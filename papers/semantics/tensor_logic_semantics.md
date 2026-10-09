@@ -23,22 +23,22 @@ The document has five parts, followed by a notation reference and bibliography:
 
 | Part | Central question | Contents and result |
 | --- | --- | --- |
-| [I: Background notation](#part-i-background-notation), Sections 1-12 | What mathematical objects and notation are used? | Finite domains, scalar algebras, tensor signatures, environments, stores, indices, operators, and contribution occurrences, illustrated by running examples. |
-| [II: Core language and surface elaboration](#part-ii-core-language-and-surface-elaboration), Sections 13-17 | What does a well-formed statement say explicitly? | Scoped core syntax, structural checks, surface-to-core translation, and the canonical pure-einsum meaning and rewrite conditions. |
-| [III: Denotational semantics](#part-iii-denotational-semantics), Sections 18-22 | What equations and values does a program define? | Strict expression interpretation, additive collection, complete program models, and a partial input-output function on inputs with a unique model. |
-| [IV: Operational semantics](#part-iv-operational-semantics), Sections 23-28 | How can the contributions be computed safely? | Read footprints, dependency ranks, accumulation and publication rules, explicit failures, and correspondence with unique models for the ranked fragment. |
-| [V: Compilation and refinement](#part-v-compilation-and-refinement), Sections 29-34 | When does a compiled plan implement that meaning? | Plan contracts, buffer representations, simulation and progress obligations, batching, scan-buffer reuse, and a conditional compiler-correctness theorem. |
+| [I: Background notation](#part-i-background-notation), Sections [1](#1-numbers-finite-sets-and-functions)-[12](#12-notation-for-operational-and-proof-rules) | What mathematical objects and notation are used? | Finite domains, scalar algebras, tensor signatures, environments, stores, indices, operators, and contribution occurrences, illustrated by running examples. |
+| [II: Core language and surface elaboration](#part-ii-core-language-and-surface-elaboration), Sections [13](#13-core-syntax-and-binding)-[17](#17-pure-einsum-semantics-and-transformation-foundations) | What does a well-formed statement say explicitly? | Scoped core syntax, structural checks, surface-to-core translation, and the canonical pure-einsum meaning and rewrite conditions. |
+| [III: Denotational semantics](#part-iii-denotational-semantics), Sections [18](#18-expression-interpretation-and-definedness)-[22](#22-denotational-scope-and-execution-requirements) | What equations and values does a program define? | Strict expression interpretation, additive collection, complete program models, and a partial input-output function on inputs with a unique model. |
+| [IV: Operational semantics](#part-iv-operational-semantics), Sections [23](#23-read-footprints-and-executable-dependencies)-[28](#28-reference-machine-boundaries-and-proof-targets) | How can the contributions be computed safely? | Read footprints, dependency ranks, accumulation and publication rules, explicit failures, and correspondence with unique models for the ranked fragment. |
+| [V: Compilation and refinement](#part-v-compilation-and-refinement), Sections [29](#29-execution-plans-and-logical-action-contracts)-[34](#34-refinement-boundaries-and-formalization-targets) | When does a compiled plan implement that meaning? | Plan contracts, buffer representations, simulation and progress obligations, batching, scan-buffer reuse, and a conditional compiler-correctness theorem. |
 
-Read Parts I and II before the formal semantics: they establish the notation
-and binding conventions used throughout. Part III applies even to cyclic
-equation systems; the progress guarantees in Parts IV and V concern the
+Read Parts [I](#part-i-background-notation) and [II](#part-ii-core-language-and-surface-elaboration) before the formal semantics: they establish the notation
+and binding conventions used throughout. [Part III](#part-iii-denotational-semantics) applies even to cyclic
+equation systems; the progress guarantees in Parts [IV](#part-iv-operational-semantics) and [V](#part-v-compilation-and-refinement) concern the
 coordinate-ranked fragment, not every structurally valid program.
 The distinction between having a unique model and having a supported
 execution strategy is therefore essential.
 
 The boundary, colliding-write, activation, and finite-history examples are
 revisited across the parts to connect notation, elaboration, equations,
-execution, and storage. Section 35 collects the notation; the references
+execution, and storage. [Section 35](#35-compact-notation-reference) collects the notation; the references
 identify the mathematical sources and related design documents.
 
 For the implementation path, see
@@ -50,29 +50,29 @@ remaining source-correspondence and backend-refinement work.
 
 ### Semantics at a glance
 
-The development rests on five ideas. Part I fixes the notation, and each
+The development rests on five ideas. [Part I](#part-i-background-notation) fixes the notation, and each
 item names the section that makes it precise. The colors are explained in the
 next subsection.
 
-1. **Occurrences (§9, §13).** A statement $\textcolor{#9D75C4}{s}$ generates one
+1. **Occurrences ([§9](#9-programs-and-contribution-occurrences), [§13](#13-core-syntax-and-binding)).** A statement $\textcolor{#9D75C4}{s}$ generates one
    occurrence $(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$ for each
    admissible valuation $\textcolor{#5688C7}{\nu}\in\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$.
    It is addressed to $\textcolor{#9D75C4}{\mathop{\mathrm{dst}}\nolimits}(\textcolor{#9D75C4}{o})=(T_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu}))$
    and carries a body value $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$,
    which can be undefined ($\textcolor{#398B83}{\bot}$).
-2. **Collection (§19).** All occurrences addressed to a coordinate are
+2. **Collection ([§19](#19-contribution-collection)).** All occurrences addressed to a coordinate are
    combined, none deduplicated, and an empty fiber gives $0_K$:
    $$
    \textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]
    =\bigoplus_{(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(T,p)}
    \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
    $$
-3. **Meaning (§20).** A model on inputs $\textcolor{#398B83}{\eta}$ is a complete
+3. **Meaning ([§20](#20-program-models-and-functional-denotation)).** A model on inputs $\textcolor{#398B83}{\eta}$ is a complete
    environment that extends $\textcolor{#398B83}{\eta}$, has every actual body defined, and satisfies
    $\textcolor{#398B83}{\rho}(T)=\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)$ for every defined tensor $T$.
    The denotation $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})$ is the output part of the model when
    $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ has exactly one element.
-4. **Execution (§24–25).** A configuration $(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$ holds published values,
+4. **Execution (§[24](#24-machine-configurations-and-initialization)–[25](#25-execution-rules-and-terminal-outcomes)).** A configuration $(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$ holds published values,
    accumulators, and pending occurrences. Three rules fire in any order their
    premises allow:
    $\textcolor{#A87C28}{\mathrm{CONTRIBUTE}}$ adds a pending occurrence's value to its destination's
@@ -80,12 +80,12 @@ next subsection.
    $\textcolor{#A87C28}{\mathrm{PUBLISH}}$ makes a coordinate readable once no pending occurrence
    targets it; $\textcolor{#A87C28}{\mathrm{UNDEFINED}}$ ends the run in an explicit failure when a
    ready body is undefined.
-5. **Correspondence (§26, §31).** For programs with a coordinate rank
+5. **Correspondence ([§26](#26-conservation-termination-and-correspondence), [§31](#31-simulation-and-compiler-correctness)).** For programs with a coordinate rank
    certificate, every maximal run succeeds exactly when $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ is a
    singleton and then returns that model; otherwise it fails explicitly.
    A valid compiled plan refines this machine.
 
-In the boundary example of Section 11.1, `T[0,c] = C[c]` and `T[r,0] = R[r]`
+In the boundary example of [Section 11.1](#111-boundary-contributions), `T[0,c] = C[c]` and `T[r,0] = R[r]`
 give the corner two occurrences, so $T[0,0]=C[0]+R[0]$. Interior coordinates
 have empty fibers and receive $0$, and the corner is not readable until both
 occurrences have been consumed.
@@ -138,7 +138,7 @@ supported macros. Use the local preview to render the complete specification.
 The specification assumes:
 
 - Finite, explicitly determined index domains, including finite scan histories.
-- A fixed scalar algebra, or a fixed family of scalar sorts (Section 2.4), for a
+- A fixed scalar algebra, or a fixed family of scalar sorts ([Section 2.4](#24-scalar-sorts)), for a
   given development.
 - Exact mathematical values, distinguished from machine floating-point values.
 - Explicitly specified domains for primitive operators.
@@ -152,7 +152,7 @@ Several distinctions apply throughout:
 - An unavailable value is not an available zero; a ready but undefined
   expression is a different case again.
 - Primitive applications and constructed arrays use the strict interpretation
-  in Part III. A zero multiplier is not a guard.
+  in [Part III](#part-iii-denotational-semantics). A zero multiplier is not a guard.
 - Logical coordinates and published versions remain distinct even when
   physical storage is reused.
 
@@ -160,14 +160,14 @@ Cyclic dependencies remain permitted in the denotational language, but the
 direct executor does not select solutions for cyclic equations. Padding,
 out-of-range access, implicit conversion between scalar types, floating-point
 reduction order, and
-machine-number representations are outside the specified fragment. Part V treats
+machine-number representations are outside the specified fragment. [Part V](#part-v-compilation-and-refinement) treats
 physical storage reuse within an exact-value memory model; it does not
 silently replace the scalar carrier by floating-point values.
 
 Every lemma and theorem here carries a mathematical argument. Which of them
 are also kernel-checked in Lean is recorded in
 [Proof status and numbered results](#proof-status-and-numbered-results). The
-Part V compilation results have no Lean proof. Compiler correctness is
+[Part V](#part-v-compilation-and-refinement) compilation results have no Lean proof. Compiler correctness is
 conditional on the stated certificates and kernel contracts; it is not a claim
 that an existing compiler satisfies them.
 Structural well-formedness alone establishes neither existence of a model
@@ -175,7 +175,7 @@ nor an executable dependency order.
 
 The pure-einsum material draws on
 [*The Syntax and Semantics of einsum*](https://arxiv.org/html/2509.20020).
-Section 17 adapts it to zero-based finite domains, explicit signatures, and
+[Section 17](#17-pure-einsum-semantics-and-transformation-foundations) adapts it to zero-based finite domains, explicit signatures, and
 tagged contributions. The paper uses one-based intervals with positive
 extents; this specification permits zero extents. Correspondence arguments
 must preserve that difference rather than exclude empty domains implicitly.
@@ -185,7 +185,7 @@ must preserve that difference rather than exclude empty domains implicitly.
 The lemmas, propositions, theorems, and corollaries below are labeled where
 they are stated. Other sections cite them by label. Labels are numbered
 sequentially within each top-level section and are not subsection numbers:
-"Theorem 26.5" is in Section 26.4, and "Section 26.3" names a section.
+"Theorem 26.5" is in [Section 26.4](#264-finite-execution-and-progress-for-ranked-programs), and "[Section 26.3](#263-successful-execution-gives-the-unique-model)" names a section.
 
 | Result | Statement | Lean status (`LeanNCD.Semantics`) |
 | --- | --- | --- |
@@ -213,7 +213,7 @@ The rank certificate and complete ordered schedule are supplied as data;
 there is no rank/schedule synthesis or source checker, and no production/backend
 correspondence is claimed. Arbitrary debug blocking or exhaustion is not a
 no-model result.
-Items 1 and 2 of the proof targets in Section 28 (well-definedness of typed
+Items 1 and 2 of the proof targets in [Section 28](#28-reference-machine-boundaries-and-proof-targets) (well-definedness of typed
 interpretation, and renaming and substitution) are not numbered statements;
 the companion document records what covers them. The table reflects
 [the Lean path document](lean_executable_semantics_path.md) as of its
@@ -281,7 +281,7 @@ together.
 This part fixes the mathematical objects shared by the core language,
 both semantics, and the compilation contracts. Its source examples illustrate
 contributions; their explicit syntax and interpretation are defined in
-Parts II and III.
+Parts [II](#part-ii-core-language-and-surface-elaboration) and [III](#part-iii-denotational-semantics).
 
 ## 1. Numbers, finite sets, and functions
 
@@ -388,7 +388,7 @@ $K=\mathbb{R}$. Exact reals are mathematical objects; this does not assert that
 a Lean runtime stores exact real numbers.
 
 Tensor contraction and contribution collection use a commutative semiring
-(Section 2.3 records which results use which of its laws)
+([Section 2.3](#23-which-algebraic-laws-each-part-uses) records which results use which of its laws)
 
 $$
 \mathcal{K}=(K,\oplus,\otimes,0_K,1_K).
@@ -457,29 +457,29 @@ different fragments of it:
 
 | Used by | Needs |
 | --- | --- |
-| Contribution collection (Section 19), conservation, soundness, finite execution, and progress (Sections 24-26), and batched accumulation (Section 32.1) | A commutative monoid $(K,\oplus,0_K)$ on the carrier of each defined tensor |
-| Expression interpretation (Section 18), read footprints, read stability (Section 23) | No laws: $\oplus$, $\otimes$, $0_K$, $1_K$ are interpreted operations, and a reduction is the ascending fold of Section 18.3 |
-| Enumeration independence of nested reductions (Section 15.2), the pure-einsum correspondence (Proposition 19.1), Sections 17.1-17.3 | The commutative-monoid laws of $\oplus$ (associativity, commutativity, identity), the coherence condition, and the bracketing convention below |
-| Delta tensors, operand permutation, distribution, neutral operands (Sections 17.4-17.6) | The full semiring laws: $\otimes$ associative and commutative with identity $1_K$, distributivity, and $0_K$ absorbing |
+| Contribution collection ([Section 19](#19-contribution-collection)), conservation, soundness, finite execution, and progress (Sections [24](#24-machine-configurations-and-initialization)-[26](#26-conservation-termination-and-correspondence)), and batched accumulation ([Section 32.1](#321-why-exact-batched-accumulation-refines-individual-steps)) | A commutative monoid $(K,\oplus,0_K)$ on the carrier of each defined tensor |
+| Expression interpretation ([Section 18](#18-expression-interpretation-and-definedness)), read footprints, read stability ([Section 23](#23-read-footprints-and-executable-dependencies)) | No laws: $\oplus$, $\otimes$, $0_K$, $1_K$ are interpreted operations, and a reduction is the ascending fold of [Section 18.3](#183-reduction-and-tabulation) |
+| Enumeration independence of nested reductions ([Section 15.2](#152-statement-variables-and-term-local-contraction)), the pure-einsum correspondence (Proposition 19.1), Sections [17.1](#171-index-strings-and-global-valuations)-[17.3](#173-connection-to-the-contribution-core) | The commutative-monoid laws of $\oplus$ (associativity, commutativity, identity), the coherence condition, and the bracketing convention below |
+| Delta tensors, operand permutation, distribution, neutral operands (Sections [17.4](#174-delta-tensors-and-diagonal-identities)-[17.6](#176-neutral-operands-and-domain-preservation)) | The full semiring laws: $\otimes$ associative and commutative with identity $1_K$, distributivity, and $0_K$ absorbing |
 
-No result of Parts III and IV uses a law of $\otimes$, distributivity, or
+No result of Parts [III](#part-iii-denotational-semantics) and [IV](#part-iv-operational-semantics) uses a law of $\otimes$, distributivity, or
 absorption; $1_K$ appears only as the value of a true Iverson predicate.
 
 **Coherence.** An expression combines values with $\oplus$ and uses $0_K$ for an
 empty reduction, while collection combines contribution values with $\oplus$
 starting from $0_K$. Several results treat these as the same operation and the
 same identity, for example the equality of a reduction with its finite
-combination (Section 15.2), Proposition 19.1, and Section 27.3, where an
+combination ([Section 15.2](#152-statement-variables-and-term-local-contraction)), Proposition 19.1, and [Section 27.3](#273-guards-empty-binders-and-failure), where an
 empty reduction contributes the collection identity. This is an assumption on
 the development: the expression-level $\oplus$ and $0_K$ agree with the
 collection monoid. The Lean formalization keeps them as separate data and
 links them by hypothesis; it evaluates a reduction as an ascending fold, which
-equals the finite combination of Section 2.2 when the monoid laws and
+equals the finite combination of [Section 2.2](#22-finite-sums-and-products) when the monoid laws and
 coherence hold.
 
 **Bracketing.** A finite product of an ordered list of factors is the
-left-nested product. The $\bigotimes$ over operands in Section 17.2 and the
-product that Section 15.2 builds from the same factors in the same order use
+left-nested product. The $\bigotimes$ over operands in [Section 17.2](#172-canonical-fiber-semantics) and the
+product that [Section 15.2](#152-statement-variables-and-term-local-contraction) builds from the same factors in the same order use
 this nesting, so relating them uses no law of $\otimes$.
 
 A formalization may give each defined tensor its own commutative monoid when it
@@ -490,19 +490,19 @@ not use that freedom.
 
 ### 2.4 Scalar sorts
 
-The text is written for one carrier $K$, but nothing in Parts III-IV depends
+The text is written for one carrier $K$, but nothing in Parts [III](#part-iii-denotational-semantics)-[IV](#part-iv-operational-semantics) depends
 on there being only one. A development may instead fix a family of **sorts**,
 each with a carrier $K_s$ and operations $(\oplus_s,\otimes_s,0_s,1_s)$, and a
-tensor signature (Section 4.1) names the sort of its entries. Then:
+tensor signature ([Section 4.1](#41-signatures-and-coordinate-domains)) names the sort of its entries. Then:
 
 - A scalar expression has a sort. Literals, tensor reads, Iverson values,
   $\oplus$, $\otimes$, reductions, tabulations, and selection stay within one
   sort, and a tensor read has the sort of the tensor.
 - A contribution body has the sort of its destination tensor.
-- A registered primitive (Section 13.2) may have input and output types in
+- A registered primitive ([Section 13.2](#132-value-types-and-primitive-signatures)) may have input and output types in
   different sorts. This is the only way a value changes sort.
 - Collection on a defined tensor uses the monoid of its sort. A sort that is
-  the sort of no defined tensor needs no $\oplus$ laws for Sections 19-26;
+  the sort of no defined tensor needs no $\oplus$ laws for Sections [19](#19-contribution-collection)-[26](#26-conservation-termination-and-correspondence);
   enumeration independence of reductions in such a sort needs
   $(K_s,\oplus_s,0_s)$ to be a commutative monoid.
 - Every carrier is nonempty, since it contains $0_s$.
@@ -586,7 +586,7 @@ $$
 
 such as the valuations satisfying an explicit guard. A guard restricts
 which contributions exist; an Iverson factor changes the value of a
-contribution. Section 13.1 makes that distinction explicit in the syntax.
+contribution. [Section 13.1](#131-index-expressions-and-predicates) makes that distinction explicit in the syntax.
 
 ## 4. Tensor signatures, coordinates, and values
 
@@ -668,7 +668,7 @@ The notation $\textcolor{#398B83}{\rho}(T)[p]$ means "coordinate $p$ of the valu
 Write $\textcolor{#5688C7}{\mathrm{In}}$ for input identifiers and $\textcolor{#5688C7}{\mathrm{Def}}$ for defined
 identifiers. These disjoint sets partition the signature's identifiers;
 $\textcolor{#5688C7}{\mathrm{Out}}\subseteq\textcolor{#5688C7}{\mathrm{Def}}$ designates the outputs.
-Section 13.6 includes these roles in a core program's declaration.
+[Section 13.6](#136-core-programs) includes these roles in a core program's declaration.
 
 An input environment $\textcolor{#398B83}{\eta}$ assigns values only to identifiers in
 $\textcolor{#5688C7}{\mathrm{In}}$. A supplied input value is not automatically a contribution
@@ -707,7 +707,7 @@ Write $\textcolor{#A87C28}{\sigma}[(T,p)\mapsto v]$ for the store updated at tha
 This is a mathematical description of a machine-state update, not an
 additive source-language statement.
 
-Part IV distinguishes finalized values from accumulators containing only some
+[Part IV](#part-iv-operational-semantics) distinguishes finalized values from accumulators containing only some
 contributions.
 
 ### 5.3 Logical addresses, physical slots, and proof-only history
@@ -739,7 +739,7 @@ longer needed. A correctness proof may retain an old logical value as
 necessarily stored by the executing program.
 Ghost history is not a runtime source of tensor values. Every actual read
 and every returned output must still have a justified concrete representation.
-Part V makes this distinction precise.
+[Part V](#part-v-compilation-and-refinement) makes this distinction precise.
 
 Here "physical" distinguishes storage from tensor semantics; the contents
 are still elements of the exact carrier $K$, not unspecified machine bits.
@@ -824,7 +824,7 @@ Surface einsum notation may omit this binder:
 Y[i,j] = W[i,k] X[k,j]
 ```
 
-The elaboration of surface notation is defined in Part II. We do not use
+The elaboration of surface notation is defined in [Part II](#part-ii-core-language-and-surface-elaboration). We do not use
 "all RHS-only variables are summed" as a substitute for specifying binder
 scope.
 
@@ -876,7 +876,7 @@ $$
 \frac{\exp(x[j])}{\sum_{k\in[m]}\exp(x[k])}.
 $$
 
-This is not an independent scalar operation at each coordinate. Part IV
+This is not an independent scalar operation at each coordinate. [Part IV](#part-iv-operational-semantics)
 represents its slice dependencies through the full argument footprint.
 
 An Iverson value embeds a predicate $\textcolor{#9D75C4}{Q}$ into the scalar algebra:
@@ -892,7 +892,7 @@ $$
 
 Multiplication by $\mathbf{1}_{\textcolor{#9D75C4}{Q}}$ is a value-level operation, not
 short-circuit evaluation of the other factor. In the core, $\textcolor{#9D75C4}{Q}$ depends
-only on index values, as specified in Section 13.1.
+only on index values, as specified in [Section 13.1](#131-index-expressions-and-predicates).
 For example, $\mathbf{1}_{i<1}\log(X[i])$ is still undefined at $i=1$
 if $X[1]=-1$: the zero factor does not make the logarithm defined.
 
@@ -920,7 +920,7 @@ For each core statement, use the data:
 - $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}:\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}\to\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T_{\textcolor{#9D75C4}{s}})$: write map.
 - $\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}$: body expression, with free variables in $\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}}$.
 
-Part II gives the syntax that supplies these data. The write map is derived
+[Part II](#part-ii-core-language-and-surface-elaboration) gives the syntax that supplies these data. The write map is derived
 from the statement's output index expressions.
 
 ### 9.2 Tagged contribution occurrences
@@ -1012,14 +1012,14 @@ The symbol $\textcolor{#9D75C4}{\mathrel{+}=}$ does not mean "read the current m
 $T$ and update it immediately." It describes a contribution to be collected.
 For a non-numerical scalar algebra, its combination operation is $\oplus$.
 
-Use the following interpretation notation, made precise in Part III:
+Use the following interpretation notation, made precise in [Part III](#part-iii-denotational-semantics):
 
 - $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}\rrbracket_{\textcolor{#5688C7}{\nu}}$: the value of an index expression.
 - $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$: the result of interpreting a tensor
   expression under a complete tensor environment and an index valuation;
   it may be undefined.
 - $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})$: the partial input-output denotation,
-  defined when $\textcolor{#398B83}{\eta}$ has a unique complete model, as specified in Section 20.3.
+  defined when $\textcolor{#398B83}{\eta}$ has a unique complete model, as specified in [Section 20.3](#203-functional-admissibility).
 - $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$: environments satisfying a program's
   collected equations on the supplied inputs.
 
@@ -1031,7 +1031,7 @@ be assumed to have a unique model merely because this notation is available.
 ## 11. Running examples fixing the notation
 
 These examples illustrate the intended contribution reading. They do not
-replace the formal semantic definitions in Parts III and IV.
+replace the formal semantic definitions in Parts [III](#part-iii-denotational-semantics) and [IV](#part-iv-operational-semantics).
 
 ### 11.1 Boundary contributions
 
@@ -1145,11 +1145,11 @@ Use:
 - $\textcolor{#A87C28}{\longrightarrow}^{*}$ for zero or more execution steps.
 - $\textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}$ for termination with result environment $\textcolor{#398B83}{\rho}$.
 - $\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)$ for the tensor addresses required to evaluate the
-  contributions at address $a$, as defined in Section 23.
+  contributions at address $a$, as defined in [Section 23](#23-read-footprints-and-executable-dependencies).
 - $r:\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\to\mathbb{N}$ for a dependency rank when
   a finite acyclic ordering exists.
 
-The rank condition used in Part IV is
+The rank condition used in [Part IV](#part-iv-operational-semantics) is
 
 $$
 b\in\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)\Longrightarrow r(b)<r(a).
@@ -1162,8 +1162,8 @@ while still depending only on earlier coordinates.
 
 For proof judgments, $\textcolor{#5688C7}{\Gamma}\vdash J$ reads "judgment $J$ holds in context
 $\textcolor{#5688C7}{\Gamma}$." Here $\textcolor{#5688C7}{\Gamma}$ will be an index context unless explicitly qualified.
-Part II introduces structural typing judgments, and Part III defines expression
-interpretation and program models. Part IV defines the execution judgments
+[Part II](#part-ii-core-language-and-surface-elaboration) introduces structural typing judgments, and [Part III](#part-iii-denotational-semantics) defines expression
+interpretation and program models. [Part IV](#part-iv-operational-semantics) defines the execution judgments
 and their rules.
 
 ## Part II: Core language and surface elaboration
@@ -1222,7 +1222,7 @@ An expression has a value type $\textcolor{#5688C7}{\tau}$, which is either:
 - An array type $K^{\textcolor{#5688C7}{I}_1\times\cdots\times \textcolor{#5688C7}{I}_m}$, with $m\ge1$.
 
 Each array slot has a specified finite coordinate domain, just as for a
-tensor signature in Section 4. Rank-zero values use the scalar type $K$.
+tensor signature in [Section 4](#4-tensor-signatures-coordinates-and-values). Rank-zero values use the scalar type $K$.
 Arrays here are expression values, not necessarily named tensors.
 
 A fixed primitive registry $\textcolor{#9D75C4}{\mathcal{F}}$ supplies, for every operator $f$,
@@ -1234,7 +1234,7 @@ $$
 $$
 
 The types in this formula denote their value spaces. This specializes the
-operator-domain notation from Section 8.
+operator-domain notation from [Section 8](#8-operators-predicates-and-definedness).
 Primitive interpretations are deterministic mathematical functions of
 their arguments on $\textcolor{#398B83}{\mathcal{D}}_f$. They have no hidden store reads or side
 effects. Computable implementations and domain tests are separate requirements.
@@ -1243,7 +1243,7 @@ For example, real ReLU has one scalar argument and result. Softmax is
 registered for every $m\ge0$, with one argument and result of type
 $\mathbb{R}^{[m]}$. Its domain of definition is all of $\mathbb{R}^{[m]}$
 when $m>0$ and is empty when $m=0$, matching the nonempty requirement of
-Section 8. Because softmax is registered at $m=0$, a statement whose slice
+[Section 8](#8-operators-predicates-and-definedness). Because softmax is registered at $m=0$, a statement whose slice
 domain is empty type checks; having no occurrences, it never demands the
 application. A demanded application to an empty array is undefined.
 A user-supplied $F:\mathbb{R}^{[d]}\to\mathbb{R}^{[d]}$ can be a registered
@@ -1307,7 +1307,7 @@ $$
 $$
 
 is an array expression of type $K^{[d]}$, with $l$ free and $j$ bound.
-It makes the shorthand $H[:,l]$ from Part I explicit.
+It makes the shorthand $H[:,l]$ from [Part I](#part-i-background-notation) explicit.
 
 **Example: a scalar selected from an array computation.**
 
@@ -1371,7 +1371,7 @@ output indices, and body. The body must have the scalar type of its
 destination tensor ($K$ when there is one sort).
 The guard is optional, with omitted guard meaning $\mathrm{true}$.
 
-The guard and output indices determine the data introduced in Section 9:
+The guard and output indices determine the data introduced in [Section 9](#9-programs-and-contribution-occurrences):
 
 $$
 \textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}=\{\textcolor{#5688C7}{\nu}\in\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})
@@ -1399,7 +1399,7 @@ has three occurrences addressed to coordinate $0$, not one.
 A core program consists of:
 
 1. A finite signature $\textcolor{#5688C7}{\Sigma}$, over the scalar carrier $K$ (or the
-   sort family of Section 2.4).
+   sort family of [Section 2.4](#24-scalar-sorts)).
 2. A partition of its tensor identifiers into designated inputs
    $\textcolor{#5688C7}{\mathrm{In}}$ and defined tensors $\textcolor{#5688C7}{\mathrm{Def}}$.
 3. Designated output identifiers $\textcolor{#5688C7}{\mathrm{Out}}\subseteq\textcolor{#5688C7}{\mathrm{Def}}$.
@@ -1411,7 +1411,7 @@ Every statement targets an identifier in $\textcolor{#5688C7}{\mathrm{Def}}$.
 Reads may refer to either set.
 
 A defined tensor need not have any statements targeting it. Its values
-are governed by the empty-collection rule in Section 19.
+are governed by the empty-collection rule in [Section 19](#19-contribution-collection).
 Conversely, declaring a tensor to be an input does not
 provide its values: an input environment $\textcolor{#398B83}{\eta}$ must supply them.
 
@@ -1507,7 +1507,7 @@ $i+1$ remains a well-scoped integer expression.
 Index literals are integers, variables must belong to $\textcolor{#5688C7}{\Gamma}$, and
 affine constructors preserve the integer index type.
 Predicates are built from well-scoped index expressions using the
-constructors in Section 13.1.
+constructors in [Section 13.1](#131-index-expressions-and-predicates).
 
 The expression rules are:
 
@@ -1531,10 +1531,10 @@ construct a complete array on a prefix of a named tensor's domain.
 These rules use compatible declared coordinate domains, not name-based
 axis matching or an implicit transpose. An implementation mapping must
 retain any axis identities and explicitly justified identifications.
-Because $\textcolor{#5688C7}{I}_a=[n_a]$ is a set of integers (Section 3.1), these
+Because $\textcolor{#5688C7}{I}_a=[n_a]$ is a set of integers ([Section 3.1](#31-axes-and-identities)), these
 judgments see only coordinate ranges: two axes of equal extent are
 indistinguishable to them. Distinguishing such axes is the job of domain
-resolution (assumed before elaboration in Section 15.1) and the
+resolution (assumed before elaboration in [Section 15.1](#151-explicit-inputs-to-elaboration)) and the
 implementation mapping, not of the core rules.
 
 The core permits an explicitly restricted index domain. For example,
@@ -1573,9 +1573,9 @@ automatically. A compiler may prove admitted affine cases, accept explicit
 evidence, or reject a case it cannot establish.
 
 Operator definedness is a different condition. The interpretation in
-Section 18 accounts for $\textcolor{#398B83}{\mathcal{D}}_f$ (where $f$ is the primitive
+[Section 18](#18-expression-interpretation-and-definedness) accounts for $\textcolor{#398B83}{\mathcal{D}}_f$ (where $f$ is the primitive
 operator and $\textcolor{#398B83}{\mathcal{D}}_f$ is its domain of definition), distinguishing
-defined values from undefined results. Section 20 then specifies
+defined values from undefined results. [Section 20](#20-program-models-and-functional-denotation) then specifies
 admissible inputs for a functional program denotation.
 A runtime check is not a proof that every input meets that condition.
 
@@ -1596,7 +1596,7 @@ rule at $i=3$.
 **Surface notation** is the compact, user-facing syntax in which tensor
 logic programs are written, such as `Y[i,j] = W[i,k] X[k,j]`.
 It leaves some information implicit, including the contraction over $k$.
-The **core notation** from Section 13 makes binders, reductions, and
+The **core notation** from [Section 13](#13-core-syntax-and-binding) makes binders, reductions, and
 operator applications explicit. **Elaboration** translates the surface
 form into that core form; it is not execution of the program.
 
@@ -1630,10 +1630,10 @@ permitted; they label separate destination slots.
 
 Consequently, $A[i]B[i]$ with operand lengths $3$ and $5$ is rejected as
 a standard full-axis einsum. An explicitly restricted core binder can
-still specify the prefix computation described in Section 14.2.
+still specify the prefix computation described in [Section 14.2](#142-index-and-expression-rules).
 Broadcasting an output-only variable from a declared domain is also a
 core/general surface capability, not a standard pure-einsum inference.
-Section 17 gives the reference semantics for the standard profile.
+[Section 17](#17-pure-einsum-semantics-and-transformation-foundations) gives the reference semantics for the standard profile.
 
 Surface syntax supported here consists of an additive body of products
 of scalar factors, optionally enclosed by one unary scalar operator or
@@ -1651,7 +1651,7 @@ adding implicit contractions. The slice shorthand $T[:,l]$ expands to
 $\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in \textcolor{#5688C7}{I}_{T,1}}(T[j,l])$ for a fresh $j$;
 the corresponding rule for several colon slots tabulates their declared
 domains in slot order. Selection from an array expression, such as
-$F(T[:,l])[i]$, expands to $\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}$ as in Section 13.3.
+$F(T[:,l])[i]$, expands to $\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}$ as in [Section 13.3](#133-expression-constructors).
 The fixed indices must remain well-scoped and in bounds.
 
 ### 15.2 Statement variables and term-local contraction
@@ -1673,7 +1673,7 @@ C_b=\textcolor{#9D75C4}{\mathop{\mathrm{FV}}\nolimits}(t_b)\setminus\textcolor{#
 $$
 
 where $\textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})$ is the context's variable-identity set
-from Section 3.2. Each contracted variable has its own resolved
+from [Section 3.2](#32-index-variables-and-contexts). Each contracted variable has its own resolved
 domain.
 
 Elaborate the factors to scalar core expressions, multiply them with
@@ -1683,7 +1683,7 @@ has the same value in each occurrence.
 
 Use a fixed enumeration of $C_b$ to produce a concrete syntax tree.
 The commutative-monoid laws of $\oplus$, with the coherence condition of
-Section 2.3, justify independence from that enumeration; floating-point
+[Section 2.3](#23-which-algebraic-laws-each-part-uses), justify independence from that enumeration; floating-point
 execution must separately specify its order.
 Each reduction binder is scoped only over its own term.
 
@@ -1760,17 +1760,17 @@ The fresh tabulation binders supply the entire slice to the operator.
 This applies an operator to one statement's body slice.
 It does not first collect slices from other statements defining the
 same destination. To apply softmax or another operator to a collected
-tensor, use a separate named intermediate, as in Section 11.3.
+tensor, use a separate named intermediate, as in [Section 11.3](#113-activation-before-versus-after-collection).
 
 Nonrectangular slices, guards depending on marked slice variables, and other
 operator shapes require explicit core expressions or an explicit surface-language
 extension. They are not assigned an implicit meaning by this abbreviation.
-A causal mask is such a guard; Section 16.7 gives its core forms.
+A causal mask is such a guard; [Section 16.7](#167-a-causal-mask-is-not-a-marked-slice) gives its core forms.
 
 ### 15.5 Structural checks after elaboration
 
 Derive $\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$ and $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}$ from the resulting statement and check the
-rules in Section 14. Elaboration preserves every source statement
+rules in [Section 14](#14-structural-well-formedness). Elaboration preserves every source statement
 occurrence. It neither merges identical statements by textual equality
 nor orders them as destructive assignments.
 
@@ -1837,7 +1837,7 @@ $$
 $$
 
 The empty statement context has one valuation, the empty assignment,
-identified with $()$ under the rank-zero convention of Section 1.2.
+identified with $()$ under the rank-zero convention of [Section 1.2](#12-tuples-products-and-rank-zero-cases).
 The repeated RHS variable binds once and selects diagonal coordinates.
 
 By contrast, with input $X$ of shape $(n)$ and a defined `Diagonal`
@@ -1854,7 +1854,7 @@ contribution collections.
 
 ### 16.3 Colliding writes and lost-binder prevention
 
-The affine-write example from Section 11.2 elaborates to
+The affine-write example from [Section 11.2](#112-colliding-affine-writes) elaborates to
 
 $$
 \text{for }i\in[2],j\in[2]:
@@ -1948,7 +1948,7 @@ The full statement contributes that body to $A[q,\textcolor{#5688C7}{s}]$.
 
 ### 16.6 A scan history with explicit slice input
 
-Use the shapes and bounds of Section 11.4. The recurrence statement
+Use the shapes and bounds of [Section 11.4](#114-a-finite-history-with-persistent-input). The recurrence statement
 elaborates to
 
 $$
@@ -1966,13 +1966,13 @@ The tabulated $j$ is fresh and represents all coordinates required by $F$.
 
 For $N=0$, this statement has no occurrences, while the base statements
 still apply at time zero. For $N>0$, its apparent self-reference by tensor
-name does not prevent the coordinate-level dependency analysis in Section 23 from
+name does not prevent the coordinate-level dependency analysis in [Section 23](#23-read-footprints-and-executable-dependencies) from
 recognizing a forward scan.
 
 ### 16.7 A causal mask is not a marked slice
 
-Keep the inputs and shapes of Section 16.5, but normalize over only the keys
-$t\le q$ for each query $q$. The marked-slice abbreviation of Section 15.4 does
+Keep the inputs and shapes of [Section 16.5](#165-softmax-over-an-attention-slice), but normalize over only the keys
+$t\le q$ for each query $q$. The marked-slice abbreviation of [Section 15.4](#154-marked-slice-operators) does
 not apply: the mask $\textcolor{#5688C7}{s}\le q$ is a guard that depends on the marked variable
 $\textcolor{#5688C7}{s}$. A mask inside the argument of $\mathop{\mathrm{softmax}}\nolimits$ does not work either.
 That argument is a complete array on $[\textcolor{#5688C7}{s}_0]$, and multiplying an
@@ -1981,7 +1981,7 @@ is still normalized over, and exact reals have no $-\infty$ to use instead.
 
 The core expresses the mask with scalar primitives. Register $\exp$, which is
 total on $\mathbb{R}$, and division, defined where the divisor is nonzero
-(Section 8). Abbreviate the explicit reduction
+([Section 8](#8-operators-predicates-and-definedness)). Abbreviate the explicit reduction
 $S(q,t)=\bigoplus_{k\in[d]}\textcolor{#9D75C4}{Q}[q,k]\otimes K_{\mathrm{key}}[t,k]$. For
 $q\in[q_0]$ and $\textcolor{#5688C7}{s}\in[\textcolor{#5688C7}{s}_0]$, one statement suffices:
 
@@ -1995,7 +1995,7 @@ $$
 
 Every read is in bounds for every lifted valuation. Because $\exp$ is total,
 multiplying by the Iverson value is safe here, unlike the logarithm of
-Section 21.3: the masked bodies are defined and contribute $0$. For
+[Section 21.3](#213-a-guard-differs-from-a-zero-multiplier): the masked bodies are defined and contribute $0$. For
 $\textcolor{#5688C7}{s}_0>0$ the denominator is at least $\exp(S(q,0))>0$, because $0\le q$ always holds,
 so every division is defined and $A[q,\textcolor{#5688C7}{s}]=0$ for $\textcolor{#5688C7}{s}>q$. For
 $\textcolor{#5688C7}{s}_0=0$ there are no occurrences.
@@ -2014,7 +2014,7 @@ $$
 
 Entries with $\textcolor{#5688C7}{s}>q$ have empty fibers and are $0$. $\mathit{Den}[q]$ is read as a
 named tensor, so its whole fiber is collected before any division is ready
-(Section 25.2).
+([Section 25.2](#252-publish-a-completed-coordinate)).
 
 The two forms differ on fully masked rows. Replace $t\le q$ by the strict mask
 $t<q$, and assume $q_0>0$ and $\textcolor{#5688C7}{s}_0>0$. Row $q=0$ then has no unmasked key.
@@ -2023,20 +2023,20 @@ equal to $0_K$, so the division is undefined at an actual occurrence and the
 program has no model (the machine ends in
 $\textcolor{#A87C28}{\mathsf{Failed}}$). In the guarded form row $0$ has no
 occurrence of $A$, so $A[0,\textcolor{#5688C7}{s}]=0$ is defined. This is the guard-versus-multiplier
-distinction of Section 21.3 again.
+distinction of [Section 21.3](#213-a-guard-differs-from-a-zero-multiplier) again.
 
 ## 17. Pure einsum semantics and transformation foundations
 
 This section fixes the mathematical reference meaning of the standard
-pure-einsum profile from Section 15.1. It does not extend the core with
+pure-einsum profile from [Section 15.1](#151-explicit-inputs-to-elaboration). It does not extend the core with
 a new primitive and does not define whole-program semantics.
 
 The reference operands are complete tensor values from an environment
 $\textcolor{#398B83}{\rho}$. There are no nonlinear operators, guards, or affine access
 maps in this profile. The general core retains those capabilities.
 
-Sections 17.1-17.3 need only the commutative-monoid laws of $\oplus$, the
-coherence condition, and the bracketing convention of Section 2.3. Sections 17.4-17.6 use the full
+Sections [17.1](#171-index-strings-and-global-valuations)-[17.3](#173-connection-to-the-contribution-core) need only the commutative-monoid laws of $\oplus$, the
+coherence condition, and the bracketing convention of [Section 2.3](#23-which-algebraic-laws-each-part-uses). Sections [17.4](#174-delta-tensors-and-diagonal-identities)-[17.6](#176-neutral-operands-and-domain-preservation) use the full
 semiring laws.
 
 ### 17.1 Index strings and global valuations
@@ -2058,7 +2058,7 @@ The standard profile requires:
 
 Let $\textcolor{#5688C7}{\Gamma}_{\mathrm{all}}$ contain every distinct variable in the
 operand strings, once, with its resolved domain. This is a context
-in the sense of Section 3, not a concatenation retaining duplicates.
+in the sense of [Section 3](#3-axes-index-variables-and-valuations), not a concatenation retaining duplicates.
 Its valuations are the paper's global index assignments, expressed
 using our existing $\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}$ notation.
 
@@ -2171,7 +2171,7 @@ its output-variable valuation and its contracted-variable valuation,
 then combines the finite sums. Empty domains and repeated output
 indices must be included in the proof.
 
-Section 19.3 states this correspondence using the core interpretation.
+[Section 19.3](#193-correspondence-with-pure-einsum) states this correspondence using the core interpretation.
 It remains a Lean proof obligation (Proposition 19.1), not a completed formal
 theorem.
 
@@ -2183,7 +2183,7 @@ $$
 $$
 
 is not generally the sum of $\mathop{\mathrm{ReLU}}\nolimits(W[i,k]X[k])$.
-The operator boundary fixed in Sections 13 and 15 remains authoritative.
+The operator boundary fixed in Sections [13](#13-core-syntax-and-binding) and [15](#15-surface-to-core-elaboration) remains authoritative.
 
 ### 17.4 Delta tensors and diagonal identities
 
@@ -2272,7 +2272,7 @@ A pure einsum distributes over replacement of one operand by this
 pointwise combination, retaining that operand's index string.
 The scalar distributive law and finite combination justify the result.
 The core can express pointwise combination using tabulation, as
-specified in Section 13.3.
+specified in [Section 13.3](#133-expression-constructors).
 
 **Nesting and denesting.** An intermediate contraction may aggregate
 only indices that are no longer needed by the outer contraction.
@@ -2370,7 +2370,7 @@ as ReLU or for arbitrary semirings.
 
 Denotational semantics describes values and equations without prescribing
 how a machine computes them. In this part, $\textcolor{#398B83}{\rho}$ is always a complete,
-signature-respecting environment as defined in Section 5. It supplies
+signature-respecting environment as defined in [Section 5](#5-environments-and-stores). It supplies
 candidate values even for tensors that the program defines.
 
 Reading $\textcolor{#398B83}{\rho}(T)$ does not recursively execute statements defining $T$.
@@ -2383,7 +2383,7 @@ programs and cyclic equation systems.
 
 ### 18.1 Successful and undefined results
 
-For an expression value type $\textcolor{#5688C7}{\tau}$ from Section 13.2, define the result
+For an expression value type $\textcolor{#5688C7}{\tau}$ from [Section 13.2](#132-value-types-and-primitive-signatures), define the result
 space
 
 $$
@@ -2427,7 +2427,7 @@ $$
 to mean that it is undefined. The downward arrow on an expression
 means definedness, not operational termination.
 The separate $\textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}$ notation denotes successful
-machine execution in Part IV.
+machine execution in [Part IV](#part-iv-operational-semantics).
 
 ### 18.2 Scalar constructors
 
@@ -2503,7 +2503,7 @@ $$
 
 Here $\bigoplus_{k\in\textcolor{#5688C7}{I}_j}v_k$ is the fold of $\oplus$ over the ascending enumeration of
 $\textcolor{#5688C7}{I}_j$, which needs no law; it equals the finite combination of
-Section 2.2 under the monoid laws (Section 2.3).
+[Section 2.2](#22-finite-sums-and-products) under the monoid laws ([Section 2.3](#23-which-algebraic-laws-each-part-uses)).
 An empty reduction succeeds with $0_K$. Its body is not interpreted
 at any valuation, so an unreachable primitive application does not
 cause undefinedness.
@@ -2532,7 +2532,7 @@ $$
 
 Here $\textcolor{#398B83}{V}:\textcolor{#5688C7}{J}\to K$ is a complete array value.
 An empty $\textcolor{#5688C7}{J}$ produces the unique empty array successfully.
-These binders use exactly the lifted domains from Section 14.1.
+These binders use exactly the lifted domains from [Section 14.1](#141-judgments-and-admissible-valuations).
 
 ### 18.4 Array selection and primitive application
 
@@ -2609,15 +2609,15 @@ coordinate selection.
 
 Therefore, transformations involving partial primitives must preserve
 both values and definedness. Replacing $0\cdot \textcolor{#9D75C4}{E}$ by $0$ is unsound when
-$\textcolor{#9D75C4}{E}$ can be undefined. The pure semiring transformations of Section 17
+$\textcolor{#9D75C4}{E}$ can be undefined. The pure semiring transformations of [Section 17](#17-pure-einsum-semantics-and-transformation-foundations)
 do not have this problem: their structurally valid reads and semiring
 operations are total on complete environments.
 
 ## 19. Contribution collection
 
-The Lean status of Sections 19–20 is recorded in
+The Lean status of Sections [19](#19-contribution-collection)–[20](#20-program-models-and-functional-denotation) is recorded in
 [Proof status and numbered results](#proof-status-and-numbered-results).
-Section 19.3's pure-einsum elaboration correspondence (Proposition 19.1)
+[Section 19.3](#193-correspondence-with-pure-einsum)'s pure-einsum elaboration correspondence (Proposition 19.1)
 remains a proof target.
 
 ### 19.1 Environments with defined contributions
@@ -2695,7 +2695,7 @@ the input environment must provide every designated input value.
 ### 19.3 Correspondence with pure einsum
 
 **Proposition 19.1 (pure-einsum correspondence).**
-For the normalized pure-einsum statement of Section 17.3,
+For the normalized pure-einsum statement of [Section 17.3](#173-connection-to-the-contribution-core),
 the intended local correspondence is
 
 $$
@@ -2703,7 +2703,7 @@ $$
 $$
 
 for every output coordinate, with $\textcolor{#398B83}{V}_{\textcolor{#5688C7}{L}}$ computed from the same operand
-values in $\textcolor{#398B83}{\rho}$ by Section 17.2.
+values in $\textcolor{#398B83}{\rho}$ by [Section 17.2](#172-canonical-fiber-semantics).
 This statement applies whenever the contribution tensor is defined;
 the pure statement itself has no partial primitive applications.
 
@@ -2711,7 +2711,7 @@ The mathematical proof decomposes a global valuation into the values
 of distinct output variables and the remaining contracted variables.
 The core body combines over the latter, while the write fiber combines
 over the former. This uses only the commutative-monoid laws of
-$\oplus$, coherence, and the bracketing convention (Section 2.3), not
+$\oplus$, coherence, and the bracketing convention ([Section 2.3](#23-which-algebraic-laws-each-part-uses)), not
 distributivity. The resulting finite
 combinations enumerate exactly the assignments in $\textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}}^{-1}(\{p\})$.
 
@@ -2919,7 +2919,7 @@ $$
 The model equations therefore force the unique output $T=(4,10)$.
 There is no previous value of $T$ added to those entries.
 
-For the boundary example in Section 11.1, the same definition gives
+For the boundary example in [Section 11.1](#111-boundary-contributions), the same definition gives
 the sum at the corner and zero throughout the uncovered interior.
 For an untargeted defined tensor it gives zero at every coordinate
 of its declared domain.
@@ -2995,7 +2995,7 @@ without contradicting their denotational descriptions.
 
 ### 21.5 Bounded histories have simultaneous equations too
 
-For the finite-history program in Section 11.4, assume
+For the finite-history program in [Section 11.4](#114-a-finite-history-with-persistent-input), assume
 $F:\mathbb{R}^{[d]}\to\mathbb{R}^{[d]}$ is total.
 The collected equations are
 
@@ -3020,7 +3020,7 @@ $$
 
 When $N=0$, only the base slice is present. The recurrence statement
 has no occurrences and does not create an additional equation.
-This establishes the mathematical history meaning. Part IV explains how
+This establishes the mathematical history meaning. [Part IV](#part-iv-operational-semantics) explains how
 completion barriers and a time-based rank yield this same history.
 
 ## 22. Denotational scope and execution requirements
@@ -3040,10 +3040,10 @@ a model. In particular:
   restriction or a separately justified solver.
 
 An execution strategy must respect these conditions rather than replace
-them with mutation-order rules. Part IV supplies a direct executor for the
+them with mutation-order rules. [Part IV](#part-iv-operational-semantics) supplies a direct executor for the
 coordinate-ranked fragment.
 It uses complete logical values, not guesses obtained by iterating $\textcolor{#398B83}{\Phi}_{\textcolor{#9D75C4}{P}}$.
-Its correspondence is with the unique-model meaning of Section 20, not
+Its correspondence is with the unique-model meaning of [Section 20](#20-program-models-and-functional-denotation), not
 with a newly selected least model or mutation-order interpretation.
 
 ## Part IV: Operational semantics
@@ -3054,7 +3054,7 @@ but publishes a defined coordinate only after all occurrences targeting it
 have been consumed.
 
 This is an abstract, exact-value machine using the primitive interpretations
-fixed in Section 13.2. Expression evaluation
+fixed in [Section 13.2](#132-value-types-and-primitive-signatures). Expression evaluation
 is atomic at this level. Computable implementations of the primitives and
 their domain tests are separate requirements, especially over exact reals.
 
@@ -3073,7 +3073,7 @@ $$
 =\{(T,p)\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\mid T\in\textcolor{#5688C7}{\mathrm{Def}}\}.
 $$
 
-Recall the destination function from Section 9.2: for
+Recall the destination function from [Section 9.2](#92-tagged-contribution-occurrences): for
 $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}$,
 
 $$
@@ -3132,13 +3132,13 @@ $$
 =\bigcup_{r=1}^{q}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E}_r,\textcolor{#5688C7}{\nu}).
 $$
 
-Here $\textcolor{#5688C7}{\nu}_p$ is the simultaneous valuation extension from Section 18.3.
+Here $\textcolor{#5688C7}{\nu}_p$ is the simultaneous valuation extension from [Section 18.3](#183-reduction-and-tabulation).
 An empty union is empty, including for empty reductions, empty tabulations,
 and nullary primitives.
 
 The footprint of `at` includes the whole array expression, not just the
 selected entry. Both operands of a scalar operation remain in the footprint,
-even for multiplication by zero. These choices implement Part III's strict
+even for multiplication by zero. These choices implement [Part III](#part-iii-denotational-semantics)'s strict
 interpretation. A statement guard instead removes excluded occurrences
 before footprints are taken.
 
@@ -3251,7 +3251,7 @@ applied as later mutations to that value.
 The reference machine retains accumulators after publication to simplify
 the conservation argument. Its immutable published history and completed
 accumulators may become proof-only information in a compiled implementation,
-as introduced in Section 5.3. This does not relax logical readiness.
+as introduced in [Section 5.3](#53-logical-addresses-physical-slots-and-proof-only-history). This does not relax logical readiness.
 
 It also has terminal failed configurations
 $\textcolor{#A87C28}{\mathsf{Failed}}(\textcolor{#9D75C4}{o},\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$, recording an occurrence whose ready
@@ -3401,14 +3401,14 @@ $$
 $$
 
 All defined tensors must complete, including internal tensors not in
-$\textcolor{#5688C7}{\mathrm{Out}}$. This matches the complete-model criterion in Section 20.3.
+$\textcolor{#5688C7}{\mathrm{Out}}$. This matches the complete-model criterion in [Section 20.3](#203-functional-admissibility).
 The externally returned output is $\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}}$.
 
 A running configuration is **blocked** when it is not complete and has
 no enabled transition. It is neither a successful result nor an
 undefined-operation failure. Blocking reports an unresolved dependency
 structure; it does not prove that the equations lack a model.
-Section 26 shows that a ranked program cannot reach such a state.
+[Section 26](#26-conservation-termination-and-correspondence) shows that a ranked program cannot reach such a state.
 
 ## 26. Conservation, termination, and correspondence
 
@@ -3582,7 +3582,7 @@ and a successful run has a unique model by Theorem 26.3.
 
 Therefore every maximal run of the reference machine, under any schedule,
 realizes exactly the partial function of
-Section 20.3 for ranked programs. The machine is a transition relation;
+[Section 20.3](#203-functional-admissibility) for ranked programs. The machine is a transition relation;
 choosing a schedule is a separate, computable artifact. The Lean executor is
 one such artifact, for an exact-rational profile with a supplied schedule
 (see [the Lean path document](lean_executable_semantics_path.md#46-the-computable-reference-executor)).
@@ -3615,11 +3615,11 @@ Reversing the first two consumption steps gives the same result.
 Applying ReLU to the partially accumulated value $1$ would violate the
 readiness rule and change the program's meaning.
 Separate contributions `relu(A[])` and `relu(B[])` instead produce $1$,
-as in Section 21.2; that is a different program.
+as in [Section 21.2](#212-an-intermediate-fixes-the-activation-boundary); that is a different program.
 
 ### 27.2 Boundary overlap and unwritten coordinates
 
-For Section 11.1, the corner's fiber contains both its row and column
+For [Section 11.1](#111-boundary-contributions), the corner's fiber contains both its row and column
 occurrences. If $C[0]=2$ and $R[0]=7$, its accumulator may first be $2$
 or $7$, depending on scheduling. It becomes readable only after both
 occurrences are consumed and $T[0,0]=9$ is published.
@@ -3633,7 +3633,7 @@ rule, with all their occurrences retained.
 
 ### 27.3 Guards, empty binders, and failure
 
-For the guarded logarithm of Section 21.3, only $i=0$ belongs to the
+For the guarded logarithm of [Section 21.3](#213-a-guard-differs-from-a-zero-multiplier), only $i=0$ belongs to the
 occurrence set. Its body is ready from the supplied $X$ and contributes
 $\log(4)$; the empty fiber at $Y[1]$ publishes zero.
 
@@ -3655,7 +3655,7 @@ dependency cycle: the bound body has no instances.
 
 ### 27.4 Bounded scans and complete logical slices
 
-For Section 11.4, the recurrence body at $(i,l)$ has the core form
+For [Section 11.4](#114-a-finite-history-with-persistent-input), the recurrence body at $(i,l)$ has the core form
 
 $$
 \textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
@@ -3715,13 +3715,13 @@ have many models. For `T[] = T[] + 1`, it is also blocked and there is no
 model. These three outcomes are denotationally different despite the
 same kind of unresolved operational cycle.
 
-None admits the rank certificate of Section 23.4.
+None admits the rank certificate of [Section 23.4](#234-coordinate-dependencies-and-the-ranked-fragment).
 A ranked-fragment compiler should report an unsupported dependency form,
 not assert inconsistency or pick the zero accumulator as a solution.
 
 ## 28. Reference-machine boundaries and proof targets
 
-Part IV specifies logical execution, not a storage layout or a claim about
+[Part IV](#part-iv-operational-semantics) specifies logical execution, not a storage layout or a claim about
 the current compiler. A compiled implementation may collect whole tensors,
 batch occurrences, fuse reductions, or run independent work in parallel,
 provided it preserves:
@@ -3764,10 +3764,10 @@ The foundational proof targets are:
    unique model or explicitly fails on a ranked program
    (Lemma 26.4, Theorems 26.5 and 26.6, Corollary 26.7).
 
-The arguments in Part IV establish the reference-machine properties.
+The arguments in [Part IV](#part-iv-operational-semantics) establish the reference-machine properties.
 [Proof status and numbered results](#proof-status-and-numbered-results)
 records which are also proved in Lean.
-Part V supplies the compilation/refinement layer: it defines plan contracts
+[Part V](#part-v-compilation-and-refinement) supplies the compilation/refinement layer: it defines plan contracts
 and the relation between logical states and reusable storage.
 General cyclic solvers remain a separately justified extension, not an
 implicit fallback.
@@ -3792,8 +3792,8 @@ refinement problem.
 ### 29.1 Plans, commands, and annotations
 
 Fix a structurally well-formed program $\textcolor{#9D75C4}{P}$ in the coordinate-ranked fragment
-(the rank certificate of Section 23.4, which a schedule certificate already
-implies; see the end of Section 29.3).
+(the rank certificate of [Section 23.4](#234-coordinate-dependencies-and-the-ranked-fragment), which a schedule certificate already
+implies; see the end of [Section 29.3](#293-coverage-and-schedule-certificates)).
 An execution plan $\textcolor{#C16C86}{\Pi}$ records the source signature and tensor roles
 $(\textcolor{#5688C7}{\mathrm{In}},\textcolor{#5688C7}{\mathrm{Def}},\textcolor{#5688C7}{\mathrm{Out}})$,
 a finite buffer collection $\textcolor{#C16C86}{\mathcal{B}}$ with capacities, and a finite
@@ -3849,7 +3849,7 @@ $$
 The contract leaves $\textcolor{#A87C28}{\sigma}$ unchanged. If a body is undefined, the kernel
 must explicitly fail in a way matching a reference execution ending in
 $\textcolor{#A87C28}{\mathsf{Failed}}$, not produce a successful aggregate.
-Section 32 specifies the correspondence for both cases.
+[Section 32](#32-batched-collection-and-array-kernels) specifies the correspondence for both cases.
 
 For $\textcolor{#C16C86}{\mathsf{Publish}}(B)$, require
 
@@ -3882,11 +3882,11 @@ must satisfy:
 
 These conditions preserve all actual contributions and every declared
 defined coordinate, including empty fibers. They also ensure the readiness
-and completion premises of Section 29.2 at each successful prefix.
+and completion premises of [Section 29.2](#292-accumulation-and-publication-contracts) at each successful prefix.
 They do not establish body-definedness on every input.
 
 Storage annotations have additional representation obligations in
-Section 30. Schedule validity alone does not prove a correct kernel,
+[Section 30](#30-concrete-states-and-logical-representation). Schedule validity alone does not prove a correct kernel,
 layout, or aliasing discipline.
 
 A schedule satisfying conditions 1-4 itself yields a coordinate rank. Let
@@ -3915,7 +3915,7 @@ $$
 \qquad \textcolor{#C16C86}{\mathsf{pc}}\in[m+1],
 $$
 
-where $\textcolor{#C16C86}{M}$ is the memory from Section 5.3 and $\textcolor{#C16C86}{\chi}$ is the plan's specified
+where $\textcolor{#C16C86}{M}$ is the memory from [Section 5.3](#53-logical-addresses-physical-slots-and-proof-only-history) and $\textcolor{#C16C86}{\chi}$ is the plan's specified
 control and layout metadata. It is not a second source-language environment.
 Metadata may be determined statically by the command position rather than
 stored as runtime fields.
@@ -4086,21 +4086,21 @@ or silently supply zeros at missing nonempty output coordinates.
 $\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\mathsf{valid}}$ when the plan
 satisfies all of the following.
 
-1. **Schedule.** The coverage and order conditions 1-4 of Section 29.3.
-2. **Initialization.** The initialization obligation of Section 31.2.
+1. **Schedule.** The coverage and order conditions 1-4 of [Section 29.3](#293-coverage-and-schedule-certificates).
+2. **Initialization.** The initialization obligation of [Section 31.2](#312-initial-states-and-successful-step-simulation).
 3. **Step simulation.** The successful-step simulation obligation of
-   Section 31.2, including the representation requirements and the output
-   decoder of Sections 30.2-30.4.
+   [Section 31.2](#312-initial-states-and-successful-step-simulation), including the representation requirements and the output
+   decoder of Sections [30.2](#302-resource-views-and-live-representations)-[30.4](#304-the-refinement-relation-and-output-decoder).
 4. **Failure matching.** Every $\textcolor{#C16C86}{\mathsf{PlanFailed}}(\textcolor{#9D75C4}{o})$ has a matching
-   reference segment (Section 31.3).
+   reference segment ([Section 31.3](#313-failure-matching-progress-and-finishing)).
 5. **Progress.** The concrete progress and kernel-termination obligation of
-   Section 31.3.
+   [Section 31.3](#313-failure-matching-progress-and-finishing).
 
 Condition 1 is a static check on the plan. Conditions 2-5 quantify over all
 well-typed inputs and reachable related states, and conditions 3-5 are
 discharged kernel by kernel. Terminal adequacy is not a sixth condition; it
-follows from the others (Lemma 31.2). The rank certificate of Section 23.4,
-assumed in Section 29.1, is implied by condition 1 (end of Section 29.3).
+follows from the others (Lemma 31.2). The rank certificate of [Section 23.4](#234-coordinate-dependencies-and-the-ranked-fragment),
+assumed in [Section 29.1](#291-plans-commands-and-annotations), is implied by condition 1 (end of [Section 29.3](#293-coverage-and-schedule-certificates)).
 
 A proposed compiler may return an accepted plan satisfying
 Definition 31.1,
@@ -4183,15 +4183,15 @@ $$
 $$
 
 *Argument.* The run executed every command. By the agreement clause of the
-representation relation (Section 30.4, item 2), $\textcolor{#A87C28}{\mathsf{Conf}}$ has consumed and
+representation relation ([Section 30.4](#304-the-refinement-relation-and-output-decoder), item 2), $\textcolor{#A87C28}{\mathsf{Conf}}$ has consumed and
 published exactly what the annotations of the whole command sequence account
-for. By coverage conditions 1 and 2 of Section 29.3 these exhaust
+for. By coverage conditions 1 and 2 of [Section 29.3](#293-coverage-and-schedule-certificates) these exhaust
 $\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}$ and $\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}$. So $\textcolor{#A87C28}{U}=\varnothing$,
 every defined address is published, and the input addresses were published
 initially; hence $\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})=\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$. Every output
-address lies in $\textcolor{#A87C28}{\mathop{\mathrm{Need}}\nolimits}_{\mathrm{pub}}$ (Section 30.2), so its $\textcolor{#A87C28}{\mathsf{pub}}$ resource
-is mapped, and the decoder requirement of Section 30.4 together with the memory
-equation of Section 30.2 gives
+address lies in $\textcolor{#A87C28}{\mathop{\mathrm{Need}}\nolimits}_{\mathrm{pub}}$ ([Section 30.2](#302-resource-views-and-live-representations)), so its $\textcolor{#A87C28}{\mathsf{pub}}$ resource
+is mapped, and the decoder requirement of [Section 30.4](#304-the-refinement-relation-and-output-decoder) together with the memory
+equation of [Section 30.2](#302-resource-views-and-live-representations) gives
 $\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})(T)[p]=\textcolor{#C16C86}{M}[\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}(\textcolor{#A87C28}{\mathsf{pub}}((T,p)))]=\textcolor{#A87C28}{\sigma}(T,p)$.
 
 Write
@@ -4249,7 +4249,7 @@ even when a model exists; (a) and (b) are unaffected.
 
 The theorem is conditional on Definition 31.1. Its hypotheses are exactly
 those conditions; the generic steps (Lemma 31.2 above and, for batched
-kernels, Lemma 32.1 in Section 32.1) are argued on paper, while conditions
+kernels, Lemma 32.1 in [Section 32.1](#321-why-exact-batched-accumulation-refines-individual-steps)) are argued on paper, while conditions
 3-5 remain an obligation on each kernel. It is a compiler proof specification with a mathematical
 argument, not a claim that a particular compiler or kernel has already been
 verified.
@@ -4288,7 +4288,7 @@ terminal and yields no successful output.
 
 ### 32.2 Complete arrays, empty groups, and shared computations
 
-An array kernel must implement Section 18's interpretation, including
+An array kernel must implement [Section 18](#18-expression-interpretation-and-definedness)'s interpretation, including
 complete arguments, primitive domains, and complete-array selection.
 In particular, computing only the selected coordinate of
 
@@ -4299,7 +4299,7 @@ $$
 $$
 
 is not valid if the other tabulated coordinate has an invalid logarithm,
-as in Section 18.5.
+as in [Section 18.5](#185-definedness-examples-and-transformation-limits).
 
 For a whole-slice primitive, the logical footprint contains every required
 input coordinate. Those published values must have concrete representations
@@ -4311,7 +4311,7 @@ An empty occurrence group evaluates no bodies. A compiler must not invoke
 a partial primitive merely because the syntax contains it in a statement
 whose occurrence domain is empty.
 An actually demanded primitive on an empty array is different: its
-$\textcolor{#398B83}{\mathcal{D}}_f$ condition still applies, as in Section 25.3.
+$\textcolor{#398B83}{\mathcal{D}}_f$ condition still applies, as in [Section 25.3](#253-surface-undefined-operations).
 
 ### 32.3 Publication fusion and interference
 
@@ -4335,7 +4335,7 @@ commutativity alone does not prove either property.
 
 ### 33.1 A separate-buffer history plan
 
-Use the finite history of Section 11.4 with total
+Use the finite history of [Section 11.4](#114-a-finite-history-with-persistent-input) with total
 $F:\mathbb{R}^{[d]}\to\mathbb{R}^{[d]}$.
 For each $l\in[N+1]$, let
 $B_l=\{(H,(i,l))\mid i\in[d]\}$.
@@ -4354,11 +4354,11 @@ each time slice, alongside the supplied-input storage:
 
 The union in each group is a disjoint union of occurrence subsets.
 Each recurrence group reads a complete, earlier published slice.
-The certificate $r(H,(i,l))=l+1$ from Section 27.4 applies.
+The certificate $r(H,(i,l))=l+1$ from [Section 27.4](#274-bounded-scans-and-complete-logical-slices) applies.
 If an explicit `Last` output is included, finish by accumulating its reads
 of $H_N$ and publishing `Last`.
 
-Unlike the schedule in Section 27.4, this plan consumes a slice's persistent
+Unlike the schedule in [Section 27.4](#274-bounded-scans-and-complete-logical-slices), this plan consumes a slice's persistent
 input only when constructing that slice. It still accounts for every
 occurrence exactly once. It never adds $X$ twice merely because a previous
 slice remains stored.
@@ -4447,7 +4447,7 @@ reads and next-slice writes.
 
 ## 34. Refinement boundaries and formalization targets
 
-Parts III-V separate three obligations:
+Parts [III](#part-iii-denotational-semantics)-[V](#part-v-compilation-and-refinement) separate three obligations:
 
 1. **Meaning:** collected equations define models and functional denotation.
 2. **Logical execution:** the reference machine collects occurrences and
@@ -4595,9 +4595,9 @@ of their individual components.
   Its additive convention motivates this specification; the definitions and
   implementation correspondence here must be stated independently.
 - [*The Syntax and Semantics of einsum*](https://arxiv.org/html/2509.20020).
-  Sections 3-4 provide the pure-einsum syntax and global-position semantics;
-  Sections 5-7 supply algebraic, nesting, delta, and neutral-operand results.
-  Section 17 adapts the relevant foundations to this document's conventions.
+  Sections [3](#3-axes-index-variables-and-valuations)-[4](#4-tensor-signatures-coordinates-and-values) provide the pure-einsum syntax and global-position semantics;
+  Sections [5](#5-environments-and-stores)-[7](#7-free-indices-contraction-and-broadcasting) supply algebraic, nesting, delta, and neutral-operand results.
+  [Section 17](#17-pure-einsum-semantics-and-transformation-foundations) adapts the relevant foundations to this document's conventions.
 - [Tensor logic and einsum](../einsum_tensor_logic.md).
 - [Integer constants and affine index arithmetic](../index_arithmetic.md).
 - [Iteration in tensor logic](../iteration.md).
