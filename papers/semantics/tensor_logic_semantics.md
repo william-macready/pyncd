@@ -72,7 +72,7 @@ next subsection.
    $\textcolor{#398B83}{\rho}(T)=\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)$ for every defined tensor $T$.
    The denotation $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})$ is the output part of the model when
    $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ has exactly one element.
-4. **Execution (§[24](#24-machine-configurations-and-initialization)–[25](#25-execution-rules-and-terminal-outcomes)).** A configuration $(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$ holds published values,
+4. **Execution ([§24](#24-machine-configurations-and-initialization)–[§25](#25-execution-rules-and-terminal-outcomes)).** A configuration $(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$ holds published values,
    accumulators, and pending occurrences. Three rules fire in any order their
    premises allow:
    $\textcolor{#A87C28}{\mathrm{CONTRIBUTE}}$ adds a pending occurrence's value to its destination's
