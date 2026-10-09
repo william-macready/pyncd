@@ -51,7 +51,10 @@ term-local typed expressions and role-based multi-target Programs.
 domain, and runs the existing validated rational executor with optional debug
 fuel. `Source.Provenance` certifies original-ID inverses from successful
 admission; `Source.Permutation` preserves tagged collection and whole-store
-models, not event order. `Source.Oracle` provides an independent exact
+models, not event order. `StatementPermutation.successful_results` also equates
+whole stores of completed rational executions under a statement permutation
+when their inputs agree; it does not assert completion or equal traces.
+`Source.Oracle` provides an independent exact
 global-fiber evaluator with explicitly checked fixture dependency order.
 `Semantics.SourceProgramTest` checks actual executor/oracle parity and endpoint
 contracts. `Source.Fiber`, `Source.Correspondence`, and

@@ -846,11 +846,16 @@ reordering guarantee, and nothing outside the fragment is covered.
 | --- | --- | --- |
 | [Proposition 19.2](tensor_logic_semantics.md#194-source-order-and-nonlinear-boundaries): source-order invariance | `StatementPermutation`, `occurrenceEquiv`, and under it `outcome`, `footprints`, `destinations`, `guards`, `originals`, `identities`, `bodies`, `admEnv`, `contribution`, `collect`, `models` ([Permutation](../../leanncd/LeanNCD/Semantics/Source/Permutation.lean)) | For any list in bijection with the admitted statements, the occurrence relabeling preserves outcomes, footprints, destinations, original identities, admissibility, contributions, collected values, and the model relation. |
 
-Not proved: any statement about runs of a reordered source, whose blocked or
-complete status may differ without a rank certificate (Section 28, target 5,
-asks for successful execution results); the connection to re-admitting a
-permuted source text, which renumbers original identities; and permutation of
-terms or factors.
+No completion guarantee is added for a reordered source without a rank
+certificate. Conditional successful
+result agreement is proved by `StatementPermutation.successful_results`: two
+initialized rational executions, with equal inputs and complete outcomes,
+have equal whole stores. It combines model preservation with successful-run
+uniqueness and does not equate traces or assert that either run completes.
+The fixtures specialize it to statement reversal and execute an identity
+permutation of an empty program. Still unproved: the connection to re-admitting
+a permuted source text, which renumbers original identities, and permutation
+of terms or factors.
 
 #### Automatic schedules
 
@@ -931,8 +936,8 @@ executed fixtures and mutation controls, and every claim below is of that kind.
 - **No injected-fault claims.** The signed-zero, warning, and two protocol cases
   were injected, not observed from a real backend, and native nonoutputs are
   not compared.
-- **No rank synthesis or schedule independence.** Results about completed runs
-  are over ℚ.
+- **No rank synthesis or trace/status independence.** Conditional whole-store
+  agreement under statement permutation is proved for completed runs over ℚ.
 
 ### 4.8 Existing validation and its limits
 
@@ -1001,8 +1006,7 @@ marked arrays and slices, affine writes, guards and Iverson factors, nonlinear
 primitives and their before-versus-after-collection boundary, unpinned dimension
 inference, general expression substitution with renaming applied by admission,
 and rank synthesis, plus schedule construction for programs outside the fragment.
-Two proof targets inside the fragment are also open: linking admitted reads
-back to raw source text and successful-execution results under source permutation.
+The link from admitted reads back to raw source text remains open.
 
 Differential debugging beyond the bounded profile needs a stated criterion for
 non-integral and f32 numerics, native hooks for causal localization, comparison

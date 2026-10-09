@@ -186,7 +186,7 @@ sequentially within each top-level section and are not subsection numbers:
 | Result | Statement | Lean status (`LeanNCD.Semantics`) |
 | --- | --- | --- |
 | Proposition 19.1 | Pure-einsum elaboration correspondence | Proved for the bounded source fragment (read-only sums of products over bare slots, over any semiring): `Term.collectedBody_correspondence`, `AdmittedSource.collect_correspondence`, `AdmittedSource.models_iff_global` (`Source.Correspondence`, `Source.ProgramCorrespondence`). Open beyond it: the link from admitted reads back to raw source text holds by construction only, and affine slots, guards, marked slices, and nonlinear bodies are outside the fragment. |
-| Proposition 19.2 | Source-order invariance | Proved for the bounded source fragment: the occurrence-relabeling form generically (`models_relabel`) and for source programs under any statement permutation (`StatementPermutation.models`, `.collect`, `.admEnv`, `.identities` in `Source.Permutation`). Open beyond the fragment and for re-admitted permuted source text. The form about successful execution results (Section 28, target 5) is not stated. |
+| Proposition 19.2 | Source-order invariance | Proved for the bounded source fragment: the occurrence-relabeling form generically (`models_relabel`) and for source programs under any statement permutation (`StatementPermutation.models`, `.collect`, `.admEnv`, `.identities` in `Source.Permutation`). `StatementPermutation.successful_results` proves equal whole stores for two completed rational executions with equal inputs; it does not assert completion or trace equality. Open beyond the fragment and for re-admitted permuted source text. |
 | Lemma 23.1 | Read stability | Proved: `evalWith_stable`, `interpret_stable` (`Readiness`). |
 | Lemma 26.1 | Conservation invariants | Proved: `reachable_invariant` (`Invariants`) yields `Invariant.published` (item 4), `Invariant.consumed` (item 5), `Invariant.conservation` (accumulator formula), and `Invariant.inputs` (inputs unchanged, part of item 3), with `initial_invariant`, `consume_invariant`, `publish_invariant`. Items 1 and 2 follow from the step premises and typing (item 1 via the pending premise and `Finset.erase`). Monotone publication has only the one-step lemma `publish_extends`; the invariant does not need more. |
 | Lemma 26.2 | Preservation of every candidate model | Partial. Parts (b) and (c) are `candidate_preserved` (`Soundness`), which also makes failed states incompatible with a model. For part (a), the finished-fiber case is `finished_accumulator`; the partial-fiber sum follows from `Invariant.conservation` and `Invariant.consumed` and is not stated separately in Lean. |
@@ -3771,7 +3771,9 @@ The foundational proof targets are:
 5. Source-statement permutation preserves the model relation and successful
    execution results under corresponding occurrence relabeling
    (Proposition 19.2; the model and collection forms are proved in Lean for the
-   bounded source fragment, the execution-result form is not stated).
+   bounded source fragment, as is whole-store agreement for two completed
+   rational executions with equal inputs; completion and trace invariance
+   are not claimed).
 6. The transition invariants and model-preservation claims hold
    (Lemmas 26.1 and 26.2, Theorem 26.3).
 7. The finite measure and rank certificate establish termination and

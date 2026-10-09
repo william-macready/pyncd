@@ -1,4 +1,5 @@
 import LeanNCD.Semantics.Source.Provenance
+import LeanNCD.Semantics.Source.Schedule
 import LeanNCD.Semantics.Models
 
 namespace LeanNCD.Semantics.Source
@@ -233,6 +234,23 @@ theorem models (η : (source.program r).Input)
     intro t x
     rw [p.collect r ρ ((p.admEnv r ρ).mpr h) h]
     exact equations t x
+
+theorem successful_results
+    (before : Program.Executor.ValidatedResult (elaborateSource source) RationalReference.ops)
+    (after : Program.Executor.ValidatedResult (elaborateSource p.reordered) RationalReference.ops)
+    (sameInput : after.input = before.input)
+    (oldState : (elaborateSource source).Running)
+    (oldComplete : (elaborateSource source).Complete oldState)
+    (oldSuccess : before.result.outcome = .complete oldState oldComplete)
+    (newState : (elaborateSource p.reordered).Running)
+    (newComplete : (elaborateSource p.reordered).Complete newState)
+    (newSuccess : after.result.outcome = .complete newState newComplete) :
+    (elaborateSource source).finalStore oldState oldComplete =
+      (elaborateSource p.reordered).finalStore newState newComplete := by
+  have newModel := sourceResult_model p.reordered after newState newComplete newSuccess
+  rw [sameInput] at newModel
+  exact (sourceResult_unique source before oldState oldComplete oldSuccess _
+    ((p.models RationalReference.registry before.input _).mp newModel)).symm
 
 end StatementPermutation
 end LeanNCD.Semantics.Source
