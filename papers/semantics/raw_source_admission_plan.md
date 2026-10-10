@@ -1,6 +1,9 @@
 # Raw-source/admission correspondence: execution recipe
 
-**EXECUTION-READY. Controller verification complete; implementation not landed.**
+**IMPLEMENTED AND MERGED TO LOCAL MAIN.** All four tasks, controller validation
+and both whole-branch reviews are complete; see the
+[execution record](raw_source_admission_record.md#2026-10-09--implementation-execution).
+The authoring recipe and historical readiness snapshot below are retained unchanged.
 
 Date: 2026-10-09. Process: **Full**, a new soundness surface; proof discovery is complete.
 Base: `3d721f9631de8642163446f98b4efc8fe1d078d5`.

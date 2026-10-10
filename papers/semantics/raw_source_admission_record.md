@@ -475,3 +475,19 @@ documentation unchanged, then reran the full default build: exit 0, 8,766 jobs.
 Only review receipts and this close-out have been added since the immutable tip.
 All source/build/mutation/review gates are satisfied. Local integration is next;
 no remote push is authorized or performed.
+
+### Local integration disposition
+
+The implementation branch was merged with `--no-ff` into local `main` at
+`d8ce83ea9363672e85e3d523a9536dff9be25000`.
+The reviewed branch tip plus close-out receipts was `4fc86314`.
+Controller checks confirmed branch ancestry, an empty `main`/branch tree diff,
+and a clean primary checkout. The built project cache was synchronized back
+to the primary checkout; its full default build then passed, exit 0,
+**8,766 jobs**: [integrated-main receipt](raw_source_admission_artifacts/execution-integrated-main-build.log).
+
+Only this observed-disposition entry, the plan's current status and the
+integrated-main build receipt are committed after integration; no implementation
+or theorem changed after the final reviews. The branch/worktree cleanup is
+performed by the controller after this record is committed. No remote push
+occurred; local `main` is left ahead of `origin/main`.
