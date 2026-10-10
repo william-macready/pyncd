@@ -49,7 +49,7 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-10, Lean as of `8b7cc508`: the Part V slice-1 plan layer
+**Snapshot: 2026-10-10, Lean as of `a9f8d3bb`: the Part V slice-1 plan layer
 (`Semantics/Plan/`), on top of bounded source correspondence
 (`6a90baff`), nested-reduction reindexing (`705280cd`), successful-permutation
 agreement (`ca642b3d`), and raw-source admission, on top of the verified
