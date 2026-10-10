@@ -988,6 +988,15 @@ versus unavailable reads. The earlier logical machine fixtures include a proved 
 run and failure exclusion, but are not runtime executions by a scheduler.
 The cyclic blocked fixture is not separately proved reachable.
 
+[`Semantics.AxiomAudit`](../../leanncd/test/Semantics/AxiomAudit.lean) fails the
+build if any theorem or definition under `LeanNCD.Semantics` reaches an axiom
+other than `propext`, `Classical.choice`, and `Quot.sound`. A `sorry`, a
+`native_decide`, or a new `axiom` therefore cannot land silently, and the
+"proved" rows in the status tables stay enforceable. It covers the whole
+namespace (5,142 constants when added), so no list needs to be kept in sync, and
+a self-test checks that a deliberately non-standard axiom is rejected. Only
+modules imported through `LeanNCD/Semantics.lean` are audited.
+
 The ranked fixtures add 16 acceptance families: same-tensor coordinate history,
 strict masked self-dependency versus guard exclusion, whole-array and binder
 demand, input-dependency exclusion, duplicate/zero consumption counts,

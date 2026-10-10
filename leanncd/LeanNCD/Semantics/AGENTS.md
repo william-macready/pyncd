@@ -107,6 +107,10 @@ defined equations, partial equation-operator fixed points, and nonconstructive
 unique-model output projection. Only defined carriers need `AddCommMonoid`;
 nonlinear body primitives do not acquire sum-preservation laws.
 
+`Semantics.AxiomAudit` (a test) fails the build if anything under `LeanNCD.Semantics` reaches an
+axiom outside `propext`, `Classical.choice`, `Quot.sound`: no `sorry`, `native_decide`, or new
+`axiom` here. New modules must be imported by `LeanNCD/Semantics.lean` to be audited.
+
 This is semantic validation, not an execution-backend replacement. Scalar sorts and
 carriers are open; operations are data, not assumed machine-float semiring laws.
 Contexts are typed valuation spaces with product extension, not named affine
