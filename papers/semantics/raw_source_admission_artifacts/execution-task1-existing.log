@@ -1,0 +1,92 @@
+=== S1 original declaration ID becomes tensor table index (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]' -> '      entries := entries ++ [⟨entries.length, name, ty, spec.role, shape⟩]' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:547:24: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S1 original declaration ID becomes tensor table index (proof-protected rejection) MUTATE exit=1 ===
+=== S1 original declaration ID becomes tensor table index (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== S1 original declaration ID becomes tensor table index (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S1 original declaration ID becomes tensor table index (proof-protected rejection): PASS
+=== S1 original declaration ID becomes tensor table index (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S2 reverse declared axis accumulation (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '        shape := shape ++ [← sourceAxis c .declarations { origin with slot := some j } a]' -> '        shape := [← sourceAxis c .declarations { origin with slot := some j } a] ++ shape' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:527:26: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S2 reverse declared axis accumulation (proof-protected rejection) MUTATE exit=1 ===
+=== S2 reverse declared axis accumulation (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== S2 reverse declared axis accumulation (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S2 reverse declared axis accumulation (proof-protected rejection): PASS
+=== S2 reverse declared axis accumulation (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S3 drop first untyped declared axis (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes))' -> '  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes.drop 1))' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:430:21: Application type mismatch: The argument
+error: LeanNCD/Semantics/Source/Adapter.lean:434:21: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S3 drop first untyped declared axis (proof-protected rejection) MUTATE exit=1 ===
+=== S3 drop first untyped declared axis (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== S3 drop first untyped declared axis (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S3 drop first untyped declared axis (proof-protected rejection): PASS
+=== S3 drop first untyped declared axis (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S7 replace external role by defined role (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]' -> '      entries := entries ++ [⟨i, name, ty, .defined, shape⟩]' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:547:24: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S7 replace external role by defined role (proof-protected rejection) MUTATE exit=1 ===
+=== S7 replace external role by defined role (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== S7 replace external role by defined role (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S7 replace external role by defined role (proof-protected rejection): PASS
+=== S7 replace external role by defined role (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S8 classify typed f64 as f32 (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '    | .f32 | .f64 => .ok (some (name, ty, axes))' -> '    | .f32 | .f64 => .ok (some (name, .f32, axes))' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:435:30: unsolved goals
+error: LeanNCD/Semantics/Source/Adapter.lean:438:35: unsolved goals
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S8 classify typed f64 as f32 (proof-protected rejection) MUTATE exit=1 ===
+=== S8 classify typed f64 as f32 (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== S8 classify typed f64 as f32 (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S8 classify typed f64 as f32 (proof-protected rejection): PASS
+=== S8 classify typed f64 as f32 (proof-protected rejection) MANIFEST VERDICT: PASS ===
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| S1 original declaration ID becomes tensor table index (proof-protected rejection) | yes | yes | yes | PASS |
+| S2 reverse declared axis accumulation (proof-protected rejection) | yes | yes | yes | PASS |
+| S3 drop first untyped declared axis (proof-protected rejection) | yes | yes | yes | PASS |
+| S7 replace external role by defined role (proof-protected rejection) | yes | yes | yes | PASS |
+| S8 classify typed f64 as f32 (proof-protected rejection) | yes | yes | yes | PASS |
+
+5/5 cycles passed.

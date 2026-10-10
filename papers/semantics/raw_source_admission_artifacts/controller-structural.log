@@ -1,0 +1,158 @@
+=== S1 CANDIDATE original declaration ID becomes tensor table index MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]' -> '      entries := entries ++ [⟨entries.length, name, ty, spec.role, shape⟩]' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:547:24: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S1 CANDIDATE original declaration ID becomes tensor table index MUTATE exit=1 ===
+=== S1 CANDIDATE original declaration ID becomes tensor table index RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8523 jobs).
+=== S1 CANDIDATE original declaration ID becomes tensor table index SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S1 CANDIDATE original declaration ID becomes tensor table index: PASS
+=== S1 CANDIDATE original declaration ID becomes tensor table index MANIFEST VERDICT: PASS ===
+=== S2 CANDIDATE reverse declared axis accumulation MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '        shape := shape ++ [← sourceAxis c .declarations { origin with slot := some j } a]' -> '        shape := [← sourceAxis c .declarations { origin with slot := some j } a] ++ shape' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:527:26: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S2 CANDIDATE reverse declared axis accumulation MUTATE exit=1 ===
+=== S2 CANDIDATE reverse declared axis accumulation RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8523 jobs).
+=== S2 CANDIDATE reverse declared axis accumulation SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S2 CANDIDATE reverse declared axis accumulation: PASS
+=== S2 CANDIDATE reverse declared axis accumulation MANIFEST VERDICT: PASS ===
+=== S3 CANDIDATE drop first untyped declared axis MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes))' -> '  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes.drop 1))' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:430:21: Application type mismatch: The argument
+error: LeanNCD/Semantics/Source/Adapter.lean:434:21: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S3 CANDIDATE drop first untyped declared axis MUTATE exit=1 ===
+=== S3 CANDIDATE drop first untyped declared axis RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8523 jobs).
+=== S3 CANDIDATE drop first untyped declared axis SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S3 CANDIDATE drop first untyped declared axis: PASS
+=== S3 CANDIDATE drop first untyped declared axis MANIFEST VERDICT: PASS ===
+=== S4 CANDIDATE reverse raw factor occurrence traversal MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '        let reads ← term.factors.zipIdx.mapM fun (factor, j) =>
+          astRead source { termOrigin with factor := some j } factor
+        admitTerm source.context output.context termOrigin reads' -> '        let reads ← term.factors.reverse.zipIdx.mapM fun (factor, j) =>
+          astRead source { termOrigin with factor := some j } factor
+        admitTerm source.context output.context termOrigin reads' ---
+error: LeanNCD/Semantics/Source/Admission.lean:550:35: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== S4 CANDIDATE reverse raw factor occurrence traversal MUTATE exit=1 ===
+=== S4 CANDIDATE reverse raw factor occurrence traversal RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8523 jobs).
+=== S4 CANDIDATE reverse raw factor occurrence traversal SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S4 CANDIDATE reverse raw factor occurrence traversal: PASS
+=== S4 CANDIDATE reverse raw factor occurrence traversal MANIFEST VERDICT: PASS ===
+=== S5 CANDIDATE drop raw factor occurrence MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '        let reads ← term.factors.zipIdx.mapM fun (factor, j) =>
+          astRead source { termOrigin with factor := some j } factor
+        admitTerm source.context output.context termOrigin reads' -> '        let reads ← (term.factors.drop 1).zipIdx.mapM fun (factor, j) =>
+          astRead source { termOrigin with factor := some j } factor
+        admitTerm source.context output.context termOrigin reads' ---
+error: LeanNCD/Semantics/Source/Admission.lean:550:35: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== S5 CANDIDATE drop raw factor occurrence MUTATE exit=1 ===
+=== S5 CANDIDATE drop raw factor occurrence RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8523 jobs).
+=== S5 CANDIDATE drop raw factor occurrence SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S5 CANDIDATE drop raw factor occurrence: PASS
+=== S5 CANDIDATE drop raw factor occurrence MANIFEST VERDICT: PASS ===
+=== S6 CANDIDATE use initial UID despite covering name memo MUTATE ===
+--- mutated LeanNCD/DSL/Pipeline/Structural.lean: 'def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=
+  match u.name with
+  | some nm => match memo[nm]? with | some v => { u with uid := v } | none => u
+  | none => u' -> 'def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=
+  match u.name with
+  | some nm => match memo[nm]? with | some _ => u | none => u
+  | none => u' ---
+error: LeanNCD/DSL/Pipeline/Structural.lean:655:73: unsolved goals
+error: LeanNCD/DSL/Pipeline/Structural.lean:687:2: Tactic `rfl` failed: The left-hand side
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/DSL/Pipeline/Structural.lean now) ---
+=== S6 CANDIDATE use initial UID despite covering name memo MUTATE exit=1 ===
+=== S6 CANDIDATE use initial UID despite covering name memo RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8523 jobs).
+=== S6 CANDIDATE use initial UID despite covering name memo SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S6 CANDIDATE use initial UID despite covering name memo: PASS
+=== S6 CANDIDATE use initial UID despite covering name memo MANIFEST VERDICT: PASS ===
+=== S7 CANDIDATE replace external role by defined role MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]' -> '      entries := entries ++ [⟨i, name, ty, .defined, shape⟩]' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:547:24: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S7 CANDIDATE replace external role by defined role MUTATE exit=1 ===
+=== S7 CANDIDATE replace external role by defined role RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8524 jobs).
+=== S7 CANDIDATE replace external role by defined role SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S7 CANDIDATE replace external role by defined role: PASS
+=== S7 CANDIDATE replace external role by defined role MANIFEST VERDICT: PASS ===
+=== S8 CANDIDATE classify typed f64 as f32 MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '    | .f32 | .f64 => .ok (some (name, ty, axes))' -> '    | .f32 | .f64 => .ok (some (name, .f32, axes))' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:435:30: unsolved goals
+error: LeanNCD/Semantics/Source/Adapter.lean:438:35: unsolved goals
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S8 CANDIDATE classify typed f64 as f32 MUTATE exit=1 ===
+=== S8 CANDIDATE classify typed f64 as f32 RESTORED BUILD ===
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:133:0: true
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:140:0: "accepted"
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:141:0: "accepted"
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:142:0: "accepted"
+Build completed successfully (8524 jobs).
+=== S8 CANDIDATE classify typed f64 as f32 SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S8 CANDIDATE classify typed f64 as f32: PASS
+=== S8 CANDIDATE classify typed f64 as f32 MANIFEST VERDICT: PASS ===
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| S1 CANDIDATE original declaration ID becomes tensor table index | yes | yes | yes | PASS |
+| S2 CANDIDATE reverse declared axis accumulation | yes | yes | yes | PASS |
+| S3 CANDIDATE drop first untyped declared axis | yes | yes | yes | PASS |
+| S4 CANDIDATE reverse raw factor occurrence traversal | yes | yes | yes | PASS |
+| S5 CANDIDATE drop raw factor occurrence | yes | yes | yes | PASS |
+| S6 CANDIDATE use initial UID despite covering name memo | yes | yes | yes | PASS |
+| S7 CANDIDATE replace external role by defined role | yes | yes | yes | PASS |
+| S8 CANDIDATE classify typed f64 as f32 | yes | yes | yes | PASS |
+
+8/8 cycles passed.

@@ -1,0 +1,167 @@
+{
+  "phase": "C",
+  "status": "verified_certificate_semantic_applicability_prototype",
+  "scope": "Plan-authoring prototype continuation only. C source is installed and uncommitted; no landing, plan/package emission, new fixture corpus, or mutation phase.",
+  "base": "3d721f9631de8642163446f98b4efc8fe1d078d5",
+  "production_file": "leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+  "public_import": "leanncd/LeanNCD/Semantics/Source.lean",
+  "contracts": [
+    {
+      "symbol": "Slots.uids_length@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Typed tensor rank equals the ordered slot-UID list length, including repetitions."
+    },
+    {
+      "symbol": "Slots.project_lookup@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "For every tensor-coordinate position and source UID valuation, supplies the actual source-context key at that slot and proves the checked projection coordinate equals that key's valuation. Uses existing Slots.keys/Ref.key behavior through Ref.get_uidCoordEquiv; no new resolver."
+    },
+    {
+      "symbol": "RawReadSlots.coordinate@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Every typed read-coordinate position retrieves the original raw bare axis at the identical position, RawAxisFields for the actual checked source key, the actual memo lookup by its raw name, and equality of the projected coordinate with that key's valuation."
+    },
+    {
+      "symbol": "RawOutputSlots.coordinate@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "The analogous original raw free-output-slot link and source-key coordinate equality. Positions are never deduplicated, so repeated output slots retain separate coordinate obligations."
+    },
+    {
+      "symbol": "CertifiedRawStatement@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Prop indexed by an actual admitted statement index and original raw AST. Stores the same-index original raw.stmts lookup, RawStatementFields, and original/mapped output declaration evidence for the actual typed output tensor."
+    },
+    {
+      "symbol": "CertifiedRawTerm@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Prop indexed by actual admitted statement and term positions, original statement AST, and original product AST. Retains the statement certificate, the raw RHS term at the identical position, and RawTermFields with exact statement/term origin for that admitted term."
+    },
+    {
+      "symbol": "RawCorrespondence.certifiedStatement@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Derives a CertifiedRawStatement at every admitted statement index from B's RawCorrespondence.statement and tensor getters."
+    },
+    {
+      "symbol": "CertifiedRawStatement.term@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Derives the original product AST and CertifiedRawTerm at each actual admitted term index using RawStatementFields.term."
+    },
+    {
+      "symbol": "CertifiedRawTerm.read_projection@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "From RawCorrespondence and an indexed term certificate, retrieves the original raw read factor at the identical factor position, raw tensor name, actual typed tensor's original/mapped declaration, RawCheckedFactorFields with full origin, and ordered RawReadSlots. Proves actual localized read projection equals global checked read projection. For every tensor-coordinate position, both projections equal the source-context valuation at the key supplied by the actual raw-name memo lookup."
+    },
+    {
+      "symbol": "CertifiedRawStatement.output_projection@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Returns the original raw assignment/name/output slots, original ordinal, typed output's original/mapped declaration, local and source RawOutputSlots, and exact output origin. Actual destination pullback equals global checked output projection, and every coordinate in both equals the source-key valuation supplied by the original raw slot's actual memo lookup."
+    },
+    {
+      "symbol": "CertifiedRawTerm.semantics@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Over any total store in a generic semiring, retains the indexed original raw term certificate and exact factor count, exposes actual global support, proves actual body interpretation equals the existing relevant UID sum, actual collected body equals the existing term global fiber, and actual body footprint/read-address pullback equals the existing ordered read lists. No new raw body interpretation is defined."
+    },
+    {
+      "symbol": "CertifiedRawStatement.semantics@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Over any total store in a generic semiring, retains original raw occurrence/declaration evidence and exact term count, and supplies actual statement body correspondence, ordered flatMap footprint equality, and existing finite destination-fiber equality."
+    },
+    {
+      "symbol": "CertifiedRawSource@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Prop containing B's complete RawCorrespondence (including actual resolver/admission successes and ordered axes/table/statement relations) and indexed CertifiedRawStatement getters."
+    },
+    {
+      "symbol": "RawCorrespondence.certifiedSource@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Composes B's certificate into CertifiedRawSource without inventing a second semantic interpreter."
+    },
+    {
+      "symbol": "admitRawSource_certified@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "premise": "admitRawSource raw specs inputs = .ok admitted",
+      "contract": "Produces existential actual resolver snapshot/memo witnesses and CertifiedRawSource solely via admitRawSource_fields."
+    },
+    {
+      "symbol": "CertifiedRawSource.collect@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Generic semiring total-store actual collection correspondence at any defined tensor coordinate, accompanied by the complete source certificate and that actual typed tensor's original/mapped raw declaration evidence. Uses existing total_admEnv and collect_correspondence."
+    },
+    {
+      "symbol": "CertifiedRawSource.models@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "contract": "Retains the complete source certificate and original/mapped declaration evidence for every defined tensor while supplying the existing checked Models iff GlobalModels theorem. Does not define a separate RawModels predicate."
+    },
+    {
+      "symbol": "admitRawSource_reached@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "premises": [
+        "admitRawSource raw specs inputs = .ok admitted",
+        "result : ActualValidatedResult admitted",
+        "result.result.outcome = .complete c complete"
+      ],
+      "contract": "Produces CertifiedRawSource with actual witnesses, the existing rational GlobalModels property of the reached final store, original/mapped declaration evidence and whole-store equations for EVERY defined tensor and EVERY coordinate, and uniqueness against every total rational store satisfying those global model equations and input agreement."
+    },
+    {
+      "symbol": "admitRawSource_reached_denotation@leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "premises": [
+        "admitRawSource raw specs inputs = .ok admitted",
+        "result : ActualValidatedResult admitted",
+        "result.result.outcome = .complete c complete",
+        "t satisfies (elaborateSource admitted).output t = true"
+      ],
+      "contract": "Produces the complete original raw source certificate and output tensor's original/mapped declaration alongside equality of the EXISTING checked-program output denotation with its global fiber in the reached final store. The denotation API is output-restricted; all-defined-coordinate applicability is supplied separately by admitRawSource_reached, not asserted for an unavailable all-defined denotation API."
+    }
+  ],
+  "certificate_use": {
+    "coordinates": "RawTermFields.factor and RawCorrespondence.read identify the original factor, tensor name, declaration, and ordered raw slots. RawReadSlots.slot/RawOutputSlots.slot supply the original raw axis and RawAxisFields.lookup. These witnesses enter the equality's source valuation key and raw memo lookup; the raw certificate is not an unused premise around Term.read_projection.",
+    "body_and_fiber": "The returned conjunction keeps CertifiedRawTerm/CertifiedRawStatement, whose raw ASTs are linked to actual descriptor indices. Exact factor/term counts are derived from B. Semantic equalities apply to these same actual admitted descriptors; existing admitted semantics is not relabeled as an independent raw denotation.",
+    "whole_source": "The returned CertifiedRawSource contains actual resolver/admission successes and all ordered B provenance, and each defined tensor is paired with its original/mapped declaration via RawCorrespondence.tensor. Global equations are still the existing admitted-source equations, now accompanied by usable original-raw applicability evidence.",
+    "order_and_support": "Certificates keep original statement/term/factor positions and ordered slot relations even where sums commute. Coordinate laws quantify over every tensor position. Footprints retain ordered lists, and term semantics exposes the actual local/global support rather than completing unused source domains."
+  },
+  "validation": {
+    "command": "bash /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd LeanNCD.Semantics.Source.RawCorrespondence LeanNCD.Semantics.Source.RawSemanticConnection LeanNCD.Semantics.Source Semantics.SourceRawCorrespondenceTest Semantics.SourceAdmissionAcceptanceTest",
+    "exit_code": 0,
+    "observed": "Build completed successfully (8558 jobs).",
+    "log": "/Users/williammacready/.copilot/session-state/f0f50335-e56d-401a-a010-11d0d43c0404/files/semantic-c-build.log",
+    "kernel_specializations": [
+      "parsed_read_connection@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "asymmetric_read_connection@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "inconsistent_read_connection@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "parsed_body_connection@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "asymmetric_body_connection@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "inconsistent_body_connection@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "parsed_output_connection@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "asymmetric_output_connection@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "inconsistent_output_connection@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean"
+    ],
+    "specialization_method": "Uses the existing kernel-proved actual success donors; quantifies over actual occurrence indices and valuations/total stores. Proves original raw read-slot lookup and both coordinate equalities, output-slot lookup and both coordinate equalities, and statement body/fiber/ordered-footprint applicability. No new corpus or native_decide.",
+    "axioms": {
+      "method": "#print axioms for all 16 new exported corollaries and all nine donor specializations",
+      "Slots.uids_length": ["propext"],
+      "other_new_corollaries_and_donors": ["propext", "Classical.choice", "Quot.sound"],
+      "forbidden_axioms_observed": [],
+      "source_scan": "No sorry, admit, native_decide, or new axiom in RawSemanticConnection.lean."
+    },
+    "persistence_validation": "Receipt JSON, all contract file paths, all 16 exported axiom prints, all nine donor axiom prints, and the successful persisted build log were checked mechanically.",
+    "whitespace": "git diff --check passed through receipt persistence.",
+    "failed_attempts_resolved": [
+      "Mixed untyped/typed existential binder syntax was corrected to nested existential binders.",
+      "List optional/indexed lookup conversion was made explicit with Option.some.inj and List.getElem?_eq_getElem.",
+      "Lean theorem headers cannot infer a result type from the proof; donor specializations now have explicit shared proposition types."
+    ],
+    "not_run": ["Full lake build", "Mutation manifests", "New distinguishing fixture corpus", "Whole-branch review", "Patch/package emission"]
+  },
+  "remaining": {
+    "C_proof_obligations": [],
+    "fixtures_and_mutations": "Separate distinguishing-fixture and mutation-manifest gates remain; the nine kernel specializations are not claimed to discharge those gates.",
+    "package_readiness": "Fresh artifact-based plan/package authoring and applicable reviews remain. No whole-plan execution readiness or landing is claimed.",
+    "nonclaims": [
+      "Independent raw-source interpreter or denotation",
+      "Full parser correctness",
+      "Raw evaluator correctness or differential oracle equality",
+      "Unconditional completion or a result from a forged/nonvalidated execution",
+      "All-defined checked denotation API (the existing denotation API is output-only)",
+      "Floating-point theorem or global name-mint injectivity"
+    ]
+  },
+  "budget": {
+    "limit": "Approximately 50 assistant turns and 250k peak context for this C continuation.",
+    "observed_snapshot": "SDK events.jsonl counted 26 assistant.turn_start events from the C user request through the final targeted build, before receipt persistence.",
+    "closeout_snapshot": "SDK events.jsonl counted 29 assistant.turn_start events through receipt validation; only this JSON close-out update and final report remain. Under the approximately 50-turn cap.",
+    "context_accounting": "token-report.py found no Claude transcript for SDK session f0f50335-e56d-401a-a010-11d0d43c0404; the C SDK event segment contains no usage event types. Exact peak and cumulative token counts are unavailable, not silently asserted as measured.",
+    "known_breach": false,
+    "reading_windows": "File content reads used 40-60-line windows (short files/directories naturally end earlier); RawCorrespondence was never read whole."
+  },
+  "workspace_actions": {
+    "staged": false,
+    "committed": false,
+    "restored": false,
+    "spawned": false,
+    "merged": false,
+    "source_installed": true,
+    "prior_seed_A_B_work_preserved": true
+  }
+}

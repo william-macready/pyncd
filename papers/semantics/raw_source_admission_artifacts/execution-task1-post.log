@@ -1,0 +1,53 @@
+=== M1 bypass original axis-name mint loop (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/DSL/Pipeline/Structural.lean: 'private def assignUIDMemo (p : TLProgram) : FreshM (HashMap String UID) := do
+  let mut memo : HashMap String UID := {}
+  for nm in p.axisNames do' -> 'private def assignUIDMemo (p : TLProgram) : FreshM (HashMap String UID) := do
+  let mut memo : HashMap String UID := {}
+  for nm in ([] : List String) do' ---
+error: LeanNCD/DSL/Pipeline/Structural.lean:635:14: unsolved goals
+error: LeanNCD/DSL/Pipeline/Structural.lean:638:67: Unknown identifier `memo`
+error: LeanNCD/DSL/Pipeline/Structural.lean:638:78: Unknown identifier `finish`
+error: LeanNCD/DSL/Pipeline/Structural.lean:687:2: Tactic `rfl` failed: The left-hand side
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/DSL/Pipeline/Structural.lean now) ---
+=== M1 bypass original axis-name mint loop (proof-protected rejection) MUTATE exit=1 ===
+=== M1 bypass original axis-name mint loop (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== M1 bypass original axis-name mint loop (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M1 bypass original axis-name mint loop (proof-protected rejection): PASS
+=== M1 bypass original axis-name mint loop (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S6 use initial UID despite covering name memo (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/DSL/Pipeline/Structural.lean: 'def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=
+  match u.name with
+  | some nm => match memo[nm]? with | some v => { u with uid := v } | none => u
+  | none => u' -> 'def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=
+  match u.name with
+  | some nm => match memo[nm]? with | some _ => u | none => u
+  | none => u' ---
+error: LeanNCD/DSL/Pipeline/Structural.lean:655:73: unsolved goals
+error: LeanNCD/DSL/Pipeline/Structural.lean:687:2: Tactic `rfl` failed: The left-hand side
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/DSL/Pipeline/Structural.lean now) ---
+=== S6 use initial UID despite covering name memo (proof-protected rejection) MUTATE exit=1 ===
+=== S6 use initial UID despite covering name memo (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== S6 use initial UID despite covering name memo (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S6 use initial UID despite covering name memo (proof-protected rejection): PASS
+=== S6 use initial UID despite covering name memo (proof-protected rejection) MANIFEST VERDICT: PASS ===
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| M1 bypass original axis-name mint loop (proof-protected rejection) | yes | yes | yes | PASS |
+| S6 use initial UID despite covering name memo (proof-protected rejection) | yes | yes | yes | PASS |
+
+2/2 cycles passed.

@@ -608,3 +608,29 @@ Do not add cache counters again. End-to-end input, full dispatch peaks and
 compliance with the 175M execution/50M authoring targets remain unmeasured.
 No new implementation/review dispatch or duplicate mutation run was launched
 for close-out.
+
+## 2026-10-09 — bounded raw-source/admission follow-up
+
+The original source-slice receipts above, including its 39 implementation controls,
+remain historical and unchanged. The separately executed
+[raw-source/admission recipe](raw_source_admission_plan.md) adds actual-success
+`admitRawSource_fields` and `admitRawSource_certified`: name-keyed resolver coverage,
+ordered pinned declarations and original declaration indices, exact raw indexed
+statement/term/factor/slot transport, and certified raw-coordinate witnesses for
+the existing body/footprint/fiber/Program results. Both new modules are reachable
+through `LeanNCD`; `Semantics.SourceRawCorrespondenceTest` is in default `Tests`.
+
+`admitRawSource_reached` requires an actual validated rational result and its
+complete-outcome equality. All-defined equations, input agreement and uniqueness
+are relative to `result.input`; denotation applicability is output-restricted.
+Canonical parsed/asymmetric donors use `sourceInput` but do not remove the
+completion premise. No independent raw denotation, parser correctness, global
+mint injectivity, input-buffer certification, unconditional completion, oracle
+equality or numerical/backend refinement is claimed. Existing production
+cross-statement additive divergence is unchanged.
+
+The follow-up has ten fixture families and 17 controls: 15 proof-protected
+rejections, two fixture contrasts and zero runtime kills. Its stage/final
+validation, review verdicts and integration disposition are recorded separately
+in the [raw-source/admission record](raw_source_admission_record.md), not counted
+as new differential samples or folded into the original 39.

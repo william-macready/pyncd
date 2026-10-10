@@ -1,0 +1,466 @@
+ℹ [8483/8521] Replayed LeanNCD.Semantics.Readiness
+info: LeanNCD/Semantics/Readiness.lean:93:0: 'LeanNCD.Semantics.evalWith_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:94:0: 'LeanNCD.Semantics.interpret_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:95:0: 'LeanNCD.Semantics.ready_consistent' depends on axioms: [propext, Quot.sound]
+⚠ [8484/8521] Replayed LeanNCD.Semantics.Machine
+warning: LeanNCD/Semantics/Machine.lean:85:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.finalStore_published`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+ℹ [8486/8521] Replayed LeanNCD.Semantics.Measure
+info: LeanNCD/Semantics/Measure.lean:144:0: 'LeanNCD.Semantics.Program.initial_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:145:0: 'LeanNCD.Semantics.Program.consume_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:146:0: 'LeanNCD.Semantics.Program.publish_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:147:0: 'LeanNCD.Semantics.Program.step_wellFounded' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:148:0: 'LeanNCD.Semantics.Program.trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:149:0: 'LeanNCD.Semantics.Program.running_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:150:0: 'LeanNCD.Semantics.Program.failed_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:151:0: 'LeanNCD.Semantics.Program.no_infinite_chain' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [8487/8521] Replayed LeanNCD.Semantics.Invariants
+warning: LeanNCD/Semantics/Invariants.lean:99:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.publish_extends`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+ℹ [8488/8521] Replayed LeanNCD.Semantics.Soundness
+info: LeanNCD/Semantics/Soundness.lean:112:0: 'LeanNCD.Semantics.Program.reachable_invariant' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:113:0: 'LeanNCD.Semantics.Program.successful_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:114:0: 'LeanNCD.Semantics.Program.candidate_preserved' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:115:0: 'LeanNCD.Semantics.Program.successful_unique' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:116:0: 'LeanNCD.Semantics.Program.successful_admInput' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:117:0: 'LeanNCD.Semantics.Program.successful_denotation' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:118:0: 'LeanNCD.Semantics.Program.failed_no_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8489/8521] Replayed LeanNCD.Semantics.Progress
+info: LeanNCD/Semantics/Progress.lean:182:0: 'LeanNCD.Semantics.Program.ranked_progress' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:183:0: 'LeanNCD.Semantics.Program.ranked_not_blocked' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:184:0: 'LeanNCD.Semantics.Program.terminal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:185:0: 'LeanNCD.Semantics.Program.maximal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:186:0: 'LeanNCD.Semantics.Program.maximal_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:187:0: 'LeanNCD.Semantics.Program.model_maximal_success' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:188:0: 'LeanNCD.Semantics.Program.no_model_maximal_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:189:0: 'LeanNCD.Semantics.Program.initialization_iff_singleton' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:190:0: 'LeanNCD.Semantics.Program.successful_schedules_agree' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [8490/8521] Replayed LeanNCD.Semantics.ExecutableState
+warning: LeanNCD/Semantics/ExecutableState.lean:51:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_error`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:83:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.publish_agrees`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:87:8: Used `tac1 <;> tac2` where `(tac1; tac2)` would suffice
+
+Note: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`
+warning: LeanNCD/Semantics/ExecutableState.lean:94:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.initialBudget_agrees`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [8491/8521] Replayed LeanNCD.Semantics.ExecutableSelection
+warning: LeanNCD/Semantics/ExecutableSelection.lean:69:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.scan_none`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ExecutableSelection.lean:120:0: 'LeanNCD.Semantics.Program.Executor.select_none_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [8492/8521] Replayed LeanNCD.Semantics.ReferenceExecutor
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:10:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_accepts`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:19:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_preserves`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ReferenceExecutor.lean:187:0: 'LeanNCD.Semantics.Program.Executor.run_not_exhausted' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:188:0: 'LeanNCD.Semantics.Program.Executor.run_ranked_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:189:0: 'LeanNCD.Semantics.Program.Executor.result_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:190:0: 'LeanNCD.Semantics.Program.Executor.result_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [8507/8521] Replayed LeanNCD.Semantics.Source.Adapter
+warning: LeanNCD/Semantics/Source/Adapter.lean:125:58: This simp argument is unused:
+  pure
+
+Hint: Omit it from the simp argument list.
+  simp [resolveSource, EStateM.bind, EStateM.run, bind, p̵u̵r̵e̵,̵ ̵ha] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:262:2: 'all_goals
+  try { contradiction
+  }' tactic does nothing
+
+Note: This linter can be disabled with `set_option linter.unusedTactic false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:296:59: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, Except.bind, Except.pure, t̵h̵r̵o̵w̵,̵
+  ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵MonadExceptOf.throw, throwThe] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:297:12: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, Except.bind, Except.pure, throw, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵throwThe] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:297:33: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, Except.bind, Except.pure, throw, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵]̵M̲o̲n̲a̲d̲E̲x̲c̲e̲p̲t̲O̲f̲.̲t̲h̲r̲o̲w̲]̲ at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:555:11: Local variable 'unit' resembles constructor 'PUnit.unit' - write '.unit' (with a dot) or 'PUnit.unit' to use the constructor.
+
+Note: This linter can be disabled with `set_option linter.constructorNameAsVariable false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:490:23: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [b̵i̵n̵d̵,̵ ̵Except.bind] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:490:29: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:496:21: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [b̵i̵n̵d̵,̵ ̵pure, Except.bind, Except.pure] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:496:33: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵,̵ ̵Except.pure] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:510:22: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw,̵ ̵t̵h̵r̵o̵w̵The, MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:510:29: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [throw, t̵h̵r̵o̵w̵T̵h̵e̵,̵ ̵MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:510:39: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:510:60: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:510:66: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:538:30: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw,̵ ̵t̵h̵r̵o̵w̵The, MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:538:37: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, t̵h̵r̵o̵w̵T̵h̵e̵,̵ ̵MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:538:47: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, throwThe, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:538:68: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, throwThe, MonadExceptOf.throw, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:538:74: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, throwThe, MonadExceptOf.throw, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:540:35: This simp argument is unused:
+  pure
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, p̵u̵r̵e̵,̵ ̵Except.pure, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:540:41: This simp argument is unused:
+  Except.pure
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, pure, E̵x̵c̵e̵p̵t̵.̵p̵u̵r̵e̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:540:54: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, pure, Except.pure, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:540:60: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, pure, Except.pure, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:542:28: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw,̵ ̵t̵h̵r̵o̵w̵The, MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:542:35: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [throw, t̵h̵r̵o̵w̵T̵h̵e̵,̵ ̵MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:542:45: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:542:66: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:542:72: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:33: This simp argument is unused:
+  pure
+
+Hint: Omit it from the simp argument list.
+  simp only [p̵u̵r̵e̵,̵ ̵Except.pure, bind, Except.bind, Except.ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:39: This simp argument is unused:
+  Except.pure
+
+Hint: Omit it from the simp argument list.
+  simp only [pure, E̵x̵c̵e̵p̵t̵.̵p̵u̵r̵e̵,̵ ̵bind, Except.bind, Except.ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:52: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [pure, Except.pure, b̵i̵n̵d̵,̵ ̵Except.bind, Except.ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:58: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [pure, Except.pure, bind, Except.b̵i̵n̵d̵,̵ ̵E̵x̵c̵e̵p̵t̵.̵ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:550:17: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [b̵i̵n̵d̵,̵ ̵Except.bind] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:550:23: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+⚠ [8508/8521] Replayed LeanNCD.Semantics.Source.Admission
+warning: LeanNCD/Semantics/Source/Admission.lean:405:24: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [ht, t̵h̵r̵o̵w̵,̵ ̵MonadExceptOf.throw, throwThe] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Admission.lean:405:31: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵throwThe] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Admission.lean:405:52: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, MonadExceptOf.throw,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+ℹ [8517/8521] Replayed LeanNCD.Semantics.Source.RawCorrespondence
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:52:0: 'LeanNCD.assignUIDs_mapUID' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:53:0: 'LeanNCD.Semantics.Source.resolveSource_mapUID' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:54:0: 'LeanNCD.Semantics.Source.mapM_success_forall2' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:55:0: 'LeanNCD.Semantics.Source.admitRead_fields' depends on axioms: [propext]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:56:0: 'LeanNCD.Semantics.Source.admitTerm_reads' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:57:0: 'LeanNCD.Semantics.Source.TensorTable.find_name' depends on axioms: [propext]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:58:0: 'LeanNCD.Semantics.Source.astRead_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:59:0: 'LeanNCD.Semantics.Source.admitOutput_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:60:0: 'LeanNCD.Semantics.Source.admitStatement_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:61:0: 'LeanNCD.Semantics.Source.adaptSource_statements' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:62:0: 'LeanNCD.Semantics.Source.admitSource_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:63:0: 'LeanNCD.Semantics.Source.mapUID_axis_metadata' does not depend on any axioms
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:64:0: 'LeanNCD.Semantics.Source.admitRawSource_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:65:0: 'LeanNCD.Semantics.Source.TermFields.factor_count' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:66:0: 'LeanNCD.Semantics.Source.StatementFields.term_count' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8520/8521] Replayed Semantics.SourceAdmissionAcceptanceTest
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:63:0: true
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:101:0: true
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:133:0: true
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:140:0: "accepted"
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:141:0: "accepted"
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:142:0: "accepted"
+ℹ [8521/8521] Built Semantics.SourceRawCorrespondenceTest (5.2s)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:52:0: some [(0,
+  "Y",
+  5,
+  [1],
+  [[("B",
+     4,
+     [1],
+     { side := LeanNCD.Semantics.Source.SourceSide.read,
+       declaration := some 4,
+       statement := some 0,
+       term := some 0,
+       factor := some 0,
+       slot := none }),
+    ("A",
+     3,
+     [1, 2],
+     { side := LeanNCD.Semantics.Source.SourceSide.read,
+       declaration := some 3,
+       statement := some 0,
+       term := some 0,
+       factor := some 1,
+       slot := none }),
+    ("B",
+     4,
+     [1],
+     { side := LeanNCD.Semantics.Source.SourceSide.read,
+       declaration := some 4,
+       statement := some 0,
+       term := some 0,
+       factor := some 2,
+       slot := none })],
+   [("A",
+     3,
+     [1, 2],
+     { side := LeanNCD.Semantics.Source.SourceSide.read,
+       declaration := some 3,
+       statement := some 0,
+       term := some 1,
+       factor := some 0,
+       slot := none })],
+   []]),
+ (1, "Diagonal", 7, [1, 1], [[]]),
+ (2, "Y", 5, [1], [])]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:65:0: true
+info: test/Semantics/SourceRawCorrespondenceTest.lean:70:0: some [(0,
+  "Y",
+  2,
+  [1],
+  [[("X",
+     1,
+     [1],
+     { side := LeanNCD.Semantics.Source.SourceSide.read,
+       declaration := some 1,
+       statement := some 0,
+       term := some 0,
+       factor := some 0,
+       slot := none })]])]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:78:0: true
+info: test/Semantics/SourceRawCorrespondenceTest.lean:88:0: true
+info: test/Semantics/SourceRawCorrespondenceTest.lean:101:0: true
+info: test/Semantics/SourceRawCorrespondenceTest.lean:142:0: 'LeanNCD.TLProgram.mem_axisNames_iff' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:143:0: 'LeanNCD.TLProgram.axisSpec_name_mem' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:144:0: 'LeanNCD.AxisSpec.mapUID_metadata' does not depend on any axioms
+info: test/Semantics/SourceRawCorrespondenceTest.lean:145:0: 'LeanNCD.forIn_insert_coverage' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:146:0: 'LeanNCD.assignUIDMemo_covers' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:147:0: 'LeanNCD.AxisSpec.mapUID_sourceUIDRelabel' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:148:0: 'LeanNCD.AxisSpec.mapUID_sourceUIDRelabel_same_name' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:149:0: 'LeanNCD.assignUIDs_eq_inline' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:150:0: 'LeanNCD.assignUIDs_mapUID_covered' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:151:0: 'LeanNCD.assignUIDs_mapUID' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:152:0: 'LeanNCD.Semantics.Source.resolveSource_mapUID_covered' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:153:0: 'LeanNCD.Semantics.Source.resolveSource_mapUID' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:154:0: 'SourceRawCorrespondenceTest.inconsistentUIDs_start_zero' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:155:0: 'SourceRawCorrespondenceTest.inconsistentUIDs_start_seven' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:157:0: 'LeanNCD.Semantics.Source.forIn_append_selection' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:158:0: 'LeanNCD.Semantics.Source.AxisDeclarations.pinned' depends on axioms: [propext]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:159:0: 'LeanNCD.Semantics.Source.checkAxes_declarations' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:160:0: 'LeanNCD.Semantics.Source.sourceAxis_declared' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:161:0: 'LeanNCD.Semantics.Source.checkTable_declarations' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:162:0: 'LeanNCD.Semantics.Source.TableDeclarations.entry' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:163:0: 'LeanNCD.Semantics.Source.DeclaredAxisSlots.pinned' depends on axioms: [propext]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:164:0: 'LeanNCD.Semantics.Source.adaptSource_declarations' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:165:0: 'LeanNCD.Semantics.Source.adaptSource_entry_declaration' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8521 jobs).

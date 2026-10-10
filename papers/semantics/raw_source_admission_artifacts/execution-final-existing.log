@@ -1,0 +1,212 @@
+=== M2 table position used as declaration origin (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '      declaration := some (source.table.entry tensor).declaration }' -> '      declaration := some tensor.val }' ---
+error: LeanNCD/Semantics/Source/Admission.lean:410:19: `simp` made no progress
+error: LeanNCD/Semantics/Source/Admission.lean:412:8: `simp` made no progress
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== M2 table position used as declaration origin (proof-protected rejection) MUTATE exit=1 ===
+=== M2 table position used as declaration origin (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, MonadExceptOf.throw,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8507 jobs).
+=== M2 table position used as declaration origin (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M2 table position used as declaration origin (proof-protected rejection): PASS
+=== M2 table position used as declaration origin (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S1 original declaration ID becomes tensor table index (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]' -> '      entries := entries ++ [⟨entries.length, name, ty, spec.role, shape⟩]' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:547:24: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S1 original declaration ID becomes tensor table index (proof-protected rejection) MUTATE exit=1 ===
+=== S1 original declaration ID becomes tensor table index (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== S1 original declaration ID becomes tensor table index (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S1 original declaration ID becomes tensor table index (proof-protected rejection): PASS
+=== S1 original declaration ID becomes tensor table index (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S2 reverse declared axis accumulation (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '        shape := shape ++ [← sourceAxis c .declarations { origin with slot := some j } a]' -> '        shape := [← sourceAxis c .declarations { origin with slot := some j } a] ++ shape' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:527:26: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S2 reverse declared axis accumulation (proof-protected rejection) MUTATE exit=1 ===
+=== S2 reverse declared axis accumulation (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== S2 reverse declared axis accumulation (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S2 reverse declared axis accumulation (proof-protected rejection): PASS
+=== S2 reverse declared axis accumulation (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S3 drop first untyped declared axis (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes))' -> '  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes.drop 1))' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:430:21: Application type mismatch: The argument
+error: LeanNCD/Semantics/Source/Adapter.lean:434:21: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S3 drop first untyped declared axis (proof-protected rejection) MUTATE exit=1 ===
+=== S3 drop first untyped declared axis (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== S3 drop first untyped declared axis (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S3 drop first untyped declared axis (proof-protected rejection): PASS
+=== S3 drop first untyped declared axis (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S4 reverse raw factor occurrence traversal (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '        let reads ← term.factors.zipIdx.mapM fun (factor, j) =>
+          astRead source { termOrigin with factor := some j } factor
+        admitTerm source.context output.context termOrigin reads' -> '        let reads ← term.factors.reverse.zipIdx.mapM fun (factor, j) =>
+          astRead source { termOrigin with factor := some j } factor
+        admitTerm source.context output.context termOrigin reads' ---
+error: LeanNCD/Semantics/Source/Admission.lean:550:35: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== S4 reverse raw factor occurrence traversal (proof-protected rejection) MUTATE exit=1 ===
+=== S4 reverse raw factor occurrence traversal (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, MonadExceptOf.throw,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8507 jobs).
+=== S4 reverse raw factor occurrence traversal (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S4 reverse raw factor occurrence traversal (proof-protected rejection): PASS
+=== S4 reverse raw factor occurrence traversal (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S5 drop raw factor occurrence (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '        let reads ← term.factors.zipIdx.mapM fun (factor, j) =>
+          astRead source { termOrigin with factor := some j } factor
+        admitTerm source.context output.context termOrigin reads' -> '        let reads ← (term.factors.drop 1).zipIdx.mapM fun (factor, j) =>
+          astRead source { termOrigin with factor := some j } factor
+        admitTerm source.context output.context termOrigin reads' ---
+error: LeanNCD/Semantics/Source/Admission.lean:550:35: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== S5 drop raw factor occurrence (proof-protected rejection) MUTATE exit=1 ===
+=== S5 drop raw factor occurrence (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, MonadExceptOf.throw,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8507 jobs).
+=== S5 drop raw factor occurrence (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S5 drop raw factor occurrence (proof-protected rejection): PASS
+=== S5 drop raw factor occurrence (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S7 replace external role by defined role (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]' -> '      entries := entries ++ [⟨i, name, ty, .defined, shape⟩]' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:547:24: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S7 replace external role by defined role (proof-protected rejection) MUTATE exit=1 ===
+=== S7 replace external role by defined role (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== S7 replace external role by defined role (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S7 replace external role by defined role (proof-protected rejection): PASS
+=== S7 replace external role by defined role (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== S8 classify typed f64 as f32 (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Adapter.lean: '    | .f32 | .f64 => .ok (some (name, ty, axes))' -> '    | .f32 | .f64 => .ok (some (name, .f32, axes))' ---
+error: LeanNCD/Semantics/Source/Adapter.lean:435:30: unsolved goals
+error: LeanNCD/Semantics/Source/Adapter.lean:438:35: unsolved goals
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Adapter.lean now) ---
+=== S8 classify typed f64 as f32 (proof-protected rejection) MUTATE exit=1 ===
+=== S8 classify typed f64 as f32 (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8505 jobs).
+=== S8 classify typed f64 as f32 (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+S8 classify typed f64 as f32 (proof-protected rejection): PASS
+=== S8 classify typed f64 as f32 (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== E1 nonSum guard deletion (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '    if rhs.agg != .sum then throw (sourceError .statement origin (.unsupported .nonSum))
+' -> '' ---
+error: LeanNCD/Semantics/Source/Admission.lean:518:15: unsolved goals
+error: LeanNCD/Semantics/Source/Admission.lean:520:10: `simp` made no progress
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== E1 nonSum guard deletion (proof-protected rejection) MUTATE exit=1 ===
+=== E1 nonSum guard deletion (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, MonadExceptOf.throw,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8507 jobs).
+=== E1 nonSum guard deletion (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+E1 nonSum guard deletion (proof-protected rejection): PASS
+=== E1 nonSum guard deletion (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== E2 nonSum and nonIdentity guard deletion (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '    if rhs.agg != .sum then throw (sourceError .statement origin (.unsupported .nonSum))
+    if rhs.nonlin != .identity then
+      throw (sourceError .statement origin (.unsupported .nonIdentity))
+' -> '' ---
+error: LeanNCD/Semantics/Source/Admission.lean:513:8: Tactic `contradiction` failed
+error: LeanNCD/Semantics/Source/Admission.lean:518:10: `simp` made no progress
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== E2 nonSum and nonIdentity guard deletion (proof-protected rejection) MUTATE exit=1 ===
+=== E2 nonSum and nonIdentity guard deletion (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, MonadExceptOf.throw,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8507 jobs).
+=== E2 nonSum and nonIdentity guard deletion (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+E2 nonSum and nonIdentity guard deletion (proof-protected rejection): PASS
+=== E2 nonSum and nonIdentity guard deletion (proof-protected rejection) MANIFEST VERDICT: PASS ===
+=== E3 constant Z output lookup (proof-protected rejection) MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '    let dst ← match source.table.find name with
+' -> '    let dst ← match source.table.find "Z" with
+' ---
+error: LeanNCD/Semantics/Source/Admission.lean:519:15: unsolved goals
+error: LeanNCD/Semantics/Source/Admission.lean:521:10: `simp` made no progress
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== E3 constant Z output lookup (proof-protected rejection) MUTATE exit=1 ===
+=== E3 constant Z output lookup (proof-protected rejection) RESTORED BUILD ===
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, MonadExceptOf.throw,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8507 jobs).
+=== E3 constant Z output lookup (proof-protected rejection) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+E3 constant Z output lookup (proof-protected rejection): PASS
+=== E3 constant Z output lookup (proof-protected rejection) MANIFEST VERDICT: PASS ===
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| M2 table position used as declaration origin (proof-protected rejection) | yes | yes | yes | PASS |
+| S1 original declaration ID becomes tensor table index (proof-protected rejection) | yes | yes | yes | PASS |
+| S2 reverse declared axis accumulation (proof-protected rejection) | yes | yes | yes | PASS |
+| S3 drop first untyped declared axis (proof-protected rejection) | yes | yes | yes | PASS |
+| S4 reverse raw factor occurrence traversal (proof-protected rejection) | yes | yes | yes | PASS |
+| S5 drop raw factor occurrence (proof-protected rejection) | yes | yes | yes | PASS |
+| S7 replace external role by defined role (proof-protected rejection) | yes | yes | yes | PASS |
+| S8 classify typed f64 as f32 (proof-protected rejection) | yes | yes | yes | PASS |
+| E1 nonSum guard deletion (proof-protected rejection) | yes | yes | yes | PASS |
+| E2 nonSum and nonIdentity guard deletion (proof-protected rejection) | yes | yes | yes | PASS |
+| E3 constant Z output lookup (proof-protected rejection) | yes | yes | yes | PASS |
+
+11/11 cycles passed.

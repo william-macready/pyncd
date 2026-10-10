@@ -1,0 +1,268 @@
+{
+  "stages": [
+    {
+      "task": "1",
+      "manifest_checks": [
+        {
+          "command": [
+            "bash",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/mutation-manifest.sh",
+            "--check",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_artifacts/stage-1-existing.json"
+          ],
+          "exit_code": 0,
+          "log": "final-stage-1-stage-1-existing-check.log",
+          "summaries": [
+            "manifest OK: 5 entries, 5 selected, every old-string unique"
+          ]
+        },
+        {
+          "command": [
+            "bash",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/mutation-manifest.sh",
+            "--check",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_artifacts/stage-1-post.json"
+          ],
+          "exit_code": 0,
+          "log": "final-stage-1-stage-1-post-check.log",
+          "summaries": [
+            "manifest OK: 2 entries, 2 selected, every old-string unique"
+          ]
+        }
+      ],
+      "build": {
+        "command": [
+          "bash",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+          "LeanNCD.Semantics.Source.Adapter"
+        ],
+        "exit_code": 0,
+        "log": "final-stage-1.log",
+        "summaries": [
+          "Build completed successfully (8505 jobs)."
+        ]
+      }
+    },
+    {
+      "task": "2",
+      "manifest_checks": [
+        {
+          "command": [
+            "bash",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/mutation-manifest.sh",
+            "--check",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_artifacts/stage-2-existing.json"
+          ],
+          "exit_code": 0,
+          "log": "final-stage-2-stage-2-existing-check.log",
+          "summaries": [
+            "manifest OK: 6 entries, 6 selected, every old-string unique"
+          ]
+        },
+        {
+          "command": [
+            "bash",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/mutation-manifest.sh",
+            "--check",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_artifacts/stage-2-post.json"
+          ],
+          "exit_code": 0,
+          "log": "final-stage-2-stage-2-post-check.log",
+          "summaries": [
+            "manifest OK: 1 entries, 1 selected, every old-string unique"
+          ]
+        }
+      ],
+      "build": {
+        "command": [
+          "bash",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+          "LeanNCD.Semantics.Source.Admission"
+        ],
+        "exit_code": 0,
+        "log": "final-stage-2.log",
+        "summaries": [
+          "Build completed successfully (8507 jobs)."
+        ]
+      }
+    },
+    {
+      "task": "3",
+      "manifest_checks": [],
+      "build": {
+        "command": [
+          "bash",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+          "LeanNCD.Semantics.Source.RawCorrespondence"
+        ],
+        "exit_code": 0,
+        "log": "final-stage-3.log",
+        "summaries": [
+          "Build completed successfully (8516 jobs)."
+        ]
+      }
+    },
+    {
+      "task": "4",
+      "manifest_checks": [
+        {
+          "command": [
+            "bash",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/mutation-manifest.sh",
+            "--check",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+            "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_artifacts/stage-4-post.json"
+          ],
+          "exit_code": 0,
+          "log": "final-stage-4-stage-4-post-check.log",
+          "summaries": [
+            "manifest OK: 3 entries, 3 selected, every old-string unique"
+          ]
+        }
+      ],
+      "build": {
+        "command": [
+          "bash",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+          "LeanNCD.Semantics.Source.RawSemanticConnection",
+          "Semantics.SourceRawCorrespondenceTest",
+          "Semantics.SourceAdmissionTest",
+          "LeanNCD"
+        ],
+        "exit_code": 0,
+        "log": "final-stage-4.log",
+        "summaries": [
+          "Build completed successfully (8597 jobs)."
+        ]
+      }
+    }
+  ],
+  "final_manifests": [
+    {
+      "name": "raw_source_admission_mutations.json",
+      "check": {
+        "command": [
+          "bash",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/mutation-manifest.sh",
+          "--check",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_mutations.json"
+        ],
+        "exit_code": 0,
+        "log": "final-manifest-existing-check.log",
+        "summaries": [
+          "manifest OK: 11 entries, 11 selected, every old-string unique"
+        ]
+      },
+      "cycles": {
+        "command": [
+          "bash",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/mutation-manifest.sh",
+          "--out",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_artifacts/final-manifest-existing.md",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_mutations.json"
+        ],
+        "exit_code": 0,
+        "log": "final-manifest-existing.log",
+        "summaries": [
+          "Build completed successfully (8507 jobs).",
+          "Build completed successfully (8505 jobs).",
+          "Build completed successfully (8505 jobs).",
+          "Build completed successfully (8505 jobs).",
+          "Build completed successfully (8507 jobs).",
+          "Build completed successfully (8507 jobs).",
+          "Build completed successfully (8505 jobs).",
+          "Build completed successfully (8505 jobs).",
+          "Build completed successfully (8507 jobs).",
+          "Build completed successfully (8507 jobs).",
+          "Build completed successfully (8507 jobs).",
+          "11/11 cycles passed."
+        ]
+      }
+    },
+    {
+      "name": "raw_source_admission_mutations_post.json",
+      "check": {
+        "command": [
+          "bash",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/mutation-manifest.sh",
+          "--check",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_mutations_post.json"
+        ],
+        "exit_code": 0,
+        "log": "final-manifest-post-check.log",
+        "summaries": [
+          "manifest OK: 6 entries, 6 selected, every old-string unique"
+        ]
+      },
+      "cycles": {
+        "command": [
+          "bash",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/mutation-manifest.sh",
+          "--out",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_artifacts/final-manifest-post.md",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+          "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_mutations_post.json"
+        ],
+        "exit_code": 0,
+        "log": "final-manifest-post.log",
+        "summaries": [
+          "Build completed successfully (8505 jobs).",
+          "Build completed successfully (8507 jobs).",
+          "Build completed successfully (8523 jobs).",
+          "Build completed successfully (8505 jobs).",
+          "Build completed successfully (8517 jobs).",
+          "Build completed successfully (8523 jobs).",
+          "6/6 cycles passed."
+        ]
+      }
+    }
+  ],
+  "status": "all_controller_readiness_gates_pass",
+  "full_default_build": {
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd"
+    ],
+    "exit_code": 0,
+    "log": "final-full-build.log",
+    "summaries": [
+      "Build completed successfully (8766 jobs)."
+    ]
+  },
+  "restored_base_build": {
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+      "LeanNCD"
+    ],
+    "exit_code": 0,
+    "log": "final-restored-base-build.log",
+    "summaries": [
+      "Build completed successfully (8584 jobs)."
+    ]
+  },
+  "cached_replay_after_restoration": {
+    "command": [
+      "python3",
+      "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_artifacts/emit_ready_patches.py",
+      "--verify"
+    ],
+    "exit_code": 0,
+    "log": "final-restored-package-verify.log",
+    "summaries": []
+  },
+  "source_restored_to_base": true
+}

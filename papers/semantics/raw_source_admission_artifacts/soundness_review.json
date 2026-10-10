@@ -1,0 +1,93 @@
+{
+  "review": "independent_soundness",
+  "status": "clean_with_scoped_limitations",
+  "base": "3d721f9631de8642163446f98b4efc8fe1d078d5",
+  "verdict": "No high-confidence load-bearing soundness defect or missing obligation found within the bounded contracts. Actual admitRawSource success suffices for the original-raw binding and full ordered correspondence certificate. Semantic applicability is substantive for the existing checked/global UID semantics, with total-store generic-semiring and rational complete-result hypotheses kept separate.",
+  "scope": "Actual admitRawSource success, original raw declaration/context and ordered occurrence correspondence, and scoped semantic applicability. Prototype source and dependencies only; runtime fidelity, form-acceptance matrix, parser correctness, global mint injectivity and artifact staging excluded.",
+  "method": "Read source predicates and kernel proof dependencies directly; compilation and controller mutations are not taken as soundness evidence. No source edits, delegation, staging or commits.",
+  "findings": [],
+  "checked_obligations": [
+    {
+      "identifier": "raw_success_provenance",
+      "evidence": "RawCorrespondence.lean:403-470; Adapter.lean:99-137,605-649",
+      "result": "The public endpoint takes only actual admitRawSource equality, splits actual resolveSource/admitSource execution, and derives the snapshot, mapped lists and adapter evidence. RawCorrespondence itself retains both success equalities; correspondence is not assumed for an arbitrary admitted record."
+    },
+    {
+      "identifier": "ordered_original_occurrences",
+      "evidence": "RawCorrespondence.lean:191-286,312-399,473-660",
+      "result": "Original declarations are addressed by original zipIdx declaration IDs. Statements, terms, factors and slots use complete Forall2 relations, exact lengths and same-index getters. Constructor inversion excludes non-read factors; ordered witnesses are not replaced by commutative value equality."
+    },
+    {
+      "identifier": "raw_coordinate_link",
+      "evidence": "RawSemanticConnection.lean:6-53,93-165",
+      "result": "Each checked tensor coordinate position is linked through typed Slots.project_lookup and Forall2 slot lookup to the original raw bare leaf and memo lookup at its name. The source key in the coordinate equality is the memo UID, not an unrelated decorative certificate."
+    },
+    {
+      "identifier": "all_table_entries_and_extents",
+      "evidence": "Adapter.lean:195-317,344-557; RawCorrespondence.lean:85-115,473-532",
+      "result": "Ordered declaration scans cover every table entry and context axis. Original/mapped declarations share name/type and ordinal; slot UIDs belong to the actual context, context extents come from raw pinned declarations, and the spec lookup, declaration ID, role and exact extent list are retained."
+    },
+    {
+      "identifier": "actual_covering_memo_and_traversal",
+      "evidence": "Structural.lean:345-369,580-702; Traverse.lean:8-10,63-98; RawCorrespondence.lean:10-53,123-399",
+      "result": "The memo witness is extracted by splitting the actual assignUIDMemo stateful run. Insert-only coverage accounts for every raw.axisNames member; names are derived from the real traverseAxes collector. Axis membership is propagated through actual declaration/statement/term/factor/slot traversal. AxisSpec.mapUID supplies some raw name, so every certified leaf uses a defined memo lookup and cannot use the relabel fallback."
+    },
+    {
+      "identifier": "non_tautological_semantic_applicability",
+      "evidence": "RawSemanticConnection.lean:168-261; Statement.lean:35-105; Correspondence.lean:8-111; ProgramCorrespondence.lean:8-53,86-92,151-165,223-239",
+      "result": "No raw interpreter or raw model is defined by copying checked interpretation. Indexed raw occurrence certificates and lengths accompany equalities between actual checked Expr interpretation/collection/footprints and existing UID-valued fibers. Fibers use ordered sourceReads, real projected addresses, relevant support and original statement positions. Generic results quantify total Store values under only the existing Semiring hypotheses."
+    },
+    {
+      "identifier": "reached_model_scope",
+      "evidence": "RawSemanticConnection.lean:264-301; ProgramCorrespondence.lean:223-281; Schedule.lean:169-190; ReferenceExecutor.lean:125-171",
+      "result": "Reached equations cover every Defined tensor and coordinate, and uniqueness quantifies total rational stores satisfying input agreement plus all global equations. Reached/denotation endpoints require ActualValidatedResult and equality of its outcome with complete. Denotation remains output-restricted; no generic semiring execution or unconditional admission-to-completion theorem is asserted."
+    }
+  ],
+  "additional_checked_obligations": [
+    {
+      "identifier": "repetitions_empty_lists_zero_domains",
+      "evidence": "RawCorrespondence.lean:191-199,267-286,540-640; Context.lean:7-60; Lowering.lean:27-84; Statement.lean:8-32,35-60,80-105; Correspondence.lean:39-111",
+      "result": "Forall2 lengths and positional getters preserve repeated slots/factors and cannot drop empty terms. Empty products interpret as one; empty sums as zero. Typed coordinates use Fin extent without a positive-domain premise; a zero reduction domain gives an empty sum and footprint. A coordinate theorem over an empty valuation type can be vacuous, but the raw occurrence/declaration/ordered-list certificates are independent of valuation inhabitance. Relevant support excludes unused source axes from sums, so unused zero domains do not erase contributions."
+    },
+    {
+      "identifier": "actual_execution_not_forged_completion",
+      "evidence": "ReferenceExecutor.lean:28-40,61-64,112-124,167-171; Soundness.lean:18-37,60-95; RawSemanticConnection.lean:264-301",
+      "result": "ValidatedResult.result is indexed by running(initial result.input); Result contains legal Execution from that state to its outcome. Equality with a complete outcome yields reachability plus completeness, not an arbitrary preconstructed final store. GlobalModels includes input agreement, and uniqueness reuses preservation along actual legal execution. Admission alone is not asserted to imply successful execution."
+    },
+    {
+      "identifier": "inhabited_admission_examples",
+      "evidence": "SourceRawCorrespondenceTest.lean:11-25,208-242,720-741,759-787,826-911",
+      "result": "The generic admission premise has concrete kernel-checked success witnesses for parsed, asymmetric/repeated/empty and inconsistent-UID raw ASTs. Their read/output/body connections specialize the indexed certificate APIs. Evaluated complete outcomes exercise the rational endpoint; no soundness conclusion is inferred from evaluation or mutation sensitivity alone."
+    },
+    {
+      "identifier": "transitive_kernel_axioms",
+      "evidence": "SourceRawCorrespondenceTest.lean:182-205,253-269,921-936; soundness-build.log:463-502,1086-1105",
+      "result": "Replayed #print axioms for binder coverage, declaration scans, admission endpoint, provenance projections and every public generic semantic endpoint report only propext, Classical.choice and Quot.sound (or subsets/no axioms). No sorryAx, native_decide reduction axiom or custom axiom occurs in these reported transitive dependencies."
+    }
+  ],
+  "validation": {
+    "command": "bash /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd LeanNCD.Semantics.Source.RawCorrespondence LeanNCD.Semantics.Source.RawSemanticConnection Semantics.SourceRawCorrespondenceTest",
+    "exit_code": 0,
+    "observed": "Build completed successfully (8523 jobs). Replayed axiom reports were inspected independently of the artifacts' claims.",
+    "log": "/Users/williammacready/.copilot/session-state/f0f50335-e56d-401a-a010-11d0d43c0404/files/soundness-build.log",
+    "not_run": "No new mutation cycles, full build, acceptance-matrix audit or review cascade; these were not needed for this source-contract soundness review.",
+    "source_changes_by_reviewer": false,
+    "spawned_agents": false,
+    "staged_or_committed": false
+  },
+  "limitations": [
+    "Semantic applicability is to the existing checked/global UID semantics with original-raw provenance, not to a separately specified independent raw denotation.",
+    "ActualValidatedResult is execution-indexed at its own result.input. It need not be the specific runSource result or use the stored source input buffers; the reached theorem correctly states equations and uniqueness relative to result.input. The prototype test's CertifiedExecution adds runSource equality for its concrete donors.",
+    "No global mint injectivity, parser/string correctness, floating-point/runtime fidelity or independent raw denotation is certified or requested. Those would be separate extensions, not defects in these scoped conclusions.",
+    "Zero-sized coordinate types legitimately make some coordinate quantification empty; this is not a claim that every admitted source has an inhabited valuation domain.",
+    "Generic collection/body/fiber results use total Store and the existing Semiring assumptions. Reached final-store existence, GlobalModels, all-defined equations and uniqueness additionally require the rational validated execution's complete outcome. Denotation equality is restricted to outputs.",
+    "This report evaluates the installed prototype, not the old main plan's status, revised-package readiness, artifact staging, or authorization to land."
+  ],
+  "budget": {
+    "turn_limit": 30,
+    "context_limit_approx_tokens": 250000,
+    "breach": false,
+    "review_tool_rounds_at_final_report": 19,
+    "context_note": "No observed context or turn-budget breach. Exact token peak was not metered; review used bounded source windows and no delegated context."
+  }
+}

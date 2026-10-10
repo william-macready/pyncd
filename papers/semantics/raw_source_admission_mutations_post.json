@@ -1,0 +1,86 @@
+[
+  {
+    "label": "M1 bypass original axis-name mint loop (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+    "old": "private def assignUIDMemo (p : TLProgram) : FreshM (HashMap String UID) := do\n  let mut memo : HashMap String UID := {}\n  for nm in p.axisNames do",
+    "new": "private def assignUIDMemo (p : TLProgram) : FreshM (HashMap String UID) := do\n  let mut memo : HashMap String UID := {}\n  for nm in ([] : List String) do",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/DSL/Pipeline/Structural.lean",
+      "unsolved goals"
+    ]
+  },
+  {
+    "label": "M3 reverse certified checked read order (proof-protected rejection)",
+    "task": "2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "      c.origin = r.origin) raw term.sourceReads\n\nprivate theorem admitAstTerm_fields",
+    "new": "      c.origin = r.origin) raw term.sourceReads.reverse\n\nprivate theorem admitAstTerm_fields",
+    "targets": [
+      "LeanNCD.Semantics.Source.Admission"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Admission.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "M4 asymmetric ordered oracle swaps distinct tensors (fixture-contrast)",
+    "task": "4",
+    "file": "test/Semantics/SourceRawCorrespondenceTest.lean",
+    "old": "    [(\"B\", 4, [1], ro 0 0 0 4), (\"A\", 3, [1, 2], ro 0 0 1 3),",
+    "new": "    [(\"A\", 3, [1, 2], ro 0 0 1 3), (\"B\", 4, [1], ro 0 0 0 4),",
+    "targets": [
+      "Semantics.SourceRawCorrespondenceTest"
+    ],
+    "expect": [
+      "error: test/Semantics/SourceRawCorrespondenceTest.lean",
+      "Expression"
+    ]
+  },
+  {
+    "label": "S6 use initial UID despite covering name memo (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+    "old": "def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=\n  match u.name with\n  | some nm => match memo[nm]? with | some v => { u with uid := v } | none => u\n  | none => u",
+    "new": "def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=\n  match u.name with\n  | some nm => match memo[nm]? with | some _ => u | none => u\n  | none => u",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/DSL/Pipeline/Structural.lean",
+      "unsolved goals"
+    ]
+  },
+  {
+    "label": "E4 reverse certified raw read coordinate witness (proof-protected rejection)",
+    "task": "4",
+    "file": "LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+    "old": "  obtain ⟨a, u, ha, hu, hm, hv⟩ := hs.coordinate v q\n",
+    "new": "  obtain ⟨a, u, ha, hu, hm, hv⟩ := hs.coordinate v q.rev\n",
+    "targets": [
+      "LeanNCD.Semantics.Source.RawSemanticConnection"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "E5 refusal max-to-sum donor contrast (fixture-contrast)",
+    "task": "4",
+    "file": "test/Semantics/SourceRawCorrespondenceTest.lean",
+    "old": "  .assign \"Missing\" [.free i] { body := ⟨[]⟩, nonlin := .pointwise .relu, agg := .max }] }\n",
+    "new": "  .assign \"Missing\" [.free i] { body := ⟨[]⟩, nonlin := .pointwise .relu, agg := .sum }] }\n",
+    "targets": [
+      "Semantics.SourceRawCorrespondenceTest"
+    ],
+    "expect": [
+      "error: test/Semantics/SourceRawCorrespondenceTest.lean",
+      "Expression"
+    ]
+  }
+]

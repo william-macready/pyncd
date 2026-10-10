@@ -1,0 +1,74 @@
+[
+  {
+    "label": "S1 CANDIDATE original declaration ID becomes tensor table index",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]",
+    "new": "      entries := entries ++ [⟨entries.length, name, ty, spec.role, shape⟩]",
+    "targets": ["Semantics.SourceRawCorrespondenceTest"],
+    "expect": ["error: LeanNCD/Semantics/Source/Adapter.lean"]
+  },
+  {
+    "label": "S2 CANDIDATE reverse declared axis accumulation",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "        shape := shape ++ [← sourceAxis c .declarations { origin with slot := some j } a]",
+    "new": "        shape := [← sourceAxis c .declarations { origin with slot := some j } a] ++ shape",
+    "targets": ["Semantics.SourceRawCorrespondenceTest"],
+    "expect": ["error: LeanNCD/Semantics/Source/Adapter.lean"]
+  },
+  {
+    "label": "S3 CANDIDATE drop first untyped declared axis",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes))",
+    "new": "  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes.drop 1))",
+    "targets": ["Semantics.SourceRawCorrespondenceTest"],
+    "expect": ["error: LeanNCD/Semantics/Source/Adapter.lean"]
+  },
+  {
+    "label": "S4 CANDIDATE reverse raw factor occurrence traversal",
+    "task": "3",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "        let reads ← term.factors.zipIdx.mapM fun (factor, j) =>\n          astRead source { termOrigin with factor := some j } factor\n        admitTerm source.context output.context termOrigin reads",
+    "new": "        let reads ← term.factors.reverse.zipIdx.mapM fun (factor, j) =>\n          astRead source { termOrigin with factor := some j } factor\n        admitTerm source.context output.context termOrigin reads",
+    "targets": ["Semantics.SourceRawCorrespondenceTest"],
+    "expect": ["error: LeanNCD/Semantics/Source/Admission.lean"]
+  },
+  {
+    "label": "S5 CANDIDATE drop raw factor occurrence",
+    "task": "3",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "        let reads ← term.factors.zipIdx.mapM fun (factor, j) =>\n          astRead source { termOrigin with factor := some j } factor\n        admitTerm source.context output.context termOrigin reads",
+    "new": "        let reads ← (term.factors.drop 1).zipIdx.mapM fun (factor, j) =>\n          astRead source { termOrigin with factor := some j } factor\n        admitTerm source.context output.context termOrigin reads",
+    "targets": ["Semantics.SourceRawCorrespondenceTest"],
+    "expect": ["error: LeanNCD/Semantics/Source/Admission.lean"]
+  },
+  {
+    "label": "S6 CANDIDATE use initial UID despite covering name memo",
+    "task": "1",
+    "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+    "old": "def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=\n  match u.name with\n  | some nm => match memo[nm]? with | some v => { u with uid := v } | none => u\n  | none => u",
+    "new": "def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=\n  match u.name with\n  | some nm => match memo[nm]? with | some _ => u | none => u\n  | none => u",
+    "targets": ["Semantics.SourceRawCorrespondenceTest"],
+    "expect": ["error: LeanNCD/DSL/Pipeline/Structural.lean"]
+  },
+  {
+    "label": "S7 CANDIDATE replace external role by defined role",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]",
+    "new": "      entries := entries ++ [⟨i, name, ty, .defined, shape⟩]",
+    "targets": ["Semantics.SourceRawCorrespondenceTest", "Semantics.SourceAdmissionAcceptanceTest"],
+    "expect": ["error: LeanNCD/Semantics/Source/Adapter.lean"]
+  },
+  {
+    "label": "S8 CANDIDATE classify typed f64 as f32",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "    | .f32 | .f64 => .ok (some (name, ty, axes))",
+    "new": "    | .f32 | .f64 => .ok (some (name, .f32, axes))",
+    "targets": ["Semantics.SourceRawCorrespondenceTest", "Semantics.SourceAdmissionAcceptanceTest"],
+    "expect": ["error: LeanNCD/Semantics/Source/Adapter.lean"]
+  }
+]

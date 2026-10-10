@@ -1,0 +1,72 @@
+[
+  {
+    "label": "S1 original declaration ID becomes tensor table index (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]",
+    "new": "      entries := entries ++ [⟨entries.length, name, ty, spec.role, shape⟩]",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Adapter.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "S2 reverse declared axis accumulation (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "        shape := shape ++ [← sourceAxis c .declarations { origin with slot := some j } a]",
+    "new": "        shape := [← sourceAxis c .declarations { origin with slot := some j } a] ++ shape",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Adapter.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "S3 drop first untyped declared axis (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes))",
+    "new": "  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes.drop 1))",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Adapter.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "S7 replace external role by defined role (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]",
+    "new": "      entries := entries ++ [⟨i, name, ty, .defined, shape⟩]",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Adapter.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "S8 classify typed f64 as f32 (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "    | .f32 | .f64 => .ok (some (name, ty, axes))",
+    "new": "    | .f32 | .f64 => .ok (some (name, .f32, axes))",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Adapter.lean",
+      "unsolved goals"
+    ]
+  }
+]

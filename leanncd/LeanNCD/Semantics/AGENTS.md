@@ -67,6 +67,18 @@ nested reduction interpretations under coordinate reindexing with transported
 read environments, without changing factor order or claiming float parity.
 `Semantics.SourceCorrespondenceTest` specializes the generic proofs to Nat and
 Rat, including reversed reduction bounds and empty/zero domains.
+`Source.RawCorrespondence` proves actual successful raw admission preserves
+original declarations and indexed statements/terms/factors/slots through the
+name-keyed resolver memo, including metadata, order and multiplicity.
+`Source.RawSemanticConnection` supplies certified raw-coordinate read/output
+witnesses and existing body/footprint/fiber/Program applicability.
+`admitRawSource_fields` / `admitRawSource_certified` require actual admission success;
+`admitRawSource_reached` requires an actual complete validated rational outcome.
+Equations and uniqueness are relative to `result.input`; denotation is output-restricted.
+No independent raw denotation, parser correctness, global mint injectivity,
+input-buffer certification or unconditional completion is claimed.
+`Semantics.SourceRawCorrespondenceTest` covers ten structural/semantic families,
+including parsed and asymmetric sourceInput donors, in default `Tests`.
 `Source.Observation` / `Source.Diagnostics` expose actual
 source-linked endpoints and canonical contribution data. `Source.NumericalProfile`
 checks the exact bounded-integer binary64 comparison profile;
@@ -98,8 +110,9 @@ nonlinear body primitives do not acquire sum-preservation laws.
 This is semantic validation, not an execution-backend replacement. Scalar sorts and
 carriers are open; operations are data, not assumed machine-float semiring laws.
 Contexts are typed valuation spaces with product extension, not named affine
-syntax. Read admission is explicit; general source checking beyond the finite
-read-only fragment, syntactic substitution, expression reindexing laws, raw writes,
+syntax. Read admission and the bounded raw-AST correspondence are explicit;
+general source checking beyond the finite read-only fragment, syntactic
+substitution, expression reindexing laws, raw writes,
 and full categorical/backend interpretation remain deferred.
 See the [implementation plan](../../../papers/semantics/expression_readiness_plan.md)
 and [authoring verification](../../../papers/semantics/expression_readiness_authoring_record.md)

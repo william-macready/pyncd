@@ -1,0 +1,45 @@
+{
+  "status": "CANDIDATES_ONLY_SCHEMA_AND_UNIQUE_TEXT_VALIDATED",
+  "entries": [
+    {
+      "label": "S1 CANDIDATE original declaration ID becomes tensor table index",
+      "old_occurrences": 1,
+      "cycle_executed": false
+    },
+    {
+      "label": "S2 CANDIDATE reverse declared axis accumulation",
+      "old_occurrences": 1,
+      "cycle_executed": false
+    },
+    {
+      "label": "S3 CANDIDATE drop first untyped declared axis",
+      "old_occurrences": 1,
+      "cycle_executed": false
+    },
+    {
+      "label": "S4 CANDIDATE reverse raw factor occurrence traversal",
+      "old_occurrences": 1,
+      "cycle_executed": false
+    },
+    {
+      "label": "S5 CANDIDATE drop raw factor occurrence",
+      "old_occurrences": 1,
+      "cycle_executed": false
+    },
+    {
+      "label": "S6 CANDIDATE use initial UID despite covering name memo",
+      "old_occurrences": 1,
+      "cycle_executed": false
+    },
+    {
+      "label": "S7 CANDIDATE replace external role by defined role",
+      "old_occurrences": 1,
+      "cycle_executed": false
+    },
+    {
+      "label": "S8 CANDIDATE classify typed f64 as f32",
+      "old_occurrences": 1,
+      "cycle_executed": false
+    }
+  ]
+}

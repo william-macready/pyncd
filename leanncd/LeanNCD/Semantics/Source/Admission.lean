@@ -3,6 +3,26 @@ import LeanNCD.Semantics.Source.Lowering
 
 namespace LeanNCD.Semantics.Source
 
+theorem mapM_success_forall2 {α β ε : Type} (f : α → Except ε β)
+    (xs : List α) (ys : List β) (h : xs.mapM f = .ok ys) :
+    List.Forall₂ (fun x y => f x = .ok y) xs ys := by
+  induction xs generalizing ys with
+  | nil =>
+    simp [List.mapM_nil, pure, Except.pure] at h
+    subst ys
+    exact .nil
+  | cons x xs ih =>
+    simp only [List.mapM_cons, bind, pure, Except.bind, Except.pure] at h
+    cases hx : f x with
+    | error e => simp [hx] at h
+    | ok y =>
+      cases ht : xs.mapM f with
+      | error e => simp [hx, ht] at h
+      | ok zs =>
+        have he : y :: zs = ys := by simpa [hx, ht] using h
+        subst ys
+        exact .cons hx (ih zs ht)
+
 def Slots.uids : Slots ctx sh → List UID
   | .nil => []
   | .cons r rest => r.uid :: rest.uids
@@ -137,6 +157,18 @@ def admitRead (c : Context) (read : RawRead σ) :
     (σ.signature read.tensor).axes read.indices
   pure ⟨⟨read.tensor, slots.val⟩, read.indices, slots.property, read.origin⟩
 
+theorem admitRead_fields (c : Context) (raw : RawRead σ) (checked : CheckedRead c σ)
+    (h : admitRead c raw = .ok checked) :
+    checked.read.tensor = raw.tensor ∧ checked.indices = raw.indices ∧
+      checked.origin = raw.origin := by
+  unfold admitRead at h
+  simp only [bind, pure, Except.bind, Except.pure] at h
+  split at h
+  · contradiction
+  · simp only [Except.ok.injEq] at h
+    subst checked
+    exact ⟨rfl, rfl, rfl⟩
+
 structure SupportPartition (source out : Context) (support : List UID) where
   bound : Shape
   exact : bound = source.axes.filter
@@ -239,6 +271,24 @@ def admitTerm (source out : Context) (origin : SourceOrigin) (raw : List (RawRea
 def Term.operands (term : Term source out σ) : List (Read term.partition.context.axes σ) :=
   List.ofFn (fun i => (term.reads i).read)
 
+theorem admitTerm_reads (source out : Context) (origin : SourceOrigin)
+    (raw : List (RawRead σ)) (term : Term source out σ)
+    (h : admitTerm source out origin raw = .ok term) :
+    term.origin = origin ∧
+      List.Forall₂ (fun r c => c.read.tensor = r.tensor ∧ c.indices = r.indices ∧
+        c.origin = r.origin) raw term.sourceReads := by
+  unfold admitTerm at h
+  simp only [bind, pure, Except.bind, Except.pure] at h
+  cases hg : raw.mapM (admitRead source) with
+  | error e => simp [hg] at h
+  | ok global =>
+    simp only [hg] at h
+    repeat' split at h
+    all_goals simp only [Except.ok.injEq, reduceCtorEq] at h
+    all_goals subst term
+    all_goals exact ⟨rfl, (mapM_success_forall2 _ _ _ hg).imp
+      (fun _ _ hc => admitRead_fields source _ _ hc)⟩
+
 theorem Term.read_projection (term : Term source out σ) (i : Fin term.sourceReads.length)
     (v : UIDVal source) :
     (term.reads i).slots.project
@@ -309,6 +359,98 @@ private def astRead (source : AdaptedSource) (origin : SourceOrigin) :
   | .iverson _ => .error (sourceError .read origin (.unsupported .iverson))
   | .unaryFn .. => .error (sourceError .read origin (.unsupported .unary))
 
+def BareReadSlots (es : List IdxExpr) (ids : List UID) : Prop :=
+  List.Forall₂ (fun (e, _) uid => ∃ a : AxisSpec, e = .axis a ∧ uid = a.uid)
+    es.zipIdx ids
+
+def BareOutputSlots (slots : List LHSSlot) (ids : List UID) : Prop :=
+  List.Forall₂ (fun (s, _) uid => ∃ a : AxisSpec, s = .free a ∧ uid = a.uid)
+    slots.zipIdx ids
+
+private theorem readIndices_fields (c : Context) (origin : SourceOrigin)
+    (es : List IdxExpr) (ids : List UID) (h : readIndices c origin es = .ok ids) :
+    BareReadSlots es ids := by
+  apply (mapM_success_forall2 _ _ _ h).imp
+  rintro ⟨e, i⟩ uid he
+  cases e <;> simp only [bind, pure, Except.bind, Except.pure, throw,
+    MonadExceptOf.throw, throwThe] at he
+  all_goals repeat' split at he
+  all_goals simp_all
+
+private theorem outputIndices_fields (c : Context) (origin : SourceOrigin)
+    (slots : List LHSSlot) (ids : List UID) (h : outputIndices c origin slots = .ok ids) :
+    BareOutputSlots slots ids := by
+  apply (mapM_success_forall2 _ _ _ h).imp
+  rintro ⟨s, i⟩ uid he
+  cases s <;> simp only [bind, pure, Except.bind, Except.pure, throw,
+    MonadExceptOf.throw, throwThe] at he
+  all_goals repeat' split at he
+  all_goals simp_all
+
+def FactorFields (source : AdaptedSource) (origin : SourceOrigin) (f : Factor)
+    (r : RawRead source.table.declarations) : Prop :=
+  ∃ name es, f = .read name es ∧ source.table.find name = some r.tensor ∧
+    (source.table.entry r.tensor).name = name ∧ BareReadSlots es r.indices ∧
+    r.origin = { origin with declaration := some (source.table.entry r.tensor).declaration }
+
+theorem astRead_fields (source : AdaptedSource) (origin : SourceOrigin)
+    (f : Factor) (r : RawRead source.table.declarations) (h : astRead source origin f = .ok r) :
+    FactorFields source origin f r := by
+  cases f with
+  | iverson _ => simp [astRead] at h
+  | unaryFn _ _ _ => simp [astRead] at h
+  | read name es =>
+    simp only [astRead, bind, pure, Except.bind, Except.pure] at h
+    cases ht : source.table.find name with
+    | none => simp [ht, throw, MonadExceptOf.throw, throwThe] at h
+    | some t =>
+      simp only [ht] at h
+      cases hi : readIndices source.context
+          { origin with declaration := some (source.table.entry t).declaration } es with
+      | error e => simp [hi] at h
+      | ok ids =>
+        simp only [hi, Except.ok.injEq] at h
+        subst r
+        exact ⟨name, es, rfl, ht, source.table.find_name name t ht,
+          readIndices_fields _ _ _ _ hi, rfl⟩
+
+def TermFields (source : AdaptedSource) (origin : SourceOrigin) (ast : ProdTerm)
+    (term : Term source.context out source.table.declarations) : Prop :=
+  term.origin = origin ∧ ∃ raw : List (RawRead source.table.declarations),
+    List.Forall₂ (fun (f, j) r => FactorFields source { origin with factor := some j } f r)
+      ast.factors.zipIdx raw ∧
+    List.Forall₂ (fun r c => c.read.tensor = r.tensor ∧ c.indices = r.indices ∧
+      c.origin = r.origin) raw term.sourceReads
+
+private theorem admitAstTerm_fields (source : AdaptedSource) (out : Context)
+    (origin : SourceOrigin) (ast : ProdTerm) (term : Term source.context out
+      source.table.declarations)
+    (h : (do
+      let reads ← ast.factors.zipIdx.mapM fun (factor, j) =>
+        astRead source { origin with factor := some j } factor
+      admitTerm source.context out origin reads) = .ok term) :
+    TermFields source origin ast term := by
+  simp only [bind, Except.bind] at h
+  cases hr : ast.factors.zipIdx.mapM (fun (factor, j) =>
+      astRead source { origin with factor := some j } factor) with
+  | error e => simp [hr] at h
+  | ok reads =>
+    simp only [hr] at h
+    obtain ⟨ho, hc⟩ := admitTerm_reads _ _ _ _ _ h
+    exact ⟨ho, reads, (mapM_success_forall2 _ _ _ hr).imp
+      (fun x r hx => astRead_fields source _ x.1 r hx), hc⟩
+
+theorem admitOutput_fields (source : Context) (dst : σ.Tensor) (ids : List UID)
+    (origin : SourceOrigin) (output : {o : AdmittedOutput source σ // o.tensor = dst})
+    (h : admitOutput source dst ids origin = .ok output) :
+    output.val.indices = ids ∧ output.val.origin = origin := by
+  unfold admitOutput at h
+  simp only [bind, pure, Except.bind, Except.pure] at h
+  repeat' split at h
+  all_goals simp only [Except.ok.injEq, reduceCtorEq] at h
+  all_goals subst output
+  all_goals exact ⟨rfl, rfl⟩
+
 structure AdmittedStatement (source : AdaptedSource) where
   original : Nat
   output : AdmittedOutput source.context source.table.declarations
@@ -343,6 +485,71 @@ def admitStatement (source : AdaptedSource) (original : Nat) :
     else
       throw (sourceError .output origin (.role .defined (source.table.entry dst).role))
 
+def StatementFields (source : AdaptedSource) (i : Nat) (ast : Stmt)
+    (statement : AdmittedStatement source) : Prop :=
+  ∃ name slots rhs,
+    ast = .assign name slots rhs ∧ statement.original = i ∧
+    rhs.agg = .sum ∧ rhs.nonlin = .identity ∧
+    source.table.find name = some statement.output.tensor ∧
+    (source.table.entry statement.output.tensor).name = name ∧
+    BareOutputSlots slots statement.output.indices ∧
+    statement.output.origin = {
+      side := .output, statement := some i,
+      declaration := some (source.table.entry statement.output.tensor).declaration } ∧
+    List.Forall₂ (fun (t, j) term => TermFields source {
+      side := .read, statement := some i, term := some j } t term)
+      rhs.body.terms.zipIdx statement.terms
+
+theorem admitStatement_fields (source : AdaptedSource) (i : Nat) (ast : Stmt)
+    (statement : AdmittedStatement source) (h : admitStatement source i ast = .ok statement) :
+    StatementFields source i ast statement := by
+  cases ast with
+  | scatter _ _ _ _ => simp [admitStatement] at h
+  | recurMorphism _ _ _ => simp [admitStatement] at h
+  | assign name slots rhs =>
+    simp only [admitStatement, bind, pure, Except.bind, Except.pure,
+      throw, MonadExceptOf.throw, throwThe] at h
+    split at h
+    · contradiction
+    · rename_i ha
+      split at h
+      · contradiction
+      · rename_i hn
+        cases ht : source.table.find name with
+        | none => simp [ht] at h
+        | some dst =>
+          simp only [ht] at h
+          split at h
+          · cases hi : outputIndices source.context
+                { side := .output, statement := some i,
+                  declaration := some (source.table.entry dst).declaration } slots with
+            | error e => simp [hi] at h
+            | ok ids =>
+              simp only [hi] at h
+              cases ho : admitOutput source.context dst ids
+                  { side := .output, statement := some i,
+                    declaration := some (source.table.entry dst).declaration } with
+              | error e => simp [ho] at h
+              | ok output =>
+                simp only [ho] at h
+                split at h
+                · contradiction
+                · rename_i terms hs
+                  simp only [Except.ok.injEq] at h
+                  subst statement
+                  obtain ⟨hid, horigin⟩ := admitOutput_fields _ _ _ _ _ ho
+                  refine ⟨name, slots, rhs, rfl, rfl, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                  · simpa using ha
+                  · simpa using hn
+                  · simpa only [output.property] using ht
+                  · simpa only [output.property] using source.table.find_name name dst ht
+                  · rw [hid]; exact outputIndices_fields _ _ _ _ hi
+                  · simpa only [output.property] using horigin
+                  · exact (mapM_success_forall2 _ _ _ hs).imp
+                      (fun x term hx => admitAstTerm_fields source output.val.context
+                        _ x.1 term hx)
+          · contradiction
+
 structure AdmittedSource where
   source : AdaptedSource
   statements : List (AdmittedStatement source)
@@ -357,5 +564,23 @@ def admitRawSource (raw : TLProgram) (specs : List TensorSpec) (inputs : List In
     Except SourceDiagnostic AdmittedSource := do
   let snapshot ← resolveSource raw specs inputs
   admitSource snapshot
+
+theorem admitSource_fields (snapshot : SourceSnapshot) (admitted : AdmittedSource)
+    (h : admitSource snapshot = .ok admitted) :
+    admitted.source.statements = snapshot.resolved.stmts.zipIdx.map (fun (s, i) => (i, s)) ∧
+    List.Forall₂ (fun (i, s) a => StatementFields admitted.source i s a)
+      admitted.source.statements admitted.statements := by
+  unfold admitSource at h
+  simp only [bind, pure, Except.bind, Except.pure] at h
+  cases ha : adaptSource snapshot with
+  | error e => simp [ha] at h
+  | ok source =>
+    cases hs : source.statements.mapM (fun (i, s) => admitStatement source i s) with
+    | error e => simp [ha, hs] at h
+    | ok statements =>
+      simp only [ha, hs, Except.ok.injEq] at h
+      subst admitted
+      exact ⟨adaptSource_statements _ _ ha, (mapM_success_forall2 _ _ _ hs).imp
+        (fun x s hx => admitStatement_fields source x.1 x.2 s hx)⟩
 
 end LeanNCD.Semantics.Source

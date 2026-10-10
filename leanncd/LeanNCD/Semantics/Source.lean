@@ -10,6 +10,8 @@ import LeanNCD.Semantics.Source.Permutation
 import LeanNCD.Semantics.Source.Fiber
 import LeanNCD.Semantics.Source.Correspondence
 import LeanNCD.Semantics.Source.ProgramCorrespondence
+import LeanNCD.Semantics.Source.RawCorrespondence
+import LeanNCD.Semantics.Source.RawSemanticConnection
 import LeanNCD.Semantics.Source.Diagnostics
 import LeanNCD.Semantics.Source.NumericalProfile
 import LeanNCD.Semantics.Source.NativeLegs
