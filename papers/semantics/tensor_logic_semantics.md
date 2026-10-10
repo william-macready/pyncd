@@ -1331,6 +1331,37 @@ $$
 
 is the core form of $F(H[:,l])[i]$.
 
+**Example: pointwise addition of two matrices.** There is no dedicated
+constructor; pointwise array addition is tabulated scalar addition. Let $A$ and
+$B$ be tensors of shape $(m,n)$. As an array value,
+
+$$
+\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{i\in[m],\,j\in[n]}\left(A[i,j]\oplus B[i,j]\right)
+$$
+
+has type $K^{[m]\times[n]}$. The bound variables $i$ and $j$ visit every
+coordinate; they are not summed out. Selection gives
+$\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{i\in[m],\,j\in[n]}(A[i,j]\oplus B[i,j]),(0,1))=A[0,1]\oplus B[0,1]$,
+and if $m=0$ or $n=0$ the result is the unique empty array. Every read is in
+bounds because the binders range over the declared extents. A bare tabulation
+cannot be a statement body, since a body must have scalar type
+([Section 13.5](#135-core-contribution-statements)), but it can be the argument
+of a registered array primitive.
+
+To define a tensor $C$ of the same shape, use one core statement per
+coordinate:
+
+$$
+\text{for }i\in[m],\,j\in[n]:
+\quad
+C[i,j]\textcolor{#9D75C4}{\mathrel{+}=}A[i,j]\oplus B[i,j].
+$$
+
+In surface notation this is `C[i,j] = A[i,j] + B[i,j]`. It has two additive
+terms and no contracted variable, so
+[Section 15.2](#152-statement-variables-and-term-local-contraction) elaborates
+it to exactly this statement, with one occurrence for each $(i,j)$.
+
 ### 13.4 Scope, freshness, and substitution
 
 All bound variables have identities distinct from the variables already
