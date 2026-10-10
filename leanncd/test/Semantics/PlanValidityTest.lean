@@ -198,4 +198,16 @@ example : targetUnpub.checkPlan = false := by decide
 example : halfThenInit.checkPlan = false := by decide
 example : lateEmptyInit.checkPlan = true := by decide
 
+/-! ### The empty command
+
+`emptyCmd` (PlanStepTest) is `plan` with `[]` inserted after the init: only
+`checkSingleton` rejects it, and the run is `stuck` at the empty command's
+index (`stepCommand`'s catch-all), so `singleton` is the guard that matters. -/
+
+#eval check "invalid-empty-command"
+  (verdict emptyCmd, outcomeRow (emptyCmd.runPlan ops (Start η0)))
+  ((false, ["singleton"]), ("stuck", 1, none, [some 0, some 0, some 0]))
+
+example : emptyCmd.checkPlan = false := by decide
+
 end LeanNCD.Semantics.PlanFixtures

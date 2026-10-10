@@ -166,4 +166,27 @@ def fused : taggedOut.Plan := unitPlan [[.initZero block, .acc group], [.pub blo
 #eval check "invalid-fused" (outcomeRow (fused.runPlan ops (Start η0)))
   ("stuck", 0, none, [none, none, none])
 
+/-! ### The empty command (`stepCommand` catch-all) -/
+
+/-- Kind and raw slot row (`none` slots read as `none`) of one step. -/
+def stepRow {P : Program Carrier declarations registry} : StepResult P → String × List (Option ℚ)
+  | .ok M => ("ok", [M (place ⟨(), point 0⟩), M (place ⟨(), point 1⟩), M (place ⟨(), point 2⟩)])
+  | .semFail _ => ("semFail", [])
+  | .stuck => ("stuck", [])
+
+/-- Memory after `plan`'s `initZero block` (the first step of `plan`). -/
+def initMem : Memory Carrier declarations :=
+  match plan.stepPlan ops 0 (Start η0) with | .ok M => M | _ => Start η0
+
+/-- Donor `plan` with the empty command `[]` inserted after the init. -/
+def emptyCmd : taggedOut.Plan := unitPlan [[.initZero block], [], [.acc group], [.pub block]]
+
+#eval check "step-empty-command-stuck"
+  (stepRow (plan.stepCommand ops 1 initMem []), outcomeRow (emptyCmd.runPlan ops (Start η0)))
+  (("stuck", []), ("stuck", 1, none, [some 0, some 0, some 0]))
+-- Accept-neighbours: a one-element no-op command steps; the plan without `[]` completes.
+#eval check "step-empty-command-neighbours"
+  (stepRow (plan.stepCommand ops 1 initMem [.initZero []]), outcomeRow (plan.runPlan ops (Start η0)))
+  (("ok", [some 0, some 0, some 0]), ("done", 3, none, [some 0, some 14, some 0]))
+
 end LeanNCD.Semantics.PlanFixtures
