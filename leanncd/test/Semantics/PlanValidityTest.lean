@@ -198,6 +198,39 @@ example : targetUnpub.checkPlan = false := by decide
 example : halfThenInit.checkPlan = false := by decide
 example : lateEmptyInit.checkPlan = true := by decide
 
+/-! ### Initialisation of a published address (`checkInit`, not-published half)
+
+`reinitMid` shows the consumed-target half. Here the re-initialised member is
+`addr 0`, an empty-fiber address no occurrence targets, so only the
+not-published half can reject: it is already published, and the late
+`initZero` writes 0 over 0 (the run ends as `plan`'s does). -/
+
+/-- Re-initialise the published empty-fiber address 0 after the publication. -/
+def reinitPub : taggedOut.Plan :=
+  unitPlan [[.initZero block], [.acc group], [.pub block], [.initZero [addr 0]]]
+
+/-- Accept-neighbour: the same `initZero [addr 0]` placed before the publication. -/
+def reinitBeforePub : taggedOut.Plan :=
+  unitPlan [[.initZero block], [.acc group], [.initZero [addr 0]], [.pub block]]
+
+#eval check "invalid-reinit-after-publish"
+  (verdict reinitPub, outcomeRow (reinitPub.runPlan ops (Start η0)))
+  ((false, ["initFresh@3"]), ("done", 4, none, [some 0, some 14, some 0]))
+#eval check "valid-reinit-before-publish"
+  (verdict reinitBeforePub, outcomeRow (reinitBeforePub.runPlan ops (Start η0)))
+  ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
+
+-- The two halves of `checkInit` at pc 3 for `[addr 0]`, read separately: the
+-- consumed-target half holds (no consumed occurrence targets address 0), so
+-- the not-published half (address 0 is published) alone causes the rejection.
+#eval check "invalid-reinit-after-publish-halves"
+  (decide (reinitPub.Pub 3 (addr 0).addr),
+    (reinitPub.consList 3).all fun y => decide (y.target ≠ addr 0))
+  (true, true)
+
+example : reinitPub.checkPlan = false := by decide
+example : reinitBeforePub.checkPlan = true := by decide
+
 /-! ### The empty command
 
 `emptyCmd` (PlanStepTest) is `plan` with `[]` inserted after the init: only
