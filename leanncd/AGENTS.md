@@ -85,7 +85,8 @@ cover every manifest entry; file existence and old-string uniqueness are checked
 selected by `--task` and/or label prefixes (all entries without filters). `--check` performs those
 checks without building and reports when entries outside the selection were not filesystem-validated,
 so post-code manifests can be checked task by task before later tasks' code exists. An empty selection
-is an error; the script's header documents the format.
+is an error. Optional `task` fields must be strings and match `--task` exactly; an unknown task ID
+reports the manifest's available IDs (or none). The script's header documents the format.
 
 The controlling session should invoke mutation cycles directly rather than delegating the shell
 command to a subagent: subagent permission scope is loaded from the creator session's worktree,

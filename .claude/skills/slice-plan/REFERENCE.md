@@ -335,7 +335,9 @@ author's observed failure, so a mutation that breaks the build for the wrong rea
 it at authoring time with `--check` (global schema and duplicate labels, selected files present and
 every selected old-string unique, with no build). Without filters all entries are checked;
 `--check --task N` or label prefixes check only selected filesystem state, so later tasks' missing
-post-code does not block an earlier task. An empty selection is an error. Each task then says
+post-code does not block an earlier task. Optional `task` fields must be strings; `--task` matches
+them exactly and reports available task IDs when an unknown ID is supplied. An empty selection
+is an error. Each task then says
 `mutation-manifest.sh --task N`, and `--out` gives the close-out its results table.
 
 **Keep the live plan separate from the record.** F32-A's and F32-B's plans are ~2,150 lines each.

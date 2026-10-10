@@ -12,6 +12,7 @@
 # --check        validate global schema plus selected files and old-strings (EXACTLY ONCE).
 #                No build runs. Use it at plan-authoring time.
 # --task <id>    select only entries whose "task" field equals <id>, for checking or running
+#                IDs are exact strings; unknown IDs report available tasks
 # --out <file>   also write the summary table to <file> (markdown)
 # label-prefix   select only entries whose label starts with one of these
 #
@@ -21,7 +22,7 @@
 #
 # Manifest: a JSON array of objects —
 #   { "label":   "M1 (payload bits constant 0)",          required, unique
-#     "task":    "2",                                      optional
+#     "task":    "2",                                      optional; must be a string if present
 #     "file":    "LeanNCD/Eval/Plan/Dense.lean",           required, relative to <leanncd-dir>
 #     "old":     "exact text, may span lines",             required, must occur exactly once
 #     "new":     "replacement text",                       required
@@ -75,6 +76,8 @@ for i, e in enumerate(entries):
     if not isinstance(e, dict): problems.append(f"{where}: not an object"); continue
     for k in ("label", "file", "old", "new"):
         if not isinstance(e.get(k), str): problems.append(f"{where}: '{k}' must be a string")
+    if "task" in e and not isinstance(e["task"], str):
+        problems.append(f"{where}: 'task' must be a string")
     if not (isinstance(e.get("targets"), list) and e["targets"] and all(isinstance(t, str) for t in e["targets"])):
         problems.append(f"{where}: 'targets' must be a non-empty list of strings")
     if "expect" in e and not (isinstance(e["expect"], list) and all(isinstance(s, str) for s in e["expect"])):
@@ -86,9 +89,15 @@ if problems:
     print("\n".join(problems), file=sys.stderr); sys.exit(125)
 
 selected = [(i, e) for i, e in enumerate(entries)
-            if (task is None or str(e.get("task")) == task)
+            if (task is None or e.get("task") == task)
             and (not prefixes or any(e["label"].startswith(p) for p in prefixes))]
-if not selected: die("no manifest entries selected")
+if not selected:
+    if task is not None:
+        available = sorted({e["task"] for e in entries if "task" in e})
+        if task not in available:
+            hint = ", ".join(repr(t) for t in available) or "(none)"
+            die(f"no manifest entries selected: unknown task {task!r}; available tasks: {hint}")
+    die("no manifest entries selected")
 
 for i, e in selected:
     where = f"entry {i} ({e['label']})"
