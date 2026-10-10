@@ -5,3 +5,4 @@ import LeanNCD.Semantics.Soundness
 import LeanNCD.Semantics.Progress
 import LeanNCD.Semantics.RationalReference
 import LeanNCD.Semantics.Source
+import LeanNCD.Semantics.Plan

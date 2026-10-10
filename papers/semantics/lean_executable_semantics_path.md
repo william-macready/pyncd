@@ -30,6 +30,11 @@
     - [Differential debugging](#differential-debugging)
     - [What the source layer does not claim](#what-the-source-layer-does-not-claim)
   - [4.8 Existing validation and its limits](#48-existing-validation-and-its-limits)
+  - [4.9 Part V slice 1: the singleton-command plan layer](#49-part-v-slice-1-the-singleton-command-plan-layer)
+    - [Plan modules](#plan-modules)
+    - [Plan-layer theorems](#plan-layer-theorems)
+    - [Slice-1 profile, fixtures and mutations](#slice-1-profile-fixtures-and-mutations)
+    - [What slice 1 does not do](#what-slice-1-does-not-do)
 - [5. Remaining work, in dependency order](#5-remaining-work-in-dependency-order)
   - [5.1 Beyond the bounded source fragment](#51-beyond-the-bounded-source-fragment)
   - [5.2 Later: compiled and numerical refinement](#52-later-compiled-and-numerical-refinement)
@@ -44,7 +49,8 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-09, Lean as of `d8ce83ea`: bounded source correspondence
+**Snapshot: 2026-10-10, Lean as of `b3028e57`: the Part V slice-1 plan layer
+(`Semantics/Plan/`), on top of bounded source correspondence
 (`6a90baff`), nested-reduction reindexing (`705280cd`), successful-permutation
 agreement (`ca642b3d`), and raw-source admission, on top of the verified
 executor (`6026f0b`).** The expression/readiness,
@@ -52,6 +58,10 @@ collection/model, reference-machine soundness, and coordinate-ranks/finite-measu
 developments have landed, including maximal-run correspondence. The computable
 validated reference executor and its exact-rational fixtures are now verified;
 both final whole-branch code-review lenses are clean.
+The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer))
+is in the snapshot above: eight modules under `Semantics/Plan/` proving Lemma 31.2,
+Theorem 31.3 and Lemma 32.1 for the slice-1 profile, with 96 fixtures and a 20-cycle mutation
+manifest (20 of 20 passed).
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
 [`LeanNCD`](../../leanncd/LeanNCD.lean). They are a semantic validation layer,
@@ -97,7 +107,9 @@ computable state/step selection + validated reference executor    LANDED
                          |
 bounded source correspondence + differential debugging             LANDED
                          |
-compiled storage/backend refinement                              LATER
+Part V slice-1 plan layer (singleton, dense)                      LANDED
+                         |
+general compiled storage/backend refinement                      LATER
 ```
 
 The generic executor still accepts directly constructed admitted core programs.
@@ -773,7 +785,9 @@ solver.
   may differ.
 - **No dense/backend representation claims.** Stores remain function-valued.
   The separate bounded source layer adds correspondence and scalar diagnostic
-  rendering, not dense-storage simulation or Part V backend refinement.
+  rendering, not dense-storage simulation. The Part V slice-1 plan layer
+  ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)) adds dense-storage
+  simulation for singleton commands; general backend refinement remains open.
 - **A parked runtime gap.** The generic executor retains heterogeneous carriers,
   but the runtime fixtures do not cover heterogeneous non-additive inputs.
 
@@ -956,7 +970,9 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   unconditional successful execution.
 - **No proof for the oracle or the comparison.** There is no theorem about
   `compareSource`, the numerical profile, or the native legs, and no backend
-  refinement result. No Part V result is formalized.
+  refinement result. The only formalized Part V results are the slice-1 plan layer's
+  ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)), which does not
+  touch the source layer or the oracle.
 - **No floating-point correctness.** f32 and f64 are metadata in the exact
   semantics; the bit comparison holds only on the bounded-integer, f64-declared,
   single-definition profile.
@@ -979,6 +995,7 @@ mutation controls, and unsupported claims:
 | Coordinate ranks/termination/correspondence | [RankedMachineTest](../../leanncd/test/Semantics/RankedMachineTest.lean) | [Coordinate-ranks/finite-measure execution](coordinate_ranks_finite_measure_execution_record.md) |
 | Computable validated reference | [ExecutableReferenceTest](../../leanncd/test/Semantics/ExecutableReferenceTest.lean) | [Executor implementation execution](computable_reference_executor_record.md#8-implementation-execution-2026-10-08) |
 | Bounded source correspondence and differential debugging | [SourceAdmissionTest](../../leanncd/test/Semantics/SourceAdmissionTest.lean), [SourceBindingTest](../../leanncd/test/Semantics/SourceBindingTest.lean), [SourceCorrespondenceTest](../../leanncd/test/Semantics/SourceCorrespondenceTest.lean), [SourceProgramTest](../../leanncd/test/Semantics/SourceProgramTest.lean), [SourceOracleTest](../../leanncd/test/Semantics/SourceOracleTest.lean), [SourceDiagnosticTest](../../leanncd/test/Semantics/SourceDiagnosticTest.lean), [SourceDifferentialTest](../../leanncd/test/Semantics/SourceDifferentialTest.lean), [SourceRawCorrespondenceTest](../../leanncd/test/Semantics/SourceRawCorrespondenceTest.lean), [SourceCorrespondenceTransportTest](../../leanncd/test/Semantics/SourceCorrespondenceTransportTest.lean), [SourceProgramIdentityTest](../../leanncd/test/Semantics/SourceProgramIdentityTest.lean) | [Source correspondence record](source_correspondence_record.md), [raw-source/admission record](raw_source_admission_record.md) |
+| Part V slice-1 plan layer | [PlanBatchTest](../../leanncd/test/Semantics/PlanBatchTest.lean), [PlanMemoryTest](../../leanncd/test/Semantics/PlanMemoryTest.lean), [PlanStepTest](../../leanncd/test/Semantics/PlanStepTest.lean), [PlanSimulationTest](../../leanncd/test/Semantics/PlanSimulationTest.lean), [PlanValidityTest](../../leanncd/test/Semantics/PlanValidityTest.lean), [PlanRunTest](../../leanncd/test/Semantics/PlanRunTest.lean), [PlanCorrectnessTest](../../leanncd/test/Semantics/PlanCorrectnessTest.lean), shared [PlanFixtures](../../leanncd/test/Semantics/PlanFixtures.lean) | [Plan-layer mutation results](plan_layer_mutation_results.md) |
 
 All are discovered by the default `Tests` target. Existing fixtures cover
 strict zero multiplication, empty binders, whole-array selection obligations,
@@ -1037,6 +1054,70 @@ The earlier [semantic-core spike](tensor_logic_semantic_core_spike_record.md)
 and `ContractTest` supply a narrow signed-coordinate `StMat` seam, not a full
 categorical interpretation or general source correspondence.
 
+### 4.9 Part V slice 1: the singleton-command plan layer
+
+`LeanNCD.Semantics.Plan` (imported by `LeanNCD.Semantics`) is the first Lean model of
+[Part V](tensor_logic_semantics.md#part-v-compilation-and-refinement): a reference plan
+`Program.Plan` of annotated commands over a dense memory, a computable checker for
+Definition 31.1 in its slice-1 form, and proofs of Lemma 31.2, Theorem 31.3 and Lemma 32.1 for
+that profile. It is not the checked evaluation backend `Eval/Plan` (`CheckedEvalPlan`); no theorem
+connects the two.
+
+#### Plan modules
+
+The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/Plan/), in import order:
+
+- `Plan/Syntax`: annotations (`initZero`, `acc`, `pub`), commands, the prefix `prefixAnn` and the
+  schedule views `accFlat`/`pubFlat`.
+- `Plan/Batch`: `accumulateBatch` and `publishBlock` at the logical level; Lemma 32.1 without any
+  memory model.
+- `Plan/Memory`: dense memory, the layout view `SlotView`, the read view `readPub`, `Decode`, the reference post-state
+  `refState`, and the relation `R` with `R_start`.
+- `Plan/Step`: the step kernels, `StepResult`, `PlanOutcome`, validated `Start`, and the run
+  `runPlan`/`runFrom`.
+- `Plan/Simulation`: per-annotation side conditions (`InitOK`, `AccOK`, `PubOK`, `AnnOK`) and
+  one-step simulation `step_R`, `step_failed`.
+- `Plan/Validity`: `Valid` (Definition 31.1, slice-1 form), the computable `checkPlan` and
+  `checkPlan_sound`.
+- `Plan/Run`: progress `step_not_stuck` and the multi-step run lemma `run_R`/`runPlan_R`.
+- `Plan/Correctness`: terminal adequacy and compiled correctness.
+
+#### Plan-layer theorems
+
+| Theorem | Mathematical conclusion | Spec result |
+| --- | --- | --- |
+| `batch_execution`, `batch_execution_perm`, `accumulateBatch_accumulators`, `accumulateBatch_pending`, `accumulateBatch_published` | A duplicate-free, pending, ready, successful group is a reference execution ending at accumulator $\alpha\oplus\Delta_G$ and remaining set $U\setminus G$, in any enumeration order | Lemma 32.1 |
+| `R_start` | The initial memory is R-related to the initial reference state | Section 31.2 (initialization) |
+| `step_R` | From R and `Conf = refState pc`, a successful singleton step re-establishes R at `pc + 1` | Section 31.2 (step simulation) |
+| `step_failed` | A failed step is matched by one `undefined` event for the same occurrence from the related state | Section 31.3 (failure matching) |
+| `checkPlan_sound` | An accepted plan satisfies `Valid` | Definition 31.1 |
+| `step_not_stuck`, `runPlan_not_stuck` | A valid plan's run never reports `stuck` | Section 31.3 (progress) |
+| `run_R`, `runPlan_R` | The whole run ends `done m` with R and a reference execution, or fails with a matched failure | Sections 31.2-31.3 |
+| `terminal_adequacy`, `complete_of_refState` | At `done m M'` the reference state is complete and `Decode` gives its outputs | Lemma 31.2 |
+| `done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model` | `done` gives the unique model and the denotation; `failed` gives no model; the run is `done` iff a model exists | Theorem 31.3 |
+
+#### Slice-1 profile, fixtures and mutations
+
+The profile is: singleton commands, dense non-reused storage (one slot per materialised address,
+never reused), no retirement, error-free kernels. Soundness rests on `checkPlan`: the run does not
+detect an invalid plan. The spec's restatements are the paragraphs headed "As formalized (slice-1
+profile ...)" in Sections 29.3, 30.2, 30.4, 31.1-31.4 and 32.1 of the
+[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 96
+fixtures; the mutation manifest ran 20 mutation cycles, of which 3 are labelled equivalent.
+
+#### What slice 1 does not do
+
+- Non-singleton (fused) commands.
+- Fixtures over more than one sort, numeric kernels other than the exact reference, floating point.
+- Buffer reuse, aliasing, retirement, and liveness for scans.
+- Implementation errors (allocation failure, kernel errors) and their matching.
+- Checker completeness (`Valid` implies `checkPlan = true`).
+- A proof that per-step `AccOK`/`PubOK` imply the Nodup halves of conditions 1 and 2 (conjecture).
+- Comparing the failure occurrence or failure snapshot between the plan and the reference executor.
+- Dropping the redundant condition-1 covering clause of `Valid`. It follows from the condition-2
+  covering clause and condition 4 (`accFlat_complete`), but `complete_of_refState` consumes it
+  directly, so dropping it means rerouting that proof.
+
 ## 5. Remaining work, in dependency order
 
 ### 5.1 Beyond the bounded source fragment
@@ -1072,6 +1153,13 @@ logical-to-physical representations, kernel contracts, simulation/progress,
 batching, and buffer liveness for scans. Rank alone never justifies overwriting
 a still-needed value. A checked production plan is not automatically a
 certificate for these new semantics.
+
+Slice 1 of the plan layer has landed
+([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)): singleton commands over
+dense non-reused storage, with Lemma 31.2, Theorem 31.3 and Lemma 32.1 proved for that profile.
+Not yet done: fused (non-singleton) commands; buffer reuse, aliasing, retirement and scan liveness;
+implementation errors and their matching; checker completeness; multi-sort and non-exact numeric
+kernel fixtures; and the Nodup conjecture for conditions 1 and 2.
 
 Floating-point correspondence needs its own ordered-reduction or numerical
 correctness criterion. Exact commutative pushforward laws do not imply bitwise
