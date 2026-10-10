@@ -1,0 +1,1560 @@
+ℹ [8483/8597] Replayed LeanNCD.Semantics.Readiness
+info: LeanNCD/Semantics/Readiness.lean:93:0: 'LeanNCD.Semantics.evalWith_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:94:0: 'LeanNCD.Semantics.interpret_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:95:0: 'LeanNCD.Semantics.ready_consistent' depends on axioms: [propext, Quot.sound]
+⚠ [8484/8597] Replayed LeanNCD.Semantics.Machine
+warning: LeanNCD/Semantics/Machine.lean:85:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.finalStore_published`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+ℹ [8486/8597] Replayed LeanNCD.Semantics.Measure
+info: LeanNCD/Semantics/Measure.lean:144:0: 'LeanNCD.Semantics.Program.initial_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:145:0: 'LeanNCD.Semantics.Program.consume_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:146:0: 'LeanNCD.Semantics.Program.publish_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:147:0: 'LeanNCD.Semantics.Program.step_wellFounded' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:148:0: 'LeanNCD.Semantics.Program.trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:149:0: 'LeanNCD.Semantics.Program.running_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:150:0: 'LeanNCD.Semantics.Program.failed_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:151:0: 'LeanNCD.Semantics.Program.no_infinite_chain' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [8487/8597] Replayed LeanNCD.Semantics.Invariants
+warning: LeanNCD/Semantics/Invariants.lean:99:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.publish_extends`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+ℹ [8488/8597] Replayed LeanNCD.Semantics.Soundness
+info: LeanNCD/Semantics/Soundness.lean:112:0: 'LeanNCD.Semantics.Program.reachable_invariant' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:113:0: 'LeanNCD.Semantics.Program.successful_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:114:0: 'LeanNCD.Semantics.Program.candidate_preserved' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:115:0: 'LeanNCD.Semantics.Program.successful_unique' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:116:0: 'LeanNCD.Semantics.Program.successful_admInput' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:117:0: 'LeanNCD.Semantics.Program.successful_denotation' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:118:0: 'LeanNCD.Semantics.Program.failed_no_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8489/8597] Replayed LeanNCD.Semantics.Progress
+info: LeanNCD/Semantics/Progress.lean:182:0: 'LeanNCD.Semantics.Program.ranked_progress' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:183:0: 'LeanNCD.Semantics.Program.ranked_not_blocked' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:184:0: 'LeanNCD.Semantics.Program.terminal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:185:0: 'LeanNCD.Semantics.Program.maximal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:186:0: 'LeanNCD.Semantics.Program.maximal_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:187:0: 'LeanNCD.Semantics.Program.model_maximal_success' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:188:0: 'LeanNCD.Semantics.Program.no_model_maximal_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:189:0: 'LeanNCD.Semantics.Program.initialization_iff_singleton' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:190:0: 'LeanNCD.Semantics.Program.successful_schedules_agree' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [8490/8597] Replayed LeanNCD.Semantics.ExecutableState
+warning: LeanNCD/Semantics/ExecutableState.lean:51:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_error`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:83:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.publish_agrees`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:87:8: Used `tac1 <;> tac2` where `(tac1; tac2)` would suffice
+
+Note: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`
+warning: LeanNCD/Semantics/ExecutableState.lean:94:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.initialBudget_agrees`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [8491/8597] Replayed LeanNCD.Semantics.ExecutableSelection
+warning: LeanNCD/Semantics/ExecutableSelection.lean:69:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.scan_none`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ExecutableSelection.lean:120:0: 'LeanNCD.Semantics.Program.Executor.select_none_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [8492/8597] Replayed LeanNCD.Semantics.ReferenceExecutor
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:10:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_accepts`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:19:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_preserves`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ReferenceExecutor.lean:187:0: 'LeanNCD.Semantics.Program.Executor.run_not_exhausted' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:188:0: 'LeanNCD.Semantics.Program.Executor.run_ranked_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:189:0: 'LeanNCD.Semantics.Program.Executor.result_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:190:0: 'LeanNCD.Semantics.Program.Executor.result_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8497/8597] Replayed LeanNCD.Semantics.Completeness
+info: LeanNCD/Semantics/Completeness.lean:184:0: 'LeanNCD.Semantics.sequence_some_iff' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:185:0: 'LeanNCD.Semantics.tab_complete' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:186:0: 'LeanNCD.Semantics.foldValues_defined_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:187:0: 'LeanNCD.Semantics.reduce_defined_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:188:0: 'LeanNCD.Semantics.reduce_empty' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:189:0: 'LeanNCD.Semantics.foldValues_some_map_sum' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:190:0: 'LeanNCD.Semantics.reduce_sum' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:191:0: 'LeanNCD.Semantics.interpret_reduce_sum' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:192:0: 'LeanNCD.Semantics.at_some_iff' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:193:0: 'LeanNCD.Semantics.registry_apply_some_iff' depends on axioms: [propext]
+info: LeanNCD/Semantics/Completeness.lean:194:0: 'LeanNCD.Semantics.prim_some_iff' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:195:0: 'LeanNCD.Semantics.ready_complete_extension' depends on axioms: [propext, Quot.sound]
+⚠ [8509/8597] Replayed LeanNCD.Semantics.Source.Adapter
+warning: LeanNCD/Semantics/Source/Adapter.lean:125:58: This simp argument is unused:
+  pure
+
+Hint: Omit it from the simp argument list.
+  simp [resolveSource, EStateM.bind, EStateM.run, bind, p̵u̵r̵e̵,̵ ̵ha] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:262:2: 'all_goals
+  try { contradiction
+  }' tactic does nothing
+
+Note: This linter can be disabled with `set_option linter.unusedTactic false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:296:59: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, Except.bind, Except.pure, t̵h̵r̵o̵w̵,̵
+  ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵MonadExceptOf.throw, throwThe] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:297:12: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, Except.bind, Except.pure, throw, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵throwThe] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:297:33: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, Except.bind, Except.pure, throw, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵]̵M̲o̲n̲a̲d̲E̲x̲c̲e̲p̲t̲O̲f̲.̲t̲h̲r̲o̲w̲]̲ at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:555:11: Local variable 'unit' resembles constructor 'PUnit.unit' - write '.unit' (with a dot) or 'PUnit.unit' to use the constructor.
+
+Note: This linter can be disabled with `set_option linter.constructorNameAsVariable false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:490:23: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [b̵i̵n̵d̵,̵ ̵Except.bind] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:490:29: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:496:21: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [b̵i̵n̵d̵,̵ ̵pure, Except.bind, Except.pure] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:496:33: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵,̵ ̵Except.pure] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:510:22: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw,̵ ̵t̵h̵r̵o̵w̵The, MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:510:29: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [throw, t̵h̵r̵o̵w̵T̵h̵e̵,̵ ̵MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:510:39: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:510:60: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:510:66: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:538:30: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw,̵ ̵t̵h̵r̵o̵w̵The, MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:538:37: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, t̵h̵r̵o̵w̵T̵h̵e̵,̵ ̵MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:538:47: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, throwThe, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:538:68: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, throwThe, MonadExceptOf.throw, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:538:74: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, throwThe, MonadExceptOf.throw, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:540:35: This simp argument is unused:
+  pure
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, p̵u̵r̵e̵,̵ ̵Except.pure, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:540:41: This simp argument is unused:
+  Except.pure
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, pure, E̵x̵c̵e̵p̵t̵.̵p̵u̵r̵e̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:540:54: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, pure, Except.pure, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:540:60: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, pure, Except.pure, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:542:28: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw,̵ ̵t̵h̵r̵o̵w̵The, MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:542:35: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [throw, t̵h̵r̵o̵w̵T̵h̵e̵,̵ ̵MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:542:45: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:542:66: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:542:72: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:33: This simp argument is unused:
+  pure
+
+Hint: Omit it from the simp argument list.
+  simp only [p̵u̵r̵e̵,̵ ̵Except.pure, bind, Except.bind, Except.ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:39: This simp argument is unused:
+  Except.pure
+
+Hint: Omit it from the simp argument list.
+  simp only [pure, E̵x̵c̵e̵p̵t̵.̵p̵u̵r̵e̵,̵ ̵bind, Except.bind, Except.ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:52: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [pure, Except.pure, b̵i̵n̵d̵,̵ ̵Except.bind, Except.ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:58: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [pure, Except.pure, bind, Except.b̵i̵n̵d̵,̵ ̵E̵x̵c̵e̵p̵t̵.̵ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:550:17: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [b̵i̵n̵d̵,̵ ̵Except.bind] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:550:23: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+⚠ [8510/8597] Replayed LeanNCD.Semantics.Source.Admission
+warning: LeanNCD/Semantics/Source/Admission.lean:405:24: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [ht, t̵h̵r̵o̵w̵,̵ ̵MonadExceptOf.throw, throwThe] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Admission.lean:405:31: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵throwThe] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Admission.lean:405:52: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, MonadExceptOf.throw,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+ℹ [8519/8597] Replayed LeanNCD.Semantics.Source.RawCorrespondence
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:692:0: 'LeanNCD.assignUIDs_mapUID' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:693:0: 'LeanNCD.Semantics.Source.resolveSource_mapUID' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:694:0: 'LeanNCD.Semantics.Source.mapM_success_forall2' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:695:0: 'LeanNCD.Semantics.Source.admitRead_fields' depends on axioms: [propext]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:696:0: 'LeanNCD.Semantics.Source.admitTerm_reads' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:697:0: 'LeanNCD.Semantics.Source.TensorTable.find_name' depends on axioms: [propext]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:698:0: 'LeanNCD.Semantics.Source.astRead_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:699:0: 'LeanNCD.Semantics.Source.admitOutput_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:700:0: 'LeanNCD.Semantics.Source.admitStatement_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:701:0: 'LeanNCD.Semantics.Source.adaptSource_statements' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:702:0: 'LeanNCD.Semantics.Source.admitSource_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:703:0: 'LeanNCD.Semantics.Source.mapUID_axis_metadata' does not depend on any axioms
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:704:0: 'LeanNCD.Semantics.Source.admitRawSource_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:705:0: 'LeanNCD.Semantics.Source.TermFields.factor_count' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:706:0: 'LeanNCD.Semantics.Source.StatementFields.term_count' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8525/8597] Replayed Semantics.SourceRawCorrespondenceTest
+info: test/Semantics/SourceRawCorrespondenceTest.lean:54:0: some [(0,
+  "Y",
+  5,
+  [1],
+  [[("B",
+     4,
+     [1],
+     { side := LeanNCD.Semantics.Source.SourceSide.read,
+       declaration := some 4,
+       statement := some 0,
+       term := some 0,
+       factor := some 0,
+       slot := none }),
+    ("A",
+     3,
+     [1, 2],
+     { side := LeanNCD.Semantics.Source.SourceSide.read,
+       declaration := some 3,
+       statement := some 0,
+       term := some 0,
+       factor := some 1,
+       slot := none }),
+    ("B",
+     4,
+     [1],
+     { side := LeanNCD.Semantics.Source.SourceSide.read,
+       declaration := some 4,
+       statement := some 0,
+       term := some 0,
+       factor := some 2,
+       slot := none })],
+   [("A",
+     3,
+     [1, 2],
+     { side := LeanNCD.Semantics.Source.SourceSide.read,
+       declaration := some 3,
+       statement := some 0,
+       term := some 1,
+       factor := some 0,
+       slot := none })],
+   []]),
+ (1, "Diagonal", 7, [1, 1], [[]]),
+ (2, "Y", 5, [1], [])]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:67:0: true
+info: test/Semantics/SourceRawCorrespondenceTest.lean:72:0: some [(0,
+  "Y",
+  2,
+  [1],
+  [[("X",
+     1,
+     [1],
+     { side := LeanNCD.Semantics.Source.SourceSide.read,
+       declaration := some 1,
+       statement := some 0,
+       term := some 0,
+       factor := some 0,
+       slot := none })]])]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:80:0: true
+info: test/Semantics/SourceRawCorrespondenceTest.lean:90:0: true
+info: test/Semantics/SourceRawCorrespondenceTest.lean:103:0: true
+info: test/Semantics/SourceRawCorrespondenceTest.lean:126:0: ("ErrorOrder.diagnostics",
+ [some (LeanNCD.Semantics.Source.SourceStage.statement,
+   { side := LeanNCD.Semantics.Source.SourceSide.output,
+     declaration := none,
+     statement := some 0,
+     term := none,
+     factor := none,
+     slot := none },
+   "LeanNCD.Semantics.Source.SourceCause.unsupported (LeanNCD.Semantics.Source.UnsupportedSource.nonSum)"),
+  some (LeanNCD.Semantics.Source.SourceStage.statement,
+   { side := LeanNCD.Semantics.Source.SourceSide.output,
+     declaration := none,
+     statement := some 0,
+     term := none,
+     factor := none,
+     slot := none },
+   "LeanNCD.Semantics.Source.SourceCause.unsupported (LeanNCD.Semantics.Source.UnsupportedSource.nonIdentity)"),
+  some (LeanNCD.Semantics.Source.SourceStage.output,
+   { side := LeanNCD.Semantics.Source.SourceSide.output,
+     declaration := none,
+     statement := some 0,
+     term := none,
+     factor := none,
+     slot := none },
+   "LeanNCD.Semantics.Source.SourceCause.undeclaredTensor \"Missing\"")])
+info: test/Semantics/SourceRawCorrespondenceTest.lean:140:0: ("ExactErrorOrder", true)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:141:0: ("ErrorOrder.accepted", some [(0, "Y", 5, [1], [])])
+info: test/Semantics/SourceRawCorrespondenceTest.lean:182:0: 'LeanNCD.TLProgram.mem_axisNames_iff' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:183:0: 'LeanNCD.TLProgram.axisSpec_name_mem' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:184:0: 'LeanNCD.AxisSpec.mapUID_metadata' does not depend on any axioms
+info: test/Semantics/SourceRawCorrespondenceTest.lean:185:0: 'LeanNCD.forIn_insert_coverage' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:186:0: 'LeanNCD.assignUIDMemo_covers' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:187:0: 'LeanNCD.AxisSpec.mapUID_sourceUIDRelabel' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:188:0: 'LeanNCD.AxisSpec.mapUID_sourceUIDRelabel_same_name' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:189:0: 'LeanNCD.assignUIDs_eq_inline' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:190:0: 'LeanNCD.assignUIDs_mapUID_covered' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:191:0: 'LeanNCD.assignUIDs_mapUID' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:192:0: 'LeanNCD.Semantics.Source.resolveSource_mapUID_covered' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:193:0: 'LeanNCD.Semantics.Source.resolveSource_mapUID' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:194:0: 'SourceRawCorrespondenceTest.inconsistentUIDs_start_zero' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:195:0: 'SourceRawCorrespondenceTest.inconsistentUIDs_start_seven' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:197:0: 'LeanNCD.Semantics.Source.forIn_append_selection' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:198:0: 'LeanNCD.Semantics.Source.AxisDeclarations.pinned' depends on axioms: [propext]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:199:0: 'LeanNCD.Semantics.Source.checkAxes_declarations' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:200:0: 'LeanNCD.Semantics.Source.sourceAxis_declared' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:201:0: 'LeanNCD.Semantics.Source.checkTable_declarations' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:202:0: 'LeanNCD.Semantics.Source.TableDeclarations.entry' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:203:0: 'LeanNCD.Semantics.Source.DeclaredAxisSlots.pinned' depends on axioms: [propext]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:204:0: 'LeanNCD.Semantics.Source.adaptSource_declarations' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:205:0: 'LeanNCD.Semantics.Source.adaptSource_entry_declaration' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:253:0: 'LeanNCD.Semantics.Source.admitRawSource_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:254:0: 'LeanNCD.Semantics.Source.RawCorrespondence.tensor' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:255:0: 'LeanNCD.Semantics.Source.RawCorrespondence.pinned' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:256:0: 'LeanNCD.Semantics.Source.RawCorrespondence.statement' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:257:0: 'LeanNCD.Semantics.Source.RawCorrespondence.read' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:258:0: 'LeanNCD.Semantics.Source.RawCorrespondence.output' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:259:0: 'LeanNCD.Semantics.Source.RawAxisFields.metadata' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:260:0: 'LeanNCD.Semantics.Source.RawAxisFields.same_name' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:261:0: 'LeanNCD.Semantics.Source.RawDeclaredAxisSlots.slot' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:262:0: 'LeanNCD.Semantics.Source.RawTermFields.factor_count' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:263:0: 'LeanNCD.Semantics.Source.RawTermFields.factor' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:264:0: 'LeanNCD.Semantics.Source.RawStatementFields.term' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:265:0: 'LeanNCD.Semantics.Source.RawStatementFields.term_count' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:266:0: 'LeanNCD.Semantics.Source.RawCheckedFactorFields.slots' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:267:0: 'LeanNCD.Semantics.Source.RawStatementFields.output_slots' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:268:0: 'LeanNCD.Semantics.Source.RawReadSlots.slot' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:269:0: 'LeanNCD.Semantics.Source.RawOutputSlots.slot' depends on axioms: [propext, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:270:0: 'SourceRawCorrespondenceTest.parsed_success' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:271:0: 'SourceRawCorrespondenceTest.parsed_raw_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:272:0: 'SourceRawCorrespondenceTest.asymmetric_success' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:273:0: 'SourceRawCorrespondenceTest.asymmetric_raw_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:274:0: 'SourceRawCorrespondenceTest.inconsistent_success' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:275:0: 'SourceRawCorrespondenceTest.inconsistent_raw_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:358:0: ("DeclarationIdentity", true)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:359:0: ("interleaved.entries",
+ some [(0, 3, "A", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2), (2, 3)]),
+  (1, 5, "B", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+  (2, 6, "Y", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)]),
+  (3, 7, "Empty", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(3, 0)]),
+  (4, 8, "Diagonal", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.defined, [(1, 2), (1, 2)])])
+info: test/Semantics/SourceRawCorrespondenceTest.lean:360:0: ("interleaved.pins", some [(1, 2), (2, 3), (3, 0), (4, 0)])
+info: test/Semantics/SourceRawCorrespondenceTest.lean:361:0: ("equalExtent.entries",
+ [some [(0, 3, "A", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2), (2, 2)]),
+   (1, 5, "B", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (2, 6, "Y", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)]),
+   (3, 7, "Empty", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(3, 0)]),
+   (4, 8, "Diagonal", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.defined, [(1, 2), (1, 2)])],
+  some [(0, 3, "A", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(2, 2), (1, 2)]),
+   (1, 5, "B", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (2, 6, "Y", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)]),
+   (3, 7, "Empty", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(3, 0)]),
+   (4, 8, "Diagonal", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.defined, [(1, 2), (1, 2)])],
+  some [(0, 3, "A", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2), (1, 2)]),
+   (1, 5, "B", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (2, 6, "Y", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)]),
+   (3, 7, "Empty", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(3, 0)]),
+   (4, 8, "Diagonal", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.defined, [(1, 2), (1, 2)])]])
+info: test/Semantics/SourceRawCorrespondenceTest.lean:364:0: ("equalExtent.reads",
+ some [(0,
+   "Y",
+   6,
+   [1],
+   [[("A",
+      3,
+      [2, 1],
+      { side := LeanNCD.Semantics.Source.SourceSide.read,
+        declaration := some 3,
+        statement := some 0,
+        term := some 0,
+        factor := some 0,
+        slot := none })],
+    [("B",
+      5,
+      [1],
+      { side := LeanNCD.Semantics.Source.SourceSide.read,
+        declaration := some 5,
+        statement := some 0,
+        term := some 1,
+        factor := some 0,
+        slot := none })]]),
+  (1, "Diagonal", 8, [1, 1], [[]]),
+  (2, "Y", 6, [1], [])])
+info: test/Semantics/SourceRawCorrespondenceTest.lean:480:0: ("DeclarationForms", true)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:481:0: [("tensor",
+  some [(0, 1, "X", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (1, 2, "Y", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)])],
+  some [(0,
+    "Y",
+    2,
+    [1],
+    [[("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 0,
+         slot := none }),
+      ("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 1,
+         slot := none })],
+     [("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 1,
+         factor := some 0,
+         slot := none })]])]),
+ ("tensor.f32",
+  some [(0, 1, "X", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (1, 2, "Y", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)])],
+  some [(0,
+    "Y",
+    2,
+    [1],
+    [[("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 0,
+         slot := none }),
+      ("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 1,
+         slot := none })],
+     [("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 1,
+         factor := some 0,
+         slot := none })]])]),
+ ("tensor.f64",
+  some [(0, 1, "X", LeanNCD.TensorElementType.f64, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (1, 2, "Y", LeanNCD.TensorElementType.f64, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)])],
+  some [(0,
+    "Y",
+    2,
+    [1],
+    [[("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 0,
+         slot := none }),
+      ("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 1,
+         slot := none })],
+     [("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 1,
+         factor := some 0,
+         slot := none })]])]),
+ ("linear",
+  some [(0, 1, "X", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (1, 2, "Y", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)])],
+  some [(0,
+    "Y",
+    2,
+    [1],
+    [[("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 0,
+         slot := none }),
+      ("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 1,
+         slot := none })],
+     [("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 1,
+         factor := some 0,
+         slot := none })]])]),
+ ("linear.bias",
+  some [(0, 1, "X", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (1, 2, "Y", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)])],
+  some [(0,
+    "Y",
+    2,
+    [1],
+    [[("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 0,
+         slot := none }),
+      ("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 1,
+         slot := none })],
+     [("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 1,
+         factor := some 0,
+         slot := none })]])]),
+ ("linear.f32",
+  some [(0, 1, "X", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (1, 2, "Y", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)])],
+  some [(0,
+    "Y",
+    2,
+    [1],
+    [[("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 0,
+         slot := none }),
+      ("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 1,
+         slot := none })],
+     [("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 1,
+         factor := some 0,
+         slot := none })]])]),
+ ("linear.f32.bias",
+  some [(0, 1, "X", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (1, 2, "Y", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)])],
+  some [(0,
+    "Y",
+    2,
+    [1],
+    [[("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 0,
+         slot := none }),
+      ("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 1,
+         slot := none })],
+     [("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 1,
+         factor := some 0,
+         slot := none })]])]),
+ ("linear.f64",
+  some [(0, 1, "X", LeanNCD.TensorElementType.f64, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (1, 2, "Y", LeanNCD.TensorElementType.f64, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)])],
+  some [(0,
+    "Y",
+    2,
+    [1],
+    [[("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 0,
+         slot := none }),
+      ("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 1,
+         slot := none })],
+     [("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 1,
+         factor := some 0,
+         slot := none })]])]),
+ ("linear.f64.bias",
+  some [(0, 1, "X", LeanNCD.TensorElementType.f64, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+   (1, 2, "Y", LeanNCD.TensorElementType.f64, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)])],
+  some [(0,
+    "Y",
+    2,
+    [1],
+    [[("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 0,
+         slot := none }),
+      ("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 0,
+         factor := some 1,
+         slot := none })],
+     [("X",
+       1,
+       [1],
+       { side := LeanNCD.Semantics.Source.SourceSide.read,
+         declaration := some 1,
+         statement := some 0,
+         term := some 1,
+         factor := some 0,
+         slot := none })]])])]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:531:0: ("IndexedOccurrences", true)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:532:0: ("indexed.reads",
+ some [(0,
+   "Y",
+   5,
+   [1],
+   [[("B",
+      4,
+      [1],
+      { side := LeanNCD.Semantics.Source.SourceSide.read,
+        declaration := some 4,
+        statement := some 0,
+        term := some 0,
+        factor := some 0,
+        slot := none }),
+     ("A",
+      3,
+      [1, 2],
+      { side := LeanNCD.Semantics.Source.SourceSide.read,
+        declaration := some 3,
+        statement := some 0,
+        term := some 0,
+        factor := some 1,
+        slot := none }),
+     ("B",
+      4,
+      [1],
+      { side := LeanNCD.Semantics.Source.SourceSide.read,
+        declaration := some 4,
+        statement := some 0,
+        term := some 0,
+        factor := some 2,
+        slot := none })],
+    [("A",
+      3,
+      [1, 2],
+      { side := LeanNCD.Semantics.Source.SourceSide.read,
+        declaration := some 3,
+        statement := some 0,
+        term := some 1,
+        factor := some 0,
+        slot := none })],
+    []]),
+  (1, "Diagonal", 7, [1, 1], [[]]),
+  (2, "Y", 5, [1], []),
+  (3,
+   "Y",
+   5,
+   [1],
+   [[("B",
+      4,
+      [1],
+      { side := LeanNCD.Semantics.Source.SourceSide.read,
+        declaration := some 4,
+        statement := some 3,
+        term := some 0,
+        factor := some 0,
+        slot := none }),
+     ("A",
+      3,
+      [1, 2],
+      { side := LeanNCD.Semantics.Source.SourceSide.read,
+        declaration := some 3,
+        statement := some 3,
+        term := some 0,
+        factor := some 1,
+        slot := none }),
+     ("B",
+      4,
+      [1],
+      { side := LeanNCD.Semantics.Source.SourceSide.read,
+        declaration := some 4,
+        statement := some 3,
+        term := some 0,
+        factor := some 2,
+        slot := none })],
+    [("A",
+      3,
+      [1, 2],
+      { side := LeanNCD.Semantics.Source.SourceSide.read,
+        declaration := some 3,
+        statement := some 3,
+        term := some 1,
+        factor := some 0,
+        slot := none })],
+    []]),
+  (4,
+   "Diagonal",
+   7,
+   [1, 1],
+   [[("Diagonal",
+      7,
+      [1, 1],
+      { side := LeanNCD.Semantics.Source.SourceSide.read,
+        declaration := some 7,
+        statement := some 4,
+        term := some 0,
+        factor := some 0,
+        slot := none })]])])
+info: test/Semantics/SourceRawCorrespondenceTest.lean:600:0: ("RawSentinelNames", true)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:601:0: ("sentinel.entries",
+ some [(0, 2, "X", LeanNCD.TensorElementType.f64, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2), (2, 2)]),
+  (1, 3, "Y", LeanNCD.TensorElementType.f64, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)])])
+info: test/Semantics/SourceRawCorrespondenceTest.lean:602:0: ("sentinel.resolved",
+  some
+    ([Decl.axis { name := "a", uid := 1, kind := AxisKind.nat } (some 2),
+        Decl.axis { name := "b", uid := 2, kind := AxisKind.nat } (some 2),
+        Decl.typedTensor TensorElementType.f64 "X"
+          [{ name := "a", uid := 1, kind := AxisKind.real }, { name := "b", uid := 2, kind := AxisKind.real }],
+        Decl.typedTensor TensorElementType.f64 "Y" [{ name := "a", uid := 1, kind := AxisKind.real }]],
+      [Stmt.assign "Y" [LHSSlot.free { name := "a", uid := 1, kind := AxisKind.real }]
+          {
+            body :=
+              {
+                terms :=
+                  [{
+                      factors :=
+                        [Factor.read "X"
+                            [IdxExpr.axis { name := "b", uid := 2, kind := AxisKind.real },
+                              IdxExpr.axis { name := "a", uid := 1, kind := AxisKind.real }]] }] },
+            nonlin := Nonlin.identity }]))
+info: test/Semantics/SourceRawCorrespondenceTest.lean:636:0: ("ResolverMetadataFidelity", true)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:637:0: ("distinctZero.entries",
+ some [(0, 3, "A", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2), (2, 2)]),
+  (1, 5, "B", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(1, 2)]),
+  (2, 6, "Y", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.output, [(1, 2)]),
+  (3, 7, "Empty", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.input, [(3, 0)]),
+  (4, 8, "Diagonal", LeanNCD.TensorElementType.f32, LeanNCD.Semantics.Source.TensorRole.defined, [(1, 2), (1, 2)])])
+info: test/Semantics/SourceRawCorrespondenceTest.lean:638:0: ("distinctZero.pins", some [(1, 2), (2, 2), (3, 0), (4, 0)])
+info: test/Semantics/SourceRawCorrespondenceTest.lean:639:0: ("mismatch.resolved",
+  some
+    ([Decl.axis { name := "a", uid := 1, kind := AxisKind.nat } (some 2),
+        Decl.typedTensor TensorElementType.f64 "X" [{ name := "a", uid := 1, kind := AxisKind.real }],
+        Decl.typedTensor TensorElementType.f64 "Y" [{ name := "a", uid := 1, kind := AxisKind.nat }]],
+      [Stmt.assign "Y" [LHSSlot.free { name := "a", uid := 1, kind := AxisKind.real }]
+          {
+            body :=
+              {
+                terms :=
+                  [{ factors := [Factor.read "X" [IdxExpr.axis { name := "a", uid := 1, kind := AxisKind.nat }]] }] },
+            nonlin := Nonlin.identity }]))
+info: test/Semantics/SourceRawCorrespondenceTest.lean:641:0: ("parsed.resolved",
+  some
+    ([Decl.axis { name := "a", uid := 1, kind := AxisKind.nat } (some 2),
+        Decl.typedTensor TensorElementType.f64 "X" [{ name := "a", uid := 1, kind := AxisKind.real }],
+        Decl.typedTensor TensorElementType.f64 "Y" [{ name := "a", uid := 1, kind := AxisKind.real }]],
+      [Stmt.assign "Y" [LHSSlot.free { name := "a", uid := 1, kind := AxisKind.real }]
+          {
+            body :=
+              {
+                terms :=
+                  [{ factors := [Factor.read "X" [IdxExpr.axis { name := "a", uid := 1, kind := AxisKind.real }]] }] },
+            nonlin := Nonlin.identity }]))
+info: test/Semantics/SourceRawCorrespondenceTest.lean:644:0: 'SourceRawCorrespondenceTest.Structural.interleaved_adapter' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:645:0: 'SourceRawCorrespondenceTest.Structural.interleaved_tensor' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:646:0: 'SourceRawCorrespondenceTest.Structural.interleaved_pinned' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:647:0: 'SourceRawCorrespondenceTest.Structural.equal_tensor' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:648:0: 'SourceRawCorrespondenceTest.Structural.form_tensor' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:649:0: 'SourceRawCorrespondenceTest.Structural.indexed_projections' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:650:0: 'SourceRawCorrespondenceTest.Structural.indexed_read_slots' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:651:0: 'SourceRawCorrespondenceTest.Structural.sentinel_raw_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:686:0: ("OutputTargetNames", true)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:687:0: ("OutputTargetNames.targets",
+ [some [(0,
+    2,
+    6,
+    "Y",
+    LeanNCD.Semantics.Source.TensorRole.output,
+    [(1, 2)],
+    { side := LeanNCD.Semantics.Source.SourceSide.output,
+      declaration := some 6,
+      statement := some 0,
+      term := none,
+      factor := none,
+      slot := none })],
+  some [(0,
+    5,
+    9,
+    "Z",
+    LeanNCD.Semantics.Source.TensorRole.output,
+    [(1, 2)],
+    { side := LeanNCD.Semantics.Source.SourceSide.output,
+      declaration := some 9,
+      statement := some 0,
+      term := none,
+      factor := none,
+      slot := none })]])
+info: test/Semantics/SourceRawCorrespondenceTest.lean:839:0: ("CertifiedParsedSemantics.execution",
+ SourceProgramFixtures.OutcomeKind.complete,
+ [{ uid := 0, declaration := 1, name := "X", shape := [2], values := [some 3, some 5] },
+  { uid := 1, declaration := 2, name := "Y", shape := [2], values := [some 3, some 5] }],
+ 4)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:840:0: ("CertifiedAsymmetricSemantics.execution",
+ SourceProgramFixtures.OutcomeKind.complete,
+ [{ uid := 0,
+    declaration := 3,
+    name := "A",
+    shape := [2, 3],
+    values := [some 1, some 2, some 3, some 4, some 5, some 6] },
+  { uid := 1, declaration := 4, name := "B", shape := [2], values := [some 10, some 20] },
+  { uid := 2, declaration := 5, name := "Y", shape := [2], values := [some 607, some 6016] },
+  { uid := 3, declaration := 6, name := "Empty", shape := [0], values := [] },
+  { uid := 4, declaration := 7, name := "Diagonal", shape := [2, 2], values := [some 1, some 0, some 0, some 1] }],
+ 12)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:850:0: ("CertifiedParsedSemantics", true)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:851:0: ("CertifiedAsymmetricSemantics", true)
+info: test/Semantics/SourceRawCorrespondenceTest.lean:914:0: SourceRawCorrespondenceTest.Endpoint.parsed_certified_execution (c : Program.Running (elaborateSource parsedAdmitted))
+  (complete : Program.Complete (elaborateSource parsedAdmitted) c)
+  (hr : parsedRun.result.outcome = Program.Executor.Outcome.complete c complete) :
+  CertifiedExecution parsed parsedSpecs parsedInputs parsedAdmitted parsedRun
+info: test/Semantics/SourceRawCorrespondenceTest.lean:915:0: SourceRawCorrespondenceTest.Endpoint.asymmetric_certified_execution
+  (c : Program.Running (elaborateSource asymmetricAdmitted))
+  (complete : Program.Complete (elaborateSource asymmetricAdmitted) c)
+  (hr : asymmetricRun.result.outcome = Program.Executor.Outcome.complete c complete) :
+  CertifiedExecution asymmetric specs inputs asymmetricAdmitted asymmetricRun
+info: test/Semantics/SourceRawCorrespondenceTest.lean:916:0: 'SourceRawCorrespondenceTest.Endpoint.parsed_certified_execution' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:917:0: 'SourceRawCorrespondenceTest.Endpoint.asymmetric_certified_execution' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:921:0: 'LeanNCD.Semantics.Source.Slots.uids_length' depends on axioms: [propext]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:922:0: 'LeanNCD.Semantics.Source.Slots.project_lookup' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:923:0: 'LeanNCD.Semantics.Source.RawReadSlots.coordinate' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:924:0: 'LeanNCD.Semantics.Source.RawOutputSlots.coordinate' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:925:0: 'LeanNCD.Semantics.Source.RawCorrespondence.certifiedStatement' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:926:0: 'LeanNCD.Semantics.Source.CertifiedRawStatement.term' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:927:0: 'LeanNCD.Semantics.Source.CertifiedRawTerm.read_projection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:928:0: 'LeanNCD.Semantics.Source.CertifiedRawStatement.output_projection' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:929:0: 'LeanNCD.Semantics.Source.CertifiedRawTerm.semantics' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:930:0: 'LeanNCD.Semantics.Source.CertifiedRawStatement.semantics' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:931:0: 'LeanNCD.Semantics.Source.RawCorrespondence.certifiedSource' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:932:0: 'LeanNCD.Semantics.Source.admitRawSource_certified' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:933:0: 'LeanNCD.Semantics.Source.CertifiedRawSource.collect' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:934:0: 'LeanNCD.Semantics.Source.CertifiedRawSource.models' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:935:0: 'LeanNCD.Semantics.Source.admitRawSource_reached' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:936:0: 'LeanNCD.Semantics.Source.admitRawSource_reached_denotation' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:937:0: 'SourceRawCorrespondenceTest.parsed_read_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:938:0: 'SourceRawCorrespondenceTest.asymmetric_read_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:939:0: 'SourceRawCorrespondenceTest.inconsistent_read_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:940:0: 'SourceRawCorrespondenceTest.parsed_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:941:0: 'SourceRawCorrespondenceTest.asymmetric_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8526/8597] Replayed Semantics.SourceAdmissionDomainsTest
+info: test/Semantics/SourceAdmissionDomainsTest.lean:29:0: Except.error { stage := LeanNCD.Semantics.Source.SourceStage.read,
+  cause := LeanNCD.Semantics.Source.SourceCause.domain 3 2 3,
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.read,
+              declaration := some 3,
+              statement := some 2,
+              term := some 1,
+              factor := some 1,
+              slot := some 0 } }
+info: test/Semantics/SourceAdmissionDomainsTest.lean:45:0: some ([7, 3, 11],
+ [(3, LeanNCD.Semantics.Source.TensorRole.input, [2, 3]),
+  (4, LeanNCD.Semantics.Source.TensorRole.input, [2]),
+  (5, LeanNCD.Semantics.Source.TensorRole.output, [2]),
+  (6, LeanNCD.Semantics.Source.TensorRole.input, [0]),
+  (7, LeanNCD.Semantics.Source.TensorRole.defined, [2, 2])],
+ [{ original := 0,
+    slots := [7],
+    context := [7],
+    terms := [{ bound := [3],
+                classification := LeanNCD.Semantics.Source.TermClass.pure,
+                reads := [(some 0, some 0, [7, 3])] },
+              { bound := [],
+                classification := LeanNCD.Semantics.Source.TermClass.pure,
+                reads := [(some 1, some 0, [7])] }] },
+  { original := 1,
+    slots := [7, 7],
+    context := [7],
+    terms := [{ bound := [], classification := LeanNCD.Semantics.Source.TermClass.broadcast, reads := [] }] },
+  { original := 2,
+    slots := [7],
+    context := [7],
+    terms := [{ bound := [],
+                classification := LeanNCD.Semantics.Source.TermClass.pure,
+                reads := [(some 0, some 0, [7])] },
+              { bound := [3],
+                classification := LeanNCD.Semantics.Source.TermClass.pure,
+                reads := [(some 1, some 0, [7]), (some 1, some 1, [7, 3])] }] }])
+info: test/Semantics/SourceAdmissionDomainsTest.lean:70:0: Except.error { stage := LeanNCD.Semantics.Source.SourceStage.output,
+  cause := LeanNCD.Semantics.Source.SourceCause.domain 7 3 2,
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.output,
+              declaration := some 3,
+              statement := some 2,
+              term := none,
+              factor := none,
+              slot := some 1 } }
+info: test/Semantics/SourceAdmissionDomainsTest.lean:83:0: Except.error { stage := LeanNCD.Semantics.Source.SourceStage.output,
+  cause := LeanNCD.Semantics.Source.SourceCause.domain 3 2 3,
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.output,
+              declaration := some 3,
+              statement := some 2,
+              term := none,
+              factor := none,
+              slot := some 0 } }
+info: test/Semantics/SourceAdmissionDomainsTest.lean:97:0: Except.error { stage := LeanNCD.Semantics.Source.SourceStage.output,
+  cause := LeanNCD.Semantics.Source.SourceCause.rank 2 3,
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.output,
+              declaration := some 3,
+              statement := some 2,
+              term := none,
+              factor := none,
+              slot := some 2 } }
+info: test/Semantics/SourceAdmissionDomainsTest.lean:111:0: Except.error { stage := LeanNCD.Semantics.Source.SourceStage.output,
+  cause := LeanNCD.Semantics.Source.SourceCause.rank 2 1,
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.output,
+              declaration := some 3,
+              statement := some 2,
+              term := none,
+              factor := none,
+              slot := some 1 } }
+info: test/Semantics/SourceAdmissionDomainsTest.lean:124:0: some ([7, 3, 11],
+ [(3, LeanNCD.Semantics.Source.TensorRole.defined, [2, 3]),
+  (4, LeanNCD.Semantics.Source.TensorRole.input, [2]),
+  (5, LeanNCD.Semantics.Source.TensorRole.output, [2]),
+  (6, LeanNCD.Semantics.Source.TensorRole.input, [0]),
+  (7, LeanNCD.Semantics.Source.TensorRole.defined, [2, 2])],
+ [{ original := 0,
+    slots := [7],
+    context := [7],
+    terms := [{ bound := [3],
+                classification := LeanNCD.Semantics.Source.TermClass.pure,
+                reads := [(some 0, some 0, [7, 3])] },
+              { bound := [],
+                classification := LeanNCD.Semantics.Source.TermClass.pure,
+                reads := [(some 1, some 0, [7])] }] },
+  { original := 1,
+    slots := [7, 7],
+    context := [7],
+    terms := [{ bound := [], classification := LeanNCD.Semantics.Source.TermClass.broadcast, reads := [] }] },
+  { original := 2, slots := [7, 3], context := [7, 3], terms := [] }])
+ℹ [8527/8597] Replayed Semantics.SourceAdmissionSupportTest
+info: test/Semantics/SourceAdmissionSupportTest.lean:123:0: ("A4",
+ some { original := 1,
+   slots := [3, 7, 3],
+   context := [3, 7],
+   terms := [{ bound := [],
+               classification := LeanNCD.Semantics.Source.TermClass.pure,
+               reads := [(some 0, some 0, [7, 3])] }] },
+ some { origin := { side := LeanNCD.Semantics.Source.SourceSide.output,
+               declaration := some 8,
+               statement := some 1,
+               term := none,
+               factor := none,
+               slot := none },
+   shape := [3, 2, 3],
+   context := [(3, 3), (7, 2)],
+   sourceSlots := [3, 7, 3],
+   slots := [3, 7, 3],
+   projection := some [2, 1, 2],
+   readProjections := [[some [1, 2]]] },
+ some [{ origin := { side := LeanNCD.Semantics.Source.SourceSide.read,
+                declaration := none,
+                statement := some 1,
+                term := some 0,
+                factor := none,
+                slot := none },
+    readOrigins := [{ side := LeanNCD.Semantics.Source.SourceSide.read,
+                      declaration := some 3,
+                      statement := some 1,
+                      term := some 0,
+                      factor := some 0,
+                      slot := none }],
+    support := [7, 3],
+    bound := [],
+    context := [(3, 3), (7, 2)],
+    localReads := [[7, 3]],
+    pure := true }])
+info: test/Semantics/SourceAdmissionSupportTest.lean:124:0: ("A5",
+ some { original := 2,
+   slots := [7],
+   context := [7],
+   terms := [{ bound := [3],
+               classification := LeanNCD.Semantics.Source.TermClass.broadcast,
+               reads := [(some 0, some 0, [3])] },
+             { bound := [],
+               classification := LeanNCD.Semantics.Source.TermClass.pure,
+               reads := [(some 1, some 0, [7])] }] },
+ some [{ origin := { side := LeanNCD.Semantics.Source.SourceSide.read,
+                declaration := none,
+                statement := some 2,
+                term := some 0,
+                factor := none,
+                slot := none },
+    readOrigins := [{ side := LeanNCD.Semantics.Source.SourceSide.read,
+                      declaration := some 8,
+                      statement := some 2,
+                      term := some 0,
+                      factor := some 0,
+                      slot := none }],
+    support := [3],
+    bound := [(3, 3)],
+    context := [(7, 2), (3, 3)],
+    localReads := [[3]],
+    pure := false },
+  { origin := { side := LeanNCD.Semantics.Source.SourceSide.read,
+                declaration := none,
+                statement := some 2,
+                term := some 1,
+                factor := none,
+                slot := none },
+    readOrigins := [{ side := LeanNCD.Semantics.Source.SourceSide.read,
+                      declaration := some 4,
+                      statement := some 2,
+                      term := some 1,
+                      factor := some 0,
+                      slot := none }],
+    support := [7],
+    bound := [],
+    context := [(7, 2)],
+    localReads := [[7]],
+    pure := true }])
+info: test/Semantics/SourceAdmissionSupportTest.lean:125:0: ("A6",
+ some { original := 3,
+   slots := [7],
+   context := [7],
+   terms := [{ bound := [3],
+               classification := LeanNCD.Semantics.Source.TermClass.pure,
+               reads := [(some 0, some 0, [7, 3])] },
+             { bound := [],
+               classification := LeanNCD.Semantics.Source.TermClass.pure,
+               reads := [(some 1, some 0, [7])] }] },
+ some [{ origin := { side := LeanNCD.Semantics.Source.SourceSide.read,
+                declaration := none,
+                statement := some 3,
+                term := some 0,
+                factor := none,
+                slot := none },
+    readOrigins := [{ side := LeanNCD.Semantics.Source.SourceSide.read,
+                      declaration := some 3,
+                      statement := some 3,
+                      term := some 0,
+                      factor := some 0,
+                      slot := none }],
+    support := [7, 3],
+    bound := [(3, 3)],
+    context := [(7, 2), (3, 3)],
+    localReads := [[7, 3]],
+    pure := true },
+  { origin := { side := LeanNCD.Semantics.Source.SourceSide.read,
+                declaration := none,
+                statement := some 3,
+                term := some 1,
+                factor := none,
+                slot := none },
+    readOrigins := [{ side := LeanNCD.Semantics.Source.SourceSide.read,
+                      declaration := some 4,
+                      statement := some 3,
+                      term := some 1,
+                      factor := some 0,
+                      slot := none }],
+    support := [7],
+    bound := [],
+    context := [(7, 2)],
+    localReads := [[7]],
+    pure := true }])
+ℹ [8528/8597] Replayed Semantics.SourceAdmissionDeclarationsTest
+info: test/Semantics/SourceAdmissionDeclarationsTest.lean:52:0: some ({ original := 1,
+   slots := [7, 7],
+   context := [7],
+   terms := [{ bound := [], classification := LeanNCD.Semantics.Source.TermClass.broadcast, reads := [] }] },
+ [some 1, some 1],
+ { original := 3,
+   slots := [],
+   context := [],
+   terms := [{ bound := [], classification := LeanNCD.Semantics.Source.TermClass.pure, reads := [] }] },
+ [some 1])
+info: test/Semantics/SourceAdmissionDeclarationsTest.lean:61:0: some ({ original := 2, slots := [7], context := [7], terms := [] }, [some 0, some 0])
+info: test/Semantics/SourceAdmissionDeclarationsTest.lean:79:0: "{ stage := LeanNCD.Semantics.Source.SourceStage.declarations,\n  cause := LeanNCD.Semantics.Source.SourceCause.duplicateAxis 7,\n  origin := { side := LeanNCD.Semantics.Source.SourceSide.declaration,\n              declaration := some 8,\n              statement := none,\n              term := none,\n              factor := none,\n              slot := none } }"
+ℹ [8529/8597] Replayed Semantics.SourceAdmissionRolesTest
+info: test/Semantics/SourceAdmissionRolesTest.lean:53:0: true
+info: test/Semantics/SourceAdmissionRolesTest.lean:54:0: Except.error { stage := LeanNCD.Semantics.Source.SourceStage.declarations,
+  cause := LeanNCD.Semantics.Source.SourceCause.duplicateTensor "A",
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.declaration,
+              declaration := some 8,
+              statement := none,
+              term := none,
+              factor := none,
+              slot := none } }
+info: test/Semantics/SourceAdmissionRolesTest.lean:55:0: Except.error { stage := LeanNCD.Semantics.Source.SourceStage.resolution,
+  cause := LeanNCD.Semantics.Source.SourceCause.resolution (LeanNCD.CompileError.duplicateTensorDecl "A"),
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.declaration,
+              declaration := some 8,
+              statement := none,
+              term := none,
+              factor := none,
+              slot := none } }
+info: test/Semantics/SourceAdmissionRolesTest.lean:94:0: true
+info: test/Semantics/SourceAdmissionRolesTest.lean:95:0: Except.error { stage := LeanNCD.Semantics.Source.SourceStage.output,
+  cause := LeanNCD.Semantics.Source.SourceCause.role
+             (LeanNCD.Semantics.Source.TensorRole.defined)
+             (LeanNCD.Semantics.Source.TensorRole.input),
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.output,
+              declaration := some 5,
+              statement := some 1,
+              term := none,
+              factor := none,
+              slot := none } }
+info: test/Semantics/SourceAdmissionRolesTest.lean:96:0: Except.ok [0, 1]
+info: test/Semantics/SourceAdmissionRolesTest.lean:97:0: Except.ok [0, 1]
+info: test/Semantics/SourceAdmissionRolesTest.lean:137:0: true
+info: test/Semantics/SourceAdmissionRolesTest.lean:138:0: Except.error { stage := LeanNCD.Semantics.Source.SourceStage.declarations,
+  cause := LeanNCD.Semantics.Source.SourceCause.missingDomain 3,
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.declaration,
+              declaration := some 1,
+              statement := none,
+              term := none,
+              factor := none,
+              slot := none } }
+info: test/Semantics/SourceAdmissionRolesTest.lean:139:0: some ([7, 3, 11, 13],
+ [(3, LeanNCD.Semantics.Source.TensorRole.input, [2, 3]),
+  (4, LeanNCD.Semantics.Source.TensorRole.input, [3, 4]),
+  (5, LeanNCD.Semantics.Source.TensorRole.output, [2, 4]),
+  (6, LeanNCD.Semantics.Source.TensorRole.input, [0]),
+  (7, LeanNCD.Semantics.Source.TensorRole.defined, [2, 2])],
+ [{ original := 0,
+    slots := [7, 7],
+    context := [7],
+    terms := [{ bound := [], classification := LeanNCD.Semantics.Source.TermClass.broadcast, reads := [] }] },
+  { original := 1,
+    slots := [7, 13],
+    context := [7, 13],
+    terms := [{ bound := [3],
+                classification := LeanNCD.Semantics.Source.TermClass.pure,
+                reads := [(some 0, some 0, [7, 3]), (some 0, some 1, [3, 13])] }] }])
+ℹ [8530/8597] Replayed Semantics.SourceAdmissionInputsTest
+info: test/Semantics/SourceAdmissionInputsTest.lean:68:0: some { stage := LeanNCD.Semantics.Source.SourceStage.inputs,
+  cause := LeanNCD.Semantics.Source.SourceCause.missingInput 8,
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.input,
+              declaration := some 8,
+              statement := none,
+              term := none,
+              factor := none,
+              slot := none } }
+info: test/Semantics/SourceAdmissionInputsTest.lean:69:0: some [{ declaration := 3,
+   axes := [(7, 2), (3, 3)],
+   count := 6,
+   values := [1, 2, 3, 4, 5, 6],
+   coordinateValues := [1, 2, 3, 4, 5, 6] },
+ { declaration := 4, axes := [(7, 2)], count := 2, values := [10, 20], coordinateValues := [10, 20] },
+ { declaration := 6, axes := [(11, 0)], count := 0, values := [], coordinateValues := [] },
+ { declaration := 8, axes := [(7, 2)], count := 2, values := [31, 47], coordinateValues := [31, 47] }]
+info: test/Semantics/SourceAdmissionInputsTest.lean:87:0: some { stage := LeanNCD.Semantics.Source.SourceStage.inputs,
+  cause := LeanNCD.Semantics.Source.SourceCause.missingInput 6,
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.input,
+              declaration := some 6,
+              statement := none,
+              term := none,
+              factor := none,
+              slot := none } }
+info: test/Semantics/SourceAdmissionInputsTest.lean:88:0: some [{ declaration := 3,
+   axes := [(7, 2), (3, 3)],
+   count := 6,
+   values := [1, 2, 3, 4, 5, 6],
+   coordinateValues := [1, 2, 3, 4, 5, 6] },
+ { declaration := 4, axes := [(7, 2)], count := 2, values := [10, 20], coordinateValues := [10, 20] },
+ { declaration := 6, axes := [(11, 0)], count := 0, values := [], coordinateValues := [] }]
+info: test/Semantics/SourceAdmissionInputsTest.lean:106:0: some { stage := LeanNCD.Semantics.Source.SourceStage.inputs,
+  cause := LeanNCD.Semantics.Source.SourceCause.length 6 5,
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.input,
+              declaration := some 3,
+              statement := none,
+              term := none,
+              factor := none,
+              slot := none } }
+info: test/Semantics/SourceAdmissionInputsTest.lean:107:0: some [{ declaration := 3,
+   axes := [(7, 2), (3, 3)],
+   count := 6,
+   values := [1, 2, 3, 4, 5, 6],
+   coordinateValues := [1, 2, 3, 4, 5, 6] },
+ { declaration := 4, axes := [(7, 2)], count := 2, values := [10, 20], coordinateValues := [10, 20] },
+ { declaration := 6, axes := [(11, 0)], count := 0, values := [], coordinateValues := [] }]
+ℹ [8531/8597] Replayed Semantics.SourceAdmissionRefusalsTest
+info: test/Semantics/SourceAdmissionRefusalsTest.lean:44:0: { stage := LeanNCD.Semantics.Source.SourceStage.inputs,
+  cause := LeanNCD.Semantics.Source.SourceCause.shape [2, 3] [3, 2],
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.input,
+              declaration := some 3,
+              statement := none,
+              term := none,
+              factor := none,
+              slot := none } }
+info: test/Semantics/SourceAdmissionRefusalsTest.lean:68:0: some [{ original := 3,
+   slots := [],
+   context := [],
+   terms := [{ bound := [7, 3],
+               classification := LeanNCD.Semantics.Source.TermClass.pure,
+               reads := [(some 0, some 0, [7, 3])] },
+             { bound := [7, 3],
+               classification := LeanNCD.Semantics.Source.TermClass.pure,
+               reads := [(some 1, some 0, [7, 3]),
+                         (some 1, some 1, [7]),
+                         (some 1, some 2, [7, 3]),
+                         (some 1, some 3, [7])] }] }]
+info: test/Semantics/SourceAdmissionRefusalsTest.lean:85:0: { stage := LeanNCD.Semantics.Source.SourceStage.read,
+  cause := LeanNCD.Semantics.Source.SourceCause.unsupported (LeanNCD.Semantics.Source.UnsupportedSource.iverson),
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.read,
+              declaration := none,
+              statement := some 3,
+              term := some 1,
+              factor := some 2,
+              slot := none } }
+info: test/Semantics/SourceAdmissionRefusalsTest.lean:102:0: { stage := LeanNCD.Semantics.Source.SourceStage.read,
+  cause := LeanNCD.Semantics.Source.SourceCause.unsupported (LeanNCD.Semantics.Source.UnsupportedSource.unary),
+  origin := { side := LeanNCD.Semantics.Source.SourceSide.read,
+              declaration := none,
+              statement := some 3,
+              term := some 1,
+              factor := some 2,
+              slot := none } }
+ℹ [8532/8597] Replayed Semantics.SourceAdmissionAcceptanceTest
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:63:0: true
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:101:0: true
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:133:0: true
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:140:0: "accepted"
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:141:0: "accepted"
+info: test/Semantics/SourceAdmissionAcceptanceTest.lean:142:0: "accepted"
+ℹ [8535/8597] Replayed LeanNCD.Base.ColoredPROP
+info: LeanNCD/Base/ColoredPROP.lean:99:0: ColoredPROP : Type → Type 1
+info: LeanNCD/Base/ColoredPROP.lean:100:0: @Elemental.elemental : ∀ {ob : Type} {inst : ColoredPROP ob} [self : Elemental ob] {X Y : ob}
+  (f g : SmallCategory.hom X Y),
+  (∀ (x : SmallCategory.hom ColoredPROP.unit X), SmallCategory.comp x f = SmallCategory.comp x g) → f = g
+⚠ [8536/8597] Replayed LeanNCD.Base.St
+warning: LeanNCD/Base/St.lean:171:23: declaration uses `sorry`
+⚠ [8537/8597] Replayed LeanNCD.Base.Br
+warning: LeanNCD/Base/Br.lean:305:8: declaration uses `sorry`
+warning: LeanNCD/Base/Br.lean:426:0: Definition `LeanNCD.brElemental` of class type must be marked with `@[reducible]` or `@[implicit_reducible]`
+⚠ [8540/8597] Replayed LeanNCD.Core.Weave
+warning: LeanNCD/Core/Weave.lean:29:8: declaration uses `sorry`
+⚠ [8546/8597] Replayed LeanNCD.Instances.StBr
+warning: LeanNCD/Instances/StBr.lean:13:23: declaration uses `sorry`
+⚠ [8557/8597] Replayed LeanNCD.Bridge.AcsetCodec
+warning: LeanNCD/Bridge/AcsetCodec.lean:905:10: This simp argument is unused:
+  encodeAxisRows_length
+
+Hint: Omit it from the simp argument list.
+  simp ̵[̵e̵n̵c̵o̵d̵e̵A̵x̵i̵s̵R̵o̵w̵s̵_̵l̵e̵n̵g̵t̵h̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Bridge/AcsetCodec.lean:917:17: This simp argument is unused:
+  hwk
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵h̵w̵k̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Bridge/AcsetCodec.lean:921:17: This simp argument is unused:
+  hwk
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵h̵w̵k̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+⚠ [8559/8597] Replayed LeanNCD.Bridge.Agreement
+warning: LeanNCD/Bridge/Agreement.lean:99:52: This simp argument is unused:
+  ih
+
+Hint: Omit it from the simp argument list.
+  simp [fixedAxesP, List.map_cons,̵ ̵i̵h̵]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Bridge/Agreement.lean:122:29: This simp argument is unused:
+  hep
+
+Hint: Omit it from the simp argument list.
+  simp [̵h̵e̵p̵]̵ ̵at hk'
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Bridge/Agreement.lean:125:28: This simp argument is unused:
+  hep
+
+Hint: Omit it from the simp argument list.
+  simp only [̵h̵e̵p̵]̵ ̵at hk'
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+Build completed successfully (8597 jobs).

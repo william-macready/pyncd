@@ -1,0 +1,106 @@
+=== E1 PENDING nonSum guard deletion; likely certificate proof kill, not an observed ErrorOrder kill MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '    if rhs.agg != .sum then throw (sourceError .statement origin (.unsupported .nonSum))
+' -> '' ---
+error: LeanNCD/Semantics/Source/Admission.lean:518:15: unsolved goals
+error: LeanNCD/Semantics/Source/Admission.lean:520:10: `simp` made no progress
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== E1 PENDING nonSum guard deletion; likely certificate proof kill, not an observed ErrorOrder kill MUTATE exit=1 ===
+=== E1 PENDING nonSum guard deletion; likely certificate proof kill, not an observed ErrorOrder kill RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8523 jobs).
+=== E1 PENDING nonSum guard deletion; likely certificate proof kill, not an observed ErrorOrder kill SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+E1 PENDING nonSum guard deletion; likely certificate proof kill, not an observed ErrorOrder kill: PASS
+=== E1 PENDING nonSum guard deletion; likely certificate proof kill, not an observed ErrorOrder kill MANIFEST VERDICT: PASS ===
+=== E2 PENDING nonSum and nonIdentity guard deletion; likely certificate proof kill, not an observed ErrorOrder kill MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '    if rhs.agg != .sum then throw (sourceError .statement origin (.unsupported .nonSum))
+    if rhs.nonlin != .identity then
+      throw (sourceError .statement origin (.unsupported .nonIdentity))
+' -> '' ---
+error: LeanNCD/Semantics/Source/Admission.lean:513:8: Tactic `contradiction` failed
+error: LeanNCD/Semantics/Source/Admission.lean:518:10: `simp` made no progress
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== E2 PENDING nonSum and nonIdentity guard deletion; likely certificate proof kill, not an observed ErrorOrder kill MUTATE exit=1 ===
+=== E2 PENDING nonSum and nonIdentity guard deletion; likely certificate proof kill, not an observed ErrorOrder kill RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8523 jobs).
+=== E2 PENDING nonSum and nonIdentity guard deletion; likely certificate proof kill, not an observed ErrorOrder kill SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+E2 PENDING nonSum and nonIdentity guard deletion; likely certificate proof kill, not an observed ErrorOrder kill: PASS
+=== E2 PENDING nonSum and nonIdentity guard deletion; likely certificate proof kill, not an observed ErrorOrder kill MANIFEST VERDICT: PASS ===
+=== E3 PENDING constant Z output lookup; likely exact-name certificate proof kill MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '    let dst ← match source.table.find name with
+' -> '    let dst ← match source.table.find "Z" with
+' ---
+error: LeanNCD/Semantics/Source/Admission.lean:519:15: unsolved goals
+error: LeanNCD/Semantics/Source/Admission.lean:521:10: `simp` made no progress
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== E3 PENDING constant Z output lookup; likely exact-name certificate proof kill MUTATE exit=1 ===
+=== E3 PENDING constant Z output lookup; likely exact-name certificate proof kill RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8523 jobs).
+=== E3 PENDING constant Z output lookup; likely exact-name certificate proof kill SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+E3 PENDING constant Z output lookup; likely exact-name certificate proof kill: PASS
+=== E3 PENDING constant Z output lookup; likely exact-name certificate proof kill MANIFEST VERDICT: PASS ===
+=== E4 PENDING reverse certified raw read coordinate witness; semantic-link proof kill MUTATE ===
+--- mutated LeanNCD/Semantics/Source/RawSemanticConnection.lean: '  obtain ⟨a, u, ha, hu, hm, hv⟩ := hs.coordinate v q
+' -> '  obtain ⟨a, u, ha, hu, hm, hv⟩ := hs.coordinate v q.rev
+' ---
+error: LeanNCD/Semantics/Source/RawSemanticConnection.lean:128:15: Application type mismatch: The argument
+error: LeanNCD/Semantics/Source/RawSemanticConnection.lean:128:67: Application type mismatch: The argument
+error: LeanNCD/Semantics/Source/RawSemanticConnection.lean:128:57: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/RawSemanticConnection.lean now) ---
+=== E4 PENDING reverse certified raw read coordinate witness; semantic-link proof kill MUTATE exit=1 ===
+=== E4 PENDING reverse certified raw read coordinate witness; semantic-link proof kill RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8523 jobs).
+=== E4 PENDING reverse certified raw read coordinate witness; semantic-link proof kill SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+E4 PENDING reverse certified raw read coordinate witness; semantic-link proof kill: PASS
+=== E4 PENDING reverse certified raw read coordinate witness; semantic-link proof kill MANIFEST VERDICT: PASS ===
+=== E5 PENDING refusal max-to-sum test-donor contrast; must observe nonIdentity before ErrorOrder assertion failure MUTATE ===
+--- mutated test/Semantics/SourceRawCorrespondenceTest.lean: '  .assign "Missing" [.free i] { body := ⟨[]⟩, nonlin := .pointwise .relu, agg := .max }] }
+' -> '  .assign "Missing" [.free i] { body := ⟨[]⟩, nonlin := .pointwise .relu, agg := .sum }] }
+' ---
+error: test/Semantics/SourceRawCorrespondenceTest.lean:102:0: Expression
+error: test/Semantics/SourceRawCorrespondenceTest.lean:139:0: Expression
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring test/Semantics/SourceRawCorrespondenceTest.lean now) ---
+=== E5 PENDING refusal max-to-sum test-donor contrast; must observe nonIdentity before ErrorOrder assertion failure MUTATE exit=1 ===
+=== E5 PENDING refusal max-to-sum test-donor contrast; must observe nonIdentity before ErrorOrder assertion failure RESTORED BUILD ===
+info: test/Semantics/SourceRawCorrespondenceTest.lean:942:0: 'SourceRawCorrespondenceTest.inconsistent_body_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:943:0: 'SourceRawCorrespondenceTest.parsed_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:944:0: 'SourceRawCorrespondenceTest.asymmetric_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:945:0: 'SourceRawCorrespondenceTest.inconsistent_output_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8523 jobs).
+=== E5 PENDING refusal max-to-sum test-donor contrast; must observe nonIdentity before ErrorOrder assertion failure SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+E5 PENDING refusal max-to-sum test-donor contrast; must observe nonIdentity before ErrorOrder assertion failure: PASS
+=== E5 PENDING refusal max-to-sum test-donor contrast; must observe nonIdentity before ErrorOrder assertion failure MANIFEST VERDICT: PASS ===
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| E1 PENDING nonSum guard deletion; likely certificate proof kill, not an observed ErrorOrder kill | yes | yes | yes | PASS |
+| E2 PENDING nonSum and nonIdentity guard deletion; likely certificate proof kill, not an observed ErrorOrder kill | yes | yes | yes | PASS |
+| E3 PENDING constant Z output lookup; likely exact-name certificate proof kill | yes | yes | yes | PASS |
+| E4 PENDING reverse certified raw read coordinate witness; semantic-link proof kill | yes | yes | yes | PASS |
+| E5 PENDING refusal max-to-sum test-donor contrast; must observe nonIdentity before ErrorOrder assertion failure | yes | yes | yes | PASS |
+
+5/5 cycles passed.

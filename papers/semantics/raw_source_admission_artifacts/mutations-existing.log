@@ -1,0 +1,44 @@
+=== M1 bypass original axis-name mint loop MUTATE ===
+--- mutated LeanNCD/DSL/Pipeline/Structural.lean: '  for nm in p.axisNames do' -> '  for nm in ([] : List String) do' ---
+error: test/Semantics/SourceRawCorrespondenceTest.lean:51:0: Expression
+error: test/Semantics/SourceRawCorrespondenceTest.lean:64:0: Expression
+error: test/Semantics/SourceRawCorrespondenceTest.lean:69:0: Expression
+error: test/Semantics/SourceRawCorrespondenceTest.lean:77:0: Expression
+error: test/Semantics/SourceRawCorrespondenceTest.lean:87:0: Expression
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/DSL/Pipeline/Structural.lean now) ---
+=== M1 bypass original axis-name mint loop MUTATE exit=1 ===
+=== M1 bypass original axis-name mint loop RESTORED BUILD ===
+       slot := none })]])]
+info: test/Semantics/SourceRawCorrespondenceTest.lean:78:0: true
+info: test/Semantics/SourceRawCorrespondenceTest.lean:88:0: true
+info: test/Semantics/SourceRawCorrespondenceTest.lean:101:0: true
+Build completed successfully (8520 jobs).
+=== M1 bypass original axis-name mint loop SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M1 bypass original axis-name mint loop: PASS
+=== M1 bypass original axis-name mint loop MANIFEST VERDICT: PASS ===
+=== M2 table position used as declaration origin MUTATE ===
+--- mutated LeanNCD/Semantics/Source/Admission.lean: '      declaration := some (source.table.entry tensor).declaration }' -> '      declaration := some tensor.val }' ---
+error: LeanNCD/Semantics/Source/Admission.lean:410:19: `simp` made no progress
+error: LeanNCD/Semantics/Source/Admission.lean:412:8: `simp` made no progress
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring LeanNCD/Semantics/Source/Admission.lean now) ---
+=== M2 table position used as declaration origin MUTATE exit=1 ===
+=== M2 table position used as declaration origin RESTORED BUILD ===
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:63:0: 'LeanNCD.Semantics.Source.mapUID_axis_metadata' does not depend on any axioms
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:64:0: 'LeanNCD.Semantics.Source.admitRawSource_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:65:0: 'LeanNCD.Semantics.Source.TermFields.factor_count' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:66:0: 'LeanNCD.Semantics.Source.StatementFields.term_count' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8516 jobs).
+=== M2 table position used as declaration origin SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M2 table position used as declaration origin: PASS
+=== M2 table position used as declaration origin MANIFEST VERDICT: PASS ===
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| M1 bypass original axis-name mint loop | yes | yes | yes | PASS |
+| M2 table position used as declaration origin | yes | yes | yes | PASS |
+
+2/2 cycles passed.

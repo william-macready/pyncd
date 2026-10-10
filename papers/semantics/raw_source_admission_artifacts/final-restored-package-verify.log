@@ -1,0 +1,2 @@
+Ordered cached replay: all 10 source-file SHA256 values match captured compiled bytes
+Task projections: every mutation old text exists uniquely at its cached stage prefix
