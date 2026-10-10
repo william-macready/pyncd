@@ -171,8 +171,8 @@ Worktree `plan-layer-parked-items`; closes the items the audit-cells slice left 
 |---|---|---|
 | `db15f986` | A2-e outside the valid domain (plan section 10 item 10) | both reviewer-derived plans built as fixtures (`a2e-seq-visible`, `a2e-failed-vs-stuck`), `checkPlan`-invalid (`pubOrder@1`; `accMat@1`, `pubMat@2`); shipped `[0,3,1]` / `failed`, mutant (scratch run) `[0,3,4]` / `stuck`, exactly as predicted; valid neighbours agree under both |
 | `88fed829` | Nodup redundancy | `checkPlan_nodup_redundant` (singleton and `checkSteps` imply `checkCov1Nodup` and `checkCov2Nodup`), `checkPlan_eq_core`; no `DefAddr.addr_injective` needed in this direction |
-| `8b7cc508` | converse pairing | `checkAccFresh_of_cov1Nodup`, `checkPubFresh_of_cov2Nodup` (hold without `checkSingleton`): `checkCov1Nodup` implies every accumulate command's freshness clause and `checkCov2Nodup` every publish command's, and on a singleton plan the step checks imply the Nodup checks, so no plan separates a Nodup check from its freshness clause |
-| docs commit | D8, `Tests` sentence, plan sections 5 and 10, path doc counts | spec Section 32.3 cross-references the Publish premise; `Semantics/AGENTS.md` names the test groups and defers to `lakefile.toml`; path doc says 125 fixtures (96 shipped with the layer plus 29 from the audit cells) and snapshot `8b7cc508` |
+| `8b7cc508` | converse pairing | `checkAccFresh_of_cov1Nodup`, `checkPubFresh_of_cov2Nodup` (hold without `checkSingleton`): `checkCov1Nodup` implies every accumulate command's freshness clause and `checkCov2Nodup` every publish command's, and on a singleton plan the step checks imply the Nodup checks, so no singleton plan separates a Nodup check from its freshness clause (a non-singleton command is skipped by `checkSteps` but rejected by `checkSingleton`) |
+| docs commit | D8, `Tests` sentence, plan sections 5 and 10, path doc counts | spec Section 32.3 cross-references the Publish premise; `Semantics/AGENTS.md` names the test groups and defers to `lakefile.toml`; path doc says 129 fixtures (96 shipped with the layer, 27 from the audit cells, 6 from this slice) and snapshot `8b7cc508` |
 
 Findings: the proof needed no `DefAddr.addr_injective` in the redundancy direction (the reviewer
 argument had assumed it). The plan's item 10 mis-cited `chainEarly` for `[0,3,1]` (that fixture
@@ -184,3 +184,10 @@ shipped values again after the revert.
 Harness tool uses: A2-e dispatch 35 (self-reported 31; cap 40), Nodup proof 43 (cap 50). Full
 default build 8784 jobs green; `AxiomAudit`: 5650 constants under `LeanNCD.Semantics` use only
 standard axioms, including the new theorems.
+
+Whole-branch review (single lens, `plan_layer_artifacts/wb_review_parked_items.md`; 27 harness tool
+uses): no Critical or Important findings, five Minor, all applied: (1) fixture split corrected to
+96 + 27 + 6 = 129; (2) the mutant values in plan section 5.2 labelled as a scratch run;
+(3) verdict rows and `decide` examples added so the build asserts both A2-e plans are
+`checkPlan`-invalid (`invalid-a2e-seq-visible`, `invalid-a2e-failed-vs-stuck`); (4) the pairing
+claim qualified to singleton plans; (5) the D8 sentence now says "for every `a ∈ B`".

@@ -4512,7 +4512,7 @@ premises hold after removing $G$ from $\textcolor{#A87C28}{U}$. It must not expo
 accumulator while another contribution to the same address remains: this is the
 publication premise
 $\textcolor{#A87C28}{U}\cap\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)=\varnothing$
-of [Section 29.2](#292-accumulation-and-publication-contracts), checked after removing $G$.
+for every $a\in B$ of [Section 29.2](#292-accumulation-and-publication-contracts), checked after removing $G$.
 
 For `Pre[] = A[]; Pre[] = B[]; T[] = relu(Pre[])`, collecting the two
 `Pre` occurrences, publishing `Pre`, and then evaluating ReLU can be fused
