@@ -265,6 +265,48 @@ theorem checkPlan_eq_core : π.checkPlan =
   obtain ⟨h1, h2⟩ := π.checkPlan_nodup_redundant hs ht
   simp [h1, h2]
 
+/-! ### The converse: each `Nodup` check implies its freshness check
+
+A duplicate-free whole image makes every singleton step's image duplicate-free
+and disjoint from its prefix's, so `checkCov1Nodup` gives `checkAccFresh` and
+`checkCov2Nodup` gives `checkPubFresh` at every such step. With
+`nodup_prefixAnn_flatMap` the pair shadow each other: on a singleton plan the
+`Nodup` check fails exactly when some step's freshness check does. This
+direction needs no `checkSingleton`, only that the step itself is `[a]`. -/
+
+omit [DecidableEq σ.Tensor] in
+theorem fresh_of_nodup_flatMap {α : Type _} (f : Ann P → List α)
+    (hnd : (π.ann.flatMap f).Nodup) {pc : Nat} {a : Ann P} (ha : π.commands[pc]? = some [a]) :
+    (f a).Nodup ∧ ∀ x ∈ f a, x ∉ (π.prefixAnn pc).flatMap f := by
+  have hsub : List.Sublist ((π.prefixAnn (pc + 1)).flatMap f) (π.ann.flatMap f) :=
+    ((List.take_sublist _ _).flatten).flatMap f
+  have h := hnd.sublist hsub
+  rw [π.prefixAnn_succ ha, List.flatMap_append, List.flatMap_singleton, List.nodup_append] at h
+  exact ⟨h.2.1, fun x hx hmem => h.2.2 x hmem x hx rfl⟩
+
+theorem checkAccFresh_of_cov1Nodup (h1 : π.checkCov1Nodup = true) {pc : Nat}
+    {G : List (OccRef P)} (ha : π.commands[pc]? = some [.acc G]) :
+    π.checkAccFresh pc G = true := by
+  simp only [checkCov1Nodup, accFlat, decide_eq_true_eq] at h1
+  obtain ⟨hn, hd⟩ := π.fresh_of_nodup_flatMap Ann.groups h1 ha
+  simp only [checkAccFresh, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true,
+    Bool.not_eq_true', decide_eq_false_iff_not]
+  exact ⟨hn, hd⟩
+
+theorem checkPubFresh_of_cov2Nodup (h2 : π.checkCov2Nodup = true) {pc : Nat}
+    {B : List (DefAddr P)} (ha : π.commands[pc]? = some [.pub B]) :
+    π.checkPubFresh pc B = true := by
+  simp only [checkCov2Nodup, pubFlat, decide_eq_true_eq] at h2
+  obtain ⟨hn, hd⟩ := π.fresh_of_nodup_flatMap Ann.blocks h2 ha
+  simp only [checkPubFresh, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true,
+    Bool.not_eq_true', decide_eq_false_iff_not]
+  refine ⟨hn, fun x hx hp => ?_⟩
+  rcases hp with hin | hmem
+  · have hx' : P.input x.1.val = false := x.1.2
+    simp [DefAddr.addr, hx'] at hin
+  · obtain ⟨y, hy, e⟩ := List.mem_map.mp hmem
+    exact hd x hx (DefAddr.addr_injective e ▸ hy)
+
 end Check
 
 #print axioms Valid.stepOK
@@ -274,5 +316,8 @@ end Check
 #print axioms nodup_prefixAnn_flatMap
 #print axioms checkPlan_nodup_redundant
 #print axioms checkPlan_eq_core
+#print axioms fresh_of_nodup_flatMap
+#print axioms checkAccFresh_of_cov1Nodup
+#print axioms checkPubFresh_of_cov2Nodup
 
 end LeanNCD.Semantics.Program.Plan
