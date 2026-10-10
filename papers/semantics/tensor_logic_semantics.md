@@ -4508,8 +4508,11 @@ $\textcolor{#398B83}{\mathcal{D}}_f$ condition still applies, as in [Section 25.
 
 An accumulation-and-publication kernel may fuse
 $\textcolor{#C16C86}{\mathsf{Accumulate}}(G)$ and $\textcolor{#C16C86}{\mathsf{Publish}}(B)$ only when publication's
-premises hold after removing $G$ from $\textcolor{#A87C28}{U}$. It must not expose partial
-accumulators through an output view while another contribution remains.
+premises hold after removing $G$ from $\textcolor{#A87C28}{U}$. It must not expose a partial
+accumulator while another contribution to the same address remains: this is the
+publication premise
+$\textcolor{#A87C28}{U}\cap\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)=\varnothing$
+for every $a\in B$ of [Section 29.2](#292-accumulation-and-publication-contracts), checked after removing $G$.
 
 For `Pre[] = A[]; Pre[] = B[]; T[] = relu(Pre[])`, collecting the two
 `Pre` occurrences, publishing `Pre`, and then evaluating ReLU can be fused

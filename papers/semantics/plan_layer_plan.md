@@ -315,16 +315,16 @@ fixture or mutant backs the cell). "Fixture" names come from §6; "mutant" ids f
 | check | `Valid` field | role (a3a §`Valid` field table) | F case and its fixture (first failing clause) | mutant | status |
 |---|---|---|---|---|---|
 | `checkSingleton` | `singleton` | progress (profile) | fused command: `fused` (`singleton`; run stuck 0) | A3a-e: `fused` flips | backed |
-| `checkCov1Nodup` | `coverage1` (Nodup half) | diagnostic (a3b draft table) | occurrence in two groups: `dupGroup` (`cov1Nodup`, also `accFresh@2`; run done 4 `[0,16,0]`) | none (see `checkAccFresh`) | **EQUIVALENT at `checkPlan`, paired with `checkAccFresh`**: `dupGroup` and `dupWithin` fail both `cov1Nodup` and `accFresh`, so no fixture isolates either; observed on every fixture, not proved. The proof that dropping the pair cannot admit an unsound plan stays parked (Open items 3) |
+| `checkCov1Nodup` | `coverage1` (Nodup half) | diagnostic (a3b draft table) | occurrence in two groups: `dupGroup` (`cov1Nodup`, also `accFresh@2`; run done 4 `[0,16,0]`) | none (see `checkAccFresh`) | **PROVED redundant at `checkPlan`**: `checkPlan_nodup_redundant` (singleton and `checkSteps` imply it), and the converse `checkAccFresh_of_cov1Nodup` (it implies the freshness clause at every accumulate command) holds, so no singleton plan separates the pair (`dupGroup`, `dupWithin`) |
 | `checkCov1Complete` | `coverage1` (covering half) | terminal, derivable (N6) | missing occurrence: `missingOcc` (`cov1Complete`, also `pubOrder@2`) | A3a-a: no fixture flips | **EQUIVALENT at `checkPlan`** (N6: `accFlat_complete` is the substantive reason; `cov1_of_cov2_pubOrder` is the trivial Valid-level corollary). Confirmed for all plans (soundness review Q4) |
-| `checkCov2Nodup` | `coverage2` (Nodup half) | diagnostic | address in two blocks: `invalid-publish-twice-across-blocks`, `invalid-publish-twice-in-block` (`cov2Nodup` and `pubFresh@3` / `pubFresh@2`; runs done 4 and 3, `[0,14,0]`) | none (see `checkPubFresh`) | **EQUIVALENT at `checkPlan`, paired with `checkPubFresh`** (they fail on exactly the same plans in every fixture; not proved); the pair-drop proof stays parked (Open items 3) |
+| `checkCov2Nodup` | `coverage2` (Nodup half) | diagnostic | address in two blocks: `invalid-publish-twice-across-blocks`, `invalid-publish-twice-in-block` (`cov2Nodup` and `pubFresh@3` / `pubFresh@2`; runs done 4 and 3, `[0,14,0]`) | none (see `checkPubFresh`) | **PROVED redundant at `checkPlan`**: `checkPlan_nodup_redundant`, converse `checkPubFresh_of_cov2Nodup` (it implies the freshness clause at every publish command), so no singleton plan separates the pair (`pubTwice`, `pubDupIn`) |
 | `checkCov2Complete` | `coverage2` (covering half) | terminal | unpublished defined address: `missingPub` (`(false, ["cov2Complete"])`; run done 3, Decode `none`) | A3b-1: `missingPub` flips; A3b-2: field unreachable | backed |
 | `checkInit` (both halves) | `initFresh` | safety (N2) | re-init after consume: `reinitMid` (`initFresh@2`; run done 5 `[0,10,0]`) | A3a-d (drops both halves): only `reinitMid` flips | backed for the consumed-target half |
 | `checkInit` (not-published half alone) | `initFresh` | safety | re-init of a published empty-fiber address: `invalid-reinit-after-publish` (`reinitPub`: `(false, ["initFresh@3"])`, no other clause; run done 4 `[0,14,0]`) | audit mutant B3 (drop only the not-published conjunct): the build stops in `checkInit_sound` before the fixtures are reached, so the flip itself was not observed | **backed at checker level**; the half affects no run outcome (a published address with a non-empty fiber is caught by the consumed-target half via `pubOrder`; an empty-fiber one gets 0 written over 0), so "safety" overstates its role |
-| `checkAccFresh` | `accOK` | safety + progress | already-consumed member (across groups): `dupGroup` (`accFresh@2`, second clause); within-group duplicate: `dupWithin` (`invalid-duplicate-within-group`: `cov1Nodup`, `accFresh@1`; run done 3 `[0,16,0]`) | audit mutants C2a (drop Nodup half) and C2b (drop consumed half): both break `checkPlan_sound` first; under C2b `dupGroup` does not flip because `cov1Nodup` still rejects | **EQUIVALENT at `checkPlan`, paired with `checkCov1Nodup`** (neighbour `accSplit`: valid) |
+| `checkAccFresh` | `accOK` | safety + progress | already-consumed member (across groups): `dupGroup` (`accFresh@2`, second clause); within-group duplicate: `dupWithin` (`invalid-duplicate-within-group`: `cov1Nodup`, `accFresh@1`; run done 3 `[0,16,0]`) | audit mutants C2a (drop Nodup half) and C2b (drop consumed half): both break `checkPlan_sound` first; under C2b `dupGroup` does not flip because `cov1Nodup` still rejects | **EQUIVALENT at `checkPlan`, paired with `checkCov1Nodup`** (proved: `checkAccFresh_of_cov1Nodup`; neighbour `accSplit` valid) |
 | `checkAccMat` | `accOK` | safety + progress | unmaterialised target: `noInit` (`accMat@0`, also `pubMat@1`; run stuck 0) | audit mutant C3 (check always true): breaks `checkPlan_sound` first; no fixture flips | **EQUIVALENT at `checkPlan`**: no plan fails `accMat` alone (`invalid-acc-unmaterialised-attempts`: every attempt also trips `initFresh`, `pubMat` or `cov2Complete`); neighbour `lateEmptyInit` valid |
 | `checkReady` | `ready` | progress only (N3) | read of unpublished address: `chainEarly` (`ready@1`; run stuck 1) | A3a-f: `chainEarly` flips | backed |
-| `checkPubFresh` | `pubOK` | safety + progress | duplicate / already-published member: `pubTwice`, `pubDupIn` (see `checkCov2Nodup`) | audit mutant C1 (check always true): breaks `checkPlan_sound` first; no fixture flips | **EQUIVALENT at `checkPlan`, paired with `checkCov2Nodup`** (neighbour `pubSplit` valid) |
+| `checkPubFresh` | `pubOK` | safety + progress | duplicate / already-published member: `pubTwice`, `pubDupIn` (see `checkCov2Nodup`) | audit mutant C1 (check always true): breaks `checkPlan_sound` first; no fixture flips | **EQUIVALENT at `checkPlan`, paired with `checkCov2Nodup`** (proved: `checkPubFresh_of_cov2Nodup`; neighbour `pubSplit` valid) |
 | `checkPubMat` | `pubOK` | safety + progress (N1) | empty fibers not materialised: `partialInit` (`pubMat@2`; run stuck 2) | A3a-c: `partialInit` flips | backed |
 | `checkPubOrder` | `pubOK` | safety (cond. 4) | publish before all contributions: `earlyStep` (`pubOrder@1`), `earlyHalf` (`pubOrder@2`); both run to done | A3a-b: both flip | backed |
 | `checkSteps` on non-singleton | — | — | vacuous by design (P6); covered by `checkSingleton` | A3a-e | **I by design**, guarded |
@@ -357,7 +357,7 @@ has no proof consumer beyond `checkPlan_sound` building `coverage1.2` (N6).
 | `execAcc` | already-consumed member (reused across groups) | I at kernel; F by `checkAccFresh` | `dupGroup` runs to done 4 `[0,16,0]` |
 | `execAcc` | duplicate member within one group | I at kernel; F by `checkAccFresh` | `dupWithin` runs to done 3 `[0,16,0]` (double-counts) |
 | `execAcc` | commit values from raw vs published view | **EQUIVALENT** (A2-b, N5), all plans | no fixture can differ: footprint addresses are published after a successful scan (confirmed for all plans, valid or not; soundness review Q4) |
-| `execAcc` | transactional vs sequential commit | **EQUIVALENT on `checkPlan`-valid plans only** (A2-e, N5) | `semFail` carries no memory; `readPub` hides prefix commits because destinations are unpublished and materialised (`dest_not_pub`, `acc_slot_isSome`); two reviewer-computed invalid plans distinguish them (Open items 10) |
+| `execAcc` | transactional vs sequential commit | **EQUIVALENT on `checkPlan`-valid plans only** (A2-e, N5) | `semFail` carries no memory; `readPub` hides prefix commits because destinations are unpublished and materialised (`dest_not_pub`, `acc_slot_isSome`); two invalid plans distinguish them (`a2e-seq-visible`, `a2e-failed-vs-stuck`: shipped `[0,3,1]` / `failed`, mutant `[0,3,4]` / `stuck`, the mutant values observed in a scratch run and not asserted by the build; Open items 10) |
 | `execAcc` | which failing member is reported when several fail | not a requirement (31.3 (b) compares no-model only, D5) | **OPEN** by design: no fixture mixes a not-ready and an undefined member |
 | `execPub` | every member slot initialised | R: `ok M`, writes nothing | A2-c gives `[0,0,0]` on tagged and chain |
 | `execPub` | some member slot `none` | R: `stuck` | `partialInit` stuck 2 |
@@ -658,10 +658,12 @@ bash <exec>/leanncd/scripts/mutation-manifest.sh --out <exec>/papers/semantics/p
    and the within-group duplicate `execAcc` rows. EQUIVALENT at `checkPlan` (no fixture flips; the
    hand mutants break `checkPlan_sound` first): `checkPubFresh` (paired with `checkCov2Nodup`),
    `checkAccFresh` (paired with `checkCov1Nodup`), `checkAccMat` (every plan that fails it also
-   trips `initFresh`, `pubMat` or `cov2Complete`). These are observations on the fixtures, not
-   proofs. Remaining: the by-design `execAcc` failing-member-order row, and the proof that dropping
-   a shadowed pair cannot admit an unsound plan (the soundness theorem already covers it in the
-   other direction: removing a clause breaks `checkPlan_sound`); parked, about one short dispatch.
+   trips `initFresh`, `pubMat` or `cov2Complete`; observed on the fixtures, not proved). The
+   `checkCov1Nodup` / `checkCov2Nodup` pair with the two freshness checks is PROVED in
+   `Validity.lean` (`checkPlan_nodup_redundant`, `checkPlan_eq_core`, `checkAccFresh_of_cov1Nodup`,
+   `checkPubFresh_of_cov2Nodup`, commits `88fed829`, `8b7cc508`). Remaining: the by-design `execAcc`
+   failing-member-order row, and a proof (not a fixture) that `checkAccMat` is implied by the other
+   clauses; parked.
 4. **A3b-2 is single-site.** The prototype dropped the `coverage2` field and its `checkPlan_sound`
    component (two sites); the manifest format takes one site per entry, so the cycle renames the
    field instead. It still shows that only `Correctness` consumes `coverage2` by name; the semantic
@@ -677,20 +679,17 @@ bash <exec>/leanncd/scripts/mutation-manifest.sh --out <exec>/papers/semantics/p
    covers it implicitly through the R/Definition 31.1 restatement. D7, D8, D11, D12 were recovered
    from the originating session's design review and are recorded in `plan_layer_record.md`
    (section "Spec defects recovered"): D7 (no implementation-error constructor; deferred), D8
-   (undefined "output view" in Section 32.3; proposed fix drop or cross-reference, not applied),
+   (undefined "output view" in Section 32.3; fixed by cross-reference to the Publish premise of Section 29.2),
    D11 (multi-sort K unaddressed), D12 (`In ∩ Out` open).
 9. **Pushing `main`**: not done; push only on explicit request (CHECKPOINT §3 decision 4).
-10. **A2-e outside the valid domain: reviewer-computed, NOT built or verified.** The "transactional vs
-    sequential commit equivalent" claim (§5.2, N5) holds only on `checkPlan`-valid plans. The soundness
-    review derived two plans that distinguish the A2-e mutant; they were derived from the shipped
-    definitions and recorded fixture values, never run:
-    1. `unitPlan [[.initZero cAll], [.pub cAll], [.acc [cOcc 0, cOcc 1]]]` over `routed chainBody`
-       (occurrence 0 writes point 1, occurrence 1 reads point 1; `chainPlan` gives `[0,3,4]`; violates
-       `pubOrder`). Shipped kernel: occurrence 1 reads point 1 from the pre-step view (0), final memory
-       `[0,3,1]` (the `chainEarly` observation). Mutant: `readPub 2 M₁` shows occurrence 0's commit
-       (3), so occurrence 1 reads 3 and the final memory is `[0,3,4]`.
-    2. Group `[x1, x2]` with x1's destination slot `none` and x2 undefined (`failureAfterBody`-style;
-       violates `accMat`). Shipped: the scan reaches x2 and returns `failed x2 pc M`. Mutant: x1's
-       `addAt` returns `none`, giving `stuck pc M`.
-    Cost if wanted: 1 fixture (plan 1) in a Direct-path change; it would kill A2-e outside the valid
-    domain. The A2-b and A3a-a equivalences were confirmed by the reviewer for all plans (Q4).
+10. **A2-e outside the valid domain: built and run** (commit `db15f986`, `PlanStepTest.lean`). The
+    "transactional vs sequential commit equivalent" claim (§5.2, N5) holds only on `checkPlan`-valid
+    plans. Two invalid plans, derived by the soundness review, distinguish the A2-e mutant; both are
+    now fixtures with observed values: `a2e-seq-visible` (`pubOrder@1`; shipped final memory
+    `[0,3,1]`, mutant `[0,3,4]`) and `a2e-failed-vs-stuck` (`accMat@1`, `pubMat@2`; shipped `failed`,
+    mutant `stuck`). The mutant values were observed in a scratch run, not asserted by the build (the
+    mutant breaks a proof in `Plan/Simulation.lean`, which stops every module that imports the
+    aggregator). Both plans are pinned `checkPlan`-invalid by `invalid-a2e-seq-visible` and
+    `invalid-a2e-failed-vs-stuck` (`PlanValidityTest.lean`, with `decide` examples). The valid
+    neighbours `chainPlan` and `pPlan 2 failureAfterBody` agree under both kernels (the mutant side
+    from the scratch run). The A2-b and A3a-a equivalences were confirmed by the reviewer for all plans (Q4).

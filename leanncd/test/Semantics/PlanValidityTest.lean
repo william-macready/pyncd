@@ -243,4 +243,21 @@ index (`stepCommand`'s catch-all), so `singleton` is the guard that matters. -/
 
 example : emptyCmd.checkPlan = false := by decide
 
+/-! ### The two A2-e distinguishing plans are `checkPlan`-invalid
+
+`a2eSeqVisible` and `a2eFailedVsStuck` (PlanStepTest) are the invalid plans on which the
+non-transactional accumulate mutant differs from the shipped kernel; the verdicts below pin
+that they are outside `checkPlan`'s domain, where transactional and sequential commit are
+unobservable. -/
+
+#eval check "invalid-a2e-seq-visible"
+  (verdict a2eSeqVisible) (false, ["pubOrder@1"])
+
+#eval check "invalid-a2e-failed-vs-stuck"
+  (verdict a2eFailedVsStuck) (false, ["accMat@1", "pubMat@2"])
+
+example : a2eSeqVisible.checkPlan = false := by decide
+
+example : a2eFailedVsStuck.checkPlan = false := by decide
+
 end LeanNCD.Semantics.PlanFixtures

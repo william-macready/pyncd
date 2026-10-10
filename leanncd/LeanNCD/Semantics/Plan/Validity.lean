@@ -196,11 +196,128 @@ theorem checkPlan_sound (h : π.checkPlan = true) : π.Valid := by
     fun pc B ha => π.checkAnn_pub_sound (π.checkSteps_ann hst ha),
     fun pc G ha => (π.checkAnn_acc_sound (π.checkSteps_ann hst ha)).2⟩
 
+/-! ### Redundancy of the coverage `Nodup` checks (plan §10 item 3)
+
+In the singleton profile the freshness halves of `checkAnn` (`checkAccFresh`,
+`checkPubFresh`) already force `accFlat`/`pubFlat` duplicate-free: each step's
+group (block) is duplicate-free and disjoint from what the prefix consumed
+(published), so the prefix flat-map stays duplicate-free by induction on `pc`. -/
+
+omit [DecidableEq σ.Tensor] in
+/-- Generic induction: if every singleton step's image under `f` is
+    duplicate-free and disjoint from the prefix's image, every prefix image is
+    duplicate-free. -/
+theorem nodup_prefixAnn_flatMap {α : Type _} (f : Ann P → List α) (hs : π.Singleton)
+    (hfresh : ∀ pc a, π.commands[pc]? = some [a] →
+      (f a).Nodup ∧ ∀ x ∈ f a, x ∉ (π.prefixAnn pc).flatMap f) :
+    ∀ n, ((π.prefixAnn n).flatMap f).Nodup := by
+  intro n
+  induction n with
+  | zero => simp [prefixAnn_zero]
+  | succ n ih =>
+    cases hc : π.commands[n]? with
+    | none =>
+      have : π.prefixAnn (n + 1) = π.prefixAnn n := by simp [prefixAnn, List.take_add_one, hc]
+      rw [this]
+      exact ih
+    | some cmd =>
+      obtain ⟨a, rfl⟩ := hs cmd (List.mem_of_getElem? hc)
+      obtain ⟨hn, hd⟩ := hfresh n a hc
+      rw [π.prefixAnn_succ hc, List.flatMap_append, List.flatMap_singleton, List.nodup_append]
+      exact ⟨ih, hn, fun x hx y hy e => hd y hy (e ▸ hx)⟩
+
+/-- Plan §10 item 3: given the singleton profile and `checkSteps`, the two
+    coverage `Nodup` checks of `checkPlan` always pass. -/
+theorem checkPlan_nodup_redundant (hs : π.checkSingleton = true) (ht : π.checkSteps = true) :
+    π.checkCov1Nodup = true ∧ π.checkCov2Nodup = true := by
+  have hS : π.Singleton := by
+    simp only [checkSingleton, List.all_eq_true, beq_iff_eq] at hs
+    exact fun cmd hc => List.length_eq_one_iff.mp (hs cmd hc)
+  have hann : π.ann = π.prefixAnn π.commands.length := by simp [ann, prefixAnn]
+  simp only [checkCov1Nodup, checkCov2Nodup, accFlat, pubFlat, decide_eq_true_eq, hann]
+  refine ⟨π.nodup_prefixAnn_flatMap Ann.groups hS (fun pc a ha => ?_) _,
+    π.nodup_prefixAnn_flatMap Ann.blocks hS (fun pc a ha => ?_) _⟩
+  · have h := π.checkSteps_ann ht ha
+    cases a with
+    | acc G =>
+      simp only [checkAnn, checkAccFresh, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true,
+        Bool.not_eq_true', decide_eq_false_iff_not] at h
+      exact ⟨h.1.1.1, h.1.1.2⟩
+    | pub B => simp [Ann.groups]
+    | initZero S => simp [Ann.groups]
+  · have h := π.checkSteps_ann ht ha
+    cases a with
+    | pub B =>
+      simp only [checkAnn, checkPubFresh, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true,
+        Bool.not_eq_true', decide_eq_false_iff_not] at h
+      exact ⟨h.1.1.1, fun x hx hmem => h.1.1.2 x hx (Or.inr (List.mem_map_of_mem hmem))⟩
+    | acc G => simp [Ann.blocks]
+    | initZero S => simp [Ann.blocks]
+
+/-- Corollary: `checkPlan` equals its core without the two `Nodup` checks. -/
+theorem checkPlan_eq_core : π.checkPlan =
+    (π.checkSingleton && π.checkCov1Complete && π.checkCov2Complete && π.checkSteps) := by
+  unfold checkPlan
+  cases hs : π.checkSingleton
+  · simp
+  cases ht : π.checkSteps
+  · simp
+  obtain ⟨h1, h2⟩ := π.checkPlan_nodup_redundant hs ht
+  simp [h1, h2]
+
+/-! ### The converse: each `Nodup` check implies its freshness check
+
+A duplicate-free whole image makes every singleton step's image duplicate-free
+and disjoint from its prefix's, so `checkCov1Nodup` gives `checkAccFresh` and
+`checkCov2Nodup` gives `checkPubFresh` at every such step. With
+`nodup_prefixAnn_flatMap` the pair shadow each other: on a singleton plan the
+`Nodup` check fails exactly when some step's freshness check does. This
+direction needs no `checkSingleton`, only that the step itself is `[a]`. -/
+
+omit [DecidableEq σ.Tensor] in
+theorem fresh_of_nodup_flatMap {α : Type _} (f : Ann P → List α)
+    (hnd : (π.ann.flatMap f).Nodup) {pc : Nat} {a : Ann P} (ha : π.commands[pc]? = some [a]) :
+    (f a).Nodup ∧ ∀ x ∈ f a, x ∉ (π.prefixAnn pc).flatMap f := by
+  have hsub : List.Sublist ((π.prefixAnn (pc + 1)).flatMap f) (π.ann.flatMap f) :=
+    ((List.take_sublist _ _).flatten).flatMap f
+  have h := hnd.sublist hsub
+  rw [π.prefixAnn_succ ha, List.flatMap_append, List.flatMap_singleton, List.nodup_append] at h
+  exact ⟨h.2.1, fun x hx hmem => h.2.2 x hmem x hx rfl⟩
+
+theorem checkAccFresh_of_cov1Nodup (h1 : π.checkCov1Nodup = true) {pc : Nat}
+    {G : List (OccRef P)} (ha : π.commands[pc]? = some [.acc G]) :
+    π.checkAccFresh pc G = true := by
+  simp only [checkCov1Nodup, accFlat, decide_eq_true_eq] at h1
+  obtain ⟨hn, hd⟩ := π.fresh_of_nodup_flatMap Ann.groups h1 ha
+  simp only [checkAccFresh, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true,
+    Bool.not_eq_true', decide_eq_false_iff_not]
+  exact ⟨hn, hd⟩
+
+theorem checkPubFresh_of_cov2Nodup (h2 : π.checkCov2Nodup = true) {pc : Nat}
+    {B : List (DefAddr P)} (ha : π.commands[pc]? = some [.pub B]) :
+    π.checkPubFresh pc B = true := by
+  simp only [checkCov2Nodup, pubFlat, decide_eq_true_eq] at h2
+  obtain ⟨hn, hd⟩ := π.fresh_of_nodup_flatMap Ann.blocks h2 ha
+  simp only [checkPubFresh, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true,
+    Bool.not_eq_true', decide_eq_false_iff_not]
+  refine ⟨hn, fun x hx hp => ?_⟩
+  rcases hp with hin | hmem
+  · have hx' : P.input x.1.val = false := x.1.2
+    simp [DefAddr.addr, hx'] at hin
+  · obtain ⟨y, hy, e⟩ := List.mem_map.mp hmem
+    exact hd x hx (DefAddr.addr_injective e ▸ hy)
+
 end Check
 
 #print axioms Valid.stepOK
 #print axioms mem_occList
 #print axioms mem_addrList
 #print axioms checkPlan_sound
+#print axioms nodup_prefixAnn_flatMap
+#print axioms checkPlan_nodup_redundant
+#print axioms checkPlan_eq_core
+#print axioms fresh_of_nodup_flatMap
+#print axioms checkAccFresh_of_cov1Nodup
+#print axioms checkPubFresh_of_cov2Nodup
 
 end LeanNCD.Semantics.Program.Plan

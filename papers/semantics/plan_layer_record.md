@@ -66,11 +66,11 @@ Tool-use counts are harness counts (CHECKPOINT §7: self-reports ran about 20 pe
   item, batched/fused wording, notation), all applied; the snapshot now names the plan layer.
 - Fix dispatches: group A (spec) and group B (path doc and AGENTS nodes), one dispatch each,
   run in parallel on disjoint files.
-- Open items resolved / parked (plan section 10): the 11 OPEN audit cells are closed by the
-  audit-cells slice (below); D7, D8, D11, D12 are recovered (below); still parked: reviewer-computed
-  invalid-plan distinguishers for the A2-e equivalence (not built), the proof that dropping a
-  shadowed Nodup/Fresh pair cannot admit an unsound plan, and the pre-existing stale default-`Tests`
-  sentence in `Semantics/AGENTS.md` (Source and AxiomAudit modules omitted).
+- Open items resolved / parked (plan section 10): the 11 OPEN audit cells, the A2-e invalid-plan
+  distinguishers, the Nodup/Fresh shadowing proof, D8 and the stale `Semantics/AGENTS.md` `Tests`
+  sentence are all closed (sections below). Still parked: a proof that `checkAccMat` is implied by
+  the other clauses (observed on four attempted plans, not proved), and the slice-2 deferrals D7, D11,
+  D12 (implementation errors, multiple sorts in fixtures, `In ∩ Out`).
 - Token total (`token-report.py`, this session only; prototype sessions A1-A3b are separate): 55.5M
   across the controller (18.5M, peak context 241k, 120 turns) and 12 dispatches, against the
   Rule 6 execution budget of about 175M. Harness tool uses ran above the agents' self-reports again:
@@ -129,8 +129,8 @@ text (spec line numbers dropped):
   "It must not expose partial accumulators through an output view while another contribution
   remains"). Fusion legality is already sequential composition, and the Publish side condition
   already keeps partial accumulators from being exposed. Proposed fix: drop the phrase or
-  cross-reference. Disposition: NOT applied here (the spec is a protected input and the fix rests on
-  a reading of the fusion rules); parked for the slice that touches fused commands.
+  cross-reference. Disposition: applied in the parked-items slice: the phrase is replaced by the
+  publication premise `U ∩ C_P(a) = ∅` of Section 29.2, checked after removing `G` (Section 32.3).
 - **D11 (low).** Multi-sort `K` is unaddressed: the design review observed that slots carry one
   carrier and fixed the rationals for slice 1. Note (plan review F6): the theorems are generic over
   `K : S → Type`; only the fixtures use one sort. Disposition: parked (slice 2, multiple sorts).
@@ -157,7 +157,37 @@ Also covered by run-level evidence from the same fixtures: the `execPub` already
 (`pubTwice` done 4, `pubDupIn` done 3, both `[0,14,0]`) and the within-group duplicate `execAcc`
 row (`dupWithin` done 3 `[0,16,0]`, double-counted). No unsound plan found, no silent clause.
 For every EQUIVALENT cell the hand mutant breaks `checkPlan_sound` before any fixture is reached,
-so the claim "shadowed" rests on the fixtures, not a proof; the proof is parked.
+so the claim "shadowed" rested on the fixtures when this slice closed. The parked-items slice below
+proves it for the Nodup/Fresh pairs; `checkAccMat` stays observed only.
 
 Harness tool uses: dispatch A 36 (cap 40), dispatch B 39 (cap 38; one `cd` plus a heredoc edit used
 against the plain-command rule). Session token total after this slice (`token-report.py`): 71.5M.
+
+## Parked-items slice (Direct path)
+
+Worktree `plan-layer-parked-items`; closes the items the audit-cells slice left parked.
+
+| commit | item | result |
+|---|---|---|
+| `db15f986` | A2-e outside the valid domain (plan section 10 item 10) | both reviewer-derived plans built as fixtures (`a2e-seq-visible`, `a2e-failed-vs-stuck`), `checkPlan`-invalid (`pubOrder@1`; `accMat@1`, `pubMat@2`); shipped `[0,3,1]` / `failed`, mutant (scratch run) `[0,3,4]` / `stuck`, exactly as predicted; valid neighbours agree under both |
+| `88fed829` | Nodup redundancy | `checkPlan_nodup_redundant` (singleton and `checkSteps` imply `checkCov1Nodup` and `checkCov2Nodup`), `checkPlan_eq_core`; no `DefAddr.addr_injective` needed in this direction |
+| `8b7cc508` | converse pairing | `checkAccFresh_of_cov1Nodup`, `checkPubFresh_of_cov2Nodup` (hold without `checkSingleton`): `checkCov1Nodup` implies every accumulate command's freshness clause and `checkCov2Nodup` every publish command's, and on a singleton plan the step checks imply the Nodup checks, so no singleton plan separates a Nodup check from its freshness clause (a non-singleton command is skipped by `checkSteps` but rejected by `checkSingleton`) |
+| docs commit | D8, `Tests` sentence, plan sections 5 and 10, path doc counts | spec Section 32.3 cross-references the Publish premise; `Semantics/AGENTS.md` names the test groups and defers to `lakefile.toml`; path doc says 129 fixtures (96 shipped with the layer, 27 from the audit cells, 6 from this slice) and snapshot `a9f8d3bb` |
+
+Findings: the proof needed no `DefAddr.addr_injective` in the redundancy direction (the reviewer
+argument had assumed it). The plan's item 10 mis-cited `chainEarly` for `[0,3,1]` (that fixture
+gives `stuck` with `[0,0,0]`); corrected. A scratch probe that imports an already-built test module
+prints the shipped values under a mutant (stale downstream oleans): the mutant values here came
+from a probe importing only `Semantics.PlanFixtures` with copied definitions, checked to print the
+shipped values again after the revert.
+
+Harness tool uses: A2-e dispatch 35 (self-reported 31; cap 40), Nodup proof 43 (cap 50). Full
+default build 8784 jobs green; `AxiomAudit`: 5650 constants under `LeanNCD.Semantics` use only
+standard axioms, including the new theorems.
+
+Whole-branch review (single lens, `plan_layer_artifacts/wb_review_parked_items.md`; 27 harness tool
+uses): no Critical or Important findings, five Minor, all applied: (1) fixture split corrected to
+96 + 27 + 6 = 129; (2) the mutant values in plan section 5.2 labelled as a scratch run;
+(3) verdict rows and `decide` examples added so the build asserts both A2-e plans are
+`checkPlan`-invalid (`invalid-a2e-seq-visible`, `invalid-a2e-failed-vs-stuck`); (4) the pairing
+claim qualified to singleton plans; (5) the D8 sentence now says "for every `a ∈ B`".
