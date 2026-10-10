@@ -187,7 +187,7 @@ sequentially within each top-level section and are not subsection numbers:
 
 | Result | Statement | Lean status (`LeanNCD.Semantics`) |
 | --- | --- | --- |
-| Proposition 19.1 | Pure-einsum elaboration correspondence | Proved for the bounded source fragment (read-only sums of products over bare slots, over any semiring): `Term.collectedBody_correspondence`, `AdmittedSource.collect_correspondence`, `AdmittedSource.models_iff_global` (`Source.Correspondence`, `Source.ProgramCorrespondence`). Actual successful raw admission now certifies original declarations and indexed occurrences through `admitRawSource_fields` and `admitRawSource_certified` (`Source.RawCorrespondence`, `Source.RawSemanticConnection`), with applicability to existing body/fiber/collection/model results. Reached rational results require an actual complete outcome, are relative to `result.input`, and expose denotation only on outputs. This is not an independent raw denotation, parser correctness or input-buffer certification; affine slots, guards, marked slices and nonlinear bodies remain outside the fragment. |
+| Proposition 19.1 | Pure-einsum elaboration correspondence | Proved for the bounded source fragment (read-only sums of products over bare slots, over any semiring): `Term.collectedBody_correspondence`, `AdmittedSource.collect_correspondence`, `AdmittedSource.models_iff_global` (`Source.Correspondence`, `Source.ProgramCorrespondence`). Independence from the order of nested reductions is `interpret_contract_reindex` (`Source.Lowering`): any equivalence of the bound coordinates leaves the interpreted contraction unchanged, for the generic `contract` builder over any semiring. Admission still builds reductions in declaration order, and no theorem permutes factors or terms. Actual successful raw admission now certifies original declarations and indexed occurrences through `admitRawSource_fields` and `admitRawSource_certified` (`Source.RawCorrespondence`, `Source.RawSemanticConnection`), with applicability to existing body/fiber/collection/model results. Reached rational results require an actual complete outcome, are relative to `result.input`, and expose denotation only on outputs. This is not an independent raw denotation, parser correctness, global identity-mint injectivity or input-buffer certification; affine slots, guards, marked slices and nonlinear bodies remain outside the fragment. |
 | Proposition 19.2 | Source-order invariance | Proved for the bounded source fragment: the occurrence-relabeling form generically (`models_relabel`) and for source programs under any statement permutation (`StatementPermutation.models`, `.collect`, `.admEnv`, `.identities` in `Source.Permutation`). `StatementPermutation.successful_results` proves equal whole stores for two completed rational executions with equal inputs; it does not assert completion or trace equality. Open beyond the fragment and for re-admitted permuted source text. |
 | Lemma 23.1 | Read stability | Proved: `evalWith_stable`, `interpret_stable` (`Readiness`). |
 | Lemma 26.1 | Conservation invariants | Proved: `reachable_invariant` (`Invariants`) yields `Invariant.published` (item 4), `Invariant.consumed` (item 5), `Invariant.conservation` (accumulator formula), and `Invariant.inputs` (inputs unchanged, part of item 3), with `initial_invariant`, `consume_invariant`, `publish_invariant`. Items 1 and 2 follow from the step premises and typing (item 1 via the pending premise and `Finset.erase`). Monotone publication has only the one-step lemma `publish_extends`; the invariant does not need more. |
@@ -219,13 +219,15 @@ slots with identity-keyed valuations, and proves Propositions 19.1 and 19.2
 for that fragment. Its
 differential comparison of four evaluation legs (an independent exact oracle,
 the rational executor, legacy evaluation, and the checked dense backend) is
-executed evidence, not theorems. The slice as a whole is validated by 79 named
-fixtures and 39 mutation controls (18 proof-protected and 21 executable).
+executed evidence, not theorems. The original slice is validated by 79 named
+fixtures and 39 mutation controls (18 proof-protected and 21 executable). The
+raw-admission follow-up adds ten fixture families and 17 controls (15
+proof-protected rejections and 2 fixture contrasts), recorded separately.
 Its numerical profile claims exact bit agreement only for programs with
 f64-declared integral values of magnitude at most $2^{20}$ and one definition
 per left-hand side; it is not a floating-point semantics. Proof target 2 is
-covered only at the level of identity-keyed valuations and binder freshening;
-there is no substitution on expressions. See
+covered only at the level of identity-keyed valuations, binder freshening, and
+reindexing of reduction binders; there is no substitution on expressions. See
 [the Lean path document](lean_executable_semantics_path.md#47-bounded-source-correspondence-and-differential-debugging).
 Items 1 and 2 of the proof targets in [Section 28](#28-reference-machine-boundaries-and-proof-targets) (well-definedness of typed
 interpretation, and renaming and substitution) are not numbered statements;
@@ -2767,7 +2769,8 @@ valuation yields the scalar operand product.
 
 The proof description here is a paper argument. A Lean proof exists for the
 bounded source fragment (see the status table); it covers repeated slots, empty
-contractions, zero extents, factor order, and multiplicity.
+contractions, zero extents, factor order, multiplicity, and the order of nested
+reductions (`interpret_contract_reindex`).
 
 ### 19.4 Source order and nonlinear boundaries
 

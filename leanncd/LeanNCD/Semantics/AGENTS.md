@@ -112,7 +112,7 @@ carriers are open; operations are data, not assumed machine-float semiring laws.
 Contexts are typed valuation spaces with product extension, not named affine
 syntax. Read admission and the bounded raw-AST correspondence are explicit;
 general source checking beyond the finite read-only fragment, syntactic
-substitution, expression reindexing laws, raw writes,
+substitution (only reduction-binder reindexing is proved), raw writes,
 and full categorical/backend interpretation remain deferred.
 See the [implementation plan](../../../papers/semantics/expression_readiness_plan.md)
 and [authoring verification](../../../papers/semantics/expression_readiness_authoring_record.md)
