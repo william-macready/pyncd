@@ -77,4 +77,17 @@ def earlyHalf : taggedOut.Plan :=
 example : missingOcc.checkPlan = false := by decide
 example : earlyHalf.checkPlan = false := by decide
 
+/-- N2 freshness: re-initialising point 1 after the first group has consumed
+    into it. Only `initFresh` rejects it; unchecked, the run silently returns
+    10 (the second group alone) instead of 14. -/
+def reinitMid : taggedOut.Plan :=
+  unitPlan [[.initZero block], [.acc [occ 0 0, occ 0 1]], [.initZero block],
+    [.acc [occ 1 0, occ 1 1]], [.pub block]]
+
+#eval check "invalid-reinit-after-consume"
+  (verdict reinitMid, outcomeRow (reinitMid.runPlan ops (Start η0)))
+  ((false, ["initFresh@2"]), ("done", 5, none, [some 0, some 10, some 0]))
+
+example : reinitMid.checkPlan = false := by decide
+
 end LeanNCD.Semantics.PlanFixtures
