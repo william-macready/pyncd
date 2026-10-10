@@ -90,4 +90,39 @@ def reinitMid : taggedOut.Plan :=
 
 example : reinitMid.checkPlan = false := by decide
 
+/-! ### Publication freshness (`checkPubFresh`)
+
+`checkPubFresh` and `checkCov2Nodup` fire together: a member that repeats
+inside a block, or that an earlier block already published, is a repeat in
+`pubFlat` (a defined address is never an input, so `Pub` is membership in an
+earlier block). Neither run goes wrong here: both end `done` with point 1
+holding 14, as `plan` does. -/
+
+/-- Point 1 published by the full block, then again by a second block. -/
+def pubTwice : taggedOut.Plan :=
+  unitPlan [[.initZero block], [.acc group], [.pub block], [.pub [addr 1]]]
+
+/-- Point 1 listed twice inside the one publication block. -/
+def pubDupIn : taggedOut.Plan :=
+  unitPlan [[.initZero block], [.acc group], [.pub [addr 0, addr 1, addr 1, addr 2]]]
+
+/-- Accept-neighbour: `plan` with its block split in two; distinct blocks
+    over disjoint members are fresh. -/
+def pubSplit : taggedOut.Plan :=
+  unitPlan [[.initZero block], [.acc group], [.pub [addr 0, addr 1]], [.pub [addr 2]]]
+
+#eval check "invalid-publish-twice-across-blocks"
+  (verdict pubTwice, outcomeRow (pubTwice.runPlan ops (Start η0)))
+  ((false, ["cov2Nodup", "pubFresh@3"]), ("done", 4, none, [some 0, some 14, some 0]))
+#eval check "invalid-publish-twice-in-block"
+  (verdict pubDupIn, outcomeRow (pubDupIn.runPlan ops (Start η0)))
+  ((false, ["cov2Nodup", "pubFresh@2"]), ("done", 3, none, [some 0, some 14, some 0]))
+#eval check "valid-publish-split-blocks"
+  (verdict pubSplit, outcomeRow (pubSplit.runPlan ops (Start η0)))
+  ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
+
+example : pubTwice.checkPlan = false := by decide
+example : pubDupIn.checkPlan = false := by decide
+example : pubSplit.checkPlan = true := by decide
+
 end LeanNCD.Semantics.PlanFixtures
