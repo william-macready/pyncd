@@ -125,4 +125,28 @@ example : pubTwice.checkPlan = false := by decide
 example : pubDupIn.checkPlan = false := by decide
 example : pubSplit.checkPlan = true := by decide
 
+/-! ### Accumulation freshness (`checkAccFresh`)
+
+`checkAccFresh` and `checkCov1Nodup` fire together: a within-group repeat
+or a member an earlier group consumed (`dupGroup`) is a repeat in `accFlat`. -/
+
+/-- Occurrence (0, 0) listed twice in the one group. Unchecked, the run
+    silently returns 16 (the value 2 counted twice) instead of 14. -/
+def dupWithin : taggedOut.Plan :=
+  unitPlan [[.initZero block], [.acc [occ 0 0, occ 0 0, occ 0 1, occ 1 0, occ 1 1]], [.pub block]]
+
+/-- Accept-neighbour: `plan` with its group split in two disjoint groups. -/
+def accSplit : taggedOut.Plan :=
+  unitPlan [[.initZero block], [.acc [occ 0 0, occ 0 1]], [.acc [occ 1 0, occ 1 1]], [.pub block]]
+
+#eval check "invalid-duplicate-within-group"
+  (verdict dupWithin, outcomeRow (dupWithin.runPlan ops (Start η0)))
+  ((false, ["cov1Nodup", "accFresh@1"]), ("done", 3, none, [some 0, some 16, some 0]))
+#eval check "valid-accumulate-split-groups"
+  (verdict accSplit, outcomeRow (accSplit.runPlan ops (Start η0)))
+  ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
+
+example : dupWithin.checkPlan = false := by decide
+example : accSplit.checkPlan = true := by decide
+
 end LeanNCD.Semantics.PlanFixtures
