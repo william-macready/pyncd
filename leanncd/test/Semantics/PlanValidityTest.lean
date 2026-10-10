@@ -149,4 +149,53 @@ def accSplit : taggedOut.Plan :=
 example : dupWithin.checkPlan = false := by decide
 example : accSplit.checkPlan = true := by decide
 
+/-! ### Accumulate into an unmaterialised target (`checkAccMat`)
+
+No plan fails `checkAccMat` alone. If the target `t` of a group at `pc` is
+not materialised there, `t` must still be published (else `cov2Complete`);
+a publication before `pc` fails `pubOrder` (or `accFresh`, if the member was
+consumed earlier); a publication after `pc` either finds `t` unmaterialised
+(`pubMat`) or follows an `initZero` of `t` placed after `pc`, which a consumed
+occurrence already targets (`initFresh`). Each attempt below shows one branch
+(`noInit` above shows `pubMat` with nothing materialised). -/
+
+/-- Materialise every point only after the accumulate. -/
+def accThenInit : taggedOut.Plan :=
+  unitPlan [[.acc group], [.initZero block], [.pub block]]
+
+/-- Materialise only the empty fibers, never the target. -/
+def emptyOnlyInit : taggedOut.Plan :=
+  unitPlan [[.initZero [addr 0, addr 2]], [.acc group], [.pub block]]
+
+/-- As `emptyOnlyInit`, but never publish the target. -/
+def targetUnpub : taggedOut.Plan :=
+  unitPlan [[.initZero [addr 0, addr 2]], [.acc group], [.pub [addr 0, addr 2]]]
+
+/-- Materialise the target between its two groups. -/
+def halfThenInit : taggedOut.Plan :=
+  unitPlan [[.initZero [addr 0, addr 2]], [.acc [occ 0 0, occ 0 1]], [.initZero [addr 1]],
+    [.acc [occ 1 0, occ 1 1]], [.pub block]]
+
+/-- Accept-neighbour: the empty fibers materialised after the accumulate;
+    only the target need be materialised before it. -/
+def lateEmptyInit : taggedOut.Plan :=
+  unitPlan [[.initZero [addr 1]], [.acc group], [.initZero [addr 0, addr 2]], [.pub block]]
+
+#eval check "invalid-acc-unmaterialised-attempts"
+  (([accThenInit, emptyOnlyInit, targetUnpub, halfThenInit] : List taggedOut.Plan).map
+    fun (π : taggedOut.Plan) => (verdict π, outcomeRow (π.runPlan ops (Start η0))))
+  [((false, ["accMat@0", "initFresh@1"]), ("stuck", 0, none, [none, none, none])),
+   ((false, ["accMat@1", "pubMat@2"]), ("stuck", 1, none, [some 0, none, some 0])),
+   ((false, ["cov2Complete", "accMat@1"]), ("stuck", 1, none, [some 0, none, some 0])),
+   ((false, ["accMat@1", "initFresh@2"]), ("stuck", 1, none, [some 0, none, some 0]))]
+#eval check "valid-late-empty-fiber-init"
+  (verdict lateEmptyInit, outcomeRow (lateEmptyInit.runPlan ops (Start η0)))
+  ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
+
+example : accThenInit.checkPlan = false := by decide
+example : emptyOnlyInit.checkPlan = false := by decide
+example : targetUnpub.checkPlan = false := by decide
+example : halfThenInit.checkPlan = false := by decide
+example : lateEmptyInit.checkPlan = true := by decide
+
 end LeanNCD.Semantics.PlanFixtures
