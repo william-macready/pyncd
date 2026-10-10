@@ -33,7 +33,8 @@ interpretation/footprints, structural stability/readiness, and whole-array
 completeness. Default `Tests` includes `Semantics.ExpressionTest`,
 `Semantics.NativeTest`, `Semantics.ContractTest`, `Semantics.CollectionModelTest`,
 `Semantics.ReferenceMachineTest`, `Semantics.RankedMachineTest`, and
-`Semantics.ExecutableReferenceTest`.
+`Semantics.ExecutableReferenceTest`. The Part V plan layer's tests are the
+`Semantics.Plan*Test` modules and `Semantics.PlanFixtures` (see `Plan/AGENTS.md`).
 
 `Source.Context` supplies UID-keyed dependent valuations, coordinate
 equivalences, full-domain index pullbacks, and generated-only alpha transport.
@@ -173,4 +174,4 @@ reference-machine soundness, bounded read-only pure-einsum correspondence, and
 the Part V slice-1 plan layer (singleton commands, dense non-reused storage).
 General source-expression elaboration, cyclic solving, general unique-model
 existence, complete categorical/backend interpretations, buffer reuse, and
-fused/batched plan commands remain outside it.
+fused plan commands remain outside it.

@@ -4153,21 +4153,21 @@ or silently supply zeros at missing nonempty output coordinates.
 
 **As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
 The general relation above stays the contract; the slice-1 instance is the structure `R` (`Plan.Memory`),
-with the input $\eta$ explicit and the pc-local sets $\mathrm{Pub}(pc)$, $\mathrm{Cons}(pc)$,
-$\mathrm{Mat}(pc)$ computed from the first $pc$ commands (`prefixAnn`). Because nothing is retired, the
-layout view `SlotView` maps exactly the addresses of $\mathrm{Pub}(pc)$ to their published slots.
+with the input $\eta$ explicit and the pc-local sets $\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$,
+$\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$ computed from the first $\textcolor{#C16C86}{\mathsf{pc}}$ commands (`prefixAnn`). Because nothing is retired, the
+layout view `SlotView` maps exactly the addresses of $\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$ to their published slots.
 
-- R1 (reach): $\mathsf{Conf}$ is reachable from the initial state on $\eta$. R1 is kept because R2-R4 do
+- R1 (reach): $\textcolor{#A87C28}{\mathsf{Conf}}$ is reachable from the initial state on $\eta$. R1 is kept because R2-R4 do
   not pin untouched accumulators; only conservation from the initial state does
   (`acc_zero_of_unconsumed`).
-- R2 (agreement, as equations): $o\in U(t)\iff(t,o)\notin\mathrm{Cons}(pc)$, and $\sigma(a)$ is
-  defined $\iff a\in\mathrm{Pub}(pc)$.
-- R3 (memory): for $a\in\mathrm{Pub}(pc)$, $M[\mathrm{place}\ a]=\sigma(a)$; for
-  $x\in\mathrm{Mat}(pc)\setminus\mathrm{Pub}(pc)$, $M[\mathrm{place}\ x]=\mathsf{acc}(x)$. The layout
-  view `SlotView` depends on $pc$ only, not on the memory.
+- R2 (agreement, as equations): $o\in U(t)\iff(t,o)\notin\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$, and $\sigma(a)$ is
+  defined $\iff a\in\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$.
+- R3 (memory): for $a\in\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$, $M[\mathrm{place}\ a]=\sigma(a)$; for
+  $x\in\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})\setminus\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$, $M[\mathrm{place}\ x]=\mathsf{acc}(x)$. The layout
+  view `SlotView` depends on $\textcolor{#C16C86}{\mathsf{pc}}$ only, not on the memory.
 - R4 (retention): if $x$ is unpublished and some consumed occurrence targets $x$, then
-  $x\in\mathrm{Mat}(pc)$.
-- `Decode` at $pc$ is partial. It succeeds iff every output coordinate is in $\mathrm{Pub}(pc)$ with an
+  $x\in\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$.
+- `Decode` at $\textcolor{#C16C86}{\mathsf{pc}}$ is partial. It succeeds iff every output coordinate is in $\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$ with an
   initialised slot (`decode_of_R` under R), and it never fills a missing coordinate.
 
 ## 31. Simulation and compiler correctness
@@ -4207,27 +4207,31 @@ handled as below.
 
 **As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
 The five-condition definition above stays the general contract. Lean's `Valid` (`Plan.Validity`) is a
-purely static condition, stated per command $pc$ with `commands[pc] = [a]` against the prefix sets
-$\mathrm{Pub}(pc)$, $\mathrm{Cons}(pc)$, $\mathrm{Mat}(pc)$ (the rows below). The semantic conditions 2-5
-are not fields of it: for the fixed slice-1 kernels they are theorems, `R_start` (2), `step_R` (3),
-`step_failed` (4) and `step_not_stuck` (5). Each clause has a role: *safety* (needed for a correct
-step), *progress* (needed so that a step is not stuck), *terminal* (needed only at $pc=m$), or
+purely static condition, stated per command $\textcolor{#C16C86}{\mathsf{pc}}$ with `commands[pc] = [a]` against the prefix sets
+$\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$ (the rows below). Definition 31.1's semantic
+conditions 2-5 are not fields of it: for the fixed slice-1 kernels they are theorems, `R_start` (2),
+`step_R` (3, for the reference state `refState pc = some c`; see
+[Section 31.2](#312-initial-states-and-successful-step-simulation)), `step_failed` (4) and
+`step_not_stuck` (5). Each clause has a role: *safety* (needed for a correct
+step), *progress* (needed so that a step is not stuck), *terminal* (needed only at $\textcolor{#C16C86}{\mathsf{pc}}=m$), or
 *diagnostic* (checked but consumed by no theorem).
 
 | clause | role | consumed by |
 | --- | --- | --- |
 | profile: every command is a singleton | progress | `step_not_stuck`, `run_R` |
-| initZero $S$: each $x\notin\mathrm{Pub}(pc)$, and no occurrence in $\mathrm{Cons}(pc)$ targets $x$ (initZero freshness) | safety | `step_R` |
-| acc $G$: $G$ duplicate-free, $G\cap\mathrm{Cons}(pc)=\varnothing$, every target $\in\mathrm{Mat}(pc)$ | safety + progress | `step_R`, `step_failed`, `step_not_stuck` |
-| acc $G$: every footprint address $\in\mathrm{Pub}(pc)$ ([Section 29.3](#293-coverage-and-schedule-certificates) condition 3) | progress | `step_not_stuck` |
-| pub $B$: $B$ duplicate-free, $B\cap\mathrm{Pub}(pc)=\varnothing$, $B\subseteq\mathrm{Mat}(pc)$, every occurrence targeting $B$ is in $\mathrm{Cons}(pc)$ (condition 4) | safety + progress | `step_R`, `step_not_stuck` |
-| whole plan: groups duplicate-free (condition 1, Nodup half) | diagnostic | none |
-| whole plan: blocks duplicate-free (condition 2, Nodup half, `checkCov2Nodup`) | diagnostic | none |
-| whole plan: blocks cover $\mathrm{Addr}_{\mathrm{Def}}$ (condition 2 covering) | terminal | `complete_of_refState` (Lemma 31.2) |
-| whole plan: groups cover $\mathcal{O}_P$ (condition 1 covering) | terminal, derivable from condition 2 covering and condition 4 | `complete_of_refState` |
+| initZero $S$: each $x\notin\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$, and no occurrence in $\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$ targets $x$ (initZero freshness) | safety | `step_R` |
+| acc $G$: $G$ duplicate-free, $G\cap\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})=\varnothing$, every target $\in\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$ | safety + progress | `step_R`, `step_failed`, `step_not_stuck` |
+| acc $G$: every footprint address $\in\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$ ([Section 29.3](#293-coverage-and-schedule-certificates) condition 3) | progress | `step_not_stuck` |
+| pub $B$: $B$ duplicate-free, $B\cap\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})=\varnothing$, $B\subseteq\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$, every occurrence targeting $B$ is in $\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$ (Section 29.3 condition 4) | safety + progress | `step_R`, `step_not_stuck` |
+| whole plan: groups duplicate-free (Section 29.3 condition 1, Nodup half) | diagnostic | none |
+| whole plan: blocks duplicate-free (Section 29.3 condition 2, Nodup half, `checkCov2Nodup`) | diagnostic | none |
+| whole plan: blocks cover $\mathrm{Addr}_{\mathrm{Def}}$ (Section 29.3 condition 2 covering) | terminal | `complete_of_refState` (Lemma 31.2) |
+| whole plan: groups cover $\mathcal{O}_P$ (Section 29.3 condition 1 covering) | terminal (redundant: derivable from Section 29.3 condition 2 covering and condition 4) | `complete_of_refState` |
 
-Condition 1 covering is a consequence of condition 2 covering plus condition 4 in the singleton profile
-(`accFlat_complete`); it is kept in `Valid` as a diagnostic clause. That the Nodup half of condition 1
+Section 29.3 condition 1 covering is redundant in the singleton profile: it follows from Section 29.3
+condition 2 covering plus Section 29.3 condition 4 (`accFlat_complete`, packaged as
+`cov1_of_cov2_pubOrder`). It is nevertheless kept in `Valid` and is not diagnostic:
+`complete_of_refState` consumes it directly. That the Nodup half of Section 29.3 condition 1
 follows from the per-step `AccOK` success is a conjecture, not proved. Runtime execution (`runPlan`)
 does not detect an invalid plan: soundness rests on the computable checker `checkPlan`, whose
 acceptance implies `Valid` (`checkPlan_sound`).
@@ -4266,9 +4270,9 @@ concrete termination or prevent an incorrectly stuck compiled execution.
 
 **As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
 The one-step theorem `step_R` assumes a singleton command `[a]` with `AnnOK pc a` and, besides R, that
-$\mathsf{Conf}$ is the deterministic logical post-state of the prefix, `refState pc`. So the simulation
-invariant is $R\land\mathsf{Conf}=\mathtt{refState}\ pc$, not R alone: R2-R4 do not pin untouched
-accumulators, so R does not determine $\mathsf{Conf}$. Simulation is proved for that reference state
+$\textcolor{#A87C28}{\mathsf{Conf}}$ is the deterministic logical post-state of the prefix, `refState pc`. So the simulation
+invariant is $R\land\textcolor{#A87C28}{\mathsf{Conf}}=\mathtt{refState}\ \textcolor{#C16C86}{\mathsf{pc}}$, not R alone: R2-R4 do not pin untouched
+accumulators, so R does not determine $\textcolor{#A87C28}{\mathsf{Conf}}$. Simulation is proved for that reference state
 only, not for every R-related state. `R_start` is the initialization obligation, and `run_R` chains the
 steps over the whole plan.
 
@@ -4292,15 +4296,20 @@ error occurs. Concrete progress below, and the converse direction of
 Theorem 31.3, are stated for that profile.
 
 **As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
-Failure matching is proved with the same occurrence: `step_failed` (one command) and `runPlan_R` (the
-whole run) give $\mathsf{Conf}\longrightarrow^{*}\mathsf{Failed}(o,\ldots)$ for the occurrence $o$ the plan
-reports, by one `undefined` event from the related $\mathsf{Conf}$ (zero preceding contributions: the
-accumulate kernel is transactional). `PlanFailed` carries the memory before the failing command. The
-matched snapshot is that related $\mathsf{Conf}$; it may differ from the state the reference executor
-`Executor.run` reaches under its own schedule (fixture `failureAfter`: executor accumulator 2, plan 0).
-Theorem 31.3 (b) claims only that no model exists, so this difference is harmless. On
-`checkPlan`-valid plans, committing raw values versus view values, and transactional versus sequential
-commit, are unobservable (`dest_not_pub`, `acc_slot_isSome`).
+Failure matching is proved with the same occurrence $o$ the plan reports. For one command,
+`step_failed` gives, from any R-related $\textcolor{#A87C28}{\mathsf{Conf}}$, the single `undefined` event
+$\textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\longrightarrow}\textcolor{#A87C28}{\mathsf{Failed}}(o,\ldots)$, with no preceding contributions, so its
+matched snapshot is that related $\textcolor{#A87C28}{\mathsf{Conf}}$. This holds because `runFrom` reports
+the memory from before the failing command (`PlanFailed` carries it), so a partial commit is never
+observed. For the whole run, `runPlan_R` gives only some reference execution from the initial state to
+$\textcolor{#A87C28}{\mathsf{Failed}}(o,\ldots)$ on the same $o$; its snapshot is left existential. The snapshot may differ
+from the state the reference executor `Executor.run` reaches under its own schedule (fixture
+`failureAfter`: executor accumulator 2, plan 0). Theorem 31.3 (b) claims only that no model exists, so
+this difference is harmless. Committing raw values versus view values, and transactional versus
+sequential commit, are not told apart by any fixture on `checkPlan`-valid plans. This is an
+observation, not a theorem: neither variant is defined in Lean, the
+[mutation record](plan_layer_mutation_results.md) lists both as equivalent mutants, and the argument
+that no run outcome distinguishes them (from `dest_not_pub` and `acc_slot_isSome`) is informal.
 
 Concrete progress requires that, in the error-free profile, every reachable
 running state with $\textcolor{#C16C86}{\mathsf{pc}}<m$ can execute its next command successfully or report a
@@ -4341,7 +4350,7 @@ $\mathrm{Addr}_{\mathrm{Def}}$ plus inputs), and $\mathrm{Decode}_m(M')=\rho_c|_
 $\rho_c$ is the final store of $c$. The general argument above stays: its step through
 $\mathrm{Need}_{\mathrm{pub}}$ is the one that matters once retirement
 ([Section 33](#33-scan-compilation-and-buffer-reuse)) separates "published" from "mapped". In slice 1 that
-step is trivial: at $pc=m$, $\mathrm{Pub}(m)=\mathrm{Addr}_\Sigma$ already and nothing is retired, so
+step is trivial: at $\textcolor{#C16C86}{\mathsf{pc}}=m$, $\mathrm{Pub}(m)=\mathrm{Addr}_\Sigma$ already and nothing is retired, so
 `decode_of_R` needs no $\mathrm{Need}_{\mathrm{pub}}$ argument.
 
 Write
@@ -4416,7 +4425,8 @@ those conditions; the generic steps (Lemma 31.2 above and, for batched
 kernels, Lemma 32.1 in [Section 32.1](#321-why-exact-batched-accumulation-refines-individual-steps)) carry a mathematical argument in general, while conditions
 3-5 remain an obligation on each kernel. For the slice-1 kernels (singleton commands, dense non-reused
 storage, no retirement) the generic steps and conditions 2-5 are kernel-checked in Lean (`R_start`,
-`step_R`, `step_failed`, `step_not_stuck`, `batch_execution`, `terminal_adequacy`); every other kernel
+`step_R` for the reference state `refState pc = some c`, `step_failed`, `step_not_stuck`,
+`batch_execution`, `terminal_adequacy`); every other kernel
 keeps the obligation. Beyond that profile it is a compiler proof specification with a mathematical
 argument, not a claim that a particular compiler or kernel has already been
 verified.
@@ -4462,7 +4472,8 @@ ending in the state `accumulateBatch c G v`, whose accumulator is $\alpha\oplus\
 and whose published store is unchanged (`accumulateBatch_published`); any enumeration order gives the
 same state (`batch_execution_perm`). The failure paragraph is proved only for the transactional
 singleton kernel (`step_failed`): the plan reports the first undefined member, matched by one
-`undefined` event from the related reference state with no preceding contributions; that snapshot may
+`undefined` event from the related reference state with no preceding contributions, because the
+reported memory is the one from before the failing command; that snapshot may
 differ from the reference executor's own schedule ([Section 31.3](#313-failure-matching-progress-and-finishing)).
 A kernel that commits a successful prefix before failing is not formalized.
 
