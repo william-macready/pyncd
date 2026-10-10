@@ -7,6 +7,9 @@ separate from the production DSL evaluator and execution backends.
 
 ## Current artifact
 
+Plan layer (`LeanNCD.Semantics.Plan`, Part V slice 1: singleton commands over dense memory,
+`checkPlan`, Lemma 31.2, Theorem 31.3, Lemma 32.1): see [`Plan/AGENTS.md`](Plan/AGENTS.md).
+
 `ExecutableState`, `ExecutableSelection`, and `ReferenceExecutor` realize the
 same reference `Step` edges computationally, with function-valued typed stores.
 Provide computational tensor equality and a complete, duplicate-free ordered
@@ -166,6 +169,8 @@ Read the [plan](../../../papers/semantics/tensor_logic_semantic_core_spike_plan.
 and [results](../../../papers/semantics/tensor_logic_semantic_core_spike_record.md)
 before extending that spike. The validation layer covers the admitted
 array/heterogeneous expression fragment, finite additive program models,
-reference-machine soundness, and bounded read-only pure-einsum correspondence.
+reference-machine soundness, bounded read-only pure-einsum correspondence, and
+the Part V slice-1 plan layer (singleton commands, dense non-reused storage).
 General source-expression elaboration, cyclic solving, general unique-model
-existence, and complete categorical/backend interpretations remain outside it.
+existence, complete categorical/backend interpretations, buffer reuse, and
+fused/batched plan commands remain outside it.

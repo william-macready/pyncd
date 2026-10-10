@@ -165,7 +165,9 @@ silently replace the scalar carrier by floating-point values.
 Every lemma and theorem here carries a mathematical argument. Which of them
 are also kernel-checked in Lean is recorded in
 [Proof status and numbered results](#proof-status-and-numbered-results). The
-[Part V](#part-v-compilation-and-refinement) compilation results have no Lean proof. Compiler correctness is
+[Part V](#part-v-compilation-and-refinement) compilation results Lemma 31.2, Theorem 31.3 and Lemma 32.1 are
+proved for the slice-1 profile (singleton commands, dense non-reused storage, no retirement; see the table);
+the general results, fused commands and buffer reuse have no Lean proof. Compiler correctness is
 conditional on the stated certificates and kernel contracts; it is not a claim
 that an existing compiler satisfies them.
 Structural well-formedness alone establishes neither existence of a model
@@ -197,9 +199,9 @@ sequentially within each top-level section and are not subsection numbers:
 | Theorem 26.5 | Ranked progress | Proved: `ranked_progress`, `ranked_not_blocked` (`Progress`). Executor level: `result_not_blocked`. |
 | Theorem 26.6 | Ranked correspondence | Proved: `maximal_dichotomy`, `model_maximal_success`, `no_model_maximal_failure`, `initialization_iff_singleton`, `successful_schedules_agree` (`Progress`). Executor level: `run_ranked_dichotomy`. |
 | Corollary 26.7 | Ranked uniqueness | Follows from `model_maximal_success`, `maximal_extension` and `successful_unique`; no separately named theorem. |
-| Lemma 31.2 | Terminal adequacy of a valid plan | Not formalized. |
-| Theorem 31.3 | Compiled correctness | Not formalized. |
-| Lemma 32.1 | Batched accumulation refines individual steps | Not formalized. |
+| Lemma 31.2 | Terminal adequacy of a valid plan | Proved (slice-1 profile): `terminal_adequacy`, `complete_of_refState` (`Plan.Correctness`). |
+| Theorem 31.3 | Compiled correctness | Proved (slice-1 profile): `done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model` (`Plan.Correctness`); `runPlan_not_stuck` (`Plan.Run`). |
+| Lemma 32.1 | Batched accumulation refines individual steps | Proved: `batch_execution`, `batch_execution_perm`, `accumulateBatch_accumulators`, `accumulateBatch_pending`, `accumulateBatch_published` (`Plan.Batch`); failure half for the transactional singleton kernel only (`step_failed`, `Plan.Simulation`). |
 
 The Lean results for Sections 23-26 concern the reference machine as a transition
 relation over abstract finite carriers and primitives. Its computable refinement now
@@ -3938,6 +3940,16 @@ defined coordinate, including empty fibers. They also ensure the readiness
 and completion premises of [Section 29.2](#292-accumulation-and-publication-contracts) at each successful prefix.
 They do not establish body-definedness on every input.
 
+**As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
+The conditions play different roles. Conditions 1 and 2 (covering) are *terminal*: only terminal
+adequacy uses them. Condition 4 is a *safety* condition of each publication. Condition 3 is a
+*progress* premise, not a simulation premise: readiness is enforced dynamically by the read view, so
+an unready read makes a step report `stuck` rather than compute a wrong value, and condition 3 is what
+rules that out (`step_not_stuck`). Publication also requires materialisation: every member of a
+published block must have a slot, including addresses whose fiber is empty
+([Section 31.1](#311-acceptance-and-explicit-rejection) gives the per-command form and the role of each
+clause).
+
 Storage annotations have additional representation obligations in
 [Section 30](#30-concrete-states-and-logical-representation). Schedule validity alone does not prove a correct kernel,
 layout, or aliasing discipline.
@@ -4063,6 +4075,14 @@ need not yet occupy a slot. Before a kernel updates or reads its physical
 accumulator, it must materialize that zero or prove an equivalent
 initial-write operation. Uninitialized memory is never used as a zero.
 
+**As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
+Materializing a zero does not by itself make the zero correct: an `initZero` of an accumulator that
+already holds contributions would silently erase them. The slice-1 plan therefore also requires
+*initZero freshness* (`InitOK`): each initialised address is still unpublished at that command, and no
+occurrence consumed by an earlier command targets it, so its logical accumulator is still $0_K$
+(`acc_zero_of_unconsumed`). Publication likewise requires *materialisation* (`PubOK`): every member of a
+published block is materialised at that point, including addresses whose fiber is empty.
+
 These requirements permit a compiled execution to forget dead published
 values and completed accumulators physically. Their values remain in the
 reference state as ghost history, not as available runtime storage.
@@ -4131,6 +4151,25 @@ A scalar output requires its one rank-zero coordinate.
 The decoder cannot recover overwritten output entries from ghost history
 or silently supply zeros at missing nonempty output coordinates.
 
+**As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
+The general relation above stays the contract; the slice-1 instance is the structure `R` (`Plan.Memory`),
+with the input $\eta$ explicit and the pc-local sets $\mathrm{Pub}(pc)$, $\mathrm{Cons}(pc)$,
+$\mathrm{Mat}(pc)$ computed from the first $pc$ commands (`prefixAnn`). Because nothing is retired, the
+layout view `SlotView` maps exactly the addresses of $\mathrm{Pub}(pc)$ to their published slots.
+
+- R1 (reach): $\mathsf{Conf}$ is reachable from the initial state on $\eta$. R1 is kept because R2-R4 do
+  not pin untouched accumulators; only conservation from the initial state does
+  (`acc_zero_of_unconsumed`).
+- R2 (agreement, as equations): $o\in U(t)\iff(t,o)\notin\mathrm{Cons}(pc)$, and $\sigma(a)$ is
+  defined $\iff a\in\mathrm{Pub}(pc)$.
+- R3 (memory): for $a\in\mathrm{Pub}(pc)$, $M[\mathrm{place}\ a]=\sigma(a)$; for
+  $x\in\mathrm{Mat}(pc)\setminus\mathrm{Pub}(pc)$, $M[\mathrm{place}\ x]=\mathsf{acc}(x)$. The layout
+  view `SlotView` depends on $pc$ only, not on the memory.
+- R4 (retention): if $x$ is unpublished and some consumed occurrence targets $x$, then
+  $x\in\mathrm{Mat}(pc)$.
+- `Decode` at $pc$ is partial. It succeeds iff every output coordinate is in $\mathrm{Pub}(pc)$ with an
+  initialised slot (`decode_of_R` under R), and it never fills a missing coordinate.
+
 ## 31. Simulation and compiler correctness
 
 ### 31.1 Acceptance and explicit rejection
@@ -4166,6 +4205,33 @@ specification. Compiler **soundness** requires that every accepted plan
 satisfy Definition 31.1 for all well-typed inputs, with semantic failures
 handled as below.
 
+**As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
+The five-condition definition above stays the general contract. Lean's `Valid` (`Plan.Validity`) is a
+purely static condition, stated per command $pc$ with `commands[pc] = [a]` against the prefix sets
+$\mathrm{Pub}(pc)$, $\mathrm{Cons}(pc)$, $\mathrm{Mat}(pc)$ (the rows below). The semantic conditions 2-5
+are not fields of it: for the fixed slice-1 kernels they are theorems, `R_start` (2), `step_R` (3),
+`step_failed` (4) and `step_not_stuck` (5). Each clause has a role: *safety* (needed for a correct
+step), *progress* (needed so that a step is not stuck), *terminal* (needed only at $pc=m$), or
+*diagnostic* (checked but consumed by no theorem).
+
+| clause | role | consumed by |
+| --- | --- | --- |
+| profile: every command is a singleton | progress | `step_not_stuck`, `run_R` |
+| initZero $S$: each $x\notin\mathrm{Pub}(pc)$, and no occurrence in $\mathrm{Cons}(pc)$ targets $x$ (initZero freshness) | safety | `step_R` |
+| acc $G$: $G$ duplicate-free, $G\cap\mathrm{Cons}(pc)=\varnothing$, every target $\in\mathrm{Mat}(pc)$ | safety + progress | `step_R`, `step_failed`, `step_not_stuck` |
+| acc $G$: every footprint address $\in\mathrm{Pub}(pc)$ ([Section 29.3](#293-coverage-and-schedule-certificates) condition 3) | progress | `step_not_stuck` |
+| pub $B$: $B$ duplicate-free, $B\cap\mathrm{Pub}(pc)=\varnothing$, $B\subseteq\mathrm{Mat}(pc)$, every occurrence targeting $B$ is in $\mathrm{Cons}(pc)$ (condition 4) | safety + progress | `step_R`, `step_not_stuck` |
+| whole plan: groups duplicate-free (condition 1, Nodup half) | diagnostic | none |
+| whole plan: blocks duplicate-free (condition 2, Nodup half, `checkCov2Nodup`) | diagnostic | none |
+| whole plan: blocks cover $\mathrm{Addr}_{\mathrm{Def}}$ (condition 2 covering) | terminal | `complete_of_refState` (Lemma 31.2) |
+| whole plan: groups cover $\mathcal{O}_P$ (condition 1 covering) | terminal, derivable from condition 2 covering and condition 4 | `complete_of_refState` |
+
+Condition 1 covering is a consequence of condition 2 covering plus condition 4 in the singleton profile
+(`accFlat_complete`); it is kept in `Valid` as a diagnostic clause. That the Nodup half of condition 1
+follows from the per-step `AccOK` success is a conjecture, not proved. Runtime execution (`runPlan`)
+does not detect an invalid plan: soundness rests on the computable checker `checkPlan`, whose
+acceptance implies `Valid` (`checkPlan_sound`).
+
 ### 31.2 Initial states and successful-step simulation
 
 The initialization obligation is
@@ -4198,6 +4264,14 @@ This is a **forward simulation with stuttering**: a concrete step may
 leave the reference state unchanged. It is not enough, by itself, to prove
 concrete termination or prevent an incorrectly stuck compiled execution.
 
+**As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
+The one-step theorem `step_R` assumes a singleton command `[a]` with `AnnOK pc a` and, besides R, that
+$\mathsf{Conf}$ is the deterministic logical post-state of the prefix, `refState pc`. So the simulation
+invariant is $R\land\mathsf{Conf}=\mathtt{refState}\ pc$, not R alone: R2-R4 do not pin untouched
+accumulators, so R does not determine $\mathsf{Conf}$. Simulation is proved for that reference state
+only, not for every R-related state. `R_start` is the initialization obligation, and `run_R` chains the
+steps over the whole plan.
+
 ### 31.3 Failure matching, progress, and finishing
 
 If a related concrete state steps to $\textcolor{#C16C86}{\mathsf{PlanFailed}}(\textcolor{#9D75C4}{o})$, require
@@ -4216,6 +4290,17 @@ from matched semantic failure, that does not establish absence of a model.
 The **error-free profile** consists of the runs in which no implementation
 error occurs. Concrete progress below, and the converse direction of
 Theorem 31.3, are stated for that profile.
+
+**As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
+Failure matching is proved with the same occurrence: `step_failed` (one command) and `runPlan_R` (the
+whole run) give $\mathsf{Conf}\longrightarrow^{*}\mathsf{Failed}(o,\ldots)$ for the occurrence $o$ the plan
+reports, by one `undefined` event from the related $\mathsf{Conf}$ (zero preceding contributions: the
+accumulate kernel is transactional). `PlanFailed` carries the memory before the failing command. The
+matched snapshot is that related $\mathsf{Conf}$; it may differ from the state the reference executor
+`Executor.run` reaches under its own schedule (fixture `failureAfter`: executor accumulator 2, plan 0).
+Theorem 31.3 (b) claims only that no model exists, so this difference is harmless. On
+`checkPlan`-valid plans, committing raw values versus view values, and transactional versus sequential
+commit, are unobservable (`dest_not_pub`, `acc_slot_isSome`).
 
 Concrete progress requires that, in the error-free profile, every reachable
 running state with $\textcolor{#C16C86}{\mathsf{pc}}<m$ can execute its next command successfully or report a
@@ -4246,6 +4331,18 @@ address lies in $\textcolor{#A87C28}{\mathop{\mathrm{Need}}\nolimits}_{\mathrm{p
 is mapped, and the decoder requirement of [Section 30.4](#304-the-refinement-relation-and-output-decoder) together with the memory
 equation of [Section 30.2](#302-resource-views-and-live-representations) gives
 $\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})(T)[p]=\textcolor{#C16C86}{M}[\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}(\textcolor{#A87C28}{\mathsf{pub}}((T,p)))]=\textcolor{#A87C28}{\sigma}(T,p)$.
+
+**As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
+`terminal_adequacy` is one theorem about the plan run from $\mathrm{Start}(\eta)$: for a valid plan, if
+`runPlan` ends `done m M'`, then $m$ is the number of commands, the deterministic reference state $c$ at
+$m$ (`refState m`) exists and is R-related to `M'`, $c$ is complete (`complete_of_refState`: $U=\varnothing$
+by coverage of $\mathcal{O}_P$, and $\mathrm{dom}(\sigma)=\mathrm{Addr}_\Sigma$ by coverage of
+$\mathrm{Addr}_{\mathrm{Def}}$ plus inputs), and $\mathrm{Decode}_m(M')=\rho_c|_{\mathrm{Out}}$, where
+$\rho_c$ is the final store of $c$. The general argument above stays: its step through
+$\mathrm{Need}_{\mathrm{pub}}$ is the one that matters once retirement
+([Section 33](#33-scan-compilation-and-buffer-reuse)) separates "published" from "mapped". In slice 1 that
+step is trivial: at $pc=m$, $\mathrm{Pub}(m)=\mathrm{Addr}_\Sigma$ already and nothing is retired, so
+`decode_of_R` needs no $\mathrm{Need}_{\mathrm{pub}}$ argument.
 
 Write
 $\textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#398B83}{\zeta}$
@@ -4300,10 +4397,27 @@ failure.
 Outside the error-free profile a valid plan can end in an implementation error
 even when a model exists; (a) and (b) are unaffected.
 
+**As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement;
+error-free).** For a `Valid` plan and a well-typed $\eta$, with the run `runPlan` from $\mathrm{Start}(\eta)$:
+
+- (a) `done_correct`: if the run ends `done m M'`, then
+  $\mathrm{Models}(P,\eta)=\{\rho_c\}$, $\mathrm{Decode}_m(M')=\rho_c|_{\mathrm{Out}}$, and that equals
+  $\llbracket P\rrbracket(\eta)$.
+- (b) `failed_correct`: if the run ends `failed o pc M'`, then $\mathrm{Models}(P,\eta)=\varnothing$, as
+  stated above. Separately, failure matching holds with the same occurrence $o$
+  ([Section 31.3](#313-failure-matching-progress-and-finishing)); `M'` is the memory before the failing
+  command.
+- (c) The run is never stuck (`runPlan_not_stuck`), so it ends `done` or `failed` (`done_or_failed`). If
+  $\mathrm{Models}(P,\eta)$ is nonempty, the run is `done` with $\mathrm{Decode}=\rho|_{\mathrm{Out}}$
+  (`done_of_model`). Hence the run is `done` iff a model exists (`done_iff_model`).
+
 The theorem is conditional on Definition 31.1. Its hypotheses are exactly
 those conditions; the generic steps (Lemma 31.2 above and, for batched
-kernels, Lemma 32.1 in [Section 32.1](#321-why-exact-batched-accumulation-refines-individual-steps)) are argued on paper, while conditions
-3-5 remain an obligation on each kernel. It is a compiler proof specification with a mathematical
+kernels, Lemma 32.1 in [Section 32.1](#321-why-exact-batched-accumulation-refines-individual-steps)) carry a mathematical argument in general, while conditions
+3-5 remain an obligation on each kernel. For the slice-1 kernels (singleton commands, dense non-reused
+storage, no retirement) the generic steps and conditions 2-5 are kernel-checked in Lean (`R_start`,
+`step_R`, `step_failed`, `step_not_stuck`, `batch_execution`, `terminal_adequacy`); every other kernel
+keeps the obligation. Beyond that profile it is a compiler proof specification with a mathematical
 argument, not a claim that a particular compiler or kernel has already been
 verified.
 
@@ -4338,6 +4452,19 @@ committing any group contributions: the reference machine can choose that
 member first. A kernel that commits a successful prefix before failing must
 justify the corresponding reference prefix. In either case failure is
 terminal and yields no successful output.
+
+**As formalized (slice-1 profile: singleton commands, dense non-reused storage, no retirement).**
+`batch_execution` (`Plan.Batch`) proves the success half at the logical level, with premises: `G.Nodup`
+(the list form of "$G$ is a set"), every member of $G$ is pending, every member is ready, and every
+member evaluates successfully to $v_o$. The contribution events then form a reference execution
+ending in the state `accumulateBatch c G v`, whose accumulator is $\alpha\oplus\Delta_G$
+(`accumulateBatch_accumulators`), whose remaining set is $U\setminus G$ (`accumulateBatch_pending`),
+and whose published store is unchanged (`accumulateBatch_published`); any enumeration order gives the
+same state (`batch_execution_perm`). The failure paragraph is proved only for the transactional
+singleton kernel (`step_failed`): the plan reports the first undefined member, matched by one
+`undefined` event from the related reference state with no preceding contributions; that snapshot may
+differ from the reference executor's own schedule ([Section 31.3](#313-failure-matching-progress-and-finishing)).
+A kernel that commits a successful prefix before failing is not formalized.
 
 ### 32.2 Complete arrays, empty groups, and shared computations
 
@@ -4516,19 +4643,30 @@ occurrence coverage, barriers, domain behavior, and safe reuse.
 The compilation-layer proof targets are:
 
 - Typed plan annotations and sound validation of their coverage and order.
+  *Proved for the slice-1 profile* (`Valid`, `checkPlan_sound`).
 - Resource views, concrete states, and the representation relation,
   including empty shapes and untouched zero accumulators.
+  *Proved for the slice-1 profile* (dense non-reused storage: `SlotView`, `R`, `R_start`).
 - Refinement lemmas for individual kernels, block publication, and storage
   operations; composite lemmas for fused commands.
+  *Proved for the slice-1 profile's singleton kernels* (`step_R`, `step_failed`); composite lemmas for
+  fused commands remain a target.
 - Preservation of explicit undefinedness when batching or sharing expressions.
+  *Batching proved for the transactional singleton accumulate kernel* (`batch_execution`,
+  `step_failed`); sharing remains a target.
 - Concrete progress and termination, not just forward simulation.
+  *Proved for the slice-1 profile* (`step_not_stuck`, `runPlan_not_stuck`).
 - Terminal decoding and the compiled-correctness theorem.
+  *Proved for the slice-1 profile* (`terminal_adequacy`, `done_correct`, `failed_correct`,
+  `done_iff_model`).
 - Separate-buffer and two-buffer scan proofs, with full-history and
   terminal-only output contracts tested separately.
 
-These are proposed contracts and proof targets, not kernel-checked results
-or claims about current compiler acceptance. Connecting them to Lean requires
-choosing a concrete plan representation and kernel fragment and proving that
+Outside the slice-1 profile (singleton commands, dense non-reused storage, no retirement) these are
+proposed contracts and proof targets, not kernel-checked results
+or claims about current compiler acceptance. The slice-1 results fix one concrete plan representation
+and kernel fragment (`LeanNCD.Semantics.Plan`); extending them requires
+choosing further plan representations and kernel fragments and proving that
 they satisfy the contracts, including additive contribution semantics.
 Machine-number refinement, more permissive aliasing, asynchronous command
 execution, and general cyclic solvers require their own explicit extensions.
