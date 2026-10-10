@@ -135,6 +135,33 @@ def chainEarly : (routed chainBody).Plan :=
   (outcomeRow (chainEarly.runPlan ops (Start chainInput)))
   ("stuck", 1, none, [some 0, some 0, some 0])
 
+/-! ### Transactional acc, outside checkPlan's domain (plan §10 item 10)
+
+On checkPlan-invalid plans the transactional kernel (evaluate every member
+on the pc read view, then commit) is observable against a sequential
+evaluate-commit-continue kernel (manifest mutant A2-e). These rows pin the
+shipped values; the valid neighbour is in the same row. -/
+
+-- pubOrder-invalid: point 1 is published before occurrence 0 writes it, and
+-- occurrence 1 (same group) reads point 1 from the pre-step view.
+def a2eSeqVisible : (routed chainBody).Plan :=
+  unitPlan [[.initZero cAll], [.pub cAll], [.acc [cOcc 0, cOcc 1]]]
+#eval check "a2e-seq-visible"
+  (outcomeRow (a2eSeqVisible.runPlan ops (Start chainInput)),
+    outcomeRow (chainPlan.runPlan ops (Start chainInput)))
+  (("done", 3, none, [some 0, some 3, some 1]), ("done", 5, none, [some 0, some 3, some 4]))
+
+-- accMat-invalid: occurrence 0's slot (point 0) is never initialised and
+-- occurrence 1 is undefined; the scan reports occurrence 1 before any commit.
+def a2eFailedVsStuck : (program 2 failureAfterBody).Plan :=
+  unitPlan [[.initZero [pAddr 2 failureAfterBody 1, pAddr 2 failureAfterBody 2]],
+    [.acc ((List.finRange 2).map (pOcc 2 failureAfterBody))], [.pub (pBlock 2 failureAfterBody)]]
+#eval check "a2e-failed-vs-stuck"
+  (outcomeRow (a2eFailedVsStuck.runPlan ops (Start (pInput 2 failureAfterBody))),
+    outcomeRow (pRun 2 failureAfterBody))
+  (("failed", 1, some (1, 0), [none, some 0, some 0]),
+    ("failed", 1, some (1, 0), [some 0, some 0, some 0]))
+
 /-! ### Invalid plans: runPlan does not check validity -/
 
 -- Publish before accumulate: the run completes and decodes 14, but the
