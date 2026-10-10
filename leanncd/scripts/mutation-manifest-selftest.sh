@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test mutation-manifest.sh's validation scope and run path without Lean.
+# Test mutation-manifest.sh's validation scope, task diagnostics, and run path without Lean.
 # Usage: bash leanncd/scripts/mutation-manifest-selftest.sh
 
 set -euo pipefail
@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix="mutation-manifest-selftest-") as tmp:
                 "every selected old-string unique\n")
     unfiltered = "manifest OK: 2 entries, 2 selected, every old-string unique\n"
 
-    def check(name, entries, status, text, *filters):
+    def check(name, entries, status, text, *filters, exact_error=False):
         global checks
         manifest.write_text(json.dumps(entries))
         options = filters[:2] if filters[:1] == ("--task",) else ()
@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix="mutation-manifest-selftest-") as tmp:
             require(result.stdout == text and not result.stderr,
                     f"{name}: unexpected output\nstdout: {result.stdout}stderr: {result.stderr}")
         else:
-            require(text in result.stderr and not result.stdout,
+            require((result.stderr == text if exact_error else text in result.stderr) and not result.stdout,
                     f"{name}: missing diagnostic {text!r}\n"
                     f"stdout: {result.stdout}stderr: {result.stderr}")
         checks += 1
@@ -99,6 +99,43 @@ with tempfile.TemporaryDirectory(prefix="mutation-manifest-selftest-") as tmp:
     check("unknown prefix selects nothing before filesystem checks", [first, second], 125,
           "no manifest entries selected", "unknown-")
     check("empty manifest selects nothing", [], 125, "no manifest entries selected")
+
+    for value in [1, 1.0, True, False, None, [], {}]:
+        for filters in [(), ("--task", "1"), ("task1-",)]:
+            check(f"global task schema: {value!r}, {filters}", [first, {**second, "task": value}],
+                  125, "'task' must be a string", *filters)
+    check("global task schema precedes unknown task hint", [first, {**second, "task": None}],
+          125, "'task' must be a string", "--task", "unknown")
+
+    no_task = {k: v for k, v in first.items() if k != "task"}
+    single = "manifest OK: 1 entries, 1 selected, every old-string unique\n"
+    check("task field is optional without filters", [no_task], 0, single)
+    check("task field is optional with prefix selection", [no_task], 0, single, "task1-")
+    check("missing task is not the string None", [no_task], 125,
+          "error: no manifest entries selected: unknown task 'None'; available tasks: (none)\n",
+          "--task", "None", exact_error=True)
+    check("explicit string None remains selectable", [{**first, "task": "None"}],
+          0, single, "--task", "None")
+    check("task strings are exact, not parsed as numbers", [{**first, "task": "01"}, second],
+          0, filtered, "--task", "01")
+    check("unknown numeric-looking task lists exact strings", [{**first, "task": "01"}, second],
+          125, "error: no manifest entries selected: unknown task '1'; available tasks: '01', '2'\n",
+          "--task", "1", exact_error=True)
+
+    task_ids = [{**second, "task": "T2"}, {**first, "task": "T1"},
+                {**first, "label": "another-T2", "task": "T2"}, {**no_task, "label": "taskless"}]
+    hint = "error: no manifest entries selected: unknown task 'unknown'; available tasks: 'T1', 'T2'\n"
+    check("unknown task hint is sorted, unique, and omits taskless entries", task_ids,
+          125, hint, "--task", "unknown", exact_error=True)
+    check("unknown task hint ignores prefix and future filesystem state", task_ids,
+          125, hint, "--task", "unknown", "task1-", exact_error=True)
+    check("empty manifest has no available tasks", [], 125,
+          "error: no manifest entries selected: unknown task 'unknown'; available tasks: (none)\n",
+          "--task", "unknown", exact_error=True)
+    check("known task excluded by prefix is not called unknown", [first, second], 125,
+          "error: no manifest entries selected\n", "--task", "1", "task2-", exact_error=True)
+    check("prefix-only empty selection keeps its diagnostic", [first, second], 125,
+          "error: no manifest entries selected\n", "unknown-", exact_error=True)
 
     stub_dir = root / "scripts"
     stub_dir.mkdir()
