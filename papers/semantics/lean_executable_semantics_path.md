@@ -44,8 +44,10 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-09, bounded source-correspondence implementation `09d8cb42`
-(merged as `6a90baff`) on top of the verified executor (`6026f0b`).** The expression/readiness,
+**Snapshot: 2026-10-09, Lean as of `d8ce83ea`: bounded source correspondence
+(`6a90baff`), nested-reduction reindexing (`705280cd`), successful-permutation
+agreement (`ca642b3d`), and raw-source admission, on top of the verified
+executor (`6026f0b`).** The expression/readiness,
 collection/model, reference-machine soundness, and coordinate-ranks/finite-measure
 developments have landed, including maximal-run correspondence. The computable
 validated reference executor and its exact-rational fixtures are now verified;
@@ -117,6 +119,10 @@ The bounded raw-source/admission follow-up now proves actual resolver name cover
 original declaration and indexed occurrence correspondence, and applicability of the
 existing semantic results. Its conditional endpoints and separate validation receipts
 are in the [raw-source/admission record](raw_source_admission_record.md).
+Two smaller follow-ups have also landed: `interpret_contract_reindex` (a contraction
+is independent of the enumeration of its bound coordinates) and
+`StatementPermutation.successful_results` (two complete rational runs of a
+permuted source reach the same final store).
 
 ## 2. One notation, two presentations
 
@@ -206,8 +212,8 @@ adopted clauses of the core specification. A rejecting read cannot inhabit
 the admitted interface at that valuation.
 
 Destinations are already bounded coordinates. These types establish admission
-of the constructed objects. The `Source` layer checks malformed source text for
-its bounded fragment only; there is no runtime checker for arbitrary raw write
+of the constructed objects. The `Source` layer checks malformed parsed source programs
+(`TLProgram` ASTs) for its bounded fragment only; there is no runtime checker for arbitrary raw write
 indices.
 
 ## 3. The category-theoretic organization
@@ -972,7 +978,7 @@ mutation controls, and unsupported claims:
 | Reference transitions/soundness | [ReferenceMachineTest](../../leanncd/test/Semantics/ReferenceMachineTest.lean) | [Reference-machine execution](reference_machine_execution_record.md) |
 | Coordinate ranks/termination/correspondence | [RankedMachineTest](../../leanncd/test/Semantics/RankedMachineTest.lean) | [Coordinate-ranks/finite-measure execution](coordinate_ranks_finite_measure_execution_record.md) |
 | Computable validated reference | [ExecutableReferenceTest](../../leanncd/test/Semantics/ExecutableReferenceTest.lean) | [Executor implementation execution](computable_reference_executor_record.md#8-implementation-execution-2026-10-08) |
-| Bounded source correspondence and differential debugging | [SourceAdmissionTest](../../leanncd/test/Semantics/SourceAdmissionTest.lean), [SourceBindingTest](../../leanncd/test/Semantics/SourceBindingTest.lean), [SourceCorrespondenceTest](../../leanncd/test/Semantics/SourceCorrespondenceTest.lean), [SourceProgramTest](../../leanncd/test/Semantics/SourceProgramTest.lean), [SourceOracleTest](../../leanncd/test/Semantics/SourceOracleTest.lean), [SourceDiagnosticTest](../../leanncd/test/Semantics/SourceDiagnosticTest.lean), [SourceDifferentialTest](../../leanncd/test/Semantics/SourceDifferentialTest.lean) | [Source correspondence record](source_correspondence_record.md) |
+| Bounded source correspondence and differential debugging | [SourceAdmissionTest](../../leanncd/test/Semantics/SourceAdmissionTest.lean), [SourceBindingTest](../../leanncd/test/Semantics/SourceBindingTest.lean), [SourceCorrespondenceTest](../../leanncd/test/Semantics/SourceCorrespondenceTest.lean), [SourceProgramTest](../../leanncd/test/Semantics/SourceProgramTest.lean), [SourceOracleTest](../../leanncd/test/Semantics/SourceOracleTest.lean), [SourceDiagnosticTest](../../leanncd/test/Semantics/SourceDiagnosticTest.lean), [SourceDifferentialTest](../../leanncd/test/Semantics/SourceDifferentialTest.lean), [SourceRawCorrespondenceTest](../../leanncd/test/Semantics/SourceRawCorrespondenceTest.lean), [SourceCorrespondenceTransportTest](../../leanncd/test/Semantics/SourceCorrespondenceTransportTest.lean), [SourceProgramIdentityTest](../../leanncd/test/Semantics/SourceProgramIdentityTest.lean) | [Source correspondence record](source_correspondence_record.md), [raw-source/admission record](raw_source_admission_record.md) |
 
 All are discovered by the default `Tests` target. Existing fixtures cover
 strict zero multiplication, empty binders, whole-array selection obligations,
@@ -1005,6 +1011,12 @@ kills, and 13 fixture contrasts. The post-mutation full default build passed
 (8,704 jobs); unusedSectionVars and unnecessarySeqFocus warnings remain.
 These controls do not claim 19 production-runtime kills or general source
 correspondence. Heterogeneous non-additive-input runtime coverage remains parked.
+
+The nested-reduction and successful-permutation follow-ups (`705280cd`,
+`ca642b3d`) have no separate record; their validation is in their commit
+messages: one hand mutation each (the reordered Nat result changed from 19310 to
+19311; a required input-equality witness replaced by `rfl` was rejected), and a
+full build of 8,763 jobs for `ca642b3d`.
 
 Native expression fixtures use checked binary32/binary64 primitive APIs and
 observe rounding differences. They do not give machine floats exact additive
@@ -1091,6 +1103,8 @@ For the bounded source fragment, `sourceResult_model`, `sourceResult_unique`, an
 `sourceResult_denotation` give the same success implications for programs
 admitted from source, and `runSource_not_exhausted` shows that the
 automatically scheduled default run is never exhausted.
+`StatementPermutation.successful_results` adds that two complete rational
+runs of a permuted source with equal inputs reach the same final store.
 
 The endpoint is an executable realization of the specified equations, not
 zero-seeded fixed-point iteration, a floating-point solver presented as exact
