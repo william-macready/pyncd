@@ -332,8 +332,11 @@ mutation's failure while writing the plan, yet F32-B Task 4's implementer re-rea
 getting multi-line old-strings right. **Rule: the plan's cycles live in `papers/<plan>_mutations.json`,
 run by `leanncd/scripts/mutation-manifest.sh`.** Each entry's `expect` strings are copied from the
 author's observed failure, so a mutation that breaks the build for the wrong reason FAILs. Validate
-it at authoring time with `--check` (schema, and every old-string unique, with no build). Each task
-then says `mutation-manifest.sh --task N`, and `--out` gives the close-out its results table.
+it at authoring time with `--check` (global schema and duplicate labels, selected files present and
+every selected old-string unique, with no build). Without filters all entries are checked;
+`--check --task N` or label prefixes check only selected filesystem state, so later tasks' missing
+post-code does not block an earlier task. An empty selection is an error. Each task then says
+`mutation-manifest.sh --task N`, and `--out` gives the close-out its results table.
 
 **Keep the live plan separate from the record.** F32-A's and F32-B's plans are ~2,150 lines each.
 About 470 of F32-B's are close-out and authoring-verification history (§6.5, §8), which no
