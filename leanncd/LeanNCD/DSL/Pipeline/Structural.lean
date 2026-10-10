@@ -342,7 +342,7 @@ private theorem stmtAxisUidFusion (s : Stmt) :
 
 /-- Every `AxisSpec` occurring anywhere in the program, in program order (decls then stmts).
     The `ConstL (List AxisSpec)` instantiation of `TLProgram.traverseAxes`. -/
-private def TLProgram.axisSpecs (p : TLProgram) : List AxisSpec :=
+def TLProgram.axisSpecs (p : TLProgram) : List AxisSpec :=
   (TLProgram.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) p).run
 
 /-- The ordered, de-duplicated list of axis names occurring anywhere in the program. -/
@@ -357,6 +357,14 @@ private def TLProgram.axisSpecs (p : TLProgram) : List AxisSpec :=
 -- need it — it would add a fourth instantiation to maintain for no simplification.
 def TLProgram.axisNames (p : TLProgram) : List String :=
   (p.axisSpecs.map (·.name)).eraseDups
+
+theorem TLProgram.mem_axisNames_iff (p : TLProgram) (name : String) :
+    name ∈ p.axisNames ↔ ∃ a ∈ p.axisSpecs, a.name = name := by
+  simp only [TLProgram.axisNames, List.mem_eraseDups, List.mem_map]
+
+theorem TLProgram.axisSpec_name_mem (p : TLProgram) (a : AxisSpec)
+    (h : a ∈ p.axisSpecs) : a.name ∈ p.axisNames :=
+  (p.mem_axisNames_iff a.name).mpr ⟨a, h, rfl⟩
 
 /-! ## UID collectors (public — for tests and later phases) -/
 
@@ -569,19 +577,136 @@ private def freshNonZero : FreshM UID := do
   let d ← freshUData
   if d.uid == 0 then return (← freshUData).uid else return d.uid
 
-/-- Mint one fresh non-zero UID per distinct axis name, then relabel every `AxisSpec.uid`
-    by keying on the axis's source name. Equal names ⇒ equal UID; distinct names ⇒ distinct. -/
-def assignUIDs (p : TLProgram) : FreshM LabeledProgram := do
+/-- Mint one fresh non-zero UID per distinct axis name, keyed by source name. -/
+private def assignUIDMemo (p : TLProgram) : FreshM (HashMap String UID) := do
   let mut memo : HashMap String UID := {}
   for nm in p.axisNames do
     let u ← freshNonZero
     memo := memo.insert nm u
-  let relabel : UData → UData := fun u =>
-    match u.name with
-    | some nm => match memo[nm]? with | some v => { u with uid := v } | none => u
-    | none    => u
-  let p' := TLProgram.mapUID relabel p
+  return memo
+
+/-- A successful insert-only stateful loop covers its visited keys and retains coverage
+    of its initial map. Values may be overwritten; no freshness assumption is needed. -/
+theorem forIn_insert_coverage {κ ν ε σ : Type} [BEq κ] [Hashable κ]
+    [LawfulBEq κ] [LawfulHashable κ]
+    (body : κ → HashMap κ ν → EStateM ε σ (ForInStep (HashMap κ ν)))
+    (step : ∀ key memo result start finish,
+      body key memo start = .ok result finish →
+      ∃ value, result = .yield (memo.insert key value))
+    (keys : List κ) (init out : HashMap κ ν) (start finish : σ)
+    (h : (forIn keys init body).run start = .ok out finish) :
+    ∀ key, key ∈ keys ∨ (∃ value, init[key]? = some value) →
+      ∃ value, out[key]? = some value := by
+  induction keys generalizing init start with
+  | nil =>
+    simp only [List.forIn_nil, EStateM.run, pure, EStateM.pure,
+      EStateM.Result.ok.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    intro key hk
+    simpa using hk
+  | cons key keys ih =>
+    rw [List.forIn_cons] at h
+    cases hb : body key init start with
+    | error e s =>
+      simp [EStateM.run, bind, EStateM.bind, hb] at h
+    | ok result s =>
+      obtain ⟨value, rfl⟩ := step key init result start s hb
+      simp only [EStateM.run, bind, EStateM.bind, hb] at h
+      intro name hn
+      apply ih (init.insert key value) s h name
+      rcases hn with hn | ⟨old, ho⟩
+      · rcases List.mem_cons.mp hn with rfl | hn
+        · exact Or.inr ⟨value, HashMap.getElem?_insert_self⟩
+        · exact Or.inl hn
+      · right
+        by_cases he : key = name
+        · subst name
+          exact ⟨value, HashMap.getElem?_insert_self⟩
+        · exact ⟨old, by simp [HashMap.getElem?_insert, he, ho]⟩
+
+theorem assignUIDMemo_covers (p : TLProgram) (start finish : Nat)
+    (memo : HashMap String UID)
+    (h : (assignUIDMemo p).run start = .ok memo finish) :
+    ∀ name ∈ p.axisNames, ∃ uid, memo[name]? = some uid := by
+  simp only [assignUIDMemo, EStateM.run, bind, EStateM.bind, pure, EStateM.pure] at h
+  generalize hl : forIn (m := FreshM) p.axisNames ({} : HashMap String UID) _ start =
+    result at h
+  cases result with
+  | error e n => simp at h
+  | ok out n =>
+    obtain ⟨rfl, rfl⟩ := h
+    apply fun name hn => forIn_insert_coverage _ ?_ p.axisNames {} memo start finish hl
+      name (Or.inl hn)
+    intro key acc result s t hs
+    simp only [EStateM.bind, EStateM.pure] at hs
+    cases hf : freshNonZero s with
+    | error e n => simp [hf] at hs
+    | ok uid n =>
+      simp [hf] at hs
+      exact ⟨uid, hs.1.symm⟩
+
+def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=
+  match u.name with
+  | some nm => match memo[nm]? with | some v => { u with uid := v } | none => u
+  | none => u
+
+theorem AxisSpec.mapUID_sourceUIDRelabel (memo : HashMap String UID) (a : AxisSpec)
+    (uid : UID) (h : memo[a.name]? = some uid) :
+    AxisSpec.mapUID (sourceUIDRelabel memo) a = { a with uid := uid } := by
+  simp [AxisSpec.mapUID, sourceUIDRelabel, h]
+
+theorem AxisSpec.mapUID_sourceUIDRelabel_same_name (memo : HashMap String UID)
+    (a b : AxisSpec) (hn : a.name = b.name)
+    (hc : ∃ uid, memo[a.name]? = some uid) :
+    (AxisSpec.mapUID (sourceUIDRelabel memo) a).uid =
+      (AxisSpec.mapUID (sourceUIDRelabel memo) b).uid := by
+  obtain ⟨uid, hu⟩ := hc
+  rw [a.mapUID_sourceUIDRelabel memo uid hu,
+    b.mapUID_sourceUIDRelabel memo uid (hn ▸ hu)]
+
+/-- Relabel every `AxisSpec.uid` by source name after minting the name memo. -/
+def assignUIDs (p : TLProgram) : FreshM LabeledProgram := do
+  let memo ← assignUIDMemo p
+  let p' := TLProgram.mapUID (sourceUIDRelabel memo) p
   return { decls := p'.decls, stmts := p'.stmts }
+
+/-- Equality to the original inline computation, including errors and the final counter. -/
+theorem assignUIDs_eq_inline (p : TLProgram) :
+    assignUIDs p = (do
+      let mut memo : HashMap String UID := {}
+      for nm in p.axisNames do
+        let u ← freshNonZero
+        memo := memo.insert nm u
+      let relabel : UData → UData := fun u =>
+        match u.name with
+        | some nm => match memo[nm]? with | some v => { u with uid := v } | none => u
+        | none => u
+      let p' := TLProgram.mapUID relabel p
+      return { decls := p'.decls, stmts := p'.stmts } : FreshM LabeledProgram) := by
+  simp [assignUIDs, assignUIDMemo]
+  rfl
+
+theorem assignUIDs_mapUID_covered (p : TLProgram) (start finish : Nat) (lp : LabeledProgram)
+    (h : (assignUIDs p).run start = .ok lp finish) :
+    ∃ memo : HashMap String UID,
+      (∀ name ∈ p.axisNames, ∃ uid, memo[name]? = some uid) ∧
+      lp.decls = (TLProgram.mapUID (sourceUIDRelabel memo) p).decls ∧
+      lp.stmts = (TLProgram.mapUID (sourceUIDRelabel memo) p).stmts := by
+  simp only [assignUIDs, EStateM.run, bind, pure, EStateM.bind, EStateM.pure] at h
+  cases hm : assignUIDMemo p start with
+  | error e n => simp [hm] at h
+  | ok memo n =>
+    simp [hm] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨memo, assignUIDMemo_covers p start n memo hm, rfl, rfl⟩
+
+theorem assignUIDs_mapUID (p : TLProgram) (start finish : Nat) (lp : LabeledProgram)
+    (h : (assignUIDs p).run start = .ok lp finish) :
+    ∃ memo : HashMap String UID,
+      lp.decls = (TLProgram.mapUID (sourceUIDRelabel memo) p).decls ∧
+      lp.stmts = (TLProgram.mapUID (sourceUIDRelabel memo) p).stmts := by
+  obtain ⟨memo, _, hd, hs⟩ := assignUIDs_mapUID_covered p start finish lp h
+  exact ⟨memo, hd, hs⟩
 
 /-! ## The `resolveDecls` phase
 
