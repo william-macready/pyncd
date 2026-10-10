@@ -179,6 +179,10 @@ with tempfile.TemporaryDirectory(prefix="mutation-manifest-selftest-") as tmp:
     check("global task schema precedes unknown task hint", [first, {**second, "task": None}],
           125, "'task' must be a string", "--task", "unknown")
 
+    for filters in [(), ("--task", "1")]:
+        check(f"task ids starting with -- are refused (--task could not select them), {filters}",
+              [first, {**second, "task": "--x"}], 125, "'task' must not start with '--'", *filters)
+
     no_task = {k: v for k, v in first.items() if k != "task"}
     single = "manifest OK: 1 entries, 1 selected, every old-string unique\n"
     check("task field is optional without filters", [no_task], 0, single)
@@ -251,6 +255,127 @@ with tempfile.TemporaryDirectory(prefix="mutation-manifest-selftest-") as tmp:
     require(table_path.read_text() == table, "stub run: --out table differs from stdout")
     checks += 1
     print("PASS: stub run selects only task 1, preserves arguments, restore/expect checks, and table")
+
+    # Flags taking a value refuse a following flag; --out is validated before any cycle runs;
+    # --cd without a value is a clean usage error.
+    manifest.write_text(json.dumps([first]))
+    stub_script = stub_dir / script.name
+    calls2 = root / "calls2"
+
+    def run_stub(*args, cwd=root):
+        calls2.unlink(missing_ok=True)
+        return subprocess.run(["bash", str(stub_script), *args], cwd=cwd,
+                              env={**os.environ, "MUTATION_CALLS": str(calls2)},
+                              capture_output=True, text=True)
+
+    def refuses(name, result, status, stderr):
+        global checks
+        require(result.returncode == status and not result.stdout and result.stderr == stderr
+                and not calls2.exists(),
+                f"{name}: expected exit {status} with {stderr!r} and no cycle run, got "
+                f"exit {result.returncode}\nstdout: {result.stdout}stderr: {result.stderr}"
+                f"\ncycles ran: {calls2.exists()}")
+        checks += 1
+        print(f"PASS: {name}", flush=True)
+
+    for flag in ("--out", "--task"):
+        refuses(f"{flag} refuses a following flag as its value",
+                run_stub(flag, "--check", str(root), str(manifest)), 1,
+                f"error: {flag} requires a value, not the flag --check\n")
+    require(not (root / "--check").exists(), "--out swallowed --check and wrote a file named --check")
+
+    missing = root / "missing-dir" / "t.md"
+    refuses("--out in a missing directory fails before any cycle runs",
+            run_stub("--out", str(missing), str(root), str(manifest)), 125,
+            f"error: cannot write --out {missing}: directory {missing.parent} does not exist\n")
+    refuses("--out naming a directory fails before any cycle runs",
+            run_stub("--out", str(root), str(root), str(manifest)), 125,
+            f"error: cannot write --out {root}: it is a directory\n")
+    readonly_dir = root / "ro"
+    readonly_dir.mkdir()
+    readonly_dir.chmod(0o555)
+    if os.access(readonly_dir, os.W_OK):  # root can write anywhere: skip rather than flake
+        print("SKIP: --out in a read-only directory (this user can write to a mode-555 directory)",
+              flush=True)
+    else:
+        target = readonly_dir / "t.md"
+        refuses("--out in a read-only directory fails before any cycle runs",
+                run_stub("--out", str(target), str(root), str(manifest)), 125,
+                f"error: cannot write --out {target}: directory {readonly_dir} is not writable\n")
+    readonly_dir.chmod(0o755)
+    readonly_file = root / "ro.md"
+    readonly_file.write_text("")
+    readonly_file.chmod(0o444)
+    if os.access(readonly_file, os.W_OK):
+        print("SKIP: --out onto a read-only file (this user can write to a mode-444 file)", flush=True)
+    else:
+        refuses("--out onto a read-only file fails before any cycle runs",
+                run_stub("--out", str(readonly_file), str(root), str(manifest)), 125,
+                f"error: cannot write --out {readonly_file}: file is not writable\n")
+    readonly_file.chmod(0o644)
+
+    result = run_stub("--check", "--out", str(missing), str(root), str(manifest))
+    require(result.returncode == 0 and not result.stderr and not missing.parent.exists()
+            and result.stdout == "manifest OK: 1 entries, 1 selected, every old-string unique\n",
+            f"--check must ignore --out entirely\nstdout: {result.stdout}stderr: {result.stderr}")
+    checks += 1
+    print("PASS: --check ignores --out and neither validates nor creates it", flush=True)
+
+    refuses("--cd without a value is a clean usage error", run_stub("--cd"), 1,
+            "error: --cd requires a value\n")
+    result = run_stub("--cd", str(root), "--check", ".", str(manifest), cwd=root.parent)
+    require(result.returncode == 0 and not result.stderr
+            and result.stdout == "manifest OK: 1 entries, 1 selected, every old-string unique\n",
+            f"--cd <dir> must resolve the leanncd dir relative to <dir>\n"
+            f"stdout: {result.stdout}stderr: {result.stderr}")
+    checks += 1
+    print("PASS: --cd <dir> resolves a relative leanncd dir inside <dir>", flush=True)
+
+    # Errors that were already reported before this change keep priority over an unwritable --out,
+    # and --out is judged only when cycles are really about to run.
+    refuses("a manifest problem is reported before an unwritable --out",
+            run_stub("--out", str(missing), str(root), str(root / "bad.json")), 125,
+            f"error: cannot read manifest {root / 'bad.json'}: "
+            f"[Errno 2] No such file or directory: '{root / 'bad.json'}'\n")
+    manifest.write_text(json.dumps([bad_targets]))
+    refuses("a schema problem is reported before an unwritable --out",
+            run_stub("--out", str(missing), str(root), str(manifest)), 125, schema_0)
+    manifest.write_text(json.dumps([first]))
+    refuses("an unknown task is reported before an unwritable --out",
+            run_stub("--task", "9", "--out", str(missing), str(root), str(manifest)), 125,
+            "error: no manifest entries selected: unknown task '9'; available tasks: '1'\n")
+    refuses("--out under a path component that is a file says so",
+            run_stub("--out", str(root / "real.lean" / "t.md"), str(root), str(manifest)), 125,
+            f"error: cannot write --out {root / 'real.lean' / 't.md'}: "
+            f"{root / 'real.lean'} is not a directory\n")
+    refuses("--out with an empty path is a usage error",
+            run_stub("--out", "", str(root), str(manifest)), 1,
+            "error: --out requires a non-empty path\n")
+
+    # A write that fails only at the end (dangling symlink) is a clean 125; the table is already shown.
+    dangling = root / "dangling.md"
+    dangling.symlink_to(root / "no-such-dir" / "x.md")
+    result = run_stub("--out", str(dangling), str(root), str(manifest))
+    require(result.returncode == 125 and calls2.exists() and "| Mutation |" in result.stdout
+            and result.stderr == f"error: cannot write --out {dangling}: No such file or directory\n",
+            f"final --out write failure: got exit {result.returncode}\n"
+            f"stdout: {result.stdout}stderr: {result.stderr}")
+    checks += 1
+    print("PASS: a write that fails after the run is a clean 125 with the table already printed",
+          flush=True)
+
+    # A single dash is not a flag, and an existing writable file is simply overwritten.
+    result = run_stub("--out", "-x", str(root), str(manifest))
+    require(result.returncode == 0 and (root / "-x").read_text().startswith("| Mutation |"),
+            f"--out -x must be accepted as a path\nstdout: {result.stdout}stderr: {result.stderr}")
+    existing = root / "existing.md"
+    existing.write_text("old contents")
+    result = run_stub("--out", str(existing), str(root), str(manifest))
+    require(result.returncode == 0 and existing.read_text().startswith("| Mutation |"),
+            f"an existing writable --out file must be overwritten\n"
+            f"stdout: {result.stdout}stderr: {result.stderr}")
+    checks += 1
+    print("PASS: --out -x is a path, and an existing writable --out file is overwritten", flush=True)
 
 print(f"mutation-manifest selftest: {checks} checks passed")
 PY
