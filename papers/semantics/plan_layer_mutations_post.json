@@ -1,0 +1,182 @@
+[
+  {
+    "label": "A1-a accumulateBatch last-writer-wins (overwrite, not add)",
+    "task": "T1",
+    "file": "LeanNCD/Semantics/Plan/Batch.lean",
+    "old": "  G.foldl (fun c x => Executor.consume P c x.1 x.2 (v x)) c",
+    "new": "  G.foldl (fun _ x => Executor.consume P c x.1 x.2 (v x)) c",
+    "targets": ["LeanNCD.Semantics.Plan.Batch"],
+    "expect": ["Batch.lean:80:19", "Type mismatch"]
+  },
+  {
+    "label": "A1-b accumulateBatch skips the last member (dropLast)",
+    "task": "T1",
+    "file": "LeanNCD/Semantics/Plan/Batch.lean",
+    "old": "  G.foldl (fun c x => Executor.consume P c x.1 x.2 (v x)) c",
+    "new": "  G.dropLast.foldl (fun c x => Executor.consume P c x.1 x.2 (v x)) c",
+    "targets": ["LeanNCD.Semantics.Plan.Batch"],
+    "expect": ["Batch.lean:80:19", "Batch.lean:88:4", "Batch.lean:99:4", "Batch.lean:129:4"]
+  },
+  {
+    "label": "A1-c place collides (slot index / 2)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Plan/Memory.lean",
+    "old": "  ⟨a.1, (canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2⟩",
+    "new": "  ⟨a.1, ⟨((canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2).val / 2, Nat.lt_of_le_of_lt (Nat.div_le_self _ 2) ((canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2).isLt⟩⟩",
+    "targets": ["LeanNCD.Semantics.Plan.Memory"],
+    "expect": ["Memory.lean:28:91", "Application type mismatch"]
+  },
+  {
+    "label": "A1-d Decode zero-fills (getD 0, no Pub/initialised check)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Plan/Memory.lean",
+    "old": "  if h : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p,\n      (π.readPub pc M ⟨t.val, p⟩).isSome = true then\n    some (fun t p => (π.readPub pc M ⟨t.val, p⟩).get (h t p))\n  else none",
+    "new": "  some (fun t p => (π.readPub pc M ⟨t.val, p⟩).getD 0)",
+    "targets": ["LeanNCD.Semantics.Plan.Memory"],
+    "expect": ["Memory.lean:104:2", "Tactic `split_ifs` failed: no if-then-else conditions to split"]
+  },
+  {
+    "label": "A1-e SlotView maps acc x whenever not Pub (drops Mat guard)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Plan/Memory.lean",
+    "old": "  | .acc x => if π.Mat pc x ∧ ¬ π.Pub pc x.addr then some (place x.addr) else none",
+    "new": "  | .acc x => if ¬ π.Pub pc x.addr then some (place x.addr) else none",
+    "targets": ["LeanNCD.Semantics.Plan.Memory"],
+    "expect": ["Memory.lean:241:17", "unsolved goals"]
+  },
+  {
+    "label": "A3b-3 readPub ignores Pub (read view exposes raw memory)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Plan/Memory.lean",
+    "old": "  if π.Pub pc a then M (place a) else none",
+    "new": "  if π.Pub pc a ∨ True then M (place a) else none",
+    "targets": ["LeanNCD.Semantics.Plan.Memory"],
+    "expect": ["Memory.lean:253:23", "unsolved goals"]
+  },
+  {
+    "label": "A2-a addAt overwrites the slot instead of adding",
+    "task": "T3",
+    "file": "LeanNCD/Semantics/Plan/Step.lean",
+    "old": "  | some a => some (Function.update M (place x.dest) (some (addVal x a (v x))))",
+    "new": "  | some a => some (Function.update M (place x.dest) (some (v x)))",
+    "targets": ["LeanNCD.Semantics.Plan.Simulation"],
+    "expect": ["Simulation.lean:297"]
+  },
+  {
+    "label": "A2-b EQUIVALENT (N5): commit values read raw memory, readiness still on readPub",
+    "task": "T3",
+    "file": "LeanNCD/Semantics/Plan/Step.lean",
+    "old": "    match G.foldlM (addAt (valuesOn ops (π.readPub pc M))) M with",
+    "new": "    match G.foldlM (addAt (valuesOn ops (fun a => M (place a)))) M with",
+    "targets": ["LeanNCD.Semantics.Plan.Simulation"],
+    "expect": ["Simulation.lean:461"]
+  },
+  {
+    "label": "A2-c execPub writes (re-initialises the block)",
+    "task": "T3",
+    "file": "LeanNCD/Semantics/Plan/Step.lean",
+    "old": "  if B.all (fun x => (M (place x.addr)).isSome) then .ok M else .stuck",
+    "new": "  if B.all (fun x => (M (place x.addr)).isSome) then .ok (execInit B M) else .stuck",
+    "targets": ["LeanNCD.Semantics.Plan.Simulation"],
+    "expect": ["Simulation.lean:512"]
+  },
+  {
+    "label": "A2-e EQUIVALENT (N5): non-transactional acc (evaluate, commit, continue per member)",
+    "task": "T3",
+    "file": "LeanNCD/Semantics/Plan/Step.lean",
+    "old": "  match scanGroup ops (π.readPub pc M) G with\n  | some res => res\n  | none =>\n    match G.foldlM (addAt (valuesOn ops (π.readPub pc M))) M with\n    | some M' => .ok M'\n    | none => .stuck",
+    "new": "  G.foldl (fun r x => match r with\n    | .ok M₁ => match scanGroup ops (π.readPub pc M₁) [x] with\n      | some res => res\n      | none => (addAt (valuesOn ops (π.readPub pc M₁)) M₁ x).elim .stuck (fun M' => .ok M')\n    | r => r) (.ok M)",
+    "targets": ["LeanNCD.Semantics.Plan.Simulation"],
+    "expect": ["Simulation.lean:451", "Simulation.lean:577"]
+  },
+  {
+    "label": "A2-f scan and commit values read raw memory as a fallback",
+    "task": "T3",
+    "file": "LeanNCD/Semantics/Plan/Step.lean",
+    "old": "  match scanGroup ops (π.readPub pc M) G with\n  | some res => res\n  | none =>\n    match G.foldlM (addAt (valuesOn ops (π.readPub pc M))) M with",
+    "new": "  match scanGroup ops (fun a => (π.readPub pc M a).or (M (place a))) G with\n  | some res => res\n  | none =>\n    match G.foldlM (addAt (valuesOn ops (fun a => (π.readPub pc M a).or (M (place a))))) M with",
+    "targets": ["LeanNCD.Semantics.Plan.Simulation"],
+    "expect": ["Simulation.lean:463", "Simulation.lean:490", "Simulation.lean:583"]
+  },
+  {
+    "label": "A3a-a EQUIVALENT at checkPlan (N6): checkCov1Complete trivially true",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Plan/Validity.lean",
+    "old": "def checkCov1Complete : Bool := π.occList.all fun x => decide (x ∈ π.accFlat)",
+    "new": "def checkCov1Complete : Bool := π.occList.all fun _ => true",
+    "targets": ["LeanNCD.Semantics.Plan.Validity"],
+    "expect": ["Validity.lean:193:19", "Type mismatch"]
+  },
+  {
+    "label": "A3a-b checkAnn pub drops checkPubOrder (spec 29.3 condition 4)",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Plan/Validity.lean",
+    "old": "  | .pub B => π.checkPubFresh pc B && π.checkPubMat pc B && π.checkPubOrder pc B",
+    "new": "  | .pub B => π.checkPubFresh pc B && π.checkPubMat pc B",
+    "targets": ["LeanNCD.Semantics.Plan.Validity"],
+    "expect": ["Validity.lean:179:10"]
+  },
+  {
+    "label": "A3a-c checkAnn pub drops checkPubMat (N1)",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Plan/Validity.lean",
+    "old": "  | .pub B => π.checkPubFresh pc B && π.checkPubMat pc B && π.checkPubOrder pc B",
+    "new": "  | .pub B => π.checkPubFresh pc B && π.checkPubOrder pc B",
+    "targets": ["LeanNCD.Semantics.Plan.Validity"],
+    "expect": ["Validity.lean:179:10", "Validity.lean:174:58", "unsolved goals"]
+  },
+  {
+    "label": "A3a-d checkInit trivially true (N2 initZero freshness)",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Plan/Validity.lean",
+    "old": "  S.all fun x => !decide (π.Pub pc x.addr) && (π.consList pc).all fun y => decide (y.target ≠ x)",
+    "new": "  S.all fun _ => (π.consList pc).all fun _ => true",
+    "targets": ["LeanNCD.Semantics.Plan.Validity"],
+    "expect": ["Validity.lean:163:9"]
+  },
+  {
+    "label": "A3a-e checkSingleton trivially true (slice-1 profile)",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Plan/Validity.lean",
+    "old": "def checkSingleton : Bool := π.commands.all fun cmd => cmd.length == 1",
+    "new": "def checkSingleton : Bool := π.commands.all fun _ => true",
+    "targets": ["LeanNCD.Semantics.Plan.Validity"],
+    "expect": ["Validity.lean:192:50"]
+  },
+  {
+    "label": "A3a-f checkAnn acc drops checkReady (spec 29.3 condition 3, N3)",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Plan/Validity.lean",
+    "old": "  | .acc G => π.checkAccFresh pc G && π.checkAccMat pc G && π.checkReady pc G",
+    "new": "  | .acc G => π.checkAccFresh pc G && π.checkAccMat pc G",
+    "targets": ["LeanNCD.Semantics.Plan.Validity"],
+    "expect": ["Validity.lean:171:10", "Validity.lean:167:75", "unsolved goals"]
+  },
+  {
+    "label": "A3b-1 checkCov2Complete trivially true (spec 29.3 condition 2 covering)",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Plan/Validity.lean",
+    "old": "def checkCov2Complete : Bool := π.addrList.all fun x => decide (x ∈ π.pubFlat)",
+    "new": "def checkCov2Complete : Bool := π.addrList.all fun _ => true",
+    "targets": ["LeanNCD.Semantics.Plan.Validity"],
+    "expect": ["Validity.lean:193:60", "Type mismatch"]
+  },
+  {
+    "label": "A3b-2 Valid field coverage2 unreachable by name (single-site form of the drop)",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Plan/Validity.lean",
+    "old": "  coverage2 : π.Coverage2",
+    "new": "  coverage2' : π.Coverage2",
+    "targets": ["LeanNCD.Semantics.Plan.Correctness"],
+    "expect": ["Correctness.lean:33:37", "Correctness.lean:55:30", "Invalid field `coverage2`"]
+  },
+  {
+    "label": "A2-d fixture plan materialises only addr 1 (N1 empty fibers)",
+    "task": "T5",
+    "file": "test/Semantics/PlanFixtures.lean",
+    "old": "def plan : taggedOut.Plan := unitPlan [[.initZero block], [.acc group], [.pub block]]",
+    "new": "def plan : taggedOut.Plan := unitPlan [[.initZero [addr 1]], [.acc group], [.pub block]]",
+    "targets": ["Semantics.PlanSimulationTest"],
+    "expect": ["PlanStepTest.lean:31:0", "step-tagged-run: expected (\"done\", 3, none, [some 0, some 14, some 0]), got (\"stuck\", 2, none, [none, some 14, none])"]
+  }
+]

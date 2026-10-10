@@ -1,0 +1,551 @@
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Correctness.lean b/leanncd/LeanNCD/Semantics/Plan/Correctness.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..4288c5357c37d483f692805acf5b1514282af7ec
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Plan/Correctness.lean
+@@ -0,0 +1,154 @@
++import LeanNCD.Semantics.Plan.Run
++
++/- Terminal adequacy (Lemma 31.2) and plan correctness (Theorem 31.3) for the
++   slice-1 profile. Lemma 31.2 is the first consumer of `Valid.coverage1` and
++   `Valid.coverage2`: at pc = m the related reference state is complete, so the
++   reference final store exists, every output coordinate is published, and
++   Decode returns its output projection. Theorem 31.3 compares outcomes only
++   (done/model, failed/no model), never the failing occurrence or the failure
++   snapshot (defect D5). -/
++
++namespace LeanNCD.Semantics.Program.Plan
++
++open Executor
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++variable {P : Program K σ r} {π : P.Plan}
++
++/-- At pc = m the command prefix is the whole plan. -/
++theorem prefixAnn_length (π : P.Plan) : π.prefixAnn π.commands.length = π.ann := by
++  simp [prefixAnn, ann]
++
++/-- Spec 29.3 condition 4 for every pub command, from `pubOK`. -/
++theorem Valid.order4 (hv : π.Valid) : π.Order4 := by
++  intro pc a ha y hy o hd
++  cases a with
++  | initZero S => cases hy
++  | acc G => cases hy
++  | pub B => exact ((hv.pubOK pc B ha).2 y hy).2.2 o hd
++
++/-- N6 (D9): the covering half of condition 1 follows from the covering half of
++    condition 2 and condition 4 (here: `pubOK`), in the singleton profile. -/
++theorem cov1_of_cov2_pubOrder (hv : π.Valid) (x : OccRef P) : x ∈ π.accFlat :=
++  π.accFlat_complete hv.singleton hv.coverage2.2 hv.order4 x
++
++variable [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
++variable (ops : (s : S) → ScalarOps (K s))
++
++/-- The reference state related to pc = m is complete: pending is empty by
++    coverage1 (every occurrence is in some group), and every address is
++    published by coverage2 (every defined address is in some block) or is an
++    input. -/
++theorem complete_of_refState (hv : π.Valid) {η : P.Input} {c : P.Running}
++    (hc : π.refState ops η π.commands.length = some c) : P.Complete c := by
++  obtain ⟨hp, hb⟩ := π.refState_R2 ops hc
++  refine ⟨fun t => Finset.ext fun o => ?_, fun a => ?_⟩
++  · rw [hp]
++    have hx : (⟨t, o⟩ : OccRef P) ∈ π.accFlat := hv.coverage1.2 ⟨t, o⟩
++    simp only [Cons, consList, prefixAnn_length, Finset.notMem_empty, iff_false, not_not]
++    exact hx
++  · rw [hb]
++    obtain ⟨t, p⟩ := a
++    cases ht : P.input t
++    · right
++      simp only [pubList, prefixAnn_length, List.mem_map]
++      exact ⟨⟨⟨t, ht⟩, p⟩, hv.coverage2.2 _, rfl⟩
++    · exact Or.inl ht
++
++/-- **Lemma 31.2 (terminal adequacy).** If a valid plan's run from `Start η`
++    is `done m M'`, then `m = commands.length`, the related reference state
++    `c = refState m` exists and is R-related to `M'`, `c` is complete (so the
++    reference run is successful), and Decode returns the output projection of
++    the reference final store. -/
++theorem terminal_adequacy (hv : π.Valid) (η : P.Input) {m : Nat} {M' : Memory K σ}
++    (hrun : π.runPlan ops (Start η) = .done m M') :
++    m = π.commands.length ∧ ∃ c, π.refState ops η m = some c ∧ π.R ops η m M' c ∧
++      ∃ complete : P.Complete c,
++        π.Decode m M' = some (P.outputProjection (P.finalStore c complete)) := by
++  rcases runPlan_R ops hv η with ⟨M₁, c, h, hc, hR, -⟩ | ⟨_, _, _, _, _, h, -⟩
++  · rw [hrun] at h
++    obtain ⟨rfl, rfl⟩ := PlanOutcome.done.inj h
++    have complete := complete_of_refState ops hv hc
++    have outs : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, π.Pub π.commands.length ⟨t.val, p⟩ :=
++      fun t p => (hR.published _).mp (complete.2 _)
++    obtain ⟨out, hd, hout⟩ := π.decode_of_R ops hR outs
++    refine ⟨rfl, c, hc, hR, complete, ?_⟩
++    rw [hd]
++    congr 1
++    funext t p
++    have h1 := hout t p
++    rw [P.finalStore_published c complete] at h1
++    exact (Option.some.inj h1).symm
++  · rw [hrun] at h
++    cases h
++
++/-- **Theorem 31.3 (a).** A `done` run of a valid plan has exactly one model,
++    the reference final store `ρ`; its decode is `ρ`'s output projection, which
++    is also the denotation. -/
++theorem done_correct (hv : π.Valid) (η : P.Input) {m : Nat} {M' : Memory K σ}
++    (hrun : π.runPlan ops (Start η) = .done m M') :
++    ∃ c, ∃ success : P.Successful ops η c,
++      (∀ ρ, P.Models ops η ρ ↔ ρ = P.finalStore c success.2) ∧
++      π.Decode m M' = some (P.outputProjection (P.finalStore c success.2)) ∧
++      P.denotation ops η (P.successful_admInput ops η c success) =
++        P.outputProjection (P.finalStore c success.2) := by
++  obtain ⟨-, c, -, hR, complete, hd⟩ := terminal_adequacy ops hv η hrun
++  let success : P.Successful ops η c := ⟨hR.reach, complete⟩
++  refine ⟨c, success, fun ρ => ⟨P.successful_unique ops η c success ρ, ?_⟩, hd,
++    P.successful_denotation ops η c success⟩
++  rintro rfl
++  exact P.successful_model ops η c success
++
++/-- **Theorem 31.3 (b).** A `failed` run of a valid plan means no model exists.
++    The failing occurrence and the memory are not compared (D5). -/
++theorem failed_correct (hv : π.Valid) (η : P.Input) {o : OccRef P} {pc : Nat}
++    {M' : Memory K σ} (hrun : π.runPlan ops (Start η) = .failed o pc M') :
++    ¬ ∃ ρ, P.Models ops η ρ := by
++  rcases runPlan_R ops hv η with ⟨_, _, h, -⟩ | ⟨o', _, _, c', _, _, hex⟩
++  · rw [hrun] at h
++    cases h
++  · exact P.failed_no_model ops η o'.1 o'.2 c' (hex.reaches P ops)
++
++/-- **Theorem 31.3 (c), error-free profile.** A valid plan's run is never
++    `stuck`: it is `done` at `m = commands.length` or `failed`. -/
++theorem done_or_failed (hv : π.Valid) (η : P.Input) :
++    (∃ M', π.runPlan ops (Start η) = .done π.commands.length M') ∨
++      ∃ o pc M', π.runPlan ops (Start η) = .failed o pc M' := by
++  rcases runPlan_R ops hv η with ⟨M', _, h, -⟩ | ⟨o, pc, M', _, _, h, -⟩
++  · exact Or.inl ⟨M', h⟩
++  · exact Or.inr ⟨o, pc, M', h⟩
++
++/-- **Theorem 31.3 (c), converse.** If a model exists, a valid plan's run is
++    `done` and decodes to that model's output projection. -/
++theorem done_of_model (hv : π.Valid) (η : P.Input) {ρ : Store K σ}
++    (hρ : P.Models ops η ρ) :
++    ∃ M', π.runPlan ops (Start η) = .done π.commands.length M' ∧
++      π.Decode π.commands.length M' = some (P.outputProjection ρ) := by
++  rcases done_or_failed ops hv η with ⟨M', h⟩ | ⟨_, _, _, h⟩
++  · obtain ⟨c, success, hmod, hd, -⟩ := done_correct ops hv η h
++    rw [(hmod ρ).mp hρ]
++    exact ⟨M', h, hd⟩
++  · exact absurd ⟨ρ, hρ⟩ (failed_correct ops hv η h)
++
++/-- (b) + (c): a valid plan's run is `done` iff a model exists. -/
++theorem done_iff_model (hv : π.Valid) (η : P.Input) :
++    (∃ m M', π.runPlan ops (Start η) = .done m M') ↔ ∃ ρ, P.Models ops η ρ := by
++  constructor
++  · rintro ⟨m, M', h⟩
++    obtain ⟨c, success, hmod, -⟩ := done_correct ops hv η h
++    exact ⟨_, (hmod _).mpr rfl⟩
++  · rintro ⟨ρ, hρ⟩
++    obtain ⟨M', h, -⟩ := done_of_model ops hv η hρ
++    exact ⟨_, M', h⟩
++
++#print axioms Valid.order4
++#print axioms cov1_of_cov2_pubOrder
++#print axioms complete_of_refState
++#print axioms terminal_adequacy
++#print axioms done_correct
++#print axioms failed_correct
++#print axioms done_or_failed
++#print axioms done_of_model
++#print axioms done_iff_model
++
++end LeanNCD.Semantics.Program.Plan
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Run.lean b/leanncd/LeanNCD/Semantics/Plan/Run.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..119114795fe2538c4ad7009f82e58992e95f5a1a
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Plan/Run.lean
+@@ -0,0 +1,173 @@
++import LeanNCD.Semantics.Plan.Validity
++
++/- Progress and the multi-step run lemma for valid plans (slice 1).
++   `step_not_stuck`: a valid plan is never stuck at a related state.
++   `run_R`: a run from a related state ends `done` at pc = m with R and a
++   matching reference execution, or `failed` with a matching reference
++   execution to a failed state; never `stuck`. -/
++
++namespace LeanNCD.Semantics.Program.Plan
++
++open Executor
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++variable {P : Program K σ r} {π : P.Plan}
++variable [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
++variable (ops : (s : S) → ScalarOps (K s))
++
++/-! ### Progress -/
++
++omit [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
++/-- A group whose every footprint is readable never reports `stuck` in its scan. -/
++theorem scanGroup_ne_stuck {p : PartialStore K σ} {G : List (OccRef P)}
++    (ready : ∀ x ∈ G, checkReads p (footprint (P.body x.1 x.2.1) x.2.2) = true) :
++    scanGroup ops p G ≠ some .stuck := by
++  induction G with
++  | nil => simp [scanGroup]
++  | cons x G ih =>
++    unfold scanGroup
++    split
++    · rename_i hn
++      simp [evalReady, ready x List.mem_cons_self] at hn
++    · simp
++    · exact ih (fun y hy => ready y (List.mem_cons_of_mem _ hy))
++
++/-- The commit phase succeeds when every destination slot is initialised. -/
++theorem foldlM_addAt_some (v : Values P) : ∀ (G : List (OccRef P)) (M : Memory K σ),
++    (∀ x ∈ G, (M (place x.dest)).isSome = true) → ∃ M', G.foldlM (addAt v) M = some M'
++  | [], M, _ => ⟨M, rfl⟩
++  | x :: G, M, h => by
++    obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp (h x List.mem_cons_self)
++    have step : addAt v M x = some (Function.update M (place x.dest) (some (addVal x a (v x)))) := by
++      simp [addAt, ha]
++    rw [List.foldlM_cons, step]
++    refine foldlM_addAt_some v G _ (fun y hy => ?_)
++    by_cases e : place y.dest = place x.dest
++    · rw [e, Function.update_self]
++      rfl
++    · rw [Function.update_of_ne e]
++      exact h y (List.mem_cons_of_mem _ hy)
++
++variable {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
++
++/-- Under R, a published address's slot is readable through the read view. -/
++theorem readPub_isSome (hR : π.R ops η pc M c) {a : Address σ} (ha : π.Pub pc a) :
++    (π.readPub pc M a).isSome = true := by
++  simp only [readPub, if_pos ha]
++  rw [hR.pubSlot a (slotView_pub π |>.mpr ha)]
++  exact (hR.published a).mpr ha
++
++/-- Under R, a materialised unpublished address has an initialised slot. -/
++theorem acc_slot_isSome (hR : π.R ops η pc M c) {x : DefAddr P} (hm : π.Mat pc x)
++    (hp : ¬ π.Pub pc x.addr) : (M (place x.addr)).isSome = true := by
++  rw [hR.accSlot x (slotView_acc π |>.mpr ⟨hm, hp⟩)]
++  rfl
++
++/-- **Progress.** A valid plan at a related state, with a command left, is not
++    stuck. Uses Singleton, AccOK (destinations in Mat, members unconsumed),
++    ReadyOK (condition 3) and PubOK (unpublished, Mat). No `refState` hypothesis
++    is needed: R alone suffices. -/
++theorem step_not_stuck (hv : π.Valid) (hR : π.R ops η pc M c)
++    (hpc : pc < π.commands.length) : π.stepPlan ops pc M ≠ .stuck := by
++  obtain ⟨a, ha⟩ := hv.singleton _ (List.getElem_mem hpc)
++  have hcmd : π.commands[pc]? = some [a] := by
++    rw [List.getElem?_eq_getElem hpc, ha]
++  unfold stepPlan
++  rw [hcmd]
++  cases a with
++  | initZero S => simp [stepCommand, execAnn]
++  | pub B =>
++    obtain ⟨-, hB⟩ := hv.pubOK pc B hcmd
++    simp only [stepCommand, execAnn, execPub]
++    rw [if_pos]
++    · simp
++    · simp only [List.all_eq_true]
++      intro x hx
++      exact acc_slot_isSome ops hR (hB x hx).2.1 (hB x hx).1
++  | acc G =>
++    obtain ⟨-, hG⟩ := hv.accOK pc G hcmd
++    have hready := hv.ready pc G hcmd
++    simp only [stepCommand, execAnn, execAcc]
++    split
++    · rename_i res hres
++      intro e
++      subst e
++      exact scanGroup_ne_stuck ops (fun x hx => (checkReads_iff _ _).mpr
++        (fun a ha => readPub_isSome ops hR (hready x hx a ha))) hres
++    · obtain ⟨M', hM'⟩ := foldlM_addAt_some (valuesOn ops (π.readPub pc M)) G M
++        (fun x hx => acc_slot_isSome ops hR (hG x hx).2 (π.dest_not_pub ops hR (hG x hx).1))
++      rw [hM']
++      simp
++
++/-! ### The multi-step run lemma -/
++
++/-- **Run lemma.** From a related state at `pc` (with `c = refState pc`), the
++    remaining run of a valid plan either finishes at `m = commands.length` with R
++    and a reference execution `c →* c'` (`c' = refState m`), or fails on an
++    occurrence `o` with a reference execution from `c` to `.failed o c''`.
++    It is never stuck (no third disjunct). -/
++theorem run_R (hv : π.Valid) :
++    ∀ (l : List (Command P)) (pc : Nat) (M : Memory K σ) (c : P.Running),
++      π.commands.drop pc = l → pc ≤ π.commands.length →
++      π.R ops η pc M c → π.refState ops η pc = some c →
++      (∃ M' c', π.runFrom ops pc M l = .done π.commands.length M' ∧
++          π.refState ops η π.commands.length = some c' ∧ π.R ops η π.commands.length M' c' ∧
++          ∃ events, Execution P ops events (.running c) (.running c')) ∨
++      (∃ o pc' M' c' events, π.runFrom ops pc M l = .failed o pc' M' ∧
++          Execution P ops events (.running c) (.failed o.1 o.2 c'))
++  | [], pc, M, c, hl, hle, hR, hc => by
++    have hpc : pc = π.commands.length :=
++      le_antisymm hle (List.drop_eq_nil_iff.mp hl)
++    subst hpc
++    exact Or.inl ⟨M, c, rfl, hc, hR, [], .nil _⟩
++  | cmd :: rest, pc, M, c, hl, _, hR, hc => by
++    have hcmd : π.commands[pc]? = some cmd := by
++      rw [← List.head?_drop, hl]
++      rfl
++    have hlt : pc < π.commands.length := (List.getElem?_eq_some_iff.mp hcmd).1
++    obtain ⟨a, rfl⟩ := hv.singleton _ (List.mem_of_getElem? hcmd)
++    have hrest : π.commands.drop (pc + 1) = rest := by
++      rw [← List.tail_drop, hl]
++      rfl
++    have hstep : π.stepCommand ops pc M [a] = π.stepPlan ops pc M := by
++      simp [stepPlan, hcmd]
++    cases hs : π.stepPlan ops pc M with
++    | ok M' =>
++      obtain ⟨c', hc', hR', ev, hex⟩ := step_R ops hR hc hcmd (hv.stepOK pc a hcmd) hs
++      have ih := run_R hv rest (pc + 1) M' c' hrest hlt hR' hc'
++      simp only [runFrom, hstep, hs]
++      rcases ih with ⟨M'', c'', hrun, hcm, hRm, ev', hex'⟩ | ⟨o, pc', M'', c'', ev', hrun, hex'⟩
++      · exact Or.inl ⟨M'', c'', hrun, hcm, hRm, ev ++ ev', hex.append hex'⟩
++      · exact Or.inr ⟨o, pc', M'', c'', ev ++ ev', hrun, hex.append hex'⟩
++    | semFail o =>
++      have hex := step_failed ops hR hcmd
++        (fun G hG x hx => by
++          cases hG
++          exact ((hv.accOK pc G hcmd).2 x hx).1) hs
++      simp only [runFrom, hstep, hs]
++      exact Or.inr ⟨o, pc, M, c, _, rfl, hex⟩
++    | stuck => exact absurd hs (step_not_stuck ops hv hR hlt)
++
++/-- `run_R` from `Start`: a valid plan's `runPlan` either completes with R at
++    `m` and a reference execution from the initial state, or fails with a
++    matching reference failure. -/
++theorem runPlan_R (hv : π.Valid) (η : P.Input) :
++    (∃ M' c', π.runPlan ops (Start η) = .done π.commands.length M' ∧
++        π.refState ops η π.commands.length = some c' ∧ π.R ops η π.commands.length M' c' ∧
++        ∃ events, Execution P ops events (.running (P.initial η)) (.running c')) ∨
++    (∃ o pc' M' c' events, π.runPlan ops (Start η) = .failed o pc' M' ∧
++        Execution P ops events (.running (P.initial η)) (.failed o.1 o.2 c')) :=
++  run_R ops hv π.commands 0 (Start η) (P.initial η) (List.drop_zero) (Nat.zero_le _)
++    (π.R_start ops η) (by simp [refState, prefixAnn_zero])
++
++/-- A valid plan's run from `Start` is never stuck. -/
++theorem runPlan_not_stuck (hv : π.Valid) (η : P.Input) (pc : Nat) (M : Memory K σ) :
++    π.runPlan ops (Start η) ≠ .stuck pc M := by
++  rcases runPlan_R ops hv η with ⟨_, _, h, -⟩ | ⟨_, _, _, _, _, h, -⟩ <;> rw [h] <;> simp
++
++#print axioms step_not_stuck
++#print axioms run_R
++#print axioms runPlan_R
++#print axioms runPlan_not_stuck
++
++end LeanNCD.Semantics.Program.Plan
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Validity.lean b/leanncd/LeanNCD/Semantics/Plan/Validity.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..5cbaf800317937cec60cfdd11fbb4c20c3819ab2
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Plan/Validity.lean
+@@ -0,0 +1,206 @@
++import LeanNCD.Semantics.Plan.Simulation
++
++/- Definition 31.1 (valid plan), slice-1 form, and its computable check.
++   `Valid` restates the static part of 31.1 as named fields (the A2
++   ValidityConditions list); `checkPlan` decides it by list recursion only.
++   Coverage completeness and condition 4 quantify over all occurrences or
++   defined addresses: their enumerations are DERIVED from the plan's certified
++   `tensors` list (`occList`, `addrList`), never from the noncomputable
++   `definedFintype`/`definedAddressFintype` instances. -/
++
++namespace LeanNCD.Semantics.Program.Plan
++
++open Executor
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++variable {P : Program K σ r} (π : P.Plan)
++
++/-- Spec 29.3 condition 3 for one group: every address a member body reads is
++    in `Pub pc` (inputs, or published by the prefix). A PROGRESS condition. -/
++def ReadyOK (pc : Nat) (G : List (OccRef P)) : Prop :=
++  ∀ x ∈ G, ∀ a ∈ footprint (P.body x.1 x.2.1) x.2.2, π.Pub pc a
++
++/-- Definition 31.1, slice-1 form (singleton commands, initZero/acc/pub).
++    `tensors_nodup`/`tensors_complete` are fields of the plan itself. -/
++structure Valid : Prop where
++  /-- Slice-1 profile: every command is one annotation. -/
++  singleton : π.Singleton
++  /-- Spec 29.3 condition 1 (groups duplicate-free, disjoint, covering `𝒪_P`). -/
++  coverage1 : π.Coverage1
++  /-- Spec 29.3 condition 2 (blocks duplicate-free, disjoint, covering `Addr_Def`). -/
++  coverage2 : π.Coverage2
++  /-- `InitOK` (N2): initZero targets unpublished, unconsumed-into addresses. -/
++  initFresh : ∀ pc S, π.commands[pc]? = some [.initZero S] → π.InitOK pc S
++  /-- `AccOK`: group duplicate-free, unconsumed, destinations materialised. -/
++  accOK : ∀ pc G, π.commands[pc]? = some [.acc G] → π.AccOK pc G
++  /-- `PubOK`: block duplicate-free, unpublished, materialised (N1), and every
++      occurrence targeting a member already consumed (spec 29.3 condition 4). -/
++  pubOK : ∀ pc B, π.commands[pc]? = some [.pub B] → π.PubOK pc B
++  /-- Spec 29.3 condition 3 (N3): every read footprint is in `Pub pc`. -/
++  ready : ∀ pc G, π.commands[pc]? = some [.acc G] → π.ReadyOK pc G
++
++theorem Valid.stepOK {π : P.Plan} (h : π.Valid) (pc : Nat) : π.StepOK pc := by
++  intro a ha
++  cases a with
++  | initZero S => exact h.initFresh pc S ha
++  | acc G => exact h.accOK pc G ha
++  | pub B => exact h.pubOK pc B ha
++
++/-! ### Enumerations derived from the certified tensor list -/
++
++/-- Every tagged occurrence, enumerated from `π.tensors`. -/
++def occList : List (OccRef P) :=
++  π.tensors.flatMap fun t =>
++    if h : P.input t = false then
++      (List.finRange (P.statements ⟨t, h⟩)).flatMap fun s =>
++        (List.finRange (P.valuations ⟨t, h⟩ s)).filterMap fun v =>
++          if hg : P.guard ⟨t, h⟩ s v = true then some ⟨⟨t, h⟩, ⟨s, ⟨v, hg⟩⟩⟩ else none
++    else []
++
++theorem mem_occList (x : OccRef P) : x ∈ π.occList := by
++  obtain ⟨⟨t, h⟩, ⟨s, ⟨v, hg⟩⟩⟩ := x
++  simp only [occList, List.mem_flatMap]
++  refine ⟨t, π.tensors_complete t, ?_⟩
++  rw [dif_pos h]
++  simp only [List.mem_flatMap, List.mem_filterMap, List.mem_finRange, true_and]
++  exact ⟨s, v, by rw [dif_pos hg]⟩
++
++/-- Every defined address, enumerated from `π.tensors` and the canonical layout. -/
++def addrList : List (DefAddr P) :=
++  π.tensors.flatMap fun t =>
++    if h : P.input t = false then
++      (List.finRange (canonicalLayout (σ.signature t).axes).count).map fun i =>
++        ⟨⟨t, h⟩, (canonicalLayout (σ.signature t).axes).enumerate i⟩
++    else []
++
++theorem mem_addrList (x : DefAddr P) : x ∈ π.addrList := by
++  obtain ⟨⟨t, h⟩, p⟩ := x
++  simp only [addrList, List.mem_flatMap]
++  refine ⟨t, π.tensors_complete t, ?_⟩
++  rw [dif_pos h]
++  simp only [List.mem_map, List.mem_finRange, true_and]
++  exact ⟨(canonicalLayout (σ.signature t).axes).enumerate.symm p, by simp⟩
++
++/-! ### The computable check (one Bool per Valid clause) -/
++
++section Check
++
++variable [DecidableEq σ.Tensor]
++local instance coordEqInst (sh : Shape) : DecidableEq (Coord sh) := coordDecidableEq sh
++
++def checkSingleton : Bool := π.commands.all fun cmd => cmd.length == 1
++
++def checkCov1Nodup : Bool := decide π.accFlat.Nodup
++def checkCov1Complete : Bool := π.occList.all fun x => decide (x ∈ π.accFlat)
++def checkCov2Nodup : Bool := decide π.pubFlat.Nodup
++def checkCov2Complete : Bool := π.addrList.all fun x => decide (x ∈ π.pubFlat)
++
++/-- `InitOK` (N2): no member is published, and no consumed occurrence targets it. -/
++def checkInit (pc : Nat) (S : List (DefAddr P)) : Bool :=
++  S.all fun x => !decide (π.Pub pc x.addr) && (π.consList pc).all fun y => decide (y.target ≠ x)
++
++/-- `AccOK`, first half: duplicate-free and unconsumed. -/
++def checkAccFresh (pc : Nat) (G : List (OccRef P)) : Bool :=
++  decide G.Nodup && G.all fun x => !decide (π.Cons pc x)
++
++/-- `AccOK`, second half: every destination materialised. -/
++def checkAccMat (pc : Nat) (G : List (OccRef P)) : Bool :=
++  G.all fun x => decide (π.Mat pc x.target)
++
++/-- Condition 3 (progress). -/
++def checkReady (pc : Nat) (G : List (OccRef P)) : Bool :=
++  G.all fun x => (footprint (P.body x.1 x.2.1) x.2.2).all fun a => decide (π.Pub pc a)
++
++/-- `PubOK`, first part: duplicate-free and unpublished. -/
++def checkPubFresh (pc : Nat) (B : List (DefAddr P)) : Bool :=
++  decide B.Nodup && B.all fun x => !decide (π.Pub pc x.addr)
++
++/-- `PubOK`, N1: every member materialised. -/
++def checkPubMat (pc : Nat) (B : List (DefAddr P)) : Bool :=
++  B.all fun x => decide (π.Mat pc x)
++
++/-- `PubOK`, condition 4: every occurrence targeting a member is consumed. -/
++def checkPubOrder (pc : Nat) (B : List (DefAddr P)) : Bool :=
++  B.all fun x => π.occList.all fun y => !decide (y.target = x) || decide (π.Cons pc y)
++
++def checkAnn (pc : Nat) : Ann P → Bool
++  | .initZero S => π.checkInit pc S
++  | .acc G => π.checkAccFresh pc G && π.checkAccMat pc G && π.checkReady pc G
++  | .pub B => π.checkPubFresh pc B && π.checkPubMat pc B && π.checkPubOrder pc B
++
++def checkSteps : Bool :=
++  (List.range π.commands.length).all fun pc =>
++    match π.commands[pc]? with
++    | some [a] => π.checkAnn pc a
++    | _ => true
++
++def checkPlan : Bool :=
++  π.checkSingleton && π.checkCov1Nodup && π.checkCov1Complete &&
++    π.checkCov2Nodup && π.checkCov2Complete && π.checkSteps
++
++/-! ### Soundness -/
++
++theorem checkSteps_ann (h : π.checkSteps = true) {pc : Nat} {a : Ann P}
++    (ha : π.commands[pc]? = some [a]) : π.checkAnn pc a = true := by
++  have hlt : pc < π.commands.length := by
++    obtain ⟨hlt, -⟩ := List.getElem?_eq_some_iff.mp ha
++    exact hlt
++  simp only [checkSteps, List.all_eq_true] at h
++  have := h pc (List.mem_range.mpr hlt)
++  rw [ha] at this
++  exact this
++
++omit [DecidableEq σ.Tensor] in
++theorem target_eq {t : P.Defined} (o : P.Occurrence t) (p : Coord (σ.signature t.val).axes) :
++    OccRef.target (⟨t, o⟩ : OccRef P) = (⟨t, p⟩ : DefAddr P) ↔ P.destination t o.1 o.2 = p := by
++  simp [OccRef.target]
++
++theorem checkInit_sound {pc : Nat} {S : List (DefAddr P)} (h : π.checkInit pc S = true) :
++    π.InitOK pc S := by
++  simp only [checkInit, List.all_eq_true, Bool.and_eq_true, Bool.not_eq_true',
++    decide_eq_false_iff_not, decide_eq_true_eq] at h
++  rintro ⟨t, p⟩ hx
++  obtain ⟨hp, hc⟩ := h _ hx
++  refine ⟨hp, fun o ho hd => hc ⟨t, o⟩ ho ((target_eq o p).mpr hd)⟩
++
++theorem checkAnn_acc_sound {pc : Nat} {G : List (OccRef P)}
++    (h : π.checkAnn pc (.acc G) = true) : π.AccOK pc G ∧ π.ReadyOK pc G := by
++  simp only [checkAnn, checkAccFresh, checkAccMat, checkReady, List.all_eq_true,
++    Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not, decide_eq_true_eq] at h
++  obtain ⟨⟨⟨hn, hc⟩, hm⟩, hr⟩ := h
++  exact ⟨⟨hn, fun x hx => ⟨hc x hx, hm x hx⟩⟩, hr⟩
++
++theorem checkAnn_pub_sound {pc : Nat} {B : List (DefAddr P)}
++    (h : π.checkAnn pc (.pub B) = true) : π.PubOK pc B := by
++  simp only [checkAnn, checkPubFresh, checkPubMat, checkPubOrder, List.all_eq_true,
++    Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not, decide_eq_true_eq,
++    Bool.or_eq_true] at h
++  obtain ⟨⟨⟨hn, hp⟩, hm⟩, ho⟩ := h
++  refine ⟨hn, ?_⟩
++  rintro ⟨t, p⟩ hx
++  refine ⟨hp _ hx, hm _ hx, fun o hd => ?_⟩
++  rcases ho _ hx ⟨t, o⟩ (π.mem_occList _) with hne | hcons
++  · exact absurd ((target_eq o p).mpr hd) (by simpa using hne)
++  · exact hcons
++
++/-- `checkPlan` is sound for Definition 31.1 (slice-1 form). -/
++theorem checkPlan_sound (h : π.checkPlan = true) : π.Valid := by
++  simp only [checkPlan, Bool.and_eq_true] at h
++  obtain ⟨⟨⟨⟨⟨hs, h1n⟩, h1c⟩, h2n⟩, h2c⟩, hst⟩ := h
++  simp only [checkSingleton, checkCov1Nodup, checkCov1Complete, checkCov2Nodup,
++    checkCov2Complete, List.all_eq_true, decide_eq_true_eq, beq_iff_eq] at hs h1n h1c h2n h2c
++  refine ⟨fun cmd hc => List.length_eq_one_iff.mp (hs cmd hc),
++    ⟨h1n, fun x => h1c x (π.mem_occList x)⟩, ⟨h2n, fun x => h2c x (π.mem_addrList x)⟩,
++    fun pc S ha => π.checkInit_sound (π.checkSteps_ann hst ha),
++    fun pc G ha => (π.checkAnn_acc_sound (π.checkSteps_ann hst ha)).1,
++    fun pc B ha => π.checkAnn_pub_sound (π.checkSteps_ann hst ha),
++    fun pc G ha => (π.checkAnn_acc_sound (π.checkSteps_ann hst ha)).2⟩
++
++end Check
++
++#print axioms Valid.stepOK
++#print axioms mem_occList
++#print axioms mem_addrList
++#print axioms checkPlan_sound
++
++end LeanNCD.Semantics.Program.Plan

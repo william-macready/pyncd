@@ -1,0 +1,125 @@
+{
+  "base": "0bf02e47ced1b380ab3249aefe5a62dbab877329",
+  "prototype_code_head": "3625b2fe309b15fc0000f228071fd607250fa8b4",
+  "scratch_head": "f14415ed00bb994bfea0074d374de113c918d1e9",
+  "scratch_tree": "f3eee99eaafc782e0476232934b453f21c5481fd",
+  "tasks": [
+    {
+      "task": "T1",
+      "name": "01-syntax-batch",
+      "commit": "6c1ec8a9cdd0851f71e86b6fa6e9acc8d4cd6343",
+      "parent": "0bf02e47ced1b380ab3249aefe5a62dbab877329",
+      "tree": "4c8ef7fe643c4b15e2cdd11d8d1dd0e762a7ba06",
+      "patch": "papers/semantics/plan_layer_patches/01-syntax-batch.patch",
+      "patch_lines": 429,
+      "sha256": "2bce03df1b58f3cd108bd775fd6cd5293a6a1ff56cf9853eb65beccf1dcd68d1",
+      "build": {
+        "targets": [
+          "LeanNCD.Semantics.Plan.Syntax",
+          "LeanNCD.Semantics.Plan.Batch"
+        ],
+        "result": "Build completed successfully",
+        "jobs": 2960,
+        "log": null,
+        "source": "console output observed during emission; not logged"
+      }
+    },
+    {
+      "task": "T2",
+      "name": "02-memory",
+      "commit": "4978c19ebf5bf74f0d536ee53d3fd7911643d938",
+      "parent": "6c1ec8a9cdd0851f71e86b6fa6e9acc8d4cd6343",
+      "tree": "471bd440f8439080207625c98a140fb240524016",
+      "patch": "papers/semantics/plan_layer_patches/02-memory.patch",
+      "patch_lines": 293,
+      "sha256": "37593919d4617b7bd3c10baebfd8335d0105aad9e5aa1318712c7512450d2239",
+      "build": {
+        "targets": [
+          "LeanNCD.Semantics.Plan.Memory"
+        ],
+        "result": "Build completed successfully",
+        "jobs": 2961,
+        "log": "/private/tmp/claude-501/-Users-williammacready-code-python-pyncd/bb660e2f-3c8f-43f7-9eeb-5f44761df677/scratchpad/t2.log",
+        "log_sha256": "871116bce4eaa95aabca830c78b12b45fa22682af0b8826e3caf1110f4d2b4b3",
+        "warnings": 13
+      }
+    },
+    {
+      "task": "T3",
+      "name": "03-step-simulation",
+      "commit": "ee18d6657138c5ec2b55833d1b1e84f005d2598b",
+      "parent": "4978c19ebf5bf74f0d536ee53d3fd7911643d938",
+      "tree": "7878073319b71e4938a9cb37ac1fbf3831d93a58",
+      "patch": "papers/semantics/plan_layer_patches/03-step-simulation.patch",
+      "patch_lines": 786,
+      "sha256": "a3c042f1b370eef4025dcab67e76a84721e7ade57ceadf63a352e1379b73790f",
+      "build": {
+        "targets": [
+          "LeanNCD.Semantics.Plan.Step",
+          "LeanNCD.Semantics.Plan.Simulation"
+        ],
+        "result": "Build completed successfully",
+        "jobs": 2963,
+        "log": "/private/tmp/claude-501/-Users-williammacready-code-python-pyncd/bb660e2f-3c8f-43f7-9eeb-5f44761df677/scratchpad/t3.log",
+        "log_sha256": "883724fd2509b5174e1006dd9317f2d92f89e79a0a9101cef2bde9ed7b3658ef",
+        "warnings": 13
+      }
+    },
+    {
+      "task": "T4",
+      "name": "04-validity-run-correctness",
+      "commit": "de6a582bf8d110204bafe50c2b77b6c1d940ade8",
+      "parent": "ee18d6657138c5ec2b55833d1b1e84f005d2598b",
+      "tree": "e6563cd4a77d3b1e402cfff51f8de9227cedafa4",
+      "patch": "papers/semantics/plan_layer_patches/04-validity-run-correctness.patch",
+      "patch_lines": 551,
+      "sha256": "5f645b8fcce6d7e502cc157fdb2b305d6385371fc7b0cbe5c929063cc7b6fa5b",
+      "build": {
+        "targets": [
+          "LeanNCD.Semantics.Plan.Validity",
+          "LeanNCD.Semantics.Plan.Run",
+          "LeanNCD.Semantics.Plan.Correctness"
+        ],
+        "result": "Build completed successfully",
+        "jobs": 2966,
+        "log": "/private/tmp/claude-501/-Users-williammacready-code-python-pyncd/bb660e2f-3c8f-43f7-9eeb-5f44761df677/scratchpad/t4.log",
+        "log_sha256": "db10b2cacedeb4f93b52e8eeae400069e2eb665783bd490d87bec0750c5ca104",
+        "warnings": 13
+      }
+    },
+    {
+      "task": "T5",
+      "name": "05-aggregator-fixtures",
+      "commit": "f14415ed00bb994bfea0074d374de113c918d1e9",
+      "parent": "de6a582bf8d110204bafe50c2b77b6c1d940ade8",
+      "tree": "f3eee99eaafc782e0476232934b453f21c5481fd",
+      "patch": "papers/semantics/plan_layer_patches/05-aggregator-fixtures.patch",
+      "patch_lines": 830,
+      "sha256": "fd710a46ff5082d8f6693baac4791bb87af10b4ef4794e086344747e0b2ccf37",
+      "build": {
+        "targets": [
+          "<default targets>"
+        ],
+        "result": "Build completed successfully",
+        "jobs": 8784,
+        "log": "/private/tmp/claude-501/-Users-williammacready-code-python-pyncd/bb660e2f-3c8f-43f7-9eeb-5f44761df677/scratchpad/t5.log",
+        "log_sha256": "eb33cf40eb19c69b5c539ff95814efd678bfe44eefe37ffb3c3eb52c17fa40b9",
+        "warnings": 63
+      }
+    }
+  ],
+  "replay": "PASS: temporary-index git apply --cached of each patch onto BASE yields each task commit's tree; final tree equals PROTO on all 19 shipped paths",
+  "excluded_from_patches": [
+    "papers/semantics/plan_layer_artifacts/a1_notes.md",
+    "papers/semantics/plan_layer_artifacts/a2_notes.md",
+    "papers/semantics/plan_layer_artifacts/a3a_notes.md",
+    "papers/semantics/plan_layer_artifacts/a3b_notes.md"
+  ],
+  "forbidden_token_grep": {
+    "pattern": "\\b(sorry|admit|axiom|native_decide)\\b",
+    "files": 18,
+    "hits": []
+  },
+  "boundary_moves": [],
+  "source_edits": "none: every file is byte-copied from PROTO via git checkout"
+}
