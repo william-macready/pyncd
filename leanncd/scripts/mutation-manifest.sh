@@ -10,7 +10,9 @@
 #
 # --cd <dir>     change directory first (as in mutation-cycle.sh); must come first if given
 # --check        validate global schema plus selected files and old-strings (EXACTLY ONCE).
-#                No build runs. Use it at plan-authoring time.
+#                No build runs. Use it at plan-authoring time, WITHOUT filters: a filtered check
+#                leaves every entry outside the selection unvalidated (a successful filtered
+#                check reports how many).
 # --task <id>    select only entries whose "task" field equals <id>, for checking or running
 #                IDs are exact strings; unknown IDs report available tasks
 # --out <file>   also write the summary table to <file> (markdown)
@@ -19,6 +21,8 @@
 # Validation scope: schema and duplicate labels are checked across ALL entries. File existence
 # and old-string uniqueness are checked only for selected entries; no filters means all entries.
 # An empty selection is an error. Filtered --check output names entries outside validation.
+# Schema, duplicate-label and selected-file problems are reported in one pass, in entry order;
+# an unknown task or an empty selection is reported once those are fixed.
 #
 # Manifest: a JSON array of objects —
 #   { "label":   "M1 (payload bits constant 0)",          required, unique
@@ -70,27 +74,49 @@ except Exception as e:
     die(f"cannot read manifest {manifest_path}: {e}")
 if not isinstance(entries, list): die("manifest must be a JSON array")
 
-problems, labels = [], set()
+problems, labels = [], set()   # problems: (entry index, message)
+def problem(i, msg): problems.append((i, msg))
+def fail_if_problems():
+    # One report, in entry order (stable within an entry: schema, then duplicate label, then disk).
+    if problems:
+        print("\n".join(m for _, m in sorted(problems, key=lambda p: p[0])), file=sys.stderr)
+        sys.exit(125)
+
 for i, e in enumerate(entries):
     where = f"entry {i} ({e.get('label', '?')})" if isinstance(e, dict) else f"entry {i}"
-    if not isinstance(e, dict): problems.append(f"{where}: not an object"); continue
+    if not isinstance(e, dict): problem(i, f"{where}: not an object"); continue
     for k in ("label", "file", "old", "new"):
-        if not isinstance(e.get(k), str): problems.append(f"{where}: '{k}' must be a string")
+        if not isinstance(e.get(k), str): problem(i, f"{where}: '{k}' must be a string")
     if "task" in e and not isinstance(e["task"], str):
-        problems.append(f"{where}: 'task' must be a string")
+        problem(i, f"{where}: 'task' must be a string (got {json.dumps(e['task'])}); "
+                   "quote task ids, e.g. \"task\": \"2\"")
     if not (isinstance(e.get("targets"), list) and e["targets"] and all(isinstance(t, str) for t in e["targets"])):
-        problems.append(f"{where}: 'targets' must be a non-empty list of strings")
+        problem(i, f"{where}: 'targets' must be a non-empty list of strings")
     if "expect" in e and not (isinstance(e["expect"], list) and all(isinstance(s, str) for s in e["expect"])):
-        problems.append(f"{where}: 'expect' must be a list of strings")
+        problem(i, f"{where}: 'expect' must be a list of strings")
     if isinstance(e.get("label"), str):
-        if e["label"] in labels: problems.append(f"{where}: duplicate label")
+        if e["label"] in labels: problem(i, f"{where}: duplicate label")
         labels.add(e["label"])
-if problems:
-    print("\n".join(problems), file=sys.stderr); sys.exit(125)
 
-selected = [(i, e) for i, e in enumerate(entries)
-            if (task is None or e.get("task") == task)
-            and (not prefixes or any(e["label"].startswith(p) for p in prefixes))]
+# Selection tolerates entries that already have schema problems, so their problems are reported
+# together with the filesystem problems of the selected entries instead of one class per run.
+def selectable(e):
+    if not isinstance(e, dict): return False
+    if task is not None and e.get("task") != task: return False
+    return not prefixes or (isinstance(e.get("label"), str) and any(e["label"].startswith(p) for p in prefixes))
+
+selected = [(i, e) for i, e in enumerate(entries) if selectable(e)]
+
+for i, e in selected:
+    if isinstance(e.get("file"), str) and isinstance(e.get("old"), str):
+        where = f"entry {i} ({e.get('label', '?')})"
+        path = os.path.join(leanncd_dir, e["file"])
+        if not os.path.isfile(path): problem(i, f"{where}: no such file {e['file']}")
+        else:
+            n = open(path).read().count(e["old"])
+            if n != 1: problem(i, f"{where}: old-string occurs {n} times in {e['file']} (expected 1)")
+fail_if_problems()
+
 if not selected:
     if task is not None:
         available = sorted({e["task"] for e in entries if "task" in e})
@@ -98,16 +124,6 @@ if not selected:
             hint = ", ".join(repr(t) for t in available) or "(none)"
             die(f"no manifest entries selected: unknown task {task!r}; available tasks: {hint}")
     die("no manifest entries selected")
-
-for i, e in selected:
-    where = f"entry {i} ({e['label']})"
-    path = os.path.join(leanncd_dir, e["file"])
-    if not os.path.isfile(path): problems.append(f"{where}: no such file {e['file']}")
-    else:
-        n = open(path).read().count(e["old"])
-        if n != 1: problems.append(f"{where}: old-string occurs {n} times in {e['file']} (expected 1)")
-if problems:
-    print("\n".join(problems), file=sys.stderr); sys.exit(125)
 
 if check_only:
     if len(selected) == len(entries):
