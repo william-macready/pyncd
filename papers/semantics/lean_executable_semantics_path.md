@@ -49,7 +49,7 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-10, Lean as of `b3028e57`: the Part V slice-1 plan layer
+**Snapshot: 2026-10-10, Lean as of `8b7cc508`: the Part V slice-1 plan layer
 (`Semantics/Plan/`), on top of bounded source correspondence
 (`6a90baff`), nested-reduction reindexing (`705280cd`), successful-permutation
 agreement (`ca642b3d`), and raw-source admission, on top of the verified
@@ -60,7 +60,7 @@ validated reference executor and its exact-rational fixtures are now verified;
 both final whole-branch code-review lenses are clean.
 The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer))
 is in the snapshot above: eight modules under `Semantics/Plan/` proving Lemma 31.2,
-Theorem 31.3 and Lemma 32.1 for the slice-1 profile, with 96 fixtures and a 20-cycle mutation
+Theorem 31.3 and Lemma 32.1 for the slice-1 profile, with 125 fixtures and a 20-cycle mutation
 manifest (20 of 20 passed).
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
@@ -1102,8 +1102,9 @@ The profile is: singleton commands, dense non-reused storage (one slot per mater
 never reused), no retirement, error-free kernels. Soundness rests on `checkPlan`: the run does not
 detect an invalid plan. The spec's restatements are the paragraphs headed "As formalized (slice-1
 profile ...)" in Sections 29.3, 30.2, 30.4, 31.1-31.4 and 32.1 of the
-[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 96
-fixtures; the mutation manifest ran 20 mutation cycles, of which 3 are labelled equivalent.
+[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 125
+fixtures (96 shipped with the layer, 29 added when its audit cells were closed); the mutation manifest
+ran 20 mutation cycles, of which 3 are labelled equivalent.
 
 #### What slice 1 does not do
 

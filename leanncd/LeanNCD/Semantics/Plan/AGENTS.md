@@ -16,7 +16,7 @@ Reachable from `import LeanNCD` (`Semantics.lean` imports `Plan.lean`, which imp
 | `Memory.lean` | dense `Memory`, `place`, `SlotView`, `readPub`, partial `Decode`, `refState`, relation `R`, `R_start`, `decode_of_R` |
 | `Step.lean` | step kernels `execInit`/`execAcc`/`execPub`, `stepPlan`, `runFrom`, `runPlan`, `PlanOutcome` |
 | `Simulation.lean` | `InitOK`/`AccOK`/`PubOK`/`AnnOK`, `accFlat_complete`, `refState_R2`, `step_R`, `step_failed` |
-| `Validity.lean` | `Valid`, computable `checkPlan` and its component checks, `checkPlan_sound` |
+| `Validity.lean` | `Valid`, computable `checkPlan` and its component checks, `checkPlan_sound`, `checkPlan_nodup_redundant` (the two Nodup checks follow from singleton + `checkSteps`) |
 | `Run.lean` | `step_not_stuck`, `run_R`, `runPlan_R`, `runPlan_not_stuck` |
 | `Correctness.lean` | `terminal_adequacy` (Lemma 31.2), `complete_of_refState`, Theorem 31.3 (a)(b)(c) |
 

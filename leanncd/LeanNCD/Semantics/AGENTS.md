@@ -30,11 +30,14 @@ The semantic validation layer `LeanNCD.Semantics` is reachable from `LeanNCD`.
 `Types`, `Expr`, `Interpret`, `Readiness`, and `Completeness` separate typed
 values/declarations/registries, structurally admitted expressions, strict
 interpretation/footprints, structural stability/readiness, and whole-array
-completeness. Default `Tests` includes `Semantics.ExpressionTest`,
-`Semantics.NativeTest`, `Semantics.ContractTest`, `Semantics.CollectionModelTest`,
-`Semantics.ReferenceMachineTest`, `Semantics.RankedMachineTest`, and
-`Semantics.ExecutableReferenceTest`. The Part V plan layer's tests are the
-`Semantics.Plan*Test` modules and `Semantics.PlanFixtures` (see `Plan/AGENTS.md`).
+completeness. Default `Tests` (the `Semantics.*` entries of `lakefile.toml` are the
+authoritative list) includes `Semantics.ExpressionTest`, `Semantics.NativeTest`,
+`Semantics.ContractTest`, `Semantics.CollectionModelTest`,
+`Semantics.ReferenceMachineTest`, `Semantics.RankedMachineTest`,
+`Semantics.ExecutableReferenceTest`, the Part V plan layer's `Semantics.Plan*Test`
+modules and `Semantics.PlanFixtures` (see `Plan/AGENTS.md`), the `Semantics.Source*`
+fixture and test modules, and `Semantics.AxiomAudit`, which fails the build if any
+`LeanNCD.Semantics` declaration depends on a non-standard axiom.
 
 `Source.Context` supplies UID-keyed dependent valuations, coordinate
 equivalences, full-domain index pullbacks, and generated-only alpha transport.
