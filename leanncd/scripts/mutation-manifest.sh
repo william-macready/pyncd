@@ -6,13 +6,18 @@
 # Usage:
 #   mutation-manifest.sh [--cd <dir>] [--check] [--task <id>] [--out <file.md>] \
 #     <leanncd-dir> <manifest.json> [label-prefix...]
+#   Filters select entries for both --check and runs; task and prefix filters intersect.
 #
 # --cd <dir>     change directory first (as in mutation-cycle.sh); must come first if given
-# --check        validate the manifest only: schema, file existence, and that every old-string
-#                occurs EXACTLY ONCE. No build runs. Use it at plan-authoring time.
-# --task <id>    run only entries whose "task" field equals <id>
+# --check        validate global schema plus selected files and old-strings (EXACTLY ONCE).
+#                No build runs. Use it at plan-authoring time.
+# --task <id>    select only entries whose "task" field equals <id>, for checking or running
 # --out <file>   also write the summary table to <file> (markdown)
-# label-prefix   run only entries whose label starts with one of these
+# label-prefix   select only entries whose label starts with one of these
+#
+# Validation scope: schema and duplicate labels are checked across ALL entries. File existence
+# and old-string uniqueness are checked only for selected entries; no filters means all entries.
+# An empty selection is an error. Filtered --check output names entries outside validation.
 #
 # Manifest: a JSON array of objects —
 #   { "label":   "M1 (payload bits constant 0)",          required, unique
@@ -74,29 +79,40 @@ for i, e in enumerate(entries):
         problems.append(f"{where}: 'targets' must be a non-empty list of strings")
     if "expect" in e and not (isinstance(e["expect"], list) and all(isinstance(s, str) for s in e["expect"])):
         problems.append(f"{where}: 'expect' must be a list of strings")
-    if e.get("label") in labels: problems.append(f"{where}: duplicate label")
-    labels.add(e.get("label"))
-    if isinstance(e.get("file"), str) and isinstance(e.get("old"), str):
-        path = os.path.join(leanncd_dir, e["file"])
-        if not os.path.isfile(path): problems.append(f"{where}: no such file {e['file']}")
-        else:
-            n = open(path).read().count(e["old"])
-            if n != 1: problems.append(f"{where}: old-string occurs {n} times in {e['file']} (expected 1)")
+    if isinstance(e.get("label"), str):
+        if e["label"] in labels: problems.append(f"{where}: duplicate label")
+        labels.add(e["label"])
 if problems:
     print("\n".join(problems), file=sys.stderr); sys.exit(125)
 
-selected = [e for e in entries
+selected = [(i, e) for i, e in enumerate(entries)
             if (task is None or str(e.get("task")) == task)
             and (not prefixes or any(e["label"].startswith(p) for p in prefixes))]
 if not selected: die("no manifest entries selected")
+
+for i, e in selected:
+    where = f"entry {i} ({e['label']})"
+    path = os.path.join(leanncd_dir, e["file"])
+    if not os.path.isfile(path): problems.append(f"{where}: no such file {e['file']}")
+    else:
+        n = open(path).read().count(e["old"])
+        if n != 1: problems.append(f"{where}: old-string occurs {n} times in {e['file']} (expected 1)")
+if problems:
+    print("\n".join(problems), file=sys.stderr); sys.exit(125)
+
 if check_only:
-    print(f"manifest OK: {len(entries)} entries, {len(selected)} selected, every old-string unique")
+    if len(selected) == len(entries):
+        print(f"manifest OK: {len(entries)} entries, {len(selected)} selected, every old-string unique")
+    else:
+        print(f"manifest OK: {len(entries)} entries, {len(selected)} selected; "
+              f"{len(entries) - len(selected)} outside the selection not validated; "
+              "every selected old-string unique")
     sys.exit(0)
 
 def sha(path): return hashlib.sha256(open(path, "rb").read()).hexdigest()
 
 rows = []
-for e in selected:
+for _, e in selected:
     path = os.path.join(leanncd_dir, e["file"])
     before = sha(path)
     fd, log = tempfile.mkstemp(suffix=".log"); os.close(fd)

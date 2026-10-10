@@ -80,8 +80,12 @@ When a plan ships its cycles as a JSON manifest, run them all with
 `bash leanncd/scripts/mutation-manifest.sh [--task <id>] [--out <table.md>] <leanncd-dir> <manifest.json>`:
 each entry goes through `mutation-cycle.sh` unchanged, plus a byte-identical restore check and optional
 `expect` strings that must appear in the mutated build's log, proving it broke for the intended reason.
-It prints a markdown results table for the close-out record. `--check` validates a manifest (schema,
-every old-string unique) without building; the script's header documents the format.
+It prints a markdown results table for the close-out record. Schema and duplicate-label checks
+cover every manifest entry; file existence and old-string uniqueness are checked only for entries
+selected by `--task` and/or label prefixes (all entries without filters). `--check` performs those
+checks without building and reports when entries outside the selection were not filesystem-validated,
+so post-code manifests can be checked task by task before later tasks' code exists. An empty selection
+is an error; the script's header documents the format.
 
 The controlling session should invoke mutation cycles directly rather than delegating the shell
 command to a subagent: subagent permission scope is loaded from the creator session's worktree,

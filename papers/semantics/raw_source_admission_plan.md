@@ -298,9 +298,12 @@ Controller final-target cycles also passed: [11 existing-text](raw_source_admiss
 and [6 post-text](raw_source_admission_artifacts/final-manifest-post.md), with byte-identical
 restoration and restored green. Classification remains 15 proof rejections and 2 fixture contrasts.
 
-The runner validates **all entries before filtering**, including on `--check`. Therefore early
-stages use generated exact task projections, hashed in readiness.json, not the full post manifest.
-These projections are derived execution inputs, not a third authority; capture regenerates them.
+The runner checks schema and duplicate labels globally, then validates file existence and old-string
+uniqueness only for selected entries, including on `--check`. A consolidated post manifest can now
+be checked or run with `--task` before later tasks' code exists. This package retains its generated
+exact task projections, hashed in readiness.json, for the existing recipes below; the projections
+are no longer required by the runner's validation scope. They remain derived execution inputs,
+not a third authority; capture regenerates them.
 At tasks1/2 use both projections; at task4 use its post projection only; task3 has no new entries.
 Commands below supply the runner's working directory explicitly; receipt names are new, preserving
 historical observations. Schema/unique-text checks are separate from actual cycles.
