@@ -62,10 +62,9 @@ Definition 31.1 / relation R / Lemma 31.2 / Theorem 31.3 to match what is proved
 - Checker completeness (`Valid → checkPlan = true`) (a3a §Decision log 2).
 - Proving the A2 conjecture that per-step `AccOK`/`PubOK` imply the Nodup halves of
   Coverage1/2 (a2 §ValidityConditions; a3a §Decision log 6). `checkCov1Nodup`/`checkCov2Nodup` stay.
-- Dropping `checkCov1Complete` (CHECKPOINT §3 decision 3; a3b §Decision log 7): kept as a
-  diagnostic clause; see Open items.
+- Dropping `checkCov1Complete` (CHECKPOINT §3 decision 3; a3b §Decision log 7): kept; redundant
+  at `checkPlan` (N6) but consumed by `complete_of_refState`; see Open items.
 - Comparing failure occurrence or snapshot between plan and executor (D5).
-- Reconstructing D7, D8, D11, D12 (a3b §SPEC RESTATEMENT DRAFT: not recorded in any artifact).
 
 ## 2. Decisions (each cites its source)
 
@@ -316,16 +315,16 @@ fixture or mutant backs the cell). "Fixture" names come from §6; "mutant" ids f
 | check | `Valid` field | role (a3a §`Valid` field table) | F case and its fixture (first failing clause) | mutant | status |
 |---|---|---|---|---|---|
 | `checkSingleton` | `singleton` | progress (profile) | fused command: `fused` (`singleton`; run stuck 0) | A3a-e: `fused` flips | backed |
-| `checkCov1Nodup` | `coverage1` (Nodup half) | diagnostic (a3b draft table) | occurrence in two groups: `dupGroup` (`cov1Nodup`, also `accFresh@2`; run done 4 `[0,16,0]`) | none | **OPEN**: no mutant; `dupGroup` is also rejected by `accFresh@2`. Reviewer argument (soundness review, open-cells note): equivalent to the check being dropped at `checkPlan` in the singleton profile, so no fixture can ever back it; needs a short proof, parked (Open items 3) |
+| `checkCov1Nodup` | `coverage1` (Nodup half) | diagnostic (a3b draft table) | occurrence in two groups: `dupGroup` (`cov1Nodup`, also `accFresh@2`; run done 4 `[0,16,0]`) | none (see `checkAccFresh`) | **EQUIVALENT at `checkPlan`, paired with `checkAccFresh`**: `dupGroup` and `dupWithin` fail both `cov1Nodup` and `accFresh`, so no fixture isolates either; observed on every fixture, not proved. The proof that dropping the pair cannot admit an unsound plan stays parked (Open items 3) |
 | `checkCov1Complete` | `coverage1` (covering half) | terminal, derivable (N6) | missing occurrence: `missingOcc` (`cov1Complete`, also `pubOrder@2`) | A3a-a: no fixture flips | **EQUIVALENT at `checkPlan`** (N6: `accFlat_complete` is the substantive reason; `cov1_of_cov2_pubOrder` is the trivial Valid-level corollary). Confirmed for all plans (soundness review Q4) |
-| `checkCov2Nodup` | `coverage2` (Nodup half) | diagnostic | address in two blocks: no fixture | none | **OPEN** (no fixture, no mutant; a second publication would also fail `checkPubFresh`; same reviewer argument as `checkCov1Nodup`: no fixture can ever back it, needs a short proof, parked) |
+| `checkCov2Nodup` | `coverage2` (Nodup half) | diagnostic | address in two blocks: `invalid-publish-twice-across-blocks`, `invalid-publish-twice-in-block` (`cov2Nodup` and `pubFresh@3` / `pubFresh@2`; runs done 4 and 3, `[0,14,0]`) | none (see `checkPubFresh`) | **EQUIVALENT at `checkPlan`, paired with `checkPubFresh`** (they fail on exactly the same plans in every fixture; not proved); the pair-drop proof stays parked (Open items 3) |
 | `checkCov2Complete` | `coverage2` (covering half) | terminal | unpublished defined address: `missingPub` (`(false, ["cov2Complete"])`; run done 3, Decode `none`) | A3b-1: `missingPub` flips; A3b-2: field unreachable | backed |
 | `checkInit` (both halves) | `initFresh` | safety (N2) | re-init after consume: `reinitMid` (`initFresh@2`; run done 5 `[0,10,0]`) | A3a-d (drops both halves): only `reinitMid` flips | backed for the consumed-target half |
-| `checkInit` (not-published half alone) | `initFresh` | safety | re-init of a published empty-fiber address: no fixture | none separates the halves | **OPEN**; a checker-level fixture is possible (reviewer-computed, not built: `[[.initZero block], [.acc group], [.pub block], [.initZero [addr 0]]]` gives `initFresh@3`), but the half affects no run outcome (a published address with a non-empty fiber is caught by the consumed-target half via `pubOrder`; an empty-fiber one gets 0 written over 0), so "safety" overstates its role |
-| `checkAccFresh` | `accOK` | safety + progress | already-consumed member (across groups): `dupGroup` (`accFresh@2`, second clause); within-group duplicate: no fixture | none | **OPEN** (consumed half: fixture fires, no mutant; within-group duplicate half: no fixture) |
-| `checkAccMat` | `accOK` | safety + progress | unmaterialised target: `noInit` (`accMat@0`, also `pubMat@1`; run stuck 0) | none | **OPEN** (fixture fires; no mutant) |
+| `checkInit` (not-published half alone) | `initFresh` | safety | re-init of a published empty-fiber address: `invalid-reinit-after-publish` (`reinitPub`: `(false, ["initFresh@3"])`, no other clause; run done 4 `[0,14,0]`) | audit mutant B3 (drop only the not-published conjunct): the build stops in `checkInit_sound` before the fixtures are reached, so the flip itself was not observed | **backed at checker level**; the half affects no run outcome (a published address with a non-empty fiber is caught by the consumed-target half via `pubOrder`; an empty-fiber one gets 0 written over 0), so "safety" overstates its role |
+| `checkAccFresh` | `accOK` | safety + progress | already-consumed member (across groups): `dupGroup` (`accFresh@2`, second clause); within-group duplicate: `dupWithin` (`invalid-duplicate-within-group`: `cov1Nodup`, `accFresh@1`; run done 3 `[0,16,0]`) | audit mutants C2a (drop Nodup half) and C2b (drop consumed half): both break `checkPlan_sound` first; under C2b `dupGroup` does not flip because `cov1Nodup` still rejects | **EQUIVALENT at `checkPlan`, paired with `checkCov1Nodup`** (neighbour `accSplit`: valid) |
+| `checkAccMat` | `accOK` | safety + progress | unmaterialised target: `noInit` (`accMat@0`, also `pubMat@1`; run stuck 0) | audit mutant C3 (check always true): breaks `checkPlan_sound` first; no fixture flips | **EQUIVALENT at `checkPlan`**: no plan fails `accMat` alone (`invalid-acc-unmaterialised-attempts`: every attempt also trips `initFresh`, `pubMat` or `cov2Complete`); neighbour `lateEmptyInit` valid |
 | `checkReady` | `ready` | progress only (N3) | read of unpublished address: `chainEarly` (`ready@1`; run stuck 1) | A3a-f: `chainEarly` flips | backed |
-| `checkPubFresh` | `pubOK` | safety + progress | duplicate / already-published member: no fixture | none | **OPEN** |
+| `checkPubFresh` | `pubOK` | safety + progress | duplicate / already-published member: `pubTwice`, `pubDupIn` (see `checkCov2Nodup`) | audit mutant C1 (check always true): breaks `checkPlan_sound` first; no fixture flips | **EQUIVALENT at `checkPlan`, paired with `checkCov2Nodup`** (neighbour `pubSplit` valid) |
 | `checkPubMat` | `pubOK` | safety + progress (N1) | empty fibers not materialised: `partialInit` (`pubMat@2`; run stuck 2) | A3a-c: `partialInit` flips | backed |
 | `checkPubOrder` | `pubOK` | safety (cond. 4) | publish before all contributions: `earlyStep` (`pubOrder@1`), `earlyHalf` (`pubOrder@2`); both run to done | A3a-b: both flip | backed |
 | `checkSteps` on non-singleton | — | — | vacuous by design (P6); covered by `checkSingleton` | A3a-e | **I by design**, guarded |
@@ -346,8 +345,8 @@ has no proof consumer beyond `checkPlan_sound` building `coverage1.2` (N6).
 |---|---|---|---|
 | `stepCommand` | singleton `[a]` | R: run `execAnn` | every valid fixture |
 | `stepCommand` | fused command | R: `stuck`, never a wrong `ok` | `fused` (stuck 0) |
-| `stepCommand` | empty command `[]` | R: `stuck` (by code: the catch-all case) | **OPEN** (no fixture) |
-| `stepPlan` | `pc ≥ m` | R: `stuck` | **OPEN** (no fixture; `runFrom` is structural and never reaches it) |
+| `stepCommand` | empty command `[]` | R: `stuck` (by code: the catch-all case) | `step-empty-command-stuck`, `invalid-empty-command` (`emptyCmd`: `stepCommand []` stuck; `runPlan` stuck at pc 1; `singleton` fires); audit mutants B1, B1b flip the fixture |
+| `stepPlan` | `pc ≥ m` | R: `stuck` | `step-plan-past-end` (pc 3 and 4 stuck, pc 2 steps; `runFrom` never reaches it structurally); audit mutant B2 flips the fixture |
 | `execInit` | writes `0` to each member | R | `step-tagged-trace` pc 1 `[0,0,0]` |
 | `execInit` | duplicate members in S | I by design (idempotent; a2 §ValidityConditions "S need not be duplicate-free") | none needed |
 | `execInit` | target live (consumed contributions or published) | I at kernel; F by `checkInit` | `reinitMid` silently returns `[0,10,0]` (N2, N4) |
@@ -356,13 +355,13 @@ has no proof consumer beyond `checkPlan_sound` building `coverage1.2` (N6).
 | `execAcc` | member undefined | R: `semFail x`, nothing committed (transactional) | `failureAfter` failed pc 1, slot 0 `some 0` vs executor 2 (D5) |
 | `execAcc` | destination slot uninitialised | R: `stuck` | `noInit` stuck 0 |
 | `execAcc` | already-consumed member (reused across groups) | I at kernel; F by `checkAccFresh` | `dupGroup` runs to done 4 `[0,16,0]` |
-| `execAcc` | duplicate member within one group | I at kernel; F by `checkAccFresh` | **OPEN** (no fixture: `dupGroup` reuses a member across groups only) |
+| `execAcc` | duplicate member within one group | I at kernel; F by `checkAccFresh` | `dupWithin` runs to done 3 `[0,16,0]` (double-counts) |
 | `execAcc` | commit values from raw vs published view | **EQUIVALENT** (A2-b, N5), all plans | no fixture can differ: footprint addresses are published after a successful scan (confirmed for all plans, valid or not; soundness review Q4) |
 | `execAcc` | transactional vs sequential commit | **EQUIVALENT on `checkPlan`-valid plans only** (A2-e, N5) | `semFail` carries no memory; `readPub` hides prefix commits because destinations are unpublished and materialised (`dest_not_pub`, `acc_slot_isSome`); two reviewer-computed invalid plans distinguish them (Open items 10) |
 | `execAcc` | which failing member is reported when several fail | not a requirement (31.3 (b) compares no-model only, D5) | **OPEN** by design: no fixture mixes a not-ready and an undefined member |
 | `execPub` | every member slot initialised | R: `ok M`, writes nothing | A2-c gives `[0,0,0]` on tagged and chain |
 | `execPub` | some member slot `none` | R: `stuck` | `partialInit` stuck 2 |
-| `execPub` | already-published member | I at kernel; F by `checkPubFresh` | **OPEN** (no fixture) |
+| `execPub` | already-published member | I at kernel; F by `checkPubFresh` | `pubTwice` runs to done 4 and `pubDupIn` to done 3, both `[0,14,0]` (silently re-publish) |
 | `execPub` | contributions still pending | I at kernel; F by `checkPubOrder` | `earlyStep` runs to done 3, `refState 2 isSome = false` |
 | `runFrom` | failure | R: `failed o pc M` with PRE-step memory (this comes from `runFrom`'s structure, since `semFail` carries no memory; the fixture does not test transactionality) | `step-failure-after` `("failed", 1, some (1, 0), [some 0, some 0, some 0])` |
 
@@ -484,7 +483,7 @@ argument and the five-condition Definition 31.1 stay, because Section 33 (buffer
 | edit | spec location (heading as it exists) | content |
 |---|---|---|
 | relation R | `### 30.4 The refinement relation and output decoder` | add an "as formalized (slice-1 profile)" paragraph after the general R, which stays (`SlotView` maps exactly `Pub pc` only because nothing is retired): R1 reach; R2 as iff-equations (D3); R3 at `place a` with `SlotView π pc` depending on pc only (D2); R4 retention; R1 kept because R2-R4 do not pin untouched accumulators (D1); Decode partial, succeeds iff every output coordinate is in `Pub pc` with an initialised slot, never fills (D6) |
-| Definition 31.1 | `**Definition 31.1 (valid plan).**` under `### 31.1 Acceptance and explicit rejection` | Lean's `Valid` is purely static; the spec's semantic conditions 2-5 are, for the slice-1 kernels, the theorems `R_start` (2), `step_R` (3), `step_failed` (4), `step_not_stuck` (5). Per-command-prefix form (N8) with the role/consumer table (N7); initZero freshness (N2); pub `B ⊆ Mat pc` (N1); cond. 3 as progress (N3); cond. 1 covering listed as a consequence of cond. 2 covering + cond. 4 (N6, D9; cite `accFlat_complete`, not `cov1_of_cov2_pubOrder`, whose `Valid` hypothesis already contains cond. 1) and kept as a diagnostic clause; Nodup halves of cond. 1 and cond. 2 are diagnostic (cond. 1 Nodup following from `AccOK` is an unproved conjecture); one sentence that runtime execution does not detect invalid plans, soundness rests on the checker (N4) |
+| Definition 31.1 | `**Definition 31.1 (valid plan).**` under `### 31.1 Acceptance and explicit rejection` | Lean's `Valid` is purely static; the spec's semantic conditions 2-5 are, for the slice-1 kernels, the theorems `R_start` (2), `step_R` (3), `step_failed` (4), `step_not_stuck` (5). Per-command-prefix form (N8) with the role/consumer table (N7); initZero freshness (N2); pub `B ⊆ Mat pc` (N1); cond. 3 as progress (N3); cond. 1 covering listed as a consequence of cond. 2 covering + cond. 4 (N6, D9; cite `accFlat_complete`, not `cov1_of_cov2_pubOrder`, whose `Valid` hypothesis already contains cond. 1) and kept in `Valid` (redundant, consumed by `complete_of_refState`); Nodup halves of cond. 1 and cond. 2 are diagnostic (cond. 1 Nodup following from `AccOK` is an unproved conjecture); one sentence that runtime execution does not detect invalid plans, soundness rests on the checker (N4) |
 | step simulation | `### 31.2 Initial states and successful-step simulation` | as formalized: the invariant is `R ∧ Conf = refState pc` (P3), premises singleton command and `AnnOK pc a`; simulation is proved for that reference state only, not every R-related Conf, since R2-R4 do not pin untouched accumulators (D1; N9); `R_start` is the initialisation obligation |
 | Lemma 31.2 | `**Lemma 31.2 (terminal adequacy).**` (under `### 31.3`) | add an "as formalized (slice-1 profile)" paragraph after the general argument, which stays: in slice 1 the Need_pub step is trivial because at pc = m `Pub m = Addr_Σ` and nothing is retired (a3b draft, "New wording") |
 | Theorem 31.3 | `**Theorem 31.3 (compiled correctness).**` | (a)(b)(c) as formalized; (b) as the spec states it (no model); error-free singleton profile stated |
@@ -646,24 +645,23 @@ bash <exec>/leanncd/scripts/mutation-manifest.sh --out <exec>/papers/semantics/p
    Lemma 31.2 / Theorem 31.3 / Lemma 32.1 rows in the path doc; `rg` finds them only in the spec's
    `### Proof status and numbered results` table ("Not formalized."). §8.1 edits them there; the path
    doc gets section 4.9 instead. Controller: confirm.
-2. **`checkCov1Complete`: keep or drop** (CHECKPOINT §3 decision 3). Kept as a diagnostic clause
-   (a3b §Decision log 7); dropping is sound (N6) and costs one small Direct-path change later.
-   Spec wording in §8.1 says "consequence, kept as diagnostic"; change it if the user drops the check.
-3. **OPEN audit cells (§5).** 11 OPEN rows in §5 (6 in §5.1, 5 in §5.2). No mutant for
-   `checkAccFresh` (consumed half), `checkAccMat`; no fixture and no mutant for `checkPubFresh`, the
-   within-group duplicate of `execAcc` and of `checkAccFresh`, the empty command of `stepCommand`,
-   and `stepPlan` at `pc ≥ m`; plus the by-design `execAcc` failing-member-order row and the
-   already-published `execPub` row. `checkCov1Nodup` and `checkCov2Nodup` are not backable by any
-   fixture (reviewer argument, soundness review: in the singleton profile they are equivalent to the
-   check being dropped at `checkPlan`, because `checkAccFresh` and `checkPubFresh` already force
-   disjointness and `DefAddr.addr_injective` finishes the argument); they need a short proof,
-   parked, not "3 fixtures + 3 cycles". The not-published half of `checkInit` can get a
-   checker-level fixture but affects no run outcome (see §5.1). Not required for the goal (every
-   theorem is proved, the checker is proved sound, so a dropped check cannot make an accepted plan
-   wrong without breaking `checkPlan_sound`). Parked cost: about 1 Direct-path dispatch for the
-   fixtures and mutants that can exist (the `checkInit` half, `checkAccFresh`, `checkAccMat`,
-   `checkPubFresh`, within-group duplicate, empty command, `stepPlan`), about 1 more short dispatch
-   for the Nodup proof.
+2. **`checkCov1Complete`: keep or drop** (CHECKPOINT §3 decision 3). Kept: redundant at `checkPlan`
+   (N6) but not diagnostic, since `complete_of_refState` consumes `hv.coverage1.2` (a3b §Decision
+   log 7). Dropping it would mean rerouting `checkPlan_sound`'s `coverage1.2` through
+   `accFlat_complete`: a small Direct-path change later. Spec wording (§8.1, as executed) says
+   "redundant but kept in `Valid`"; change it if the user drops the check.
+3. **Audit cells (§5): closed by the audit-cells slice** (Direct path, tests only, commits
+   `99b07bcf`, `a830be4c`, `316bc888`, `08c974b0`, `42dc4914`, `5a24ca59`; fixtures in
+   `PlanValidityTest.lean` and `PlanStepTest.lean`, hand mutants reported in the commit bodies, no
+   production change, no new manifest entries). Backed with fixtures: the `checkInit` not-published
+   half, the empty command of `stepCommand`, `stepPlan` at `pc ≥ m`, the already-published `execPub`
+   and the within-group duplicate `execAcc` rows. EQUIVALENT at `checkPlan` (no fixture flips; the
+   hand mutants break `checkPlan_sound` first): `checkPubFresh` (paired with `checkCov2Nodup`),
+   `checkAccFresh` (paired with `checkCov1Nodup`), `checkAccMat` (every plan that fails it also
+   trips `initFresh`, `pubMat` or `cov2Complete`). These are observations on the fixtures, not
+   proofs. Remaining: the by-design `execAcc` failing-member-order row, and the proof that dropping
+   a shadowed pair cannot admit an unsound plan (the soundness theorem already covers it in the
+   other direction: removing a clause breaks `checkPlan_sound`); parked, about one short dispatch.
 4. **A3b-2 is single-site.** The prototype dropped the `coverage2` field and its `checkPlan_sound`
    component (two sites); the manifest format takes one site per entry, so the cycle renames the
    field instead. It still shows that only `Correctness` consumes `coverage2` by name; the semantic
@@ -676,9 +674,11 @@ bash <exec>/leanncd/scripts/mutation-manifest.sh --out <exec>/papers/semantics/p
 7. **manifest.json symbol extraction** lists three `(pc` entries for Syntax (instance binders);
    harmless, not corrected here (the patches are authoritative).
 8. **D4, D7, D8, D11, D12.** D4 is discharged in Lean but not in the docs-sweep findings list; §8.1
-   covers it implicitly through the R/Definition 31.1 restatement. D7, D8, D11, D12 are not in any
-   artifact (a3b draft) and are not reconstructed. Cost to recover: read the pre-A1 brief, about one
-   short dispatch; parked.
+   covers it implicitly through the R/Definition 31.1 restatement. D7, D8, D11, D12 were recovered
+   from the originating session's design review and are recorded in `plan_layer_record.md`
+   (section "Spec defects recovered"): D7 (no implementation-error constructor; deferred), D8
+   (undefined "output view" in Section 32.3; proposed fix drop or cross-reference, not applied),
+   D11 (multi-sort K unaddressed), D12 (`In ∩ Out` open).
 9. **Pushing `main`**: not done; push only on explicit request (CHECKPOINT §3 decision 4).
 10. **A2-e outside the valid domain: reviewer-computed, NOT built or verified.** The "transactional vs
     sequential commit equivalent" claim (§5.2, N5) holds only on `checkPlan`-valid plans. The soundness

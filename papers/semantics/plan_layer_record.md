@@ -66,10 +66,11 @@ Tool-use counts are harness counts (CHECKPOINT §7: self-reports ran about 20 pe
   item, batched/fused wording, notation), all applied; the snapshot now names the plan layer.
 - Fix dispatches: group A (spec) and group B (path doc and AGENTS nodes), one dispatch each,
   run in parallel on disjoint files.
-- Open items resolved / parked (plan section 10): parked as listed there (11 OPEN audit cells, about
-  one direct dispatch; D7, D8, D11, D12 unrecorded; reviewer-computed invalid-plan distinguishers for
-  A2-e not built). One pre-existing gap noticed, not fixed: the default-`Tests` list sentence in
-  `Semantics/AGENTS.md` omits the Source and AxiomAudit modules (one sentence about the Plan tests was added).
+- Open items resolved / parked (plan section 10): the 11 OPEN audit cells are closed by the
+  audit-cells slice (below); D7, D8, D11, D12 are recovered (below); still parked: reviewer-computed
+  invalid-plan distinguishers for the A2-e equivalence (not built), the proof that dropping a
+  shadowed Nodup/Fresh pair cannot admit an unsound plan, and the pre-existing stale default-`Tests`
+  sentence in `Semantics/AGENTS.md` (Source and AxiomAudit modules omitted).
 - Token total (`token-report.py`, this session only; prototype sessions A1-A3b are separate): 55.5M
   across the controller (18.5M, peak context 241k, 120 turns) and 12 dispatches, against the
   Rule 6 execution budget of about 175M. Harness tool uses ran above the agents' self-reports again:
@@ -114,3 +115,49 @@ Fix dispatches (harness counts): group P (plan body) 47 (self-reported 29, cap 4
 controller afterwards: D5 row corrected, decision N9 added to plan section 2 (one-step simulation
 proved for `Conf = refState pc` only), `D-sweep-1` renamed to N9. Briefs gave 35 as the aim; both
 dispatches ran about 1.4-1.9x over the harness count, so budget fix dispatches at ~25 self-reported.
+
+## Spec defects recovered (D7, D8, D11, D12)
+
+The pre-A1 design review (originating session, section "Spec questions and defects, ranked") listed
+twelve defects; D1-D6, D9, D10 were carried through the notes, and these four were not. Recovered
+text (spec line numbers dropped):
+
+- **D7 (medium).** The Section 30.1 state type has no implementation-error constructor, though
+  Section 31.3 introduces implementation errors as a third terminal outcome. Proposed fix: add the
+  constructor. Disposition: deferred with the error-free profile (slice 2, "implementation errors").
+- **D8 (low).** The Section 32.3 "output view" is never defined (it occurs once, in the sentence
+  "It must not expose partial accumulators through an output view while another contribution
+  remains"). Fusion legality is already sequential composition, and the Publish side condition
+  already keeps partial accumulators from being exposed. Proposed fix: drop the phrase or
+  cross-reference. Disposition: NOT applied here (the spec is a protected input and the fix rests on
+  a reading of the fusion rules); parked for the slice that touches fused commands.
+- **D11 (low).** Multi-sort `K` is unaddressed: the design review observed that slots carry one
+  carrier and fixed the rationals for slice 1. Note (plan review F6): the theorems are generic over
+  `K : S → Type`; only the fixtures use one sort. Disposition: parked (slice 2, multiple sorts).
+- **D12 (low).** `In ∩ Out` is left open: if an input may also be an output, `Start` must map
+  `pub(a)` for output inputs. Disposition: parked.
+
+## Audit-cells slice (Direct path, tests only)
+
+Closes plan section 10 item 3 (the 11 OPEN rows of section 5). Worktree `plan-layer-audit-cells`,
+no production change, no new manifest entries, hand mutants run with `mutation-cycle.sh` and
+reported in each commit body; fixtures in `PlanValidityTest.lean` and `PlanStepTest.lean`
+(188 lines added). Full default build 8784 jobs green.
+
+| commit | cell | result |
+|---|---|---|
+| `99b07bcf` | `checkPubFresh` duplicate / already-published | EQUIVALENT at `checkPlan`, paired with `checkCov2Nodup` (`pubTwice`, `pubDupIn`; neighbour `pubSplit`) |
+| `a830be4c` | `checkAccFresh` within-group duplicate and consumed half | EQUIVALENT at `checkPlan`, paired with `checkCov1Nodup` (`dupWithin`; neighbour `accSplit`) |
+| `316bc888` | `checkAccMat` | EQUIVALENT at `checkPlan`: no plan fails it alone (four attempts, each also trips `initFresh`, `pubMat` or `cov2Complete`); neighbour `lateEmptyInit` |
+| `08c974b0` | `stepCommand` empty command | backed (`emptyCmd`: stuck; mutants B1, B1b flip the fixture) |
+| `42dc4914` | `stepPlan` at `pc ≥ m` | backed (`step-plan-past-end`; mutant B2 flips the fixture) |
+| `5a24ca59` | `checkInit` not-published half | backed at checker level (`reinitPub`: `initFresh@3` alone; run unchanged, done 4 `[0,14,0]`); the mutant stopped the build in `checkInit_sound` before the fixtures, so the flip was inferred from the halves row, not observed |
+
+Also covered by run-level evidence from the same fixtures: the `execPub` already-published row
+(`pubTwice` done 4, `pubDupIn` done 3, both `[0,14,0]`) and the within-group duplicate `execAcc`
+row (`dupWithin` done 3 `[0,16,0]`, double-counted). No unsound plan found, no silent clause.
+For every EQUIVALENT cell the hand mutant breaks `checkPlan_sound` before any fixture is reached,
+so the claim "shadowed" rests on the fixtures, not a proof; the proof is parked.
+
+Harness tool uses: dispatch A 36 (cap 40), dispatch B 39 (cap 38; one `cd` plus a heredoc edit used
+against the plain-command rule). Session token total after this slice (`token-report.py`): 71.5M.
