@@ -235,7 +235,7 @@ Items 1 and 2 of the proof targets in [Section 28](#28-reference-machine-boundar
 interpretation, and renaming and substitution) are not numbered statements;
 the companion document records what covers them. The table reflects
 [the Lean path document](lean_executable_semantics_path.md) as of its
-2026-10-09 snapshot, which is authoritative for what has landed. Update both
+2026-10-10 snapshot, which is authoritative for what has landed. Update both
 together.
 
 ## Table of contents

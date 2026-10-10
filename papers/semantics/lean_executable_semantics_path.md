@@ -49,7 +49,8 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-09, Lean as of `d8ce83ea`: bounded source correspondence
+**Snapshot: 2026-10-10, Lean as of `b3028e57`: the Part V slice-1 plan layer
+(`Semantics/Plan/`), on top of bounded source correspondence
 (`6a90baff`), nested-reduction reindexing (`705280cd`), successful-permutation
 agreement (`ca642b3d`), and raw-source admission, on top of the verified
 executor (`6026f0b`).** The expression/readiness,
@@ -58,10 +59,9 @@ developments have landed, including maximal-run correspondence. The computable
 validated reference executor and its exact-rational fixtures are now verified;
 both final whole-branch code-review lenses are clean.
 The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer))
-lands after the snapshot above: eight modules under `Semantics/Plan/` proving Lemma 31.2,
+is in the snapshot above: eight modules under `Semantics/Plan/` proving Lemma 31.2,
 Theorem 31.3 and Lemma 32.1 for the slice-1 profile, with 96 fixtures and a 20-cycle mutation
-manifest (20 of 20 passed). The snapshot date and Lean hash above are refreshed when that layer
-merges; until then they do not cover it.
+manifest (20 of 20 passed).
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
 [`LeanNCD`](../../leanncd/LeanNCD.lean). They are a semantic validation layer,

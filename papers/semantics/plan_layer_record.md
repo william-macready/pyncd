@@ -43,20 +43,40 @@ Tool-use counts are harness counts (CHECKPOINT §7: self-reports ran about 20 pe
   - All other cycles: `new` follows the notes' literal mutant text; `expect` locations were checked
     against the shipped files (each cited line holds the declaration the notes name).
 
-## Close-out (controller fills in)
+## Close-out
 
-- Execution worktree / branch:
-- Base `main` SHA at execution:
-- Per-task commits (T1..T5) and build results:
-- Docs-sweep commit:
-- Full default build: jobs, `error` lines, forbidden-token grep:
-- Mutation manifest full run (`--out` table path, PASS count, any `expect` corrected from the log):
-- Whole-branch review, soundness lens (findings file, adjudication):
-- Whole-branch review, spec-Lean fidelity lens (findings file, adjudication):
-- Fix dispatches (one per finding group):
-- Open items resolved / parked (plan §10):
-- Token total (`token-report.py`), against CLAUDE.md Rule 6 (≤ ~175M execution):
-- Merge SHA on local `main`; branches and worktrees removed; push status (not pushed):
+- Execution worktree / branch: `.claude/worktrees/plan-layer-exec`, `worktree-plan-layer-exec`.
+- Base `main` SHA at execution: `e259294b` (the docs-only landing commit on top of `0bf02e47`).
+- Per-task commits and builds (controller ran each; patch sha256 matched `manifest.json`, `apply --check` clean):
+  T1 `489443ab` (2960 jobs), T2 `81a3e646` (2961), T3 `de2cb75f` (2963), T4 `9cc2e758` (2966),
+  T5 `b3028e57` (full default build, 8784 jobs). `leanncd` tree identical to the prototype branch.
+- Docs-sweep commit: `59e8ef32`; whole-branch review fixes `a3faeb8a`; snapshot refresh in the next commit.
+- Full default build: 8784 jobs, "Build completed successfully", no `error` line; no `sorry`,
+  `axiom`, `admit` or `native_decide` in the shipped Lean (emission grep, plus `AxiomAudit`, which
+  covers the whole `LeanNCD.Semantics` namespace, built green).
+- Mutation manifest full run in the execution worktree: 20/20 PASS, every file restored
+  byte-identical, no `expect` corrected (`plan_layer_mutation_results.md`, commit `ae641ba3`).
+- Whole-branch review, soundness lens: `plan_layer_artifacts/wb_review_soundness.md`; no Critical or
+  Important, six Minor (condition-1 "diagnostic" label, `runPlan_R` snapshot attribution, the
+  unobservable-claim reason, missing `refState pc = some c` premise in three places, `SlotView`
+  called the read view, "batched commands" out of scope), all applied.
+- Whole-branch review, spec-Lean fidelity lens: `plan_layer_artifacts/wb_review_fidelity.md`; no
+  Critical, two Important (Definition 31.1 versus Section 29.3 numbering in the spec block; path doc
+  Snapshot paragraph stale), five Minor (4.8 table row, diagnostic wording, dropped does-not-do
+  item, batched/fused wording, notation), all applied; the snapshot now names the plan layer.
+- Fix dispatches: group A (spec) and group B (path doc and AGENTS nodes), one dispatch each,
+  run in parallel on disjoint files.
+- Open items resolved / parked (plan section 10): parked as listed there (11 OPEN audit cells, about
+  one direct dispatch; D7, D8, D11, D12 unrecorded; reviewer-computed invalid-plan distinguishers for
+  A2-e not built). One pre-existing gap noticed, not fixed: the default-`Tests` list sentence in
+  `Semantics/AGENTS.md` omits the Source and AxiomAudit modules (one sentence about the Plan tests was added).
+- Token total (`token-report.py`, this session only; prototype sessions A1-A3b are separate): 55.5M
+  across the controller (18.5M, peak context 241k, 120 turns) and 12 dispatches, against the
+  Rule 6 execution budget of about 175M. Harness tool uses ran above the agents' self-reports again:
+  doc-sweep dispatch 71 (cap 55), fix group A 45 (cap 40), fidelity review 49 (cap 45).
+- Merge SHA on local `main`: the `Merge branch 'worktree-plan-layer-exec'` commit; prototype branch
+  tagged `plan-layer-slice1-proto` before deletion; branches and worktrees removed; not pushed
+  (`main` stays ahead of `origin/main`).
 
 ## Review round 1
 
