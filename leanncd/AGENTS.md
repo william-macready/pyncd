@@ -84,8 +84,10 @@ It prints a markdown results table for the close-out record. Schema and duplicat
 cover every manifest entry; file existence and old-string uniqueness are checked only for entries
 selected by `--task` and/or label prefixes (all entries without filters). `--check` performs those
 checks without building and reports when entries outside the selection were not filesystem-validated,
-so post-code manifests can be checked task by task before later tasks' code exists. An empty selection
-is an error. Optional `task` fields must be strings and match `--task` exactly; an unknown task ID
+so post-code manifests can be checked task by task before later tasks' code exists. Validate a
+manifest at authoring time with `--check` WITHOUT filters, since a filtered check leaves the other
+entries unvalidated. Schema, duplicate-label and selected-file problems are reported in one pass,
+in entry order. An empty selection is an error. Optional `task` fields must be strings and match `--task` exactly; an unknown task ID
 reports the manifest's available IDs (or none). The script's header documents the format.
 
 The controlling session should invoke mutation cycles directly rather than delegating the shell

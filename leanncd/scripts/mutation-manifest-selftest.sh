@@ -88,6 +88,43 @@ with tempfile.TemporaryDirectory(prefix="mutation-manifest-selftest-") as tmp:
     check("global duplicate labels with prefix filter", [first, {**second, "label": first["label"]}],
           125, "duplicate label", "task1-")
 
+    # Schema and filesystem problems arrive in ONE pass, in entry order (an author fixing a
+    # manifest should not need one round trip per class of problem).
+    bad_targets = {**first, "targets": []}
+    schema_0 = "entry 0 (task1-first): 'targets' must be a non-empty list of strings\n"
+    fs_1 = "entry 1 (task2-missing): no such file missing.lean\n"
+    check("single pass: unfiltered reports schema and filesystem problems together",
+          [bad_targets, second], 125, schema_0 + fs_1, exact_error=True)
+    check("single pass: filtered check still reports global schema plus selected filesystem",
+          [bad_targets, second], 125, schema_0 + fs_1, "--task", "2", exact_error=True)
+    check("single pass: filesystem problems of unselected entries stay unreported",
+          [bad_targets, second], 125, schema_0, "--task", "1", exact_error=True)
+    check("single pass: duplicate label precedes the same entry's filesystem problem",
+          [first, {**second, "label": first["label"]}], 125,
+          "entry 1 (task1-first): duplicate label\nentry 1 (task1-first): no such file missing.lean\n",
+          exact_error=True)
+    check("single pass: entry order wins over discovery order (disk problem before schema problem)",
+          [second, bad_targets], 125,
+          fs_1.replace("entry 1", "entry 0") + schema_0.replace("entry 0", "entry 1"),
+          exact_error=True)
+    check("single pass: problems within one entry keep discovery order, not alphabetical order",
+          [{**first, "targets": [], "expect": "failure"}], 125,
+          "entry 0 (task1-first): 'targets' must be a non-empty list of strings\n"
+          "entry 0 (task1-first): 'expect' must be a list of strings\n", exact_error=True)
+    check("single pass: non-string label is still located by index and checked on disk",
+          [{**second, "label": 42}], 125,
+          "entry 0 (42): 'label' must be a string\nentry 0 (42): no such file missing.lean\n",
+          exact_error=True)
+    check("single pass: non-object entry does not hide a later filesystem problem",
+          [None, second], 125, "entry 0: not an object\n" + fs_1, exact_error=True)
+    check("single pass: unselectable label under a prefix filter cannot crash selection",
+          [{**second, "label": 42}, first], 125, "entry 0 (42): 'label' must be a string\n",
+          "task1-", exact_error=True)
+    check("task schema error names the offending value and how to fix it",
+          [first, {**second, "task": 2}], 125,
+          "entry 1 (task2-missing): 'task' must be a string (got 2); "
+          "quote task ids, e.g. \"task\": \"2\"\n" + fs_1, exact_error=True)
+
     healthy = {**second, "file": "real.lean", "old": "second needle"}
     check("unfiltered healthy output unchanged", [first, healthy], 0, unfiltered)
     check("prefix selecting all keeps output unchanged", [first, healthy], 0, unfiltered, "task")
