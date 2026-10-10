@@ -1,3 +1,5 @@
+Continue part-v-plan-layer-slice1. Read its CHECKPOINT.md, do the pre-flight, then go ahead with patch emission using the T1–T5 partition.
+
 # Tensor Logic: Operational and Denotational Semantics
 
 ## Status and purpose
