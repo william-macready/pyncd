@@ -1,0 +1,241 @@
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Run.lean b/leanncd/LeanNCD/Semantics/Plan/Run.lean
+index 119114795fe2538c4ad7009f82e58992e95f5a1a..407f862b6ae7805b05ba6490fedd4d246922a846 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Run.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Run.lean
+@@ -75,10 +75,10 @@ theorem step_not_stuck (hv : π.Valid) (hR : π.R ops η pc M c)
+   unfold stepPlan
+   rw [hcmd]
+   cases a with
+-  | initZero S => simp [stepCommand, execAnn]
++  | initZero S => simp [stepCommand_single, execAnn]
+   | pub B =>
+     obtain ⟨-, hB⟩ := hv.pubOK pc B hcmd
+-    simp only [stepCommand, execAnn, execPub]
++    simp only [stepCommand_single, execAnn, execPub]
+     rw [if_pos]
+     · simp
+     · simp only [List.all_eq_true]
+@@ -87,7 +87,7 @@ theorem step_not_stuck (hv : π.Valid) (hR : π.R ops η pc M c)
+   | acc G =>
+     obtain ⟨-, hG⟩ := hv.accOK pc G hcmd
+     have hready := hv.ready pc G hcmd
+-    simp only [stepCommand, execAnn, execAcc]
++    simp only [stepCommand_single, execAnn, execAcc]
+     split
+     · rename_i res hres
+       intro e
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Simulation.lean b/leanncd/LeanNCD/Semantics/Plan/Simulation.lean
+index e594a8fafcffca5932c6c1d97b6ce6139a731c72..bc95044ff3bb34608f1c4672a73975538217329b 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Simulation.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Simulation.lean
+@@ -553,6 +553,7 @@ theorem step_R {a : Ann P} (hR : π.R ops η pc M c) (hc : π.refState ops η pc
+       ∃ events, Execution P ops events (.running c) (.running c') := by
+   unfold stepPlan at h
+   rw [hcmd] at h
++  simp only [stepCommand_single] at h
+   cases a with
+   | initZero S =>
+     cases h
+@@ -564,16 +565,16 @@ theorem step_R {a : Ann P} (hR : π.R ops η pc M c) (hc : π.refState ops η pc
+ /-- Failure matching (spec 31.3): a semantic failure reported by the
+     transactional kernel is an actual ready, undefined, pending occurrence of
+     the related reference state. Only "members unconsumed" is needed. -/
+-theorem step_failed {cmd : Command P} {o : OccRef P} (hR : π.R ops η pc M c)
+-    (hcmd : π.commands[pc]? = some cmd)
+-    (ok : ∀ G, cmd = [.acc G] → ∀ x ∈ G, ¬ π.Cons pc x)
++theorem step_failed {a : Ann P} {o : OccRef P} (hR : π.R ops η pc M c)
++    (hcmd : π.commands[pc]? = some [a])
++    (ok : ∀ G, [a] = [.acc G] → ∀ x ∈ G, ¬ π.Cons pc x)
+     (h : π.stepPlan ops pc M = .semFail o) :
+     Execution P ops [.undefined o.1 o.2] (.running c) (.failed o.1 o.2 c) := by
+   unfold stepPlan at h
+   rw [hcmd] at h
+-  match cmd, h, ok with
+-  | [.acc G], h, ok =>
+-    simp only [stepCommand, execAnn, execAcc] at h
++  match a, h, ok with
++  | .acc G, h, ok =>
++    simp only [stepCommand_single, execAnn, execAcc] at h
+     split at h
+     · rename_i res hres
+       subst h
+@@ -582,17 +583,15 @@ theorem step_failed {cmd : Command P} {o : OccRef P} (hR : π.R ops η pc M c)
+       exact .cons (e := .undefined o.1 o.2)
+         ⟨(hR.pending o.1 o.2).mpr (ok G rfl o hoG), hev⟩ (.nil _)
+     · split at h <;> cases h
+-  | [.pub B], h, _ =>
+-    simp only [stepCommand, execAnn, execPub] at h
++  | .pub B, h, _ =>
++    simp only [stepCommand_single, execAnn, execPub] at h
+     split_ifs at h
+-  | [.initZero S], h, _ => cases h
+-  | [], h, _ => cases h
+-  | _ :: _ :: _, h, _ => cases h
++  | .initZero S, h, _ => simp only [stepCommand_single, execAnn] at h; cases h
+ 
+ /-- A reported plan failure is a reachable reference failure, so no model. -/
+-theorem step_failed_no_model {cmd : Command P} {o : OccRef P} (hR : π.R ops η pc M c)
+-    (hcmd : π.commands[pc]? = some cmd)
+-    (ok : ∀ G, cmd = [.acc G] → ∀ x ∈ G, ¬ π.Cons pc x)
++theorem step_failed_no_model {a : Ann P} {o : OccRef P} (hR : π.R ops η pc M c)
++    (hcmd : π.commands[pc]? = some [a])
++    (ok : ∀ G, [a] = [.acc G] → ∀ x ∈ G, ¬ π.Cons pc x)
+     (h : π.stepPlan ops pc M = .semFail o) : ¬ ∃ ρ, P.Models ops η ρ :=
+   P.failed_no_model ops η o.1 o.2 c
+     (P.reaches_trans ops hR.reach ((step_failed ops hR hcmd ok h).reaches P ops))
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Step.lean b/leanncd/LeanNCD/Semantics/Plan/Step.lean
+index fbafeff24143c7089d8ba313119b054114606602..3a118e15e7a5c3db0fda7055077f1df09bce7213 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Step.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Step.lean
+@@ -133,10 +133,42 @@ def execAnn (pc : Nat) (M : Memory K σ) : Ann P → StepResult P
+   | .acc G => π.execAcc ops pc G M
+   | .pub B => execPub B M
+ 
+-/-- Slice 1 executes singleton commands only; anything else is stuck. -/
+-def stepCommand (pc : Nat) (M : Memory K σ) : Command P → StepResult P
+-  | [a] => π.execAnn ops pc M a
+-  | _ => .stuck
++/-- Run a list of annotations from position `n` on the running memory.
++    `semFail`/`stuck` propagate; the caller reports the pre-command memory. -/
++def execAnns (n : Nat) (M : Memory K σ) : List (Ann P) → StepResult P
++  | [] => .ok M
++  | a :: as =>
++    match π.execAnn ops n M a with
++    | .ok M' => execAnns n.succ M' as
++    | res => res
++
++/-- A (possibly fused) command at command position `pc`: its annotations run at the
++    expanded positions `offset pc, offset pc + 1, …` of `π.expand` (spec 29.3), each on
++    the memory left by the previous one. Failure is transactional per command: the
++    callers (`runFrom`) report the pre-command memory. -/
++def stepCommand (pc : Nat) (M : Memory K σ) (cmd : Command P) : StepResult P :=
++  π.expand.execAnns ops (π.offset pc) M cmd
++
++/-- `execAnn` depends on the plan only through the annotation prefix at its position
++    (it reads `readPub pc`, i.e. `Pub pc`, i.e. `prefixAnn pc`). -/
++theorem execAnn_prefix {π π' : P.Plan} {pc pc' : Nat} (h : π.prefixAnn pc = π'.prefixAnn pc')
++    (M : Memory K σ) (a : Ann P) : π.execAnn ops pc M a = π'.execAnn ops pc' M a := by
++  have hr : π.readPub pc = π'.readPub pc' := by
++    funext M a
++    have hp : π.Pub pc a ↔ π'.Pub pc' a := by simp [Pub, pubList, h]
++    unfold readPub
++    by_cases hπ : π.Pub pc a
++    · rw [if_pos hπ, if_pos (hp.mp hπ)]
++    · rw [if_neg hπ, if_neg (fun h' => hπ (hp.mpr h'))]
++  cases a <;> simp [execAnn, execAcc, hr]
++
++/-- On a singleton command the generalised step is the slice-1 step, for ANY plan:
++    this is what keeps the slice-1 step lemmas' statements unchanged. -/
++theorem stepCommand_single (pc : Nat) (M : Memory K σ) (a : Ann P) :
++    π.stepCommand ops pc M [a] = π.execAnn ops pc M a := by
++  have h := execAnn_prefix ops (π.prefixAnn_eq_expand pc).symm M a
++  simp only [stepCommand, execAnns, h]
++  cases π.execAnn ops pc M a <;> rfl
+ 
+ def stepPlan (pc : Nat) (M : Memory K σ) : StepResult P :=
+   match π.commands[pc]? with
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Syntax.lean b/leanncd/LeanNCD/Semantics/Plan/Syntax.lean
+index a281020528d3ba698493a957cfea0320a63273ea..af03ec0aaa584f293478da59a20e503e480d07f3 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Syntax.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Syntax.lean
+@@ -131,6 +131,45 @@ end Decidable
+ 
+ theorem prefixAnn_zero : π.prefixAnn 0 = [] := by simp [prefixAnn]
+ 
++/-! ### Expansion (spec 29.3): the schedule of a fused plan -/
++
++/-- The expanded plan: every annotation of `π` in its own command. -/
++def expand : P.Plan := { π with commands := π.ann.map (fun a => [a]) }
++
++/-- Number of annotations in the first `pc` commands (the expanded position of command `pc`). -/
++def offset (pc : Nat) : Nat := (π.prefixAnn pc).length
++
++theorem flatten_map_single {α : Type _} (l : List α) : (l.map fun a => [a]).flatten = l := by
++  induction l <;> simp [*]
++
++theorem expand_ann : π.expand.ann = π.ann := flatten_map_single π.ann
++
++theorem expand_prefixAnn (n : Nat) : π.expand.prefixAnn n = π.ann.take n := by
++  show (List.take n (π.ann.map fun a => [a])).flatten = _
++  rw [← List.map_take, flatten_map_single]
++
++theorem expand_commands_getElem? {n : Nat} {a : Ann P} (h : π.ann[n]? = some a) :
++    π.expand.commands[n]? = some [a] := by
++  simp [expand, h]
++
++theorem ann_eq_append (pc : Nat) : π.ann = π.prefixAnn pc ++ (π.commands.drop pc).flatten := by
++  simp only [ann, prefixAnn, ← List.flatten_append, List.take_append_drop]
++
++theorem prefixAnn_eq_expand (pc : Nat) : π.prefixAnn pc = π.expand.prefixAnn (π.offset pc) := by
++  rw [expand_prefixAnn, offset, ann_eq_append π pc, List.take_left' rfl]
++
++theorem drop_flatten {pc : Nat} {cmd : Command P} (h : π.commands[pc]? = some cmd) :
++    (π.commands.drop pc).flatten = cmd ++ (π.commands.drop (pc + 1)).flatten := by
++  obtain ⟨hpc, hc⟩ := List.getElem?_eq_some_iff.mp h
++  rw [List.drop_eq_getElem_cons hpc, hc, List.flatten_cons]
++
++theorem ann_getElem?_offset {pc : Nat} {cmd : Command P} (h : π.commands[pc]? = some cmd)
++    {j : Nat} {a : Ann P} (hj : cmd[j]? = some a) : π.ann[π.offset pc + j]? = some a := by
++  have hlt : j < cmd.length := (List.getElem?_eq_some_iff.mp hj).1
++  rw [ann_eq_append π pc, drop_flatten π h, offset, List.getElem?_append_right (by omega)]
++  simp only [Nat.add_sub_cancel_left]
++  rw [List.getElem?_append_left hlt, hj]
++
+ theorem not_cons_zero (x : OccRef P) : ¬ π.Cons 0 x := by
+   simp [Cons, consList, prefixAnn_zero]
+ 
+diff --git a/leanncd/test/Semantics/PlanStepTest.lean b/leanncd/test/Semantics/PlanStepTest.lean
+index 21400ec9e38554900b9450590387bb2440eb728f..0b718520761c9759e7f9d4f749cee0aa537bf47c 100644
+--- a/leanncd/test/Semantics/PlanStepTest.lean
++++ b/leanncd/test/Semantics/PlanStepTest.lean
+@@ -188,12 +188,12 @@ def dupGroup : taggedOut.Plan :=
+   (outcomeRow (dupGroup.runPlan ops (Start η0)), (dupGroup.refState ops η0 3).isSome)
+   (("done", 4, none, [some 0, some 16, some 0]), false)
+ 
+--- A fused (non-singleton) command is stuck in slice 1.
++-- A fused (non-singleton) command was stuck in slice 1; slice 2 runs it (see PlanFusionTest).
+ def fused : taggedOut.Plan := unitPlan [[.initZero block, .acc group], [.pub block]]
+-#eval check "invalid-fused" (outcomeRow (fused.runPlan ops (Start η0)))
+-  ("stuck", 0, none, [none, none, none])
++#eval check "fused-runs-in-slice-2" (outcomeRow (fused.runPlan ops (Start η0)))
++  ("done", 2, none, [some 0, some 14, some 0])
+ 
+-/-! ### The empty command (`stepCommand` catch-all) -/
++/-! ### The empty command (a no-op command in slice 2) -/
+ 
+ /-- Kind and raw slot row (`none` slots read as `none`) of one step. -/
+ def stepRow {P : Program Carrier declarations registry} : StepResult P → String × List (Option ℚ)
+@@ -208,9 +208,10 @@ def initMem : Memory Carrier declarations :=
+ /-- Donor `plan` with the empty command `[]` inserted after the init. -/
+ def emptyCmd : taggedOut.Plan := unitPlan [[.initZero block], [], [.acc group], [.pub block]]
+ 
+-#eval check "step-empty-command-stuck"
++-- Slice 1: stuck, and the run stuck at pc 1. Slice 2: `[]` is the identity step.
++#eval check "step-empty-command-noop"
+   (stepRow (plan.stepCommand ops 1 initMem []), outcomeRow (emptyCmd.runPlan ops (Start η0)))
+-  (("stuck", []), ("stuck", 1, none, [some 0, some 0, some 0]))
++  (("ok", [some 0, some 0, some 0]), ("done", 4, none, [some 0, some 14, some 0]))
+ -- Accept-neighbours: a one-element no-op command steps; the plan without `[]` completes.
+ #eval check "step-empty-command-neighbours"
+   (stepRow (plan.stepCommand ops 1 initMem [.initZero []]), outcomeRow (plan.runPlan ops (Start η0)))
+diff --git a/leanncd/test/Semantics/PlanValidityTest.lean b/leanncd/test/Semantics/PlanValidityTest.lean
+index 0038cb820a1bea4d732cfac068e5bca71830920e..0f40ecd33515ad8ce62e647f3bd553af0c5b4619 100644
+--- a/leanncd/test/Semantics/PlanValidityTest.lean
++++ b/leanncd/test/Semantics/PlanValidityTest.lean
+@@ -234,12 +234,13 @@ example : reinitBeforePub.checkPlan = true := by decide
+ /-! ### The empty command
+ 
+ `emptyCmd` (PlanStepTest) is `plan` with `[]` inserted after the init: only
+-`checkSingleton` rejects it, and the run is `stuck` at the empty command's
+-index (`stepCommand`'s catch-all), so `singleton` is the guard that matters. -/
++`checkSingleton` rejects it. In slice 1 the run was `stuck` at the empty command's
++index; with fusion `[]` is the identity step, so the run completes (`done` at pc 4) and
++`singleton` is the only guard (slice 2 replaces it by validity of the expansion). -/
+ 
+ #eval check "invalid-empty-command"
+   (verdict emptyCmd, outcomeRow (emptyCmd.runPlan ops (Start η0)))
+-  ((false, ["singleton"]), ("stuck", 1, none, [some 0, some 0, some 0]))
++  ((false, ["singleton"]), ("done", 4, none, [some 0, some 14, some 0]))
+ 
+ example : emptyCmd.checkPlan = false := by decide
+ 

@@ -1,0 +1,455 @@
+diff --git a/leanncd/LeanNCD/Semantics/Plan.lean b/leanncd/LeanNCD/Semantics/Plan.lean
+index 39c6d425e66e32fe138d28adcc86f1821775a9c0..2564b0c77f844812756a86fcfe04293891a62c77 100644
+--- a/leanncd/LeanNCD/Semantics/Plan.lean
++++ b/leanncd/LeanNCD/Semantics/Plan.lean
+@@ -7,3 +7,4 @@ import LeanNCD.Semantics.Plan.Validity
+ import LeanNCD.Semantics.Plan.Run
+ import LeanNCD.Semantics.Plan.Correctness
+ import LeanNCD.Semantics.Plan.Fusion
++import LeanNCD.Semantics.Plan.FusionCorrectness
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Fusion.lean b/leanncd/LeanNCD/Semantics/Plan/Fusion.lean
+index 0377a97b422c60d76b80d2121d8dd7ea8d85fa72..a632c50160cab4d0aca68c1ddbda3f37a3158697 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Fusion.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Fusion.lean
+@@ -161,4 +161,96 @@ theorem stepCommand_not_stuck {pc : Nat} {cmd : Command P} {M : Memory K σ} {c
+     (R_transport ops hp hR) ((refState_prefix_congr (η := η) ops hp).symm.trans hc)
+     (fun j a hj => π.expand_commands_getElem? (π.ann_getElem?_offset hcmd hj))
+ 
++/-! ### Run bridge (T3): a fused run and the run of its expansion agree -/
++
++/-- Two outcomes agree up to the stopping pc and the memory of a stopped run: `done` on the
++    same final memory, `failed` on the same occurrence, or both `stuck`. -/
++def PlanOutcome.Agree : PlanOutcome P → PlanOutcome P → Prop
++  | .done _ M, .done _ M' => M = M'
++  | .failed o _ _, .failed o' _ _ => o = o'
++  | .stuck _ _, .stuck _ _ => True
++  | _, _ => False
++
++/-- A `done` run stops at the start position plus the number of commands consumed. -/
++theorem runFrom_done_pc (π' : P.Plan) : ∀ (l : List (Command P)) (pc : Nat) (M M' : Memory K σ)
++    (m : Nat), π'.runFrom ops pc M l = .done m M' → m = pc + l.length
++  | [], pc, M, M', m, h => by
++    have h' : PlanOutcome.done pc M = .done m M' := h
++    have := (PlanOutcome.done.inj h').1
++    simp; omega
++  | cmd :: rest, pc, M, M', m, h => by
++    simp only [runFrom] at h
++    cases hs : π'.stepCommand ops pc M cmd with
++    | ok M₁ =>
++      rw [hs] at h
++      have := runFrom_done_pc π' rest (pc + 1) M₁ M' m h
++      simp; omega
++    | semFail o => rw [hs] at h; cases h
++    | stuck => rw [hs] at h; cases h
++
++/-- Running singleton commands built from `anns` is `execAnns` of `anns`, then the rest. -/
++theorem runFrom_append_anns (π' : P.Plan) : ∀ (anns : List (Ann P)) (n : Nat) (M : Memory K σ)
++    (ys : List (Command P)),
++    match π'.execAnns ops n M anns with
++    | .ok M' => π'.runFrom ops n M (anns.map (fun a => [a]) ++ ys) =
++        π'.runFrom ops (n + anns.length) M' ys
++    | .semFail o => ∃ pc M', π'.runFrom ops n M (anns.map (fun a => [a]) ++ ys) = .failed o pc M'
++    | .stuck => ∃ pc M', π'.runFrom ops n M (anns.map (fun a => [a]) ++ ys) = .stuck pc M'
++  | [], n, M, ys => by simp [execAnns]
++  | a :: as, n, M, ys => by
++    have key := stepCommand_single π' ops n M a
++    have e : n + (a :: as).length = n.succ + as.length := by simp; omega
++    cases hs : π'.execAnn ops n M a with
++    | ok M₁ =>
++      have ih := runFrom_append_anns π' as n.succ M₁ ys
++      simp only [execAnns, hs, List.map_cons, List.cons_append, runFrom, key, e]
++      cases he : π'.execAnns ops n.succ M₁ as <;> rw [he] at ih <;> exact ih
++    | semFail o => simp [execAnns, hs, runFrom, key]
++    | stuck => simp [execAnns, hs, runFrom, key]
++
++/-- **Run bridge.** From any command boundary `pc`, the fused run of the remaining commands and
++    the run of their expansion (from the expanded position `offset pc`) agree: same final memory
++    when done, same failing occurrence when failed. -/
++theorem runFrom_agree : ∀ (l : List (Command P)) (pc : Nat) (M : Memory K σ),
++    π.commands.drop pc = l →
++    (π.runFrom ops pc M l).Agree
++      (π.expand.runFrom ops (π.offset pc) M (l.flatten.map fun a => [a]))
++  | [], pc, M, _ => by simp [runFrom, PlanOutcome.Agree]
++  | cmd :: rest, pc, M, hl => by
++    have hcmd : π.commands[pc]? = some cmd := by rw [← List.head?_drop, hl]; rfl
++    have hrest : π.commands.drop (pc + 1) = rest := by rw [← List.tail_drop, hl]; rfl
++    have hoff : π.offset (pc + 1) = π.offset pc + cmd.length := by
++      simp [offset, prefixAnn_succ π hcmd]
++    have ha := runFrom_append_anns ops π.expand cmd (π.offset pc) M
++      (rest.flatten.map fun a => [a])
++    have hfl : (cmd :: rest).flatten.map (fun a => [a]) =
++        cmd.map (fun a => [a]) ++ rest.flatten.map (fun a => [a]) := by simp
++    rw [hfl]
++    simp only [runFrom]
++    have hstep : π.stepCommand ops pc M cmd = π.expand.execAnns ops (π.offset pc) M cmd := rfl
++    rw [hstep]
++    cases he : π.expand.execAnns ops (π.offset pc) M cmd with
++    | ok M' =>
++      rw [he] at ha
++      rw [ha, ← hoff]
++      exact runFrom_agree rest (pc + 1) M' hrest
++    | semFail o =>
++      rw [he] at ha
++      obtain ⟨pc', M'', h⟩ := ha
++      rw [h]
++      exact rfl
++    | stuck =>
++      rw [he] at ha
++      obtain ⟨pc', M'', h⟩ := ha
++      rw [h]
++      exact True.intro
++
++/-- `runFrom_agree` from the start: a fused plan's run and its expansion's agree. -/
++theorem runPlan_agree (M : Memory K σ) :
++    (π.runPlan ops M).Agree (π.expand.runPlan ops M) := by
++  have h := runFrom_agree π ops π.commands 0 M List.drop_zero
++  have e0 : π.offset 0 = 0 := by simp [offset, prefixAnn_zero]
++  rw [e0] at h
++  exact h
++
+ end LeanNCD.Semantics.Program.Plan
+diff --git a/leanncd/LeanNCD/Semantics/Plan/FusionCorrectness.lean b/leanncd/LeanNCD/Semantics/Plan/FusionCorrectness.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..7abf11f56ad6a36ffe17085ee64881e302bb3bb6
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Plan/FusionCorrectness.lean
+@@ -0,0 +1,193 @@
++import LeanNCD.Semantics.Plan.Fusion
++import LeanNCD.Semantics.Plan.Correctness
++
++/- Slice 2 (T3): Lemma 31.2 and Theorem 31.3 for FUSED plans, stated about `π.runPlan` of the
++   fused plan `π` under `FValid π := π.expand.Valid`. The run bridge (`runPlan_agree`, in
++   Fusion.lean) says the fused run and the run of the expansion agree on final memory (done) and
++   on the failing occurrence (failed), so the slice-1 run lemma lifts to command boundaries
++   (`runPlan_R_F`: R at pc = number of commands) and the terminal theorems keep their proofs.
++   `done m M'` reports `m = π.commands.length` (the number of COMMANDS, not annotations): the
++   pc field is never compared across the fused plan and its expansion. Theorem 31.3 failure
++   case compares fails / no-model only (D5; a failed fused command reports the PRE-command
++   memory, D14). -/
++
++namespace LeanNCD.Semantics.Program.Plan
++
++open Executor
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++variable {P : Program K σ r} {π : P.Plan}
++
++/-- Fusion validity: the expansion is valid (spec 29.3 "expand fused annotations in their
++    stated order"). -/
++abbrev FValid (π : P.Plan) : Prop := π.expand.Valid
++
++section Check
++
++variable [DecidableEq σ.Tensor]
++
++/-- The slice-2 checker: the slice-1 checker on the expansion. -/
++def checkPlanF (π : P.Plan) : Bool := π.expand.checkPlan
++
++theorem checkPlanF_sound (h : π.checkPlanF = true) : π.FValid := checkPlan_sound π.expand h
++
++end Check
++
++/-- At the end of the run the command prefix of the fused plan and the annotation prefix of the
++    expansion are both the whole annotation list. -/
++theorem prefixAnn_done {m n : Nat} (hm : m = π.commands.length) (hn : n = π.expand.commands.length) :
++    π.prefixAnn m = π.expand.prefixAnn n := by
++  subst hm hn
++  rw [prefixAnn_length, prefixAnn_length, expand_ann]
++
++variable [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
++variable (ops : (s : S) → ScalarOps (K s))
++
++omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
++/-- `Decode` depends on the plan only through the annotation prefix at its position. -/
++theorem decode_prefix_congr {π π' : P.Plan} {pc pc' : Nat}
++    (h : π.prefixAnn pc = π'.prefixAnn pc') (M : Memory K σ) :
++    π.Decode pc M = π'.Decode pc' M := by
++  have hr : π.readPub pc = π'.readPub pc' := by
++    funext M a
++    have hp : π.Pub pc a ↔ π'.Pub pc' a := by simp [Pub, pubList, h]
++    unfold readPub
++    by_cases hπ : π.Pub pc a
++    · rw [if_pos hπ, if_pos (hp.mp hπ)]
++    · rw [if_neg hπ, if_neg (fun h' => hπ (hp.mpr h'))]
++  unfold Decode
++  rw [hr]
++
++/-- **Run lemma for fused plans.** The slice-1 `runPlan_R` for a plan whose expansion is valid:
++    R holds at command boundaries, in particular at pc = number of commands when done. -/
++theorem runPlan_R_F (hv : π.FValid) (η : P.Input) :
++    (∃ M' c', π.runPlan ops (Start η) = .done π.commands.length M' ∧
++        π.refState ops η π.commands.length = some c' ∧ π.R ops η π.commands.length M' c' ∧
++        ∃ events, Execution P ops events (.running (P.initial η)) (.running c')) ∨
++    (∃ o pc' M' c' events, π.runPlan ops (Start η) = .failed o pc' M' ∧
++        Execution P ops events (.running (P.initial η)) (.failed o.1 o.2 c')) := by
++  have hag := runPlan_agree π ops (Start η)
++  rcases runPlan_R ops hv η with ⟨M', c', he, hc, hR, ev⟩ | ⟨o, pc', M', c', ev, he, hex⟩
++  · rw [he] at hag
++    cases h : π.runPlan ops (Start η) with
++    | done m M'' =>
++      rw [h] at hag
++      have hM : M'' = M' := hag
++      have hm := runFrom_done_pc ops π π.commands 0 (Start η) M'' m h
++      have hmm : m = π.commands.length := by simpa using hm
++      subst hM hmm
++      have hp := prefixAnn_done (π := π) (m := π.commands.length) rfl
++        (n := π.expand.commands.length) rfl
++      exact Or.inl ⟨_, c', rfl, (refState_prefix_congr (η := η) ops hp).trans hc,
++        R_transport ops hp.symm hR, ev⟩
++    | failed o'' pc'' M'' => rw [h] at hag; exact False.elim hag
++    | stuck pc'' M'' => rw [h] at hag; exact False.elim hag
++  · rw [he] at hag
++    cases h : π.runPlan ops (Start η) with
++    | done m M'' => rw [h] at hag; exact False.elim hag
++    | failed o'' pc'' M'' =>
++      rw [h] at hag
++      have ho : o'' = o := hag
++      subst ho
++      exact Or.inr ⟨o'', pc'', M'', c', ev, rfl, hex⟩
++    | stuck pc'' M'' => rw [h] at hag; exact False.elim hag
++
++/-- A fused plan with a valid expansion never gets stuck. -/
++theorem runPlan_not_stuck_F (hv : π.FValid) (η : P.Input) (pc : Nat) (M : Memory K σ) :
++    π.runPlan ops (Start η) ≠ .stuck pc M := by
++  rcases runPlan_R_F ops hv η with ⟨_, _, h, -⟩ | ⟨_, _, _, _, _, h, -⟩ <;> rw [h] <;> simp
++
++/-- **Lemma 31.2 (terminal adequacy), fused.** As `terminal_adequacy`, for the fused plan:
++    `m` is the number of commands. -/
++theorem terminal_adequacy_F (hv : π.FValid) (η : P.Input) {m : Nat} {M' : Memory K σ}
++    (hrun : π.runPlan ops (Start η) = .done m M') :
++    m = π.commands.length ∧ ∃ c, π.refState ops η m = some c ∧ π.R ops η m M' c ∧
++      ∃ complete : P.Complete c,
++        π.Decode m M' = some (P.outputProjection (P.finalStore c complete)) := by
++  rcases runPlan_R_F ops hv η with ⟨M₁, c, h, hc, hR, -⟩ | ⟨_, _, _, _, _, h, -⟩
++  · rw [hrun] at h
++    obtain ⟨rfl, rfl⟩ := PlanOutcome.done.inj h
++    have hp := prefixAnn_done (π := π) (m := π.commands.length) rfl
++      (n := π.expand.commands.length) rfl
++    have complete := complete_of_refState ops hv
++      ((refState_prefix_congr (η := η) ops hp).symm.trans hc)
++    have outs : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, π.Pub π.commands.length ⟨t.val, p⟩ :=
++      fun t p => (hR.published _).mp (complete.2 _)
++    obtain ⟨out, hd, hout⟩ := π.decode_of_R ops hR outs
++    refine ⟨rfl, c, hc, hR, complete, ?_⟩
++    rw [hd]
++    congr 1
++    funext t p
++    have h1 := hout t p
++    rw [P.finalStore_published c complete] at h1
++    exact (Option.some.inj h1).symm
++  · rw [hrun] at h
++    cases h
++
++/-- **Theorem 31.3 (a), fused.** -/
++theorem done_correct_F (hv : π.FValid) (η : P.Input) {m : Nat} {M' : Memory K σ}
++    (hrun : π.runPlan ops (Start η) = .done m M') :
++    ∃ c, ∃ success : P.Successful ops η c,
++      (∀ ρ, P.Models ops η ρ ↔ ρ = P.finalStore c success.2) ∧
++      π.Decode m M' = some (P.outputProjection (P.finalStore c success.2)) ∧
++      P.denotation ops η (P.successful_admInput ops η c success) =
++        P.outputProjection (P.finalStore c success.2) := by
++  obtain ⟨-, c, -, hR, complete, hd⟩ := terminal_adequacy_F ops hv η hrun
++  let success : P.Successful ops η c := ⟨hR.reach, complete⟩
++  refine ⟨c, success, fun ρ => ⟨P.successful_unique ops η c success ρ, ?_⟩, hd,
++    P.successful_denotation ops η c success⟩
++  rintro rfl
++  exact P.successful_model ops η c success
++
++/-- **Theorem 31.3 (b), fused.** A `failed` fused run means no model exists (D5, D14: neither
++    the failing occurrence nor the pre-command memory is compared). -/
++theorem failed_correct_F (hv : π.FValid) (η : P.Input) {o : OccRef P} {pc : Nat}
++    {M' : Memory K σ} (hrun : π.runPlan ops (Start η) = .failed o pc M') :
++    ¬ ∃ ρ, P.Models ops η ρ := by
++  rcases runPlan_R_F ops hv η with ⟨_, _, h, -⟩ | ⟨o', _, _, c', _, _, hex⟩
++  · rw [hrun] at h
++    cases h
++  · exact P.failed_no_model ops η o'.1 o'.2 c' (hex.reaches P ops)
++
++/-- **Theorem 31.3 (c), error-free profile, fused.** -/
++theorem done_or_failed_F (hv : π.FValid) (η : P.Input) :
++    (∃ M', π.runPlan ops (Start η) = .done π.commands.length M') ∨
++      ∃ o pc M', π.runPlan ops (Start η) = .failed o pc M' := by
++  rcases runPlan_R_F ops hv η with ⟨M', _, h, -⟩ | ⟨o, pc, M', _, _, h, -⟩
++  · exact Or.inl ⟨M', h⟩
++  · exact Or.inr ⟨o, pc, M', h⟩
++
++/-- **Theorem 31.3 (c), converse, fused.** -/
++theorem done_of_model_F (hv : π.FValid) (η : P.Input) {ρ : Store K σ}
++    (hρ : P.Models ops η ρ) :
++    ∃ M', π.runPlan ops (Start η) = .done π.commands.length M' ∧
++      π.Decode π.commands.length M' = some (P.outputProjection ρ) := by
++  rcases done_or_failed_F ops hv η with ⟨M', h⟩ | ⟨_, _, _, h⟩
++  · obtain ⟨c, success, hmod, hd, -⟩ := done_correct_F ops hv η h
++    rw [(hmod ρ).mp hρ]
++    exact ⟨M', h, hd⟩
++  · exact absurd ⟨ρ, hρ⟩ (failed_correct_F ops hv η h)
++
++/-- (b) + (c), fused: the run is `done` iff a model exists. -/
++theorem done_iff_model_F (hv : π.FValid) (η : P.Input) :
++    (∃ m M', π.runPlan ops (Start η) = .done m M') ↔ ∃ ρ, P.Models ops η ρ := by
++  constructor
++  · rintro ⟨m, M', h⟩
++    obtain ⟨c, success, hmod, -⟩ := done_correct_F ops hv η h
++    exact ⟨_, (hmod _).mpr rfl⟩
++  · rintro ⟨ρ, hρ⟩
++    obtain ⟨M', h, -⟩ := done_of_model_F ops hv η hρ
++    exact ⟨_, M', h⟩
++
++#print axioms checkPlanF_sound
++#print axioms runPlan_agree
++#print axioms runPlan_R_F
++#print axioms runPlan_not_stuck_F
++#print axioms terminal_adequacy_F
++#print axioms done_correct_F
++#print axioms failed_correct_F
++#print axioms done_or_failed_F
++#print axioms done_of_model_F
++#print axioms done_iff_model_F
++
++end LeanNCD.Semantics.Program.Plan
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index af80f6c5e872607e38655498c543d7385ba86fec..39b98c67e668ccc070c20caee471a2c92c60acac 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -85,7 +85,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Semantics.PlanFixtures", "Semantics.PlanBatchTest", "Semantics.PlanMemoryTest",
+          "Semantics.PlanStepTest", "Semantics.PlanSimulationTest",
+          "Semantics.PlanValidityTest", "Semantics.PlanRunTest", "Semantics.PlanCorrectnessTest",
+-         "Semantics.PlanFusionTest",
++         "Semantics.PlanFusionTest", "Semantics.PlanFusionCorrectnessTest",
+          "Semantics.SourceBindingUIDTest", "Semantics.SourceBindingRenameTest",
+          "Semantics.SourceBindingBoundaryTest", "Semantics.SourceBindingTest",
+          "Semantics.SourceAdmissionFixtures", "Semantics.SourceAdmissionDomainsTest",
+diff --git a/leanncd/test/Semantics/PlanFusionCorrectnessTest.lean b/leanncd/test/Semantics/PlanFusionCorrectnessTest.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..8be7deb6d6a7c79a74efe6473fd59e300bd7222a
+--- /dev/null
++++ b/leanncd/test/Semantics/PlanFusionCorrectnessTest.lean
+@@ -0,0 +1,127 @@
++import Semantics.PlanCorrectnessTest
++import Semantics.PlanFusionTest
++
++/- Slice 2 (T3) fixtures: Lemma 31.2 / Theorem 31.3 for FUSED plans (`FusionCorrectness.lean`).
++   Every asserted value was observed from a real run. Cloned from PlanCorrectnessTest (done and
++   failing comparisons) and PlanFusionTest (fused plans). -/
++
++namespace LeanNCD.Semantics.PlanFixtures
++
++open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
++
++/-- The slice-2 verdict: `checkPlanF` and the failing clauses of the EXPANSION. -/
++def verdictF {K : S → Type} {σ : Declarations S} {r : Registry K} {P : Program K σ r}
++    [DecidableEq σ.Tensor] (π : P.Plan) : Bool × List String :=
++  (π.checkPlanF, (clauseRow π.expand).filterMap fun (n, b) => if b then none else some n)
++
++/-! ### (1) a valid fused plan: runPlan is `done`, Decode is the model's output projection -/
++
++def fusedRun := fused.runPlan ops (Start η0)
++
++-- `fused` = [[initZero; acc], [pub]] (2 commands); the singleton `plan` ends at pc 3.
++#eval check "fusedcorr-done-decode"
++  (verdictF fused, outcomeRow fusedRun, decodeRow (fused.Decode 2 (finalMemory fusedRun)),
++    decodeRow (plan.Decode 3 (finalMemory taggedRun)))
++  ((true, []), ("done", 2, none, [some 0, some 14, some 0]), some [0, 14, 0], some [0, 14, 0])
++
++theorem fused_fvalid : fused.FValid := fused.checkPlanF_sound (by decide)
++
++/-- Theorem 31.3 (a) on the fused plan: the model is unique, and the fused plan's Decode (at
++    pc = number of COMMANDS) is its output projection. -/
++theorem fused_model_unique : ∃ ρ, (∀ ρ', taggedOut.Models ops η0 ρ' ↔ ρ' = ρ) ∧
++    fused.Decode 2 (finalMemory fusedRun) = some (taggedOut.outputProjection ρ) := by
++  obtain ⟨c, success, hmod, hd, -⟩ := done_correct_F ops fused_fvalid η0
++    (rfl : fusedRun = .done 2 (finalMemory fusedRun))
++  exact ⟨_, hmod, hd⟩
++
++theorem fused_has_model : ∃ ρ, taggedOut.Models ops η0 ρ :=
++  (done_iff_model_F ops fused_fvalid η0).mp ⟨2, finalMemory fusedRun, rfl⟩
++
++/-- A fused scalar plan: Decode of the fused run against the executor's published value. -/
++def sFusedDecode : Option ℚ :=
++  ((sPlanFused false).Decode 2 (finalMemory (sRunF false))).map (fun out => out sOut ())
++
++#eval check "fusedcorr-scalar-done-decode"
++  ((sPlanFused false).checkPlanF, sFusedDecode, sRefOut false)
++  (true, some 2, ("complete", some 2))
++
++/-! ### (2) a fused plan that fails: fails / no model (D5, D14: not the occurrence or snapshot) -/
++
++-- fused-scalar-bad reports the PRE-command memory ([7,0,0]); the singleton plan reports [7,2,0].
++#eval check "fusedcorr-failed-no-model"
++  ((sPlanFused true).checkPlanF, (sRowF true), (sRefRow true))
++  (true, ("failed", 1, some 2, [some 7, some 0, some 0]), ("failed", some 2))
++
++theorem sFused_bad_fvalid : (sPlanFused true).FValid :=
++  (sPlanFused true).checkPlanF_sound (by decide)
++
++theorem scalar_bad_no_model_F : ¬ ∃ ρ, (scalarRole true).Models ops (scalarInput true) ρ :=
++  failed_correct_F ops sFused_bad_fvalid (scalarInput true)
++    (rfl : (sPlanFused true).runPlan ops (Start (scalarInput true)) =
++      .failed (sOcc true 2 rfl) 1 (finalMemory (sRunF true)))
++
++/-! ### (3) a fused plan with an INVALID expansion (publish before accumulate in one command) -/
++
++-- Slice-1 verdict on the unexpanded plan: only `singleton` fails (checkSteps is vacuous on a
++-- non-singleton command); slice-2 verdict: the expansion fails `pubOrder@1`.
++#eval check "fusedcorr-misfused-verdicts"
++  (verdict (pPlanMisFused 2 reciprocalBody), verdictF (pPlanMisFused 2 reciprocalBody))
++  ((false, ["singleton"]), (false, ["pubOrder@1"]))
++
++example : (pPlanMisFused 2 reciprocalBody).checkPlanF = false := by decide
++
++-- Hypothesis necessity: a fused plan that omits publication of point 2 runs to `done` but
++-- Decode fails (the fused analogue of `invalid-missing-publication`); FValid fails `cov2Complete`.
++def fusedMissingPub : taggedOut.Plan :=
++  unitPlan [[.initZero block, .acc group], [.pub [addr 0, addr 1]]]
++
++#eval check "fusedcorr-missing-publication"
++  (verdictF fusedMissingPub, outcomeRow (fusedMissingPub.runPlan ops (Start η0)),
++    decodeRow (fusedMissingPub.Decode 2 (finalMemory (fusedMissingPub.runPlan ops (Start η0)))))
++  ((false, ["cov2Complete"]), ("done", 2, none, [some 0, some 14, some 0]), none)
++
++/-! ### (4) a valid fused plan agrees with its expansion on the final memory -/
++
++/-- Kinds, stopping pcs (commands vs annotations) and whether the final points agree. -/
++def agreeRow {P : Program Carrier declarations registry} (π : P.Plan) (η : P.Input) :
++    String × String × Nat × Nat × Bool :=
++  let a := outcomeRow (π.runPlan ops (Start η))
++  let b := outcomeRow (π.expand.runPlan ops (Start η))
++  (a.1, b.1, a.2.1, b.2.1, a.2.2.2 == b.2.2.2)
++
++#eval check "fusedcorr-valid-agrees-with-expansion"
++  ((pPlanFused 2 reciprocalBody).checkPlanF, agreeRow (pPlanFused 2 reciprocalBody) (pInput 2 reciprocalBody),
++    (pPlanAP 2 reciprocalBody).checkPlanF, agreeRow (pPlanAP 2 reciprocalBody) (pInput 2 reciprocalBody),
++    fused.checkPlanF, agreeRow fused η0)
++  (true, ("done", "done", 1, 3, true), true, ("done", "done", 2, 3, true),
++    true, ("done", "done", 2, 3, true))
++
++-- Failing runs agree on the failing occurrence (not on pc or memory).
++#eval check "fusedcorr-failed-agrees-on-occurrence"
++  (match (sRunF true), (sPlanFused true).expand.runPlan ops (Start (scalarInput true)) with
++    | .failed o _ _, .failed o' _ _ => (o.1.val.val, o'.1.val.val, o == o')
++    | _, _ => (0, 0, false))
++  (2, 2, true)
++
++example : PlanOutcome.Agree fusedRun (fused.expand.runPlan ops (Start η0)) := rfl
++
++-- `Agree` is not vacuous: different final memories and different failing occurrences disagree.
++example : ¬ PlanOutcome.Agree fusedRun (.done 3 (Start η0)) := by
++  intro h
++  have e : finalMemory fusedRun (place ⟨T, point 1⟩) = Start η0 (place ⟨T, point 1⟩) :=
++    congrFun (h : finalMemory fusedRun = Start η0) _
++  revert e
++  decide
++
++example : ¬ PlanOutcome.Agree (sRunF true) (.failed (sOcc true 1 rfl) 0 (Start (scalarInput true))) := by
++  intro h
++  have e : (2 : Nat) = 1 := congrArg (fun o : OccRef (scalarRole true) => o.1.val.val)
++    (h : (sOcc true 2 rfl) = (sOcc true 1 rfl))
++  omega
++
++#print axioms fused_fvalid
++#print axioms fused_model_unique
++#print axioms fused_has_model
++#print axioms scalar_bad_no_model_F
++
++end LeanNCD.Semantics.PlanFixtures

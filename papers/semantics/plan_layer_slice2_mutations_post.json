@@ -1,0 +1,212 @@
+[
+ {
+  "label": "S2-M1 execAnns folds right-to-left",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Plan/Step.lean",
+  "old": "  | a :: as =>\n    match π.execAnn ops n M a with\n    | .ok M' => execAnns n.succ M' as\n    | res => res",
+  "new": "  | a :: as =>\n    match execAnns n.succ M as with\n    | .ok M' => π.execAnn ops n M' a\n    | res => res",
+  "targets": [
+   "LeanNCD.Semantics.Plan.Fusion",
+   "Semantics.PlanFusionTest"
+  ],
+  "expect": [
+   "Step.lean:171:2",
+   "No goals to be solved"
+  ]
+ },
+ {
+  "label": "S2-M2 failure reports the partial memory, not the pre-command memory",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Plan/Step.lean",
+  "old": "    | .semFail o => .failed o pc M\n    | .stuck => .stuck pc M",
+  "new": "    | .semFail o => .failed o pc (cmd.foldl (fun M' a => match π.expand.execAnn ops (π.offset pc) M' a with | .ok M'' => M'' | _ => M') M)\n    | .stuck => .stuck pc M",
+  "targets": [
+   "LeanNCD.Semantics.Plan.Fusion",
+   "Semantics.PlanFusionTest"
+  ],
+  "expect": [
+   "Run.lean:177:36",
+   "Application type mismatch"
+  ]
+ },
+ {
+  "label": "S2-M3 every annotation reads the pre-command memory",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Plan/Step.lean",
+  "old": "    | .ok M' => execAnns n.succ M' as\n    | res => res",
+  "new": "    | .ok _ => execAnns n.succ M as\n    | res => res",
+  "targets": [
+   "LeanNCD.Semantics.Plan.Fusion",
+   "Semantics.PlanFusionTest"
+  ],
+  "expect": [
+   "Step.lean:171:33",
+   "Tactic `rfl` failed"
+  ]
+ },
+ {
+  "label": "S2-M4 offset off by one (equivalent at fixture level)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Plan/Syntax.lean",
+  "old": "def offset (pc : Nat) : Nat := (π.prefixAnn pc).length",
+  "new": "def offset (pc : Nat) : Nat := (π.prefixAnn pc).length + 1",
+  "targets": [
+   "LeanNCD.Semantics.Plan.Fusion",
+   "Semantics.PlanFusionTest"
+  ],
+  "expect": [
+   "Syntax.lean:159:52",
+   "Tactic `rewrite` failed"
+  ]
+ },
+ {
+  "label": "S2-M5 checkPlanF is the slice-1 checker on the unexpanded plan",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Plan/FusionCorrectness.lean",
+  "old": "def checkPlanF (π : P.Plan) : Bool := π.expand.checkPlan",
+  "new": "def checkPlanF (π : P.Plan) : Bool := π.checkPlan",
+  "targets": [
+   "LeanNCD.Semantics.Plan.FusionCorrectness",
+   "Semantics.PlanFusionCorrectnessTest"
+  ],
+  "expect": [
+   "FusionCorrectness.lean:32:90",
+   "Application type mismatch"
+  ]
+ },
+ {
+  "label": "S2-M6 FValid weakened to slice-1 Valid of the fused plan",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Plan/FusionCorrectness.lean",
+  "old": "abbrev FValid (π : P.Plan) : Prop := π.expand.Valid",
+  "new": "abbrev FValid (π : P.Plan) : Prop := π.Valid",
+  "targets": [
+   "LeanNCD.Semantics.Plan.FusionCorrectness",
+   "Semantics.PlanFusionCorrectnessTest"
+  ],
+  "expect": [
+   "FusionCorrectness.lean:32:65",
+   "Type mismatch"
+  ]
+ },
+ {
+  "label": "S2-M7 terminal_adequacy_F drops the FValid hypothesis",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Plan/FusionCorrectness.lean",
+  "old": "theorem terminal_adequacy_F (hv : π.FValid) (η : P.Input)",
+  "new": "theorem terminal_adequacy_F (η : P.Input)",
+  "targets": [
+   "LeanNCD.Semantics.Plan.FusionCorrectness",
+   "Semantics.PlanFusionCorrectnessTest"
+  ],
+  "expect": [
+   "FusionCorrectness.lean:107:25",
+   "Unknown identifier `hv`"
+  ]
+ },
+ {
+  "label": "S2-M8 terminal_adequacy_F reports the expanded command count",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Plan/FusionCorrectness.lean",
+  "old": "m = π.commands.length ∧ ∃ c, π.refState ops η m = some c",
+  "new": "m = π.expand.commands.length ∧ ∃ c, π.refState ops η m = some c",
+  "targets": [
+   "LeanNCD.Semantics.Plan.FusionCorrectness",
+   "Semantics.PlanFusionCorrectnessTest"
+  ],
+  "expect": [
+   "FusionCorrectness.lean:117:12",
+   "Application type mismatch"
+  ]
+ },
+ {
+  "label": "S2-M9 checkPlanF skips the expansion (slice-1 checker minus singleton)",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Plan/FusionCorrectness.lean",
+  "old": "def checkPlanF (π : P.Plan) : Bool := π.expand.checkPlan",
+  "new": "def checkPlanF (π : P.Plan) : Bool :=\n  π.checkCov1Nodup && π.checkCov1Complete && π.checkCov2Nodup && π.checkCov2Complete && π.checkSteps",
+  "targets": [
+   "LeanNCD.Semantics.Plan.FusionCorrectness",
+   "Semantics.PlanFusionCorrectnessTest"
+  ],
+  "expect": [
+   "FusionCorrectness.lean:33:90",
+   "Application type mismatch"
+  ]
+ },
+ {
+  "label": "S2-M10 Agree drops the final-memory equality of done runs",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Plan/Fusion.lean",
+  "old": "  | .done _ M, .done _ M' => M = M'",
+  "new": "  | .done _ _, .done _ _ => True",
+  "targets": [
+   "LeanNCD.Semantics.Plan.FusionCorrectness",
+   "Semantics.PlanFusionCorrectnessTest"
+  ],
+  "expect": [
+   "FusionCorrectness.lean:75:28",
+   "Type mismatch"
+  ]
+ },
+ {
+  "label": "S2-M11 Agree drops the failing-occurrence equality",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Plan/Fusion.lean",
+  "old": "  | .failed o _ _, .failed o' _ _ => o = o'",
+  "new": "  | .failed _ _ _, .failed _ _ _ => True",
+  "targets": [
+   "LeanNCD.Semantics.Plan.FusionCorrectness",
+   "Semantics.PlanFusionCorrectnessTest"
+  ],
+  "expect": [
+   "Plan/Fusion.lean:241:6",
+   "Type mismatch"
+  ]
+ },
+ {
+  "label": "S2-M12 expand reverses annotation order within each command",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Plan/Syntax.lean",
+  "old": "def expand : P.Plan := { π with commands := π.ann.map (fun a => [a]) }",
+  "new": "def expand : P.Plan := { π with commands := (π.commands.flatMap List.reverse).map (fun a => [a]) }",
+  "targets": [
+   "LeanNCD.Semantics.Plan.Fusion",
+   "Semantics.PlanFusionCheckerTest"
+  ],
+  "expect": [
+   "Syntax.lean:145:45",
+   "Type mismatch"
+  ]
+ },
+ {
+  "label": "S2-M13 expand drops the first annotation of each fused command",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Plan/Syntax.lean",
+  "old": "def expand : P.Plan := { π with commands := π.ann.map (fun a => [a]) }",
+  "new": "def expand : P.Plan := { π with commands := (π.commands.flatMap (fun c => if c.length > 1 then c.drop 1 else c)).map (fun a => [a]) }",
+  "targets": [
+   "LeanNCD.Semantics.Plan.Fusion",
+   "Semantics.PlanFusionCheckerTest"
+  ],
+  "expect": [
+   "Syntax.lean:145:45",
+   "Type mismatch"
+  ]
+ },
+ {
+  "label": "S2-M14 offset counts commands instead of annotations",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Plan/Syntax.lean",
+  "old": "def offset (pc : Nat) : Nat := (π.prefixAnn pc).length",
+  "new": "def offset (pc : Nat) : Nat := (π.commands.take pc).length",
+  "targets": [
+   "LeanNCD.Semantics.Plan.Fusion",
+   "Semantics.PlanFusionCheckerTest"
+  ],
+  "expect": [
+   "Syntax.lean:159:52",
+   "Tactic `rewrite` failed"
+  ]
+ }
+]

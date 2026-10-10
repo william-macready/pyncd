@@ -1,0 +1,292 @@
+{
+  "base": "4570a79424ba0e7fb4b789ca0ed087ce89ebc752",
+  "prototype_code_head": "b554437fdbf578d17c4c1a93d958e39eefcea175",
+  "scratch_head": "cc97e0625de00d0d7c3a9a8cbb7d3356ac658a05",
+  "fusion_split_marker": "/-! ### Run bridge (T3): a fused run and the run of its expansion agree -/",
+  "tasks": [
+    {
+      "task": "T1",
+      "name": "01-expand-step",
+      "commit": "8f5df34ead6e32f28ff388843786a89668c9d297",
+      "parent": "4570a79424ba0e7fb4b789ca0ed087ce89ebc752",
+      "tree": "40c12a93fd24e18554491742e798ca2f3c0c198c",
+      "patch": "papers/semantics/plan_layer_slice2_patches/01-expand-step.patch",
+      "patch_lines": 241,
+      "sha256": "49afc87266d1b3db751674918eea8131c7fa7c65482fca04cdfb378c21e33a7f",
+      "build": {
+        "target": "slice-1 Plan test targets",
+        "lake_targets": [
+          "Semantics.PlanFixtures",
+          "Semantics.PlanBatchTest",
+          "Semantics.PlanMemoryTest",
+          "Semantics.PlanStepTest",
+          "Semantics.PlanSimulationTest",
+          "Semantics.PlanValidityTest",
+          "Semantics.PlanRunTest",
+          "Semantics.PlanCorrectnessTest"
+        ],
+        "result": "Build completed successfully",
+        "jobs": 2977,
+        "warnings": 13,
+        "log": "/private/tmp/claude-501/-Users-williammacready-code-python-pyncd/d8b43bb7-b07c-4d34-bdae-de0edbd2926e/scratchpad/s2logs/t1.log",
+        "log_sha256": "6c373d10cd107b73f156359c23809f550cbeedb8ca44087d2c32f7ee6cd0a40a"
+      }
+    },
+    {
+      "task": "T2",
+      "name": "02-fold-lemmas",
+      "commit": "7b0ba5dc9ea8cdfa45ef6520ce7c4b8bb00089f5",
+      "parent": "8f5df34ead6e32f28ff388843786a89668c9d297",
+      "tree": "3701598ae3b134e781e35d7508d117fceabca3d5",
+      "patch": "papers/semantics/plan_layer_slice2_patches/02-fold-lemmas.patch",
+      "patch_lines": 363,
+      "sha256": "836da8cbfcc71341d30672281975569275e2d9d4361dedf521bb60659416259d",
+      "build": {
+        "target": "Semantics.PlanFusionTest",
+        "lake_targets": [
+          "Semantics.PlanFusionTest"
+        ],
+        "result": "Build completed successfully",
+        "jobs": 2973,
+        "warnings": 13,
+        "log": "/private/tmp/claude-501/-Users-williammacready-code-python-pyncd/d8b43bb7-b07c-4d34-bdae-de0edbd2926e/scratchpad/s2logs/t2.log",
+        "log_sha256": "3d99d060dbbae00cd2750ca9953fb9a939d768c24682842d6a187a6249428980"
+      }
+    },
+    {
+      "task": "T3",
+      "name": "03-fused-run-theorems",
+      "commit": "243b93394a93614c3de7a8e83ca17be3f06dfe52",
+      "parent": "7b0ba5dc9ea8cdfa45ef6520ce7c4b8bb00089f5",
+      "tree": "551776faa272fb8ca73d717c6f30ff1136dd14ec",
+      "patch": "papers/semantics/plan_layer_slice2_patches/03-fused-run-theorems.patch",
+      "patch_lines": 455,
+      "sha256": "86d6b69802074b175890c9d5f8673352c80800cfacf35f704773c32220d9514c",
+      "build": {
+        "target": "LeanNCD + Semantics.PlanFusionCorrectnessTest",
+        "lake_targets": [
+          "LeanNCD",
+          "Semantics.PlanFusionCorrectnessTest"
+        ],
+        "result": "Build completed successfully",
+        "jobs": 8606,
+        "warnings": 62,
+        "log": "/private/tmp/claude-501/-Users-williammacready-code-python-pyncd/d8b43bb7-b07c-4d34-bdae-de0edbd2926e/scratchpad/s2logs/t3.log",
+        "log_sha256": "5f8e3f2369fc23d330847babaeba1b76cc2b36337228983f9e57cdc57535c47a"
+      }
+    },
+    {
+      "task": "T4",
+      "name": "04-checker-fixtures",
+      "commit": "cc97e0625de00d0d7c3a9a8cbb7d3356ac658a05",
+      "parent": "243b93394a93614c3de7a8e83ca17be3f06dfe52",
+      "tree": "4a9812cf5a08dca0f2e7c45bcd5943b1c5da4e23",
+      "patch": "papers/semantics/plan_layer_slice2_patches/04-checker-fixtures.patch",
+      "patch_lines": 132,
+      "sha256": "920f93b1c9d17a8cef1451f5cddf296a9cd58ddac21ee462317e46d731a05873",
+      "build": {
+        "target": "Semantics.PlanFusionCheckerTest",
+        "lake_targets": [
+          "Semantics.PlanFusionCheckerTest"
+        ],
+        "result": "Build completed successfully",
+        "jobs": 2980,
+        "warnings": 13,
+        "log": "/private/tmp/claude-501/-Users-williammacready-code-python-pyncd/d8b43bb7-b07c-4d34-bdae-de0edbd2926e/scratchpad/s2logs/t4.log",
+        "log_sha256": "913445df8e67b270c53b674ae83df5090b0b889c980b36ec4a2067d4d36323e5"
+      }
+    }
+  ],
+  "replay": "PASS: (1) temporary-index git apply --cached per patch equals each task commit tree; (2) fresh BASE checkout, git apply --check then git apply in order, `git diff --cached --stat PROTO -- leanncd` empty",
+  "excluded_from_patches": [
+    "papers/semantics/plan_layer_slice2_artifacts/p1_notes.md",
+    "papers/semantics/plan_layer_slice2_artifacts/p2a_notes.md",
+    "papers/semantics/plan_layer_slice2_artifacts/p2b_notes.md",
+    "papers/semantics/plan_layer_slice2_artifacts/p2c_notes.md",
+    "papers/semantics/plan_layer_slice2_mutations_post.json"
+  ],
+  "forbidden_token_grep": {
+    "pattern": "\\b(sorry|admit|axiom|native_decide)\\b",
+    "hits": []
+  },
+  "mutation_manifest_check_unfiltered": {
+    "rc": 0,
+    "output": "manifest OK: 14 entries, 14 selected, every old-string unique"
+  },
+  "mutation_task_tag_audit": [
+    {
+      "label": "S2-M1 execAnns folds right-to-left",
+      "tag": "T1",
+      "file": "LeanNCD/Semantics/Plan/Step.lean",
+      "old_first_present_in": "T1",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.Fusion": "T2",
+        "Semantics.PlanFusionTest": "T2"
+      },
+      "tag_before_code": false,
+      "tag_before_target": true
+    },
+    {
+      "label": "S2-M2 failure reports the partial memory, not the pre-command memory",
+      "tag": "T2",
+      "file": "LeanNCD/Semantics/Plan/Step.lean",
+      "old_first_present_in": "T1",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.Fusion": "T2",
+        "Semantics.PlanFusionTest": "T2"
+      },
+      "tag_before_code": false,
+      "tag_before_target": false
+    },
+    {
+      "label": "S2-M3 every annotation reads the pre-command memory",
+      "tag": "T1",
+      "file": "LeanNCD/Semantics/Plan/Step.lean",
+      "old_first_present_in": "T1",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.Fusion": "T2",
+        "Semantics.PlanFusionTest": "T2"
+      },
+      "tag_before_code": false,
+      "tag_before_target": true
+    },
+    {
+      "label": "S2-M4 offset off by one",
+      "tag": "T1",
+      "file": "LeanNCD/Semantics/Plan/Syntax.lean",
+      "old_first_present_in": "T1",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.Fusion": "T2",
+        "Semantics.PlanFusionTest": "T2"
+      },
+      "tag_before_code": false,
+      "tag_before_target": true
+    },
+    {
+      "label": "S2-M5 checkPlanF is the slice-1 checker on the unexpanded plan",
+      "tag": "T3",
+      "file": "LeanNCD/Semantics/Plan/FusionCorrectness.lean",
+      "old_first_present_in": "T3",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.FusionCorrectness": "T3",
+        "Semantics.PlanFusionCorrectnessTest": "T3"
+      },
+      "tag_before_code": false,
+      "tag_before_target": false
+    },
+    {
+      "label": "S2-M6 FValid weakened to slice-1 Valid of the fused plan",
+      "tag": "T3",
+      "file": "LeanNCD/Semantics/Plan/FusionCorrectness.lean",
+      "old_first_present_in": "T3",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.FusionCorrectness": "T3",
+        "Semantics.PlanFusionCorrectnessTest": "T3"
+      },
+      "tag_before_code": false,
+      "tag_before_target": false
+    },
+    {
+      "label": "S2-M7 terminal_adequacy_F drops the FValid hypothesis",
+      "tag": "T3",
+      "file": "LeanNCD/Semantics/Plan/FusionCorrectness.lean",
+      "old_first_present_in": "T3",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.FusionCorrectness": "T3",
+        "Semantics.PlanFusionCorrectnessTest": "T3"
+      },
+      "tag_before_code": false,
+      "tag_before_target": false
+    },
+    {
+      "label": "S2-M8 terminal_adequacy_F reports the expanded command count",
+      "tag": "T3",
+      "file": "LeanNCD/Semantics/Plan/FusionCorrectness.lean",
+      "old_first_present_in": "T3",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.FusionCorrectness": "T3",
+        "Semantics.PlanFusionCorrectnessTest": "T3"
+      },
+      "tag_before_code": false,
+      "tag_before_target": false
+    },
+    {
+      "label": "S2-M9 checkPlanF skips the expansion (slice-1 checker minus singleton)",
+      "tag": "T3",
+      "file": "LeanNCD/Semantics/Plan/FusionCorrectness.lean",
+      "old_first_present_in": "T3",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.FusionCorrectness": "T3",
+        "Semantics.PlanFusionCorrectnessTest": "T3"
+      },
+      "tag_before_code": false,
+      "tag_before_target": false
+    },
+    {
+      "label": "S2-M10 Agree drops the final-memory equality of done runs",
+      "tag": "T3",
+      "file": "LeanNCD/Semantics/Plan/Fusion.lean",
+      "old_first_present_in": "T3",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.FusionCorrectness": "T3",
+        "Semantics.PlanFusionCorrectnessTest": "T3"
+      },
+      "tag_before_code": false,
+      "tag_before_target": false
+    },
+    {
+      "label": "S2-M11 Agree drops the failing-occurrence equality",
+      "tag": "T3",
+      "file": "LeanNCD/Semantics/Plan/Fusion.lean",
+      "old_first_present_in": "T3",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.FusionCorrectness": "T3",
+        "Semantics.PlanFusionCorrectnessTest": "T3"
+      },
+      "tag_before_code": false,
+      "tag_before_target": false
+    },
+    {
+      "label": "S2-M12 expand reverses annotation order within each command",
+      "tag": "T4",
+      "file": "LeanNCD/Semantics/Plan/Syntax.lean",
+      "old_first_present_in": "T1",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.Fusion": "T2",
+        "Semantics.PlanFusionCheckerTest": "T4"
+      },
+      "tag_before_code": false,
+      "tag_before_target": false
+    },
+    {
+      "label": "S2-M13 expand drops the first annotation of each fused command",
+      "tag": "T4",
+      "file": "LeanNCD/Semantics/Plan/Syntax.lean",
+      "old_first_present_in": "T1",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.Fusion": "T2",
+        "Semantics.PlanFusionCheckerTest": "T4"
+      },
+      "tag_before_code": false,
+      "tag_before_target": false
+    },
+    {
+      "label": "S2-M14 offset counts commands instead of annotations",
+      "tag": "T4",
+      "file": "LeanNCD/Semantics/Plan/Syntax.lean",
+      "old_first_present_in": "T1",
+      "targets_first_present_in": {
+        "LeanNCD.Semantics.Plan.Fusion": "T2",
+        "Semantics.PlanFusionCheckerTest": "T4"
+      },
+      "tag_before_code": false,
+      "tag_before_target": false
+    }
+  ],
+  "derived_intermediate_files": [
+    "leanncd/LeanNCD/Semantics/Plan/Fusion.lean",
+    "leanncd/LeanNCD/Semantics/Plan/Run.lean",
+    "leanncd/lakefile.toml",
+    "leanncd/LeanNCD/Semantics/Plan.lean"
+  ]
+}
