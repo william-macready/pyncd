@@ -125,6 +125,41 @@ with tempfile.TemporaryDirectory(prefix="mutation-manifest-selftest-") as tmp:
           "entry 1 (task2-missing): 'task' must be a string (got 2); "
           "quote task ids, e.g. \"task\": \"2\"\n" + fs_1, exact_error=True)
 
+    # Unreadable inputs and flags without values are diagnosed, never a Python traceback.
+    (root / "bad.bin").write_bytes(b"ok \xff\xfe bad bytes")
+    binary = dict(label="binary", task="3", file="bad.bin", old="ok", new="y", targets=["Stub.Binary"])
+    not_utf8 = "entry {i} (binary): cannot read bad.bin: not valid UTF-8\n"
+    check("non-UTF-8 file is a clean diagnostic", [binary], 125, not_utf8.format(i=0),
+          exact_error=True)
+    check("non-UTF-8 file is reported in entry order with other problems",
+          [bad_targets, binary], 125, schema_0 + not_utf8.format(i=1), exact_error=True)
+    check("non-UTF-8 file of an unselected entry is never read", [first, binary], 0, filtered,
+          "--task", "1")
+    locked = root / "locked.lean"
+    locked.write_text("needle")
+    locked.chmod(0)
+    if os.access(locked, os.R_OK):  # root can read anything: skip rather than flake
+        print("SKIP: unreadable file is a clean diagnostic (this user can read a mode-0 file)",
+              flush=True)
+    else:
+        check("unreadable file is a clean diagnostic",
+              [dict(binary, label="locked", file="locked.lean")], 125,
+              "entry 0 (locked): cannot read locked.lean: Permission denied\n", exact_error=True)
+    locked.chmod(0o644)
+
+    def run_raw(*args):
+        return subprocess.run(["bash", str(script), *args], capture_output=True, text=True)
+    for flag in ("--task", "--out"):
+        for lead in ((), ("--check",)):
+            result = run_raw(*lead, flag)
+            require(result.returncode == 1 and not result.stdout
+                    and result.stderr == f"error: {flag} requires a value\n",
+                    f"{flag} without a value after {lead}: got exit {result.returncode}\n"
+                    f"stdout: {result.stdout}stderr: {result.stderr}")
+            checks += 1
+            print(f"PASS: {flag} without a value is a clean error ({' '.join(lead) or 'alone'})",
+                  flush=True)
+
     healthy = {**second, "file": "real.lean", "old": "second needle"}
     check("unfiltered healthy output unchanged", [first, healthy], 0, unfiltered)
     check("prefix selecting all keeps output unchanged", [first, healthy], 0, unfiltered, "task")
@@ -181,7 +216,11 @@ with tempfile.TemporaryDirectory(prefix="mutation-manifest-selftest-") as tmp:
         '#!/usr/bin/env bash\nset -euo pipefail\n'
         'printf "%s\\n" "$@" >> "$MUTATION_CALLS"\n'
         'printf "%s\\n" "intended failure" > "$MUTATION_LOG"\n'
-        'echo "stub cycle: $1"\nexit 0\n')
+        'printf "\\377 stray non-UTF-8 byte in a build log\\n" >> "$MUTATION_LOG"\n'
+        'echo "stub cycle: $1"\n'
+        'printf "error: bad \\377 byte\\n"\n'
+        'printf "warn \\377\\n" >&2\n'
+        'exit 0\n')
     other_first = {**first, "label": "task1-second", "old": "second needle"}
     del other_first["expect"]
     manifest.write_text(json.dumps([first, other_first, second]))
@@ -205,8 +244,9 @@ with tempfile.TemporaryDirectory(prefix="mutation-manifest-selftest-") as tmp:
         "| task1-first | yes | yes | yes | PASS |\n"
         "| task1-second | yes | yes | n/a | PASS |\n"
         "\n2/2 cycles passed.\n")
-    banners = "".join(f"stub cycle: {e['label']}\n=== {e['label']} MANIFEST VERDICT: PASS ===\n"
-                      for e in [first, other_first])
+    # The cycle's stdout and stderr carry a stray non-UTF-8 byte: shown as U+FFFD, never a traceback.
+    banners = "".join(f"stub cycle: {e['label']}\nerror: bad \ufffd byte\nwarn \ufffd\n"
+                      f"=== {e['label']} MANIFEST VERDICT: PASS ===\n" for e in [first, other_first])
     require(result.stdout == banners + "\n" + table, f"stub run: unexpected table\n{result.stdout}")
     require(table_path.read_text() == table, "stub run: --out table differs from stdout")
     checks += 1

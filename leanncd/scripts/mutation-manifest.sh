@@ -38,7 +38,10 @@
 # Each entry is run through mutation-cycle.sh unchanged (mutate, build, restore, rebuild), with a
 # sha256 check that the file is byte-identical afterwards. An entry PASSes only if mutation-cycle.sh
 # passes, the file is restored, and every `expect` string was seen. Exits 0 iff all selected entries
-# pass; 125 on a malformed manifest or a --check failure.
+# pass; 125 on a malformed manifest or a --check failure, which includes a selected file that cannot
+# be read (not valid UTF-8, or no permission). A usage error (unknown flag, flag without its value)
+# exits 1. Each cycle's stdout/stderr and the mutated build log are decoded as UTF-8 with
+# replacement, so a stray byte in build output never aborts a run.
 
 set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
@@ -53,11 +56,14 @@ import hashlib, json, os, subprocess, sys, tempfile
 
 script_dir, *argv = sys.argv[1:]
 check_only = False; task = None; out = None
+def flag_value(flag):
+    if not argv: sys.exit(f"error: {flag} requires a value")
+    return argv.pop(0)
 while argv and argv[0].startswith("--"):
     flag = argv.pop(0)
     if flag == "--check": check_only = True
-    elif flag == "--task": task = argv.pop(0)
-    elif flag == "--out": out = argv.pop(0)
+    elif flag == "--task": task = flag_value(flag)
+    elif flag == "--out": out = flag_value(flag)
     else: sys.exit(f"error: unknown flag {flag}")
 if len(argv) < 2:
     sys.exit("usage: mutation-manifest.sh [--cd <dir>] [--check] [--task <id>] [--out <file.md>] "
@@ -113,8 +119,14 @@ for i, e in selected:
         path = os.path.join(leanncd_dir, e["file"])
         if not os.path.isfile(path): problem(i, f"{where}: no such file {e['file']}")
         else:
-            n = open(path).read().count(e["old"])
-            if n != 1: problem(i, f"{where}: old-string occurs {n} times in {e['file']} (expected 1)")
+            try:
+                n = open(path, encoding="utf-8").read().count(e["old"])
+            except UnicodeDecodeError:
+                problem(i, f"{where}: cannot read {e['file']}: not valid UTF-8")
+            except OSError as exc:
+                problem(i, f"{where}: cannot read {e['file']}: {exc.strerror or exc}")
+            else:
+                if n != 1: problem(i, f"{where}: old-string occurs {n} times in {e['file']} (expected 1)")
 fail_if_problems()
 
 if not selected:
@@ -144,9 +156,10 @@ for _, e in selected:
     cycle = subprocess.run(
         ["bash", os.path.join(script_dir, "mutation-cycle.sh"), e["label"], leanncd_dir,
          e["file"], e["old"], e["new"], *e["targets"]],
-        env={**os.environ, "MUTATION_LOG": log}, capture_output=True, text=True)
+        env={**os.environ, "MUTATION_LOG": log}, capture_output=True,
+        text=True, encoding="utf-8", errors="replace")
     sys.stdout.write(cycle.stdout); sys.stdout.write(cycle.stderr)
-    mutated_log = open(log).read(); os.unlink(log)
+    mutated_log = open(log, encoding="utf-8", errors="replace").read(); os.unlink(log)
     missing = [s for s in e.get("expect", []) if s not in mutated_log]
     restored = sha(path) == before
     ok = cycle.returncode == 0 and restored and not missing
