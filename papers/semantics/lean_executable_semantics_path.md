@@ -113,6 +113,11 @@ Exact scope, observed fixtures, mutation classifications and
 historical authoring receipts are in the separate
 [source correspondence record](source_correspondence_record.md).
 
+The bounded raw-source/admission follow-up now proves actual resolver name coverage,
+original declaration and indexed occurrence correspondence, and applicability of the
+existing semantic results. Its conditional endpoints and separate validation receipts
+are in the [raw-source/admission record](raw_source_admission_record.md).
+
 ## 2. One notation, two presentations
 
 Use the specification's notation throughout:
@@ -794,6 +799,7 @@ about runs hold over ℚ through the rational profile of Section 4.6.
 | [Sections 3.2-3.3](tensor_logic_semantics.md#32-index-variables-and-contexts): variables are identities, order is irrelevant | [`Context`](../../leanncd/LeanNCD/Semantics/Source/Context.lean), `UIDVal`, `uidCoordEquiv`, `Ref.sameUID_lookup`, `UIDTransport`, `reenumerateTransport` | A valuation is a dependent function keyed by axis identity, equivalent to ordered coordinates. Two refs with the same identity read the same value, which gives diagonals. A domain-preserving bijection of identities, or any reordering of the axis list, transports valuations and lookups. |
 | [Section 13.4](tensor_logic_semantics.md#134-scope-freshness-and-substitution): freshness and renaming | `BinderScope`, `renameBinders_noCapture`, `requestedBinders_*`, `indexPullback_id`, `indexPullback_comp`, `indexPullback_repeated` | Generated identities land outside the support; everything else is fixed. Pullback along an index map is contravariant, and a non-injective map yields equal coordinates. A requested renaming applies only when injective and fresh; otherwise every generated identity falls back to the default freshening. There is no substitution $E[i:=e]$, and admission never renames. |
 | [Section 15.1](tensor_logic_semantics.md#151-explicit-inputs-to-elaboration): resolution | `resolveRef` ([Context](../../leanncd/LeanNCD/Semantics/Source/Context.lean)), `resolveSourceSlots` ([Admission](../../leanncd/LeanNCD/Semantics/Source/Admission.lean)), `adaptSource`, `UnsupportedSource` ([Adapter](../../leanncd/LeanNCD/Semantics/Source/Adapter.lean)) | Slots resolve by identity and must match the declared extent exactly. Refusals are typed (unbound, domain, rank, and the unsupported forms above). Roles come from explicit specs, not names. |
+| Raw source to admitted occurrences | `admitRawSource_fields` ([RawCorrespondence](../../leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean)), `admitRawSource_certified` ([RawSemanticConnection](../../leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean)) | Actual admission success certifies name-keyed resolver memo coverage, ordered pinned domains, original declaration indices and specs, and pointwise raw statement/term/factor/slot links. Names, metadata, order, repeated occurrences and empty sums/products are retained; raw coordinate witnesses use the actual memo lookup at the same slot position. |
 | [Section 15.2](tensor_logic_semantics.md#152-statement-variables-and-term-local-contraction): term-local contraction | `SupportPartition`, `admitTerm`, `interpret_product`, `interpret_contract` ([Admission](../../leanncd/LeanNCD/Semantics/Source/Admission.lean), [Lowering](../../leanncd/LeanNCD/Semantics/Source/Lowering.lean)) | The contracted variables of a term are its read identities not in the output, in declaration order, with a coverage and disjointness proof. A body is a nested sum of products. |
 | [Section 14.3](tensor_logic_semantics.md#143-statement-and-program-rules): statement conditions | `admitStatement`, `admitOutput` | Conditions 1 and 3 are checked (writable target, arity). Conditions 4 and 5 hold by construction because extents match exactly. Condition 2 holds by construction for output indices, which are scoped by the output identities; its guard part is vacuous since guards have no syntax. |
 | [Sections 13.6 and 15.5](tensor_logic_semantics.md#136-core-programs): programs keep every occurrence | `AdmittedSource.program`, `program_*`, `IdentifiedSource`, `originalLocalEquiv`, `occurrenceIdentity` ([Program](../../leanncd/LeanNCD/Semantics/Source/Program.lean), [Provenance](../../leanncd/LeanNCD/Semantics/Source/Provenance.lean)) | A defined tensor collects every statement that targets it, in source order, with no merging. Original statement identities are retained and are in bijection with the program's occurrence tags. |
@@ -829,9 +835,20 @@ Several choices sharpen the specification:
 
 Proposition 19.1 is thereby proved for this fragment, including repeated slots,
 empty contractions, zero extents, factor order, multiplicity, broadcast and
-zero-factor terms, and sums of several terms. The link from the
-admitted reads and indices back to the raw source text is not proved; it holds
-by construction. `interpret_contract_reindex` ([Lowering](../../leanncd/LeanNCD/Semantics/Source/Lowering.lean))
+zero-factor terms, and sums of several terms. For actual successful
+`admitRawSource`, `admitRawSource_fields` and `admitRawSource_certified` now prove
+the structural link from the original raw AST's declarations and indexed
+occurrences to admitted reads and outputs. `CertifiedRawTerm.semantics`,
+`CertifiedRawStatement.semantics`, and `CertifiedRawSource.collect` / `.models`
+connect these witnesses to the existing body, footprint, fiber and Program results,
+not to a second independently specified raw denotation.
+`admitRawSource_reached` requires an `ActualValidatedResult` and its actual
+complete-outcome equality; its all-defined-coordinate equations, input agreement
+and uniqueness are relative to `result.input`, not automatically the admitted
+source's stored input buffers. `admitRawSource_reached_denotation` uses the
+existing output-restricted denotation API. The parsed and asymmetric donors run
+with `sourceInput`, but their kernel theorems still explicitly require completion.
+`interpret_contract_reindex` ([Lowering](../../leanncd/LeanNCD/Semantics/Source/Lowering.lean))
 also proves equality of actual nested reduction interpretations under a
 coordinate equivalence, with the read environment transported along it.
 This includes changing binder order while keeping the ordered read product;
@@ -927,6 +944,10 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   interpretation or footprints are invariant under renaming.
 - **No general elaboration.** Everything outside the fragment is refused, and
   the Adapter drops the linear bias flag, element types as semantics, and names.
+- **No independent raw denotation or parser correctness.** The raw AST certificate
+  proves successful-admission correspondence and existing-semantic applicability,
+  not string parsing, global UID mint injectivity, input-buffer certification or
+  unconditional successful execution.
 - **No proof for the oracle or the comparison.** There is no theorem about
   `compareSource`, the numerical profile, or the native legs, and no backend
   refinement result. No Part V result is formalized.
@@ -1006,7 +1027,8 @@ marked arrays and slices, affine writes, guards and Iverson factors, nonlinear
 primitives and their before-versus-after-collection boundary, unpinned dimension
 inference, general expression substitution with renaming applied by admission,
 and rank synthesis, plus schedule construction for programs outside the fragment.
-The link from admitted reads back to raw source text remains open.
+The bounded raw-AST link is now certified from actual admission success;
+parser/string correctness and an independently specified raw denotation remain open.
 
 Differential debugging beyond the bounded profile needs a stated criterion for
 non-integral and f32 numerics, native hooks for causal localization, comparison

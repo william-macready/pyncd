@@ -16,7 +16,7 @@ Does not own: evaluation semantics (`../Eval/`) or the acset bridge (`../Bridge/
 | AST types (`Stmt`, `LHSSlot`, `RHSExpr`, `Nonlin`, `IdxExpr`, `Decl`), `TensorElementType`, declaration→storage-kind rules (`storageConstraintOfDecl`, `storageConstraintOfName?`, `buildDeclEnv`), shared slot helpers (`LHSSlot.toReadIdx`, `producerSlots`, `slotsBecomeScatter`, `LHSSlot.outExtent`) | `Ast.lean` |
 | Routed-DAG target format (`ThreadedComposed`/`BrBaseP`/`Wire`/`StMatP`) | `Target.lean` |
 | Pipeline chain + `tl!{...}` macro | `Compile.lean` |
-| Generic per-node axis traversal (canonical UID-remap primitive) | `TraverseAxes.lean`; `Traverse.lean` holds thin `mapUID` instantiations |
+| Generic per-node axis traversal (canonical UID-remap primitive) | `TraverseAxes.lean`; `Traverse.lean` holds thin `mapUID` instantiations and reusable ordered-list/metadata mapping lemmas |
 
 ### `DSL/Pipeline/`
 | Looking for... | Go to |
@@ -42,6 +42,7 @@ Cross-layer imports, each deliberate:
 |---|---|---|
 | `tl!{ ... }` macro | any file embedding a TL program | any pipeline-phase change ripples here |
 | `TLProgram.compile`/`.compileToScheduled` | `tl!` macro; `Eval/` | central pipeline-order contract |
+| `TLProgram.axisSpecs`/`.axisNames`, `assignUIDs_mapUID_covered`, `assignUIDs_eq_inline` (`Structural.lean`) | raw-source correspondence | actual resolver memo covers occurring names; UID-only mapping preserves metadata. Helper extraction preserves the entire FreshM computation, including errors and final state; no global mint freshness/injectivity theorem is claimed |
 | `ThreadedComposed`, `BrBaseP`, `Wire`, `StMatP` (`Target.lean`) | `Bridge/*`, `Eval/*` | stable wire format to downstream layers — treat as an ABI |
 | `route`/`routeCore`/`buildStep` (`Lowering.lean`) | `Bridge/Agreement.lean`, `RouteSpec.lean` | a signature change invalidates the B.1–B.7 lemmas |
 

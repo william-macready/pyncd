@@ -5,3 +5,4 @@ import Semantics.SourceAdmissionRolesTest
 import Semantics.SourceAdmissionInputsTest
 import Semantics.SourceAdmissionRefusalsTest
 import Semantics.SourceAdmissionAcceptanceTest
+import Semantics.SourceRawCorrespondenceTest
