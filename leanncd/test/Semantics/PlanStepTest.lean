@@ -189,4 +189,16 @@ def emptyCmd : taggedOut.Plan := unitPlan [[.initZero block], [], [.acc group], 
   (stepRow (plan.stepCommand ops 1 initMem [.initZero []]), outcomeRow (plan.runPlan ops (Start η0)))
   (("ok", [some 0, some 0, some 0]), ("done", 3, none, [some 0, some 14, some 0]))
 
+/-! ### `stepPlan` at and past the end of a three-command plan -/
+
+/-- Memory before `plan`'s publication (after the init and the accumulate). -/
+def preMem : Memory Carrier declarations :=
+  match plan.stepPlan ops 1 initMem with | .ok M => M | _ => initMem
+
+-- Past the end is stuck even over a fully-run memory; pc = m - 1 is a real step.
+#eval check "step-plan-past-end"
+  (stepRow (plan.stepPlan ops 2 preMem), stepRow (plan.stepPlan ops 3 (finalMemory taggedRun)),
+    stepRow (plan.stepPlan ops 4 (finalMemory taggedRun)))
+  (("ok", [some 0, some 14, some 0]), ("stuck", []), ("stuck", []))
+
 end LeanNCD.Semantics.PlanFixtures
