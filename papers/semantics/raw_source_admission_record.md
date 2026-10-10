@@ -449,5 +449,29 @@ the added Adapter/Admission proofs emit non-fatal Lean linter warnings (unused
 simp arguments, an unnecessary tactic sequence and a local variable naming
 warning). No new theorem depends on `sorryAx`.
 
-Two independent whole-branch review verdicts and local integration disposition
-remain pending until their observed receipts are appended below.
+### Whole-branch review gate
+
+Two independent whole-branch reviews of execution base `9f333b91` through
+immutable tip `270b517d` are **clean within their stated scopes**:
+[soundness](raw_source_admission_artifacts/execution-whole-branch-soundness.md)
+and [runtime/fidelity](raw_source_admission_artifacts/execution-whole-branch-fidelity.md).
+The soundness review followed the complete actual-success premise chain and
+immediate semantic dependencies. The fidelity review independently reconstructed
+four patches in memory, verified all ten hashes and the exact stage projections,
+and checked every execution-final cycle's expected error/restoration evidence.
+Neither review reran builds or mutations or claimed independent runtime evidence.
+Both reported no known dispatch-budget breach; exact SDK telemetry is unavailable.
+
+The soundness review records an important evidence limit: the asymmetric donor
+has an unused zero-extent source axis, so its full-source UIDVal read/output
+specializations are vacuous. They alone do not prove non-vacuous coordinate
+evaluation. The generic `RawReadSlots.coordinate` / `RawOutputSlots.coordinate`
+APIs can instead use localized term or output Slots without the unused axis;
+that applicability was read, not independently instantiated in a scratch proof.
+This is not a load-bearing theorem defect and no broader claim is made here.
+
+After review, the controller confirmed the reviewed implementation and runtime
+documentation unchanged, then reran the full default build: exit 0, 8,766 jobs.
+Only review receipts and this close-out have been added since the immutable tip.
+All source/build/mutation/review gates are satisfied. Local integration is next;
+no remote push is authorized or performed.
