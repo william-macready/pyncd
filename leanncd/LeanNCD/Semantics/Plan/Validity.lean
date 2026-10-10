@@ -198,6 +198,7 @@ theorem checkPlan_sound (h : π.checkPlan = true) : π.Valid := by
 
 end Check
 
+#print axioms Valid.stepOK
 #print axioms mem_occList
 #print axioms mem_addrList
 #print axioms checkPlan_sound
