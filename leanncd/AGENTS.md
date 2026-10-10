@@ -87,8 +87,8 @@ checks without building and reports when entries outside the selection were not 
 so post-code manifests can be checked task by task before later tasks' code exists. Validate a
 manifest at authoring time with `--check` WITHOUT filters, since a filtered check leaves the other
 entries unvalidated. Schema, duplicate-label and selected-file problems are reported in one pass,
-in entry order. An empty selection is an error. Optional `task` fields must be strings and match `--task` exactly; an unknown task ID
-reports the manifest's available IDs (or none). The script's header documents the format.
+in entry order. An empty selection is an error. Optional `task` fields must be strings not starting with `--` and match `--task` exactly;
+an unknown task ID reports the manifest's available IDs (or none). The script's header documents the format.
 
 The controlling session should invoke mutation cycles directly rather than delegating the shell
 command to a subagent: subagent permission scope is loaded from the creator session's worktree,

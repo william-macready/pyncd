@@ -26,7 +26,7 @@
 #
 # Manifest: a JSON array of objects —
 #   { "label":   "M1 (payload bits constant 0)",          required, unique
-#     "task":    "2",                                      optional; must be a string if present
+#     "task":    "2",                                      optional; a string not starting with "--"
 #     "file":    "LeanNCD/Eval/Plan/Dense.lean",           required, relative to <leanncd-dir>
 #     "old":     "exact text, may span lines",             required, must occur exactly once
 #     "new":     "replacement text",                       required
@@ -39,14 +39,20 @@
 # sha256 check that the file is byte-identical afterwards. An entry PASSes only if mutation-cycle.sh
 # passes, the file is restored, and every `expect` string was seen. Exits 0 iff all selected entries
 # pass; 125 on a malformed manifest or a --check failure, which includes a selected file that cannot
-# be read (not valid UTF-8, or no permission). A usage error (unknown flag, flag without its value)
-# exits 1. Each cycle's stdout/stderr and the mutated build log are decoded as UTF-8 with
-# replacement, so a stray byte in build output never aborts a run.
+# be read (not valid UTF-8, or no permission), and when --out cannot be written. An obviously
+# unwritable --out (a directory, a missing or non-directory parent, a read-only directory or file)
+# is refused just before the first cycle runs, after every manifest and selection diagnostic and
+# never under --check; any other write failure is reported at the end, after the table is shown.
+# A usage error (unknown flag, a flag without its value or followed by another flag, an empty --out,
+# --cd without a value) exits 1. Task ids may not start with "--", which --task could not select.
+# Each cycle's stdout/stderr and the mutated build log are decoded as UTF-8 with replacement, so a
+# stray byte in build output never aborts a run.
 
 set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 
 if [[ "${1:-}" == "--cd" ]]; then
+  if [[ $# -lt 2 ]]; then echo "error: --cd requires a value" >&2; exit 1; fi
   cd -- "$2"
   shift 2
 fi
@@ -58,12 +64,15 @@ script_dir, *argv = sys.argv[1:]
 check_only = False; task = None; out = None
 def flag_value(flag):
     if not argv: sys.exit(f"error: {flag} requires a value")
+    if argv[0].startswith("--"): sys.exit(f"error: {flag} requires a value, not the flag {argv[0]}")
     return argv.pop(0)
 while argv and argv[0].startswith("--"):
     flag = argv.pop(0)
     if flag == "--check": check_only = True
     elif flag == "--task": task = flag_value(flag)
-    elif flag == "--out": out = flag_value(flag)
+    elif flag == "--out":
+        out = flag_value(flag)
+        if out == "": sys.exit("error: --out requires a non-empty path")
     else: sys.exit(f"error: unknown flag {flag}")
 if len(argv) < 2:
     sys.exit("usage: mutation-manifest.sh [--cd <dir>] [--check] [--task <id>] [--out <file.md>] "
@@ -96,6 +105,8 @@ for i, e in enumerate(entries):
     if "task" in e and not isinstance(e["task"], str):
         problem(i, f"{where}: 'task' must be a string (got {json.dumps(e['task'])}); "
                    "quote task ids, e.g. \"task\": \"2\"")
+    elif isinstance(e.get("task"), str) and e["task"].startswith("--"):
+        problem(i, f"{where}: 'task' must not start with '--' (--task could not select it)")
     if not (isinstance(e.get("targets"), list) and e["targets"] and all(isinstance(t, str) for t in e["targets"])):
         problem(i, f"{where}: 'targets' must be a non-empty list of strings")
     if "expect" in e and not (isinstance(e["expect"], list) and all(isinstance(s, str) for s in e["expect"])):
@@ -146,6 +157,17 @@ if check_only:
               "every selected old-string unique")
     sys.exit(0)
 
+# Judge --out only now: every manifest, selection and --check diagnostic has priority, and it must
+# still happen before any cycle runs, not after a long run when the table cannot be written.
+if out is not None:
+    out_dir = os.path.dirname(os.path.abspath(out))
+    if os.path.isdir(out): die(f"cannot write --out {out}: it is a directory")
+    if os.path.exists(out_dir) and not os.path.isdir(out_dir):
+        die(f"cannot write --out {out}: {out_dir} is not a directory")
+    if not os.path.isdir(out_dir): die(f"cannot write --out {out}: directory {out_dir} does not exist")
+    if not os.access(out_dir, os.W_OK): die(f"cannot write --out {out}: directory {out_dir} is not writable")
+    if os.path.exists(out) and not os.access(out, os.W_OK): die(f"cannot write --out {out}: file is not writable")
+
 def sha(path): return hashlib.sha256(open(path, "rb").read()).hexdigest()
 
 rows = []
@@ -178,6 +200,11 @@ passed = sum(ok for *_, ok in rows)
 table.append(f"\n{passed}/{len(rows)} cycles passed.")
 print("\n" + "\n".join(table))
 if out:
-    open(out, "w").write("\n".join(table) + "\n")
+    try:
+        open(out, "w").write("\n".join(table) + "\n")
+    except OSError as exc:
+        # The table is already on stdout; do not let a late write failure look like a test result.
+        print(f"error: cannot write --out {out}: {exc.strerror or exc}", file=sys.stderr)
+        sys.exit(125)
 sys.exit(0 if passed == len(rows) else 1)
 PY

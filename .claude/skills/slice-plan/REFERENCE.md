@@ -339,8 +339,8 @@ post-code does not block an earlier task. The two have different users: the plan
 prototype already contains all post-code, runs the unfiltered `--check` (a filtered one leaves the
 other entries' files and old-strings unvalidated), while an executor who has applied only the early
 tasks runs the filtered one. Schema, duplicate-label and selected-file problems are reported in one
-pass, in entry order. Optional `task` fields must be strings; `--task` matches them exactly and
-reports available task IDs when an unknown ID is supplied. An empty selection is an error. Each
+pass, in entry order. Optional `task` fields must be strings that do not start with `--`; `--task` matches them
+exactly and reports available task IDs when an unknown ID is supplied. An empty selection is an error. Each
 task then says `mutation-manifest.sh --task N`, and `--out` gives the close-out its results table.
 
 **Keep the live plan separate from the record.** F32-A's and F32-B's plans are ~2,150 lines each.
