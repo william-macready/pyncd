@@ -1,0 +1,191 @@
+{
+  "phase": "PLAN_READINESS_FINAL_ENDPOINT_FIXTURES_ONLY",
+  "status": "all_ten_fixture_families_exercised; targeted_build_green; controller_mutation_cycles_pending; not_landing",
+  "base": "3d721f96",
+  "worktree": "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4",
+  "changed_paths_this_dispatch": [
+    "leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+    "papers/semantics/raw_source_admission_artifacts/endpoint_mutations_candidates.json",
+    "papers/semantics/raw_source_admission_artifacts/endpoint_fixtures.json",
+    "papers/semantics/raw_source_admission_artifacts/endpoint-build.log"
+  ],
+  "implementation_bug_exposed": null,
+  "preserved": [
+    "Installed seed+A+B+C sources and structural fixtures",
+    "structural_mutations_candidates.json (eight candidates, no cycles run)",
+    "Existing SourceAdmissionAcceptanceTest acceptance matrix",
+    "Main plan/record, package/patch artifacts, and all unrelated initial changes"
+  ],
+  "error_order": {
+    "fixture": "SourceRawCorrespondenceTest.ExactErrorOrder",
+    "original_fixture": "SourceRawCorrespondenceTest.refusal / ErrorOrder",
+    "original": "One statement at index0: Missing[i], empty sum body, max aggregation, pointwise relu. Decl/spec/input donor is asymmetric, itself cloned from SourceAdmissionFixtures.snapshot.",
+    "nearest_donors": [
+      "refusalSum changes only max to sum",
+      "refusalIdentity changes only relu to identity in refusalSum",
+      "refusalAccepted changes only the Missing LHS name to legal Y in refusalIdentity"
+    ],
+    "observed": [
+      {
+        "donor": "refusal",
+        "stage": "statement",
+        "origin": {"side": "output", "declaration": null, "statement": 0, "term": null, "factor": null, "slot": null},
+        "cause_repr": "LeanNCD.Semantics.Source.SourceCause.unsupported (LeanNCD.Semantics.Source.UnsupportedSource.nonSum)"
+      },
+      {
+        "donor": "refusalSum",
+        "stage": "statement",
+        "origin": {"side": "output", "declaration": null, "statement": 0, "term": null, "factor": null, "slot": null},
+        "cause_repr": "LeanNCD.Semantics.Source.SourceCause.unsupported (LeanNCD.Semantics.Source.UnsupportedSource.nonIdentity)"
+      },
+      {
+        "donor": "refusalIdentity",
+        "stage": "output",
+        "origin": {"side": "output", "declaration": null, "statement": 0, "term": null, "factor": null, "slot": null},
+        "cause_repr": "LeanNCD.Semantics.Source.SourceCause.undeclaredTensor \"Missing\""
+      }
+    ],
+    "accepted_neighbor": [[0, "Y", 5, [1], []]],
+    "checks": "Original ErrorOrder retained. ExactErrorOrder pins all three observed diagnostics, including every absent origin field. The legal neighbor is guarded as an actual admission success.",
+    "observed_exact_error_order": true,
+    "candidates": ["E1", "E2", "E5"],
+    "mutation_nonclaim": "No mutation executed. Guard deletion may fail in admitStatement_fields before ErrorOrder is compiled. Such a cycle is proof coverage only; E5 is a test-donor fixture contrast, not an implementation-runtime kill."
+  },
+  "output_target_names": {
+    "fixture": "SourceRawCorrespondenceTest.Endpoint.OutputTargetNames",
+    "donor": "Structural.interleaved (cloned from SourceAdmissionFixtures.snapshot)",
+    "construction": "Append distinct tensor Z(i) at original declaration9 and explicit writable output spec(9,output,[2]); retain Y original declaration6 with explicit output spec(6,output,[2]). Take original statement0. Both neighbors share declarations/specs/inputs/slots/RHS and differ only in LHS name Y versus Z.",
+    "view_columns": ["original_statement", "tensor_table_position", "original_declaration", "original_name", "role", "ordered_uid_extent_pairs", "origin"],
+    "observed": [
+      [0, 2, 6, "Y", "output", [[1, 2]], {"side": "output", "declaration": 6, "statement": 0, "term": null, "factor": null, "slot": null}],
+      [0, 5, 9, "Z", "output", [[1, 2]], {"side": "output", "declaration": 9, "statement": 0, "term": null, "factor": null, "slot": null}]
+    ],
+    "raw_declaration_lookups": {"6": ["tensor", "Y", [["i", 7, "nat"]]], "9": ["tensor", "Z", [["i", 7, "nat"]]]},
+    "both_neighbors_actually_accepted": true,
+    "observed_output_target_names": true,
+    "new_output_shape_guard": false,
+    "candidates": ["E3"],
+    "mutation_nonclaim": "No mutation executed. Constant Z lookup may fail StatementFields' exact-name proof before either fixture is reached; do not call that a fixture kill."
+  },
+  "certified_semantics": {
+    "existing_C_proof_body_verification": [
+      "donor_read_connection obtains admitRawSource_certified, then certified statements/terms and CertifiedRawTerm.read_projection, retaining original raw indexed factor lookup, raw name/UID binding and coordinate equality",
+      "donor_output_connection uses CertifiedRawStatement.output_projection with original raw output slots and name-keyed UID witnesses",
+      "donor_body_connection uses CertifiedRawStatement.semantics; connects semiring body interpretation/footprint and global fibers, not a raw independent interpreter"
+    ],
+    "new_named_kernel_fixtures": [
+      "SourceRawCorrespondenceTest.Endpoint.parsed_certified_execution",
+      "SourceRawCorrespondenceTest.Endpoint.asymmetric_certified_execution"
+    ],
+    "exported_contract": "SourceRawCorrespondenceTest.Endpoint.CertifiedExecution",
+    "actual_result_definitions": [
+      "Endpoint.parsedRun : ActualValidatedResult parsedAdmitted",
+      "Endpoint.asymmetricRun : ActualValidatedResult asymmetricAdmitted"
+    ],
+    "runner_identity": "Each result is the canonical validated run from sourceInput and Program.Executor.run; runSource_eq proves runSource admitted = .ok that exact result. No injected outcome, new runner, or forged execution witness.",
+    "specialization": "The named kernel theorems fix raw program, specs, inputs, admitted source AND actual rational result. Only c, Complete c and the actual result's complete-outcome equality remain premises. Those outcomes are separately observed complete and guarded on the same fixed results.",
+    "kernel_completion_nonclaim": "Unconditional kernel proofs that the concrete runs complete are NOT claimed. Two exhaustive cbv completion attempts stalled/timed out; they were removed, not replaced with native_decide, sorry, a fabricated complete witness, or an independent raw denotation. This is the requested reached-result specialization with an observed explicit complete premise.",
+    "connected_contracts": [
+      "runSource admitted = .ok result",
+      "Certified raw original factor/read slot identity at every indexed statement/term/factor and output coordinate identity at every output slot",
+      "Rational semiring body interpretation, read footprint and statement global fiber",
+      "CertifiedRawSource and original RawTensorEntryFields for every defined tensor",
+      "Actual complete result GlobalModels, finalStore equals globalFiber on every defined tensor, and uniqueness",
+      "CertifiedRawSource.collect connects program collection to globalFiber for arbitrary rational stores",
+      "CertifiedRawSource.models connects Program.Models and GlobalModels",
+      "admitRawSource_reached_denotation connects validated complete checked output denotation to globalFiber; not an independent raw denotation"
+    ],
+    "parsed_observation": {
+      "kind": "complete",
+      "events": 4,
+      "tensors": [
+        {"table_position": 0, "original_declaration": 1, "name": "X", "shape": [2], "values": [3, 5]},
+        {"table_position": 1, "original_declaration": 2, "name": "Y", "shape": [2], "values": [3, 5]}
+      ],
+      "all_listed_cells_some": true,
+      "CertifiedParsedSemantics": true
+    },
+    "asymmetric_observation": {
+      "kind": "complete",
+      "events": 12,
+      "tensors": [
+        {"table_position": 0, "original_declaration": 3, "name": "A", "shape": [2, 3], "values": [1, 2, 3, 4, 5, 6]},
+        {"table_position": 1, "original_declaration": 4, "name": "B", "shape": [2], "values": [10, 20]},
+        {"table_position": 2, "original_declaration": 5, "name": "Y", "shape": [2], "values": [607, 6016]},
+        {"table_position": 3, "original_declaration": 6, "name": "Empty", "shape": [0], "values": []},
+        {"table_position": 4, "original_declaration": 7, "name": "Diagonal", "shape": [2, 2], "values": [1, 0, 0, 1]}
+      ],
+      "all_listed_cells_some": true,
+      "CertifiedAsymmetricSemantics": true,
+      "occurrence_cases_retained": ["B,A,B ordered factors", "second A term", "empty product", "repeated diagonal output slots", "duplicate Y definition with empty sum"],
+      "numeric_evidence": "Actual rational-reference execution using SourceProgramFixtures observers. No native/reference comparison or invented numeric oracle; order is pinned by indexed certificate/list fixtures, not commutative numeric equality."
+    },
+    "candidates": ["E4"]
+  },
+  "ten_family_inventory": [
+    {"family": "DeclLocatorInterleaved", "fixture": "Structural.DeclarationIdentity", "observed": true, "receipt": "structural_fixtures.json"},
+    {"family": "DeclarationForms", "fixture": "Structural.DeclarationForms", "observed": true, "receipt": "structural_fixtures.json"},
+    {"family": "EqualExtentAxes", "fixture": "Structural.DeclarationIdentity", "observed": true, "receipt": "structural_fixtures.json"},
+    {"family": "ResolverMetadataFidelity", "fixture": "Structural.ResolverMetadataFidelity", "observed": true, "receipt": "structural_fixtures.json"},
+    {"family": "ErrorOrder", "fixture": "ExactErrorOrder plus original ErrorOrder", "observed": true, "receipt": "endpoint_fixtures.json"},
+    {"family": "OutputTargetNames", "fixture": "Endpoint.OutputTargetNames", "observed": true, "receipt": "endpoint_fixtures.json"},
+    {"family": "RawIndexedOccurrences", "fixture": "Structural.IndexedOccurrences", "observed": true, "receipt": "structural_fixtures.json"},
+    {"family": "RawSentinelNames", "fixture": "Structural.RawSentinelNames", "observed": true, "receipt": "structural_fixtures.json"},
+    {"family": "CertifiedParsedSemantics", "fixture": "Endpoint.CertifiedParsedSemantics and parsed_certified_execution", "observed": true, "receipt": "endpoint_fixtures.json"},
+    {"family": "CertifiedAsymmetricSemantics", "fixture": "Endpoint.CertifiedAsymmetricSemantics and asymmetric_certified_execution", "observed": true, "receipt": "endpoint_fixtures.json"}
+  ],
+  "validation": {
+    "command": "bash /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd Semantics.SourceRawCorrespondenceTest Semantics.SourceAdmissionAcceptanceTest",
+    "exit_code": 0,
+    "log": "endpoint-build.log",
+    "result": "Build completed successfully (8524 jobs). These are the dependency graph's jobs for the two explicit targets, mostly replayed; no full build command was run.",
+    "acceptance_test": "Existing compiled SourceAdmissionAcceptanceTest replayed green; no new acceptance count claimed.",
+    "type_verification": "#check of both exported named fixture theorems succeeded; actual complete-outcome premises appear in the emitted types.",
+    "axiom_verification": "Both new fixture theorems: [propext, Classical.choice, Quot.sound]. All existing RawSemanticConnection and donor projection/body/output audits replayed with their standard axioms.",
+    "sorry_axiom": false,
+    "failed_attempts_before_final_pass": [
+      "Initial targeted build: parsed Option.get proof transport stalled cbv; asymmetric exhaustive completion reduction exceeded 4000000 heartbeats; malformed dependent existential syntax and rewritten equality branch were fixed.",
+      "Second targeted build: parsed exhaustive completion reduction exceeded 2000000 heartbeats. Replaced unconditional reduction with an observed guarded complete outcome and a kernel theorem explicitly consuming its equality."
+    ],
+    "validation_scope_nonclaim": "No whole-branch review, full build, package emission, or mutation cycle."
+  },
+  "mutation_candidates": {
+    "manifest": "endpoint_mutations_candidates.json",
+    "count": 5,
+    "unique_old_match_counts_observed": {"E1": 1, "E2": 1, "E3": 1, "E4": 1, "E5": 1},
+    "validation": "Read-only JSON load and exact textual old-string counts in installed files; no replacement applied.",
+    "status": "pending_controller_cycle_observation",
+    "expect_status": "Predicted diagnostic file prefixes only; controller must record actual first failure/diagnostics, restoration and restored pass.",
+    "observed_mutation_kills": 0,
+    "classification": {"E1": "likely proof kill", "E2": "likely proof kill", "E3": "likely exact-name proof kill", "E4": "semantic-link proof kill candidate", "E5": "test-donor fixture contrast"},
+    "semantic_candidate_meaning": "E4 calls the same well-typed raw coordinate witness API at q.rev (same Fin bound), but CertifiedRawTerm.read_projection must still prove slot q. Distinct two-slot asymmetric reads distinguish the wrong witness; no syntactic type change or numeric self-equality."
+  },
+  "remaining": {
+    "missing_fixture_families": [],
+    "controller_only": [
+      "Run existing, post, eight structural and five endpoint mutation candidates after all tests are ready; record exact first failure honestly as proof kill or fixture contrast/kill.",
+      "Validate the pending expect observations against actual cycle logs; endpoint prefixes are not observed cycle diagnostics.",
+      "Perform any later plan/record, full-build/review, package or landing gates separately."
+    ],
+    "nonclaims": ["Independent raw denotation", "Unconditional concrete kernel completion", "Native/reference comparison", "Mutation cycles already passed", "Final plan/package readiness"]
+  },
+  "budget": {
+    "limit": "Approximately 40 assistant turns and 250k peak context for this final fixture continuation.",
+    "observed_snapshot": "SDK events.jsonl counted 23 assistant.turn_start events from the final-fixture user request through the successful targeted build and log checks, before receipt persistence.",
+    "context_accounting": "No usage event types exist in this SDK event segment. Exact peak/cumulative tokens are unavailable; no measured token total is claimed.",
+    "known_breach": false,
+    "reading_windows": "File content inspected in bounded 40-60-line windows or shorter EOF windows; no whole SourceRawCorrespondenceTest read."
+  },
+  "workspace_actions": {
+    "source_logic_changed": false,
+    "staged": false,
+    "committed": false,
+    "restored": false,
+    "spawned": false,
+    "merged": false,
+    "mutation_cycles_run": false,
+    "full_build_run": false,
+    "plan_or_record_changed": false,
+    "package_emitted": false
+  }
+}

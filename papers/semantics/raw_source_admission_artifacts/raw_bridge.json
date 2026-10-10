@@ -1,0 +1,158 @@
+{
+  "phase": "B",
+  "status": "verified_raw_pointwise_certificate",
+  "scope": "Plan-authoring prototype continuation only; source remains installed and uncommitted. Not landing and not whole-plan execution readiness.",
+  "base": "3d721f96",
+  "endpoint": {
+    "symbol": "admitRawSource_fields@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+    "premise": "admitRawSource raw specs inputs = .ok admitted",
+    "conclusion": "RawAdmissionFields raw specs inputs admitted",
+    "contract": "Existential actual resolver snapshot and actual covering name memo, with a RawCorrespondence certificate containing original-raw ordered declarations and indexed statements, terms, factors, and slots. No premise assumes correspondence or accepts an arbitrary forged admitted record."
+  },
+  "contracts": [
+    {
+      "symbol": "RawCorrespondence@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Compositional Prop parameterized by the witness snapshot and memo. Stores actual resolveSource/admitSource successes, coverage of all raw.axisNames, exact mapped declaration/statement lists, unchanged specs/inputs, ordered raw pinned-axis/table selections, and Forall2 RawStatementFields over raw.stmts.zipIdx and admitted.statements."
+    },
+    {
+      "symbol": "RawCorrespondence.tensor@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Every table tensor has an ORIGINAL raw.decls lookup at its declaration ID and an actual snapshot.resolved.decls lookup at that same ID equal to the mapped original declaration. RawTensorEntryFields supplies supported raw and mapped classification with matching name/type, ordered raw declaration leaves, the same memo mapping, context axes, original spec lookup/ID, role, and exact extent shape."
+    },
+    {
+      "symbol": "RawDeclaredAxisSlots.slot@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "At each declaration-axis position, retrieves the original raw AxisSpec and its RawAxisFields certificate for the corresponding admitted axis UID, plus membership of that exact axis in the admitted context. The enclosing declaration certificate preserves ordered extents and spec shape."
+    },
+    {
+      "symbol": "RawCorrespondence.pinned@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Every admitted context axis comes from a raw pinned axis declaration with that exact extent and the covering-memo UID. RawCorrespondence.axes additionally preserves the complete ordered declaration selection, including skipped declarations."
+    },
+    {
+      "symbol": "RawCorrespondence.statement@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "For every admitted statement index, retrieves raw.stmts at the identical index and RawStatementFields. Raw assignment name, sum aggregation, identity nonlinearity, original ordinal, output table lookup/name, bare output slots, exact output declaration origin, and ordered raw terms are exposed directly."
+    },
+    {
+      "symbol": "RawStatementFields.term@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Retrieves the original assignment RHS and raw product at the admitted term index, with RawTermFields using the exact statement/term origin."
+    },
+    {
+      "symbol": "RawTermFields.factor@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Retrieves the original raw factor at each checked source-read index, directly paired with RawCheckedFactorFields and its exact factor origin. The relation requires a raw read constructor; iverson and unary constructors cannot masquerade as reads."
+    },
+    {
+      "symbol": "RawCorrespondence.read@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Combines a raw checked-factor certificate with the original and mapped tensor declaration, raw read name, ordered/repeated raw bare indices paired with checked typed slot UIDs, and exact declaration-linked origin."
+    },
+    {
+      "symbol": "RawCorrespondence.output@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Combines a raw statement certificate with the original and mapped output declaration, raw output name and ordinal, both local and source typed output slot UID lists, and exact output origin."
+    },
+    {
+      "symbol": "RawCheckedFactorFields.slots@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Exposes RawReadSlots against checked read.slots.uids, using the existing CheckedRead.linked proof, not a second slot resolver."
+    },
+    {
+      "symbol": "RawStatementFields.output_slots@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Exposes RawOutputSlots against output.slots.uids and output.sourceSlots.uids through existing linkage proofs."
+    },
+    {
+      "symbol": "RawReadSlots.slot@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "At each checked UID position, retrieves the original bare raw index axis and its RawAxisFields certificate. Repetition and list order are retained."
+    },
+    {
+      "symbol": "RawOutputSlots.slot@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "At each output UID position, retrieves the original bare raw free axis and its RawAxisFields certificate. Repetition and list order are retained."
+    },
+    {
+      "symbol": "RawAxisFields@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Proves original leaf membership in raw.axisSpecs, its name membership in raw.axisNames, a defined lookup memo[a.name]? = some uid, and exact AxisSpec.mapUID replacement preserving name/kind. Different names, including leaves initially carrying UID0, use their respective defined name lookups rather than the input UID. Membership is derived down the actual ConstL traverseAxes collector through raw declaration/statement/term/factor/slot membership, not asserted."
+    },
+    {
+      "symbol": "RawAxisFields.metadata@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Projects exact mapped UID and preserved raw name/kind."
+    },
+    {
+      "symbol": "RawAxisFields.same_name@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Same-name occurring leaves map identically regardless of their original UIDs or kinds. No global mint injectivity theorem is claimed."
+    },
+    {
+      "symbol": "RawTermFields.factor_count@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Exact raw factor/checked-read length; zero-length products are covered by the same Forall2 proof."
+    },
+    {
+      "symbol": "RawStatementFields.term_count@leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Exact raw RHS term/admitted-term length; zero-length sums are covered by the same Forall2 proof."
+    }
+  ],
+  "reusable_structural_lemmas": [
+    "traverseAxes_list_id@leanncd/LeanNCD/DSL/Traverse.lean",
+    "traverseAxes_list_collect@leanncd/LeanNCD/DSL/Traverse.lean",
+    "ProdTerm.mapUID_factors@leanncd/LeanNCD/DSL/Traverse.lean",
+    "RHSExpr.mapUID_terms@leanncd/LeanNCD/DSL/Traverse.lean",
+    "TLProgram.mapUID_lists@leanncd/LeanNCD/DSL/Traverse.lean"
+  ],
+  "proof_method": {
+    "resolver": "Reuses resolveSource_mapUID_covered and AxisSpec.mapUID_sourceUIDRelabel; does not re-audit or reimplement A.",
+    "declarations": "Reuses adaptSource_declarations and OrderedSelection.member; transports actual ordered mapped declaration selections to original raw declarations.",
+    "admission": "Reuses admitSource_fields, StatementFields, TermFields, FactorFields, BareReadSlots, and BareOutputSlots, then inverts the actual mapUID constructors and lists.",
+    "list_helpers": "Uses List.zipIdx_map, List.forall₂_map_left_iff, List.forall₂_and_left, List.Forall₂.get, List.getElem_zipIdx, and original indexed membership helpers. No duplicate mapM-success lemma.",
+    "traversal": "The private leaves abbreviation instantiates existing traverseAxes; it is not a parallel recursive collector, mapper, or interpreter.",
+    "algorithms": "B adds definitions/theorems only. No production resolver, adapter, admission, refusal, or payload-order algorithm edits.",
+    "preservation": "Existing base public APIs, including resolved TermFields.factor_count and StatementFields.term_count, remain. Only the unfinished seed RawAdmissionFields representation is strengthened. No added axis-identity restriction on legal same-extent different-axis read slots."
+  },
+  "validation": {
+    "command": "bash /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd LeanNCD.Semantics.Source.RawCorrespondence Semantics.SourceRawCorrespondenceTest Semantics.SourceAdmissionAcceptanceTest",
+    "exit_code": 0,
+    "observed": "Build completed successfully (8521 jobs).",
+    "log": "/Users/williammacready/.copilot/session-state/f0f50335-e56d-401a-a010-11d0d43c0404/files/raw-b-build.log",
+    "generic_axioms": {
+      "endpoint_and_main_projections": ["propext", "Classical.choice", "Quot.sound"],
+      "axis_metadata_same_name_and_slot_projections": ["propext", "Quot.sound"],
+      "forbidden_axioms_observed": [],
+      "method": "#print axioms in SourceRawCorrespondenceTest for the generic endpoint and all new public projections; no sorryAx or Lean.ofReduceBool."
+    },
+    "kernel_donors": [
+      "parsed_success@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "parsed_raw_fields@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "asymmetric_success@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "asymmetric_raw_fields@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "inconsistent_success@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "inconsistent_raw_fields@leanncd/test/Semantics/SourceRawCorrespondenceTest.lean"
+    ],
+    "donor_method": "Concrete actual admission success is proved with kernel cbv and Except case analysis, then the generic endpoint is applied. Donor axioms are propext, Classical.choice, Quot.sound only. No native_decide.",
+    "failed_attempts_resolved": [
+      "Initial Id map projection lemmas required explicit f := Id and definitional projection reduction.",
+      "Initial donor decide/rfl reduction was insufficient; replaced by kernel cbv and a generic Except.toOption success lemma.",
+      "Unqualified SourceRawCorrespondenceTest target was refused by Lake; corrected to Semantics.SourceRawCorrespondenceTest and Semantics.SourceAdmissionAcceptanceTest."
+    ],
+    "not_run": ["Full lake build", "Mutation manifests", "Heavyweight new fixture phase", "Whole-branch review"]
+  },
+  "remaining": {
+    "C": "Connect these raw indexed structural certificates to generic Term.read_projection, AdmittedOutput.projection, and later semantic corollaries. No C corollary implemented here.",
+    "fixtures": "Separate missing fixture/mutation phase remains. Existing asymmetric order/repeated-read/empty-product/empty-sum checks and parsed metadata donors pass, but their heavyweight distinguishing-fixture and mutation obligations are not declared discharged.",
+    "nonclaims": [
+      "No independent raw-source denotation",
+      "No differential oracle equality",
+      "No completion or floating-point theorem",
+      "No global name-mint injectivity",
+      "No whole-plan execution readiness or landing"
+    ],
+    "unresolved_B_proof_obligations": []
+  },
+  "budget": {
+    "limit": "Approximately 60 assistant turns and 250k peak context for this B continuation.",
+    "observed_at_receipt": "SDK event log counted 49 assistant.turn_start events since the user message containing B objective ONLY, before receipt authoring.",
+    "turn_status": "52 assistant turns through final JSON/whitespace validation, measured from the B user message in the SDK event log. Under cap; receipt close-out and final report only.",
+    "context_status": "Exact peak and cumulative tokens unavailable: token-report.py found no Claude transcript for SDK session f0f50335-e56d-401a-a010-11d0d43c0404, and no usage events occurred during B. No context-limit breach observed; not claiming a measured peak.",
+    "previous_session_events": "Earlier continuation/session events were excluded from the B turn count.",
+    "known_breach": false,
+    "reading_deviation": "One early Admission file read requested 98 lines and one early Traverse file read requested 62 lines rather than the requested 40-60; subsequent file windows used bounded reads."
+  },
+  "workspace_actions": {
+    "staged": false,
+    "committed": false,
+    "restored": false,
+    "spawned": false,
+    "merged": false,
+    "source_installed": true
+  }
+}

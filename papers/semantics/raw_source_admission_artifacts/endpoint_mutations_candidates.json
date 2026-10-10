@@ -1,0 +1,67 @@
+[
+  {
+    "label": "E1 PENDING nonSum guard deletion; likely certificate proof kill, not an observed ErrorOrder kill",
+    "unique_old_matches": 1,
+    "expect_validation": "pending_controller_cycle_observation",
+    "task": "2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "    if rhs.agg != .sum then throw (sourceError .statement origin (.unsupported .nonSum))\n",
+    "new": "",
+    "targets": ["Semantics.SourceRawCorrespondenceTest"],
+    "expect": ["error: LeanNCD/Semantics/Source/Admission.lean"],
+    "status": "pending_controller_cycle",
+    "coverage": "StatementFields requires sum. If its proof fails before tests compile, record proof kill only. Unmodified refusalSum observes the actual next diagnostic nonIdentity."
+  },
+  {
+    "label": "E2 PENDING nonSum and nonIdentity guard deletion; likely certificate proof kill, not an observed ErrorOrder kill",
+    "unique_old_matches": 1,
+    "expect_validation": "pending_controller_cycle_observation",
+    "task": "2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "    if rhs.agg != .sum then throw (sourceError .statement origin (.unsupported .nonSum))\n    if rhs.nonlin != .identity then\n      throw (sourceError .statement origin (.unsupported .nonIdentity))\n",
+    "new": "",
+    "targets": ["Semantics.SourceRawCorrespondenceTest"],
+    "expect": ["error: LeanNCD/Semantics/Source/Admission.lean"],
+    "status": "pending_controller_cycle",
+    "coverage": "StatementFields requires sum and identity. If rejected there, record proof kill only. Unmodified refusalIdentity observes the actual next diagnostic undeclaredTensor Missing."
+  },
+  {
+    "label": "E3 PENDING constant Z output lookup; likely exact-name certificate proof kill",
+    "unique_old_matches": 1,
+    "expect_validation": "pending_controller_cycle_observation",
+    "task": "2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "    let dst ← match source.table.find name with\n",
+    "new": "    let dst ← match source.table.find \"Z\" with\n",
+    "targets": ["Semantics.SourceRawCorrespondenceTest"],
+    "expect": ["error: LeanNCD/Semantics/Source/Admission.lean"],
+    "status": "pending_controller_cycle",
+    "coverage": "Both Y and Z are legal same-shape writable outputs. Original declaration6/table2/nameY must differ from declaration9/table5/nameZ. No shape guard is added. If StatementFields fails first, report proof kill, not fixture kill."
+  },
+  {
+    "label": "E4 PENDING reverse certified raw read coordinate witness; semantic-link proof kill",
+    "unique_old_matches": 1,
+    "expect_validation": "pending_controller_cycle_observation",
+    "task": "4",
+    "file": "LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+    "old": "  obtain ⟨a, u, ha, hu, hm, hv⟩ := hs.coordinate v q\n",
+    "new": "  obtain ⟨a, u, ha, hu, hm, hv⟩ := hs.coordinate v q.rev\n",
+    "targets": ["Semantics.SourceRawCorrespondenceTest"],
+    "expect": ["error: LeanNCD/Semantics/Source/RawSemanticConnection.lean"],
+    "status": "pending_controller_cycle",
+    "coverage": "The replacement calls the same well-typed coordinate API with another Fin of the same bound, but supplies raw factor/UID/value witnesses for the wrong slot. CertifiedRawTerm.read_projection must prove the original q, including distinct two-slot asymmetric reads. This is a proof kill candidate, not a numeric oracle or mere certificate self-equality."
+  },
+  {
+    "label": "E5 PENDING refusal max-to-sum test-donor contrast; must observe nonIdentity before ErrorOrder assertion failure",
+    "unique_old_matches": 1,
+    "expect_validation": "pending_controller_cycle_observation",
+    "task": "2",
+    "file": "test/Semantics/SourceRawCorrespondenceTest.lean",
+    "old": "  .assign \"Missing\" [.free i] { body := ⟨[]⟩, nonlin := .pointwise .relu, agg := .max }] }\n",
+    "new": "  .assign \"Missing\" [.free i] { body := ⟨[]⟩, nonlin := .pointwise .relu, agg := .sum }] }\n",
+    "targets": ["Semantics.SourceRawCorrespondenceTest"],
+    "expect": ["error: test/Semantics/SourceRawCorrespondenceTest.lean"],
+    "status": "pending_controller_cycle",
+    "coverage": "Fixture contrast only. Changes the donor, not admission. Baseline refusalSum already observes nonIdentity; exact ErrorOrder and endpoint error-order assertions must reject it. Do not call this an implementation-runtime kill."
+  }
+]

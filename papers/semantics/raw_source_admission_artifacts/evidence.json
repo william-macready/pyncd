@@ -1,0 +1,246 @@
+{
+  "status": "partial-non-ready",
+  "base_commit": "3d721f9631de8642163446f98b4efc8fe1d078d5",
+  "remaining_load_bearing_obligations": [
+    "Prove successful checkTable/adaptSource links every TensorEntry declaration index, name, element type and ordered axes to the declaration at that index in snapshot.resolved.decls, then transport the witness to raw.decls using the actual UID relabeling.",
+    "Expose pointwise raw/resolved bare assignment/read/slot correspondence through existing mapUID traversal; currently the raw endpoint carries whole-program mapUID equalities plus leaf name/kind preservation, not the requested fully expanded per-raw-occurrence relation.",
+    "Compose the strengthened raw occurrence/declaration certificate with Term.read_projection, AdmittedOutput.projection and existing body/fiber/collect/model theorems. No independent raw denotation theorem is claimed."
+  ],
+  "scope": "existing finite bare-slot read-only semiring fragment; metadata retains existing f32/f64 and nat/real acceptance",
+  "excluded": [
+    "parser correctness from strings",
+    "global minting freshness or injectivity",
+    "scans, nonlinear forms, affine slots",
+    "arbitrary expression substitution",
+    "source permutations",
+    "floats or backend refinement",
+    "independent raw denotation"
+  ],
+  "refactor": {
+    "file": "leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+    "description": "Split the original memo-building loop into private assignUIDMemo; expose the identical name-keyed relabel lambda as sourceUIDRelabel; assignUIDs uses the original TLProgram.mapUID tail.",
+    "behavior_preservation": "Same axisNames order, freshNonZero calls, memo inserts, name lookup and mapUID traversal. Resolver remains a single assignUIDs/resolveDecls run at state zero. No DSL/Eval acceptance or diagnostic branch is changed.",
+    "limitation": "No generic extensional equality theorem between the pre-refactor and post-refactor FreshM computations was added."
+  },
+  "theorem_contracts": [
+    {
+      "locator": "assignUIDs_mapUID @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "contract": "Successful actual assignUIDs.run start yields an existential name-keyed UID memo and exact labeled declaration/statement mapUID equations; no uniqueness claim."
+    },
+    {
+      "locator": "resolveSource_mapUID @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "contract": "Successful actual resolveSource yields exact mapUID declaration/statement equations and unchanged specs/inputs."
+    },
+    {
+      "locator": "TensorTable.find_name @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "contract": "A successful table.find name returns an entry bearing that exact name; this does not certify its original declaration index."
+    },
+    {
+      "locator": "admitStatement_fields @ leanncd/LeanNCD/Semantics/Source/Admission.lean",
+      "contract": "Success gives sum/identity assignment, exact ordinal, output lookup/name/bare ordered slot relation/declaration origin and Forall2 over ordered term occurrences. Each term has Forall2 over indexed AST factors and intermediate RawReads, followed by Forall2 preserving checked tensor, repeated UID slot list and origin. Empty lists are covered generically."
+    },
+    {
+      "locator": "admitSource_fields @ leanncd/LeanNCD/Semantics/Source/Admission.lean",
+      "contract": "Success gives exact adapted resolved statement zipIdx sequence and StatementFields Forall2; not arbitrary forged AdmittedSource."
+    },
+    {
+      "locator": "admitRawSource_fields @ leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Conditioned only on actual admitRawSource success, combines resolver mapUID witness and resolved admission occurrence certificate. Partial endpoint: original raw declaration lookup and fully expanded pointwise raw mapping are not yet certified."
+    },
+    {
+      "locator": "mapUID_axis_metadata @ leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Existing AxisSpec.mapUID preserves name and kind, independently of remapper."
+    },
+    {
+      "locator": "TermFields.factor_count @ leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Factor count agrees exactly with checked sourceReads; supplementary to stronger ordered Forall2, not a length-only endpoint."
+    },
+    {
+      "locator": "StatementFields.term_count @ leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean",
+      "contract": "Term count agrees exactly; supplementary to stronger ordered Forall2."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1",
+      "patch": "../raw_source_admission_patches/task-1.patch",
+      "deliverable": "Actual resolver UID-only structural witness and table.find name lemma",
+      "ready": false,
+      "missing": "Raw declaration/table correspondence remains load-bearing; do not treat this patch as complete task 1."
+    },
+    {
+      "id": "2",
+      "patch": "../raw_source_admission_patches/task-2.patch",
+      "deliverable": "Successful resolved admission ordered output/term/factor/slot certificate",
+      "ready": true,
+      "limitation": "Resolved table entry identities are certified; original declaration identity relies on unfinished task 1."
+    },
+    {
+      "id": "3",
+      "patch": "../raw_source_admission_patches/task-3.patch",
+      "deliverable": "Partial raw endpoint, six fixtures, axiom audit and import registration",
+      "ready": false,
+      "missing": "Strengthen endpoint and connect certified original raw occurrences to existing semantic projection/body/fiber theorems."
+    }
+  ],
+  "fixtures": [
+    {
+      "locator": "AsymmetricOrder @ leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "donor": "SourceAdmissionFixtures.snapshot: keep declarations/specs/inputs; replace first write with ordered B,A,B factors, distinct second term A and empty third product; use actual raw endpoint.",
+      "observed": "see fixtures.log: exact ordered names B,A,B and declaration IDs 4,3,4; slots [1],[1,2],[1]; term/factor origins 0/0,0/1,0/2 then 1/0; no algebraic oracle."
+    },
+    {
+      "locator": "ParsedMetadata @ leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "donor": "SourceAdmissionAcceptanceTest.ParsedRawNatCopy: independent tlprog! construction.",
+      "observed": true,
+      "pinned": "declaration nat kind versus real use-site placeholders; UID0 becomes UID1; names/kinds retained"
+    },
+    {
+      "locator": "ParsedRead @ leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "donor": "SourceAdmissionAcceptanceTest.ParsedRawNatCopy: view actual raw admission independently.",
+      "observed": "see fixtures.log: Y declaration2 output [1]; X declaration1 read [1], statement0/term0/factor0"
+    },
+    {
+      "locator": "EmptyAndDiagonal @ leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "donor": "SourceAdmissionFixtures.snapshot: preserve diagonal write, empty product and empty sum in asymmetric raw donor.",
+      "observed": true
+    },
+    {
+      "locator": "ZeroExtent @ leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "donor": "SourceAdmissionFixtures.snapshot: actual raw resolution of same declaration list.",
+      "observed": true,
+      "pinned": "context UIDs [1,2,3]; original declaration IDs 3/4/5/6/7; shapes [2,3]/[2]/[2]/[0]/[2,2]"
+    },
+    {
+      "locator": "ErrorOrder @ leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "donor": "SourceAdmissionFixtures.snapshot: replace statements by missing output, max aggregation and relu nonlinearity together.",
+      "observed": true,
+      "pinned": "nonSum wins over nonIdentity and undeclared output; stage statement; output side and statement0; all other origin fields none"
+    }
+  ],
+  "validation": {
+    "builds": [
+      {
+        "command": "bash /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd LeanNCD.Semantics.Source.Admission",
+        "exit_code": 0,
+        "observed_summary": "Build completed successfully (8507 jobs)."
+      },
+      {
+        "command": "bash /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd Semantics.SourceAdmissionTest LeanNCD",
+        "exit_code": 0,
+        "observed_summary": "Build completed successfully (8595 jobs)."
+      },
+      {
+        "command": "bash /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd",
+        "exit_code": 0,
+        "observed_summary": "Build completed successfully (8765 jobs)."
+      }
+    ],
+    "mutation_cycles": [
+      {
+        "label": "M1 bypass original axis-name mint loop",
+        "task": "1",
+        "targets": [
+          "Semantics.SourceRawCorrespondenceTest"
+        ],
+        "expect": [
+          "error: test/Semantics/SourceRawCorrespondenceTest.lean",
+          "Expression"
+        ],
+        "observed": "mutation build failed; original bytes restored; restored build passed"
+      },
+      {
+        "label": "M2 table position used as declaration origin",
+        "task": "2",
+        "targets": [
+          "LeanNCD.Semantics.Source.RawCorrespondence"
+        ],
+        "expect": [
+          "error: LeanNCD/Semantics/Source/Admission.lean",
+          "`simp` made no progress"
+        ],
+        "observed": "mutation build failed; original bytes restored; restored build passed"
+      },
+      {
+        "label": "M3 reverse certified checked read order",
+        "task": "2",
+        "targets": [
+          "LeanNCD.Semantics.Source.RawCorrespondence"
+        ],
+        "expect": [
+          "error: LeanNCD/Semantics/Source/Admission.lean",
+          "Application type mismatch"
+        ],
+        "observed": "mutation build failed; original bytes restored; restored build passed"
+      },
+      {
+        "label": "M4 asymmetric ordered oracle swaps distinct tensors",
+        "task": "3",
+        "targets": [
+          "Semantics.SourceRawCorrespondenceTest"
+        ],
+        "expect": [
+          "error: test/Semantics/SourceRawCorrespondenceTest.lean",
+          "Expression"
+        ],
+        "observed": "mutation build failed; original bytes restored; restored build passed"
+      }
+    ],
+    "axiom_audit": "axioms.log: 15 generic theorem audits; only propext/Classical.choice/Quot.sound or no axioms. No sorry/admit/new axiom/native_decide generic proofs.",
+    "fixture_mutation_coverage": "M1 fails AsymmetricOrder, ParsedMetadata, ParsedRead, EmptyAndDiagonal and ZeroExtent. M4 independently pins asymmetric order/identity. ErrorOrder is compiled/observed but not mutation-pinned; do not claim all regression fixtures are mutation-verified.",
+    "budget": {
+      "requested_turn_cap": "~60",
+      "requested_context_peak": "~250k",
+      "measurement": "token-report.py found no Claude transcript for this Copilot SDK session; exact usage unavailable. Stopped proof work and closed out near the ~60-turn cap. No observed context-cap breach; exact SDK usage is not asserted. No agents spawned."
+    },
+    "manifest_checks": {
+      "existing_code": "PASS: 2 entries, every old-string unique",
+      "prototype_added_code": "PASS: 2 entries, every old-string unique",
+      "checked_state": "Final compiled prototype installed, before reverse-patch restoration; post manifest is intended to run after applying the task patches."
+    },
+    "earlier_failures": [
+      "Initial EStateM proof elaboration failures corrected by explicitly unfolding bind/pure/Functor.map.",
+      "Unregistered new test target rejected, then missing olean through aggregator; fixed by adding explicit lakefile Tests glob.",
+      "First mutation run executed/restored both cycles successfully but receipt write failed because artifact directory did not yet exist; rerun with directory and expect strings.",
+      "Earlier exploratory mutation of new assignUIDs tail rejected by kernel; superseded by mutation of original axis-name mint loop."
+    ]
+  },
+  "intentional_unverified_gaps": [
+    "Original raw tensor declaration index/type/axis-list correspondence through private imperative checkTable.",
+    "Expanded pointwise bare raw mapUID lemmas and endpoint semantic linkage.",
+    "First-match/minimal-position table.find theorem beyond exact returned name.",
+    "ErrorOrder mutation coverage; four final combined mutation cycles targeted.",
+    "No full plan/record, whole-branch review, commit, merge or remote push: authoring only."
+  ],
+  "next_proof_obstruction": {
+    "locator": "checkTable @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+    "required_contract": "From adaptSource snapshot = ok source, for each Fin table tensor prove that snapshot.resolved.decls[entry.declaration]? is some original declaration whose successful tensorDecl classification has exactly entry.name and entry.elementType, with ordered AxisSpec occurrences corresponding to entry.axes through successful sourceAxis resolution.",
+    "reason_unfinished": "The existing private imperative checkTable uses nested for loops, mutable seen/entries/shape and appended entries; no success loop invariant connects the accumulated entries back to decls.zipIdx. This invariant was not prototyped in the available turn budget. A future implementation must prove it or make a separately verified tightly scoped behavior-preserving helper extraction, preserving error order/payloads.",
+    "afterward": "Transport the indexed declaration relation through actual mapUID witness while preserving names/kinds and list order; expand pointwise bare raw occurrence relation; jointly expose existing projection/body/fiber/collect results on this certified source."
+  },
+  "mechanical_patches": {
+    "ordered_cached_apply_checked": true,
+    "result_matches_compiled_bytes": true,
+    "compiled_file_sha256": {
+      "leanncd/LeanNCD/DSL/Pipeline/Structural.lean": "24faa657dd16322ebb709da39c900b05b417bdcb117d52e7345f1d233f838219",
+      "leanncd/LeanNCD/Semantics/Source/Adapter.lean": "34ed6c772650dc2bbe0d603da95993d119d8e34ba710374e58bd9d03cc4c77c2",
+      "leanncd/LeanNCD/Semantics/Source/Admission.lean": "8db23813aba6868199e9c90bf14c9790d6a5ab06128db5b2fcdd4b175a27ebf1",
+      "leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean": "84f62e3a70f1b4e9e3bcbdddac786ab4e7110af6c5de1f878dbb3be3a1bc2e00",
+      "leanncd/LeanNCD/Semantics/Source.lean": "7757a177dbf6eda99e1a9cff29390bff802132a63b9987480f138b580c407987",
+      "leanncd/test/Semantics/SourceRawCorrespondenceTest.lean": "df9bc413a46085dc24f0285b391a84ecbab9476f8ad094e2b11eabedee93d079",
+      "leanncd/test/Semantics/SourceAdmissionTest.lean": "5a4f7f0c178bc5da9e4bd8a06c11a3c31fc5f6358521d181f62defc1265fc6bc",
+      "leanncd/lakefile.toml": "3c9294b5a0e09bb78edad101bf5c856270a81239b61268bce38dcd631c2d50b3"
+    },
+    "patch_sha256": {
+      "task-1.patch": "d839237bafc6b7c2879bc198fff6e18e8955b97fd3f6cb7d614f26c387d10e81",
+      "task-2.patch": "d49d9d9598de95837270144a853e51724726c8a6427bc8af0a35990a4939c4fc",
+      "task-3.patch": "78ebb326f2884d5de0468bd61900d74db4c223fbc2c119657e4e3feaf4c54e4f"
+    },
+    "method": "isolated temporary git index, explicit source paths only; ordered cached apply checked against each exact compiled file; real index untouched"
+  },
+  "restoration": {
+    "source_equals_base": true,
+    "method": "git apply -R task3/task2/task1; source-path status and all-leanncd diff empty",
+    "no_checkout_reset_commit_merge": true
+  }
+}

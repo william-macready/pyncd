@@ -1,0 +1,220 @@
+diff --git a/leanncd/LeanNCD/Semantics/Source.lean b/leanncd/LeanNCD/Semantics/Source.lean
+index 52806bb2..67618d0e 100644
+--- a/leanncd/LeanNCD/Semantics/Source.lean
++++ b/leanncd/LeanNCD/Semantics/Source.lean
+@@ -10,6 +10,7 @@ import LeanNCD.Semantics.Source.Permutation
+ import LeanNCD.Semantics.Source.Fiber
+ import LeanNCD.Semantics.Source.Correspondence
+ import LeanNCD.Semantics.Source.ProgramCorrespondence
++import LeanNCD.Semantics.Source.RawCorrespondence
+ import LeanNCD.Semantics.Source.Diagnostics
+ import LeanNCD.Semantics.Source.NumericalProfile
+ import LeanNCD.Semantics.Source.NativeLegs
+diff --git a/leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean b/leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean
+new file mode 100644
+index 00000000..99dd4b6e
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean
+@@ -0,0 +1,68 @@
++import LeanNCD.Semantics.Source.Provenance
++import LeanNCD.Semantics.Source.ProgramCorrespondence
++
++namespace LeanNCD.Semantics.Source
++
++theorem mapUID_axis_metadata (f : UData → UData) (a : AxisSpec) :
++    (AxisSpec.mapUID f a).name = a.name ∧ (AxisSpec.mapUID f a).kind = a.kind := by
++  exact ⟨rfl, rfl⟩
++
++def RawAdmissionFields (raw : TLProgram) (specs : List TensorSpec)
++    (inputs : List InputBinding) (admitted : AdmittedSource) : Prop :=
++  ∃ snapshot : SourceSnapshot, ∃ memo : Std.HashMap String UID,
++    resolveSource raw specs inputs = .ok snapshot ∧
++    admitSource snapshot = .ok admitted ∧
++    snapshot.resolved.decls = (TLProgram.mapUID (sourceUIDRelabel memo) raw).decls ∧
++    snapshot.resolved.stmts = (TLProgram.mapUID (sourceUIDRelabel memo) raw).stmts ∧
++    snapshot.specs = specs ∧ snapshot.inputs = inputs ∧
++    admitted.source.statements =
++      (TLProgram.mapUID (sourceUIDRelabel memo) raw).stmts.zipIdx.map
++        (fun (s, i) => (i, s)) ∧
++    List.Forall₂ (fun (i, s) a => StatementFields admitted.source i s a)
++      admitted.source.statements admitted.statements
++
++theorem admitRawSource_fields (raw : TLProgram) (specs : List TensorSpec)
++    (inputs : List InputBinding) (admitted : AdmittedSource)
++    (h : admitRawSource raw specs inputs = .ok admitted) :
++    RawAdmissionFields raw specs inputs admitted := by
++  unfold admitRawSource at h
++  simp only [bind, Except.bind] at h
++  cases hr : resolveSource raw specs inputs with
++  | error e => simp [hr] at h
++  | ok snapshot =>
++    simp only [hr] at h
++    obtain ⟨memo, hd, hs, hp, hi⟩ := resolveSource_mapUID raw specs inputs snapshot hr
++    obtain ⟨hst, hfields⟩ := admitSource_fields snapshot admitted h
++    exact ⟨snapshot, memo, hr, h, hd, hs, hp, hi, hs ▸ hst, hfields⟩
++
++theorem TermFields.factor_count {source : AdaptedSource} {origin : SourceOrigin}
++    {ast : ProdTerm} {term : Term source.context out source.table.declarations}
++    (h : TermFields source origin ast term) :
++    ast.factors.length = term.sourceReads.length := by
++  obtain ⟨_, raw, hf, hc⟩ := h
++  simpa using hf.length_eq.trans hc.length_eq
++
++theorem StatementFields.term_count {source : AdaptedSource} {i : Nat} {ast : Stmt}
++    {statement : AdmittedStatement source} (h : StatementFields source i ast statement) :
++    ∃ name slots rhs, ast = .assign name slots rhs ∧
++      rhs.body.terms.length = statement.terms.length := by
++  obtain ⟨name, slots, rhs, he, _, _, _, _, _, _, _, ht⟩ := h
++  exact ⟨name, slots, rhs, he, by simpa using ht.length_eq⟩
++
++#print axioms LeanNCD.assignUIDs_mapUID
++#print axioms resolveSource_mapUID
++#print axioms mapM_success_forall2
++#print axioms admitRead_fields
++#print axioms admitTerm_reads
++#print axioms TensorTable.find_name
++#print axioms astRead_fields
++#print axioms admitOutput_fields
++#print axioms admitStatement_fields
++#print axioms adaptSource_statements
++#print axioms admitSource_fields
++#print axioms mapUID_axis_metadata
++#print axioms admitRawSource_fields
++#print axioms TermFields.factor_count
++#print axioms StatementFields.term_count
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index d7ed7577..aa7469aa 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -88,6 +88,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Semantics.SourceAdmissionSupportTest", "Semantics.SourceAdmissionDeclarationsTest",
+          "Semantics.SourceAdmissionRolesTest", "Semantics.SourceAdmissionInputsTest",
+          "Semantics.SourceAdmissionRefusalsTest", "Semantics.SourceAdmissionTest",
++         "Semantics.SourceRawCorrespondenceTest",
+          "Semantics.SourceAdmissionAcceptanceTest",
+          "Semantics.SourceOracleTest", "Semantics.SourceProgramFixtures",
+          "Semantics.SourceProgramOutcomesTest", "Semantics.SourceProgramIdentityTest",
+diff --git a/leanncd/test/Semantics/SourceAdmissionTest.lean b/leanncd/test/Semantics/SourceAdmissionTest.lean
+index 922d85e7..70878952 100644
+--- a/leanncd/test/Semantics/SourceAdmissionTest.lean
++++ b/leanncd/test/Semantics/SourceAdmissionTest.lean
+@@ -5,3 +5,4 @@ import Semantics.SourceAdmissionRolesTest
+ import Semantics.SourceAdmissionInputsTest
+ import Semantics.SourceAdmissionRefusalsTest
+ import Semantics.SourceAdmissionAcceptanceTest
++import Semantics.SourceRawCorrespondenceTest
+diff --git a/leanncd/test/Semantics/SourceRawCorrespondenceTest.lean b/leanncd/test/Semantics/SourceRawCorrespondenceTest.lean
+new file mode 100644
+index 00000000..5590f31d
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceRawCorrespondenceTest.lean
+@@ -0,0 +1,107 @@
++import LeanNCD.Semantics.Source.RawCorrespondence
++import Semantics.SourceAdmissionFixtures
++import LeanNCD.DSL.Elab
++
++open LeanNCD LeanNCD.Semantics.Source SourceAdmissionFixtures
++
++namespace SourceRawCorrespondenceTest
++
++def parsed : TLProgram := tlprog!{
++  axis a : ℕ = 2
++  tensor f64 X(a), Y(a)
++  Y[a] := X[a]
++}
++
++def parsedSpecs : List TensorSpec := [⟨1, .input, [2]⟩, ⟨2, .output, [2]⟩]
++def parsedInputs : List InputBinding := [⟨1, [2], [3, 5]⟩]
++
++def asymmetric : TLProgram := ⟨decls, [
++  .assign "Y" [.free i] (rhs [
++    [.read "B" [.axis i], .read "A" [.axis i, .axis k], .read "B" [.axis i]],
++    [.read "A" [.axis i, .axis k]], []]),
++  .assign "Diagonal" [.free i, .free i] (rhs [[]]),
++  .assign "Y" [.free i] (rhs [])]⟩
++
++abbrev ReadView := String × Nat × List UID × SourceOrigin
++abbrev WriteView := Nat × String × Nat × List UID × List (List ReadView)
++
++def view (raw : TLProgram) (ss : List TensorSpec) (ins : List InputBinding) :
++    Option (List WriteView) :=
++  (admitRawSource raw ss ins).toOption.map fun a =>
++    a.statements.map fun st =>
++      (st.original, (a.source.table.entry st.output.tensor).name,
++       (a.source.table.entry st.output.tensor).declaration, st.output.indices,
++       st.terms.map fun term => term.sourceReads.map fun r =>
++         ((a.source.table.entry r.read.tensor).name,
++          (a.source.table.entry r.read.tensor).declaration, r.indices, r.origin))
++
++def ro (statement term factor declaration : Nat) : SourceOrigin :=
++  { side := .read, statement := some statement, term := some term,
++    factor := some factor, declaration := some declaration }
++
++def expected : List WriteView := [
++  (0, "Y", 5, [1], [
++    [("B", 4, [1], ro 0 0 0 4), ("A", 3, [1, 2], ro 0 0 1 3),
++     ("B", 4, [1], ro 0 0 2 4)],
++    [("A", 3, [1, 2], ro 0 1 0 3)], []]),
++  (1, "Diagonal", 7, [1, 1], [[]]),
++  (2, "Y", 5, [1], [])]
++
++def AsymmetricOrder := view asymmetric specs inputs == some expected
++#guard AsymmetricOrder
++#eval view asymmetric specs inputs
++
++def ParsedMetadata : Bool :=
++  match resolveSource parsed parsedSpecs parsedInputs with
++  | .error _ => false
++  | .ok s =>
++    parsed.decls == [.axis ⟨"a", 0, .nat⟩ (some 2),
++      .typedTensor .f64 "X" [⟨"a", 0, .real⟩],
++      .typedTensor .f64 "Y" [⟨"a", 0, .real⟩]] &&
++    s.resolved.decls == [.axis ⟨"a", 1, .nat⟩ (some 2),
++      .typedTensor .f64 "X" [⟨"a", 1, .real⟩],
++      .typedTensor .f64 "Y" [⟨"a", 1, .real⟩]]
++#guard ParsedMetadata
++#eval ParsedMetadata
++
++def ParsedRead := view parsed parsedSpecs parsedInputs ==
++  some [(0, "Y", 2, [1], [[("X", 1, [1], ro 0 0 0 1)]])]
++#guard ParsedRead
++#eval view parsed parsedSpecs parsedInputs
++
++def EmptyAndDiagonal : Bool :=
++  match view asymmetric specs inputs with
++  | some [(_, _, _, _, [_, _, []]), (_, "Diagonal", 7, [1, 1], [[]]),
++      (_, "Y", 5, [1], [])] => true
++  | _ => false
++#guard EmptyAndDiagonal
++#eval EmptyAndDiagonal
++
++def ZeroExtent : Bool :=
++  match resolveSource asymmetric specs inputs with
++  | .error _ => false
++  | .ok s => admissionView s |>.any fun (axes, table, _) =>
++    axes == [1, 2, 3] && table ==
++      [(3, .input, [2, 3]), (4, .input, [2]), (5, .output, [2]),
++       (6, .input, [0]), (7, .defined, [2, 2])]
++#guard ZeroExtent
++#eval ZeroExtent
++
++def refusal : TLProgram := { asymmetric with stmts := [
++  .assign "Missing" [.free i] { body := ⟨[]⟩, nonlin := .pointwise .relu, agg := .max }] }
++
++def ErrorOrder : Bool :=
++  match admitRawSource refusal specs inputs with
++  | .error d =>
++    d.stage == .statement && d.origin ==
++      { side := .output, statement := some 0 } &&
++    match d.cause with | .unsupported .nonSum => true | _ => false
++  | .ok _ => false
++#guard ErrorOrder
++#eval ErrorOrder
++
++example (a : AdmittedSource) (h : admitRawSource asymmetric specs inputs = .ok a) :
++    RawAdmissionFields asymmetric specs inputs a :=
++  admitRawSource_fields _ _ _ _ h
++
++end SourceRawCorrespondenceTest

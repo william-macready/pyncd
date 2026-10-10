@@ -1,0 +1,290 @@
+{
+  "review": "independent runtime/DSL fidelity",
+  "base": "3d721f96",
+  "status": "clean_within_runtime_fidelity_and_tested_scope",
+  "verdict": {
+    "runtime_admission_and_DSL_unchanged": true,
+    "high_confidence_behavior_bugs": 0,
+    "inadequate_required_test_pins": 0,
+    "missing_import_surfaces": 0,
+    "meaning_of_clean": "Runtime fidelity and required tested scopes reviewed, not integration approval or plan/package readiness.",
+    "main_plan_gate": "Still gated as stated by the controller. Pending final patch emission, staging and docs are not defects in installed code."
+  },
+  "scope": {
+    "runtime": ["DSL/Pipeline/Structural.lean", "DSL/Traverse.lean", "Semantics/Source/Adapter.lean", "Semantics/Source/Admission.lean"],
+    "additional": "Entire behavior diff, new source modules, umbrella and test registration, required fixture pins and mutation receipts.",
+    "excluded": "Independent binder soundness and dependent semantic proof review; final package staging/docs are pending by design.",
+    "constraints": "No code edits, spawning, staging or commits. Only this report artifact is edited. Budget: 30 turns / 250k context."
+  },
+  "initial_observations": [
+    "Tracked diff consists of four runtime/proof modules plus Source umbrella, lakefile test glob and SourceAdmissionTest import.",
+    "Untracked RawCorrespondence, RawSemanticConnection and SourceRawCorrespondenceTest must be included in evidence and eventual package.",
+    "Source umbrella imports both new source modules; both lakefile glob and SourceAdmissionTest import register the new test."
+  ],
+  "runtime_comparison": {
+    "method": "Read the surgical git diff and compare whitespace-normalized original top-level computation/data command bodies against the working tree. Ignore only the private-to-public visibility change on TLProgram.axisSpecs.",
+    "original_commands_compared": {"Structural": 44, "Traverse": 13, "Adapter": 32, "Admission": 31},
+    "changed_original_computations": ["assignUIDs"],
+    "assignUIDs": "The equality theorem's inline computation exactly matches the base assignUIDs body modulo whitespace. assignUIDs_eq_inline quantifies over arbitrary programs and equates the entire FreshM function, including error results and final state, not just successful output.",
+    "unchanged": "All original Traverse, Adapter and Admission computation/data command bodies match. Adapter has 379 insertions and zero deletions; Admission has 225 insertions and zero deletions. Added definitions there describe propositions, not replacement checkers.",
+    "public_surface": "TLProgram.axisSpecs is newly public with unchanged collector body; sourceUIDRelabel is a newly public extraction of the original name-based relabel. Existing axisNames and mapUID bodies are unchanged.",
+    "consequence": "No changed acceptance, rejection ordering, diagnostic payload, f32 default, input validation, traversal ordering, or UID/name/kind behavior found."
+  },
+  "findings": [],
+  "case_class_audit": {
+    "legend": {
+      "required": "Must emit/classify/preserve the stated supported behavior when the other existing checks succeed.",
+      "forbidden": "Existing production seam rejects this class; no new rejection guard is requested.",
+      "silently_ignored": "This seam intentionally skips the class or ignores this metadata. It may still be rejected by another seam."
+    },
+    "rows": [
+      {
+        "name": "Pinned axis, nat or real kind, including extent zero",
+        "class": "Decl.axis a (some n)",
+        "required": "checkAxes emits (a.uid,n) in original declaration order; PinnedAxisDeclaration and RawPinnedAxisDeclaration preserve the pin.",
+        "forbidden": "Duplicate axis UID at the adapter seam.",
+        "silently_ignored": "tensorDecl skips every axis declaration; axis kind and name do not add adapter guards.",
+        "evidence": ["Adapter.lean:180", "Adapter.lean:207", "Adapter.lean:405", "SourceRawCorrespondenceTest.lean:339", "SourceAdmissionAcceptanceTest.lean:57"]
+      },
+      {
+        "name": "Unpinned axis",
+        "class": "Decl.axis a none",
+        "required": "Existing missingDomain error, after the duplicate-UID check.",
+        "forbidden": "Successful checkAxes/AxisDeclarations containing an unpinned axis.",
+        "silently_ignored": "tensorDecl alone skips it; the preceding axis pass rejects it.",
+        "evidence": ["Adapter.lean:207", "SourceAdmissionAcceptanceTest.lean:154"]
+      },
+      {
+        "name": "Iteration declaration",
+        "class": "Decl.iter",
+        "required": "Existing unsupported iteration diagnostic.",
+        "forbidden": "Both axis selection and tensor selection.",
+        "silently_ignored": "None in these admission seams.",
+        "evidence": ["Adapter.lean:180", "Adapter.lean:207", "Adapter.lean:402", "SourceAdmissionAcceptanceTest.lean:160"]
+      },
+      {
+        "name": "Untyped tensor",
+        "class": "Decl.tensor",
+        "required": "SupportedTensorDeclaration and tensorDecl agree on original name, ordered slots and f32 default.",
+        "forbidden": "Duplicate tensor name, unbound declaration slots, missing/incorrect spec, as before.",
+        "silently_ignored": "checkAxes emits no axis for it.",
+        "evidence": ["Adapter.lean:338", "Adapter.lean:402", "SourceRawCorrespondenceTest.lean:451"]
+      },
+      {
+        "name": "Typed tensor siblings",
+        "class": "Decl.typedTensor f32 / f64",
+        "required": "Retain explicit element type, original name and ordered slots.",
+        "forbidden": "No additional nat/real-kind or declaration/read-UID identity constraint.",
+        "silently_ignored": "checkAxes emits no axis for it.",
+        "evidence": ["Adapter.lean:338", "Adapter.lean:402", "SourceRawCorrespondenceTest.lean:451"]
+      },
+      {
+        "name": "Untyped linear bias and nonbias siblings",
+        "class": "Decl.linear false / true",
+        "required": "Both classify exactly like untyped tensor, with f32 default.",
+        "forbidden": "No new linear-specific guard.",
+        "silently_ignored": "Bias bit is immaterial to tensorDecl and SupportedTensorDeclaration; checkAxes skips the declaration.",
+        "evidence": ["Adapter.lean:338", "Adapter.lean:402", "SourceRawCorrespondenceTest.lean:451"]
+      },
+      {
+        "name": "Typed linear type x bias siblings",
+        "class": "Decl.typedLinear (f32 / f64) (false / true)",
+        "required": "All four cases retain the explicit type, name and ordered slots.",
+        "forbidden": "No new bias or use-site-kind constraint.",
+        "silently_ignored": "Bias bit is immaterial; checkAxes skips the declaration.",
+        "evidence": ["Adapter.lean:338", "Adapter.lean:402", "SourceRawCorrespondenceTest.lean:451"]
+      },
+      {
+        "name": "Complex tensor and linear siblings",
+        "class": "typedTensor / typedLinear complex64 / complex128, both bias bits",
+        "required": "Existing unsupported complex diagnostic from tensorDecl.",
+        "forbidden": "SupportedTensorDeclaration is false for all these cases.",
+        "silently_ignored": "checkAxes alone skips them.",
+        "evidence": ["Adapter.lean:338", "Adapter.lean:402", "SourceAdmissionAcceptanceTest.lean:218"]
+      },
+      {
+        "name": "Predicate declaration",
+        "class": "Decl.predicate",
+        "required": "Existing unsupported predicate diagnostic from tensorDecl.",
+        "forbidden": "TensorDeclarationSelection emission or skip; only axis declarations may skip the table.",
+        "silently_ignored": "checkAxes skips predicate declarations without emitting an axis.",
+        "evidence": ["Adapter.lean:180", "Adapter.lean:338", "Adapter.lean:349", "Adapter.lean:402", "SourceAdmissionAcceptanceTest.lean:225"]
+      },
+      {
+        "name": "Original declaration locator and signature role",
+        "class": "Every supported tensor/linear sibling",
+        "required": "TableDeclarations selects decls.zipIdx, records original index rather than compact table position, finds the corresponding spec, preserves spec.role and ordered extent list.",
+        "forbidden": "Duplicate/missing/unexpected specs and mismatching signature shapes, in existing order.",
+        "silently_ignored": "Cached DeclEnv and external-name classification do not determine semantic role.",
+        "evidence": ["Adapter.lean:349", "Adapter.lean:363", "Adapter.lean:444", "SourceRawCorrespondenceTest.lean:339", "SourceRawCorrespondenceTest.lean:385"]
+      },
+      {
+        "name": "Raw same-name binding",
+        "class": "axis declaration / tensor signature / read / output occurrences",
+        "required": "Production axisNames traversal and memo relabel bind equal source names to the same UID, retaining name and kind.",
+        "forbidden": "No added requirement that the initial UIDs or kinds agree.",
+        "silently_ignored": "Initial UID differences do not choose binding; uncovered or unnamed UData keeps the old fallback behavior.",
+        "evidence": ["Structural.lean:345", "Structural.lean:648", "Structural.lean:674", "SourceRawCorrespondenceTest.lean:156", "SourceRawCorrespondenceTest.lean:618"]
+      },
+      {
+        "name": "Raw distinct names sharing sentinel zero",
+        "class": "Different AxisSpec names, all initial UIDs zero",
+        "required": "Preserve separate name-based minted bindings and occurrence order; no sentinel-UID aliasing.",
+        "forbidden": "No new nonzero precondition on raw axes.",
+        "silently_ignored": "Initial zero is a placeholder, not axis identity for raw name resolution.",
+        "evidence": ["Structural.lean:674", "SourceRawCorrespondenceTest.lean:581", "SourceRawCorrespondenceTest.lean:592", "SourceRawCorrespondenceTest.lean:615"]
+      },
+      {
+        "name": "Bare read slots and shape-compatible distinct axes",
+        "class": "IdxExpr.axis, nat or real kind",
+        "required": "UID must resolve in context; slot extent and rank must match. Ordered/repeated IDs are preserved. Same-extent distinct read-axis UIDs remain accepted even when different from declaration-slot UIDs.",
+        "forbidden": "Unbound UID or wrong extent/rank, not mere declaration/read UID inequality.",
+        "silently_ignored": "sourceAxis does not consult AxisSpec.name or kind; there is no new read-role restriction.",
+        "evidence": ["Adapter.lean:261", "Admission.lean:77", "Admission.lean:330", "Admission.lean:349", "SourceRawCorrespondenceTest.lean:307", "SourceRawCorrespondenceTest.lean:326", "SourceRawCorrespondenceTest.lean:339"]
+      },
+      {
+        "name": "Nonbare read-slot siblings",
+        "class": "IdxExpr.const / scale / shift / affine",
+        "required": "Existing unsupported affine diagnostic with original slot provenance.",
+        "forbidden": "BareReadSlots and RawReadSlots classification.",
+        "silently_ignored": "None at the read-slot seam.",
+        "evidence": ["Admission.lean:330", "Admission.lean:362", "SourceAdmissionAcceptanceTest.lean:182"]
+      },
+      {
+        "name": "Bare output slots",
+        "class": "LHSSlot.free, including repeated or empty slot lists",
+        "required": "Preserve ordered indices and destination provenance; repeated UIDs remain duplicated in slots while outputContext retains first-occurrence support.",
+        "forbidden": "Unbound UID or wrong extent/rank, not repeated slots or use-site kind.",
+        "silently_ignored": "AxisSpec.name/kind is not an extra post-resolution acceptance check.",
+        "evidence": ["Admission.lean:119", "Admission.lean:339", "Admission.lean:366", "SourceRawCorrespondenceTest.lean:74", "SourceAdmissionDeclarationsTest.lean:48"]
+      },
+      {
+        "name": "Nonbare output-slot siblings",
+        "class": "freeNorm / iterAt / iterNext / affine",
+        "required": "Existing marked / scanSlot / affine diagnostic respectively.",
+        "forbidden": "BareOutputSlots and RawOutputSlots classification.",
+        "silently_ignored": "None at the output-slot seam.",
+        "evidence": ["Admission.lean:339", "Admission.lean:366", "SourceAdmissionAcceptanceTest.lean:170"]
+      },
+      {
+        "name": "Read factor vs other factor siblings",
+        "class": "Factor.read / iverson / unaryFn",
+        "required": "read looks up its exact original tensor name, retains original declaration and term/factor/slot provenance; ordered duplicate reads remain distinct occurrences.",
+        "forbidden": "iverson and unaryFn retain their existing unsupported diagnostics.",
+        "silently_ignored": "No input-only role restriction on reads, and no deduplication of factors.",
+        "evidence": ["Admission.lean:349", "Admission.lean:390", "RawCorrespondence.lean:244", "SourceRawCorrespondenceTest.lean:44", "SourceRawCorrespondenceTest.lean:516", "SourceAdmissionAcceptanceTest.lean:233"]
+      },
+      {
+        "name": "Writable output-role siblings",
+        "class": "TensorRole.output / defined / input",
+        "required": "output and defined remain writable, using exact LHS name lookup.",
+        "forbidden": "Writing an input retains the existing role diagnostic.",
+        "silently_ignored": "External name classification does not override explicit spec role.",
+        "evidence": ["Adapter.lean:604", "Admission.lean:460", "SourceRawCorrespondenceTest.lean:657", "SourceRawCorrespondenceTest.lean:675", "SourceAdmissionRolesTest.lean:75"]
+      },
+      {
+        "name": "Assignment aggregation/nonlinearity and statement siblings",
+        "class": "assign / scatter / recurMorphism",
+        "required": "assign checks sum first, identity second, then destination lookup, role, output slots and ordered terms/factors.",
+        "forbidden": "nonSum, nonIdentity, scatter and recurMorphism remain unsupported.",
+        "silently_ignored": "An earlier failing check prevents later diagnostics, deliberately.",
+        "evidence": ["Admission.lean:460", "Admission.lean:488", "SourceRawCorrespondenceTest.lean:92", "SourceRawCorrespondenceTest.lean:130"]
+      },
+      {
+        "name": "Empty and duplicate/multiplicity cases",
+        "class": "zero extent / scalar / empty product / empty sum / repeated statements, terms, factors and slots",
+        "required": "Zero pins and zero-length buffers are accepted; scalars use empty slots; empty product/sum and ordered multiplicities are retained. Duplicate tensor declarations and duplicate axis identities are still errors, distinct from repeated uses.",
+        "forbidden": "No new positive-size, nonempty, unique-use or one-write-only guard.",
+        "silently_ignored": "Support deduplication does not deduplicate source occurrences.",
+        "evidence": ["SourceRawCorrespondenceTest.lean:44", "SourceRawCorrespondenceTest.lean:74", "SourceRawCorrespondenceTest.lean:82", "SourceRawCorrespondenceTest.lean:516", "SourceAdmissionDeclarationsTest.lean:48", "SourceAdmissionDeclarationsTest.lean:63", "SourceAdmissionRolesTest.lean:17"]
+      },
+      {
+        "name": "Input binding siblings",
+        "class": "input role / noninput role / unused input / zero-size input",
+        "required": "Every input, even unused or zero-size, requires exactly the existing binding checks: original declaration ID, ordered shape, canonical element count and exact values.",
+        "forbidden": "Duplicate/unexpected bindings, noninput binding roles, missing inputs, shape mismatch and length mismatch retain their existing diagnostics and ordering.",
+        "silently_ignored": "Noninput entries need no input buffer; input values are not changed or coerced by these proof additions.",
+        "evidence": ["Adapter.lean:560", "Adapter.lean:575", "Adapter.lean:589", "SourceAdmissionInputsTest.lean:47", "SourceAdmissionInputsTest.lean:71", "SourceAdmissionAcceptanceTest.lean:245"]
+      }
+    ],
+    "relation_boundary": "These new relations are success certificates, not independent acceptance checkers or biconditional validators. For example, PinnedAxisDeclaration records exact pin selection but does not itself restate duplicate-axis rejection; production success and Context provide that constraint. The supported tensor declaration forms themselves agree exactly with tensorDecl."
+  },
+  "required_test_pins": [
+    {"case": "Original declaration index, not table position", "result": "adequate", "evidence": "Structural.DeclarationIdentity records both columns for interleaved entries, notably B at table index 1/original declaration 5. interleaved_tensor specializes the certificate to that exact entry. Read/output views also pin original declaration provenance."},
+    {"case": "Ordered equal extents", "result": "adequate", "evidence": "The two legal A declarations have [(1,2),(2,2)] versus [(2,2),(1,2)], not merely [2,2]. Both share read slots [2,1]; sameExtentIdentity accepts declaration [i,i] with distinct-axis read slots. No identity-rejection guard was introduced."},
+    {"case": "Read name", "result": "adequate", "evidence": "AsymmetricOrder pins B,A,B and a second A term, including each name, original declaration, slots and factor origin. IndexedOccurrences repeats the statement at original index 3 and adds a named Diagonal read. FactorFields/RawCheckedFactorFields also relate exact original names to the table entry."},
+    {"case": "Output name", "result": "adequate", "evidence": "OutputTargetNames changes only the LHS name between writable same-shape Y and Z, and pins table positions 2/5, original declarations 6/9, names, role, axes and full origin."},
+    {"case": "Diagnostic order with multiple simultaneous violations", "result": "adequate", "evidence": "refusal simultaneously has max, relu and Missing output. ExactErrorOrder pins nonSum, then nonIdentity after changing only aggregation, then undeclaredTensor Missing after changing only nonlinearity, including stage and every SourceOrigin field. Changing only output name finally yields admission success."},
+    {"case": "Sentinel names vs same-name mismatched initial UIDs", "result": "adequate", "evidence": "RawSentinelNames uses distinct a/b names sharing initial UID zero and reverses legal read slots. ResolverMetadataFidelity separately uses same name a at initial UIDs 17,29,43,81,19 with mixed nat/real kinds; full resolved decl/statement equality retains kinds and maps every UID to 1. distinctZero supplies another sentinel neighbor."},
+    {"case": "Tensor/linear type and bias siblings", "result": "adequate", "evidence": "DeclarationForms exercises nine actual raw-admission cases: untyped tensor, typed f32/f64 tensors, untyped linear bias/nonbias, and typed f32/f64 linear bias/nonbias; exact entries and ordered duplicate read occurrences are guarded. Existing acceptance tests also reject both complex types across tensor/linear and both linear bias bits."},
+    {"case": "Zero, empty, duplicate and multiplicity behavior", "result": "adequate", "evidence": "New guards pin zero extents, repeated declaration/output slots, empty product and sum, duplicate reads/terms and repeated statements without deduplication. Existing registered tests pin scalar slots, zero/unused input requirements, and distinguish repeated uses from duplicate axis/tensor declarations."}
+  ],
+  "mutation_receipts": {
+    "basis": "Read all four controller markdown summaries and bounded windows covering their logs; these are existing controller cycles, not new mutations run by this reviewer.",
+    "counts": {"existing": 2, "post": 2, "structural": 8, "endpoint": 5, "total_passed": 17, "proof_kills": 15, "fixture_contrasts": 2, "runtime_kills": 0},
+    "proof_kill_ids": ["M1", "M2", "M3", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "E1", "E2", "E3", "E4"],
+    "fixture_contrast_ids": ["M4", "E5"],
+    "observed_first_failure": {
+      "M1": "Structural coverage proof and assignUIDs_eq_inline",
+      "M2": "Admission.astRead_fields",
+      "M3": "Admission.admitAstTerm_fields",
+      "S1": "Adapter.checkTable_declarations",
+      "S2": "Adapter.checkTable_declarations",
+      "S3": "Adapter.tensorDecl_classifies",
+      "S4": "Admission.admitStatement_fields",
+      "S5": "Admission.admitStatement_fields",
+      "S6": "Structural relabel proof and assignUIDs_eq_inline",
+      "S7": "Adapter.checkTable_declarations",
+      "S8": "Adapter.tensorDecl_classifies",
+      "E1": "Admission.admitStatement_fields",
+      "E2": "Admission.admitStatement_fields",
+      "E3": "Admission.admitStatement_fields",
+      "E4": "RawSemanticConnection.CertifiedRawTerm.read_projection",
+      "M4": "SourceRawCorrespondenceTest AsymmetricOrder / IndexedOccurrences guards after swapping expected order",
+      "E5": "SourceRawCorrespondenceTest ErrorOrder / ExactErrorOrder guards after changing refusal donor max to sum"
+    },
+    "restoration": "Every summary records mutation_exit=1, restore_hash_exit=0, restored_build_exit=0, with the intended proof/fixture source error and restored green build.",
+    "nonclaim": "A proof failing before the test compiles is proof coverage, not an observed runtime assertion kill. M4 changes an oracle; E5 changes a donor. Neither is an implementation-runtime kill.",
+    "historical_receipt_fields": "structural_fixtures.json and endpoint_fixtures.json retain zero-cycle/pending fields from their dispatch time; controller logs are the later observation. Preserve that chronology and reconcile it explicitly in the final plan/package rather than presenting the historical snapshots as current cycle totals."
+  },
+  "reached_result_boundary": {
+    "observed": "The exact parsedRun and asymmetricRun executor results are guarded as complete, with 4 and 12 events respectively; build output agrees with endpoint_fixtures.json.",
+    "kernel_contract": "parsed_certified_execution and asymmetric_certified_execution fix actual raw programs, admission results and validated execution results, but explicitly require c, Complete c, and equality of the actual outcome to complete c complete.",
+    "nonclaim": "Unconditional kernel completion of either concrete run is not verified. This review confirms the premise is explicit, not the independent dependent semantic proof obligations."
+  },
+  "verification": [
+    {
+      "command": "bash /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd LeanNCD Tests",
+      "exit_code": 0,
+      "build_jobs": 8766,
+      "scope": "Public library and registered test targets, including existing acceptance matrix and new raw correspondence fixtures.",
+      "note": "Lake replayed cached successful modules as applicable. This is not a claim of whole-branch integration readiness."
+    }
+  ],
+  "package_constraints": [
+    "Stage by explicit path only; do not stage .claude/settings.json or sweep unrelated worktree changes.",
+    "Include untracked RawCorrespondence.lean, RawSemanticConnection.lean and SourceRawCorrespondenceTest.lean together with the four modified runtime/proof modules.",
+    "Preserve all three import/registration changes: Source.lean imports both new public modules, SourceAdmissionTest.lean imports the new test, and lakefile.toml lists the new test glob.",
+    "Final replacement patches must contain the installed memo/relabel extraction AND generic assignUIDs_eq_inline, not a stale earlier seed snapshot.",
+    "Final docs/plan must distinguish 17 observed cycles, 15 proof kills, 2 fixture contrasts, and zero observed implementation-runtime kills; candidate labels and historical pending receipt fields are not current count evidence.",
+    "Keep observed complete outcomes separate from the kernel theorems' explicit completion premises. Do not advertise unconditional kernel completion.",
+    "These are expected package-phase obligations, not current code findings; full integration/plan readiness remains a separate gate."
+  ],
+  "operations": {
+    "source_code_edited": false,
+    "spawned": false,
+    "staged": false,
+    "committed": false,
+    "mutations_run": false,
+    "only_authored_artifact": "papers/semantics/raw_source_admission_artifacts/fidelity_review.json",
+    "proof_scope": "No binder soundness or independent dependent semantic proof audit performed."
+  },
+  "budget": {
+    "limit_turns": 30,
+    "limit_context": 250000,
+    "status": "Within turn limit; no context-limit breach observed.",
+    "measurement": "Exact context peak/cumulative token telemetry is unavailable here; no fabricated token measurement is claimed.",
+    "reading": "Bounded 40-60-line file windows, with shorter EOF windows; surgical diff and rg -n searches.",
+    "breach": false
+  }
+}

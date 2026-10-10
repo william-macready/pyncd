@@ -1,0 +1,111 @@
+{
+  "status": "A-context/table prototype compiled; not slice-ready",
+  "base": "3d721f96",
+  "changed_paths_this_phase": [
+    "leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+    "leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+    "papers/semantics/raw_source_admission_artifacts/declaration_invariants.json"
+  ],
+  "interfaces": [
+    {
+      "relation": "AxisDeclarations @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "classifier": "PinnedAxisDeclaration @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "theorem": "checkAxes_declarations @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "contract": "Actual checkAxes success implies an ordered structural selection of exactly the pinned axis declarations. Axis uid and extent are copied exactly, including zero. Iterations and unpinned axis declarations cannot satisfy this relation. Non-axis declarations emit no axes; context uniqueness comes from Context.unique.",
+      "projection": "AxisDeclarations.pinned @ leanncd/LeanNCD/Semantics/Source/Adapter.lean"
+    },
+    {
+      "relation": "TableDeclarations @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "classifier": "TensorDeclarationSelection @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "supported_forms": "SupportedTensorDeclaration @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "theorem": "checkTable_declarations @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "contract": "OrderedSelection relates decls.zipIdx to table.entries. Only axis declarations may be skipped. Every emitted entry keeps the original declaration index, name, element type and ordered AxisSpec slots. Untyped tensor/linear classify as f32; typed tensor/linear admit f32/f64; linear bias is immaterial. The relation records the actual specs.find? result at the original declaration index, role equality and extent-list equality.",
+      "entry_relation": "TensorEntryDeclaration @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "entry_theorem": "TableDeclarations.entry @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "entry_contract": "For every t : table.declarations.Tensor, decls[(table.entry t).declaration]? = some original declaration. Classification and ordered slots refer to that declaration, not to t.val. The actual matching spec also has spec.declaration = entry.declaration.",
+      "slots_relation": "DeclaredAxisSlots @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "slots_theorems": [
+        "sourceAxis_declared @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+        "DeclaredAxisSlots.pinned @ leanncd/LeanNCD/Semantics/Source/Adapter.lean"
+      ],
+      "slots_contract": "Forall2 preserves slot order and repeated axes. Each returned Axis has the corresponding declared AxisSpec UID and belongs to c.axes. With AxisDeclarations, each returned extent has its original bare pin. No constraint compares tensor slots to read-use slots, and no nat/real use-site-kind rejection is introduced."
+    },
+    {
+      "relation": "AdaptSourceDeclarations @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "theorem": "adaptSource_declarations @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "entry_theorem": "adaptSource_entry_declaration @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "contract": "Given adaptSource snapshot = Except.ok source, expose both AxisDeclarations and TableDeclarations for that actual source. No certificate assumption was added to AdaptedSource."
+    }
+  ],
+  "proof_evidence": {
+    "shared_helper": "forIn_append_selection @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+    "helper_contract": "Generic over input/output/error types and the actual forIn body. Successful steps yield the existing accumulator plus zero or one structurally classified output; actual traversal success implies OrderedSelection and out = init ++ selected.",
+    "prior_art_read": [
+      "List.forIn_cons and List.forIn_yield_eq_foldlM @ Lean 4.30.0 Init/Data/List/Monadic.lean",
+      "physicalizeFold_fragmentCount @ leanncd/LeanNCD/DSL/Pipeline/RouteFragments.lean",
+      "foldl_preserves_inv @ leanncd/LeanNCD/DSL/Pipeline/RouteSpec.lean"
+    ],
+    "method": "Normalize and generalize the original imperative loops in proof hypotheses, prove their successful callbacks, then apply the shared traversal theorem. No second runtime checker or extracted runtime body.",
+    "donor": "snapshot @ leanncd/test/Semantics/SourceAdmissionFixtures.lean",
+    "donor_checks": "SourceRawCorrespondenceTest now kernel-checks adaptSource snapshot succeeds by rfl and instantiates the generic original-entry theorem. Existing six raw fixtures and SourceAdmissionAcceptanceTest also compile; no fixture corpus expansion or mutation phase."
+  },
+  "behavior_equality": {
+    "runtime_extraction": false,
+    "facts": [
+      "No original Adapter computation body, algorithm, signature, origin construction or check ordering was edited in this phase.",
+      "The recorded zero-context Adapter diff against the base contains only insertion hunks between original computations, with no removed lines.",
+      "Because no original computation was changed or extracted, all original Except results are definitionally unchanged, including errors, origins and ordering. No new equality theorem against a replacement computation is needed or claimed."
+    ],
+    "evidence_log": "declaration-runtime-diff.log in the current session files directory"
+  },
+  "validation": {
+    "successful_commands": [
+      {
+        "command": "bash /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd LeanNCD.Semantics.Source.Adapter",
+        "result": "exit 0; all three generic interfaces compile",
+        "log": "declaration-build.log in the current session files directory"
+      },
+      {
+        "command": "bash /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd Semantics.SourceRawCorrespondenceTest Semantics.SourceAdmissionAcceptanceTest",
+        "result": "exit 0; Build completed successfully (8521 jobs)",
+        "log": "declaration-tests.log in the current session files directory"
+      }
+    ],
+    "corrected_invocation": "Tests:Semantics.SourceRawCorrespondenceTest was an invalid Lake facet; corrected to the bare module targets above.",
+    "axiom_audit": {
+      "location": "SourceRawCorrespondenceTest @ leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+      "propext_only": [
+        "AxisDeclarations.pinned",
+        "DeclaredAxisSlots.pinned"
+      ],
+      "propext_Quot_sound": [
+        "forIn_append_selection",
+        "checkAxes_declarations",
+        "sourceAxis_declared",
+        "checkTable_declarations",
+        "TableDeclarations.entry"
+      ],
+      "propext_Classical_choice_Quot_sound": [
+        "adaptSource_declarations",
+        "adaptSource_entry_declaration"
+      ],
+      "observation": "No sorryAx, native proof or new axiom. Only the adapter-level certificates additionally report Classical.choice; neither generic declaration checker theorem does. Its dependency origin was not separately traced."
+    }
+  },
+  "remaining_gates": [
+    "Later actual mapUID transport of these structural relations; not attempted in this A-context/table phase.",
+    "Separate fixture/mutation phase, including discriminating original-ID/order and accepted-neighbor tests.",
+    "Further execution-ready plan authoring and generation of final replacement patches; installed real-source additions were deliberately retained.",
+    "Full default build and final whole-branch review remain execution/integration gates, not performed here."
+  ],
+  "blockers": [],
+  "scope_and_budget": {
+    "agents_spawned": 0,
+    "commits_merges_or_staging": false,
+    "seed_artifacts_preserved": true,
+    "excluded_work": "No memo, raw AST transport, semantic endpoint or input correspondence implementation.",
+    "turn_cap": "Approximately 55 tool-call turns at receipt creation; finishing within the approximately 60-turn cap.",
+    "context_cap": "No observed breach of approximately 250k context; exact token telemetry unavailable.",
+    "measurement_attempt": "token-report.py f0f50335-e56d-401a-a010-11d0d43c0404 returned 'no transcript for session'; no measured cumulative-token claim."
+  }
+}

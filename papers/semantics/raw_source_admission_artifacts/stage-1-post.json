@@ -1,0 +1,30 @@
+[
+  {
+    "label": "M1 bypass original axis-name mint loop (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+    "old": "private def assignUIDMemo (p : TLProgram) : FreshM (HashMap String UID) := do\n  let mut memo : HashMap String UID := {}\n  for nm in p.axisNames do",
+    "new": "private def assignUIDMemo (p : TLProgram) : FreshM (HashMap String UID) := do\n  let mut memo : HashMap String UID := {}\n  for nm in ([] : List String) do",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/DSL/Pipeline/Structural.lean",
+      "unsolved goals"
+    ]
+  },
+  {
+    "label": "S6 use initial UID despite covering name memo (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+    "old": "def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=\n  match u.name with\n  | some nm => match memo[nm]? with | some v => { u with uid := v } | none => u\n  | none => u",
+    "new": "def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=\n  match u.name with\n  | some nm => match memo[nm]? with | some _ => u | none => u\n  | none => u",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/DSL/Pipeline/Structural.lean",
+      "unsolved goals"
+    ]
+  }
+]

@@ -1,0 +1,145 @@
+{
+  "status": "A-resolver proof interfaces compiled; bounded objective complete; not full slice readiness",
+  "base": "3d721f96",
+  "worktree": "/Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4",
+  "source_disposition": "Installed real-source additions retained for the next stage; existing seed and declaration-invariant work preserved.",
+  "changed_paths_this_continuation": [
+    "leanncd/LeanNCD/DSL/Traverse.lean",
+    "leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+    "leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+    "leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+    "papers/semantics/raw_source_admission_artifacts/resolver_binding.json",
+    "papers/semantics/raw_source_admission_artifacts/resolver-validation.log"
+  ],
+  "interfaces": [
+    {
+      "collector": "LeanNCD.TLProgram.axisSpecs @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "collector_visibility": "Existing private collector made public; its body is unchanged.",
+      "collector_definition": "(TLProgram.traverseAxes (f := ConstL (List AxisSpec)) (fun a => \u27e8[a]\u27e9) p).run",
+      "name_collector": "LeanNCD.TLProgram.axisNames @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "name_collector_definition": "(p.axisSpecs.map (fun a => a.name)).eraseDups",
+      "theorem": "LeanNCD.TLProgram.mem_axisNames_iff @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "contract": "For every p and name: name in p.axisNames iff there exists a in p.axisSpecs with a.name = name. Proved using actual map and eraseDups membership lemmas.",
+      "occurrence_projection": "LeanNCD.TLProgram.axisSpec_name_mem @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "projection_contract": "a in p.axisSpecs implies a.name in p.axisNames. This is the public structural-occurrence collector interface for the later raw phase.",
+      "boundary": "No separate raw AST occurrence predicate or unproved set equality is assumed. Later bare output/read/declaration occurrence proofs must establish membership in this actual traversal collector; no huge per-node decomposition proof was added."
+    },
+    {
+      "theorem": "LeanNCD.forIn_insert_coverage @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "parameters": "Generic key/value/error/state types; BEq and Hashable keys with LawfulBEq and LawfulHashable.",
+      "premise": "Every successful actual callback body key memo start = EStateM.Result.ok result finish yields result = ForInStep.yield (memo.insert key value) for some value.",
+      "contract": "Successful (forIn keys init body).run start = EStateM.Result.ok out finish implies every key in keys, or already having some lookup value in init, has some lookup value in out.",
+      "method": "Induction through List.forIn_cons with the actual EStateM callback result; HashMap.getElem?_insert and getElem?_insert_self prove preservation and insertion.",
+      "not_claimed": "Values of pre-existing entries need not be preserved when overwritten. No uniqueness, injectivity, nonzero or counter-freshness hypothesis is used."
+    },
+    {
+      "computation": "assignUIDMemo (private) @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "theorem": "LeanNCD.assignUIDMemo_covers @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "contract": "For every p, start, finish and memo, actual successful (assignUIDMemo p).run start = EStateM.Result.ok memo finish implies forall name in p.axisNames, exists uid, memo[name]? = some uid.",
+      "method": "Normalize and generalize the installed imperative forIn loop in the success hypothesis, prove the actual freshNonZero callback yields an insert, and apply forIn_insert_coverage starting with the empty HashMap.",
+      "visibility_note": "The theorem is public but its premise mentions the private mint computation. Downstream clients normally use assignUIDs_mapUID_covered instead."
+    },
+    {
+      "theorem": "LeanNCD.assignUIDs_mapUID_covered @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "contract": "Actual successful (assignUIDs p).run start = EStateM.Result.ok lp finish produces one memo covering every p.axisNames name, with both lp.decls and lp.stmts equal to the corresponding fields of p.mapUID (sourceUIDRelabel memo). The memo is exactly the successful memo from the actual mint computation, not a separately constructed witness.",
+      "compatibility_corollary": "LeanNCD.assignUIDs_mapUID @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "compatibility": "The old public existential mapUID statement is unchanged; its proof now projects the stronger witness."
+    },
+    {
+      "theorem": "LeanNCD.AxisSpec.mapUID_metadata @ leanncd/LeanNCD/DSL/Traverse.lean",
+      "contract": "For every mapper f and AxisSpec a, AxisSpec.mapUID f a preserves a.name and a.kind.",
+      "lookup_theorem": "LeanNCD.AxisSpec.mapUID_sourceUIDRelabel @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "lookup_contract": "memo[a.name]? = some uid implies AxisSpec.mapUID (sourceUIDRelabel memo) a = { a with uid := uid }.",
+      "same_name_theorem": "LeanNCD.AxisSpec.mapUID_sourceUIDRelabel_same_name @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+      "same_name_contract": "For arbitrary a and b, a.name = b.name and existence of a memo lookup value for a.name imply equality of their mapped UIDs. There is no hypothesis relating their initial UIDs or kinds."
+    },
+    {
+      "theorem": "LeanNCD.Semantics.Source.resolveSource_mapUID_covered @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "contract": "Actual resolveSource raw specs inputs = Except.ok snapshot produces one memo covering all raw.axisNames, snapshot.resolved.decls/stmts equal to raw.mapUID (sourceUIDRelabel memo) fields, and snapshot.specs = specs and snapshot.inputs = inputs.",
+      "method": "Derive from the production resolver's assignUIDs raw at state 0, then the existing resolveDecls/buildDeclEnv success branches; no declaration proof algorithm is changed.",
+      "compatibility_corollary": "LeanNCD.Semantics.Source.resolveSource_mapUID @ leanncd/LeanNCD/Semantics/Source/Adapter.lean",
+      "compatibility": "The old public success statement is unchanged and follows by discarding coverage."
+    }
+  ],
+  "behavior_equality": {
+    "theorem": "LeanNCD.assignUIDs_eq_inline @ leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+    "contract": "Equality of FreshM LabeledProgram computations, hence equality of the entire EStateM result at every starting counter, including success values, errors and final fresh state.",
+    "reference": "Original inline assignUIDs body read from git show HEAD:leanncd/LeanNCD/DSL/Pipeline/Structural.lean: empty memo, for nm in p.axisNames, freshNonZero, memo.insert, original source-name relabel lambda, p.mapUID, labeled field return.",
+    "method": "Monad-law simplification followed by definitional equality. The original body occurs only in the theorem expression, not as a parallel runtime resolver.",
+    "decision": "Preserved seed extraction into private assignUIDMemo and sourceUIDRelabel because a short generic behavior-equality proof compiled. No restoration or removal of seed extraction.",
+    "documentation": "Corrected assignUIDMemo's mint-only attribution and placed the relabel description on assignUIDs."
+  },
+  "validation": {
+    "final_command": "bash /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/leanncd LeanNCD.DSL.Pipeline.Structural LeanNCD.Semantics.Source.Adapter Semantics.SourceRawCorrespondenceTest Semantics.SourceAdmissionAcceptanceTest",
+    "result": "Exit 0; Build completed successfully (8521 jobs). Requested modules and their existing fixture checks compile.",
+    "receipt": "papers/semantics/raw_source_admission_artifacts/resolver-validation.log",
+    "fixture": "SourceRawCorrespondenceTest.inconsistentUIDs @ leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+    "donor": "Clone parsed's program shape, changing initial UIDs and kinds independently at axis declaration, tensor declaration, bare output and bare read sites.",
+    "kernel_fixtures": [
+      {
+        "theorem": "SourceRawCorrespondenceTest.inconsistentUIDs_start_zero @ leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+        "observed_contract": "Actual assignUIDs at start 0 gives the entire program mapped to UID 1 and final counter 2, retaining names and kinds.",
+        "proof": "cbv, kernel-checked; no native_decide."
+      },
+      {
+        "theorem": "SourceRawCorrespondenceTest.inconsistentUIDs_start_seven @ leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+        "observed_contract": "Actual assignUIDs at start 7 gives the entire program mapped to UID 7 and final counter 8, retaining names and kinds.",
+        "proof": "cbv, kernel-checked; no native_decide."
+      }
+    ],
+    "generic_client": "SourceRawCorrespondenceTest includes a generic successful-resolver witness projecting coverage to every a in raw.axisSpecs, while retaining both resolved field equations for that same memo.",
+    "failed_attempts_resolved": [
+      "First compile exposed local names removed by substitution and a remaining definitional relabel equality; both corrected without changing runtime behavior.",
+      "Optional concrete HashMap fixture did not close by rfl; cbv closes both fixtures with kernel-checked proofs."
+    ],
+    "axiom_audit": {
+      "location": "print axioms commands in leanncd/test/Semantics/SourceRawCorrespondenceTest.lean; emitted lists retained in resolver-validation.log",
+      "no_axioms": [
+        "LeanNCD.AxisSpec.mapUID_metadata"
+      ],
+      "propext_Quot_sound": [
+        "LeanNCD.TLProgram.mem_axisNames_iff",
+        "LeanNCD.TLProgram.axisSpec_name_mem",
+        "LeanNCD.AxisSpec.mapUID_sourceUIDRelabel",
+        "LeanNCD.AxisSpec.mapUID_sourceUIDRelabel_same_name",
+        "LeanNCD.assignUIDs_eq_inline"
+      ],
+      "propext_Classical_choice_Quot_sound": [
+        "LeanNCD.forIn_insert_coverage",
+        "LeanNCD.assignUIDMemo_covers",
+        "LeanNCD.assignUIDs_mapUID_covered",
+        "LeanNCD.assignUIDs_mapUID",
+        "LeanNCD.Semantics.Source.resolveSource_mapUID_covered",
+        "LeanNCD.Semantics.Source.resolveSource_mapUID",
+        "SourceRawCorrespondenceTest.inconsistentUIDs_start_zero",
+        "SourceRawCorrespondenceTest.inconsistentUIDs_start_seven"
+      ],
+      "observation": "All new generic proof interfaces and both named concrete fixtures were audited. No sorryAx or native dependency, and no new axioms. Source search for sorry, native_decide or axiom declarations in the four touched Lean files returned no matches."
+    },
+    "warnings": "Existing Adapter and dependency linter warnings remain; no declaration algorithm cleanup was undertaken."
+  },
+  "remaining_other_gates": [
+    "Later raw bare output/read/declaration membership decomposition against the public actual axisSpecs collector as needed by raw transport.",
+    "Raw AST transport and semantic correspondence/endpoints, including transport of the already compiled declaration relations; deliberately not implemented here.",
+    "Full fixture and mutation phase, including accepted-neighbor and discriminating order/original-ID tests; optional kernel fixture here is not a replacement.",
+    "Execution-ready plan authoring and final patch artifact regeneration from installed source; existing patch artifacts were not regenerated or claimed current.",
+    "Full default build and final whole-branch review/integration gates; not run in this bounded authoring continuation."
+  ],
+  "blockers": [],
+  "scope_and_budget": {
+    "process_weight": "Full proof-authoring continuation, bounded to A-resolver; no pipeline dispatch.",
+    "agents_spawned": 0,
+    "commits_merges_or_staging": false,
+    "other_work_preserved": true,
+    "excluded": "No global UID freshness/injectivity/nonzero theorem, raw AST/semantic transport implementation, declaration proof algorithm changes or full fixture phase.",
+    "turn_cap": "Approximately 55 turns.",
+    "tool_call_rounds_at_receipt": 24,
+    "estimated_tool_call_rounds_at_close": 25,
+    "estimated_remaining_tool_call_rounds_to_55": 30,
+    "turn_count_caveat": "These counts are direct tool-call rounds of this continuation, not host-reported API turn telemetry.",
+    "context_cap": "Approximately 250k context; no observed breach.",
+    "context_availability": "Exact SDK token telemetry unavailable; no exact remaining-token or cumulative-token claim.",
+    "measurement_attempt": "token-report.py f0f50335-e56d-401a-a010-11d0d43c0404 returned no transcript for session.",
+    "budget_breach": "No observed breach; exact context measurement unavailable."
+  }
+}

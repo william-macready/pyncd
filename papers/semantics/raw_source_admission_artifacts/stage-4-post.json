@@ -1,0 +1,44 @@
+[
+  {
+    "label": "M4 asymmetric ordered oracle swaps distinct tensors (fixture-contrast)",
+    "task": "4",
+    "file": "test/Semantics/SourceRawCorrespondenceTest.lean",
+    "old": "    [(\"B\", 4, [1], ro 0 0 0 4), (\"A\", 3, [1, 2], ro 0 0 1 3),",
+    "new": "    [(\"A\", 3, [1, 2], ro 0 0 1 3), (\"B\", 4, [1], ro 0 0 0 4),",
+    "targets": [
+      "Semantics.SourceRawCorrespondenceTest"
+    ],
+    "expect": [
+      "error: test/Semantics/SourceRawCorrespondenceTest.lean",
+      "Expression"
+    ]
+  },
+  {
+    "label": "E4 reverse certified raw read coordinate witness (proof-protected rejection)",
+    "task": "4",
+    "file": "LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+    "old": "  obtain ⟨a, u, ha, hu, hm, hv⟩ := hs.coordinate v q\n",
+    "new": "  obtain ⟨a, u, ha, hu, hm, hv⟩ := hs.coordinate v q.rev\n",
+    "targets": [
+      "LeanNCD.Semantics.Source.RawSemanticConnection"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "E5 refusal max-to-sum donor contrast (fixture-contrast)",
+    "task": "4",
+    "file": "test/Semantics/SourceRawCorrespondenceTest.lean",
+    "old": "  .assign \"Missing\" [.free i] { body := ⟨[]⟩, nonlin := .pointwise .relu, agg := .max }] }\n",
+    "new": "  .assign \"Missing\" [.free i] { body := ⟨[]⟩, nonlin := .pointwise .relu, agg := .sum }] }\n",
+    "targets": [
+      "Semantics.SourceRawCorrespondenceTest"
+    ],
+    "expect": [
+      "error: test/Semantics/SourceRawCorrespondenceTest.lean",
+      "Expression"
+    ]
+  }
+]

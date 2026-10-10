@@ -1,0 +1,276 @@
+{
+  "status": "execution_ready_not_landed",
+  "base_commit": "3d721f9631de8642163446f98b4efc8fe1d078d5",
+  "stages": [
+    {
+      "task": "1",
+      "depends_on": [],
+      "patch": "papers/semantics/raw_source_admission_patches/01-certified-binding.patch",
+      "sha256": "53ea70b56e8eea65da6d0f4fa416743c3f7c8701acd904e668e7a0f4b8811e32",
+      "paths": [
+        "leanncd/LeanNCD/DSL/Traverse.lean",
+        "leanncd/LeanNCD/DSL/Pipeline/Structural.lean",
+        "leanncd/LeanNCD/Semantics/Source/Adapter.lean"
+      ],
+      "build_targets": [
+        "LeanNCD.Semantics.Source.Adapter"
+      ],
+      "file_sha256": {
+        "leanncd/LeanNCD/DSL/Traverse.lean": "807605ddb4a7e4829db5c138e6ba538d3842da1a8d51bb78bd77f645166c60c0",
+        "leanncd/LeanNCD/DSL/Pipeline/Structural.lean": "11bd3c2581ff6e1e56721b12039f3ef5b48c564308afa183a521b61fe4d3749d",
+        "leanncd/LeanNCD/Semantics/Source/Adapter.lean": "a979fe935f0306d8ff724ea7909ac6c62b31db1cb8f6742d62762a032605ccb1"
+      },
+      "controls": [
+        "M1",
+        "S1",
+        "S2",
+        "S3",
+        "S6",
+        "S7",
+        "S8"
+      ],
+      "fixture_families_run_at_stage": 0,
+      "mutation_manifests": [
+        "stage-1-existing.json",
+        "stage-1-post.json"
+      ]
+    },
+    {
+      "task": "2",
+      "depends_on": [
+        "1"
+      ],
+      "patch": "papers/semantics/raw_source_admission_patches/02-resolved-occurrences.patch",
+      "sha256": "d49d9d9598de95837270144a853e51724726c8a6427bc8af0a35990a4939c4fc",
+      "paths": [
+        "leanncd/LeanNCD/Semantics/Source/Admission.lean"
+      ],
+      "build_targets": [
+        "LeanNCD.Semantics.Source.Admission"
+      ],
+      "file_sha256": {
+        "leanncd/LeanNCD/Semantics/Source/Admission.lean": "8db23813aba6868199e9c90bf14c9790d6a5ab06128db5b2fcdd4b175a27ebf1"
+      },
+      "controls": [
+        "M2",
+        "M3",
+        "S4",
+        "S5",
+        "E1",
+        "E2",
+        "E3"
+      ],
+      "fixture_families_run_at_stage": 0,
+      "mutation_manifests": [
+        "stage-2-existing.json",
+        "stage-2-post.json"
+      ]
+    },
+    {
+      "task": "3",
+      "depends_on": [
+        "2"
+      ],
+      "patch": "papers/semantics/raw_source_admission_patches/03-raw-correspondence.patch",
+      "sha256": "a013af8584e44c7e0cdd03b2b415553a8dc2d18add6c842998e1b948277e8824",
+      "paths": [
+        "leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean"
+      ],
+      "build_targets": [
+        "LeanNCD.Semantics.Source.RawCorrespondence"
+      ],
+      "file_sha256": {
+        "leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean": "b8f53abc9e0e456e1597ab8521a478694c9dc80f9d2434af00b2526f54cffa99"
+      },
+      "controls": [],
+      "fixture_families_run_at_stage": 0,
+      "mutation_manifests": []
+    },
+    {
+      "task": "4",
+      "depends_on": [
+        "3"
+      ],
+      "patch": "papers/semantics/raw_source_admission_patches/04-semantic-fixtures.patch",
+      "sha256": "9acf13af261183d0151d6acde8ffe5905eed756afaa62bf7fcf5f3553cc4ebca",
+      "paths": [
+        "leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean",
+        "leanncd/LeanNCD/Semantics/Source.lean",
+        "leanncd/test/Semantics/SourceRawCorrespondenceTest.lean",
+        "leanncd/test/Semantics/SourceAdmissionTest.lean",
+        "leanncd/lakefile.toml"
+      ],
+      "build_targets": [
+        "LeanNCD.Semantics.Source.RawSemanticConnection",
+        "Semantics.SourceRawCorrespondenceTest",
+        "Semantics.SourceAdmissionTest",
+        "LeanNCD"
+      ],
+      "file_sha256": {
+        "leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean": "f52158e7e09d3e394b77b459777aa7b086487f6cc10fcf2b1cd56e38d4f4d590",
+        "leanncd/LeanNCD/Semantics/Source.lean": "947136186fd794ef2b1cac3c5fe69cb76443a4a4fdbb5ad27ce8c8f10e6992cb",
+        "leanncd/test/Semantics/SourceRawCorrespondenceTest.lean": "20536f072d489f2e25a8bb9569af7af364d33b388947ae35dbed6b6e2b24154a",
+        "leanncd/test/Semantics/SourceAdmissionTest.lean": "5a4f7f0c178bc5da9e4bd8a06c11a3c31fc5f6358521d181f62defc1265fc6bc",
+        "leanncd/lakefile.toml": "3c9294b5a0e09bb78edad101bf5c856270a81239b61268bce38dcd631c2d50b3"
+      },
+      "controls": [
+        "M4",
+        "E4",
+        "E5"
+      ],
+      "fixture_families_run_at_stage": 10,
+      "mutation_manifests": [
+        "stage-4-post.json"
+      ]
+    }
+  ],
+  "file_sha256": {
+    "leanncd/LeanNCD/DSL/Traverse.lean": "807605ddb4a7e4829db5c138e6ba538d3842da1a8d51bb78bd77f645166c60c0",
+    "leanncd/LeanNCD/DSL/Pipeline/Structural.lean": "11bd3c2581ff6e1e56721b12039f3ef5b48c564308afa183a521b61fe4d3749d",
+    "leanncd/LeanNCD/Semantics/Source/Adapter.lean": "a979fe935f0306d8ff724ea7909ac6c62b31db1cb8f6742d62762a032605ccb1",
+    "leanncd/LeanNCD/Semantics/Source/Admission.lean": "8db23813aba6868199e9c90bf14c9790d6a5ab06128db5b2fcdd4b175a27ebf1",
+    "leanncd/LeanNCD/Semantics/Source/RawCorrespondence.lean": "b8f53abc9e0e456e1597ab8521a478694c9dc80f9d2434af00b2526f54cffa99",
+    "leanncd/LeanNCD/Semantics/Source/RawSemanticConnection.lean": "f52158e7e09d3e394b77b459777aa7b086487f6cc10fcf2b1cd56e38d4f4d590",
+    "leanncd/LeanNCD/Semantics/Source.lean": "947136186fd794ef2b1cac3c5fe69cb76443a4a4fdbb5ad27ce8c8f10e6992cb",
+    "leanncd/test/Semantics/SourceRawCorrespondenceTest.lean": "20536f072d489f2e25a8bb9569af7af364d33b388947ae35dbed6b6e2b24154a",
+    "leanncd/test/Semantics/SourceAdmissionTest.lean": "5a4f7f0c178bc5da9e4bd8a06c11a3c31fc5f6358521d181f62defc1265fc6bc",
+    "leanncd/lakefile.toml": "3c9294b5a0e09bb78edad101bf5c856270a81239b61268bce38dcd631c2d50b3"
+  },
+  "mechanical_validation": {
+    "ordered_cached_application": "passed",
+    "compiled_byte_hash_match": "passed",
+    "source_worktree_unchanged": true,
+    "real_index_untouched": true,
+    "stage_build_replay": "passed controller"
+  },
+  "receipts": {
+    "declaration_invariants.json": "eb3d49edd13c6d6d54480ed949e8c8a600c0fcb90cd389d5415c4bcd9f930963",
+    "resolver_binding.json": "19d12d715d08a3d0ecdcf0c25d79baeb01d07878ea561ef71293a785d1524406",
+    "raw_bridge.json": "7cecd94a936b9d2438221bbdf8d0bab5c9b6d1474c91571a07872d8727354dc6",
+    "semantic_connection.json": "ab552e99fd92cf635aafba522b518cabdacc35967c8a4bdc973bc13c44324370",
+    "structural_fixtures.json": "b1f7fc32ee5e75f04a96cd8f5090d2e5b0da19d1f9f6b02e11975b24e8a54505",
+    "endpoint_fixtures.json": "ea58d4fa004065e7e0820ed02e7d52b39cfc8ab5fb8764bd4fc6be9c5765970f",
+    "soundness_review.json": "9a150a04bf8198c6242b6e72859053230706e04c251fdb10de904404bae98872",
+    "fidelity_review.json": "d38897d0b22ec2083701b4b228c3a874680d6c75f8734ff87a7622d3fde9cecc",
+    "controller-existing.md": "bd736f76d7653891842c10ea31b0e907da2bd83a946b99b4ea7353a433d04f9b",
+    "controller-existing.log": "c62e28ed1b317e6fa21081aff53d90721cd6773ce4d421f469e2f0f9e8a2a0c1",
+    "controller-post.md": "0026e286c819fa22ce718c520886b52c0b336d07d0cd4ad64bf3bf66a62ea5f5",
+    "controller-post.log": "417e63c26aeacd6e17091127d22b5ad1b148449bc22caaf53aae46b339a0cdc6",
+    "controller-structural.md": "43187d95af0a23ee09cd484066c475613f05fd9f5be2b557352e02fd458fad34",
+    "controller-structural.log": "3b3ea6e4189a588ddd71c45f0d7f79f1bcf5e32e4de8277915973443c8378706",
+    "controller-endpoint.md": "5bf7fbeeba5760bae2839e0c7592425df2098edacca530d18c2c20a4035af897",
+    "controller-endpoint.log": "86dcbf1ff2eeef643acab9ea85d3e3e9cc2a8c78d34c11c92778ee128ce36848"
+  },
+  "contracts": {
+    "A": "resolver_binding.json and declaration_invariants.json: actual memo coverage, original declaration IDs, ordered pins/slots, specs roles/shapes",
+    "B": "raw_bridge.json: actual-success original-raw indexed AST/slot/declaration correspondence",
+    "C": "semantic_connection.json: certified checked/global semantics; reached equations relative to result.input, with complete-outcome premises",
+    "fixtures": [
+      {
+        "family": "DeclLocatorInterleaved",
+        "fixture": "Structural.DeclarationIdentity",
+        "observed": true,
+        "receipt": "structural_fixtures.json"
+      },
+      {
+        "family": "DeclarationForms",
+        "fixture": "Structural.DeclarationForms",
+        "observed": true,
+        "receipt": "structural_fixtures.json"
+      },
+      {
+        "family": "EqualExtentAxes",
+        "fixture": "Structural.DeclarationIdentity",
+        "observed": true,
+        "receipt": "structural_fixtures.json"
+      },
+      {
+        "family": "ResolverMetadataFidelity",
+        "fixture": "Structural.ResolverMetadataFidelity",
+        "observed": true,
+        "receipt": "structural_fixtures.json"
+      },
+      {
+        "family": "ErrorOrder",
+        "fixture": "ExactErrorOrder plus original ErrorOrder",
+        "observed": true,
+        "receipt": "endpoint_fixtures.json"
+      },
+      {
+        "family": "OutputTargetNames",
+        "fixture": "Endpoint.OutputTargetNames",
+        "observed": true,
+        "receipt": "endpoint_fixtures.json"
+      },
+      {
+        "family": "RawIndexedOccurrences",
+        "fixture": "Structural.IndexedOccurrences",
+        "observed": true,
+        "receipt": "structural_fixtures.json"
+      },
+      {
+        "family": "RawSentinelNames",
+        "fixture": "Structural.RawSentinelNames",
+        "observed": true,
+        "receipt": "structural_fixtures.json"
+      },
+      {
+        "family": "CertifiedParsedSemantics",
+        "fixture": "Endpoint.CertifiedParsedSemantics and parsed_certified_execution",
+        "observed": true,
+        "receipt": "endpoint_fixtures.json"
+      },
+      {
+        "family": "CertifiedAsymmetricSemantics",
+        "fixture": "Endpoint.CertifiedAsymmetricSemantics and asymmetric_certified_execution",
+        "observed": true,
+        "receipt": "endpoint_fixtures.json"
+      }
+    ],
+    "mutation_counts_observed_before_consolidation": {
+      "total": 17,
+      "proof_protected_rejections": 15,
+      "fixture_contrasts": 2,
+      "runtime_kills": 0
+    },
+    "reviews": "soundness/fidelity reports clean within installed-source scope, not package or whole-branch approval"
+  },
+  "manifest_sha256": {
+    "raw_source_admission_mutations.json": "b2c556d415fb81b9b4c3b800acfe5d8edc379dac86a678799996c7d834786394",
+    "raw_source_admission_mutations_post.json": "4d2d9adb3840d23088675d39d50a793bfc2eefbf9abbcdaec6d89b95cfcc8ce4"
+  },
+  "stage_manifest_sha256": {
+    "stage-1-existing.json": "537399f5f008184b565929f7a9051bb5c48beed850ca15bcf546b98fff83546f",
+    "stage-2-existing.json": "f8a7043a36f7bbea774fbeb6408f2ef30aa679c345d30470c5f24c281c89fa3f",
+    "stage-1-post.json": "3a60cd819e1e507c6fd6ce60119781fe622adfabe47bdc06dc90f5e47753c7b8",
+    "stage-2-post.json": "75a957975ffc6e73e5e0ccad868fc815af324935a382c39b5b898a7d32d0fa6b",
+    "stage-4-post.json": "d63d612d0fa20c974edfe0402b00fc72101056284ec454c3c47d7470806de105"
+  },
+  "stage_manifest_note": "Exact task projections of the two authoritative manifests, not independent authority. Runner validates all entries before --task filtering.",
+  "history_only": {
+    "evidence.json": "faebbd3b8e9b86462e2788f7526566dd8768837af7ee4b8faf4a6c563989250a",
+    "task-1.patch": "d839237bafc6b7c2879bc198fff6e18e8955b97fd3f6cb7d614f26c387d10e81",
+    "task-2.patch": "d49d9d9598de95837270144a853e51724726c8a6427bc8af0a35990a4939c4fc",
+    "task-3.patch": "78ebb326f2884d5de0468bd61900d74db4c223fbc2c119657e4e3feaf4c54e4f",
+    "candidate_manifest_sha256": {
+      "structural_mutations_candidates.json": "66d18a12cbc48e3f4b7611085ebdb77bbfab30d7b8f1aa8a2f05dd88103f0960",
+      "endpoint_mutations_candidates.json": "9f9fc085d25e59716dfbd8a3acc19ffafdd9d11d40bb6a646a8d171062178bef"
+    },
+    "note": "Partial seed and candidate manifests are historical design evidence, not final readiness receipts."
+  },
+  "controller_checks": {
+    "ordered_stage_builds": "passed: 4/4",
+    "full_default_build": "passed",
+    "final_manifests_check_and_cycles": "passed: 17/17",
+    "restored_hashes_and_green": "passed; prototype source restored to base; base LeanNCD green",
+    "execution_docs_and_whole_branch_reviews": "future execution"
+  },
+  "runtime_docs": "Task 4 execution edits; not included in compiled prototype patch",
+  "budget": "SDK exact turns/context/cumulative input unavailable; no measured 50M compliance claimed",
+  "commands": {
+    "capture": "python3 /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_artifacts/emit_ready_patches.py --capture",
+    "verify": "python3 /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_artifacts/emit_ready_patches.py --verify",
+    "consolidate": "python3 /Users/williammacready/code/python/pyncd.worktrees/close-raw-source-admission-proof-fcf548a4/papers/semantics/raw_source_admission_artifacts/emit_ready_patches.py --consolidate"
+  },
+  "controller_receipt": "controller-readiness.json"
+}

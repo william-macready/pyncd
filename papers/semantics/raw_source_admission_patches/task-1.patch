@@ -1,0 +1,110 @@
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/Structural.lean b/leanncd/LeanNCD/DSL/Pipeline/Structural.lean
+index cf2f784a..75ca2077 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/Structural.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/Structural.lean
+@@ -571,18 +571,37 @@ private def freshNonZero : FreshM UID := do
+ 
+ /-- Mint one fresh non-zero UID per distinct axis name, then relabel every `AxisSpec.uid`
+     by keying on the axis's source name. Equal names ⇒ equal UID; distinct names ⇒ distinct. -/
+-def assignUIDs (p : TLProgram) : FreshM LabeledProgram := do
++private def assignUIDMemo (p : TLProgram) : FreshM (HashMap String UID) := do
+   let mut memo : HashMap String UID := {}
+   for nm in p.axisNames do
+     let u ← freshNonZero
+     memo := memo.insert nm u
+-  let relabel : UData → UData := fun u =>
+-    match u.name with
+-    | some nm => match memo[nm]? with | some v => { u with uid := v } | none => u
+-    | none    => u
+-  let p' := TLProgram.mapUID relabel p
++  return memo
++
++def sourceUIDRelabel (memo : HashMap String UID) (u : UData) : UData :=
++  match u.name with
++  | some nm => match memo[nm]? with | some v => { u with uid := v } | none => u
++  | none => u
++
++def assignUIDs (p : TLProgram) : FreshM LabeledProgram := do
++  let memo ← assignUIDMemo p
++  let p' := TLProgram.mapUID (sourceUIDRelabel memo) p
+   return { decls := p'.decls, stmts := p'.stmts }
+ 
++theorem assignUIDs_mapUID (p : TLProgram) (start finish : Nat) (lp : LabeledProgram)
++    (h : (assignUIDs p).run start = .ok lp finish) :
++    ∃ memo : HashMap String UID,
++      lp.decls = (TLProgram.mapUID (sourceUIDRelabel memo) p).decls ∧
++      lp.stmts = (TLProgram.mapUID (sourceUIDRelabel memo) p).stmts := by
++  simp only [assignUIDs, EStateM.run, bind, pure, Functor.map, EStateM.map,
++    EStateM.bind, EStateM.pure] at h
++  cases hm : assignUIDMemo p start with
++  | error e n => simp [hm] at h
++  | ok memo n =>
++    simp [hm] at h
++    obtain ⟨rfl, rfl⟩ := h
++    exact ⟨memo, rfl, rfl⟩
++
+ /-! ## The `resolveDecls` phase
+ 
+ Builds the `DeclEnv` and classifies tensor names as external inputs vs internally produced.
+diff --git a/leanncd/LeanNCD/Semantics/Source/Adapter.lean b/leanncd/LeanNCD/Semantics/Source/Adapter.lean
+index e0ccdc10..2439a3e3 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Adapter.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Adapter.lean
+@@ -112,6 +112,28 @@ structure TensorEntry where
+   axes : Shape
+   deriving Repr
+ 
++theorem resolveSource_mapUID (raw : TLProgram) (specs : List TensorSpec)
++    (inputs : List InputBinding) (snapshot : SourceSnapshot)
++    (h : resolveSource raw specs inputs = .ok snapshot) :
++    ∃ memo : Std.HashMap String UID,
++      snapshot.resolved.decls = (TLProgram.mapUID (sourceUIDRelabel memo) raw).decls ∧
++      snapshot.resolved.stmts = (TLProgram.mapUID (sourceUIDRelabel memo) raw).stmts ∧
++      snapshot.specs = specs ∧ snapshot.inputs = inputs := by
++  cases ha : assignUIDs raw 0 with
++  | error e n =>
++    simp [resolveSource, EStateM.bind, EStateM.run, bind, pure, ha] at h
++  | ok lp n =>
++    obtain ⟨memo, hd, hs⟩ := assignUIDs_mapUID raw 0 n lp ha
++    cases hb : buildDeclEnv lp.decls with
++    | error e =>
++      simp [resolveSource, resolveDecls, EStateM.bind, EStateM.run, bind, pure, ha, hb,
++        throw, MonadExceptOf.throw, throwThe, EStateM.throw] at h
++    | ok env =>
++      simp [resolveSource, resolveDecls, EStateM.bind, EStateM.run, bind, pure, ha, hb,
++        EStateM.pure] at h
++      subst snapshot
++      exact ⟨memo, hd, hs, rfl, rfl⟩
++
+ structure TensorTable where
+   entries : List TensorEntry
+ 
+@@ -128,6 +150,13 @@ def TensorTable.find (table : TensorTable) (name : String) :
+ def TensorTable.entry (table : TensorTable) (t : table.declarations.Tensor) : TensorEntry :=
+   table.entries.get t
+ 
++theorem TensorTable.find_name (table : TensorTable) (name : String)
++    (t : table.declarations.Tensor) (h : table.find name = some t) :
++    (table.entry t).name = name := by
++  unfold TensorTable.find at h
++  have found := List.find?_some h
++  simpa [TensorTable.entry] using found
++
+ structure InputBuffer (axes : Shape) where
+   values : List ℚ
+   length : values.length = (canonicalLayout axes).count
+@@ -267,4 +296,14 @@ def adaptSource (snapshot : SourceSnapshot) : Except SourceDiagnostic AdaptedSou
+   pure ⟨context, table, inputs,
+     snapshot.resolved.stmts.zipIdx |>.map (fun (s, i) => (i, s))⟩
+ 
++theorem adaptSource_statements (snapshot : SourceSnapshot) (source : AdaptedSource)
++    (h : adaptSource snapshot = .ok source) :
++    source.statements = snapshot.resolved.stmts.zipIdx.map (fun (s, i) => (i, s)) := by
++  unfold adaptSource at h
++  simp only [bind, pure, Except.bind, Except.pure] at h
++  repeat' split at h
++  all_goals simp only [Except.ok.injEq, reduceCtorEq] at h
++  all_goals subst source
++  all_goals rfl
++
+ end LeanNCD.Semantics.Source

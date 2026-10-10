@@ -1,0 +1,16 @@
+[
+  {
+    "label": "M3 reverse certified checked read order (proof-protected rejection)",
+    "task": "2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "      c.origin = r.origin) raw term.sourceReads\n\nprivate theorem admitAstTerm_fields",
+    "new": "      c.origin = r.origin) raw term.sourceReads.reverse\n\nprivate theorem admitAstTerm_fields",
+    "targets": [
+      "LeanNCD.Semantics.Source.Admission"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Admission.lean",
+      "Application type mismatch"
+    ]
+  }
+]

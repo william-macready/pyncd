@@ -1,0 +1,156 @@
+[
+  {
+    "label": "M2 table position used as declaration origin (proof-protected rejection)",
+    "task": "2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "      declaration := some (source.table.entry tensor).declaration }",
+    "new": "      declaration := some tensor.val }",
+    "targets": [
+      "LeanNCD.Semantics.Source.Admission"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Admission.lean",
+      "`simp` made no progress"
+    ]
+  },
+  {
+    "label": "S1 original declaration ID becomes tensor table index (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]",
+    "new": "      entries := entries ++ [⟨entries.length, name, ty, spec.role, shape⟩]",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Adapter.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "S2 reverse declared axis accumulation (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "        shape := shape ++ [← sourceAxis c .declarations { origin with slot := some j } a]",
+    "new": "        shape := [← sourceAxis c .declarations { origin with slot := some j } a] ++ shape",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Adapter.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "S3 drop first untyped declared axis (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes))",
+    "new": "  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes.drop 1))",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Adapter.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "S4 reverse raw factor occurrence traversal (proof-protected rejection)",
+    "task": "2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "        let reads ← term.factors.zipIdx.mapM fun (factor, j) =>\n          astRead source { termOrigin with factor := some j } factor\n        admitTerm source.context output.context termOrigin reads",
+    "new": "        let reads ← term.factors.reverse.zipIdx.mapM fun (factor, j) =>\n          astRead source { termOrigin with factor := some j } factor\n        admitTerm source.context output.context termOrigin reads",
+    "targets": [
+      "LeanNCD.Semantics.Source.Admission"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Admission.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "S5 drop raw factor occurrence (proof-protected rejection)",
+    "task": "2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "        let reads ← term.factors.zipIdx.mapM fun (factor, j) =>\n          astRead source { termOrigin with factor := some j } factor\n        admitTerm source.context output.context termOrigin reads",
+    "new": "        let reads ← (term.factors.drop 1).zipIdx.mapM fun (factor, j) =>\n          astRead source { termOrigin with factor := some j } factor\n        admitTerm source.context output.context termOrigin reads",
+    "targets": [
+      "LeanNCD.Semantics.Source.Admission"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Admission.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "S7 replace external role by defined role (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]",
+    "new": "      entries := entries ++ [⟨i, name, ty, .defined, shape⟩]",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Adapter.lean",
+      "Application type mismatch"
+    ]
+  },
+  {
+    "label": "S8 classify typed f64 as f32 (proof-protected rejection)",
+    "task": "1",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "    | .f32 | .f64 => .ok (some (name, ty, axes))",
+    "new": "    | .f32 | .f64 => .ok (some (name, .f32, axes))",
+    "targets": [
+      "LeanNCD.Semantics.Source.Adapter"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Adapter.lean",
+      "unsolved goals"
+    ]
+  },
+  {
+    "label": "E1 nonSum guard deletion (proof-protected rejection)",
+    "task": "2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "    if rhs.agg != .sum then throw (sourceError .statement origin (.unsupported .nonSum))\n",
+    "new": "",
+    "targets": [
+      "LeanNCD.Semantics.Source.Admission"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Admission.lean",
+      "unsolved goals"
+    ]
+  },
+  {
+    "label": "E2 nonSum and nonIdentity guard deletion (proof-protected rejection)",
+    "task": "2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "    if rhs.agg != .sum then throw (sourceError .statement origin (.unsupported .nonSum))\n    if rhs.nonlin != .identity then\n      throw (sourceError .statement origin (.unsupported .nonIdentity))\n",
+    "new": "",
+    "targets": [
+      "LeanNCD.Semantics.Source.Admission"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Admission.lean",
+      "`simp` made no progress"
+    ]
+  },
+  {
+    "label": "E3 constant Z output lookup (proof-protected rejection)",
+    "task": "2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "    let dst ← match source.table.find name with\n",
+    "new": "    let dst ← match source.table.find \"Z\" with\n",
+    "targets": [
+      "LeanNCD.Semantics.Source.Admission"
+    ],
+    "expect": [
+      "error: LeanNCD/Semantics/Source/Admission.lean",
+      "unsolved goals"
+    ]
+  }
+]
