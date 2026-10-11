@@ -4451,6 +4451,19 @@ failure.
 Outside the error-free profile a valid plan can end in an implementation error
 even when a model exists; (a) and (b) are unaffected.
 
+**As formalized (implementation errors, D7; singleton-profile `Valid` plans).** The third outcome is a wrapper, not a
+new constructor of the Section 30.1 state: `FOutcome` is `run o` (an ordinary `PlanOutcome`) or `error e pc M`, with
+`e : ImplErr` (`allocFail`, `kernelFault`; no information about models). A fault schedule `Faults : Nat → Option ImplErr`
+is indexed by expanded annotation position and is consulted for a command's positions before the command runs
+(`runFromE`), so a fault pre-empts a semantic failure at the same step and reports the memory from before the command.
+`stuck` stays a plan defect, separate from `error`. Proved: with no faults `runPlanE` is `run (runPlan …)`
+(`runPlanE_noFault`); a non-error outcome is the fault-free outcome (`runFromE_run`); an error at command `pc'` carries
+exactly the fault-free memory there and a fault at one of that command's positions (`runFromE_error`); hence (a) and
+(b) hold under every schedule (`done_correct_E`, `failed_correct_E`) and the run is never `stuck`
+(`runPlanE_not_stuck`). Not stated: the error-free profile as a predicate with (c) restated under it, fixtures that
+inject faults, the fused counterparts `done_correct_F`/`failed_correct_F` under faults (the wrapper already runs fused
+commands), and `R` at the error state.
+
 **As formalized (slice-1 and slice-2 profile: fused commands by expansion, dense non-reused storage, no retirement;
 error-free).** For a `Valid` plan and a well-typed $\eta$, with the run `runPlan` from $\mathrm{Start}(\eta)$:
 
