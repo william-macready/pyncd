@@ -21,7 +21,7 @@ variable {P : Program K σ r} (π : P.Plan)
 def ReadyOK (pc : Nat) (G : List (OccRef P)) : Prop :=
   ∀ x ∈ G, ∀ a ∈ footprint (P.body x.1 x.2.1) x.2.2, π.Live pc a
 
-/-- Definition 31.1, slice-1 form (singleton commands, initZero/acc/pub).
+/-- Definition 31.1, slice-1 form (singleton commands, initZero/acc/pub/retire).
     `tensors_nodup`/`tensors_complete` are fields of the plan itself. -/
 structure Valid : Prop where
   /-- Slice-1 profile: every command is one annotation. -/

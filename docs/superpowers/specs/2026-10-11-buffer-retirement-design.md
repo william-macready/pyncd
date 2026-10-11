@@ -85,11 +85,11 @@ conditions to re-derive the logical set from the commands, a much larger ripple 
 - New `R5` (`dead`): `∀ a, Pub pc a → ¬ Live pc a → M (place a) = none` ("a retired slot is free").
   It gives D2 a theorem, and is the invariant the reuse slice starts from.
 - `R` gets a sixth field `retPub : ∀ a, Ret pc a → Pub pc a` (R6, not in the original design). It is needed by
-  `step_pub` (a freshly published member is live) and by `step_init`/`step_acc` (a retired address is not an
-  unpublished write target); `R` does not remember earlier steps' `RetOK`.
+  `step_pub` (a freshly published member is live); the other steps only carry it forward to `pc + 1`. `R` does not
+  remember earlier steps' `RetOK`.
 - `readPub_eq` is restated pointwise on `Live`; the function equality `readPub pc M = c.published` is false once a
   retired address keeps its ghost value. New helper `readPub_le`; `step_acc` and `step_failed` now reach readiness
-  through `evalReady_of_le` and per-member values through `delta_congr`. `decode_of_R`'s hypothesis `outs` is over
+  through `evalReady_of_le`; `step_acc` also gets per-member values through `delta_congr`. `decode_of_R`'s hypothesis `outs` is over
   `Live` (conclusion unchanged); `live_output_of_valid` produces it.
 - `R_start`: `R5` holds vacuously (`Ret 0` is empty).
 - New `step_retire`: advances `R` using `place_injective` (retired and surviving slots are distinct) and the
@@ -107,7 +107,7 @@ conditions to re-derive the logical set from the commands, a much larger ripple 
 ### 3.5 Testing
 
 - All 200 existing fixture rows (by the `rg -c` count of `#eval check` rows plus `example`/`theorem` items in
-  `Plan*Test.lean`; the path doc's 180 predates `PlanFaultsTest`) stay green with no row edited.
+  `Plan*Test.lean`; the path doc's earlier 180 was counted differently, plan O6) stay green with no row edited.
 - New `PlanRetireTest` (checked against both `checkPlan` and `runPlan`; fixtures are authored from the
   plan in `PlanFixtures.lean` style):
   1. valid retire after the last reader: `done`, final memory has `none` at the retired slot;

@@ -90,7 +90,7 @@ def readPub (pc : Nat) (M : Memory K σ) (a : Address σ) : Option (K (σ.signat
   if π.Live pc a then M (place a) else none
 
 /-- Partial output decoder: succeeds only when every output coordinate is in
-    `Pub(pc)` and its slot is initialised. It never fills a missing value. -/
+    `Live(pc)` and its slot is initialised. It never fills a missing value. -/
 def Decode (pc : Nat) (M : Memory K σ) : Option P.Output :=
   letI := P.tensors
   letI : ∀ t, Fintype (Coord (σ.signature t).axes) := finiteCoords

@@ -7,7 +7,7 @@ Does not own: the reference executor (`../ReferenceExecutor.lean`, `../Executabl
 Plan: `papers/semantics/plan_layer_plan.md` (slice 3: `papers/semantics/plan_layer_slice3_plan.md`); spec Part V in `papers/semantics/tensor_logic_semantics.md` (29.3, 30.2-30.4, 31.1-31.4, 32.1, 33.2); path doc section 4.9.
 
 ## Code Map
-Reachable from `import LeanNCD` (`Semantics.lean` imports `Plan.lean`, which imports the ten modules below in this order).
+Reachable from `import LeanNCD` (`Semantics.lean` imports `Plan.lean`, which imports the eleven modules below in this order).
 
 | File | Owns |
 |---|---|
@@ -45,4 +45,4 @@ Reachable from `import LeanNCD` (`Semantics.lean` imports `Plan.lean`, which imp
 - Not the checked backend: `Semantics/Plan` (`Program.Plan.checkPlan`, the Part V reference plan) is unrelated to `Eval/Plan` (`CheckedEvalPlan`, whose own `checkPlan` is in `Eval/Plan/EvalPlan.lean`); no theorem connects them.
 - Slice-1 `checkSteps` is vacuous on a fused command (slice-1 `checkPlan` rejects a fused plan only via `checkSingleton`): use `checkPlanF`, soundness `checkPlanF_sound`.
 - A fused `failed` reports the pre-command memory, and `PlanOutcome.Agree` ignores pc and failure memory.
-- Mutation cycles: `papers/semantics/plan_layer_mutations_post.json` (20 cycles) and `papers/semantics/plan_layer_slice2_mutations_post.json` (15 cycles) and `papers/semantics/plan_layer_d7_mutations_post.json` (9 cycles, all caught at the proofs of `Faults.lean`, not by `PlanFaultsTest`), and `papers/semantics/plan_layer_slice3_mutations_post.json` (10 cycles, all caught at library proofs), run with `leanncd/scripts/mutation-manifest.sh`; results in `papers/semantics/plan_layer_mutation_results.md`.
+- Mutation cycles: `papers/semantics/plan_layer_mutations_post.json` (20 cycles) and `papers/semantics/plan_layer_slice2_mutations_post.json` (15 cycles) and `papers/semantics/plan_layer_d7_mutations_post.json` (9 cycles, all caught at the proofs of `Faults.lean`, not by `PlanFaultsTest`), and `papers/semantics/plan_layer_slice3_mutations_post.json` (10 cycles, all caught at library proofs), run with `leanncd/scripts/mutation-manifest.sh`; results in `papers/semantics/plan_layer_mutation_results.md` (slice 1), `plan_layer_slice2_mutation_results.md` and `plan_layer_slice3_mutation_results.md`.

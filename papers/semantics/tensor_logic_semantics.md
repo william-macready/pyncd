@@ -3956,7 +3956,8 @@ published block must have a slot, including addresses whose fiber is empty
 clause). Slice 2: a command is a finite, possibly empty, list of annotations executed in order;
 the per-annotation conditions (3, 4 and the freshness/materialisation clauses; 1 and 2 are whole-plan) are
 evaluated at expanded positions (`offset pc + j`) on the static sets $\mathrm{Pub}(n)$,
-$\mathrm{Cons}(n)$, $\mathrm{Mat}(n)$, so "before" inside a command is the expanded order. The plan is valid when its
+$\mathrm{Cons}(n)$, $\mathrm{Mat}(n)$, $\mathrm{Ret}(n)$ (condition 3 and the retire clause read
+$\mathrm{Live}(n)=\mathrm{Pub}(n)\setminus\mathrm{Ret}(n)$), so "before" inside a command is the expanded order. The plan is valid when its
 expansion is valid (`FValid`, `checkPlanF`).
 
 Storage annotations have additional representation obligations in
@@ -4132,8 +4133,8 @@ contribution" is enforced at the reader: a later `acc` whose footprint contains 
 which ranges over $\mathrm{Live}$. "Not needed by output decoding" is the `RetOK` clause that no member is an
 output (`live_output_of_valid`: every output is live at the end of a valid plan). "Remaining concrete storage
 operation" is vacuous: copy and relocate are not formalized. Reuse has no Lean counterpart either: `place` is
-injective, a retired slot is never rewritten, and reading it is a plan defect (rejected by the checker, `stuck` at
-run time).
+injective, a retired slot is never rewritten, and reading it in a later `acc` is a plan defect (rejected by the checker, `stuck` at
+run time); decoding a retired output yields `none` (Section 31.1).
 
 Liveness between commands is not sufficient for safety inside a kernel:
 all required reads of old contents must occur before an overlapping write,
@@ -4246,7 +4247,8 @@ handled as below.
 **As formalized (slice-1 to slice-3 profile: fused commands by expansion, retirement of defined published addresses, dense injective storage).**
 The five-condition definition above stays the general contract. Lean's `Valid` (`Plan.Validity`) is a
 purely static condition, stated per command $\textcolor{#C16C86}{\mathsf{pc}}$ with `commands[pc] = [a]` against the prefix sets
-$\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$ (the rows below). Definition 31.1's semantic
+$\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Ret}(\textcolor{#C16C86}{\mathsf{pc}})$ (condition 3 and the retire clause read
+$\mathrm{Live}(\textcolor{#C16C86}{\mathsf{pc}})=\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})\setminus\mathrm{Ret}(\textcolor{#C16C86}{\mathsf{pc}})$; the rows below). Definition 31.1's semantic
 conditions 2-5 are not fields of it: for the fixed slice-1 kernels they are theorems, `R_start` (2),
 `step_R` (3, for the reference state `refState pc = some c`; see
 [Section 31.2](#312-initial-states-and-successful-step-simulation)), `step_failed` (4) and

@@ -62,7 +62,7 @@ validated reference executor and its exact-rational fixtures are now verified;
 both final whole-branch code-review lenses are clean.
 The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer))
 is in the snapshot above, extended by slice 2 to fused commands and by slice 3 to retirement of defined
-published addresses: ten modules under `Semantics/Plan/`
+published addresses: eleven modules under `Semantics/Plan/`
 proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 228 fixtures and 54 mutation cycles
 (20 in slice 1, 15 in slice 2, 9 in the D7 manifest, 10 in slice 3).
 The public entry is
@@ -1072,17 +1072,17 @@ connects the two.
 
 The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/Plan/), in import order:
 
-- `Plan/Syntax`: annotations (`initZero`, `acc`, `pub`), commands, the prefix `prefixAnn` and the
-  schedule views `accFlat`/`pubFlat`.
+- `Plan/Syntax`: annotations (`initZero`, `acc`, `pub`, `retire`), commands, the prefix `prefixAnn`, the retired and
+  readable sets `Ret`/`Live` and the schedule views `accFlat`/`pubFlat`.
 - `Plan/Batch`: `accumulateBatch` and `publishBlock` at the logical level; Lemma 32.1 without any
   memory model.
 - `Plan/Memory`: dense memory, the layout view `SlotView`, the read view `readPub`, `Decode`, the reference post-state
-  `refState`, and the relation `R` with `R_start`.
+  `refState`, and the relation `R` (fields `dead`, `retPub`) with `R_start`.
 - `Plan/Step`: the step kernels, `StepResult`, `PlanOutcome`, validated `Start`, and the run
   `runPlan`/`runFrom`.
-- `Plan/Simulation`: per-annotation side conditions (`InitOK`, `AccOK`, `PubOK`, `AnnOK`) and
-  one-step simulation `step_R`, `step_failed`.
-- `Plan/Validity`: `Valid` (Definition 31.1, slice-1 form), the computable `checkPlan`,
+- `Plan/Simulation`: per-annotation side conditions (`InitOK`, `AccOK`, `PubOK`, `RetOK`, `AnnOK`) and
+  one-step simulation `step_R`, `step_failed`, `step_retire`.
+- `Plan/Validity`: `Valid` (Definition 31.1, slice-1 form; field `retOK`), the computable `checkPlan` (with `checkRet`),
   `checkPlan_sound`, `checkPlan_complete` (so `checkPlan_iff`) and `checkAccMat_of_rest`.
 - `Plan/Run`: progress `step_not_stuck` and the multi-step run lemma `run_R`/`runPlan_R`.
 - `Plan/Correctness`: terminal adequacy and compiled correctness.
@@ -1091,6 +1091,8 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
   its expansion. (`expand` and `offset` live in `Plan/Syntax`, `execAnns` in `Plan/Step`.)
 - `Plan/FusionCorrectness`: `FValid`, `checkPlanF`/`checkPlanF_sound`/`checkPlanF_complete`, `runFrom_R_F`, `runPlan_R_F`, `terminal_adequacy_F`
   and the compiled-correctness theorems `done_correct_F` ... `done_iff_model_F`.
+- `Plan/Faults`: implementation errors as a wrapper over an abstract fault oracle (`FOutcome`, `runFromE`,
+  `runPlanE`), with Theorem 31.3 (a)(b)(c) restated under faults.
 
 #### Plan-layer theorems
 
@@ -1139,8 +1141,9 @@ Slice 3 adds the annotation `retire B` for defined addresses (`Ann.retire`; inpu
 always live, `live_input`). `Pub` stays the logical published set and `Live = Pub \ Ret` is the readable set:
 `readPub`, `SlotView .pub`, `ReadyOK` and `R`'s `pubSlot` range over `Live`. `execRet` clears each member's slot to
 `none`; the reference state does not change, so a retired address stays in the logical `σ` as ghost history.
-Reading a retired slot is a plan defect: `ReadyOK` over `Live` is the reader-side rule that rejects it, and a run
-that does it is `stuck`, never an implementation error.
+Reading a retired slot in a later `acc` is a plan defect: `ReadyOK` over `Live` is the reader-side rule that rejects
+it, and a run that does it is `stuck`, never an implementation error; decoding a retired output yields `none` and
+the run still ends `done` (only the checker rejects that).
 
 `RetOK` has three roles: that every member is published is safety (a retire of an unpublished address would
 clear a live accumulator); that no member is already retired is diagnostic; that no member is an output is
@@ -1159,7 +1162,7 @@ The profile is: singleton or fused commands (fusion by expansion), retirement of
 (`Pub` logical, `Live` readable), dense injective storage (one slot per materialised address, never reused; a
 retired slot is cleared and never rewritten), error-free kernels. Soundness rests on `checkPlan`
 (singleton plans) or `checkPlanF` (fused plans): the run does not detect an invalid plan. The spec's
-restatements are the paragraphs headed "As formalized (slice-1 to slice-3 profile ...)" in Sections
+restatements are the paragraphs headed "As formalized (slice-1 to slice-3 profile ...)" (in 30.3 and 33.2: "(slice-3 profile ...)") in Sections
 29.3, 30.2, 30.3, 30.4, 31.1-31.4, 32.1 and 33.2 of the
 [specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 228
 fixtures by the `rg -c` count (139 `#eval check` rows and 89 `example`/`theorem` items), of which 28 are slice 3's
