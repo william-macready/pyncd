@@ -253,4 +253,9 @@ theorem runPlan_agree (M : Memory K σ) :
   rw [e0] at h
   exact h
 
+#print axioms step_R_command
+#print axioms step_failed_command
+#print axioms stepCommand_not_stuck
+#print axioms runFrom_agree
+
 end LeanNCD.Semantics.Program.Plan

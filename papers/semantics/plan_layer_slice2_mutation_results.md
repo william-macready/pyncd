@@ -14,5 +14,6 @@
 | S2-M12 expand reverses annotation order within each command | yes | yes | yes | PASS |
 | S2-M13 expand drops the first annotation of each fused command | yes | yes | yes | PASS |
 | S2-M14 offset counts commands instead of annotations | yes | yes | yes | PASS |
+| S2-M15 execAnns on the empty command is stuck, not a no-op | yes | yes | yes | PASS |
 
-14/14 cycles passed.
+15/15 cycles passed.

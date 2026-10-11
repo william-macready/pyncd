@@ -10,7 +10,7 @@
    "Semantics.PlanFusionTest"
   ],
   "expect": [
-   "Step.lean:171:2",
+   "Step.lean:172:2",
    "No goals to be solved"
   ]
  },
@@ -40,7 +40,7 @@
    "Semantics.PlanFusionTest"
   ],
   "expect": [
-   "Step.lean:171:33",
+   "Step.lean:172:33",
    "Tactic `rfl` failed"
   ]
  },
@@ -70,7 +70,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:32:90",
+   "FusionCorrectness.lean:33:90",
    "Application type mismatch"
   ]
  },
@@ -85,7 +85,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:32:65",
+   "FusionCorrectness.lean:33:65",
    "Type mismatch"
   ]
  },
@@ -100,7 +100,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:107:25",
+   "FusionCorrectness.lean:137:25",
    "Unknown identifier `hv`"
   ]
  },
@@ -115,7 +115,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:117:12",
+   "FusionCorrectness.lean:147:12",
    "Application type mismatch"
   ]
  },
@@ -130,7 +130,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:33:90",
+   "FusionCorrectness.lean:34:90",
    "Application type mismatch"
   ]
  },
@@ -145,7 +145,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:75:28",
+   "FusionCorrectness.lean:93:28",
    "Type mismatch"
   ]
  },
@@ -207,6 +207,21 @@
   "expect": [
    "Syntax.lean:159:52",
    "Tactic `rewrite` failed"
+  ]
+ },
+ {
+  "label": "S2-M15 execAnns on the empty command is stuck, not a no-op",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Plan/Step.lean",
+  "old": "  | [] => .ok M\n  | a :: as =>\n    match π.execAnn ops n M a with",
+  "new": "  | [] => .stuck\n  | a :: as =>\n    match π.execAnn ops n M a with",
+  "targets": [
+   "LeanNCD.Semantics.Plan.Fusion",
+   "Semantics.PlanFusionCheckerTest"
+  ],
+  "expect": [
+   "Step.lean:172:33",
+   "Tactic `rfl` failed"
   ]
  }
 ]

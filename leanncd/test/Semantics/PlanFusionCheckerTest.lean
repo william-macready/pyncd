@@ -58,6 +58,35 @@ def t4ReadFirst : (routed chainBody).Plan :=
   unitPlan [[.initZero cAll], [.acc [cOcc 0], .acc [cOcc 1], .pub [cAddr 1]],
     [.pub [cAddr 0, cAddr 2]]]
 
+/-- (a10) empty commands before and after the fused producer pair, and before the reader: the
+    reader's read view is the expanded position `offset 5 = 3`, which an empty command must not shift
+    (donor `chainPlan`). -/
+def t4ReadEmpty : (routed chainBody).Plan :=
+  unitPlan [[.initZero cAll], [], [.acc [cOcc 0], .pub [cAddr 1]], [], [.acc [cOcc 1]],
+    [.pub [cAddr 0, cAddr 2]]]
+
+/-- The plausible-but-wrong lift of the slice-1 checker (table cell c): every annotation of a command
+    is checked against the PRE-command sets `Pub pc`, `Cons pc`, `Mat pc`. -/
+def preCmdCheck {K : S → Type} {σ : Declarations S} {r : Registry K} {P : Program K σ r}
+    [DecidableEq σ.Tensor] (π : P.Plan) : Bool :=
+  (List.range π.commands.length).all fun pc =>
+    ((π.commands[pc]?).getD []).all (π.checkAnn pc)
+
+/-- (a2) publish before the accumulate that targets it, after a separate `initZero`. -/
+def t4PubFirstAP : (program 2 reciprocalBody).Plan :=
+  unitPlan [[.initZero (pBlock 2 reciprocalBody)],
+    [.pub (pBlock 2 reciprocalBody), .acc ((List.finRange 2).map (pOcc 2 reciprocalBody))]]
+
+/-- (a3mis + a2) both order clauses violated at once: the reader precedes the producer's publication
+    (ready) AND the publication precedes an accumulate that targets it (pubOrder), in one command. -/
+def t4BothOrder : (routed chainBody).Plan :=
+  unitPlan [[.initZero cAll], [.acc [cOcc 1], .pub [cAddr 1], .acc [cOcc 0]],
+    [.pub [cAddr 0, cAddr 2]]]
+/-- Singleton donor of `t4BothOrder`. -/
+def chainBothOrder : (routed chainBody).Plan :=
+  unitPlan [[.initZero cAll], [.acc [cOcc 1]], [.pub [cAddr 1]], [.acc [cOcc 0]],
+    [.pub [cAddr 0, cAddr 2]]]
+
 /-! ### Fixtures. Donor note: the donor has the same flat annotation sequence as the fused plan. -/
 
 -- donor chainPlan; fused [acc0, pub1] then a separate [acc1] that reads the fused command's publication.
@@ -109,5 +138,40 @@ def t4ReadFirst : (routed chainBody).Plan :=
   (verdictTrio t4InitPub lateEmptyInit,
     runPair (t4InitPub.runPlan ops (Start η0)) (lateEmptyInit.runPlan ops (Start η0)))
   (((true, []), (true, []), (true, [])), ("done", "done", true, [some 0, some 14, some 0], [some 0, some 14, some 0]))
+
+-- (a10) empty commands are accepted by `checkPlanF` and are no-ops; the reader after an empty command still sees
+-- the earlier publication (donor chainPlan has the same flat annotation sequence).
+#eval check "t4-a10-readAfterEmpty"
+  (verdictTrio t4ReadEmpty chainPlan,
+    runPair (t4ReadEmpty.runPlan ops (Start chainInput)) (chainPlan.runPlan ops (Start chainInput)))
+  (((true, []), (true, []), (true, [])), ("done", "done", true, [some 0, some 3, some 4], [some 0, some 3, some 4]))
+
+-- (a10) a plan containing `[]`: `checkPlanF` accepts, the slice-1 checker rejects (singleton only).
+#eval check "t4-a10-checkPlanF-accepts-empty" (verdictF fusedEmpty, verdict fusedEmpty)
+  ((true, []), (false, ["singleton"]))
+
+-- (cell c) the pre-command lift is wrong in both directions. `(preCmdCheck, checkPlanF)` per plan:
+-- it wrongly REJECTS the valid a1 (acc;pub), a8 (init;acc;pub), a3 (read after same-command publication,
+-- fused and split) and a9 (init of empty fibers fused with the publication), and wrongly ACCEPTS a5 (re-init
+-- after consume), a6 and a7 (their Nodup checks are whole-plan, not per step); it does reject a2 and a4.
+#eval check "t4-c-precommand-check-unsound"
+  [preCmdCheck (pPlanAP 2 reciprocalBody), preCmdCheck (pPlanFused 2 reciprocalBody),
+   preCmdCheck t4ReadSame, preCmdCheck t4ReadSplit, preCmdCheck t4InitPub,
+   preCmdCheck t4Reinit, preCmdCheck t4Dup, preCmdCheck t4PubTwice,
+   preCmdCheck t4PubFirstAP, preCmdCheck t4Unpub]
+  [false, false, false, false, false, true, true, true, false, false]
+#eval check "t4-c-checkPlanF-verdicts"
+  [(pPlanAP 2 reciprocalBody).checkPlanF, (pPlanFused 2 reciprocalBody).checkPlanF,
+   t4ReadSame.checkPlanF, t4ReadSplit.checkPlanF, t4InitPub.checkPlanF,
+   t4Reinit.checkPlanF, t4Dup.checkPlanF, t4PubTwice.checkPlanF,
+   t4PubFirstAP.checkPlanF, t4Unpub.checkPlanF]
+  [true, true, true, true, true, false, false, false, false, false]
+
+-- both order clauses fail at once (`ready@1` and `pubOrder@2`), in the fused plan, its expansion and the donor.
+#eval check "t4-order-both-clauses"
+  (verdictTrio t4BothOrder chainBothOrder,
+    runPair (t4BothOrder.runPlan ops (Start chainInput)) (chainBothOrder.runPlan ops (Start chainInput)))
+  (((false, ["ready@1", "pubOrder@2"]), (false, ["ready@1", "pubOrder@2"]), (false, ["ready@1", "pubOrder@2"])),
+    ("stuck", "stuck", true, [some 0, some 0, some 0], [some 0, some 0, some 0]))
 
 end LeanNCD.Semantics.PlanFixtures
