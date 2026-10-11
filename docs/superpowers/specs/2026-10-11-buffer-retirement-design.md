@@ -1,6 +1,8 @@
 # Part V buffer retirement (slice 3): design
 
-Status: design approved in conversation 2026-10-11; this file awaits user review before `writing-plans`.
+Status: implemented by `papers/semantics/plan_layer_slice3_plan.md`; sections 3.1, 3.4, 3.5 and 5 amended to the
+prototype (a1/a2/a3a notes under `papers/semantics/plan_layer_slice3_artifacts/`). Original approval: conversation
+2026-10-11.
 Path: architectural (new `Ann` constructor, new `Valid` clause, new `R` field).
 Scope: **retirement only**. Reuse/aliasing and scan liveness are later slices (see Out of scope).
 
@@ -46,7 +48,9 @@ conditions to re-derive the logical set from the commands, a much larger ripple 
   `Live pc a := Pub pc a ∧ ¬ Ret pc a`. Decidable instances alongside `Pub`/`Mat`.
 - `Pub` is unchanged and remains the logical published set.
 - Inputs are always live: `Ret` only mentions defined addresses (`P.input t = false` for `t : P.Defined`).
-- Lemmas mirroring `pub_succ`/`mat_succ`: `ret_succ`, `ret_zero`, `live_input`.
+- Lemmas: `ret_zero`, `live_zero`, `Live.pub`, `live_input` in `Syntax.lean`. The `pub_succ`/`mat_succ`-style lemmas
+  live in `Plan/Simulation.lean` beside `pub_succ`, not in `Syntax.lean`: `ret_succ`, `pub_succ_of`, `ret_succ_of`,
+  `live_succ_of`.
 
 ### 3.2 Execution (`Plan/Memory.lean`, `Plan/Step.lean`)
 
@@ -80,6 +84,13 @@ conditions to re-derive the logical set from the commands, a much larger ripple 
 - `R3` (`pubSlot`) is stated over `Live`.
 - New `R5` (`dead`): `∀ a, Pub pc a → ¬ Live pc a → M (place a) = none` ("a retired slot is free").
   It gives D2 a theorem, and is the invariant the reuse slice starts from.
+- `R` gets a sixth field `retPub : ∀ a, Ret pc a → Pub pc a` (R6, not in the original design). It is needed by
+  `step_pub` (a freshly published member is live) and by `step_init`/`step_acc` (a retired address is not an
+  unpublished write target); `R` does not remember earlier steps' `RetOK`.
+- `readPub_eq` is restated pointwise on `Live`; the function equality `readPub pc M = c.published` is false once a
+  retired address keeps its ghost value. New helper `readPub_le`; `step_acc` and `step_failed` now reach readiness
+  through `evalReady_of_le` and per-member values through `delta_congr`. `decode_of_R`'s hypothesis `outs` is over
+  `Live` (conclusion unchanged); `live_output_of_valid` produces it.
 - `R_start`: `R5` holds vacuously (`Ret 0` is empty).
 - New `step_retire`: advances `R` using `place_injective` (retired and surviving slots are distinct) and the
   fact that retired addresses are published, so they are distinct from every accumulator address.
@@ -95,22 +106,26 @@ conditions to re-derive the logical set from the commands, a much larger ripple 
 
 ### 3.5 Testing
 
-- All 180 existing fixture rows stay green with no row edited.
+- All 200 existing fixture rows (by the `rg -c` count of `#eval check` rows plus `example`/`theorem` items in
+  `Plan*Test.lean`; the path doc's 180 predates `PlanFaultsTest`) stay green with no row edited.
 - New `PlanRetireTest` (checked against both `checkPlan` and `runPlan`; fixtures are authored from the
   plan in `PlanFixtures.lean` style):
   1. valid retire after the last reader: `done`, final memory has `none` at the retired slot;
   2. read after retire: `checkPlan` false, run is `stuck`;
   3. retire of an output: `checkPlan` false;
-  4. retire of an unpublished accumulator: `checkPlan` false;
+  4. retire of an unpublished accumulator: `checkPlan` false (observed: the run is `stuck` at the later `pub`; the
+     clear does happen, it is not `done`);
   5. fused command, retire after a read (valid) and retire before a read (rejected);
   6. retire under a fault oracle (`Faults`): the `_E` outcome is consistent with the fault-free run
      before the fault position.
-- Mutation manifest, about 8 cycles. Planned mutants: `execRet` clears the wrong slot; `execRet` does not
-  clear; `checkRet` drops the live clause; `checkRet` drops the output clause; `ReadyOK` over `Pub`;
-  `SlotView.pub` over `Pub`; `R5` weakened; `step_retire` omitted from `execAnns_R`.
-- Known equivalent mutant at the behaviour level: `readPub` ignoring `Ret`. Under `R5` a retired slot is
-  already `none`, so the read is the same; the guard matters only to the proofs. It is recorded as an
-  equivalent mutant, not chased.
+- Mutation manifest, 10 cycles (`plan_layer_slice3_mutations_post.json`): S3-M1 `execRet` identity; S3-M2 `execRet`
+  leaves the first member's slot; S3-M3 `checkRet` always true; S3-M4 `checkRet` drops the live clause; S3-M5
+  `checkRet` drops the not-an-output clause; S3-M6 `checkReady` over `Pub`; S3-M7 `SlotView .pub` over `Pub`; S3-M8
+  `ReadyOK` over `Pub`; S3-M9 `readPub` over `Pub`; S3-M10 `RetOK` drops the not-an-output conjunct. The planned
+  mutants "`R5` weakened" and "`step_retire` omitted from `execAnns_R`" were not run.
+- `readPub` over `Pub` (S3-M9) is NOT equivalent: it is killed at the proof of `readPub_eq`, which was restated
+  pointwise on `Live`. All 10 mutants are killed at library proofs, never at a fixture row; row-level kills were
+  probed by hand for S3-M1, S3-M3 and S3-M6 only.
 - Per `slice-plan`: each mutation `expect` string carries a line number; any edit shifting lines in a mutated
   file needs a manifest re-run.
 
@@ -135,7 +150,10 @@ published addresses, dense injective `place`"), the 33.2 note, the proof-status 
 |------|--------|
 | `Ann` | new constructor `retire` (about 24 constructor-case sites gain an arm) |
 | `Plan.Valid` | new field `retOK`; `ReadyOK` over `Live` |
-| `R` | `pubSlot` over `Live`; new field `dead` |
+| `R` | `pubSlot` over `Live`; new fields `dead` and `retPub` |
+| `readPub_eq` | restated pointwise on `Live` |
+| `decode_of_R` | hypothesis `outs` over `Live` (conclusion unchanged) |
+| `live_output_of_valid` | new theorem (`Plan/Correctness.lean`) |
 | `readPub`, `SlotView .pub` | guard `Live` instead of `Pub` |
 | `checkAnn`, `checkReady` | new `checkRet`; `checkReady` over `Live` |
 

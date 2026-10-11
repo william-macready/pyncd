@@ -34,8 +34,9 @@
     - [Plan modules](#plan-modules)
     - [Plan-layer theorems](#plan-layer-theorems)
     - [Fused commands (slice 2)](#fused-commands-slice-2)
-    - [Slice 1 and 2 profile, fixtures and mutations](#slice-1-and-2-profile-fixtures-and-mutations)
-    - [What slices 1 and 2 do not do](#what-slices-1-and-2-do-not-do)
+    - [Buffer retirement (slice 3)](#buffer-retirement-slice-3)
+    - [Slices 1-3 profile, fixtures and mutations](#slices-1-3-profile-fixtures-and-mutations)
+    - [What slices 1-3 do not do](#what-slices-1-3-do-not-do)
 - [5. Remaining work, in dependency order](#5-remaining-work-in-dependency-order)
   - [5.1 Beyond the bounded source fragment](#51-beyond-the-bounded-source-fragment)
   - [5.2 Later: compiled and numerical refinement](#52-later-compiled-and-numerical-refinement)
@@ -50,7 +51,7 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-10, Lean as of `003080b2`: the Part V slice-1 and slice-2 plan layer
+**Snapshot: 2026-10-11, Lean as of `f3210475`: the Part V slice-1 to slice-3 plan layer
 (`Semantics/Plan/`), on top of bounded source correspondence
 (`6a90baff`), nested-reduction reindexing (`705280cd`), successful-permutation
 agreement (`ca642b3d`), and raw-source admission, on top of the verified
@@ -60,9 +61,10 @@ developments have landed, including maximal-run correspondence. The computable
 validated reference executor and its exact-rational fixtures are now verified;
 both final whole-branch code-review lenses are clean.
 The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer))
-is in the snapshot above, extended by slice 2 to fused commands: ten modules under `Semantics/Plan/`
-proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 180 fixtures and a 35-cycle mutation
-manifest (20 in slice 1, 15 in slice 2).
+is in the snapshot above, extended by slice 2 to fused commands and by slice 3 to retirement of defined
+published addresses: ten modules under `Semantics/Plan/`
+proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 228 fixtures and 54 mutation cycles
+(20 in slice 1, 15 in slice 2, 9 in the D7 manifest, 10 in slice 3).
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
 [`LeanNCD`](../../leanncd/LeanNCD.lean). They are a semantic validation layer,
@@ -971,7 +973,7 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   unconditional successful execution.
 - **No proof for the oracle or the comparison.** There is no theorem about
   `compareSource`, the numerical profile, or the native legs, and no backend
-  refinement result. The only formalized Part V results are the slice-1 and slice-2 plan layer's
+  refinement result. The only formalized Part V results are the slice-1 to slice-3 plan layer's
   ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)), which does not
   touch the source layer or the oracle.
 - **No floating-point correctness.** f32 and f64 are metadata in the exact
@@ -1111,6 +1113,9 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
 | `runPlan_agree` | A fused plan and its expansion run to the same final memory, or fail at the same occurrence | run bridge (no spec result) |
 | `checkPlanF_sound`, `checkPlanF_complete`, `checkPlanF_iff` | A fused plan is accepted iff it satisfies `FValid` (Definition 31.1 of the expansion) | Definition 31.1 |
 | `terminal_adequacy_F`, `done_correct_F`, `failed_correct_F`, `done_or_failed_F`, `done_of_model_F`, `done_iff_model_F` | Lemma 31.2 and Theorem 31.3 for `FValid` fused plans | Lemma 31.2, Theorem 31.3 |
+| `step_retire` | From R and `Conf = refState pc`, a retire block satisfying `RetOK` re-establishes R at `pc + 1` with the reference state unchanged and every retired slot `none` | Section 30.3 (retirement) |
+| `checkRet_sound`, `checkRet_complete` | `checkRet` accepts exactly `RetOK`, so `checkPlan_iff` still holds with the retire clause | Definition 31.1 |
+| `live_output_of_valid` | A valid plan has every output coordinate live at the end, so no retire of an output exists | Lemma 31.2 |
 
 #### Fused commands (slice 2)
 
@@ -1128,23 +1133,46 @@ dependencies; every cell but e (a theorem) and c (argued, not probed) is pinned 
 (`step_failed`, `step_failed_no_model`, now stated for `commands[pc]? = some [a]`) and three slice-1
 fixtures that had asserted "fused or empty is stuck".
 
-#### Slice 1 and 2 profile, fixtures and mutations
+#### Buffer retirement (slice 3)
 
-The profile is: singleton or fused commands (fusion by expansion), dense non-reused storage (one slot per
-materialised address, never reused), no retirement, error-free kernels. Soundness rests on `checkPlan`
+Slice 3 adds the annotation `retire B` for defined addresses (`Ann.retire`; inputs are never retired and are
+always live, `live_input`). `Pub` stays the logical published set and `Live = Pub \ Ret` is the readable set:
+`readPub`, `SlotView .pub`, `ReadyOK` and `R`'s `pubSlot` range over `Live`. `execRet` clears each member's slot to
+`none`; the reference state does not change, so a retired address stays in the logical `σ` as ghost history.
+Reading a retired slot is a plan defect: `ReadyOK` over `Live` is the reader-side rule that rejects it, and a run
+that does it is `stuck`, never an implementation error.
+
+`RetOK` has three roles: that every member is published is safety (a retire of an unpublished address would
+clear a live accumulator); that no member is already retired is diagnostic; that no member is an output is
+terminal (`live_output_of_valid`). `R` gains two fields, `dead` (a retired slot is `none`) and `retPub` (a
+retired address is published; Lean only, needed because `R` does not remember earlier steps), and `readPub_eq`
+is restated pointwise on `Live`. `Valid` gains the field `retOK`, and `checkPlan_iff` still holds.
+
+The case-by-class table is the "Review Focus" section of `plan_layer_slice3_plan.md`; the two deviations from the
+design spec (`retPub` and the pointwise `readPub_eq`) are recorded in its section 3.4. Not done: reuse and
+aliasing (`place` stays injective, a retired slot is never rewritten), scan liveness, retiring inputs, copy and
+relocate.
+
+#### Slices 1-3 profile, fixtures and mutations
+
+The profile is: singleton or fused commands (fusion by expansion), retirement of defined published addresses
+(`Pub` logical, `Live` readable), dense injective storage (one slot per materialised address, never reused; a
+retired slot is cleared and never rewritten), error-free kernels. Soundness rests on `checkPlan`
 (singleton plans) or `checkPlanF` (fused plans): the run does not detect an invalid plan. The spec's
-restatements are the paragraphs headed "As formalized (slice-1 and slice-2 profile ...)" in Sections
-29.3, 30.2, 30.4, 31.1-31.4 and 32.1 of the
-[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 180
-fixtures (129 in slice 1: 96 shipped with the layer, 27 added when its audit cells were closed, 6 in the
-parked-items slice; plus 47 in slice 2: 18 + 16 + 13; plus 4 in `PlanMultiSortTest`, which closes D11); the mutation manifests
-ran 35 mutation cycles (20 in slice 1, 15 in slice 2), of which 4 are labelled equivalent (3 in slice 1;
-S2-M4 at fixture level).
+restatements are the paragraphs headed "As formalized (slice-1 to slice-3 profile ...)" in Sections
+29.3, 30.2, 30.3, 30.4, 31.1-31.4, 32.1 and 33.2 of the
+[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 228
+fixtures by the `rg -c` count (139 `#eval check` rows and 89 `example`/`theorem` items), of which 28 are slice 3's
+`PlanRetireTest` (17 rows, 10 `example`s, 1 theorem); the earlier figure of 180 was counted differently and does
+not reconcile with this method (see open item O6 of `plan_layer_slice3_plan.md`). The mutation manifests ran 54 mutation cycles (20 in slice 1, 15 in
+slice 2, 9 in the D7 manifest, 10 in slice 3), of which 4 are labelled equivalent among the 35 of slices 1-2
+(3 in slice 1; S2-M4 at fixture level) and none among the 10 of slice 3 (every one is killed at a library proof).
 
-#### What slices 1 and 2 do not do
+#### What slices 1-3 do not do
 
 - Cross-sort reads and primitives (the one multi-sort fixture, `PlanMultiSortTest`, has an empty registry), numeric kernels other than the exact reference, floating point.
-- Buffer reuse, aliasing, retirement, and liveness for scans.
+- Buffer reuse and aliasing, retiring inputs, copy and relocate operations, and liveness for scans (retirement of
+  defined published addresses is done, slice 3).
 - Concrete implementation-error sources: `Plan/Faults.lean` models errors as an abstract fault oracle (`FOutcome`, error-free profile, (a)(b)(c) under faults, `R` at the error state; fixtures in `PlanFaultsTest`), so allocation failure and kernel errors are oracle outputs, not events of the model.
 - A proof that per-step `AccOK`/`PubOK` imply the Nodup halves of conditions 1 and 2 (conjecture).
 - Comparing the failure occurrence or failure snapshot between the plan and the reference executor.
@@ -1188,10 +1216,11 @@ batching, and buffer liveness for scans. Rank alone never justifies overwriting
 a still-needed value. A checked production plan is not automatically a
 certificate for these new semantics.
 
-Slices 1 and 2 of the plan layer have landed
-([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)): singleton and fused commands over
-dense non-reused storage, with Lemma 31.2, Theorem 31.3 and Lemma 32.1 proved for that profile.
-Not yet done: buffer reuse, aliasing, retirement and scan liveness;
+Slices 1-3 of the plan layer have landed
+([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)): singleton and fused commands,
+retirement of defined published addresses, dense injective storage, with Lemma 31.2, Theorem 31.3 and
+Lemma 32.1 proved for that profile.
+Not yet done: buffer reuse and aliasing, scan liveness, retiring inputs;
 concrete implementation-error sources (an abstract fault oracle with the error-free profile restated is done, `Plan/Faults.lean`); cross-sort primitives and non-exact numeric
 kernel fixtures; and the Nodup conjecture for conditions 1 and 2.
 
