@@ -1,0 +1,204 @@
+{
+  "base": "69214c6426aa1fb06c9db4c5bc11a27d3c98a2c4",
+  "prototype_code_head": "e452e970358458119f241bf665003f60f3b06fd7",
+  "prototype_head_at_emit": "3f09c105e72ee696b8714cab41648e404843604b",
+  "build_jobs": {
+    "LeanNCD.Semantics.Plan.Simulation": 2963,
+    "LeanNCD.Semantics.Plan.Validity": 2964,
+    "LeanNCD.Semantics.Plan.Run": 2965,
+    "LeanNCD.Semantics.Plan.Correctness": 2966,
+    "LeanNCD.Semantics.Plan.Fusion": 2966,
+    "LeanNCD.Semantics.Plan.FusionCorrectness": 2968,
+    "LeanNCD.Semantics.Plan.Faults": 2969,
+    "LeanNCD": 8598,
+    "Semantics.PlanRetireTest": 2982,
+    "default targets": 8793
+  },
+  "fixtures": {
+    "plans": 10,
+    "check_rows": 17,
+    "decide_examples": 10,
+    "theorems": 1,
+    "source": "papers/semantics/plan_layer_slice3_artifacts/a3a_notes.md"
+  },
+  "patches": [
+    {
+      "task": "01-core",
+      "gate": "LeanNCD.Semantics.Plan.Simulation",
+      "patch": "papers/semantics/plan_layer_slice3_patches/01-core.patch",
+      "patch_lines": 655,
+      "sha256": "e5f512d36302dc845e804821fbc02ea8cbe4564e606a1cd3812af44aa570b301",
+      "git_patch_id": "b7c32d8db42a29305976037854d6f525d7a0efc0",
+      "numstat": [
+        {
+          "added": "29",
+          "deleted": "18",
+          "path": "leanncd/LeanNCD/Semantics/Plan/Memory.lean"
+        },
+        {
+          "added": "198",
+          "deleted": "22",
+          "path": "leanncd/LeanNCD/Semantics/Plan/Simulation.lean"
+        },
+        {
+          "added": "9",
+          "deleted": "3",
+          "path": "leanncd/LeanNCD/Semantics/Plan/Step.lean"
+        },
+        {
+          "added": "43",
+          "deleted": "1",
+          "path": "leanncd/LeanNCD/Semantics/Plan/Syntax.lean"
+        }
+      ]
+    },
+    {
+      "task": "02-validity-run-correctness",
+      "gate": "LeanNCD.Semantics.Plan.Correctness",
+      "patch": "papers/semantics/plan_layer_slice3_patches/02-validity-run-correctness.patch",
+      "patch_lines": 239,
+      "sha256": "2685544f2fcc980f409935ce9ce06ec6c4b364fe4360f9477ab6cf2c90a78cb6",
+      "git_patch_id": "5b50cf89e842ea884241fa16fa7c978c4b37ec9b",
+      "numstat": [
+        {
+          "added": "28",
+          "deleted": "3",
+          "path": "leanncd/LeanNCD/Semantics/Plan/Correctness.lean"
+        },
+        {
+          "added": "4",
+          "deleted": "3",
+          "path": "leanncd/LeanNCD/Semantics/Plan/Run.lean"
+        },
+        {
+          "added": "33",
+          "deleted": "6",
+          "path": "leanncd/LeanNCD/Semantics/Plan/Validity.lean"
+        }
+      ]
+    },
+    {
+      "task": "03-fusion",
+      "gate": "LeanNCD.Semantics.Plan.FusionCorrectness, then full LeanNCD",
+      "patch": "papers/semantics/plan_layer_slice3_patches/03-fusion.patch",
+      "patch_lines": 55,
+      "sha256": "6e4210402b0bf99a2a5425a7704b986c63a01f89de5ecb7fd67000f0e26a353a",
+      "git_patch_id": "e86aeb7eeff6405eb14e101a6243f55eb61d318c",
+      "numstat": [
+        {
+          "added": "7",
+          "deleted": "2",
+          "path": "leanncd/LeanNCD/Semantics/Plan/Fusion.lean"
+        },
+        {
+          "added": "6",
+          "deleted": "4",
+          "path": "leanncd/LeanNCD/Semantics/Plan/FusionCorrectness.lean"
+        }
+      ]
+    },
+    {
+      "task": "04-fixtures",
+      "gate": "default targets (lake build with no argument)",
+      "patch": "papers/semantics/plan_layer_slice3_patches/04-fixtures.patch",
+      "patch_lines": 188,
+      "sha256": "2e1a9d35c60c94c6595d3608177a0b52fe7980f490c3cd4abfc9b191a3325d33",
+      "git_patch_id": "52ba5f5a8247a7650b1b6258ff39637d7f3bf516",
+      "numstat": [
+        {
+          "added": "1",
+          "deleted": "1",
+          "path": "leanncd/lakefile.toml"
+        },
+        {
+          "added": "169",
+          "deleted": "0",
+          "path": "leanncd/test/Semantics/PlanRetireTest.lean"
+        }
+      ]
+    }
+  ],
+  "overall_numstat_non_papers": "14 files changed, 786 insertions(+), 63 deletions(-)",
+  "replay": "PASS: (1) temporary-index git apply --cached per patch, leanncd tree equals CODE_HEAD's; (2) scratch worktree at BASE, git apply --check then git apply in order, `git diff --cached --stat CODE_HEAD -- leanncd` empty",
+  "mutation_manifest": "papers/semantics/plan_layer_slice3_mutations_post.json",
+  "mutation_results_file": "papers/semantics/plan_layer_slice3_mutation_results.md",
+  "mutation_rows": [
+    {
+      "label": "S3-M1 execRet is the identity (retirement frees nothing)",
+      "cycle": "yes",
+      "restored": "yes",
+      "expect_seen": "yes",
+      "result": "PASS"
+    },
+    {
+      "label": "S3-M2 execRet leaves the first member's slot (B.tail)",
+      "cycle": "yes",
+      "restored": "yes",
+      "expect_seen": "yes",
+      "result": "PASS"
+    },
+    {
+      "label": "S3-M3 checkRet always true",
+      "cycle": "yes",
+      "restored": "yes",
+      "expect_seen": "yes",
+      "result": "PASS"
+    },
+    {
+      "label": "S3-M4 checkRet drops the live clause",
+      "cycle": "yes",
+      "restored": "yes",
+      "expect_seen": "yes",
+      "result": "PASS"
+    },
+    {
+      "label": "S3-M5 checkRet drops the not-an-output clause",
+      "cycle": "yes",
+      "restored": "yes",
+      "expect_seen": "yes",
+      "result": "PASS"
+    },
+    {
+      "label": "S3-M6 checkReady over Pub instead of Live",
+      "cycle": "yes",
+      "restored": "yes",
+      "expect_seen": "yes",
+      "result": "PASS"
+    },
+    {
+      "label": "S3-M7 SlotView .pub over Pub instead of Live",
+      "cycle": "yes",
+      "restored": "yes",
+      "expect_seen": "yes",
+      "result": "PASS"
+    },
+    {
+      "label": "S3-M8 ReadyOK over Pub instead of Live",
+      "cycle": "yes",
+      "restored": "yes",
+      "expect_seen": "yes",
+      "result": "PASS"
+    },
+    {
+      "label": "S3-M9 readPub over Pub instead of Live (ignores Ret)",
+      "cycle": "yes",
+      "restored": "yes",
+      "expect_seen": "yes",
+      "result": "PASS"
+    },
+    {
+      "label": "S3-M10 RetOK drops the not-an-output conjunct",
+      "cycle": "yes",
+      "restored": "yes",
+      "expect_seen": "yes",
+      "result": "PASS"
+    },
+    {
+      "label": "S3-M4",
+      "cycle": "library proofs",
+      "restored": "same two lines as M3. (First attempt dropped `\u03c0` from the body and died on `Invalid field notation` at `:138/:175/:344`, a type-level artefact; the committed mutant keeps `\u03c0.Live` via `\\",
+      "expect_seen": "\\",
+      "result": "true`.)"
+    }
+  ]
+}

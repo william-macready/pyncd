@@ -1,0 +1,655 @@
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Memory.lean b/leanncd/LeanNCD/Semantics/Plan/Memory.lean
+index 55c64556..b97cf57c 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Memory.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Memory.lean
+@@ -37,7 +37,7 @@ variable {P : Program K σ r} [DecidableEq σ.Tensor] (π : P.Plan)
+ 
+ /-- The spec's layout view `λ`: a function of `pc` and the commands only. -/
+ def SlotView (pc : Nat) : Resource P → Option (Slot σ)
+-  | .pub a => if π.Pub pc a then some (place a) else none
++  | .pub a => if π.Live pc a then some (place a) else none
+   | .acc x => if π.Mat pc x ∧ ¬ π.Pub pc x.addr then some (place x.addr) else none
+ 
+ /-- The simple profile's injectivity of `λ` on its domain. -/
+@@ -56,7 +56,7 @@ theorem slotView_injective {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot σ}
+       split_ifs at h₁ h₂ with hp hq
+       cases h₁
+       have e := place_injective (Option.some.inj h₂)
+-      exact absurd (e ▸ hp) hq.2
++      exact absurd (e ▸ hp.1) hq.2
+   | acc x =>
+     cases r₂ with
+     | pub b =>
+@@ -64,7 +64,7 @@ theorem slotView_injective {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot σ}
+       split_ifs at h₁ h₂ with hq hp
+       cases h₁
+       have e := place_injective (Option.some.inj h₂)
+-      exact absurd (e.symm ▸ hp) hq.2
++      exact absurd (e.symm ▸ hp.1) hq.2
+     | acc y =>
+       simp only [SlotView] at h₁ h₂
+       split_ifs at h₁ h₂
+@@ -85,9 +85,9 @@ theorem start_noninput (η : P.Input) (t : σ.Tensor) (h : P.input t = false)
+   simp only [Start, Option.map_eq_none_iff]
+   simpa using hv
+ 
+-/-- The read view of published resources: `M (place a)` exactly on `Pub(pc)`. -/
++/-- The read view of published resources: `M (place a)` exactly on `Live(pc)`. -/
+ def readPub (pc : Nat) (M : Memory K σ) (a : Address σ) : Option (K (σ.signature a.1).sort) :=
+-  if π.Pub pc a then M (place a) else none
++  if π.Live pc a then M (place a) else none
+ 
+ /-- Partial output decoder: succeeds only when every output coordinate is in
+     `Pub(pc)` and its slot is initialised. It never fills a missing value. -/
+@@ -154,6 +154,7 @@ def postAnn (c : P.Running) : Ann P → Option P.Running
+   | .acc G => postAcc ops c G
+   | .pub B => postPub c B
+   | .initZero _ => some c
++  | .retire _ => some c
+ 
+ /-- The related reference state: a deterministic function of `pc`. -/
+ def refState (η : P.Input) (pc : Nat) : Option P.Running :=
+@@ -177,6 +178,9 @@ theorem postAnn_execution {c d : P.Running} {a : Ann P} (h : postAnn ops c a = s
+   | initZero S =>
+     cases h
+     exact ⟨[], .nil _⟩
++  | retire B =>
++    cases h
++    exact ⟨[], .nil _⟩
+ 
+ theorem foldlM_execution (anns : List (Ann P)) {c d : P.Running}
+     (h : anns.foldlM (postAnn ops) c = some d) :
+@@ -224,6 +228,10 @@ structure R (η : P.Input) (pc : Nat) (M : Memory K σ) (c : P.Running) : Prop w
+   retain : ∀ x : DefAddr P, ¬ π.Pub pc x.addr →
+     (∃ o : P.Occurrence x.1, π.Cons pc ⟨x.1, o⟩ ∧ P.destination x.1 o.1 o.2 = x.2) →
+     π.Mat pc x
++  /-- R5: a retired slot is free. -/
++  dead : ∀ a, π.Pub pc a → ¬ π.Live pc a → M (place a) = none
++  /-- R6: a retired address is published (so `Live` is `Pub` minus a published set). -/
++  retPub : ∀ a, π.Ret pc a → π.Pub pc a
+ 
+ /-- Lemma 31.2's initialisation obligation. -/
+ theorem R_start (η : P.Input) : π.R ops η 0 (Start η) (P.initial η) where
+@@ -243,34 +251,37 @@ theorem R_start (η : P.Input) : π.R ops η 0 (Start η) (P.initial η) where
+   retain x _ := by
+     rintro ⟨o, ho, _⟩
+     exact absurd ho (π.not_cons_zero _)
++  dead a hp hl := absurd ⟨hp, π.ret_zero a⟩ hl
++  retPub a h := absurd h (π.ret_zero a)
+ 
+-/-- Under R, the read view of memory is exactly the reference published store. -/
++/-- Under R, the read view of memory is the reference published store on `Live(pc)`
++    (a retired address keeps its ghost value in `c.published` but reads `none`). -/
+ theorem readPub_eq {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
+-    (h : π.R ops η pc M c) : π.readPub pc M = c.published := by
+-  funext a
++    (h : π.R ops η pc M c) {a : Address σ} (ha : π.Live pc a) :
++    π.readPub pc M a = c.published a := by
+   unfold readPub
+-  split_ifs with hp
+-  · exact h.pubSlot a (by simp [SlotView, hp])
+-  · have hn := (h.published a).not.mpr hp
+-    exact (Option.not_isSome_iff_eq_none.mp hn).symm
++  rw [if_pos ha]
++  exact h.pubSlot a (by simp [SlotView, ha])
+ 
+ /-- Under R, Decode succeeds exactly when every output coordinate is in
+-    `Pub(pc)`, and then returns the reference published values. -/
++    `Live(pc)`, and then returns the reference published values. -/
+ theorem decode_of_R {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
+     (h : π.R ops η pc M c)
+-    (outs : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, π.Pub pc ⟨t.val, p⟩) :
++    (outs : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, π.Live pc ⟨t.val, p⟩) :
+     ∃ out, π.Decode pc M = some out ∧
+       ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, c.published ⟨t.val, p⟩ = some (out t p) := by
+-  have view := π.readPub_eq ops h
++  have view : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p,
++      π.readPub pc M ⟨t.val, p⟩ = c.published ⟨t.val, p⟩ :=
++    fun t p => π.readPub_eq ops h (outs t p)
+   have all : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p,
+       (π.readPub pc M ⟨t.val, p⟩).isSome = true := by
+     intro t p
+-    rw [view]
+-    exact (h.published _).mpr (outs t p)
++    rw [view t p]
++    exact (h.published _).mpr (outs t p).1
+   refine ⟨fun t p => (π.readPub pc M ⟨t.val, p⟩).get (all t p), ?_, fun t p => ?_⟩
+   · unfold Decode
+     rw [dif_pos all]
+-  · rw [← view]
++  · rw [← view t p]
+     exact (Option.some_get _).symm
+ 
+ #print axioms place_injective
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Simulation.lean b/leanncd/LeanNCD/Semantics/Plan/Simulation.lean
+index bc95044f..e15c80b9 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Simulation.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Simulation.lean
+@@ -33,10 +33,28 @@ theorem pub_succ (b : Address σ) :
+ theorem mat_succ (x : DefAddr P) : π.Mat (pc + 1) x ↔ π.Mat pc x ∨ x ∈ a.inits := by
+   simp [Mat, matList, π.prefixAnn_succ h]
+ 
++theorem ret_succ (b : Address σ) :
++    π.Ret (pc + 1) b ↔ π.Ret pc b ∨ b ∈ a.rets.map DefAddr.addr := by
++  simp only [Ret, retList, π.prefixAnn_succ h, List.flatMap_append, List.map_append,
++    List.mem_append, List.flatMap_cons, List.flatMap_nil, List.append_nil]
++
++/-- An annotation that publishes nothing leaves `Pub` unchanged. -/
++theorem pub_succ_of (hb : a.blocks = []) (b : Address σ) : π.Pub (pc + 1) b ↔ π.Pub pc b := by
++  simp [pub_succ h, hb]
++
++/-- An annotation that retires nothing leaves `Ret` unchanged. -/
++theorem ret_succ_of (hr : a.rets = []) (b : Address σ) : π.Ret (pc + 1) b ↔ π.Ret pc b := by
++  simp [ret_succ h, hr]
++
++/-- An annotation that neither publishes nor retires leaves `Live` unchanged. -/
++theorem live_succ_of (hb : a.blocks = []) (hr : a.rets = []) (b : Address σ) :
++    π.Live (pc + 1) b ↔ π.Live pc b := by
++  simp only [Live, pub_succ_of h hb, ret_succ_of h hr]
++
+ end Succ
+ 
+ theorem slotView_pub [DecidableEq σ.Tensor] {pc : Nat} {b : Address σ} :
+-    π.SlotView pc (.pub b) = some (place b) ↔ π.Pub pc b := by
++    π.SlotView pc (.pub b) = some (place b) ↔ π.Live pc b := by
+   simp only [SlotView]
+   split_ifs with hb <;> simp [hb]
+ 
+@@ -55,7 +73,7 @@ def InitOK (pc : Nat) (S : List (DefAddr P)) : Prop :=
+ 
+ /-- acc: the group is duplicate-free, unconsumed, and every destination was
+     materialised. (Readiness, spec 29.3 condition 3, is NOT needed here: a
+-    successful kernel run already read every footprint address from Pub.) -/
++    successful kernel run already read every footprint address from Live.) -/
+ def AccOK (pc : Nat) (G : List (OccRef P)) : Prop :=
+   G.Nodup ∧ ∀ x ∈ G, ¬ π.Cons pc x ∧ π.Mat pc x.target
+ 
+@@ -65,10 +83,17 @@ def PubOK (pc : Nat) (B : List (DefAddr P)) : Prop :=
+   B.Nodup ∧ ∀ x ∈ B, ¬ π.Pub pc x.addr ∧ π.Mat pc x ∧
+     ∀ o : P.Occurrence x.1, P.destination x.1 o.1 o.2 = x.2 → π.Cons pc ⟨x.1, o⟩
+ 
++/-- retire: each member is live (published and not yet retired, the safety half) and
++    not an output (`Decode` needs every output live). That no remaining reader exists
++    is NOT stated here: it is enforced at the reader (`ReadyOK` over `Live`). -/
++def RetOK (pc : Nat) (B : List (DefAddr P)) : Prop :=
++  ∀ x ∈ B, π.Live pc x.addr ∧ P.output x.1.val = false
++
+ def AnnOK (pc : Nat) : Ann P → Prop
+   | .initZero S => π.InitOK pc S
+   | .acc G => π.AccOK pc G
+   | .pub B => π.PubOK pc B
++  | .retire B => π.RetOK pc B
+ 
+ /-- The step's side conditions at `pc` (singleton commands). -/
+ def StepOK (pc : Nat) : Prop := ∀ a, π.commands[pc]? = some [a] → π.AnnOK pc a
+@@ -185,6 +210,9 @@ theorem postAnn_bookkeeping {c d : P.Running} {a : Ann P} (h : postAnn ops c a =
+   | initZero S =>
+     cases h
+     exact ⟨fun t o => by simp [Ann.groups], fun b => by simp [Ann.blocks]⟩
++  | retire B =>
++    cases h
++    exact ⟨fun t o => by simp [Ann.groups], fun b => by simp [Ann.blocks]⟩
+ 
+ theorem foldlM_bookkeeping (anns : List (Ann P)) {c d : P.Running}
+     (h : anns.foldlM (postAnn ops) c = some d) :
+@@ -252,6 +280,17 @@ theorem dest_not_pub {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
+   obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp ((hR.published _).mpr hp)
+   exact (inv.published x.1 _ v hv).1 x.2 ((hR.pending x.1 x.2).mpr hx) rfl
+ 
++/-- The read view never invents values: whatever it returns is the reference value. -/
++theorem readPub_le {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
++    (hR : π.R ops η pc M c) (a : Address σ) (v : K (σ.signature a.1).sort)
++    (h : π.readPub pc M a = some v) : c.published a = some v := by
++  by_cases hl : π.Live pc a
++  · rw [← π.readPub_eq ops hR hl]
++    exact h
++  · unfold readPub at h
++    rw [if_neg hl] at h
++    cases h
++
+ /-! ### Memory effects of the kernels -/
+ 
+ omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
+@@ -286,6 +325,30 @@ theorem execInit_mem (S : List (DefAddr P)) (M : Memory K σ) {y : DefAddr P} (h
+       rw [execInit_not_mem _ _ (fun z hz e => hS (by rw [← DefAddr.addr_injective e]; exact hz))]
+       exact writeDef_self _ _ _
+ 
++omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
++theorem execRet_not_mem (B : List (DefAddr P)) (M : Memory K σ) {b : Address σ}
++    (h : ∀ x ∈ B, x.addr ≠ b) : execRet B M (place b) = M (place b) := by
++  induction B generalizing M with
++  | nil => rfl
++  | cons x B ih =>
++    change execRet B (Function.update M (place x.addr) none) (place b) = _
++    rw [ih _ (fun y hy => h y (List.mem_cons_of_mem _ hy)),
++      Function.update_of_ne (fun e => h x List.mem_cons_self (place_injective e).symm) _ _]
++
++omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
++theorem execRet_mem (B : List (DefAddr P)) (M : Memory K σ) {y : DefAddr P} (hy : y ∈ B) :
++    execRet B M (place y.addr) = none := by
++  induction B generalizing M with
++  | nil => cases hy
++  | cons x B ih =>
++    change execRet B (Function.update M (place x.addr) none) (place y.addr) = _
++    by_cases hB : y ∈ B
++    · exact ih _ hB
++    · have hyx : y = x := by simpa [hB] using hy
++      subst hyx
++      rw [execRet_not_mem _ _ (fun z hz e => hB (by rw [← DefAddr.addr_injective e]; exact hz))]
++      exact Function.update_self _ _ _
++
+ theorem addAt_some {v : Values P} {M M₁ : Memory K σ} {x : OccRef P}
+     (h : addAt v M x = some M₁) :
+     ∃ a, M (place x.dest) = some a ∧
+@@ -359,6 +422,30 @@ theorem commit_def {v : Values P} (G : List (OccRef P)) {M M' : Memory K σ}
+ 
+ /-! ### The evaluation phase -/
+ 
++omit [DecidableEq σ.Tensor] in
++/-- Readiness is stable under extending the partial store. -/
++theorem evalReady_of_le {Γ : Type} {τ : Ty S} (p q : PartialStore K σ)
++    (hpq : ∀ a v, p a = some v → q a = some v) (e : Expr K σ r Γ τ) (γ : Γ)
++    {w : Option (Value K τ)} (h : evalReady ops p e γ = .evaluated w) :
++    evalReady ops q e γ = .evaluated w := by
++  unfold evalReady at h ⊢
++  split_ifs at h with hc
++  · have hc' := (checkReads_iff p _).mp hc
++    have hagree : ∀ a ∈ footprint e γ, p a = q a := fun a ha => by
++      obtain ⟨v, hv⟩ := Option.isSome_iff_exists.mp (hc' a ha)
++      rw [hv, hpq a v hv]
++    have hq : checkReads q (footprint e γ) = true :=
++      (checkReads_iff q _).mpr (fun a ha => by rw [← hagree a ha]; exact hc' a ha)
++    rw [if_pos hq]
++    cases h
++    exact congrArg ReadyResult.evaluated (evalWith_stable ops e γ q p (fun a ha => (hagree a ha).symm))
++
++theorem delta_congr {G : List (OccRef P)} {v w : Values P} (h : ∀ x ∈ G, v x = w x) :
++    delta P G v = delta P G w := by
++  unfold delta
++  congr 1
++  exact List.map_congr_left (fun x hx => by rw [h x hx])
++
+ omit [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
+ theorem scanGroup_ne_ok (p : PartialStore K σ) (G : List (OccRef P)) (M : Memory K σ) :
+     scanGroup ops p G ≠ some (.ok M) := by
+@@ -423,12 +510,11 @@ theorem step_init {S : List (DefAddr P)} (hR : π.R ops η pc M c)
+   obtain ⟨r2p, r2b⟩ := π.refState_R2 ops hc'
+   have unpub : ∀ y : DefAddr P, ¬ π.Pub (pc + 1) y.addr → ¬ π.Pub pc y.addr :=
+     fun y hn h => hn ((pub_succ hcmd _).mpr (.inl h))
+-  refine ⟨hc', ⟨hR.reach, r2p, r2b, ?_, ?_, ?_⟩, .nil _⟩
++  refine ⟨hc', ⟨hR.reach, r2p, r2b, ?_, ?_, ?_, ?_, ?_⟩, .nil _⟩
+   · intro b hb
+-    have hp : π.Pub pc b := by
+-      simpa [pub_succ hcmd, Ann.blocks] using (π.slotView_pub).mp hb
+-    rw [execInit_not_mem S M (fun x hx e => (ok x hx).1 (by rw [e]; exact hp))]
+-    exact hR.pubSlot b ((π.slotView_pub).mpr hp)
++    have hl : π.Live pc b := (live_succ_of hcmd rfl rfl b).mp ((π.slotView_pub).mp hb)
++    rw [execInit_not_mem S M (fun x hx e => (ok x hx).1 (by rw [e]; exact hl.1))]
++    exact hR.pubSlot b ((π.slotView_pub).mpr hl)
+   · intro y hy
+     obtain ⟨hm, hnp⟩ := (π.slotView_acc).mp hy
+     by_cases hS : y ∈ S
+@@ -440,13 +526,18 @@ theorem step_init {S : List (DefAddr P)} (hR : π.R ops η pc M c)
+     have hcons' : ∃ o : P.Occurrence y.1, π.Cons pc ⟨y.1, o⟩ ∧ P.destination y.1 o.1 o.2 = y.2 := by
+       simpa [cons_succ hcmd, Ann.groups] using hcons
+     exact (mat_succ hcmd y).mpr (.inl (hR.retain y (unpub y hnp) hcons'))
++  · intro b hp hl
++    have hp' : π.Pub pc b := (pub_succ_of hcmd rfl b).mp hp
++    rw [execInit_not_mem S M (fun x hx e => (ok x hx).1 (by rw [e]; exact hp'))]
++    exact hR.dead b hp' (fun h => hl ((live_succ_of hcmd rfl rfl b).mpr h))
++  · intro b hb
++    exact (pub_succ hcmd b).mpr (.inl (hR.retPub b ((ret_succ_of hcmd rfl b).mp hb)))
+ 
+ theorem step_acc {G : List (OccRef P)} (hR : π.R ops η pc M c)
+     (hc : π.refState ops η pc = some c) (hcmd : π.commands[pc]? = some [.acc G])
+     (ok : π.AccOK pc G) (h : π.execAcc ops pc G M = .ok M') :
+     ∃ c', π.refState ops η (pc + 1) = some c' ∧ π.R ops η (pc + 1) M' c' ∧
+       ∃ events, Execution P ops events (.running c) (.running c') := by
+-  have view := π.readPub_eq ops hR
+   unfold execAcc at h
+   split at h
+   · rename_i res hres
+@@ -458,12 +549,17 @@ theorem step_acc {G : List (OccRef P)} (hR : π.R ops η pc M c)
+   · contradiction
+   rename_i M'' hcommit
+   cases h
+-  rw [view] at hscan hcommit
+-  have ready := scanGroup_none ops hscan
++  have ready0 := scanGroup_none ops hscan
++  have ready : ∀ x ∈ G, evalReady ops c.published (P.body x.1 x.2.1) x.2.2 =
++      .evaluated (some (valuesOn ops (π.readPub pc M) x)) :=
++    fun x hx => evalReady_of_le ops _ _ (π.readPub_le ops hR) _ _ (ready0 x hx)
+   have cond : G.Nodup ∧ ∀ x ∈ G, x.2 ∈ c.pending x.1 ∧ (evalValue ops c x).isSome = true := by
+     refine ⟨ok.1, fun x hx => ⟨(hR.pending x.1 x.2).mpr (ok.2 x hx).1, ?_⟩⟩
+     rw [evalValue_eq]
+     simp [valueOn, ready x hx]
++  have hvals : ∀ x ∈ G, valuesOn ops (π.readPub pc M) x = valuesOn ops c.published x := by
++    intro x hx
++    simp [valuesOn, valueOn, ready x hx]
+   have hpost : postAnn ops c (.acc G) = some (accumulateBatch P c G (valuesOn ops c.published)) := by
+     simp only [postAnn, postAcc]
+     rw [if_pos cond]
+@@ -474,19 +570,19 @@ theorem step_acc {G : List (OccRef P)} (hR : π.R ops η pc M c)
+   obtain ⟨r2p, r2b⟩ := π.refState_R2 ops hc'
+   have unpub : ∀ y : DefAddr P, ¬ π.Pub (pc + 1) y.addr → ¬ π.Pub pc y.addr :=
+     fun y hn h => hn ((pub_succ hcmd _).mpr (.inl h))
+-  refine ⟨_, hc', ⟨π.refState_reaches ops hc', r2p, r2b, ?_, ?_, ?_⟩, postAnn_execution ops hpost⟩
++  refine ⟨_, hc', ⟨π.refState_reaches ops hc', r2p, r2b, ?_, ?_, ?_, ?_, ?_⟩,
++    postAnn_execution ops hpost⟩
+   · intro b hb
+-    have hp : π.Pub pc b := by
+-      simpa [pub_succ hcmd, Ann.blocks] using (π.slotView_pub).mp hb
++    have hl : π.Live pc b := (live_succ_of hcmd rfl rfl b).mp ((π.slotView_pub).mp hb)
+     have hne : ∀ x ∈ G, x.dest ≠ b := fun x hx e =>
+-      π.dest_not_pub ops hR (ok.2 x hx).1 (by rw [e]; exact hp)
+-    rw [commit_other G hcommit hne, hR.pubSlot b ((π.slotView_pub).mpr hp),
++      π.dest_not_pub ops hR (ok.2 x hx).1 (by rw [e]; exact hl.1)
++    rw [commit_other G hcommit hne, hR.pubSlot b ((π.slotView_pub).mpr hl),
+       accumulateBatch_published]
+   · intro y hy
+     obtain ⟨hm, hnp⟩ := (π.slotView_acc).mp hy
+     have hm' : π.Mat pc y := by simpa [mat_succ hcmd, Ann.inits] using hm
+-    rw [commit_def G hcommit y, hR.accSlot y ((π.slotView_acc).mpr ⟨hm', unpub y hnp⟩),
+-      accumulateBatch_accumulators]
++    rw [commit_def G hcommit y, delta_congr hvals,
++      hR.accSlot y ((π.slotView_acc).mpr ⟨hm', unpub y hnp⟩), accumulateBatch_accumulators]
+     rfl
+   · intro y hnp hcons
+     obtain ⟨o, hco, hd⟩ := hcons
+@@ -499,6 +595,14 @@ theorem step_acc {G : List (OccRef P)} (hR : π.R ops η pc M c)
+       have hmat := (ok.2 _ h1).2
+       rw [ht] at hmat
+       exact (mat_succ hcmd y).mpr (.inl hmat)
++  · intro b hp hl
++    have hp' : π.Pub pc b := (pub_succ_of hcmd rfl b).mp hp
++    have hne : ∀ x ∈ G, x.dest ≠ b := fun x hx e =>
++      π.dest_not_pub ops hR (ok.2 x hx).1 (by rw [e]; exact hp')
++    rw [commit_other G hcommit hne]
++    exact hR.dead b hp' (fun h => hl ((live_succ_of hcmd rfl rfl b).mpr h))
++  · intro b hb
++    exact (pub_succ hcmd b).mpr (.inl (hR.retPub b ((ret_succ_of hcmd rfl b).mp hb)))
+ 
+ theorem step_pub {B : List (DefAddr P)} (hR : π.R ops η pc M c)
+     (hc : π.refState ops η pc = some c) (hcmd : π.commands[pc]? = some [.pub B])
+@@ -526,12 +630,15 @@ theorem step_pub {B : List (DefAddr P)} (hR : π.R ops η pc M c)
+   obtain ⟨r2p, r2b⟩ := π.refState_R2 ops hc'
+   have unpub : ∀ y : DefAddr P, ¬ π.Pub (pc + 1) y.addr → ¬ π.Pub pc y.addr :=
+     fun y hn h => hn ((pub_succ hcmd _).mpr (.inl h))
+-  refine ⟨_, hc', ⟨π.refState_reaches ops hc', r2p, r2b, ?_, ?_, ?_⟩, postAnn_execution ops hpost⟩
++  refine ⟨_, hc', ⟨π.refState_reaches ops hc', r2p, r2b, ?_, ?_, ?_, ?_, ?_⟩,
++    postAnn_execution ops hpost⟩
+   · intro b hb
+-    rcases (pub_succ hcmd b).mp ((π.slotView_pub).mp hb) with hp | hmem
++    have hl := (π.slotView_pub).mp hb
++    have hnr : ¬ π.Ret pc b := fun h => hl.2 ((ret_succ_of hcmd rfl b).mpr h)
++    rcases (pub_succ hcmd b).mp hl.1 with hp | hmem
+     · have hne : ∀ y ∈ B, y.addr ≠ b := fun y hy e => (ok.2 y hy).1 (by rw [e]; exact hp)
+       rw [publishBlock_published_not_mem c B hne]
+-      exact hR.pubSlot b ((π.slotView_pub).mpr hp)
++      exact hR.pubSlot b ((π.slotView_pub).mpr ⟨hp, hnr⟩)
+     · obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hmem
+       rw [publishBlock_published_mem c B hy]
+       exact hR.accSlot y ((π.slotView_acc).mpr ⟨(ok.2 y hy).2.1, (ok.2 y hy).1⟩)
+@@ -544,6 +651,62 @@ theorem step_pub {B : List (DefAddr P)} (hR : π.R ops η pc M c)
+     have hcons' : ∃ o : P.Occurrence y.1, π.Cons pc ⟨y.1, o⟩ ∧ P.destination y.1 o.1 o.2 = y.2 := by
+       simpa [cons_succ hcmd, Ann.groups] using hcons
+     exact (mat_succ hcmd y).mpr (.inl (hR.retain y (unpub y hnp) hcons'))
++  · intro b hp hl
++    have hr : π.Ret pc b := by
++      by_contra hn
++      exact hl ⟨hp, fun h => hn ((ret_succ_of hcmd rfl b).mp h)⟩
++    have hp' := hR.retPub b hr
++    exact hR.dead b hp' (fun h => h.2 hr)
++  · intro b hb
++    exact (pub_succ hcmd b).mpr (.inl (hR.retPub b ((ret_succ_of hcmd rfl b).mp hb)))
++
++/-- Retirement: the reference state does not change; the retired slots are cleared. -/
++theorem step_retire {B : List (DefAddr P)} (hR : π.R ops η pc M c)
++    (hc : π.refState ops η pc = some c) (hcmd : π.commands[pc]? = some [.retire B])
++    (ok : π.RetOK pc B) :
++    π.refState ops η (pc + 1) = some c ∧ π.R ops η (pc + 1) (execRet B M) c ∧
++      Execution P ops [] (.running c) (.running c) := by
++  have hc' : π.refState ops η (pc + 1) = some c := by
++    rw [π.refState_succ_single ops η hcmd, hc]
++    rfl
++  obtain ⟨r2p, r2b⟩ := π.refState_R2 ops hc'
++  have hpubEq : ∀ b, π.Pub (pc + 1) b ↔ π.Pub pc b := pub_succ_of hcmd rfl
++  have hretEq : ∀ b, π.Ret (pc + 1) b ↔ π.Ret pc b ∨ b ∈ B.map DefAddr.addr := ret_succ hcmd
++  have unpub : ∀ y : DefAddr P, ¬ π.Pub (pc + 1) y.addr → ¬ π.Pub pc y.addr :=
++    fun y hn h => hn ((hpubEq _).mpr h)
++  -- members of `B` are published, so unpublished addresses (accumulators) avoid them
++  have notB : ∀ b, ¬ π.Pub pc b → ∀ x ∈ B, x.addr ≠ b :=
++    fun b hb x hx e => hb (by rw [← e]; exact (ok x hx).1.1)
++  refine ⟨hc', ⟨hR.reach, r2p, r2b, ?_, ?_, ?_, ?_, ?_⟩, .nil _⟩
++  · intro b hb
++    have hl := (π.slotView_pub).mp hb
++    have hnB : ∀ x ∈ B, x.addr ≠ b := fun x hx e =>
++      hl.2 ((hretEq b).mpr (.inr (List.mem_map.mpr ⟨x, hx, e⟩)))
++    rw [execRet_not_mem B M hnB]
++    exact hR.pubSlot b ((π.slotView_pub).mpr ⟨(hpubEq b).mp hl.1,
++      fun h => hl.2 ((hretEq b).mpr (.inl h))⟩)
++  · intro y hy
++    obtain ⟨hm, hnp⟩ := (π.slotView_acc).mp hy
++    have hm' : π.Mat pc y := by simpa [mat_succ hcmd, Ann.inits] using hm
++    rw [execRet_not_mem B M (notB _ (unpub y hnp))]
++    exact hR.accSlot y ((π.slotView_acc).mpr ⟨hm', unpub y hnp⟩)
++  · intro y hnp hcons
++    have hcons' : ∃ o : P.Occurrence y.1, π.Cons pc ⟨y.1, o⟩ ∧ P.destination y.1 o.1 o.2 = y.2 := by
++      simpa [cons_succ hcmd, Ann.groups] using hcons
++    exact (mat_succ hcmd y).mpr (.inl (hR.retain y (unpub y hnp) hcons'))
++  · intro b hp hl
++    have hp' := (hpubEq b).mp hp
++    by_cases hbB : b ∈ B.map DefAddr.addr
++    · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hbB
++      exact execRet_mem B M hx
++    · have hnB : ∀ x ∈ B, x.addr ≠ b := fun x hx e => hbB (List.mem_map.mpr ⟨x, hx, e⟩)
++      rw [execRet_not_mem B M hnB]
++      exact hR.dead b hp' (fun h => hl ⟨hp, fun hr => ((hretEq b).mp hr).elim h.2 hbB⟩)
++  · intro b hb
++    rcases (hretEq b).mp hb with h | h
++    · exact (hpubEq b).mpr (hR.retPub b h)
++    · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp h
++      exact (hpubEq _).mpr (ok x hx).1.1
+ 
+ /-- Successful-step simulation (spec 31.2) for every slice-1 command. -/
+ theorem step_R {a : Ann P} (hR : π.R ops η pc M c) (hc : π.refState ops η pc = some c)
+@@ -561,6 +724,10 @@ theorem step_R {a : Ann P} (hR : π.R ops η pc M c) (hc : π.refState ops η pc
+     exact ⟨c, h1, h2, [], h3⟩
+   | acc G => exact step_acc ops hR hc hcmd ok h
+   | pub B => exact step_pub ops hR hc hcmd ok h
++  | retire B =>
++    cases h
++    obtain ⟨h1, h2, h3⟩ := step_retire ops hR hc hcmd ok
++    exact ⟨c, h1, h2, [], h3⟩
+ 
+ /-- Failure matching (spec 31.3): a semantic failure reported by the
+     transactional kernel is an actual ready, undefined, pending occurrence of
+@@ -579,14 +746,15 @@ theorem step_failed {a : Ann P} {o : OccRef P} (hR : π.R ops η pc M c)
+     · rename_i res hres
+       subst h
+       obtain ⟨hoG, hev⟩ := scanGroup_semFail ops hres
+-      rw [π.readPub_eq ops hR] at hev
++      have hev' := evalReady_of_le ops _ _ (π.readPub_le ops hR) _ _ hev
+       exact .cons (e := .undefined o.1 o.2)
+-        ⟨(hR.pending o.1 o.2).mpr (ok G rfl o hoG), hev⟩ (.nil _)
++        ⟨(hR.pending o.1 o.2).mpr (ok G rfl o hoG), hev'⟩ (.nil _)
+     · split at h <;> cases h
+   | .pub B, h, _ =>
+     simp only [stepCommand_single, execAnn, execPub] at h
+     split_ifs at h
+   | .initZero S, h, _ => simp only [stepCommand_single, execAnn] at h; cases h
++  | .retire B, h, _ => simp only [stepCommand_single, execAnn] at h; cases h
+ 
+ /-- A reported plan failure is a reachable reference failure, so no model. -/
+ theorem step_failed_no_model {a : Ann P} {o : OccRef P} (hR : π.R ops η pc M c)
+@@ -603,9 +771,17 @@ end Steps
+ #print axioms accFlat_complete
+ #print axioms acc_zero_of_unconsumed
+ #print axioms commit_def
++#print axioms live_succ_of
++#print axioms ret_succ
++#print axioms readPub_le
++#print axioms execRet_not_mem
++#print axioms execRet_mem
++#print axioms evalReady_of_le
++#print axioms delta_congr
+ #print axioms step_init
+ #print axioms step_acc
+ #print axioms step_pub
++#print axioms step_retire
+ #print axioms step_R
+ #print axioms step_failed
+ #print axioms step_failed_no_model
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Step.lean b/leanncd/LeanNCD/Semantics/Plan/Step.lean
+index d4e869b5..0120e439 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Step.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Step.lean
+@@ -129,10 +129,16 @@ def execAcc (pc : Nat) (G : List (OccRef P)) (M : Memory K σ) : StepResult P :=
+ def execPub (B : List (DefAddr P)) (M : Memory K σ) : StepResult P :=
+   if B.all (fun x => (M (place x.addr)).isSome) then .ok M else .stuck
+ 
++/-- `retire B`: clear the slot of each member (retirement frees the physical slot).
++    Total: never `stuck`, like `execInit`. -/
++def execRet (B : List (DefAddr P)) (M : Memory K σ) : Memory K σ :=
++  B.foldl (fun M x => Function.update M (place x.addr) none) M
++
+ def execAnn (pc : Nat) (M : Memory K σ) : Ann P → StepResult P
+   | .initZero S => .ok (execInit S M)
+   | .acc G => π.execAcc ops pc G M
+   | .pub B => execPub B M
++  | .retire B => .ok (execRet B M)
+ 
+ /-- Run a list of annotations from position `n` on the running memory.
+     `semFail`/`stuck` propagate; the caller reports the pre-command memory. -/
+@@ -151,14 +157,14 @@ def stepCommand (pc : Nat) (M : Memory K σ) (cmd : Command P) : StepResult P :=
+   π.expand.execAnns ops (π.offset pc) M cmd
+ 
+ /-- `execAnn` depends on the plan only through the annotation prefix at its position
+-    (it reads `readPub pc`, i.e. `Pub pc`, i.e. `prefixAnn pc`). -/
++    (it reads `readPub pc`, i.e. `Live pc`, i.e. `Pub`/`Ret` of `prefixAnn pc`). -/
+ theorem execAnn_prefix {π π' : P.Plan} {pc pc' : Nat} (h : π.prefixAnn pc = π'.prefixAnn pc')
+     (M : Memory K σ) (a : Ann P) : π.execAnn ops pc M a = π'.execAnn ops pc' M a := by
+   have hr : π.readPub pc = π'.readPub pc' := by
+     funext M a
+-    have hp : π.Pub pc a ↔ π'.Pub pc' a := by simp [Pub, pubList, h]
++    have hp : π.Live pc a ↔ π'.Live pc' a := by simp [Live, Pub, Ret, pubList, retList, h]
+     unfold readPub
+-    by_cases hπ : π.Pub pc a
++    by_cases hπ : π.Live pc a
+     · rw [if_pos hπ, if_pos (hp.mp hπ)]
+     · rw [if_neg hπ, if_neg (fun h' => hπ (hp.mpr h'))]
+   cases a <;> simp [execAnn, execAcc, hr]
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Syntax.lean b/leanncd/LeanNCD/Semantics/Plan/Syntax.lean
+index af03ec0a..ef5da10e 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Syntax.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Syntax.lean
+@@ -30,11 +30,13 @@ theorem DefAddr.addr_injective {P : Program K σ r} :
+ 
+ /-- One logical annotation. `acc G` is spec `Accumulate(G)`, `pub B` is
+     `Publish(B)`, `initZero S` is the storage operation materialising zero
+-    accumulators at the addresses `S`. -/
++    accumulators at the addresses `S`, `retire B` retires the published defined
++    addresses `B` (their physical slots are cleared). -/
+ inductive Ann (P : Program K σ r)
+   | acc (G : List (OccRef P))
+   | pub (B : List (DefAddr P))
+   | initZero (S : List (DefAddr P))
++  | retire (B : List (DefAddr P))
+ 
+ /-- A (possibly fused) command is its finite annotation sequence. -/
+ abbrev Command (P : Program K σ r) := List (Ann P)
+@@ -64,6 +66,10 @@ def inits : Ann P → List (DefAddr P)
+   | .initZero S => S
+   | _ => []
+ 
++def rets : Ann P → List (DefAddr P)
++  | .retire B => B
++  | _ => []
++
+ def occKey (x : OccRef P) : Key P := .occurrence x.1 x.2
+ def pubKey (x : DefAddr P) : Key P := .publication x.1 x.2
+ 
+@@ -72,6 +78,7 @@ def keys : Ann P → List (Key P)
+   | .acc G => G.map occKey
+   | .pub B => B.map pubKey
+   | .initZero _ => []
++  | .retire _ => []
+ 
+ theorem occKey_injective : Function.Injective (occKey (P := P)) := by
+   rintro ⟨t, o⟩ ⟨u, q⟩ h
+@@ -100,6 +107,7 @@ def prefixAnn (pc : Nat) : List (Ann P) := (π.commands.take pc).flatten
+ def consList (pc : Nat) : List (OccRef P) := (π.prefixAnn pc).flatMap Ann.groups
+ def pubList (pc : Nat) : List (DefAddr P) := (π.prefixAnn pc).flatMap Ann.blocks
+ def matList (pc : Nat) : List (DefAddr P) := (π.prefixAnn pc).flatMap Ann.inits
++def retList (pc : Nat) : List (DefAddr P) := (π.prefixAnn pc).flatMap Ann.rets
+ 
+ /-- `Pub(pc)`: input addresses plus every address published by the prefix. -/
+ def Pub (pc : Nat) (a : Address σ) : Prop :=
+@@ -111,6 +119,12 @@ def Cons (pc : Nat) (x : OccRef P) : Prop := x ∈ π.consList pc
+ /-- `Mat(pc)`: addresses whose zero accumulator the prefix materialised. -/
+ def Mat (pc : Nat) (x : DefAddr P) : Prop := x ∈ π.matList pc
+ 
++/-- `Ret(pc)`: addresses retired by the prefix. -/
++def Ret (pc : Nat) (a : Address σ) : Prop := a ∈ (π.retList pc).map DefAddr.addr
++
++/-- `Live(pc)`: published and not retired. -/
++def Live (pc : Nat) (a : Address σ) : Prop := π.Pub pc a ∧ ¬ π.Ret pc a
++
+ section Decidable
+ 
+ variable [DecidableEq σ.Tensor]
+@@ -127,6 +141,13 @@ instance (pc : Nat) (x : DefAddr P) : Decidable (π.Mat pc x) :=
+     fun t => coordDecidableEq (σ.signature t.val).axes
+   inferInstanceAs (Decidable (x ∈ π.matList pc))
+ 
++instance (pc : Nat) (a : Address σ) : Decidable (π.Ret pc a) :=
++  letI := addressEq (σ := σ)
++  inferInstanceAs (Decidable (a ∈ _))
++
++instance (pc : Nat) (a : Address σ) : Decidable (π.Live pc a) :=
++  inferInstanceAs (Decidable (_ ∧ ¬ _))
++
+ end Decidable
+ 
+ theorem prefixAnn_zero : π.prefixAnn 0 = [] := by simp [prefixAnn]
+@@ -179,6 +200,23 @@ theorem not_mat_zero (x : DefAddr P) : ¬ π.Mat 0 x := by
+ theorem pub_zero (a : Address σ) : π.Pub 0 a ↔ P.input a.1 = true := by
+   simp [Pub, pubList, prefixAnn_zero]
+ 
++theorem ret_zero (a : Address σ) : ¬ π.Ret 0 a := by
++  simp [Ret, retList, prefixAnn_zero]
++
++theorem live_zero (a : Address σ) : π.Live 0 a ↔ P.input a.1 = true := by
++  simp [Live, ret_zero, pub_zero]
++
++theorem Live.pub {pc : Nat} {a : Address σ} (h : π.Live pc a) : π.Pub pc a := h.1
++
++/-- Inputs are always live: `Ret` mentions only defined addresses. -/
++theorem live_input (pc : Nat) (a : Address σ) (h : P.input a.1 = true) : π.Live pc a := by
++  refine ⟨Or.inl h, ?_⟩
++  rintro hr
++  obtain ⟨x, _, rfl⟩ := List.mem_map.mp hr
++  have := x.1.2
++  simp [DefAddr.addr] at h
++  simp_all
++
+ /-! ### Schedule view (spec 29.3 conditions 1-2) -/
+ 
+ def accFlat : List (OccRef P) := π.ann.flatMap Ann.groups
+@@ -212,6 +250,8 @@ theorem keys_perm_aux (anns : List (Ann P)) :
+       exact (ih.append_left _).trans (List.perm_append_comm_assoc _ _ _)
+     | initZero S =>
+       simpa [Ann.keys, Ann.groups, Ann.blocks, List.flatMap_cons] using ih
++    | retire B =>
++      simpa [Ann.keys, Ann.groups, Ann.blocks, List.flatMap_cons] using ih
+ 
+ theorem flatKeys_perm :
+     π.flatKeys.Perm (π.accFlat.map Ann.occKey ++ π.pubFlat.map Ann.pubKey) :=
+@@ -251,5 +291,7 @@ theorem coverage_iff_schedule :
+ 
+ #print axioms DefAddr.addr_injective
+ #print axioms coverage_iff_schedule
++#print axioms ret_zero
++#print axioms live_input
+ 
+ end LeanNCD.Semantics.Program.Plan

@@ -1,0 +1,135 @@
+[
+  {
+    "task": "01-core",
+    "files": [
+      "leanncd/LeanNCD/Semantics/Plan/Syntax.lean",
+      "leanncd/LeanNCD/Semantics/Plan/Memory.lean",
+      "leanncd/LeanNCD/Semantics/Plan/Step.lean",
+      "leanncd/LeanNCD/Semantics/Plan/Simulation.lean"
+    ],
+    "gate": "LeanNCD.Semantics.Plan.Simulation",
+    "patch": "papers/semantics/plan_layer_slice3_patches/01-core.patch",
+    "patch_lines": 655,
+    "sha256": "e5f512d36302dc845e804821fbc02ea8cbe4564e606a1cd3812af44aa570b301",
+    "git_patch_id": "b7c32d8db42a29305976037854d6f525d7a0efc0",
+    "blobs_at_code_head": {
+      "leanncd/LeanNCD/Semantics/Plan/Syntax.lean": "ef5da10ed467faec78d80628db7f27cc0c478d84",
+      "leanncd/LeanNCD/Semantics/Plan/Memory.lean": "b97cf57c7fc339d44085cc97649f451d87c75631",
+      "leanncd/LeanNCD/Semantics/Plan/Step.lean": "0120e439c859be4095de8734818f7ac255607bfc",
+      "leanncd/LeanNCD/Semantics/Plan/Simulation.lean": "e15c80b913a5251378aab3a8b1878e8252c5b18a"
+    },
+    "numstat": [
+      {
+        "added": "29",
+        "deleted": "18",
+        "path": "leanncd/LeanNCD/Semantics/Plan/Memory.lean"
+      },
+      {
+        "added": "198",
+        "deleted": "22",
+        "path": "leanncd/LeanNCD/Semantics/Plan/Simulation.lean"
+      },
+      {
+        "added": "9",
+        "deleted": "3",
+        "path": "leanncd/LeanNCD/Semantics/Plan/Step.lean"
+      },
+      {
+        "added": "43",
+        "deleted": "1",
+        "path": "leanncd/LeanNCD/Semantics/Plan/Syntax.lean"
+      }
+    ]
+  },
+  {
+    "task": "02-validity-run-correctness",
+    "files": [
+      "leanncd/LeanNCD/Semantics/Plan/Validity.lean",
+      "leanncd/LeanNCD/Semantics/Plan/Run.lean",
+      "leanncd/LeanNCD/Semantics/Plan/Correctness.lean"
+    ],
+    "gate": "LeanNCD.Semantics.Plan.Correctness",
+    "patch": "papers/semantics/plan_layer_slice3_patches/02-validity-run-correctness.patch",
+    "patch_lines": 239,
+    "sha256": "2685544f2fcc980f409935ce9ce06ec6c4b364fe4360f9477ab6cf2c90a78cb6",
+    "git_patch_id": "5b50cf89e842ea884241fa16fa7c978c4b37ec9b",
+    "blobs_at_code_head": {
+      "leanncd/LeanNCD/Semantics/Plan/Validity.lean": "6b0b112bf81373022cc9b45515bb3c27a5265d3c",
+      "leanncd/LeanNCD/Semantics/Plan/Run.lean": "be257f45e3a8cb9362ceb908829f14c51a959844",
+      "leanncd/LeanNCD/Semantics/Plan/Correctness.lean": "2ed806c5ac35d83ac47b9257bb402bda13cffe0f"
+    },
+    "numstat": [
+      {
+        "added": "28",
+        "deleted": "3",
+        "path": "leanncd/LeanNCD/Semantics/Plan/Correctness.lean"
+      },
+      {
+        "added": "4",
+        "deleted": "3",
+        "path": "leanncd/LeanNCD/Semantics/Plan/Run.lean"
+      },
+      {
+        "added": "33",
+        "deleted": "6",
+        "path": "leanncd/LeanNCD/Semantics/Plan/Validity.lean"
+      }
+    ]
+  },
+  {
+    "task": "03-fusion",
+    "files": [
+      "leanncd/LeanNCD/Semantics/Plan/Fusion.lean",
+      "leanncd/LeanNCD/Semantics/Plan/FusionCorrectness.lean"
+    ],
+    "gate": "LeanNCD.Semantics.Plan.FusionCorrectness, then full LeanNCD",
+    "patch": "papers/semantics/plan_layer_slice3_patches/03-fusion.patch",
+    "patch_lines": 55,
+    "sha256": "6e4210402b0bf99a2a5425a7704b986c63a01f89de5ecb7fd67000f0e26a353a",
+    "git_patch_id": "e86aeb7eeff6405eb14e101a6243f55eb61d318c",
+    "blobs_at_code_head": {
+      "leanncd/LeanNCD/Semantics/Plan/Fusion.lean": "17d56754ee39afc24350a1a20065b776380aa8ae",
+      "leanncd/LeanNCD/Semantics/Plan/FusionCorrectness.lean": "15a32f15d54780cda03688e699f2f93284b9c88e"
+    },
+    "numstat": [
+      {
+        "added": "7",
+        "deleted": "2",
+        "path": "leanncd/LeanNCD/Semantics/Plan/Fusion.lean"
+      },
+      {
+        "added": "6",
+        "deleted": "4",
+        "path": "leanncd/LeanNCD/Semantics/Plan/FusionCorrectness.lean"
+      }
+    ]
+  },
+  {
+    "task": "04-fixtures",
+    "files": [
+      "leanncd/test/Semantics/PlanRetireTest.lean",
+      "leanncd/lakefile.toml"
+    ],
+    "gate": "default targets (lake build with no argument)",
+    "patch": "papers/semantics/plan_layer_slice3_patches/04-fixtures.patch",
+    "patch_lines": 188,
+    "sha256": "2e1a9d35c60c94c6595d3608177a0b52fe7980f490c3cd4abfc9b191a3325d33",
+    "git_patch_id": "52ba5f5a8247a7650b1b6258ff39637d7f3bf516",
+    "blobs_at_code_head": {
+      "leanncd/test/Semantics/PlanRetireTest.lean": "50d4241560e1f0c22c7d183f1833f367cf013684",
+      "leanncd/lakefile.toml": "b18bcea4fd88460b5678891e22099be723e7fb8e"
+    },
+    "numstat": [
+      {
+        "added": "1",
+        "deleted": "1",
+        "path": "leanncd/lakefile.toml"
+      },
+      {
+        "added": "169",
+        "deleted": "0",
+        "path": "leanncd/test/Semantics/PlanRetireTest.lean"
+      }
+    ]
+  }
+]
