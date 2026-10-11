@@ -8,3 +8,4 @@ import LeanNCD.Semantics.Plan.Run
 import LeanNCD.Semantics.Plan.Correctness
 import LeanNCD.Semantics.Plan.Fusion
 import LeanNCD.Semantics.Plan.FusionCorrectness
+import LeanNCD.Semantics.Plan.Faults

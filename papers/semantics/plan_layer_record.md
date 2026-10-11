@@ -125,6 +125,11 @@ text (spec line numbers dropped):
 - **D7 (medium).** The Section 30.1 state type has no implementation-error constructor, though
   Section 31.3 introduces implementation errors as a third terminal outcome. Proposed fix: add the
   constructor. Disposition: deferred with the error-free profile (slice 2, "implementation errors").
+  **CLOSED 2026-10-11** (Direct path, `Plan/Faults.lean`): realized as a wrapper `FOutcome = run | error` over an
+  oracle `Faults` rather than a new constructor of `StepResult`/`PlanOutcome` (that would have touched every match in
+  Step/Run/Simulation/Correctness for no stronger theorem); `stuck` stays separate. Theorems: `runFromE_noFault`,
+  `runFromE_run`, `runFromE_error`, `done_correct_E`, `failed_correct_E`, `runPlanE_not_stuck`. Not done: error-free
+  profile predicate and (c) under it, fault fixtures and mutants, `R` at the error state, fused `_F` corollaries.
 - **D8 (low).** The Section 32.3 "output view" is never defined (it occurs once, in the sentence
   "It must not expose partial accumulators through an output view while another contribution
   remains"). Fusion legality is already sequential composition, and the Publish side condition

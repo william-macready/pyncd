@@ -21,6 +21,7 @@ Reachable from `import LeanNCD` (`Semantics.lean` imports `Plan.lean`, which imp
 | `Correctness.lean` | `terminal_adequacy` (Lemma 31.2), `complete_of_refState`, Theorem 31.3 (a)(b)(c) |
 | `Fusion.lean` | fused-command fold lemmas `execAnns_R`, `step_R_command`, `step_failed_command`, `stepCommand_not_stuck` (the fold `execAnns` and `stepCommand` are in `Step.lean`, `execAnns_not_stuck` in `Run.lean`); run bridge `runFrom_agree`, `runPlan_agree` (`expand`/`offset` live in `Syntax.lean`, `execAnns` in `Step.lean`) |
 | `FusionCorrectness.lean` | `FValid`, `checkPlanF`, `checkPlanF_sound`, `runFrom_R_F` (mid-run, any command boundary), `runPlan_R_F`, `runPlan_not_stuck_F`, `terminal_adequacy_F`, `done_correct_F`/`failed_correct_F`/`done_or_failed_F`/`done_of_model_F`/`done_iff_model_F` |
+| `Faults.lean` | implementation errors (D7) as a wrapper: `ImplErr`, oracle `Faults`, `FOutcome = run \| error`, `runFromE`/`runPlanE`; `runFromE_noFault`, `runFromE_run`, `runFromE_error`, `done_correct_E`, `failed_correct_E`, `runPlanE_not_stuck` (slice-1 `Valid`; kernels, `StepResult` and `PlanOutcome` untouched) |
 
 ## Contracts
 - A fused plan is valid iff its expansion is (`FValid := π.expand.Valid`); `done m` counts commands, not expanded annotations.
