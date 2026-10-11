@@ -75,10 +75,10 @@ theorem step_not_stuck (hv : π.Valid) (hR : π.R ops η pc M c)
   unfold stepPlan
   rw [hcmd]
   cases a with
-  | initZero S => simp [stepCommand, execAnn]
+  | initZero S => simp [stepCommand_single, execAnn]
   | pub B =>
     obtain ⟨-, hB⟩ := hv.pubOK pc B hcmd
-    simp only [stepCommand, execAnn, execPub]
+    simp only [stepCommand_single, execAnn, execPub]
     rw [if_pos]
     · simp
     · simp only [List.all_eq_true]
@@ -87,7 +87,7 @@ theorem step_not_stuck (hv : π.Valid) (hR : π.R ops η pc M c)
   | acc G =>
     obtain ⟨-, hG⟩ := hv.accOK pc G hcmd
     have hready := hv.ready pc G hcmd
-    simp only [stepCommand, execAnn, execAcc]
+    simp only [stepCommand_single, execAnn, execAcc]
     split
     · rename_i res hres
       intro e
