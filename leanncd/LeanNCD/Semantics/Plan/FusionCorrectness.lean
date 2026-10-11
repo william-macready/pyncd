@@ -55,9 +55,9 @@ theorem decode_prefix_congr {π π' : P.Plan} {pc pc' : Nat}
     π.Decode pc M = π'.Decode pc' M := by
   have hr : π.readPub pc = π'.readPub pc' := by
     funext M a
-    have hp : π.Pub pc a ↔ π'.Pub pc' a := by simp [Pub, pubList, h]
+    have hp : π.Live pc a ↔ π'.Live pc' a := by simp [Live, Pub, Ret, pubList, retList, h]
     unfold readPub
-    by_cases hπ : π.Pub pc a
+    by_cases hπ : π.Live pc a
     · rw [if_pos hπ, if_pos (hp.mp hπ)]
     · rw [if_neg hπ, if_neg (fun h' => hπ (hp.mpr h'))]
   unfold Decode
@@ -145,8 +145,10 @@ theorem terminal_adequacy_F (hv : π.FValid) (η : P.Input) {m : Nat} {M' : Memo
       (n := π.expand.commands.length) rfl
     have complete := complete_of_refState ops hv
       ((refState_prefix_congr (η := η) ops hp).symm.trans hc)
-    have outs : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, π.Pub π.commands.length ⟨t.val, p⟩ :=
-      fun t p => (hR.published _).mp (complete.2 _)
+    have outs : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, π.Live π.commands.length ⟨t.val, p⟩ :=
+      fun t p => by
+        have := live_output_of_valid hv t p
+        simpa [Live, Pub, Ret, pubList, retList, hp] using this
     obtain ⟨out, hd, hout⟩ := π.decode_of_R ops hR outs
     refine ⟨rfl, c, hc, hR, complete, ?_⟩
     rw [hd]

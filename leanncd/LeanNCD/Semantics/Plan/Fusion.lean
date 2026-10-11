@@ -104,14 +104,19 @@ theorem R_transport {π π' : P.Plan} {pc pc' : Nat} {M : Memory K σ} {c : P.Ru
   have hcons : ∀ x, π.Cons pc x ↔ π'.Cons pc' x := fun x => by simp [Cons, consList, h]
   have hpub : ∀ a, π.Pub pc a ↔ π'.Pub pc' a := fun a => by simp [Pub, pubList, h]
   have hmat : ∀ x, π.Mat pc x ↔ π'.Mat pc' x := fun x => by simp [Mat, matList, h]
+  have hret : ∀ a, π.Ret pc a ↔ π'.Ret pc' a := fun a => by simp [Ret, retList, h]
+  have hlive : ∀ a, π.Live pc a ↔ π'.Live pc' a := fun a => by
+    simp only [Live, hpub, hret]
   have hsv : ∀ r, π.SlotView pc r = π'.SlotView pc' r := by
-    intro r; cases r <;> simp [SlotView, hpub, hmat]
+    intro r; cases r <;> simp [SlotView, hpub, hmat, hlive]
   exact ⟨hR.reach, fun t o => by rw [← hcons]; exact hR.pending t o,
     fun a => by rw [← hpub]; exact hR.published a,
     fun a ha => hR.pubSlot a (by rw [hsv]; exact ha),
     fun x hx => hR.accSlot x (by rw [hsv]; exact hx),
     fun x hx ho => (hmat x).mp (hR.retain x (fun hp => hx ((hpub _).mp hp))
-      (by obtain ⟨o, ho1, ho2⟩ := ho; exact ⟨o, (hcons _).mpr ho1, ho2⟩))⟩
+      (by obtain ⟨o, ho1, ho2⟩ := ho; exact ⟨o, (hcons _).mpr ho1, ho2⟩)),
+    fun a hp hl => hR.dead a ((hpub a).mpr hp) (fun hl' => hl ((hlive a).mp hl')),
+    fun a ha => (hpub a).mp (hR.retPub a ((hret a).mpr ha))⟩
 
 theorem refState_prefix_congr {π π' : P.Plan} {pc pc' : Nat}
     (h : π.prefixAnn pc = π'.prefixAnn pc') : π.refState ops η pc = π'.refState ops η pc' := by
