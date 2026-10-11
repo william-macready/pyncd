@@ -169,7 +169,8 @@ example : rtDupBlock.checkPlan = true := by decide
 /-! ### 8. rows added for the deferred whole-branch review minors -/
 
 -- donor: rtNeighbour. TWO DISTINCT addresses in one retire block, both after their last reader:
--- a `retire` that only handled the first member (executor or checker) would differ here.
+-- an `execRet` that only handled the first member would differ here. (A checker that looked only at
+-- the first member would NOT: both members are legal; `retire-multi-second-unpublished` pins that side.)
 def rtMulti : (routed chainBody).Plan :=
   unitPlan [[.initZero cAll], [.acc [cOcc 0]], [.pub [cAddr 0, cAddr 1]], [.acc [cOcc 1]],
     [.retire [cAddr 0, cAddr 1]], [.pub [cAddr 2]]]
@@ -178,7 +179,8 @@ def rtMulti : (routed chainBody).Plan :=
   (true, ("done", 6, none, [none, none, some 4]))
 example : rtMulti.checkPlan = true := by decide
 
--- donor: rtMulti with the SECOND member replaced by point 2, which is accumulated but not yet
+-- donor: rtMulti with the retire block changed to `[p1, p2]`: the first member stays legal and the
+-- second is point 2, accumulated but not yet
 -- published: the Pub half of Live rejects the block through its second member only (a checker that
 -- looked at the first member would accept). The run clears the live accumulator, so the later `pub`
 -- is stuck (as in `retire-unpublished`).

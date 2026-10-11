@@ -4788,10 +4788,11 @@ The compilation-layer proof targets are:
   *Batching proved for the transactional singleton accumulate kernel* (`batch_execution`,
   `step_failed`); sharing remains a target.
 - Concrete progress and termination, not just forward simulation.
-  *Proved for the slice-1 to slice-3 profile* (`step_not_stuck`, `runPlan_not_stuck`).
+  *Proved for the slice-1 to slice-3 profile* (`step_not_stuck`, `runPlan_not_stuck`; fused plans:
+  `stepCommand_not_stuck`, `runPlan_not_stuck_F`).
 - Terminal decoding and the compiled-correctness theorem.
   *Proved for the slice-1 to slice-3 profile* (`terminal_adequacy`, `done_correct`, `failed_correct`,
-  `done_iff_model`).
+  `done_iff_model`; fused plans: `terminal_adequacy_F`, `done_correct_F`, `failed_correct_F`, `done_iff_model_F`).
 - Separate-buffer and two-buffer scan proofs, with full-history and
   terminal-only output contracts tested separately.
 
