@@ -1145,7 +1145,7 @@ S2-M4 at fixture level).
 
 - Cross-sort reads and primitives (the one multi-sort fixture, `PlanMultiSortTest`, has an empty registry), numeric kernels other than the exact reference, floating point.
 - Buffer reuse, aliasing, retirement, and liveness for scans.
-- Implementation errors beyond the fault-oracle wrapper (`Plan/Faults.lean`: `FOutcome`, `done_correct_E`, `failed_correct_E`): no error-free-profile predicate with (c) restated, no fault fixtures, no concrete error sources (allocation failure and kernel errors are abstract oracle outputs).
+- Concrete implementation-error sources: `Plan/Faults.lean` models errors as an abstract fault oracle (`FOutcome`, error-free profile, (a)(b)(c) under faults, `R` at the error state; fixtures in `PlanFaultsTest`), so allocation failure and kernel errors are oracle outputs, not events of the model.
 - A proof that per-step `AccOK`/`PubOK` imply the Nodup halves of conditions 1 and 2 (conjecture).
 - Comparing the failure occurrence or failure snapshot between the plan and the reference executor.
 - Dropping the redundant condition-1 covering clause of `Valid`. It follows from the condition-2
@@ -1192,7 +1192,7 @@ Slices 1 and 2 of the plan layer have landed
 ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)): singleton and fused commands over
 dense non-reused storage, with Lemma 31.2, Theorem 31.3 and Lemma 32.1 proved for that profile.
 Not yet done: buffer reuse, aliasing, retirement and scan liveness;
-concrete implementation-error sources and the error-free-profile restatement (an abstract fault oracle is done, `Plan/Faults.lean`); cross-sort primitives and non-exact numeric
+concrete implementation-error sources (an abstract fault oracle with the error-free profile restated is done, `Plan/Faults.lean`); cross-sort primitives and non-exact numeric
 kernel fixtures; and the Nodup conjecture for conditions 1 and 2.
 
 Floating-point correspondence needs its own ordered-reduction or numerical

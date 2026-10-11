@@ -128,8 +128,18 @@ text (spec line numbers dropped):
   **CLOSED 2026-10-11** (Direct path, `Plan/Faults.lean`): realized as a wrapper `FOutcome = run | error` over an
   oracle `Faults` rather than a new constructor of `StepResult`/`PlanOutcome` (that would have touched every match in
   Step/Run/Simulation/Correctness for no stronger theorem); `stuck` stays separate. Theorems: `runFromE_noFault`,
-  `runFromE_run`, `runFromE_error`, `done_correct_E`, `failed_correct_E`, `runPlanE_not_stuck`. Not done: error-free
-  profile predicate and (c) under it, fault fixtures and mutants, `R` at the error state, fused `_F` corollaries.
+  `runFromE_run`, `runFromE_error`, `done_correct_E`, `failed_correct_E`, `runPlanE_not_stuck`. **Follow-ups closed the
+  same day** (second Direct-path pass): fused `done_correct_FE`/`failed_correct_FE`/`runPlanE_not_stuck_FE`; error-free
+  profile `ErrorFreeRun`/`NoFaultsInPlan` with (c) restated (`done_or_failed_FE`, `done_of_model_FE`, `done_iff_model_FE`)
+  and `error_despite_model`; `R` at the error state (`runFromE_error_R`, `runPlanE_error_R`); fixture module
+  `PlanFaultsTest` (11 `#eval check` rows over `fused`, `sPlanFused`, `sPlan`, plus theorem instances) and manifest
+  `plan_layer_d7_mutations_post.json` (9 cycles, 9/9 PASS). Still not modelled: concrete error sources.
+  Caveat on the mutation evidence: all nine mutants break the build at the PROOFS in `Faults.lean`, so the manifest
+  does not show the fixtures discriminate (and the manifest has no `expect` strings). That was probed separately with
+  a scratch buggy copy of `runFromE` (one knob per mutant M1-M7, deleted, not committed): the control with correct
+  knobs equals the real runner; each of M1-M7 changes at least one fixture row (M4 only the position-2 row; M7 only
+  the first-wins-in-command row). M8 and M9 (the `NoFaultsInPlan` bound off by one either way) were probed on the two
+  predicate examples, which flip.
 - **D8 (low).** The Section 32.3 "output view" is never defined (it occurs once, in the sentence
   "It must not expose partial accumulators through an output view while another contribution
   remains"). Fusion legality is already sequential composition, and the Publish side condition

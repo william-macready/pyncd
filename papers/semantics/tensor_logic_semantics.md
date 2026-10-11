@@ -4451,7 +4451,7 @@ failure.
 Outside the error-free profile a valid plan can end in an implementation error
 even when a model exists; (a) and (b) are unaffected.
 
-**As formalized (implementation errors, D7; singleton-profile `Valid` plans).** The third outcome is a wrapper, not a
+**As formalized (implementation errors, D7; slice-1 `Valid` and fused `FValid` plans).** The third outcome is a wrapper, not a
 new constructor of the Section 30.1 state: `FOutcome` is `run o` (an ordinary `PlanOutcome`) or `error e pc M`, with
 `e : ImplErr` (`allocFail`, `kernelFault`; no information about models). A fault schedule `Faults : Nat → Option ImplErr`
 is indexed by expanded annotation position and is consulted for a command's positions before the command runs
@@ -4460,9 +4460,20 @@ is indexed by expanded annotation position and is consulted for a command's posi
 (`runPlanE_noFault`); a non-error outcome is the fault-free outcome (`runFromE_run`); an error at command `pc'` carries
 exactly the fault-free memory there and a fault at one of that command's positions (`runFromE_error`); hence (a) and
 (b) hold under every schedule (`done_correct_E`, `failed_correct_E`) and the run is never `stuck`
-(`runPlanE_not_stuck`). Not stated: the error-free profile as a predicate with (c) restated under it, fixtures that
-inject faults, the fused counterparts `done_correct_F`/`failed_correct_F` under faults (the wrapper already runs fused
-commands), and `R` at the error state.
+(`runPlanE_not_stuck`). The fused counterparts hold for `FValid` plans (`done_correct_FE`, `failed_correct_FE`,
+`runPlanE_not_stuck_FE`); the wrapper runs fused commands unchanged, and a fault at any annotation of a fused command
+reports the pre-command memory.
+
+*Error-free profile.* The profile is the set of runs that end `run _` (`ErrorFreeRun`); a schedule with no fault at any
+expanded position of the plan (`NoFaultsInPlan`, faults beyond the plan are never reached) gives such a run
+(`errorFreeRun_of_noFaultsInPlan`). Under an error-free run, (c) holds for fused plans: the run ends `done` or `failed`
+(`done_or_failed_FE`), a model forces `done` with the model's decoded output (`done_of_model_FE`), and `done` iff a
+model exists (`done_iff_model_FE`). Outside the profile the converse fails, as the specification says: with a fault at
+an executed position of the first command, the fault-free run is `done` while the faulty run is an `error` at pc 0
+(`error_despite_model`). *`R` at the error state:* the memory an `error` reports is related by `R` to the reference
+state at that command (`runFromE_error_R`, `runPlanE_error_R`), so it is a fault-free reachable state. Not modelled:
+concrete error sources (allocation failure and kernel faults are abstract oracle outputs), and matching of an error to
+a reference segment (an error establishes no absence of a model, so none is required).
 
 **As formalized (slice-1 and slice-2 profile: fused commands by expansion, dense non-reused storage, no retirement;
 error-free).** For a `Valid` plan and a well-typed $\eta$, with the run `runPlan` from $\mathrm{Start}(\eta)$:
