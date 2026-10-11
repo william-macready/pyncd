@@ -10,7 +10,7 @@
    "Semantics.PlanFusionTest"
   ],
   "expect": [
-   "Step.lean:172:2",
+   "Step.lean:178:2",
    "No goals to be solved"
   ]
  },
@@ -25,7 +25,7 @@
    "Semantics.PlanFusionTest"
   ],
   "expect": [
-   "Run.lean:177:36",
+   "Run.lean:178:36",
    "Application type mismatch"
   ]
  },
@@ -40,7 +40,7 @@
    "Semantics.PlanFusionTest"
   ],
   "expect": [
-   "Step.lean:172:33",
+   "Step.lean:178:33",
    "Tactic `rfl` failed"
   ]
  },
@@ -55,7 +55,7 @@
    "Semantics.PlanFusionTest"
   ],
   "expect": [
-   "Syntax.lean:159:52",
+   "Syntax.lean:180:52",
    "Tactic `rewrite` failed"
   ]
  },
@@ -100,7 +100,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:137:25",
+   "FusionCorrectness.lean:141:25",
    "Unknown identifier `hv`"
   ]
  },
@@ -115,7 +115,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:147:12",
+   "FusionCorrectness.lean:153:12",
    "Application type mismatch"
   ]
  },
@@ -145,7 +145,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:93:28",
+   "FusionCorrectness.lean:97:28",
    "Type mismatch"
   ]
  },
@@ -160,7 +160,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "Plan/Fusion.lean:241:6",
+   "Plan/Fusion.lean:246:6",
    "Type mismatch"
   ]
  },
@@ -175,7 +175,7 @@
    "Semantics.PlanFusionCheckerTest"
   ],
   "expect": [
-   "Syntax.lean:145:45",
+   "Syntax.lean:166:45",
    "Type mismatch"
   ]
  },
@@ -190,7 +190,7 @@
    "Semantics.PlanFusionCheckerTest"
   ],
   "expect": [
-   "Syntax.lean:145:45",
+   "Syntax.lean:166:45",
    "Type mismatch"
   ]
  },
@@ -205,7 +205,7 @@
    "Semantics.PlanFusionCheckerTest"
   ],
   "expect": [
-   "Syntax.lean:159:52",
+   "Syntax.lean:180:52",
    "Tactic `rewrite` failed"
   ]
  },
@@ -220,7 +220,7 @@
    "Semantics.PlanFusionCheckerTest"
   ],
   "expect": [
-   "Step.lean:172:33",
+   "Step.lean:178:33",
    "Tactic `rfl` failed"
   ]
  }
