@@ -37,7 +37,7 @@ variable {P : Program K σ r} [DecidableEq σ.Tensor] (π : P.Plan)
 
 /-- The spec's layout view `λ`: a function of `pc` and the commands only. -/
 def SlotView (pc : Nat) : Resource P → Option (Slot σ)
-  | .pub a => if π.Pub pc a then some (place a) else none
+  | .pub a => if π.Live pc a then some (place a) else none
   | .acc x => if π.Mat pc x ∧ ¬ π.Pub pc x.addr then some (place x.addr) else none
 
 /-- The simple profile's injectivity of `λ` on its domain. -/
@@ -56,7 +56,7 @@ theorem slotView_injective {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot σ}
       split_ifs at h₁ h₂ with hp hq
       cases h₁
       have e := place_injective (Option.some.inj h₂)
-      exact absurd (e ▸ hp) hq.2
+      exact absurd (e ▸ hp.1) hq.2
   | acc x =>
     cases r₂ with
     | pub b =>
@@ -64,7 +64,7 @@ theorem slotView_injective {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot σ}
       split_ifs at h₁ h₂ with hq hp
       cases h₁
       have e := place_injective (Option.some.inj h₂)
-      exact absurd (e.symm ▸ hp) hq.2
+      exact absurd (e.symm ▸ hp.1) hq.2
     | acc y =>
       simp only [SlotView] at h₁ h₂
       split_ifs at h₁ h₂
@@ -85,9 +85,9 @@ theorem start_noninput (η : P.Input) (t : σ.Tensor) (h : P.input t = false)
   simp only [Start, Option.map_eq_none_iff]
   simpa using hv
 
-/-- The read view of published resources: `M (place a)` exactly on `Pub(pc)`. -/
+/-- The read view of published resources: `M (place a)` exactly on `Live(pc)`. -/
 def readPub (pc : Nat) (M : Memory K σ) (a : Address σ) : Option (K (σ.signature a.1).sort) :=
-  if π.Pub pc a then M (place a) else none
+  if π.Live pc a then M (place a) else none
 
 /-- Partial output decoder: succeeds only when every output coordinate is in
     `Pub(pc)` and its slot is initialised. It never fills a missing value. -/
@@ -154,6 +154,7 @@ def postAnn (c : P.Running) : Ann P → Option P.Running
   | .acc G => postAcc ops c G
   | .pub B => postPub c B
   | .initZero _ => some c
+  | .retire _ => some c
 
 /-- The related reference state: a deterministic function of `pc`. -/
 def refState (η : P.Input) (pc : Nat) : Option P.Running :=
@@ -175,6 +176,9 @@ theorem postAnn_execution {c d : P.Running} {a : Ann P} (h : postAnn ops c a = s
     exact ⟨_, block_execution P ops c B hc.1
       (fun x hx => Option.isNone_iff_eq_none.mp (hc.2 x hx).1) (fun x hx => (hc.2 x hx).2)⟩
   | initZero S =>
+    cases h
+    exact ⟨[], .nil _⟩
+  | retire B =>
     cases h
     exact ⟨[], .nil _⟩
 
@@ -224,6 +228,10 @@ structure R (η : P.Input) (pc : Nat) (M : Memory K σ) (c : P.Running) : Prop w
   retain : ∀ x : DefAddr P, ¬ π.Pub pc x.addr →
     (∃ o : P.Occurrence x.1, π.Cons pc ⟨x.1, o⟩ ∧ P.destination x.1 o.1 o.2 = x.2) →
     π.Mat pc x
+  /-- R5: a retired slot is free. -/
+  dead : ∀ a, π.Pub pc a → ¬ π.Live pc a → M (place a) = none
+  /-- R6: a retired address is published (so `Live` is `Pub` minus a published set). -/
+  retPub : ∀ a, π.Ret pc a → π.Pub pc a
 
 /-- Lemma 31.2's initialisation obligation. -/
 theorem R_start (η : P.Input) : π.R ops η 0 (Start η) (P.initial η) where
@@ -243,34 +251,37 @@ theorem R_start (η : P.Input) : π.R ops η 0 (Start η) (P.initial η) where
   retain x _ := by
     rintro ⟨o, ho, _⟩
     exact absurd ho (π.not_cons_zero _)
+  dead a hp hl := absurd ⟨hp, π.ret_zero a⟩ hl
+  retPub a h := absurd h (π.ret_zero a)
 
-/-- Under R, the read view of memory is exactly the reference published store. -/
+/-- Under R, the read view of memory is the reference published store on `Live(pc)`
+    (a retired address keeps its ghost value in `c.published` but reads `none`). -/
 theorem readPub_eq {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
-    (h : π.R ops η pc M c) : π.readPub pc M = c.published := by
-  funext a
+    (h : π.R ops η pc M c) {a : Address σ} (ha : π.Live pc a) :
+    π.readPub pc M a = c.published a := by
   unfold readPub
-  split_ifs with hp
-  · exact h.pubSlot a (by simp [SlotView, hp])
-  · have hn := (h.published a).not.mpr hp
-    exact (Option.not_isSome_iff_eq_none.mp hn).symm
+  rw [if_pos ha]
+  exact h.pubSlot a (by simp [SlotView, ha])
 
 /-- Under R, Decode succeeds exactly when every output coordinate is in
-    `Pub(pc)`, and then returns the reference published values. -/
+    `Live(pc)`, and then returns the reference published values. -/
 theorem decode_of_R {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
     (h : π.R ops η pc M c)
-    (outs : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, π.Pub pc ⟨t.val, p⟩) :
+    (outs : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, π.Live pc ⟨t.val, p⟩) :
     ∃ out, π.Decode pc M = some out ∧
       ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, c.published ⟨t.val, p⟩ = some (out t p) := by
-  have view := π.readPub_eq ops h
+  have view : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p,
+      π.readPub pc M ⟨t.val, p⟩ = c.published ⟨t.val, p⟩ :=
+    fun t p => π.readPub_eq ops h (outs t p)
   have all : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p,
       (π.readPub pc M ⟨t.val, p⟩).isSome = true := by
     intro t p
-    rw [view]
-    exact (h.published _).mpr (outs t p)
+    rw [view t p]
+    exact (h.published _).mpr (outs t p).1
   refine ⟨fun t p => (π.readPub pc M ⟨t.val, p⟩).get (all t p), ?_, fun t p => ?_⟩
   · unfold Decode
     rw [dif_pos all]
-  · rw [← view]
+  · rw [← view t p]
     exact (Option.some_get _).symm
 
 #print axioms place_injective
