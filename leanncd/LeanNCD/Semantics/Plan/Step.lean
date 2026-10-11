@@ -133,10 +133,42 @@ def execAnn (pc : Nat) (M : Memory K σ) : Ann P → StepResult P
   | .acc G => π.execAcc ops pc G M
   | .pub B => execPub B M
 
-/-- Slice 1 executes singleton commands only; anything else is stuck. -/
-def stepCommand (pc : Nat) (M : Memory K σ) : Command P → StepResult P
-  | [a] => π.execAnn ops pc M a
-  | _ => .stuck
+/-- Run a list of annotations from position `n` on the running memory.
+    `semFail`/`stuck` propagate; the caller reports the pre-command memory. -/
+def execAnns (n : Nat) (M : Memory K σ) : List (Ann P) → StepResult P
+  | [] => .ok M
+  | a :: as =>
+    match π.execAnn ops n M a with
+    | .ok M' => execAnns n.succ M' as
+    | res => res
+
+/-- A (possibly fused) command at command position `pc`: its annotations run at the
+    expanded positions `offset pc, offset pc + 1, …` of `π.expand` (spec 29.3), each on
+    the memory left by the previous one. Failure is transactional per command: the
+    callers (`runFrom`) report the pre-command memory. -/
+def stepCommand (pc : Nat) (M : Memory K σ) (cmd : Command P) : StepResult P :=
+  π.expand.execAnns ops (π.offset pc) M cmd
+
+/-- `execAnn` depends on the plan only through the annotation prefix at its position
+    (it reads `readPub pc`, i.e. `Pub pc`, i.e. `prefixAnn pc`). -/
+theorem execAnn_prefix {π π' : P.Plan} {pc pc' : Nat} (h : π.prefixAnn pc = π'.prefixAnn pc')
+    (M : Memory K σ) (a : Ann P) : π.execAnn ops pc M a = π'.execAnn ops pc' M a := by
+  have hr : π.readPub pc = π'.readPub pc' := by
+    funext M a
+    have hp : π.Pub pc a ↔ π'.Pub pc' a := by simp [Pub, pubList, h]
+    unfold readPub
+    by_cases hπ : π.Pub pc a
+    · rw [if_pos hπ, if_pos (hp.mp hπ)]
+    · rw [if_neg hπ, if_neg (fun h' => hπ (hp.mpr h'))]
+  cases a <;> simp [execAnn, execAcc, hr]
+
+/-- On a singleton command the generalised step is the slice-1 step, for ANY plan:
+    this is what keeps the slice-1 step lemmas' statements unchanged. -/
+theorem stepCommand_single (pc : Nat) (M : Memory K σ) (a : Ann P) :
+    π.stepCommand ops pc M [a] = π.execAnn ops pc M a := by
+  have h := execAnn_prefix ops (π.prefixAnn_eq_expand pc).symm M a
+  simp only [stepCommand, execAnns, h]
+  cases π.execAnn ops pc M a <;> rfl
 
 def stepPlan (pc : Nat) (M : Memory K σ) : StepResult P :=
   match π.commands[pc]? with

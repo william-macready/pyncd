@@ -162,27 +162,34 @@ dispatch 52 (harness count; past its 30 budget; text-only edits located by `rg` 
 
 | pattern | hit files (plan 4(d)) | disposition | commit |
 |---|---|---|---|
-| `129 fixtures` | | | |
-| `20 mutation cycles` / `20 cycles` | | | |
-| `singleton` / `non-singleton` / `fused` | | | |
-| `Slice-1 profile` / `slice-1 profile` / `slice-1 plan layer` | | | |
-| `invalid-fused` / `step-empty-command-stuck` / `invalid-empty-command` | | | |
-| measured fixture total (`#eval check` + `example`/`theorem`) | | | |
+| `129 fixtures` | path doc, `plan_layer_record.md` | path doc edited (171, "+ 42"); record historical: keep | docs sweep |
+| `20 mutation cycles` / `20 cycles` | path doc, `Plan/AGENTS.md`, `plan_layer_artifacts/docs_sweep_results.md` | first two edited (34 / 20+14); historical records keep | docs sweep |
+| `singleton` / `non-singleton` / `fused` | spec, path doc, `Semantics/AGENTS.md`, `Plan/AGENTS.md` | re-read; edited where stale (spec lines 170, 4699-4715 and the nine paragraphs; `Semantics/AGENTS.md` scope line "fused plan commands remain outside it" removed); other trees unrelated vocabulary | docs sweep + review fix |
+| `Slice-1 profile` / `slice-1 profile` / `slice-1 plan layer` | spec (9 headings), path doc (4 further spots: roadmap diagram, 4.x summaries, fixtures table), `Plan/AGENTS.md` | edited; `plan_layer_*` records and `Plan/*.lean` doc comments keep | docs sweep |
+| `invalid-fused` / `step-empty-command-stuck` / `invalid-empty-command` | `PlanValidityTest.lean`, historical patches/notes | no stale document hit; `step-empty-command-stuck` has no hit | docs sweep |
+| measured fixture total (`#eval check` + `example`/`theorem`) | | 101 + 70 = 171, as expected | docs sweep |
 
 ## Close-out (controller fills)
 
-- Execution worktree / branch: ____ .
-- Base `main` SHA at execution (docs-only landing commit): ____ .
-- Per-task commits and builds (patch sha256 matched `manifest.json`, `apply --check` clean): T1 ____ (jobs ____), T2 ____ (____),
-  T3 ____ (____), T4 ____ (____).
-- Docs-sweep commit: ____ ; whole-branch review fixes: ____ .
-- Full default build: ____ jobs, "Build completed successfully", no `error` line; forbidden-token grep: ____ .
-- Mutation manifest, whole file: ____ /14 PASS, files restored byte-identical: ____ ; slice-1 manifest regression: ____ /20 ; `expect` repairs: ____ .
-- S2-M1..M4 fixture-flip probes: observed at authoring (P2d: M1-M3 flip, M4 equivalent at fixture level); at execution record only the manifest runs: ____ .
-- Measured fixture total: ____ (expected 171) ; TOC counts before/after of the path doc: ____ / ____ ; Plan/AGENTS.md Pitfalls bytes before/after: 997 / ____ .
-- Execution session total tokens (`token-report.py <session-id>`; Rule 6 budget <= ~175M): ____ ; controller peak context ____ ; turns ____ .
-  Authoring tokens (target <= ~50M): ____ . Any overrun explained: ____ .
-- Merge SHA on local `main`: ____ ; prototype branch tagged `plan-layer-slice2-proto` before deletion: ____ ; branches and worktrees removed: ____ ;
-  not pushed (`main` ahead of `origin/main`): ____ .
+- Execution worktree / branch: `.claude/worktrees/plan-layer-slice2-exec` / `worktree-plan-layer-slice2-exec`.
+- Base `main` SHA at execution (docs-only landing commit): 03a2372f (docs landed on main before the worktree; main was 4570a794 before it).
+- Per-task commits and builds (patch sha256 matched `manifest.json`, `apply --check` clean): T1 187e9d15 (jobs 2977), T2 89ee8513 (2973),
+  T3 6ed8dc9e (8606), T4 003080b2 (2980). Patches applied by the controller directly (mechanical), no implementer dispatches.
+- Docs-sweep commit: bc888183 ; whole-branch review fixes: the commit after it, `docs(semantics): adjudicate whole-branch review ...`.
+- Full default build: 8789 jobs, "Build completed successfully", no `error` line; forbidden-token grep: no hits (exit 1).
+- Mutation manifest, whole file: 14/14 PASS, files restored byte-identical: yes (all 14); slice-1 manifest regression: 18/20 as shipped, 20/20 after repair ;
+  `expect` repairs: A2-e `Simulation.lean:577` -> `578`, A2-f `583` -> `584` (pure line shift from T1; same error kinds, re-run 2/2 PASS), Direct path, in the docs-sweep commit.
+- S2-M1..M4 fixture-flip probes: observed at authoring (P2d: M1-M3 flip, M4 equivalent at fixture level); at execution the manifest runs T2 4/4, T3 7/7 and the unfiltered 14/14 passed.
+- Measured fixture total: 171 (101 + 70, as expected) ; TOC counts before/after of the path doc: 38/37 -> 39/38 ; Plan/AGENTS.md Pitfalls bytes before/after: 997 / 1273 (whole file 3978 -> about 4.9k).
+- Execution session total tokens (`token-report.py 3a4c384e-...`; Rule 6 budget <= ~175M): 16.9M (controller 8.8M, peak 182k, 72 turns; two review dispatches 4.1M + 3.9M, 36 and 33 turns).
+  Authoring tokens (target <= ~50M): 44.8M. Any overrun explained: none.
+- Whole-branch reviews (opus): soundness 0 Critical / 1 Important / 5 Minor; fidelity 0 / 2 / 6. Adjudication: the shared Important (path doc and `Plan/AGENTS.md` said a mis-fused plan
+  "passes `checkPlan` with a wrong value"; actually `checkSteps` is vacuous and `checkSingleton` rejects, and `misfused-run-undetected` yields the right value, `t4-a5-reinitMid` the wrong one),
+  the stale spec passages (lines 170, 4699-4715), the `step_failed_command` / `stepCommand_not_stuck` description strength, the 30.4/29.3 position wording, the D13 pointer and the
+  `Plan/AGENTS.md` omissions were FIXED in docs. PARKED (Lean files, patched, not touched): W-3 `runPlan_R_F` docstring says "at command boundaries" but states R only at the end; W-4 no
+  fixture runs `checkPlanF` on a plan containing `[]`; W-6 no `#print axioms` lines for `step_R_command`, `step_failed_command`, `stepCommand_not_stuck`, `execAnns_not_stuck`, `runFrom_agree`
+  (axioms of the file's other theorems are `[propext, Classical.choice, Quot.sound]`; no `sorry`/`native_decide` in the changed files). Review files: `plan_layer_slice2_artifacts/wb_review_{soundness,fidelity}.md`.
+- Merge SHA on local `main`: see git log (`Merge branch 'worktree-plan-layer-slice2-exec'`); prototype branch tagged `plan-layer-slice2-proto` before deletion: yes (done at integration);
+  branches and worktrees removed: prototype and exec (done at integration); not pushed (`main` ahead of `origin/main`): yes.
 - Parked (plan section 5): O1 D13-D16 spec-text fixes, O2 lakefile whitespace, O4 mid-run `run_R_F`, O6 `Step.lean` header comment, O10 empty-command
   mutant, O11 no fixture reads after an empty command; carried over: D7, D11, D12, buffer reuse/retirement, checker completeness, `checkAccMat`.

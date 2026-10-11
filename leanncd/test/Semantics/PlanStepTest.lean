@@ -188,12 +188,12 @@ def dupGroup : taggedOut.Plan :=
   (outcomeRow (dupGroup.runPlan ops (Start η0)), (dupGroup.refState ops η0 3).isSome)
   (("done", 4, none, [some 0, some 16, some 0]), false)
 
--- A fused (non-singleton) command is stuck in slice 1.
+-- A fused (non-singleton) command was stuck in slice 1; slice 2 runs it (see PlanFusionTest).
 def fused : taggedOut.Plan := unitPlan [[.initZero block, .acc group], [.pub block]]
-#eval check "invalid-fused" (outcomeRow (fused.runPlan ops (Start η0)))
-  ("stuck", 0, none, [none, none, none])
+#eval check "fused-runs-in-slice-2" (outcomeRow (fused.runPlan ops (Start η0)))
+  ("done", 2, none, [some 0, some 14, some 0])
 
-/-! ### The empty command (`stepCommand` catch-all) -/
+/-! ### The empty command (a no-op command in slice 2) -/
 
 /-- Kind and raw slot row (`none` slots read as `none`) of one step. -/
 def stepRow {P : Program Carrier declarations registry} : StepResult P → String × List (Option ℚ)
@@ -208,9 +208,10 @@ def initMem : Memory Carrier declarations :=
 /-- Donor `plan` with the empty command `[]` inserted after the init. -/
 def emptyCmd : taggedOut.Plan := unitPlan [[.initZero block], [], [.acc group], [.pub block]]
 
-#eval check "step-empty-command-stuck"
+-- Slice 1: stuck, and the run stuck at pc 1. Slice 2: `[]` is the identity step.
+#eval check "step-empty-command-noop"
   (stepRow (plan.stepCommand ops 1 initMem []), outcomeRow (emptyCmd.runPlan ops (Start η0)))
-  (("stuck", []), ("stuck", 1, none, [some 0, some 0, some 0]))
+  (("ok", [some 0, some 0, some 0]), ("done", 4, none, [some 0, some 14, some 0]))
 -- Accept-neighbours: a one-element no-op command steps; the plan without `[]` completes.
 #eval check "step-empty-command-neighbours"
   (stepRow (plan.stepCommand ops 1 initMem [.initZero []]), outcomeRow (plan.runPlan ops (Start η0)))

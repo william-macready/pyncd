@@ -234,12 +234,13 @@ example : reinitBeforePub.checkPlan = true := by decide
 /-! ### The empty command
 
 `emptyCmd` (PlanStepTest) is `plan` with `[]` inserted after the init: only
-`checkSingleton` rejects it, and the run is `stuck` at the empty command's
-index (`stepCommand`'s catch-all), so `singleton` is the guard that matters. -/
+`checkSingleton` rejects it. In slice 1 the run was `stuck` at the empty command's
+index; with fusion `[]` is the identity step, so the run completes (`done` at pc 4) and
+`singleton` is the only guard (slice 2 replaces it by validity of the expansion). -/
 
 #eval check "invalid-empty-command"
   (verdict emptyCmd, outcomeRow (emptyCmd.runPlan ops (Start η0)))
-  ((false, ["singleton"]), ("stuck", 1, none, [some 0, some 0, some 0]))
+  ((false, ["singleton"]), ("done", 4, none, [some 0, some 14, some 0]))
 
 example : emptyCmd.checkPlan = false := by decide
 

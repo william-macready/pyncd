@@ -174,7 +174,7 @@ and [results](../../../papers/semantics/tensor_logic_semantic_core_spike_record.
 before extending that spike. The validation layer covers the admitted
 array/heterogeneous expression fragment, finite additive program models,
 reference-machine soundness, bounded read-only pure-einsum correspondence, and
-the Part V slice-1 plan layer (singleton commands, dense non-reused storage).
+the Part V slices 1-2 plan layer (singleton and fused commands (by expansion), dense non-reused storage).
 General source-expression elaboration, cyclic solving, general unique-model
-existence, complete categorical/backend interpretations, buffer reuse, and
-fused plan commands remain outside it.
+existence, complete categorical/backend interpretations, and buffer reuse
+remain outside it.

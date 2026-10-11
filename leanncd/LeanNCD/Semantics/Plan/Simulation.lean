@@ -553,6 +553,7 @@ theorem step_R {a : Ann P} (hR : π.R ops η pc M c) (hc : π.refState ops η pc
       ∃ events, Execution P ops events (.running c) (.running c') := by
   unfold stepPlan at h
   rw [hcmd] at h
+  simp only [stepCommand_single] at h
   cases a with
   | initZero S =>
     cases h
@@ -564,16 +565,16 @@ theorem step_R {a : Ann P} (hR : π.R ops η pc M c) (hc : π.refState ops η pc
 /-- Failure matching (spec 31.3): a semantic failure reported by the
     transactional kernel is an actual ready, undefined, pending occurrence of
     the related reference state. Only "members unconsumed" is needed. -/
-theorem step_failed {cmd : Command P} {o : OccRef P} (hR : π.R ops η pc M c)
-    (hcmd : π.commands[pc]? = some cmd)
-    (ok : ∀ G, cmd = [.acc G] → ∀ x ∈ G, ¬ π.Cons pc x)
+theorem step_failed {a : Ann P} {o : OccRef P} (hR : π.R ops η pc M c)
+    (hcmd : π.commands[pc]? = some [a])
+    (ok : ∀ G, [a] = [.acc G] → ∀ x ∈ G, ¬ π.Cons pc x)
     (h : π.stepPlan ops pc M = .semFail o) :
     Execution P ops [.undefined o.1 o.2] (.running c) (.failed o.1 o.2 c) := by
   unfold stepPlan at h
   rw [hcmd] at h
-  match cmd, h, ok with
-  | [.acc G], h, ok =>
-    simp only [stepCommand, execAnn, execAcc] at h
+  match a, h, ok with
+  | .acc G, h, ok =>
+    simp only [stepCommand_single, execAnn, execAcc] at h
     split at h
     · rename_i res hres
       subst h
@@ -582,17 +583,15 @@ theorem step_failed {cmd : Command P} {o : OccRef P} (hR : π.R ops η pc M c)
       exact .cons (e := .undefined o.1 o.2)
         ⟨(hR.pending o.1 o.2).mpr (ok G rfl o hoG), hev⟩ (.nil _)
     · split at h <;> cases h
-  | [.pub B], h, _ =>
-    simp only [stepCommand, execAnn, execPub] at h
+  | .pub B, h, _ =>
+    simp only [stepCommand_single, execAnn, execPub] at h
     split_ifs at h
-  | [.initZero S], h, _ => cases h
-  | [], h, _ => cases h
-  | _ :: _ :: _, h, _ => cases h
+  | .initZero S, h, _ => simp only [stepCommand_single, execAnn] at h; cases h
 
 /-- A reported plan failure is a reachable reference failure, so no model. -/
-theorem step_failed_no_model {cmd : Command P} {o : OccRef P} (hR : π.R ops η pc M c)
-    (hcmd : π.commands[pc]? = some cmd)
-    (ok : ∀ G, cmd = [.acc G] → ∀ x ∈ G, ¬ π.Cons pc x)
+theorem step_failed_no_model {a : Ann P} {o : OccRef P} (hR : π.R ops η pc M c)
+    (hcmd : π.commands[pc]? = some [a])
+    (ok : ∀ G, [a] = [.acc G] → ∀ x ∈ G, ¬ π.Cons pc x)
     (h : π.stepPlan ops pc M = .semFail o) : ¬ ∃ ρ, P.Models ops η ρ :=
   P.failed_no_model ops η o.1 o.2 c
     (P.reaches_trans ops hR.reach ((step_failed ops hR hcmd ok h).reaches P ops))

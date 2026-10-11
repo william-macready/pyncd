@@ -131,6 +131,45 @@ end Decidable
 
 theorem prefixAnn_zero : π.prefixAnn 0 = [] := by simp [prefixAnn]
 
+/-! ### Expansion (spec 29.3): the schedule of a fused plan -/
+
+/-- The expanded plan: every annotation of `π` in its own command. -/
+def expand : P.Plan := { π with commands := π.ann.map (fun a => [a]) }
+
+/-- Number of annotations in the first `pc` commands (the expanded position of command `pc`). -/
+def offset (pc : Nat) : Nat := (π.prefixAnn pc).length
+
+theorem flatten_map_single {α : Type _} (l : List α) : (l.map fun a => [a]).flatten = l := by
+  induction l <;> simp [*]
+
+theorem expand_ann : π.expand.ann = π.ann := flatten_map_single π.ann
+
+theorem expand_prefixAnn (n : Nat) : π.expand.prefixAnn n = π.ann.take n := by
+  show (List.take n (π.ann.map fun a => [a])).flatten = _
+  rw [← List.map_take, flatten_map_single]
+
+theorem expand_commands_getElem? {n : Nat} {a : Ann P} (h : π.ann[n]? = some a) :
+    π.expand.commands[n]? = some [a] := by
+  simp [expand, h]
+
+theorem ann_eq_append (pc : Nat) : π.ann = π.prefixAnn pc ++ (π.commands.drop pc).flatten := by
+  simp only [ann, prefixAnn, ← List.flatten_append, List.take_append_drop]
+
+theorem prefixAnn_eq_expand (pc : Nat) : π.prefixAnn pc = π.expand.prefixAnn (π.offset pc) := by
+  rw [expand_prefixAnn, offset, ann_eq_append π pc, List.take_left' rfl]
+
+theorem drop_flatten {pc : Nat} {cmd : Command P} (h : π.commands[pc]? = some cmd) :
+    (π.commands.drop pc).flatten = cmd ++ (π.commands.drop (pc + 1)).flatten := by
+  obtain ⟨hpc, hc⟩ := List.getElem?_eq_some_iff.mp h
+  rw [List.drop_eq_getElem_cons hpc, hc, List.flatten_cons]
+
+theorem ann_getElem?_offset {pc : Nat} {cmd : Command P} (h : π.commands[pc]? = some cmd)
+    {j : Nat} {a : Ann P} (hj : cmd[j]? = some a) : π.ann[π.offset pc + j]? = some a := by
+  have hlt : j < cmd.length := (List.getElem?_eq_some_iff.mp hj).1
+  rw [ann_eq_append π pc, drop_flatten π h, offset, List.getElem?_append_right (by omega)]
+  simp only [Nat.add_sub_cancel_left]
+  rw [List.getElem?_append_left hlt, hj]
+
 theorem not_cons_zero (x : OccRef P) : ¬ π.Cons 0 x := by
   simp [Cons, consList, prefixAnn_zero]
 
