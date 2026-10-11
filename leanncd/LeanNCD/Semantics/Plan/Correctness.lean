@@ -25,12 +25,38 @@ theorem Valid.order4 (hv : π.Valid) : π.Order4 := by
   cases a with
   | initZero S => cases hy
   | acc G => cases hy
+  | retire B => cases hy
   | pub B => exact ((hv.pubOK pc B ha).2 y hy).2.2 o hd
 
 /-- N6 (D9): the covering half of condition 1 follows from the covering half of
     condition 2 and condition 4 (here: `pubOK`), in the singleton profile. -/
 theorem cov1_of_cov2_pubOrder (hv : π.Valid) (x : OccRef P) : x ∈ π.accFlat :=
   π.accFlat_complete hv.singleton hv.coverage2.2 hv.order4 x
+
+/-- At pc = m every output address is live: published (inputs, or covered by `coverage2`) and
+    not retired (no `retire` annotation of a valid plan retires an output, by `retOK`). -/
+theorem live_output_of_valid (hv : π.Valid) (t : {t : σ.Tensor // P.output t = true})
+    (p : Coord (σ.signature t.val).axes) : π.Live π.commands.length ⟨t.val, p⟩ := by
+  obtain ⟨t, ht⟩ := t
+  cases hin : P.input t
+  · refine ⟨Or.inr ?_, fun hr => ?_⟩
+    · simp only [pubList, prefixAnn_length, List.mem_map]
+      exact ⟨⟨⟨t, hin⟩, p⟩, hv.coverage2.2 _, rfl⟩
+    · simp only [Ret, retList, List.mem_map, List.mem_flatMap] at hr
+      obtain ⟨x, ⟨z, hz, hxz⟩, hxa⟩ := hr
+      obtain ⟨i, -, cmd, hc, hzc⟩ := (π.mem_prefixAnn).mp hz
+      obtain ⟨z', rfl⟩ := hv.singleton cmd (List.mem_of_getElem? hc)
+      obtain rfl : z = z' := by simpa using hzc
+      cases z with
+      | retire B =>
+        have h1 := (hv.retOK i B hc x hxz).2
+        have h2 : x.1.val = t := congrArg Sigma.fst hxa
+        rw [h2, ht] at h1
+        exact Bool.noConfusion h1
+      | initZero S => simp [Ann.rets] at hxz
+      | acc G => simp [Ann.rets] at hxz
+      | pub B => simp [Ann.rets] at hxz
+  · exact live_input π _ _ hin
 
 variable [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
 variable (ops : (s : S) → ScalarOps (K s))
@@ -69,9 +95,7 @@ theorem terminal_adequacy (hv : π.Valid) (η : P.Input) {m : Nat} {M' : Memory 
   · rw [hrun] at h
     obtain ⟨rfl, rfl⟩ := PlanOutcome.done.inj h
     have complete := complete_of_refState ops hv hc
-    have outs : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, π.Pub π.commands.length ⟨t.val, p⟩ :=
-      fun t p => (hR.published _).mp (complete.2 _)
-    obtain ⟨out, hd, hout⟩ := π.decode_of_R ops hR outs
+    obtain ⟨out, hd, hout⟩ := π.decode_of_R ops hR (live_output_of_valid hv)
     refine ⟨rfl, c, hc, hR, complete, ?_⟩
     rw [hd]
     congr 1
@@ -143,6 +167,7 @@ theorem done_iff_model (hv : π.Valid) (η : P.Input) :
 
 #print axioms Valid.order4
 #print axioms cov1_of_cov2_pubOrder
+#print axioms live_output_of_valid
 #print axioms complete_of_refState
 #print axioms terminal_adequacy
 #print axioms done_correct
