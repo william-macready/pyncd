@@ -61,7 +61,7 @@ validated reference executor and its exact-rational fixtures are now verified;
 both final whole-branch code-review lenses are clean.
 The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer))
 is in the snapshot above, extended by slice 2 to fused commands: ten modules under `Semantics/Plan/`
-proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 176 fixtures and a 35-cycle mutation
+proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 180 fixtures and a 35-cycle mutation
 manifest (20 in slice 1, 15 in slice 2).
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
@@ -996,7 +996,7 @@ mutation controls, and unsupported claims:
 | Coordinate ranks/termination/correspondence | [RankedMachineTest](../../leanncd/test/Semantics/RankedMachineTest.lean) | [Coordinate-ranks/finite-measure execution](coordinate_ranks_finite_measure_execution_record.md) |
 | Computable validated reference | [ExecutableReferenceTest](../../leanncd/test/Semantics/ExecutableReferenceTest.lean) | [Executor implementation execution](computable_reference_executor_record.md#8-implementation-execution-2026-10-08) |
 | Bounded source correspondence and differential debugging | [SourceAdmissionTest](../../leanncd/test/Semantics/SourceAdmissionTest.lean), [SourceBindingTest](../../leanncd/test/Semantics/SourceBindingTest.lean), [SourceCorrespondenceTest](../../leanncd/test/Semantics/SourceCorrespondenceTest.lean), [SourceProgramTest](../../leanncd/test/Semantics/SourceProgramTest.lean), [SourceOracleTest](../../leanncd/test/Semantics/SourceOracleTest.lean), [SourceDiagnosticTest](../../leanncd/test/Semantics/SourceDiagnosticTest.lean), [SourceDifferentialTest](../../leanncd/test/Semantics/SourceDifferentialTest.lean), [SourceRawCorrespondenceTest](../../leanncd/test/Semantics/SourceRawCorrespondenceTest.lean), [SourceCorrespondenceTransportTest](../../leanncd/test/Semantics/SourceCorrespondenceTransportTest.lean), [SourceProgramIdentityTest](../../leanncd/test/Semantics/SourceProgramIdentityTest.lean) | [Source correspondence record](source_correspondence_record.md), [raw-source/admission record](raw_source_admission_record.md) |
-| Part V slice-1/2 plan layer | [PlanFusionTest](../../leanncd/test/Semantics/PlanFusionTest.lean), [PlanFusionCorrectnessTest](../../leanncd/test/Semantics/PlanFusionCorrectnessTest.lean), [PlanFusionCheckerTest](../../leanncd/test/Semantics/PlanFusionCheckerTest.lean), [PlanBatchTest](../../leanncd/test/Semantics/PlanBatchTest.lean), [PlanMemoryTest](../../leanncd/test/Semantics/PlanMemoryTest.lean), [PlanStepTest](../../leanncd/test/Semantics/PlanStepTest.lean), [PlanSimulationTest](../../leanncd/test/Semantics/PlanSimulationTest.lean), [PlanValidityTest](../../leanncd/test/Semantics/PlanValidityTest.lean), [PlanRunTest](../../leanncd/test/Semantics/PlanRunTest.lean), [PlanCorrectnessTest](../../leanncd/test/Semantics/PlanCorrectnessTest.lean), shared [PlanFixtures](../../leanncd/test/Semantics/PlanFixtures.lean) | [Plan-layer mutation results](plan_layer_mutation_results.md), [slice-2 mutation results](plan_layer_slice2_mutation_results.md) |
+| Part V slice-1/2 plan layer | [PlanFusionTest](../../leanncd/test/Semantics/PlanFusionTest.lean), [PlanFusionCorrectnessTest](../../leanncd/test/Semantics/PlanFusionCorrectnessTest.lean), [PlanFusionCheckerTest](../../leanncd/test/Semantics/PlanFusionCheckerTest.lean), [PlanBatchTest](../../leanncd/test/Semantics/PlanBatchTest.lean), [PlanMemoryTest](../../leanncd/test/Semantics/PlanMemoryTest.lean), [PlanStepTest](../../leanncd/test/Semantics/PlanStepTest.lean), [PlanSimulationTest](../../leanncd/test/Semantics/PlanSimulationTest.lean), [PlanValidityTest](../../leanncd/test/Semantics/PlanValidityTest.lean), [PlanRunTest](../../leanncd/test/Semantics/PlanRunTest.lean), [PlanCorrectnessTest](../../leanncd/test/Semantics/PlanCorrectnessTest.lean), [PlanMultiSortTest](../../leanncd/test/Semantics/PlanMultiSortTest.lean), shared [PlanFixtures](../../leanncd/test/Semantics/PlanFixtures.lean) | [Plan-layer mutation results](plan_layer_mutation_results.md), [slice-2 mutation results](plan_layer_slice2_mutation_results.md) |
 
 All are discovered by the default `Tests` target. Existing fixtures cover
 strict zero multiplication, empty binders, whole-array selection obligations,
@@ -1133,15 +1133,15 @@ materialised address, never reused), no retirement, error-free kernels. Soundnes
 (singleton plans) or `checkPlanF` (fused plans): the run does not detect an invalid plan. The spec's
 restatements are the paragraphs headed "As formalized (slice-1 and slice-2 profile ...)" in Sections
 29.3, 30.2, 30.4, 31.1-31.4 and 32.1 of the
-[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 176
+[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 180
 fixtures (129 in slice 1: 96 shipped with the layer, 27 added when its audit cells were closed, 6 in the
-parked-items slice; plus 47 in slice 2: 18 + 16 + 13); the mutation manifests
+parked-items slice; plus 47 in slice 2: 18 + 16 + 13; plus 4 in `PlanMultiSortTest`, which closes D11); the mutation manifests
 ran 35 mutation cycles (20 in slice 1, 15 in slice 2), of which 4 are labelled equivalent (3 in slice 1;
 S2-M4 at fixture level).
 
 #### What slices 1 and 2 do not do
 
-- Fixtures over more than one sort, numeric kernels other than the exact reference, floating point.
+- Cross-sort reads and primitives (the one multi-sort fixture, `PlanMultiSortTest`, has an empty registry), numeric kernels other than the exact reference, floating point.
 - Buffer reuse, aliasing, retirement, and liveness for scans.
 - Implementation errors (allocation failure, kernel errors) and their matching.
 - Checker completeness (`Valid` implies `checkPlan = true`).
@@ -1191,7 +1191,7 @@ Slices 1 and 2 of the plan layer have landed
 ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)): singleton and fused commands over
 dense non-reused storage, with Lemma 31.2, Theorem 31.3 and Lemma 32.1 proved for that profile.
 Not yet done: buffer reuse, aliasing, retirement and scan liveness;
-implementation errors and their matching; checker completeness; multi-sort and non-exact numeric
+implementation errors and their matching; checker completeness; cross-sort primitives and non-exact numeric
 kernel fixtures; and the Nodup conjecture for conditions 1 and 2.
 
 Floating-point correspondence needs its own ordered-reduction or numerical

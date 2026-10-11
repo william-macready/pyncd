@@ -4180,6 +4180,7 @@ layout view `SlotView` maps exactly the addresses of $\mathrm{Pub}(\textcolor{#C
   $x\in\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$.
 - `Decode` at $\textcolor{#C16C86}{\mathsf{pc}}$ is partial. It succeeds iff every output coordinate is in $\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$ with an
   initialised slot (`decode_of_R` under R), and it never fills a missing coordinate.
+- Inputs and outputs are disjoint: $\mathrm{Out}\subseteq\mathrm{Def}$ and $\mathrm{In}\cap\mathrm{Def}=\emptyset$ ([Section 13.6](#136-core-programs); `Program.output_defined`). So an output coordinate is never an input slot, `Start` leaves every non-input slot uninitialised (`start_noninput`), and an output is decoded only after a `pub` command publishes it.
 
 Slice 2: `R` and `refState` are indexed by command count and computed from the expanded annotations of the
 first `pc` commands (`prefixAnn`); `R` is claimed at command boundaries
