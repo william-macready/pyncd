@@ -87,7 +87,7 @@
     "old": "  match scanGroup ops (π.readPub pc M) G with\n  | some res => res\n  | none =>\n    match G.foldlM (addAt (valuesOn ops (π.readPub pc M))) M with\n    | some M' => .ok M'\n    | none => .stuck",
     "new": "  G.foldl (fun r x => match r with\n    | .ok M₁ => match scanGroup ops (π.readPub pc M₁) [x] with\n      | some res => res\n      | none => (addAt (valuesOn ops (π.readPub pc M₁)) M₁ x).elim .stuck (fun M' => .ok M')\n    | r => r) (.ok M)",
     "targets": ["LeanNCD.Semantics.Plan.Simulation"],
-    "expect": ["Simulation.lean:451", "Simulation.lean:577"]
+    "expect": ["Simulation.lean:451", "Simulation.lean:578"]
   },
   {
     "label": "A2-f scan and commit values read raw memory as a fallback",
@@ -96,7 +96,7 @@
     "old": "  match scanGroup ops (π.readPub pc M) G with\n  | some res => res\n  | none =>\n    match G.foldlM (addAt (valuesOn ops (π.readPub pc M))) M with",
     "new": "  match scanGroup ops (fun a => (π.readPub pc M a).or (M (place a))) G with\n  | some res => res\n  | none =>\n    match G.foldlM (addAt (valuesOn ops (fun a => (π.readPub pc M a).or (M (place a))))) M with",
     "targets": ["LeanNCD.Semantics.Plan.Simulation"],
-    "expect": ["Simulation.lean:463", "Simulation.lean:490", "Simulation.lean:583"]
+    "expect": ["Simulation.lean:463", "Simulation.lean:490", "Simulation.lean:584"]
   },
   {
     "label": "A3a-a EQUIVALENT at checkPlan (N6): checkCov1Complete trivially true",
