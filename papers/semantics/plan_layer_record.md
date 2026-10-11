@@ -134,8 +134,17 @@ text (spec line numbers dropped):
 - **D11 (low).** Multi-sort `K` is unaddressed: the design review observed that slots carry one
   carrier and fixed the rationals for slice 1. Note (plan review F6): the theorems are generic over
   `K : S → Type`; only the fixtures use one sort. Disposition: parked (slice 2, multiple sorts).
+  Closed (D11/D12 pass, Direct path, tests only): `PlanMultiSortTest` runs a ℤ tensor and a ℚ tensor
+  through `checkPlan`, `runPlan`, `Decode` and the reference `run` (4 `#eval check` rows, total 180). Two hand
+  mutants (ℤ `add` replaced by `mul`; ℚ `mul` replaced by `add`) each fail the value rows. The registry is
+  empty, so a primitive that crosses sorts is not covered.
 - **D12 (low).** `In ∩ Out` is left open: if an input may also be an output, `Start` must map
   `pub(a)` for output inputs. Disposition: parked.
+  Closed (D11/D12 pass): not a gap against the final text. Section 13.6 already has
+  `Out ⊆ Def` and `In ∩ Def = ∅`, and `Program.output_defined : output t = true → input t = false` makes
+  `In ∩ Out = ∅` a structure field, so no program can violate it and `Start` needs no `pub` entry for an
+  output. The Plan-layer text did not say so; a bullet after the Decode bullet of Section 30.4 now does.
+  No fixture: the violating program cannot be constructed.
 
 ## Audit-cells slice (Direct path, tests only)
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 Owns: the Part V slices 1-2 plan layer (`LeanNCD.Semantics.Program.Plan`): a plan is a list of commands (accumulate, publish, `initZero`) over dense memory; it is checked by the computable `checkPlan`, run by `runPlan`, and related to the reference executor by relation `R`. Proves Lemma 32.1 (`batch_execution`), one-step simulation (`step_R`, `step_failed`), Lemma 31.2 (`terminal_adequacy`) and Theorem 31.3 (`done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model`) for the slice-1 profile, and for fused commands by expansion (slice 2: `FValid`, `checkPlanF`, `*_F` theorems).
-Does not own: the reference executor (`../ReferenceExecutor.lean`, `../ExecutableState.lean`), the checked evaluation backend (`../../Eval/Plan/`), buffer reuse, retirement, multiple sorts in fixtures.
+Does not own: the reference executor (`../ReferenceExecutor.lean`, `../ExecutableState.lean`), the checked evaluation backend (`../../Eval/Plan/`), buffer reuse, retirement, cross-sort primitives in fixtures.
 
 Plan: `papers/semantics/plan_layer_plan.md`; spec Part V in `papers/semantics/tensor_logic_semantics.md` (29.3, 30.2, 30.4, 31.1-31.4, 32.1); path doc section 4.9.
 
@@ -24,7 +24,7 @@ Reachable from `import LeanNCD` (`Semantics.lean` imports `Plan.lean`, which imp
 
 ## Contracts
 - A fused plan is valid iff its expansion is (`FValid := π.expand.Valid`); `done m` counts commands, not expanded annotations.
-- Slice-1/2 profile: singleton or fused commands, dense non-reused buffers, transactional failure, explicit `initZero`, no implementation errors. The theorems are generic over sorts (`K : S → Type`); only the fixtures use one sort (rationals).
+- Slice-1/2 profile: singleton or fused commands, dense non-reused buffers, transactional failure, explicit `initZero`, no implementation errors. The theorems are generic over sorts (`K : S → Type`); the fixtures use rationals, except `PlanMultiSortTest` (ℤ and ℚ with per-sort `ScalarOps`, empty registry, so no cross-sort reads).
 - `runPlan` does not detect schedule-invalid plans. Soundness rests on `checkPlan` (`checkPlan_sound : π.checkPlan = true → π.Valid`); completeness of the checker is not claimed.
 - `Valid` is purely static. The spec's semantic conditions 2-5 are the theorems `R_start`, `step_R` (only at `refState pc = some c`, next bullet), `step_failed`, `step_not_stuck`.
 - `step_R` needs `refState pc = some c` besides `R`; simulation is not claimed for every R-related state.
