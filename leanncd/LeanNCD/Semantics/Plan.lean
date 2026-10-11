@@ -6,3 +6,4 @@ import LeanNCD.Semantics.Plan.Simulation
 import LeanNCD.Semantics.Plan.Validity
 import LeanNCD.Semantics.Plan.Run
 import LeanNCD.Semantics.Plan.Correctness
+import LeanNCD.Semantics.Plan.Fusion

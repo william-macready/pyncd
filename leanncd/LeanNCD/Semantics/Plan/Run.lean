@@ -99,6 +99,35 @@ theorem step_not_stuck (hv : π.Valid) (hR : π.R ops η pc M c)
       rw [hM']
       simp
 
+/-- **Progress for a run of annotations.** On a valid (singleton) plan, folding `execAnn`
+    over annotations scheduled at consecutive positions `n, n+1, …` from a related state is
+    never stuck: each step is `step_not_stuck`, and a successful step re-establishes R
+    (`step_R`). Used on `π.expand` for a fused command. -/
+theorem execAnns_not_stuck (hv : π.Valid) :
+    ∀ (anns : List (Ann P)) (n : Nat) (M : Memory K σ) (c : P.Running),
+      π.R ops η n M c → π.refState ops η n = some c →
+      (∀ j a, anns[j]? = some a → π.commands[n + j]? = some [a]) →
+      π.execAnns ops n M anns ≠ .stuck
+  | [], n, M, c, _, _, _ => by simp [execAnns]
+  | a :: as, n, M, c, hR, hc, hcmds => by
+    have h0 : π.commands[n]? = some [a] := hcmds 0 a rfl
+    have hlt : n < π.commands.length := (List.getElem?_eq_some_iff.mp h0).1
+    have hstep : π.stepPlan ops n M = π.execAnn ops n M a := by
+      simp [stepPlan, h0, stepCommand_single]
+    have hns := step_not_stuck ops hv hR hlt
+    rw [hstep] at hns
+    simp only [execAnns]
+    cases hs : π.execAnn ops n M a with
+    | ok M₁ =>
+      rw [hs] at hns
+      have hs' : π.stepPlan ops n M = .ok M₁ := by rw [hstep, hs]
+      obtain ⟨c₁, hc₁, hR₁, -⟩ := step_R ops hR hc h0 (hv.stepOK n a h0) hs'
+      exact execAnns_not_stuck hv as n.succ M₁ c₁ hR₁ hc₁ (fun j b hb => by
+        have := hcmds (j + 1) b (by simpa using hb)
+        rwa [show n + (j + 1) = n.succ + j by omega] at this)
+    | semFail o => simp
+    | stuck => rw [hs] at hns; exact absurd rfl hns
+
 /-! ### The multi-step run lemma -/
 
 /-- **Run lemma.** From a related state at `pc` (with `c = refState pc`), the
