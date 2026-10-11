@@ -1080,14 +1080,14 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
   `runPlan`/`runFrom`.
 - `Plan/Simulation`: per-annotation side conditions (`InitOK`, `AccOK`, `PubOK`, `AnnOK`) and
   one-step simulation `step_R`, `step_failed`.
-- `Plan/Validity`: `Valid` (Definition 31.1, slice-1 form), the computable `checkPlan` and
-  `checkPlan_sound`.
+- `Plan/Validity`: `Valid` (Definition 31.1, slice-1 form), the computable `checkPlan`,
+  `checkPlan_sound`, `checkPlan_complete` (so `checkPlan_iff`) and `checkAccMat_of_rest`.
 - `Plan/Run`: progress `step_not_stuck` and the multi-step run lemma `run_R`/`runPlan_R`.
 - `Plan/Correctness`: terminal adequacy and compiled correctness.
 - `Plan/Fusion`: fold lemmas for a fused command (`execAnns_R`, `step_R_command`, `step_failed_command`,
   `stepCommand_not_stuck`) and the run bridge `runFrom_agree`/`runPlan_agree` between a fused plan and
   its expansion. (`expand` and `offset` live in `Plan/Syntax`, `execAnns` in `Plan/Step`.)
-- `Plan/FusionCorrectness`: `FValid`, `checkPlanF`/`checkPlanF_sound`, `runFrom_R_F`, `runPlan_R_F`, `terminal_adequacy_F`
+- `Plan/FusionCorrectness`: `FValid`, `checkPlanF`/`checkPlanF_sound`/`checkPlanF_complete`, `runFrom_R_F`, `runPlan_R_F`, `terminal_adequacy_F`
   and the compiled-correctness theorems `done_correct_F` ... `done_iff_model_F`.
 
 #### Plan-layer theorems
@@ -1099,6 +1099,8 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
 | `step_R` | From R and `Conf = refState pc`, a successful singleton step re-establishes R at `pc + 1` | Section 31.2 (step simulation) |
 | `step_failed` | A failed step is matched by one `undefined` event for the same occurrence from the related state | Section 31.3 (failure matching) |
 | `checkPlan_sound` | An accepted plan satisfies `Valid` | Definition 31.1 |
+| `checkPlan_complete`, `checkPlan_iff` | A `Valid` plan is accepted, so `checkPlan` decides `Valid` exactly | Definition 31.1 |
+| `checkAccMat_of_rest` | Given `checkSingleton`, `checkCov2Complete`, `checkInit` at every `initZero` and `checkPubMat` at every `pub`, `checkAccMat` holds at every `acc`: the clause is shadowed | Definition 31.1 (checker redundancy; no spec result) |
 | `step_not_stuck`, `runPlan_not_stuck` | A valid plan's run never reports `stuck` | Section 31.3 (progress) |
 | `run_R`, `runPlan_R` | The whole run ends `done m` with R and a reference execution, or fails with a matched failure | Sections 31.2-31.3 |
 | `terminal_adequacy`, `complete_of_refState` | At `done m M'` the reference state is complete and `Decode` gives its outputs | Lemma 31.2 |
@@ -1107,7 +1109,7 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
 | `step_failed_command` | From R and `Conf = refState pc`, a failing fused command is matched by some reference execution from `Conf` to `Failed` on the same occurrence (the execution may include the earlier annotations of the command) | Section 31.3 (fused failure) |
 | `stepCommand_not_stuck` | From R and `refState pc = some c`, a command of an `FValid` plan is never stuck | Section 31.3 (progress, fused) |
 | `runPlan_agree` | A fused plan and its expansion run to the same final memory, or fail at the same occurrence | run bridge (no spec result) |
-| `checkPlanF_sound` | An accepted fused plan satisfies `FValid` (Definition 31.1 of the expansion) | Definition 31.1 |
+| `checkPlanF_sound`, `checkPlanF_complete`, `checkPlanF_iff` | A fused plan is accepted iff it satisfies `FValid` (Definition 31.1 of the expansion) | Definition 31.1 |
 | `terminal_adequacy_F`, `done_correct_F`, `failed_correct_F`, `done_or_failed_F`, `done_of_model_F`, `done_iff_model_F` | Lemma 31.2 and Theorem 31.3 for `FValid` fused plans | Lemma 31.2, Theorem 31.3 |
 
 #### Fused commands (slice 2)
@@ -1144,7 +1146,6 @@ S2-M4 at fixture level).
 - Cross-sort reads and primitives (the one multi-sort fixture, `PlanMultiSortTest`, has an empty registry), numeric kernels other than the exact reference, floating point.
 - Buffer reuse, aliasing, retirement, and liveness for scans.
 - Implementation errors (allocation failure, kernel errors) and their matching.
-- Checker completeness (`Valid` implies `checkPlan = true`).
 - A proof that per-step `AccOK`/`PubOK` imply the Nodup halves of conditions 1 and 2 (conjecture).
 - Comparing the failure occurrence or failure snapshot between the plan and the reference executor.
 - Dropping the redundant condition-1 covering clause of `Valid`. It follows from the condition-2
@@ -1191,7 +1192,7 @@ Slices 1 and 2 of the plan layer have landed
 ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)): singleton and fused commands over
 dense non-reused storage, with Lemma 31.2, Theorem 31.3 and Lemma 32.1 proved for that profile.
 Not yet done: buffer reuse, aliasing, retirement and scan liveness;
-implementation errors and their matching; checker completeness; cross-sort primitives and non-exact numeric
+implementation errors and their matching; cross-sort primitives and non-exact numeric
 kernel fixtures; and the Nodup conjecture for conditions 1 and 2.
 
 Floating-point correspondence needs its own ordered-reduction or numerical

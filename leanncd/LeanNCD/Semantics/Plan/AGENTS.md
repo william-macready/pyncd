@@ -25,7 +25,7 @@ Reachable from `import LeanNCD` (`Semantics.lean` imports `Plan.lean`, which imp
 ## Contracts
 - A fused plan is valid iff its expansion is (`FValid := π.expand.Valid`); `done m` counts commands, not expanded annotations.
 - Slice-1/2 profile: singleton or fused commands, dense non-reused buffers, transactional failure, explicit `initZero`, no implementation errors. The theorems are generic over sorts (`K : S → Type`); the fixtures use rationals, except `PlanMultiSortTest` (ℤ and ℚ with per-sort `ScalarOps`, empty registry, so no cross-sort reads).
-- `runPlan` does not detect schedule-invalid plans. Soundness rests on `checkPlan` (`checkPlan_sound : π.checkPlan = true → π.Valid`); completeness of the checker is not claimed.
+- `runPlan` does not detect schedule-invalid plans. Soundness rests on `checkPlan` (`checkPlan_sound : π.checkPlan = true → π.Valid`); `checkPlan_complete` gives the converse (`checkPlan_iff`; fused: `checkPlanF_iff`), so the checker decides `Valid` exactly. `checkAccMat` is redundant given the other clauses (`checkAccMat_of_rest`), and is kept.
 - `Valid` is purely static. The spec's semantic conditions 2-5 are the theorems `R_start`, `step_R` (only at `refState pc = some c`, next bullet), `step_failed`, `step_not_stuck`.
 - `step_R` needs `refState pc = some c` besides `R`; simulation is not claimed for every R-related state.
 - Theorem 31.3 (b) claims failure and no model only; the failure snapshot may differ from `Executor.run`'s own schedule.
