@@ -51,7 +51,7 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-11, Lean as of `f3210475`: the Part V slice-1 to slice-3 plan layer
+**Snapshot: 2026-10-11, Lean as of `fe013f1b`: the Part V slice-1 to slice-3 plan layer
 (`Semantics/Plan/`), on top of bounded source correspondence
 (`6a90baff`), nested-reduction reindexing (`705280cd`), successful-permutation
 agreement (`ca642b3d`), and raw-source admission, on top of the verified
@@ -63,7 +63,7 @@ both final whole-branch code-review lenses are clean.
 The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer))
 is in the snapshot above, extended by slice 2 to fused commands and by slice 3 to retirement of defined
 published addresses: eleven modules under `Semantics/Plan/`
-proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 228 fixtures and 54 mutation cycles
+proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 235 fixtures and 54 mutation cycles
 (20 in slice 1, 15 in slice 2, 9 in the D7 manifest, 10 in slice 3).
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
@@ -1164,9 +1164,9 @@ retired slot is cleared and never rewritten), error-free kernels. Soundness rest
 (singleton plans) or `checkPlanF` (fused plans): the run does not detect an invalid plan. The spec's
 restatements are the paragraphs headed "As formalized (slice-1 to slice-3 profile ...)" (in 30.3 and 33.2: "(slice-3 profile ...)") in Sections
 29.3, 30.2, 30.3, 30.4, 31.1-31.4, 32.1 and 33.2 of the
-[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 228
-fixtures by the `rg -c` count (139 `#eval check` rows and 89 `example`/`theorem` items), of which 28 are slice 3's
-`PlanRetireTest` (17 rows, 10 `example`s, 1 theorem); the earlier figure of 180 was counted differently and does
+[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 235
+fixtures by the `rg -c` count (143 `#eval check` rows and 92 `example`/`theorem` items), of which 35 are slice 3's
+`PlanRetireTest` (21 rows, 13 `example`s, 1 theorem); the earlier figure of 180 was counted differently and does
 not reconcile with this method (see open item O6 of `plan_layer_slice3_plan.md`). The mutation manifests ran 54 mutation cycles (20 in slice 1, 15 in
 slice 2, 9 in the D7 manifest, 10 in slice 3), of which 4 are labelled equivalent among the 35 of slices 1-2
 (3 in slice 1; S2-M4 at fixture level) and none among the 10 of slice 3 (every one is killed at a library proof).

@@ -199,8 +199,8 @@ sequentially within each top-level section and are not subsection numbers:
 | Theorem 26.5 | Ranked progress | Proved: `ranked_progress`, `ranked_not_blocked` (`Progress`). Executor level: `result_not_blocked`. |
 | Theorem 26.6 | Ranked correspondence | Proved: `maximal_dichotomy`, `model_maximal_success`, `no_model_maximal_failure`, `initialization_iff_singleton`, `successful_schedules_agree` (`Progress`). Executor level: `run_ranked_dichotomy`. |
 | Corollary 26.7 | Ranked uniqueness | Follows from `model_maximal_success`, `maximal_extension` and `successful_unique`; no separately named theorem. |
-| Lemma 31.2 | Terminal adequacy of a valid plan | Proved (slice-1 profile): `terminal_adequacy`, `complete_of_refState` (`Plan.Correctness`). Fused plans: `terminal_adequacy_F` (`Plan.FusionCorrectness`). Slice 3: statement unchanged for plans containing `retire`; outputs are live by `live_output_of_valid` (`Plan.Correctness`). |
-| Theorem 31.3 | Compiled correctness | Proved (slice-1 profile): `done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model` (`Plan.Correctness`); `runPlan_not_stuck` (`Plan.Run`). Fused plans: `done_correct_F`, `failed_correct_F`, `done_or_failed_F`, `done_of_model_F`, `done_iff_model_F`, `runPlan_not_stuck_F` (`Plan.FusionCorrectness`); per-command failure matching `step_failed_command` (`Plan.Fusion`). Slice 3: statements unchanged for plans containing `retire` (`Valid` has the field `retOK`; `checkPlan_iff` still holds). |
+| Lemma 31.2 | Terminal adequacy of a valid plan | Proved (slice-1 to slice-3 profile): `terminal_adequacy`, `complete_of_refState` (`Plan.Correctness`). Fused plans: `terminal_adequacy_F` (`Plan.FusionCorrectness`). Slice 3: statement unchanged for plans containing `retire`; outputs are live by `live_output_of_valid` (`Plan.Correctness`). |
+| Theorem 31.3 | Compiled correctness | Proved (slice-1 to slice-3 profile): `done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model` (`Plan.Correctness`); `runPlan_not_stuck` (`Plan.Run`). Fused plans: `done_correct_F`, `failed_correct_F`, `done_or_failed_F`, `done_of_model_F`, `done_iff_model_F`, `runPlan_not_stuck_F` (`Plan.FusionCorrectness`); per-command failure matching `step_failed_command` (`Plan.Fusion`). Slice 3: statements unchanged for plans containing `retire` (`Valid` has the field `retOK`; `checkPlan_iff` still holds). |
 | Lemma 32.1 | Batched accumulation refines individual steps | Proved: `batch_execution`, `batch_execution_perm`, `accumulateBatch_accumulators`, `accumulateBatch_pending`, `accumulateBatch_published` (`Plan.Batch`); failure half for the transactional singleton kernel only (`step_failed`, `Plan.Simulation`). |
 
 The Lean results for Sections 23-26 concern the reference machine as a transition
@@ -4775,7 +4775,7 @@ occurrence coverage, barriers, domain behavior, and safe reuse.
 The compilation-layer proof targets are:
 
 - Typed plan annotations and sound validation of their coverage and order.
-  *Proved for the slice-1 profile* (`Valid`, `checkPlan_sound`, `checkPlan_complete`; fused plans: `FValid`, `checkPlanF_sound`, `checkPlanF_complete`).
+  *Proved for the slice-1 to slice-3 profile* (`Valid`, `checkPlan_sound`, `checkPlan_complete`; fused plans: `FValid`, `checkPlanF_sound`, `checkPlanF_complete`).
 - Resource views, concrete states, and the representation relation,
   including empty shapes and untouched zero accumulators.
   *Proved for the slice-1 to slice-3 profile* (dense injective storage with retirement: `SlotView`, `R`, `R_start`, `step_retire`).
@@ -4788,9 +4788,9 @@ The compilation-layer proof targets are:
   *Batching proved for the transactional singleton accumulate kernel* (`batch_execution`,
   `step_failed`); sharing remains a target.
 - Concrete progress and termination, not just forward simulation.
-  *Proved for the slice-1 profile* (`step_not_stuck`, `runPlan_not_stuck`).
+  *Proved for the slice-1 to slice-3 profile* (`step_not_stuck`, `runPlan_not_stuck`).
 - Terminal decoding and the compiled-correctness theorem.
-  *Proved for the slice-1 profile* (`terminal_adequacy`, `done_correct`, `failed_correct`,
+  *Proved for the slice-1 to slice-3 profile* (`terminal_adequacy`, `done_correct`, `failed_correct`,
   `done_iff_model`).
 - Separate-buffer and two-buffer scan proofs, with full-history and
   terminal-only output contracts tested separately.

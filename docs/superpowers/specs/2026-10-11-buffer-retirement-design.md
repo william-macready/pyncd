@@ -148,7 +148,7 @@ published addresses, dense injective `place`"), the 33.2 note, the proof-status 
 
 | Item | Change |
 |------|--------|
-| `Ann` | new constructor `retire` (about 24 constructor-case sites gain an arm) |
+| `Ann` | new constructor `retire` (21 constructor-case sites gain an arm, counted at HEAD) |
 | `Plan.Valid` | new field `retOK`; `ReadyOK` over `Live` |
 | `R` | `pubSlot` over `Live`; new fields `dead` and `retPub` |
 | `readPub_eq` | restated pointwise on `Live` |
@@ -164,7 +164,7 @@ Everything else (coverage, `refState`, `postAnn` results, theorem statements of 
 - The `R5` preservation arguments touch the three largest step proofs (`step_init`, `step_acc`, `step_pub`).
   If `R5` turns out disproportionate it can be dropped; D2 then has fixture-level content only and the
   reuse slice adds it.
-- The about 24 constructor-case sites include `Faults` and the fusion modules; per the Lean pitfalls memory,
-  grep callers before changing signatures.
+- The 21 constructor-case sites (counted at HEAD with `rg -c` over `| .retire` arms; `Faults.lean` needed none); per
+  the Lean pitfalls memory, grep callers before changing signatures.
 - The `Valid` change shifts line numbers in mutated files, so the slice-1 and slice-2 manifests need a
   re-run and `expect` repair.
