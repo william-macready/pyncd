@@ -166,4 +166,48 @@ example : rtDupBlock.checkPlan = true := by decide
 #eval check "retire-fault-fused-none" (chainRowE rtFusedOk fun _ => none)
   ("run:done", 5, none, [some 0, none, some 4])
 
+/-! ### 8. rows added for the deferred whole-branch review minors -/
+
+-- donor: rtNeighbour. TWO DISTINCT addresses in one retire block, both after their last reader:
+-- a `retire` that only handled the first member (executor or checker) would differ here.
+def rtMulti : (routed chainBody).Plan :=
+  unitPlan [[.initZero cAll], [.acc [cOcc 0]], [.pub [cAddr 0, cAddr 1]], [.acc [cOcc 1]],
+    [.retire [cAddr 0, cAddr 1]], [.pub [cAddr 2]]]
+
+#eval check "retire-multi-distinct" (rtMulti.checkPlan, chainRow rtMulti)
+  (true, ("done", 6, none, [none, none, some 4]))
+example : rtMulti.checkPlan = true := by decide
+
+-- donor: rtMulti with the SECOND member replaced by point 2, which is accumulated but not yet
+-- published: the Pub half of Live rejects the block through its second member only (a checker that
+-- looked at the first member would accept). The run clears the live accumulator, so the later `pub`
+-- is stuck (as in `retire-unpublished`).
+def rtMultiBad : (routed chainBody).Plan :=
+  unitPlan [[.initZero cAll], [.acc [cOcc 0]], [.pub [cAddr 0, cAddr 1]], [.acc [cOcc 1]],
+    [.retire [cAddr 1, cAddr 2]], [.pub [cAddr 2]]]
+
+#eval check "retire-multi-second-unpublished" (rtMultiBad.checkPlan, chainRow rtMultiBad)
+  (false, ("stuck", 5, none, [some 0, none, none]))
+example : rtMultiBad.checkPlan = false := by decide
+
+-- donor: sPlan false with `retire t2` placed BEFORE the `initZero` of t2: at run time clearing an
+-- empty slot is a no-op, so the run ends `done` with every value correct (decode `some 2`); only the
+-- checker rejects it (t2 is not yet published). A run-time-silent defect, pinned here.
+def rtEarly : (scalarRole false).Plan :=
+  scalarPlan false [[.retire [sAddr false 2 rfl]],
+    [.initZero [sAddr false 1 rfl, sAddr false 2 rfl]], [.acc [sOcc false 1 rfl]],
+    [.pub [sAddr false 1 rfl]], [.acc [sOcc false 2 rfl]], [.pub [sAddr false 2 rfl]]]
+
+#eval check "retire-before-init"
+  (rtEarly.checkPlan, sRowEP false rtEarly fun _ => none, sDecodeOf rtEarly)
+  (false, ("run:done", 6, none, [some 7, some 2, some 3]), some 2)
+example : rtEarly.checkPlan = false := by decide
+
+-- donor: `retire-fault-fused-at-retire` with the fault moved to the LAST pub (position 5, command 4),
+-- i.e. AFTER the command that fused the retire: unlike the fault rows at the retire itself, the
+-- memory shown is the one after the fused command, so the retired slot must already be `none`
+-- (a no-op `execRet` inside a fused command would show `some 3` there).
+#eval check "retire-fault-fused-after-retire" (chainRowE rtFusedOk (faultAt 5 .kernelFault))
+  ("error", 4, some .kernelFault, [some 0, none, some 4])
+
 end LeanNCD.Semantics.PlanFixtures
