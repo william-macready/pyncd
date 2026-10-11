@@ -16,11 +16,12 @@ variable {K : S → Type} {σ : Declarations S} {r : Registry K}
 variable {P : Program K σ r} (π : P.Plan)
 
 /-- Spec 29.3 condition 3 for one group: every address a member body reads is
-    in `Pub pc` (inputs, or published by the prefix). A PROGRESS condition. -/
+    in `Live pc` (inputs, or published and not retired by the prefix). A PROGRESS
+    condition; over `Live` it also enforces "no remaining reader" of a retired address. -/
 def ReadyOK (pc : Nat) (G : List (OccRef P)) : Prop :=
-  ∀ x ∈ G, ∀ a ∈ footprint (P.body x.1 x.2.1) x.2.2, π.Pub pc a
+  ∀ x ∈ G, ∀ a ∈ footprint (P.body x.1 x.2.1) x.2.2, π.Live pc a
 
-/-- Definition 31.1, slice-1 form (singleton commands, initZero/acc/pub).
+/-- Definition 31.1, slice-1 form (singleton commands, initZero/acc/pub/retire).
     `tensors_nodup`/`tensors_complete` are fields of the plan itself. -/
 structure Valid : Prop where
   /-- Slice-1 profile: every command is one annotation. -/
@@ -36,8 +37,10 @@ structure Valid : Prop where
   /-- `PubOK`: block duplicate-free, unpublished, materialised (N1), and every
       occurrence targeting a member already consumed (spec 29.3 condition 4). -/
   pubOK : ∀ pc B, π.commands[pc]? = some [.pub B] → π.PubOK pc B
-  /-- Spec 29.3 condition 3 (N3): every read footprint is in `Pub pc`. -/
+  /-- Spec 29.3 condition 3 (N3): every read footprint is in `Live pc`. -/
   ready : ∀ pc G, π.commands[pc]? = some [.acc G] → π.ReadyOK pc G
+  /-- `RetOK`: retired members are live and not outputs. -/
+  retOK : ∀ pc B, π.commands[pc]? = some [.retire B] → π.RetOK pc B
 
 theorem Valid.stepOK {π : P.Plan} (h : π.Valid) (pc : Nat) : π.StepOK pc := by
   intro a ha
@@ -45,6 +48,7 @@ theorem Valid.stepOK {π : P.Plan} (h : π.Valid) (pc : Nat) : π.StepOK pc := b
   | initZero S => exact h.initFresh pc S ha
   | acc G => exact h.accOK pc G ha
   | pub B => exact h.pubOK pc B ha
+  | retire B => exact h.retOK pc B ha
 
 /-! ### Enumerations derived from the certified tensor list -/
 
@@ -107,9 +111,9 @@ def checkAccFresh (pc : Nat) (G : List (OccRef P)) : Bool :=
 def checkAccMat (pc : Nat) (G : List (OccRef P)) : Bool :=
   G.all fun x => decide (π.Mat pc x.target)
 
-/-- Condition 3 (progress). -/
+/-- Condition 3 (progress), over `Live`. -/
 def checkReady (pc : Nat) (G : List (OccRef P)) : Bool :=
-  G.all fun x => (footprint (P.body x.1 x.2.1) x.2.2).all fun a => decide (π.Pub pc a)
+  G.all fun x => (footprint (P.body x.1 x.2.1) x.2.2).all fun a => decide (π.Live pc a)
 
 /-- `PubOK`, first part: duplicate-free and unpublished. -/
 def checkPubFresh (pc : Nat) (B : List (DefAddr P)) : Bool :=
@@ -123,10 +127,15 @@ def checkPubMat (pc : Nat) (B : List (DefAddr P)) : Bool :=
 def checkPubOrder (pc : Nat) (B : List (DefAddr P)) : Bool :=
   B.all fun x => π.occList.all fun y => !decide (y.target = x) || decide (π.Cons pc y)
 
+/-- `RetOK`: every member is live and not an output. -/
+def checkRet (pc : Nat) (B : List (DefAddr P)) : Bool :=
+  B.all fun x => decide (π.Live pc x.addr) && decide (P.output x.1.val = false)
+
 def checkAnn (pc : Nat) : Ann P → Bool
   | .initZero S => π.checkInit pc S
   | .acc G => π.checkAccFresh pc G && π.checkAccMat pc G && π.checkReady pc G
   | .pub B => π.checkPubFresh pc B && π.checkPubMat pc B && π.checkPubOrder pc B
+  | .retire B => π.checkRet pc B
 
 def checkSteps : Bool :=
   (List.range π.commands.length).all fun pc =>
@@ -163,6 +172,11 @@ theorem checkInit_sound {pc : Nat} {S : List (DefAddr P)} (h : π.checkInit pc S
   obtain ⟨hp, hc⟩ := h _ hx
   refine ⟨hp, fun o ho hd => hc ⟨t, o⟩ ho ((target_eq o p).mpr hd)⟩
 
+theorem checkRet_sound {pc : Nat} {B : List (DefAddr P)} (h : π.checkRet pc B = true) :
+    π.RetOK pc B := by
+  simp only [checkRet, List.all_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h
+  exact h
+
 theorem checkAnn_acc_sound {pc : Nat} {G : List (OccRef P)}
     (h : π.checkAnn pc (.acc G) = true) : π.AccOK pc G ∧ π.ReadyOK pc G := by
   simp only [checkAnn, checkAccFresh, checkAccMat, checkReady, List.all_eq_true,
@@ -194,7 +208,8 @@ theorem checkPlan_sound (h : π.checkPlan = true) : π.Valid := by
     fun pc S ha => π.checkInit_sound (π.checkSteps_ann hst ha),
     fun pc G ha => (π.checkAnn_acc_sound (π.checkSteps_ann hst ha)).1,
     fun pc B ha => π.checkAnn_pub_sound (π.checkSteps_ann hst ha),
-    fun pc G ha => (π.checkAnn_acc_sound (π.checkSteps_ann hst ha)).2⟩
+    fun pc G ha => (π.checkAnn_acc_sound (π.checkSteps_ann hst ha)).2,
+    fun pc B ha => π.checkRet_sound (π.checkSteps_ann hst ha)⟩
 
 /-! ### Redundancy of the coverage `Nodup` checks (plan §10 item 3)
 
@@ -245,6 +260,7 @@ theorem checkPlan_nodup_redundant (hs : π.checkSingleton = true) (ht : π.check
       exact ⟨h.1.1.1, h.1.1.2⟩
     | pub B => simp [Ann.groups]
     | initZero S => simp [Ann.groups]
+    | retire B => simp [Ann.groups]
   · have h := π.checkSteps_ann ht ha
     cases a with
     | pub B =>
@@ -253,6 +269,7 @@ theorem checkPlan_nodup_redundant (hs : π.checkSingleton = true) (ht : π.check
       exact ⟨h.1.1.1, fun x hx hmem => h.1.1.2 x hx (Or.inr (List.mem_map_of_mem hmem))⟩
     | acc G => simp [Ann.blocks]
     | initZero S => simp [Ann.blocks]
+    | retire B => simp [Ann.blocks]
 
 /-- Corollary: `checkPlan` equals its core without the two `Nodup` checks. -/
 theorem checkPlan_eq_core : π.checkPlan =
@@ -323,6 +340,11 @@ theorem checkInit_complete {pc : Nat} {S : List (DefAddr P)} (h : π.InitOK pc S
   obtain ⟨rfl, e⟩ := e
   exact hc o hy (eq_of_heq e)
 
+theorem checkRet_complete {pc : Nat} {B : List (DefAddr P)} (h : π.RetOK pc B) :
+    π.checkRet pc B = true := by
+  simp only [checkRet, List.all_eq_true, Bool.and_eq_true, decide_eq_true_eq]
+  exact h
+
 theorem checkAnn_acc_complete {pc : Nat} {G : List (OccRef P)}
     (hA : π.AccOK pc G) (hR : π.ReadyOK pc G) : π.checkAnn pc (.acc G) = true := by
   simp only [checkAnn, checkAccFresh, checkAccMat, checkReady, List.all_eq_true,
@@ -355,6 +377,7 @@ theorem checkPlan_complete (h : π.Valid) : π.checkPlan = true := by
       | initZero S => exact π.checkInit_complete (h.initFresh pc S hc)
       | acc G => exact π.checkAnn_acc_complete (h.accOK pc G hc) (h.ready pc G hc)
       | pub B => exact π.checkAnn_pub_complete (h.pubOK pc B hc)
+      | retire B => exact π.checkRet_complete (h.retOK pc B hc)
   simp only [checkPlan, Bool.and_eq_true]
   refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, hst⟩
   · simp only [checkSingleton, List.all_eq_true, beq_iff_eq]
@@ -413,6 +436,7 @@ theorem checkAccMat_of_rest (hs : π.checkSingleton = true) (h2c : π.checkCov2C
   cases y with
   | initZero S => simp [Ann.blocks] at hyb
   | acc G' => simp [Ann.blocks] at hyb
+  | retire R => simp [Ann.blocks] at hyb
   | pub B =>
     -- `checkPubMat` at `pc'` gives an `initZero` at an index below `pc'`.
     have hm := hpub pc' B hpc'
@@ -425,6 +449,7 @@ theorem checkAccMat_of_rest (hs : π.checkSingleton = true) (h2c : π.checkCov2C
     cases z with
     | acc _ => simp [Ann.inits] at hzi
     | pub _ => simp [Ann.inits] at hzi
+    | retire _ => simp [Ann.inits] at hzi
     | initZero S =>
       have hio := π.checkInit_sound (hinit i S hci)
       have hne : pc ≠ i := by
@@ -453,6 +478,8 @@ end Check
 #print axioms checkAccFresh_of_cov1Nodup
 #print axioms checkPubFresh_of_cov2Nodup
 #print axioms checkInit_complete
+#print axioms checkRet_sound
+#print axioms checkRet_complete
 #print axioms checkAnn_acc_complete
 #print axioms checkAnn_pub_complete
 #print axioms checkPlan_complete

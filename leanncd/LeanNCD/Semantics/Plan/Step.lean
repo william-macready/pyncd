@@ -129,10 +129,16 @@ def execAcc (pc : Nat) (G : List (OccRef P)) (M : Memory K σ) : StepResult P :=
 def execPub (B : List (DefAddr P)) (M : Memory K σ) : StepResult P :=
   if B.all (fun x => (M (place x.addr)).isSome) then .ok M else .stuck
 
+/-- `retire B`: clear the slot of each member (retirement frees the physical slot).
+    Total: never `stuck`, like `execInit`. -/
+def execRet (B : List (DefAddr P)) (M : Memory K σ) : Memory K σ :=
+  B.foldl (fun M x => Function.update M (place x.addr) none) M
+
 def execAnn (pc : Nat) (M : Memory K σ) : Ann P → StepResult P
   | .initZero S => .ok (execInit S M)
   | .acc G => π.execAcc ops pc G M
   | .pub B => execPub B M
+  | .retire B => .ok (execRet B M)
 
 /-- Run a list of annotations from position `n` on the running memory.
     `semFail`/`stuck` propagate; the caller reports the pre-command memory. -/
@@ -151,14 +157,14 @@ def stepCommand (pc : Nat) (M : Memory K σ) (cmd : Command P) : StepResult P :=
   π.expand.execAnns ops (π.offset pc) M cmd
 
 /-- `execAnn` depends on the plan only through the annotation prefix at its position
-    (it reads `readPub pc`, i.e. `Pub pc`, i.e. `prefixAnn pc`). -/
+    (it reads `readPub pc`, i.e. `Live pc`, i.e. `Pub`/`Ret` of `prefixAnn pc`). -/
 theorem execAnn_prefix {π π' : P.Plan} {pc pc' : Nat} (h : π.prefixAnn pc = π'.prefixAnn pc')
     (M : Memory K σ) (a : Ann P) : π.execAnn ops pc M a = π'.execAnn ops pc' M a := by
   have hr : π.readPub pc = π'.readPub pc' := by
     funext M a
-    have hp : π.Pub pc a ↔ π'.Pub pc' a := by simp [Pub, pubList, h]
+    have hp : π.Live pc a ↔ π'.Live pc' a := by simp [Live, Pub, Ret, pubList, retList, h]
     unfold readPub
-    by_cases hπ : π.Pub pc a
+    by_cases hπ : π.Live pc a
     · rw [if_pos hπ, if_pos (hp.mp hπ)]
     · rw [if_neg hπ, if_neg (fun h' => hπ (hp.mpr h'))]
   cases a <;> simp [execAnn, execAcc, hr]

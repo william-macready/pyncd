@@ -86,31 +86,44 @@ Row-level kills were NOT run by the manifest. They were observed by hand in A3a 
 - Check older manifests with `--check` at authoring time: it is free (no build) and found a hard failure the prototype missed.
 - A brief's "section X has a note that says Y" needs a grep before it is repeated: 30.3 and 33.2 had no note at all.
 
-## Review round 1 (controller fills)
+## Review round 1
 
-- Soundness lens: findings and adjudication:
-- Fidelity lens: findings and adjudication:
+Both lenses ran on the most capable model (`fable`), in parallel, writing to `plan_layer_slice3_artifacts/wb_review_soundness.md` and `wb_review_fidelity.md`.
 
-## Value-grep dispositions (controller fills the per-file column after T5)
+- Soundness lens: 0 Critical, 0 Important, 4 Minor (about 22 turns). Verified clean: every `Valid` clause is consumed or a labelled diagnostic and `checkRet` is exactly `RetOK`; `dead`/`retPub` preservation sound (`retPub` is derived from `RetOK`, not assumed); no use of the old function equality `readPub_eq`; fused plans carry the new fields through `R_transport`; `Faults.lean` unchanged is justified; no `sorryAx` in the new theorems. Findings: F1 (case x class table lacks the cell "retire before `initZero` is a run-time no-op; run ends `done`, only the checker rejects"), F2 (no fixture retires two or more distinct addresses in one block), F3 (the two `-at-retire` fault rows cannot tell a no-op `execRet`; the two `-none` rows repeat `runPlanE_noFault`), F4 (`RetOK` docstring called the whole `Live` clause "the safety half").
+- Fidelity lens: 0 Critical, 0 Important by its grading, 9 Minor (about 54 turns). Every identifier and count in the changed hunks checked clean (228 = 139 + 89, 28 in `PlanRetireTest`, 54 = 20 + 15 + 9 + 10 cycles). Findings: F1 "ten modules" (eleven), F2 path-doc "Plan modules" list missed, F3 path-doc header quote for 30.3/33.2, F4 29.3/31.1 sets omit `Ret`/`Live`, F5 stale `Decode`/`Valid` docstrings, F6 "reading a retired slot is stuck" omits `Decode`, F7 wrong results-file pointer, F8 design spec said `retPub` is consumed by `step_init`/`step_acc` and `delta_congr` by `step_failed`, F9 design spec's account of the old "180".
+- Adjudication (ledger Rulings): fidelity F1-F4, F6-F9, F5 and soundness F4 re-graded Important (a false or stale statement in a shipped document or docstring that a reader would act on) and fixed in ONE pass, commit `4a9916aa`. Verified by exact-count asserted edits, exit greps (no `File.lean:NNN`), `git diff --numstat` (each Lean file exactly 1/1 lines: no line shift, so no manifest `expect` moved), TOC 40/39, full default build 8793 jobs green, slice-3 manifest rerun 10/10 on the final tree. Prose has no failing-test form, so no RED step applies.
+- Deferred minors: soundness F1, F2, F3 (test-strength and table completeness; the library proofs already catch the mutants), and the fidelity "declined to judge" items (proof-status labels "Proved (slice-1 profile)" with a "Slice 3" suffix; design-spec estimate "about 24" constructor-case sites, actual 21).
 
-| pattern | file | disposition (EDIT / keep: reason) |
+## Value-grep dispositions (after T5)
+
+`bash scratchpad/value_grep.sh <exec>` over the patterns of plan section (e), excluding `plan_layer_slice3_*`:
+
+| pattern | file | disposition |
 |---|---|---|
-| | | |
+| "180 fixtures", "35 mutation", "35-cycle", "readPub = c.published" | none | no hits after T5 |
+| "no retirement" | design spec (2), `plan_layer_slice2_plan.md` (3), `plan_layer_plan.md` (1), `plan_layer_artifacts/review_fidelity.md` (2), `plan_layer_slice2_artifacts/wb_review_fidelity.md` (1) | keep: historical plans/reviews and the design spec's own statement of the pre-slice profile |
+| "nothing is retired" | `tensor_logic_semantics.md` (1) | keep: scoped "In slices 1-2" sentence in 31.3, true; `plan_layer_plan.md` (2), `a3b_notes.md`, `review_fidelity.md`: historical |
+| "non-reused" | `tensor_logic_semantics.md` (1, section 34 bullet) | EDIT (done in T5); the other hits are historical plans/records/reviews: keep |
+| "slices 1-2" | `lean_executable_semantics_path.md` (1), `tensor_logic_semantics.md` (1) | keep: intentional scoped text ("35 of slices 1-2", "In slices 1-2 that step is trivial"); `plan_layer_slice2_plan.md` (2): historical |
+| "slice-1 and slice-2" | design spec (1), `plan_layer_slice2_plan.md` (1) | keep: design spec edit instruction text; historical |
+| "slice 1-2 plan layer" | `plan_layer_slice2_plan.md` (1) | keep: historical |
 
-Measured fixture total after T4: ___ (expected 228 = 139 + 89); `PlanRetireTest`: ___ rows + ___ items (expected 17 + 11).
-Path doc TOC counts before / after (`^#{2,4} ` and `^ *- \[`): ___ / ___ -> ___ / ___.
-`Plan/AGENTS.md` Pitfalls bytes before / after: 1483 / ___ ; whole file 6151 / ___.
+Measured fixture total after T4: 228 (139 + 89); `PlanRetireTest`: 17 rows + 11 items (10 `example` + 1 `theorem`).
+Path doc TOC counts before / after (`^#{2,4} ` and `^ *- \[`): 39 / 38 -> 40 / 39 (the second count is the first minus 1).
+`Plan/AGENTS.md` Pitfalls bytes before / after: 1483 / 2049 (gate <= ~3000); whole file 6151 / 7427.
+Parked, not moved by this slice (Rule 14): the path-doc snapshot said "ten modules" and `Plan/AGENTS.md` said "the ten modules below" while eleven exist; both were corrected in the review fix pass because the branch re-shipped the sentence.
 
-## Close-out (controller fills)
+## Close-out
 
-- Execution worktree / branch: ___
-- Base `main` SHA at execution (docs-only landing commit): ___
-- Per-task commits and builds (sha256 matched, `apply --check` clean): T1 ___ (2963 expected), T2 ___ (2966), T3 ___ (2968; `LeanNCD` 8598), T4 ___ (2982; default 8793).
-- T4b: slice-1 manifest as shipped ___ / 20, after repair ___ / 20 (`expect` and `old` repairs listed: ___); slice-2 ___ / 15 -> ___ / 15; D7 ___ / 9. Commit ___.
-- New manifest: `--check` ___; full run ___ / 10; files restored byte-identical: ___.
-- Docs-sweep commit: ___; whole-branch review fix commits: ___.
-- Full default build: ___ jobs; forbidden-token grep: ___.
-- Execution session total tokens (`token-report.py <session-id>`; Rule 6 <= ~175M): ___. Authoring tokens (target <= ~50M): ___. Any overrun explained: ___.
-- Whole-branch reviews: soundness ___ Critical / ___ Important / ___ Minor; fidelity ___ / ___ / ___. Adjudication: ___.
-- Merge SHA on local `main`: ___; prototype tagged `plan-layer-slice3-proto` before deletion: ___; branches and worktrees removed: ___; not pushed (`main` ahead of `origin/main`): ___.
-- Parked (plan open items): O1 later slices, O2 lakefile space, O3 row probes, O4 `dead`/`retPub` no fixture, O5 `--task` validation gap, O6 fixture-count reconciliation, O7 stale "slice-1 profile" comments.
+- Execution worktree / branch: `.claude/worktrees/plan-retire-exec` / `worktree-plan-retire-exec`.
+- Base `main` SHA at execution (docs-only landing commit): `097ebeff` (on top of the spec commit `69214c64`).
+- Per-task commits and builds (sha256 matched the manifest, `apply --check` clean, no hand-merge): T1 `327f4b30`, gate `Plan.Simulation` 2963 jobs; T2 `11d90dde`, `Plan.Correctness` 2966; T3 `dc698955`, `Plan.FusionCorrectness` 2968, then `LeanNCD` 8598; T4 `f3210475`, `Semantics.PlanRetireTest` 2982, 17 rows printed, recount 17 / 11.
+- T4b: slice-1 manifest as shipped: validation FAILED before any cycle (entry `A3b-3` `old` string gone); after repairing that entry's `old`/`new` to the `Live` form it ran 5 / 20 (all 20 mutants still broke their build; 15 `expect` locations stale); after repairing those 15 locations (message text kept, except `A3b-3`: now a `rewrite` failure at the pointwise `readPub_eq`, and `A3b-2`: dies in `Validity.lean` before `Correctness`) 20 / 20. Slice-2: 3 / 15 as shipped (12 stale locations, all mutants still died) -> 15 / 15 after repair. D7: 9 / 9 untouched. Repair commit `966f38f7`. The controller did the repairs itself (mechanical, scripted from the observed first errors) instead of the one-fixer-per-manifest dispatch the plan allowed.
+- New manifest: `--check` OK (10 entries, every old-string unique); full run 10 / 10 (twice: on the T4 tree and again on the final tree after the review fixes); files restored byte-identical.
+- Docs-sweep commit `ca512754` (spec 17 asserted edits + 2 more for section 34; design spec 8; path doc 12; AGENTS 18); whole-branch review fix commit `4a9916aa`.
+- Full default build on the final tree: `Build completed successfully (8793 jobs).`; four pre-existing `declaration uses sorry` warnings only; forbidden-token grep (`sorry|admit|axiom|native_decide`) over `Plan/*.lean`, `Plan.lean` and `Plan*Test.lean`: nothing.
+- Session tokens (`token-report.py 0381d9c1-...`, the whole session including brainstorming, authoring and execution): 66.4M total, of which subagents 34.1M (authoring dispatches A1 4.7M, A2a 1.6M, A2b 2.8M, A3a 5.5M, A3b 5.3M, Phase B 5.7M = 25.6M; the two review lenses 2.1M + 6.5M = 8.6M) and the controller 32.1M (peak context 376k, 137 turns) covering brainstorming, authoring coordination and execution. The authoring-versus-execution split of the controller's 32.1M was not measured; combined, the session is far under Rule 6's execution budget (<= ~175M) and the authoring dispatches alone (25.6M) are under the ~50M authoring target. The controller's peak context is above the 250k dispatch rule, which applies to dispatches, not the controller. Harness tool uses ran above self-reports again (A3a 85 vs "about 50", A3b 75 vs 45).
+- Whole-branch reviews: soundness 0 Critical / 0 Important / 4 Minor; fidelity 0 / 0 / 9 by their grading (8 re-graded Important plus F5 and soundness F4, all fixed).
+- Merge SHA, prototype tag, branch and worktree removal, push status: see the commit that follows the merge on `main`.
+- Parked (plan open items): O1 later slices (reuse and aliasing starts from `dead`; scan liveness; retiring inputs; copy/relocate), O2 lakefile missing space, O3 row probes for S3-M2, M4, M5, M7-M10, O4 `dead`/`retPub` have no fixture, O5 mutation-manifest `--task` validation gap, O6 fixture-count reconciliation (200 vs 180), O7 stale "slice-1 profile" comments; plus the deferred minors above.

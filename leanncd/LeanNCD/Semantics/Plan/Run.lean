@@ -50,12 +50,12 @@ theorem foldlM_addAt_some (v : Values P) : ∀ (G : List (OccRef P)) (M : Memory
 
 variable {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
 
-/-- Under R, a published address's slot is readable through the read view. -/
-theorem readPub_isSome (hR : π.R ops η pc M c) {a : Address σ} (ha : π.Pub pc a) :
+/-- Under R, a live address's slot is readable through the read view. -/
+theorem readPub_isSome (hR : π.R ops η pc M c) {a : Address σ} (ha : π.Live pc a) :
     (π.readPub pc M a).isSome = true := by
   simp only [readPub, if_pos ha]
   rw [hR.pubSlot a (slotView_pub π |>.mpr ha)]
-  exact (hR.published a).mpr ha
+  exact (hR.published a).mpr ha.pub
 
 /-- Under R, a materialised unpublished address has an initialised slot. -/
 theorem acc_slot_isSome (hR : π.R ops η pc M c) {x : DefAddr P} (hm : π.Mat pc x)
@@ -76,6 +76,7 @@ theorem step_not_stuck (hv : π.Valid) (hR : π.R ops η pc M c)
   rw [hcmd]
   cases a with
   | initZero S => simp [stepCommand_single, execAnn]
+  | retire B => simp [stepCommand_single, execAnn]
   | pub B =>
     obtain ⟨-, hB⟩ := hv.pubOK pc B hcmd
     simp only [stepCommand_single, execAnn, execPub]

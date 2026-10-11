@@ -30,11 +30,13 @@ theorem DefAddr.addr_injective {P : Program K σ r} :
 
 /-- One logical annotation. `acc G` is spec `Accumulate(G)`, `pub B` is
     `Publish(B)`, `initZero S` is the storage operation materialising zero
-    accumulators at the addresses `S`. -/
+    accumulators at the addresses `S`, `retire B` retires the published defined
+    addresses `B` (their physical slots are cleared). -/
 inductive Ann (P : Program K σ r)
   | acc (G : List (OccRef P))
   | pub (B : List (DefAddr P))
   | initZero (S : List (DefAddr P))
+  | retire (B : List (DefAddr P))
 
 /-- A (possibly fused) command is its finite annotation sequence. -/
 abbrev Command (P : Program K σ r) := List (Ann P)
@@ -64,6 +66,10 @@ def inits : Ann P → List (DefAddr P)
   | .initZero S => S
   | _ => []
 
+def rets : Ann P → List (DefAddr P)
+  | .retire B => B
+  | _ => []
+
 def occKey (x : OccRef P) : Key P := .occurrence x.1 x.2
 def pubKey (x : DefAddr P) : Key P := .publication x.1 x.2
 
@@ -72,6 +78,7 @@ def keys : Ann P → List (Key P)
   | .acc G => G.map occKey
   | .pub B => B.map pubKey
   | .initZero _ => []
+  | .retire _ => []
 
 theorem occKey_injective : Function.Injective (occKey (P := P)) := by
   rintro ⟨t, o⟩ ⟨u, q⟩ h
@@ -100,6 +107,7 @@ def prefixAnn (pc : Nat) : List (Ann P) := (π.commands.take pc).flatten
 def consList (pc : Nat) : List (OccRef P) := (π.prefixAnn pc).flatMap Ann.groups
 def pubList (pc : Nat) : List (DefAddr P) := (π.prefixAnn pc).flatMap Ann.blocks
 def matList (pc : Nat) : List (DefAddr P) := (π.prefixAnn pc).flatMap Ann.inits
+def retList (pc : Nat) : List (DefAddr P) := (π.prefixAnn pc).flatMap Ann.rets
 
 /-- `Pub(pc)`: input addresses plus every address published by the prefix. -/
 def Pub (pc : Nat) (a : Address σ) : Prop :=
@@ -110,6 +118,12 @@ def Cons (pc : Nat) (x : OccRef P) : Prop := x ∈ π.consList pc
 
 /-- `Mat(pc)`: addresses whose zero accumulator the prefix materialised. -/
 def Mat (pc : Nat) (x : DefAddr P) : Prop := x ∈ π.matList pc
+
+/-- `Ret(pc)`: addresses retired by the prefix. -/
+def Ret (pc : Nat) (a : Address σ) : Prop := a ∈ (π.retList pc).map DefAddr.addr
+
+/-- `Live(pc)`: published and not retired. -/
+def Live (pc : Nat) (a : Address σ) : Prop := π.Pub pc a ∧ ¬ π.Ret pc a
 
 section Decidable
 
@@ -126,6 +140,13 @@ instance (pc : Nat) (x : DefAddr P) : Decidable (π.Mat pc x) :=
   letI : ∀ t : P.Defined, DecidableEq (Coord (σ.signature t.val).axes) :=
     fun t => coordDecidableEq (σ.signature t.val).axes
   inferInstanceAs (Decidable (x ∈ π.matList pc))
+
+instance (pc : Nat) (a : Address σ) : Decidable (π.Ret pc a) :=
+  letI := addressEq (σ := σ)
+  inferInstanceAs (Decidable (a ∈ _))
+
+instance (pc : Nat) (a : Address σ) : Decidable (π.Live pc a) :=
+  inferInstanceAs (Decidable (_ ∧ ¬ _))
 
 end Decidable
 
@@ -179,6 +200,23 @@ theorem not_mat_zero (x : DefAddr P) : ¬ π.Mat 0 x := by
 theorem pub_zero (a : Address σ) : π.Pub 0 a ↔ P.input a.1 = true := by
   simp [Pub, pubList, prefixAnn_zero]
 
+theorem ret_zero (a : Address σ) : ¬ π.Ret 0 a := by
+  simp [Ret, retList, prefixAnn_zero]
+
+theorem live_zero (a : Address σ) : π.Live 0 a ↔ P.input a.1 = true := by
+  simp [Live, ret_zero, pub_zero]
+
+theorem Live.pub {pc : Nat} {a : Address σ} (h : π.Live pc a) : π.Pub pc a := h.1
+
+/-- Inputs are always live: `Ret` mentions only defined addresses. -/
+theorem live_input (pc : Nat) (a : Address σ) (h : P.input a.1 = true) : π.Live pc a := by
+  refine ⟨Or.inl h, ?_⟩
+  rintro hr
+  obtain ⟨x, _, rfl⟩ := List.mem_map.mp hr
+  have := x.1.2
+  simp [DefAddr.addr] at h
+  simp_all
+
 /-! ### Schedule view (spec 29.3 conditions 1-2) -/
 
 def accFlat : List (OccRef P) := π.ann.flatMap Ann.groups
@@ -211,6 +249,8 @@ theorem keys_perm_aux (anns : List (Ann P)) :
         List.map_append]
       exact (ih.append_left _).trans (List.perm_append_comm_assoc _ _ _)
     | initZero S =>
+      simpa [Ann.keys, Ann.groups, Ann.blocks, List.flatMap_cons] using ih
+    | retire B =>
       simpa [Ann.keys, Ann.groups, Ann.blocks, List.flatMap_cons] using ih
 
 theorem flatKeys_perm :
@@ -251,5 +291,7 @@ theorem coverage_iff_schedule :
 
 #print axioms DefAddr.addr_injective
 #print axioms coverage_iff_schedule
+#print axioms ret_zero
+#print axioms live_input
 
 end LeanNCD.Semantics.Program.Plan
