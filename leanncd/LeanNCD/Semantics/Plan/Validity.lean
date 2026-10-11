@@ -307,6 +307,139 @@ theorem checkPubFresh_of_cov2Nodup (h2 : π.checkCov2Nodup = true) {pc : Nat}
   · obtain ⟨y, hy, e⟩ := List.mem_map.mp hmem
     exact hd x hx (DefAddr.addr_injective e ▸ hy)
 
+/-! ### Completeness: `Valid` implies `checkPlan = true`
+
+Each `*_complete` lemma is the converse of the matching `*_sound` lemma, so `checkPlan` is an exact
+decision procedure for `Valid`, not just a sound one. -/
+
+theorem checkInit_complete {pc : Nat} {S : List (DefAddr P)} (h : π.InitOK pc S) :
+    π.checkInit pc S = true := by
+  simp only [checkInit, List.all_eq_true, Bool.and_eq_true, Bool.not_eq_true',
+    decide_eq_false_iff_not, decide_eq_true_eq]
+  rintro ⟨t, p⟩ hx
+  obtain ⟨hp, hc⟩ := h _ hx
+  refine ⟨hp, fun ⟨t', o⟩ hy e => ?_⟩
+  simp only [OccRef.target, Sigma.mk.injEq] at e
+  obtain ⟨rfl, e⟩ := e
+  exact hc o hy (eq_of_heq e)
+
+theorem checkAnn_acc_complete {pc : Nat} {G : List (OccRef P)}
+    (hA : π.AccOK pc G) (hR : π.ReadyOK pc G) : π.checkAnn pc (.acc G) = true := by
+  simp only [checkAnn, checkAccFresh, checkAccMat, checkReady, List.all_eq_true,
+    Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not, decide_eq_true_eq]
+  exact ⟨⟨⟨hA.1, fun x hx => (hA.2 x hx).1⟩, fun x hx => (hA.2 x hx).2⟩, hR⟩
+
+theorem checkAnn_pub_complete {pc : Nat} {B : List (DefAddr P)}
+    (h : π.PubOK pc B) : π.checkAnn pc (.pub B) = true := by
+  simp only [checkAnn, checkPubFresh, checkPubMat, checkPubOrder, List.all_eq_true,
+    Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not, decide_eq_true_eq,
+    Bool.or_eq_true]
+  refine ⟨⟨⟨h.1, fun x hx => (h.2 x hx).1⟩, fun x hx => (h.2 x hx).2.1⟩, ?_⟩
+  rintro ⟨t, p⟩ hx ⟨t', o⟩ -
+  by_cases e : OccRef.target (⟨t', o⟩ : OccRef P) = ⟨t, p⟩
+  · simp only [OccRef.target, Sigma.mk.injEq] at e
+    obtain ⟨rfl, e⟩ := e
+    exact Or.inr ((h.2 _ hx).2.2 o (eq_of_heq e))
+  · exact Or.inl (by simpa using e)
+
+/-- `checkPlan` is complete for Definition 31.1 (slice-1 form): a valid plan passes it. -/
+theorem checkPlan_complete (h : π.Valid) : π.checkPlan = true := by
+  have hst : π.checkSteps = true := by
+    simp only [checkSteps, List.all_eq_true, List.mem_range]
+    intro pc hpc
+    cases hc : π.commands[pc]? with
+    | none => rfl
+    | some cmd =>
+      obtain ⟨a, rfl⟩ := h.singleton cmd (List.mem_of_getElem? hc)
+      cases a with
+      | initZero S => exact π.checkInit_complete (h.initFresh pc S hc)
+      | acc G => exact π.checkAnn_acc_complete (h.accOK pc G hc) (h.ready pc G hc)
+      | pub B => exact π.checkAnn_pub_complete (h.pubOK pc B hc)
+  simp only [checkPlan, Bool.and_eq_true]
+  refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, hst⟩
+  · simp only [checkSingleton, List.all_eq_true, beq_iff_eq]
+    exact fun cmd hc => List.length_eq_one_iff.mpr (h.singleton cmd hc)
+  · simpa only [checkCov1Nodup, decide_eq_true_eq] using h.coverage1.1
+  · simp only [checkCov1Complete, List.all_eq_true, decide_eq_true_eq]
+    exact fun x _ => h.coverage1.2 x
+  · simpa only [checkCov2Nodup, decide_eq_true_eq] using h.coverage2.1
+  · simp only [checkCov2Complete, List.all_eq_true, decide_eq_true_eq]
+    exact fun x _ => h.coverage2.2 x
+
+theorem checkPlan_iff : π.checkPlan = true ↔ π.Valid :=
+  ⟨π.checkPlan_sound, π.checkPlan_complete⟩
+
+/-! ### `checkAccMat` is shadowed
+
+The materialisation clause of `checkAccMat` is implied by the other clauses: an accumulation into
+`a` precedes the publication of `a` (condition 4 at the `pub`), so the `initZero` that `checkPubMat`
+demands before that publication must also come before the accumulation, or else `checkInit` would
+have rejected it (a consumed occurrence would target `a`). The proof is a statement about the other
+clauses holding, so no second checker is defined. -/
+
+omit [DecidableEq σ.Tensor] in
+theorem mem_prefixAnn {n : Nat} {z : Ann P} :
+    z ∈ π.prefixAnn n ↔ ∃ i, i < n ∧ ∃ cmd, π.commands[i]? = some cmd ∧ z ∈ cmd := by
+  simp only [prefixAnn, List.mem_flatten]
+  constructor
+  · rintro ⟨cmd, hmem, hz⟩
+    obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hmem
+    rw [List.getElem?_take] at hi
+    split_ifs at hi with hlt
+    exact ⟨i, hlt, cmd, hi, hz⟩
+  · rintro ⟨i, hlt, cmd, hi, hz⟩
+    refine ⟨cmd, List.mem_iff_getElem?.mpr ⟨i, ?_⟩, hz⟩
+    rw [List.getElem?_take, if_pos hlt, hi]
+
+theorem checkAccMat_of_rest (hs : π.checkSingleton = true) (h2c : π.checkCov2Complete = true)
+    (hinit : ∀ pc S, π.commands[pc]? = some [.initZero S] → π.checkInit pc S = true)
+    (hpub : ∀ pc B, π.commands[pc]? = some [.pub B] → π.checkPubMat pc B = true)
+    {pc : Nat} {G : List (OccRef P)} (ha : π.commands[pc]? = some [.acc G]) :
+    π.checkAccMat pc G = true := by
+  have hS : ∀ cmd ∈ π.commands, ∃ a, cmd = [a] := by
+    simp only [checkSingleton, List.all_eq_true, beq_iff_eq] at hs
+    exact fun cmd hc => List.length_eq_one_iff.mp (hs cmd hc)
+  simp only [checkAccMat, List.all_eq_true, decide_eq_true_eq]
+  intro x hx
+  -- `x.target` is published by some `pub B` command at index `pc'`.
+  have hpubd : x.target ∈ π.pubFlat := by
+    simp only [checkCov2Complete, List.all_eq_true, decide_eq_true_eq] at h2c
+    exact h2c _ (π.mem_addrList _)
+  obtain ⟨y, hy, hyb⟩ := List.mem_flatMap.mp hpubd
+  obtain ⟨cmd, hcmd, hycmd⟩ := List.mem_flatten.mp hy
+  obtain ⟨y', rfl⟩ := hS cmd hcmd
+  obtain rfl : y = y' := by simpa using hycmd
+  obtain ⟨pc', hpc'⟩ := List.mem_iff_getElem?.mp hcmd
+  cases y with
+  | initZero S => simp [Ann.blocks] at hyb
+  | acc G' => simp [Ann.blocks] at hyb
+  | pub B =>
+    -- `checkPubMat` at `pc'` gives an `initZero` at an index below `pc'`.
+    have hm := hpub pc' B hpc'
+    simp only [checkPubMat, List.all_eq_true, decide_eq_true_eq] at hm
+    have hmat : π.Mat pc' x.target := hm _ hyb
+    obtain ⟨z, hz, hzi⟩ := List.mem_flatMap.mp hmat
+    obtain ⟨i, hilt, cmd', hci, hzcmd⟩ := (π.mem_prefixAnn).mp hz
+    obtain ⟨z', rfl⟩ := hS cmd' (List.mem_of_getElem? hci)
+    obtain rfl : z = z' := by simpa using hzcmd
+    cases z with
+    | acc _ => simp [Ann.inits] at hzi
+    | pub _ => simp [Ann.inits] at hzi
+    | initZero S =>
+      have hio := π.checkInit_sound (hinit i S hci)
+      have hne : pc ≠ i := by
+        rintro rfl
+        rw [ha] at hci
+        simp at hci
+      by_cases hlt : pc < i
+      · -- the accumulation precedes the `initZero`: its target would already be consumed there
+        have hcons : π.Cons i x :=
+          List.mem_flatMap.mpr ⟨.acc G, (π.mem_prefixAnn).mpr ⟨pc, hlt, _, ha, by simp⟩, hx⟩
+        have hxS : x.target ∈ S := by simpa [Ann.inits] using hzi
+        exact absurd rfl ((hio _ hxS).2 x.2 hcons)
+      · exact List.mem_flatMap.mpr ⟨.initZero S,
+          (π.mem_prefixAnn).mpr ⟨i, by omega, _, hci, by simp⟩, hzi⟩
+
 end Check
 
 #print axioms Valid.stepOK
@@ -319,5 +452,12 @@ end Check
 #print axioms fresh_of_nodup_flatMap
 #print axioms checkAccFresh_of_cov1Nodup
 #print axioms checkPubFresh_of_cov2Nodup
+#print axioms checkInit_complete
+#print axioms checkAnn_acc_complete
+#print axioms checkAnn_pub_complete
+#print axioms checkPlan_complete
+#print axioms checkPlan_iff
+#print axioms mem_prefixAnn
+#print axioms checkAccMat_of_rest
 
 end LeanNCD.Semantics.Program.Plan
