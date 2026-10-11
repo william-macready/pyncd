@@ -4250,11 +4250,12 @@ condition 2 covering plus Section 29.3 condition 4 (`accFlat_complete`, packaged
 `complete_of_refState` consumes it directly. That the Nodup half of Section 29.3 condition 1
 follows from the per-step `AccOK` success is a conjecture, not proved. Runtime execution (`runPlan`)
 does not detect an invalid plan: soundness rests on the computable checker `checkPlan`, whose
-acceptance implies `Valid` (`checkPlan_sound`).
+acceptance implies `Valid` (`checkPlan_sound`) and every `Valid` plan is accepted (`checkPlan_complete`), so
+`checkPlan` decides `Valid` exactly (`checkPlan_iff`).
 
 Slice 2: Definition 31.1 for a fused plan is Definition 31.1 of its expansion (`FValid`). The slice-1
-`checkSteps` ignores a fused command, so the checker for fused plans is `checkPlanF` (sound:
-`checkPlanF_sound`). The empty command is accepted. Runtime execution still does not detect an invalid
+`checkSteps` ignores a fused command, so the checker for fused plans is `checkPlanF` (sound and complete:
+`checkPlanF_sound`, `checkPlanF_complete`). The empty command is accepted. Runtime execution still does not detect an invalid
 fusion (`misfused-run-undetected`).
 
 ### 31.2 Initial states and successful-step simulation
@@ -4710,7 +4711,7 @@ occurrence coverage, barriers, domain behavior, and safe reuse.
 The compilation-layer proof targets are:
 
 - Typed plan annotations and sound validation of their coverage and order.
-  *Proved for the slice-1 profile* (`Valid`, `checkPlan_sound`; fused plans: `FValid`, `checkPlanF_sound`).
+  *Proved for the slice-1 profile* (`Valid`, `checkPlan_sound`, `checkPlan_complete`; fused plans: `FValid`, `checkPlanF_sound`, `checkPlanF_complete`).
 - Resource views, concrete states, and the representation relation,
   including empty shapes and untouched zero accumulators.
   *Proved for the slice-1 profile* (dense non-reused storage: `SlotView`, `R`, `R_start`).

@@ -68,8 +68,8 @@ Tool-use counts are harness counts (CHECKPOINT §7: self-reports ran about 20 pe
   run in parallel on disjoint files.
 - Open items resolved / parked (plan section 10): the 11 OPEN audit cells, the A2-e invalid-plan
   distinguishers, the Nodup/Fresh shadowing proof, D8 and the stale `Semantics/AGENTS.md` `Tests`
-  sentence are all closed (sections below). Still parked: a proof that `checkAccMat` is implied by
-  the other clauses (observed on four attempted plans, not proved), and the slice-2 deferrals D7, D11,
+  sentence are all closed (sections below). Still parked at the time: a proof that `checkAccMat` is implied by
+  the other clauses (observed on four attempted plans, not proved; since proved, last section), and the slice-2 deferrals D7, D11,
   D12 (implementation errors, multiple sorts in fixtures, `In ∩ Out`).
 - Token total (`token-report.py`, this session only; prototype sessions A1-A3b are separate): 55.5M
   across the controller (18.5M, peak context 241k, 120 turns) and 12 dispatches, against the
@@ -167,7 +167,8 @@ Also covered by run-level evidence from the same fixtures: the `execPub` already
 row (`dupWithin` done 3 `[0,16,0]`, double-counted). No unsound plan found, no silent clause.
 For every EQUIVALENT cell the hand mutant breaks `checkPlan_sound` before any fixture is reached,
 so the claim "shadowed" rested on the fixtures when this slice closed. The parked-items slice below
-proves it for the Nodup/Fresh pairs; `checkAccMat` stays observed only.
+proves it for the Nodup/Fresh pairs; `checkAccMat` stays observed only (proved in the checker-completeness
+pass at the end of this record).
 
 Harness tool uses: dispatch A 36 (cap 40), dispatch B 39 (cap 38; one `cd` plus a heredoc edit used
 against the plain-command rule). Session token total after this slice (`token-report.py`): 71.5M.
@@ -200,3 +201,24 @@ uses): no Critical or Important findings, five Minor, all applied: (1) fixture s
 (3) verdict rows and `decide` examples added so the build asserts both A2-e plans are
 `checkPlan`-invalid (`invalid-a2e-seq-visible`, `invalid-a2e-failed-vs-stuck`); (4) the pairing
 claim qualified to singleton plans; (5) the D8 sentence now says "for every `a ∈ B`".
+
+## Checker completeness and `checkAccMat` shadowing (Direct path, proofs only)
+
+Closes the two parked proof items. No new definitions and no production change beyond theorems in
+`Plan/Validity.lean` and `Plan/FusionCorrectness.lean`; no sorry, axioms `propext`, `Classical.choice`,
+`Quot.sound`.
+
+- `checkPlan_complete : π.Valid → π.checkPlan = true`, assembled from `checkInit_complete`,
+  `checkAnn_acc_complete`, `checkAnn_pub_complete` (each the converse of its `*_sound` lemma) and the
+  coverage fields; `checkPlan_iff` states the equivalence, and `checkPlanF_complete`/`checkPlanF_iff` are
+  its one-line fused corollaries (`FValid` is `Valid` of the expansion).
+- `checkAccMat_of_rest`: with `checkSingleton`, `checkCov2Complete`, `checkInit` at every `initZero` and
+  `checkPubMat` at every `pub`, `checkAccMat` holds at every `acc`. The argument: cov2Complete publishes
+  the target `a` at some `pub`; `checkPubMat` gives an `initZero` of `a` below that `pub`; if that
+  `initZero` came after the `acc`, the consumed occurrence would target `a` there and `checkInit` would
+  reject it, so it comes before. Hence the clause is shadowed, now proved and not only observed. It is kept
+  in the checker. Condition 4 and `checkAccFresh` are not needed.
+- Hand mutants, each caught by the build: `checkReady` made stricter than `Valid` (fails
+  `checkAnn_acc_complete`); `checkCov2Complete` made vacuous (fails `checkAccMat_of_rest`, and also the
+  soundness and completeness proofs that read it). Both mutants also break an existing `*_sound` lemma, since
+  they change a clause's shape; the new theorems are tied to the clause structure, not only to its truth.

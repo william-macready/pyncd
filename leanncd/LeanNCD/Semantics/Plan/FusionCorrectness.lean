@@ -32,6 +32,10 @@ def checkPlanF (π : P.Plan) : Bool := π.expand.checkPlan
 
 theorem checkPlanF_sound (h : π.checkPlanF = true) : π.FValid := checkPlan_sound π.expand h
 
+theorem checkPlanF_complete (h : π.FValid) : π.checkPlanF = true := checkPlan_complete π.expand h
+
+theorem checkPlanF_iff : π.checkPlanF = true ↔ π.FValid := checkPlan_iff π.expand
+
 end Check
 
 /-- At the end of the run the command prefix of the fused plan and the annotation prefix of the
@@ -210,6 +214,8 @@ theorem done_iff_model_F (hv : π.FValid) (η : P.Input) :
     exact ⟨_, M', h⟩
 
 #print axioms checkPlanF_sound
+#print axioms checkPlanF_complete
+#print axioms checkPlanF_iff
 #print axioms runPlan_agree
 #print axioms runFrom_R_F
 #print axioms runPlan_R_F
