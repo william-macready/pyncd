@@ -68,12 +68,14 @@ Also pinned, lower risk: `dead` (R5) and `retPub` (R6) preservation in `step_ini
 | retire before a reader | no | `ReadyOK` at the reader | reader `stuck` | no (stuck) | `retire-read-after` |
 | retire an output | no | `RetOK` not-an-output | `done`, decode `none` | YES | `retire-output` |
 | retire an unpublished address | no | `RetOK` `Pub` half | later `pub` `stuck` | no (stuck, late) | `retire-unpublished` |
+| retire an unpublished address BEFORE its `initZero` (added after the whole-branch review) | no | `RetOK` `Pub` half | clearing an empty slot is a no-op: `done`, every value correct | YES | `retire-before-init` |
+| several distinct addresses in one block: all valid / the second one unpublished (added after the review) | yes / no | `RetOK` over every member (`checkRet` is `B.all`) | all cleared, `done` / the second member's accumulator is cleared, later `pub` `stuck` | no | `retire-multi-distinct`, `retire-multi-second-unpublished` |
 | retire the same address twice (two commands) | no (diagnostic) | `RetOK` `not Ret` half | `done`, same memory | YES | `retire-twice` |
 | duplicate inside one block | yes | none | `done` | n/a | `retire-dup-in-block` |
 | fused, retire after / before a reader | yes / no | `checkPlanF` | `done` / `stuck` | no | `retire-fused-after-read`, `retire-fused-before-read` |
 | retire an input | not expressible | type (`DefAddr P`) | n/a | n/a | none (comment in the module) |
 
-The two YES cells (retire an output; retire twice) are the silently-ignored cells: the run cannot see them, only `checkPlan` can. Both are pinned by `retire-output` and `retire-twice`, and both fixtures carry a verdict `false` that S3-M3 (checker always true) flips.
+The three YES cells (retire an output; retire twice; retire before `initZero`) are the silently-ignored cells: the run cannot see them, only `checkPlan` can. They are pinned by `retire-output`, `retire-twice` and `retire-before-init`, and each fixture carries a verdict `false` that S3-M3 (checker always true) flips (hand-probed: `retire-before-init` also flips when only the live clause of `checkRet` is dropped). The `-multi-` rows and `retire-fault-fused-after-retire` were added after the whole-branch review (see the record, "Deferred minors resolved"); the counts quoted above for T4 are as shipped by the patch.
 
 ## File structure
 
