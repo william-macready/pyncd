@@ -195,6 +195,7 @@ theorem runPlan_not_stuck (hv : π.Valid) (η : P.Input) (pc : Nat) (M : Memory 
   rcases runPlan_R ops hv η with ⟨_, _, h, -⟩ | ⟨_, _, _, _, _, h, -⟩ <;> rw [h] <;> simp
 
 #print axioms step_not_stuck
+#print axioms execAnns_not_stuck
 #print axioms run_R
 #print axioms runPlan_R
 #print axioms runPlan_not_stuck

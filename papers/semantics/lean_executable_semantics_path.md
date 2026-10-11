@@ -61,8 +61,8 @@ validated reference executor and its exact-rational fixtures are now verified;
 both final whole-branch code-review lenses are clean.
 The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer))
 is in the snapshot above, extended by slice 2 to fused commands: ten modules under `Semantics/Plan/`
-proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 171 fixtures and a 34-cycle mutation
-manifest (20 in slice 1, 14 in slice 2).
+proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 176 fixtures and a 35-cycle mutation
+manifest (20 in slice 1, 15 in slice 2).
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
 [`LeanNCD`](../../leanncd/LeanNCD.lean). They are a semantic validation layer,
@@ -1087,7 +1087,7 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
 - `Plan/Fusion`: fold lemmas for a fused command (`execAnns_R`, `step_R_command`, `step_failed_command`,
   `stepCommand_not_stuck`) and the run bridge `runFrom_agree`/`runPlan_agree` between a fused plan and
   its expansion. (`expand` and `offset` live in `Plan/Syntax`, `execAnns` in `Plan/Step`.)
-- `Plan/FusionCorrectness`: `FValid`, `checkPlanF`/`checkPlanF_sound`, `runPlan_R_F`, `terminal_adequacy_F`
+- `Plan/FusionCorrectness`: `FValid`, `checkPlanF`/`checkPlanF_sound`, `runFrom_R_F`, `runPlan_R_F`, `terminal_adequacy_F`
   and the compiled-correctness theorems `done_correct_F` ... `done_iff_model_F`.
 
 #### Plan-layer theorems
@@ -1133,10 +1133,10 @@ materialised address, never reused), no retirement, error-free kernels. Soundnes
 (singleton plans) or `checkPlanF` (fused plans): the run does not detect an invalid plan. The spec's
 restatements are the paragraphs headed "As formalized (slice-1 and slice-2 profile ...)" in Sections
 29.3, 30.2, 30.4, 31.1-31.4 and 32.1 of the
-[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 171
+[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 176
 fixtures (129 in slice 1: 96 shipped with the layer, 27 added when its audit cells were closed, 6 in the
-parked-items slice; plus 42 in slice 2: 18 + 16 + 8); the mutation manifests
-ran 34 mutation cycles (20 in slice 1, 14 in slice 2), of which 4 are labelled equivalent (3 in slice 1;
+parked-items slice; plus 47 in slice 2: 18 + 16 + 13); the mutation manifests
+ran 35 mutation cycles (20 in slice 1, 15 in slice 2), of which 4 are labelled equivalent (3 in slice 1;
 S2-M4 at fixture level).
 
 #### What slices 1 and 2 do not do

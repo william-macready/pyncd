@@ -3935,6 +3935,11 @@ must satisfy:
 4. Every occurrence in $\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)$ is in an accumulation group
    before the block publishing $a$.
 
+"Before" in conditions 3 and 4 is the expanded order, including between annotations of one command:
+a later annotation of a command may read an address published earlier in the same command, and an
+annotation that reads or publishes too early inside a command violates the condition exactly as it would
+across two commands. A command may be empty (a no-op that changes no state or set).
+
 These conditions preserve all actual contributions and every declared
 defined coordinate, including empty fibers. They also ensure the readiness
 and completion premises of [Section 29.2](#292-accumulation-and-publication-contracts) at each successful prefix.
@@ -4276,8 +4281,10 @@ $$
 The matching reference segment must implement the command's declared
 annotations. A batch may match many contribution steps; a block publication
 may match many publication steps; a pure storage change matches zero steps.
-A fused command must justify the same intermediate logical barriers as
-its annotation sequence.
+$\mathcal{R}_{\Pi}$ is claimed only at command boundaries ([Section 30.4](#304-the-refinement-relation-and-output-decoder)).
+The reference segment matched by a fused command is the concatenation of the segments of its annotations
+in the expanded order of [Section 29.3](#293-coverage-and-schedule-certificates); the intermediate states
+inside the command are not concrete states of $\Pi$ and carry no $\mathcal{R}_{\Pi}$ obligation.
 
 This is a **forward simulation with stuttering**: a concrete step may
 leave the reference state unchanged. It is not enough, by itself, to prove
@@ -4292,9 +4299,9 @@ only, not for every R-related state. `R_start` is the initialization obligation,
 steps over the whole plan. Slice 2: simulation for a command is the fold of the per-annotation steps. From
 $R\land\textcolor{#A87C28}{\mathsf{Conf}}=\mathtt{refState}\ \textcolor{#C16C86}{\mathsf{pc}}$ and `AnnOK` at each expanded position
 `offset pc + j` of the command, `stepCommand = ok` gives `R` and the reference state at `pc + 1`
-(`step_R_command`); progress holds under `FValid` (`stepCommand_not_stuck`). The requirement "same
-intermediate logical barriers" is replaced by `FValid`, the validity of the expansion; the requirement itself has
-no further formal content here (spec defect D13, recorded in `plan_layer_slice2_record.md`).
+(`step_R_command`); progress holds under `FValid` (`stepCommand_not_stuck`). The concatenation requirement
+above is `step_R_command`'s fold over the expanded order, and the per-position side conditions are `FValid`,
+the validity of the expansion.
 
 ### 31.3 Failure matching, progress, and finishing
 
@@ -4305,6 +4312,12 @@ $$
 \textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\longrightarrow}^{*}
 \textcolor{#A87C28}{\mathsf{Failed}}(\textcolor{#9D75C4}{o},\textcolor{#A87C28}{\sigma}',\textcolor{#A87C28}{\alpha}',\textcolor{#A87C28}{U}').
 $$
+
+For a fused command that fails at its $j$-th annotation, the matching reference segment is the segment of
+the $j-1$ preceding annotations of that command followed by the failing step. Whether the concrete memory
+reported with $\mathsf{PlanFailed}(o)$ keeps the effects of those preceding annotations (partial commit) or
+is the memory from before the command (rollback) is not constrained by the specification; a kernel
+chooses, and must justify the reference snapshot it matches.
 
 Thus the reported semantic failure is caused by an actual ready,
 undefined source occurrence. A generic kernel exception is not automatically
@@ -4331,9 +4344,10 @@ observation, not a theorem: neither variant is defined in Lean, the
 [mutation record](plan_layer_mutation_results.md) lists both as equivalent mutants, and the argument
 that no run outcome distinguishes them (from `dest_not_pub` and `acc_slot_isSome`) is informal.
 Slice 2: a failing annotation of a fused command rolls back the whole command, so `failed o pc M_pre`
-carries the memory from before the command. The reference runs the earlier annotations of the command and
-then fails with the same occurrence $o$ (`step_failed_command` per command, `runPlan_R_F` for the run: both state that some reference run reaches
-`Failed` on the same occurrence); unlike `step_failed`, the reference run needed is not the single `undefined`
+carries the memory from before the command (the choice of rollback left open above). The reference runs the
+earlier annotations of the command and then fails with the same occurrence $o$ (`step_failed_command` per
+command, `runFrom_R_F` and `runPlan_R_F` for the run: each states that some reference run reaches `Failed` on
+the same occurrence); unlike `step_failed`, the reference run needed is not the single `undefined`
 event from the related state, because earlier annotations of the command have already executed.
 Transactional versus sequential commit, which no slice-1 fixture told apart, is told apart by fused plans
 (`fused-failure-after`, `fused-scalar-bad`).

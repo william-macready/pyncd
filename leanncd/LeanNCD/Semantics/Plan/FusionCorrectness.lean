@@ -4,8 +4,9 @@ import LeanNCD.Semantics.Plan.Correctness
 /- Slice 2 (T3): Lemma 31.2 and Theorem 31.3 for FUSED plans, stated about `π.runPlan` of the
    fused plan `π` under `FValid π := π.expand.Valid`. The run bridge (`runPlan_agree`, in
    Fusion.lean) says the fused run and the run of the expansion agree on final memory (done) and
-   on the failing occurrence (failed), so the slice-1 run lemma lifts to command boundaries
-   (`runPlan_R_F`: R at pc = number of commands) and the terminal theorems keep their proofs.
+   on the failing occurrence (failed), so the slice-1 run lemma lifts to any command boundary
+   (`runFrom_R_F`; `runPlan_R_F` is its instance at pc = 0, with R at the end of the run, pc =
+   number of commands) and the terminal theorems keep their proofs.
    `done m M'` reports `m = π.commands.length` (the number of COMMANDS, not annotations): the
    pc field is never compared across the fused plan and its expansion. Theorem 31.3 failure
    case compares fails / no-model only (D5; a failed fused command reports the PRE-command
@@ -58,32 +59,49 @@ theorem decode_prefix_congr {π π' : P.Plan} {pc pc' : Nat}
   unfold Decode
   rw [hr]
 
-/-- **Run lemma for fused plans.** The slice-1 `runPlan_R` for a plan whose expansion is valid:
-    R holds at command boundaries, in particular at pc = number of commands when done. -/
-theorem runPlan_R_F (hv : π.FValid) (η : P.Input) :
-    (∃ M' c', π.runPlan ops (Start η) = .done π.commands.length M' ∧
+/-- **Mid-run run lemma for fused plans.** The slice-1 `run_R` from an arbitrary command boundary
+    `pc` of a plan whose expansion is valid: from `R` and the reference state at `pc`, the run of
+    the remaining commands ends `done` with `R` at the command count, or fails on a matched
+    occurrence. -/
+theorem runFrom_R_F (hv : π.FValid) (η : P.Input) (pc : Nat) (M : Memory K σ) (c : P.Running)
+    (hle : pc ≤ π.commands.length) (hR : π.R ops η pc M c) (hc : π.refState ops η pc = some c) :
+    (∃ M' c', π.runFrom ops pc M (π.commands.drop pc) = .done π.commands.length M' ∧
         π.refState ops η π.commands.length = some c' ∧ π.R ops η π.commands.length M' c' ∧
-        ∃ events, Execution P ops events (.running (P.initial η)) (.running c')) ∨
-    (∃ o pc' M' c' events, π.runPlan ops (Start η) = .failed o pc' M' ∧
-        Execution P ops events (.running (P.initial η)) (.failed o.1 o.2 c')) := by
-  have hag := runPlan_agree π ops (Start η)
-  rcases runPlan_R ops hv η with ⟨M', c', he, hc, hR, ev⟩ | ⟨o, pc', M', c', ev, he, hex⟩
+        ∃ events, Execution P ops events (.running c) (.running c')) ∨
+    (∃ o pc' M' c' events, π.runFrom ops pc M (π.commands.drop pc) = .failed o pc' M' ∧
+        Execution P ops events (.running c) (.failed o.1 o.2 c')) := by
+  have hag := runFrom_agree π ops (π.commands.drop pc) pc M rfl
+  have hoff : π.ann.drop (π.offset pc) = (π.commands.drop pc).flatten := by
+    rw [ann_eq_append π pc]
+    exact List.drop_left' rfl
+  have hd : π.expand.commands.drop (π.offset pc) =
+      (π.commands.drop pc).flatten.map (fun a => [a]) := by
+    simp only [expand, ← List.map_drop, hoff]
+  have hle' : π.offset pc ≤ π.expand.commands.length := by
+    have := congrArg List.length (ann_eq_append π pc)
+    simp only [List.length_append, offset] at this ⊢
+    simp only [expand, List.length_map]
+    omega
+  have hp := prefixAnn_eq_expand (π := π) pc
+  rcases run_R ops hv _ _ _ _ hd hle' (R_transport ops hp hR)
+      ((refState_prefix_congr ops hp).symm.trans hc) with
+    ⟨M', c', he, hc2, hR2, ev⟩ | ⟨o, pc', M', c', ev, he, hex⟩
   · rw [he] at hag
-    cases h : π.runPlan ops (Start η) with
+    cases h : π.runFrom ops pc M (π.commands.drop pc) with
     | done m M'' =>
       rw [h] at hag
       have hM : M'' = M' := hag
-      have hm := runFrom_done_pc ops π π.commands 0 (Start η) M'' m h
-      have hmm : m = π.commands.length := by simpa using hm
+      have hm := runFrom_done_pc ops π _ pc M M'' m h
+      have hmm : m = π.commands.length := by simp at hm; omega
       subst hM hmm
-      have hp := prefixAnn_done (π := π) (m := π.commands.length) rfl
+      have hq := prefixAnn_done (π := π) (m := π.commands.length) rfl
         (n := π.expand.commands.length) rfl
-      exact Or.inl ⟨_, c', rfl, (refState_prefix_congr (η := η) ops hp).trans hc,
-        R_transport ops hp.symm hR, ev⟩
+      exact Or.inl ⟨_, c', rfl, (refState_prefix_congr (η := η) ops hq).trans hc2,
+        R_transport ops hq.symm hR2, ev⟩
     | failed o'' pc'' M'' => rw [h] at hag; exact False.elim hag
     | stuck pc'' M'' => rw [h] at hag; exact False.elim hag
   · rw [he] at hag
-    cases h : π.runPlan ops (Start η) with
+    cases h : π.runFrom ops pc M (π.commands.drop pc) with
     | done m M'' => rw [h] at hag; exact False.elim hag
     | failed o'' pc'' M'' =>
       rw [h] at hag
@@ -91,6 +109,18 @@ theorem runPlan_R_F (hv : π.FValid) (η : P.Input) :
       subst ho
       exact Or.inr ⟨o'', pc'', M'', c', ev, rfl, hex⟩
     | stuck pc'' M'' => rw [h] at hag; exact False.elim hag
+
+/-- **Run lemma for fused plans.** The slice-1 `runPlan_R` for a plan whose expansion is valid:
+    when the run ends `done`, R holds at pc = number of commands (the end of the run). The
+    intermediate command boundaries are covered by `runFrom_R_F`. -/
+theorem runPlan_R_F (hv : π.FValid) (η : P.Input) :
+    (∃ M' c', π.runPlan ops (Start η) = .done π.commands.length M' ∧
+        π.refState ops η π.commands.length = some c' ∧ π.R ops η π.commands.length M' c' ∧
+        ∃ events, Execution P ops events (.running (P.initial η)) (.running c')) ∨
+    (∃ o pc' M' c' events, π.runPlan ops (Start η) = .failed o pc' M' ∧
+        Execution P ops events (.running (P.initial η)) (.failed o.1 o.2 c')) := by
+  simpa [runPlan] using runFrom_R_F ops hv η 0 (Start η) (P.initial η) (Nat.zero_le _)
+    (π.R_start ops η) (by simp [refState, prefixAnn_zero])
 
 /-- A fused plan with a valid expansion never gets stuck. -/
 theorem runPlan_not_stuck_F (hv : π.FValid) (η : P.Input) (pc : Nat) (M : Memory K σ) :
@@ -181,6 +211,7 @@ theorem done_iff_model_F (hv : π.FValid) (η : P.Input) :
 
 #print axioms checkPlanF_sound
 #print axioms runPlan_agree
+#print axioms runFrom_R_F
 #print axioms runPlan_R_F
 #print axioms runPlan_not_stuck_F
 #print axioms terminal_adequacy_F

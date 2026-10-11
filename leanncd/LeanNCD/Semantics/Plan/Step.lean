@@ -1,7 +1,8 @@
 import LeanNCD.Semantics.Plan.Memory
 
-/- Concrete plan execution (spec Section 30.1), slice-1 profile: validated
-   Start, singleton commands, and three kernels. `initZero` writes the
+/- Concrete plan execution (spec Section 30.1), slice-1/2 profile: validated
+   Start, commands (singleton or fused: `stepCommand` folds `execAnns` over the command's
+   annotations), and three kernels. `initZero` writes the
    accumulator identity; `acc` is TRANSACTIONAL: it evaluates every member
    body on the read view `readPub pc M` first and commits only if all
    succeed; `pub` is a role change that writes nothing. -/
