@@ -161,4 +161,96 @@ theorem stepCommand_not_stuck {pc : Nat} {cmd : Command P} {M : Memory K σ} {c 
     (R_transport ops hp hR) ((refState_prefix_congr (η := η) ops hp).symm.trans hc)
     (fun j a hj => π.expand_commands_getElem? (π.ann_getElem?_offset hcmd hj))
 
+/-! ### Run bridge (T3): a fused run and the run of its expansion agree -/
+
+/-- Two outcomes agree up to the stopping pc and the memory of a stopped run: `done` on the
+    same final memory, `failed` on the same occurrence, or both `stuck`. -/
+def PlanOutcome.Agree : PlanOutcome P → PlanOutcome P → Prop
+  | .done _ M, .done _ M' => M = M'
+  | .failed o _ _, .failed o' _ _ => o = o'
+  | .stuck _ _, .stuck _ _ => True
+  | _, _ => False
+
+/-- A `done` run stops at the start position plus the number of commands consumed. -/
+theorem runFrom_done_pc (π' : P.Plan) : ∀ (l : List (Command P)) (pc : Nat) (M M' : Memory K σ)
+    (m : Nat), π'.runFrom ops pc M l = .done m M' → m = pc + l.length
+  | [], pc, M, M', m, h => by
+    have h' : PlanOutcome.done pc M = .done m M' := h
+    have := (PlanOutcome.done.inj h').1
+    simp; omega
+  | cmd :: rest, pc, M, M', m, h => by
+    simp only [runFrom] at h
+    cases hs : π'.stepCommand ops pc M cmd with
+    | ok M₁ =>
+      rw [hs] at h
+      have := runFrom_done_pc π' rest (pc + 1) M₁ M' m h
+      simp; omega
+    | semFail o => rw [hs] at h; cases h
+    | stuck => rw [hs] at h; cases h
+
+/-- Running singleton commands built from `anns` is `execAnns` of `anns`, then the rest. -/
+theorem runFrom_append_anns (π' : P.Plan) : ∀ (anns : List (Ann P)) (n : Nat) (M : Memory K σ)
+    (ys : List (Command P)),
+    match π'.execAnns ops n M anns with
+    | .ok M' => π'.runFrom ops n M (anns.map (fun a => [a]) ++ ys) =
+        π'.runFrom ops (n + anns.length) M' ys
+    | .semFail o => ∃ pc M', π'.runFrom ops n M (anns.map (fun a => [a]) ++ ys) = .failed o pc M'
+    | .stuck => ∃ pc M', π'.runFrom ops n M (anns.map (fun a => [a]) ++ ys) = .stuck pc M'
+  | [], n, M, ys => by simp [execAnns]
+  | a :: as, n, M, ys => by
+    have key := stepCommand_single π' ops n M a
+    have e : n + (a :: as).length = n.succ + as.length := by simp; omega
+    cases hs : π'.execAnn ops n M a with
+    | ok M₁ =>
+      have ih := runFrom_append_anns π' as n.succ M₁ ys
+      simp only [execAnns, hs, List.map_cons, List.cons_append, runFrom, key, e]
+      cases he : π'.execAnns ops n.succ M₁ as <;> rw [he] at ih <;> exact ih
+    | semFail o => simp [execAnns, hs, runFrom, key]
+    | stuck => simp [execAnns, hs, runFrom, key]
+
+/-- **Run bridge.** From any command boundary `pc`, the fused run of the remaining commands and
+    the run of their expansion (from the expanded position `offset pc`) agree: same final memory
+    when done, same failing occurrence when failed. -/
+theorem runFrom_agree : ∀ (l : List (Command P)) (pc : Nat) (M : Memory K σ),
+    π.commands.drop pc = l →
+    (π.runFrom ops pc M l).Agree
+      (π.expand.runFrom ops (π.offset pc) M (l.flatten.map fun a => [a]))
+  | [], pc, M, _ => by simp [runFrom, PlanOutcome.Agree]
+  | cmd :: rest, pc, M, hl => by
+    have hcmd : π.commands[pc]? = some cmd := by rw [← List.head?_drop, hl]; rfl
+    have hrest : π.commands.drop (pc + 1) = rest := by rw [← List.tail_drop, hl]; rfl
+    have hoff : π.offset (pc + 1) = π.offset pc + cmd.length := by
+      simp [offset, prefixAnn_succ π hcmd]
+    have ha := runFrom_append_anns ops π.expand cmd (π.offset pc) M
+      (rest.flatten.map fun a => [a])
+    have hfl : (cmd :: rest).flatten.map (fun a => [a]) =
+        cmd.map (fun a => [a]) ++ rest.flatten.map (fun a => [a]) := by simp
+    rw [hfl]
+    simp only [runFrom]
+    have hstep : π.stepCommand ops pc M cmd = π.expand.execAnns ops (π.offset pc) M cmd := rfl
+    rw [hstep]
+    cases he : π.expand.execAnns ops (π.offset pc) M cmd with
+    | ok M' =>
+      rw [he] at ha
+      rw [ha, ← hoff]
+      exact runFrom_agree rest (pc + 1) M' hrest
+    | semFail o =>
+      rw [he] at ha
+      obtain ⟨pc', M'', h⟩ := ha
+      rw [h]
+      exact rfl
+    | stuck =>
+      rw [he] at ha
+      obtain ⟨pc', M'', h⟩ := ha
+      rw [h]
+      exact True.intro
+
+/-- `runFrom_agree` from the start: a fused plan's run and its expansion's agree. -/
+theorem runPlan_agree (M : Memory K σ) :
+    (π.runPlan ops M).Agree (π.expand.runPlan ops M) := by
+  have h := runFrom_agree π ops π.commands 0 M List.drop_zero
+  have e0 : π.offset 0 = 0 := by simp [offset, prefixAnn_zero]
+  rw [e0] at h
+  exact h
+
 end LeanNCD.Semantics.Program.Plan
