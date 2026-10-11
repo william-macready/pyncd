@@ -166,8 +166,8 @@ Every lemma and theorem here carries a mathematical argument. Which of them
 are also kernel-checked in Lean is recorded in
 [Proof status and numbered results](#proof-status-and-numbered-results). The
 [Part V](#part-v-compilation-and-refinement) compilation results Lemma 31.2, Theorem 31.3 and Lemma 32.1 are
-proved for the slice-1 profile (singleton commands, dense non-reused storage, no retirement; see the table);
-the general results, fused commands and buffer reuse have no Lean proof. Compiler correctness is
+proved for the slice-1 and slice-2 profile (singleton and fused commands, the latter by expansion; dense
+non-reused storage, no retirement; see the table); the general results and buffer reuse have no Lean proof. Compiler correctness is
 conditional on the stated certificates and kernel contracts; it is not a claim
 that an existing compiler satisfies them.
 Structural well-formedness alone establishes neither existence of a model
@@ -3949,7 +3949,8 @@ rules that out (`step_not_stuck`). Publication also requires materialisation: ev
 published block must have a slot, including addresses whose fiber is empty
 ([Section 31.1](#311-acceptance-and-explicit-rejection) gives the per-command form and the role of each
 clause). Slice 2: a command is a finite, possibly empty, list of annotations executed in order;
-conditions 1-4 are evaluated at expanded positions (`offset pc + j`) on the static sets $\mathrm{Pub}(n)$,
+the per-annotation conditions (3, 4 and the freshness/materialisation clauses; 1 and 2 are whole-plan) are
+evaluated at expanded positions (`offset pc + j`) on the static sets $\mathrm{Pub}(n)$,
 $\mathrm{Cons}(n)$, $\mathrm{Mat}(n)$, so "before" inside a command is the expanded order. The plan is valid when its
 expansion is valid (`FValid`, `checkPlanF`).
 
@@ -4175,7 +4176,8 @@ layout view `SlotView` maps exactly the addresses of $\mathrm{Pub}(\textcolor{#C
 - `Decode` at $\textcolor{#C16C86}{\mathsf{pc}}$ is partial. It succeeds iff every output coordinate is in $\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$ with an
   initialised slot (`decode_of_R` under R), and it never fills a missing coordinate.
 
-Slice 2: `R` and `refState` are indexed by expanded annotations; `R` is claimed at command boundaries
+Slice 2: `R` and `refState` are indexed by command count and computed from the expanded annotations of the
+first `pc` commands (`prefixAnn`); `R` is claimed at command boundaries
 only (`step_R_command`), and the intermediate states of a fused command exist only inside the fold.
 
 ## 31. Simulation and compiler correctness
@@ -4291,7 +4293,8 @@ steps over the whole plan. Slice 2: simulation for a command is the fold of the 
 $R\land\textcolor{#A87C28}{\mathsf{Conf}}=\mathtt{refState}\ \textcolor{#C16C86}{\mathsf{pc}}$ and `AnnOK` at each expanded position
 `offset pc + j` of the command, `stepCommand = ok` gives `R` and the reference state at `pc + 1`
 (`step_R_command`); progress holds under `FValid` (`stepCommand_not_stuck`). The requirement "same
-intermediate logical barriers" is discharged by `FValid`.
+intermediate logical barriers" is replaced by `FValid`, the validity of the expansion; the requirement itself has
+no further formal content here (spec defect D13, recorded in `plan_layer_slice2_record.md`).
 
 ### 31.3 Failure matching, progress, and finishing
 
@@ -4329,8 +4332,9 @@ observation, not a theorem: neither variant is defined in Lean, the
 that no run outcome distinguishes them (from `dest_not_pub` and `acc_slot_isSome`) is informal.
 Slice 2: a failing annotation of a fused command rolls back the whole command, so `failed o pc M_pre`
 carries the memory from before the command. The reference runs the earlier annotations of the command and
-then fails with the same occurrence $o$ (`step_failed_command` per command, `runPlan_R_F` for the run);
-unlike `step_failed`, the matched reference snapshot is the state after those earlier annotations.
+then fails with the same occurrence $o$ (`step_failed_command` per command, `runPlan_R_F` for the run: both state that some reference run reaches
+`Failed` on the same occurrence); unlike `step_failed`, the reference run needed is not the single `undefined`
+event from the related state, because earlier annotations of the command have already executed.
 Transactional versus sequential commit, which no slice-1 fixture told apart, is told apart by fused plans
 (`fused-failure-after`, `fused-scalar-bad`).
 
@@ -4691,14 +4695,14 @@ occurrence coverage, barriers, domain behavior, and safe reuse.
 The compilation-layer proof targets are:
 
 - Typed plan annotations and sound validation of their coverage and order.
-  *Proved for the slice-1 profile* (`Valid`, `checkPlan_sound`).
+  *Proved for the slice-1 profile* (`Valid`, `checkPlan_sound`; fused plans: `FValid`, `checkPlanF_sound`).
 - Resource views, concrete states, and the representation relation,
   including empty shapes and untouched zero accumulators.
   *Proved for the slice-1 profile* (dense non-reused storage: `SlotView`, `R`, `R_start`).
 - Refinement lemmas for individual kernels, block publication, and storage
   operations; composite lemmas for fused commands.
-  *Proved for the slice-1 profile's singleton kernels* (`step_R`, `step_failed`); composite lemmas for
-  fused commands remain a target.
+  *Proved for the slice-1 profile's singleton kernels* (`step_R`, `step_failed`) and, for fused commands
+  by expansion, the composite lemmas `step_R_command`, `step_failed_command`.
 - Preservation of explicit undefinedness when batching or sharing expressions.
   *Batching proved for the transactional singleton accumulate kernel* (`batch_execution`,
   `step_failed`); sharing remains a target.
@@ -4710,7 +4714,7 @@ The compilation-layer proof targets are:
 - Separate-buffer and two-buffer scan proofs, with full-history and
   terminal-only output contracts tested separately.
 
-Outside the slice-1 profile (singleton commands, dense non-reused storage, no retirement) these are
+Outside the slice-1 and slice-2 profile (singleton and fused commands, dense non-reused storage, no retirement) these are
 proposed contracts and proof targets, not kernel-checked results
 or claims about current compiler acceptance. The slice-1 results fix one concrete plan representation
 and kernel fragment (`LeanNCD.Semantics.Plan`); extending them requires

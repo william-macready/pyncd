@@ -1104,8 +1104,8 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
 | `terminal_adequacy`, `complete_of_refState` | At `done m M'` the reference state is complete and `Decode` gives its outputs | Lemma 31.2 |
 | `done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model` | `done` gives the unique model and the denotation; `failed` gives no model; the run is `done` iff a model exists | Theorem 31.3 |
 | `step_R_command` | From R and `Conf = refState pc`, with `AnnOK` at each expanded position, a successful fused command re-establishes R at `pc + 1` | Section 31.2 (fused) |
-| `step_failed_command` | A failing fused command is matched by the reference run of its earlier annotations and then one `undefined` event for the same occurrence | Section 31.3 (fused failure) |
-| `stepCommand_not_stuck` | A command of an `FValid` plan is never stuck | Section 31.3 (progress, fused) |
+| `step_failed_command` | From R and `Conf = refState pc`, a failing fused command is matched by some reference execution from `Conf` to `Failed` on the same occurrence (the execution may include the earlier annotations of the command) | Section 31.3 (fused failure) |
+| `stepCommand_not_stuck` | From R and `refState pc = some c`, a command of an `FValid` plan is never stuck | Section 31.3 (progress, fused) |
 | `runPlan_agree` | A fused plan and its expansion run to the same final memory, or fail at the same occurrence | run bridge (no spec result) |
 | `checkPlanF_sound` | An accepted fused plan satisfies `FValid` (Definition 31.1 of the expansion) | Definition 31.1 |
 | `terminal_adequacy_F`, `done_correct_F`, `failed_correct_F`, `done_or_failed_F`, `done_of_model_F`, `done_iff_model_F` | Lemma 31.2 and Theorem 31.3 for `FValid` fused plans | Lemma 31.2, Theorem 31.3 |
@@ -1118,10 +1118,11 @@ run in order. The design is expansion: `π.expand` is the plan whose commands ar
 `runPlan_agree` reuses the slice-1 proofs on the expansion. A failing annotation rolls back the whole
 command (the failure memory is the memory before the command), `R` is claimed at command boundaries only,
 and `done m` counts commands, not expanded annotations (so `Agree` compares final memory or failing
-occurrence, never the pc). The slice-1 `checkSteps` is vacuous on a fused command, so a mis-fused plan
-passes `checkPlan` and runs to `done` with a wrong value (`misfused-run-undetected`); `checkPlanF` rejects
-it. The case-by-class table (a1-a10, b-e: legal and forbidden intra-command dependencies, each pinned by a
-fixture) is section 2 of `plan_layer_slice2_plan.md`. Slice 2 changed two slice-1 statements
+occurrence, never the pc). The slice-1 `checkSteps` is vacuous on a fused command (slice-1 `checkPlan`
+rejects a fused plan only through `checkSingleton`), so the run does not detect a mis-fused plan:
+`misfused-run-undetected` runs to `done`, and `t4-a5-reinitMid` silently ends with a wrong value;
+`checkPlanF` rejects both. The case-by-class table (a1-a10, b-e: legal and forbidden intra-command
+dependencies; every cell but e (a theorem) and c (argued, not probed) is pinned by a fixture) is section 2 of `plan_layer_slice2_plan.md`. Slice 2 changed two slice-1 statements
 (`step_failed`, `step_failed_no_model`, now stated for `commands[pc]? = some [a]`) and three slice-1
 fixtures that had asserted "fused or empty is stuck".
 
