@@ -1,0 +1,74 @@
+[
+ {
+  "label": "D7-M1 a semantic failure wins over a fault at the same command",
+  "task": "D7",
+  "file": "LeanNCD/Semantics/Plan/Faults.lean",
+  "old": "    | some e => .error e pc M",
+  "new": "    | some e =>\n      match π.stepCommand ops pc M cmd with\n      | .semFail o => .run (.failed o pc M)\n      | _ => .error e pc M",
+  "targets": ["LeanNCD.Semantics.Plan.Faults", "Semantics.PlanFaultsTest"]
+ },
+ {
+  "label": "D7-M2 error reports the post-command memory, not the pre-command memory",
+  "task": "D7",
+  "file": "LeanNCD/Semantics/Plan/Faults.lean",
+  "old": "    | some e => .error e pc M",
+  "new": "    | some e => .error e pc (match π.stepCommand ops pc M cmd with | .ok M' => M' | _ => M)",
+  "targets": ["LeanNCD.Semantics.Plan.Faults", "Semantics.PlanFaultsTest"]
+ },
+ {
+  "label": "D7-M3 only the first position of a command is checked",
+  "task": "D7",
+  "file": "LeanNCD/Semantics/Plan/Faults.lean",
+  "old": "    match faultIn faults (π.offset pc) cmd.length with",
+  "new": "    match faultIn faults (π.offset pc) (min cmd.length 1) with",
+  "targets": ["LeanNCD.Semantics.Plan.Faults", "Semantics.PlanFaultsTest"]
+ },
+ {
+  "label": "D7-M4 the oracle is indexed by command position, not expanded position",
+  "task": "D7",
+  "file": "LeanNCD/Semantics/Plan/Faults.lean",
+  "old": "    match faultIn faults (π.offset pc) cmd.length with",
+  "new": "    match faultIn faults pc cmd.length with",
+  "targets": ["LeanNCD.Semantics.Plan.Faults", "Semantics.PlanFaultsTest"]
+ },
+ {
+  "label": "D7-M5 the last position of a command is missed",
+  "task": "D7",
+  "file": "LeanNCD/Semantics/Plan/Faults.lean",
+  "old": "    match faultIn faults (π.offset pc) cmd.length with",
+  "new": "    match faultIn faults (π.offset pc) (cmd.length - 1) with",
+  "targets": ["LeanNCD.Semantics.Plan.Faults", "Semantics.PlanFaultsTest"]
+ },
+ {
+  "label": "D7-M6 error reports the next command position",
+  "task": "D7",
+  "file": "LeanNCD/Semantics/Plan/Faults.lean",
+  "old": "    | some e => .error e pc M",
+  "new": "    | some e => .error e (pc + 1) M",
+  "targets": ["LeanNCD.Semantics.Plan.Faults", "Semantics.PlanFaultsTest"]
+ },
+ {
+  "label": "D7-M7 the last fault of a command is reported, not the first",
+  "task": "D7",
+  "file": "LeanNCD/Semantics/Plan/Faults.lean",
+  "old": "  (List.range k).findSome? (fun j => faults (n + j))",
+  "new": "  (List.range k).reverse.findSome? (fun j => faults (n + j))",
+  "targets": ["LeanNCD.Semantics.Plan.Faults", "Semantics.PlanFaultsTest"]
+ },
+ {
+  "label": "D7-M8 NoFaultsInPlan allows a fault one position beyond the plan (hypothesis too strong; proofs still compile)",
+  "task": "D7",
+  "file": "LeanNCD/Semantics/Plan/Faults.lean",
+  "old": "def NoFaultsInPlan (faults : Faults) : Prop := ∀ n, n < π.ann.length → faults n = none",
+  "new": "def NoFaultsInPlan (faults : Faults) : Prop := ∀ n, n < π.ann.length + 1 → faults n = none",
+  "targets": ["LeanNCD.Semantics.Plan.Faults", "Semantics.PlanFaultsTest"]
+ },
+ {
+  "label": "D7-M9 NoFaultsInPlan ignores the last plan position (hypothesis too weak)",
+  "task": "D7",
+  "file": "LeanNCD/Semantics/Plan/Faults.lean",
+  "old": "def NoFaultsInPlan (faults : Faults) : Prop := ∀ n, n < π.ann.length → faults n = none",
+  "new": "def NoFaultsInPlan (faults : Faults) : Prop := ∀ n, n < π.ann.length - 1 → faults n = none",
+  "targets": ["LeanNCD.Semantics.Plan.Faults", "Semantics.PlanFaultsTest"]
+ }
+]
