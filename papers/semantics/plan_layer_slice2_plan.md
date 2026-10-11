@@ -88,7 +88,7 @@ p2b/p2c; "-" = no manifest mutant targets the cell).
 | cell | case | legal | expanded check | slice-1 checker | pre-command check | pinning fixtures (name @ file) | mutant flip |
 |---|---|---|---|---|---|---|---|
 | a1 | `[acc G, pub B]`, B in G (32.3 fusion) | yes | R PubOK order | I | wrongly REJECT | `fused-reciprocal-acc-pub`, `fused-expand-valid-ap` @ PlanFusionTest; AP row of `fusedcorr-valid-agrees-with-expansion` @ PlanFusionCorrectnessTest | S2-M5 (valid-agrees `(false,false,false)`) |
-| a2 | `[pub B, acc G]`, G targets B | no | F PubOK order | I | I | `misfused-expand-rejected`, `misfused-slice1-checkSteps-vacuous`, `misfused-run-undetected` @ PlanFusionTest; `fusedcorr-misfused-verdicts` (`pubOrder@1`) @ PlanFusionCorrectnessTest | S2-M9 (verdict `(true,..)` vs `(false,..)`) |
+| a2 | `[pub B, acc G]`, G targets B | no | F PubOK order | I | F (PubOrder at the pre-command sets; probed, `t4-c-precommand-check-unsound`) | `misfused-expand-rejected`, `misfused-slice1-checkSteps-vacuous`, `misfused-run-undetected` @ PlanFusionTest; `fusedcorr-misfused-verdicts` (`pubOrder@1`) @ PlanFusionCorrectnessTest | S2-M9 (verdict `(true,..)` vs `(false,..)`) |
 | a3 | later annotation reads an address published earlier in the same command (32.3 relu) | yes | R ReadyOK at `n` | I | wrongly REJECT | `fused-scalar-good` @ PlanFusionTest; `fusedcorr-scalar-done-decode` @ PlanFusionCorrectnessTest; `t4-a3-chainPlan`, `t4-a3split-chainPlan` @ PlanFusionCheckerTest | S2-M12 (a3 `(false,[ready@1,pubOrder@2])` vs `true`), S2-M13, S2-M14 (only `t4-a3split-chainPlan`) |
 | a3mis | publication AFTER the read in one command (D15 pair of a3; `[acc0, acc1, pub1]`: accumulated earlier, published later; same `ready` clause as a4) | no | F ReadyOK (`ready@2`) | I | F | `t4-a3mis-chainReadFirst` @ PlanFusionCheckerTest (fused and donor memories differ, kinds agree) | S2-M12 (`pubOrder@1` vs `ready@2`) |
 | a4 | reader precedes producer: a later annotation reads an address before ANY accumulation (`[acc1, acc0]`, reader first) | no | F ReadyOK; runtime `readPub = none`, stuck, never a wrong value | I | F | `t4-a4-chainEarly` @ PlanFusionCheckerTest (`ready@1`, stuck, stuck). The "accumulated earlier, published later" instance is the a3mis fixture `[acc0, acc1, pub1]`; both fail the same `ready` clause and the fixtures pin the clause, not a difference between them | S2-M12 (`ready@2` vs `ready@1`), S2-M13 |
@@ -99,7 +99,7 @@ p2b/p2c; "-" = no manifest mutant targets the cell).
 | a9 | `[initZero B, pub B]`, empty fibers (N1) | yes | R PubOK Mat | I | wrongly REJECT | `t4-a9-lateEmptyInit` @ PlanFusionCheckerTest (`(true,[])`, `[0,14,0]`) | S2-M12 (`(false,[pubMat@2,initFresh@3])` vs `true`) |
 | a10 | empty command `[]` (D16) | yes | nothing required; stutter | rejected by `checkSingleton` | n/a | `fused-with-empty-commands`, `empty-step-is-identity` @ PlanFusionTest; `step-empty-command-noop` @ PlanStepTest; `invalid-empty-command` @ PlanValidityTest | OPEN: no manifest mutant targets the empty command (cost: 1 cycle; value fixtures pin the behaviour) |
 | b | Order4 per command | yes | `Order4` of `π.expand` | I | n/a | `misfused-expand-rejected` @ PlanFusionTest (a command mis-ordered for Order4 fails expanded `checkPlan`; p1 §2(b)) | S2-M9 |
-| c | AccOK/PubOK/InitOK evaluated at | expanded position, static | R | I | unsound for a2/a5 | a1/a3/a8/a9 valid fixtures above (a pre-command check would reject them), a2/a5 invalid fixtures above | pre-command column is ARGUED from the definitions, not probed: OPEN (cost: one scratch probe, no shipped change) |
+| c | AccOK/PubOK/InitOK evaluated at | expanded position, static | R | I | wrongly rejects a1/a3/a8/a9, wrongly accepts a5 (a6, a7 per step) | a1/a3/a8/a9 valid fixtures above (a pre-command check would reject them), a5 (and a6, a7) invalid fixtures above | PROBED (parked-items pass): `t4-c-precommand-check-unsound` and `t4-c-checkPlanF-verdicts` @ PlanFusionCheckerTest; the earlier table said a2 was accepted by the pre-command check, which was wrong: PubOrder at `Cons pc` rejects it |
 | d | semantic failure inside a fused command | transactional | `failed o pc M_pre` | n/a | n/a | `fused-failure-after`, `fused-failure-after-ap`, `fused-scalar-bad`, `fused-two-acc-different-tensors-bad` @ PlanFusionTest; `fusedcorr-failed-no-model`, `fusedcorr-failed-agrees-on-occurrence` @ PlanFusionCorrectnessTest | S2-M2 intended; fixture flips observed (P2d, 2.2): `fused-failure-after`, `fused-scalar-bad`, `fused-two-acc-different-tensors-bad` |
 | e | R claimed | command boundaries only | `step_R_command` (proved) | n/a | n/a | theorem, no fixture; `fusedcorr-valid-agrees-with-expansion` pins the run bridge | - |
 
@@ -501,3 +501,19 @@ Then update the auto-memory index entry "Part V Plan-layer slice 1" with the sli
 | O9 | P2a's missing-import concern for `Fusion.lean` | CLOSED: imports `Plan.Run`; whole chain built (T2 2973 jobs, T3 8606 jobs) | none |
 | O10 | no mutant targets the empty command (a10) | open; value fixtures pin it | 1 cycle if wanted |
 | O11 | no fixture puts a reading annotation after an EMPTY command; offset correctness with empty commands rests on the proof `prefixAnn_eq_expand` (no emptiness hypothesis); `fused-with-empty-commands` has no annotation reading the published view | open (review S-3, parked) | closing it needs one T4 fixture and regenerating patch 04 + manifest sha, about 1 small dispatch |
+
+### 5.1 Closure of O1, O2, O4, O5, O6, O10, O11 and review items W-3, W-4, W-6 (parked-items pass, after the merge)
+
+| id | closed by |
+|---|---|
+| O1 | spec text edited: 29.3 ("before" is the expanded order; empty command is a no-op), 31.2 (R only at command boundaries; reference segment of a fused command is the concatenation), 31.3 (failure of a fused command: preceding annotations' segment then the failing step; rollback vs partial commit left to the kernel) |
+| O2 | `lakefile.toml` whitespace run removed |
+| O4 | `runFrom_R_F` (`Plan.FusionCorrectness`), `runPlan_R_F` is now its instance at pc = 0 |
+| O5 / cell c | probed: `t4-c-precommand-check-unsound`, `t4-c-checkPlanF-verdicts`; the pre-command check wrongly rejects a1/a3/a8/a9, wrongly accepts a5/a6/a7, and DOES reject a2 (the table said "I": corrected) |
+| O6 | `Step.lean` header comment |
+| O10 | manifest entry S2-M15 (`execAnns` on `[]` is `.stuck`), tagged T4 |
+| O11, W-4 | `t4-a10-readAfterEmpty`, `t4-a10-checkPlanF-accepts-empty` |
+| W-3 | docstrings of `runPlan_R_F` and the module header of `FusionCorrectness.lean` |
+| W-6 | `#print axioms` for `step_R_command`, `step_failed_command`, `stepCommand_not_stuck`, `runFrom_agree` (Fusion), `execAnns_not_stuck` (Run), `runFrom_R_F` |
+
+Still open (not slice-2 parked items; each its own slice or proof): D7, D11, D12, buffer reuse and retirement, checker completeness, the `checkAccMat` shadowing proof.
