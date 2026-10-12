@@ -18,14 +18,13 @@ open Executor
 
 variable {K : S → Type} {σ : Declarations S} {r : Registry K}
 variable {P : Program K σ r} {π : P.Plan}
+variable [DecidableEq σ.Tensor]
 
 /-- Fusion validity: the expansion is valid (spec 29.3 "expand fused annotations in their
     stated order"). -/
 abbrev FValid (π : P.Plan) : Prop := π.expand.Valid
 
 section Check
-
-variable [DecidableEq σ.Tensor]
 
 /-- The slice-2 checker: the slice-1 checker on the expansion. -/
 def checkPlanF (π : P.Plan) : Bool := π.expand.checkPlan
@@ -38,6 +37,7 @@ theorem checkPlanF_iff : π.checkPlanF = true ↔ π.FValid := checkPlan_iff π.
 
 end Check
 
+omit [DecidableEq σ.Tensor] in
 /-- At the end of the run the command prefix of the fused plan and the annotation prefix of the
     expansion are both the whole annotation list. -/
 theorem prefixAnn_done {m n : Nat} (hm : m = π.commands.length) (hn : n = π.expand.commands.length) :
@@ -45,29 +45,42 @@ theorem prefixAnn_done {m n : Nat} (hm : m = π.commands.length) (hn : n = π.ex
   subst hm hn
   rw [prefixAnn_length, prefixAnn_length, expand_ann]
 
-variable [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
+variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
 variable (ops : (s : S) → ScalarOps (K s))
 
 omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
-/-- `Decode` depends on the plan only through the annotation prefix at its position. -/
+/-- `Decode` depends only on the allocation and annotation prefix at its position. -/
 theorem decode_prefix_congr {π π' : P.Plan} {pc pc' : Nat}
-    (h : π.prefixAnn pc = π'.prefixAnn pc') (M : Memory K σ) :
-    π.Decode pc M = π'.Decode pc' M := by
-  have hr : π.readPub pc = π'.readPub pc' := by
-    funext M a
-    have hp : π.Live pc a ↔ π'.Live pc' a := by simp [Live, Pub, Ret, pubList, retList, h]
-    unfold readPub
-    by_cases hπ : π.Live pc a
-    · rw [if_pos hπ, if_pos (hp.mp hπ)]
-    · rw [if_neg hπ, if_neg (fun h' => hπ (hp.mpr h'))]
-  unfold Decode
-  rw [hr]
+    (hA : π.allocation = π'.allocation) (h : π.prefixAnn pc = π'.prefixAnn pc')
+    (M : Memory K π.allocation) :
+    π.Decode pc M = π'.Decode pc' (cast (congrArg (Memory K) hA) M) := by
+  cases π with
+  | mk ts hn hc cmds A =>
+    cases π' with
+    | mk ts' hn' hc' cmds' A' =>
+      dsimp at hA
+      subst A'
+      let π : P.Plan := ⟨ts, hn, hc, cmds, A⟩
+      let π' : P.Plan := ⟨ts', hn', hc', cmds', A⟩
+      change π.prefixAnn pc = π'.prefixAnn pc' at h
+      change π.Decode pc M = π'.Decode pc' M
+      have hr : π.readPub pc = π'.readPub pc' := by
+        funext M a
+        have hp : π.Live pc a ↔ π'.Live pc' a := by
+          simp [Live, Pub, Ret, pubList, retList, h]
+        unfold readPub
+        by_cases hπ : π.Live pc a
+        · rw [if_pos hπ, if_pos (hp.mp hπ)]
+        · rw [if_neg hπ, if_neg (fun h' => hπ (hp.mpr h'))]
+      unfold Decode
+      rw [hr]
 
 /-- **Mid-run run lemma for fused plans.** The slice-1 `run_R` from an arbitrary command boundary
     `pc` of a plan whose expansion is valid: from `R` and the reference state at `pc`, the run of
     the remaining commands ends `done` with `R` at the command count, or fails on a matched
     occurrence. -/
-theorem runFrom_R_F (hv : π.FValid) (η : P.Input) (pc : Nat) (M : Memory K σ) (c : P.Running)
+theorem runFrom_R_F (hv : π.FValid) (η : P.Input) (pc : Nat)
+    (M : Memory K π.allocation) (c : P.Running)
     (hle : pc ≤ π.commands.length) (hR : π.R ops η pc M c) (hc : π.refState ops η pc = some c) :
     (∃ M' c', π.runFrom ops pc M (π.commands.drop pc) = .done π.commands.length M' ∧
         π.refState ops η π.commands.length = some c' ∧ π.R ops η π.commands.length M' c' ∧
@@ -87,7 +100,7 @@ theorem runFrom_R_F (hv : π.FValid) (η : P.Input) (pc : Nat) (M : Memory K σ)
     simp only [expand, List.length_map]
     omega
   have hp := prefixAnn_eq_expand (π := π) pc
-  rcases run_R ops hv _ _ _ _ hd hle' (R_transport ops hp hR)
+  rcases run_R ops hv _ _ M _ hd hle' (R_transport ops (π := π) (π' := π.expand) rfl hp hR)
       ((refState_prefix_congr ops hp).symm.trans hc) with
     ⟨M', c', he, hc2, hR2, ev⟩ | ⟨o, pc', M', c', ev, he, hex⟩
   · rw [he] at hag
@@ -101,7 +114,7 @@ theorem runFrom_R_F (hv : π.FValid) (η : P.Input) (pc : Nat) (M : Memory K σ)
       have hq := prefixAnn_done (π := π) (m := π.commands.length) rfl
         (n := π.expand.commands.length) rfl
       exact Or.inl ⟨_, c', rfl, (refState_prefix_congr (η := η) ops hq).trans hc2,
-        R_transport ops hq.symm hR2, ev⟩
+        R_transport ops (π := π.expand) (π' := π) rfl hq.symm hR2, ev⟩
     | failed o'' pc'' M'' => rw [h] at hag; exact False.elim hag
     | stuck pc'' M'' => rw [h] at hag; exact False.elim hag
   · rw [he] at hag
@@ -118,23 +131,25 @@ theorem runFrom_R_F (hv : π.FValid) (η : P.Input) (pc : Nat) (M : Memory K σ)
     when the run ends `done`, R holds at pc = number of commands (the end of the run). The
     intermediate command boundaries are covered by `runFrom_R_F`. -/
 theorem runPlan_R_F (hv : π.FValid) (η : P.Input) :
-    (∃ M' c', π.runPlan ops (Start η) = .done π.commands.length M' ∧
+    (∃ M' c', π.runPlan ops (π.Start η) = .done π.commands.length M' ∧
         π.refState ops η π.commands.length = some c' ∧ π.R ops η π.commands.length M' c' ∧
         ∃ events, Execution P ops events (.running (P.initial η)) (.running c')) ∨
-    (∃ o pc' M' c' events, π.runPlan ops (Start η) = .failed o pc' M' ∧
+    (∃ o pc' M' c' events, π.runPlan ops (π.Start η) = .failed o pc' M' ∧
         Execution P ops events (.running (P.initial η)) (.failed o.1 o.2 c')) := by
-  simpa [runPlan] using runFrom_R_F ops hv η 0 (Start η) (P.initial η) (Nat.zero_le _)
+  simpa [runPlan] using runFrom_R_F ops hv η 0 (π.Start η) (P.initial η) (Nat.zero_le _)
     (π.R_start ops η) (by simp [refState, prefixAnn_zero])
 
 /-- A fused plan with a valid expansion never gets stuck. -/
-theorem runPlan_not_stuck_F (hv : π.FValid) (η : P.Input) (pc : Nat) (M : Memory K σ) :
-    π.runPlan ops (Start η) ≠ .stuck pc M := by
+theorem runPlan_not_stuck_F (hv : π.FValid) (η : P.Input) (pc : Nat)
+    (M : Memory K π.allocation) :
+    π.runPlan ops (π.Start η) ≠ .stuck pc M := by
   rcases runPlan_R_F ops hv η with ⟨_, _, h, -⟩ | ⟨_, _, _, _, _, h, -⟩ <;> rw [h] <;> simp
 
 /-- **Lemma 31.2 (terminal adequacy), fused.** As `terminal_adequacy`, for the fused plan:
     `m` is the number of commands. -/
-theorem terminal_adequacy_F (hv : π.FValid) (η : P.Input) {m : Nat} {M' : Memory K σ}
-    (hrun : π.runPlan ops (Start η) = .done m M') :
+theorem terminal_adequacy_F (hv : π.FValid) (η : P.Input) {m : Nat}
+    {M' : Memory K π.allocation}
+    (hrun : π.runPlan ops (π.Start η) = .done m M') :
     m = π.commands.length ∧ ∃ c, π.refState ops η m = some c ∧ π.R ops η m M' c ∧
       ∃ complete : P.Complete c,
         π.Decode m M' = some (P.outputProjection (P.finalStore c complete)) := by
@@ -161,8 +176,8 @@ theorem terminal_adequacy_F (hv : π.FValid) (η : P.Input) {m : Nat} {M' : Memo
     cases h
 
 /-- **Theorem 31.3 (a), fused.** -/
-theorem done_correct_F (hv : π.FValid) (η : P.Input) {m : Nat} {M' : Memory K σ}
-    (hrun : π.runPlan ops (Start η) = .done m M') :
+theorem done_correct_F (hv : π.FValid) (η : P.Input) {m : Nat} {M' : Memory K π.allocation}
+    (hrun : π.runPlan ops (π.Start η) = .done m M') :
     ∃ c, ∃ success : P.Successful ops η c,
       (∀ ρ, P.Models ops η ρ ↔ ρ = P.finalStore c success.2) ∧
       π.Decode m M' = some (P.outputProjection (P.finalStore c success.2)) ∧
@@ -178,7 +193,7 @@ theorem done_correct_F (hv : π.FValid) (η : P.Input) {m : Nat} {M' : Memory K 
 /-- **Theorem 31.3 (b), fused.** A `failed` fused run means no model exists (D5, D14: neither
     the failing occurrence nor the pre-command memory is compared). -/
 theorem failed_correct_F (hv : π.FValid) (η : P.Input) {o : OccRef P} {pc : Nat}
-    {M' : Memory K σ} (hrun : π.runPlan ops (Start η) = .failed o pc M') :
+    {M' : Memory K π.allocation} (hrun : π.runPlan ops (π.Start η) = .failed o pc M') :
     ¬ ∃ ρ, P.Models ops η ρ := by
   rcases runPlan_R_F ops hv η with ⟨_, _, h, -⟩ | ⟨o', _, _, c', _, _, hex⟩
   · rw [hrun] at h
@@ -187,8 +202,8 @@ theorem failed_correct_F (hv : π.FValid) (η : P.Input) {o : OccRef P} {pc : Na
 
 /-- **Theorem 31.3 (c), error-free profile, fused.** -/
 theorem done_or_failed_F (hv : π.FValid) (η : P.Input) :
-    (∃ M', π.runPlan ops (Start η) = .done π.commands.length M') ∨
-      ∃ o pc M', π.runPlan ops (Start η) = .failed o pc M' := by
+    (∃ M', π.runPlan ops (π.Start η) = .done π.commands.length M') ∨
+      ∃ o pc M', π.runPlan ops (π.Start η) = .failed o pc M' := by
   rcases runPlan_R_F ops hv η with ⟨M', _, h, -⟩ | ⟨o, pc, M', _, _, h, -⟩
   · exact Or.inl ⟨M', h⟩
   · exact Or.inr ⟨o, pc, M', h⟩
@@ -196,7 +211,7 @@ theorem done_or_failed_F (hv : π.FValid) (η : P.Input) :
 /-- **Theorem 31.3 (c), converse, fused.** -/
 theorem done_of_model_F (hv : π.FValid) (η : P.Input) {ρ : Store K σ}
     (hρ : P.Models ops η ρ) :
-    ∃ M', π.runPlan ops (Start η) = .done π.commands.length M' ∧
+    ∃ M', π.runPlan ops (π.Start η) = .done π.commands.length M' ∧
       π.Decode π.commands.length M' = some (P.outputProjection ρ) := by
   rcases done_or_failed_F ops hv η with ⟨M', h⟩ | ⟨_, _, _, h⟩
   · obtain ⟨c, success, hmod, hd, -⟩ := done_correct_F ops hv η h
@@ -206,7 +221,7 @@ theorem done_of_model_F (hv : π.FValid) (η : P.Input) {ρ : Store K σ}
 
 /-- (b) + (c), fused: the run is `done` iff a model exists. -/
 theorem done_iff_model_F (hv : π.FValid) (η : P.Input) :
-    (∃ m M', π.runPlan ops (Start η) = .done m M') ↔ ∃ ρ, P.Models ops η ρ := by
+    (∃ m M', π.runPlan ops (π.Start η) = .done m M') ↔ ∃ ρ, P.Models ops η ρ := by
   constructor
   · rintro ⟨m, M', h⟩
     obtain ⟨c, success, hmod, -⟩ := done_correct_F ops hv η h
@@ -218,6 +233,7 @@ theorem done_iff_model_F (hv : π.FValid) (η : P.Input) :
 #print axioms checkPlanF_sound
 #print axioms checkPlanF_complete
 #print axioms checkPlanF_iff
+#print axioms decode_prefix_congr
 #print axioms runPlan_agree
 #print axioms runFrom_R_F
 #print axioms runPlan_R_F
