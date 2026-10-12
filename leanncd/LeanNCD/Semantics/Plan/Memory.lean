@@ -61,6 +61,41 @@ theorem cast_option_none {s t : S} (h : s = t) :
   cases h
   rfl
 
+theorem readSlot_eq_cast {P : Program K σ r} (A : Allocation P)
+    (M : Memory K A) (a : Address σ) :
+    readSlot A M a =
+      cast (congrArg (fun s => Option (K s)) (place_sort A a)) (M (place A a)) := by
+  apply eq_of_heq
+  have hr : HEq (readSlot A M a) (M (place A a)) := by
+    by_cases h : P.input a.1 = true
+    · have e : place A a = .inl ⟨⟨a.1, h⟩,
+          (canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2⟩ := by
+        simp only [place, dif_pos h]
+      have hm : HEq (M (place A a)) (M (.inl ⟨⟨a.1, h⟩,
+          (canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2⟩)) := by rw [e]
+      simp only [readSlot, dif_pos h]
+      exact hm.symm
+    · let x : DefAddr P := ⟨⟨a.1, by cases hi : P.input a.1 <;> simp_all⟩, a.2⟩
+      have e : place A a = .inr (A.locate x).val := by
+        simp only [place, dif_neg h]
+        rfl
+      have hm : HEq (M (place A a)) (M (.inr (A.locate x).val)) := by rw [e]
+      simp only [readSlot, dif_neg h]
+      exact (cast_heq _ _).trans hm.symm
+  exact hr.trans (cast_heq _ _).symm
+
+theorem readSlot_heq {P : Program K σ r} (A : Allocation P)
+    (M : Memory K A) {a b : Address σ} (h : place A a = place A b) :
+    HEq (readSlot A M a) (readSlot A M b) := by
+  rw [readSlot_eq_cast, readSlot_eq_cast]
+  have hm : HEq (M (place A a)) (M (place A b)) := by rw [h]
+  exact (cast_heq _ _).trans (hm.trans (cast_heq _ _).symm)
+
+theorem readSlot_congr {P : Program K σ r} (A : Allocation P)
+    {M N : Memory K A} {a : Address σ} (h : M (place A a) = N (place A a)) :
+    readSlot A M a = readSlot A N a := by
+  simp only [readSlot_eq_cast, h]
+
 theorem place_injective {P : Program K σ r} (ts : List σ.Tensor)
     (hn : ts.Nodup) (hc : ∀ t, t ∈ ts) :
     Function.Injective (place (Allocation.canonical P ts hn hc)) := by
@@ -84,6 +119,17 @@ variable {P : Program K σ r} [DecidableEq σ.Tensor] (π : P.Plan)
 def SlotView (pc : Nat) : Resource P → Option (Slot π.allocation)
   | .pub a => if π.Live pc a then some (place π.allocation a) else none
   | .acc x => if π.Mat pc x ∧ ¬ π.Pub pc x.addr then some (place π.allocation x.addr) else none
+
+/-- Simultaneously represented resources occupy distinct physical slots. -/
+def LayoutOK (pc : Nat) : Prop :=
+  ∀ r₁ r₂ ξ, π.SlotView pc r₁ = some ξ → π.SlotView pc r₂ = some ξ → r₁ = r₂
+
+theorem LayoutOK.ne {π : P.Plan} {pc : Nat} (ok : π.LayoutOK pc)
+    {r₁ r₂ : Resource P} {ξ₁ ξ₂ : Slot π.allocation}
+    (h₁ : π.SlotView pc r₁ = some ξ₁) (h₂ : π.SlotView pc r₂ = some ξ₂)
+    (hne : r₁ ≠ r₂) : ξ₁ ≠ ξ₂ := by
+  intro e
+  exact hne (ok r₁ r₂ ξ₂ (e ▸ h₁) h₂)
 
 /-- The simple profile's injectivity of `λ` on its domain. -/
 theorem slotView_injective (hinj : Function.Injective (place π.allocation))
@@ -116,6 +162,11 @@ theorem slotView_injective (hinj : Function.Injective (place π.allocation))
       split_ifs at h₁ h₂
       cases h₁
       rw [DefAddr.addr_injective (hinj (Option.some.inj h₂))]
+
+theorem layoutOK_of_place_injective (hinj : Function.Injective (place π.allocation))
+    (pc : Nat) : π.LayoutOK pc := by
+  intro r₁ r₂ ξ h₁ h₂
+  exact π.slotView_injective hinj h₁ h₂
 
 /-- Concrete initialisation: validated inputs at their slots, every other slot
     uninitialised. Zero materialisation is an explicit `initZero` command. -/
@@ -348,6 +399,11 @@ theorem decode_of_R {η : P.Input} {pc : Nat} {M : Memory K π.allocation} {c : 
     exact (Option.some_get _).symm
 
 #print axioms place_injective
+#print axioms readSlot_eq_cast
+#print axioms readSlot_heq
+#print axioms readSlot_congr
+#print axioms LayoutOK.ne
+#print axioms layoutOK_of_place_injective
 #print axioms slotView_injective
 #print axioms start_noninput
 #print axioms decode_some
