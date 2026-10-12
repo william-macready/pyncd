@@ -7,17 +7,23 @@ namespace LeanNCD.Semantics.PlanFixtures
 open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
 
 -- One buffer per tensor: the three coordinates occupy three distinct slots.
-#eval check "place-indices" (block.map (fun x => (place x.addr).2.val)) [0, 1, 2]
+#eval check "place-indices"
+  (block.map (fun x => match place plan.allocation x.addr with
+    | .inl ξ => ξ.2.val
+    | .inr ξ => ξ.2.val)) [0, 1, 2]
 
-example : Function.Injective (place (σ := declarations)) := place_injective
+example : Function.Injective (place plan.allocation) :=
+  place_injective plan.tensors plan.tensors_nodup plan.tensors_complete
 
 -- Start installs validated inputs and leaves every other slot uninitialised.
-def scalarSlot (t : Fin 3) : Slot scalarDeclarations := ⟨t, ⟨0, Nat.zero_lt_one⟩⟩
+def scalarSlot (t : Fin 3) : Slot (scalarPlan true []).allocation :=
+  place (scalarPlan true []).allocation ⟨t, ()⟩
 
 #eval check "start-scalar"
-  ((List.finRange 3).map (fun t => Start (scalarInput true) (scalarSlot t)))
+  ((List.finRange 3).map (fun t => (scalarPlan true []).Start (scalarInput true) (scalarSlot t)))
   [some 7, none, none]
-#eval check "start-tagged" (block.map (fun x => Start η0 (place x.addr))) [none, none, none]
+#eval check "start-tagged"
+  (block.map (fun x => plan.Start η0 (place plan.allocation x.addr))) [none, none, none]
 
 -- The slot view depends only on pc and the commands.
 #eval check "slotview-acc"
@@ -28,15 +34,15 @@ def scalarSlot (t : Fin 3) : Slot scalarDeclarations := ⟨t, ⟨0, Nat.zero_lt_
   [false, false, false, true]
 
 -- R_start on both fixture programs.
-example : plan.R ops η0 0 (Start η0) start0 := plan.R_start ops η0
+example : plan.R ops η0 0 (plan.Start η0) start0 := plan.R_start ops η0
 example : (scalarPlan true []).R ops (scalarInput true) 0
-    (Start (scalarInput true)) ((scalarRole true).initial (scalarInput true)) :=
+    ((scalarPlan true []).Start (scalarInput true)) ((scalarRole true).initial (scalarInput true)) :=
   Plan.R_start _ ops _
 
 -- Decode is partial: it fails before publication and on a missing slot,
 -- and never supplies zeros.
 #eval check "decode"
-  (decodeRow (plan.Decode 0 (Start η0)), decodeRow (plan.Decode 2 mem3),
+  (decodeRow (plan.Decode 0 (plan.Start η0)), decodeRow (plan.Decode 2 mem3),
     decodeRow (plan.Decode 3 mem3), decodeRow (plan.Decode 3 mem3Hole))
   (none, none, some [0, 14, 0], none)
 

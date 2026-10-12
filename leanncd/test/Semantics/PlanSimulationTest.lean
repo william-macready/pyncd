@@ -14,13 +14,13 @@ theorem group_complete (y : OccRef taggedOut) : y ∈ group := by
 
 /-! ### The concrete memories of the run, by `stepPlan` -/
 
-def m1 : Memory Carrier declarations := execInit block (Start η0)
-def m2 : Memory Carrier declarations :=
+def m1 : Memory Carrier plan.allocation := plan.execInit block (plan.Start η0)
+def m2 : Memory Carrier plan.allocation :=
   match plan.stepPlan ops 1 m1 with | .ok M => M | _ => m1
-def m3 : Memory Carrier declarations :=
+def m3 : Memory Carrier plan.allocation :=
   match plan.stepPlan ops 2 m2 with | .ok M => M | _ => m2
 
-theorem run0 : plan.stepPlan ops 0 (Start η0) = .ok m1 := rfl
+theorem run0 : plan.stepPlan ops 0 (plan.Start η0) = .ok m1 := rfl
 theorem run1 : plan.stepPlan ops 1 m1 = .ok m2 := rfl
 theorem run2 : plan.stepPlan ops 2 m2 = .ok m3 := rfl
 
@@ -45,28 +45,32 @@ theorem ok2 : plan.AnnOK 2 (.pub block) := by
 
 /-- R holds at every pc along the actual run, with refState as the witness. -/
 theorem tagged_R_every_pc :
-    plan.R ops η0 0 (Start η0) start0 ∧
+    plan.R ops η0 0 (plan.Start η0) start0 ∧
     (∃ c, plan.refState ops η0 1 = some c ∧ plan.R ops η0 1 m1 c) ∧
     (∃ c, plan.refState ops η0 2 = some c ∧ plan.R ops η0 2 m2 c) ∧
     (∃ c, plan.refState ops η0 3 = some c ∧ plan.R ops η0 3 m3 c) := by
   have R0 := plan.R_start ops η0
   have hc0 : plan.refState ops η0 0 = some start0 := rfl
-  obtain ⟨c1, hc1, R1, -⟩ := step_R ops R0 hc0 rfl ok0 run0
-  obtain ⟨c2, hc2, R2, -⟩ := step_R ops R1 hc1 rfl ok1 run1
-  obtain ⟨c3, hc3, R3, -⟩ := step_R ops R2 hc2 rfl ok2 run2
+  have layout := plan.layoutOK_of_place_injective
+    (place_injective plan.tensors plan.tensors_nodup plan.tensors_complete)
+  obtain ⟨c1, hc1, R1, -⟩ := step_R ops R0 hc0 rfl ok0 (layout 0) (layout 1) run0
+  obtain ⟨c2, hc2, R2, -⟩ := step_R ops R1 hc1 rfl ok1 (layout 1) (layout 2) run1
+  obtain ⟨c3, hc3, R3, -⟩ := step_R ops R2 hc2 rfl ok2 (layout 2) (layout 3) run2
   exact ⟨R0, ⟨c1, hc1, R1⟩, ⟨c2, hc2, R2⟩, ⟨c3, hc3, R3⟩⟩
 
 -- The proved-related final memory is the one runPlan returns.
 example : finalMemory taggedRun = m3 := rfl
 #eval check "sim-tagged-m-rows"
-  ([m1, m2, m3].map (fun M => block.map (fun x => M (place x.addr))))
+  ([m1, m2, m3].map (fun M => block.map (fun x => readSlot plan.allocation M x.addr)))
   [[some 0, some 0, some 0], [some 0, some 14, some 0], [some 0, some 14, some 0]]
 
 /-! ### Failure matching on failureAfterBody -/
 
 abbrev FP := program 2 failureAfterBody
 
-def fm1 : Memory Carrier declarations := execInit (pBlock 2 failureAfterBody) (Start (pInput 2 failureAfterBody))
+def fm1 : Memory Carrier (pPlan 2 failureAfterBody).allocation :=
+  (pPlan 2 failureAfterBody).execInit (pBlock 2 failureAfterBody)
+    ((pPlan 2 failureAfterBody).Start (pInput 2 failureAfterBody))
 
 theorem fOk0 : (pPlan 2 failureAfterBody).AnnOK 0 (.initZero (pBlock 2 failureAfterBody)) := by
   intro x _
@@ -84,7 +88,10 @@ theorem failure_matched :
         (.running c) (.failed (pOcc 2 failureAfterBody 1).1 (pOcc 2 failureAfterBody 1).2 c) ∧
       ¬ ∃ ρ, FP.Models ops (pInput 2 failureAfterBody) ρ := by
   have R0 := (pPlan 2 failureAfterBody).R_start ops (pInput 2 failureAfterBody)
-  obtain ⟨c1, hc1, R1, -⟩ := step_R ops R0 rfl rfl fOk0 rfl
+  have layout := (pPlan 2 failureAfterBody).layoutOK_of_place_injective
+    (place_injective (pPlan 2 failureAfterBody).tensors
+      (pPlan 2 failureAfterBody).tensors_nodup (pPlan 2 failureAfterBody).tensors_complete)
+  obtain ⟨c1, hc1, R1, -⟩ := step_R ops R0 rfl rfl fOk0 (layout 0) (layout 1) rfl
   have notCons : ∀ G, [Ann.acc ((List.finRange 2).map (pOcc 2 failureAfterBody))] = [.acc G] →
       ∀ x ∈ G, ¬ (pPlan 2 failureAfterBody).Cons 1 x := by
     intro G hG x _ hx

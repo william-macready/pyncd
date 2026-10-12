@@ -17,9 +17,9 @@ def pPlanAP (n : Nat) (body) : (program n body).Plan :=
   unitPlan [[.initZero (pBlock n body)], [.acc ((List.finRange n).map (pOcc n body)),
     .pub (pBlock n body)]]
 def pRunF (n : Nat) (body) :=
-  (pPlanFused n body).runPlan ops (Start (pInput n body))
+  (pPlanFused n body).runPlan ops ((pPlanFused n body).Start (pInput n body))
 def pRunAP (n : Nat) (body) :=
-  (pPlanAP n body).runPlan ops (Start (pInput n body))
+  (pPlanAP n body).runPlan ops ((pPlanAP n body).Start (pInput n body))
 
 -- singleton (PlanStepTest) gives ("done", 3, none, [3/4, 0, 0]); fused: same memory, pc = #commands.
 #eval check "fused-reciprocal-all" (outcomeRow (pRunF 2 reciprocalBody))
@@ -40,10 +40,12 @@ def pRunAP (n : Nat) (body) :=
 def sPlanFused (bad : Bool) : (scalarRole bad).Plan :=
   scalarPlan bad [[.initZero [sAddr bad 1 rfl, sAddr bad 2 rfl]],
     [.acc [sOcc bad 1 rfl], .pub [sAddr bad 1 rfl], .acc [sOcc bad 2 rfl], .pub [sAddr bad 2 rfl]]]
-def sRunF (bad : Bool) := (sPlanFused bad).runPlan ops (Start (scalarInput bad))
+def sRunF (bad : Bool) := (sPlanFused bad).runPlan ops ((sPlanFused bad).Start (scalarInput bad))
 def sRowF (bad : Bool) : String × Nat × Option Nat × List (Option ℚ) :=
-  let row (M : Memory Carrier scalarDeclarations) :=
-    [M (place ⟨0, ()⟩), M (place ⟨1, ()⟩), M (place ⟨2, ()⟩)]
+  let row (M : Memory Carrier (sPlanFused bad).allocation) :=
+    [readSlot (sPlanFused bad).allocation M ⟨0, ()⟩,
+      readSlot (sPlanFused bad).allocation M ⟨1, ()⟩,
+      readSlot (sPlanFused bad).allocation M ⟨2, ()⟩]
   match sRunF bad with
   | .done pc M => ("done", pc, none, row M)
   | .failed o pc M => ("failed", pc, some o.1.val.val, row M)
@@ -71,28 +73,35 @@ def pPlanMisFused (n : Nat) (body) : (program n body).Plan :=
   (true, false)
 -- the run of the mis-fused plan is NOT detected (N4): same value, `done`.
 #eval check "misfused-run-undetected"
-  (outcomeRow ((pPlanMisFused 2 reciprocalBody).runPlan ops (Start (pInput 2 reciprocalBody))))
+  (outcomeRow ((pPlanMisFused 2 reciprocalBody).runPlan ops
+    ((pPlanMisFused 2 reciprocalBody).Start (pInput 2 reciprocalBody))))
   ("done", 1, none, [some (3 / 4), some 0, some 0])
 
 /-! ### T2 additions: the step, equality with the expansion, empty commands, two accumulates -/
 
 -- (1) One fused step: `initZero block; acc group` as a single command from `Start`.
 #eval check "fused-step-success"
-  (stepRow (fused.stepCommand ops 0 (Start η0) [.initZero block, .acc group])) ("ok", [some 0, some 14, some 0])
+  (stepRow (fused.stepCommand ops 0 (fused.Start η0) [.initZero block, .acc group])) ("ok", [some 0, some 14, some 0])
 
 -- (4) A fused plan and its expansion (all singleton) end on the same memory; only pc differs.
-def rowOf {P : Program Carrier declarations registry} (out : PlanOutcome P) : List (Option ℚ) :=
+def rowOf {P : Program Carrier declarations registry} {A : Allocation P}
+    (out : PlanOutcome P A) : List (Option ℚ) :=
   (outcomeRow out).2.2.2
 #eval check "fused-vs-expand-reciprocal"
-  (rowOf ((pPlanFused 2 reciprocalBody).runPlan ops (Start (pInput 2 reciprocalBody))),
-   rowOf ((pPlanFused 2 reciprocalBody).expand.runPlan ops (Start (pInput 2 reciprocalBody))),
-   finalPc ((pPlanFused 2 reciprocalBody).expand.runPlan ops (Start (pInput 2 reciprocalBody))))
+  (rowOf ((pPlanFused 2 reciprocalBody).runPlan ops
+     ((pPlanFused 2 reciprocalBody).Start (pInput 2 reciprocalBody))),
+   rowOf ((pPlanFused 2 reciprocalBody).expand.runPlan ops
+     ((pPlanFused 2 reciprocalBody).expand.Start (pInput 2 reciprocalBody))),
+   finalPc ((pPlanFused 2 reciprocalBody).expand.runPlan ops
+     ((pPlanFused 2 reciprocalBody).expand.Start (pInput 2 reciprocalBody))))
   ([some (3 / 4), some 0, some 0], [some (3 / 4), some 0, some 0], 3)
 #eval check "fused-vs-expand-scalar"
   ((sRowF false).2.2.2,
-   (sPlanFused false).expand.runPlan ops (Start (scalarInput false)) |> fun out =>
-     let row (M : Memory Carrier scalarDeclarations) :=
-       [M (place ⟨0, ()⟩), M (place ⟨1, ()⟩), M (place ⟨2, ()⟩)]
+   (sPlanFused false).expand.runPlan ops ((sPlanFused false).expand.Start (scalarInput false)) |> fun out =>
+     let row (M : Memory Carrier (sPlanFused false).allocation) :=
+       [readSlot (sPlanFused false).allocation M ⟨0, ()⟩,
+         readSlot (sPlanFused false).allocation M ⟨1, ()⟩,
+         readSlot (sPlanFused false).allocation M ⟨2, ()⟩]
      row (finalMemory out))
   ([some 7, some 2, some 3], [some 7, some 2, some 3])
 
@@ -100,7 +109,7 @@ def rowOf {P : Program Carrier declarations registry} (out : PlanOutcome P) : Li
 -- (`cmd.length = 0`, no annotation obligations).
 def fusedEmpty : taggedOut.Plan :=
   unitPlan [[], [.initZero block, .acc group], [], [.pub block], []]
-#eval check "fused-with-empty-commands" (outcomeRow (fusedEmpty.runPlan ops (Start η0)))
+#eval check "fused-with-empty-commands" (outcomeRow (fusedEmpty.runPlan ops (fusedEmpty.Start η0)))
   ("done", 5, none, [some 0, some 14, some 0])
 #eval check "empty-step-is-identity"
   (stepRow (fused.stepCommand ops 0 initMem []))
@@ -113,14 +122,16 @@ def sPlanTwoAcc (bad : Bool) : (scalarRole bad).Plan :=
     [.acc [sOcc bad 1 rfl], .pub [sAddr bad 1 rfl], .acc [sOcc bad 2 rfl]],
     [.pub [sAddr bad 2 rfl]]]
 def sRowTwo (bad : Bool) : List (Option ℚ) :=
-  let row (M : Memory Carrier scalarDeclarations) :=
-    [M (place ⟨0, ()⟩), M (place ⟨1, ()⟩), M (place ⟨2, ()⟩)]
-  row (finalMemory ((sPlanTwoAcc bad).runPlan ops (Start (scalarInput bad))))
+  let row (M : Memory Carrier (sPlanTwoAcc bad).allocation) :=
+    [readSlot (sPlanTwoAcc bad).allocation M ⟨0, ()⟩,
+      readSlot (sPlanTwoAcc bad).allocation M ⟨1, ()⟩,
+      readSlot (sPlanTwoAcc bad).allocation M ⟨2, ()⟩]
+  row (finalMemory ((sPlanTwoAcc bad).runPlan ops ((sPlanTwoAcc bad).Start (scalarInput bad))))
 #eval check "fused-two-acc-different-tensors"
-  (sRowTwo false, finalPc ((sPlanTwoAcc false).runPlan ops (Start (scalarInput false))))
+  (sRowTwo false, finalPc ((sPlanTwoAcc false).runPlan ops ((sPlanTwoAcc false).Start (scalarInput false))))
   ([some 7, some 2, some 3], 3)
 #eval check "fused-two-acc-different-tensors-bad"
-  (sRowTwo true, finalPc ((sPlanTwoAcc true).runPlan ops (Start (scalarInput true))))
+  (sRowTwo true, finalPc ((sPlanTwoAcc true).runPlan ops ((sPlanTwoAcc true).Start (scalarInput true))))
   ([some 7, some 0, some 0], 1)
 
 end LeanNCD.Semantics.PlanFixtures

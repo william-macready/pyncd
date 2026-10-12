@@ -18,9 +18,9 @@ namespace LeanNCD.Semantics.PlanFixtures
 open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
 
 def chainRow (π : (routed chainBody).Plan) :=
-  outcomeRow (π.runPlan ops (Start chainInput))
+  outcomeRow (π.runPlan ops (π.Start chainInput))
 def chainRowE (π : (routed chainBody).Plan) (faults : Faults) :=
-  eRow (π.runPlanE ops faults (Start chainInput))
+  eRow (π.runPlanE ops faults (π.Start chainInput))
 
 /-! ### 1. valid retire after the last reader of a published intermediate -/
 
@@ -35,8 +35,9 @@ def rtChain : (routed chainBody).Plan :=
 -- the un-retired donor ends with the full row [0, 3, 4] (step-chain): only the retired slot differs.
 #eval check "retire-valid-chain-donor" (chainPlan.checkPlan, chainRow chainPlan)
   (true, ("done", 5, none, [some 0, some 3, some 4]))
-example : rtChain.checkPlan = true := by decide
-theorem rtChain_valid : rtChain.Valid := rtChain.checkPlan_sound (by decide)
+example : rtChain.checkPlan = true := by apply checkPlan_of_canonical rtChain rfl; decide
+theorem rtChain_valid : rtChain.Valid :=
+  rtChain.checkPlan_sound (by apply checkPlan_of_canonical rtChain rfl; decide)
 
 -- donor: sPlan false ([init 1,2; acc 1; pub 1; acc 2; pub 2]) plus `retire t2` last. Tensor 1 is
 -- the output; it still decodes (to 2, as in `step-scalar-good`) and the retired slot is `none`.
@@ -46,7 +47,7 @@ def rtScalar : (scalarRole false).Plan :=
     [.retire [sAddr false 2 rfl]]]
 
 def sDecodeOf (π : (scalarRole false).Plan) : Option ℚ :=
-  match π.runPlan ops (Start (scalarInput false)) with
+  match π.runPlan ops (π.Start (scalarInput false)) with
   | .done pc M => (π.Decode pc M).map (fun out => out sOut ())
   | _ => none
 
@@ -54,7 +55,7 @@ def sDecodeOf (π : (scalarRole false).Plan) : Option ℚ :=
   (true, ("run:done", 6, none, [some 7, some 2, none]))
 #eval check "retire-valid-scalar-decode" (sDecodeOf rtScalar, sDecodeOf (sPlan false))
   (some 2, some 2)
-example : rtScalar.checkPlan = true := by decide
+example : rtScalar.checkPlan = true := by apply checkPlan_of_canonical rtScalar rfl; decide
 
 /-! ### 2. read after retire, and the accept-neighbour -/
 
@@ -77,7 +78,7 @@ def rtNeighbour : (routed chainBody).Plan :=
 
 #eval check "retire-neighbour-other-address" (rtNeighbour.checkPlan, chainRow rtNeighbour)
   (true, ("done", 6, none, [none, some 3, some 4]))
-example : rtNeighbour.checkPlan = true := by decide
+example : rtNeighbour.checkPlan = true := by apply checkPlan_of_canonical rtNeighbour rfl; decide
 
 /-! ### 3. retire of an output address -/
 
@@ -124,7 +125,7 @@ def rtFusedBad : (routed chainBody).Plan :=
   (true, ("done", 5, none, [some 0, none, some 4]))
 #eval check "retire-fused-before-read" (rtFusedBad.checkPlanF, chainRow rtFusedBad)
   (false, ("stuck", 3, none, [some 0, some 3, some 0]))
-example : rtFusedOk.checkPlanF = true := by decide
+example : rtFusedOk.checkPlanF = true := by apply checkPlan_of_canonical rtFusedOk.expand rfl; decide
 example : rtFusedBad.checkPlanF = false := by decide
 
 /-! ### 6. retire twice -/
@@ -145,7 +146,7 @@ def rtDupBlock : (routed chainBody).Plan :=
 #eval check "retire-dup-in-block" (rtDupBlock.checkPlan, chainRow rtDupBlock)
   (true, ("done", 6, none, [some 0, none, some 4]))
 example : rtTwice.checkPlan = false := by decide
-example : rtDupBlock.checkPlan = true := by decide
+example : rtDupBlock.checkPlan = true := by apply checkPlan_of_canonical rtDupBlock rfl; decide
 
 /-! ### 7. retire under the fault oracle (donor `PlanFaultsTest`) -/
 
@@ -177,7 +178,7 @@ def rtMulti : (routed chainBody).Plan :=
 
 #eval check "retire-multi-distinct" (rtMulti.checkPlan, chainRow rtMulti)
   (true, ("done", 6, none, [none, none, some 4]))
-example : rtMulti.checkPlan = true := by decide
+example : rtMulti.checkPlan = true := by apply checkPlan_of_canonical rtMulti rfl; decide
 
 -- donor: rtMulti with the retire block changed to `[p1, p2]`: the first member stays legal and the
 -- second is point 2, accumulated but not yet
@@ -214,7 +215,7 @@ example : rtEarly.checkPlan = false := by decide
 
 /-! ### 9. R at every command boundary (regression net for the `dead` and `retPub` fields of `R`)
 
-   `R` is proved in general (`step_R`, `step_retire`), but `dead` (a retired slot is `none`) and
+   `R` is proved in general (`step_R`, `step_retire`), but `dead` (an unmapped slot is `none`) and
    `retPub` (a retired address is published) only ever appear inside those proofs. These theorems
    instantiate `R` on concrete retire plans at EVERY command boundary along the actual run and read the
    two fields off the intermediate states, so a change to `R` (the buffer-reuse slice will reshape it)
@@ -224,8 +225,8 @@ example : rtEarly.checkPlan = false := by decide
 
 /-- The memory after the first `n` commands of the actual run (a command that does not return `ok`
     leaves the memory unchanged; the lemmas below require every step to be `ok`). -/
-def chainMem (π : (routed chainBody).Plan) : Nat → Memory Carrier declarations
-  | 0 => Start chainInput
+def chainMem (π : (routed chainBody).Plan) : Nat → Memory Carrier π.allocation
+  | 0 => π.Start chainInput
   | n + 1 =>
     match π.stepPlan ops n (chainMem π n) with
     | .ok M => M
@@ -247,8 +248,9 @@ theorem R_every_pc_of (π : (routed chainBody).Plan) (hv : π.Valid) (n : Nat)
     have hcmd0 : π.commands[k]? = some π.commands[k] := List.getElem?_eq_getElem hlt
     obtain ⟨a, ha⟩ := hv.singleton _ (List.mem_of_getElem? hcmd0)
     have hcmd : π.commands[k]? = some [a] := by rw [hcmd0, ha]
+    obtain ⟨layout, layout'⟩ := hv.layout_boundary hcmd
     obtain ⟨c', hc', hR', -⟩ :=
-      step_R ops hR hc hcmd (hv.stepOK k a hcmd) (hstep k (by omega))
+      step_R ops hR hc hcmd (hv.stepOK k a hcmd) layout layout' (hstep k (by omega))
     exact ⟨c', hc', hR'⟩
 
 /-- The same for a valid FUSED plan, at command boundaries (`R` is claimed there only). -/
@@ -269,11 +271,14 @@ theorem R_every_pc_F_of (π : (routed chainBody).Plan) (hv : π.FValid) (n : Nat
       have h := hstep k (by omega)
       simpa [stepPlan, hcmd] using h
     obtain ⟨c', hc', hR', -⟩ := π.step_R_command ops hR hc hcmd
-      (fun j a hj => Valid.stepOK hv _ a (π.expand_commands_getElem? (π.ann_getElem?_offset hcmd hj))) hs
+      (fun j a hj => Valid.stepOK hv _ a (π.expand_commands_getElem? (π.ann_getElem?_offset hcmd hj)))
+      hv.layout hs
     exact ⟨c', hc', hR'⟩
 
-theorem rtMulti_valid : rtMulti.Valid := rtMulti.checkPlan_sound (by decide)
-theorem rtFusedOk_valid : rtFusedOk.FValid := rtFusedOk.checkPlanF_sound (by decide)
+theorem rtMulti_valid : rtMulti.Valid :=
+  rtMulti.checkPlan_sound (by apply checkPlan_of_canonical rtMulti rfl; decide)
+theorem rtFusedOk_valid : rtFusedOk.FValid :=
+  rtFusedOk.checkPlanF_sound (by apply checkPlan_of_canonical rtFusedOk.expand rfl; decide)
 
 theorem rtChain_R_every_pc : ∀ pc, pc ≤ 6 → ∃ c, rtChain.refState ops chainInput pc = some c ∧
     rtChain.R ops chainInput pc (chainMem rtChain pc) c :=
@@ -287,6 +292,25 @@ theorem rtFusedOk_R_every_pc : ∀ pc, pc ≤ 5 → ∃ c, rtFusedOk.refState op
     rtFusedOk.R ops chainInput pc (chainMem rtFusedOk pc) c :=
   R_every_pc_F_of rtFusedOk rtFusedOk_valid 5 rfl (by intro k hk; interval_cases k <;> rfl)
 
+private theorem retired_slot_free_of_injective {π : (routed chainBody).Plan}
+    {pc : Nat} {M : Memory Carrier π.allocation} {c : (routed chainBody).Running}
+    (hR : π.R ops chainInput pc M c) (hinj : Function.Injective (place π.allocation))
+    {a : Address declarations} (hPub : π.Pub pc a) (hnl : ¬ π.Live pc a) :
+    M (place π.allocation a) = none := by
+  apply hR.dead
+  intro res h
+  cases res with
+  | pub b =>
+    simp only [SlotView] at h
+    split_ifs at h with hb
+    · have e : b = a := hinj (Option.some.inj h)
+      exact hnl (e ▸ hb)
+  | acc x =>
+    simp only [SlotView] at h
+    split_ifs at h with hx
+    · have e : x.addr = a := hinj (Option.some.inj h)
+      exact hx.2 (e.symm ▸ hPub)
+
 /-- After the retire of `rtChain` (command 4, so from pc 5 on) point 1 is retired: `retPub` makes it
     published, it is no longer live, and `dead` says its slot is free, which the concrete memory
     confirms. -/
@@ -294,26 +318,28 @@ theorem rtChain_retired_slot_free :
     ∃ c, rtChain.refState ops chainInput 5 = some c ∧
       rtChain.R ops chainInput 5 (chainMem rtChain 5) c ∧
       rtChain.Pub 5 (cAddr 1).addr ∧ ¬ rtChain.Live 5 (cAddr 1).addr ∧
-      chainMem rtChain 5 (place (cAddr 1).addr) = none := by
+      chainMem rtChain 5 (place rtChain.allocation (cAddr 1).addr) = none := by
   obtain ⟨c, hc, hR⟩ := rtChain_R_every_pc 5 (by omega)
   have hRet : rtChain.Ret 5 (cAddr 1).addr := by decide
   have hPub := hR.retPub _ hRet
   have hnl : ¬ rtChain.Live 5 (cAddr 1).addr := fun h => h.2 hRet
-  exact ⟨c, hc, hR, hPub, hnl, hR.dead _ hPub hnl⟩
+  exact ⟨c, hc, hR, hPub, hnl, retired_slot_free_of_injective hR
+    (place_injective rtChain.tensors rtChain.tensors_nodup rtChain.tensors_complete) hPub hnl⟩
 
 /-- A block of two distinct addresses: both are retired, no longer live and free at pc 5. -/
 theorem rtMulti_retired_slots_free :
     ∃ c, rtMulti.refState ops chainInput 5 = some c ∧
       rtMulti.R ops chainInput 5 (chainMem rtMulti 5) c ∧
-      (¬ rtMulti.Live 5 (cAddr 0).addr ∧ chainMem rtMulti 5 (place (cAddr 0).addr) = none) ∧
-      (¬ rtMulti.Live 5 (cAddr 1).addr ∧ chainMem rtMulti 5 (place (cAddr 1).addr) = none) := by
+      (¬ rtMulti.Live 5 (cAddr 0).addr ∧ chainMem rtMulti 5 (place rtMulti.allocation (cAddr 0).addr) = none) ∧
+      (¬ rtMulti.Live 5 (cAddr 1).addr ∧ chainMem rtMulti 5 (place rtMulti.allocation (cAddr 1).addr) = none) := by
   obtain ⟨c, hc, hR⟩ := rtMulti_R_every_pc 5 (by omega)
   have free : ∀ a : Fin 3, rtMulti.Ret 5 (cAddr a).addr →
-      ¬ rtMulti.Live 5 (cAddr a).addr ∧ chainMem rtMulti 5 (place (cAddr a).addr) = none :=
+      ¬ rtMulti.Live 5 (cAddr a).addr ∧ chainMem rtMulti 5 (place rtMulti.allocation (cAddr a).addr) = none :=
     fun a hRet => by
       have hPub := hR.retPub _ hRet
       have hnl : ¬ rtMulti.Live 5 (cAddr a).addr := fun h => h.2 hRet
-      exact ⟨hnl, hR.dead _ hPub hnl⟩
+      exact ⟨hnl, retired_slot_free_of_injective hR
+        (place_injective rtMulti.tensors rtMulti.tensors_nodup rtMulti.tensors_complete) hPub hnl⟩
   exact ⟨c, hc, hR, free 0 (by decide), free 1 (by decide)⟩
 
 /-- Fused: the retire sits inside command 3 (`[acc occ1, retire p1]`), so it has run at pc 4. -/
@@ -321,29 +347,30 @@ theorem rtFusedOk_retired_slot_free :
     ∃ c, rtFusedOk.refState ops chainInput 4 = some c ∧
       rtFusedOk.R ops chainInput 4 (chainMem rtFusedOk 4) c ∧
       ¬ rtFusedOk.Live 4 (cAddr 1).addr ∧
-      chainMem rtFusedOk 4 (place (cAddr 1).addr) = none := by
+      chainMem rtFusedOk 4 (place rtFusedOk.allocation (cAddr 1).addr) = none := by
   obtain ⟨c, hc, hR⟩ := rtFusedOk_R_every_pc 4 (by omega)
   have hRet : rtFusedOk.Ret 4 (cAddr 1).addr := by decide
   have hPub := hR.retPub _ hRet
   have hnl : ¬ rtFusedOk.Live 4 (cAddr 1).addr := fun h => h.2 hRet
-  exact ⟨c, hc, hR, hnl, hR.dead _ hPub hnl⟩
+  exact ⟨c, hc, hR, hnl, retired_slot_free_of_injective hR
+    (place_injective rtFusedOk.tensors rtFusedOk.tensors_nodup rtFusedOk.tensors_complete) hPub hnl⟩
 
 -- Independent of `R` (so they can fail on their own): the memories the run actually computes have the
 -- retired slots free and every live neighbour untouched. In `rtChain` at pc 5 the memory is
 -- `[some 0, none, some 4]` (point 1 retired), as in the row `retire-valid-chain`. The slots holding `4`
 -- (= 3 + 1 in exact rationals, which kernel `rfl` cannot normalise) are `#eval check` rows below.
-example : chainMem rtChain 5 (place (cAddr 1).addr) = none := rfl
-example : chainMem rtChain 5 (place (cAddr 0).addr) = some 0 := rfl
-example : chainMem rtMulti 5 (place (cAddr 0).addr) = none := rfl
-example : chainMem rtMulti 5 (place (cAddr 1).addr) = none := rfl
-example : chainMem rtFusedOk 4 (place (cAddr 1).addr) = none := rfl
+example : chainMem rtChain 5 (place rtChain.allocation (cAddr 1).addr) = none := rfl
+example : chainMem rtChain 5 (place rtChain.allocation (cAddr 0).addr) = some 0 := rfl
+example : chainMem rtMulti 5 (place rtMulti.allocation (cAddr 0).addr) = none := rfl
+example : chainMem rtMulti 5 (place rtMulti.allocation (cAddr 1).addr) = none := rfl
+example : chainMem rtFusedOk 4 (place rtFusedOk.allocation (cAddr 1).addr) = none := rfl
 
-#eval check "retire-net-chain-live-neighbour" (chainMem rtChain 5 (place (cAddr 2).addr)) (some 4)
-#eval check "retire-net-multi-live-neighbour" (chainMem rtMulti 5 (place (cAddr 2).addr)) (some 4)
-#eval check "retire-net-fused-live-neighbour" (chainMem rtFusedOk 4 (place (cAddr 2).addr)) (some 4)
+#eval check "retire-net-chain-live-neighbour" (chainMem rtChain 5 (place rtChain.allocation (cAddr 2).addr)) (some 4)
+#eval check "retire-net-multi-live-neighbour" (chainMem rtMulti 5 (place rtMulti.allocation (cAddr 2).addr)) (some 4)
+#eval check "retire-net-fused-live-neighbour" (chainMem rtFusedOk 4 (place rtFusedOk.allocation (cAddr 2).addr)) (some 4)
 
-/-! `dead` and `retPub` hold trivially until something has been retired (`Live = Pub ∧ ¬ Ret`), so the
-   steps that matter are the ones that run AFTER a retire. `rtNeighbour` has an `acc` after its retire;
+/-! To preserve the old retired-slot regression, the steps that matter are the ones that run
+   AFTER a retire. `rtNeighbour` has an `acc` after its retire;
    `rtInitAfter` has an `initZero` after its retire, the shape the buffer-reuse slice will introduce. -/
 
 -- donor: rtNeighbour. Retire p0 (command 3), THEN `initZero [p2]` (command 4), then the accumulation
@@ -354,10 +381,12 @@ def rtInitAfter : (routed chainBody).Plan :=
 
 #eval check "retire-init-after-retire" (rtInitAfter.checkPlan, chainRow rtInitAfter)
   (true, ("done", 7, none, [none, some 3, some 4]))
-example : rtInitAfter.checkPlan = true := by decide
+example : rtInitAfter.checkPlan = true := by apply checkPlan_of_canonical rtInitAfter rfl; decide
 
-theorem rtNeighbour_valid : rtNeighbour.Valid := rtNeighbour.checkPlan_sound (by decide)
-theorem rtInitAfter_valid : rtInitAfter.Valid := rtInitAfter.checkPlan_sound (by decide)
+theorem rtNeighbour_valid : rtNeighbour.Valid :=
+  rtNeighbour.checkPlan_sound (by apply checkPlan_of_canonical rtNeighbour rfl; decide)
+theorem rtInitAfter_valid : rtInitAfter.Valid :=
+  rtInitAfter.checkPlan_sound (by apply checkPlan_of_canonical rtInitAfter rfl; decide)
 
 theorem rtNeighbour_R_every_pc : ∀ pc, pc ≤ 6 → ∃ c, rtNeighbour.refState ops chainInput pc = some c ∧
     rtNeighbour.R ops chainInput pc (chainMem rtNeighbour pc) c :=
@@ -371,35 +400,38 @@ theorem rtInitAfter_R_every_pc : ∀ pc, pc ≤ 7 → ∃ c, rtInitAfter.refStat
 theorem rtNeighbour_dead_after_acc :
     ∃ c, rtNeighbour.refState ops chainInput 5 = some c ∧
       rtNeighbour.R ops chainInput 5 (chainMem rtNeighbour 5) c ∧
-      ¬ rtNeighbour.Live 5 (cAddr 0).addr ∧ chainMem rtNeighbour 5 (place (cAddr 0).addr) = none := by
+      ¬ rtNeighbour.Live 5 (cAddr 0).addr ∧
+      chainMem rtNeighbour 5 (place rtNeighbour.allocation (cAddr 0).addr) = none := by
   obtain ⟨c, hc, hR⟩ := rtNeighbour_R_every_pc 5 (by omega)
   have hRet : rtNeighbour.Ret 5 (cAddr 0).addr := by decide
   have hPub := hR.retPub _ hRet
   have hnl : ¬ rtNeighbour.Live 5 (cAddr 0).addr := fun h => h.2 hRet
-  exact ⟨c, hc, hR, hnl, hR.dead _ hPub hnl⟩
+  exact ⟨c, hc, hR, hnl, retired_slot_free_of_injective hR
+    (place_injective rtNeighbour.tensors rtNeighbour.tensors_nodup rtNeighbour.tensors_complete) hPub hnl⟩
 
 /-- The same after a later `initZero` (command 4, pc 5) and after the following `acc` (command 5, pc 6). -/
 theorem rtInitAfter_dead_after_init_and_acc :
     ∀ pc, 5 ≤ pc → pc ≤ 6 → ∃ c, rtInitAfter.refState ops chainInput pc = some c ∧
       rtInitAfter.R ops chainInput pc (chainMem rtInitAfter pc) c ∧
       ¬ rtInitAfter.Live pc (cAddr 0).addr ∧
-      chainMem rtInitAfter pc (place (cAddr 0).addr) = none := by
+      chainMem rtInitAfter pc (place rtInitAfter.allocation (cAddr 0).addr) = none := by
   intro pc h5 h6
   obtain ⟨c, hc, hR⟩ := rtInitAfter_R_every_pc pc (by omega)
   have hRet : rtInitAfter.Ret pc (cAddr 0).addr := by
     interval_cases pc <;> decide
   have hPub := hR.retPub _ hRet
   have hnl : ¬ rtInitAfter.Live pc (cAddr 0).addr := fun h => h.2 hRet
-  exact ⟨c, hc, hR, hnl, hR.dead _ hPub hnl⟩
+  exact ⟨c, hc, hR, hnl, retired_slot_free_of_injective hR
+    (place_injective rtInitAfter.tensors rtInitAfter.tensors_nodup rtInitAfter.tensors_complete) hPub hnl⟩
 
 -- Independent of `R`: p0 stays free while the later `init` and `acc` kernels run, and they did run.
-example : chainMem rtNeighbour 5 (place (cAddr 0).addr) = none := rfl
-example : chainMem rtInitAfter 5 (place (cAddr 0).addr) = none := rfl
-example : chainMem rtInitAfter 6 (place (cAddr 0).addr) = none := rfl
-example : chainMem rtInitAfter 4 (place (cAddr 2).addr) = none := rfl
-example : chainMem rtInitAfter 5 (place (cAddr 2).addr) = some 0 := rfl
-#eval check "retire-net-neighbour-acc-ran" (chainMem rtNeighbour 5 (place (cAddr 2).addr)) (some 4)
-#eval check "retire-net-init-after-acc-ran" (chainMem rtInitAfter 6 (place (cAddr 2).addr)) (some 4)
+example : chainMem rtNeighbour 5 (place rtNeighbour.allocation (cAddr 0).addr) = none := rfl
+example : chainMem rtInitAfter 5 (place rtInitAfter.allocation (cAddr 0).addr) = none := rfl
+example : chainMem rtInitAfter 6 (place rtInitAfter.allocation (cAddr 0).addr) = none := rfl
+example : chainMem rtInitAfter 4 (place rtInitAfter.allocation (cAddr 2).addr) = none := rfl
+example : chainMem rtInitAfter 5 (place rtInitAfter.allocation (cAddr 2).addr) = some 0 := rfl
+#eval check "retire-net-neighbour-acc-ran" (chainMem rtNeighbour 5 (place rtNeighbour.allocation (cAddr 2).addr)) (some 4)
+#eval check "retire-net-init-after-acc-ran" (chainMem rtInitAfter 6 (place rtInitAfter.allocation (cAddr 2).addr)) (some 4)
 
 #print axioms R_every_pc_of
 #print axioms R_every_pc_F_of

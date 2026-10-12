@@ -16,7 +16,7 @@ def verdictF {K : S → Type} {σ : Declarations S} {r : Registry K} {P : Progra
 
 /-! ### (1) a valid fused plan: runPlan is `done`, Decode is the model's output projection -/
 
-def fusedRun := fused.runPlan ops (Start η0)
+def fusedRun := fused.runPlan ops (fused.Start η0)
 
 -- `fused` = [[initZero; acc], [pub]] (2 commands); the singleton `plan` ends at pc 3.
 #eval check "fusedcorr-done-decode"
@@ -24,7 +24,8 @@ def fusedRun := fused.runPlan ops (Start η0)
     decodeRow (plan.Decode 3 (finalMemory taggedRun)))
   ((true, []), ("done", 2, none, [some 0, some 14, some 0]), some [0, 14, 0], some [0, 14, 0])
 
-theorem fused_fvalid : fused.FValid := fused.checkPlanF_sound (by decide)
+theorem fused_fvalid : fused.FValid :=
+  fused.checkPlanF_sound (by apply checkPlan_of_canonical fused.expand rfl; decide)
 
 /-- Theorem 31.3 (a) on the fused plan: the model is unique, and the fused plan's Decode (at
     pc = number of COMMANDS) is its output projection. -/
@@ -53,11 +54,12 @@ def sFusedDecode : Option ℚ :=
   (true, ("failed", 1, some 2, [some 7, some 0, some 0]), ("failed", some 2))
 
 theorem sFused_bad_fvalid : (sPlanFused true).FValid :=
-  (sPlanFused true).checkPlanF_sound (by decide)
+  (sPlanFused true).checkPlanF_sound (by
+    apply checkPlan_of_canonical (sPlanFused true).expand rfl; decide)
 
 theorem scalar_bad_no_model_F : ¬ ∃ ρ, (scalarRole true).Models ops (scalarInput true) ρ :=
   failed_correct_F ops sFused_bad_fvalid (scalarInput true)
-    (rfl : (sPlanFused true).runPlan ops (Start (scalarInput true)) =
+    (rfl : (sPlanFused true).runPlan ops ((sPlanFused true).Start (scalarInput true)) =
       .failed (sOcc true 2 rfl) 1 (finalMemory (sRunF true)))
 
 /-! ### (3) a fused plan with an INVALID expansion (publish before accumulate in one command) -/
@@ -76,8 +78,8 @@ def fusedMissingPub : taggedOut.Plan :=
   unitPlan [[.initZero block, .acc group], [.pub [addr 0, addr 1]]]
 
 #eval check "fusedcorr-missing-publication"
-  (verdictF fusedMissingPub, outcomeRow (fusedMissingPub.runPlan ops (Start η0)),
-    decodeRow (fusedMissingPub.Decode 2 (finalMemory (fusedMissingPub.runPlan ops (Start η0)))))
+  (verdictF fusedMissingPub, outcomeRow (fusedMissingPub.runPlan ops (fusedMissingPub.Start η0)),
+    decodeRow (fusedMissingPub.Decode 2 (finalMemory (fusedMissingPub.runPlan ops (fusedMissingPub.Start η0)))))
   ((false, ["cov2Complete"]), ("done", 2, none, [some 0, some 14, some 0]), none)
 
 /-! ### (4) a valid fused plan agrees with its expansion on the final memory -/
@@ -85,8 +87,8 @@ def fusedMissingPub : taggedOut.Plan :=
 /-- Kinds, stopping pcs (commands vs annotations) and whether the final points agree. -/
 def agreeRow {P : Program Carrier declarations registry} (π : P.Plan) (η : P.Input) :
     String × String × Nat × Nat × Bool :=
-  let a := outcomeRow (π.runPlan ops (Start η))
-  let b := outcomeRow (π.expand.runPlan ops (Start η))
+  let a := outcomeRow (π.runPlan ops (π.Start η))
+  let b := outcomeRow (π.expand.runPlan ops (π.expand.Start η))
   (a.1, b.1, a.2.1, b.2.1, a.2.2.2 == b.2.2.2)
 
 #eval check "fusedcorr-valid-agrees-with-expansion"
@@ -98,22 +100,28 @@ def agreeRow {P : Program Carrier declarations registry} (π : P.Plan) (η : P.I
 
 -- Failing runs agree on the failing occurrence (not on pc or memory).
 #eval check "fusedcorr-failed-agrees-on-occurrence"
-  (match (sRunF true), (sPlanFused true).expand.runPlan ops (Start (scalarInput true)) with
+  (match (sRunF true), (sPlanFused true).expand.runPlan ops ((sPlanFused true).expand.Start (scalarInput true)) with
     | .failed o _ _, .failed o' _ _ => (o.1.val.val, o'.1.val.val, o == o')
     | _, _ => (0, 0, false))
   (2, 2, true)
 
-example : PlanOutcome.Agree fusedRun (fused.expand.runPlan ops (Start η0)) := rfl
+example : PlanOutcome.Agree fusedRun (fused.expand.runPlan ops (fused.expand.Start η0)) := by
+  have hs : fused.expand.Start η0 = fused.Start η0 := by
+    funext ξ
+    cases ξ <;> rfl
+  simpa only [hs, fusedRun] using fused.runPlan_agree ops (fused.Start η0)
 
 -- `Agree` is not vacuous: different final memories and different failing occurrences disagree.
-example : ¬ PlanOutcome.Agree fusedRun (.done 3 (Start η0)) := by
+example : ¬ PlanOutcome.Agree fusedRun (.done 3 (fused.Start η0)) := by
   intro h
-  have e : finalMemory fusedRun (place ⟨T, point 1⟩) = Start η0 (place ⟨T, point 1⟩) :=
-    congrFun (h : finalMemory fusedRun = Start η0) _
+  have e : finalMemory fusedRun (place fused.allocation ⟨T, point 1⟩) =
+      fused.Start η0 (place fused.allocation ⟨T, point 1⟩) :=
+    congrFun (h : finalMemory fusedRun = fused.Start η0) _
   revert e
   decide
 
-example : ¬ PlanOutcome.Agree (sRunF true) (.failed (sOcc true 1 rfl) 0 (Start (scalarInput true))) := by
+example : ¬ PlanOutcome.Agree (sRunF true)
+    (.failed (sOcc true 1 rfl) 0 ((sPlanFused true).Start (scalarInput true))) := by
   intro h
   have e : (2 : Nat) = 1 := congrArg (fun o : OccRef (scalarRole true) => o.1.val.val)
     (h : (sOcc true 2 rfl) = (sOcc true 1 rfl))

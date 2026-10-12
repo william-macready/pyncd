@@ -18,7 +18,8 @@ def verdictTrio {K : S → Type} {σ : Declarations S} {r : Registry K} {P : Pro
 
 /-- Kind of the fused run, kind of the donor run, whether the final memories agree on the three
     slots, the fused run's slots, the donor run's slots. -/
-def runPair {P : Program Carrier declarations registry} (a b : PlanOutcome P) :
+def runPair {P : Program Carrier declarations registry} {A B : Allocation P}
+    (a : PlanOutcome P A) (b : PlanOutcome P B) :
     String × String × Bool × List (Option ℚ) × List (Option ℚ) :=
   let x := outcomeRow a
   let y := outcomeRow b
@@ -94,56 +95,56 @@ def chainBothOrder : (routed chainBody).Plan :=
 -- `fusedcorr-misfused-verdicts` = pubOrder@1.)
 #eval check "t4-a3split-chainPlan"
   (verdictTrio t4ReadSplit chainPlan,
-    runPair (t4ReadSplit.runPlan ops (Start chainInput)) (chainPlan.runPlan ops (Start chainInput)))
+    runPair (t4ReadSplit.runPlan ops (t4ReadSplit.Start chainInput)) (chainPlan.runPlan ops (chainPlan.Start chainInput)))
   (((true, []), (true, []), (true, [])), ("done", "done", true, [some 0, some 3, some 4], [some 0, some 3, some 4]))
 
 -- donor chainPlan = [init],[acc0],[pub1],[acc1],[pub 0 2]; fused [acc0, pub1, acc1]: acc1 reads point 1 published in the SAME command (valid, D15).
 #eval check "t4-a3-chainPlan"
   (verdictTrio t4ReadSame chainPlan,
-    runPair (t4ReadSame.runPlan ops (Start chainInput)) (chainPlan.runPlan ops (Start chainInput)))
+    runPair (t4ReadSame.runPlan ops (t4ReadSame.Start chainInput)) (chainPlan.runPlan ops (chainPlan.Start chainInput)))
   (((true, []), (true, []), (true, [])), ("done", "done", true, [some 0, some 3, some 4], [some 0, some 3, some 4]))
 
 -- donor chainReadFirst = [init],[acc0],[acc1],[pub1],[pub 0 2]; fused [acc0, acc1, pub1]: the publication follows the read (D15 counterpart).
 #eval check "t4-a3mis-chainReadFirst"
   (verdictTrio t4ReadFirst chainReadFirst,
-    runPair (t4ReadFirst.runPlan ops (Start chainInput)) (chainReadFirst.runPlan ops (Start chainInput)))
+    runPair (t4ReadFirst.runPlan ops (t4ReadFirst.Start chainInput)) (chainReadFirst.runPlan ops (chainReadFirst.Start chainInput)))
   (((false, ["ready@2"]), (false, ["ready@2"]), (false, ["ready@2"])), ("stuck", "stuck", false, [some 0, some 0, some 0], [some 0, some 3, some 0]))
 
 -- donor chainEarly = [init],[acc1],[acc0],[pub]; fused [acc1, acc0]: reads an accumulator that is never published first.
 #eval check "t4-a4-chainEarly"
   (verdictTrio t4Unpub chainEarly,
-    runPair (t4Unpub.runPlan ops (Start chainInput)) (chainEarly.runPlan ops (Start chainInput)))
+    runPair (t4Unpub.runPlan ops (t4Unpub.Start chainInput)) (chainEarly.runPlan ops (chainEarly.Start chainInput)))
   (((false, ["ready@1"]), (false, ["ready@1"]), (false, ["ready@1"])), ("stuck", "stuck", true, [some 0, some 0, some 0], [some 0, some 0, some 0]))
 
 -- donor reinitMid = [init],[acc g1],[init],[acc g2],[pub]; fused [acc g1, init] (re-init after consume wipes g1: 10 not 14).
 #eval check "t4-a5-reinitMid"
   (verdictTrio t4Reinit reinitMid,
-    runPair (t4Reinit.runPlan ops (Start η0)) (reinitMid.runPlan ops (Start η0)))
+    runPair (t4Reinit.runPlan ops (t4Reinit.Start η0)) (reinitMid.runPlan ops (reinitMid.Start η0)))
   (((false, ["initFresh@2"]), (false, ["initFresh@2"]), (false, ["initFresh@2"])), ("done", "done", true, [some 0, some 10, some 0], [some 0, some 10, some 0]))
 
 -- donor dupGroup = [init],[acc group],[acc [occ 0 0]],[pub]; fused [acc group, acc [occ 0 0]] (duplicate across annotations).
 #eval check "t4-a6-dupGroup"
   (verdictTrio t4Dup dupGroup,
-    runPair (t4Dup.runPlan ops (Start η0)) (dupGroup.runPlan ops (Start η0)))
+    runPair (t4Dup.runPlan ops (t4Dup.Start η0)) (dupGroup.runPlan ops (dupGroup.Start η0)))
   (((false, ["cov1Nodup", "accFresh@2"]), (false, ["cov1Nodup", "accFresh@2"]), (false, ["cov1Nodup", "accFresh@2"])), ("done", "done", true, [some 0, some 16, some 0], [some 0, some 16, some 0]))
 
 -- donor pubTwice = [init],[acc],[pub block],[pub [addr 1]]; fused [pub block, pub [addr 1]] (overlapping blocks).
 #eval check "t4-a7-pubTwice"
   (verdictTrio t4PubTwice pubTwice,
-    runPair (t4PubTwice.runPlan ops (Start η0)) (pubTwice.runPlan ops (Start η0)))
+    runPair (t4PubTwice.runPlan ops (t4PubTwice.Start η0)) (pubTwice.runPlan ops (pubTwice.Start η0)))
   (((false, ["cov2Nodup", "pubFresh@3"]), (false, ["cov2Nodup", "pubFresh@3"]), (false, ["cov2Nodup", "pubFresh@3"])), ("done", "done", true, [some 0, some 14, some 0], [some 0, some 14, some 0]))
 
 -- donor lateEmptyInit = [init 1],[acc],[init 0 2],[pub block]; fused [init 0 2, pub block] (empty fibers initialised, then published).
 #eval check "t4-a9-lateEmptyInit"
   (verdictTrio t4InitPub lateEmptyInit,
-    runPair (t4InitPub.runPlan ops (Start η0)) (lateEmptyInit.runPlan ops (Start η0)))
+    runPair (t4InitPub.runPlan ops (t4InitPub.Start η0)) (lateEmptyInit.runPlan ops (lateEmptyInit.Start η0)))
   (((true, []), (true, []), (true, [])), ("done", "done", true, [some 0, some 14, some 0], [some 0, some 14, some 0]))
 
 -- (a10) empty commands are accepted by `checkPlanF` and are no-ops; the reader after an empty command still sees
 -- the earlier publication (donor chainPlan has the same flat annotation sequence).
 #eval check "t4-a10-readAfterEmpty"
   (verdictTrio t4ReadEmpty chainPlan,
-    runPair (t4ReadEmpty.runPlan ops (Start chainInput)) (chainPlan.runPlan ops (Start chainInput)))
+    runPair (t4ReadEmpty.runPlan ops (t4ReadEmpty.Start chainInput)) (chainPlan.runPlan ops (chainPlan.Start chainInput)))
   (((true, []), (true, []), (true, [])), ("done", "done", true, [some 0, some 3, some 4], [some 0, some 3, some 4]))
 
 -- (a10) a plan containing `[]`: `checkPlanF` accepts, the slice-1 checker rejects (singleton only).
@@ -170,7 +171,7 @@ def chainBothOrder : (routed chainBody).Plan :=
 -- both order clauses fail at once (`ready@1` and `pubOrder@2`), in the fused plan, its expansion and the donor.
 #eval check "t4-order-both-clauses"
   (verdictTrio t4BothOrder chainBothOrder,
-    runPair (t4BothOrder.runPlan ops (Start chainInput)) (chainBothOrder.runPlan ops (Start chainInput)))
+    runPair (t4BothOrder.runPlan ops (t4BothOrder.Start chainInput)) (chainBothOrder.runPlan ops (chainBothOrder.Start chainInput)))
   (((false, ["ready@1", "pubOrder@2"]), (false, ["ready@1", "pubOrder@2"]), (false, ["ready@1", "pubOrder@2"])),
     ("stuck", "stuck", true, [some 0, some 0, some 0], [some 0, some 0, some 0]))
 

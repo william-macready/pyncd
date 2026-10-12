@@ -35,12 +35,14 @@ def verdict {K : S → Type} {σ : Declarations S} {r : Registry K} {P : Program
   [(true, []), (true, []), (true, []), (true, []), (true, []), (true, [])]
 
 -- The same verdicts in the kernel.
-example : plan.checkPlan = true := by decide
-example : (pPlan 2 reciprocalBody).checkPlan = true := by decide
-example : (pPlan 2 failureAfterBody).checkPlan = true := by decide
-example : (sPlan true).checkPlan = true := by decide
-example : (sPlan false).checkPlan = true := by decide
-example : chainPlan.checkPlan = true := by decide
+example : plan.checkPlan = true := by apply checkPlan_of_canonical plan rfl; decide
+example : (pPlan 2 reciprocalBody).checkPlan = true := by
+  apply checkPlan_of_canonical (pPlan 2 reciprocalBody) rfl; decide
+example : (pPlan 2 failureAfterBody).checkPlan = true := by
+  apply checkPlan_of_canonical (pPlan 2 failureAfterBody) rfl; decide
+example : (sPlan true).checkPlan = true := by apply checkPlan_of_canonical (sPlan true) rfl; decide
+example : (sPlan false).checkPlan = true := by apply checkPlan_of_canonical (sPlan false) rfl; decide
+example : chainPlan.checkPlan = true := by apply checkPlan_of_canonical chainPlan rfl; decide
 
 /-! ### A2 invalid plans -/
 
@@ -71,7 +73,7 @@ def earlyHalf : taggedOut.Plan :=
 
 #eval check "invalid-missing-occurrence" (verdict missingOcc)
   (false, ["cov1Complete", "pubOrder@2"])
-#eval check "invalid-publish-after-one-group" (verdict earlyHalf, outcomeRow (earlyHalf.runPlan ops (Start η0)))
+#eval check "invalid-publish-after-one-group" (verdict earlyHalf, outcomeRow (earlyHalf.runPlan ops (earlyHalf.Start η0)))
   ((false, ["pubOrder@2"]), ("done", 4, none, [some 0, some 14, some 0]))
 
 example : missingOcc.checkPlan = false := by decide
@@ -85,7 +87,7 @@ def reinitMid : taggedOut.Plan :=
     [.acc [occ 1 0, occ 1 1]], [.pub block]]
 
 #eval check "invalid-reinit-after-consume"
-  (verdict reinitMid, outcomeRow (reinitMid.runPlan ops (Start η0)))
+  (verdict reinitMid, outcomeRow (reinitMid.runPlan ops (reinitMid.Start η0)))
   ((false, ["initFresh@2"]), ("done", 5, none, [some 0, some 10, some 0]))
 
 example : reinitMid.checkPlan = false := by decide
@@ -112,18 +114,18 @@ def pubSplit : taggedOut.Plan :=
   unitPlan [[.initZero block], [.acc group], [.pub [addr 0, addr 1]], [.pub [addr 2]]]
 
 #eval check "invalid-publish-twice-across-blocks"
-  (verdict pubTwice, outcomeRow (pubTwice.runPlan ops (Start η0)))
+  (verdict pubTwice, outcomeRow (pubTwice.runPlan ops (pubTwice.Start η0)))
   ((false, ["cov2Nodup", "pubFresh@3"]), ("done", 4, none, [some 0, some 14, some 0]))
 #eval check "invalid-publish-twice-in-block"
-  (verdict pubDupIn, outcomeRow (pubDupIn.runPlan ops (Start η0)))
+  (verdict pubDupIn, outcomeRow (pubDupIn.runPlan ops (pubDupIn.Start η0)))
   ((false, ["cov2Nodup", "pubFresh@2"]), ("done", 3, none, [some 0, some 14, some 0]))
 #eval check "valid-publish-split-blocks"
-  (verdict pubSplit, outcomeRow (pubSplit.runPlan ops (Start η0)))
+  (verdict pubSplit, outcomeRow (pubSplit.runPlan ops (pubSplit.Start η0)))
   ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
 
 example : pubTwice.checkPlan = false := by decide
 example : pubDupIn.checkPlan = false := by decide
-example : pubSplit.checkPlan = true := by decide
+example : pubSplit.checkPlan = true := by apply checkPlan_of_canonical pubSplit rfl; decide
 
 /-! ### Accumulation freshness (`checkAccFresh`)
 
@@ -140,14 +142,14 @@ def accSplit : taggedOut.Plan :=
   unitPlan [[.initZero block], [.acc [occ 0 0, occ 0 1]], [.acc [occ 1 0, occ 1 1]], [.pub block]]
 
 #eval check "invalid-duplicate-within-group"
-  (verdict dupWithin, outcomeRow (dupWithin.runPlan ops (Start η0)))
+  (verdict dupWithin, outcomeRow (dupWithin.runPlan ops (dupWithin.Start η0)))
   ((false, ["cov1Nodup", "accFresh@1"]), ("done", 3, none, [some 0, some 16, some 0]))
 #eval check "valid-accumulate-split-groups"
-  (verdict accSplit, outcomeRow (accSplit.runPlan ops (Start η0)))
+  (verdict accSplit, outcomeRow (accSplit.runPlan ops (accSplit.Start η0)))
   ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
 
 example : dupWithin.checkPlan = false := by decide
-example : accSplit.checkPlan = true := by decide
+example : accSplit.checkPlan = true := by apply checkPlan_of_canonical accSplit rfl; decide
 
 /-! ### Accumulate into an unmaterialised target (`checkAccMat`)
 
@@ -183,20 +185,20 @@ def lateEmptyInit : taggedOut.Plan :=
 
 #eval check "invalid-acc-unmaterialised-attempts"
   (([accThenInit, emptyOnlyInit, targetUnpub, halfThenInit] : List taggedOut.Plan).map
-    fun (π : taggedOut.Plan) => (verdict π, outcomeRow (π.runPlan ops (Start η0))))
+    fun (π : taggedOut.Plan) => (verdict π, outcomeRow (π.runPlan ops (π.Start η0))))
   [((false, ["accMat@0", "initFresh@1"]), ("stuck", 0, none, [none, none, none])),
    ((false, ["accMat@1", "pubMat@2"]), ("stuck", 1, none, [some 0, none, some 0])),
    ((false, ["cov2Complete", "accMat@1"]), ("stuck", 1, none, [some 0, none, some 0])),
    ((false, ["accMat@1", "initFresh@2"]), ("stuck", 1, none, [some 0, none, some 0]))]
 #eval check "valid-late-empty-fiber-init"
-  (verdict lateEmptyInit, outcomeRow (lateEmptyInit.runPlan ops (Start η0)))
+  (verdict lateEmptyInit, outcomeRow (lateEmptyInit.runPlan ops (lateEmptyInit.Start η0)))
   ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
 
 example : accThenInit.checkPlan = false := by decide
 example : emptyOnlyInit.checkPlan = false := by decide
 example : targetUnpub.checkPlan = false := by decide
 example : halfThenInit.checkPlan = false := by decide
-example : lateEmptyInit.checkPlan = true := by decide
+example : lateEmptyInit.checkPlan = true := by apply checkPlan_of_canonical lateEmptyInit rfl; decide
 
 /-! ### Initialisation of a published address (`checkInit`, not-published half)
 
@@ -214,10 +216,10 @@ def reinitBeforePub : taggedOut.Plan :=
   unitPlan [[.initZero block], [.acc group], [.initZero [addr 0]], [.pub block]]
 
 #eval check "invalid-reinit-after-publish"
-  (verdict reinitPub, outcomeRow (reinitPub.runPlan ops (Start η0)))
+  (verdict reinitPub, outcomeRow (reinitPub.runPlan ops (reinitPub.Start η0)))
   ((false, ["initFresh@3"]), ("done", 4, none, [some 0, some 14, some 0]))
 #eval check "valid-reinit-before-publish"
-  (verdict reinitBeforePub, outcomeRow (reinitBeforePub.runPlan ops (Start η0)))
+  (verdict reinitBeforePub, outcomeRow (reinitBeforePub.runPlan ops (reinitBeforePub.Start η0)))
   ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
 
 -- The two halves of `checkInit` at pc 3 for `[addr 0]`, read separately: the
@@ -229,7 +231,7 @@ def reinitBeforePub : taggedOut.Plan :=
   (true, true)
 
 example : reinitPub.checkPlan = false := by decide
-example : reinitBeforePub.checkPlan = true := by decide
+example : reinitBeforePub.checkPlan = true := by apply checkPlan_of_canonical reinitBeforePub rfl; decide
 
 /-! ### The empty command
 
@@ -239,7 +241,7 @@ index; with fusion `[]` is the identity step, so the run completes (`done` at pc
 `singleton` is the only guard (slice 2 replaces it by validity of the expansion). -/
 
 #eval check "invalid-empty-command"
-  (verdict emptyCmd, outcomeRow (emptyCmd.runPlan ops (Start η0)))
+  (verdict emptyCmd, outcomeRow (emptyCmd.runPlan ops (emptyCmd.Start η0)))
   ((false, ["singleton"]), ("done", 4, none, [some 0, some 14, some 0]))
 
 example : emptyCmd.checkPlan = false := by decide
@@ -277,8 +279,10 @@ theorem singleton_of_checkSingleton (π : taggedOut.Plan) (h : π.checkSingleton
   simp only [checkSingleton, List.all_eq_true, beq_iff_eq] at h
   exact fun cmd hc => List.length_eq_one_iff.mp (h cmd hc)
 
-theorem accSplit_valid : accSplit.Valid := accSplit.checkPlan_sound (by decide)
-theorem pubSplit_valid : pubSplit.Valid := pubSplit.checkPlan_sound (by decide)
+theorem accSplit_valid : accSplit.Valid :=
+  accSplit.checkPlan_sound (by apply checkPlan_of_canonical accSplit rfl; decide)
+theorem pubSplit_valid : pubSplit.Valid :=
+  pubSplit.checkPlan_sound (by apply checkPlan_of_canonical pubSplit rfl; decide)
 
 -- the valid neighbours: both images are duplicate-free, derived without the coverage fields
 theorem accSplit_nodup : accSplit.accFlat.Nodup ∧ accSplit.pubFlat.Nodup :=

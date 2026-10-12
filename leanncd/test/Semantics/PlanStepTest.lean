@@ -9,24 +9,26 @@ namespace LeanNCD.Semantics.PlanFixtures
 open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
 
 /-- Kind, stopping pc, failing occurrence (statement, valuation), raw slot row. -/
-def outcomeRow {P : Program Carrier declarations registry} (out : PlanOutcome P) :
+def outcomeRow {P : Program Carrier declarations registry} {A : Allocation P}
+    (out : PlanOutcome P A) :
     String × Nat × Option (Nat × Nat) × List (Option ℚ) :=
-  let row (M : Memory Carrier declarations) :=
-    [M (place ⟨(), point 0⟩), M (place ⟨(), point 1⟩), M (place ⟨(), point 2⟩)]
+  let row (M : Memory Carrier A) :=
+    [readSlot A M ⟨(), point 0⟩, readSlot A M ⟨(), point 1⟩,
+      readSlot A M ⟨(), point 2⟩]
   match out with
   | .done pc M => ("done", pc, none, row M)
   | .failed o pc M => ("failed", pc, some (o.2.1.val, o.2.2.val.val), row M)
   | .stuck pc M => ("stuck", pc, none, row M)
 
-def finalMemory {P : Program K σ r} : PlanOutcome P → Memory K σ
+def finalMemory {P : Program K σ r} {A : Allocation P} : PlanOutcome P A → Memory K A
   | .done _ M | .failed _ _ M | .stuck _ M => M
 
-def finalPc {P : Program K σ r} : PlanOutcome P → Nat
+def finalPc {P : Program K σ r} {A : Allocation P} : PlanOutcome P A → Nat
   | .done pc _ | .failed _ pc _ | .stuck pc _ => pc
 
 /-! ### taggedOut: [initZero p0..p2; acc group; pub p0..p2] -/
 
-def taggedRun := plan.runPlan ops (Start η0)
+def taggedRun := plan.runPlan ops (plan.Start η0)
 
 #eval check "step-tagged-run" (outcomeRow taggedRun)
   ("done", 3, none, [some 0, some 14, some 0])
@@ -37,11 +39,12 @@ def taggedRun := plan.runPlan ops (Start η0)
 
 -- Per-pc concrete states versus refState, observed with stepPlan.
 def taggedTrace : List (Option (List (Option ℚ))) :=
-  let m1 := match plan.stepPlan ops 0 (Start η0) with | .ok M => some M | _ => none
+  let m1 := match plan.stepPlan ops 0 (plan.Start η0) with | .ok M => some M | _ => none
   let m2 := m1.bind (fun M => match plan.stepPlan ops 1 M with | .ok M => some M | _ => none)
   let m3 := m2.bind (fun M => match plan.stepPlan ops 2 M with | .ok M => some M | _ => none)
-  [some (Start η0), m1, m2, m3].map (fun m => m.map (fun M =>
-    [M (place (addr 0).addr), M (place (addr 1).addr), M (place (addr 2).addr)]))
+  [some (plan.Start η0), m1, m2, m3].map (fun m => m.map (fun M =>
+    [readSlot plan.allocation M (addr 0).addr, readSlot plan.allocation M (addr 1).addr,
+      readSlot plan.allocation M (addr 2).addr]))
 #eval check "step-tagged-trace" taggedTrace
   [some [none, none, none], some [some 0, some 0, some 0],
    some [some 0, some 14, some 0], some [some 0, some 14, some 0]]
@@ -55,7 +58,7 @@ def pPlan (n : Nat) (body) : (program n body).Plan :=
   unitPlan [[.initZero (pBlock n body)], [.acc ((List.finRange n).map (pOcc n body))],
     [.pub (pBlock n body)]]
 def pInput (n : Nat) (body) := noInput (program n body) (fun _ => rfl)
-def pRun (n : Nat) (body) := (pPlan n body).runPlan ops (Start (pInput n body))
+def pRun (n : Nat) (body) := (pPlan n body).runPlan ops ((pPlan n body).Start (pInput n body))
 
 -- reciprocal(2) + reciprocal(4) collected = 3/4, not reciprocal(2 + 4) = 1/6.
 #eval check "step-reciprocal" (outcomeRow (pRun 2 reciprocalBody), summarize 2 reciprocalBody)
@@ -84,10 +87,11 @@ def sOcc (bad : Bool) (t : Fin 3) (h : (scalarRole bad).input t = false) :
 def sPlan (bad : Bool) : (scalarRole bad).Plan :=
   scalarPlan bad [[.initZero [sAddr bad 1 rfl, sAddr bad 2 rfl]], [.acc [sOcc bad 1 rfl]],
     [.pub [sAddr bad 1 rfl]], [.acc [sOcc bad 2 rfl]], [.pub [sAddr bad 2 rfl]]]
-def sRun (bad : Bool) := (sPlan bad).runPlan ops (Start (scalarInput bad))
+def sRun (bad : Bool) := (sPlan bad).runPlan ops ((sPlan bad).Start (scalarInput bad))
 def sRow (bad : Bool) : String × Nat × Option Nat × List (Option ℚ) :=
-  let row (M : Memory Carrier scalarDeclarations) :=
-    [M (place ⟨0, ()⟩), M (place ⟨1, ()⟩), M (place ⟨2, ()⟩)]
+  let row (M : Memory Carrier (sPlan bad).allocation) :=
+    [readSlot (sPlan bad).allocation M ⟨0, ()⟩, readSlot (sPlan bad).allocation M ⟨1, ()⟩,
+      readSlot (sPlan bad).allocation M ⟨2, ()⟩]
   match sRun bad with
   | .done pc M => ("done", pc, none, row M)
   | .failed o pc M => ("failed", pc, some o.1.val.val, row M)
@@ -128,11 +132,11 @@ def chainEarly : (routed chainBody).Plan :=
   unitPlan [[.initZero cAll], [.acc [cOcc 1]], [.acc [cOcc 0]], [.pub cAll]]
 
 #eval check "step-chain"
-  (outcomeRow (chainPlan.runPlan ops (Start chainInput)),
+  (outcomeRow (chainPlan.runPlan ops (chainPlan.Start chainInput)),
     chainResult.outcome.kind, vectorStore (snapshot chainResult.outcome))
   (("done", 5, none, [some 0, some 3, some 4]), "complete", [some 0, some 3, some 4])
 #eval check "invalid-read-unpublished"
-  (outcomeRow (chainEarly.runPlan ops (Start chainInput)))
+  (outcomeRow (chainEarly.runPlan ops (chainEarly.Start chainInput)))
   ("stuck", 1, none, [some 0, some 0, some 0])
 
 /-! ### Transactional acc, outside checkPlan's domain (plan §10 item 10)
@@ -147,8 +151,8 @@ shipped values; the valid neighbour is in the same row. -/
 def a2eSeqVisible : (routed chainBody).Plan :=
   unitPlan [[.initZero cAll], [.pub cAll], [.acc [cOcc 0, cOcc 1]]]
 #eval check "a2e-seq-visible"
-  (outcomeRow (a2eSeqVisible.runPlan ops (Start chainInput)),
-    outcomeRow (chainPlan.runPlan ops (Start chainInput)))
+  (outcomeRow (a2eSeqVisible.runPlan ops (a2eSeqVisible.Start chainInput)),
+    outcomeRow (chainPlan.runPlan ops (chainPlan.Start chainInput)))
   (("done", 3, none, [some 0, some 3, some 1]), ("done", 5, none, [some 0, some 3, some 4]))
 
 -- accMat-invalid: occurrence 0's slot (point 0) is never initialised and
@@ -157,7 +161,7 @@ def a2eFailedVsStuck : (program 2 failureAfterBody).Plan :=
   unitPlan [[.initZero [pAddr 2 failureAfterBody 1, pAddr 2 failureAfterBody 2]],
     [.acc ((List.finRange 2).map (pOcc 2 failureAfterBody))], [.pub (pBlock 2 failureAfterBody)]]
 #eval check "a2e-failed-vs-stuck"
-  (outcomeRow (a2eFailedVsStuck.runPlan ops (Start (pInput 2 failureAfterBody))),
+  (outcomeRow (a2eFailedVsStuck.runPlan ops (a2eFailedVsStuck.Start (pInput 2 failureAfterBody))),
     outcomeRow (pRun 2 failureAfterBody))
   (("failed", 1, some (1, 0), [none, some 0, some 0]),
     ("failed", 1, some (1, 0), [some 0, some 0, some 0]))
@@ -168,59 +172,61 @@ def a2eFailedVsStuck : (program 2 failureAfterBody).Plan :=
 -- reference post-state at pc 2 does not exist (fiber premise fails).
 def earlyStep : taggedOut.Plan := unitPlan [[.initZero block], [.pub block], [.acc group]]
 #eval check "invalid-publish-before-acc"
-  (outcomeRow (earlyStep.runPlan ops (Start η0)), (earlyStep.refState ops η0 2).isSome)
+  (outcomeRow (earlyStep.runPlan ops (earlyStep.Start η0)), (earlyStep.refState ops η0 2).isSome)
   (("done", 3, none, [some 0, some 14, some 0]), false)
 
 -- Missing initZero: the accumulate kernel has no slot to add into.
 def noInit : taggedOut.Plan := unitPlan [[.acc group], [.pub block]]
-#eval check "invalid-missing-init" (outcomeRow (noInit.runPlan ops (Start η0)))
+#eval check "invalid-missing-init" (outcomeRow (noInit.runPlan ops (noInit.Start η0)))
   ("stuck", 0, none, [none, none, none])
 
 -- Missing initZero for the empty-fiber coordinates only (N1): publish is stuck.
 def partialInit : taggedOut.Plan := unitPlan [[.initZero [addr 1]], [.acc group], [.pub block]]
-#eval check "invalid-missing-init-empty-fiber" (outcomeRow (partialInit.runPlan ops (Start η0)))
+#eval check "invalid-missing-init-empty-fiber" (outcomeRow (partialInit.runPlan ops (partialInit.Start η0)))
   ("stuck", 2, none, [none, some 14, none])
 
 -- One occurrence in two groups: counted twice (16); reference post-state at pc 3 fails.
 def dupGroup : taggedOut.Plan :=
   unitPlan [[.initZero block], [.acc group], [.acc [occ 0 0]], [.pub block]]
 #eval check "invalid-duplicate-member"
-  (outcomeRow (dupGroup.runPlan ops (Start η0)), (dupGroup.refState ops η0 3).isSome)
+  (outcomeRow (dupGroup.runPlan ops (dupGroup.Start η0)), (dupGroup.refState ops η0 3).isSome)
   (("done", 4, none, [some 0, some 16, some 0]), false)
 
 -- A fused (non-singleton) command was stuck in slice 1; slice 2 runs it (see PlanFusionTest).
 def fused : taggedOut.Plan := unitPlan [[.initZero block, .acc group], [.pub block]]
-#eval check "fused-runs-in-slice-2" (outcomeRow (fused.runPlan ops (Start η0)))
+#eval check "fused-runs-in-slice-2" (outcomeRow (fused.runPlan ops (fused.Start η0)))
   ("done", 2, none, [some 0, some 14, some 0])
 
 /-! ### The empty command (a no-op command in slice 2) -/
 
 /-- Kind and raw slot row (`none` slots read as `none`) of one step. -/
-def stepRow {P : Program Carrier declarations registry} : StepResult P → String × List (Option ℚ)
-  | .ok M => ("ok", [M (place ⟨(), point 0⟩), M (place ⟨(), point 1⟩), M (place ⟨(), point 2⟩)])
+def stepRow {P : Program Carrier declarations registry} {A : Allocation P} :
+    StepResult P A → String × List (Option ℚ)
+  | .ok M => ("ok", [readSlot A M ⟨(), point 0⟩, readSlot A M ⟨(), point 1⟩,
+      readSlot A M ⟨(), point 2⟩])
   | .semFail _ => ("semFail", [])
   | .stuck => ("stuck", [])
 
 /-- Memory after `plan`'s `initZero block` (the first step of `plan`). -/
-def initMem : Memory Carrier declarations :=
-  match plan.stepPlan ops 0 (Start η0) with | .ok M => M | _ => Start η0
+def initMem : Memory Carrier plan.allocation :=
+  match plan.stepPlan ops 0 (plan.Start η0) with | .ok M => M | _ => plan.Start η0
 
 /-- Donor `plan` with the empty command `[]` inserted after the init. -/
 def emptyCmd : taggedOut.Plan := unitPlan [[.initZero block], [], [.acc group], [.pub block]]
 
 -- Slice 1: stuck, and the run stuck at pc 1. Slice 2: `[]` is the identity step.
 #eval check "step-empty-command-noop"
-  (stepRow (plan.stepCommand ops 1 initMem []), outcomeRow (emptyCmd.runPlan ops (Start η0)))
+  (stepRow (plan.stepCommand ops 1 initMem []), outcomeRow (emptyCmd.runPlan ops (emptyCmd.Start η0)))
   (("ok", [some 0, some 0, some 0]), ("done", 4, none, [some 0, some 14, some 0]))
 -- Accept-neighbours: a one-element no-op command steps; the plan without `[]` completes.
 #eval check "step-empty-command-neighbours"
-  (stepRow (plan.stepCommand ops 1 initMem [.initZero []]), outcomeRow (plan.runPlan ops (Start η0)))
+  (stepRow (plan.stepCommand ops 1 initMem [.initZero []]), outcomeRow (plan.runPlan ops (plan.Start η0)))
   (("ok", [some 0, some 0, some 0]), ("done", 3, none, [some 0, some 14, some 0]))
 
 /-! ### `stepPlan` at and past the end of a three-command plan -/
 
 /-- Memory before `plan`'s publication (after the init and the accumulate). -/
-def preMem : Memory Carrier declarations :=
+def preMem : Memory Carrier plan.allocation :=
   match plan.stepPlan ops 1 initMem with | .ok M => M | _ => initMem
 
 -- Past the end is stuck even over a fully-run memory; pc = m - 1 is a real step.
