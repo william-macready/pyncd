@@ -16,7 +16,7 @@ Reachable from `import LeanNCD` (`Semantics.lean` imports `Plan.lean`, which imp
 | `Memory.lean` | dense `Memory`, `place`, `SlotView`, `readPub`, partial `Decode`, `refState`, relation `R` (fields `dead`, `retPub`), `readPub_eq` (pointwise on `Live`), `R_start`, `decode_of_R` |
 | `Step.lean` | step kernels `execInit`/`execAcc`/`execPub`/`execRet`, `stepPlan`, `runFrom`, `runPlan`, `PlanOutcome` |
 | `Simulation.lean` | `InitOK`/`AccOK`/`PubOK`/`RetOK`/`AnnOK`, `accFlat_complete`, `refState_R2`, `step_retire`, `readPub_le`, `step_R`, `step_failed` |
-| `Validity.lean` | `Valid`, computable `checkPlan` and its component checks, `checkPlan_sound`, `checkRet`, field `Valid.retOK`, `checkPlan_nodup_redundant` (the two Nodup checks follow from singleton + `checkSteps`) |
+| `Validity.lean` | `Valid`, computable `checkPlan` and its component checks, `checkPlan_sound`, `checkRet`, field `Valid.retOK`, `checkPlan_nodup_redundant` (the two Nodup checks follow from singleton + `checkSteps`), Prop-level `accFlat_nodup_of_accOK`/`pubFlat_nodup_of_pubOK`/`Valid.coverage_nodup_of_steps` |
 | `Run.lean` | `step_not_stuck`, `readPub_isSome` (over `Live`), `run_R`, `runPlan_R`, `runPlan_not_stuck` |
 | `Correctness.lean` | `terminal_adequacy` (Lemma 31.2), `complete_of_refState`, `live_output_of_valid`, Theorem 31.3 (a)(b)(c) |
 | `Fusion.lean` | `R_transport` (carries `Ret`/`Live`/`dead`/`retPub` along equal prefixes), fused-command fold lemmas `execAnns_R`, `step_R_command`, `step_failed_command`, `stepCommand_not_stuck` (the fold `execAnns` and `stepCommand` are in `Step.lean`, `execAnns_not_stuck` in `Run.lean`); run bridge `runFrom_agree`, `runPlan_agree` (`expand`/`offset` live in `Syntax.lean`, `execAnns` in `Step.lean`) |

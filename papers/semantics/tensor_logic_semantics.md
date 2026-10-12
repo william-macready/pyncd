@@ -4266,16 +4266,18 @@ step), *progress* (needed so that a step is not stuck), *terminal* (needed only 
 | retire $B$: every $x\in B$ is published at pc (the $\mathrm{Pub}$ half of $\mathrm{Live}$) | safety (a retire of an unpublished address would clear a live accumulator) | `step_retire` |
 | retire $B$: no $x\in B$ is already retired (the $\neg\mathrm{Ret}$ half of $\mathrm{Live}$; a second retire is harmless at run time) | diagnostic | none (fixture `retire-twice`) |
 | retire $B$: no $x\in B$ is an output (`RetOK`) | terminal | `live_output_of_valid`, `terminal_adequacy` |
-| whole plan: groups duplicate-free (Section 29.3 condition 1, Nodup half) | diagnostic | none |
-| whole plan: blocks duplicate-free (Section 29.3 condition 2, Nodup half, `checkCov2Nodup`) | diagnostic | none |
+| whole plan: groups duplicate-free (Section 29.3 condition 1, Nodup half) | diagnostic (derivable from the `acc` step conditions: `accFlat_nodup_of_accOK`) | none |
+| whole plan: blocks duplicate-free (Section 29.3 condition 2, Nodup half, `checkCov2Nodup`) | diagnostic (derivable from the `pub` step conditions: `pubFlat_nodup_of_pubOK`) | none |
 | whole plan: blocks cover $\mathrm{Addr}_{\mathrm{Def}}$ (Section 29.3 condition 2 covering) | terminal | `complete_of_refState` (Lemma 31.2) |
 | whole plan: groups cover $\mathcal{O}_P$ (Section 29.3 condition 1 covering) | terminal (redundant: derivable from Section 29.3 condition 2 covering and condition 4) | `complete_of_refState` |
 
 Section 29.3 condition 1 covering is redundant in the singleton profile: it follows from Section 29.3
 condition 2 covering plus Section 29.3 condition 4 (`accFlat_complete`, packaged as
 `cov1_of_cov2_pubOrder`). It is nevertheless kept in `Valid` and is not diagnostic:
-`complete_of_refState` consumes it directly. That the Nodup half of Section 29.3 condition 1
-follows from the per-step `AccOK` success is a conjecture, not proved. Runtime execution (`runPlan`)
+`complete_of_refState` consumes it directly. That the Nodup halves of Section 29.3 conditions 1 and 2
+follow from the per-step `AccOK` and `PubOK` conditions is proved on a singleton plan
+(`accFlat_nodup_of_accOK`, `pubFlat_nodup_of_pubOK`, and for a `Valid` plan
+`Valid.coverage_nodup_of_steps`; the checker-level form is `checkPlan_nodup_redundant`). Runtime execution (`runPlan`)
 does not detect an invalid plan: soundness rests on the computable checker `checkPlan`, whose
 acceptance implies `Valid` (`checkPlan_sound`) and every `Valid` plan is accepted (`checkPlan_complete`), so
 `checkPlan` decides `Valid` exactly (`checkPlan_iff`).
