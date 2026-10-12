@@ -5,7 +5,7 @@ production and regression prototype compiled through `deb4fecd`; both controller
 full builds and the axiom audit are green. Exact ordered patch replay from
 `4ffdc342` to `deb4fecd` is controller-verified (isolated-index final git diff
 exit 0). All 64 mutation verdicts pass; both fresh whole-branch reviews are
-clean or adjudicated. Local integration remains pending.
+clean or adjudicated. Landed on local `main` via merge `c44f8a21`; not pushed.
 Decisions D1-D6 were confirmed individually before approval.
 Base: local `main` at `4ffdc342`.
 Path: Full (physical storage, placement, validity and refinement interfaces change).

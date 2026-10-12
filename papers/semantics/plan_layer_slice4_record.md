@@ -3,7 +3,7 @@
 Status: implementation validated. Both controller full builds and the axiom
 audit are green, all 64 mutation verdicts pass, both whole-branch reviews are
 clean or adjudicated, and exact ordered patch replay is verified.
-Local integration is the only remaining gate; no remote push is authorized.
+Local integration completed with merge `c44f8a21`; no remote push was performed.
 
 ## Approved scope
 
@@ -146,8 +146,8 @@ The increase is 73: `PlanReuseTest` 26, `PlanReuseStorageTest` 22,
   without changing production. No per-fixture kill claim is made for storage.
 - New live plan: `plan_layer_slice4_plan.md`; production/fixture tasks marked as
   executed checkpoints, with donors, symbol windows, patch scopes and risks.
-  Manifest gates, documentation verification, both fresh whole-branch reviews
-  and the final controller build are complete. Local integration remains.
+  Manifest gates, documentation verification, both fresh whole-branch reviews,
+  the final controller build and local integration are complete.
 
 ### Final controller validation and review disposition
 
@@ -223,6 +223,12 @@ no additional known budget breach occurred. Exact cumulative usage and measured
 context peaks remain unavailable, not zero, so the 250k context and cumulative
 token budgets have no accounting certificate.
 
-## Outstanding completion gates
+## Local integration
 
-- Local integration; no remote push.
+- Merged the validated topic branch into local `main` with `--no-ff` as
+  `c44f8a21`.
+- Confirmed the topic branch is an ancestor of `main` and the merged trees
+  have no content difference before this documentation close-out.
+- The primary checkout was clean at integration. No remote push was performed.
+- Cleanup is limited to this task's topic branch/worktree and temporary
+  immutable snapshot; no other checkout or branch is in scope.

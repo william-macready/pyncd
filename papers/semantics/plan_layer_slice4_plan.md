@@ -1,7 +1,8 @@
 # Part V slice 4: typed buffer reuse and alias safety
 
 Status: compiled prototype is the implementation; all validation gates are
-complete. Local integration is pending. Base: local `main` at `4ffdc342`.
+complete and the slice landed on local `main` via merge `c44f8a21`.
+Base: local `main` at `4ffdc342`.
 Approved contract: `docs/superpowers/specs/2026-10-11-buffer-reuse-aliasing-design.md`.
 Execution evidence belongs in `plan_layer_slice4_record.md`, not this live plan.
 
@@ -235,7 +236,7 @@ then rerun affected tests/cycles. Both reviews must be clean or adjudicated.
 Soundness was clean; fidelity found three documentation corrections, all fixed.
 Only documentation and observed diagnostic anchors changed after review.
 
-### T10 controller final build — COMPLETE; local integration — PENDING
+### T10 controller final build and local integration — COMPLETE
 
 Dependencies: T7–T9; after restoring all mutation files:
 
