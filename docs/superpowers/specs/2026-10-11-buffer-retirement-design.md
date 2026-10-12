@@ -107,7 +107,7 @@ conditions to re-derive the logical set from the commands, a much larger ripple 
 ### 3.5 Testing
 
 - All 200 existing fixture rows (by the `rg -c` count of `#eval check` rows plus `example`/`theorem` items in
-  `Plan*Test.lean`; the path doc's earlier 180 was counted differently, plan O6) stay green with no row edited.
+  `Plan*Test.lean`; the path doc's earlier 180 was off by one, 181 by this method, plus 19 from `PlanFaultsTest`) stay green with no row edited.
 - New `PlanRetireTest` (checked against both `checkPlan` and `runPlan`; fixtures are authored from the
   plan in `PlanFixtures.lean` style):
   1. valid retire after the last reader: `done`, final memory has `none` at the retired slot;

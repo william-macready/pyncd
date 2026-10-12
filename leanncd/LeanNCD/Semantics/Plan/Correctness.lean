@@ -1,7 +1,7 @@
 import LeanNCD.Semantics.Plan.Run
 
 /- Terminal adequacy (Lemma 31.2) and plan correctness (Theorem 31.3) for the
-   slice-1 profile. Lemma 31.2 is the first consumer of `Valid.coverage1` and
+   slice-1 to slice-3 profile. Lemma 31.2 is the first consumer of `Valid.coverage1` and
    `Valid.coverage2`: at pc = m the related reference state is complete, so the
    reference final store exists, every output coordinate is published, and
    Decode returns its output projection. Theorem 31.3 compares outcomes only

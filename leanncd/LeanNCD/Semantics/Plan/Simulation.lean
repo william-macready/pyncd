@@ -1,7 +1,7 @@
 import LeanNCD.Semantics.Plan.Step
 
 /- Successful-step simulation and failure matching (spec 31.2-31.3) for the
-   slice-1 profile. Each kernel is proved separately against the logical
+   slice-1 to slice-3 profile. Each kernel is proved separately against the logical
    post-state `postAnn`; `refState` is advanced one annotation at a time. -/
 
 namespace LeanNCD.Semantics.Program.Plan

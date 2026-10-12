@@ -2,7 +2,7 @@ import LeanNCD.Semantics.Plan.Batch
 
 /- Concrete memory, the slot view, Start, Decode, the logical post-state of a
    command prefix, and the representation relation R (spec Section 30).
-   Slice-1 profile: one dense buffer per tensor, injective place map, no reuse. -/
+   Slice-1 to slice-3 profile: one dense buffer per tensor, injective place map, no reuse. -/
 
 namespace LeanNCD.Semantics.Program.Plan
 
@@ -213,7 +213,7 @@ theorem refState_reaches {η : P.Input} {pc : Nat} {c : P.Running}
 
 /-! ### The representation relation -/
 
-/-- `R_Π` (spec 30.4) in the slice-1 profile, with the input `η` explicit. -/
+/-- `R_Π` (spec 30.4) in the slice-1 to slice-3 profile, with the input `η` explicit. -/
 structure R (η : P.Input) (pc : Nat) (M : Memory K σ) (c : P.Running) : Prop where
   /-- R1: the related reference state is reachable. -/
   reach : P.Reaches ops (.running (P.initial η)) (.running c)
