@@ -51,7 +51,7 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-11, Lean as of `7932c87b`: the Part V slice-1 to slice-3 plan layer
+**Snapshot: 2026-10-11, Lean as of `df1cdb6c`: the Part V slice-1 to slice-3 plan layer
 (`Semantics/Plan/`), on top of bounded source correspondence
 (`6a90baff`), nested-reduction reindexing (`705280cd`), successful-permutation
 agreement (`ca642b3d`), and raw-source admission, on top of the verified
@@ -63,7 +63,7 @@ both final whole-branch code-review lenses are clean.
 The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer))
 is in the snapshot above, extended by slice 2 to fused commands and by slice 3 to retirement of defined
 published addresses: eleven modules under `Semantics/Plan/`
-proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 268 fixtures and 54 mutation cycles
+proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 281 fixtures and 54 mutation cycles
 (20 in slice 1, 15 in slice 2, 9 in the D7 manifest, 10 in slice 3).
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
@@ -1104,6 +1104,7 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
 | `step_failed` | A failed step is matched by one `undefined` event for the same occurrence from the related state | Section 31.3 (failure matching) |
 | `checkPlan_sound` | An accepted plan satisfies `Valid` | Definition 31.1 |
 | `checkPlan_complete`, `checkPlan_iff` | A `Valid` plan is accepted, so `checkPlan` decides `Valid` exactly | Definition 31.1 |
+| `accFlat_nodup_of_accOK`, `pubFlat_nodup_of_pubOK`, `Valid.coverage_nodup_of_steps` | On a singleton plan, `AccOK` (resp. `PubOK`) at every `acc` (resp. `pub`) command makes the accumulation (publication) image duplicate-free: the Nodup halves of coverage 1 and 2 are consequences of the step conditions (checker-level form: `checkPlan_nodup_redundant`) | Section 29.3 conditions 1-2 (Nodup halves) |
 | `checkAccMat_of_rest` | Given `checkSingleton`, `checkCov2Complete`, `checkInit` at every `initZero` and `checkPubMat` at every `pub`, `checkAccMat` holds at every `acc`: the clause is shadowed | Definition 31.1 (checker redundancy; no spec result) |
 | `step_not_stuck`, `runPlan_not_stuck` | A valid plan's run never reports `stuck` | Section 31.3 (progress) |
 | `run_R`, `runPlan_R` | The whole run ends `done m` with R and a reference execution, or fails with a matched failure | Sections 31.2-31.3 |
@@ -1164,8 +1165,8 @@ retired slot is cleared and never rewritten), error-free kernels. Soundness rest
 (singleton plans) or `checkPlanF` (fused plans): the run does not detect an invalid plan. The spec's
 restatements are the paragraphs headed "As formalized (slice-1 to slice-3 profile ...)" (in 30.3 and 33.2: "(slice-3 profile ...)") in Sections
 29.3, 30.2, 30.3, 30.4, 31.1-31.4, 32.1 and 33.2 of the
-[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 268
-fixtures by the `rg -c` count (149 `#eval check` rows and 119 `example`/`theorem` items), of which 68 are slice 3's
+[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 281
+fixtures by the `rg -c` count (149 `#eval check` rows and 132 `example`/`theorem` items), of which 68 are slice 3's
 `PlanRetireTest` (27 rows, 24 `example`s, 17 theorems); the earlier figure of 180 was off by one (181 by this method
 at the commit that wrote it: 110 rows + 71 items), and `PlanFaultsTest` added 19 after it (12 rows + 7 items),
 which gives the 200 before slice 3. The mutation manifests ran 54 mutation cycles (20 in slice 1, 15 in
@@ -1178,7 +1179,6 @@ slice 2, 9 in the D7 manifest, 10 in slice 3), of which 4 are labelled equivalen
 - Buffer reuse and aliasing, retiring inputs, copy and relocate operations, and liveness for scans (retirement of
   defined published addresses is done, slice 3).
 - Concrete implementation-error sources: `Plan/Faults.lean` models errors as an abstract fault oracle (`FOutcome`, error-free profile, (a)(b)(c) under faults, `R` at the error state; fixtures in `PlanFaultsTest`), so allocation failure and kernel errors are oracle outputs, not events of the model.
-- A proof that per-step `AccOK`/`PubOK` imply the Nodup halves of conditions 1 and 2 (conjecture).
 - Comparing the failure occurrence or failure snapshot between the plan and the reference executor.
 - Dropping the redundant condition-1 covering clause of `Valid`. It follows from the condition-2
   covering clause and condition 4 (`accFlat_complete`), but `complete_of_refState` consumes it
@@ -1226,7 +1226,7 @@ retirement of defined published addresses, dense injective storage, with Lemma 3
 Lemma 32.1 proved for that profile.
 Not yet done: buffer reuse and aliasing, scan liveness, retiring inputs;
 concrete implementation-error sources (an abstract fault oracle with the error-free profile restated is done, `Plan/Faults.lean`); cross-sort primitives and non-exact numeric
-kernel fixtures; and the Nodup conjecture for conditions 1 and 2.
+kernel fixtures.
 
 Floating-point correspondence needs its own ordered-reduction or numerical
 correctness criterion. Exact commutative pushforward laws do not imply bitwise
