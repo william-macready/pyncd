@@ -342,10 +342,71 @@ example : chainMem rtFusedOk 4 (place (cAddr 1).addr) = none := rfl
 #eval check "retire-net-multi-live-neighbour" (chainMem rtMulti 5 (place (cAddr 2).addr)) (some 4)
 #eval check "retire-net-fused-live-neighbour" (chainMem rtFusedOk 4 (place (cAddr 2).addr)) (some 4)
 
+/-! `dead` and `retPub` hold trivially until something has been retired (`Live = Pub ∧ ¬ Ret`), so the
+   steps that matter are the ones that run AFTER a retire. `rtNeighbour` has an `acc` after its retire;
+   `rtInitAfter` has an `initZero` after its retire, the shape the buffer-reuse slice will introduce. -/
+
+-- donor: rtNeighbour. Retire p0 (command 3), THEN `initZero [p2]` (command 4), then the accumulation
+-- into p2 and its publication: the `init` and `acc` kernels run with a retired slot present.
+def rtInitAfter : (routed chainBody).Plan :=
+  unitPlan [[.initZero [cAddr 0, cAddr 1]], [.acc [cOcc 0]], [.pub [cAddr 0, cAddr 1]],
+    [.retire [cAddr 0]], [.initZero [cAddr 2]], [.acc [cOcc 1]], [.pub [cAddr 2]]]
+
+#eval check "retire-init-after-retire" (rtInitAfter.checkPlan, chainRow rtInitAfter)
+  (true, ("done", 7, none, [none, some 3, some 4]))
+example : rtInitAfter.checkPlan = true := by decide
+
+theorem rtNeighbour_valid : rtNeighbour.Valid := rtNeighbour.checkPlan_sound (by decide)
+theorem rtInitAfter_valid : rtInitAfter.Valid := rtInitAfter.checkPlan_sound (by decide)
+
+theorem rtNeighbour_R_every_pc : ∀ pc, pc ≤ 6 → ∃ c, rtNeighbour.refState ops chainInput pc = some c ∧
+    rtNeighbour.R ops chainInput pc (chainMem rtNeighbour pc) c :=
+  R_every_pc_of rtNeighbour rtNeighbour_valid 6 rfl (by intro k hk; interval_cases k <;> rfl)
+
+theorem rtInitAfter_R_every_pc : ∀ pc, pc ≤ 7 → ∃ c, rtInitAfter.refState ops chainInput pc = some c ∧
+    rtInitAfter.R ops chainInput pc (chainMem rtInitAfter pc) c :=
+  R_every_pc_of rtInitAfter rtInitAfter_valid 7 rfl (by intro k hk; interval_cases k <;> rfl)
+
+/-- `dead` and `retPub` read off the state AFTER a later `acc` (command 4 of `rtNeighbour`, so pc 5). -/
+theorem rtNeighbour_dead_after_acc :
+    ∃ c, rtNeighbour.refState ops chainInput 5 = some c ∧
+      rtNeighbour.R ops chainInput 5 (chainMem rtNeighbour 5) c ∧
+      ¬ rtNeighbour.Live 5 (cAddr 0).addr ∧ chainMem rtNeighbour 5 (place (cAddr 0).addr) = none := by
+  obtain ⟨c, hc, hR⟩ := rtNeighbour_R_every_pc 5 (by omega)
+  have hRet : rtNeighbour.Ret 5 (cAddr 0).addr := by decide
+  have hPub := hR.retPub _ hRet
+  have hnl : ¬ rtNeighbour.Live 5 (cAddr 0).addr := fun h => h.2 hRet
+  exact ⟨c, hc, hR, hnl, hR.dead _ hPub hnl⟩
+
+/-- The same after a later `initZero` (command 4, pc 5) and after the following `acc` (command 5, pc 6). -/
+theorem rtInitAfter_dead_after_init_and_acc :
+    ∀ pc, 5 ≤ pc → pc ≤ 6 → ∃ c, rtInitAfter.refState ops chainInput pc = some c ∧
+      rtInitAfter.R ops chainInput pc (chainMem rtInitAfter pc) c ∧
+      ¬ rtInitAfter.Live pc (cAddr 0).addr ∧
+      chainMem rtInitAfter pc (place (cAddr 0).addr) = none := by
+  intro pc h5 h6
+  obtain ⟨c, hc, hR⟩ := rtInitAfter_R_every_pc pc (by omega)
+  have hRet : rtInitAfter.Ret pc (cAddr 0).addr := by
+    interval_cases pc <;> decide
+  have hPub := hR.retPub _ hRet
+  have hnl : ¬ rtInitAfter.Live pc (cAddr 0).addr := fun h => h.2 hRet
+  exact ⟨c, hc, hR, hnl, hR.dead _ hPub hnl⟩
+
+-- Independent of `R`: p0 stays free while the later `init` and `acc` kernels run, and they did run.
+example : chainMem rtNeighbour 5 (place (cAddr 0).addr) = none := rfl
+example : chainMem rtInitAfter 5 (place (cAddr 0).addr) = none := rfl
+example : chainMem rtInitAfter 6 (place (cAddr 0).addr) = none := rfl
+example : chainMem rtInitAfter 4 (place (cAddr 2).addr) = none := rfl
+example : chainMem rtInitAfter 5 (place (cAddr 2).addr) = some 0 := rfl
+#eval check "retire-net-neighbour-acc-ran" (chainMem rtNeighbour 5 (place (cAddr 2).addr)) (some 4)
+#eval check "retire-net-init-after-acc-ran" (chainMem rtInitAfter 6 (place (cAddr 2).addr)) (some 4)
+
 #print axioms R_every_pc_of
 #print axioms R_every_pc_F_of
 #print axioms rtChain_retired_slot_free
 #print axioms rtMulti_retired_slots_free
 #print axioms rtFusedOk_retired_slot_free
+#print axioms rtNeighbour_dead_after_acc
+#print axioms rtInitAfter_dead_after_init_and_acc
 
 end LeanNCD.Semantics.PlanFixtures
