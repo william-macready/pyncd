@@ -166,8 +166,11 @@ Every lemma and theorem here carries a mathematical argument. Which of them
 are also kernel-checked in Lean is recorded in
 [Proof status and numbered results](#proof-status-and-numbered-results). The
 [Part V](#part-v-compilation-and-refinement) compilation results Lemma 31.2, Theorem 31.3 and Lemma 32.1 are
-proved for the slice-1 to slice-3 profile (singleton and fused commands, the latter by expansion; retirement of
-defined published addresses, dense injective storage; see the table); the general results and buffer reuse have no Lean proof. Compiler correctness is
+proved for the slice-1 to slice-4 profile (singleton/fused commands by expansion,
+retirement of defined published addresses, typed static same-sort buffer reuse
+with boundary-local layout injectivity; see the table). Slice 4 is compiled;
+mutation, fresh review and integration gates remain pending in
+`plan_layer_slice4_record.md`. General scan/liveness and in-place reuse are not proved. Compiler correctness is
 conditional on the stated certificates and kernel contracts; it is not a claim
 that an existing compiler satisfies them.
 Structural well-formedness alone establishes neither existence of a model
@@ -199,8 +202,8 @@ sequentially within each top-level section and are not subsection numbers:
 | Theorem 26.5 | Ranked progress | Proved: `ranked_progress`, `ranked_not_blocked` (`Progress`). Executor level: `result_not_blocked`. |
 | Theorem 26.6 | Ranked correspondence | Proved: `maximal_dichotomy`, `model_maximal_success`, `no_model_maximal_failure`, `initialization_iff_singleton`, `successful_schedules_agree` (`Progress`). Executor level: `run_ranked_dichotomy`. |
 | Corollary 26.7 | Ranked uniqueness | Follows from `model_maximal_success`, `maximal_extension` and `successful_unique`; no separately named theorem. |
-| Lemma 31.2 | Terminal adequacy of a valid plan | Proved (slice-1 to slice-3 profile): `terminal_adequacy`, `complete_of_refState` (`Plan.Correctness`). Fused plans: `terminal_adequacy_F` (`Plan.FusionCorrectness`). Slice 3: statement unchanged for plans containing `retire`; outputs are live by `live_output_of_valid` (`Plan.Correctness`). |
-| Theorem 31.3 | Compiled correctness | Proved (slice-1 to slice-3 profile): `done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model` (`Plan.Correctness`); `runPlan_not_stuck` (`Plan.Run`). Fused plans: `done_correct_F`, `failed_correct_F`, `done_or_failed_F`, `done_of_model_F`, `done_iff_model_F`, `runPlan_not_stuck_F` (`Plan.FusionCorrectness`); per-command failure matching `step_failed_command` (`Plan.Fusion`). Slice 3: statements unchanged for plans containing `retire` (`Valid` has the field `retOK`; `checkPlan_iff` still holds). |
+| Lemma 31.2 | Terminal adequacy of a valid plan | Proved (slice-1 to slice-4 profile): `terminal_adequacy`, `complete_of_refState` (`Plan.Correctness`). Fused plans: `terminal_adequacy_F` (`Plan.FusionCorrectness`). Outputs remain live by `live_output_of_valid`; `Decode` follows allocation, not ghost history. |
+| Theorem 31.3 | Compiled correctness | Proved (slice-1 to slice-4 profile): `done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model` (`Plan.Correctness`); `runPlan_not_stuck` (`Plan.Run`). Fused plans: `done_correct_F`, `failed_correct_F`, `done_or_failed_F`, `done_of_model_F`, `done_iff_model_F`, `runPlan_not_stuck_F` (`Plan.FusionCorrectness`); per-command failure matching `step_failed_command` (`Plan.Fusion`). `Valid.layout` supplies all-boundary alias safety; exact `checkPlan_iff` and `checkPlanF_iff` remain. |
 | Lemma 32.1 | Batched accumulation refines individual steps | Proved: `batch_execution`, `batch_execution_perm`, `accumulateBatch_accumulators`, `accumulateBatch_pending`, `accumulateBatch_published` (`Plan.Batch`); failure half for the transactional singleton kernel only (`step_failed`, `Plan.Simulation`). |
 
 The Lean results for Sections 23-26 concern the reference machine as a transition
@@ -3945,7 +3948,7 @@ defined coordinate, including empty fibers. They also ensure the readiness
 and completion premises of [Section 29.2](#292-accumulation-and-publication-contracts) at each successful prefix.
 They do not establish body-definedness on every input.
 
-**As formalized (slice-1 to slice-3 profile: fused commands by expansion, retirement of defined published addresses, dense injective storage).**
+**As formalized (slice-1 to slice-4 profile: fused commands by expansion, retirement and typed static same-sort buffer reuse).**
 The conditions play different roles. Conditions 1 and 2 (covering) are *terminal*: only terminal
 adequacy uses them. Condition 4 is a *safety* condition of each publication. Condition 3 is a
 *progress* premise, not a simulation premise: readiness is enforced dynamically by the read view, so
@@ -4085,7 +4088,12 @@ need not yet occupy a slot. Before a kernel updates or reads its physical
 accumulator, it must materialize that zero or prove an equivalent
 initial-write operation. Uninitialized memory is never used as a zero.
 
-**As formalized (slice-1 to slice-3 profile: fused commands by expansion, retirement of defined published addresses, dense injective storage).**
+**As formalized (slice-1 to slice-4 profile: fused commands by expansion, retirement and typed static same-sort buffer reuse).**
+`Allocation` records independent finite buffer identities, sorts, capacities and
+bounded sort-certified placement (`locate`). `Slot = InputSlot P ⊕ BufferSlot A`
+keeps inputs separate from reusable defined storage. `SlotView` represents
+published resources on `Live` and accumulators on `Mat` but not `Pub`;
+`LayoutOK` requires injectivity on this domain, not on all addresses.
 Materializing a zero does not by itself make the zero correct: an `initZero` of an accumulator that
 already holds contributions would silently erase them. The slice-1 plan therefore also requires
 *initZero freshness* (`InitOK`): each initialised address is still unpublished at that command, and no
@@ -4123,18 +4131,22 @@ $\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$. Reuse does not id
 addresses. Buffer ownership and ordered coordinates must follow $\textcolor{#5688C7}{\Sigma}$;
 matching printed axis names or equal extents is not a layout proof.
 
-**As formalized (slice-3 profile: retirement of defined published addresses, dense injective storage).**
+**As formalized (slice-3 to slice-4 profile: retirement and typed static same-sort buffer reuse).**
 The annotation `retire B` retires published addresses of $B$ (defined addresses only; inputs are never retired,
 `live_input`). `execRet` sets each member's slot to `none` and the reference state is unchanged, so a retired
-address stays in $\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$ as ghost history, and a retired slot is free
-(`dead`). The logical published set $\mathrm{Pub}$ is unchanged; the readable set is
+address stays in $\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$ as ghost history. Its slot is immediately
+cleared, then may represent another resource under boundary-local `LayoutOK`. The logical published set $\mathrm{Pub}$ is unchanged; the readable set is
 $\mathrm{Live}=\mathrm{Pub}\setminus\mathrm{Ret}$ (`Live`, `Ret`, `retList`). "Not needed by any remaining
 contribution" is enforced at the reader: a later `acc` whose footprint contains a retired address fails `ReadyOK`,
 which ranges over $\mathrm{Live}$. "Not needed by output decoding" is the `RetOK` clause that no member is an
 output (`live_output_of_valid`: every output is live at the end of a valid plan). "Remaining concrete storage
-operation" is vacuous: copy and relocate are not formalized. Reuse has no Lean counterpart either: `place` is
-injective, a retired slot is never rewritten, and reading it in a later `acc` is a plan defect (rejected by the checker, `stuck` at
-run time); decoding a retired output yields `none` (Section 31.1).
+operation" is vacuous: copy and relocate are not formalized. Slice 4 permits
+static same-sort reuse after retirement: `place` need not be globally injective.
+`R.dead` requires emptiness only outside the current layout image, including
+unused capacity; it does not require an old address's reused slot to stay empty.
+A later read of the retired logical address still returns `none` even when its
+former slot holds a new value; such a demanded read is a plan defect (rejected
+by the checker, `stuck` at run time). Decoding a retired output yields `none`.
 
 Liveness between commands is not sufficient for safety inside a kernel:
 all required reads of old contents must occur before an overlapping write,
@@ -4178,11 +4190,12 @@ A scalar output requires its one rank-zero coordinate.
 The decoder cannot recover overwritten output entries from ghost history
 or silently supply zeros at missing nonempty output coordinates.
 
-**As formalized (slice-1 to slice-3 profile: fused commands by expansion, retirement of defined published addresses, dense injective storage).**
-The general relation above stays the contract; the slice-1 instance is the structure `R` (`Plan.Memory`),
+**As formalized (slice-1 to slice-4 profile: fused commands by expansion, retirement and typed static same-sort buffer reuse).**
+The general relation above stays the contract; the allocation-indexed instance is the structure `R` (`Plan.Memory`),
 with the input $\eta$ explicit and the pc-local sets $\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$,
 $\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$ computed from the first $\textcolor{#C16C86}{\mathsf{pc}}$ commands (`prefixAnn`). The layout view `SlotView` maps exactly the addresses of
-$\mathrm{Live}(\textcolor{#C16C86}{\mathsf{pc}})$ (the published, not yet retired addresses) to their published slots;
+$\mathrm{Live}(\textcolor{#C16C86}{\mathsf{pc}})$ (the published, not yet retired addresses) to their published slots,
+and `Mat`-but-not-`Pub` accumulator resources to their accumulator slots;
 $\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$ is the logical set.
 
 - R1 (reach): $\textcolor{#A87C28}{\mathsf{Conf}}$ is reachable from the initial state on $\eta$. R1 is kept because R2-R4 do
@@ -4195,8 +4208,9 @@ $\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$ is the logical set.
   view `SlotView` depends on $\textcolor{#C16C86}{\mathsf{pc}}$ only, not on the memory.
 - R4 (retention): if $x$ is unpublished and some consumed occurrence targets $x$, then
   $x\in\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$.
-- R5 (dead): for $a\in\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})\setminus\mathrm{Live}(\textcolor{#C16C86}{\mathsf{pc}})$, $M[\mathrm{place}\ a]$ is
-  uninitialised (a retired slot is free); `dead`.
+- R5 (dead): every physical slot outside the image of `SlotView pc` contains
+  `none`, including unused capacity; `dead`. A retired address's former slot
+  may hold a different mapped resource.
 - R6 (Lean only): a retired address is published (`retPub`); it is needed because $R$ does not remember earlier
   steps' conditions.
 - `Decode` at $\textcolor{#C16C86}{\mathsf{pc}}$ is partial. It succeeds iff every output coordinate is in $\mathrm{Live}(\textcolor{#C16C86}{\mathsf{pc}})$ with an
@@ -4208,6 +4222,10 @@ $\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$ is the logical set.
 Slice 2: `R` and `refState` are indexed by command count and computed from the expanded annotations of the
 first `pc` commands (`prefixAnn`); `R` is claimed at command boundaries
 only (`step_R_command`), and the intermediate states of a fused command exist only inside the fold.
+Slice 4: expansion preserves allocation; prefix transport (`R_transport`,
+`execAnn_prefix`, `decode_prefix_congr`) requires allocation equality as well as
+prefix equality and casts memory along that equality. Layout safety is required
+at all expanded annotation boundaries, not only the outer command boundaries.
 
 ## 31. Simulation and compiler correctness
 
@@ -4244,7 +4262,7 @@ specification. Compiler **soundness** requires that every accepted plan
 satisfy Definition 31.1 for all well-typed inputs, with semantic failures
 handled as below.
 
-**As formalized (slice-1 to slice-3 profile: fused commands by expansion, retirement of defined published addresses, dense injective storage).**
+**As formalized (slice-1 to slice-4 profile: fused commands by expansion, retirement and typed static same-sort buffer reuse).**
 The five-condition definition above stays the general contract. Lean's `Valid` (`Plan.Validity`) is a
 purely static condition, stated per command $\textcolor{#C16C86}{\mathsf{pc}}$ with `commands[pc] = [a]` against the prefix sets
 $\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Ret}(\textcolor{#C16C86}{\mathsf{pc}})$ (condition 3 and the retire clause read
@@ -4259,12 +4277,13 @@ step), *progress* (needed so that a step is not stuck), *terminal* (needed only 
 | clause | role | consumed by |
 | --- | --- | --- |
 | profile: every command is a singleton | progress | `step_not_stuck`, `run_R` |
+| every boundary: `LayoutOK pc`, including pc = command count (`Valid.layout`) | safety | `step_init` (post), `step_acc`/`step_retire` (pre), `step_R`, run preservation |
 | initZero $S$: each $x\notin\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$, and no occurrence in $\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$ targets $x$ (initZero freshness) | safety | `step_R` |
 | acc $G$: $G$ duplicate-free, $G\cap\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})=\varnothing$, every target $\in\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$ | safety + progress | `step_R`, `step_failed`, `step_not_stuck` |
 | acc $G$: every footprint address $\in\mathrm{Live}(\textcolor{#C16C86}{\mathsf{pc}})$ (`ReadyOK`; [Section 29.3](#293-coverage-and-schedule-certificates) condition 3, and where [Section 30.3](#303-storage-changes-and-retirement)'s "no remaining reader" is enforced) | progress | `step_not_stuck` |
 | pub $B$: $B$ duplicate-free, $B\cap\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})=\varnothing$, $B\subseteq\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$, every occurrence targeting $B$ is in $\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$ (Section 29.3 condition 4) | safety + progress | `step_R`, `step_not_stuck` |
 | retire $B$: every $x\in B$ is published at pc (the $\mathrm{Pub}$ half of $\mathrm{Live}$) | safety (a retire of an unpublished address would clear a live accumulator) | `step_retire` |
-| retire $B$: no $x\in B$ is already retired (the $\neg\mathrm{Ret}$ half of $\mathrm{Live}$; a second retire is harmless at run time) | diagnostic | none (fixture `retire-twice`) |
+| retire $B$: no $x\in B$ is already retired (the $\neg\mathrm{Ret}$ half of $\mathrm{Live}$) | safety with reuse (a second retire could clear a new occupant); the canonical `retire-twice` fixture remains rejected | `step_retire` uses the retiring resource's pre-boundary `SlotView` |
 | retire $B$: no $x\in B$ is an output (`RetOK`) | terminal | `live_output_of_valid`, `terminal_adequacy` |
 | whole plan: groups duplicate-free (Section 29.3 condition 1, Nodup half) | diagnostic (derivable from the `acc` step conditions: `accFlat_nodup_of_accOK`) | none |
 | whole plan: blocks duplicate-free (Section 29.3 condition 2, Nodup half, `checkCov2Nodup`) | diagnostic (derivable from the `pub` step conditions: `pubFlat_nodup_of_pubOK`) | none |
@@ -4281,6 +4300,13 @@ follow from the per-step `AccOK` and `PubOK` conditions is proved on a singleton
 does not detect an invalid plan: soundness rests on the computable checker `checkPlan`, whose
 acceptance implies `Valid` (`checkPlan_sound`) and every `Valid` plan is accepted (`checkPlan_complete`), so
 `checkPlan` decides `Valid` exactly (`checkPlan_iff`).
+
+Slice 4: `checkLayoutAt` enumerates pub/pub, pub/acc and acc/acc pairs using
+`resourceList`; `checkLayouts` checks `range (commands.length + 1)`.
+`checkLayouts_iff` is exactly the `Valid.layout` condition. Sort compatibility
+and capacity bounds are enforced by allocation types, not runtime metadata
+checks. An unchecked live alias can still finish `done` with corrupted values
+(`reuseBad`); the checker is the safety gate, not the runner.
 
 Slice 2: Definition 31.1 for a fused plan is Definition 31.1 of its expansion (`FValid`). The slice-1
 `checkSteps` ignores a fused command, so the checker for fused plans is `checkPlanF` (sound and complete:
@@ -4327,8 +4353,9 @@ This is a **forward simulation with stuttering**: a concrete step may
 leave the reference state unchanged. It is not enough, by itself, to prove
 concrete termination or prevent an incorrectly stuck compiled execution.
 
-**As formalized (slice-1 to slice-3 profile: fused commands by expansion, retirement of defined published addresses, dense injective storage).**
-The one-step theorem `step_R` assumes a singleton command `[a]` with `AnnOK pc a` and, besides R, that
+**As formalized (slice-1 to slice-4 profile: fused commands by expansion, retirement and typed static same-sort buffer reuse).**
+The one-step theorem `step_R` assumes a singleton command `[a]` with `AnnOK pc a`,
+pre/post `LayoutOK`, and, besides R, that
 $\textcolor{#A87C28}{\mathsf{Conf}}$ is the deterministic logical post-state of the prefix, `refState pc`. So the simulation
 invariant is $R\land\textcolor{#A87C28}{\mathsf{Conf}}=\mathtt{refState}\ \textcolor{#C16C86}{\mathsf{pc}}$, not R alone: R2-R4 do not pin untouched
 accumulators, so R does not determine $\textcolor{#A87C28}{\mathsf{Conf}}$. Simulation is proved for that reference state
@@ -4339,6 +4366,10 @@ $R\land\textcolor{#A87C28}{\mathsf{Conf}}=\mathtt{refState}\ \textcolor{#C16C86}
 (`step_R_command`); progress holds under `FValid` (`stepCommand_not_stuck`). The concatenation requirement
 above is `step_R_command`'s fold over the expanded order, and the per-position side conditions are `FValid`,
 the validity of the expansion.
+Slice 4: initialization uses successor-layout safety; accumulation and
+retirement use current-layout safety; publication and failure add no layout
+premise. `Valid.layout_boundary` supplies the pair for singleton steps, and
+fused folds receive every expanded-boundary layout.
 
 ### 31.3 Failure matching, progress, and finishing
 
@@ -4365,7 +4396,7 @@ The **error-free profile** consists of the runs in which no implementation
 error occurs. Concrete progress below, and the converse direction of
 Theorem 31.3, are stated for that profile.
 
-**As formalized (slice-1 to slice-3 profile: fused commands by expansion, retirement of defined published addresses, dense injective storage).**
+**As formalized (slice-1 to slice-4 profile: fused commands by expansion, retirement and typed static same-sort buffer reuse).**
 Failure matching is proved with the same occurrence $o$ the plan reports. For one command,
 `step_failed` gives, from any R-related $\textcolor{#A87C28}{\mathsf{Conf}}$, the single `undefined` event
 $\textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\longrightarrow}\textcolor{#A87C28}{\mathsf{Failed}}(o,\ldots)$, with no preceding contributions, so its
@@ -4419,7 +4450,7 @@ is mapped, and the decoder requirement of [Section 30.4](#304-the-refinement-rel
 equation of [Section 30.2](#302-resource-views-and-live-representations) gives
 $\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})(T)[p]=\textcolor{#C16C86}{M}[\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}(\textcolor{#A87C28}{\mathsf{pub}}((T,p)))]=\textcolor{#A87C28}{\sigma}(T,p)$.
 
-**As formalized (slice-1 to slice-3 profile: fused commands by expansion, retirement of defined published addresses, dense injective storage).**
+**As formalized (slice-1 to slice-4 profile: fused commands by expansion, retirement and typed static same-sort buffer reuse).**
 `terminal_adequacy` is one theorem about the plan run from $\mathrm{Start}(\eta)$: for a valid plan, if
 `runPlan` ends `done m M'`, then $m$ is the number of commands, the deterministic reference state $c$ at
 $m$ (`refState m`) exists and is R-related to `M'`, $c$ is complete (`complete_of_refState`: $U=\varnothing$
@@ -4433,6 +4464,11 @@ every output coordinate is in $\mathrm{Live}(m)$, because it is published and `R
 `decode_of_R` takes that as its hypothesis `outs`. Slice 2: `terminal_adequacy_F` is the same
 statement for a fused plan under `FValid`; at `done m M'` the count $m$ is the number of commands (not of
 expanded annotations), and the $\mathrm{Need}_{\mathrm{pub}}$ argument is the slice-1 argument on the expansion.
+Slice 4: output slots follow the chosen physical allocation. A nonempty scalar
+output can take a retired internal tensor's slot (`PlanReuseStorage.reuse`,
+decoded value 2, matching canonical donors). Once represented, the output
+cannot be retired or collide with another represented resource. Ghost history
+cannot repair missing or overwritten output storage.
 
 Write
 $\textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#398B83}{\zeta}$
@@ -4487,7 +4523,7 @@ failure.
 Outside the error-free profile a valid plan can end in an implementation error
 even when a model exists; (a) and (b) are unaffected.
 
-**As formalized (implementation errors, D7; slice-1 `Valid` and fused `FValid` plans).** The third outcome is a wrapper, not a
+**As formalized (implementation errors, D7; slice-1 to slice-4 `Valid` and fused `FValid` plans).** The third outcome is a wrapper, not a
 new constructor of the Section 30.1 state: `FOutcome` is `run o` (an ordinary `PlanOutcome`) or `error e pc M`, with
 `e : ImplErr` (`allocFail`, `kernelFault`; no information about models). A fault schedule `Faults : Nat → Option ImplErr`
 is indexed by expanded annotation position and is consulted for a command's positions before the command runs
@@ -4510,8 +4546,13 @@ an executed position of the first command, the fault-free run is `done` while th
 state at that command (`runFromE_error_R`, `runPlanE_error_R`), so it is a fault-free reachable state. Not modelled:
 concrete error sources (allocation failure and kernel faults are abstract oracle outputs), and matching of an error to
 a reference segment (an error establishes no absence of a model, so none is required).
+Slice 4: `FOutcome` carries the plan's allocation-indexed memory. A fault after
+the reused-slot write reports command pc 5, physical value 4 and error-state R
+(`reuseFused_fault_after_write`, `reuseFused_error_R`), while the retired read
+is `none` and the reference ghost is 0. No-fault parity remains
+`runPlanE_noFault`; concrete error sources are still not modeled.
 
-**As formalized (slice-1 to slice-3 profile: fused commands by expansion, retirement of defined published addresses, dense injective storage;
+**As formalized (slice-1 to slice-4 profile: fused commands by expansion, retirement and typed static same-sort buffer reuse;
 error-free).** For a `Valid` plan and a well-typed $\eta$, with the run `runPlan` from $\mathrm{Start}(\eta)$:
 
 - (a) `done_correct`: if the run ends `done m M'`, then
@@ -4528,8 +4569,9 @@ error-free).** For a `Valid` plan and a well-typed $\eta$, with the run `runPlan
 The theorem is conditional on Definition 31.1. Its hypotheses are exactly
 those conditions; the generic steps (Lemma 31.2 above and, for batched
 kernels, Lemma 32.1 in [Section 32.1](#321-why-exact-batched-accumulation-refines-individual-steps)) carry a mathematical argument in general, while conditions
-3-5 remain an obligation on each kernel. For the slice-1 to slice-3 kernels (singleton and fused commands, retirement of defined published addresses,
-dense injective storage) the generic steps and conditions 2-5 are kernel-checked in Lean (`R_start`,
+3-5 remain an obligation on each kernel. For the slice-1 to slice-4 kernels (singleton/fused commands,
+retirement and typed static same-sort reuse with boundary-local layout safety)
+the generic steps and conditions 2-5 are kernel-checked in Lean (`R_start`,
 `step_R` for the reference state `refState pc = some c`, `step_failed`, `step_not_stuck`,
 `batch_execution`, `terminal_adequacy`); every other kernel
 keeps the obligation. Beyond that profile it is a compiler proof specification with a mathematical
@@ -4573,7 +4615,7 @@ member first. A kernel that commits a successful prefix before failing must
 justify the corresponding reference prefix. In either case failure is
 terminal and yields no successful output.
 
-**As formalized (slice-1 to slice-3 profile: fused commands by expansion, retirement of defined published addresses, dense injective storage).**
+**As formalized (slice-1 to slice-4 profile: fused commands by expansion, retirement and typed static same-sort buffer reuse).**
 `batch_execution` (`Plan.Batch`) proves the success half at the logical level, with premises: `G.Nodup`
 (the list form of "$G$ is a set"), every member of $G$ is pending, every member is ready, and every
 member evaluates successfully to $v_o$. The contribution events then form a reference execution
@@ -4719,11 +4761,14 @@ history still has distinct logical addresses with values $5$ and $26$.
 No remaining kernel is permitted to read the overwritten $H_0$ slot as
 though it still represented $H_0$.
 
-**As formalized (slice-3 profile).** Only the retirement half of this example is formalized: a plan may retire
-$H_0$ after its readers (`retire`, `execRet`; the slot becomes free, `dead`) and the logical address stays in
-$\textcolor{#A87C28}{\sigma}$. The reuse half (zero-initializing the freed buffer for $H_2$, the two-buffer
-schedule, "no remaining kernel may read the overwritten slot") has no Lean counterpart: `place` is injective, so
-the freed slot is never rewritten. It belongs to the later buffer-reuse slice.
+**As formalized (slice-3 to slice-4 profile).** Retirement and static same-sort
+reuse are formalized: `execRet` clears storage without changing the reference
+history; subsequent `initZero` and accumulation may occupy that slot for a
+different resource, under `LayoutOK`. `readPub` still excludes the retired
+address even when its former slot has a new value (`reuseGood`).
+This is not the Section 33.2 scan program or its liveness proof: that two-buffer
+schedule, its values 5 and 26, full-history copy/relocation and in-place
+snapshots remain unformalized.
 
 ### 33.3 Full-history outputs change the retention obligation
 
@@ -4777,28 +4822,29 @@ occurrence coverage, barriers, domain behavior, and safe reuse.
 The compilation-layer proof targets are:
 
 - Typed plan annotations and sound validation of their coverage and order.
-  *Proved for the slice-1 to slice-3 profile* (`Valid`, `checkPlan_sound`, `checkPlan_complete`; fused plans: `FValid`, `checkPlanF_sound`, `checkPlanF_complete`).
+  *Proved for the slice-1 to slice-4 profile* (`Valid`, `checkPlan_sound`, `checkPlan_complete`, `checkLayouts_iff`; fused plans: `FValid`, `checkPlanF_sound`, `checkPlanF_complete`).
 - Resource views, concrete states, and the representation relation,
   including empty shapes and untouched zero accumulators.
-  *Proved for the slice-1 to slice-3 profile* (dense injective storage with retirement: `SlotView`, `R`, `R_start`, `step_retire`).
+  *Proved for the slice-1 to slice-4 profile* (typed static allocation and boundary-local layout injectivity: `Allocation`, `SlotView`, `LayoutOK`, `R`, `R_start`, `step_retire`).
 - Refinement lemmas for individual kernels, block publication, and storage
   operations; composite lemmas for fused commands.
-  *Proved for the slice-1 profile's singleton kernels* (`step_R`, `step_failed`), for the retirement storage
+  *Proved for the slice-1 to slice-4 profile's singleton kernels* (`step_R`, `step_failed`), for the retirement storage
   operation (slice 3: `step_retire`) and, for fused commands
   by expansion, the composite lemmas `step_R_command`, `step_failed_command`.
 - Preservation of explicit undefinedness when batching or sharing expressions.
   *Batching proved for the transactional singleton accumulate kernel* (`batch_execution`,
   `step_failed`); sharing remains a target.
 - Concrete progress and termination, not just forward simulation.
-  *Proved for the slice-1 to slice-3 profile* (`step_not_stuck`, `runPlan_not_stuck`; fused plans:
+  *Proved for the slice-1 to slice-4 profile* (`step_not_stuck`, `runPlan_not_stuck`; fused plans:
   `stepCommand_not_stuck`, `runPlan_not_stuck_F`).
 - Terminal decoding and the compiled-correctness theorem.
-  *Proved for the slice-1 to slice-3 profile* (`terminal_adequacy`, `done_correct`, `failed_correct`,
+  *Proved for the slice-1 to slice-4 profile* (`terminal_adequacy`, `done_correct`, `failed_correct`,
   `done_iff_model`; fused plans: `terminal_adequacy_F`, `done_correct_F`, `failed_correct_F`, `done_iff_model_F`).
 - Separate-buffer and two-buffer scan proofs, with full-history and
   terminal-only output contracts tested separately.
 
-Outside the slice-1 to slice-3 profile (singleton and fused commands, retirement of defined published addresses, dense injective storage) these are
+Outside the slice-1 to slice-4 profile (singleton/fused commands, retirement of
+defined published addresses, typed static same-sort reuse with boundary-local layout safety) these are
 proposed contracts and proof targets, not kernel-checked results
 or claims about current compiler acceptance. The slice-1 results fix one concrete plan representation
 and kernel fragment (`LeanNCD.Semantics.Plan`); extending them requires

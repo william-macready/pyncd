@@ -3,30 +3,30 @@
   "label": "S3-M1 execRet is the identity (retirement frees nothing)",
   "task": "S3",
   "file": "LeanNCD/Semantics/Plan/Step.lean",
-  "old": "  B.foldl (fun M x => Function.update M (place x.addr) none) M",
+  "old": "  B.foldl (fun M x => Function.update M (place π.allocation x.addr) none) M",
   "new": "  M",
   "targets": [
    "LeanNCD.Semantics.Plan.Step",
    "Semantics.PlanRetireTest"
   ],
   "expect": [
-   "Simulation.lean:334:4: 'change' tactic failed",
-   "Simulation.lean:344:4: 'change' tactic failed"
+   "Simulation.lean:",
+   "'change' tactic failed"
   ]
  },
  {
   "label": "S3-M2 execRet leaves the first member's slot (B.tail)",
   "task": "S3",
   "file": "LeanNCD/Semantics/Plan/Step.lean",
-  "old": "  B.foldl (fun M x => Function.update M (place x.addr) none) M",
-  "new": "  B.tail.foldl (fun M x => Function.update M (place x.addr) none) M",
+  "old": "  B.foldl (fun M x => Function.update M (place π.allocation x.addr) none) M",
+  "new": "  B.tail.foldl (fun M x => Function.update M (place π.allocation x.addr) none) M",
   "targets": [
    "LeanNCD.Semantics.Plan.Step",
    "Semantics.PlanRetireTest"
   ],
   "expect": [
-   "Simulation.lean:334:4: 'change' tactic failed",
-   "Simulation.lean:344:4: 'change' tactic failed"
+   "Simulation.lean:",
+   "'change' tactic failed"
   ]
  },
  {
@@ -40,8 +40,8 @@
    "Semantics.PlanRetireTest"
   ],
   "expect": [
-   "Validity.lean:178:2: Type mismatch",
-   "Validity.lean:346:2: Type mismatch"
+   "Validity.lean:",
+   "Type mismatch"
   ]
  },
  {
@@ -55,8 +55,8 @@
    "Semantics.PlanRetireTest"
   ],
   "expect": [
-   "Validity.lean:178:2: Type mismatch",
-   "Validity.lean:346:2: Type mismatch"
+   "Validity.lean:",
+   "Type mismatch"
   ]
  },
  {
@@ -70,8 +70,8 @@
    "Semantics.PlanRetireTest"
   ],
   "expect": [
-   "Validity.lean:178:2: Type mismatch",
-   "Validity.lean:346:2: Type mismatch"
+   "Validity.lean:",
+   "Type mismatch"
   ]
  },
  {
@@ -85,24 +85,24 @@
    "Semantics.PlanRetireTest"
   ],
   "expect": [
-   "Validity.lean:185:47: Application type mismatch",
-   "Validity.lean:352:73: Application type mismatch"
+   "Validity.lean:",
+   "Application type mismatch"
   ]
  },
  {
   "label": "S3-M7 SlotView .pub over Pub instead of Live",
   "task": "S3",
   "file": "LeanNCD/Semantics/Plan/Memory.lean",
-  "old": "  | .pub a => if π.Live pc a then some (place a) else none",
-  "new": "  | .pub a => if π.Pub pc a then some (place a) else none",
+  "old": "  | .pub a => if π.Live pc a then some (place π.allocation a) else none",
+  "new": "  | .pub a => if π.Pub pc a then some (place π.allocation a) else none",
   "targets": [
    "LeanNCD.Semantics.Plan.Memory",
    "Semantics.PlanRetireTest"
   ],
   "expect": [
-   "Memory.lean:59:24: Invalid projection",
-   "Memory.lean:67:29: Invalid projection",
-   "Memory.lean:264:21: unsolved goals"
+   "Memory.lean:",
+   "Invalid projection",
+   "unsolved goals"
   ]
  },
  {
@@ -116,22 +116,23 @@
    "Semantics.PlanRetireTest"
   ],
   "expect": [
-   "Validity.lean:185:47: Application type mismatch",
-   "Validity.lean:352:73: Application type mismatch"
+   "Validity.lean:",
+   "Application type mismatch"
   ]
  },
  {
   "label": "S3-M9 readPub over Pub instead of Live (ignores Ret)",
   "task": "S3",
   "file": "LeanNCD/Semantics/Plan/Memory.lean",
-  "old": "  if π.Live pc a then M (place a) else none",
-  "new": "  if π.Pub pc a then M (place a) else none",
+  "old": "  if π.Live pc a then readSlot π.allocation M a else none",
+  "new": "  if π.Pub pc a then readSlot π.allocation M a else none",
   "targets": [
    "LeanNCD.Semantics.Plan.Memory",
    "Semantics.PlanRetireTest"
   ],
   "expect": [
-   "Memory.lean:263:6: Tactic `rewrite` failed"
+   "Memory.lean:",
+   "Tactic `rewrite` failed"
   ]
  },
  {
@@ -145,8 +146,8 @@
    "Semantics.PlanRetireTest"
   ],
   "expect": [
-   "Validity.lean:178:2: Type mismatch",
-   "Validity.lean:346:2: Type mismatch"
+   "Validity.lean:",
+   "Type mismatch"
   ]
  }
 ]

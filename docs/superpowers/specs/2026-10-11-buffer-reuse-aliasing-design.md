@@ -1,7 +1,10 @@
 # Part V buffer reuse and aliasing (slice 4): design
 
-Status: awaiting owner approval. Decisions D1-D6 were confirmed individually in the
-2026-10-11 implementation conversation.
+Status: approved by the owner in the 2026-10-11 implementation conversation;
+production and regression prototype compiled through `deb4fecd`; pre-cycle
+controller full build and axiom audit green. Mutation kills, replay verification,
+two fresh whole-branch reviews, final build and integration remain pending.
+Decisions D1-D6 were confirmed individually before approval.
 Base: local `main` at `4ffdc342`.
 Path: Full (physical storage, placement, validity and refinement interfaces change).
 Source brief: [buffer reuse and aliasing brief](2026-10-11-buffer-reuse-aliasing-brief.md).
@@ -50,9 +53,13 @@ resource. Thus output retention does not forbid reuse *into* output storage.
   placement. Existing fixtures keep their logical meaning and observed results.
   Necessary API migrations must not weaken their assertions.
 
-The prototype will choose and compile the concrete Lean representation before
-an implementation plan specifies signatures. Equality transport may use proved
-sort equalities; there is no conversion between incompatible scalar carriers.
+The compiled prototype chose `Allocation` (explicit complete finite buffers,
+computable equality, per-buffer sort/capacity, bounded sort-certified `locate`)
+and `Slot = InputSlot P ⊕ BufferSlot A`. `Memory`, reads, writes, decoding and
+outcomes carry allocation; expansion preserves it. The fresh implementation plan
+is `papers/semantics/plan_layer_slice4_plan.md`, with mechanical patches and
+observations in the separate record. Equality transport uses proved sort
+equalities; there is no conversion between incompatible scalar carriers.
 Computable enumeration and slot equality must not require a new global
 `DecidableEq S` or a noncomputable instance in the executable checker.
 
@@ -128,8 +135,13 @@ snapshots. Do not introduce a new concrete implementation-error source.
 
 ## 6. Acceptance and regression evidence
 
-Fixture values below are requirements to measure during prototyping, not
-assertions that the new implementation has already been executed.
+The requirements below were measured by the compiled prototype. The record
+contains observed values: actual retired-slot overwrite, rejected live alias
+despite unchecked `done`, three pair classes/final boundary, cross-tensor output
+decode 2, ℤ/ℚ decode `(11,7/8)`, fused internal-only conflict and post-write
+fault-state R. All 281 baseline assertions remain; total 354 = 174 `#eval check`
+rows + 180 proof items. Actual mutation kills remain pending and are not implied
+by compilation or these observations.
 
 1. Clone `rtInitAfter`, place point 2 in point 0's slot, and retain point 1 in
    its own slot. Prove the checker accepts, the run is `done`, and `R` holds at

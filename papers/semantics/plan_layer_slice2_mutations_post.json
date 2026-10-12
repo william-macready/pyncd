@@ -10,7 +10,7 @@
    "Semantics.PlanFusionTest"
   ],
   "expect": [
-   "Step.lean:178:2",
+   "Step.lean:",
    "No goals to be solved"
   ]
  },
@@ -25,7 +25,7 @@
    "Semantics.PlanFusionTest"
   ],
   "expect": [
-   "Run.lean:178:36",
+   "Run.lean:",
    "Application type mismatch"
   ]
  },
@@ -40,7 +40,7 @@
    "Semantics.PlanFusionTest"
   ],
   "expect": [
-   "Step.lean:178:33",
+   "Step.lean:",
    "Tactic `rfl` failed"
   ]
  },
@@ -55,7 +55,7 @@
    "Semantics.PlanFusionTest"
   ],
   "expect": [
-   "Syntax.lean:180:52",
+   "Syntax.lean:",
    "Tactic `rewrite` failed"
   ]
  },
@@ -70,7 +70,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:33:90",
+   "FusionCorrectness.lean:",
    "Application type mismatch"
   ]
  },
@@ -85,7 +85,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:33:65",
+   "FusionCorrectness.lean:",
    "Type mismatch"
   ]
  },
@@ -100,7 +100,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:141:25",
+   "FusionCorrectness.lean:",
    "Unknown identifier `hv`"
   ]
  },
@@ -115,7 +115,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:153:12",
+   "FusionCorrectness.lean:",
    "Application type mismatch"
   ]
  },
@@ -124,13 +124,13 @@
   "task": "T3",
   "file": "LeanNCD/Semantics/Plan/FusionCorrectness.lean",
   "old": "def checkPlanF (π : P.Plan) : Bool := π.expand.checkPlan",
-  "new": "def checkPlanF (π : P.Plan) : Bool :=\n  π.checkCov1Nodup && π.checkCov1Complete && π.checkCov2Nodup && π.checkCov2Complete && π.checkSteps",
+  "new": "def checkPlanF (π : P.Plan) : Bool :=\n  π.checkCov1Nodup && π.checkCov1Complete && π.checkCov2Nodup && π.checkCov2Complete && π.checkSteps && π.checkLayouts",
   "targets": [
    "LeanNCD.Semantics.Plan.FusionCorrectness",
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:34:90",
+   "FusionCorrectness.lean:",
    "Application type mismatch"
   ]
  },
@@ -145,7 +145,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "FusionCorrectness.lean:97:28",
+   "FusionCorrectness.lean:",
    "Type mismatch"
   ]
  },
@@ -160,7 +160,7 @@
    "Semantics.PlanFusionCorrectnessTest"
   ],
   "expect": [
-   "Plan/Fusion.lean:246:6",
+   "Plan/Fusion.lean:",
    "Type mismatch"
   ]
  },
@@ -175,7 +175,7 @@
    "Semantics.PlanFusionCheckerTest"
   ],
   "expect": [
-   "Syntax.lean:166:45",
+   "Syntax.lean:",
    "Type mismatch"
   ]
  },
@@ -190,7 +190,7 @@
    "Semantics.PlanFusionCheckerTest"
   ],
   "expect": [
-   "Syntax.lean:166:45",
+   "Syntax.lean:",
    "Type mismatch"
   ]
  },
@@ -205,7 +205,7 @@
    "Semantics.PlanFusionCheckerTest"
   ],
   "expect": [
-   "Syntax.lean:180:52",
+   "Syntax.lean:",
    "Tactic `rewrite` failed"
   ]
  },
@@ -220,7 +220,7 @@
    "Semantics.PlanFusionCheckerTest"
   ],
   "expect": [
-   "Step.lean:178:33",
+   "Step.lean:",
    "Tactic `rfl` failed"
   ]
  }

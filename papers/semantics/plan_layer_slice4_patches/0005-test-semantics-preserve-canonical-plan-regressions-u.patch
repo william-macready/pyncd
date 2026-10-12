@@ -1,0 +1,1347 @@
+From 763e5403e19f2f52a67f3ecdf86e35130530ba8d Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sun, 11 Oct 2026 19:57:10 -0700
+Subject: [PATCH 5/6] test(semantics): preserve canonical plan regressions
+ under physical storage
+
+All fourteen existing Plan targets built green. Retained all 281 original assertions (149 evaluated checks and 132 proof items) and evaluation labels; added two canonical-layout proof helpers. Retired canonical slot assertions follow the unmapped-slot invariant without weakening expected values.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ .../test/Semantics/PlanCorrectnessTest.lean   |  20 +--
+ leanncd/test/Semantics/PlanFaultsTest.lean    |  19 +--
+ leanncd/test/Semantics/PlanFixtures.lean      |  24 +++-
+ .../test/Semantics/PlanFusionCheckerTest.lean |  23 +--
+ .../Semantics/PlanFusionCorrectnessTest.lean  |  36 +++--
+ leanncd/test/Semantics/PlanFusionTest.lean    |  51 ++++---
+ leanncd/test/Semantics/PlanMemoryTest.lean    |  22 +--
+ leanncd/test/Semantics/PlanMultiSortTest.lean |  12 +-
+ leanncd/test/Semantics/PlanRetireTest.lean    | 134 +++++++++++-------
+ leanncd/test/Semantics/PlanRunTest.lean       |  14 +-
+ .../test/Semantics/PlanSimulationTest.lean    |  29 ++--
+ leanncd/test/Semantics/PlanStepTest.lean      |  66 +++++----
+ leanncd/test/Semantics/PlanValidityTest.lean  |  52 +++----
+ 13 files changed, 302 insertions(+), 200 deletions(-)
+
+diff --git a/leanncd/test/Semantics/PlanCorrectnessTest.lean b/leanncd/test/Semantics/PlanCorrectnessTest.lean
+index 03083a93..2b960df3 100644
+--- a/leanncd/test/Semantics/PlanCorrectnessTest.lean
++++ b/leanncd/test/Semantics/PlanCorrectnessTest.lean
+@@ -11,9 +11,10 @@ namespace LeanNCD.Semantics.PlanFixtures
+ open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
+ 
+ /-- Plan side: kind, stopping pc, and the read view of points 0..2 at that pc. -/
+-def planRow {P : Program Carrier declarations registry} (π : P.Plan) (out : PlanOutcome P) :
++def planRow {P : Program Carrier declarations registry} (π : P.Plan)
++    (out : PlanOutcome P π.allocation) :
+     String × Nat × List (Option ℚ) :=
+-  let view (pc : Nat) (M : Memory Carrier declarations) :=
++  let view (pc : Nat) (M : Memory Carrier π.allocation) :=
+     ([0, 1, 2] : List (Fin 3)).map fun i => π.readPub pc M ⟨(), point i⟩
+   match out with
+   | .done pc M => ("done", pc, view pc M)
+@@ -42,7 +43,7 @@ def reciprocalRef := run (program 2 reciprocalBody) ops (schedule 2 reciprocalBo
+   (("done", 3, [some (3 / 4), some 0, some 0]), ("complete", [some (3 / 4), some 0, some 0]))
+ 
+ #eval check "cmp-chain"
+-  (planRow chainPlan (chainPlan.runPlan ops (Start chainInput)), refRow chainResult.outcome)
++  (planRow chainPlan (chainPlan.runPlan ops (chainPlan.Start chainInput)), refRow chainResult.outcome)
+   (("done", 5, [some 0, some 3, some 4]), ("complete", [some 0, some 3, some 4]))
+ 
+ -- scalarRole false: output tensor 1 only.
+@@ -59,7 +60,7 @@ def sRefOut (bad : Bool) : String × Option ℚ :=
+   [(planRow plan taggedRun).2.2 == (refRow taggedResult.outcome).2,
+     (planRow (pPlan 2 reciprocalBody) (pRun 2 reciprocalBody)).2.2 ==
+       (refRow reciprocalRef.outcome).2,
+-    (planRow chainPlan (chainPlan.runPlan ops (Start chainInput))).2.2 ==
++    (planRow chainPlan (chainPlan.runPlan ops (chainPlan.Start chainInput))).2.2 ==
+       (refRow chainResult.outcome).2,
+     sDecode == (sRefOut false).2]
+   [true, true, true, true]
+@@ -72,7 +73,8 @@ def failureAccRef : ℚ := (snapshot failureAfterResult.outcome).accumulators 
+ 
+ #eval check "cmp-failure-after"
+   ((planRow (pPlan 2 failureAfterBody) (pRun 2 failureAfterBody)).1,
+-    finalMemory (pRun 2 failureAfterBody) (place ⟨(), point 0⟩),
++    readSlot (pPlan 2 failureAfterBody).allocation (finalMemory (pRun 2 failureAfterBody))
++      ⟨(), point 0⟩,
+     failureAfterResult.outcome.kind, failureAccRef)
+   ("failed", some 0, "failed", 2)
+ 
+@@ -80,7 +82,7 @@ def failureAccRef : ℚ := (snapshot failureAfterResult.outcome).accumulators 
+ 
+ /-! ### Theorem 31.3 instantiated -/
+ 
+-theorem plan_tagged_done : plan.runPlan ops (Start η0) = .done 3 m3 := rfl
++theorem plan_tagged_done : plan.runPlan ops (plan.Start η0) = .done 3 m3 := rfl
+ 
+ /-- 31.3 (a) on taggedOut: the model is unique and Decode is its output projection. -/
+ theorem tagged_model_unique : ∃ ρ, (∀ ρ', taggedOut.Models ops η0 ρ' ↔ ρ' = ρ) ∧
+@@ -91,7 +93,7 @@ theorem tagged_model_unique : ∃ ρ, (∀ ρ', taggedOut.Models ops η0 ρ' ↔
+ /-- 31.3 (b) on scalarRole true: the plan fails, so no model exists. -/
+ theorem scalar_bad_no_model : ¬ ∃ ρ, (scalarRole true).Models ops (scalarInput true) ρ :=
+   failed_correct ops sPlan_bad_valid (scalarInput true)
+-    (rfl : (sPlan true).runPlan ops (Start (scalarInput true)) =
++    (rfl : (sPlan true).runPlan ops ((sPlan true).Start (scalarInput true)) =
+       .failed (sOcc true 2 rfl) 3 (finalMemory (sRun true)))
+ 
+ /-- 31.3 (b)+(c) on taggedOut: done, hence a model exists. -/
+@@ -106,8 +108,8 @@ def missingPub : taggedOut.Plan :=
+   unitPlan [[.initZero block], [.acc group], [.pub [addr 0, addr 1]]]
+ 
+ #eval check "invalid-missing-publication"
+-  (verdict missingPub, outcomeRow (missingPub.runPlan ops (Start η0)),
+-    decodeRow (missingPub.Decode 3 (finalMemory (missingPub.runPlan ops (Start η0)))))
++  (verdict missingPub, outcomeRow (missingPub.runPlan ops (missingPub.Start η0)),
++    decodeRow (missingPub.Decode 3 (finalMemory (missingPub.runPlan ops (missingPub.Start η0)))))
+   ((false, ["cov2Complete"]), ("done", 3, none, [some 0, some 14, some 0]), none)
+ 
+ example : missingPub.checkPlan = false := by decide
+diff --git a/leanncd/test/Semantics/PlanFaultsTest.lean b/leanncd/test/Semantics/PlanFaultsTest.lean
+index 05a029c6..3450453b 100644
+--- a/leanncd/test/Semantics/PlanFaultsTest.lean
++++ b/leanncd/test/Semantics/PlanFaultsTest.lean
+@@ -17,12 +17,12 @@ def faultsAt (n₁ : Nat) (e₁ : ImplErr) (n₂ : Nat) (e₂ : ImplErr) : Fault
+   fun k => if k = n₁ then some e₁ else if k = n₂ then some e₂ else none
+ 
+ /-- Outcome kind, pc, error, memory row of a faulty run (taggedOut). -/
+-def eRow {P : Program Carrier declarations registry} : FOutcome P →
++def eRow {P : Program Carrier declarations registry} {A : Allocation P} : FOutcome P A →
+     String × Nat × Option ImplErr × List (Option ℚ)
+   | .run o => let r := outcomeRow o; ("run:" ++ r.1, r.2.1, none, r.2.2.2)
+   | .error e pc M => ("error", pc, some e, rowOf (PlanOutcome.done (P := P) 0 M))
+ 
+-def eFused (faults : Faults) := fused.runPlanE ops faults (Start η0)
++def eFused (faults : Faults) := fused.runPlanE ops faults (fused.Start η0)
+ 
+ /-! ### (1) `fused`: no fault, then a single fault at each position -/
+ 
+@@ -57,9 +57,10 @@ def eFused (faults : Faults) := fused.runPlanE ops faults (Start η0)
+ 
+ def sRowEP (bad : Bool) (π : (scalarRole bad).Plan) (faults : Faults) :
+     String × Nat × Option ImplErr × List (Option ℚ) :=
+-  let row (M : Memory Carrier scalarDeclarations) :=
+-    [M (place ⟨0, ()⟩), M (place ⟨1, ()⟩), M (place ⟨2, ()⟩)]
+-  match π.runPlanE ops faults (Start (scalarInput bad)) with
++  let row (M : Memory Carrier π.allocation) :=
++    [readSlot π.allocation M ⟨0, ()⟩, readSlot π.allocation M ⟨1, ()⟩,
++      readSlot π.allocation M ⟨2, ()⟩]
++  match π.runPlanE ops faults (π.Start (scalarInput bad)) with
+   | .run (.done pc M) => ("run:done", pc, none, row M)
+   | .run (.failed _ pc M) => ("run:failed", pc, none, row M)
+   | .run (.stuck pc M) => ("run:stuck", pc, none, row M)
+@@ -103,7 +104,7 @@ example : ¬ fused.NoFaultsInPlan (faultAt 2 .allocFail) := by
+   have := h 2 (by decide)
+   simp [faultAt] at this
+ 
+-theorem fused_beyond_errorFree : fused.ErrorFreeRun ops (faultAt 3 .allocFail) (Start η0) :=
++theorem fused_beyond_errorFree : fused.ErrorFreeRun ops (faultAt 3 .allocFail) (fused.Start η0) :=
+   fused.errorFreeRun_of_noFaultsInPlan ops (by
+     intro n hn
+     have : n < 3 := hn
+@@ -112,15 +113,15 @@ theorem fused_beyond_errorFree : fused.ErrorFreeRun ops (faultAt 3 .allocFail) (
+ 
+ /-- (c) under an error-free run: done iff a model exists. -/
+ theorem fused_done_iff_model_beyond :
+-    (∃ m M', fused.runPlanE ops (faultAt 3 .allocFail) (Start η0) = .run (.done m M')) ↔
++    (∃ m M', fused.runPlanE ops (faultAt 3 .allocFail) (fused.Start η0) = .run (.done m M')) ↔
+       ∃ ρ, taggedOut.Models ops η0 ρ :=
+   done_iff_model_FE ops fused_fvalid _ η0 fused_beyond_errorFree
+ 
+ /-- Outside the error-free profile: the model exists, the fault-free run is `done`, and the
+     faulty run is an error at pc 0. -/
+ theorem fused_error_despite_model :
+-    (∃ M', fused.runPlanE ops (fun _ => none) (Start η0) = .run (.done fused.commands.length M')) ∧
+-      ∃ e', fused.runPlanE ops (faultAt 1 .kernelFault) (Start η0) = .error e' 0 (Start η0) := by
++    (∃ M', fused.runPlanE ops (fun _ => none) (fused.Start η0) = .run (.done fused.commands.length M')) ∧
++      ∃ e', fused.runPlanE ops (faultAt 1 .kernelFault) (fused.Start η0) = .error e' 0 (fused.Start η0) := by
+   obtain ⟨ρ, hρ⟩ := fused_has_model
+   exact error_despite_model ops fused_fvalid η0 hρ (cmd := [.initZero block, .acc group])
+     rfl (j := 1) (by decide) (e := .kernelFault) (by simp [faultAt])
+diff --git a/leanncd/test/Semantics/PlanFixtures.lean b/leanncd/test/Semantics/PlanFixtures.lean
+index 0608fbc2..973d79af 100644
+--- a/leanncd/test/Semantics/PlanFixtures.lean
++++ b/leanncd/test/Semantics/PlanFixtures.lean
+@@ -44,6 +44,20 @@ def scalarPlan (bad : Bool) (cmds : List (Command (scalarRole bad))) : (scalarRo
+   tensors_complete := by intro t; fin_cases t <;> simp
+   commands := cmds
+ 
++/-- Canonical layout safety is proved, avoiding kernel reduction through dependent slot equality. -/
++theorem checkPlan_of_canonical {K : S → Type} {σ : Declarations S} {r : Registry K}
++    {P : Program K σ r} [DecidableEq σ.Tensor] (π : P.Plan)
++    (hA : π.allocation = Allocation.canonical P π.tensors π.tensors_nodup π.tensors_complete)
++    (h : (π.checkSingleton && π.checkCov1Nodup && π.checkCov1Complete &&
++      π.checkCov2Nodup && π.checkCov2Complete && π.checkSteps) = true) :
++    π.checkPlan = true := by
++  rw [checkPlan, h, Bool.true_and]
++  apply π.checkLayouts_iff.mpr
++  intro pc _
++  apply π.layoutOK_of_place_injective
++  rw [hA]
++  exact place_injective π.tensors π.tensors_nodup π.tensors_complete
++
+ /-- materialise all three zeros; one batch of all four occurrences; one block. -/
+ def plan : taggedOut.Plan := unitPlan [[.initZero block], [.acc group], [.pub block]]
+ 
+@@ -58,12 +72,14 @@ def accRow (c : taggedOut.Running) : List ℚ :=
+   [c.accumulators T (point 0), c.accumulators T (point 1), c.accumulators T (point 2)]
+ 
+ /-- A hand-built memory at pc = 3 holding the published vector `[0, 14, 0]`. -/
+-def mem3 : Memory Carrier declarations :=
+-  fun ξ => some (if ξ.2.val = 1 then 14 else 0)
++def mem3 : Memory Carrier plan.allocation
++  | .inl _ => none
++  | .inr ξ => some (if ξ.2.val = 1 then 14 else 0)
+ 
+ /-- The same memory with the point-2 slot uninitialised. -/
+-def mem3Hole : Memory Carrier declarations :=
+-  fun ξ => if ξ.2.val = 2 then none else some (if ξ.2.val = 1 then 14 else 0)
++def mem3Hole : Memory Carrier plan.allocation
++  | .inl _ => none
++  | .inr ξ => if ξ.2.val = 2 then none else some (if ξ.2.val = 1 then 14 else 0)
+ 
+ def outT : {t : declarations.Tensor // taggedOut.output t = true} := ⟨(), rfl⟩
+ 
+diff --git a/leanncd/test/Semantics/PlanFusionCheckerTest.lean b/leanncd/test/Semantics/PlanFusionCheckerTest.lean
+index f4e52f02..c04ab99e 100644
+--- a/leanncd/test/Semantics/PlanFusionCheckerTest.lean
++++ b/leanncd/test/Semantics/PlanFusionCheckerTest.lean
+@@ -18,7 +18,8 @@ def verdictTrio {K : S → Type} {σ : Declarations S} {r : Registry K} {P : Pro
+ 
+ /-- Kind of the fused run, kind of the donor run, whether the final memories agree on the three
+     slots, the fused run's slots, the donor run's slots. -/
+-def runPair {P : Program Carrier declarations registry} (a b : PlanOutcome P) :
++def runPair {P : Program Carrier declarations registry} {A B : Allocation P}
++    (a : PlanOutcome P A) (b : PlanOutcome P B) :
+     String × String × Bool × List (Option ℚ) × List (Option ℚ) :=
+   let x := outcomeRow a
+   let y := outcomeRow b
+@@ -94,56 +95,56 @@ def chainBothOrder : (routed chainBody).Plan :=
+ -- `fusedcorr-misfused-verdicts` = pubOrder@1.)
+ #eval check "t4-a3split-chainPlan"
+   (verdictTrio t4ReadSplit chainPlan,
+-    runPair (t4ReadSplit.runPlan ops (Start chainInput)) (chainPlan.runPlan ops (Start chainInput)))
++    runPair (t4ReadSplit.runPlan ops (t4ReadSplit.Start chainInput)) (chainPlan.runPlan ops (chainPlan.Start chainInput)))
+   (((true, []), (true, []), (true, [])), ("done", "done", true, [some 0, some 3, some 4], [some 0, some 3, some 4]))
+ 
+ -- donor chainPlan = [init],[acc0],[pub1],[acc1],[pub 0 2]; fused [acc0, pub1, acc1]: acc1 reads point 1 published in the SAME command (valid, D15).
+ #eval check "t4-a3-chainPlan"
+   (verdictTrio t4ReadSame chainPlan,
+-    runPair (t4ReadSame.runPlan ops (Start chainInput)) (chainPlan.runPlan ops (Start chainInput)))
++    runPair (t4ReadSame.runPlan ops (t4ReadSame.Start chainInput)) (chainPlan.runPlan ops (chainPlan.Start chainInput)))
+   (((true, []), (true, []), (true, [])), ("done", "done", true, [some 0, some 3, some 4], [some 0, some 3, some 4]))
+ 
+ -- donor chainReadFirst = [init],[acc0],[acc1],[pub1],[pub 0 2]; fused [acc0, acc1, pub1]: the publication follows the read (D15 counterpart).
+ #eval check "t4-a3mis-chainReadFirst"
+   (verdictTrio t4ReadFirst chainReadFirst,
+-    runPair (t4ReadFirst.runPlan ops (Start chainInput)) (chainReadFirst.runPlan ops (Start chainInput)))
++    runPair (t4ReadFirst.runPlan ops (t4ReadFirst.Start chainInput)) (chainReadFirst.runPlan ops (chainReadFirst.Start chainInput)))
+   (((false, ["ready@2"]), (false, ["ready@2"]), (false, ["ready@2"])), ("stuck", "stuck", false, [some 0, some 0, some 0], [some 0, some 3, some 0]))
+ 
+ -- donor chainEarly = [init],[acc1],[acc0],[pub]; fused [acc1, acc0]: reads an accumulator that is never published first.
+ #eval check "t4-a4-chainEarly"
+   (verdictTrio t4Unpub chainEarly,
+-    runPair (t4Unpub.runPlan ops (Start chainInput)) (chainEarly.runPlan ops (Start chainInput)))
++    runPair (t4Unpub.runPlan ops (t4Unpub.Start chainInput)) (chainEarly.runPlan ops (chainEarly.Start chainInput)))
+   (((false, ["ready@1"]), (false, ["ready@1"]), (false, ["ready@1"])), ("stuck", "stuck", true, [some 0, some 0, some 0], [some 0, some 0, some 0]))
+ 
+ -- donor reinitMid = [init],[acc g1],[init],[acc g2],[pub]; fused [acc g1, init] (re-init after consume wipes g1: 10 not 14).
+ #eval check "t4-a5-reinitMid"
+   (verdictTrio t4Reinit reinitMid,
+-    runPair (t4Reinit.runPlan ops (Start η0)) (reinitMid.runPlan ops (Start η0)))
++    runPair (t4Reinit.runPlan ops (t4Reinit.Start η0)) (reinitMid.runPlan ops (reinitMid.Start η0)))
+   (((false, ["initFresh@2"]), (false, ["initFresh@2"]), (false, ["initFresh@2"])), ("done", "done", true, [some 0, some 10, some 0], [some 0, some 10, some 0]))
+ 
+ -- donor dupGroup = [init],[acc group],[acc [occ 0 0]],[pub]; fused [acc group, acc [occ 0 0]] (duplicate across annotations).
+ #eval check "t4-a6-dupGroup"
+   (verdictTrio t4Dup dupGroup,
+-    runPair (t4Dup.runPlan ops (Start η0)) (dupGroup.runPlan ops (Start η0)))
++    runPair (t4Dup.runPlan ops (t4Dup.Start η0)) (dupGroup.runPlan ops (dupGroup.Start η0)))
+   (((false, ["cov1Nodup", "accFresh@2"]), (false, ["cov1Nodup", "accFresh@2"]), (false, ["cov1Nodup", "accFresh@2"])), ("done", "done", true, [some 0, some 16, some 0], [some 0, some 16, some 0]))
+ 
+ -- donor pubTwice = [init],[acc],[pub block],[pub [addr 1]]; fused [pub block, pub [addr 1]] (overlapping blocks).
+ #eval check "t4-a7-pubTwice"
+   (verdictTrio t4PubTwice pubTwice,
+-    runPair (t4PubTwice.runPlan ops (Start η0)) (pubTwice.runPlan ops (Start η0)))
++    runPair (t4PubTwice.runPlan ops (t4PubTwice.Start η0)) (pubTwice.runPlan ops (pubTwice.Start η0)))
+   (((false, ["cov2Nodup", "pubFresh@3"]), (false, ["cov2Nodup", "pubFresh@3"]), (false, ["cov2Nodup", "pubFresh@3"])), ("done", "done", true, [some 0, some 14, some 0], [some 0, some 14, some 0]))
+ 
+ -- donor lateEmptyInit = [init 1],[acc],[init 0 2],[pub block]; fused [init 0 2, pub block] (empty fibers initialised, then published).
+ #eval check "t4-a9-lateEmptyInit"
+   (verdictTrio t4InitPub lateEmptyInit,
+-    runPair (t4InitPub.runPlan ops (Start η0)) (lateEmptyInit.runPlan ops (Start η0)))
++    runPair (t4InitPub.runPlan ops (t4InitPub.Start η0)) (lateEmptyInit.runPlan ops (lateEmptyInit.Start η0)))
+   (((true, []), (true, []), (true, [])), ("done", "done", true, [some 0, some 14, some 0], [some 0, some 14, some 0]))
+ 
+ -- (a10) empty commands are accepted by `checkPlanF` and are no-ops; the reader after an empty command still sees
+ -- the earlier publication (donor chainPlan has the same flat annotation sequence).
+ #eval check "t4-a10-readAfterEmpty"
+   (verdictTrio t4ReadEmpty chainPlan,
+-    runPair (t4ReadEmpty.runPlan ops (Start chainInput)) (chainPlan.runPlan ops (Start chainInput)))
++    runPair (t4ReadEmpty.runPlan ops (t4ReadEmpty.Start chainInput)) (chainPlan.runPlan ops (chainPlan.Start chainInput)))
+   (((true, []), (true, []), (true, [])), ("done", "done", true, [some 0, some 3, some 4], [some 0, some 3, some 4]))
+ 
+ -- (a10) a plan containing `[]`: `checkPlanF` accepts, the slice-1 checker rejects (singleton only).
+@@ -170,7 +171,7 @@ def chainBothOrder : (routed chainBody).Plan :=
+ -- both order clauses fail at once (`ready@1` and `pubOrder@2`), in the fused plan, its expansion and the donor.
+ #eval check "t4-order-both-clauses"
+   (verdictTrio t4BothOrder chainBothOrder,
+-    runPair (t4BothOrder.runPlan ops (Start chainInput)) (chainBothOrder.runPlan ops (Start chainInput)))
++    runPair (t4BothOrder.runPlan ops (t4BothOrder.Start chainInput)) (chainBothOrder.runPlan ops (chainBothOrder.Start chainInput)))
+   (((false, ["ready@1", "pubOrder@2"]), (false, ["ready@1", "pubOrder@2"]), (false, ["ready@1", "pubOrder@2"])),
+     ("stuck", "stuck", true, [some 0, some 0, some 0], [some 0, some 0, some 0]))
+ 
+diff --git a/leanncd/test/Semantics/PlanFusionCorrectnessTest.lean b/leanncd/test/Semantics/PlanFusionCorrectnessTest.lean
+index 8be7deb6..c50b2dbd 100644
+--- a/leanncd/test/Semantics/PlanFusionCorrectnessTest.lean
++++ b/leanncd/test/Semantics/PlanFusionCorrectnessTest.lean
+@@ -16,7 +16,7 @@ def verdictF {K : S → Type} {σ : Declarations S} {r : Registry K} {P : Progra
+ 
+ /-! ### (1) a valid fused plan: runPlan is `done`, Decode is the model's output projection -/
+ 
+-def fusedRun := fused.runPlan ops (Start η0)
++def fusedRun := fused.runPlan ops (fused.Start η0)
+ 
+ -- `fused` = [[initZero; acc], [pub]] (2 commands); the singleton `plan` ends at pc 3.
+ #eval check "fusedcorr-done-decode"
+@@ -24,7 +24,8 @@ def fusedRun := fused.runPlan ops (Start η0)
+     decodeRow (plan.Decode 3 (finalMemory taggedRun)))
+   ((true, []), ("done", 2, none, [some 0, some 14, some 0]), some [0, 14, 0], some [0, 14, 0])
+ 
+-theorem fused_fvalid : fused.FValid := fused.checkPlanF_sound (by decide)
++theorem fused_fvalid : fused.FValid :=
++  fused.checkPlanF_sound (by apply checkPlan_of_canonical fused.expand rfl; decide)
+ 
+ /-- Theorem 31.3 (a) on the fused plan: the model is unique, and the fused plan's Decode (at
+     pc = number of COMMANDS) is its output projection. -/
+@@ -53,11 +54,12 @@ def sFusedDecode : Option ℚ :=
+   (true, ("failed", 1, some 2, [some 7, some 0, some 0]), ("failed", some 2))
+ 
+ theorem sFused_bad_fvalid : (sPlanFused true).FValid :=
+-  (sPlanFused true).checkPlanF_sound (by decide)
++  (sPlanFused true).checkPlanF_sound (by
++    apply checkPlan_of_canonical (sPlanFused true).expand rfl; decide)
+ 
+ theorem scalar_bad_no_model_F : ¬ ∃ ρ, (scalarRole true).Models ops (scalarInput true) ρ :=
+   failed_correct_F ops sFused_bad_fvalid (scalarInput true)
+-    (rfl : (sPlanFused true).runPlan ops (Start (scalarInput true)) =
++    (rfl : (sPlanFused true).runPlan ops ((sPlanFused true).Start (scalarInput true)) =
+       .failed (sOcc true 2 rfl) 1 (finalMemory (sRunF true)))
+ 
+ /-! ### (3) a fused plan with an INVALID expansion (publish before accumulate in one command) -/
+@@ -76,8 +78,8 @@ def fusedMissingPub : taggedOut.Plan :=
+   unitPlan [[.initZero block, .acc group], [.pub [addr 0, addr 1]]]
+ 
+ #eval check "fusedcorr-missing-publication"
+-  (verdictF fusedMissingPub, outcomeRow (fusedMissingPub.runPlan ops (Start η0)),
+-    decodeRow (fusedMissingPub.Decode 2 (finalMemory (fusedMissingPub.runPlan ops (Start η0)))))
++  (verdictF fusedMissingPub, outcomeRow (fusedMissingPub.runPlan ops (fusedMissingPub.Start η0)),
++    decodeRow (fusedMissingPub.Decode 2 (finalMemory (fusedMissingPub.runPlan ops (fusedMissingPub.Start η0)))))
+   ((false, ["cov2Complete"]), ("done", 2, none, [some 0, some 14, some 0]), none)
+ 
+ /-! ### (4) a valid fused plan agrees with its expansion on the final memory -/
+@@ -85,8 +87,8 @@ def fusedMissingPub : taggedOut.Plan :=
+ /-- Kinds, stopping pcs (commands vs annotations) and whether the final points agree. -/
+ def agreeRow {P : Program Carrier declarations registry} (π : P.Plan) (η : P.Input) :
+     String × String × Nat × Nat × Bool :=
+-  let a := outcomeRow (π.runPlan ops (Start η))
+-  let b := outcomeRow (π.expand.runPlan ops (Start η))
++  let a := outcomeRow (π.runPlan ops (π.Start η))
++  let b := outcomeRow (π.expand.runPlan ops (π.expand.Start η))
+   (a.1, b.1, a.2.1, b.2.1, a.2.2.2 == b.2.2.2)
+ 
+ #eval check "fusedcorr-valid-agrees-with-expansion"
+@@ -98,22 +100,28 @@ def agreeRow {P : Program Carrier declarations registry} (π : P.Plan) (η : P.I
+ 
+ -- Failing runs agree on the failing occurrence (not on pc or memory).
+ #eval check "fusedcorr-failed-agrees-on-occurrence"
+-  (match (sRunF true), (sPlanFused true).expand.runPlan ops (Start (scalarInput true)) with
++  (match (sRunF true), (sPlanFused true).expand.runPlan ops ((sPlanFused true).expand.Start (scalarInput true)) with
+     | .failed o _ _, .failed o' _ _ => (o.1.val.val, o'.1.val.val, o == o')
+     | _, _ => (0, 0, false))
+   (2, 2, true)
+ 
+-example : PlanOutcome.Agree fusedRun (fused.expand.runPlan ops (Start η0)) := rfl
++example : PlanOutcome.Agree fusedRun (fused.expand.runPlan ops (fused.expand.Start η0)) := by
++  have hs : fused.expand.Start η0 = fused.Start η0 := by
++    funext ξ
++    cases ξ <;> rfl
++  simpa only [hs, fusedRun] using fused.runPlan_agree ops (fused.Start η0)
+ 
+ -- `Agree` is not vacuous: different final memories and different failing occurrences disagree.
+-example : ¬ PlanOutcome.Agree fusedRun (.done 3 (Start η0)) := by
++example : ¬ PlanOutcome.Agree fusedRun (.done 3 (fused.Start η0)) := by
+   intro h
+-  have e : finalMemory fusedRun (place ⟨T, point 1⟩) = Start η0 (place ⟨T, point 1⟩) :=
+-    congrFun (h : finalMemory fusedRun = Start η0) _
++  have e : finalMemory fusedRun (place fused.allocation ⟨T, point 1⟩) =
++      fused.Start η0 (place fused.allocation ⟨T, point 1⟩) :=
++    congrFun (h : finalMemory fusedRun = fused.Start η0) _
+   revert e
+   decide
+ 
+-example : ¬ PlanOutcome.Agree (sRunF true) (.failed (sOcc true 1 rfl) 0 (Start (scalarInput true))) := by
++example : ¬ PlanOutcome.Agree (sRunF true)
++    (.failed (sOcc true 1 rfl) 0 ((sPlanFused true).Start (scalarInput true))) := by
+   intro h
+   have e : (2 : Nat) = 1 := congrArg (fun o : OccRef (scalarRole true) => o.1.val.val)
+     (h : (sOcc true 2 rfl) = (sOcc true 1 rfl))
+diff --git a/leanncd/test/Semantics/PlanFusionTest.lean b/leanncd/test/Semantics/PlanFusionTest.lean
+index 88763fec..b41b7b09 100644
+--- a/leanncd/test/Semantics/PlanFusionTest.lean
++++ b/leanncd/test/Semantics/PlanFusionTest.lean
+@@ -17,9 +17,9 @@ def pPlanAP (n : Nat) (body) : (program n body).Plan :=
+   unitPlan [[.initZero (pBlock n body)], [.acc ((List.finRange n).map (pOcc n body)),
+     .pub (pBlock n body)]]
+ def pRunF (n : Nat) (body) :=
+-  (pPlanFused n body).runPlan ops (Start (pInput n body))
++  (pPlanFused n body).runPlan ops ((pPlanFused n body).Start (pInput n body))
+ def pRunAP (n : Nat) (body) :=
+-  (pPlanAP n body).runPlan ops (Start (pInput n body))
++  (pPlanAP n body).runPlan ops ((pPlanAP n body).Start (pInput n body))
+ 
+ -- singleton (PlanStepTest) gives ("done", 3, none, [3/4, 0, 0]); fused: same memory, pc = #commands.
+ #eval check "fused-reciprocal-all" (outcomeRow (pRunF 2 reciprocalBody))
+@@ -40,10 +40,12 @@ def pRunAP (n : Nat) (body) :=
+ def sPlanFused (bad : Bool) : (scalarRole bad).Plan :=
+   scalarPlan bad [[.initZero [sAddr bad 1 rfl, sAddr bad 2 rfl]],
+     [.acc [sOcc bad 1 rfl], .pub [sAddr bad 1 rfl], .acc [sOcc bad 2 rfl], .pub [sAddr bad 2 rfl]]]
+-def sRunF (bad : Bool) := (sPlanFused bad).runPlan ops (Start (scalarInput bad))
++def sRunF (bad : Bool) := (sPlanFused bad).runPlan ops ((sPlanFused bad).Start (scalarInput bad))
+ def sRowF (bad : Bool) : String × Nat × Option Nat × List (Option ℚ) :=
+-  let row (M : Memory Carrier scalarDeclarations) :=
+-    [M (place ⟨0, ()⟩), M (place ⟨1, ()⟩), M (place ⟨2, ()⟩)]
++  let row (M : Memory Carrier (sPlanFused bad).allocation) :=
++    [readSlot (sPlanFused bad).allocation M ⟨0, ()⟩,
++      readSlot (sPlanFused bad).allocation M ⟨1, ()⟩,
++      readSlot (sPlanFused bad).allocation M ⟨2, ()⟩]
+   match sRunF bad with
+   | .done pc M => ("done", pc, none, row M)
+   | .failed o pc M => ("failed", pc, some o.1.val.val, row M)
+@@ -71,28 +73,35 @@ def pPlanMisFused (n : Nat) (body) : (program n body).Plan :=
+   (true, false)
+ -- the run of the mis-fused plan is NOT detected (N4): same value, `done`.
+ #eval check "misfused-run-undetected"
+-  (outcomeRow ((pPlanMisFused 2 reciprocalBody).runPlan ops (Start (pInput 2 reciprocalBody))))
++  (outcomeRow ((pPlanMisFused 2 reciprocalBody).runPlan ops
++    ((pPlanMisFused 2 reciprocalBody).Start (pInput 2 reciprocalBody))))
+   ("done", 1, none, [some (3 / 4), some 0, some 0])
+ 
+ /-! ### T2 additions: the step, equality with the expansion, empty commands, two accumulates -/
+ 
+ -- (1) One fused step: `initZero block; acc group` as a single command from `Start`.
+ #eval check "fused-step-success"
+-  (stepRow (fused.stepCommand ops 0 (Start η0) [.initZero block, .acc group])) ("ok", [some 0, some 14, some 0])
++  (stepRow (fused.stepCommand ops 0 (fused.Start η0) [.initZero block, .acc group])) ("ok", [some 0, some 14, some 0])
+ 
+ -- (4) A fused plan and its expansion (all singleton) end on the same memory; only pc differs.
+-def rowOf {P : Program Carrier declarations registry} (out : PlanOutcome P) : List (Option ℚ) :=
++def rowOf {P : Program Carrier declarations registry} {A : Allocation P}
++    (out : PlanOutcome P A) : List (Option ℚ) :=
+   (outcomeRow out).2.2.2
+ #eval check "fused-vs-expand-reciprocal"
+-  (rowOf ((pPlanFused 2 reciprocalBody).runPlan ops (Start (pInput 2 reciprocalBody))),
+-   rowOf ((pPlanFused 2 reciprocalBody).expand.runPlan ops (Start (pInput 2 reciprocalBody))),
+-   finalPc ((pPlanFused 2 reciprocalBody).expand.runPlan ops (Start (pInput 2 reciprocalBody))))
++  (rowOf ((pPlanFused 2 reciprocalBody).runPlan ops
++     ((pPlanFused 2 reciprocalBody).Start (pInput 2 reciprocalBody))),
++   rowOf ((pPlanFused 2 reciprocalBody).expand.runPlan ops
++     ((pPlanFused 2 reciprocalBody).expand.Start (pInput 2 reciprocalBody))),
++   finalPc ((pPlanFused 2 reciprocalBody).expand.runPlan ops
++     ((pPlanFused 2 reciprocalBody).expand.Start (pInput 2 reciprocalBody))))
+   ([some (3 / 4), some 0, some 0], [some (3 / 4), some 0, some 0], 3)
+ #eval check "fused-vs-expand-scalar"
+   ((sRowF false).2.2.2,
+-   (sPlanFused false).expand.runPlan ops (Start (scalarInput false)) |> fun out =>
+-     let row (M : Memory Carrier scalarDeclarations) :=
+-       [M (place ⟨0, ()⟩), M (place ⟨1, ()⟩), M (place ⟨2, ()⟩)]
++   (sPlanFused false).expand.runPlan ops ((sPlanFused false).expand.Start (scalarInput false)) |> fun out =>
++     let row (M : Memory Carrier (sPlanFused false).allocation) :=
++       [readSlot (sPlanFused false).allocation M ⟨0, ()⟩,
++         readSlot (sPlanFused false).allocation M ⟨1, ()⟩,
++         readSlot (sPlanFused false).allocation M ⟨2, ()⟩]
+      row (finalMemory out))
+   ([some 7, some 2, some 3], [some 7, some 2, some 3])
+ 
+@@ -100,7 +109,7 @@ def rowOf {P : Program Carrier declarations registry} (out : PlanOutcome P) : Li
+ -- (`cmd.length = 0`, no annotation obligations).
+ def fusedEmpty : taggedOut.Plan :=
+   unitPlan [[], [.initZero block, .acc group], [], [.pub block], []]
+-#eval check "fused-with-empty-commands" (outcomeRow (fusedEmpty.runPlan ops (Start η0)))
++#eval check "fused-with-empty-commands" (outcomeRow (fusedEmpty.runPlan ops (fusedEmpty.Start η0)))
+   ("done", 5, none, [some 0, some 14, some 0])
+ #eval check "empty-step-is-identity"
+   (stepRow (fused.stepCommand ops 0 initMem []))
+@@ -113,14 +122,16 @@ def sPlanTwoAcc (bad : Bool) : (scalarRole bad).Plan :=
+     [.acc [sOcc bad 1 rfl], .pub [sAddr bad 1 rfl], .acc [sOcc bad 2 rfl]],
+     [.pub [sAddr bad 2 rfl]]]
+ def sRowTwo (bad : Bool) : List (Option ℚ) :=
+-  let row (M : Memory Carrier scalarDeclarations) :=
+-    [M (place ⟨0, ()⟩), M (place ⟨1, ()⟩), M (place ⟨2, ()⟩)]
+-  row (finalMemory ((sPlanTwoAcc bad).runPlan ops (Start (scalarInput bad))))
++  let row (M : Memory Carrier (sPlanTwoAcc bad).allocation) :=
++    [readSlot (sPlanTwoAcc bad).allocation M ⟨0, ()⟩,
++      readSlot (sPlanTwoAcc bad).allocation M ⟨1, ()⟩,
++      readSlot (sPlanTwoAcc bad).allocation M ⟨2, ()⟩]
++  row (finalMemory ((sPlanTwoAcc bad).runPlan ops ((sPlanTwoAcc bad).Start (scalarInput bad))))
+ #eval check "fused-two-acc-different-tensors"
+-  (sRowTwo false, finalPc ((sPlanTwoAcc false).runPlan ops (Start (scalarInput false))))
++  (sRowTwo false, finalPc ((sPlanTwoAcc false).runPlan ops ((sPlanTwoAcc false).Start (scalarInput false))))
+   ([some 7, some 2, some 3], 3)
+ #eval check "fused-two-acc-different-tensors-bad"
+-  (sRowTwo true, finalPc ((sPlanTwoAcc true).runPlan ops (Start (scalarInput true))))
++  (sRowTwo true, finalPc ((sPlanTwoAcc true).runPlan ops ((sPlanTwoAcc true).Start (scalarInput true))))
+   ([some 7, some 0, some 0], 1)
+ 
+ end LeanNCD.Semantics.PlanFixtures
+diff --git a/leanncd/test/Semantics/PlanMemoryTest.lean b/leanncd/test/Semantics/PlanMemoryTest.lean
+index 9462606c..f3b03be5 100644
+--- a/leanncd/test/Semantics/PlanMemoryTest.lean
++++ b/leanncd/test/Semantics/PlanMemoryTest.lean
+@@ -7,17 +7,23 @@ namespace LeanNCD.Semantics.PlanFixtures
+ open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
+ 
+ -- One buffer per tensor: the three coordinates occupy three distinct slots.
+-#eval check "place-indices" (block.map (fun x => (place x.addr).2.val)) [0, 1, 2]
++#eval check "place-indices"
++  (block.map (fun x => match place plan.allocation x.addr with
++    | .inl ξ => ξ.2.val
++    | .inr ξ => ξ.2.val)) [0, 1, 2]
+ 
+-example : Function.Injective (place (σ := declarations)) := place_injective
++example : Function.Injective (place plan.allocation) :=
++  place_injective plan.tensors plan.tensors_nodup plan.tensors_complete
+ 
+ -- Start installs validated inputs and leaves every other slot uninitialised.
+-def scalarSlot (t : Fin 3) : Slot scalarDeclarations := ⟨t, ⟨0, Nat.zero_lt_one⟩⟩
++def scalarSlot (t : Fin 3) : Slot (scalarPlan true []).allocation :=
++  place (scalarPlan true []).allocation ⟨t, ()⟩
+ 
+ #eval check "start-scalar"
+-  ((List.finRange 3).map (fun t => Start (scalarInput true) (scalarSlot t)))
++  ((List.finRange 3).map (fun t => (scalarPlan true []).Start (scalarInput true) (scalarSlot t)))
+   [some 7, none, none]
+-#eval check "start-tagged" (block.map (fun x => Start η0 (place x.addr))) [none, none, none]
++#eval check "start-tagged"
++  (block.map (fun x => plan.Start η0 (place plan.allocation x.addr))) [none, none, none]
+ 
+ -- The slot view depends only on pc and the commands.
+ #eval check "slotview-acc"
+@@ -28,15 +34,15 @@ def scalarSlot (t : Fin 3) : Slot scalarDeclarations := ⟨t, ⟨0, Nat.zero_lt_
+   [false, false, false, true]
+ 
+ -- R_start on both fixture programs.
+-example : plan.R ops η0 0 (Start η0) start0 := plan.R_start ops η0
++example : plan.R ops η0 0 (plan.Start η0) start0 := plan.R_start ops η0
+ example : (scalarPlan true []).R ops (scalarInput true) 0
+-    (Start (scalarInput true)) ((scalarRole true).initial (scalarInput true)) :=
++    ((scalarPlan true []).Start (scalarInput true)) ((scalarRole true).initial (scalarInput true)) :=
+   Plan.R_start _ ops _
+ 
+ -- Decode is partial: it fails before publication and on a missing slot,
+ -- and never supplies zeros.
+ #eval check "decode"
+-  (decodeRow (plan.Decode 0 (Start η0)), decodeRow (plan.Decode 2 mem3),
++  (decodeRow (plan.Decode 0 (plan.Start η0)), decodeRow (plan.Decode 2 mem3),
+     decodeRow (plan.Decode 3 mem3), decodeRow (plan.Decode 3 mem3Hole))
+   (none, none, some [0, 14, 0], none)
+ 
+diff --git a/leanncd/test/Semantics/PlanMultiSortTest.lean b/leanncd/test/Semantics/PlanMultiSortTest.lean
+index df0dbb79..bf7f91a6 100644
+--- a/leanncd/test/Semantics/PlanMultiSortTest.lean
++++ b/leanncd/test/Semantics/PlanMultiSortTest.lean
+@@ -70,7 +70,12 @@ def pl : prog.Plan where
+      [.acc [occ 0 0, occ 0 1, occ 1 0, occ 1 1]],
+      [.pub [addr 0, addr 1]]]
+ 
+-theorem pl_valid : pl.Valid := pl.checkPlan_sound (by decide)
++theorem pl_valid : pl.Valid := pl.checkPlan_sound (by
++  have hl : pl.checkLayouts = true := pl.checkLayouts_iff.mpr
++    (fun pc _ => pl.layoutOK_of_place_injective
++      (place_injective pl.tensors pl.tensors_nodup pl.tensors_complete) pc)
++  rw [checkPlan, hl, Bool.and_true]
++  decide)
+ 
+ def msSchedule : Schedule prog where
+   tensors := [0, 1]
+@@ -95,12 +100,13 @@ def msSchedule : Schedule prog where
+       cases p
+       fin_cases t <;> simp
+ 
+-def planRun := pl.runPlan msOps (Start η)
++def planRun := pl.runPlan msOps (pl.Start η)
+ 
+ /-- Plan side: the two published values, each at its own carrier. -/
+ def planRow : String × Nat × Option ℤ × Option ℚ :=
+   match planRun with
+-  | .done pc M => ("done", pc, (M (place ⟨0, ()⟩) : Option ℤ), (M (place ⟨1, ()⟩) : Option ℚ))
++  | .done pc M => ("done", pc, (readSlot pl.allocation M ⟨0, ()⟩ : Option ℤ),
++      (readSlot pl.allocation M ⟨1, ()⟩ : Option ℚ))
+   | .failed _ pc _ => ("failed", pc, none, none)
+   | .stuck pc _ => ("stuck", pc, none, none)
+ 
+diff --git a/leanncd/test/Semantics/PlanRetireTest.lean b/leanncd/test/Semantics/PlanRetireTest.lean
+index f8c086c7..921b25a5 100644
+--- a/leanncd/test/Semantics/PlanRetireTest.lean
++++ b/leanncd/test/Semantics/PlanRetireTest.lean
+@@ -18,9 +18,9 @@ namespace LeanNCD.Semantics.PlanFixtures
+ open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
+ 
+ def chainRow (π : (routed chainBody).Plan) :=
+-  outcomeRow (π.runPlan ops (Start chainInput))
++  outcomeRow (π.runPlan ops (π.Start chainInput))
+ def chainRowE (π : (routed chainBody).Plan) (faults : Faults) :=
+-  eRow (π.runPlanE ops faults (Start chainInput))
++  eRow (π.runPlanE ops faults (π.Start chainInput))
+ 
+ /-! ### 1. valid retire after the last reader of a published intermediate -/
+ 
+@@ -35,8 +35,9 @@ def rtChain : (routed chainBody).Plan :=
+ -- the un-retired donor ends with the full row [0, 3, 4] (step-chain): only the retired slot differs.
+ #eval check "retire-valid-chain-donor" (chainPlan.checkPlan, chainRow chainPlan)
+   (true, ("done", 5, none, [some 0, some 3, some 4]))
+-example : rtChain.checkPlan = true := by decide
+-theorem rtChain_valid : rtChain.Valid := rtChain.checkPlan_sound (by decide)
++example : rtChain.checkPlan = true := by apply checkPlan_of_canonical rtChain rfl; decide
++theorem rtChain_valid : rtChain.Valid :=
++  rtChain.checkPlan_sound (by apply checkPlan_of_canonical rtChain rfl; decide)
+ 
+ -- donor: sPlan false ([init 1,2; acc 1; pub 1; acc 2; pub 2]) plus `retire t2` last. Tensor 1 is
+ -- the output; it still decodes (to 2, as in `step-scalar-good`) and the retired slot is `none`.
+@@ -46,7 +47,7 @@ def rtScalar : (scalarRole false).Plan :=
+     [.retire [sAddr false 2 rfl]]]
+ 
+ def sDecodeOf (π : (scalarRole false).Plan) : Option ℚ :=
+-  match π.runPlan ops (Start (scalarInput false)) with
++  match π.runPlan ops (π.Start (scalarInput false)) with
+   | .done pc M => (π.Decode pc M).map (fun out => out sOut ())
+   | _ => none
+ 
+@@ -54,7 +55,7 @@ def sDecodeOf (π : (scalarRole false).Plan) : Option ℚ :=
+   (true, ("run:done", 6, none, [some 7, some 2, none]))
+ #eval check "retire-valid-scalar-decode" (sDecodeOf rtScalar, sDecodeOf (sPlan false))
+   (some 2, some 2)
+-example : rtScalar.checkPlan = true := by decide
++example : rtScalar.checkPlan = true := by apply checkPlan_of_canonical rtScalar rfl; decide
+ 
+ /-! ### 2. read after retire, and the accept-neighbour -/
+ 
+@@ -77,7 +78,7 @@ def rtNeighbour : (routed chainBody).Plan :=
+ 
+ #eval check "retire-neighbour-other-address" (rtNeighbour.checkPlan, chainRow rtNeighbour)
+   (true, ("done", 6, none, [none, some 3, some 4]))
+-example : rtNeighbour.checkPlan = true := by decide
++example : rtNeighbour.checkPlan = true := by apply checkPlan_of_canonical rtNeighbour rfl; decide
+ 
+ /-! ### 3. retire of an output address -/
+ 
+@@ -124,7 +125,7 @@ def rtFusedBad : (routed chainBody).Plan :=
+   (true, ("done", 5, none, [some 0, none, some 4]))
+ #eval check "retire-fused-before-read" (rtFusedBad.checkPlanF, chainRow rtFusedBad)
+   (false, ("stuck", 3, none, [some 0, some 3, some 0]))
+-example : rtFusedOk.checkPlanF = true := by decide
++example : rtFusedOk.checkPlanF = true := by apply checkPlan_of_canonical rtFusedOk.expand rfl; decide
+ example : rtFusedBad.checkPlanF = false := by decide
+ 
+ /-! ### 6. retire twice -/
+@@ -145,7 +146,7 @@ def rtDupBlock : (routed chainBody).Plan :=
+ #eval check "retire-dup-in-block" (rtDupBlock.checkPlan, chainRow rtDupBlock)
+   (true, ("done", 6, none, [some 0, none, some 4]))
+ example : rtTwice.checkPlan = false := by decide
+-example : rtDupBlock.checkPlan = true := by decide
++example : rtDupBlock.checkPlan = true := by apply checkPlan_of_canonical rtDupBlock rfl; decide
+ 
+ /-! ### 7. retire under the fault oracle (donor `PlanFaultsTest`) -/
+ 
+@@ -177,7 +178,7 @@ def rtMulti : (routed chainBody).Plan :=
+ 
+ #eval check "retire-multi-distinct" (rtMulti.checkPlan, chainRow rtMulti)
+   (true, ("done", 6, none, [none, none, some 4]))
+-example : rtMulti.checkPlan = true := by decide
++example : rtMulti.checkPlan = true := by apply checkPlan_of_canonical rtMulti rfl; decide
+ 
+ -- donor: rtMulti with the retire block changed to `[p1, p2]`: the first member stays legal and the
+ -- second is point 2, accumulated but not yet
+@@ -214,7 +215,7 @@ example : rtEarly.checkPlan = false := by decide
+ 
+ /-! ### 9. R at every command boundary (regression net for the `dead` and `retPub` fields of `R`)
+ 
+-   `R` is proved in general (`step_R`, `step_retire`), but `dead` (a retired slot is `none`) and
++   `R` is proved in general (`step_R`, `step_retire`), but `dead` (an unmapped slot is `none`) and
+    `retPub` (a retired address is published) only ever appear inside those proofs. These theorems
+    instantiate `R` on concrete retire plans at EVERY command boundary along the actual run and read the
+    two fields off the intermediate states, so a change to `R` (the buffer-reuse slice will reshape it)
+@@ -224,8 +225,8 @@ example : rtEarly.checkPlan = false := by decide
+ 
+ /-- The memory after the first `n` commands of the actual run (a command that does not return `ok`
+     leaves the memory unchanged; the lemmas below require every step to be `ok`). -/
+-def chainMem (π : (routed chainBody).Plan) : Nat → Memory Carrier declarations
+-  | 0 => Start chainInput
++def chainMem (π : (routed chainBody).Plan) : Nat → Memory Carrier π.allocation
++  | 0 => π.Start chainInput
+   | n + 1 =>
+     match π.stepPlan ops n (chainMem π n) with
+     | .ok M => M
+@@ -247,8 +248,9 @@ theorem R_every_pc_of (π : (routed chainBody).Plan) (hv : π.Valid) (n : Nat)
+     have hcmd0 : π.commands[k]? = some π.commands[k] := List.getElem?_eq_getElem hlt
+     obtain ⟨a, ha⟩ := hv.singleton _ (List.mem_of_getElem? hcmd0)
+     have hcmd : π.commands[k]? = some [a] := by rw [hcmd0, ha]
++    obtain ⟨layout, layout'⟩ := hv.layout_boundary hcmd
+     obtain ⟨c', hc', hR', -⟩ :=
+-      step_R ops hR hc hcmd (hv.stepOK k a hcmd) (hstep k (by omega))
++      step_R ops hR hc hcmd (hv.stepOK k a hcmd) layout layout' (hstep k (by omega))
+     exact ⟨c', hc', hR'⟩
+ 
+ /-- The same for a valid FUSED plan, at command boundaries (`R` is claimed there only). -/
+@@ -269,11 +271,14 @@ theorem R_every_pc_F_of (π : (routed chainBody).Plan) (hv : π.FValid) (n : Nat
+       have h := hstep k (by omega)
+       simpa [stepPlan, hcmd] using h
+     obtain ⟨c', hc', hR', -⟩ := π.step_R_command ops hR hc hcmd
+-      (fun j a hj => Valid.stepOK hv _ a (π.expand_commands_getElem? (π.ann_getElem?_offset hcmd hj))) hs
++      (fun j a hj => Valid.stepOK hv _ a (π.expand_commands_getElem? (π.ann_getElem?_offset hcmd hj)))
++      hv.layout hs
+     exact ⟨c', hc', hR'⟩
+ 
+-theorem rtMulti_valid : rtMulti.Valid := rtMulti.checkPlan_sound (by decide)
+-theorem rtFusedOk_valid : rtFusedOk.FValid := rtFusedOk.checkPlanF_sound (by decide)
++theorem rtMulti_valid : rtMulti.Valid :=
++  rtMulti.checkPlan_sound (by apply checkPlan_of_canonical rtMulti rfl; decide)
++theorem rtFusedOk_valid : rtFusedOk.FValid :=
++  rtFusedOk.checkPlanF_sound (by apply checkPlan_of_canonical rtFusedOk.expand rfl; decide)
+ 
+ theorem rtChain_R_every_pc : ∀ pc, pc ≤ 6 → ∃ c, rtChain.refState ops chainInput pc = some c ∧
+     rtChain.R ops chainInput pc (chainMem rtChain pc) c :=
+@@ -287,6 +292,25 @@ theorem rtFusedOk_R_every_pc : ∀ pc, pc ≤ 5 → ∃ c, rtFusedOk.refState op
+     rtFusedOk.R ops chainInput pc (chainMem rtFusedOk pc) c :=
+   R_every_pc_F_of rtFusedOk rtFusedOk_valid 5 rfl (by intro k hk; interval_cases k <;> rfl)
+ 
++private theorem retired_slot_free_of_injective {π : (routed chainBody).Plan}
++    {pc : Nat} {M : Memory Carrier π.allocation} {c : (routed chainBody).Running}
++    (hR : π.R ops chainInput pc M c) (hinj : Function.Injective (place π.allocation))
++    {a : Address declarations} (hPub : π.Pub pc a) (hnl : ¬ π.Live pc a) :
++    M (place π.allocation a) = none := by
++  apply hR.dead
++  intro res h
++  cases res with
++  | pub b =>
++    simp only [SlotView] at h
++    split_ifs at h with hb
++    · have e : b = a := hinj (Option.some.inj h)
++      exact hnl (e ▸ hb)
++  | acc x =>
++    simp only [SlotView] at h
++    split_ifs at h with hx
++    · have e : x.addr = a := hinj (Option.some.inj h)
++      exact hx.2 (e.symm ▸ hPub)
++
+ /-- After the retire of `rtChain` (command 4, so from pc 5 on) point 1 is retired: `retPub` makes it
+     published, it is no longer live, and `dead` says its slot is free, which the concrete memory
+     confirms. -/
+@@ -294,26 +318,28 @@ theorem rtChain_retired_slot_free :
+     ∃ c, rtChain.refState ops chainInput 5 = some c ∧
+       rtChain.R ops chainInput 5 (chainMem rtChain 5) c ∧
+       rtChain.Pub 5 (cAddr 1).addr ∧ ¬ rtChain.Live 5 (cAddr 1).addr ∧
+-      chainMem rtChain 5 (place (cAddr 1).addr) = none := by
++      chainMem rtChain 5 (place rtChain.allocation (cAddr 1).addr) = none := by
+   obtain ⟨c, hc, hR⟩ := rtChain_R_every_pc 5 (by omega)
+   have hRet : rtChain.Ret 5 (cAddr 1).addr := by decide
+   have hPub := hR.retPub _ hRet
+   have hnl : ¬ rtChain.Live 5 (cAddr 1).addr := fun h => h.2 hRet
+-  exact ⟨c, hc, hR, hPub, hnl, hR.dead _ hPub hnl⟩
++  exact ⟨c, hc, hR, hPub, hnl, retired_slot_free_of_injective hR
++    (place_injective rtChain.tensors rtChain.tensors_nodup rtChain.tensors_complete) hPub hnl⟩
+ 
+ /-- A block of two distinct addresses: both are retired, no longer live and free at pc 5. -/
+ theorem rtMulti_retired_slots_free :
+     ∃ c, rtMulti.refState ops chainInput 5 = some c ∧
+       rtMulti.R ops chainInput 5 (chainMem rtMulti 5) c ∧
+-      (¬ rtMulti.Live 5 (cAddr 0).addr ∧ chainMem rtMulti 5 (place (cAddr 0).addr) = none) ∧
+-      (¬ rtMulti.Live 5 (cAddr 1).addr ∧ chainMem rtMulti 5 (place (cAddr 1).addr) = none) := by
++      (¬ rtMulti.Live 5 (cAddr 0).addr ∧ chainMem rtMulti 5 (place rtMulti.allocation (cAddr 0).addr) = none) ∧
++      (¬ rtMulti.Live 5 (cAddr 1).addr ∧ chainMem rtMulti 5 (place rtMulti.allocation (cAddr 1).addr) = none) := by
+   obtain ⟨c, hc, hR⟩ := rtMulti_R_every_pc 5 (by omega)
+   have free : ∀ a : Fin 3, rtMulti.Ret 5 (cAddr a).addr →
+-      ¬ rtMulti.Live 5 (cAddr a).addr ∧ chainMem rtMulti 5 (place (cAddr a).addr) = none :=
++      ¬ rtMulti.Live 5 (cAddr a).addr ∧ chainMem rtMulti 5 (place rtMulti.allocation (cAddr a).addr) = none :=
+     fun a hRet => by
+       have hPub := hR.retPub _ hRet
+       have hnl : ¬ rtMulti.Live 5 (cAddr a).addr := fun h => h.2 hRet
+-      exact ⟨hnl, hR.dead _ hPub hnl⟩
++      exact ⟨hnl, retired_slot_free_of_injective hR
++        (place_injective rtMulti.tensors rtMulti.tensors_nodup rtMulti.tensors_complete) hPub hnl⟩
+   exact ⟨c, hc, hR, free 0 (by decide), free 1 (by decide)⟩
+ 
+ /-- Fused: the retire sits inside command 3 (`[acc occ1, retire p1]`), so it has run at pc 4. -/
+@@ -321,29 +347,30 @@ theorem rtFusedOk_retired_slot_free :
+     ∃ c, rtFusedOk.refState ops chainInput 4 = some c ∧
+       rtFusedOk.R ops chainInput 4 (chainMem rtFusedOk 4) c ∧
+       ¬ rtFusedOk.Live 4 (cAddr 1).addr ∧
+-      chainMem rtFusedOk 4 (place (cAddr 1).addr) = none := by
++      chainMem rtFusedOk 4 (place rtFusedOk.allocation (cAddr 1).addr) = none := by
+   obtain ⟨c, hc, hR⟩ := rtFusedOk_R_every_pc 4 (by omega)
+   have hRet : rtFusedOk.Ret 4 (cAddr 1).addr := by decide
+   have hPub := hR.retPub _ hRet
+   have hnl : ¬ rtFusedOk.Live 4 (cAddr 1).addr := fun h => h.2 hRet
+-  exact ⟨c, hc, hR, hnl, hR.dead _ hPub hnl⟩
++  exact ⟨c, hc, hR, hnl, retired_slot_free_of_injective hR
++    (place_injective rtFusedOk.tensors rtFusedOk.tensors_nodup rtFusedOk.tensors_complete) hPub hnl⟩
+ 
+ -- Independent of `R` (so they can fail on their own): the memories the run actually computes have the
+ -- retired slots free and every live neighbour untouched. In `rtChain` at pc 5 the memory is
+ -- `[some 0, none, some 4]` (point 1 retired), as in the row `retire-valid-chain`. The slots holding `4`
+ -- (= 3 + 1 in exact rationals, which kernel `rfl` cannot normalise) are `#eval check` rows below.
+-example : chainMem rtChain 5 (place (cAddr 1).addr) = none := rfl
+-example : chainMem rtChain 5 (place (cAddr 0).addr) = some 0 := rfl
+-example : chainMem rtMulti 5 (place (cAddr 0).addr) = none := rfl
+-example : chainMem rtMulti 5 (place (cAddr 1).addr) = none := rfl
+-example : chainMem rtFusedOk 4 (place (cAddr 1).addr) = none := rfl
+-
+-#eval check "retire-net-chain-live-neighbour" (chainMem rtChain 5 (place (cAddr 2).addr)) (some 4)
+-#eval check "retire-net-multi-live-neighbour" (chainMem rtMulti 5 (place (cAddr 2).addr)) (some 4)
+-#eval check "retire-net-fused-live-neighbour" (chainMem rtFusedOk 4 (place (cAddr 2).addr)) (some 4)
+-
+-/-! `dead` and `retPub` hold trivially until something has been retired (`Live = Pub ∧ ¬ Ret`), so the
+-   steps that matter are the ones that run AFTER a retire. `rtNeighbour` has an `acc` after its retire;
++example : chainMem rtChain 5 (place rtChain.allocation (cAddr 1).addr) = none := rfl
++example : chainMem rtChain 5 (place rtChain.allocation (cAddr 0).addr) = some 0 := rfl
++example : chainMem rtMulti 5 (place rtMulti.allocation (cAddr 0).addr) = none := rfl
++example : chainMem rtMulti 5 (place rtMulti.allocation (cAddr 1).addr) = none := rfl
++example : chainMem rtFusedOk 4 (place rtFusedOk.allocation (cAddr 1).addr) = none := rfl
++
++#eval check "retire-net-chain-live-neighbour" (chainMem rtChain 5 (place rtChain.allocation (cAddr 2).addr)) (some 4)
++#eval check "retire-net-multi-live-neighbour" (chainMem rtMulti 5 (place rtMulti.allocation (cAddr 2).addr)) (some 4)
++#eval check "retire-net-fused-live-neighbour" (chainMem rtFusedOk 4 (place rtFusedOk.allocation (cAddr 2).addr)) (some 4)
++
++/-! To preserve the old retired-slot regression, the steps that matter are the ones that run
++   AFTER a retire. `rtNeighbour` has an `acc` after its retire;
+    `rtInitAfter` has an `initZero` after its retire, the shape the buffer-reuse slice will introduce. -/
+ 
+ -- donor: rtNeighbour. Retire p0 (command 3), THEN `initZero [p2]` (command 4), then the accumulation
+@@ -354,10 +381,12 @@ def rtInitAfter : (routed chainBody).Plan :=
+ 
+ #eval check "retire-init-after-retire" (rtInitAfter.checkPlan, chainRow rtInitAfter)
+   (true, ("done", 7, none, [none, some 3, some 4]))
+-example : rtInitAfter.checkPlan = true := by decide
++example : rtInitAfter.checkPlan = true := by apply checkPlan_of_canonical rtInitAfter rfl; decide
+ 
+-theorem rtNeighbour_valid : rtNeighbour.Valid := rtNeighbour.checkPlan_sound (by decide)
+-theorem rtInitAfter_valid : rtInitAfter.Valid := rtInitAfter.checkPlan_sound (by decide)
++theorem rtNeighbour_valid : rtNeighbour.Valid :=
++  rtNeighbour.checkPlan_sound (by apply checkPlan_of_canonical rtNeighbour rfl; decide)
++theorem rtInitAfter_valid : rtInitAfter.Valid :=
++  rtInitAfter.checkPlan_sound (by apply checkPlan_of_canonical rtInitAfter rfl; decide)
+ 
+ theorem rtNeighbour_R_every_pc : ∀ pc, pc ≤ 6 → ∃ c, rtNeighbour.refState ops chainInput pc = some c ∧
+     rtNeighbour.R ops chainInput pc (chainMem rtNeighbour pc) c :=
+@@ -371,35 +400,38 @@ theorem rtInitAfter_R_every_pc : ∀ pc, pc ≤ 7 → ∃ c, rtInitAfter.refStat
+ theorem rtNeighbour_dead_after_acc :
+     ∃ c, rtNeighbour.refState ops chainInput 5 = some c ∧
+       rtNeighbour.R ops chainInput 5 (chainMem rtNeighbour 5) c ∧
+-      ¬ rtNeighbour.Live 5 (cAddr 0).addr ∧ chainMem rtNeighbour 5 (place (cAddr 0).addr) = none := by
++      ¬ rtNeighbour.Live 5 (cAddr 0).addr ∧
++      chainMem rtNeighbour 5 (place rtNeighbour.allocation (cAddr 0).addr) = none := by
+   obtain ⟨c, hc, hR⟩ := rtNeighbour_R_every_pc 5 (by omega)
+   have hRet : rtNeighbour.Ret 5 (cAddr 0).addr := by decide
+   have hPub := hR.retPub _ hRet
+   have hnl : ¬ rtNeighbour.Live 5 (cAddr 0).addr := fun h => h.2 hRet
+-  exact ⟨c, hc, hR, hnl, hR.dead _ hPub hnl⟩
++  exact ⟨c, hc, hR, hnl, retired_slot_free_of_injective hR
++    (place_injective rtNeighbour.tensors rtNeighbour.tensors_nodup rtNeighbour.tensors_complete) hPub hnl⟩
+ 
+ /-- The same after a later `initZero` (command 4, pc 5) and after the following `acc` (command 5, pc 6). -/
+ theorem rtInitAfter_dead_after_init_and_acc :
+     ∀ pc, 5 ≤ pc → pc ≤ 6 → ∃ c, rtInitAfter.refState ops chainInput pc = some c ∧
+       rtInitAfter.R ops chainInput pc (chainMem rtInitAfter pc) c ∧
+       ¬ rtInitAfter.Live pc (cAddr 0).addr ∧
+-      chainMem rtInitAfter pc (place (cAddr 0).addr) = none := by
++      chainMem rtInitAfter pc (place rtInitAfter.allocation (cAddr 0).addr) = none := by
+   intro pc h5 h6
+   obtain ⟨c, hc, hR⟩ := rtInitAfter_R_every_pc pc (by omega)
+   have hRet : rtInitAfter.Ret pc (cAddr 0).addr := by
+     interval_cases pc <;> decide
+   have hPub := hR.retPub _ hRet
+   have hnl : ¬ rtInitAfter.Live pc (cAddr 0).addr := fun h => h.2 hRet
+-  exact ⟨c, hc, hR, hnl, hR.dead _ hPub hnl⟩
++  exact ⟨c, hc, hR, hnl, retired_slot_free_of_injective hR
++    (place_injective rtInitAfter.tensors rtInitAfter.tensors_nodup rtInitAfter.tensors_complete) hPub hnl⟩
+ 
+ -- Independent of `R`: p0 stays free while the later `init` and `acc` kernels run, and they did run.
+-example : chainMem rtNeighbour 5 (place (cAddr 0).addr) = none := rfl
+-example : chainMem rtInitAfter 5 (place (cAddr 0).addr) = none := rfl
+-example : chainMem rtInitAfter 6 (place (cAddr 0).addr) = none := rfl
+-example : chainMem rtInitAfter 4 (place (cAddr 2).addr) = none := rfl
+-example : chainMem rtInitAfter 5 (place (cAddr 2).addr) = some 0 := rfl
+-#eval check "retire-net-neighbour-acc-ran" (chainMem rtNeighbour 5 (place (cAddr 2).addr)) (some 4)
+-#eval check "retire-net-init-after-acc-ran" (chainMem rtInitAfter 6 (place (cAddr 2).addr)) (some 4)
++example : chainMem rtNeighbour 5 (place rtNeighbour.allocation (cAddr 0).addr) = none := rfl
++example : chainMem rtInitAfter 5 (place rtInitAfter.allocation (cAddr 0).addr) = none := rfl
++example : chainMem rtInitAfter 6 (place rtInitAfter.allocation (cAddr 0).addr) = none := rfl
++example : chainMem rtInitAfter 4 (place rtInitAfter.allocation (cAddr 2).addr) = none := rfl
++example : chainMem rtInitAfter 5 (place rtInitAfter.allocation (cAddr 2).addr) = some 0 := rfl
++#eval check "retire-net-neighbour-acc-ran" (chainMem rtNeighbour 5 (place rtNeighbour.allocation (cAddr 2).addr)) (some 4)
++#eval check "retire-net-init-after-acc-ran" (chainMem rtInitAfter 6 (place rtInitAfter.allocation (cAddr 2).addr)) (some 4)
+ 
+ #print axioms R_every_pc_of
+ #print axioms R_every_pc_F_of
+diff --git a/leanncd/test/Semantics/PlanRunTest.lean b/leanncd/test/Semantics/PlanRunTest.lean
+index 7245baa1..1858c3fe 100644
+--- a/leanncd/test/Semantics/PlanRunTest.lean
++++ b/leanncd/test/Semantics/PlanRunTest.lean
+@@ -8,13 +8,14 @@ namespace LeanNCD.Semantics.PlanFixtures
+ 
+ open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
+ 
+-theorem plan_valid : plan.Valid := plan.checkPlan_sound (by decide)
++theorem plan_valid : plan.Valid :=
++  plan.checkPlan_sound (by apply checkPlan_of_canonical plan rfl; decide)
+ 
+ /-- R at pc = length on the memory runPlan actually returns, from `run_R`. -/
+ theorem tagged_run_R :
+     ∃ c, plan.refState ops η0 3 = some c ∧ plan.R ops η0 3 m3 c ∧
+       ∃ events, Execution taggedOut ops events (.running start0) (.running c) := by
+-  have hrun : plan.runPlan ops (Start η0) = .done 3 m3 := rfl
++  have hrun : plan.runPlan ops (plan.Start η0) = .done 3 m3 := rfl
+   rcases runPlan_R ops plan_valid η0 with ⟨M', c', h, hc, hR, hex⟩ | ⟨_, _, _, _, _, h, -⟩
+   · rw [hrun] at h
+     obtain ⟨-, rfl⟩ := PlanOutcome.done.inj h
+@@ -22,22 +23,23 @@ theorem tagged_run_R :
+   · rw [hrun] at h
+     cases h
+ 
+-theorem sPlan_bad_valid : (sPlan true).Valid := (sPlan true).checkPlan_sound (by decide)
++theorem sPlan_bad_valid : (sPlan true).Valid :=
++  (sPlan true).checkPlan_sound (by apply checkPlan_of_canonical (sPlan true) rfl; decide)
+ 
+ /-- scalarRole true fails at pc 3 on tensor 2; run_R supplies the matching
+     reference execution to a failed state, and that failure is on tensor 2. -/
+ theorem scalar_bad_matched :
+-    ∃ o M' c' events, (sPlan true).runPlan ops (Start (scalarInput true)) = .failed o 3 M' ∧
++    ∃ o M' c' events, (sPlan true).runPlan ops ((sPlan true).Start (scalarInput true)) = .failed o 3 M' ∧
+       o.1.val = 2 ∧
+       Execution (scalarRole true) ops events (.running ((scalarRole true).initial (scalarInput true)))
+         (.failed o.1 o.2 c') := by
+   rcases runPlan_R ops sPlan_bad_valid (scalarInput true) with
+     ⟨_, _, h, -⟩ | ⟨o, pc', M', c', ev, h, hex⟩
+-  · have hrun : (sPlan true).runPlan ops (Start (scalarInput true)) =
++  · have hrun : (sPlan true).runPlan ops ((sPlan true).Start (scalarInput true)) =
+         .failed (sOcc true 2 rfl) 3 (finalMemory (sRun true)) := rfl
+     rw [hrun] at h
+     cases h
+-  · have hrun : (sPlan true).runPlan ops (Start (scalarInput true)) =
++  · have hrun : (sPlan true).runPlan ops ((sPlan true).Start (scalarInput true)) =
+         .failed (sOcc true 2 rfl) 3 (finalMemory (sRun true)) := rfl
+     rw [hrun] at h
+     obtain ⟨rfl, rfl, rfl⟩ := PlanOutcome.failed.inj h
+diff --git a/leanncd/test/Semantics/PlanSimulationTest.lean b/leanncd/test/Semantics/PlanSimulationTest.lean
+index b4052799..25be06b5 100644
+--- a/leanncd/test/Semantics/PlanSimulationTest.lean
++++ b/leanncd/test/Semantics/PlanSimulationTest.lean
+@@ -14,13 +14,13 @@ theorem group_complete (y : OccRef taggedOut) : y ∈ group := by
+ 
+ /-! ### The concrete memories of the run, by `stepPlan` -/
+ 
+-def m1 : Memory Carrier declarations := execInit block (Start η0)
+-def m2 : Memory Carrier declarations :=
++def m1 : Memory Carrier plan.allocation := plan.execInit block (plan.Start η0)
++def m2 : Memory Carrier plan.allocation :=
+   match plan.stepPlan ops 1 m1 with | .ok M => M | _ => m1
+-def m3 : Memory Carrier declarations :=
++def m3 : Memory Carrier plan.allocation :=
+   match plan.stepPlan ops 2 m2 with | .ok M => M | _ => m2
+ 
+-theorem run0 : plan.stepPlan ops 0 (Start η0) = .ok m1 := rfl
++theorem run0 : plan.stepPlan ops 0 (plan.Start η0) = .ok m1 := rfl
+ theorem run1 : plan.stepPlan ops 1 m1 = .ok m2 := rfl
+ theorem run2 : plan.stepPlan ops 2 m2 = .ok m3 := rfl
+ 
+@@ -45,28 +45,32 @@ theorem ok2 : plan.AnnOK 2 (.pub block) := by
+ 
+ /-- R holds at every pc along the actual run, with refState as the witness. -/
+ theorem tagged_R_every_pc :
+-    plan.R ops η0 0 (Start η0) start0 ∧
++    plan.R ops η0 0 (plan.Start η0) start0 ∧
+     (∃ c, plan.refState ops η0 1 = some c ∧ plan.R ops η0 1 m1 c) ∧
+     (∃ c, plan.refState ops η0 2 = some c ∧ plan.R ops η0 2 m2 c) ∧
+     (∃ c, plan.refState ops η0 3 = some c ∧ plan.R ops η0 3 m3 c) := by
+   have R0 := plan.R_start ops η0
+   have hc0 : plan.refState ops η0 0 = some start0 := rfl
+-  obtain ⟨c1, hc1, R1, -⟩ := step_R ops R0 hc0 rfl ok0 run0
+-  obtain ⟨c2, hc2, R2, -⟩ := step_R ops R1 hc1 rfl ok1 run1
+-  obtain ⟨c3, hc3, R3, -⟩ := step_R ops R2 hc2 rfl ok2 run2
++  have layout := plan.layoutOK_of_place_injective
++    (place_injective plan.tensors plan.tensors_nodup plan.tensors_complete)
++  obtain ⟨c1, hc1, R1, -⟩ := step_R ops R0 hc0 rfl ok0 (layout 0) (layout 1) run0
++  obtain ⟨c2, hc2, R2, -⟩ := step_R ops R1 hc1 rfl ok1 (layout 1) (layout 2) run1
++  obtain ⟨c3, hc3, R3, -⟩ := step_R ops R2 hc2 rfl ok2 (layout 2) (layout 3) run2
+   exact ⟨R0, ⟨c1, hc1, R1⟩, ⟨c2, hc2, R2⟩, ⟨c3, hc3, R3⟩⟩
+ 
+ -- The proved-related final memory is the one runPlan returns.
+ example : finalMemory taggedRun = m3 := rfl
+ #eval check "sim-tagged-m-rows"
+-  ([m1, m2, m3].map (fun M => block.map (fun x => M (place x.addr))))
++  ([m1, m2, m3].map (fun M => block.map (fun x => readSlot plan.allocation M x.addr)))
+   [[some 0, some 0, some 0], [some 0, some 14, some 0], [some 0, some 14, some 0]]
+ 
+ /-! ### Failure matching on failureAfterBody -/
+ 
+ abbrev FP := program 2 failureAfterBody
+ 
+-def fm1 : Memory Carrier declarations := execInit (pBlock 2 failureAfterBody) (Start (pInput 2 failureAfterBody))
++def fm1 : Memory Carrier (pPlan 2 failureAfterBody).allocation :=
++  (pPlan 2 failureAfterBody).execInit (pBlock 2 failureAfterBody)
++    ((pPlan 2 failureAfterBody).Start (pInput 2 failureAfterBody))
+ 
+ theorem fOk0 : (pPlan 2 failureAfterBody).AnnOK 0 (.initZero (pBlock 2 failureAfterBody)) := by
+   intro x _
+@@ -84,7 +88,10 @@ theorem failure_matched :
+         (.running c) (.failed (pOcc 2 failureAfterBody 1).1 (pOcc 2 failureAfterBody 1).2 c) ∧
+       ¬ ∃ ρ, FP.Models ops (pInput 2 failureAfterBody) ρ := by
+   have R0 := (pPlan 2 failureAfterBody).R_start ops (pInput 2 failureAfterBody)
+-  obtain ⟨c1, hc1, R1, -⟩ := step_R ops R0 rfl rfl fOk0 rfl
++  have layout := (pPlan 2 failureAfterBody).layoutOK_of_place_injective
++    (place_injective (pPlan 2 failureAfterBody).tensors
++      (pPlan 2 failureAfterBody).tensors_nodup (pPlan 2 failureAfterBody).tensors_complete)
++  obtain ⟨c1, hc1, R1, -⟩ := step_R ops R0 rfl rfl fOk0 (layout 0) (layout 1) rfl
+   have notCons : ∀ G, [Ann.acc ((List.finRange 2).map (pOcc 2 failureAfterBody))] = [.acc G] →
+       ∀ x ∈ G, ¬ (pPlan 2 failureAfterBody).Cons 1 x := by
+     intro G hG x _ hx
+diff --git a/leanncd/test/Semantics/PlanStepTest.lean b/leanncd/test/Semantics/PlanStepTest.lean
+index 0b718520..1972fa5d 100644
+--- a/leanncd/test/Semantics/PlanStepTest.lean
++++ b/leanncd/test/Semantics/PlanStepTest.lean
+@@ -9,24 +9,26 @@ namespace LeanNCD.Semantics.PlanFixtures
+ open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
+ 
+ /-- Kind, stopping pc, failing occurrence (statement, valuation), raw slot row. -/
+-def outcomeRow {P : Program Carrier declarations registry} (out : PlanOutcome P) :
++def outcomeRow {P : Program Carrier declarations registry} {A : Allocation P}
++    (out : PlanOutcome P A) :
+     String × Nat × Option (Nat × Nat) × List (Option ℚ) :=
+-  let row (M : Memory Carrier declarations) :=
+-    [M (place ⟨(), point 0⟩), M (place ⟨(), point 1⟩), M (place ⟨(), point 2⟩)]
++  let row (M : Memory Carrier A) :=
++    [readSlot A M ⟨(), point 0⟩, readSlot A M ⟨(), point 1⟩,
++      readSlot A M ⟨(), point 2⟩]
+   match out with
+   | .done pc M => ("done", pc, none, row M)
+   | .failed o pc M => ("failed", pc, some (o.2.1.val, o.2.2.val.val), row M)
+   | .stuck pc M => ("stuck", pc, none, row M)
+ 
+-def finalMemory {P : Program K σ r} : PlanOutcome P → Memory K σ
++def finalMemory {P : Program K σ r} {A : Allocation P} : PlanOutcome P A → Memory K A
+   | .done _ M | .failed _ _ M | .stuck _ M => M
+ 
+-def finalPc {P : Program K σ r} : PlanOutcome P → Nat
++def finalPc {P : Program K σ r} {A : Allocation P} : PlanOutcome P A → Nat
+   | .done pc _ | .failed _ pc _ | .stuck pc _ => pc
+ 
+ /-! ### taggedOut: [initZero p0..p2; acc group; pub p0..p2] -/
+ 
+-def taggedRun := plan.runPlan ops (Start η0)
++def taggedRun := plan.runPlan ops (plan.Start η0)
+ 
+ #eval check "step-tagged-run" (outcomeRow taggedRun)
+   ("done", 3, none, [some 0, some 14, some 0])
+@@ -37,11 +39,12 @@ def taggedRun := plan.runPlan ops (Start η0)
+ 
+ -- Per-pc concrete states versus refState, observed with stepPlan.
+ def taggedTrace : List (Option (List (Option ℚ))) :=
+-  let m1 := match plan.stepPlan ops 0 (Start η0) with | .ok M => some M | _ => none
++  let m1 := match plan.stepPlan ops 0 (plan.Start η0) with | .ok M => some M | _ => none
+   let m2 := m1.bind (fun M => match plan.stepPlan ops 1 M with | .ok M => some M | _ => none)
+   let m3 := m2.bind (fun M => match plan.stepPlan ops 2 M with | .ok M => some M | _ => none)
+-  [some (Start η0), m1, m2, m3].map (fun m => m.map (fun M =>
+-    [M (place (addr 0).addr), M (place (addr 1).addr), M (place (addr 2).addr)]))
++  [some (plan.Start η0), m1, m2, m3].map (fun m => m.map (fun M =>
++    [readSlot plan.allocation M (addr 0).addr, readSlot plan.allocation M (addr 1).addr,
++      readSlot plan.allocation M (addr 2).addr]))
+ #eval check "step-tagged-trace" taggedTrace
+   [some [none, none, none], some [some 0, some 0, some 0],
+    some [some 0, some 14, some 0], some [some 0, some 14, some 0]]
+@@ -55,7 +58,7 @@ def pPlan (n : Nat) (body) : (program n body).Plan :=
+   unitPlan [[.initZero (pBlock n body)], [.acc ((List.finRange n).map (pOcc n body))],
+     [.pub (pBlock n body)]]
+ def pInput (n : Nat) (body) := noInput (program n body) (fun _ => rfl)
+-def pRun (n : Nat) (body) := (pPlan n body).runPlan ops (Start (pInput n body))
++def pRun (n : Nat) (body) := (pPlan n body).runPlan ops ((pPlan n body).Start (pInput n body))
+ 
+ -- reciprocal(2) + reciprocal(4) collected = 3/4, not reciprocal(2 + 4) = 1/6.
+ #eval check "step-reciprocal" (outcomeRow (pRun 2 reciprocalBody), summarize 2 reciprocalBody)
+@@ -84,10 +87,11 @@ def sOcc (bad : Bool) (t : Fin 3) (h : (scalarRole bad).input t = false) :
+ def sPlan (bad : Bool) : (scalarRole bad).Plan :=
+   scalarPlan bad [[.initZero [sAddr bad 1 rfl, sAddr bad 2 rfl]], [.acc [sOcc bad 1 rfl]],
+     [.pub [sAddr bad 1 rfl]], [.acc [sOcc bad 2 rfl]], [.pub [sAddr bad 2 rfl]]]
+-def sRun (bad : Bool) := (sPlan bad).runPlan ops (Start (scalarInput bad))
++def sRun (bad : Bool) := (sPlan bad).runPlan ops ((sPlan bad).Start (scalarInput bad))
+ def sRow (bad : Bool) : String × Nat × Option Nat × List (Option ℚ) :=
+-  let row (M : Memory Carrier scalarDeclarations) :=
+-    [M (place ⟨0, ()⟩), M (place ⟨1, ()⟩), M (place ⟨2, ()⟩)]
++  let row (M : Memory Carrier (sPlan bad).allocation) :=
++    [readSlot (sPlan bad).allocation M ⟨0, ()⟩, readSlot (sPlan bad).allocation M ⟨1, ()⟩,
++      readSlot (sPlan bad).allocation M ⟨2, ()⟩]
+   match sRun bad with
+   | .done pc M => ("done", pc, none, row M)
+   | .failed o pc M => ("failed", pc, some o.1.val.val, row M)
+@@ -128,11 +132,11 @@ def chainEarly : (routed chainBody).Plan :=
+   unitPlan [[.initZero cAll], [.acc [cOcc 1]], [.acc [cOcc 0]], [.pub cAll]]
+ 
+ #eval check "step-chain"
+-  (outcomeRow (chainPlan.runPlan ops (Start chainInput)),
++  (outcomeRow (chainPlan.runPlan ops (chainPlan.Start chainInput)),
+     chainResult.outcome.kind, vectorStore (snapshot chainResult.outcome))
+   (("done", 5, none, [some 0, some 3, some 4]), "complete", [some 0, some 3, some 4])
+ #eval check "invalid-read-unpublished"
+-  (outcomeRow (chainEarly.runPlan ops (Start chainInput)))
++  (outcomeRow (chainEarly.runPlan ops (chainEarly.Start chainInput)))
+   ("stuck", 1, none, [some 0, some 0, some 0])
+ 
+ /-! ### Transactional acc, outside checkPlan's domain (plan §10 item 10)
+@@ -147,8 +151,8 @@ shipped values; the valid neighbour is in the same row. -/
+ def a2eSeqVisible : (routed chainBody).Plan :=
+   unitPlan [[.initZero cAll], [.pub cAll], [.acc [cOcc 0, cOcc 1]]]
+ #eval check "a2e-seq-visible"
+-  (outcomeRow (a2eSeqVisible.runPlan ops (Start chainInput)),
+-    outcomeRow (chainPlan.runPlan ops (Start chainInput)))
++  (outcomeRow (a2eSeqVisible.runPlan ops (a2eSeqVisible.Start chainInput)),
++    outcomeRow (chainPlan.runPlan ops (chainPlan.Start chainInput)))
+   (("done", 3, none, [some 0, some 3, some 1]), ("done", 5, none, [some 0, some 3, some 4]))
+ 
+ -- accMat-invalid: occurrence 0's slot (point 0) is never initialised and
+@@ -157,7 +161,7 @@ def a2eFailedVsStuck : (program 2 failureAfterBody).Plan :=
+   unitPlan [[.initZero [pAddr 2 failureAfterBody 1, pAddr 2 failureAfterBody 2]],
+     [.acc ((List.finRange 2).map (pOcc 2 failureAfterBody))], [.pub (pBlock 2 failureAfterBody)]]
+ #eval check "a2e-failed-vs-stuck"
+-  (outcomeRow (a2eFailedVsStuck.runPlan ops (Start (pInput 2 failureAfterBody))),
++  (outcomeRow (a2eFailedVsStuck.runPlan ops (a2eFailedVsStuck.Start (pInput 2 failureAfterBody))),
+     outcomeRow (pRun 2 failureAfterBody))
+   (("failed", 1, some (1, 0), [none, some 0, some 0]),
+     ("failed", 1, some (1, 0), [some 0, some 0, some 0]))
+@@ -168,59 +172,61 @@ def a2eFailedVsStuck : (program 2 failureAfterBody).Plan :=
+ -- reference post-state at pc 2 does not exist (fiber premise fails).
+ def earlyStep : taggedOut.Plan := unitPlan [[.initZero block], [.pub block], [.acc group]]
+ #eval check "invalid-publish-before-acc"
+-  (outcomeRow (earlyStep.runPlan ops (Start η0)), (earlyStep.refState ops η0 2).isSome)
++  (outcomeRow (earlyStep.runPlan ops (earlyStep.Start η0)), (earlyStep.refState ops η0 2).isSome)
+   (("done", 3, none, [some 0, some 14, some 0]), false)
+ 
+ -- Missing initZero: the accumulate kernel has no slot to add into.
+ def noInit : taggedOut.Plan := unitPlan [[.acc group], [.pub block]]
+-#eval check "invalid-missing-init" (outcomeRow (noInit.runPlan ops (Start η0)))
++#eval check "invalid-missing-init" (outcomeRow (noInit.runPlan ops (noInit.Start η0)))
+   ("stuck", 0, none, [none, none, none])
+ 
+ -- Missing initZero for the empty-fiber coordinates only (N1): publish is stuck.
+ def partialInit : taggedOut.Plan := unitPlan [[.initZero [addr 1]], [.acc group], [.pub block]]
+-#eval check "invalid-missing-init-empty-fiber" (outcomeRow (partialInit.runPlan ops (Start η0)))
++#eval check "invalid-missing-init-empty-fiber" (outcomeRow (partialInit.runPlan ops (partialInit.Start η0)))
+   ("stuck", 2, none, [none, some 14, none])
+ 
+ -- One occurrence in two groups: counted twice (16); reference post-state at pc 3 fails.
+ def dupGroup : taggedOut.Plan :=
+   unitPlan [[.initZero block], [.acc group], [.acc [occ 0 0]], [.pub block]]
+ #eval check "invalid-duplicate-member"
+-  (outcomeRow (dupGroup.runPlan ops (Start η0)), (dupGroup.refState ops η0 3).isSome)
++  (outcomeRow (dupGroup.runPlan ops (dupGroup.Start η0)), (dupGroup.refState ops η0 3).isSome)
+   (("done", 4, none, [some 0, some 16, some 0]), false)
+ 
+ -- A fused (non-singleton) command was stuck in slice 1; slice 2 runs it (see PlanFusionTest).
+ def fused : taggedOut.Plan := unitPlan [[.initZero block, .acc group], [.pub block]]
+-#eval check "fused-runs-in-slice-2" (outcomeRow (fused.runPlan ops (Start η0)))
++#eval check "fused-runs-in-slice-2" (outcomeRow (fused.runPlan ops (fused.Start η0)))
+   ("done", 2, none, [some 0, some 14, some 0])
+ 
+ /-! ### The empty command (a no-op command in slice 2) -/
+ 
+ /-- Kind and raw slot row (`none` slots read as `none`) of one step. -/
+-def stepRow {P : Program Carrier declarations registry} : StepResult P → String × List (Option ℚ)
+-  | .ok M => ("ok", [M (place ⟨(), point 0⟩), M (place ⟨(), point 1⟩), M (place ⟨(), point 2⟩)])
++def stepRow {P : Program Carrier declarations registry} {A : Allocation P} :
++    StepResult P A → String × List (Option ℚ)
++  | .ok M => ("ok", [readSlot A M ⟨(), point 0⟩, readSlot A M ⟨(), point 1⟩,
++      readSlot A M ⟨(), point 2⟩])
+   | .semFail _ => ("semFail", [])
+   | .stuck => ("stuck", [])
+ 
+ /-- Memory after `plan`'s `initZero block` (the first step of `plan`). -/
+-def initMem : Memory Carrier declarations :=
+-  match plan.stepPlan ops 0 (Start η0) with | .ok M => M | _ => Start η0
++def initMem : Memory Carrier plan.allocation :=
++  match plan.stepPlan ops 0 (plan.Start η0) with | .ok M => M | _ => plan.Start η0
+ 
+ /-- Donor `plan` with the empty command `[]` inserted after the init. -/
+ def emptyCmd : taggedOut.Plan := unitPlan [[.initZero block], [], [.acc group], [.pub block]]
+ 
+ -- Slice 1: stuck, and the run stuck at pc 1. Slice 2: `[]` is the identity step.
+ #eval check "step-empty-command-noop"
+-  (stepRow (plan.stepCommand ops 1 initMem []), outcomeRow (emptyCmd.runPlan ops (Start η0)))
++  (stepRow (plan.stepCommand ops 1 initMem []), outcomeRow (emptyCmd.runPlan ops (emptyCmd.Start η0)))
+   (("ok", [some 0, some 0, some 0]), ("done", 4, none, [some 0, some 14, some 0]))
+ -- Accept-neighbours: a one-element no-op command steps; the plan without `[]` completes.
+ #eval check "step-empty-command-neighbours"
+-  (stepRow (plan.stepCommand ops 1 initMem [.initZero []]), outcomeRow (plan.runPlan ops (Start η0)))
++  (stepRow (plan.stepCommand ops 1 initMem [.initZero []]), outcomeRow (plan.runPlan ops (plan.Start η0)))
+   (("ok", [some 0, some 0, some 0]), ("done", 3, none, [some 0, some 14, some 0]))
+ 
+ /-! ### `stepPlan` at and past the end of a three-command plan -/
+ 
+ /-- Memory before `plan`'s publication (after the init and the accumulate). -/
+-def preMem : Memory Carrier declarations :=
++def preMem : Memory Carrier plan.allocation :=
+   match plan.stepPlan ops 1 initMem with | .ok M => M | _ => initMem
+ 
+ -- Past the end is stuck even over a fully-run memory; pc = m - 1 is a real step.
+diff --git a/leanncd/test/Semantics/PlanValidityTest.lean b/leanncd/test/Semantics/PlanValidityTest.lean
+index b2de3425..ae2ae8c5 100644
+--- a/leanncd/test/Semantics/PlanValidityTest.lean
++++ b/leanncd/test/Semantics/PlanValidityTest.lean
+@@ -35,12 +35,14 @@ def verdict {K : S → Type} {σ : Declarations S} {r : Registry K} {P : Program
+   [(true, []), (true, []), (true, []), (true, []), (true, []), (true, [])]
+ 
+ -- The same verdicts in the kernel.
+-example : plan.checkPlan = true := by decide
+-example : (pPlan 2 reciprocalBody).checkPlan = true := by decide
+-example : (pPlan 2 failureAfterBody).checkPlan = true := by decide
+-example : (sPlan true).checkPlan = true := by decide
+-example : (sPlan false).checkPlan = true := by decide
+-example : chainPlan.checkPlan = true := by decide
++example : plan.checkPlan = true := by apply checkPlan_of_canonical plan rfl; decide
++example : (pPlan 2 reciprocalBody).checkPlan = true := by
++  apply checkPlan_of_canonical (pPlan 2 reciprocalBody) rfl; decide
++example : (pPlan 2 failureAfterBody).checkPlan = true := by
++  apply checkPlan_of_canonical (pPlan 2 failureAfterBody) rfl; decide
++example : (sPlan true).checkPlan = true := by apply checkPlan_of_canonical (sPlan true) rfl; decide
++example : (sPlan false).checkPlan = true := by apply checkPlan_of_canonical (sPlan false) rfl; decide
++example : chainPlan.checkPlan = true := by apply checkPlan_of_canonical chainPlan rfl; decide
+ 
+ /-! ### A2 invalid plans -/
+ 
+@@ -71,7 +73,7 @@ def earlyHalf : taggedOut.Plan :=
+ 
+ #eval check "invalid-missing-occurrence" (verdict missingOcc)
+   (false, ["cov1Complete", "pubOrder@2"])
+-#eval check "invalid-publish-after-one-group" (verdict earlyHalf, outcomeRow (earlyHalf.runPlan ops (Start η0)))
++#eval check "invalid-publish-after-one-group" (verdict earlyHalf, outcomeRow (earlyHalf.runPlan ops (earlyHalf.Start η0)))
+   ((false, ["pubOrder@2"]), ("done", 4, none, [some 0, some 14, some 0]))
+ 
+ example : missingOcc.checkPlan = false := by decide
+@@ -85,7 +87,7 @@ def reinitMid : taggedOut.Plan :=
+     [.acc [occ 1 0, occ 1 1]], [.pub block]]
+ 
+ #eval check "invalid-reinit-after-consume"
+-  (verdict reinitMid, outcomeRow (reinitMid.runPlan ops (Start η0)))
++  (verdict reinitMid, outcomeRow (reinitMid.runPlan ops (reinitMid.Start η0)))
+   ((false, ["initFresh@2"]), ("done", 5, none, [some 0, some 10, some 0]))
+ 
+ example : reinitMid.checkPlan = false := by decide
+@@ -112,18 +114,18 @@ def pubSplit : taggedOut.Plan :=
+   unitPlan [[.initZero block], [.acc group], [.pub [addr 0, addr 1]], [.pub [addr 2]]]
+ 
+ #eval check "invalid-publish-twice-across-blocks"
+-  (verdict pubTwice, outcomeRow (pubTwice.runPlan ops (Start η0)))
++  (verdict pubTwice, outcomeRow (pubTwice.runPlan ops (pubTwice.Start η0)))
+   ((false, ["cov2Nodup", "pubFresh@3"]), ("done", 4, none, [some 0, some 14, some 0]))
+ #eval check "invalid-publish-twice-in-block"
+-  (verdict pubDupIn, outcomeRow (pubDupIn.runPlan ops (Start η0)))
++  (verdict pubDupIn, outcomeRow (pubDupIn.runPlan ops (pubDupIn.Start η0)))
+   ((false, ["cov2Nodup", "pubFresh@2"]), ("done", 3, none, [some 0, some 14, some 0]))
+ #eval check "valid-publish-split-blocks"
+-  (verdict pubSplit, outcomeRow (pubSplit.runPlan ops (Start η0)))
++  (verdict pubSplit, outcomeRow (pubSplit.runPlan ops (pubSplit.Start η0)))
+   ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
+ 
+ example : pubTwice.checkPlan = false := by decide
+ example : pubDupIn.checkPlan = false := by decide
+-example : pubSplit.checkPlan = true := by decide
++example : pubSplit.checkPlan = true := by apply checkPlan_of_canonical pubSplit rfl; decide
+ 
+ /-! ### Accumulation freshness (`checkAccFresh`)
+ 
+@@ -140,14 +142,14 @@ def accSplit : taggedOut.Plan :=
+   unitPlan [[.initZero block], [.acc [occ 0 0, occ 0 1]], [.acc [occ 1 0, occ 1 1]], [.pub block]]
+ 
+ #eval check "invalid-duplicate-within-group"
+-  (verdict dupWithin, outcomeRow (dupWithin.runPlan ops (Start η0)))
++  (verdict dupWithin, outcomeRow (dupWithin.runPlan ops (dupWithin.Start η0)))
+   ((false, ["cov1Nodup", "accFresh@1"]), ("done", 3, none, [some 0, some 16, some 0]))
+ #eval check "valid-accumulate-split-groups"
+-  (verdict accSplit, outcomeRow (accSplit.runPlan ops (Start η0)))
++  (verdict accSplit, outcomeRow (accSplit.runPlan ops (accSplit.Start η0)))
+   ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
+ 
+ example : dupWithin.checkPlan = false := by decide
+-example : accSplit.checkPlan = true := by decide
++example : accSplit.checkPlan = true := by apply checkPlan_of_canonical accSplit rfl; decide
+ 
+ /-! ### Accumulate into an unmaterialised target (`checkAccMat`)
+ 
+@@ -183,20 +185,20 @@ def lateEmptyInit : taggedOut.Plan :=
+ 
+ #eval check "invalid-acc-unmaterialised-attempts"
+   (([accThenInit, emptyOnlyInit, targetUnpub, halfThenInit] : List taggedOut.Plan).map
+-    fun (π : taggedOut.Plan) => (verdict π, outcomeRow (π.runPlan ops (Start η0))))
++    fun (π : taggedOut.Plan) => (verdict π, outcomeRow (π.runPlan ops (π.Start η0))))
+   [((false, ["accMat@0", "initFresh@1"]), ("stuck", 0, none, [none, none, none])),
+    ((false, ["accMat@1", "pubMat@2"]), ("stuck", 1, none, [some 0, none, some 0])),
+    ((false, ["cov2Complete", "accMat@1"]), ("stuck", 1, none, [some 0, none, some 0])),
+    ((false, ["accMat@1", "initFresh@2"]), ("stuck", 1, none, [some 0, none, some 0]))]
+ #eval check "valid-late-empty-fiber-init"
+-  (verdict lateEmptyInit, outcomeRow (lateEmptyInit.runPlan ops (Start η0)))
++  (verdict lateEmptyInit, outcomeRow (lateEmptyInit.runPlan ops (lateEmptyInit.Start η0)))
+   ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
+ 
+ example : accThenInit.checkPlan = false := by decide
+ example : emptyOnlyInit.checkPlan = false := by decide
+ example : targetUnpub.checkPlan = false := by decide
+ example : halfThenInit.checkPlan = false := by decide
+-example : lateEmptyInit.checkPlan = true := by decide
++example : lateEmptyInit.checkPlan = true := by apply checkPlan_of_canonical lateEmptyInit rfl; decide
+ 
+ /-! ### Initialisation of a published address (`checkInit`, not-published half)
+ 
+@@ -214,10 +216,10 @@ def reinitBeforePub : taggedOut.Plan :=
+   unitPlan [[.initZero block], [.acc group], [.initZero [addr 0]], [.pub block]]
+ 
+ #eval check "invalid-reinit-after-publish"
+-  (verdict reinitPub, outcomeRow (reinitPub.runPlan ops (Start η0)))
++  (verdict reinitPub, outcomeRow (reinitPub.runPlan ops (reinitPub.Start η0)))
+   ((false, ["initFresh@3"]), ("done", 4, none, [some 0, some 14, some 0]))
+ #eval check "valid-reinit-before-publish"
+-  (verdict reinitBeforePub, outcomeRow (reinitBeforePub.runPlan ops (Start η0)))
++  (verdict reinitBeforePub, outcomeRow (reinitBeforePub.runPlan ops (reinitBeforePub.Start η0)))
+   ((true, []), ("done", 4, none, [some 0, some 14, some 0]))
+ 
+ -- The two halves of `checkInit` at pc 3 for `[addr 0]`, read separately: the
+@@ -229,7 +231,7 @@ def reinitBeforePub : taggedOut.Plan :=
+   (true, true)
+ 
+ example : reinitPub.checkPlan = false := by decide
+-example : reinitBeforePub.checkPlan = true := by decide
++example : reinitBeforePub.checkPlan = true := by apply checkPlan_of_canonical reinitBeforePub rfl; decide
+ 
+ /-! ### The empty command
+ 
+@@ -239,7 +241,7 @@ index; with fusion `[]` is the identity step, so the run completes (`done` at pc
+ `singleton` is the only guard (slice 2 replaces it by validity of the expansion). -/
+ 
+ #eval check "invalid-empty-command"
+-  (verdict emptyCmd, outcomeRow (emptyCmd.runPlan ops (Start η0)))
++  (verdict emptyCmd, outcomeRow (emptyCmd.runPlan ops (emptyCmd.Start η0)))
+   ((false, ["singleton"]), ("done", 4, none, [some 0, some 14, some 0]))
+ 
+ example : emptyCmd.checkPlan = false := by decide
+@@ -277,8 +279,10 @@ theorem singleton_of_checkSingleton (π : taggedOut.Plan) (h : π.checkSingleton
+   simp only [checkSingleton, List.all_eq_true, beq_iff_eq] at h
+   exact fun cmd hc => List.length_eq_one_iff.mp (h cmd hc)
+ 
+-theorem accSplit_valid : accSplit.Valid := accSplit.checkPlan_sound (by decide)
+-theorem pubSplit_valid : pubSplit.Valid := pubSplit.checkPlan_sound (by decide)
++theorem accSplit_valid : accSplit.Valid :=
++  accSplit.checkPlan_sound (by apply checkPlan_of_canonical accSplit rfl; decide)
++theorem pubSplit_valid : pubSplit.Valid :=
++  pubSplit.checkPlan_sound (by apply checkPlan_of_canonical pubSplit rfl; decide)
+ 
+ -- the valid neighbours: both images are duplicate-free, derived without the coverage fields
+ theorem accSplit_nodup : accSplit.accFlat.Nodup ∧ accSplit.pubFlat.Nodup :=
+-- 
+2.55.0
+

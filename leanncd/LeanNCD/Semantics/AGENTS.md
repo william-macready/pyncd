@@ -7,8 +7,12 @@ separate from the production DSL evaluator and execution backends.
 
 ## Current artifact
 
-Plan layer (`LeanNCD.Semantics.Plan`, Part V slice 1: singleton commands over dense memory,
-`checkPlan`, Lemma 31.2, Theorem 31.3, Lemma 32.1): see [`Plan/AGENTS.md`](Plan/AGENTS.md).
+Plan layer (`LeanNCD.Semantics.Plan`, Part V slices 1-4: singleton/fused commands,
+retirement and typed static same-sort buffer reuse, exact boundary layout checker,
+Lemma 31.2, Theorem 31.3, Lemma 32.1): see [`Plan/AGENTS.md`](Plan/AGENTS.md).
+Slice 4 is compiled, with 354 fixtures and registered `PlanReuseTest`,
+`PlanReuseStorageTest`, `PlanReuseWrapperTest`; mutation/review/integration gates
+remain pending in `papers/semantics/plan_layer_slice4_record.md`.
 
 `ExecutableState`, `ExecutableSelection`, and `ReferenceExecutor` realize the
 same reference `Step` edges computationally, with function-valued typed stores.
@@ -174,7 +178,10 @@ and [results](../../../papers/semantics/tensor_logic_semantic_core_spike_record.
 before extending that spike. The validation layer covers the admitted
 array/heterogeneous expression fragment, finite additive program models,
 reference-machine soundness, bounded read-only pure-einsum correspondence, and
-the Part V slices 1-3 plan layer (singleton and fused commands (by expansion), retirement of defined published addresses, dense injective storage).
+the Part V slices 1-4 plan layer (singleton/fused commands by expansion,
+retirement of defined published addresses, typed static same-sort physical reuse
+with boundary-local layout injectivity).
 General source-expression elaboration, cyclic solving, general unique-model
-existence, complete categorical/backend interpretations, and buffer reuse
+existence, complete categorical/backend interpretations, scan liveness,
+copy/relocation, in-place kernels and cross-sort reuse
 remain outside it.
