@@ -42,7 +42,7 @@ Decisions D1-D4 are the user's, 2026-10-11, taken verbatim from the spec; D5-D8 
 | Retiring inputs (needs an ownership story for caller memory; `Ann.retire` takes `DefAddr P`, so a retire of an input is not even expressible; no fixture, comment in `PlanRetireTest`) | not scheduled |
 | Copy and relocate storage operations; in-kernel read-before-write | not scheduled |
 | Concrete implementation-error sources beyond the abstract `Faults` oracle | not scheduled |
-| Mutation-manifest `--task` validation gap (separate open item, recorded in memory; not re-measured here, not touched) | separate |
+| Mutation-manifest `--task` validation gap: NOT a gap on current main; already fixed 2026-10-10 in `a2b5d50f` (see the record, "`--task` gap correction") | none |
 
 Not a goal and not touched: `Faults.lean` (a2b_notes: no change needed; it passes through `step_R`/`step_failed`).
 
@@ -319,6 +319,6 @@ Fill the "Close-out" section of `papers/semantics/plan_layer_slice3_record.md` (
 | O2 | `lakefile.toml` entry `"Semantics.PlanRetireTest","Semantics.SourceBindingUIDTest"` has no space (the patch carries it); cosmetic | present in the prototype lakefile | 1 line, Direct. RESOLVED in the cosmetic follow-up |
 | O3 | Row-level kills for S3-M2, M4, M5, M7-M10 not probed (all killed at proofs) | by design; `a3a_notes` | none, or 1 optional probe dispatch |
 | O4 | `dead`/`retPub` preservation has no fixture, only proofs | accepted | none |
-| O5 | Mutation-manifest `--task` validation gap | separate open item (memory); not part of this slice; not re-measured | separate |
+| O5 | Mutation-manifest `--task` validation gap | RESOLVED (it was a stale claim): already fixed on main 2026-10-10 by `a2b5d50f` and four follow-ups; the memory note it relied on dated from 2026-10-03; re-measured, 119 self-test checks pass | none |
 | O6 | Pre-slice-3 fixture count 200 (by `rg -c`) vs the path doc's 180: a difference of 20 (19 are `PlanFaultsTest` fixtures; 1 unexplained at authoring) | measured at authoring; the doc edit uses the measured total | none. RESOLVED in the cosmetic follow-up: at the commit that wrote the 180 the method gives 181 (110 rows + 71 items), so the doc was off by one, and `PlanFaultsTest` (12 + 7 = 19) came later |
 | O7 | doc comments that say "slice-1 profile" (`rg -n "slice-1 profile" leanncd/LeanNCD/Semantics/Plan --glob "*.lean"` at the prototype head: the `R` docstring in `Memory.lean`, the module headers of `Correctness.lean` and `Simulation.lean`; none in `Step.lean`, so slice 2's O6 about `Step.lean` is closed or moved) | cosmetic; the patches carry them unchanged | 1 comment edit + rebuild. RESOLVED in the cosmetic follow-up (see the record) |
