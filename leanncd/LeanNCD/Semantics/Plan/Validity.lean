@@ -487,4 +487,44 @@ end Check
 #print axioms mem_prefixAnn
 #print axioms checkAccMat_of_rest
 
+/-! ### The `Nodup` halves of coverage 1 and 2 follow from the per-step side conditions
+
+`checkPlan_nodup_redundant` is the checker-level form of this. Stated directly (the form the spec's
+Section 31.1 table asks about): on a singleton plan, `AccOK` at every `acc` command makes the accumulation
+image `accFlat` duplicate-free, and `PubOK` at every `pub` command makes the publication image
+`pubFlat` duplicate-free. So the `Nodup` halves of `Coverage1` and `Coverage2` are consequences of
+`singleton`, `accOK` and `pubOK`, never independent requirements. -/
+
+theorem accFlat_nodup_of_accOK (hs : π.Singleton)
+    (hacc : ∀ pc G, π.commands[pc]? = some [.acc G] → π.AccOK pc G) : π.accFlat.Nodup := by
+  have hann : π.ann = π.prefixAnn π.commands.length := by simp [ann, prefixAnn]
+  simp only [accFlat, hann]
+  refine π.nodup_prefixAnn_flatMap Ann.groups hs (fun pc a ha => ?_) _
+  cases a with
+  | acc G => exact ⟨(hacc pc G ha).1, fun x hx hmem => ((hacc pc G ha).2 x hx).1 hmem⟩
+  | pub B => simp [Ann.groups]
+  | initZero S => simp [Ann.groups]
+  | retire B => simp [Ann.groups]
+
+theorem pubFlat_nodup_of_pubOK (hs : π.Singleton)
+    (hpub : ∀ pc B, π.commands[pc]? = some [.pub B] → π.PubOK pc B) : π.pubFlat.Nodup := by
+  have hann : π.ann = π.prefixAnn π.commands.length := by simp [ann, prefixAnn]
+  simp only [pubFlat, hann]
+  refine π.nodup_prefixAnn_flatMap Ann.blocks hs (fun pc a ha => ?_) _
+  cases a with
+  | pub B =>
+    exact ⟨(hpub pc B ha).1, fun x hx hmem =>
+      ((hpub pc B ha).2 x hx).1 (Or.inr (List.mem_map_of_mem (f := DefAddr.addr) hmem))⟩
+  | acc G => simp [Ann.blocks]
+  | initZero S => simp [Ann.blocks]
+  | retire B => simp [Ann.blocks]
+
+/-- For a `Valid` plan the two `Nodup` halves are therefore derivable from the other fields. -/
+theorem Valid.coverage_nodup_of_steps (hv : π.Valid) : π.accFlat.Nodup ∧ π.pubFlat.Nodup :=
+  ⟨π.accFlat_nodup_of_accOK hv.singleton hv.accOK, π.pubFlat_nodup_of_pubOK hv.singleton hv.pubOK⟩
+
+#print axioms accFlat_nodup_of_accOK
+#print axioms pubFlat_nodup_of_pubOK
+#print axioms Valid.coverage_nodup_of_steps
+
 end LeanNCD.Semantics.Program.Plan

@@ -261,4 +261,57 @@ example : a2eSeqVisible.checkPlan = false := by decide
 
 example : a2eFailedVsStuck.checkPlan = false := by decide
 
+/-! ### The `Nodup` halves follow from the per-step side conditions (Prop-level theorems)
+
+`accFlat_nodup_of_accOK`, `pubFlat_nodup_of_pubOK` and `Valid.coverage_nodup_of_steps` say the `Nodup`
+halves of coverage 1 and 2 are consequences of `singleton`, `accOK` and `pubOK`. The valid
+accept-neighbours get them for free; the invalid plans below repeat an occurrence or an address, so
+their images are NOT duplicate-free and the theorem refutes the per-step hypothesis (the contrapositive
+is what makes the statement non-vacuous). Each invalid plan repeats in a different way: inside one
+group (`dupWithin`), across two groups (`dupGroup`, the `¬ Cons` half of `AccOK`), and in the
+publication image (`pubTwice`). -/
+
+theorem singleton_of_checkSingleton (π : taggedOut.Plan) (h : π.checkSingleton = true) :
+    π.Singleton := by
+  simp only [checkSingleton, List.all_eq_true, beq_iff_eq] at h
+  exact fun cmd hc => List.length_eq_one_iff.mp (h cmd hc)
+
+theorem accSplit_valid : accSplit.Valid := accSplit.checkPlan_sound (by decide)
+theorem pubSplit_valid : pubSplit.Valid := pubSplit.checkPlan_sound (by decide)
+
+-- the valid neighbours: both images are duplicate-free, derived without the coverage fields
+theorem accSplit_nodup : accSplit.accFlat.Nodup ∧ accSplit.pubFlat.Nodup :=
+  accSplit_valid.coverage_nodup_of_steps
+theorem pubSplit_nodup : pubSplit.accFlat.Nodup ∧ pubSplit.pubFlat.Nodup :=
+  pubSplit_valid.coverage_nodup_of_steps
+
+theorem dupWithin_not_nodup : ¬ dupWithin.accFlat.Nodup := by
+  have h : dupWithin.checkCov1Nodup = false := by decide
+  simpa [checkCov1Nodup] using h
+theorem dupGroup_not_nodup : ¬ dupGroup.accFlat.Nodup := by
+  have h : dupGroup.checkCov1Nodup = false := by decide
+  simpa [checkCov1Nodup] using h
+theorem pubTwice_not_nodup : ¬ pubTwice.pubFlat.Nodup := by
+  have h : pubTwice.checkCov2Nodup = false := by decide
+  simpa [checkCov2Nodup] using h
+
+theorem dupWithin_accOK_fails :
+    ¬ ∀ pc G, dupWithin.commands[pc]? = some [.acc G] → dupWithin.AccOK pc G :=
+  fun h => dupWithin_not_nodup
+    (accFlat_nodup_of_accOK _ (singleton_of_checkSingleton _ (by decide)) h)
+theorem dupGroup_accOK_fails :
+    ¬ ∀ pc G, dupGroup.commands[pc]? = some [.acc G] → dupGroup.AccOK pc G :=
+  fun h => dupGroup_not_nodup
+    (accFlat_nodup_of_accOK _ (singleton_of_checkSingleton _ (by decide)) h)
+theorem pubTwice_pubOK_fails :
+    ¬ ∀ pc B, pubTwice.commands[pc]? = some [.pub B] → pubTwice.PubOK pc B :=
+  fun h => pubTwice_not_nodup
+    (pubFlat_nodup_of_pubOK _ (singleton_of_checkSingleton _ (by decide)) h)
+
+#print axioms accSplit_nodup
+#print axioms pubSplit_nodup
+#print axioms dupWithin_accOK_fails
+#print axioms dupGroup_accOK_fails
+#print axioms pubTwice_pubOK_fails
+
 end LeanNCD.Semantics.PlanFixtures
