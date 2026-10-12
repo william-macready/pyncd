@@ -6,7 +6,7 @@
     "old": "def checkPlan : Bool :=\n  π.checkSingleton && π.checkCov1Nodup && π.checkCov1Complete &&\n    π.checkCov2Nodup && π.checkCov2Complete && π.checkSteps && π.checkLayouts",
     "new": "def checkPlan : Bool :=\n  π.checkSingleton && π.checkCov1Nodup && π.checkCov1Complete &&\n    π.checkCov2Nodup && π.checkCov2Complete && π.checkSteps",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "Type mismatch"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:269:14: Tactic `cases` failed with a nested error:", "LeanNCD/Semantics/Plan/Validity.lean:344:41: unsolved goals", "LeanNCD/Semantics/Plan/Validity.lean:450:14: Insufficient number of fields for `\u27e8...\u27e9` constructor: Constructor `Eq.refl` does not have explicit fields, but 2 were provided", "LeanNCD/Semantics/Plan/Validity.lean:451:4: `simp` made no progress", "LeanNCD/Semantics/Plan/Validity.lean:453:4: Type mismatch: After simplification, term", "LeanNCD/Semantics/Plan/Validity.lean:454:4: `simp` made no progress", "LeanNCD/Semantics/Plan/Validity.lean:456:2: No goals to be solved", "LeanNCD/Semantics/Plan/Validity.lean:610:20: Tactic `rewrite` failed: Did not find an occurrence of the pattern"]
   },
   {
     "label": "S4-M2 checkLayouts skips the final boundary (checkLayouts_iff exactness)",
@@ -15,7 +15,7 @@
     "old": "  (List.range (π.commands.length + 1)).all fun pc => π.checkLayoutAt pc",
     "new": "  (List.range π.commands.length).all fun pc => π.checkLayoutAt pc",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "omega could not prove the goal"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:157:19: omega could not prove the goal:"]
   },
   {
     "label": "S4-M3 resourceList omits pub resources (pub/pub and pub/acc checker exactness)",
@@ -24,7 +24,7 @@
     "old": "  π.allAddrList.map Resource.pub ++ π.addrList.map Resource.acc",
     "new": "  [] ++ π.addrList.map Resource.acc",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "Application type mismatch"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:120:42: Application type mismatch: The argument"]
   },
   {
     "label": "S4-M4 resourceList omits acc resources (acc/acc and pub/acc checker exactness)",
@@ -33,7 +33,7 @@
     "old": "  π.allAddrList.map Resource.pub ++ π.addrList.map Resource.acc",
     "new": "  π.allAddrList.map Resource.pub ++ []",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "Application type mismatch"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:121:43: Application type mismatch: The argument"]
   },
   {
     "label": "S4-M5 SlotView acc drops the not-Pub guard (resource-role exclusion proof)",
@@ -42,16 +42,16 @@
     "old": "  | .acc x => if π.Mat pc x ∧ ¬ π.Pub pc x.addr then some (place π.allocation x.addr) else none",
     "new": "  | .acc x => if π.Mat pc x then some (place π.allocation x.addr) else none",
     "targets": ["LeanNCD.Semantics.Plan.Memory"],
-    "expect": ["Memory.lean:", "Invalid projection"]
+    "expect": ["LeanNCD/Semantics/Plan/Memory.lean:151:30: Invalid projection: Projections extract constructor fields for one-constructor inductive types. The expression", "LeanNCD/Semantics/Plan/Memory.lean:159:35: Invalid projection: Projections extract constructor fields for one-constructor inductive types. The expression"]
   },
   {
-    "label": "S4-M6 R.dead permits arbitrary unused physical-slot contents (initial representation proof)",
+    "label": "S4-M6 R.dead permits arbitrary unused physical-slot contents (retired-slot consumer)",
     "task": "S4-unused-storage",
     "file": "LeanNCD/Semantics/Plan/Memory.lean",
     "old": "  dead : ∀ ξ, (∀ res, π.SlotView pc res ≠ some ξ) → M ξ = none",
     "new": "  dead : ∀ ξ, (∀ res, π.SlotView pc res ≠ some ξ) → M ξ = none ∨ True",
-    "targets": ["LeanNCD.Semantics.Plan.Memory"],
-    "expect": ["Memory.lean:", "Tactic `rfl` failed"]
+    "targets": ["Semantics.PlanRetireTest", "Semantics.PlanReuseTest"],
+    "expect": ["test/Semantics/PlanRetireTest.lean:300:2: Tactic `apply` failed: could not unify the conclusion of `hR.dead`"]
   },
   {
     "label": "S4-M7 execRet clears every slot (co-live resources lost; execRet_not_mem preservation)",
@@ -60,7 +60,7 @@
     "old": "  B.foldl (fun M x => Function.update M (place π.allocation x.addr) none) M",
     "new": "  fun _ => none",
     "targets": ["LeanNCD.Semantics.Plan.Simulation"],
-    "expect": ["Simulation.lean:", "Tactic `rfl` failed"]
+    "expect": ["LeanNCD/Semantics/Plan/Simulation.lean:341:11: Tactic `rfl` failed: The left-hand side", "LeanNCD/Semantics/Plan/Simulation.lean:351:11: Type mismatch"]
   },
   {
     "label": "S4-F1 fixture aliases the new point to a still-live point",
@@ -69,7 +69,7 @@
     "old": "def reuseGoodAllocation : Allocation (routed chainBody) := reuseAllocation 0",
     "new": "def reuseGoodAllocation : Allocation (routed chainBody) := reuseAllocation 1",
     "targets": ["Semantics.PlanReuseTest"],
-    "expect": ["reuse-good-run: expected"]
+    "expect": ["reuse-good-run: expected", "test/Semantics/PlanReuseTest.lean:40:0: reuse-good-run: expected (true, \"done\", 7, none, [some 4, some 3, some 4]), got (false, \"done\", 7, none, [none, some 1, some 1])"]
   },
   {
     "label": "S4-F2 fixture collides the independent-buffer accept neighbour",
@@ -78,7 +78,7 @@
     "old": "def reuseSeparateAllocation : Allocation (routed chainBody) := reuseAllocation 2",
     "new": "def reuseSeparateAllocation : Allocation (routed chainBody) := reuseAllocation 1",
     "targets": ["Semantics.PlanReuseTest"],
-    "expect": ["reuse-pub-pub-component: expected"]
+    "expect": ["reuse-pub-pub-component: expected", "test/Semantics/PlanReuseTest.lean:157:0: reuse-pub-pub-component: expected (false, true, [false, true, true, false, false, false]), got (false, false, [false, true, true, false, false, false])"]
   },
   {
     "label": "S4-F3 fused fixture initializes the reused slot before retirement",
@@ -87,6 +87,6 @@
     "old": "      [[.retire [cAddr 0], .initZero [cAddr 2]]] ++ reuseGood.commands.drop 5",
     "new": "      [[.initZero [cAddr 2], .retire [cAddr 0]]] ++ reuseGood.commands.drop 5",
     "targets": ["Semantics.PlanReuseWrapperTest"],
-    "expect": ["reuse-fused-accepted: expected"]
+    "expect": ["reuse-fused-accepted: expected", "test/Semantics/PlanReuseWrapperTest.lean:16:0: reuse-fused-accepted: expected (true, (\"done\", 6, none, [some 4, some 3, some 4]), some []), got (false, (\"stuck\", 4, none, [none, some 3, none]), none)"]
   }
 ]

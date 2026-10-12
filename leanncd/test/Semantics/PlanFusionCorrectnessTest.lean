@@ -106,10 +106,14 @@ def agreeRow {P : Program Carrier declarations registry} (π : P.Plan) (η : P.I
   (2, 2, true)
 
 example : PlanOutcome.Agree fusedRun (fused.expand.runPlan ops (fused.expand.Start η0)) := by
-  have hs : fused.expand.Start η0 = fused.Start η0 := by
-    funext ξ
-    cases ξ <;> rfl
-  simpa only [hs, fusedRun] using fused.runPlan_agree ops (fused.Start η0)
+  change finalMemory fusedRun =
+    finalMemory (fused.expand.runPlan ops (fused.expand.Start η0))
+  funext ξ
+  cases ξ with
+  | inl ξ => cases ξ.1.property
+  | inr ξ =>
+    rcases ξ with ⟨⟨⟩, i⟩
+    fin_cases i <;> rfl
 
 -- `Agree` is not vacuous: different final memories and different failing occurrences disagree.
 example : ¬ PlanOutcome.Agree fusedRun (.done 3 (fused.Start η0)) := by

@@ -225,5 +225,7 @@ def runPlan (M : Memory K π.allocation) : PlanOutcome P π.allocation :=
 
 #print axioms validateInput_accepts
 #print axioms validateInput_error
+#print axioms execAnn_prefix
+#print axioms stepCommand_single
 
 end LeanNCD.Semantics.Program.Plan

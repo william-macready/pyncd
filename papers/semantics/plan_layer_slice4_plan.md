@@ -73,7 +73,8 @@ Audit unchanged siblings, not only changed lines:
 All patch names below are relative to `papers/semantics/plan_layer_slice4_patches/`.
 They were generated mechanically from committed prototype code, not transcribed
 into this document. Apply in order only in the controller's isolated replay.
-Compilation is observed; mutation kills are not yet observed for this branch.
+Compilation, all 64 mutation-control verdicts, ordered replay and review gates
+are complete; the implementation landed locally via `c44f8a21`, unpushed.
 
 | Task | Prototype checkpoint | Patch |
 |---|---|---|
@@ -146,8 +147,9 @@ controls instead fail at library proofs and are not fixture-level kill evidence.
 Open 40–60-line windows around `reuseGood_R_every_pc`,
 `reuseGood_unused_dead_every_pc`, `reuseRoles`, `reuse_valid`, `typedDecode`,
 `reuseFused_R_every_pc`, `reuseFused_fault_after_write`, `reuseFused_error_R`.
-No claim that all 73 fixtures have individual mutation kills: dedicated controls
-are only F1–F3; review must assess the uncovered storage/typed/retention oracles.
+No claim that every reuse fixture has an individual mutation kill: dedicated
+manifest fixture controls are F1–F3. The post-review output-claim, second-retire
+and custom-capacity rows also have hand mutation probes recorded in the record.
 
 Measured compiled expectations (not newly executed by the author):
 
@@ -173,14 +175,15 @@ Measured compiled expectations (not newly executed by the author):
   physical value 4 / old read `none` / ghost 0, with error-state R.
   No-fault parity and error-free model theorems remain proved.
 
-## 4. Remaining execution tasks
+## 4. Completed validation and integration tasks
 
 ### T7 controller mutation gate — COMPLETE
 
 Dependencies: T1–T6; ordered patch replay is verified. Mutation cycles require
 byte-identical restoration.
 All inherited old strings are unique under unfiltered `--check` on the compiled
-tree. New manifest: 10 entries, 7 library-proof controls + 3 fixture controls.
+tree. Reuse manifest after review: 10 entries, 6 library-proof controls,
+1 test-level invariant consumer and 3 computed fixture controls.
 The controller observed every expected failure after correcting stale
 diagnostic anchors and rerunning the affected manifests unfiltered.
 All **64/64** verdicts pass with byte-identical restoration and restored builds.
@@ -208,7 +211,8 @@ Files: this plan and record; `tensor_logic_semantics.md`;
 Only "As formalized" paragraphs, proof-status rows and profile labels change
 in the general specification. Preserve mathematical contract text and historical
 slice records. Risk: stale claims / overclaiming; 0 fixtures, 0 mutation cycles.
-Current count is **354 = 174 rows + 180 proof items**, baseline 281 preserved.
+At landing the count was 354. Post-review count is
+**360 = 179 rows + 181 proof items**, baseline 281 preserved.
 Sixteen `Plan*Test` modules are registered (13 original + 3 new); `PlanFixtures`
 is one additional shared module, giving 14 original Plan test/shared modules
 and 17 total. New tests are in default `Tests`; the library remains

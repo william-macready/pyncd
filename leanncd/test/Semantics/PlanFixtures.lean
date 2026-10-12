@@ -44,20 +44,6 @@ def scalarPlan (bad : Bool) (cmds : List (Command (scalarRole bad))) : (scalarRo
   tensors_complete := by intro t; fin_cases t <;> simp
   commands := cmds
 
-/-- Canonical layout safety is proved, avoiding kernel reduction through dependent slot equality. -/
-theorem checkPlan_of_canonical {K : S → Type} {σ : Declarations S} {r : Registry K}
-    {P : Program K σ r} [DecidableEq σ.Tensor] (π : P.Plan)
-    (hA : π.allocation = Allocation.canonical P π.tensors π.tensors_nodup π.tensors_complete)
-    (h : (π.checkSingleton && π.checkCov1Nodup && π.checkCov1Complete &&
-      π.checkCov2Nodup && π.checkCov2Complete && π.checkSteps) = true) :
-    π.checkPlan = true := by
-  rw [checkPlan, h, Bool.true_and]
-  apply π.checkLayouts_iff.mpr
-  intro pc _
-  apply π.layoutOK_of_place_injective
-  rw [hA]
-  exact place_injective π.tensors π.tensors_nodup π.tensors_complete
-
 /-- materialise all three zeros; one batch of all four occurrences; one block. -/
 def plan : taggedOut.Plan := unitPlan [[.initZero block], [.acc group], [.pub block]]
 

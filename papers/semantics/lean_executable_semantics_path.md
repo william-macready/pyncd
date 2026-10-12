@@ -35,7 +35,7 @@
     - [Plan-layer theorems](#plan-layer-theorems)
     - [Fused commands (slice 2)](#fused-commands-slice-2)
     - [Buffer retirement (slice 3)](#buffer-retirement-slice-3)
-    - [Buffer reuse and aliasing (slice 4, compiled)](#buffer-reuse-and-aliasing-slice-4-compiled)
+    - [Buffer reuse and aliasing (slice 4, landed)](#buffer-reuse-and-aliasing-slice-4-landed)
     - [Slices 1-4 profile, fixtures and mutations](#slices-1-4-profile-fixtures-and-mutations)
     - [What slices 1-4 do not do](#what-slices-1-4-do-not-do)
 - [5. Remaining work, in dependency order](#5-remaining-work-in-dependency-order)
@@ -52,7 +52,7 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-12, compiled Lean prototype as of `deb4fecd`: the Part V slice-1 to slice-4 plan layer
+**Snapshot: 2026-10-12, landed Lean implementation via `c44f8a21`, with post-merge review fixes: the Part V slice-1 to slice-4 plan layer
 (`Semantics/Plan/`), on top of bounded source correspondence
 (`6a90baff`), nested-reduction reindexing (`705280cd`), successful-permutation
 agreement (`ca642b3d`), and raw-source admission, on top of the verified
@@ -65,7 +65,7 @@ The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-co
 is in the snapshot above, extended by slice 2 to fused commands, slice 3 to retirement
 and slice 4 to typed static same-sort physical reuse with boundary-local layout
 injectivity: eleven modules under `Semantics/Plan/`, proving Lemma 31.2,
-Theorem 31.3 and Lemma 32.1 for that profile, with 354 fixtures.
+Theorem 31.3 and Lemma 32.1 for that profile, with 360 fixtures.
 The four inherited manifests contain 54 cycles (20 + 15 + 9 + 10);
 slice 4 adds 10 controls. Exact ordered patch replay from `4ffdc342` to `deb4fecd`
 is controller-verified (isolated-index final git diff exit 0). All 64 mutation
@@ -120,7 +120,7 @@ bounded source correspondence + differential debugging             LANDED
                          |
 Part V slices 1-3 (singleton + fused + retirement)                 LANDED
                          |
-Part V slice 4 (typed static buffer reuse + layout safety)         COMPILED
+Part V slice 4 (typed static buffer reuse + layout safety)         LANDED (local)
                          |
 general compiled storage/backend refinement                      LATER
 ```
@@ -1072,7 +1072,7 @@ categorical interpretation or general source correspondence.
 ### 4.9 Part V slice 1: the singleton-command plan layer
 
 Slice 2 extends the layer to fused commands, slice 3 to retirement, and the
-compiled slice-4 prototype to typed static same-sort buffer reuse.
+landed slice-4 implementation to typed static same-sort buffer reuse.
 
 `LeanNCD.Semantics.Plan` (imported by `LeanNCD.Semantics`) is the first Lean model of
 [Part V](tensor_logic_semantics.md#part-v-compilation-and-refinement): a reference plan
@@ -1176,7 +1176,7 @@ design spec (`retPub` and the pointwise `readPub_eq`) are recorded in its sectio
 The address-indexed `dead` description and diagnostic second-retire classification
 above describe slice 3 historically; slice 4 changes them as follows.
 
-#### Buffer reuse and aliasing (slice 4, compiled)
+#### Buffer reuse and aliasing (slice 4, landed)
 
 `Allocation` has explicit complete finite independent buffer identities,
 computable equality, per-buffer sort/capacity and bounded sort-certified placement.
@@ -1204,7 +1204,12 @@ raw row `[4,3,4]`, ghost 0 vs retired read `none`), nearest live-alias rejection
 all three resource-pair classes and final-boundary checking.
 `PlanReuseStorageTest` pins distinct internal/output tensors sharing one buffer
 index, decode 2 matching canonical, typed ℤ/ℚ decode `(11,7/8)`, empty outputs
-and unused capacity. `PlanReuseWrapperTest` pins retire-then-init fusion,
+and custom zero/unused capacity. A later internal initializer claiming a live
+output's slot is rejected only by layout, while its canonical twin passes; the
+unchecked shared run corrupts and then clears the output. Re-retiring point 0
+after point 2 takes its slot clears point 2 and makes its later publication
+`stuck`, unlike canonical storage. Empty decoding is only a control, not a
+layout discriminator. `PlanReuseWrapperTest` pins retire-then-init fusion,
 an internal-only collision (all outer layouts true, expanded index 4 false),
 fault-after-write error-state R at pc 5 and no-fault parity.
 
@@ -1216,10 +1221,10 @@ layout injectivity, and error-free kernels (faults remain an abstract wrapper). 
 (singleton plans) or `checkPlanF` (fused plans): the run does not detect an invalid plan. The spec's
 restatements are the paragraphs headed "As formalized (slice-1 to slice-4 profile ...)" (in 30.3 and 33.2: "(slice-3 to slice-4 profile ...)") in Sections
 29.3, 30.2, 30.3, 30.4, 31.1-31.4, 32.1 and 33.2 of the
-[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 354
-fixtures (174 `#eval check` rows and 180 top-level `example`/`theorem` items).
-All 281 baseline assertions (149 + 132) are preserved; 73 new fixtures are split
-26 core, 22 storage and 25 wrapper. Default `Tests` retains all 13 original
+[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 360
+fixtures (179 `#eval check` rows and 181 top-level `example`/`theorem` items).
+All 281 baseline assertions (149 + 132) are preserved; 79 reuse fixtures are split
+28 core, 26 storage and 25 wrapper. Default `Tests` retains all 13 original
 `Plan*Test` modules and adds these three, giving 16 test modules. `PlanFixtures`
 is one additional shared module: 14 original Plan test/shared modules, 17 total.
 Of the baseline, 68 are slice 3's
@@ -1229,9 +1234,13 @@ which gives the 200 before slice 3. Historically the mutation manifests ran 54 c
 slice 2, 9 in the D7 manifest, 10 in slice 3), of which 4 are labelled equivalent among the 35 of slices 1-2
 (3 in slice 1; S2-M4 at fixture level) and none among the 10 of slice 3 (every one was killed at a library proof).
 Those are historical observations, not slice-4 rerun results. The current branch
-has 64 manifest controls: 54 inherited + 10 new (7 library-proof, 3 fixture).
-Actual rerun kills and equivalent adjudications remain pending in
-`plan_layer_slice4_mutation_results/`; `--check` uniqueness is not kill evidence.
+has 64 manifest controls: 54 inherited + 10 reuse controls (6 library-proof,
+1 test-level invariant consumer, 3 computed fixtures).
+All 64 controls have been rerun successfully with observed failure-site
+anchors, including D7; multi-site expectations remain separate. Results are
+in `plan_layer_slice4_mutation_results/`. Inherited equivalent controls are
+proof-shape checks, not semantic counterexamples; `--check` uniqueness alone
+is not kill evidence. The slice landed locally via `c44f8a21`, unpushed.
 
 #### What slices 1-4 do not do
 

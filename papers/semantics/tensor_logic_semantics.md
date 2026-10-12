@@ -168,9 +168,10 @@ are also kernel-checked in Lean is recorded in
 [Part V](#part-v-compilation-and-refinement) compilation results Lemma 31.2, Theorem 31.3 and Lemma 32.1 are
 proved for the slice-1 to slice-4 profile (singleton/fused commands by expansion,
 retirement of defined published addresses, typed static same-sort buffer reuse
-with boundary-local layout injectivity; see the table). Slice 4 is compiled;
-mutation, fresh review and integration gates remain pending in
-`plan_layer_slice4_record.md`. General scan/liveness and in-place reuse are not proved. Compiler correctness is
+with boundary-local layout injectivity; see the table). Slice 4 landed locally
+via merge `c44f8a21`, with 64 mutation controls verified and whole-branch reviews
+adjudicated; no remote push was performed. See `plan_layer_slice4_record.md`.
+General scan/liveness and in-place reuse are not proved. Compiler correctness is
 conditional on the stated certificates and kernel contracts; it is not a claim
 that an existing compiler satisfies them.
 Structural well-formedness alone establishes neither existence of a model

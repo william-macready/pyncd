@@ -9,10 +9,7 @@
    "LeanNCD.Semantics.Plan.Step",
    "Semantics.PlanRetireTest"
   ],
-  "expect": [
-   "Simulation.lean:",
-   "'change' tactic failed"
-  ]
+  "expect": ["LeanNCD/Semantics/Plan/Simulation.lean:343:4: 'change' tactic failed, pattern", "LeanNCD/Semantics/Plan/Simulation.lean:354:4: 'change' tactic failed, pattern", "LeanNCD/Semantics/Plan/Simulation.lean:367:4: 'change' tactic failed, pattern"]
  },
  {
   "label": "S3-M2 execRet leaves the first member's slot (B.tail)",
@@ -24,10 +21,7 @@
    "LeanNCD.Semantics.Plan.Step",
    "Semantics.PlanRetireTest"
   ],
-  "expect": [
-   "Simulation.lean:",
-   "'change' tactic failed"
-  ]
+  "expect": ["LeanNCD/Semantics/Plan/Simulation.lean:343:4: 'change' tactic failed, pattern", "LeanNCD/Semantics/Plan/Simulation.lean:353:4: Tactic `apply` failed: could not unify the conclusion of `ih`", "LeanNCD/Semantics/Plan/Simulation.lean:367:4: 'change' tactic failed, pattern"]
  },
  {
   "label": "S3-M3 checkRet always true",
@@ -39,10 +33,7 @@
    "LeanNCD.Semantics.Plan.Validity",
    "Semantics.PlanRetireTest"
   ],
-  "expect": [
-   "Validity.lean:",
-   "Type mismatch"
-  ]
+  "expect": ["LeanNCD/Semantics/Plan/Validity.lean:244:2: Type mismatch", "LeanNCD/Semantics/Plan/Validity.lean:414:2: Type mismatch"]
  },
  {
   "label": "S3-M4 checkRet drops the live clause",
@@ -54,10 +45,7 @@
    "LeanNCD.Semantics.Plan.Validity",
    "Semantics.PlanRetireTest"
   ],
-  "expect": [
-   "Validity.lean:",
-   "Type mismatch"
-  ]
+  "expect": ["LeanNCD/Semantics/Plan/Validity.lean:244:2: Type mismatch", "LeanNCD/Semantics/Plan/Validity.lean:414:2: Type mismatch"]
  },
  {
   "label": "S3-M5 checkRet drops the not-an-output clause",
@@ -69,10 +57,7 @@
    "LeanNCD.Semantics.Plan.Validity",
    "Semantics.PlanRetireTest"
   ],
-  "expect": [
-   "Validity.lean:",
-   "Type mismatch"
-  ]
+  "expect": ["LeanNCD/Semantics/Plan/Validity.lean:244:2: Type mismatch", "LeanNCD/Semantics/Plan/Validity.lean:414:2: Type mismatch"]
  },
  {
   "label": "S3-M6 checkReady over Pub instead of Live",
@@ -84,10 +69,7 @@
    "LeanNCD.Semantics.Plan.Validity",
    "Semantics.PlanRetireTest"
   ],
-  "expect": [
-   "Validity.lean:",
-   "Application type mismatch"
-  ]
+  "expect": ["LeanNCD/Semantics/Plan/Validity.lean:251:47: Application type mismatch: The argument", "LeanNCD/Semantics/Plan/Validity.lean:420:73: Application type mismatch: The argument"]
  },
  {
   "label": "S3-M7 SlotView .pub over Pub instead of Live",
@@ -99,11 +81,7 @@
    "LeanNCD.Semantics.Plan.Memory",
    "Semantics.PlanRetireTest"
   ],
-  "expect": [
-   "Memory.lean:",
-   "Invalid projection",
-   "unsolved goals"
-  ]
+  "expect": ["LeanNCD/Semantics/Plan/Memory.lean:151:24: Invalid projection: Projections extract constructor fields for one-constructor inductive types. The expression", "LeanNCD/Semantics/Plan/Memory.lean:159:29: Invalid projection: Projections extract constructor fields for one-constructor inductive types. The expression", "LeanNCD/Semantics/Plan/Memory.lean:371:12: unsolved goals", "LeanNCD/Semantics/Plan/Memory.lean:386:21: unsolved goals"]
  },
  {
   "label": "S3-M8 ReadyOK over Pub instead of Live",
@@ -115,10 +93,7 @@
    "LeanNCD.Semantics.Plan.Validity",
    "Semantics.PlanRetireTest"
   ],
-  "expect": [
-   "Validity.lean:",
-   "Application type mismatch"
-  ]
+  "expect": ["LeanNCD/Semantics/Plan/Validity.lean:251:47: Application type mismatch: The argument", "LeanNCD/Semantics/Plan/Validity.lean:420:73: Application type mismatch: The argument"]
  },
  {
   "label": "S3-M9 readPub over Pub instead of Live (ignores Ret)",
@@ -130,10 +105,7 @@
    "LeanNCD.Semantics.Plan.Memory",
    "Semantics.PlanRetireTest"
   ],
-  "expect": [
-   "Memory.lean:",
-   "Tactic `rewrite` failed"
-  ]
+  "expect": ["LeanNCD/Semantics/Plan/Memory.lean:385:6: Tactic `rewrite` failed: Did not find an occurrence of the pattern"]
  },
  {
   "label": "S3-M10 RetOK drops the not-an-output conjunct",
@@ -145,9 +117,6 @@
    "LeanNCD.Semantics.Plan.Simulation",
    "Semantics.PlanRetireTest"
   ],
-  "expect": [
-   "Validity.lean:",
-   "Type mismatch"
-  ]
+  "expect": ["LeanNCD/Semantics/Plan/Validity.lean:244:2: Type mismatch", "LeanNCD/Semantics/Plan/Validity.lean:414:2: Type mismatch"]
  }
 ]
