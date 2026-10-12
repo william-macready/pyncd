@@ -83,8 +83,9 @@ def PubOK (pc : Nat) (B : List (DefAddr P)) : Prop :=
   B.Nodup ∧ ∀ x ∈ B, ¬ π.Pub pc x.addr ∧ π.Mat pc x ∧
     ∀ o : P.Occurrence x.1, P.destination x.1 o.1 o.2 = x.2 → π.Cons pc ⟨x.1, o⟩
 
-/-- retire: each member is live (published: safety; not yet retired: diagnostic) and
-    not an output (`Decode` needs every output live). That no remaining reader exists
+/-- retire: each member is live and not an output. Both halves of Live are safety
+    conditions: re-retiring after reuse could clear a different resource's slot.
+    `Decode` needs every output live. That no remaining reader exists
     is NOT stated here: it is enforced at the reader (`ReadyOK` over `Live`). -/
 def RetOK (pc : Nat) (B : List (DefAddr P)) : Prop :=
   ∀ x ∈ B, π.Live pc x.addr ∧ P.output x.1.val = false

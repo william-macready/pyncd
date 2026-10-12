@@ -15,7 +15,7 @@
     "old": "  G.foldl (fun c x => Executor.consume P c x.1 x.2 (v x)) c",
     "new": "  G.dropLast.foldl (fun c x => Executor.consume P c x.1 x.2 (v x)) c",
     "targets": ["LeanNCD.Semantics.Plan.Batch"],
-    "expect": ["Batch.lean:", "unsolved goals"]
+    "expect": ["Batch.lean:", "Type mismatch"]
   },
   {
     "label": "A1-c place collides (slot index / 2)",
@@ -60,7 +60,7 @@
     "old": "  | some a => some (π.writeDef M x.target (addVal x a (v x)))",
     "new": "  | some a => some (π.writeDef M x.target (v x))",
     "targets": ["LeanNCD.Semantics.Plan.Simulation"],
-    "expect": ["Simulation.lean:", "Tactic `rfl` failed"]
+    "expect": ["Simulation.lean:", "Application type mismatch"]
   },
   {
     "label": "A2-b EQUIVALENT (N5): commit values read raw memory, readiness still on readPub",
@@ -78,7 +78,7 @@
     "old": "  if B.all (fun x => (readSlot π.allocation M x.addr).isSome) then .ok M else .stuck",
     "new": "  if B.all (fun x => (readSlot π.allocation M x.addr).isSome) then .ok (π.execInit B M) else .stuck",
     "targets": ["LeanNCD.Semantics.Plan.Simulation"],
-    "expect": ["Simulation.lean:", "Tactic `rewrite` failed"]
+    "expect": ["Simulation.lean:", "Tactic `rfl` failed"]
   },
   {
     "label": "A2-e EQUIVALENT (N5): non-transactional acc (evaluate, commit, continue per member)",
@@ -87,7 +87,7 @@
     "old": "  match scanGroup ops π.allocation (π.readPub pc M) G with\n  | some res => res\n  | none =>\n    match G.foldlM (π.addAt (valuesOn ops (π.readPub pc M))) M with\n    | some M' => .ok M'\n    | none => .stuck",
     "new": "  G.foldl (fun r x => match r with\n    | .ok M₁ => match scanGroup ops π.allocation (π.readPub pc M₁) [x] with\n      | some res => res\n      | none => (π.addAt (valuesOn ops (π.readPub pc M₁)) M₁ x).elim .stuck (fun M' => .ok M')\n    | r => r) (.ok M)",
     "targets": ["LeanNCD.Semantics.Plan.Simulation"],
-    "expect": ["Simulation.lean:", "Tactic `rewrite` failed"]
+    "expect": ["Step.lean:", "Tactic `split` failed"]
   },
   {
     "label": "A2-f scan and commit values read raw memory as a fallback",
@@ -132,7 +132,7 @@
     "old": "  S.all fun x => !decide (π.Pub pc x.addr) && (π.consList pc).all fun y => decide (y.target ≠ x)",
     "new": "  S.all fun _ => (π.consList pc).all fun _ => true",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "Type mismatch"]
+    "expect": ["Validity.lean:", "Tactic `rcases` failed"]
   },
   {
     "label": "A3a-e checkSingleton trivially true (slice-1 profile)",

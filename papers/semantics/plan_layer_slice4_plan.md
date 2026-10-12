@@ -1,7 +1,7 @@
 # Part V slice 4: typed buffer reuse and alias safety
 
-Status: compiled prototype is the implementation; remaining validation and
-integration gates are **PENDING**. Base: local `main` at `4ffdc342`.
+Status: compiled prototype is the implementation; all validation gates are
+complete. Local integration is pending. Base: local `main` at `4ffdc342`.
 Approved contract: `docs/superpowers/specs/2026-10-11-buffer-reuse-aliasing-design.md`.
 Execution evidence belongs in `plan_layer_slice4_record.md`, not this live plan.
 
@@ -12,9 +12,10 @@ change; this is a new soundness surface, not a localized guard addition.
 This is the required fresh authoring dispatch after the compiled prototype.
 The prototype used the real module split and namespace and already delivered
 production and fixtures. Do not revert or reapply it to simulate fresh execution.
-Mechanical per-task patches provide reproducibility; the controller is checking
+Mechanical per-task patches provide reproducibility; the controller verified
 ordered replay from the base with an isolated index, without changing live code.
-Replay verification is pending until its result is recorded.
+The controller verified exact ordered replay from `4ffdc342` to `deb4fecd`;
+the isolated-index final git diff exited 0.
 
 Worktree: `/Users/williammacready/code/python/pyncd.worktrees/implement-buffer-reuse-aliasing-plan`.
 Use plain separate shell commands, absolute paths and `/usr/bin/git -C` for git.
@@ -125,7 +126,8 @@ APIs/proofs, not expected outcomes. `PlanBatchTest.lean` stays unchanged.
 Read `PlanFixtures.finalMemory`, then 40–60-line windows around each changed
 consumer. Risk: losing oracle strength in migration; **281 preserved fixtures**
 (149 `#eval check`, 132 top-level `example`/`theorem`), **54 inherited cycles**.
-All 14 existing Plan test targets remain registered.
+All 13 original `Plan*Test` module targets remain registered, along with the
+additional shared `PlanFixtures` module.
 
 ### T6 fixture dispatches (already executed separately)
 
@@ -172,12 +174,15 @@ Measured compiled expectations (not newly executed by the author):
 
 ## 4. Remaining execution tasks
 
-### T7 controller mutation/replay gate — PENDING
+### T7 controller mutation gate — COMPLETE
 
-Dependencies: T1–T6; ordered patch replay and byte-identical mutation restoration.
+Dependencies: T1–T6; ordered patch replay is verified. Mutation cycles require
+byte-identical restoration.
 All inherited old strings are unique under unfiltered `--check` on the compiled
 tree. New manifest: 10 entries, 7 library-proof controls + 3 fixture controls.
-`expect` strings are manifest expectations, **not observed slice-4 failures**.
+The controller observed every expected failure after correcting stale
+diagnostic anchors and rerunning the affected manifests unfiltered.
+All **64/64** verdicts pass with byte-identical restoration and restored builds.
 Run all five manifests unfiltered; do not substitute `--check` for actual cycles.
 Results go under `papers/semantics/plan_layer_slice4_mutation_results/`.
 
@@ -194,7 +199,7 @@ Record actual failure diagnostics, caught-at-proof versus caught-at-fixture,
 restoration hashes, equivalent adjudications and replay results. A failed
 `expect` match is not success; repair only from observed diagnostics.
 
-### T8 documentation/discoverability — authoring complete, controller review pending
+### T8 documentation/discoverability — COMPLETE
 
 Files: this plan and record; `tensor_logic_semantics.md`;
 `lean_executable_semantics_path.md`; `leanncd/LeanNCD/Semantics/AGENTS.md`;
@@ -203,8 +208,9 @@ Only "As formalized" paragraphs, proof-status rows and profile labels change
 in the general specification. Preserve mathematical contract text and historical
 slice records. Risk: stale claims / overclaiming; 0 fixtures, 0 mutation cycles.
 Current count is **354 = 174 rows + 180 proof items**, baseline 281 preserved.
-Seventeen Plan test targets are registered (14 old + 3 new); `PlanFixtures` is
-a separate shared target. New tests are in default `Tests`; the library remains
+Sixteen `Plan*Test` modules are registered (13 original + 3 new); `PlanFixtures`
+is one additional shared module, giving 14 original Plan test/shared modules
+and 17 total. New tests are in default `Tests`; the library remains
 reachable from `import LeanNCD`.
 
 Run the value sweep, inspect hits and classify historical vs current:
@@ -214,9 +220,11 @@ rg -n -l --glob '*.md' '281|149|132|dense injective|never.?reused|no Lean.{0,30}
 rg -n --no-filename '281|149|132|dense injective|never.?reused|no Lean.{0,30}reuse|slice-1 to slice-3' /Users/williammacready/code/python/pyncd.worktrees/implement-buffer-reuse-aliasing-plan/papers/semantics/tensor_logic_semantics.md /Users/williammacready/code/python/pyncd.worktrees/implement-buffer-reuse-aliasing-plan/papers/semantics/lean_executable_semantics_path.md /Users/williammacready/code/python/pyncd.worktrees/implement-buffer-reuse-aliasing-plan/leanncd/LeanNCD/Semantics/AGENTS.md /Users/williammacready/code/python/pyncd.worktrees/implement-buffer-reuse-aliasing-plan/leanncd/LeanNCD/Semantics/Plan/AGENTS.md
 ```
 
-### T9 two fresh whole-branch reviews — PENDING
+### T9 two fresh whole-branch reviews — COMPLETE
 
-Dependencies: T7/T8; read the complete base-to-branch diff, not just patch 6.
+Dependencies: T1–T6/T8. Reviews read the complete frozen implementation diff,
+not just patch 6, using immutable snapshots while controller mutation cycles
+ran. Both validation paths complete before integration.
 Soundness lens: dependent allocation casts, all write kernels, `R.dead`,
 resource-pair enumeration and boundary quantification, wrapper error states.
 Fidelity lens: D1–D6, canonical assertion preservation, physical observations,
@@ -224,8 +232,10 @@ retained output decoding, final/internal discriminators and truthful scope.
 Read 40–60-line windows; append findings incrementally to controller-owned
 review artifacts. Limit each dispatch to 60 turns / 250k; narrow fixes by group,
 then rerun affected tests/cycles. Both reviews must be clean or adjudicated.
+Soundness was clean; fidelity found three documentation corrections, all fixed.
+Only documentation and observed diagnostic anchors changed after review.
 
-### T10 controller final build and local integration — PENDING
+### T10 controller final build — COMPLETE; local integration — PENDING
 
 Dependencies: T7–T9; after restoring all mutation files:
 
@@ -233,11 +243,10 @@ Dependencies: T7–T9; after restoring all mutation files:
 bash /Users/williammacready/code/python/pyncd.worktrees/implement-buffer-reuse-aliasing-plan/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/implement-buffer-reuse-aliasing-plan/leanncd
 ```
 
-The pre-cycle controller full build already passed 8796 jobs; its actual
-`Semantics.AxiomAudit` build audited 5992 constants with standard axioms only
+Both pre-cycle and final post-cycle controller full builds passed 8796 jobs.
+The final actual `Semantics.AxiomAudit` build audited 5992 constants with standard axioms only
 (`propext`, `Classical.choice`, `Quot.sound`).
-This is evidence, not a substitute for the final post-cycle gate. Four inherited
-sorry warnings remain in Base/St, Base/Br, Core/Weave and Instances/StBr.
+Four inherited sorry warnings remain in Base/St, Base/Br, Core/Weave and Instances/StBr.
 Require no new `sorry`, `admit`, `axiom` or `native_decide` in Plan production/tests.
 Record results, skips, deviations and unavailable token accounting honestly.
 Commit explicit deliverables; merge to local `main` only after all gates, then

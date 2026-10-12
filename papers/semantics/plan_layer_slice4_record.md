@@ -1,8 +1,9 @@
 # Part V slice 4: buffer reuse execution record
 
-Status: production and fixtures compiled; controller pre-cycle full build and
-axiom audit green. Mutation kills, ordered replay, fresh whole-branch reviews,
-final post-cycle build and local integration are **PENDING**.
+Status: implementation validated. Both controller full builds and the axiom
+audit are green, all 64 mutation verdicts pass, both whole-branch reviews are
+clean or adjudicated, and exact ordered patch replay is verified.
+Local integration is the only remaining gate; no remote push is authorized.
 
 ## Approved scope
 
@@ -88,8 +89,9 @@ Commit `c615fb9b` compiled `LeanNCD.Semantics.Plan.Correctness`.
 - Wrapper dispatch: 23 turns. Canonical migration `763e5403` stayed within its
   50-turn cap. All baseline 281 assertions remain: 149 `#eval check` rows and
   132 top-level `example`/`theorem` items, with only required API/proof changes.
-- The 14 existing Plan test targets remain registered; three new targets were
-  added in `deb4fecd`.
+- The 13 original `Plan*Test` modules remain registered; three new test modules
+  were added in `deb4fecd`, giving 16. The additional shared `PlanFixtures`
+  module makes 14 original Plan test/shared modules and 17 total.
 
 ### Actual physical-reuse fixtures
 
@@ -127,22 +129,54 @@ The increase is 73: `PlanReuseTest` 26, `PlanReuseStorageTest` 22,
   Base/Br, Core/Weave and Instances/StBr are unchanged.
 - Six mechanical git-format-patch artifacts exist in
   `plan_layer_slice4_patches/`, covering the six checkpoints above. The controller
-  is checking ordered replay from `4ffdc342` with an isolated index; result
-  pending. No destructive revert/reapplication is required.
+  verified exact ordered replay from `4ffdc342` to `deb4fecd` with an isolated
+  index; the final git diff exited 0. No destructive revert/reapplication is
+  required.
 - Deviation: the compiled prototype doubles as implementation. Fresh authoring
   writes the execution plan from compiled artifacts rather than pretending the
   implementation has not happened. Immutable `deb4fecd` snapshot windows were
   used while controller cycles could temporarily mutate production.
 - Inherited manifests: 20 + 15 + 9 + 10 = 54; the new manifest has 10 entries,
   seven library-proof controls and three fixture controls. Old strings were
-  unique under unfiltered `--check`. **Actual slice-4 kills are PENDING**:
-  manifest `expect` strings are not observed failures. Results will be under
-  `plan_layer_slice4_mutation_results/`; proof kills and fixture discrimination
-  must be reported separately. No per-fixture kill claim is made for storage.
+  unique under final unfiltered `--check`. All five actual manifests pass:
+  **20/20 + 15/15 + 9/9 + 10/10 + 10/10 = 64/64**. Every cycle broke its
+  build, observed its expected failure, restored the file byte-identically and
+  passed the restored build. Results are in `plan_layer_slice4_mutation_results/`.
+  Seven new controls die at library proofs; three die at named fixture checks
+  without changing production. No per-fixture kill claim is made for storage.
 - New live plan: `plan_layer_slice4_plan.md`; production/fixture tasks marked as
   executed checkpoints, with donors, symbol windows, patch scopes and risks.
-  Remaining tasks are manifest/replay gates, documentation verification, two
-  fresh whole-branch reviews, final controller build and local integration.
+  Manifest gates, documentation verification, both fresh whole-branch reviews
+  and the final controller build are complete. Local integration remains.
+
+### Final controller validation and review disposition
+
+- The initial new-manifest run killed/restored all ten controls, but two
+  expected diagnostic strings had incorrect capitalization. The controller
+  copied the observed `Application type mismatch` diagnostic and reran the
+  complete ten-entry manifest successfully.
+- The first inherited slice-1 rerun killed/restored all twenty controls, but
+  five expected diagnostics no longer matched the migrated proof structure.
+  The controller repaired those anchors from the observed failures and reran
+  the complete twenty-entry manifest successfully. No failed verdict was
+  silently counted as success.
+- The inherited N5/N6 controls retain their equivalence labels. Their library
+  proof failures are not claimed as semantic counterexamples.
+- Fresh soundness review found no high-confidence bugs. Fresh spec-to-Lean
+  fidelity review found no blocking defects and three documentation issues:
+  the `RetOK` safety classification, completed replay still marked pending,
+  and test-module counts double-counting `PlanFixtures`. All three are fixed.
+- Reviews used the immutable compiled snapshot while mutation cycles ran.
+  After review, only documentation and observed diagnostic anchors changed;
+  no executable behavior or theorem premise changed.
+- Final post-cycle controller full build passed **8796 jobs**. Its actual
+  `Semantics.AxiomAudit` build audited **5992 constants** with standard axioms
+  only. The four pre-existing sorry warnings outside Plan remain unchanged.
+- Controller assertions found no prohibited proof shortcuts in the eleven
+  Plan modules and verified all 64 persisted mutation table verdicts are PASS.
+- Final inventory: **16 test modules + shared `PlanFixtures` = 17 Plan modules**;
+  **354 assertions = 174 evaluated rows + 180 proof items**. All 281 baseline
+  assertions and their expected values remain preserved.
 
 ### Documentation value sweep
 
@@ -191,9 +225,4 @@ token budgets have no accounting certificate.
 
 ## Outstanding completion gates
 
-- Measured mutation results for all inherited and new cycles.
-- Controller result for isolated ordered patch replay.
-- Controller verification of authored plan and current documentation sweep.
-- Both fresh whole-branch soundness/fidelity review lenses.
-- Final post-cycle controller full build and axiom audit.
 - Local integration; no remote push.

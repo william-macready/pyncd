@@ -67,9 +67,11 @@ and slice 4 to typed static same-sort physical reuse with boundary-local layout
 injectivity: eleven modules under `Semantics/Plan/`, proving Lemma 31.2,
 Theorem 31.3 and Lemma 32.1 for that profile, with 354 fixtures.
 The four inherited manifests contain 54 cycles (20 + 15 + 9 + 10);
-slice 4 adds 10 controls. Rerun kills, patch replay, fresh whole-branch reviews
-and integration are pending in `plan_layer_slice4_record.md`; the prototype
-controller full build and actual axiom audit are green. Earlier clean review
+slice 4 adds 10 controls. Exact ordered patch replay from `4ffdc342` to `deb4fecd`
+is controller-verified (isolated-index final git diff exit 0). All 64 mutation
+verdicts pass; both fresh whole-branch reviews are clean or adjudicated, and
+both controller full builds and the actual axiom audit are green. Only local
+integration remains pending in `plan_layer_slice4_record.md`. Earlier clean review
 statements above refer to the landed reference executor, not slice 4.
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
@@ -1008,7 +1010,7 @@ mutation controls, and unsupported claims:
 | Computable validated reference | [ExecutableReferenceTest](../../leanncd/test/Semantics/ExecutableReferenceTest.lean) | [Executor implementation execution](computable_reference_executor_record.md#8-implementation-execution-2026-10-08) |
 | Bounded source correspondence and differential debugging | [SourceAdmissionTest](../../leanncd/test/Semantics/SourceAdmissionTest.lean), [SourceBindingTest](../../leanncd/test/Semantics/SourceBindingTest.lean), [SourceCorrespondenceTest](../../leanncd/test/Semantics/SourceCorrespondenceTest.lean), [SourceProgramTest](../../leanncd/test/Semantics/SourceProgramTest.lean), [SourceOracleTest](../../leanncd/test/Semantics/SourceOracleTest.lean), [SourceDiagnosticTest](../../leanncd/test/Semantics/SourceDiagnosticTest.lean), [SourceDifferentialTest](../../leanncd/test/Semantics/SourceDifferentialTest.lean), [SourceRawCorrespondenceTest](../../leanncd/test/Semantics/SourceRawCorrespondenceTest.lean), [SourceCorrespondenceTransportTest](../../leanncd/test/Semantics/SourceCorrespondenceTransportTest.lean), [SourceProgramIdentityTest](../../leanncd/test/Semantics/SourceProgramIdentityTest.lean) | [Source correspondence record](source_correspondence_record.md), [raw-source/admission record](raw_source_admission_record.md) |
 | Part V slice-1/2 plan layer | [PlanFusionTest](../../leanncd/test/Semantics/PlanFusionTest.lean), [PlanFusionCorrectnessTest](../../leanncd/test/Semantics/PlanFusionCorrectnessTest.lean), [PlanFusionCheckerTest](../../leanncd/test/Semantics/PlanFusionCheckerTest.lean), [PlanBatchTest](../../leanncd/test/Semantics/PlanBatchTest.lean), [PlanMemoryTest](../../leanncd/test/Semantics/PlanMemoryTest.lean), [PlanStepTest](../../leanncd/test/Semantics/PlanStepTest.lean), [PlanSimulationTest](../../leanncd/test/Semantics/PlanSimulationTest.lean), [PlanValidityTest](../../leanncd/test/Semantics/PlanValidityTest.lean), [PlanRunTest](../../leanncd/test/Semantics/PlanRunTest.lean), [PlanCorrectnessTest](../../leanncd/test/Semantics/PlanCorrectnessTest.lean), [PlanMultiSortTest](../../leanncd/test/Semantics/PlanMultiSortTest.lean), shared [PlanFixtures](../../leanncd/test/Semantics/PlanFixtures.lean) | [Plan-layer mutation results](plan_layer_mutation_results.md), [slice-2 mutation results](plan_layer_slice2_mutation_results.md) |
-| Part V retirement (landed), reuse (compiled) and fault wrappers | [PlanRetireTest](../../leanncd/test/Semantics/PlanRetireTest.lean), [PlanFaultsTest](../../leanncd/test/Semantics/PlanFaultsTest.lean), [PlanReuseTest](../../leanncd/test/Semantics/PlanReuseTest.lean), [PlanReuseStorageTest](../../leanncd/test/Semantics/PlanReuseStorageTest.lean), [PlanReuseWrapperTest](../../leanncd/test/Semantics/PlanReuseWrapperTest.lean) | [Slice-3 record](plan_layer_slice3_record.md), [slice-4 record](plan_layer_slice4_record.md) (mutation/review/integration pending) |
+| Part V retirement (landed), reuse (validated) and fault wrappers | [PlanRetireTest](../../leanncd/test/Semantics/PlanRetireTest.lean), [PlanFaultsTest](../../leanncd/test/Semantics/PlanFaultsTest.lean), [PlanReuseTest](../../leanncd/test/Semantics/PlanReuseTest.lean), [PlanReuseStorageTest](../../leanncd/test/Semantics/PlanReuseStorageTest.lean), [PlanReuseWrapperTest](../../leanncd/test/Semantics/PlanReuseWrapperTest.lean) | [Slice-3 record](plan_layer_slice3_record.md), [slice-4 record](plan_layer_slice4_record.md) (validation complete; integration pending) |
 
 All are discovered by the default `Tests` target. Existing fixtures cover
 strict zero multiplication, empty binders, whole-array selection obligations,
@@ -1217,8 +1219,9 @@ restatements are the paragraphs headed "As formalized (slice-1 to slice-4 profil
 [specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 354
 fixtures (174 `#eval check` rows and 180 top-level `example`/`theorem` items).
 All 281 baseline assertions (149 + 132) are preserved; 73 new fixtures are split
-26 core, 22 storage and 25 wrapper. Default `Tests` retains all 14 old Plan test
-targets and adds these three; `PlanFixtures` remains separate.
+26 core, 22 storage and 25 wrapper. Default `Tests` retains all 13 original
+`Plan*Test` modules and adds these three, giving 16 test modules. `PlanFixtures`
+is one additional shared module: 14 original Plan test/shared modules, 17 total.
 Of the baseline, 68 are slice 3's
 `PlanRetireTest` (27 rows, 24 `example`s, 17 theorems); the earlier figure of 180 was off by one (181 by this method
 at the commit that wrote it: 110 rows + 71 items), and `PlanFaultsTest` added 19 after it (12 rows + 7 items),
@@ -1278,8 +1281,8 @@ batching, and buffer liveness for scans. Rank alone never justifies overwriting
 a still-needed value. A checked production plan is not automatically a
 certificate for these new semantics.
 
-Slices 1-3 of the plan layer have landed; slice 4 is compiled with pending
-mutation/review/integration gates
+Slices 1-3 of the plan layer have landed; slice 4 is validated with only local
+integration pending
 ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)): singleton and fused commands,
 retirement of defined published addresses, typed static same-sort reuse with
 boundary-local layout safety, with Lemma 31.2, Theorem 31.3 and

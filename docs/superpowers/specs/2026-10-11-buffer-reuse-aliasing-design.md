@@ -1,9 +1,11 @@
 # Part V buffer reuse and aliasing (slice 4): design
 
 Status: approved by the owner in the 2026-10-11 implementation conversation;
-production and regression prototype compiled through `deb4fecd`; pre-cycle
-controller full build and axiom audit green. Mutation kills, replay verification,
-two fresh whole-branch reviews, final build and integration remain pending.
+production and regression prototype compiled through `deb4fecd`; both controller
+full builds and the axiom audit are green. Exact ordered patch replay from
+`4ffdc342` to `deb4fecd` is controller-verified (isolated-index final git diff
+exit 0). All 64 mutation verdicts pass; both fresh whole-branch reviews are
+clean or adjudicated. Local integration remains pending.
 Decisions D1-D6 were confirmed individually before approval.
 Base: local `main` at `4ffdc342`.
 Path: Full (physical storage, placement, validity and refinement interfaces change).
@@ -140,8 +142,8 @@ contains observed values: actual retired-slot overwrite, rejected live alias
 despite unchecked `done`, three pair classes/final boundary, cross-tensor output
 decode 2, ℤ/ℚ decode `(11,7/8)`, fused internal-only conflict and post-write
 fault-state R. All 281 baseline assertions remain; total 354 = 174 `#eval check`
-rows + 180 proof items. Actual mutation kills remain pending and are not implied
-by compilation or these observations.
+rows + 180 proof items. All 64 actual mutation verdicts pass with byte-identical
+restoration; this evidence was measured separately from compilation.
 
 1. Clone `rtInitAfter`, place point 2 in point 0's slot, and retain point 1 in
    its own slot. Prove the checker accepts, the run is `done`, and `R` holds at
