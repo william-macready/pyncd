@@ -70,7 +70,12 @@ def pl : prog.Plan where
      [.acc [occ 0 0, occ 0 1, occ 1 0, occ 1 1]],
      [.pub [addr 0, addr 1]]]
 
-theorem pl_valid : pl.Valid := pl.checkPlan_sound (by decide)
+theorem pl_valid : pl.Valid := pl.checkPlan_sound (by
+  have hl : pl.checkLayouts = true := pl.checkLayouts_iff.mpr
+    (fun pc _ => pl.layoutOK_of_place_injective
+      (place_injective pl.tensors pl.tensors_nodup pl.tensors_complete) pc)
+  rw [checkPlan, hl, Bool.and_true]
+  decide)
 
 def msSchedule : Schedule prog where
   tensors := [0, 1]
@@ -95,12 +100,13 @@ def msSchedule : Schedule prog where
       cases p
       fin_cases t <;> simp
 
-def planRun := pl.runPlan msOps (Start η)
+def planRun := pl.runPlan msOps (pl.Start η)
 
 /-- Plan side: the two published values, each at its own carrier. -/
 def planRow : String × Nat × Option ℤ × Option ℚ :=
   match planRun with
-  | .done pc M => ("done", pc, (M (place ⟨0, ()⟩) : Option ℤ), (M (place ⟨1, ()⟩) : Option ℚ))
+  | .done pc M => ("done", pc, (readSlot pl.allocation M ⟨0, ()⟩ : Option ℤ),
+      (readSlot pl.allocation M ⟨1, ()⟩ : Option ℚ))
   | .failed _ pc _ => ("failed", pc, none, none)
   | .stuck pc _ => ("stuck", pc, none, none)
 

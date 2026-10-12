@@ -1,22 +1,22 @@
 # LeanNCD/Semantics/Plan
 
 ## Purpose
-Owns: the Part V slices 1-3 plan layer (`LeanNCD.Semantics.Program.Plan`): a plan is a list of commands (accumulate, publish, `initZero`, `retire`) over dense memory; it is checked by the computable `checkPlan`, run by `runPlan`, and related to the reference executor by relation `R`. Proves Lemma 32.1 (`batch_execution`), one-step simulation (`step_R`, `step_failed`), Lemma 31.2 (`terminal_adequacy`) and Theorem 31.3 (`done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model`) for the slice-1 profile, and for fused commands by expansion (slice 2: `FValid`, `checkPlanF`, `*_F` theorems), and for retirement of defined published addresses (slice 3: `Ann.retire`, `Live`, `RetOK`, `step_retire`).
-Does not own: the reference executor (`../ReferenceExecutor.lean`, `../ExecutableState.lean`), the checked evaluation backend (`../../Eval/Plan/`), buffer reuse and aliasing, scan liveness, retiring inputs, copy/relocate, cross-sort primitives in fixtures.
+Owns: the Part V slices 1-4 plan layer (`LeanNCD.Semantics.Program.Plan`): commands (accumulate, publish, `initZero`, `retire`) over allocation-indexed memory, checked by `checkPlan`, run by `runPlan`, and related to the reference executor by `R`. Proves Lemma 32.1 (`batch_execution`), simulation (`step_R`, `step_failed`), Lemma 31.2 (`terminal_adequacy`) and Theorem 31.3 (`done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model`), with fused commands by expansion (`FValid`, `checkPlanF`, `*_F`), retirement (`Live`, `RetOK`, `step_retire`), and typed static same-sort physical reuse (`Allocation`, `LayoutOK`, `Valid.layout`, `checkLayouts`). Slice 4 is compiled; mutation/review/integration gates remain pending in its record.
+Does not own: the reference executor (`../ReferenceExecutor.lean`, `../ExecutableState.lean`), the checked backend (`../../Eval/Plan/`), scan programs/liveness, retiring inputs, copy/relocate, dynamic allocation, in-place kernels or cross-sort reuse.
 
-Plan: `papers/semantics/plan_layer_plan.md` (slice 3: `papers/semantics/plan_layer_slice3_plan.md`); spec Part V in `papers/semantics/tensor_logic_semantics.md` (29.3, 30.2-30.4, 31.1-31.4, 32.1, 33.2); path doc section 4.9.
+Plan: `papers/semantics/plan_layer_plan.md`; current slice: `papers/semantics/plan_layer_slice4_plan.md` and `plan_layer_slice4_record.md`; spec Part V in `papers/semantics/tensor_logic_semantics.md` (29.3, 30.2-30.4, 31.1-31.4, 32.1, 33.2); path doc section 4.9.
 
 ## Code Map
 Reachable from `import LeanNCD` (`Semantics.lean` imports `Plan.lean`, which imports the eleven modules below in this order).
 
 | File | Owns |
 |---|---|
-| `Syntax.lean` | `Command`, `Ann` (incl. `retire`), occurrence/publication keys, `Pub`/`Cons`/`Mat`/`Ret`/`Live` per command prefix (`retList`), `Coverage1`/`Coverage2`, `coverage_iff_schedule` |
+| `Syntax.lean` | `Allocation` (finite buffers, sorts, capacities, typed `locate`), canonical default, `Command`, `Ann`, `Pub`/`Cons`/`Mat`/`Ret`/`Live`, `Coverage1`/`Coverage2`, allocation-preserving `expand` |
 | `Batch.lean` | batched accumulation: `accumulateBatch`, `publishBlock`, `batch_execution` (Lemma 32.1), `block_execution` |
-| `Memory.lean` | dense `Memory`, `place`, `SlotView`, `readPub`, partial `Decode`, `refState`, relation `R` (fields `dead`, `retPub`), `readPub_eq` (pointwise on `Live`), `R_start`, `decode_of_R` |
+| `Memory.lean` | `Slot = InputSlot ⊕ BufferSlot`, allocation-indexed `Memory`/`Start`/`place`/`readSlot`/`Decode`, `SlotView`, `LayoutOK`, `readPub`, `refState`, `R` (unmapped-slot `dead`, `retPub`), `R_start`, `decode_of_R` |
 | `Step.lean` | step kernels `execInit`/`execAcc`/`execPub`/`execRet`, `stepPlan`, `runFrom`, `runPlan`, `PlanOutcome` |
 | `Simulation.lean` | `InitOK`/`AccOK`/`PubOK`/`RetOK`/`AnnOK`, `accFlat_complete`, `refState_R2`, `step_retire`, `readPub_le`, `step_R`, `step_failed` |
-| `Validity.lean` | `Valid`, computable `checkPlan` and its component checks, `checkPlan_sound`, `checkRet`, field `Valid.retOK`, `checkPlan_nodup_redundant` (the two Nodup checks follow from singleton + `checkSteps`), Prop-level `accFlat_nodup_of_accOK`/`pubFlat_nodup_of_pubOK`/`Valid.coverage_nodup_of_steps` |
+| `Validity.lean` | `Valid` (`retOK`, all-boundary `layout`), `resourceList`, `checkLayoutAt`/`checkLayouts` and exactness, `checkPlan_iff`, `checkRet`, `layout_boundary`, existing coverage/checker redundancy |
 | `Run.lean` | `step_not_stuck`, `readPub_isSome` (over `Live`), `run_R`, `runPlan_R`, `runPlan_not_stuck` |
 | `Correctness.lean` | `terminal_adequacy` (Lemma 31.2), `complete_of_refState`, `live_output_of_valid`, Theorem 31.3 (a)(b)(c) |
 | `Fusion.lean` | `R_transport` (carries `Ret`/`Live`/`dead`/`retPub` along equal prefixes), fused-command fold lemmas `execAnns_R`, `step_R_command`, `step_failed_command`, `stepCommand_not_stuck` (the fold `execAnns` and `stepCommand` are in `Step.lean`, `execAnns_not_stuck` in `Run.lean`); run bridge `runFrom_agree`, `runPlan_agree` (`expand`/`offset` live in `Syntax.lean`, `execAnns` in `Step.lean`) |
@@ -25,11 +25,12 @@ Reachable from `import LeanNCD` (`Semantics.lean` imports `Plan.lean`, which imp
 
 ## Contracts
 - A fused plan is valid iff its expansion is (`FValid := π.expand.Valid`); `done m` counts commands, not expanded annotations.
-- Slice-1-3 profile: singleton or fused commands, dense injective buffers (a retired slot is cleared, never reused), transactional failure, explicit `initZero`, no implementation errors. The theorems are generic over sorts (`K : S → Type`); the fixtures use rationals, except `PlanMultiSortTest` (ℤ and ℚ with per-sort `ScalarOps`, empty registry, so no cross-sort reads).
+- Slice-1-4 profile: singleton or fused commands, typed static same-sort reuse, boundary-local layout injectivity, transactional failure and explicit `initZero`. Canonical allocation remains globally injective. Inputs are separate; outputs cannot be retired. Theorems are sort-generic (`K : S → Type`); `PlanMultiSortTest` and `PlanReuseStorageTest` use ℤ/ℚ with an empty registry (no cross-sort reads). Faults are an abstract wrapper.
 - `runPlan` does not detect schedule-invalid plans. Soundness rests on `checkPlan` (`checkPlan_sound : π.checkPlan = true → π.Valid`); `checkPlan_complete` gives the converse (`checkPlan_iff`; fused: `checkPlanF_iff`), so the checker decides `Valid` exactly. `checkAccMat` is redundant given the other clauses (`checkAccMat_of_rest`), and is kept.
 - `Valid` is purely static. The spec's semantic conditions 2-5 are the theorems `R_start`, `step_R` (only at `refState pc = some c`, next bullet), `step_failed`, `step_not_stuck`.
 - `Pub` is the logical published set, `Live = Pub \ Ret` the readable one; a retired address stays in `Pub` and in `dom σ`.
-- `step_R` needs `refState pc = some c` besides `R`; simulation is not claimed for every R-related state.
+- `step_R` needs `refState pc = some c` and pre/post `LayoutOK` besides `R`; init uses post-layout, acc/retire pre-layout, pub/failure add none. Simulation is not claimed for every R-related state.
+- `R.dead` ranges over unmapped physical slots, not retired logical addresses' placements: a freed slot may later contain another resource. Prefix transports require allocation equality and dependent memory casts.
 - Theorem 31.3 (b) claims failure and no model only; the failure snapshot may differ from `Executor.run`'s own schedule.
 
 ## Pitfalls
@@ -43,6 +44,9 @@ Reachable from `import LeanNCD` (`Semantics.lean` imports `Plan.lean`, which imp
 - Retiring an output or retiring twice still runs to `done`: only `checkPlan` rejects it.
 - `StepResult` has no `DecidableEq`: R-at-every-pc fixtures are proofs by `rfl`, not `decide`.
 - Not the checked backend: `Semantics/Plan` (`Program.Plan.checkPlan`, the Part V reference plan) is unrelated to `Eval/Plan` (`CheckedEvalPlan`, whose own `checkPlan` is in `Eval/Plan/EvalPlan.lean`); no theorem connects them.
-- Slice-1 `checkSteps` is vacuous on a fused command (slice-1 `checkPlan` rejects a fused plan only via `checkSingleton`): use `checkPlanF`, soundness `checkPlanF_sound`.
+- Singleton `checkSteps` is vacuous on a fused command, and `checkSingleton` rejects non-singletons. Outer layouts alone miss internal collisions: use `checkPlanF`, soundness `checkPlanF_sound`.
 - A fused `failed` reports the pre-command memory, and `PlanOutcome.Agree` ignores pc and failure memory.
-- Mutation cycles: `papers/semantics/plan_layer_mutations_post.json` (20 cycles) and `papers/semantics/plan_layer_slice2_mutations_post.json` (15 cycles) and `papers/semantics/plan_layer_d7_mutations_post.json` (9 cycles, all caught at the proofs of `Faults.lean`, not by `PlanFaultsTest`), and `papers/semantics/plan_layer_slice3_mutations_post.json` (10 cycles, all caught at library proofs), run with `leanncd/scripts/mutation-manifest.sh`; results in `papers/semantics/plan_layer_mutation_results.md` (slice 1), `plan_layer_slice2_mutation_results.md` and `plan_layer_slice3_mutation_results.md`.
+- Mutation manifests: `plan_layer_mutations_post.json` (20), `plan_layer_slice2_mutations_post.json` (15), `plan_layer_d7_mutations_post.json` (9), `plan_layer_slice3_mutations_post.json` (10), `plan_layer_slice4_mutations_post.json` (10), all under `papers/semantics/`. Run unfiltered with `leanncd/scripts/mutation-manifest.sh`. Slice-4 rerun results are pending under `plan_layer_slice4_mutation_results/`; distinguish library-proof controls from fixture kills.
+
+## Fixtures
+`test/Semantics/Plan*Test.lean`: 354 fixtures (174 `#eval check`, 180 top-level `example`/`theorem`); the baseline 281 are preserved. Default `Tests` retains 13 original `Plan*Test` modules and adds `PlanReuseTest` (26 fixtures: real overwrite, pair classes, final boundary), `PlanReuseStorageTest` (22: cross-tensor output reuse, typed banks, empty/unused capacity), and `PlanReuseWrapperTest` (25: fused intermediate conflict, error-state R, no-fault parity), giving 16 test modules. `PlanFixtures` is one additional shared module: 14 original Plan test/shared modules, 17 total.

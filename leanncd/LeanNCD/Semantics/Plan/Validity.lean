@@ -3,9 +3,9 @@ import LeanNCD.Semantics.Plan.Simulation
 /- Definition 31.1 (valid plan), slice-1 form, and its computable check.
    `Valid` restates the static part of 31.1 as named fields (the A2
    ValidityConditions list); `checkPlan` decides it by list recursion only.
-   Coverage completeness and condition 4 quantify over all occurrences or
-   defined addresses: their enumerations are DERIVED from the plan's certified
-   `tensors` list (`occList`, `addrList`), never from the noncomputable
+   Coverage completeness, condition 4 and layout safety enumerate occurrences,
+   addresses and both resource kinds from the plan's certified `tensors` list
+   and canonical coordinate layouts, never from the noncomputable
    `definedFintype`/`definedAddressFintype` instances. -/
 
 namespace LeanNCD.Semantics.Program.Plan
@@ -20,6 +20,10 @@ variable {P : Program K σ r} (π : P.Plan)
     condition; over `Live` it also enforces "no remaining reader" of a retired address. -/
 def ReadyOK (pc : Nat) (G : List (OccRef P)) : Prop :=
   ∀ x ∈ G, ∀ a ∈ footprint (P.body x.1 x.2.1) x.2.2, π.Live pc a
+
+section Validity
+
+variable [DecidableEq σ.Tensor]
 
 /-- Definition 31.1, slice-1 form (singleton commands, initZero/acc/pub/retire).
     `tensors_nodup`/`tensors_complete` are fields of the plan itself. -/
@@ -41,6 +45,8 @@ structure Valid : Prop where
   ready : ∀ pc G, π.commands[pc]? = some [.acc G] → π.ReadyOK pc G
   /-- `RetOK`: retired members are live and not outputs. -/
   retOK : ∀ pc B, π.commands[pc]? = some [.retire B] → π.RetOK pc B
+  /-- Every boundary, including the initial and final boundary, has no live aliases. -/
+  layout : ∀ pc, pc ≤ π.commands.length → π.LayoutOK pc
 
 theorem Valid.stepOK {π : P.Plan} (h : π.Valid) (pc : Nat) : π.StepOK pc := by
   intro a ha
@@ -49,6 +55,14 @@ theorem Valid.stepOK {π : P.Plan} (h : π.Valid) (pc : Nat) : π.StepOK pc := b
   | acc G => exact h.accOK pc G ha
   | pub B => exact h.pubOK pc B ha
   | retire B => exact h.retOK pc B ha
+
+/-- Layout safety on both sides of an existing singleton annotation. -/
+theorem Valid.layout_boundary {π : P.Plan} (h : π.Valid) {pc : Nat} {a : Ann P}
+    (ha : π.commands[pc]? = some [a]) : π.LayoutOK pc ∧ π.LayoutOK (pc + 1) := by
+  have hlt := (List.getElem?_eq_some_iff.mp ha).1
+  exact ⟨h.layout pc (Nat.le_of_lt hlt), h.layout (pc + 1) hlt⟩
+
+end Validity
 
 /-! ### Enumerations derived from the certified tensor list -/
 
@@ -85,12 +99,64 @@ theorem mem_addrList (x : DefAddr P) : x ∈ π.addrList := by
   simp only [List.mem_map, List.mem_finRange, true_and]
   exact ⟨(canonicalLayout (σ.signature t).axes).enumerate.symm p, by simp⟩
 
+/-- All addresses, including supplied inputs and empty-domain tensors. -/
+def allAddrList : List (Address σ) :=
+  π.tensors.flatMap fun t =>
+    (List.finRange (canonicalLayout (σ.signature t).axes).count).map fun i =>
+      ⟨t, (canonicalLayout (σ.signature t).axes).enumerate i⟩
+
+theorem mem_allAddrList (a : Address σ) : a ∈ π.allAddrList := by
+  obtain ⟨t, p⟩ := a
+  simp only [allAddrList, List.mem_flatMap, List.mem_map, List.mem_finRange, true_and]
+  exact ⟨t, π.tensors_complete t,
+    (canonicalLayout (σ.signature t).axes).enumerate.symm p, by simp⟩
+
+/-- Both resource kinds are enumerated; inactive resources reserve no storage. -/
+def resourceList : List (Resource P) :=
+  π.allAddrList.map Resource.pub ++ π.addrList.map Resource.acc
+
+theorem mem_resourceList (res : Resource P) : res ∈ π.resourceList := by
+  cases res with
+  | pub a => exact List.mem_append_left _ (List.mem_map_of_mem (π.mem_allAddrList a))
+  | acc x => exact List.mem_append_right _ (List.mem_map_of_mem (π.mem_addrList x))
+
 /-! ### The computable check (one Bool per Valid clause) -/
 
 section Check
 
 variable [DecidableEq σ.Tensor]
 local instance coordEqInst (sh : Shape) : DecidableEq (Coord sh) := coordDecidableEq sh
+local instance resourceEqInst : DecidableEq (Resource P) := fun a b => by
+  cases a <;> cases b <;>
+    simp only [Resource.pub.injEq, Resource.acc.injEq, reduceCtorEq] <;> infer_instance
+
+/-- Check every pub/pub, pub/acc and acc/acc pair at one boundary. -/
+def checkLayoutAt (pc : Nat) : Bool :=
+  π.resourceList.all fun a => π.resourceList.all fun b =>
+    decide ((π.SlotView pc a).isSome = true →
+      π.SlotView pc a = π.SlotView pc b → a = b)
+
+theorem checkLayoutAt_iff (pc : Nat) : π.checkLayoutAt pc = true ↔ π.LayoutOK pc := by
+  simp only [checkLayoutAt, List.all_eq_true, decide_eq_true_eq]
+  constructor
+  · intro h a b ξ ha hb
+    exact h a (π.mem_resourceList a) b (π.mem_resourceList b)
+      (by rw [ha]; rfl) (ha.trans hb.symm)
+  · intro h a _ b _ hs he
+    obtain ⟨ξ, hξ⟩ := Option.isSome_iff_exists.mp hs
+    exact h a b ξ hξ (he ▸ hξ)
+
+def checkLayouts : Bool :=
+  (List.range (π.commands.length + 1)).all fun pc => π.checkLayoutAt pc
+
+theorem checkLayouts_iff : π.checkLayouts = true ↔
+    ∀ pc, pc ≤ π.commands.length → π.LayoutOK pc := by
+  simp only [checkLayouts, List.all_eq_true, List.mem_range, checkLayoutAt_iff]
+  constructor
+  · intro h pc hp
+    exact h pc (by omega)
+  · intro h pc hp
+    exact h pc (by omega)
 
 def checkSingleton : Bool := π.commands.all fun cmd => cmd.length == 1
 
@@ -145,7 +211,7 @@ def checkSteps : Bool :=
 
 def checkPlan : Bool :=
   π.checkSingleton && π.checkCov1Nodup && π.checkCov1Complete &&
-    π.checkCov2Nodup && π.checkCov2Complete && π.checkSteps
+    π.checkCov2Nodup && π.checkCov2Complete && π.checkSteps && π.checkLayouts
 
 /-! ### Soundness -/
 
@@ -200,7 +266,7 @@ theorem checkAnn_pub_sound {pc : Nat} {B : List (DefAddr P)}
 /-- `checkPlan` is sound for Definition 31.1 (slice-1 form). -/
 theorem checkPlan_sound (h : π.checkPlan = true) : π.Valid := by
   simp only [checkPlan, Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨hs, h1n⟩, h1c⟩, h2n⟩, h2c⟩, hst⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨hs, h1n⟩, h1c⟩, h2n⟩, h2c⟩, hst⟩, hl⟩ := h
   simp only [checkSingleton, checkCov1Nodup, checkCov1Complete, checkCov2Nodup,
     checkCov2Complete, List.all_eq_true, decide_eq_true_eq, beq_iff_eq] at hs h1n h1c h2n h2c
   refine ⟨fun cmd hc => List.length_eq_one_iff.mp (hs cmd hc),
@@ -209,7 +275,8 @@ theorem checkPlan_sound (h : π.checkPlan = true) : π.Valid := by
     fun pc G ha => (π.checkAnn_acc_sound (π.checkSteps_ann hst ha)).1,
     fun pc B ha => π.checkAnn_pub_sound (π.checkSteps_ann hst ha),
     fun pc G ha => (π.checkAnn_acc_sound (π.checkSteps_ann hst ha)).2,
-    fun pc B ha => π.checkRet_sound (π.checkSteps_ann hst ha)⟩
+    fun pc B ha => π.checkRet_sound (π.checkSteps_ann hst ha),
+    π.checkLayouts_iff.mp hl⟩
 
 /-! ### Redundancy of the coverage `Nodup` checks (plan §10 item 3)
 
@@ -273,7 +340,8 @@ theorem checkPlan_nodup_redundant (hs : π.checkSingleton = true) (ht : π.check
 
 /-- Corollary: `checkPlan` equals its core without the two `Nodup` checks. -/
 theorem checkPlan_eq_core : π.checkPlan =
-    (π.checkSingleton && π.checkCov1Complete && π.checkCov2Complete && π.checkSteps) := by
+    (π.checkSingleton && π.checkCov1Complete && π.checkCov2Complete &&
+      π.checkSteps && π.checkLayouts) := by
   unfold checkPlan
   cases hs : π.checkSingleton
   · simp
@@ -379,7 +447,7 @@ theorem checkPlan_complete (h : π.Valid) : π.checkPlan = true := by
       | pub B => exact π.checkAnn_pub_complete (h.pubOK pc B hc)
       | retire B => exact π.checkRet_complete (h.retOK pc B hc)
   simp only [checkPlan, Bool.and_eq_true]
-  refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, hst⟩
+  refine ⟨⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, hst⟩, π.checkLayouts_iff.mpr h.layout⟩
   · simp only [checkSingleton, List.all_eq_true, beq_iff_eq]
     exact fun cmd hc => List.length_eq_one_iff.mpr (h.singleton cmd hc)
   · simpa only [checkCov1Nodup, decide_eq_true_eq] using h.coverage1.1
@@ -468,6 +536,11 @@ theorem checkAccMat_of_rest (hs : π.checkSingleton = true) (h2c : π.checkCov2C
 end Check
 
 #print axioms Valid.stepOK
+#print axioms Valid.layout_boundary
+#print axioms mem_allAddrList
+#print axioms mem_resourceList
+#print axioms checkLayoutAt_iff
+#print axioms checkLayouts_iff
 #print axioms mem_occList
 #print axioms mem_addrList
 #print axioms checkPlan_sound
@@ -520,7 +593,8 @@ theorem pubFlat_nodup_of_pubOK (hs : π.Singleton)
   | retire B => simp [Ann.blocks]
 
 /-- For a `Valid` plan the two `Nodup` halves are therefore derivable from the other fields. -/
-theorem Valid.coverage_nodup_of_steps (hv : π.Valid) : π.accFlat.Nodup ∧ π.pubFlat.Nodup :=
+theorem Valid.coverage_nodup_of_steps [DecidableEq σ.Tensor] (hv : π.Valid) :
+    π.accFlat.Nodup ∧ π.pubFlat.Nodup :=
   ⟨π.accFlat_nodup_of_accOK hv.singleton hv.accOK, π.pubFlat_nodup_of_pubOK hv.singleton hv.pubOK⟩
 
 #print axioms accFlat_nodup_of_accOK

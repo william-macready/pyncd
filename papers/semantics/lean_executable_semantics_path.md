@@ -35,8 +35,9 @@
     - [Plan-layer theorems](#plan-layer-theorems)
     - [Fused commands (slice 2)](#fused-commands-slice-2)
     - [Buffer retirement (slice 3)](#buffer-retirement-slice-3)
-    - [Slices 1-3 profile, fixtures and mutations](#slices-1-3-profile-fixtures-and-mutations)
-    - [What slices 1-3 do not do](#what-slices-1-3-do-not-do)
+    - [Buffer reuse and aliasing (slice 4, compiled)](#buffer-reuse-and-aliasing-slice-4-compiled)
+    - [Slices 1-4 profile, fixtures and mutations](#slices-1-4-profile-fixtures-and-mutations)
+    - [What slices 1-4 do not do](#what-slices-1-4-do-not-do)
 - [5. Remaining work, in dependency order](#5-remaining-work-in-dependency-order)
   - [5.1 Beyond the bounded source fragment](#51-beyond-the-bounded-source-fragment)
   - [5.2 Later: compiled and numerical refinement](#52-later-compiled-and-numerical-refinement)
@@ -51,7 +52,7 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-11, Lean as of `df1cdb6c`: the Part V slice-1 to slice-3 plan layer
+**Snapshot: 2026-10-12, compiled Lean prototype as of `deb4fecd`: the Part V slice-1 to slice-4 plan layer
 (`Semantics/Plan/`), on top of bounded source correspondence
 (`6a90baff`), nested-reduction reindexing (`705280cd`), successful-permutation
 agreement (`ca642b3d`), and raw-source admission, on top of the verified
@@ -61,10 +62,17 @@ developments have landed, including maximal-run correspondence. The computable
 validated reference executor and its exact-rational fixtures are now verified;
 both final whole-branch code-review lenses are clean.
 The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer))
-is in the snapshot above, extended by slice 2 to fused commands and by slice 3 to retirement of defined
-published addresses: eleven modules under `Semantics/Plan/`
-proving Lemma 31.2, Theorem 31.3 and Lemma 32.1 for that profile, with 281 fixtures and 54 mutation cycles
-(20 in slice 1, 15 in slice 2, 9 in the D7 manifest, 10 in slice 3).
+is in the snapshot above, extended by slice 2 to fused commands, slice 3 to retirement
+and slice 4 to typed static same-sort physical reuse with boundary-local layout
+injectivity: eleven modules under `Semantics/Plan/`, proving Lemma 31.2,
+Theorem 31.3 and Lemma 32.1 for that profile, with 354 fixtures.
+The four inherited manifests contain 54 cycles (20 + 15 + 9 + 10);
+slice 4 adds 10 controls. Exact ordered patch replay from `4ffdc342` to `deb4fecd`
+is controller-verified (isolated-index final git diff exit 0). All 64 mutation
+verdicts pass; both fresh whole-branch reviews are clean or adjudicated, and
+both controller full builds and the actual axiom audit are green. Only local
+integration remains pending in `plan_layer_slice4_record.md`. Earlier clean review
+statements above refer to the landed reference executor, not slice 4.
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
 [`LeanNCD`](../../leanncd/LeanNCD.lean). They are a semantic validation layer,
@@ -110,7 +118,9 @@ computable state/step selection + validated reference executor    LANDED
                          |
 bounded source correspondence + differential debugging             LANDED
                          |
-Part V slice-1/2 plan layer (singleton + fused, dense)            LANDED
+Part V slices 1-3 (singleton + fused + retirement)                 LANDED
+                         |
+Part V slice 4 (typed static buffer reuse + layout safety)         COMPILED
                          |
 general compiled storage/backend refinement                      LATER
 ```
@@ -788,9 +798,10 @@ solver.
   may differ.
 - **No dense/backend representation claims.** Stores remain function-valued.
   The separate bounded source layer adds correspondence and scalar diagnostic
-  rendering, not dense-storage simulation. The Part V slice-1/2 plan layer
-  ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)) adds dense-storage
-  simulation for singleton and fused commands; general backend refinement remains open.
+  rendering, not physical-storage simulation. The Part V slice-1 to slice-4 plan layer
+  ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)) adds allocation-indexed
+  simulation for singleton/fused commands, retirement and static same-sort reuse;
+  general backend refinement remains open.
 - **A parked runtime gap.** The generic executor retains heterogeneous carriers,
   but the runtime fixtures do not cover heterogeneous non-additive inputs.
 
@@ -973,7 +984,7 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   unconditional successful execution.
 - **No proof for the oracle or the comparison.** There is no theorem about
   `compareSource`, the numerical profile, or the native legs, and no backend
-  refinement result. The only formalized Part V results are the slice-1 to slice-3 plan layer's
+  refinement result. The only formalized Part V results are the slice-1 to slice-4 plan layer's
   ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)), which does not
   touch the source layer or the oracle.
 - **No floating-point correctness.** f32 and f64 are metadata in the exact
@@ -990,7 +1001,7 @@ executed fixtures and mutation controls, and every claim below is of that kind.
 The execution records distinguish observed computation, proof checking,
 mutation controls, and unsupported claims:
 
-| Landed layer | Tests | Validation record |
+| Layer (status) | Tests | Validation record |
 | --- | --- | --- |
 | Strict expressions/readiness | [ExpressionTest](../../leanncd/test/Semantics/ExpressionTest.lean), [NativeTest](../../leanncd/test/Semantics/NativeTest.lean), [ContractTest](../../leanncd/test/Semantics/ContractTest.lean) | [Expression/readiness execution](expression_readiness_execution_record.md) |
 | Collection/models | [CollectionModelTest](../../leanncd/test/Semantics/CollectionModelTest.lean) | [Collection/model execution](collection_model_execution_record.md) |
@@ -999,6 +1010,7 @@ mutation controls, and unsupported claims:
 | Computable validated reference | [ExecutableReferenceTest](../../leanncd/test/Semantics/ExecutableReferenceTest.lean) | [Executor implementation execution](computable_reference_executor_record.md#8-implementation-execution-2026-10-08) |
 | Bounded source correspondence and differential debugging | [SourceAdmissionTest](../../leanncd/test/Semantics/SourceAdmissionTest.lean), [SourceBindingTest](../../leanncd/test/Semantics/SourceBindingTest.lean), [SourceCorrespondenceTest](../../leanncd/test/Semantics/SourceCorrespondenceTest.lean), [SourceProgramTest](../../leanncd/test/Semantics/SourceProgramTest.lean), [SourceOracleTest](../../leanncd/test/Semantics/SourceOracleTest.lean), [SourceDiagnosticTest](../../leanncd/test/Semantics/SourceDiagnosticTest.lean), [SourceDifferentialTest](../../leanncd/test/Semantics/SourceDifferentialTest.lean), [SourceRawCorrespondenceTest](../../leanncd/test/Semantics/SourceRawCorrespondenceTest.lean), [SourceCorrespondenceTransportTest](../../leanncd/test/Semantics/SourceCorrespondenceTransportTest.lean), [SourceProgramIdentityTest](../../leanncd/test/Semantics/SourceProgramIdentityTest.lean) | [Source correspondence record](source_correspondence_record.md), [raw-source/admission record](raw_source_admission_record.md) |
 | Part V slice-1/2 plan layer | [PlanFusionTest](../../leanncd/test/Semantics/PlanFusionTest.lean), [PlanFusionCorrectnessTest](../../leanncd/test/Semantics/PlanFusionCorrectnessTest.lean), [PlanFusionCheckerTest](../../leanncd/test/Semantics/PlanFusionCheckerTest.lean), [PlanBatchTest](../../leanncd/test/Semantics/PlanBatchTest.lean), [PlanMemoryTest](../../leanncd/test/Semantics/PlanMemoryTest.lean), [PlanStepTest](../../leanncd/test/Semantics/PlanStepTest.lean), [PlanSimulationTest](../../leanncd/test/Semantics/PlanSimulationTest.lean), [PlanValidityTest](../../leanncd/test/Semantics/PlanValidityTest.lean), [PlanRunTest](../../leanncd/test/Semantics/PlanRunTest.lean), [PlanCorrectnessTest](../../leanncd/test/Semantics/PlanCorrectnessTest.lean), [PlanMultiSortTest](../../leanncd/test/Semantics/PlanMultiSortTest.lean), shared [PlanFixtures](../../leanncd/test/Semantics/PlanFixtures.lean) | [Plan-layer mutation results](plan_layer_mutation_results.md), [slice-2 mutation results](plan_layer_slice2_mutation_results.md) |
+| Part V retirement (landed), reuse (validated) and fault wrappers | [PlanRetireTest](../../leanncd/test/Semantics/PlanRetireTest.lean), [PlanFaultsTest](../../leanncd/test/Semantics/PlanFaultsTest.lean), [PlanReuseTest](../../leanncd/test/Semantics/PlanReuseTest.lean), [PlanReuseStorageTest](../../leanncd/test/Semantics/PlanReuseStorageTest.lean), [PlanReuseWrapperTest](../../leanncd/test/Semantics/PlanReuseWrapperTest.lean) | [Slice-3 record](plan_layer_slice3_record.md), [slice-4 record](plan_layer_slice4_record.md) (validation complete; integration pending) |
 
 All are discovered by the default `Tests` target. Existing fixtures cover
 strict zero multiplication, empty binders, whole-array selection obligations,
@@ -1059,11 +1071,12 @@ categorical interpretation or general source correspondence.
 
 ### 4.9 Part V slice 1: the singleton-command plan layer
 
-Slice 2 extends the layer to fused commands.
+Slice 2 extends the layer to fused commands, slice 3 to retirement, and the
+compiled slice-4 prototype to typed static same-sort buffer reuse.
 
 `LeanNCD.Semantics.Plan` (imported by `LeanNCD.Semantics`) is the first Lean model of
 [Part V](tensor_logic_semantics.md#part-v-compilation-and-refinement): a reference plan
-`Program.Plan` of annotated commands over a dense memory, a computable checker for
+`Program.Plan` of annotated commands over allocation-indexed exact memory, a computable checker for
 Definition 31.1 in its slice-1 form, and proofs of Lemma 31.2, Theorem 31.3 and Lemma 32.1 for
 that profile. It is not the checked evaluation backend `Eval/Plan` (`CheckedEvalPlan`); no theorem
 connects the two.
@@ -1072,17 +1085,21 @@ connects the two.
 
 The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/Plan/), in import order:
 
-- `Plan/Syntax`: annotations (`initZero`, `acc`, `pub`, `retire`), commands, the prefix `prefixAnn`, the retired and
+- `Plan/Syntax`: `Allocation` (finite buffers, sorts, capacities, typed `locate`), canonical default,
+  allocation-preserving expansion, annotations (`initZero`, `acc`, `pub`, `retire`), commands, the prefix `prefixAnn`, the retired and
   readable sets `Ret`/`Live` and the schedule views `accFlat`/`pubFlat`.
 - `Plan/Batch`: `accumulateBatch` and `publishBlock` at the logical level; Lemma 32.1 without any
   memory model.
-- `Plan/Memory`: dense memory, the layout view `SlotView`, the read view `readPub`, `Decode`, the reference post-state
+- `Plan/Memory`: separate `InputSlot` and reusable `BufferSlot`, allocation-indexed memory,
+  `Start`, `place`, `readSlot`, the layout view `SlotView` and its domain injectivity `LayoutOK`,
+  the read view `readPub`, `Decode`, the reference post-state
   `refState`, and the relation `R` (fields `dead`, `retPub`) with `R_start`.
 - `Plan/Step`: the step kernels, `StepResult`, `PlanOutcome`, validated `Start`, and the run
   `runPlan`/`runFrom`.
 - `Plan/Simulation`: per-annotation side conditions (`InitOK`, `AccOK`, `PubOK`, `RetOK`, `AnnOK`) and
   one-step simulation `step_R`, `step_failed`, `step_retire`.
-- `Plan/Validity`: `Valid` (Definition 31.1, slice-1 form; field `retOK`), the computable `checkPlan` (with `checkRet`),
+- `Plan/Validity`: `Valid` (Definition 31.1, singleton form; fields `retOK`, all-boundary `layout`),
+  `resourceList`, `checkLayoutAt`, `checkLayouts` and their exactness, the computable `checkPlan` (with `checkRet`),
   `checkPlan_sound`, `checkPlan_complete` (so `checkPlan_iff`) and `checkAccMat_of_rest`.
 - `Plan/Run`: progress `step_not_stuck` and the multi-step run lemma `run_R`/`runPlan_R`.
 - `Plan/Correctness`: terminal adequacy and compiled correctness.
@@ -1100,7 +1117,7 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
 | --- | --- | --- |
 | `batch_execution`, `batch_execution_perm`, `accumulateBatch_accumulators`, `accumulateBatch_pending`, `accumulateBatch_published` | A duplicate-free, pending, ready, successful group is a reference execution ending at accumulator $\alpha\oplus\Delta_G$ and remaining set $U\setminus G$, in any enumeration order | Lemma 32.1 |
 | `R_start` | The initial memory is R-related to the initial reference state | Section 31.2 (initialization) |
-| `step_R` | From R and `Conf = refState pc`, a successful singleton step re-establishes R at `pc + 1` | Section 31.2 (step simulation) |
+| `step_R` | From R, `Conf = refState pc`, `AnnOK` and pre/post `LayoutOK`, a successful singleton step re-establishes R at `pc + 1` | Section 31.2 (step simulation) |
 | `step_failed` | A failed step is matched by one `undefined` event for the same occurrence from the related state | Section 31.3 (failure matching) |
 | `checkPlan_sound` | An accepted plan satisfies `Valid` | Definition 31.1 |
 | `checkPlan_complete`, `checkPlan_iff` | A `Valid` plan is accepted, so `checkPlan` decides `Valid` exactly | Definition 31.1 |
@@ -1110,13 +1127,14 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
 | `run_R`, `runPlan_R` | The whole run ends `done m` with R and a reference execution, or fails with a matched failure | Sections 31.2-31.3 |
 | `terminal_adequacy`, `complete_of_refState` | At `done m M'` the reference state is complete and `Decode` gives its outputs | Lemma 31.2 |
 | `done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model` | `done` gives the unique model and the denotation; `failed` gives no model; the run is `done` iff a model exists | Theorem 31.3 |
-| `step_R_command` | From R and `Conf = refState pc`, with `AnnOK` at each expanded position, a successful fused command re-establishes R at `pc + 1` | Section 31.2 (fused) |
+| `step_R_command` | From R and `Conf = refState pc`, with `AnnOK` at each expanded position and every expanded-boundary `LayoutOK`, a successful fused command re-establishes R at `pc + 1` | Section 31.2 (fused) |
 | `step_failed_command` | From R and `Conf = refState pc`, a failing fused command is matched by some reference execution from `Conf` to `Failed` on the same occurrence (the execution may include the earlier annotations of the command) | Section 31.3 (fused failure) |
 | `stepCommand_not_stuck` | From R and `refState pc = some c`, a command of an `FValid` plan is never stuck | Section 31.3 (progress, fused) |
 | `runPlan_agree` | A fused plan and its expansion run to the same final memory, or fail at the same occurrence | run bridge (no spec result) |
 | `checkPlanF_sound`, `checkPlanF_complete`, `checkPlanF_iff` | A fused plan is accepted iff it satisfies `FValid` (Definition 31.1 of the expansion) | Definition 31.1 |
 | `terminal_adequacy_F`, `done_correct_F`, `failed_correct_F`, `done_or_failed_F`, `done_of_model_F`, `done_iff_model_F` | Lemma 31.2 and Theorem 31.3 for `FValid` fused plans | Lemma 31.2, Theorem 31.3 |
-| `step_retire` | From R and `Conf = refState pc`, a retire block satisfying `RetOK` re-establishes R at `pc + 1` with the reference state unchanged and every retired slot `none` | Section 30.3 (retirement) |
+| `step_retire` | From R, `Conf = refState pc`, `RetOK` and pre-layout safety, the reference state is unchanged, each block member's slot is cleared and R is re-established | Section 30.3 (retirement) |
+| `checkLayoutAt_iff`, `checkLayouts_iff`, `Valid.layout_boundary` | Exact resource-pair separation at one/all boundaries, including the final one; validity supplies step pre/post layouts | Sections 30.2, 31.1-31.2 |
 | `checkRet_sound`, `checkRet_complete` | `checkRet` accepts exactly `RetOK`, so `checkPlan_iff` still holds with the retire clause | Definition 31.1 |
 | `live_output_of_valid` | A valid plan has every output coordinate live at the end, so no retire of an output exists | Lemma 31.2 |
 
@@ -1128,8 +1146,9 @@ run in order. The design is expansion: `π.expand` is the plan whose commands ar
 `runPlan_agree` reuses the slice-1 proofs on the expansion. A failing annotation rolls back the whole
 command (the failure memory is the memory before the command), `R` is claimed at command boundaries only,
 and `done m` counts commands, not expanded annotations (so `Agree` compares final memory or failing
-occurrence, never the pc). The slice-1 `checkSteps` is vacuous on a fused command (slice-1 `checkPlan`
-rejects a fused plan only through `checkSingleton`), so the run does not detect a mis-fused plan:
+occurrence, never the pc). The singleton `checkSteps` is vacuous on a fused command,
+and `checkSingleton` rejects non-singletons. Use `checkPlanF` for fused validity;
+outer-boundary layouts alone are insufficient. The run does not detect a mis-fused plan:
 `misfused-run-undetected` runs to `done`, and `t4-a5-reinitMid` silently ends with a wrong value;
 `checkPlanF` rejects both. The case-by-class table (a1-a10, b-e: legal and forbidden intra-command
 dependencies; every cell but e (a theorem) and c (argued, not probed) is pinned by a fixture) is section 2 of `plan_layer_slice2_plan.md`. Slice 2 changed two slice-1 statements
@@ -1153,31 +1172,73 @@ retired address is published; Lean only, needed because `R` does not remember ea
 is restated pointwise on `Live`. `Valid` gains the field `retOK`, and `checkPlan_iff` still holds.
 
 The case-by-class table is the "Review Focus" section of `plan_layer_slice3_plan.md`; the two deviations from the
-design spec (`retPub` and the pointwise `readPub_eq`) are recorded in its section 3.4. Not done: reuse and
-aliasing (`place` stays injective, a retired slot is never rewritten), scan liveness, retiring inputs, copy and
-relocate.
+design spec (`retPub` and the pointwise `readPub_eq`) are recorded in its section 3.4.
+The address-indexed `dead` description and diagnostic second-retire classification
+above describe slice 3 historically; slice 4 changes them as follows.
 
-#### Slices 1-3 profile, fixtures and mutations
+#### Buffer reuse and aliasing (slice 4, compiled)
+
+`Allocation` has explicit complete finite independent buffer identities,
+computable equality, per-buffer sort/capacity and bounded sort-certified placement.
+The canonical default preserves one buffer per tensor and the existing constructors.
+Inputs have separate storage. `Memory`, kernels, reads, decoding and outcomes
+carry allocation; `expand` preserves it. Prefix transport (`execAnn_prefix`,
+`R_transport`, `decode_prefix_congr`) requires allocation equality and memory casts.
+
+`SlotView` maps `Live` published resources and materialized unpublished
+accumulators. `LayoutOK` requires domain injectivity only at the current boundary;
+`Valid.layout` and `checkLayouts` cover 0 through `commands.length`, including
+pub/pub, pub/acc and acc/acc pairs. Fused checking uses all expanded boundaries.
+Initialization needs the successor layout; accumulation/retirement need the
+current layout; `step_R` carries both. Publication/failure add none.
+
+`R.dead` now means every unmapped physical slot is `none`, including unused
+capacity. A retired address's old slot may hold a new resource; `readPub` still
+returns `none` for that logical address. Retirement must act on a live resource:
+the no-second-retire condition is now safety, since a repeated retire could clear
+a new occupant. Outputs remain live and cannot be retired or overwritten while
+represented. Unchecked invalid aliases can finish `done` with corrupted values.
+
+`PlanReuseTest` pins actual point-2-to-retired-point-0 overwrite (`done 7`,
+raw row `[4,3,4]`, ghost 0 vs retired read `none`), nearest live-alias rejection,
+all three resource-pair classes and final-boundary checking.
+`PlanReuseStorageTest` pins distinct internal/output tensors sharing one buffer
+index, decode 2 matching canonical, typed ℤ/ℚ decode `(11,7/8)`, empty outputs
+and unused capacity. `PlanReuseWrapperTest` pins retire-then-init fusion,
+an internal-only collision (all outer layouts true, expanded index 4 false),
+fault-after-write error-state R at pc 5 and no-fault parity.
+
+#### Slices 1-4 profile, fixtures and mutations
 
 The profile is: singleton or fused commands (fusion by expansion), retirement of defined published addresses
-(`Pub` logical, `Live` readable), dense injective storage (one slot per materialised address, never reused; a
-retired slot is cleared and never rewritten), error-free kernels. Soundness rests on `checkPlan`
+(`Pub` logical, `Live` readable), typed static same-sort reuse with boundary-local
+layout injectivity, and error-free kernels (faults remain an abstract wrapper). Soundness rests on `checkPlan`
 (singleton plans) or `checkPlanF` (fused plans): the run does not detect an invalid plan. The spec's
-restatements are the paragraphs headed "As formalized (slice-1 to slice-3 profile ...)" (in 30.3 and 33.2: "(slice-3 profile ...)") in Sections
+restatements are the paragraphs headed "As formalized (slice-1 to slice-4 profile ...)" (in 30.3 and 33.2: "(slice-3 to slice-4 profile ...)") in Sections
 29.3, 30.2, 30.3, 30.4, 31.1-31.4, 32.1 and 33.2 of the
-[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 281
-fixtures by the `rg -c` count (149 `#eval check` rows and 132 `example`/`theorem` items), of which 68 are slice 3's
+[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 354
+fixtures (174 `#eval check` rows and 180 top-level `example`/`theorem` items).
+All 281 baseline assertions (149 + 132) are preserved; 73 new fixtures are split
+26 core, 22 storage and 25 wrapper. Default `Tests` retains all 13 original
+`Plan*Test` modules and adds these three, giving 16 test modules. `PlanFixtures`
+is one additional shared module: 14 original Plan test/shared modules, 17 total.
+Of the baseline, 68 are slice 3's
 `PlanRetireTest` (27 rows, 24 `example`s, 17 theorems); the earlier figure of 180 was off by one (181 by this method
 at the commit that wrote it: 110 rows + 71 items), and `PlanFaultsTest` added 19 after it (12 rows + 7 items),
-which gives the 200 before slice 3. The mutation manifests ran 54 mutation cycles (20 in slice 1, 15 in
+which gives the 200 before slice 3. Historically the mutation manifests ran 54 cycles (20 in slice 1, 15 in
 slice 2, 9 in the D7 manifest, 10 in slice 3), of which 4 are labelled equivalent among the 35 of slices 1-2
-(3 in slice 1; S2-M4 at fixture level) and none among the 10 of slice 3 (every one is killed at a library proof).
+(3 in slice 1; S2-M4 at fixture level) and none among the 10 of slice 3 (every one was killed at a library proof).
+Those are historical observations, not slice-4 rerun results. The current branch
+has 64 manifest controls: 54 inherited + 10 new (7 library-proof, 3 fixture).
+Actual rerun kills and equivalent adjudications remain pending in
+`plan_layer_slice4_mutation_results/`; `--check` uniqueness is not kill evidence.
 
-#### What slices 1-3 do not do
+#### What slices 1-4 do not do
 
 - Cross-sort reads and primitives (the one multi-sort fixture, `PlanMultiSortTest`, has an empty registry), numeric kernels other than the exact reference, floating point.
-- Buffer reuse and aliasing, retiring inputs, copy and relocate operations, and liveness for scans (retirement of
-  defined published addresses is done, slice 3).
+- Retiring inputs, copy/relocate, dynamic allocation, cross-sort reuse,
+  in-place kernels/snapshots and scan programs/liveness. Static same-sort reuse
+  after retirement is done; the Section 33.2 scan example is not formalized.
 - Concrete implementation-error sources: `Plan/Faults.lean` models errors as an abstract fault oracle (`FOutcome`, error-free profile, (a)(b)(c) under faults, `R` at the error state; fixtures in `PlanFaultsTest`), so allocation failure and kernel errors are oracle outputs, not events of the model.
 - Comparing the failure occurrence or failure snapshot between the plan and the reference executor.
 - Dropping the redundant condition-1 covering clause of `Valid`. It follows from the condition-2
@@ -1220,11 +1281,14 @@ batching, and buffer liveness for scans. Rank alone never justifies overwriting
 a still-needed value. A checked production plan is not automatically a
 certificate for these new semantics.
 
-Slices 1-3 of the plan layer have landed
+Slices 1-3 of the plan layer have landed; slice 4 is validated with only local
+integration pending
 ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)): singleton and fused commands,
-retirement of defined published addresses, dense injective storage, with Lemma 31.2, Theorem 31.3 and
+retirement of defined published addresses, typed static same-sort reuse with
+boundary-local layout safety, with Lemma 31.2, Theorem 31.3 and
 Lemma 32.1 proved for that profile.
-Not yet done: buffer reuse and aliasing, scan liveness, retiring inputs;
+Not yet done: scan programs/liveness, retiring inputs, relocation/copy,
+dynamic allocation, cross-sort reuse and in-place kernels/snapshots;
 concrete implementation-error sources (an abstract fault oracle with the error-free profile restated is done, `Plan/Faults.lean`); cross-sort primitives and non-exact numeric
 kernel fixtures.
 

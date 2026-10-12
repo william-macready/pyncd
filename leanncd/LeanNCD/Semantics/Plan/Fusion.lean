@@ -29,8 +29,9 @@ variable (ops : (s : S) → ScalarOps (K s))
 variable {η : P.Input}
 
 /-- Fold of `step_R` over a list of annotations of a (singleton-command) plan `π'`. -/
-theorem execAnns_R (π' : P.Plan) :
-    ∀ (anns : List (Ann P)) (n : Nat) (M M' : Memory K σ) (c : P.Running),
+theorem execAnns_R (π' : P.Plan)
+    (layout : ∀ pc, pc ≤ π'.commands.length → π'.LayoutOK pc) :
+    ∀ (anns : List (Ann P)) (n : Nat) (M M' : Memory K π'.allocation) (c : P.Running),
       π'.R ops η n M c → π'.refState ops η n = some c →
       (∀ j a, anns[j]? = some a → π'.commands[n + j]? = some [a] ∧ π'.AnnOK (n + j) a) →
       π'.execAnns ops n M anns = .ok M' →
@@ -50,8 +51,10 @@ theorem execAnns_R (π' : P.Plan) :
       rw [hs] at h
       have hstep : π'.stepPlan ops n M = .ok M₁ := by
         simp [stepPlan, h0, stepCommand_single, hs]
-      obtain ⟨c₁, hc₁, hR₁, ev, hex⟩ := step_R ops hR hc h0 hok0 hstep
-      obtain ⟨c', hc', hR', ev', hex'⟩ := execAnns_R π' as n.succ M₁ M' c₁ hR₁ hc₁
+      have hlt := (List.getElem?_eq_some_iff.mp h0).1
+      obtain ⟨c₁, hc₁, hR₁, ev, hex⟩ :=
+        step_R ops hR hc h0 hok0 (layout n (Nat.le_of_lt hlt)) (layout (n + 1) hlt) hstep
+      obtain ⟨c', hc', hR', ev', hex'⟩ := execAnns_R π' layout as n.succ M₁ M' c₁ hR₁ hc₁
         (fun j b hb => by
           have := hok (j + 1) b (by simpa using hb)
           rwa [show n + (j + 1) = n.succ + j by omega] at this) h
@@ -64,8 +67,9 @@ theorem execAnns_R (π' : P.Plan) :
 /-- Fold of `step_failed`: a semantic failure inside a fused command is matched by the
     reference execution of the EARLIER annotations of the command followed by the
     failing contribution. -/
-theorem execAnns_failed (π' : P.Plan) :
-    ∀ (anns : List (Ann P)) (n : Nat) (M : Memory K σ) (c : P.Running) (o : OccRef P),
+theorem execAnns_failed (π' : P.Plan)
+    (layout : ∀ pc, pc ≤ π'.commands.length → π'.LayoutOK pc) :
+    ∀ (anns : List (Ann P)) (n : Nat) (M : Memory K π'.allocation) (c : P.Running) (o : OccRef P),
       π'.R ops η n M c → π'.refState ops η n = some c →
       (∀ j a, anns[j]? = some a → π'.commands[n + j]? = some [a] ∧ π'.AnnOK (n + j) a) →
       π'.execAnns ops n M anns = .semFail o →
@@ -81,8 +85,10 @@ theorem execAnns_failed (π' : P.Plan) :
       rw [hs] at h
       have hstep : π'.stepPlan ops n M = .ok M₁ := by
         simp [stepPlan, h0, stepCommand_single, hs]
-      obtain ⟨c₁, hc₁, hR₁, ev, hex⟩ := step_R ops hR hc h0 hok0 hstep
-      obtain ⟨c', ev', hex'⟩ := execAnns_failed π' as n.succ M₁ c₁ o hR₁ hc₁
+      have hlt := (List.getElem?_eq_some_iff.mp h0).1
+      obtain ⟨c₁, hc₁, hR₁, ev, hex⟩ :=
+        step_R ops hR hc h0 hok0 (layout n (Nat.le_of_lt hlt)) (layout (n + 1) hlt) hstep
+      obtain ⟨c', ev', hex'⟩ := execAnns_failed π' layout as n.succ M₁ c₁ o hR₁ hc₁
         (fun j b hb => by
           have := hok (j + 1) b (by simpa using hb)
           rwa [show n + (j + 1) = n.succ + j by omega] at this) h
@@ -98,35 +104,50 @@ theorem execAnns_failed (π' : P.Plan) :
           exact ((show π'.AccOK n G from hok0).2 x hx).1) hstep⟩
     | stuck => rw [hs] at h; cases h
 
-/-- Transport of R between plans along equal annotation prefixes. -/
-theorem R_transport {π π' : P.Plan} {pc pc' : Nat} {M : Memory K σ} {c : P.Running}
-    (h : π.prefixAnn pc = π'.prefixAnn pc') (hR : π.R ops η pc M c) : π'.R ops η pc' M c := by
-  have hcons : ∀ x, π.Cons pc x ↔ π'.Cons pc' x := fun x => by simp [Cons, consList, h]
-  have hpub : ∀ a, π.Pub pc a ↔ π'.Pub pc' a := fun a => by simp [Pub, pubList, h]
-  have hmat : ∀ x, π.Mat pc x ↔ π'.Mat pc' x := fun x => by simp [Mat, matList, h]
-  have hret : ∀ a, π.Ret pc a ↔ π'.Ret pc' a := fun a => by simp [Ret, retList, h]
-  have hlive : ∀ a, π.Live pc a ↔ π'.Live pc' a := fun a => by
-    simp only [Live, hpub, hret]
-  have hsv : ∀ r, π.SlotView pc r = π'.SlotView pc' r := by
-    intro r; cases r <;> simp [SlotView, hpub, hmat, hlive]
-  exact ⟨hR.reach, fun t o => by rw [← hcons]; exact hR.pending t o,
-    fun a => by rw [← hpub]; exact hR.published a,
-    fun a ha => hR.pubSlot a (by rw [hsv]; exact ha),
-    fun x hx => hR.accSlot x (by rw [hsv]; exact hx),
-    fun x hx ho => (hmat x).mp (hR.retain x (fun hp => hx ((hpub _).mp hp))
-      (by obtain ⟨o, ho1, ho2⟩ := ho; exact ⟨o, (hcons _).mpr ho1, ho2⟩)),
-    fun a hp hl => hR.dead a ((hpub a).mpr hp) (fun hl' => hl ((hlive a).mp hl')),
-    fun a ha => (hpub a).mp (hR.retPub a ((hret a).mpr ha))⟩
+/-- Transport of R along equal allocation metadata and annotation prefixes. -/
+theorem R_transport {π π' : P.Plan} {pc pc' : Nat} {M : Memory K π.allocation} {c : P.Running}
+    (hA : π.allocation = π'.allocation) (h : π.prefixAnn pc = π'.prefixAnn pc')
+    (hR : π.R ops η pc M c) :
+    π'.R ops η pc' (cast (congrArg (Memory K) hA) M) c := by
+  cases π with
+  | mk ts hn hc cmds A =>
+    cases π' with
+    | mk ts' hn' hc' cmds' A' =>
+      dsimp at hA
+      subst A'
+      let π : P.Plan := ⟨ts, hn, hc, cmds, A⟩
+      let π' : P.Plan := ⟨ts', hn', hc', cmds', A⟩
+      change π.prefixAnn pc = π'.prefixAnn pc' at h
+      change π.R ops η pc M c at hR
+      change π'.R ops η pc' M c
+      have hcons : ∀ x, π.Cons pc x ↔ π'.Cons pc' x := fun x => by simp [Cons, consList, h]
+      have hpub : ∀ a, π.Pub pc a ↔ π'.Pub pc' a := fun a => by simp [Pub, pubList, h]
+      have hmat : ∀ x, π.Mat pc x ↔ π'.Mat pc' x := fun x => by simp [Mat, matList, h]
+      have hret : ∀ a, π.Ret pc a ↔ π'.Ret pc' a := fun a => by simp [Ret, retList, h]
+      have hlive : ∀ a, π.Live pc a ↔ π'.Live pc' a := fun a => by
+        simp only [Live, hpub, hret]
+      have hsv : ∀ r, π.SlotView pc r = π'.SlotView pc' r := by
+        intro r; cases r <;> simp only [SlotView, hpub, hmat, hlive] <;> rfl
+      exact ⟨hR.reach, fun t o => by rw [← hcons]; exact hR.pending t o,
+        fun a => by rw [← hpub]; exact hR.published a,
+        fun a ha => hR.pubSlot a (by rw [hsv]; exact ha),
+        fun x hx => hR.accSlot x (by rw [hsv]; exact hx),
+        fun x hx ho => (hmat x).mp (hR.retain x (fun hp => hx ((hpub _).mp hp))
+          (by obtain ⟨o, ho1, ho2⟩ := ho; exact ⟨o, (hcons _).mpr ho1, ho2⟩)),
+        fun ξ hu => hR.dead ξ (fun res => by rw [hsv]; exact hu res),
+        fun a ha => (hpub a).mp (hR.retPub a ((hret a).mpr ha))⟩
 
 theorem refState_prefix_congr {π π' : P.Plan} {pc pc' : Nat}
     (h : π.prefixAnn pc = π'.prefixAnn pc') : π.refState ops η pc = π'.refState ops η pc' := by
   simp only [refState, h]
 
 /-- **Step simulation for a fused command** (iii): R at command boundaries only. -/
-theorem step_R_command {pc : Nat} {cmd : Command P} {M M' : Memory K σ} {c : P.Running}
+theorem step_R_command {pc : Nat} {cmd : Command P}
+    {M M' : Memory K π.allocation} {c : P.Running}
     (hR : π.R ops η pc M c) (hc : π.refState ops η pc = some c)
     (hcmd : π.commands[pc]? = some cmd)
     (ok : ∀ j a, cmd[j]? = some a → π.expand.AnnOK (π.offset pc + j) a)
+    (layout : ∀ n, n ≤ π.expand.commands.length → π.expand.LayoutOK n)
     (h : π.stepCommand ops pc M cmd = .ok M') :
     ∃ c', π.refState ops η (pc + 1) = some c' ∧ π.R ops η (pc + 1) M' c' ∧
       ∃ events, Execution P ops events (.running c) (.running c') := by
@@ -134,50 +155,57 @@ theorem step_R_command {pc : Nat} {cmd : Command P} {M M' : Memory K σ} {c : P.
   have hp' : π.prefixAnn (pc + 1) = π.expand.prefixAnn (π.offset pc + cmd.length) := by
     rw [π.prefixAnn_succ hcmd, expand_prefixAnn, ann_eq_append π pc, drop_flatten π hcmd,
       ← List.append_assoc, List.take_left' (by simp [offset])]
-  obtain ⟨c', hc', hR', ev, hex⟩ := execAnns_R ops π.expand cmd (π.offset pc) M M' c
-    (R_transport ops hp hR) ((refState_prefix_congr (η := η) ops hp).symm.trans hc)
+  obtain ⟨c', hc', hR', ev, hex⟩ := execAnns_R ops π.expand layout cmd (π.offset pc) M M' c
+    (R_transport ops (π := π) (π' := π.expand) rfl hp hR)
+    ((refState_prefix_congr (η := η) ops hp).symm.trans hc)
     (fun j a hj => ⟨π.expand_commands_getElem? (π.ann_getElem?_offset hcmd hj),
       ok j a hj⟩) h
   exact ⟨c', (refState_prefix_congr (η := η) ops hp').trans hc',
-    R_transport ops hp'.symm hR', ev, hex⟩
+    R_transport ops (π := π.expand) (π' := π) rfl hp'.symm hR', ev, hex⟩
 
 /-- Failure inside a fused command (d): the reference runs the earlier annotations of the
     command and then fails on `o`; the plan reports the pre-command memory. -/
-theorem step_failed_command {pc : Nat} {cmd : Command P} {M : Memory K σ} {c : P.Running}
+theorem step_failed_command {pc : Nat} {cmd : Command P}
+    {M : Memory K π.allocation} {c : P.Running}
     {o : OccRef P}
     (hR : π.R ops η pc M c) (hc : π.refState ops η pc = some c)
     (hcmd : π.commands[pc]? = some cmd)
     (ok : ∀ j a, cmd[j]? = some a → π.expand.AnnOK (π.offset pc + j) a)
+    (layout : ∀ n, n ≤ π.expand.commands.length → π.expand.LayoutOK n)
     (h : π.stepCommand ops pc M cmd = .semFail o) :
     ∃ c' events, Execution P ops events (.running c) (.failed o.1 o.2 c') := by
   have hp := π.prefixAnn_eq_expand pc
-  exact execAnns_failed ops π.expand cmd (π.offset pc) M c o
-    (R_transport ops hp hR) ((refState_prefix_congr (η := η) ops hp).symm.trans hc)
+  exact execAnns_failed ops π.expand layout cmd (π.offset pc) M c o
+    (R_transport ops (π := π) (π' := π.expand) rfl hp hR)
+    ((refState_prefix_congr (η := η) ops hp).symm.trans hc)
     (fun j a hj => ⟨π.expand_commands_getElem? (π.ann_getElem?_offset hcmd hj),
       ok j a hj⟩) h
 
 /-- **Progress for a fused command**: on a plan whose expansion is valid, a related state at
     command `pc` never gets stuck on that command. -/
-theorem stepCommand_not_stuck {pc : Nat} {cmd : Command P} {M : Memory K σ} {c : P.Running}
+theorem stepCommand_not_stuck {pc : Nat} {cmd : Command P}
+    {M : Memory K π.allocation} {c : P.Running}
     (hv : π.expand.Valid) (hR : π.R ops η pc M c) (hc : π.refState ops η pc = some c)
     (hcmd : π.commands[pc]? = some cmd) : π.stepCommand ops pc M cmd ≠ .stuck := by
   have hp := π.prefixAnn_eq_expand pc
   exact execAnns_not_stuck ops hv cmd (π.offset pc) M c
-    (R_transport ops hp hR) ((refState_prefix_congr (η := η) ops hp).symm.trans hc)
+    (R_transport ops (π := π) (π' := π.expand) rfl hp hR)
+    ((refState_prefix_congr (η := η) ops hp).symm.trans hc)
     (fun j a hj => π.expand_commands_getElem? (π.ann_getElem?_offset hcmd hj))
 
 /-! ### Run bridge (T3): a fused run and the run of its expansion agree -/
 
 /-- Two outcomes agree up to the stopping pc and the memory of a stopped run: `done` on the
     same final memory, `failed` on the same occurrence, or both `stuck`. -/
-def PlanOutcome.Agree : PlanOutcome P → PlanOutcome P → Prop
+def PlanOutcome.Agree {A : Allocation P} : PlanOutcome P A → PlanOutcome P A → Prop
   | .done _ M, .done _ M' => M = M'
   | .failed o _ _, .failed o' _ _ => o = o'
   | .stuck _ _, .stuck _ _ => True
   | _, _ => False
 
 /-- A `done` run stops at the start position plus the number of commands consumed. -/
-theorem runFrom_done_pc (π' : P.Plan) : ∀ (l : List (Command P)) (pc : Nat) (M M' : Memory K σ)
+theorem runFrom_done_pc (π' : P.Plan) :
+    ∀ (l : List (Command P)) (pc : Nat) (M M' : Memory K π'.allocation)
     (m : Nat), π'.runFrom ops pc M l = .done m M' → m = pc + l.length
   | [], pc, M, M', m, h => by
     have h' : PlanOutcome.done pc M = .done m M' := h
@@ -194,7 +222,8 @@ theorem runFrom_done_pc (π' : P.Plan) : ∀ (l : List (Command P)) (pc : Nat) (
     | stuck => rw [hs] at h; cases h
 
 /-- Running singleton commands built from `anns` is `execAnns` of `anns`, then the rest. -/
-theorem runFrom_append_anns (π' : P.Plan) : ∀ (anns : List (Ann P)) (n : Nat) (M : Memory K σ)
+theorem runFrom_append_anns (π' : P.Plan) :
+    ∀ (anns : List (Ann P)) (n : Nat) (M : Memory K π'.allocation)
     (ys : List (Command P)),
     match π'.execAnns ops n M anns with
     | .ok M' => π'.runFrom ops n M (anns.map (fun a => [a]) ++ ys) =
@@ -216,7 +245,7 @@ theorem runFrom_append_anns (π' : P.Plan) : ∀ (anns : List (Ann P)) (n : Nat)
 /-- **Run bridge.** From any command boundary `pc`, the fused run of the remaining commands and
     the run of their expansion (from the expanded position `offset pc`) agree: same final memory
     when done, same failing occurrence when failed. -/
-theorem runFrom_agree : ∀ (l : List (Command P)) (pc : Nat) (M : Memory K σ),
+theorem runFrom_agree : ∀ (l : List (Command P)) (pc : Nat) (M : Memory K π.allocation),
     π.commands.drop pc = l →
     (π.runFrom ops pc M l).Agree
       (π.expand.runFrom ops (π.offset pc) M (l.flatten.map fun a => [a]))
@@ -251,13 +280,16 @@ theorem runFrom_agree : ∀ (l : List (Command P)) (pc : Nat) (M : Memory K σ),
       exact True.intro
 
 /-- `runFrom_agree` from the start: a fused plan's run and its expansion's agree. -/
-theorem runPlan_agree (M : Memory K σ) :
+theorem runPlan_agree (M : Memory K π.allocation) :
     (π.runPlan ops M).Agree (π.expand.runPlan ops M) := by
   have h := runFrom_agree π ops π.commands 0 M List.drop_zero
   have e0 : π.offset 0 = 0 := by simp [offset, prefixAnn_zero]
   rw [e0] at h
   exact h
 
+#print axioms execAnns_R
+#print axioms execAnns_failed
+#print axioms R_transport
 #print axioms step_R_command
 #print axioms step_failed_command
 #print axioms stepCommand_not_stuck

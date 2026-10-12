@@ -1,0 +1,772 @@
+From b6f05490fd252ab19e35829343db82898354585d Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sun, 11 Oct 2026 19:33:58 -0700
+Subject: [PATCH 1/6] feat(semantics): prototype typed physical buffers and
+ static placement
+
+Approved slice-4 design: separate input slots, sort-preserving defined placement, allocation-indexed execution, and unmapped-slot retirement invariant. Syntax, Memory and Step compile; downstream proof and fixture migration remains pending.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ ...2026-10-11-buffer-reuse-aliasing-design.md | 191 ++++++++++++++++++
+ leanncd/LeanNCD/Semantics/Plan/Memory.lean    | 167 ++++++++++-----
+ leanncd/LeanNCD/Semantics/Plan/Step.lean      | 126 +++++++-----
+ leanncd/LeanNCD/Semantics/Plan/Syntax.lean    |  30 +++
+ 4 files changed, 414 insertions(+), 100 deletions(-)
+ create mode 100644 docs/superpowers/specs/2026-10-11-buffer-reuse-aliasing-design.md
+
+diff --git a/docs/superpowers/specs/2026-10-11-buffer-reuse-aliasing-design.md b/docs/superpowers/specs/2026-10-11-buffer-reuse-aliasing-design.md
+new file mode 100644
+index 00000000..87c80450
+--- /dev/null
++++ b/docs/superpowers/specs/2026-10-11-buffer-reuse-aliasing-design.md
+@@ -0,0 +1,191 @@
++# Part V buffer reuse and aliasing (slice 4): design
++
++Status: awaiting owner approval. Decisions D1-D6 were confirmed individually in the
++2026-10-11 implementation conversation.
++Base: local `main` at `4ffdc342`.
++Path: Full (physical storage, placement, validity and refinement interfaces change).
++Source brief: [buffer reuse and aliasing brief](2026-10-11-buffer-reuse-aliasing-brief.md).
++Template: [slice-3 retirement design](2026-10-11-buffer-retirement-design.md), retained
++unchanged as the record of the preceding slice.
++
++## 1. Goal
++
++Allow different logical defined addresses to occupy the same physical slot at
++different times. A retired address remains in the reference published store as
++ghost history, but its former slot may subsequently hold another accumulator or
++published value. No kernel or output decoder may use ghost history as storage.
++
++Success requires actual reuse, not merely clearing a retired slot or introducing
++buffer metadata while kernels continue using canonical tensor slots.
++
++## 2. Decisions confirmed by the owner
++
++| ID | Decision |
++|---|---|
++| D1 | Explicit finite physical buffers, each with identity, sort and capacity; static per-plan placement of defined addresses. The old one-buffer-per-tensor layout remains the canonical default. Inputs have separate storage. |
++| D2 | The layout view is injective over all simultaneously represented resources at every annotation boundary, including intermediate boundaries within fused commands. The checker decides this exactly. |
++| D3 | Replace `R.dead` by: every physical slot outside the image of the current layout view contains `none`. Retirement still immediately clears its members' slots. |
++| D4 | Dependent types enforce capacity bounds and address/buffer sort compatibility. The checker handles temporal alias safety, not malformed raw placement metadata. |
++| D5 | Kernels remain non-in-place. Accumulation reads the pre-command published view before committing writes. Snapshots and justified live-source/destination overlap are deferred. |
++| D6 | Scope is same-sort static reuse, checker/proofs, canonical compatibility, and singleton/fused/fault-wrapper regressions. Inputs remain separate and non-retirable; outputs cannot be retired or overwritten after publication. |
++
++An output accumulator may take a slot formerly occupied by a retired internal
++address. Once that output is represented, its storage cannot be taken by another
++resource. Thus output retention does not forbid reuse *into* output storage.
++
++## 3. Physical storage and placement
++
++### 3.1 Storage metadata
++
++- Separate buffer identity from logical tensor identity. A physical buffer has
++  one declared sort and a finite capacity; distinct buffer identities remain
++  distinct even when their sorts and capacities coincide.
++- Slot indices are bounded by their buffer capacity. Placement carries the
++  proof that a defined address's sort matches its buffer's sort.
++- Represent supplied-input storage separately from reusable defined storage.
++  A defined placement cannot target an input slot.
++- The storage description and placement are static plan metadata. No new
++  allocation, relocation or copy annotation is introduced.
++- Canonical metadata supplies the existing dense tensor layout and injective
++  placement. Existing fixtures keep their logical meaning and observed results.
++  Necessary API migrations must not weaken their assertions.
++
++The prototype will choose and compile the concrete Lean representation before
++an implementation plan specifies signatures. Equality transport may use proved
++sort equalities; there is no conversion between incompatible scalar carriers.
++Computable enumeration and slot equality must not require a new global
++`DecidableEq S` or a noncomputable instance in the executable checker.
++
++### 3.2 Layout view and reads
++
++- Published resources are represented exactly on `Live pc`.
++- Accumulator resources are represented on `Mat pc` and not `Pub pc`.
++- Both use the chosen placement, not the old global canonical `place`.
++- `readPub` returns memory values only for live addresses. A retired logical
++  address returns `none` even if its former slot is occupied again.
++- `Decode` follows the same physical placement and remains partial. It cannot
++  fill missing outputs with zeros or recover overwritten values from history.
++- Empty coordinate domains require no slots; scalar domains require one.
++
++## 4. Validity and the exact checker
++
++Add a named layout-safety clause requiring injectivity on the layout view's
++domain. It distinguishes published and accumulator resources, not only logical
++addresses or tensors. In particular, it rejects:
++
++- two distinct live published resources sharing a slot;
++- a live published resource sharing a slot with a materialized accumulator;
++- two distinct materialized unpublished accumulators sharing a slot.
++
++Inactive, untouched or retired resources do not reserve a slot. Reinitializing
++the same still-untouched logical accumulator remains governed by existing
++`InitOK`; it is not mistaken for overlap between distinct resources.
++
++The computable check enumerates resources from certified tensor/coordinate
++lists and checks every boundary, including the initial and final boundary.
++Fused validity/checking remains validity/checking of the expansion. Expansion
++preserves storage metadata and placement, and its check sees every intermediate
++annotation boundary, not only the outer command boundaries.
++
++Preserve the existing coverage, freshness, materialization, readiness and
++retirement clauses. Preserve exact `checkPlan_iff` and fused checker parity.
++Layout safety is a static safety condition, not a runtime alias detector:
++unchecked invalid plans may still run to `done` with corrupted values.
++
++## 5. Refinement and kernels
++
++### 5.1 Relation
++
++Retain reachability, pending/published bookkeeping, mapped-resource memory
++agreement, accumulator retention, and `retPub`.
++
++Replace address-indexed `dead` with the unmapped-slot invariant from D3. Its
++conclusion applies to unused buffer capacity as well as a slot just freed by
++retirement. After reuse it no longer requires that physical slot to be empty.
++
++Layout injectivity is an explicit premise available wherever simulation needs
++to distinguish physical slots. The unconditional canonical injectivity theorem
++remains a canonical-layout fact, not a theorem about arbitrary placements.
++
++### 5.2 Preservation obligations
++
++| Operation | Required argument |
++|---|---|
++| `Start` | Install supplied inputs in separate storage; all reusable slots start `none`. At boundary zero the mapped resources are exactly inputs. |
++| `execInit` | Newly materialized targets are distinct from surviving represented resources by post-boundary injectivity. Writes install logical zeros under `InitOK`; other unmapped slots remain `none`. |
++| `execAcc` | Read the old published view, then update already represented accumulator slots. Injectivity separates destination slots from live sources and other accumulators. Transactional semantic failure is preserved. |
++| `execPub` | Change accumulator resources into published resources without writing memory; preserve the physical image and values under the existing publication conditions. |
++| `execRet` | Pre-boundary injectivity separates retired members from surviving resources. Clear exactly the freed slots; preserve surviving memory and leave the reference state unchanged. |
++
++Carry these premises through `step_R`, run preservation, progress, terminal
++adequacy and the correctness/model theorems. Preserve the existing restriction
++that step simulation uses the deterministic reachable `refState`.
++
++Fused prefix transport requires agreement of storage/placement as well as
++logical prefixes. Fault-oracle states and outcome types carry the same physical
++memory; preserve error-state `R`, no-fault parity and transactional failure
++snapshots. Do not introduce a new concrete implementation-error source.
++
++## 6. Acceptance and regression evidence
++
++Fixture values below are requirements to measure during prototyping, not
++assertions that the new implementation has already been executed.
++
++1. Clone `rtInitAfter`, place point 2 in point 0's slot, and retain point 1 in
++   its own slot. Prove the checker accepts, the run is `done`, and `R` holds at
++   every boundary, including after the reused-slot initialization and write.
++   Observe slot transitions, old-address reads, ghost history and decode.
++2. Clone that fixture and instead place point 2 in still-live point 1's slot.
++   Prove checker rejection and record the actual unchecked run and values.
++   Do not assume rejection implies a stuck runtime.
++3. Add overlap discriminators for the three resource-pair classes in section 4,
++   with nearest legal neighbors. Include final-boundary and fused-intermediate
++   conflicts so checking fewer boundaries cannot pass unnoticed.
++4. Exercise reuse between different tensors of the same sort, ensuring the
++   new buffers are not tensor slots with only renamed metadata.
++5. Exercise heterogeneous carriers using `PlanMultiSortTest` as the donor;
++   preserve sort-indexed initialization, accumulation, reads and decoding.
++6. Include a retained nonempty output using the scalar-role donors, plus
++   empty/scalar canonical regressions. The routed chain's empty output alone
++   does not establish meaningful output-decoder coverage.
++7. Test a fused reuse plan and its expansion, no-fault wrapper parity, and a
++   fault after reuse with the error-boundary representation relation.
++8. Pin the unmapped-slot invariant before and after retirement and after later
++   writes, including unused physical capacity.
++
++Preserve all existing Plan regression assertions modulo required API migration.
++Re-measure fixture counts; do not propagate historical counts without checking.
++Mutation-test the new checker and invariant regressions, distinguishing a
++fixture's discrimination from a library proof that rejects the mutant first.
++Use repository mutation wrappers and byte-identical restoration, never
++destructive checkout/reset commands.
++
++## 7. Execution and definition of done
++
++After approval:
++
++1. Prototype on the real module split, compile, observe fixture results, and
++   verify mutations. Emit per-task patches mechanically from compiled code.
++2. Author one bounded implementation plan from those verified artifacts, with
++   explicit file/symbol windows, fixture donors and mutation counts.
++3. Execute all tasks, migrating every physical-memory consumer, expansion and
++   fault wrapper. Update only directly related documentation.
++4. Run all four inherited mutation manifests unfiltered and the new manifest.
++   If API changes invalidate a mutation target, preserve its semantic intent;
++   repair observed diagnostic locations without weakening expected failures.
++5. Run the full build and axiom audit. No new `sorry`, `admit`, `axiom` or
++   `native_decide` in the Plan files. New theorem axiom reports must contain
++   only the permitted standard axioms.
++6. Perform fresh whole-branch soundness and spec-to-Lean fidelity reviews.
++   Update the Part V "As formalized" paragraphs, proof-status rows, path
++   documentation and `Plan/AGENTS.md`, with measured counts and no stale
++   claims that reuse is still absent.
++7. Record verified results, deviations, skipped work and measured token usage.
++   Merge locally only after the full build and reviews pass. Do not push.
++
++## 8. Out of scope
++
++The Section 33.2 two-buffer scan program and its liveness proof; full-history
++copy/relocation; dynamic allocation; in-place kernels and snapshots; retiring
++inputs; cross-sort reuse; concrete implementation-error sources; and any
++connection to the separate checked `Eval/Plan` backend.
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Memory.lean b/leanncd/LeanNCD/Semantics/Plan/Memory.lean
+index 4df2c90e..e0d86992 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Memory.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Memory.lean
+@@ -2,7 +2,7 @@ import LeanNCD.Semantics.Plan.Batch
+ 
+ /- Concrete memory, the slot view, Start, Decode, the logical post-state of a
+    command prefix, and the representation relation R (spec Section 30).
+-   Slice-1 to slice-3 profile: one dense buffer per tensor, injective place map, no reuse. -/
++   Inputs have separate slots; defined addresses use the plan's typed allocation. -/
+ 
+ namespace LeanNCD.Semantics.Program.Plan
+ 
+@@ -10,23 +10,68 @@ open Executor
+ 
+ variable {K : S → Type} {σ : Declarations S} {r : Registry K}
+ 
+-/-- One buffer per tensor, indexed by the canonical layout's enumeration. -/
+-abbrev Slot (σ : Declarations S) :=
+-  (t : σ.Tensor) × Fin (canonicalLayout (σ.signature t).axes).count
+-
+-/-- Concrete memory: a slot is either uninitialised (`none`) or holds a value. -/
+-abbrev Memory (K : S → Type) (σ : Declarations S) :=
+-  (ξ : Slot σ) → Option (K (σ.signature ξ.1).sort)
+-
+-def place (a : Address σ) : Slot σ :=
+-  ⟨a.1, (canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2⟩
++/-- Input storage cannot be targeted by a defined allocation. -/
++abbrev InputSlot (P : Program K σ r) :=
++  (t : {t : σ.Tensor // P.input t = true}) ×
++    Fin (canonicalLayout (σ.signature t.val).axes).count
++
++abbrev BufferSlot {P : Program K σ r} (A : Allocation P) :=
++  (b : A.Buffer) × Fin (A.capacity b)
++
++abbrev Slot {P : Program K σ r} (A : Allocation P) := InputSlot P ⊕ BufferSlot A
++
++def slotSort {P : Program K σ r} (A : Allocation P) : Slot A → S
++  | .inl ξ => (σ.signature ξ.1.val).sort
++  | .inr ξ => A.sort ξ.1
++
++instance {P : Program K σ r} [DecidableEq σ.Tensor] (A : Allocation P) :
++    DecidableEq (Slot A) :=
++  letI := A.bufferEq
++  inferInstance
++
++/-- Physical memory includes every slot, including unused buffer capacity. -/
++abbrev Memory (K : S → Type) {r : Registry K} {P : Program K σ r} (A : Allocation P) :=
++  (ξ : Slot A) → Option (K (slotSort A ξ))
++
++def place {P : Program K σ r} (A : Allocation P) (a : Address σ) : Slot A :=
++  if h : P.input a.1 = true then
++    .inl ⟨⟨a.1, h⟩, (canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2⟩
++  else
++    .inr (A.locate ⟨⟨a.1, by cases hi : P.input a.1 <;> simp_all⟩, a.2⟩).val
++
++theorem place_sort {P : Program K σ r} (A : Allocation P) (a : Address σ) :
++    slotSort A (place A a) = (σ.signature a.1).sort := by
++  unfold place
++  split_ifs
++  · rfl
++  · exact (A.locate _).property
++
++/-- Read at the logical sort, transporting only along the certified sort equality. -/
++def readSlot {P : Program K σ r} (A : Allocation P) (M : Memory K A) (a : Address σ) :
++    Option (K (σ.signature a.1).sort) :=
++  if h : P.input a.1 = true then
++    M (.inl ⟨⟨a.1, h⟩, (canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2⟩)
++  else
++    let x : DefAddr P := ⟨⟨a.1, by cases hi : P.input a.1 <;> simp_all⟩, a.2⟩
++    cast (congrArg (fun s => Option (K s)) (A.locate x).property)
++      (M (.inr (A.locate x).val))
++
++theorem cast_option_none {s t : S} (h : s = t) :
++    cast (congrArg (fun s => Option (K s)) h) none = none := by
++  cases h
++  rfl
+ 
+-theorem place_injective : Function.Injective (place (σ := σ)) := by
++theorem place_injective {P : Program K σ r} (ts : List σ.Tensor)
++    (hn : ts.Nodup) (hc : ∀ t, t ∈ ts) :
++    Function.Injective (place (Allocation.canonical P ts hn hc)) := by
+   rintro ⟨t, p⟩ ⟨u, q⟩ h
+-  simp only [place, Sigma.mk.injEq] at h
+-  obtain ⟨rfl, h⟩ := h
+-  obtain rfl := (canonicalLayout (σ.signature t).axes).enumerate.symm.injective (eq_of_heq h)
+-  rfl
++  unfold place at h
++  split_ifs at h <;> simp only [Allocation.canonical, Subtype.coe_mk] at h
++  all_goals
++    simp only [Sum.inl.injEq, Sum.inr.injEq, Sigma.mk.injEq, Subtype.mk.injEq] at h
++    obtain ⟨rfl, h⟩ := h
++    obtain rfl := (canonicalLayout (σ.signature t).axes).enumerate.symm.injective (eq_of_heq h)
++    rfl
+ 
+ /-- The two kinds of logical resource of spec 30.2. -/
+ inductive Resource (P : Program K σ r)
+@@ -36,12 +81,13 @@ inductive Resource (P : Program K σ r)
+ variable {P : Program K σ r} [DecidableEq σ.Tensor] (π : P.Plan)
+ 
+ /-- The spec's layout view `λ`: a function of `pc` and the commands only. -/
+-def SlotView (pc : Nat) : Resource P → Option (Slot σ)
+-  | .pub a => if π.Live pc a then some (place a) else none
+-  | .acc x => if π.Mat pc x ∧ ¬ π.Pub pc x.addr then some (place x.addr) else none
++def SlotView (pc : Nat) : Resource P → Option (Slot π.allocation)
++  | .pub a => if π.Live pc a then some (place π.allocation a) else none
++  | .acc x => if π.Mat pc x ∧ ¬ π.Pub pc x.addr then some (place π.allocation x.addr) else none
+ 
+ /-- The simple profile's injectivity of `λ` on its domain. -/
+-theorem slotView_injective {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot σ}
++theorem slotView_injective (hinj : Function.Injective (place π.allocation))
++    {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot π.allocation}
+     (h₁ : π.SlotView pc r₁ = some ξ) (h₂ : π.SlotView pc r₂ = some ξ) : r₁ = r₂ := by
+   cases r₁ with
+   | pub a =>
+@@ -50,12 +96,12 @@ theorem slotView_injective {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot σ}
+       simp only [SlotView] at h₁ h₂
+       split_ifs at h₁ h₂
+       cases h₁
+-      rw [place_injective (Option.some.inj h₂)]
++      rw [hinj (Option.some.inj h₂)]
+     | acc y =>
+       simp only [SlotView] at h₁ h₂
+       split_ifs at h₁ h₂ with hp hq
+       cases h₁
+-      have e := place_injective (Option.some.inj h₂)
++      have e := hinj (Option.some.inj h₂)
+       exact absurd (e ▸ hp.1) hq.2
+   | acc x =>
+     cases r₂ with
+@@ -63,35 +109,46 @@ theorem slotView_injective {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot σ}
+       simp only [SlotView] at h₁ h₂
+       split_ifs at h₁ h₂ with hq hp
+       cases h₁
+-      have e := place_injective (Option.some.inj h₂)
++      have e := hinj (Option.some.inj h₂)
+       exact absurd (e.symm ▸ hp.1) hq.2
+     | acc y =>
+       simp only [SlotView] at h₁ h₂
+       split_ifs at h₁ h₂
+       cases h₁
+-      rw [DefAddr.addr_injective (place_injective (Option.some.inj h₂))]
++      rw [DefAddr.addr_injective (hinj (Option.some.inj h₂))]
+ 
+ /-- Concrete initialisation: validated inputs at their slots, every other slot
+     uninitialised. Zero materialisation is an explicit `initZero` command. -/
+-def Start (η : P.Input) : Memory K σ :=
+-  fun ξ => (η.val ξ.1).map (fun f => f ((canonicalLayout (σ.signature ξ.1).axes).enumerate ξ.2))
++def Start (η : P.Input) : Memory K π.allocation
++  | .inl ξ => (η.val ξ.1.val).map
++      (fun f => f ((canonicalLayout (σ.signature ξ.1.val).axes).enumerate ξ.2))
++  | .inr _ => none
+ 
+ omit [DecidableEq σ.Tensor] in
+-theorem start_noninput (η : P.Input) (t : σ.Tensor) (h : P.input t = false)
+-    (i : Fin (canonicalLayout (σ.signature t).axes).count) :
+-    Start η ⟨t, i⟩ = none := by
+-  have hv := η.property t
+-  rw [h] at hv
+-  simp only [Start, Option.map_eq_none_iff]
+-  simpa using hv
++theorem start_noninput (η : P.Input) (ξ : BufferSlot π.allocation) :
++    π.Start η (.inr ξ) = none := rfl
++
++theorem start_read (η : P.Input) (a : Address σ) :
++    readSlot π.allocation (π.Start η) a = (η.val a.1).map (fun f => f a.2) := by
++  unfold readSlot
++  split_ifs with hi
++  · simp only [Start, Equiv.apply_symm_apply]
++    rfl
++  · have hf : P.input a.1 = false := by cases h : P.input a.1 <;> simp_all
++    have hn : η.val a.1 = none := by
++      have hv := η.property a.1
++      simpa [hf] using hv
++    simp only [Start, hn, Option.map_none]
++    exact cast_option_none (π.allocation.locate ⟨⟨a.1, hf⟩, a.2⟩).property
+ 
+ /-- The read view of published resources: `M (place a)` exactly on `Live(pc)`. -/
+-def readPub (pc : Nat) (M : Memory K σ) (a : Address σ) : Option (K (σ.signature a.1).sort) :=
+-  if π.Live pc a then M (place a) else none
++def readPub (pc : Nat) (M : Memory K π.allocation) (a : Address σ) :
++    Option (K (σ.signature a.1).sort) :=
++  if π.Live pc a then readSlot π.allocation M a else none
+ 
+ /-- Partial output decoder: succeeds only when every output coordinate is in
+     `Live(pc)` and its slot is initialised. It never fills a missing value. -/
+-def Decode (pc : Nat) (M : Memory K σ) : Option P.Output :=
++def Decode (pc : Nat) (M : Memory K π.allocation) : Option P.Output :=
+   letI := P.tensors
+   letI : ∀ t, Fintype (Coord (σ.signature t).axes) := finiteCoords
+   if h : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p,
+@@ -99,7 +156,7 @@ def Decode (pc : Nat) (M : Memory K σ) : Option P.Output :=
+     some (fun t p => (π.readPub pc M ⟨t.val, p⟩).get (h t p))
+   else none
+ 
+-theorem decode_some {pc : Nat} {M : Memory K σ} {out : P.Output}
++theorem decode_some {pc : Nat} {M : Memory K π.allocation} {out : P.Output}
+     (h : π.Decode pc M = some out) (t : {t : σ.Tensor // P.output t = true})
+     (p : Coord (σ.signature t.val).axes) :
+     π.readPub pc M ⟨t.val, p⟩ = some (out t p) := by
+@@ -214,49 +271,55 @@ theorem refState_reaches {η : P.Input} {pc : Nat} {c : P.Running}
+ /-! ### The representation relation -/
+ 
+ /-- `R_Π` (spec 30.4) in the slice-1 to slice-3 profile, with the input `η` explicit. -/
+-structure R (η : P.Input) (pc : Nat) (M : Memory K σ) (c : P.Running) : Prop where
++structure R (η : P.Input) (pc : Nat) (M : Memory K π.allocation) (c : P.Running) : Prop where
+   /-- R1: the related reference state is reachable. -/
+   reach : P.Reaches ops (.running (P.initial η)) (.running c)
+   /-- R2: bookkeeping agrees with the command prefix. -/
+   pending : ∀ t o, o ∈ c.pending t ↔ ¬ π.Cons pc ⟨t, o⟩
+   published : ∀ a, (c.published a).isSome = true ↔ π.Pub pc a
+   /-- R3: every mapped resource's slot holds its logical value. -/
+-  pubSlot : ∀ a, π.SlotView pc (.pub a) = some (place a) → M (place a) = c.published a
+-  accSlot : ∀ x : DefAddr P, π.SlotView pc (.acc x) = some (place x.addr) →
+-    M (place x.addr) = some (c.accumulators x.1 x.2)
++  pubSlot : ∀ a, π.SlotView pc (.pub a) = some (place π.allocation a) →
++    readSlot π.allocation M a = c.published a
++  accSlot : ∀ x : DefAddr P,
++    π.SlotView pc (.acc x) = some (place π.allocation x.addr) →
++    readSlot π.allocation M x.addr = some (c.accumulators x.1 x.2)
+   /-- R4: an unpublished address with a consumed occurrence keeps its accumulator. -/
+   retain : ∀ x : DefAddr P, ¬ π.Pub pc x.addr →
+     (∃ o : P.Occurrence x.1, π.Cons pc ⟨x.1, o⟩ ∧ P.destination x.1 o.1 o.2 = x.2) →
+     π.Mat pc x
+-  /-- R5: a retired slot is free. -/
+-  dead : ∀ a, π.Pub pc a → ¬ π.Live pc a → M (place a) = none
++  /-- R5: every slot outside the current layout image is uninitialised. -/
++  dead : ∀ ξ, (∀ res, π.SlotView pc res ≠ some ξ) → M ξ = none
+   /-- R6: a retired address is published (so `Live` is `Pub` minus a published set). -/
+   retPub : ∀ a, π.Ret pc a → π.Pub pc a
+ 
+ /-- Lemma 31.2's initialisation obligation. -/
+-theorem R_start (η : P.Input) : π.R ops η 0 (Start η) (P.initial η) where
++theorem R_start (η : P.Input) : π.R ops η 0 (π.Start η) (P.initial η) where
+   reach := .refl _
+   pending t o := by
+     simp [Program.initial, π.not_cons_zero]
+   published a := by
+     rw [π.pub_zero, ← η.property a.1]
+     simp [Program.initial]
+-  pubSlot a _ := by
+-    simp only [Start, place, Program.initial]
+-    congr 1
+-    funext f
+-    exact congrArg f ((canonicalLayout (σ.signature a.1).axes).enumerate.apply_symm_apply a.2)
++  pubSlot a _ := by simpa [Program.initial] using π.start_read η a
+   accSlot x h := by
+     simp [SlotView, π.not_mat_zero] at h
+   retain x _ := by
+     rintro ⟨o, ho, _⟩
+     exact absurd ho (π.not_cons_zero _)
+-  dead a hp hl := absurd ⟨hp, π.ret_zero a⟩ hl
++  dead ξ hu := by
++    cases ξ with
++    | inr ξ => rfl
++    | inl ξ =>
++      exfalso
++      apply hu (.pub ⟨ξ.1.val,
++        (canonicalLayout (σ.signature ξ.1.val).axes).enumerate ξ.2⟩)
++      simp [SlotView, π.live_zero, ξ.1.property, place,
++        (canonicalLayout (σ.signature ξ.1.val).axes).enumerate.symm_apply_apply]
+   retPub a h := absurd h (π.ret_zero a)
+ 
+ /-- Under R, the read view of memory is the reference published store on `Live(pc)`
+     (a retired address keeps its ghost value in `c.published` but reads `none`). -/
+-theorem readPub_eq {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
++theorem readPub_eq {η : P.Input} {pc : Nat} {M : Memory K π.allocation} {c : P.Running}
+     (h : π.R ops η pc M c) {a : Address σ} (ha : π.Live pc a) :
+     π.readPub pc M a = c.published a := by
+   unfold readPub
+@@ -265,7 +328,7 @@ theorem readPub_eq {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
+ 
+ /-- Under R, Decode succeeds exactly when every output coordinate is in
+     `Live(pc)`, and then returns the reference published values. -/
+-theorem decode_of_R {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
++theorem decode_of_R {η : P.Input} {pc : Nat} {M : Memory K π.allocation} {c : P.Running}
+     (h : π.R ops η pc M c)
+     (outs : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, π.Live pc ⟨t.val, p⟩) :
+     ∃ out, π.Decode pc M = some out ∧
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Step.lean b/leanncd/LeanNCD/Semantics/Plan/Step.lean
+index 56594747..3774934d 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Step.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Step.lean
+@@ -24,16 +24,16 @@ def OccRef.target {P : Program K σ r} (x : OccRef P) : DefAddr P :=
+ theorem OccRef.target_addr {P : Program K σ r} (x : OccRef P) : x.target.addr = x.dest := rfl
+ 
+ /-- Outcome of one concrete command. -/
+-inductive StepResult (P : Program K σ r)
+-  | ok (M : Memory K σ)
++inductive StepResult (P : Program K σ r) (A : Allocation P)
++  | ok (M : Memory K A)
+   | semFail (o : OccRef P)
+   | stuck
+ 
+ /-- Outcome of a whole plan run; `pc` is where it stopped. -/
+-inductive PlanOutcome (P : Program K σ r)
+-  | done (pc : Nat) (M : Memory K σ)
+-  | failed (o : OccRef P) (pc : Nat) (M : Memory K σ)
+-  | stuck (pc : Nat) (M : Memory K σ)
++inductive PlanOutcome (P : Program K σ r) (A : Allocation P)
++  | done (pc : Nat) (M : Memory K A)
++  | failed (o : OccRef P) (pc : Nat) (M : Memory K A)
++  | stuck (pc : Nat) (M : Memory K A)
+ 
+ variable {P : Program K σ r} (π : P.Plan)
+ 
+@@ -70,8 +70,8 @@ theorem validateInput_error (η : InputBinding (K := K) (σ := σ)) (t : σ.Tens
+ 
+ /-- Validated concrete initialisation: reject a misbound input, else `Start`. -/
+ def startValidated (η : InputBinding (K := K) (σ := σ)) :
+-    Except σ.Tensor (P.Input × Memory K σ) :=
+-  (π.validateInput η).map (fun input => (input, Start input))
++    Except σ.Tensor (P.Input × Memory K π.allocation) :=
++  (π.validateInput η).map (fun input => (input, π.Start input))
+ 
+ variable [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
+ variable (ops : (s : S) → ScalarOps (K s))
+@@ -79,13 +79,14 @@ variable (ops : (s : S) → ScalarOps (K s))
+ /-! ### Kernels -/
+ 
+ /-- Overwrite the slot of one defined address. -/
+-def writeDef (M : Memory K σ) (x : DefAddr P) (v : K (σ.signature x.1.val).sort) :
+-    Memory K σ :=
+-  Function.update M (place x.addr) (some v)
++def writeDef (M : Memory K π.allocation) (x : DefAddr P)
++    (v : K (σ.signature x.1.val).sort) : Memory K π.allocation :=
++  Function.update M (place π.allocation x.addr)
++    (cast (congrArg (fun s => Option (K s)) (place_sort π.allocation x.addr).symm) (some v))
+ 
+ /-- `initZero S`: write the accumulator identity at each member's slot. -/
+-def execInit (S : List (DefAddr P)) (M : Memory K σ) : Memory K σ :=
+-  S.foldl (fun M x => writeDef M x 0) M
++def execInit (S : List (DefAddr P)) (M : Memory K π.allocation) : Memory K π.allocation :=
++  S.foldl (fun M x => π.writeDef M x 0) M
+ 
+ /-- A body value read from a partial store (the shape of `evalValue`). -/
+ def valueOn (p : PartialStore K σ) (x : OccRef P) : Option (K (σ.signature x.1.val).sort) :=
+@@ -97,52 +98,55 @@ def valuesOn (p : PartialStore K σ) : Values P := fun x => (valueOn ops p x).ge
+ 
+ /-- Evaluation phase: `none` when every member evaluated successfully; else the
+     first member (list order) that is not ready (`stuck`) or undefined. -/
+-def scanGroup (p : PartialStore K σ) : List (OccRef P) → Option (StepResult P)
++def scanGroup (A : Allocation P) (p : PartialStore K σ) :
++    List (OccRef P) → Option (StepResult P A)
+   | [] => none
+   | x :: G =>
+     match evalReady ops p (P.body x.1 x.2.1) x.2.2 with
+     | .notReady => some .stuck
+     | .evaluated none => some (.semFail x)
+-    | .evaluated (some _) => scanGroup p G
++    | .evaluated (some _) => scanGroup A p G
+ 
+ /-- Addition at an occurrence's sort (fixes the instance's index). -/
+ def addVal (x : OccRef P) (a b : K (σ.signature x.1.val).sort) : K (σ.signature x.1.val).sort :=
+   a + b
+ 
+ /-- Add one member's value into its destination slot, which must be initialised. -/
+-def addAt (v : Values P) (M : Memory K σ) (x : OccRef P) : Option (Memory K σ) :=
+-  match M (place x.dest) with
+-  | some a => some (Function.update M (place x.dest) (some (addVal x a (v x))))
++def addAt (v : Values P) (M : Memory K π.allocation) (x : OccRef P) :
++    Option (Memory K π.allocation) :=
++  match readSlot π.allocation M x.dest with
++  | some a => some (π.writeDef M x.target (addVal x a (v x)))
+   | none => none
+ 
+ /-- `acc G`, transactional: evaluate all members on the read view, then commit. -/
+-def execAcc (pc : Nat) (G : List (OccRef P)) (M : Memory K σ) : StepResult P :=
+-  match scanGroup ops (π.readPub pc M) G with
++def execAcc (pc : Nat) (G : List (OccRef P)) (M : Memory K π.allocation) :
++    StepResult P π.allocation :=
++  match scanGroup ops π.allocation (π.readPub pc M) G with
+   | some res => res
+   | none =>
+-    match G.foldlM (addAt (valuesOn ops (π.readPub pc M))) M with
++    match G.foldlM (π.addAt (valuesOn ops (π.readPub pc M))) M with
+     | some M' => .ok M'
+     | none => .stuck
+ 
+ /-- `pub B`: a role change. It writes nothing and requires every member's slot
+     to be initialised (the N1 materialisation requirement). -/
+-def execPub (B : List (DefAddr P)) (M : Memory K σ) : StepResult P :=
+-  if B.all (fun x => (M (place x.addr)).isSome) then .ok M else .stuck
++def execPub (B : List (DefAddr P)) (M : Memory K π.allocation) : StepResult P π.allocation :=
++  if B.all (fun x => (readSlot π.allocation M x.addr).isSome) then .ok M else .stuck
+ 
+ /-- `retire B`: clear the slot of each member (retirement frees the physical slot).
+     Total: never `stuck`, like `execInit`. -/
+-def execRet (B : List (DefAddr P)) (M : Memory K σ) : Memory K σ :=
+-  B.foldl (fun M x => Function.update M (place x.addr) none) M
++def execRet (B : List (DefAddr P)) (M : Memory K π.allocation) : Memory K π.allocation :=
++  B.foldl (fun M x => Function.update M (place π.allocation x.addr) none) M
+ 
+-def execAnn (pc : Nat) (M : Memory K σ) : Ann P → StepResult P
+-  | .initZero S => .ok (execInit S M)
++def execAnn (pc : Nat) (M : Memory K π.allocation) : Ann P → StepResult P π.allocation
++  | .initZero S => .ok (π.execInit S M)
+   | .acc G => π.execAcc ops pc G M
+-  | .pub B => execPub B M
+-  | .retire B => .ok (execRet B M)
++  | .pub B => π.execPub B M
++  | .retire B => .ok (π.execRet B M)
+ 
+ /-- Run a list of annotations from position `n` on the running memory.
+     `semFail`/`stuck` propagate; the caller reports the pre-command memory. -/
+-def execAnns (n : Nat) (M : Memory K σ) : List (Ann P) → StepResult P
++def execAnns (n : Nat) (M : Memory K π.allocation) : List (Ann P) → StepResult P π.allocation
+   | [] => .ok M
+   | a :: as =>
+     match π.execAnn ops n M a with
+@@ -153,37 +157,62 @@ def execAnns (n : Nat) (M : Memory K σ) : List (Ann P) → StepResult P
+     expanded positions `offset pc, offset pc + 1, …` of `π.expand` (spec 29.3), each on
+     the memory left by the previous one. Failure is transactional per command: the
+     callers (`runFrom`) report the pre-command memory. -/
+-def stepCommand (pc : Nat) (M : Memory K σ) (cmd : Command P) : StepResult P :=
++def stepCommand (pc : Nat) (M : Memory K π.allocation) (cmd : Command P) :
++    StepResult P π.allocation :=
+   π.expand.execAnns ops (π.offset pc) M cmd
+ 
+-/-- `execAnn` depends on the plan only through the annotation prefix at its position
+-    (it reads `readPub pc`, i.e. `Live pc`, i.e. `Pub`/`Ret` of `prefixAnn pc`). -/
+-theorem execAnn_prefix {π π' : P.Plan} {pc pc' : Nat} (h : π.prefixAnn pc = π'.prefixAnn pc')
+-    (M : Memory K σ) (a : Ann P) : π.execAnn ops pc M a = π'.execAnn ops pc' M a := by
+-  have hr : π.readPub pc = π'.readPub pc' := by
+-    funext M a
+-    have hp : π.Live pc a ↔ π'.Live pc' a := by simp [Live, Pub, Ret, pubList, retList, h]
+-    unfold readPub
+-    by_cases hπ : π.Live pc a
+-    · rw [if_pos hπ, if_pos (hp.mp hπ)]
+-    · rw [if_neg hπ, if_neg (fun h' => hπ (hp.mpr h'))]
+-  cases a <;> simp [execAnn, execAcc, hr]
++/-- Prefix transport also requires the same physical allocation. -/
++theorem execAnn_prefix {π π' : P.Plan} {pc pc' : Nat}
++    (hA : π.allocation = π'.allocation) (h : π.prefixAnn pc = π'.prefixAnn pc')
++    (M : Memory K π.allocation) (a : Ann P) :
++    cast (congrArg (StepResult P) hA) (π.execAnn ops pc M a) =
++      π'.execAnn ops pc' (cast (congrArg (Memory K) hA) M) a := by
++  cases π with
++  | mk ts hn hc cmds A =>
++    cases π' with
++    | mk ts' hn' hc' cmds' A' =>
++      dsimp at hA
++      subst A'
++      let π : P.Plan := ⟨ts, hn, hc, cmds, A⟩
++      let π' : P.Plan := ⟨ts', hn', hc', cmds', A⟩
++      change π.prefixAnn pc = π'.prefixAnn pc' at h
++      change π.execAnn ops pc M a = π'.execAnn ops pc' M a
++      have hr : π.readPub pc = π'.readPub pc' := by
++        funext M a
++        have hp : π.Live pc a ↔ π'.Live pc' a := by
++          simp only [Live, Pub, Ret, pubList, retList, h]
++        unfold readPub
++        by_cases hπ : π.Live pc a
++        · rw [if_pos hπ, if_pos (hp.mp hπ)]
++        · rw [if_neg hπ, if_neg (fun h' => hπ (hp.mpr h'))]
++      have hadd : π.addAt = π'.addAt := by
++        funext v M x
++        rfl
++      cases a <;> simp only [execAnn, execAcc, hr, hadd]
++      all_goals dsimp [π, π']
++      all_goals try rfl
++      split
++      · rfl
++      · split <;> rfl
+ 
+ /-- On a singleton command the generalised step is the slice-1 step, for ANY plan:
+     this is what keeps the slice-1 step lemmas' statements unchanged. -/
+-theorem stepCommand_single (pc : Nat) (M : Memory K σ) (a : Ann P) :
++theorem stepCommand_single (pc : Nat) (M : Memory K π.allocation) (a : Ann P) :
+     π.stepCommand ops pc M [a] = π.execAnn ops pc M a := by
+-  have h := execAnn_prefix ops (π.prefixAnn_eq_expand pc).symm M a
++  have h := execAnn_prefix ops (π := π.expand) (π' := π) rfl
++    (π.prefixAnn_eq_expand pc).symm M a
++  change π.expand.execAnn ops (π.offset pc) M a = π.execAnn ops pc M a at h
+   simp only [stepCommand, execAnns, h]
+   cases π.execAnn ops pc M a <;> rfl
+ 
+-def stepPlan (pc : Nat) (M : Memory K σ) : StepResult P :=
++def stepPlan (pc : Nat) (M : Memory K π.allocation) : StepResult P π.allocation :=
+   match π.commands[pc]? with
+   | some cmd => π.stepCommand ops pc M cmd
+   | none => .stuck
+ 
+ /-- Run the remaining commands from `pc`; structural in the command list. -/
+-def runFrom (pc : Nat) (M : Memory K σ) : List (Command P) → PlanOutcome P
++def runFrom (pc : Nat) (M : Memory K π.allocation) :
++    List (Command P) → PlanOutcome P π.allocation
+   | [] => .done pc M
+   | cmd :: rest =>
+     match π.stepCommand ops pc M cmd with
+@@ -191,7 +220,8 @@ def runFrom (pc : Nat) (M : Memory K σ) : List (Command P) → PlanOutcome P
+     | .semFail o => .failed o pc M
+     | .stuck => .stuck pc M
+ 
+-def runPlan (M : Memory K σ) : PlanOutcome P := π.runFrom ops 0 M π.commands
++def runPlan (M : Memory K π.allocation) : PlanOutcome P π.allocation :=
++  π.runFrom ops 0 M π.commands
+ 
+ #print axioms validateInput_accepts
+ #print axioms validateInput_error
+diff --git a/leanncd/LeanNCD/Semantics/Plan/Syntax.lean b/leanncd/LeanNCD/Semantics/Plan/Syntax.lean
+index b241720e..3ceb0a19 100644
+--- a/leanncd/LeanNCD/Semantics/Plan/Syntax.lean
++++ b/leanncd/LeanNCD/Semantics/Plan/Syntax.lean
+@@ -28,6 +28,33 @@ theorem DefAddr.addr_injective {P : Program K σ r} :
+   obtain rfl := eq_of_heq h
+   rfl
+ 
++/-- Finite reusable buffers and a sort-preserving, bounded placement. Buffer
++    identity is independent of logical tensor identity. -/
++structure Allocation (P : Program K σ r) where
++  Buffer : Type
++  bufferEq : DecidableEq Buffer
++  buffers : List Buffer
++  buffers_nodup : buffers.Nodup
++  buffers_complete : ∀ b, b ∈ buffers
++  sort : Buffer → S
++  capacity : Buffer → Nat
++  locate : (x : DefAddr P) →
++    {ξ : (b : Buffer) × Fin (capacity b) // sort ξ.1 = (σ.signature x.1.val).sort}
++
++/-- The old dense placement, used when a plan supplies no custom allocation. -/
++def Allocation.canonical (P : Program K σ r) (ts : List σ.Tensor)
++    (hn : ts.Nodup) (hc : ∀ t, t ∈ ts) : Allocation P where
++  Buffer := σ.Tensor
++  bufferEq := fun t u => decidable_of_iff (σ.uid t = σ.uid u)
++    ⟨fun h => σ.unique h, congrArg σ.uid⟩
++  buffers := ts
++  buffers_nodup := hn
++  buffers_complete := hc
++  sort := fun t => (σ.signature t).sort
++  capacity := fun t => (canonicalLayout (σ.signature t).axes).count
++  locate := fun x => ⟨⟨x.1.val,
++    (canonicalLayout (σ.signature x.1.val).axes).enumerate.symm x.2⟩, rfl⟩
++
+ /-- One logical annotation. `acc G` is spec `Accumulate(G)`, `pub B` is
+     `Publish(B)`, `initZero S` is the storage operation materialising zero
+     accumulators at the addresses `S`, `retire B` retires the published defined
+@@ -49,6 +76,7 @@ structure _root_.LeanNCD.Semantics.Program.Plan (P : Program K σ r) where
+   tensors_nodup : tensors.Nodup
+   tensors_complete : ∀ t, t ∈ tensors
+   commands : List (Command P)
++  allocation : Allocation P := Allocation.canonical P tensors tensors_nodup tensors_complete
+ 
+ namespace Ann
+ 
+@@ -157,6 +185,8 @@ theorem prefixAnn_zero : π.prefixAnn 0 = [] := by simp [prefixAnn]
+ /-- The expanded plan: every annotation of `π` in its own command. -/
+ def expand : P.Plan := { π with commands := π.ann.map (fun a => [a]) }
+ 
++theorem expand_allocation : π.expand.allocation = π.allocation := rfl
++
+ /-- Number of annotations in the first `pc` commands (the expanded position of command `pc`). -/
+ def offset (pc : Nat) : Nat := (π.prefixAnn pc).length
+ 
+-- 
+2.55.0
+

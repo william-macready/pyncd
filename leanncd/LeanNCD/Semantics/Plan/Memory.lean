@@ -2,7 +2,7 @@ import LeanNCD.Semantics.Plan.Batch
 
 /- Concrete memory, the slot view, Start, Decode, the logical post-state of a
    command prefix, and the representation relation R (spec Section 30).
-   Slice-1 to slice-3 profile: one dense buffer per tensor, injective place map, no reuse. -/
+   Inputs have separate slots; defined addresses use the plan's typed allocation. -/
 
 namespace LeanNCD.Semantics.Program.Plan
 
@@ -10,23 +10,103 @@ open Executor
 
 variable {K : S → Type} {σ : Declarations S} {r : Registry K}
 
-/-- One buffer per tensor, indexed by the canonical layout's enumeration. -/
-abbrev Slot (σ : Declarations S) :=
-  (t : σ.Tensor) × Fin (canonicalLayout (σ.signature t).axes).count
+/-- Input storage cannot be targeted by a defined allocation. -/
+abbrev InputSlot (P : Program K σ r) :=
+  (t : {t : σ.Tensor // P.input t = true}) ×
+    Fin (canonicalLayout (σ.signature t.val).axes).count
 
-/-- Concrete memory: a slot is either uninitialised (`none`) or holds a value. -/
-abbrev Memory (K : S → Type) (σ : Declarations S) :=
-  (ξ : Slot σ) → Option (K (σ.signature ξ.1).sort)
+abbrev BufferSlot {P : Program K σ r} (A : Allocation P) :=
+  (b : A.Buffer) × Fin (A.capacity b)
 
-def place (a : Address σ) : Slot σ :=
-  ⟨a.1, (canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2⟩
+abbrev Slot {P : Program K σ r} (A : Allocation P) := InputSlot P ⊕ BufferSlot A
 
-theorem place_injective : Function.Injective (place (σ := σ)) := by
-  rintro ⟨t, p⟩ ⟨u, q⟩ h
-  simp only [place, Sigma.mk.injEq] at h
-  obtain ⟨rfl, h⟩ := h
-  obtain rfl := (canonicalLayout (σ.signature t).axes).enumerate.symm.injective (eq_of_heq h)
+def slotSort {P : Program K σ r} (A : Allocation P) : Slot A → S
+  | .inl ξ => (σ.signature ξ.1.val).sort
+  | .inr ξ => A.sort ξ.1
+
+instance {P : Program K σ r} [DecidableEq σ.Tensor] (A : Allocation P) :
+    DecidableEq (Slot A) :=
+  letI := A.bufferEq
+  inferInstance
+
+/-- Physical memory includes every slot, including unused buffer capacity. -/
+abbrev Memory (K : S → Type) {r : Registry K} {P : Program K σ r} (A : Allocation P) :=
+  (ξ : Slot A) → Option (K (slotSort A ξ))
+
+def place {P : Program K σ r} (A : Allocation P) (a : Address σ) : Slot A :=
+  if h : P.input a.1 = true then
+    .inl ⟨⟨a.1, h⟩, (canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2⟩
+  else
+    .inr (A.locate ⟨⟨a.1, by cases hi : P.input a.1 <;> simp_all⟩, a.2⟩).val
+
+theorem place_sort {P : Program K σ r} (A : Allocation P) (a : Address σ) :
+    slotSort A (place A a) = (σ.signature a.1).sort := by
+  unfold place
+  split_ifs
+  · rfl
+  · exact (A.locate _).property
+
+/-- Read at the logical sort, transporting only along the certified sort equality. -/
+def readSlot {P : Program K σ r} (A : Allocation P) (M : Memory K A) (a : Address σ) :
+    Option (K (σ.signature a.1).sort) :=
+  if h : P.input a.1 = true then
+    M (.inl ⟨⟨a.1, h⟩, (canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2⟩)
+  else
+    let x : DefAddr P := ⟨⟨a.1, by cases hi : P.input a.1 <;> simp_all⟩, a.2⟩
+    cast (congrArg (fun s => Option (K s)) (A.locate x).property)
+      (M (.inr (A.locate x).val))
+
+theorem cast_option_none {s t : S} (h : s = t) :
+    cast (congrArg (fun s => Option (K s)) h) none = none := by
+  cases h
   rfl
+
+theorem readSlot_eq_cast {P : Program K σ r} (A : Allocation P)
+    (M : Memory K A) (a : Address σ) :
+    readSlot A M a =
+      cast (congrArg (fun s => Option (K s)) (place_sort A a)) (M (place A a)) := by
+  apply eq_of_heq
+  have hr : HEq (readSlot A M a) (M (place A a)) := by
+    by_cases h : P.input a.1 = true
+    · have e : place A a = .inl ⟨⟨a.1, h⟩,
+          (canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2⟩ := by
+        simp only [place, dif_pos h]
+      have hm : HEq (M (place A a)) (M (.inl ⟨⟨a.1, h⟩,
+          (canonicalLayout (σ.signature a.1).axes).enumerate.symm a.2⟩)) := by rw [e]
+      simp only [readSlot, dif_pos h]
+      exact hm.symm
+    · let x : DefAddr P := ⟨⟨a.1, by cases hi : P.input a.1 <;> simp_all⟩, a.2⟩
+      have e : place A a = .inr (A.locate x).val := by
+        simp only [place, dif_neg h]
+        rfl
+      have hm : HEq (M (place A a)) (M (.inr (A.locate x).val)) := by rw [e]
+      simp only [readSlot, dif_neg h]
+      exact (cast_heq _ _).trans hm.symm
+  exact hr.trans (cast_heq _ _).symm
+
+theorem readSlot_heq {P : Program K σ r} (A : Allocation P)
+    (M : Memory K A) {a b : Address σ} (h : place A a = place A b) :
+    HEq (readSlot A M a) (readSlot A M b) := by
+  rw [readSlot_eq_cast, readSlot_eq_cast]
+  have hm : HEq (M (place A a)) (M (place A b)) := by rw [h]
+  exact (cast_heq _ _).trans (hm.trans (cast_heq _ _).symm)
+
+theorem readSlot_congr {P : Program K σ r} (A : Allocation P)
+    {M N : Memory K A} {a : Address σ} (h : M (place A a) = N (place A a)) :
+    readSlot A M a = readSlot A N a := by
+  simp only [readSlot_eq_cast, h]
+
+theorem place_injective {P : Program K σ r} (ts : List σ.Tensor)
+    (hn : ts.Nodup) (hc : ∀ t, t ∈ ts) :
+    Function.Injective (place (Allocation.canonical P ts hn hc)) := by
+  rintro ⟨t, p⟩ ⟨u, q⟩ h
+  unfold place at h
+  split_ifs at h <;> simp only [Allocation.canonical, Subtype.coe_mk] at h
+  all_goals
+    simp only [Sum.inl.injEq, Sum.inr.injEq, Sigma.mk.injEq, Subtype.mk.injEq] at h
+    obtain ⟨rfl, h⟩ := h
+    obtain rfl := (canonicalLayout (σ.signature t).axes).enumerate.symm.injective (eq_of_heq h)
+    rfl
 
 /-- The two kinds of logical resource of spec 30.2. -/
 inductive Resource (P : Program K σ r)
@@ -36,12 +116,24 @@ inductive Resource (P : Program K σ r)
 variable {P : Program K σ r} [DecidableEq σ.Tensor] (π : P.Plan)
 
 /-- The spec's layout view `λ`: a function of `pc` and the commands only. -/
-def SlotView (pc : Nat) : Resource P → Option (Slot σ)
-  | .pub a => if π.Live pc a then some (place a) else none
-  | .acc x => if π.Mat pc x ∧ ¬ π.Pub pc x.addr then some (place x.addr) else none
+def SlotView (pc : Nat) : Resource P → Option (Slot π.allocation)
+  | .pub a => if π.Live pc a then some (place π.allocation a) else none
+  | .acc x => if π.Mat pc x ∧ ¬ π.Pub pc x.addr then some (place π.allocation x.addr) else none
+
+/-- Simultaneously represented resources occupy distinct physical slots. -/
+def LayoutOK (pc : Nat) : Prop :=
+  ∀ r₁ r₂ ξ, π.SlotView pc r₁ = some ξ → π.SlotView pc r₂ = some ξ → r₁ = r₂
+
+theorem LayoutOK.ne {π : P.Plan} {pc : Nat} (ok : π.LayoutOK pc)
+    {r₁ r₂ : Resource P} {ξ₁ ξ₂ : Slot π.allocation}
+    (h₁ : π.SlotView pc r₁ = some ξ₁) (h₂ : π.SlotView pc r₂ = some ξ₂)
+    (hne : r₁ ≠ r₂) : ξ₁ ≠ ξ₂ := by
+  intro e
+  exact hne (ok r₁ r₂ ξ₂ (e ▸ h₁) h₂)
 
 /-- The simple profile's injectivity of `λ` on its domain. -/
-theorem slotView_injective {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot σ}
+theorem slotView_injective (hinj : Function.Injective (place π.allocation))
+    {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot π.allocation}
     (h₁ : π.SlotView pc r₁ = some ξ) (h₂ : π.SlotView pc r₂ = some ξ) : r₁ = r₂ := by
   cases r₁ with
   | pub a =>
@@ -50,12 +142,12 @@ theorem slotView_injective {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot σ}
       simp only [SlotView] at h₁ h₂
       split_ifs at h₁ h₂
       cases h₁
-      rw [place_injective (Option.some.inj h₂)]
+      rw [hinj (Option.some.inj h₂)]
     | acc y =>
       simp only [SlotView] at h₁ h₂
       split_ifs at h₁ h₂ with hp hq
       cases h₁
-      have e := place_injective (Option.some.inj h₂)
+      have e := hinj (Option.some.inj h₂)
       exact absurd (e ▸ hp.1) hq.2
   | acc x =>
     cases r₂ with
@@ -63,35 +155,51 @@ theorem slotView_injective {pc : Nat} {r₁ r₂ : Resource P} {ξ : Slot σ}
       simp only [SlotView] at h₁ h₂
       split_ifs at h₁ h₂ with hq hp
       cases h₁
-      have e := place_injective (Option.some.inj h₂)
+      have e := hinj (Option.some.inj h₂)
       exact absurd (e.symm ▸ hp.1) hq.2
     | acc y =>
       simp only [SlotView] at h₁ h₂
       split_ifs at h₁ h₂
       cases h₁
-      rw [DefAddr.addr_injective (place_injective (Option.some.inj h₂))]
+      rw [DefAddr.addr_injective (hinj (Option.some.inj h₂))]
+
+theorem layoutOK_of_place_injective (hinj : Function.Injective (place π.allocation))
+    (pc : Nat) : π.LayoutOK pc := by
+  intro r₁ r₂ ξ h₁ h₂
+  exact π.slotView_injective hinj h₁ h₂
 
 /-- Concrete initialisation: validated inputs at their slots, every other slot
     uninitialised. Zero materialisation is an explicit `initZero` command. -/
-def Start (η : P.Input) : Memory K σ :=
-  fun ξ => (η.val ξ.1).map (fun f => f ((canonicalLayout (σ.signature ξ.1).axes).enumerate ξ.2))
+def Start (η : P.Input) : Memory K π.allocation
+  | .inl ξ => (η.val ξ.1.val).map
+      (fun f => f ((canonicalLayout (σ.signature ξ.1.val).axes).enumerate ξ.2))
+  | .inr _ => none
 
 omit [DecidableEq σ.Tensor] in
-theorem start_noninput (η : P.Input) (t : σ.Tensor) (h : P.input t = false)
-    (i : Fin (canonicalLayout (σ.signature t).axes).count) :
-    Start η ⟨t, i⟩ = none := by
-  have hv := η.property t
-  rw [h] at hv
-  simp only [Start, Option.map_eq_none_iff]
-  simpa using hv
+theorem start_noninput (η : P.Input) (ξ : BufferSlot π.allocation) :
+    π.Start η (.inr ξ) = none := rfl
+
+theorem start_read (η : P.Input) (a : Address σ) :
+    readSlot π.allocation (π.Start η) a = (η.val a.1).map (fun f => f a.2) := by
+  unfold readSlot
+  split_ifs with hi
+  · simp only [Start, Equiv.apply_symm_apply]
+    rfl
+  · have hf : P.input a.1 = false := by cases h : P.input a.1 <;> simp_all
+    have hn : η.val a.1 = none := by
+      have hv := η.property a.1
+      simpa [hf] using hv
+    simp only [Start, hn, Option.map_none]
+    exact cast_option_none (π.allocation.locate ⟨⟨a.1, hf⟩, a.2⟩).property
 
 /-- The read view of published resources: `M (place a)` exactly on `Live(pc)`. -/
-def readPub (pc : Nat) (M : Memory K σ) (a : Address σ) : Option (K (σ.signature a.1).sort) :=
-  if π.Live pc a then M (place a) else none
+def readPub (pc : Nat) (M : Memory K π.allocation) (a : Address σ) :
+    Option (K (σ.signature a.1).sort) :=
+  if π.Live pc a then readSlot π.allocation M a else none
 
 /-- Partial output decoder: succeeds only when every output coordinate is in
     `Live(pc)` and its slot is initialised. It never fills a missing value. -/
-def Decode (pc : Nat) (M : Memory K σ) : Option P.Output :=
+def Decode (pc : Nat) (M : Memory K π.allocation) : Option P.Output :=
   letI := P.tensors
   letI : ∀ t, Fintype (Coord (σ.signature t).axes) := finiteCoords
   if h : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p,
@@ -99,7 +207,7 @@ def Decode (pc : Nat) (M : Memory K σ) : Option P.Output :=
     some (fun t p => (π.readPub pc M ⟨t.val, p⟩).get (h t p))
   else none
 
-theorem decode_some {pc : Nat} {M : Memory K σ} {out : P.Output}
+theorem decode_some {pc : Nat} {M : Memory K π.allocation} {out : P.Output}
     (h : π.Decode pc M = some out) (t : {t : σ.Tensor // P.output t = true})
     (p : Coord (σ.signature t.val).axes) :
     π.readPub pc M ⟨t.val, p⟩ = some (out t p) := by
@@ -214,49 +322,55 @@ theorem refState_reaches {η : P.Input} {pc : Nat} {c : P.Running}
 /-! ### The representation relation -/
 
 /-- `R_Π` (spec 30.4) in the slice-1 to slice-3 profile, with the input `η` explicit. -/
-structure R (η : P.Input) (pc : Nat) (M : Memory K σ) (c : P.Running) : Prop where
+structure R (η : P.Input) (pc : Nat) (M : Memory K π.allocation) (c : P.Running) : Prop where
   /-- R1: the related reference state is reachable. -/
   reach : P.Reaches ops (.running (P.initial η)) (.running c)
   /-- R2: bookkeeping agrees with the command prefix. -/
   pending : ∀ t o, o ∈ c.pending t ↔ ¬ π.Cons pc ⟨t, o⟩
   published : ∀ a, (c.published a).isSome = true ↔ π.Pub pc a
   /-- R3: every mapped resource's slot holds its logical value. -/
-  pubSlot : ∀ a, π.SlotView pc (.pub a) = some (place a) → M (place a) = c.published a
-  accSlot : ∀ x : DefAddr P, π.SlotView pc (.acc x) = some (place x.addr) →
-    M (place x.addr) = some (c.accumulators x.1 x.2)
+  pubSlot : ∀ a, π.SlotView pc (.pub a) = some (place π.allocation a) →
+    readSlot π.allocation M a = c.published a
+  accSlot : ∀ x : DefAddr P,
+    π.SlotView pc (.acc x) = some (place π.allocation x.addr) →
+    readSlot π.allocation M x.addr = some (c.accumulators x.1 x.2)
   /-- R4: an unpublished address with a consumed occurrence keeps its accumulator. -/
   retain : ∀ x : DefAddr P, ¬ π.Pub pc x.addr →
     (∃ o : P.Occurrence x.1, π.Cons pc ⟨x.1, o⟩ ∧ P.destination x.1 o.1 o.2 = x.2) →
     π.Mat pc x
-  /-- R5: a retired slot is free. -/
-  dead : ∀ a, π.Pub pc a → ¬ π.Live pc a → M (place a) = none
+  /-- R5: every slot outside the current layout image is uninitialised. -/
+  dead : ∀ ξ, (∀ res, π.SlotView pc res ≠ some ξ) → M ξ = none
   /-- R6: a retired address is published (so `Live` is `Pub` minus a published set). -/
   retPub : ∀ a, π.Ret pc a → π.Pub pc a
 
 /-- Lemma 31.2's initialisation obligation. -/
-theorem R_start (η : P.Input) : π.R ops η 0 (Start η) (P.initial η) where
+theorem R_start (η : P.Input) : π.R ops η 0 (π.Start η) (P.initial η) where
   reach := .refl _
   pending t o := by
     simp [Program.initial, π.not_cons_zero]
   published a := by
     rw [π.pub_zero, ← η.property a.1]
     simp [Program.initial]
-  pubSlot a _ := by
-    simp only [Start, place, Program.initial]
-    congr 1
-    funext f
-    exact congrArg f ((canonicalLayout (σ.signature a.1).axes).enumerate.apply_symm_apply a.2)
+  pubSlot a _ := by simpa [Program.initial] using π.start_read η a
   accSlot x h := by
     simp [SlotView, π.not_mat_zero] at h
   retain x _ := by
     rintro ⟨o, ho, _⟩
     exact absurd ho (π.not_cons_zero _)
-  dead a hp hl := absurd ⟨hp, π.ret_zero a⟩ hl
+  dead ξ hu := by
+    cases ξ with
+    | inr ξ => rfl
+    | inl ξ =>
+      exfalso
+      apply hu (.pub ⟨ξ.1.val,
+        (canonicalLayout (σ.signature ξ.1.val).axes).enumerate ξ.2⟩)
+      simp [SlotView, π.live_zero, ξ.1.property, place,
+        (canonicalLayout (σ.signature ξ.1.val).axes).enumerate.symm_apply_apply]
   retPub a h := absurd h (π.ret_zero a)
 
 /-- Under R, the read view of memory is the reference published store on `Live(pc)`
     (a retired address keeps its ghost value in `c.published` but reads `none`). -/
-theorem readPub_eq {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
+theorem readPub_eq {η : P.Input} {pc : Nat} {M : Memory K π.allocation} {c : P.Running}
     (h : π.R ops η pc M c) {a : Address σ} (ha : π.Live pc a) :
     π.readPub pc M a = c.published a := by
   unfold readPub
@@ -265,7 +379,7 @@ theorem readPub_eq {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
 
 /-- Under R, Decode succeeds exactly when every output coordinate is in
     `Live(pc)`, and then returns the reference published values. -/
-theorem decode_of_R {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
+theorem decode_of_R {η : P.Input} {pc : Nat} {M : Memory K π.allocation} {c : P.Running}
     (h : π.R ops η pc M c)
     (outs : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p, π.Live pc ⟨t.val, p⟩) :
     ∃ out, π.Decode pc M = some out ∧
@@ -285,6 +399,11 @@ theorem decode_of_R {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
     exact (Option.some_get _).symm
 
 #print axioms place_injective
+#print axioms readSlot_eq_cast
+#print axioms readSlot_heq
+#print axioms readSlot_congr
+#print axioms LayoutOK.ne
+#print axioms layoutOK_of_place_injective
 #print axioms slotView_injective
 #print axioms start_noninput
 #print axioms decode_some

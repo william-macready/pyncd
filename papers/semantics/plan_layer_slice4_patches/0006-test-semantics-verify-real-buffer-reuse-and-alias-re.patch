@@ -1,0 +1,648 @@
+From deb4fecdd4eee6b8b8125e40ab2721bfa4ed0dcf Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Mon, 12 Oct 2026 06:29:29 -0700
+Subject: [PATCH 6/6] test(semantics): verify real buffer reuse and alias
+ rejection
+
+Accept retired-slot reuse with R at every boundary; reject live/accumulator overlaps and final/fused intermediate conflicts. Observe unchecked corruption and stuck outcomes, cross-tensor retained output decoding, heterogeneous carriers, unused capacity, and post-write fault snapshots. All three new acceptance modules compile.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ leanncd/lakefile.toml                         |   5 +-
+ .../test/Semantics/PlanReuseStorageTest.lean  | 255 ++++++++++++++++++
+ leanncd/test/Semantics/PlanReuseTest.lean     | 198 ++++++++++++++
+ .../test/Semantics/PlanReuseWrapperTest.lean  | 139 ++++++++++
+ 4 files changed, 596 insertions(+), 1 deletion(-)
+ create mode 100644 leanncd/test/Semantics/PlanReuseStorageTest.lean
+ create mode 100644 leanncd/test/Semantics/PlanReuseTest.lean
+ create mode 100644 leanncd/test/Semantics/PlanReuseWrapperTest.lean
+
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index 80f54b3f..5ee154a8 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -86,7 +86,10 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Semantics.PlanStepTest", "Semantics.PlanSimulationTest",
+          "Semantics.PlanValidityTest", "Semantics.PlanRunTest", "Semantics.PlanCorrectnessTest",
+          "Semantics.PlanFusionTest", "Semantics.PlanFusionCorrectnessTest",
+-         "Semantics.PlanFusionCheckerTest", "Semantics.PlanMultiSortTest", "Semantics.PlanFaultsTest", "Semantics.PlanRetireTest", "Semantics.SourceBindingUIDTest", "Semantics.SourceBindingRenameTest",
++         "Semantics.PlanFusionCheckerTest", "Semantics.PlanMultiSortTest", "Semantics.PlanFaultsTest", "Semantics.PlanRetireTest",
++         "Semantics.PlanReuseTest", "Semantics.PlanReuseStorageTest",
++         "Semantics.PlanReuseWrapperTest",
++         "Semantics.SourceBindingUIDTest", "Semantics.SourceBindingRenameTest",
+          "Semantics.SourceBindingBoundaryTest", "Semantics.SourceBindingTest",
+          "Semantics.SourceAdmissionFixtures", "Semantics.SourceAdmissionDomainsTest",
+          "Semantics.SourceAdmissionSupportTest", "Semantics.SourceAdmissionDeclarationsTest",
+diff --git a/leanncd/test/Semantics/PlanReuseStorageTest.lean b/leanncd/test/Semantics/PlanReuseStorageTest.lean
+new file mode 100644
+index 00000000..fbbd7b57
+--- /dev/null
++++ b/leanncd/test/Semantics/PlanReuseStorageTest.lean
+@@ -0,0 +1,255 @@
++import Semantics.PlanRetireTest
++import Semantics.PlanMultiSortTest
++
++namespace LeanNCD.Semantics.PlanReuseStorage
++
++open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
++open PlanFixtures
++
++/- Tensor 2 and output tensor 1 have different logical identities, but share
++   index 0 of a single independent buffer. Index 1 is deliberately unused. -/
++inductive ReuseBuffer
++  | workspace
++  deriving DecidableEq
++
++def reuseAllocation : Allocation (scalarRole false) where
++  Buffer := ReuseBuffer
++  bufferEq := inferInstance
++  buffers := [.workspace]
++  buffers_nodup := by simp
++  buffers_complete := by intro b; cases b; simp
++  sort := fun _ => ()
++  capacity := fun _ => 2
++  locate := fun _ => ⟨⟨.workspace, 0⟩, rfl⟩
++
++def reuse : (scalarRole false).Plan :=
++  { scalarPlan false
++      [[.initZero [sAddr false 2 rfl]], [.acc [sOcc false 2 rfl]],
++       [.pub [sAddr false 2 rfl]], [.retire [sAddr false 2 rfl]],
++       [.initZero [sAddr false 1 rfl]], [.acc [sOcc false 1 rfl]],
++       [.pub [sAddr false 1 rfl]]] with
++    allocation := reuseAllocation }
++
++def reuseRun := reuse.runPlan ops (reuse.Start (scalarInput false))
++
++def reusePrefix (pc : Nat) :=
++  reuse.runFrom ops 0 (reuse.Start (scalarInput false)) (reuse.commands.take pc)
++
++def reuseMemory (pc : Nat) := finalMemory (reusePrefix pc)
++
++def reusePhysical (pc : Nat) : List (Option ℚ) :=
++  [reuseMemory pc (.inr ⟨.workspace, ⟨0, by decide⟩⟩),
++   reuseMemory pc (.inr ⟨.workspace, ⟨1, by decide⟩⟩)]
++
++def reuseLogical (pc : Nat) : List (Option ℚ) :=
++  [reuse.readPub pc (reuseMemory pc) ⟨0, ()⟩,
++   reuse.readPub pc (reuseMemory pc) ⟨1, ()⟩,
++   reuse.readPub pc (reuseMemory pc) ⟨2, ()⟩]
++
++def reuseGhost (pc : Nat) : Option ℚ :=
++  (reuse.refState ops (scalarInput false) pc).bind fun c => c.published ⟨2, ()⟩
++
++def reuseKind : String × Nat :=
++  match reuseRun with
++  | .done pc _ => ("done", pc)
++  | .failed _ pc _ => ("failed", pc)
++  | .stuck pc _ => ("stuck", pc)
++
++example : (sAddr false 1 rfl).addr ≠ (sAddr false 2 rfl).addr := by decide
++example : place reuse.allocation ⟨1, ()⟩ = place reuse.allocation ⟨2, ()⟩ := rfl
++example : place reuse.allocation ⟨0, ()⟩ = .inl ⟨⟨0, rfl⟩, ⟨0, by decide⟩⟩ := rfl
++example : place reuse.allocation ⟨1, ()⟩ =
++    .inr ⟨.workspace, ⟨0, by decide⟩⟩ := rfl
++
++-- Keeping the internal publication alive prevents even the output initializer.
++def retainedInternal : (scalarRole false).Plan :=
++  { reuse with commands :=
++      [[.initZero [sAddr false 2 rfl]], [.acc [sOcc false 2 rfl]],
++       [.pub [sAddr false 2 rfl]], [.initZero [sAddr false 1 rfl]],
++       [.acc [sOcc false 1 rfl]], [.pub [sAddr false 1 rfl]],
++       [.retire [sAddr false 2 rfl]]] }
++
++-- After publication, output storage cannot be cleared or claimed again.
++def retireOutput : (scalarRole false).Plan :=
++  { reuse with commands := reuse.commands ++ [[.retire [sAddr false 1 rfl]]] }
++
++def overwriteOutput : (scalarRole false).Plan :=
++  { reuse with commands := reuse.commands ++ [[.initZero [sAddr false 2 rfl]]] }
++
++set_option maxHeartbeats 1000000 in
++theorem reuse_layout : ∀ pc, pc ≤ 7 → reuse.LayoutOK pc := by
++  intro pc hpc
++  interval_cases pc <;>
++    rintro (⟨t, ⟨⟩⟩ | ⟨⟨t, ht⟩, ⟨⟩⟩)
++      (⟨u, ⟨⟩⟩ | ⟨⟨u, hu⟩, ⟨⟩⟩) ξ h₁ h₂ <;>
++    fin_cases t <;> fin_cases u <;>
++    simp [SlotView, Live, Pub, Ret, Mat, pubList, retList, matList, prefixAnn,
++      Ann.blocks, Ann.rets, Ann.inits, DefAddr.addr, reuse, scalarPlan,
++      sAddr, scalarRole, place, reuseAllocation] at h₁ h₂ <;>
++    simp_all [scalarRole] <;> cases h₁ <;> cases h₂
++
++theorem reuse_valid : reuse.Valid := reuse.checkPlan_sound (by
++  have hb : (reuse.checkSingleton && reuse.checkCov1Nodup && reuse.checkCov1Complete &&
++      reuse.checkCov2Nodup && reuse.checkCov2Complete && reuse.checkSteps) = true := by decide
++  rw [checkPlan, hb, Bool.true_and]
++  exact reuse.checkLayouts_iff.mpr reuse_layout)
++
++theorem reuse_done :
++    reuseRun = .done 7 (finalMemory reuseRun) := by rfl
++
++theorem reuse_R :
++    ∃ c, reuse.refState ops (scalarInput false) 7 = some c ∧
++      reuse.R ops (scalarInput false) 7 (finalMemory reuseRun) c := by
++  rcases reuse.runPlan_R ops reuse_valid (scalarInput false) with
++    ⟨M, c, hrun, hc, hR, _⟩ | ⟨o, pc, M, c, events, hrun, _⟩
++  · have h : PlanOutcome.done 7 (finalMemory reuseRun) = .done 7 M :=
++      reuse_done.symm.trans hrun
++    cases h
++    exact ⟨c, hc, hR⟩
++  · have h := reuse_done.symm.trans hrun
++    cases h
++
++#eval check "storage-cross-tensor-decode"
++  (reuse.checkPlan, reuseKind, sDecodeOf reuse, sDecodeOf (sPlan false), sDecodeOf rtScalar)
++  (true, ("done", 7), some 2, some 2, some 2)
++#eval check "storage-cross-tensor-all-boundaries"
++  ((List.range 8).map fun pc => (pc, reusePhysical pc, reuseLogical pc, reuseGhost pc))
++  [(0, [none, none], [some 7, none, none], none),
++   (1, [some 0, none], [some 7, none, none], none),
++   (2, [some 3, none], [some 7, none, none], none),
++   (3, [some 3, none], [some 7, none, some 3], some 3),
++   (4, [none, none], [some 7, none, none], some 3),
++   (5, [some 0, none], [some 7, none, none], some 3),
++   (6, [some 2, none], [some 7, none, none], some 3),
++   (7, [some 2, none], [some 7, some 2, none], some 3)]
++#eval check "storage-retention-rejections"
++  (retainedInternal.checkPlan, retainedInternal.checkLayouts,
++    retireOutput.checkPlan, overwriteOutput.checkPlan)
++  (false, false, false, false)
++
++/- Physical buffer names do not come from the tensors, and scalar coordinates
++   need not occupy index 0. Sort compatibility is certified by `locate`. -/
++inductive TypedBuffer
++  | integerBank
++  | rationalBank
++  deriving DecidableEq
++
++def typedAllocation : Allocation PlanMultiSort.prog where
++  Buffer := TypedBuffer
++  bufferEq := inferInstance
++  buffers := [.rationalBank, .integerBank]
++  buffers_nodup := by decide
++  buffers_complete := by intro b; cases b <;> simp
++  sort := fun b => match b with
++    | .integerBank => false
++    | .rationalBank => true
++  capacity := fun b => match b with
++    | .integerBank => 3
++    | .rationalBank => 2
++  locate := fun x => match x.1.val with
++    | 0 => ⟨⟨.integerBank, 1⟩, rfl⟩
++    | 1 => ⟨⟨.rationalBank, 0⟩, rfl⟩
++
++def typed : PlanMultiSort.prog.Plan :=
++  { PlanMultiSort.pl with allocation := typedAllocation }
++
++def typedRun := typed.runPlan PlanMultiSort.msOps (typed.Start PlanMultiSort.η)
++
++def typedMemory (pc : Nat) :=
++  finalMemory (typed.runFrom PlanMultiSort.msOps 0 (typed.Start PlanMultiSort.η)
++    (typed.commands.take pc))
++
++def typedPhysical (pc : Nat) : List (Option ℤ) × List (Option ℚ) :=
++  ([typedMemory pc (.inr ⟨.integerBank, ⟨0, by decide⟩⟩),
++    typedMemory pc (.inr ⟨.integerBank, ⟨1, by decide⟩⟩),
++    typedMemory pc (.inr ⟨.integerBank, ⟨2, by decide⟩⟩)],
++   [typedMemory pc (.inr ⟨.rationalBank, ⟨0, by decide⟩⟩),
++    typedMemory pc (.inr ⟨.rationalBank, ⟨1, by decide⟩⟩)])
++
++def typedRow : String × Nat × Option ℤ × Option ℚ :=
++  match typedRun with
++  | .done pc M => ("done", pc, typed.readPub pc M ⟨0, ()⟩, typed.readPub pc M ⟨1, ()⟩)
++  | .failed _ pc _ => ("failed", pc, none, none)
++  | .stuck pc _ => ("stuck", pc, none, none)
++
++def typedDecode : Option (ℤ × ℚ) :=
++  match typedRun with
++  | .done pc M => (typed.Decode pc M).map fun out => (out ⟨0, rfl⟩ (), out ⟨1, rfl⟩ ())
++  | _ => none
++
++example : place typed.allocation ⟨0, ()⟩ =
++    .inr ⟨.integerBank, ⟨1, by decide⟩⟩ := rfl
++example : place typed.allocation ⟨1, ()⟩ =
++    .inr ⟨.rationalBank, ⟨0, by decide⟩⟩ := rfl
++
++theorem typed_valid : typed.Valid := typed.checkPlan_sound (by
++  have hinj : Function.Injective (place typed.allocation) := by
++    rintro ⟨t, p⟩ ⟨u, q⟩ h
++    fin_cases t <;> fin_cases u <;> cases p <;> cases q <;>
++      simp_all [place, typed, typedAllocation, PlanMultiSort.prog,
++        PlanMultiSort.msDeclarations]
++  have hl : typed.checkLayouts = true := typed.checkLayouts_iff.mpr
++    (fun pc _ => typed.layoutOK_of_place_injective hinj pc)
++  rw [checkPlan, hl, Bool.and_true]
++  decide)
++
++theorem typed_done :
++    typedRun = .done 3 (finalMemory typedRun) := by rfl
++
++theorem typed_R :
++    ∃ c, typed.refState PlanMultiSort.msOps PlanMultiSort.η 3 = some c ∧
++      typed.R PlanMultiSort.msOps PlanMultiSort.η 3 (finalMemory typedRun) c := by
++  rcases typed.runPlan_R PlanMultiSort.msOps typed_valid PlanMultiSort.η with
++    ⟨M, c, hrun, hc, hR, _⟩ | ⟨o, pc, M, c, events, hrun, _⟩
++  · have h : PlanOutcome.done 3 (finalMemory typedRun) = .done 3 M :=
++      typed_done.symm.trans hrun
++    cases h
++    exact ⟨c, hc, hR⟩
++  · have h := typed_done.symm.trans hrun
++    cases h
++
++#eval check "storage-typed-independent-buffers"
++  (typed.checkPlan, typedRow, typedDecode, PlanMultiSort.decodeRow)
++  (true, ("done", 3, some 11, some (7 / 8)), some (11, 7 / 8), some (11, 7 / 8))
++#eval check "storage-typed-unused-capacity-all-boundaries"
++  ((List.range 4).map fun pc => (pc, typedPhysical pc))
++  [(0, [none, none, none], [none, none]),
++   (1, [none, some 0, none], [some 0, none]),
++   (2, [none, some 11, none], [some (7 / 8), none]),
++   (3, [none, some 11, none], [some (7 / 8), none])]
++
++/- The existing zero-extent declaration has no addresses at all, even when
++   output flagged. Its canonical buffer therefore needs no physical slots. -/
++@[reducible] def emptyOutput : Program Carrier emptyDeclarations registry :=
++  { emptyRole false with
++    output := fun _ => true
++    output_defined := fun _ _ => rfl }
++
++def emptyPlan : emptyOutput.Plan where
++  tensors := [()]
++  tensors_nodup := by simp
++  tensors_complete := by intro t; cases t; simp
++  commands := []
++def emptyInput : emptyOutput.Input := ⟨fun _ => none, by intro t; rfl⟩
++def emptyRun := emptyPlan.runPlan ops (emptyPlan.Start emptyInput)
++
++example : IsEmpty (BufferSlot emptyPlan.allocation) :=
++  ⟨fun ξ => Fin.elim0 ξ.2⟩
++example : IsEmpty (Slot emptyPlan.allocation) := ⟨fun ξ => by
++  cases ξ with
++  | inl ξ => cases ξ.1.property
++  | inr ξ => exact Fin.elim0 ξ.2⟩
++
++example : emptyRun = .done 0 (finalMemory emptyRun) := rfl
++
++#eval check "storage-empty-domain-versus-scalar"
++  (emptyPlan.checkPlan, finalPc emptyRun,
++    emptyPlan.allocation.capacity (), emptyPlan.allAddrList.length,
++    (emptyPlan.Decode 0 (finalMemory emptyRun)).isSome,
++    (canonicalLayout []).count)
++  (true, 0, 0, 0, true, 1)
++
++#print axioms reuse_R
++#print axioms typed_R
++
++end LeanNCD.Semantics.PlanReuseStorage
+diff --git a/leanncd/test/Semantics/PlanReuseTest.lean b/leanncd/test/Semantics/PlanReuseTest.lean
+new file mode 100644
+index 00000000..6c420f88
+--- /dev/null
++++ b/leanncd/test/Semantics/PlanReuseTest.lean
+@@ -0,0 +1,198 @@
++import Semantics.PlanRetireTest
++
++namespace LeanNCD.Semantics.PlanFixtures
++
++open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
++
++/- All three physical buffers have the same sort and capacity, but independent identities.
++   Only slot 0 is placed; slot 1 and the third buffer exercise unmapped storage. -/
++def reuseAllocation (lastBuffer : Fin 3) : Allocation (routed chainBody) where
++  Buffer := Fin 3
++  bufferEq := inferInstance
++  buffers := [0, 1, 2]
++  buffers_nodup := by decide
++  buffers_complete := by intro b; fin_cases b <;> simp
++  sort := fun _ => ()
++  capacity := fun _ => 2
++  locate := fun x =>
++    ⟨⟨if x.2.1 = 2 then lastBuffer else x.2.1, (0 : Fin 2)⟩, rfl⟩
++
++def reuseGoodAllocation : Allocation (routed chainBody) := reuseAllocation 0
++def reuseBadAllocation : Allocation (routed chainBody) := reuseAllocation 1
++def reuseSeparateAllocation : Allocation (routed chainBody) := reuseAllocation 2
++
++def reuseGood : (routed chainBody).Plan :=
++  { rtInitAfter with allocation := reuseGoodAllocation }
++def reuseBad : (routed chainBody).Plan :=
++  { rtInitAfter with allocation := reuseBadAllocation }
++
++def reuseDecode (π : (routed chainBody).Plan) : Option (List ℚ) :=
++  match π.runPlan ops (π.Start chainInput) with
++  | .done pc M =>
++    (π.Decode pc M).map fun out =>
++      (π.tensors.filterMap fun t =>
++        if h : (routed chainBody).output t = true then
++          some ((List.finRange 3).map fun i => out ⟨t, h⟩ (point i))
++        else none).flatten
++  | _ => none
++
++-- Raw rows intentionally expose physical aliasing; published reads below exclude retired ghosts.
++#eval check "reuse-good-run" (reuseGood.checkPlan, chainRow reuseGood)
++  (true, ("done", 7, none, [some 4, some 3, some 4]))
++#eval check "reuse-good-empty-output" (reuseDecode reuseGood) (some [])
++#eval check "reuse-bad-live-alias-run" (reuseBad.checkPlan, chainRow reuseBad)
++  (false, ("done", 7, none, [none, some 1, some 1]))
++
++set_option maxHeartbeats 1000000 in
++theorem reuseGood_layout : ∀ pc, pc ≤ 7 → reuseGood.LayoutOK pc := by
++  intro pc hpc
++  interval_cases pc <;>
++    rintro (⟨⟨⟩, ⟨i, ⟨⟩⟩⟩ | ⟨⟨⟨⟩, hi⟩, ⟨i, ⟨⟩⟩⟩)
++      (⟨⟨⟩, ⟨j, ⟨⟩⟩⟩ | ⟨⟨⟨⟩, hj⟩, ⟨j, ⟨⟩⟩⟩) ξ h₁ h₂ <;>
++    fin_cases i <;> fin_cases j <;>
++    simp [SlotView, Live, Pub, Ret, Mat, pubList, retList, matList, prefixAnn,
++      Ann.blocks, Ann.rets, Ann.inits, DefAddr.addr, reuseGood, rtInitAfter, unitPlan, cAddr, point,
++      routed, program, place, reuseGoodAllocation, reuseAllocation] at h₁ h₂ <;>
++    simp_all <;> cases h₁ <;> cases h₂
++
++theorem reuseGood_valid : reuseGood.Valid := by
++  apply reuseGood.checkPlan_sound
++  rw [checkPlan]
++  have hb : (reuseGood.checkSingleton && reuseGood.checkCov1Nodup &&
++      reuseGood.checkCov1Complete && reuseGood.checkCov2Nodup &&
++      reuseGood.checkCov2Complete && reuseGood.checkSteps) = true := by decide
++  rw [hb, Bool.true_and]
++  exact reuseGood.checkLayouts_iff.mpr (by simpa [reuseGood, rtInitAfter, unitPlan]
++    using reuseGood_layout)
++
++theorem reuseGood_R_every_pc : ∀ pc, pc ≤ 7 → ∃ c,
++    reuseGood.refState ops chainInput pc = some c ∧
++      reuseGood.R ops chainInput pc (chainMem reuseGood pc) c :=
++  R_every_pc_of reuseGood reuseGood_valid 7 rfl
++    (by intro k hk; interval_cases k <;> rfl)
++
++example : place reuseGood.allocation (cAddr 0).addr =
++    place reuseGood.allocation (cAddr 2).addr := rfl
++example : place reuseGood.allocation (cAddr 0).addr ≠
++    place reuseGood.allocation (cAddr 1).addr := by
++  intro h
++  cases h
++
++def reuseSharedSlot : Slot reuseGood.allocation := .inr ⟨(0 : Fin 3), (0 : Fin 2)⟩
++def reuseSpareCapacity : Slot reuseGood.allocation := .inr ⟨(0 : Fin 3), (1 : Fin 2)⟩
++def reuseSpareBuffer : Slot reuseGood.allocation := .inr ⟨(2 : Fin 3), (0 : Fin 2)⟩
++
++example : place reuseGood.allocation (cAddr 0).addr = reuseSharedSlot := rfl
++example : chainMem reuseGood 4 reuseSharedSlot = none := rfl
++example : chainMem reuseGood 5 reuseSharedSlot = some 0 := rfl
++#eval check "reuse-shared-slot-trace"
++  ([chainMem reuseGood 4 reuseSharedSlot, chainMem reuseGood 5 reuseSharedSlot,
++    chainMem reuseGood 6 reuseSharedSlot, chainMem reuseGood 7 reuseSharedSlot])
++  [none, some 0, some 4, some 4]
++#eval check "reuse-retired-ghost-vs-live"
++  (reuseGood.readPub 7 (chainMem reuseGood 7) (cAddr 0).addr,
++    (reuseGood.refState ops chainInput 7).bind fun c => c.published (cAddr 0).addr,
++    reuseGood.readPub 7 (chainMem reuseGood 7) (cAddr 2).addr)
++  (none, some 0, some 4)
++#eval check "reuse-bad-corrupted-live-source"
++  (reuseBad.readPub 7 (chainMem reuseBad 7) (cAddr 1).addr,
++    (reuseBad.refState ops chainInput 7).bind fun c => c.published (cAddr 1).addr,
++    reuseBad.readPub 7 (chainMem reuseBad 7) (cAddr 2).addr)
++  (some 1, some 3, some 1)
++
++theorem reuseGood_unused_dead_every_pc : ∀ pc, pc ≤ 7 →
++    chainMem reuseGood pc reuseSpareCapacity = none ∧
++      chainMem reuseGood pc reuseSpareBuffer = none := by
++  intro pc hpc
++  obtain ⟨c, _, hR⟩ := reuseGood_R_every_pc pc hpc
++  have hCapacity : ∀ res, reuseGood.SlotView pc res ≠ some reuseSpareCapacity := by
++    intro res
++    cases res <;> simp only [SlotView] <;> split_ifs <;>
++      simp [place, reuseGood, reuseGoodAllocation, reuseAllocation, reuseSpareCapacity,
++        routed, program]
++  have hBuffer : ∀ res, reuseGood.SlotView pc res ≠ some reuseSpareBuffer := by
++    intro res
++    cases res <;> simp only [SlotView] <;> split_ifs <;>
++      simp [place, reuseGood, reuseGoodAllocation, reuseAllocation, reuseSpareBuffer,
++        routed, program] <;> split_ifs <;> simp_all
++  exact ⟨hR.dead _ hCapacity, hR.dead _ hBuffer⟩
++
++/- The component rows isolate the represented pair at the selected boundary.
++   Coverage/step validity of these schedules is deliberately not a premise. -/
++def reusePairPlan (A : Allocation (routed chainBody))
++    (cmds : List (Command (routed chainBody))) : (routed chainBody).Plan :=
++  { unitPlan cmds with allocation := A }
++
++def reusePubPair (A : Allocation (routed chainBody)) : (routed chainBody).Plan :=
++  reusePairPlan A [[.initZero [cAddr 1]], [.acc [cOcc 0]], [.pub [cAddr 1]],
++    [.initZero [cAddr 2]], [.acc [cOcc 1]], [.pub [cAddr 2]]]
++def reuseAccPair (A : Allocation (routed chainBody)) : (routed chainBody).Plan :=
++  reusePairPlan A [[.initZero [cAddr 1, cAddr 2]]]
++
++def reuseRoles (π : (routed chainBody).Plan) (pc : Nat) : List Bool :=
++  [Resource.pub (cAddr 0).addr, .pub (cAddr 1).addr, .pub (cAddr 2).addr,
++    .acc (cAddr 0), .acc (cAddr 1), .acc (cAddr 2)].map fun res =>
++      (π.SlotView pc res).isSome
++
++#eval check "reuse-pub-pub-component"
++  ((reusePubPair reuseBadAllocation).checkLayoutAt 6,
++    (reusePubPair reuseSeparateAllocation).checkLayoutAt 6,
++    reuseRoles (reusePubPair reuseBadAllocation) 6)
++  (false, true, [false, true, true, false, false, false])
++#eval check "reuse-pub-acc-component"
++  ((reusePubPair reuseBadAllocation).checkLayoutAt 4,
++    (reusePubPair reuseSeparateAllocation).checkLayoutAt 4,
++    reuseRoles (reusePubPair reuseBadAllocation) 4)
++  (false, true, [false, true, false, false, false, true])
++#eval check "reuse-acc-acc-component"
++  ((reuseAccPair reuseBadAllocation).checkLayoutAt 1,
++    (reuseAccPair reuseSeparateAllocation).checkLayoutAt 1,
++    reuseRoles (reuseAccPair reuseBadAllocation) 1)
++  (false, true, [false, false, false, false, true, true])
++
++theorem reuseSeparate_place_injective :
++    Function.Injective (place reuseSeparateAllocation) := by
++  rintro ⟨⟨⟩, ⟨i, ⟨⟩⟩⟩ ⟨⟨⟩, ⟨j, ⟨⟩⟩⟩ h
++  fin_cases i <;> fin_cases j <;> cases h <;> rfl
++
++example : ¬ (reusePubPair reuseBadAllocation).LayoutOK 6 := by
++  intro h
++  have he := h (.pub (cAddr 1).addr) (.pub (cAddr 2).addr)
++    (place reuseBadAllocation (cAddr 1).addr) rfl rfl
++  have hc := congrArg (fun res : Resource (routed chainBody) =>
++    match res with | .pub a => a.2.1 | .acc x => x.2.1) he
++  cases hc
++example : (reusePubPair reuseSeparateAllocation).LayoutOK 6 :=
++  (reusePubPair reuseSeparateAllocation).layoutOK_of_place_injective
++    reuseSeparate_place_injective 6
++example : ¬ (reusePubPair reuseBadAllocation).LayoutOK 4 := by
++  intro h
++  have he := h (.pub (cAddr 1).addr) (.acc (cAddr 2))
++    (place reuseBadAllocation (cAddr 1).addr) rfl rfl
++  cases he
++example : (reusePubPair reuseSeparateAllocation).LayoutOK 4 :=
++  (reusePubPair reuseSeparateAllocation).layoutOK_of_place_injective
++    reuseSeparate_place_injective 4
++example : ¬ (reuseAccPair reuseBadAllocation).LayoutOK 1 := by
++  intro h
++  have he := h (.acc (cAddr 1)) (.acc (cAddr 2))
++    (place reuseBadAllocation (cAddr 1).addr) rfl rfl
++  have hc := congrArg (fun res : Resource (routed chainBody) =>
++    match res with | .pub a => a.2.1 | .acc x => x.2.1) he
++  cases hc
++example : (reuseAccPair reuseSeparateAllocation).LayoutOK 1 :=
++  (reuseAccPair reuseSeparateAllocation).layoutOK_of_place_injective
++    reuseSeparate_place_injective 1
++
++-- The only collision appears at the final init boundary; omitting it accepts this component.
++#eval check "reuse-final-boundary-coverage"
++  ((reuseAccPair reuseBadAllocation).checkLayoutAt 0,
++    (reuseAccPair reuseBadAllocation).checkLayoutAt 1,
++    (reuseAccPair reuseBadAllocation).checkLayouts,
++    (reuseAccPair reuseSeparateAllocation).checkLayouts)
++  (true, false, false, true)
++
++#print axioms reuseGood_R_every_pc
++#print axioms reuseGood_unused_dead_every_pc
++
++end LeanNCD.Semantics.PlanFixtures
+diff --git a/leanncd/test/Semantics/PlanReuseWrapperTest.lean b/leanncd/test/Semantics/PlanReuseWrapperTest.lean
+new file mode 100644
+index 00000000..479dc97d
+--- /dev/null
++++ b/leanncd/test/Semantics/PlanReuseWrapperTest.lean
+@@ -0,0 +1,139 @@
++import Semantics.PlanReuseTest
++
++namespace LeanNCD.Semantics.PlanFixtures
++
++open Program Program.Executor Program.Plan RationalReference ExecutableReferenceFixtures
++
++-- Only grouping changes: allocation and all other annotations come from the accepted donor.
++def reuseFused : (routed chainBody).Plan :=
++  { reuseGood with commands := reuseGood.commands.take 3 ++
++      [[.retire [cAddr 0], .initZero [cAddr 2]]] ++ reuseGood.commands.drop 5 }
++
++def reuseFusedConflict : (routed chainBody).Plan :=
++  { reuseGood with commands := reuseGood.commands.take 3 ++
++      [[.initZero [cAddr 2], .retire [cAddr 0]]] ++ reuseGood.commands.drop 5 }
++
++#eval check "reuse-fused-accepted"
++  (reuseFused.checkPlanF, chainRow reuseFused, reuseDecode reuseFused)
++  (true, ("done", 6, none, [some 4, some 3, some 4]), some [])
++
++theorem reuseFused_expand : reuseFused.expand = reuseGood := rfl
++example : reuseFused.allocation = reuseGoodAllocation := rfl
++example : reuseFusedConflict.allocation = reuseGoodAllocation := rfl
++
++theorem reuseFused_valid : reuseFused.FValid := by
++  change reuseFused.expand.Valid
++  rw [reuseFused_expand]
++  exact reuseGood_valid
++
++example : reuseFused.checkPlanF = true :=
++  reuseFused.checkPlanF_complete reuseFused_valid
++
++theorem reuseFused_done :
++    reuseFused.runPlan ops (reuseFused.Start chainInput) =
++      .done 6 (chainMem reuseFused 6) := rfl
++
++theorem reuseFused_R_every_pc : ∀ pc, pc ≤ 6 → ∃ c,
++    reuseFused.refState ops chainInput pc = some c ∧
++      reuseFused.R ops chainInput pc (chainMem reuseFused pc) c :=
++  R_every_pc_F_of reuseFused reuseFused_valid 6 rfl
++    (by intro k hk; interval_cases k <;> rfl)
++
++example : PlanOutcome.Agree
++    (reuseFused.runPlan ops (reuseFused.Start chainInput))
++    (reuseFused.expand.runPlan ops (reuseFused.expand.Start chainInput)) := by
++  have hs : reuseFused.expand.Start chainInput = reuseFused.Start chainInput := by
++    funext ξ
++    cases ξ <;> rfl
++  simpa only [hs] using reuseFused.runPlan_agree ops (reuseFused.Start chainInput)
++
++#eval check "reuse-fused-shared-slot-trace"
++  [chainMem reuseFused 3 reuseSharedSlot, chainMem reuseFused 4 reuseSharedSlot,
++    chainMem reuseFused 5 reuseSharedSlot, chainMem reuseFused 6 reuseSharedSlot]
++  [some 0, some 0, some 4, some 4]
++#eval check "reuse-fused-retired-read-vs-ghost"
++  (reuseFused.readPub 6 (chainMem reuseFused 6) (cAddr 0).addr,
++    (reuseFused.refState ops chainInput 6).bind fun c => c.published (cAddr 0).addr,
++    reuseFused.readPub 6 (chainMem reuseFused 6) (cAddr 2).addr)
++  (none, some 0, some 4)
++
++-- Both outer sides are injective. Only the expansion sees pub 0 collide with acc 2.
++#eval check "reuse-fused-conflict-outer-vs-internal"
++  ((List.range 7).map reuseFusedConflict.checkLayoutAt,
++    (List.range 8).map reuseFusedConflict.expand.checkLayoutAt,
++    reuseFusedConflict.checkLayouts, reuseFusedConflict.expand.checkLayouts,
++    reuseFusedConflict.checkPlanF)
++  ([true, true, true, true, true, true, true],
++    [true, true, true, true, false, true, true, true], true, false, false)
++#eval check "reuse-fused-conflict-resource-boundaries"
++  (reuseRoles reuseFusedConflict 3, reuseRoles reuseFusedConflict.expand 4,
++    reuseRoles reuseFusedConflict 4)
++  ([true, true, false, false, false, false],
++    [true, true, false, false, false, true],
++    [false, true, false, false, false, true])
++#eval check "reuse-fused-conflict-unchecked-run" (chainRow reuseFusedConflict)
++  ("stuck", 4, none, [none, some 3, none])
++
++example : ¬ reuseFusedConflict.expand.LayoutOK 4 := by
++  intro h
++  have he := h (.pub (cAddr 0).addr) (.acc (cAddr 2)) reuseSharedSlot rfl rfl
++  cases he
++
++-- The oracle is consulted before pub 2, after acc 2 has committed its write to the reused slot.
++theorem reuseFused_fault_after_write :
++    reuseFused.runPlanE ops (faultAt 6 .kernelFault) (reuseFused.Start chainInput) =
++      .error .kernelFault 5 (chainMem reuseFused 5) := rfl
++
++#eval check "reuse-fused-fault-after-write"
++  (chainRowE reuseFused (faultAt 6 .kernelFault))
++  ("error", 5, some .kernelFault, [some 4, some 3, some 4])
++#eval check "reuse-fused-fault-physical-vs-ghost"
++  (chainMem reuseFused 5 reuseSharedSlot,
++    reuseFused.readPub 5 (chainMem reuseFused 5) (cAddr 0).addr,
++    (reuseFused.refState ops chainInput 5).bind fun c => c.published (cAddr 0).addr)
++  (some 4, none, some 0)
++
++theorem reuseFused_error_R : ∃ c,
++    reuseFused.refState ops chainInput 5 = some c ∧
++      reuseFused.R ops chainInput 5 (chainMem reuseFused 5) c :=
++  runPlanE_error_R ops reuseFused_valid (faultAt 6 .kernelFault) chainInput
++    reuseFused_fault_after_write
++
++theorem reuseFused_noFaults : reuseFused.NoFaultsInPlan (fun _ => none) :=
++  by intro _ _; rfl
++
++theorem reuseFused_noFault_parity :
++    reuseFused.runPlanE ops (fun _ => none) (reuseFused.Start chainInput) =
++      .run (reuseFused.runPlan ops (reuseFused.Start chainInput)) :=
++  reuseFused.runPlanE_noFault ops (by intro _; rfl) _
++
++#eval check "reuse-fused-fault-free-wrapper" (chainRowE reuseFused (fun _ => none))
++  ("run:done", 6, none, [some 4, some 3, some 4])
++
++theorem reuseFused_errorFree :
++    reuseFused.ErrorFreeRun ops (fun _ => none) (reuseFused.Start chainInput) :=
++  reuseFused.errorFreeRun_of_noFaultsInPlan ops reuseFused_noFaults _
++
++theorem reuseFused_done_iff_model :
++    (∃ m M, reuseFused.runPlanE ops (fun _ => none) (reuseFused.Start chainInput) =
++      .run (.done m M)) ↔ ∃ ρ, (routed chainBody).Models ops chainInput ρ :=
++  done_iff_model_FE ops reuseFused_valid _ chainInput reuseFused_errorFree
++
++theorem reuseFused_wrapper_model_unique : ∃ ρ,
++    (∀ ρ', (routed chainBody).Models ops chainInput ρ' ↔ ρ' = ρ) ∧
++      reuseFused.Decode 6 (chainMem reuseFused 6) =
++        some ((routed chainBody).outputProjection ρ) := by
++  have hrun : reuseFused.runPlanE ops (fun _ => none) (reuseFused.Start chainInput) =
++      .run (.done 6 (chainMem reuseFused 6)) := by
++    rw [reuseFused_noFault_parity, reuseFused_done]
++  obtain ⟨c, success, hmod, hd, -⟩ :=
++    done_correct_FE ops reuseFused_valid (fun _ => none) chainInput hrun
++  exact ⟨_, hmod, hd⟩
++
++#print axioms reuseFused_R_every_pc
++#print axioms reuseFused_error_R
++#print axioms reuseFused_noFault_parity
++#print axioms reuseFused_done_iff_model
++#print axioms reuseFused_wrapper_model_unique
++
++end LeanNCD.Semantics.PlanFixtures
+-- 
+2.55.0
+

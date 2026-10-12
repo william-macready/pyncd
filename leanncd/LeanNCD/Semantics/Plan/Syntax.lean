@@ -28,6 +28,33 @@ theorem DefAddr.addr_injective {P : Program K σ r} :
   obtain rfl := eq_of_heq h
   rfl
 
+/-- Finite reusable buffers and a sort-preserving, bounded placement. Buffer
+    identity is independent of logical tensor identity. -/
+structure Allocation (P : Program K σ r) where
+  Buffer : Type
+  bufferEq : DecidableEq Buffer
+  buffers : List Buffer
+  buffers_nodup : buffers.Nodup
+  buffers_complete : ∀ b, b ∈ buffers
+  sort : Buffer → S
+  capacity : Buffer → Nat
+  locate : (x : DefAddr P) →
+    {ξ : (b : Buffer) × Fin (capacity b) // sort ξ.1 = (σ.signature x.1.val).sort}
+
+/-- The old dense placement, used when a plan supplies no custom allocation. -/
+def Allocation.canonical (P : Program K σ r) (ts : List σ.Tensor)
+    (hn : ts.Nodup) (hc : ∀ t, t ∈ ts) : Allocation P where
+  Buffer := σ.Tensor
+  bufferEq := fun t u => decidable_of_iff (σ.uid t = σ.uid u)
+    ⟨fun h => σ.unique h, congrArg σ.uid⟩
+  buffers := ts
+  buffers_nodup := hn
+  buffers_complete := hc
+  sort := fun t => (σ.signature t).sort
+  capacity := fun t => (canonicalLayout (σ.signature t).axes).count
+  locate := fun x => ⟨⟨x.1.val,
+    (canonicalLayout (σ.signature x.1.val).axes).enumerate.symm x.2⟩, rfl⟩
+
 /-- One logical annotation. `acc G` is spec `Accumulate(G)`, `pub B` is
     `Publish(B)`, `initZero S` is the storage operation materialising zero
     accumulators at the addresses `S`, `retire B` retires the published defined
@@ -49,6 +76,7 @@ structure _root_.LeanNCD.Semantics.Program.Plan (P : Program K σ r) where
   tensors_nodup : tensors.Nodup
   tensors_complete : ∀ t, t ∈ tensors
   commands : List (Command P)
+  allocation : Allocation P := Allocation.canonical P tensors tensors_nodup tensors_complete
 
 namespace Ann
 
@@ -156,6 +184,8 @@ theorem prefixAnn_zero : π.prefixAnn 0 = [] := by simp [prefixAnn]
 
 /-- The expanded plan: every annotation of `π` in its own command. -/
 def expand : P.Plan := { π with commands := π.ann.map (fun a => [a]) }
+
+theorem expand_allocation : π.expand.allocation = π.allocation := rfl
 
 /-- Number of annotations in the first `pc` commands (the expanded position of command `pc`). -/
 def offset (pc : Nat) : Nat := (π.prefixAnn pc).length

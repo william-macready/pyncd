@@ -1,7 +1,7 @@
 import LeanNCD.Semantics.Plan.Step
 
-/- Successful-step simulation and failure matching (spec 31.2-31.3) for the
-   slice-1 to slice-3 profile. Each kernel is proved separately against the logical
+/- Successful-step simulation and failure matching (spec 31.2-31.3) for
+   boundary-injective typed allocations. Each kernel is proved against the logical
    post-state `postAnn`; `refState` is advanced one annotation at a time. -/
 
 namespace LeanNCD.Semantics.Program.Plan
@@ -54,12 +54,12 @@ theorem live_succ_of (hb : a.blocks = []) (hr : a.rets = []) (b : Address σ) :
 end Succ
 
 theorem slotView_pub [DecidableEq σ.Tensor] {pc : Nat} {b : Address σ} :
-    π.SlotView pc (.pub b) = some (place b) ↔ π.Live pc b := by
+    π.SlotView pc (.pub b) = some (place π.allocation b) ↔ π.Live pc b := by
   simp only [SlotView]
   split_ifs with hb <;> simp [hb]
 
 theorem slotView_acc [DecidableEq σ.Tensor] {pc : Nat} {x : DefAddr P} :
-    π.SlotView pc (.acc x) = some (place x.addr) ↔ π.Mat pc x ∧ ¬ π.Pub pc x.addr := by
+    π.SlotView pc (.acc x) = some (place π.allocation x.addr) ↔ π.Mat pc x ∧ ¬ π.Pub pc x.addr := by
   simp only [SlotView]
   split_ifs with hx <;> simp [hx]
 
@@ -83,8 +83,9 @@ def PubOK (pc : Nat) (B : List (DefAddr P)) : Prop :=
   B.Nodup ∧ ∀ x ∈ B, ¬ π.Pub pc x.addr ∧ π.Mat pc x ∧
     ∀ o : P.Occurrence x.1, P.destination x.1 o.1 o.2 = x.2 → π.Cons pc ⟨x.1, o⟩
 
-/-- retire: each member is live (published: safety; not yet retired: diagnostic) and
-    not an output (`Decode` needs every output live). That no remaining reader exists
+/-- retire: each member is live and not an output. Both halves of Live are safety
+    conditions: re-retiring after reuse could clear a different resource's slot.
+    `Decode` needs every output live. That no remaining reader exists
     is NOT stated here: it is enforced at the reader (`ReadyOK` over `Live`). -/
 def RetOK (pc : Nat) (B : List (DefAddr P)) : Prop :=
   ∀ x ∈ B, π.Live pc x.addr ∧ P.output x.1.val = false
@@ -257,7 +258,7 @@ theorem refState_R2 {η : P.Input} {pc : Nat} {c : P.Running}
 
 /-- An unconsumed-into accumulator is still the identity (defect D1: only R1
     pins it). -/
-theorem acc_zero_of_unconsumed {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
+theorem acc_zero_of_unconsumed {η : P.Input} {pc : Nat} {M : Memory K π.allocation} {c : P.Running}
     (hR : π.R ops η pc M c) (x : DefAddr P)
     (h : ∀ o : P.Occurrence x.1, π.Cons pc ⟨x.1, o⟩ → P.destination x.1 o.1 o.2 ≠ x.2) :
     c.accumulators x.1 x.2 = 0 := by
@@ -273,7 +274,7 @@ theorem acc_zero_of_unconsumed {η : P.Input} {pc : Nat} {M : Memory K σ} {c : 
     simp [hp, h o hc]
 
 /-- A pending occurrence never targets a published address. -/
-theorem dest_not_pub {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
+theorem dest_not_pub {η : P.Input} {pc : Nat} {M : Memory K π.allocation} {c : P.Running}
     (hR : π.R ops η pc M c) {x : OccRef P} (hx : ¬ π.Cons pc x) : ¬ π.Pub pc x.dest := by
   intro hp
   obtain ⟨values, inv⟩ := P.reachable_invariant ops η hR.reach
@@ -281,7 +282,7 @@ theorem dest_not_pub {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
   exact (inv.published x.1 _ v hv).1 x.2 ((hR.pending x.1 x.2).mpr hx) rfl
 
 /-- The read view never invents values: whatever it returns is the reference value. -/
-theorem readPub_le {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
+theorem readPub_le {η : P.Input} {pc : Nat} {M : Memory K π.allocation} {c : P.Running}
     (hR : π.R ops η pc M c) (a : Address σ) (v : K (σ.signature a.1).sort)
     (h : π.readPub pc M a = some v) : c.published a = some v := by
   by_cases hl : π.Live pc a
@@ -294,65 +295,87 @@ theorem readPub_le {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
 /-! ### Memory effects of the kernels -/
 
 omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
-theorem writeDef_ne (M : Memory K σ) (x : DefAddr P) (v : K (σ.signature x.1.val).sort)
-    {b : Address σ} (h : x.addr ≠ b) : writeDef M x v (place b) = M (place b) :=
-  Function.update_of_ne (fun e => h (place_injective e).symm) _ _
+theorem writeDef_ne (M : Memory K π.allocation) (x : DefAddr P)
+    (v : K (σ.signature x.1.val).sort) {ξ : Slot π.allocation}
+    (h : place π.allocation x.addr ≠ ξ) : π.writeDef M x v ξ = M ξ :=
+  Function.update_of_ne (Ne.symm h) _ _
 
 omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
-theorem writeDef_self (M : Memory K σ) (x : DefAddr P) (v : K (σ.signature x.1.val).sort) :
-    writeDef M x v (place x.addr) = some v :=
-  Function.update_self _ _ _
+theorem writeDef_self (M : Memory K π.allocation) (x : DefAddr P)
+    (v : K (σ.signature x.1.val).sort) :
+    readSlot π.allocation (π.writeDef M x v) x.addr = some v := by
+  simp [readSlot_eq_cast, writeDef, Function.update_self]
+  rfl
 
-theorem execInit_not_mem (S : List (DefAddr P)) (M : Memory K σ) {b : Address σ}
-    (h : ∀ x ∈ S, x.addr ≠ b) : execInit S M (place b) = M (place b) := by
+theorem execInit_not_mem (S : List (DefAddr P)) (M : Memory K π.allocation)
+    {ξ : Slot π.allocation} (h : ∀ x ∈ S, place π.allocation x.addr ≠ ξ) :
+    π.execInit S M ξ = M ξ := by
   induction S generalizing M with
   | nil => rfl
   | cons x S ih =>
-    change execInit S (writeDef M x 0) (place b) = _
+    change π.execInit S (π.writeDef M x 0) ξ = _
     rw [ih _ (fun y hy => h y (List.mem_cons_of_mem _ hy)),
-      writeDef_ne _ _ _ (h x List.mem_cons_self)]
+      π.writeDef_ne _ _ _ (h x List.mem_cons_self)]
 
-theorem execInit_mem (S : List (DefAddr P)) (M : Memory K σ) {y : DefAddr P} (hy : y ∈ S) :
-    execInit S M (place y.addr) = some (0 : K (σ.signature y.1.val).sort) := by
+theorem execInit_mem (S : List (DefAddr P)) (M : Memory K π.allocation)
+    {y : DefAddr P} (hy : y ∈ S)
+    (safe : ∀ x ∈ S, place π.allocation x.addr = place π.allocation y.addr → x = y) :
+    readSlot π.allocation (π.execInit S M) y.addr = some (0 : K (σ.signature y.1.val).sort) := by
   induction S generalizing M with
   | nil => cases hy
   | cons x S ih =>
-    change execInit S (writeDef M x 0) (place y.addr) = _
+    change readSlot π.allocation (π.execInit S (π.writeDef M x 0)) y.addr = _
     by_cases hS : y ∈ S
-    · exact ih _ hS
+    · exact ih _ hS (fun z hz => safe z (List.mem_cons_of_mem _ hz))
     · have hyx : y = x := by simpa [hS] using hy
       subst hyx
-      rw [execInit_not_mem _ _ (fun z hz e => hS (by rw [← DefAddr.addr_injective e]; exact hz))]
-      exact writeDef_self _ _ _
+      rw [readSlot_congr π.allocation (π.execInit_not_mem _ _
+        (fun z hz e => hS (safe z (List.mem_cons_of_mem _ hz) e ▸ hz)))]
+      exact π.writeDef_self _ _ _
 
 omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
-theorem execRet_not_mem (B : List (DefAddr P)) (M : Memory K σ) {b : Address σ}
-    (h : ∀ x ∈ B, x.addr ≠ b) : execRet B M (place b) = M (place b) := by
+theorem execRet_not_mem (B : List (DefAddr P)) (M : Memory K π.allocation)
+    {ξ : Slot π.allocation} (h : ∀ x ∈ B, place π.allocation x.addr ≠ ξ) :
+    π.execRet B M ξ = M ξ := by
   induction B generalizing M with
   | nil => rfl
   | cons x B ih =>
-    change execRet B (Function.update M (place x.addr) none) (place b) = _
+    change π.execRet B (Function.update M (place π.allocation x.addr) none) ξ = _
     rw [ih _ (fun y hy => h y (List.mem_cons_of_mem _ hy)),
-      Function.update_of_ne (fun e => h x List.mem_cons_self (place_injective e).symm) _ _]
+      Function.update_of_ne (Ne.symm (h x List.mem_cons_self)) _ _]
 
 omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
-theorem execRet_mem (B : List (DefAddr P)) (M : Memory K σ) {y : DefAddr P} (hy : y ∈ B) :
-    execRet B M (place y.addr) = none := by
+theorem execRet_none (B : List (DefAddr P)) (M : Memory K π.allocation)
+    {ξ : Slot π.allocation} (h : M ξ = none) : π.execRet B M ξ = none := by
+  induction B generalizing M with
+  | nil => exact h
+  | cons x B ih =>
+    apply ih
+    change Function.update M (place π.allocation x.addr) none ξ = none
+    by_cases e : ξ = place π.allocation x.addr
+    · subst ξ
+      exact Function.update_self _ _ _
+    · rw [Function.update_of_ne e]
+      exact h
+
+omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
+theorem execRet_mem (B : List (DefAddr P)) (M : Memory K π.allocation)
+    {y : DefAddr P} (hy : y ∈ B) : π.execRet B M (place π.allocation y.addr) = none := by
   induction B generalizing M with
   | nil => cases hy
   | cons x B ih =>
-    change execRet B (Function.update M (place x.addr) none) (place y.addr) = _
+    change π.execRet B (Function.update M (place π.allocation x.addr) none)
+      (place π.allocation y.addr) = _
     by_cases hB : y ∈ B
     · exact ih _ hB
     · have hyx : y = x := by simpa [hB] using hy
       subst hyx
-      rw [execRet_not_mem _ _ (fun z hz e => hB (by rw [← DefAddr.addr_injective e]; exact hz))]
-      exact Function.update_self _ _ _
+      exact π.execRet_none _ _ (Function.update_self _ _ _)
 
-theorem addAt_some {v : Values P} {M M₁ : Memory K σ} {x : OccRef P}
-    (h : addAt v M x = some M₁) :
-    ∃ a, M (place x.dest) = some a ∧
-      M₁ = Function.update M (place x.dest) (some (addVal x a (v x))) := by
+theorem addAt_some {v : Values P} {M M₁ : Memory K π.allocation} {x : OccRef P}
+    (h : π.addAt v M x = some M₁) :
+    ∃ a, readSlot π.allocation M x.dest = some a ∧
+      M₁ = π.writeDef M x.target (addVal x a (v x)) := by
   unfold addAt at h
   split at h
   · rename_i a ha
@@ -360,22 +383,22 @@ theorem addAt_some {v : Values P} {M M₁ : Memory K σ} {x : OccRef P}
     exact ⟨a, ha, rfl⟩
   · contradiction
 
-theorem commit_other {v : Values P} (G : List (OccRef P)) {M M' : Memory K σ}
-    (h : G.foldlM (addAt v) M = some M') {b : Address σ} (hb : ∀ x ∈ G, x.dest ≠ b) :
-    M' (place b) = M (place b) := by
+theorem commit_other {v : Values P} (G : List (OccRef P)) {M M' : Memory K π.allocation}
+    (h : G.foldlM (π.addAt v) M = some M') {ξ : Slot π.allocation}
+    (hb : ∀ x ∈ G, place π.allocation x.dest ≠ ξ) : M' ξ = M ξ := by
   induction G generalizing M with
   | nil =>
     cases h
     rfl
   | cons x G ih =>
     rw [List.foldlM_cons] at h
-    cases h₁ : addAt v M x with
+    cases h₁ : π.addAt v M x with
     | none => simp [h₁] at h
     | some M₁ =>
       simp only [h₁, Option.bind_eq_bind, Option.bind_some] at h
-      obtain ⟨a, _, rfl⟩ := addAt_some h₁
+      obtain ⟨a, _, rfl⟩ := π.addAt_some h₁
       rw [ih h (fun y hy => hb y (List.mem_cons_of_mem _ hy))]
-      exact Function.update_of_ne (fun e => hb x List.mem_cons_self (place_injective e).symm) _ _
+      exact π.writeDef_ne _ _ _ (hb x List.mem_cons_self)
 
 theorem single_target (x : OccRef P) (w : K (σ.signature x.1.val).sort) :
     single P x w x.target.1 x.target.2 = w := by
@@ -392,32 +415,36 @@ theorem single_ne (x : OccRef P) (w : K (σ.signature x.1.val).sort) (y : DefAdd
   · simp [single, Pi.single_eq_of_ne hut]
 
 /-- A committed group adds exactly `Δ_G` at every defined address. -/
-theorem commit_def {v : Values P} (G : List (OccRef P)) {M M' : Memory K σ}
-    (h : G.foldlM (addAt v) M = some M') (y : DefAddr P) :
-    M' (place y.addr) = (M (place y.addr)).map (fun a => a + delta P G v y.1 y.2) := by
+theorem commit_def {v : Values P} (G : List (OccRef P)) {M M' : Memory K π.allocation}
+    (h : G.foldlM (π.addAt v) M = some M') (y : DefAddr P)
+    (safe : ∀ x ∈ G, place π.allocation x.dest = place π.allocation y.addr → x.target = y) :
+    readSlot π.allocation M' y.addr =
+      (readSlot π.allocation M y.addr).map (fun a => a + delta P G v y.1 y.2) := by
   induction G generalizing M with
   | nil =>
     cases h
     simp [delta]
   | cons x G ih =>
     rw [List.foldlM_cons] at h
-    cases h₁ : addAt v M x with
+    cases h₁ : π.addAt v M x with
     | none => simp [h₁] at h
     | some M₁ =>
       simp only [h₁, Option.bind_eq_bind, Option.bind_some] at h
-      obtain ⟨a, ha, rfl⟩ := addAt_some h₁
-      rw [ih h]
+      obtain ⟨a, ha, rfl⟩ := π.addAt_some h₁
+      rw [ih h (fun z hz => safe z (List.mem_cons_of_mem _ hz))]
       have hd : delta P (x :: G) v y.1 y.2 = single P x (v x) y.1 y.2 + delta P G v y.1 y.2 := by
         simp only [delta, List.map_cons, List.sum_cons, Pi.add_apply]
       rw [hd]
       by_cases hy : y.addr = x.dest
       · obtain rfl : y = x.target := DefAddr.addr_injective hy
-        change (Function.update M (place x.dest) (some (addVal x a (v x))) (place x.dest)).map _ =
-          (M (place x.dest)).map _
-        rw [Function.update_self, ha, single_target]
+        change readSlot π.allocation M x.target.addr = some a at ha
+        rw [π.writeDef_self, ha, single_target]
         simp only [addVal, Option.map_some]
         exact congrArg some (add_assoc (G := K (σ.signature x.1.val).sort) a (v x) _)
-      · rw [Function.update_of_ne (fun e => hy (place_injective e)), single_ne x (v x) y hy,
+      · have hne : place π.allocation x.dest ≠ place π.allocation y.addr := by
+          intro e
+          exact hy (congrArg DefAddr.addr (safe x List.mem_cons_self e)).symm
+        rw [readSlot_congr π.allocation (π.writeDef_ne M x.target _ hne), single_ne x (v x) y hy,
           zero_add]
 
 /-! ### The evaluation phase -/
@@ -447,8 +474,9 @@ theorem delta_congr {G : List (OccRef P)} {v w : Values P} (h : ∀ x ∈ G, v x
   exact List.map_congr_left (fun x hx => by rw [h x hx])
 
 omit [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
-theorem scanGroup_ne_ok (p : PartialStore K σ) (G : List (OccRef P)) (M : Memory K σ) :
-    scanGroup ops p G ≠ some (.ok M) := by
+theorem scanGroup_ne_ok (A : Allocation P) (p : PartialStore K σ)
+    (G : List (OccRef P)) (M : Memory K A) :
+    scanGroup ops A p G ≠ some (.ok M) := by
   induction G with
   | nil => simp [scanGroup]
   | cons x G ih =>
@@ -456,8 +484,8 @@ theorem scanGroup_ne_ok (p : PartialStore K σ) (G : List (OccRef P)) (M : Memor
     split <;> simp_all
 
 omit [DecidableEq σ.Tensor] in
-theorem scanGroup_none {p : PartialStore K σ} {G : List (OccRef P)}
-    (h : scanGroup ops p G = none) :
+theorem scanGroup_none {A : Allocation P} {p : PartialStore K σ} {G : List (OccRef P)}
+    (h : scanGroup ops A p G = none) :
     ∀ x ∈ G, evalReady ops p (P.body x.1 x.2.1) x.2.2 = .evaluated (some (valuesOn ops p x)) := by
   induction G with
   | nil => simp
@@ -474,8 +502,9 @@ theorem scanGroup_none {p : PartialStore K σ} {G : List (OccRef P)}
       · exact ih h y hy
 
 omit [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
-theorem scanGroup_semFail {p : PartialStore K σ} {G : List (OccRef P)} {o : OccRef P}
-    (h : scanGroup ops p G = some (.semFail o)) :
+theorem scanGroup_semFail {A : Allocation P} {p : PartialStore K σ}
+    {G : List (OccRef P)} {o : OccRef P}
+    (h : scanGroup ops A p G = some (.semFail o)) :
     o ∈ G ∧ evalReady ops p (P.body o.1 o.2.1) o.2.2 = .evaluated none := by
   induction G with
   | nil => simp [scanGroup] at h
@@ -497,12 +526,12 @@ theorem evalValue_eq (c : P.Running) (x : OccRef P) :
 
 section Steps
 
-variable {π} {η : P.Input} {pc : Nat} {M M' : Memory K σ} {c : P.Running}
+variable {π} {η : P.Input} {pc : Nat} {M M' : Memory K π.allocation} {c : P.Running}
 
 theorem step_init {S : List (DefAddr P)} (hR : π.R ops η pc M c)
     (hc : π.refState ops η pc = some c) (hcmd : π.commands[pc]? = some [.initZero S])
-    (ok : π.InitOK pc S) :
-    π.refState ops η (pc + 1) = some c ∧ π.R ops η (pc + 1) (execInit S M) c ∧
+    (ok : π.InitOK pc S) (layout : π.LayoutOK (pc + 1)) :
+    π.refState ops η (pc + 1) = some c ∧ π.R ops η (pc + 1) (π.execInit S M) c ∧
       Execution P ops [] (.running c) (.running c) := by
   have hc' : π.refState ops η (pc + 1) = some c := by
     rw [π.refState_succ_single ops η hcmd, hc]
@@ -510,39 +539,59 @@ theorem step_init {S : List (DefAddr P)} (hR : π.R ops η pc M c)
   obtain ⟨r2p, r2b⟩ := π.refState_R2 ops hc'
   have unpub : ∀ y : DefAddr P, ¬ π.Pub (pc + 1) y.addr → ¬ π.Pub pc y.addr :=
     fun y hn h => hn ((pub_succ hcmd _).mpr (.inl h))
+  have initView : ∀ x ∈ S, π.SlotView (pc + 1) (.acc x) =
+      some (place π.allocation x.addr) := fun x hx => (π.slotView_acc).mpr
+    ⟨(mat_succ hcmd x).mpr (.inr hx),
+      fun hp => (ok x hx).1 ((pub_succ_of hcmd rfl _).mp hp)⟩
   refine ⟨hc', ⟨hR.reach, r2p, r2b, ?_, ?_, ?_, ?_, ?_⟩, .nil _⟩
   · intro b hb
     have hl : π.Live pc b := (live_succ_of hcmd rfl rfl b).mp ((π.slotView_pub).mp hb)
-    rw [execInit_not_mem S M (fun x hx e => (ok x hx).1 (by rw [e]; exact hl.1))]
+    rw [readSlot_congr π.allocation (π.execInit_not_mem S M
+      (fun x hx => layout.ne (initView x hx) hb (by intro e; cases e)))]
     exact hR.pubSlot b ((π.slotView_pub).mpr hl)
   · intro y hy
     obtain ⟨hm, hnp⟩ := (π.slotView_acc).mp hy
     by_cases hS : y ∈ S
-    · rw [execInit_mem S M hS, π.acc_zero_of_unconsumed ops hR y (ok y hS).2]
-    · rw [execInit_not_mem S M (fun x hx e => hS (by rw [DefAddr.addr_injective e] at hx; exact hx))]
+    · have safe : ∀ x ∈ S, place π.allocation x.addr = place π.allocation y.addr → x = y := by
+        intro x hx e
+        exact Resource.acc.inj (layout _ _ _ (e ▸ initView x hx) hy)
+      rw [π.execInit_mem S M hS safe, π.acc_zero_of_unconsumed ops hR y (ok y hS).2]
+    · rw [readSlot_congr π.allocation (π.execInit_not_mem S M (fun x hx =>
+        layout.ne (initView x hx) hy (fun e => hS (Resource.acc.inj e ▸ hx))))]
       have hm' : π.Mat pc y := by simpa [mat_succ hcmd, Ann.inits, hS] using hm
       exact hR.accSlot y ((π.slotView_acc).mpr ⟨hm', unpub y hnp⟩)
   · intro y hnp hcons
     have hcons' : ∃ o : P.Occurrence y.1, π.Cons pc ⟨y.1, o⟩ ∧ P.destination y.1 o.1 o.2 = y.2 := by
       simpa [cons_succ hcmd, Ann.groups] using hcons
     exact (mat_succ hcmd y).mpr (.inl (hR.retain y (unpub y hnp) hcons'))
-  · intro b hp hl
-    have hp' : π.Pub pc b := (pub_succ_of hcmd rfl b).mp hp
-    rw [execInit_not_mem S M (fun x hx e => (ok x hx).1 (by rw [e]; exact hp'))]
-    exact hR.dead b hp' (fun h => hl ((live_succ_of hcmd rfl rfl b).mpr h))
+  · intro ξ hu
+    rw [π.execInit_not_mem S M (ξ := ξ)
+      (fun x hx e => hu (.acc x) ((initView x hx).trans (congrArg some e)))]
+    apply hR.dead ξ
+    intro res hr
+    apply hu res
+    cases res with
+    | pub b =>
+      simpa only [SlotView, live_succ_of hcmd rfl rfl] using hr
+    | acc y =>
+      simp only [SlotView] at hr ⊢
+      split_ifs at hr with hy
+      rw [if_pos ⟨(mat_succ hcmd y).mpr (.inl hy.1),
+        fun hp => hy.2 ((pub_succ_of hcmd rfl _).mp hp)⟩]
+      exact hr
   · intro b hb
     exact (pub_succ hcmd b).mpr (.inl (hR.retPub b ((ret_succ_of hcmd rfl b).mp hb)))
 
 theorem step_acc {G : List (OccRef P)} (hR : π.R ops η pc M c)
     (hc : π.refState ops η pc = some c) (hcmd : π.commands[pc]? = some [.acc G])
-    (ok : π.AccOK pc G) (h : π.execAcc ops pc G M = .ok M') :
+    (ok : π.AccOK pc G) (layout : π.LayoutOK pc) (h : π.execAcc ops pc G M = .ok M') :
     ∃ c', π.refState ops η (pc + 1) = some c' ∧ π.R ops η (pc + 1) M' c' ∧
       ∃ events, Execution P ops events (.running c) (.running c') := by
   unfold execAcc at h
   split at h
   · rename_i res hres
     subst h
-    exact absurd hres (scanGroup_ne_ok ops _ G M')
+    exact absurd hres (scanGroup_ne_ok ops π.allocation _ G M')
   rename_i hscan
   split at h
   swap
@@ -570,18 +619,26 @@ theorem step_acc {G : List (OccRef P)} (hR : π.R ops η pc M c)
   obtain ⟨r2p, r2b⟩ := π.refState_R2 ops hc'
   have unpub : ∀ y : DefAddr P, ¬ π.Pub (pc + 1) y.addr → ¬ π.Pub pc y.addr :=
     fun y hn h => hn ((pub_succ hcmd _).mpr (.inl h))
+  have destView : ∀ x ∈ G, π.SlotView pc (.acc x.target) =
+      some (place π.allocation x.dest) := fun x hx => (π.slotView_acc).mpr
+    ⟨(ok.2 x hx).2, π.dest_not_pub ops hR (ok.2 x hx).1⟩
   refine ⟨_, hc', ⟨π.refState_reaches ops hc', r2p, r2b, ?_, ?_, ?_, ?_, ?_⟩,
     postAnn_execution ops hpost⟩
   · intro b hb
     have hl : π.Live pc b := (live_succ_of hcmd rfl rfl b).mp ((π.slotView_pub).mp hb)
-    have hne : ∀ x ∈ G, x.dest ≠ b := fun x hx e =>
-      π.dest_not_pub ops hR (ok.2 x hx).1 (by rw [e]; exact hl.1)
-    rw [commit_other G hcommit hne, hR.pubSlot b ((π.slotView_pub).mpr hl),
+    have hne : ∀ x ∈ G, place π.allocation x.dest ≠ place π.allocation b :=
+      fun x hx => layout.ne (destView x hx) ((π.slotView_pub).mpr hl) (by intro e; cases e)
+    rw [readSlot_congr π.allocation (π.commit_other G hcommit hne),
+      hR.pubSlot b ((π.slotView_pub).mpr hl),
       accumulateBatch_published]
   · intro y hy
     obtain ⟨hm, hnp⟩ := (π.slotView_acc).mp hy
     have hm' : π.Mat pc y := by simpa [mat_succ hcmd, Ann.inits] using hm
-    rw [commit_def G hcommit y, delta_congr hvals,
+    have yView := (π.slotView_acc).mpr ⟨hm', unpub y hnp⟩
+    have safe : ∀ x ∈ G, place π.allocation x.dest = place π.allocation y.addr → x.target = y := by
+      intro x hx e
+      exact Resource.acc.inj (layout _ _ _ (e ▸ destView x hx) yView)
+    rw [π.commit_def G hcommit y safe, delta_congr hvals,
       hR.accSlot y ((π.slotView_acc).mpr ⟨hm', unpub y hnp⟩), accumulateBatch_accumulators]
     rfl
   · intro y hnp hcons
@@ -595,18 +652,26 @@ theorem step_acc {G : List (OccRef P)} (hR : π.R ops η pc M c)
       have hmat := (ok.2 _ h1).2
       rw [ht] at hmat
       exact (mat_succ hcmd y).mpr (.inl hmat)
-  · intro b hp hl
-    have hp' : π.Pub pc b := (pub_succ_of hcmd rfl b).mp hp
-    have hne : ∀ x ∈ G, x.dest ≠ b := fun x hx e =>
-      π.dest_not_pub ops hR (ok.2 x hx).1 (by rw [e]; exact hp')
-    rw [commit_other G hcommit hne]
-    exact hR.dead b hp' (fun h => hl ((live_succ_of hcmd rfl rfl b).mpr h))
+  · intro ξ hu
+    have same : ∀ res, π.SlotView (pc + 1) res = π.SlotView pc res := by
+      intro res
+      cases res with
+      | pub b => simp only [SlotView, live_succ_of hcmd rfl rfl]
+      | acc y => simp only [SlotView, mat_succ hcmd, Ann.inits, List.not_mem_nil,
+          or_false, pub_succ_of hcmd rfl]
+    have oldUnused : ∀ res, π.SlotView pc res ≠ some ξ := by
+      intro res
+      rw [← same res]
+      exact hu res
+    rw [π.commit_other G hcommit (ξ := ξ)
+      (fun x hx e => oldUnused (.acc x.target) ((destView x hx).trans (congrArg some e)))]
+    exact hR.dead ξ oldUnused
   · intro b hb
     exact (pub_succ hcmd b).mpr (.inl (hR.retPub b ((ret_succ_of hcmd rfl b).mp hb)))
 
 theorem step_pub {B : List (DefAddr P)} (hR : π.R ops η pc M c)
     (hc : π.refState ops η pc = some c) (hcmd : π.commands[pc]? = some [.pub B])
-    (ok : π.PubOK pc B) (h : execPub B M = .ok M') :
+    (ok : π.PubOK pc B) (h : π.execPub B M = .ok M') :
     ∃ c', π.refState ops η (pc + 1) = some c' ∧ π.R ops η (pc + 1) M' c' ∧
       ∃ events, Execution P ops events (.running c) (.running c') := by
   have hM : M' = M := by
@@ -651,20 +716,48 @@ theorem step_pub {B : List (DefAddr P)} (hR : π.R ops η pc M c)
     have hcons' : ∃ o : P.Occurrence y.1, π.Cons pc ⟨y.1, o⟩ ∧ P.destination y.1 o.1 o.2 = y.2 := by
       simpa [cons_succ hcmd, Ann.groups] using hcons
     exact (mat_succ hcmd y).mpr (.inl (hR.retain y (unpub y hnp) hcons'))
-  · intro b hp hl
-    have hr : π.Ret pc b := by
-      by_contra hn
-      exact hl ⟨hp, fun h => hn ((ret_succ_of hcmd rfl b).mp h)⟩
-    have hp' := hR.retPub b hr
-    exact hR.dead b hp' (fun h => h.2 hr)
+  · intro ξ hu
+    apply hR.dead ξ
+    intro res hr
+    cases res with
+    | pub b =>
+      apply hu (.pub b)
+      simp only [SlotView] at hr ⊢
+      split_ifs at hr with hl
+      rw [if_pos ⟨(pub_succ hcmd b).mpr (.inl hl.1),
+        fun hn => hl.2 ((ret_succ_of hcmd rfl b).mp hn)⟩]
+      exact hr
+    | acc y =>
+      by_cases hy : y ∈ B
+      · apply hu (.pub y.addr)
+        have hl : π.Live (pc + 1) y.addr := by
+          refine ⟨(pub_succ hcmd _).mpr (.inr (List.mem_map.mpr ⟨y, hy, rfl⟩)), ?_⟩
+          intro hn
+          exact (ok.2 y hy).1 (hR.retPub _ ((ret_succ_of hcmd rfl _).mp hn))
+        have he : some (place π.allocation y.addr) = some ξ := by
+          rw [SlotView, if_pos (show π.Mat pc y ∧ ¬ π.Pub pc y.addr from
+            ⟨(ok.2 y hy).2.1, (ok.2 y hy).1⟩)] at hr
+          exact hr
+        exact (π.slotView_pub).mpr hl |>.trans he
+      · apply hu (.acc y)
+        simp only [SlotView] at hr ⊢
+        split_ifs at hr with hold
+        have hnp : ¬ π.Pub (pc + 1) y.addr := by
+          intro hp
+          rcases (pub_succ hcmd _).mp hp with hp | hp
+          · exact hold.2 hp
+          · obtain ⟨z, hz, e⟩ := List.mem_map.mp hp
+            exact hy (DefAddr.addr_injective e ▸ hz)
+        rw [if_pos ⟨(mat_succ hcmd y).mpr (.inl hold.1), hnp⟩]
+        exact hr
   · intro b hb
     exact (pub_succ hcmd b).mpr (.inl (hR.retPub b ((ret_succ_of hcmd rfl b).mp hb)))
 
 /-- Retirement: the reference state does not change; the retired slots are cleared. -/
 theorem step_retire {B : List (DefAddr P)} (hR : π.R ops η pc M c)
     (hc : π.refState ops η pc = some c) (hcmd : π.commands[pc]? = some [.retire B])
-    (ok : π.RetOK pc B) :
-    π.refState ops η (pc + 1) = some c ∧ π.R ops η (pc + 1) (execRet B M) c ∧
+    (ok : π.RetOK pc B) (layout : π.LayoutOK pc) :
+    π.refState ops η (pc + 1) = some c ∧ π.R ops η (pc + 1) (π.execRet B M) c ∧
       Execution P ops [] (.running c) (.running c) := by
   have hc' : π.refState ops η (pc + 1) = some c := by
     rw [π.refState_succ_single ops η hcmd, hc]
@@ -674,43 +767,65 @@ theorem step_retire {B : List (DefAddr P)} (hR : π.R ops η pc M c)
   have hretEq : ∀ b, π.Ret (pc + 1) b ↔ π.Ret pc b ∨ b ∈ B.map DefAddr.addr := ret_succ hcmd
   have unpub : ∀ y : DefAddr P, ¬ π.Pub (pc + 1) y.addr → ¬ π.Pub pc y.addr :=
     fun y hn h => hn ((hpubEq _).mpr h)
-  -- members of `B` are published, so unpublished addresses (accumulators) avoid them
-  have notB : ∀ b, ¬ π.Pub pc b → ∀ x ∈ B, x.addr ≠ b :=
-    fun b hb x hx e => hb (by rw [← e]; exact (ok x hx).1.1)
+  have retView : ∀ x ∈ B, π.SlotView pc (.pub x.addr) =
+      some (place π.allocation x.addr) := fun x hx => (π.slotView_pub).mpr (ok x hx).1
   refine ⟨hc', ⟨hR.reach, r2p, r2b, ?_, ?_, ?_, ?_, ?_⟩, .nil _⟩
   · intro b hb
     have hl := (π.slotView_pub).mp hb
-    have hnB : ∀ x ∈ B, x.addr ≠ b := fun x hx e =>
-      hl.2 ((hretEq b).mpr (.inr (List.mem_map.mpr ⟨x, hx, e⟩)))
-    rw [execRet_not_mem B M hnB]
-    exact hR.pubSlot b ((π.slotView_pub).mpr ⟨(hpubEq b).mp hl.1,
-      fun h => hl.2 ((hretEq b).mpr (.inl h))⟩)
+    have oldView := (π.slotView_pub).mpr ⟨(hpubEq b).mp hl.1,
+      fun h => hl.2 ((hretEq b).mpr (.inl h))⟩
+    have hnB : ∀ x ∈ B, place π.allocation x.addr ≠ place π.allocation b := by
+      intro x hx
+      apply layout.ne (retView x hx) oldView
+      intro e
+      exact hl.2 ((hretEq b).mpr (.inr
+        (List.mem_map.mpr ⟨x, hx, Resource.pub.inj e⟩)))
+    rw [readSlot_congr π.allocation (π.execRet_not_mem B M hnB)]
+    exact hR.pubSlot b oldView
   · intro y hy
     obtain ⟨hm, hnp⟩ := (π.slotView_acc).mp hy
     have hm' : π.Mat pc y := by simpa [mat_succ hcmd, Ann.inits] using hm
-    rw [execRet_not_mem B M (notB _ (unpub y hnp))]
-    exact hR.accSlot y ((π.slotView_acc).mpr ⟨hm', unpub y hnp⟩)
+    have oldView := (π.slotView_acc).mpr ⟨hm', unpub y hnp⟩
+    rw [readSlot_congr π.allocation (π.execRet_not_mem B M
+      (fun x hx => layout.ne (retView x hx) oldView (by intro e; cases e)))]
+    exact hR.accSlot y oldView
   · intro y hnp hcons
     have hcons' : ∃ o : P.Occurrence y.1, π.Cons pc ⟨y.1, o⟩ ∧ P.destination y.1 o.1 o.2 = y.2 := by
       simpa [cons_succ hcmd, Ann.groups] using hcons
     exact (mat_succ hcmd y).mpr (.inl (hR.retain y (unpub y hnp) hcons'))
-  · intro b hp hl
-    have hp' := (hpubEq b).mp hp
-    by_cases hbB : b ∈ B.map DefAddr.addr
-    · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hbB
-      exact execRet_mem B M hx
-    · have hnB : ∀ x ∈ B, x.addr ≠ b := fun x hx e => hbB (List.mem_map.mpr ⟨x, hx, e⟩)
-      rw [execRet_not_mem B M hnB]
-      exact hR.dead b hp' (fun h => hl ⟨hp, fun hr => ((hretEq b).mp hr).elim h.2 hbB⟩)
+  · intro ξ hu
+    by_cases hhit : ∃ x ∈ B, place π.allocation x.addr = ξ
+    · obtain ⟨x, hx, rfl⟩ := hhit
+      exact π.execRet_mem B M hx
+    · rw [π.execRet_not_mem B M (fun x hx e => hhit ⟨x, hx, e⟩)]
+      apply hR.dead ξ
+      intro res hr
+      cases res with
+      | acc y =>
+        apply hu (.acc y)
+        simpa only [SlotView, mat_succ hcmd, Ann.inits, List.not_mem_nil,
+          or_false, hpubEq] using hr
+      | pub b =>
+        simp only [SlotView] at hr
+        split_ifs at hr with hl
+        have hnb : b ∉ B.map DefAddr.addr := by
+          intro hm
+          obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hm
+          exact hhit ⟨x, hx, Option.some.inj hr⟩
+        apply hu (.pub b)
+        have newView := (π.slotView_pub).mpr ⟨(hpubEq b).mpr hl.1,
+          fun hn => ((hretEq b).mp hn).elim hl.2 hnb⟩
+        exact newView.trans hr
   · intro b hb
     rcases (hretEq b).mp hb with h | h
     · exact (hpubEq b).mpr (hR.retPub b h)
     · obtain ⟨x, hx, rfl⟩ := List.mem_map.mp h
       exact (hpubEq _).mpr (ok x hx).1.1
 
-/-- Successful-step simulation (spec 31.2) for every slice-1 command. -/
+/-- Successful-step simulation at alias-safe pre- and post-command boundaries. -/
 theorem step_R {a : Ann P} (hR : π.R ops η pc M c) (hc : π.refState ops η pc = some c)
     (hcmd : π.commands[pc]? = some [a]) (ok : π.AnnOK pc a)
+    (layout : π.LayoutOK pc) (layout' : π.LayoutOK (pc + 1))
     (h : π.stepPlan ops pc M = .ok M') :
     ∃ c', π.refState ops η (pc + 1) = some c' ∧ π.R ops η (pc + 1) M' c' ∧
       ∃ events, Execution P ops events (.running c) (.running c') := by
@@ -720,13 +835,13 @@ theorem step_R {a : Ann P} (hR : π.R ops η pc M c) (hc : π.refState ops η pc
   cases a with
   | initZero S =>
     cases h
-    obtain ⟨h1, h2, h3⟩ := step_init ops hR hc hcmd ok
+    obtain ⟨h1, h2, h3⟩ := step_init ops hR hc hcmd ok layout'
     exact ⟨c, h1, h2, [], h3⟩
-  | acc G => exact step_acc ops hR hc hcmd ok h
+  | acc G => exact step_acc ops hR hc hcmd ok layout h
   | pub B => exact step_pub ops hR hc hcmd ok h
   | retire B =>
     cases h
-    obtain ⟨h1, h2, h3⟩ := step_retire ops hR hc hcmd ok
+    obtain ⟨h1, h2, h3⟩ := step_retire ops hR hc hcmd ok layout
     exact ⟨c, h1, h2, [], h3⟩
 
 /-- Failure matching (spec 31.3): a semantic failure reported by the
@@ -770,6 +885,12 @@ end Steps
 #print axioms refState_R2
 #print axioms accFlat_complete
 #print axioms acc_zero_of_unconsumed
+#print axioms writeDef_ne
+#print axioms writeDef_self
+#print axioms execInit_not_mem
+#print axioms execInit_mem
+#print axioms execRet_none
+#print axioms commit_other
 #print axioms commit_def
 #print axioms live_succ_of
 #print axioms ret_succ

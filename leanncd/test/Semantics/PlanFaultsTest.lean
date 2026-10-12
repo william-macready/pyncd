@@ -17,12 +17,12 @@ def faultsAt (n₁ : Nat) (e₁ : ImplErr) (n₂ : Nat) (e₂ : ImplErr) : Fault
   fun k => if k = n₁ then some e₁ else if k = n₂ then some e₂ else none
 
 /-- Outcome kind, pc, error, memory row of a faulty run (taggedOut). -/
-def eRow {P : Program Carrier declarations registry} : FOutcome P →
+def eRow {P : Program Carrier declarations registry} {A : Allocation P} : FOutcome P A →
     String × Nat × Option ImplErr × List (Option ℚ)
   | .run o => let r := outcomeRow o; ("run:" ++ r.1, r.2.1, none, r.2.2.2)
   | .error e pc M => ("error", pc, some e, rowOf (PlanOutcome.done (P := P) 0 M))
 
-def eFused (faults : Faults) := fused.runPlanE ops faults (Start η0)
+def eFused (faults : Faults) := fused.runPlanE ops faults (fused.Start η0)
 
 /-! ### (1) `fused`: no fault, then a single fault at each position -/
 
@@ -57,9 +57,10 @@ def eFused (faults : Faults) := fused.runPlanE ops faults (Start η0)
 
 def sRowEP (bad : Bool) (π : (scalarRole bad).Plan) (faults : Faults) :
     String × Nat × Option ImplErr × List (Option ℚ) :=
-  let row (M : Memory Carrier scalarDeclarations) :=
-    [M (place ⟨0, ()⟩), M (place ⟨1, ()⟩), M (place ⟨2, ()⟩)]
-  match π.runPlanE ops faults (Start (scalarInput bad)) with
+  let row (M : Memory Carrier π.allocation) :=
+    [readSlot π.allocation M ⟨0, ()⟩, readSlot π.allocation M ⟨1, ()⟩,
+      readSlot π.allocation M ⟨2, ()⟩]
+  match π.runPlanE ops faults (π.Start (scalarInput bad)) with
   | .run (.done pc M) => ("run:done", pc, none, row M)
   | .run (.failed _ pc M) => ("run:failed", pc, none, row M)
   | .run (.stuck pc M) => ("run:stuck", pc, none, row M)
@@ -103,7 +104,7 @@ example : ¬ fused.NoFaultsInPlan (faultAt 2 .allocFail) := by
   have := h 2 (by decide)
   simp [faultAt] at this
 
-theorem fused_beyond_errorFree : fused.ErrorFreeRun ops (faultAt 3 .allocFail) (Start η0) :=
+theorem fused_beyond_errorFree : fused.ErrorFreeRun ops (faultAt 3 .allocFail) (fused.Start η0) :=
   fused.errorFreeRun_of_noFaultsInPlan ops (by
     intro n hn
     have : n < 3 := hn
@@ -112,15 +113,15 @@ theorem fused_beyond_errorFree : fused.ErrorFreeRun ops (faultAt 3 .allocFail) (
 
 /-- (c) under an error-free run: done iff a model exists. -/
 theorem fused_done_iff_model_beyond :
-    (∃ m M', fused.runPlanE ops (faultAt 3 .allocFail) (Start η0) = .run (.done m M')) ↔
+    (∃ m M', fused.runPlanE ops (faultAt 3 .allocFail) (fused.Start η0) = .run (.done m M')) ↔
       ∃ ρ, taggedOut.Models ops η0 ρ :=
   done_iff_model_FE ops fused_fvalid _ η0 fused_beyond_errorFree
 
 /-- Outside the error-free profile: the model exists, the fault-free run is `done`, and the
     faulty run is an error at pc 0. -/
 theorem fused_error_despite_model :
-    (∃ M', fused.runPlanE ops (fun _ => none) (Start η0) = .run (.done fused.commands.length M')) ∧
-      ∃ e', fused.runPlanE ops (faultAt 1 .kernelFault) (Start η0) = .error e' 0 (Start η0) := by
+    (∃ M', fused.runPlanE ops (fun _ => none) (fused.Start η0) = .run (.done fused.commands.length M')) ∧
+      ∃ e', fused.runPlanE ops (faultAt 1 .kernelFault) (fused.Start η0) = .error e' 0 (fused.Start η0) := by
   obtain ⟨ρ, hρ⟩ := fused_has_model
   exact error_despite_model ops fused_fvalid η0 hρ (cmd := [.initZero block, .acc group])
     rfl (j := 1) (by decide) (e := .kernelFault) (by simp [faultAt])
