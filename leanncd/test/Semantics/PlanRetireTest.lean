@@ -212,4 +212,201 @@ example : rtEarly.checkPlan = false := by decide
 #eval check "retire-fault-fused-after-retire" (chainRowE rtFusedOk (faultAt 5 .kernelFault))
   ("error", 4, some .kernelFault, [some 0, none, some 4])
 
+/-! ### 9. R at every command boundary (regression net for the `dead` and `retPub` fields of `R`)
+
+   `R` is proved in general (`step_R`, `step_retire`), but `dead` (a retired slot is `none`) and
+   `retPub` (a retired address is published) only ever appear inside those proofs. These theorems
+   instantiate `R` on concrete retire plans at EVERY command boundary along the actual run and read the
+   two fields off the intermediate states, so a change to `R` (the buffer-reuse slice will reshape it)
+   or to a step kernel that breaks them on a real plan fails here, not only in a distant proof.
+   The pattern is `PlanSimulationTest.tagged_R_every_pc`, with the per-step side conditions taken from
+   `Valid` (`Valid.stepOK`) instead of written by hand. -/
+
+/-- The memory after the first `n` commands of the actual run (a command that does not return `ok`
+    leaves the memory unchanged; the lemmas below require every step to be `ok`). -/
+def chainMem (π : (routed chainBody).Plan) : Nat → Memory Carrier declarations
+  | 0 => Start chainInput
+  | n + 1 =>
+    match π.stepPlan ops n (chainMem π n) with
+    | .ok M => M
+    | _ => chainMem π n
+
+/-- R holds at every boundary of a valid singleton plan whose run steps through `ok` memories. -/
+theorem R_every_pc_of (π : (routed chainBody).Plan) (hv : π.Valid) (n : Nat)
+    (hn : π.commands.length = n)
+    (hstep : ∀ k, k < n → π.stepPlan ops k (chainMem π k) = .ok (chainMem π (k + 1))) :
+    ∀ pc, pc ≤ n → ∃ c, π.refState ops chainInput pc = some c ∧
+      π.R ops chainInput pc (chainMem π pc) c := by
+  intro pc
+  induction pc with
+  | zero => intro _; exact ⟨_, rfl, π.R_start ops chainInput⟩
+  | succ k ih =>
+    intro hk
+    obtain ⟨c, hc, hR⟩ := ih (by omega)
+    have hlt : k < π.commands.length := by omega
+    have hcmd0 : π.commands[k]? = some π.commands[k] := List.getElem?_eq_getElem hlt
+    obtain ⟨a, ha⟩ := hv.singleton _ (List.mem_of_getElem? hcmd0)
+    have hcmd : π.commands[k]? = some [a] := by rw [hcmd0, ha]
+    obtain ⟨c', hc', hR', -⟩ :=
+      step_R ops hR hc hcmd (hv.stepOK k a hcmd) (hstep k (by omega))
+    exact ⟨c', hc', hR'⟩
+
+/-- The same for a valid FUSED plan, at command boundaries (`R` is claimed there only). -/
+theorem R_every_pc_F_of (π : (routed chainBody).Plan) (hv : π.FValid) (n : Nat)
+    (hn : π.commands.length = n)
+    (hstep : ∀ k, k < n → π.stepPlan ops k (chainMem π k) = .ok (chainMem π (k + 1))) :
+    ∀ pc, pc ≤ n → ∃ c, π.refState ops chainInput pc = some c ∧
+      π.R ops chainInput pc (chainMem π pc) c := by
+  intro pc
+  induction pc with
+  | zero => intro _; exact ⟨_, rfl, π.R_start ops chainInput⟩
+  | succ k ih =>
+    intro hk
+    obtain ⟨c, hc, hR⟩ := ih (by omega)
+    have hlt : k < π.commands.length := by omega
+    have hcmd : π.commands[k]? = some π.commands[k] := List.getElem?_eq_getElem hlt
+    have hs : π.stepCommand ops k (chainMem π k) π.commands[k] = .ok (chainMem π (k + 1)) := by
+      have h := hstep k (by omega)
+      simpa [stepPlan, hcmd] using h
+    obtain ⟨c', hc', hR', -⟩ := π.step_R_command ops hR hc hcmd
+      (fun j a hj => Valid.stepOK hv _ a (π.expand_commands_getElem? (π.ann_getElem?_offset hcmd hj))) hs
+    exact ⟨c', hc', hR'⟩
+
+theorem rtMulti_valid : rtMulti.Valid := rtMulti.checkPlan_sound (by decide)
+theorem rtFusedOk_valid : rtFusedOk.FValid := rtFusedOk.checkPlanF_sound (by decide)
+
+theorem rtChain_R_every_pc : ∀ pc, pc ≤ 6 → ∃ c, rtChain.refState ops chainInput pc = some c ∧
+    rtChain.R ops chainInput pc (chainMem rtChain pc) c :=
+  R_every_pc_of rtChain rtChain_valid 6 rfl (by intro k hk; interval_cases k <;> rfl)
+
+theorem rtMulti_R_every_pc : ∀ pc, pc ≤ 6 → ∃ c, rtMulti.refState ops chainInput pc = some c ∧
+    rtMulti.R ops chainInput pc (chainMem rtMulti pc) c :=
+  R_every_pc_of rtMulti rtMulti_valid 6 rfl (by intro k hk; interval_cases k <;> rfl)
+
+theorem rtFusedOk_R_every_pc : ∀ pc, pc ≤ 5 → ∃ c, rtFusedOk.refState ops chainInput pc = some c ∧
+    rtFusedOk.R ops chainInput pc (chainMem rtFusedOk pc) c :=
+  R_every_pc_F_of rtFusedOk rtFusedOk_valid 5 rfl (by intro k hk; interval_cases k <;> rfl)
+
+/-- After the retire of `rtChain` (command 4, so from pc 5 on) point 1 is retired: `retPub` makes it
+    published, it is no longer live, and `dead` says its slot is free, which the concrete memory
+    confirms. -/
+theorem rtChain_retired_slot_free :
+    ∃ c, rtChain.refState ops chainInput 5 = some c ∧
+      rtChain.R ops chainInput 5 (chainMem rtChain 5) c ∧
+      rtChain.Pub 5 (cAddr 1).addr ∧ ¬ rtChain.Live 5 (cAddr 1).addr ∧
+      chainMem rtChain 5 (place (cAddr 1).addr) = none := by
+  obtain ⟨c, hc, hR⟩ := rtChain_R_every_pc 5 (by omega)
+  have hRet : rtChain.Ret 5 (cAddr 1).addr := by decide
+  have hPub := hR.retPub _ hRet
+  have hnl : ¬ rtChain.Live 5 (cAddr 1).addr := fun h => h.2 hRet
+  exact ⟨c, hc, hR, hPub, hnl, hR.dead _ hPub hnl⟩
+
+/-- A block of two distinct addresses: both are retired, no longer live and free at pc 5. -/
+theorem rtMulti_retired_slots_free :
+    ∃ c, rtMulti.refState ops chainInput 5 = some c ∧
+      rtMulti.R ops chainInput 5 (chainMem rtMulti 5) c ∧
+      (¬ rtMulti.Live 5 (cAddr 0).addr ∧ chainMem rtMulti 5 (place (cAddr 0).addr) = none) ∧
+      (¬ rtMulti.Live 5 (cAddr 1).addr ∧ chainMem rtMulti 5 (place (cAddr 1).addr) = none) := by
+  obtain ⟨c, hc, hR⟩ := rtMulti_R_every_pc 5 (by omega)
+  have free : ∀ a : Fin 3, rtMulti.Ret 5 (cAddr a).addr →
+      ¬ rtMulti.Live 5 (cAddr a).addr ∧ chainMem rtMulti 5 (place (cAddr a).addr) = none :=
+    fun a hRet => by
+      have hPub := hR.retPub _ hRet
+      have hnl : ¬ rtMulti.Live 5 (cAddr a).addr := fun h => h.2 hRet
+      exact ⟨hnl, hR.dead _ hPub hnl⟩
+  exact ⟨c, hc, hR, free 0 (by decide), free 1 (by decide)⟩
+
+/-- Fused: the retire sits inside command 3 (`[acc occ1, retire p1]`), so it has run at pc 4. -/
+theorem rtFusedOk_retired_slot_free :
+    ∃ c, rtFusedOk.refState ops chainInput 4 = some c ∧
+      rtFusedOk.R ops chainInput 4 (chainMem rtFusedOk 4) c ∧
+      ¬ rtFusedOk.Live 4 (cAddr 1).addr ∧
+      chainMem rtFusedOk 4 (place (cAddr 1).addr) = none := by
+  obtain ⟨c, hc, hR⟩ := rtFusedOk_R_every_pc 4 (by omega)
+  have hRet : rtFusedOk.Ret 4 (cAddr 1).addr := by decide
+  have hPub := hR.retPub _ hRet
+  have hnl : ¬ rtFusedOk.Live 4 (cAddr 1).addr := fun h => h.2 hRet
+  exact ⟨c, hc, hR, hnl, hR.dead _ hPub hnl⟩
+
+-- Independent of `R` (so they can fail on their own): the memories the run actually computes have the
+-- retired slots free and every live neighbour untouched. In `rtChain` at pc 5 the memory is
+-- `[some 0, none, some 4]` (point 1 retired), as in the row `retire-valid-chain`. The slots holding `4`
+-- (= 3 + 1 in exact rationals, which kernel `rfl` cannot normalise) are `#eval check` rows below.
+example : chainMem rtChain 5 (place (cAddr 1).addr) = none := rfl
+example : chainMem rtChain 5 (place (cAddr 0).addr) = some 0 := rfl
+example : chainMem rtMulti 5 (place (cAddr 0).addr) = none := rfl
+example : chainMem rtMulti 5 (place (cAddr 1).addr) = none := rfl
+example : chainMem rtFusedOk 4 (place (cAddr 1).addr) = none := rfl
+
+#eval check "retire-net-chain-live-neighbour" (chainMem rtChain 5 (place (cAddr 2).addr)) (some 4)
+#eval check "retire-net-multi-live-neighbour" (chainMem rtMulti 5 (place (cAddr 2).addr)) (some 4)
+#eval check "retire-net-fused-live-neighbour" (chainMem rtFusedOk 4 (place (cAddr 2).addr)) (some 4)
+
+/-! `dead` and `retPub` hold trivially until something has been retired (`Live = Pub ∧ ¬ Ret`), so the
+   steps that matter are the ones that run AFTER a retire. `rtNeighbour` has an `acc` after its retire;
+   `rtInitAfter` has an `initZero` after its retire, the shape the buffer-reuse slice will introduce. -/
+
+-- donor: rtNeighbour. Retire p0 (command 3), THEN `initZero [p2]` (command 4), then the accumulation
+-- into p2 and its publication: the `init` and `acc` kernels run with a retired slot present.
+def rtInitAfter : (routed chainBody).Plan :=
+  unitPlan [[.initZero [cAddr 0, cAddr 1]], [.acc [cOcc 0]], [.pub [cAddr 0, cAddr 1]],
+    [.retire [cAddr 0]], [.initZero [cAddr 2]], [.acc [cOcc 1]], [.pub [cAddr 2]]]
+
+#eval check "retire-init-after-retire" (rtInitAfter.checkPlan, chainRow rtInitAfter)
+  (true, ("done", 7, none, [none, some 3, some 4]))
+example : rtInitAfter.checkPlan = true := by decide
+
+theorem rtNeighbour_valid : rtNeighbour.Valid := rtNeighbour.checkPlan_sound (by decide)
+theorem rtInitAfter_valid : rtInitAfter.Valid := rtInitAfter.checkPlan_sound (by decide)
+
+theorem rtNeighbour_R_every_pc : ∀ pc, pc ≤ 6 → ∃ c, rtNeighbour.refState ops chainInput pc = some c ∧
+    rtNeighbour.R ops chainInput pc (chainMem rtNeighbour pc) c :=
+  R_every_pc_of rtNeighbour rtNeighbour_valid 6 rfl (by intro k hk; interval_cases k <;> rfl)
+
+theorem rtInitAfter_R_every_pc : ∀ pc, pc ≤ 7 → ∃ c, rtInitAfter.refState ops chainInput pc = some c ∧
+    rtInitAfter.R ops chainInput pc (chainMem rtInitAfter pc) c :=
+  R_every_pc_of rtInitAfter rtInitAfter_valid 7 rfl (by intro k hk; interval_cases k <;> rfl)
+
+/-- `dead` and `retPub` read off the state AFTER a later `acc` (command 4 of `rtNeighbour`, so pc 5). -/
+theorem rtNeighbour_dead_after_acc :
+    ∃ c, rtNeighbour.refState ops chainInput 5 = some c ∧
+      rtNeighbour.R ops chainInput 5 (chainMem rtNeighbour 5) c ∧
+      ¬ rtNeighbour.Live 5 (cAddr 0).addr ∧ chainMem rtNeighbour 5 (place (cAddr 0).addr) = none := by
+  obtain ⟨c, hc, hR⟩ := rtNeighbour_R_every_pc 5 (by omega)
+  have hRet : rtNeighbour.Ret 5 (cAddr 0).addr := by decide
+  have hPub := hR.retPub _ hRet
+  have hnl : ¬ rtNeighbour.Live 5 (cAddr 0).addr := fun h => h.2 hRet
+  exact ⟨c, hc, hR, hnl, hR.dead _ hPub hnl⟩
+
+/-- The same after a later `initZero` (command 4, pc 5) and after the following `acc` (command 5, pc 6). -/
+theorem rtInitAfter_dead_after_init_and_acc :
+    ∀ pc, 5 ≤ pc → pc ≤ 6 → ∃ c, rtInitAfter.refState ops chainInput pc = some c ∧
+      rtInitAfter.R ops chainInput pc (chainMem rtInitAfter pc) c ∧
+      ¬ rtInitAfter.Live pc (cAddr 0).addr ∧
+      chainMem rtInitAfter pc (place (cAddr 0).addr) = none := by
+  intro pc h5 h6
+  obtain ⟨c, hc, hR⟩ := rtInitAfter_R_every_pc pc (by omega)
+  have hRet : rtInitAfter.Ret pc (cAddr 0).addr := by
+    interval_cases pc <;> decide
+  have hPub := hR.retPub _ hRet
+  have hnl : ¬ rtInitAfter.Live pc (cAddr 0).addr := fun h => h.2 hRet
+  exact ⟨c, hc, hR, hnl, hR.dead _ hPub hnl⟩
+
+-- Independent of `R`: p0 stays free while the later `init` and `acc` kernels run, and they did run.
+example : chainMem rtNeighbour 5 (place (cAddr 0).addr) = none := rfl
+example : chainMem rtInitAfter 5 (place (cAddr 0).addr) = none := rfl
+example : chainMem rtInitAfter 6 (place (cAddr 0).addr) = none := rfl
+example : chainMem rtInitAfter 4 (place (cAddr 2).addr) = none := rfl
+example : chainMem rtInitAfter 5 (place (cAddr 2).addr) = some 0 := rfl
+#eval check "retire-net-neighbour-acc-ran" (chainMem rtNeighbour 5 (place (cAddr 2).addr)) (some 4)
+#eval check "retire-net-init-after-acc-ran" (chainMem rtInitAfter 6 (place (cAddr 2).addr)) (some 4)
+
+#print axioms R_every_pc_of
+#print axioms R_every_pc_F_of
+#print axioms rtChain_retired_slot_free
+#print axioms rtMulti_retired_slots_free
+#print axioms rtFusedOk_retired_slot_free
+#print axioms rtNeighbour_dead_after_acc
+#print axioms rtInitAfter_dead_after_init_and_acc
+
 end LeanNCD.Semantics.PlanFixtures
