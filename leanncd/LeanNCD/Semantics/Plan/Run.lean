@@ -1,10 +1,11 @@
 import LeanNCD.Semantics.Plan.Validity
 
-/- Progress and the multi-step run lemma for valid plans (slice 1).
+/- Progress and the multi-step run lemma for valid singleton plans with typed allocations.
    `step_not_stuck`: a valid plan is never stuck at a related state.
    `run_R`: a run from a related state ends `done` at pc = m with R and a
    matching reference execution, or `failed` with a matching reference
-   execution to a failed state; never `stuck`. -/
+   execution to a failed state; never `stuck`. Preservation uses the validity
+   clause for layouts on both sides of each annotation. -/
 
 namespace LeanNCD.Semantics.Program.Plan
 
@@ -19,9 +20,9 @@ variable (ops : (s : S) → ScalarOps (K s))
 
 omit [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
 /-- A group whose every footprint is readable never reports `stuck` in its scan. -/
-theorem scanGroup_ne_stuck {p : PartialStore K σ} {G : List (OccRef P)}
+theorem scanGroup_ne_stuck (A : Allocation P) {p : PartialStore K σ} {G : List (OccRef P)}
     (ready : ∀ x ∈ G, checkReads p (footprint (P.body x.1 x.2.1) x.2.2) = true) :
-    scanGroup ops p G ≠ some .stuck := by
+    scanGroup ops A p G ≠ some .stuck := by
   induction G with
   | nil => simp [scanGroup]
   | cons x G ih =>
@@ -32,23 +33,38 @@ theorem scanGroup_ne_stuck {p : PartialStore K σ} {G : List (OccRef P)}
     · simp
     · exact ih (fun y hy => ready y (List.mem_cons_of_mem _ hy))
 
+omit [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
+theorem cast_option_isSome {s t : S} (h : s = t) (v : Option (K s)) :
+    (cast (congrArg (fun s => Option (K s)) h) v).isSome = v.isSome := by
+  cases h
+  rfl
+
+omit [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
+theorem readSlot_isSome (A : Allocation P) (M : Memory K A) (a : Address σ) :
+    (readSlot A M a).isSome = (M (place A a)).isSome := by
+  rw [readSlot_eq_cast]
+  exact cast_option_isSome (place_sort A a) _
+
 /-- The commit phase succeeds when every destination slot is initialised. -/
-theorem foldlM_addAt_some (v : Values P) : ∀ (G : List (OccRef P)) (M : Memory K σ),
-    (∀ x ∈ G, (M (place x.dest)).isSome = true) → ∃ M', G.foldlM (addAt v) M = some M'
+theorem foldlM_addAt_some (v : Values P) :
+    ∀ (G : List (OccRef P)) (M : Memory K π.allocation),
+    (∀ x ∈ G, (readSlot π.allocation M x.dest).isSome = true) →
+      ∃ M', G.foldlM (π.addAt v) M = some M'
   | [], M, _ => ⟨M, rfl⟩
   | x :: G, M, h => by
     obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp (h x List.mem_cons_self)
-    have step : addAt v M x = some (Function.update M (place x.dest) (some (addVal x a (v x)))) := by
+    have step : π.addAt v M x = some (π.writeDef M x.target (addVal x a (v x))) := by
       simp [addAt, ha]
     rw [List.foldlM_cons, step]
     refine foldlM_addAt_some v G _ (fun y hy => ?_)
-    by_cases e : place y.dest = place x.dest
-    · rw [e, Function.update_self]
-      rfl
-    · rw [Function.update_of_ne e]
+    by_cases e : place π.allocation y.dest = place π.allocation x.dest
+    · rw [readSlot_isSome, e]
+      simp only [writeDef, OccRef.target_addr, Function.update_self]
+      exact cast_option_isSome (place_sort π.allocation x.target.addr).symm _
+    · rw [readSlot_isSome, π.writeDef_ne _ _ _ (Ne.symm e), ← readSlot_isSome]
       exact h y (List.mem_cons_of_mem _ hy)
 
-variable {η : P.Input} {pc : Nat} {M : Memory K σ} {c : P.Running}
+variable {η : P.Input} {pc : Nat} {M : Memory K π.allocation} {c : P.Running}
 
 /-- Under R, a live address's slot is readable through the read view. -/
 theorem readPub_isSome (hR : π.R ops η pc M c) {a : Address σ} (ha : π.Live pc a) :
@@ -59,7 +75,8 @@ theorem readPub_isSome (hR : π.R ops η pc M c) {a : Address σ} (ha : π.Live 
 
 /-- Under R, a materialised unpublished address has an initialised slot. -/
 theorem acc_slot_isSome (hR : π.R ops η pc M c) {x : DefAddr P} (hm : π.Mat pc x)
-    (hp : ¬ π.Pub pc x.addr) : (M (place x.addr)).isSome = true := by
+    (hp : ¬ π.Pub pc x.addr) :
+    (readSlot π.allocation M x.addr).isSome = true := by
   rw [hR.accSlot x (slotView_acc π |>.mpr ⟨hm, hp⟩)]
   rfl
 
@@ -93,7 +110,7 @@ theorem step_not_stuck (hv : π.Valid) (hR : π.R ops η pc M c)
     · rename_i res hres
       intro e
       subst e
-      exact scanGroup_ne_stuck ops (fun x hx => (checkReads_iff _ _).mpr
+      exact scanGroup_ne_stuck ops π.allocation (fun x hx => (checkReads_iff _ _).mpr
         (fun a ha => readPub_isSome ops hR (hready x hx a ha))) hres
     · obtain ⟨M', hM'⟩ := foldlM_addAt_some (valuesOn ops (π.readPub pc M)) G M
         (fun x hx => acc_slot_isSome ops hR (hG x hx).2 (π.dest_not_pub ops hR (hG x hx).1))
@@ -105,7 +122,7 @@ theorem step_not_stuck (hv : π.Valid) (hR : π.R ops η pc M c)
     never stuck: each step is `step_not_stuck`, and a successful step re-establishes R
     (`step_R`). Used on `π.expand` for a fused command. -/
 theorem execAnns_not_stuck (hv : π.Valid) :
-    ∀ (anns : List (Ann P)) (n : Nat) (M : Memory K σ) (c : P.Running),
+    ∀ (anns : List (Ann P)) (n : Nat) (M : Memory K π.allocation) (c : P.Running),
       π.R ops η n M c → π.refState ops η n = some c →
       (∀ j a, anns[j]? = some a → π.commands[n + j]? = some [a]) →
       π.execAnns ops n M anns ≠ .stuck
@@ -122,7 +139,9 @@ theorem execAnns_not_stuck (hv : π.Valid) :
     | ok M₁ =>
       rw [hs] at hns
       have hs' : π.stepPlan ops n M = .ok M₁ := by rw [hstep, hs]
-      obtain ⟨c₁, hc₁, hR₁, -⟩ := step_R ops hR hc h0 (hv.stepOK n a h0) hs'
+      obtain ⟨layout, layout'⟩ := hv.layout_boundary h0
+      obtain ⟨c₁, hc₁, hR₁, -⟩ :=
+        step_R ops hR hc h0 (hv.stepOK n a h0) layout layout' hs'
       exact execAnns_not_stuck hv as n.succ M₁ c₁ hR₁ hc₁ (fun j b hb => by
         have := hcmds (j + 1) b (by simpa using hb)
         rwa [show n + (j + 1) = n.succ + j by omega] at this)
@@ -137,7 +156,7 @@ theorem execAnns_not_stuck (hv : π.Valid) :
     occurrence `o` with a reference execution from `c` to `.failed o c''`.
     It is never stuck (no third disjunct). -/
 theorem run_R (hv : π.Valid) :
-    ∀ (l : List (Command P)) (pc : Nat) (M : Memory K σ) (c : P.Running),
+    ∀ (l : List (Command P)) (pc : Nat) (M : Memory K π.allocation) (c : P.Running),
       π.commands.drop pc = l → pc ≤ π.commands.length →
       π.R ops η pc M c → π.refState ops η pc = some c →
       (∃ M' c', π.runFrom ops pc M l = .done π.commands.length M' ∧
@@ -163,7 +182,9 @@ theorem run_R (hv : π.Valid) :
       simp [stepPlan, hcmd]
     cases hs : π.stepPlan ops pc M with
     | ok M' =>
-      obtain ⟨c', hc', hR', ev, hex⟩ := step_R ops hR hc hcmd (hv.stepOK pc a hcmd) hs
+      obtain ⟨layout, layout'⟩ := hv.layout_boundary hcmd
+      obtain ⟨c', hc', hR', ev, hex⟩ :=
+        step_R ops hR hc hcmd (hv.stepOK pc a hcmd) layout layout' hs
       have ih := run_R hv rest (pc + 1) M' c' hrest hlt hR' hc'
       simp only [runFrom, hstep, hs]
       rcases ih with ⟨M'', c'', hrun, hcm, hRm, ev', hex'⟩ | ⟨o, pc', M'', c'', ev', hrun, hex'⟩
@@ -182,20 +203,26 @@ theorem run_R (hv : π.Valid) :
     `m` and a reference execution from the initial state, or fails with a
     matching reference failure. -/
 theorem runPlan_R (hv : π.Valid) (η : P.Input) :
-    (∃ M' c', π.runPlan ops (Start η) = .done π.commands.length M' ∧
+    (∃ M' c', π.runPlan ops (π.Start η) = .done π.commands.length M' ∧
         π.refState ops η π.commands.length = some c' ∧ π.R ops η π.commands.length M' c' ∧
         ∃ events, Execution P ops events (.running (P.initial η)) (.running c')) ∨
-    (∃ o pc' M' c' events, π.runPlan ops (Start η) = .failed o pc' M' ∧
+    (∃ o pc' M' c' events, π.runPlan ops (π.Start η) = .failed o pc' M' ∧
         Execution P ops events (.running (P.initial η)) (.failed o.1 o.2 c')) :=
-  run_R ops hv π.commands 0 (Start η) (P.initial η) (List.drop_zero) (Nat.zero_le _)
+  run_R ops hv π.commands 0 (π.Start η) (P.initial η) (List.drop_zero) (Nat.zero_le _)
     (π.R_start ops η) (by simp [refState, prefixAnn_zero])
 
 /-- A valid plan's run from `Start` is never stuck. -/
-theorem runPlan_not_stuck (hv : π.Valid) (η : P.Input) (pc : Nat) (M : Memory K σ) :
-    π.runPlan ops (Start η) ≠ .stuck pc M := by
+theorem runPlan_not_stuck (hv : π.Valid) (η : P.Input) (pc : Nat)
+    (M : Memory K π.allocation) : π.runPlan ops (π.Start η) ≠ .stuck pc M := by
   rcases runPlan_R ops hv η with ⟨_, _, h, -⟩ | ⟨_, _, _, _, _, h, -⟩ <;> rw [h] <;> simp
 
 #print axioms step_not_stuck
+#print axioms scanGroup_ne_stuck
+#print axioms cast_option_isSome
+#print axioms readSlot_isSome
+#print axioms foldlM_addAt_some
+#print axioms readPub_isSome
+#print axioms acc_slot_isSome
 #print axioms execAnns_not_stuck
 #print axioms run_R
 #print axioms runPlan_R

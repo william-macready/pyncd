@@ -1,7 +1,7 @@
 import LeanNCD.Semantics.Plan.Run
 
 /- Terminal adequacy (Lemma 31.2) and plan correctness (Theorem 31.3) for the
-   slice-1 to slice-3 profile. Lemma 31.2 is the first consumer of `Valid.coverage1` and
+   singleton profile with typed allocations. Lemma 31.2 consumes `Valid.coverage1` and
    `Valid.coverage2`: at pc = m the related reference state is complete, so the
    reference final store exists, every output coordinate is published, and
    Decode returns its output projection. Theorem 31.3 compares outcomes only
@@ -18,6 +18,8 @@ variable {P : Program K σ r} {π : P.Plan}
 /-- At pc = m the command prefix is the whole plan. -/
 theorem prefixAnn_length (π : P.Plan) : π.prefixAnn π.commands.length = π.ann := by
   simp [prefixAnn, ann]
+
+variable [DecidableEq σ.Tensor]
 
 /-- Spec 29.3 condition 4 for every pub command, from `pubOK`. -/
 theorem Valid.order4 (hv : π.Valid) : π.Order4 := by
@@ -58,7 +60,7 @@ theorem live_output_of_valid (hv : π.Valid) (t : {t : σ.Tensor // P.output t =
       | pub B => simp [Ann.rets] at hxz
   · exact live_input π _ _ hin
 
-variable [DecidableEq σ.Tensor] [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
+variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
 variable (ops : (s : S) → ScalarOps (K s))
 
 /-- The reference state related to pc = m is complete: pending is empty by
@@ -86,8 +88,8 @@ theorem complete_of_refState (hv : π.Valid) {η : P.Input} {c : P.Running}
     `c = refState m` exists and is R-related to `M'`, `c` is complete (so the
     reference run is successful), and Decode returns the output projection of
     the reference final store. -/
-theorem terminal_adequacy (hv : π.Valid) (η : P.Input) {m : Nat} {M' : Memory K σ}
-    (hrun : π.runPlan ops (Start η) = .done m M') :
+theorem terminal_adequacy (hv : π.Valid) (η : P.Input) {m : Nat}
+    {M' : Memory K π.allocation} (hrun : π.runPlan ops (π.Start η) = .done m M') :
     m = π.commands.length ∧ ∃ c, π.refState ops η m = some c ∧ π.R ops η m M' c ∧
       ∃ complete : P.Complete c,
         π.Decode m M' = some (P.outputProjection (P.finalStore c complete)) := by
@@ -109,8 +111,8 @@ theorem terminal_adequacy (hv : π.Valid) (η : P.Input) {m : Nat} {M' : Memory 
 /-- **Theorem 31.3 (a).** A `done` run of a valid plan has exactly one model,
     the reference final store `ρ`; its decode is `ρ`'s output projection, which
     is also the denotation. -/
-theorem done_correct (hv : π.Valid) (η : P.Input) {m : Nat} {M' : Memory K σ}
-    (hrun : π.runPlan ops (Start η) = .done m M') :
+theorem done_correct (hv : π.Valid) (η : P.Input) {m : Nat}
+    {M' : Memory K π.allocation} (hrun : π.runPlan ops (π.Start η) = .done m M') :
     ∃ c, ∃ success : P.Successful ops η c,
       (∀ ρ, P.Models ops η ρ ↔ ρ = P.finalStore c success.2) ∧
       π.Decode m M' = some (P.outputProjection (P.finalStore c success.2)) ∧
@@ -126,7 +128,7 @@ theorem done_correct (hv : π.Valid) (η : P.Input) {m : Nat} {M' : Memory K σ}
 /-- **Theorem 31.3 (b).** A `failed` run of a valid plan means no model exists.
     The failing occurrence and the memory are not compared (D5). -/
 theorem failed_correct (hv : π.Valid) (η : P.Input) {o : OccRef P} {pc : Nat}
-    {M' : Memory K σ} (hrun : π.runPlan ops (Start η) = .failed o pc M') :
+    {M' : Memory K π.allocation} (hrun : π.runPlan ops (π.Start η) = .failed o pc M') :
     ¬ ∃ ρ, P.Models ops η ρ := by
   rcases runPlan_R ops hv η with ⟨_, _, h, -⟩ | ⟨o', _, _, c', _, _, hex⟩
   · rw [hrun] at h
@@ -136,8 +138,8 @@ theorem failed_correct (hv : π.Valid) (η : P.Input) {o : OccRef P} {pc : Nat}
 /-- **Theorem 31.3 (c), error-free profile.** A valid plan's run is never
     `stuck`: it is `done` at `m = commands.length` or `failed`. -/
 theorem done_or_failed (hv : π.Valid) (η : P.Input) :
-    (∃ M', π.runPlan ops (Start η) = .done π.commands.length M') ∨
-      ∃ o pc M', π.runPlan ops (Start η) = .failed o pc M' := by
+    (∃ M', π.runPlan ops (π.Start η) = .done π.commands.length M') ∨
+      ∃ o pc M', π.runPlan ops (π.Start η) = .failed o pc M' := by
   rcases runPlan_R ops hv η with ⟨M', _, h, -⟩ | ⟨o, pc, M', _, _, h, -⟩
   · exact Or.inl ⟨M', h⟩
   · exact Or.inr ⟨o, pc, M', h⟩
@@ -146,7 +148,7 @@ theorem done_or_failed (hv : π.Valid) (η : P.Input) :
     `done` and decodes to that model's output projection. -/
 theorem done_of_model (hv : π.Valid) (η : P.Input) {ρ : Store K σ}
     (hρ : P.Models ops η ρ) :
-    ∃ M', π.runPlan ops (Start η) = .done π.commands.length M' ∧
+    ∃ M', π.runPlan ops (π.Start η) = .done π.commands.length M' ∧
       π.Decode π.commands.length M' = some (P.outputProjection ρ) := by
   rcases done_or_failed ops hv η with ⟨M', h⟩ | ⟨_, _, _, h⟩
   · obtain ⟨c, success, hmod, hd, -⟩ := done_correct ops hv η h
@@ -156,7 +158,7 @@ theorem done_of_model (hv : π.Valid) (η : P.Input) {ρ : Store K σ}
 
 /-- (b) + (c): a valid plan's run is `done` iff a model exists. -/
 theorem done_iff_model (hv : π.Valid) (η : P.Input) :
-    (∃ m M', π.runPlan ops (Start η) = .done m M') ↔ ∃ ρ, P.Models ops η ρ := by
+    (∃ m M', π.runPlan ops (π.Start η) = .done m M') ↔ ∃ ρ, P.Models ops η ρ := by
   constructor
   · rintro ⟨m, M', h⟩
     obtain ⟨c, success, hmod, -⟩ := done_correct ops hv η h
