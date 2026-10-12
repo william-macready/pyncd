@@ -10,9 +10,10 @@ separate from the production DSL evaluator and execution backends.
 Plan layer (`LeanNCD.Semantics.Plan`, Part V slices 1-4: singleton/fused commands,
 retirement and typed static same-sort buffer reuse, exact boundary layout checker,
 Lemma 31.2, Theorem 31.3, Lemma 32.1): see [`Plan/AGENTS.md`](Plan/AGENTS.md).
-Slice 4 is compiled, with 354 fixtures and registered `PlanReuseTest`,
-`PlanReuseStorageTest`, `PlanReuseWrapperTest`; mutation/review/integration gates
-remain pending in `papers/semantics/plan_layer_slice4_record.md`.
+Slice 4 landed locally via merge `c44f8a21`, with registered `PlanReuseTest`,
+`PlanReuseStorageTest`, `PlanReuseWrapperTest`. Post-review fixtures total 360;
+all 64 mutation controls are verified and reviews adjudicated. No remote push
+was performed; see `papers/semantics/plan_layer_slice4_record.md`.
 
 `ExecutableState`, `ExecutableSelection`, and `ReferenceExecutor` realize the
 same reference `Step` edges computationally, with function-valued typed stores.

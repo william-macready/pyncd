@@ -69,12 +69,39 @@ def retainedInternal : (scalarRole false).Plan :=
        [.acc [sOcc false 1 rfl]], [.pub [sAddr false 1 rfl]],
        [.retire [sAddr false 2 rfl]]] }
 
--- After publication, output storage cannot be cleared or claimed again.
+-- These two plans exercise the inherited output-retirement and init-freshness rules.
 def retireOutput : (scalarRole false).Plan :=
   { reuse with commands := reuse.commands ++ [[.retire [sAddr false 1 rfl]]] }
 
 def overwriteOutput : (scalarRole false).Plan :=
   { reuse with commands := reuse.commands ++ [[.initZero [sAddr false 2 rfl]]] }
+
+def outputFirst : (scalarRole false).Plan :=
+  { reuse with commands :=
+      [[.initZero [sAddr false 1 rfl]], [.acc [sOcc false 1 rfl]],
+       [.pub [sAddr false 1 rfl]], [.initZero [sAddr false 2 rfl]],
+       [.acc [sOcc false 2 rfl]], [.pub [sAddr false 2 rfl]],
+       [.retire [sAddr false 2 rfl]]] }
+
+def outputFirstCanonical : (scalarRole false).Plan :=
+  { outputFirst with allocation := (sPlan false).allocation }
+
+def outputFirstMemory (pc : Nat) :=
+  finalMemory (outputFirst.runFrom ops 0 (outputFirst.Start (scalarInput false))
+    (outputFirst.commands.take pc))
+
+#eval check "storage-live-output-claim"
+  (outputFirst.checkSteps, outputFirst.checkLayouts, outputFirst.checkPlan,
+    outputFirstCanonical.checkPlan, sDecodeOf outputFirst, sDecodeOf outputFirstCanonical,
+    sRowEP false outputFirst (fun _ => none),
+    sRowEP false outputFirstCanonical (fun _ => none))
+  (true, false, false, true, none, some 2,
+    ("run:done", 7, none, [some 7, none, none]),
+    ("run:done", 7, none, [some 7, some 2, none]))
+#eval check "storage-live-output-corruption"
+  ([3, 4, 5, 7].map fun pc => outputFirst.readPub pc (outputFirstMemory pc) ⟨1, ()⟩,
+    outputFirst.checkLayoutAt 3, outputFirst.checkLayoutAt 4)
+  ([some 2, some 0, some 3, none], true, false)
 
 set_option maxHeartbeats 1000000 in
 theorem reuse_layout : ∀ pc, pc ≤ 7 → reuse.LayoutOK pc := by
@@ -232,6 +259,29 @@ def emptyPlan : emptyOutput.Plan where
   commands := []
 def emptyInput : emptyOutput.Input := ⟨fun _ => none, by intro t; rfl⟩
 def emptyRun := emptyPlan.runPlan ops (emptyPlan.Start emptyInput)
+
+def emptyAllocation : Allocation emptyOutput where
+  Buffer := Fin 1
+  bufferEq := inferInstance
+  buffers := [0]
+  buffers_nodup := by decide
+  buffers_complete := by intro b; fin_cases b; simp
+  sort := fun _ => ()
+  capacity := fun _ => 0
+  locate := fun x => Fin.elim0 x.2.1
+
+def emptyCustomPlan : emptyOutput.Plan :=
+  { emptyPlan with allocation := emptyAllocation }
+
+example : IsEmpty (BufferSlot emptyCustomPlan.allocation) :=
+  ⟨fun ξ => Fin.elim0 ξ.2⟩
+
+#eval check "storage-custom-zero-capacity"
+  (emptyCustomPlan.allocation.buffers.length, emptyCustomPlan.allocation.capacity (0 : Fin 1),
+    emptyCustomPlan.checkPlan,
+    finalPc (emptyCustomPlan.runPlan ops (emptyCustomPlan.Start emptyInput)),
+    (emptyCustomPlan.Decode 0 (emptyCustomPlan.Start emptyInput)).isSome)
+  (1, 0, true, 0, true)
 
 example : IsEmpty (BufferSlot emptyPlan.allocation) :=
   ⟨fun ξ => Fin.elim0 ξ.2⟩

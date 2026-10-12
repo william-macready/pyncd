@@ -2,7 +2,7 @@ import LeanNCD.Semantics.ReferenceExecutor
 
 /- Execution plans (spec Part V, Section 29): command syntax, annotation
    expansion, command prefixes and the static prefix sets Pub/Cons/Mat.
-   Slice-1 to slice-3 profile: batched Accumulate, block Publish, initZero and block retire.
+   Slice-1 to slice-4 profile: batched Accumulate, block Publish, initZero and block retire.
    Every group/block is a List; its order is presentation data and is never
    obtained by choosing a Finset order. -/
 
@@ -323,5 +323,6 @@ theorem coverage_iff_schedule :
 #print axioms coverage_iff_schedule
 #print axioms ret_zero
 #print axioms live_input
+#print axioms expand_allocation
 
 end LeanNCD.Semantics.Program.Plan

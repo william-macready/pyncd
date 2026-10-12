@@ -137,12 +137,15 @@ snapshots. Do not introduce a new concrete implementation-error source.
 
 ## 6. Acceptance and regression evidence
 
-The requirements below were measured by the compiled prototype. The record
+The requirements below were measured by the landed implementation. The record
 contains observed values: actual retired-slot overwrite, rejected live alias
 despite unchecked `done`, three pair classes/final boundary, cross-tensor output
 decode 2, ℤ/ℚ decode `(11,7/8)`, fused internal-only conflict and post-write
-fault-state R. All 281 baseline assertions remain; total 354 = 174 `#eval check`
-rows + 180 proof items. All 64 actual mutation verdicts pass with byte-identical
+fault-state R. All 281 baseline assertions remain; the post-review total is
+360 = 179 `#eval check` rows + 181 proof items (354 at the original checkpoint).
+The follow-up also pins a live output's slot claimed by a later internal tensor,
+re-retirement after reuse, and custom zero-capacity storage.
+All 64 actual mutation verdicts pass with byte-identical
 restoration; this evidence was measured separately from compilation.
 
 1. Clone `rtInitAfter`, place point 2 in point 0's slot, and retain point 1 in

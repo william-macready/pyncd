@@ -5,7 +5,7 @@
 | S4-M3 resourceList omits pub resources (pub/pub and pub/acc checker exactness) | yes | yes | yes | PASS |
 | S4-M4 resourceList omits acc resources (acc/acc and pub/acc checker exactness) | yes | yes | yes | PASS |
 | S4-M5 SlotView acc drops the not-Pub guard (resource-role exclusion proof) | yes | yes | yes | PASS |
-| S4-M6 R.dead permits arbitrary unused physical-slot contents (initial representation proof) | yes | yes | yes | PASS |
+| S4-M6 R.dead permits arbitrary unused physical-slot contents (retired-slot consumer) | yes | yes | yes | PASS |
 | S4-M7 execRet clears every slot (co-live resources lost; execRet_not_mem preservation) | yes | yes | yes | PASS |
 | S4-F1 fixture aliases the new point to a still-live point | yes | yes | yes | PASS |
 | S4-F2 fixture collides the independent-buffer accept neighbour | yes | yes | yes | PASS |

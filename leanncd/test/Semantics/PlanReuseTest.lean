@@ -39,7 +39,8 @@ def reuseDecode (π : (routed chainBody).Plan) : Option (List ℚ) :=
 -- Raw rows intentionally expose physical aliasing; published reads below exclude retired ghosts.
 #eval check "reuse-good-run" (reuseGood.checkPlan, chainRow reuseGood)
   (true, ("done", 7, none, [some 4, some 3, some 4]))
-#eval check "reuse-good-empty-output" (reuseDecode reuseGood) (some [])
+-- Empty decoding is a control, not a layout discriminator; storage fixtures pin nonempty outputs.
+#eval check "reuse-good-empty-output" (reuseDecode reuseGood, reuseDecode reuseBad) (some [], some [])
 #eval check "reuse-bad-live-alias-run" (reuseBad.checkPlan, chainRow reuseBad)
   (false, ("done", 7, none, [none, some 1, some 1]))
 
@@ -81,6 +82,25 @@ example : place reuseGood.allocation (cAddr 0).addr ≠
 def reuseSharedSlot : Slot reuseGood.allocation := .inr ⟨(0 : Fin 3), (0 : Fin 2)⟩
 def reuseSpareCapacity : Slot reuseGood.allocation := .inr ⟨(0 : Fin 3), (1 : Fin 2)⟩
 def reuseSpareBuffer : Slot reuseGood.allocation := .inr ⟨(2 : Fin 3), (0 : Fin 2)⟩
+
+def reuseRetireAgain : (routed chainBody).Plan :=
+  { reuseGood with commands := reuseGood.commands.take 6 ++
+      [[.retire [cAddr 0]]] ++ reuseGood.commands.drop 6 }
+
+def reuseRetireAgainCanonical : (routed chainBody).Plan :=
+  { reuseRetireAgain with allocation := rtInitAfter.allocation }
+
+#eval check "reuse-retire-again-after-reuse"
+  (reuseRetireAgain.checkRet 6 [cAddr 0], reuseRetireAgain.checkPlan,
+    reuseRetireAgain.checkLayouts, chainRow reuseRetireAgain,
+    reuseRetireAgainCanonical.checkPlan, chainRow reuseRetireAgainCanonical)
+  (false, false, true, ("stuck", 7, none, [none, some 3, none]),
+    false, ("done", 8, none, [none, some 3, some 4]))
+#eval check "reuse-retire-again-clears-new-occupant"
+  (chainMem reuseRetireAgain 6 reuseSharedSlot,
+    chainMem reuseRetireAgain 7 reuseSharedSlot,
+    reuseRetireAgain.readPub 7 (chainMem reuseRetireAgain 7) (cAddr 2).addr)
+  (some 4, none, none)
 
 example : place reuseGood.allocation (cAddr 0).addr = reuseSharedSlot := rfl
 example : chainMem reuseGood 4 reuseSharedSlot = none := rfl

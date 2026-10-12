@@ -168,6 +168,14 @@ theorem layoutOK_of_place_injective (hinj : Function.Injective (place π.allocat
   intro r₁ r₂ ξ h₁ h₂
   exact π.slotView_injective hinj h₁ h₂
 
+/-- Canonical allocation satisfies the layout condition at every boundary. -/
+theorem layoutOK_of_canonical
+    (hA : π.allocation = Allocation.canonical P π.tensors π.tensors_nodup π.tensors_complete)
+    (pc : Nat) : π.LayoutOK pc := by
+  apply π.layoutOK_of_place_injective
+  rw [hA]
+  exact place_injective π.tensors π.tensors_nodup π.tensors_complete
+
 /-- Concrete initialisation: validated inputs at their slots, every other slot
     uninitialised. Zero materialisation is an explicit `initZero` command. -/
 def Start (η : P.Input) : Memory K π.allocation
@@ -321,7 +329,7 @@ theorem refState_reaches {η : P.Input} {pc : Nat} {c : P.Running}
 
 /-! ### The representation relation -/
 
-/-- `R_Π` (spec 30.4) in the slice-1 to slice-3 profile, with the input `η` explicit. -/
+/-- `R_Π` (spec 30.4) in the slice-1 to slice-4 profile, with the input `η` explicit. -/
 structure R (η : P.Input) (pc : Nat) (M : Memory K π.allocation) (c : P.Running) : Prop where
   /-- R1: the related reference state is reachable. -/
   reach : P.Reaches ops (.running (P.initial η)) (.running c)
@@ -359,7 +367,7 @@ theorem R_start (η : P.Input) : π.R ops η 0 (π.Start η) (P.initial η) wher
     exact absurd ho (π.not_cons_zero _)
   dead ξ hu := by
     cases ξ with
-    | inr ξ => rfl
+    | inr ξ => simp [Start]
     | inl ξ =>
       exfalso
       apply hu (.pub ⟨ξ.1.val,
@@ -398,6 +406,10 @@ theorem decode_of_R {η : P.Input} {pc : Nat} {M : Memory K π.allocation} {c : 
   · rw [← view t p]
     exact (Option.some_get _).symm
 
+#print axioms layoutOK_of_canonical
+#print axioms place_sort
+#print axioms cast_option_none
+#print axioms start_read
 #print axioms place_injective
 #print axioms readSlot_eq_cast
 #print axioms readSlot_heq

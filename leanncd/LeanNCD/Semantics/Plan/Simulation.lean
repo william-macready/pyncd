@@ -796,7 +796,7 @@ theorem step_retire {B : List (DefAddr P)} (hR : π.R ops η pc M c)
   · intro ξ hu
     by_cases hhit : ∃ x ∈ B, place π.allocation x.addr = ξ
     · obtain ⟨x, hx, rfl⟩ := hhit
-      exact π.execRet_mem B M hx
+      simp [π.execRet_mem B M hx]
     · rw [π.execRet_not_mem B M (fun x hx e => hhit ⟨x, hx, e⟩)]
       apply hR.dead ξ
       intro res hr

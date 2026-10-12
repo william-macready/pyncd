@@ -157,9 +157,11 @@ The increase is 73: `PlanReuseTest` 26, `PlanReuseStorageTest` 22,
   complete ten-entry manifest successfully.
 - The first inherited slice-1 rerun killed/restored all twenty controls, but
   five expected diagnostics no longer matched the migrated proof structure.
-  The controller repaired those anchors from the observed failures and reran
-  the complete twenty-entry manifest successfully. No failed verdict was
-  silently counted as success.
+  The initial repair reduced all 45 slice-1/2/3 expectation lists to file-level
+  substrings, losing 64 historical failure-site strings (29 + 15 + 20) and
+  merging multi-site checks. The resulting PASS verdicts were weaker than
+  required, not a faithful location repair. The post-merge follow-up below
+  restores exact sites and diagnostics from fresh failures.
 - The inherited N5/N6 controls retain their equivalence labels. Their library
   proof failures are not claimed as semantic counterexamples.
 - Fresh soundness review found no high-confidence bugs. Fresh spec-to-Lean
@@ -194,7 +196,7 @@ records, retirement design and the pre-approval reuse brief remain historical;
 unrelated numeric/index hits are not capability claims. The approved reuse design
 only receives status and measured-prototype clarifications.
 
-Authoring checks: the live plan is 244 lines, named module/test paths exist,
+Authoring checks: the live plan was 244 lines at authoring time, named module/test paths exist,
 new immutable fixture counts are 10+16 core, 6+16 storage and 9+16 wrapper.
 Current stale-value hits are historical baseline counts or unrelated section
 numbers; no current "reuse absent" profile remains in the four swept current
@@ -232,3 +234,82 @@ token budgets have no accounting certificate.
 - The primary checkout was clean at integration. No remote push was performed.
 - Cleanup is limited to this task's topic branch/worktree and temporary
   immutable snapshot; no other checkout or branch is in scope.
+
+## Post-merge review follow-up
+
+Direct path, isolated branch `worktree-reuse-review-fixes`, based on `84b1cc1c`.
+The three Important findings and confirmed Minor findings were checked against
+the landed code and the external review reports, not treated as new capabilities.
+
+- All 45 inherited slice-1/2/3 expectation lists now retain separate exact
+  file/line/column/diagnostic strings. Every observed failure site is pinned,
+  including both `checkRet_sound` and `checkRet_complete` for S3-M3/M4/M5/M10.
+  D7's nine entries now have observed diagnostic anchors rather than `n/a`;
+  reuse controls also have exact sites. There are 167 anchored expectations
+  across the five manifests; no bare `File.lean:` expectation remains.
+- The N5 A2-e equivalence control now fails at `execAnn_prefix` in `Step`,
+  not at the former Simulation sites. It remains a local proof-shape control,
+  not evidence of a semantic counterexample or a transactional simulation kill.
+- S4-M6 retains the weakened `R.dead` mutant but targets the test consumers.
+  The physical-slot branch of `R_start` and the cleared-slot branch of
+  `step_retire` now use simplification rather than syntax-sensitive producers.
+  The mutant therefore builds the library and fails at
+  `retired_slot_free_of_injective` in `PlanRetireTest`, which needs actual
+  emptiness. `PlanReuseTest` is also a target but imports that failing module,
+  so this is not claimed as an independent kill of its unused-capacity theorem.
+  The ten reuse controls are now six library-proof controls, one test-level
+  invariant consumer and three computed fixture controls.
+- `storage-live-output-claim` computes output 1 before internal tensor 2.
+  The old step rules pass, layout rejects the shared allocation, and the same
+  commands pass with canonical allocation. Both unchecked runs finish at 7;
+  the shared run clears the output and cannot decode, while the canonical run
+  decodes 2. The trace pins output reads `[2,0,3,none]`. The older output-retire
+  and overwrite fixtures are explicitly labelled inherited-rule checks.
+- `reuse-retire-again-after-reuse` retires point 0 after point 2 has written 4
+  into its old slot. The checker rejects it; the unchecked run clears 4 and
+  is `stuck` at the later publication. Its canonical twin is also rejected
+  but finishes `done`, because the new occupant has separate storage.
+- Empty decode is documented and tested as a vacuous control: both good and
+  bad aliases return `some []`. Nonempty output correctness is pinned by the
+  storage fixtures. `storage-custom-zero-capacity` uses an explicitly supplied
+  independent `Fin 1` buffer, capacity 0, and successful empty-domain decoding.
+- `layoutOK_of_canonical` and `checkPlan_of_canonical` are library theorems;
+  the test-only copy is removed. Direct axiom reports cover both bridges,
+  `place_sort`, `cast_option_none`, `start_read`, `expand_allocation`,
+  `execAnn_prefix` and `stepCommand_single`. Their reports use standard axioms.
+- The canonical fused `PlanOutcome.Agree` example is independent computation
+  again: pointwise `fin_cases`/`rfl`, not `runPlan_agree`.
+- All five live pending-status documents are refreshed, including the path
+  heading/TOC and roadmap; the top-level Lean index says slices 1-4.
+  The repeated-retire pitfall is scoped to canonical versus reused storage,
+  `R`'s profile docstring is current, and the plan-length observation above
+  is explicitly historical. No mathematical contract or runtime kernel changed.
+
+### Observed validation
+
+- Targeted reuse/storage/wrapper/fused correctness builds passed.
+- Hand mutation probes: switching `outputFirst` to canonical allocation fails
+  both new output rows; removing the second retirement fails both new retire
+  rows; increasing custom capacity to 1 fails the capacity row and its emptiness
+  proof. Each wrapper verified byte-identical restoration and a restored build.
+- Fixture inventory: **360 = 179 evaluated rows + 181 proof items**, split
+  28 core reuse, 26 storage and 25 wrappers. All 149 inherited evaluated rows
+  outside the new reuse modules are byte-identical to the landed baseline;
+  the canonical example's statement is unchanged.
+- All six historical patches independently replayed in order in an isolated
+  index from `4ffdc342`; the complete `leanncd` tree equals `deb4fecd`.
+  No worktree source files or real Git index were used for replay.
+- Final anchored reruns: **20/20 + 15/15 + 9/9 + 10/10 + 10/10 = 64/64**.
+  Every expected site appears in its own mutated log, every file is restored
+  byte-identically, and every restored build passes. Preliminary S4-M6 variants
+  that stopped at producer/prefix proofs were rejected, not counted as consumer
+  evidence; only the final consumer-killing control is shipped.
+- Controller full build passed **8796 jobs**. The actual rebuilt axiom audit
+  checked **5994 constants**, all with standard axioms. Four pre-existing
+  `sorry` warnings outside Plan remain; no proof shortcut was added.
+- Direct whole-branch review covered code, fixtures, live documents, all five
+  manifests and persisted results: no outstanding findings. Structural checks
+  confirm all mutation bodies are unchanged; only S4-M6's target/label changes
+  besides expectations. Whitespace and the live stale-status sweep are clean.
+- Token reporting found no transcript for this Copilot session. Cumulative
+  usage is unavailable, not measured as zero; no subagents were dispatched.

@@ -601,4 +601,15 @@ theorem Valid.coverage_nodup_of_steps [DecidableEq σ.Tensor] (hv : π.Valid) :
 #print axioms pubFlat_nodup_of_pubOK
 #print axioms Valid.coverage_nodup_of_steps
 
+/-- Canonical layout safety discharges the additional checker clause. -/
+theorem checkPlan_of_canonical [DecidableEq σ.Tensor]
+    (hA : π.allocation = Allocation.canonical P π.tensors π.tensors_nodup π.tensors_complete)
+    (h : (π.checkSingleton && π.checkCov1Nodup && π.checkCov1Complete &&
+      π.checkCov2Nodup && π.checkCov2Complete && π.checkSteps) = true) :
+    π.checkPlan = true := by
+  rw [checkPlan, h, Bool.true_and]
+  exact π.checkLayouts_iff.mpr (fun pc _ => π.layoutOK_of_canonical hA pc)
+
+#print axioms checkPlan_of_canonical
+
 end LeanNCD.Semantics.Program.Plan

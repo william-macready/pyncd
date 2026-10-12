@@ -6,7 +6,7 @@
     "old": "  G.foldl (fun c x => Executor.consume P c x.1 x.2 (v x)) c",
     "new": "  G.foldl (fun _ x => Executor.consume P c x.1 x.2 (v x)) c",
     "targets": ["LeanNCD.Semantics.Plan.Batch"],
-    "expect": ["Batch.lean:", "Type mismatch"]
+    "expect": ["LeanNCD/Semantics/Plan/Batch.lean:80:19: Type mismatch", "LeanNCD/Semantics/Plan/Batch.lean:88:4: 'change' tactic failed, pattern", "LeanNCD/Semantics/Plan/Batch.lean:99:4: 'change' tactic failed, pattern", "LeanNCD/Semantics/Plan/Batch.lean:129:4: Type mismatch"]
   },
   {
     "label": "A1-b accumulateBatch skips the last member (dropLast)",
@@ -15,7 +15,7 @@
     "old": "  G.foldl (fun c x => Executor.consume P c x.1 x.2 (v x)) c",
     "new": "  G.dropLast.foldl (fun c x => Executor.consume P c x.1 x.2 (v x)) c",
     "targets": ["LeanNCD.Semantics.Plan.Batch"],
-    "expect": ["Batch.lean:", "Type mismatch"]
+    "expect": ["LeanNCD/Semantics/Plan/Batch.lean:80:19: Type mismatch", "LeanNCD/Semantics/Plan/Batch.lean:88:4: 'change' tactic failed, pattern", "LeanNCD/Semantics/Plan/Batch.lean:99:4: 'change' tactic failed, pattern", "LeanNCD/Semantics/Plan/Batch.lean:129:4: Type mismatch"]
   },
   {
     "label": "A1-c place collides (slot index / 2)",
@@ -24,7 +24,7 @@
     "old": "  locate := fun x => ⟨⟨x.1.val,\n    (canonicalLayout (σ.signature x.1.val).axes).enumerate.symm x.2⟩, rfl⟩",
     "new": "  locate := fun x => ⟨⟨x.1.val,\n    ⟨((canonicalLayout (σ.signature x.1.val).axes).enumerate.symm x.2).val / 2,\n      Nat.lt_of_le_of_lt (Nat.div_le_self _ 2)\n        ((canonicalLayout (σ.signature x.1.val).axes).enumerate.symm x.2).isLt⟩⟩, rfl⟩",
     "targets": ["LeanNCD.Semantics.Plan.Memory"],
-    "expect": ["Memory.lean:", "Application type mismatch"]
+    "expect": ["LeanNCD/Semantics/Plan/Memory.lean:108:93: Application type mismatch: The argument"]
   },
   {
     "label": "A1-d Decode zero-fills (getD 0, no Pub/initialised check)",
@@ -33,7 +33,7 @@
     "old": "  if h : ∀ t : {t : σ.Tensor // P.output t = true}, ∀ p,\n      (π.readPub pc M ⟨t.val, p⟩).isSome = true then\n    some (fun t p => (π.readPub pc M ⟨t.val, p⟩).get (h t p))\n  else none",
     "new": "  some (fun t p => (π.readPub pc M ⟨t.val, p⟩).getD 0)",
     "targets": ["LeanNCD.Semantics.Plan.Memory"],
-    "expect": ["Memory.lean:", "Tactic `split_ifs` failed: no if-then-else conditions to split"]
+    "expect": ["LeanNCD/Semantics/Plan/Memory.lean:213:52: failed to synthesize instance of type class", "LeanNCD/Semantics/Plan/Memory.lean:220:2: Tactic `split_ifs` failed: no if-then-else conditions to split"]
   },
   {
     "label": "A1-e SlotView maps acc x whenever not Pub (drops Mat guard)",
@@ -42,7 +42,7 @@
     "old": "  | .acc x => if π.Mat pc x ∧ ¬ π.Pub pc x.addr then some (place π.allocation x.addr) else none",
     "new": "  | .acc x => if ¬ π.Pub pc x.addr then some (place π.allocation x.addr) else none",
     "targets": ["LeanNCD.Semantics.Plan.Memory"],
-    "expect": ["Memory.lean:", "unsolved goals"]
+    "expect": ["LeanNCD/Semantics/Plan/Memory.lean:151:30: Invalid projection: Projections cannot be used on functions, and", "LeanNCD/Semantics/Plan/Memory.lean:159:35: Invalid projection: Projections cannot be used on functions, and", "LeanNCD/Semantics/Plan/Memory.lean:363:17: unsolved goals"]
   },
   {
     "label": "A3b-3 readPub ignores Pub (read view exposes raw memory)",
@@ -51,7 +51,7 @@
     "old": "  if π.Live pc a then readSlot π.allocation M a else none",
     "new": "  if π.Live pc a ∨ True then readSlot π.allocation M a else none",
     "targets": ["LeanNCD.Semantics.Plan.Memory"],
-    "expect": ["Memory.lean:", "Tactic `rewrite` failed"]
+    "expect": ["LeanNCD/Semantics/Plan/Memory.lean:385:6: Tactic `rewrite` failed: Did not find an occurrence of the pattern"]
   },
   {
     "label": "A2-a addAt overwrites the slot instead of adding",
@@ -60,7 +60,7 @@
     "old": "  | some a => some (π.writeDef M x.target (addVal x a (v x)))",
     "new": "  | some a => some (π.writeDef M x.target (v x))",
     "targets": ["LeanNCD.Semantics.Plan.Simulation"],
-    "expect": ["Simulation.lean:", "Application type mismatch"]
+    "expect": ["LeanNCD/Semantics/Plan/Simulation.lean:383:18: Application type mismatch: The argument"]
   },
   {
     "label": "A2-b EQUIVALENT (N5): commit values read raw memory, readiness still on readPub",
@@ -69,7 +69,7 @@
     "old": "    match G.foldlM (π.addAt (valuesOn ops (π.readPub pc M))) M with",
     "new": "    match G.foldlM (π.addAt (valuesOn ops (readSlot π.allocation M))) M with",
     "targets": ["LeanNCD.Semantics.Plan.Simulation"],
-    "expect": ["Simulation.lean:", "Tactic `rewrite` failed"]
+    "expect": ["LeanNCD/Semantics/Plan/Simulation.lean:641:39: Tactic `rewrite` failed: Did not find an occurrence of the pattern"]
   },
   {
     "label": "A2-c execPub writes (re-initialises the block)",
@@ -78,7 +78,7 @@
     "old": "  if B.all (fun x => (readSlot π.allocation M x.addr).isSome) then .ok M else .stuck",
     "new": "  if B.all (fun x => (readSlot π.allocation M x.addr).isSome) then .ok (π.execInit B M) else .stuck",
     "targets": ["LeanNCD.Semantics.Plan.Simulation"],
-    "expect": ["Simulation.lean:", "Tactic `rfl` failed"]
+    "expect": ["LeanNCD/Semantics/Plan/Simulation.lean:681:4: Tactic `rfl` failed: The left-hand side"]
   },
   {
     "label": "A2-e EQUIVALENT (N5): non-transactional acc (evaluate, commit, continue per member)",
@@ -87,7 +87,7 @@
     "old": "  match scanGroup ops π.allocation (π.readPub pc M) G with\n  | some res => res\n  | none =>\n    match G.foldlM (π.addAt (valuesOn ops (π.readPub pc M))) M with\n    | some M' => .ok M'\n    | none => .stuck",
     "new": "  G.foldl (fun r x => match r with\n    | .ok M₁ => match scanGroup ops π.allocation (π.readPub pc M₁) [x] with\n      | some res => res\n      | none => (π.addAt (valuesOn ops (π.readPub pc M₁)) M₁ x).elim .stuck (fun M' => .ok M')\n    | r => r) (.ok M)",
     "targets": ["LeanNCD.Semantics.Plan.Simulation"],
-    "expect": ["Step.lean:", "Tactic `split` failed"]
+    "expect": ["LeanNCD/Semantics/Plan/Step.lean:193:6: Tactic `split` failed: Could not split an `if` or `match` expression in the goal"]
   },
   {
     "label": "A2-f scan and commit values read raw memory as a fallback",
@@ -96,7 +96,7 @@
     "old": "  match scanGroup ops π.allocation (π.readPub pc M) G with\n  | some res => res\n  | none =>\n    match G.foldlM (π.addAt (valuesOn ops (π.readPub pc M))) M with",
     "new": "  match scanGroup ops π.allocation (fun a => (π.readPub pc M a).or (readSlot π.allocation M a)) G with\n  | some res => res\n  | none =>\n    match G.foldlM (π.addAt (valuesOn ops (fun a => (π.readPub pc M a).or (readSlot π.allocation M a)))) M with",
     "targets": ["LeanNCD.Semantics.Plan.Simulation"],
-    "expect": ["Simulation.lean:", "Tactic `rewrite` failed"]
+    "expect": ["LeanNCD/Semantics/Plan/Simulation.lean:604:66: Application type mismatch: The argument", "LeanNCD/Semantics/Plan/Simulation.lean:641:39: Tactic `rewrite` failed: Did not find an occurrence of the pattern", "LeanNCD/Semantics/Plan/Simulation.lean:864:69: Application type mismatch: The argument"]
   },
   {
     "label": "A3a-a EQUIVALENT at checkPlan (N6): checkCov1Complete trivially true",
@@ -105,7 +105,7 @@
     "old": "def checkCov1Complete : Bool := π.occList.all fun x => decide (x ∈ π.accFlat)",
     "new": "def checkCov1Complete : Bool := π.occList.all fun _ => true",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "Type mismatch"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:273:19: Type mismatch", "LeanNCD/Semantics/Plan/Validity.lean:455:21: Type mismatch"]
   },
   {
     "label": "A3a-b checkAnn pub drops checkPubOrder (spec 29.3 condition 4)",
@@ -114,7 +114,7 @@
     "old": "  | .pub B => π.checkPubFresh pc B && π.checkPubMat pc B && π.checkPubOrder pc B",
     "new": "  | .pub B => π.checkPubFresh pc B && π.checkPubMat pc B",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "Application type mismatch"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:259:10: Unknown identifier `hn`", "LeanNCD/Semantics/Plan/Validity.lean:261:10: Unknown identifier `hp`", "LeanNCD/Semantics/Plan/Validity.lean:261:19: Application type mismatch: The argument", "LeanNCD/Semantics/Plan/Validity.lean:262:9: Function expected at", "LeanNCD/Semantics/Plan/Validity.lean:262:47: Tactic `rcases` failed: `x\u271d : ?m.135` is not an inductive datatype", "LeanNCD/Semantics/Plan/Validity.lean:336:13: Invalid projection: Projections extract constructor fields for one-constructor inductive types. The expression", "LeanNCD/Semantics/Plan/Validity.lean:336:39: Invalid projection: Projections extract constructor fields for one-constructor inductive types. The expression", "LeanNCD/Semantics/Plan/Validity.lean:427:11: Invalid `\u27e8...\u27e9` notation: The expected type", "LeanNCD/Semantics/Plan/Validity.lean:427:56: Type mismatch", "LeanNCD/Semantics/Plan/Validity.lean:428:19: Tactic `introN` failed: There are no additional binders or `let` bindings in the goal to introduce"]
   },
   {
     "label": "A3a-c checkAnn pub drops checkPubMat (N1)",
@@ -123,7 +123,7 @@
     "old": "  | .pub B => π.checkPubFresh pc B && π.checkPubMat pc B && π.checkPubOrder pc B",
     "new": "  | .pub B => π.checkPubFresh pc B && π.checkPubOrder pc B",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "unsolved goals"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:259:10: Unknown identifier `hn`", "LeanNCD/Semantics/Plan/Validity.lean:261:10: Unknown identifier `hp`", "LeanNCD/Semantics/Plan/Validity.lean:261:19: Application type mismatch: The argument", "LeanNCD/Semantics/Plan/Validity.lean:254:58: unsolved goals", "LeanNCD/Semantics/Plan/Validity.lean:336:13: Invalid projection: Projections extract constructor fields for one-constructor inductive types. The expression", "LeanNCD/Semantics/Plan/Validity.lean:336:39: Invalid projection: Projections extract constructor fields for one-constructor inductive types. The expression", "LeanNCD/Semantics/Plan/Validity.lean:427:11: Invalid `\u27e8...\u27e9` notation: The expected type", "LeanNCD/Semantics/Plan/Validity.lean:427:56: Type mismatch"]
   },
   {
     "label": "A3a-d checkInit trivially true (N2 initZero freshness)",
@@ -132,7 +132,7 @@
     "old": "  S.all fun x => !decide (π.Pub pc x.addr) && (π.consList pc).all fun y => decide (y.target ≠ x)",
     "new": "  S.all fun _ => (π.consList pc).all fun _ => true",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "Tactic `rcases` failed"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:238:9: Tactic `rcases` failed: `x\u271d : \u2200 x \u2208 \u03c0.consList pc, True` is not an inductive datatype", "LeanNCD/Semantics/Plan/Validity.lean:406:9: Invalid `\u27e8...\u27e9` notation: The expected type `\u2200 x \u2208 \u03c0.consList pc, True` is not an inductive type", "LeanNCD/Semantics/Plan/Validity.lean:407:2: No goals to be solved"]
   },
   {
     "label": "A3a-e checkSingleton trivially true (slice-1 profile)",
@@ -141,7 +141,7 @@
     "old": "def checkSingleton : Bool := π.commands.all fun cmd => cmd.length == 1",
     "new": "def checkSingleton : Bool := π.commands.all fun _ => true",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "Type mismatch"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:272:50: Application type mismatch: The argument", "LeanNCD/Semantics/Plan/Validity.lean:317:50: Application type mismatch: The argument", "LeanNCD/Semantics/Plan/Validity.lean:452:24: Type mismatch", "LeanNCD/Semantics/Plan/Validity.lean:492:50: Application type mismatch: The argument"]
   },
   {
     "label": "A3a-f checkAnn acc drops checkReady (spec 29.3 condition 3, N3)",
@@ -150,7 +150,7 @@
     "old": "  | .acc G => π.checkAccFresh pc G && π.checkAccMat pc G && π.checkReady pc G",
     "new": "  | .acc G => π.checkAccFresh pc G && π.checkAccMat pc G",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "unsolved goals"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:251:10: Unknown identifier `hn`", "LeanNCD/Semantics/Plan/Validity.lean:251:27: Unknown identifier `hc`", "LeanNCD/Semantics/Plan/Validity.lean:247:75: unsolved goals", "LeanNCD/Semantics/Plan/Validity.lean:327:13: Invalid projection: Projections extract constructor fields for one-constructor inductive types. The expression", "LeanNCD/Semantics/Plan/Validity.lean:327:22: Invalid projection: Projections extract constructor fields for one-constructor inductive types. The expression", "LeanNCD/Semantics/Plan/Validity.lean:420:10: Invalid `\u27e8...\u27e9` notation: The expected type", "LeanNCD/Semantics/Plan/Validity.lean:420:57: Type mismatch"]
   },
   {
     "label": "A3b-1 checkCov2Complete trivially true (spec 29.3 condition 2 covering)",
@@ -159,7 +159,7 @@
     "old": "def checkCov2Complete : Bool := π.addrList.all fun x => decide (x ∈ π.pubFlat)",
     "new": "def checkCov2Complete : Bool := π.addrList.all fun _ => true",
     "targets": ["LeanNCD.Semantics.Plan.Validity"],
-    "expect": ["Validity.lean:", "Type mismatch"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:273:60: Type mismatch", "LeanNCD/Semantics/Plan/Validity.lean:458:21: Type mismatch", "LeanNCD/Semantics/Plan/Validity.lean:498:4: Type mismatch"]
   },
   {
     "label": "A3b-2 Valid field coverage2 unreachable by name (single-site form of the drop)",
@@ -168,7 +168,7 @@
     "old": "  coverage2 : π.Coverage2",
     "new": "  coverage2' : π.Coverage2",
     "targets": ["LeanNCD.Semantics.Plan.Correctness"],
-    "expect": ["Validity.lean:", "Invalid field `coverage2`"]
+    "expect": ["LeanNCD/Semantics/Plan/Validity.lean:456:59: Invalid field `coverage2`: The environment does not contain `LeanNCD.Semantics.Program.Plan.Valid.coverage2`, so it is not possible to project the field `coverage2` from an expression", "LeanNCD/Semantics/Plan/Validity.lean:458:23: Invalid field `coverage2`: The environment does not contain `LeanNCD.Semantics.Program.Plan.Valid.coverage2`, so it is not possible to project the field `coverage2` from an expression"]
   },
   {
     "label": "A2-d fixture plan materialises only addr 1 (N1 empty fibers)",
@@ -177,6 +177,6 @@
     "old": "def plan : taggedOut.Plan := unitPlan [[.initZero block], [.acc group], [.pub block]]",
     "new": "def plan : taggedOut.Plan := unitPlan [[.initZero [addr 1]], [.acc group], [.pub block]]",
     "targets": ["Semantics.PlanSimulationTest"],
-    "expect": ["PlanStepTest.lean:", "step-tagged-run: expected (\"done\", 3, none, [some 0, some 14, some 0]), got (\"stuck\", 2, none, [none, some 14, none])"]
+    "expect": ["test/Semantics/PlanStepTest.lean:33:0: step-tagged-run: expected (\"done\", 3, none, [some 0, some 14, some 0]), got (\"stuck\", 2, none, [none, some 14, none])", "test/Semantics/PlanStepTest.lean:35:0: step-tagged-decode-vs-run: expected (some [some 0, some 14, some 0], \"complete\", [some 0, some 14, some 0]), got (none, \"complete\", [some 0, some 14, some 0])", "test/Semantics/PlanStepTest.lean:48:0: step-tagged-trace: expected [some [none, none, none], some [some 0, some 0, some 0], some [some 0, some 14, some 0], some [some 0, some 14, some 0]], got [some [none, none, none], some [none, some 0, none], some [none, some 14, none], none]", "test/Semantics/PlanStepTest.lean:218:0: step-empty-command-noop: expected ((\"ok\", [some 0, some 0, some 0]), \"done\", 4, none, [some 0, some 14, some 0]), got ((\"ok\", [none, some 0, none]), \"done\", 4, none, [some 0, some 14, some 0])", "test/Semantics/PlanStepTest.lean:222:0: step-empty-command-neighbours: expected ((\"ok\", [some 0, some 0, some 0]), \"done\", 3, none, [some 0, some 14, some 0]), got ((\"ok\", [none, some 0, none]), \"stuck\", 2, none, [none, some 14, none])", "test/Semantics/PlanStepTest.lean:233:0: step-plan-past-end: expected ((\"ok\", [some 0, some 14, some 0]), (\"stuck\", []), \"stuck\", []), got ((\"stuck\", []), (\"stuck\", []), \"stuck\", [])"]
   }
 ]
