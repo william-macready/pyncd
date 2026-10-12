@@ -2,7 +2,7 @@ import LeanNCD.Semantics.ReferenceExecutor
 
 /- Execution plans (spec Part V, Section 29): command syntax, annotation
    expansion, command prefixes and the static prefix sets Pub/Cons/Mat.
-   Slice-1 profile: batched Accumulate, block Publish, and initZero only.
+   Slice-1 to slice-3 profile: batched Accumulate, block Publish, initZero and block retire.
    Every group/block is a List; its order is presentation data and is never
    obtained by choosing a Finset order. -/
 

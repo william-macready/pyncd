@@ -1166,8 +1166,9 @@ restatements are the paragraphs headed "As formalized (slice-1 to slice-3 profil
 29.3, 30.2, 30.3, 30.4, 31.1-31.4, 32.1 and 33.2 of the
 [specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 235
 fixtures by the `rg -c` count (143 `#eval check` rows and 92 `example`/`theorem` items), of which 35 are slice 3's
-`PlanRetireTest` (21 rows, 13 `example`s, 1 theorem); the earlier figure of 180 was counted differently and does
-not reconcile with this method (see open item O6 of `plan_layer_slice3_plan.md`). The mutation manifests ran 54 mutation cycles (20 in slice 1, 15 in
+`PlanRetireTest` (21 rows, 13 `example`s, 1 theorem); the earlier figure of 180 was off by one (181 by this method
+at the commit that wrote it: 110 rows + 71 items), and `PlanFaultsTest` added 19 after it (12 rows + 7 items),
+which gives the 200 before slice 3. The mutation manifests ran 54 mutation cycles (20 in slice 1, 15 in
 slice 2, 9 in the D7 manifest, 10 in slice 3), of which 4 are labelled equivalent among the 35 of slices 1-2
 (3 in slice 1; S2-M4 at fixture level) and none among the 10 of slice 3 (every one is killed at a library proof).
 

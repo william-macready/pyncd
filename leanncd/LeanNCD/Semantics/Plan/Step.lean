@@ -1,6 +1,6 @@
 import LeanNCD.Semantics.Plan.Memory
 
-/- Concrete plan execution (spec Section 30.1), slice-1/2 profile: validated
+/- Concrete plan execution (spec Section 30.1), slice-1 to slice-3 profile: validated
    Start, commands (singleton or fused: `stepCommand` folds `execAnns` over the command's
    annotations), and three kernels. `initZero` writes the
    accumulator identity; `acc` is TRANSACTIONAL: it evaluates every member
