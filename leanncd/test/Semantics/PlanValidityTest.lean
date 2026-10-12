@@ -267,9 +267,10 @@ example : a2eFailedVsStuck.checkPlan = false := by decide
 halves of coverage 1 and 2 are consequences of `singleton`, `accOK` and `pubOK`. The valid
 accept-neighbours get them for free; the invalid plans below repeat an occurrence or an address, so
 their images are NOT duplicate-free and the theorem refutes the per-step hypothesis (the contrapositive
-is what makes the statement non-vacuous). Each invalid plan repeats in a different way: inside one
-group (`dupWithin`), across two groups (`dupGroup`, the `¬ Cons` half of `AccOK`), and in the
-publication image (`pubTwice`). -/
+is what makes the statement non-vacuous). Each invalid plan repeats in a different way, covering both
+halves of `AccOK` and of `PubOK`: inside one group (`dupWithin`, `G.Nodup`), across two groups
+(`dupGroup`, the `¬ Cons` half), inside one publication block (`pubDupIn`, `B.Nodup`) and across two
+blocks (`pubTwice`, the `¬ Pub` half). -/
 
 theorem singleton_of_checkSingleton (π : taggedOut.Plan) (h : π.checkSingleton = true) :
     π.Singleton := by
@@ -295,6 +296,10 @@ theorem pubTwice_not_nodup : ¬ pubTwice.pubFlat.Nodup := by
   have h : pubTwice.checkCov2Nodup = false := by decide
   simpa [checkCov2Nodup] using h
 
+theorem pubDupIn_not_nodup : ¬ pubDupIn.pubFlat.Nodup := by
+  have h : pubDupIn.checkCov2Nodup = false := by decide
+  simpa [checkCov2Nodup] using h
+
 theorem dupWithin_accOK_fails :
     ¬ ∀ pc G, dupWithin.commands[pc]? = some [.acc G] → dupWithin.AccOK pc G :=
   fun h => dupWithin_not_nodup
@@ -308,7 +313,14 @@ theorem pubTwice_pubOK_fails :
   fun h => pubTwice_not_nodup
     (pubFlat_nodup_of_pubOK _ (singleton_of_checkSingleton _ (by decide)) h)
 
+-- the within-block half of `PubOK` (`B.Nodup`): the one fixture that repeats an address inside a block
+theorem pubDupIn_pubOK_fails :
+    ¬ ∀ pc B, pubDupIn.commands[pc]? = some [.pub B] → pubDupIn.PubOK pc B :=
+  fun h => pubDupIn_not_nodup
+    (pubFlat_nodup_of_pubOK _ (singleton_of_checkSingleton _ (by decide)) h)
+
 #print axioms accSplit_nodup
+#print axioms pubDupIn_pubOK_fails
 #print axioms pubSplit_nodup
 #print axioms dupWithin_accOK_fails
 #print axioms dupGroup_accOK_fails
