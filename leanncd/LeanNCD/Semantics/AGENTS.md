@@ -11,7 +11,7 @@ Plan layer (`LeanNCD.Semantics.Plan`, Part V slices 1-4: singleton/fused command
 retirement and typed static same-sort buffer reuse, exact boundary layout checker,
 Lemma 31.2, Theorem 31.3, Lemma 32.1): see [`Plan/AGENTS.md`](Plan/AGENTS.md).
 Slice 4 landed locally via merge `c44f8a21`, with registered `PlanReuseTest`,
-`PlanReuseStorageTest`, `PlanReuseWrapperTest`. Post-review fixtures total 360;
+`PlanReuseStorageTest`, `PlanReuseWrapperTest`. Fixtures total 367 after probe closure;
 all 64 mutation controls are verified and reviews adjudicated. No remote push
 was performed; see `papers/semantics/plan_layer_slice4_record.md`.
 

@@ -313,3 +313,33 @@ the landed code and the external review reports, not treated as new capabilities
   besides expectations. Whitespace and the live stale-status sweep are clean.
 - Token reporting found no transcript for this Copilot session. Cumulative
   usage is unavailable, not measured as zero; no subagents were dispatched.
+
+## Retirement/reuse fixture-probe closure
+
+The subsequent `worktree-buffer-fixture-probes` pass closes slice-3 O3 without
+changing any runtime kernel, theorem or production mutation entry. Full
+reconciliation, per-mutant observations and reproduction command are in
+`plan_layer_slice3_record.md`, section "O3 reconciled and closed".
+
+`buffer-fixture-probes.py` source-extracts the exact current definitions and
+committed row expressions, proves clean copy parity, and measures ten retirement
+and six reuse computed component kills. It additionally checks the unused-capacity/buffer
+consumer under the exact weakened `R.dead` field, independently of
+`PlanRetireTest`'s earlier proof barrier. All seventeen probes pass with clean
+controls before and after, production hashes unchanged and no admissions.
+These supplemental component/consumer probes do not expand the 64 production
+manifest entries or claim whole mutated executor runs.
+
+Seven appended rows raise the current count to **367 = 186 evaluated rows +
+181 proof items** (360 immediately after the review fixes). All previous fixture
+lines remain unchanged, so existing mutation anchors do not move. Retirement
+fixtures total 72; reuse fixtures split 31 core, 26 storage and 25 wrappers.
+The original three reuse fixture controls already have computed kills, so all
+twenty buffer controls now have evidence beyond library proofs. This remains
+separate from complete mutated executor coverage or a mutation per fixture.
+
+Final validation: supplemental probes **17/17**, both production buffer
+manifests **20/20**, full build **8796 jobs**, actual axiom audit **5994 constants**,
+and direct whole-branch review clean after the diagnostic-handling fix.
+All old fixture lines and production Lean definitions/proofs remain unchanged;
+the historical 64-entry manifests are neither weakened nor expanded.

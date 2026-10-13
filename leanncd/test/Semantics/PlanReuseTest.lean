@@ -215,4 +215,20 @@ example : (reuseAccPair reuseSeparateAllocation).LayoutOK 1 :=
 #print axioms reuseGood_R_every_pc
 #print axioms reuseGood_unused_dead_every_pc
 
+#eval check "reuse-retired-slot-view-and-live-neighbour"
+  ((reuseGood.SlotView 7 (.pub (cAddr 0).addr)).isSome,
+    (reuseGood.SlotView 7 (.pub (cAddr 2).addr)).isSome)
+  (false, true)
+
+#eval check "reuse-resource-kind-enumeration"
+  (reuseGood.resourceList.countP (fun res => match res with | .pub _ => true | .acc _ => false),
+    reuseGood.resourceList.countP (fun res => match res with | .pub _ => false | .acc _ => true))
+  (3, 3)
+
+#eval check "reuse-acc-role-before-and-after-publish"
+  ((reuseGood.SlotView 2 (.acc (cAddr 1))).isSome,
+    (reuseGood.SlotView 3 (.acc (cAddr 1))).isSome,
+    (reuseGood.SlotView 3 (.pub (cAddr 1).addr)).isSome)
+  (true, false, true)
+
 end LeanNCD.Semantics.PlanFixtures

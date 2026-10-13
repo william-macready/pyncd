@@ -94,6 +94,15 @@ The controlling session should invoke mutation cycles directly rather than deleg
 command to a subagent: subagent permission scope is loaded from the creator session's worktree,
 which may predate these allow rules even when the target implementation worktree contains them.
 
+For buffer fixture observations hidden behind library proof failures, run
+`python3 leanncd/scripts/buffer-fixture-probes.py <leanncd-dir> <evidence-dir>`.
+It refreshes `Semantics.PlanReuseTest`, extracts definitions and fixture expressions into
+fresh namespaces, proves unmutated copy parity, and applies the existing manifest substitutions
+only to those copies. No production definition or proof is changed or admitted. It requires
+the intended fixture/consumer failure and a clean copied control afterward, and checks source
+hashes. These are component observations (plus an isolated `R.dead` consumer), not whole
+mutated executor runs; the production manifests remain separate evidence.
+
 **`lake env lean <file>` does not rebuild the file's dependencies — it only typechecks that one
 file against whatever `.olean`s already exist.** If you edit module `A.lean` and then run
 `lake env lean` on a file `B.lean` that imports `A`, `B` is checked against `A`'s STALE `.olean`
