@@ -65,7 +65,7 @@ The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-co
 is in the snapshot above, extended by slice 2 to fused commands, slice 3 to retirement
 and slice 4 to typed static same-sort physical reuse with boundary-local layout
 injectivity: eleven modules under `Semantics/Plan/`, proving Lemma 31.2,
-Theorem 31.3 and Lemma 32.1 for that profile, with 360 fixtures.
+Theorem 31.3 and Lemma 32.1 for that profile, with 367 fixtures.
 The four inherited manifests contain 54 cycles (20 + 15 + 9 + 10);
 slice 4 adds 10 controls. Exact ordered patch replay from `4ffdc342` to `deb4fecd`
 is controller-verified (isolated-index final git diff exit 0). All 64 mutation
@@ -1221,10 +1221,11 @@ layout injectivity, and error-free kernels (faults remain an abstract wrapper). 
 (singleton plans) or `checkPlanF` (fused plans): the run does not detect an invalid plan. The spec's
 restatements are the paragraphs headed "As formalized (slice-1 to slice-4 profile ...)" (in 30.3 and 33.2: "(slice-3 to slice-4 profile ...)") in Sections
 29.3, 30.2, 30.3, 30.4, 31.1-31.4, 32.1 and 33.2 of the
-[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 360
-fixtures (179 `#eval check` rows and 181 top-level `example`/`theorem` items).
-All 281 baseline assertions (149 + 132) are preserved; 79 reuse fixtures are split
-28 core, 26 storage and 25 wrapper. Default `Tests` retains all 13 original
+[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 367
+fixtures (186 `#eval check` rows and 181 top-level `example`/`theorem` items).
+All 281 baseline assertions (149 + 132) are preserved, with four additional
+retirement component rows; 82 reuse fixtures are split 31 core, 26 storage and
+25 wrapper. Default `Tests` retains all 13 original
 `Plan*Test` modules and adds these three, giving 16 test modules. `PlanFixtures`
 is one additional shared module: 14 original Plan test/shared modules, 17 total.
 Of the baseline, 68 are slice 3's
@@ -1240,7 +1241,21 @@ All 64 controls have been rerun successfully with observed failure-site
 anchors, including D7; multi-site expectations remain separate. Results are
 in `plan_layer_slice4_mutation_results/`. Inherited equivalent controls are
 proof-shape checks, not semantic counterexamples; `--check` uniqueness alone
-is not kill evidence. The slice landed locally via `c44f8a21`, unpushed.
+is not kill evidence. The slice landed locally via `c44f8a21`; subsequent
+review/probe closures are recorded in the slice records.
+
+The old slice-3 O3 fixture-probe gap is closed by
+`leanncd/scripts/buffer-fixture-probes.py`: all ten exact retirement substitutions
+kill independently evaluated components, including the seven previously
+unmeasured variants. Clean source copies prove parity with production and use
+the committed fixture expressions. The unused-capacity `R.dead` consumer is also
+checked independently of the retirement test's earlier proof barrier. Six
+additional reuse computational controls are measured as well: layout omission,
+final-boundary omission, each missing resource kind, accumulator role exclusion,
+and preservation of a co-live neighbour during retirement. These seventeen
+supplemental probes do not admit proofs, mutate production, or claim
+whole-executor mutation coverage. Together with the three existing reuse
+fixture controls, every buffer manifest entry has evidence beyond a library-proof kill.
 
 #### What slices 1-4 do not do
 

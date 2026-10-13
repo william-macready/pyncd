@@ -141,12 +141,16 @@ The requirements below were measured by the landed implementation. The record
 contains observed values: actual retired-slot overwrite, rejected live alias
 despite unchecked `done`, three pair classes/final boundary, cross-tensor output
 decode 2, ℤ/ℚ decode `(11,7/8)`, fused internal-only conflict and post-write
-fault-state R. All 281 baseline assertions remain; the post-review total is
-360 = 179 `#eval check` rows + 181 proof items (354 at the original checkpoint).
+fault-state R. All 281 baseline assertions remain; after fixture-probe closure the total is
+367 = 186 `#eval check` rows + 181 proof items (354 at the original checkpoint,
+360 after the review fixes).
 The follow-up also pins a live output's slot claimed by a later internal tensor,
 re-retirement after reuse, and custom zero-capacity storage.
 All 64 actual mutation verdicts pass with byte-identical
-restoration; this evidence was measured separately from compilation.
+restoration; this evidence was measured separately from compilation. Supplemental
+source-copied probes cover all ten retirement mutations, six reuse computational
+mutations and the independent unused-slot consumer, without admitting proofs or
+modifying production.
 
 1. Clone `rtInitAfter`, place point 2 in point 0's slot, and retain point 1 in
    its own slot. Prove the checker accepts, the run is `done`, and `R` holds at

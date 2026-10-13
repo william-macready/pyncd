@@ -212,7 +212,11 @@ Only "As formalized" paragraphs, proof-status rows and profile labels change
 in the general specification. Preserve mathematical contract text and historical
 slice records. Risk: stale claims / overclaiming; 0 fixtures, 0 mutation cycles.
 At landing the count was 354. Post-review count is
-**360 = 179 rows + 181 proof items**, baseline 281 preserved.
+**367 = 186 rows + 181 proof items**, baseline 281 preserved (360 after the
+review fixes, before the seven component rows). Slice-3 O3 is closed by the
+source-copied probes in `leanncd/scripts/buffer-fixture-probes.py`; their component
+and consumer evidence (17 probes, including the six additional reuse controls)
+is separate from the 64 production manifest controls.
 Sixteen `Plan*Test` modules are registered (13 original + 3 new); `PlanFixtures`
 is one additional shared module, giving 14 original Plan test/shared modules
 and 17 total. New tests are in default `Tests`; the library remains

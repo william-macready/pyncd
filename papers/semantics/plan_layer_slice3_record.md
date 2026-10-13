@@ -180,3 +180,109 @@ Direct path, branch `worktree-nodup-prop`. Re-checked before working: a checker-
 Tests (`PlanValidityTest.lean`, 13 theorems): the valid neighbours `accSplit`/`pubSplit` get both Nodup halves from `Valid.coverage_nodup_of_steps`; the invalid plans `dupWithin` (repeat inside one group), `dupGroup` (repeat across two groups, the `¬ Cons` half of `AccOK`) `pubDupIn` (repeat inside one publication block, the `B.Nodup` half of `PubOK`) and `pubTwice` (repeat across two blocks, the `¬ Pub` half) have non-duplicate-free images (`checkCov1Nodup`/`checkCov2Nodup` false) and the theorem then refutes the per-step hypothesis (`dupWithin_accOK_fails`, `dupGroup_accOK_fails`, `pubTwice_pubOK_fails`), so the hypotheses are neither vacuous nor always true. Docs: spec 31.1 (the two Nodup rows now say derivable; the "conjecture, not proved" sentence now states the result), path doc (theorem row added, the "does not do" bullet and the not-yet-done mention removed, counts 281 = 149 rows + 132 items, snapshot SHA), `Plan/AGENTS.md` Validity row. Not changed: the Nodup rows stay "diagnostic" (derivable; consumed by no correctness theorem, only read by `checkPlan_complete`, which reads every `Valid` field) and `Valid` keeps the two Nodup fields (removing them would be a separate refactor, not requested).
 
 Nodup review (one fresh lens, `wb_review_nodup.md`): 0 Critical, 0 Important, 3 Minor, all three fixed: F1 the record said the Nodup halves are "consumed by no theorem" although `checkPlan_complete` reads them (reworded: no correctness theorem consumes them); F2 "already proved at the checker level" overstated (it is a Bool statement assuming `checkSingleton` and every per-step check; reworded); F3 the tests refuted both halves of `AccOK` but only the across-blocks half of `PubOK`, so `pubDupIn_not_nodup` and `pubDupIn_pubOK_fails` were added (within-block `B.Nodup` half). Final counts: `Plan*Test.lean` 149 rows + 132 items = 281. Verified clean by the lens: statements match the docs (the hypotheses have exactly the shape of the `Valid.accOK`/`Valid.pubOK` fields, `Singleton` is genuinely needed), axioms `propext`/`Quot.sound`, `Validity.lean` is +40/-0 (every cited `Validity.lean` line under `papers/` is at or before line 388, so no manifest `expect` shifted), no `File.lean:NNN` added.
+
+## O3 reconciled and closed: independent component mutation probes
+
+Direct path, branch `worktree-buffer-fixture-probes`, base `b9b25055`.
+The original unmeasured set was exactly S3-M2, M4, M5, M7-M10. The later
+multi-member, fault-after-retire and R-net follow-ups measured related variants,
+but did not measure all seven exact manifest substitutions. This pass measures
+all ten current retirement entries, rechecking M1/M3/M6 as controls rather than
+assuming the old admitted-proof scratch runs still apply to slice 4.
+
+Four rows are appended to `PlanRetireTest`: the actual retire kernel applied to
+`rtMulti`'s pre-retire memory, live/output checker components, and decided
+`ReadyOK`/`RetOK` components beside legal neighbours. One row is appended to
+`PlanReuseTest`: retired versus live published `SlotView` membership after reuse.
+All old assertions and line positions are preserved. The existing reuse
+retired-read/ghost/new-value row supplies the read-view discriminator; a cleared
+canonical slot would not discriminate `readPub` over Pub from Live.
+
+`leanncd/scripts/buffer-fixture-probes.py` refreshes the actual fixture dependency,
+extracts the current definition and committed row expression, and creates a
+temporary Lean module in a fresh namespace. Each clean copy is proved equal to
+its production definition by `rfl`. The exact existing manifest old/new
+substitution is then applied only to the copied definition, and the same row
+expression is routed to it. Controls pass before and after each intended failure.
+No production file or manifest is edited; hashes are checked throughout, and
+temporary modules are removed. No library proof is admitted or bypassed by
+replacing it. Raw generated sources, control/mutant/restored logs and
+`results.json` are written to the caller's evidence directory.
+
+| Mutation | Committed component observation | Observed mutant difference |
+|---|---|---|
+| S3-M1 identity retirement | `retire-kernel-members-and-neighbour` | after `[none,none,4]` becomes `[0,3,4]` |
+| S3-M2 retire `B.tail` | same kernel row | first member remains `some 0`; second clears; neighbour remains 4 |
+| S3-M3 `checkRet` always true | `retire-check-live-and-output-conditions` | `(false,false,false,true)` becomes `(true,true,true,true)` |
+| S3-M4 `checkRet` drops Live | same checker row | unpublished and re-retired cases flip; output remains rejected; legal neighbour stays true |
+| S3-M5 `checkRet` drops output clause | same checker row | only the output case flips to true |
+| S3-M6 `checkReady` over Pub | `retire-ready-condition-and-neighbour` | retired reader's checker flips; unchanged ReadyOK stays false |
+| S3-M7 pub `SlotView` over Pub | `reuse-retired-slot-view-and-live-neighbour` | retired resource becomes mapped; live neighbour remains mapped |
+| S3-M8 `ReadyOK` over Pub | readiness component row | decided ReadyOK flips; unchanged checker stays false |
+| S3-M9 `readPub` over Pub | `reuse-retired-ghost-vs-live` | retired read returns new occupant 4, not `none`; ghost remains 0 |
+| S3-M10 `RetOK` drops output clause | `retire-prop-output-condition-and-neighbour` | output condition flips to true; internal neighbour stays true |
+
+Also reconciled: S4-M6 is a Prop-only change to `R.dead`; it cannot change an
+executor's computed memory row. The runner isolates its exact field predicate
+and the capacity/buffer consumer body from `reuseGood_unused_dead_every_pc`.
+The clean field copy accepts the real production `R.dead`. The weakened copy
+fails independently at the actual unused-capacity demand: an equality-or-True
+cannot provide the required equality to `none`. This is consumer-contract
+evidence, not an executor-row kill, and no failure in `PlanRetireTest` blocks it.
+
+Measured result: **10/10 computed component probes plus 1/1 independent consumer
+probe**, with clean controls before and after every kill and production hashes
+unchanged. The first consumer diagnostic classifier expected `Type mismatch`;
+Lean reported `Application type mismatch`. That mismatch was refused, the
+classifier was corrected to the observed consumer-specific diagnostic and
+payload, and all eleven probes were rerun successfully.
+
+Reproduce from a prepared checkout:
+
+```sh
+python3 leanncd/scripts/buffer-fixture-probes.py /path/to/checkout/leanncd /path/to/evidence
+```
+
+Scope limit: these are definition-level component observations, including
+decided logical conditions, not complete executions of a mutated `runPlan`.
+The production manifests still kill these mutations at library proofs and are
+separate evidence. O3 asked for fixture discrimination, now measured without
+admissions; it does not promise one independent mutation kill for every fixture.
+Copy/relocation, input retirement, scan liveness and other capabilities remain
+out of scope. The owner then explicitly approved closing the six additional
+reuse computational controls as part of this same pass:
+
+| Mutation | Component observation | Observed mutant difference |
+|---|---|---|
+| S4-M1 checker omits layout | `reuse-bad-live-alias-run`, with `reuse-good-run` accepted | bad alias checker false becomes true; the unchecked corrupted row is unchanged |
+| S4-M2 final boundary omitted | `reuse-final-boundary-coverage` | aggregate layout false becomes true; final-boundary collision and separate neighbour remain pinned |
+| S4-M3 pub resources omitted | `reuse-resource-kind-enumeration` | counts `(3,3)` become `(0,3)` |
+| S4-M4 acc resources omitted | same enumeration row | counts `(3,3)` become `(3,0)` |
+| S4-M5 acc not-Pub guard omitted | `reuse-acc-role-before-and-after-publish` | `(true,false,true)` becomes `(true,true,true)` |
+| S4-M7 retirement clears all storage | retire kernel component row | the untouched neighbour 4 is also cleared |
+
+Two additional rows pin resource-kind enumeration and accumulator/publication
+role exclusion. The runner handles both a compound receiver and a chained List
+operation, and extracts exactly one fixture at a time. Early control failures
+in the compound/chained routing were refused; they were not counted as kills.
+After fixing those routes, the full run passed **17/17**: sixteen computed
+component probes and one independent consumer contract. The three existing
+reuse fixture controls S4-F1/F2/F3 already have actual fixture kills, rechecked
+in the production manifest. Thus all twenty buffer manifest entries now have
+component, consumer or actual fixture evidence beyond library-proof barriers,
+without claiming every fixture has an individual mutant.
+
+Current inventory is **367 = 186 evaluated rows + 181 proof items**;
+`PlanRetireTest` is 72 (31 rows + 41 items), and `PlanReuseTest` is 31.
+
+Final gates: the reviewed runner passes **17/17** again, including strict handling
+of both ordinary and coded Lean diagnostics; unrelated errors cannot count as
+fixture kills. Both production buffer manifests pass **10/10 + 10/10**, with
+their expected sites and byte-identical restoration unchanged. Controller full
+build passes **8796 jobs**, and the actual axiom audit checks **5994 constants**
+using standard axioms. The four pre-existing `sorry` warnings outside Plan remain.
+Direct whole-branch review found and fixed the coded-diagnostic classifier gap;
+its subsequent complete probe run is green, with no outstanding findings.
+No runtime definition, production theorem or mutation entry changed.
+Token reporting again found no transcript for this Copilot session: cumulative
+usage is unavailable, not zero. No subagents were dispatched.

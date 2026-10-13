@@ -441,4 +441,49 @@ example : chainMem rtInitAfter 5 (place rtInitAfter.allocation (cAddr 2).addr) =
 #print axioms rtNeighbour_dead_after_acc
 #print axioms rtInitAfter_dead_after_init_and_acc
 
+/-! ### 10. Component observations for proof-free retirement mutation probes -/
+
+#eval check "retire-kernel-members-and-neighbour"
+  (let before := chainMem rtMulti 4
+   let after := rtMulti.execRet [cAddr 0, cAddr 1] before
+   ([readSlot rtMulti.allocation before (cAddr 0).addr,
+     readSlot rtMulti.allocation before (cAddr 1).addr,
+     readSlot rtMulti.allocation before (cAddr 2).addr],
+    [readSlot rtMulti.allocation after (cAddr 0).addr,
+     readSlot rtMulti.allocation after (cAddr 1).addr,
+     readSlot rtMulti.allocation after (cAddr 2).addr]))
+  ([some 0, some 3, some 4], [none, none, some 4])
+
+#eval check "retire-check-live-and-output-conditions"
+  (rtUnpub.checkRet 4 [sAddr false 2 rfl],
+    rtTwice.checkRet 5 [cAddr 1],
+    rtOutput.checkRet 5 [sAddr false 1 rfl],
+    rtScalar.checkRet 5 [sAddr false 2 rfl])
+  (false, false, false, true)
+
+section
+attribute [local instance 2000] List.decidableBAll
+
+local instance (π : (routed chainBody).Plan) (pc : Nat)
+    (G : List (OccRef (routed chainBody))) : Decidable (π.ReadyOK pc G) := by
+  unfold ReadyOK
+  infer_instance
+
+local instance (π : (scalarRole false).Plan) (pc : Nat)
+    (B : List (DefAddr (scalarRole false))) : Decidable (π.RetOK pc B) := by
+  unfold RetOK
+  infer_instance
+
+#eval check "retire-ready-condition-and-neighbour"
+  (rtReadAfter.checkReady 4 [cOcc 1], rtNeighbour.checkReady 4 [cOcc 1],
+    decide (rtReadAfter.ReadyOK 4 [cOcc 1]), decide (rtNeighbour.ReadyOK 4 [cOcc 1]))
+  (false, true, false, true)
+
+#eval check "retire-prop-output-condition-and-neighbour"
+  (decide (rtOutput.RetOK 5 [sAddr false 1 rfl]),
+    decide (rtScalar.RetOK 5 [sAddr false 2 rfl]))
+  (false, true)
+
+end
+
 end LeanNCD.Semantics.PlanFixtures
