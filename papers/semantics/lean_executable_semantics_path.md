@@ -52,7 +52,7 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-12, landed Lean implementation via `c44f8a21`, with post-merge review fixes: the Part V slice-1 to slice-4 plan layer
+**Snapshot: 2026-10-12, merged and pushed through `e9ae73f1`, including buffer review fixes and fixture-probe closure: the Part V slice-1 to slice-4 plan layer
 (`Semantics/Plan/`), on top of bounded source correspondence
 (`6a90baff`), nested-reduction reindexing (`705280cd`), successful-permutation
 agreement (`ca642b3d`), and raw-source admission, on top of the verified
@@ -68,11 +68,17 @@ injectivity: eleven modules under `Semantics/Plan/`, proving Lemma 31.2,
 Theorem 31.3 and Lemma 32.1 for that profile, with 367 fixtures.
 The four inherited manifests contain 54 cycles (20 + 15 + 9 + 10);
 slice 4 adds 10 controls. Exact ordered patch replay from `4ffdc342` to `deb4fecd`
-is controller-verified (isolated-index final git diff exit 0). All 64 mutation
-verdicts pass; both fresh whole-branch reviews are clean or adjudicated, and
-both controller full builds and the actual axiom audit are green. Slice 4 landed
-on local `main` via merge `c44f8a21`; see `plan_layer_slice4_record.md`. Earlier clean review
-statements above refer to the landed reference executor, not slice 4.
+is controller-verified (isolated-index final git diff exit 0). All 64 production
+controls pass with exact failure-site expectations. The supplemental source-copy
+probes pass 17/17 (16 computed components and one independent unused-slot
+consumer); they neither admit proofs nor claim complete mutated executor runs.
+The latest controller full build passed 8796 jobs, and the actual axiom audit
+checked 5994 constants with standard axioms. Four pre-existing `sorry` warnings
+outside Plan remain unchanged. Slice 4 landed via `c44f8a21`, review fixes via
+`b9b25055`, and probe closure via `e9ae73f1`; all are on `origin/main`.
+Review findings are closed. See the [slice-4 record](plan_layer_slice4_record.md)
+and [retirement probe close-out](plan_layer_slice3_record.md#o3-reconciled-and-closed-independent-component-mutation-probes).
+Earlier clean review statements above refer to the landed reference executor.
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
 [`LeanNCD`](../../leanncd/LeanNCD.lean). They are a semantic validation layer,
@@ -120,7 +126,9 @@ bounded source correspondence + differential debugging             LANDED
                          |
 Part V slices 1-3 (singleton + fused + retirement)                 LANDED
                          |
-Part V slice 4 (typed static buffer reuse + layout safety)         LANDED (local)
+Part V slice 4 (typed static buffer reuse + layout safety)         LANDED / PUSHED
+                         |
+buffer review fixes + fixture-level probe reconciliation         CLOSED / PUSHED
                          |
 general compiled storage/backend refinement                      LATER
 ```
@@ -1092,6 +1100,7 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
   memory model.
 - `Plan/Memory`: separate `InputSlot` and reusable `BufferSlot`, allocation-indexed memory,
   `Start`, `place`, `readSlot`, the layout view `SlotView` and its domain injectivity `LayoutOK`,
+  with canonical compatibility `layoutOK_of_canonical`,
   the read view `readPub`, `Decode`, the reference post-state
   `refState`, and the relation `R` (fields `dead`, `retPub`) with `R_start`.
 - `Plan/Step`: the step kernels, `StepResult`, `PlanOutcome`, validated `Start`, and the run
@@ -1100,7 +1109,8 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
   one-step simulation `step_R`, `step_failed`, `step_retire`.
 - `Plan/Validity`: `Valid` (Definition 31.1, singleton form; fields `retOK`, all-boundary `layout`),
   `resourceList`, `checkLayoutAt`, `checkLayouts` and their exactness, the computable `checkPlan` (with `checkRet`),
-  `checkPlan_sound`, `checkPlan_complete` (so `checkPlan_iff`) and `checkAccMat_of_rest`.
+  `checkPlan_sound`, `checkPlan_complete` (so `checkPlan_iff`),
+  `checkPlan_of_canonical` and `checkAccMat_of_rest`.
 - `Plan/Run`: progress `step_not_stuck` and the multi-step run lemma `run_R`/`runPlan_R`.
 - `Plan/Correctness`: terminal adequacy and compiled correctness.
 - `Plan/Fusion`: fold lemmas for a fused command (`execAnns_R`, `step_R_command`, `step_failed_command`,
@@ -1121,6 +1131,7 @@ The modules are in [`LeanNCD/Semantics/Plan/`](../../leanncd/LeanNCD/Semantics/P
 | `step_failed` | A failed step is matched by one `undefined` event for the same occurrence from the related state | Section 31.3 (failure matching) |
 | `checkPlan_sound` | An accepted plan satisfies `Valid` | Definition 31.1 |
 | `checkPlan_complete`, `checkPlan_iff` | A `Valid` plan is accepted, so `checkPlan` decides `Valid` exactly | Definition 31.1 |
+| `layoutOK_of_canonical`, `checkPlan_of_canonical` | Canonical allocation is layout-safe at every boundary; if the other checker clauses pass, the added layout clause does not reject the plan | Slice-4 compatibility with the canonical profile |
 | `accFlat_nodup_of_accOK`, `pubFlat_nodup_of_pubOK`, `Valid.coverage_nodup_of_steps` | On a singleton plan, `AccOK` (resp. `PubOK`) at every `acc` (resp. `pub`) command makes the accumulation (publication) image duplicate-free: the Nodup halves of coverage 1 and 2 are consequences of the step conditions (checker-level form: `checkPlan_nodup_redundant`) | Section 29.3 conditions 1-2 (Nodup halves) |
 | `checkAccMat_of_rest` | Given `checkSingleton`, `checkCov2Complete`, `checkInit` at every `initZero` and `checkPubMat` at every `pub`, `checkAccMat` holds at every `acc`: the clause is shadowed | Definition 31.1 (checker redundancy; no spec result) |
 | `step_not_stuck`, `runPlan_not_stuck` | A valid plan's run never reports `stuck` | Section 31.3 (progress) |
@@ -1231,21 +1242,26 @@ is one additional shared module: 14 original Plan test/shared modules, 17 total.
 Of the baseline, 68 are slice 3's
 `PlanRetireTest` (27 rows, 24 `example`s, 17 theorems); the earlier figure of 180 was off by one (181 by this method
 at the commit that wrote it: 110 rows + 71 items), and `PlanFaultsTest` added 19 after it (12 rows + 7 items),
-which gives the 200 before slice 3. Historically the mutation manifests ran 54 cycles (20 in slice 1, 15 in
+which gives the 200 before slice 3. The four appended component rows bring
+`PlanRetireTest` to 72 (31 rows + 41 proof items) today.
+Historically the mutation manifests ran 54 cycles (20 in slice 1, 15 in
 slice 2, 9 in the D7 manifest, 10 in slice 3), of which 4 are labelled equivalent among the 35 of slices 1-2
 (3 in slice 1; S2-M4 at fixture level) and none among the 10 of slice 3 (every one was killed at a library proof).
-Those are historical observations, not slice-4 rerun results. The current branch
+Those are historical observations, not slice-4 rerun results. The current implementation
 has 64 manifest controls: 54 inherited + 10 reuse controls (6 library-proof,
 1 test-level invariant consumer, 3 computed fixtures).
-All 64 controls have been rerun successfully with observed failure-site
-anchors, including D7; multi-site expectations remain separate. Results are
-in `plan_layer_slice4_mutation_results/`. Inherited equivalent controls are
+All 64 controls have been rerun successfully with 167 exact failure-site
+expectations, including D7; multi-site expectations remain separate.
+The probe-closure pass additionally reran the two affected buffer manifests,
+10/10 each, without changing mutation entries or moving existing fixture anchors.
+Results are in [plan_layer_slice4_mutation_results/](plan_layer_slice4_mutation_results/).
+Inherited equivalent controls are
 proof-shape checks, not semantic counterexamples; `--check` uniqueness alone
-is not kill evidence. The slice landed locally via `c44f8a21`; subsequent
-review/probe closures are recorded in the slice records.
+is not kill evidence. Review and probe closures are merged and pushed through
+`e9ae73f1`, with evidence in the slice records.
 
 The old slice-3 O3 fixture-probe gap is closed by
-`leanncd/scripts/buffer-fixture-probes.py`: all ten exact retirement substitutions
+[buffer-fixture-probes.py](../../leanncd/scripts/buffer-fixture-probes.py): all ten exact retirement substitutions
 kill independently evaluated components, including the seven previously
 unmeasured variants. Clean source copies prove parity with production and use
 the committed fixture expressions. The unused-capacity `R.dead` consumer is also
@@ -1305,11 +1321,18 @@ batching, and buffer liveness for scans. Rank alone never justifies overwriting
 a still-needed value. A checked production plan is not automatically a
 certificate for these new semantics.
 
-Slices 1-4 of the plan layer have landed locally
+Slices 1-4 of the plan layer and their review/probe follow-ups are merged and pushed
 ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)): singleton and fused commands,
 retirement of defined published addresses, typed static same-sort reuse with
 boundary-local layout safety, with Lemma 31.2, Theorem 31.3 and
 Lemma 32.1 proved for that profile.
+The remaining buffer work is capability work, not the old fixture-probe backlog:
+copy/relocation would free working storage while retaining a value elsewhere;
+input retirement needs caller-memory ownership; in-place execution needs
+read-before-write or snapshot guarantees. The Section 33.2 two-buffer scan
+still needs an actual schedule and last-reader/liveness proof, with full-history
+and terminal-only outputs kept distinct. The completed static-reuse layer alone
+does not provide any of these extensions or certify the production backend.
 Not yet done: scan programs/liveness, retiring inputs, relocation/copy,
 dynamic allocation, cross-sort reuse and in-place kernels/snapshots;
 concrete implementation-error sources (an abstract fault oracle with the error-free profile restated is done, `Plan/Faults.lean`); cross-sort primitives and non-exact numeric
