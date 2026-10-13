@@ -1326,6 +1326,19 @@ Slices 1-4 of the plan layer and their review/probe follow-ups are merged and pu
 retirement of defined published addresses, typed static same-sort reuse with
 boundary-local layout safety, with Lemma 31.2, Theorem 31.3 and
 Lemma 32.1 proved for that profile.
+
+**Next priority: a certified bounded full-history scan.** Use the
+[Section 33.1 separate-buffer plan](tensor_logic_semantics.md#331-a-separate-buffer-history-plan)
+with the entire history $H$ designated as output. Construct each slice directly
+in distinct retained storage, keep all published slices live through output
+decoding, and prove schedule validity, preservation of earlier slices, and
+decoding of the complete history. This milestone uses the existing static
+allocation and correctness machinery; it does not require state retirement,
+two-buffer reuse, or copy/relocation. Under the dense profile its retained output
+uses $d(N+1)$ scalar slots. Terminal-only two-buffer scans and reusable working
+buffers with retained-history copy/relocation are later milestones with distinct
+output contracts; neither is a prerequisite for the full-history baseline.
+
 The remaining buffer work is capability work, not the old fixture-probe backlog:
 copy/relocation would free working storage while retaining a value elsewhere;
 input retirement needs caller-memory ownership; in-place execution needs
