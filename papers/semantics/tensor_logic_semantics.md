@@ -4905,6 +4905,15 @@ The compilation-layer proof targets are:
   *Not yet formalized.* The completed retirement/reuse proofs and fixture-probe
   closure are groundwork, not a proof of the scan schedule or its last-reader condition.
 
+**Next formalization priority:** certify a bounded full-history scan using
+distinct retained storage for each time slice, with the entire history $H$
+designated as output. Start from the separate-buffer plan of
+[Section 33.1](#331-a-separate-buffer-history-plan), retaining every published
+slice as required by [Section 33.3](#333-full-history-outputs-change-the-retention-obligation).
+Prove schedule validity, preservation of published slices, and complete history
+decoding. Two-buffer terminal-only scans and reusable working buffers with
+copy/relocation remain later targets, not prerequisites for this milestone.
+
 Outside the slice-1 to slice-4 profile (singleton/fused commands, retirement of
 defined published addresses, typed static same-sort reuse with boundary-local layout safety) these are
 proposed contracts and proof targets, not kernel-checked results
