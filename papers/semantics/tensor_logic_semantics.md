@@ -168,9 +168,17 @@ are also kernel-checked in Lean is recorded in
 [Part V](#part-v-compilation-and-refinement) compilation results Lemma 31.2, Theorem 31.3 and Lemma 32.1 are
 proved for the slice-1 to slice-4 profile (singleton/fused commands by expansion,
 retirement of defined published addresses, typed static same-sort buffer reuse
-with boundary-local layout injectivity; see the table). Slice 4 landed locally
-via merge `c44f8a21`, with 64 mutation controls verified and whole-branch reviews
-adjudicated; no remote push was performed. See `plan_layer_slice4_record.md`.
+with boundary-local layout injectivity; see the table). Slice 4, its review fixes,
+and the retirement/reuse fixture-probe closure are merged and pushed through
+`e9ae73f1` (2026-10-12). The current validation inventory is 367 fixtures
+(186 evaluated rows and 181 proof items), 64 production mutation controls with
+exact failure-site expectations, and 17 supplemental probes (16 computed
+components and one independent `R.dead` consumer). The latter use source copies
+with proved control parity: they do not admit proofs, modify production, or
+establish whole mutated executor runs. The full build and standard-axiom audit
+are green, and the review findings are closed. See the
+[slice-4 record](plan_layer_slice4_record.md) and the
+[retirement probe close-out](plan_layer_slice3_record.md#o3-reconciled-and-closed-independent-component-mutation-probes).
 General scan/liveness and in-place reuse are not proved. Compiler correctness is
 conditional on the stated certificates and kernel contracts; it is not a claim
 that an existing compiler satisfies them.
@@ -4095,6 +4103,11 @@ bounded sort-certified placement (`locate`). `Slot = InputSlot P ⊕ BufferSlot 
 keeps inputs separate from reusable defined storage. `SlotView` represents
 published resources on `Live` and accumulators on `Mat` but not `Pub`;
 `LayoutOK` requires injectivity on this domain, not on all addresses.
+Canonical allocation retains globally injective placement: `layoutOK_of_canonical`
+(`Plan.Memory`) proves layout safety at every boundary, and
+`checkPlan_of_canonical` (`Plan.Validity`) discharges the layout checker clause
+when the other checks pass. These compatibility bridges are library theorems,
+not test-only helpers.
 Materializing a zero does not by itself make the zero correct: an `initZero` of an accumulator that
 already holds contributions would silently erase them. The slice-1 plan therefore also requires
 *initZero freshness* (`InitOK`): each initialised address is still unpublished at that command, and no
@@ -4148,6 +4161,13 @@ unused capacity; it does not require an old address's reused slot to stay empty.
 A later read of the retired logical address still returns `none` even when its
 former slot holds a new value; such a demanded read is a plan defect (rejected
 by the checker, `stuck` at run time). Decoding a retired output yields `none`.
+Re-retirement is also a safety violation under reuse: the second clear could
+erase a new occupant. The fixture `reuse-retire-again-after-reuse` pins this
+hazard, whereas its canonical-allocation twin has separate storage and finishes
+despite static rejection. `storage-live-output-claim` pins the opposite retention
+direction: a later internal tensor cannot claim a live output's slot. Its old
+step checks pass, the layout check rejects it, and its canonical twin is valid.
+Custom zero-capacity storage and both resource kinds are independently tested.
 
 Liveness between commands is not sufficient for safety inside a kernel:
 all required reads of old contents must occur before an overlapping write,
@@ -4268,7 +4288,7 @@ The five-condition definition above stays the general contract. Lean's `Valid` (
 purely static condition, stated per command $\textcolor{#C16C86}{\mathsf{pc}}$ with `commands[pc] = [a]` against the prefix sets
 $\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Cons}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Mat}(\textcolor{#C16C86}{\mathsf{pc}})$, $\mathrm{Ret}(\textcolor{#C16C86}{\mathsf{pc}})$ (condition 3 and the retire clause read
 $\mathrm{Live}(\textcolor{#C16C86}{\mathsf{pc}})=\mathrm{Pub}(\textcolor{#C16C86}{\mathsf{pc}})\setminus\mathrm{Ret}(\textcolor{#C16C86}{\mathsf{pc}})$; the rows below). Definition 31.1's semantic
-conditions 2-5 are not fields of it: for the fixed slice-1 kernels they are theorems, `R_start` (2),
+conditions 2-5 are not fields of it: for the profile's singleton kernels they are theorems, `R_start` (2),
 `step_R` (3, for the reference state `refState pc = some c`; see
 [Section 31.2](#312-initial-states-and-successful-step-simulation)), `step_failed` (4) and
 `step_not_stuck` (5). Each clause has a role: *safety* (needed for a correct
@@ -4767,6 +4787,9 @@ reuse are formalized: `execRet` clears storage without changing the reference
 history; subsequent `initZero` and accumulation may occupy that slot for a
 different resource, under `LayoutOK`. `readPub` still excludes the retired
 address even when its former slot has a new value (`reuseGood`).
+The parked retirement/reuse component mutation-probe gaps are closed; this is
+validation of the existing storage model, not a scan-liveness theorem or a
+claim of independent whole-executor mutation coverage for every fixture.
 This is not the Section 33.2 scan program or its liveness proof: that two-buffer
 schedule, its values 5 and 26, full-history copy/relocation and in-place
 snapshots remain unformalized.
@@ -4843,6 +4866,8 @@ The compilation-layer proof targets are:
   `done_iff_model`; fused plans: `terminal_adequacy_F`, `done_correct_F`, `failed_correct_F`, `done_iff_model_F`).
 - Separate-buffer and two-buffer scan proofs, with full-history and
   terminal-only output contracts tested separately.
+  *Not yet formalized.* The completed retirement/reuse proofs and fixture-probe
+  closure are groundwork, not a proof of the scan schedule or its last-reader condition.
 
 Outside the slice-1 to slice-4 profile (singleton/fused commands, retirement of
 defined published addresses, typed static same-sort reuse with boundary-local layout safety) these are
@@ -4853,6 +4878,11 @@ choosing further plan representations and kernel fragments and proving that
 they satisfy the contracts, including additive contribution semantics.
 Machine-number refinement, more permissive aliasing, asynchronous command
 execution, and general cyclic solvers require their own explicit extensions.
+Further buffer work includes copy/relocation for retained values, ownership-aware
+input retirement, dynamic allocation, cross-sort reuse, and in-place
+read-before-write or snapshot contracts. Concrete allocation/kernel error
+sources and a refinement connection to the production `Eval/Plan` backend also
+remain outside the proved profile; the existing fault wrapper is an abstract oracle.
 
 ## 35. Compact notation reference
 
