@@ -1766,7 +1766,7 @@ $\bigoplus_{k\in \textcolor{#5688C7}{I}_k}(W[i,k]\otimes X[k]\oplus B[i])$.
 **Example: two nested contractions.** Consider the surface statement
 
 ```text
-Y[i] += A[i,j] B[j,k] X[k]
+Y[i] = A[i,j] B[j,k] X[k]
 ```
 
 Its contribution context contains only the output variable $i$. Before
@@ -2018,7 +2018,7 @@ guarded computation, not zero-padded convolution.
 
 ### 16.5 Softmax over an attention slice
 
-Work over exact reals. Let inputs $\textcolor{#9D75C4}{Q},K_{\mathrm{key}}$ have shapes
+Work over exact reals. Let inputs $\textcolor{#9D75C4}{Q},\textcolor{#9D75C4}{\mathrm{Key}}$ have shapes
 $(q_0,d)$ and $(\textcolor{#5688C7}{s}_0,d)$, and let the defined tensor $A$ have shape
 $(q_0,\textcolor{#5688C7}{s}_0)$. If $\textcolor{#5688C7}{s}_0=0$, the statement below has no
 occurrences and nothing is evaluated:
@@ -2027,14 +2027,14 @@ occurrences and nothing is evaluated:
 A[q,s.] = softmax(Q[q,k] Key[s,k])
 ```
 
-`Key` denotes $K_{\mathrm{key}}$. The marked variable $\textcolor{#5688C7}{s}$ selects the
+The marked variable $\textcolor{#5688C7}{s}$ selects the
 slice domain $[\textcolor{#5688C7}{s}_0]$. The core body for $q\in[q_0],\textcolor{#5688C7}{s}\in[\textcolor{#5688C7}{s}_0]$ is
 
 $$
 \textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
 \mathop{\mathrm{softmax}}\nolimits\left(
 \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{t\in[\textcolor{#5688C7}{s}_0]}
-\left(\sum_{k\in[d]}\textcolor{#9D75C4}{Q}[q,k]K_{\mathrm{key}}[t,k]\right)
+\left(\sum_{k\in[d]}\textcolor{#9D75C4}{Q}[q,k]\textcolor{#9D75C4}{\mathrm{Key}}[t,k]\right)
 \right),(\textcolor{#5688C7}{s})
 \right).
 $$
@@ -2079,7 +2079,7 @@ is still normalized over, and exact reals have no $-\infty$ to use instead.
 The core expresses the mask with scalar primitives. Register $\exp$, which is
 total on $\mathbb{R}$, and division, defined where the divisor is nonzero
 ([Section 8](#8-operators-predicates-and-definedness)). Abbreviate the explicit reduction
-$S(q,t)=\bigoplus_{k\in[d]}\textcolor{#9D75C4}{Q}[q,k]\otimes K_{\mathrm{key}}[t,k]$. For
+$S(q,t)=\bigoplus_{k\in[d]}\textcolor{#9D75C4}{Q}[q,k]\otimes \textcolor{#9D75C4}{\mathrm{Key}}[t,k]$. For
 $q\in[q_0]$ and $\textcolor{#5688C7}{s}\in[\textcolor{#5688C7}{s}_0]$, one statement suffices:
 
 $$
