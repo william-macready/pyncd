@@ -1763,6 +1763,42 @@ $$
 It does not give
 $\bigoplus_{k\in \textcolor{#5688C7}{I}_k}(W[i,k]\otimes X[k]\oplus B[i])$.
 
+**Example: two nested contractions.** Consider the surface statement
+
+```text
+Y[i] += A[i,j] B[j,k] X[k]
+```
+
+Its contribution context contains only the output variable $i$. Before
+elaboration, the product term $t_1=A[i,j]B[j,k]X[k]$ has no reduction binders,
+so all three index variables are syntactically free:
+
+$$
+\textcolor{#9D75C4}{\mathop{\mathrm{FV}}\nolimits}(t_1)=\{i,j,k\},
+\qquad
+\textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})=\{i\},
+\qquad
+C_1=\{i,j,k\}\setminus\{i\}=\{j,k\}.
+$$
+
+Choosing $j$ as the outer binder and $k$ as the inner binder gives the
+elaborated contribution body
+
+$$
+\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}(i)=
+\bigoplus_{j\in \textcolor{#5688C7}{I}_j}
+\left(
+\bigoplus_{k\in \textcolor{#5688C7}{I}_k}
+\left(A[i,j]\otimes B[j,k]\otimes X[k]\right)
+\right).
+$$
+
+The inner reduction holds $i,j$ fixed and combines the values over $k$;
+the outer reduction then combines those results over $j$. Each repeated
+variable is bound once. After elaboration, $j,k$ are bound and
+$\textcolor{#9D75C4}{\mathop{\mathrm{FV}}\nolimits}(\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}})=\{i\}$:
+the contractions occur inside one contribution body for each admissible $i$.
+
 ### 15.3 Scalar operator placement
 
 Without an enclosing operator, the contribution body is $\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}=B_{\textcolor{#9D75C4}{s}}$.
