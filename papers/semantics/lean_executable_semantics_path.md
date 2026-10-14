@@ -1339,6 +1339,10 @@ uses $d(N+1)$ scalar slots. Terminal-only two-buffer scans and reusable working
 buffers with retained-history copy/relocation are later milestones with distinct
 output contracts; neither is a prerequisite for the full-history baseline.
 
+Implementation plan: [Part V slice 5](plan_layer_slice5_plan.md), with measured
+prototype and authoring evidence in its [record](plan_layer_slice5_record.md).
+The prototype compiles; generic scan certification remains unimplemented.
+
 The remaining buffer work is capability work, not the old fixture-probe backlog:
 copy/relocation would free working storage while retaining a value elsewhere;
 input retirement needs caller-memory ownership; in-place execution needs

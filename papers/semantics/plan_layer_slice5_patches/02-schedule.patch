@@ -1,0 +1,253 @@
+From 4dafdcde1dc0d473c96e713ef3304c9c4cfd307b Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Tue, 13 Oct 2026 18:30:53 -0700
+Subject: [PATCH] feat(semantics): replay scan schedule and boundary
+ bookkeeping
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ .../Semantics/Plan/ScanHistory/Plan.lean      |  97 +++++++++++++
+ .../Semantics/Plan/ScanHistory/Schedule.lean  | 130 ++++++++++++++++++
+ 2 files changed, 227 insertions(+)
+ create mode 100644 leanncd/LeanNCD/Semantics/Plan/ScanHistory/Plan.lean
+ create mode 100644 leanncd/LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean
+
+diff --git a/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Plan.lean b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Plan.lean
+new file mode 100644
+index 00000000..665cf899
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Plan.lean
+@@ -0,0 +1,97 @@
++import LeanNCD.Semantics.Plan.ScanHistory.Allocation
++import LeanNCD.Semantics.Plan.ScanHistory.Operator
++import LeanNCD.Semantics.Plan.ScanHistory.Schedule
++
++namespace LeanNCD.Semantics.Program.Plan.ScanHistory
++
++variable {V : Type} {d : Nat} {r : Registry (Carrier V)}
++
++def block (f : RegisteredF r d) (N : Nat) (l : Fin (N + 1)) :
++    List (DefAddr (program f N)) :=
++  (List.finRange d).map fun i => historyDefAddr f N i l
++
++def persistentGroup (f : RegisteredF r d) (N : Nat) (l : Fin (N + 1)) :
++    List (OccRef (program f N)) :=
++  (List.finRange d).map fun i => ⟨historyDefined f N, persistentOccurrence f N i l⟩
++
++def initialGroup (f : RegisteredF r d) (N : Nat) : List (OccRef (program f N)) :=
++  (List.finRange d).map fun i => ⟨historyDefined f N, initialOccurrence f N i⟩
++
++def recurrenceGroup (f : RegisteredF r d) (N : Nat) (l : Fin N) :
++    List (OccRef (program f N)) :=
++  (List.finRange d).map fun i => ⟨historyDefined f N, recurrenceOccurrence f N i l⟩
++
++def group (f : RegisteredF r d) (N : Nat) (l : Fin (N + 1)) :
++    List (OccRef (program f N)) :=
++  persistentGroup f N l ++ Fin.cases (initialGroup f N) (recurrenceGroup f N) l
++
++def plan (f : RegisteredF r d) (N : Nat) : (program f N).Plan where
++  tensors := [.X, .Z, .H]
++  tensors_nodup := by simp
++  tensors_complete := by intro t; cases t <;> simp
++  commands := scheduleCommands (List.finRange (N + 1)) (block f N) (group f N)
++  allocation := allocation f N
++
++def input (f : RegisteredF r d) (N : Nat) (X Z : State V d) :
++    (program f N).Input :=
++  ⟨(fun t => match t with
++    | .X => some (fun p => X p.1)
++    | .Z => some (fun p => Z p.1)
++    | .H => none), by intro t; cases t <;> rfl⟩
++
++theorem block_length (f : RegisteredF r d) (N : Nat) (l : Fin (N + 1)) :
++    (block f N l).length = d := by simp [block]
++
++theorem group_length (f : RegisteredF r d) (N : Nat) (l : Fin (N + 1)) :
++    (group f N l).length = 2 * d := by
++  refine Fin.cases ?_ (fun j => ?_) l
++  · simp [group, persistentGroup, initialGroup, two_mul]
++  · simp [group, persistentGroup, recurrenceGroup, two_mul]
++
++theorem zero_dim_group (f : RegisteredF r 0) (N : Nat) (l : Fin (N + 1)) :
++    group f N l = [] :=
++  List.length_eq_zero_iff.mp (by simpa using group_length f N l)
++
++theorem plan_length (f : RegisteredF r d) (N : Nat) :
++    (plan f N).commands.length = 3 * (N + 1) := by
++  simp only [plan, scheduleCommands_length, List.length_finRange]
++
++theorem plan_singleton (f : RegisteredF r d) (N : Nat) : (plan f N).Singleton :=
++  singleton_of_scheduleCommands _ _ _ _ rfl
++
++theorem plan_layout (f : RegisteredF r d) (N pc : Nat) : (plan f N).LayoutOK pc :=
++  (plan f N).layoutOK_of_place_injective (place_injective f N) pc
++
++theorem plan_retList (f : RegisteredF r d) (N pc : Nat) : (plan f N).retList pc = [] :=
++  retList_at_any_boundary _ _ _ _ rfl pc
++
++theorem plan_pubList_boundary (f : RegisteredF r d) (N k : Nat) :
++    (plan f N).pubList (3 * k) =
++      ((List.finRange (N + 1)).take k).flatMap (block f N) :=
++  pubList_at_slice_boundary _ _ _ _ rfl k
++
++theorem history_live_at_slice_boundary (f : RegisteredF r d) (N k : Nat)
++    (i : Fin d) (l : Fin (N + 1)) (hl : l.val < k) :
++    (plan f N).Live (3 * k) (historyAddress d N i l) := by
++  refine ⟨Or.inr ?_, ?_⟩
++  · apply List.mem_map.mpr
++    refine ⟨historyDefAddr f N i l, ?_, rfl⟩
++    rw [plan_pubList_boundary]
++    apply List.mem_flatMap.mpr
++    refine ⟨l, ?_, ?_⟩
++    · rw [List.mem_take_iff_idxOf_lt (List.mem_finRange l), List.idxOf_finRange]
++      exact hl
++    · exact List.mem_map.mpr ⟨i, List.mem_finRange i, rfl⟩
++  · simp [Ret, plan_retList]
++
++#print axioms block_length
++#print axioms group_length
++#print axioms zero_dim_group
++#print axioms plan_length
++#print axioms plan_singleton
++#print axioms plan_layout
++#print axioms plan_retList
++#print axioms plan_pubList_boundary
++#print axioms history_live_at_slice_boundary
++
++end LeanNCD.Semantics.Program.Plan.ScanHistory
+diff --git a/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean
+new file mode 100644
+index 00000000..e01ea57b
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean
+@@ -0,0 +1,130 @@
++import LeanNCD.Semantics.Plan.Simulation
++
++namespace LeanNCD.Semantics.Program.Plan.ScanHistory
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++variable {P : Program K σ r}
++
++def sliceCommands (B : List (DefAddr P)) (G : List (OccRef P)) :
++    List (Command P) :=
++  [[.initZero B], [.acc G], [.pub B]]
++
++def scheduleCommands {ι : Type} (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P)) :
++    List (Command P) :=
++  slices.flatMap fun t => sliceCommands (blocks t) (groups t)
++
++theorem scheduleCommands_length {ι : Type} (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P)) :
++    (scheduleCommands slices blocks groups).length = 3 * slices.length := by
++  induction slices with
++  | nil => simp [scheduleCommands]
++  | cons t ts ih => simpa [scheduleCommands, sliceCommands, Nat.mul_succ] using ih
++
++theorem take_flatMap_three {α β : Type} (items : List α) (emit : α → List β)
++    (size : ∀ x, (emit x).length = 3) (k : Nat) :
++    (items.flatMap emit).take (3 * k) = (items.take k).flatMap emit := by
++  induction k generalizing items with
++  | zero => simp
++  | succ k ih =>
++    cases items with
++    | nil => simp
++    | cons x xs =>
++      rw [List.flatMap_cons, List.take_succ_cons, List.flatMap_cons, List.take_append]
++      rw [List.take_of_length_le (by rw [size]; omega), size]
++      simp only [Nat.mul_succ, Nat.add_sub_cancel]
++      rw [ih]
++
++theorem scheduleCommands_take {ι : Type} (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P)) (k : Nat) :
++    (scheduleCommands slices blocks groups).take (3 * k) =
++      scheduleCommands (slices.take k) blocks groups :=
++  take_flatMap_three slices _ (fun _ => rfl) k
++
++theorem scheduleCommands_pubs {ι : Type} (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P)) :
++    (scheduleCommands slices blocks groups).flatten.flatMap Ann.blocks =
++      slices.flatMap blocks := by
++  induction slices with
++  | nil => simp [scheduleCommands]
++  | cons t ts ih => simpa [scheduleCommands, sliceCommands, Ann.blocks] using ih
++
++theorem pubList_at_slice_boundary {ι : Type} (π : P.Plan) (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P))
++    (cmds : π.commands = scheduleCommands slices blocks groups) (k : Nat) :
++    π.pubList (3 * k) = (slices.take k).flatMap blocks := by
++  simp only [pubList, prefixAnn, cmds, scheduleCommands_take]
++  exact scheduleCommands_pubs _ _ _
++
++theorem scheduleCommands_groups {ι : Type} (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P)) :
++    (scheduleCommands slices blocks groups).flatten.flatMap Ann.groups =
++      slices.flatMap groups := by
++  induction slices with
++  | nil => simp [scheduleCommands]
++  | cons t ts ih => simpa [scheduleCommands, sliceCommands, Ann.groups] using ih
++
++theorem consList_at_slice_boundary {ι : Type} (π : P.Plan) (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P))
++    (cmds : π.commands = scheduleCommands slices blocks groups) (k : Nat) :
++    π.consList (3 * k) = (slices.take k).flatMap groups := by
++  simp only [consList, prefixAnn, cmds, scheduleCommands_take]
++  exact scheduleCommands_groups _ _ _
++
++theorem scheduleCommands_inits {ι : Type} (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P)) :
++    (scheduleCommands slices blocks groups).flatten.flatMap Ann.inits =
++      slices.flatMap blocks := by
++  induction slices with
++  | nil => simp [scheduleCommands]
++  | cons t ts ih => simpa [scheduleCommands, sliceCommands, Ann.inits] using ih
++
++theorem matList_at_slice_boundary {ι : Type} (π : P.Plan) (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P))
++    (cmds : π.commands = scheduleCommands slices blocks groups) (k : Nat) :
++    π.matList (3 * k) = (slices.take k).flatMap blocks := by
++  simp only [matList, prefixAnn, cmds, scheduleCommands_take]
++  exact scheduleCommands_inits _ _ _
++
++theorem scheduleCommands_rets {ι : Type} (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P)) :
++    (scheduleCommands slices blocks groups).flatten.flatMap Ann.rets = [] := by
++  induction slices with
++  | nil => simp [scheduleCommands]
++  | cons t ts ih => simpa [scheduleCommands, sliceCommands, Ann.rets] using ih
++
++theorem retList_at_any_boundary {ι : Type} (π : P.Plan) (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P))
++    (cmds : π.commands = scheduleCommands slices blocks groups) (pc : Nat) :
++    π.retList pc = [] := by
++  have whole : π.ann.flatMap Ann.rets = [] := by
++    simp only [ann, cmds]
++    exact scheduleCommands_rets _ _ _
++  have sub : (π.retList pc).Sublist (π.ann.flatMap Ann.rets) :=
++    ((List.take_sublist pc π.commands).flatten).flatMap Ann.rets
++  rw [whole] at sub
++  exact List.sublist_nil.mp sub
++
++theorem singleton_of_scheduleCommands {ι : Type} (π : P.Plan) (slices : List ι)
++    (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P))
++    (cmds : π.commands = scheduleCommands slices blocks groups) : π.Singleton := by
++  intro cmd hc
++  rw [cmds] at hc
++  obtain ⟨t, _, ht⟩ := List.mem_flatMap.mp hc
++  simp only [sliceCommands, List.mem_cons, List.not_mem_nil, or_false] at ht
++  rcases ht with rfl | rfl | rfl <;> exact ⟨_, rfl⟩
++
++#print axioms scheduleCommands_length
++#print axioms take_flatMap_three
++#print axioms scheduleCommands_take
++#print axioms scheduleCommands_pubs
++#print axioms pubList_at_slice_boundary
++#print axioms scheduleCommands_groups
++#print axioms consList_at_slice_boundary
++#print axioms scheduleCommands_inits
++#print axioms matList_at_slice_boundary
++#print axioms scheduleCommands_rets
++#print axioms retList_at_any_boundary
++#print axioms singleton_of_scheduleCommands
++
++end LeanNCD.Semantics.Program.Plan.ScanHistory

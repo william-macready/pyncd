@@ -1,0 +1,393 @@
+From 94313d8eda90b60cce62f258a235a6927392d5ae Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Tue, 13 Oct 2026 18:30:52 -0700
+Subject: [PATCH] feat(semantics): replay scan family and retained allocation
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ .../Plan/ScanHistory/Allocation.lean          |  71 +++++++
+ .../Semantics/Plan/ScanHistory/Core.lean      | 200 ++++++++++++++++++
+ .../Semantics/Plan/ScanHistory/Operator.lean  |  41 ++++
+ .../Plan/ScanHistory/Recurrence.lean          |  40 ++++
+ 4 files changed, 352 insertions(+)
+ create mode 100644 leanncd/LeanNCD/Semantics/Plan/ScanHistory/Allocation.lean
+ create mode 100644 leanncd/LeanNCD/Semantics/Plan/ScanHistory/Core.lean
+ create mode 100644 leanncd/LeanNCD/Semantics/Plan/ScanHistory/Operator.lean
+ create mode 100644 leanncd/LeanNCD/Semantics/Plan/ScanHistory/Recurrence.lean
+
+diff --git a/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Allocation.lean b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Allocation.lean
+new file mode 100644
+index 00000000..28433616
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Allocation.lean
+@@ -0,0 +1,71 @@
++import LeanNCD.Semantics.Plan.ScanHistory.Core
++import LeanNCD.Semantics.Plan.Memory
++
++namespace LeanNCD.Semantics.Program.Plan.ScanHistory
++
++variable {V : Type} {d N : Nat} {r : Registry (Carrier V)}
++
++/-- Independent slice buffers, with no reuse and no allocation of input storage. -/
++@[reducible] def allocation (f : RegisteredF r d) (N : Nat) : Allocation (program f N) where
++  Buffer := Fin (N + 1)
++  bufferEq := inferInstance
++  buffers := List.finRange (N + 1)
++  buffers_nodup := List.nodup_finRange _
++  buffers_complete := List.mem_finRange
++  sort := fun _ => ()
++  capacity := fun _ => d
++  locate := fun x => by
++    rcases x with ⟨⟨t, ht⟩, p⟩
++    cases t
++    · simp [isInput] at ht
++    · simp [isInput] at ht
++    · exact ⟨⟨p.2.1, p.1⟩, rfl⟩
++
++theorem history_locate (f : RegisteredF r d) (N : Nat)
++    (i : Fin d) (l : Fin (N + 1)) :
++    ((allocation f N).locate (historyDefAddr f N i l)).val = ⟨l, i⟩ := rfl
++
++theorem history_place (f : RegisteredF r d) (N : Nat)
++    (i : Fin d) (l : Fin (N + 1)) :
++    place (allocation f N) (historyAddress d N i l) = .inr ⟨l, i⟩ := rfl
++
++theorem place_injective (f : RegisteredF r d) (N : Nat) :
++    Function.Injective (place (allocation f N)) := by
++  rintro ⟨t, p⟩ ⟨u, q⟩ h
++  cases t <;> cases u
++  all_goals simp only [place, program, isInput, Bool.false_eq_true,
++    dite_true, dite_false] at h
++  all_goals try contradiction
++  · have hi := congrArg (fun x : InputSlot (program f N) => x.2.val) (Sum.inl.inj h)
++    have hp : p = q := (canonicalLayout (stateShape d).axes).enumerate.symm.injective
++      (Fin.ext hi)
++    cases hp
++    rfl
++  · have ht := congrArg (fun x => x.1.val) (Sum.inl.inj h)
++    cases ht
++  · have ht := congrArg (fun x => x.1.val) (Sum.inl.inj h)
++    cases ht
++  · have hi := congrArg (fun x : InputSlot (program f N) => x.2.val) (Sum.inl.inj h)
++    have hp : p = q := (canonicalLayout (stateShape d).axes).enumerate.symm.injective
++      (Fin.ext hi)
++    cases hp
++    rfl
++  · rcases p with ⟨i, l, e⟩
++    rcases q with ⟨j, m, e'⟩
++    cases e
++    cases e'
++    change Sum.inr (⟨l, i⟩ : BufferSlot (allocation f N)) =
++      Sum.inr (⟨m, j⟩ : BufferSlot (allocation f N)) at h
++    have hl : l = m := congrArg Sigma.fst (Sum.inr.inj h)
++    have hiNat : i.val = j.val :=
++      congrArg (fun x : BufferSlot (allocation f N) => x.2.val) (Sum.inr.inj h)
++    have hi : i = j := Fin.ext hiNat
++    cases hl
++    cases hi
++    rfl
++
++#print axioms history_locate
++#print axioms history_place
++#print axioms place_injective
++
++end LeanNCD.Semantics.Program.Plan.ScanHistory
+diff --git a/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Core.lean b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Core.lean
+new file mode 100644
+index 00000000..9f1b0de0
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Core.lean
+@@ -0,0 +1,200 @@
++import LeanNCD.Semantics.Plan.ScanHistory.Recurrence
++import LeanNCD.Semantics.Plan.Syntax
++import LeanNCD.Semantics.Source.Context
++
++namespace LeanNCD.Semantics.Program.Plan.ScanHistory
++
++abbrev Carrier (V : Type) : Unit → Type := fun _ => V
++
++def spaceAxis (d : Nat) : Axis := ⟨0, d⟩
++def timeAxis (N : Nat) : Axis := ⟨1, N + 1⟩
++def stateShape (d : Nat) : ArrayShape := ⟨[spaceAxis d], by simp⟩
++def historyShape (d N : Nat) : Shape := [spaceAxis d, timeAxis N]
++def stateTy (d : Nat) : Ty Unit := .array () (stateShape d)
++
++def stateLayout (d : Nat) : Layout (stateShape d).axes where
++  count := d
++  enumerate :=
++    { toFun := fun i => (i, ())
++      invFun := Prod.fst
++      left_inv := fun _ => rfl
++      right_inv := by rintro ⟨i, u⟩; cases u; rfl }
++
++def stateCoord {d : Nat} (i : Fin d) : Coord (stateShape d).axes := (i, ())
++
++def historyCoord {d N : Nat} (i : Fin d) (l : Fin (N + 1)) :
++    Coord (historyShape d N) := (i, l, ())
++
++inductive Tensor
++  | X | Z | H
++  deriving DecidableEq, Repr
++
++@[reducible] def declarations (d N : Nat) : Declarations Unit where
++  Tensor := Tensor
++  uid := fun t => match t with
++    | .X => 10
++    | .Z => 11
++    | .H => 12
++  unique := by
++    intro t u h
++    cases t <;> cases u <;> simp_all
++  signature := fun t => ⟨(), match t with
++    | .X | .Z => (stateShape d).axes
++    | .H => historyShape d N⟩
++
++/-- A certificate for one operator in an arbitrary existing registry. -/
++structure RegisteredF {V : Type} (r : Registry (Carrier V)) (d : Nat) where
++  op : r.Op
++  unary : r.arity op = 1
++  input_eq : ∀ i, r.input op i = stateTy d
++  output_eq : r.output op = stateTy d
++  total : ∀ xs, r.domain op xs = true
++
++variable {V : Type} {d N : Nat} {r : Registry (Carrier V)}
++
++def RegisteredF.arguments (f : RegisteredF r d) (x : State V d) :
++    (i : Fin (r.arity f.op)) → Value (Carrier V) (r.input f.op i) :=
++  fun i => cast (congrArg (Value (Carrier V)) (f.input_eq i).symm)
++    (fun p : Coord (stateShape d).axes => x p.1)
++
++def RegisteredF.transition (f : RegisteredF r d) (x : State V d) : State V d :=
++  let y := cast (congrArg (Value (Carrier V)) f.output_eq)
++    (r.meaning f.op (f.arguments x) (f.total (f.arguments x)))
++  fun i => y (stateCoord i)
++
++def directRead {W Γ : Type} {sh : Shape} (index : Γ → Coord sh) :
++    AdmittedRead W sh Γ where
++  policy := Source.strictPolicy sh
++  raw := fun γ => Coord.raw (index γ)
++  resolved := fun γ => .at (index γ)
++  admission := fun γ => (Source.strictPolicy sh).inBounds (index γ)
++
++def RegisteredF.arrayExpr {Γ : Type} {σ : Declarations Unit}
++    (f : RegisteredF r d) (arg : Expr (Carrier V) σ r Γ (stateTy d)) :
++    Expr (Carrier V) σ r Γ (stateTy d) :=
++  cast (congrArg (Expr (Carrier V) σ r Γ) f.output_eq)
++    (.prim f.op (fun i =>
++      cast (congrArg (Expr (Carrier V) σ r Γ) (f.input_eq i).symm) arg))
++
++def priorSlice {Γ : Type} (l : Γ → Fin (N + 1)) :
++    Expr (Carrier V) (declarations d N) r Γ (stateTy d) :=
++  .tab (stateShape d) (stateLayout d)
++    (.read Tensor.H (directRead (fun γ => historyCoord γ.2.1 (l γ.1))))
++
++def recurrenceBody {Γ : Type} (f : RegisteredF r d)
++    (i : Γ → Fin d) (l : Γ → Fin (N + 1)) :
++    Expr (Carrier V) (declarations d N) r Γ (.scalar ()) :=
++  .at (f.arrayExpr (priorSlice l)) (fun γ => stateCoord (i γ))
++
++/-- The three source IDs remain distinct even when their bodies coincide. -/
++def persistentID : Fin 3 := 0
++def initialID : Fin 3 := 1
++def recurrenceID : Fin 3 := 2
++
++def valuationPair (d N : Nat) (v : Fin (d * (N + 1))) :
++    Fin d × Fin (N + 1) := finProdFinEquiv.symm v
++
++def valuationIndex {d N : Nat} (i : Fin d) (l : Fin (N + 1)) :
++    Fin (d * (N + 1)) := finProdFinEquiv (i, l)
++
++theorem valuationPair_index (i : Fin d) (l : Fin (N + 1)) :
++    valuationPair d N (valuationIndex i l) = (i, l) :=
++  finProdFinEquiv.symm_apply_apply _
++
++def statementGuard (d N : Nat) (s : Fin 3) (v : Fin (d * (N + 1))) : Bool :=
++  if s = initialID then decide ((valuationPair d N v).2.val = 0)
++  else if s = recurrenceID then decide ((valuationPair d N v).2.val < N)
++  else true
++
++abbrev AdmittedValuation (d N : Nat) (s : Fin 3) :=
++  {v : Fin (d * (N + 1)) // statementGuard d N s v = true}
++
++theorem recurrence_lt (v : AdmittedValuation d N recurrenceID) :
++    (valuationPair d N v.val).2.val < N := by
++  simpa [statementGuard, initialID, recurrenceID] using v.property
++
++def destination (d N : Nat) (s : Fin 3) (v : AdmittedValuation d N s) :
++    Coord (historyShape d N) :=
++  let p := valuationPair d N v.val
++  if h : s = recurrenceID then
++    historyCoord p.1 ⟨p.2.val + 1, by
++      have hv : p.2.val < N := by
++        have hv := v.property
++        simpa [statementGuard, h, initialID, recurrenceID] using hv
++      omega⟩
++  else historyCoord p.1 p.2
++
++def statementBody (f : RegisteredF r d) (N : Nat) (s : Fin 3) :
++    Expr (Carrier V) (declarations d N) r (AdmittedValuation d N s) (.scalar ()) :=
++  if s = persistentID then
++    .read Tensor.X (directRead (fun v => stateCoord (valuationPair d N v.val).1))
++  else if s = initialID then
++    .read Tensor.Z (directRead (fun v => stateCoord (valuationPair d N v.val).1))
++  else
++    recurrenceBody f (fun v => (valuationPair d N v.val).1)
++      (fun v => (valuationPair d N v.val).2)
++
++def isInput : Tensor → Bool
++  | .X | .Z => true
++  | .H => false
++
++def isOutput : Tensor → Bool
++  | .X | .Z => false
++  | .H => true
++
++theorem defined_tensor (t : Tensor) (h : isInput t = false) : t = .H := by
++  cases t <;> simp_all [isInput]
++
++@[reducible] def program (f : RegisteredF r d) (N : Nat) :
++    Program (Carrier V) (declarations d N) r where
++  tensors := ⟨{.X, .Z, .H}, by intro t; cases t <;> simp⟩
++  input := isInput
++  output := isOutput
++  output_defined := by intro t h; cases t <;> simp_all [isOutput, isInput]
++  statements := fun _ => 3
++  valuations := fun _ _ => d * (N + 1)
++  guard := fun _ => statementGuard d N
++  destination := fun t s v => by
++    have ht := defined_tensor t.val t.property
++    exact ht ▸ destination d N s v
++  body := fun t s => by
++    have ht := defined_tensor t.val t.property
++    exact ht ▸ statementBody f N s
++
++def historyDefined (f : RegisteredF r d) (N : Nat) : (program f N).Defined :=
++  ⟨.H, rfl⟩
++
++def historyAddress (d N : Nat) (i : Fin d) (l : Fin (N + 1)) :
++    Address (declarations d N) := ⟨.H, historyCoord i l⟩
++
++def historyDefAddr (f : RegisteredF r d) (N : Nat) (i : Fin d) (l : Fin (N + 1)) :
++    DefAddr (program f N) := ⟨historyDefined f N, historyCoord i l⟩
++
++def persistentOccurrence (f : RegisteredF r d) (N : Nat)
++    (i : Fin d) (l : Fin (N + 1)) : (program f N).Occurrence (historyDefined f N) :=
++  ⟨persistentID, ⟨valuationIndex i l, by simp [statementGuard, persistentID, initialID,
++    recurrenceID]⟩⟩
++
++def initialOccurrence (f : RegisteredF r d) (N : Nat) (i : Fin d) :
++    (program f N).Occurrence (historyDefined f N) :=
++  ⟨initialID, ⟨valuationIndex i 0, by simp [statementGuard, valuationPair_index]⟩⟩
++
++def recurrenceOccurrence (f : RegisteredF r d) (N : Nat)
++    (i : Fin d) (l : Fin N) : (program f N).Occurrence (historyDefined f N) :=
++  ⟨recurrenceID, ⟨valuationIndex i ⟨l.val, Nat.lt_succ_of_lt l.isLt⟩, by
++    simp [statementGuard, initialID, recurrenceID, valuationPair_index, l.isLt]⟩⟩
++
++theorem priorSlice_footprint {Γ : Type} (l : Γ → Fin (N + 1)) (γ : Γ) :
++    footprint (priorSlice (V := V) (r := r) (d := d) l) γ =
++      (List.finRange d).map (fun i => historyAddress d N i (l γ)) := by
++  simp only [priorSlice, footprint, stateLayout, directRead, historyAddress, historyCoord]
++  generalize List.finRange d = is
++  induction is <;> simp_all
++  rfl
++
++#print axioms valuationPair_index
++#print axioms recurrence_lt
++#print axioms defined_tensor
++#print axioms priorSlice_footprint
++
++end LeanNCD.Semantics.Program.Plan.ScanHistory
+diff --git a/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Operator.lean b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Operator.lean
+new file mode 100644
+index 00000000..a166ca55
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Operator.lean
+@@ -0,0 +1,41 @@
++import LeanNCD.Semantics.Plan.ScanHistory.Core
++
++namespace LeanNCD.Semantics.Program.Plan.ScanHistory
++
++theorem footprint_cast {K : S → Type} {σ : Declarations S} {r : Registry K}
++    {Γ : Type} {τ τ' : Ty S} (h : τ = τ') (e : Expr K σ r Γ τ) (γ : Γ) :
++    footprint (cast (congrArg (Expr K σ r Γ) h) e) γ = footprint e γ := by
++  cases h
++  rfl
++
++variable {V : Type} {d N : Nat} {r : Registry (Carrier V)}
++
++theorem arrayExpr_footprint {Γ : Type} {σ : Declarations Unit}
++    (f : RegisteredF r d) (arg : Expr (Carrier V) σ r Γ (stateTy d)) (γ : Γ) :
++    footprint (f.arrayExpr arg) γ = footprint arg γ := by
++  unfold RegisteredF.arrayExpr
++  rw [footprint_cast f.output_eq]
++  simp only [footprint]
++  have argFootprint (j : Fin (r.arity f.op)) :
++      footprint (cast (congrArg (Expr (Carrier V) σ r Γ) (f.input_eq j).symm) arg) γ =
++        footprint arg γ :=
++    footprint_cast (f.input_eq j).symm arg γ
++  simp_rw [argFootprint]
++  have len : (List.finRange (r.arity f.op)).length = 1 := by simpa using f.unary
++  obtain ⟨j, hj⟩ := List.length_eq_one_iff.mp len
++  rw [hj]
++  simp
++
++theorem recurrenceBody_footprint {Γ : Type} (f : RegisteredF r d)
++    (i : Γ → Fin d) (l : Γ → Fin (N + 1)) (γ : Γ) :
++    footprint (recurrenceBody f i l) γ =
++      (List.finRange d).map fun j => historyAddress d N j (l γ) := by
++  unfold recurrenceBody
++  simp only [footprint]
++  exact (arrayExpr_footprint f (priorSlice l) γ).trans (priorSlice_footprint l γ)
++
++#print axioms footprint_cast
++#print axioms arrayExpr_footprint
++#print axioms recurrenceBody_footprint
++
++end LeanNCD.Semantics.Program.Plan.ScanHistory
+diff --git a/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Recurrence.lean b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Recurrence.lean
+new file mode 100644
+index 00000000..14c941f7
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Plan/ScanHistory/Recurrence.lean
+@@ -0,0 +1,40 @@
++import LeanNCD.Semantics.Types
++
++namespace LeanNCD.Semantics.Program.Plan.ScanHistory
++
++abbrev State (V : Type) (d : Nat) := Fin d → V
++
++variable {V : Type} {d : Nat}
++
++/-- The independent full-history specification, before any plan or memory model. -/
++def history [Add V] (F : State V d → State V d) (X Z : State V d) :
++    Nat → State V d
++  | 0 => fun i => X i + Z i
++  | n + 1 => fun i => X i + F (history F X Z n) i
++
++theorem history_zero [Add V] (F : State V d → State V d) (X Z : State V d) :
++    history F X Z 0 = fun i => X i + Z i := rfl
++
++theorem history_succ [Add V] (F : State V d → State V d) (X Z : State V d)
++    (n : Nat) : history F X Z (n + 1) = fun i => X i + F (history F X Z n) i := rfl
++
++/-- Any history satisfying the two recurrence equations agrees slice by slice. -/
++theorem history_unique [Add V] (F : State V d → State V d) (X Z : State V d)
++    (H : Nat → State V d) (base : H 0 = fun i => X i + Z i)
++    (step : ∀ n, H (n + 1) = fun i => X i + F (H n) i) :
++    H = history F X Z := by
++  funext n
++  induction n with
++  | zero => exact base
++  | succ n ih => rw [step n, history_succ, ih]
++
++theorem state_zero_unique (a b : State V 0) : a = b := by
++  funext i
++  exact Fin.elim0 i
++
++#print axioms history_zero
++#print axioms history_succ
++#print axioms history_unique
++#print axioms state_zero_unique
++
++end LeanNCD.Semantics.Program.Plan.ScanHistory

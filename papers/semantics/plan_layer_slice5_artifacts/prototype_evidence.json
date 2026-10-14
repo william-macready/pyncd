@@ -1,0 +1,143 @@
+{
+  "phase": "compiled prototype, not complete scan certification",
+  "base": "581bd163",
+  "code_head": "94cc67c9",
+  "branch": "worktree-scan-history-prototype",
+  "decisions": {
+    "bounds": "Arbitrary d,N : Nat, including zero",
+    "carrier": "Generic exact additive carrier; executable fixtures use rationals",
+    "operator": "Any certified total unary same-sort array operator in an existing Registry",
+    "output": "Entire H of shape (d,N+1)",
+    "storage": "N+1 independent buffers of capacity d; inputs separate; no retirement or reuse"
+  },
+  "modules": {
+    "Recurrence": "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Recurrence.lean",
+    "Core": "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Core.lean",
+    "Allocation": "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Allocation.lean",
+    "Operator": "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Operator.lean",
+    "Schedule": "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean",
+    "Plan": "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Plan.lean"
+  },
+  "compiled_generic_facts": [
+    "Independent recurrence equations and uniqueness",
+    "Registered operator shape/totality interface without restricting the registry to one operator",
+    "Typed three-statement program and guarded occurrence constructors",
+    "History placement H(i,l) -> buffer l, coordinate i, and global placement injectivity",
+    "Full recurrence-body footprint is exactly the entire previous slice",
+    "Block length d and contribution-group length 2*d; d=0 groups are empty",
+    "Plan length 3*(N+1), singleton commands, and layout safety at every boundary",
+    "Exact consumed/materialized/published lists at completed-slice boundaries",
+    "No retirement at any prefix",
+    "History slices l<k remain logically Live at boundary 3*k"
+  ],
+  "valuation_design": {
+    "raw_sizes": "All three source IDs use d*(N+1) raw valuations",
+    "guards": "Persistent X: all pairs; initial Z: time=0; recurrence: time<N",
+    "enumeration": "finProdFinEquiv, avoiding ad hoc division at zero bounds",
+    "reason": "Shared valuation shape simplifies dependent expression construction; admitted occurrence coverage is still a future proof"
+  },
+  "observed_fixtures": {
+    "evaluated_rows": 14,
+    "test_proof_items": 4,
+    "scalar": {
+      "d": 1,
+      "N": 2,
+      "X": [2],
+      "Z": [3],
+      "F": "double",
+      "checker": true,
+      "outcome": ["done", 9],
+      "decoded": [[5], [12], [26]]
+    },
+    "cross_coordinate_nonlinear": {
+      "d": 2,
+      "N": 2,
+      "X": [1, 2],
+      "Z": [3, 5],
+      "F": "[2*h0+h1, h0*h1]",
+      "checker": true,
+      "outcome": ["done", 9],
+      "decoded": [[4, 7], [16, 30], [63, 482]],
+      "independent_oracle": [[4, 7], [16, 30], [63, 482]]
+    },
+    "zero_transitions": {
+      "checker": true,
+      "outcome": ["done", 3],
+      "decoded": [[5]]
+    },
+    "empty_state": {
+      "d": 0,
+      "N": 2,
+      "buffers": 3,
+      "capacity": 0,
+      "checker": true,
+      "outcome": ["done", 9],
+      "decoded": [[], [], []]
+    },
+    "retention": "Scalar physical memory observed at every pc=0..9; published earlier slices remain 5 and 12 through later initialization/accumulation",
+    "early_publication": {
+      "checkSteps": false,
+      "checkLayouts": true,
+      "checkPlan": false,
+      "legal_neighbour": true
+    },
+    "aliased_history": {
+      "checkSteps": true,
+      "checkLayouts": false,
+      "checkPlan": false,
+      "legal_neighbour": true,
+      "unchecked_outcome": ["done", 9],
+      "unchecked_decoded": [2, 2, 2]
+    }
+  },
+  "mutation_evidence": {
+    "cycles": 4,
+    "intended_fixture_failures_observed": true,
+    "files_restored_byte_identically": true,
+    "restored_builds_passed": true,
+    "cases": [
+      "Scalar oracle F changed from double to identity: [[5],[7],[9]]",
+      "Cross-coordinate oracle inputs swapped: [[4,7],[19,30],[80,572]]",
+      "Registered operator selection changed to the unrelated identity: actual scalar history [[5],[7],[9]]",
+      "Persistent X occurrence replaced by initial Z occurrence, preserving group sizes: actual scalar history [[12],[12],[24]]"
+    ],
+    "limit": "Not every prototype row has an individual mutant. The full plan must assign final mutation coverage.",
+    "exploration_only": "An earlier omitted-persistent-group probe also reached fixtures, before group_length was added. It is not counted as final-tree fixture evidence."
+  },
+  "validation": {
+    "targeted_builds": "All six library modules and both test modules compile",
+    "full_build_jobs": 8804,
+    "library_axiom_audit_constants": 187,
+    "plan_fixture_axiom_audit_constants": 26,
+    "allowed_axioms": ["propext", "Classical.choice", "Quot.sound"],
+    "admissions": false,
+    "preexisting_sorry_warnings_outside_plan": 4,
+    "direct_scope_review": "No outstanding correctness findings within the prototype scope",
+    "existing_production_files_changed": ["leanncd/lakefile.toml: register two prototype tests"]
+  },
+  "remaining_certification": [
+    "Interpreter evaluation through arbitrary registered-operator transports agrees with RegisteredF.transition",
+    "The Program's collected equations correspond to the independent history recurrence, including model existence",
+    "Occurrence/publication coverage, freshness, readiness and order yield Valid for arbitrary d,N",
+    "Numerical published-slice retention at all command boundaries, not merely static Live membership",
+    "Generic successful execution and complete history decoding equal the independent recurrence",
+    "Final mutation manifest, reviewed implementation plan, public import wiring and production documentation"
+  ],
+  "planning_observations": [
+    "No executor or representation-relation redesign was needed",
+    "Dependent registry casts need explicit transport lemmas; footprint transport is now solved",
+    "Raw valuation guards and per-command prefix bookkeeping are the main remaining static-proof work",
+    "Rational closed arithmetic uses norm_num with explicit unfolding; decide did not kernel-reduce those values",
+    "A retained prototype worktree is required until the verified plan and patch package are authored"
+  ],
+  "reproduce": [
+    "bash leanncd/scripts/lake-build.sh <checkout>/leanncd Semantics.ScanHistoryRecurrencePrototype Semantics.ScanHistoryPlanPrototype",
+    "bash leanncd/scripts/lake-build.sh <checkout>/leanncd"
+  ],
+  "budget": {
+    "core_dispatch": "Agent reported staying below its 45-turn aim and 55-turn hard stop, with no observed context breach",
+    "cumulative_tokens": "Unavailable: token-report found no transcript for the Copilot session",
+    "note": "Unavailable accounting is not zero and is not a budget-compliance certificate"
+  },
+  "integration": "Prototype remains isolated; not merged to main, not pushed, and not advertised as certified"
+}
