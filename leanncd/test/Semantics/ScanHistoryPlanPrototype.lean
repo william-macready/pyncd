@@ -268,6 +268,33 @@ theorem empty_zero_occurrence_pin (x : OccRef (program (registered 0 id) 0)) :
     False :=
   no_occurrence_zero_dim _ _ x
 
+theorem generic_coverage_pin {V : Type} {d N : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) :
+    (plan f N).Coverage1 ∧ (plan f N).Coverage2 :=
+  ⟨plan_coverage1 f N, plan_coverage2 f N⟩
+
+theorem scalar_coverage_pin :
+    scalarPlan.Coverage1 ∧ scalarPlan.Coverage2 :=
+  generic_coverage_pin _
+
+theorem vector_coverage_pin :
+    (plan (registered 2 crossNonlinear) 2).Coverage1 ∧
+      (plan (registered 2 crossNonlinear) 2).Coverage2 :=
+  generic_coverage_pin _
+
+theorem no_transition_coverage_pin :
+    (plan (registered 1 doubleState) 0).Coverage1 ∧
+      (plan (registered 1 doubleState) 0).Coverage2 :=
+  generic_coverage_pin _
+
+theorem empty_history_coverage_pin :
+    (plan (registered 0 id) 2).Coverage1 ∧ (plan (registered 0 id) 2).Coverage2 :=
+  generic_coverage_pin _
+
+theorem empty_zero_coverage_pin :
+    (plan (registered 0 id) 0).Coverage1 ∧ (plan (registered 0 id) 0).Coverage2 :=
+  generic_coverage_pin _
+
 #print axioms selectedF_arrayExpr_pin
 #print axioms selectedF_recurrence_pin
 #print axioms validatedInput_pin
@@ -280,6 +307,12 @@ theorem empty_zero_occurrence_pin (x : OccRef (program (registered 0 id) 0)) :
 #print axioms no_transition_guard_pin
 #print axioms empty_history_occurrence_pin
 #print axioms empty_zero_occurrence_pin
+#print axioms generic_coverage_pin
+#print axioms scalar_coverage_pin
+#print axioms vector_coverage_pin
+#print axioms no_transition_coverage_pin
+#print axioms empty_history_coverage_pin
+#print axioms empty_zero_coverage_pin
 
 end LeanNCD.Semantics.ScanHistoryPlanPrototype
 

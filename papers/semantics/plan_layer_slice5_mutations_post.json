@@ -204,5 +204,23 @@
     "new": "  if s = initialID then true",
     "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.ScanHistoryPlanPrototype"],
     "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:16:79: unsolved goals"]
+  },
+  {
+    "label": "S5-T3b-M1 contribution groups repeat persistent time zero",
+    "task": "T3b",
+    "file": "LeanNCD/Semantics/Plan/ScanHistory/Plan.lean",
+    "old": "  persistentGroup f N l ++ Fin.cases (initialGroup f N) (recurrenceGroup f N) l",
+    "new": "  persistentGroup f N 0 ++ Fin.cases (initialGroup f N) (recurrenceGroup f N) l",
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:203:4: Type mismatch", "LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:220:16: Application type mismatch: The argument"]
+  },
+  {
+    "label": "S5-T3b-M2 publication blocks repeat time zero",
+    "task": "T3b",
+    "file": "LeanNCD/Semantics/Plan/ScanHistory/Plan.lean",
+    "old": "  (List.finRange d).map fun i => historyDefAddr f N i l",
+    "new": "  (List.finRange d).map fun i => historyDefAddr f N i 0",
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:84:54: Application type mismatch: The argument"]
   }
 ]
