@@ -1,4 +1,5 @@
 import LeanNCD.Semantics.Plan.ScanHistory.Plan
+import LeanNCD.Semantics.Plan.ScanHistory.Coverage
 import LeanNCD.Semantics.Plan.ScanHistory.Evaluation
 import LeanNCD.Semantics.Plan.Validity
 import Semantics.ScanHistoryRecurrencePrototype
@@ -218,11 +219,67 @@ theorem directEmptyInput_pin :
     directEmptyInput = input (registered 0 id) 0 emptyState emptyState :=
   input_reconstruct _ _ directEmptyInput
 
+theorem guard_partition_pin :
+    (List.finRange 3).map (fun l =>
+      (statementGuard 2 2 persistentID (valuationIndex (1 : Fin 2) l),
+       statementGuard 2 2 initialID (valuationIndex (1 : Fin 2) l),
+       statementGuard 2 2 recurrenceID (valuationIndex (1 : Fin 2) l))) =
+      [(true, true, true), (true, false, true), (true, false, false)] := by
+  decide
+
+theorem classification_pin :
+    Function.Bijective (occurrenceRef (registered 2 crossNonlinear) 2) :=
+  occurrenceRef_bijective _
+
+theorem target_partition_pin :
+    OccRef.target (occurrenceRef (registered 2 crossNonlinear) 2
+      (.persistent 1 2)) = historyDefAddr (registered 2 crossNonlinear) 2 1 2 ∧
+    OccRef.target (occurrenceRef (registered 2 crossNonlinear) 2
+      (.initial 1)) = historyDefAddr (registered 2 crossNonlinear) 2 1 0 ∧
+    OccRef.target (occurrenceRef (registered 2 crossNonlinear) 2
+      (.recurrence 1 1)) = historyDefAddr (registered 2 crossNonlinear) 2 1 2 := by
+  exact ⟨persistent_target _ _ _, initial_target _ _, recurrence_target _ _ _⟩
+
+theorem same_size_wrong_tag_pin :
+    (persistentGroup (registered 1 doubleState) 2 0).length =
+      (initialGroup (registered 1 doubleState) 2).length ∧
+    persistentGroup (registered 1 doubleState) 2 0 ≠
+      initialGroup (registered 1 doubleState) 2 := by
+  constructor
+  · rfl
+  · decide
+
+#eval check "scan-prototype-same-size-wrong-source-tags"
+  ((persistentGroup (registered 1 doubleState) 2 0).length,
+    (initialGroup (registered 1 doubleState) 2).length,
+    (persistentGroup (registered 1 doubleState) 2 0).map (fun x => x.2.1.val),
+    (initialGroup (registered 1 doubleState) 2).map (fun x => x.2.1.val))
+  (1, 1, [0], [1])
+
+theorem no_transition_guard_pin (v : Fin (1 * (0 + 1))) :
+    statementGuard 1 0 recurrenceID v = false :=
+  no_recurrence_zero v
+
+theorem empty_history_occurrence_pin (x : OccRef (program (registered 0 id) 2)) :
+    False :=
+  no_occurrence_zero_dim _ _ x
+
+theorem empty_zero_occurrence_pin (x : OccRef (program (registered 0 id) 0)) :
+    False :=
+  no_occurrence_zero_dim _ _ x
+
 #print axioms selectedF_arrayExpr_pin
 #print axioms selectedF_recurrence_pin
 #print axioms validatedInput_pin
 #print axioms directScalarInput_pin
 #print axioms directEmptyInput_pin
+#print axioms guard_partition_pin
+#print axioms classification_pin
+#print axioms target_partition_pin
+#print axioms same_size_wrong_tag_pin
+#print axioms no_transition_guard_pin
+#print axioms empty_history_occurrence_pin
+#print axioms empty_zero_occurrence_pin
 
 end LeanNCD.Semantics.ScanHistoryPlanPrototype
 

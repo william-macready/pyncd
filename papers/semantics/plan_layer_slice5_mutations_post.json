@@ -186,5 +186,23 @@
     "new": "  op := true",
     "targets": ["Semantics.ScanHistoryPlanPrototype"],
     "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:180:0: scan-prototype-transported-array-and-recurrence: expected (some [15, 28], some 15, some 28), got (some [4, 7], some 4, some 7)"]
+  },
+  {
+    "label": "S5-T3a-M1 recurrence target loses successor time",
+    "task": "T3a",
+    "file": "LeanNCD/Semantics/Plan/ScanHistory/Core.lean",
+    "old": "    historyCoord p.1 ⟨p.2.val + 1, by",
+    "new": "    historyCoord p.1 ⟨p.2.val, by",
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:56:61: unsolved goals"]
+  },
+  {
+    "label": "S5-T3a-M2 initial guard admits future times",
+    "task": "T3a",
+    "file": "LeanNCD/Semantics/Plan/ScanHistory/Core.lean",
+    "old": "  if s = initialID then decide ((valuationPair d N v).2.val = 0)",
+    "new": "  if s = initialID then true",
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:16:79: unsolved goals"]
   }
 ]

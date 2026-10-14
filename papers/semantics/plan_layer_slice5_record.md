@@ -194,7 +194,8 @@ T0 is accepted; subsequent tasks remain pending until their actual gates pass.
 |---|---|---|---|---|---|
 | T0 | `9f9ba4a9`: three checksum-verified patches; exact leanncd tree equals `94cc67c9` | refresh `LeanNCD` 8598 jobs; full build 8804 jobs, PASS | baseline 367; prototype 14 evaluated +4 proof items | unfiltered check 11 unique; 11/11 actual cycles, 38 exact sites; `t0_mutation_results.md` | controller replay/scope review accepted |
 | T1 | accepted evaluation/input bridge; SHA is this row's checkpoint commit | combined Evaluation + prototype plan target, 8580 jobs PASS; explicit audits 200 library/42 fixture constants | +2 evaluated rows, +5 theorem pins; all original assertions retained | input-X/Z swap killed `input_reconstruct` proof; selected-op control killed new transported-array row; restores/builds PASS | controller signatures/scope review accepted; no rfl-shape, positive-bound or constructor-only premise |
-| T3 | PENDING | PENDING | PENDING | PENDING | PENDING |
+| T3a | compiled classification/target checkpoint; SHA is this row's checkpoint | Coverage + prototype plan target, 8581 jobs PASS; audits 251/49 constants | +1 evaluated wrong-tag row, +7 theorem pins; original assertions retained | successor destination and widened initial guard killed generic target/guard proofs; restores/builds PASS | accepted subset; 48 reported tool turns, below cap; budget split, not semantic blocker |
+| T3b | PENDING coverage/Nodup continuation | PENDING | PENDING | PENDING | PENDING |
 | T2a | PENDING | PENDING | PENDING | PENDING | PENDING |
 | T2b | PENDING | PENDING | PENDING | PENDING | PENDING |
 | T4a | PENDING | PENDING | PENDING | PENDING | PENDING |
