@@ -187,11 +187,12 @@ the new generic proof contracts are requirements, not kernel-checked results.
 
 ## F. Execution close-out template — fill only from observed evidence
 
-Status: NOT EXECUTED. No success checkbox below is pre-filled.
+Status: EXECUTING in `worktree-scan-history-exec`, based on local main `ed884938`.
+T0 is accepted; subsequent tasks remain pending until their actual gates pass.
 
 | Task | Accepted SHA / exact scope | Target command/log/result | Fixtures added/retained | Controls/evidence | Review/adjudication |
 |---|---|---|---|---|---|
-| T0 | PENDING replay SHA and checksum verification | PENDING | base/prototype recount PENDING | final package map PENDING | PENDING |
+| T0 | `9f9ba4a9`: three checksum-verified patches; exact leanncd tree equals `94cc67c9` | refresh `LeanNCD` 8598 jobs; full build 8804 jobs, PASS | baseline 367; prototype 14 evaluated +4 proof items | unfiltered check 11 unique; 11/11 actual cycles, 38 exact sites; `t0_mutation_results.md` | controller replay/scope review accepted |
 | T1 | PENDING | PENDING | PENDING | PENDING | PENDING |
 | T3 | PENDING | PENDING | PENDING | PENDING | PENDING |
 | T2a | PENDING | PENDING | PENDING | PENDING | PENDING |
