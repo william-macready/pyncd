@@ -1,4 +1,5 @@
 import LeanNCD.Semantics.Plan.ScanHistory.Plan
+import LeanNCD.Semantics.Plan.ScanHistory.Evaluation
 import LeanNCD.Semantics.Plan.Validity
 import Semantics.ScanHistoryRecurrencePrototype
 import Semantics.AxiomAudit
@@ -136,6 +137,92 @@ def collapsedPlan := { scalarPlan with allocation := collapsedAllocation }
 example : scalarPlan.LayoutOK 5 := plan_layout _ _ _
 example : scalarPlan.Live 6 (historyAddress 1 2 0 0) :=
   history_live_at_slice_boundary _ _ 2 _ _ (by decide)
+
+/-- Transport the selected operator's signatures inside its existing registry. -/
+def selectedF {V : Type} {d : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) (d' : Nat) (signature : stateTy d = stateTy d') :
+    RegisteredF r d' where
+  op := f.op
+  unary := f.unary
+  input_eq := fun j => (f.input_eq j).trans signature
+  output_eq := f.output_eq.trans signature
+  total := f.total
+
+theorem selectedF_arrayExpr_pin {V Γ : Type} {d d' : Nat}
+    {r : Registry (Carrier V)} {σ : Declarations Unit}
+    (f : RegisteredF r d) (signature : stateTy d = stateTy d')
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (p : PartialStore (Carrier V) σ)
+    (arg : Expr (Carrier V) σ r Γ (stateTy d')) (γ : Γ) (x : State V d')
+    (harg : evalWith ops p arg γ =
+      some (fun c : Coord (stateShape d').axes => x c.1)) :
+    evalWith ops p ((selectedF f d' signature).arrayExpr arg) γ =
+      some (fun c : Coord (stateShape d').axes =>
+        (selectedF f d' signature).transition x c.1) :=
+  arrayExpr_eval _ ops p arg γ x harg
+
+theorem selectedF_recurrence_pin {V Γ : Type} {d d' N : Nat}
+    {r : Registry (Carrier V)}
+    (f : RegisteredF r d) (signature : stateTy d = stateTy d')
+    (ops : (s : Unit) → ScalarOps (Carrier V s))
+    (p : PartialStore (Carrier V) (declarations d' N))
+    (i : Γ → Fin d') (l : Γ → Fin (N + 1)) (γ : Γ) (slice : State V d')
+    (hpresent : ∀ j, p (historyAddress d' N j (l γ)) = some (slice j)) :
+    evalWith ops p (recurrenceBody (selectedF f d' signature) i l) γ =
+      some ((selectedF f d' signature).transition slice (i γ)) :=
+  recurrenceBody_eval _ ops p i l γ slice hpresent
+
+def priorStore : PartialStore (Carrier ℚ) (declarations 2 2) :=
+  fun a => match a with
+  | ⟨.H, c⟩ => some (if c.1.val = 0 then 4 else 7)
+  | ⟨.X, _⟩ => none
+  | ⟨.Z, _⟩ => none
+
+#eval check "scan-prototype-transported-array-and-recurrence"
+  (let f := selectedF (registered 2 crossNonlinear) 2 rfl
+   ((evalWith RationalReference.ops priorStore
+       (f.arrayExpr (priorSlice (fun _ : Unit => (0 : Fin 3)))) ()).map
+         (fun xs => [xs (stateCoord 0), xs (stateCoord 1)]),
+     evalWith RationalReference.ops priorStore
+       (recurrenceBody f (fun _ : Unit => 0) (fun _ : Unit => 0)) (),
+     evalWith RationalReference.ops priorStore
+       (recurrenceBody f (fun _ : Unit => 1) (fun _ : Unit => 0)) ()))
+  (some [15, 28], some 15, some 28)
+
+theorem validatedInput_pin {V : Type} {d N : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) (η : (program f N).Input) :
+    η = input f N (inputX η) (inputZ η) :=
+  input_reconstruct f N η
+
+def directScalarInput : (program (registered 1 doubleState) 2).Input :=
+  ⟨(fun t => match t with
+    | .X => some (fun _ => 2)
+    | .Z => some (fun _ => 3)
+    | .H => none), by intro t; cases t <;> rfl⟩
+
+theorem directScalarInput_pin :
+    directScalarInput = input (registered 1 doubleState) 2 scalarX scalarZ :=
+  input_reconstruct _ _ directScalarInput
+
+#eval check "scan-prototype-direct-validated-input-extraction"
+  (inputX directScalarInput 0, inputZ directScalarInput 0,
+    (directScalarInput.val .H).isNone)
+  (2, 3, true)
+
+def directEmptyInput : (program (registered 0 id) 0).Input :=
+  ⟨(fun t => match t with
+    | .X => some (fun c => Fin.elim0 c.1)
+    | .Z => some (fun c => Fin.elim0 c.1)
+    | .H => none), by intro t; cases t <;> rfl⟩
+
+theorem directEmptyInput_pin :
+    directEmptyInput = input (registered 0 id) 0 emptyState emptyState :=
+  input_reconstruct _ _ directEmptyInput
+
+#print axioms selectedF_arrayExpr_pin
+#print axioms selectedF_recurrence_pin
+#print axioms validatedInput_pin
+#print axioms directScalarInput_pin
+#print axioms directEmptyInput_pin
 
 end LeanNCD.Semantics.ScanHistoryPlanPrototype
 

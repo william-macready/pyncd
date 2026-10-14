@@ -168,5 +168,23 @@
       "test/Semantics/ScanHistoryPlanPrototype.lean:113:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (false, true, false, false)",
       "test/Semantics/ScanHistoryPlanPrototype.lean:124:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (false, false, false, false)"
     ]
+  },
+  {
+    "label": "S5-T1-M1 validated input extraction reads Z in place of X",
+    "task": "T1",
+    "file": "LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean",
+    "old": "  fun i => (η.val .X).get (η.property .X) (stateCoord i)",
+    "new": "  fun i => (η.val .Z).get (η.property .Z) (stateCoord i)",
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Evaluation", "Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean:24:17: unsolved goals"]
+  },
+  {
+    "label": "S5-T1-F1 transported operator pin selects the unrelated identity",
+    "task": "T1",
+    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "old": "  op := false",
+    "new": "  op := true",
+    "targets": ["Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:180:0: scan-prototype-transported-array-and-recurrence: expected (some [15, 28], some 15, some 28), got (some [4, 7], some 4, some 7)"]
   }
 ]

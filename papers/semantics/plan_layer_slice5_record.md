@@ -193,7 +193,7 @@ T0 is accepted; subsequent tasks remain pending until their actual gates pass.
 | Task | Accepted SHA / exact scope | Target command/log/result | Fixtures added/retained | Controls/evidence | Review/adjudication |
 |---|---|---|---|---|---|
 | T0 | `9f9ba4a9`: three checksum-verified patches; exact leanncd tree equals `94cc67c9` | refresh `LeanNCD` 8598 jobs; full build 8804 jobs, PASS | baseline 367; prototype 14 evaluated +4 proof items | unfiltered check 11 unique; 11/11 actual cycles, 38 exact sites; `t0_mutation_results.md` | controller replay/scope review accepted |
-| T1 | PENDING | PENDING | PENDING | PENDING | PENDING |
+| T1 | accepted evaluation/input bridge; SHA is this row's checkpoint commit | combined Evaluation + prototype plan target, 8580 jobs PASS; explicit audits 200 library/42 fixture constants | +2 evaluated rows, +5 theorem pins; all original assertions retained | input-X/Z swap killed `input_reconstruct` proof; selected-op control killed new transported-array row; restores/builds PASS | controller signatures/scope review accepted; no rfl-shape, positive-bound or constructor-only premise |
 | T3 | PENDING | PENDING | PENDING | PENDING | PENDING |
 | T2a | PENDING | PENDING | PENDING | PENDING | PENDING |
 | T2b | PENDING | PENDING | PENDING | PENDING | PENDING |
