@@ -51,6 +51,17 @@ separates the verified admitted exact-rational reference executor and the
 bounded source-correspondence layer from the remaining general-source and
 backend-refinement work.
 
+For a fully worked example of the notation, see
+[Tensor Logic semantics: worked examples](tensor_logic_semantics_examples.md).
+It starts with the DSL for an L-layer, ten-class classifier, makes its core
+translation and dependencies explicit, and shows every contribution and
+publication step of a numerical instance. Three additional worked programs
+demonstrate residual contribution collection, guarded partial operations and
+explicit failure, and affine scatter with collisions and empty fibers. A
+Lean-focused compilation walkthrough then contrasts current full-history
+lowering with an illustrative Part V two-buffer plan, including physical
+layouts, retirement, certificates and simulation obligations.
+
 ### Semantics at a glance
 
 The development rests on five ideas. [Part I](#part-i-background-notation) fixes the notation, and each
