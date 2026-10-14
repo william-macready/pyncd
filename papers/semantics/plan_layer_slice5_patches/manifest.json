@@ -1,0 +1,39 @@
+{
+  "base": "581bd1636cb8a9658600fa6bba2b2e648bca18c6",
+  "code_head": "94cc67c97393fb6d0f5863dd445bd8cfee2ccf99",
+  "scope": "Compiled prototype code only; general certification is not implemented",
+  "patches": [
+    {
+      "file": "01-foundations.patch",
+      "sha256": "597ca587a77d6ee511cab410d513f6ad44a61fa5786ccc48ff4053797e409ce2",
+      "synthetic_commit": "94313d8eda90b60cce62f258a235a6927392d5ae",
+      "paths": [
+        "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Recurrence.lean",
+        "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Core.lean",
+        "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Allocation.lean",
+        "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Operator.lean"
+      ]
+    },
+    {
+      "file": "02-schedule.patch",
+      "sha256": "ba03a2b7efb2ec3f05b1f7164eb85272f0d1db57be167fe1eacf57ac35308260",
+      "synthetic_commit": "4dafdcde1dc0d473c96e713ef3304c9c4cfd307b",
+      "paths": [
+        "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean",
+        "leanncd/LeanNCD/Semantics/Plan/ScanHistory/Plan.lean"
+      ]
+    },
+    {
+      "file": "03-fixtures.patch",
+      "sha256": "29fd4ad21710c20665cbd79d3138f8c78ac82f91e2cab15b8d2151a53d1e814f",
+      "synthetic_commit": "476571c2e5a04bb52f450582b2b1c609423fd51f",
+      "paths": [
+        "leanncd/test/Semantics/ScanHistoryRecurrencePrototype.lean",
+        "leanncd/test/Semantics/ScanHistoryPlanPrototype.lean",
+        "leanncd/lakefile.toml"
+      ]
+    }
+  ],
+  "emission_tree_matches_code_head": true,
+  "ordered_replay_matches_complete_leanncd_tree": true
+}

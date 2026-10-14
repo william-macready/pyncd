@@ -1,0 +1,222 @@
+From 476571c2e5a04bb52f450582b2b1c609423fd51f Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Tue, 13 Oct 2026 18:30:53 -0700
+Subject: [PATCH] test(semantics): replay observed scan prototype fixtures
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ leanncd/lakefile.toml                         |   2 +
+ .../Semantics/ScanHistoryPlanPrototype.lean   | 143 ++++++++++++++++++
+ .../ScanHistoryRecurrencePrototype.lean       |  40 +++++
+ 3 files changed, 185 insertions(+)
+ create mode 100644 leanncd/test/Semantics/ScanHistoryPlanPrototype.lean
+ create mode 100644 leanncd/test/Semantics/ScanHistoryRecurrencePrototype.lean
+
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index 5ee154a8..5540f549 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -89,6 +89,8 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Semantics.PlanFusionCheckerTest", "Semantics.PlanMultiSortTest", "Semantics.PlanFaultsTest", "Semantics.PlanRetireTest",
+          "Semantics.PlanReuseTest", "Semantics.PlanReuseStorageTest",
+          "Semantics.PlanReuseWrapperTest",
++         "Semantics.ScanHistoryRecurrencePrototype",
++         "Semantics.ScanHistoryPlanPrototype",
+          "Semantics.SourceBindingUIDTest", "Semantics.SourceBindingRenameTest",
+          "Semantics.SourceBindingBoundaryTest", "Semantics.SourceBindingTest",
+          "Semantics.SourceAdmissionFixtures", "Semantics.SourceAdmissionDomainsTest",
+diff --git a/leanncd/test/Semantics/ScanHistoryPlanPrototype.lean b/leanncd/test/Semantics/ScanHistoryPlanPrototype.lean
+new file mode 100644
+index 00000000..7c952f00
+--- /dev/null
++++ b/leanncd/test/Semantics/ScanHistoryPlanPrototype.lean
+@@ -0,0 +1,143 @@
++import LeanNCD.Semantics.Plan.ScanHistory.Plan
++import LeanNCD.Semantics.Plan.Validity
++import Semantics.ScanHistoryRecurrencePrototype
++import Semantics.AxiomAudit
++
++namespace LeanNCD.Semantics.ScanHistoryPlanPrototype
++
++open Program Program.Plan Program.Plan.ScanHistory ExecutableReferenceFixtures
++open ScanHistoryRecurrencePrototype
++
++/-- Two registered operators: the selected scan operator and an unrelated identity. -/
++def registry (d : Nat) (F : State ℚ d → State ℚ d) :
++    Registry (Program.Plan.ScanHistory.Carrier ℚ) where
++  Op := Bool
++  arity := fun _ => 1
++  input := fun _ _ => stateTy d
++  output := fun _ => stateTy d
++  domain := fun _ _ => true
++  meaning := fun op xs _ =>
++    if op then xs 0 else fun p => F (fun i => xs 0 (stateCoord i)) p.1
++
++def registered (d : Nat) (F : State ℚ d → State ℚ d) : RegisteredF (registry d F) d where
++  op := false
++  unary := rfl
++  input_eq := fun _ => rfl
++  output_eq := rfl
++  total := fun _ => rfl
++
++def execute {d : Nat} (F : State ℚ d → State ℚ d) (N : Nat) (X Z : State ℚ d) :=
++  let π := plan (registered d F) N
++  π.runPlan RationalReference.ops (π.Start (input (registered d F) N X Z))
++
++def kind {d : Nat} (F : State ℚ d → State ℚ d) (N : Nat) (X Z : State ℚ d) :
++    String × Nat :=
++  match execute F N X Z with
++  | .done pc _ => ("done", pc)
++  | .failed _ pc _ => ("failed", pc)
++  | .stuck pc _ => ("stuck", pc)
++
++def decoded {d : Nat} (F : State ℚ d → State ℚ d) (N : Nat) (X Z : State ℚ d) :
++    Option (List (List ℚ)) :=
++  let π := plan (registered d F) N
++  match execute F N X Z with
++  | .done pc M => (π.Decode pc M).map fun out =>
++      (List.finRange (N + 1)).map fun l =>
++        (List.finRange d).map fun i => out ⟨.H, rfl⟩ (historyCoord i l)
++  | _ => none
++
++#eval check "scan-prototype-scalar-executor"
++  ((plan (registered 1 doubleState) 2).checkPlan, kind doubleState 2 scalarX scalarZ,
++    decoded doubleState 2 scalarX scalarZ)
++  (true, ("done", 9), some [[5], [12], [26]])
++
++#eval check "scan-prototype-vector-executor-vs-oracle"
++  ((plan (registered 2 crossNonlinear) 2).checkPlan,
++    kind crossNonlinear 2 vectorX vectorZ,
++    decoded crossNonlinear 2 vectorX vectorZ,
++    some (trace crossNonlinear vectorX vectorZ 2))
++  (true, ("done", 9), some [[4, 7], [16, 30], [63, 482]],
++    some [[4, 7], [16, 30], [63, 482]])
++
++#eval check "scan-prototype-whole-prior-slice-footprint"
++  ((footprint
++      (recurrenceBody (N := 2) (registered 2 crossNonlinear)
++        (fun _ : Unit => 0) (fun _ : Unit => 0)) ()).map fun a =>
++    ((declarations 2 2).uid a.1,
++      (List.finRange ((declarations 2 2).signature a.1).axes.length).map (Coord.raw a.2)))
++  [(12, [0, 0]), (12, [1, 0])]
++
++#eval check "scan-prototype-no-transitions"
++  ((plan (registered 1 doubleState) 0).checkPlan,
++    kind doubleState 0 scalarX scalarZ, decoded doubleState 0 scalarX scalarZ)
++  (true, ("done", 3), some [[5]])
++
++#eval check "scan-prototype-empty-history"
++  ((plan (registered 0 id) 2).checkPlan,
++    (allocation (registered 0 id) 2).buffers.length,
++    (allocation (registered 0 id) 2).capacity 0,
++    kind id 2 emptyState emptyState, decoded id 2 emptyState emptyState)
++  (true, 3, 0, ("done", 9), some [[], [], []])
++
++def scalarPlan := plan (registered 1 doubleState) 2
++def scalarInput := input (registered 1 doubleState) 2 scalarX scalarZ
++def scalarPrefix (pc : Nat) :=
++  scalarPlan.runFrom RationalReference.ops 0 (scalarPlan.Start scalarInput)
++    (scalarPlan.commands.take pc)
++def scalarMemory (pc : Nat) :=
++  match scalarPrefix pc with
++  | .done _ M | .failed _ _ M | .stuck _ M => M
++
++#eval check "scan-prototype-retained-prefix-memory"
++  ((List.range 10).map fun pc =>
++    (List.finRange 3).map fun l => scalarMemory pc (.inr ⟨l, (0 : Fin 1)⟩))
++  [[none, none, none], [some 0, none, none], [some 5, none, none],
++   [some 5, none, none], [some 5, some 0, none], [some 5, some 12, none],
++   [some 5, some 12, none], [some 5, some 12, some 0],
++   [some 5, some 12, some 26], [some 5, some 12, some 26]]
++
++#eval check "scan-prototype-inputs-and-published-history"
++  (scalarPlan.readPub 9 (scalarMemory 9) ⟨.X, stateCoord 0⟩,
++    scalarPlan.readPub 9 (scalarMemory 9) ⟨.Z, stateCoord 0⟩,
++    (List.finRange 3).map fun l =>
++      scalarPlan.readPub 9 (scalarMemory 9) (historyAddress 1 2 0 l))
++  (some 2, some 3, [some 5, some 12, some 26])
++
++def earlyPublish :=
++  { scalarPlan with commands :=
++      (List.finRange 3).flatMap fun l =>
++        [[.initZero (block (registered 1 doubleState) 2 l)],
++         [.pub (block (registered 1 doubleState) 2 l)],
++         [.acc (group (registered 1 doubleState) 2 l)]] }
++
++#eval check "scan-prototype-early-publication-rejected"
++  (earlyPublish.checkSteps, earlyPublish.checkLayouts,
++    earlyPublish.checkPlan, scalarPlan.checkPlan)
++  (false, true, false, true)
++
++def collapsedAllocation : Allocation (program (registered 1 doubleState) 2) :=
++  { allocation (registered 1 doubleState) 2 with
++    locate := fun x =>
++      ⟨⟨0, ((allocation (registered 1 doubleState) 2).locate x).val.2⟩, rfl⟩ }
++def collapsedPlan := { scalarPlan with allocation := collapsedAllocation }
++
++#eval check "scan-prototype-history-alias-rejected"
++  (collapsedPlan.checkSteps, collapsedPlan.checkLayouts,
++    collapsedPlan.checkPlan, scalarPlan.checkPlan)
++  (true, false, false, true)
++
++#eval check "scan-prototype-unchecked-alias-corrupts-history"
++  (match collapsedPlan.runPlan RationalReference.ops (collapsedPlan.Start scalarInput) with
++   | .done pc M => (pc, (collapsedPlan.Decode pc M).map fun out =>
++       (List.finRange 3).map fun l => out ⟨.H, rfl⟩ (historyCoord (0 : Fin 1) l))
++   | .failed _ pc _ | .stuck pc _ => (pc, none))
++  (9, some [2, 2, 2])
++
++example : scalarPlan.LayoutOK 5 := plan_layout _ _ _
++example : scalarPlan.Live 6 (historyAddress 1 2 0 0) :=
++  history_live_at_slice_boundary _ _ 2 _ _ (by decide)
++
++end LeanNCD.Semantics.ScanHistoryPlanPrototype
++
++#audit_axioms LeanNCD.Semantics.Program.Plan.ScanHistory
++#audit_axioms LeanNCD.Semantics.ScanHistoryPlanPrototype
+diff --git a/leanncd/test/Semantics/ScanHistoryRecurrencePrototype.lean b/leanncd/test/Semantics/ScanHistoryRecurrencePrototype.lean
+new file mode 100644
+index 00000000..c2a7b4df
+--- /dev/null
++++ b/leanncd/test/Semantics/ScanHistoryRecurrencePrototype.lean
+@@ -0,0 +1,40 @@
++import LeanNCD.Semantics.Plan.ScanHistory.Recurrence
++import Semantics.ExecutableReferenceTest
++
++namespace LeanNCD.Semantics.ScanHistoryRecurrencePrototype
++
++open Program.Plan.ScanHistory ExecutableReferenceFixtures
++
++def scalarX : State ℚ 1 := fun _ => 2
++def scalarZ : State ℚ 1 := fun _ => 3
++def doubleState : State ℚ 1 → State ℚ 1 := fun h i => 2 * h i
++
++def trace {d : Nat} (F : State ℚ d → State ℚ d) (X Z : State ℚ d) (N : Nat) :
++    List (List ℚ) :=
++  (List.range (N + 1)).map fun n => (List.finRange d).map (history F X Z n)
++
++#eval check "scan-oracle-scalar-full-history"
++  (trace doubleState scalarX scalarZ 2) [[5], [12], [26]]
++
++#eval check "scan-oracle-no-transitions"
++  (trace doubleState scalarX scalarZ 0) [[5]]
++
++def vectorX : State ℚ 2 := ![1, 2]
++def vectorZ : State ℚ 2 := ![3, 5]
++def crossNonlinear : State ℚ 2 → State ℚ 2 :=
++  fun h => ![2 * h 0 + h 1, h 0 * h 1]
++
++#eval check "scan-oracle-cross-coordinate-nonlinear"
++  (trace crossNonlinear vectorX vectorZ 2) [[4, 7], [16, 30], [63, 482]]
++
++def emptyState : State ℚ 0 := Fin.elim0
++
++#eval check "scan-oracle-empty-state"
++  (trace id emptyState emptyState 2) [[], [], []]
++
++example : (history doubleState scalarX scalarZ 2) 0 = 26 := by
++  norm_num [history, doubleState, scalarX, scalarZ]
++example : (history crossNonlinear vectorX vectorZ 2) 1 = 482 := by
++  norm_num [history, crossNonlinear, vectorX, vectorZ]
++
++end LeanNCD.Semantics.ScanHistoryRecurrencePrototype

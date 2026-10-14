@@ -1,0 +1,276 @@
+{
+  "prototype_code": "94cc67c9",
+  "base": "581bd163",
+  "baseline_plan_fixtures": {
+    "evaluated": 186,
+    "proof_items": 181,
+    "total": 367
+  },
+  "prototype_scan_fixtures": {
+    "evaluated": 14,
+    "proof_items": 4,
+    "total": 18
+  },
+  "prototype_naming_limit": "The two ScanHistory*Prototype files are outside Plan*Test glob; current Plan*Test total remains 367. Final names/recount are implementation work.",
+  "cycles": 11,
+  "expected_anchors": 38,
+  "classification": {
+    "independent_oracle_controls": [
+      "S5-C1",
+      "S5-C2",
+      "S5-C3"
+    ],
+    "fixture_or_observation_controls": [
+      "S5-F1",
+      "S5-F3",
+      "S5-F4",
+      "S5-F5",
+      "S5-F6"
+    ],
+    "implementation_mutants": [
+      "S5-F2",
+      "S5-F7",
+      "S5-F8"
+    ]
+  },
+  "all_prototype_evaluated_rows_have_observed_mutation_kills": true,
+  "fixture_kill_coverage": {
+    "scan-oracle-scalar-full-history": [
+      "S5-C1",
+      "S5-C3"
+    ],
+    "scan-oracle-no-transitions": [
+      "S5-C3"
+    ],
+    "scan-oracle-cross-coordinate-nonlinear": [
+      "S5-C2",
+      "S5-C3"
+    ],
+    "scan-oracle-empty-state": [
+      "S5-C3"
+    ],
+    "scan-prototype-scalar-executor": [
+      "S5-F1",
+      "S5-F2",
+      "S5-F3",
+      "S5-F7",
+      "S5-F8"
+    ],
+    "scan-prototype-vector-executor-vs-oracle": [
+      "S5-F1",
+      "S5-F2",
+      "S5-F3",
+      "S5-F7",
+      "S5-F8"
+    ],
+    "scan-prototype-whole-prior-slice-footprint": [
+      "S5-F4"
+    ],
+    "scan-prototype-no-transitions": [
+      "S5-F2",
+      "S5-F3"
+    ],
+    "scan-prototype-empty-history": [
+      "S5-F3"
+    ],
+    "scan-prototype-retained-prefix-memory": [
+      "S5-F1",
+      "S5-F2",
+      "S5-F7"
+    ],
+    "scan-prototype-inputs-and-published-history": [
+      "S5-F1",
+      "S5-F2",
+      "S5-F7"
+    ],
+    "scan-prototype-early-publication-rejected": [
+      "S5-F2",
+      "S5-F5",
+      "S5-F7",
+      "S5-F8"
+    ],
+    "scan-prototype-history-alias-rejected": [
+      "S5-F2",
+      "S5-F6",
+      "S5-F7",
+      "S5-F8"
+    ],
+    "scan-prototype-unchecked-alias-corrupts-history": [
+      "S5-F2",
+      "S5-F6"
+    ]
+  },
+  "observations": [
+    {
+      "label": "S5-C1 independent scalar recurrence oracle changes double to identity",
+      "killed_rows": [
+        "scan-oracle-scalar-full-history"
+      ],
+      "expected_sites": [
+        "test/Semantics/ScanHistoryRecurrencePrototype.lean:16:0: scan-oracle-scalar-full-history: expected [[5], [12], [26]], got [[5], [7], [9]]",
+        "test/Semantics/ScanHistoryRecurrencePrototype.lean:35:60: unsolved goals"
+      ],
+      "restored": true
+    },
+    {
+      "label": "S5-C2 independent nonlinear oracle swaps coordinate inputs",
+      "killed_rows": [
+        "scan-oracle-cross-coordinate-nonlinear"
+      ],
+      "expected_sites": [
+        "test/Semantics/ScanHistoryRecurrencePrototype.lean:27:0: scan-oracle-cross-coordinate-nonlinear: expected [[4, 7], [16, 30], [63, 482]], got [[4, 7], [19, 30], [80, 572]]",
+        "test/Semantics/ScanHistoryRecurrencePrototype.lean:37:64: unsolved goals"
+      ],
+      "restored": true
+    },
+    {
+      "label": "S5-C3 independent oracle drops the final history time",
+      "killed_rows": [
+        "scan-oracle-cross-coordinate-nonlinear",
+        "scan-oracle-empty-state",
+        "scan-oracle-no-transitions",
+        "scan-oracle-scalar-full-history"
+      ],
+      "expected_sites": [
+        "test/Semantics/ScanHistoryRecurrencePrototype.lean:16:0: scan-oracle-scalar-full-history: expected [[5], [12], [26]], got [[5], [12]]",
+        "test/Semantics/ScanHistoryRecurrencePrototype.lean:19:0: scan-oracle-no-transitions: expected [[5]], got []",
+        "test/Semantics/ScanHistoryRecurrencePrototype.lean:27:0: scan-oracle-cross-coordinate-nonlinear: expected [[4, 7], [16, 30], [63, 482]], got [[4, 7], [16, 30]]",
+        "test/Semantics/ScanHistoryRecurrencePrototype.lean:32:0: scan-oracle-empty-state: expected [[], [], []], got [[], []]"
+      ],
+      "restored": true
+    },
+    {
+      "label": "S5-F1 fixture selects the unrelated registered operator",
+      "killed_rows": [
+        "scan-prototype-inputs-and-published-history",
+        "scan-prototype-retained-prefix-memory",
+        "scan-prototype-scalar-executor",
+        "scan-prototype-vector-executor-vs-oracle"
+      ],
+      "expected_sites": [
+        "test/Semantics/ScanHistoryPlanPrototype.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [7], [9]])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [5, 9], [6, 11]], some [[4, 7], [16, 30], [63, 482]])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:91:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:99:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 5, some 7, some 9])"
+      ],
+      "restored": true
+    },
+    {
+      "label": "S5-F2 actual plan substitutes initial Z occurrences for persistent X",
+      "killed_rows": [
+        "scan-prototype-early-publication-rejected",
+        "scan-prototype-history-alias-rejected",
+        "scan-prototype-inputs-and-published-history",
+        "scan-prototype-no-transitions",
+        "scan-prototype-retained-prefix-memory",
+        "scan-prototype-scalar-executor",
+        "scan-prototype-unchecked-alias-corrupts-history",
+        "scan-prototype-vector-executor-vs-oracle"
+      ],
+      "expected_sites": [
+        "test/Semantics/ScanHistoryPlanPrototype.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (false, (\"done\", 9), some [[12], [12], [24]])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (false, (\"done\", 9), some [[12, 20], [22, 60], [104, 1320]], some [[4, 7], [16, 30], [63, 482]])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:70:0: scan-prototype-no-transitions: expected (true, (\"done\", 3), some [[5]]), got (false, (\"done\", 3), some [[6]])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:91:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:99:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 12, some 12, some 24])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:113:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (false, true, false, false)",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:124:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (false, false, false, false)",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:129:0: scan-prototype-unchecked-alias-corrupts-history: expected (9, some [2, 2, 2]), got (9, some [3, 3, 3])"
+      ],
+      "restored": true
+    },
+    {
+      "label": "S5-F3 decoder observation omits the final retained slice",
+      "killed_rows": [
+        "scan-prototype-empty-history",
+        "scan-prototype-no-transitions",
+        "scan-prototype-scalar-executor",
+        "scan-prototype-vector-executor-vs-oracle"
+      ],
+      "expected_sites": [
+        "test/Semantics/ScanHistoryPlanPrototype.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [12]])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [16, 30]], some [[4, 7], [16, 30], [63, 482]])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:70:0: scan-prototype-no-transitions: expected (true, (\"done\", 3), some [[5]]), got (true, (\"done\", 3), some [])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:75:0: scan-prototype-empty-history: expected (true, 3, 0, (\"done\", 9), some [[], [], []]), got (true, 3, 0, (\"done\", 9), some [[], []])"
+      ],
+      "restored": true
+    },
+    {
+      "label": "S5-F4 footprint fixture observes the wrong previous time",
+      "killed_rows": [
+        "scan-prototype-whole-prior-slice-footprint"
+      ],
+      "expected_sites": [
+        "test/Semantics/ScanHistoryPlanPrototype.lean:62:0: scan-prototype-whole-prior-slice-footprint: expected [(12, [0, 0]), (12, [1, 0])], got [(12, [0, 1]), (12, [1, 1])]"
+      ],
+      "restored": true
+    },
+    {
+      "label": "S5-F5 premature-publication negative fixture becomes its legal neighbour",
+      "killed_rows": [
+        "scan-prototype-early-publication-rejected"
+      ],
+      "expected_sites": [
+        "test/Semantics/ScanHistoryPlanPrototype.lean:108:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (true, true, true, true)"
+      ],
+      "restored": true
+    },
+    {
+      "label": "S5-F6 aliased-history negative fixture becomes its injective neighbour",
+      "killed_rows": [
+        "scan-prototype-history-alias-rejected",
+        "scan-prototype-unchecked-alias-corrupts-history"
+      ],
+      "expected_sites": [
+        "test/Semantics/ScanHistoryPlanPrototype.lean:122:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (true, true, true, true)",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:127:0: scan-prototype-unchecked-alias-corrupts-history: expected (9, some [2, 2, 2]), got (9, some [5, 12, 26])"
+      ],
+      "restored": true
+    },
+    {
+      "label": "S5-F7 actual recurrence destination writes the old time instead of its successor",
+      "killed_rows": [
+        "scan-prototype-early-publication-rejected",
+        "scan-prototype-history-alias-rejected",
+        "scan-prototype-inputs-and-published-history",
+        "scan-prototype-retained-prefix-memory",
+        "scan-prototype-scalar-executor",
+        "scan-prototype-vector-executor-vs-oracle"
+      ],
+      "expected_sites": [
+        "test/Semantics/ScanHistoryPlanPrototype.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (false, (\"done\", 9), some [[15], [6], [2]])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (false, (\"done\", 9), some [[19, 35], [5, 4], [1, 2]], some [[4, 7], [16, 30], [63, 482]])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:91:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:99:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 15, some 6, some 2])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:113:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (false, true, false, false)",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:124:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (false, false, false, false)"
+      ],
+      "restored": true
+    },
+    {
+      "label": "S5-F8 actual initial Z guard admits every history time",
+      "killed_rows": [
+        "scan-prototype-early-publication-rejected",
+        "scan-prototype-history-alias-rejected",
+        "scan-prototype-scalar-executor",
+        "scan-prototype-vector-executor-vs-oracle"
+      ],
+      "expected_sites": [
+        "test/Semantics/ScanHistoryPlanPrototype.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (false, (\"done\", 9), some [[5], [12], [26]])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (false, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]])",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:113:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (false, true, false, false)",
+        "test/Semantics/ScanHistoryPlanPrototype.lean:124:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (false, false, false, false)"
+      ],
+      "restored": true
+    }
+  ],
+  "limits": [
+    "A row kill need not discriminate every field within that row.",
+    "Oracle/observation/negative-neighbour controls are not evidence of production semantic bugs.",
+    "Future general proof/hypothesis fixtures and proof mutants must be measured during implementation.",
+    "No new numeric expectations beyond the compiled prototype are asserted by authoring."
+  ],
+  "ordered_replay": "Three patches verified in both isolated index and fresh registered detached worktree against complete leanncd tree at 94cc67c9; scratch worktree removed after verifying only its nine generated paths.",
+  "anchored_manifest_rerun": "PASS: 11/11 actual cycles with all 38 exact failure-site expectations, byte-identical restoration and restored builds green.",
+  "budget_accounting": "Unavailable, not measured as zero."
+}
