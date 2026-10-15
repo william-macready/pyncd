@@ -901,6 +901,61 @@ def wrongTagsPlan :=
 #print axioms empty_history_side_conditions_pin
 #print axioms empty_zero_side_conditions_pin
 
+theorem generic_source_footprints_pin {V : Type} {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (N : Nat)
+    (i : Fin d) (k : Fin (N + 1)) (l : Fin N) :
+    footprint ((program f N).body (historyDefined f N) persistentID)
+      (persistentOccurrence f N i k).2 = [⟨.X, stateCoord i⟩] ∧
+    footprint ((program f N).body (historyDefined f N) initialID)
+      (initialOccurrence f N i).2 = [⟨.Z, stateCoord i⟩] ∧
+    footprint ((program f N).body (historyDefined f N) recurrenceID)
+      (recurrenceOccurrence f N i l).2 =
+      (List.finRange d).map fun j =>
+        historyAddress d N j ⟨l.val, Nat.lt_succ_of_lt l.isLt⟩ :=
+  ⟨persistentOccurrence_footprint f N i k, initialOccurrence_footprint f N i,
+    recurrenceOccurrence_footprint f N i l⟩
+
+theorem generic_readyOK_pin {V : Type} {d : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) (N : Nat) :
+    ∀ pc G, (plan f N).commands[pc]? = some [.acc G] →
+      (plan f N).ReadyOK pc G :=
+  plan_readyOK f N
+
+theorem generic_valid_pin {V : Type} {d : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) (N : Nat) : (plan f N).Valid :=
+  plan_valid f N
+
+theorem generic_checkPlan_pin {V : Type} {d : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) (N : Nat) : (plan f N).checkPlan = true :=
+  plan_checkPlan f N
+
+theorem generic_zero_transition_validity_pin {V : Type} {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) :
+    (plan f 0).ReadyOK 1 (group f 0 0) ∧
+    (plan f 0).Valid ∧ (plan f 0).checkPlan = true :=
+  ⟨plan_readyOK_slice f 0 0, plan_valid f 0, plan_checkPlan f 0⟩
+
+theorem generic_zero_dimension_validity_pin {V : Type} {r : Registry (Carrier V)}
+    (f : RegisteredF r 0) (N : Nat) :
+    (∀ k : Fin (N + 1), (plan f N).ReadyOK (3 * k.val + 1) []) ∧
+    (plan f N).Valid ∧ (plan f N).checkPlan = true := by
+  refine ⟨?_, plan_valid f N, plan_checkPlan f N⟩
+  intro k
+  simpa only [zero_dim_group] using plan_readyOK_slice f N k
+
+theorem generic_zero_bounds_validity_pin {V : Type} {r : Registry (Carrier V)}
+    (f : RegisteredF r 0) :
+    (plan f 0).ReadyOK 1 [] ∧ (plan f 0).Valid ∧ (plan f 0).checkPlan = true :=
+  ⟨(generic_zero_dimension_validity_pin f 0).1 0, plan_valid f 0, plan_checkPlan f 0⟩
+
+#print axioms generic_source_footprints_pin
+#print axioms generic_readyOK_pin
+#print axioms generic_valid_pin
+#print axioms generic_checkPlan_pin
+#print axioms generic_zero_transition_validity_pin
+#print axioms generic_zero_dimension_validity_pin
+#print axioms generic_zero_bounds_validity_pin
+
 end LeanNCD.Semantics.ScanHistoryPlanPrototype
 
 #audit_axioms LeanNCD.Semantics.Program.Plan.ScanHistory

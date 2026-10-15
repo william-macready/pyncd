@@ -84,3 +84,12 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
 - Two data-neighbour controls restore/rebuild PASS; historic duplicate controls
   will be consolidated into the final requirement map, not advertised as independent bugs.
 - Controller review accepted; T5b ReadyOK/full Valid next.
+
+## T5b accepted
+
+- Exact footprints, all-prior-coordinate readiness, full Valid and checkPlan=true.
+- Arbitrary carrier/registry/bounds; zero cases and generic interface pinned.
+- Target8584jobs PASS, audits397/135 standard-only; seven added proof pins.
+- Reused existing footprint/alias controls rather than duplicate manifest entries;
+  actual cycles2/2 PASS, precise multi-site failure pins retained.
+- Controller accepted; T6a actual-prefix/numerical retention next.

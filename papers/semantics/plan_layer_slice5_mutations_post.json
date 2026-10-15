@@ -97,7 +97,7 @@
   },
   {
     "label": "S5-F4 footprint fixture observes the wrong previous time",
-    "task": "T0",
+    "task": "T5b",
     "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
     "old": "        (fun _ : Unit => 0) (fun _ : Unit => 0)) ()).map fun a =>",
     "new": "        (fun _ : Unit => 0) (fun _ : Unit => 1)) ()).map fun a =>",
@@ -105,7 +105,7 @@
       "Semantics.ScanHistoryPlanPrototype"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryPlanPrototype.lean:62:0: scan-prototype-whole-prior-slice-footprint: expected [(12, [0, 0]), (12, [1, 0])], got [(12, [0, 1]), (12, [1, 1])]"
+      "test/Semantics/ScanHistoryPlanPrototype.lean:67:0: scan-prototype-whole-prior-slice-footprint: expected [(12, [0, 0]), (12, [1, 0])], got [(12, [0, 1]), (12, [1, 1])]"
     ]
   },
   {
@@ -123,7 +123,7 @@
   },
   {
     "label": "S5-F6 aliased-history negative fixture becomes its injective neighbour",
-    "task": "T0",
+    "task": "T5b",
     "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
     "old": "def collapsedAllocation : Allocation (program (registered 1 doubleState) 2) :=\n  { allocation (registered 1 doubleState) 2 with\n    locate := fun x =>\n      \u27e8\u27e80, ((allocation (registered 1 doubleState) 2).locate x).val.2\u27e9, rfl\u27e9 }",
     "new": "def collapsedAllocation : Allocation (program (registered 1 doubleState) 2) :=\n  allocation (registered 1 doubleState) 2",
@@ -131,8 +131,8 @@
       "Semantics.ScanHistoryPlanPrototype"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryPlanPrototype.lean:122:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (true, true, true, true)",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:127:0: scan-prototype-unchecked-alias-corrupts-history: expected (9, some [2, 2, 2]), got (9, some [5, 12, 26])"
+      "test/Semantics/ScanHistoryPlanPrototype.lean:259:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (true, true, true, true)",
+      "test/Semantics/ScanHistoryPlanPrototype.lean:264:0: scan-prototype-unchecked-alias-corrupts-history: expected (9, some [2, 2, 2]), got (9, some [5, 12, 26])"
     ]
   },
   {
