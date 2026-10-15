@@ -28,6 +28,11 @@ contract must not automatically be labelled implementation bugs.
 
 ### Established baseline: multiple LHS definitions are not additive
 
+*Status update, 2026-10-14: a decision to close this divergence was recorded in
+[the additive-production decision note](additive_production_decision_note.md). The
+change is planned and not implemented; the audit findings below describe the code
+as audited.*
+
 The existing code is already known not to satisfy the specification's
 additive collection of contributions from multiple statements defining the
 same LHS. This is a user-confirmed semantic divergence, not an open audit

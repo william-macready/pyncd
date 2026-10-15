@@ -166,9 +166,14 @@ Several distinctions apply throughout:
   physical storage is reused.
 
 Cyclic dependencies remain permitted in the denotational language, but the
-direct executor does not select solutions for cyclic equations. Padding,
-out-of-range access, implicit conversion between scalar types, floating-point
-reduction order, and
+direct executor does not select solutions for cyclic equations. Out-of-range
+access is outside the core: it is neither a read nor a write of an in-bounds
+coordinate. A surface profile may give a read outside the shape a defined
+meaning, for example the zero-extension read of the
+[boundary-policy note](tensor_logic_boundary_policies.md#843-boundary-aware-gather-constructs-another-naperian-family), which
+returns $0_K$ of the sort being read. Likewise implicit conversion between sorts
+is defined only as an elaboration into registered primitives
+([Section 2.4](#24-scalar-sorts)). Floating-point reduction order and
 machine-number representations are outside the specified fragment. [Part V](#part-v-compilation-and-refinement) treats
 physical storage reuse within an exact-value memory model; it does not
 silently replace the scalar carrier by floating-point values.
@@ -442,15 +447,22 @@ Specifically:
 - Multiplication distributes over addition.
 - $0_K$ is absorbing for multiplication.
 
-The two principal interpretations are:
+The principal interpretations are:
 
 | Interpretation | $K$ | $\oplus$ | $\otimes$ | $0_K$ | $1_K$ |
 | --- | --- | --- | --- | --- | --- |
 | Numerical | $\mathbb{R}$ | $+$ | $\cdot$ | $0$ | $1$ |
 | Boolean | $\mathbb{B}$ | $\lor$ | $\land$ | false | true |
+| Max-plus | $\mathbb{R}\cup\{-\infty\}$ | $\max$ | $+$ | $-\infty$ | $0$ |
+| Min-plus | $\mathbb{R}\cup\{+\infty\}$ | $\min$ | $+$ | $+\infty$ | $0$ |
 
 The word "additive" means combination by $\oplus$. For Boolean tensors this is
-OR, not arithmetic addition of truth values.
+OR, not arithmetic addition of truth values, and for a max-plus tensor it is
+$\max$. In the tropical rows $\otimes$ is ordinary addition, so $-\infty$
+(respectively $+\infty$) is the absorbing element and the identity of $\oplus$.
+Each row satisfies every law listed above on its exact carrier. Machine-number
+behavior at infinities (for example the sum $(-\infty)+(+\infty)$ in floating
+point) is outside the specified fragment, as for any machine-number carrier.
 
 Subtraction, division, ordering, and nonlinear functions are **not** supplied
 by the semiring structure alone. They need an appropriate carrier and their own
@@ -548,9 +560,29 @@ tensor signature ([Section 4.1](#41-signatures-and-coordinate-domains)) names th
   $(K_s,\oplus_s,0_s)$ to be a commutative monoid.
 - Every carrier is nonempty, since it contains $0_s$.
 
-The single-carrier text is the case of one sort. Still excluded are implicit
-conversion between sorts and machine-number carriers; a Boolean mask feeding a
-real computation goes through a registered primitive with declared sorts.
+The single-carrier text is the case of one sort. The concrete sort family used
+for tensor logic is {real, Boolean, max-plus, min-plus}, the rows of the table in
+[Section 2.1](#21-the-scalar-carrier). A defined tensor's sort selects the
+$\oplus$ and $0_K$ used to collect every contribution addressed to it, whether
+the contributions come from one statement or several, and the $\oplus$ and
+$0_K$ of the contraction inside each statement's body (the coherence condition
+of [Section 2.3](#23-which-algebraic-laws-each-part-uses)).
+
+Implicit conversion between sorts is not part of the core, and neither are
+machine-number carriers. A change of sort is a registered primitive with
+declared input and output sorts. A surface language may *elaborate* an implicit
+conversion into such a primitive. The elaborated conversions are:
+
+- real $\leftrightarrow$ max-plus or min-plus: the identity on the values
+  they share. (Real values lie in $\mathbb{R}$, a subset of both tropical
+  carriers.)
+- Boolean $\to$ any sort $K$: the unique semiring homomorphism, false
+  $\mapsto 0_K$ and true $\mapsto 1_K$ of the target sort. This is the same
+  rule that gives an Iverson value its meaning in
+  [Section 8](#8-operators-predicates-and-definedness).
+
+No conversion is specified from a tropical sort to the Boolean sort, or between
+the two tropical sorts.
 
 ## 3. Axes, index variables, and valuations
 
@@ -930,6 +962,12 @@ $$
 0_K,&\textcolor{#9D75C4}{Q}\text{ is false}.
 \end{cases}
 $$
+
+The values $0_K$ and $1_K$ are those of the sort of the surrounding expression:
+in the max-plus sort a true predicate is $0$ and a false one is $-\infty$, in the
+min-plus sort a false predicate is $+\infty$, and in the Boolean sort the values
+are false and true. A false Iverson factor is therefore the absorbing element of
+its sort, so in a max-plus reduction a masked term drops out of the maximum.
 
 Multiplication by $\mathbf{1}_{\textcolor{#9D75C4}{Q}}$ is a value-level operation, not
 short-circuit evaluation of the other factor. In the core, $\textcolor{#9D75C4}{Q}$ depends
@@ -1487,6 +1525,17 @@ are governed by the empty-collection rule in [Section 19](#19-contribution-colle
 Conversely, declaring a tensor to be an input does not
 provide its values: an input environment $\textcolor{#398B83}{\eta}$ must supply them.
 
+**Remark (current production pipeline).** The production source language
+does not declare $\mathrm{In}$ and $\mathrm{Def}$. It derives a name as a defined
+tensor when some statement writes it and as an input when it is only read.
+A defined tensor without statements, and a designated input that no statement
+reads, are therefore not realized there (see the
+[semantic gap audit](tensor_logic_semantic_gap_audit.md), F03 and W07). A supplied
+input that names a defined tensor violates the disjointness of
+$\mathrm{In}$ and $\mathrm{Def}$ and must be rejected; the pipeline currently
+replaces the supplied value silently, and enforcing the rejection is part of the
+planned alignment. See the [decision note](additive_production_decision_note.md), Section B.
+
 Designated outputs specify whole tensor values with their declared coordinate
 domains. If $H$ is a history tensor and $H\in\textcolor{#5688C7}{\mathrm{Out}}$, the output includes
 every time slice, not just its last slice. Returning only the final state
@@ -1636,6 +1685,13 @@ statement satisfy their respective conditions.
 Neither injectivity of $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}$ nor disjointness of different statements'
 write images is required. Additive overlap is allowed.
 No condition here requires an acyclic dependency graph.
+
+Condition 4 applies to writes as well as reads. A write whose destination lies
+outside the declared shape is not a dropped contribution but an ill-formed
+statement, and a production profile must reject it rather than skip it. A
+policy that drops such writes is a separate, explicit extension (see the
+[boundary-policy note](tensor_logic_boundary_policies.md), Section 8.4.4); it
+needs the occurrence demands of its drop timing and is not part of this core.
 
 ### 14.4 Mathematical conditions versus compiler decisions
 
@@ -2800,6 +2856,19 @@ A defined tensor with no targeting statements has the zero tensor as
 its collected value. No analogous default supplies an omitted input:
 the input environment must provide every designated input value.
 
+**Collection through per-statement tensors.** Because $\oplus$ is
+associative and commutative, the occurrences addressed to $(T,p)$ may be grouped
+by statement. If $T$ is targeted by statements $s_1,\ldots,s_n$ and $T_k$ is a
+fresh defined tensor of the same signature and sort targeted only by $s_k$,
+then $\mathop{\mathrm{Collect}}(T)[p]=\bigoplus_{k}\mathop{\mathrm{Collect}}(T_k)[p]$.
+This is the statement-wise grouping of the Lean `Program.collect_grouped`. A program in which
+$T$ is replaced by $T_1,\ldots,T_n$ and one collector statement
+$T[\vec{i}]\mathrel{+}=T_1[\vec{i}]+\cdots+T_n[\vec{i}]$ (the sum
+in the sort of $T$, in statement order) therefore defines the same value of
+$T$. A compiler may collect multiple definitions this way. The result is
+independent of the grouping, and the order of the summands has no semantic
+meaning.
+
 ### 19.3 Correspondence with pure einsum
 
 **Proposition 19.1 (pure-einsum correspondence).**
@@ -3335,6 +3404,17 @@ compilation data structure.
 Dependencies must be taken at coordinate level. A finite history may read
 the same tensor identifier that it defines while its time coordinates
 still admit a strictly increasing rank.
+
+**Remark (production readiness).** The production profile orders whole
+tensors: a tensor is ready only when every statement that defines it has run,
+and a program whose tensor-level dependency graph has a cycle, apart from a scan
+node's reads of its own state, is rejected. (The scheduler currently releases a
+reader after the first of several writers; correcting this is part of the
+planned alignment recorded in the
+[decision note](additive_production_decision_note.md).) The programs accepted
+under this rule have a coordinate-rank certificate, but the converse fails. This is a strict subset of the coordinate-ranked fragment, and
+a self-dependent history is expressed there only through the scan construct.
+
 
 ## 24. Machine configurations and initialization
 
