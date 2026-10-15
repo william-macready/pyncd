@@ -53,6 +53,18 @@ theorem nonlinear_full_history_pin :
 #eval check "scan-oracle-empty-combined-zero"
   (trace id emptyState emptyState 0) [[]]
 
+#eval check "scan-oracle-extended-nonlinear-history"
+  (trace crossNonlinear vectorX vectorZ 3)
+  [[4, 7], [16, 30], [63, 482], [609, 30368]]
+
+theorem extended_nonlinear_full_history_pin :
+    (fun l : Fin 4 => history crossNonlinear vectorX vectorZ l.val) =
+      (fun l i => (![![4, 7], ![16, 30], ![63, 482], ![609, 30368]] l) i) := by
+  funext l i
+  fin_cases l <;> fin_cases i <;>
+    norm_num [history, crossNonlinear, vectorX, vectorZ]
+
+#print axioms extended_nonlinear_full_history_pin
 #print axioms scalar_full_history_pin
 #print axioms nonlinear_full_history_pin
 

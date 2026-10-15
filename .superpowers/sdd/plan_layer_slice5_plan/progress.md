@@ -123,3 +123,15 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
 - Three proof-interface controls PASS, classified separately from numerical kills.
 - Final manifest references mechanically migrated; stale historic anchors remain
   to be remeasured/consolidated by T7b, not declared currently green.
+
+## T7b accepted
+
+- Raw X/Z/H role rejection and accepted neighbours cover nonempty and empty inputs.
+- Different bound(d2,N3) observed; mixed registry selected unary array while
+  unused binary scalar operator is partial. Prior assertions preserved.
+- Target8585jobs PASS, audits405/184/18; all Plan fixtures516=239eval+277proof.
+- Manifest consolidated35phase entries to31distinct edits; all real cycles broke
+  and restored, with53 exact anchors repaired from actual logs.
+- Initial stale-manifest15/31 explicitly retained; all six new entries rerun PASS.
+- Eight production proof controls distinguished from sixteen fixture observations,
+  three oracle controls and four interface controls. Final unfiltered gate remains T9.

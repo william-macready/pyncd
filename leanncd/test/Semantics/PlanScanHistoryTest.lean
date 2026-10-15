@@ -1218,6 +1218,159 @@ theorem zero_bounds_scan_decode_history_pin {V : Type} [AddCommMonoid V]
 #print axioms zero_dimension_scan_decode_history_pin
 #print axioms zero_bounds_scan_decode_history_pin
 
+def rawRoleInput {d : Nat} (N : Nat) (X Z : State ℚ d)
+    (hasX hasZ hasH : Bool) : InputBinding (K := Carrier ℚ) (σ := declarations d N) :=
+  fun t => match t with
+  | .X => if hasX then some (fun p => X p.1) else none
+  | .Z => if hasZ then some (fun p => Z p.1) else none
+  | .H => if hasH then some (fun _ => 37) else none
+
+def rawValidationRole {d : Nat} {r : Registry (Carrier ℚ)} (f : RegisteredF r d)
+    (N : Nat) (η : InputBinding (K := Carrier ℚ) (σ := declarations d N)) : String :=
+  match (plan f N).validateInput η with
+  | .ok _ => "accepted"
+  | .error .X => "X"
+  | .error .Z => "Z"
+  | .error .H => "H"
+
+def rawRoleNeighbours {d : Nat} (F : State ℚ d → State ℚ d)
+    (N : Nat) (X Z : State ℚ d) : List (String × String) :=
+  [(false, true, false), (true, false, false), (true, true, true)].map fun flags =>
+    (rawValidationRole (registered d F) N (rawRoleInput N X Z flags.1 flags.2.1 flags.2.2),
+      rawValidationRole (registered d F) N (rawRoleInput N X Z true true false))
+
+#eval check "scan-regression-raw-input-role-neighbours"
+  (rawRoleNeighbours doubleState 2 scalarX scalarZ)
+  [("X", "accepted"), ("Z", "accepted"), ("H", "accepted")]
+
+#eval check "scan-regression-empty-raw-input-role-neighbours"
+  (rawRoleNeighbours id 0 emptyState emptyState)
+  [("X", "accepted"), ("Z", "accepted"), ("H", "accepted")]
+
+#eval check "scan-regression-empty-inputs-present-at-tensor-role"
+  (let η := rawRoleInput 0 emptyState emptyState true true false
+  ((η .X).isSome, (η .Z).isSome, (η .H).isSome))
+  (true, true, false)
+
+#eval check "scan-regression-combined-zero-check-done-full-decode"
+  ((plan (registered 0 id) 0).checkPlan,
+  kind id 0 emptyState emptyState, (decodedOutput id 0 emptyState emptyState).isSome,
+  decoded id 0 emptyState emptyState, some (trace id emptyState emptyState 0))
+  (true, ("done", 3), true, some [[]], some [[]])
+
+#eval check "scan-regression-extended-nonlinear-check-done-full-decode"
+  ((plan (registered 2 crossNonlinear) 3).checkPlan,
+  kind crossNonlinear 3 vectorX vectorZ,
+  (decodedOutput crossNonlinear 3 vectorX vectorZ).isSome,
+  decoded crossNonlinear 3 vectorX vectorZ, some (trace crossNonlinear vectorX vectorZ 3))
+  (true, ("done", 12), true,
+    some [[4, 7], [16, 30], [63, 482], [609, 30368]],
+    some [[4, 7], [16, 30], [63, 482], [609, 30368]])
+
+theorem extended_nonlinear_decode_function_pin :
+    (decodedOutput crossNonlinear 3 vectorX vectorZ).map (fun out => out ⟨.H, rfl⟩) =
+      some (fun c : Coord (historyShape 2 3) =>
+        ((![![4, 7], ![16, 30], ![63, 482], ![609, 30368]] c.2.1) c.1 : ℚ)) := by
+  rw [decodedOutput_history]
+  apply congrArg some
+  funext c
+  rcases c with ⟨i, l, u⟩
+  cases u
+  change history crossNonlinear vectorX vectorZ l.val i = _
+  exact congrFun (congrFun extended_nonlinear_full_history_pin l) i
+
+/-- Only the selected array operator is unary and total; the scalar binary entry is partial. -/
+def mixedRegistry (d : Nat) (F : State ℚ d → State ℚ d) : Registry (Carrier ℚ) where
+  Op := Bool
+  arity := fun | false => 1 | true => 2
+  input := fun op _ => match op with | false => stateTy d | true => .scalar ()
+  output := fun | false => stateTy d | true => .scalar ()
+  domain := fun op _ => !op
+  meaning := fun op => match op with
+    | false => fun xs _ p => F (fun i => xs 0 (stateCoord i)) p.1
+    | true => fun xs _ => (xs 0 : ℚ) + (xs 1 : ℚ)
+
+def mixedRegistered (d : Nat) (F : State ℚ d → State ℚ d) :
+    RegisteredF (mixedRegistry d F) d where
+  op := false
+  unary := rfl
+  input_eq := fun _ => rfl
+  output_eq := rfl
+  total := fun _ => rfl
+
+def mixedSelected := selectedF (mixedRegistered 2 crossNonlinear) 2 rfl
+def mixedInput := input mixedSelected 2 vectorX vectorZ
+def mixedExecute :=
+  (plan mixedSelected 2).runPlan RationalReference.ops ((plan mixedSelected 2).Start mixedInput)
+
+def mixedDecodedOutput : Option (program mixedSelected 2).Output :=
+  match mixedExecute with
+  | .done pc M => (plan mixedSelected 2).Decode pc M
+  | _ => none
+
+def mixedDecoded : Option (List (List ℚ)) :=
+  mixedDecodedOutput.map fun out =>
+    (List.finRange 3).map fun l =>
+      (List.finRange 2).map fun i => out ⟨.H, rfl⟩ (historyCoord i l)
+
+#eval check (α := Nat × Nat × String × String × Bool × Option ℚ)
+  "scan-regression-mixed-registry-binary-scalar-unused-partial"
+  ((mixedRegistry 2 crossNonlinear).arity false,
+  (mixedRegistry 2 crossNonlinear).arity true,
+  (match (mixedRegistry 2 crossNonlinear).input true (0 : Fin 2) with
+   | .scalar _ => "scalar" | .array _ _ => "array"),
+  (match (mixedRegistry 2 crossNonlinear).output true with
+   | .scalar _ => "scalar" | .array _ _ => "array"),
+  (mixedRegistry 2 crossNonlinear).domain true (fun _ => (7 : ℚ)),
+  (mixedRegistry 2 crossNonlinear).apply true (fun _ => (7 : ℚ)))
+  (1, 2, "scalar", "scalar", false, none)
+
+#eval check "scan-regression-mixed-registry-check-done-full-decode"
+  ((plan mixedSelected 2).checkPlan,
+  (match mixedExecute with
+   | .done pc _ => ("done", pc)
+   | .failed _ pc _ => ("failed", pc)
+   | .stuck pc _ => ("stuck", pc)),
+  mixedDecodedOutput.isSome, mixedDecoded, some (trace crossNonlinear vectorX vectorZ 2))
+  (true, ("done", 9), true, some [[4, 7], [16, 30], [63, 482]],
+    some [[4, 7], [16, 30], [63, 482]])
+
+#eval check "scan-regression-mixed-selected-nonlinear-transition"
+  ((mixedSelected.transition (history crossNonlinear vectorX vectorZ 0) 0),
+  (mixedSelected.transition (history crossNonlinear vectorX vectorZ 0) 1))
+  (15, 28)
+
+theorem mixed_selected_scan_decode_pin (N : Nat) (η : (program mixedSelected N).Input) :
+    ∃ M, (plan mixedSelected N).runPlan RationalReference.ops
+        ((plan mixedSelected N).Start η) = .done (3 * (N + 1)) M ∧
+      (plan mixedSelected N).Decode (3 * (N + 1)) M =
+        some (history_output mixedSelected N η) :=
+  (generic_scan_decode_history_pin mixedSelected N RationalReference.ops η).2
+
+theorem mixed_decoded_history_pin :
+    mixedDecodedOutput = some (history_output mixedSelected 2 mixedInput) := by
+  obtain ⟨M, hr, hd⟩ := mixed_selected_scan_decode_pin 2 mixedInput
+  unfold mixedDecodedOutput mixedExecute
+  rw [hr]
+  exact hd
+
+theorem mixed_decode_function_pin :
+    mixedDecodedOutput.map (fun out => out ⟨.H, rfl⟩) =
+      some (fun c : Coord (historyShape 2 2) =>
+        ((![![4, 7], ![16, 30], ![63, 482]] c.2.1) c.1 : ℚ)) := by
+  rw [mixed_decoded_history_pin]
+  apply congrArg some
+  funext c
+  rcases c with ⟨i, l, u⟩
+  cases u
+  change history crossNonlinear vectorX vectorZ l.val i = _
+  exact congrFun (congrFun nonlinear_full_history_pin l) i
+
+#print axioms extended_nonlinear_decode_function_pin
+#print axioms mixed_selected_scan_decode_pin
+#print axioms mixed_decoded_history_pin
+#print axioms mixed_decode_function_pin
+
 end LeanNCD.Semantics.PlanScanHistoryTest
 
 #audit_axioms LeanNCD.Semantics.Program.Plan.ScanHistory

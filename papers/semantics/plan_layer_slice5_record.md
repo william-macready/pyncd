@@ -204,8 +204,8 @@ T0 is accepted; subsequent tasks remain pending until their actual gates pass.
 | T5b | `37e6087e`: generic ReadyOK, Valid and exact checker acceptance | Validity + prototype plan target, 8584 jobs PASS; audits 397/135 constants | +7 theorem pins, 34 evaluated/66 proof assertions total in plan fixture | reused S5-F4/F6, repaired exact multi-site locations: 2/2 actual cycles PASS | controller footprint/previous-time/layout/empty review accepted; 16 tool turns/55 operations, context unmetered |
 | T6a | `d8e26311`: actual-prefix success and numerical retention | Correctness + prototype plan target, 8585 jobs PASS; audits 400/142 constants | +1 observed vector physical table, +6 theorem pins | scalar buffer-alias and vector coordinate-repeat observation controls: 2/2 actual cycles PASS; multiline diagnostic formatting corrected after first anchor miss | controller original-plan Valid/step-model/refState/physical-value review accepted; 21 turns/50 operations, context unmetered |
 | T6b | `74da4fc7`: unconditional completion, typed full Decode and independent denotation | Correctness + both prototype targets, 8585 jobs PASS; audits 405/153 constants | assertions 113 to 129, including typed empty Decode and last-state-correct omission control | reused S5-F3 with all four refreshed sites plus terminal-only neighbour: 2/2 actual cycles PASS | controller full-function/zero/admissibility review accepted; 13 turns/35 leaf operations, context unmetered |
-| T7a | accepted final PlanScanHistoryTest/OracleTest discovery and generic interfaces; SHA is this row's checkpoint | both final test targets, 8585 jobs PASS; audits 405/159/17 constants | all 44 existing labeled rows preserved at their lines; assertions 129 to 135 | 3/3 actual proof-interface controls (bounds/input/full output shape); these are contract controls, not numerical implementation kills | controller signatures/renames reviewed; one diagnostic-kind correction before green rerun; 10 turns/32 operations |
-| T7b | PENDING | PENDING | PENDING | PENDING | PENDING |
+| T7a | `2a3408c9`: final PlanScanHistoryTest/OracleTest discovery and generic interfaces | both final test targets, 8585 jobs PASS; audits 405/159/17 constants | all 44 existing labeled rows preserved at their lines; assertions 129 to 135 | 3/3 actual proof-interface controls (bounds/input/full output shape); these are contract controls, not numerical implementation kills | controller signatures/renames reviewed; one diagnostic-kind correction before green rerun; 10 turns/32 operations |
+| T7b | accepted input-role/empty/extended-bound/mixed-registry regression shapes and measured final map; SHA is this row's checkpoint | both final test targets, 8585 jobs PASS; audits 405/184/18 | +9 evaluated rows/+5 proof items; total516=239+277 in18 Plan*Test modules | 31 distinct edits all broke/restored; initial stale manifest15/31; all53 repaired anchors verified against actual logs; six new controls rerun6/6 PASS; final unfiltered repaired-manifest gate is T9 | controller numeric/roles/registry review accepted; three old numeric kills now honestly classified as earlier generic-proof barriers; 32 implementer turns |
 | T8 | PENDING | PENDING | PENDING | PENDING | PENDING |
 | T9 | PENDING | PENDING | PENDING | PENDING | PENDING |
 
@@ -238,3 +238,46 @@ same-sort array operator in an existing registry; AddCommMonoid V; independent
 retained slice buffers and separate inputs; no retire/reuse/fusion/relocation,
 partial-F/floats/source-adapter or automatic general scan recognition.
 Blocked load-bearing work stops; no hidden semantic narrowing or invented pass.
+
+## G. Execution requirement-to-fixture-to-control map
+
+The final unfiltered mutation rerun is still pending. Historical T0 evidence
+remains evidence for the compiled prototype, not an assertion that its fixture
+diagnostics remain reachable behind the new generic proofs.
+
+| Required contract | Compiled theorem / fixture evidence | Distinct final control IDs |
+|---|---|---|
+| Independent arbitrary whole-array transition | oracle scalar/nonlinear histories; transported evaluation and mixed-registry fixtures | S5-C1/C2, S5-F1, S5-T7b-F5 |
+| Exact validated input, no fallback | `input_reconstruct`; raw-role accepted/rejected neighbours, including empty tensors | S5-T1-M1, S5-T7b-F1/F2/F3 |
+| Guarded occurrence classification, successor targets | `occurrence_cases`, target identities and zero-bound pins | S5-F7/F8 |
+| Full Coverage1/2, distinct tags and slices | `plan_coverage1/2`; wrong-tag component rows | S5-F2, S5-T3b-M1/M2, S5-T5a-F1 |
+| Exact two-source collected equations and independent finite model | direct-store fibres, sentinel model stores, `models_iff_historyStore` | S5-T2a-F1, S5-T2b-M1 |
+| All three command phases and exact read readiness | indexed lookups, prefix membership, whole-prior-slice footprint, pre/post-pub reads | S5-T4a-M1, S5-F4, S5-T4b-F1 |
+| Static initialization/accumulation/publication, full Valid and checker | `plan_valid/checkPlan`; early-pub and alias rejection with legal neighbours | S5-F5/F6, S5-T5a-F1 |
+| Actual prefix success and retained physical values at every boundary | `prefix_done_R`, `history_retained/later`; scalar/vector pc0..9 tables | S5-T6a-F1/F2 |
+| Unconditional done, arbitrary input and complete typed output shape | generic/zero `scan_done/decode_history` pins | S5-T7a-P1/P2/P3 |
+| Full output, not merely correct terminal state | scalar/nonlinear typed function equality, terminal-only negative neighbour | S5-F3, S5-T6b-F1 |
+| Empty dimensions, no transitions, combined zero and a different nonempty bound | typed empty Decode, `[[]]`, nonlinear `(d,N)=(2,3)` | S5-C3, S5-F3, S5-T7b-F1/F2/F3/F4 |
+| Existing mixed registry; unrelated entry may be binary, scalar and partial | selected unary array with unused binary partial scalar operator; full-history parity | S5-T7b-F5/P1 |
+| Public discovery without child imports | T8 public-import-only pin pending | T8 control pending |
+
+Controls are not all semantic implementation mutants: oracle, fixture-data,
+proof-interface and production-library mutations are classified separately.
+Four repeated phase edits have been consolidated; their historical labels and
+validated task identities remain on the retained manifest entries. Thus phase
+cycle counts must not be summed and presented as independent mutation coverage.
+
+T7b measured 31 distinct edits: 3 independent-oracle, 16 fixture-observation,
+8 production-library-proof and 4 proof-interface controls. The actual initial
+measurement had 31 broken mutant builds, 31 byte-identical restores and 31
+restored green builds, but only 15 old expectation sets matched. This failed
+table is retained as `t7b_measurement_results.md`, not relabelled as a pass.
+`t7b_anchor_observations.json` verifies the 53 repaired exact location/diagnostic
+anchors against those actual mutant logs. The six new entries then passed a real
+manifest rerun (`t7b_mutation_results.md`). T9 must still rerun the complete final
+manifest after public wiring.
+
+S5-F2/F7/F8 now stop in the generic Coverage proofs, before numeric test rows.
+Their old fixture expectations are retained as historical metadata, not active
+unreachable expectations or a claim of current fixture-level kills. S5-F2 keeps
+two distinct proof failure sites; all reachable inherited multi-site pins remain.

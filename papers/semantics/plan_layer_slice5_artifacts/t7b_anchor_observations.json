@@ -1,0 +1,402 @@
+{
+  "status": "Measured cycles and repaired-anchor log membership, NOT a rerun verdict of the repaired manifest. Unfiltered repaired-manifest acceptance remains T9.",
+  "source_log": "scan-exec-t7b-measurement.log",
+  "distinct_edits": 31,
+  "exact_anchors": 53,
+  "cycles": [
+    {
+      "label": "S5-C1 independent scalar recurrence oracle changes double to identity",
+      "kind": "independent_oracle",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryOracleTest.lean:16:0: scan-oracle-scalar-full-history: expected [[5], [12], [26]], got [[5], [7], [9]]",
+        "test/Semantics/PlanScanHistoryOracleTest.lean:35:60: unsolved goals"
+      ]
+    },
+    {
+      "label": "S5-C2 independent nonlinear oracle swaps coordinate inputs",
+      "kind": "independent_oracle",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryOracleTest.lean:27:0: scan-oracle-cross-coordinate-nonlinear: expected [[4, 7], [16, 30], [63, 482]], got [[4, 7], [19, 30], [80, 572]]",
+        "test/Semantics/PlanScanHistoryOracleTest.lean:37:64: unsolved goals"
+      ]
+    },
+    {
+      "label": "S5-C3 independent oracle drops the final history time",
+      "kind": "independent_oracle",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryOracleTest.lean:16:0: scan-oracle-scalar-full-history: expected [[5], [12], [26]], got [[5], [12]]",
+        "test/Semantics/PlanScanHistoryOracleTest.lean:19:0: scan-oracle-no-transitions: expected [[5]], got []",
+        "test/Semantics/PlanScanHistoryOracleTest.lean:27:0: scan-oracle-cross-coordinate-nonlinear: expected [[4, 7], [16, 30], [63, 482]], got [[4, 7], [16, 30]]",
+        "test/Semantics/PlanScanHistoryOracleTest.lean:32:0: scan-oracle-empty-state: expected [[], [], []], got [[], []]"
+      ]
+    },
+    {
+      "label": "S5-F1 fixture selects the unrelated registered operator",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:55:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [7], [9]])",
+        "test/Semantics/PlanScanHistoryTest.lean:60:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [5, 9], [6, 11]], some [[4, 7], [16, 30], [63, 482]])",
+        "test/Semantics/PlanScanHistoryTest.lean:229:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
+        "test/Semantics/PlanScanHistoryTest.lean:237:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 5, some 7, some 9])",
+        "test/Semantics/PlanScanHistoryTest.lean:317:0: scan-prototype-transported-array-and-recurrence: expected (some [15, 28], some 15, some 28), got (some [4, 7], some 4, some 7)"
+      ]
+    },
+    {
+      "label": "S5-F2 actual plan substitutes initial Z occurrences for persistent X",
+      "kind": "production_library_proof",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:157:30: Application type mismatch: The argument",
+        "LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:185:30: Application type mismatch: The argument"
+      ]
+    },
+    {
+      "label": "S5-F3 decoder observation omits the final retained slice",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:55:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [12]])",
+        "test/Semantics/PlanScanHistoryTest.lean:60:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [16, 30]], some [[4, 7], [16, 30], [63, 482]])",
+        "test/Semantics/PlanScanHistoryTest.lean:76:0: scan-prototype-no-transitions: expected (true, (\"done\", 3), some [[5]]), got (true, (\"done\", 3), some [])",
+        "test/Semantics/PlanScanHistoryTest.lean:81:0: scan-prototype-empty-history: expected (true, 3, 0, (\"done\", 9), some [[], [], []]), got (true, 3, 0, (\"done\", 9), some [[], []])"
+      ]
+    },
+    {
+      "label": "S5-F4 footprint fixture observes the wrong previous time",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:68:0: scan-prototype-whole-prior-slice-footprint: expected [(12, [0, 0]), (12, [1, 0])], got [(12, [0, 1]), (12, [1, 1])]"
+      ]
+    },
+    {
+      "label": "S5-F5 premature-publication negative fixture becomes its legal neighbour",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:246:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (true, true, true, true)"
+      ]
+    },
+    {
+      "label": "S5-F6 aliased-history negative fixture becomes its injective neighbour",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:260:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (true, true, true, true)",
+        "test/Semantics/PlanScanHistoryTest.lean:265:0: scan-prototype-unchecked-alias-corrupts-history: expected (9, some [2, 2, 2]), got (9, some [5, 12, 26])"
+      ]
+    },
+    {
+      "label": "S5-F7 actual recurrence destination writes the old time instead of its successor",
+      "kind": "production_library_proof",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:56:61: unsolved goals"
+      ]
+    },
+    {
+      "label": "S5-F8 actual initial Z guard admits every history time",
+      "kind": "production_library_proof",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:16:79: unsolved goals"
+      ]
+    },
+    {
+      "label": "S5-T1-M1 validated input extraction reads Z in place of X",
+      "kind": "production_library_proof",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean:24:17: unsolved goals"
+      ]
+    },
+    {
+      "label": "S5-T3b-M1 contribution groups repeat persistent time zero",
+      "kind": "production_library_proof",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:203:4: Type mismatch",
+        "LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:220:16: Application type mismatch: The argument"
+      ]
+    },
+    {
+      "label": "S5-T3b-M2 publication blocks repeat time zero",
+      "kind": "production_library_proof",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:84:54: Application type mismatch: The argument"
+      ]
+    },
+    {
+      "label": "S5-T2a-F1 same-size wrong bag becomes the correct collected fibre",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:528:0: scan-prototype-collected-same-size-wrong-occurrence: expected (2, 2, 5, 4), got (2, 2, 5, 5)"
+      ]
+    },
+    {
+      "label": "S5-T2b-M1 independent model store repeats only the base state",
+      "kind": "production_library_proof",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "LeanNCD/Semantics/Plan/ScanHistory/Model.lean:226:6: Tactic `rfl` failed: The left-hand side",
+        "LeanNCD/Semantics/Plan/ScanHistory/Model.lean:269:8: Type mismatch"
+      ]
+    },
+    {
+      "label": "S5-T4a-M1 command phase one publishes before accumulation",
+      "kind": "production_library_proof",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:27:2: Type mismatch: After simplification, term",
+        "LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:36:2: Type mismatch: After simplification, term"
+      ]
+    },
+    {
+      "label": "S5-T4b-F1 before-pub read fixture is shifted to its legal neighbour",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:712:0: scan-prototype-history-before-and-after-pub: expected (none, some 5, none, some 12), got (some 5, some 5, none, some 12)"
+      ]
+    },
+    {
+      "label": "S5-T5a-F1 wrong-tag negative plan becomes the legal plan",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:874:0: scan-prototype-wrong-tags-coverage-vs-control: expected ((6, false, false, true), 6, true, true, true), got ((6, true, true, true), 6, true, true, true)",
+        "test/Semantics/PlanScanHistoryTest.lean:881:0: scan-prototype-wrong-tags-static-components-vs-control: expected ((true, false, true, true, true, false), true, true, true, true, true, true), got ((true, false, true, true, true, true), true, true, true, true, true, true)"
+      ]
+    },
+    {
+      "label": "S5-T6a-F1 scalar physical observation aliases every history buffer",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:229:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],"
+      ]
+    },
+    {
+      "label": "S5-T6a-F2 vector physical observation repeats the first coordinate",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:732:0: scan-prototype-vector-retained-all-command-physical-memory: expected [[[none, none], [none, none], [none, none]],"
+      ]
+    },
+    {
+      "label": "S5-T6b-F1 terminal-only negative observation becomes complete history",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:1151:0: scan-prototype-terminal-only-observation-control: expected (true, false, false), got (true, true, true)"
+      ]
+    },
+    {
+      "label": "S5-T7a-P1 generic completion pin is specialized to zero transitions",
+      "kind": "proof_interface",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:1171:2: Type mismatch"
+      ]
+    },
+    {
+      "label": "S5-T7a-P2 full Decode pin is supplied a different validated input",
+      "kind": "proof_interface",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:1181:4: Application type mismatch: The argument"
+      ]
+    },
+    {
+      "label": "S5-T7a-P3 typed output shape pin omits the initial time slice",
+      "kind": "proof_interface",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:1180:3: Application type mismatch: The argument"
+      ]
+    },
+    {
+      "label": "S5-T7b-F1 missing-X raw binding becomes present including empty tensors",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:1242:0: scan-regression-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"accepted\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")]",
+        "test/Semantics/PlanScanHistoryTest.lean:1246:0: scan-regression-empty-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"accepted\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")]"
+      ]
+    },
+    {
+      "label": "S5-T7b-F2 missing-Z raw binding becomes present including empty tensors",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:1242:0: scan-regression-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"accepted\", \"accepted\"), (\"H\", \"accepted\")]",
+        "test/Semantics/PlanScanHistoryTest.lean:1246:0: scan-regression-empty-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"accepted\", \"accepted\"), (\"H\", \"accepted\")]"
+      ]
+    },
+    {
+      "label": "S5-T7b-F3 extra-H raw binding becomes absent including empty tensors",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:1242:0: scan-regression-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"accepted\", \"accepted\")]",
+        "test/Semantics/PlanScanHistoryTest.lean:1246:0: scan-regression-empty-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"accepted\", \"accepted\")]"
+      ]
+    },
+    {
+      "label": "S5-T7b-F4 extended history observation substitutes the shorter bound",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:1261:0: scan-regression-extended-nonlinear-check-done-full-decode: expected (true,"
+      ]
+    },
+    {
+      "label": "S5-T7b-F5 selected mixed-registry operator becomes identity",
+      "kind": "fixture_observation",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:1328:0: scan-regression-mixed-registry-check-done-full-decode: expected (true, (\"done\", 9), true, some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), true, some [[4, 7], [5, 9], [6, 11]], some [[4, 7], [16, 30], [63, 482]])",
+        "test/Semantics/PlanScanHistoryTest.lean:1338:0: scan-regression-mixed-selected-nonlinear-transition: expected (15, 28), got (4, 7)"
+      ]
+    },
+    {
+      "label": "S5-T7b-P1 unused mixed-registry entry changes binary arity",
+      "kind": "proof_interface",
+      "cycle_exit_codes": {
+        "mutation": 1,
+        "restore_hash": 0,
+        "restored_build": 0
+      },
+      "observed_exact_anchors": [
+        "test/Semantics/PlanScanHistoryTest.lean:1320:53: Application type mismatch: The argument"
+      ]
+    }
+  ]
+}
