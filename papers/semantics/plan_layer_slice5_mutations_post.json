@@ -240,5 +240,14 @@
     "new": "  | ⟨.H, c⟩ => history f.transition (inputX η) (inputZ η) 0 c.1",
     "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Model", "Semantics.ScanHistoryPlanPrototype"],
     "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Model.lean:226:6: Tactic `rfl` failed: The left-hand side", "LeanNCD/Semantics/Plan/ScanHistory/Model.lean:269:8: Type mismatch"]
+  },
+  {
+    "label": "S5-T4a-M1 command phase one publishes before accumulation",
+    "task": "T4a",
+    "file": "LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean",
+    "old": "  [[.initZero B], [.acc G], [.pub B]]",
+    "new": "  [[.initZero B], [.pub B], [.acc G]]",
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Prefix", "Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:27:2: Type mismatch: After simplification, term", "LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:36:2: Type mismatch: After simplification, term"]
   }
 ]

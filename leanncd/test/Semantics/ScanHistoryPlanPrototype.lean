@@ -1,5 +1,6 @@
 import LeanNCD.Semantics.Plan.ScanHistory.Plan
 import LeanNCD.Semantics.Plan.ScanHistory.Coverage
+import LeanNCD.Semantics.Plan.ScanHistory.Prefix
 import LeanNCD.Semantics.Plan.ScanHistory.Evaluation
 import LeanNCD.Semantics.Plan.ScanHistory.Model
 import LeanNCD.Semantics.Plan.Validity
@@ -90,6 +91,138 @@ def scalarPrefix (pc : Nat) :=
 def scalarMemory (pc : Nat) :=
   match scalarPrefix pc with
   | .done _ M | .failed _ _ M | .stuck _ M => M
+
+def commandTag {V : Type} {d : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) (N pc : Nat) : String :=
+  match (plan f N).commands[pc]? with
+  | some [.initZero _] => "init"
+  | some [.acc _] => "acc"
+  | some [.pub _] => "pub"
+  | none => "end"
+  | _ => "other"
+
+def scalarPrefixBookkeeping (pc : Nat) :=
+  ((scalarPlan.consList pc).length, (scalarPlan.matList pc).length,
+    (scalarPlan.pubList pc).length,
+    (List.finRange 3).map fun l =>
+      (group (registered 1 doubleState) 2 l).all fun x =>
+        decide (x ∈ scalarPlan.consList pc),
+    (List.finRange 3).map fun l =>
+      decide (historyDefAddr (registered 1 doubleState) 2 0 l ∈ scalarPlan.matList pc),
+    (List.finRange 3).map fun l =>
+      decide (historyDefAddr (registered 1 doubleState) 2 0 l ∈ scalarPlan.pubList pc))
+
+#eval check "scan-prototype-command-phase-tags"
+  ((List.range 10).map fun pc => commandTag (registered 1 doubleState) 2 pc)
+  ["init", "acc", "pub", "init", "acc", "pub", "init", "acc", "pub", "end"]
+
+#eval check "scan-prototype-all-phase-prefix-bookkeeping"
+  ((List.range 10).map scalarPrefixBookkeeping)
+  [(0, 0, 0, [false, false, false], [false, false, false], [false, false, false]),
+   (0, 1, 0, [false, false, false], [true, false, false], [false, false, false]),
+   (2, 1, 0, [true, false, false], [true, false, false], [false, false, false]),
+   (2, 1, 1, [true, false, false], [true, false, false], [true, false, false]),
+   (2, 2, 1, [true, false, false], [true, true, false], [true, false, false]),
+   (4, 2, 1, [true, true, false], [true, true, false], [true, false, false]),
+   (4, 2, 2, [true, true, false], [true, true, false], [true, true, false]),
+   (4, 3, 2, [true, true, false], [true, true, true], [true, true, false]),
+   (6, 3, 2, [true, true, true], [true, true, true], [true, true, false]),
+   (6, 3, 3, [true, true, true], [true, true, true], [true, true, true])]
+
+#eval check "scan-prototype-empty-zero-retains-three-commands"
+  ((List.range 4).map fun pc => commandTag (registered 0 id) 0 pc,
+  (plan (registered 0 id) 0).commands.length,
+  (List.range 4).map fun pc =>
+    (((plan (registered 0 id) 0).consList pc).isEmpty,
+      ((plan (registered 0 id) 0).matList pc).isEmpty,
+      ((plan (registered 0 id) 0).pubList pc).isEmpty))
+  (["init", "acc", "pub", "end"], 3,
+    [(true, true, true), (true, true, true), (true, true, true), (true, true, true)])
+
+#eval check "scan-prototype-nearest-acc-and-pub-boundaries"
+  ((scalarPlan.consList 1).length, (scalarPlan.consList 2).length,
+    (scalarPlan.pubList 2).length, (scalarPlan.pubList 3).length)
+  (0, 2, 0, 1)
+
+theorem generic_command_lookup_pin {V : Type} {d : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) (N : Nat) (k : Fin (N + 1)) :
+    (plan f N).commands[3 * k.val]? = some [.initZero (block f N k)] ∧
+    (plan f N).commands[3 * k.val + 1]? = some [.acc (group f N k)] ∧
+    (plan f N).commands[3 * k.val + 2]? = some [.pub (block f N k)] ∧
+    (plan f N).commands[3 * (N + 1)]? = none :=
+  ⟨command_init f N k, command_acc f N k, command_pub f N k, command_end f N⟩
+
+theorem generic_prefix_phase_lists_pin {V : Type} {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (N : Nat) (k : Fin (N + 1)) :
+    ((plan f N).consList (3 * k.val), (plan f N).matList (3 * k.val),
+      (plan f N).pubList (3 * k.val)) =
+      (beforeG f N k.val, beforeB f N k.val, beforeB f N k.val) ∧
+    ((plan f N).consList (3 * k.val + 1), (plan f N).matList (3 * k.val + 1),
+      (plan f N).pubList (3 * k.val + 1)) =
+      (beforeG f N k.val, beforeB f N k.val ++ block f N k, beforeB f N k.val) ∧
+    ((plan f N).consList (3 * k.val + 2), (plan f N).matList (3 * k.val + 2),
+      (plan f N).pubList (3 * k.val + 2)) =
+      (beforeG f N k.val ++ group f N k, beforeB f N k.val ++ block f N k,
+        beforeB f N k.val) ∧
+    ((plan f N).consList (3 * (k.val + 1)), (plan f N).matList (3 * (k.val + 1)),
+      (plan f N).pubList (3 * (k.val + 1))) =
+      (beforeG f N (k.val + 1), beforeB f N (k.val + 1), beforeB f N (k.val + 1)) := by
+  obtain ⟨h0, h1, h2, h3⟩ := prefix_phase_lists f N k
+  exact ⟨by rw [h0.1, h0.2.1, h0.2.2],
+    by rw [h1.1, h1.2.1, h1.2.2],
+    by rw [h2.1, h2.2.1, h2.2.2],
+    by rw [h3.1, h3.2.1, h3.2.2]⟩
+
+theorem generic_boundary_pin (N pc : Nat) (hpc : pc ≤ 3 * (N + 1)) :
+    pc = 3 * (N + 1) ∨
+      ∃ k : Fin (N + 1), ∃ phase : Fin 3, pc = 3 * k.val + phase.val :=
+  boundary_decomposition N pc hpc
+
+theorem generic_retirement_pin {V : Type} {d : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) (N pc : Nat) : (plan f N).retList pc = [] :=
+  prefix_retList f N pc
+
+theorem generic_command_index_pin (N pc : Nat) (hpc : pc < 3 * (N + 1)) :
+    ∃ k : Fin (N + 1), ∃ phase : Fin 3, pc = 3 * k.val + phase.val :=
+  command_index_decomposition N pc hpc
+
+theorem generic_endpoint_lists_pin {V : Type} {d : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) (N : Nat) :
+    ((plan f N).consList 0 = [] ∧ (plan f N).matList 0 = [] ∧
+      (plan f N).pubList 0 = []) ∧
+    ((plan f N).consList (3 * (N + 1)) = (List.finRange (N + 1)).flatMap (group f N) ∧
+      (plan f N).matList (3 * (N + 1)) = (List.finRange (N + 1)).flatMap (block f N) ∧
+      (plan f N).pubList (3 * (N + 1)) = (List.finRange (N + 1)).flatMap (block f N)) := by
+  constructor
+  · simp [consList, matList, pubList, prefixAnn]
+  · have full : (List.finRange (N + 1)).take (N + 1) = List.finRange (N + 1) :=
+      List.take_of_length_le (by simp)
+    simpa [beforeB, beforeG, full] using
+      And.intro (consList_phase_zero f N (N + 1))
+        (And.intro (matList_phase_zero f N (N + 1)) (pubList_phase_zero f N (N + 1)))
+
+theorem empty_zero_commands_pin :
+    (plan (registered 0 id) 0).commands = [[.initZero []], [.acc []], [.pub []]] := by
+  rfl
+
+theorem no_transition_commands_pin {V : Type} {d : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) :
+    (plan f 0).commands[0]? = some [.initZero (block f 0 0)] ∧
+    (plan f 0).commands[1]? = some [.acc (group f 0 0)] ∧
+    (plan f 0).commands[2]? = some [.pub (block f 0 0)] ∧
+    (plan f 0).commands[3]? = none :=
+  generic_command_lookup_pin f 0 0
+
+theorem empty_dimension_commands_pin {V : Type} {r : Registry (Carrier V)}
+    (f : RegisteredF r 0) (N : Nat) (k : Fin (N + 1)) :
+    (plan f N).commands[3 * k.val]? = some [.initZero []] ∧
+    (plan f N).commands[3 * k.val + 1]? = some [.acc []] ∧
+    (plan f N).commands[3 * k.val + 2]? = some [.pub []] ∧
+    (plan f N).commands.length = 3 * (N + 1) := by
+  simpa [block, zero_dim_group] using
+    And.intro (command_init f N k)
+      (And.intro (command_acc f N k) (And.intro (command_pub f N k) (plan_length f N)))
+
 
 #eval check "scan-prototype-retained-prefix-memory"
   ((List.range 10).map fun pc =>
@@ -529,6 +662,15 @@ theorem independent_empty_output_pin (N : Nat) :
   exact Fin.elim0 c.1
 
 #print axioms generic_history_model_pin
+#print axioms generic_command_lookup_pin
+#print axioms generic_prefix_phase_lists_pin
+#print axioms generic_boundary_pin
+#print axioms generic_retirement_pin
+#print axioms generic_command_index_pin
+#print axioms generic_endpoint_lists_pin
+#print axioms empty_zero_commands_pin
+#print axioms no_transition_commands_pin
+#print axioms empty_dimension_commands_pin
 #print axioms generic_history_output_pin
 #print axioms independent_scalar_model_pin
 #print axioms independent_vector_model_pin

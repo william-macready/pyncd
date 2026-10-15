@@ -41,6 +41,29 @@ theorem scheduleCommands_take {ι : Type} (slices : List ι)
       scheduleCommands (slices.take k) blocks groups :=
   take_flatMap_three slices _ (fun _ => rfl) k
 
+theorem getElem?_flatMap_three {α β : Type} (items : List α) (emit : α → List β)
+    (size : ∀ x, (emit x).length = 3) {k : Nat} {x : α}
+    (hx : items[k]? = some x) (phase : Nat) (hp : phase < 3) :
+    (items.flatMap emit)[3 * k + phase]? = (emit x)[phase]? := by
+  induction k generalizing items with
+  | zero =>
+    cases items with
+    | nil => simp at hx
+    | cons y ys =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at hx
+      subst y
+      simp only [List.flatMap_cons, Nat.mul_zero, Nat.zero_add]
+      exact List.getElem?_append_left (by rw [size]; exact hp)
+  | succ k ih =>
+    cases items with
+    | nil => simp at hx
+    | cons y ys =>
+      have hys : ys[k]? = some x := by simpa using hx
+      rw [List.flatMap_cons, List.getElem?_append_right (by rw [size]; omega), size]
+      have index : 3 * (k + 1) + phase - 3 = 3 * k + phase := by omega
+      rw [index]
+      exact ih ys hys
+
 theorem scheduleCommands_pubs {ι : Type} (slices : List ι)
     (blocks : ι → List (DefAddr P)) (groups : ι → List (OccRef P)) :
     (scheduleCommands slices blocks groups).flatten.flatMap Ann.blocks =
@@ -117,6 +140,7 @@ theorem singleton_of_scheduleCommands {ι : Type} (π : P.Plan) (slices : List �
 #print axioms scheduleCommands_length
 #print axioms take_flatMap_three
 #print axioms scheduleCommands_take
+#print axioms getElem?_flatMap_three
 #print axioms scheduleCommands_pubs
 #print axioms pubList_at_slice_boundary
 #print axioms scheduleCommands_groups
