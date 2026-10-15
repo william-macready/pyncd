@@ -1,6 +1,7 @@
 import LeanNCD.Semantics.Plan.ScanHistory.Plan
 import LeanNCD.Semantics.Plan.ScanHistory.Coverage
 import LeanNCD.Semantics.Plan.ScanHistory.Prefix
+import LeanNCD.Semantics.Plan.ScanHistory.Validity
 import LeanNCD.Semantics.Plan.ScanHistory.Evaluation
 import LeanNCD.Semantics.Plan.ScanHistory.Model
 import LeanNCD.Semantics.Plan.Validity
@@ -794,6 +795,111 @@ theorem empty_history_roles_pin (N : Nat) :
 #print axioms generic_history_endpoints_pin
 #print axioms no_transition_history_live_pin
 #print axioms empty_history_roles_pin
+
+theorem generic_side_conditions_pin {V : Type} {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (N : Nat) :
+    (∀ pc B, (plan f N).commands[pc]? = some [.initZero B] →
+      (plan f N).InitOK pc B) ∧
+    (∀ pc G, (plan f N).commands[pc]? = some [.acc G] →
+      (plan f N).AccOK pc G) ∧
+    (∀ pc B, (plan f N).commands[pc]? = some [.pub B] →
+      (plan f N).PubOK pc B) :=
+  ⟨plan_initOK f N, plan_accOK f N, plan_pubOK f N⟩
+
+theorem scalar_side_conditions_pin :
+    scalarPlan.InitOK 3 (block (registered 1 doubleState) 2 1) ∧
+    scalarPlan.AccOK 4 (group (registered 1 doubleState) 2 1) ∧
+    scalarPlan.PubOK 5 (block (registered 1 doubleState) 2 1) :=
+  ⟨plan_initOK _ _ _ _ (command_init _ _ 1),
+    plan_accOK _ _ _ _ (command_acc _ _ 1),
+    plan_pubOK _ _ _ _ (command_pub _ _ 1)⟩
+
+theorem vector_side_conditions_pin :
+    (plan (registered 2 crossNonlinear) 2).InitOK 6
+      (block (registered 2 crossNonlinear) 2 2) ∧
+    (plan (registered 2 crossNonlinear) 2).AccOK 7
+      (group (registered 2 crossNonlinear) 2 2) ∧
+    (plan (registered 2 crossNonlinear) 2).PubOK 8
+      (block (registered 2 crossNonlinear) 2 2) :=
+  ⟨plan_initOK _ _ _ _ (command_init _ _ 2),
+    plan_accOK _ _ _ _ (command_acc _ _ 2),
+    plan_pubOK _ _ _ _ (command_pub _ _ 2)⟩
+
+theorem no_transition_side_conditions_pin :
+    (plan (registered 1 doubleState) 0).InitOK 0
+      (block (registered 1 doubleState) 0 0) ∧
+    (plan (registered 1 doubleState) 0).AccOK 1
+      (group (registered 1 doubleState) 0 0) ∧
+    (plan (registered 1 doubleState) 0).PubOK 2
+      (block (registered 1 doubleState) 0 0) :=
+  ⟨plan_initOK _ _ _ _ (command_init _ _ 0),
+    plan_accOK _ _ _ _ (command_acc _ _ 0),
+    plan_pubOK _ _ _ _ (command_pub _ _ 0)⟩
+
+theorem empty_history_side_conditions_pin (N : Nat) (k : Fin (N + 1)) :
+    (plan (registered 0 id) N).InitOK (3 * k.val) [] ∧
+    (plan (registered 0 id) N).AccOK (3 * k.val + 1) [] ∧
+    (plan (registered 0 id) N).PubOK (3 * k.val + 2) [] := by
+  simpa only [block, List.finRange_zero, List.map_nil, zero_dim_group] using
+    And.intro (plan_initOK_slice (registered 0 id) N k)
+      (And.intro (plan_accOK_slice (registered 0 id) N k)
+        (plan_pubOK_slice (registered 0 id) N k))
+
+theorem empty_zero_side_conditions_pin :
+    (plan (registered 0 id) 0).InitOK 0 [] ∧
+    (plan (registered 0 id) 0).AccOK 1 [] ∧
+    (plan (registered 0 id) 0).PubOK 2 [] :=
+  empty_history_side_conditions_pin 0 0
+
+def wrongTagsPlan :=
+  { scalarPlan with
+    commands := scheduleCommands (List.finRange 3) (block (registered 1 doubleState) 2)
+      (fun l => if l = 0 then
+        initialGroup (registered 1 doubleState) 2 ++
+          initialGroup (registered 1 doubleState) 2
+        else group (registered 1 doubleState) 2 l) }
+
+#eval check "scan-prototype-wrong-tags-coverage-vs-control"
+  ((wrongTagsPlan.accFlat.length, wrongTagsPlan.checkCov1Nodup,
+      wrongTagsPlan.checkCov1Complete, wrongTagsPlan.checkCov2Complete),
+    (scalarPlan.accFlat.length, scalarPlan.checkCov1Nodup,
+      scalarPlan.checkCov1Complete, scalarPlan.checkCov2Complete))
+  ((6, false, false, true), (6, true, true, true))
+
+#eval check "scan-prototype-wrong-tags-static-components-vs-control"
+  ((wrongTagsPlan.checkInit 0 (block (registered 1 doubleState) 2 0),
+      wrongTagsPlan.checkAccFresh 1
+        (initialGroup (registered 1 doubleState) 2 ++ initialGroup (registered 1 doubleState) 2),
+      wrongTagsPlan.checkAccMat 1
+        (initialGroup (registered 1 doubleState) 2 ++ initialGroup (registered 1 doubleState) 2),
+      wrongTagsPlan.checkPubFresh 2 (block (registered 1 doubleState) 2 0),
+      wrongTagsPlan.checkPubMat 2 (block (registered 1 doubleState) 2 0),
+      wrongTagsPlan.checkPubOrder 2 (block (registered 1 doubleState) 2 0)),
+    (scalarPlan.checkInit 0 (block (registered 1 doubleState) 2 0),
+      scalarPlan.checkAccFresh 1 (group (registered 1 doubleState) 2 0),
+      scalarPlan.checkAccMat 1 (group (registered 1 doubleState) 2 0),
+      scalarPlan.checkPubFresh 2 (block (registered 1 doubleState) 2 0),
+      scalarPlan.checkPubMat 2 (block (registered 1 doubleState) 2 0),
+      scalarPlan.checkPubOrder 2 (block (registered 1 doubleState) 2 0)))
+  ((true, false, true, true, true, false), (true, true, true, true, true, true))
+
+#eval check "scan-prototype-wrong-tags-all-targeting-occurrences"
+  (decide (wrongTagsPlan.Cons 2
+      ⟨historyDefined (registered 1 doubleState) 2,
+        persistentOccurrence (registered 1 doubleState) 2 0 0⟩),
+    decide (wrongTagsPlan.Cons 2
+      ⟨historyDefined (registered 1 doubleState) 2,
+        initialOccurrence (registered 1 doubleState) 2 0⟩),
+    wrongTagsPlan.checkSteps, wrongTagsPlan.checkLayouts,
+    wrongTagsPlan.checkPlan, scalarPlan.checkPlan)
+  (false, true, false, true, false, true)
+
+#print axioms generic_side_conditions_pin
+#print axioms scalar_side_conditions_pin
+#print axioms vector_side_conditions_pin
+#print axioms no_transition_side_conditions_pin
+#print axioms empty_history_side_conditions_pin
+#print axioms empty_zero_side_conditions_pin
 
 end LeanNCD.Semantics.ScanHistoryPlanPrototype
 
