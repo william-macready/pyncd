@@ -249,5 +249,14 @@
     "new": "  [[.initZero B], [.pub B], [.acc G]]",
     "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Prefix", "Semantics.ScanHistoryPlanPrototype"],
     "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:27:2: Type mismatch: After simplification, term", "LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:36:2: Type mismatch: After simplification, term"]
+  },
+  {
+    "label": "S5-T4b-F1 before-pub read fixture is shifted to its legal neighbour",
+    "task": "T4b",
+    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "old": "  (scalarPlan.readPub 2 (scalarMemory 2) (historyAddress 1 2 0 0),",
+    "new": "  (scalarPlan.readPub 3 (scalarMemory 3) (historyAddress 1 2 0 0),",
+    "targets": ["Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:710:0: scan-prototype-history-before-and-after-pub: expected (none, some 5, none, some 12), got (some 5, some 5, none, some 12)"]
   }
 ]

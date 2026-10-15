@@ -707,6 +707,94 @@ theorem independent_empty_output_pin (N : Nat) :
 #print axioms collected_vector_succ_pin
 #print axioms collected_empty_admEnv_pin
 
+#eval check "scan-prototype-history-before-and-after-pub"
+  (scalarPlan.readPub 2 (scalarMemory 2) (historyAddress 1 2 0 0),
+  scalarPlan.readPub 3 (scalarMemory 3) (historyAddress 1 2 0 0),
+  scalarPlan.readPub 5 (scalarMemory 5) (historyAddress 1 2 0 1),
+  scalarPlan.readPub 6 (scalarMemory 6) (historyAddress 1 2 0 1))
+  (none, some 5, none, some 12)
+
+def vectorPlan := plan (registered 2 crossNonlinear) 2
+def vectorPrefix (pc : Nat) :=
+  vectorPlan.runFrom RationalReference.ops 0
+    (vectorPlan.Start (input (registered 2 crossNonlinear) 2 vectorX vectorZ))
+    (vectorPlan.commands.take pc)
+def vectorMemory (pc : Nat) :=
+  match vectorPrefix pc with
+  | .done _ M | .failed _ _ M | .stuck _ M => M
+
+def vectorPublished (pc : Nat) (l : Fin 3) : List (Option ℚ) :=
+  (List.finRange 2).map fun i =>
+    vectorPlan.readPub pc (vectorMemory pc) (historyAddress 2 2 i l)
+
+#eval check "scan-prototype-vector-whole-previous-slice-read-boundaries"
+  (vectorPublished 4 0, vectorPublished 5 1, vectorPublished 6 1, vectorPublished 7 1)
+  ([some 4, some 7], [none, none], [some 16, some 30], [some 16, some 30])
+
+#eval check "scan-prototype-empty-history-decodes-at-zero"
+  (((plan (registered 0 id) 2).Decode 0
+    ((plan (registered 0 id) 2).Start
+      (input (registered 0 id) 2 emptyState emptyState))).isSome,
+  ((plan (registered 0 id) 0).Decode 0
+    ((plan (registered 0 id) 0).Start
+      (input (registered 0 id) 0 emptyState emptyState))).isSome)
+  (true, true)
+
+theorem generic_prefix_membership_pin {V : Type} {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (N pc : Nat)
+    (hpc : pc ≤ 3 * (N + 1)) :
+    (∀ x, (plan f N).Cons pc x ↔
+      ∃ i l, 3 * l.val + 2 ≤ pc ∧ x.target = historyDefAddr f N i l) ∧
+    (∀ i l, (plan f N).Mat pc (historyDefAddr f N i l) ↔ 3 * l.val + 1 ≤ pc) ∧
+    (∀ i l, (plan f N).Pub pc (historyAddress d N i l) ↔ 3 * (l.val + 1) ≤ pc) :=
+  prefix_membership f N pc hpc
+
+theorem generic_history_live_pin {V : Type} {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (N pc : Nat)
+    (hpc : pc ≤ 3 * (N + 1)) (i : Fin d) (l : Fin (N + 1)) :
+    (plan f N).Live pc (historyAddress d N i l) ↔ 3 * (l.val + 1) ≤ pc :=
+  history_live_iff f N pc hpc i l
+
+theorem generic_input_live_pin {V : Type} {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (N pc : Nat) (i : Fin d) :
+    ((plan f N).Pub pc ⟨.X, stateCoord i⟩ ∧
+      (plan f N).Live pc ⟨.X, stateCoord i⟩) ∧
+    ((plan f N).Pub pc ⟨.Z, stateCoord i⟩ ∧
+      (plan f N).Live pc ⟨.Z, stateCoord i⟩) :=
+  ⟨input_pub_live f N pc _ rfl, input_pub_live f N pc _ rfl⟩
+
+theorem generic_history_endpoints_pin {V : Type} {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (N : Nat)
+    (i : Fin d) (l : Fin (N + 1)) :
+    ¬ (plan f N).Live 0 (historyAddress d N i l) ∧
+      (plan f N).Live (3 * (N + 1)) (historyAddress d N i l) := by
+  rw [history_live_iff f N 0 (by omega),
+    history_live_iff f N (3 * (N + 1)) (by omega)]
+  have := l.isLt
+  omega
+
+theorem no_transition_history_live_pin :
+    ¬ (plan (registered 1 doubleState) 0).Live 2 (historyAddress 1 0 0 0) ∧
+      (plan (registered 1 doubleState) 0).Live 3 (historyAddress 1 0 0 0) := by
+  rw [history_live_iff _ 0 2 (by omega), history_live_iff _ 0 3 (by omega)]
+  decide
+
+theorem empty_history_roles_pin (N : Nat) :
+    (plan (registered 0 id) N).tensors = [.X, .Z, .H] ∧
+    (program (registered 0 id) N).input .X = true ∧
+    (program (registered 0 id) N).input .Z = true ∧
+    (program (registered 0 id) N).input .H = false ∧
+    (program (registered 0 id) N).output .H = true ∧
+    (plan (registered 0 id) N).commands.length = 3 * (N + 1) :=
+  ⟨rfl, rfl, rfl, rfl, rfl, plan_length _ N⟩
+
+#print axioms generic_prefix_membership_pin
+#print axioms generic_history_live_pin
+#print axioms generic_input_live_pin
+#print axioms generic_history_endpoints_pin
+#print axioms no_transition_history_live_pin
+#print axioms empty_history_roles_pin
+
 end LeanNCD.Semantics.ScanHistoryPlanPrototype
 
 #audit_axioms LeanNCD.Semantics.Program.Plan.ScanHistory
