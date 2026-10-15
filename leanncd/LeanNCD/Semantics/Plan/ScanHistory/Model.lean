@@ -185,6 +185,103 @@ theorem collect_succ (f : RegisteredF r d)
   intro o _
   split_ifs <;> rfl
 
+def historyStore (f : RegisteredF r d) (N : Nat) (η : (program f N).Input) :
+    Store (Carrier V) (declarations d N)
+  | ⟨.X, c⟩ => inputX η c.1
+  | ⟨.Z, c⟩ => inputZ η c.1
+  | ⟨.H, c⟩ => history f.transition (inputX η) (inputZ η) c.2.1.val c.1
+
+theorem historyStore_models (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input) :
+    (program f N).Models ops η (historyStore f N η) := by
+  refine ⟨program_admEnv f N ops _, ?_, ?_⟩
+  · intro t g hg c
+    cases t with
+    | X =>
+        have he := (Option.some_get (η.property .X)).trans hg
+        obtain rfl := Option.some.inj he
+        rcases c with ⟨i, u⟩
+        cases u
+        rfl
+    | Z =>
+        have he := (Option.some_get (η.property .Z)).trans hg
+        obtain rfl := Option.some.inj he
+        rcases c with ⟨i, u⟩
+        cases u
+        rfl
+    | H =>
+        have presence := η.property .H
+        simp [hg, isInput] at presence
+  · intro t c
+    obtain rfl := defined_eq_history f t
+    rcases c with ⟨i, l, u⟩
+    cases u
+    change historyStore f N η (historyAddress d N i l) =
+      (program f N).collect ops (historyStore f N η) _
+        (historyDefined f N) (historyCoord i l)
+    refine Fin.cases ?_ (fun k => ?_) l
+    · rw [collect_zero]
+      rfl
+    · rw [collect_succ]
+      rfl
+
+theorem models_iff_historyStore (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input)
+    (ρ : Store (Carrier V) (declarations d N)) :
+    (program f N).Models ops η ρ ↔ ρ = historyStore f N η := by
+  constructor
+  · rintro ⟨h, agree, equations⟩
+    have hx (i : Fin d) : ρ ⟨.X, stateCoord i⟩ = inputX η i :=
+      agree .X _ (Option.some_get (η.property .X)).symm (stateCoord i)
+    have hz (i : Fin d) : ρ ⟨.Z, stateCoord i⟩ = inputZ η i :=
+      agree .Z _ (Option.some_get (η.property .Z)).symm (stateCoord i)
+    have hh : ∀ (l : Fin (N + 1)) (i : Fin d),
+        ρ (historyAddress d N i l) =
+          history f.transition (inputX η) (inputZ η) l.val i := by
+      intro l
+      refine Fin.induction ?_ ?_ l
+      · intro i
+        change ρ ⟨(historyDefined f N).val, historyCoord i 0⟩ = _
+        rw [equations (historyDefined f N) (historyCoord i 0), collect_zero, hx, hz]
+        rfl
+      · intro k ih i
+        have slice :
+            (fun j => ρ (historyAddress d N j k.castSucc)) =
+              history f.transition (inputX η) (inputZ η) k.val := funext ih
+        change ρ ⟨(historyDefined f N).val, historyCoord i k.succ⟩ = _
+        rw [equations (historyDefined f N) (historyCoord i k.succ),
+          collect_succ, hx, slice]
+        rfl
+    funext a
+    rcases a with ⟨t, c⟩
+    cases t with
+    | X =>
+        rcases c with ⟨i, u⟩
+        cases u
+        exact hx i
+    | Z =>
+        rcases c with ⟨i, u⟩
+        cases u
+        exact hz i
+    | H =>
+        rcases c with ⟨i, l, u⟩
+        cases u
+        exact hh l i
+  · rintro rfl
+    exact historyStore_models f N ops η
+
+def history_output (f : RegisteredF r d) (N : Nat) (η : (program f N).Input) :
+    (program f N).Output :=
+  (program f N).outputProjection (historyStore f N η)
+
+theorem history_output_coord (f : RegisteredF r d) (N : Nat)
+    (η : (program f N).Input) (i : Fin d) (l : Fin (N + 1)) :
+    history_output f N η ⟨.H, rfl⟩ (historyCoord i l) =
+      history f.transition (inputX η) (inputZ η) l.val i := rfl
+
+#print axioms historyStore_models
+#print axioms models_iff_historyStore
+#print axioms history_output_coord
 #print axioms persistent_outcome
 #print axioms initial_outcome
 #print axioms recurrence_outcome

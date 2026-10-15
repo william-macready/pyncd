@@ -231,5 +231,14 @@
     "new": "   let wrong := persistentGroup f 2 0 ++ initialGroup f 2",
     "targets": ["Semantics.ScanHistoryPlanPrototype"],
     "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:393:0: scan-prototype-collected-same-size-wrong-occurrence: expected (2, 2, 5, 4), got (2, 2, 5, 5)"]
+  },
+  {
+    "label": "S5-T2b-M1 independent model store repeats only the base state",
+    "task": "T2b",
+    "file": "LeanNCD/Semantics/Plan/ScanHistory/Model.lean",
+    "old": "  | ⟨.H, c⟩ => history f.transition (inputX η) (inputZ η) c.2.1.val c.1",
+    "new": "  | ⟨.H, c⟩ => history f.transition (inputX η) (inputZ η) 0 c.1",
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Model", "Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Model.lean:226:6: Tactic `rfl` failed: The left-hand side", "LeanNCD/Semantics/Plan/ScanHistory/Model.lean:269:8: Type mismatch"]
   }
 ]

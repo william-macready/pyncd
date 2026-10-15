@@ -401,6 +401,144 @@ theorem collected_empty_admEnv_pin :
      (wrong.map fun x => P.contribution RationalReference.ops collectedScalarStore h x.1 x.2).sum))
   (2, 2, 5, 4)
 
+def oracleStore {d N : Nat} (F : State ℚ d → State ℚ d) (X Z : State ℚ d) :
+    Store (Carrier ℚ) (declarations d N) :=
+  collectedStore X Z (fun i l => history F X Z l.val i)
+
+def independentScalarStore := oracleStore (N := 2) doubleState scalarX scalarZ
+def independentVectorStore := oracleStore (N := 2) crossNonlinear vectorX vectorZ
+
+def independentOutputRows {d : Nat} (F : State ℚ d → State ℚ d) (N : Nat)
+    (η : (program (registered d F) N).Input) : List (List ℚ) :=
+  (List.finRange (N + 1)).map fun l => (List.finRange d).map fun i =>
+    history_output (registered d F) N η ⟨.H, rfl⟩ (historyCoord i l)
+
+#eval check "scan-prototype-independent-scalar-model-output"
+  (independentOutputRows doubleState 2 directScalarInput,
+    trace doubleState scalarX scalarZ 2)
+  ([[5], [12], [26]], [[5], [12], [26]])
+#eval check "scan-prototype-independent-vector-model-output"
+  (independentOutputRows crossNonlinear 2
+    (input (registered 2 crossNonlinear) 2 vectorX vectorZ),
+    trace crossNonlinear vectorX vectorZ 2)
+  ([[4, 7], [16, 30], [63, 482]], [[4, 7], [16, 30], [63, 482]])
+#eval check "scan-prototype-independent-no-transitions-output"
+  (independentOutputRows doubleState 0 (input (registered 1 doubleState) 0 scalarX scalarZ))
+  [[5]]
+#eval check "scan-prototype-independent-empty-history-output"
+  (independentOutputRows id 2 (input (registered 0 id) 2 emptyState emptyState))
+  [[], [], []]
+#eval check "scan-prototype-independent-empty-zero-output"
+  (independentOutputRows id 0 directEmptyInput,
+    (directEmptyInput.val .X).isSome, (directEmptyInput.val .Z).isSome,
+    (directEmptyInput.val .H).isNone)
+  ([[]], true, true, true)
+
+theorem generic_history_model_pin {V : Type} [AddCommMonoid V] {d N : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input) :
+    (program f N).Models ops η (historyStore f N η) ∧
+      ∀ ρ, (program f N).Models ops η ρ ↔ ρ = historyStore f N η :=
+  ⟨historyStore_models f N ops η, models_iff_historyStore f N ops η⟩
+
+theorem generic_history_output_pin {V : Type} [AddCommMonoid V] {d N : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (η : (program f N).Input) :
+    ((declarations d N).signature .H).axes.map Axis.extent = [d, N + 1] ∧
+    (program f N).output .H = true ∧
+    (η.val .X).isSome = true ∧ (η.val .Z).isSome = true ∧
+    (η.val .H).isSome = false ∧
+    history_output f N η ⟨.H, rfl⟩ =
+      (fun c : Coord (historyShape d N) =>
+        history f.transition (inputX η) (inputZ η) c.2.1.val c.1) := by
+  exact ⟨rfl, rfl, η.property .X, η.property .Z, η.property .H, rfl⟩
+
+theorem independent_scalar_model_pin :
+    (program (registered 1 doubleState) 2).Models RationalReference.ops
+      directScalarInput independentScalarStore ∧
+    ∀ ρ, (program (registered 1 doubleState) 2).Models RationalReference.ops
+      directScalarInput ρ ↔ ρ = independentScalarStore := by
+  change (program (registered 1 doubleState) 2).Models RationalReference.ops
+      directScalarInput (historyStore _ _ directScalarInput) ∧ _
+  exact generic_history_model_pin _ _ _
+
+theorem independent_vector_model_pin :
+    (program (registered 2 crossNonlinear) 2).Models RationalReference.ops
+      (input (registered 2 crossNonlinear) 2 vectorX vectorZ) independentVectorStore ∧
+    ∀ ρ, (program (registered 2 crossNonlinear) 2).Models RationalReference.ops
+      (input (registered 2 crossNonlinear) 2 vectorX vectorZ) ρ ↔
+        ρ = independentVectorStore :=
+  generic_history_model_pin _ _ _
+
+theorem independent_scalar_output_pin (i : Fin 1) (l : Fin 3) :
+    history_output (registered 1 doubleState) 2 directScalarInput
+      ⟨.H, rfl⟩ (historyCoord i l) = (![5, 12, 26] l) := by
+  change history doubleState scalarX scalarZ l.val i = (![5, 12, 26] l)
+  fin_cases i
+  fin_cases l <;> norm_num [history, doubleState, scalarX, scalarZ]
+
+theorem independent_vector_output_pin (i : Fin 2) (l : Fin 3) :
+    history_output (registered 2 crossNonlinear) 2
+      (input (registered 2 crossNonlinear) 2 vectorX vectorZ)
+      ⟨.H, rfl⟩ (historyCoord i l) = ((![![4, 7], ![16, 30], ![63, 482]] l) i) := by
+  change history crossNonlinear vectorX vectorZ l.val i =
+    ((![![4, 7], ![16, 30], ![63, 482]] l) i)
+  fin_cases i <;> fin_cases l <;> norm_num [history, crossNonlinear, vectorX, vectorZ]
+
+theorem independent_no_transition_model_pin :
+    (program (registered 1 doubleState) 0).Models RationalReference.ops
+      (input (registered 1 doubleState) 0 scalarX scalarZ)
+      (oracleStore (N := 0) doubleState scalarX scalarZ) ∧
+    ∀ ρ, (program (registered 1 doubleState) 0).Models RationalReference.ops
+      (input (registered 1 doubleState) 0 scalarX scalarZ) ρ ↔
+        ρ = oracleStore (N := 0) doubleState scalarX scalarZ :=
+  generic_history_model_pin _ _ _
+
+theorem independent_no_transition_output_pin :
+    history_output (registered 1 doubleState) 0
+      (input (registered 1 doubleState) 0 scalarX scalarZ) ⟨.H, rfl⟩ =
+        (fun _ => 5) := by
+  funext c
+  rcases c with ⟨i, l, u⟩
+  fin_cases l
+  change (2 : ℚ) + 3 = 5
+  norm_num
+
+theorem independent_empty_model_pin :
+    (program (registered 0 id) 2).Models RationalReference.ops
+      (input (registered 0 id) 2 emptyState emptyState)
+      (oracleStore (N := 2) id emptyState emptyState) ∧
+    ∀ ρ, (program (registered 0 id) 2).Models RationalReference.ops
+      (input (registered 0 id) 2 emptyState emptyState) ρ ↔
+        ρ = oracleStore (N := 2) id emptyState emptyState :=
+  generic_history_model_pin _ _ _
+
+theorem independent_empty_zero_model_pin :
+    (program (registered 0 id) 0).Models RationalReference.ops
+      directEmptyInput (oracleStore (N := 0) id emptyState emptyState) ∧
+    ∀ ρ, (program (registered 0 id) 0).Models RationalReference.ops directEmptyInput ρ ↔
+      ρ = oracleStore (N := 0) id emptyState emptyState :=
+  generic_history_model_pin _ _ _
+
+theorem independent_empty_output_pin (N : Nat) :
+    ((declarations 0 N).signature .H).axes.map Axis.extent = [0, N + 1] ∧
+    history_output (registered 0 id) N
+      (input (registered 0 id) N emptyState emptyState) ⟨.H, rfl⟩ =
+        (fun c => Fin.elim0 c.1) := by
+  refine ⟨rfl, ?_⟩
+  funext c
+  exact Fin.elim0 c.1
+
+#print axioms generic_history_model_pin
+#print axioms generic_history_output_pin
+#print axioms independent_scalar_model_pin
+#print axioms independent_vector_model_pin
+#print axioms independent_scalar_output_pin
+#print axioms independent_vector_output_pin
+#print axioms independent_no_transition_model_pin
+#print axioms independent_no_transition_output_pin
+#print axioms independent_empty_model_pin
+#print axioms independent_empty_zero_model_pin
+#print axioms independent_empty_output_pin
 #print axioms selectedF_arrayExpr_pin
 #print axioms selectedF_recurrence_pin
 #print axioms validatedInput_pin
