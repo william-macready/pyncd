@@ -222,5 +222,14 @@
     "new": "  (List.finRange d).map fun i => historyDefAddr f N i 0",
     "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.ScanHistoryPlanPrototype"],
     "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:84:54: Application type mismatch: The argument"]
+  },
+  {
+    "label": "S5-T2a-F1 same-size wrong bag becomes the correct collected fibre",
+    "task": "T2a",
+    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "old": "   let wrong := persistentGroup f 2 0 ++ persistentGroup f 2 0",
+    "new": "   let wrong := persistentGroup f 2 0 ++ initialGroup f 2",
+    "targets": ["Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:393:0: scan-prototype-collected-same-size-wrong-occurrence: expected (2, 2, 5, 4), got (2, 2, 5, 5)"]
   }
 ]

@@ -1,6 +1,7 @@
 import LeanNCD.Semantics.Plan.ScanHistory.Plan
 import LeanNCD.Semantics.Plan.ScanHistory.Coverage
 import LeanNCD.Semantics.Plan.ScanHistory.Evaluation
+import LeanNCD.Semantics.Plan.ScanHistory.Model
 import LeanNCD.Semantics.Plan.Validity
 import Semantics.ScanHistoryRecurrencePrototype
 import Semantics.AxiomAudit
@@ -295,6 +296,111 @@ theorem empty_zero_coverage_pin :
     (plan (registered 0 id) 0).Coverage1 ∧ (plan (registered 0 id) 0).Coverage2 :=
   generic_coverage_pin _
 
+def collectedStore {d N : Nat} (X Z : State ℚ d)
+    (H : Fin d → Fin (N + 1) → ℚ) : Store (Carrier ℚ) (declarations d N)
+  | ⟨.X, c⟩ => X c.1
+  | ⟨.Z, c⟩ => Z c.1
+  | ⟨.H, c⟩ => H c.1 c.2.1
+
+def collectedScalarStore : Store (Carrier ℚ) (declarations 1 2) :=
+  collectedStore scalarX scalarZ (fun _ l => ![5, 12, 999] l)
+
+def collectedVectorStore : Store (Carrier ℚ) (declarations 2 2) :=
+  collectedStore vectorX vectorZ (fun i l => (![![4, 7], ![16, 30], ![901, 902]] l) i)
+
+def collectedRows {d N : Nat} (F : State ℚ d → State ℚ d)
+    (ρ : Store (Carrier ℚ) (declarations d N)) : List (List ℚ) :=
+  (List.finRange (N + 1)).map fun l => (List.finRange d).map fun i =>
+    (program (registered d F) N).collect RationalReference.ops ρ
+      (program_admEnv _ N RationalReference.ops ρ)
+      (historyDefined _ N) (historyCoord i l)
+
+theorem generic_admEnv_pin {V : Type} {d N : Nat} {r : Registry (Carrier V)}
+    (f : RegisteredF r d) (ops : (s : Unit) → ScalarOps (Carrier V s))
+    (ρ : Store (Carrier V) (declarations d N)) :
+    (program f N).AdmEnv ops ρ :=
+  program_admEnv f N ops ρ
+
+theorem generic_collect_pin {V : Type} [AddCommMonoid V] {d N : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d)
+    (ops : (s : Unit) → ScalarOps (Carrier V s))
+    (ρ : Store (Carrier V) (declarations d N)) :
+    (∀ i, (program f N).collect ops ρ (program_admEnv f N ops ρ)
+      (historyDefined f N) (historyCoord i 0) =
+        ρ ⟨.X, stateCoord i⟩ + ρ ⟨.Z, stateCoord i⟩) ∧
+    (∀ (i : Fin d) (k : Fin N), (program f N).collect ops ρ (program_admEnv f N ops ρ)
+      (historyDefined f N) (historyCoord i k.succ) =
+        ρ ⟨.X, stateCoord i⟩ +
+          f.transition (fun j => ρ (historyAddress d N j k.castSucc)) i) :=
+  ⟨fun i => collect_zero f ops ρ _ i, fun i k => collect_succ f ops ρ _ i k⟩
+
+theorem collected_scalar_zero_pin :
+    (program (registered 1 doubleState) 2).collect RationalReference.ops collectedScalarStore
+      (program_admEnv _ 2 RationalReference.ops collectedScalarStore)
+      (historyDefined _ 2) (historyCoord 0 0) = 5 := by
+  rw [collect_zero]
+  norm_num [collectedScalarStore, collectedStore, scalarX, scalarZ]
+
+theorem collected_scalar_succ_pin (k : Fin 2) :
+    (program (registered 1 doubleState) 2).collect RationalReference.ops collectedScalarStore
+      (program_admEnv _ 2 RationalReference.ops collectedScalarStore)
+      (historyDefined _ 2) (historyCoord 0 k.succ) = (![12, 26] k) := by
+  rw [collect_succ]
+  fin_cases k
+  · change (2 : ℚ) + 2 * 5 = 12
+    norm_num
+  · change (2 : ℚ) + 2 * 12 = 26
+    norm_num
+
+theorem collected_vector_zero_pin (i : Fin 2) :
+    (program (registered 2 crossNonlinear) 2).collect RationalReference.ops collectedVectorStore
+      (program_admEnv _ 2 RationalReference.ops collectedVectorStore)
+      (historyDefined _ 2) (historyCoord i 0) = (![4, 7] i) := by
+  rw [collect_zero]
+  fin_cases i <;> norm_num [collectedVectorStore, collectedStore, vectorX, vectorZ, stateCoord]
+
+theorem collected_vector_succ_pin (i : Fin 2) (k : Fin 2) :
+    (program (registered 2 crossNonlinear) 2).collect RationalReference.ops collectedVectorStore
+      (program_admEnv _ 2 RationalReference.ops collectedVectorStore)
+      (historyDefined _ 2) (historyCoord i k.succ) = ((![![16, 30], ![63, 482]] k) i) := by
+  rw [collect_succ]
+  change vectorX i + crossNonlinear
+    (fun j => (![![4, 7], ![16, 30], ![901, 902]] k.castSucc) j) i =
+      ((![![16, 30], ![63, 482]] k) i)
+  fin_cases i <;> fin_cases k <;> norm_num [vectorX, crossNonlinear]
+
+theorem collected_empty_admEnv_pin :
+    (program (registered 0 id) 2).AdmEnv RationalReference.ops
+      (collectedStore emptyState emptyState (fun i _ => Fin.elim0 i)) ∧
+    (program (registered 0 id) 0).AdmEnv RationalReference.ops
+      (collectedStore emptyState emptyState (fun i _ => Fin.elim0 i)) :=
+  ⟨program_admEnv _ _ _ _, program_admEnv _ _ _ _⟩
+
+#eval check "scan-prototype-collected-scalar-direct-store"
+  (collectedRows doubleState collectedScalarStore) [[5], [12], [26]]
+#eval check "scan-prototype-collected-vector-direct-store"
+  (collectedRows crossNonlinear collectedVectorStore) [[4, 7], [16, 30], [63, 482]]
+#eval check "scan-prototype-collected-no-transitions"
+  (collectedRows doubleState
+    (collectedStore (N := 0) scalarX scalarZ (fun _ _ => 999))) [[5]]
+#eval check "scan-prototype-collected-empty-history"
+  (collectedRows (N := 2) id
+    (collectedStore emptyState emptyState (fun i _ => Fin.elim0 i))) [[], [], []]
+#eval check "scan-prototype-collected-empty-zero"
+  (collectedRows (N := 0) id
+    (collectedStore emptyState emptyState (fun i _ => Fin.elim0 i))) [[]]
+
+#eval check "scan-prototype-collected-same-size-wrong-occurrence"
+  (let f := registered 1 doubleState
+   let P := program f 2
+   let h := program_admEnv f 2 RationalReference.ops collectedScalarStore
+   let wrong := persistentGroup f 2 0 ++ persistentGroup f 2 0
+   ((group f 2 0).length, wrong.length,
+     P.collect RationalReference.ops collectedScalarStore h (historyDefined f 2)
+       (historyCoord 0 0),
+     (wrong.map fun x => P.contribution RationalReference.ops collectedScalarStore h x.1 x.2).sum))
+  (2, 2, 5, 4)
+
 #print axioms selectedF_arrayExpr_pin
 #print axioms selectedF_recurrence_pin
 #print axioms validatedInput_pin
@@ -313,6 +419,13 @@ theorem empty_zero_coverage_pin :
 #print axioms no_transition_coverage_pin
 #print axioms empty_history_coverage_pin
 #print axioms empty_zero_coverage_pin
+#print axioms generic_admEnv_pin
+#print axioms generic_collect_pin
+#print axioms collected_scalar_zero_pin
+#print axioms collected_scalar_succ_pin
+#print axioms collected_vector_zero_pin
+#print axioms collected_vector_succ_pin
+#print axioms collected_empty_admEnv_pin
 
 end LeanNCD.Semantics.ScanHistoryPlanPrototype
 
