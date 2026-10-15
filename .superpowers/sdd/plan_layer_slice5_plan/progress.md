@@ -113,3 +113,13 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
 - Target8585jobs PASS, audits405/153; assertions113to129, oracle independent.
 - Two actual controls PASS, including all four inherited decoder-failure sites.
 - Controller accepted; T7a final names/generic interface pins next.
+
+## T7a accepted
+
+- Final PlanScanHistoryTest/PlanScanHistoryOracleTest names, imports, namespaces,
+  lake discovery; original labeled rows and expected values preserved.
+- Added six arbitrary-carrier/registry/bounds/validated-input and zero pins.
+- Target8585jobs PASS, audits405/159/17; assertions129to135.
+- Three proof-interface controls PASS, classified separately from numerical kills.
+- Final manifest references mechanically migrated; stale historic anchors remain
+  to be remeasured/consolidated by T7b, not declared currently green.

@@ -2,61 +2,61 @@
   {
     "label": "S5-C1 independent scalar recurrence oracle changes double to identity",
     "task": "T0",
-    "file": "test/Semantics/ScanHistoryRecurrencePrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryOracleTest.lean",
     "old": "def doubleState : State \u211a 1 \u2192 State \u211a 1 := fun h i => 2 * h i",
     "new": "def doubleState : State \u211a 1 \u2192 State \u211a 1 := fun h i => h i",
     "targets": [
-      "Semantics.ScanHistoryRecurrencePrototype"
+      "Semantics.PlanScanHistoryOracleTest"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryRecurrencePrototype.lean:16:0: scan-oracle-scalar-full-history: expected [[5], [12], [26]], got [[5], [7], [9]]",
-      "test/Semantics/ScanHistoryRecurrencePrototype.lean:35:60: unsolved goals"
+      "test/Semantics/PlanScanHistoryOracleTest.lean:16:0: scan-oracle-scalar-full-history: expected [[5], [12], [26]], got [[5], [7], [9]]",
+      "test/Semantics/PlanScanHistoryOracleTest.lean:35:60: unsolved goals"
     ]
   },
   {
     "label": "S5-C2 independent nonlinear oracle swaps coordinate inputs",
     "task": "T0",
-    "file": "test/Semantics/ScanHistoryRecurrencePrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryOracleTest.lean",
     "old": "  fun h => ![2 * h 0 + h 1, h 0 * h 1]",
     "new": "  fun h => ![2 * h 1 + h 0, h 0 * h 1]",
     "targets": [
-      "Semantics.ScanHistoryRecurrencePrototype"
+      "Semantics.PlanScanHistoryOracleTest"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryRecurrencePrototype.lean:27:0: scan-oracle-cross-coordinate-nonlinear: expected [[4, 7], [16, 30], [63, 482]], got [[4, 7], [19, 30], [80, 572]]",
-      "test/Semantics/ScanHistoryRecurrencePrototype.lean:37:64: unsolved goals"
+      "test/Semantics/PlanScanHistoryOracleTest.lean:27:0: scan-oracle-cross-coordinate-nonlinear: expected [[4, 7], [16, 30], [63, 482]], got [[4, 7], [19, 30], [80, 572]]",
+      "test/Semantics/PlanScanHistoryOracleTest.lean:37:64: unsolved goals"
     ]
   },
   {
     "label": "S5-C3 independent oracle drops the final history time",
     "task": "T0",
-    "file": "test/Semantics/ScanHistoryRecurrencePrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryOracleTest.lean",
     "old": "  (List.range (N + 1)).map fun n => (List.finRange d).map (history F X Z n)",
     "new": "  (List.range N).map fun n => (List.finRange d).map (history F X Z n)",
     "targets": [
-      "Semantics.ScanHistoryRecurrencePrototype"
+      "Semantics.PlanScanHistoryOracleTest"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryRecurrencePrototype.lean:16:0: scan-oracle-scalar-full-history: expected [[5], [12], [26]], got [[5], [12]]",
-      "test/Semantics/ScanHistoryRecurrencePrototype.lean:19:0: scan-oracle-no-transitions: expected [[5]], got []",
-      "test/Semantics/ScanHistoryRecurrencePrototype.lean:27:0: scan-oracle-cross-coordinate-nonlinear: expected [[4, 7], [16, 30], [63, 482]], got [[4, 7], [16, 30]]",
-      "test/Semantics/ScanHistoryRecurrencePrototype.lean:32:0: scan-oracle-empty-state: expected [[], [], []], got [[], []]"
+      "test/Semantics/PlanScanHistoryOracleTest.lean:16:0: scan-oracle-scalar-full-history: expected [[5], [12], [26]], got [[5], [12]]",
+      "test/Semantics/PlanScanHistoryOracleTest.lean:19:0: scan-oracle-no-transitions: expected [[5]], got []",
+      "test/Semantics/PlanScanHistoryOracleTest.lean:27:0: scan-oracle-cross-coordinate-nonlinear: expected [[4, 7], [16, 30], [63, 482]], got [[4, 7], [16, 30]]",
+      "test/Semantics/PlanScanHistoryOracleTest.lean:32:0: scan-oracle-empty-state: expected [[], [], []], got [[], []]"
     ]
   },
   {
     "label": "S5-F1 fixture selects the unrelated registered operator",
     "task": "T0",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "  op := false",
     "new": "  op := true",
     "targets": [
-      "Semantics.ScanHistoryPlanPrototype"
+      "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryPlanPrototype.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [7], [9]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [5, 9], [6, 11]], some [[4, 7], [16, 30], [63, 482]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:91:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:99:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 5, some 7, some 9])"
+      "test/Semantics/PlanScanHistoryTest.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [7], [9]])",
+      "test/Semantics/PlanScanHistoryTest.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [5, 9], [6, 11]], some [[4, 7], [16, 30], [63, 482]])",
+      "test/Semantics/PlanScanHistoryTest.lean:91:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
+      "test/Semantics/PlanScanHistoryTest.lean:99:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 5, some 7, some 9])"
     ]
   },
   {
@@ -66,73 +66,73 @@
     "old": "  (List.finRange d).map fun i => \u27e8historyDefined f N, persistentOccurrence f N i l\u27e9",
     "new": "  (List.finRange d).map fun i => \u27e8historyDefined f N, initialOccurrence f N i\u27e9",
     "targets": [
-      "Semantics.ScanHistoryPlanPrototype"
+      "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryPlanPrototype.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (false, (\"done\", 9), some [[12], [12], [24]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (false, (\"done\", 9), some [[12, 20], [22, 60], [104, 1320]], some [[4, 7], [16, 30], [63, 482]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:70:0: scan-prototype-no-transitions: expected (true, (\"done\", 3), some [[5]]), got (false, (\"done\", 3), some [[6]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:91:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:99:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 12, some 12, some 24])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:113:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (false, true, false, false)",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:124:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (false, false, false, false)",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:129:0: scan-prototype-unchecked-alias-corrupts-history: expected (9, some [2, 2, 2]), got (9, some [3, 3, 3])"
+      "test/Semantics/PlanScanHistoryTest.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (false, (\"done\", 9), some [[12], [12], [24]])",
+      "test/Semantics/PlanScanHistoryTest.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (false, (\"done\", 9), some [[12, 20], [22, 60], [104, 1320]], some [[4, 7], [16, 30], [63, 482]])",
+      "test/Semantics/PlanScanHistoryTest.lean:70:0: scan-prototype-no-transitions: expected (true, (\"done\", 3), some [[5]]), got (false, (\"done\", 3), some [[6]])",
+      "test/Semantics/PlanScanHistoryTest.lean:91:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
+      "test/Semantics/PlanScanHistoryTest.lean:99:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 12, some 12, some 24])",
+      "test/Semantics/PlanScanHistoryTest.lean:113:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (false, true, false, false)",
+      "test/Semantics/PlanScanHistoryTest.lean:124:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (false, false, false, false)",
+      "test/Semantics/PlanScanHistoryTest.lean:129:0: scan-prototype-unchecked-alias-corrupts-history: expected (9, some [2, 2, 2]), got (9, some [3, 3, 3])"
     ]
   },
   {
     "label": "S5-F3 decoder observation omits the final retained slice",
     "task": "T6b",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "      (List.finRange (N + 1)).map fun l =>\n        (List.finRange d).map fun i => out \u27e8.H, rfl\u27e9 (historyCoord i l)",
     "new": "      (List.finRange (N + 1)).dropLast.map fun l =>\n        (List.finRange d).map fun i => out \u27e8.H, rfl\u27e9 (historyCoord i l)",
     "targets": [
-      "Semantics.ScanHistoryPlanPrototype"
+      "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryPlanPrototype.lean:55:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [12]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:60:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [16, 30]], some [[4, 7], [16, 30], [63, 482]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:76:0: scan-prototype-no-transitions: expected (true, (\"done\", 3), some [[5]]), got (true, (\"done\", 3), some [])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:81:0: scan-prototype-empty-history: expected (true, 3, 0, (\"done\", 9), some [[], [], []]), got (true, 3, 0, (\"done\", 9), some [[], []])"
+      "test/Semantics/PlanScanHistoryTest.lean:55:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [12]])",
+      "test/Semantics/PlanScanHistoryTest.lean:60:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [16, 30]], some [[4, 7], [16, 30], [63, 482]])",
+      "test/Semantics/PlanScanHistoryTest.lean:76:0: scan-prototype-no-transitions: expected (true, (\"done\", 3), some [[5]]), got (true, (\"done\", 3), some [])",
+      "test/Semantics/PlanScanHistoryTest.lean:81:0: scan-prototype-empty-history: expected (true, 3, 0, (\"done\", 9), some [[], [], []]), got (true, 3, 0, (\"done\", 9), some [[], []])"
     ]
   },
   {
     "label": "S5-F4 footprint fixture observes the wrong previous time",
     "task": "T5b",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "        (fun _ : Unit => 0) (fun _ : Unit => 0)) ()).map fun a =>",
     "new": "        (fun _ : Unit => 0) (fun _ : Unit => 1)) ()).map fun a =>",
     "targets": [
-      "Semantics.ScanHistoryPlanPrototype"
+      "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryPlanPrototype.lean:67:0: scan-prototype-whole-prior-slice-footprint: expected [(12, [0, 0]), (12, [1, 0])], got [(12, [0, 1]), (12, [1, 1])]"
+      "test/Semantics/PlanScanHistoryTest.lean:67:0: scan-prototype-whole-prior-slice-footprint: expected [(12, [0, 0]), (12, [1, 0])], got [(12, [0, 1]), (12, [1, 1])]"
     ]
   },
   {
     "label": "S5-F5 premature-publication negative fixture becomes its legal neighbour",
     "task": "T0",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "def earlyPublish :=\n  { scalarPlan with commands :=\n      (List.finRange 3).flatMap fun l =>\n        [[.initZero (block (registered 1 doubleState) 2 l)],\n         [.pub (block (registered 1 doubleState) 2 l)],\n         [.acc (group (registered 1 doubleState) 2 l)]] }",
     "new": "def earlyPublish := scalarPlan",
     "targets": [
-      "Semantics.ScanHistoryPlanPrototype"
+      "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryPlanPrototype.lean:108:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (true, true, true, true)"
+      "test/Semantics/PlanScanHistoryTest.lean:108:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (true, true, true, true)"
     ]
   },
   {
     "label": "S5-F6 aliased-history negative fixture becomes its injective neighbour",
     "task": "T5b",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "def collapsedAllocation : Allocation (program (registered 1 doubleState) 2) :=\n  { allocation (registered 1 doubleState) 2 with\n    locate := fun x =>\n      \u27e8\u27e80, ((allocation (registered 1 doubleState) 2).locate x).val.2\u27e9, rfl\u27e9 }",
     "new": "def collapsedAllocation : Allocation (program (registered 1 doubleState) 2) :=\n  allocation (registered 1 doubleState) 2",
     "targets": [
-      "Semantics.ScanHistoryPlanPrototype"
+      "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryPlanPrototype.lean:259:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (true, true, true, true)",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:264:0: scan-prototype-unchecked-alias-corrupts-history: expected (9, some [2, 2, 2]), got (9, some [5, 12, 26])"
+      "test/Semantics/PlanScanHistoryTest.lean:259:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (true, true, true, true)",
+      "test/Semantics/PlanScanHistoryTest.lean:264:0: scan-prototype-unchecked-alias-corrupts-history: expected (9, some [2, 2, 2]), got (9, some [5, 12, 26])"
     ]
   },
   {
@@ -142,15 +142,15 @@
     "old": "    historyCoord p.1 \u27e8p.2.val + 1, by",
     "new": "    historyCoord p.1 \u27e8p.2.val, by",
     "targets": [
-      "Semantics.ScanHistoryPlanPrototype"
+      "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryPlanPrototype.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (false, (\"done\", 9), some [[15], [6], [2]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (false, (\"done\", 9), some [[19, 35], [5, 4], [1, 2]], some [[4, 7], [16, 30], [63, 482]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:91:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:99:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 15, some 6, some 2])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:113:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (false, true, false, false)",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:124:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (false, false, false, false)"
+      "test/Semantics/PlanScanHistoryTest.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (false, (\"done\", 9), some [[15], [6], [2]])",
+      "test/Semantics/PlanScanHistoryTest.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (false, (\"done\", 9), some [[19, 35], [5, 4], [1, 2]], some [[4, 7], [16, 30], [63, 482]])",
+      "test/Semantics/PlanScanHistoryTest.lean:91:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
+      "test/Semantics/PlanScanHistoryTest.lean:99:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 15, some 6, some 2])",
+      "test/Semantics/PlanScanHistoryTest.lean:113:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (false, true, false, false)",
+      "test/Semantics/PlanScanHistoryTest.lean:124:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (false, false, false, false)"
     ]
   },
   {
@@ -160,13 +160,13 @@
     "old": "  if s = initialID then decide ((valuationPair d N v).2.val = 0)",
     "new": "  if s = initialID then true",
     "targets": [
-      "Semantics.ScanHistoryPlanPrototype"
+      "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryPlanPrototype.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (false, (\"done\", 9), some [[5], [12], [26]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (false, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:113:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (false, true, false, false)",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:124:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (false, false, false, false)"
+      "test/Semantics/PlanScanHistoryTest.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (false, (\"done\", 9), some [[5], [12], [26]])",
+      "test/Semantics/PlanScanHistoryTest.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (false, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]])",
+      "test/Semantics/PlanScanHistoryTest.lean:113:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (false, true, false, false)",
+      "test/Semantics/PlanScanHistoryTest.lean:124:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (false, false, false, false)"
     ]
   },
   {
@@ -175,17 +175,17 @@
     "file": "LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean",
     "old": "  fun i => (η.val .X).get (η.property .X) (stateCoord i)",
     "new": "  fun i => (η.val .Z).get (η.property .Z) (stateCoord i)",
-    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Evaluation", "Semantics.ScanHistoryPlanPrototype"],
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Evaluation", "Semantics.PlanScanHistoryTest"],
     "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean:24:17: unsolved goals"]
   },
   {
     "label": "S5-T1-F1 transported operator pin selects the unrelated identity",
     "task": "T1",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "  op := false",
     "new": "  op := true",
-    "targets": ["Semantics.ScanHistoryPlanPrototype"],
-    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:180:0: scan-prototype-transported-array-and-recurrence: expected (some [15, 28], some 15, some 28), got (some [4, 7], some 4, some 7)"]
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": ["test/Semantics/PlanScanHistoryTest.lean:180:0: scan-prototype-transported-array-and-recurrence: expected (some [15, 28], some 15, some 28), got (some [4, 7], some 4, some 7)"]
   },
   {
     "label": "S5-T3a-M1 recurrence target loses successor time",
@@ -193,7 +193,7 @@
     "file": "LeanNCD/Semantics/Plan/ScanHistory/Core.lean",
     "old": "    historyCoord p.1 ⟨p.2.val + 1, by",
     "new": "    historyCoord p.1 ⟨p.2.val, by",
-    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.ScanHistoryPlanPrototype"],
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.PlanScanHistoryTest"],
     "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:56:61: unsolved goals"]
   },
   {
@@ -202,7 +202,7 @@
     "file": "LeanNCD/Semantics/Plan/ScanHistory/Core.lean",
     "old": "  if s = initialID then decide ((valuationPair d N v).2.val = 0)",
     "new": "  if s = initialID then true",
-    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.ScanHistoryPlanPrototype"],
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.PlanScanHistoryTest"],
     "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:16:79: unsolved goals"]
   },
   {
@@ -211,7 +211,7 @@
     "file": "LeanNCD/Semantics/Plan/ScanHistory/Plan.lean",
     "old": "  persistentGroup f N l ++ Fin.cases (initialGroup f N) (recurrenceGroup f N) l",
     "new": "  persistentGroup f N 0 ++ Fin.cases (initialGroup f N) (recurrenceGroup f N) l",
-    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.ScanHistoryPlanPrototype"],
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.PlanScanHistoryTest"],
     "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:203:4: Type mismatch", "LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:220:16: Application type mismatch: The argument"]
   },
   {
@@ -220,17 +220,17 @@
     "file": "LeanNCD/Semantics/Plan/ScanHistory/Plan.lean",
     "old": "  (List.finRange d).map fun i => historyDefAddr f N i l",
     "new": "  (List.finRange d).map fun i => historyDefAddr f N i 0",
-    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.ScanHistoryPlanPrototype"],
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Coverage", "Semantics.PlanScanHistoryTest"],
     "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:84:54: Application type mismatch: The argument"]
   },
   {
     "label": "S5-T2a-F1 same-size wrong bag becomes the correct collected fibre",
     "task": "T2a",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "   let wrong := persistentGroup f 2 0 ++ persistentGroup f 2 0",
     "new": "   let wrong := persistentGroup f 2 0 ++ initialGroup f 2",
-    "targets": ["Semantics.ScanHistoryPlanPrototype"],
-    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:393:0: scan-prototype-collected-same-size-wrong-occurrence: expected (2, 2, 5, 4), got (2, 2, 5, 5)"]
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": ["test/Semantics/PlanScanHistoryTest.lean:393:0: scan-prototype-collected-same-size-wrong-occurrence: expected (2, 2, 5, 4), got (2, 2, 5, 5)"]
   },
   {
     "label": "S5-T2b-M1 independent model store repeats only the base state",
@@ -238,7 +238,7 @@
     "file": "LeanNCD/Semantics/Plan/ScanHistory/Model.lean",
     "old": "  | ⟨.H, c⟩ => history f.transition (inputX η) (inputZ η) c.2.1.val c.1",
     "new": "  | ⟨.H, c⟩ => history f.transition (inputX η) (inputZ η) 0 c.1",
-    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Model", "Semantics.ScanHistoryPlanPrototype"],
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Model", "Semantics.PlanScanHistoryTest"],
     "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Model.lean:226:6: Tactic `rfl` failed: The left-hand side", "LeanNCD/Semantics/Plan/ScanHistory/Model.lean:269:8: Type mismatch"]
   },
   {
@@ -247,61 +247,88 @@
     "file": "LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean",
     "old": "  [[.initZero B], [.acc G], [.pub B]]",
     "new": "  [[.initZero B], [.pub B], [.acc G]]",
-    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Prefix", "Semantics.ScanHistoryPlanPrototype"],
+    "targets": ["LeanNCD.Semantics.Plan.ScanHistory.Prefix", "Semantics.PlanScanHistoryTest"],
     "expect": ["LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:27:2: Type mismatch: After simplification, term", "LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:36:2: Type mismatch: After simplification, term"]
   },
   {
     "label": "S5-T4b-F1 before-pub read fixture is shifted to its legal neighbour",
     "task": "T4b",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "  (scalarPlan.readPub 2 (scalarMemory 2) (historyAddress 1 2 0 0),",
     "new": "  (scalarPlan.readPub 3 (scalarMemory 3) (historyAddress 1 2 0 0),",
-    "targets": ["Semantics.ScanHistoryPlanPrototype"],
-    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:710:0: scan-prototype-history-before-and-after-pub: expected (none, some 5, none, some 12), got (some 5, some 5, none, some 12)"]
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": ["test/Semantics/PlanScanHistoryTest.lean:710:0: scan-prototype-history-before-and-after-pub: expected (none, some 5, none, some 12), got (some 5, some 5, none, some 12)"]
   },
   {
     "label": "S5-T5a-F1 wrong-tag negative plan becomes the legal plan",
     "task": "T5a",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "def wrongTagsPlan :=\n  { scalarPlan with\n    commands := scheduleCommands (List.finRange 3) (block (registered 1 doubleState) 2)\n      (fun l => if l = 0 then\n        initialGroup (registered 1 doubleState) 2 ++\n          initialGroup (registered 1 doubleState) 2\n        else group (registered 1 doubleState) 2 l) }",
     "new": "def wrongTagsPlan := scalarPlan",
-    "targets": ["Semantics.ScanHistoryPlanPrototype"],
-    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:856:0: scan-prototype-wrong-tags-coverage-vs-control: expected", "test/Semantics/ScanHistoryPlanPrototype.lean:863:0: scan-prototype-wrong-tags-static-components-vs-control: expected"]
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": ["test/Semantics/PlanScanHistoryTest.lean:856:0: scan-prototype-wrong-tags-coverage-vs-control: expected", "test/Semantics/PlanScanHistoryTest.lean:863:0: scan-prototype-wrong-tags-static-components-vs-control: expected"]
   },
   {
     "label": "S5-T5a-F2 premature-publication negative becomes the legal plan",
     "task": "T5a",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "def earlyPublish :=\n  { scalarPlan with commands :=\n      (List.finRange 3).flatMap fun l =>\n        [[.initZero (block (registered 1 doubleState) 2 l)],\n         [.pub (block (registered 1 doubleState) 2 l)],\n         [.acc (group (registered 1 doubleState) 2 l)]] }",
     "new": "def earlyPublish := scalarPlan",
-    "targets": ["Semantics.ScanHistoryPlanPrototype"],
-    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:245:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (true, true, true, true)"]
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": ["test/Semantics/PlanScanHistoryTest.lean:245:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (true, true, true, true)"]
   },
   {
     "label": "S5-T6a-F1 scalar physical observation aliases every history buffer",
     "task": "T6a",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "scalarMemory pc (.inr ⟨l, (0 : Fin 1)⟩)",
     "new": "scalarMemory pc (.inr ⟨(0 : Fin 3), (0 : Fin 1)⟩)",
-    "targets": ["Semantics.ScanHistoryPlanPrototype"],
-    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:229:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],"]
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": ["test/Semantics/PlanScanHistoryTest.lean:229:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],"]
   },
   {
     "label": "S5-T6a-F2 vector physical observation repeats the first coordinate",
     "task": "T6a",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "vectorMemory pc (.inr ⟨l, i⟩)",
     "new": "vectorMemory pc (.inr ⟨l, (0 : Fin 2)⟩)",
-    "targets": ["Semantics.ScanHistoryPlanPrototype"],
-    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:732:0: scan-prototype-vector-retained-all-command-physical-memory: expected [[[none, none], [none, none], [none, none]]"]
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": ["test/Semantics/PlanScanHistoryTest.lean:732:0: scan-prototype-vector-retained-all-command-physical-memory: expected [[[none, none], [none, none], [none, none]]"]
   },
   {
     "label": "S5-T6b-F1 terminal-only negative observation becomes complete history",
     "task": "T6b",
-    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
     "old": "def terminalOnlyHistory : List (List ℚ) := [[26]]",
     "new": "def terminalOnlyHistory : List (List ℚ) := [[5], [12], [26]]",
-    "targets": ["Semantics.ScanHistoryPlanPrototype"],
-    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:1151:0: scan-prototype-terminal-only-observation-control: expected (true, false, false), got (true, true, true)"]
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": ["test/Semantics/PlanScanHistoryTest.lean:1151:0: scan-prototype-terminal-only-observation-control: expected (true, false, false), got (true, true, true)"]
+  },
+  {
+    "label": "S5-T7a-P1 generic completion pin is specialized to zero transitions",
+    "task": "T7a",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
+    "old": "  scan_done f N ops η\n",
+    "new": "  scan_done f 0 ops (input f 0 (inputX η) (inputZ η))\n",
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": ["test/Semantics/PlanScanHistoryTest.lean:1171:2: Type mismatch"]
+  },
+  {
+    "label": "S5-T7a-P2 full Decode pin is supplied a different validated input",
+    "task": "T7a",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
+    "old": "  ⟨(generic_history_output_pin f η).1, scan_decode_history f N ops η⟩",
+    "new": "  ⟨(generic_history_output_pin f η).1,\n    scan_decode_history f N ops (input f N (inputZ η) (inputX η))⟩",
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": ["test/Semantics/PlanScanHistoryTest.lean:1181:4: Application type mismatch: The argument"]
+  },
+  {
+    "label": "S5-T7a-P3 typed output shape pin omits the initial time slice",
+    "task": "T7a",
+    "file": "test/Semantics/PlanScanHistoryTest.lean",
+    "old": "    ((declarations d N).signature .H).axes.map Axis.extent = [d, N + 1] ∧\n    ∃ M, (plan f N).runPlan ops ((plan f N).Start η) = .done (3 * (N + 1)) M ∧",
+    "new": "    ((declarations d N).signature .H).axes.map Axis.extent = [d, N] ∧\n    ∃ M, (plan f N).runPlan ops ((plan f N).Start η) = .done (3 * (N + 1)) M ∧",
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": ["test/Semantics/PlanScanHistoryTest.lean:1180:3: Application type mismatch"]
   }
 ]

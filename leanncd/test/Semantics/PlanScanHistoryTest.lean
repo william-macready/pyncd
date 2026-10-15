@@ -6,13 +6,13 @@ import LeanNCD.Semantics.Plan.ScanHistory.Evaluation
 import LeanNCD.Semantics.Plan.ScanHistory.Model
 import LeanNCD.Semantics.Plan.ScanHistory.Correctness
 import LeanNCD.Semantics.Plan.Validity
-import Semantics.ScanHistoryRecurrencePrototype
+import Semantics.PlanScanHistoryOracleTest
 import Semantics.AxiomAudit
 
-namespace LeanNCD.Semantics.ScanHistoryPlanPrototype
+namespace LeanNCD.Semantics.PlanScanHistoryTest
 
 open Program Program.Plan Program.Plan.ScanHistory ExecutableReferenceFixtures
-open ScanHistoryRecurrencePrototype
+open PlanScanHistoryOracleTest
 
 /-- Two registered operators: the selected scan operator and an unrelated identity. -/
 def registry (d : Nat) (F : State ℚ d → State ℚ d) :
@@ -1164,7 +1164,62 @@ def terminalOnlyHistory : List (List ℚ) := [[26]]
 #print axioms combined_zero_decode_pin
 #print axioms combined_zero_decode_function_pin
 
-end LeanNCD.Semantics.ScanHistoryPlanPrototype
+theorem generic_scan_done_pin {V : Type} [AddCommMonoid V] {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input) :
+    ∃ M, (plan f N).runPlan ops ((plan f N).Start η) = .done (3 * (N + 1)) M :=
+  scan_done f N ops η
+
+theorem generic_scan_decode_history_pin {V : Type} [AddCommMonoid V] {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input) :
+    ((declarations d N).signature .H).axes.map Axis.extent = [d, N + 1] ∧
+    ∃ M, (plan f N).runPlan ops ((plan f N).Start η) = .done (3 * (N + 1)) M ∧
+      (plan f N).Decode (3 * (N + 1)) M =
+        some (history_output f N η : (program f N).Output) :=
+  ⟨(generic_history_output_pin f η).1, scan_decode_history f N ops η⟩
+
+theorem generic_scan_denotation_history_pin {V : Type} [AddCommMonoid V] {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input) :
+    (program f N).denotation ops η (scan_admInput f N ops η) =
+      (history_output f N η : (program f N).Output) :=
+  scan_denotation_history f N ops η
+
+theorem zero_transition_scan_decode_history_pin {V : Type} [AddCommMonoid V]
+    {d : Nat} {r : Registry (Carrier V)} (f : RegisteredF r d)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f 0).Input) :
+    ((declarations d 0).signature .H).axes.map Axis.extent = [d, 1] ∧
+    ∃ M, (plan f 0).runPlan ops ((plan f 0).Start η) = .done 3 M ∧
+      (plan f 0).Decode 3 M = some (history_output f 0 η : (program f 0).Output) :=
+  generic_scan_decode_history_pin f 0 ops η
+
+theorem zero_dimension_scan_decode_history_pin {V : Type} [AddCommMonoid V]
+    {r : Registry (Carrier V)} (f : RegisteredF r 0) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input) :
+    ((declarations 0 N).signature .H).axes.map Axis.extent = [0, N + 1] ∧
+    ∃ M, (plan f N).runPlan ops ((plan f N).Start η) = .done (3 * (N + 1)) M ∧
+      (plan f N).Decode (3 * (N + 1)) M =
+        some (history_output f N η : (program f N).Output) :=
+  generic_scan_decode_history_pin f N ops η
+
+theorem zero_bounds_scan_decode_history_pin {V : Type} [AddCommMonoid V]
+    {r : Registry (Carrier V)} (f : RegisteredF r 0)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f 0).Input) :
+    ((declarations 0 0).signature .H).axes.map Axis.extent = [0, 1] ∧
+    ∃ M, (plan f 0).runPlan ops ((plan f 0).Start η) = .done 3 M ∧
+      (plan f 0).Decode 3 M = some (history_output f 0 η : (program f 0).Output) :=
+  zero_dimension_scan_decode_history_pin f 0 ops η
+
+#print axioms generic_scan_done_pin
+#print axioms generic_scan_decode_history_pin
+#print axioms generic_scan_denotation_history_pin
+#print axioms zero_transition_scan_decode_history_pin
+#print axioms zero_dimension_scan_decode_history_pin
+#print axioms zero_bounds_scan_decode_history_pin
+
+end LeanNCD.Semantics.PlanScanHistoryTest
 
 #audit_axioms LeanNCD.Semantics.Program.Plan.ScanHistory
-#audit_axioms LeanNCD.Semantics.ScanHistoryPlanPrototype
+#audit_axioms LeanNCD.Semantics.PlanScanHistoryTest
+#audit_axioms LeanNCD.Semantics.PlanScanHistoryOracleTest

@@ -1,7 +1,7 @@
 import LeanNCD.Semantics.Plan.ScanHistory.Recurrence
 import Semantics.ExecutableReferenceTest
 
-namespace LeanNCD.Semantics.ScanHistoryRecurrencePrototype
+namespace LeanNCD.Semantics.PlanScanHistoryOracleTest
 
 open Program.Plan.ScanHistory ExecutableReferenceFixtures
 
@@ -56,4 +56,4 @@ theorem nonlinear_full_history_pin :
 #print axioms scalar_full_history_pin
 #print axioms nonlinear_full_history_pin
 
-end LeanNCD.Semantics.ScanHistoryRecurrencePrototype
+end LeanNCD.Semantics.PlanScanHistoryOracleTest
