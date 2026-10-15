@@ -4,6 +4,7 @@ import LeanNCD.Semantics.Plan.ScanHistory.Prefix
 import LeanNCD.Semantics.Plan.ScanHistory.Validity
 import LeanNCD.Semantics.Plan.ScanHistory.Evaluation
 import LeanNCD.Semantics.Plan.ScanHistory.Model
+import LeanNCD.Semantics.Plan.ScanHistory.Correctness
 import LeanNCD.Semantics.Plan.Validity
 import Semantics.ScanHistoryRecurrencePrototype
 import Semantics.AxiomAudit
@@ -724,6 +725,23 @@ def vectorMemory (pc : Nat) :=
   match vectorPrefix pc with
   | .done _ M | .failed _ _ M | .stuck _ M => M
 
+def vectorPhysical (pc : Nat) : List (List (Option ℚ)) :=
+  (List.finRange 3).map fun l : Fin 3 =>
+    (List.finRange 2).map fun i : Fin 2 => vectorMemory pc (.inr ⟨l, i⟩)
+
+#eval check "scan-prototype-vector-retained-all-command-physical-memory"
+  ((List.range 10).map vectorPhysical)
+  [[[none, none], [none, none], [none, none]],
+   [[some 0, some 0], [none, none], [none, none]],
+   [[some 4, some 7], [none, none], [none, none]],
+   [[some 4, some 7], [none, none], [none, none]],
+   [[some 4, some 7], [some 0, some 0], [none, none]],
+   [[some 4, some 7], [some 16, some 30], [none, none]],
+   [[some 4, some 7], [some 16, some 30], [none, none]],
+   [[some 4, some 7], [some 16, some 30], [some 0, some 0]],
+   [[some 4, some 7], [some 16, some 30], [some 63, some 482]],
+   [[some 4, some 7], [some 16, some 30], [some 63, some 482]]]
+
 def vectorPublished (pc : Nat) (l : Fin 3) : List (Option ℚ) :=
   (List.finRange 2).map fun i =>
     vectorPlan.readPub pc (vectorMemory pc) (historyAddress 2 2 i l)
@@ -955,6 +973,93 @@ theorem generic_zero_bounds_validity_pin {V : Type} {r : Registry (Carrier V)}
 #print axioms generic_zero_transition_validity_pin
 #print axioms generic_zero_dimension_validity_pin
 #print axioms generic_zero_bounds_validity_pin
+
+theorem generic_prefix_done_R_pin {V : Type} [AddCommMonoid V] {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input)
+    (pc : Nat) (hpc : pc ≤ 3 * (N + 1)) :
+    ∃ M c,
+      (plan f N).runFrom ops 0 ((plan f N).Start η)
+        ((plan f N).commands.take pc) = .done pc M ∧
+      (plan f N).refState ops η pc = some c ∧ (plan f N).R ops η pc M c :=
+  prefix_done_R f N ops η pc hpc
+
+theorem generic_history_retained_all_boundaries_pin {V : Type} [AddCommMonoid V]
+    {d : Nat} {r : Registry (Carrier V)} (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input)
+    (pc : Nat) (hpc : pc ≤ 3 * (N + 1)) :
+    ∃ M c,
+      (plan f N).runFrom ops 0 ((plan f N).Start η)
+        ((plan f N).commands.take pc) = .done pc M ∧
+      (plan f N).refState ops η pc = some c ∧ (plan f N).R ops η pc M c ∧
+      ∀ (i : Fin d) (l : Fin (N + 1)), 3 * (l.val + 1) ≤ pc →
+        readSlot (allocation f N) M (historyAddress d N i l) =
+            some (history f.transition (inputX η) (inputZ η) l.val i) ∧
+        (plan f N).readPub pc M (historyAddress d N i l) =
+            some (history f.transition (inputX η) (inputZ η) l.val i) ∧
+        M (.inr ⟨l, i⟩) =
+            some (history f.transition (inputX η) (inputZ η) l.val i) := by
+  obtain ⟨M, c, hr, hc, hR⟩ := prefix_done_R f N ops η pc hpc
+  exact ⟨M, c, hr, hc, hR, fun i l hl => history_retained f N ops η pc hpc hr i l hl⟩
+
+theorem generic_history_retained_later_pin {V : Type} [AddCommMonoid V]
+    {d : Nat} {r : Registry (Carrier V)} (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input)
+    (pc pc' : Nat) (hpc' : pc' ≤ 3 * (N + 1)) (hle : pc ≤ pc') :
+    ∃ M M',
+      (plan f N).runFrom ops 0 ((plan f N).Start η)
+        ((plan f N).commands.take pc) = .done pc M ∧
+      (plan f N).runFrom ops 0 ((plan f N).Start η)
+        ((plan f N).commands.take pc') = .done pc' M' ∧
+      ∀ (i : Fin d) (l : Fin (N + 1)), 3 * (l.val + 1) ≤ pc →
+        M' (.inr ⟨l, i⟩) =
+            some (history f.transition (inputX η) (inputZ η) l.val i) ∧
+        M' (.inr ⟨l, i⟩) = M (.inr ⟨l, i⟩) ∧
+        readSlot (allocation f N) M' (historyAddress d N i l) =
+          readSlot (allocation f N) M (historyAddress d N i l) ∧
+        (plan f N).readPub pc' M' (historyAddress d N i l) =
+          (plan f N).readPub pc M (historyAddress d N i l) := by
+  obtain ⟨M, _, hr, -⟩ := prefix_done_R f N ops η pc (Nat.le_trans hle hpc')
+  obtain ⟨M', _, hr', -⟩ := prefix_done_R f N ops η pc' hpc'
+  exact ⟨M, M', hr, hr', fun i l hl =>
+    history_retained_later f N ops η pc pc' hpc' hle hr hr' i l hl⟩
+
+theorem zero_transition_prefix_done_R_pin {V : Type} [AddCommMonoid V] {d : Nat}
+    {r : Registry (Carrier V)} (f : RegisteredF r d)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f 0).Input)
+    (pc : Nat) (hpc : pc ≤ 3) :
+    ∃ M c,
+      (plan f 0).runFrom ops 0 ((plan f 0).Start η)
+        ((plan f 0).commands.take pc) = .done pc M ∧
+      (plan f 0).refState ops η pc = some c ∧ (plan f 0).R ops η pc M c :=
+  prefix_done_R f 0 ops η pc (by simpa using hpc)
+
+theorem zero_dimension_prefix_done_R_pin {V : Type} [AddCommMonoid V]
+    {r : Registry (Carrier V)} (f : RegisteredF r 0) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input)
+    (pc : Nat) (hpc : pc ≤ 3 * (N + 1)) :
+    ∃ M c,
+      (plan f N).runFrom ops 0 ((plan f N).Start η)
+        ((plan f N).commands.take pc) = .done pc M ∧
+      (plan f N).refState ops η pc = some c ∧ (plan f N).R ops η pc M c :=
+  prefix_done_R f N ops η pc hpc
+
+theorem zero_bounds_prefix_done_R_pin {V : Type} [AddCommMonoid V]
+    {r : Registry (Carrier V)} (f : RegisteredF r 0)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f 0).Input)
+    (pc : Nat) (hpc : pc ≤ 3) :
+    ∃ M c,
+      (plan f 0).runFrom ops 0 ((plan f 0).Start η)
+        ((plan f 0).commands.take pc) = .done pc M ∧
+      (plan f 0).refState ops η pc = some c ∧ (plan f 0).R ops η pc M c :=
+  zero_transition_prefix_done_R_pin f ops η pc hpc
+
+#print axioms generic_prefix_done_R_pin
+#print axioms generic_history_retained_all_boundaries_pin
+#print axioms generic_history_retained_later_pin
+#print axioms zero_transition_prefix_done_R_pin
+#print axioms zero_dimension_prefix_done_R_pin
+#print axioms zero_bounds_prefix_done_R_pin
 
 end LeanNCD.Semantics.ScanHistoryPlanPrototype
 

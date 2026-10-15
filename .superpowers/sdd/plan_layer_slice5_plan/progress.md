@@ -93,3 +93,13 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
 - Reused existing footprint/alias controls rather than duplicate manifest entries;
   actual cycles2/2 PASS, precise multi-site failure pins retained.
 - Controller accepted; T6a actual-prefix/numerical retention next.
+
+## T6a accepted
+
+- Original-full-plan Valid used for successful finite segments, not truncated validity.
+- Every command prefix succeeds/refState/R; published readSlot/readPub/physical
+  values equal independent history and remain equal at all later boundaries.
+- Vector all-command physical table observed; scalar table unchanged.
+- Target8585jobs PASS, audits400/142; +1 evaluated row/+6 theorem pins.
+- Two observation controls PASS after correcting multiline diagnostic anchor.
+- Controller accepted model/step/retention proof; T6b terminal/full Decode next.

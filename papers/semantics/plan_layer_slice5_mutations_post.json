@@ -276,5 +276,23 @@
     "new": "def earlyPublish := scalarPlan",
     "targets": ["Semantics.ScanHistoryPlanPrototype"],
     "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:245:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (true, true, true, true)"]
+  },
+  {
+    "label": "S5-T6a-F1 scalar physical observation aliases every history buffer",
+    "task": "T6a",
+    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "old": "scalarMemory pc (.inr ⟨l, (0 : Fin 1)⟩)",
+    "new": "scalarMemory pc (.inr ⟨(0 : Fin 3), (0 : Fin 1)⟩)",
+    "targets": ["Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:229:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],"]
+  },
+  {
+    "label": "S5-T6a-F2 vector physical observation repeats the first coordinate",
+    "task": "T6a",
+    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "old": "vectorMemory pc (.inr ⟨l, i⟩)",
+    "new": "vectorMemory pc (.inr ⟨l, (0 : Fin 2)⟩)",
+    "targets": ["Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:732:0: scan-prototype-vector-retained-all-command-physical-memory: expected [[[none, none], [none, none], [none, none]]"]
   }
 ]
