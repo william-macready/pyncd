@@ -37,4 +37,23 @@ example : (history doubleState scalarX scalarZ 2) 0 = 26 := by
 example : (history crossNonlinear vectorX vectorZ 2) 1 = 482 := by
   norm_num [history, crossNonlinear, vectorX, vectorZ]
 
+theorem scalar_full_history_pin :
+    (fun l : Fin 3 => history doubleState scalarX scalarZ l.val) =
+      (fun l i => (![![5], ![12], ![26]] l) i) := by
+  funext l i
+  fin_cases l <;> fin_cases i <;> norm_num [history, doubleState, scalarX, scalarZ]
+
+theorem nonlinear_full_history_pin :
+    (fun l : Fin 3 => history crossNonlinear vectorX vectorZ l.val) =
+      (fun l i => (![![4, 7], ![16, 30], ![63, 482]] l) i) := by
+  funext l i
+  fin_cases l <;> fin_cases i <;>
+    norm_num [history, crossNonlinear, vectorX, vectorZ]
+
+#eval check "scan-oracle-empty-combined-zero"
+  (trace id emptyState emptyState 0) [[]]
+
+#print axioms scalar_full_history_pin
+#print axioms nonlinear_full_history_pin
+
 end LeanNCD.Semantics.ScanHistoryRecurrencePrototype

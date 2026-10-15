@@ -81,7 +81,7 @@
   },
   {
     "label": "S5-F3 decoder observation omits the final retained slice",
-    "task": "T0",
+    "task": "T6b",
     "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
     "old": "      (List.finRange (N + 1)).map fun l =>\n        (List.finRange d).map fun i => out \u27e8.H, rfl\u27e9 (historyCoord i l)",
     "new": "      (List.finRange (N + 1)).dropLast.map fun l =>\n        (List.finRange d).map fun i => out \u27e8.H, rfl\u27e9 (historyCoord i l)",
@@ -89,10 +89,10 @@
       "Semantics.ScanHistoryPlanPrototype"
     ],
     "expect": [
-      "test/Semantics/ScanHistoryPlanPrototype.lean:49:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [12]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:54:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [16, 30]], some [[4, 7], [16, 30], [63, 482]])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:70:0: scan-prototype-no-transitions: expected (true, (\"done\", 3), some [[5]]), got (true, (\"done\", 3), some [])",
-      "test/Semantics/ScanHistoryPlanPrototype.lean:75:0: scan-prototype-empty-history: expected (true, 3, 0, (\"done\", 9), some [[], [], []]), got (true, 3, 0, (\"done\", 9), some [[], []])"
+      "test/Semantics/ScanHistoryPlanPrototype.lean:55:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [12]])",
+      "test/Semantics/ScanHistoryPlanPrototype.lean:60:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [16, 30]], some [[4, 7], [16, 30], [63, 482]])",
+      "test/Semantics/ScanHistoryPlanPrototype.lean:76:0: scan-prototype-no-transitions: expected (true, (\"done\", 3), some [[5]]), got (true, (\"done\", 3), some [])",
+      "test/Semantics/ScanHistoryPlanPrototype.lean:81:0: scan-prototype-empty-history: expected (true, 3, 0, (\"done\", 9), some [[], [], []]), got (true, 3, 0, (\"done\", 9), some [[], []])"
     ]
   },
   {
@@ -294,5 +294,14 @@
     "new": "vectorMemory pc (.inr ⟨l, (0 : Fin 2)⟩)",
     "targets": ["Semantics.ScanHistoryPlanPrototype"],
     "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:732:0: scan-prototype-vector-retained-all-command-physical-memory: expected [[[none, none], [none, none], [none, none]]"]
+  },
+  {
+    "label": "S5-T6b-F1 terminal-only negative observation becomes complete history",
+    "task": "T6b",
+    "file": "test/Semantics/ScanHistoryPlanPrototype.lean",
+    "old": "def terminalOnlyHistory : List (List ℚ) := [[26]]",
+    "new": "def terminalOnlyHistory : List (List ℚ) := [[5], [12], [26]]",
+    "targets": ["Semantics.ScanHistoryPlanPrototype"],
+    "expect": ["test/Semantics/ScanHistoryPlanPrototype.lean:1151:0: scan-prototype-terminal-only-observation-control: expected (true, false, false), got (true, true, true)"]
   }
 ]

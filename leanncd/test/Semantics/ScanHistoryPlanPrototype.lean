@@ -1061,6 +1061,109 @@ theorem zero_bounds_prefix_done_R_pin {V : Type} [AddCommMonoid V]
 #print axioms zero_dimension_prefix_done_R_pin
 #print axioms zero_bounds_prefix_done_R_pin
 
+/-- Keep the actual typed Option: empty coordinate tables must not mask failure. -/
+def decodedOutput {d : Nat} (F : State ℚ d → State ℚ d) (N : Nat) (X Z : State ℚ d) :
+    Option (program (registered d F) N).Output :=
+  let π := plan (registered d F) N
+  match execute F N X Z with
+  | .done pc M => π.Decode pc M
+  | _ => none
+
+theorem decodedOutput_history {d : Nat} (F : State ℚ d → State ℚ d) (N : Nat)
+    (X Z : State ℚ d) :
+    decodedOutput F N X Z =
+      some (history_output (registered d F) N (input (registered d F) N X Z)) := by
+  obtain ⟨M, hr, hd⟩ := scan_decode_history (registered d F) N RationalReference.ops
+    (input (registered d F) N X Z)
+  unfold decodedOutput execute
+  rw [hr]
+  exact hd
+
+theorem scalar_full_decode_pin :
+    decodedOutput doubleState 2 scalarX scalarZ =
+      some (history_output (registered 1 doubleState) 2 directScalarInput) :=
+  decodedOutput_history _ _ _ _
+
+theorem nonlinear_full_decode_pin :
+    decodedOutput crossNonlinear 2 vectorX vectorZ =
+      some (history_output (registered 2 crossNonlinear) 2
+        (input (registered 2 crossNonlinear) 2 vectorX vectorZ)) :=
+  decodedOutput_history _ _ _ _
+
+theorem scalar_decode_function_pin :
+    (decodedOutput doubleState 2 scalarX scalarZ).map (fun out => out ⟨.H, rfl⟩) =
+      some (fun c : Coord (historyShape 1 2) => (![5, 12, 26] c.2.1 : ℚ)) := by
+  rw [decodedOutput_history]
+  apply congrArg some
+  funext c
+  rcases c with ⟨i, l, u⟩
+  cases u
+  exact independent_scalar_output_pin i l
+
+theorem nonlinear_decode_function_pin :
+    (decodedOutput crossNonlinear 2 vectorX vectorZ).map (fun out => out ⟨.H, rfl⟩) =
+      some (fun c : Coord (historyShape 2 2) =>
+        ((![![4, 7], ![16, 30], ![63, 482]] c.2.1) c.1 : ℚ)) := by
+  rw [decodedOutput_history]
+  apply congrArg some
+  funext c
+  rcases c with ⟨i, l, u⟩
+  cases u
+  exact independent_vector_output_pin i l
+
+theorem no_transition_decode_function_pin :
+    (decodedOutput doubleState 0 scalarX scalarZ).map (fun out => out ⟨.H, rfl⟩) =
+      some (fun _ : Coord (historyShape 1 0) => (5 : ℚ)) := by
+  rw [decodedOutput_history]
+  exact congrArg some independent_no_transition_output_pin
+
+theorem empty_decode_function_pin (N : Nat) :
+    (decodedOutput id N emptyState emptyState).map (fun out => out ⟨.H, rfl⟩) =
+      some (fun c : Coord (historyShape 0 N) => (Fin.elim0 c.1 : ℚ)) := by
+  rw [decodedOutput_history]
+  exact congrArg some (independent_empty_output_pin N).2
+
+theorem combined_zero_decode_pin :
+    decodedOutput id 0 emptyState emptyState =
+      some (history_output (registered 0 id) 0 directEmptyInput) :=
+  decodedOutput_history _ _ _ _
+
+theorem combined_zero_decode_function_pin :
+    (decodedOutput id 0 emptyState emptyState).map (fun out => out ⟨.H, rfl⟩) =
+      some (fun c : Coord (historyShape 0 0) => (Fin.elim0 c.1 : ℚ)) :=
+  empty_decode_function_pin 0
+
+#eval check "scan-prototype-full-history-equality-scalar"
+  (decoded doubleState 2 scalarX scalarZ == some (trace doubleState scalarX scalarZ 2))
+  true
+#eval check "scan-prototype-full-history-equality-nonlinear"
+  (decoded crossNonlinear 2 vectorX vectorZ ==
+    some (trace crossNonlinear vectorX vectorZ 2)) true
+#eval check "scan-prototype-combined-zero-successful-decode"
+  (kind id 0 emptyState emptyState, (decodedOutput id 0 emptyState emptyState).isSome,
+    decoded id 0 emptyState emptyState)
+  (("done", 3), true, some [[]])
+
+/-- A terminal-only observer cannot detect omitted earlier slices.
+    Whole-history equality must reject this despite the correct last state. -/
+def terminalOnlyHistory : List (List ℚ) := [[26]]
+
+#eval check "scan-prototype-terminal-only-observation-control"
+  (terminalOnlyHistory.getLast? == (trace doubleState scalarX scalarZ 2).getLast?,
+    terminalOnlyHistory == trace doubleState scalarX scalarZ 2,
+    decoded doubleState 2 scalarX scalarZ == some terminalOnlyHistory)
+  (true, false, false)
+
+#print axioms decodedOutput_history
+#print axioms scalar_full_decode_pin
+#print axioms nonlinear_full_decode_pin
+#print axioms scalar_decode_function_pin
+#print axioms nonlinear_decode_function_pin
+#print axioms no_transition_decode_function_pin
+#print axioms empty_decode_function_pin
+#print axioms combined_zero_decode_pin
+#print axioms combined_zero_decode_function_pin
+
 end LeanNCD.Semantics.ScanHistoryPlanPrototype
 
 #audit_axioms LeanNCD.Semantics.Program.Plan.ScanHistory

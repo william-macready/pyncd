@@ -1,6 +1,7 @@
 import LeanNCD.Semantics.Plan.ScanHistory.Model
 import LeanNCD.Semantics.Plan.ScanHistory.Validity
 import LeanNCD.Semantics.Plan.Run
+import LeanNCD.Semantics.Plan.Correctness
 
 namespace LeanNCD.Semantics.Program.Plan
 
@@ -133,6 +134,41 @@ theorem history_retained_later (f : RegisteredF r d) (N : Nat)
     (Nat.le_trans hl hle)
   exact ⟨hm', hm'.trans hm.symm, hs'.trans hs.symm, hp'.trans hp.symm⟩
 
+/-- Every validated input completes, and the entire typed history is decoded.
+    This includes successful decoding of an empty coordinate domain. -/
+theorem scan_decode_history (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input) :
+    ∃ M, (plan f N).runPlan ops ((plan f N).Start η) = .done (3 * (N + 1)) M ∧
+      (plan f N).Decode (3 * (N + 1)) M = some (history_output f N η) := by
+  simpa only [plan_length, history_output] using
+    done_of_model ops (plan_valid f N) η (historyStore_models f N ops η)
+
+/-- Completion needs neither a successful-run premise nor positive bounds. -/
+theorem scan_done (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input) :
+    ∃ M, (plan f N).runPlan ops ((plan f N).Start η) = .done (3 * (N + 1)) M := by
+  obtain ⟨M, hr, -⟩ := scan_decode_history f N ops η
+  exact ⟨M, hr⟩
+
+/-- Admissibility is supplied by the independent history model, not assumed. -/
+theorem scan_admInput (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input) :
+    (program f N).AdmInput ops η :=
+  ⟨historyStore f N η, historyStore_models f N ops η,
+    fun ρ hρ => (models_iff_historyStore f N ops η ρ).mp hρ⟩
+
+/-- The public denotation is the full independent history output. -/
+theorem scan_denotation_history (f : RegisteredF r d) (N : Nat)
+    (ops : (s : Unit) → ScalarOps (Carrier V s)) (η : (program f N).Input) :
+    (program f N).denotation ops η (scan_admInput f N ops η) =
+      history_output f N η :=
+  (program f N).denotation_of_model ops η (scan_admInput f N ops η)
+    (historyStore f N η) (historyStore_models f N ops η)
+
+#print axioms scan_done
+#print axioms scan_decode_history
+#print axioms scan_admInput
+#print axioms scan_denotation_history
 #print axioms prefix_done_R
 #print axioms history_retained
 #print axioms history_retained_later

@@ -103,3 +103,13 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
 - Target8585jobs PASS, audits400/142; +1 evaluated row/+6 theorem pins.
 - Two observation controls PASS after correcting multiline diagnostic anchor.
 - Controller accepted model/step/retention proof; T6b terminal/full Decode next.
+
+## T6b accepted
+
+- Unconditional completion and Decode=some full history_output for all validated inputs.
+- Independent model supplies admissibility and exact public denotation.
+- Typed function equalities cover scalar/nonlinear/zero bounds; correct last
+  state alone explicitly fails whole-history observation.
+- Target8585jobs PASS, audits405/153; assertions113to129, oracle independent.
+- Two actual controls PASS, including all four inherited decoder-failure sites.
+- Controller accepted; T7a final names/generic interface pins next.
