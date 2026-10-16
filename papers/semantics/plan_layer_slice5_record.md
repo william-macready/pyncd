@@ -185,29 +185,32 @@ The unchanged implementation baseline builds in 8796 jobs in the author's
 worktree. No Lean fences or new proof implementation are being published:
 the new generic proof contracts are requirements, not kernel-checked results.
 
-## F. Execution close-out template — fill only from observed evidence
+## F. Execution acceptance
 
-Status: NOT EXECUTED. No success checkbox below is pre-filled.
+Status: all 16 execution tasks and final gates ACCEPTED, ready for local
+integration. Execution base `ed884938`, branch `worktree-scan-history-exec`.
+The original T3 was split into T3a/T3b without changing its obligations.
 
 | Task | Accepted SHA / exact scope | Target command/log/result | Fixtures added/retained | Controls/evidence | Review/adjudication |
 |---|---|---|---|---|---|
-| T0 | PENDING replay SHA and checksum verification | PENDING | base/prototype recount PENDING | final package map PENDING | PENDING |
-| T1 | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T3 | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T2a | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T2b | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T4a | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T4b | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T5a | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T5b | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T6a | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T6b | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T7a | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T7b | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T8 | PENDING | PENDING | PENDING | PENDING | PENDING |
-| T9 | PENDING | PENDING | PENDING | PENDING | PENDING |
+| T0 | `9f9ba4a9`: three checksum-verified patches; exact leanncd tree equals `94cc67c9` | refresh `LeanNCD` 8598 jobs; full build 8804 jobs, PASS | baseline 367; prototype 14 evaluated +4 proof items | unfiltered check 11 unique; 11/11 actual cycles, 38 exact sites; `t0_mutation_results.md` | controller replay/scope review accepted |
+| T1 | `3ed861da`: accepted evaluation/input bridge | combined Evaluation + prototype plan target, 8580 jobs PASS; explicit audits 200 library/42 fixture constants | +2 evaluated rows, +5 theorem pins; all original assertions retained | input-X/Z swap killed `input_reconstruct` proof; selected-op control killed new transported-array row; restores/builds PASS | controller signatures/scope review accepted; no rfl-shape, positive-bound or constructor-only premise |
+| T3a | `1d7f97dd`: compiled classification/target checkpoint | Coverage + prototype plan target, 8581 jobs PASS; audits 251/49 constants | +1 evaluated wrong-tag row, +7 theorem pins; original assertions retained | successor destination and widened initial guard killed generic target/guard proofs; restores/builds PASS | accepted subset; 48 reported tool turns, below cap; budget split, not semantic blocker |
+| T3b | `5288fd23`: accepted complete generic Coverage1/2 | Coverage + prototype plan target, 8581 jobs PASS; audits 269/55 constants | +6 generic/scalar/vector/zero theorem pins; old assertions retained | repeated persistent time killed group/target proofs; repeated publication time killed earlier static Live proof; restores/builds PASS | controller source/Nodup/membership review accepted; original T3 now complete |
+| T2a | `3ab8964a`: generic AdmEnv and exact two-source collected equations | Model + prototype plan target, 8582 jobs PASS; audits 288/73 constants | +6 evaluated direct-store/fibre rows, +7 theorem pins; earlier assertions retained | same-size bag control changes `(2,2,5,4)` to `(2,2,5,5)` at intended row; restore/build PASS | controller outcome/fibre/sum review accepted; implementer reported 50 tool turns/~51 including report, planned-cap overrun surfaced, below hard55 |
+| T2b | `9297d569`: independent history model/existence/finite iff/output | Model + both prototype targets, 8582 jobs PASS; audits 297/88 constants | +5 evaluated independent-model outputs, +11 theorem pins; prior assertions retained | base-only repeated history store killed model/successor/output contracts; restore/build PASS | controller finite-induction and actual-input review accepted; no execution/model/positive-bound assumptions |
+| T4a | `3ff6949c`: exact command lookup and all-phase prefix lists | Prefix + prototype plan target, 8583 jobs PASS; audits 332/105 constants | +4 evaluated phase/endpoint rows, +9 theorem pins; old assertions retained | swapped acc/pub killed both generic phase lookup contracts; restore/build PASS | controller list-index and terminal/zero decomposition review accepted |
+| T4b | `1751eb27`: exact membership and Live/publication thresholds | Prefix + prototype plan target, 8583 jobs PASS; audits 373/121 constants | +3 evaluated read/empty rows, +6 theorem pins; +14 library theorems | before-pub fixture shifted to next legal boundary fails intended numeric row; restore/build PASS | controller threshold/zero review accepted; report27turns/47substantive operations,52including wrappers: operation cap50 exceeded, planned turn cap40 not exceeded; context uninstrumented |
+| T5a | `2a086392`: generic InitOK/AccOK/PubOK at actual lookup indices | Validity + prototype plan target, 8584 jobs PASS; audits 388/128 constants | +3 evaluated static-component rows, +6 theorem pins | wrong-tag and premature-publication negative plans changed to legal neighbours; intended rows fail; restores/builds PASS | controller source/phase/quantifier review accepted; no Valid or numeric assumptions |
+| T5b | `37e6087e`: generic ReadyOK, Valid and exact checker acceptance | Validity + prototype plan target, 8584 jobs PASS; audits 397/135 constants | +7 theorem pins, 34 evaluated/66 proof assertions total in plan fixture | reused S5-F4/F6, repaired exact multi-site locations: 2/2 actual cycles PASS | controller footprint/previous-time/layout/empty review accepted; 16 tool turns/55 operations, context unmetered |
+| T6a | `d8e26311`: actual-prefix success and numerical retention | Correctness + prototype plan target, 8585 jobs PASS; audits 400/142 constants | +1 observed vector physical table, +6 theorem pins | scalar buffer-alias and vector coordinate-repeat observation controls: 2/2 actual cycles PASS; multiline diagnostic formatting corrected after first anchor miss | controller original-plan Valid/step-model/refState/physical-value review accepted; 21 turns/50 operations, context unmetered |
+| T6b | `74da4fc7`: unconditional completion, typed full Decode and independent denotation | Correctness + both prototype targets, 8585 jobs PASS; audits 405/153 constants | assertions 113 to 129, including typed empty Decode and last-state-correct omission control | reused S5-F3 with all four refreshed sites plus terminal-only neighbour: 2/2 actual cycles PASS | controller full-function/zero/admissibility review accepted; 13 turns/35 leaf operations, context unmetered |
+| T7a | `2a3408c9`: final PlanScanHistoryTest/OracleTest discovery and generic interfaces | both final test targets, 8585 jobs PASS; audits 405/159/17 constants | all 44 existing labeled rows preserved at their lines; assertions 129 to 135 | 3/3 actual proof-interface controls (bounds/input/full output shape); these are contract controls, not numerical implementation kills | controller signatures/renames reviewed; one diagnostic-kind correction before green rerun; 10 turns/32 operations |
+| T7b | `8b4c542b`: input-role/empty/extended-bound/mixed-registry regression shapes and measured final map | both final test targets, 8585 jobs PASS; audits 405/184/18 | +9 evaluated rows/+5 proof items; total516=239+277 in18 Plan*Test modules | 31 distinct edits all broke/restored; initial stale manifest15/31; all53 repaired anchors verified against actual logs; six new controls rerun6/6 PASS; final unfiltered repaired-manifest gate is T9 | controller numeric/roles/registry review accepted; three old numeric kills now honestly classified as earlier generic-proof barriers; 32 implementer turns |
+| T8 | `8978f8bd`: public umbrella, public-only production test import and live status/discovery docs | LeanNCD + both final targets, 8615 jobs PASS; root audit6395, scan405/test184/oracle18 | reused generic full-Decode/prefix pins under `import LeanNCD`; 516 fixtures unchanged | public import omission remeasured, exact two-site gate1/1 PASS; all32 manifest old strings unique | first direct wrapper ended without a restoration summary (not accepted), restored build confirmed and full cycle rerun PASS; hook budgets0/0/2402 chars |
+| T9 | accepted whole-branch reviews, actual final gates and scope sweep; checkpoint is this acceptance commit | post-mutation and integrated full builds8811 jobs PASS; audits6395/405/184/18 | 516 fixtures; all16 inherited Plan test modules byte-identical, all18 prototype assertions preserved | actual UNFILTERED32/32 PASS,55 exact anchors, all byte restores/rebuilds PASS | independent soundness CLEAN26 rounds; fidelity CLEAN22 turns; no findings to adjudicate; concurrent main docs preserved inee5ed402 with exact reviewed Lean tree unchanged |
 
-Close-out must record:
+Close-out acceptance checklist, satisfied by the task table and Sections G-H:
 
 1. Complete whole-slice diff and replay base/code/execution SHA; scope changes.
 2. Independent model/evaluation/coverage/Valid/prefix/completion/Decode theorem
@@ -236,3 +239,147 @@ same-sort array operator in an existing registry; AddCommMonoid V; independent
 retained slice buffers and separate inputs; no retire/reuse/fusion/relocation,
 partial-F/floats/source-adapter or automatic general scan recognition.
 Blocked load-bearing work stops; no hidden semantic narrowing or invented pass.
+
+## G. Execution requirement-to-fixture-to-control map
+
+The final unfiltered mutation rerun passed 32/32. Historical T0 evidence
+remains evidence for the compiled prototype, not an assertion that its fixture
+diagnostics remain reachable behind the new generic proofs.
+
+| Required contract | Compiled theorem / fixture evidence | Distinct final control IDs |
+|---|---|---|
+| Independent arbitrary whole-array transition | oracle scalar/nonlinear histories; transported evaluation and mixed-registry fixtures | S5-C1/C2, S5-F1, S5-T7b-F5 |
+| Exact validated input, no fallback | `input_reconstruct`; raw-role accepted/rejected neighbours, including empty tensors | S5-T1-M1, S5-T7b-F1/F2/F3 |
+| Guarded occurrence classification, successor targets | `occurrence_cases`, target identities and zero-bound pins | S5-F7/F8 |
+| Full Coverage1/2, distinct tags and slices | `plan_coverage1/2`; wrong-tag component rows | S5-F2, S5-T3b-M1/M2, S5-T5a-F1 |
+| Exact two-source collected equations and independent finite model | direct-store fibres, sentinel model stores, `models_iff_historyStore` | S5-T2a-F1, S5-T2b-M1 |
+| All three command phases and exact read readiness | indexed lookups, prefix membership, whole-prior-slice footprint, pre/post-pub reads | S5-T4a-M1, S5-F4, S5-T4b-F1 |
+| Static initialization/accumulation/publication, full Valid and checker | `plan_valid/checkPlan`; early-pub and alias rejection with legal neighbours | S5-F5/F6, S5-T5a-F1 |
+| Actual prefix success and retained physical values at every boundary | `prefix_done_R`, `history_retained/later`; scalar/vector pc0..9 tables | S5-T6a-F1/F2 |
+| Unconditional done, arbitrary input and complete typed output shape | generic/zero `scan_done/decode_history` pins | S5-T7a-P1/P2/P3 |
+| Full output, not merely correct terminal state | scalar/nonlinear typed function equality, terminal-only negative neighbour | S5-F3, S5-T6b-F1 |
+| Empty dimensions, no transitions, combined zero and a different nonempty bound | typed empty Decode, `[[]]`, nonlinear `(d,N)=(2,3)` | S5-C3, S5-F3, S5-T7b-F1/F2/F3/F4 |
+| Existing mixed registry; unrelated entry may be binary, scalar and partial | selected unary array with unused binary partial scalar operator; full-history parity | S5-T7b-F5/P1 |
+| Public discovery without child imports | registered scan test has only public `LeanNCD` production import; generic full-Decode/prefix pins compile | S5-T8-P1 |
+
+Controls are not all semantic implementation mutants: oracle, fixture-data,
+proof-interface and production-library mutations are classified separately.
+Four repeated phase edits have been consolidated; their historical labels and
+validated task identities remain on the retained manifest entries. Thus phase
+cycle counts must not be summed and presented as independent mutation coverage.
+
+T7b measured 31 distinct edits: 3 independent-oracle, 16 fixture-observation,
+8 production-library-proof and 4 proof-interface controls. The actual initial
+measurement had 31 broken mutant builds, 31 byte-identical restores and 31
+restored green builds, but only 15 old expectation sets matched. This failed
+table is retained as `t7b_measurement_results.md`, not relabelled as a pass.
+`t7b_anchor_observations.json` verifies the 53 repaired exact location/diagnostic
+anchors against those actual mutant logs. The six new entries then passed a real
+manifest rerun (`t7b_mutation_results.md`). At that checkpoint the complete final
+rerun was still required; T9 subsequently passed all 32 entries after public wiring.
+
+S5-F2/F7/F8 now stop in the generic Coverage proofs, before numeric test rows.
+Their old fixture expectations are retained as historical metadata, not active
+unreachable expectations or a claim of current fixture-level kills. S5-F2 keeps
+two distinct proof failure sites; all reachable inherited multi-site pins remain.
+
+T8 adds the public import control, giving 32 distinct edits / 55 exact anchors
+(3 oracle, 16 fixture-observation, 8 production-library-proof, 5 interface).
+The scan test's direct ScanHistory child imports were replaced by `LeanNCD`;
+the independent oracle imports only the recurrence foundation and audit helpers
+enter production through public Semantics. Removing the public Plan exposure
+really fails the registered consumer, then restores byte-identically and builds
+green. All 33 active scan-test anchors were shifted by exactly seven removed
+import lines; historical anchors were not rewritten.
+
+The three AGENTS hook budgets were measured before (0/0/2116 characters) and
+after (0/0/2402), under 3000 each. The two live status docs, three discovery
+nodes and plan intro now describe implemented certification; historical
+records retain their old counts. The broad numeric sweep mostly finds unrelated
+numeric constants and historical plans, not a reason to edit them. A stale
+"only slices 1-4" source-scope sentence was also corrected. No math contract,
+source-adapter, general-scan, partial-F, relocation, in-place or float claim was added.
+Token reporting again returned "no transcript"; total usage is unavailable,
+not zero and not a budget-compliance certificate.
+
+## H. Final controller gates and adjudication
+
+### Exact contract and persistent public surface
+
+For every `V` with `AddCommMonoid V`, arbitrary natural `d,N`, registry `r`,
+certified `f : RegisteredF r d`, scalar operations and validated input, the
+constructed scan has independent X/Z inputs and sole output H of shape
+`(d,N+1)`. Its independent recurrence is `H0=X+Z`, `H(n+1)=X+F(Hn)`.
+It uses N+1 distinct capacity-d buffers and 3(N+1) commands, with no positive-bound,
+canonical-input-only, assumed-model or assumed-success restriction.
+
+`input_reconstruct`, transported array evaluation, exact tagged coverage and
+`collect_zero/collect_succ` establish the source/model bridge;
+`historyStore_models` and `models_iff_historyStore` give finite existence/uniqueness.
+`plan_valid/plan_checkPlan` certify the schedule. `prefix_done_R` is actual
+successful execution at every command boundary, and `history_retained/later`
+identify readSlot, readPub and actual physical buffer values. `scan_done`,
+`scan_decode_history` and `scan_denotation_history` establish unconditional
+completion and the full typed output, including successful empty Decode.
+The public umbrella imports Correctness; public Plan and LeanNCD reach it
+without a child-to-umbrella cycle.
+
+### Reviews
+
+- [Soundness review](plan_layer_slice5_artifacts/soundness_review.md): **CLEAN**,
+  no high-confidence meaningful finding, 26 tool-response rounds.
+- [Fidelity review](plan_layer_slice5_artifacts/fidelity_review.md): **CLEAN**,
+  no substantive defect or coverage hole, 22 tool-call turns (111 leaf operations).
+- Both inspected the whole slice from `ed884938` to frozen `8978f8bd`, including
+  unchanged sibling contracts. No finding was waived or silently parked.
+  Reviewers did not rerun controller builds/mutations, and their reports say so.
+- Reviews used the separate immutable `scan-history-final-review` checkout,
+  never the concurrently mutated execution sources. Concurrent main advancement
+  added only five documentation files/changes; merge `ee5ed402` preserved them
+  conflict-free and `git diff --exit-code 8978f8bd HEAD -- leanncd` was zero.
+  The unrelated additive-production decision and worked examples were preserved,
+  not widened into this implementation task.
+
+### Actual commands and results
+
+All commands ran against
+`/Users/williammacready/code/python/pyncd.worktrees/scan-history-exec`.
+Raw controller logs are retained under session
+`f27ccd0f-0115-4a73-a6bb-b6d59a17cf53/files/`.
+
+| Gate | Actual result / evidence |
+|---|---|
+| Unfiltered `mutation-manifest.sh --check` | 32 entries selected, every old string unique |
+| Unfiltered `mutation-manifest.sh --out .../final_mutation_results.md .../leanncd .../plan_layer_slice5_mutations_post.json` | [32/32 PASS](plan_layer_slice5_artifacts/final_mutation_results.md); raw `scan-exec-final-manifest.log`; 55 location/column/diagnostic anchors, all intended failures, byte-identical restores and restored builds verified |
+| Post-mutation `lake-build.sh .../leanncd` (no target filter) | PASS, 8811 jobs; `scan-exec-final-build.log` |
+| Full build after concurrent-main documentation merge | PASS, 8811 jobs; `scan-exec-integrated-build.log`; reviewed Lean subtree unchanged |
+| Standard-axiom audits | 6395 root Semantics constants, 405 scan library, 184 scan-test and 18 oracle-test constants; only propext, Classical.choice, Quot.sound |
+| Forbidden-mechanism sweep | 15 new scan/umbrella/test Lean files, zero sorry/admit/new-axiom/native_decide/sorryAx/unsafe/implemented_by hits |
+| Exact inherited preservation | All 16 inherited Plan test modules byte-identical to `ed884938`; all 18 original prototype assertion bodies preserved |
+| Final default discovery/inventory | 18 `Plan*Test.lean` modules plus shared PlanFixtures; 516 assertions = 239 evaluated + 277 top-level proof items; scan adds 149 = 53 + 96 |
+| Scope / whitespace / hook budget | Existing plan kernels/storage modules unchanged; `git diff --check` green; hook sections 0/0/2402 characters |
+
+The full build emitted 64 warning lines, including four pre-existing sorry
+warnings outside this semantic layer: `Base/St.lean`, `Base/Br.lean`,
+`Core/Weave.lean`, `Instances/StBr.lean`. These files are unchanged; this is not
+a claim that the entire repository is axiom/admission-free or warning-free.
+No scan test or required gate was skipped.
+
+### Budget and deferred scope
+
+The original T3 dispatch was split into accepted T3a/T3b before its hard cap.
+The earlier T2a reporting-cap and T4b operation-count overruns remain explicitly
+recorded above; turn counts are not confused with leaf-operation counts.
+Neither final reviewer exceeded its 40-turn target. Exact context peaks and
+cumulative authoring/execution input tokens remain unavailable:
+`token-report.py f27ccd0f-0115-4a73-a6bb-b6d59a17cf53` again reported no transcript.
+No zero token total or measured compliance with the approximately 175M execution
+budget is claimed.
+
+No new parked defect remains from this slice. Two-buffer terminal-only liveness,
+retirement/reuse/copy/relocation for scan storage, selected partial operators,
+floating-point refinement, automatic source/scan recognition and production
+backend certification remain deliberately outside the agreed contract.
+The separate prototype checkout is retained as historical evidence, not merged
+as a second implementation. Local integration/cleanup receipt follows below;
+no remote push is authorized by this execution request.

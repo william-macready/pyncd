@@ -7,13 +7,18 @@ separate from the production DSL evaluator and execution backends.
 
 ## Current artifact
 
-Plan layer (`LeanNCD.Semantics.Plan`, Part V slices 1-4: singleton/fused commands,
+Plan layer (`LeanNCD.Semantics.Plan`, Part V slices 1-5: singleton/fused commands,
 retirement and typed static same-sort buffer reuse, exact boundary layout checker,
 Lemma 31.2, Theorem 31.3, Lemma 32.1): see [`Plan/AGENTS.md`](Plan/AGENTS.md).
-Slice 4 landed locally via merge `c44f8a21`, with registered `PlanReuseTest`,
-`PlanReuseStorageTest`, `PlanReuseWrapperTest`. Fixtures total 367 after probe closure;
-all 64 mutation controls are verified and reviews adjudicated. No remote push
-was performed; see `papers/semantics/plan_layer_slice4_record.md`.
+Slice 4's buffer/review/probe follow-ups are merged and pushed through `e9ae73f1`.
+Slice 5 adds `Plan.ScanHistory`: arbitrary bounded full histories for a registered
+total unary same-sort array operator over any `AddCommMonoid`, including zero
+bounds. Distinct retained buffers, exact `Valid`/checker acceptance, all-command
+physical value retention, unconditional completion and full typed Decode are
+proved. `PlanScanHistoryTest` and independent `PlanScanHistoryOracleTest` bring
+the Plan inventory to 516 fixtures (239 evaluated, 277 proof items).
+The 64 earlier controls, 17 supplemental probes and new scan evidence have separate provenance;
+see `papers/semantics/plan_layer_slice4_record.md` and `plan_layer_slice5_record.md`.
 
 `ExecutableState`, `ExecutableSelection`, and `ReferenceExecutor` realize the
 same reference `Step` edges computationally, with function-valued typed stores.
@@ -179,10 +184,11 @@ and [results](../../../papers/semantics/tensor_logic_semantic_core_spike_record.
 before extending that spike. The validation layer covers the admitted
 array/heterogeneous expression fragment, finite additive program models,
 reference-machine soundness, bounded read-only pure-einsum correspondence, and
-the Part V slices 1-4 plan layer (singleton/fused commands by expansion,
+the Part V slices 1-5 plan layer (singleton/fused commands by expansion,
 retirement of defined published addresses, typed static same-sort physical reuse
-with boundary-local layout injectivity).
+with boundary-local layout injectivity, plus certified bounded full-history scans).
 General source-expression elaboration, cyclic solving, general unique-model
-existence, complete categorical/backend interpretations, scan liveness,
+existence, complete categorical/backend interpretations, general scan recognition
+and two-buffer last-reader liveness,
 copy/relocation, in-place kernels and cross-sort reuse
 remain outside it.

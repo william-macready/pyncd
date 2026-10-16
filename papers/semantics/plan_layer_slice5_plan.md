@@ -1,9 +1,11 @@
 # Part V slice 5: certified bounded full-history scans
 
-Status: authoring artifacts verified after a compiled, incomplete prototype;
-general certification has **not** been implemented. Base: local `main` at `581bd163`.
-Authoring branch: `worktree-scan-history-plan`.
-Execution evidence and close-out belong in `plan_layer_slice5_record.md`.
+Status: generic certification and final regression interfaces are implemented;
+controller acceptance, review and integration gates are recorded in
+`plan_layer_slice5_record.md`. Original authoring base: local `main` at `581bd163`;
+execution base: `ed884938`, branch `worktree-scan-history-exec`.
+The task contracts below are the implementation plan, not a substitute for its
+measured execution record.
 
 ## 1. Process, authority and bounded execution
 
@@ -197,12 +199,13 @@ Existing Recurrence/Core/Allocation/Operator/Schedule/Plan imports stay intact.
 |---|---|---:|---|
 | T0 controller replay/baseline | approved authoring + packages | 20 | 14 evaluated +4 proof replay assertions; eleven measured authoring cycles |
 | T1 evaluation/input bridge | T0 | 50 | 2 planned pins: transport, arbitrary validated input; 2 controls |
-| T3 coverage/targets | T0,T1 (shared test handoff) | 50 | 2 planned pins: guard classification, tag/target partition; 2 controls |
-| T2a collected equations | T1,T3 | 50 | 1 planned equation shape, scalar/vector instantiations; 1 control |
+| T3a classification/targets | T0,T1 (shared test handoff) | 50 | guard/tag/target pins; 2 measured source controls |
+| T3b coverage/Nodup | T3a | 50 | complete occurrence/publication covering and local/cross-slice uniqueness pins; 2 controls |
+| T2a collected equations | T1,T3b | 50 | 1 planned equation shape, scalar/vector instantiations; 1 control |
 | T2b independent model | T2a | 45 | 2 planned pins: finite correspondence, empty-domain model; 1 control |
-| T4a lookup/all-phase lists | T3,T2b (shared test handoff) | 50 | 1 planned full phase table; 1 control |
+| T4a lookup/all-phase lists | T3b,T2b (shared test handoff) | 50 | 1 planned full phase table; 1 control |
 | T4b membership/readiness bridge | T4a | 40 | 1 planned off-by-one read boundary; 1 control |
-| T5a Init/Acc/Pub conditions | T3,T4b | 50 | 2 donor shapes: early pub, wrong same-size tags; 2 controls |
+| T5a Init/Acc/Pub conditions | T3b,T4b | 50 | 2 donor shapes: early pub, wrong same-size tags; 2 controls |
 | T5b readiness/Valid/checker | T5a | 45 | 2 donor shapes: full-slice reads, aliases; 2 controls |
 | T6a prefix success/retention | T2b,T5b | 55 | 2 donor shapes: scalar all-pc, vector all-pc; 2 controls |
 | T6b done/full Decode | T6a | 45 | 2 donor shapes: full-history oracle, empty Decode; 2 controls |
@@ -211,9 +214,12 @@ Existing Recurrence/Core/Allocation/Operator/Schedule/Plan imports stay intact.
 | T8 public exposure/docs | T7b | 30 | 1 public-import pin/control; no heavyweight docs dispatch |
 | T9 reviews/controller gate/integration | T8 | 40 per review | complete measured fixture/cycle inventories, not fixed totals |
 
-There are 15 acceptance tasks including two controller-only gates.
-T1 and T3 are logically independent, but both edit the same prototype test module;
-T3 therefore waits for T1's accepted fixture checkpoint. Likewise T4a waits for
+There are 16 execution acceptance tasks including two controller-only gates.
+Execution split the original T3 at its compiled classification/target checkpoint
+after 48 tool turns: T3a is accepted before a fresh T3b coverage/Nodup dispatch.
+No obligation or generic assumption is dropped. T1 and T3a are logically
+independent but share the prototype test module; T3a waits for T1's checkpoint.
+Likewise T4a waits for
 T2b's fixture handoff although prefix mathematics is independent of model existence.
 These resource prerequisites are explicit in the table: do not run implementers
 concurrently against shared test files. T2 follows T3 because equation collection
@@ -281,7 +287,7 @@ Build: `LeanNCD.Semantics.Plan.ScanHistory.Evaluation`,
 `Semantics.ScanHistoryRecurrencePrototype`, `Semantics.ScanHistoryPlanPrototype`.
 Done: bridge lemmas compile generically, no getD, empty inputs covered.
 
-### T3 — exact occurrence and publication coverage
+### T3a/T3b — exact occurrence and publication coverage
 
 Files: NEW `leanncd/LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean`;
 CURRENT prototype plan test for classification/tag pins.
@@ -297,6 +303,10 @@ NEW targets `occurrence_cases`, `persistent_target`, `initial_target`,
 Three obligations: bijective tagged classification into all persistent pairs,
 initial i at zero, recurrence i,l with l<N; exact target identities including
 the recurrence successor; occurrence/publication flatMap covering and Nodup.
+T3a owns the first two obligations and their guard/target pins. T3b starts from
+the compiled `OccurrenceIndex`/`occurrenceRef_bijective` API and owns local
+Nodup, cross-time disjointness and both complete coverage fields. T3b cannot
+proceed to T2a until `plan_coverage1` and `plan_coverage2` are actually accepted.
 Prove source-ID disjointness, per-slice injectivity and disjoint blocks, not
 just cardinality. Raw count is three times `d*(N+1)`; admitted bounds differ.
 Explicitly prove N=0 rejects every recurrence valuation and d=0 has no occurrence.
@@ -306,7 +316,9 @@ admitted guards and coverage, including combined zero. Retain the legal groups
 as nearest neighbours. Observe any new expected counts before recording them.
 Build: `LeanNCD.Semantics.Plan.ScanHistory.Coverage`,
 `Semantics.ScanHistoryPlanPrototype`.
-Done: completeness/Nodup and exact targets compile for arbitrary d,N.
+Done T3a: classification and exact targets compile for arbitrary d,N.
+Done T3b: completeness/Nodup fields compile for arbitrary d,N; all original
+T3 obligations are then complete.
 
 ### T2a — collected equations, not just recurrence-shaped syntax
 
