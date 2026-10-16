@@ -56,11 +56,11 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:55:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [7], [9]])",
-      "test/Semantics/PlanScanHistoryTest.lean:60:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [5, 9], [6, 11]], some [[4, 7], [16, 30], [63, 482]])",
-      "test/Semantics/PlanScanHistoryTest.lean:229:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
-      "test/Semantics/PlanScanHistoryTest.lean:237:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 5, some 7, some 9])",
-      "test/Semantics/PlanScanHistoryTest.lean:317:0: scan-prototype-transported-array-and-recurrence: expected (some [15, 28], some 15, some 28), got (some [4, 7], some 4, some 7)"
+      "test/Semantics/PlanScanHistoryTest.lean:48:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [7], [9]])",
+      "test/Semantics/PlanScanHistoryTest.lean:53:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [5, 9], [6, 11]], some [[4, 7], [16, 30], [63, 482]])",
+      "test/Semantics/PlanScanHistoryTest.lean:222:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],",
+      "test/Semantics/PlanScanHistoryTest.lean:230:0: scan-prototype-inputs-and-published-history: expected (some 2, some 3, [some 5, some 12, some 26]), got (some 2, some 3, [some 5, some 7, some 9])",
+      "test/Semantics/PlanScanHistoryTest.lean:310:0: scan-prototype-transported-array-and-recurrence: expected (some [15, 28], some 15, some 28), got (some [4, 7], some 4, some 7)"
     ],
     "historical_labels": [
       "S5-T1-F1 transported operator pin selects the unrelated identity"
@@ -107,10 +107,10 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:55:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [12]])",
-      "test/Semantics/PlanScanHistoryTest.lean:60:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [16, 30]], some [[4, 7], [16, 30], [63, 482]])",
-      "test/Semantics/PlanScanHistoryTest.lean:76:0: scan-prototype-no-transitions: expected (true, (\"done\", 3), some [[5]]), got (true, (\"done\", 3), some [])",
-      "test/Semantics/PlanScanHistoryTest.lean:81:0: scan-prototype-empty-history: expected (true, 3, 0, (\"done\", 9), some [[], [], []]), got (true, 3, 0, (\"done\", 9), some [[], []])"
+      "test/Semantics/PlanScanHistoryTest.lean:48:0: scan-prototype-scalar-executor: expected (true, (\"done\", 9), some [[5], [12], [26]]), got (true, (\"done\", 9), some [[5], [12]])",
+      "test/Semantics/PlanScanHistoryTest.lean:53:0: scan-prototype-vector-executor-vs-oracle: expected (true, (\"done\", 9), some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), some [[4, 7], [16, 30]], some [[4, 7], [16, 30], [63, 482]])",
+      "test/Semantics/PlanScanHistoryTest.lean:69:0: scan-prototype-no-transitions: expected (true, (\"done\", 3), some [[5]]), got (true, (\"done\", 3), some [])",
+      "test/Semantics/PlanScanHistoryTest.lean:74:0: scan-prototype-empty-history: expected (true, 3, 0, (\"done\", 9), some [[], [], []]), got (true, 3, 0, (\"done\", 9), some [[], []])"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -124,7 +124,7 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:68:0: scan-prototype-whole-prior-slice-footprint: expected [(12, [0, 0]), (12, [1, 0])], got [(12, [0, 1]), (12, [1, 1])]"
+      "test/Semantics/PlanScanHistoryTest.lean:61:0: scan-prototype-whole-prior-slice-footprint: expected [(12, [0, 0]), (12, [1, 0])], got [(12, [0, 1]), (12, [1, 1])]"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -138,7 +138,7 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:246:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (true, true, true, true)"
+      "test/Semantics/PlanScanHistoryTest.lean:239:0: scan-prototype-early-publication-rejected: expected (false, true, false, true), got (true, true, true, true)"
     ],
     "historical_labels": [
       "S5-T5a-F2 premature-publication negative becomes the legal plan"
@@ -159,8 +159,8 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:260:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (true, true, true, true)",
-      "test/Semantics/PlanScanHistoryTest.lean:265:0: scan-prototype-unchecked-alias-corrupts-history: expected (9, some [2, 2, 2]), got (9, some [5, 12, 26])"
+      "test/Semantics/PlanScanHistoryTest.lean:253:0: scan-prototype-history-alias-rejected: expected (true, false, false, true), got (true, true, true, true)",
+      "test/Semantics/PlanScanHistoryTest.lean:258:0: scan-prototype-unchecked-alias-corrupts-history: expected (9, some [2, 2, 2]), got (9, some [5, 12, 26])"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -280,7 +280,7 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:528:0: scan-prototype-collected-same-size-wrong-occurrence: expected (2, 2, 5, 4), got (2, 2, 5, 5)"
+      "test/Semantics/PlanScanHistoryTest.lean:521:0: scan-prototype-collected-same-size-wrong-occurrence: expected (2, 2, 5, 4), got (2, 2, 5, 5)"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -326,7 +326,7 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:712:0: scan-prototype-history-before-and-after-pub: expected (none, some 5, none, some 12), got (some 5, some 5, none, some 12)"
+      "test/Semantics/PlanScanHistoryTest.lean:705:0: scan-prototype-history-before-and-after-pub: expected (none, some 5, none, some 12), got (some 5, some 5, none, some 12)"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -340,8 +340,8 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:874:0: scan-prototype-wrong-tags-coverage-vs-control: expected ((6, false, false, true), 6, true, true, true), got ((6, true, true, true), 6, true, true, true)",
-      "test/Semantics/PlanScanHistoryTest.lean:881:0: scan-prototype-wrong-tags-static-components-vs-control: expected ((true, false, true, true, true, false), true, true, true, true, true, true), got ((true, false, true, true, true, true), true, true, true, true, true, true)"
+      "test/Semantics/PlanScanHistoryTest.lean:867:0: scan-prototype-wrong-tags-coverage-vs-control: expected ((6, false, false, true), 6, true, true, true), got ((6, true, true, true), 6, true, true, true)",
+      "test/Semantics/PlanScanHistoryTest.lean:874:0: scan-prototype-wrong-tags-static-components-vs-control: expected ((true, false, true, true, true, false), true, true, true, true, true, true), got ((true, false, true, true, true, true), true, true, true, true, true, true)"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -355,7 +355,7 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:229:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],"
+      "test/Semantics/PlanScanHistoryTest.lean:222:0: scan-prototype-retained-prefix-memory: expected [[none, none, none],"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -369,7 +369,7 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:732:0: scan-prototype-vector-retained-all-command-physical-memory: expected [[[none, none], [none, none], [none, none]],"
+      "test/Semantics/PlanScanHistoryTest.lean:725:0: scan-prototype-vector-retained-all-command-physical-memory: expected [[[none, none], [none, none], [none, none]],"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -383,7 +383,7 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:1151:0: scan-prototype-terminal-only-observation-control: expected (true, false, false), got (true, true, true)"
+      "test/Semantics/PlanScanHistoryTest.lean:1144:0: scan-prototype-terminal-only-observation-control: expected (true, false, false), got (true, true, true)"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -397,7 +397,7 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:1171:2: Type mismatch"
+      "test/Semantics/PlanScanHistoryTest.lean:1164:2: Type mismatch"
     ],
     "evidence_kind": "proof_interface"
   },
@@ -411,7 +411,7 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:1181:4: Application type mismatch: The argument"
+      "test/Semantics/PlanScanHistoryTest.lean:1174:4: Application type mismatch: The argument"
     ],
     "evidence_kind": "proof_interface"
   },
@@ -425,7 +425,7 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:1180:3: Application type mismatch: The argument"
+      "test/Semantics/PlanScanHistoryTest.lean:1173:3: Application type mismatch: The argument"
     ],
     "evidence_kind": "proof_interface"
   },
@@ -439,8 +439,8 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:1242:0: scan-regression-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"accepted\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")]",
-      "test/Semantics/PlanScanHistoryTest.lean:1246:0: scan-regression-empty-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"accepted\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")]"
+      "test/Semantics/PlanScanHistoryTest.lean:1235:0: scan-regression-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"accepted\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")]",
+      "test/Semantics/PlanScanHistoryTest.lean:1239:0: scan-regression-empty-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"accepted\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")]"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -454,8 +454,8 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:1242:0: scan-regression-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"accepted\", \"accepted\"), (\"H\", \"accepted\")]",
-      "test/Semantics/PlanScanHistoryTest.lean:1246:0: scan-regression-empty-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"accepted\", \"accepted\"), (\"H\", \"accepted\")]"
+      "test/Semantics/PlanScanHistoryTest.lean:1235:0: scan-regression-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"accepted\", \"accepted\"), (\"H\", \"accepted\")]",
+      "test/Semantics/PlanScanHistoryTest.lean:1239:0: scan-regression-empty-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"accepted\", \"accepted\"), (\"H\", \"accepted\")]"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -469,8 +469,8 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:1242:0: scan-regression-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"accepted\", \"accepted\")]",
-      "test/Semantics/PlanScanHistoryTest.lean:1246:0: scan-regression-empty-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"accepted\", \"accepted\")]"
+      "test/Semantics/PlanScanHistoryTest.lean:1235:0: scan-regression-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"accepted\", \"accepted\")]",
+      "test/Semantics/PlanScanHistoryTest.lean:1239:0: scan-regression-empty-raw-input-role-neighbours: expected [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"H\", \"accepted\")], got [(\"X\", \"accepted\"), (\"Z\", \"accepted\"), (\"accepted\", \"accepted\")]"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -484,7 +484,7 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:1261:0: scan-regression-extended-nonlinear-check-done-full-decode: expected (true,"
+      "test/Semantics/PlanScanHistoryTest.lean:1254:0: scan-regression-extended-nonlinear-check-done-full-decode: expected (true,"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -498,8 +498,8 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:1328:0: scan-regression-mixed-registry-check-done-full-decode: expected (true, (\"done\", 9), true, some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), true, some [[4, 7], [5, 9], [6, 11]], some [[4, 7], [16, 30], [63, 482]])",
-      "test/Semantics/PlanScanHistoryTest.lean:1338:0: scan-regression-mixed-selected-nonlinear-transition: expected (15, 28), got (4, 7)"
+      "test/Semantics/PlanScanHistoryTest.lean:1321:0: scan-regression-mixed-registry-check-done-full-decode: expected (true, (\"done\", 9), true, some [[4, 7], [16, 30], [63, 482]], some [[4, 7], [16, 30], [63, 482]]), got (true, (\"done\", 9), true, some [[4, 7], [5, 9], [6, 11]], some [[4, 7], [16, 30], [63, 482]])",
+      "test/Semantics/PlanScanHistoryTest.lean:1331:0: scan-regression-mixed-selected-nonlinear-transition: expected (15, 28), got (4, 7)"
     ],
     "evidence_kind": "fixture_observation"
   },
@@ -513,7 +513,20 @@
       "Semantics.PlanScanHistoryTest"
     ],
     "expect": [
-      "test/Semantics/PlanScanHistoryTest.lean:1320:53: Application type mismatch: The argument"
+      "test/Semantics/PlanScanHistoryTest.lean:1313:53: Application type mismatch: The argument"
+    ],
+    "evidence_kind": "proof_interface"
+  },
+  {
+    "label": "S5-T8-P1 public Plan umbrella omits scan certification",
+    "task": "T8",
+    "file": "LeanNCD/Semantics/Plan.lean",
+    "old": "import LeanNCD.Semantics.Plan.ScanHistory",
+    "new": "",
+    "targets": ["Semantics.PlanScanHistoryTest"],
+    "expect": [
+      "test/Semantics/PlanScanHistoryTest.lean:12:14: Unknown constant `LeanNCD.Semantics.Program.Plan.ScanHistory.Carrier`",
+      "test/Semantics/PlanScanHistoryTest.lean:29:11: Unknown identifier `plan`"
     ],
     "evidence_kind": "proof_interface"
   }

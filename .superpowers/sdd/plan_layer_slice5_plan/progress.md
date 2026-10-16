@@ -135,3 +135,13 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
 - Initial stale-manifest15/31 explicitly retained; all six new entries rerun PASS.
 - Eight production proof controls distinguished from sixteen fixture observations,
   three oracle controls and four interface controls. Final unfiltered gate remains T9.
+
+## T8 accepted
+
+- Scan umbrella/public Plan exposure; final registered scan test imports only
+  public LeanNCD for production symbols, keeping independent oracle/audit helpers.
+- Generic public pins compile. Root+bothtargets8615jobs PASS; audits6395/405/184/18.
+- Public-exposure omission fully rerun1/1 PASS after one incomplete wrapper result.
+- Live spec/path/threeAGENTS/plan status refreshed, fixture inventory516 unchanged.
+- Hook budgets0/0/2402 chars. Final manifest32distinct/55exact anchors, all old strings unique.
+- Token report unavailable. T9 whole-branch reviews and actual unfiltered gates next.

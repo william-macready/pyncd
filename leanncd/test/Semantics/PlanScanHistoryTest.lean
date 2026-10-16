@@ -1,11 +1,4 @@
-import LeanNCD.Semantics.Plan.ScanHistory.Plan
-import LeanNCD.Semantics.Plan.ScanHistory.Coverage
-import LeanNCD.Semantics.Plan.ScanHistory.Prefix
-import LeanNCD.Semantics.Plan.ScanHistory.Validity
-import LeanNCD.Semantics.Plan.ScanHistory.Evaluation
-import LeanNCD.Semantics.Plan.ScanHistory.Model
-import LeanNCD.Semantics.Plan.ScanHistory.Correctness
-import LeanNCD.Semantics.Plan.Validity
+import LeanNCD
 import Semantics.PlanScanHistoryOracleTest
 import Semantics.AxiomAudit
 

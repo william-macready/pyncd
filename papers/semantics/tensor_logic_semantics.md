@@ -170,7 +170,7 @@ proved for the slice-1 to slice-4 profile (singleton/fused commands by expansion
 retirement of defined published addresses, typed static same-sort buffer reuse
 with boundary-local layout injectivity; see the table). Slice 4, its review fixes,
 and the retirement/reuse fixture-probe closure are merged and pushed through
-`e9ae73f1` (2026-10-12). The current validation inventory is 367 fixtures
+`e9ae73f1` (2026-10-12). That baseline has 367 fixtures
 (186 evaluated rows and 181 proof items), 64 production mutation controls with
 exact failure-site expectations, and 17 supplemental probes (16 computed
 components and one independent `R.dead` consumer). The latter use source copies
@@ -179,7 +179,14 @@ establish whole mutated executor runs. The full build and standard-axiom audit
 are green, and the review findings are closed. See the
 [slice-4 record](plan_layer_slice4_record.md) and the
 [retirement probe close-out](plan_layer_slice3_record.md#o3-reconciled-and-closed-independent-component-mutation-probes).
-General scan/liveness and in-place reuse are not proved. Compiler correctness is
+Slice 5 additionally proves the bounded full-history instance of
+[Section 33.1](#331-a-separate-buffer-history-plan): exact schedule validity,
+all-command physical preservation of published slices, unconditional completion,
+and full typed history decoding for arbitrary natural bounds, including zero.
+The Plan inventory is now 516 fixtures (239 evaluated rows and 277 proof items);
+scan controls, review and integration evidence are separate in the
+[slice-5 record](plan_layer_slice5_record.md). Automatic scan recognition,
+two-buffer last-reader liveness and in-place reuse are not proved. Compiler correctness is
 conditional on the stated certificates and kernel contracts; it is not a claim
 that an existing compiler satisfies them.
 Structural well-formedness alone establishes neither existence of a model
@@ -214,6 +221,7 @@ sequentially within each top-level section and are not subsection numbers:
 | Lemma 31.2 | Terminal adequacy of a valid plan | Proved (slice-1 to slice-4 profile): `terminal_adequacy`, `complete_of_refState` (`Plan.Correctness`). Fused plans: `terminal_adequacy_F` (`Plan.FusionCorrectness`). Outputs remain live by `live_output_of_valid`; `Decode` follows allocation, not ghost history. |
 | Theorem 31.3 | Compiled correctness | Proved (slice-1 to slice-4 profile): `done_correct`, `failed_correct`, `done_or_failed`, `done_of_model`, `done_iff_model` (`Plan.Correctness`); `runPlan_not_stuck` (`Plan.Run`). Fused plans: `done_correct_F`, `failed_correct_F`, `done_or_failed_F`, `done_of_model_F`, `done_iff_model_F`, `runPlan_not_stuck_F` (`Plan.FusionCorrectness`); per-command failure matching `step_failed_command` (`Plan.Fusion`). `Valid.layout` supplies all-boundary alias safety; exact `checkPlan_iff` and `checkPlanF_iff` remain. |
 | Lemma 32.1 | Batched accumulation refines individual steps | Proved: `batch_execution`, `batch_execution_perm`, `accumulateBatch_accumulators`, `accumulateBatch_pending`, `accumulateBatch_published` (`Plan.Batch`); failure half for the transactional singleton kernel only (`step_failed`, `Plan.Simulation`). |
+| Section 33.1 instance | Bounded full-history scan with retained slice buffers | Proved (slice 5, `Plan.ScanHistory`): `plan_valid`, `plan_checkPlan`, independent collected-equation model existence/uniqueness, `prefix_done_R`, `history_retained`, `history_retained_later`, unconditional `scan_done`, full typed `scan_decode_history`, and `scan_denotation_history`. Arbitrary `d,N`, `AddCommMonoid V`, registered total unary same-sort array F and every validated input; no retirement/reuse or compiler-recognition claim. |
 
 The Lean results for Sections 23-26 concern the reference machine as a transition
 relation over abstract finite carriers and primitives. Its computable refinement now
@@ -4770,6 +4778,19 @@ input only when constructing that slice. It still accounts for every
 occurrence exactly once. It never adds $X$ twice merely because a previous
 slice remains stored.
 
+**As formalized (slice 5, full-history output).** `Plan.ScanHistory` certifies
+this plan with $H$ as the sole output, over any additive commutative monoid and
+any registered total unary same-sort array operator $F$. For arbitrary natural
+$d,N$, it uses $N+1$ buffers of capacity $d$ and exactly $3(N+1)$ singleton
+commands, including empty groups. The independent recurrence is connected to
+the Program's collected equations and unique model. `plan_valid` and
+`plan_checkPlan` establish schedule acceptance; `prefix_done_R` and
+`history_retained_later` preserve each published slice's actual physical value
+at every later command boundary. `scan_decode_history` completes for every
+validated input and returns the full typed history, including successful empty
+output decoding; `scan_denotation_history` identifies the independent output.
+This is a constructed bounded scan certificate, not automatic source/scan recognition.
+
 ### 33.2 Reusing two state buffers
 
 If $H$ is internal and the designated output is defined by
@@ -4902,20 +4923,21 @@ The compilation-layer proof targets are:
   `done_iff_model`; fused plans: `terminal_adequacy_F`, `done_correct_F`, `failed_correct_F`, `done_iff_model_F`).
 - Separate-buffer and two-buffer scan proofs, with full-history and
   terminal-only output contracts tested separately.
-  *Not yet formalized.* The completed retirement/reuse proofs and fixture-probe
-  closure are groundwork, not a proof of the scan schedule or its last-reader condition.
+  *Separate-buffer full history proved in slice 5* (`plan_valid`,
+  `history_retained_later`, `scan_decode_history`). Terminal-only two-buffer
+  schedules and their last-reader condition remain unformalized.
 
-**Next formalization priority:** certify a bounded full-history scan using
-distinct retained storage for each time slice, with the entire history $H$
-designated as output. Start from the separate-buffer plan of
-[Section 33.1](#331-a-separate-buffer-history-plan), retaining every published
+**Full-history milestone completed:** the bounded separate-buffer plan of
+[Section 33.1](#331-a-separate-buffer-history-plan) retains every published
 slice as required by [Section 33.3](#333-full-history-outputs-change-the-retention-obligation).
-Prove schedule validity, preservation of published slices, and complete history
-decoding. Two-buffer terminal-only scans and reusable working buffers with
-copy/relocation remain later targets, not prerequisites for this milestone.
+Schedule validity, actual numerical preservation at all command boundaries and
+complete typed decoding are proved, without retirement, reuse or copy/relocation.
+Two-buffer terminal-only scans and reusable working buffers with retained-history
+copy/relocation remain later targets with different output contracts.
 
-Outside the slice-1 to slice-4 profile (singleton/fused commands, retirement of
-defined published addresses, typed static same-sort reuse with boundary-local layout safety) these are
+Beyond the slice-1 to slice-4 profile (singleton/fused commands, retirement of
+defined published addresses, typed static same-sort reuse with boundary-local layout safety)
+and the slice-5 bounded full-history instance, these are
 proposed contracts and proof targets, not kernel-checked results
 or claims about current compiler acceptance. The slice-1 results fix one concrete plan representation
 and kernel fragment (`LeanNCD.Semantics.Plan`); extending them requires

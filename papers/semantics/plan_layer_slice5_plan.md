@@ -1,9 +1,11 @@
 # Part V slice 5: certified bounded full-history scans
 
-Status: authoring artifacts verified after a compiled, incomplete prototype;
-general certification has **not** been implemented. Base: local `main` at `581bd163`.
-Authoring branch: `worktree-scan-history-plan`.
-Execution evidence and close-out belong in `plan_layer_slice5_record.md`.
+Status: generic certification and final regression interfaces are implemented;
+controller acceptance, review and integration gates are recorded in
+`plan_layer_slice5_record.md`. Original authoring base: local `main` at `581bd163`;
+execution base: `ed884938`, branch `worktree-scan-history-exec`.
+The task contracts below are the implementation plan, not a substitute for its
+measured execution record.
 
 ## 1. Process, authority and bounded execution
 

@@ -205,8 +205,8 @@ T0 is accepted; subsequent tasks remain pending until their actual gates pass.
 | T6a | `d8e26311`: actual-prefix success and numerical retention | Correctness + prototype plan target, 8585 jobs PASS; audits 400/142 constants | +1 observed vector physical table, +6 theorem pins | scalar buffer-alias and vector coordinate-repeat observation controls: 2/2 actual cycles PASS; multiline diagnostic formatting corrected after first anchor miss | controller original-plan Valid/step-model/refState/physical-value review accepted; 21 turns/50 operations, context unmetered |
 | T6b | `74da4fc7`: unconditional completion, typed full Decode and independent denotation | Correctness + both prototype targets, 8585 jobs PASS; audits 405/153 constants | assertions 113 to 129, including typed empty Decode and last-state-correct omission control | reused S5-F3 with all four refreshed sites plus terminal-only neighbour: 2/2 actual cycles PASS | controller full-function/zero/admissibility review accepted; 13 turns/35 leaf operations, context unmetered |
 | T7a | `2a3408c9`: final PlanScanHistoryTest/OracleTest discovery and generic interfaces | both final test targets, 8585 jobs PASS; audits 405/159/17 constants | all 44 existing labeled rows preserved at their lines; assertions 129 to 135 | 3/3 actual proof-interface controls (bounds/input/full output shape); these are contract controls, not numerical implementation kills | controller signatures/renames reviewed; one diagnostic-kind correction before green rerun; 10 turns/32 operations |
-| T7b | accepted input-role/empty/extended-bound/mixed-registry regression shapes and measured final map; SHA is this row's checkpoint | both final test targets, 8585 jobs PASS; audits 405/184/18 | +9 evaluated rows/+5 proof items; total516=239+277 in18 Plan*Test modules | 31 distinct edits all broke/restored; initial stale manifest15/31; all53 repaired anchors verified against actual logs; six new controls rerun6/6 PASS; final unfiltered repaired-manifest gate is T9 | controller numeric/roles/registry review accepted; three old numeric kills now honestly classified as earlier generic-proof barriers; 32 implementer turns |
-| T8 | PENDING | PENDING | PENDING | PENDING | PENDING |
+| T7b | `8b4c542b`: input-role/empty/extended-bound/mixed-registry regression shapes and measured final map | both final test targets, 8585 jobs PASS; audits 405/184/18 | +9 evaluated rows/+5 proof items; total516=239+277 in18 Plan*Test modules | 31 distinct edits all broke/restored; initial stale manifest15/31; all53 repaired anchors verified against actual logs; six new controls rerun6/6 PASS; final unfiltered repaired-manifest gate is T9 | controller numeric/roles/registry review accepted; three old numeric kills now honestly classified as earlier generic-proof barriers; 32 implementer turns |
+| T8 | accepted public umbrella, public-only production test import and live status/discovery docs; SHA is this row's checkpoint | LeanNCD + both final targets, 8615 jobs PASS; root audit6395, scan405/test184/oracle18 | reused generic full-Decode/prefix pins under `import LeanNCD`; 516 fixtures unchanged | public import omission remeasured, exact two-site gate1/1 PASS; all32 manifest old strings unique | first direct wrapper ended without a restoration summary (not accepted), restored build confirmed and full cycle rerun PASS; hook budgets0/0/2402 chars |
 | T9 | PENDING | PENDING | PENDING | PENDING | PENDING |
 
 Close-out must record:
@@ -259,7 +259,7 @@ diagnostics remain reachable behind the new generic proofs.
 | Full output, not merely correct terminal state | scalar/nonlinear typed function equality, terminal-only negative neighbour | S5-F3, S5-T6b-F1 |
 | Empty dimensions, no transitions, combined zero and a different nonempty bound | typed empty Decode, `[[]]`, nonlinear `(d,N)=(2,3)` | S5-C3, S5-F3, S5-T7b-F1/F2/F3/F4 |
 | Existing mixed registry; unrelated entry may be binary, scalar and partial | selected unary array with unused binary partial scalar operator; full-history parity | S5-T7b-F5/P1 |
-| Public discovery without child imports | T8 public-import-only pin pending | T8 control pending |
+| Public discovery without child imports | registered scan test has only public `LeanNCD` production import; generic full-Decode/prefix pins compile | S5-T8-P1 |
 
 Controls are not all semantic implementation mutants: oracle, fixture-data,
 proof-interface and production-library mutations are classified separately.
@@ -281,3 +281,22 @@ S5-F2/F7/F8 now stop in the generic Coverage proofs, before numeric test rows.
 Their old fixture expectations are retained as historical metadata, not active
 unreachable expectations or a claim of current fixture-level kills. S5-F2 keeps
 two distinct proof failure sites; all reachable inherited multi-site pins remain.
+
+T8 adds the public import control, giving 32 distinct edits / 55 exact anchors
+(3 oracle, 16 fixture-observation, 8 production-library-proof, 5 interface).
+The scan test's direct ScanHistory child imports were replaced by `LeanNCD`;
+the independent oracle imports only the recurrence foundation and audit helpers
+enter production through public Semantics. Removing the public Plan exposure
+really fails the registered consumer, then restores byte-identically and builds
+green. All 33 active scan-test anchors were shifted by exactly seven removed
+import lines; historical anchors were not rewritten.
+
+The three AGENTS hook budgets were measured before (0/0/2116 characters) and
+after (0/0/2402), under 3000 each. The two live status docs, three discovery
+nodes and plan intro now describe implemented certification; historical
+records retain their old counts. The broad numeric sweep mostly finds unrelated
+numeric constants and historical plans, not a reason to edit them. A stale
+"only slices 1-4" source-scope sentence was also corrected. No math contract,
+source-adapter, general-scan, partial-F, relocation, in-place or float claim was added.
+Token reporting again returned "no transcript"; total usage is unavailable,
+not zero and not a budget-compliance certificate.

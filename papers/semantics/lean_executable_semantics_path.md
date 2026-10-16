@@ -65,7 +65,10 @@ The Part V slice-1 plan layer ([Section 4.9](#49-part-v-slice-1-the-singleton-co
 is in the snapshot above, extended by slice 2 to fused commands, slice 3 to retirement
 and slice 4 to typed static same-sort physical reuse with boundary-local layout
 injectivity: eleven modules under `Semantics/Plan/`, proving Lemma 31.2,
-Theorem 31.3 and Lemma 32.1 for that profile, with 367 fixtures.
+Theorem 31.3 and Lemma 32.1 for that profile, with 367 inherited fixtures.
+Slice 5 adds certified bounded full-history scans: generic schedule validity,
+all-command physical value retention, unconditional completion and full typed
+Decode. The current Plan inventory is 516 fixtures (239 evaluated, 277 proof).
 The four inherited manifests contain 54 cycles (20 + 15 + 9 + 10);
 slice 4 adds 10 controls. Exact ordered patch replay from `4ffdc342` to `deb4fecd`
 is controller-verified (isolated-index final git diff exit 0). All 64 production
@@ -992,9 +995,10 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   unconditional successful execution.
 - **No proof for the oracle or the comparison.** There is no theorem about
   `compareSource`, the numerical profile, or the native legs, and no backend
-  refinement result. The only formalized Part V results are the slice-1 to slice-4 plan layer's
-  ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)), which does not
-  touch the source layer or the oracle.
+  refinement result. The formalized Part V results are the slices 1-4 plan layer
+  ([Section 4.9](#49-part-v-slice-1-the-singleton-command-plan-layer)) and slice 5's
+  bounded full-history scan ([Section 5.2](#52-later-compiled-and-numerical-refinement));
+  neither certifies the source layer or the differential oracle.
 - **No floating-point correctness.** f32 and f64 are metadata in the exact
   semantics; the bit comparison holds only on the bounded-integer, f64-declared,
   single-definition profile.
@@ -1232,13 +1236,16 @@ layout injectivity, and error-free kernels (faults remain an abstract wrapper). 
 (singleton plans) or `checkPlanF` (fused plans): the run does not detect an invalid plan. The spec's
 restatements are the paragraphs headed "As formalized (slice-1 to slice-4 profile ...)" (in 30.3 and 33.2: "(slice-3 to slice-4 profile ...)") in Sections
 29.3, 30.2, 30.3, 30.4, 31.1-31.4, 32.1 and 33.2 of the
-[specification](tensor_logic_semantics.md). The fixture files (`test/Semantics/Plan*Test.lean`) hold 367
-fixtures (186 `#eval check` rows and 181 top-level `example`/`theorem` items).
+[specification](tensor_logic_semantics.md). The slices 1-4 fixture baseline contains 367
+fixtures (186 `#eval check` rows and 181 top-level `example`/`theorem` items);
+slice 5 adds 149, giving 516 (239 + 277) in the current `Plan*Test.lean` glob.
 All 281 baseline assertions (149 + 132) are preserved, with four additional
 retirement component rows; 82 reuse fixtures are split 31 core, 26 storage and
 25 wrapper. Default `Tests` retains all 13 original
 `Plan*Test` modules and adds these three, giving 16 test modules. `PlanFixtures`
-is one additional shared module: 14 original Plan test/shared modules, 17 total.
+is one additional shared module: 14 original Plan test/shared modules, 17 through
+slice 4. The two scan modules bring the current totals to 18 test modules and
+19 including `PlanFixtures`.
 Of the baseline, 68 are slice 3's
 `PlanRetireTest` (27 rows, 24 `example`s, 17 theorems); the earlier figure of 180 was off by one (181 by this method
 at the commit that wrote it: 110 rows + 71 items), and `PlanFaultsTest` added 19 after it (12 rows + 7 items),
@@ -1277,8 +1284,9 @@ fixture controls, every buffer manifest entry has evidence beyond a library-proo
 
 - Cross-sort reads and primitives (the one multi-sort fixture, `PlanMultiSortTest`, has an empty registry), numeric kernels other than the exact reference, floating point.
 - Retiring inputs, copy/relocate, dynamic allocation, cross-sort reuse,
-  in-place kernels/snapshots and scan programs/liveness. Static same-sort reuse
-  after retirement is done; the Section 33.2 scan example is not formalized.
+  in-place kernels/snapshots and two-buffer scan last-reader liveness. Static
+  same-sort reuse after retirement is done; the Section 33.2 scan example is not
+  formalized. Slice 5 separately certifies the Section 33.1 full-history plan.
 - Concrete implementation-error sources: `Plan/Faults.lean` models errors as an abstract fault oracle (`FOutcome`, error-free profile, (a)(b)(c) under faults, `R` at the error state; fixtures in `PlanFaultsTest`), so allocation failure and kernel errors are oracle outputs, not events of the model.
 - Comparing the failure occurrence or failure snapshot between the plan and the reference executor.
 - Dropping the redundant condition-1 covering clause of `Valid`. It follows from the condition-2
@@ -1327,13 +1335,18 @@ retirement of defined published addresses, typed static same-sort reuse with
 boundary-local layout safety, with Lemma 31.2, Theorem 31.3 and
 Lemma 32.1 proved for that profile.
 
-**Next priority: a certified bounded full-history scan.** Use the
+**Certified bounded full-history scan (slice 5).** The
 [Section 33.1 separate-buffer plan](tensor_logic_semantics.md#331-a-separate-buffer-history-plan)
-with the entire history $H$ designated as output. Construct each slice directly
-in distinct retained storage, keep all published slices live through output
-decoding, and prove schedule validity, preservation of earlier slices, and
-decoding of the complete history. This milestone uses the existing static
-allocation and correctness machinery; it does not require state retirement,
+has the entire history $H$ designated as output. Each slice is constructed
+directly in distinct retained storage; all published slices stay live through
+decoding. `Plan.ScanHistory` proves exact `Valid`/checker acceptance,
+actual-prefix success and physical numerical preservation at every command
+boundary, unconditional completion, and complete typed history decoding.
+The independent recurrence is connected to collected equations, finite model
+existence/uniqueness and output denotation. Theorems cover arbitrary natural
+$d,N$, including zero, any `AddCommMonoid V`, a registered total unary same-sort
+array operator $F$ and every validated input. This uses the existing static
+allocation and correctness machinery without state retirement,
 two-buffer reuse, or copy/relocation. Under the dense profile its retained output
 uses $d(N+1)$ scalar slots. Terminal-only two-buffer scans and reusable working
 buffers with retained-history copy/relocation are later milestones with distinct
@@ -1341,7 +1354,13 @@ output contracts; neither is a prerequisite for the full-history baseline.
 
 Implementation plan: [Part V slice 5](plan_layer_slice5_plan.md), with measured
 prototype and authoring evidence in its [record](plan_layer_slice5_record.md).
-The prototype compiles; generic scan certification remains unimplemented.
+Generic certification is implemented, publicly reachable from `import LeanNCD`
+or `import LeanNCD.Semantics.Plan`. The registered `PlanScanHistoryTest` and
+independent `PlanScanHistoryOracleTest` retain all old assertions and cover
+scalar/nonlinear full-history equality, all-command physical reads, successful
+typed empty Decode, input-role rejection and a genuinely mixed registry.
+The record distinguishes oracle/fixture/interface controls from generic-proof
+kills, retains historical prototype evidence and records the final actual gates.
 
 The remaining buffer work is capability work, not the old fixture-probe backlog:
 copy/relocation would free working storage while retaining a value elsewhere;
@@ -1350,7 +1369,8 @@ read-before-write or snapshot guarantees. The Section 33.2 two-buffer scan
 still needs an actual schedule and last-reader/liveness proof, with full-history
 and terminal-only outputs kept distinct. The completed static-reuse layer alone
 does not provide any of these extensions or certify the production backend.
-Not yet done: scan programs/liveness, retiring inputs, relocation/copy,
+Not yet done: automatic general scan recognition, two-buffer last-reader liveness,
+retiring inputs, relocation/copy,
 dynamic allocation, cross-sort reuse and in-place kernels/snapshots;
 concrete implementation-error sources (an abstract fault oracle with the error-free profile restated is done, `Plan/Faults.lean`); cross-sort primitives and non-exact numeric
 kernel fixtures.
