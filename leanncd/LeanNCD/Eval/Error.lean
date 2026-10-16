@@ -351,6 +351,11 @@ inductive EvalError
       `checkScatterFill` (`Eval.lean`) in `evalPlain`'s scatter arm only; scan-local scatters are
       exempt. -/
   | scatterFillNotIdentity (stmt : String) (agg : AggOp)
+  /-- A supplied input names a tensor the program defines (writes), including a private
+      per-writer tensor `T#k` of additive collection. Inputs and defined tensors are disjoint
+      (spec §13.6); the old reference silently replaced the supplied value. Raised by
+      `evalScheduled` for the first defined name, in schedule write order, that `inputs` binds. -/
+  | inputIsDefined (name : String)
 
 /-- The sole renderer for `EvalError` — reproduces every pre-4h message byte-for-byte.
     `.unaryDomain`'s `context` is deliberately NOT rendered (its `EvalContext` carries strictly
@@ -421,6 +426,8 @@ statement marks exactly one"
   | .scatterFillNotIdentity stmt agg =>
       s!"evalPlain: scatter {stmt} aggregates with {if agg == .max then "max" else "min"} but fills \
 unwritten cells with a finite value, not the {if agg == .max then "-inf" else "+inf"} identity"
+  | .inputIsDefined name =>
+      s!"evalScheduled: supplied input {name} names a tensor the program defines"
 
 instance : ToString EvalError := ⟨EvalError.render⟩
 

@@ -1,4 +1,5 @@
 import LeanNCD.DSL.Pipeline.Structural
+import LeanNCD.DSL.Pipeline.Collect
 
 namespace LeanNCD
 
@@ -115,23 +116,45 @@ def scheduleStorageKind (env : DeclEnv) (stmts : List ScanStmt) : Except String 
 def scheduleFloat32Name? (env : DeclEnv) (stmts : List ScanStmt) : Option String :=
   ((scheduleStorageConstraints env stmts).find? (fun nk => nk.2 == .float32)).map (·.1)
 
-/-- A scheduled program whose source invariants and derived authority have been checked. -/
+/-- Additive collection (decision note §C): `desugarMultiWriters`, with its result asserted to be in
+    producer-before-consumer order. The one entry every boundary calls (`validateScheduled` here;
+    `route` before `physicalizeForRoute`). The identity on single-writer schedules. -/
+def collectDefinitions (sched : ScheduledProgram) :
+    Except CompileError (ScheduledProgram × List String) := do
+  let (collected, privateNames) ← desugarMultiWriters sched
+  unless isTopoOrdered collected.stmts collected.stmts do
+    throw (.cyclicDataflow "collectDefinitions: desugared schedule is not in producer-before-consumer order")
+  return (collected, privateNames)
+
+/-- A scheduled program whose source invariants and derived authority have been checked.
+
+    `program` is the COLLECTED schedule (`collectDefinitions`): at most one writer per name, with
+    the private per-writer tensors `T#k` it introduced listed in `privateNames`. The constructor is
+    private, so only `validateScheduled` can pair a program with its hiding list; every consumer
+    must erase `privateNames` from what it reports. -/
 structure CheckedScheduledProgram where private mk ::
   program       : ScheduledProgram
   declEnv       : DeclEnv
   explicitSizes : Std.HashMap UID Nat
   extNames      : List String
+  privateNames  : List String
 
-/-- Check the complete source-invariant boundary for a direct scheduled program. -/
+/-- Check the complete source-invariant boundary for a direct scheduled program, then collect
+    multi-writer tensors. The source checks run on the program as written; the declaration
+    environment and derived fields come from the collected program (whose private tensors carry
+    cloned declarations). -/
 def validateScheduled (sched : ScheduledProgram) : Except CompileError CheckedScheduledProgram := do
-  let declEnv ← buildDeclEnv sched.decls
-  checkScheduledReadRanks declEnv sched.stmts
-  checkScheduledDtypes declEnv sched.stmts
+  let sourceEnv ← buildDeclEnv sched.decls
+  checkScheduledReadRanks sourceEnv sched.stmts
+  checkScheduledDtypes sourceEnv sched.stmts
   unless isTopoOrdered sched.stmts sched.stmts do
     throw (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
-  return { program := sched
+  let (collected, privateNames) ← collectDefinitions sched
+  let declEnv ← buildDeclEnv collected.decls
+  return { program := collected
          , declEnv
-         , explicitSizes := declaredAxisSizes sched.decls
-         , extNames := orderedExternalNames sched.stmts }
+         , explicitSizes := declaredAxisSizes collected.decls
+         , extNames := orderedExternalNames collected.stmts
+         , privateNames }
 
 end LeanNCD

@@ -140,6 +140,11 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
   match scheduleFloat32Name? checked.declEnv sched.stmts with
   | some nm => .error { error := .unsupportedDtype nm, warnings := [] }
   | none =>
+  -- Inputs and defined tensors are disjoint (decision note B3): a supplied value for a written name
+  -- (a private `T#k` included) used to be silently replaced by the first write.
+  match (sched.stmts.flatMap ScanStmt.writes).find? inputs.contains with
+  | some nm => .error { error := .inputIsDefined nm, warnings := [] }
+  | none =>
   -- A scan-local scatter's LHS describes placement into persistent state, not a standalone scatter
   -- output whose placement extent should constrain later reads of that state.
   let allStmts : List Stmt := sched.stmts.flatMap (fun
@@ -167,7 +172,8 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
           | .scanPre nm _ _ => throw (.unsupportedRecurMorphism .evalScheduled nm)
         return env
       match execution with
-      | .ok env => .ok { env, warnings }
+      -- Private per-writer tensors of additive collection are not part of the reported result.
+      | .ok env => .ok { env := checked.privateNames.foldl (·.erase ·) env, warnings }
       | .error error => .error { error, warnings }
 
 end LeanNCD.Eval

@@ -1633,7 +1633,10 @@ run_cmd do
   let prepared ← match prepareEvalPlan orderedTwinSched (InputSignature.ofDenseInputs topologyInputs) with
     | .ok p => pure p
     | .error _ => throwError "ordered topology sibling failed preparation"
-  match evalScheduled orderedTwinSched topologyInputs, runPreparedDense prepared topologyInputs with
+  -- `Z` is defined here, so the reference refuses a supplied `Z` (`inputIsDefined`, decision note
+  -- B3); the out-of-order fixture above still supplies it to show it is never consumed.
+  match evalScheduled orderedTwinSched (topologyInputs.erase "Z"),
+      runPreparedDense prepared topologyInputs with
   | .ok direct, .ok dense =>
       match direct.env.get? "Y", dense.env.get? "Y" with
       | some directY, some denseY =>
