@@ -975,6 +975,11 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   `NativeLegs.checkIdentity` refuses a program whose names and identities are not
   in bijection (the same name for distinct identities, or the reverse); that case
   is native-unavailable, not an unsupported profile.
+  **Planned alignment (decided 2026-10-14, not landed).** Production will collect multiple
+  definitions additively and the overwrite behavior will be removed rather than kept as an
+  option; this bullet and the one-definition-per-left-hand-side restriction of the numerical
+  profile are rewritten when the first slice lands, so that multi-definition programs are
+  value-compared. See [the decision note](additive_production_decision_note.md).
 - **Evidence.** 79 named fixtures (one of them, F16, evaluates a generated corpus
   of exactly 18 programs) and 39 implementation mutations: 18 proof-protected kills and 21
   executable-fixture kills, not 39 runtime differential samples. Six historical
@@ -1311,6 +1316,12 @@ Differential debugging beyond the bounded profile needs a stated criterion for
 non-integral and f32 numerics, native hooks for causal localization, comparison
 of native nonoutputs, and value comparison of multi-definition programs once
 production collects additively.
+
+The decision to remove overwrite and realize additive collection in production
+(collection by private per-statement tensors and a collector, destination-owned
+algebra, max-plus and min-plus sorts, out-of-range writes as errors) is recorded in
+[the decision note](additive_production_decision_note.md). It is planned and not
+yet implemented, so the divergence described next still holds today.
 
 The [semantic gap audit](tensor_logic_semantic_gap_audit.md) records the known
 production divergence for multiple statements defining one left-hand side:
