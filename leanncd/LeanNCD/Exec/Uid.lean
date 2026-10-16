@@ -95,6 +95,18 @@ inductive CompileError
                                                              -- (`DSL/Ast.lean`). Strings, not
                                                              -- `TensorElementType`: this module
                                                              -- cannot import the AST
+  -- Additive collection, slice 1 (`collectDefinitions`, `DSL/Pipeline/Collect.lean`): the
+  -- multi-writer sets the collector does not admit yet. Each names the destination tensor `T`.
+  | multiWriterScatter   : String → CompileError            -- a writer of a multi-writer `T` is a
+                                                             -- scatter (affine or diagonal LHS)
+  | multiWriterAlgebra   : String → CompileError            -- a writer of a multi-writer `T`
+                                                             -- aggregates with `max`/`min`
+  | writerShapeMismatch  : String → Nat → Nat → CompileError -- `T`, 1-based writer `k`, 0-based
+                                                             -- slot position: writer `k`'s slot is
+                                                             -- not a bare free slot on writer 1's
+                                                             -- axis UID (or the slot counts differ)
+  | reservedNameCollision : String → CompileError           -- a generated private name `T#k` is
+                                                             -- already a source name
   deriving Repr, DecidableEq, BEq, Inhabited
 
 /-- Combined error + UID-counter monad (`EStateM ε σ α = σ → Result ε σ α`, Lean core). Mints fresh
