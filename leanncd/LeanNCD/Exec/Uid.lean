@@ -101,6 +101,9 @@ inductive CompileError
                                                              -- scatter (affine or diagonal LHS)
   | multiWriterAlgebra   : String → CompileError            -- a writer of a multi-writer `T`
                                                              -- aggregates with `max`/`min`
+  | multiWriterScan      : String → CompileError            -- `T` is written by two or more nodes
+                                                             -- and at least one is a scan node
+                                                             -- (plain + scan, or scan + scan)
   | writerShapeMismatch  : String → Nat → Nat → CompileError -- `T`, 1-based writer `k`, 0-based
                                                              -- slot position: writer `k`'s slot is
                                                              -- not a bare free slot on writer 1's

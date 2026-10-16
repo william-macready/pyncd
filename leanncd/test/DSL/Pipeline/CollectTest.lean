@@ -218,4 +218,29 @@ def r4 : TLProgram := tlprog!{ iter r = 2, c = 2
       (sp.stmts.map ScanStmt.outputs) == [["G", "G"]] && isTopoOrdered stmts stmts
   | none => false
 
+/-! ## Scan writers (`multiWriterScan`)
+
+A name written by two or more nodes of which one is a scan node is rejected outright, instead of
+being skipped. The surface cannot reach these shapes (it absorbs a plain reader of a scan name, and
+fails loud with `duplicateScratchProducer` on a second producer), so the schedules are hand-built
+from the scan of R4. -/
+
+private def scanErrorOf (extra : List ScanStmt) (dup : Bool := false) : Option CompileError :=
+  (scheduled r4).bind fun sp =>
+    match desugarMultiWriters { sp with stmts := (if dup then sp.stmts ++ sp.stmts else sp.stmts) ++ extra } with
+    | .error e => some e
+    | .ok _ => none
+
+-- C9 (donor: R4's scan of G): a plain statement also writes G.
+#guard scanErrorOf [.plain (copyStmt "G" "A")] == some (.multiWriterScan "G")
+-- C9b (clone C9): a second scan node of the same name instead of the plain writer.
+#guard scanErrorOf [] (dup := true) == some (.multiWriterScan "G")
+-- C9c accept-neighbour (clone C9, rename the plain writer's destination): one scan writer of G plus
+-- an unrelated plain statement is accepted and generates nothing.
+#guard scanErrorOf [.plain (copyStmt "T" "A")] == none
+#guard match (scheduled r4).map (fun sp => desugarMultiWriters
+    { sp with stmts := sp.stmts ++ [.plain (copyStmt "T" "A")] }) with
+  | some (.ok (_, g)) => g.isEmpty
+  | _ => false
+
 end LeanNCD.CollectTest

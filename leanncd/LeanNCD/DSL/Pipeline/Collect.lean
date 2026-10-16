@@ -18,8 +18,8 @@ so single-writer programs are byte-identical through every later phase.
 
 Slice 1 admits only real-sum and predicate multi-writer sets whose writers are plain `.assign`
 statements with bare free slots on the same axis UIDs; every other multi-writer set fails loud
-(`multiWriterScatter`, `multiWriterAlgebra`, `writerShapeMismatch`). A name any scan node writes is
-left alone (scan mixing stays rejected downstream). The topological-order assertion on the result
+(`multiWriterScatter`, `multiWriterAlgebra`, `writerShapeMismatch`). A name written by two or more
+nodes of which one is a scan node is rejected outright (`multiWriterScan`). The topological-order assertion on the result
 is `collectDefinitions` (`ScheduledValidation.lean`), which wraps this pass, because the readiness
 predicate lives there. -/
 
@@ -50,9 +50,18 @@ private def plainAt? (stmts : List ScanStmt) (i : Nat) : Option Stmt :=
   | some (.plain s) => some s
   | _ => none
 
+/-- The first name (in first-writer order) written by two or more nodes of which at least one is a
+    scan node (`.scan`/`.scanPre`): plain + scan, or scan + scan. One scan node that writes a name
+    in both its base and recurrence halves is a single writer (`routeWrites` dedups). -/
+def scanWriterConflict? (stmts : List ScanStmt) : Option String :=
+  (stmts.flatMap routeWrites).eraseDups.find? fun nm =>
+    let writers := stmts.filter fun sc => (routeWrites sc).contains nm
+    writers.length ≥ 2 && writers.any fun sc => match sc with | .plain _ => false | _ => true
+
 /-- The names with two or more writers that this pass collects, in first-writer order. A name is
-    skipped when a scan node writes it, or when one of its writers is a `.recurMorphism` (the
-    escape hatch every entry rejects on its own terms). -/
+    skipped when one of its writers is a `.recurMorphism` (the escape hatch every entry rejects on
+    its own terms) or a scan node (`desugarMultiWriters` rejects such multi-writer names first,
+    through `scanWriterConflict?`). -/
 def writerGroups (stmts : List ScanStmt) : List WriterGroup :=
   let names := (stmts.flatMap routeWrites).eraseDups
   names.filterMap fun nm =>
@@ -100,6 +109,7 @@ def collectorStmt (nm : String) (firstSlots : List LHSSlot) (n : Nat) : Stmt :=
     generated private names in group order. The identity on single-writer schedules. -/
 def desugarMultiWriters (sched : ScheduledProgram) :
     Except CompileError (ScheduledProgram × List String) := do
+  if let some nm := scanWriterConflict? sched.stmts then throw (.multiWriterScan nm)
   let groups := writerGroups sched.stmts
   if groups.isEmpty then return (sched, [])
   for g in groups do checkWriterGroup sched.stmts g
