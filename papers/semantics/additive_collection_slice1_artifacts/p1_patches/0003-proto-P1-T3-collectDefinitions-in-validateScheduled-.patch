@@ -1,0 +1,405 @@
+From 849d922fbe8422b0a9a871b187bb13c7f3a65ea8 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Wed, 14 Oct 2026 19:36:23 -0700
+Subject: [PATCH 3/3] proto: P1-T3 collectDefinitions in
+ validateScheduled/evalScheduled, hiding, B3 + evaluator tests
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ leanncd/LeanNCD/DSL/AGENTS.md                 |   2 +-
+ .../DSL/Pipeline/ScheduledValidation.lean     |  39 +++-
+ leanncd/LeanNCD/Eval/Error.lean               |   7 +
+ leanncd/LeanNCD/Eval/Eval.lean                |   8 +-
+ leanncd/lakefile.toml                         |   2 +-
+ leanncd/test/Eval/CollectEvalTest.lean        | 171 ++++++++++++++++++
+ leanncd/test/Eval/Plan/CompileTest.lean       |   5 +-
+ leanncd/test/Eval/Plan/ContractTest.lean      |  21 ++-
+ 8 files changed, 233 insertions(+), 22 deletions(-)
+ create mode 100644 leanncd/test/Eval/CollectEvalTest.lean
+
+diff --git a/leanncd/LeanNCD/DSL/AGENTS.md b/leanncd/LeanNCD/DSL/AGENTS.md
+index 72fc08c4..5420e278 100644
+--- a/leanncd/LeanNCD/DSL/AGENTS.md
++++ b/leanncd/LeanNCD/DSL/AGENTS.md
+@@ -54,7 +54,7 @@ Cross-layer imports, each deliberate:
+ - `ThreadedComposed { steps; routing; nExternal }`; `Wire = external Nat | internal Nat Nat`; `StMatP { domLen codLen; coeffs; bias }` with `.wellFormed`/`.validate`.
+ 
+ ### ScheduledProgram consumers
+-- `prepareEvalPlan` and `evalScheduled` are the two public preparation/execution boundaries. Both require `validateScheduled` and consume its declarations, explicit sizes, external-name order, and original statements. Its topology advances by `ScanStmt.publications` (`outputs`, once per node), not `writes`: recurrence scratch stays block-local, plain statements cannot read their own destination, and scan-internal dependencies remain legal. Readiness is ALL-WRITERS: a read is ready once the emitted publications of the name equal the number of nodes writing it, so a reader of a multi-writer tensor waits for every writer and a writer that reads its own (multi-writer) destination is `cyclicDataflow`.
++- `prepareEvalPlan` and `evalScheduled` are the two public preparation/execution boundaries. Both require `validateScheduled` and consume its declarations, explicit sizes, external-name order, and its COLLECTED statements (`collectDefinitions`: multi-writer `T` → private `T#k` + one collector); each must erase `CheckedScheduledProgram.privateNames` from what it reports (`evalScheduled` does; `prepareEvalPlan`'s `materializedNames` must too). Its topology advances by `ScanStmt.publications` (`outputs`, once per node), not `writes`: recurrence scratch stays block-local, plain statements cannot read their own destination, and scan-internal dependencies remain legal. Readiness is ALL-WRITERS: a read is ready once the emitted publications of the name equal the number of nodes writing it, so a reader of a multi-writer tensor waits for every writer and a writer that reads its own (multi-writer) destination is `cyclicDataflow`.
+ - `schedule` establishes the invariant for source programs. `capabilityPreflight` and `orderedExtNames` run only after the checked boundary.
+ - `elaborateAffineReindexings`, `routeCore`, `routeNameInventory`, `physicalizeRaw`, `physicalizeForRoute`, `route` are routing-local; they never invoke evaluation validation.
+ - `PropertyOracle.independentRun` is an independent oracle with a valid-source precondition; its scan-free calls reach the shared boundary through `evalScheduled`.
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+index 4587d0af..b578982b 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+@@ -1,4 +1,5 @@
+ import LeanNCD.DSL.Pipeline.Structural
++import LeanNCD.DSL.Pipeline.Collect
+ 
+ namespace LeanNCD
+ 
+@@ -115,23 +116,45 @@ def scheduleStorageKind (env : DeclEnv) (stmts : List ScanStmt) : Except String
+ def scheduleFloat32Name? (env : DeclEnv) (stmts : List ScanStmt) : Option String :=
+   ((scheduleStorageConstraints env stmts).find? (fun nk => nk.2 == .float32)).map (·.1)
+ 
+-/-- A scheduled program whose source invariants and derived authority have been checked. -/
++/-- Additive collection (decision note §C): `desugarMultiWriters`, with its result asserted to be in
++    producer-before-consumer order. The one entry every boundary calls (`validateScheduled` here;
++    `route` before `physicalizeForRoute`). The identity on single-writer schedules. -/
++def collectDefinitions (sched : ScheduledProgram) :
++    Except CompileError (ScheduledProgram × List String) := do
++  let (collected, privateNames) ← desugarMultiWriters sched
++  unless isTopoOrdered collected.stmts collected.stmts do
++    throw (.cyclicDataflow "collectDefinitions: desugared schedule is not in producer-before-consumer order")
++  return (collected, privateNames)
++
++/-- A scheduled program whose source invariants and derived authority have been checked.
++
++    `program` is the COLLECTED schedule (`collectDefinitions`): at most one writer per name, with
++    the private per-writer tensors `T#k` it introduced listed in `privateNames`. The constructor is
++    private, so only `validateScheduled` can pair a program with its hiding list; every consumer
++    must erase `privateNames` from what it reports. -/
+ structure CheckedScheduledProgram where private mk ::
+   program       : ScheduledProgram
+   declEnv       : DeclEnv
+   explicitSizes : Std.HashMap UID Nat
+   extNames      : List String
++  privateNames  : List String
+ 
+-/-- Check the complete source-invariant boundary for a direct scheduled program. -/
++/-- Check the complete source-invariant boundary for a direct scheduled program, then collect
++    multi-writer tensors. The source checks run on the program as written; the declaration
++    environment and derived fields come from the collected program (whose private tensors carry
++    cloned declarations). -/
+ def validateScheduled (sched : ScheduledProgram) : Except CompileError CheckedScheduledProgram := do
+-  let declEnv ← buildDeclEnv sched.decls
+-  checkScheduledReadRanks declEnv sched.stmts
+-  checkScheduledDtypes declEnv sched.stmts
++  let sourceEnv ← buildDeclEnv sched.decls
++  checkScheduledReadRanks sourceEnv sched.stmts
++  checkScheduledDtypes sourceEnv sched.stmts
+   unless isTopoOrdered sched.stmts sched.stmts do
+     throw (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
+-  return { program := sched
++  let (collected, privateNames) ← collectDefinitions sched
++  let declEnv ← buildDeclEnv collected.decls
++  return { program := collected
+          , declEnv
+-         , explicitSizes := declaredAxisSizes sched.decls
+-         , extNames := orderedExternalNames sched.stmts }
++         , explicitSizes := declaredAxisSizes collected.decls
++         , extNames := orderedExternalNames collected.stmts
++         , privateNames }
+ 
+ end LeanNCD
+diff --git a/leanncd/LeanNCD/Eval/Error.lean b/leanncd/LeanNCD/Eval/Error.lean
+index e958b25b..9174e441 100644
+--- a/leanncd/LeanNCD/Eval/Error.lean
++++ b/leanncd/LeanNCD/Eval/Error.lean
+@@ -351,6 +351,11 @@ inductive EvalError
+       `checkScatterFill` (`Eval.lean`) in `evalPlain`'s scatter arm only; scan-local scatters are
+       exempt. -/
+   | scatterFillNotIdentity (stmt : String) (agg : AggOp)
++  /-- A supplied input names a tensor the program defines (writes), including a private
++      per-writer tensor `T#k` of additive collection. Inputs and defined tensors are disjoint
++      (spec §13.6); the old reference silently replaced the supplied value. Raised by
++      `evalScheduled` for the first defined name, in schedule write order, that `inputs` binds. -/
++  | inputIsDefined (name : String)
+ 
+ /-- The sole renderer for `EvalError` — reproduces every pre-4h message byte-for-byte.
+     `.unaryDomain`'s `context` is deliberately NOT rendered (its `EvalContext` carries strictly
+@@ -421,6 +426,8 @@ statement marks exactly one"
+   | .scatterFillNotIdentity stmt agg =>
+       s!"evalPlain: scatter {stmt} aggregates with {if agg == .max then "max" else "min"} but fills \
+ unwritten cells with a finite value, not the {if agg == .max then "-inf" else "+inf"} identity"
++  | .inputIsDefined name =>
++      s!"evalScheduled: supplied input {name} names a tensor the program defines"
+ 
+ instance : ToString EvalError := ⟨EvalError.render⟩
+ 
+diff --git a/leanncd/LeanNCD/Eval/Eval.lean b/leanncd/LeanNCD/Eval/Eval.lean
+index c6f89081..e977cf24 100644
+--- a/leanncd/LeanNCD/Eval/Eval.lean
++++ b/leanncd/LeanNCD/Eval/Eval.lean
+@@ -140,6 +140,11 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
+   match scheduleFloat32Name? checked.declEnv sched.stmts with
+   | some nm => .error { error := .unsupportedDtype nm, warnings := [] }
+   | none =>
++  -- Inputs and defined tensors are disjoint (decision note B3): a supplied value for a written name
++  -- (a private `T#k` included) used to be silently replaced by the first write.
++  match (sched.stmts.flatMap ScanStmt.writes).find? inputs.contains with
++  | some nm => .error { error := .inputIsDefined nm, warnings := [] }
++  | none =>
+   -- A scan-local scatter's LHS describes placement into persistent state, not a standalone scatter
+   -- output whose placement extent should constrain later reads of that state.
+   let allStmts : List Stmt := sched.stmts.flatMap (fun
+@@ -167,7 +172,8 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
+           | .scanPre nm _ _ => throw (.unsupportedRecurMorphism .evalScheduled nm)
+         return env
+       match execution with
+-      | .ok env => .ok { env, warnings }
++      -- Private per-writer tensors of additive collection are not part of the reported result.
++      | .ok env => .ok { env := checked.privateNames.foldl (·.erase ·) env, warnings }
+       | .error error => .error { error, warnings }
+ 
+ end LeanNCD.Eval
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index 9bc9f792..c836ee9a 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -47,7 +47,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Eval.ContractTest", "Eval.NonlinTest", "Eval.Nonlin32Test", "Eval.ScatterTest",
+          "Eval.WaveBRegressionTest",
+          "Eval.AffineShapeSolverTest",
+-         "Eval.ScanTest", "Eval.EvalExamplesTest", "Eval.EntryTest", "Eval.ExplicitF64", "Eval.ExplicitF64Test",
++         "Eval.ScanTest", "Eval.EvalExamplesTest", "Eval.EntryTest", "Eval.CollectEvalTest", "Eval.ExplicitF64", "Eval.ExplicitF64Test",
+          "Eval.Plan.ContractTest", "Eval.Plan.ScanContractTest", "Eval.Plan.SignatureTest",
+          "Eval.Plan.CoordinatesTest",
+          "Eval.Plan.KernelCheckTest", "Eval.Plan.KernelDenseTest",
+diff --git a/leanncd/test/Eval/CollectEvalTest.lean b/leanncd/test/Eval/CollectEvalTest.lean
+new file mode 100644
+index 00000000..7dcf70c6
+--- /dev/null
++++ b/leanncd/test/Eval/CollectEvalTest.lean
+@@ -0,0 +1,171 @@
++import Eval.ExplicitF64
++import LeanNCD.Eval.Entry
++
++/-!
++# Additive collection through the reference evaluator (slice 1)
++
++A tensor with several writers is the sum (predicate: OR) of the writers' values, not the last
++write. Each fixture pins a value observed through `TLProgram.eval` on an `explicitF64` program,
++compared bit-for-bit (`Float.toBits`). Rejections are compared by their rendered text. Structural
++facts of the desugar itself are in `test/DSL/Pipeline/CollectTest.lean`.
++-/
++
++namespace LeanNCD.Eval.CollectEvalTest
++open LeanNCD LeanNCD.Eval Std
++
++private def tz (shape : List Nat) (d : List Float) : DenseTensor := ⟨shape, d.toArray⟩
++private def inp (l : List (String × DenseTensor)) : HashMap String DenseTensor :=
++  l.foldl (fun m (k, v) => m.insert k v) {}
++
++/-- The bits of tensor `nm` after evaluating `p.explicitF64`, or `none` on failure/absence. -/
++private def bitsOf (p : TLProgram) (i : HashMap String DenseTensor) (nm : String) :
++    Option (List UInt64) :=
++  match TLProgram.eval p.explicitF64 i with
++  | .ok r => r.env[nm]?.map (·.data.toList.map Float.toBits)
++  | .error _ => none
++
++private def keysOf (p : TLProgram) (i : HashMap String DenseTensor) : Option (List String) :=
++  match TLProgram.eval p.explicitF64 i with
++  | .ok r => some ((r.env.toList.map (·.1)).mergeSort (· ≤ ·))
++  | .error _ => none
++
++private def errOf (p : TLProgram) (i : HashMap String DenseTensor) : Option String :=
++  match TLProgram.eval p.explicitF64 i with
++  | .ok _ => none
++  | .error e => some (toString e.error)
++
++private def bits (xs : List Float) : List UInt64 := xs.map Float.toBits
++
++/-! ## Values -/
++
++-- V1 (donor: F14 `multiDefinition`, SourceDifferentialPolicyTest; spec value [7,13]).
++def v1 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := A[i]
++  Y[i] := B[i]
++}
++private def v1In := inp [("A", tz [2] [5, 9]), ("B", tz [2] [2, 4])]
++#guard bitsOf v1 v1In "Y" == some (bits [7, 13])
++-- Private names are hidden from the reported environment.
++#guard keysOf v1 v1In == some ["A", "B", "Y"]
++
++-- V2 (donor: F15 `duplicateDefinition`; clone v1, append `Y := A`; spec value [12,22]).
++def v2 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := A[i]
++  Y[i] := B[i]
++  Y[i] := A[i]
++}
++#guard bitsOf v2 v1In "Y" == some (bits [12, 22])
++
++-- V3 duplicate statement gives 2X (spec §9.1). Clone v1, both writers read X.
++def v3 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := X[i]
++  Y[i] := X[i]
++}
++#guard bitsOf v3 (inp [("X", tz [2] [1.5, 2.5])]) "Y" == some (bits [3, 5])
++
++-- V4 predicate multi-writer collects by ∃ (OR), not by counting: A=[1,0], B=[1,1] gives [1,1]
++-- (a count would give [2,1]). Clone v1, declare Y `predicate`.
++def v4 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  predicate R(i)
++  R[i] := A[i]
++  R[i] := B[i]
++}
++#guard bitsOf v4 (inp [("A", tz [2] [1, 0]), ("B", tz [2] [1, 1])]) "R" == some (bits [1, 1])
++-- The decision-note probe inputs A=[1,0], B=[0,1] (old overwrite: [0,1]).
++#guard bitsOf v4 (inp [("A", tz [2] [1, 0]), ("B", tz [2] [0, 1])]) "R" == some (bits [1, 1])
++
++-- V5 writers are collected in SOURCE order: (0.1+0.2)+0.3 = 0x3FE3333333333334, while the
++-- reversed program (V5r) gives (0.3+0.2)+0.1 = 0x3FE3333333333333. Non-integral on purpose.
++def v5 : TLProgram := tlprog!{
++  axis i : ℕ = 1
++  Y[i] := A[i]
++  Y[i] := B[i]
++  Y[i] := C[i]
++}
++def v5r : TLProgram := tlprog!{
++  axis i : ℕ = 1
++  Y[i] := C[i]
++  Y[i] := B[i]
++  Y[i] := A[i]
++}
++private def v5In := inp [("A", tz [1] [0.1]), ("B", tz [1] [0.2]), ("C", tz [1] [0.3])]
++#guard bitsOf v5 v5In "Y" == some [4603579539098121012]
++#guard bitsOf v5r v5In "Y" == some [4603579539098121011]
++
++-- V6 a reader between two writers sees BOTH (decision note §C.2 probe; old: U = A).
++def v6 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  T[i] := A[i]
++  U[i] := T[i]
++  T[i] := B[i]
++}
++private def v6In := inp [("A", tz [2] [1, 2]), ("B", tz [2] [10, 20])]
++#guard bitsOf v6 v6In "U" == some (bits [11, 22])
++#guard bitsOf v6 v6In "T" == some (bits [11, 22])
++
++-- V7 each writer keeps its own nonlinearity; the collector is the identity (spec §15.3):
++-- relu(A)+relu(B) = [3,2], not relu(A+B) = [2,0].
++def v7 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := relu(A[i])
++  Y[i] := relu(B[i])
++}
++#guard bitsOf v7 (inp [("A", tz [2] [-1, 2]), ("B", tz [2] [3, -4])]) "Y" == some (bits [3, 2])
++
++-- V8 single-writer accept-neighbour of v1: unchanged, nothing hidden.
++def v8 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := A[i]
++}
++#guard bitsOf v8 v1In "Y" == some (bits [5, 9])
++#guard keysOf v8 v1In == some ["A", "B", "Y"]
++
++/-! ## Rejections -/
++
++-- J1 a writer reading its own multi-writer destination is cyclic (old: T = A·B, overwrite chain).
++def j1 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  T[i] := A[i]
++  T[i] := T[i] · B[i]
++}
++#guard errOf j1 v6In == some "compile failed: LeanNCD.CompileError.cyclicDataflow \"schedule: cyclic dataflow\""
++
++-- J2 assign writers on different axes (old: silently truncated). Clone v1, writer 2 on j.
++def j2 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis j : ℕ = 3
++  Y[i] := A[i]
++  Y[j] := B[j]
++}
++#guard errOf j2 (inp [("A", tz [2] [1, 2]), ("B", tz [3] [10, 20, 30])]) ==
++  some "compile failed: LeanNCD.CompileError.writerShapeMismatch \"Y\" 2 0"
++
++-- J3 scatter multi-writer (old: S = [0,10,0,20], X lost).
++def j3 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  S[2*i] := X[i]
++  S[2*i + 1] := Y[i]
++}
++#guard errOf j3 (inp [("X", tz [2] [1, 2]), ("Y", tz [2] [10, 20])]) ==
++  some "compile failed: LeanNCD.CompileError.multiWriterScatter \"S\""
++
++-- J4 max-annotated multi-writer (slice 1 admits only sum).
++def j4 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := maxreduce(A[i, j])
++  Y[i] := maxreduce(B[i, j])
++}
++#guard errOf j4 (inp [("A", tz [2, 2] [1, 2, 3, 4]), ("B", tz [2, 2] [5, 6, 7, 8])]) ==
++  some "compile failed: LeanNCD.CompileError.multiWriterAlgebra \"Y\""
++
++-- J5 a supplied input naming a defined tensor (decision note B3; old: silently replaced).
++#guard errOf v8 (inp [("A", tz [2] [1, 2]), ("Y", tz [2] [7, 7])]) ==
++  some "evalScheduled: supplied input Y names a tensor the program defines"
++-- J5b accept-neighbour: an unrelated extra input passes through unchanged.
++#guard bitsOf v8 (inp [("A", tz [2] [1, 2]), ("Unused", tz [1] [7])]) "Unused" == some (bits [7])
++
++end LeanNCD.Eval.CollectEvalTest
+diff --git a/leanncd/test/Eval/Plan/CompileTest.lean b/leanncd/test/Eval/Plan/CompileTest.lean
+index a9ebb0c4..71ea6980 100644
+--- a/leanncd/test/Eval/Plan/CompileTest.lean
++++ b/leanncd/test/Eval/Plan/CompileTest.lean
+@@ -1633,7 +1633,10 @@ run_cmd do
+   let prepared ← match prepareEvalPlan orderedTwinSched (InputSignature.ofDenseInputs topologyInputs) with
+     | .ok p => pure p
+     | .error _ => throwError "ordered topology sibling failed preparation"
+-  match evalScheduled orderedTwinSched topologyInputs, runPreparedDense prepared topologyInputs with
++  -- `Z` is defined here, so the reference refuses a supplied `Z` (`inputIsDefined`, decision note
++  -- B3); the out-of-order fixture above still supplies it to show it is never consumed.
++  match evalScheduled orderedTwinSched (topologyInputs.erase "Z"),
++      runPreparedDense prepared topologyInputs with
+   | .ok direct, .ok dense =>
+       match direct.env.get? "Y", dense.env.get? "Y" with
+       | some directY, some denseY =>
+diff --git a/leanncd/test/Eval/Plan/ContractTest.lean b/leanncd/test/Eval/Plan/ContractTest.lean
+index 507750e3..dbae46ed 100644
+--- a/leanncd/test/Eval/Plan/ContractTest.lean
++++ b/leanncd/test/Eval/Plan/ContractTest.lean
+@@ -323,8 +323,9 @@ run_cmd do
+         throwError s!"fanOut mutation did not propagate through fan-out: {repr (report.env["Z"]?)}"
+ 
+ /-- `Y` is assigned twice; `Z` reads `Y` after both writes. Pins two properties at once: (a) the
+-    materialized binding for `Y` is the LAST write, and (b) that binding is truly overwritten, not
+-    combined — mutating the FIRST (discarded) write must change nothing. -/
++    materialized binding for `Y` is the SUM of both writes (additive collection, spec §19.2), and
++    (b) the first write genuinely contributes — mutating it must change `Y`. Before additive
++    collection the reference overwrote: Y = Z = B and the first write was discarded. -/
+ private def repeatAssignProg : TLProgram := tlprog!{
+   axis i : ℕ = 2
+   Y[i] := A[i]
+@@ -335,24 +336,24 @@ private def repeatAssignProg : TLProgram := tlprog!{
+ private def repeatAssignInputs (a0 : Float) : HashMap String DenseTensor :=
+   (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[a0, 2.0]⟩).insert "B" ⟨[2], #[100.0, 200.0]⟩
+ 
+--- Baseline: last write (B) is what both Y and Z observe (verified).
++-- Baseline: both Y and Z observe A + B (verified).
+ run_cmd do
+   match TLProgram.eval repeatAssignProg.explicitF64 (repeatAssignInputs 1.0) with
+   | .error e => throwError s!"repeatAssign baseline eval failed: {e}"
+   | .ok report =>
+-      unless expectTensor report.env["Y"]? [2] #[100.0, 200.0] do
++      unless expectTensor report.env["Y"]? [2] #[101.0, 202.0] do
+         throwError s!"repeatAssign baseline Y mismatch: {repr (report.env["Y"]?)}"
+-      unless expectTensor report.env["Z"]? [2] #[100.0, 200.0] do
++      unless expectTensor report.env["Z"]? [2] #[101.0, 202.0] do
+         throwError s!"repeatAssign baseline Z mismatch: {repr (report.env["Z"]?)}"
+ 
+--- Mutation: changing A (the discarded first write) must change NOTHING — proves true overwrite,
+--- not e.g. an accidental combine of both writes.
++-- Mutation: changing A (the first write) must change Y — proves collection, not an overwrite that
++-- discards the first write.
+ run_cmd do
+   match TLProgram.eval repeatAssignProg.explicitF64 (repeatAssignInputs 999.0) with
+-  | .error e => throwError s!"repeatAssign discarded-write eval failed: {e}"
++  | .error e => throwError s!"repeatAssign first-write eval failed: {e}"
+   | .ok report =>
+-      unless expectTensor report.env["Y"]? [2] #[100.0, 200.0] do
+-        throwError s!"repeatAssign: discarded first write leaked through: {repr (report.env["Y"]?)}"
++      unless expectTensor report.env["Y"]? [2] #[1099.0, 202.0] do
++        throwError s!"repeatAssign: first write did not contribute: {repr (report.env["Y"]?)}"
+ 
+ /-- An input tensor not referenced anywhere in the program must still appear, unchanged, in the
+     final environment (§5.4: `env` starts at `inputs`, nothing is filtered out). -/
+-- 
+2.50.1 (Apple Git-155)
+

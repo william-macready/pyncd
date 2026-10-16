@@ -1,0 +1,861 @@
+From 2688526abe0f9c7ccbb1b006aade9fab4fc1409c Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Thu, 15 Oct 2026 12:56:32 -0700
+Subject: [PATCH 2/2] proto: P2a-T1+T2 checked plan hides private names; B3 on
+ the checked side
+
+T1: prepareEvalPlan splits the collector's private names off materializedNames (privateSlots
+records their publication slots; checkPreparedBindings expects the publication sequence minus
+them). T2: PlanBindings.definedNames + InputBindingError.inputIsDefined, raised by packBodyOf
+and unpackBodyOf. Migrated CompileTest repeat block and ordered twin, DifferentialTest
+repeated-assignment case, Adapter32Test fixture 4; new Eval.Plan.CollectPlanTest (f64 + f32).
+Combined commit: both tasks edit the same PlanBindings/Adapter code.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ leanncd/LeanNCD/DSL/AGENTS.md                |   2 +-
+ leanncd/LeanNCD/Eval/Plan/AGENTS.md          |   1 +
+ leanncd/LeanNCD/Eval/Plan/Adapter.lean       |  10 +
+ leanncd/LeanNCD/Eval/Plan/Compile.lean       |  15 +-
+ leanncd/LeanNCD/Eval/Plan/Error.lean         |  10 +
+ leanncd/LeanNCD/Eval/Plan/Prepared.lean      |  26 +-
+ leanncd/lakefile.toml                        |   2 +-
+ leanncd/test/Eval/Plan/Adapter32Test.lean    |  41 ++-
+ leanncd/test/Eval/Plan/CollectPlanTest.lean  | 364 +++++++++++++++++++
+ leanncd/test/Eval/Plan/CompileTest.lean      |  88 ++++-
+ leanncd/test/Eval/Plan/DifferentialTest.lean |  41 ++-
+ 11 files changed, 538 insertions(+), 62 deletions(-)
+ create mode 100644 leanncd/test/Eval/Plan/CollectPlanTest.lean
+
+diff --git a/leanncd/LeanNCD/DSL/AGENTS.md b/leanncd/LeanNCD/DSL/AGENTS.md
+index 96b12028..45c04223 100644
+--- a/leanncd/LeanNCD/DSL/AGENTS.md
++++ b/leanncd/LeanNCD/DSL/AGENTS.md
+@@ -54,7 +54,7 @@ Cross-layer imports, each deliberate:
+ - `ThreadedComposed { steps; routing; nExternal }`; `Wire = external Nat | internal Nat Nat`; `StMatP { domLen codLen; coeffs; bias }` with `.wellFormed`/`.validate`.
+ 
+ ### ScheduledProgram consumers
+-- `prepareEvalPlan` and `evalScheduled` are the two public preparation/execution boundaries. Both require `validateScheduled` and consume its declarations, explicit sizes, external-name order, and its COLLECTED statements (`collectDefinitions`: multi-writer `T` → private `T#k` + one collector); each must erase `CheckedScheduledProgram.privateNames` from what it reports (`evalScheduled` does; `prepareEvalPlan`'s `materializedNames` must too). Its topology advances by `ScanStmt.publications` (`outputs`, once per node), not `writes`: recurrence scratch stays block-local, plain statements cannot read their own destination, and scan-internal dependencies remain legal. Readiness is ALL-WRITERS: a read is ready once the emitted publications of the name equal the number of nodes writing it, so a reader of a multi-writer tensor waits for every writer and a writer that reads its own (multi-writer) destination is `cyclicDataflow`.
++- `prepareEvalPlan` and `evalScheduled` are the two public preparation/execution boundaries. Both require `validateScheduled` and consume its declarations, explicit sizes, external-name order, and its COLLECTED statements (`collectDefinitions`: multi-writer `T` → private `T#k` + one collector); each erases `CheckedScheduledProgram.privateNames` from what it reports (`evalScheduled` from `env`; `prepareEvalPlan` from `materializedNames`, recording them in `privateSlots`). Its topology advances by `ScanStmt.publications` (`outputs`, once per node), not `writes`: recurrence scratch stays block-local, plain statements cannot read their own destination, and scan-internal dependencies remain legal. Readiness is ALL-WRITERS: a read is ready once the emitted publications of the name equal the number of nodes writing it, so a reader of a multi-writer tensor waits for every writer and a writer that reads its own (multi-writer) destination is `cyclicDataflow`.
+ - `schedule` establishes the invariant for source programs. `capabilityPreflight` and `orderedExtNames` run only after the checked boundary.
+ - `elaborateAffineReindexings`, `routeCore`, `routeNameInventory`, `physicalizeRaw`, `physicalizeForRoute`, `route` are routing-local; they never invoke evaluation validation.
+ - `PropertyOracle.independentRun` is an independent oracle with a valid-source precondition; its scan-free calls reach the shared boundary through `evalScheduled`.
+diff --git a/leanncd/LeanNCD/Eval/Plan/AGENTS.md b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+index 0623d14d..cfcbf764 100644
+--- a/leanncd/LeanNCD/Eval/Plan/AGENTS.md
++++ b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+@@ -41,6 +41,7 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
+ - **The write-geometry surface stays exhaustive over `WriteRowKind`.** Nine match sites (six in `Scan.lean`, one in `Compile.lean`'s base-write placement, two in `ScanTest.lean`'s frozen `stepWriteRowsOkNoClause1` oracle) have no wildcard, so a new kind is a compile error at each. The tripwire forces a decision, not a sound one: discharging every arm with `true` compiles and recreates the defect. **Not tripwired, and must be extended by hand:** `classifyWriteRow` (produces kinds), `causalAdvancingRow` (read rows), `baseWriteTouchesBoundary` (decides by equality), and `ScanTest.lean`'s `allRowKinds` list. `.strided` is admitted only with positive scale and nonnegative bias, at non-advancing state dimensions, with `scatterDestExtent` extent agreement; equal-scale distinct residues prove base writes disjoint. `Scan.lean`'s module docstring is authoritative. This family's recurring defect is a predicate saying which rows MUST be a kind but not which MAY NOT be.
+ - **`checkScanPlan` owns dtype positions no `checkAssign` sees** (`stateDtypeNotAdmitted`, `captureDtypeNotAdmitted`). `CheckedScanPlan` stores the signature table it was validated against; `runDenseScan` requires the caller's table to equal it (`signatureContextMismatch`) and the store length to match (`storeArityMismatch`) before allocating or committing anything.
+ - **A block's `.pointwise`/`.axiswise` source must be a PRECEDING `.assign` destination** (`nonlinearSourceNotLocalAssignment`) — what keeps `Scan.lean`'s assignment-only causality walk complete.
++- **Additive-collection private names are published but not persistent outputs.** `prepareEvalPlan` compiles the COLLECTED schedule (`CheckedScheduledProgram.privateNames`: `T#k` per writer plus a collector `T`). Step F splits the publications: `PlanBindings.materializedNames` holds only public names, `privateSlots` the hidden publication slots, and `checkPreparedBindings` requires `materializedNames`' slots to equal the raw publication sequence MINUS `privateSlots` (a hidden slot the plan does not publish is `PreparedBindingsError.privateSlotUnpublished`). `PlanBindings.definedNames` (every name the schedule writes, scan scratch included) backs B3: `packBodyOf`/`unpackBodyOf` refuse a supplied environment that names one (`InputBindingError.inputIsDefined`, first in write order, the name `EvalError.inputIsDefined` reports on the reference). A new publication site must push into `materializedAcc` unconditionally and let Step F partition it.
+ - **Error-constructor shape, not step kind:** a `checkScatter` failure surfaces as `PlanStepError.assign (.nodeError ni e)`, because the payload is a plain `PlanError`.
+ - **JAX is context-free; `affineReference` runs binary64 and binary32, `einsumOnly` binary64 only.** Per node, `checkJaxAssignSupport` re-runs the evidence's own checker and admits only the storage kind's real carrier (`jaxRealCarrier`: `f64`+`admittedAlgebra` or `f32`+`admittedAlgebraF32`), rejecting (located, in the order destination/algebra/context/factors) a Boolean destination or source, tropical max/min, a unary read, and a non-empty `contextShape` under either kind. A `.scatter` is refused categorically (no `checkJaxScatterSupport` exists: neither lowering represents placement, `fill`, or collision); `JaxExecutableWellFormed` admits only an `.assign` step at a kernel's index. Evidence is storage-keyed (`orderedReferenceFor`): an affine kernel is `orderedReference64` or `orderedReference32` by its evidence's kind, and `aggregateEvidenceList kind` folds to the PLAN's claim, so a zero-step f32 plan gets `orderedReference32`, never `orderedReference64`. Binary32 einsum is refused at every door: `validateEinsum` conjoins `einsumStorageAdmitted`, and every einsum entry and every plan-level entry of `EvalPlanCodegen.lean` opens with the mode-aware `requireModeStorage` (plan-level at plan entries, per-assignment at the standalone `lowerAssign`/`loweringToEinsumCandidate`); the standalone affine entries (`renderAffineAssign`, `loweringToAffineTableCandidate`) and `buildAssignFixture` do not. A new einsum or plan-level JAX entry point needs its own `requireModeStorage`. Certification implies rendering: `validateEinsum` mirrors the emitter via `einsumTermRenderable` and the public `einsumTermLabelExtents`, which `lowerAssign` also calls — every factor's source extent must equal its label's iteration extent, since a shorter zero-padded read renders as `a->a` and returns a different shape than Dense. Which NAME belongs to which slot is deliberately not re-checked there (`raw` carries no names).
+ 
+diff --git a/leanncd/LeanNCD/Eval/Plan/Adapter.lean b/leanncd/LeanNCD/Eval/Plan/Adapter.lean
+index 1b97cd4d..3616d50d 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Adapter.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Adapter.lean
+@@ -56,6 +56,14 @@ class StorageCarrier (α : Type) where
+ instance : StorageCarrier Float := ⟨.float64⟩
+ instance : StorageCarrier Float32 := ⟨.float32⟩
+ 
++/-- The first name (in `PlanBindings.definedNames` order, the schedule's write order) that a supplied
++    environment holds a value for although the plan defines it: decision note B3, the checked
++    backend's counterpart of the reference's `evalScheduled` check. Shared by `packBodyOf` and
++    `unpackBodyOf`, so both boundaries refuse exactly the same environments. -/
++def firstDefinedInput? {α : Type} (bindings : PlanBindings) (env : NamedDenseEnvOf α) :
++    Option String :=
++  bindings.definedNames.find? env.contains
++
+ /-- Resolve every input slot `runDensePlan` needs, in `raw.inputSlots` order, by NAME through
+     `requiredInputs` — never by array position. `requiredInputs : RequiredBindings` is already
+     checked (`checkBindings`, `Compile.lean`) to be a name-unique permutation onto
+@@ -89,6 +97,7 @@ def packBodyOf {α : Type} [StorageCarrier α] (plan : PreparedPlan)
+     Except InputBindingError (Array (DenseTensorOf α)) := do
+   unless plan.plan.storageKind == StorageCarrier.kind α do
+     throw (.storageKindMismatch (StorageCarrier.kind α) plan.plan.storageKind)
++  if let some nm := firstDefinedInput? plan.bindings env then throw (.inputIsDefined nm)
+   let raw := plan.plan.raw
+   let slotName : HashMap TensorSlot String :=
+     checked.requiredInputs.bindings.foldl (fun acc b => acc.insert b.slot b.name) {}
+@@ -187,6 +196,7 @@ def unpackBodyOf {α : Type} [StorageCarrier α] (plan : PreparedPlan)
+     (result : Array (DenseTensorOf α)) : Except PlanRunCause (NamedDenseEnvOf α) := do
+   unless plan.plan.storageKind == StorageCarrier.kind α do
+     throw (.storageKindMismatch (StorageCarrier.kind α) plan.plan.storageKind)
++  if let some nm := firstDefinedInput? plan.bindings env then throw (.binding (.inputIsDefined nm))
+   let expected := plan.plan.raw.tensorSigs.size
+   unless result.size == expected do
+     throw (.resultStore (.storeArityMismatch expected result.size))
+diff --git a/leanncd/LeanNCD/Eval/Plan/Compile.lean b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+index 3143aed7..a5f42c25 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Compile.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+@@ -1567,6 +1567,13 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
+     slotOf := slotOf.insert nm slot
+     inputSlotsAcc := inputSlotsAcc.push slot
+     requiredInputsAcc := requiredInputsAcc.push { name := nm, slot := slot }
++  -- Additive collection (decision note §C.8): `checked.program` is the COLLECTED schedule, so a
++  -- multi-writer `T` is compiled as private per-writer tensors `T#k` plus a collector. They are
++  -- published like any other statement (the raw plan is unchanged) but are not persistent outputs:
++  -- Step F splits `materializedAcc` into the public bindings and the private slots. Both lists are
++  -- fixed here because `checked` is shadowed by Step E's checked plan.
++  let privateNames := checked.privateNames
++  let definedNames := (sched.stmts.flatMap ScanStmt.writes).eraseDups
+   let mut stepsAcc : Array PlanStep := #[]
+   let mut materializedAcc : Array SlotBinding := #[]
+   -- Branches on `ScanStmt`'s constructors directly rather than funnelling through a
+@@ -1761,8 +1768,14 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
+   -- should never actually reject compiler-produced input — same "this should ALWAYS succeed" spirit
+   -- as `checkPlan` just above, wired through the same `lift*` pattern regardless.
+   let requiredInputs ← liftBindings warnings (checkBindings inputSlotsAcc requiredInputsAcc)
++  -- Every publication site above pushes into `materializedAcc` unconditionally; the split of the
++  -- collector's private names off it is made once, here, so no push site can forget it.
++  let isPrivate (b : SlotBinding) : Bool := privateNames.contains b.name
+   return { plan := checked
+-         , bindings := { requiredInputs, materializedNames := materializedAcc }
++         , bindings := { requiredInputs
++                       , materializedNames := materializedAcc.filter (fun b => !isPrivate b)
++                       , privateSlots := (materializedAcc.filter isPrivate).map (·.slot)
++                       , definedNames := definedNames.toArray }
+          , warnings }
+ 
+ end LeanNCD.Eval.Plan
+diff --git a/leanncd/LeanNCD/Eval/Plan/Error.lean b/leanncd/LeanNCD/Eval/Plan/Error.lean
+index 71674614..fa9aa027 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Error.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Error.lean
+@@ -481,6 +481,8 @@ inductive PreparedBindingsError
+   | requiredInputs    (cause : BindingsError)
+   | materializedSlot  (cause : PlanError)
+   | publicationSlots  (expected actual : Array TensorSlot)
++  /-- `PlanBindings.privateSlots` names a slot the raw plan never publishes. -/
++  | privateSlotUnpublished (slot : TensorSlot)
+   deriving DecidableEq, BEq, Repr, Inhabited
+ 
+ /- `PlanCompileCause`/`PlanCompileFailure` used to live here (§5.5's sketch), but `invalidPlan`'s
+@@ -510,6 +512,14 @@ inductive InputBindingError
+   | missingEnvBinding (name : String)
+   | shapeMismatch     (name : String) (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
+   | storageMismatch   (name : String) (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
++  /-- The supplied environment holds a value for a name the plan DEFINES (decision note B3):
++      inputs and defined tensors are disjoint, and a supplied value for a written name — a private
++      per-writer `T#k` and block-local scan scratch included — used to be silently replaced by the
++      plan's own write. `name` is the first such name in the schedule's write order
++      (`PlanBindings.definedNames`), the same name the reference evaluator reports as
++      `EvalError.inputIsDefined`. Raised by `packBodyOf` and, for a direct call, `unpackBodyOf`
++      (as `PlanRunCause.binding`). -/
++  | inputIsDefined    (name : String)
+   /-- The named INPUT adapter's own carrier does not match the prepared plan's checked storage kind.
+       `expected` is the adapter's carrier (`.float64` for `pack`, `.float32` for `pack32`), `actual`
+       the plan's. Raised by `packBodyOf` (`Adapter.lean`) as its first statement, before any shape
+diff --git a/leanncd/LeanNCD/Eval/Plan/Prepared.lean b/leanncd/LeanNCD/Eval/Plan/Prepared.lean
+index dab33a03..d9cd47ba 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Prepared.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Prepared.lean
+@@ -91,10 +91,27 @@ def checkBindings (inputSlots : Array TensorSlot) (bindings : Array SlotBinding)
+     slot is never named). Block-local scratch inside a scan is deliberately NOT here — it never
+     becomes an outer slot or a materialized name. A name reassigned twice appears twice; `unpack`
+     (Task 3) relies on this, inserting each in order so the LAST entry for a repeated name is the one
+-    that survives. -/
++    that survives.
++
++    Additive collection (decision note §C.8): the private per-writer tensors `T#k` that the
++    collector introduces are NOT persistent outputs — `materializedNames` omits them, so a
++    collected multi-writer name appears exactly once, under its public name (so the repeated-name
++    entries and `unpack`'s "last write wins" above now only describe a hand-built `PlanBindings`;
++    `prepareEvalPlan` never repeats a public name). Two further fields
++    record what that omission would otherwise lose:
++
++    * `privateSlots` — the publication slots of the omitted private names, in publication order.
++      They are still published by the raw plan (`rawPublicationSlots`), so `checkPreparedBindings`
++      expects `materializedNames`' slots to be exactly the publication sequence MINUS these.
++    * `definedNames` — every name the schedule writes (public, private, and scan-local scratch),
++      deduplicated in first-write order: the set a supplied input may not name (decision note B3,
++      `InputBindingError.inputIsDefined`). Defaults to empty, i.e. no input is refused, for a
++      hand-built `PlanBindings`. -/
+ structure PlanBindings where
+   requiredInputs    : RequiredBindings
+   materializedNames : Array SlotBinding
++  privateSlots      : Array TensorSlot := #[]
++  definedNames      : Array String := #[]
+   deriving Repr
+ 
+ /-- No `deriving` clause: `CheckedEvalPlan` (private constructor) has no `BEq`/`DecidableEq`/
+@@ -180,7 +197,12 @@ def checkPreparedBindings (source : PreparedPlan) :
+   match rawMaterializedWith source.bindings.materializedNames raw.tensorSigs with
+   | .error e => throw (.materializedSlot e)
+   | .ok _ => pure ()
+-  let expected := rawPublicationSlots raw
++  let published := rawPublicationSlots raw
++  -- A hidden (private) slot must be one the raw plan really publishes; the visible bindings then
++  -- cover exactly the rest of the publication sequence, in order.
++  for s in source.bindings.privateSlots do
++    unless published.contains s do throw (.privateSlotUnpublished s)
++  let expected := published.filter (fun s => !source.bindings.privateSlots.contains s)
+   let actual := source.bindings.materializedNames.map (·.slot)
+   unless actual == expected do
+     throw (.publicationSlots expected actual)
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index c836ee9a..47b2ae5d 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -61,7 +61,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Eval.Plan.GraphCheckTest", "Eval.Plan.GraphDenseTest", "Eval.Plan.NonlinCheckTest",
+          "Eval.Plan.NonlinDenseTest", "Eval.Plan.NonlinDense32Test",
+          "Eval.Plan.CompileTest", "Eval.Plan.ScatterCompileTest", "Eval.Plan.NonlinCompileTest",
+-         "Eval.Plan.AdapterTest", "Eval.Plan.Adapter32Test", "Eval.Plan.Scatter32OracleTest", "Eval.Plan.ScanDense32Test",
++         "Eval.Plan.AdapterTest", "Eval.Plan.Adapter32Test", "Eval.Plan.CollectPlanTest", "Eval.Plan.Scatter32OracleTest", "Eval.Plan.ScanDense32Test",
+          "Eval.Plan.DefaultF32Test",
+          "Eval.Plan.DifferentialTest",
+          "Eval.Plan.ExecutableTest",
+diff --git a/leanncd/test/Eval/Plan/Adapter32Test.lean b/leanncd/test/Eval/Plan/Adapter32Test.lean
+index 4cfe2b74..39d3f6f4 100644
+--- a/leanncd/test/Eval/Plan/Adapter32Test.lean
++++ b/leanncd/test/Eval/Plan/Adapter32Test.lean
+@@ -117,10 +117,11 @@ run_cmd do
+ /-! ## Fixture 4: repeated assignment, homogeneous f32
+ 
+ `CompileTest.repeatSched`'s shape (`Y[i] := A[i]; Y[i] := B[i]; Z[i] := Y[i]`) in source spelling
+-with binary32 declarations. `materializedNames` is NOT deduplicated — two `Y` entries, one per
+-write, then `Z`, in schedule order — and `unpack32` inserts them IN THAT ORDER, so the LAST write is
+-what survives under the repeated name. A deduplicating or reversed publication would leave `Y` at
+-`A`'s value instead of `B`'s, which is why the two inputs carry visibly different values. -/
++with binary32 declarations. Additive collection (decision note §C): the two writers of `Y` are
++SUMMED by a collector over the private per-writer tensors `Y#1`, `Y#2`, which are not persistent
++outputs, so `materializedNames` is `Y` once, then `Z`, and `unpack32` publishes `Y = A + B` (it used
++to publish the LAST write, `B`). The two inputs carry visibly different values, so neither a
++last-wins nor a first-wins collection satisfies the expected bits. -/
+ 
+ def f32RepeatProg : TLProgram := tlprog!{
+   axis i : ℕ = 2
+@@ -138,29 +139,31 @@ run_cmd do
+   let prepared ← match prepare32 f32RepeatProg f32RepeatInputs with
+     | .ok p => pure p
+     | .error e => throwError s!"f32 repeat: {e}"
+-  unless prepared.bindings.materializedNames.map (·.name) == #["Y", "Y", "Z"] do
++  unless prepared.bindings.materializedNames.map (·.name) == #["Y", "Z"] do
+     throwError s!"f32 repeat materializedNames drifted: \
+ {repr (prepared.bindings.materializedNames.map (·.name))}"
+-  -- The two `Y` entries name DISTINCT slots, so "last write wins" is a real ordering claim about
+-  -- publication rather than a statement about one slot written twice.
+-  let ySlots := (prepared.bindings.materializedNames.filter (·.name == "Y")).map (·.slot)
+-  unless ySlots.size == 2 && ySlots[0]! != ySlots[1]! do
+-    throwError s!"f32 repeat: expected two distinct Y slots, got {repr ySlots}"
++  -- The two private writers are published (their slots are recorded, distinct from each other and
++  -- from every public slot) but never named in `materializedNames`.
++  let ps := prepared.bindings.privateSlots
++  unless ps.size == 2 && ps[0]! != ps[1]! &&
++      prepared.bindings.materializedNames.all (fun b => !ps.contains b.slot) do
++    throwError s!"f32 repeat: expected two distinct hidden slots, got {repr ps}"
+   match runPreparedDense32 prepared f32RepeatInputs with
+   | .error e => throwError s!"f32 repeat run failed: {repr e.cause}"
+   | .ok report =>
+-      -- `100` and `200` as exact binary32 bits — `B`'s values, not `A`'s (`1`/`2` would be
+-      -- `#[1065353216, 1073741824]`).
+-      unless expect32 report.env "Y" [2] #[1120403456, 1128792064] do
+-        throwError s!"f32 repeat: Y did not take the LAST write's value: \
+-{repr (bitsOf report.env "Y")}"
+-      unless expect32 report.env "Z" [2] #[1120403456, 1128792064] do
+-        throwError s!"f32 repeat: Z did not read the LAST write of Y: \
+-{repr (bitsOf report.env "Z")}"
++      -- `101` and `202` as exact binary32 bits — the SUM `A + B` (`B`'s `100`/`200` alone would be
++      -- `#[1120403456, 1128792064]`).
++      unless expect32 report.env "Y" [2] #[1120534528, 1128923136] do
++        throwError s!"f32 repeat: Y is not the sum of its writers: {repr (bitsOf report.env "Y")}"
++      unless expect32 report.env "Z" [2] #[1120534528, 1128923136] do
++        throwError s!"f32 repeat: Z did not read the collected Y: {repr (bitsOf report.env "Z")}"
++      -- No private name leaks into the report: exactly `A`, `B`, `Y`, `Z`.
++      unless report.env.size == 4 && !report.env.contains "Y#1" && !report.env.contains "Y#2" do
++        throwError s!"f32 repeat: env inventory is not [A, B, Y, Z]: {report.env.size} entries"
+   match matDtypes prepared with
+   | .error e => throwError s!"f32 repeat: {e}"
+   | .ok pairs =>
+-      unless pairs == #[("Y", ScalarDType.f32), ("Y", ScalarDType.f32), ("Z", ScalarDType.f32)] do
++      unless pairs == #[("Y", ScalarDType.f32), ("Z", ScalarDType.f32)] do
+         throwError s!"f32 repeat materialized signatures wrong: {repr pairs}"
+ 
+ /-! ## Fixture 5: a malformed binary32 input buffer is rejected BEFORE execution
+diff --git a/leanncd/test/Eval/Plan/CollectPlanTest.lean b/leanncd/test/Eval/Plan/CollectPlanTest.lean
+new file mode 100644
+index 00000000..07d29878
+--- /dev/null
++++ b/leanncd/test/Eval/Plan/CollectPlanTest.lean
+@@ -0,0 +1,364 @@
++import LeanNCD.Eval.Entry
++import LeanNCD.Eval.Plan.Adapter32
++import Eval.Plan.ScanCompileTest   -- `scratchSched`: the donor for block-local scan scratch
++
++/-!
++# Additive collection through the CHECKED plan (slice 1, P2a)
++
++`Eval/CollectEvalTest.lean` pins the multi-writer collection on the reference evaluator. This module
++pins the same programs through `prepareEvalPlan` / `runPreparedDense` / `runPreparedDense32`:
++
++* **Hiding (decision note §C.8).** The private per-writer tensors `Y#k` are published by the raw plan
++  but are not persistent outputs: `materializedNames`, `materializedSignatures` and the
++  `unpack`/`unpack32` result contain only public names, and the checked plan's reported environment
++  equals the reference's.
++* **B3 (decision note B3).** A supplied input that names a tensor the program defines is refused by
++  `runPreparedDense`/`runPreparedDense32`/`unpack`/`unpack32` with
++  `InputBindingError.inputIsDefined`, naming the same tensor the reference names as
++  `EvalError.inputIsDefined`.
++
++f32 is the DEFAULT dtype: plain `tensor` and undeclared names are binary32, `tensor f64` is the
++explicit binary64 spelling, and the reference evaluator refuses f32 outright. So every fixture exists
++twice: a binary64 version (declared `tensor f64` through `TLProgram.explicitF64`, compared
++bit-for-bit with `evalScheduled`) and a binary32 version through `Adapter32`/`Dense32` (declared
++`tensor f32`, and UNDECLARED, i.e. the default), whose expected bit patterns are observed from real
++runs and never narrowed from binary64.
++-/
++
++namespace LeanNCD.Eval.Plan.CollectPlanTest
++open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan Std
++
++/-! ## Helpers -/
++
++private def keysOf {α : Type} (env : HashMap String α) : List String :=
++  (env.toList.map (·.1)).toArray.qsort (· < ·) |>.toList
++
++private def sched64 (p : TLProgram) : Option ScheduledProgram :=
++  match p.explicitF64.compileToScheduled.run 0 with
++  | .ok s _ => some s
++  | .error _ _ => none
++
++private def sched32 (p : TLProgram) : Option ScheduledProgram :=
++  match p.compileToScheduled.run 0 with
++  | .ok s _ => some s
++  | .error _ _ => none
++
++private def prepared64 (p : TLProgram) (inputs : NamedDenseEnv) : Option PreparedPlan :=
++  (sched64 p).bind fun s => (prepareEvalPlan s (InputSignature.ofDenseInputs inputs)).toOption
++
++private def prepared32 (p : TLProgram) (inputs : NamedDenseEnv32) : Option PreparedPlan :=
++  (sched32 p).bind fun s =>
++    (InputSignature.ofDenseInputs32ForDecls s.decls inputs).toOption.bind fun sig =>
++      (prepareEvalPlan s sig).toOption
++
++private def plan64 (p : TLProgram) (inputs : NamedDenseEnv) : Option NamedDenseEnv :=
++  (prepared64 p inputs).bind fun pp => (runPreparedDense pp inputs).toOption.map (·.env)
++
++private def ref64 (p : TLProgram) (inputs : NamedDenseEnv) : Option NamedDenseEnv :=
++  (sched64 p).bind fun s => (evalScheduled s inputs).toOption.map (·.env)
++
++private def plan32 (p : TLProgram) (inputs : NamedDenseEnv32) : Option NamedDenseEnv32 :=
++  (prepared32 p inputs).bind fun pp => (runPreparedDense32 pp inputs).toOption.map (·.env)
++
++private def bits64 (env : Option NamedDenseEnv) (nm : String) : Option (Array UInt64) :=
++  env.bind fun e => (e[nm]?).map fun t => t.data.map Float.toBits
++
++private def bits32 (env : Option NamedDenseEnv32) (nm : String) : Option (Array UInt32) :=
++  env.bind fun e => (e[nm]?).map fun t => t.data.map Float32.toBits
++
++private def mk64 (xs : List (String × List Nat × Array Float)) : NamedDenseEnv :=
++  xs.foldl (fun m (nm, sh, d) => m.insert nm ⟨sh, d⟩) {}
++
++private def mk32 (xs : List (String × List Nat × Array Float32)) : NamedDenseEnv32 :=
++  xs.foldl (fun m (nm, sh, d) => m.insert nm ⟨sh, d⟩) {}
++
++private def f64bits (xs : Array Float) : Option (Array UInt64) := some (xs.map Float.toBits)
++private def f32bits (xs : Array Float32) : Option (Array UInt32) := some (xs.map Float32.toBits)
++
++private def matNames (p : Option PreparedPlan) : Option (Array String) :=
++  p.map fun pp => pp.bindings.materializedNames.map (·.name)
++
++/-! ## T1: hiding
++
++### H1 (donor: `CollectEvalTest` V1, `Y:=A; Y:=B`)
++
++Two writers of `Y`. Checked plan: `materializedNames = [Y]`, two hidden slots, env keys exactly
++`[A, B, Y]`, `Y = A + B`. Accept-neighbour: H1s, the single-writer program, same keys, `Y = A`. -/
++
++def h1 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := A[i]
++  Y[i] := B[i]
++}
++def h1s : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := A[i]
++}
++private def h1In : NamedDenseEnv := mk64 [("A", [2], #[5.0, 9.0]), ("B", [2], #[2.0, 4.0])]
++
++-- binary64 (explicitF64): plan and reference agree on keys and values.
++#guard keysOf <$> plan64 h1 h1In == some ["A", "B", "Y"]
++#guard bits64 (plan64 h1 h1In) "Y" == f64bits #[7.0, 13.0]
++#guard (keysOf <$> plan64 h1 h1In) == (keysOf <$> ref64 h1 h1In)
++#guard bits64 (plan64 h1 h1In) "Y" == bits64 (ref64 h1 h1In) "Y"
++#guard matNames (prepared64 h1 h1In) == some #["Y"]
++#guard (prepared64 h1 h1In).map (·.bindings.privateSlots.size) == some 2
++-- accept-neighbour: one writer, same inventory, no hidden slot.
++#guard keysOf <$> plan64 h1s h1In == some ["A", "B", "Y"]
++#guard bits64 (plan64 h1s h1In) "Y" == f64bits #[5.0, 9.0]
++#guard (prepared64 h1s h1In).map (·.bindings.privateSlots) == some #[]
++
++/-- `h1` with `Y` declared `tensor f32` (the clone path) and with `Y` undeclared (the default). -/
++def h1f32 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  tensor f32 A(i), B(i), Y(i)
++  Y[i] := A[i]
++  Y[i] := B[i]
++}
++private def h1In32 : NamedDenseEnv32 :=
++  mk32 [("A", [2], #[5.0, 9.0]), ("B", [2], #[2.0, 4.0])]
++
++-- binary32, declared: private names absent, one public Y, two hidden slots.
++#guard keysOf <$> plan32 h1f32 h1In32 == some ["A", "B", "Y"]
++#guard bits32 (plan32 h1f32 h1In32) "Y" == f32bits #[7.0, 13.0]
++#guard matNames (prepared32 h1f32 h1In32) == some #["Y"]
++#guard (prepared32 h1f32 h1In32).map (·.bindings.privateSlots.size) == some 2
++-- binary32, undeclared (default f32): same.
++#guard keysOf <$> plan32 h1 h1In32 == some ["A", "B", "Y"]
++#guard bits32 (plan32 h1 h1In32) "Y" == f32bits #[7.0, 13.0]
++#guard matNames (prepared32 h1 h1In32) == some #["Y"]
++-- accept-neighbour (binary32): the single-writer program.
++#guard keysOf <$> plan32 h1s h1In32 == some ["A", "B", "Y"]
++#guard (prepared32 h1s h1In32).map (·.bindings.privateSlots) == some #[]
++
++/-- The materialized SIGNATURE table lists only public names, in both precisions. -/
++private def matDtypes (p : Option PreparedPlan) : Option (Array (String × ScalarDType)) :=
++  p.bind fun pp => match pp.materializedSignatures with
++    | .ok a => some (a.map fun e => (e.1, e.2.dtype))
++    | .error _ => none
++#guard matDtypes (prepared64 h1 h1In) == some #[("Y", .f64)]
++#guard matDtypes (prepared32 h1f32 h1In32) == some #[("Y", .f32)]
++
++/-- `unpack32` itself, fed the worker's positional result: private names are absent from its output. -/
++private def unpack32Keys (p : TLProgram) (inputs : NamedDenseEnv32) : Option (List String) := do
++  let pp ← prepared32 p inputs
++  let packed ← (pack32 pp inputs).toOption
++  let result ← (runDensePlan32 pp.plan packed).toOption
++  let env ← (unpack32 pp inputs result).toOption
++  return keysOf env
++#guard unpack32Keys h1f32 h1In32 == some ["A", "B", "Y"]
++#guard unpack32Keys h1 h1In32 == some ["A", "B", "Y"]
++
++/-! ### H2 (donor: `CollectEvalTest` V5, non-integral three writers, order)
++
++`Y := A; Y := B; Y := W` with `A = 0.1`, `B = 0.3`, `W = 0.4` on a one-element axis. The collector
++folds the writers in SOURCE order, so the result is `(A + B) + W` and the reversed program gives
++`(W + B) + A`. The three values were chosen so that the two orders differ in BOTH precisions. The
++binary64 expected bits come from the reference evaluator on the same program; the binary32 bits are
++observed from the checked plan (`Dense32`) and are not a narrowed binary64 result. -/
++
++def h2 : TLProgram := tlprog!{
++  axis i : ℕ = 1
++  Y[i] := A[i]
++  Y[i] := B[i]
++  Y[i] := W[i]
++}
++def h2r : TLProgram := tlprog!{
++  axis i : ℕ = 1
++  Y[i] := W[i]
++  Y[i] := B[i]
++  Y[i] := A[i]
++}
++/-- `h2` with every name declared `tensor f32` (the clone path), beside the undeclared default. -/
++def h2f32 : TLProgram := tlprog!{
++  axis i : ℕ = 1
++  tensor f32 A(i), B(i), W(i), Y(i)
++  Y[i] := A[i]
++  Y[i] := B[i]
++  Y[i] := W[i]
++}
++private def h2In : NamedDenseEnv :=
++  mk64 [("A", [1], #[0.1]), ("B", [1], #[0.3]), ("W", [1], #[0.4])]
++private def h2In32 : NamedDenseEnv32 :=
++  mk32 [("A", [1], #[0.1]), ("B", [1], #[0.3]), ("W", [1], #[0.4])]
++
++#guard bits64 (plan64 h2 h2In) "Y" == bits64 (ref64 h2 h2In) "Y"
++#guard bits64 (plan64 h2r h2In) "Y" == bits64 (ref64 h2r h2In) "Y"
++#guard bits64 (plan64 h2 h2In) "Y" != bits64 (plan64 h2r h2In) "Y"
++#guard bits64 (plan64 h2 h2In) "Y" == f64bits #[(0.1 + 0.3) + 0.4]
++#guard bits32 (plan32 h2 h2In32) "Y" != bits32 (plan32 h2r h2In32) "Y"
++-- Observed bit patterns (real runs): source order folds left, so reversing the writers changes the
++-- last bit in both precisions. The f32 default (undeclared) schedule and the declared one agree.
++#guard bits64 (plan64 h2 h2In) "Y" == some #[4605380978949069210]
++#guard bits64 (plan64 h2r h2In) "Y" == some #[4605380978949069209]
++#guard bits32 (plan32 h2 h2In32) "Y" == some #[1061997773]
++#guard bits32 (plan32 h2r h2In32) "Y" == some #[1061997774]
++#guard bits32 (plan32 h2f32 h2In32) "Y" == some #[1061997773]
++
++/-! ### H3 (donor: `CollectEvalTest` V4, predicate OR)
++
++`predicate R(i); R := A; R := B`. The collector of a predicate `R` is an OR (`Combine.bool` through
++`R`'s own declaration), not a sum and not a count. Binary64 compares with the reference; the binary32
++version runs on an f32 schedule (`A`, `B` undeclared, i.e. the default dtype) where the predicate is
++storage-neutral and its private clones are predicates too. Accept-neighbour: the single writer. -/
++
++def h3 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  predicate R(i)
++  R[i] := A[i]
++  R[i] := B[i]
++}
++def h3s : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  predicate R(i)
++  R[i] := A[i]
++}
++private def h3In : NamedDenseEnv := mk64 [("A", [2], #[1.0, 0.0]), ("B", [2], #[0.0, 1.0])]
++private def h3In32 : NamedDenseEnv32 := mk32 [("A", [2], #[1.0, 0.0]), ("B", [2], #[0.0, 1.0])]
++
++#guard bits64 (plan64 h3 h3In) "R" == bits64 (ref64 h3 h3In) "R"
++#guard bits64 (plan64 h3 h3In) "R" == f64bits #[1.0, 1.0]
++#guard keysOf <$> plan64 h3 h3In == some ["A", "B", "R"]
++#guard matDtypes (prepared64 h3 h3In) == some #[("R", .bool)]
++#guard bits64 (plan64 h3s h3In) "R" == f64bits #[1.0, 0.0]
++#guard bits32 (plan32 h3 h3In32) "R" == f32bits #[1.0, 1.0]
++#guard keysOf <$> plan32 h3 h3In32 == some ["A", "B", "R"]
++#guard matDtypes (prepared32 h3 h3In32) == some #[("R", .bool)]
++#guard bits32 (plan32 h3s h3In32) "R" == f32bits #[1.0, 0.0]
++
++/-! ### H4: no `mixedStorageKinds` from `T#k`
++
++`tensor f64 Y(i)` / `tensor f32 Y(i)` with two writers: the private clones `Y#1`, `Y#2` carry `Y`'s
++element type, so the schedule stays homogeneous and PREPARES. A clone left undeclared would default
++to f32 and make the f64 schedule mixed (rejected `unsupportedDtype ... mixed f32/f64`), which is what
++the f64 version below discriminates; the f32 version holds for the default-f32 reason either way, so
++its discriminating mutation changes the clone's element type instead. -/
++
++def h4f64 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  tensor f64 A(i), B(i), Y(i)
++  Y[i] := A[i]
++  Y[i] := B[i]
++}
++#guard (prepared64 h4f64 h1In).isSome
++#guard bits64 (plan64 h4f64 h1In) "Y" == f64bits #[7.0, 13.0]
++#guard (prepared32 h1f32 h1In32).isSome
++
++/-! ## T2: B3 on the checked side
++
++A supplied input naming a tensor the program defines is refused by BOTH backends with the same name:
++the reference as `EvalError.inputIsDefined`, the checked plan as `InputBindingError.inputIsDefined`
++(through `runPreparedDense`/`runPreparedDense32`, wrapped `.binding`, and through a direct
++`unpack`/`unpack32`, wrapped `.binding` into `PlanRunCause`). The first defined name in the
++schedule's write order is reported by both, including the private `Y#k`. Block-local scan scratch
++counts as defined too (`ScanStmt.writes`). Unrelated extra inputs still pass through unchanged. -/
++
++/-- The name the reference refuses, if it refuses with `inputIsDefined`. -/
++private def refDefined (s : ScheduledProgram) (supplied : NamedDenseEnv) : Option String :=
++  match evalScheduled s supplied with
++  | .error { error := .inputIsDefined nm, .. } => some nm
++  | _ => none
++
++private def prepS64 (s : ScheduledProgram) (clean : NamedDenseEnv) : Option PreparedPlan :=
++  (prepareEvalPlan s (InputSignature.ofDenseInputs clean)).toOption
++
++private def prepS32 (s : ScheduledProgram) (clean : NamedDenseEnv32) : Option PreparedPlan :=
++  (InputSignature.ofDenseInputs32ForDecls s.decls clean).toOption.bind fun sig =>
++    (prepareEvalPlan s sig).toOption
++
++/-- The name the checked plan refuses through `runPreparedDense`. -/
++private def runDefined64 (pp : PreparedPlan) (supplied : NamedDenseEnv) : Option String :=
++  match runPreparedDense pp supplied with
++  | .error { cause := .binding (.inputIsDefined nm), .. } => some nm
++  | _ => none
++
++/-- ... and through a direct `unpack` (any positional store: the check precedes the arity check). -/
++private def unpackDefined64 (pp : PreparedPlan) (supplied : NamedDenseEnv) : Option String :=
++  match unpack pp supplied #[] with
++  | .error (.binding (.inputIsDefined nm)) => some nm
++  | _ => none
++
++/-- ... and through a direct `pack` (the pack door is guarded on its own: through the runner the
++    unpack door would report the same cause, so only a direct call pins this guard). -/
++private def packDefined64 (pp : PreparedPlan) (supplied : NamedDenseEnv) : Option String :=
++  match pack pp supplied with
++  | .error (.inputIsDefined nm) => some nm
++  | _ => none
++
++private def packDefined32 (pp : PreparedPlan) (supplied : NamedDenseEnv32) : Option String :=
++  match pack32 pp supplied with
++  | .error (.inputIsDefined nm) => some nm
++  | _ => none
++
++private def runDefined32 (pp : PreparedPlan) (supplied : NamedDenseEnv32) : Option String :=
++  match runPreparedDense32 pp supplied with
++  | .error { cause := .binding (.inputIsDefined nm), .. } => some nm
++  | _ => none
++
++private def unpackDefined32 (pp : PreparedPlan) (supplied : NamedDenseEnv32) : Option String :=
++  match unpack32 pp supplied #[] with
++  | .error (.binding (.inputIsDefined nm)) => some nm
++  | _ => none
++
++/-- The four binary64 observers of one (program, supplied-environment) pair, as a tuple:
++    reference, `runPreparedDense`, `unpack`, `pack`. -/
++private def verdict64 (s : ScheduledProgram) (clean supplied : NamedDenseEnv) :
++    Option (Option String × Option String × Option String × Option String) :=
++  (prepS64 s clean).map fun pp =>
++    (refDefined s supplied, runDefined64 pp supplied, unpackDefined64 pp supplied, packDefined64 pp supplied)
++
++/-- The three binary32 observers: `runPreparedDense32`, `unpack32`, `pack32`. -/
++private def verdict32 (s : ScheduledProgram) (clean supplied : NamedDenseEnv32) :
++    Option (Option String × Option String × Option String) :=
++  (prepS32 s clean).map fun pp =>
++    (runDefined32 pp supplied, unpackDefined32 pp supplied, packDefined32 pp supplied)
++
++private def s1 : Option ScheduledProgram := sched64 h1s    -- `Y := A`, single writer
++private def s1m : Option ScheduledProgram := sched64 h1   -- `Y := A; Y := B`, two writers
++private def s1_32 : Option ScheduledProgram := sched32 h1s
++private def s1m_32 : Option ScheduledProgram := sched32 h1
++
++private def yIn : NamedDenseEnv := h1In.insert "Y" ⟨[2], #[7.0, 7.0]⟩
++private def y1In : NamedDenseEnv := h1In.insert "Y#1" ⟨[2], #[7.0, 7.0]⟩
++private def yy1In : NamedDenseEnv := yIn.insert "Y#1" ⟨[2], #[7.0, 7.0]⟩
++private def yIn32 : NamedDenseEnv32 := h1In32.insert "Y" ⟨[2], #[7.0, 7.0]⟩
++private def y1In32 : NamedDenseEnv32 := h1In32.insert "Y#1" ⟨[2], #[7.0, 7.0]⟩
++private def yy1In32 : NamedDenseEnv32 := yIn32.insert "Y#1" ⟨[2], #[7.0, 7.0]⟩
++
++-- B3.1 (donor: `CollectEvalTest` J5): single writer, supplied `Y`; all three observers name `Y`.
++#guard s1.bind (verdict64 · h1In yIn) == some (some "Y", some "Y", some "Y", some "Y")
++-- B3.1 accept-neighbour: the same program without the supplied `Y`, and with an unrelated extra input.
++#guard s1.bind (verdict64 · h1In h1In) == some (none, none, none, none)
++#guard s1.bind (verdict64 · h1In (h1In.insert "Unused" ⟨[1], #[7.0]⟩)) == some (none, none, none, none)
++-- B3.1 f32 (undeclared = default f32, and declared f32): the checked plan names `Y` too.
++#guard s1_32.bind (verdict32 · h1In32 yIn32) == some (some "Y", some "Y", some "Y")
++#guard s1_32.bind (verdict32 · h1In32 h1In32) == some (none, none, none)
++#guard s1_32.bind (verdict32 · h1In32 (h1In32.insert "Unused" ⟨[1], #[7.0]⟩)) == some (none, none, none)
++#guard (sched32 h1f32).bind (verdict32 · h1In32 yIn32) == some (some "Y", some "Y", some "Y")
++
++-- B3.2 (clone B3.1, two writers): a supplied `Y#1` is refused by name; with `Y` also supplied the FIRST
++-- defined name in write order wins, on every observer.
++#guard s1m.bind (verdict64 · h1In yIn) == some (some "Y", some "Y", some "Y", some "Y")
++#guard s1m.bind (verdict64 · h1In y1In) == some (some "Y#1", some "Y#1", some "Y#1", some "Y#1")
++#guard s1m.bind (verdict64 · h1In yy1In) == some (some "Y#1", some "Y#1", some "Y#1", some "Y#1")
++#guard s1m.bind (verdict64 · h1In h1In) == some (none, none, none, none)
++#guard s1m_32.bind (verdict32 · h1In32 yIn32) == some (some "Y", some "Y", some "Y")
++#guard s1m_32.bind (verdict32 · h1In32 y1In32) == some (some "Y#1", some "Y#1", some "Y#1")
++#guard s1m_32.bind (verdict32 · h1In32 yy1In32) == some (some "Y#1", some "Y#1", some "Y#1")
++#guard s1m_32.bind (verdict32 · h1In32 h1In32) == some (none, none, none)
++
++-- B3.3 (donor: `ScanCompileTest.scratchSched`): block-local scan scratch `T` counts as defined on both
++-- backends, although it is not a persistent output.
++private def scratchS64 : ScheduledProgram :=
++  Eval.Plan.ScanCompileTest.explicitF64Sched Eval.Plan.ScanCompileTest.scratchSched
++private def scratchIn : NamedDenseEnv := Eval.Plan.ScanCompileTest.scratchInputs
++private def scratchIn32 : NamedDenseEnv32 :=
++  mk32 [("S0", [], #[1.0]), ("K", [3], #[2.0, 3.0, 4.0])]
++#guard verdict64 scratchS64 scratchIn (scratchIn.insert "T" ⟨[], #[9.0]⟩) ==
++  some (some "T", some "T", some "T", some "T")
++#guard verdict64 scratchS64 scratchIn scratchIn == some (none, none, none, none)
++#guard verdict32 Eval.Plan.ScanCompileTest.scratchSched scratchIn32
++    (scratchIn32.insert "T" ⟨[], #[9.0]⟩) == some (some "T", some "T", some "T")
++#guard verdict32 Eval.Plan.ScanCompileTest.scratchSched scratchIn32 scratchIn32 == some (none, none, none)
++
++end LeanNCD.Eval.Plan.CollectPlanTest
+diff --git a/leanncd/test/Eval/Plan/CompileTest.lean b/leanncd/test/Eval/Plan/CompileTest.lean
+index 71ea6980..58f2acb9 100644
+--- a/leanncd/test/Eval/Plan/CompileTest.lean
++++ b/leanncd/test/Eval/Plan/CompileTest.lean
+@@ -624,17 +624,30 @@ def repeatSig : InputSignature := InputSignature.ofDenseInputs repeatInputs
+ #guard (prepareEvalPlan repeatSched repeatSig).toOption.isSome
+ 
+ def repeatPrepared : Option PreparedPlan := (prepareEvalPlan repeatSched repeatSig).toOption
+--- NOT deduplicated: two entries for "Y" (one per write), then "Z" — matches §5.4's own text.
+-#guard repeatPrepared.map (fun p => p.bindings.materializedNames.map (·.name)) == some #["Y", "Y", "Z"]
+-def repeatYSlots : Option (Array TensorSlot) :=
+-  repeatPrepared.map (fun p => (p.bindings.materializedNames.filter (·.name == "Y")).map (·.slot))
+-#guard repeatYSlots.map (fun ss => ss[0]! == ss[1]!) == some false   -- two DISTINCT "Y" slots
++-- Additive collection (decision note §C.8): the two writers of `Y` compile as the private tensors
++-- `Y#1`, `Y#2` plus a collector `Y`, but only the PUBLIC names are persistent outputs — one `Y`, then
++-- `Z`. (Before additive collection this was `#["Y", "Y", "Z"]`: one entry per write.)
++#guard repeatPrepared.map (fun p => p.bindings.materializedNames.map (·.name)) == some #["Y", "Z"]
++-- The private publications are not lost: their two slots are recorded in `privateSlots`, distinct
++-- from each other and from the public bindings' slots, and `definedNames` lists every written name
++-- in schedule write order.
++#guard repeatPrepared.map (fun p => p.bindings.privateSlots.size) == some 2
++#guard repeatPrepared.map (fun p =>
++    let ps := p.bindings.privateSlots
++    ps[0]! != ps[1]! && p.bindings.materializedNames.all (fun b => !ps.contains b.slot)) == some true
++#guard repeatPrepared.map (·.bindings.definedNames) == some #["Y#1", "Y#2", "Y", "Z"]
++-- Accept-neighbour (clone `repeatSched`, drop the second writer): a single-writer program has no
++-- private publication and a one-to-one `materializedNames`/`definedNames`.
++def singleWriterPrepared : Option PreparedPlan :=
++  (prepareEvalPlan (explicitF64Sched { repeatSchedRaw with stmts := repeatSchedRaw.stmts.take 1 ++ repeatSchedRaw.stmts.drop 2 }) repeatSig).toOption
++#guard singleWriterPrepared.map (fun p => p.bindings.materializedNames.map (·.name)) == some #["Y", "Z"]
++#guard singleWriterPrepared.map (fun p => p.bindings.privateSlots) == some #[]
+ 
+ -- Task 4.3, fixture 8: `repeatSched`'s shape with `Y` declared a predicate and `Z` left real —
+--- `materializedSignatures` must show the destination-derived dtype in the SAME repeated-name,
+--- per-slot order `materializedNames` already establishes (Task 4.1): two `bool` entries for `Y`
+--- (one per write, since `checkPredicateOutput` re-validates BOTH writes independently), then one
+--- `f64` entry for `Z`. This is the VALID repeated-name ordering sibling of the adversarial
++-- `materializedSignatures` must show the destination-derived dtype in the per-slot order
++-- `materializedNames` establishes (Task 4.1): one `bool` entry for the collected `Y` (its private
++-- per-writer clones `Y#1`, `Y#2` are hidden, but `checkPredicateOutput` still re-validates each
++-- writer independently), then one `f64` entry for `Z`. This is the VALID repeated-name ordering sibling of the adversarial
+ -- out-of-range fixture below: both slots are in range, so the accessor succeeds and the array is
+ -- positionally aligned with `materializedNames`, repeats included.
+ -- (Round 4: the declaration is `.predicate "Y" [axI3]`, not `.predicate "Y" []`. `Y` is read
+@@ -656,18 +669,18 @@ def matSigsOf (p : Option PreparedPlan) :
+ 
+ #guard match matSigsOf repeatPredPrepared with
+   | some (.ok sigs) =>
+-      sigs.map (fun e => (e.1, e.2.dtype)) == #[("Y", .bool), ("Y", .bool), ("Z", .f64)]
++      sigs.map (fun e => (e.1, e.2.dtype)) == #[("Y", .bool), ("Z", .f64)]
+   | _ => false
+ 
+ -- Whole-branch review finding 2: `materializedSignatures` is a PUBLIC accessor on a PUBLIC
+ -- structure, so a `PreparedPlan` whose `materializedNames` names a slot outside `plan.raw.tensorSigs`
+ -- is constructible by struct update (the same authority-substitution idiom `AdapterTest` Check 5
+ -- uses to reorder `requiredInputs`) — `prepareEvalPlan` is merely the only PRODUCER that cannot
+--- emit one. Slot 99 against this plan's 5-entry signature table must be the located
+--- `PlanError.slotOutOfRange 99 5`, not a fabricated scalar `f64` signature (which would misreport
++-- emit one. Slot 99 against this plan's 6-entry signature table must be the located
++-- `PlanError.slotOutOfRange 99 6`, not a fabricated scalar `f64` signature (which would misreport
+ -- `Y`'s declared-`bool` destination as real) and not a silently shortened array (which would break
+ -- the positional correspondence with `materializedNames` that the fixture above pins).
+-#guard repeatPredPrepared.map (fun p => p.plan.raw.tensorSigs.size) == some 5
++#guard repeatPredPrepared.map (fun p => p.plan.raw.tensorSigs.size) == some 6
+ 
+ def repeatPredBadSlot : Option PreparedPlan :=
+   repeatPredPrepared.map (fun p =>
+@@ -675,7 +688,7 @@ def repeatPredBadSlot : Option PreparedPlan :=
+         materializedNames := #[{ name := "Y", slot := 99 }] } })
+ 
+ #guard match matSigsOf repeatPredBadSlot with
+-  | some (.error (.materializedSlot (.slotOutOfRange 99 5))) => true
++  | some (.error (.materializedSlot (.slotOutOfRange 99 6))) => true
+   | _ => false
+ 
+ -- The out-of-range entry is rejected even when it TRAILS legal ones — the accessor's failure is not
+@@ -686,15 +699,15 @@ def repeatPredTrailingBadSlot : Option PreparedPlan :=
+         materializedNames := p.bindings.materializedNames.push { name := "Z", slot := 7 } } })
+ 
+ #guard match matSigsOf repeatPredTrailingBadSlot with
+-  | some (.error (.materializedSlot (.slotOutOfRange 7 5))) => true
++  | some (.error (.materializedSlot (.slotOutOfRange 7 6))) => true
+   | _ => false
+ 
+--- Exact publication is structural slot identity, not name authentication.  Omitting the middle
++-- Exact publication is structural slot identity, not name authentication.  Omitting a public
+ -- output is rejected even though the remaining slots are increasing; changing only names is valid.
+ def repeatPredMissingPublication : Option PreparedPlan :=
+   repeatPredPrepared.map (fun p =>
+     { p with bindings := { p.bindings with
+-        materializedNames := p.bindings.materializedNames.take 1 ++ p.bindings.materializedNames.drop 2 } })
++        materializedNames := p.bindings.materializedNames.drop 1 } })
+ 
+ #guard match repeatPredPrepared, repeatPredMissingPublication with
+   | some valid, some malformed =>
+@@ -716,6 +729,28 @@ def repeatPredMissingPublication : Option PreparedPlan :=
+   | .ok _ => true
+   | .error _ => false) == some true
+ 
++-- Hidden (private) publications are still accounted for: a plan whose `privateSlots` was forgotten
++-- (hand-built, or a producer that omitted `Y#1`/`Y#2` from `materializedNames` without recording
++-- them) no longer matches the raw publication sequence. `expected` is the full sequence here
++-- because nothing is declared hidden.
++#guard match repeatPredPrepared with
++  | some valid =>
++      match checkPreparedBindings { valid with bindings := { valid.bindings with privateSlots := #[] } } with
++      | .error (.publicationSlots expected actual) =>
++          expected.size == 4 && actual == valid.bindings.materializedNames.map (·.slot)
++      | _ => false
++  | none => false
++-- A `privateSlots` entry the raw plan never publishes (the input slot 0) is rejected by name.
++#guard match repeatPredPrepared with
++  | some valid =>
++      match checkPreparedBindings { valid with bindings := { valid.bindings with
++          privateSlots := valid.bindings.privateSlots.push 0 } } with
++      | .error (.privateSlotUnpublished 0) => true
++      | _ => false
++  | none => false
++-- Accept-neighbour: the unmodified producer output is accepted (`repeatPredPrepared` itself).
++#guard repeatPredPrepared.map (fun p => (checkPreparedBindings p).toOption.isSome) == some true
++
+ -- Deterministic slot assignment: same input, same structural output.
+ -- `RequiredBindings` has no derived `BEq` (same established precedent as `PreparedPlan` itself, per
+ -- `Prepared.lean`'s own doc comment: private-constructor types compare through field projections,
+@@ -1633,10 +1668,23 @@ run_cmd do
+   let prepared ← match prepareEvalPlan orderedTwinSched (InputSignature.ofDenseInputs topologyInputs) with
+     | .ok p => pure p
+     | .error _ => throwError "ordered topology sibling failed preparation"
+-  -- `Z` is defined here, so the reference refuses a supplied `Z` (`inputIsDefined`, decision note
+-  -- B3); the out-of-order fixture above still supplies it to show it is never consumed.
++  -- `Z` is defined here, so BOTH backends refuse a supplied `Z` (decision note B3: the reference's
++  -- `EvalError.inputIsDefined`, the checked plan's `InputBindingError.inputIsDefined`); the
++  -- out-of-order fixture above still supplies it to show it is never consumed. The agreement run
++  -- below is the accept-neighbour: the same program without the supplied `Z`.
++  match evalScheduled orderedTwinSched topologyInputs with
++  | .error { error := .inputIsDefined "Z", warnings := [] } => pure ()
++  | .error f => throwError s!"ordered twin with supplied Z: reference reported {f.error}"
++  | .ok _ => throwError "ordered twin with supplied Z: reference accepted a supplied defined input"
++  match runPreparedDense prepared topologyInputs with
++  | .error { cause := .binding (.inputIsDefined "Z"), .. } => pure ()
++  | .error f => throwError s!"ordered twin with supplied Z: checked plan reported {repr f.cause}"
++  | .ok _ => throwError "ordered twin with supplied Z: checked plan accepted a supplied defined input"
++  match unpack prepared topologyInputs #[] with
++  | .error (.binding (.inputIsDefined "Z")) => pure ()
++  | r => throwError s!"ordered twin with supplied Z: unpack reported {repr (r.map (fun _ => ()))}"
+   match evalScheduled orderedTwinSched (topologyInputs.erase "Z"),
+-      runPreparedDense prepared topologyInputs with
++      runPreparedDense prepared (topologyInputs.erase "Z") with
+   | .ok direct, .ok dense =>
+       match direct.env.get? "Y", dense.env.get? "Y" with
+       | some directY, some denseY =>
+diff --git a/leanncd/test/Eval/Plan/DifferentialTest.lean b/leanncd/test/Eval/Plan/DifferentialTest.lean
+index f4c4edef..a008c9d7 100644
+--- a/leanncd/test/Eval/Plan/DifferentialTest.lean
++++ b/leanncd/test/Eval/Plan/DifferentialTest.lean
+@@ -291,14 +291,13 @@ run_cmd do
+ 
+ -- ── Repeated-assignment executing coverage: `CompileTest.lean`'s `repeatSched` fixture
+ -- (`Y[i]:=A[i]; Y[i]:=B[i]; Z[i]:=Y[i]`) is checked STRUCTURALLY there (`materializedNames ==
+--- #["Y","Y","Z"]`, two distinct slots for the two `Y` entries) but never actually RUN.
+--- `PlanBindings.materializedNames`'s deliberate non-deduplication design and `unpack`'s "later
+--- insertion wins" behavior have zero executing test behind them without this: a regression in
+--- `unpack`'s fold direction (e.g. `foldr` instead of `foldl`, or an accidental `.reverse`) would
+--- silently make a reassigned name return its FIRST write instead of its last, and nothing else in
+--- this slice would catch it. Runs the equivalent source program through the full
+--- `prepareEvalPlan` → `runPreparedDense` pipeline, asserts the explicit expected value (last write
+--- wins), AND cross-checks against `evalScheduled` via `planAgrees` — belt and suspenders. ──
++-- #["Y","Z"]`, two hidden private slots) but never actually RUN. Additive collection (decision note
++-- §C): the two writers are summed, `Y = A + B`, so `Z = A + B` too — it used to be the LAST write
++-- (`Y = B`). Runs the equivalent source program through the full `prepareEvalPlan` →
++-- `runPreparedDense` pipeline, asserts the explicit expected value, AND cross-checks against
++-- `evalScheduled` via `planAgrees` (which also compares the key inventory, so a leaked private
++-- `Y#1`/`Y#2` is a disagreement) — belt and suspenders. A regression that exposes the private
++-- tensors, or collects by last-wins, fails here. ──
+ 
+ private def repeatProg : TLProgram := tlprog!{
+   axis i : ℕ = 2
+@@ -321,16 +320,22 @@ run_cmd do
+       match prepareEvalPlan sched (InputSignature.ofDenseInputs repeatProgInputs) with
+       | .error _ => throwError "repeatProg prepare failed (unexpected — planAgrees already accepted it)"
+       | .ok prepared =>
+-          match runPreparedDense prepared repeatProgInputs with
+-          | .error e => throwError s!"repeatProg run failed (warnings={e.warnings.length})"
+-          | .ok report =>
+-              match report.env["Y"]?, report.env["Z"]? with
+-              | some y, some z =>
+-                  unless denseEq y ⟨[2], #[100.0, 200.0]⟩ do
+-                    throwError s!"Y did not take the LAST write's value: {repr y.data}"
+-                  unless denseEq z ⟨[2], #[100.0, 200.0]⟩ do
+-                    throwError s!"Z did not read the LAST write of Y: {repr z.data}"
+-              | _, _ => throwError "Y or Z missing from repeated-assignment plan env"
++          match runPreparedDense prepared repeatProgInputs, evalScheduled sched repeatProgInputs with
++          | .error e, _ => throwError s!"repeatProg run failed (warnings={e.warnings.length})"
++          | _, .error e => throwError s!"repeatProg reference failed: {e.error}"
++          | .ok report, .ok ref =>
++              match report.env["Y"]?, report.env["Z"]?, ref.env["Y"]?, ref.env["Z"]? with
++              | some y, some z, some ry, some rz =>
++                  unless denseEq y ⟨[2], #[101.0, 202.0]⟩ do
++                    throwError s!"Y is not the sum of its writers: {repr y.data}"
++                  unless denseEq z ⟨[2], #[101.0, 202.0]⟩ do
++                    throwError s!"Z did not read the collected Y: {repr z.data}"
++                  unless denseEq y ry && denseEq z rz do
++                    throwError "plan and evalScheduled disagree on the collected Y/Z"
++                  unless report.env.size == 4 && ref.env.size == 4 do
++                    throwError s!"env inventory is not [A, B, Y, Z]: plan {report.env.size}, \
++reference {ref.env.size}"
++              | _, _, _, _ => throwError "Y or Z missing from repeated-assignment plan/reference env"
+ 
+ -- ── Plain (non-scan) max/min aggregation, end-to-end through the CHECKED PLAN path. The scan corpus
+ -- (template 5) pins the scan-RECURRENCE `residualizeAssignment` call site (`sum` base + `max` recur),
+-- 
+2.50.1 (Apple Git-155)
+
