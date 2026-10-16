@@ -187,8 +187,9 @@ the new generic proof contracts are requirements, not kernel-checked results.
 
 ## F. Execution acceptance
 
-Status: all 16 execution tasks and final gates ACCEPTED, ready for local
-integration. Execution base `ed884938`, branch `worktree-scan-history-exec`.
+Status: COMPLETE; all 16 execution tasks and final gates ACCEPTED and merged
+to local main via `b47b2598`. Execution base `ed884938`,
+branch `worktree-scan-history-exec`; no push by this session.
 The original T3 was split into T3a/T3b without changing its obligations.
 
 | Task | Accepted SHA / exact scope | Target command/log/result | Fixtures added/retained | Controls/evidence | Review/adjudication |
@@ -208,7 +209,7 @@ The original T3 was split into T3a/T3b without changing its obligations.
 | T7a | `2a3408c9`: final PlanScanHistoryTest/OracleTest discovery and generic interfaces | both final test targets, 8585 jobs PASS; audits 405/159/17 constants | all 44 existing labeled rows preserved at their lines; assertions 129 to 135 | 3/3 actual proof-interface controls (bounds/input/full output shape); these are contract controls, not numerical implementation kills | controller signatures/renames reviewed; one diagnostic-kind correction before green rerun; 10 turns/32 operations |
 | T7b | `8b4c542b`: input-role/empty/extended-bound/mixed-registry regression shapes and measured final map | both final test targets, 8585 jobs PASS; audits 405/184/18 | +9 evaluated rows/+5 proof items; total516=239+277 in18 Plan*Test modules | 31 distinct edits all broke/restored; initial stale manifest15/31; all53 repaired anchors verified against actual logs; six new controls rerun6/6 PASS; final unfiltered repaired-manifest gate is T9 | controller numeric/roles/registry review accepted; three old numeric kills now honestly classified as earlier generic-proof barriers; 32 implementer turns |
 | T8 | `8978f8bd`: public umbrella, public-only production test import and live status/discovery docs | LeanNCD + both final targets, 8615 jobs PASS; root audit6395, scan405/test184/oracle18 | reused generic full-Decode/prefix pins under `import LeanNCD`; 516 fixtures unchanged | public import omission remeasured, exact two-site gate1/1 PASS; all32 manifest old strings unique | first direct wrapper ended without a restoration summary (not accepted), restored build confirmed and full cycle rerun PASS; hook budgets0/0/2402 chars |
-| T9 | accepted whole-branch reviews, actual final gates and scope sweep; checkpoint is this acceptance commit | post-mutation and integrated full builds8811 jobs PASS; audits6395/405/184/18 | 516 fixtures; all16 inherited Plan test modules byte-identical, all18 prototype assertions preserved | actual UNFILTERED32/32 PASS,55 exact anchors, all byte restores/rebuilds PASS | independent soundness CLEAN26 rounds; fidelity CLEAN22 turns; no findings to adjudicate; concurrent main docs preserved inee5ed402 with exact reviewed Lean tree unchanged |
+| T9 | `6a8d268f`: whole-branch reviews, actual final gates and scope sweep; local integration `b47b2598` | post-mutation and integrated full builds8811 jobs PASS; audits6395/405/184/18 | 516 fixtures; all16 inherited Plan test modules byte-identical, all18 prototype assertions preserved | actual UNFILTERED32/32 PASS,55 exact anchors, all byte restores/rebuilds PASS | independent soundness CLEAN26 rounds; fidelity CLEAN22 turns; no findings to adjudicate; concurrent main docs preserved inee5ed402 with exact reviewed Lean tree unchanged |
 
 Close-out acceptance checklist, satisfied by the task table and Sections G-H:
 
@@ -383,3 +384,27 @@ backend certification remain deliberately outside the agreed contract.
 The separate prototype checkout is retained as historical evidence, not merged
 as a second implementation. Local integration/cleanup receipt follows below;
 no remote push is authorized by this execution request.
+
+## I. Local integration receipt
+
+- Accepted validation/review checkpoint: `6a8d268f`.
+- Actual local-main merge:
+  `b47b259805b280ca5bfd9a71585f1c75086fd952`
+  (`Merge certified bounded full-history scan`).
+- Shared main's concurrent documentation through `b0d37f2f` was preserved via
+  `ee5ed402`, with no conflict or history rewrite. The exact reviewed `leanncd`
+  subtree is unchanged in local main; all branch commits are ancestors of main.
+- Main's unrelated untracked `plan_layer_slice4_independent_review.md` was left
+  untouched; before-merge SHA-256:
+  `c49e6cc4a8f9fbdc5574941e42273853e900ad72c64d33835ee856fc4919b6ba`.
+- This final receipt is prepared in the isolated execution worktree, then
+  fast-forwarded to main. Cleanup targets only `worktree-scan-history-exec`,
+  its clean `scan-history-exec` checkout and the clean detached
+  `scan-history-final-review` checkout. The historical prototype checkout and
+  all unrelated worktrees/branches are retained.
+- The controller verifies cleanup, main ancestry/status and the preserved
+  user-file hash after this receipt lands. Actual final-head/ahead-of-origin
+  and cleanup verification are persisted in the session artifact
+  `scan-integration-receipt.json`, beside the raw gate logs.
+- No remote push was performed. Any origin-ahead count is reported from local
+  refs without fetching or publishing.

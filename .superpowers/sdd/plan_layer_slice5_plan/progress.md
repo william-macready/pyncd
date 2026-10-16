@@ -158,3 +158,13 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
 - Concurrent main docs preserved inee5ed402, exact reviewed leanncd tree unchanged.
 - No findings waived/parked; historical budget limitations and four pre-existing
   nonsemantic sorry warnings recorded. Ready for local-main integration, no push.
+
+## Local integration complete
+
+- Acceptance checkpoint6a8d268f merged to localmain b47b2598.
+- Concurrent main docs and unrelated user review file preserved, Lean tree unchanged.
+- This receipt is committed in the isolated execution worktree and fast-forwarded
+  to main; controller then removes only the two clean task-owned execution/review
+  checkouts and the execution branch.
+- Final cleanup/main-status/hash verification persists in session
+  files/scan-integration-receipt.json. No push.

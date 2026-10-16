@@ -1,8 +1,8 @@
 # Part V slice 5: certified bounded full-history scans
 
-Status: generic certification and final regression interfaces are implemented;
-controller acceptance, review and integration gates are recorded in
-`plan_layer_slice5_record.md`. Original authoring base: local `main` at `581bd163`;
+Status: COMPLETE, merged to local `main` via `b47b2598`, not pushed by this
+session. Controller acceptance, both clean reviews and actual final gates are
+recorded in `plan_layer_slice5_record.md`. Original authoring base: `581bd163`;
 execution base: `ed884938`, branch `worktree-scan-history-exec`.
 The task contracts below are the implementation plan, not a substitute for its
 measured execution record.
