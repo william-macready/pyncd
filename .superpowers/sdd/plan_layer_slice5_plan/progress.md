@@ -145,3 +145,16 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
 - Live spec/path/threeAGENTS/plan status refreshed, fixture inventory516 unchanged.
 - Hook budgets0/0/2402 chars. Final manifest32distinct/55exact anchors, all old strings unique.
 - Token report unavailable. T9 whole-branch reviews and actual unfiltered gates next.
+
+## T9 gates accepted
+
+- Independent whole-branch soundness/fidelity reviews CLEAN,26/22 tool rounds.
+- Controller actual UNFILTERED32/32 controls PASS,55 exact anchors; byte restores
+  and restored builds verified, no setup refusal counted as a kill.
+- Post-cycle full build8811jobs PASS; integrated full build8811 PASS again.
+- Audits6395/405/184/18 standard-only; no forbidden mechanism in15 new Lean files.
+- All16 inherited Plan test modules byte-identical;18 prototype assertions retained.
+- Inventory516=239evaluated+277proof; all required shapes/control classes mapped.
+- Concurrent main docs preserved inee5ed402, exact reviewed leanncd tree unchanged.
+- No findings waived/parked; historical budget limitations and four pre-existing
+  nonsemantic sorry warnings recorded. Ready for local-main integration, no push.
