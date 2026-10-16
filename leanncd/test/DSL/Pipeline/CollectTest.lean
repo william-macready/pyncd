@@ -157,4 +157,65 @@ private def c8 : ScheduledProgram :=
   | .ok (_, g) => g == ["Y#1", "Y#2"]
   | .error _ => false
 
+
+/-! ## All-writers readiness (`eligible`, `topoSortFuel`, `isTopoOrdered`)
+
+A read is ready only once EVERY writer of the name has published it. -/
+
+private def scheduledDests (p : TLProgram) : Option (List String) :=
+  (scheduled p).bind fun sp => (plainStmts sp.stmts).map (·.map Stmt.lhsName)
+
+-- R1 (decision note §C.2 probe `T:=A; U:=T; T:=B`): `schedule` moves the reader after both
+-- writers. Before all-writers readiness it stayed between them (evaluator U = A).
+def r1 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  T[i] := A[i]
+  U[i] := T[i]
+  T[i] := B[i]
+}
+#guard scheduledDests r1 == some ["T", "T", "U"]
+
+-- R2: the same order hand-built as a direct schedule is not producer-before-consumer.
+private def r2Stmts : List ScanStmt :=
+  [.plain (copyStmt "T" "A"), .plain (copyStmt "U" "T"), .plain (copyStmt "T" "B")]
+#guard !isTopoOrdered r2Stmts r2Stmts
+-- R2b accept-neighbour: reader after both writers.
+private def r2bStmts : List ScanStmt :=
+  [.plain (copyStmt "T" "A"), .plain (copyStmt "T" "B"), .plain (copyStmt "U" "T")]
+#guard isTopoOrdered r2bStmts r2bStmts
+
+-- R3 self-read of a multi-writer tensor: the second writer can never see all writers of T, so the
+-- program is cyclic. Before, it read the first writer's T (overwrite chain).
+def r3 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  T[i] := A[i]
+  T[i] := T[i] · B[i]
+}
+#guard match r3.compileToScheduled.run 0 with
+  | .error (.cyclicDataflow "schedule: cyclic dataflow") _ => true
+  | _ => false
+-- R3b accept-neighbour: read into a different name.
+def r3b : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  T[i] := A[i]
+  U[i] := T[i] · B[i]
+}
+#guard scheduledDests r3b == some ["T", "U"]
+
+
+-- R4 readiness counts NODES, not output occurrences: a 2-D scan with two base faces of G lists G
+-- twice in `ScanStmt.outputs` (observed: `[G, G]`), yet it is ONE writer of G. A plain reader
+-- appended after it (hand-built direct schedule; surface syntax absorbs such a reader into the
+-- scan) is ready. Donor: RC10 (`test/Eval/Portfolio/RecurrenceTest.lean`) plus a column-0 face.
+def r4 : TLProgram := tlprog!{ iter r = 2, c = 2
+  G[r, 0] := Z[r]
+  G[0, c] := Q[c]
+  G[r +1, c +1] := G[r, c] · W[r, c]
+}
+#guard match scheduled r4 with
+  | some sp =>
+      let stmts := sp.stmts ++ [.plain (copyStmt "T" "G")]
+      (sp.stmts.map ScanStmt.outputs) == [["G", "G"]] && isTopoOrdered stmts stmts
+  | none => false
+
 end LeanNCD.CollectTest

@@ -21,15 +21,23 @@ def ScanStmt.reads : ScanStmt → List String
   | .scan _ _ b r _ => (b.flatMap Stmt.readNames ++ r.flatMap Stmt.readNames).eraseDups
   | .scanPre _ _ _  => []
 
-/-- A node is ready when each read is external, was published by an earlier node, or is internal to
-    a scan block. A plain write is not available to its own RHS, and scan scratch is never emitted. -/
+/-- The publications a node adds to the emitted list: each name it publishes, ONCE per node. A scan
+    whose state has two base faces lists that state twice in `ScanStmt.outputs`; readiness counts
+    nodes, so the duplicate must not count as a second writer. -/
+def ScanStmt.publications (sc : ScanStmt) : List String := sc.outputs.eraseDups
+
+/-- A node is ready when each read is internal to its own scan block, or ALL of the read's writers
+    have published it: the number of emitted publications of `r` equals the number of nodes that
+    write `r` (an external name has zero of both). This is all-writers readiness (additive
+    collection, decision note §C.2): a reader of a multi-writer tensor waits for every writer. A
+    plain write is not available to its own RHS (its own publication is never emitted before it),
+    and scan scratch is never emitted, so a reader of it is never ready. -/
 private def eligible (sc : ScanStmt) (all : List ScanStmt) (emitted : List String) : Bool :=
   sc.reads.all (fun r =>
     (match sc with
      | .scan .. => sc.writes.contains r
      | _ => false) ||
-    emitted.contains r ||
-    all.all (fun s => !s.writes.contains r))
+    emitted.count r == (all.filter (fun s => s.writes.contains r)).length)
 
 /-- Fuel-bounded stable Kahn's sort. -/
 def topoSortFuel : Nat → List ScanStmt → List ScanStmt → List String →
@@ -41,7 +49,7 @@ def topoSortFuel : Nat → List ScanStmt → List ScanStmt → List String →
       | none   => acc ++ remaining
       | some i =>
           let sc := remaining[i]!
-          topoSortFuel n all (remaining.eraseIdx i) (emitted ++ sc.outputs) (acc ++ [sc])
+          topoSortFuel n all (remaining.eraseIdx i) (emitted ++ sc.publications) (acc ++ [sc])
 
 /-- Topological sort of scheduled statements. -/
 def topoSort (stmts : List ScanStmt) : List ScanStmt :=
@@ -51,7 +59,7 @@ def topoSort (stmts : List ScanStmt) : List ScanStmt :=
 def isTopoOrdered (all : List ScanStmt) (ordered : List ScanStmt) : Bool :=
   (ordered.foldl (fun (acc : Bool × List String) sc =>
       let (ok, emitted) := acc
-      (ok && eligible sc all emitted, emitted ++ sc.outputs))
+      (ok && eligible sc all emitted, emitted ++ sc.publications))
     (true, ([] : List String))).1
 
 /-- External read names in first-seen scheduled-read order. -/
