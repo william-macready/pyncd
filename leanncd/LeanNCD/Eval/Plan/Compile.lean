@@ -1567,6 +1567,13 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     slotOf := slotOf.insert nm slot
     inputSlotsAcc := inputSlotsAcc.push slot
     requiredInputsAcc := requiredInputsAcc.push { name := nm, slot := slot }
+  -- Additive collection (decision note §C.8): `checked.program` is the COLLECTED schedule, so a
+  -- multi-writer `T` is compiled as private per-writer tensors `T#k` plus a collector. They are
+  -- published like any other statement (the raw plan is unchanged) but are not persistent outputs:
+  -- Step F splits `materializedAcc` into the public bindings and the private slots. Both lists are
+  -- fixed here because `checked` is shadowed by Step E's checked plan.
+  let privateNames := checked.privateNames
+  let definedNames := (sched.stmts.flatMap ScanStmt.writes).eraseDups
   let mut stepsAcc : Array PlanStep := #[]
   let mut materializedAcc : Array SlotBinding := #[]
   -- Branches on `ScanStmt`'s constructors directly rather than funnelling through a
@@ -1761,8 +1768,14 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- should never actually reject compiler-produced input — same "this should ALWAYS succeed" spirit
   -- as `checkPlan` just above, wired through the same `lift*` pattern regardless.
   let requiredInputs ← liftBindings warnings (checkBindings inputSlotsAcc requiredInputsAcc)
+  -- Every publication site above pushes into `materializedAcc` unconditionally; the split of the
+  -- collector's private names off it is made once, here, so no push site can forget it.
+  let isPrivate (b : SlotBinding) : Bool := privateNames.contains b.name
   return { plan := checked
-         , bindings := { requiredInputs, materializedNames := materializedAcc }
+         , bindings := { requiredInputs
+                       , materializedNames := materializedAcc.filter (fun b => !isPrivate b)
+                       , privateSlots := (materializedAcc.filter isPrivate).map (·.slot)
+                       , definedNames := definedNames.toArray }
          , warnings }
 
 end LeanNCD.Eval.Plan

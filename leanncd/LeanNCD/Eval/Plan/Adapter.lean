@@ -56,6 +56,14 @@ class StorageCarrier (α : Type) where
 instance : StorageCarrier Float := ⟨.float64⟩
 instance : StorageCarrier Float32 := ⟨.float32⟩
 
+/-- The first name (in `PlanBindings.definedNames` order, the schedule's write order) that a supplied
+    environment holds a value for although the plan defines it: decision note B3, the checked
+    backend's counterpart of the reference's `evalScheduled` check. Shared by `packBodyOf` and
+    `unpackBodyOf`, so both boundaries refuse exactly the same environments. -/
+def firstDefinedInput? {α : Type} (bindings : PlanBindings) (env : NamedDenseEnvOf α) :
+    Option String :=
+  bindings.definedNames.find? env.contains
+
 /-- Resolve every input slot `runDensePlan` needs, in `raw.inputSlots` order, by NAME through
     `requiredInputs` — never by array position. `requiredInputs : RequiredBindings` is already
     checked (`checkBindings`, `Compile.lean`) to be a name-unique permutation onto
@@ -89,6 +97,7 @@ def packBodyOf {α : Type} [StorageCarrier α] (plan : PreparedPlan)
     Except InputBindingError (Array (DenseTensorOf α)) := do
   unless plan.plan.storageKind == StorageCarrier.kind α do
     throw (.storageKindMismatch (StorageCarrier.kind α) plan.plan.storageKind)
+  if let some nm := firstDefinedInput? plan.bindings env then throw (.inputIsDefined nm)
   let raw := plan.plan.raw
   let slotName : HashMap TensorSlot String :=
     checked.requiredInputs.bindings.foldl (fun acc b => acc.insert b.slot b.name) {}
@@ -187,6 +196,7 @@ def unpackBodyOf {α : Type} [StorageCarrier α] (plan : PreparedPlan)
     (result : Array (DenseTensorOf α)) : Except PlanRunCause (NamedDenseEnvOf α) := do
   unless plan.plan.storageKind == StorageCarrier.kind α do
     throw (.storageKindMismatch (StorageCarrier.kind α) plan.plan.storageKind)
+  if let some nm := firstDefinedInput? plan.bindings env then throw (.binding (.inputIsDefined nm))
   let expected := plan.plan.raw.tensorSigs.size
   unless result.size == expected do
     throw (.resultStore (.storeArityMismatch expected result.size))

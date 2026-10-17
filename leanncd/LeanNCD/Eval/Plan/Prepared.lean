@@ -91,10 +91,27 @@ def checkBindings (inputSlots : Array TensorSlot) (bindings : Array SlotBinding)
     slot is never named). Block-local scratch inside a scan is deliberately NOT here — it never
     becomes an outer slot or a materialized name. A name reassigned twice appears twice; `unpack`
     (Task 3) relies on this, inserting each in order so the LAST entry for a repeated name is the one
-    that survives. -/
+    that survives.
+
+    Additive collection (decision note §C.8): the private per-writer tensors `T#k` that the
+    collector introduces are NOT persistent outputs — `materializedNames` omits them, so a
+    collected multi-writer name appears exactly once, under its public name (so the repeated-name
+    entries and `unpack`'s "last write wins" above now only describe a hand-built `PlanBindings`;
+    `prepareEvalPlan` never repeats a public name). Two further fields
+    record what that omission would otherwise lose:
+
+    * `privateSlots` — the publication slots of the omitted private names, in publication order.
+      They are still published by the raw plan (`rawPublicationSlots`), so `checkPreparedBindings`
+      expects `materializedNames`' slots to be exactly the publication sequence MINUS these.
+    * `definedNames` — every name the schedule writes (public, private, and scan-local scratch),
+      deduplicated in first-write order: the set a supplied input may not name (decision note B3,
+      `InputBindingError.inputIsDefined`). Defaults to empty, i.e. no input is refused, for a
+      hand-built `PlanBindings`. -/
 structure PlanBindings where
   requiredInputs    : RequiredBindings
   materializedNames : Array SlotBinding
+  privateSlots      : Array TensorSlot := #[]
+  definedNames      : Array String := #[]
   deriving Repr
 
 /-- No `deriving` clause: `CheckedEvalPlan` (private constructor) has no `BEq`/`DecidableEq`/
@@ -180,7 +197,12 @@ def checkPreparedBindings (source : PreparedPlan) :
   match rawMaterializedWith source.bindings.materializedNames raw.tensorSigs with
   | .error e => throw (.materializedSlot e)
   | .ok _ => pure ()
-  let expected := rawPublicationSlots raw
+  let published := rawPublicationSlots raw
+  -- A hidden (private) slot must be one the raw plan really publishes; the visible bindings then
+  -- cover exactly the rest of the publication sequence, in order.
+  for s in source.bindings.privateSlots do
+    unless published.contains s do throw (.privateSlotUnpublished s)
+  let expected := published.filter (fun s => !source.bindings.privateSlots.contains s)
   let actual := source.bindings.materializedNames.map (·.slot)
   unless actual == expected do
     throw (.publicationSlots expected actual)
