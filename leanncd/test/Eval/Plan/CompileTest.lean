@@ -624,17 +624,30 @@ def repeatSig : InputSignature := InputSignature.ofDenseInputs repeatInputs
 #guard (prepareEvalPlan repeatSched repeatSig).toOption.isSome
 
 def repeatPrepared : Option PreparedPlan := (prepareEvalPlan repeatSched repeatSig).toOption
--- NOT deduplicated: two entries for "Y" (one per write), then "Z" — matches §5.4's own text.
-#guard repeatPrepared.map (fun p => p.bindings.materializedNames.map (·.name)) == some #["Y", "Y", "Z"]
-def repeatYSlots : Option (Array TensorSlot) :=
-  repeatPrepared.map (fun p => (p.bindings.materializedNames.filter (·.name == "Y")).map (·.slot))
-#guard repeatYSlots.map (fun ss => ss[0]! == ss[1]!) == some false   -- two DISTINCT "Y" slots
+-- Additive collection (decision note §C.8): the two writers of `Y` compile as the private tensors
+-- `Y#1`, `Y#2` plus a collector `Y`, but only the PUBLIC names are persistent outputs — one `Y`, then
+-- `Z`. (Before additive collection this was `#["Y", "Y", "Z"]`: one entry per write.)
+#guard repeatPrepared.map (fun p => p.bindings.materializedNames.map (·.name)) == some #["Y", "Z"]
+-- The private publications are not lost: their two slots are recorded in `privateSlots`, distinct
+-- from each other and from the public bindings' slots, and `definedNames` lists every written name
+-- in schedule write order.
+#guard repeatPrepared.map (fun p => p.bindings.privateSlots.size) == some 2
+#guard repeatPrepared.map (fun p =>
+    let ps := p.bindings.privateSlots
+    ps[0]! != ps[1]! && p.bindings.materializedNames.all (fun b => !ps.contains b.slot)) == some true
+#guard repeatPrepared.map (·.bindings.definedNames) == some #["Y#1", "Y#2", "Y", "Z"]
+-- Accept-neighbour (clone `repeatSched`, drop the second writer): a single-writer program has no
+-- private publication and a one-to-one `materializedNames`/`definedNames`.
+def singleWriterPrepared : Option PreparedPlan :=
+  (prepareEvalPlan (explicitF64Sched { repeatSchedRaw with stmts := repeatSchedRaw.stmts.take 1 ++ repeatSchedRaw.stmts.drop 2 }) repeatSig).toOption
+#guard singleWriterPrepared.map (fun p => p.bindings.materializedNames.map (·.name)) == some #["Y", "Z"]
+#guard singleWriterPrepared.map (fun p => p.bindings.privateSlots) == some #[]
 
 -- Task 4.3, fixture 8: `repeatSched`'s shape with `Y` declared a predicate and `Z` left real —
--- `materializedSignatures` must show the destination-derived dtype in the SAME repeated-name,
--- per-slot order `materializedNames` already establishes (Task 4.1): two `bool` entries for `Y`
--- (one per write, since `checkPredicateOutput` re-validates BOTH writes independently), then one
--- `f64` entry for `Z`. This is the VALID repeated-name ordering sibling of the adversarial
+-- `materializedSignatures` must show the destination-derived dtype in the per-slot order
+-- `materializedNames` establishes (Task 4.1): one `bool` entry for the collected `Y` (its private
+-- per-writer clones `Y#1`, `Y#2` are hidden, but `checkPredicateOutput` still re-validates each
+-- writer independently), then one `f64` entry for `Z`. This is the VALID repeated-name ordering sibling of the adversarial
 -- out-of-range fixture below: both slots are in range, so the accessor succeeds and the array is
 -- positionally aligned with `materializedNames`, repeats included.
 -- (Round 4: the declaration is `.predicate "Y" [axI3]`, not `.predicate "Y" []`. `Y` is read
@@ -656,18 +669,18 @@ def matSigsOf (p : Option PreparedPlan) :
 
 #guard match matSigsOf repeatPredPrepared with
   | some (.ok sigs) =>
-      sigs.map (fun e => (e.1, e.2.dtype)) == #[("Y", .bool), ("Y", .bool), ("Z", .f64)]
+      sigs.map (fun e => (e.1, e.2.dtype)) == #[("Y", .bool), ("Z", .f64)]
   | _ => false
 
 -- Whole-branch review finding 2: `materializedSignatures` is a PUBLIC accessor on a PUBLIC
 -- structure, so a `PreparedPlan` whose `materializedNames` names a slot outside `plan.raw.tensorSigs`
 -- is constructible by struct update (the same authority-substitution idiom `AdapterTest` Check 5
 -- uses to reorder `requiredInputs`) — `prepareEvalPlan` is merely the only PRODUCER that cannot
--- emit one. Slot 99 against this plan's 5-entry signature table must be the located
--- `PlanError.slotOutOfRange 99 5`, not a fabricated scalar `f64` signature (which would misreport
+-- emit one. Slot 99 against this plan's 6-entry signature table must be the located
+-- `PlanError.slotOutOfRange 99 6`, not a fabricated scalar `f64` signature (which would misreport
 -- `Y`'s declared-`bool` destination as real) and not a silently shortened array (which would break
 -- the positional correspondence with `materializedNames` that the fixture above pins).
-#guard repeatPredPrepared.map (fun p => p.plan.raw.tensorSigs.size) == some 5
+#guard repeatPredPrepared.map (fun p => p.plan.raw.tensorSigs.size) == some 6
 
 def repeatPredBadSlot : Option PreparedPlan :=
   repeatPredPrepared.map (fun p =>
@@ -675,7 +688,7 @@ def repeatPredBadSlot : Option PreparedPlan :=
         materializedNames := #[{ name := "Y", slot := 99 }] } })
 
 #guard match matSigsOf repeatPredBadSlot with
-  | some (.error (.materializedSlot (.slotOutOfRange 99 5))) => true
+  | some (.error (.materializedSlot (.slotOutOfRange 99 6))) => true
   | _ => false
 
 -- The out-of-range entry is rejected even when it TRAILS legal ones — the accessor's failure is not
@@ -686,15 +699,15 @@ def repeatPredTrailingBadSlot : Option PreparedPlan :=
         materializedNames := p.bindings.materializedNames.push { name := "Z", slot := 7 } } })
 
 #guard match matSigsOf repeatPredTrailingBadSlot with
-  | some (.error (.materializedSlot (.slotOutOfRange 7 5))) => true
+  | some (.error (.materializedSlot (.slotOutOfRange 7 6))) => true
   | _ => false
 
--- Exact publication is structural slot identity, not name authentication.  Omitting the middle
+-- Exact publication is structural slot identity, not name authentication.  Omitting a public
 -- output is rejected even though the remaining slots are increasing; changing only names is valid.
 def repeatPredMissingPublication : Option PreparedPlan :=
   repeatPredPrepared.map (fun p =>
     { p with bindings := { p.bindings with
-        materializedNames := p.bindings.materializedNames.take 1 ++ p.bindings.materializedNames.drop 2 } })
+        materializedNames := p.bindings.materializedNames.drop 1 } })
 
 #guard match repeatPredPrepared, repeatPredMissingPublication with
   | some valid, some malformed =>
@@ -715,6 +728,28 @@ def repeatPredMissingPublication : Option PreparedPlan :=
           materializedNames := p.bindings.materializedNames.map fun b => { b with name := "renamed" } } } with
   | .ok _ => true
   | .error _ => false) == some true
+
+-- Hidden (private) publications are still accounted for: a plan whose `privateSlots` was forgotten
+-- (hand-built, or a producer that omitted `Y#1`/`Y#2` from `materializedNames` without recording
+-- them) no longer matches the raw publication sequence. `expected` is the full sequence here
+-- because nothing is declared hidden.
+#guard match repeatPredPrepared with
+  | some valid =>
+      match checkPreparedBindings { valid with bindings := { valid.bindings with privateSlots := #[] } } with
+      | .error (.publicationSlots expected actual) =>
+          expected.size == 4 && actual == valid.bindings.materializedNames.map (·.slot)
+      | _ => false
+  | none => false
+-- A `privateSlots` entry the raw plan never publishes (the input slot 0) is rejected by name.
+#guard match repeatPredPrepared with
+  | some valid =>
+      match checkPreparedBindings { valid with bindings := { valid.bindings with
+          privateSlots := valid.bindings.privateSlots.push 0 } } with
+      | .error (.privateSlotUnpublished 0) => true
+      | _ => false
+  | none => false
+-- Accept-neighbour: the unmodified producer output is accepted (`repeatPredPrepared` itself).
+#guard repeatPredPrepared.map (fun p => (checkPreparedBindings p).toOption.isSome) == some true
 
 -- Deterministic slot assignment: same input, same structural output.
 -- `RequiredBindings` has no derived `BEq` (same established precedent as `PreparedPlan` itself, per
@@ -1633,10 +1668,23 @@ run_cmd do
   let prepared ← match prepareEvalPlan orderedTwinSched (InputSignature.ofDenseInputs topologyInputs) with
     | .ok p => pure p
     | .error _ => throwError "ordered topology sibling failed preparation"
-  -- `Z` is defined here, so the reference refuses a supplied `Z` (`inputIsDefined`, decision note
-  -- B3); the out-of-order fixture above still supplies it to show it is never consumed.
+  -- `Z` is defined here, so BOTH backends refuse a supplied `Z` (decision note B3: the reference's
+  -- `EvalError.inputIsDefined`, the checked plan's `InputBindingError.inputIsDefined`); the
+  -- out-of-order fixture above still supplies it to show it is never consumed. The agreement run
+  -- below is the accept-neighbour: the same program without the supplied `Z`.
+  match evalScheduled orderedTwinSched topologyInputs with
+  | .error { error := .inputIsDefined "Z", warnings := [] } => pure ()
+  | .error f => throwError s!"ordered twin with supplied Z: reference reported {f.error}"
+  | .ok _ => throwError "ordered twin with supplied Z: reference accepted a supplied defined input"
+  match runPreparedDense prepared topologyInputs with
+  | .error { cause := .binding (.inputIsDefined "Z"), .. } => pure ()
+  | .error f => throwError s!"ordered twin with supplied Z: checked plan reported {repr f.cause}"
+  | .ok _ => throwError "ordered twin with supplied Z: checked plan accepted a supplied defined input"
+  match unpack prepared topologyInputs #[] with
+  | .error (.binding (.inputIsDefined "Z")) => pure ()
+  | r => throwError s!"ordered twin with supplied Z: unpack reported {repr (r.map (fun _ => ()))}"
   match evalScheduled orderedTwinSched (topologyInputs.erase "Z"),
-      runPreparedDense prepared topologyInputs with
+      runPreparedDense prepared (topologyInputs.erase "Z") with
   | .ok direct, .ok dense =>
       match direct.env.get? "Y", dense.env.get? "Y" with
       | some directY, some denseY =>
