@@ -73,13 +73,10 @@ private def acceptedNonshared : Bool :=
   match compareSource nonsharedSnapshot (some [1]) with
   | .ok run =>
     match run.classification, run.profile, run.reference.observe.endpoint, run.oracle with
-    | .knownContractDifference (.crossStatementOverwrite 1 origins),
-      .error (.structural (.crossStatementOverwrite 1 profileOrigins)), .complete snapshot,
-      .ok oracle =>
-      origins == [
-        { side := .output, declaration := some 1, statement := some 0 },
-        { side := .output, declaration := some 1, statement := some 1 }] &&
-        profileOrigins == origins &&
+    | .fourLegParity, .ok profile, .complete snapshot, .ok oracle =>
+      profile.shared.definitions == [
+        (1, { side := .output, declaration := some 1, statement := some 0 }),
+        (1, { side := .output, declaration := some 1, statement := some 1 })] &&
         snapshot.tensors.map (fun t => (t.tensorUID, t.declaration, t.values)) ==
           [(0, 0, [some 3]), (1, 1, [some 6])] &&
         oracle.tensors.map (fun t => (t.declaration, t.values)) ==
@@ -103,7 +100,7 @@ private def acceptedNonshared : Bool :=
             | .ok [l], .ok [c] =>
               l.metadata.declaration == 1 && c.metadata == l.metadata &&
                 l.shape == [] && c.shape == [] &&
-                l.bits == #[0x4008000000000000] && c.bits == l.bits
+                l.bits == #[0x4018000000000000] && c.bits == l.bits
             | _, _ => false)
           | _, _ => false
         | _ => false)

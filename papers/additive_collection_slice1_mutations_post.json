@@ -1,0 +1,285 @@
+[
+ {
+  "label": "A1-M1 collector numbering reversed (T#k assigned from the last writer)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "        let k := g.writers.idxOf i + 1",
+  "new": "        let k := g.writers.length - g.writers.idxOf i",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:57:0", "CollectTest.lean:58:0", "CollectTest.lean:59:0", "CollectTest.lean:72:0"]
+ },
+ {
+  "label": "A1-M2 no declaration clones (decls := sched.decls)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "              decls := sched.decls ++ clones",
+  "new": "              decls := sched.decls",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:96:0", "CollectTest.lean:110:0"]
+ },
+ {
+  "label": "A1-M3 scatter writers admitted (UNOBSERVED in the prototype)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "    | .scatter .. => throw (.multiWriterScatter g.name)",
+  "new": "    | .scatter .. => pure ()",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:123:0"]
+ },
+ {
+  "label": "A1-M4 max/min multi-writer algebra admitted (UNOBSERVED in the prototype)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "    | .assign _ _ r => unless r.agg == .sum do throw (.multiWriterAlgebra g.name)",
+  "new": "    | .assign _ _ r => pure ()",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:131:0"]
+ },
+ {
+  "label": "A1-M5 axis-UID disagreement admitted (UNOBSERVED in the prototype)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "      | some u, some u0 => unless u == u0 do throw (.writerShapeMismatch g.name k pos)",
+  "new": "      | some u, some u0 => pure ()",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:140:0"]
+ },
+ {
+  "label": "A1-M6 source-inventory freshness check dropped (UNOBSERVED in the prototype)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "    if inventory.contains nm || (generated.take i).contains nm then",
+  "new": "    if (generated.take i).contains nm then",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:235:0"]
+ },
+ {
+  "label": "A1-M7 single-writer names collected too (identity broken; UNOBSERVED in the prototype)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "    if writers.length ≥ 2 && allPlain then some ⟨nm, writers⟩ else none",
+  "new": "    if writers.length ≥ 1 && allPlain then some ⟨nm, writers⟩ else none",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:82:0"]
+ },
+ {
+  "label": "A2-M1 any-writer readiness restored",
+  "task": "T2",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "    emitted.count r == (all.filter (fun s => s.writes.contains r)).length)",
+  "new": "    emitted.contains r ||\n    all.all (fun s => !s.writes.contains r))",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:271:0", "CollectTest.lean:276:0", "CollectTest.lean:289:0"]
+ },
+ {
+  "label": "A2-M2 publications without eraseDups (a two-face scan counts as two writers)",
+  "task": "T2",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "def ScanStmt.publications (sc : ScanStmt) : List String := sc.outputs.eraseDups",
+  "new": "def ScanStmt.publications (sc : ScanStmt) : List String := sc.outputs",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:310:0"]
+ },
+ {
+  "label": "A3-M1 numbering reversed, seen through the evaluator (bit-order fixtures)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "        let k := g.writers.idxOf i + 1",
+  "new": "        let k := g.writers.length - g.writers.idxOf i",
+  "targets": ["Eval.CollectEvalTest"],
+  "expect": ["CollectEvalTest.lean:96:0", "CollectEvalTest.lean:97:0"]
+ },
+ {
+  "label": "A3-M2 no declaration clones, seen through the evaluator",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "              decls := sched.decls ++ clones",
+  "new": "              decls := sched.decls",
+  "targets": ["Eval.CollectEvalTest"],
+  "expect": ["CollectEvalTest.lean:48:0", "CollectEvalTest.lean:59:0", "CollectEvalTest.lean:67:0", "CollectEvalTest.lean:96:0", "CollectEvalTest.lean:97:0"]
+ },
+ {
+  "label": "A3-M3 collector aggregates with max",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "      agg := .sum }",
+  "new": "      agg := .max }",
+  "targets": ["Eval.CollectEvalTest"],
+  "expect": ["CollectEvalTest.lean:48:0", "CollectEvalTest.lean:59:0", "CollectEvalTest.lean:67:0"]
+ },
+ {
+  "label": "A3-M4 last-wins regression (desugar returns the schedule unchanged); also kills J2-J4",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "  if groups.isEmpty then return (sched, [])",
+  "new": "  if true then return (sched, [])",
+  "targets": ["Eval.CollectEvalTest"],
+  "expect": ["CollectEvalTest.lean:48:0", "CollectEvalTest.lean:59:0", "CollectEvalTest.lean:67:0", "CollectEvalTest.lean:144:0", "CollectEvalTest.lean:153:0", "CollectEvalTest.lean:162:0"]
+ },
+ {
+  "label": "A3-M5 private names not erased from the reported environment",
+  "task": "T3",
+  "file": "LeanNCD/Eval/Eval.lean",
+  "old": ".ok { env := checked.privateNames.foldl (·.erase ·) env, warnings }",
+  "new": ".ok { env := env, warnings }",
+  "targets": ["Eval.CollectEvalTest"],
+  "expect": ["CollectEvalTest.lean:50:0"]
+ },
+ {
+  "label": "A3-M6 B3 check removed from the reference evaluator (UNOBSERVED in the prototype)",
+  "task": "T3",
+  "file": "LeanNCD/Eval/Eval.lean",
+  "old": "  match (sched.stmts.flatMap ScanStmt.writes).find? inputs.contains with",
+  "new": "  match (none : Option String) with",
+  "targets": ["Eval.CollectEvalTest"],
+  "expect": ["CollectEvalTest.lean:166:0"]
+ },
+ {
+  "label": "A4-M1 scan-writer conflict check never fires",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "  if let some nm := scanWriterConflict? sched.stmts then throw (.multiWriterScan nm)",
+  "new": "  if let some nm := (none : Option String) then throw (.multiWriterScan nm)",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:341:0", "CollectTest.lean:343:0"]
+ },
+ {
+  "label": "A4-M2 scan-vs-scan dropped (a plain writer is also required)",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "writers.length ≥ 2 && writers.any fun sc => match sc with | .plain _ => false | _ => true",
+  "new": "writers.length ≥ 2 && writers.any (fun sc => match sc with | .plain _ => false | _ => true) && writers.any (fun sc => match sc with | .plain _ => true | _ => false)",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:343:0"]
+ },
+ {
+  "label": "A4-M3 a single scan writer is rejected (length >= 1)",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "writers.length ≥ 2 && writers.any fun sc",
+  "new": "writers.length ≥ 1 && writers.any fun sc",
+  "targets": ["DSL.Pipeline.CollectTest"],
+  "expect": ["CollectTest.lean:346:0", "CollectTest.lean:347:0"]
+ },
+ {
+  "label": "A5-M1 no public/private partition at Step F",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "                       , materializedNames := materializedAcc.filter (fun b => !isPrivate b)\n                       , privateSlots := (materializedAcc.filter isPrivate).map (·.slot)",
+  "new": "                       , materializedNames := materializedAcc\n                       , privateSlots := #[]",
+  "targets": ["Eval.Plan.CollectPlanTest", "Eval.Plan.CompileTest"],
+  "expect": ["CompileTest.lean:630:0", "CompileTest.lean:634:0", "CollectPlanTest.lean:100:0", "CollectPlanTest.lean:104:0", "CollectPlanTest.lean:122:0", "CollectPlanTest.lean:124:0"]
+ },
+ {
+  "label": "A5-M2 checkPreparedBindings ignores privateSlots",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Prepared.lean",
+  "old": "  let expected := published.filter (fun s => !source.bindings.privateSlots.contains s)",
+  "new": "  let expected := published",
+  "targets": ["Eval.Plan.CollectPlanTest", "Eval.Plan.CompileTest"],
+  "expect": ["CompileTest.lean:670:0", "CompileTest.lean:752:0", "CollectPlanTest.lean:100:0", "CollectPlanTest.lean:101:0", "CollectPlanTest.lean:123:0", "CollectPlanTest.lean:128:0"]
+ },
+ {
+  "label": "A5-M3 privateSlotUnpublished check dropped",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Prepared.lean",
+  "old": "    unless published.contains s do throw (.privateSlotUnpublished s)",
+  "new": "    pure ()",
+  "targets": ["Eval.Plan.CompileTest"],
+  "expect": ["CompileTest.lean:744:0"]
+ },
+ {
+  "label": "A5-M4 no declaration clones, seen through the checked plan (f64-declared fixtures)",
+  "task": "T5",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "              decls := sched.decls ++ clones",
+  "new": "              decls := sched.decls",
+  "targets": ["Eval.Plan.CollectPlanTest", "Eval.Plan.CompileTest"],
+  "expect": ["CompileTest.lean:624:0", "CollectPlanTest.lean:100:0", "CollectPlanTest.lean:101:0", "CollectPlanTest.lean:104:0", "CollectPlanTest.lean:139:0", "CollectPlanTest.lean:187:0"]
+ },
+ {
+  "label": "A5-M5 clone of a typed tensor is always f64 (f32 storage conflict)",
+  "task": "T5",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "  | .typedTensor ty _ ax => some (.typedTensor ty fresh ax)",
+  "new": "  | .typedTensor _ _ ax => some (.typedTensor .f64 fresh ax)",
+  "targets": ["Eval.Plan.CollectPlanTest", "Eval.Plan.Adapter32Test"],
+  "expect": ["Adapter32Test.lean:138:0", "mixed f32/f64 storage in one schedule", "CollectPlanTest.lean:122:0", "CollectPlanTest.lean:140:0", "CollectPlanTest.lean:149:0", "CollectPlanTest.lean:196:0", "CollectPlanTest.lean:245:0"]
+ },
+ {
+  "label": "A5-M6 B3 check removed from packBodyOf (direct pack/pack32 observers only)",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Adapter.lean",
+  "old": "  if let some nm := firstDefinedInput? plan.bindings env then throw (.inputIsDefined nm)",
+  "new": "  pure ()",
+  "targets": ["Eval.Plan.CollectPlanTest", "Eval.Plan.CompileTest"],
+  "expect": ["CollectPlanTest.lean:329:0", "CollectPlanTest.lean:334:0", "CollectPlanTest.lean:341:0", "CollectPlanTest.lean:342:0", "CollectPlanTest.lean:357:0", "CollectPlanTest.lean:360:0"]
+ },
+ {
+  "label": "A5-M7 B3 check removed from unpackBodyOf",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Adapter.lean",
+  "old": "  if let some nm := firstDefinedInput? plan.bindings env then throw (.binding (.inputIsDefined nm))",
+  "new": "  pure ()",
+  "targets": ["Eval.Plan.CollectPlanTest", "Eval.Plan.CompileTest"],
+  "expect": ["CompileTest.lean:1667:0", "CollectPlanTest.lean:329:0"]
+ },
+ {
+  "label": "A5-M8 definedNames lists public outputs only (private names and scratch not refused)",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "                       , definedNames := definedNames.toArray }",
+  "new": "                       , definedNames := ((materializedAcc.filter (fun b => !isPrivate b)).map (·.name)) }",
+  "targets": ["Eval.Plan.CollectPlanTest", "Eval.Plan.CompileTest"],
+  "expect": ["CompileTest.lean:638:0", "CollectPlanTest.lean:342:0", "CollectPlanTest.lean:343:0", "CollectPlanTest.lean:346:0", "CollectPlanTest.lean:347:0", "CollectPlanTest.lean:357:0", "CollectPlanTest.lean:360:0"]
+ },
+ {
+  "label": "A6-M1 route skips collection (physicalizes the uncollected schedule)",
+  "task": "T6",
+  "file": "LeanNCD/DSL/Pipeline/Lowering.lean",
+  "old": "match physicalizeForRoute collected with",
+  "new": "match physicalizeForRoute logical with",
+  "targets": ["DSL.Pipeline.CollectTest", "Bridge.AcsetCodecTest"],
+  "expect": ["CollectTest.lean:430:0", "CollectTest.lean:439:0", "CollectTest.lean:449:0", "CollectTest.lean:470:0", "CollectTest.lean:481:0", "AcsetCodecTest.lean:97:0"]
+ },
+ {
+  "label": "A6-M2 route calls the collectDefinitions wrapper (second topology gate moves the cyclic payload)",
+  "task": "T6",
+  "file": "LeanNCD/DSL/Pipeline/Lowering.lean",
+  "old": "  match desugarMultiWriters logical with",
+  "new": "  match collectDefinitions logical with",
+  "targets": ["DSL.Pipeline.RouteFragmentDiagnosticTest"],
+  "expect": ["RouteFragmentDiagnosticTest.lean:317:0", "RouteFragmentDiagnosticTest.lean:318:0", "RouteFragmentDiagnosticTest.lean:319:0"]
+ },
+ {
+  "label": "A7-M1 oracle profile refuses a second definition again",
+  "task": "T7",
+  "file": "LeanNCD/Semantics/Source/NumericalProfile.lean",
+  "old": "    definitions := definitions ++ [(output.declaration, statement.output.origin)]",
+  "new": "    unless (definitions.filter (fun p => p.1 == output.declaration)).isEmpty do\n      throw (.structural (.usedDType statement.output.origin output.name .f32))\n    definitions := definitions ++ [(output.declaration, statement.output.origin)]",
+  "targets": ["Semantics.SourceDifferentialPolicyTest", "Semantics.SourceDiagnosticAdmissionTest"],
+  "expect": ["SourceDifferentialPolicyTest.lean:329:0", "SourceDifferentialPolicyTest.lean:331:0", "SourceDiagnosticAdmissionTest.lean:175:0"]
+ },
+ {
+  "label": "A7-M2 oracle output dtype check removed (f32 twin and F13 must notice)",
+  "task": "T7",
+  "file": "LeanNCD/Semantics/Source/NumericalProfile.lean",
+  "old": "    unless output.elementType == .f64 do\n      throw (.structural (.usedDType statement.output.origin output.name output.elementType))\n    used := used ++ [output.declaration]",
+  "new": "    used := used ++ [output.declaration]",
+  "targets": ["Semantics.SourceDifferentialPolicyTest"],
+  "expect": ["SourceDifferentialPolicyTest.lean:328:0", "SourceDifferentialPolicyTest.lean:330:0"]
+ },
+ {
+  "label": "A3-M7 B3 reads the ORIGINAL schedule's writes, not the collected schedule's",
+  "task": "FG2",
+  "file": "LeanNCD/Eval/Eval.lean",
+  "old": "  let sched := checked.program\n  match scheduleFloat32Name? checked.declEnv sched.stmts with\n  -- A private per-writer clone `T#k` is reported as the user's tensor `T`.\n  | some nm =>\n      let shown := if checked.privateNames.contains nm then collectorOwner nm else nm\n      .error { error := .unsupportedDtype shown, warnings := [] }\n  | none =>\n  -- Inputs and defined tensors are disjoint (decision note B3): a supplied value for a written name\n  -- (a private `T#k` included) used to be silently replaced by the first write.\n  match (sched.stmts.flatMap ScanStmt.writes).find? inputs.contains with",
+  "new": "  let origSched := sched\n  let sched := checked.program\n  match scheduleFloat32Name? checked.declEnv sched.stmts with\n  -- A private per-writer clone `T#k` is reported as the user's tensor `T`.\n  | some nm =>\n      let shown := if checked.privateNames.contains nm then collectorOwner nm else nm\n      .error { error := .unsupportedDtype shown, warnings := [] }\n  | none =>\n  -- Inputs and defined tensors are disjoint (decision note B3): a supplied value for a written name\n  -- (a private `T#k` included) used to be silently replaced by the first write.\n  match (origSched.stmts.flatMap ScanStmt.writes).find? inputs.contains with",
+  "targets": [
+   "Eval.CollectEvalTest"
+  ],
+  "expect": [
+   "CollectEvalTest.lean:179:0"
+  ]
+ }
+]

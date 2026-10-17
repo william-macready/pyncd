@@ -147,7 +147,8 @@ Implement:
 4. assignment-node emission in checked graph order;
 5. positional slot initialization from `PreparedPlan.bindings.requiredInputs`;
 6. materialized output reconstruction from `PreparedPlan.bindings.materializedNames`, preserving
-   last-write-wins behavior for repeated source names;
+   last-write-wins behavior for repeated source names (superseded by additive collection slice 1:
+   a repeated source assignment is collected and published once);
 7. generated static shape checks for external inputs before evaluation; and
 8. fixture preparation, Dense execution, and generated-module writing from `main`.
 

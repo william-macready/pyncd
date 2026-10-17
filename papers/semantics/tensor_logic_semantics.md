@@ -1540,9 +1540,10 @@ A defined tensor without statements, and a designated input that no statement
 reads, are therefore not realized there (see the
 [semantic gap audit](tensor_logic_semantic_gap_audit.md), F03 and W07). A supplied
 input that names a defined tensor violates the disjointness of
-$\mathrm{In}$ and $\mathrm{Def}$ and must be rejected; the pipeline currently
-replaces the supplied value silently, and enforcing the rejection is part of the
-planned alignment. See the [decision note](additive_production_decision_note.md), Section B.
+$\mathrm{In}$ and $\mathrm{Def}$ and must be rejected; both backends reject such an
+input at run time (`EvalError.inputIsDefined` on the reference evaluator,
+`InputBindingError.inputIsDefined` on the plan path). See the
+[decision note](additive_production_decision_note.md), Section B.
 
 Designated outputs specify whole tensor values with their declared coordinate
 domains. If $H$ is a history tensor and $H\in\textcolor{#5688C7}{\mathrm{Out}}$, the output includes
@@ -3416,9 +3417,8 @@ still admit a strictly increasing rank.
 **Remark (production readiness).** The production profile orders whole
 tensors: a tensor is ready only when every statement that defines it has run,
 and a program whose tensor-level dependency graph has a cycle, apart from a scan
-node's reads of its own state, is rejected. (The scheduler currently releases a
-reader after the first of several writers; correcting this is part of the
-planned alignment recorded in the
+node's reads of its own state, is rejected. (A reader of a tensor with several
+writers waits for every writer: all-writers readiness, recorded in the
 [decision note](additive_production_decision_note.md).) The programs accepted
 under this rule have a coordinate-rank certificate, but the converse fails. This is a strict subset of the coordinate-ranked fragment, and
 a self-dependent history is expressed there only through the scan construct.

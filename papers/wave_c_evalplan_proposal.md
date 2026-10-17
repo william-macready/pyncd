@@ -2385,7 +2385,7 @@ unsupported construct fails before `runDensePlan`; checked semantic data contain
 > `PropertyOracle.enumPrograms` differential sweep, 3 test-the-tester mutations, a rank-2 output case
 > (`Y[i,j] := A[i]·B[j]`) exercising the multi-retained-axis surface at the value level, and a
 > repeated-assignment program run through the full `prepareEvalPlan → runPreparedDense` pipeline
-> confirming the last write wins — the latter two added by the final whole-branch review, which
+> confirming the last write wins (superseded by additive collection slice 1: a repeated assignment now sums) — the latter two added by the final whole-branch review, which
 > independently confirmed the compiler algorithm correct but found these two value-level paths
 > untested by anything else in the slice). **Real observed sweep counts (not estimated): total =
 > 3,832, accepted = 3,832, rejected = 0, 0 rejection categories — 100% bit-exact agreement between

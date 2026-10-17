@@ -89,12 +89,33 @@ def checkBindings (inputSlots : Array TensorSlot) (bindings : Array SlotBinding)
     `.axiswise` step publishes the statement's one name (see `Compile.lean`'s `prepareEvalPlan`
     `.plain` branch, and `NonlinCompileTest.lean` Section 3, which pins this directly: the internal
     slot is never named). Block-local scratch inside a scan is deliberately NOT here — it never
-    becomes an outer slot or a materialized name. A name reassigned twice appears twice; `unpack`
-    (Task 3) relies on this, inserting each in order so the LAST entry for a repeated name is the one
-    that survives. -/
+    becomes an outer slot or a materialized name. Only hand-built bindings can repeat a name (then
+    `unpack` (Task 3) inserts each in order, so the LAST entry for a repeated name is the one that
+    survives); `prepareEvalPlan` never repeats one.
+
+    Additive collection (decision note §C.8): the private per-writer tensors `T#k` that the
+    collector introduces are NOT persistent outputs — `materializedNames` omits them, so a
+    collected multi-writer name appears exactly once, under its public name (so the repeated-name
+    entries and `unpack`'s "last write wins" above now only describe a hand-built `PlanBindings`;
+    `prepareEvalPlan` never repeats a public name). Two further fields
+    record what that omission would otherwise lose:
+
+    * `privateSlots` — the publication slots of the omitted private names, in publication order.
+      They are still published by the raw plan (`rawPublicationSlots`), so `checkPreparedBindings`
+      expects `materializedNames`' slots to be exactly the publication sequence MINUS these. The
+      hidden slots are trusted like the names are (nothing authenticates that they belong to
+      generated `T#k` writers), and `prepareEvalPlan` is the sole producer; hardening (store the
+      hidden `SlotBinding`s and require `<base>#<digits>` with a visible base whose slot is later)
+      is parked.
+    * `definedNames` — every name the schedule writes (public, private, and scan-local scratch),
+      deduplicated in first-write order: the set a supplied input may not name (decision note B3,
+      `InputBindingError.inputIsDefined`). Defaults to empty, i.e. no input is refused, for a
+      hand-built `PlanBindings`. -/
 structure PlanBindings where
   requiredInputs    : RequiredBindings
   materializedNames : Array SlotBinding
+  privateSlots      : Array TensorSlot := #[]
+  definedNames      : Array String := #[]
   deriving Repr
 
 /-- No `deriving` clause: `CheckedEvalPlan` (private constructor) has no `BEq`/`DecidableEq`/
@@ -180,7 +201,12 @@ def checkPreparedBindings (source : PreparedPlan) :
   match rawMaterializedWith source.bindings.materializedNames raw.tensorSigs with
   | .error e => throw (.materializedSlot e)
   | .ok _ => pure ()
-  let expected := rawPublicationSlots raw
+  let published := rawPublicationSlots raw
+  -- A hidden (private) slot must be one the raw plan really publishes; the visible bindings then
+  -- cover exactly the rest of the publication sequence, in order.
+  for s in source.bindings.privateSlots do
+    unless published.contains s do throw (.privateSlotUnpublished s)
+  let expected := published.filter (fun s => !source.bindings.privateSlots.contains s)
   let actual := source.bindings.materializedNames.map (·.slot)
   unless actual == expected do
     throw (.publicationSlots expected actual)
@@ -195,8 +221,8 @@ def CheckedPreparedBindings.materializedWith {α : Type} (checked : CheckedPrepa
 /-- Ordered materialized SIGNATURES (Task 4.3): pairs each `PlanBindings.materializedNames` entry
     with its own slot's `TensorSignature`, read from the checked plan's `raw.tensorSigs` table —
     same order, including repeats, as `materializedNames` itself (its own doc comment: NOT
-    deduplicated; a name reassigned twice appears twice here too, each with its own slot's
-    signature). Exposes the destination dtype `prepareEvalPlan`'s Step D derives from the source
+    deduplicated; a name repeated in hand-built bindings appears twice here too, each with its own
+    slot's signature). Exposes the destination dtype `prepareEvalPlan`'s Step D derives from the source
     declaration (`dtypeOfDecl`, `Signature.lean`) at the one boundary a caller can observe it without
     reaching into `plan.raw` and re-deriving the pairing by hand.
 

@@ -291,14 +291,13 @@ run_cmd do
 
 -- ── Repeated-assignment executing coverage: `CompileTest.lean`'s `repeatSched` fixture
 -- (`Y[i]:=A[i]; Y[i]:=B[i]; Z[i]:=Y[i]`) is checked STRUCTURALLY there (`materializedNames ==
--- #["Y","Y","Z"]`, two distinct slots for the two `Y` entries) but never actually RUN.
--- `PlanBindings.materializedNames`'s deliberate non-deduplication design and `unpack`'s "later
--- insertion wins" behavior have zero executing test behind them without this: a regression in
--- `unpack`'s fold direction (e.g. `foldr` instead of `foldl`, or an accidental `.reverse`) would
--- silently make a reassigned name return its FIRST write instead of its last, and nothing else in
--- this slice would catch it. Runs the equivalent source program through the full
--- `prepareEvalPlan` → `runPreparedDense` pipeline, asserts the explicit expected value (last write
--- wins), AND cross-checks against `evalScheduled` via `planAgrees` — belt and suspenders. ──
+-- #["Y","Z"]`, two hidden private slots) but never actually RUN. Additive collection (decision note
+-- §C): the two writers are summed, `Y = A + B`, so `Z = A + B` too — it used to be the LAST write
+-- (`Y = B`). Runs the equivalent source program through the full `prepareEvalPlan` →
+-- `runPreparedDense` pipeline, asserts the explicit expected value, AND cross-checks against
+-- `evalScheduled` via `planAgrees` (which also compares the key inventory, so a leaked private
+-- `Y#1`/`Y#2` is a disagreement) — belt and suspenders. A regression that exposes the private
+-- tensors, or collects by last-wins, fails here. ──
 
 private def repeatProg : TLProgram := tlprog!{
   axis i : ℕ = 2
@@ -321,16 +320,22 @@ run_cmd do
       match prepareEvalPlan sched (InputSignature.ofDenseInputs repeatProgInputs) with
       | .error _ => throwError "repeatProg prepare failed (unexpected — planAgrees already accepted it)"
       | .ok prepared =>
-          match runPreparedDense prepared repeatProgInputs with
-          | .error e => throwError s!"repeatProg run failed (warnings={e.warnings.length})"
-          | .ok report =>
-              match report.env["Y"]?, report.env["Z"]? with
-              | some y, some z =>
-                  unless denseEq y ⟨[2], #[100.0, 200.0]⟩ do
-                    throwError s!"Y did not take the LAST write's value: {repr y.data}"
-                  unless denseEq z ⟨[2], #[100.0, 200.0]⟩ do
-                    throwError s!"Z did not read the LAST write of Y: {repr z.data}"
-              | _, _ => throwError "Y or Z missing from repeated-assignment plan env"
+          match runPreparedDense prepared repeatProgInputs, evalScheduled sched repeatProgInputs with
+          | .error e, _ => throwError s!"repeatProg run failed (warnings={e.warnings.length})"
+          | _, .error e => throwError s!"repeatProg reference failed: {e.error}"
+          | .ok report, .ok ref =>
+              match report.env["Y"]?, report.env["Z"]?, ref.env["Y"]?, ref.env["Z"]? with
+              | some y, some z, some ry, some rz =>
+                  unless denseEq y ⟨[2], #[101.0, 202.0]⟩ do
+                    throwError s!"Y is not the sum of its writers: {repr y.data}"
+                  unless denseEq z ⟨[2], #[101.0, 202.0]⟩ do
+                    throwError s!"Z did not read the collected Y: {repr z.data}"
+                  unless denseEq y ry && denseEq z rz do
+                    throwError "plan and evalScheduled disagree on the collected Y/Z"
+                  unless report.env.size == 4 && ref.env.size == 4 do
+                    throwError s!"env inventory is not [A, B, Y, Z]: plan {report.env.size}, \
+reference {ref.env.size}"
+              | _, _, _, _ => throwError "Y or Z missing from repeated-assignment plan/reference env"
 
 -- ── Plain (non-scan) max/min aggregation, end-to-end through the CHECKED PLAN path. The scan corpus
 -- (template 5) pins the scan-RECURRENCE `residualizeAssignment` call site (`sum` base + `max` recur),

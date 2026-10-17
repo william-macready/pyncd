@@ -56,6 +56,14 @@ class StorageCarrier (α : Type) where
 instance : StorageCarrier Float := ⟨.float64⟩
 instance : StorageCarrier Float32 := ⟨.float32⟩
 
+/-- The first name (in `PlanBindings.definedNames` order, the schedule's write order) that a supplied
+    environment holds a value for although the plan defines it: decision note B3, the checked
+    backend's counterpart of the reference's `evalScheduled` check. Shared by `packBodyOf` and
+    `unpackBodyOf`, so both boundaries refuse exactly the same environments. -/
+def firstDefinedInput? {α : Type} (bindings : PlanBindings) (env : NamedDenseEnvOf α) :
+    Option String :=
+  bindings.definedNames.find? env.contains
+
 /-- Resolve every input slot `runDensePlan` needs, in `raw.inputSlots` order, by NAME through
     `requiredInputs` — never by array position. `requiredInputs : RequiredBindings` is already
     checked (`checkBindings`, `Compile.lean`) to be a name-unique permutation onto
@@ -89,6 +97,7 @@ def packBodyOf {α : Type} [StorageCarrier α] (plan : PreparedPlan)
     Except InputBindingError (Array (DenseTensorOf α)) := do
   unless plan.plan.storageKind == StorageCarrier.kind α do
     throw (.storageKindMismatch (StorageCarrier.kind α) plan.plan.storageKind)
+  if let some nm := firstDefinedInput? plan.bindings env then throw (.inputIsDefined nm)
   let raw := plan.plan.raw
   let slotName : HashMap TensorSlot String :=
     checked.requiredInputs.bindings.foldl (fun acc b => acc.insert b.slot b.name) {}
@@ -134,9 +143,12 @@ def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
 
 /-- Reconstruct the named environment from a positional result. Starts from the ORIGINAL `env`
     (preserving every entry `pack` never consulted — extra inputs the plan doesn't read), then
-    inserts every `PlanBindings.materializedNames` entry IN ORDER; a name written twice by the
-    schedule appears twice here too, and since `HashMap.insert` overwrites, the later insertion
-    (the plan's own last write) naturally wins — no separate "most recent" bookkeeping needed.
+    inserts every `PlanBindings.materializedNames` entry IN ORDER. A `prepareEvalPlan` plan lists
+    each public name once (a multi-writer name is collected, its private `T#k` writers hidden), so
+    nothing repeats; only a hand-built `PlanBindings` can repeat a name, and then `HashMap.insert`
+    overwrites, so the later insertion naturally wins. A supplied `env` that names a tensor the
+    program defines is refused first (`InputBindingError.inputIsDefined`, decision note B3, via
+    `firstDefinedInput?`; a hand-built `PlanBindings` has empty `definedNames`, so none is refused).
 
     **The store's arity is the plan's, not the caller's (whole-branch review round 4).** This takes
     the whole `PreparedPlan`, not a bare `PlanBindings`, and requires `result.size` to equal
@@ -187,6 +199,7 @@ def unpackBodyOf {α : Type} [StorageCarrier α] (plan : PreparedPlan)
     (result : Array (DenseTensorOf α)) : Except PlanRunCause (NamedDenseEnvOf α) := do
   unless plan.plan.storageKind == StorageCarrier.kind α do
     throw (.storageKindMismatch (StorageCarrier.kind α) plan.plan.storageKind)
+  if let some nm := firstDefinedInput? plan.bindings env then throw (.binding (.inputIsDefined nm))
   let expected := plan.plan.raw.tensorSigs.size
   unless result.size == expected do
     throw (.resultStore (.storeArityMismatch expected result.size))

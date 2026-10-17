@@ -107,9 +107,10 @@ The differential fixtures (including the generated corpus), implementation
 mutation controls, and both final whole-branch reviews have landed. Nothing in
 `Oracle`, `Observation`, `Diagnostics`, `NativeLegs`, `NumericalProfile`, or
 `Differential` is a theorem: the oracle is tested against, not proved equal to,
-`globalFiber`, and bit parity holds only on the bounded-integer, f64-declared,
-single-definition profile. Same-LHS multi-statement programs are a known
-production contract difference and are never compared natively. See the
+`globalFiber`, and bit parity holds only on the bounded-integer, f64-declared
+profile. Same-LHS multi-statement programs are summed by every backend and compared
+by value on all four legs. `StructuralCondition` has only `usedDType` (an untyped
+f32 tensor); `knownContractDifference` is produced only by it. See the
 [source correspondence record](../../../papers/semantics/source_correspondence_record.md)
 for scope and limits.
 

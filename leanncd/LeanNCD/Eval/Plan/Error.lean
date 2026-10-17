@@ -481,6 +481,8 @@ inductive PreparedBindingsError
   | requiredInputs    (cause : BindingsError)
   | materializedSlot  (cause : PlanError)
   | publicationSlots  (expected actual : Array TensorSlot)
+  /-- `PlanBindings.privateSlots` names a slot the raw plan never publishes. -/
+  | privateSlotUnpublished (slot : TensorSlot)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /- `PlanCompileCause`/`PlanCompileFailure` used to live here (§5.5's sketch), but `invalidPlan`'s
@@ -510,6 +512,14 @@ inductive InputBindingError
   | missingEnvBinding (name : String)
   | shapeMismatch     (name : String) (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
   | storageMismatch   (name : String) (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
+  /-- The supplied environment holds a value for a name the plan DEFINES (decision note B3):
+      inputs and defined tensors are disjoint, and a supplied value for a written name — a private
+      per-writer `T#k` and block-local scan scratch included — used to be silently replaced by the
+      plan's own write. `name` is the first such name in the schedule's write order
+      (`PlanBindings.definedNames`), the same name the reference evaluator reports as
+      `EvalError.inputIsDefined`. Raised by `packBodyOf` and, for a direct call, `unpackBodyOf`
+      (as `PlanRunCause.binding`). -/
+  | inputIsDefined    (name : String)
   /-- The named INPUT adapter's own carrier does not match the prepared plan's checked storage kind.
       `expected` is the adapter's carrier (`.float64` for `pack`, `.float32` for `pack32`), `actual`
       the plan's. Raised by `packBodyOf` (`Adapter.lean`) as its first statement, before any shape

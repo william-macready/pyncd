@@ -130,7 +130,19 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
     does: a duplicate tensor-bearing declaration makes "which declaration is `Y`" ambiguous, so the
     storage question is not well-defined until the environment is. Unlike the checked backend's
     stop, this one is NOT temporary and is not limited to mixed schedules: a homogeneous f32
-    schedule has no correct binary64 reading either. -/
+    schedule has no correct binary64 reading either. A refusal that would name a private
+    per-writer clone `T#k` (below) names the user's tensor `T` instead (`collectorOwner`).
+
+    **Collection, B3 and hidden names.** `validateScheduled` also collects multi-writer tensors
+    (`collectDefinitions`, `DSL/Pipeline/Collect.lean`): every statement below the validation step
+    runs on the COLLECTED program (`checked.program`), in which each name has one writer and the
+    private tensors `T#k` of the writers are listed in `checked.privateNames`. The source checks
+    above (declarations, read ranks, dtypes, topological order) ran on the program as written; the
+    f32 refusal, size inference and execution all see the collected one. After the f32 refusal a
+    supplied input that names ANY name the collected program writes (a plain output, a private
+    `T#k`, a collector output, scan scratch) is refused as `EvalError.inputIsDefined` (decision
+    note B3): inputs and defined tensors are disjoint, so an input never silently stands in for a
+    write. On success the private names are erased from the reported environment. -/
 def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTensor) :
     Except EvalFailure EvalReport :=
   match validateScheduled sched with
@@ -138,7 +150,15 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
   | .ok checked =>
   let sched := checked.program
   match scheduleFloat32Name? checked.declEnv sched.stmts with
-  | some nm => .error { error := .unsupportedDtype nm, warnings := [] }
+  -- A private per-writer clone `T#k` is reported as the user's tensor `T`.
+  | some nm =>
+      let shown := if checked.privateNames.contains nm then collectorOwner nm else nm
+      .error { error := .unsupportedDtype shown, warnings := [] }
+  | none =>
+  -- Inputs and defined tensors are disjoint (decision note B3): a supplied value for a written name
+  -- (a private `T#k` included) used to be silently replaced by the first write.
+  match (sched.stmts.flatMap ScanStmt.writes).find? inputs.contains with
+  | some nm => .error { error := .inputIsDefined nm, warnings := [] }
   | none =>
   -- A scan-local scatter's LHS describes placement into persistent state, not a standalone scatter
   -- output whose placement extent should constrain later reads of that state.
@@ -167,7 +187,8 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
           | .scanPre nm _ _ => throw (.unsupportedRecurMorphism .evalScheduled nm)
         return env
       match execution with
-      | .ok env => .ok { env, warnings }
+      -- Private per-writer tensors of additive collection are not part of the reported result.
+      | .ok env => .ok { env := checked.privateNames.foldl (·.erase ·) env, warnings }
       | .error error => .error { error, warnings }
 
 end LeanNCD.Eval

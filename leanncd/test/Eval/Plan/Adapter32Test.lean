@@ -117,10 +117,11 @@ run_cmd do
 /-! ## Fixture 4: repeated assignment, homogeneous f32
 
 `CompileTest.repeatSched`'s shape (`Y[i] := A[i]; Y[i] := B[i]; Z[i] := Y[i]`) in source spelling
-with binary32 declarations. `materializedNames` is NOT deduplicated — two `Y` entries, one per
-write, then `Z`, in schedule order — and `unpack32` inserts them IN THAT ORDER, so the LAST write is
-what survives under the repeated name. A deduplicating or reversed publication would leave `Y` at
-`A`'s value instead of `B`'s, which is why the two inputs carry visibly different values. -/
+with binary32 declarations. Additive collection (decision note §C): the two writers of `Y` are
+SUMMED by a collector over the private per-writer tensors `Y#1`, `Y#2`, which are not persistent
+outputs, so `materializedNames` is `Y` once, then `Z`, and `unpack32` publishes `Y = A + B` (it used
+to publish the LAST write, `B`). The two inputs carry visibly different values, so neither a
+last-wins nor a first-wins collection satisfies the expected bits. -/
 
 def f32RepeatProg : TLProgram := tlprog!{
   axis i : ℕ = 2
@@ -138,29 +139,31 @@ run_cmd do
   let prepared ← match prepare32 f32RepeatProg f32RepeatInputs with
     | .ok p => pure p
     | .error e => throwError s!"f32 repeat: {e}"
-  unless prepared.bindings.materializedNames.map (·.name) == #["Y", "Y", "Z"] do
+  unless prepared.bindings.materializedNames.map (·.name) == #["Y", "Z"] do
     throwError s!"f32 repeat materializedNames drifted: \
 {repr (prepared.bindings.materializedNames.map (·.name))}"
-  -- The two `Y` entries name DISTINCT slots, so "last write wins" is a real ordering claim about
-  -- publication rather than a statement about one slot written twice.
-  let ySlots := (prepared.bindings.materializedNames.filter (·.name == "Y")).map (·.slot)
-  unless ySlots.size == 2 && ySlots[0]! != ySlots[1]! do
-    throwError s!"f32 repeat: expected two distinct Y slots, got {repr ySlots}"
+  -- The two private writers are published (their slots are recorded, distinct from each other and
+  -- from every public slot) but never named in `materializedNames`.
+  let ps := prepared.bindings.privateSlots
+  unless ps.size == 2 && ps[0]! != ps[1]! &&
+      prepared.bindings.materializedNames.all (fun b => !ps.contains b.slot) do
+    throwError s!"f32 repeat: expected two distinct hidden slots, got {repr ps}"
   match runPreparedDense32 prepared f32RepeatInputs with
   | .error e => throwError s!"f32 repeat run failed: {repr e.cause}"
   | .ok report =>
-      -- `100` and `200` as exact binary32 bits — `B`'s values, not `A`'s (`1`/`2` would be
-      -- `#[1065353216, 1073741824]`).
-      unless expect32 report.env "Y" [2] #[1120403456, 1128792064] do
-        throwError s!"f32 repeat: Y did not take the LAST write's value: \
-{repr (bitsOf report.env "Y")}"
-      unless expect32 report.env "Z" [2] #[1120403456, 1128792064] do
-        throwError s!"f32 repeat: Z did not read the LAST write of Y: \
-{repr (bitsOf report.env "Z")}"
+      -- `101` and `202` as exact binary32 bits — the SUM `A + B` (`B`'s `100`/`200` alone would be
+      -- `#[1120403456, 1128792064]`).
+      unless expect32 report.env "Y" [2] #[1120534528, 1128923136] do
+        throwError s!"f32 repeat: Y is not the sum of its writers: {repr (bitsOf report.env "Y")}"
+      unless expect32 report.env "Z" [2] #[1120534528, 1128923136] do
+        throwError s!"f32 repeat: Z did not read the collected Y: {repr (bitsOf report.env "Z")}"
+      -- No private name leaks into the report: exactly `A`, `B`, `Y`, `Z`.
+      unless report.env.size == 4 && !report.env.contains "Y#1" && !report.env.contains "Y#2" do
+        throwError s!"f32 repeat: env inventory is not [A, B, Y, Z]: {report.env.size} entries"
   match matDtypes prepared with
   | .error e => throwError s!"f32 repeat: {e}"
   | .ok pairs =>
-      unless pairs == #[("Y", ScalarDType.f32), ("Y", ScalarDType.f32), ("Z", ScalarDType.f32)] do
+      unless pairs == #[("Y", ScalarDType.f32), ("Z", ScalarDType.f32)] do
         throwError s!"f32 repeat materialized signatures wrong: {repr pairs}"
 
 /-! ## Fixture 5: a malformed binary32 input buffer is rejected BEFORE execution

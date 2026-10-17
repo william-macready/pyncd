@@ -145,27 +145,30 @@ private def statementContributions (statement : Nat) (values : List Rat) :
   values.zipIdx.map fun (value, coordinate) =>
     ⟨⟨statement, [(7, coordinate)]⟩, ⟨2, 3, [coordinate]⟩, some value⟩
 
-private def overwriteRefusal (run : ComparisonRun) (origins : List SourceOrigin) : Bool :=
-  let condition : StructuralCondition := .crossStatementOverwrite 3 origins
+/-- A multi-definition program is VALUE-COMPARED on every leg (additive collection): the profile
+admits it with one `definitions` entry per defining statement, and the legacy and checked native
+outputs agree with the oracle. Before collection this was a `crossStatementOverwrite` known
+contract difference with both native legs unavailable. -/
+private def valueCompared (run : ComparisonRun) (origins : List SourceOrigin) : Bool :=
+  let definitions := origins.map ((3, ·))
   (match run.classification with
-  | .knownContractDifference actual => actual == condition
+  | .fourLegParity => true
   | _ => false) &&
     (match run.profile with
-    | .error reason => reason == .structural condition
+    | .ok profile => profile.actual.isSome && profile.shared.definitions == definitions
     | _ => false) &&
     (match run.native with
-    | .ok native => native.shared == .error (.structural condition)
+    | .ok native => native.shared.toOption.map (·.definitions) == some definitions
     | _ => false) &&
     (match run.legacyComparison, run.checkedComparison with
-    | .unavailable (.profile left), .unavailable (.profile right) =>
-      left == .structural condition && right == .structural condition
+    | .compared (.ok .agreement), .compared (.ok .agreement) => true
     | _, _ => false)
 
 def F14 : Bool :=
   match compareSource multiDefinition (some [3]) with
   | .ok run =>
     run.fixtureDependencyOrder == some [3] &&
-      overwriteRefusal run [outputOrigin 0, outputOrigin 1] &&
+      valueCompared run [outputOrigin 0, outputOrigin 1] &&
       completeValues run.reference
         [(0, 1, [2], [5, 9]), (1, 2, [2], [2, 4]), (2, 3, [2], [7, 13])] &&
       run.reference.source.admitted.statements.map (·.original) == [0, 1] &&
@@ -183,8 +186,8 @@ def F14 : Bool :=
           native.source.admitted.statements.map (·.original) == [0, 1] &&
           (match native.legacy, native.checked with
           | .observed legacy, .observed checked mappings =>
-            observedOutput legacy 2 3 [2] #[0x4000000000000000, 0x4010000000000000] &&
-              observedOutput checked 2 3 [2] #[0x4000000000000000, 0x4010000000000000] &&
+            observedOutput legacy 2 3 [2] #[0x401C000000000000, 0x402A000000000000] &&
+              observedOutput checked 2 3 [2] #[0x401C000000000000, 0x402A000000000000] &&
               !mappings.isEmpty && mappings.all (fun mapping =>
                 mapping.name == "Y" && mapping.originals == [outputOrigin 0, outputOrigin 1] &&
                   mapping.scheduledIndex.isSome)
@@ -260,9 +263,9 @@ def F15 : Bool :=
       original.fixtureDependencyOrder == some [3] &&
         duplicateDefinition.resolved.stmts.length == 3 &&
         duplicateDefinition.resolved.stmts[0]? == duplicateDefinition.resolved.stmts[2]? &&
-        overwriteRefusal original [outputOrigin 0, outputOrigin 1] &&
-        checkStructure after.source.admitted ==
-          .error (.structural (.crossStatementOverwrite 3 [outputOrigin 2, outputOrigin 1])) &&
+        valueCompared original [outputOrigin 0, outputOrigin 1, outputOrigin 2] &&
+        (checkStructure after.source.admitted).toOption.map (·.definitions) ==
+          some [(3, outputOrigin 2), (3, outputOrigin 1), (3, outputOrigin 0)] &&
         before.source.admitted.statements.map (·.original) == [0, 1, 2] &&
         after.source.admitted.statements.map (·.original) == [2, 1, 0] &&
         originalLocals before.source == [(0, 2, 0), (1, 2, 1), (2, 2, 2)] &&
@@ -286,8 +289,8 @@ def F15 : Bool :=
             native.source.admitted.statements.map (·.original) == [0, 1, 2] &&
             (match native.legacy, native.checked with
             | .observed legacy, .observed checked mappings =>
-              observedOutput legacy 2 3 [2] #[0x4014000000000000, 0x4022000000000000] &&
-                observedOutput checked 2 3 [2] #[0x4014000000000000, 0x4022000000000000] &&
+              observedOutput legacy 2 3 [2] #[0x4028000000000000, 0x4036000000000000] &&
+                observedOutput checked 2 3 [2] #[0x4028000000000000, 0x4036000000000000] &&
                 !mappings.isEmpty && mappings.all (fun mapping =>
                   mapping.name == "Y" &&
                     mapping.originals == [outputOrigin 0, outputOrigin 1, outputOrigin 2] &&
@@ -297,8 +300,34 @@ def F15 : Bool :=
     | _ => false
   | _ => false
 
+/-- F14 default-f32 twin (clone F14, decls undeclared-typed as in F13's `defaultF32`): lifting the
+multi-definition refusal does not change how an untyped program is classified. The profile's
+dtype check refuses statement 0's f32 output before any second definition is reached, exactly as
+it did while `crossStatementOverwrite` existed (that check ran after the first statement too). -/
+private def multiDefinitionF32 : SourceSnapshot :=
+  { multiDefinition with
+    resolved := { multiDefinition.resolved with
+      decls := [.axis i (some 2), .tensor "A" [i], .tensor "B" [i], .tensor "Y" [i]] } }
+
+def F14f32 : Bool :=
+  match compareSource multiDefinitionF32 (some [3]) with
+  | .ok run =>
+    let condition : StructuralCondition := .usedDType (outputOrigin 0) "Y" .f32
+    (match run.classification with
+    | .knownContractDifference actual => actual == condition
+    | _ => false) &&
+      (match run.profile with
+      | .error reason => reason == .structural condition
+      | _ => false) &&
+      (match run.oracle with
+      | .ok oracle => oracle.tensors.map (fun t => (t.declaration, t.values)) ==
+          [(1, [5, 9]), (2, [2, 4]), (3, [7, 13])]
+      | _ => false)
+  | _ => false
+
 #guard F13
 #guard F14
+#guard F14f32
 #guard F15
 
 end SourceDifferentialPolicyTest

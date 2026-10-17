@@ -1,0 +1,280 @@
+From 6d72619295c023b274dda351bc95f2ae1afecf9a Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Thu, 15 Oct 2026 15:40:49 -0700
+Subject: [PATCH 1/2] proto: P2b-T3 route collects multi-writer tensors before
+ physicalization
+
+route runs desugarMultiWriters before physicalizeForRoute, so a reader of a
+multi-writer name is wired to the sum collector instead of the last writer.
+compile_eq_physical_route gains the collection stage; compile_wellFormed's
+statement is unchanged. Fixtures RT1-RT6 (CollectTest), acset fixture 10.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ leanncd/LeanNCD/Bridge/Agreement.lean         | 43 ++++++----
+ leanncd/LeanNCD/DSL/Pipeline/Lowering.lean    | 19 ++++-
+ .../DSL/Pipeline/ScheduledValidation.lean     |  5 +-
+ leanncd/test/Bridge/AcsetCodecTest.lean       | 16 ++++
+ leanncd/test/DSL/Pipeline/CollectTest.lean    | 82 +++++++++++++++++++
+ 5 files changed, 145 insertions(+), 20 deletions(-)
+
+diff --git a/leanncd/LeanNCD/Bridge/Agreement.lean b/leanncd/LeanNCD/Bridge/Agreement.lean
+index 299bbafd..5c511012 100644
+--- a/leanncd/LeanNCD/Bridge/Agreement.lean
++++ b/leanncd/LeanNCD/Bridge/Agreement.lean
+@@ -11,11 +11,12 @@ open Std
+ 
+ /-! ## Phase 4 — `compile_wellFormed`: every compiled program is `WellFormed`
+ 
+-`compile = compileToScheduled >>= route`, and `route` is now two stages (§2.5): checked
+-physicalization of the LOGICAL schedule into a `PhysicalRouteProgram`, then the unchanged
+-`routeCore` on that program's PHYSICAL statements. `compile_eq_physical_route` walks both stages
+-and isolates `tc` as `routeCore physical.scheduled`'s output, after which each `WellFormed`
+-conjunct is a fact about `routeCore` exactly as before.
++`compile = compileToScheduled >>= route`, and `route` is now three stages: additive collection
++of the LOGICAL schedule (`desugarMultiWriters`, one writer per name), checked physicalization of
++the COLLECTED schedule into a `PhysicalRouteProgram` (§2.5), then the unchanged `routeCore` on
++that program's PHYSICAL statements. `compile_eq_physical_route` walks all three stages and
++isolates `tc` as `routeCore physical.scheduled`'s output, after which each `WellFormed` conjunct
++is a fact about `routeCore` exactly as before.
+ 
+ Agreement consumes only three things — successful `routeCore`, the external-count equality, and
+ `wellFormedDom` — so no fragment evidence (coverage, contiguity, exits, freshness) is threaded
+@@ -23,14 +24,17 @@ into `wf_typeMatch`, `wf_singleOutput`, or `wf_topo`. The logical/physical disti
+ to them: they only ever see the physical program `routeCore` succeeded on. -/
+ 
+ /-- Plumbing: a successful `compile` factors as a successful `compileToScheduled` (giving the
+-    LOGICAL schedule), a successful `physicalizeForRoute` (giving the checked physical package),
+-    and a `routeCore` on the physical program that produced `tc`'s steps/routing, with
+-    `tc.nExternal = physical.scheduled.extNames.card`. -/
++    LOGICAL schedule), a successful `desugarMultiWriters` (giving the COLLECTED schedule and its
++    private names), a successful `physicalizeForRoute` of the collected schedule (giving the
++    checked physical package), and a `routeCore` on the physical program that produced `tc`'s
++    steps/routing, with `tc.nExternal = physical.scheduled.extNames.card`. -/
+ theorem compile_eq_physical_route {p : TLProgram} {s : Nat} {tc : ThreadedComposed} {s' : Nat}
+     (h : (TLProgram.compile p).run s = .ok tc s') :
+-    ∃ (logical : ScheduledProgram) (s₁ : Nat) (physical : PhysicalRouteProgram),
++    ∃ (logical : ScheduledProgram) (s₁ : Nat) (collected : ScheduledProgram)
++      (privateNames : List String) (physical : PhysicalRouteProgram),
+       (TLProgram.compileToScheduled p).run s = .ok logical s₁ ∧
+-      physicalizeForRoute logical = .ok physical ∧
++      desugarMultiWriters logical = .ok (collected, privateNames) ∧
++      physicalizeForRoute collected = .ok physical ∧
+       routeCore physical.scheduled = .ok (tc.steps, tc.routing) ∧
+       tc.nExternal = physical.scheduled.extNames.card ∧
+       tc.wellFormedDom = true := by
+@@ -43,7 +47,12 @@ theorem compile_eq_physical_route {p : TLProgram} {s : Nat} {tc : ThreadedCompos
+       rw [hcs] at h
+       dsimp only at h
+       unfold route at h
+-      cases hp : physicalizeForRoute logical with
++      rcases hcd : desugarMultiWriters logical with e | ⟨collected, privateNames⟩
++      · rw [hcd] at h
++        simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
++      rw [hcd] at h
++      dsimp only at h
++      cases hp : physicalizeForRoute collected with
+       | error e =>
+           rw [hp] at h
+           simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
+@@ -60,7 +69,7 @@ theorem compile_eq_physical_route {p : TLProgram} {s : Nat} {tc : ThreadedCompos
+               simp only [EStateM.run, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
+               obtain ⟨htc, -⟩ := h
+               subst htc
+-              exact ⟨logical, s₁, physical, rfl, hp, hrcc, rfl, hwf⟩
++              exact ⟨logical, s₁, collected, privateNames, physical, rfl, hcd, hp, hrcc, rfl, hwf⟩
+             · simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
+ 
+ -- NOTE(phaseB): restated to `≥ 1` to match the weakened `WellFormed` conjunct 3 (multi-output scans).
+@@ -398,13 +407,15 @@ theorem wf_topo {sp : ScheduledProgram} {tc : ThreadedComposed}
+ /-- **The compiler theorem: every compiled program is `WellFormed`** (discharges `realize`'s
+     precondition on real input).
+ 
+-    Statement UNCHANGED by the logical-schedule flip (§2.5). Only the internal witness moved: the
+-    scheduled program the conjuncts are proved against is now `physical.scheduled` (the checked
+-    physicalization) rather than `compileToScheduled`'s own output. `test/Bridge/AgreementTest.lean`
++    Statement UNCHANGED by the logical-schedule flip (§2.5) and by additive collection. Only the
++    internal witness moved: the scheduled program the conjuncts are proved against is now
++    `physical.scheduled` (the checked physicalization of the collected schedule) rather than
++    `compileToScheduled`'s own output. `test/Bridge/AgreementTest.lean`
+     pins this exact type. -/
+ theorem compile_wellFormed (p : TLProgram) (s : Nat) (tc : ThreadedComposed) (s' : Nat)
+     (h : (TLProgram.compile p).run s = .ok tc s') : tc.WellFormed := by
+-  obtain ⟨_logical, _s₁, physical, _hlogical, _hphysical, hrc, hne, hwfd⟩ :=
++  obtain ⟨_logical, _s₁, _collected, _privateNames, physical, _hlogical, _hcollected, _hphysical,
++      hrc, hne, hwfd⟩ :=
+     compile_eq_physical_route h
+   exact ⟨hwfd, wf_typeMatch hrc hwfd hne, wf_singleOutput hrc, wf_topo hrc hne⟩
+ 
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean b/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean
+index 5a50445b..7311e465 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean
+@@ -545,7 +545,19 @@ def routeCore(sp : ScheduledProgram) : Except CompileError (List BrBaseP × List
+ 
+ /-- Phase 8: route a **logical** scheduled program into a `ThreadedComposed` (§2.4, §2.5).
+ 
+-    Two stages, and the split between them is the whole point of this design:
++    First, `desugarMultiWriters` (`Pipeline/Collect.lean`) collects multi-writer tensors: every
++    writer of `T` is renamed to a private `T#k` and one `.assign` (sum aggregation, identity
++    nonlinearity, labelled `.contract`) publishes `T`, so `buildNameToStep` sees at most one writer
++    per name and every reader is wired to the collector (identity on single-writer schedules). The
++    `T#k` steps stay in the routed diagram: like the nonlinear producer/consumer split below, they
++    are compilation artifacts of the morphism, and nothing in `route` hides names. Route names are
++    computed from the COLLECTED program's inventory, so they stay fresh against `T#k`.
++    `route` calls the pass, not its `collectDefinitions` wrapper: the wrapper's `isTopoOrdered`
++    assertion would duplicate `routeCore`'s `routableInOrder`, the single topology gate here (the
++    two agree once every name has one writer), and would move the payload a cyclic hand-built
++    schedule reports (pinned in `RouteFragmentDiagnosticTest.lean`).
++
++    Then two stages, and the split between them is the whole point of this design:
+ 
+     1. `physicalizeForRoute` (`Pipeline/RouteFragments.lean`) turns the logical schedule into a
+        checked, proof-carrying `PhysicalRouteProgram` — expanding each nonlinear plain assignment
+@@ -565,7 +577,10 @@ def routeCore(sp : ScheduledProgram) : Except CompileError (List BrBaseP × List
+     Regression tests that compare the old split pipeline against the new one must therefore
+     terminate at `routeCore`, not at public `route`. -/
+ def route (logical : ScheduledProgram) : FreshM ThreadedComposed := do
+-  match physicalizeForRoute logical with
++  match desugarMultiWriters logical with
++  | .error e => throw e
++  | .ok (collected, _) =>
++  match physicalizeForRoute collected with
+   | .error e => throw e
+   | .ok physical =>
+       let nExternal := physical.scheduled.extNames.card
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+index b578982b..02dda59c 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+@@ -117,8 +117,9 @@ def scheduleFloat32Name? (env : DeclEnv) (stmts : List ScanStmt) : Option String
+   ((scheduleStorageConstraints env stmts).find? (fun nk => nk.2 == .float32)).map (·.1)
+ 
+ /-- Additive collection (decision note §C): `desugarMultiWriters`, with its result asserted to be in
+-    producer-before-consumer order. The one entry every boundary calls (`validateScheduled` here;
+-    `route` before `physicalizeForRoute`). The identity on single-writer schedules. -/
++    producer-before-consumer order. The entry `validateScheduled` calls; `route` calls
++    `desugarMultiWriters` directly, because `routeCore`'s `routableInOrder` is its single topology
++    gate. The identity on single-writer schedules. -/
+ def collectDefinitions (sched : ScheduledProgram) :
+     Except CompileError (ScheduledProgram × List String) := do
+   let (collected, privateNames) ← desugarMultiWriters sched
+diff --git a/leanncd/test/Bridge/AcsetCodecTest.lean b/leanncd/test/Bridge/AcsetCodecTest.lean
+index cc609c6f..040cf358 100644
+--- a/leanncd/test/Bridge/AcsetCodecTest.lean
++++ b/leanncd/test/Bridge/AcsetCodecTest.lean
+@@ -83,4 +83,20 @@ open LeanNCD.AcsetCodec
+           G[j, 0]    := X[j]
+           G[j, l +1] := relu(G[j, l] · W_G[j, k]) }
+ 
++-- 10. Additive collection round trip (P2b-T3). Clone of fixture 8: two writers of Y (the first
++-- nonlinear) and a reader. The routed diagram holds both private writers, the ReLU pair of the
++-- first, and the sum collector, a step with two internal input wires.
++#guard toThreadedComposed (fromThreadedComposed (tl!{
++          Y[i] := relu(A[i])
++          Y[i] := B[i]
++          U[i] := Y[i] }))
++        = tl!{
++          Y[i] := relu(A[i])
++          Y[i] := B[i]
++          U[i] := Y[i] }
++#guard (tl!{
++          Y[i] := relu(A[i])
++          Y[i] := B[i]
++          U[i] := Y[i] }).steps.length = 5
++
+ end LeanNCD
+diff --git a/leanncd/test/DSL/Pipeline/CollectTest.lean b/leanncd/test/DSL/Pipeline/CollectTest.lean
+index 00554feb..9f3d3386 100644
+--- a/leanncd/test/DSL/Pipeline/CollectTest.lean
++++ b/leanncd/test/DSL/Pipeline/CollectTest.lean
+@@ -243,4 +243,86 @@ private def scanErrorOf (extra : List ScanStmt) (dup : Bool := false) : Option C
+   | some (.ok (_, g)) => g.isEmpty
+   | _ => false
+ 
++/-! ## Route integration (`route` runs `desugarMultiWriters` before `physicalizeForRoute`)
++
++Before this, `route` physicalized the UNCOLLECTED logical schedule, and `buildNameToStep`'s
++`HashMap.insert` fold wired every reader of a multi-writer name to its LAST writer, leaving the
++earlier writers as dead steps (observed on RT1 and RT2 alike: 3 steps, routing
++`[[external 0], [external 1], [internal 1 0]]`, so `U` read only `B`). Now every reader is wired to
++the collector, and the collector reads every private writer. The private `Y#k` steps stay in the
++routed diagram (`route` hides nothing). Programs here are undeclared, i.e. default f32, except RT3. -/
++
++private def routed (p : TLProgram) : Option (List BrOp × List (List Wire)) :=
++  match p.compile.run 0 with
++  | .ok tc _ => some (tc.steps.map (·.op), tc.routing)
++  | .error _ _ => none
++
++/-- Two private writers (steps 0, 1), the `.contract`-labelled sum collector (step 2) reading both,
++    and the reader `U` (step 3) reading the collector. -/
++private def collectedRoute : List BrOp × List (List Wire) :=
++  ([.contract, .contract, .contract, .contract],
++   [[.external 0], [.external 1], [.internal 0 0, .internal 1 0], [.internal 2 0]])
++
++-- RT1 (donor: C1 plus a reader; P1's `T:=A; U:=T; T:=B` probe): the reader sits BETWEEN the writers.
++def rt1 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := A[i]
++  U[i] := Y[i]
++  Y[i] := B[i]
++}
++#guard routed rt1 == some collectedRoute
++
++-- RT2 (clone RT1, reader after both writers): the same diagram.
++def rt2 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := A[i]
++  Y[i] := B[i]
++  U[i] := Y[i]
++}
++#guard routed rt2 == some collectedRoute
++
++-- RT3 (clone RT1, declare Y `tensor f64` as in C4b): the declared clones route identically.
++def rt3 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  tensor f64 Y(i)
++  Y[i] := A[i]
++  U[i] := Y[i]
++  Y[i] := B[i]
++}
++#guard routed rt3 == some collectedRoute
++
++-- RT4 accept-neighbour (clone RT1, rename the second writer to S): one writer per name, so no
++-- collector; `U` reads `Y`'s only writer.
++def rt4 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := A[i]
++  U[i] := Y[i]
++  S[i] := B[i]
++}
++#guard routed rt4 == some ([.contract, .contract, .contract],
++  [[.external 0], [.internal 0 0], [.external 1]])
++
++-- RT5 (clone RT2, first writer ReLU): the private writer `Y#1` is itself split into the nonlinear
++-- producer/consumer pair (steps 0, 1); the collector (step 3) reads the pair's consumer and `Y#2`.
++def rt5 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := relu(A[i])
++  Y[i] := B[i]
++  U[i] := Y[i]
++}
++#guard routed rt5 == some ([.contract, .relu, .contract, .contract, .contract],
++  [[.external 0], [.internal 0 0], [.external 1], [.internal 1 0, .internal 2 0], [.internal 3 0]])
++
++-- RT6 (clone RT2, a third writer and a ReLU reader): the collector reads all three private writers.
++def rt6 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  Y[i] := A[i]
++  Y[i] := B[i]
++  Y[i] := C[i]
++  U[i] := relu(Y[i])
++}
++#guard routed rt6 == some ([.contract, .contract, .contract, .contract, .contract, .relu],
++  [[.external 0], [.external 1], [.external 2], [.internal 0 0, .internal 1 0, .internal 2 0],
++   [.internal 3 0], [.internal 4 0]])
++
+ end LeanNCD.CollectTest
+-- 
+2.50.1 (Apple Git-155)
+

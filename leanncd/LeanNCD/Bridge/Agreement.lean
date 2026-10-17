@@ -11,11 +11,12 @@ open Std
 
 /-! ## Phase 4 — `compile_wellFormed`: every compiled program is `WellFormed`
 
-`compile = compileToScheduled >>= route`, and `route` is now two stages (§2.5): checked
-physicalization of the LOGICAL schedule into a `PhysicalRouteProgram`, then the unchanged
-`routeCore` on that program's PHYSICAL statements. `compile_eq_physical_route` walks both stages
-and isolates `tc` as `routeCore physical.scheduled`'s output, after which each `WellFormed`
-conjunct is a fact about `routeCore` exactly as before.
+`compile = compileToScheduled >>= route`, and `route` is now three stages: additive collection
+of the LOGICAL schedule (`desugarMultiWriters`, one writer per name), checked physicalization of
+the COLLECTED schedule into a `PhysicalRouteProgram` (§2.5), then the unchanged `routeCore` on
+that program's PHYSICAL statements. `compile_eq_physical_route` walks all three stages and
+isolates `tc` as `routeCore physical.scheduled`'s output, after which each `WellFormed` conjunct
+is a fact about `routeCore` exactly as before.
 
 Agreement consumes only three things — successful `routeCore`, the external-count equality, and
 `wellFormedDom` — so no fragment evidence (coverage, contiguity, exits, freshness) is threaded
@@ -23,14 +24,17 @@ into `wf_typeMatch`, `wf_singleOutput`, or `wf_topo`. The logical/physical disti
 to them: they only ever see the physical program `routeCore` succeeded on. -/
 
 /-- Plumbing: a successful `compile` factors as a successful `compileToScheduled` (giving the
-    LOGICAL schedule), a successful `physicalizeForRoute` (giving the checked physical package),
-    and a `routeCore` on the physical program that produced `tc`'s steps/routing, with
-    `tc.nExternal = physical.scheduled.extNames.card`. -/
+    LOGICAL schedule), a successful `desugarMultiWriters` (giving the COLLECTED schedule and its
+    private names), a successful `physicalizeForRoute` of the collected schedule (giving the
+    checked physical package), and a `routeCore` on the physical program that produced `tc`'s
+    steps/routing, with `tc.nExternal = physical.scheduled.extNames.card`. -/
 theorem compile_eq_physical_route {p : TLProgram} {s : Nat} {tc : ThreadedComposed} {s' : Nat}
     (h : (TLProgram.compile p).run s = .ok tc s') :
-    ∃ (logical : ScheduledProgram) (s₁ : Nat) (physical : PhysicalRouteProgram),
+    ∃ (logical : ScheduledProgram) (s₁ : Nat) (collected : ScheduledProgram)
+      (privateNames : List String) (physical : PhysicalRouteProgram),
       (TLProgram.compileToScheduled p).run s = .ok logical s₁ ∧
-      physicalizeForRoute logical = .ok physical ∧
+      desugarMultiWriters logical = .ok (collected, privateNames) ∧
+      physicalizeForRoute collected = .ok physical ∧
       routeCore physical.scheduled = .ok (tc.steps, tc.routing) ∧
       tc.nExternal = physical.scheduled.extNames.card ∧
       tc.wellFormedDom = true := by
@@ -43,7 +47,12 @@ theorem compile_eq_physical_route {p : TLProgram} {s : Nat} {tc : ThreadedCompos
       rw [hcs] at h
       dsimp only at h
       unfold route at h
-      cases hp : physicalizeForRoute logical with
+      rcases hcd : desugarMultiWriters logical with e | ⟨collected, privateNames⟩
+      · rw [hcd] at h
+        simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
+      rw [hcd] at h
+      dsimp only at h
+      cases hp : physicalizeForRoute collected with
       | error e =>
           rw [hp] at h
           simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
@@ -60,7 +69,7 @@ theorem compile_eq_physical_route {p : TLProgram} {s : Nat} {tc : ThreadedCompos
               simp only [EStateM.run, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
               obtain ⟨htc, -⟩ := h
               subst htc
-              exact ⟨logical, s₁, physical, rfl, hp, hrcc, rfl, hwf⟩
+              exact ⟨logical, s₁, collected, privateNames, physical, rfl, hcd, hp, hrcc, rfl, hwf⟩
             · simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
 
 -- NOTE(phaseB): restated to `≥ 1` to match the weakened `WellFormed` conjunct 3 (multi-output scans).
@@ -398,13 +407,15 @@ theorem wf_topo {sp : ScheduledProgram} {tc : ThreadedComposed}
 /-- **The compiler theorem: every compiled program is `WellFormed`** (discharges `realize`'s
     precondition on real input).
 
-    Statement UNCHANGED by the logical-schedule flip (§2.5). Only the internal witness moved: the
-    scheduled program the conjuncts are proved against is now `physical.scheduled` (the checked
-    physicalization) rather than `compileToScheduled`'s own output. `test/Bridge/AgreementTest.lean`
+    Statement UNCHANGED by the logical-schedule flip (§2.5) and by additive collection. Only the
+    internal witness moved: the scheduled program the conjuncts are proved against is now
+    `physical.scheduled` (the checked physicalization of the collected schedule) rather than
+    `compileToScheduled`'s own output. `test/Bridge/AgreementTest.lean`
     pins this exact type. -/
 theorem compile_wellFormed (p : TLProgram) (s : Nat) (tc : ThreadedComposed) (s' : Nat)
     (h : (TLProgram.compile p).run s = .ok tc s') : tc.WellFormed := by
-  obtain ⟨_logical, _s₁, physical, _hlogical, _hphysical, hrc, hne, hwfd⟩ :=
+  obtain ⟨_logical, _s₁, _collected, _privateNames, physical, _hlogical, _hcollected, _hphysical,
+      hrc, hne, hwfd⟩ :=
     compile_eq_physical_route h
   exact ⟨hwfd, wf_typeMatch hrc hwfd hne, wf_singleOutput hrc, wf_topo hrc hne⟩
 

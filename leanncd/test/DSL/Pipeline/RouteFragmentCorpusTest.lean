@@ -357,14 +357,18 @@ run_cmd check "G20 common-domain exact (137 cases)" commonExact
 
 /-! ### G21 — the eight `%nl0` collisions transition from rejection to acceptance
 
-The OLD pipeline mints `%nl0`, which the source already binds, so `routeCore` sees a self-read and
-rejects with `cyclicDataflow`. Physicalization's `routeName` is fresh by construction, so the same
-program routes. This is stated separately from G20: the old bug did NOT accept these. -/
+The OLD pipeline mints `%nl0`, which the source already binds, so the minted producer becomes a
+second writer of `%nl0` that reads `%nl0`: a self-read of a multi-writer tensor. Under all-writers
+readiness (additive collection, slice 1) `schedule` cannot order it and rejects with
+`cyclicDataflow "schedule: cyclic dataflow"`; before that change `schedule` ordered it and
+`routeCore` rejected the self-read as `"routeCore: cyclic dataflow (topoSort fallback)"`.
+Physicalization's `routeName` is fresh by construction, so the same program routes. This is stated
+separately from G20: the old bug did NOT accept these. -/
 
 def collisionTransition (c : CorpusCase) : Bool :=
   if !c.collision then true else
     match oldErr c.logical, newTC c.logical with
-    | some (.cyclicDataflow "routeCore: cyclic dataflow (topoSort fallback)"), some new =>
+    | some (.cyclicDataflow "schedule: cyclic dataflow"), some new =>
         new.wellFormedDom &&
         toThreadedComposed (fromThreadedComposed new) == new
     | _, _ => false

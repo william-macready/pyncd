@@ -1,0 +1,177 @@
+From 0774a920f52e21f2d94273c950fca5b7c5136ec8 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Wed, 14 Oct 2026 19:08:48 -0700
+Subject: [PATCH 2/3] proto: P1-T2 all-writers readiness in
+ eligible/topoSortFuel/isTopoOrdered + tests
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ leanncd/LeanNCD/DSL/AGENTS.md                 |  2 +-
+ .../DSL/Pipeline/ScheduledValidation.lean     | 20 ++++--
+ leanncd/test/DSL/Pipeline/CollectTest.lean    | 61 +++++++++++++++++++
+ .../DSL/Pipeline/RouteFragmentCorpusTest.lean | 12 ++--
+ 4 files changed, 84 insertions(+), 11 deletions(-)
+
+diff --git a/leanncd/LeanNCD/DSL/AGENTS.md b/leanncd/LeanNCD/DSL/AGENTS.md
+index 7871421a..72fc08c4 100644
+--- a/leanncd/LeanNCD/DSL/AGENTS.md
++++ b/leanncd/LeanNCD/DSL/AGENTS.md
+@@ -54,7 +54,7 @@ Cross-layer imports, each deliberate:
+ - `ThreadedComposed { steps; routing; nExternal }`; `Wire = external Nat | internal Nat Nat`; `StMatP { domLen codLen; coeffs; bias }` with `.wellFormed`/`.validate`.
+ 
+ ### ScheduledProgram consumers
+-- `prepareEvalPlan` and `evalScheduled` are the two public preparation/execution boundaries. Both require `validateScheduled` and consume its declarations, explicit sizes, external-name order, and original statements. Its topology advances by `ScanStmt.outputs`, not `writes`: recurrence scratch stays block-local, plain statements cannot read their own destination, and scan-internal dependencies remain legal.
++- `prepareEvalPlan` and `evalScheduled` are the two public preparation/execution boundaries. Both require `validateScheduled` and consume its declarations, explicit sizes, external-name order, and original statements. Its topology advances by `ScanStmt.publications` (`outputs`, once per node), not `writes`: recurrence scratch stays block-local, plain statements cannot read their own destination, and scan-internal dependencies remain legal. Readiness is ALL-WRITERS: a read is ready once the emitted publications of the name equal the number of nodes writing it, so a reader of a multi-writer tensor waits for every writer and a writer that reads its own (multi-writer) destination is `cyclicDataflow`.
+ - `schedule` establishes the invariant for source programs. `capabilityPreflight` and `orderedExtNames` run only after the checked boundary.
+ - `elaborateAffineReindexings`, `routeCore`, `routeNameInventory`, `physicalizeRaw`, `physicalizeForRoute`, `route` are routing-local; they never invoke evaluation validation.
+ - `PropertyOracle.independentRun` is an independent oracle with a valid-source precondition; its scan-free calls reach the shared boundary through `evalScheduled`.
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+index 31c81419..4587d0af 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+@@ -21,15 +21,23 @@ def ScanStmt.reads : ScanStmt → List String
+   | .scan _ _ b r _ => (b.flatMap Stmt.readNames ++ r.flatMap Stmt.readNames).eraseDups
+   | .scanPre _ _ _  => []
+ 
+-/-- A node is ready when each read is external, was published by an earlier node, or is internal to
+-    a scan block. A plain write is not available to its own RHS, and scan scratch is never emitted. -/
++/-- The publications a node adds to the emitted list: each name it publishes, ONCE per node. A scan
++    whose state has two base faces lists that state twice in `ScanStmt.outputs`; readiness counts
++    nodes, so the duplicate must not count as a second writer. -/
++def ScanStmt.publications (sc : ScanStmt) : List String := sc.outputs.eraseDups
++
++/-- A node is ready when each read is internal to its own scan block, or ALL of the read's writers
++    have published it: the number of emitted publications of `r` equals the number of nodes that
++    write `r` (an external name has zero of both). This is all-writers readiness (additive
++    collection, decision note §C.2): a reader of a multi-writer tensor waits for every writer. A
++    plain write is not available to its own RHS (its own publication is never emitted before it),
++    and scan scratch is never emitted, so a reader of it is never ready. -/
+ private def eligible (sc : ScanStmt) (all : List ScanStmt) (emitted : List String) : Bool :=
+   sc.reads.all (fun r =>
+     (match sc with
+      | .scan .. => sc.writes.contains r
+      | _ => false) ||
+-    emitted.contains r ||
+-    all.all (fun s => !s.writes.contains r))
++    emitted.count r == (all.filter (fun s => s.writes.contains r)).length)
+ 
+ /-- Fuel-bounded stable Kahn's sort. -/
+ def topoSortFuel : Nat → List ScanStmt → List ScanStmt → List String →
+@@ -41,7 +49,7 @@ def topoSortFuel : Nat → List ScanStmt → List ScanStmt → List String →
+       | none   => acc ++ remaining
+       | some i =>
+           let sc := remaining[i]!
+-          topoSortFuel n all (remaining.eraseIdx i) (emitted ++ sc.outputs) (acc ++ [sc])
++          topoSortFuel n all (remaining.eraseIdx i) (emitted ++ sc.publications) (acc ++ [sc])
+ 
+ /-- Topological sort of scheduled statements. -/
+ def topoSort (stmts : List ScanStmt) : List ScanStmt :=
+@@ -51,7 +59,7 @@ def topoSort (stmts : List ScanStmt) : List ScanStmt :=
+ def isTopoOrdered (all : List ScanStmt) (ordered : List ScanStmt) : Bool :=
+   (ordered.foldl (fun (acc : Bool × List String) sc =>
+       let (ok, emitted) := acc
+-      (ok && eligible sc all emitted, emitted ++ sc.outputs))
++      (ok && eligible sc all emitted, emitted ++ sc.publications))
+     (true, ([] : List String))).1
+ 
+ /-- External read names in first-seen scheduled-read order. -/
+diff --git a/leanncd/test/DSL/Pipeline/CollectTest.lean b/leanncd/test/DSL/Pipeline/CollectTest.lean
+index 0651bba5..c016682e 100644
+--- a/leanncd/test/DSL/Pipeline/CollectTest.lean
++++ b/leanncd/test/DSL/Pipeline/CollectTest.lean
+@@ -157,4 +157,65 @@ private def c8 : ScheduledProgram :=
+   | .ok (_, g) => g == ["Y#1", "Y#2"]
+   | .error _ => false
+ 
++
++/-! ## All-writers readiness (`eligible`, `topoSortFuel`, `isTopoOrdered`)
++
++A read is ready only once EVERY writer of the name has published it. -/
++
++private def scheduledDests (p : TLProgram) : Option (List String) :=
++  (scheduled p).bind fun sp => (plainStmts sp.stmts).map (·.map Stmt.lhsName)
++
++-- R1 (decision note §C.2 probe `T:=A; U:=T; T:=B`): `schedule` moves the reader after both
++-- writers. Before all-writers readiness it stayed between them (evaluator U = A).
++def r1 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  T[i] := A[i]
++  U[i] := T[i]
++  T[i] := B[i]
++}
++#guard scheduledDests r1 == some ["T", "T", "U"]
++
++-- R2: the same order hand-built as a direct schedule is not producer-before-consumer.
++private def r2Stmts : List ScanStmt :=
++  [.plain (copyStmt "T" "A"), .plain (copyStmt "U" "T"), .plain (copyStmt "T" "B")]
++#guard !isTopoOrdered r2Stmts r2Stmts
++-- R2b accept-neighbour: reader after both writers.
++private def r2bStmts : List ScanStmt :=
++  [.plain (copyStmt "T" "A"), .plain (copyStmt "T" "B"), .plain (copyStmt "U" "T")]
++#guard isTopoOrdered r2bStmts r2bStmts
++
++-- R3 self-read of a multi-writer tensor: the second writer can never see all writers of T, so the
++-- program is cyclic. Before, it read the first writer's T (overwrite chain).
++def r3 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  T[i] := A[i]
++  T[i] := T[i] · B[i]
++}
++#guard match r3.compileToScheduled.run 0 with
++  | .error (.cyclicDataflow "schedule: cyclic dataflow") _ => true
++  | _ => false
++-- R3b accept-neighbour: read into a different name.
++def r3b : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  T[i] := A[i]
++  U[i] := T[i] · B[i]
++}
++#guard scheduledDests r3b == some ["T", "U"]
++
++
++-- R4 readiness counts NODES, not output occurrences: a 2-D scan with two base faces of G lists G
++-- twice in `ScanStmt.outputs` (observed: `[G, G]`), yet it is ONE writer of G. A plain reader
++-- appended after it (hand-built direct schedule; surface syntax absorbs such a reader into the
++-- scan) is ready. Donor: RC10 (`test/Eval/Portfolio/RecurrenceTest.lean`) plus a column-0 face.
++def r4 : TLProgram := tlprog!{ iter r = 2, c = 2
++  G[r, 0] := Z[r]
++  G[0, c] := Q[c]
++  G[r +1, c +1] := G[r, c] · W[r, c]
++}
++#guard match scheduled r4 with
++  | some sp =>
++      let stmts := sp.stmts ++ [.plain (copyStmt "T" "G")]
++      (sp.stmts.map ScanStmt.outputs) == [["G", "G"]] && isTopoOrdered stmts stmts
++  | none => false
++
+ end LeanNCD.CollectTest
+diff --git a/leanncd/test/DSL/Pipeline/RouteFragmentCorpusTest.lean b/leanncd/test/DSL/Pipeline/RouteFragmentCorpusTest.lean
+index 1345e49f..3c239a92 100644
+--- a/leanncd/test/DSL/Pipeline/RouteFragmentCorpusTest.lean
++++ b/leanncd/test/DSL/Pipeline/RouteFragmentCorpusTest.lean
+@@ -357,14 +357,18 @@ run_cmd check "G20 common-domain exact (137 cases)" commonExact
+ 
+ /-! ### G21 — the eight `%nl0` collisions transition from rejection to acceptance
+ 
+-The OLD pipeline mints `%nl0`, which the source already binds, so `routeCore` sees a self-read and
+-rejects with `cyclicDataflow`. Physicalization's `routeName` is fresh by construction, so the same
+-program routes. This is stated separately from G20: the old bug did NOT accept these. -/
++The OLD pipeline mints `%nl0`, which the source already binds, so the minted producer becomes a
++second writer of `%nl0` that reads `%nl0`: a self-read of a multi-writer tensor. Under all-writers
++readiness (additive collection, slice 1) `schedule` cannot order it and rejects with
++`cyclicDataflow "schedule: cyclic dataflow"`; before that change `schedule` ordered it and
++`routeCore` rejected the self-read as `"routeCore: cyclic dataflow (topoSort fallback)"`.
++Physicalization's `routeName` is fresh by construction, so the same program routes. This is stated
++separately from G20: the old bug did NOT accept these. -/
+ 
+ def collisionTransition (c : CorpusCase) : Bool :=
+   if !c.collision then true else
+     match oldErr c.logical, newTC c.logical with
+-    | some (.cyclicDataflow "routeCore: cyclic dataflow (topoSort fallback)"), some new =>
++    | some (.cyclicDataflow "schedule: cyclic dataflow"), some new =>
+         new.wellFormedDom &&
+         toThreadedComposed (fromThreadedComposed new) == new
+     | _, _ => false
+-- 
+2.50.1 (Apple Git-155)
+

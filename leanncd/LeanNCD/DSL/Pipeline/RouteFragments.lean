@@ -418,7 +418,9 @@ predicate and a `topological` field on `PhysicalRouteProgram`. Both are gone: `L
 accessor halves (tied by `Lowering.lean`'s `routeOutputs_eq`/`routeInputReads_eq`). Duplicating it
 here only moved the rejection one phase earlier and changed the payload string a cyclic program
 reports, with no compensating guarantee. `test/DSL/Pipeline/RouteFragmentDiagnosticTest.lean`
-pins that a self-referential logical schedule reports `routeCore`'s message. -/
+pins that a self-referential logical schedule reports `routeCore`'s message. On the `route` path the
+schedule is collected first (`desugarMultiWriters`), so the "same last-writer-wins check" sees one
+writer per name, and `PhysicalRouteProgram.logical` holds the COLLECTED schedule. -/
 
 /-- Checked, proof-carrying package: the private physical route program.
 

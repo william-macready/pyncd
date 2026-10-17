@@ -959,27 +959,28 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   ([Observation](../../leanncd/LeanNCD/Semantics/Source/Observation.lean)); causal evidence is never invented.
   Admission errors abort the comparison rather than classify.
 - **Numerical profile.** [`checkProfile`](../../leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean) requires
-  explicit `f64` declarations, one definition per left-hand side, and exact
+  explicit `f64` declarations (several statements may define one left-hand
+  side: they are collected and value-compared), and exact
   values that are integers of magnitude at most $2^{20}$, bounding inputs,
   products, partial sums, and events. Comparison
   is exact bit equality, with $\pm 0$ equal but original bits kept. The argument
   that binary64 arithmetic is exact on this range is informal, not formalized,
   and the profile is not a floating-point semantics.
-- **Known contract differences.** Production overwrites when several statements
-  define one left-hand side, while the specification, the reference leg, and the
-  oracle collect additively. The comparison classifies such programs as a known
-  difference and never compares their native output values, though reference
-  and oracle still agree; fixtures F14 and F15 observe
-  `[2,4]` against `[7,13]`, and `[5,9]` against `[12,22]`. An untyped tensor
-  defaults to f32 and is classified the same way. Production resolves axes by name, so
+- **Known contract differences.** Every backend sums multiple definitions of one
+  left-hand side (the specification, the reference leg, the oracle, and
+  production, which collects them additively); fixtures F14 and F15 are
+  value-compared on all four legs at `[7,13]` and `[12,22]`. The remaining
+  known contract difference is an untyped tensor, which defaults to f32 and is
+  classified through `StructuralCondition.usedDType`. Production resolves axes by name, so
   `NativeLegs.checkIdentity` refuses a program whose names and identities are not
   in bijection (the same name for distinct identities, or the reverse); that case
   is native-unavailable, not an unsupported profile.
-  **Planned alignment (decided 2026-10-14, not landed).** Production will collect multiple
-  definitions additively and the overwrite behavior will be removed rather than kept as an
-  option; this bullet and the one-definition-per-left-hand-side restriction of the numerical
-  profile are rewritten when the first slice lands, so that multi-definition programs are
-  value-compared. See [the decision note](additive_production_decision_note.md).
+  **Additive collection (decided 2026-10-14, slice 1 landed).** Production collects multiple
+  definitions of a sum-algebra bare-slot tensor additively (`collectDefinitions` /
+  `desugarMultiWriters`); the overwrite behavior was removed rather than kept as an option, so
+  multi-definition programs are value-compared. Scatter, max/min and scan multi-writer sets are
+  rejected (`CompileError.multiWriterScatter`, `multiWriterAlgebra`, `multiWriterScan`) and are not
+  yet collected. See [the decision note](additive_production_decision_note.md).
 - **Evidence.** 79 named fixtures (one of them, F16, evaluates a generated corpus
   of exactly 18 programs) and 39 implementation mutations: 18 proof-protected kills and 21
   executable-fixture kills, not 39 runtime differential samples. Six historical
@@ -1314,22 +1315,27 @@ parser/string correctness and an independently specified raw denotation remain o
 
 Differential debugging beyond the bounded profile needs a stated criterion for
 non-integral and f32 numerics, native hooks for causal localization, comparison
-of native nonoutputs, and value comparison of multi-definition programs once
-production collects additively.
+of native nonoutputs.
 
 The decision to remove overwrite and realize additive collection in production
 (collection by private per-statement tensors and a collector, destination-owned
 algebra, max-plus and min-plus sorts, out-of-range writes as errors) is recorded in
-[the decision note](additive_production_decision_note.md). It is planned and not
-yet implemented, so the divergence described next still holds today.
+[the decision note](additive_production_decision_note.md). Slice 1 implemented collection
+for sum-algebra bare-slot writers (`collectDefinitions`, `desugarMultiWriters`,
+`ScanStmt.publications`, `PlanBindings.privateSlots`); the note's other slices (scatter,
+max/min and scan multi-writer sets, the oracle for affine write slots and tropical carriers,
+out-of-range write errors, max-plus) remain planned. Two slice-1 caveats on the routed
+path: `route` runs `desugarMultiWriters` before physicalization, and a routed collector step
+records the same step as a product (`.contract` is (×, Σ, 0)), so routed steps do not keep
+term structure (pre-existing for a user-written `A + B`; the real fix is parked with S3). A
+plain writer plus a scan-scratch name that has a reader fails `cyclicDataflow` through
+`validateScheduled` (the topology assertion runs before collection) and `multiWriterScan`
+through a direct `desugarMultiWriters` call.
 
-The [semantic gap audit](tensor_logic_semantic_gap_audit.md) records the known
-production divergence for multiple statements defining one left-hand side:
-production does not yet implement the specification's cross-statement additive
-collection. The reference and oracle legs do collect additively. The comparison
-classifies such programs as a known contract difference and never compares their
-native output values, so the divergence is tracked explicitly rather than hidden by weakening
-the oracle or counted as a newly discovered regression.
+The [semantic gap audit](tensor_logic_semantic_gap_audit.md) (G04, F01) records the pre-slice
+production divergence for multiple statements defining one left-hand side. Production now sums
+the definitions and the differential compares them by value; the audit keeps the findings as
+audited before slice 1.
 
 ### 5.2 Later: compiled and numerical refinement
 

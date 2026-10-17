@@ -323,8 +323,9 @@ run_cmd do
         throwError s!"fanOut mutation did not propagate through fan-out: {repr (report.env["Z"]?)}"
 
 /-- `Y` is assigned twice; `Z` reads `Y` after both writes. Pins two properties at once: (a) the
-    materialized binding for `Y` is the LAST write, and (b) that binding is truly overwritten, not
-    combined — mutating the FIRST (discarded) write must change nothing. -/
+    materialized binding for `Y` is the SUM of both writes (additive collection, spec §19.2), and
+    (b) the first write genuinely contributes — mutating it must change `Y`. Before additive
+    collection the reference overwrote: Y = Z = B and the first write was discarded. -/
 private def repeatAssignProg : TLProgram := tlprog!{
   axis i : ℕ = 2
   Y[i] := A[i]
@@ -335,24 +336,24 @@ private def repeatAssignProg : TLProgram := tlprog!{
 private def repeatAssignInputs (a0 : Float) : HashMap String DenseTensor :=
   (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[a0, 2.0]⟩).insert "B" ⟨[2], #[100.0, 200.0]⟩
 
--- Baseline: last write (B) is what both Y and Z observe (verified).
+-- Baseline: both Y and Z observe A + B (verified).
 run_cmd do
   match TLProgram.eval repeatAssignProg.explicitF64 (repeatAssignInputs 1.0) with
   | .error e => throwError s!"repeatAssign baseline eval failed: {e}"
   | .ok report =>
-      unless expectTensor report.env["Y"]? [2] #[100.0, 200.0] do
+      unless expectTensor report.env["Y"]? [2] #[101.0, 202.0] do
         throwError s!"repeatAssign baseline Y mismatch: {repr (report.env["Y"]?)}"
-      unless expectTensor report.env["Z"]? [2] #[100.0, 200.0] do
+      unless expectTensor report.env["Z"]? [2] #[101.0, 202.0] do
         throwError s!"repeatAssign baseline Z mismatch: {repr (report.env["Z"]?)}"
 
--- Mutation: changing A (the discarded first write) must change NOTHING — proves true overwrite,
--- not e.g. an accidental combine of both writes.
+-- Mutation: changing A (the first write) must change Y — proves collection, not an overwrite that
+-- discards the first write.
 run_cmd do
   match TLProgram.eval repeatAssignProg.explicitF64 (repeatAssignInputs 999.0) with
-  | .error e => throwError s!"repeatAssign discarded-write eval failed: {e}"
+  | .error e => throwError s!"repeatAssign first-write eval failed: {e}"
   | .ok report =>
-      unless expectTensor report.env["Y"]? [2] #[100.0, 200.0] do
-        throwError s!"repeatAssign: discarded first write leaked through: {repr (report.env["Y"]?)}"
+      unless expectTensor report.env["Y"]? [2] #[1099.0, 202.0] do
+        throwError s!"repeatAssign: first write did not contribute: {repr (report.env["Y"]?)}"
 
 /-- An input tensor not referenced anywhere in the program must still appear, unchanged, in the
     final environment (§5.4: `env` starts at `inputs`, nothing is filtered out). -/

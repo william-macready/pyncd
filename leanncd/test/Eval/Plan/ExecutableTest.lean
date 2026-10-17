@@ -1488,8 +1488,8 @@ def mixedVerdict (materialized : Array SlotBinding) :
   | some (.ok _) => true
   | _ => false
 
--- VALID sibling: a name REASSIGNED — the same name twice, at two increasing slots, which is exactly
--- what a repeated source assignment produces (`materializedNames` is not deduplicated). The order
+-- VALID sibling: a name REASSIGNED — the same name twice, at two increasing slots. This is a
+-- hand-built shape (a repeated source assignment now publishes one collected name). The order
 -- rule constrains slots, not names.
 #guard match mixedVerdict #[{ name := "y", slot := 1 }, { name := "y", slot := 2 }] with
   | some (.ok _) => true
