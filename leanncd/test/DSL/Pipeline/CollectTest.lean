@@ -70,7 +70,8 @@ def c2 : TLProgram := tlprog!{
   Z[i] := Y[i]
 }
 #guard dests c2 == some ["Y#1", "Y#2", "Y#3", "Y", "Z"]
-#guard (dests c2).map (fun ds => ds.eraseDups.length == ds.length) == some true
+#guard readsOf c2 "Y" == some ["Y#1", "Y#2", "Y#3"]
+#guard readsOf c2 "Z" == some ["Y"]
 
 -- C3 identity (accept-neighbour of c1: one writer): the schedule is returned unchanged.
 def c3 : TLProgram := tlprog!{
@@ -138,8 +139,91 @@ def c7 : TLProgram := tlprog!{
 }
 #guard errorOf c7 == some (.writerShapeMismatch "Y" 2 0)
 
--- C7b accept-neighbour of c7: both writers on i.
-#guard (dests c1).isSome
+-- C7b accept-neighbour of c7 (same text, `axis j` still declared, writer 2 moved to i): accepted,
+-- with the generated names and order. Fails on its own if the UID test over-rejects.
+def c7b : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 2
+  Y[i] := A[i]
+  Y[i] := B[i]
+}
+#guard errorOf c7b == none
+#guard dests c7b == some ["Y#1", "Y#2", "Y"]
+#guard generatedOf c7b == some ["Y#1", "Y#2"]
+
+-- C7c (clone c7, rank 2, mismatch at position 1): the reported position is 1, not 0.
+def c7c : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 2
+  axis k : ℕ = 2
+  Y[i, j] := A[i, j]
+  Y[i, k] := B[i, k]
+}
+#guard errorOf c7c == some (.writerShapeMismatch "Y" 2 1)
+
+-- C10 slot-count check (`checkWriterGroup`): writer 2 has FEWER slots than writer 1. The position
+-- loop never fires on it (every writer-2 slot agrees with writer 1's), so only the length check
+-- rejects; payload = the shorter length.
+def c10 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 2
+  Y[i, j] := A[i, j]
+  Y[i] := B[i]
+}
+#guard errorOf c10 == some (.writerShapeMismatch "Y" 2 1)
+-- C10b (clone c10, swap the writers): LONGER writer 2 fails in the position loop at `first.length`.
+def c10b : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 2
+  Y[i] := A[i]
+  Y[i, j] := B[i, j]
+}
+#guard errorOf c10b == some (.writerShapeMismatch "Y" 2 1)
+-- C10c accept-neighbour (clone c10, writer 2 also rank 2): accepted.
+def c10c : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 2
+  Y[i, j] := A[i, j]
+  Y[i, j] := B[i, j]
+}
+#guard errorOf c10c == none
+#guard dests c10c == some ["Y#1", "Y#2", "Y"]
+
+-- C6b/C6c rejection (clone c6): a MIXED set, one sum writer and one max writer, in both orders, so a
+-- check of only the first or only the last writer's annotation survives neither.
+def c6b : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i]
+  Y[i] := maxreduce(B[i, j])
+}
+#guard errorOf c6b == some (.multiWriterAlgebra "Y")
+def c6c : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := maxreduce(A[i, j])
+  Y[i] := B[i]
+}
+#guard errorOf c6c == some (.multiWriterAlgebra "Y")
+
+-- C11 admitted `.freeNorm` class (donor: `RouteFragmentCorpusTest.axiswise`'s `Y[q, s.] := softmax`):
+-- each writer keeps its marker; the collector's slots are plain `.free`, so no
+-- `unmarkedReductionAxis` is raised for the collector's sum over `Y#k`.
+private def slotsOf (p : TLProgram) (nm : String) : Option (List LHSSlot) :=
+  match desugared p with
+  | some (.ok (sp, _)) => ((plainStmts sp.stmts).bind (·.find? (·.lhsName == nm))).map Stmt.slots
+  | _ => none
+private def isFreeNormSlot : LHSSlot → Bool
+  | .freeNorm _ => true
+  | _ => false
+def c11 : TLProgram := tlprog!{
+  axis q : ℕ = 2
+  axis s : ℕ = 2
+  Y[q, s.] := softmax(A[q, s])
+  Y[q, s.] := softmax(B[q, s])
+}
+#guard dests c11 == some ["Y#1", "Y#2", "Y"]
+#guard (slotsOf c11 "Y#1").map (·.any isFreeNormSlot) == some true
+#guard (slotsOf c11 "Y#2").map (·.any isFreeNormSlot) == some true
+#guard (slotsOf c11 "Y").map (·.any isFreeNormSlot) == some false
 
 -- C8 rejection: a source name already spells a generated name (programmatic only).
 private def ax : AxisSpec := { name := "i", uid := 1, kind := .nat }
@@ -156,6 +240,17 @@ private def c8 : ScheduledProgram :=
     .plain (copyStmt "Y" "B"), .plain (copyStmt "Y" "C")] } with
   | .ok (_, g) => g == ["Y#1", "Y#2"]
   | .error _ => false
+-- C8c (clone c8): the clash is a READ of the generated name (an external input called `Y#2`).
+#guard match desugarMultiWriters { c8 with stmts := [.plain (copyStmt "Y" "A"),
+    .plain (copyStmt "Y" "B"), .plain (copyStmt "U" "Y#2")] } with
+  | .error e => e == .reservedNameCollision "Y#2"
+  | .ok _ => false
+-- C8d (clone c8): the clash is a DECLARATION only; no statement mentions `Y#2`.
+private def c8d : ScheduledProgram :=
+  { c8 with decls := [.tensor "Y#2" [ax]], stmts := [.plain (copyStmt "Y" "A"), .plain (copyStmt "Y" "B")] }
+#guard match desugarMultiWriters c8d with
+  | .error e => e == .reservedNameCollision "Y#2"
+  | .ok _ => false
 
 
 /-! ## All-writers readiness (`eligible`, `topoSortFuel`, `isTopoOrdered`)
@@ -218,6 +313,17 @@ def r4 : TLProgram := tlprog!{ iter r = 2, c = 2
       (sp.stmts.map ScanStmt.outputs) == [["G", "G"]] && isTopoOrdered stmts stmts
   | none => false
 
+-- R4b (donor: R4; scan counts as exactly ONE writer inside a multi-writer group): a plain writer of
+-- G, R4's scan of G, and a plain reader of G. The reader is ready only after BOTH writers, in
+-- either order of the two writers, and not before the scan.
+private def ordered (l : List ScanStmt) : Bool := isTopoOrdered l l
+#guard match scheduled r4 with
+  | some sp =>
+      let w : List ScanStmt := [.plain (copyStmt "G" "Z0")]
+      let rd : List ScanStmt := [.plain (copyStmt "T" "G")]
+      ordered (w ++ sp.stmts ++ rd) && ordered (sp.stmts ++ w ++ rd) && !ordered (w ++ rd ++ sp.stmts)
+  | none => false
+
 /-! ## Scan writers (`multiWriterScan`)
 
 A name written by two or more nodes of which one is a scan node is rejected outright, instead of
@@ -242,6 +348,57 @@ private def scanErrorOf (extra : List ScanStmt) (dup : Bool := false) : Option C
     { sp with stmts := sp.stmts ++ [.plain (copyStmt "T" "A")] }) with
   | some (.ok (_, g)) => g.isEmpty
   | _ => false
+
+/-! ## Scan scratch also written by a plain node (the order of checks)
+
+R4's scan with one extra recurrence-only statement `S := Z`: `S` is block-local scratch, so the
+scan WRITES it (`ScanStmt.writes = [G, S]`) but never publishes it (`outputs = [G, G]`). A plain
+node also writing `S` therefore makes two writers of `S` of which only one ever publishes. Decision:
+`validateScheduled` keeps asserting topology BEFORE collection, so with a reader of `S` it ends as
+`cyclicDataflow` (fail-loud, no collection attempted); `desugarMultiWriters` called directly does
+not check order and reports `multiWriterScan`, with or without the reader. -/
+
+private def scratchSched (before after : List ScanStmt) : Option ScheduledProgram :=
+  (scheduled r4).bind fun sp => match sp.stmts with
+    | [.scan nm axs b r aff] =>
+        some { sp with stmts := before ++ [.scan nm axs b (r ++ [.assign "S" [.free ax]
+          { body := ⟨[⟨[.read "Z" [.axis ax]]⟩]⟩, nonlin := .identity }]) aff] ++ after }
+    | _ => none
+
+private def scratchValidateError (before after : List ScanStmt) : Option CompileError :=
+  (scratchSched before after).bind fun sp => match validateScheduled sp with
+    | .error e => some e
+    | .ok _ => none
+
+private def scratchDesugarError (before after : List ScanStmt) : Option CompileError :=
+  (scratchSched before after).bind fun sp => match desugarMultiWriters sp with
+    | .error e => some e
+    | .ok _ => none
+
+private def plainS : ScanStmt := .plain (copyStmt "S" "A")
+private def readS : ScanStmt := .plain (copyStmt "U" "S")
+
+-- X1 sanity (donor: R4): the scratch is written, not published.
+#guard match scratchSched [] [] with
+  | some sp => sp.stmts.map ScanStmt.writes == [["G", "S"]] && sp.stmts.map ScanStmt.outputs == [["G", "G"]]
+  | none => false
+-- X2 readiness: reader of S after [plain S, scan] is NOT ready (1 publication of S, 2 writers).
+#guard match scratchSched [plainS] [readS] with
+  | some sp => !ordered sp.stmts
+  | none => false
+-- X2b accept-neighbour (clone X2, no reader): ordered.
+#guard match scratchSched [plainS] [] with
+  | some sp => ordered sp.stmts
+  | none => false
+-- X3 direct desugar, with and without the reader: `multiWriterScan`.
+#guard scratchDesugarError [plainS] [readS] == some (.multiWriterScan "S")
+#guard scratchDesugarError [plainS] [] == some (.multiWriterScan "S")
+-- X4 validateScheduled with the reader: topology fails first, `cyclicDataflow`, not `multiWriterScan`.
+#guard match scratchValidateError [plainS] [readS] with
+  | some (.cyclicDataflow _) => true
+  | _ => false
+-- X4b accept-neighbour (clone X4, no reader): topology passes, collection rejects `multiWriterScan`.
+#guard scratchValidateError [plainS] [] == some (.multiWriterScan "S")
 
 /-! ## Route integration (`route` runs `desugarMultiWriters` before `physicalizeForRoute`)
 

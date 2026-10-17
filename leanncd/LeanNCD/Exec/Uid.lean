@@ -95,8 +95,9 @@ inductive CompileError
                                                              -- (`DSL/Ast.lean`). Strings, not
                                                              -- `TensorElementType`: this module
                                                              -- cannot import the AST
-  -- Additive collection, slice 1 (`collectDefinitions`, `DSL/Pipeline/Collect.lean`): the
-  -- multi-writer sets the collector does not admit yet. Each names the destination tensor `T`.
+  -- Additive collection, slice 1 (`desugarMultiWriters`, `DSL/Pipeline/Collect.lean`; wrapped by
+  -- `collectDefinitions`, `DSL/Pipeline/ScheduledValidation.lean`): the multi-writer sets the
+  -- collector does not admit yet. Each names the destination tensor `T`.
   | multiWriterScatter   : String → CompileError            -- a writer of a multi-writer `T` is a
                                                              -- scatter (affine or diagonal LHS)
   | multiWriterAlgebra   : String → CompileError            -- a writer of a multi-writer `T`

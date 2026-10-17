@@ -32,7 +32,15 @@ def ScanStmt.publications (sc : ScanStmt) : List String := sc.outputs.eraseDups
     write `r` (an external name has zero of both). This is all-writers readiness (additive
     collection, decision note §C.2): a reader of a multi-writer tensor waits for every writer. A
     plain write is not available to its own RHS (its own publication is never emitted before it),
-    and scan scratch is never emitted, so a reader of it is never ready. -/
+    and scan scratch is never emitted, so a reader of it is never ready.
+
+    Scratch also counts on the denominator: a scan whose recurrence-only scratch `S` is ALSO written
+    by a plain node is a writer of `S` (`writes`) that never publishes it (`publications`), so a
+    reader of `S` is never ready there either. That is deliberate (counting publishers instead would
+    make a reader of pure scratch ready). `validateScheduled` asserts topology before collection, so
+    this program ends as `cyclicDataflow`; `desugarMultiWriters` called directly does not check order
+    and reports `multiWriterScan`. A scan node's own reads short-circuit on its own `writes` and
+    ignore other writers of that name. -/
 private def eligible (sc : ScanStmt) (all : List ScanStmt) (emitted : List String) : Bool :=
   sc.reads.all (fun r =>
     (match sc with

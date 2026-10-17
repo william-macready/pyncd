@@ -10,8 +10,9 @@ the private tensor `T#k` in place, and one collector statement
   `T[slots'] := T#1[idx] + … + T#n[idx]`
 
 is inserted immediately after the last writer. The collector carries the identity nonlinearity
-and the writers' agreed annotation, so each `T#k` keeps its own nonlinearity, and a predicate `T`
-collects by `Combine.bool` (OR) through its own declaration.
+and the sum annotation (slice 1 admits only `.sum` writers; the max/min slice owns threading the
+writers' agreed annotation through the collector), so each `T#k` keeps its own nonlinearity, and a
+predicate `T` collects by `Combine.bool` (OR) through its own declaration.
 
 `desugarMultiWriters` is the identity on every schedule in which each name has at most one writer,
 so single-writer programs are byte-identical through every later phase.
@@ -19,9 +20,10 @@ so single-writer programs are byte-identical through every later phase.
 Slice 1 admits only real-sum and predicate multi-writer sets whose writers are plain `.assign`
 statements with bare free slots on the same axis UIDs; every other multi-writer set fails loud
 (`multiWriterScatter`, `multiWriterAlgebra`, `writerShapeMismatch`). A name written by two or more
-nodes of which one is a scan node is rejected outright (`multiWriterScan`). The topological-order assertion on the result
-is `collectDefinitions` (`ScheduledValidation.lean`), which wraps this pass, because the readiness
-predicate lives there. -/
+nodes of which one is a scan node is rejected outright (`multiWriterScan`). The topological-order
+assertion on the result is made by `collectDefinitions` in `ScheduledValidation.lean`, which wraps
+this pass (`desugarMultiWriters` itself does not check order), because the readiness predicate
+lives there. -/
 
 namespace LeanNCD
 
@@ -103,6 +105,8 @@ def collectorStmt (nm : String) (firstSlots : List LHSSlot) (n : Nat) : Stmt :=
   .assign nm slots'
     { body := ⟨(List.range n).map fun k => ⟨[.read (collectorName nm (k + 1)) idx]⟩⟩
       nonlin := .identity
+      -- Sound only because `checkWriterGroup` rejects every non-sum writer; lifting
+      -- `multiWriterAlgebra` must thread the writers' agreed annotation here.
       agg := .sum }
 
 /-- Additive-collection desugar (decision note §C). Returns the desugared schedule and the
