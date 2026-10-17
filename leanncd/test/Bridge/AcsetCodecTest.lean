@@ -83,4 +83,20 @@ open LeanNCD.AcsetCodec
           G[j, 0]    := X[j]
           G[j, l +1] := relu(G[j, l] · W_G[j, k]) }
 
+-- 10. Additive collection round trip (P2b-T3). Clone of fixture 8: two writers of Y (the first
+-- nonlinear) and a reader. The routed diagram holds both private writers, the ReLU pair of the
+-- first, and the sum collector, a step with two internal input wires.
+#guard toThreadedComposed (fromThreadedComposed (tl!{
+          Y[i] := relu(A[i])
+          Y[i] := B[i]
+          U[i] := Y[i] }))
+        = tl!{
+          Y[i] := relu(A[i])
+          Y[i] := B[i]
+          U[i] := Y[i] }
+#guard (tl!{
+          Y[i] := relu(A[i])
+          Y[i] := B[i]
+          U[i] := Y[i] }).steps.length = 5
+
 end LeanNCD

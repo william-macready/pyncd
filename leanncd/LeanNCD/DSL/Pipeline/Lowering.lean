@@ -545,7 +545,19 @@ def routeCore(sp : ScheduledProgram) : Except CompileError (List BrBaseP × List
 
 /-- Phase 8: route a **logical** scheduled program into a `ThreadedComposed` (§2.4, §2.5).
 
-    Two stages, and the split between them is the whole point of this design:
+    First, `desugarMultiWriters` (`Pipeline/Collect.lean`) collects multi-writer tensors: every
+    writer of `T` is renamed to a private `T#k` and one `.assign` (sum aggregation, identity
+    nonlinearity, labelled `.contract`) publishes `T`, so `buildNameToStep` sees at most one writer
+    per name and every reader is wired to the collector (identity on single-writer schedules). The
+    `T#k` steps stay in the routed diagram: like the nonlinear producer/consumer split below, they
+    are compilation artifacts of the morphism, and nothing in `route` hides names. Route names are
+    computed from the COLLECTED program's inventory, so they stay fresh against `T#k`.
+    `route` calls the pass, not its `collectDefinitions` wrapper: the wrapper's `isTopoOrdered`
+    assertion would duplicate `routeCore`'s `routableInOrder`, the single topology gate here (the
+    two agree once every name has one writer), and would move the payload a cyclic hand-built
+    schedule reports (pinned in `RouteFragmentDiagnosticTest.lean`).
+
+    Then two stages, and the split between them is the whole point of this design:
 
     1. `physicalizeForRoute` (`Pipeline/RouteFragments.lean`) turns the logical schedule into a
        checked, proof-carrying `PhysicalRouteProgram` — expanding each nonlinear plain assignment
@@ -565,7 +577,10 @@ def routeCore(sp : ScheduledProgram) : Except CompileError (List BrBaseP × List
     Regression tests that compare the old split pipeline against the new one must therefore
     terminate at `routeCore`, not at public `route`. -/
 def route (logical : ScheduledProgram) : FreshM ThreadedComposed := do
-  match physicalizeForRoute logical with
+  match desugarMultiWriters logical with
+  | .error e => throw e
+  | .ok (collected, _) =>
+  match physicalizeForRoute collected with
   | .error e => throw e
   | .ok physical =>
       let nExternal := physical.scheduled.extNames.card

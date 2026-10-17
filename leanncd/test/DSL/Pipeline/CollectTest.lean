@@ -243,4 +243,86 @@ private def scanErrorOf (extra : List ScanStmt) (dup : Bool := false) : Option C
   | some (.ok (_, g)) => g.isEmpty
   | _ => false
 
+/-! ## Route integration (`route` runs `desugarMultiWriters` before `physicalizeForRoute`)
+
+Before this, `route` physicalized the UNCOLLECTED logical schedule, and `buildNameToStep`'s
+`HashMap.insert` fold wired every reader of a multi-writer name to its LAST writer, leaving the
+earlier writers as dead steps (observed on RT1 and RT2 alike: 3 steps, routing
+`[[external 0], [external 1], [internal 1 0]]`, so `U` read only `B`). Now every reader is wired to
+the collector, and the collector reads every private writer. The private `Y#k` steps stay in the
+routed diagram (`route` hides nothing). Programs here are undeclared, i.e. default f32, except RT3. -/
+
+private def routed (p : TLProgram) : Option (List BrOp × List (List Wire)) :=
+  match p.compile.run 0 with
+  | .ok tc _ => some (tc.steps.map (·.op), tc.routing)
+  | .error _ _ => none
+
+/-- Two private writers (steps 0, 1), the `.contract`-labelled sum collector (step 2) reading both,
+    and the reader `U` (step 3) reading the collector. -/
+private def collectedRoute : List BrOp × List (List Wire) :=
+  ([.contract, .contract, .contract, .contract],
+   [[.external 0], [.external 1], [.internal 0 0, .internal 1 0], [.internal 2 0]])
+
+-- RT1 (donor: C1 plus a reader; P1's `T:=A; U:=T; T:=B` probe): the reader sits BETWEEN the writers.
+def rt1 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i]
+  U[i] := Y[i]
+  Y[i] := B[i]
+}
+#guard routed rt1 == some collectedRoute
+
+-- RT2 (clone RT1, reader after both writers): the same diagram.
+def rt2 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i]
+  Y[i] := B[i]
+  U[i] := Y[i]
+}
+#guard routed rt2 == some collectedRoute
+
+-- RT3 (clone RT1, declare Y `tensor f64` as in C4b): the declared clones route identically.
+def rt3 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  tensor f64 Y(i)
+  Y[i] := A[i]
+  U[i] := Y[i]
+  Y[i] := B[i]
+}
+#guard routed rt3 == some collectedRoute
+
+-- RT4 accept-neighbour (clone RT1, rename the second writer to S): one writer per name, so no
+-- collector; `U` reads `Y`'s only writer.
+def rt4 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i]
+  U[i] := Y[i]
+  S[i] := B[i]
+}
+#guard routed rt4 == some ([.contract, .contract, .contract],
+  [[.external 0], [.internal 0 0], [.external 1]])
+
+-- RT5 (clone RT2, first writer ReLU): the private writer `Y#1` is itself split into the nonlinear
+-- producer/consumer pair (steps 0, 1); the collector (step 3) reads the pair's consumer and `Y#2`.
+def rt5 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := relu(A[i])
+  Y[i] := B[i]
+  U[i] := Y[i]
+}
+#guard routed rt5 == some ([.contract, .relu, .contract, .contract, .contract],
+  [[.external 0], [.internal 0 0], [.external 1], [.internal 1 0, .internal 2 0], [.internal 3 0]])
+
+-- RT6 (clone RT2, a third writer and a ReLU reader): the collector reads all three private writers.
+def rt6 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i]
+  Y[i] := B[i]
+  Y[i] := C[i]
+  U[i] := relu(Y[i])
+}
+#guard routed rt6 == some ([.contract, .contract, .contract, .contract, .contract, .relu],
+  [[.external 0], [.external 1], [.external 2], [.internal 0 0, .internal 1 0, .internal 2 0],
+   [.internal 3 0], [.internal 4 0]])
+
 end LeanNCD.CollectTest

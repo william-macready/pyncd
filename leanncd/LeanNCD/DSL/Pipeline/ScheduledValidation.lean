@@ -117,8 +117,9 @@ def scheduleFloat32Name? (env : DeclEnv) (stmts : List ScanStmt) : Option String
   ((scheduleStorageConstraints env stmts).find? (fun nk => nk.2 == .float32)).map (·.1)
 
 /-- Additive collection (decision note §C): `desugarMultiWriters`, with its result asserted to be in
-    producer-before-consumer order. The one entry every boundary calls (`validateScheduled` here;
-    `route` before `physicalizeForRoute`). The identity on single-writer schedules. -/
+    producer-before-consumer order. The entry `validateScheduled` calls; `route` calls
+    `desugarMultiWriters` directly, because `routeCore`'s `routableInOrder` is its single topology
+    gate. The identity on single-writer schedules. -/
 def collectDefinitions (sched : ScheduledProgram) :
     Except CompileError (ScheduledProgram × List String) := do
   let (collected, privateNames) ← desugarMultiWriters sched
