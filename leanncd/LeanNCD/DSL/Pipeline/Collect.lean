@@ -30,6 +30,15 @@ namespace LeanNCD
 /-- The private name of writer `k` (1-based, schedule order) of `nm`. -/
 def collectorName (nm : String) (k : Nat) : String := s!"{nm}#{k}"
 
+/-- The public tensor a private writer name `collectorName nm k` belongs to (everything before the
+    last `#`). Only meaningful for names `desugarMultiWriters` generated: any name without a `#`
+    is returned unchanged. Used to name the user's tensor in a diagnostic that would otherwise
+    name the private clone. -/
+def collectorOwner (nm : String) : String :=
+  match nm.splitOn "#" with
+  | [] | [_] => nm
+  | parts => "#".intercalate parts.dropLast
+
 /-- A tensor-bearing declaration cloned under `fresh`: same constructor, element type and axes.
     `none` for axis declarations. -/
 def Decl.cloneAs (fresh : String) : Decl → Option Decl
@@ -53,8 +62,10 @@ private def plainAt? (stmts : List ScanStmt) (i : Nat) : Option Stmt :=
   | _ => none
 
 /-- The first name (in first-writer order) written by two or more nodes of which at least one is a
-    scan node (`.scan`/`.scanPre`): plain + scan, or scan + scan. One scan node that writes a name
-    in both its base and recurrence halves is a single writer (`routeWrites` dedups). -/
+    scan node (`.scan`/`.scanPre`): plain + scan, or scan + scan. Writers are counted per NODE
+    (`stmts.filter … (routeWrites sc).contains nm`), so one scan node that writes a name in both
+    its base and recurrence halves is a single writer; `routeWrites`' own `eraseDups` only
+    dedups the names within one node, and the `eraseDups` here only dedups the candidate names. -/
 def scanWriterConflict? (stmts : List ScanStmt) : Option String :=
   (stmts.flatMap routeWrites).eraseDups.find? fun nm =>
     let writers := stmts.filter fun sc => (routeWrites sc).contains nm
@@ -110,7 +121,13 @@ def collectorStmt (nm : String) (firstSlots : List LHSSlot) (n : Nat) : Stmt :=
       agg := .sum }
 
 /-- Additive-collection desugar (decision note §C). Returns the desugared schedule and the
-    generated private names in group order. The identity on single-writer schedules. -/
+    generated private names in group order. The identity on single-writer schedules.
+
+    Error priority (the first failing check wins, whatever the order of names in the schedule):
+    `multiWriterScan` (any name, `scanWriterConflict?`) first; then, per group in first-writer
+    order, `multiWriterScatter`, `multiWriterAlgebra`, `writerShapeMismatch` (the order of checks
+    inside `checkWriterGroup`; a group's failure stops the pass before the next group is looked
+    at); `reservedNameCollision` last, after every group has passed. -/
 def desugarMultiWriters (sched : ScheduledProgram) :
     Except CompileError (ScheduledProgram × List String) := do
   if let some nm := scanWriterConflict? sched.stmts then throw (.multiWriterScan nm)

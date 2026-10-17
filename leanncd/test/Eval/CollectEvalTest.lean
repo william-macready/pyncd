@@ -168,4 +168,80 @@ def j4 : TLProgram := tlprog!{
 -- J5b accept-neighbour: an unrelated extra input passes through unchanged.
 #guard bitsOf v8 (inp [("A", tz [2] [1, 2]), ("Unused", tz [1] [7])]) "Unused" == some (bits [7])
 
+/-! ## B3 on the COLLECTED schedule (fix group 2)
+
+J5 supplies a defined single-writer name, which the ORIGINAL schedule's writes also contain. The
+private `Y#1` and the collector output `Y` of a multi-writer program are names only the COLLECTED
+schedule writes (`Y#1`, `Y#2`, `Y`; in the original, `Y` twice and no `Y#1`), so these two pin that
+B3 reads the collected writes. -/
+
+-- J5c (donor: J5, program v1): a supplied PRIVATE writer tensor is refused.
+#guard errOf v1 (inp [("A", tz [2] [5, 9]), ("B", tz [2] [2, 4]), ("Y#1", tz [2] [7, 7])]) ==
+  some "evalScheduled: supplied input Y#1 names a tensor the program defines"
+-- J5d (donor: J5, program v1): a supplied multi-writer COLLECTOR output is refused, by its own name.
+#guard errOf v1 (inp [("A", tz [2] [5, 9]), ("B", tz [2] [2, 4]), ("Y", tz [2] [7, 7])]) ==
+  some "evalScheduled: supplied input Y names a tensor the program defines"
+-- J5e accept-neighbour (clone J5c/J5d, an unrelated extra input instead): accepted, value unchanged.
+#guard bitsOf v1 (inp [("A", tz [2] [5, 9]), ("B", tz [2] [2, 4]), ("Unused", tz [1] [7])]) "Y" ==
+  some (bits [7, 13])
+
+/-! ## The refusal names the user's tensor, not a private clone (fix group 2)
+
+`Y` declared `f32` with externals declared `f64`: the first f32 name in used-name order is the
+private clone `Y#1`, which the user never wrote. -/
+
+-- F2a (donor: V1; `Y` declared f32, A and B declared f64).
+def f2a : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  tensor f64 A(i)
+  tensor f64 B(i)
+  tensor f32 Y(i)
+  Y[i] := A[i]
+  Y[i] := B[i]
+}
+#guard (errOf f2a v1In).any (·.startsWith "unsupported dtype: tensor Y is declared f32")
+-- F2b accept-neighbour (clone F2a, `Y` declared f64): accepted with V1's value.
+def f2b : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  tensor f64 A(i)
+  tensor f64 B(i)
+  tensor f64 Y(i)
+  Y[i] := A[i]
+  Y[i] := B[i]
+}
+#guard bitsOf f2b v1In "Y" == some (bits [7, 13])
+
+/-! ## Direct schedules (through `evalScheduled`, no `schedule` step)
+
+`TLProgram.eval` orders the statements before `evalScheduled` sees them (J1 is rejected by that
+step); these hand-permute V6's scheduled statements so the `validateScheduled` path itself is
+exercised. A reader sitting BETWEEN the two writers of `T` is not ready (readiness waits for every
+writer); after both it is, and then sees the collected sum. -/
+
+private def v6Sched (order : List ScanStmt → List ScanStmt) : Option ScheduledProgram :=
+  match v6.explicitF64.compileToScheduled.run 0 with
+  | .ok sp _ => some { sp with stmts := order sp.stmts }
+  | .error _ _ => none
+
+private def ofT (l : List ScanStmt) : List ScanStmt := l.filter (·.writes == ["T"])
+private def ofU (l : List ScanStmt) : List ScanStmt := l.filter (·.writes == ["U"])
+
+private def directErr (sp : Option ScheduledProgram) : Option String :=
+  sp.bind fun s => match evalScheduled s v6In with
+    | .error e => some (toString e.error)
+    | .ok _ => none
+
+private def directBits (sp : Option ScheduledProgram) (nm : String) : Option (List UInt64) :=
+  sp.bind fun s => match evalScheduled s v6In with
+    | .ok r => r.env[nm]?.map (·.data.toList.map Float.toBits)
+    | .error _ => none
+
+-- J1b (donor: V6): reader between the writers is refused by `validateScheduled`, exact payload.
+#guard directErr (v6Sched fun l => (ofT l).take 1 ++ ofU l ++ (ofT l).drop 1) ==
+  some "compile failed: LeanNCD.CompileError.cyclicDataflow \"scheduled program: statements are not in producer-before-consumer order\""
+-- J1c accept-neighbour (clone J1b, reader after both writers): accepted; the reader sees A+B
+-- (without collection the second write would overwrite: U = B = [10,20]).
+#guard directBits (v6Sched fun l => ofT l ++ ofU l) "U" == some (bits [11, 22])
+#guard directBits (v6Sched fun l => ofT l ++ ofU l) "T" == some (bits [11, 22])
+
 end LeanNCD.Eval.CollectEvalTest

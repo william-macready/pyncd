@@ -268,5 +268,18 @@
   "new": "    used := used ++ [output.declaration]",
   "targets": ["Semantics.SourceDifferentialPolicyTest"],
   "expect": ["SourceDifferentialPolicyTest.lean:328:0", "SourceDifferentialPolicyTest.lean:330:0"]
+ },
+ {
+  "label": "A3-M7 B3 reads the ORIGINAL schedule's writes, not the collected schedule's",
+  "task": "FG2",
+  "file": "LeanNCD/Eval/Eval.lean",
+  "old": "  let sched := checked.program\n  match scheduleFloat32Name? checked.declEnv sched.stmts with\n  -- A private per-writer clone `T#k` is reported as the user's tensor `T`.\n  | some nm =>\n      let shown := if checked.privateNames.contains nm then collectorOwner nm else nm\n      .error { error := .unsupportedDtype shown, warnings := [] }\n  | none =>\n  -- Inputs and defined tensors are disjoint (decision note B3): a supplied value for a written name\n  -- (a private `T#k` included) used to be silently replaced by the first write.\n  match (sched.stmts.flatMap ScanStmt.writes).find? inputs.contains with",
+  "new": "  let origSched := sched\n  let sched := checked.program\n  match scheduleFloat32Name? checked.declEnv sched.stmts with\n  -- A private per-writer clone `T#k` is reported as the user's tensor `T`.\n  | some nm =>\n      let shown := if checked.privateNames.contains nm then collectorOwner nm else nm\n      .error { error := .unsupportedDtype shown, warnings := [] }\n  | none =>\n  -- Inputs and defined tensors are disjoint (decision note B3): a supplied value for a written name\n  -- (a private `T#k` included) used to be silently replaced by the first write.\n  match (origSched.stmts.flatMap ScanStmt.writes).find? inputs.contains with",
+  "targets": [
+   "Eval.CollectEvalTest"
+  ],
+  "expect": [
+   "CollectEvalTest.lean:179:0"
+  ]
  }
 ]

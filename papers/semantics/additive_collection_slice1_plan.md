@@ -268,7 +268,8 @@ Symbols: `scanWriterConflict?`, `desugarMultiWriters` (first statement), `writer
 `CompileError.multiWriterScan` @ `Exec/Uid.lean`.
 Fixtures (hand-built from R4's scan; the surface cannot reach them): C9 plain `G` + scan, C9b scan +
 scan, accept-neighbour C9c (one scan writer of `G` plus an unrelated plain `T`: accepted, generated `[]`).
-Reachability: `routeWrites` dedups, so one scan writing `G` in both halves is ONE writer.
+Reachability: `scanWriterConflict?` counts NODES (`filter`/`contains`), so one scan writing `G` in both
+halves is ONE writer (`routeWrites`' `eraseDups` only dedups names within a node, not writers).
 Sibling note: `Uid.lean` is touched a second time here (full-library rebuild); do not fold it into T1 (the
 patch order is fixed).
 Cycles (3): A4-M1 check never fires; A4-M2 scan-vs-scan dropped; A4-M3 `length >= 1` (false rejection of C9c).

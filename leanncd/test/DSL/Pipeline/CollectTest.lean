@@ -482,4 +482,37 @@ def rt6 : TLProgram := tlprog!{
   [[.external 0], [.external 1], [.external 2], [.internal 0 0, .internal 1 0, .internal 2 0],
    [.internal 3 0], [.internal 4 0]])
 
+/-! ## Pins of the scan-writer check's arms and priority (fix group 2)
+
+The scan-scratch counting of `scanWriterConflict?` (a plain writer of recurrence-only scratch) is
+pinned by X3 above. Two scans writing one state name are not constructed from surface syntax here:
+`finalizeScans` was read (T4 review) to make them reachable only with distinct iteration axes and a
+single declaration, and no probe was run, so C9b stays a hand-built schedule. -/
+
+private def preTC : ThreadedComposed := { steps := [], routing := [], nExternal := 0 }
+
+private def r4Desugar (stmts : List ScanStmt) : Option CompileError :=
+  (scheduled r4).bind fun sp => match desugarMultiWriters { sp with stmts } with
+    | .error e => some e
+    | .ok _ => none
+
+-- C9d the `.scanPre` arm (donor: C9): a plain writer of G plus a `scanPre` node of G.
+#guard r4Desugar [.plain (copyStmt "G" "A"), .scanPre "G" ax preTC] == some (.multiWriterScan "G")
+-- C9d' accept-neighbour (clone C9d, the `scanPre` node writes H): accepted.
+#guard r4Desugar [.plain (copyStmt "G" "A"), .scanPre "H" ax preTC] == none
+
+-- C9e "checked first" (donor: C9 and C5): the scatter group `S` comes first in writer order, yet the
+-- scan conflict on `G` wins.
+private def priorityError (scanConflict : Bool) : Option CompileError :=
+  match scheduled c5, scheduled r4 with
+  | some s5, some sp =>
+      match desugarMultiWriters { sp with stmts :=
+          s5.stmts ++ sp.stmts ++ (if scanConflict then [.plain (copyStmt "G" "A")] else []) } with
+      | .error e => some e
+      | .ok _ => none
+  | _, _ => none
+#guard priorityError true == some (.multiWriterScan "G")
+-- C9e' accept-neighbour (clone C9e, no scan conflict): the scatter group's own error surfaces.
+#guard priorityError false == some (.multiWriterScatter "S")
+
 end LeanNCD.CollectTest
