@@ -143,9 +143,12 @@ def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
 
 /-- Reconstruct the named environment from a positional result. Starts from the ORIGINAL `env`
     (preserving every entry `pack` never consulted — extra inputs the plan doesn't read), then
-    inserts every `PlanBindings.materializedNames` entry IN ORDER; a name written twice by the
-    schedule appears twice here too, and since `HashMap.insert` overwrites, the later insertion
-    (the plan's own last write) naturally wins — no separate "most recent" bookkeeping needed.
+    inserts every `PlanBindings.materializedNames` entry IN ORDER. A `prepareEvalPlan` plan lists
+    each public name once (a multi-writer name is collected, its private `T#k` writers hidden), so
+    nothing repeats; only a hand-built `PlanBindings` can repeat a name, and then `HashMap.insert`
+    overwrites, so the later insertion naturally wins. A supplied `env` that names a tensor the
+    program defines is refused first (`InputBindingError.inputIsDefined`, decision note B3, via
+    `firstDefinedInput?`; a hand-built `PlanBindings` has empty `definedNames`, so none is refused).
 
     **The store's arity is the plan's, not the caller's (whole-branch review round 4).** This takes
     the whole `PreparedPlan`, not a bare `PlanBindings`, and requires `result.size` to equal

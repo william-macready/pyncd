@@ -102,7 +102,11 @@ def checkBindings (inputSlots : Array TensorSlot) (bindings : Array SlotBinding)
 
     * `privateSlots` — the publication slots of the omitted private names, in publication order.
       They are still published by the raw plan (`rawPublicationSlots`), so `checkPreparedBindings`
-      expects `materializedNames`' slots to be exactly the publication sequence MINUS these.
+      expects `materializedNames`' slots to be exactly the publication sequence MINUS these. The
+      hidden slots are trusted like the names are (nothing authenticates that they belong to
+      generated `T#k` writers), and `prepareEvalPlan` is the sole producer; hardening (store the
+      hidden `SlotBinding`s and require `<base>#<digits>` with a visible base whose slot is later)
+      is parked.
     * `definedNames` — every name the schedule writes (public, private, and scan-local scratch),
       deduplicated in first-write order: the set a supplied input may not name (decision note B3,
       `InputBindingError.inputIsDefined`). Defaults to empty, i.e. no input is refused, for a

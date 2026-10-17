@@ -553,9 +553,21 @@ def routeCore(sp : ScheduledProgram) : Except CompileError (List BrBaseP × List
     are compilation artifacts of the morphism, and nothing in `route` hides names. Route names are
     computed from the COLLECTED program's inventory, so they stay fresh against `T#k`.
     `route` calls the pass, not its `collectDefinitions` wrapper: the wrapper's `isTopoOrdered`
-    assertion would duplicate `routeCore`'s `routableInOrder`, the single topology gate here (the
-    two agree once every name has one writer), and would move the payload a cyclic hand-built
-    schedule reports (pinned in `RouteFragmentDiagnosticTest.lean`).
+    assertion would duplicate `routeCore`'s `routableInOrder`, the single topology gate here, and
+    would move the payload a cyclic hand-built schedule reports (pinned in
+    `RouteFragmentDiagnosticTest.lean`). The two gates accept the same COLLECTED schedules on plain
+    dataflow (one writer per name, every read of a defined name after its writer); they are not
+    interchangeable in general. For example, a hand-built plain node reading a scan-scratch name
+    (written but not an output) is rejected by `isTopoOrdered`, while `routableInOrder` finds no
+    producing step and defers the rejection to `buildStep`, which reports `undeclaredName`.
+    A reader placed BEFORE the last writer of a multi-writer name is rejected by `routableInOrder`
+    after collection (`cyclicDataflow` from `routeCore`), because the collector, the only writer
+    its reader sees, comes after it (pinned in `test/DSL/Pipeline/CollectTest.lean`).
+    Error priority on this path: collection errors first (`desugarMultiWriters`), then
+    physicalization errors (`rejectComplexDecls`, nonlinear scatter), then `routeCore`'s. So a
+    hand-built schedule that is both a multi-writer scatter and complex-declared reports
+    `multiWriterScatter`; `compile` is unaffected because `buildDeclEnv` rejects complex
+    declarations first.
 
     Then two stages, and the split between them is the whole point of this design:
 

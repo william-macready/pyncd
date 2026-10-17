@@ -515,4 +515,25 @@ private def priorityError (scanConflict : Bool) : Option CompileError :=
 -- C9e' accept-neighbour (clone C9e, no scan conflict): the scatter group's own error surfaces.
 #guard priorityError false == some (.multiWriterScatter "S")
 
+/-! ## Direct `route` on a hand-built schedule (review T6-F4)
+
+`route` skips `collectDefinitions`' topology assertion and relies on `routeCore`'s `routableInOrder`.
+RT1 cannot show that this still rejects a reader placed BEFORE the last writer of a multi-writer
+name, because `compile` reorders it first. Here `route` receives the schedule directly: after
+collection `U := Y` precedes the collector `Y := Y#1 + Y#2`, so it is rejected as `cyclicDataflow`
+from `routeCore`. Accept-neighbour (RT2's order): the reader after the last writer routes (4 steps). -/
+
+private def directRoute (stmts : List ScanStmt) : Except CompileError Nat :=
+  match (route { c8 with extNames := {"A", "B"}, stmts }).run 7 with
+  | .ok tc _ => .ok tc.steps.length
+  | .error e _ => .error e
+
+#guard match directRoute [.plain (copyStmt "Y" "A"), .plain (copyStmt "U" "Y"), .plain (copyStmt "Y" "B")] with
+  | .error e => e == .cyclicDataflow "routeCore: cyclic dataflow (topoSort fallback)"
+  | .ok _ => false
+-- accept-neighbour (clone, reader after both writers): routes, 2 private writers + collector + reader.
+#guard match directRoute [.plain (copyStmt "Y" "A"), .plain (copyStmt "Y" "B"), .plain (copyStmt "U" "Y")] with
+  | .ok n => n == 4
+  | .error _ => false
+
 end LeanNCD.CollectTest

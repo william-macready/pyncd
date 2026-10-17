@@ -213,8 +213,8 @@ def h3s : TLProgram := tlprog!{
   predicate R(i)
   R[i] := A[i]
 }
-private def h3In : NamedDenseEnv := mk64 [("A", [2], #[1.0, 0.0]), ("B", [2], #[0.0, 1.0])]
-private def h3In32 : NamedDenseEnv32 := mk32 [("A", [2], #[1.0, 0.0]), ("B", [2], #[0.0, 1.0])]
+private def h3In : NamedDenseEnv := mk64 [("A", [2], #[1.0, 0.0]), ("B", [2], #[1.0, 1.0])]
+private def h3In32 : NamedDenseEnv32 := mk32 [("A", [2], #[1.0, 0.0]), ("B", [2], #[1.0, 1.0])]
 
 #guard bits64 (plan64 h3 h3In) "R" == bits64 (ref64 h3 h3In) "R"
 #guard bits64 (plan64 h3 h3In) "R" == f64bits #[1.0, 1.0]
@@ -360,5 +360,34 @@ private def scratchIn32 : NamedDenseEnv32 :=
 #guard verdict32 Eval.Plan.ScanCompileTest.scratchSched scratchIn32
     (scratchIn32.insert "T" ⟨[], #[9.0]⟩) == some (some "T", some "T", some "T")
 #guard verdict32 Eval.Plan.ScanCompileTest.scratchSched scratchIn32 scratchIn32 == some (none, none, none)
+
+/-! ## Declared-f32 variants (review T5-F4)
+
+`h3d32`: H3's predicate OR on a schedule whose surrounding real tensors are declared `tensor f32`
+(the predicate itself is storage-neutral). The overlapping inputs separate OR (`[1,1]`) from a count
+(`[2,1]`). Accept-neighbour: the single writer. `b32d32`: B3.2 on the declared-f32 CLONE path, i.e.
+a supplied private `Y#1` (and `Y#1` beside `Y`) refused by name, with the clean-input accept-neighbour. -/
+
+def h3d32 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  tensor f32 A(i), B(i)
+  predicate R(i)
+  R[i] := A[i]
+  R[i] := B[i]
+}
+def h3d32s : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  tensor f32 A(i), B(i)
+  predicate R(i)
+  R[i] := A[i]
+}
+#guard bits32 (plan32 h3d32 h3In32) "R" == f32bits #[1.0, 1.0]
+#guard keysOf <$> plan32 h3d32 h3In32 == some ["A", "B", "R"]
+#guard matDtypes (prepared32 h3d32 h3In32) == some #[("R", .bool)]
+#guard bits32 (plan32 h3d32s h3In32) "R" == f32bits #[1.0, 0.0]
+
+#guard (sched32 h1f32).bind (verdict32 · h1In32 y1In32) == some (some "Y#1", some "Y#1", some "Y#1")
+#guard (sched32 h1f32).bind (verdict32 · h1In32 yy1In32) == some (some "Y#1", some "Y#1", some "Y#1")
+#guard (sched32 h1f32).bind (verdict32 · h1In32 h1In32) == some (none, none, none)
 
 end LeanNCD.Eval.Plan.CollectPlanTest
