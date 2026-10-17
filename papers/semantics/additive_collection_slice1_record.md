@@ -138,3 +138,41 @@ Patch sizes behind the plan's risk table: production lines are the `leanncd/Lean
   was three dispatches plus a docsweep.
 - The patches' trailers name `Claude Opus 5.5` (prototype authorship); the plan gives each task a fresh commit message
   ending with the harness's attribution line, so those trailers are not reused.
+
+## Close-out (execution, 2026-10-17)
+
+Landed on `worktree-additive-collection-slice1` (final tip `cf6b7d92`; base `b0d37f2f`, plan commit `5977af03`):
+T1 `afe25920`, T2 `17f7fb68`, T3 `89ddeb99`, T4 `38457b93`, T5 `193efadf` + `7a6a1dfb`, T6 `b1e32963`, T7 `d230946a`,
+fix groups 1-3 `f4bfb667`, `f493a5e0`, `7fa81ec1`, T8 docs `1088b200`, fix group 4 (final reviews) `cf6b7d92`.
+
+Verification by the controller (not by implementers):
+- Per task: the manifest cycles of the task (T1 7, T2 2, T3 6, T4 3, T5 8, T6 2, T7 2) all PASS, each file byte-identical after.
+- Full unfiltered manifest on the final tip: **31/31 cycles PASS** (the 30 planned plus `A3-M7`, added by fix group 2 under
+  task id `FG2`; 21 `expect` positions were re-pointed by fix group 4 after earlier fix groups inserted fixtures).
+- Full `lake-build.sh ... Tests` on the final tip: **Build completed successfully (8799 jobs)**, also green on `1088b200`.
+- Reviews: per-task (T1-T6) and two final whole-branch lenses (a semantics, b regression), all APPROVE WITH MINORS, 0 Critical;
+  the only Major (stale manifest positions) was a process defect, fixed. Review files: `additive_collection_slice1_review_*.md`.
+
+Deviations from the plan and decision note, ratified by the user 2026-10-15: `route` calls `desugarMultiWriters` (not
+`collectDefinitions`); plain+scan and scan+scan writers are rejected `multiWriterScan`; `PlanBindings.privateSlots`/`definedNames`
+and `PreparedBindingsError.privateSlotUnpublished`. Later in execution: `collectorOwner` maps a private clone back to its public
+tensor in both backends' dtype errors; summation is in SCHEDULE order (a writer reading a later-defined tensor moves behind
+later writers; both backends agree bit for bit).
+
+Measured token cost (`token-report.py` on the controller session, which includes design and authoring):
+- Whole session 260.9M (controller 90.4M, peak context 619k; the controller's figure is not split by phase).
+- Slice-authoring dispatches (3 prototype dispatches + docsweep + plan write-up): 82.4M against the ~50M target: **overrun**.
+  Causes: prototype dispatches ran 87-128 harness turns (cap 60) on rebuild chains and 25-minute full `Tests` runs; the
+  write-up dispatch ran 101 turns.
+- Execution dispatches: implementers 23.1M (T8 alone 11.0M), per-task and final reviews 27.2M, fix groups 16.0M = 66.3M.
+  Upper bound for execution including the whole controller figure: 66.3M + 90.4M = 156.7M, under the 175M cap
+  (the 125M estimate in the plan §7 cannot be compared exactly because the controller is not split by phase).
+- Turn-cap breaches: T7 (62 harness turns vs 40, polled an ~80 min build), T8 (91 vs 45, builds + large log read),
+  fix group 4 (55 vs 50). Implementers on T1-T6 stayed within caps. Context-peak breaches: controller 619k.
+
+Parked (unchanged from plan §8, plus review follow-ups): prepare-time B3 refusal; `buildNameToStep` last-wins for direct
+`routeCore` callers; `PlanBindings.privateSlots` hardening; JAX runtime on collected plans (unprobed); unpinned paths
+(`.recurMorphism` writer skip, hand-built affine-slot `.assign` arm, `Decl.cloneAs` per-arm cycles); scan+scan on one state name
+from surface code not constructed; routed collector step reads as a product (routed steps keep no term structure; pre-existing).
+Next slices: S2 oracle extension (affine write slots, exact tropical carriers; schedule the prepare-time B3 refusal with it),
+S3 scatter-collision ⊕, tropical sorts, out-of-range write error, deletion of `CollisionReduce`/`fill`.
