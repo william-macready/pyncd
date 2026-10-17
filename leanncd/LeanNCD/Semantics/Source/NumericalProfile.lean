@@ -21,7 +21,6 @@ structure Site where
 
 inductive StructuralCondition
   | usedDType (origin : SourceOrigin) (name : String) (actual : TensorElementType)
-  | crossStatementOverwrite (declaration : Nat) (definitions : List SourceOrigin)
   deriving DecidableEq, Repr
 
 inductive ReceiptCondition
@@ -111,16 +110,14 @@ structure SharedFragment where
   deriving DecidableEq, Repr
 
 /-- Admission already pins domains and excludes contexts/scans and non-sum/identity forms.
-Only cross-statement definitions and used tensor dtypes are extra structural restrictions. -/
+Used tensor dtypes are the only extra structural restriction. Several statements may define one
+declaration: every backend collects them additively (`collectDefinitions`), so `definitions` lists
+each (declaration, origin) pair in statement order. -/
 def checkStructure (source : AdmittedSource) : Except Unsupported SharedFragment := do
   let mut used : List Nat := []
   let mut definitions : List (Nat × SourceOrigin) := []
   for statement in source.statements do
     let output := source.source.table.entry statement.output.tensor
-    let previous := definitions.filter (fun p => p.1 == output.declaration)
-    unless previous.isEmpty do
-      throw (.structural (.crossStatementOverwrite output.declaration
-        (previous.map Prod.snd ++ [statement.output.origin])))
     definitions := definitions ++ [(output.declaration, statement.output.origin)]
     unless output.elementType == .f64 do
       throw (.structural (.usedDType statement.output.origin output.name output.elementType))
