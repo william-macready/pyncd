@@ -89,9 +89,9 @@ def checkBindings (inputSlots : Array TensorSlot) (bindings : Array SlotBinding)
     `.axiswise` step publishes the statement's one name (see `Compile.lean`'s `prepareEvalPlan`
     `.plain` branch, and `NonlinCompileTest.lean` Section 3, which pins this directly: the internal
     slot is never named). Block-local scratch inside a scan is deliberately NOT here — it never
-    becomes an outer slot or a materialized name. A name reassigned twice appears twice; `unpack`
-    (Task 3) relies on this, inserting each in order so the LAST entry for a repeated name is the one
-    that survives.
+    becomes an outer slot or a materialized name. Only hand-built bindings can repeat a name (then
+    `unpack` (Task 3) inserts each in order, so the LAST entry for a repeated name is the one that
+    survives); `prepareEvalPlan` never repeats one.
 
     Additive collection (decision note §C.8): the private per-writer tensors `T#k` that the
     collector introduces are NOT persistent outputs — `materializedNames` omits them, so a
@@ -221,8 +221,8 @@ def CheckedPreparedBindings.materializedWith {α : Type} (checked : CheckedPrepa
 /-- Ordered materialized SIGNATURES (Task 4.3): pairs each `PlanBindings.materializedNames` entry
     with its own slot's `TensorSignature`, read from the checked plan's `raw.tensorSigs` table —
     same order, including repeats, as `materializedNames` itself (its own doc comment: NOT
-    deduplicated; a name reassigned twice appears twice here too, each with its own slot's
-    signature). Exposes the destination dtype `prepareEvalPlan`'s Step D derives from the source
+    deduplicated; a name repeated in hand-built bindings appears twice here too, each with its own
+    slot's signature). Exposes the destination dtype `prepareEvalPlan`'s Step D derives from the source
     declaration (`dtypeOfDecl`, `Signature.lean`) at the one boundary a caller can observe it without
     reaching into `plan.raw` and re-deriving the pairing by hand.
 

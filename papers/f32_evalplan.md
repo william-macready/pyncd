@@ -564,7 +564,7 @@ preserves those guards and gives the f32 siblings the symmetric `.float32` check
 buffer length. `unpack32` requires the result-store arity to equal the plan signature table and every
 materialized signature to be f32 or bool before publishing anything. The result starts from the
 original f32-carrier environment and applies materialized bindings in schedule order, preserving
-the existing last-write-wins behavior for repeated names. Warnings survive success and every
+the existing last-write-wins behavior for repeated names (only hand-built bindings repeat one). Warnings survive success and every
 failure exactly as in `runPreparedDense`.
 
 Add `InputSignatureBuildError` in `Eval/Plan/Signature.lean` with
@@ -1338,8 +1338,8 @@ Mutations and expected observations:
    round-trip; make its real declarations f32 and use native Float32 inputs. Require output bits
    `[1114636288, 1142292480]` for `[60, 600]`, preservation of the original named inputs, and an f32
    materialized signature.
-4. Clone `CompileTest`'s repeated-assignment schedule; make it homogeneous f32; require repeated
-   materialized names in schedule order and last-write-wins native bits.
+4. Clone `CompileTest`'s repeated-assignment schedule; make it homogeneous f32; require
+   materialized names `#["Y", "Z"]` (the collected `Y` once, then `Z`) and the `A + B` native bits.
 5. Clone `AdapterTest`'s malformed-storage fixture; shorten an f32 input buffer; require storage
    mismatch before execution.
 6. Clone `AdapterTest`'s wrong-result-arity fixture against `unpack32`; append an extra validly shaped

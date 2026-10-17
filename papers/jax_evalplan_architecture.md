@@ -253,8 +253,9 @@ ownership:
 | Executable | Backend-specific validated lowering of one portable semantic plan; only this phase contains implementation choices |
 
 Required-input bindings are length-correct and positionally aligned with plan input slots, with unique
-names. Ordered materialized bindings are reconstructed left-to-right and retain existing
-last-write-wins behavior, including repeated names. These roles must not be conflated.
+names. Ordered materialized bindings are reconstructed left-to-right; prepared plans never repeat a
+public name (a multi-writer name is collected and published once), only hand-built bindings may, and
+then the later entry wins. These roles must not be conflated.
 
 [Appendix A](#appendix-a-ordinary-raw-and-portable-dtos) illustrates Raw, Prepared, and Portable
 ownership. [Appendix B](#appendix-b-candidate-dependent-checked-contraction-core) and
@@ -1562,9 +1563,10 @@ inexpressible and would make the whole name-indirection design pointless. `check
 public constructor; besides the permutation check it also rejects a duplicate binding name
 (`BindingsError.duplicateName`), a malformation slot-`Perm` alone cannot catch, since two distinct
 slots can each appear exactly once in the permutation while still sharing a name. Materialized
-bindings remain a separate, ordinary array (`PlanBindings.materializedNames`), may repeat names, and
-are reconstructed left-to-right with last-write-wins — conflating the two would either lose
-required-input totality or incorrectly ban an existing materialization behavior.
+bindings remain a separate, ordinary array (`PlanBindings.materializedNames`), may repeat names only
+when hand-built (prepared plans publish each collected name once), and are reconstructed
+left-to-right with the later entry winning — conflating the two would either lose
+required-input totality or incorrectly ban a hand-built materialization shape.
 
 One honest limit remains, undisguised by the type: `RequiredBindings` proves `bindings` aligned
 against its OWN stored `inputSlots` field, not against the enclosing `PreparedPlan`'s actual

@@ -7,7 +7,7 @@ Each fixture pins one structural fact of the desugar on a real schedule (from `t
 `compileToScheduled`, or hand-built where surface syntax cannot reach the case): at most one writer
 per name afterwards, writers renamed in place and in order, the collector reads exactly its group,
 declaration clones, freshness, the identity on single-writer schedules, and the slice-1 rejections.
-Values are checked separately, through the evaluator (`test/Eval/EntryTest.lean`). -/
+Values are checked separately, through the evaluator (`test/Eval/CollectEvalTest.lean`). -/
 
 namespace LeanNCD.CollectTest
 open LeanNCD

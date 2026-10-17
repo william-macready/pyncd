@@ -46,7 +46,7 @@ def pack32 (plan : PreparedPlan) (env : NamedDenseEnv32) :
   packBodyOf plan checked env
 
 /-- Reconstruct the named binary32 environment from a positional binary32 result. The binary32
-    sibling of `unpack`, sharing its publication order, its repeated-name last-write-wins semantics,
+    sibling of `unpack`, sharing its publication order, its repeated-name last-write-wins semantics (hand-built bindings only),
     and its "the store's arity is the plan's, not the caller's" rule verbatim through
     `unpackBodyOf` — including that body's `.float32` storage-kind guard, which runs after
     `checkPreparedBindings` and before the arity check. -/

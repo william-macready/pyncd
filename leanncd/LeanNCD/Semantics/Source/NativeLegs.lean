@@ -257,7 +257,7 @@ structure NativeRun where
   checked : CheckedOutcome
 
 /-- Structural shared-profile eligibility is metadata, not a gate on observing actual
-backend failures or known overwrite behavior. Neither leg falls back to the other. -/
+backend failures. Neither leg falls back to the other. -/
 def runNative (snapshot : SourceSnapshot) : Except SourceDiagnostic NativeRun :=
   match h : admitSource snapshot with
   | .error error => .error error

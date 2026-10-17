@@ -195,6 +195,10 @@ S silently-ignored-today.
 | `evalScheduled` env fold | F | **R** (T3) | R (rejected) | S -> R (`multiWriterScan`, T4) | T3/T4 |
 | `slotOf`, `materializedNames` push sites, `unpack` fold @ Eval/Plan | F | S/R (T5) | — | — | T5 |
 | `checkStructure` @ Semantics/Source/NumericalProfile | F | **R** (T7) | F | — | T7 |
+| (review T1 F6) `routeWrites .scanPre` as a writer; `allPlain` skip in `writerGroups` | F | F | F | **S** (a plain + `scanPre` name is skipped silently like a scan writer) | T4 `multiWriterScan` covers `scanPre` (hand-built only) |
+| (review T1 F6) `checkReadRanksIn` declared-destination slot-count loop @ Structural | F | **S** for an undeclared `T` (per-writer rank agreement rests on the collector's length check, `writerShapeMismatch`); checked per writer only when `T` is declared | S | S | accepted, documented |
+| (review T1 F6) `writerGroups` `.recurMorphism` writer (per-name silent skip) | F | **S** (a multi-writer set containing it is skipped) | S | S | parked in §2 / §8 |
+| (review T2 F1) `eligible`/`isTopoOrdered`, cell plain + scan-scratch name (scratch never published) | F | F | F | **R** (old: accepted; new: `cyclicDataflow` through `validateScheduled`, `multiWriterScan` through a direct `desugarMultiWriters` call) | T2/T4; documented in `DSL/AGENTS.md` |
 
 Cycles (7, `--task T1`, all in `Collect.lean`, target `DSL.Pipeline.CollectTest`): A1-M1 numbering,
 A1-M2 no clones, A1-M3 scatter admitted, A1-M4 algebra admitted, A1-M5 UID mismatch admitted, A1-M6
@@ -520,6 +524,12 @@ PARKED (each a Direct-path dispatch, ~1 each): prepare-time B3 for `InputSignatu
 reference-evaluator f32 refusal fixture. UNPROBED: JAX runtime on collected plans. Also noted, not parked:
 `producedRank` (`checkReadRanksIn`) is still last-wins, masked by `writerShapeMismatch` except that a reader
 may report `rankMismatch` first.
+Added after the T1-T6 reviews (each a Direct-path dispatch, ~1, unless noted): hardening of
+`PlanBindings.privateSlots` (review T5 F1: a hand-built plan can hide a real output; fix = store hidden
+`SlotBinding`s and require `<base>#<digits>` with a visible base whose slot is later); scan + scan on one
+state name from surface code is not constructed (no fixture builds it); T3-F4 (a rejection fixture cannot
+tell T3 from T2); `producedRank` still last-wins (as noted above); a routed collector step records the
+same step as a product (review T6 F1, documented; real fix parked with S3).
 
 ## 9. Decisions needed from the user (only the genuinely open)
 

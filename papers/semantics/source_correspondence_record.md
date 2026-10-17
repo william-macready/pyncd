@@ -2,6 +2,8 @@
 
 ## Status and authority
 
+*Dated record: its production observations (`[2, 4]` overwrite, the same-left-hand-side known contract difference) are superseded by additive collection slice 1 (2026-10-16); production now sums and F14/F15 are value-compared.*
+
 **Implemented and controller-verified, 2026-10-09.** All 79 named fixtures,
 exactly 18 generated programs, 39/39 implementation mutation cycles, and the
 controller full build (8,763 jobs) pass. T1-T5 per-task reviews and both final

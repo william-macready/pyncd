@@ -11,7 +11,8 @@ today. Boolean→tropical reads use the semiring homomorphism (all four open que
 the checked plan and a dynamic error in the reference evaluator, and both reject the same programs. Probes
 cited as "probe" were run on 2026-10-14 (scratch `chk4.lean`, `lake env lean`, primary checkout).
 
-Evidence from the probes (today's behaviour):
+Evidence from the probes (behaviour on 2026-10-14, before slice 1; slice 1 landed the real-sum plain
+bare-slot collection and the supplied-input rejection, see "Landed as" under §C):
 
 | Program | Today | Spec |
 | --- | --- | --- |
@@ -269,6 +270,26 @@ Slice 1 does **not** change this. It stays a recorded divergence.
 `Program.collect_grouped`, Semantics/Program.lean:60-67), so the desugared models restricted to the
 original names are in bijection with the original models.
 
+**Landed as (slice 1, 2026-10-16).** Slice 1 implemented the sum-algebra bare-slot fragment of this section.
+Deviations from the text above:
+
+- `collectDefinitions` is the wrapper in `ScheduledValidation.lean` (it runs `desugarMultiWriters` from
+  `Pipeline/Collect.lean` and asserts the result is topologically ordered); `route` calls
+  `desugarMultiWriters` directly, because `routeCore`'s `routableInOrder` stays the single topology gate.
+- Readiness counts nodes through `ScanStmt.publications` (`outputs`, once per node), not `writes`:
+  all-writers readiness compares emitted publications with the number of nodes writing the name.
+- Plain + scan and scan + scan writers of one name are rejected `CompileError.multiWriterScan`, where item 9
+  said the desugar "does nothing". The other rejections are `multiWriterScatter`, `multiWriterAlgebra`,
+  `writerShapeMismatch` and `reservedNameCollision`.
+- `PlanBindings` gained `privateSlots` and `definedNames`, and `PreparedBindingsError` gained
+  `privateSlotUnpublished`; `privateSlots` is unauthenticated (hardening parked).
+- B3 is `EvalError.inputIsDefined` (checked evaluator, after the f32 refusal, where `collectorOwner` names the
+  public tensor of a private clone) and `InputBindingError.inputIsDefined` (plan path): run time only on the
+  checked side; prepare-time B3 for `InputSignature` entries is parked.
+
+Not landed (S2/S3): scatter, max/min and scan multi-writer sets, the oracle for affine write slots and
+tropical carriers, out-of-range write errors, `CollisionReduce`/fill deletion, max-plus.
+
 ## D. Spec and document amendments (checklist)
 
 - [x] `tensor_logic_semantics.md` §2.1 table (L445-450): add the max-plus and min-plus rows from A2.
@@ -291,16 +312,18 @@ original names are in bijection with the original models.
   fragment. Scans, §11.1 boundary writers, explicit roles and scatter collection are out of scope for S1.
 - [x] §14.3 condition 4 (L1629): note that production now enforces in-bounds writes (S3); the drop policy
   remains long-term option C.
-- [~] `lean_executable_semantics_path.md` L959-975 ("one definition per left-hand side"; known contract
+- [x] `lean_executable_semantics_path.md` L959-975 ("one definition per left-hand side"; known contract
   difference; F14/F15 values) and L1304-1312: rewrite after S1 so multi-definition programs are
-  value-compared.
-- [~] Gap audit: the baseline (L29-48), the G04 rows (L90, L307) and F01 (L316-331) are marked closed for the
+  value-compared. Done by slice 1 (numerical profile, known contract differences, §5.1).
+- [x] Gap audit: the baseline (L29-48), the G04 rows (L90, L307) and F01 (L316-331) are marked closed for the
   plain bare-slot sum fragment (S1). Scatter and tropical closure is marked at S3. F03 and W07 stay open.
+  Done by slice 1; the audited-code findings are kept as "as audited before slice 1".
 
-Status, 2026-10-14: the spec items are applied (`[x]`). The path doc and gap audit carry only a
-"planned, not landed" pointer (`[~]`); their full rewrite waits for S1 so that they do not claim
-behavior production does not yet have. The spec remarks on roles (§13.6) and production readiness (§23.4)
-describe the planned profile and say where it differs from the code today.
+Status, 2026-10-16: slice 1 landed and every item above is applied (`[x]`). The path doc and gap audit
+describe the landed state for the plain bare-slot sum fragment; scatter, max/min, scan multi-writer sets,
+the oracle for affine write slots and tropical carriers, out-of-range write errors and max-plus remain
+planned (S2/S3). The spec remarks on roles (§13.6) and production readiness (§23.4) say that both
+backends reject a supplied input that names a defined tensor and that a reader waits for every writer.
 
 ## E. Slice outline
 
@@ -308,7 +331,7 @@ Costs are rough, measured against the Rule 6 budget of about 175M per slice.
 
 | Slice | Content | Rough cost | Biggest risk |
 | --- | --- | --- | --- |
-| **S1** | §C collector; all-writers readiness; hiding; B3 (optional); S1 rejections (scatter or non-sum multi-writer, UID mismatch, reserved names); remove the oracle profile's `crossStatementOverwrite` refusal (NumericalProfile.lean:120-123) | 4–6 dispatches, ~80–120M | The desugar must agree across three entries (`schedule` sort, `validateScheduled`, `route`). Private names could leak through `materializedNames`. |
+| **S1** (landed 2026-10-16, see "Landed as" under §C) | §C collector; all-writers readiness; hiding; B3 (optional); S1 rejections (scatter or non-sum multi-writer, UID mismatch, reserved names); remove the oracle profile's `crossStatementOverwrite` refusal (NumericalProfile.lean:120-123) | 4–6 dispatches, ~80–120M | The desugar must agree across three entries (`schedule` sort, `validateScheduled`, `route`). Private names could leak through `materializedNames`. |
 | **S2** | Oracle extension: affine write slots in Source admission and correspondence (Admission.lean:462 refuses scatter today); exact tropical carriers (e.g. `WithBot ℚ` with ⊗ = +); per-sort `AddCommMonoid` (Program.lean:52 already per sort) | ~150M+; likely S2a slots / S2b carriers | Proof cost in `RawCorrespondence` (34.6K) |
 | **S3** | Scatter ⊕ (Scatter.lean:59-92, Dense.lean:392-409, Check.lean:437-441); delete `CollisionReduce`, `ScatterOpts.reduce/fill`, `checkScatterFill` (Eval.lean:23-39), `scatterFillOrFail`, `overlappingScatter` const-collapse (Structural.lean:1099-1118); out-of-range error (B6); multi-writer scatter (B5); A3–A9 | ~150–175M; **PROPOSED** split into S3a (scatter/fill/range) and S3b (sorts/casts/constants) | Lockstep meaning change: reference, checked plan, f32 tables, `BrOp`/bridge and the JAX runtime must flip together, and tests are numerous |
 

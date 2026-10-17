@@ -647,9 +647,9 @@ def singleWriterPrepared : Option PreparedPlan :=
 -- `materializedSignatures` must show the destination-derived dtype in the per-slot order
 -- `materializedNames` establishes (Task 4.1): one `bool` entry for the collected `Y` (its private
 -- per-writer clones `Y#1`, `Y#2` are hidden, but `checkPredicateOutput` still re-validates each
--- writer independently), then one `f64` entry for `Z`. This is the VALID repeated-name ordering sibling of the adversarial
+-- writer independently), then one `f64` entry for `Z`. This is the VALID ordering sibling of the adversarial
 -- out-of-range fixture below: both slots are in range, so the accessor succeeds and the array is
--- positionally aligned with `materializedNames`, repeats included.
+-- positionally aligned with `materializedNames` (`Y` once, then `Z`).
 -- (Round 4: the declaration is `.predicate "Y" [axI3]`, not `.predicate "Y" []`. `Y` is read
 -- `Y[i]` by the third statement, so a zero-axis declaration is a rank contradiction the source
 -- pipeline's `checkReadRanks` has always rejected — and which `prepareEvalPlan`'s Step 0 now

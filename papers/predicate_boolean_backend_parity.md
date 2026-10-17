@@ -739,7 +739,7 @@ signatures from `PreparedPlan`.
 | Predicate output produced from Iverson | Slice 5 RL1 checked fixture; add a predicate declaration |
 | Unused predicate declaration | Simple accepted `CompileTest` schedule; add one unused declaration |
 | Compatibility helper remains f64 | Existing `SignatureTest` `ofDenseInputs` fixture |
-| Materialized dtype/order/repeated names | `CompileTest.repeatSched` for binding order and `DifferentialTest.repeatProg` for executing last-write-wins behavior |
+| Materialized dtype/order/repeated names | `CompileTest.repeatSched` for binding order and `DifferentialTest.repeatProg` for executing last-write-wins behavior (superseded by additive collection slice 1: a repeated assignment now sums and publishes one name) |
 | Duplicate declarations fail loud | Clone a structural declaration fixture for tensor/tensor, predicate/predicate, tensor-then-predicate, and predicate-then-tensor duplicates |
 | Axis name does not hide predicate dtype | Clone a predicate scalar fixture; add an earlier same-named axis declaration |
 | Hand-built predicate max fails at preparation | Clone the produced-predicate fixture; change only `agg` to max and require `CapabilityError.predicateAggregation` with the exact name/operator payload |
