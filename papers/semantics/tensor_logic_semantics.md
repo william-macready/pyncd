@@ -1533,7 +1533,7 @@ reads, are therefore not realized there (see the
 [semantic gap audit](tensor_logic_semantic_gap_audit.md), F03 and W07). A supplied
 input that names a defined tensor violates the disjointness of
 $\mathrm{In}$ and $\mathrm{Def}$ and must be rejected; both backends reject such an
-input at run time (`EvalError.inputIsDefined` on the checked evaluator,
+input at run time (`EvalError.inputIsDefined` on the reference evaluator,
 `InputBindingError.inputIsDefined` on the plan path). See the
 [decision note](additive_production_decision_note.md), Section B.
 

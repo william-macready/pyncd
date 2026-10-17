@@ -229,7 +229,9 @@ Slice 1 does **not** change this. It stays a recorded divergence.
    - A hand-built direct schedule in that order is rejected as `cyclicDataflow` ("not in
      producer-before-consumer order").
 3. **Form.**
-   - Writer k of T (1-based, source order) is renamed `T#k` in place.
+   - Writer k of T (1-based, schedule order) is renamed `T#k` in place. Schedule order is source order
+     unless `topoSort` must delay a writer whose input is defined later; e.g. `T:=V; T:=A; T:=C; V:=B`
+     gives `T#1=A, T#2=C, T#3=V`, and the collector folds in that order.
    - The collector is `.plain (.assign T slots' {body := ⟨[⟨[.read "T#1" idx]⟩, …]⟩, nonlin := .identity, agg := a})`.
      It is inserted immediately after the last writer, which precedes every reader by rule 2.
    - `slots'` is `producerSlots` applied to the first writer's slots (Ast.lean:435-438), `idx` is
@@ -283,7 +285,7 @@ Deviations from the text above:
   `writerShapeMismatch` and `reservedNameCollision`.
 - `PlanBindings` gained `privateSlots` and `definedNames`, and `PreparedBindingsError` gained
   `privateSlotUnpublished`; `privateSlots` is unauthenticated (hardening parked).
-- B3 is `EvalError.inputIsDefined` (checked evaluator, after the f32 refusal, where `collectorOwner` names the
+- B3 is `EvalError.inputIsDefined` (reference evaluator, after the f32 refusal, where `collectorOwner` names the
   public tensor of a private clone) and `InputBindingError.inputIsDefined` (plan path): run time only on the
   checked side; prepare-time B3 for `InputSignature` entries is parked.
 
@@ -331,7 +333,7 @@ Costs are rough, measured against the Rule 6 budget of about 175M per slice.
 
 | Slice | Content | Rough cost | Biggest risk |
 | --- | --- | --- | --- |
-| **S1** (landed 2026-10-16, see "Landed as" under §C) | §C collector; all-writers readiness; hiding; B3 (optional); S1 rejections (scatter or non-sum multi-writer, UID mismatch, reserved names); remove the oracle profile's `crossStatementOverwrite` refusal (NumericalProfile.lean:120-123) | 4–6 dispatches, ~80–120M | The desugar must agree across three entries (`schedule` sort, `validateScheduled`, `route`). Private names could leak through `materializedNames`. |
+| **S1** (landed 2026-10-16, see "Landed as" under §C) | §C collector; all-writers readiness; hiding; B3 (optional); S1 rejections (scatter or non-sum multi-writer, UID mismatch, reserved names); remove the oracle profile's `crossStatementOverwrite` refusal (removed in slice 1) | 4–6 dispatches, ~80–120M | The desugar must agree across three entries (`schedule` sort, `validateScheduled`, `route`). Private names could leak through `materializedNames`. |
 | **S2** | Oracle extension: affine write slots in Source admission and correspondence (Admission.lean:462 refuses scatter today); exact tropical carriers (e.g. `WithBot ℚ` with ⊗ = +); per-sort `AddCommMonoid` (Program.lean:52 already per sort) | ~150M+; likely S2a slots / S2b carriers | Proof cost in `RawCorrespondence` (34.6K) |
 | **S3** | Scatter ⊕ (Scatter.lean:59-92, Dense.lean:392-409, Check.lean:437-441); delete `CollisionReduce`, `ScatterOpts.reduce/fill`, `checkScatterFill` (Eval.lean:23-39), `scatterFillOrFail`, `overlappingScatter` const-collapse (Structural.lean:1099-1118); out-of-range error (B6); multi-writer scatter (B5); A3–A9 | ~150–175M; **PROPOSED** split into S3a (scatter/fill/range) and S3b (sorts/casts/constants) | Lockstep meaning change: reference, checked plan, f32 tables, `BrOp`/bridge and the JAX runtime must flip together, and tests are numerous |
 

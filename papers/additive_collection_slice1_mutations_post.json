@@ -15,7 +15,7 @@
   "old": "              decls := sched.decls ++ clones",
   "new": "              decls := sched.decls",
   "targets": ["DSL.Pipeline.CollectTest"],
-  "expect": ["CollectTest.lean:95:0", "CollectTest.lean:109:0"]
+  "expect": ["CollectTest.lean:96:0", "CollectTest.lean:110:0"]
  },
  {
   "label": "A1-M3 scatter writers admitted (UNOBSERVED in the prototype)",
@@ -24,7 +24,7 @@
   "old": "    | .scatter .. => throw (.multiWriterScatter g.name)",
   "new": "    | .scatter .. => pure ()",
   "targets": ["DSL.Pipeline.CollectTest"],
-  "expect": ["CollectTest.lean:122:0"]
+  "expect": ["CollectTest.lean:123:0"]
  },
  {
   "label": "A1-M4 max/min multi-writer algebra admitted (UNOBSERVED in the prototype)",
@@ -33,7 +33,7 @@
   "old": "    | .assign _ _ r => unless r.agg == .sum do throw (.multiWriterAlgebra g.name)",
   "new": "    | .assign _ _ r => pure ()",
   "targets": ["DSL.Pipeline.CollectTest"],
-  "expect": ["CollectTest.lean:130:0"]
+  "expect": ["CollectTest.lean:131:0"]
  },
  {
   "label": "A1-M5 axis-UID disagreement admitted (UNOBSERVED in the prototype)",
@@ -42,7 +42,7 @@
   "old": "      | some u, some u0 => unless u == u0 do throw (.writerShapeMismatch g.name k pos)",
   "new": "      | some u, some u0 => pure ()",
   "targets": ["DSL.Pipeline.CollectTest"],
-  "expect": ["CollectTest.lean:139:0"]
+  "expect": ["CollectTest.lean:140:0"]
  },
  {
   "label": "A1-M6 source-inventory freshness check dropped (UNOBSERVED in the prototype)",
@@ -51,7 +51,7 @@
   "old": "    if inventory.contains nm || (generated.take i).contains nm then",
   "new": "    if (generated.take i).contains nm then",
   "targets": ["DSL.Pipeline.CollectTest"],
-  "expect": ["CollectTest.lean:151:0"]
+  "expect": ["CollectTest.lean:235:0"]
  },
  {
   "label": "A1-M7 single-writer names collected too (identity broken; UNOBSERVED in the prototype)",
@@ -60,7 +60,7 @@
   "old": "    if writers.length ≥ 2 && allPlain then some ⟨nm, writers⟩ else none",
   "new": "    if writers.length ≥ 1 && allPlain then some ⟨nm, writers⟩ else none",
   "targets": ["DSL.Pipeline.CollectTest"],
-  "expect": ["CollectTest.lean:81:0"]
+  "expect": ["CollectTest.lean:82:0"]
  },
  {
   "label": "A2-M1 any-writer readiness restored",
@@ -69,7 +69,7 @@
   "old": "    emitted.count r == (all.filter (fun s => s.writes.contains r)).length)",
   "new": "    emitted.contains r ||\n    all.all (fun s => !s.writes.contains r))",
   "targets": ["DSL.Pipeline.CollectTest"],
-  "expect": ["CollectTest.lean:176:0", "CollectTest.lean:181:0", "CollectTest.lean:194:0"]
+  "expect": ["CollectTest.lean:271:0", "CollectTest.lean:276:0", "CollectTest.lean:289:0"]
  },
  {
   "label": "A2-M2 publications without eraseDups (a two-face scan counts as two writers)",
@@ -78,7 +78,7 @@
   "old": "def ScanStmt.publications (sc : ScanStmt) : List String := sc.outputs.eraseDups",
   "new": "def ScanStmt.publications (sc : ScanStmt) : List String := sc.outputs",
   "targets": ["DSL.Pipeline.CollectTest"],
-  "expect": ["CollectTest.lean:215:0"]
+  "expect": ["CollectTest.lean:310:0"]
  },
  {
   "label": "A3-M1 numbering reversed, seen through the evaluator (bit-order fixtures)",
@@ -141,7 +141,7 @@
   "old": "  if let some nm := scanWriterConflict? sched.stmts then throw (.multiWriterScan nm)",
   "new": "  if let some nm := (none : Option String) then throw (.multiWriterScan nm)",
   "targets": ["DSL.Pipeline.CollectTest"],
-  "expect": ["CollectTest.lean:235:0", "CollectTest.lean:237:0"]
+  "expect": ["CollectTest.lean:341:0", "CollectTest.lean:343:0"]
  },
  {
   "label": "A4-M2 scan-vs-scan dropped (a plain writer is also required)",
@@ -150,7 +150,7 @@
   "old": "writers.length ≥ 2 && writers.any fun sc => match sc with | .plain _ => false | _ => true",
   "new": "writers.length ≥ 2 && writers.any (fun sc => match sc with | .plain _ => false | _ => true) && writers.any (fun sc => match sc with | .plain _ => true | _ => false)",
   "targets": ["DSL.Pipeline.CollectTest"],
-  "expect": ["CollectTest.lean:237:0"]
+  "expect": ["CollectTest.lean:343:0"]
  },
  {
   "label": "A4-M3 a single scan writer is rejected (length >= 1)",
@@ -159,7 +159,7 @@
   "old": "writers.length ≥ 2 && writers.any fun sc",
   "new": "writers.length ≥ 1 && writers.any fun sc",
   "targets": ["DSL.Pipeline.CollectTest"],
-  "expect": ["CollectTest.lean:240:0", "CollectTest.lean:241:0"]
+  "expect": ["CollectTest.lean:346:0", "CollectTest.lean:347:0"]
  },
  {
   "label": "A5-M1 no public/private partition at Step F",
@@ -240,7 +240,7 @@
   "old": "match physicalizeForRoute collected with",
   "new": "match physicalizeForRoute logical with",
   "targets": ["DSL.Pipeline.CollectTest", "Bridge.AcsetCodecTest"],
-  "expect": ["CollectTest.lean:273:0", "CollectTest.lean:282:0", "CollectTest.lean:292:0", "CollectTest.lean:313:0", "CollectTest.lean:324:0", "AcsetCodecTest.lean:97:0"]
+  "expect": ["CollectTest.lean:430:0", "CollectTest.lean:439:0", "CollectTest.lean:449:0", "CollectTest.lean:470:0", "CollectTest.lean:481:0", "AcsetCodecTest.lean:97:0"]
  },
  {
   "label": "A6-M2 route calls the collectDefinitions wrapper (second topology gate moves the cyclic payload)",

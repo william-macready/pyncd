@@ -1484,8 +1484,10 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- table, or — when that table is bool-only — its scan blocks' tables, where scan scratch lives).
   let storage ← match scheduleStorageKind declEnv sched.stmts with
     | .error nm =>
+        -- A private per-writer clone `T#k` is reported as the user's tensor `T` (as `evalScheduled`).
+        let shown := if checked.privateNames.contains nm then collectorOwner nm else nm
         throw { cause := .capability
-                  (.unsupportedDtype s!"{nm}: mixed f32/f64 storage in one schedule")
+                  (.unsupportedDtype s!"{shown}: mixed f32/f64 storage in one schedule")
               , warnings := [] }
     | .ok k => pure k
   -- Step A: capability preflight.

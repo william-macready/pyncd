@@ -31,8 +31,8 @@ contract must not automatically be labelled implementation bugs.
 *Status update, 2026-10-14: a decision to close this divergence was recorded in
 [the additive-production decision note](additive_production_decision_note.md).
 Slice 1 implemented the change for the plain bare-slot sum fragment
-(`collectDefinitions`; scatter, max/min, scan and tropical closure are S3; F03 and
-W07 stay open). The audit findings below describe the code as audited before slice 1.*
+(`collectDefinitions`; scatter, max/min and tropical closure are S3; scan collection
+is parked (scan collection, no slice assigned); F03 and W07 stay open). The audit findings below describe the code as audited before slice 1.*
 
 The existing code is already known not to satisfy the specification's
 additive collection of contributions from multiple statements defining the

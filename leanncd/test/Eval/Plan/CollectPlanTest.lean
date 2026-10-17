@@ -187,7 +187,7 @@ private def h2In32 : NamedDenseEnv32 :=
 #guard bits64 (plan64 h2 h2In) "Y" != bits64 (plan64 h2r h2In) "Y"
 #guard bits64 (plan64 h2 h2In) "Y" == f64bits #[(0.1 + 0.3) + 0.4]
 #guard bits32 (plan32 h2 h2In32) "Y" != bits32 (plan32 h2r h2In32) "Y"
--- Observed bit patterns (real runs): source order folds left, so reversing the writers changes the
+-- Observed bit patterns (real runs): schedule order folds left, so reversing the writers changes the
 -- last bit in both precisions. The f32 default (undeclared) schedule and the declared one agree.
 #guard bits64 (plan64 h2 h2In) "Y" == some #[4605380978949069210]
 #guard bits64 (plan64 h2r h2In) "Y" == some #[4605380978949069209]
@@ -389,5 +389,36 @@ def h3d32s : TLProgram := tlprog!{
 #guard (sched32 h1f32).bind (verdict32 · h1In32 y1In32) == some (some "Y#1", some "Y#1", some "Y#1")
 #guard (sched32 h1f32).bind (verdict32 · h1In32 yy1In32) == some (some "Y#1", some "Y#1", some "Y#1")
 #guard (sched32 h1f32).bind (verdict32 · h1In32 h1In32) == some (none, none, none)
+
+/-! ## Mixed-storage diagnostic names the public tensor (final review B-F2)
+
+f64 inputs with `Y` left undeclared (f32 by default) make the schedule mixed f32/f64. Step 0b's
+first conflicting used name is then the private clone `Y#1`; the error must name `Y`, as the
+reference evaluator's f32 refusal does (`collectorOwner`). Accept-neighbour: every tensor declared
+`f64` prepares. A declared `tensor f32 Y(i)` beside f64 inputs is the same mixed schedule. -/
+
+/-- The `unsupportedDtype` text `prepareEvalPlan` reports (checked), if it refuses that way. -/
+private def prepDtypeErr (s : ScheduledProgram) (inputs : NamedDenseEnv) : Option String :=
+  match prepareEvalPlan s (InputSignature.ofDenseInputs inputs) with
+  | .error { cause := .capability (.unsupportedDtype m), .. } => some m
+  | _ => none
+
+def mixedUndeclY : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  tensor f64 A(i), B(i)
+  Y[i] := A[i]
+  Y[i] := B[i]
+}
+def mixedDeclF32Y : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  tensor f64 A(i), B(i)
+  tensor f32 Y(i)
+  Y[i] := A[i]
+  Y[i] := B[i]
+}
+#guard (sched32 mixedUndeclY).bind (prepDtypeErr · h1In) == some "Y: mixed f32/f64 storage in one schedule"
+#guard (sched32 mixedDeclF32Y).bind (prepDtypeErr · h1In) == some "Y: mixed f32/f64 storage in one schedule"
+#guard (sched32 h4f64).bind (prepDtypeErr · h1In) == none
+#guard ((sched32 h4f64).bind fun s => (prepareEvalPlan s (InputSignature.ofDenseInputs h1In)).toOption).isSome
 
 end LeanNCD.Eval.Plan.CollectPlanTest

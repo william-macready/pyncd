@@ -78,8 +78,8 @@ def v4 : TLProgram := tlprog!{
 -- The decision-note probe inputs A=[1,0], B=[0,1] (old overwrite: [0,1]).
 #guard bitsOf v4 (inp [("A", tz [2] [1, 0]), ("B", tz [2] [0, 1])]) "R" == some (bits [1, 1])
 
--- V5 writers are collected in SOURCE order: (0.1+0.2)+0.3 = 0x3FE3333333333334, while the
--- reversed program (V5r) gives (0.3+0.2)+0.1 = 0x3FE3333333333333. Non-integral on purpose.
+-- V5 writers are summed in SCHEDULE order (source order unless topoSort delays a writer; see V9):
+-- (0.1+0.2)+0.3 = 0x3FE3333333333334, reversed (V5r) (0.3+0.2)+0.1 = 0x3FE3333333333333.
 def v5 : TLProgram := tlprog!{
   axis i : ℕ = 1
   Y[i] := A[i]
@@ -243,5 +243,33 @@ private def directBits (sp : Option ScheduledProgram) (nm : String) : Option (Li
 -- (without collection the second write would overwrite: U = B = [10,20]).
 #guard directBits (v6Sched fun l => ofT l ++ ofU l) "U" == some (bits [11, 22])
 #guard directBits (v6Sched fun l => ofT l ++ ofU l) "T" == some (bits [11, 22])
+
+/-! ## Summation order is SCHEDULE order (final review A-F1)
+
+`topoSort` moves a writer whose input is not yet defined behind the later writers of the same
+tensor, and the collector numbers writers in that order. A=1e16, C=1, B=-1e16 (so V=-1e16) separate
+the two orders: schedule order `T#1=A, T#2=C, T#3=V` folds to ((0+1e16)+1)+(-1e16) = 0 (1e16+1 rounds
+back to 1e16), while source order `((0+V)+A)+C` would give 1. -/
+
+-- V9 (donor: V5): writer 1 reads V, which is defined last, so it is delayed behind writers 2 and 3.
+def v9 : TLProgram := tlprog!{
+  axis i : ℕ = 1
+  T[i] := V[i]
+  T[i] := A[i]
+  T[i] := C[i]
+  V[i] := B[i]
+}
+private def v9In := inp [("A", tz [1] [1e16]), ("B", tz [1] [-1e16]), ("C", tz [1] [1])]
+#guard bitsOf v9 v9In "T" == some (bits [0])
+-- V9b accept-neighbour (clone V9, `V` defined first so no writer is delayed): source order is the
+-- schedule order, the fold is ((0+V)+A)+C, and the value is 1.
+def v9b : TLProgram := tlprog!{
+  axis i : ℕ = 1
+  V[i] := B[i]
+  T[i] := V[i]
+  T[i] := A[i]
+  T[i] := C[i]
+}
+#guard bitsOf v9b v9In "T" == some (bits [1])
 
 end LeanNCD.Eval.CollectEvalTest
