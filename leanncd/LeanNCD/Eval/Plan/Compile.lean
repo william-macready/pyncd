@@ -1515,7 +1515,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- before any required-input check, mirroring the run-time `inputIsDefined` refusals. `sched` is the
   -- COLLECTED schedule, so this covers public outputs, private `T#k` clones, collectors and scan
   -- scratch. Iterated in schedule write order (not the signature map) so the first offender is
-  -- deterministic; Step D reuses this binding for `PlanBindings.definedNames`.
+  -- deterministic; the final `PlanBindings` construction reuses this binding for `definedNames`.
   let definedNames := (sched.stmts.flatMap ScanStmt.writes).eraseDups
   match definedNames.find? (fun nm => sig.tensors.contains nm) with
   | some nm => throw { cause := .inputSignature (.definedName nm), warnings := [] }
