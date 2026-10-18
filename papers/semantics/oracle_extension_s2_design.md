@@ -1,6 +1,6 @@
 # S2 design: oracle extension (affine write slots, exact tropical carriers) and prepare-time B3
 
-Status: brainstormed 2026-10-17, awaiting user review of this note. Not a plan. Parent:
+Status: brainstormed 2026-10-17; user approved the note and the cut. Not a plan. §5 (B3) landed 2026-10-17 on the Direct path. Parent:
 `additive_production_decision_note.md` §E (slice outline) and `additive_collection_slice1_record.md` (parked list).
 
 ## 1. Purpose

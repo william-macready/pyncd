@@ -424,9 +424,14 @@ inductive NonlinCompileError
     admitted but disagrees with the one the source DECLARATION commits this name to (a `.predicate`
     declaration expects `bool`, everything else expects `f64`) — a genuinely different failure: the
     signature is well-formed on its own, just contradicts what the program itself says about this
-    name. -/
+    name. `definedName` (B3, prepare-time half) fires when the supplied signature has an entry
+    naming a tensor the program DEFINES (any name written by the collected schedule: public
+    outputs, private `T#k` clones, collectors, scan scratch) — the prepare-time counterpart of
+    the run-time `inputIsDefined` refusals. It is checked FIRST, before the required-input
+    checks, and reports the first offender in schedule write order. -/
 inductive InputSignatureError
   | missingSignature (name : String)
+  | definedName      (name : String)
   | dtypeNotAdmitted (name : String) (dtype : ScalarDType)
   | dtypeMismatch    (name : String) (expected actual : ScalarDType)
   deriving DecidableEq, BEq, Repr, Inhabited

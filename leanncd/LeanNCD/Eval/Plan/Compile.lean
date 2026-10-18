@@ -1511,6 +1511,15 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- `dtypeAdmittedF32` would only relabel the one interesting case, a supplied `.f64` signature for
   -- an f32-declared name, from the informative `dtypeMismatch nm .f32 .f64` (two known sides
   -- disagreeing about precision) to a bare "not admitted", losing the expectation.
+  -- B3 (prepare-time half): a signature entry naming a tensor the program DEFINES is refused FIRST,
+  -- before any required-input check, mirroring the run-time `inputIsDefined` refusals. `sched` is the
+  -- COLLECTED schedule, so this covers public outputs, private `T#k` clones, collectors and scan
+  -- scratch. Iterated in schedule write order (not the signature map) so the first offender is
+  -- deterministic; the final `PlanBindings` construction reuses this binding for `definedNames`.
+  let definedNames := (sched.stmts.flatMap ScanStmt.writes).eraseDups
+  match definedNames.find? (fun nm => sig.tensors.contains nm) with
+  | some nm => throw { cause := .inputSignature (.definedName nm), warnings := [] }
+  | none => pure ()
   let extOrder := checked.extNames
   for nm in extOrder do
     match sig.tensors[nm]? with
@@ -1575,7 +1584,6 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- Step F splits `materializedAcc` into the public bindings and the private slots. Both lists are
   -- fixed here because `checked` is shadowed by Step E's checked plan.
   let privateNames := checked.privateNames
-  let definedNames := (sched.stmts.flatMap ScanStmt.writes).eraseDups
   let mut stepsAcc : Array PlanStep := #[]
   let mut materializedAcc : Array SlotBinding := #[]
   -- Branches on `ScanStmt`'s constructors directly rather than funnelling through a

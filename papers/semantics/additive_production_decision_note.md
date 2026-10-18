@@ -287,7 +287,7 @@ Deviations from the text above:
   `privateSlotUnpublished`; `privateSlots` is unauthenticated (hardening parked).
 - B3 is `EvalError.inputIsDefined` (reference evaluator, after the f32 refusal, where `collectorOwner` names the
   public tensor of a private clone) and `InputBindingError.inputIsDefined` (plan path): run time only on the
-  checked side; prepare-time B3 for `InputSignature` entries is parked.
+  checked side at run time, and at prepare time `InputSignatureError.definedName` (landed after S1, Direct path).
 
 Not landed (S2/S3): scatter, max/min and scan multi-writer sets, the oracle for affine write slots and
 tropical carriers, out-of-range write errors, `CollisionReduce`/fill deletion, max-plus.

@@ -170,9 +170,11 @@ Measured token cost (`token-report.py` on the controller session, which includes
 - Turn-cap breaches: T7 (62 harness turns vs 40, polled an ~80 min build), T8 (91 vs 45, builds + large log read),
   fix group 4 (55 vs 50). Implementers on T1-T6 stayed within caps. Context-peak breaches: controller 619k.
 
-Parked (unchanged from plan §8, plus review follow-ups): prepare-time B3 refusal; `buildNameToStep` last-wins for direct
+Parked (unchanged from plan §8, plus review follow-ups; prepare-time B3 refusal CLOSED later, see below): `buildNameToStep` last-wins for direct
 `routeCore` callers; `PlanBindings.privateSlots` hardening; JAX runtime on collected plans (unprobed); unpinned paths
 (`.recurMorphism` writer skip, hand-built affine-slot `.assign` arm, `Decl.cloneAs` per-arm cycles); scan+scan on one state name
 from surface code not constructed; routed collector step reads as a product (routed steps keep no term structure; pre-existing).
-Next slices: S2 oracle extension (affine write slots, exact tropical carriers; schedule the prepare-time B3 refusal with it),
+Prepare-time B3 landed after this slice on the Direct path: `InputSignatureError.definedName`, checked first in `prepareEvalPlan`
+Step B in schedule write order (commit message of the B3 commit lists fixtures and hand mutations).
+Next slices: S2 oracle extension (affine write slots, exact tropical carriers; see `oracle_extension_s2_design.md`),
 S3 scatter-collision ⊕, tropical sorts, out-of-range write error, deletion of `CollisionReduce`/`fill`.

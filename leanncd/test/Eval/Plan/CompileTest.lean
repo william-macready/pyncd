@@ -781,6 +781,49 @@ def f32Sig : InputSignature :=
 #guard causeOf (prepareEvalPlan identitySched f32Sig) ==
   some { cause := .inputSignature (.dtypeNotAdmitted "X" .f32), warnings := [] }
 
+-- B3 prepare-time half: a signature entry naming a tensor the program DEFINES is refused
+-- (`definedName`), mirroring the run-time `inputIsDefined` refusals. Fixture 1 (f64 public output):
+-- `identitySig` plus an entry for the written output `Y`; accept-neighbour `identitySig` (guarded above).
+def definedYSig : InputSignature :=
+  InputSignature.mk (identitySig.tensors.insert "Y" { shape := #[3], dtype := .f64 })
+#guard causeOf (prepareEvalPlan identitySched definedYSig) ==
+  some { cause := .inputSignature (.definedName "Y"), warnings := [] }
+
+-- Fixture 5 (ORDER): `contractSched` needs `A` and `B`. A signature that omits `B` AND names the
+-- written `Y` must report `definedName` (checked first), not `missingSignature`. Neighbours: the same
+-- omission without `Y` still reports `missingSignature "B"`; the complete clean signature prepares.
+def contractDefinedMissingSig : InputSignature :=
+  InputSignature.mk (((contractSig.tensors.erase "B").insert "Y" { shape := #[2], dtype := .f64 }))
+#guard causeOf (prepareEvalPlan contractSched contractDefinedMissingSig) ==
+  some { cause := .inputSignature (.definedName "Y"), warnings := [] }
+#guard causeOf (prepareEvalPlan contractSched (InputSignature.mk (contractSig.tensors.erase "B"))) ==
+  some { cause := .inputSignature (.missingSignature "B"), warnings := [] }
+
+-- Fixture 5 (ORDER, two defined names): `Y` is written before `Z`; a signature naming both reports the
+-- FIRST in write order. `Z` is inserted before `Y` so insertion order is the reverse of write order.
+def twoOutSched : ScheduledProgram :=
+  explicitF64Sched
+  { decls := [.axis axI1 (some 3)]
+  , stmts := [ .plain (.assign "Y" [.free axI1]
+        { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity })
+    , .plain (.assign "Z" [.free axI1]
+        { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity }) ]
+  , env := {}, extNames := insert "X" (∅ : Finset String)
+  , explicitSizes := (({} : HashMap UID Nat).insert axI1.uid 3) }
+def twoDefinedSig : InputSignature :=
+  InputSignature.mk
+    ((identitySig.tensors.insert "Z" { shape := #[3], dtype := .f64 }).insert "Y"
+      { shape := #[3], dtype := .f64 })
+#guard (prepareEvalPlan twoOutSched identitySig).toOption.isSome
+#guard causeOf (prepareEvalPlan twoOutSched twoDefinedSig) ==
+  some { cause := .inputSignature (.definedName "Y"), warnings := [] }
+-- Same signature, statements swapped (`Z` written first): the verdict follows WRITE order, not name
+-- order and not signature-map order, so at most one of the two orders can coincide with a map walk.
+def twoOutRevSched : ScheduledProgram :=
+  { twoOutSched with stmts := twoOutSched.stmts.reverse }
+#guard causeOf (prepareEvalPlan twoOutRevSched twoDefinedSig) ==
+  some { cause := .inputSignature (.definedName "Z"), warnings := [] }
+
 /-! ### f32 slice Task 2, fixtures 11-15 and 17
 
 Task 1's temporary blanket stop (`CapabilityError.unsupportedDtype "f32 execution not yet
@@ -812,6 +855,14 @@ def f32IdentitySig : InputSignature :=
   | .error _ => InputSignature.mk ({} : HashMap String TensorSignature)
 
 #guard (f32IdentitySig.tensors["X"]?).map (·.dtype) == some ScalarDType.f32
+
+-- B3 prepare-time half, fixture 2 (f32 public output): `f32IdentitySig` plus an `f32` entry for the
+-- written output `Y`; accept-neighbour: `f32IdentitySig` itself prepares.
+def f32DefinedYSig : InputSignature :=
+  InputSignature.mk (f32IdentitySig.tensors.insert "Y" { shape := #[3], dtype := .f32 })
+#guard (prepareEvalPlan f32IdentitySched f32IdentitySig).toOption.isSome
+#guard causeOf (prepareEvalPlan f32IdentitySched f32DefinedYSig) ==
+  some { cause := .inputSignature (.definedName "Y"), warnings := [] }
 
 def f32IdentityPrepared : Option PreparedPlan :=
   (prepareEvalPlan f32IdentitySched f32IdentitySig).toOption
@@ -1665,7 +1716,13 @@ def orderedTwinPrepared : Option PreparedPlan :=
   some #[1, 2]
 
 run_cmd do
-  let prepared ← match prepareEvalPlan orderedTwinSched (InputSignature.ofDenseInputs topologyInputs) with
+  -- B3 prepare-time half: a signature naming the defined `Z` is itself refused at prepare time, so the
+  -- plan is prepared from the clean signature (no `Z`) and the supplied `Z` is offered only at run time.
+  match prepareEvalPlan orderedTwinSched (InputSignature.ofDenseInputs topologyInputs) with
+  | .error { cause := .inputSignature (.definedName "Z"), warnings := [] } => pure ()
+  | _ => throwError "ordered twin: a signature naming the defined Z was not refused at prepare time"
+  let prepared ← match prepareEvalPlan orderedTwinSched
+      (InputSignature.ofDenseInputs (topologyInputs.erase "Z")) with
     | .ok p => pure p
     | .error _ => throwError "ordered topology sibling failed preparation"
   -- `Z` is defined here, so BOTH backends refuse a supplied `Z` (decision note B3: the reference's

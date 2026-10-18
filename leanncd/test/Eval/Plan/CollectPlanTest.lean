@@ -361,6 +361,49 @@ private def scratchIn32 : NamedDenseEnv32 :=
     (scratchIn32.insert "T" ⟨[], #[9.0]⟩) == some (some "T", some "T", some "T")
 #guard verdict32 Eval.Plan.ScanCompileTest.scratchSched scratchIn32 scratchIn32 == some (none, none, none)
 
+/-! ## B3 prepare-time half: a SIGNATURE entry naming a defined tensor
+
+`prepareEvalPlan` refuses with `InputSignatureError.definedName`, over the SAME defined-name set as
+the run-time refusals above (the collected schedule's writes: public outputs, private `T#k`
+clones, scan scratch), BEFORE the required-input checks, reporting the first offender in write
+order. `prepOutcome` tags the verdict so `definedName` is told apart from `missingSignature`. -/
+
+private def prepOutcome (r : Except PlanCompileFailure PreparedPlan) : String :=
+  match r with
+  | .ok _ => "ok"
+  | .error e =>
+      match e.cause with
+      | .inputSignature (.definedName n) => s!"defined:{n}"
+      | .inputSignature (.missingSignature n) => s!"missing:{n}"
+      | _ => "other"
+
+private def out64 (s : ScheduledProgram) (env : NamedDenseEnv) : String :=
+  prepOutcome (prepareEvalPlan s (InputSignature.ofDenseInputs env))
+
+private def out32 (s : ScheduledProgram) (env : NamedDenseEnv32) : String :=
+  match InputSignature.ofDenseInputs32ForDecls s.decls env with
+  | .ok sig => prepOutcome (prepareEvalPlan s sig)
+  | .error _ => "sigbuild"
+
+-- Fixture 3 (private clone): `h1` has two writers of `Y`, so `Y#1` is a private clone. Naming it in the
+-- signature is refused by name; accept-neighbour: h1's own (clean) signature.
+#guard s1m.map (out64 · y1In) == some "defined:Y#1"
+#guard s1m.map (out64 · h1In) == some "ok"
+#guard s1m_32.map (out32 · y1In32) == some "defined:Y#1"
+#guard s1m_32.map (out32 · h1In32) == some "ok"
+-- The public output beside the clone: the FIRST defined name in write order (`Y#1`, as at run time).
+#guard s1m.map (out64 · yy1In) == some "defined:Y#1"
+#guard s1m_32.map (out32 · yy1In32) == some "defined:Y#1"
+-- Single writer (no clone): the public output alone is refused; accept-neighbour as above.
+#guard s1.map (out64 · yIn) == some "defined:Y"
+#guard s1.map (out64 · h1In) == some "ok"
+
+-- Fixture 4 (scan scratch): `T` is written only inside the scan body, never a persistent output.
+#guard out64 scratchS64 (scratchIn.insert "T" ⟨[], #[9.0]⟩) == "defined:T"
+#guard out64 scratchS64 scratchIn == "ok"
+#guard out32 Eval.Plan.ScanCompileTest.scratchSched (scratchIn32.insert "T" ⟨[], #[9.0]⟩) == "defined:T"
+#guard out32 Eval.Plan.ScanCompileTest.scratchSched scratchIn32 == "ok"
+
 /-! ## Declared-f32 variants (review T5-F4)
 
 `h3d32`: H3's predicate OR on a schedule whose surrounding real tensors are declared `tensor f32`
