@@ -1,0 +1,13 @@
+diff --git a/leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean b/leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean
+index 4f8b5995..5f2a031f 100644
+--- a/leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean
++++ b/leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean
+@@ -41,7 +41,7 @@ theorem AdmittedStatement.fiber_partition (statement : AdmittedStatement source)
+       rw [ih, term.fiber_partition, ← Finset.sum_add_distrib]
+       apply Finset.sum_congr rfl
+       intro x _
+-      by_cases h : statement.output.slots.project x = p <;>
++      by_cases h : statement.output.dest (statement.output.slots.project x) = p <;>
+         simp [AdmittedStatement.destination, h]
+   exact linear statement.terms
+ 

@@ -1,0 +1,198 @@
+From 39fe34cc6c7c992564f6bd9268b54e26a3f9025d Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sun, 18 Oct 2026 07:29:24 -0700
+Subject: [PATCH 1/2] proto(s2a-p3): differential reads oracle occurrences for
+ non-bare rows; compareSource uses affine admission
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ .../LeanNCD/Semantics/Source/Diagnostics.lean |  2 +-
+ .../Semantics/Source/Differential.lean        |  2 +-
+ .../Semantics/Source/NumericalProfile.lean    | 33 ++++++++++++++----
+ .../LeanNCD/Semantics/Source/Observation.lean | 34 +++++++++++++++----
+ .../LeanNCD/Semantics/Source/Provenance.lean  | 10 ++++++
+ 5 files changed, 67 insertions(+), 14 deletions(-)
+
+diff --git a/leanncd/LeanNCD/Semantics/Source/Diagnostics.lean b/leanncd/LeanNCD/Semantics/Source/Diagnostics.lean
+index 0a28681b..ed6d887e 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Diagnostics.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Diagnostics.lean
+@@ -148,7 +148,7 @@ where
+       else .ok (.disagreement (.extra r))
+ 
+ def oracleContributions (rows : List OracleRow) : List ContributionObservation :=
+-  canonicalizeContributions (rows.filterMap (·.occurrence))
++  canonicalizeContributions (rows.flatMap (·.occurrences))
+ 
+ def renderExecutionError : ExecutionError → String
+   | .admission d => s!"admission: stage={repr d.stage} origin={repr d.origin} cause={repr d.cause}"
+diff --git a/leanncd/LeanNCD/Semantics/Source/Differential.lean b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+index 3b43c11c..7b84a4e2 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Differential.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+@@ -329,7 +329,7 @@ namespace LeanNCD.Semantics.Source
+ 
+ def compareSource (snapshot : SourceSnapshot) (fixtureDependencyOrder : Option (List Nat))
+     (fuel : Option Nat := none) : Except Debug.ExecutionError Differential.ComparisonRun := do
+-  let reference ← Debug.sourceDebug snapshot fuel
++  let reference ← Debug.sourceDebugAffine snapshot fuel
+   let oracle := Oracle.run reference.source.admitted fixtureDependencyOrder
+   let native := NativeLegs.runNative snapshot
+   let profile := NumericalProfile.checkRunProfile reference oracle
+diff --git a/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean b/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
+index 5db3ab8e..f51b7abe 100644
+--- a/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
++++ b/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
+@@ -186,18 +186,37 @@ private def checkOccurrence (source : AdmittedSource) (result : Oracle.Result)
+     ← checkValue site .subsetProductBound envelope]
+   pure values
+ 
++/-- A write form `c0 + Σ coef * value(uid)` evaluated over an occurrence assignment (the profile's
++own receipt check of the oracle's destination; independent of `dest`). -/
++private def formsAt (site : Site) (assignment : List (UID × Nat)) (forms : List WriteForm) :
++    Except Unsupported (List Nat) :=
++  forms.mapM fun form => do
++    let mut value : Int := form.1
++    for (coef, uid) in form.2 do
++      match assignment.find? (fun p => p.1 == uid) with
++      | some p => value := value + coef * (p.2 : Int)
++      | none => throw (.receipt site (.lookup ⟨site.origin, .missingUID uid⟩))
++    if value < 0 then throw (.receipt site .outputCoordinate) else pure value.toNat
++
+ private def checkFiber (source : AdmittedSource) (result : Oracle.Result)
+     (statement : AdmittedStatement source.source)
+     (term : Term source.source.context statement.output.context source.source.table.declarations)
+     (row : Debug.OracleRow) (fiber : Oracle.TermFiber) :
+     Except Unsupported (List CheckedValue × ℚ) := do
+   let site : Site := { origin := term.origin, coordinate := row.fullCell.coordinate }
++  -- Bare: the existing checks. Non-bare: the support is the forms' uids, the destination is the
++  -- forms evaluated over the assignment, and the occurrence count of a fiber (0..n) has no
++  -- closed form here, so it is not checked (the collection sums are, in `checkOracle`).
++  let bare := statement.output.forms == statement.output.indices.map WriteForm.single
++  let outputUids := if bare then statement.output.indices
++    else statement.output.forms.flatMap WriteForm.uids
+   let axes := source.source.context.axes.filter
+-    (fun a => a.uid ∈ statement.output.indices ++ term.sourceReads.flatMap (·.indices))
+-  let expectedCount := if row.occurrence.isSome then
+-    Oracle.cellCount (term.partition.bound.map (·.extent)) else 0
+-  unless fiber.occurrences.length == expectedCount do
+-    throw (.receipt site (.occurrences expectedCount fiber.occurrences.length))
++    (fun a => a.uid ∈ outputUids ++ term.sourceReads.flatMap (·.indices))
++  if bare then
++    let expectedCount := if row.occurrence.isSome then
++      Oracle.cellCount (term.partition.bound.map (·.extent)) else 0
++    unless fiber.occurrences.length == expectedCount do
++      throw (.receipt site (.occurrences expectedCount fiber.occurrences.length))
+   let mut seen : List (List (UID × Nat)) := []
+   let mut total : ℚ := 0
+   let mut absoluteSum : ℚ := 0
+@@ -211,7 +230,9 @@ private def checkFiber (source : AdmittedSource) (result : Oracle.Result)
+     seen := seen ++ [occurrence.assignment]
+     for (axis, pair) in axes.zip occurrence.assignment do
+       unless pair.2 < axis.extent do throw (.receipt here .assignment)
+-    let expectedOutput ← coordinateAt here occurrence.assignment statement.output.indices
++    let expectedOutput ← if bare then
++      coordinateAt here occurrence.assignment statement.output.indices
++    else formsAt here occurrence.assignment statement.output.forms
+     unless expectedOutput == row.fullCell.coordinate do throw (.receipt here .outputCoordinate)
+     values := values ++ (← checkOccurrence source result term row.fullCell.coordinate occurrence)
+     total := total + occurrence.value
+diff --git a/leanncd/LeanNCD/Semantics/Source/Observation.lean b/leanncd/LeanNCD/Semantics/Source/Observation.lean
+index 05b1aec2..2364d807 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Observation.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Observation.lean
+@@ -205,9 +205,9 @@ inductive ExecutionError
+   | inputPresence (tensorUID : UID) (origin : SourceOrigin) (expected actual : Bool)
+   deriving Repr
+ 
+-def sourceDebug (snapshot : SourceSnapshot) (fuel : Option Nat := none) :
+-    Except ExecutionError SourceRun := do
+-  let source ← (admitIdentifiedSource snapshot).mapError ExecutionError.admission
++def sourceDebugFrom (admitted : Except SourceDiagnostic IdentifiedSource)
++    (fuel : Option Nat := none) : Except ExecutionError SourceRun := do
++  let source ← admitted.mapError ExecutionError.admission
+   let actual ← (runSourceDebug source.admitted fuel).mapError fun t =>
+     .inputPresence t.val
+       { side := .input, declaration := some (source.admitted.source.table.entry t).declaration }
+@@ -215,6 +215,15 @@ def sourceDebug (snapshot : SourceSnapshot) (fuel : Option Nat := none) :
+       ((sourceInputBinding source.admitted t).isSome)
+   pure ⟨source, actual, fuel⟩
+ 
++def sourceDebug (snapshot : SourceSnapshot) (fuel : Option Nat := none) :
++    Except ExecutionError SourceRun :=
++  sourceDebugFrom (admitIdentifiedSource snapshot) fuel
++
++/-- The differential's reference entry: `admitSourceAffine` (bare behaviour unchanged). -/
++def sourceDebugAffine (snapshot : SourceSnapshot) (fuel : Option Nat := none) :
++    Except ExecutionError SourceRun :=
++  sourceDebugFrom (admitIdentifiedSourceAffine snapshot) fuel
++
+ structure ContributionObservation where
+   key : OccurrenceKey
+   destination : AddressObservation
+@@ -265,6 +274,9 @@ An empty contracted fiber still has an output occurrence with contribution zero.
+ structure OracleRow where
+   fullCell : Oracle.Contribution
+   occurrence : Option ContributionObservation
++  /-- Executor-comparable occurrences of the row: `occurrence.toList` for a bare statement,
++  `oracleOccurrences` (0..n per destination cell) for a non-bare one. -/
++  occurrences : List ContributionObservation
+   deriving DecidableEq, Repr
+ 
+ def normalizeOracleContribution (source : AdmittedSource) (row : Oracle.Contribution) :
+@@ -286,9 +298,10 @@ def normalizeOracleContribution (source : AdmittedSource) (row : Oracle.Contribu
+   unless statement.output.indices.length == row.coordinate.length do
+     throw ⟨row.origin, .rank statement.output.indices.length row.coordinate.length⟩
+   let assignment ← assign statement.output.indices entry.axes row.coordinate 0 [] true
+-  pure ⟨row, assignment.map fun values =>
++  let occurrence := assignment.map fun values =>
+     ⟨⟨original, values⟩, ⟨statement.output.tensor.val, entry.declaration, row.coordinate⟩,
+-      some row.value⟩⟩
++      some row.value⟩
++  pure ⟨row, occurrence, occurrence.toList⟩
+ where
+   assign : List UID → Shape → List Nat → Nat → List (UID × Nat) → Bool →
+       Except NormalizationError (Option (List (UID × Nat)))
+@@ -338,8 +351,17 @@ def oracleOccurrences (source : AdmittedSource) (row : Oracle.Contribution) :
+     | _ => throw ⟨row.origin, .unknownStatement original⟩
+   | .error e => throw e
+ 
++/-- Bare rows: `normalizeOracleContribution` unchanged. Non-bare rows: no single occurrence
++(`occurrence := none`), the destination-cell occurrences come from `oracleOccurrences`. -/
++def normalizeOracleRow (source : AdmittedSource) (row : Oracle.Contribution) :
++    Except NormalizationError OracleRow := do
++  match normalizeOracleContribution source row with
++  | .ok normalized => pure normalized
++  | .error ⟨_, .nonBareWrite⟩ => pure ⟨row, none, ← oracleOccurrences source row⟩
++  | .error e => throw e
++
+ def normalizeOracle (source : AdmittedSource) (result : Oracle.Result) :
+     Except NormalizationError (List OracleRow) :=
+-  result.contributions.mapM (normalizeOracleContribution source)
++  result.contributions.mapM (normalizeOracleRow source)
+ 
+ end LeanNCD.Semantics.Source.Debug
+diff --git a/leanncd/LeanNCD/Semantics/Source/Provenance.lean b/leanncd/LeanNCD/Semantics/Source/Provenance.lean
+index 9cb2ffde..80426661 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Provenance.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Provenance.lean
+@@ -71,6 +71,16 @@ def admitIdentifiedSource (snapshot : SourceSnapshot) :
+   | .error e => .error e
+   | .ok source => .ok ⟨source, admitSource_originals snapshot source h⟩
+ 
++/-- `admitIdentifiedSource` over `admitSourceAffine`. Affine statements have no raw-parse theorem
++(`admitAffineWrite` is private), so uniqueness of the originals is checked, not proved; the failing
++branch is unreachable in practice (`adaptSource_originals`, and admission keeps the index) and is
++reported, not hidden. -/
++def admitIdentifiedSourceAffine (snapshot : SourceSnapshot) :
++    Except SourceDiagnostic IdentifiedSource := do
++  let source ← admitSourceAffine snapshot
++  if h : (source.statements.map AdmittedStatement.original).Nodup then pure ⟨source, h⟩
++  else throw (sourceError .statement {} (.duplicateTensor "statement originals not unique"))
++
+ def admitRawIdentifiedSource (raw : TLProgram) (specs : List TensorSpec)
+     (inputs : List InputBinding) : Except SourceDiagnostic IdentifiedSource := do
+   let snapshot ← resolveSource raw specs inputs
+-- 
+2.50.1 (Apple Git-155)
+

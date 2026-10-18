@@ -1,0 +1,157 @@
+diff --git a/leanncd/LeanNCD/Semantics/Source/Differential.lean b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+index 243b2360..8652174d 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Differential.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+@@ -229,10 +229,14 @@ def detectConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
+   let extents := source.statements.filterMap fun st =>
+     let declared := (source.source.table.entry st.output.tensor).axes.map (·.extent)
+     let derived := derivedShape source st
+-    if nonBareWrite st && declared != derived then
++    -- single-writer tensors only: with several writers production's shape is not one form's extent
++    if nonBareWrite st && declared != derived &&
++        (source.statements.filter fun o => decl o == decl st).length == 1 then
+       some (StructuralCondition.scatterExtentOverridesDeclared st.output.origin (decl st) derived)
+     else none
+-  collisions ++ multi ++ extents
++  -- pipeline order: compile (multi-writer), evaluation (collision), output binding (extent). Only
++  -- the first can be observed, so `classification` confirms the head only.
++  multi ++ collisions ++ extents
+ 
+ private def legacyCollision : LegacyOutcome → Bool
+   | .failure e => e.phase == .scheduledEvaluation &&
+@@ -337,7 +341,7 @@ def ComparisonRun.classification (run : ComparisonRun) : Classification := Id.ru
+   | .error _ => return .nativeUnavailable
+   | .ok native =>
+     if let c :: _ := run.conditions then
+-      if run.conditions.all (confirms native) then return .knownContractDifference c
++      if confirms native c then return .knownContractDifference c
+     match native.legacy, native.checked with
+     | .unavailable _, _ | _, .unavailable _ => return .nativeUnavailable
+     | .failure _, _ | _, .sourceCompilation _ | _, .preparation _ | _, .runtime _ =>
+diff --git a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+index 428b427d..ef7259cc 100644
+--- a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
++++ b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+@@ -69,11 +69,117 @@ def observe (s : SourceSnapshot) : String :=
+         | .observed o _ => s!"value {bits o}"
+     s!"class={repr run.classification}\n  oracle={oracle}\n  legacy={legacy}\n  checked={checked}"
+ 
+-private def conv : SourceSnapshot :=
+-  snap 6 [k] [.assign "Y" [.affine (.affine 0 [(1, a), (1, b)])] readXW]
++/-- `snap` with `|b|` as a parameter (`W` is `[5]` when `|b| = 1`). -/
++private def snapB (bExtent kExtent : Nat) (yAxes : List AxisSpec) (stmts : List Stmt) :
++    SourceSnapshot :=
++  let s := snap kExtent yAxes stmts
++  if bExtent = 1 then
++    { s with
++      resolved := { s.resolved with decls := s.resolved.decls.map fun d =>
++        match d with | .axis ax _ => if ax.uid = 8 then .axis ax (some 1) else d | _ => d }
++      inputs := [⟨3, [4], [1, 2, 3, 4]⟩, ⟨4, [1], [5]⟩]
++      specs := [⟨3, .input, [4]⟩, ⟨4, .input, [1]⟩, ⟨5, .output, yAxes.map fun ax =>
++        if ax.uid = 7 then 4 else if ax.uid = 8 then 1 else kExtent⟩] }
++  else s
+ 
+-#eval observe (snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX])
+-#eval observe (snap 6 [k] [.assign "Y" [.affine (.shift a 2)] readX])
+-#eval observe (snap 6 [k] [.assign "Y" [.affine (.scale 2 a)] readX])
++private def sumOpts : ScatterOpts := { reduce := .sum }
++private def convSlot : LHSSlot := .affine (.affine 0 [(1, a), (1, b)])
++
++/-- Classification name only (the full per-leg report is `observe`). -/
++def tag (s : SourceSnapshot) (order : List Nat := [5]) : String :=
++  match compareSource s (some order) with
++  | .error e => if ((renderExecutionError e).splitOn "writeOutOfRange").length > 1
++      then "refused:writeOutOfRange" else "error"
++  | .ok run => match run.classification with
++    | .fourLegParity => "parity"
++    | .knownContractDifference (.scatterCollisionRejected _) => "known:collision"
++    | .knownContractDifference (.multiWriterScatter _) => "known:multiWriter"
++    | .knownContractDifference (.scatterExtentOverridesDeclared ..) => "known:extent"
++    | .knownContractDifference (.usedDType ..) => "known:usedDType"
++    | .nativeFailure => "nativeFailure"
++    | .nativeDiscrepancy => "nativeDiscrepancy"
++    | .comparisonRefused => "comparisonRefused"
++    | .nativeUnavailable => "nativeUnavailable"
++    | _ => "other"
++
++-- fixtures (appended; guards below)
++private def fA := snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX]
++private def fB := snap 6 [k] [.assign "Y" [.affine (.shift a 2)] readX]
++private def fC := snap 4 [a, a] [.assign "Y" [.free a, .free a] readX]
++private def fD := snap 7 [k] [.scatter "Y" [convSlot] readXW sumOpts]
++private def fD' := snap 4 [k] [.scatter "Y" [.affine (.const 3)] readX sumOpts]
++private def fE := snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readXW]
++private def fF := snap 6 [k] [.assign "Y" [convSlot] readXW]
++private def fF' := snap 12 [k] [.assign "Y" [.affine (.affine 0 [(1, a), (4, b)])] readXW]
++private def fG := snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX,
++  .assign "Y" [.affine (.shift a 1)] readX]
++private def fH6 := snap 6 [k] [.assign "Y" [.affine (.scale 2 a)] readX]
++private def fH9 := snap 9 [k] [.assign "Y" [.affine (.scale 2 a)] readX]
++private def fI1 := snapB 1 5 [k] [.assign "Y" [.affine (.const 3)] readW]
++private def fI2 := snap 5 [k] [.assign "Y" [.affine (.const 3)] readX]
++/-- Masking negative: the collision of `fE` plus an independent constant-slot statement on `Z`
++that makes the legacy leg fail at COMPILATION (not at the predicted evaluation-time collision). -/
++private def fMask : SourceSnapshot :=
++  let s := snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readXW,
++    .assign "Z" [.affine (.const 3)] readX]
++  { s with
++    resolved := { s.resolved with decls := s.resolved.decls ++ [.typedTensor .f64 "Z" [k]] }
++    specs := s.specs ++ [⟨6, .output, [8]⟩] }
++
++-- Observed classifications (p3_observed.md). Parity: C is a diagonal write.
++#guard tag fA == "parity"
++#guard tag fB == "parity"
++#guard tag fC == "parity"
++-- Checked leg refuses the multi-axis / constant slot (capability); legacy sums like the oracle.
++#guard tag fD == "nativeFailure"
++#guard tag fD' == "nativeFailure"
++-- Collision under the reject policy: E vs its parity neighbour A (one RHS factor).
++#guard tag fE == "known:collision"
++#guard tag fF == "known:collision"
++-- F's non-colliding neighbour (b coefficient 1 -> 4): no condition, native refusal stays a failure.
++#guard tag fF' == "nativeFailure"
++-- Multi-writer vs single writer; extent override vs equal extent (A); out-of-range refusal.
++#guard tag fG == "known:multiWriter"
++#guard tag (snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX]) == "parity"
++#guard tag fH9 == "known:extent"
++#guard tag fH6 == "refused:writeOutOfRange"
++-- Constant slots: compile `overlappingScatter` under the reject policy, whatever the RHS.
++#guard tag fI1 == "nativeFailure"
++#guard tag fI2 == "nativeFailure"
++-- Masking negative: fE's collision is detected, but legacy fails at compilation (the independent
++-- constant-slot statement on Z), not with the predicted collision, so no condition applies.
++#guard tag fMask [5, 6] == "nativeFailure"
++
++/-- Profile verdict on `fE`'s oracle result with one occurrence of the first nonempty fiber dropped
++and every sum (fiber, contribution, tensor cell) adjusted so only the COUNT is inconsistent. -/
++private def dropOccurrence (drop : Bool) : String :=
++  match Debug.sourceDebugAffine fE none with
++  | .error _ => "no run"
++  | .ok run => match Oracle.run run.source.admitted (some [5]) with
++    | .error _ => "no oracle"
++    | .ok r =>
++      match r.contributions.find? (fun c => c.terms.any (fun f => !f.occurrences.isEmpty)) with
++      | none => "no occurrence"
++      | some c => match c.terms with
++        | [f] => match f.occurrences with
++          | o :: rest =>
++            let d : ℚ := if drop then o.value else 0
++            let f' := if drop then { f with occurrences := rest, value := f.value - d } else f
++            let c' := { c with terms := [f'], value := c.value - d }
++            let idx := c.coordinate.headD 0
++            let r' : Oracle.Result := {
++              tensors := r.tensors.map fun t => if t.declaration == 5 then
++                { t with values := t.values.set idx (t.values.getD idx 0 - d) } else t
++              contributions := r.contributions.map fun x =>
++                if x.coordinate == c.coordinate && x.origin == c.origin then c' else x }
++            match NumericalProfile.checkRunProfile run (.ok r') with
++            | .error (.receipt _ (.occurrences e n)) => s!"occurrences {e} {n}"
++            | .error u => s!"other {repr u}"
++            | .ok _ => "accepted"
++          | [] => "empty"
++        | _ => "terms"
++
++#guard dropOccurrence false == "accepted"
++#guard dropOccurrence true == "occurrences 3 2"
+ 
+ end SourceDifferentialScatterTest

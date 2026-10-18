@@ -55,14 +55,25 @@ Today the Source oracle cannot express those programs, so S3's claims are held b
 4. Oracle: each destination coordinate sums the contributions of every source coordinate whose image equals it; an
    empty fiber is 0. Several statements writing one tensor sum (as in S1).
 5. New structural known-difference conditions (S1 pattern; S3a converts them to agreement): `rejectCollisions` with a
-   real collision (production errors, oracle sums); multi-writer scatter (production refuses `multiWriterScatter`).
+   real collision (production errors, oracle sums); multi-writer scatter (production refuses `multiWriterScatter`);
+   a scatter whose declared destination shape differs from production's derived extent (item 7).
 6. Differential coverage: non-colliding scatter, `reduce := sum`, diagonal writes and constant slots should agree on
    all four legs today. These fixtures are the first validation of S3a's target semantics.
-7. **First plan task is a probe (UNVERIFIED):** a destination declared with an extent that disagrees with the one
-   production derives from the source axis sizes (`outExtent`, e.g. declared 6 vs derived 8 for `S[2*i]`, `|i| = 4`).
-   Production may already reject this as a size conflict, may skip, or may agree. Record each leg's behaviour as a
-   fixture; if it differs from the oracle's static refusal, document it as a known difference. No condition is
-   pre-declared for it.
+7. **Probe result (P0, 2026-10-17; table in `additive_s2a_artifacts/p0_extent_probe.md`, scratch branch `proto-s2a-p0`).**
+   Production IGNORES the declared pinned shape of a scatter destination: `S` declared over a pinned axis `k` of size
+   6, 7, 8, 9 or unpinned, written by `S[2*i] := X[i]` with `|i| = 4`, always comes out shape `[8]` (the derived
+   stride-aligned extent) in both the reference evaluator and the checked plan, with no skip, no error and full values.
+   The two backends agree with each other. The disagreement surfaces only at a consumer reading `S` through the pinned
+   axis (`Z[k] := S[k]`, `k != 8`): both raise a size conflict (6 vs 8, 9 vs 8). Consequence for the oracle: it uses the
+   DECLARED shape, so declared 6 or 7 is a static `writeOutOfRange` refusal and declared 9 is a shape-9 tensor with a
+   zero cell where production has shape 8. These become a new structural known-difference condition
+   (`scatterExtentOverridesDeclared`, name provisional; production derives the shape, the oracle declares it); S3a fixes
+   production to honor the declared shape (with the B6 range error). Not probed: `reduce := sum` (not expressible in
+   surface syntax, only through a hand-built `Stmt.scatter`), and a constant slot (the probe fixture failed in the scan
+   path for an unrelated reason).
+8. **Also to check first in the prototype:** `AdmittedOutput.order` uses `firstUIDs`, which suggests a repeated free
+   axis (`Y[i,i]`, a diagonal write) may ALREADY be admitted today. If so it is not new in S2a and §4.1's mention of
+   it is only a regression requirement.
 
 ## 5. B3 prepare-time rejection (Direct path)
 

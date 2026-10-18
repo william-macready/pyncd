@@ -1,0 +1,433 @@
+[
+ {
+  "label": "T2-M3 scatter accepts reduce max",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "!(opts.reduce == .sum || opts.reduce == .rejectCollisions)",
+  "new": "!(opts.reduce == .sum || opts.reduce == .rejectCollisions || opts.reduce == .max)",
+  "targets": [
+   "Semantics.SourceAdmissionAffineTest"
+  ],
+  "expect": [
+   "SourceAdmissionAffineTest.lean:116:0"
+  ]
+ },
+ {
+  "label": "T2-M4 scatter fill check removed",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "opts.fill != 0 || ",
+  "new": "",
+  "targets": [
+   "Semantics.SourceAdmissionAffineTest"
+  ],
+  "expect": [
+   "SourceAdmissionAffineTest.lean:119:0"
+  ]
+ },
+ {
+  "label": "T2-M6 scale slot drops coefficient",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "pure (idxAffineForm e)",
+  "new": "pure (match e with | .scale _ a => (0, [(1, a.uid)]) | _ => idxAffineForm e)",
+  "targets": [
+   "Semantics.SourceAdmissionAffineTest"
+  ],
+  "expect": [
+   "SourceAdmissionAffineTest.lean:80:0",
+   "SourceAdmissionAffineTest.lean:82:0",
+   "SourceAdmissionAffineTest.lean:112:0",
+   "SourceAdmissionAffineTest.lean:114:0"
+  ]
+ },
+ {
+  "label": "T2-M8 const slot offset ignored",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "pure (idxAffineForm e)",
+  "new": "pure (match e with | .const _ => (0, []) | _ => idxAffineForm e)",
+  "targets": [
+   "Semantics.SourceAdmissionAffineTest"
+  ],
+  "expect": [
+   "SourceAdmissionAffineTest.lean:86:0",
+   "SourceAdmissionAffineTest.lean:89:0"
+  ]
+ },
+ {
+  "label": "T2-M7 affine shift READ admitted (PROOF kill: breaks a theorem in Admission.lean, no fixture reached)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "    | .const _ | .scale .. | .shift .. | .affine .. =>",
+  "new": "    | .shift a _ => let _ \u2190 sourceAxis c .read here a; pure a.uid\n    | .const _ | .scale .. | .affine .. =>",
+  "targets": [
+   "Semantics.SourceAdmissionAffineTest"
+  ],
+  "expect": [
+   "Admission.lean:520:28"
+  ]
+ },
+ {
+  "label": "T2-M5 support order reversed",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "firstUIDs (forms.flatMap WriteForm.uids)",
+  "new": "(firstUIDs (forms.flatMap WriteForm.uids)).reverse",
+  "targets": [
+   "Semantics.SourceAdmissionAffineTest"
+  ],
+  "expect": [
+   "SourceAdmissionAffineTest.lean:93:0"
+  ]
+ },
+ {
+  "label": "T2-M2 range check off by one (PROOF kill: omega in fitIndex, no fixture reached)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "decide (writeValue f v < a.extent)",
+  "new": "decide (writeValue f v \u2264 a.extent)",
+  "targets": [
+   "Semantics.SourceAdmissionAffineTest"
+  ],
+  "expect": [
+   "Admission.lean:343:68"
+  ]
+ },
+ {
+  "label": "T2-M9 range error blames first fitting axis",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "      !coordAll shape (fun w => formFits ax f (coordLookup w))).map (\u00b7.2)).getD 0",
+  "new": "      coordAll shape (fun w => formFits ax f (coordLookup w))).map (\u00b7.2)).getD 0",
+  "targets": [
+   "Semantics.SourceAdmissionAffineTest"
+  ],
+  "expect": [
+   "SourceAdmissionAffineTest.lean:89:0"
+  ]
+ },
+ {
+  "label": "T1-M1 globalFiber ignores destination (PROOF kill)",
+  "task": "T1",
+  "file": "LeanNCD/Semantics/Source/Fiber.lean",
+  "old": "if Term.globalDestination output term v = p then term.globalProduct \u03c1 v else 0",
+  "new": "if True then term.globalProduct \u03c1 v else 0",
+  "targets": [
+   "Semantics.SourceAffineDestinationTest"
+  ],
+  "expect": [
+   "Fiber.lean:293:2"
+  ]
+ },
+ {
+  "label": "T1-M2 collectedBody empty fibers read 1 (PROOF kill)",
+  "task": "T1",
+  "file": "LeanNCD/Semantics/Source/Correspondence.lean",
+  "old": "interpret semiringOps \u03c1 (term.body (r := r) id) x else some 0)",
+  "new": "interpret semiringOps \u03c1 (term.body (r := r) id) x else some 1)",
+  "targets": [
+   "Semantics.SourceAffineDestinationTest"
+  ],
+  "expect": [
+   "Correspondence.lean:107:6"
+  ]
+ },
+ {
+  "label": "T1-M3 statement fiber keeps only first term (PROOF kill)",
+  "task": "T1",
+  "file": "LeanNCD/Semantics/Source/ProgramCorrespondence.lean",
+  "old": "(statement.terms.map (fun term => term.globalFiber statement.output \u03c1 p)).sum",
+  "new": "(statement.terms.map (fun term => term.globalFiber statement.output \u03c1 p)).headD 0",
+  "targets": [
+   "Semantics.SourceAffineDestinationTest"
+  ],
+  "expect": [
+   "ProgramCorrespondence.lean:46:2"
+  ]
+ },
+ {
+  "label": "T2-M1 range-error slot forced to 0",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "slot := some bad } .writeOutOfRange",
+  "new": "slot := some 0 } .writeOutOfRange",
+  "targets": [
+   "Semantics.SourceAdmissionAffineTest"
+  ],
+  "expect": [
+   "SourceAdmissionAffineTest.lean:148:0"
+  ]
+ },
+ {
+  "label": "T2-M10 rank check removed",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "if forms.length \u2260 sig.length then",
+  "new": "if False then",
+  "targets": [
+   "Semantics.SourceAdmissionAffineTest"
+  ],
+  "expect": [
+   "SourceAdmissionAffineTest.lean:157:0",
+   "SourceAdmissionAffineTest.lean:159:0"
+  ]
+ },
+ {
+  "label": "P2b-i oracle destination from output.indices (forms ignored)",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "let output \u2190 destination statement.output.origin shape assignment statement.output.forms",
+  "new": "let output \u2190 slots statement.output.origin assignment statement.output.indices",
+  "targets": [
+   "Semantics.SourceOracleAffineTest"
+  ],
+  "expect": [
+   "SourceOracleAffineTest.lean:79:0",
+   "SourceOracleAffineTest.lean:84:0",
+   "SourceOracleAffineTest.lean:89:0",
+   "SourceOracleAffineTest.lean:100:0",
+   "SourceOracleAffineTest.lean:104:0",
+   "SourceOracleAffineTest.lean:120:0",
+   "SourceOracleAffineTest.lean:131:0",
+   "SourceOracleAffineTest.lean:140:0",
+   "SourceOracleAffineTest.lean:141:0",
+   "SourceOracleAffineTest.lean:145:0"
+  ]
+ },
+ {
+  "label": "P2b-ii collisions keep last write instead of sum",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "total := total + product",
+  "new": "total := product",
+  "targets": [
+   "Semantics.SourceOracleAffineTest"
+  ],
+  "expect": [
+   "SourceOracleAffineTest.lean:89:0",
+   "SourceOracleAffineTest.lean:100:0",
+   "SourceOracleAffineTest.lean:104:0",
+   "SourceOracleAffineTest.lean:131:0",
+   "SourceOracleAffineTest.lean:145:0",
+   "SourceOracleAffineTest.lean:168:0"
+  ]
+ },
+ {
+  "label": "P2b-iii coefficient sign flipped",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "value := value + coef * (p.2 : Int)",
+  "new": "value := value - coef * (p.2 : Int)",
+  "targets": [
+   "Semantics.SourceOracleAffineTest"
+  ],
+  "expect": [
+   "SourceOracleAffineTest.lean:75:0",
+   "SourceOracleAffineTest.lean:79:0",
+   "SourceOracleAffineTest.lean:84:0",
+   "SourceOracleAffineTest.lean:100:0",
+   "SourceOracleAffineTest.lean:104:0",
+   "SourceOracleAffineTest.lean:120:0",
+   "SourceOracleAffineTest.lean:125:0",
+   "SourceOracleAffineTest.lean:131:0",
+   "SourceOracleAffineTest.lean:140:0",
+   "SourceOracleAffineTest.lean:141:0"
+  ]
+ },
+ {
+  "label": "P2b-iv c0 offset ignored",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "let mut value : Int := form.1",
+  "new": "let mut value : Int := 0",
+  "targets": [
+   "Semantics.SourceOracleAffineTest"
+  ],
+  "expect": [
+   "SourceOracleAffineTest.lean:84:0",
+   "SourceOracleAffineTest.lean:89:0",
+   "SourceOracleAffineTest.lean:120:0",
+   "SourceOracleAffineTest.lean:140:0",
+   "SourceOracleAffineTest.lean:141:0",
+   "SourceOracleAffineTest.lean:145:0",
+   "SourceOracleAffineTest.lean:159:0"
+  ]
+ },
+ {
+  "label": "P2b-v empty term fiber reads 1",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "pure \u27e8term.origin, occurrences, total\u27e9",
+  "new": "pure \u27e8term.origin, occurrences, if occurrences.isEmpty then 1 else total\u27e9",
+  "targets": [
+   "Semantics.SourceOracleAffineTest"
+  ],
+  "expect": [
+   "SourceOracleAffineTest.lean:79:0",
+   "SourceOracleAffineTest.lean:84:0",
+   "SourceOracleAffineTest.lean:89:0",
+   "SourceOracleAffineTest.lean:120:0",
+   "SourceOracleAffineTest.lean:125:0",
+   "SourceOracleAffineTest.lean:131:0",
+   "SourceOracleAffineTest.lean:140:0",
+   "SourceOracleAffineTest.lean:141:0",
+   "SourceOracleAffineTest.lean:145:0"
+  ]
+ },
+ {
+  "label": "P2b-vi Observation inverts output.indices for non-bare rows",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Observation.lean",
+  "old": "unless statement.output.forms == statement.output.indices.map WriteForm.single do",
+  "new": "unless true do",
+  "targets": [
+   "Semantics.SourceOracleAffineTest"
+  ],
+  "expect": [
+   "SourceOracleAffineTest.lean:79:0",
+   "SourceOracleAffineTest.lean:84:0",
+   "SourceOracleAffineTest.lean:89:0",
+   "SourceOracleAffineTest.lean:100:0",
+   "SourceOracleAffineTest.lean:120:0",
+   "SourceOracleAffineTest.lean:131:0",
+   "SourceOracleAffineTest.lean:140:0",
+   "SourceOracleAffineTest.lean:141:0",
+   "SourceOracleAffineTest.lean:145:0",
+   "SourceOracleAffineTest.lean:168:0"
+  ]
+ },
+ {
+  "label": "P2b-vii out-of-range image wraps instead of failing",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "else throw (unavailable here (.writeOutOfRange slot value extent))",
+  "new": "else pure (value % (extent : Int)).toNat",
+  "targets": [
+   "Semantics.SourceOracleAffineTest"
+  ],
+  "expect": [
+   "SourceOracleAffineTest.lean:158:0",
+   "SourceOracleAffineTest.lean:159:0"
+  ]
+ },
+ {
+  "label": "P2b-viii row occurrence values keep last instead of summing contracted terms",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Observation.lean",
+  "old": "(g.1, g.2 + o.value)",
+  "new": "(g.1, o.value)",
+  "targets": [
+   "Semantics.SourceOracleAffineTest"
+  ],
+  "expect": [
+   "SourceOracleAffineTest.lean:131:0",
+   "SourceOracleAffineTest.lean:145:0"
+  ]
+ },
+ {
+  "label": "P2b-ix oracle support omits axes mentioned only by the forms",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "let support := statement.output.forms.flatMap WriteForm.uids ++",
+  "new": "let support := [] ++",
+  "targets": [
+   "Semantics.SourceOracleAffineTest"
+  ],
+  "expect": [
+   "SourceOracleAffineTest.lean:168:0"
+  ]
+ },
+ {
+  "label": "P3b-M1 collision predicate inverted (writeCollides)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "images.eraseDups.length < images.length",
+  "new": "images.eraseDups.length == images.length",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "SourceDifferentialScatterTest.lean:137:0",
+   "SourceDifferentialScatterTest.lean:138:0",
+   "SourceDifferentialScatterTest.lean:144:0"
+  ]
+ },
+ {
+  "label": "P3b-M2 multi-writer detection removed",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "length > 1).map decl",
+  "new": "length > 100).map decl",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "SourceDifferentialScatterTest.lean:142:0"
+  ]
+ },
+ {
+  "label": "P3b-M3 extent condition removed",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "if nonBareWrite st && declared != derived &&",
+  "new": "if false && declared != derived &&",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "SourceDifferentialScatterTest.lean:144:0"
+  ]
+ },
+ {
+  "label": "P3b-M4 native-outcome post-check removed (confirms bypassed); the masking negative must die",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "if confirms native c then return",
+  "new": "if true || confirms native c then return",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "SourceDifferentialScatterTest.lean:140:0",
+   "SourceDifferentialScatterTest.lean:147:0",
+   "SourceDifferentialScatterTest.lean:148:0",
+   "SourceDifferentialScatterTest.lean:151:0"
+  ]
+ },
+ {
+  "label": "P3b-M5 restored occurrence-count check removed; the tamper fixture must die",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/NumericalProfile.lean",
+  "old": "unless fiber.occurrences.length == expectedCount do",
+  "new": "unless true || fiber.occurrences.length == expectedCount do",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "SourceDifferentialScatterTest.lean:183:0"
+  ]
+ },
+ {
+  "label": "P3b-M6 oracleOccurrences replaced by the empty list for non-bare rows (exactly 10 failure lines printed: possibly truncated)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Observation.lean",
+  "old": "pure \u27e8row, none, \u2190 oracleOccurrences source row\u27e9",
+  "new": "pure \u27e8row, none, []\u27e9",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "SourceDifferentialScatterTest.lean:130:0",
+   "SourceDifferentialScatterTest.lean:131:0",
+   "SourceDifferentialScatterTest.lean:134:0",
+   "SourceDifferentialScatterTest.lean:135:0",
+   "SourceDifferentialScatterTest.lean:137:0",
+   "SourceDifferentialScatterTest.lean:138:0",
+   "SourceDifferentialScatterTest.lean:140:0",
+   "SourceDifferentialScatterTest.lean:142:0",
+   "SourceDifferentialScatterTest.lean:143:0",
+   "SourceDifferentialScatterTest.lean:144:0"
+  ]
+ }
+]

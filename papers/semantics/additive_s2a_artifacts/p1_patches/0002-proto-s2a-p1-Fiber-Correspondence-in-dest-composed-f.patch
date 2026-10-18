@@ -1,0 +1,123 @@
+From 42b495aef95543fb7673d5b2cdf8f307b165919b Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sat, 17 Oct 2026 17:55:00 -0700
+Subject: [PATCH 2/5] proto(s2a-p1): Fiber/Correspondence in dest-composed form
+
+Term.globalDestination composes output.dest; globalDestination_partition,
+fiber_partition, collectedBody(_correspondence) and empty_fiber now state
+output.dest (output.slots.project x) = p.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../Semantics/Source/Correspondence.lean      | 27 ++++++++++---------
+ leanncd/LeanNCD/Semantics/Source/Fiber.lean   |  4 +--
+ 2 files changed, 16 insertions(+), 15 deletions(-)
+
+diff --git a/leanncd/LeanNCD/Semantics/Source/Correspondence.lean b/leanncd/LeanNCD/Semantics/Source/Correspondence.lean
+index 26365c16..91aea3e9 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Correspondence.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Correspondence.lean
+@@ -27,15 +27,15 @@ theorem Term.globalProduct_partition (term : Term source out σ)
+ theorem Term.globalDestination_partition (output : AdmittedOutput source σ)
+     (term : Term source output.context σ) (v : UIDVal term.globalContext) :
+     Term.globalDestination output term v =
+-      output.slots.project (term.partitionCoordEquiv v).1 := by
+-  let localized : Slots term.partition.context.axes (σ.signature output.tensor).axes :=
++      output.dest (output.slots.project (term.partitionCoordEquiv v).1) := by
++  let localized : Slots term.partition.context.axes output.shape :=
+     term.partition.context_axes.symm ▸ output.slots.appendLeft
+   have hl : localized.uids = output.sourceSlots.uids := by
+     rw [Slots.cast_uids, Slots.appendLeft_uids, output.linked, output.source_linked]
+   have hp := Slots.projectWithin_transport term.globalEmbedding term.partitionTransport
+     (fun _ => rfl) output.sourceSlots localized (term.output_global_support output) hl v
+   rw [Slots.cast_project, Slots.appendLeft_project] at hp
+-  exact hp
++  exact congrArg output.dest hp
+ 
+ theorem Term.value_eq_globalSlice (term : Term source out σ)
+     (ρ : Store (fun _ => K) σ) (x : Coord out.axes) :
+@@ -61,7 +61,7 @@ theorem Term.fiber_partition (output : AdmittedOutput source σ)
+     (p : Coord (σ.signature output.tensor).axes) :
+     term.globalFiber output ρ p =
+       ∑ x : Coord output.context.axes,
+-        if output.slots.project x = p then term.value ρ x else 0 := by
++        if output.dest (output.slots.project x) = p then term.value ρ x else 0 := by
+   unfold Term.globalFiber
+   rw [← Equiv.sum_comp term.partitionCoordEquiv.symm
+     (fun v => if Term.globalDestination output term v = p then term.globalProduct ρ v else 0)]
+@@ -70,7 +70,7 @@ theorem Term.fiber_partition (output : AdmittedOutput source σ)
+   rw [Fintype.sum_prod_type]
+   apply Finset.sum_congr rfl
+   intro x _
+-  by_cases h : output.slots.project x = p <;> simp [h, Term.value]
++  by_cases h : output.dest (output.slots.project x) = p <;> simp [h, Term.value]
+ 
+ /-- Finite pushforward of interpreted bodies; undefinedness is not erased. -/
+ def Term.collectedBody (output : AdmittedOutput source σ)
+@@ -80,7 +80,7 @@ def Term.collectedBody (output : AdmittedOutput source σ)
+   foldValues (semiringOps ())
+     ((List.finRange layout.count).map fun i =>
+       let x := layout.enumerate i
+-      if output.slots.project x = p then
++      if output.dest (output.slots.project x) = p then
+         interpret semiringOps ρ (term.body (r := r) id) x else some 0)
+ 
+ theorem Term.collectedBody_correspondence (output : AdmittedOutput source σ)
+@@ -91,23 +91,24 @@ theorem Term.collectedBody_correspondence (output : AdmittedOutput source σ)
+   simp_rw [term.interpret_body]
+   simp only [id_eq]
+   have hi : (fun i : Fin (canonicalLayout output.context.axes).count =>
+-      if output.slots.project ((canonicalLayout output.context.axes).enumerate i) = p then
++      if output.dest (output.slots.project
++        ((canonicalLayout output.context.axes).enumerate i)) = p then
+         some (term.value ρ ((canonicalLayout output.context.axes).enumerate i)) else some 0) =
+-      (fun i => some (if output.slots.project
+-        ((canonicalLayout output.context.axes).enumerate i) = p then
++      (fun i => some (if output.dest (output.slots.project
++        ((canonicalLayout output.context.axes).enumerate i)) = p then
+           term.value ρ ((canonicalLayout output.context.axes).enumerate i) else 0)) := by
+     funext i
+     split <;> rfl
+   have hf := fold_some ((List.finRange (canonicalLayout output.context.axes).count).map
+-    (fun i => if output.slots.project
+-      ((canonicalLayout output.context.axes).enumerate i) = p then
++    (fun i => if output.dest (output.slots.project
++      ((canonicalLayout output.context.axes).enumerate i)) = p then
+         term.value ρ ((canonicalLayout output.context.axes).enumerate i) else 0))
+   simp only [List.map_map, Function.comp_def] at hf
+   rw [hi, hf, List.finRange, List.map_ofFn, List.sum_ofFn]
+   congr 1
+   rw [term.fiber_partition]
+   exact Equiv.sum_comp (canonicalLayout output.context.axes).enumerate
+-    (fun x => if output.slots.project x = p then term.value ρ x else 0)
++    (fun x => if output.dest (output.slots.project x) = p then term.value ρ x else 0)
+ 
+ /-- Proposition 19.1, term-level: a pure normalized body pushes forward to its
+ original-read global fiber. Program collection is a separate occurrence-relabeling step. -/
+@@ -121,7 +122,7 @@ theorem pure_correspondence (output : AdmittedOutput source σ)
+ theorem Term.empty_fiber (output : AdmittedOutput source σ)
+     (term : Term source output.context σ) (ρ : Store (fun _ => K) σ)
+     (p : Coord (σ.signature output.tensor).axes)
+-    (h : ∀ x, output.slots.project x ≠ p) :
++    (h : ∀ x, output.dest (output.slots.project x) ≠ p) :
+     term.globalFiber output ρ p = 0 := by
+   rw [term.fiber_partition]
+   simp [h]
+diff --git a/leanncd/LeanNCD/Semantics/Source/Fiber.lean b/leanncd/LeanNCD/Semantics/Source/Fiber.lean
+index 19d4b68f..dd8f34ab 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Fiber.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Fiber.lean
+@@ -262,8 +262,8 @@ theorem Term.output_global_support (output : AdmittedOutput source σ)
+ def Term.globalDestination (output : AdmittedOutput source σ)
+     (term : Term source output.context σ) (v : UIDVal term.globalContext) :
+     Coord (σ.signature output.tensor).axes :=
+-  output.sourceSlots.projectWithin term.globalEmbedding v
+-    (term.output_global_support output)
++  output.dest (output.sourceSlots.projectWithin term.globalEmbedding v
++    (term.output_global_support output))
+ 
+ def Term.globalFiber (output : AdmittedOutput source σ)
+     (term : Term source output.context σ) (ρ : Store (fun _ => K) σ)
+-- 
+2.50.1 (Apple Git-155)
+

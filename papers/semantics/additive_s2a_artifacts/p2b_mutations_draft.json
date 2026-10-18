@@ -1,0 +1,83 @@
+[
+ {
+  "label": "P2b-i oracle destination from output.indices (forms ignored)",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "let output ← destination statement.output.origin shape assignment statement.output.forms",
+  "new": "let output ← slots statement.output.origin assignment statement.output.indices",
+  "targets": ["Semantics.SourceOracleAffineTest"],
+  "expect": ["SourceOracleAffineTest.lean:79:0", "SourceOracleAffineTest.lean:84:0", "SourceOracleAffineTest.lean:89:0", "SourceOracleAffineTest.lean:100:0", "SourceOracleAffineTest.lean:104:0", "SourceOracleAffineTest.lean:120:0", "SourceOracleAffineTest.lean:131:0", "SourceOracleAffineTest.lean:140:0", "SourceOracleAffineTest.lean:141:0", "SourceOracleAffineTest.lean:145:0"]
+ },
+ {
+  "label": "P2b-ii collisions keep last write instead of sum",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "total := total + product",
+  "new": "total := product",
+  "targets": ["Semantics.SourceOracleAffineTest"],
+  "expect": ["SourceOracleAffineTest.lean:89:0", "SourceOracleAffineTest.lean:100:0", "SourceOracleAffineTest.lean:104:0", "SourceOracleAffineTest.lean:131:0", "SourceOracleAffineTest.lean:145:0", "SourceOracleAffineTest.lean:168:0"]
+ },
+ {
+  "label": "P2b-iii coefficient sign flipped",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "value := value + coef * (p.2 : Int)",
+  "new": "value := value - coef * (p.2 : Int)",
+  "targets": ["Semantics.SourceOracleAffineTest"],
+  "expect": ["SourceOracleAffineTest.lean:75:0", "SourceOracleAffineTest.lean:79:0", "SourceOracleAffineTest.lean:84:0", "SourceOracleAffineTest.lean:100:0", "SourceOracleAffineTest.lean:104:0", "SourceOracleAffineTest.lean:120:0", "SourceOracleAffineTest.lean:125:0", "SourceOracleAffineTest.lean:131:0", "SourceOracleAffineTest.lean:140:0", "SourceOracleAffineTest.lean:141:0"]
+ },
+ {
+  "label": "P2b-iv c0 offset ignored",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "let mut value : Int := form.1",
+  "new": "let mut value : Int := 0",
+  "targets": ["Semantics.SourceOracleAffineTest"],
+  "expect": ["SourceOracleAffineTest.lean:84:0", "SourceOracleAffineTest.lean:89:0", "SourceOracleAffineTest.lean:120:0", "SourceOracleAffineTest.lean:140:0", "SourceOracleAffineTest.lean:141:0", "SourceOracleAffineTest.lean:145:0", "SourceOracleAffineTest.lean:159:0"]
+ },
+ {
+  "label": "P2b-v empty term fiber reads 1",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "pure ⟨term.origin, occurrences, total⟩",
+  "new": "pure ⟨term.origin, occurrences, if occurrences.isEmpty then 1 else total⟩",
+  "targets": ["Semantics.SourceOracleAffineTest"],
+  "expect": ["SourceOracleAffineTest.lean:79:0", "SourceOracleAffineTest.lean:84:0", "SourceOracleAffineTest.lean:89:0", "SourceOracleAffineTest.lean:120:0", "SourceOracleAffineTest.lean:125:0", "SourceOracleAffineTest.lean:131:0", "SourceOracleAffineTest.lean:140:0", "SourceOracleAffineTest.lean:141:0", "SourceOracleAffineTest.lean:145:0"]
+ },
+ {
+  "label": "P2b-vi Observation inverts output.indices for non-bare rows",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Observation.lean",
+  "old": "unless statement.output.forms == statement.output.indices.map WriteForm.single do",
+  "new": "unless true do",
+  "targets": ["Semantics.SourceOracleAffineTest"],
+  "expect": ["SourceOracleAffineTest.lean:79:0", "SourceOracleAffineTest.lean:84:0", "SourceOracleAffineTest.lean:89:0", "SourceOracleAffineTest.lean:100:0", "SourceOracleAffineTest.lean:120:0", "SourceOracleAffineTest.lean:131:0", "SourceOracleAffineTest.lean:140:0", "SourceOracleAffineTest.lean:141:0", "SourceOracleAffineTest.lean:145:0", "SourceOracleAffineTest.lean:168:0"]
+ },
+ {
+  "label": "P2b-vii out-of-range image wraps instead of failing",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "else throw (unavailable here (.writeOutOfRange slot value extent))",
+  "new": "else pure (value % (extent : Int)).toNat",
+  "targets": ["Semantics.SourceOracleAffineTest"],
+  "expect": ["SourceOracleAffineTest.lean:158:0", "SourceOracleAffineTest.lean:159:0"]
+ },
+ {
+  "label": "P2b-viii row occurrence values keep last instead of summing contracted terms",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Observation.lean",
+  "old": "(g.1, g.2 + o.value)",
+  "new": "(g.1, o.value)",
+  "targets": ["Semantics.SourceOracleAffineTest"],
+  "expect": ["SourceOracleAffineTest.lean:131:0", "SourceOracleAffineTest.lean:145:0"]
+ },
+ {
+  "label": "P2b-ix oracle support omits axes mentioned only by the forms",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "let support := statement.output.forms.flatMap WriteForm.uids ++",
+  "new": "let support := [] ++",
+  "targets": ["Semantics.SourceOracleAffineTest"],
+  "expect": ["SourceOracleAffineTest.lean:168:0"]
+ }
+]

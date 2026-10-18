@@ -1,0 +1,36 @@
+From b6e39e58db16420c33dc6a28e294f5a765d9944c Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sat, 17 Oct 2026 19:53:11 -0700
+Subject: [PATCH 3/3] proto(s2a-p2a): NativeSource admits through
+ admitSourceAffine
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ leanncd/LeanNCD/Semantics/Source/NativeLegs.lean | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/leanncd/LeanNCD/Semantics/Source/NativeLegs.lean b/leanncd/LeanNCD/Semantics/Source/NativeLegs.lean
+index 54e79980..96082df5 100644
+--- a/leanncd/LeanNCD/Semantics/Source/NativeLegs.lean
++++ b/leanncd/LeanNCD/Semantics/Source/NativeLegs.lean
+@@ -10,7 +10,7 @@ open NumericalProfile
+ structure NativeSource where
+   snapshot : SourceSnapshot
+   admitted : AdmittedSource
+-  admission : admitSource snapshot = .ok admitted
++  admission : admitSourceAffine snapshot = .ok admitted
+ 
+ def NativeSource.program (source : NativeSource) : TLProgram :=
+   ⟨source.snapshot.resolved.decls, source.snapshot.resolved.stmts⟩
+@@ -259,7 +259,7 @@ structure NativeRun where
+ /-- Structural shared-profile eligibility is metadata, not a gate on observing actual
+ backend failures. Neither leg falls back to the other. -/
+ def runNative (snapshot : SourceSnapshot) : Except SourceDiagnostic NativeRun :=
+-  match h : admitSource snapshot with
++  match h : admitSourceAffine snapshot with
+   | .error error => .error error
+   | .ok admitted =>
+     let source : NativeSource := ⟨snapshot, admitted, h⟩
+-- 
+2.50.1 (Apple Git-155)
+

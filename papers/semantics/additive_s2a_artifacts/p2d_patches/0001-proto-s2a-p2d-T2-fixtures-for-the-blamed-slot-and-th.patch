@@ -1,0 +1,74 @@
+From 6d35f5cdd09ee29d77cc4748da8689f7ffc4d054 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sun, 18 Oct 2026 15:18:25 -0700
+Subject: [PATCH] proto(s2a-p2d): T2 fixtures for the blamed slot and the rank
+ check (survivors of P2c M1/M10)
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ .../Semantics/SourceAdmissionAffineTest.lean  | 23 +++++++++++++++++++
+ .../p2d_mutations_draft.json                  | 20 ++++++++++++++++
+ 2 files changed, 43 insertions(+)
+ create mode 100644 papers/semantics/additive_s2a_artifacts/p2d_mutations_draft.json
+
+diff --git a/leanncd/test/Semantics/SourceAdmissionAffineTest.lean b/leanncd/test/Semantics/SourceAdmissionAffineTest.lean
+index 72c2f964..85192553 100644
+--- a/leanncd/test/Semantics/SourceAdmissionAffineTest.lean
++++ b/leanncd/test/Semantics/SourceAdmissionAffineTest.lean
+@@ -136,4 +136,27 @@ private def shiftedRead : RHSExpr := rhs [[.read "X" [.shift a 1]]]
+ #guard refused (admitSourceAffine (snap 3 [k] (.assign "Y" [.affine (.scale 2 a)] shiftedRead)))
+   readOrigin isAffine
+ 
++/-! (f) the BLAMED destination slot and the rank check (added after mutation cycles T2-M1 and
++T2-M10 survived: every earlier out-of-range fixture failed at slot 0, and no fixture wrote a
++different number of slots than the destination's rank). -/
++private def isRank (expected actual : Nat) : SourceCause → Bool
++  | .rank e r => e == expected && r == actual
++  | _ => false
++
++-- `Y[a, a+1] := X[a]`, `Y` over `[a, k]`: slot 0 fits, slot 1 images 1, 2 (`|k| = 2`).
++-- The blame is slot 1, not slot 0. Neighbour: `|k| = 3` admits.
++#guard refused (admitSourceAffine (snap 2 [a, k]
++    (.assign "Y" [.free a, .affine (.shift a 1)] readX))) (outSlot 1) isOutOfRange
++#guard view (admitSourceAffine (snap 3 [a, k]
++    (.assign "Y" [.free a, .affine (.shift a 1)] readX))) ==
++  some [([(0, [(1, 7)]), (1, [(1, 7)])], [7], [[0, 1], [1, 2]], true)]
++
++-- Rank: two slots written into a rank-1 `Y`, and one slot into a rank-2 `Y`. The refusal is
++-- `.rank <destination rank> <slot count>` at slot `min` of the two. Neighbour: the matching
++-- rank (the `.scale` fixture in (c)) admits.
++#guard refused (admitSourceAffine (snap 3 [k]
++    (.assign "Y" [.free a, .affine (.scale 1 a)] readX))) (outSlot 1) (isRank 1 2)
++#guard refused (admitSourceAffine (snap 3 [a, k]
++    (.assign "Y" [.affine (.shift a 0)] readX))) (outSlot 1) (isRank 2 1)
++
+ end SourceAdmissionAffineTest
+diff --git a/papers/semantics/additive_s2a_artifacts/p2d_mutations_draft.json b/papers/semantics/additive_s2a_artifacts/p2d_mutations_draft.json
+new file mode 100644
+index 00000000..f142b258
+--- /dev/null
++++ b/papers/semantics/additive_s2a_artifacts/p2d_mutations_draft.json
+@@ -0,0 +1,20 @@
++[
++ {
++  "label": "T2-M1 range-error slot forced to 0",
++  "task": "T2",
++  "file": "LeanNCD/Semantics/Source/Admission.lean",
++  "old": "slot := some bad } .writeOutOfRange",
++  "new": "slot := some 0 } .writeOutOfRange",
++  "targets": ["Semantics.SourceAdmissionAffineTest"],
++  "expect": ["SourceAdmissionAffineTest.lean:148:0"]
++ },
++ {
++  "label": "T2-M10 rank check removed",
++  "task": "T2",
++  "file": "LeanNCD/Semantics/Source/Admission.lean",
++  "old": "if forms.length ≠ sig.length then",
++  "new": "if False then",
++  "targets": ["Semantics.SourceAdmissionAffineTest"],
++  "expect": ["SourceAdmissionAffineTest.lean:157:0", "SourceAdmissionAffineTest.lean:159:0"]
++ }
++]
+-- 
+2.50.1 (Apple Git-155)
+

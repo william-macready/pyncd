@@ -1,0 +1,56 @@
+[
+ {
+  "label": "P3b-M1 collision predicate inverted (writeCollides)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "images.eraseDups.length < images.length",
+  "new": "images.eraseDups.length == images.length",
+  "targets": ["Semantics.SourceDifferentialScatterTest"],
+  "expect": ["SourceDifferentialScatterTest.lean:137:0", "SourceDifferentialScatterTest.lean:138:0", "SourceDifferentialScatterTest.lean:144:0"]
+ },
+ {
+  "label": "P3b-M2 multi-writer detection removed",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "length > 1).map decl",
+  "new": "length > 100).map decl",
+  "targets": ["Semantics.SourceDifferentialScatterTest"],
+  "expect": ["SourceDifferentialScatterTest.lean:142:0"]
+ },
+ {
+  "label": "P3b-M3 extent condition removed",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "if nonBareWrite st && declared != derived &&",
+  "new": "if false && declared != derived &&",
+  "targets": ["Semantics.SourceDifferentialScatterTest"],
+  "expect": ["SourceDifferentialScatterTest.lean:144:0"]
+ },
+ {
+  "label": "P3b-M4 native-outcome post-check removed (confirms bypassed); the masking negative must die",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "if confirms native c then return",
+  "new": "if true || confirms native c then return",
+  "targets": ["Semantics.SourceDifferentialScatterTest"],
+  "expect": ["SourceDifferentialScatterTest.lean:140:0", "SourceDifferentialScatterTest.lean:147:0", "SourceDifferentialScatterTest.lean:148:0", "SourceDifferentialScatterTest.lean:151:0"]
+ },
+ {
+  "label": "P3b-M5 restored occurrence-count check removed; the tamper fixture must die",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/NumericalProfile.lean",
+  "old": "unless fiber.occurrences.length == expectedCount do",
+  "new": "unless true || fiber.occurrences.length == expectedCount do",
+  "targets": ["Semantics.SourceDifferentialScatterTest"],
+  "expect": ["SourceDifferentialScatterTest.lean:183:0"]
+ },
+ {
+  "label": "P3b-M6 oracleOccurrences replaced by the empty list for non-bare rows (exactly 10 failure lines printed: possibly truncated)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Observation.lean",
+  "old": "pure ⟨row, none, ← oracleOccurrences source row⟩",
+  "new": "pure ⟨row, none, []⟩",
+  "targets": ["Semantics.SourceDifferentialScatterTest"],
+  "expect": ["SourceDifferentialScatterTest.lean:130:0", "SourceDifferentialScatterTest.lean:131:0", "SourceDifferentialScatterTest.lean:134:0", "SourceDifferentialScatterTest.lean:135:0", "SourceDifferentialScatterTest.lean:137:0", "SourceDifferentialScatterTest.lean:138:0", "SourceDifferentialScatterTest.lean:140:0", "SourceDifferentialScatterTest.lean:142:0", "SourceDifferentialScatterTest.lean:143:0", "SourceDifferentialScatterTest.lean:144:0"]
+ }
+]
