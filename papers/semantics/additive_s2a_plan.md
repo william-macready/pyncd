@@ -19,8 +19,11 @@ Manifest: `papers/additive_s2a_mutations_post.json` (28 cycles).
 
 **Goal.** The Source differential's exact oracle and the Source-level correspondence proofs cover writes whose LHS
 slots are integer-affine forms over the statement's axes (`Y[2*a]`, `Y[a+1]`, `Y[a+b]`, `Y[2, a]`, `Y[3]`, diagonals)
-and scatters with `fill = 0`, `reduce in {sum, rejectCollisions}`, so that S3a can claim scatter-collision semantics
-validated against an independent reference. Concretely:
+and scatters with `fill = 0`, `reduce in {sum, rejectCollisions}`, so that S3a has an independent reference for
+scatter-collision semantics. What is ASSERTED: four-leg parity on non-colliding affine `.assign` writes (rows a, b, c),
+oracle-vs-executed-core parity on collisions (T3), and, after the review-driven addition T4-A2, legacy-vs-oracle value
+agreement on the collision-sum scatters (legacy only: the checked plan refuses those slots by capability). Before A2 the
+collision-sum agreement was only a comment and `p3_observed.md`. Concretely:
 1. `AdmittedOutput` carries a virtual write shape and a destination map `dest`; the fiber/correspondence/program
    theorems are stated through `dest` (T1).
 2. A second admission entry `admitSourceAffine` admits affine and policy-checked scatter writes and refuses
@@ -52,7 +55,14 @@ patches, 28 mutation cycles (`slice-plan` §0).
   (a stored proof would break retargeting `{ o with tensor := t, dest := d }` used by `SourceAffineDestinationTest`).
 - The oracle's independence from `dest` is by construction (its code never mentions `dest`, `sourceSlots` or the
   admitted `shape`; it uses the destination TABLE ENTRY's extents). No fixture can distinguish a `dest`-based oracle
-  (they are equal by `FormsSpec`); the observable variant is mutation (i) of T3.
+  (they are equal by `FormsSpec`); the observable variant is mutation (i) of T3. SCOPE OF THAT CLAIM (review F2, F3):
+  it is independence from `dest` ONLY. The forms are extracted by `idxAffineForm`, which the oracle's input
+  (`AdmittedOutput.forms`, via `Admission`) shares with production's lowering, compile and scan code, so a defect in
+  `idxAffineForm` is invisible to every differential row; only the T3 hand-valued fixtures pin it, and they cover
+  `.scale`, a two-unit-axis `.affine` and `.const` only (no `.shift` value fixture, no negative coefficient). Also,
+  `FormsSpec` is a Prop proved for the two output builders only: a hand-built or retargeted `AdmittedOutput` (the T1 test's
+  `retarget` builds one whose `forms` and `dest` disagree) carries no agreement and must never reach the oracle,
+  `Observation` or `NumericalProfile`; today only T1's proof test builds one.
 - f32 is the default dtype; the oracle and reference evaluator are f64-only. Every differential fixture in this slice
   declares f64 through the donor `snap` helpers (`SourceOracleAffineTest.snap`); no checked-plan f32 fixture is in
   scope (the Source differential's native legs are the checked plan and legacy evaluator on f64 programs).
@@ -104,9 +114,13 @@ Final whole-branch review: TWO Opus lenses (§5). One fix dispatch per finding g
 ## 2. Global constraints (exact values)
 
 - **Baseline (measured).** `LeanNCD Tests` on main `6fad5161` before the slice: 8814 jobs, green. Expected after all
-  four tasks: **8818 jobs** (four new test modules, one per task). The prototype measured the full `Tests` at its tip:
-  8818 jobs, "Build completed successfully", `Semantics.AxiomAudit` prints only `propext`, `Classical.choice`,
-  `Quot.sound`. Per-task job counts at intermediate states are UNMEASURED.
+  four tasks: **8818 jobs**. The prototype measured the full `Tests` at its tip: 8818 jobs, "Build completed
+  successfully", `Semantics.AxiomAudit` prints only `propext`, `Classical.choice`, `Quot.sound`. The prototype's own
+  series was 8816 (T1 state, one new module: +2), 8817 (T2 + T4-01), 8818 (T3 state), 8818 (tip, although T4 registers a
+  fourth module: increments 2, 1, 1, 0 are unexplained). So the total is the check, NOT a per-module count of one: the
+  executor confirms that all four new test modules appear BUILT in the final `Tests` log by grepping their names. The
+  controller separately built the T1..T3 task state (all five Lake targets, 8508-8584 jobs, listed in the record);
+  other intermediate states were not built.
 - **New test modules (lakefile.toml registration, one per task).** `Semantics.SourceAffineDestinationTest` (T1),
   `Semantics.SourceAdmissionAffineTest` (T2), `Semantics.SourceOracleAffineTest` (T3),
   `Semantics.SourceDifferentialScatterTest` (T4). No existing test is semantically edited; the single forced edit is
@@ -154,6 +168,10 @@ Final whole-branch review: TWO Opus lenses (§5). One fix dispatch per finding g
 | Unproved/untested paths (`p2a_findings.md` "Not done"): (1) no statement/source-level `FormsSpec` theorem for `admitSourceAffine`; (2) no `admitSourceAffine_originals`; (3) no fixture for an all-`.const` write at admission level (empty support, `shape = []`); (4) no fixture for an RHS reading an axis the LHS does not mention (the T3 fixture 6/9 cover it at oracle level only); (5) `writeOutOfRange` slot index tested only at slot 0 before the T2 survivor fixtures, now also slot 1; (6) the `.rank` mismatch path (closed by the T2 survivor fixture) | listed; items 1-3 unowned |
 | Known limitation: an executor occurrence whose contracted fiber is EMPTY (extent-0 contracted axis) leaves no oracle occurrence for non-bare rows | unowned; no fixture |
 | Differential renderer does not print `ComparisonRun.conditions` | unowned |
+| Unmeasured guards (review F8): the T2 range accept-neighbours and the affine-READ refusal guards are killed by no cycle (`T2-M2`, `T2-M7` stop the build at a proof; a proof-compatible STRICTER range check such as `writeValue f v + 1 < a.extent` is the mutation they exist for and is not in the manifest) | unowned; add that cycle if the guards are ever relied on |
+| Over-detection and under-confirmation of the T4 conditions (review F9): `writeCollides` counts every term's read axes (a multi-term `Y[2*a] := X[a] + W[b]` reads as colliding because of `b`); two single-writer extent conditions on DIFFERENT tensors are never confirmed (`shapeOnly` needs every binding issue to belong to the head's declaration: safe direction, a generic divergence); `derivedShape` with a negative coefficient goes through `Int.toNat` and is unprobed | unowned |
+| Enumeration cost: admission's range check (`coordAll` over the support box), the oracle and `writeCollides` (`eraseDups`, quadratic in the box) enumerate the whole box; fixture-sized only. Empty extents behave (vacuous check, no occurrence) | unowned |
+| Bare-slot `.scatter` with `reduce := rejectCollisions` and a CONTRACTED axis (review F11): `admitAffineStatement` sends it to the bare path, the oracle sums over the contracted axis, `detectConditions` skips it (`nonBareWrite` false), and whether production rejects it is UNPROBED (the `writeCollides` docstring says production counts a contracted axis as a collision) | T4-A1 probes it as part of the origin-binding fixture |
 
 ## 3. Sibling audit (case x class): deliverable of T2 and T4
 
@@ -168,14 +186,15 @@ marked `*` have no guarding fixture. Derived from the findings files and a `rg` 
 |---|---|---|---|---|---|
 | `AdmittedStatement.destination`, `Term.globalDestination`, `Term.fiber_partition`, `collectedBody*`, `empty_fiber`, `AdmittedStatement.fiber_partition` (T1) | R (composes `dest`) | R (at virtual `shape`) | S (not used) | R (types) | S (not used) |
 | `Permutation`/`Program.destination`/collection theorems via `statement.destination` | R (through `destination`, unfolded nowhere) | S | S | S | S |
-| Raw chain: `StatementFields`, `RawStatementFields`, `CertifiedRawStatement.output_projection`, `RawOutputSlots` | F (pairs with `IsBare`; destination equation holds for every output) | F (bare-slot conjunct + `IsBare`) | R (`RawOutputSlots raw memo slots output.indices`) | F | S* (no raw reading of forms) |
+| Raw chain: `StatementFields`, `RawStatementFields`, `CertifiedRawStatement.output_projection`, `RawOutputSlots` | R under `IsBare` (pairs with `IsBare`; the destination equation holds for every output) | R under `IsBare` (reads `sourceSlots.uids`/`.project` through the bare witness; review F5: not "forbidden") | R (`RawOutputSlots raw memo slots output.indices`) | F | S* (no raw reading of forms) |
+| `AdmittedStatement.destination_pullback` (statement CHANGED in T1-01), `destination_bare` (new), `pure_correspondence`, `Term.output_global_support`, `Term.globalFiber_reenumerate`, `Observation.sourceDebugFrom`/`sourceDebugAffine` (entry consumers) | R (through `destination`) | R | S | R (types) | S |
 | `admitStatement` / `admitSource` (default) | R (builds identity `dest`) | R | R | R (signature axes) | R (`indices.map single`) |
 | `admitAffineWrite`, `admitAffineStatement`, `admitSourceAffine` | R (builds `dest` from `hfit`) | R | R (`formsSupport`) | R (`supportShape`) | R |
 | `Oracle.termFiber` / `destination` | S BY DESIGN (never mentions `dest`) | S (reads use `slots`; output does not) | S | S BY DESIGN (uses table-entry extents) | R |
 | `Observation.normalizeOracleContribution` | S | S | R (bare: inversion over indices) | S | F (throws `nonBareWrite` unless forms == `indices.map single`) |
 | `Observation.oracleOccurrences` / `normalizeOracleRow` | S | S | S | S | R (non-bare: restriction to `output.context.axes` uids, valued by sums) |
 | `NumericalProfile.checkFiber` | S | S | R (bare support) | S | R (non-bare: forms uids, `formsAt`; occurrence-count check restored in T4) |
-| `Differential.detectConditions` (`nonBareWrite`, `derivedShape`, `writeCollides`) | S | S | S | S | R |
+| `Differential.detectConditions` (`nonBareWrite`, `derivedShape`, `writeCollides`) | S | S | R (`nonBareWrite` is `forms != indices.map single`; review F5) | S | R |
 | `Diagnostics.oracleContributions` (`flatMap occurrences`) | S | S | S | S | S (identical on bare rows) |
 | `Provenance.admitIdentifiedSource` (default entry) | S | S | S | S | S (admission refuses affine first) |
 | `Provenance.admitIdentifiedSourceAffine` | S* (runtime `Nodup` only; misleading cause) | S | S | S | S |
@@ -207,9 +226,9 @@ and are noted in the record):
 | Task | Patches | Fixtures (guard/example) | Cycles | Prototype turns (measured; self-reported) | Cap, split |
 |---|---|---|---|---|---|
 | T1 | 5 | 3 / 2 | 3 | P1: 77 (self-report 104) | 60 turns, 250k; SPLIT FLAGGED: dispatch A = T1-01..T1-03 (core proofs) then dispatch B = T1-04, T1-05 (gating + test) |
-| T2 | 3 | 28 / 0 | 10 | P2a: 52 (self 60-75), P2c: 30 | 60 turns, 250k; no split (apply + build + cycles); `Admission.lean` rebuild is the long step |
+| T2 | 3 | 28 / 0 | 10 | P2a: 52 (self 60-75), P2c: 30 | 60 turns, 250k; no split (apply + build; cycles are the controller's); `Admission.lean` rebuild is the long step |
 | T3 | 3 | 16 / 0 | 9 | P2b: 35 (self 74) | 60 turns, 250k; no split |
-| T4 | 6 | 17 / 0 | 6 | P3: 34 + P3b: 60 = 94 (self 57 + ~80, controller figure 156) | 60 turns, 250k; SPLIT FLAGGED: dispatch A = T4-01..T4-04 (production), dispatch B = T4-05, T4-06 + cycles |
+| T4 | 6 | 17 / 0 | 6 | P3: 34 + P3b: 60 = 94 (self 57 + ~80, controller figure 156) | 60 turns, 250k; THREE dispatches: A = T4-01..T4-04 (production + the `T4-03` test scaffold), B = T4-05, T4-06 (fixtures AND the head-only `confirms` change in `Differential.lean`: its reviewer must read `classification`/`confirms`, review F6), C = the review-driven additions A1, A2 below (UNPROTOTYPED, adds a manifest entry or two). Mutation cycles are ALWAYS the controller's step (§1), never inside an implementer dispatch |
 
 Execution should cost less than prototyping (it applies patches), but this is a hope, not a measurement: the
 prototype figures above are what was measured. Surface any breach.
@@ -262,6 +281,10 @@ Mutation cycles: `--task T2` runs 10: 6 killed by guards (`T2-M3`, `M4`, `M5`, `
 Those two were SURVIVORS in P2c (no fixture noticed them); `T2-03-survivor-fixtures.patch` adds the fixtures that kill
 them (blamed slot 1 of `Y` over `[a, k]`; `.rank 1 2` at slot 1), and the manifest records the observed killing
 positions. Slot-blame and rank-check fixtures are therefore load-bearing: do not drop `T2-03`.
+Unmeasured (review F8): `T2-M2` and `T2-M7` stop the build at a proof, so NO cycle exercises the range accept-neighbour
+guards or the affine-READ refusal guards; `T2-M9`'s `expect` list (line 89 only, recorded before `T2-03`) is a subset
+and omits the new slot-1 guard at line 148 (`mutation-manifest.sh` checks that every listed string appears, so this is
+harmless; do not add 148 without observing it).
 Expected: targets green; no existing test flipped; `NativeSource` unchanged in this task (it switches in T4-01).
 Deliverable: §3 table rows for `admitSource` vs `admitSourceAffine` confirmed (see §3).
 Reviewer lens: refusal completeness. Does any program that `admitSource` refused and `admitSourceAffine` now admits
@@ -319,6 +342,38 @@ stricter (decided after the native legs and only when `confirms` holds); `usedDT
 divergence (parked).
 Reviewer lens: no masking. For each condition, does an unrelated native failure still classify as `nativeFailure`
 (fixture `fMask`)? Does `confirms` need BOTH native legs? Is the count check restored for non-bare rows (tamper guard)?
+The prototype does NOT fully satisfy this lens (independent review F1, Major): `confirms` is cause-only. The legacy leg
+matches ANY `.scatterCollision`, the checked leg ANY runtime `scatterCollision` OR ANY preparation `.capability _`,
+the multi-writer condition ANY `scanAxisNotIter` compile error, and after `T4-05` only the HEAD condition is
+confirmed. A native failure from a DIFFERENT statement of the same source is therefore absorbed. `fMask` differs from the
+condition only in error KIND (compile vs evaluation), never in origin.
+
+**T4-A1 (review-driven, UNPROTOTYPED; dispatch C; Opus review of the diff).** Bind each leg's confirmation to the
+condition's own tensor/statement wherever the native error carries one, test-first:
+ 1. FIRST observe (do not guess) with the `observe` helper of `SourceDifferentialScatterTest.lean`: which native errors
+    carry a tensor or statement identity (`scatterCollision` carries a destination name; check whether the checked
+    plan's `capability` refusal and the legacy `scanAxisNotIter` compile error name one) and what production does on a
+    bare-slot `.scatter` with `reduce := rejectCollisions` and a CONTRACTED axis (`S[i] := X[i, j]`, review F11).
+    Record the observed table in `papers/semantics/additive_s2a_record.md`.
+ 2. Negative fixture (donor: `fMask`, change: make both statements raise the SAME error KIND from different tensors):
+    statement S1 = the detected collision `Y[a+b] := X[a]*W[b]`; statement S0 = a second, undetected failure of the same
+    kind on another tensor (a bare-slot `rejectCollisions` scatter with a contracted axis if the probe shows production
+    rejects it, else another undetected same-kind failure the implementer constructs). Expected: NOT
+    `knownContractDifference` for the S1 condition; the classification stays a native failure. The implementer pins the
+    OBSERVED classification, and the fixture must fail on the prototype's cause-only `confirms`.
+ 3. Production change in `Differential.lean` (`confirms` and the per-leg predicates): compare the native error's
+    tensor/statement with the condition's. Where a native error carries NO identity (report which legs/causes), leave that
+    leg cause-only, say so in a docstring and in the §2 table, and keep the other leg origin-bound.
+ 4. Manifest: add one cycle per bound leg (confirmation reverted to cause-only; expect = the new negative fixture's
+    line, copied from the observed failure). The controller runs them; a surviving cycle is a finding.
+**T4-A2 (review-driven, UNPROTOTYPED; dispatch C).** Make the stated purpose of the slice an assertion (review F4): add to
+`SourceDifferentialScatterTest.lean` (append at the END of the file) guards asserting that the LEGACY leg's output tensors
+equal the oracle's for the collision-sum scatters `fD` and `fD'`, named and commented as LEGACY-ONLY agreement (the checked
+plan refuses those slots by capability, so four-leg parity is impossible), plus an accept-neighbour (a collision-free
+scatter whose legacy values equal the oracle's). Cycle: one mutation of the ORACLE's collision handling that makes
+the legacy-vs-oracle guards fail (cheap: `Oracle.lean` only). An optional second cycle mutating legacy `Eval/Scatter.lean`'s
+`.sum` branch (`prev + val` to `val`) is EXPENSIVE (it rebuilds the `Eval` chain); run it once by hand and record the
+result in the record rather than shipping it in the manifest.
 
 ### T5. Documentation sweep (no code)
 
@@ -332,7 +387,10 @@ Edit, by value-grep (commands; each hit is either updated or recorded as unchang
 4. Gap audit: `rg -n "G04|F01" papers/semantics/tensor_logic_semantic_gap_audit.md`: state what S2a closes (affine
    LHS/scatter in the oracle) and what remains (S2b, S3).
 5. Design note and decision note §E rows: `rg -n "S2a|S2b|S3a" papers/semantics/oracle_extension_s2_design.md papers/semantics/additive_production_decision_note.md`;
-   mark S2a landed with the merge hash after merge; Sync the master-plan completion blockquote.
+   mark S2a landed with the merge hash after merge. There is no separate master-plan blockquote for this lineage
+   (`rg -c master` over the docs listed in this task finds none; review F10): the decision note §E rows and the design note
+   §7 are the places. Step 1 is expected to find nothing in the two AGENTS.md files (0 hits for the job counts there);
+   the real edits are steps 2-6 and the discoverability entry.
 6. Oracle statements in the Source modules: `rg -n "bare-slot fragment|bare slot|BareOutputSlots|crossStatement|refuses.*affine|\.affine" <file>` for
    each of `leanncd/LeanNCD/Semantics/Source/{Oracle,Admission,Observation,Differential,NumericalProfile,Adapter}.lean`.
    Any docstring saying the oracle is limited to a bare-slot fragment is rewritten to the affine fragment with sum-only scatter.
@@ -354,7 +412,8 @@ reviews run in parallel, each appending findings to `papers/semantics/additive_s
 raw-chain gating (the raw entry still refuses affine; nothing proves a raw reading of forms; `output_projection`
 unchanged signature), the independence-by-construction claim of the oracle;
 (b) regression/differential: no pre-existing test edited beyond the two forced lines; `compareSource` switch cannot
-wrongly refuse a program; no condition masks a native divergence; the §3 starred cells.
+wrongly refuse a program; no condition masks a native divergence (including the same-kind/different-origin case closed
+by T4-A1) and legacy-vs-oracle collision sums are asserted (T4-A2); the §3 starred cells.
 One fix dispatch per finding group.
 
 Merge: `ExitWorktree` keep, then `/usr/bin/git -C /Users/williammacready/code/python/pyncd merge --no-ff worktree-additive-s2a-affine-write-slots`
@@ -367,4 +426,6 @@ Merge: `ExitWorktree` keep, then `/usr/bin/git -C /Users/williammacready/code/py
 S2b tropical carriers; S3a/S3b; affine READ slots; `admitSourceAffine_originals` + a proved `Nodup`; statement/source-level
 `FormsSpec` theorem; all-const write admission fixture; `usedDType` masking; `admitAffineWrite` body dedup; conditions
 for the checked plan's capability refusals; scatter parity fixture on the oracle leg; extent-0 contracted fiber under
-non-bare rows; renderer printing `conditions`; JAX unprobed.
+non-bare rows; renderer printing `conditions`; JAX unprobed; a hand-valued `.shift`/negative-coefficient fixture for
+`idxAffineForm`; a stricter-range-check mutation for the T2 accept-neighbours; the `writeCollides`/`derivedShape`/
+multi-tensor-extent limits (§2 table).

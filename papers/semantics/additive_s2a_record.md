@@ -147,3 +147,44 @@ duplicated body; no statement/source-level `FormsSpec` theorem; no `admitSourceA
 admission fixture; empty-contracted-fiber limitation for non-bare rows; the renderer does not print
 `ComparisonRun.conditions`. Prototype scratch branches `proto-s2a-p0`, `-p1`, `-p2a`, `-p2b`, `-p3` (and `-p2c`/`-p2d`
 if present) remain: ask before `git branch -D`.
+
+## 9. Controller verification of the T1..T3 task state (2026-10-18)
+
+After the write-up, the controller applied the first 11 patches (`T1-01` .. `T3-03`) with `git apply --index` on the slice
+branch (clean at the plan commit), built the targets below, and restored the branch with `git reset --hard HEAD`
+(discarding only that patch application). All `Build completed successfully`:
+
+| Target | Jobs |
+|---|---|
+| `Semantics.SourceOracleAffineTest` | 8520 |
+| `Semantics.SourceDifferentialTest` (existing differential tests unaffected by T1..T3) | 8564 |
+| `Semantics.SourceAdmissionAffineTest` | 8508 |
+| `Semantics.SourceAffineDestinationTest` | 8520 |
+| `Semantics.SourceRawCorrespondenceTest` (the one forced test edit) | 8523 |
+| `Semantics.AxiomAudit` | 8584 |
+
+This closes the "reordered patches never built together" gap for T1..T3. The T4 state is the prototype tip (full `Tests`
+8818 jobs, `AxiomAudit` standard axioms only). Task states T1 alone and T1+T2 alone were not built separately.
+
+## 10. Independent plan review (2026-10-18) and disposition
+
+Review file: `papers/semantics/additive_s2a_review_plan.md` (one Opus reviewer, two lenses; 0 Critical, 2 Major, 8 Minor,
+1 Question; 53 harness tool calls, 209k subagent tokens). The controller read the evidence for both Majors (the quoted
+`confirms` predicates; the `fD`/`fD'` guards asserting only `nativeFailure`) and agrees with both.
+
+| Finding | Severity | Disposition |
+|---|---|---|
+| F1 `confirms` is cause-only (a same-kind failure from another statement is absorbed; the `fMask` fixture differs only in error kind) | Major | Plan §4 T4 adds `T4-A1` (origin binding + same-kind/different-origin negative fixture + one cycle per bound leg), UNPROTOTYPED, dispatch C; row in §2 |
+| F4 the slice's purpose (collision-sum reference) has no assertion behind it | Major | Plan §0 goal reworded to what is asserted; `T4-A2` adds legacy-vs-oracle value guards for `fD`/`fD'` (legacy-only) plus a cycle |
+| F2 independence is from `dest` only; `idxAffineForm` is shared | Minor | Plan §0 bullet extended; hand-valued `.shift`/negative-coefficient fixture parked |
+| F3 `retarget` builds `forms`/`dest`-disagreeing outputs | Minor | Plan §0 bullet extended (such outputs must never reach the oracle) |
+| F5 §3 cells wrong/omitted | Minor | Cells corrected, rows added |
+| F6 T4 split labels, cycle owner inconsistent | Minor | Plan §4: three dispatches, cycles always the controller's |
+| F7 job-count statement | Minor | Plan §2 cites the measured series (2, 1, 1, 0 increments, the zero is unexplained); the executor greps the four module names in the final log |
+| F8 guards killed by no cycle; `T2-M9` expect subset | Minor | Plan T2 text and §2 row; stricter-range cycle parked |
+| F9 detection/confirmation limits | Minor | §2 rows |
+| F10 T5 master-plan clause | Minor | T5 step 5 rewritten (no such doc for this lineage) |
+| F11 bare-slot `rejectCollisions` with a contracted axis unprobed | Question | `T4-A1` step 1 probes it |
+
+Not adjudicated by anyone: the unexplained 0-job increment for the T4 module (F7), and the checked-plan `capability`
+refusal's lack of statement identity (decided inside `T4-A1` step 1).
