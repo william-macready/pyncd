@@ -233,14 +233,14 @@ Branch `worktree-additive-s2a-affine-write-slots`. Dispatches so far, in order (
 | T1 implementer | `1a8b49a7` | Sonnet, ~28 turns | `AdmittedOutput` generalised (`shape`, `dest`, `slots`, `forms`), `IsBare` witness |
 | T1 review | none | Opus | APPROVE |
 | T1 mutation cycles | none | controller | 3/3 (all proof kills) |
-| T2 implementer | `8cbdacb1` | not recorded | `admitSourceAffine` admits affine writes and policy-checked scatter |
+| T2 implementer | `8cbdacb1` | Sonnet 5.5 | `admitSourceAffine` admits affine writes and policy-checked scatter |
 | T2 review | none | Sonnet | ACCEPT WITH CHANGES |
-| T2 fix | `c9c86181` | not recorded | +18 guards (negative/mixed-sign image, bare-slot `scatterPolicy`, `freeNorm`/scan refusal), 28 to 46; 3 hand mutations all killed |
+| T2 fix | `c9c86181` | Sonnet 5.5 | +18 guards (negative/mixed-sign image, bare-slot `scatterPolicy`, `freeNorm`/scan refusal), 28 to 46; 3 hand mutations all killed |
 | T2 mutation cycles | none | controller | 10/10 |
-| T3 implementer | `801d4edf` | not recorded | oracle evaluates write forms; `Observation` derives affine occurrences |
-| T3 review | none | not recorded | APPROVE |
+| T3 implementer | `801d4edf` | Sonnet 5.5 | oracle evaluates write forms; `Observation` derives affine occurrences |
+| T3 review | none | Sonnet 5.5 | APPROVE |
 | T3 mutation cycles | none | controller | 9/9 |
-| T4 implementer (all 8 patches) | `78cecd9d` (T4-A), `7cf28ba2` (T4-B), `e54795e9` (T4-C) | not recorded | one dispatch in three stage commits instead of the plan's three dispatches (deviation; patch application only) |
+| T4 implementer (all 8 patches) | `78cecd9d` (T4-A), `7cf28ba2` (T4-B), `e54795e9` (T4-C) | Sonnet 5.5 | one dispatch in three stage commits instead of the plan's three dispatches (deviation; patch application only) |
 | T4 A+B review | none | Sonnet | ACCEPT WITH FINDINGS: Major = extent-condition masking (verified, documented, not fixed: plan §2) |
 | T4-C review | none | Opus | APPROVE, 2 Minor (plan §2) |
 | T4 mutation cycles | none | controller | 10/10 (total 32/32) |
