@@ -15,6 +15,7 @@ inductive Cause
   | coordinateRank (expected actual : Nat)
   | coordinateBound (slot coordinate extent : Nat)
   | offsetBound (offset length : Nat)
+  | writeOutOfRange (slot : Nat) (value : Int) (extent : Nat)
   deriving DecidableEq, Repr
 
 structure Unavailable where
@@ -106,6 +107,24 @@ private def slots (origin : SourceOrigin) (assignment : List (UID × Nat))
     | some p => .ok p.2
     | none => .error (unavailable { origin with slot := some slot } (.missingUID uid))
 
+/-- Destination coordinate of one occurrence: each write form `c0 + Σ coef * value(uid)` is
+evaluated over the assignment as an `Int`. Independent of `dest`. An image outside
+`[0, extent)` is an error here, never wrapped, even though admission already rules it out. -/
+private def destination (origin : SourceOrigin) (shape : List Nat)
+    (assignment : List (UID × Nat)) (forms : List WriteForm) :
+    Except Unavailable (List Nat) := do
+  unless forms.length == shape.length do
+    throw (unavailable origin (.coordinateRank shape.length forms.length))
+  (forms.zip shape).zipIdx.mapM fun ((form, extent), slot) => do
+    let here := { origin with slot := some slot }
+    let mut value : Int := form.1
+    for (coef, uid) in form.2 do
+      match assignment.find? (fun p => p.1 == uid) with
+      | some p => value := value + coef * (p.2 : Int)
+      | none => throw (unavailable here (.missingUID uid))
+    if 0 ≤ value ∧ value < (extent : Int) then pure value.toNat
+    else throw (unavailable here (.writeOutOfRange slot value extent))
+
 private def assignments : List Axis → List (List (UID × Nat))
   | [] => [[]]
   | a :: rest =>
@@ -160,12 +179,14 @@ private def termFiber (admitted : AdmittedSource) (store : List Tensor)
     (term : Term admitted.source.context statement.output.context
       admitted.source.table.declarations)
     (coordinate : List Nat) : Except Unavailable TermFiber := do
-  let support := statement.output.indices ++ term.sourceReads.flatMap (·.indices)
+  let support := statement.output.forms.flatMap WriteForm.uids ++
+    term.sourceReads.flatMap (·.indices)
   let axes := admitted.source.context.axes.filter (fun a => a.uid ∈ support)
+  let shape := (admitted.source.table.entry statement.output.tensor).axes.map (·.extent)
   let mut occurrences := []
   let mut total : ℚ := 0
   for assignment in assignments axes do
-    let output ← slots statement.output.origin assignment statement.output.indices
+    let output ← destination statement.output.origin shape assignment statement.output.forms
     if output == coordinate then
       let mut product : ℚ := 1
       let mut reads := []
