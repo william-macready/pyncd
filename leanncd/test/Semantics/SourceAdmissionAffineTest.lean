@@ -160,3 +160,79 @@ private def isRank (expected actual : Nat) : SourceCause → Bool
     (.assign "Y" [.affine (.shift a 0)] readX))) (outSlot 1) (isRank 2 1)
 
 end SourceAdmissionAffineTest
+
+namespace SourceAdmissionAffineTest
+
+/-! (g) NEGATIVE and MIXED-SIGN images (added after the T2 review: every earlier fixture had
+non-negative coefficients and failed only the UPPER bound). `|a| = 2`, `|b| = 3`. -/
+
+-- `Y[a-1] := X[a]` into `|k| = 9`: images -1, 0. The upper bound is far away, so only the lower
+-- bound `0 ≤ image` refuses (kills: deleting the `0 ≤` conjunct, which `Int.toNat` would turn
+-- into a silent alias of cell 0). Neighbour: `Y[a+0]` into the same `Y` admits.
+#guard refused (admitSourceAffine (snap 9 [k] (.assign "Y" [.affine (.shift a (-1))] readX)))
+  (outSlot 0) isOutOfRange
+#guard view (admitSourceAffine (snap 9 [k] (.assign "Y" [.affine (.shift a 0)] readX))) ==
+  some [([(0, [(1, 7)])], [7], [[0], [1]], true)]
+-- Negative scale: `Y[-a]`, images 0, -1.
+#guard refused (admitSourceAffine (snap 9 [k] (.assign "Y" [.affine (.scale (-1) a)] readX)))
+  (outSlot 0) isOutOfRange
+
+-- Mixed sign `Y[a-b] := X[a]`, `|k| = 9`: images -2..1, the minimum at the corner (a, b) = (0, 2).
+-- Refused although the maximum (1) fits. Neighbour `Y[2+a-b]`: images 0..3, admitted at
+-- `|k| = 4` and refused at `|k| = 3` (image 3, the maximum at the corner (1, 0)).
+#guard refused (admitSourceAffine (snap 9 [k]
+    (.assign "Y" [.affine (.affine 0 [(1, a), (-1, b)])] readX))) (outSlot 0) isOutOfRange
+#guard view (admitSourceAffine (snap 4 [k]
+    (.assign "Y" [.affine (.affine 2 [(1, a), (-1, b)])] readX))) ==
+  some [([(2, [(1, 7), (-1, 8)])], [7, 8], [[0], [3], [2], [1]], true)]
+#guard refused (admitSourceAffine (snap 3 [k]
+    (.assign "Y" [.affine (.affine 2 [(1, a), (-1, b)])] readX))) (outSlot 0) isOutOfRange
+
+-- Negative coefficient whose image fits: `Y[3-a] := X[a]`, images 3, 2. Admitted at `|k| = 4`,
+-- refused at `|k| = 3`: the maximum 3 sits at a = 0, the ORIGIN, while the far corner a = 1 gives
+-- 2 and fits, so a corner-only (max-coordinate) enumeration would wrongly admit the `|k| = 3`
+-- case. Kills: replacing `coordAll` by a far-corner check; a sign-blind range check.
+#guard view (admitSourceAffine (snap 4 [k]
+    (.assign "Y" [.affine (.affine 3 [(-1, a)])] readX))) ==
+  some [([(3, [(-1, 7)])], [7], [[3], [2]], true)]
+#guard refused (admitSourceAffine (snap 3 [k]
+    (.assign "Y" [.affine (.affine 3 [(-1, a)])] readX))) (outSlot 0) isOutOfRange
+
+/-! (h) BARE-slot scatter policy: the policy is checked before the slot dispatch, so an all-free
+`.scatter` with `reduce := max` or `fill := 1` is refused, not admitted as a plain `.assign`
+(kills: moving the policy test into the non-bare branch). Neighbours: bare `sum` (in (d)) and
+bare `rejectCollisions` admit. -/
+private def bareScatter (opts : ScatterOpts) : SourceSnapshot :=
+  snap 3 [a] (.scatter "Y" [.free a] readX opts)
+
+#guard refused (admitSourceAffine (bareScatter { reduce := .max })) policyOrigin isPolicy
+#guard refused (admitSourceAffine (bareScatter { fill := 1, reduce := .sum })) policyOrigin isPolicy
+#guard view (admitSourceAffine (bareScatter { reduce := .rejectCollisions })) ==
+  some [([(0, [(1, 7)])], [7], [[0], [1]], true)]
+
+/-! (i) `.freeNorm` and scan slots under `admitSourceAffine`: refused by `outputForms` at the
+blamed slot with today's causes, before any range check (the `.iter` declaration refusal is the
+earlier `checkAxes` stage and is covered under `admitSource`). Observed: all of these reach
+`outputForms` (slot-level origin, stage `.output`). Neighbour: `Y[a+0, a]` admits. -/
+private def isMarked : SourceCause → Bool | .unsupported .marked => true | _ => false
+private def isScanSlot : SourceCause → Bool | .unsupported .scanSlot => true | _ => false
+
+#guard refused (admitSourceAffine (snap 3 [a] (.assign "Y" [.freeNorm a] readX)))
+  (outSlot 0) isMarked
+#guard refused (admitSourceAffine (snap 3 [k, a]
+    (.assign "Y" [.affine (.shift a 0), .freeNorm a] readX))) (outSlot 1) isMarked
+#guard refused (admitSourceAffine (snap 3 [a] (.assign "Y" [.iterNext a] readX)))
+  (outSlot 0) isScanSlot
+#guard refused (admitSourceAffine (snap 3 [k, a]
+    (.assign "Y" [.affine (.shift a 0), .iterNext a] readX))) (outSlot 1) isScanSlot
+#guard refused (admitSourceAffine (snap 3 [k, a]
+    (.assign "Y" [.affine (.shift a 0), .iterAt a 0] readX))) (outSlot 1) isScanSlot
+-- Slot 0 (`const 5`, `|k| = 3`) would fail the range check, yet the scan slot at 1 is blamed:
+-- `outputForms` runs before the range check.
+#guard refused (admitSourceAffine (snap 3 [k, a]
+    (.assign "Y" [.affine (.const 5), .iterNext a] readX))) (outSlot 1) isScanSlot
+#guard view (admitSourceAffine (snap 3 [k, a]
+    (.assign "Y" [.affine (.shift a 0), .free a] readX))) ==
+  some [([(0, [(1, 7)]), (0, [(1, 7)])], [7], [[0, 0], [1, 1]], true)]
+
+end SourceAdmissionAffineTest
