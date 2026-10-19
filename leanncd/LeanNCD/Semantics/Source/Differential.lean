@@ -180,7 +180,9 @@ inductive Classification
 
 /-! Source-shape contract differences for affine writes and scatters. `detectConditions` looks at
 the source alone; `confirms` additionally requires BOTH native legs to show exactly the predicted
-outcome, so a condition can never explain away an unrelated native divergence. -/
+outcome. That keeps an unrelated native divergence visible only for the origin-bound legs: the
+checked runtime collision and the multi-writer `scanAxisNotIter` stay cause-only, and while
+`scatterExtentOverridesDeclared` fires it suppresses all value comparison for the program. -/
 
 private def nonBareWrite (st : AdmittedStatement source) : Bool :=
   st.output.forms != st.output.indices.map WriteForm.single

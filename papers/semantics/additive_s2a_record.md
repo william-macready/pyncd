@@ -223,3 +223,37 @@ which cannot be separated). That is an OVERRUN of about 2x. The largest items: P
 controller's own polling and long tool outputs (469k peak), and the two review-driven prototype rounds (A1 + A2 + review =
 11.3M). Lessons: several dispatches ended while a long build ran and needed re-notification; every prototype dispatch
 overran its harness turn budget (self-reports understate by ~30%); the controller should not poll builds with loops.
+
+## 12. Execution (2026-10-18)
+
+Branch `worktree-additive-s2a-affine-write-slots`. Dispatches so far, in order (guard counts are of the final tree).
+
+| Dispatch | Commit | Model / size | Outcome |
+|---|---|---|---|
+| T1 implementer | `1a8b49a7` | Sonnet, ~28 turns | `AdmittedOutput` generalised (`shape`, `dest`, `slots`, `forms`), `IsBare` witness |
+| T1 review | none | Opus | APPROVE |
+| T1 mutation cycles | none | controller | 3/3 (all proof kills) |
+| T2 implementer | `8cbdacb1` | not recorded | `admitSourceAffine` admits affine writes and policy-checked scatter |
+| T2 review | none | Sonnet | ACCEPT WITH CHANGES |
+| T2 fix | `c9c86181` | not recorded | +18 guards (negative/mixed-sign image, bare-slot `scatterPolicy`, `freeNorm`/scan refusal), 28 to 46; 3 hand mutations all killed |
+| T2 mutation cycles | none | controller | 10/10 |
+| T3 implementer | `801d4edf` | not recorded | oracle evaluates write forms; `Observation` derives affine occurrences |
+| T3 review | none | not recorded | APPROVE |
+| T3 mutation cycles | none | controller | 9/9 |
+| T4 implementer (all 8 patches) | `78cecd9d` (T4-A), `7cf28ba2` (T4-B), `e54795e9` (T4-C) | not recorded | one dispatch in three stage commits instead of the plan's three dispatches (deviation; patch application only) |
+| T4 A+B review | none | Sonnet | ACCEPT WITH FINDINGS: Major = extent-condition masking (verified, documented, not fixed: plan §2) |
+| T4-C review | none | Opus | APPROVE, 2 Minor (plan §2) |
+| T4 mutation cycles | none | controller | 10/10 (total 32/32) |
+| T5 documentation sweep | the commit titled `docs(semantics): S2a documentation sweep and execution record (T5)` | Sonnet | docs only plus one docstring qualification in `Differential.lean` |
+
+Final guard counts: `SourceAffineDestinationTest` 3, `SourceAdmissionAffineTest` 46, `SourceOracleAffineTest` 16,
+`SourceDifferentialScatterTest` 38. The 32-cycle manifest is unchanged (no cycles were added by the T2 fix).
+
+Incident: one garbled T2-fix dispatch was stopped before it acted.
+
+| Item | Result |
+|---|---|
+| Final full build (`Tests`) | pending (controller) |
+| Final whole-branch reviews | pending (controller) |
+| Merge to local `main` | pending (controller) |
+| Measured execution total (Rule 6, target <= ~175M) | pending (controller) |

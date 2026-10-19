@@ -836,6 +836,11 @@ Iverson and unary factors, scatter, scans, marked output slots, non-sum
 aggregation, predicates, complex types, and writes to input tensors. The
 generic theorems hold over any `Semiring`, not necessarily commutative. Results
 about runs hold over ℚ through the rational profile of Section 4.6.
+This paragraph describes the default entry `admitSource`. A second entry,
+`admitSourceAffine` (S2a, implemented on branch `worktree-additive-s2a-affine-write-slots`, pending
+merge), also admits integer-affine and constant LEFT-hand slots and sum-only scatter; affine READ
+slots, guards and the other refusals above stay refused, and the raw-parse chain
+(`RawCorrespondence`, `RawSemanticConnection`) is not extended to affine statements.
 
 #### Binding and admission
 
@@ -981,6 +986,15 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   multi-definition programs are value-compared. Scatter, max/min and scan multi-writer sets are
   rejected (`CompileError.multiWriterScatter`, `multiWriterAlgebra`, `multiWriterScan`) and are not
   yet collected. See [the decision note](additive_production_decision_note.md).
+  **Affine writes and scatter (S2a, implemented on branch `worktree-additive-s2a-affine-write-slots`,
+  pending merge).** Through `admitSourceAffine` the oracle evaluates integer-affine left-hand slots
+  (`AdmittedOutput.forms`, an integer-affine form per destination axis) and sum-only scatter, so a
+  colliding write is summed. Production does not agree, and the differential classifies the difference as
+  a `StructuralCondition` (`scatterCollisionRejected`, `multiWriterScatter`,
+  `scatterExtentOverridesDeclared`) only when both native legs show exactly the predicted outcome;
+  S3a converts these to agreement. While `scatterExtentOverridesDeclared` is confirmed no value of that
+  program is compared (documented limitation, see the S2a plan §2). The raw-parse theorem for affine
+  statements is a documented gap. See [the S2a record](additive_s2a_record.md).
 - **Evidence.** 79 named fixtures (one of them, F16, evaluates a generated corpus
   of exactly 18 programs) and 39 implementation mutations: 18 proof-protected kills and 21
   executable-fixture kills, not 39 runtime differential samples. Six historical
@@ -1306,7 +1320,8 @@ fixture controls, every buffer manifest entry has evidence beyond a library-proo
 The first source slice is described in
 [Section 4.7](#47-bounded-source-correspondence-and-differential-debugging). The
 remaining source work is broader than that finite bare-slot fragment: scans,
-marked arrays and slices, affine writes, guards and Iverson factors, nonlinear
+marked arrays and slices, affine reads (affine writes are covered by the S2a oracle on its
+branch, pending merge, without a raw-parse theorem), guards and Iverson factors, nonlinear
 primitives and their before-versus-after-collection boundary, unpinned dimension
 inference, general expression substitution with renaming applied by admission,
 and rank synthesis, plus schedule construction for programs outside the fragment.
@@ -1323,8 +1338,9 @@ algebra, max-plus and min-plus sorts, out-of-range writes as errors) is recorded
 [the decision note](additive_production_decision_note.md). Slice 1 implemented collection
 for sum-algebra bare-slot writers (`collectDefinitions`, `desugarMultiWriters`,
 `ScanStmt.publications`, `PlanBindings.privateSlots`); the note's other slices (scatter,
-max/min and scan multi-writer sets, the oracle for affine write slots and tropical carriers,
-out-of-range write errors, max-plus) remain planned. Two slice-1 caveats on the routed
+max/min and scan multi-writer sets, tropical carriers,
+out-of-range write errors, max-plus) remain planned; the oracle for affine write slots (S2a) is
+implemented on branch `worktree-additive-s2a-affine-write-slots`, pending merge. Two slice-1 caveats on the routed
 path: `route` runs `desugarMultiWriters` before physicalization, and a routed collector step
 records the same step as a product (`.contract` is (×, Σ, 0)), so routed steps do not keep
 term structure (pre-existing for a user-written `A + B`; the real fix is parked with S3). A

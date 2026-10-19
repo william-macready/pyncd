@@ -132,7 +132,7 @@ Final whole-branch review: TWO Opus lenses (§5). One fix dispatch per finding g
   | Task | Test file | `#guard` | example/theorem | Manifest cycles |
   |---|---|---|---|---|
   | T1 | `SourceAffineDestinationTest.lean` | 3 | 2 | 3 (all PROOF kills) |
-  | T2 | `SourceAdmissionAffineTest.lean` | 28 | 0 | 10 (6 guard kills, 2 proof kills `T2-M2`/`T2-M7`, 2 guard kills `T2-M1`/`T2-M10` that the `6d35f5cd` survivor fixtures made possible) |
+  | T2 | `SourceAdmissionAffineTest.lean` | 46 (28 from the patches + 18 appended by `c9c86181` after the T2 review: negative and mixed-sign image, bare-slot `scatterPolicy`, `freeNorm`/scan refusal) | 0 | 10 (6 guard kills, 2 proof kills `T2-M2`/`T2-M7`, 2 guard kills `T2-M1`/`T2-M10` that the `6d35f5cd` survivor fixtures made possible) |
   | T3 | `SourceOracleAffineTest.lean` | 16 | 0 | 9 |
   | T4 | `SourceDifferentialScatterTest.lean` | 38 (17 + 21 from T4-07/T4-08) | 0 | 10 |
 
@@ -176,6 +176,12 @@ Final whole-branch review: TWO Opus lenses (§5). One fix dispatch per finding g
 | Enumeration cost: admission's range check (`coordAll` over the support box), the oracle and `writeCollides` (`eraseDups`, quadratic in the box) enumerate the whole box; fixture-sized only. Empty extents behave (vacuous check, no occurrence) | unowned |
 | Bare-slot `.scatter` with `reduce := rejectCollisions` and a CONTRACTED axis (review F11): `admitAffineStatement` sends it to the bare path, the oracle sums over the contracted axis, `detectConditions` skips it (`nonBareWrite` false), and production DOES reject it (probed by A1: legacy `evalScatter Z: collision`, checked runtime `scatterCollision`), so it classifies as `nativeFailure` with no condition explaining it (pinned as `fF11`) | detection of the contracted-axis collision: parked, ~1 dispatch |
 | T4-08 residuals: the checked RUNTIME collision and the multi-writer `scanAxisNotIter` carry no tensor identity and stay cause-only (a same-kind failure from another statement on those legs is still absorbed); binding is per tensor, not per statement; the checked arm's tightening to the two affine-slot capability constructors has no cycle or fixture; the reverse statement orders of `fOriginL`/`fOriginC` were not pinned | locator in `PlanRunFailure` (out of scope); the rest ~0.5 dispatch |
+| EXTENT-CONDITION MASKING (review T4AB Major, verified): while `scatterExtentOverridesDeclared` is confirmed, `compareNative` returns the binding issues before `compareValues`, so no tensor's value in that program is compared and an unrelated value divergence in the same program is absorbed (before S2a the same program was a loud native discrepancy) | unowned; fix = per-tensor binding in `compareNative`, ~1-2 dispatches |
+| T4-C review Minor (extends the F9 row): with head-only confirmation plus origin binding, two detected collisions where the head `Y` is single-axis and a later `Z` is multi-axis classify `nativeFailure` (checked preflight refuses `Z` first), not `known:collision`: safe direction | unowned; ~0.5 dispatch |
+| T4AB review Minors: the both-legs requirement of `confirms` is half-tested (survivors: `checkedCollision := true`, dropping the checked `scanAxisNotIter` clause of the multi-writer condition, dropping either `shapeOnly` conjunct); `multiWriterScatter` confirms on an incidental `scanAxisNotIter`; the `fF'` comment says no condition although `detectConditions` emits the extent condition unconfirmed; only the head condition is tried | unowned; ~1 dispatch (guards/cycles) |
+| T1 review Minors: `T1-M3` is guard-unkillable (one-term fixture); `AdmittedStatement.destination` is never evaluated by a guard; `IsBare` holds vacuously for any `dest` when a declared axis has extent 0 (the identity fact is `admitOutput_identity`); the `output_projection` conclusion is generalised through `dest` though its hypotheses are unchanged (T1 checklist (e) reworded accordingly) | unowned; ~0.5 dispatch |
+| T3 review Minors: no negative-coefficient fixture, no two-term affine statement fixture, only slot 0 of a rank-1 destination tested | unowned; ~0.5 dispatch |
+| T2 review Minors: `admitAffineWrite` copies of the nonSum/nonIdentity/undeclaredTensor/role-input checks are unexercised; `AxiomAudit` does not mention the new theorems | unowned; ~0.5 dispatch |
 
 ## 3. Sibling audit (case x class): deliverable of T2 and T4
 
@@ -230,7 +236,7 @@ and are noted in the record):
 | Task | Patches | Fixtures (guard/example) | Cycles | Prototype turns (measured; self-reported) | Cap, split |
 |---|---|---|---|---|---|
 | T1 | 5 | 3 / 2 | 3 | P1: 77 (self-report 104) | 60 turns, 250k; SPLIT FLAGGED: dispatch A = T1-01..T1-03 (core proofs) then dispatch B = T1-04, T1-05 (gating + test) |
-| T2 | 3 | 28 / 0 | 10 | P2a: 52 (self 60-75), P2c: 30 | 60 turns, 250k; no split (apply + build; cycles are the controller's); `Admission.lean` rebuild is the long step |
+| T2 | 3 | 46 / 0 (28 + 18 review guards) | 10 | P2a: 52 (self 60-75), P2c: 30 | 60 turns, 250k; no split (apply + build; cycles are the controller's); `Admission.lean` rebuild is the long step |
 | T3 | 3 | 16 / 0 | 9 | P2b: 35 (self 74) | 60 turns, 250k; no split |
 | T4 | 8 | 38 / 0 | 10 | P3: 34 + P3b: 60 = 94 (self 57 + ~80, controller figure 156); A2 45 harness tool calls (self 35); A1 57 (self ~46) | 60 turns, 250k; THREE dispatches: A = T4-01..T4-04 (production + the `T4-03` test scaffold), B = T4-05, T4-06 (fixtures AND the head-only `confirms` change in `Differential.lean`: its reviewer must read `classification`/`confirms`, review F6), C = `T4-07` (A2 guards) and `T4-08` (A1 origin binding; Opus review of the diff). A1 and A2 are PROTOTYPED (patches shipped, cycles run). Mutation cycles are ALWAYS the controller's step (§1), never inside an implementer dispatch |
 
@@ -259,7 +265,7 @@ form; `admitOutput_identity`/`admitOutput_bare` exist; (c) theorem NAMES unchang
 (`Term.fiber_partition`, `Term.globalDestination_partition`, `Term.collectedBody_correspondence`, `Term.empty_fiber`,
 `AdmittedStatement.fiber_partition`); (d) `StatementFields`/`RawStatementFields` pair the bare-slot conjunct with
 `IsBare` (left-nested in position 7, so positional `obtain` sites are unchanged); (e) `CertifiedRawStatement.output_projection`
-keeps its signature, no new hypothesis; (f) CONSEQUENCE: `admitStatement_fields` cannot prove `StatementFields` for
+keeps its hypotheses (no new one), while its conclusion is generalised through `dest` (reworded after the T1 review); (f) CONSEQUENCE: `admitStatement_fields` cannot prove `StatementFields` for
 affine statements: check the raw entry still refuses them.
 Reviewer lens: proof soundness. Is `IsBare` the right gate (does the raw chain need the witness or the equation)? Does
 every theorem that formerly talked about the bare destination still say something strictly stronger? Opus review.
@@ -275,7 +281,7 @@ Files: `leanncd/LeanNCD/Semantics/Source/{Admission,Adapter}.lean`, `leanncd/lak
 Lake targets: `LeanNCD.Semantics.Source.Admission`, `Semantics.SourceAdmissionAffineTest`,
 `Semantics.SourceAdmissionAcceptanceTest` (the pre-existing affine-refusal guard must still pass unchanged).
 Commit message: `feat(semantics): admitSourceAffine admits affine writes and policy-checked scatter (S2a T2)`.
-Fixtures: 28 `#guard` (donor: `SourceAdmissionAcceptanceTest` snapshot helpers; accept-neighbours throughout: e.g.
+Fixtures: 28 `#guard` from the patches, 46 on the final tree (18 more appended by `c9c86181` after the T2 review: negative/mixed-sign image, bare-slot `scatterPolicy`, `freeNorm`/scan refusal) (donor: `SourceAdmissionAcceptanceTest` snapshot helpers; accept-neighbours throughout: e.g.
 `snap 3 [k]` admits where `snap 2 [k]` refuses). Cases: flip (`Y[a+1]` refused `writeOutOfRange` under the new entry,
 `.unsupported .affine` under `admitSource`); neighbour; `Y[2*a]`; `Y[2, a]`; `Y[a+b]`; diagonal; scatter `sum`,
 `rejectCollisions` admitted and `max`/`min`/`overwrite`/`fill := 1` refused `scatterPolicy`; affine READ refused under both;
@@ -456,3 +462,4 @@ for the checked plan's capability refusals; scatter parity fixture on the oracle
 non-bare rows; renderer printing `conditions`; JAX unprobed; a hand-valued `.shift`/negative-coefficient fixture for
 `idxAffineForm`; a stricter-range-check mutation for the T2 accept-neighbours; the `writeCollides`/`derivedShape`/
 multi-tensor-extent limits (§2 table).
+The review Minors and the extent-condition masking Major recorded in the last six rows of the §2 table (T1, T2, T3, T4-A/B/C reviews) are parked there, not here.
