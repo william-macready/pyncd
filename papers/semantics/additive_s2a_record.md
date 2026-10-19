@@ -253,9 +253,10 @@ Incident: one garbled T2-fix dispatch was stopped before it acted.
 
 | Item | Result |
 |---|---|
-| Final full build (`Tests`) | pending (controller) |
-| Final whole-branch reviews | pending (controller) |
-| Merge to local `main` | pending (controller) |
+| Final full build (`Tests`), run twice: at `42013f71` (before the final-review doc fixes) and at `da90ebfb` (after; the fixes touched two Lean docstrings/comments) | both: 8818 jobs, Build completed successfully, 0 `error`, 0 `sorryAx`/`ofReduceBool`; `Semantics.AxiomAudit`: 6621 constants under `LeanNCD.Semantics`, standard axioms only. In the first log only `SourceOracleAffineTest` and `SourceAffineDestinationTest` print a fresh `Built` line; the other two new test modules were already up to date from the per-task builds and cycle restores (the job total is the check, plan §2) |
+| Unfiltered mutation manifest at `42013f71` | 32/32 cycles passed, exit 0, Lean tree clean afterwards (not re-run at `da90ebfb`: that commit changed only comments/docstrings and prose) |
+| Final whole-branch reviews (two Opus lenses) | (a) proofs: approve, 0 Critical/Major, 1 behavioural Minor (parked, below), 2 wording Minors + 1 nit (fixed in `da90ebfb`); (b) regression/differential: approve, 0 Critical/Major, 3 documentation Minors (fixed in `da90ebfb`). Files `additive_s2a_review_final_A.md`, `additive_s2a_review_final_B.md` |
+| Merge to local `main` | pending (controller; merge hash recorded in the controller's closing note) |
 
 Parked by the final whole-branch review (lens a, finding 1; behavioural minor, deliberately NOT fixed in S2a; plan §2
 row, owner unowned): the bare test is `forms == indices.map WriteForm.single` in `normalizeOracleContribution`,
@@ -265,4 +266,13 @@ coefficient-1 but into a WIDER destination (e.g. `Y[a+0]`, `|a|=2`, `|Y|=9`, adm
 differential reports `referenceDiscrepancy` (loud, wrong blame; the extent condition is skipped too); untested. Fix:
 also require destination extents equal support extents (or record the admission path on the output); touches those
 three functions, one fixture appended at file end, one cycle; ~1-2 dispatches, Rule 14: parked.
-| Measured execution total (Rule 6, target <= ~175M) | pending (controller) |
+
+Measured execution cost (Rule 6, `token-report.py` on the execution session, cumulative input tokens, target <= ~175M):
+**43.6M** in total: controller 11.9M (peak context 203k, 83 turns), implementers 9.8M (T1 1.7, T2 1.5, T2 guard fix 2.2,
+T3 1.8, T4 2.6; the zero-cost line in the report is the stopped garbled dispatch), reviews 14.6M (T1 Opus 1.0, T2 1.2,
+T3 0.9, T4 A+B 2.1, T4-C Opus 1.4, final A 4.2, final B 3.8, of which Opus 10.4M), T5 docs 2.5M, final-review fix 4.8M.
+Dispatch budget (Rule 6: peak <= ~250k and <= ~60 turns): all dispatches stayed under 250k peak context; the final-review fix
+dispatch ran 54 harness turns per the report but 83 tool calls by its own count, over its stated 35-turn budget (self-matching
+`pgrep` monitors that never fired and repeated build polling), still under the 60-turn Rule 6 cap. No other dispatch exceeded
+its budget. Deviations from the plan: T1 and T4 each ran as one dispatch instead of the planned splits (patch application, not
+prototyping); T4 committed in three stages. Unmeasured: the plan's execution-cost hope was never quantified; 43.6M is the first measurement.
