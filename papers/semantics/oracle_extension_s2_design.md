@@ -1,6 +1,6 @@
 # S2 design: oracle extension (affine write slots, exact tropical carriers) and prepare-time B3
 
-Status: brainstormed 2026-10-17; user approved the note and the cut. Not a plan. §5 (B3) landed 2026-10-17 on the Direct path. §4 (S2a) is implemented on branch `worktree-additive-s2a-affine-write-slots`, pending merge (plan `additive_s2a_plan.md`, record `additive_s2a_record.md`); §6 (S2b) is not started. Parent:
+Status: brainstormed 2026-10-17; user approved the note and the cut. Not a plan. §5 (B3) landed 2026-10-17 on the Direct path. §4 (S2a) is landed on local main, merge 7a551faa (plan `additive_s2a_plan.md`, record `additive_s2a_record.md`); §6 (S2b) is not started. Parent:
 `additive_production_decision_note.md` §E (slice outline) and `additive_collection_slice1_record.md` (parked list).
 
 ## 1. Purpose
@@ -112,7 +112,7 @@ Today the Source oracle cannot express those programs, so S3's claims are held b
 ## 7. Sequencing and what each unlocks
 
 B3 (independent, any time) -> S2a plan, execute, land -> S2b plan, execute, land.
-(Status 2026-10-18: B3 landed; S2a implemented on branch `worktree-additive-s2a-affine-write-slots`, pending merge; S2b not started.)
+(Status 2026-10-18: B3 landed; S2a landed on local main, merge 7a551faa; S2b not started.)
 S2a unlocks S3a (scatter ⊕, delete `fill`/`CollisionReduce`, range error); S2b unlocks S3b (tropical sorts, casts,
 constants).
 

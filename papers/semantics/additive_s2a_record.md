@@ -256,7 +256,7 @@ Incident: one garbled T2-fix dispatch was stopped before it acted.
 | Final full build (`Tests`), run twice: at `42013f71` (before the final-review doc fixes) and at `da90ebfb` (after; the fixes touched two Lean docstrings/comments) | both: 8818 jobs, Build completed successfully, 0 `error`, 0 `sorryAx`/`ofReduceBool`; `Semantics.AxiomAudit`: 6621 constants under `LeanNCD.Semantics`, standard axioms only. In the first log only `SourceOracleAffineTest` and `SourceAffineDestinationTest` print a fresh `Built` line; the other two new test modules were already up to date from the per-task builds and cycle restores (the job total is the check, plan §2) |
 | Unfiltered mutation manifest at `42013f71` | 32/32 cycles passed, exit 0, Lean tree clean afterwards (not re-run at `da90ebfb`: that commit changed only comments/docstrings and prose) |
 | Final whole-branch reviews (two Opus lenses) | (a) proofs: approve, 0 Critical/Major, 1 behavioural Minor (parked, below), 2 wording Minors + 1 nit (fixed in `da90ebfb`); (b) regression/differential: approve, 0 Critical/Major, 3 documentation Minors (fixed in `da90ebfb`). Files `additive_s2a_review_final_A.md`, `additive_s2a_review_final_B.md` |
-| Merge to local `main` | pending (controller; merge hash recorded in the controller's closing note) |
+| Merge to local `main` | `7a551faa` (`--no-ff`, 2026-10-19), `git diff --stat main <branch>` empty; NOT pushed (main 20 commits ahead of origin/main); proto-s2a-* scratch branches kept (ask before -D) |
 
 Parked by the final whole-branch review (lens a, finding 1; behavioural minor, deliberately NOT fixed in S2a; plan §2
 row, owner unowned): the bare test is `forms == indices.map WriteForm.single` in `normalizeOracleContribution`,

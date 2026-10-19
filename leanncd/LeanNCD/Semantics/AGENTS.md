@@ -98,8 +98,7 @@ input-buffer certification or unconditional completion is claimed.
 `Semantics.SourceRawCorrespondenceTest` covers ten structural/semantic families,
 including parsed and asymmetric sourceInput donors, in default `Tests`.
 
-Affine write slots (S2a, implemented on branch `worktree-additive-s2a-affine-write-slots`, pending
-merge): `Source.Admission` has TWO admission entries. `admitSource` (default, raw-parse chain) refuses
+Affine write slots (S2a, landed on local main, merge 7a551faa): `Source.Admission` has TWO admission entries. `admitSource` (default, raw-parse chain) refuses
 affine and scatter statements. `admitSourceAffine` (the differential's reference entry, via
 `sourceDebugAffine`) also admits integer-affine and constant LEFT-hand slots and sum-only scatter
 (`fill = 0`, `reduce` in `{sum, rejectCollisions}`). Read slots stay bare; affine READS stay refused.
