@@ -115,7 +115,8 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
          "Semantics.SourceDiagnosticTest", "Semantics.SourceDifferentialFixtures",
          "Semantics.SourceDifferentialAlgebraTest", "Semantics.SourceDifferentialGeometryTest",
          "Semantics.SourceDifferentialIdentityTest", "Semantics.SourceDifferentialNumericalTest",
-         "Semantics.SourceDifferentialPolicyTest", "Semantics.SourceDifferentialCorpusTest",
+         "Semantics.SourceDifferentialPolicyTest", "Semantics.SourceDifferentialScatterTest",
+         "Semantics.SourceDifferentialCorpusTest",
          "Semantics.SourceDifferentialTest"]
 
 # Non-default experimental JAX-bridge codegen library. Deliberately absent from

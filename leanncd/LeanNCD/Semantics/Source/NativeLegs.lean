@@ -10,7 +10,7 @@ open NumericalProfile
 structure NativeSource where
   snapshot : SourceSnapshot
   admitted : AdmittedSource
-  admission : admitSource snapshot = .ok admitted
+  admission : admitSourceAffine snapshot = .ok admitted
 
 def NativeSource.program (source : NativeSource) : TLProgram :=
   ⟨source.snapshot.resolved.decls, source.snapshot.resolved.stmts⟩
@@ -259,7 +259,7 @@ structure NativeRun where
 /-- Structural shared-profile eligibility is metadata, not a gate on observing actual
 backend failures. Neither leg falls back to the other. -/
 def runNative (snapshot : SourceSnapshot) : Except SourceDiagnostic NativeRun :=
-  match h : admitSource snapshot with
+  match h : admitSourceAffine snapshot with
   | .error error => .error error
   | .ok admitted =>
     let source : NativeSource := ⟨snapshot, admitted, h⟩

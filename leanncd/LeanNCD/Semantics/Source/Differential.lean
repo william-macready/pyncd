@@ -178,6 +178,100 @@ inductive Classification
   | nativeDiscrepancy
   deriving Repr
 
+/-! Source-shape contract differences for affine writes and scatters. `detectConditions` looks at
+the source alone; `confirms` additionally requires BOTH native legs to show exactly the predicted
+outcome, so a condition can never explain away an unrelated native divergence. -/
+
+private def nonBareWrite (st : AdmittedStatement source) : Bool :=
+  st.output.forms != st.output.indices.map WriteForm.single
+
+private def rejectsCollisions : Stmt → Bool
+  | .assign .. => true
+  | .scatter _ _ _ opts => opts.reduce == .rejectCollisions
+  | _ => false
+
+/-- Two distinct assignments of the support axes (forms uids and every term's read indices) share
+a destination image. -/
+private def writeCollides (source : AdmittedSource) (st : AdmittedStatement source.source) : Bool :=
+  let uids := st.output.forms.flatMap WriteForm.uids ++
+    st.terms.flatMap (·.sourceReads.flatMap (·.indices))
+  let axes := source.source.context.axes.filter (fun a => a.uid ∈ uids)
+  let image (c : List Nat) : List Int := st.output.forms.map fun f =>
+    f.1 + (f.2.map fun (coef, u) =>
+      coef * (((axes.zip c).find? (·.1.uid == u)).map (fun p => (p.2 : Int)) |>.getD 0)).sum
+  let images := (Oracle.coordinates (axes.map (·.extent))).map image
+  images.eraseDups.length < images.length
+
+/-- The extent production derives per destination dimension: `c0 + Σ coef * extent` (observed on
+P3 fixtures: `2*a` over 4 gives 8, `a+2` gives 6, `a+b` gives 7, a constant `c` gives `c+1`). -/
+private def derivedShape (source : AdmittedSource) (st : AdmittedStatement source.source) :
+    List Nat :=
+  st.output.forms.map fun f =>
+    if f.2.isEmpty then (f.1 + 1).toNat else
+    (f.1 + (f.2.map fun (coef, u) =>
+      coef * ((source.source.context.axes.find? (·.uid == u)).map (fun a => (a.extent : Int))
+        |>.getD 0)).sum).toNat
+
+def detectConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
+    List StructuralCondition :=
+  let collisions := source.statements.filterMap fun st =>
+    if nonBareWrite st &&
+        (snapshot.resolved.stmts[st.original]?.map rejectsCollisions).getD false &&
+        writeCollides source st then
+      some (StructuralCondition.scatterCollisionRejected st.output.origin)
+    else none
+  let decl (st : AdmittedStatement source.source) : Nat :=
+    (source.source.table.entry st.output.tensor).declaration
+  let multi := (source.statements.filter fun st =>
+      nonBareWrite st &&
+        (source.statements.filter fun o => decl o == decl st).length > 1).map decl
+    |>.eraseDups |>.map StructuralCondition.multiWriterScatter
+  let extents := source.statements.filterMap fun st =>
+    let declared := (source.source.table.entry st.output.tensor).axes.map (·.extent)
+    let derived := derivedShape source st
+    if nonBareWrite st && declared != derived then
+      some (StructuralCondition.scatterExtentOverridesDeclared st.output.origin (decl st) derived)
+    else none
+  collisions ++ multi ++ extents
+
+private def legacyCollision : LegacyOutcome → Bool
+  | .failure e => e.phase == .scheduledEvaluation &&
+      (match e.original.error with | .scatterCollision .. => true | _ => false)
+  | _ => false
+
+private def legacyCompile (needle : String) : LegacyOutcome → Bool
+  | .failure e => e.phase == .compilation &&
+      ((toString e.original.error).splitOn needle).length > 1
+  | _ => false
+
+/-- The checked leg refuses a multi-axis/constant slot at preparation (capability) before it can
+reach the collision, so either is the predicted rejection. -/
+private def checkedCollision : CheckedOutcome → Bool
+  | .runtime e => (match e.original.cause with
+      | .execution (.scatterCollision ..) => true | _ => false)
+  | .preparation e => (match e.original.cause with | .capability _ => true | _ => false)
+  | _ => false
+
+private def shapeOnly (declaration : Nat) (derived : List Nat) (o : NativeObservation) : Bool :=
+  match o.outputs with
+  | .error issues => !issues.isEmpty && issues.all fun
+      | .shape m _ actual _ _ => m.declaration == declaration && actual == derived
+      | .length m _ actual _ _ => m.declaration == declaration && actual == derived
+      | _ => false
+  | .ok _ => false
+
+def confirms (native : NativeRun) : StructuralCondition → Bool
+  | .scatterCollisionRejected _ => legacyCollision native.legacy && checkedCollision native.checked
+  | .multiWriterScatter _ => legacyCompile "scanAxisNotIter" native.legacy &&
+      (match native.checked with
+        | .sourceCompilation e => (match e.cause with | .scanAxisNotIter _ => true | _ => false)
+        | _ => false)
+  | .scatterExtentOverridesDeclared _ declaration derived =>
+      (match native.legacy, native.checked with
+        | .observed l, .observed c _ => shapeOnly declaration derived l && shapeOnly declaration derived c
+        | _, _ => false)
+  | .usedDType .. => false
+
 structure ComparisonRun where
   reference : SourceRun
   fixtureDependencyOrder : Option (List Nat)
@@ -187,6 +281,7 @@ structure ComparisonRun where
   referenceComparison : Option ReferenceComparison
   legacyComparison : NativeComparison
   checkedComparison : NativeComparison
+  conditions : List StructuralCondition := []
 
 private def agrees : Except ε (Comparison δ) → Bool
   | .ok .agreement => true
@@ -241,6 +336,8 @@ def ComparisonRun.classification (run : ComparisonRun) : Classification := Id.ru
   match run.native with
   | .error _ => return .nativeUnavailable
   | .ok native =>
+    if let c :: _ := run.conditions then
+      if run.conditions.all (confirms native) then return .knownContractDifference c
     match native.legacy, native.checked with
     | .unavailable _, _ | _, .unavailable _ => return .nativeUnavailable
     | .failure _, _ | _, .sourceCompilation _ | _, .preparation _ | _, .runtime _ =>
@@ -329,7 +426,7 @@ namespace LeanNCD.Semantics.Source
 
 def compareSource (snapshot : SourceSnapshot) (fixtureDependencyOrder : Option (List Nat))
     (fuel : Option Nat := none) : Except Debug.ExecutionError Differential.ComparisonRun := do
-  let reference ← Debug.sourceDebug snapshot fuel
+  let reference ← Debug.sourceDebugAffine snapshot fuel
   let oracle := Oracle.run reference.source.admitted fixtureDependencyOrder
   let native := NativeLegs.runNative snapshot
   let profile := NumericalProfile.checkRunProfile reference oracle
@@ -337,7 +434,8 @@ def compareSource (snapshot : SourceSnapshot) (fixtureDependencyOrder : Option (
     | .error _ => none
     | .ok result => some (Differential.compareReference reference result)
   pure ⟨reference, fixtureDependencyOrder, oracle, native, profile, comparison,
-    Differential.legacyComparison profile native, Differential.checkedComparison profile native⟩
+    Differential.legacyComparison profile native, Differential.checkedComparison profile native,
+    Differential.detectConditions snapshot reference.source.admitted⟩
 
 def renderSourceComparison (result : Except Debug.ExecutionError Differential.ComparisonRun) :
     String :=
