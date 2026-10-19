@@ -229,14 +229,17 @@ def detectConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
   let extents := source.statements.filterMap fun st =>
     let declared := (source.source.table.entry st.output.tensor).axes.map (·.extent)
     let derived := derivedShape source st
-    if nonBareWrite st && declared != derived then
+    -- single-writer tensors only: with several writers production's shape is not one form's extent
+    if nonBareWrite st && declared != derived &&
+        (source.statements.filter fun o => decl o == decl st).length == 1 then
       some (StructuralCondition.scatterExtentOverridesDeclared st.output.origin (decl st) derived)
     else none
-  collisions ++ multi ++ extents
+  -- pipeline order: compile (multi-writer), evaluation (collision), output binding (extent). Only
+  -- the first can be observed, so `classification` confirms the head only.
+  multi ++ collisions ++ extents
 
 private def legacyCollision : LegacyOutcome → Bool
-  | .failure e => e.phase == .scheduledEvaluation &&
-      (match e.original.error with | .scatterCollision .. => true | _ => false)
+  | .failure e => (match e.original.error with | .scatterCollision .. => true | _ => false)
   | _ => false
 
 private def legacyCompile (needle : String) : LegacyOutcome → Bool
@@ -337,7 +340,7 @@ def ComparisonRun.classification (run : ComparisonRun) : Classification := Id.ru
   | .error _ => return .nativeUnavailable
   | .ok native =>
     if let c :: _ := run.conditions then
-      if run.conditions.all (confirms native) then return .knownContractDifference c
+      if confirms native c then return .knownContractDifference c
     match native.legacy, native.checked with
     | .unavailable _, _ | _, .unavailable _ => return .nativeUnavailable
     | .failure _, _ | _, .sourceCompilation _ | _, .preparation _ | _, .runtime _ =>
