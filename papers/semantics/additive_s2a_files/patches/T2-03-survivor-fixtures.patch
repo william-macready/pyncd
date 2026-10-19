@@ -1,0 +1,32 @@
+diff --git a/leanncd/test/Semantics/SourceAdmissionAffineTest.lean b/leanncd/test/Semantics/SourceAdmissionAffineTest.lean
+index 72c2f964..85192553 100644
+--- a/leanncd/test/Semantics/SourceAdmissionAffineTest.lean
++++ b/leanncd/test/Semantics/SourceAdmissionAffineTest.lean
+@@ -136,4 +136,27 @@ private def shiftedRead : RHSExpr := rhs [[.read "X" [.shift a 1]]]
+ #guard refused (admitSourceAffine (snap 3 [k] (.assign "Y" [.affine (.scale 2 a)] shiftedRead)))
+   readOrigin isAffine
+ 
++/-! (f) the BLAMED destination slot and the rank check (added after mutation cycles T2-M1 and
++T2-M10 survived: every earlier out-of-range fixture failed at slot 0, and no fixture wrote a
++different number of slots than the destination's rank). -/
++private def isRank (expected actual : Nat) : SourceCause → Bool
++  | .rank e r => e == expected && r == actual
++  | _ => false
++
++-- `Y[a, a+1] := X[a]`, `Y` over `[a, k]`: slot 0 fits, slot 1 images 1, 2 (`|k| = 2`).
++-- The blame is slot 1, not slot 0. Neighbour: `|k| = 3` admits.
++#guard refused (admitSourceAffine (snap 2 [a, k]
++    (.assign "Y" [.free a, .affine (.shift a 1)] readX))) (outSlot 1) isOutOfRange
++#guard view (admitSourceAffine (snap 3 [a, k]
++    (.assign "Y" [.free a, .affine (.shift a 1)] readX))) ==
++  some [([(0, [(1, 7)]), (1, [(1, 7)])], [7], [[0, 1], [1, 2]], true)]
++
++-- Rank: two slots written into a rank-1 `Y`, and one slot into a rank-2 `Y`. The refusal is
++-- `.rank <destination rank> <slot count>` at slot `min` of the two. Neighbour: the matching
++-- rank (the `.scale` fixture in (c)) admits.
++#guard refused (admitSourceAffine (snap 3 [k]
++    (.assign "Y" [.free a, .affine (.scale 1 a)] readX))) (outSlot 1) (isRank 1 2)
++#guard refused (admitSourceAffine (snap 3 [a, k]
++    (.assign "Y" [.affine (.shift a 0)] readX))) (outSlot 1) (isRank 2 1)
++
+ end SourceAdmissionAffineTest

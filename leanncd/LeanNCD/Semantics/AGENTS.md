@@ -46,7 +46,8 @@ authoritative list) includes `Semantics.ExpressionTest`, `Semantics.NativeTest`,
 `Semantics.ReferenceMachineTest`, `Semantics.RankedMachineTest`,
 `Semantics.ExecutableReferenceTest`, the Part V plan layer's `Semantics.Plan*Test`
 modules and `Semantics.PlanFixtures` (see `Plan/AGENTS.md`), the `Semantics.Source*`
-fixture and test modules, and `Semantics.AxiomAudit`, which fails the build if any
+fixture and test modules (including `SourceAffineDestinationTest`, `SourceAdmissionAffineTest`,
+`SourceOracleAffineTest`, `SourceDifferentialScatterTest`), and `Semantics.AxiomAudit`, which fails the build if any
 `LeanNCD.Semantics` declaration depends on a non-standard axiom.
 
 `Source.Context` supplies UID-keyed dependent valuations, coordinate
@@ -96,6 +97,23 @@ No independent raw denotation, parser correctness, global mint injectivity,
 input-buffer certification or unconditional completion is claimed.
 `Semantics.SourceRawCorrespondenceTest` covers ten structural/semantic families,
 including parsed and asymmetric sourceInput donors, in default `Tests`.
+
+Affine write slots (S2a, implemented on branch `worktree-additive-s2a-affine-write-slots`, pending
+merge): `Source.Admission` has TWO admission entries. `admitSource` (default, raw-parse chain) refuses
+affine and scatter statements. `admitSourceAffine` (the differential's reference entry, via
+`sourceDebugAffine`) also admits integer-affine and constant LEFT-hand slots and sum-only scatter
+(`fill = 0`, `reduce` in `{sum, rejectCollisions}`). Read slots stay bare; affine READS stay refused.
+`AdmittedOutput` carries two views of the destination: `dest` (a function from the virtual write
+shape, for the proof chain) and `forms` (one integer-affine `WriteForm` per destination axis, as DATA,
+for the oracle). `AdmittedOutput.FormsSpec` ties them (proved by `admitOutput_formsSpec` and
+`admitAffineOutput_formsSpec`; deliberately not a field, so `{ o with dest := ... }` still works).
+`AdmittedOutput.IsBare` is a WITNESS (an existential bare slot list plus the projection equation), not
+an equation on `forms`; `StatementFields`/`RawStatementFields` pair their bare-slot conjunct with it.
+EXPLICIT GAP: affine statements have no raw-parse theorem (`admitStatement_fields` proves
+`StatementFields` only for bare statements) and nothing proves a raw reading of `forms`. The oracle's
+collision sum is tested, not proved. Tests: `SourceAffineDestinationTest`, `SourceAdmissionAffineTest`,
+`SourceOracleAffineTest`, `SourceDifferentialScatterTest` (plan and record:
+`papers/semantics/additive_s2a_plan.md`, `additive_s2a_record.md`).
 `Source.Observation` / `Source.Diagnostics` expose actual
 source-linked endpoints and canonical contribution data. `Source.NumericalProfile`
 checks the exact bounded-integer binary64 comparison profile;
@@ -109,8 +127,19 @@ mutation controls, and both final whole-branch reviews have landed. Nothing in
 `Differential` is a theorem: the oracle is tested against, not proved equal to,
 `globalFiber`, and bit parity holds only on the bounded-integer, f64-declared
 profile. Same-LHS multi-statement programs are summed by every backend and compared
-by value on all four legs. `StructuralCondition` has only `usedDType` (an untyped
-f32 tensor); `knownContractDifference` is produced only by it. See the
+by value on all four legs. `StructuralCondition` has `usedDType` (an untyped
+f32 tensor) and three affine-write conditions: `scatterCollisionRejected` (a colliding
+`rejectCollisions` write: legacy collision, checked capability refusal), `multiWriterScatter`
+(any non-bare write among several writers of one tensor, `fG` is two `.assign`s:
+`scanAxisNotIter` on both native legs) and
+`scatterExtentOverridesDeclared` (production derives the destination extent, the oracle uses the
+declared one). `knownContractDifference` is produced only by these. A condition is confirmed only when
+the native legs show the predicted outcome, with limited precision: origin-bound only for the legacy
+collision, the checked affine-slot refusal and the extent condition; the checked runtime collision and
+multi-writer `scanAxisNotIter` are cause-only; only the head condition is confirmed; while the extent
+condition is confirmed no value of that program is compared; the collision-sum scatters `fD`/`fD'` and a
+bare-slot `rejectCollisions` over a contracted axis (F11) end as `nativeFailure` with no condition
+(plan section 2). See the
 [source correspondence record](../../../papers/semantics/source_correspondence_record.md)
 for scope and limits.
 

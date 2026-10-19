@@ -1,0 +1,20 @@
+[
+ {
+  "label": "A1-M1 legacy collision binding reverted to cause-only",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "| .scatterCollision nm .. => owner nm",
+  "new": "| .scatterCollision .. => true",
+  "targets": ["Semantics.SourceDifferentialScatterTest"],
+  "expect": ["SourceDifferentialScatterTest.lean:288:0"]
+ },
+ {
+  "label": "A1-M2 checked capability binding reverted to cause-only",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "let named (context : String) := owner ((context.splitOn \": \").headD \"\")",
+  "new": "let named (_ : String) := true",
+  "targets": ["Semantics.SourceDifferentialScatterTest"],
+  "expect": ["SourceDifferentialScatterTest.lean:298:0"]
+ }
+]

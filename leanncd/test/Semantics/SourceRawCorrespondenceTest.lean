@@ -799,8 +799,8 @@ private def DonorOutputConnection (raw : TLProgram) (specs : List TensorSpec)
           Coord.raw (statement.destination
             (uidCoordEquiv statement.output.context
               (indexPullback statement.output.embedding.map v))) q = (v u).val ∧
-          Coord.raw (statement.output.sourceSlots.project
-            (uidCoordEquiv admitted.source.context v)) q = (v u).val
+          Coord.raw (statement.output.dest (statement.output.sourceSlots.project
+            (uidCoordEquiv admitted.source.context v))) q = (v u).val
 
 private theorem donor_output_connection
     {raw : TLProgram} {specs : List TensorSpec} {inputs : List InputBinding}

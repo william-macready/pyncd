@@ -276,7 +276,7 @@ def RawStatementFields (raw : TLProgram) (memo : Std.HashMap String UID)
     statement.original = i ∧ rhs.agg = .sum ∧ rhs.nonlin = .identity ∧
     source.table.find name = some statement.output.tensor ∧
     (source.table.entry statement.output.tensor).name = name ∧
-    RawOutputSlots raw memo slots statement.output.indices ∧
+    (RawOutputSlots raw memo slots statement.output.indices ∧ statement.output.IsBare) ∧
     statement.output.origin = {
       side := .output, statement := some i,
       declaration := some (source.table.entry statement.output.tensor).declaration } ∧
@@ -382,7 +382,7 @@ private theorem rawStatement_fields {raw : TLProgram} {memo : Std.HashMap String
       rw [traverseAxes_list_collect]
       exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s, hs, ha'⟩)
     refine ⟨name, original, r, rfl, hi, hagg, hnl, ht, hn,
-      rawOutputSlots_fields hc hslots hs, ho, ?_⟩
+      ⟨rawOutputSlots_fields hc hslots hs.1, hs.2⟩, ho, ?_⟩
     rw [RHSExpr.mapUID_terms, List.zipIdx_map, List.forall₂_map_left_iff] at hterms
     apply (forall2_with_mem hterms).imp
     rintro ⟨t, j⟩ term ⟨htmem, hterm⟩
@@ -619,7 +619,15 @@ theorem RawStatementFields.output_slots {raw : TLProgram} {memo : Std.HashMap St
   obtain ⟨n, original, r, he, _, _, _, _, _, hs, _, _⟩ := h
   cases he
   rw [statement.output.linked, statement.output.source_linked]
-  exact ⟨hs, hs⟩
+  exact ⟨hs.1, hs.1⟩
+
+/-- The raw-parse chain certifies only bare statements: an affine destination has no
+raw-parse theorem. -/
+theorem RawStatementFields.output_bare {raw : TLProgram} {memo : Std.HashMap String UID}
+    {source : AdaptedSource} {i : Nat} {ast : Stmt} {statement : AdmittedStatement source}
+    (h : RawStatementFields raw memo source i ast statement) : statement.output.IsBare := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, hs, _, _⟩ := h
+  exact hs.2
 
 theorem RawReadSlots.slot {raw : TLProgram} {memo : Std.HashMap String UID}
     {es : List IdxExpr} {ids : List UID} (h : RawReadSlots raw memo es ids)
@@ -673,7 +681,7 @@ theorem RawCorrespondence.output {raw : TLProgram} {specs : List TensorSpec}
         declaration := some (admitted.source.table.entry statement.output.tensor).declaration } := by
   obtain ⟨name, slots, rhs, he, hi, _, _, _, hn, hslots, ho, _⟩ := hs
   exact ⟨name, slots, rhs, he, hi, h.tensor statement.output.tensor, hn,
-    statement.output.linked ▸ hslots, statement.output.source_linked ▸ hslots, ho⟩
+    statement.output.linked ▸ hslots.1, statement.output.source_linked ▸ hslots.1, ho⟩
 
 theorem TermFields.factor_count {source : AdaptedSource} {origin : SourceOrigin}
     {ast : ProdTerm} {term : Term source.context out source.table.declarations}

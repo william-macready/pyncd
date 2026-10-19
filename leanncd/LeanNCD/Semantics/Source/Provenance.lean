@@ -71,6 +71,16 @@ def admitIdentifiedSource (snapshot : SourceSnapshot) :
   | .error e => .error e
   | .ok source => .ok ⟨source, admitSource_originals snapshot source h⟩
 
+/-- `admitIdentifiedSource` over `admitSourceAffine`. Affine statements have no raw-parse theorem
+(`admitAffineWrite` is private), so uniqueness of the originals is checked, not proved; the failing
+branch is unreachable in practice (`adaptSource_originals`, and admission keeps the index) and is
+reported, not hidden. -/
+def admitIdentifiedSourceAffine (snapshot : SourceSnapshot) :
+    Except SourceDiagnostic IdentifiedSource := do
+  let source ← admitSourceAffine snapshot
+  if h : (source.statements.map AdmittedStatement.original).Nodup then pure ⟨source, h⟩
+  else throw (sourceError .statement {} (.duplicateTensor "statement originals not unique"))
+
 def admitRawIdentifiedSource (raw : TLProgram) (specs : List TensorSpec)
     (inputs : List InputBinding) : Except SourceDiagnostic IdentifiedSource := do
   let snapshot ← resolveSource raw specs inputs

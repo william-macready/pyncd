@@ -1,0 +1,135 @@
+diff --git a/leanncd/LeanNCD/Semantics/Source/Admission.lean b/leanncd/LeanNCD/Semantics/Source/Admission.lean
+index 295b9d16..8e397886 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Admission.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Admission.lean
+@@ -302,12 +302,35 @@ structure AdmittedOutput (source : Context) (σ : Declarations Unit) where
+   origin : SourceOrigin
+   context : Context
+   order : context.axes.map Axis.uid = firstUIDs indices
+-  slots : Slots context.axes (σ.signature tensor).axes
++  /-- Virtual write shape: the coordinates `slots` project to. For a bare write this is the
++  destination signature; for an affine write, the axes its LHS slots mention. -/
++  shape : Shape
++  /-- Destination index map from virtual write coordinates to destination coordinates;
++  `id` for a bare write. Colliding coordinates are summed by the collection. -/
++  dest : Coord shape → Coord (σ.signature tensor).axes
++  slots : Slots context.axes shape
+   linked : slots.uids = indices
+-  sourceSlots : Slots source.axes (σ.signature tensor).axes
++  sourceSlots : Slots source.axes shape
+   source_linked : sourceSlots.uids = indices
+   embedding : IdentityEmbedding context source
+ 
++/-- The destination is a bare projection of the source valuation (no index map): the
++meaning the raw-parse chain certifies. -/
++def AdmittedOutput.IsBare (output : AdmittedOutput source σ) : Prop :=
++  ∃ bare : Slots source.axes (σ.signature output.tensor).axes,
++    bare.uids = output.indices ∧
++      ∀ w, output.dest (output.sourceSlots.project w) = bare.project w
++
++theorem AdmittedOutput.isBare_of_identity (output : AdmittedOutput source σ)
++    (hs : output.shape = (σ.signature output.tensor).axes)
++    (hd : ∀ x, output.dest x = hs ▸ x) : output.IsBare := by
++  cases output with
++  | mk tensor indices origin context order shape dest slots linked sourceSlots
++      source_linked embedding =>
++    simp only at hs hd ⊢
++    subst hs
++    exact ⟨sourceSlots, source_linked, fun w => hd _⟩
++
+ def admitOutput (source : Context) (dst : σ.Tensor) (ids : List UID) (origin : SourceOrigin) :
+     Except SourceDiagnostic {output : AdmittedOutput source σ // output.tensor = dst} := do
+   let global ← resolveSourceSlots source.axes .output origin (σ.signature dst).axes ids
+@@ -315,7 +338,7 @@ def admitOutput (source : Context) (dst : σ.Tensor) (ids : List UID) (origin :
+   let embedding ← identityEmbedding context source origin
+   let slots ← resolveSourceSlots context.axes .output origin (σ.signature dst).axes ids
+   pure ⟨⟨dst, ids, origin, context, by
+-    rw [outputContext_order, Slots.keys_uids, global.property],
++    rw [outputContext_order, Slots.keys_uids, global.property], (σ.signature dst).axes, id,
+     slots.val, slots.property, global.val, global.property, embedding⟩, rfl⟩
+ 
+ theorem AdmittedOutput.projection (output : AdmittedOutput source σ) (v : UIDVal source) :
+@@ -451,6 +474,25 @@ theorem admitOutput_fields (source : Context) (dst : σ.Tensor) (ids : List UID)
+   all_goals subst output
+   all_goals exact ⟨rfl, rfl⟩
+ 
++/-- Admission's output is the identity case of the destination index map. -/
++theorem admitOutput_identity (source : Context) (dst : σ.Tensor) (ids : List UID)
++    (origin : SourceOrigin) (output : {o : AdmittedOutput source σ // o.tensor = dst})
++    (h : admitOutput source dst ids origin = .ok output) :
++    ∃ hs : output.val.shape = (σ.signature output.val.tensor).axes,
++      ∀ x, output.val.dest x = hs ▸ x := by
++  unfold admitOutput at h
++  simp only [bind, pure, Except.bind, Except.pure] at h
++  repeat' split at h
++  all_goals simp only [Except.ok.injEq, reduceCtorEq] at h
++  all_goals subst output
++  all_goals exact ⟨rfl, fun _ => rfl⟩
++
++theorem admitOutput_bare (source : Context) (dst : σ.Tensor) (ids : List UID)
++    (origin : SourceOrigin) (output : {o : AdmittedOutput source σ // o.tensor = dst})
++    (h : admitOutput source dst ids origin = .ok output) : output.val.IsBare := by
++  obtain ⟨hs, hd⟩ := admitOutput_identity source dst ids origin output h
++  exact output.val.isBare_of_identity hs hd
++
+ structure AdmittedStatement (source : AdaptedSource) where
+   original : Nat
+   output : AdmittedOutput source.context source.table.declarations
+@@ -492,7 +534,7 @@ def StatementFields (source : AdaptedSource) (i : Nat) (ast : Stmt)
+     rhs.agg = .sum ∧ rhs.nonlin = .identity ∧
+     source.table.find name = some statement.output.tensor ∧
+     (source.table.entry statement.output.tensor).name = name ∧
+-    BareOutputSlots slots statement.output.indices ∧
++    (BareOutputSlots slots statement.output.indices ∧ statement.output.IsBare) ∧
+     statement.output.origin = {
+       side := .output, statement := some i,
+       declaration := some (source.table.entry statement.output.tensor).declaration } ∧
+@@ -543,7 +585,8 @@ theorem admitStatement_fields (source : AdaptedSource) (i : Nat) (ast : Stmt)
+                   · simpa using hn
+                   · simpa only [output.property] using ht
+                   · simpa only [output.property] using source.table.find_name name dst ht
+-                  · rw [hid]; exact outputIndices_fields _ _ _ _ hi
++                  · exact ⟨by rw [hid]; exact outputIndices_fields _ _ _ _ hi,
++                      admitOutput_bare _ _ _ _ _ ho⟩
+                   · simpa only [output.property] using horigin
+                   · exact (mapM_success_forall2 _ _ _ hs).imp
+                       (fun x term hx => admitAstTerm_fields source output.val.context
+diff --git a/leanncd/LeanNCD/Semantics/Source/Statement.lean b/leanncd/LeanNCD/Semantics/Source/Statement.lean
+index 775dfce8..36cf9ddb 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Statement.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Statement.lean
+@@ -112,7 +112,7 @@ def AdmittedStatement.body (statement : AdmittedStatement source)
+ def AdmittedStatement.destination (statement : AdmittedStatement source)
+     (x : Coord statement.output.context.axes) :
+     Coord (source.table.declarations.signature statement.output.tensor).axes :=
+-  statement.output.slots.project x
++  statement.output.dest (statement.output.slots.project x)
+ 
+ theorem AdmittedStatement.interpret_body (statement : AdmittedStatement source)
+     (ρ : Store (fun _ => K) source.table.declarations)
+@@ -132,7 +132,23 @@ theorem AdmittedStatement.destination_pullback (statement : AdmittedStatement so
+     statement.destination
+       (uidCoordEquiv statement.output.context
+         (indexPullback statement.output.embedding.map v)) =
+-      statement.output.sourceSlots.project (uidCoordEquiv source.context v) :=
+-  statement.output.projection v
++      statement.output.dest
++        (statement.output.sourceSlots.project (uidCoordEquiv source.context v)) :=
++  congrArg statement.output.dest (statement.output.projection v)
++
++/-- A bare statement's destination is the plain slot projection of the source valuation:
++the pre-index-map meaning, unchanged. -/
++theorem AdmittedStatement.destination_bare (statement : AdmittedStatement source)
++    (h : statement.output.IsBare) :
++    ∃ bare : Slots source.context.axes
++        (source.table.declarations.signature statement.output.tensor).axes,
++      bare.uids = statement.output.indices ∧
++      ∀ v : UIDVal source.context,
++        statement.destination
++          (uidCoordEquiv statement.output.context
++            (indexPullback statement.output.embedding.map v)) =
++          bare.project (uidCoordEquiv source.context v) := by
++  obtain ⟨bare, hu, hd⟩ := h
++  exact ⟨bare, hu, fun v => (statement.destination_pullback v).trans (hd _)⟩
+ 
+ end LeanNCD.Semantics.Source

@@ -29,6 +29,8 @@ inductive UnsupportedSource
   | iteration | predicate | complex
   | scatter | recurMorphism | marked | scanSlot | affine
   | nonSum | nonIdentity | iverson | unary
+  /-- A `Stmt.scatter` whose options are not `fill = 0` with `reduce ∈ {sum, rejectCollisions}`. -/
+  | scatterPolicy
   deriving DecidableEq, Repr
 
 inductive SourceCause
@@ -52,6 +54,9 @@ inductive SourceCause
   | domain (uid : UID) (expected actual : Nat)
   | rank (expected actual : Nat)
   | context (error : Diagnostic)
+  /-- A non-bare write whose image can leave the destination shape; the origin's `slot` names
+  the first destination axis whose affine form leaves `[0, extent)` somewhere on the box. -/
+  | writeOutOfRange
   deriving Repr
 
 structure SourceDiagnostic where

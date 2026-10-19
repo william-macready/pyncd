@@ -1,0 +1,14 @@
+diff --git a/leanncd/LeanNCD/Semantics/Source/Differential.lean b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+index 8652174d..93b69b4b 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Differential.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+@@ -239,8 +239,7 @@ def detectConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
+   multi ++ collisions ++ extents
+ 
+ private def legacyCollision : LegacyOutcome → Bool
+-  | .failure e => e.phase == .scheduledEvaluation &&
+-      (match e.original.error with | .scatterCollision .. => true | _ => false)
++  | .failure e => (match e.original.error with | .scatterCollision .. => true | _ => false)
+   | _ => false
+ 
+ private def legacyCompile (needle : String) : LegacyOutcome → Bool

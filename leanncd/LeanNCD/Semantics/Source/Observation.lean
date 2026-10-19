@@ -205,15 +205,24 @@ inductive ExecutionError
   | inputPresence (tensorUID : UID) (origin : SourceOrigin) (expected actual : Bool)
   deriving Repr
 
-def sourceDebug (snapshot : SourceSnapshot) (fuel : Option Nat := none) :
-    Except ExecutionError SourceRun := do
-  let source ← (admitIdentifiedSource snapshot).mapError ExecutionError.admission
+def sourceDebugFrom (admitted : Except SourceDiagnostic IdentifiedSource)
+    (fuel : Option Nat := none) : Except ExecutionError SourceRun := do
+  let source ← admitted.mapError ExecutionError.admission
   let actual ← (runSourceDebug source.admitted fuel).mapError fun t =>
     .inputPresence t.val
       { side := .input, declaration := some (source.admitted.source.table.entry t).declaration }
       ((elaborateSource source.admitted).input t)
       ((sourceInputBinding source.admitted t).isSome)
   pure ⟨source, actual, fuel⟩
+
+def sourceDebug (snapshot : SourceSnapshot) (fuel : Option Nat := none) :
+    Except ExecutionError SourceRun :=
+  sourceDebugFrom (admitIdentifiedSource snapshot) fuel
+
+/-- The differential's reference entry: `admitSourceAffine` (bare behaviour unchanged). -/
+def sourceDebugAffine (snapshot : SourceSnapshot) (fuel : Option Nat := none) :
+    Except ExecutionError SourceRun :=
+  sourceDebugFrom (admitIdentifiedSourceAffine snapshot) fuel
 
 structure ContributionObservation where
   key : OccurrenceKey
@@ -249,6 +258,10 @@ inductive NormalizationCause
   | rank (expected actual : Nat)
   | slotMetadataRank (uidSlots axisSlots coordinateSlots : Nat)
   | coordinateBound (slot coordinate extent : Nat)
+  /-- The row's statement writes through non-bare forms; a row there is a destination cell
+  fiber (0..n occurrences), so use `oracleOccurrences`. -/
+  | nonBareWrite
+  | missingAssignment (uid : UID)
   deriving DecidableEq, Repr
 
 structure NormalizationError where
@@ -261,6 +274,9 @@ An empty contracted fiber still has an output occurrence with contribution zero.
 structure OracleRow where
   fullCell : Oracle.Contribution
   occurrence : Option ContributionObservation
+  /-- Executor-comparable occurrences of the row: `occurrence.toList` for a bare statement,
+  `oracleOccurrences` (0..n per destination cell) for a non-bare one. -/
+  occurrences : List ContributionObservation
   deriving DecidableEq, Repr
 
 def normalizeOracleContribution (source : AdmittedSource) (row : Oracle.Contribution) :
@@ -272,6 +288,8 @@ def normalizeOracleContribution (source : AdmittedSource) (row : Oracle.Contribu
     | [] => throw ⟨row.origin, .unknownStatement original⟩
     | [st] => pure st
     | _ => throw ⟨row.origin, .ambiguousStatement original⟩
+  unless statement.output.forms == statement.output.indices.map WriteForm.single do
+    throw ⟨row.origin, .nonBareWrite⟩
   let entry := source.source.table.entry statement.output.tensor
   unless row.origin.declaration == some entry.declaration do
     throw ⟨row.origin, .targetDeclaration entry.declaration row.origin.declaration⟩
@@ -280,9 +298,10 @@ def normalizeOracleContribution (source : AdmittedSource) (row : Oracle.Contribu
   unless statement.output.indices.length == row.coordinate.length do
     throw ⟨row.origin, .rank statement.output.indices.length row.coordinate.length⟩
   let assignment ← assign statement.output.indices entry.axes row.coordinate 0 [] true
-  pure ⟨row, assignment.map fun values =>
+  let occurrence := assignment.map fun values =>
     ⟨⟨original, values⟩, ⟨statement.output.tensor.val, entry.declaration, row.coordinate⟩,
-      some row.value⟩⟩
+      some row.value⟩
+  pure ⟨row, occurrence, occurrence.toList⟩
 where
   assign : List UID → Shape → List Nat → Nat → List (UID × Nat) → Bool →
       Except NormalizationError (Option (List (UID × Nat)))
@@ -297,8 +316,52 @@ where
     | ids, axes, coordinates, _, _, _ =>
       .error ⟨row.origin, .slotMetadataRank ids.length axes.length coordinates.length⟩
 
+/-- Executor-comparable occurrences of one oracle row. Bare statements: the existing
+normalization. Non-bare statements: the row is a destination cell, so each distinct restriction
+of the oracle's own occurrence assignments to the output context (the executor's occurrence key
+order) is one occurrence, valued by the sum of the oracle occurrence values over all terms that
+share it. No inversion of `output.indices`, no use of `dest`. An occurrence whose contracted fiber
+is empty (an extent-0 contracted axis) leaves no oracle occurrence and is therefore not
+recovered here. -/
+def oracleOccurrences (source : AdmittedSource) (row : Oracle.Contribution) :
+    Except NormalizationError (List ContributionObservation) := do
+  match normalizeOracleContribution source row with
+  | .ok normalized => pure normalized.occurrence.toList
+  | .error ⟨_, .nonBareWrite⟩ =>
+    let original := row.origin.statement.getD 0
+    match source.statements.filter (fun st => st.original == original) with
+    | [statement] =>
+      let entry := source.source.table.entry statement.output.tensor
+      let keys := statement.output.context.axes.map (·.uid)
+      let mut groups : List (List (UID × Nat) × ℚ) := []
+      for term in row.terms do
+        for o in term.occurrences do
+          let mut key := []
+          for uid in keys do
+            match o.assignment.find? (fun p => p.1 == uid) with
+            | some p => key := key ++ [p]
+            | none => throw ⟨row.origin, .missingAssignment uid⟩
+          groups :=
+            if groups.any (·.1 == key) then
+              groups.map fun g => if g.1 == key then (g.1, g.2 + o.value) else g
+            else groups ++ [(key, o.value)]
+      pure (groups.map fun g =>
+        ⟨⟨original, g.1⟩, ⟨statement.output.tensor.val, entry.declaration, row.coordinate⟩,
+          some g.2⟩)
+    | _ => throw ⟨row.origin, .unknownStatement original⟩
+  | .error e => throw e
+
+/-- Bare rows: `normalizeOracleContribution` unchanged. Non-bare rows: no single occurrence
+(`occurrence := none`), the destination-cell occurrences come from `oracleOccurrences`. -/
+def normalizeOracleRow (source : AdmittedSource) (row : Oracle.Contribution) :
+    Except NormalizationError OracleRow := do
+  match normalizeOracleContribution source row with
+  | .ok normalized => pure normalized
+  | .error ⟨_, .nonBareWrite⟩ => pure ⟨row, none, ← oracleOccurrences source row⟩
+  | .error e => throw e
+
 def normalizeOracle (source : AdmittedSource) (result : Oracle.Result) :
     Except NormalizationError (List OracleRow) :=
-  result.contributions.mapM (normalizeOracleContribution source)
+  result.contributions.mapM (normalizeOracleRow source)
 
 end LeanNCD.Semantics.Source.Debug

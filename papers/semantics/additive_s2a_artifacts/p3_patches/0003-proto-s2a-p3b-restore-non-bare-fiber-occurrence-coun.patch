@@ -1,0 +1,199 @@
+From 7aebc2ddbd2b0109e7c90bcc2a61e18c75fb503e Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sun, 18 Oct 2026 07:37:14 -0700
+Subject: [PATCH 3/5] proto(s2a-p3b): restore non-bare fiber occurrence-count
+ check; scatter structural conditions with native-outcome confirmation
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ .../Semantics/Source/Differential.lean        | 100 +++++++++++++++++-
+ .../Semantics/Source/NumericalProfile.lean    |  29 +++--
+ 2 files changed, 121 insertions(+), 8 deletions(-)
+
+diff --git a/leanncd/LeanNCD/Semantics/Source/Differential.lean b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+index 7b84a4e2..243b2360 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Differential.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+@@ -178,6 +178,100 @@ inductive Classification
+   | nativeDiscrepancy
+   deriving Repr
+ 
++/-! Source-shape contract differences for affine writes and scatters. `detectConditions` looks at
++the source alone; `confirms` additionally requires BOTH native legs to show exactly the predicted
++outcome, so a condition can never explain away an unrelated native divergence. -/
++
++private def nonBareWrite (st : AdmittedStatement source) : Bool :=
++  st.output.forms != st.output.indices.map WriteForm.single
++
++private def rejectsCollisions : Stmt → Bool
++  | .assign .. => true
++  | .scatter _ _ _ opts => opts.reduce == .rejectCollisions
++  | _ => false
++
++/-- Two distinct assignments of the support axes (forms uids and every term's read indices) share
++a destination image. -/
++private def writeCollides (source : AdmittedSource) (st : AdmittedStatement source.source) : Bool :=
++  let uids := st.output.forms.flatMap WriteForm.uids ++
++    st.terms.flatMap (·.sourceReads.flatMap (·.indices))
++  let axes := source.source.context.axes.filter (fun a => a.uid ∈ uids)
++  let image (c : List Nat) : List Int := st.output.forms.map fun f =>
++    f.1 + (f.2.map fun (coef, u) =>
++      coef * (((axes.zip c).find? (·.1.uid == u)).map (fun p => (p.2 : Int)) |>.getD 0)).sum
++  let images := (Oracle.coordinates (axes.map (·.extent))).map image
++  images.eraseDups.length < images.length
++
++/-- The extent production derives per destination dimension: `c0 + Σ coef * extent` (observed on
++P3 fixtures: `2*a` over 4 gives 8, `a+2` gives 6, `a+b` gives 7, a constant `c` gives `c+1`). -/
++private def derivedShape (source : AdmittedSource) (st : AdmittedStatement source.source) :
++    List Nat :=
++  st.output.forms.map fun f =>
++    if f.2.isEmpty then (f.1 + 1).toNat else
++    (f.1 + (f.2.map fun (coef, u) =>
++      coef * ((source.source.context.axes.find? (·.uid == u)).map (fun a => (a.extent : Int))
++        |>.getD 0)).sum).toNat
++
++def detectConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
++    List StructuralCondition :=
++  let collisions := source.statements.filterMap fun st =>
++    if nonBareWrite st &&
++        (snapshot.resolved.stmts[st.original]?.map rejectsCollisions).getD false &&
++        writeCollides source st then
++      some (StructuralCondition.scatterCollisionRejected st.output.origin)
++    else none
++  let decl (st : AdmittedStatement source.source) : Nat :=
++    (source.source.table.entry st.output.tensor).declaration
++  let multi := (source.statements.filter fun st =>
++      nonBareWrite st &&
++        (source.statements.filter fun o => decl o == decl st).length > 1).map decl
++    |>.eraseDups |>.map StructuralCondition.multiWriterScatter
++  let extents := source.statements.filterMap fun st =>
++    let declared := (source.source.table.entry st.output.tensor).axes.map (·.extent)
++    let derived := derivedShape source st
++    if nonBareWrite st && declared != derived then
++      some (StructuralCondition.scatterExtentOverridesDeclared st.output.origin (decl st) derived)
++    else none
++  collisions ++ multi ++ extents
++
++private def legacyCollision : LegacyOutcome → Bool
++  | .failure e => e.phase == .scheduledEvaluation &&
++      (match e.original.error with | .scatterCollision .. => true | _ => false)
++  | _ => false
++
++private def legacyCompile (needle : String) : LegacyOutcome → Bool
++  | .failure e => e.phase == .compilation &&
++      ((toString e.original.error).splitOn needle).length > 1
++  | _ => false
++
++/-- The checked leg refuses a multi-axis/constant slot at preparation (capability) before it can
++reach the collision, so either is the predicted rejection. -/
++private def checkedCollision : CheckedOutcome → Bool
++  | .runtime e => (match e.original.cause with
++      | .execution (.scatterCollision ..) => true | _ => false)
++  | .preparation e => (match e.original.cause with | .capability _ => true | _ => false)
++  | _ => false
++
++private def shapeOnly (declaration : Nat) (derived : List Nat) (o : NativeObservation) : Bool :=
++  match o.outputs with
++  | .error issues => !issues.isEmpty && issues.all fun
++      | .shape m _ actual _ _ => m.declaration == declaration && actual == derived
++      | .length m _ actual _ _ => m.declaration == declaration && actual == derived
++      | _ => false
++  | .ok _ => false
++
++def confirms (native : NativeRun) : StructuralCondition → Bool
++  | .scatterCollisionRejected _ => legacyCollision native.legacy && checkedCollision native.checked
++  | .multiWriterScatter _ => legacyCompile "scanAxisNotIter" native.legacy &&
++      (match native.checked with
++        | .sourceCompilation e => (match e.cause with | .scanAxisNotIter _ => true | _ => false)
++        | _ => false)
++  | .scatterExtentOverridesDeclared _ declaration derived =>
++      (match native.legacy, native.checked with
++        | .observed l, .observed c _ => shapeOnly declaration derived l && shapeOnly declaration derived c
++        | _, _ => false)
++  | .usedDType .. => false
++
+ structure ComparisonRun where
+   reference : SourceRun
+   fixtureDependencyOrder : Option (List Nat)
+@@ -187,6 +281,7 @@ structure ComparisonRun where
+   referenceComparison : Option ReferenceComparison
+   legacyComparison : NativeComparison
+   checkedComparison : NativeComparison
++  conditions : List StructuralCondition := []
+ 
+ private def agrees : Except ε (Comparison δ) → Bool
+   | .ok .agreement => true
+@@ -241,6 +336,8 @@ def ComparisonRun.classification (run : ComparisonRun) : Classification := Id.ru
+   match run.native with
+   | .error _ => return .nativeUnavailable
+   | .ok native =>
++    if let c :: _ := run.conditions then
++      if run.conditions.all (confirms native) then return .knownContractDifference c
+     match native.legacy, native.checked with
+     | .unavailable _, _ | _, .unavailable _ => return .nativeUnavailable
+     | .failure _, _ | _, .sourceCompilation _ | _, .preparation _ | _, .runtime _ =>
+@@ -337,7 +434,8 @@ def compareSource (snapshot : SourceSnapshot) (fixtureDependencyOrder : Option (
+     | .error _ => none
+     | .ok result => some (Differential.compareReference reference result)
+   pure ⟨reference, fixtureDependencyOrder, oracle, native, profile, comparison,
+-    Differential.legacyComparison profile native, Differential.checkedComparison profile native⟩
++    Differential.legacyComparison profile native, Differential.checkedComparison profile native,
++    Differential.detectConditions snapshot reference.source.admitted⟩
+ 
+ def renderSourceComparison (result : Except Debug.ExecutionError Differential.ComparisonRun) :
+     String :=
+diff --git a/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean b/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
+index f51b7abe..a90f49ab 100644
+--- a/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
++++ b/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
+@@ -21,6 +21,15 @@ structure Site where
+ 
+ inductive StructuralCondition
+   | usedDType (origin : SourceOrigin) (name : String) (actual : TensorElementType)
++  /-- A non-bare write under `reject` policy whose support box has two assignments with one
++  destination image: production raises `scatterCollision`, the oracle sums them. -/
++  | scatterCollisionRejected (origin : SourceOrigin)
++  /-- A tensor written by several statements, at least one non-bare. -/
++  | multiWriterScatter (declaration : Nat)
++  /-- A non-bare write whose declared destination shape differs from the extent production
++  derives from the forms (`derived`); production's shape wins. -/
++  | scatterExtentOverridesDeclared (origin : SourceOrigin) (declaration : Nat)
++      (derived : List Nat)
+   deriving DecidableEq, Repr
+ 
+ inductive ReceiptCondition
+@@ -205,18 +214,24 @@ private def checkFiber (source : AdmittedSource) (result : Oracle.Result)
+     Except Unsupported (List CheckedValue × ℚ) := do
+   let site : Site := { origin := term.origin, coordinate := row.fullCell.coordinate }
+   -- Bare: the existing checks. Non-bare: the support is the forms' uids, the destination is the
+-  -- forms evaluated over the assignment, and the occurrence count of a fiber (0..n) has no
+-  -- closed form here, so it is not checked (the collection sums are, in `checkOracle`).
++  -- forms evaluated over the assignment, and the occurrence count of a fiber (0..n) is the number
++  -- of support assignments whose forms land on the cell (enumerated, below).
+   let bare := statement.output.forms == statement.output.indices.map WriteForm.single
+   let outputUids := if bare then statement.output.indices
+     else statement.output.forms.flatMap WriteForm.uids
+   let axes := source.source.context.axes.filter
+     (fun a => a.uid ∈ outputUids ++ term.sourceReads.flatMap (·.indices))
+-  if bare then
+-    let expectedCount := if row.occurrence.isSome then
+-      Oracle.cellCount (term.partition.bound.map (·.extent)) else 0
+-    unless fiber.occurrences.length == expectedCount do
+-      throw (.receipt site (.occurrences expectedCount fiber.occurrences.length))
++  let expectedCount : Nat := if bare then
++      (if row.occurrence.isSome then Oracle.cellCount (term.partition.bound.map (·.extent)) else 0)
++    else
++      -- Non-bare: the assignments of the support axes whose forms land on this cell (the boxes
++      -- are tiny, so enumerate; a form that evaluates negative never matches).
++      ((Oracle.coordinates (axes.map (·.extent))).filter fun coordinate =>
++        match formsAt site (axes.map Axis.uid |>.zip coordinate) statement.output.forms with
++        | .ok cell => cell == row.fullCell.coordinate
++        | .error _ => false).length
++  unless fiber.occurrences.length == expectedCount do
++    throw (.receipt site (.occurrences expectedCount fiber.occurrences.length))
+   let mut seen : List (List (UID × Nat)) := []
+   let mut total : ℚ := 0
+   let mut absoluteSum : ℚ := 0
+-- 
+2.50.1 (Apple Git-155)
+

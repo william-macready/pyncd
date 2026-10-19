@@ -1,0 +1,30 @@
+From c6de3d9812daed4b01227fe220ffcf80c3fe5882 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sat, 17 Oct 2026 17:55:02 -0700
+Subject: [PATCH 3/5] proto(s2a-p1): ProgramCorrespondence fiber_partition
+ through dest
+
+AdmittedStatement.fiber_partition's case split now on the dest-composed
+predicate; Permutation and Program were already destination-generic.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean b/leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean
+index 4f8b5995..5f2a031f 100644
+--- a/leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean
++++ b/leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean
+@@ -41,7 +41,7 @@ theorem AdmittedStatement.fiber_partition (statement : AdmittedStatement source)
+       rw [ih, term.fiber_partition, ← Finset.sum_add_distrib]
+       apply Finset.sum_congr rfl
+       intro x _
+-      by_cases h : statement.output.slots.project x = p <;>
++      by_cases h : statement.output.dest (statement.output.slots.project x) = p <;>
+         simp [AdmittedStatement.destination, h]
+   exact linear statement.terms
+ 
+-- 
+2.50.1 (Apple Git-155)
+

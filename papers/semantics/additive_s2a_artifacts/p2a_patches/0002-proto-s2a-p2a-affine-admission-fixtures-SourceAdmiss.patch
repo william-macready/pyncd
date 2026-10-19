@@ -1,0 +1,173 @@
+From fb8311a0d45b1ee884bd904d544bc2497990538f Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sat, 17 Oct 2026 19:51:28 -0700
+Subject: [PATCH 2/3] proto(s2a-p2a): affine admission fixtures
+ (SourceAdmissionAffineTest)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ leanncd/lakefile.toml                         |   1 +
+ .../Semantics/SourceAdmissionAffineTest.lean  | 139 ++++++++++++++++++
+ 2 files changed, 140 insertions(+)
+ create mode 100644 leanncd/test/Semantics/SourceAdmissionAffineTest.lean
+
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index 809a6acb..538ebe36 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -99,6 +99,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Semantics.SourceAdmissionRefusalsTest", "Semantics.SourceAdmissionTest",
+          "Semantics.SourceRawCorrespondenceTest", "Semantics.AxiomAudit",
+          "Semantics.SourceAdmissionAcceptanceTest",
++         "Semantics.SourceAdmissionAffineTest",
+          "Semantics.SourceOracleTest", "Semantics.SourceProgramFixtures",
+          "Semantics.SourceProgramOutcomesTest", "Semantics.SourceProgramIdentityTest",
+          "Semantics.SourceProgramCollectionTest", "Semantics.SourceProgramGeometryTest",
+diff --git a/leanncd/test/Semantics/SourceAdmissionAffineTest.lean b/leanncd/test/Semantics/SourceAdmissionAffineTest.lean
+new file mode 100644
+index 00000000..72c2f964
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceAdmissionAffineTest.lean
+@@ -0,0 +1,139 @@
++import LeanNCD.Semantics.Source.Admission
++
++/-! S2a admission of non-bare writes (`admitSourceAffine`).
++
++Every refusal has an accept-neighbour differing in one field (the destination axis extent, a
++slot constant, a scatter option or a read slot). The default entry `admitSource` keeps refusing
++affine and scatter writes with its old causes. -/
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++
++namespace SourceAdmissionAffineTest
++
++private def a : AxisSpec := ⟨"a", 7, .real⟩
++private def b : AxisSpec := ⟨"b", 8, .real⟩
++private def k : AxisSpec := ⟨"k", 9, .real⟩
++
++private def rhs (terms : List (List Factor)) : RHSExpr :=
++  ⟨⟨terms.map ProdTerm.mk⟩, .identity, .sum⟩
++
++private def readX : RHSExpr := rhs [[.read "X" [.axis a]]]
++
++/-- `|a| = 2`, `|b| = 3`, `|k| = kExtent`; input `X[a] = [3, 5]` (declaration 3), output `Y`
++over `yAxes` (declaration 4). -/
++private def snap (kExtent : Nat) (yAxes : List AxisSpec) (stmt : Stmt) : SourceSnapshot :=
++  let extent (ax : AxisSpec) : Nat :=
++    if ax.uid = 7 then 2 else if ax.uid = 8 then 3 else kExtent
++  { resolved := {
++      decls := [.axis a (some 2), .axis b (some 3), .axis k (some kExtent),
++        .typedTensor .f64 "X" [a], .typedTensor .f64 "Y" yAxes]
++      stmts := [stmt]
++      env := {}, extNames := ∅ }
++    specs := [⟨3, .input, [2]⟩, ⟨4, .output, yAxes.map extent⟩]
++    inputs := [⟨3, [2], [3, 5]⟩] }
++
++private def coords : (sh : Shape) → List (Coord sh)
++  | [] => [()]
++  | ax :: sh => (List.finRange ax.extent).flatMap fun i => (coords sh).map fun w => (i, w)
++
++/-- Forms, support indices, the distinct destination images over the source box, and whether
++the forms reproduce `dest` at every source coordinate (`FormsSpec`, checked numerically). -/
++private def view (r : Except SourceDiagnostic AdmittedSource) :
++    Option (List (List WriteForm × List UID × List (List Int) × Bool)) :=
++  r.toOption.map fun s => s.statements.map fun st =>
++    let images := (coords s.source.context.axes).map fun w =>
++      (coordValues (st.output.dest (st.output.sourceSlots.project w)),
++        st.output.forms.map (writeValue · (coordLookup w)))
++    (st.output.forms, st.output.indices, (images.map Prod.fst).dedup,
++      images.all fun (d, f) => d == f)
++
++private def refused (r : Except SourceDiagnostic AdmittedSource) (origin : SourceOrigin)
++    (p : SourceCause → Bool) : Bool :=
++  match r with
++  | .error e => e.origin == origin && p e.cause
++  | .ok _ => false
++
++private def outSlot (j : Nat) : SourceOrigin :=
++  { side := .output, declaration := some 4, statement := some 0, slot := some j }
++
++private def isOutOfRange : SourceCause → Bool | .writeOutOfRange => true | _ => false
++private def isAffine : SourceCause → Bool | .unsupported .affine => true | _ => false
++private def isScatter : SourceCause → Bool | .unsupported .scatter => true | _ => false
++private def isPolicy : SourceCause → Bool | .unsupported .scatterPolicy => true | _ => false
++
++/-! (a) FLIP. `Y[a+1] := X[a]`, `Y` over `a` (extent 2): images 1, 2; 2 is out of range. -/
++private def shifted : SourceSnapshot := snap 3 [a] (.assign "Y" [.affine (.shift a 1)] readX)
++
++#guard refused (admitSourceAffine shifted) (outSlot 0) isOutOfRange
++#guard refused (admitSource shifted) (outSlot 0) isAffine
++
++/-! (b) accept-neighbour: the same write into `Y` over `k`, extent 3 (2 refuses). -/
++#guard view (admitSourceAffine (snap 3 [k] (.assign "Y" [.affine (.shift a 1)] readX))) ==
++  some [([(1, [(1, 7)])], [7], [[1], [2]], true)]
++#guard refused (admitSourceAffine (snap 2 [k] (.assign "Y" [.affine (.shift a 1)] readX)))
++  (outSlot 0) isOutOfRange
++#guard refused (admitSource (snap 3 [k] (.assign "Y" [.affine (.shift a 1)] readX)))
++  (outSlot 0) isAffine
++
++/-! (c) `.scale`, `.const`, two-axis and diagonal slots. -/
++-- `Y[2*a] := X[a]`, `|k| = 3`: images 0, 2. `|k| = 2` refuses.
++#guard view (admitSourceAffine (snap 3 [k] (.assign "Y" [.affine (.scale 2 a)] readX))) ==
++  some [([(0, [(2, 7)])], [7], [[0], [2]], true)]
++#guard refused (admitSourceAffine (snap 2 [k] (.assign "Y" [.affine (.scale 2 a)] readX)))
++  (outSlot 0) isOutOfRange
++
++-- `Y[2, a] := X[a]`, `Y` over `[k, a]`, `|k| = 3`: constant row 2. `Y[3, a]` refuses at slot 0.
++#guard view (admitSourceAffine (snap 3 [k, a]
++    (.assign "Y" [.affine (.const 2), .free a] readX))) ==
++  some [([(2, []), (0, [(1, 7)])], [7], [[2, 0], [2, 1]], true)]
++#guard refused (admitSourceAffine (snap 3 [k, a]
++    (.assign "Y" [.affine (.const 3), .free a] readX))) (outSlot 0) isOutOfRange
++
++-- `Y[a+b] := X[a]`, `|k| = 4`: images 0..3, support [a, b]. `|k| = 3` refuses.
++#guard view (admitSourceAffine (snap 4 [k]
++    (.assign "Y" [.affine (.affine 0 [(1, a), (1, b)])] readX))) ==
++  some [([(0, [(1, 7), (1, 8)])], [7, 8], [[0], [1], [2], [3]], true)]
++#guard refused (admitSourceAffine (snap 3 [k]
++    (.assign "Y" [.affine (.affine 0 [(1, a), (1, b)])] readX))) (outSlot 0) isOutOfRange
++
++-- Diagonal `Y[a, a] := X[a]`: already admitted by `admitSource` before S2a (bare path,
++-- `dest = id`); both entries agree, with single forms.
++private def diagonal : SourceSnapshot := snap 3 [a, a] (.assign "Y" [.free a, .free a] readX)
++#guard view (admitSource diagonal) ==
++  some [([(0, [(1, 7)]), (0, [(1, 7)])], [7, 7], [[0, 0], [1, 1]], true)]
++#guard view (admitSourceAffine diagonal) == view (admitSource diagonal)
++
++/-! (d) scatter options: `fill = 0`, `reduce ∈ {sum, rejectCollisions}`. -/
++private def scatter (opts : ScatterOpts) : SourceSnapshot :=
++  snap 3 [k] (.scatter "Y" [.affine (.scale 2 a)] readX opts)
++
++private def policyOrigin : SourceOrigin := { statement := some 0 }
++
++#guard view (admitSourceAffine (scatter { reduce := .sum })) ==
++  some [([(0, [(2, 7)])], [7], [[0], [2]], true)]
++#guard view (admitSourceAffine (scatter { reduce := .rejectCollisions })) ==
++  some [([(0, [(2, 7)])], [7], [[0], [2]], true)]
++#guard refused (admitSourceAffine (scatter { reduce := .max })) policyOrigin isPolicy
++#guard refused (admitSourceAffine (scatter { reduce := .min })) policyOrigin isPolicy
++#guard refused (admitSourceAffine (scatter { reduce := .overwrite })) policyOrigin isPolicy
++#guard refused (admitSourceAffine (scatter { fill := 1, reduce := .sum })) policyOrigin isPolicy
++#guard refused (admitSource (scatter { reduce := .sum })) policyOrigin isScatter
++-- A bare scatter goes through the bare path.
++#guard view (admitSourceAffine (snap 3 [a] (.scatter "Y" [.free a] readX { reduce := .sum }))) ==
++  some [([(0, [(1, 7)])], [7], [[0], [1]], true)]
++
++/-! (e) affine READ slots stay refused under both entries (neighbour: the `.scale` fixture in
++(c), which reads `X[a]`). -/
++private def readOrigin : SourceOrigin :=
++  { side := .read, declaration := some 3, statement := some 0, term := some 0,
++    factor := some 0, slot := some 0 }
++
++private def shiftedRead : RHSExpr := rhs [[.read "X" [.shift a 1]]]
++
++#guard refused (admitSource (snap 3 [a] (.assign "Y" [.free a] shiftedRead))) readOrigin isAffine
++#guard refused (admitSourceAffine (snap 3 [a] (.assign "Y" [.free a] shiftedRead)))
++  readOrigin isAffine
++#guard refused (admitSourceAffine (snap 3 [k] (.assign "Y" [.affine (.scale 2 a)] shiftedRead)))
++  readOrigin isAffine
++
++end SourceAdmissionAffineTest
+-- 
+2.50.1 (Apple Git-155)
+

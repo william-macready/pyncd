@@ -148,7 +148,7 @@ where
       else .ok (.disagreement (.extra r))
 
 def oracleContributions (rows : List OracleRow) : List ContributionObservation :=
-  canonicalizeContributions (rows.filterMap (·.occurrence))
+  canonicalizeContributions (rows.flatMap (·.occurrences))
 
 def renderExecutionError : ExecutionError → String
   | .admission d => s!"admission: stage={repr d.stage} origin={repr d.origin} cause={repr d.cause}"

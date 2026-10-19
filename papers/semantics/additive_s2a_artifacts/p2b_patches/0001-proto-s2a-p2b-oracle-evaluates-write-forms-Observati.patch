@@ -1,0 +1,135 @@
+From eccc3676559d9c72e396e51c729ac8bd869d377f Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sat, 17 Oct 2026 20:03:02 -0700
+Subject: [PATCH 1/3] proto(s2a-p2b): oracle evaluates write forms; Observation
+ derives affine occurrences from oracle data
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ .../LeanNCD/Semantics/Source/Observation.lean | 41 +++++++++++++++++++
+ leanncd/LeanNCD/Semantics/Source/Oracle.lean  | 25 ++++++++++-
+ 2 files changed, 64 insertions(+), 2 deletions(-)
+
+diff --git a/leanncd/LeanNCD/Semantics/Source/Observation.lean b/leanncd/LeanNCD/Semantics/Source/Observation.lean
+index e98c0bca..05b1aec2 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Observation.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Observation.lean
+@@ -249,6 +249,10 @@ inductive NormalizationCause
+   | rank (expected actual : Nat)
+   | slotMetadataRank (uidSlots axisSlots coordinateSlots : Nat)
+   | coordinateBound (slot coordinate extent : Nat)
++  /-- The row's statement writes through non-bare forms; a row there is a destination cell
++  fiber (0..n occurrences), so use `oracleOccurrences`. -/
++  | nonBareWrite
++  | missingAssignment (uid : UID)
+   deriving DecidableEq, Repr
+ 
+ structure NormalizationError where
+@@ -272,6 +276,8 @@ def normalizeOracleContribution (source : AdmittedSource) (row : Oracle.Contribu
+     | [] => throw ⟨row.origin, .unknownStatement original⟩
+     | [st] => pure st
+     | _ => throw ⟨row.origin, .ambiguousStatement original⟩
++  unless statement.output.forms == statement.output.indices.map WriteForm.single do
++    throw ⟨row.origin, .nonBareWrite⟩
+   let entry := source.source.table.entry statement.output.tensor
+   unless row.origin.declaration == some entry.declaration do
+     throw ⟨row.origin, .targetDeclaration entry.declaration row.origin.declaration⟩
+@@ -297,6 +303,41 @@ where
+     | ids, axes, coordinates, _, _, _ =>
+       .error ⟨row.origin, .slotMetadataRank ids.length axes.length coordinates.length⟩
+ 
++/-- Executor-comparable occurrences of one oracle row. Bare statements: the existing
++normalization. Non-bare statements: the row is a destination cell, so each distinct restriction
++of the oracle's own occurrence assignments to the output context (the executor's occurrence key
++order) is one occurrence, valued by the sum of the oracle occurrence values over all terms that
++share it. No inversion of `output.indices`, no use of `dest`. An occurrence whose contracted fiber
++is empty (an extent-0 contracted axis) leaves no oracle occurrence and is therefore not
++recovered here. -/
++def oracleOccurrences (source : AdmittedSource) (row : Oracle.Contribution) :
++    Except NormalizationError (List ContributionObservation) := do
++  match normalizeOracleContribution source row with
++  | .ok normalized => pure normalized.occurrence.toList
++  | .error ⟨_, .nonBareWrite⟩ =>
++    let original := row.origin.statement.getD 0
++    match source.statements.filter (fun st => st.original == original) with
++    | [statement] =>
++      let entry := source.source.table.entry statement.output.tensor
++      let keys := statement.output.context.axes.map (·.uid)
++      let mut groups : List (List (UID × Nat) × ℚ) := []
++      for term in row.terms do
++        for o in term.occurrences do
++          let mut key := []
++          for uid in keys do
++            match o.assignment.find? (fun p => p.1 == uid) with
++            | some p => key := key ++ [p]
++            | none => throw ⟨row.origin, .missingAssignment uid⟩
++          groups :=
++            if groups.any (·.1 == key) then
++              groups.map fun g => if g.1 == key then (g.1, g.2 + o.value) else g
++            else groups ++ [(key, o.value)]
++      pure (groups.map fun g =>
++        ⟨⟨original, g.1⟩, ⟨statement.output.tensor.val, entry.declaration, row.coordinate⟩,
++          some g.2⟩)
++    | _ => throw ⟨row.origin, .unknownStatement original⟩
++  | .error e => throw e
++
+ def normalizeOracle (source : AdmittedSource) (result : Oracle.Result) :
+     Except NormalizationError (List OracleRow) :=
+   result.contributions.mapM (normalizeOracleContribution source)
+diff --git a/leanncd/LeanNCD/Semantics/Source/Oracle.lean b/leanncd/LeanNCD/Semantics/Source/Oracle.lean
+index 2ec9bfae..72233ed6 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Oracle.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Oracle.lean
+@@ -15,6 +15,7 @@ inductive Cause
+   | coordinateRank (expected actual : Nat)
+   | coordinateBound (slot coordinate extent : Nat)
+   | offsetBound (offset length : Nat)
++  | writeOutOfRange (slot : Nat) (value : Int) (extent : Nat)
+   deriving DecidableEq, Repr
+ 
+ structure Unavailable where
+@@ -106,6 +107,24 @@ private def slots (origin : SourceOrigin) (assignment : List (UID × Nat))
+     | some p => .ok p.2
+     | none => .error (unavailable { origin with slot := some slot } (.missingUID uid))
+ 
++/-- Destination coordinate of one occurrence: each write form `c0 + Σ coef * value(uid)` is
++evaluated over the assignment as an `Int`. Independent of `dest`. An image outside
++`[0, extent)` is an error here, never wrapped, even though admission already rules it out. -/
++private def destination (origin : SourceOrigin) (shape : List Nat)
++    (assignment : List (UID × Nat)) (forms : List WriteForm) :
++    Except Unavailable (List Nat) := do
++  unless forms.length == shape.length do
++    throw (unavailable origin (.coordinateRank shape.length forms.length))
++  (forms.zip shape).zipIdx.mapM fun ((form, extent), slot) => do
++    let here := { origin with slot := some slot }
++    let mut value : Int := form.1
++    for (coef, uid) in form.2 do
++      match assignment.find? (fun p => p.1 == uid) with
++      | some p => value := value + coef * (p.2 : Int)
++      | none => throw (unavailable here (.missingUID uid))
++    if 0 ≤ value ∧ value < (extent : Int) then pure value.toNat
++    else throw (unavailable here (.writeOutOfRange slot value extent))
++
+ private def assignments : List Axis → List (List (UID × Nat))
+   | [] => [[]]
+   | a :: rest =>
+@@ -160,12 +179,14 @@ private def termFiber (admitted : AdmittedSource) (store : List Tensor)
+     (term : Term admitted.source.context statement.output.context
+       admitted.source.table.declarations)
+     (coordinate : List Nat) : Except Unavailable TermFiber := do
+-  let support := statement.output.indices ++ term.sourceReads.flatMap (·.indices)
++  let support := statement.output.forms.flatMap WriteForm.uids ++
++    term.sourceReads.flatMap (·.indices)
+   let axes := admitted.source.context.axes.filter (fun a => a.uid ∈ support)
++  let shape := (admitted.source.table.entry statement.output.tensor).axes.map (·.extent)
+   let mut occurrences := []
+   let mut total : ℚ := 0
+   for assignment in assignments axes do
+-    let output ← slots statement.output.origin assignment statement.output.indices
++    let output ← destination statement.output.origin shape assignment statement.output.forms
+     if output == coordinate then
+       let mut product : ℚ := 1
+       let mut reads := []
+-- 
+2.50.1 (Apple Git-155)
+

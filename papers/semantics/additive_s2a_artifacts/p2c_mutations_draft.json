@@ -1,0 +1,101 @@
+[
+ {
+  "label": "T2-M3 scatter accepts reduce max",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "!(opts.reduce == .sum || opts.reduce == .rejectCollisions)",
+  "new": "!(opts.reduce == .sum || opts.reduce == .rejectCollisions || opts.reduce == .max)",
+  "targets": ["Semantics.SourceAdmissionAffineTest"],
+  "expect": ["SourceAdmissionAffineTest.lean:116:0"]
+ },
+ {
+  "label": "T2-M4 scatter fill check removed",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "opts.fill != 0 || ",
+  "new": "",
+  "targets": ["Semantics.SourceAdmissionAffineTest"],
+  "expect": ["SourceAdmissionAffineTest.lean:119:0"]
+ },
+ {
+  "label": "T2-M6 scale slot drops coefficient",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "pure (idxAffineForm e)",
+  "new": "pure (match e with | .scale _ a => (0, [(1, a.uid)]) | _ => idxAffineForm e)",
+  "targets": ["Semantics.SourceAdmissionAffineTest"],
+  "expect": ["SourceAdmissionAffineTest.lean:80:0", "SourceAdmissionAffineTest.lean:82:0", "SourceAdmissionAffineTest.lean:112:0", "SourceAdmissionAffineTest.lean:114:0"]
+ },
+ {
+  "label": "T2-M8 const slot offset ignored",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "pure (idxAffineForm e)",
+  "new": "pure (match e with | .const _ => (0, []) | _ => idxAffineForm e)",
+  "targets": ["Semantics.SourceAdmissionAffineTest"],
+  "expect": ["SourceAdmissionAffineTest.lean:86:0", "SourceAdmissionAffineTest.lean:89:0"]
+ },
+ {
+  "label": "T2-M7 affine shift READ admitted (PROOF kill: breaks a theorem in Admission.lean, no fixture reached)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "    | .const _ | .scale .. | .shift .. | .affine .. =>",
+  "new": "    | .shift a _ => let _ ← sourceAxis c .read here a; pure a.uid\n    | .const _ | .scale .. | .affine .. =>",
+  "targets": ["Semantics.SourceAdmissionAffineTest"],
+  "expect": ["Admission.lean:520:28"]
+ },
+ {
+  "label": "T2-M5 support order reversed",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "firstUIDs (forms.flatMap WriteForm.uids)",
+  "new": "(firstUIDs (forms.flatMap WriteForm.uids)).reverse",
+  "targets": ["Semantics.SourceAdmissionAffineTest"],
+  "expect": ["SourceAdmissionAffineTest.lean:93:0"]
+ },
+ {
+  "label": "T2-M2 range check off by one (PROOF kill: omega in fitIndex, no fixture reached)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "decide (writeValue f v < a.extent)",
+  "new": "decide (writeValue f v ≤ a.extent)",
+  "targets": ["Semantics.SourceAdmissionAffineTest"],
+  "expect": ["Admission.lean:343:68"]
+ },
+ {
+  "label": "T2-M9 range error blames first fitting axis",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "      !coordAll shape (fun w => formFits ax f (coordLookup w))).map (·.2)).getD 0",
+  "new": "      coordAll shape (fun w => formFits ax f (coordLookup w))).map (·.2)).getD 0",
+  "targets": ["Semantics.SourceAdmissionAffineTest"],
+  "expect": ["SourceAdmissionAffineTest.lean:89:0"]
+ },
+ {
+  "label": "T1-M1 globalFiber ignores destination (PROOF kill)",
+  "task": "T1",
+  "file": "LeanNCD/Semantics/Source/Fiber.lean",
+  "old": "if Term.globalDestination output term v = p then term.globalProduct ρ v else 0",
+  "new": "if True then term.globalProduct ρ v else 0",
+  "targets": ["Semantics.SourceAffineDestinationTest"],
+  "expect": ["Fiber.lean:293:2"]
+ },
+ {
+  "label": "T1-M2 collectedBody empty fibers read 1 (PROOF kill)",
+  "task": "T1",
+  "file": "LeanNCD/Semantics/Source/Correspondence.lean",
+  "old": "interpret semiringOps ρ (term.body (r := r) id) x else some 0)",
+  "new": "interpret semiringOps ρ (term.body (r := r) id) x else some 1)",
+  "targets": ["Semantics.SourceAffineDestinationTest"],
+  "expect": ["Correspondence.lean:107:6"]
+ },
+ {
+  "label": "T1-M3 statement fiber keeps only first term (PROOF kill)",
+  "task": "T1",
+  "file": "LeanNCD/Semantics/Source/ProgramCorrespondence.lean",
+  "old": "(statement.terms.map (fun term => term.globalFiber statement.output ρ p)).sum",
+  "new": "(statement.terms.map (fun term => term.globalFiber statement.output ρ p)).headD 0",
+  "targets": ["Semantics.SourceAffineDestinationTest"],
+  "expect": ["ProgramCorrespondence.lean:46:2"]
+ }
+]

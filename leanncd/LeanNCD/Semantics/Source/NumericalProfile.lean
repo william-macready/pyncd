@@ -21,6 +21,15 @@ structure Site where
 
 inductive StructuralCondition
   | usedDType (origin : SourceOrigin) (name : String) (actual : TensorElementType)
+  /-- A non-bare write under `reject` policy whose support box has two assignments with one
+  destination image: production raises `scatterCollision`, the oracle sums them. -/
+  | scatterCollisionRejected (origin : SourceOrigin)
+  /-- A tensor written by several statements, at least one non-bare. -/
+  | multiWriterScatter (declaration : Nat)
+  /-- A non-bare write whose declared destination shape differs from the extent production
+  derives from the forms (`derived`); production's shape wins. -/
+  | scatterExtentOverridesDeclared (origin : SourceOrigin) (declaration : Nat)
+      (derived : List Nat)
   deriving DecidableEq, Repr
 
 inductive ReceiptCondition
@@ -186,16 +195,41 @@ private def checkOccurrence (source : AdmittedSource) (result : Oracle.Result)
     ← checkValue site .subsetProductBound envelope]
   pure values
 
+/-- A write form `c0 + Σ coef * value(uid)` evaluated over an occurrence assignment (the profile's
+own receipt check of the oracle's destination; independent of `dest`). -/
+private def formsAt (site : Site) (assignment : List (UID × Nat)) (forms : List WriteForm) :
+    Except Unsupported (List Nat) :=
+  forms.mapM fun form => do
+    let mut value : Int := form.1
+    for (coef, uid) in form.2 do
+      match assignment.find? (fun p => p.1 == uid) with
+      | some p => value := value + coef * (p.2 : Int)
+      | none => throw (.receipt site (.lookup ⟨site.origin, .missingUID uid⟩))
+    if value < 0 then throw (.receipt site .outputCoordinate) else pure value.toNat
+
 private def checkFiber (source : AdmittedSource) (result : Oracle.Result)
     (statement : AdmittedStatement source.source)
     (term : Term source.source.context statement.output.context source.source.table.declarations)
     (row : Debug.OracleRow) (fiber : Oracle.TermFiber) :
     Except Unsupported (List CheckedValue × ℚ) := do
   let site : Site := { origin := term.origin, coordinate := row.fullCell.coordinate }
+  -- Bare: the existing checks. Non-bare: the support is the forms' uids, the destination is the
+  -- forms evaluated over the assignment, and the occurrence count of a fiber (0..n) is the number
+  -- of support assignments whose forms land on the cell (enumerated, below).
+  let bare := statement.output.forms == statement.output.indices.map WriteForm.single
+  let outputUids := if bare then statement.output.indices
+    else statement.output.forms.flatMap WriteForm.uids
   let axes := source.source.context.axes.filter
-    (fun a => a.uid ∈ statement.output.indices ++ term.sourceReads.flatMap (·.indices))
-  let expectedCount := if row.occurrence.isSome then
-    Oracle.cellCount (term.partition.bound.map (·.extent)) else 0
+    (fun a => a.uid ∈ outputUids ++ term.sourceReads.flatMap (·.indices))
+  let expectedCount : Nat := if bare then
+      (if row.occurrence.isSome then Oracle.cellCount (term.partition.bound.map (·.extent)) else 0)
+    else
+      -- Non-bare: the assignments of the support axes whose forms land on this cell (the boxes
+      -- are tiny, so enumerate; a form that evaluates negative never matches).
+      ((Oracle.coordinates (axes.map (·.extent))).filter fun coordinate =>
+        match formsAt site (axes.map Axis.uid |>.zip coordinate) statement.output.forms with
+        | .ok cell => cell == row.fullCell.coordinate
+        | .error _ => false).length
   unless fiber.occurrences.length == expectedCount do
     throw (.receipt site (.occurrences expectedCount fiber.occurrences.length))
   let mut seen : List (List (UID × Nat)) := []
@@ -211,7 +245,9 @@ private def checkFiber (source : AdmittedSource) (result : Oracle.Result)
     seen := seen ++ [occurrence.assignment]
     for (axis, pair) in axes.zip occurrence.assignment do
       unless pair.2 < axis.extent do throw (.receipt here .assignment)
-    let expectedOutput ← coordinateAt here occurrence.assignment statement.output.indices
+    let expectedOutput ← if bare then
+      coordinateAt here occurrence.assignment statement.output.indices
+    else formsAt here occurrence.assignment statement.output.forms
     unless expectedOutput == row.fullCell.coordinate do throw (.receipt here .outputCoordinate)
     values := values ++ (← checkOccurrence source result term row.fullCell.coordinate occurrence)
     total := total + occurrence.value

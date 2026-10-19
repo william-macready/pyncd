@@ -296,17 +296,165 @@ theorem Term.read_projection (term : Term source out σ) (i : Fin term.sourceRea
       (term.sourceReads.get i).read.slots.project (uidCoordEquiv source v) :=
   (term.reads i).projection term.partition.embedding v
 
+/-- An integer-affine destination form `(c0, [(coef, uid)])`, as `idxAffineForm` produces:
+one per destination axis. Data the oracle reads instead of `AdmittedOutput.dest`. -/
+abbrev WriteForm := Int × List (Int × UID)
+
+def WriteForm.single (u : UID) : WriteForm := (0, [(1, u)])
+
+def WriteForm.uids (f : WriteForm) : List UID := f.2.map Prod.snd
+
+/-- The value of a form under a UID valuation. -/
+def writeValue (f : WriteForm) (v : UID → Int) : Int :=
+  f.1 + (f.2.map fun t => t.1 * v t.2).sum
+
+/-- The value at the first axis with this UID (0 when absent). -/
+def coordLookup : {sh : Shape} → Coord sh → UID → Int
+  | [], _, _ => 0
+  | a :: _, p, u => if a.uid = u then (p.1.val : Int) else coordLookup p.2 u
+
+def coordValues : {sh : Shape} → Coord sh → List Int
+  | [], _ => []
+  | _ :: _, p => (p.1.val : Int) :: coordValues p.2
+
+/-- Decide a predicate over the whole box `Coord sh` by enumeration. -/
+def coordAll : (sh : Shape) → (Coord sh → Bool) → Bool
+  | [], p => p ()
+  | a :: sh, p => (List.finRange a.extent).all fun i => coordAll sh fun w => p (i, w)
+
+theorem coordAll_spec : (sh : Shape) → (p : Coord sh → Bool) → coordAll sh p = true →
+    ∀ w, p w = true
+  | [], _, h, () => h
+  | a :: sh, p, h, w => by
+    simp only [coordAll, List.all_eq_true, List.mem_finRange, true_implies] at h
+    exact coordAll_spec sh (fun v => p (w.1, v)) (h w.1) w.2
+
+def formFits (a : Axis) (f : WriteForm) (v : UID → Int) : Bool :=
+  decide (0 ≤ writeValue f v) && decide (writeValue f v < a.extent)
+
+def formsFit : Shape → List WriteForm → (UID → Int) → Bool
+  | [], [], _ => true
+  | a :: sh, f :: fs, v => formFits a f v && formsFit sh fs v
+  | _, _, _ => false
+
+def fitIndex (a : Axis) (f : WriteForm) (v : UID → Int) (h : formFits a f v = true) :
+    Fin a.extent :=
+  ⟨(writeValue f v).toNat, by
+    simp only [formFits, Bool.and_eq_true, decide_eq_true_eq] at h; omega⟩
+
+theorem fitIndex_val (a : Axis) (f : WriteForm) (v : UID → Int) (h : formFits a f v = true) :
+    ((fitIndex a f v h).val : Int) = writeValue f v := by
+  simp only [formFits, Bool.and_eq_true, decide_eq_true_eq] at h
+  simp only [fitIndex]; omega
+
+/-- The destination coordinate the forms denote, given they fit the destination shape. -/
+def coordOfForms : (sh : Shape) → (fs : List WriteForm) → (v : UID → Int) →
+    formsFit sh fs v = true → Coord sh
+  | [], [], _, _ => ()
+  | a :: sh, f :: fs, v, h =>
+    (fitIndex a f v (Bool.and_eq_true_iff.mp h).1,
+      coordOfForms sh fs v (Bool.and_eq_true_iff.mp h).2)
+  | [], _ :: _, _, h => absurd h (by simp [formsFit])
+  | _ :: _, [], _, h => absurd h (by simp [formsFit])
+
+theorem coordValues_ofForms : (sh : Shape) → (fs : List WriteForm) → (v : UID → Int) →
+    (h : formsFit sh fs v = true) →
+      coordValues (coordOfForms sh fs v h) = fs.map (writeValue · v)
+  | [], [], _, _ => rfl
+  | a :: sh, f :: fs, v, h => by
+    simp only [coordOfForms, coordValues, List.map_cons, fitIndex_val,
+      coordValues_ofForms sh fs v]
+  | [], _ :: _, _, h => absurd h (by simp [formsFit])
+  | _ :: _, [], _, h => absurd h (by simp [formsFit])
+
+theorem Ref.uid_mem : {sh : Shape} → (r : Ref sh n) → r.uid ∈ sh.map Axis.uid
+  | _ :: _, .here => by simp [Ref.uid]
+  | _ :: _, .there r => by
+    simp only [Ref.uid, List.map_cons, List.mem_cons]; exact Or.inr (Ref.uid_mem r)
+
+theorem Ref.get_lookup : {sh : Shape} → (r : Ref sh n) → (sh.map Axis.uid).Nodup →
+    (w : Coord sh) → ((r.get w).val : Int) = coordLookup w r.uid
+  | _ :: _, .here, _, _ => by simp [Ref.get, Ref.uid, coordLookup]
+  | a :: _, .there r, hn, w => by
+    have hn' := List.nodup_cons.mp hn
+    have hne : a.uid ≠ r.uid := fun he => hn'.1 (he ▸ Ref.uid_mem r)
+    simp only [Ref.get, Ref.uid, coordLookup, if_neg hne]
+    exact Ref.get_lookup r hn'.2 w.2
+
+theorem Slots.values_project (hn : (ctx.map Axis.uid).Nodup) :
+    (slots : Slots ctx sh) → (w : Coord ctx) →
+      coordValues (slots.project w) = slots.uids.map (coordLookup w)
+  | .nil, _ => rfl
+  | .cons r rest, w => by
+    simp only [Slots.project, coordValues, Slots.uids, List.map_cons, Ref.get_lookup r hn w,
+      Slots.values_project hn rest w]
+
+theorem Slots.lookup_project (hn : (ctx.map Axis.uid).Nodup) :
+    (slots : Slots ctx sh) → slots.uids = sh.map Axis.uid → (w : Coord ctx) → (u : UID) →
+      u ∈ sh.map Axis.uid → coordLookup (slots.project w) u = coordLookup w u
+  | .nil, _, _, u, hu => by simp at hu
+  | .cons (a := a) r rest, h, w, u, hu => by
+    simp only [Slots.uids, List.map_cons, List.cons.injEq] at h
+    rw [List.map_cons, List.mem_cons] at hu
+    simp only [Slots.project, coordLookup]
+    by_cases hau : a.uid = u
+    · rw [if_pos hau, Ref.get_lookup r hn w, h.1, hau]
+    · rw [if_neg hau]
+      exact Slots.lookup_project hn rest h.2 w u (hu.resolve_left (Ne.symm hau))
+
+theorem writeValue_congr (f : WriteForm) (v v' : UID → Int) (h : ∀ u ∈ f.uids, v u = v' u) :
+    writeValue f v = writeValue f v' := by
+  unfold writeValue
+  congr 2
+  apply List.map_congr_left
+  intro p hp
+  rw [h p.2 (List.mem_map.mpr ⟨p, hp, rfl⟩)]
+
+theorem writeValue_single (u : UID) (v : UID → Int) : writeValue (.single u) v = v u := by
+  simp [writeValue, WriteForm.single]
+
 structure AdmittedOutput (source : Context) (σ : Declarations Unit) where
   tensor : σ.Tensor
   indices : List UID
   origin : SourceOrigin
   context : Context
   order : context.axes.map Axis.uid = firstUIDs indices
-  slots : Slots context.axes (σ.signature tensor).axes
+  /-- Virtual write shape: the coordinates `slots` project to. For a bare write this is the
+  destination signature; for an affine write, the axes its LHS slots mention. -/
+  shape : Shape
+  /-- Destination index map from virtual write coordinates to destination coordinates;
+  `id` for a bare write. Colliding coordinates are summed by the collection. -/
+  dest : Coord shape → Coord (σ.signature tensor).axes
+  slots : Slots context.axes shape
   linked : slots.uids = indices
-  sourceSlots : Slots source.axes (σ.signature tensor).axes
+  sourceSlots : Slots source.axes shape
   source_linked : sourceSlots.uids = indices
   embedding : IdentityEmbedding context source
+  /-- One integer-affine form per destination axis, over source UIDs: the destination as DATA,
+  for consumers (the oracle) that must not use `dest`. `WriteForm.single` per slot for a bare
+  write. Tied to `dest` by `AdmittedOutput.FormsSpec`, proved for the two output builders
+  `admitOutput` (by `admitOutput_formsSpec`) and `admitAffineOutput` (by
+  `admitAffineOutput_formsSpec`); NOT stated as a theorem for the full `admitSourceAffine` result
+  (`admitAffineWrite` is private). Not stored: a stored proof would stop `{ o with dest := … }`
+  retargeting. -/
+  forms : List WriteForm
+
+/-- The destination is a bare projection of the source valuation (no index map): the
+meaning the raw-parse chain certifies. -/
+def AdmittedOutput.IsBare (output : AdmittedOutput source σ) : Prop :=
+  ∃ bare : Slots source.axes (σ.signature output.tensor).axes,
+    bare.uids = output.indices ∧
+      ∀ w, output.dest (output.sourceSlots.project w) = bare.project w
+
+theorem AdmittedOutput.isBare_of_identity (output : AdmittedOutput source σ)
+    (hs : output.shape = (σ.signature output.tensor).axes)
+    (hd : ∀ x, output.dest x = hs ▸ x) : output.IsBare := by
+  cases output with
+  | mk tensor indices origin context order shape dest slots linked sourceSlots
+      source_linked embedding forms =>
+    simp only at hs hd ⊢
+    subst hs
+    exact ⟨sourceSlots, source_linked, fun w => hd _⟩
 
 def admitOutput (source : Context) (dst : σ.Tensor) (ids : List UID) (origin : SourceOrigin) :
     Except SourceDiagnostic {output : AdmittedOutput source σ // output.tensor = dst} := do
@@ -315,8 +463,9 @@ def admitOutput (source : Context) (dst : σ.Tensor) (ids : List UID) (origin : 
   let embedding ← identityEmbedding context source origin
   let slots ← resolveSourceSlots context.axes .output origin (σ.signature dst).axes ids
   pure ⟨⟨dst, ids, origin, context, by
-    rw [outputContext_order, Slots.keys_uids, global.property],
-    slots.val, slots.property, global.val, global.property, embedding⟩, rfl⟩
+    rw [outputContext_order, Slots.keys_uids, global.property], (σ.signature dst).axes, id,
+    slots.val, slots.property, global.val, global.property, embedding,
+    ids.map WriteForm.single⟩, rfl⟩
 
 theorem AdmittedOutput.projection (output : AdmittedOutput source σ) (v : UIDVal source) :
     output.slots.project
@@ -451,6 +600,51 @@ theorem admitOutput_fields (source : Context) (dst : σ.Tensor) (ids : List UID)
   all_goals subst output
   all_goals exact ⟨rfl, rfl⟩
 
+/-- Admission's output is the identity case of the destination index map. -/
+theorem admitOutput_identity (source : Context) (dst : σ.Tensor) (ids : List UID)
+    (origin : SourceOrigin) (output : {o : AdmittedOutput source σ // o.tensor = dst})
+    (h : admitOutput source dst ids origin = .ok output) :
+    ∃ hs : output.val.shape = (σ.signature output.val.tensor).axes,
+      ∀ x, output.val.dest x = hs ▸ x := by
+  unfold admitOutput at h
+  simp only [bind, pure, Except.bind, Except.pure] at h
+  repeat' split at h
+  all_goals simp only [Except.ok.injEq, reduceCtorEq] at h
+  all_goals subst output
+  all_goals exact ⟨rfl, fun _ => rfl⟩
+
+theorem admitOutput_bare (source : Context) (dst : σ.Tensor) (ids : List UID)
+    (origin : SourceOrigin) (output : {o : AdmittedOutput source σ // o.tensor = dst})
+    (h : admitOutput source dst ids origin = .ok output) : output.val.IsBare := by
+  obtain ⟨hs, hd⟩ := admitOutput_identity source dst ids origin output h
+  exact output.val.isBare_of_identity hs hd
+
+/-- `forms` denote `dest`: for every source valuation, the destination coordinate's values are
+the forms evaluated at the source UIDs. -/
+def AdmittedOutput.FormsSpec (output : AdmittedOutput source σ) : Prop :=
+  ∀ w : Coord source.axes, coordValues (output.dest (output.sourceSlots.project w)) =
+    output.forms.map (writeValue · (coordLookup w))
+
+theorem admitOutput_forms (source : Context) (dst : σ.Tensor) (ids : List UID)
+    (origin : SourceOrigin) (output : {o : AdmittedOutput source σ // o.tensor = dst})
+    (h : admitOutput source dst ids origin = .ok output) :
+    output.val.forms = ids.map WriteForm.single := by
+  unfold admitOutput at h
+  simp only [bind, pure, Except.bind, Except.pure] at h
+  repeat' split at h
+  all_goals simp only [Except.ok.injEq, reduceCtorEq] at h
+  all_goals subst output
+  all_goals rfl
+
+theorem admitOutput_formsSpec (source : Context) (dst : σ.Tensor) (ids : List UID)
+    (origin : SourceOrigin) (output : {o : AdmittedOutput source σ // o.tensor = dst})
+    (h : admitOutput source dst ids origin = .ok output) : output.val.FormsSpec := by
+  obtain ⟨bare, hu, hb⟩ := admitOutput_bare source dst ids origin output h
+  intro w
+  rw [hb w, Slots.values_project source.unique, admitOutput_forms _ _ _ _ _ h, hu,
+    (admitOutput_fields _ _ _ _ _ h).1, List.map_map]
+  exact List.map_congr_left fun u _ => (writeValue_single u _).symm
+
 structure AdmittedStatement (source : AdaptedSource) where
   original : Nat
   output : AdmittedOutput source.context source.table.declarations
@@ -492,7 +686,7 @@ def StatementFields (source : AdaptedSource) (i : Nat) (ast : Stmt)
     rhs.agg = .sum ∧ rhs.nonlin = .identity ∧
     source.table.find name = some statement.output.tensor ∧
     (source.table.entry statement.output.tensor).name = name ∧
-    BareOutputSlots slots statement.output.indices ∧
+    (BareOutputSlots slots statement.output.indices ∧ statement.output.IsBare) ∧
     statement.output.origin = {
       side := .output, statement := some i,
       declaration := some (source.table.entry statement.output.tensor).declaration } ∧
@@ -543,7 +737,8 @@ theorem admitStatement_fields (source : AdaptedSource) (i : Nat) (ast : Stmt)
                   · simpa using hn
                   · simpa only [output.property] using ht
                   · simpa only [output.property] using source.table.find_name name dst ht
-                  · rw [hid]; exact outputIndices_fields _ _ _ _ hi
+                  · exact ⟨by rw [hid]; exact outputIndices_fields _ _ _ _ hi,
+                      admitOutput_bare _ _ _ _ _ ho⟩
                   · simpa only [output.property] using horigin
                   · exact (mapM_success_forall2 _ _ _ hs).imp
                       (fun x term hx => admitAstTerm_fields source output.val.context
@@ -582,5 +777,147 @@ theorem admitSource_fields (snapshot : SourceSnapshot) (admitted : AdmittedSourc
       subst admitted
       exact ⟨adaptSource_statements _ _ ha, (mapM_success_forall2 _ _ _ hs).imp
         (fun x s hx => admitStatement_fields source x.1 x.2 s hx)⟩
+
+/-! ### Non-bare writes (S2a)
+
+A second admission entry, `admitSourceAffine`, also admits writes whose LHS slots are integer-
+affine (`LHSSlot.affine`) and `Stmt.scatter` with `fill = 0`, `reduce ∈ {sum, rejectCollisions}`.
+The default entry `admitSource` (and so `admitRawSource`, `StatementFields` and the whole raw
+chain) is unchanged and still refuses them: affine statements get no raw-parse theorem, by
+construction. Bare `.assign` statements go through `admitStatement` unchanged in both entries. -/
+
+private def idxAxes : IdxExpr → List AxisSpec
+  | .axis a | .scale _ a | .shift a _ => [a]
+  | .const _ => []
+  | .affine _ xs => xs.map Prod.snd
+
+/-- One form per LHS slot. Scan and marked slots stay refused with today's causes. -/
+private def outputForms (c : Context) (origin : SourceOrigin) (slots : List LHSSlot) :
+    Except SourceDiagnostic (List WriteForm) :=
+  slots.zipIdx.mapM fun (slot, i) => do
+    let here := { origin with slot := some i }
+    match slot with
+    | .free a => let _ ← sourceAxis c .output here a; pure (.single a.uid)
+    | .affine e => let _ ← (idxAxes e).mapM (sourceAxis c .output here); pure (idxAffineForm e)
+    | .freeNorm _ => throw (sourceError .output here (.unsupported .marked))
+    | .iterAt .. | .iterNext _ => throw (sourceError .output here (.unsupported .scanSlot))
+
+/-- The distinct UIDs the forms mention, in first-mention order. -/
+def formsSupport (forms : List WriteForm) : List UID := firstUIDs (forms.flatMap WriteForm.uids)
+
+theorem mem_formsSupport (forms : List WriteForm) (f : WriteForm) (hf : f ∈ forms)
+    (u : UID) (hu : u ∈ f.uids) : u ∈ formsSupport forms := by
+  simp only [formsSupport, firstUIDs, List.mem_reverse, List.mem_dedup, List.mem_flatMap]
+  exact ⟨f, hf, hu⟩
+
+/-- The virtual write shape: the support axes with their source extents. -/
+def supportShape (c : Context) (ids : List UID) : Shape :=
+  ids.map fun u => ⟨u, ((c.axes.find? (·.uid == u)).map Axis.extent).getD 0⟩
+
+theorem supportShape_uids (c : Context) (ids : List UID) :
+    (supportShape c ids).map Axis.uid = ids := by
+  simp [supportShape, List.map_map, Function.comp_def]
+
+/-- Admit a write through affine forms. The static range check enumerates the support box:
+every form must land in `[0, extent)` of its destination axis, else `writeOutOfRange` at the
+first such axis. -/
+def admitAffineOutput (source : Context) (dst : σ.Tensor) (forms : List WriteForm)
+    (origin : SourceOrigin) :
+    Except SourceDiagnostic {output : AdmittedOutput source σ // output.tensor = dst} := do
+  let sig := (σ.signature dst).axes
+  if forms.length ≠ sig.length then
+    throw (sourceError .output { origin with slot := some (min forms.length sig.length) }
+      (.rank sig.length forms.length))
+  let ids := formsSupport forms
+  let shape := supportShape source ids
+  let global ← resolveSourceSlots source.axes .output origin shape ids
+  let context := outputContext source (global.val.keys source)
+  let embedding ← identityEmbedding context source origin
+  let slots ← resolveSourceSlots context.axes .output origin shape ids
+  if hfit : coordAll shape (fun w => formsFit sig forms (coordLookup w)) = true then
+    pure ⟨⟨dst, ids, origin, context, by
+      rw [outputContext_order, Slots.keys_uids, global.property], shape,
+      fun w => coordOfForms sig forms (coordLookup w) (coordAll_spec _ _ hfit w),
+      slots.val, slots.property, global.val, global.property, embedding, forms⟩, rfl⟩
+  else
+    let bad := (((sig.zip forms).zipIdx.find? fun ((ax, f), _) =>
+      !coordAll shape (fun w => formFits ax f (coordLookup w))).map (·.2)).getD 0
+    throw (sourceError .output { origin with slot := some bad } .writeOutOfRange)
+
+theorem AdmittedOutput.formsSpec_of_forms (output : AdmittedOutput source σ)
+    (hshape : output.shape.map Axis.uid = output.indices)
+    (hsupp : ∀ f ∈ output.forms, ∀ u ∈ f.uids, u ∈ output.indices)
+    (hfit : ∀ w, formsFit (σ.signature output.tensor).axes output.forms (coordLookup w) = true)
+    (hd : ∀ w, output.dest w = coordOfForms _ output.forms (coordLookup w) (hfit w)) :
+    output.FormsSpec := by
+  intro w
+  rw [hd, coordValues_ofForms]
+  refine List.map_congr_left fun f hf => writeValue_congr f _ _ fun u hu => ?_
+  exact Slots.lookup_project source.unique output.sourceSlots
+    (output.source_linked.trans hshape.symm) w u (hshape ▸ hsupp f hf u hu)
+
+theorem admitAffineOutput_formsSpec (source : Context) (dst : σ.Tensor)
+    (forms : List WriteForm) (origin : SourceOrigin)
+    (output : {o : AdmittedOutput source σ // o.tensor = dst})
+    (h : admitAffineOutput source dst forms origin = .ok output) :
+    output.val.forms = forms ∧ output.val.FormsSpec := by
+  unfold admitAffineOutput at h
+  simp only [bind, pure, Except.bind, Except.pure, throw, throwThe, MonadExceptOf.throw] at h
+  repeat' split at h
+  all_goals simp only [Except.ok.injEq, reduceCtorEq] at h
+  all_goals subst output
+  all_goals exact ⟨rfl, AdmittedOutput.formsSpec_of_forms _ (supportShape_uids _ _)
+    (fun f hf u hu => mem_formsSupport _ f hf u hu)
+    (coordAll_spec _ _ (by assumption)) (fun _ => rfl)⟩
+
+private def LHSSlot.isFree : LHSSlot → Bool
+  | .free _ => true
+  | _ => false
+
+/-- The write body of `admitStatement`'s `.assign` arm, with the output admitted through
+affine forms. -/
+private def admitAffineWrite (source : AdaptedSource) (original : Nat) (name : String)
+    (slots : List LHSSlot) (rhs : RHSExpr) : Except SourceDiagnostic (AdmittedStatement source) := do
+  let origin : SourceOrigin := { side := .output, statement := some original }
+  if rhs.agg != .sum then throw (sourceError .statement origin (.unsupported .nonSum))
+  if rhs.nonlin != .identity then
+    throw (sourceError .statement origin (.unsupported .nonIdentity))
+  let dst ← match source.table.find name with
+    | none => throw (sourceError .output origin (.undeclaredTensor name))
+    | some t => pure t
+  let origin := { origin with declaration := some (source.table.entry dst).declaration }
+  if hw : (source.table.entry dst).role ≠ .input then
+    let forms ← outputForms source.context origin slots
+    let checkedOutput ← admitAffineOutput source.context dst forms origin
+    let output := checkedOutput.val
+    let terms ← rhs.body.terms.zipIdx.mapM fun (term, i) => do
+      let termOrigin := { origin with side := .read, declaration := none, term := some i }
+      let reads ← term.factors.zipIdx.mapM fun (factor, j) =>
+        astRead source { termOrigin with factor := some j } factor
+      admitTerm source.context output.context termOrigin reads
+    pure ⟨original, output, by rw [checkedOutput.property]; exact hw, terms⟩
+  else
+    throw (sourceError .output origin (.role .defined (source.table.entry dst).role))
+
+/-- `admitStatement`, plus non-bare `.assign` and policy-checked `.scatter`. -/
+def admitAffineStatement (source : AdaptedSource) (original : Nat) :
+    Stmt → Except SourceDiagnostic (AdmittedStatement source)
+  | .assign name slots rhs =>
+    if slots.all LHSSlot.isFree then admitStatement source original (.assign name slots rhs)
+    else admitAffineWrite source original name slots rhs
+  | .scatter name slots rhs opts =>
+    if opts.fill != 0 || !(opts.reduce == .sum || opts.reduce == .rejectCollisions) then
+      .error (sourceError .statement { statement := some original } (.unsupported .scatterPolicy))
+    else if slots.all LHSSlot.isFree then
+      admitStatement source original (.assign name slots rhs)
+    else admitAffineWrite source original name slots rhs
+  | stmt => admitStatement source original stmt
+
+/-- The admission entry for the differential path: `admitSource` with non-bare writes. -/
+def admitSourceAffine (snapshot : SourceSnapshot) : Except SourceDiagnostic AdmittedSource := do
+  let source ← adaptSource snapshot
+  let statements ← source.statements.mapM fun (i, statement) =>
+    admitAffineStatement source i statement
+  pure ⟨source, statements⟩
 
 end LeanNCD.Semantics.Source

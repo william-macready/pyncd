@@ -1,0 +1,20 @@
+[
+ {
+  "label": "T2-M1 range-error slot forced to 0",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "slot := some bad } .writeOutOfRange",
+  "new": "slot := some 0 } .writeOutOfRange",
+  "targets": ["Semantics.SourceAdmissionAffineTest"],
+  "expect": ["SourceAdmissionAffineTest.lean:148:0"]
+ },
+ {
+  "label": "T2-M10 rank check removed",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "if forms.length ≠ sig.length then",
+  "new": "if False then",
+  "targets": ["Semantics.SourceAdmissionAffineTest"],
+  "expect": ["SourceAdmissionAffineTest.lean:157:0", "SourceAdmissionAffineTest.lean:159:0"]
+ }
+]
