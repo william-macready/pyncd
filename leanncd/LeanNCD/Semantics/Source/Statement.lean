@@ -112,7 +112,7 @@ def AdmittedStatement.body (statement : AdmittedStatement source)
 def AdmittedStatement.destination (statement : AdmittedStatement source)
     (x : Coord statement.output.context.axes) :
     Coord (source.table.declarations.signature statement.output.tensor).axes :=
-  statement.output.slots.project x
+  statement.output.dest (statement.output.slots.project x)
 
 theorem AdmittedStatement.interpret_body (statement : AdmittedStatement source)
     (ρ : Store (fun _ => K) source.table.declarations)
@@ -132,7 +132,23 @@ theorem AdmittedStatement.destination_pullback (statement : AdmittedStatement so
     statement.destination
       (uidCoordEquiv statement.output.context
         (indexPullback statement.output.embedding.map v)) =
-      statement.output.sourceSlots.project (uidCoordEquiv source.context v) :=
-  statement.output.projection v
+      statement.output.dest
+        (statement.output.sourceSlots.project (uidCoordEquiv source.context v)) :=
+  congrArg statement.output.dest (statement.output.projection v)
+
+/-- A bare statement's destination is the plain slot projection of the source valuation:
+the pre-index-map meaning, unchanged. -/
+theorem AdmittedStatement.destination_bare (statement : AdmittedStatement source)
+    (h : statement.output.IsBare) :
+    ∃ bare : Slots source.context.axes
+        (source.table.declarations.signature statement.output.tensor).axes,
+      bare.uids = statement.output.indices ∧
+      ∀ v : UIDVal source.context,
+        statement.destination
+          (uidCoordEquiv statement.output.context
+            (indexPullback statement.output.embedding.map v)) =
+          bare.project (uidCoordEquiv source.context v) := by
+  obtain ⟨bare, hu, hd⟩ := h
+  exact ⟨bare, hu, fun v => (statement.destination_pullback v).trans (hd _)⟩
 
 end LeanNCD.Semantics.Source

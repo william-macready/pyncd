@@ -144,24 +144,29 @@ theorem CertifiedRawStatement.output_projection
       statement.destination
         (uidCoordEquiv statement.output.context
           (indexPullback statement.output.embedding.map v)) =
-        statement.output.sourceSlots.project (uidCoordEquiv admitted.source.context v) ∧
+        statement.output.dest
+          (statement.output.sourceSlots.project (uidCoordEquiv admitted.source.context v)) ∧
       ∀ q : Fin (admitted.source.table.declarations.signature statement.output.tensor).axes.length,
         ∃ a, ∃ u : admitted.source.context.Key, slots[q.val]? = some (.free a) ∧
           RawAxisFields raw memo a u.val ∧ memo[a.name]? = some u.val ∧
           Coord.raw (statement.destination
             (uidCoordEquiv statement.output.context
               (indexPullback statement.output.embedding.map v))) q = (v u).val ∧
-          Coord.raw (statement.output.sourceSlots.project
-            (uidCoordEquiv admitted.source.context v)) q = (v u).val := by
-  obtain ⟨name, slots, rhs, he, hi, _, _, _, hn, _, ho, _⟩ := h.fields
+          Coord.raw (statement.output.dest (statement.output.sourceSlots.project
+            (uidCoordEquiv admitted.source.context v))) q = (v u).val := by
+  obtain ⟨name, slots, rhs, he, hi, _, _, _, hn, hb, ho, _⟩ := h.fields
   have hs := h.fields
   rw [he] at hs
   obtain ⟨hl, hg⟩ := hs.output_slots
   refine ⟨name, slots, rhs, he, hi, h.declaration, hn, hl, hg, ho,
     AdmittedStatement.destination_pullback _ v, ?_⟩
+  -- The per-coordinate raw reading is the bare meaning, gated by the certified `IsBare`.
+  obtain ⟨bare, hbu, hbd⟩ := hb.2
+  have hgb : RawOutputSlots raw memo slots bare.uids := hbu ▸ hb.1
   intro q
-  obtain ⟨a, u, ha, hu, hm, hv⟩ := hg.coordinate v q
-  exact ⟨a, u, ha, hu, hm, by rw [AdmittedStatement.destination_pullback]; exact hv, hv⟩
+  obtain ⟨a, u, ha, hu, hm, hv⟩ := hgb.coordinate v q
+  exact ⟨a, u, ha, hu, hm, by rw [AdmittedStatement.destination_pullback, hbd]; exact hv,
+    by rw [hbd]; exact hv⟩
 
 variable {K : Type} [Semiring K] {r : Registry (fun _ : Unit => K)}
 

@@ -262,8 +262,8 @@ theorem Term.output_global_support (output : AdmittedOutput source σ)
 def Term.globalDestination (output : AdmittedOutput source σ)
     (term : Term source output.context σ) (v : UIDVal term.globalContext) :
     Coord (σ.signature output.tensor).axes :=
-  output.sourceSlots.projectWithin term.globalEmbedding v
-    (term.output_global_support output)
+  output.dest (output.sourceSlots.projectWithin term.globalEmbedding v
+    (term.output_global_support output))
 
 def Term.globalFiber (output : AdmittedOutput source σ)
     (term : Term source output.context σ) (ρ : Store (fun _ => K) σ)

@@ -41,7 +41,7 @@ theorem AdmittedStatement.fiber_partition (statement : AdmittedStatement source)
       rw [ih, term.fiber_partition, ← Finset.sum_add_distrib]
       apply Finset.sum_congr rfl
       intro x _
-      by_cases h : statement.output.slots.project x = p <;>
+      by_cases h : statement.output.dest (statement.output.slots.project x) = p <;>
         simp [AdmittedStatement.destination, h]
   exact linear statement.terms
 
