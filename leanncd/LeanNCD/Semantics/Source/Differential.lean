@@ -238,21 +238,41 @@ def detectConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
   -- the first can be observed, so `classification` confirms the head only.
   multi ++ collisions ++ extents
 
-private def legacyCollision : LegacyOutcome → Bool
-  | .failure e => (match e.original.error with | .scatterCollision .. => true | _ => false)
+/-- `name` is the source name of the tensor declared at `declaration` (the condition's origin):
+a native error that names a tensor confirms a condition only for that condition's own tensor. -/
+private def ownedBy (native : NativeRun) (declaration : Option Nat) (name : String) : Bool :=
+  native.source.admitted.source.table.entries.any fun e =>
+    e.name == name && some e.declaration == declaration
+
+/-- ORIGIN-BOUND: the legacy collision names its destination tensor (`evalScatter Y: ...`), so it
+confirms only when `owner` accepts that name. -/
+private def legacyCollision (owner : String → Bool) : LegacyOutcome → Bool
+  | .failure e => (match e.original.error with | .scatterCollision nm .. => owner nm | _ => false)
   | _ => false
 
+/-- CAUSE-ONLY: the multi-writer refusal `scanAxisNotIter` names an AXIS, never a tensor or a
+statement, so a refusal raised by another tensor's writers over the same cause is not
+distinguishable here. -/
 private def legacyCompile (needle : String) : LegacyOutcome → Bool
   | .failure e => e.phase == .compilation &&
       ((toString e.original.error).splitOn needle).length > 1
   | _ => false
 
 /-- The checked leg refuses a multi-axis/constant slot at preparation (capability) before it can
-reach the collision, so either is the predicted rejection. -/
-private def checkedCollision : CheckedOutcome → Bool
+reach the collision, so either is the predicted rejection. The preparation refusal is
+ORIGIN-BOUND: its context is `"{tensor}: ..."` and must name the condition's tensor (`owner`), so
+only the two affine-slot capability constructors, whose context is that locator, qualify. The
+runtime collision is CAUSE-ONLY: `PositionalInputError.scatterCollision` carries coordinates and no
+tensor or statement (the checked layer is positional), so this leg cannot bind it. -/
+private def checkedCollision (owner : String → Bool) : CheckedOutcome → Bool
   | .runtime e => (match e.original.cause with
       | .execution (.scatterCollision ..) => true | _ => false)
-  | .preparation e => (match e.original.cause with | .capability _ => true | _ => false)
+  | .preparation e =>
+      let named (context : String) := owner ((context.splitOn ": ").headD "")
+      (match e.original.cause with
+        | .capability (.multiAxisScatterLhs context) => named context
+        | .capability (.scatterOrAffineLhs context) => named context
+        | _ => false)
   | _ => false
 
 private def shapeOnly (declaration : Nat) (derived : List Nat) (o : NativeObservation) : Bool :=
@@ -263,8 +283,14 @@ private def shapeOnly (declaration : Nat) (derived : List Nat) (o : NativeObserv
       | _ => false
   | .ok _ => false
 
+/-- Every leg whose native error carries an identity is bound to the condition's origin
+(`scatterCollisionRejected`: legacy collision name, checked capability context;
+`scatterExtentOverridesDeclared`: the binding issue's declaration). `multiWriterScatter` stays
+cause-only on both legs (`scanAxisNotIter` names an axis only). -/
 def confirms (native : NativeRun) : StructuralCondition → Bool
-  | .scatterCollisionRejected _ => legacyCollision native.legacy && checkedCollision native.checked
+  | .scatterCollisionRejected origin =>
+      legacyCollision (ownedBy native origin.declaration) native.legacy &&
+        checkedCollision (ownedBy native origin.declaration) native.checked
   | .multiWriterScatter _ => legacyCompile "scanAxisNotIter" native.legacy &&
       (match native.checked with
         | .sourceCompilation e => (match e.cause with | .scanAxisNotIter _ => true | _ => false)
