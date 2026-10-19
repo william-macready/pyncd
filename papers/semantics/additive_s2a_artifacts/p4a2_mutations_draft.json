@@ -1,0 +1,20 @@
+[
+ {
+  "label": "A2-M1 oracle fiber total takes the last occurrence (total := product)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "total := total + product",
+  "new": "total := product",
+  "targets": ["Semantics.SourceDifferentialScatterTest"],
+  "expect": ["SourceDifferentialScatterTest.lean:236:0", "SourceDifferentialScatterTest.lean:237:0", "SourceDifferentialScatterTest.lean:240:0"]
+ },
+ {
+  "label": "A2-M2 oracle drops the first occurrence of every fiber",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "total := total + product",
+  "new": "total := if occurrences.length == 1 then total else total + product",
+  "targets": ["Semantics.SourceDifferentialScatterTest"],
+  "expect": ["SourceDifferentialScatterTest.lean:236:0", "SourceDifferentialScatterTest.lean:237:0", "SourceDifferentialScatterTest.lean:240:0", "SourceDifferentialScatterTest.lean:241:0", "SourceDifferentialScatterTest.lean:251:0", "SourceDifferentialScatterTest.lean:253:0"]
+ }
+]

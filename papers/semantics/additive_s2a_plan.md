@@ -12,8 +12,9 @@ Authoring evidence (costs, dispatch table, survivors, deviations, checklist gaps
 Artifacts: `papers/semantics/additive_s2a_artifacts/` (`p0_extent_probe.md`, `p1_findings.md`, `p2a_findings.md`,
 `p2b_findings.md`, `p2c_findings.md`, `p3_findings.md`, `p3_observed.md`, `p3b_findings.md`, the four mutation
 drafts, the prototype's own `p*_patches/` directories: historical, NOT the shipped series).
-Shipped patches: `papers/semantics/additive_s2a_files/patches/` (17 files, `leanncd/` paths only).
-Manifest: `papers/additive_s2a_mutations_post.json` (28 cycles).
+Shipped patches: `papers/semantics/additive_s2a_files/patches/` (19 files, `leanncd/` paths only; `T4-07`/`T4-08` are the
+review-driven additions A2/A1, prototyped on `proto-s2a-p4` after the independent review).
+Manifest: `papers/additive_s2a_mutations_post.json` (32 cycles).
 
 ## 0. Goal, process weight, fixed decisions
 
@@ -33,8 +34,8 @@ collision-sum agreement was only a comment and `p3_observed.md`. Concretely:
 4. The differential's reference leg uses `admitSourceAffine`; three new structural known-difference conditions
    cover the divergences observed against production (T4).
 
-**Process weight: Full.** Soundness surface (core proofs, raw-chain gating), new capability, 4 code tasks, 17
-patches, 28 mutation cycles (`slice-plan` §0).
+**Process weight: Full.** Soundness surface (core proofs, raw-chain gating), new capability, 4 code tasks, 19
+patches, 32 mutation cycles (`slice-plan` §0).
 
 **Fixed decisions (do not reopen).** Design note §2 and §4, plus the prototype's resolutions:
 - Cut: S2a is sum only. S2b (tropical carriers) is a separate plan written after this slice lands (Rule 13).
@@ -133,11 +134,13 @@ Final whole-branch review: TWO Opus lenses (§5). One fix dispatch per finding g
   | T1 | `SourceAffineDestinationTest.lean` | 3 | 2 | 3 (all PROOF kills) |
   | T2 | `SourceAdmissionAffineTest.lean` | 28 | 0 | 10 (6 guard kills, 2 proof kills `T2-M2`/`T2-M7`, 2 guard kills `T2-M1`/`T2-M10` that the `6d35f5cd` survivor fixtures made possible) |
   | T3 | `SourceOracleAffineTest.lean` | 16 | 0 | 9 |
-  | T4 | `SourceDifferentialScatterTest.lean` | 17 | 0 | 6 |
+  | T4 | `SourceDifferentialScatterTest.lean` | 38 (17 + 21 from T4-07/T4-08) | 0 | 10 |
 
-  Total manifest: 28 entries (T1 3, T2 10, T3 9, T4 6); `mutation-manifest.sh --check` on the final tree prints
-  `manifest OK: 28 entries, 28 selected, every old-string unique`. `--check` verifies old-string uniqueness only; the
-  `expect` strings are verified only by running the cycles (controller step above).
+  Total manifest: 32 entries (T1 3, T2 10, T3 9, T4 10); `mutation-manifest.sh --check` on the final tree prints
+  `manifest OK: 32 entries, 32 selected, every old-string unique`. `--check` verifies old-string uniqueness only; the
+  `expect` strings are verified only by running the cycles (controller step above). The controller ran `--task T4` on
+  the final applied tree: 10/10 PASS (record §11), including the six older cycles on `Differential.lean` after A1 rewrote
+  `confirms`.
 - **Exact shipped fixed values the fixtures observe:** inputs `X[a] = [1,2,3,4]`, `W[b] = [1,10,100]`, `|a| = 4`,
   `|b| = 3` (T3); `Y[2*a]` over `|k| = 7` gives `[1,0,2,0,3,0,4]`; `Y[a+b]` over `|k| = 6` gives
   `[1,12,123,234,340,400]`; `Y[2]` (constant slot) over `|k| = 4` gives `[0,0,111,0]`. Every value was observed from a
@@ -171,7 +174,8 @@ Final whole-branch review: TWO Opus lenses (§5). One fix dispatch per finding g
 | Unmeasured guards (review F8): the T2 range accept-neighbours and the affine-READ refusal guards are killed by no cycle (`T2-M2`, `T2-M7` stop the build at a proof; a proof-compatible STRICTER range check such as `writeValue f v + 1 < a.extent` is the mutation they exist for and is not in the manifest) | unowned; add that cycle if the guards are ever relied on |
 | Over-detection and under-confirmation of the T4 conditions (review F9): `writeCollides` counts every term's read axes (a multi-term `Y[2*a] := X[a] + W[b]` reads as colliding because of `b`); two single-writer extent conditions on DIFFERENT tensors are never confirmed (`shapeOnly` needs every binding issue to belong to the head's declaration: safe direction, a generic divergence); `derivedShape` with a negative coefficient goes through `Int.toNat` and is unprobed | unowned |
 | Enumeration cost: admission's range check (`coordAll` over the support box), the oracle and `writeCollides` (`eraseDups`, quadratic in the box) enumerate the whole box; fixture-sized only. Empty extents behave (vacuous check, no occurrence) | unowned |
-| Bare-slot `.scatter` with `reduce := rejectCollisions` and a CONTRACTED axis (review F11): `admitAffineStatement` sends it to the bare path, the oracle sums over the contracted axis, `detectConditions` skips it (`nonBareWrite` false), and whether production rejects it is UNPROBED (the `writeCollides` docstring says production counts a contracted axis as a collision) | T4-A1 probes it as part of the origin-binding fixture |
+| Bare-slot `.scatter` with `reduce := rejectCollisions` and a CONTRACTED axis (review F11): `admitAffineStatement` sends it to the bare path, the oracle sums over the contracted axis, `detectConditions` skips it (`nonBareWrite` false), and production DOES reject it (probed by A1: legacy `evalScatter Z: collision`, checked runtime `scatterCollision`), so it classifies as `nativeFailure` with no condition explaining it (pinned as `fF11`) | detection of the contracted-axis collision: parked, ~1 dispatch |
+| T4-08 residuals: the checked RUNTIME collision and the multi-writer `scanAxisNotIter` carry no tensor identity and stay cause-only (a same-kind failure from another statement on those legs is still absorbed); binding is per tensor, not per statement; the checked arm's tightening to the two affine-slot capability constructors has no cycle or fixture; the reverse statement orders of `fOriginL`/`fOriginC` were not pinned | locator in `PlanRunFailure` (out of scope); the rest ~0.5 dispatch |
 
 ## 3. Sibling audit (case x class): deliverable of T2 and T4
 
@@ -228,7 +232,7 @@ and are noted in the record):
 | T1 | 5 | 3 / 2 | 3 | P1: 77 (self-report 104) | 60 turns, 250k; SPLIT FLAGGED: dispatch A = T1-01..T1-03 (core proofs) then dispatch B = T1-04, T1-05 (gating + test) |
 | T2 | 3 | 28 / 0 | 10 | P2a: 52 (self 60-75), P2c: 30 | 60 turns, 250k; no split (apply + build; cycles are the controller's); `Admission.lean` rebuild is the long step |
 | T3 | 3 | 16 / 0 | 9 | P2b: 35 (self 74) | 60 turns, 250k; no split |
-| T4 | 6 | 17 / 0 | 6 | P3: 34 + P3b: 60 = 94 (self 57 + ~80, controller figure 156) | 60 turns, 250k; THREE dispatches: A = T4-01..T4-04 (production + the `T4-03` test scaffold), B = T4-05, T4-06 (fixtures AND the head-only `confirms` change in `Differential.lean`: its reviewer must read `classification`/`confirms`, review F6), C = the review-driven additions A1, A2 below (UNPROTOTYPED, adds a manifest entry or two). Mutation cycles are ALWAYS the controller's step (§1), never inside an implementer dispatch |
+| T4 | 8 | 38 / 0 | 10 | P3: 34 + P3b: 60 = 94 (self 57 + ~80, controller figure 156); A2 45 harness tool calls (self 35); A1 57 (self ~46) | 60 turns, 250k; THREE dispatches: A = T4-01..T4-04 (production + the `T4-03` test scaffold), B = T4-05, T4-06 (fixtures AND the head-only `confirms` change in `Differential.lean`: its reviewer must read `classification`/`confirms`, review F6), C = `T4-07` (A2 guards) and `T4-08` (A1 origin binding; Opus review of the diff). A1 and A2 are PROTOTYPED (patches shipped, cycles run). Mutation cycles are ALWAYS the controller's step (§1), never inside an implementer dispatch |
 
 Execution should cost less than prototyping (it applies patches), but this is a hope, not a measurement: the
 prototype figures above are what was measured. Surface any breach.
@@ -317,23 +321,29 @@ the readings differ (X and W are distinct-valued).
 
 Patches, in order: `T4-01-native-source-affine-admission.patch`, `T4-02-differential-oracle-occurrences.patch`,
 `T4-03-differential-scatter-scaffold.patch`, `T4-04-scatter-structural-conditions.patch`,
-`T4-05-differential-guards-fixtures.patch`, `T4-06-drop-redundant-legacy-phase-check.patch`.
-Prototype commits: `b6e39e58`, `39fe34cc`, `cbfe630d`, `7aebc2dd`, `ff7a2172`, `11e92575`.
+`T4-05-differential-guards-fixtures.patch`, `T4-06-drop-redundant-legacy-phase-check.patch`,
+`T4-07-legacy-vs-oracle-collision-guards.patch` (A2), `T4-08-origin-bound-condition-confirmation.patch` (A1).
+Prototype commits: `b6e39e58`, `39fe34cc`, `cbfe630d`, `7aebc2dd`, `ff7a2172`, `11e92575`, then (scratch branch
+`proto-s2a-p4`) `820bebab` (A2), `1b90ad0e` (A1).
 Files: `leanncd/LeanNCD/Semantics/Source/{NativeLegs,Diagnostics,Differential,NumericalProfile,Observation,Provenance}.lean`,
 `leanncd/lakefile.toml`, `leanncd/test/Semantics/SourceDifferentialScatterTest.lean` (new).
 Lake targets: `LeanNCD.Semantics.Source.Differential`, `LeanNCD.Semantics.Source.NativeLegs`,
 `Semantics.SourceDifferentialScatterTest`, and the existing differential tests `Semantics.SourceDifferentialPolicyTest`,
 `Semantics.SourceDifferentialGeometryTest`, `Semantics.SourceDifferentialIdentityTest`.
 Commit message: `feat(semantics): differential covers affine and scatter writes with structural conditions (S2a T4)`.
-Fixtures: 17 `#guard` plus tamper guards (donor: `SourceOracleAffineTest.snap`); rows (a)(b)(c) four-leg parity; (d)(d') legacy sums,
+Fixtures: 38 `#guard` in total (17 from `T4-03`..`T4-06`, 21 from `T4-07`/`T4-08`) plus tamper guards (donor: `SourceOracleAffineTest.snap`); rows (a)(b)(c) four-leg parity; (d)(d') legacy sums,
 checked plan refuses by capability; (e)(f) production collides; (g) refuses at compile with `scanAxisNotIter "a"`;
 (h6) oracle `writeOutOfRange`; (h9) both native legs value with shape issues 9 vs 8; (i) constant slot compile failure;
 masking negative `fMask`; tamper `dropOccurrence true/false` (expect `occurrences 3 2`). Accept-neighbours: E vs A,
 F vs F', G vs single writer, H9 vs A. Full table: `p3_observed.md`.
 Conditions (detected from source, native-confirmed, ordered by pipeline stage, only the head confirmed):
 `scatterCollisionRejected`, `multiWriterScatter`, `scatterExtentOverridesDeclared`.
-Mutation cycles: `--task T4` runs 6 (M1..M6; the equivalent mutant M7 was NOT added: it was removed as redundant code
-in `T4-06`). M6 (`oracleOccurrences` to `[]`) printed 10 lines: possibly truncated.
+Mutation cycles: `--task T4` runs 10 (P3b-M1..M6, A2-M1/M2, A1-M1/M2; the equivalent mutant M7 was NOT added: it was
+removed as redundant code in `T4-06`). The controller ran all 10 on the final applied tree: 10/10 PASS. P3b-M6
+(`oracleOccurrences` to `[]`) and A2-M1 printed 10 lines: possibly truncated (A2-M1's `expect` is only the three new
+guards observed). The legacy-evaluator cycle A2-M3 (`Eval/Scatter.lean` `.sum` branch to `out.set! oc val`, fails exactly
+the legacy-value guards 235, 237, 239, 241 and none of the collision-free neighbours) was run by hand once and is NOT in
+the manifest (it rebuilds the `Eval` chain).
 Expected: targets green; every existing differential test green with NO edit (the `compareSource` switch to affine
 admission changes no existing refusal: checked in the prototype by the full `Tests` run).
 Deliverable: §3 `.forms` rows confirmed (see §3).
@@ -342,14 +352,26 @@ stricter (decided after the native legs and only when `confirms` holds); `usedDT
 divergence (parked).
 Reviewer lens: no masking. For each condition, does an unrelated native failure still classify as `nativeFailure`
 (fixture `fMask`)? Does `confirms` need BOTH native legs? Is the count check restored for non-bare rows (tamper guard)?
-The prototype does NOT fully satisfy this lens (independent review F1, Major): `confirms` is cause-only. The legacy leg
-matches ANY `.scatterCollision`, the checked leg ANY runtime `scatterCollision` OR ANY preparation `.capability _`,
-the multi-writer condition ANY `scanAxisNotIter` compile error, and after `T4-05` only the HEAD condition is
-confirmed. A native failure from a DIFFERENT statement of the same source is therefore absorbed. `fMask` differs from the
-condition only in error KIND (compile vs evaluation), never in origin.
+After `T4-04`..`T4-06` alone the prototype did NOT satisfy this lens (independent review F1, Major): `confirms` was
+cause-only (the legacy leg matched ANY `.scatterCollision`, the checked leg ANY runtime `scatterCollision` OR ANY
+preparation `.capability _`, the multi-writer condition ANY `scanAxisNotIter`, and only the HEAD condition is confirmed),
+so a native failure from a DIFFERENT tensor of the same source was absorbed; `fMask` differs only in error KIND. `T4-08`
+(A1) closes it where the native error carries an identity:
 
-**T4-A1 (review-driven, UNPROTOTYPED; dispatch C; Opus review of the diff).** Bind each leg's confirmation to the
-condition's own tensor/statement wherever the native error carries one, test-first:
+**T4-A1 = `T4-08` (review-driven; PROTOTYPED on `proto-s2a-p4` as `1b90ad0e`; Opus review of the diff).** Observed
+(`p4a1_findings.md`): the legacy `scatterCollision` names the destination tensor and the checked preparation refusal
+(`multiAxisScatterLhs`/`scatterOrAffineLhs`) carries a context string `"Y: affine LHS slot"`: both are now bound to the
+condition's tensor (the checked arm also now accepts only those two affine-slot capability constructors instead of any
+`.capability _`: NOT covered by a cycle or fixture, parked ~0.5 dispatch). The checked RUNTIME collision
+(`PositionalInputError.scatterCollision`: coordinates only) and the multi-writer `scanAxisNotIter` (axis name only, both
+legs) carry NO tensor identity and stay CAUSE-ONLY (docstrings say so); binding is per TENSOR, not per statement, because no
+native error carries a statement index. Probe F11: production DOES reject a bare-slot contracted-axis `rejectCollisions`
+scatter (legacy `evalScatter Z: collision`, checked runtime `scatterCollision`), while the oracle sums it and
+`detectConditions` skips it, so it classifies as `nativeFailure` with no condition (an undetected divergence, pinned as
+`fF11`, detection parked ~1 dispatch). Negative fixtures `fOriginL` and `fOriginC` (same kind, different tensor) moved
+from the wrong `known:collision` to `nativeFailure`; their accept-neighbours (Z gets a plain write) stay
+`known:collision`. Cycles A1-M1 (legacy binding reverted: fails exactly `tag fOriginL`) and A1-M2 (checked binding
+reverted: fails exactly `tag fOriginC`). The original specification, kept for the executor's checklist:
  1. FIRST observe (do not guess) with the `observe` helper of `SourceDifferentialScatterTest.lean`: which native errors
     carry a tensor or statement identity (`scatterCollision` carries a destination name; check whether the checked
     plan's `capability` refusal and the legacy `scanAxisNotIter` compile error name one) and what production does on a
@@ -366,7 +388,12 @@ condition's own tensor/statement wherever the native error carries one, test-fir
     leg cause-only, say so in a docstring and in the §2 table, and keep the other leg origin-bound.
  4. Manifest: add one cycle per bound leg (confirmation reverted to cause-only; expect = the new negative fixture's
     line, copied from the observed failure). The controller runs them; a surviving cycle is a finding.
-**T4-A2 (review-driven, UNPROTOTYPED; dispatch C).** Make the stated purpose of the slice an assertion (review F4): add to
+**T4-A2 = `T4-07` (review-driven; PROTOTYPED on `proto-s2a-p4` as `820bebab`).** Result (`p4a2_findings.md`): guards at the
+end of the test file assert, by exact bits and against hand-computed cells written beside them, that the LEGACY leg
+equals the oracle for `fD` (`[1,12,123,234,340,400,0]`) and `fD'` (`[0,0,0,10]`) (no `ComparisonRun` field means exactly
+that: `legacyComparison` is a tolerance-profile comparison used as one conjunct), with collision-free accept-neighbours
+`fN` (`Y[a+4b]`, declared extent 16: production derives 16 for that form, a declared 12 gives a shape issue) and `fN'`.
+The original specification, kept as a checklist: add to
 `SourceDifferentialScatterTest.lean` (append at the END of the file) guards asserting that the LEGACY leg's output tensors
 equal the oracle's for the collision-sum scatters `fD` and `fD'`, named and commented as LEGACY-ONLY agreement (the checked
 plan refuses those slots by capability, so four-leg parity is impossible), plus an accept-neighbour (a collision-free

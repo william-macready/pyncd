@@ -174,8 +174,8 @@ Review file: `papers/semantics/additive_s2a_review_plan.md` (one Opus reviewer, 
 
 | Finding | Severity | Disposition |
 |---|---|---|
-| F1 `confirms` is cause-only (a same-kind failure from another statement is absorbed; the `fMask` fixture differs only in error kind) | Major | Plan §4 T4 adds `T4-A1` (origin binding + same-kind/different-origin negative fixture + one cycle per bound leg), UNPROTOTYPED, dispatch C; row in §2 |
-| F4 the slice's purpose (collision-sum reference) has no assertion behind it | Major | Plan §0 goal reworded to what is asserted; `T4-A2` adds legacy-vs-oracle value guards for `fD`/`fD'` (legacy-only) plus a cycle |
+| F1 `confirms` is cause-only (a same-kind failure from another statement is absorbed; the `fMask` fixture differs only in error kind) | Major | CLOSED where the native error carries a tensor identity: `T4-08` (A1, prototyped, `proto-s2a-p4` `1b90ad0e`): legacy collision and the checked preparation refusal origin-bound; checked runtime collision and multi-writer `scanAxisNotIter` stay cause-only (no identity in the error); negative fixtures `fOriginL`/`fOriginC` + 2 cycles; residuals in plan §2 |
+| F4 the slice's purpose (collision-sum reference) has no assertion behind it | Major | CLOSED: `T4-07` (A2, prototyped, `820bebab`): legacy-vs-oracle exact-bit guards for `fD`/`fD'` (legacy only) with hand values and collision-free neighbours; 2 oracle cycles; plan §0 goal reworded |
 | F2 independence is from `dest` only; `idxAffineForm` is shared | Minor | Plan §0 bullet extended; hand-valued `.shift`/negative-coefficient fixture parked |
 | F3 `retarget` builds `forms`/`dest`-disagreeing outputs | Minor | Plan §0 bullet extended (such outputs must never reach the oracle) |
 | F5 §3 cells wrong/omitted | Minor | Cells corrected, rows added |
@@ -184,7 +184,42 @@ Review file: `papers/semantics/additive_s2a_review_plan.md` (one Opus reviewer, 
 | F8 guards killed by no cycle; `T2-M9` expect subset | Minor | Plan T2 text and §2 row; stricter-range cycle parked |
 | F9 detection/confirmation limits | Minor | §2 rows |
 | F10 T5 master-plan clause | Minor | T5 step 5 rewritten (no such doc for this lineage) |
-| F11 bare-slot `rejectCollisions` with a contracted axis unprobed | Question | `T4-A1` step 1 probes it |
+| F11 bare-slot `rejectCollisions` with a contracted axis unprobed | Question | PROBED by A1: production rejects it (legacy `evalScatter Z: collision`, checked runtime `scatterCollision`); the oracle sums, `detectConditions` skips it: classifies `nativeFailure`, pinned `fF11`; detection parked (~1 dispatch) |
 
-Not adjudicated by anyone: the unexplained 0-job increment for the T4 module (F7), and the checked-plan `capability`
-refusal's lack of statement identity (decided inside `T4-A1` step 1).
+Not adjudicated by anyone: the unexplained 0-job increment for the T4 module (F7). Settled by A1: the checked-plan
+runtime collision and the multi-writer `scanAxisNotIter` carry no tensor identity.
+
+## 11. Review-driven additions A2/A1 and the final verification (2026-10-18)
+
+Prototyped on `proto-s2a-p4` (from `proto-s2a-p3`): A2 (`820bebab`, Sonnet, 45 harness tool calls, self-reported 35;
+`p4a2_findings.md`) then A1 (`1b90ad0e`, Opus, 57 calls, self ~46; `p4a1_findings.md`); patches regenerated as `T4-07`
+and `T4-08` (`git diff <hash>^ <hash> -- leanncd`), manifest merged to 32 entries (unique labels).
+Controller verification at the combined tip:
+
+| Check | Result |
+|---|---|
+| Full `lake-build.sh <wt>/leanncd Tests` on `proto-s2a-p4` (`3a78e5ed`) | Build completed successfully, 8818 jobs; no `sorryAx`/`ofReduceBool` in the log |
+| `Semantics.AxiomAudit` | 6621 constants under `LeanNCD.Semantics`, standard axioms only |
+| All 19 patches `git apply --index` in task order on a clean slice branch; `git diff --cached --stat proto-s2a-p4 -- leanncd` | empty |
+| `mutation-manifest.sh --check` (no filters) on the applied tree, 32-entry manifest | `manifest OK: 32 entries, 32 selected, every old-string unique` |
+| `mutation-manifest.sh --task T4` on the applied tree | 10/10 PASS (every cycle broke the build, restored byte-identically, restored build green, expected failure seen) |
+
+The T1..T3 state (11 patches) was verified earlier (§9). T2/T3 cycles were not re-run by the controller after the
+patches were regenerated; they were run in the prototype and their `old` strings are unchanged by T4-07/T4-08
+(`--check` passes).
+
+### Authoring cost (token-report, session 640a51a0, after A1/A2 and the review)
+
+| Item | Cumulative input |
+|---|---|
+| Controller (brainstorming, B3 orchestration, all polling and verification; context peak 469k) | 55.8M |
+| S2a authoring dispatches: P0 3.5, P1 10.6, P2a 6.2, P2b 4.1, P2c 2.8, P3 3.6, P3b 7.0, write-up 1.7, plan review 5.6, A2 2.1, A1 3.6 | 50.8M |
+| B3 dispatch (not S2a) | 3.6M |
+| Session total | 110.3M |
+
+Against the ~50M authoring target (CLAUDE.md Rule 6): the dispatches ALONE reach it (50.8M) and with the whole controller
+figure the S2a authoring is about 106.6M (B3's dispatch excluded; the controller figure also covers brainstorming and B3,
+which cannot be separated). That is an OVERRUN of about 2x. The largest items: P1 (the proof generalisation, 10.6M), the
+controller's own polling and long tool outputs (469k peak), and the two review-driven prototype rounds (A1 + A2 + review =
+11.3M). Lessons: several dispatches ended while a long build ran and needed re-notification; every prototype dispatch
+overran its harness turn budget (self-reports understate by ~30%); the controller should not poll builds with loops.

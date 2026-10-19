@@ -1,0 +1,93 @@
+From 820bebab2fad54ad0dae9db4f936d85d2970600e Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sun, 18 Oct 2026 16:23:13 -0700
+Subject: [PATCH] proto(s2a-p4): legacy-vs-oracle value guards for the
+ collision-sum scatters (T4-A2)
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ .../SourceDifferentialScatterTest.lean        | 70 +++++++++++++++++++
+ 1 file changed, 70 insertions(+)
+
+diff --git a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+index ef7259cc..918c7fbe 100644
+--- a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
++++ b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+@@ -182,4 +182,74 @@ private def dropOccurrence (drop : Bool) : String :=
+ #guard dropOccurrence false == "accepted"
+ #guard dropOccurrence true == "occurrences 3 2"
+ 
++/-! T4-A2 (review F4): LEGACY-ONLY agreement. The checked plan refuses `fD`/`fD'` by capability,
++so four-leg parity is impossible and `tag` is `nativeFailure`; the legacy production leg's VALUES
++(which sum collisions) are asserted here against the oracle and against hand-computed cells. -/
++
++/-- Cells of the legacy leg's declaration-5 output, as raw bits (`none` unless the leg is observed
++and binds declaration 5). -/
++private def legacyCells (s : SourceSnapshot) : Option (List UInt64) :=
++  match compareSource s (some [5]) with
++  | .error _ => none
++  | .ok run => match run.native with
++    | .error _ => none
++    | .ok n => match n.legacy with
++      | .observed o => match o.outputs with
++        | .ok bs => (bs.find? fun x => x.metadata.declaration == 5).map fun x => x.bits.toList
++        | .error _ => none
++      | _ => none
++
++/-- The oracle's declaration-5 cells as the bits of the exactly-representable float of each value
++(`none` if any value is not an integer, so the comparison is exact). -/
++private def oracleCells (s : SourceSnapshot) : Option (List UInt64) :=
++  match compareSource s (some [5]) with
++  | .error _ => none
++  | .ok run => match run.oracle with
++    | .error _ => none
++    | .ok r => match r.tensors.find? (fun (t : Oracle.Tensor) => t.declaration == 5) with
++      | none => none
++      | some t =>
++        if t.values.all (fun (q : ℚ) => q.den == 1)
++        then some (t.values.map fun (q : ℚ) => (Float.ofInt q.num).toBits) else none
++
++private def handBits (xs : List Float) : Option (List UInt64) := some (xs.map Float.toBits)
++
++/-- The legacy leg is compared against the profile with `agreement` (tolerance profile). -/
++private def legacyCompared (s : SourceSnapshot) : Bool :=
++  match compareSource s (some [5]) with
++  | .error _ => false
++  | .ok run => match run.legacyComparison with
++    | .compared (.ok .agreement) => true
++    | _ => false
++
++/-- LEGACY-ONLY agreement: nonempty, bit-identical to the oracle, and the comparison says agreement. -/
++private def legacyMatchesOracle (s : SourceSnapshot) : Bool :=
++  match legacyCells s, oracleCells s with
++  | some l, some o => !l.isEmpty && l == o && legacyCompared s
++  | _, _ => false
++
++-- Hand values, from X = [1,2,3,4], W = [1,10,100], Y[a+b] += X[a]*W[b], |k| = 7:
++--   cell0 = 1*1 = 1; cell1 = 2*1 + 1*10 = 12; cell2 = 3*1 + 2*10 + 1*100 = 123;
++--   cell3 = 4*1 + 3*10 + 2*100 = 234; cell4 = 4*10 + 3*100 = 340; cell5 = 4*100 = 400; cell6 = 0.
++-- A last-write-wins or dropped-occurrence total changes cells 1..5 (e.g. cell1 would be 10 or 2).
++#guard legacyCells fD == handBits [1, 12, 123, 234, 340, 400, 0]
++#guard oracleCells fD == handBits [1, 12, 123, 234, 340, 400, 0]
++#guard legacyMatchesOracle fD
++-- fD': Y[3] += X[a] over a: 1+2+3+4 = 10; the other cells are 0 (|k| = 4).
++#guard legacyCells fD' == handBits [0, 0, 0, 10]
++#guard oracleCells fD' == handBits [0, 0, 0, 10]
++#guard legacyMatchesOracle fD'
++
++-- ACCEPT-NEIGHBOURS (collision-free `.scatter`, same assertion shape; not vacuous):
++-- fN: Y[a+4b] += X[a]*W[b], |k| = 16 (production derives shape 16 from the write form, p3_observed
++--   (f'): a declared 12 gives a shape-binding issue, not a value): slots a+4b are distinct, so
++--   Y = X[a]*W[b] laid out as b=0: 1,2,3,4; b=1: 10,20,30,40; b=2: 100,200,300,400; cells 12..15 = 0.
++private def fN := snap 16 [k] [.scatter "Y" [.affine (.affine 0 [(1, a), (4, b)])] readXW sumOpts]
++-- fN': Y[2a] += X[a], |k| = 8: Y = 1,0,2,0,3,0,4,0.
++private def fN' := snap 8 [k] [.scatter "Y" [.affine (.scale 2 a)] readX sumOpts]
++#guard legacyCells fN == handBits [1, 2, 3, 4, 10, 20, 30, 40, 100, 200, 300, 400, 0, 0, 0, 0]
++#guard legacyMatchesOracle fN
++#guard legacyCells fN' == handBits [1, 0, 2, 0, 3, 0, 4, 0]
++#guard legacyMatchesOracle fN'
++
+ end SourceDifferentialScatterTest
+-- 
+2.50.1 (Apple Git-155)
+

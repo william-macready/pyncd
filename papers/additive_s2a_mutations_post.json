@@ -60,7 +60,7 @@
   "task": "T2",
   "file": "LeanNCD/Semantics/Source/Admission.lean",
   "old": "    | .const _ | .scale .. | .shift .. | .affine .. =>",
-  "new": "    | .shift a _ => let _ \u2190 sourceAxis c .read here a; pure a.uid\n    | .const _ | .scale .. | .affine .. =>",
+  "new": "    | .shift a _ => let _ ← sourceAxis c .read here a; pure a.uid\n    | .const _ | .scale .. | .affine .. =>",
   "targets": [
    "Semantics.SourceAdmissionAffineTest"
   ],
@@ -86,7 +86,7 @@
   "task": "T2",
   "file": "LeanNCD/Semantics/Source/Admission.lean",
   "old": "decide (writeValue f v < a.extent)",
-  "new": "decide (writeValue f v \u2264 a.extent)",
+  "new": "decide (writeValue f v ≤ a.extent)",
   "targets": [
    "Semantics.SourceAdmissionAffineTest"
   ],
@@ -98,8 +98,8 @@
   "label": "T2-M9 range error blames first fitting axis",
   "task": "T2",
   "file": "LeanNCD/Semantics/Source/Admission.lean",
-  "old": "      !coordAll shape (fun w => formFits ax f (coordLookup w))).map (\u00b7.2)).getD 0",
-  "new": "      coordAll shape (fun w => formFits ax f (coordLookup w))).map (\u00b7.2)).getD 0",
+  "old": "      !coordAll shape (fun w => formFits ax f (coordLookup w))).map (·.2)).getD 0",
+  "new": "      coordAll shape (fun w => formFits ax f (coordLookup w))).map (·.2)).getD 0",
   "targets": [
    "Semantics.SourceAdmissionAffineTest"
   ],
@@ -111,8 +111,8 @@
   "label": "T1-M1 globalFiber ignores destination (PROOF kill)",
   "task": "T1",
   "file": "LeanNCD/Semantics/Source/Fiber.lean",
-  "old": "if Term.globalDestination output term v = p then term.globalProduct \u03c1 v else 0",
-  "new": "if True then term.globalProduct \u03c1 v else 0",
+  "old": "if Term.globalDestination output term v = p then term.globalProduct ρ v else 0",
+  "new": "if True then term.globalProduct ρ v else 0",
   "targets": [
    "Semantics.SourceAffineDestinationTest"
   ],
@@ -124,8 +124,8 @@
   "label": "T1-M2 collectedBody empty fibers read 1 (PROOF kill)",
   "task": "T1",
   "file": "LeanNCD/Semantics/Source/Correspondence.lean",
-  "old": "interpret semiringOps \u03c1 (term.body (r := r) id) x else some 0)",
-  "new": "interpret semiringOps \u03c1 (term.body (r := r) id) x else some 1)",
+  "old": "interpret semiringOps ρ (term.body (r := r) id) x else some 0)",
+  "new": "interpret semiringOps ρ (term.body (r := r) id) x else some 1)",
   "targets": [
    "Semantics.SourceAffineDestinationTest"
   ],
@@ -137,8 +137,8 @@
   "label": "T1-M3 statement fiber keeps only first term (PROOF kill)",
   "task": "T1",
   "file": "LeanNCD/Semantics/Source/ProgramCorrespondence.lean",
-  "old": "(statement.terms.map (fun term => term.globalFiber statement.output \u03c1 p)).sum",
-  "new": "(statement.terms.map (fun term => term.globalFiber statement.output \u03c1 p)).headD 0",
+  "old": "(statement.terms.map (fun term => term.globalFiber statement.output ρ p)).sum",
+  "new": "(statement.terms.map (fun term => term.globalFiber statement.output ρ p)).headD 0",
   "targets": [
    "Semantics.SourceAffineDestinationTest"
   ],
@@ -163,7 +163,7 @@
   "label": "T2-M10 rank check removed",
   "task": "T2",
   "file": "LeanNCD/Semantics/Source/Admission.lean",
-  "old": "if forms.length \u2260 sig.length then",
+  "old": "if forms.length ≠ sig.length then",
   "new": "if False then",
   "targets": [
    "Semantics.SourceAdmissionAffineTest"
@@ -177,8 +177,8 @@
   "label": "P2b-i oracle destination from output.indices (forms ignored)",
   "task": "T3",
   "file": "LeanNCD/Semantics/Source/Oracle.lean",
-  "old": "let output \u2190 destination statement.output.origin shape assignment statement.output.forms",
-  "new": "let output \u2190 slots statement.output.origin assignment statement.output.indices",
+  "old": "let output ← destination statement.output.origin shape assignment statement.output.forms",
+  "new": "let output ← slots statement.output.origin assignment statement.output.indices",
   "targets": [
    "Semantics.SourceOracleAffineTest"
   ],
@@ -258,8 +258,8 @@
   "label": "P2b-v empty term fiber reads 1",
   "task": "T3",
   "file": "LeanNCD/Semantics/Source/Oracle.lean",
-  "old": "pure \u27e8term.origin, occurrences, total\u27e9",
-  "new": "pure \u27e8term.origin, occurrences, if occurrences.isEmpty then 1 else total\u27e9",
+  "old": "pure ⟨term.origin, occurrences, total⟩",
+  "new": "pure ⟨term.origin, occurrences, if occurrences.isEmpty then 1 else total⟩",
   "targets": [
    "Semantics.SourceOracleAffineTest"
   ],
@@ -412,8 +412,8 @@
   "label": "P3b-M6 oracleOccurrences replaced by the empty list for non-bare rows (exactly 10 failure lines printed: possibly truncated)",
   "task": "T4",
   "file": "LeanNCD/Semantics/Source/Observation.lean",
-  "old": "pure \u27e8row, none, \u2190 oracleOccurrences source row\u27e9",
-  "new": "pure \u27e8row, none, []\u27e9",
+  "old": "pure ⟨row, none, ← oracleOccurrences source row⟩",
+  "new": "pure ⟨row, none, []⟩",
   "targets": [
    "Semantics.SourceDifferentialScatterTest"
   ],
@@ -428,6 +428,65 @@
    "SourceDifferentialScatterTest.lean:142:0",
    "SourceDifferentialScatterTest.lean:143:0",
    "SourceDifferentialScatterTest.lean:144:0"
+  ]
+ },
+ {
+  "label": "A2-M1 oracle fiber total takes the last occurrence (total := product)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "total := total + product",
+  "new": "total := product",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "SourceDifferentialScatterTest.lean:236:0",
+   "SourceDifferentialScatterTest.lean:237:0",
+   "SourceDifferentialScatterTest.lean:240:0"
+  ]
+ },
+ {
+  "label": "A2-M2 oracle drops the first occurrence of every fiber",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "total := total + product",
+  "new": "total := if occurrences.length == 1 then total else total + product",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "SourceDifferentialScatterTest.lean:236:0",
+   "SourceDifferentialScatterTest.lean:237:0",
+   "SourceDifferentialScatterTest.lean:240:0",
+   "SourceDifferentialScatterTest.lean:241:0",
+   "SourceDifferentialScatterTest.lean:251:0",
+   "SourceDifferentialScatterTest.lean:253:0"
+  ]
+ },
+ {
+  "label": "A1-M1 legacy collision binding reverted to cause-only",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "| .scatterCollision nm .. => owner nm",
+  "new": "| .scatterCollision .. => true",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "SourceDifferentialScatterTest.lean:288:0"
+  ]
+ },
+ {
+  "label": "A1-M2 checked capability binding reverted to cause-only",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "let named (context : String) := owner ((context.splitOn \": \").headD \"\")",
+  "new": "let named (_ : String) := true",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "SourceDifferentialScatterTest.lean:298:0"
   ]
  }
 ]
