@@ -332,9 +332,14 @@ below is as audited before slice 1.*
 
 *S2a (implemented on branch `worktree-additive-s2a-affine-write-slots`, pending merge) closes the ORACLE side
 for affine left-hand slots and sum-only scatter: the Source oracle (`Source.Oracle`) now evaluates
-integer-affine writes and sums colliding writes, and the differential classifies the production contract
-differences as structural conditions (`scatterCollisionRejected`, `multiWriterScatter`,
-`scatterExtentOverridesDeclared`). It changes no production semantics. Still open: S2b (tropical
+integer-affine writes and sums colliding writes, and the differential classifies some of the production
+contract differences as structural conditions (`scatterCollisionRejected`, `multiWriterScatter`,
+`scatterExtentOverridesDeclared`), with limited precision: confirmation is origin-bound only for the legacy
+collision, the checked affine-slot refusal and the extent condition; the checked runtime collision and
+multi-writer `scanAxisNotIter` are cause-only; only the head condition is confirmed; while
+`scatterExtentOverridesDeclared` is confirmed no value of that program is compared; the collision-sum
+scatters `fD`/`fD'` and a bare-slot `rejectCollisions` over a contracted axis (F11) end as `nativeFailure`
+with no condition (see `additive_s2a_plan.md` §2). It changes no production semantics. Still open: S2b (tropical
 carriers) and S3 (production scatter collision ⊕, deletion of `CollisionReduce`/`ScatterOpts.fill`,
 range errors, tropical sorts, casts, constants); affine READ slots and a raw-parse theorem for affine
 statements stay unowned (see `additive_s2a_plan.md` §2).*

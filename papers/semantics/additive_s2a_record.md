@@ -176,8 +176,8 @@ Review file: `papers/semantics/additive_s2a_review_plan.md` (one Opus reviewer, 
 |---|---|---|
 | F1 `confirms` is cause-only (a same-kind failure from another statement is absorbed; the `fMask` fixture differs only in error kind) | Major | CLOSED where the native error carries a tensor identity: `T4-08` (A1, prototyped, `proto-s2a-p4` `1b90ad0e`): legacy collision and the checked preparation refusal origin-bound; checked runtime collision and multi-writer `scanAxisNotIter` stay cause-only (no identity in the error); negative fixtures `fOriginL`/`fOriginC` + 2 cycles; residuals in plan §2 |
 | F4 the slice's purpose (collision-sum reference) has no assertion behind it | Major | CLOSED: `T4-07` (A2, prototyped, `820bebab`): legacy-vs-oracle exact-bit guards for `fD`/`fD'` (legacy only) with hand values and collision-free neighbours; 2 oracle cycles; plan §0 goal reworded |
-| F2 independence is from `dest` only; `idxAffineForm` is shared | Minor | Plan §0 bullet extended; hand-valued `.shift`/negative-coefficient fixture parked |
-| F3 `retarget` builds `forms`/`dest`-disagreeing outputs | Minor | Plan §0 bullet extended (such outputs must never reach the oracle) |
+| F2 independence is from `dest` only; `idxAffineForm` is shared | Minor | Plan §0 bullet extended; the `.shift` value fixtures already exist (oracle fixtures 4 and 7), only a hand-valued negative-coefficient fixture is parked; the legacy leg does not share `idxAffineForm` (`Eval.evalIdx`), the checked-plan and oracle legs do |
+| F3 `retarget` builds `forms`/`dest`-disagreeing outputs | Minor | Plan §0 bullet extended (no production code builds such an output; tests do: T1's `retarget`, and T3's `SourceOracleAffineTest.tampered`, which deliberately passes tampered forms to `Oracle.run`) |
 | F5 §3 cells wrong/omitted | Minor | Cells corrected, rows added |
 | F6 T4 split labels, cycle owner inconsistent | Minor | Plan §4: three dispatches, cycles always the controller's |
 | F7 job-count statement | Minor | Plan §2 cites the measured series (2, 1, 1, 0 increments, the zero is unexplained); the executor greps the four module names in the final log |
@@ -256,4 +256,13 @@ Incident: one garbled T2-fix dispatch was stopped before it acted.
 | Final full build (`Tests`) | pending (controller) |
 | Final whole-branch reviews | pending (controller) |
 | Merge to local `main` | pending (controller) |
+
+Parked by the final whole-branch review (lens a, finding 1; behavioural minor, deliberately NOT fixed in S2a; plan §2
+row, owner unowned): the bare test is `forms == indices.map WriteForm.single` in `normalizeOracleContribution`,
+`NumericalProfile.checkFiber` and `Differential.nonBareWrite`. An affine-admitted write that is single-axis
+coefficient-1 but into a WIDER destination (e.g. `Y[a+0]`, `|a|=2`, `|Y|=9`, admitted, pinned by
+`SourceAdmissionAffineTest` fixture (g)) looks bare, so the oracle invents occurrences for the unwritten cells and the
+differential reports `referenceDiscrepancy` (loud, wrong blame; the extent condition is skipped too); untested. Fix:
+also require destination extents equal support extents (or record the admission path on the output); touches those
+three functions, one fixture appended at file end, one cycle; ~1-2 dispatches, Rule 14: parked.
 | Measured execution total (Rule 6, target <= ~175M) | pending (controller) |

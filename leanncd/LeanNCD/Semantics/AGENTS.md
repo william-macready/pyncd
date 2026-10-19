@@ -130,11 +130,16 @@ profile. Same-LHS multi-statement programs are summed by every backend and compa
 by value on all four legs. `StructuralCondition` has `usedDType` (an untyped
 f32 tensor) and three affine-write conditions: `scatterCollisionRejected` (a colliding
 `rejectCollisions` write: legacy collision, checked capability refusal), `multiWriterScatter`
-(a scatter among several writers: `scanAxisNotIter` on both native legs) and
+(any non-bare write among several writers of one tensor, `fG` is two `.assign`s:
+`scanAxisNotIter` on both native legs) and
 `scatterExtentOverridesDeclared` (production derives the destination extent, the oracle uses the
 declared one). `knownContractDifference` is produced only by these. A condition is confirmed only when
-the native legs show exactly the predicted outcome; while the extent condition is confirmed no
-value of that program is compared (plan section 2). See the
+the native legs show the predicted outcome, with limited precision: origin-bound only for the legacy
+collision, the checked affine-slot refusal and the extent condition; the checked runtime collision and
+multi-writer `scanAxisNotIter` are cause-only; only the head condition is confirmed; while the extent
+condition is confirmed no value of that program is compared; the collision-sum scatters `fD`/`fD'` and a
+bare-slot `rejectCollisions` over a contracted axis (F11) end as `nativeFailure` with no condition
+(plan section 2). See the
 [source correspondence record](../../../papers/semantics/source_correspondence_record.md)
 for scope and limits.
 

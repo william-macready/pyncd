@@ -59,11 +59,15 @@ patches, 32 mutation cycles (`slice-plan` §0).
   (they are equal by `FormsSpec`); the observable variant is mutation (i) of T3. SCOPE OF THAT CLAIM (review F2, F3):
   it is independence from `dest` ONLY. The forms are extracted by `idxAffineForm`, which the oracle's input
   (`AdmittedOutput.forms`, via `Admission`) shares with production's lowering, compile and scan code, so a defect in
-  `idxAffineForm` is invisible to every differential row; only the T3 hand-valued fixtures pin it, and they cover
-  `.scale`, a two-unit-axis `.affine` and `.const` only (no `.shift` value fixture, no negative coefficient). Also,
-  `FormsSpec` is a Prop proved for the two output builders only: a hand-built or retargeted `AdmittedOutput` (the T1 test's
-  `retarget` builds one whose `forms` and `dest` disagree) carries no agreement and must never reach the oracle,
-  `Observation` or `NumericalProfile`; today only T1's proof test builds one.
+  `idxAffineForm` is shared by the checked-plan leg and the reference/oracle pair (the legacy leg is not: its scatter
+  write coordinates come from `Eval.evalIdx`, which interprets `IdxExpr` directly), so a defect in `idxAffineForm` is
+  invisible to the checked-plan and oracle legs but legacy-vs-oracle value rows (T4-07) can catch it; the T3 hand-valued
+  fixtures pin it for `.scale`, a two-unit-axis `.affine`, `.const` and `.shift` (oracle fixtures 4, `Y[a+2]`, and 7,
+  `Y[b+1]`); only a NEGATIVE-coefficient value fixture is missing. Also,
+  `FormsSpec` is a Prop proved for the two output builders only: a hand-built or retargeted `AdmittedOutput` carries no
+  agreement and must never reach the oracle, `Observation` or `NumericalProfile` from production code. No PRODUCTION code
+  builds one; tests do (T1's `retarget`, and T3's `SourceOracleAffineTest.tampered`, which deliberately passes tampered
+  forms to `Oracle.run`).
 - f32 is the default dtype; the oracle and reference evaluator are f64-only. Every differential fixture in this slice
   declares f64 through the donor `snap` helpers (`SourceOracleAffineTest.snap`); no checked-plan f32 fixture is in
   scope (the Source differential's native legs are the checked plan and legacy evaluator on f64 programs).
@@ -125,7 +129,8 @@ Final whole-branch review: TWO Opus lenses (§5). One fix dispatch per finding g
 - **New test modules (lakefile.toml registration, one per task).** `Semantics.SourceAffineDestinationTest` (T1),
   `Semantics.SourceAdmissionAffineTest` (T2), `Semantics.SourceOracleAffineTest` (T3),
   `Semantics.SourceDifferentialScatterTest` (T4). No existing test is semantically edited; the single forced edit is
-  two lines in `SourceRawCorrespondenceTest` (T1: the conjunct now takes `.1`).
+  two lines in `SourceRawCorrespondenceTest` (T1: in `DonorOutputConnection` the projection is wrapped in
+  `statement.output.dest (...)`; it takes no `.1`).
 - **Fixture and cycle counts (counted with `rg -c "^#guard" <file>` on the final tree; `example`/`theorem` counted with
   `rg -c "^(example|theorem)" <file>`).**
 
@@ -171,6 +176,7 @@ Final whole-branch review: TWO Opus lenses (§5). One fix dispatch per finding g
 | Unproved/untested paths (`p2a_findings.md` "Not done"): (1) no statement/source-level `FormsSpec` theorem for `admitSourceAffine`; (2) no `admitSourceAffine_originals`; (3) no fixture for an all-`.const` write at admission level (empty support, `shape = []`); (4) no fixture for an RHS reading an axis the LHS does not mention (the T3 fixture 6/9 cover it at oracle level only); (5) `writeOutOfRange` slot index tested only at slot 0 before the T2 survivor fixtures, now also slot 1; (6) the `.rank` mismatch path (closed by the T2 survivor fixture) | listed; items 1-3 unowned |
 | Known limitation: an executor occurrence whose contracted fiber is EMPTY (extent-0 contracted axis) leaves no oracle occurrence for non-bare rows | unowned; no fixture |
 | Differential renderer does not print `ComparisonRun.conditions` | unowned |
+| Final-review A finding 1 (behavioural minor, deliberately NOT fixed in S2a): bare test is `forms == indices.map WriteForm.single` in `normalizeOracleContribution`, `NumericalProfile.checkFiber` and `Differential.nonBareWrite`; an affine-admitted write that is single-axis coefficient-1 but into a WIDER destination (e.g. `Y[a+0]`, `\|a\|=2`, `\|Y\|=9`, admitted, pinned by `SourceAdmissionAffineTest` fixture (g)) looks bare, so the oracle invents occurrences for the unwritten cells and the differential reports `referenceDiscrepancy` (loud, wrong blame; the extent condition is skipped too); untested. Fix: also require destination extents equal support extents (or record the admission path on the output); touches those three functions, one fixture appended at file end, one cycle; ~1-2 dispatches | unowned (Rule 14: parked) |
 | Unmeasured guards (review F8): the T2 range accept-neighbours and the affine-READ refusal guards are killed by no cycle (`T2-M2`, `T2-M7` stop the build at a proof; a proof-compatible STRICTER range check such as `writeValue f v + 1 < a.extent` is the mutation they exist for and is not in the manifest) | unowned; add that cycle if the guards are ever relied on |
 | Over-detection and under-confirmation of the T4 conditions (review F9): `writeCollides` counts every term's read axes (a multi-term `Y[2*a] := X[a] + W[b]` reads as colliding because of `b`); two single-writer extent conditions on DIFFERENT tensors are never confirmed (`shapeOnly` needs every binding issue to belong to the head's declaration: safe direction, a generic divergence); `derivedShape` with a negative coefficient goes through `Int.toNat` and is unprobed | unowned |
 | Enumeration cost: admission's range check (`coordAll` over the support box), the oracle and `writeCollides` (`eraseDups`, quadratic in the box) enumerate the whole box; fixture-sized only. Empty extents behave (vacuous check, no occurrence) | unowned |
@@ -459,7 +465,7 @@ Merge: `ExitWorktree` keep, then `/usr/bin/git -C /Users/williammacready/code/py
 S2b tropical carriers; S3a/S3b; affine READ slots; `admitSourceAffine_originals` + a proved `Nodup`; statement/source-level
 `FormsSpec` theorem; all-const write admission fixture; `usedDType` masking; `admitAffineWrite` body dedup; conditions
 for the checked plan's capability refusals; scatter parity fixture on the oracle leg; extent-0 contracted fiber under
-non-bare rows; renderer printing `conditions`; JAX unprobed; a hand-valued `.shift`/negative-coefficient fixture for
+non-bare rows; renderer printing `conditions`; JAX unprobed; a hand-valued negative-coefficient fixture for
 `idxAffineForm`; a stricter-range-check mutation for the T2 accept-neighbours; the `writeCollides`/`derivedShape`/
 multi-tensor-extent limits (§2 table).
 The review Minors and the extent-condition masking Major recorded in the last six rows of the §2 table (T1, T2, T3, T4-A/B/C reviews) are parked there, not here.

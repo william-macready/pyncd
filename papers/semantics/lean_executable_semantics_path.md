@@ -991,7 +991,11 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   (`AdmittedOutput.forms`, an integer-affine form per destination axis) and sum-only scatter, so a
   colliding write is summed. Production does not agree, and the differential classifies the difference as
   a `StructuralCondition` (`scatterCollisionRejected`, `multiWriterScatter`,
-  `scatterExtentOverridesDeclared`) only when both native legs show exactly the predicted outcome;
+  `scatterExtentOverridesDeclared`) only when both native legs show the predicted outcome, with limited
+  precision: confirmation is origin-bound only for the legacy collision, the checked affine-slot refusal and
+  the extent condition; the checked runtime collision and multi-writer `scanAxisNotIter` are cause-only; only
+  the head condition is confirmed; the collision-sum scatters `fD`/`fD'` and a bare-slot `rejectCollisions`
+  over a contracted axis (F11) end as `nativeFailure` with no condition (S2a plan §2);
   S3a converts these to agreement. While `scatterExtentOverridesDeclared` is confirmed no value of that
   program is compared (documented limitation, see the S2a plan §2). The raw-parse theorem for affine
   statements is a documented gap. See [the S2a record](additive_s2a_record.md).

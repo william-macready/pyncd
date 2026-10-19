@@ -432,9 +432,11 @@ structure AdmittedOutput (source : Context) (σ : Declarations Unit) where
   embedding : IdentityEmbedding context source
   /-- One integer-affine form per destination axis, over source UIDs: the destination as DATA,
   for consumers (the oracle) that must not use `dest`. `WriteForm.single` per slot for a bare
-  write. Tied to `dest` by `AdmittedOutput.FormsSpec` (proved for admission's outputs by
-  `admitOutput_formsSpec` and `admitAffineOutput_formsSpec`, not stored: a stored proof would
-  stop `{ o with dest := … }` retargeting). -/
+  write. Tied to `dest` by `AdmittedOutput.FormsSpec`, proved for the two output builders
+  `admitOutput` (by `admitOutput_formsSpec`) and `admitAffineOutput` (by
+  `admitAffineOutput_formsSpec`); NOT stated as a theorem for the full `admitSourceAffine` result
+  (`admitAffineWrite` is private). Not stored: a stored proof would stop `{ o with dest := … }`
+  retargeting. -/
   forms : List WriteForm
 
 /-- The destination is a bare projection of the source valuation (no index map): the

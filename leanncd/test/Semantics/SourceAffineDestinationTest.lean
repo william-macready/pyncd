@@ -1,7 +1,8 @@
 import Semantics.SourceCorrespondenceFixtures
 
 /-!
-S2a P1: a hand-built non-bare destination. Admission still produces only bare outputs, so the
+S2a P1: a hand-built non-bare destination. The default `admitSource` entry still produces only
+bare outputs (`admitSourceAffine` admits non-bare outputs since T2), so the
 affine output is built here by retargeting an admitted bare output `T[x] = X[x]` onto a wider
 tensor `S` (extent 8) through an explicit destination index map. The core theorems
 (`Term.fiber_partition`, `Term.collectedBody_correspondence`, `AdmittedStatement.fiber_partition`)
