@@ -105,7 +105,8 @@ commit `79524517` was therefore not built on its own.
 1. **Per-task manifest `expect` strings are final-tree line numbers.** `SourceSortedDifferentialTest.lean` grows across T2, T3 and
    T4, so `--task T2` and `--task T3` run on a shorter file and report FAIL although every mutation breaks the build at the
    intended rows and restores byte-identical (T2: constant offset 15; T3: rows separated by T4A content). They are authoritative
-   only after T4A. Parked improvement: key `expect` on row text.
+   only after T4A. RESOLVED: re-run on the T4A-state tree (2026-10-20), `--task T2` is 3/3 PASS and `--task T3` is 2/2 PASS
+   (restored byte-identical, tree clean), so the per-task verdicts in the table above read PASS on the final test file. Parked improvement: key `expect` on row text.
 2. **Plan §0 / T1 note: "the `MaxPlus` instance and `observe` fields are pinned by the max/min `#guard` and `#guard_msgs` rows" is
    false for `observe`.** Those rows render through `Repr`; nothing calls `.observe` or `observeTensorsAt` until the T3 Core
    rows (`T3-M2`).
