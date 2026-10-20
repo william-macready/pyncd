@@ -1,4 +1,5 @@
 import LeanNCD.Semantics.Source.Admission
+import LeanNCD.Semantics.Source.Carrier
 
 namespace LeanNCD.Semantics.Source.Oracle
 
@@ -23,45 +24,45 @@ structure Unavailable where
   cause : Cause
   deriving DecidableEq, Repr
 
-structure Tensor where
+structure Tensor (K : Type := ℚ) where
   declaration : Nat
   name : String
   role : TensorRole
   shape : List Nat
-  values : List ℚ
+  values : List K
   deriving DecidableEq, Repr
 
-structure ReadValue where
+structure ReadValue (K : Type := ℚ) where
   origin : SourceOrigin
   declaration : Nat
   coordinate : List Nat
-  value : ℚ
+  value : K
   deriving DecidableEq, Repr
 
-structure Occurrence where
+structure Occurrence (K : Type := ℚ) where
   origin : SourceOrigin
   assignment : List (UID × Nat)
   output : List Nat
-  reads : List ReadValue
-  value : ℚ
+  reads : List (ReadValue K)
+  value : K
   deriving DecidableEq, Repr
 
-structure TermFiber where
+structure TermFiber (K : Type := ℚ) where
   origin : SourceOrigin
-  occurrences : List Occurrence
-  value : ℚ
+  occurrences : List (Occurrence K)
+  value : K
   deriving DecidableEq, Repr
 
-structure Contribution where
+structure Contribution (K : Type := ℚ) where
   origin : SourceOrigin
   coordinate : List Nat
-  terms : List TermFiber
-  value : ℚ
+  terms : List (TermFiber K)
+  value : K
   deriving DecidableEq, Repr
 
-structure Result where
-  tensors : List Tensor
-  contributions : List Contribution
+structure Result (K : Type := ℚ) where
+  tensors : List (Tensor K)
+  contributions : List (Contribution K)
   deriving DecidableEq, Repr
 
 private def unavailable (origin : SourceOrigin) (cause : Cause) : Unavailable :=
@@ -88,8 +89,8 @@ where
     | ns, is, _, _ =>
       .error (unavailable origin (.coordinateRank ns.length is.length))
 
-def lookup (origin : SourceOrigin) (expectedShape : List Nat)
-    (tensor : Tensor) (coordinate : List Nat) : Except Unavailable ℚ := do
+def lookup {K : Type} (origin : SourceOrigin) (expectedShape : List Nat)
+    (tensor : Tensor K) (coordinate : List Nat) : Except Unavailable K := do
   unless tensor.shape == expectedShape do
     throw (unavailable origin (.shape expectedShape tensor.shape))
   unless tensor.values.length == cellCount tensor.shape do
@@ -130,8 +131,8 @@ private def assignments : List Axis → List (List (UID × Nat))
   | a :: rest =>
     (List.range a.extent).flatMap fun i => (assignments rest).map ((a.uid, i) :: ·)
 
-private def tensorAt (origin : SourceOrigin) (store : List Tensor) (declaration : Nat) :
-    Except Unavailable Tensor :=
+private def tensorAt {K : Type} (origin : SourceOrigin) (store : List (Tensor K)) (declaration : Nat) :
+    Except Unavailable (Tensor K) :=
   match store.find? (fun t => t.declaration == declaration) with
   | some t => .ok t
   | none => .error (unavailable origin (.missingTensor declaration))
@@ -161,7 +162,8 @@ private def checkOrder (admitted : AdmittedSource) (order : List Nat) :
               throw (unavailable read.origin (.dependencyNotEarlier dependency))
     earlier := earlier ++ [target]
 
-private def initialInputs (admitted : AdmittedSource) : Except Unavailable (List Tensor) := do
+private def initialInputs {K : Type} (C : Carrier K) (admitted : AdmittedSource) :
+    Except Unavailable (List (Tensor K)) := do
   let mut store := []
   for t in List.finRange admitted.source.table.entries.length do
     let entry := admitted.source.table.entry t
@@ -171,25 +173,25 @@ private def initialInputs (admitted : AdmittedSource) : Except Unavailable (List
       unless values.length == cellCount shape do
         throw (unavailable { side := .input, declaration := some entry.declaration }
           (.length (cellCount shape) values.length))
-      store := store ++ [⟨entry.declaration, entry.name, entry.role, shape, values⟩]
+      store := store ++ [⟨entry.declaration, entry.name, entry.role, shape, values.map C.ofRat⟩]
   pure store
 
-private def termFiber (admitted : AdmittedSource) (store : List Tensor)
+private def termFiber {K : Type} [Semiring K] (admitted : AdmittedSource) (store : List (Tensor K))
     (statement : AdmittedStatement admitted.source)
     (term : Term admitted.source.context statement.output.context
       admitted.source.table.declarations)
-    (coordinate : List Nat) : Except Unavailable TermFiber := do
+    (coordinate : List Nat) : Except Unavailable (TermFiber K) := do
   let support := statement.output.forms.flatMap WriteForm.uids ++
     term.sourceReads.flatMap (·.indices)
   let axes := admitted.source.context.axes.filter (fun a => a.uid ∈ support)
   let shape := (admitted.source.table.entry statement.output.tensor).axes.map (·.extent)
-  let mut occurrences := []
-  let mut total : ℚ := 0
+  let mut occurrences : List (Occurrence K) := []
+  let mut total : K := 0
   for assignment in assignments axes do
     let output ← destination statement.output.origin shape assignment statement.output.forms
     if output == coordinate then
-      let mut product : ℚ := 1
-      let mut reads := []
+      let mut product : K := 1
+      let mut reads : List (ReadValue K) := []
       for read in term.sourceReads do
         let entry := admitted.source.table.entry read.read.tensor
         let tensor ← tensorAt read.origin store entry.declaration
@@ -201,32 +203,33 @@ private def termFiber (admitted : AdmittedSource) (store : List Tensor)
       total := total + product
   pure ⟨term.origin, occurrences, total⟩
 
-private def contribution (admitted : AdmittedSource) (store : List Tensor)
+private def contribution {K : Type} [Semiring K] (admitted : AdmittedSource)
+    (store : List (Tensor K))
     (statement : AdmittedStatement admitted.source) (coordinate : List Nat) :
-    Except Unavailable Contribution := do
+    Except Unavailable (Contribution K) := do
   let terms ← statement.terms.mapM (termFiber admitted store statement · coordinate)
   pure ⟨statement.output.origin, coordinate, terms,
     terms.foldl (fun sum term => sum + term.value) 0⟩
 
-/-- Exact acyclic fixture evaluator. The order names original tensor declaration ordinals.
-Dependency checking is syntactic and conservative, even for empty fibers. -/
-def run (admitted : AdmittedSource) (dependencyOrder : Option (List Nat)) :
-    Except Unavailable Result := do
+/-- Exact acyclic fixture evaluator over carrier `K`. The order names original tensor declaration
+ordinals. Dependency checking is syntactic and conservative, even for empty fibers. -/
+def runWith {K : Type} [Semiring K] (C : Carrier K) (admitted : AdmittedSource)
+    (dependencyOrder : Option (List Nat)) : Except Unavailable (Result K) := do
   let order ← match dependencyOrder with
     | none => throw (unavailable {} .missingOrder)
     | some order => pure order
   checkOrder admitted order
-  let mut store ← initialInputs admitted
-  let mut contributions := []
+  let mut store ← initialInputs C admitted
+  let mut contributions : List (Contribution K) := []
   for target in order do
     let origin : SourceOrigin := { side := .declaration, declaration := some target }
     let entry ← match admitted.source.table.entries.find? (fun t => t.declaration == target) with
       | some entry => pure entry
       | none => throw (unavailable origin (.missingTensor target))
     let shape := entry.axes.map (·.extent)
-    let mut values := []
+    let mut values : List K := []
     for coordinate in coordinates shape do
-      let mut total : ℚ := 0
+      let mut total : K := 0
       for statement in admitted.statements do
         if (admitted.source.table.entry statement.output.tensor).declaration == target then
           let c ← contribution admitted store statement coordinate
@@ -239,5 +242,10 @@ def run (admitted : AdmittedSource) (dependencyOrder : Option (List Nat)) :
   let canonical := admitted.statements.flatMap fun statement =>
     contributions.filter (fun c => c.origin.statement == some statement.original)
   pure ⟨tensors, canonical⟩
+
+/-- The real (sum-product over `ℚ`) oracle. -/
+def run (admitted : AdmittedSource) (dependencyOrder : Option (List Nat)) :
+    Except Unavailable Result :=
+  runWith Carrier.real admitted dependencyOrder
 
 end LeanNCD.Semantics.Source.Oracle

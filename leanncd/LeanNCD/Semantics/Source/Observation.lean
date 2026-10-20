@@ -117,15 +117,27 @@ def observeEvent (source : AdmittedSource) : Event (elaborateSource source) → 
   | .publication t p value => .publication (observeAddress source ⟨t.val, p⟩) value
   | .undefined t o => .undefined (observeOccurrence source t o)
 
-structure TensorObservation where
+/-- S2b P2: cell values are `V` (default `ℚ`; non-real carriers observe into `Oracle.ExtVal`). -/
+structure TensorObservation (V : Type := ℚ) where
   tensorUID : UID
   declaration : Nat
   name : Option String
   role : TensorRole
   axes : Shape
   shape : List Nat
-  values : List (Option ℚ)
+  values : List (Option V)
   deriving DecidableEq, Repr
+
+/-- Published cells of a Core-leg state at any carrier, observed through `obs`. -/
+def observeTensorsAt {K V : Type} [Semiring K] (source : AdmittedSource)
+    (r : Registry (fun _ : Unit => K)) (obs : K → V) (c : (source.program r).Running) :
+    List (TensorObservation V) :=
+  (sourceTensors source).map fun t =>
+    let entry := source.source.table.entry t
+    let layout := canonicalLayout entry.axes
+    ⟨t.val, entry.declaration, some entry.name, entry.role, entry.axes,
+      entry.axes.map Axis.extent,
+      (List.finRange layout.count).map fun p => (c.published ⟨t, layout.enumerate p⟩).map obs⟩
 
 def observeTensors (source : AdmittedSource) (c : (elaborateSource source).Running) :
     List TensorObservation :=
