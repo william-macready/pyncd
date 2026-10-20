@@ -1,0 +1,17 @@
+diff --git a/leanncd/test/Semantics/SourceOracleCarrierTest.lean b/leanncd/test/Semantics/SourceOracleCarrierTest.lean
+index 4f833264..d4cffb79 100644
+--- a/leanncd/test/Semantics/SourceOracleCarrierTest.lean
++++ b/leanncd/test/Semantics/SourceOracleCarrierTest.lean
+@@ -126,4 +126,12 @@ private def pickName (keys : List (AggOp × TensorElementType)) (table : List So
+ #guard pickName [(.sum, .f64), (.min, .f64)] withToy ==
+   toString (repr (SelectionError.mixedSorts [.sum, .min]))
+ 
++/-! Audit rows (plan section 3, rows 3-5): the refusal and empty cases of `selectCarrier` that no
++row above reaches. `mixedElementTypes` is a refusal on the sorted entry only; `noCarrier` needs a
++custom table; an empty program is real. -/
++#guard pickName [(.sum, .f64), (.sum, .f32)] standardCarriers ==
++  toString (repr (SelectionError.mixedElementTypes [.f64, .f32]))
++#guard pickName [(.sum, .f64)] [] == toString (repr (SelectionError.noCarrier .sum .f64))
++#guard pickName [] standardCarriers == "real"
++
+ end SourceOracleCarrierTest

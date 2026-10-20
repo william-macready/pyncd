@@ -1,0 +1,9 @@
+diff --git a/leanncd/LeanNCD/Semantics/Source.lean b/leanncd/LeanNCD/Semantics/Source.lean
+index fb09bb30..457b6bc9 100644
+--- a/leanncd/LeanNCD/Semantics/Source.lean
++++ b/leanncd/LeanNCD/Semantics/Source.lean
+@@ -16,3 +16,4 @@ import LeanNCD.Semantics.Source.Diagnostics
+ import LeanNCD.Semantics.Source.NumericalProfile
+ import LeanNCD.Semantics.Source.NativeLegs
+ import LeanNCD.Semantics.Source.Differential
++import LeanNCD.Semantics.Source.SortedDifferential
