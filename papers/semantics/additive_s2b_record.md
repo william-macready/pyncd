@@ -73,5 +73,14 @@ message fragments, the `mixedSorts` rendering, the oracle-level rows) was found 
 
 ## 4. Mutation manifest
 
-PLACEHOLDER: `papers/additive_s2b_mutations_post.json` is authored by authoring dispatch B. Intended cycles are in the plan
-(T1 2, T2 3, T3 2, T4A 2, T4B 3).
+`papers/additive_s2b_mutations_post.json` (authoring dispatch B, 2026-10-20): 9 cycles, 9/9 pass in the real run (all
+mutate, build-fail with the observed `expect` file:line strings, restore byte-identical, restored build green). Method: scratch
+branch `proto-s2b-m` (all 14 patches applied, one build of `LeanNCD Tests`, exit 0), then one manifest run without
+`expect` to observe failure positions, `expect` copied from that output, then the full run again. Per task: T1 2 (`pickName`
+rows, lines 123 and 126 of `SourceOracleCarrierTest`), T2 3 (`SourceSortedDifferentialTest` admission rows 71-75 for the
+rewrite and `sortKeys` cycles; `SourceSortedAuditTest` 56/62/63 and row 80 for the scatter guard), T3 2 (Core rows 85-105; the
+two cycles kill the same rows), T4A 2 (envelope-trip row 111; bits pin 121-122). Observations: `T2-M1` and `T2-M3` are killed
+by the same rows (they differ only in where the sort is lost); `T3-M1`/`T3-M2` likewise. The `±inf`-bits cycle `T4-M2` is
+killed only by the T4-04 pin, as the plan says. Dropped per the plan: the registry cycle (not fixture-killable) and any
+`MaxPlus` instance/`observe` cycle (pinned by `#guard`/`#guard_msgs`). DEFERRED: T4B has no cycles (`tropicalMultiFactor`,
+`tropicalScatterFill` confirmers are not prototyped; `T4-M3..M5` are authored by the T4B dispatch after the observed causes).

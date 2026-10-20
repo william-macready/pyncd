@@ -9,8 +9,9 @@ Prototype evidence: `papers/semantics/additive_s2b_artifacts/p1_findings.md`, `p
 `proto-s2b-p1` `131bc192`, `proto-s2b-p2` `3fcb6c54`; do not merge them). Authoring-verification record:
 `papers/semantics/additive_s2b_record.md` (not here).
 Shipped patches: `papers/semantics/additive_s2b_files/patches/` (`leanncd/` paths only, names `T<k>-NN-slug.patch`).
-Manifest: `papers/additive_s2b_mutations_post.json`. PLACEHOLDER: authored by authoring dispatch B with observed `expect`
-strings; until it exists no cycle may be hand-written during execution. Intended cycles are listed per task below.
+Manifest: `papers/additive_s2b_mutations_post.json`: 9 cycles (T1 2, T2 3, T3 2, T4A 2), all observed to fail with their
+`expect` strings and to restore (9/9, authoring dispatch B). T4B has NO cycles yet (not prototyped; `T4-M3..M5` are written by
+the T4B dispatch once the observed causes exist). No cycle may be hand-written during execution.
 
 ## 0. Goal, process weight, fixed decisions
 
