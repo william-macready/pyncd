@@ -84,8 +84,8 @@ expression is interpreted by the direct executor:
 
 ```math
 \textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k],\textcolor{#5688C7}{\nu})
-=\{(T,(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}},\ldots,
-        \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_k\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}))\},
+=\{(T,(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}},\ldots,
+        \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_k\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}))\},
 ```
 
 ```math
@@ -165,7 +165,7 @@ define the ready evaluation
 
 ```math
 \textcolor{#A87C28}{\mathop{\mathrm{Eval}}\nolimits}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})
-=\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+=\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 \quad\text{for any complete }\textcolor{#398B83}{\rho}\text{ with }\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}.
 ```
 
@@ -428,7 +428,7 @@ reference machine as a transition relation are listed in
    has a recorded value $v_{\textcolor{#9D75C4}{o}}$, the value returned at the step consuming it, and
    for every complete environment $\textcolor{#398B83}{\rho}$ with
    $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}$,
-   $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$
+   $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$
    is defined and equals $v_{\textcolor{#9D75C4}{o}}$. The footprint of $\textcolor{#9D75C4}{o}$ was
    published when it was consumed and published values only increase (item 3),
    so this is read stability (Lemma 23.1). It needs no model and no admissibility
@@ -459,7 +459,7 @@ $\textcolor{#398B83}{\rho}$ with $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}
 ```math
 \textcolor{#A87C28}{\alpha}(a)=
 \bigoplus_{(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)\setminus \textcolor{#A87C28}{U}}
-\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
 ```
 
 with every term defined. If the fiber of $a$ has no pending occurrence and

@@ -544,7 +544,7 @@ An index expression $\textcolor{#9D75C4}{e}$ denotes an integer-valued expressio
 appropriate valuation. Write
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}\in\mathbb{Z}
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}\in\mathbb{Z}
 ```
 
 for its evaluated value.
@@ -564,8 +564,8 @@ For an access $T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k]$, wri
 
 ```math
 \textcolor{#5688C7}{\phi}(\textcolor{#5688C7}{\nu})=
-(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}},\ldots,
- \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_k\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}).
+(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}},\ldots,
+ \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_k\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}).
 ```
 
 Calling this a map into $\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)$ asserts that the
@@ -812,8 +812,8 @@ For a non-numerical scalar algebra, its combination operation is $\oplus$.
 
 Use the following interpretation notation, made precise in [Part III](tensor_logic_semantics_part_iii.md#part-iii-denotational-semantics):
 
-- $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}$: the value of an index expression.
-- $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$: the result of interpreting a tensor
+- $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}$: the value of an index expression.
+- $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$: the result of interpreting a tensor
   expression under a complete tensor environment and an index valuation;
   it may be undefined.
 - $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\mathclose{]\!]}}(\textcolor{#398B83}{\eta})$: the partial input-output denotation,

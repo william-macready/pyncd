@@ -25,8 +25,9 @@ contents, and next links at both the top and bottom.
 Display equations use fenced `math` blocks so Markdown does not interpret
 standalone equality signs as heading underlines. Interpretation brackets use
 standard TeX square brackets with tight spacing instead of package-specific
-bracket commands. These choices change only the typesetting, not the notation's
-mathematical meaning or color coding.
+bracket commands. Both opening and closing interpretation brackets are teal;
+enclosed expressions and subscripts keep their own role-specific colors.
+These choices change only the typesetting, not the mathematical meaning.
 
 ## Table of contents
 
