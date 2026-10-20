@@ -84,7 +84,7 @@ structural facts without proving value interpretation or execution.
 
 ## Obligation checklist
 
-Use [Section 28's foundational proof targets](tensor_logic_semantics.md#28-reference-machine-boundaries-and-proof-targets)
+Use [Section 28's foundational proof targets](tensor_logic_semantics_part_iv.md#28-reference-machine-boundaries-and-proof-targets)
 to organize the comparison. Split a row when different constructors or
 execution paths have materially different dispositions.
 
