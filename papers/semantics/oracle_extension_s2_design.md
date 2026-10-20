@@ -109,6 +109,26 @@ Today the Source oracle cannot express those programs, so S3's claims are held b
   `reduce := sum`. §2.3's rule for tropical statements needs revisiting: admit `reduce` matching `agg`, or
   `rejectCollisions`.
 
+### 6.1 Decisions after prototypes P1/P2 (2026-10-19; user approved the calls)
+
+Evidence: `additive_s2b_artifacts/p1_findings.md`, `p2_findings.md` (scratch branches `proto-s2b-p1`, `proto-s2b-p2`).
+- Max-plus carrier is `Tropical (WithBot ℚ)ᵒᵈ` with a 6-line instance for the two missing `LinearOrderedAddCommMonoidWithTop`
+  fields; min-plus is `Tropical (WithTop ℚ)`. Negation transport rejected (sign flip at every boundary).
+- Carrier record `{admits : AggOp → TensorElementType → Bool, ofRat, observe : K → ExtVal}`; zero/one/⊕/⊗ come from `[Semiring K]`,
+  the same instance the Core leg uses. Selection is a first-match table keyed on (agg, element type). Extensibility requirement
+  (user): a further semiring is one carrier record + one table entry, no edits to oracle evaluation, Schedule, Admission.
+  The limit is the DSL (`AggOp` closed, no Boolean element type), not the oracle.
+- `ExtVal := fin ℚ | negInf | posInf`; observation/comparison types take a value parameter defaulting to `ℚ`, so the real path is
+  unchanged by construction. The real harness (`compareSource`, `SourceRun`, `NumericalProfile.checkProfile`, all proof files) is untouched;
+  tropical programs run through a sibling sorted harness and the unsorted entry refuses `max`/`min` with `nonSum`.
+- Core leg generic via `…At` forms (`runSourceAt`, `Registry.none`); proofs stay real-only.
+- Every tropical `.scatter` is refused (`fill : Int` cannot equal ∓∞); affine `.assign` writes are admitted (empty fibers give ∓∞).
+- Known differences to carry as structural conditions with confirmers: `tropicalMultiFactor` (production max-/min-times) and
+  `tropicalScatterFill`.
+- NOT in S2b (parked, ~1 task each): merging the sorted harness into `ComparisonRun`/`Classification`; tropical oracle-receipt
+  re-check; tropical Program/Global-model theorems; extent-0 ±∞ reaching production probe. `mixedElementTypes` stays a refusal
+  on the sorted entry only.
+
 ## 7. Sequencing and what each unlocks
 
 B3 (independent, any time) -> S2a plan, execute, land -> S2b plan, execute, land.
