@@ -370,21 +370,60 @@ S2a: check that a fixture with the condition's shape AND an unrelated mismatch i
 ### T5. Documentation sweep (no code)
 
 Commands (each hit is updated or recorded unchanged with the reason; historical records keep their dated counts):
-1. Job counts: `rg -n "8818|8822" leanncd/LeanNCD/Semantics/AGENTS.md leanncd/AGENTS.md papers/semantics/lean_executable_semantics_path.md papers/semantics/additive_production_decision_note.md`
-   (the author found 0 hits in these four files; a hit is a stale count to update, a dated record keeps its count).
+0. Doc layout (the spec and the Lean guide were split into parts after this plan was first written; verified 2026-10-20, merge `2f4727bd`).
+   `papers/semantics/lean_executable_semantics_path.md` and `papers/semantics/tensor_logic_semantics.md` are now INTRODUCTION/INDEX files; the
+   prose lives in `lean_executable_semantics_path_part_{1..6}.md` and `tensor_logic_semantics_part_{i..v}.md` + `_reference.md`
+   (map: `papers/semantics/README.md`). Every sweep command below names the part files. Before editing, re-run
+   `rg -n "S2a|S2b|tropical|max-plus|admitSourceAffine|landed on local main" papers/semantics --glob "lean_executable_semantics_path*.md" --glob "tensor_logic_semantics*.md" --glob "tensor_logic_semantic_gap_audit.md"`
+   and use its hits, not the line numbers quoted here (they will have moved). Heading anchors in the part files keep the original
+   section numbers (Section 4.7 is in `_part_4.md`); keep the `Each part has previous/contents/next links` navigation untouched.
+   Do not re-merge or re-split any document; edit prose in place.
+1. Job counts: `rg -n "8818|8822|8823" leanncd/LeanNCD/Semantics/AGENTS.md leanncd/AGENTS.md papers/semantics/additive_production_decision_note.md`
+   (the author found 0 hits in these files; the path-doc and spec files have none either, verified across `lean_executable_semantics_path*.md` and
+   `tensor_logic_semantics*.md`; a hit is a stale count to update, a dated record keeps its count).
 2. Semantics node (`leanncd/LeanNCD/Semantics/AGENTS.md`, the Source section): `rg -n "S2a|Test.lean|fixtures|nonSum|bare" leanncd/LeanNCD/Semantics/AGENTS.md`. Add: the carrier record and
    `standardCarriers` table (one new semiring = one record + one entry), the sorted admission entry and the unsorted refusal,
    `sortSelection`, the sibling sorted harness and why it is separate, the two known-difference conditions, the tropical profile
    rules, the independence caveat, and the parked items. Keep injected sections under ~3k characters (trim first if over).
-3. Path doc: `rg -n "S2a|S2b|tropical|max-plus|oracle" papers/semantics/lean_executable_semantics_path.md` (additive sections; there are S2a paragraphs near the
-   `admitSourceAffine` description and the "planned" list near the end that names max-plus as remaining).
-4. Gap audit: `rg -n "G04|F01|S2a" papers/semantics/tensor_logic_semantic_gap_audit.md`; state what S2b closes (tropical oracle) and what remains (S3a/S3b).
+3. Path doc (part files). Edit exactly these places, found by `rg -n "S2a|max-plus|admitSourceAffine" papers/semantics --glob "lean_executable_semantics_path_part_*.md"`:
+   - `lean_executable_semantics_path_part_4.md`, Section 4.7: the `admitSourceAffine` description (S2a sentence "also admits integer-affine and constant LEFT-hand slots")
+     gains the sorted entry `admitSourceSorted` (max/min programs, single-sort, tropical scatter refused, unsorted entry still refuses `nonSum`); the
+     "Affine writes and scatter (S2a, ...)" paragraph is followed by a new "Tropical carriers (S2b)" paragraph: carrier record + selection table,
+     `ExtVal`, the sibling sorted harness (real harness untouched), tropical profile rules, the two known-difference conditions, and the
+     parked items; link `additive_s2b_record.md`. Identifiers only, no line numbers. Use the S2a paragraph as the style donor.
+   - `lean_executable_semantics_path_part_5.md`, remaining-work: the two lists that name "max-plus and min-plus sorts" / "max-plus" as planned
+     (sentences beginning "The decision to remove overwrite..." and "...tropical carriers, out-of-range write errors, max-plus) remain planned") are
+     reworded: the ORACLE for max-plus/min-plus (S2b) is landed; production tropical sorts, casts and constants (S3b), scatter-collision ⊕ and range
+     errors (S3a) remain planned. Do not claim any production change.
+   - `lean_executable_semantics_path.md` (introduction/index only): `rg -n "S2|tropical|max-plus" papers/semantics/lean_executable_semantics_path.md`;
+     expected 0 hits (it holds no status prose); a hit is updated, otherwise record "no change".
+   - Parts 1-3 and 6: expected 0 hits (verified); record "no change".
+4. Gap audit (`papers/semantics/tensor_logic_semantic_gap_audit.md`, not split): `rg -n "G04|F01|S2a" papers/semantics/tensor_logic_semantic_gap_audit.md`;
+   the G04 row status cell (it currently says "S2b and S3 remain") and the F01 paragraph beginning "S2a ... closes the ORACLE side" get one S2b sentence
+   each: S2b closes the oracle side of tropical carriers (single-sort, no scatter) and adds no production semantics; still open: S3a (scatter ⊕, range
+   errors, delete `fill`/`CollisionReduce`) and S3b (tropical sorts, casts, constants, multi-factor max-plus in production).
+4b. Specification (`tensor_logic_semantics*.md`) is the semantic authority and S2b changes no semantics: NO edits to Parts I-V or the reference.
+   One check, in the introduction file `papers/semantics/tensor_logic_semantics.md` (the paragraph "The bounded source layer admits finite read-only sums of
+   products over bare slots..." and its "2026-10-10 snapshot" sentence): `rg -n "bounded source layer|four evaluation legs|2026-10-10 snapshot" papers/semantics/tensor_logic_semantics.md`.
+   That paragraph describes the proved bare-slot fragment and the dated snapshot; S2a/S2b extend only the executed oracle and differential, not the
+   proved fragment, so it stays UNCHANGED except one added sentence if (and only if) the reviewer judges the executed-evidence sentence misleading
+   without it: "The executed oracle also covers affine write slots (S2a) and single-sort max-plus/min-plus programs (S2b); these are executed
+   evidence, not theorems." Record the decision (changed or "no change, reason") in the record; do not touch the dated counts. Also check
+   `papers/semantics/README.md` for status prose: expected 0 hits.
+   The decision note has ONE link to the spec (`rg -n "tensor_logic_semantics" papers/semantics/additive_production_decision_note.md`, a bare
+   file link without anchor, verified 2026-10-20): it still resolves to the introduction file, so record "no change" unless the reviewer finds it
+   names a section that now lives in a part file.
 5. Decision note §E rows and design note: `rg -n "S2b|S2a|S3a" papers/semantics/additive_production_decision_note.md papers/semantics/oracle_extension_s2_design.md`;
    mark S2b landed with the merge hash AFTER the merge: the design note §7 status line (`rg -n "Status 2026-10-18" papers/semantics/oracle_extension_s2_design.md`)
    and the decision note's **S2** row in the §E table (`rg -n "^\| \*\*S2\*\*" papers/semantics/additive_production_decision_note.md`).
 6. Source docstrings: `rg -n "agg = sum|sum only|refuses.*max|nonSum|bare-slot" leanncd/LeanNCD/Semantics/Source/{Oracle,Admission,Observation,Differential,NumericalProfile,Adapter,Carrier,Schedule}.lean`;
    any docstring that says the oracle is sum-only is rewritten. Run `lake-build.sh <wt>/leanncd LeanNCD.Semantics.Source.Oracle` if a docstring edit is made.
-7. Value-grep for stale numbers after the final build: `rg -n "8818 jobs|accepted == |agg = .sum" papers leanncd --glob '*.md'`.
+7. Value-grep for stale numbers after the final build: `rg -n "8818 jobs|accepted == |agg = .sum" papers leanncd --glob '*.md'` (this covers the split part files).
+8. Stale "landed on local main" (S2a was pushed 2026-10-19 and is on origin/main): `rg -n "landed on local main" papers leanncd --glob '*.md'` (verified 2026-10-20:
+   AGENTS x2, path part_4 x2, part_5 x2, decision note x1, gap audit x2, design note x2). Rule 14: only the sentences T5 already edits (items 2-5) are
+   reworded to "landed (merge 7a551faa)"; the rest are LISTED in the record as parked stale wording, one line, not edited.
+9. Anchor/link check after editing the part files: `rg -n "lean_executable_semantics_path\.md#|tensor_logic_semantics\.md#" papers leanncd --glob '*.md'`
+   (anchors that point into a split-out section are broken links; fix only those introduced by this slice, list the rest).
 Discoverability (the deliverable): `import LeanNCD` reaches `Carrier` (via `Adapter`) and, after T4-03, `SortedDifferential`;
 the Semantics AGENTS node names both. No source line numbers in any shipped text; cite identifiers.
 
