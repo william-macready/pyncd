@@ -937,17 +937,33 @@ def sortKeys (snapshot : SourceSnapshot) (source : AdmittedSource) :
     ((snapshot.resolved.stmts[st.original]?.map stmtAgg).getD .sum,
       (source.source.table.entry st.output.tensor).elementType)
 
+/-- S2b: the index (into the selection keys, i.e. the admitted statements) of the first statement
+responsible for a selection refusal: for `mixedSorts` the first whose aggregation differs from
+statement 0's, for `mixedElementTypes` the first whose destination element type differs, for
+`noCarrier` the first with the unadmitted key. `none` only for an empty program. -/
+def selectionOffender (keys : List (AggOp × TensorElementType)) :
+    Oracle.SelectionError → Option Nat
+  | .mixedSorts _ => keys.head?.bind fun k0 => keys.findIdx? (·.1 != k0.1)
+  | .mixedElementTypes _ => keys.head?.bind fun k0 => keys.findIdx? (·.2 != k0.2)
+  | .noCarrier agg ty => keys.findIdx? (· == (agg, ty))
+
 /-- S2b: `admitSourceAffine` for single-sort programs: admits `max`/`min` statements and selects
 the one carrier that interprets every statement (`table`, first match). A mix is refused
-(`sortSelection (mixedSorts ..)`). -/
+(`sortSelection (mixedSorts ..)`), located at the first offending statement (`selectionOffender`). -/
 def admitSourceSorted (snapshot : SourceSnapshot)
     (table : List Oracle.Sorted := Oracle.standardCarriers) :
     Except SourceDiagnostic (AdmittedSource × Oracle.Sorted) :=
   match admitSourceAffine snapshot (sorted := true) with
   | .error e => .error e
   | .ok admitted =>
-    match Oracle.selectCarrier (sortKeys snapshot admitted) table with
-    | .error e => .error (sourceError .statement {} (.sortSelection e))
+    let keys := sortKeys snapshot admitted
+    match Oracle.selectCarrier keys table with
+    | .error e =>
+      let origin : SourceOrigin :=
+        match (selectionOffender keys e).bind (admitted.statements[·]?) with
+        | some st => { statement := some st.original }
+        | none => {}
+      .error (sourceError .statement origin (.sortSelection e))
     | .ok sorted => .ok (admitted, sorted)
 
 end LeanNCD.Semantics.Source

@@ -175,7 +175,7 @@ dispatch per finding group, given only its plan sections.
 | Cross-sort programs (`mixedSorts`) and casts, tropical constants, tropical sorts in production | S3b (production) / later sort-family item |
 | Scatter ⊕ semantics, `fill`/`CollisionReduce` deletion, range errors | S3a |
 | A real fourth carrier (needs a DSL key: closed `AggOp`, no Boolean element type) | unowned; DSL change |
-| `sortSelection` diagnostics carry an EMPTY statement origin (`sourceError .statement {}`); a fixture cannot bind a locator | parked; ~0.3 task |
+| `sortSelection` diagnostics carried an EMPTY statement origin | DONE during execution (2026-10-20, Direct path, test first): `selectionOffender` in `Admission.lean` locates the first offending statement; origin guards at the end of `SourceSortedAuditTest`; cycles `T2-M4..M6` in the manifest |
 | Core leg exercised with the toy carrier (the toy runs through oracle and selection only) | parked; the Core code is generic over the same `[Semiring K]` that the tropical rows exercise |
 | f32-destination production comparison for tropical programs | unowned (same scope as S2a) |
 
@@ -457,5 +457,5 @@ before `-D`.
 ## 6. Parked (one line each; see the §2 table for owners)
 
 Harness merge; tropical receipt re-check; tropical Program/Global-model theorems; extent-0 `∓inf` into production probe;
-`observeTensors`/`observeTensorsAt` dedup; sortSelection origin locator; toy carrier through the Core leg; cross-sort casts and
+`observeTensors`/`observeTensorsAt` dedup; toy carrier through the Core leg; cross-sort casts and
 S3a/S3b; a real fourth carrier (DSL key); f32 tropical production comparison.

@@ -71,4 +71,34 @@ site (`admitAffineWrite`). -/
 #guard causeIs isNonSum (admitSourceAffine (strided .max))
 #guard causeIs isNonSum (admitSourceAffine (strided .min))
 
+/-! Origin locator for `sortSelection`: the refusal names the FIRST statement that makes selection
+fail (it used to carry an empty origin). `mixedSorts` blames the first statement whose aggregation
+differs from statement 0's, `mixedElementTypes` the first whose destination element type differs,
+`noCarrier` the first statement with the unadmitted key. Two `mixedSorts` programs separate "first
+offender" from "last statement" and from a constant. -/
+private def originOf (s : SourceSnapshot) (table : List Sorted := standardCarriers) :
+    Option SourceOrigin :=
+  match admitSourceSorted s table with
+  | .error d => some d.origin
+  | .ok _ => none
+
+private def assignY (agg : AggOp) : Stmt :=
+  .assign "Y" [.free a] (rhs agg [[.read "X" [.axis a]]])
+
+#guard originOf (snap [a] [assignY .sum, assignY .sum, assignY .max]) == some { statement := some 2 }
+#guard originOf (snap [a] [assignY .sum, assignY .max, assignY .min]) == some { statement := some 1 }
+#guard originOf (snap [a] [assignY .sum, assignY .sum]) (table := []) == some { statement := some 0 }
+
+/-- `Y` (f64) and `V` (f32, declaration 7), both written by a `sum` over `X`. -/
+private def mixedTypes : SourceSnapshot :=
+  let base := snap [a] [assignY .sum, .assign "V" [.free a] (rhs .sum [[.read "X" [.axis a]]])]
+  { base with
+    resolved := { base.resolved with decls := base.resolved.decls ++ [.typedTensor .f32 "V" [a]] }
+    specs := base.specs ++ [⟨7, .output, [4]⟩] }
+
+#guard originOf mixedTypes == some { statement := some 1 }
+
+/-! An admitted program selects without an origin: the locator never invents a statement. -/
+#guard originOf (snap [a] [assignY .sum]) == none
+
 end SourceSortedAuditTest

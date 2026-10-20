@@ -132,5 +132,44 @@
    "SourceSortedDifferentialTest.lean:121:0",
    "SourceSortedDifferentialTest.lean:122:0"
   ]
+ },
+ {
+  "label": "T2-M4 selectionOffender blames the last statement for mixedSorts (killed by the origin #guard on the sum,max,min program)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "| .mixedSorts _ => keys.head?.bind fun k0 => keys.findIdx? (·.1 != k0.1)",
+  "new": "| .mixedSorts _ => some (keys.length - 1)",
+  "targets": [
+   "Semantics.SourceSortedAuditTest"
+  ],
+  "expect": [
+   "SourceSortedAuditTest.lean:89:0"
+  ]
+ },
+ {
+  "label": "T2-M5 selectionOffender compares the aggregation for mixedElementTypes (killed by the origin #guard on the f64/f32 program)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "| .mixedElementTypes _ => keys.head?.bind fun k0 => keys.findIdx? (·.2 != k0.2)",
+  "new": "| .mixedElementTypes _ => keys.head?.bind fun k0 => keys.findIdx? (·.1 != k0.1)",
+  "targets": [
+   "Semantics.SourceSortedAuditTest"
+  ],
+  "expect": [
+   "SourceSortedAuditTest.lean:99:0"
+  ]
+ },
+ {
+  "label": "T2-M6 selectionOffender gives noCarrier no offender (killed by the origin #guard with the empty table)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "| .noCarrier agg ty => keys.findIdx? (· == (agg, ty))",
+  "new": "| .noCarrier agg ty => none",
+  "targets": [
+   "Semantics.SourceSortedAuditTest"
+  ],
+  "expect": [
+   "SourceSortedAuditTest.lean:90:0"
+  ]
  }
 ]

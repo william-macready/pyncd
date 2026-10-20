@@ -118,7 +118,17 @@ commit `79524517` was therefore not built on its own.
    no Lean consumer exists (`git grep`), one doc citation was fixed in the T5 sweep (path part 4, schedule paragraph).
 5. T2-01 adds a private helper `stmtAgg` in `Admission.lean` that the plan's symbol list does not name.
 
-### 5.2 Parked review findings (Rule 14; none fixed)
+### 5.1b Parked items picked up during execution (user-requested, 2026-10-20)
+
+- T1 review F1-F3, F5, F6: 15 closing guards appended to `SourceOracleCarrierTest` (`observe` of all three carriers, `minPlus`
+  and `real` selection, the toy's `ofRat`/`observe`/algebra) and the `Carrier.lean` docstrings (commit `8041a187`); T1 cycles still 2/2.
+- `sortSelection` origin locator: `selectionOffender` (`Admission.lean`) blames the first statement that makes selection fail
+  (`mixedSorts`: first aggregation differing from statement 0, `mixedElementTypes`: first element type differing, `noCarrier`:
+  first with the unadmitted key; none for an empty program, which keeps the empty origin). Test first (four origin guards plus an
+  admitted-program guard appended at the end of `SourceSortedAuditTest`, red against the empty origin, then green); three
+  mutants each killed by exactly one intended guard and registered as manifest cycles `T2-M4..M6` (manifest is now 12 cycles).
+
+### 5.2 Parked review findings (Rule 14; none fixed except those listed in 5.1b)
 
 T1: no `minPlus` selection row until T2 Q6; `OrAnd` rows weak as regression (nonzero inputs); `(WithBot ℚ)ᵒᵈ` instance is an
 unscoped orphan (sound); `runWith` never reads `admits` (the guard is `admitSourceSorted`); `selectCarrier []` docstring versus
