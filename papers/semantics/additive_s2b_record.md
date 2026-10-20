@@ -81,7 +81,7 @@ rows, lines 123 and 126 of `SourceOracleCarrierTest`), T2 3 (`SourceSortedDiffer
 rewrite and `sortKeys` cycles; `SourceSortedAuditTest` 56/62/63 and row 80 for the scatter guard), T3 2 (Core rows 85-105; the
 two cycles kill the same rows), T4A 2 (envelope-trip row 111; bits pin 121-122). Observations: `T2-M1` and `T2-M3` are killed
 by the same rows (they differ only in where the sort is lost); `T3-M1`/`T3-M2` likewise. The `±inf`-bits cycle `T4-M2` is
-killed only by the T4-04 pin, as the plan says. Dropped per the plan: the registry cycle (not fixture-killable) and any
+killed only by the T4-04 pin when authored (after the extent-0 probe of section 5.1b it is also killed by two production-facing rows). Dropped per the plan: the registry cycle (not fixture-killable) and any
 `MaxPlus` instance/`observe` cycle (pinned by `#guard`/`#guard_msgs`). DEFERRED: T4B has no cycles (`tropicalMultiFactor`,
 `tropicalScatterFill` confirmers are not prototyped; `T4-M3..M5` are authored by the T4B dispatch after the observed causes).
 
@@ -134,6 +134,12 @@ commit `79524517` was therefore not built on its own.
   zero-input row (registered as `T3-M3`, manifest now 13 cycles); an observed-cell mutant is killed by all three rows.
 - Stale "landed on local main" wording for S2a fixed in `leanncd/AGENTS.md` and path part 5; the decision-note S2 row and the design note
   status lines are rewritten at merge.
+
+- Extent-0 probe: `Y[a] := max Z[a,b]` (and `min`, `sum` as a control) with `|b| = 0` is admitted, run and accepted by production; Core and
+  oracle give `-inf` (`+inf`) in every cell, both production legs agree on the bit patterns, classification `fourLegParity`. This
+  CORRECTS the plan's and the T4A review's claim that production refuses every program yielding `±inf` (only the affine write is
+  refused). Five rows appended to `SourceSortedDifferentialTest`; swapping the `ExtClass.bits` constants now fails the bits pin AND
+  both extent-0 classification rows (registered as manifest cycle `T4-M2b`, manifest now 14 cycles). No production change.
 
 ### 5.2 Parked review findings (Rule 14; none fixed except those listed in 5.1b)
 

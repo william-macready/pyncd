@@ -160,8 +160,11 @@ dispatch per finding group, given only its plan sections.
   statement and collection add no magnitude; a finite output cell passes `checkValue .tensorCell`; `±inf` is its own class
   `ExtClass.negInf/posInf` with bits `0xFFF0000000000000` / `0x7FF0000000000000`, never an envelope failure; non-finite
   reads are absorbing and skipped in the bound.
-- **The `±inf` bit patterns are not exercised by any prototype fixture** (production refuses every program that yields one), so
-  they are pinned by a T4A audit fixture against Lean's own `Float.toBits`.
+- **The `±inf` bit patterns are not exercised by any prototype fixture** (the P2 fixtures only reach `±inf` through an affine write,
+  which production refuses), so they are pinned by a T4A audit fixture against Lean's own `Float.toBits`. CORRECTION found by the
+  extent-0 probe (2026-10-20): an EMPTY reduction axis (`|b| = 0`) yields `-inf` (max) / `+inf` (min) cells that production
+  ACCEPTS, and both production legs agree with the oracle on the bits (`fourLegParity`); five rows at the end of
+  `SourceSortedDifferentialTest` pin it, so `ExtClass.bits` does meet production output.
 
 ### Deliberately NOT done, with owner (Rule 14)
 
@@ -170,7 +173,7 @@ dispatch per finding group, given only its plan sections.
 | Merging the sorted harness into `ComparisonRun`/`Classification` (one harness, one render) | parked; ~1 task; needs `SourceRun` to carry a carrier (`Type 1`) or a sum type |
 | Tropical oracle-receipt re-check (`checkOracle` re-derives arithmetic in `ℚ`) | parked; ~1 task (generic `checkOracle` over semiring ops) |
 | Tropical Program/Global-model theorems (`ProgramCorrespondence` at `K`) | parked; ~1 task; not needed for executable parity; the `AdmittedSource.program_*` lemmas are already generic |
-| Extent-0 axis producing `±inf` that reaches production (not probed) | parked; ~0.5 task (one probe + fixture) |
+| Extent-0 axis producing `±inf` that reaches production | DONE during execution (2026-10-20): it does reach production and agrees (`fourLegParity`); five rows appended to `SourceSortedDifferentialTest`; cycle `T4-M2b` |
 | `observeTensors` duplicates `observeTensorsAt … id` (unify, under 10 lines) | parked; cleanup candidate, 0 dispatches of its own |
 | Cross-sort programs (`mixedSorts`) and casts, tropical constants, tropical sorts in production | S3b (production) / later sort-family item |
 | Scatter ⊕ semantics, `fill`/`CollisionReduce` deletion, range errors | S3a |
@@ -335,8 +338,8 @@ Fixtures (8 `#guard_msgs`: the §2 classification table, plus the `compareSource
 Audit (T4-04, 2 `#guard`): `ExtClass.negInf.bits == (-(1.0 / 0.0) : Float).toBits` and
 `ExtClass.posInf.bits == (1.0 / 0.0 : Float).toBits` (independent of the constants in the source).
 Cycles (2): `T4-M1` the profile bound `bound + |q|` replaced by `bound * |q|` (the running bound starts at 0, so it never trips;
-breaks the `1048576` envelope-trip row); `T4-M2` swap the two `±inf` bit constants in `ExtClass.bits` (breaks the bits pin only: the
-prototype has NO classification row that compares a `±inf` cell with production bits).
+breaks the `1048576` envelope-trip row); `T4-M2` swap the two `±inf` bit constants in `ExtClass.bits` (breaks the bits pin; after the extent-0 probe it also breaks the two extent-0
+classification rows, which compare `±inf` cells with production bits; cycle `T4-M2b` expects those rows alone).
 Cleanup step at the end of dispatch A (one commit): the patched text carries prototype labels. Run
 `rg -n "S2b P[12]|\(prototype\)" leanncd/LeanNCD leanncd/test` and reword each docstring/comment to `S2b` (docstring text only; no
 code token changes), then rebuild `LeanNCD` and `Semantics.SourceSortedDifferentialTest` once.
@@ -456,6 +459,5 @@ before `-D`.
 
 ## 6. Parked (one line each; see the §2 table for owners)
 
-Harness merge; tropical receipt re-check; tropical Program/Global-model theorems; extent-0 `∓inf` into production probe;
-`observeTensors`/`observeTensorsAt` dedup; cross-sort casts and
+Harness merge; tropical receipt re-check; tropical Program/Global-model theorems; `observeTensors`/`observeTensorsAt` dedup; cross-sort casts and
 S3a/S3b; a real fourth carrier (DSL key); f32 tropical production comparison.

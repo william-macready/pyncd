@@ -184,5 +184,19 @@
   "expect": [
    "SourceOracleCarrierTest.lean:185:0"
   ]
+ },
+ {
+  "label": "T4-M2b negInf and posInf bit constants swapped (killed by the extent-0 classification rows against production)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "  | .negInf => 0xFFF0000000000000\n  | .posInf => 0x7FF0000000000000",
+  "new": "  | .negInf => 0x7FF0000000000000\n  | .posInf => 0xFFF0000000000000",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:155:0",
+   "SourceSortedDifferentialTest.lean:157:0"
+  ]
  }
 ]

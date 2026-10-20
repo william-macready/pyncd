@@ -117,8 +117,45 @@ private def classOf (s : SourceSnapshot) : String :=
   | _ => "ran"
 
 /-! The `±inf` bit patterns, pinned against Lean's own IEEE `Float`. No row above compares an
-infinite cell with production (production refuses every program that yields one). -/
+infinite cell with production (an affine write that yields one is refused); the extent-0 rows do. -/
 #guard ExtClass.negInf.bits == (-(1.0 / 0.0) : Float).toBits
 #guard ExtClass.posInf.bits == (1.0 / 0.0 : Float).toBits
+
+/-! Extent-0 reduction axis (probe, 2026-10-20). With `|b| = 0`, `Y[a] := agg Z[a,b]` reduces over an
+EMPTY axis, so every cell is the empty reduction: `-inf` (max) or `+inf` (min). Unlike the strided
+write this is admitted AND runs in production, whose two legs agree with the oracle on the `±inf` bit
+patterns: these rows are the only place `ExtClass.bits` meets production output. `Y` is declaration 3
+here (axes 0-1, `Z` 2). -/
+private def empty0 (agg : AggOp) : SourceSnapshot :=
+  { resolved := {
+      decls := [.axis a (some 4), .axis b (some 0),
+        .typedTensor .f64 "Z" [a, b], .typedTensor .f64 "Y" [a]]
+      stmts := [.assign "Y" [.free a] (rhs agg [[.read "Z" [.axis a, .axis b]]])]
+      env := {}, extNames := ∅ }
+    specs := [⟨2, .input, [4, 0]⟩, ⟨3, .output, [4]⟩]
+    inputs := [⟨2, [4, 0], []⟩] }
+
+private def classOf0 (s : SourceSnapshot) : String :=
+  match compareSortedSource s (some [3]) with
+  | .ok r => toString (repr r.classification)
+  | .error d => s!"refused {repr d.cause}"
+
+private def yCore0 (s : SourceSnapshot) : String :=
+  match compareSortedSource s (some [3]) with
+  | .ok r => match r.core with
+    | .ok ts => toString (repr ((ts.find? (·.declaration == 3)).map (·.values)))
+    | .error e => e
+  | .error d => s!"refused {repr d.cause}"
+
+/-- info: "some [some -inf, some -inf, some -inf, some -inf]" -/
+#guard_msgs in #eval yCore0 (empty0 .max)
+/-- info: "some [some +inf, some +inf, some +inf, some +inf]" -/
+#guard_msgs in #eval yCore0 (empty0 .min)
+/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
+#guard_msgs in #eval classOf0 (empty0 .max)
+/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
+#guard_msgs in #eval classOf0 (empty0 .min)
+/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
+#guard_msgs in #eval classOf0 (empty0 .sum)
 
 end SourceSortedDifferentialTest

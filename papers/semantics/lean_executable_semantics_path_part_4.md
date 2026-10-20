@@ -624,7 +624,8 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   rational instance, so the proofs are unchanged. A sibling harness, `compareSortedSource`
   ([SortedDifferential](../../leanncd/LeanNCD/Semantics/Source/SortedDifferential.lean)), compares Core, oracle
   and both production legs under a tropical numerical profile (finite reads are integers within ±2^20, the
-  per-occurrence sum of magnitudes stays within 2^20, `±inf` is its own class); the real harness
+  per-occurrence sum of magnitudes stays within 2^20, `±inf` is its own class; an empty reduction axis yields `±inf`
+  that production accepts and matches bit for bit); the real harness
   (`compareSource`) is untouched and still refuses `max`/`min`. Production multiplies where the tropical `⊗`
   adds, so a multi-factor `max`/`min` term is a `nativeDiscrepancy`, and a tropical affine write is a
   `nativeFailure` (production refuses a `max` scatter that fills with a finite value); fixtures assert both

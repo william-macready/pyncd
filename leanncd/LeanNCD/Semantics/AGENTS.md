@@ -124,7 +124,8 @@ carrier; the limit is the DSL, `AggOp` is closed). `admitSourceSorted` (a `sorte
 still refuse `max`/`min` (`nonSum`). Cells are observed as `ExtVal`; the Core leg is `runSourceAt` (`Registry.none`; the
 real names are its rational instance, proofs untouched). `Source.SortedDifferential.compareSortedSource` is a SIBLING
 harness (real `compareSource`, `SourceRun`, `checkProfile` untouched) with a tropical profile (finite reads integers
-within ±2^20, per-occurrence sum of magnitudes within 2^20, `±inf` its own class). Production multiplies where tropical
+within ±2^20, per-occurrence sum of magnitudes within 2^20, `±inf` its own class; an extent-0 reduction yields `±inf`
+that production matches). Production multiplies where tropical
 `⊗` adds, so multi-factor `max`/`min` is `nativeDiscrepancy` and a tropical affine write is `nativeFailure`; fixtures
 assert both and no known-difference condition explains them yet. Independence caveat: oracle and Core share the
 semiring instance, so their parity checks scheduling and observation, not the algebra (pinned by hand-valued oracle
