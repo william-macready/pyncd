@@ -1,0 +1,136 @@
+[
+ {
+  "label": "T1-M1 selectCarrier takes the last admitting entry (killed by #guard pickName row with the toy table)",
+  "task": "T1",
+  "file": "LeanNCD/Semantics/Source/Carrier.lean",
+  "old": "table.find? (·.carrier.admits agg ty)",
+  "new": "table.reverse.find? (·.carrier.admits agg ty)",
+  "targets": [
+   "Semantics.SourceOracleCarrierTest"
+  ],
+  "expect": [
+   "SourceOracleCarrierTest.lean:123:0"
+  ]
+ },
+ {
+  "label": "T1-M2 mixed sorts return the first agg's carrier (killed by #guard pickName mixed-sorts row)",
+  "task": "T1",
+  "file": "LeanNCD/Semantics/Source/Carrier.lean",
+  "old": "| as, _ => .error (.mixedSorts as)",
+  "new": "| as, _ => pick (as.headD .sum) ((keys.map (·.2)).headD .f64)",
+  "targets": [
+   "Semantics.SourceOracleCarrierTest"
+  ],
+  "expect": [
+   "SourceOracleCarrierTest.lean:126:0"
+  ]
+ },
+ {
+  "label": "T2-M1 sorted rewrite of rhs.agg removed (killed by #guard_msgs admission rows)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "let rhs := if sorted then { rhs with agg := .sum } else rhs",
+  "new": "let rhs := rhs",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest",
+   "Semantics.SourceSortedAuditTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:71:0",
+   "SourceSortedDifferentialTest.lean:73:0",
+   "SourceSortedDifferentialTest.lean:75:0"
+  ]
+ },
+ {
+  "label": "T2-M2 tropical scatter guard removed (killed by #guard audit rows A5 and the #guard_msgs scatter row)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "(sorted && rhs.agg != .sum)",
+  "new": "false",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest",
+   "Semantics.SourceSortedAuditTest"
+  ],
+  "expect": [
+   "SourceSortedAuditTest.lean:56:0",
+   "SourceSortedAuditTest.lean:62:0",
+   "SourceSortedAuditTest.lean:63:0",
+   "SourceSortedDifferentialTest.lean:80:0"
+  ]
+ },
+ {
+  "label": "T2-M3 sortKeys always reports sum (killed by #guard_msgs admission rows)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "((snapshot.resolved.stmts[st.original]?.map stmtAgg).getD .sum,",
+  "new": "(.sum,",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest",
+   "Semantics.SourceSortedAuditTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:71:0",
+   "SourceSortedDifferentialTest.lean:73:0",
+   "SourceSortedDifferentialTest.lean:75:0"
+  ]
+ },
+ {
+  "label": "T3-M1 Core input binding shifts every input by one (killed by #guard_msgs Core-leg rows)",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Schedule.lean",
+  "old": "C.ofRat ((source.source.inputs.buffers t h).value p)",
+  "new": "C.ofRat ((source.source.inputs.buffers t h).value p + 1)",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:85:0",
+   "SourceSortedDifferentialTest.lean:89:0",
+   "SourceSortedDifferentialTest.lean:95:0",
+   "SourceSortedDifferentialTest.lean:105:0"
+  ]
+ },
+ {
+  "label": "T3-M2 published cell replaced by observe of the zero (killed by #guard_msgs Core-leg rows)",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Observation.lean",
+  "old": "(c.published ⟨t, layout.enumerate p⟩).map obs⟩",
+  "new": "(c.published ⟨t, layout.enumerate p⟩).map (fun _ => obs 0)⟩",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:85:0",
+   "SourceSortedDifferentialTest.lean:89:0",
+   "SourceSortedDifferentialTest.lean:95:0",
+   "SourceSortedDifferentialTest.lean:105:0"
+  ]
+ },
+ {
+  "label": "T4-M1 tropical profile bound adds by multiplying (killed by #guard_msgs envelope-trip classification row)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "bound := bound + |q|",
+  "new": "bound := bound * |q|",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:111:0"
+  ]
+ },
+ {
+  "label": "T4-M2 negInf and posInf bit constants swapped (killed by #guard bits pin, no classification row)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "  | .negInf => 0xFFF0000000000000\n  | .posInf => 0x7FF0000000000000",
+  "new": "  | .negInf => 0x7FF0000000000000\n  | .posInf => 0xFFF0000000000000",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:121:0",
+   "SourceSortedDifferentialTest.lean:122:0"
+  ]
+ }
+]

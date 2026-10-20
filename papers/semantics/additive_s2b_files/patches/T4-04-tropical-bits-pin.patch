@@ -1,0 +1,14 @@
+diff --git a/leanncd/test/Semantics/SourceSortedDifferentialTest.lean b/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
+index 93661df1..b62a8e13 100644
+--- a/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
++++ b/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
+@@ -116,4 +116,9 @@ private def classOf (s : SourceSnapshot) : String :=
+   | .error (.admission d) => toString (repr d.cause)
+   | _ => "ran"
+ 
++/-! The `±inf` bit patterns, pinned against Lean's own IEEE `Float`. No row above compares an
++infinite cell with production (production refuses every program that yields one). -/
++#guard ExtClass.negInf.bits == (-(1.0 / 0.0) : Float).toBits
++#guard ExtClass.posInf.bits == (1.0 / 0.0 : Float).toBits
++
+ end SourceSortedDifferentialTest

@@ -1,0 +1,86 @@
+diff --git a/leanncd/LeanNCD/Semantics/Source/Adapter.lean b/leanncd/LeanNCD/Semantics/Source/Adapter.lean
+index fe8e21d5..f18e8c59 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Adapter.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Adapter.lean
+@@ -1,6 +1,7 @@
+ import LeanNCD.Semantics.Source.Context
+ import LeanNCD.DSL.Pipeline.Structural
+ import LeanNCD.Semantics.RationalReference
++import LeanNCD.Semantics.Source.Carrier
+ 
+ namespace LeanNCD.Semantics.Source
+ 
+@@ -57,6 +58,8 @@ inductive SourceCause
+   /-- A non-bare write whose image can leave the destination shape; the origin's `slot` names
+   the first destination axis whose affine form leaves `[0, extent)` somewhere on the box. -/
+   | writeOutOfRange
++  /-- S2b P2: no single carrier interprets the program (`mixedSorts`, `noCarrier`, ...). -/
++  | sortSelection (error : Oracle.SelectionError)
+   deriving Repr
+ 
+ structure SourceDiagnostic where
+diff --git a/leanncd/LeanNCD/Semantics/Source/Admission.lean b/leanncd/LeanNCD/Semantics/Source/Admission.lean
+index cce63586..d6d8d924 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Admission.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Admission.lean
+@@ -899,14 +899,19 @@ private def admitAffineWrite (source : AdaptedSource) (original : Nat) (name : S
+   else
+     throw (sourceError .output origin (.role .defined (source.table.entry dst).role))
+ 
+-/-- `admitStatement`, plus non-bare `.assign` and policy-checked `.scatter`. -/
+-def admitAffineStatement (source : AdaptedSource) (original : Nat) :
++/-- `admitStatement`, plus non-bare `.assign` and policy-checked `.scatter`. With `sorted`
++(S2b P2), a `max`/`min` statement is admitted as its sort-free structure (the aggregation is a
++program-level carrier key, read by `admitSourceSorted`), and a tropical `.scatter` is refused:
++`fill : Int` cannot be the carrier zero (`-inf`/`+inf`), so §2.3's `fill = 0_K` never holds. -/
++def admitAffineStatement (source : AdaptedSource) (original : Nat) (sorted : Bool := false) :
+     Stmt → Except SourceDiagnostic (AdmittedStatement source)
+   | .assign name slots rhs =>
++    let rhs := if sorted then { rhs with agg := .sum } else rhs
+     if slots.all LHSSlot.isFree then admitStatement source original (.assign name slots rhs)
+     else admitAffineWrite source original name slots rhs
+   | .scatter name slots rhs opts =>
+-    if opts.fill != 0 || !(opts.reduce == .sum || opts.reduce == .rejectCollisions) then
++    if opts.fill != 0 || !(opts.reduce == .sum || opts.reduce == .rejectCollisions) ||
++        (sorted && rhs.agg != .sum) then
+       .error (sourceError .statement { statement := some original } (.unsupported .scatterPolicy))
+     else if slots.all LHSSlot.isFree then
+       admitStatement source original (.assign name slots rhs)
+@@ -914,10 +919,35 @@ def admitAffineStatement (source : AdaptedSource) (original : Nat) :
+   | stmt => admitStatement source original stmt
+ 
+ /-- The admission entry for the differential path: `admitSource` with non-bare writes. -/
+-def admitSourceAffine (snapshot : SourceSnapshot) : Except SourceDiagnostic AdmittedSource := do
++def admitSourceAffine (snapshot : SourceSnapshot) (sorted : Bool := false) :
++    Except SourceDiagnostic AdmittedSource := do
+   let source ← adaptSource snapshot
+   let statements ← source.statements.mapM fun (i, statement) =>
+-    admitAffineStatement source i statement
++    admitAffineStatement source i sorted statement
+   pure ⟨source, statements⟩
+ 
++private def stmtAgg : Stmt → AggOp
++  | .assign _ _ rhs | .scatter _ _ rhs _ => rhs.agg
++  | _ => .sum
++
++/-- S2b P2: the selection key of each admitted statement, `(agg, destination element type)`. -/
++def sortKeys (snapshot : SourceSnapshot) (source : AdmittedSource) :
++    List (AggOp × TensorElementType) :=
++  source.statements.map fun st =>
++    ((snapshot.resolved.stmts[st.original]?.map stmtAgg).getD .sum,
++      (source.source.table.entry st.output.tensor).elementType)
++
++/-- S2b P2: `admitSourceAffine` for single-sort programs: admits `max`/`min` statements and selects
++the one carrier that interprets every statement (`table`, first match). A mix is refused
++(`sortSelection (mixedSorts ..)`). -/
++def admitSourceSorted (snapshot : SourceSnapshot)
++    (table : List Oracle.Sorted := Oracle.standardCarriers) :
++    Except SourceDiagnostic (AdmittedSource × Oracle.Sorted) :=
++  match admitSourceAffine snapshot (sorted := true) with
++  | .error e => .error e
++  | .ok admitted =>
++    match Oracle.selectCarrier (sortKeys snapshot admitted) table with
++    | .error e => .error (sourceError .statement {} (.sortSelection e))
++    | .ok sorted => .ok (admitted, sorted)
++
+ end LeanNCD.Semantics.Source

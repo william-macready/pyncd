@@ -1,0 +1,76 @@
+diff --git a/leanncd/test/Semantics/SourceSortedDifferentialTest.lean b/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
+index e78fff1e..93661df1 100644
+--- a/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
++++ b/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
+@@ -1,4 +1,4 @@
+-import LeanNCD.Semantics.Source.Observation
++import LeanNCD.Semantics.Source.SortedDifferential
+ 
+ /-! S2b P2 (prototype): single-sort programs end to end (admission + selection -> oracle -> Core
+ leg -> ExtVal observation -> tropical profile -> production bits).
+@@ -7,7 +7,7 @@ Declarations: axes `a` (4), `b` (3), `k` (7); `X[a] = [1,2,3,4]` (3), `W[b] = [1
+ `Z[a,b] = 10a + b - 5` (5); `Y` (6). -/
+ 
+ open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
+-open Debug Oracle
++open Oracle SortedDifferential
+ 
+ namespace SourceSortedDifferentialTest
+ 
+@@ -49,17 +49,20 @@ private def carrierOf (s : SourceSnapshot) : String :=
+   | .ok (_, S) => S.name
+   | .error d => s!"refused {repr d.cause}"
+ 
++private def run (s : SourceSnapshot) : Except SourceDiagnostic SortedRun :=
++  compareSortedSource s (some [6])
++
+ private def yCore (s : SourceSnapshot) : String :=
+-  match admitSourceSorted s with
++  match run s with
++  | .ok r => match r.core with
++    | .ok ts => toString (repr ((ts.find? (·.declaration == 6)).map (·.values)))
++    | .error e => e
++  | .error d => s!"refused {repr d.cause}"
++
++private def classOf (s : SourceSnapshot) : String :=
++  match run s with
++  | .ok r => toString (repr r.classification)
+   | .error d => s!"refused {repr d.cause}"
+-  | .ok (source, S) =>
+-    match runSourceAt S.carrier source (Registry.none S.K) with
+-    | .error t => s!"input presence {t.val}"
+-    | .ok result => match result.result.outcome with
+-      | .complete c _ =>
+-        toString (repr (((observeTensorsAt source (Registry.none S.K) S.carrier.observe c).find?
+-          (·.declaration == 6)).map (·.values)))
+-      | _ => "core leg incomplete"
+ 
+ /-! Q6: selection and admission. -/
+ /-- info: "real" -/
+@@ -91,4 +94,26 @@ private def yCore (s : SourceSnapshot) : String :=
+ /-- info: "some [some -12, some 18, some 48, some 78]" -/
+ #guard_msgs in #eval yCore (single .sum)
+ 
++/-! Q7/Q8: classification against production. -/
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (single .sum)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (single .max)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (single .min)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.nativeDiscrepancy\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.mismatch\n    { declaration := 6, coordinate := [0], expected := 4636807660098813952, observed := 4636737291354636288 })\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.mismatch\n    { declaration := 6, coordinate := [0], expected := 4636807660098813952, observed := 4636737291354636288 })" -/
++#guard_msgs in #eval classOf (product .max)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.nativeDiscrepancy\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.mismatch\n    { declaration := 6, coordinate := [0], expected := 4611686018427387904, observed := 4607182418800017408 })\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.mismatch\n    { declaration := 6, coordinate := [0], expected := 4611686018427387904, observed := 4607182418800017408 })" -/
++#guard_msgs in #eval classOf (product .min)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.nativeFailure\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.failure\n    \"legacy evalPlain: scatter Y aggregates with max but fills unwritten cells with a finite value, not the -inf identity\")\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.failure \"checked preparation\")" -/
++#guard_msgs in #eval classOf (strided .max)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.unsupportedNumericalProfile\n  (LeanNCD.Semantics.Source.NumericalProfile.Unsupported.outsideEnvelope\n    { origin := { side := LeanNCD.Semantics.Source.SourceSide.read,\n                  declaration := none,\n                  statement := some 0,\n                  term := some 0,\n                  factor := none,\n                  slot := none },\n      coordinate := [0],\n      assignment := [(7, 0), (8, 0)],\n      slots := [],\n      cell := none }\n    (LeanNCD.Semantics.Source.NumericalProfile.ValueKind.subsetProductBound)\n    1048577\n    1048576)" -/
++#guard_msgs in #eval classOf (product .max [1048576, 2, 3, 4])
++
++/-! Q8: the existing real harness still refuses a tropical program loudly at admission. -/
++/-- info: "LeanNCD.Semantics.Source.SourceCause.unsupported (LeanNCD.Semantics.Source.UnsupportedSource.nonSum)" -/
++#guard_msgs in #eval match compareSource (single .max) (some [6]) with
++  | .error (.admission d) => toString (repr d.cause)
++  | _ => "ran"
++
+ end SourceSortedDifferentialTest
