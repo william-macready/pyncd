@@ -58,7 +58,7 @@ inductive SourceCause
   /-- A non-bare write whose image can leave the destination shape; the origin's `slot` names
   the first destination axis whose affine form leaves `[0, extent)` somewhere on the box. -/
   | writeOutOfRange
-  /-- S2b P2: no single carrier interprets the program (`mixedSorts`, `noCarrier`, ...). -/
+  /-- S2b: no single carrier interprets the program (`mixedSorts`, `noCarrier`, ...). -/
   | sortSelection (error : Oracle.SelectionError)
   deriving Repr
 

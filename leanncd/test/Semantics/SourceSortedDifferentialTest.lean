@@ -1,6 +1,6 @@
 import LeanNCD.Semantics.Source.SortedDifferential
 
-/-! S2b P2 (prototype): single-sort programs end to end (admission + selection -> oracle -> Core
+/-! S2b: single-sort programs end to end (admission + selection -> oracle -> Core
 leg -> ExtVal observation -> tropical profile -> production bits).
 
 Declarations: axes `a` (4), `b` (3), `k` (7); `X[a] = [1,2,3,4]` (3), `W[b] = [1,10,100]` (4),

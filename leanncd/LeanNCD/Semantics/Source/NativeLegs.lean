@@ -10,7 +10,7 @@ open NumericalProfile
 structure NativeSource where
   snapshot : SourceSnapshot
   admitted : AdmittedSource
-  /-- S2b P2: admitted through the single-sort entry (max/min statements admitted sort-free). -/
+  /-- S2b: admitted through the single-sort entry (max/min statements admitted sort-free). -/
   sorted : Bool
   admission : admitSourceAffine snapshot sorted = .ok admitted
 

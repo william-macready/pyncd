@@ -1,7 +1,7 @@
 import Semantics.SourceProgramFixtures
 import LeanNCD.Semantics.Source.Observation
 
-/-! S2b P1 (prototype): the exact oracle evaluated over non-real carriers.
+/-! S2b: the exact oracle evaluated over non-real carriers.
 
 The programs below are still `agg = sum` source (admission refuses `max`/`min` until S2b's admission
 task); the point here is that `Oracle.runWith` evaluates the SAME admitted program under a different
@@ -113,7 +113,7 @@ private def Carrier.orAnd : Carrier OrAnd :=
 #guard yWith Carrier.orAnd strided ==
   some [⟨true⟩, ⟨false⟩, ⟨true⟩, ⟨false⟩, ⟨true⟩, ⟨false⟩, ⟨true⟩]
 
-/-! S2b P2: selection-table extension. The toy is one more table entry keyed on `(max, f32)`; the
+/-! S2b: selection-table extension. The toy is one more table entry keyed on `(max, f32)`; the
 element type separates it from max-plus. No edit to `Carrier.lean`'s table or the oracle. -/
 private def withToy : List Sorted := ⟨OrAnd, Carrier.orAnd, "orAnd"⟩ :: standardCarriers
 private def pickName (keys : List (AggOp × TensorElementType)) (table : List Sorted) : String :=

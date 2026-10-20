@@ -1,6 +1,6 @@
 import LeanNCD.Semantics.Source.Differential
 
-/-! S2b P2 (prototype): the differential for a selected carrier.
+/-! S2b: the differential for a selected carrier.
 
 Pipeline: `admitSourceSorted` (single-sort selection) -> `Oracle.runWith S.carrier` -> Core leg
 `runSourceAt S.carrier` at `Registry.none` -> both observed into `Oracle.ExtVal` -> published

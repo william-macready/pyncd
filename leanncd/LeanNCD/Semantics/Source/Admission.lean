@@ -900,7 +900,7 @@ private def admitAffineWrite (source : AdaptedSource) (original : Nat) (name : S
     throw (sourceError .output origin (.role .defined (source.table.entry dst).role))
 
 /-- `admitStatement`, plus non-bare `.assign` and policy-checked `.scatter`. With `sorted`
-(S2b P2), a `max`/`min` statement is admitted as its sort-free structure (the aggregation is a
+(S2b), a `max`/`min` statement is admitted as its sort-free structure (the aggregation is a
 program-level carrier key, read by `admitSourceSorted`), and a tropical `.scatter` is refused:
 `fill : Int` cannot be the carrier zero (`-inf`/`+inf`), so §2.3's `fill = 0_K` never holds. -/
 def admitAffineStatement (source : AdaptedSource) (original : Nat) (sorted : Bool := false) :
@@ -930,14 +930,14 @@ private def stmtAgg : Stmt → AggOp
   | .assign _ _ rhs | .scatter _ _ rhs _ => rhs.agg
   | _ => .sum
 
-/-- S2b P2: the selection key of each admitted statement, `(agg, destination element type)`. -/
+/-- S2b: the selection key of each admitted statement, `(agg, destination element type)`. -/
 def sortKeys (snapshot : SourceSnapshot) (source : AdmittedSource) :
     List (AggOp × TensorElementType) :=
   source.statements.map fun st =>
     ((snapshot.resolved.stmts[st.original]?.map stmtAgg).getD .sum,
       (source.source.table.entry st.output.tensor).elementType)
 
-/-- S2b P2: `admitSourceAffine` for single-sort programs: admits `max`/`min` statements and selects
+/-- S2b: `admitSourceAffine` for single-sort programs: admits `max`/`min` statements and selects
 the one carrier that interprets every statement (`table`, first match). A mix is refused
 (`sortSelection (mixedSorts ..)`). -/
 def admitSourceSorted (snapshot : SourceSnapshot)

@@ -20,7 +20,7 @@ theorem sourceTensors_complete (source : AdmittedSource)
 
 section Generic
 
-/-! S2b P2: the schedule is carrier-generic (`source.program r` at any semiring `K`); the real names
+/-! S2b: the schedule is carrier-generic (`source.program r` at any semiring `K`); the real names
 below are abbreviations at `RationalReference.registry`, so every existing caller is unchanged. -/
 
 variable {K : Type} [Semiring K]
@@ -234,7 +234,7 @@ theorem sourceResult_denotation (source : AdmittedSource)
       (elaborateSource source).outputProjection ((elaborateSource source).finalStore c complete) :=
   result_denotation _ _ result.input result.result c complete h
 
-/-! S2b P2: the Core leg at a carrier. Input cells (finite rationals) embed through `C.ofRat`;
+/-! S2b: the Core leg at a carrier. Input cells (finite rationals) embed through `C.ofRat`;
 arithmetic is `semiringOps`, the same instance the oracle uses. -/
 
 def sourceInputBindingAt {K : Type} [Semiring K] (C : Oracle.Carrier K) (source : AdmittedSource) :

@@ -117,7 +117,7 @@ def observeEvent (source : AdmittedSource) : Event (elaborateSource source) → 
   | .publication t p value => .publication (observeAddress source ⟨t.val, p⟩) value
   | .undefined t o => .undefined (observeOccurrence source t o)
 
-/-- S2b P2: cell values are `V` (default `ℚ`; non-real carriers observe into `Oracle.ExtVal`). -/
+/-- S2b: cell values are `V` (default `ℚ`; non-real carriers observe into `Oracle.ExtVal`). -/
 structure TensorObservation (V : Type := ℚ) where
   tensorUID : UID
   declaration : Nat

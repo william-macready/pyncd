@@ -3,7 +3,7 @@ import Mathlib.Algebra.Tropical.Basic
 import Mathlib.Algebra.Order.Monoid.OrderDual
 import Mathlib.Algebra.Order.Ring.Rat
 
-/-! S2b P1 (prototype): scalar carriers for the exact Source oracle.
+/-! S2b: scalar carriers for the exact Source oracle.
 
 The oracle's `+`, `*`, `0`, `1` come from `[Semiring K]`, the same instance the core leg
 (`AdmittedSource.program`, `semiringOps`) uses, so the two legs cannot disagree on the algebra. A
@@ -14,7 +14,7 @@ namespace LeanNCD.Semantics.Source.Oracle
 
 open Tropical
 
-/-- S2b P2: the one shared observation value: a finite rational or a signed infinity. Every
+/-- S2b: the one shared observation value: a finite rational or a signed infinity. Every
 carrier maps into it (`Carrier.observe`); the profile and production comparison read only this. -/
 inductive ExtVal
   | fin (q : ℚ)
@@ -81,7 +81,7 @@ def Carrier.maxPlus : Carrier MaxPlus :=
       | ⊥ => .negInf
       | (q : ℚ) => .fin q⟩
 
-/-- S2b P2: a carrier packaged with the instances every leg needs, so a selection result can be
+/-- S2b: a carrier packaged with the instances every leg needs, so a selection result can be
 passed around without fixing `K` in a type. -/
 structure Sorted where
   K : Type
