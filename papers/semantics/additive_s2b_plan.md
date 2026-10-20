@@ -123,7 +123,7 @@ dispatch per finding group, given only its plan sections.
 
   | Task | Test file | `#guard` | `#guard_msgs` | Intended cycles |
   |---|---|---|---|---|
-  | T1 | `SourceOracleCarrierTest.lean` | 12 + 3 audit | 3 | 2 |
+  | T1 | `SourceOracleCarrierTest.lean` | 12 + 3 audit + 15 closing | 3 | 2 |
   | T2 | `SourceSortedDifferentialTest.lean` (Q6) + `SourceSortedAuditTest.lean` | 6 audit | 6 | 3 |
   | T3 | `SourceSortedDifferentialTest.lean` (Q5 rows) | 0 | 6 | 2 |
   | T4A | `SourceSortedDifferentialTest.lean` (Q7/Q8 rows) | 2 bits pin | 8 | 2 |
@@ -245,8 +245,9 @@ Audit fixtures (T1-04, new): `A1` `selectCarrier [(.sum,.f64),(.sum,.f32)]` is `
 `selectCarrier [(.sum,.f64)] []` is `noCarrier sum f64`; `A3` `selectCarrier [] standardCarriers` selects `real`.
 Cycles (2, for dispatch B to write): `T1-M1` first-match order in `selectCarrier` (`find?` made to take the LAST admitting
 entry; breaks the toy rows); `T1-M2` the mixed refusal (`mixedSorts` branch returns the first agg's carrier; breaks
-`pickName` row 4 and audit rows). Note: the `MaxPlus` instance and `observe` fields are pinned by the max/min `#guard` and
-`#guard_msgs` rows, not by a cycle.
+`pickName` row 4 and audit rows). Note: the `MaxPlus` instance values are pinned by the max/min `#guard` and
+`#guard_msgs` rows (through `Repr`), not by a cycle. The `observe` fields are NOT reached by those rows; they are pinned
+by 15 closing guards appended to `SourceOracleCarrierTest` after the T1 review (before that, first by the T3 Core rows).
 Expected: all targets green; no existing test edited; no `sorry`; `Semantics.AxiomAudit` unchanged.
 Checklist: (a) `Oracle.run` is `runWith Carrier.real` and every pre-existing oracle test builds unchanged; (b) the default
 `ℚ` parameter appears on every structure and no existing mention was edited; (c) `Carrier.real.observe = .fin`, max-plus
@@ -280,8 +281,9 @@ NOT `sortSelection`; `A5` a bare-slot `.scatter` with `agg := .max` and one with
 `.scatter` with `.sum` and `reduce := .rejectCollisions` and bare slots, through `admitSourceSorted`, selects `real`; `A7`
 `admitSourceAffine (strided .max)` and `(strided .min)` are refused with `.unsupported .nonSum`.
 Cycles (3): `T2-M1` the sorted rewrite `{ rhs with agg := .sum }` removed (max falls back to the `nonSum` refusal; breaks Q6
-rows 2-3); `T2-M2` the scatter guard `(sorted && rhs.agg != .sum)` removed (tropical scatter admitted; breaks Q6 row 6 and
-`A5`); `T2-M3` `sortKeys` always reports `.sum` (selection picks `real`; breaks Q6 rows 2-3).
+rows 2-3); `T2-M2` the scatter guard `(sorted && rhs.agg != .sum)` removed (the `.scatter` arm never rewrites `rhs`, so a
+tropical scatter is then refused as `nonSum` instead of `scatterPolicy`; breaks Q6 row 6 and `A5`, which assert the
+cause); `T2-M3` `sortKeys` always reports `.sum` (selection picks `real`; breaks Q6 rows 2-3).
 Expected: green; `admitStatement`, `StatementFields`, `admitStatement_fields`, raw entry unchanged (the diff of
 `Admission.lean` touches only `admitAffineStatement`, `admitSourceAffine`, `sortKeys`, `admitSourceSorted`).
 Checklist: (a) §3 rows 1, 7-13 ticked with fixture names; (b) every caller of `admitSourceAffine` outside the sorted path still

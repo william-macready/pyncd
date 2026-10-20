@@ -3,9 +3,9 @@ import LeanNCD.Semantics.Source.Observation
 
 /-! S2b: the exact oracle evaluated over non-real carriers.
 
-The programs below are still `agg = sum` source (admission refuses `max`/`min` until S2b's admission
-task); the point here is that `Oracle.runWith` evaluates the SAME admitted program under a different
-semiring with no change to the oracle's evaluation code.
+The programs below are `agg = sum` source (the unsorted admission entries refuse `max`/`min`); the
+point here is that `Oracle.runWith` evaluates the SAME admitted program under a different semiring
+with no change to the oracle's evaluation code.
 
 Inputs: `X[a] = [1, 2, 3, 4]` (declaration 3), `W[b] = [1, 10, 100]` (declaration 4); `|a| = 4`,
 `|b| = 3`; `Y` is declaration 5. -/
@@ -133,5 +133,24 @@ custom table; an empty program is real. -/
   toString (repr (SelectionError.mixedElementTypes [.f64, .f32]))
 #guard pickName [(.sum, .f64)] [] == toString (repr (SelectionError.noCarrier .sum .f64))
 #guard pickName [] standardCarriers == "real"
+
+/-! Closing the T1 review gaps (parked findings F1-F3): `minPlus` and `real` selection, the `observe`
+field of each carrier (nothing else in this file calls it), and the toy's `ofRat`, `observe` and
+algebra, which the all-nonzero rows above cannot tell from a constant. -/
+#guard pickName [(.min, .f64)] standardCarriers == "minPlus"
+#guard pickName [(.sum, .f64)] standardCarriers == "real"
+#guard Carrier.real.observe (3 / 2) == .fin (3 / 2)
+#guard Carrier.maxPlus.observe (0 : MaxPlus) == .negInf
+#guard Carrier.maxPlus.observe (1 : MaxPlus) == .fin 0
+#guard Carrier.maxPlus.observe (Carrier.maxPlus.ofRat 5) == .fin 5
+#guard Carrier.minPlus.observe (0 : MinPlus) == .posInf
+#guard Carrier.minPlus.observe (1 : MinPlus) == .fin 0
+#guard Carrier.minPlus.observe (Carrier.minPlus.ofRat 5) == .fin 5
+#guard (Carrier.orAnd.ofRat 0).val == false
+#guard (Carrier.orAnd.ofRat 3).val == true
+#guard Carrier.orAnd.observe ⟨true⟩ == .fin 1
+#guard Carrier.orAnd.observe ⟨false⟩ == .fin 0
+#guard ((0 : OrAnd) + 1).val == true
+#guard ((1 : OrAnd) * 0).val == false
 
 end SourceOracleCarrierTest

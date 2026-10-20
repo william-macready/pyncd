@@ -32,7 +32,10 @@ instance : Repr ExtVal where
 /-- What the oracle needs from a scalar carrier beyond `[Semiring K]`. -/
 structure Carrier (K : Type) where
   /-- Selection key: does this carrier interpret a program whose statements all aggregate with
-  `agg` into destinations of element type `ty`? (P1: `agg` alone collides for a fourth carrier.) -/
+  `agg` into destinations of element type `ty`? Read ONLY by `selectCarrier`: `runWith` never
+  consults it, so any carrier can be run over any program, and `admitSourceSorted` is what ties a
+  program to its carrier. The element type is part of the key because `agg` alone cannot separate a
+  fourth carrier. -/
   admits : AggOp → TensorElementType → Bool
   /-- Embedding of a finite rational input value. -/
   ofRat : ℚ → K
@@ -58,7 +61,9 @@ def Carrier.minPlus : Carrier MinPlus :=
       | (q : ℚ) => .fin q⟩
 
 /-- Mathlib's tropical semiring needs `LinearOrderedAddCommMonoidWithTop`; the order dual of
-`WithBot ℚ` has every piece except the two absorbing/cancellation fields supplied here. -/
+`WithBot ℚ` has every piece except the two absorbing/cancellation fields supplied here. Both fields
+are proved (the second uses `WithBot.add_left_cancel`, i.e. ℚ is add-cancellative). This is a global,
+unscoped instance on a Mathlib type; it is kept here because only `MaxPlus` needs it. -/
 instance : LinearOrderedAddCommMonoidWithTop (WithBot ℚ)ᵒᵈ where
   top_add' x := WithBot.bot_add (OrderDual.ofDual x)
   isAddLeftRegular_of_ne_top {x} hx := by
@@ -111,7 +116,8 @@ inductive SelectionError
   deriving DecidableEq, Repr
 
 /-- Single-sort selection from per-statement `(agg, destination element type)` keys. An empty
-program is real. -/
+program selects the first entry that admits `(sum, f64)`: `real` in `standardCarriers`, `noCarrier`
+for a custom table without such an entry. -/
 def selectCarrier (keys : List (AggOp × TensorElementType))
     (table : List Sorted := standardCarriers) : Except SelectionError Sorted :=
   let pick (agg : AggOp) (ty : TensorElementType) : Except SelectionError Sorted :=
