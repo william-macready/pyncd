@@ -134,8 +134,8 @@ pending" for S2b; replace it with the merge hash after the merge (`rg -n "merge 
 known-difference condition for the tropical divergences: T4B must update those sentences (AGENTS, path part 4) when it lands.
 Recorded unchanged: sweep items 1 (no 8818/8822/8823 in the named files), 6 (no docstring says the oracle is sum-only; the only
 `nonSum` mentions are the two refusal sites), 7 (no `8818 jobs` hit outside the S2b files; other `accepted ==` hits are unrelated
-historical corpus gates), 9 (no anchor into a split-out section introduced by this slice; existing anchors point at headings that
-remain in the introduction files), path parts 1-3 and 6, path introduction file and `README.md` (no hits). Spec 4b: the
+historical corpus gates), 9 (no anchor into a split-out section introduced by this slice; the anchors `#proof-status-and-numbered-results` and `#notation-color-key` were checked and their headings exist in
+`tensor_logic_semantics.md`; one anchor inside `plan_layer_artifacts/wb_review_fidelity.md` was not checked), path parts 1-3 and 6, path introduction file and `README.md` (no hits). Spec 4b: the
 introduction paragraph about the bounded source layer and the 2026-10-10 snapshot is NOT changed (S2a/S2b extend only the executed
 oracle and differential, not the proved fragment); a reviewer may still ask for the one added sentence. Decision note: its only
 spec mention is a checked task line, not a section link, so no change. NOT YET DONE (post-merge by plan): design note §7 status
