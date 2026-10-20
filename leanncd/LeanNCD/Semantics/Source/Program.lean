@@ -115,7 +115,18 @@ theorem AdmittedSource.program_destination {K : Type} [Semiring K] (source : Adm
 abbrev LoweredSource (source : AdmittedSource) :=
   Program RationalReference.Carrier source.source.table.declarations RationalReference.registry
 
-def elaborateSource (source : AdmittedSource) : LoweredSource source :=
+/-- S2b P2: reducible so the real Schedule/Observation names (abbreviations of the generic `At`
+forms at `RationalReference.registry`) unify with `elaborateSource`. -/
+abbrev elaborateSource (source : AdmittedSource) : LoweredSource source :=
   source.program RationalReference.registry
+
+/-- S2b P2: no primitive operators (non-real carriers; admission refuses unary factors anyway). -/
+def Registry.none (K : Type) : Registry (fun _ : Unit => K) where
+  Op := Empty
+  arity := Empty.elim
+  input := fun f => Empty.elim f
+  output := Empty.elim
+  domain := fun f => Empty.elim f
+  meaning := fun f => Empty.elim f
 
 end LeanNCD.Semantics.Source
