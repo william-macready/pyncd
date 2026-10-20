@@ -77,7 +77,7 @@ The usual comparisons such as $\textcolor{#9D75C4}{e}\le \textcolor{#9D75C4}{e}'
 only on index valuations, not on tensor values. This makes a statement's
 contribution domain determinable without executing its body.
 
-Write $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}\in\mathbb{B}$ for predicate evaluation
+Write $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}\in\mathbb{B}$ for predicate evaluation
 using integer comparisons and Boolean connectives.
 This Boolean result is distinct from its scalar embedding
 $\mathbf{1}_{\textcolor{#9D75C4}{Q}}\in K$.
@@ -279,13 +279,13 @@ The guard and output indices determine the data introduced in [Section 9](tensor
 
 ```math
 \textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}=\{\textcolor{#5688C7}{\nu}\in\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})
-       \mid\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}=\mathrm{true}\},
+       \mid\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}=\mathrm{true}\},
 ```
 
 ```math
 \textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})=
-(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_{\textcolor{#9D75C4}{s},1}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}},\ldots,
- \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_{\textcolor{#9D75C4}{s},k_{\textcolor{#9D75C4}{s}}}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}).
+(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_{\textcolor{#9D75C4}{s},1}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}},\ldots,
+ \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_{\textcolor{#9D75C4}{s},k_{\textcolor{#9D75C4}{s}}}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}).
 ```
 
 The binders are part of the statement's identity as a contribution

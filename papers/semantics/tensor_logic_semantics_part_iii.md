@@ -66,25 +66,25 @@ $\textcolor{#5688C7}{\Sigma};\textcolor{#5688C7}{\Gamma};\textcolor{#5688C7}{D}\
 $\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}$, define
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\in\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau}).
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\in\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau}).
 ```
 
 Index expressions and predicates have the total interpretations already
-introduced: integer arithmetic for $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}$ and
-Boolean operations for $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}$.
+introduced: integer arithmetic for $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}$ and
+Boolean operations for $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}$.
 The result space is needed for value-dependent primitive applications,
 not to excuse malformed tensor accesses.
 
 Use the notation
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow v
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow v
 ```
 
 to mean that the result is the successful value $v$, and
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot}
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot}
 ```
 
 to mean that it is undefined. The downward arrow on an expression
@@ -97,23 +97,23 @@ machine execution in [Part IV](tensor_logic_semantics_part_iv.md#part-iv-operati
 Scalar literals, named tensor reads, and Iverson values are interpreted by
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}} c_K\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=c_K,
+\textcolor{#398B83}{\mathopen{[\![}} c_K\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=c_K,
 ```
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}} T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k]\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+\textcolor{#398B83}{\mathopen{[\![}} T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k]\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \textcolor{#398B83}{\rho}(T)[
- \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}},\ldots,
- \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_k\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}],
+ \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}},\ldots,
+ \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_k\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}],
 ```
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}}\mathbf{1}_{\textcolor{#9D75C4}{Q}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+\textcolor{#398B83}{\mathopen{[\![}}\mathbf{1}_{\textcolor{#9D75C4}{Q}}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
-1_K,&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}=\mathrm{true},\\
-0_K,&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}=\mathrm{false}.
+1_K,&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}=\mathrm{true},\\
+0_K,&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}}=\mathrm{false}.
 \end{cases}
 ```
 
@@ -134,11 +134,11 @@ u\star v,&u,v\text{ are successful scalar values},\\
 Then
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_1\star \textcolor{#9D75C4}{E}_2\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_1\star \textcolor{#9D75C4}{E}_2\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \textcolor{#398B83}{\mathop{\mathrm{lift}}\nolimits}_2\left(
- \star,\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_1\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
- \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_2\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+ \star,\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_1\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
+ \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_2\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 \right).
 ```
 
@@ -151,11 +151,11 @@ not a successful zero.
 ### 18.3 Reduction and tabulation
 
 For a reduction, let
-$v_k=\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}[j\mapsto k]}$ for each
+$v_k=\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}[j\mapsto k]}$ for each
 $k\in \textcolor{#5688C7}{I}_j$. Define
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}}\bigoplus_{j\in \textcolor{#5688C7}{I}_j}\textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+\textcolor{#398B83}{\mathopen{[\![}}\bigoplus_{j\in \textcolor{#5688C7}{I}_j}\textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
 \displaystyle\bigoplus_{k\in \textcolor{#5688C7}{I}_j}v_k,
@@ -183,11 +183,11 @@ The tabulation result is
 ```math
 \textcolor{#398B83}{\mathopen{[\![}}
 \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j_1\in \textcolor{#5688C7}{I}_1,\ldots,j_m\in \textcolor{#5688C7}{I}_m}(\textcolor{#9D75C4}{E})
-\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
 \textcolor{#398B83}{V},&
-\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}_p}\downarrow \textcolor{#398B83}{V}[p]
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}_p}\downarrow \textcolor{#398B83}{V}[p]
 \text{ for every }p\in \textcolor{#5688C7}{J},\\
 \textcolor{#398B83}{\bot},&\text{some body result is undefined}.
 \end{cases}
@@ -200,15 +200,15 @@ These binders use exactly the lifted domains from [Section 14.1](tensor_logic_se
 ### 18.4 Array selection and primitive application
 
 For array selection, let
-$p=(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}},\ldots,\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_m\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}})$.
+$p=(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}},\ldots,\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_m\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#5688C7}{\nu}})$.
 Then
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}}\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m))\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+\textcolor{#398B83}{\mathopen{[\![}}\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m))\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
-\textcolor{#398B83}{V}[p],&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow \textcolor{#398B83}{V},\\
-\textcolor{#398B83}{\bot},&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot}.
+\textcolor{#398B83}{V}[p],&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow \textcolor{#398B83}{V},\\
+\textcolor{#398B83}{\bot},&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot}.
 \end{cases}
 ```
 
@@ -218,10 +218,10 @@ It does not bypass an undefined element of a tabulation by selecting
 a different coordinate.
 
 For a primitive $f$ with arity $q$, interpret its operands and let
-$u_r=\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_r\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$. Define
+$u_r=\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_r\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$. Define
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}} f(\textcolor{#9D75C4}{E}_1,\ldots,\textcolor{#9D75C4}{E}_q)\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+\textcolor{#398B83}{\mathopen{[\![}} f(\textcolor{#9D75C4}{E}_1,\ldots,\textcolor{#9D75C4}{E}_q)\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
 f(u_1,\ldots,u_q),
@@ -242,13 +242,13 @@ domain-membership rule applies.
 Work over exact reals. The following results illustrate strictness:
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}}\log(-1)\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot},
+\textcolor{#398B83}{\mathopen{[\![}}\log(-1)\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot},
 \qquad
-\textcolor{#398B83}{\mathopen{[\![}} 0\cdot\log(-1)\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot},
+\textcolor{#398B83}{\mathopen{[\![}} 0\cdot\log(-1)\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot},
 ```
 
 ```math
-\textcolor{#398B83}{\mathopen{[\![}}\bigoplus_{j\in[0]}\log(-1)\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=0.
+\textcolor{#398B83}{\mathopen{[\![}}\bigoplus_{j\in[0]}\log(-1)\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=0.
 ```
 
 The empty reduction has no body instances. Multiplication by zero,
@@ -261,7 +261,7 @@ If $X$ has shape $(2)$ with $\textcolor{#398B83}{\rho}(X)[0]=4$ and $\textcolor{
 \textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
  \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[2]}(\log(X[j])),(0)
 \right)
-\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =\textcolor{#398B83}{\bot}.
 ```
 
@@ -294,7 +294,7 @@ For a structurally well-formed program $\textcolor{#9D75C4}{P}$, define
 \textcolor{#398B83}{\rho}\ \middle|\
 \begin{array}{l}
 \textcolor{#398B83}{\rho}\text{ is a complete, signature-respecting environment, and}\\
-\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\ne\textcolor{#398B83}{\bot}
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\ne\textcolor{#398B83}{\bot}
 \text{ for every }(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}
 \end{array}
 \right\}.
@@ -317,7 +317,7 @@ of one statement:
 \textcolor{#398B83}{V}_{\textcolor{#9D75C4}{s}}^{\textcolor{#398B83}{\rho}}[p]
 =
 \bigoplus_{\substack{\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}\\\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})=p}}
-\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
 \qquad p\in\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T_{\textcolor{#9D75C4}{s}}).
 ```
 
@@ -331,7 +331,7 @@ For every defined tensor $T$, define its collected value:
 \textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]
 =
 \bigoplus_{(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(T,p)}
-\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
 ```
 
 Equivalently, partitioning the occurrences by statement gives

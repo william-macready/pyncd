@@ -769,7 +769,7 @@ error-free).** For a `Valid` plan and a well-typed $\eta$, with the run `runPlan
 
 - (a) `done_correct`: if the run ends `done m M'`, then
   $\mathrm{Models}(P,\eta)=\{\rho_c\}$, $\mathrm{Decode}_m(M')=\rho_c|_{\mathrm{Out}}$, and that equals
-  $\mathopen{[\![} P\mathclose{]\!]}(\eta)$.
+  $\textcolor{#398B83}{\mathopen{[\![}} P\textcolor{#398B83}{\mathclose{]\!]}}(\eta)$.
 - (b) `failed_correct`: if the run ends `failed o pc M'`, then $\mathrm{Models}(P,\eta)=\varnothing$, as
   stated above. Separately, failure matching holds with the same occurrence $o$
   ([Section 31.3](#313-failure-matching-progress-and-finishing)); `M'` is the memory before the failing
