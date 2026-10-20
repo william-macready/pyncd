@@ -153,7 +153,7 @@ The meaning of the implicit notation is:
 ## 3. Translate to the core language
 
 Apply the elaboration clauses in
-[Sections 15.2-15.4](tensor_logic_semantics.md#152-statement-variables-and-term-local-contraction).
+[Sections 15.2-15.4](tensor_logic_semantics_part_ii.md#152-statement-variables-and-term-local-contraction).
 Give the three statements distinct identifiers
 $s_{\mathrm{base}},s_{\mathrm{step}},s_{\mathrm{out}}$.
 Each omitted guard is true.
@@ -247,7 +247,7 @@ publication step for the explanatory value $z_q$.
 ## 4. Identify occurrences, destinations, and fibers
 
 By
-[Section 13.5](tensor_logic_semantics.md#135-core-contribution-statements),
+[Section 13.5](tensor_logic_semantics_part_ii.md#135-core-contribution-statements),
 true guards give
 
 $$
@@ -317,7 +317,7 @@ because `=` changed its meaning.
 ### 5.1 Read footprints
 
 Apply the recursive footprint clauses in
-[Section 23.2](tensor_logic_semantics.md#232-read-footprints-of-expressions).
+[Section 23.2](tensor_logic_semantics_part_iv.md#232-read-footprints-of-expressions).
 Named reads give singleton address sets; multiplication takes unions;
 reductions and tabulations take unions over their binders; primitive
 application and array selection retain the operand's entire footprint.
@@ -366,7 +366,7 @@ advance one batch member without waiting for all the others.
 ### 5.2 Coordinate rank certificate
 
 Using
-[Section 23.4](tensor_logic_semantics.md#234-coordinate-dependencies-and-the-ranked-fragment),
+[Section 23.4](tensor_logic_semantics_part_iv.md#234-coordinate-dependencies-and-the-ranked-fragment),
 assign
 
 $$
@@ -393,7 +393,7 @@ rather than a blocked recursive equation system.
 ### 6.1 Initialize
 
 By
-[Section 24.2](tensor_logic_semantics.md#242-initial-configuration),
+[Section 24.2](tensor_logic_semantics_part_iv.md#242-initial-configuration),
 
 $$
 C_0=\operatorname{Init}(P,\eta)
@@ -416,7 +416,7 @@ In particular, the all-zero initial accumulators are not a zero hidden history.
 The reference configuration is
 $C=(\sigma,\alpha,U)$: published values, accumulators, and pending occurrences.
 Specializing
-[Section 25.1](tensor_logic_semantics.md#251-consume-a-defined-contribution)
+[Section 25.1](tensor_logic_semantics_part_iv.md#251-consume-a-defined-contribution)
 to real addition gives
 
 $$
@@ -433,7 +433,7 @@ o=(s,\nu)\in U
 $$
 
 By
-[Section 25.2](tensor_logic_semantics.md#252-publish-a-completed-coordinate),
+[Section 25.2](tensor_logic_semantics_part_iv.md#252-publish-a-completed-coordinate),
 
 $$
 \frac{
@@ -458,9 +458,9 @@ $o=(s_{\mathrm{base}},(q,i))$ and $a=(H,(q,i,0))$.
 Its footprint is available in $\sigma_\eta$. Evaluate the body by:
 
 1. The named-read and multiplication clauses of
-   [Section 18.2](tensor_logic_semantics.md#182-scalar-constructors).
+   [Section 18.2](tensor_logic_semantics_part_iii.md#182-scalar-constructors).
 2. The reduction clause of
-   [Section 18.3](tensor_logic_semantics.md#183-reduction-and-tabulation).
+   [Section 18.3](tensor_logic_semantics_part_iii.md#183-reduction-and-tabulation).
 
 These give
 
@@ -493,7 +493,7 @@ b_{q,i,l}=
 $$
 
 The primitive-application clause of
-[Section 18.4](tensor_logic_semantics.md#184-array-selection-and-primitive-application)
+[Section 18.4](tensor_logic_semantics_part_iii.md#184-array-selection-and-primitive-application)
 then gives
 
 $$
@@ -542,7 +542,7 @@ U=\varnothing,\qquad
 $$
 
 By
-[Section 25.4](tensor_logic_semantics.md#254-completion-and-dependency-blocking),
+[Section 25.4](tensor_logic_semantics_part_iv.md#254-completion-and-dependency-blocking),
 this is successful completion:
 
 $$
@@ -557,7 +557,7 @@ There is no extra `SUCCESS` transition in the specified machine; completion
 is a condition on the final running configuration.
 
 The third rule,
-[UNDEFINED (Section 25.3)](tensor_logic_semantics.md#253-surface-undefined-operations),
+[UNDEFINED (Section 25.3)](tensor_logic_semantics_part_iv.md#253-surface-undefined-operations),
 would enter $\mathsf{Failed}(o,\sigma,\alpha,U)$ for a ready body whose evaluation
 is $\bot$. It is never enabled here: structurally valid real arithmetic and
 ReLU are total, and every demanded softmax slice has ten entries.
@@ -846,7 +846,7 @@ $$
 
 This is the concrete instance of the conservation and correspondence results
 in
-[Section 26](tensor_logic_semantics.md#26-conservation-termination-and-correspondence).
+[Section 26](tensor_logic_semantics_part_iv.md#26-conservation-termination-and-correspondence).
 It is a worked mathematical derivation, not a new kernel-checked Lean theorem.
 
 ### 8.2 The zero-step boundary
@@ -883,7 +883,7 @@ The reference machine keeps the complete logical H history. Nothing in this
 trace overwrites an earlier slice with a later one. A compiler might use
 rolling buffers, batch contributions, or share the softmax calculation, but
 those are refinement questions addressed separately in
-[Part V](tensor_logic_semantics.md#part-v-compilation-and-refinement) and
+[Part V](tensor_logic_semantics_part_v.md#part-v-compilation-and-refinement) and
 worked through in Section 12 below.
 
 ## 9. Residual scan with collected preactivations
@@ -1196,7 +1196,7 @@ where the displayed multiplication denotes the strict lifting, not real
 arithmetic on $\bot$. The primitive log(-7) is undefined; multiplying by
 zero does not suppress its evaluation.
 Consequently,
-[UNDEFINED](tensor_logic_semantics.md#253-surface-undefined-operations)
+[UNDEFINED](tensor_logic_semantics_part_iv.md#253-surface-undefined-operations)
 preserves the failing occurrence and records an explicit terminal error.
 
 At failure, U still contains both padding-feature occurrences and all six
@@ -1350,7 +1350,7 @@ model even though it is not a designated output.
 This section revisits the four-layer MLP of Section 7:
 $h_0=(1,-2)$, $h_1=(4,0)$, $h_2=(2,1)$, and output p.
 It illustrates
-[Part V](tensor_logic_semantics.md#part-v-compilation-and-refinement):
+[Part V](tensor_logic_semantics_part_v.md#part-v-compilation-and-refinement):
 choosing commands and storage that implement the reference computation,
 rather than changing its equations.
 
@@ -1368,7 +1368,7 @@ particular, accepting a `CheckedEvalPlan` is not a proof of refinement to the
 Part IV reference machine. Conversely, the semantic-plan correctness theorems
 do not establish that `prepareEvalPlan` emits such plans.
 See the
-[Lean correspondence guide](lean_executable_semantics_path.md#49-part-v-slice-1-the-singleton-command-plan-layer).
+[Lean correspondence guide](lean_executable_semantics_path_part_4.md#49-part-v-slice-1-the-singleton-command-plan-layer).
 
 The walkthrough therefore separates:
 
