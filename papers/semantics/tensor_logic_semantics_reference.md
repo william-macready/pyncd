@@ -68,7 +68,7 @@ of their individual components.
 | $\textcolor{#398B83}{V}_{\textcolor{#5688C7}{L}}$ | Canonical pure-einsum result tensor |
 | $\textcolor{#398B83}{\rho},\textcolor{#398B83}{\eta}$ | Complete tensor environment and input environment |
 | $\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau}),\textcolor{#398B83}{\bot}$ | Successful typed values or an undefined result |
-| $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow v$ | Expression interpretation is defined with value $v$ |
+| $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow v$ | Expression interpretation is defined with value $v$ |
 | $\textcolor{#398B83}{\mathop{\mathrm{lift}}\nolimits}_2$ | Strict lifting of a scalar binary operation to results |
 | $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$ | Complete environment reconstructed from a complete store |
 | $\textcolor{#398B83}{\zeta}$ | Decoded output environment |
@@ -84,7 +84,7 @@ of their individual components.
 | $\mathbf{1}_J$ | All-ones tensor on coordinate domain $J$ |
 | $\textcolor{#398B83}{\mathcal{D}}_f$ | Domain of definition of primitive $f$ |
 | $H_l$ | Logical history slice $H[:,l]$ |
-| $\textcolor{#398B83}{\llbracket}\cdot\textcolor{#398B83}{\rrbracket}$ | Interpretation brackets, with parameters as specified |
+| $\textcolor{#398B83}{\mathopen{[\![}}\cdot\textcolor{#398B83}{\mathclose{]\!]}}$ | Interpretation brackets, with parameters as specified |
 | $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ | Complete environments satisfying the collected equations on inputs $\textcolor{#398B83}{\eta}$ |
 
 ### Reference execution and readiness

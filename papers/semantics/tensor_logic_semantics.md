@@ -76,19 +76,19 @@ next subsection.
    occurrence $(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$ for each
    admissible valuation $\textcolor{#5688C7}{\nu}\in\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$.
    It is addressed to $\textcolor{#9D75C4}{\mathop{\mathrm{dst}}\nolimits}(\textcolor{#9D75C4}{o})=(T_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu}))$
-   and carries a body value $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$,
+   and carries a body value $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$,
    which can be undefined ($\textcolor{#398B83}{\bot}$).
 2. **Collection ([§19](tensor_logic_semantics_part_iii.md#19-contribution-collection)).** All occurrences addressed to a coordinate are
    combined, none deduplicated, and an empty fiber gives $0_K$:
-   $$
+   ```math
    \textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]
    =\bigoplus_{(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(T,p)}
-   \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
-   $$
+   \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
+   ```
 3. **Meaning ([§20](tensor_logic_semantics_part_iii.md#20-program-models-and-functional-denotation)).** A model on inputs $\textcolor{#398B83}{\eta}$ is a complete
    environment that extends $\textcolor{#398B83}{\eta}$, has every actual body defined, and satisfies
    $\textcolor{#398B83}{\rho}(T)=\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)$ for every defined tensor $T$.
-   The denotation $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})$ is the output part of the model when
+   The denotation $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\mathclose{]\!]}}(\textcolor{#398B83}{\eta})$ is the output part of the model when
    $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ has exactly one element.
 4. **Execution ([§24](tensor_logic_semantics_part_iv.md#24-machine-configurations-and-initialization)–[§25](tensor_logic_semantics_part_iv.md#25-execution-rules-and-terminal-outcomes)).** A configuration $(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$ holds published values,
    accumulators, and pending occurrences. Three rules fire in any order their

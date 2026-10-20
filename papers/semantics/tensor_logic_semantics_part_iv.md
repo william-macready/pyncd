@@ -50,20 +50,20 @@ their domain tests are separate requirements, especially over exact reals.
 Fix a structurally well-formed core program $\textcolor{#9D75C4}{P}$. Its roles partition the
 address set:
 
-$$
+```math
 \textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{In}}}
 =\{(T,p)\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\mid T\in\textcolor{#5688C7}{\mathrm{In}}\},
 \qquad
 \textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}
 =\{(T,p)\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\mid T\in\textcolor{#5688C7}{\mathrm{Def}}\}.
-$$
+```
 
 Recall the destination function from [Section 9.2](tensor_logic_semantics_part_i.md#92-tagged-contribution-occurrences): for
 $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}$,
 
-$$
+```math
 \textcolor{#9D75C4}{\mathop{\mathrm{dst}}\nolimits}(\textcolor{#9D75C4}{o})=(T_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})).
-$$
+```
 
 For $a=(T,p)\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}$, abbreviate
 $\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)=\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(T,p)$.
@@ -77,45 +77,45 @@ $\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\te
 This set records which named coordinates must be available before the
 expression is interpreted by the direct executor:
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(c_K,\textcolor{#5688C7}{\nu})
 =\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\mathbf{1}_{\textcolor{#9D75C4}{Q}},\textcolor{#5688C7}{\nu})=\varnothing,
-$$
+```
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k],\textcolor{#5688C7}{\nu})
-=\{(T,(\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_1\rrbracket_{\textcolor{#5688C7}{\nu}},\ldots,
-        \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_k\rrbracket_{\textcolor{#5688C7}{\nu}}))\},
-$$
+=\{(T,(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}},\ldots,
+        \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_k\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}))\},
+```
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E}_1\star \textcolor{#9D75C4}{E}_2,\textcolor{#5688C7}{\nu})
 =\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E}_1,\textcolor{#5688C7}{\nu})\cup\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E}_2,\textcolor{#5688C7}{\nu}),
 \qquad\star\in\{\oplus,\otimes\},
-$$
+```
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}\left(\bigoplus_{j\in \textcolor{#5688C7}{I}_j}\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}\right)
 =\bigcup_{k\in \textcolor{#5688C7}{I}_j}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}[j\mapsto k]),
-$$
+```
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}\left(
  \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j_1\in \textcolor{#5688C7}{I}_1,\ldots,j_m\in \textcolor{#5688C7}{I}_m}(\textcolor{#9D75C4}{E}),\textcolor{#5688C7}{\nu}
 \right)
 =\bigcup_{p\in \textcolor{#5688C7}{I}_1\times\cdots\times \textcolor{#5688C7}{I}_m}
   \textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}_p),
-$$
+```
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m)),\textcolor{#5688C7}{\nu})
 =\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}),
-$$
+```
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(f(\textcolor{#9D75C4}{E}_1,\ldots,\textcolor{#9D75C4}{E}_q),\textcolor{#5688C7}{\nu})
 =\bigcup_{r=1}^{q}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E}_r,\textcolor{#5688C7}{\nu}).
-$$
+```
 
 Here $\textcolor{#5688C7}{\nu}_p$ is the simultaneous valuation extension from [Section 18.3](tensor_logic_semantics_part_iii.md#183-reduction-and-tabulation).
 An empty union is empty, including for empty reductions, empty tabulations,
@@ -139,10 +139,10 @@ an additional value-and-definedness preservation argument.
 Write $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}$ when the complete environment $\textcolor{#398B83}{\rho}$ extends
 the store's available values:
 
-$$
+```math
 \textcolor{#A87C28}{\sigma}(a)=\textcolor{#398B83}{\rho}(T)[p]
 \quad\text{for every }a=(T,p)\in\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma}).
-$$
+```
 
 For typed stores, complete extensions exist: assign, for example, $0_K$ to
 unspecified coordinates. This is a mathematical extension for defining an
@@ -163,11 +163,11 @@ When
 $\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})\subseteq\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$,
 define the ready evaluation
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Eval}}\nolimits}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})
-=\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+=\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 \quad\text{for any complete }\textcolor{#398B83}{\rho}\text{ with }\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}.
-$$
+```
 
 Read stability makes the choice irrelevant. This result belongs to
 $\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau})$ for an expression of type $\textcolor{#5688C7}{\tau}$.
@@ -181,20 +181,20 @@ For $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$, 
 $\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})=\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\nu})$.
 Define
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)
 =\bigcup_{\textcolor{#9D75C4}{o}\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})
 \quad(a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}),
-$$
+```
 
 and set $\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)=\varnothing$ for input addresses.
 
 The **coordinate-ranked fragment** consists of programs with a certificate
 $r:\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\to\mathbb{N}$ satisfying
 
-$$
+```math
 b\in\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)\Longrightarrow r(b)<r(a).
-$$
+```
 
 Equivalently, the finite directed graph with edges $b\to a$ for
 $b\in\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)$ is acyclic.
@@ -227,9 +227,9 @@ a self-dependent history is expressed there only through the scan construct.
 
 A running configuration is a triple
 
-$$
+```math
 \textcolor{#A87C28}{\mathsf{Conf}}=(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U}),
-$$
+```
 
 where:
 
@@ -259,21 +259,21 @@ changing the rules below.
 
 For $\textcolor{#398B83}{\eta}\in\textcolor{#398B83}{\mathop{\mathrm{Input}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$, initialize
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})
 =(\textcolor{#A87C28}{\sigma}_{\textcolor{#398B83}{\eta}},\textcolor{#A87C28}{\alpha}_0,\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}),
-$$
+```
 
 where
 
-$$
+```math
 \mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma}_{\textcolor{#398B83}{\eta}})=\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{In}}},
 \qquad
 \textcolor{#A87C28}{\sigma}_{\textcolor{#398B83}{\eta}}(T,p)=\textcolor{#398B83}{\eta}(T)[p],
 \qquad
 \textcolor{#A87C28}{\alpha}_0(a)=0_K
 \quad(a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}).
-$$
+```
 
 No defined address is initially published.
 Accumulator initialization is a machine operation, not an additional
@@ -297,7 +297,7 @@ an execution priority.
 
 For $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$ and $a=\textcolor{#9D75C4}{\mathop{\mathrm{dst}}\nolimits}(\textcolor{#9D75C4}{o})$:
 
-$$
+```math
 \frac{
 \textcolor{#9D75C4}{o}\in \textcolor{#A87C28}{U}
 \qquad
@@ -310,7 +310,7 @@ $$
 (\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha}[a\mapsto\textcolor{#A87C28}{\alpha}(a)\oplus v],\textcolor{#A87C28}{U}\setminus\{\textcolor{#9D75C4}{o}\})
 }
 \quad\textcolor{#A87C28}{\mathrm{CONTRIBUTE}}.
-$$
+```
 
 This rule removes exactly one tagged occurrence and combines its value
 exactly once. The destination remains unpublished until the completion
@@ -318,7 +318,7 @@ rule applies. A successful zero-valued body still consumes its occurrence.
 
 ### 25.2 Publish a completed coordinate
 
-$$
+```math
 \frac{
 a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus
       \mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})
@@ -330,7 +330,7 @@ a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\m
 (\textcolor{#A87C28}{\sigma}[a\mapsto\textcolor{#A87C28}{\alpha}(a)],\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
 }
 \quad\textcolor{#A87C28}{\mathrm{PUBLISH}}.
-$$
+```
 
 This is the **completion barrier**: no pending contribution to $a$ remains.
 Publication may be delayed by scheduling but cannot occur early.
@@ -345,7 +345,7 @@ cannot be published until all those occurrences are consumed.
 
 For $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$:
 
-$$
+```math
 \frac{
 \textcolor{#9D75C4}{o}\in \textcolor{#A87C28}{U}
 \qquad
@@ -358,7 +358,7 @@ $$
 \textcolor{#A87C28}{\mathsf{Failed}}(\textcolor{#9D75C4}{o},\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
 }
 \quad\textcolor{#A87C28}{\mathrm{UNDEFINED}}.
-$$
+```
 
 The failed configuration has no outgoing steps. The invalid occurrence
 is not consumed as zero, and partially published outputs are not returned
@@ -374,11 +374,11 @@ outside an empty binder still has its own domain requirement.
 
 A running configuration is **complete** when
 
-$$
+```math
 \textcolor{#A87C28}{U}=\varnothing,
 \qquad
 \mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})=\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}.
-$$
+```
 
 It then determines a complete environment $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$ by
 $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}(T)[p]=\textcolor{#A87C28}{\sigma}(T,p)$.
@@ -387,13 +387,13 @@ values in this environment.
 
 Define successful execution by
 
-$$
+```math
 \textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}
 \quad\Longleftrightarrow\quad
 \textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\longrightarrow}^{*}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\varnothing)
 \text{ with }\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})=\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}
 \text{ and }\textcolor{#398B83}{\rho}=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}.
-$$
+```
 
 All defined tensors must complete, including internal tensors not in
 $\textcolor{#5688C7}{\mathrm{Out}}$. This matches the complete-model criterion in [Section 20.3](tensor_logic_semantics_part_iii.md#203-functional-admissibility).
@@ -428,7 +428,7 @@ reference machine as a transition relation are listed in
    has a recorded value $v_{\textcolor{#9D75C4}{o}}$, the value returned at the step consuming it, and
    for every complete environment $\textcolor{#398B83}{\rho}$ with
    $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}$,
-   $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$
+   $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$
    is defined and equals $v_{\textcolor{#9D75C4}{o}}$. The footprint of $\textcolor{#9D75C4}{o}$ was
    published when it was consumed and published values only increase (item 3),
    so this is read stability (Lemma 23.1). It needs no model and no admissibility
@@ -437,10 +437,10 @@ reference machine as a transition relation are listed in
 More explicitly, with the recorded values $v_{\textcolor{#9D75C4}{o}}$ of item 5,
 at each running configuration
 
-$$
+```math
 \textcolor{#A87C28}{\alpha}(a)=
 \bigoplus_{\textcolor{#9D75C4}{o}\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)\setminus \textcolor{#A87C28}{U}}v_{\textcolor{#9D75C4}{o}}.
-$$
+```
 
 The values $v_{\textcolor{#9D75C4}{o}}$ are associated with the execution history for this
 argument; they need not be extra stored machine fields.
@@ -456,11 +456,11 @@ At every reachable running configuration:
 (a) For every defined address $a=(T,p)$ and every complete environment
 $\textcolor{#398B83}{\rho}$ with $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}$,
 
-$$
+```math
 \textcolor{#A87C28}{\alpha}(a)=
 \bigoplus_{(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)\setminus \textcolor{#A87C28}{U}}
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
-$$
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
+```
 
 with every term defined. If the fiber of $a$ has no pending occurrence and
 $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$, then
@@ -469,9 +469,9 @@ $\textcolor{#A87C28}{\alpha}(a)=\textcolor{#398B83}{\mathop{\mathrm{Collect}}\no
 (b) For every
 $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$,
 
-$$
+```math
 \textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}.
-$$
+```
 
 (c) If $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\ne\varnothing$, no reachable configuration
 is $\textcolor{#A87C28}{\mathsf{Failed}}$.
@@ -499,19 +499,19 @@ interpretation in the final $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sig
 All contribution bodies are defined there, and each published accumulator
 is their complete fiber sum. Hence
 
-$$
+```math
 \textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\in\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta}).
-$$
+```
 
 For any other model $\textcolor{#398B83}{\rho}$, Lemma 26.2(b) gives
 $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}$ at the complete final store. Since the store has
 every address, $\textcolor{#398B83}{\rho}=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$. Thus
 
-$$
+```math
 \textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\},
 \qquad
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
-$$
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\mathclose{]\!]}}(\textcolor{#398B83}{\eta})=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
+```
 
 No rank certificate is needed for this implication: any successful run
 has this meaning.
@@ -526,12 +526,12 @@ This failure claim does not apply to dependency blocking.
 **Lemma 26.4 (finite execution).** For a running configuration define the
 natural-number measure
 
-$$
+```math
 \textcolor{#A87C28}{\mu}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
 =|\textcolor{#A87C28}{U}|+
 \left|\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus
              \mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})\right|.
-$$
+```
 
 A contribution step decreases its first term by one. A publication step
 decreases its second term by one. An undefined-operation step is terminal.
@@ -560,11 +560,11 @@ This proves progress and excludes blocking.
 Lemma 26.4, and Theorem 26.3 gives the
 operational/denotational correspondence for the ranked fragment:
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}
 \quad\Longleftrightarrow\quad
 \textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}.
-$$
+```
 
 In more detail, every maximal run either succeeds or explicitly fails.
 If a model exists, model preservation excludes failure, so every maximal
@@ -639,9 +639,9 @@ It cannot return the partially computed $Y$ as a successful output.
 
 Empty binders also affect dependencies. The scalar statement
 
-$$
+```math
 T[]\textcolor{#9D75C4}{\mathrel{+}=}\bigoplus_{j\in[0]}T[]
-$$
+```
 
 has one contribution occurrence, but that body's read footprint is empty.
 It contributes zero and $T$ then publishes zero.
@@ -652,11 +652,11 @@ dependency cycle: the bound body has no instances.
 
 For [Section 11.4](tensor_logic_semantics_part_i.md#114-a-finite-history-with-persistent-input), the recurrence body at $(i,l)$ has the core form
 
-$$
+```math
 \textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
 F\left(\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[d]}(H[j,l])\right),(i)
 \right).
-$$
+```
 
 Its footprint is $\{(H,(j,l))\mid j\in[d]\}$.
 Thus every coordinate of $H_l$ must be published before this recurrence
@@ -664,11 +664,11 @@ contribution is ready. No update reads a partially accumulated slice.
 
 A certificate is
 
-$$
+```math
 r(X,i)=r(Z,i)=0,
 \qquad
 r(H,(i,l))=l+1,
-$$
+```
 
 where $r(X,i)$ abbreviates $r((X,(i)))$, and similarly for $Z$.
 The persistent-input and base contributions depend only on supplied

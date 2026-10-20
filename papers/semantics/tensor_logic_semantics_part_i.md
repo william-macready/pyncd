@@ -61,9 +61,9 @@ We use:
 
 For $n\in\mathbb{N}$, define the finite ordinal
 
-$$
+```math
 [n]=\{k\in\mathbb{N}\mid k<n\}.
-$$
+```
 
 Thus $[0]=\varnothing$, $[1]=\{0\}$, and $[4]=\{0,1,2,3\}$.
 The notation $[n]$ is a set, not a one-element list containing $n$.
@@ -84,9 +84,9 @@ whereas $()$ denotes the empty tuple.
 
 The Cartesian product
 
-$$
+```math
 A_1\times\cdots\times A_k
-$$
+```
 
 contains the tuples whose $j$th component belongs to $A_j$.
 
@@ -110,31 +110,31 @@ Composition is $(g\circ f)(a)=g(f(a))$.
 
 For $b\in B$, the inverse image or **fiber** of $b$ is
 
-$$
+```math
 f^{-1}(\{b\})=\{a\in A\mid f(a)=b\}.
-$$
+```
 
 This does not assume that $f$ is invertible.
 
 A function is injective if
 
-$$
+```math
 f(a)=f(a')\Longrightarrow a=a'.
-$$
+```
 
 **Example: a write map with collisions.** Let
 
-$$
+```math
 \textcolor{#5688C7}{\phi}:[2]\times[2]\to[3],
 \qquad
 \textcolor{#5688C7}{\phi}(i,j)=i+j.
-$$
+```
 
 Then
 
-$$
+```math
 \textcolor{#5688C7}{\phi}^{-1}(\{1\})=\{(0,1),(1,0)\}.
-$$
+```
 
 Two different source coordinates address output coordinate $1$. Such a
 collision is legitimate for additive contributions.
@@ -155,9 +155,9 @@ a Lean runtime stores exact real numbers.
 Tensor contraction and contribution collection use a commutative semiring
 ([Section 2.3](#23-which-algebraic-laws-each-part-uses) records which results use which of its laws)
 
-$$
+```math
 \mathcal{K}=(K,\oplus,\otimes,0_K,1_K).
-$$
+```
 
 Specifically:
 
@@ -191,28 +191,28 @@ specified operations.
 
 For a finite indexing set $A$ and a function $v:A\to K$, write
 
-$$
+```math
 \bigoplus_{a\in A}v(a)
 \qquad\text{and}\qquad
 \bigotimes_{a\in A}v(a)
-$$
+```
 
 for finite combination and multiplication. Their empty cases are
 
-$$
+```math
 \bigoplus_{a\in\varnothing}v(a)=0_K,
 \qquad
 \bigotimes_{a\in\varnothing}v(a)=1_K.
-$$
+```
 
 In the numerical interpretation, we also use $\sum$ and $\prod$.
 
 These expressions are indexed by **occurrences**, not by the set of distinct
 values. Equal-valued contributions are not deduplicated:
 
-$$
+```math
 \sum_{a\in[2]}3=6.
-$$
+```
 
 In the Boolean interpretation, combining two true contributions gives true
 because OR is idempotent. Real addition is not idempotent.
@@ -310,9 +310,9 @@ the two tropical sorts.
 An axis $a$ has an identity and a finite extent $n_a\in\mathbb{N}$. Its
 coordinate range is
 
-$$
+```math
 \textcolor{#5688C7}{I}_a=[n_a].
-$$
+```
 
 A printed name is only a label. Distinct axis identities can have the same
 label or the same extent. Neither equal spelling nor equal cardinality
@@ -330,9 +330,9 @@ An index variable such as $i$ is a bound symbol ranging over a finite domain
 $\textcolor{#5688C7}{I}_i$. An **index context** records a finite collection of distinct variable
 identities and their domains:
 
-$$
+```math
 \textcolor{#5688C7}{\Gamma}=(i_1:\textcolor{#5688C7}{I}_{i_1},\ldots,i_k:\textcolor{#5688C7}{I}_{i_k}).
-$$
+```
 
 Write $\textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma})=\{i_1,\ldots,i_k\}$ for the set of
 variable identities declared in the context.
@@ -354,11 +354,11 @@ not itself relate their valuations.
 A valuation $\textcolor{#5688C7}{\nu}$ for $\textcolor{#5688C7}{\Gamma}$ assigns each variable a coordinate in its
 declared domain. The set of all such valuations is
 
-$$
+```math
 \textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma})
 =
 \prod_{i\in\textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma})}\textcolor{#5688C7}{I}_i.
-$$
+```
 
 Here the product is a dependent family of assignments keyed by variable
 identity, not an assertion that variable order matters semantically.
@@ -372,9 +372,9 @@ $\textcolor{#5688C7}{\nu}=\{i\mapsto1,j\mapsto2\}$ evaluates $i+j$ to $3$.
 
 An admissible iteration domain can be a subset
 
-$$
+```math
 \textcolor{#5688C7}{D}\subseteq\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}),
-$$
+```
 
 such as the valuations satisfying an explicit guard. A guard restricts
 which contributions exist; an Iverson factor changes the value of a
@@ -389,19 +389,19 @@ the ordered coordinate domains and scalar carrier of each tensor.
 
 For a rank-$k$ tensor $T$, write
 
-$$
+```math
 \textcolor{#5688C7}{\Sigma}(T)=(\textcolor{#5688C7}{I}_{T,1},\ldots,\textcolor{#5688C7}{I}_{T,k};K),
 \qquad
 \textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)
 =\textcolor{#5688C7}{I}_{T,1}\times\cdots\times \textcolor{#5688C7}{I}_{T,k}.
-$$
+```
 
 Its numerical shape is
 
-$$
+```math
 \textcolor{#5688C7}{\mathop{\mathrm{shape}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)
 =(|\textcolor{#5688C7}{I}_{T,1}|,\ldots,|\textcolor{#5688C7}{I}_{T,k}|).
-$$
+```
 
 Coordinate-slot position is significant even when domains have equal sizes.
 Shape equality alone does not establish a semantic correspondence between
@@ -415,9 +415,9 @@ $(5,2)$ is not.
 
 A tensor value for $T$ is a total function
 
-$$
+```math
 \textcolor{#398B83}{V}_T:\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)\to K.
-$$
+```
 
 Write $\textcolor{#398B83}{V}_T[p]$ for its value at coordinate tuple $p$.
 The set of such functions can also be written
@@ -425,9 +425,9 @@ $K^{\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\
 
 The zero tensor is the function $\textcolor{#398B83}{\mathbf{0}}_T$ given by
 
-$$
+```math
 \textcolor{#398B83}{\mathbf{0}}_T[p]=0_K
-$$
+```
 
 at every coordinate. Zero defaults require a known coordinate domain; they
 do not determine a tensor's shape.
@@ -438,9 +438,9 @@ single scalar value.
 The notation $H_l$ abbreviates the slice $H[:,l]$ when time is the last
 coordinate. For example, if $H:[d]\times[N+1]\to K$, then
 
-$$
+```math
 H_l[i]=H[i,l].
-$$
+```
 
 This shorthand refers to logical values, not to a storage layout.
 
@@ -451,9 +451,9 @@ This shorthand refers to logical values, not to a storage layout.
 A complete tensor environment $\textcolor{#398B83}{\rho}$ assigns each tensor identifier in scope
 a value with the signature prescribed by $\textcolor{#5688C7}{\Sigma}$:
 
-$$
+```math
 \textcolor{#398B83}{\rho}(T):\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)\to K.
-$$
+```
 
 The notation $\textcolor{#398B83}{\rho}(T)[p]$ means "coordinate $p$ of the value assigned to $T$."
 
@@ -473,9 +473,9 @@ designated inputs.
 
 For operational reasoning, a tensor address is a pair
 
-$$
+```math
 a=(T,p),\qquad p\in\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T).
-$$
+```
 
 Let $\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$ be the set of all such addresses, tagged
 by tensor identifier. Coordinates of different tensors are different
@@ -483,9 +483,9 @@ addresses even if their tuples coincide.
 
 A partial store is written
 
-$$
+```math
 \textcolor{#A87C28}{\sigma}:\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\rightharpoonup K.
-$$
+```
 
 The hooked arrow denotes a partial function.
 $\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$ is the set of addresses at which a value is
@@ -512,10 +512,10 @@ For physical storage notation, let $\textcolor{#C16C86}{\mathcal{B}}$ be a finit
 identifiers, with capacity $m_{\textcolor{#C16C86}{\beta}}\in\mathbb{N}$ for each
 $\textcolor{#C16C86}{\beta}\in\textcolor{#C16C86}{\mathcal{B}}$. Define
 
-$$
+```math
 \textcolor{#C16C86}{\mathop{\mathrm{Slot}}\nolimits}_{\textcolor{#C16C86}{\mathcal{B}}}
 =\{(\textcolor{#C16C86}{\beta},k)\mid\textcolor{#C16C86}{\beta}\in\textcolor{#C16C86}{\mathcal{B}},\ k\in[m_{\textcolor{#C16C86}{\beta}}]\}.
-$$
+```
 
 A physical slot $\textcolor{#C16C86}{\xi}=(\textcolor{#C16C86}{\beta},k)$ is tagged by its buffer identifier, just
 as a logical address is tagged by its tensor identifier.
@@ -543,18 +543,18 @@ are still elements of the exact carrier $K$, not unspecified machine bits.
 An index expression $\textcolor{#9D75C4}{e}$ denotes an integer-valued expression under an
 appropriate valuation. Write
 
-$$
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}\rrbracket_{\textcolor{#5688C7}{\nu}}\in\mathbb{Z}
-$$
+```math
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}\in\mathbb{Z}
+```
 
 for its evaluated value.
 
 Examples include constants, variables, and affine expressions:
 
-$$
+```math
 \textcolor{#9D75C4}{e}=b+\sum_{j=1}^{k}c_j i_j,
 \qquad b,c_j\in\mathbb{Z}.
-$$
+```
 
 Under $\textcolor{#5688C7}{\nu}(i)=2$, the expression $2i+1$ evaluates to $5$.
 Evaluation into $\mathbb{Z}$ preserves negative values; it does not silently
@@ -562,11 +562,11 @@ convert them to valid natural-number coordinates.
 
 For an access $T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k]$, write
 
-$$
+```math
 \textcolor{#5688C7}{\phi}(\textcolor{#5688C7}{\nu})=
-(\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_1\rrbracket_{\textcolor{#5688C7}{\nu}},\ldots,
- \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_k\rrbracket_{\textcolor{#5688C7}{\nu}}).
-$$
+(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}},\ldots,
+ \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_k\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}).
+```
 
 Calling this a map into $\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)$ asserts that the
 tuple is in range throughout the stated domain. Otherwise, it is merely an
@@ -580,18 +580,18 @@ The arithmetic notation is the same, but their roles differ.
 
 **Gather example.** With $i\in[3]$,
 
-$$
+```math
 Y[i]\textcolor{#9D75C4}{\mathrel{+}=}X[2i]
-$$
+```
 
 reads source coordinates $0,2,4$. The source must contain those coordinates
 unless an extension policy is explicitly provided.
 
 **Scatter example.** With $i\in[3]$ and $Y$ of shape $(6)$,
 
-$$
+```math
 Y[2i]\textcolor{#9D75C4}{\mathrel{+}=}X[i]
-$$
+```
 
 addresses output coordinates $0,2,4$. Coordinates $1,3,5$ receive no
 contributions in this example.
@@ -604,9 +604,9 @@ or another expression binder. A reduction binds its index locally.
 In the normalized notation, free variables are the parameters of a
 contribution, and contracted variables are explicitly bound:
 
-$$
+```math
 \textcolor{#9D75C4}{E}(i,j)=\bigoplus_{k\in \textcolor{#5688C7}{I}_k}W[i,k]\otimes X[k,j].
-$$
+```
 
 Here $i,j$ are free and $k$ is contracted.
 
@@ -622,9 +622,9 @@ scope.
 
 **Term-local contraction example.**
 
-$$
+```math
 \textcolor{#9D75C4}{E}(i)=\left(\sum_{k\in \textcolor{#5688C7}{I}_k}W[i,k]X[k]\right)+B[i].
-$$
+```
 
 The bias is added once, not once per value of $k$.
 
@@ -643,11 +643,11 @@ either variable in the body.
 A primitive operator $f$ is specified by its input and output value spaces
 and its domain of definition. Write
 
-$$
+```math
 f:\textcolor{#398B83}{\mathcal{D}}_f\to B,
 \qquad
 \textcolor{#398B83}{\mathcal{D}}_f\subseteq A,
-$$
+```
 
 when it accepts values in $\textcolor{#398B83}{\mathcal{D}}_f$ rather than all of $A$.
 
@@ -662,25 +662,25 @@ An operator can consume a whole slice. For example, softmax over nonempty
 $[m]$ is a function from $\mathbb{R}^{[m]}$ to
 $\mathbb{R}^{[m]}$:
 
-$$
+```math
 \mathop{\mathrm{softmax}}\nolimits(x)[j]
 =
 \frac{\exp(x[j])}{\sum_{k\in[m]}\exp(x[k])}.
-$$
+```
 
 This is not an independent scalar operation at each coordinate. [Part IV](tensor_logic_semantics_part_iv.md#part-iv-operational-semantics)
 represents its slice dependencies through the full argument footprint.
 
 An Iverson value embeds a predicate $\textcolor{#9D75C4}{Q}$ into the scalar algebra:
 
-$$
+```math
 \mathbf{1}_{\textcolor{#9D75C4}{Q}}
 =
 \begin{cases}
 1_K,&\textcolor{#9D75C4}{Q}\text{ is true},\\
 0_K,&\textcolor{#9D75C4}{Q}\text{ is false}.
 \end{cases}
-$$
+```
 
 The values $0_K$ and $1_K$ are those of the sort of the surrounding expression:
 in the max-plus sort a true predicate is $0$ and a false one is $-\infty$, in the
@@ -726,22 +726,22 @@ from the statement's output index expressions.
 A contribution occurrence is a pair $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$ with $\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$.
 The collection of all occurrences is the tagged union
 
-$$
+```math
 \textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}
 =
 \coprod_{\textcolor{#9D75C4}{s}\in \textcolor{#9D75C4}{P}}\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}
 =
 \{(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\mid \textcolor{#9D75C4}{s}\in \textcolor{#9D75C4}{P},\ \textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}\}.
-$$
+```
 
 The symbol $\coprod$ denotes a disjoint union: the statement identifier
 distinguishes otherwise identical valuations.
 
 Its destination is
 
-$$
+```math
 \textcolor{#9D75C4}{\mathop{\mathrm{dst}}\nolimits}(\textcolor{#9D75C4}{o})=(T_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})).
-$$
+```
 
 **Example: different occurrences, different destinations.** Let $X$ have
 shape $(2)$ and $Y$ shape $(3)$:
@@ -760,12 +760,12 @@ A destination identifies a tensor and its coordinate tuple.
 
 For a tensor coordinate $(T,p)$, define its candidate contribution occurrences:
 
-$$
+```math
 \textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(T,p)
 =
 \{(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}
   \mid T_{\textcolor{#9D75C4}{s}}=T,\ \textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})=p\}.
-$$
+```
 
 The word "candidate" does not indicate optional contributions. It emphasizes
 that this definition locates occurrences without evaluating their bodies.
@@ -780,10 +780,10 @@ s_2: T[i] = X[i]    # i in [2]
 
 At coordinate $(0)$, the two distinct occurrences are
 
-$$
+```math
 \textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(T,(0))
 =\{(\textcolor{#9D75C4}{s}_1,\{i\mapsto0\}),(\textcolor{#9D75C4}{s}_2,\{i\mapsto0\})\}.
-$$
+```
 
 Both have destination $(T,(0))$. With real-valued addition their
 collected value is $2X[0]$, not $X[0]$.
@@ -812,11 +812,11 @@ For a non-numerical scalar algebra, its combination operation is $\oplus$.
 
 Use the following interpretation notation, made precise in [Part III](tensor_logic_semantics_part_iii.md#part-iii-denotational-semantics):
 
-- $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}\rrbracket_{\textcolor{#5688C7}{\nu}}$: the value of an index expression.
-- $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$: the result of interpreting a tensor
+- $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}$: the value of an index expression.
+- $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$: the result of interpreting a tensor
   expression under a complete tensor environment and an index valuation;
   it may be undefined.
-- $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})$: the partial input-output denotation,
+- $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\mathclose{]\!]}}(\textcolor{#398B83}{\eta})$: the partial input-output denotation,
   defined when $\textcolor{#398B83}{\eta}$ has a unique complete model, as specified in [Section 20.3](tensor_logic_semantics_part_iii.md#203-functional-admissibility).
 - $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$: environments satisfying a program's
   collected equations on the supplied inputs.
@@ -847,13 +847,13 @@ $(\textcolor{#9D75C4}{s}_1,c=0)$ and $(\textcolor{#9D75C4}{s}_2,r=0)$.
 
 Under real-valued additive collection, the intended values are
 
-$$
+```math
 T[r,c]
 =
 \mathbf{1}_{r=0}C[c]
 +
 \mathbf{1}_{c=0}R[r].
-$$
+```
 
 In particular, $T[0,0]=C[0]+R[0]$. There is no requirement that the
 two corner contributions agree. Interior coordinates receive an empty sum,
@@ -869,13 +869,13 @@ Y[i+j] = A[i] B[j]    # i,j in [2]
 
 The write fiber at $1$ has two occurrences, giving
 
-$$
+```math
 \begin{aligned}
 Y[0]&=A[0]B[0],\\
 Y[1]&=A[0]B[1]+A[1]B[0],\\
 Y[2]&=A[1]B[1].
 \end{aligned}
-$$
+```
 
 The body has no contracted variables. The addition arises from collecting
 different free-variable valuations with the same write image.
@@ -894,15 +894,15 @@ collected values:
 
 They respectively give
 
-$$
+```math
 T[i]=\mathop{\mathrm{ReLU}}\nolimits(A[i])+\mathop{\mathrm{ReLU}}\nolimits(B[i])
-$$
+```
 
 and
 
-$$
+```math
 T[i]=\mathop{\mathrm{ReLU}}\nolimits(A[i]+B[i]).
-$$
+```
 
 For $A[i]=1$ and $B[i]=-1$, the first is $1$ and the second is $0$.
 Expression structure, not statement enumeration order, determines the
@@ -924,11 +924,11 @@ The occurrences addressed to time zero come from the first two statements.
 Occurrences addressed to later times come from the first and third.
 The intended collected equations are
 
-$$
+```math
 H_0=X+Z,
 \qquad
 H_{l+1}=X+F(H_l)\quad(l\in[N]).
-$$
+```
 
 $H_l$ means the completed logical slice, not an accumulator containing only
 some contributions. The domains $[N+1]$ and $[N]$ are deliberately different.
@@ -949,9 +949,9 @@ Use:
 
 The rank condition used in [Part IV](tensor_logic_semantics_part_iv.md#part-iv-operational-semantics) is
 
-$$
+```math
 b\in\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)\Longrightarrow r(b)<r(a).
-$$
+```
 
 This is notation for a sufficient well-founded ordering, not a claim that all
 tensor logic programs possess one. Dependencies at tensor-name level and

@@ -20,6 +20,14 @@ implementation correspondence and status. The split preserves their prose,
 mathematical notation, examples, and numbered results. Each part has previous,
 contents, and next links at both the top and bottom.
 
+## GitHub math rendering
+
+Display equations use fenced `math` blocks so Markdown does not interpret
+standalone equality signs as heading underlines. Interpretation brackets use
+standard TeX square brackets with tight spacing instead of package-specific
+bracket commands. These choices change only the typesetting, not the notation's
+mathematical meaning or color coding.
+
 ## Table of contents
 
 ## Tensor Logic semantics

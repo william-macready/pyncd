@@ -56,10 +56,10 @@ separate syntax or an explicit extension of this fragment.
 
 The core index expressions are affine:
 
-$$
+```math
 \textcolor{#9D75C4}{e} ::= b \mid i \mid \textcolor{#9D75C4}{e}+\textcolor{#9D75C4}{e} \mid c\,\textcolor{#9D75C4}{e},
 \qquad b,c\in\mathbb{Z}.
-$$
+```
 
 Here $i$ is an index variable from a context $\textcolor{#5688C7}{\Gamma}$, not a tensor value.
 Subtraction is expressed using coefficient $-1$.
@@ -67,17 +67,17 @@ Scalar arithmetic in an expression is distinct from integer index arithmetic.
 
 The index predicates used for guards and Iverson values are:
 
-$$
+```math
 \textcolor{#9D75C4}{Q} ::= \mathrm{true}\mid\mathrm{false}
 \mid \textcolor{#9D75C4}{e}=\textcolor{#9D75C4}{e}\mid \textcolor{#9D75C4}{e}<\textcolor{#9D75C4}{e}
 \mid \neg \textcolor{#9D75C4}{Q}\mid \textcolor{#9D75C4}{Q}\land \textcolor{#9D75C4}{Q}\mid \textcolor{#9D75C4}{Q}\lor \textcolor{#9D75C4}{Q}.
-$$
+```
 
 The usual comparisons such as $\textcolor{#9D75C4}{e}\le \textcolor{#9D75C4}{e}'$ are abbreviations. Predicates depend
 only on index valuations, not on tensor values. This makes a statement's
 contribution domain determinable without executing its body.
 
-Write $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{Q}\rrbracket_{\textcolor{#5688C7}{\nu}}\in\mathbb{B}$ for predicate evaluation
+Write $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}\in\mathbb{B}$ for predicate evaluation
 using integer comparisons and Boolean connectives.
 This Boolean result is distinct from its scalar embedding
 $\mathbf{1}_{\textcolor{#9D75C4}{Q}}\in K$.
@@ -102,9 +102,9 @@ A fixed primitive registry $\textcolor{#9D75C4}{\mathcal{F}}$ supplies, for ever
 an arity $q$, input types $\textcolor{#5688C7}{\tau}_1,\ldots,\textcolor{#5688C7}{\tau}_q$, an output type $\textcolor{#5688C7}{\tau}$,
 and a domain
 
-$$
+```math
 \textcolor{#398B83}{\mathcal{D}}_f\subseteq\textcolor{#5688C7}{\tau}_1\times\cdots\times\textcolor{#5688C7}{\tau}_q.
-$$
+```
 
 The types in this formula denote their value spaces. This specializes the
 operator-domain notation from [Section 8](tensor_logic_semantics_part_i.md#8-operators-predicates-and-definedness).
@@ -156,17 +156,17 @@ $K=\mathbb{R}$ and let $X$ have shape $(3)$, with entries
 $X[0]=2$, $X[1]=5$, and $X[2]=7$.
 The array expression
 
-$$
+```math
 \textcolor{#398B83}{V}=\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[3]}(X[j]+1)
-$$
+```
 
 constructs all three entries: $\textcolor{#398B83}{V}[0]=3$, $\textcolor{#398B83}{V}[1]=6$, and $\textcolor{#398B83}{V}[2]=8$.
 The bound variable $j$ visits each coordinate; it is not summed out.
 Selection then gives
 
-$$
+```math
 \textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#398B83}{V},(1))=6.
-$$
+```
 
 Here $(1)$ is the one-coordinate tuple for a vector, and $\textcolor{#398B83}{V}$ is an expository
 name for the resulting value, not an additional core binding construct.
@@ -175,20 +175,20 @@ one scalar from that array.
 
 **Example: a history slice.**
 
-$$
+```math
 \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[d]}(H[j,l])
-$$
+```
 
 is an array expression of type $K^{[d]}$, with $l$ free and $j$ bound.
 It makes the shorthand $H[:,l]$ from [Part I](tensor_logic_semantics_part_i.md#part-i-background-notation) explicit.
 
 **Example: a scalar selected from an array computation.**
 
-$$
+```math
 \textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
 F\left(\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[d]}(H[j,l])\right),(i)
 \right)
-$$
+```
 
 is the core form of $F(H[:,l])[i]$.
 
@@ -196,9 +196,9 @@ is the core form of $F(H[:,l])[i]$.
 constructor; pointwise array addition is tabulated scalar addition. Let $A$ and
 $B$ be tensors of shape $(m,n)$. As an array value,
 
-$$
+```math
 \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{i\in[m],\,j\in[n]}\left(A[i,j]\oplus B[i,j]\right)
-$$
+```
 
 has type $K^{[m]\times[n]}$. The bound variables $i$ and $j$ visit every
 coordinate; they are not summed out. Selection gives
@@ -212,11 +212,11 @@ of a registered array primitive.
 To define a tensor $C$ of the same shape, use one core statement per
 coordinate:
 
-$$
+```math
 \text{for }i\in[m],\,j\in[n]:
 \quad
 C[i,j]\textcolor{#9D75C4}{\mathrel{+}=}A[i,j]\oplus B[i,j].
-$$
+```
 
 In surface notation this is `C[i,j] = A[i,j] + B[i,j]`. It has two additive
 terms and no contracted variable, so
@@ -232,10 +232,10 @@ freshness convention.
 For an expression $\textcolor{#9D75C4}{E}$, $\textcolor{#9D75C4}{\mathop{\mathrm{FV}}\nolimits}(\textcolor{#9D75C4}{E})$ denotes its free variables.
 For example,
 
-$$
+```math
 \textcolor{#9D75C4}{\mathop{\mathrm{FV}}\nolimits}\left(\bigoplus_{k\in \textcolor{#5688C7}{I}_k}W[i,k]\otimes X[k,j]\right)
 =\{i,j\}.
-$$
+```
 
 The corresponding notation applies to index expressions and predicates.
 For multiple expressions, take the union of their free-variable sets.
@@ -247,16 +247,16 @@ valuation update $\textcolor{#5688C7}{\nu}[i\mapsto k]$.
 
 **Example.** In
 
-$$
+```math
 \textcolor{#9D75C4}{E}(i)=\bigoplus_{k\in[k_0]}W[i,k]\otimes X[k],
-$$
+```
 
 the substitution $\textcolor{#9D75C4}{E}[i:=k]$ first renames the bound reduction variable,
 giving, for a fresh $h$,
 
-$$
+```math
 \bigoplus_{h\in[k_0]}W[k,h]\otimes X[h].
-$$
+```
 
 The replacement's $k$ stays free.
 
@@ -264,11 +264,11 @@ The replacement's $k$ stays free.
 
 A core statement with occurrence identifier $\textcolor{#9D75C4}{s}$ has the form
 
-$$
+```math
 \text{for }\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}}\text{ where }\textcolor{#9D75C4}{Q}_{\textcolor{#9D75C4}{s}}:
 \qquad
 T_{\textcolor{#9D75C4}{s}}[\textcolor{#9D75C4}{e}_{\textcolor{#9D75C4}{s},1},\ldots,\textcolor{#9D75C4}{e}_{\textcolor{#9D75C4}{s},k_{\textcolor{#9D75C4}{s}}}]\textcolor{#9D75C4}{\mathrel{+}=}\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}.
-$$
+```
 
 $\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}}$ binds the statement's contribution variables in its guard,
 output indices, and body. The body must have the scalar type of its
@@ -277,24 +277,24 @@ The guard is optional, with omitted guard meaning $\mathrm{true}$.
 
 The guard and output indices determine the data introduced in [Section 9](tensor_logic_semantics_part_i.md#9-programs-and-contribution-occurrences):
 
-$$
+```math
 \textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}=\{\textcolor{#5688C7}{\nu}\in\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})
-       \mid\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{Q}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#5688C7}{\nu}}=\mathrm{true}\},
-$$
+       \mid\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}=\mathrm{true}\},
+```
 
-$$
+```math
 \textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})=
-(\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_{\textcolor{#9D75C4}{s},1}\rrbracket_{\textcolor{#5688C7}{\nu}},\ldots,
- \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_{\textcolor{#9D75C4}{s},k_{\textcolor{#9D75C4}{s}}}\rrbracket_{\textcolor{#5688C7}{\nu}}).
-$$
+(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_{\textcolor{#9D75C4}{s},1}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}},\ldots,
+ \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_{\textcolor{#9D75C4}{s},k_{\textcolor{#9D75C4}{s}}}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}).
+```
 
 The binders are part of the statement's identity as a contribution
 generator. They are not discarded when an output index simplifies.
 For instance, with $i\in[3]$, the statement
 
-$$
+```math
 T[0i]\textcolor{#9D75C4}{\mathrel{+}=}1_K
-$$
+```
 
 has three occurrences addressed to coordinate $0$, not one.
 
@@ -344,13 +344,13 @@ compiled execution must retain for output decoding.
 
 Use the judgments
 
-$$
+```math
 \textcolor{#5688C7}{\Gamma}\vdash \textcolor{#9D75C4}{e}:\mathbb{Z},
 \qquad
 \textcolor{#5688C7}{\Gamma}\vdash \textcolor{#9D75C4}{Q}:\mathrm{pred},
 \qquad
 \textcolor{#5688C7}{\Sigma};\textcolor{#5688C7}{\Gamma};\textcolor{#5688C7}{D}\vdash \textcolor{#9D75C4}{E}:\textcolor{#5688C7}{\tau},
-$$
+```
 
 where $\textcolor{#5688C7}{D}\subseteq\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma})$.
 The marker $\mathrm{pred}$ classifies index predicates; it is not a scalar
@@ -364,12 +364,12 @@ positive tensor values for its interpretation to be defined.
 
 For a fresh $j:\textcolor{#5688C7}{I}_j$, define the lifted valuation domain
 
-$$
+```math
 \textcolor{#5688C7}{D}^{+j}
 =
 \{\textcolor{#5688C7}{\nu}[j\mapsto k]\mid\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D},\ k\in \textcolor{#5688C7}{I}_j\}
 \subseteq\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma},j:\textcolor{#5688C7}{I}_j).
-$$
+```
 
 For several fresh variables, lift successively. This accounts for every
 coordinate evaluated inside a reduction or tabulation.
@@ -379,39 +379,39 @@ $\textcolor{#5688C7}{\Sigma}(X)=([4],[2];\mathbb{R})$ and $\textcolor{#5688C7}{\
 Choose the index expression $\textcolor{#9D75C4}{e}=i+1$ and predicate $\textcolor{#9D75C4}{Q}=(i+1<4)$.
 The first two judgments are
 
-$$
+```math
 \textcolor{#5688C7}{\Gamma}\vdash i+1:\mathbb{Z},
 \qquad
 \textcolor{#5688C7}{\Gamma}\vdash i+1<4:\mathrm{pred}.
-$$
+```
 
 The admissible valuations are
 
-$$
+```math
 \textcolor{#5688C7}{D}=\{\{i\mapsto0\},\{i\mapsto1\},\{i\mapsto2\}\}.
-$$
+```
 
 Introduce a fresh reduction variable $j\in[2]$. Lifting gives
 
-$$
+```math
 \textcolor{#5688C7}{D}^{+j}
 =
 \{\{i\mapsto a,j\mapsto b\}\mid a\in[3],\ b\in[2]\}.
-$$
+```
 
 This domain contains six valuations. Every one makes the read
 $X[i+1,j]$ valid: its row is $1$, $2$, or $3$, and its column is
 $0$ or $1$. For instance, $\{i\mapsto2,j\mapsto1\}$ reads $X[3,1]$.
 Consequently, the body and reduction judgments are
 
-$$
+```math
 \textcolor{#5688C7}{\Sigma};(\textcolor{#5688C7}{\Gamma},j:[2]);\textcolor{#5688C7}{D}^{+j}\vdash X[i+1,j]:\mathbb{R},
-$$
+```
 
-$$
+```math
 \textcolor{#5688C7}{\Sigma};\textcolor{#5688C7}{\Gamma};\textcolor{#5688C7}{D}\vdash
 \bigoplus_{j\in[2]}X[i+1,j]:\mathbb{R}.
-$$
+```
 
 The result is a scalar row sum for each admissible $i$, not an array.
 If $\textcolor{#5688C7}{D}$ instead included $\{i\mapsto3\}$, the body would try to read
@@ -504,10 +504,10 @@ A runtime check is not a proof that every input meets that condition.
 
 **Guard example.** Let $X$ have shape $(4)$ and $i\in[4]$:
 
-$$
+```math
 \text{for }i\in[4]\text{ where }i+1<4:
 \qquad Y[i]\textcolor{#9D75C4}{\mathrel{+}=}X[i+1].
-$$
+```
 
 The guard makes the read in bounds throughout $\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$.
 Replacing it by the body
@@ -591,9 +591,9 @@ contribution variables.
 Write the surface additive body as a finite list of product terms
 $t_1,\ldots,t_h$. For term $t_b$, define its contracted-variable set
 
-$$
+```math
 C_b=\textcolor{#9D75C4}{\mathop{\mathrm{FV}}\nolimits}(t_b)\setminus\textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}}),
-$$
+```
 
 where $\textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})$ is the context's variable-identity set
 from [Section 3.2](tensor_logic_semantics_part_i.md#32-index-variables-and-contexts). Each contracted variable has its own resolved
@@ -616,11 +616,11 @@ uses $0_K$.
 
 This rule gives
 
-$$
+```math
 W[i,k]X[k]+B[i]
 \quad\mapsto\quad
 \left(\bigoplus_{k\in \textcolor{#5688C7}{I}_k}W[i,k]\otimes X[k]\right)\oplus B[i].
-$$
+```
 
 It does not give
 $\bigoplus_{k\in \textcolor{#5688C7}{I}_k}(W[i,k]\otimes X[k]\oplus B[i])$.
@@ -635,25 +635,25 @@ Its contribution context contains only the output variable $i$. Before
 elaboration, the product term $t_1=A[i,j]B[j,k]X[k]$ has no reduction binders,
 so all three index variables are syntactically free:
 
-$$
+```math
 \textcolor{#9D75C4}{\mathop{\mathrm{FV}}\nolimits}(t_1)=\{i,j,k\},
 \qquad
 \textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})=\{i\},
 \qquad
 C_1=\{i,j,k\}\setminus\{i\}=\{j,k\}.
-$$
+```
 
 Choosing $j$ as the outer binder and $k$ as the inner binder gives the
 elaborated contribution body
 
-$$
+```math
 \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}(i)=
 \bigoplus_{j\in \textcolor{#5688C7}{I}_j}
 \left(
 \bigoplus_{k\in \textcolor{#5688C7}{I}_k}
 \left(A[i,j]\otimes B[j,k]\otimes X[k]\right)
 \right).
-$$
+```
 
 The inner reduction holds $i,j$ fixed and combines the values over $k$;
 the outer reduction then combines those results over $j$. Each repeated
@@ -666,9 +666,9 @@ the contractions occur inside one contribution body for each admissible $i$.
 Without an enclosing operator, the contribution body is $\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}=B_{\textcolor{#9D75C4}{s}}$.
 With a registered unary scalar operator $f$, it is
 
-$$
+```math
 \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}=f(B_{\textcolor{#9D75C4}{s}}).
-$$
+```
 
 In particular, contractions inside each term and explicit combination
 of those terms occur inside $f$'s argument.
@@ -691,17 +691,17 @@ variables' domains for each valuation of the other contribution variables.
 
 The enclosing operator $f$ must have the array signature
 
-$$
+```math
 f:K^{\textcolor{#5688C7}{I}_1\times\cdots\times \textcolor{#5688C7}{I}_m}\to
   K^{\textcolor{#5688C7}{I}_1\times\cdots\times \textcolor{#5688C7}{I}_m}
-$$
+```
 
 with its own specified domain $\textcolor{#398B83}{\mathcal{D}}_f$.
 
 Choose fresh variables $h_1,\ldots,h_m$ with those domains. The scalar
 contribution body at the original output coordinates is
 
-$$
+```math
 \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}=
 \textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
 f\left(
@@ -710,7 +710,7 @@ f\left(
 \right),
 (j_1,\ldots,j_m)
 \right).
-$$
+```
 
 The simultaneous substitution affects free occurrences only.
 Marked variables remain contribution variables, not contracted variables.
@@ -750,12 +750,12 @@ Y[i,j] = W[i,k] X[k,j]
 
 Its core statement is
 
-$$
+```math
 \text{for }i\in[i_0],j\in[j_0]:
 \quad
 Y[i,j]\textcolor{#9D75C4}{\mathrel{+}=}
 \bigoplus_{k\in[k_0]}W[i,k]\otimes X[k,j].
-$$
+```
 
 For a separate vector-input bias example, retain $W$'s shape, take input
 $X$ of shape $(k_0)$ and input $B$ of shape $(i_0)$, and define $Y$ on
@@ -767,12 +767,12 @@ Y[i] = W[i,k] X[k] + B[i]
 
 the core is
 
-$$
+```math
 \text{for }i\in[i_0]:
 \quad
 Y[i]\textcolor{#9D75C4}{\mathrel{+}=}
 \left(\bigoplus_{k\in[k_0]}W[i,k]\otimes X[k]\right)\oplus B[i].
-$$
+```
 
 If $k_0=0$, the reduction is $0_K$ and the contribution is $B[i]$.
 That distinguishes the intended rule from incorrectly placing the bias
@@ -788,12 +788,12 @@ Trace[] = M[i,i]
 
 elaborates to the rank-zero contribution
 
-$$
+```math
 \text{for }():
 \quad
 \mathop{\mathrm{Trace}}\nolimits[]\textcolor{#9D75C4}{\mathrel{+}=}
 \bigoplus_{i\in[n]}\textcolor{#9D75C4}{M}[i,i].
-$$
+```
 
 The empty statement context has one valuation, the empty assignment,
 identified with $()$ under the rank-zero convention of [Section 1.2](tensor_logic_semantics_part_i.md#12-tuples-products-and-rank-zero-cases).
@@ -815,11 +815,11 @@ contribution collections.
 
 The affine-write example from [Section 11.2](tensor_logic_semantics_part_i.md#112-colliding-affine-writes) elaborates to
 
-$$
+```math
 \text{for }i\in[2],j\in[2]:
 \quad
 Y[i+j]\textcolor{#9D75C4}{\mathrel{+}=}A[i]\otimes B[j].
-$$
+```
 
 There is no body reduction. The two occurrences at output coordinate $1$
 remain distinct members of $\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(Y,1)$, with scalar-coordinate
@@ -835,9 +835,9 @@ Y[i-i] = relu(X[i])    # i in [3]
 retains three contribution occurrences at coordinate $0$.
 Its intended collected value is
 
-$$
+```math
 Y[0]=\sum_{i\in[3]}\mathop{\mathrm{ReLU}}\nolimits(X[i]),
-$$
+```
 
 not $\mathop{\mathrm{ReLU}}\nolimits(\sum_i X[i])$.
 Simplifying $i-i$ must not change the statement's binding structure or
@@ -848,9 +848,9 @@ move its activation boundary.
 Let inputs $X,W$ have shapes $(h,w)$ and $(a,b)$, and let $Y$ be a defined
 tensor whose declared output domain is such that every $(i,j)$ in it satisfies
 
-$$
+```math
 i+a\le h,\qquad 2j+b\le w.
-$$
+```
 
 For nonempty filter extents $a,b$, these conditions ensure the largest
 read coordinates are in bounds. All indices range over finite ordinals,
@@ -864,14 +864,14 @@ Y[i,j] = W[p,r] X[i+p,2*j+r]
 
 elaborates to
 
-$$
+```math
 \text{for }i,j:
 \quad
 Y[i,j]\textcolor{#9D75C4}{\mathrel{+}=}
 \bigoplus_{p\in[a]}
 \bigoplus_{r\in[b]}
 W[p,r]\otimes X[i+p,2j+r],
-$$
+```
 
 where the displayed $i,j$ binders abbreviate their declared domains.
 Alternatively, with a larger declared output domain, those inequalities can
@@ -892,14 +892,14 @@ A[q,s.] = softmax(Q[q,k] Key[s,k])
 The marked variable $\textcolor{#5688C7}{s}$ selects the
 slice domain $[\textcolor{#5688C7}{s}_0]$. The core body for $q\in[q_0],\textcolor{#5688C7}{s}\in[\textcolor{#5688C7}{s}_0]$ is
 
-$$
+```math
 \textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
 \mathop{\mathrm{softmax}}\nolimits\left(
 \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{t\in[\textcolor{#5688C7}{s}_0]}
 \left(\sum_{k\in[d]}\textcolor{#9D75C4}{Q}[q,k]\textcolor{#9D75C4}{\mathrm{Key}}[t,k]\right)
 \right),(\textcolor{#5688C7}{s})
 \right).
-$$
+```
 
 The feature index $k$ is contracted; the key-position index is tabulated
 for softmax and then selected at $\textcolor{#5688C7}{s}$. It is not contracted into a scalar.
@@ -910,14 +910,14 @@ The full statement contributes that body to $A[q,\textcolor{#5688C7}{s}]$.
 Use the shapes and bounds of [Section 11.4](tensor_logic_semantics_part_i.md#114-a-finite-history-with-persistent-input). The recurrence statement
 elaborates to
 
-$$
+```math
 \text{for }i\in[d],l\in[N]:
 \quad
 H[i,l+1]\textcolor{#9D75C4}{\mathrel{+}=}
 \textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
 F\left(\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[d]}(H[j,l])\right),(i)
 \right).
-$$
+```
 
 The read time $l$ and write time $l+1$ are both within $[N+1]$.
 $l$ is a free contribution variable, not a contracted index.
@@ -944,13 +944,13 @@ total on $\mathbb{R}$, and division, defined where the divisor is nonzero
 $S(q,t)=\bigoplus_{k\in[d]}\textcolor{#9D75C4}{Q}[q,k]\otimes \textcolor{#9D75C4}{\mathrm{Key}}[t,k]$. For
 $q\in[q_0]$ and $\textcolor{#5688C7}{s}\in[\textcolor{#5688C7}{s}_0]$, one statement suffices:
 
-$$
+```math
 A[q,\textcolor{#5688C7}{s}]\textcolor{#9D75C4}{\mathrel{+}=}
 \mathop{\mathrm{div}}\nolimits\left(
 \mathbf{1}_{\textcolor{#5688C7}{s}\le q}\otimes\exp(S(q,\textcolor{#5688C7}{s})),\;
 \bigoplus_{t\in[\textcolor{#5688C7}{s}_0]}\mathbf{1}_{t\le q}\otimes\exp(S(q,t))
 \right).
-$$
+```
 
 Every read is in bounds for every lifted valuation. Because $\exp$ is total,
 multiplying by the Iverson value is safe here, unlike the logarithm of
@@ -962,14 +962,14 @@ $\textcolor{#5688C7}{s}_0=0$ there are no occurrences.
 An equivalent form uses guards, so masked bodies are never evaluated. Let $\mathit{Den}$ be
 a defined tensor of shape $(q_0)$:
 
-$$
+```math
 \begin{aligned}
 &\text{for }q\in[q_0],t\in[\textcolor{#5688C7}{s}_0]\text{ where }t\le q:
 &&\mathit{Den}[q]\textcolor{#9D75C4}{\mathrel{+}=}\exp(S(q,t)),\\
 &\text{for }q\in[q_0],\textcolor{#5688C7}{s}\in[\textcolor{#5688C7}{s}_0]\text{ where }\textcolor{#5688C7}{s}\le q:
 &&A[q,\textcolor{#5688C7}{s}]\textcolor{#9D75C4}{\mathrel{+}=}\mathop{\mathrm{div}}\nolimits(\exp(S(q,\textcolor{#5688C7}{s})),\mathit{Den}[q]).
 \end{aligned}
-$$
+```
 
 Entries with $\textcolor{#5688C7}{s}>q$ have empty fibers and are $0$. $\mathit{Den}[q]$ is read as a
 named tensor, so its whole fiber is collected before any division is ready
@@ -1023,11 +1023,11 @@ using our existing $\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}$ notatio
 
 For a string $\textcolor{#5688C7}{L}=(j_1,\ldots,j_k)$, define
 
-$$
+```math
 \textcolor{#5688C7}{J}_{\textcolor{#5688C7}{L}}=\textcolor{#5688C7}{I}_{j_1}\times\cdots\times \textcolor{#5688C7}{I}_{j_k},
 \qquad
 \textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}}(\textcolor{#5688C7}{\nu})=(\textcolor{#5688C7}{\nu}(j_1),\ldots,\textcolor{#5688C7}{\nu}(j_k)).
-$$
+```
 
 Thus $\textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}}:\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\mathrm{all}})\to \textcolor{#5688C7}{J}_{\textcolor{#5688C7}{L}}$ is a
 coordinate projection. Equal-domain compatibility ensures that
@@ -1051,7 +1051,7 @@ of both operands and the result coordinate.
 The result of this pure einsum is the tensor value $\textcolor{#398B83}{V}_{\textcolor{#5688C7}{L}}:\textcolor{#5688C7}{J}_{\textcolor{#5688C7}{L}}\to K$
 defined by
 
-$$
+```math
 \textcolor{#398B83}{V}_{\textcolor{#5688C7}{L}}[p]
 =
 \bigoplus_{\substack{
@@ -1060,7 +1060,7 @@ $$
 }}
 \;\bigotimes_{r=1}^{m}
 \textcolor{#398B83}{\rho}(T_r)[\textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}_r}(\textcolor{#5688C7}{\nu})].
-$$
+```
 
 For each output coordinate, this combines all global assignments in
 its projection fiber. Each assignment multiplies the corresponding
@@ -1077,23 +1077,23 @@ This definition directly handles:
 
 **Example: ordinary contraction.**
 
-$$
+```math
 \textcolor{#398B83}{V}_{(i,j)}[i,j]
 =\bigoplus_{k\in \textcolor{#5688C7}{I}_k}
 \textcolor{#398B83}{\rho}(W)[i,k]\otimes\textcolor{#398B83}{\rho}(X)[k,j].
-$$
+```
 
 **Example: diagonal construction.** For the single operand $v$ with
 input string $(i)$ and output string $(i,i)$,
 
-$$
+```math
 \textcolor{#398B83}{V}_{(i,i)}[p,q]
 =
 \begin{cases}
 \textcolor{#398B83}{\rho}(v)[p],&p=q,\\
 0_K,&p\ne q.
 \end{cases}
-$$
+```
 
 The full output domain remains $\textcolor{#5688C7}{I}_i\times \textcolor{#5688C7}{I}_i$, not a diagonal-only
 coordinate set.
@@ -1113,11 +1113,11 @@ Partition the global variables into:
 Use guard $\mathrm{true}$, an output map $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}$ given by the same
 tuple projection on $\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})$, and body
 
-$$
+```math
 \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}=
 \bigoplus_{\text{remaining variables}}
 \;\bigotimes_{r=1}^{m}T_r[\textcolor{#5688C7}{L}_r].
-$$
+```
 
 $T_r[\textcolor{#5688C7}{L}_r]$ abbreviates a read with the variables in $\textcolor{#5688C7}{L}_r$ in slot order.
 The displayed reduction abbreviates nested core reductions, one binder
@@ -1137,9 +1137,9 @@ beyond that fragment it remains a proof obligation.
 The formula cannot be extended to nonlinear bodies by moving an
 operator inside the products or sums. For example,
 
-$$
+```math
 \mathop{\mathrm{ReLU}}\nolimits\left(\sum_k W[i,k]X[k]\right)
-$$
+```
 
 is not generally the sum of $\mathop{\mathrm{ReLU}}\nolimits(W[i,k]X[k])$.
 The operator boundary fixed in Sections [13](#13-core-syntax-and-binding) and [15](#15-surface-to-core-elaboration) remains authoritative.
@@ -1148,7 +1148,7 @@ The operator boundary fixed in Sections [13](#13-core-syntax-and-binding) and [1
 
 For a finite coordinate domain $\textcolor{#5688C7}{J}$, define the **delta tensor**
 
-$$
+```math
 \textcolor{#398B83}{\delta}_{\textcolor{#5688C7}{J}}:\textcolor{#5688C7}{J}\times \textcolor{#5688C7}{J}\to K,
 \qquad
 \textcolor{#398B83}{\delta}_{\textcolor{#5688C7}{J}}[p,q]=
@@ -1156,7 +1156,7 @@ $$
 1_K,&p=q,\\
 0_K,&p\ne q.
 \end{cases}
-$$
+```
 
 If $\textcolor{#5688C7}{J}$ is a product of $k$ slot domains, this can be represented as
 a rank-$2k$ named tensor with the two copies of those slots in order.
@@ -1167,25 +1167,25 @@ Iverson constructor. For product coordinates, $p=q$ abbreviates conjunction
 of the corresponding slot equalities. It needs no additional primitive operation.
 For $p\in \textcolor{#5688C7}{J}$ and a complete value $\textcolor{#398B83}{V}:\textcolor{#5688C7}{J}\to K$, finite combination gives
 
-$$
+```math
 \bigoplus_{q\in \textcolor{#5688C7}{J}}\textcolor{#398B83}{\delta}_{\textcolor{#5688C7}{J}}[p,q]\otimes \textcolor{#398B83}{V}[q]=\textcolor{#398B83}{V}[p].
-$$
+```
 
 Exactly one summand selects $p$ and the rest are $0_K$.
 For empty $\textcolor{#5688C7}{J}$, this pointwise statement has no $p$ to quantify over.
 
 For a vector $v:\textcolor{#5688C7}{I}\to K$, diagonal construction is
 
-$$
+```math
 \textcolor{#398B83}{D}[p,q]=\textcolor{#398B83}{\delta}_{\textcolor{#5688C7}{I}}[p,q]\otimes v[p].
-$$
+```
 
 For matrices with compatible domains,
 
-$$
+```math
 \bigoplus_{k\in \textcolor{#5688C7}{I}}A[i,k]\otimes \textcolor{#398B83}{D}[k,j]
 =A[i,j]\otimes v[j].
-$$
+```
 
 This explains how a nested contraction with a diagonal intermediate
 can be replaced by a direct pointwise scaling. It uses an equality
@@ -1194,14 +1194,14 @@ constraint, not merely renaming a bound variable.
 **Identity caveat.** With repeated input and output string $(i,i)$,
 a single-operand einsum keeps diagonal entries and zeros the rest:
 
-$$
+```math
 \textcolor{#398B83}{V}_{(i,i)}[p,q]
 =
 \begin{cases}
 \textcolor{#398B83}{\rho}(\textcolor{#9D75C4}{M})[p,p],&p=q,\\
 0_K,&p\ne q.
 \end{cases}
-$$
+```
 
 It is not the identity on arbitrary matrices. The ordinary
 single-operand identity law uses a string of distinct indices, so
@@ -1223,9 +1223,9 @@ changing which tensor occupies a given index string changes its reads.
 **Distribution over pointwise combination.** For complete tensor values
 $\textcolor{#398B83}{U},\textcolor{#398B83}{V}$ with the same coordinate domain, define
 
-$$
+```math
 (\textcolor{#398B83}{U}\oplus \textcolor{#398B83}{V})[p]=\textcolor{#398B83}{U}[p]\oplus \textcolor{#398B83}{V}[p].
-$$
+```
 
 A pure einsum distributes over replacement of one operand by this
 pointwise combination, retaining that operand's index string.
@@ -1241,9 +1241,9 @@ where an interface explicitly identifies them.
 
 For example,
 
-$$
+```math
 \textcolor{#9D75C4}{s}=\sum_i a[i]b[i]c[i]
-$$
+```
 
 can use $u[i]=a[i]b[i]$ followed by $\textcolor{#9D75C4}{s}=\sum_i u[i]c[i]$.
 Replacing $u$ by the scalar $\sum_i a[i]b[i]$ loses the correlation
@@ -1251,10 +1251,10 @@ with $c[i]$ and is generally incorrect.
 
 Likewise,
 
-$$
+```math
 \left(\sum_i a[i]\right)\left(\sum_i b[i]\right)
 =\sum_i\sum_j a[i]b[j],
-$$
+```
 
 not $\sum_i a[i]b[i]$. Equal printed binder names in separate reductions
 do not identify their variables.
@@ -1287,9 +1287,9 @@ variable domain, introduce or remove reductions, or change output shape.
 
 **Counterexample.** Over the reals,
 
-$$
+```math
 \sum_{j\in[m]}X[i]\cdot\mathbf{1}_{[m]}[j]=m\,X[i].
-$$
+```
 
 Removing both the operand and the $j$ binder gives $X[i]$, which is
 generally different, including when $m=0$.
@@ -1303,16 +1303,16 @@ from nothing. Domains remain supplied by signatures and binders.
 This is particularly important for differentiation. Over exact reals,
 with $W$ of shape $(d,e)$ and $x$ of shape $(e)$,
 
-$$
+```math
 F[i]=\sum_{j\in[e]}W[i,j]x[j]
-$$
+```
 
 has the coordinate derivative
 
-$$
+```math
 \frac{\partial F[i]}{\partial W[a,b]}
 =\textcolor{#398B83}{\delta}_{[d]}[i,a]x[b].
-$$
+```
 
 The derivative has coordinate domain $[d]\times[d]\times[e]$ for
 $(i,a,b)$, even though $W$ no longer appears as an operand in its value

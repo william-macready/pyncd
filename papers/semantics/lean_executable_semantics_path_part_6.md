@@ -12,18 +12,18 @@ For the admitted exact-rational profile, a validated input, computational tensor
 equality, complete ordered schedule, and supplied coordinate-rank certificate
 now produce an inspectable finite execution with proved legal transitions, and:
 
-$$
+```math
 \begin{aligned}
 \textcolor{#A87C28}{\mathsf{Success}}(\textcolor{#398B83}{\rho})
 &\Longrightarrow
 \textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}
 \ \land\
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})=\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}},\\
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\mathclose{]\!]}}(\textcolor{#398B83}{\eta})=\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}},\\
 \textcolor{#A87C28}{\mathsf{Failed}}(\textcolor{#9D75C4}{o},\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
 &\Longrightarrow
 \textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing.
 \end{aligned}
-$$
+```
 
 `run_ranked_dichotomy` proves that the actual default driver reaches one of
 these outcomes. `result_model`, `result_unique`, and `result_denotation` refine

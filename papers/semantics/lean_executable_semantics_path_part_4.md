@@ -46,14 +46,14 @@ addition. It does not assume those equalities for every carrier.
 For [Section 23.3](tensor_logic_semantics_part_iv.md#233-stable-evaluation-from-a-partial-store),
 [`Readiness.lean`](../../leanncd/LeanNCD/Semantics/Readiness.lean) proves:
 
-$$
+```math
 \textcolor{#398B83}{\rho}|_{\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})}
 =\textcolor{#398B83}{\rho}'|_{\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})}
 \Longrightarrow
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\rrbracket}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
-=\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\rrbracket}_{\textcolor{#398B83}{\rho}',\textcolor{#5688C7}{\nu}}
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+=\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho}',\textcolor{#5688C7}{\nu}}
 \qquad\texttt{interpret\_stable}.
-$$
+```
 
 `evalWith_stable` is the analogous partial-store theorem.
 `checkReads_iff` validates the Boolean readiness check, and `ready_consistent`
@@ -82,13 +82,13 @@ one entry is selected or another operand is zero.
 using local statement tags for each defined tensor. For a fixed target $T$
 and $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$, define:
 
-$$
+```math
 \textcolor{#9D75C4}{O}_T=\coprod_{\substack{\textcolor{#9D75C4}{s}\in \textcolor{#9D75C4}{P}\\T_{\textcolor{#9D75C4}{s}}=T}}\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}},
 \qquad
 \textcolor{#5688C7}{d}_T(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})=\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu}),
 \qquad
-\textcolor{#398B83}{v}^{\textcolor{#398B83}{\rho}}_T(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})=\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\rrbracket}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
-$$
+\textcolor{#398B83}{v}^{\textcolor{#398B83}{\rho}}_T(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})=\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
+```
 
 `P.Occurrence t` is the dependent pair of a statement `Fin` tag and a
 guard-admitted valuation subtype. The mathematical global $\textcolor{#9D75C4}{\mathcal O}_{\textcolor{#9D75C4}{P}}$
@@ -99,7 +99,7 @@ tensors. Guards exclude valuations before body demand.
 | --- | --- |
 | $\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$ | `{v : Fin (P.valuations t s) // P.guard t s v = true}` |
 | $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}$, $\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}$ | `P.destination t s`, `P.body t s` |
-| $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\rrbracket}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$ | `P.outcome ops ρ t o` |
+| $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$ | `P.outcome ops ρ t o` |
 | $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$ | `P.AdmEnv ops ρ` |
 | Successful value $\textcolor{#398B83}{v}^{\textcolor{#398B83}{\rho}}_T(\textcolor{#9D75C4}{o})$ | `P.contribution ops ρ h t o`, extracted using admission proof `h` |
 | $\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)=\textcolor{#5688C7}{d}_{T!}(\textcolor{#398B83}{v}^{\textcolor{#398B83}{\rho}}_T)$ | `P.collect ops ρ h t`, directly defined using `pushforward` |
@@ -111,7 +111,7 @@ analogy attached to an imperative collector. `collect_grouped` and
 [`Models.lean`](../../leanncd/LeanNCD/Semantics/Models.lean) expresses
 [Section 20](tensor_logic_semantics_part_iii.md#20-program-models-and-functional-denotation):
 
-$$
+```math
 \textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})
 \iff
 \textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})
@@ -119,7 +119,7 @@ $$
 \ \land\
 \forall T\in\textcolor{#5688C7}{\mathrm{Def}},p,\
 \textcolor{#398B83}{\rho}(T)[p]=\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p].
-$$
+```
 
 The Lean predicate is `P.Models ops η ρ`.
 `ValidInput` requires tensor-level presence exactly for input tensors,
@@ -168,10 +168,10 @@ For [Section 26.1](tensor_logic_semantics_part_iv.md#261-basic-conservation-inva
 [`Invariants.lean`](../../leanncd/LeanNCD/Semantics/Invariants.lean) retains
 proof-only consumed values $\textcolor{#398B83}{v}_{\textcolor{#9D75C4}{o}}$ and states
 
-$$
+```math
 \textcolor{#A87C28}{\alpha}(T,p)=
 \bigoplus_{\textcolor{#9D75C4}{o}\in\textcolor{#9D75C4}{\mathcal C}_{\textcolor{#9D75C4}{P}}(T,p)\setminus \textcolor{#A87C28}{U}}\textcolor{#398B83}{v}_{\textcolor{#9D75C4}{o}}.
-$$
+```
 
 This is `conservation` via `spent`. `inputs` preserves supplied inputs;
 `published` states that each published defined fiber is exhausted and its
@@ -195,7 +195,7 @@ central implications in
 | `successful_model` | Reached completion constructs $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\in\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ |
 | `successful_unique` | Every model equals that complete $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$ |
 | `successful_admInput` | Reached success proves $\textcolor{#398B83}{\eta}\in\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P})$ |
-| `successful_denotation` | $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\vert_{\textcolor{#5688C7}{\mathrm{Out}}}$ |
+| `successful_denotation` | $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\mathclose{]\!]}}(\textcolor{#398B83}{\eta})=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\vert_{\textcolor{#5688C7}{\mathrm{Out}}}$ |
 | `failed_no_model` | Reached ready-undefined failure implies $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$ |
 
 No rank certificate, pre-existing model, or semiring multiplication law is
@@ -221,12 +221,12 @@ and [Section 26.4](tensor_logic_semantics_part_iv.md#264-finite-execution-and-pr
 [`Ranks.lean`](../../leanncd/LeanNCD/Semantics/Ranks.lean) derives dependencies
 from the existing footprints:
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)=
 \bigcup_{\textcolor{#9D75C4}{o}\in\textcolor{#9D75C4}{\mathcal C}_{\textcolor{#9D75C4}{P}}(a)}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o}),
 \qquad
 b\in\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)\Longrightarrow r(b)<r(a).
-$$
+```
 
 `P.dependencies a` uses guard-admitted occurrences in the exact destination
 fiber; `input_dependencies_empty` excludes dependencies at input addresses.
@@ -241,11 +241,11 @@ a source rank checker, or a proved equivalence with graph acyclicity.
 [`Measure.lean`](../../leanncd/LeanNCD/Semantics/Measure.lean) defines
 `pendingCount`, `unpublishedCount`, and their sum `measure`:
 
-$$
+```math
 \textcolor{#A87C28}{\mu}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
 =|\textcolor{#A87C28}{U}|+
 |\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})|.
-$$
+```
 
 `DefinedAddress` includes every defined coordinate, including nonoutputs.
 `initial_measure` proves that initially
@@ -284,12 +284,12 @@ and terminal, not an arbitrary finite prefix stopped by a scheduler.
 
 Together with existing soundness, the landed correspondence is
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}
 \quad\Longleftrightarrow\quad
 \textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}
 \qquad\text{for the coordinate-ranked fragment}.
-$$
+```
 
 Here $\Downarrow$ asserts existence of a reached successful state with complete
 store $\rho$, not evaluation by a Lean driver. Denotation agreement reuses

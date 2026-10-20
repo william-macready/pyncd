@@ -57,9 +57,9 @@ $(\textcolor{#5688C7}{\mathrm{In}},\textcolor{#5688C7}{\mathrm{Def}},\textcolor{
 a finite buffer collection $\textcolor{#C16C86}{\mathcal{B}}$ with capacities, and a finite
 command sequence
 
-$$
+```math
 (\textcolor{#C16C86}{\kappa}_0,\ldots,\textcolor{#C16C86}{\kappa}_{m-1}).
-$$
+```
 
 Each command has a kernel implementation and an annotation specifying
 its logical action. The basic action contracts are:
@@ -87,22 +87,22 @@ The specification does not require a compiler to enumerate every occurrence.
 
 For $\textcolor{#C16C86}{\mathsf{Accumulate}}(G)$ at $(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$, require
 
-$$
+```math
 G\subseteq \textcolor{#A87C28}{U},
 \qquad
 \textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})\subseteq\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})
 \quad\text{for every }\textcolor{#9D75C4}{o}\in G.
-$$
+```
 
 If every body succeeds with value $v_{\textcolor{#9D75C4}{o}}$, the logical post-state is
 $(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha}',\textcolor{#A87C28}{U}\setminus G)$, where
 
-$$
+```math
 \textcolor{#A87C28}{\alpha}'(a)
 =\textcolor{#A87C28}{\alpha}(a)\oplus
  \bigoplus_{\textcolor{#9D75C4}{o}\in G\cap\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)}v_{\textcolor{#9D75C4}{o}}
 \quad(a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}).
-$$
+```
 
 The contract leaves $\textcolor{#A87C28}{\sigma}$ unchanged. If a body is undefined, the kernel
 must explicitly fail in a way matching a reference execution ending in
@@ -111,12 +111,12 @@ $\textcolor{#A87C28}{\mathsf{Failed}}$, not produce a successful aggregate.
 
 For $\textcolor{#C16C86}{\mathsf{Publish}}(B)$, require
 
-$$
+```math
 B\cap\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})=\varnothing,
 \qquad
 \textcolor{#A87C28}{U}\cap\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)=\varnothing
 \quad\text{for every }a\in B.
-$$
+```
 
 Its logical post-state extends $\textcolor{#A87C28}{\sigma}$ by $a\mapsto\textcolor{#A87C28}{\alpha}(a)$ for all
 $a\in B$, leaving $\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U}$ unchanged.
@@ -188,10 +188,10 @@ still contributes to it.
 
 A running concrete state has the form
 
-$$
+```math
 \textcolor{#C16C86}{\mathsf{C}}=(\textcolor{#C16C86}{\mathsf{pc}},\textcolor{#C16C86}{M},\textcolor{#C16C86}{\chi}),
 \qquad \textcolor{#C16C86}{\mathsf{pc}}\in[m+1],
-$$
+```
 
 where $\textcolor{#C16C86}{M}$ is the memory from [Section 5.3](tensor_logic_semantics_part_i.md#53-logical-addresses-physical-slots-and-proof-only-history) and $\textcolor{#C16C86}{\chi}$ is the plan's specified
 control and layout metadata. It is not a second source-language environment.
@@ -200,9 +200,9 @@ stored as runtime fields.
 
 For $\textcolor{#C16C86}{\mathsf{pc}}<m$, executing $\textcolor{#C16C86}{\kappa}_{\textcolor{#C16C86}{\mathsf{pc}}}$ defines a transition
 
-$$
+```math
 \textcolor{#C16C86}{\mathsf{C}}\textcolor{#C16C86}{\longrightarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#C16C86}{\mathsf{C}}'.
-$$
+```
 
 A successful command advances $\textcolor{#C16C86}{\mathsf{pc}}$ by one.
 An undefined source contribution produces a terminal
@@ -233,11 +233,11 @@ The layout is justified by plan metadata and proof annotations; it may
 be known from the command position.
 Whenever a resource is mapped:
 
-$$
+```math
 \textcolor{#C16C86}{M}[\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}(\textcolor{#A87C28}{\mathsf{pub}}(a))]=\textcolor{#A87C28}{\sigma}(a),
 \qquad
 \textcolor{#C16C86}{M}[\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}(\textcolor{#A87C28}{\mathsf{acc}}(a))]=\textcolor{#A87C28}{\alpha}(a),
-$$
+```
 
 with the respective side conditions
 $a\in\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$ and
@@ -249,21 +249,21 @@ More permissive aliasing needs a separate justification.
 
 Define the output address set
 
-$$
+```math
 \textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Out}}}
 =\{(T,p)\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\mid T\in\textcolor{#5688C7}{\mathrm{Out}}\}.
-$$
+```
 
 At $(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$, every published address in
 
-$$
+```math
 \textcolor{#A87C28}{\mathop{\mathrm{Need}}\nolimits}_{\mathrm{pub}}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{U})
 =\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})\cap
  \left(
  \textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Out}}}
  \cup\bigcup_{\textcolor{#9D75C4}{o}\in \textcolor{#A87C28}{U}}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})
  \right)
-$$
+```
 
 must have a mapped $\textcolor{#A87C28}{\mathsf{pub}}$ resource.
 All outputs remain concretely represented once published, and every
@@ -275,13 +275,13 @@ For $a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C
 that has already received a contribution must
 retain a mapped accumulator:
 
-$$
+```math
 a\notin\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma}),
 \quad
 \textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)\setminus \textcolor{#A87C28}{U}\ne\varnothing
 \quad\Longrightarrow\quad
 \textcolor{#A87C28}{\mathsf{acc}}(a)\in\mathop{\mathrm{dom}}\nolimits(\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}).
-$$
+```
 
 An untouched accumulator has the known value $0_K$ by Lemma 26.1 and
 need not yet occupy a slot. Before a kernel updates or reads its physical
@@ -369,9 +369,9 @@ must also be initialized, typed, and protected from conflicting writes.
 
 Write
 
-$$
+```math
 \textcolor{#C16C86}{\mathcal{R}}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}},\textcolor{#A87C28}{\mathsf{Conf}})
-$$
+```
 
 for the plan's representation relation. It includes:
 
@@ -391,10 +391,10 @@ $\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi
 output environment from concrete representations and signature metadata.
 For every output coordinate:
 
-$$
+```math
 \textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})(T)[p]
 =\textcolor{#C16C86}{M}[\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}(\textcolor{#A87C28}{\mathsf{pub}}((T,p)))].
-$$
+```
 
 An output with empty coordinate domain is reconstructed as its unique
 empty function with the declared signature; it requires no slots.
@@ -535,14 +535,14 @@ pin the order. Runtime execution does not detect a retire of an output (the run 
 
 The initialization obligation is
 
-$$
+```math
 \textcolor{#C16C86}{\mathcal{R}}_{\textcolor{#C16C86}{\Pi}}(
  \textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta}),\textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})).
-$$
+```
 
 For each successful concrete step, require
 
-$$
+```math
 \textcolor{#C16C86}{\mathcal{R}}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}},\textcolor{#A87C28}{\mathsf{Conf}})
 \ \land\
 \textcolor{#C16C86}{\mathsf{C}}\textcolor{#C16C86}{\longrightarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#C16C86}{\mathsf{C}}'
@@ -551,7 +551,7 @@ $$
 \textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\longrightarrow}^{*}\textcolor{#A87C28}{\mathsf{Conf}}'
 \ \land\
 \textcolor{#C16C86}{\mathcal{R}}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}}',\textcolor{#A87C28}{\mathsf{Conf}}').
-$$
+```
 
 The matching reference segment must implement the command's declared
 annotations. A batch may match many contribution steps; a block publication
@@ -588,10 +588,10 @@ fused folds receive every expanded-boundary layout.
 If a related concrete state steps to $\textcolor{#C16C86}{\mathsf{PlanFailed}}(\textcolor{#9D75C4}{o})$, require
 a matching reference segment ending in
 
-$$
+```math
 \textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\longrightarrow}^{*}
 \textcolor{#A87C28}{\mathsf{Failed}}(\textcolor{#9D75C4}{o},\textcolor{#A87C28}{\sigma}',\textcolor{#A87C28}{\alpha}',\textcolor{#A87C28}{U}').
-$$
+```
 
 For a fused command that fails at its $j$-th annotation, the matching reference segment is the segment of
 the $j-1$ preceding annotations of that command followed by the failing step. Whether the concrete memory
@@ -646,9 +646,9 @@ $\textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}
 $\textcolor{#C16C86}{\mathsf{pc}}=m$ in $\textcolor{#C16C86}{\mathsf{C}}$. Then the related reference state
 $\textcolor{#A87C28}{\mathsf{Conf}}=(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$ is complete and
 
-$$
+```math
 \textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
-$$
+```
 
 *Argument.* The run executed every command. By the agreement clause of the
 representation relation ([Section 30.4](#304-the-refinement-relation-and-output-decoder), item 2), $\textcolor{#A87C28}{\mathsf{Conf}}$ has consumed and
@@ -703,17 +703,17 @@ well-typed.
   such run ends in decoded success or $\textcolor{#C16C86}{\mathsf{PlanFailed}}$, and the converse
   of (a) holds:
 
-$$
+```math
 \textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#398B83}{\zeta}
 \quad\Longleftrightarrow\quad
 \exists\textcolor{#398B83}{\rho}\;.\;
 \textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}
 \ \land\ \textcolor{#398B83}{\zeta}=\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
-$$
+```
 
 Equivalently, in the error-free profile, successful plan inputs are precisely
 $\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P})$, and on that domain the decoded output equals
-$\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})$. The model-set formulation avoids applying
+$\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\mathclose{]\!]}}(\textcolor{#398B83}{\eta})$. The model-set formulation avoids applying
 the partial denotation outside its domain.
 
 *Argument.* For (a), initialization and successful-step simulation
@@ -769,7 +769,7 @@ error-free).** For a `Valid` plan and a well-typed $\eta$, with the run `runPlan
 
 - (a) `done_correct`: if the run ends `done m M'`, then
   $\mathrm{Models}(P,\eta)=\{\rho_c\}$, $\mathrm{Decode}_m(M')=\rho_c|_{\mathrm{Out}}$, and that equals
-  $\llbracket P\rrbracket(\eta)$.
+  $\mathopen{[\![} P\mathclose{]\!]}(\eta)$.
 - (b) `failed_correct`: if the run ends `failed o pc M'`, then $\mathrm{Models}(P,\eta)=\varnothing$, as
   stated above. Separately, failure matching holds with the same occurrence $o$
   ([Section 31.3](#313-failure-matching-progress-and-finishing)); `M'` is the memory before the failing
@@ -802,9 +802,9 @@ command.
 **Lemma 32.1 (batched accumulation refines individual steps).**
 For a ready group $G$ with all successful values $v_{\textcolor{#9D75C4}{o}}$, define
 
-$$
+```math
 \textcolor{#398B83}{\Delta}_G(a)=\bigoplus_{\textcolor{#9D75C4}{o}\in G\cap\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)}v_{\textcolor{#9D75C4}{o}}.
-$$
+```
 
 Enumerate $G$ in any order and apply $\textcolor{#A87C28}{\mathrm{CONTRIBUTE}}$ once per member.
 Every member stays ready because these steps leave $\textcolor{#A87C28}{\sigma}$ unchanged.
@@ -851,11 +851,11 @@ An array kernel must implement [Section 18](tensor_logic_semantics_part_iii.md#1
 complete arguments, primitive domains, and complete-array selection.
 In particular, computing only the selected coordinate of
 
-$$
+```math
 \textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
 \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[2]}(\log(X[j])),(0)
 \right)
-$$
+```
 
 is not valid if the other tabulated coordinate has an invalid logarithm,
 as in [Section 18.5](tensor_logic_semantics_part_iii.md#185-definedness-examples-and-transformation-limits).
@@ -942,10 +942,10 @@ This is a constructed bounded scan certificate, not automatic source/scan recogn
 
 If $H$ is internal and the designated output is defined by
 
-$$
+```math
 \mathop{\mathrm{Last}}\nolimits[i]\textcolor{#9D75C4}{\mathrel{+}=}H[i,N],
 \qquad i\in[d],
-$$
+```
 
 the plan can use two state buffers of capacity $d$:
 one for the published current slice, the other for the next accumulator.

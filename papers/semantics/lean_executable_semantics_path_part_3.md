@@ -26,9 +26,9 @@ coordinate set is the singleton, not the empty set.
 
 A coordinate map $\textcolor{#5688C7}{f}:\textcolor{#5688C7}{I}\to \textcolor{#5688C7}{J}$ induces a contravariant read map
 
-$$
+```math
 \textcolor{#5688C7}{f}^*:K^{\textcolor{#5688C7}{J}}\to K^{\textcolor{#5688C7}{I}},\qquad \textcolor{#5688C7}{f}^*(\textcolor{#398B83}{v})=\textcolor{#398B83}{v}\circ \textcolor{#5688C7}{f}.
-$$
+```
 
 Thus $\textcolor{#5688C7}{I}\mapsto K^{\textcolor{#5688C7}{I}}$ has the contravariant finite-set organization
 $\mathop{\mathrm{FinSet}}\nolimits^{op}\to\mathop{\mathrm{Set}}\nolimits$, or into additive commutative
@@ -53,10 +53,10 @@ instantiate the full $D$-graded colored PROP in
 Given finite occurrences $\textcolor{#9D75C4}{O}$, a destination map $\textcolor{#5688C7}{d}:\textcolor{#9D75C4}{O}\to \textcolor{#5688C7}{I}$, and an additive
 commutative monoid $K$, define
 
-$$
+```math
 \textcolor{#5688C7}{d}_!:K^{\textcolor{#9D75C4}{O}}\to K^{\textcolor{#5688C7}{I}},\qquad
 \textcolor{#5688C7}{d}_!(\textcolor{#398B83}{v})(p)=\bigoplus_{\substack{\textcolor{#9D75C4}{o}\in \textcolor{#9D75C4}{O}\\d(\textcolor{#9D75C4}{o})=p}}\textcolor{#398B83}{v}(\textcolor{#9D75C4}{o}).
-$$
+```
 
 This is covariant collection, not overwrite. `pushforward d v` implements it
 as a finite sum with a destination filter. The landed laws are:
@@ -84,11 +84,11 @@ formula in [Section 17.2](tensor_logic_semantics_part_ii.md#172-canonical-fiber-
 Using that section's global valuation space, index strings, and projections,
 write it as
 
-$$
+```math
 \textcolor{#398B83}{V}_{\textcolor{#5688C7}{L}}=(\textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}})_!
 \left(\bigotimes_{r=1}^{m}
   \textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}_r}^{*}(\textcolor{#398B83}{\rho}(T_r))\right).
-$$
+```
 
 Here each pullback puts an operand on the common global valuation domain;
 the product is pointwise semiring multiplication; output pushforward combines
@@ -106,11 +106,11 @@ theorems preserve factor order, repeated slots, empty fibers and multiplicity.
 At fixed $\textcolor{#398B83}{\rho}$ and admitted domain $\textcolor{#5688C7}{D}\subseteq\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma})$,
 an expression has the mathematical form
 
-$$
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\rrbracket}_{\textcolor{#398B83}{\rho}}:
+```math
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\mathclose{]\!]}}_{\textcolor{#398B83}{\rho}}:
 \textcolor{#5688C7}{D}\to\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau}),\qquad
 \textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau})=\textcolor{#5688C7}{\tau}\sqcup\{\textcolor{#398B83}{\bot}\}.
-$$
+```
 
 This is a partial map of sets, represented by an arrow in the Kleisli category
 of `Option`. Bind propagates undefinedness; pure embeds successful values.
@@ -120,11 +120,11 @@ partial map from the argument product to its result type.
 
 Strict assembly uses
 
-$$
+```math
 \textcolor{#398B83}{\mathop{\mathrm{sequence}}\nolimits}:
 \prod_i\textcolor{#398B83}{\mathop{\mathrm{Option}}\nolimits}(A_i)
 \to\textcolor{#398B83}{\mathop{\mathrm{Option}}\nolimits}\left(\prod_i A_i\right).
-$$
+```
 
 All actual components must succeed; the empty product succeeds.
 [`Interpret.lean`](../../leanncd/LeanNCD/Semantics/Interpret.lean) implements

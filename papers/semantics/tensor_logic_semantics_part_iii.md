@@ -49,9 +49,9 @@ programs and cyclic equation systems.
 For an expression value type $\textcolor{#5688C7}{\tau}$ from [Section 13.2](tensor_logic_semantics_part_ii.md#132-value-types-and-primitive-signatures), define the result
 space
 
-$$
+```math
 \textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau})=\textcolor{#5688C7}{\tau}\sqcup\{\textcolor{#398B83}{\bot}\}.
-$$
+```
 
 This is a tagged disjoint union. A member of $\textcolor{#5688C7}{\tau}$ is a successful
 value; $\textcolor{#398B83}{\bot}$ denotes an undefined result. We write $v$ for the
@@ -65,27 +65,27 @@ For a structurally well-formed expression
 $\textcolor{#5688C7}{\Sigma};\textcolor{#5688C7}{\Gamma};\textcolor{#5688C7}{D}\vdash \textcolor{#9D75C4}{E}:\textcolor{#5688C7}{\tau}$, a complete environment $\textcolor{#398B83}{\rho}$, and
 $\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}$, define
 
-$$
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\in\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau}).
-$$
+```math
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\in\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau}).
+```
 
 Index expressions and predicates have the total interpretations already
-introduced: integer arithmetic for $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}\rrbracket_{\textcolor{#5688C7}{\nu}}$ and
-Boolean operations for $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{Q}\rrbracket_{\textcolor{#5688C7}{\nu}}$.
+introduced: integer arithmetic for $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}$ and
+Boolean operations for $\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}$.
 The result space is needed for value-dependent primitive applications,
 not to excuse malformed tensor accesses.
 
 Use the notation
 
-$$
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow v
-$$
+```math
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow v
+```
 
 to mean that the result is the successful value $v$, and
 
-$$
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot}
-$$
+```math
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot}
+```
 
 to mean that it is undefined. The downward arrow on an expression
 means definedness, not operational termination.
@@ -96,51 +96,51 @@ machine execution in [Part IV](tensor_logic_semantics_part_iv.md#part-iv-operati
 
 Scalar literals, named tensor reads, and Iverson values are interpreted by
 
-$$
-\textcolor{#398B83}{\llbracket} c_K\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=c_K,
-$$
+```math
+\textcolor{#398B83}{\mathopen{[\![}} c_K\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=c_K,
+```
 
-$$
-\textcolor{#398B83}{\llbracket} T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k]\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+```math
+\textcolor{#398B83}{\mathopen{[\![}} T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k]\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \textcolor{#398B83}{\rho}(T)[
- \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_1\rrbracket_{\textcolor{#5688C7}{\nu}},\ldots,
- \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_k\rrbracket_{\textcolor{#5688C7}{\nu}}],
-$$
+ \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}},\ldots,
+ \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_k\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}],
+```
 
-$$
-\textcolor{#398B83}{\llbracket}\mathbf{1}_{\textcolor{#9D75C4}{Q}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+```math
+\textcolor{#398B83}{\mathopen{[\![}}\mathbf{1}_{\textcolor{#9D75C4}{Q}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
-1_K,&\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{Q}\rrbracket_{\textcolor{#5688C7}{\nu}}=\mathrm{true},\\
-0_K,&\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{Q}\rrbracket_{\textcolor{#5688C7}{\nu}}=\mathrm{false}.
+1_K,&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}=\mathrm{true},\\
+0_K,&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{Q}\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}}=\mathrm{false}.
 \end{cases}
-$$
+```
 
 The read is valid by the structural premises and $\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}$.
 For a scalar tensor, its index tuple is empty.
 
 For $\star\in\{\oplus,\otimes\}$, define the strict lifting
 
-$$
+```math
 \textcolor{#398B83}{\mathop{\mathrm{lift}}\nolimits}_2(\star,u,v)
 =
 \begin{cases}
 u\star v,&u,v\text{ are successful scalar values},\\
 \textcolor{#398B83}{\bot},&\text{otherwise}.
 \end{cases}
-$$
+```
 
 Then
 
-$$
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_1\star \textcolor{#9D75C4}{E}_2\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+```math
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_1\star \textcolor{#9D75C4}{E}_2\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \textcolor{#398B83}{\mathop{\mathrm{lift}}\nolimits}_2\left(
- \star,\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_1\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
- \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_2\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+ \star,\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_1\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
+ \textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_2\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 \right).
-$$
+```
 
 Both operands must be defined, even when one is $0_K$.
 This lifting is not an assertion that
@@ -151,18 +151,18 @@ not a successful zero.
 ### 18.3 Reduction and tabulation
 
 For a reduction, let
-$v_k=\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}[j\mapsto k]}$ for each
+$v_k=\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}[j\mapsto k]}$ for each
 $k\in \textcolor{#5688C7}{I}_j$. Define
 
-$$
-\textcolor{#398B83}{\llbracket}\bigoplus_{j\in \textcolor{#5688C7}{I}_j}\textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+```math
+\textcolor{#398B83}{\mathopen{[\![}}\bigoplus_{j\in \textcolor{#5688C7}{I}_j}\textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
 \displaystyle\bigoplus_{k\in \textcolor{#5688C7}{I}_j}v_k,
  &\text{every }v_k\text{ is successful},\\
 \textcolor{#398B83}{\bot},&\text{otherwise}.
 \end{cases}
-$$
+```
 
 Here $\bigoplus_{k\in\textcolor{#5688C7}{I}_j}v_k$ is the fold of $\oplus$ over the ascending enumeration of
 $\textcolor{#5688C7}{I}_j$, which needs no law; it equals the finite combination of
@@ -174,24 +174,24 @@ cause undefinedness.
 For tabulation, let $\textcolor{#5688C7}{J}=\textcolor{#5688C7}{I}_1\times\cdots\times \textcolor{#5688C7}{I}_m$ and define the extended
 valuation for $p=(p_1,\ldots,p_m)\in \textcolor{#5688C7}{J}$ by
 
-$$
+```math
 \textcolor{#5688C7}{\nu}_p=\textcolor{#5688C7}{\nu}[j_1\mapsto p_1,\ldots,j_m\mapsto p_m].
-$$
+```
 
 The tabulation result is
 
-$$
-\textcolor{#398B83}{\llbracket}
+```math
+\textcolor{#398B83}{\mathopen{[\![}}
 \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j_1\in \textcolor{#5688C7}{I}_1,\ldots,j_m\in \textcolor{#5688C7}{I}_m}(\textcolor{#9D75C4}{E})
-\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
 \textcolor{#398B83}{V},&
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}_p}\downarrow \textcolor{#398B83}{V}[p]
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}_p}\downarrow \textcolor{#398B83}{V}[p]
 \text{ for every }p\in \textcolor{#5688C7}{J},\\
 \textcolor{#398B83}{\bot},&\text{some body result is undefined}.
 \end{cases}
-$$
+```
 
 Here $\textcolor{#398B83}{V}:\textcolor{#5688C7}{J}\to K$ is a complete array value.
 An empty $\textcolor{#5688C7}{J}$ produces the unique empty array successfully.
@@ -200,17 +200,17 @@ These binders use exactly the lifted domains from [Section 14.1](tensor_logic_se
 ### 18.4 Array selection and primitive application
 
 For array selection, let
-$p=(\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_1\rrbracket_{\textcolor{#5688C7}{\nu}},\ldots,\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_m\rrbracket_{\textcolor{#5688C7}{\nu}})$.
+$p=(\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_1\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}},\ldots,\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{e}_m\mathclose{]\!]}_{\textcolor{#5688C7}{\nu}})$.
 Then
 
-$$
-\textcolor{#398B83}{\llbracket}\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m))\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+```math
+\textcolor{#398B83}{\mathopen{[\![}}\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m))\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
-\textcolor{#398B83}{V}[p],&\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow \textcolor{#398B83}{V},\\
-\textcolor{#398B83}{\bot},&\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot}.
+\textcolor{#398B83}{V}[p],&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow \textcolor{#398B83}{V},\\
+\textcolor{#398B83}{\bot},&\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot}.
 \end{cases}
-$$
+```
 
 The structural rule guarantees that $p$ belongs to the array domain.
 Selection requires the array expression to denote a complete value.
@@ -218,10 +218,10 @@ It does not bypass an undefined element of a tabulation by selecting
 a different coordinate.
 
 For a primitive $f$ with arity $q$, interpret its operands and let
-$u_r=\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_r\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$. Define
+$u_r=\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_r\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$. Define
 
-$$
-\textcolor{#398B83}{\llbracket} f(\textcolor{#9D75C4}{E}_1,\ldots,\textcolor{#9D75C4}{E}_q)\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+```math
+\textcolor{#398B83}{\mathopen{[\![}} f(\textcolor{#9D75C4}{E}_1,\ldots,\textcolor{#9D75C4}{E}_q)\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
 f(u_1,\ldots,u_q),
@@ -229,7 +229,7 @@ f(u_1,\ldots,u_q),
  (u_1,\ldots,u_q)\in\textcolor{#398B83}{\mathcal{D}}_f,\\
 \textcolor{#398B83}{\bot},&\text{otherwise}.
 \end{cases}
-$$
+```
 
 The primitive's signature guarantees the successful result has its
 declared type. Its domain $\textcolor{#398B83}{\mathcal{D}}_f$ determines definedness;
@@ -241,29 +241,29 @@ domain-membership rule applies.
 
 Work over exact reals. The following results illustrate strictness:
 
-$$
-\textcolor{#398B83}{\llbracket}\log(-1)\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot},
+```math
+\textcolor{#398B83}{\mathopen{[\![}}\log(-1)\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot},
 \qquad
-\textcolor{#398B83}{\llbracket} 0\cdot\log(-1)\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot},
-$$
+\textcolor{#398B83}{\mathopen{[\![}} 0\cdot\log(-1)\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=\textcolor{#398B83}{\bot},
+```
 
-$$
-\textcolor{#398B83}{\llbracket}\bigoplus_{j\in[0]}\log(-1)\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=0.
-$$
+```math
+\textcolor{#398B83}{\mathopen{[\![}}\bigoplus_{j\in[0]}\log(-1)\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}=0.
+```
 
 The empty reduction has no body instances. Multiplication by zero,
 by contrast, still has an undefined operand.
 
 If $X$ has shape $(2)$ with $\textcolor{#398B83}{\rho}(X)[0]=4$ and $\textcolor{#398B83}{\rho}(X)[1]=-1$, then
 
-$$
-\textcolor{#398B83}{\llbracket}
+```math
+\textcolor{#398B83}{\mathopen{[\![}}
 \textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
  \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[2]}(\log(X[j])),(0)
 \right)
-\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =\textcolor{#398B83}{\bot}.
-$$
+```
 
 The selected coordinate would be positive before taking its logarithm,
 but the array construction includes the invalid logarithm at coordinate
@@ -287,18 +287,18 @@ is proved in Lean for the bounded source fragment only (see the status table).
 
 For a structurally well-formed program $\textcolor{#9D75C4}{P}$, define
 
-$$
+```math
 \textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})
 =
 \left\{
 \textcolor{#398B83}{\rho}\ \middle|\
 \begin{array}{l}
 \textcolor{#398B83}{\rho}\text{ is a complete, signature-respecting environment, and}\\
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\ne\textcolor{#398B83}{\bot}
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\ne\textcolor{#398B83}{\bot}
 \text{ for every }(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}
 \end{array}
 \right\}.
-$$
+```
 
 Membership says all actual contribution bodies are defined. It does
 not yet say the environment satisfies the program's equations.
@@ -313,13 +313,13 @@ In contrast, a present zero-valued contribution must still be defined.
 For $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$, define the contribution tensor
 of one statement:
 
-$$
+```math
 \textcolor{#398B83}{V}_{\textcolor{#9D75C4}{s}}^{\textcolor{#398B83}{\rho}}[p]
 =
 \bigoplus_{\substack{\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}\\\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})=p}}
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
 \qquad p\in\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T_{\textcolor{#9D75C4}{s}}).
-$$
+```
 
 Each term here is a successful scalar value; $\textcolor{#398B83}{\bot}$ is never treated
 as a summand.
@@ -327,20 +327,20 @@ An empty fiber gives $0_K$.
 
 For every defined tensor $T$, define its collected value:
 
-$$
+```math
 \textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]
 =
 \bigoplus_{(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(T,p)}
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
-$$
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\mathclose{]\!]}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
+```
 
 Equivalently, partitioning the occurrences by statement gives
 
-$$
+```math
 \textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]
 =
 \bigoplus_{\substack{\textcolor{#9D75C4}{s}\in \textcolor{#9D75C4}{P}\\T_{\textcolor{#9D75C4}{s}}=T}}\textcolor{#398B83}{V}_{\textcolor{#9D75C4}{s}}^{\textcolor{#398B83}{\rho}}[p].
-$$
+```
 
 The collection is indexed by statement occurrences, so duplicate
 statements remain duplicate summands. In the Boolean interpretation,
@@ -374,9 +374,9 @@ meaning.
 For the normalized pure-einsum statement of [Section 17.3](tensor_logic_semantics_part_ii.md#173-connection-to-the-contribution-core),
 the intended local correspondence is
 
-$$
+```math
 \textcolor{#398B83}{V}_{\textcolor{#9D75C4}{s}}^{\textcolor{#398B83}{\rho}}[p]=\textcolor{#398B83}{V}_{\textcolor{#5688C7}{L}}[p]
-$$
+```
 
 for every output coordinate, with $\textcolor{#398B83}{V}_{\textcolor{#5688C7}{L}}$ computed from the same operand
 values in $\textcolor{#398B83}{\rho}$ by [Section 17.2](tensor_logic_semantics_part_ii.md#172-canonical-fiber-semantics).
@@ -414,17 +414,17 @@ Deleting a duplicate statement does not generally preserve it.
 Collection does not move primitive operators across sums.
 Two contributions $f(A[i])$ and $f(B[i])$ give
 
-$$
+```math
 f(\textcolor{#398B83}{\rho}(A)[i])\oplus f(\textcolor{#398B83}{\rho}(B)[i]),
-$$
+```
 
 provided both applications are defined.
 An intermediate defined by contributions $A[i]$ and $B[i]$, followed
 by a read through $f$, is related by the program equations to
 
-$$
+```math
 f(\textcolor{#398B83}{\rho}(A)[i]\oplus\textcolor{#398B83}{\rho}(B)[i]).
-$$
+```
 
 These are equal only under an appropriate property of $f$ on the
 relevant values. The semantics assumes no such property.
@@ -439,7 +439,7 @@ in $\textcolor{#5688C7}{\mathrm{In}}$, and its identifier domain is exactly $\te
 
 For such an $\textcolor{#398B83}{\eta}$, define
 
-$$
+```math
 \textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})
 =
 \left\{
@@ -451,7 +451,7 @@ $$
 \text{ and }p\in\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)
 \end{array}
 \right\}.
-$$
+```
 
 All defined tensors participate in these equations, not just
 designated outputs. Zero defaults follow from empty contribution
@@ -466,20 +466,20 @@ That set can be empty, a singleton, or contain several environments.
 
 The same definition can be expressed using the partial map
 
-$$
+```math
 \textcolor{#398B83}{\Phi}_{\textcolor{#9D75C4}{P}}:\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})\to
 \{\text{complete, signature-respecting environments}\},
-$$
+```
 
 given by
 
-$$
+```math
 \textcolor{#398B83}{\Phi}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)=
 \begin{cases}
 \textcolor{#398B83}{\rho}(T),&T\in\textcolor{#5688C7}{\mathrm{In}},\\
 \textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T),&T\in\textcolor{#5688C7}{\mathrm{Def}}.
 \end{cases}
-$$
+```
 
 It is partial relative to the space of all complete environments,
 because its domain is $\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$.
@@ -491,9 +491,9 @@ $T=0$, at which the same contribution is undefined.
 A model is exactly an environment $\textcolor{#398B83}{\rho}$ extending $\textcolor{#398B83}{\eta}$ for which
 $\textcolor{#398B83}{\Phi}_{\textcolor{#9D75C4}{P}}$ is defined and
 
-$$
+```math
 \textcolor{#398B83}{\Phi}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})=\textcolor{#398B83}{\rho}.
-$$
+```
 
 This is a fixed-point characterization of simultaneous equations,
 not an instruction to iterate $\textcolor{#398B83}{\Phi}_{\textcolor{#9D75C4}{P}}$ from zero.
@@ -511,37 +511,37 @@ alone does not determine which identifiers are inputs or outputs.
 
 Define the set of **functionally admissible inputs** by
 
-$$
+```math
 \textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P})
 =
 \{\textcolor{#398B83}{\eta}\in\textcolor{#398B83}{\mathop{\mathrm{Input}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}
 \mid\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})
 \text{ contains exactly one environment}\}.
-$$
+```
 
 For $\textcolor{#398B83}{\eta}\in\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P})$ with unique model $\textcolor{#398B83}{\rho}_{\textcolor{#398B83}{\eta}}$,
 define
 
-$$
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})=\textcolor{#398B83}{\rho}_{\textcolor{#398B83}{\eta}}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
-$$
+```math
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\mathclose{]\!]}}(\textcolor{#398B83}{\eta})=\textcolor{#398B83}{\rho}_{\textcolor{#398B83}{\eta}}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
+```
 
 This gives a partial function
 
-$$
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}:
+```math
+\textcolor{#398B83}{\mathopen{[\![}} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\mathclose{]\!]}}:
 \textcolor{#398B83}{\mathop{\mathrm{Input}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}
 \rightharpoonup\textcolor{#398B83}{\mathop{\mathrm{Output}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}.
-$$
+```
 
 Here the function domain is precisely $\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P})$.
 If an application specifies an input class
 $\textcolor{#398B83}{\mathcal{A}}\subseteq\textcolor{#398B83}{\mathop{\mathrm{Input}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$, total functional
 meaning on that class requires
 
-$$
+```math
 \textcolor{#398B83}{\mathcal{A}}\subseteq\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P}).
-$$
+```
 
 The unique-model criterion is deliberately stronger than uniqueness
 of outputs alone. Several models might agree on all designated outputs
@@ -588,11 +588,11 @@ s_2: T[i] = X[i]    # i in [2]
 Every body is defined. For every candidate environment extending
 the inputs, the collected values are
 
-$$
+```math
 \textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[0]=4,
 \qquad
 \textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[1]=10.
-$$
+```
 
 The model equations therefore force the unique output $T=(4,10)$.
 There is no previous value of $T$ added to those entries.
@@ -613,9 +613,9 @@ If those inputs instead contribute to `Pre`, and the only contribution
 to $T[i]$ is $\mathop{\mathrm{ReLU}}\nolimits(\mathop{\mathrm{Pre}}\nolimits[i])$, the model
 equations force
 
-$$
+```math
 \mathop{\mathrm{Pre}}\nolimits[i]=0,\qquad T[i]=0.
-$$
+```
 
 The distinction follows from collected equations, not from the order
 in which the statements are listed.
@@ -626,23 +626,23 @@ Let $X$ be a real input of shape $(2)$ with values $4,-1$, and let
 $Y$ be a defined output of shape $(2)$.
 The guarded core statement
 
-$$
+```math
 \text{for }i\in[2]\text{ where }i<1:
 \quad Y[i]\textcolor{#9D75C4}{\mathrel{+}=}\log(X[i])
-$$
+```
 
 has only the occurrence $i=0$. Its unique model gives
 
-$$
+```math
 Y[0]=\log(4),\qquad Y[1]=0.
-$$
+```
 
 Replacing the guard by an Iverson multiplier gives
 
-$$
+```math
 \text{for }i\in[2]:
 \quad Y[i]\textcolor{#9D75C4}{\mathrel{+}=}\mathbf{1}_{i<1}\log(X[i]).
-$$
+```
 
 Now $i=1$ is an actual occurrence. Its body is undefined, so no
 environment extending these inputs belongs to
@@ -677,11 +677,11 @@ For the finite-history program in [Section 11.4](tensor_logic_semantics_part_i.m
 $F:\mathbb{R}^{[d]}\to\mathbb{R}^{[d]}$ is total.
 The collected equations are
 
-$$
+```math
 H_0=X+Z,
 \qquad
 H_{l+1}=X+F(H_l)\quad(l\in[N]).
-$$
+```
 
 They determine a unique history for every well-typed $X,Z$:
 construct $H_0$, then the successive slices. Induction on time shows
@@ -692,9 +692,9 @@ each constructed slice is defined and has the required domain.
 For $d=1$, $N=2$, $X[0]=2$, $Z[0]=3$, and $F(h)[0]=2h[0]$, the
 history entries are
 
-$$
+```math
 H[0,0]=5,\qquad H[0,1]=12,\qquad H[0,2]=26.
-$$
+```
 
 When $N=0$, only the base slice is present. The recurrence statement
 has no occurrences and does not create an additional equation.
