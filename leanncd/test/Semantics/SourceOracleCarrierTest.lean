@@ -153,4 +153,36 @@ algebra, which the all-nonzero rows above cannot tell from a constant. -/
 #guard ((0 : OrAnd) + 1).val == true
 #guard ((1 : OrAnd) * 0).val == false
 
+/-! The toy carrier through the CORE leg (`runSourceAt`, `Registry.none`), selected by the extended
+table. The destination `Y` is f32 and the aggregation `max`, so `withToy` picks `orAnd` (standard
+tables would pick max-plus). Same hand values as the oracle rows above, read through the toy's own
+`observe` (`true` is `fin 1`, `false` is `fin 0`). The third row zeroes two inputs, which only a
+toy `ofRat` that really maps `0` to `false` can reproduce (the all-nonzero rows cannot tell it from
+a constant). -/
+private def toyCoreSnap (s : SourceSnapshot) : SourceSnapshot :=
+  { s with resolved := { s.resolved with
+      decls := s.resolved.decls.map fun
+        | .typedTensor _ "Y" ax => .typedTensor .f32 "Y" ax
+        | d => d
+      stmts := s.resolved.stmts.map fun
+        | .assign n sl r => .assign n sl { r with agg := .max }
+        | st => st } }
+
+private def toyCore (s : SourceSnapshot) : String :=
+  match admitSourceSorted (toyCoreSnap s) withToy with
+  | .error d => s!"refused {repr d.cause}"
+  | .ok (source, S) =>
+    match runSourceAt S.carrier source (Registry.none S.K) with
+    | .error t => s!"input presence {t.val}"
+    | .ok result => match result.result.outcome with
+      | .complete c _ =>
+        S.name ++ " " ++ toString (repr (((Debug.observeTensorsAt source (Registry.none S.K)
+          S.carrier.observe c).find? (·.declaration == 5)).map (·.values)))
+      | _ => "core leg incomplete"
+
+#guard toyCore contraction == "orAnd some [some 1, some 1, some 1, some 1]"
+#guard toyCore strided == "orAnd some [some 1, some 0, some 1, some 0, some 1, some 0, some 1]"
+#guard toyCore { contraction with inputs := [⟨3, [4], [0, 2, 0, 4]⟩, ⟨4, [3], [1, 10, 100]⟩] } ==
+  "orAnd some [some 0, some 1, some 0, some 1]"
+
 end SourceOracleCarrierTest

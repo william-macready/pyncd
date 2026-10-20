@@ -171,5 +171,18 @@
   "expect": [
    "SourceSortedAuditTest.lean:90:0"
   ]
+ },
+ {
+  "label": "T3-M3 Core input binding shift (killed ONLY by the toy-carrier Core row with zeroed inputs)",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Schedule.lean",
+  "old": "C.ofRat ((source.source.inputs.buffers t h).value p)",
+  "new": "C.ofRat ((source.source.inputs.buffers t h).value p + 1)",
+  "targets": [
+   "Semantics.SourceOracleCarrierTest"
+  ],
+  "expect": [
+   "SourceOracleCarrierTest.lean:185:0"
+  ]
  }
 ]

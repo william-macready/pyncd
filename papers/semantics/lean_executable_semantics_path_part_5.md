@@ -15,7 +15,7 @@
 The first source slice is described in
 [Section 4.7](lean_executable_semantics_path_part_4.md#47-bounded-source-correspondence-and-differential-debugging). The
 remaining source work is broader than that finite bare-slot fragment: scans,
-marked arrays and slices, affine reads (affine writes are covered by the S2a oracle (landed on local main, merge 7a551faa), without a raw-parse theorem), guards and Iverson factors, nonlinear
+marked arrays and slices, affine reads (affine writes are covered by the S2a oracle (landed, merge 7a551faa), without a raw-parse theorem), guards and Iverson factors, nonlinear
 primitives and their before-versus-after-collection boundary, unpinned dimension
 inference, general expression substitution with renaming applied by admission,
 and rank synthesis, plus schedule construction for programs outside the fragment.

@@ -128,6 +128,13 @@ commit `79524517` was therefore not built on its own.
   admitted-program guard appended at the end of `SourceSortedAuditTest`, red against the empty origin, then green); three
   mutants each killed by exactly one intended guard and registered as manifest cycles `T2-M4..M6` (manifest is now 12 cycles).
 
+- Toy carrier through the Core leg: three `toyCore` rows at the end of `SourceOracleCarrierTest` (an `OrAnd` `(max, f32)` program admitted
+  under the extended table, run by `runSourceAt` with `Registry.none`, observed through the toy's `observe`; hand values `[1,1,1,1]`,
+  `[1,0,1,0,1,0,1]` and, with inputs `X = [0,2,0,4]`, `[0,1,0,1]`). Mutants: the Core input-binding shift is killed ONLY by the
+  zero-input row (registered as `T3-M3`, manifest now 13 cycles); an observed-cell mutant is killed by all three rows.
+- Stale "landed on local main" wording for S2a fixed in `leanncd/AGENTS.md` and path part 5; the decision-note S2 row and the design note
+  status lines are rewritten at merge.
+
 ### 5.2 Parked review findings (Rule 14; none fixed except those listed in 5.1b)
 
 T1: no `minPlus` selection row until T2 Q6; `OrAnd` rows weak as regression (nonzero inputs); `(WithBot ℚ)ᵒᵈ` instance is an
