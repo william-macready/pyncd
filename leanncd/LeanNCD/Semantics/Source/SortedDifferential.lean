@@ -123,6 +123,7 @@ inductive SortedClassification
   | referenceUnavailable (reason : String)
   | referenceDiscrepancy
   | unsupportedNumericalProfile (reason : Unsupported)
+  | knownContractDifference (condition : StructuralCondition)
   | nativeUnavailable
   | nativeFailure (legacy checked : LegResult)
   | nativeDiscrepancy (legacy checked : LegResult)
@@ -152,6 +153,61 @@ private def legOf (cells : Except Unsupported (List SortedCell)) :
       | .error message => .failure message
       | .ok none => .agrees
       | .ok (some cell) => .mismatch cell
+
+/-! ### Known contract differences (T4B)
+
+Both conditions are detected from the source alone (`detectSortedConditions`) and confirmed only
+when the native legs show exactly the predicted outcome (`confirmsSorted`), each bound to the
+condition's own tensor, so an unrelated native divergence stays `nativeDiscrepancy`/`nativeFailure`.
+Pipeline order: the scatter-fill refusal (preparation / evaluation) precedes the value comparison,
+so a program with both shapes lists `tropicalScatterFill` first and `compareSortedSource` confirms
+the head only, as the real harness does. The mismatch binding compares the FIRST differing cell
+(`compareBindings`), so a second divergence in the same tensor is not separately reported. -/
+
+/-- `max`/`min` statements with a term of two or more factors (`tropicalMultiFactor`) or a non-bare
+write (`tropicalScatterFill`). -/
+def detectSortedConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
+    List StructuralCondition :=
+  let tropical (st : AdmittedStatement source.source) : Option RHSExpr :=
+    match snapshot.resolved.stmts[st.original]? with
+    | some (.assign _ _ rhs) => if rhs.agg == .sum then none else some rhs
+    | _ => none
+  let fills := source.statements.filterMap fun st =>
+    if (tropical st).isSome && Differential.nonBareWrite st then
+      some (StructuralCondition.tropicalScatterFill st.output.origin)
+    else none
+  let multis := source.statements.filterMap fun st =>
+    match tropical st with
+    | some rhs => if rhs.body.terms.any (·.factors.length ≥ 2) then
+        some (StructuralCondition.tropicalMultiFactor st.output.origin) else none
+    | none => none
+  fills ++ multis
+
+/-- ORIGIN-BOUND on both legs. `tropicalMultiFactor`: both legs are `mismatch`es at the origin's
+declaration. `tropicalScatterFill`: the legacy `scatterFillNotIdentity` names the origin's tensor
+and the checked preparation refusal's context (`"{tensor}: fill"`) names it too; a refusal that
+carries only the cause confirms nothing. -/
+def confirmsSorted (native : NativeRun) (legacy checked : LegResult) :
+    StructuralCondition → Bool
+  | .tropicalMultiFactor origin =>
+      match legacy, checked with
+      | .mismatch l, .mismatch c =>
+          some l.declaration == origin.declaration && some c.declaration == origin.declaration
+      | _, _ => false
+  | .tropicalScatterFill origin =>
+      let owner := Differential.ownedBy native origin.declaration
+      (match native.legacy with
+        | .failure e => (match e.original.error with
+            | .scatterFillNotIdentity name _ => owner name
+            | _ => false)
+        | _ => false) &&
+      (match native.checked with
+        | .preparation e => (match e.original.cause with
+            | .capability (.scatterOptsNotAdmitted context) =>
+                owner ((context.splitOn ": ").headD "")
+            | _ => false)
+        | _ => false)
+  | _ => false
 
 /-- The tropical/real single-sort differential. `table` is the carrier selection table. -/
 def compareSortedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
@@ -184,6 +240,10 @@ def compareSortedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
           | .preparation _ => legOf profile none "checked preparation"
           | .runtime e => legOf profile none s!"checked runtime {repr e.original.cause}"
           | .unavailable _ => .unavailable)
+    let confirmed : Option StructuralCondition :=
+      match native, detectSortedConditions snapshot source with
+      | .ok n, c :: _ => if confirmsSorted n legacy checked c then some c else none
+      | _, _ => none
     let classification : SortedClassification :=
       match published with
       | .error e => .referenceUnavailable e
@@ -192,6 +252,9 @@ def compareSortedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
         match profile with
         | .error reason => .unsupportedNumericalProfile reason
         | .ok _ =>
+          match confirmed with
+          | some c => .knownContractDifference c
+          | none =>
           match legacy, checked with
           | .agrees, .agrees => .fourLegParity
           | .unavailable, _ | _, .unavailable => .nativeUnavailable
