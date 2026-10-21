@@ -129,9 +129,11 @@ that production matches). Production multiplies where tropical
 `⊗` adds, so multi-factor `max`/`min` and a tropical affine write are the structural conditions `tropicalMultiFactor`
 (both legs mismatch at the origin's declaration) and `tropicalScatterFill` (legacy `scatterFillNotIdentity` and checked
 `scatterOptsNotAdmitted "{tensor}: fill"` both name the origin's tensor), each bound to its own tensor
-(`detectSortedConditions`, `confirmsSorted`; only the head is confirmed, scatter-fill first). Independence caveat: oracle and Core share the
-semiring instance, so their parity checks scheduling and observation, not the algebra (pinned by hand-valued oracle
-fixtures and production agreement on single-factor rows). Executed evidence, not theorems. Parked: merging the
+(`detectSortedConditions`, `confirmsSorted`; the first listed condition that confirms wins, scatter-fill first; multi-factor also needs both
+legs to show the same first mismatch and every tensor without that condition to agree, `unexplainedAgree`). A `real` selection through
+`compareSortedSource` is a sibling check with the weaker tropical profile: use `compareSource` for real programs. Independence caveat: oracle
+and Core share the semiring instance and `ofRat`/`observe`, so their parity checks scheduling and where embedding and observation happen,
+not those functions or the algebra (pinned by hand-valued oracle fixtures; `⊗ = +` has no production check, production multiplies). Executed evidence, not theorems. Parked: merging the
 harnesses, tropical receipt re-check and Program theorems, f32 tropical comparison (`additive_s2b_plan.md`, `additive_s2b_record.md`).
 `Source.Observation` / `Source.Diagnostics` expose actual
 source-linked endpoints and canonical contribution data. `Source.NumericalProfile`

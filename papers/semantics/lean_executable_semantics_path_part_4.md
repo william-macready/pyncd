@@ -629,10 +629,11 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   (`compareSource`) is untouched and still refuses `max`/`min`. Production multiplies where the tropical `⊗`
   adds, so a multi-factor `max`/`min` term and a tropical affine write (production refuses a `max` scatter that
   fills with a finite value) are the structural conditions `tropicalMultiFactor` and `tropicalScatterFill`; each is
-  confirmed only when both native legs show the predicted outcome at the condition's own tensor, otherwise the run
-  stays a `nativeDiscrepancy` / `nativeFailure`. Tropical scatter is refused at admission.
-  Because the oracle and the Core leg share the semiring instance, their agreement checks scheduling and
-  observation, not the algebra; the algebra is pinned by hand-valued oracle fixtures and by production
+  confirmed only when both native legs show the predicted outcome at the condition's own tensor (for multi-factor:
+  the same first mismatch on both legs and every tensor without that condition agreeing), otherwise the run
+  stays a `nativeDiscrepancy` / `nativeFailure`. A scatter-fill refusal compares no other tensor at all. Tropical scatter is refused at admission.
+  Because the oracle and the Core leg share the semiring instance and `ofRat`/`observe`, their agreement checks
+  scheduling and where embedding and observation happen, not those functions or the algebra; the algebra is pinned by hand-valued oracle fixtures and by production
   agreement on single-factor rows. This is executed evidence, not a theorem. Production tropical sorts, casts
   and constants (S3b) and scatter collision ⊕ and range errors (S3a) remain planned. Parked: merging the two
   harnesses, a tropical oracle-receipt re-check and Program theorems, f32 tropical production comparison.

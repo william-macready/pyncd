@@ -253,5 +253,57 @@
   "expect": [
    "SourceSortedDifferentialTest.lean:233:0"
   ]
+ },
+ {
+  "label": "T4-M7 multi-factor confirmer accepts legs with different first mismatches (killed ONLY by the same-first-mismatch guard)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "            l.coordinate == c.coordinate && l.observed == c.observed",
+  "new": "            true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:273:0"
+  ]
+ },
+ {
+  "label": "T4-M8 unexplainedAgree treats a mismatch as agreement (killed ONLY by the corrupted-cell guard)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "    | .ok none => true\n    | _ => false\n  | .error _ => false",
+  "new": "    | .ok none => true\n    | _ => true\n  | .error _ => false",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:294:0"
+  ]
+ },
+ {
+  "label": "T4-M9 compareSortedSource skips the unexplained-tensors check (killed ONLY by the zero-factor beside multi-factor row)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "(match c with | .tropicalMultiFactor _ => othersAgree | _ => true)",
+  "new": "true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:267:0"
+  ]
+ },
+ {
+  "label": "T4-M10 only the head condition is confirmed (killed ONLY by the statement-order row)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "conditions.find? fun c =>",
+  "new": "conditions.head?.filter fun c =>",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:270:0"
+  ]
  }
 ]

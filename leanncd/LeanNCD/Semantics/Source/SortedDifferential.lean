@@ -158,11 +158,19 @@ private def legOf (cells : Except Unsupported (List SortedCell)) :
 
 Both conditions are detected from the source alone (`detectSortedConditions`) and confirmed only
 when the native legs show exactly the predicted outcome (`confirmsSorted`), each bound to the
-condition's own tensor, so an unrelated native divergence stays `nativeDiscrepancy`/`nativeFailure`.
+condition's own tensor, so an unrelated native divergence stays `nativeDiscrepancy`/`nativeFailure`
+(with the masking limits below).
 Pipeline order: the scatter-fill refusal (preparation / evaluation) precedes the value comparison,
-so a program with both shapes lists `tropicalScatterFill` first and `compareSortedSource` confirms
-the head only, as the real harness does. The mismatch binding compares the FIRST differing cell
-(`compareBindings`), so a second divergence in the same tensor is not separately reported. -/
+so a program with both shapes lists `tropicalScatterFill` first, and `compareSortedSource` confirms
+the first listed condition whose confirmer accepts (a refused run has no values to mismatch, so a
+multi-factor condition cannot confirm beside a scatter-fill one).
+
+Masking. `tropicalScatterFill`: both legs refuse before producing any output, so no other tensor is
+compared at all (inherent, as for the real harness' scatter conditions). `tropicalMultiFactor`:
+`compareBindings` reports only the FIRST differing cell, so confirmation additionally requires
+(i) both legs show the SAME first mismatch (coordinate and bits) at the origin's declaration and
+(ii) every tensor that carries no multi-factor condition agrees with the oracle on both legs
+(`unexplainedAgree`). A second divergence inside a multi-factor tensor stays unreported. -/
 
 /-- `max`/`min` statements with a term of two or more factors (`tropicalMultiFactor`) or a non-bare
 write (`tropicalScatterFill`). -/
@@ -183,8 +191,20 @@ def detectSortedConditions (snapshot : SourceSnapshot) (source : AdmittedSource)
     | none => none
   fills ++ multis
 
-/-- ORIGIN-BOUND on both legs. `tropicalMultiFactor`: both legs are `mismatch`es at the origin's
-declaration. `tropicalScatterFill`: the legacy `scatterFillNotIdentity` names the origin's tensor
+/-- Every output of this observation whose declaration is not in `explained` agrees with the
+profile's expected cells. -/
+def unexplainedAgree (explained : List Nat) (cells : List SortedCell) (o : NativeObservation) :
+    Bool :=
+  match o.outputs with
+  | .ok bindings =>
+    match compareBindings cells (bindings.filter fun b =>
+        !explained.contains b.metadata.declaration) with
+    | .ok none => true
+    | _ => false
+  | .error _ => false
+
+/-- ORIGIN-BOUND on both legs. `tropicalMultiFactor`: both legs are the same `mismatch` at the
+origin's declaration (the caller also checks `unexplainedAgree`). `tropicalScatterFill`: the legacy `scatterFillNotIdentity` names the origin's tensor
 and the checked preparation refusal's context (`"{tensor}: fill"`) names it too; a refusal that
 carries only the cause confirms nothing. -/
 def confirmsSorted (native : NativeRun) (legacy checked : LegResult) :
@@ -192,7 +212,8 @@ def confirmsSorted (native : NativeRun) (legacy checked : LegResult) :
   | .tropicalMultiFactor origin =>
       match legacy, checked with
       | .mismatch l, .mismatch c =>
-          some l.declaration == origin.declaration && some c.declaration == origin.declaration
+          some l.declaration == origin.declaration && some c.declaration == origin.declaration &&
+            l.coordinate == c.coordinate && l.observed == c.observed
       | _, _ => false
   | .tropicalScatterFill origin =>
       let owner := Differential.ownedBy native origin.declaration
@@ -209,7 +230,10 @@ def confirmsSorted (native : NativeRun) (legacy checked : LegResult) :
         | _ => false)
   | _ => false
 
-/-- The tropical/real single-sort differential. `table` is the carrier selection table. -/
+/-- The tropical/real single-sort differential. `table` is the carrier selection table. For a
+`real` selection this is a SIBLING check, not the authoritative real harness: its profile is the
+tropical one (per-occurrence sum of magnitudes), weaker than `checkProfile`'s product bounds, so
+use `compareSource` for real programs. -/
 def compareSortedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
     (table : List Sorted := standardCarriers) : Except SourceDiagnostic SortedRun :=
   match admitSourceSorted snapshot table with
@@ -241,8 +265,18 @@ def compareSortedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
           | .runtime e => legOf profile none s!"checked runtime {repr e.original.cause}"
           | .unavailable _ => .unavailable)
     let confirmed : Option StructuralCondition :=
-      match native, detectSortedConditions snapshot source with
-      | .ok n, c :: _ => if confirmsSorted n legacy checked c then some c else none
+      match native, profile with
+      | .ok n, .ok cells =>
+        let conditions := detectSortedConditions snapshot source
+        let explained := conditions.filterMap fun c => match c with
+          | .tropicalMultiFactor o => o.declaration
+          | _ => none
+        let othersAgree := match n.legacy, n.checked with
+          | .observed l, .observed c _ =>
+            unexplainedAgree explained cells l && unexplainedAgree explained cells c
+          | _, _ => false
+        conditions.find? fun c => confirmsSorted n legacy checked c &&
+          (match c with | .tropicalMultiFactor _ => othersAgree | _ => true)
       | _, _ => none
     let classification : SortedClassification :=
       match published with

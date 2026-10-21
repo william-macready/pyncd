@@ -158,6 +158,24 @@ T3: five real names and `elaborateSource` became `abbrev` (no simp/unfold/decide
 T4A. T4A: `compareSortedSource` puts `.unavailable` before mismatch arms (never parity); `compareBindings` walks production
 bindings and relies on `NativeLegs` for missing/extra outputs; no row compares a `±inf` cell against production bits.
 
+T4B reviews (`additive_s2b_review_T4B.md`, `_final_regression.md`, `_final_soundness.md`; all APPROVE WITH FINDINGS, 0 Critical).
+FIXED in the review batch: multi-factor confirmer masked a wrong OTHER tensor once the origin tensor mismatched (now every tensor without a
+multiFactor condition must agree, `unexplainedAgree`) and accepted two different first mismatches on the two legs (now the same coordinate and
+bits); head-only confirmation gave `nativeDiscrepancy` when statement order differed from declaration order (now `find?`); docstrings state the
+masking limits; independence wording. Cycles T4-M7..M10 pin each. PARKED (Rule 14, all loud, none hides a divergence):
+(1) a `real` selection through `compareSortedSource` is judged by the weaker tropical profile (a 3-factor product near 2^55 is a false
+`nativeDiscrepancy` where `compareSource` refuses `partialProduct`); documented, a per-carrier profile hook is about one dispatch;
+(2) tropical multi-writer (two `max` writers of one tensor): oracle and Core take the max, production refuses `multiWriterAlgebra`
+(`Collect.lean`); an unencoded third known difference, reported as `nativeFailure`;
+(3) a zero-factor `max`/`min` term: oracle `1_K = 0`, production `1.0`, so detection would need `factors.length ≠ 1`; today it is an
+unexplained `nativeDiscrepancy` (pinned by the `zeroV` rows);
+(4) the extensibility claim ("one carrier record plus one table entry") covers oracle, Schedule, selection and the Core leg, NOT the
+sorted differential's conditions and profile (keyed on `agg != .sum` and `⊗ = +`); a new carrier also needs `Semiring`, `DecidableEq`, `Repr`;
+(5) `legOf` shows a leg that ran as `.unavailable` when the profile errors (display only);
+(6) T3 deleted TEN public real names from `Schedule.lean` (`sourceValuations_nodup/_complete`, `sourceOccurrences_nodup/_complete`,
+`sourceOccurrenceKeys`, `sourcePublicationKeys` and their `_nodup/_complete`) instead of restating them; no Lean consumer, the docs now cite the
+`…At_*` forms; `runSource` is not literally `runSourceAt Carrier.real` (it uses `RationalReference.ops`, same arithmetic).
+
 ### 5.3 T5 docs sweep (commit `d6d4691f`)
 
 Edited: Semantics AGENTS node (S2b paragraph), path part 4 (`admitSourceSorted` sentence, "Tropical carriers (S2b)" paragraph, schedule

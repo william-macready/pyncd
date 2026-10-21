@@ -244,4 +244,54 @@ private def multi (origin : Nat) (oneSided : Bool := false) : Bool :=
 #guard !multi 6   -- the mismatch is on `V`, not `Y`: a condition elsewhere hides nothing
 #guard !multi 7 (oneSided := true)
 
+/-! T4B review fixes. Unexplained divergence: a zero-factor `max` term is `1_K = 0` for the oracle
+and `1.0` for production, a mismatch no condition explains. Beside a multi-factor tensor it must
+stay reported (the first mismatch is the multi-factor tensor's, declaration 6). -/
+private def zeroV : Stmt := .assign "V" [.free a] (rhs .max [[]])
+
+private def tagOf (s : SourceSnapshot) (order : List Nat := [6, 7]) : String :=
+  match compareSortedSource s (some order) with
+  | .ok r => match r.classification with
+    | .fourLegParity => "parity"
+    | .knownContractDifference (.tropicalMultiFactor o) => s!"multiFactor {o.declaration}"
+    | .knownContractDifference (.tropicalScatterFill o) => s!"scatterFill {o.declaration}"
+    | .nativeDiscrepancy (.mismatch l) _ => s!"nativeDiscrepancy at {l.declaration}, bits {l.observed}"
+    | _ => "other"
+  | .error d => s!"refused {repr d.cause}"
+
+/-- info: "nativeDiscrepancy at 7, bits 4607182418800017408" -/
+#guard_msgs in #eval tagOf (snap2 [a] [a] [bareY, zeroV])
+/-- info: "multiFactor (some 6)" -/
+#guard_msgs in #eval tagOf (snap2 [a] [a] [multiY, bareV])
+-- the same multi-factor tensor with the unexplained zero-factor divergence beside it is NOT known
+#guard (tagOf (snap2 [a] [a] [multiY, zeroV])).startsWith "nativeDiscrepancy"
+-- statement order differs from declaration order: the matching condition is found, not just the head
+/-- info: "multiFactor (some 6)" -/
+#guard_msgs in #eval tagOf (snap2 [a] [a] [multiV, multiY])
+
+-- both legs must show the SAME first mismatch: a checked leg with other bits is not explained
+#guard !(match nativeOf (snap2 [a] [a] [bareY, multiV]), compareSortedSource (snap2 [a] [a] [bareY, multiV]) (some [6, 7]) with
+  | some n, .ok r => match r.checked with
+    | .mismatch c => confirmsSorted n r.legacy (.mismatch { c with observed := c.observed + 1 })
+        (.tropicalMultiFactor (originOf 7))
+    | _ => true
+  | _, _ => true)
+
+/-- `unexplainedAgree` on the legacy observation of `[bareY, multiV]`: excluding the multi-factor
+tensor (declaration 7) leaves only `Y`, which agrees; corrupting `Y`'s expected cell is seen unless
+`Y` is excluded too. -/
+private def unexplained (explained : List Nat) (corrupt : Bool) : Bool :=
+  let s := snap2 [a] [a] [bareY, multiV]
+  match nativeOf s, compareSortedSource s (some [6, 7]) with
+  | some n, .ok r => match n.legacy, r.profile with
+    | .observed o, .ok cells =>
+      unexplainedAgree explained
+        (if corrupt then cells.map (fun c => if c.declaration == 6 then { c with expected := .posInf } else c) else cells) o
+    | _, _ => false
+  | _, _ => false
+
+#guard unexplained [7] false
+#guard !unexplained [7] true
+#guard unexplained [6, 7] true
+
 end SourceSortedDifferentialTest
