@@ -198,5 +198,60 @@
    "SourceSortedDifferentialTest.lean:155:0",
    "SourceSortedDifferentialTest.lean:157:0"
   ]
+ },
+ {
+  "label": "T4-M3 multi-factor confirmer drops the declaration binding (killed by the other-tensor mismatch guard)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "          some l.declaration == origin.declaration && some c.declaration == origin.declaration",
+  "new": "          true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:244:0"
+  ]
+ },
+ {
+  "label": "T4-M4 scatter-fill confirmer accepts any tensor name (killed by the wrong-origin and both mixed-native guards)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "      let owner := Differential.ownedBy native origin.declaration",
+  "new": "      let owner : String → Bool := fun _ => true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:230:0",
+   "SourceSortedDifferentialTest.lean:231:0",
+   "SourceSortedDifferentialTest.lean:232:0",
+   "SourceSortedDifferentialTest.lean:233:0"
+  ]
+ },
+ {
+  "label": "T4-M5 scatter-fill confirmer accepts a cause-only checked leg (killed ONLY by the mixed-native guard with the other tensor's checked leg)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "                owner ((context.splitOn \": \").headD \"\")",
+  "new": "                true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:232:0"
+  ]
+ },
+ {
+  "label": "T4-M6 scatter-fill confirmer accepts a cause-only legacy leg (killed ONLY by the mixed-native guard with the other tensor's legacy leg)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "            | .scatterFillNotIdentity name _ => owner name",
+  "new": "            | .scatterFillNotIdentity name _ => true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:233:0"
+  ]
  }
 ]
