@@ -126,8 +126,10 @@ real names are its rational instance, proofs untouched). `Source.SortedDifferent
 harness (real `compareSource`, `SourceRun`, `checkProfile` untouched) with a tropical profile (finite reads integers
 within ±2^20, per-occurrence sum of magnitudes within 2^20, `±inf` its own class; an extent-0 reduction yields `±inf`
 that production matches). Production multiplies where tropical
-`⊗` adds, so multi-factor `max`/`min` is `nativeDiscrepancy` and a tropical affine write is `nativeFailure`; fixtures
-assert both and no known-difference condition explains them yet. Independence caveat: oracle and Core share the
+`⊗` adds, so multi-factor `max`/`min` and a tropical affine write are the structural conditions `tropicalMultiFactor`
+(both legs mismatch at the origin's declaration) and `tropicalScatterFill` (legacy `scatterFillNotIdentity` and checked
+`scatterOptsNotAdmitted "{tensor}: fill"` both name the origin's tensor), each bound to its own tensor
+(`detectSortedConditions`, `confirmsSorted`; only the head is confirmed, scatter-fill first). Independence caveat: oracle and Core share the
 semiring instance, so their parity checks scheduling and observation, not the algebra (pinned by hand-valued oracle
 fixtures and production agreement on single-factor rows). Executed evidence, not theorems. Parked: merging the
 harnesses, tropical receipt re-check and Program theorems, f32 tropical comparison (`additive_s2b_plan.md`, `additive_s2b_record.md`).

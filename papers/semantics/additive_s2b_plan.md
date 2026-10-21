@@ -9,9 +9,8 @@ Prototype evidence: `papers/semantics/additive_s2b_artifacts/p1_findings.md`, `p
 `proto-s2b-p1` `131bc192`, `proto-s2b-p2` `3fcb6c54`; do not merge them). Authoring-verification record:
 `papers/semantics/additive_s2b_record.md` (not here).
 Shipped patches: `papers/semantics/additive_s2b_files/patches/` (`leanncd/` paths only, names `T<k>-NN-slug.patch`).
-Manifest: `papers/additive_s2b_mutations_post.json`: 9 cycles (T1 2, T2 3, T3 2, T4A 2), all observed to fail with their
-`expect` strings and to restore (9/9, authoring dispatch B). T4B has NO cycles yet (not prototyped; `T4-M3..M5` are written by
-the T4B dispatch once the observed causes exist). No cycle may be hand-written during execution.
+Manifest: `papers/additive_s2b_mutations_post.json`: 9 cycles at authoring (T1 2, T2 3, T3 2, T4A 2; parked-item additions and T4B bring it to 18), all observed to fail with their
+`expect` strings and to restore (9/9, authoring dispatch B). T4B cycles `T4-M3..M6` were written by the T4B dispatch from the observed causes (record §5), so the manifest now has 18 cycles.
 
 ## 0. Goal, process weight, fixed decisions
 
@@ -344,7 +343,7 @@ Cleanup step at the end of dispatch A (one commit): the patched text carries pro
 `rg -n "S2b P[12]|\(prototype\)" leanncd/LeanNCD leanncd/test` and reword each docstring/comment to `S2b` (docstring text only; no
 code token changes), then rebuild `LeanNCD` and `Semantics.SourceSortedDifferentialTest` once.
 
-**Dispatch B (T4B: NOT PROTOTYPED; the one task part without a verified patch).** Add the two structural known-difference
+**Dispatch B (T4B: NOT PROTOTYPED; EXECUTED 2026-10-21, commit `1d35a72d`, see record §5; the text below is the plan as written, three cycles became four).** Add the two structural known-difference
 conditions with confirmers, following the S2a origin-bound pattern (`StructuralCondition`, `detectConditions`, `confirms`,
 `ownedBy`, `legacyCollision`, `checkedCollision` @ `Source/Differential.lean` and `Source/NumericalProfile.lean`).
 Files: `Source/NumericalProfile.lean` (two constructors), `Source/Differential.lean` (explicit `false` arms in `confirms` so the

@@ -85,7 +85,7 @@ killed only by the T4-04 pin when authored (after the extent-0 probe of section 
 `MaxPlus` instance/`observe` cycle (pinned by `#guard`/`#guard_msgs`). DEFERRED: T4B has no cycles (`tropicalMultiFactor`,
 `tropicalScatterFill` confirmers are not prototyped; `T4-M3..M5` are authored by the T4B dispatch after the observed causes).
 
-## 5. Execution record (2026-10-20; T1 to T4A and the T5 docs sweep; T4B, final reviews and merge still open)
+## 5. Execution record (2026-10-20/21; T1 to T4B and the T5 docs sweep; final reviews, unfiltered manifest and merge still open)
 
 Executed inline by the controller (patch application, not prototyping); per-task Sonnet reviews read the commit through `git show`.
 Ledger with every step: `additive_s2b_ledger.md`. Reviews: `additive_s2b_review_T1.md` .. `_T4A.md`.
@@ -96,6 +96,14 @@ Ledger with every step: `additive_s2b_ledger.md`. Reviews: `additive_s2b_review_
 | T2 | `8b11ff79` | 8558, green | killed by the intended rows; manifest verdict as written FAIL (see 5.1) | approve |
 | T3 | `a56bc89a` | 8614, green | killed by all six Core rows; manifest verdict as written FAIL (see 5.1) | approve |
 | T4A | `79524517` + label cleanup `8e70b349` | full `LeanNCD Tests` 8824, green; AxiomAudit 6997 constants, standard axioms only | 2/2 PASS | approve |
+
+T4B (`1d35a72d`, manifest commit after it): partial build (LeanNCD + sorted/real differential tests) 8562 jobs green; `--task T4`
+7/7 PASS (M3..M6 new). Observed causes (probe): checked leg of a tropical affine write = `PlanCompileCause.capability
+(.scatterOptsNotAdmitted "Y: fill")`; legacy = `EvalError.scatterFillNotIdentity "Y" agg`. `LegResult` was NOT extended (the confirmer
+reads the `NativeRun`, as S2a `confirms` does). `Differential.ownedBy` and `nonBareWrite` became public. M6 (legacy-leg owner drop) is an
+addition to the plan's M3..M5. Known limitation, as in S2a: the mismatch binding is the FIRST differing cell, so a second divergence
+in the same tensor, or head-only confirmation with two multi-factor outputs (declaration 6 confirmed, 7 not separately reported), is
+not reported separately. Full `LeanNCD Tests` build and the unfiltered manifest (14 + 4 cycles) are still to run.
 
 Deviation: T4A was built once on the post-cleanup state (the cleanup is docstring text only) instead of twice; the patch-only
 commit `79524517` was therefore not built on its own.
@@ -155,7 +163,7 @@ bindings and relies on `NativeLegs` for missing/extra outputs; no row compares a
 Edited: Semantics AGENTS node (S2b paragraph), path part 4 (`admitSourceSorted` sentence, "Tropical carriers (S2b)" paragraph, schedule
 citation to the `...At_*` forms), path part 5 (remaining-work sentence), gap audit (G04 row, F01 paragraph). Each carries "merge
 pending" for S2b; replace it with the merge hash after the merge (`rg -n "merge pending" papers leanncd`). The text says there is NO
-known-difference condition for the tropical divergences: T4B must update those sentences (AGENTS, path part 4) when it lands.
+known-difference condition for the tropical divergences; T4B (commit `1d35a72d`) updated those two sentences (AGENTS, path part 4).
 Recorded unchanged: sweep items 1 (no 8818/8822/8823 in the named files), 6 (no docstring says the oracle is sum-only; the only
 `nonSum` mentions are the two refusal sites), 7 (no `8818 jobs` hit outside the S2b files; other `accepted ==` hits are unrelated
 historical corpus gates), 9 (no anchor into a split-out section introduced by this slice; the anchors `#proof-status-and-numbered-results` and `#notation-color-key` were checked and their headings exist in

@@ -627,9 +627,10 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   per-occurrence sum of magnitudes stays within 2^20, `±inf` is its own class; an empty reduction axis yields `±inf`
   that production accepts and matches bit for bit); the real harness
   (`compareSource`) is untouched and still refuses `max`/`min`. Production multiplies where the tropical `⊗`
-  adds, so a multi-factor `max`/`min` term is a `nativeDiscrepancy`, and a tropical affine write is a
-  `nativeFailure` (production refuses a `max` scatter that fills with a finite value); fixtures assert both
-  outcomes and no known-difference condition explains them yet. Tropical scatter is refused at admission.
+  adds, so a multi-factor `max`/`min` term and a tropical affine write (production refuses a `max` scatter that
+  fills with a finite value) are the structural conditions `tropicalMultiFactor` and `tropicalScatterFill`; each is
+  confirmed only when both native legs show the predicted outcome at the condition's own tensor, otherwise the run
+  stays a `nativeDiscrepancy` / `nativeFailure`. Tropical scatter is refused at admission.
   Because the oracle and the Core leg share the semiring instance, their agreement checks scheduling and
   observation, not the algebra; the algebra is pinned by hand-valued oracle fixtures and by production
   agreement on single-factor rows. This is executed evidence, not a theorem. Production tropical sorts, casts
