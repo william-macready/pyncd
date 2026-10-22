@@ -62,8 +62,12 @@ changed): APPROVE WITH FINDINGS, no Critical/Major (`s3a_review_final.md` summar
 
 ## 5. Cost and process notes
 
-Measured with `token-report.py` on the session after the review (65.2M at that point; final figure on the close line below). Dispatch
-turns vs the ~60 cap: audit 61, T1 81, T2 61, T3a 75, T3b-1 58 (+T3c), T3b-2 102. Rule 6 breaches for T1, T3a, T3b-2: mostly
+Measured with `token-report.py` on the session at merge: **73.9M cumulative input tokens** against the ~175M Direct-slice execution
+budget (controller 13.5M, 85 turns, peak 227k; dispatches 60.4M: audit 8.4M, T1 10.1M, T2 8.9M, T3a 8.5M, T3b-1 plus T3c 5.3M, T3b-2 13.9M,
+Opus review 5.3M). Dispatch turns vs the ~60 cap: audit 61, T1 81, T2 61, T3a 75, T3b-1 plus T3c 58, T3b-2 102. Rule 6 breaches for T1, T3a, T3b-2: mostly
 waiting on builds and large mechanical arity edits; the split T3b-1/T3b-2 helped but T3b-2 (~14 files plus Gen/DifferentialTest
 found by the full build) was still too big. The scatter audit (8.4M) shrank S3a from the decision note's ~150-175M outline to a
 Direct slice: JAX has no scatter kernel, f32 shares the dense worker, the oracle already sums.
+
+Merged to local `main` as `201ffe7c` on 2026-10-22 (merged tree identical to slice tip `1845919f`, full `Tests` 8823 jobs green on it, run
+by the controller). Not pushed: `main` is ahead of `origin/main`. Worktree and branch removed.
