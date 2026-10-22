@@ -57,6 +57,16 @@ inductive PlanError
       basis — and carried for the same reason `predicateWidthMismatch` below is: fail loud rather
       than silently, if the derivation is ever reached another way. -/
   | scatterDestExtentUnknown      (dim : Nat)
+  /-- At this destination dimension the placement slot's image over the (non-empty) source box
+      leaves `[0, extent)`: some source coordinate would write outside the destination. An
+      out-of-range scatter write is an ERROR in both backends (decision note §B6); the reference
+      raises `EvalError.scatterWriteOutOfRange` at run time, the checked plan rejects it here, so the
+      dense worker never meets one. `minImage`/`maxImage` are the corner extremes
+      `bias + Σ min 0 (c_k·(n_k-1))` / `bias + Σ max 0 (c_k·(n_k-1))`; `extent` is `destShape[dim]`
+      (already equal to `outExtent`'s answer, because `scatterDestExtentMismatch` is checked first
+      for EVERY dimension). Located by dimension like its neighbours; the checked layer is
+      positional and carries no tensor name. -/
+  | scatterWriteOutOfRange        (dim : Nat) (minImage maxImage : Int) (extent : Nat)
   /-- An inline unary read factor inside an assignment whose graph storage kind has no unary
       implementation. Located at the ORIGINAL all-factor index (an Iverson ahead of the read does
       not shift it down), matching every other per-factor locator in this family. RETAINED
@@ -166,6 +176,13 @@ inductive PositionalInputError
       `writtenBy` map exists solely to report it. `first` is whichever source coordinate row-major
       enumeration reached first, matching the reference's `cartesian` order. -/
   | scatterCollision (destCoord firstSource secondSource : List Nat)
+  /-- UNREACHABLE for a checked plan (B6): `runDenseScatterWith` placed a source coordinate outside
+      the destination. `checkScatter` rejects every such placement statically
+      (`PlanError.scatterWriteOutOfRange`), so this is the internal-error backstop that replaced the
+      worker's former silent skip — the same fail-loud role as `predicateWidthMismatch`. Carries the
+      placed (possibly negative) destination coordinate and the source coordinate that produced it
+      (`allCoords` enumerates `List Int`). -/
+  | scatterPlacementOutOfRange (destCoord sourceCoord : List Int)
   /-- A carrier-specific worker was handed checked evidence for a DIFFERENT storage kind. `expected`
       is the worker's own carrier (`.float64` for every `Array Float`-backed entry in this slice),
       `actual` is the kind the checked evidence records.

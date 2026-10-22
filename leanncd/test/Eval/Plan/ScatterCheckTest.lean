@@ -179,6 +179,101 @@ re-read as the constant coordinate `0` with extent `1`. -/
 #guard scatterDestExtent #[3] #[2] 1 == some 6
 #guard scatterDestExtent #[3] #[-1] 0 == some 0
 
+/-! ## B6 T1b: the static placement-RANGE clause (`scatterWriteOutOfRange`)
+
+A placement slot's image over the source box `bias + Σ c_k·x_k`, `x_k ∈ [0, n_k)`, has its extremes
+at the corners (`min = bias + Σ min 0 (c_k·(n_k-1))`, `max = bias + Σ max 0 (c_k·(n_k-1))`), and the
+plan is rejected when either leaves `[0, destShape[d])` — an out-of-range write is an error in BOTH
+backends (decision note §B6), so the checked plan refuses it at check time and the worker's old
+silent skip is unreachable.
+
+Because the extent clause (`scatterDestExtentMismatch`) runs first and forces `destShape[d]` to be
+`outExtent`'s answer, every destination extent below is the DERIVED one. A single positive-coefficient
+axis always fits its derived extent, so the corner off-by-one pairs use a two-axis row with a negative
+coefficient, where the derived (legacy-linear) extent `bias + Σ c_k·n_k` can sit exactly at `max + 1`
+or `max`. Every payload below was observed from a real run. Source box: `X : [3,2]`. -/
+
+def boxSigs (dest : Array Nat) : Array TensorSignature :=
+  #[ { shape := #[3, 2], dtype := .f64 }, { shape := dest, dtype := .f64 } ]
+
+def boxCompute : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[3, 2]
+  , terms := #[{ iterationShape := #[3, 2], contextPos := #[], outputPos := #[0, 1]
+               , reductionPos := #[]
+               , factors := #[.read { sourceSlot := 0
+                                    , map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0, 0] }
+                                    , sourceShape := #[3, 2], oobPolicy := .zeroPad }] }]
+  , algebra := admittedAlgebra }
+
+/-- One destination dimension, placement row over the `[3,2]` box, destination extent `dest`. -/
+def boxScatter (dest : Nat) (row : Array Int) (bias : Int) : ScatterPlan :=
+  { compute := boxCompute, destShape := #[dest], outCoeffs := #[row], outBias := #[bias] }
+
+def boxCheck (row : Array Int) (bias : Int) : Except PlanError CheckedScatterPlan :=
+  match scatterDestExtent #[3, 2] row bias with
+  | some e => checkScatter (boxSigs #[e]) (boxScatter e row bias)
+  | none => .error (.scatterDestExtentUnknown 0)
+
+-- The derived extents the cases below rely on (so a change to `outExtent` fails HERE, not obscurely).
+#guard scatterDestExtent #[3, 2] #[3, -1] 1 == some 8
+#guard scatterDestExtent #[3, 2] #[3, -1] 0 == some 7
+#guard scatterDestExtent #[3, 2] #[2, -1] 1 == some 5
+
+-- Rejections. Negative bias `Out[i-1]`: image [-1, 1] in extent 2.
+#guard errOf (boxCheck #[1, 0] (-1)) == some (.scatterWriteOutOfRange 0 (-1) 1 2)
+-- Negative coefficient `Out[-i]`: extent clamps to 0, image [-2, 0].
+#guard errOf (boxCheck #[-1, 0] 0) == some (.scatterWriteOutOfRange 0 (-2) 0 0)
+-- Zero coefficient with a bias, `Out[0*i+5]`: extent 5, every write at 5.
+#guard errOf (boxCheck #[0, 0] 5) == some (.scatterWriteOutOfRange 0 5 5 5)
+-- Surface `Out[0*i]`: extent 0, every write at 0.
+#guard errOf (boxCheck #[0, 0] 0) == some (.scatterWriteOutOfRange 0 0 0 0)
+
+-- Corner off-by-one pairs (two-axis row `3a - b + bias`, box `[3,2]`):
+-- ACCEPT: min is exactly 0 AND max is exactly extent-1 (image [0,7] in extent 8).
+#guard isOk (boxCheck #[3, -1] 1)
+-- MIN corner one below: bias 0 makes the min -1 (image [-1,6] in extent 7); max is still in range.
+#guard errOf (boxCheck #[3, -1] 0) == some (.scatterWriteOutOfRange 0 (-1) 6 7)
+-- MAX corner at the extent, one over: coefficient 2 makes extent = max (image [0,5] in extent 5);
+-- min is still exactly 0.
+#guard errOf (boxCheck #[2, -1] 1) == some (.scatterWriteOutOfRange 0 0 5 5)
+
+-- `destShape` one too small is NOT a range error: the extent clause fires first, which pins the order.
+#guard errOf (checkScatter (boxSigs #[7]) (boxScatter 7 #[3, -1] 1))
+  == some (.scatterDestExtentMismatch 0 7 8)
+
+-- Order across dimensions: dim 0 is out of range (`i-1`, extent 2 correct) while dim 1 has a WRONG
+-- declared extent (7 vs derived 2). Every width/extent clause precedes any range clause, so the
+-- extent mismatch at dim 1 wins over the earlier-dimension range error.
+#guard errOf (checkScatter (boxSigs #[2, 7])
+    { compute := boxCompute, destShape := #[2, 7]
+    , outCoeffs := #[#[1, 0], #[0, 1]], outBias := #[-1, 0] })
+  == some (.scatterDestExtentMismatch 1 7 2)
+-- ... and the same plan with the right dim-1 extent reports the dim-0 range error.
+#guard errOf (checkScatter (boxSigs #[2, 2])
+    { compute := boxCompute, destShape := #[2, 2]
+    , outCoeffs := #[#[1, 0], #[0, 1]], outBias := #[-1, 0] })
+  == some (.scatterWriteOutOfRange 0 (-1) 1 2)
+
+-- Accept neighbours: identity, stride 2 (`2*i`, derived extent 6, image [0,4]), offset `i+1`
+-- (extent 4, image [1,3]), and a two-axis positive slot `i+j` (extent 5, image [0,3]).
+#guard isOk (boxCheck #[1, 0] 0)
+#guard isOk (boxCheck #[2, 0] 0)
+#guard isOk (boxCheck #[1, 0] 1)
+#guard isOk (boxCheck #[1, 1] 0)
+
+-- Empty source box: no write happens, so even a zero row with a bias is vacuously in range
+-- (`Out[0*i+5]` over `X : [0,2]`, extent 5). The same row over the non-empty box is rejected above.
+#guard isOk (checkScatter
+  #[ { shape := #[0, 2], dtype := .f64 }, { shape := #[5], dtype := .f64 } ]
+  { compute := { boxCompute with
+      outputShape := #[0, 2]
+      terms := #[{ iterationShape := #[0, 2], contextPos := #[], outputPos := #[0, 1]
+                 , reductionPos := #[]
+                 , factors := #[.read { sourceSlot := 0
+                                      , map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0, 0] }
+                                      , sourceShape := #[0, 2], oobPolicy := .zeroPad }] }] }
+  , destShape := #[5], outCoeffs := #[#[0, 0]], outBias := #[5] })
+
 /-! ## f32 slice Task 2, fixture 9: `checkScatter` stays the binary64 checker
 
 `upSigs`/`upScatter` above — the accepted strided upsample — with every signature and every scalar
@@ -209,5 +304,14 @@ def upScatterF32 : ScatterPlan :=
 #guard errOf (checkScatter
   #[ { shape := #[3], dtype := .f32 }, { shape := #[6], dtype := .f64 } ] upScatter)
   == some (.dtypeNotAdmitted 0 .f32)
+
+/- B6 T1b: the range clause lives in the shared core, so `checkScatterF32` has it too. `Out[2*i-1]`
+   over `X : [3]` (derived extent `-1 + 6 = 5`, image [-1,3]) is rejected; the unshifted upsample
+   is still accepted by the f32 checker. -/
+#guard errOf (checkScatterF32
+    #[ { shape := #[3], dtype := .f32 }, { shape := #[5], dtype := .f32 } ]
+    { upScatterF32 with destShape := #[5], outBias := #[-1] })
+  == some (.scatterWriteOutOfRange 0 (-1) 3 5)
+#guard isOk (checkScatterF32 upSigsF32 upScatterF32)
 
 end LeanNCD.Eval.Plan.ScatterCheckTest

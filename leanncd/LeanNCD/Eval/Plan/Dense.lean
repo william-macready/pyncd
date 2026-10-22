@@ -336,21 +336,19 @@ from source syntax; that is Task 5.
     algebra**, because differential parity against that evaluator is this feature's correctness gate
     (plan §2.1) — including the two places where matching it means NOT improving it:
 
-    * **An out-of-range destination coordinate is skipped silently.** The reference tests its placed
-      coordinate against the output shape and simply does not write when it fails, with no
-      diagnostic. `checkScatter`'s docstring names this as the one case-audit cell it leaves to this
-      worker, and rejecting it here — statically or at runtime — would refuse programs the reference
-      accepts. The test is `inBoundsPerDim` (`Coordinates.lean`), the same per-dimension predicate
-      `gatherFactorWith` uses on the read side, and it runs BEFORE `flatIndex`: a flat-offset test
-      can alias distinct invalid coordinates onto a valid address (proposal §8.3). So `Int.toNat` on
-      the destination coordinate is never lossy here — every component is already known
-      non-negative.
-    * **The `.toNat` extent degeneracies reach this worker as an empty destination, not as an
-      error.** A zero or negative placement coefficient makes `LHSSlot.outExtent` clamp that
-      dimension's extent to `0` (`ScatterCheckTest` pins both), and `checkScatter` admits the plan
-      because `destShape` does equal `outExtent`'s answer. Here that means `inBoundsPerDim` is false
-      at every source coordinate, so every write is skipped by the rule above and the result is the
-      empty tensor the reference produces. Nothing special-cases it.
+    * **An out-of-range destination coordinate is an ERROR (B6), rejected statically.** The reference
+      raises `EvalError.scatterWriteOutOfRange` and `checkScatter` rejects the plan
+      (`PlanError.scatterWriteOutOfRange`), so a checked plan never places a write outside
+      `[0, destShape)`; the `inBoundsPerDim` test here (`Coordinates.lean`) is the unreachable
+      backstop and fails loud with `PositionalInputError.scatterPlacementOutOfRange` rather than
+      skipping. It runs BEFORE `flatIndex`: a flat-offset test can alias distinct invalid
+      coordinates onto a valid address (proposal §8.3), and `Int.toNat` on the destination
+      coordinate is never lossy because every component is already known non-negative.
+    * **The `.toNat` extent degeneracies are rejections, not empty destinations.** A zero or
+      negative placement coefficient makes `LHSSlot.outExtent` clamp that dimension's extent to
+      `0`, and with a non-empty source box every write is then out of range — `checkScatter`
+      rejects it, as the reference does. Only an EMPTY source box reaches this worker with such a
+      slot, and it writes nothing.
 
     **A tropical-algebra scatter's unwritten cells hold `∓∞`** (`reduceId` of `admittedAlgebraMax`/
     `Min`), not `0.0`: filling with `0.0` under max-product would let a spurious zero win the
@@ -387,9 +385,10 @@ private def runDenseScatterWith {α : Type} (ops : ScalarKernelOps α) (s : Scat
   for sc in allCoords a.outputShape.toList do
     let val ← denseValueAtWith ops a [] store sc
     let dc := applyAffine placement sc
-    if inBoundsPerDim destShape dc then
-      let fi := flatIndex destShape (dc.map Int.toNat)
-      data := data.set! fi (reduceOp (data.getD fi reduceId) val)
+    unless inBoundsPerDim destShape dc do
+      throw (.scatterPlacementOutOfRange dc sc)
+    let fi := flatIndex destShape (dc.map Int.toNat)
+    data := data.set! fi (reduceOp (data.getD fi reduceId) val)
   return { shape := destShape, data := data }
 
 /-- Execute one checked BINARY64 scatter. **The storage-kind guard is first**, before the context

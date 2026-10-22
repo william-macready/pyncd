@@ -395,6 +395,19 @@ def scatterPlacementSlot (row : Array Int) (bias : Int) : LHSSlot :=
 def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Option Nat :=
   (scatterPlacementSlot row bias).outExtent (fun u => srcShape[u]?)
 
+/-- The corner extremes `(min, max)` of one placement slot's image `bias + Σ c_k·x_k` over the
+    source box `x_k ∈ [0, n_k)`: an affine image attains both at box corners, so
+    `min = bias + Σ min 0 (c_k·(n_k-1))` and `max = bias + Σ max 0 (c_k·(n_k-1))`. A zero coefficient
+    contributes nothing (the axis does not move the image). Meaningful only for a NON-EMPTY box —
+    callers test emptiness first (`n_k = 0` would make `n_k-1` a spurious `-1`). Rows are zipped
+    against `srcShape`, so the caller's width clause makes the zip lossless. -/
+def scatterImageBounds (srcShape : Array Nat) (row : Array Int) (bias : Int) : Int × Int :=
+  (row.toList.zip srcShape.toList).foldl
+    (fun (lo, hi) (c, n) =>
+      let span := c * ((n : Int) - 1)
+      (lo + min 0 span, hi + max 0 span))
+    (bias, bias)
+
 /-- Validate one raw `ScatterPlan` against the positional signature table.
 
     Clause order: the compute half through `checkAssignCore kind`, then the placement map's rank
@@ -411,19 +424,20 @@ def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Op
     `checkPlan`'s own `contextCheck` arm already discharges that obligation on the nested plan's
     field.
 
-    **Placement RANGE is not checked here either, deliberately, and it is the one case-audit cell
-    this checker leaves to the worker.** Nothing above rejects a placement map that sends some source
-    coordinate outside `[0, destShape[d])` — a negative coefficient or bias is admitted as long as
-    `destShape` equals `outExtent`'s answer for it, which for `#[-1]` over a rank-3 source domain is
-    the empty destination `#[0]`, accepted with three source values and nowhere to put them. That is
-    not an oversight to close statically: the reference evaluator `Eval/Scatter.lean` **skips an
-    out-of-range output coordinate silently**, the checked layer's obligation is to REPRODUCE that
-    (differential parity against the reference is the gate for this feature), and a static rejection
-    here would refuse plans the reference accepts. So the owner is the dense scatter worker, where the
-    per-coordinate skip belongs and where parity is measured — not this function. Mitigating fact
-    while that worker is unwritten: the shape is unreachable from surface syntax, since
-    `elabTLLHSSlot` (`DSL/Elab.lean`) parses only non-negative numeral coefficients and biases in an
-    affine LHS slot, so only a programmatic `ScatterPlan` can express it. -/
+    **Placement RANGE is checked statically (B6).** An out-of-range scatter write is an error in
+    both backends (decision note §B6; the reference raises `EvalError.scatterWriteOutOfRange`), so
+    after every dimension's rank/width/extent clause has passed, a SECOND loop rejects with
+    `scatterWriteOutOfRange dim min max extent` any dimension whose slot image over the source box
+    (`scatterImageBounds`, corner extremes) leaves `[0, destShape[d])`. Order: ALL width and extent
+    clauses (`scatterPlacementWidthMismatch`, `scatterDestExtentUnknown`,
+    `scatterDestExtentMismatch`, every dimension) precede ANY range clause, so a wrong declared
+    extent at a later dimension is reported ahead of a range error at an earlier one. The box is
+    `compute.outputShape` — the domain the worker enumerates, one write per coordinate whatever the
+    contracted axes do — and an EMPTY box (any extent 0) is vacuously in range, since no write
+    happens. This is reachable from surface syntax: `Out[0*i]` (extent 0) and `Out[0*i+5]`
+    (extent 5) put every write outside the derived extent; negative coefficients/biases are
+    programmatic-only (`elabTLLHSSlot` parses only non-negative numerals). The dense worker's former
+    silent skip is therefore unreachable for a checked plan (`runDenseScatterWith` fails loud). -/
 private def checkScatterCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature)
     (s : ScatterPlan) : Except PlanError CheckedScatterPlan := do
   let _ ← checkAssignCore kind sigs s.compute (some s.destShape)
@@ -441,6 +455,13 @@ private def checkScatterCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSi
     | some derived =>
         unless declared == derived do
           throw (.scatterDestExtentMismatch d declared derived)
+  -- Range, after EVERY extent clause (see the docstring). An empty source box writes nothing.
+  unless s.compute.outputShape.any (· == 0) do
+    for ((row, bias, declared), d) in
+        (s.outCoeffs.toList.zip (s.outBias.toList.zip s.destShape.toList)).zipIdx do
+      let (lo, hi) := scatterImageBounds s.compute.outputShape row bias
+      unless 0 ≤ lo && hi < (declared : Int) do
+        throw (.scatterWriteOutOfRange d lo hi declared)
   return CheckedScatterPlan.mk s kind
 
 /-- The FLOAT64 scatter checker: the S-A policy, unchanged in every clause, now naming its storage
