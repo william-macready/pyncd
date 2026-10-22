@@ -314,4 +314,15 @@ private def fOriginC := withZ 8 [.scatter "Z" [.affine (.const 3)] readX sumOpts
 -- Accept-neighbour: the injective affine `.scatter` fN' (no collision before or after S3a) stays parity.
 #guard tag fN' == "parity"
 
+-- S3a: stale `reduce`/`fill` options on a real program are admitted and ignored by every leg: the
+-- oracle value is the collision SUM (cells of fE), not the max/overwrite/fill the options named.
+private def fStale (opts : ScatterOpts) :=
+  snap 8 [k] [.scatter "Y" [.affine (.scale 2 a)] readXW opts]
+#guard oracleCells (fStale { reduce := .max }) == handBits [111, 0, 222, 0, 333, 0, 444, 0]
+#guard oracleCells (fStale { reduce := .overwrite }) == handBits [111, 0, 222, 0, 333, 0, 444, 0]
+#guard oracleCells (fStale { fill := 1 }) == handBits [111, 0, 222, 0, 333, 0, 444, 0]
+#guard tag (fStale { reduce := .max }) == "parity"
+#guard tag (fStale { reduce := .min }) == "parity"
+#guard tag (fStale { fill := 1, reduce := .sum }) == "parity"
+
 end SourceDifferentialScatterTest
