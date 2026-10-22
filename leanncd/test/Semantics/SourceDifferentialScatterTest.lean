@@ -82,7 +82,6 @@ private def snapB (bExtent kExtent : Nat) (yAxes : List AxisSpec) (stmts : List 
         if ax.uid = 7 then 4 else if ax.uid = 8 then 1 else kExtent⟩] }
   else s
 
-private def sumOpts : ScatterOpts := { reduce := .sum }
 private def convSlot : LHSSlot := .affine (.affine 0 [(1, a), (1, b)])
 
 /-- Classification name only (the full per-leg report is `observe`). -/
@@ -105,8 +104,8 @@ def tag (s : SourceSnapshot) (order : List Nat := [5]) : String :=
 private def fA := snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX]
 private def fB := snap 6 [k] [.assign "Y" [.affine (.shift a 2)] readX]
 private def fC := snap 4 [a, a] [.assign "Y" [.free a, .free a] readX]
-private def fD := snap 7 [k] [.scatter "Y" [convSlot] readXW sumOpts]
-private def fD' := snap 4 [k] [.scatter "Y" [.affine (.const 3)] readX sumOpts]
+private def fD := snap 7 [k] [.scatter "Y" [convSlot] readXW]
+private def fD' := snap 4 [k] [.scatter "Y" [.affine (.const 3)] readX]
 private def fE := snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readXW]
 private def fF := snap 6 [k] [.assign "Y" [convSlot] readXW]
 private def fF' := snap 12 [k] [.assign "Y" [.affine (.affine 0 [(1, a), (4, b)])] readXW]
@@ -258,9 +257,9 @@ private def legacyMatchesOracle (s : SourceSnapshot) : Bool :=
 -- fN: Y[a+4b] += X[a]*W[b], |k| = 16 (production derives shape 16 from the write form, p3_observed
 --   (f'): a declared 12 gives a shape-binding issue, not a value): slots a+4b are distinct, so
 --   Y = X[a]*W[b] laid out as b=0: 1,2,3,4; b=1: 10,20,30,40; b=2: 100,200,300,400; cells 12..15 = 0.
-private def fN := snap 16 [k] [.scatter "Y" [.affine (.affine 0 [(1, a), (4, b)])] readXW sumOpts]
+private def fN := snap 16 [k] [.scatter "Y" [.affine (.affine 0 [(1, a), (4, b)])] readXW]
 -- fN': Y[2a] += X[a], |k| = 8: Y = 1,0,2,0,3,0,4,0.
-private def fN' := snap 8 [k] [.scatter "Y" [.affine (.scale 2 a)] readX sumOpts]
+private def fN' := snap 8 [k] [.scatter "Y" [.affine (.scale 2 a)] readX]
 #guard legacyCells fN == handBits [1, 2, 3, 4, 10, 20, 30, 40, 100, 200, 300, 400, 0, 0, 0, 0]
 #guard legacyMatchesOracle fN
 #guard legacyCells fN' == handBits [1, 0, 2, 0, 3, 0, 4, 0]
@@ -268,10 +267,8 @@ private def fN' := snap 8 [k] [.scatter "Y" [.affine (.scale 2 a)] readX sumOpts
 
 /-! T4-A1 two-tensor programs, after S3a (collisions sum, so the origin-bound collision rows that
 named `Y`/`Z` in a native collision error lost their referent and are deleted; `Z` is declaration 6,
-over `a`). Kept: the stale-`rejectCollisions` bare scatter (now parity) and the checked-leg
+over `a`). Kept: the bare scatter with a contracted axis (now parity) and the checked-leg
 constant-slot refusal naming `Z`. -/
-
-private def rejOpts : ScatterOpts := { reduce := .rejectCollisions }
 
 private def withZ (kExtent : Nat) (stmts : List Stmt) : SourceSnapshot :=
   let s := snap kExtent [k] stmts
@@ -283,10 +280,10 @@ private def withZ (kExtent : Nat) (stmts : List Stmt) : SourceSnapshot :=
 private def mentions (s : SourceSnapshot) (needle : String) : Bool :=
   ((observe s).splitOn needle).length > 1
 
--- Review F11 probe: a BARE-slot scatter with the stale `rejectCollisions` option and `b` contracted,
--- `Z[a] := X[a]*W[b]`. Production ignores the option and sums (Z = X[a]*(1+10+100)), like the
--- oracle: four-leg parity (observed; before S3a both native legs rejected it as a collision).
-private def zBare : Stmt := .scatter "Z" [.free a] readXW rejOpts
+-- Review F11 probe: a BARE-slot scatter with `b` contracted, `Z[a] := X[a]*W[b]`. Production sums
+-- (Z = X[a]*(1+10+100)), like the oracle: four-leg parity (observed; before S3a both native legs
+-- rejected it as a collision).
+private def zBare : Stmt := .scatter "Z" [.free a] readXW
 private def fF11 := withZ 8 [zBare, .assign "Y" [.affine (.scale 2 a)] readX]
 #guard tag fF11 [5, 6] == "parity"
 #guard mentions fF11 "legacy=value [(Y, ([8], [1.000000, 0.000000, 2.000000, 0.000000, 3.000000, 0.000000, 4.000000, 0.000000])), (Z, ([4], [111.000000, 222.000000, 333.000000, 444.000000]))]"
@@ -300,7 +297,7 @@ private def fF11 := withZ 8 [zBare, .assign "Y" [.affine (.scale 2 a)] readX]
 -- CHECKED-only refusal: Z's constant-slot scatter (legacy sums it into Z = [0,0,0,10]; the checked
 -- plan refuses it at preparation naming Z) next to fE's agreeing write on Y: the program is still a
 -- `nativeFailure` and the refusal names Z.
-private def fOriginC := withZ 8 [.scatter "Z" [.affine (.const 3)] readX sumOpts,
+private def fOriginC := withZ 8 [.scatter "Z" [.affine (.const 3)] readX,
   .assign "Y" [.affine (.scale 2 a)] readXW]
 #guard mentions fOriginC "scatterOrAffineLhs \"Z: constant affine LHS slot\""
 #guard mentions fOriginC "(Z, ([4], [0.000000, 0.000000, 0.000000, 10.000000]))"
@@ -313,16 +310,5 @@ private def fOriginC := withZ 8 [.scatter "Z" [.affine (.const 3)] readX sumOpts
 #guard legacyMatchesOracle fE
 -- Accept-neighbour: the injective affine `.scatter` fN' (no collision before or after S3a) stays parity.
 #guard tag fN' == "parity"
-
--- S3a: stale `reduce`/`fill` options on a real program are admitted and ignored by every leg: the
--- oracle value is the collision SUM (cells of fE), not the max/overwrite/fill the options named.
-private def fStale (opts : ScatterOpts) :=
-  snap 8 [k] [.scatter "Y" [.affine (.scale 2 a)] readXW opts]
-#guard oracleCells (fStale { reduce := .max }) == handBits [111, 0, 222, 0, 333, 0, 444, 0]
-#guard oracleCells (fStale { reduce := .overwrite }) == handBits [111, 0, 222, 0, 333, 0, 444, 0]
-#guard oracleCells (fStale { fill := 1 }) == handBits [111, 0, 222, 0, 333, 0, 444, 0]
-#guard tag (fStale { reduce := .max }) == "parity"
-#guard tag (fStale { reduce := .min }) == "parity"
-#guard tag (fStale { fill := 1, reduce := .sum }) == "parity"
 
 end SourceDifferentialScatterTest

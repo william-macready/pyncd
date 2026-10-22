@@ -33,10 +33,9 @@ private def snap (yAxes : List AxisSpec) (stmts : List Stmt) : SourceSnapshot :=
 private def strided (agg : AggOp) : SourceSnapshot :=
   snap [k] [.assign "Y" [.affine (.scale 2 a)] (rhs agg [[.read "X" [.axis a]]])]
 
-/-- A bare-slot (`Y[a]`) scatter of `Z[a,b]`, reducing with `reduce`. -/
+/-- A bare-slot (`Y[a]`) scatter of `Z[a,b]`, reducing with `agg`. -/
 private def bareScatter (agg : AggOp) : SourceSnapshot :=
-  snap [a] [.scatter "Y" [.free a] (rhs agg [[.read "Z" [.axis a, .axis b]]])
-    { reduce := .rejectCollisions }]
+  snap [a] [.scatter "Y" [.free a] (rhs agg [[.read "Z" [.axis a, .axis b]]])]
 
 private def isPolicy : SourceCause → Bool | .unsupported .scatterPolicy => true | _ => false
 private def isNonSum : SourceCause → Bool | .unsupported .nonSum => true | _ => false
@@ -55,8 +54,7 @@ BOTH a mix and a policy refusal; the statement's own cause (`scatterPolicy`) is 
 `sortSelection`. -/
 #guard causeIs isPolicy (admitSourceSorted (snap [a]
   [.assign "Y" [.free a] (rhs .sum [[.read "X" [.axis a]]]),
-   .scatter "Y" [.affine (.scale 2 a)] (rhs .max [[.read "X" [.axis a]]])
-     { reduce := .rejectCollisions }]))
+   .scatter "Y" [.affine (.scale 2 a)] (rhs .max [[.read "X" [.axis a]]])]))
 
 /-! Row 9: the tropical scatter guard fires before the bare/affine slot split. -/
 #guard causeIs isPolicy (admitSourceSorted (bareScatter .max))

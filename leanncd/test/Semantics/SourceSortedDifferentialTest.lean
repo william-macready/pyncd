@@ -77,8 +77,7 @@ private def classOf (s : SourceSnapshot) : String :=
 /-- info: false -/
 #guard_msgs in #eval (admitSourceAffine (single .max)).toOption.isSome
 /-- info: "refused LeanNCD.Semantics.Source.SourceCause.unsupported (LeanNCD.Semantics.Source.UnsupportedSource.scatterPolicy)" -/
-#guard_msgs in #eval carrierOf (snap [k] [.scatter "Y" [.affine (.scale 2 a)] (rhs .max [[.read "X" [.axis a]]])
-  { reduce := .rejectCollisions }])
+#guard_msgs in #eval carrierOf (snap [k] [.scatter "Y" [.affine (.scale 2 a)] (rhs .max [[.read "X" [.axis a]]])])
 
 /-! Q5: Core leg values (must equal the oracle: `published` agreement is in the classification). -/
 /-- info: "some [some -3, some 7, some 17, some 27]" -/
