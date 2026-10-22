@@ -341,7 +341,7 @@ is compared (S2a recorded the collision condition and the `fD`/`fD'`/F11 `native
 collision condition because every backend now sums, see below). S2a itself changed no production semantics. S2b (merge cf7d6eee) closes the oracle side of tropical carriers
 (single-sort, no scatter) in the same way and adds no production semantics. S3a (landed on its branch; merge hash recorded in `additive_s3a_record.md`) makes
 top-level scatter collisions ⊕-sum in the reference (`evalScatter`) and the checked plan (the scan-local reference write still overwrites; parked) and deletes `CollisionReduce` and
-`ScatterOpts`; top-level `max`/`min` scatter stays refused, and range errors stay parked. Still open: S3b (tropical sorts,
+`ScatterOpts`; top-level `max`/`min` scatter stays refused. Out-of-range scatter writes became errors in both backends in the following B6 slice (`additive_b6_record.md`). Still open: S3b (tropical sorts,
 casts, constants, multi-factor max-plus in production); affine READ slots and a raw-parse theorem for affine
 statements stay unowned (see `additive_s2a_plan.md` §2).*
 

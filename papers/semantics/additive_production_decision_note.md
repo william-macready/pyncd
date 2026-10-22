@@ -202,16 +202,17 @@ Slice 1 does **not** change this. It stays a recorded divergence.
   - assign-vs-declared-axis needs an explicit post-inference size comparison.
 - `explicitSizes` are unaffected, because clones are tensor declarations, not axis declarations.
 
-**B6. FIXED (A), PROPOSED placement: out-of-range writes are an error (S3).**
+**B6. FIXED (A), LANDED (separate slice after S3a, record `additive_b6_record.md`): out-of-range writes are an error.**
 - Reference: the silent skip at Scatter.lean:77 becomes `scatterWriteOutOfRange nm oc srcCoord`.
 - Checked: `checkScatterCore` (Check.lean:421-433 defers range to the worker today) rejects statically. It
   computes each destination dimension's affine image over the source box (min and max are attained at
   corners; an empty source box is vacuously in range).
 - Both backends then reject exactly the same programs, and the dense skip (Dense.lean:339) becomes an
   internal error.
-- Surface affine slots cannot produce out-of-range writes against their own derived extent
-  (Elab.lean:264-280; `outExtent`, Ast.lean:459-480). The error is reachable only through programmatic
-  ASTs or S3 shape mismatches.
+- Surface affine slots with a non-negative coefficient cannot produce out-of-range writes against their own
+  derived extent (Elab.lean:264-280; `outExtent`, Ast.lean:459-480). Landed finding: a ZERO coefficient reaches the
+  error from surface syntax (`Out[0*i]` derives extent 0, `Out[0*i+5]` derives extent 5, so every write is outside);
+  negative coefficients and biases need programmatic ASTs.
 
 ## C. The collector (PROPOSED unless noted)
 
@@ -323,8 +324,8 @@ tropical carriers, out-of-range write errors, `CollisionReduce`/fill deletion, m
 
 Status, 2026-10-16: slice 1 landed and every item above is applied (`[x]`). The path doc and gap audit
 describe the landed state for the plain bare-slot sum fragment; scatter, max/min, scan multi-writer sets,
-the oracle for affine write slots and tropical carriers, out-of-range write errors and max-plus remain
-planned (S2/S3). The spec remarks on roles (§13.6) and production readiness (§23.4) say that both
+the oracle for affine write slots and tropical carriers and max-plus remain
+planned (S2/S3); out-of-range write errors landed after S3a (B6). The spec remarks on roles (§13.6) and production readiness (§23.4) say that both
 backends reject a supplied input that names a defined tensor and that a reader waits for every writer.
 
 ## E. Slice outline
