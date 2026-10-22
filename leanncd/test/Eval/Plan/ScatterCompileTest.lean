@@ -336,4 +336,18 @@ run_cmd do
   assertScatterParity "S10 Out[2*i] := X[i, j]" collideProg collideEnv "Out"
     (dt [6] [3.0, 0.0, 7.0, 0.0, 11.0, 0.0])
 
+/-! ## S10b — colliding writes fold in SOURCE order (binary64 is not associative)
+
+The same program over `X : [3, 3]`, rows chosen so the fold order is visible: row 0 `[1, 1e16, -1e16]`
+sums to 0.0 in source order (`1 + 1e16` rounds back to `1e16`) but 1.0 reversed; row 2
+`[-1e16, 1e16, 1]` sums to 1.0 in source order but 0.0 reversed; row 1 is an exact control. The
+reference and the checked plan must agree on the SOURCE-order values, so a worker that folds in
+another order fails here even though S10's integers cannot tell. -/
+
+def collideOrderEnv : HashMap String DenseTensor :=
+  HashMap.ofList [("X", dt [3, 3] [1.0, 1.0e16, -1.0e16, 3.0, 4.0, 5.0, -1.0e16, 1.0e16, 1.0])]
+run_cmd do
+  assertScatterParity "S10b Out[2*i] := X[i, j] (order)" collideProg collideOrderEnv "Out"
+    (dt [6] [0.0, 0.0, 12.0, 0.0, 1.0, 0.0])
+
 end LeanNCD.Eval.Plan.ScatterCompileTest

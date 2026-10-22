@@ -1296,6 +1296,17 @@ def f32ScatterOverflowFillProg : ScheduledProgram :=
 #guard causeOf (prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig) ==
   some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
 
+-- The `.min` twin of the fixture above (the guard is on `agg`, so `.min` must be refused exactly like
+-- `.max`; the reference-side `.min` pin is ScanTest "Shape 1").
+def f32ScatterMinFillProg : ScheduledProgram :=
+  { f32ScatterOverflowFillProg with
+    stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity
+      , agg := .min })] }
+
+#guard causeOf (prepareEvalPlan f32ScatterMinFillProg f32IdentitySig) ==
+  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
+
 -- (d) scan: `ScanCompileTest.selfRecurSched`'s statement with binary32 declarations for its two
 -- externals and its state. The scan's representative name is `S`.
 def f32ScanAxL : AxisSpec := ⟨"l", 1, .nat⟩
