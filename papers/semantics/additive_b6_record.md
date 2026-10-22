@@ -41,4 +41,11 @@ commit (stale comments, `conditionCount fR == 0`); merge hash on the close line.
 
 ## 3. Cost and process
 
-See the close line at the end. Dispatch turns vs the ~60 cap: reference 52, checked plan ~62, differential and pins 40.
+Measured with `token-report.py` at merge. B6 itself: **about 51M cumulative input tokens** (dispatches 28.7M: reference 5.2M, checked plan 8.4M,
+differential and pins 4.7M, Opus review A 3.0M, review B 7.4M; the scan-local F3 audit 6.3M; controller share about 16M). The whole session (S3a plus B6,
+including the S3a audit and review) stands at 124.9M. Dispatch turns vs the ~60 cap: reference 56, checked plan 68 (over), differential and pins 56,
+review A 33, review B 63 (over), F3 audit 59. The controller context peaked at 317k, above the 250k dispatch ceiling (a controller is not a dispatch,
+but a session this long should be split).
+
+Merged to local `main` as `8cf5052a` on 2026-10-22 (merged tree identical to slice tip `1b885acc`; full `Tests` 8823 jobs green on it, run by the
+controller). Not pushed. Worktree and branch removed.
