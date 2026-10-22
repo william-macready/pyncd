@@ -154,25 +154,13 @@ def checkNonlinScatter (stmtName : String) : Nonlin → Except CapabilityError U
   | .pointwise _ => throw (.unsupportedNonlin s!"{stmtName}: scatter nonlinearity")
   | .axiswise .. => throw (.unsupportedNonlin s!"{stmtName}: scatter nonlinearity")
 
-/-- A scatter's collision policy admission. `.rejectCollisions` is the only policy `checkScatter`
-    (`Check.lean`) admits, so the other four must be refused HERE, at capability tier with a source
-    locator — reaching `checkPlan` with one would surface as `invalidPlan`, the compiler-bug channel.
-    Matched exhaustively rather than through a catch-all (plan §2.5), so adding a sixth policy is a
-    compile error at this site. Only `.rejectCollisions` is surface-reachable in any case:
-    `lowerArith` hard-codes it, and there is no `reduce` syntax. -/
-def checkScatterReduce (stmtName : String) : LeanNCD.CollisionReduce → Except CapabilityError Unit
-  | .rejectCollisions => pure ()
-  | .overwrite | .sum | .max | .min =>
-      throw (.scatterOptsNotAdmitted s!"{stmtName}: collision policy")
-
-/-- Scan scatters have one admitted option tuple: zero fill with collision rejection. Checked after
-    slots, aggregation, nonlinearity, and factors, matching the top-level scatter's sub-construct
-    order. -/
+/-- Scan scatters admit zero fill only (S3a: the collision policy is no longer an admission question —
+    every scatter folds collisions with the destination ⊕). Checked after slots, aggregation,
+    nonlinearity, and factors, matching the top-level scatter's sub-construct order. -/
 def checkScanScatterOpts (stmtName : String) (opts : ScatterOpts) :
     Except CapabilityError Unit := do
   if opts.fill != 0 then
     throw (.scatterOptsNotAdmitted s!"{stmtName}: fill")
-  checkScatterReduce stmtName opts.reduce
 
 /-- `.unaryFn` is now structurally admitted (unary-factor thread): `residualizeAssignment` lowers it
     to a `ReadPlan` carrying `unary := some op`, and Dense's `gatherFactorWith` applies the function
@@ -237,8 +225,8 @@ def checkAggOp (_stmtName : String) : AggOp → Except CapabilityError Unit
     `classifyStmt` rejects a scatter statement outright without inspecting its payload, while S-A
     admits a TOP-LEVEL one and checks its sub-constructs in the same order an assignment's are
     checked (slots, `agg`, `nonlin`, factors), with `checkScatterLHSSlot`/`checkNonlinScatter` in
-    place of the assignment's own two, plus the one sub-construct only a scatter has (`ScatterOpts`,
-    via `checkScatterReduce`) last. `recurMorphism` is still rejected outright. -/
+    place of the assignment's own two (S3a: `ScatterOpts` is no longer checked here — collisions fold
+    with the destination ⊕). `recurMorphism` is still rejected outright. -/
 def checkStmt : Stmt → Except CapabilityError Unit
   | .assign nm slots rhs => do
       for s in slots do checkLHSSlot nm s
@@ -246,13 +234,12 @@ def checkStmt : Stmt → Except CapabilityError Unit
       checkNonlinTopLevel nm rhs.nonlin
       for t in rhs.body.terms do
         for f in t.factors do checkFactor nm f
-  | .scatter nm slots rhs opts => do
+  | .scatter nm slots rhs _ => do
       for s in slots do checkScatterLHSSlot nm s
       checkAggOp nm rhs.agg
       checkNonlinScatter nm rhs.nonlin
       for t in rhs.body.terms do
         for f in t.factors do checkFactor nm f
-      checkScatterReduce nm opts.reduce
   | .recurMorphism nm .. => throw (.recurrenceOrCallback nm)
 
 /-- The scan-context analogue of `checkLHSSlot`: inside a `.scan` node's own `base`/`recur` lists,

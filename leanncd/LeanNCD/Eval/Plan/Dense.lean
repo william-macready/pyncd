@@ -370,12 +370,12 @@ from source syntax; that is Task 5.
     max/min scatter from source, as `scatterFillNotIdentity`, so the divergence is no longer
     observable through `TLProgram.eval`; it remains for direct `evalScatter` calls and raw plans.)
 
-    `writtenBy` maps a destination flat index to the FIRST source coordinate that wrote there, and
-    exists only to name both halves of a conflict in `scatterCollision` — the reference's own reason
-    for carrying it. `.rejectCollisions` is the only policy `checkScatter` admits, so the four arms
-    beside it are unreachable for any `CheckedScatterPlan`; they go through the carrier's
-    `ops.binOp` (`.add`/`.max`/`.min`), the reference's equations, so that admitting one later is a
-    checker change alone. -/
+    **Collisions are folded, not rejected (S3a).** Every in-range write is combined into its cell
+    with the destination algebra's `reduceOp`, starting from `reduceId` (0_K): `+`/`0` for the real
+    algebras (binary32 rides this same worker over `float32Ops`), `max`/`false` for a Boolean one,
+    `max`/`min` from `∓∞` for a tropical one. The empty fibre is therefore `reduceId` and a
+    collision is a sum; `s.reduce` and `s.fill` are not read (the fields remain until their
+    deletion), `checkScatter` having already forced `fill == reduceId`. -/
 private def runDenseScatterWith {α : Type} (ops : ScalarKernelOps α) (s : ScatterPlan)
     (store : Array (DenseTensorOf α)) : Except PositionalInputError (DenseTensorOf α) := do
   let a := s.compute
@@ -389,27 +389,15 @@ private def runDenseScatterWith {α : Type} (ops : ScalarKernelOps α) (s : Scat
   -- The placement map's fields already ARE `AffineMap`'s, row per destination dimension and width per
   -- source position, so `applyAffine` applies as-is — no second affine evaluator.
   let placement : AffineMap := { coeffs := s.outCoeffs, bias := s.outBias }
-  let fill ← ops.decodeConst s.fill
-  let mut data : Array α := Array.replicate (destShape.foldl (· * ·) 1) fill
-  let mut writtenBy : Std.HashMap Nat (List Nat) := {}
+  let reduceId ← ops.decodeConst a.algebra.reduceId
+  let reduceOp ← ops.binOp a.algebra.reduceOp
+  let mut data : Array α := Array.replicate (destShape.foldl (· * ·) 1) reduceId
   for sc in allCoords a.outputShape.toList do
     let val ← denseValueAtWith ops a [] store sc
     let dc := applyAffine placement sc
     if inBoundsPerDim destShape dc then
-      let oc := dc.map Int.toNat
-      let fi := flatIndex destShape oc
-      let prev := data.getD fi fill
-      match s.reduce with
-      | .rejectCollisions =>
-          match writtenBy[fi]? with
-          | some firstSrc => throw (.scatterCollision oc firstSrc (sc.map Int.toNat))
-          | none =>
-              writtenBy := writtenBy.insert fi (sc.map Int.toNat)
-              data := data.set! fi val
-      | .overwrite => data := data.set! fi val
-      | .sum => data := data.set! fi ((← ops.binOp .add) prev val)
-      | .max => data := data.set! fi ((← ops.binOp .max) prev val)
-      | .min => data := data.set! fi ((← ops.binOp .min) prev val)
+      let fi := flatIndex destShape (dc.map Int.toNat)
+      data := data.set! fi (reduceOp (data.getD fi reduceId) val)
   return { shape := destShape, data := data }
 
 /-- Execute one checked BINARY64 scatter. **The storage-kind guard is first**, before the context

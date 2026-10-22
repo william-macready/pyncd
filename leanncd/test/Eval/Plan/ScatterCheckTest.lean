@@ -124,10 +124,11 @@ def fillMismatchScatter : ScatterPlan :=
   == some (.scatterFillNotIdentity (.f64 (Float.toBits 0.0))
             (.f64 (Float.toBits (-1.0 / 0.0))))
 
-/- Rejection 2 (collision-reduce admission). Only `rejectCollisions` has a worker; `sum`, and the
-   three arms beside it, are matched explicitly and thrown on. -/
-#guard errOf (checkScatter upSigs { upScatter with reduce := .sum })
-  == some (.scatterReduceNotAdmitted .sum)
+/- S3a: the collision policy is not a checker clause any more — the worker folds with the destination
+   algebra's `reduceOp`, so a stale `reduce` field is admitted (and ignored). Accept neighbour of the
+   `fill` rejection above. -/
+#guard isOk (checkScatter upSigs { upScatter with reduce := .sum })
+#guard isOk (checkScatter upSigs { upScatter with reduce := .overwrite })
 
 /- Rejection 3 (placement-row width — unchecked on the existing write path). The source iteration
    basis is `#[3]`, width 1; a two-wide row names a source position that does not exist. -/

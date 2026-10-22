@@ -85,7 +85,7 @@ def acceptedSched : ScheduledProgram :=
 #guard (CapabilityError.scanNode "retained") == CapabilityError.scanNode "retained"
 
 -- A TOP-LEVEL scatter statement is now ADMITTED (S-A): `checkStmt` checks its sub-constructs
--- through `checkScatterLHSSlot`/`checkNonlinScatter`/`checkScatterReduce` instead of rejecting the
+-- through `checkScatterLHSSlot`/`checkNonlinScatter` instead of rejecting the
 -- constructor outright. The scan-block analogue still rejects — see `ScanCompileTest.lean`'s
 -- `badScatter` fixtures, which are S-B and deliberately unchanged.
 #guard isOk (capabilityPreflight
@@ -151,15 +151,14 @@ def acceptedSched : ScheduledProgram :=
           , nonlin := .pointwise .relu } {})] })
   == some (.unsupportedNonlin "Out: scatter nonlinearity")
 
--- A collision policy other than `rejectCollisions` — the only one `checkScatter` admits — is
--- refused HERE, at capability tier with a locator, rather than reaching `checkPlan` and being
--- reported through the compiler-bug channel as `invalidPlan`.
-#guard errOf (capabilityPreflight
+-- S3a: the collision policy is no longer an admission question (every scatter folds collisions
+-- with the destination ⊕), so a stale non-default `reduce` passes the capability tier. The
+-- remaining option clause, nonzero `fill`, is still refused (see the scan fixtures below).
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.scatter "Out" [.free ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity }
           { fill := 0, reduce := .sum })] })
-  == some (.scatterOptsNotAdmitted "Out: collision policy")
 
 /-! Scan-scatter capability: iteration slots plus S-A's single-axis affine forms are admitted in
 both block halves. Capability remains deliberately narrower than source syntax for constant and
@@ -212,10 +211,11 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
     { fill := 1, reduce := .sum }] []))
   == some (.unsupportedNonlin "S: scatter nonlinearity")
 
-#guard errOf (capabilityPreflight (scanScatterSched
+-- S3a: a non-default collision policy is no longer refused in a scan block (accept neighbour of
+-- the nonzero-fill refusals below).
+#guard isOk (capabilityPreflight (scanScatterSched
   [scanScatterStmt "S" [.free scanScatterDataAxis, .iterAt scanScatterAxis 0]
     (opts := { fill := 0, reduce := .sum })] []))
-  == some (.scatterOptsNotAdmitted "S: collision policy")
 
 -- Nonzero fill is pinned once in each traversal half.
 #guard errOf (capabilityPreflight (scanScatterSched

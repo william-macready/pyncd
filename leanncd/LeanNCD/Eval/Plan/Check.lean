@@ -397,8 +397,9 @@ def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Op
 
 /-- Validate one raw `ScatterPlan` against the positional signature table.
 
-    Clause order: the compute half through `checkAssignCore kind`, then the two scalar
-    coherence clauses (`fill`, `reduce`), then the placement map's rank and its per-dimension width
+    Clause order: the compute half through `checkAssignCore kind`, then the scalar
+    coherence clause (`fill`; S3a: no collision-policy clause — the worker folds collisions with
+    `algebra.reduceOp`), then the placement map's rank and its per-dimension width
     and extent — global facts before the loop, the same shape `checkAssign` itself uses.
 
     The compute half is checked with `destSigShape? := some s.destShape`, which is the whole point of
@@ -436,9 +437,6 @@ private def checkScatterCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSi
   let _ ← checkAssignCore kind sigs s.compute (some s.destShape)
   unless s.fill == s.compute.algebra.reduceId do
     throw (.scatterFillNotIdentity s.fill s.compute.algebra.reduceId)
-  match s.reduce with
-  | .rejectCollisions => pure ()
-  | .overwrite | .sum | .max | .min => throw (.scatterReduceNotAdmitted s.reduce)
   unless s.outCoeffs.size == s.destShape.size && s.outBias.size == s.destShape.size do
     throw (.scatterPlacementRankMismatch s.destShape.size s.outCoeffs.size s.outBias.size)
   let srcRank := s.compute.outputShape.size

@@ -44,15 +44,6 @@ def shapeDataOf : Except String DenseTensor → Option (List Nat × Array Float)
   | .ok d => some (d.shape, d.data)
   | .error _ => none
 
-/-- The runtime error a checked scatter raises, or `none` if it checked and ran. -/
-def posErrOf (sigs : Array TensorSignature) (s : ScatterPlan) (store : Array DenseTensor) :
-    Option PositionalInputError :=
-  match checkScatter sigs s with
-  | .error _ => none
-  | .ok c => match runDenseScatter c store with
-             | .error e => some e
-             | .ok _ => none
-
 /-! ## The shared single-source-axis shape
 
 `X : [3]` at slot 0, the scattered destination at slot 1. The compute half's `outputShape` is `#[3]`
@@ -171,11 +162,11 @@ def runChain : Except String DenseTensor := do
 read axes, so `j` — which appears on the RHS only — is a SOURCE axis, giving `compute.outputShape =
 #[3,2]`. The placement row `#[1,0]` reads `i` and ignores `j`, so the two `j` values land on the same
 destination cell: this is the reference's structure exactly, where what reads like "summing over `j`"
-is multiple source coordinates colliding, resolved by `opts.reduce` rather than by a contraction.
+is multiple source coordinates colliding, folded with the destination's ⊕ (S3a), here real `+`.
 
-Under `.rejectCollisions` — the only policy `checkScatter` admits — that is an error, not a merge.
-Row-major source enumeration reaches `[0,0]` first and `[0,1]` second, both placing at destination
-`[0]`, so both conflicting source coordinates are named and `first` is `[0,0]`.
+Both `j` values land on destination `[i]`, so each cell is `X[i]·10 + X[i]·100 = 110·X[i]`: the sum
+`[110, 220, 330]`, not an error (it was `scatterCollision [0] [0,0] [0,1]` under the retired
+`.rejectCollisions` policy). The non-colliding fixtures above are the accept neighbours.
 
 `destShape` is `outExtent`'s `0 + 1·3 + 0·2 = 3`; the zero coefficient on `j` contributes nothing to
 the extent, which is the same arithmetic the degeneracy pin below exercises in isolation. -/
@@ -203,8 +194,8 @@ def collisionStore : Array DenseTensor :=
    , { shape := [2], data := #[10.0, 100.0] }
    , { shape := [3], data := #[] } ]
 
-#guard posErrOf collisionSigs collisionScatter collisionStore
-  == some (.scatterCollision [0] [0, 0] [0, 1])
+#guard shapeDataOf (runScatter collisionSigs collisionScatter collisionStore)
+  == some ([3], #[110.0, 220.0, 330.0])
 
 /-! ## Runtime case-audit pins
 

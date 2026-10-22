@@ -64,10 +64,6 @@ inductive PlanError
       rather than normalised: a checker that quietly rewrote `fill` would be indistinguishable, from
       its return value, from one that never looked. -/
   | scatterFillNotIdentity        (fill identity : ScalarConst)
-  /-- A `ScatterPlan` names a collision policy no worker implements. Only `rejectCollisions` is
-      admitted; the remaining four arms are matched explicitly (never a catch-all) so adding a sixth
-      policy is a compile error and landing one of these is replacing this `throw` with real logic. -/
-  | scatterReduceNotAdmitted      (reduce : LeanNCD.CollisionReduce)
   /-- An inline unary read factor inside an assignment whose graph storage kind has no unary
       implementation. Located at the ORIGINAL all-factor index (an Iverson ahead of the read does
       not shift it down), matching every other per-factor locator in this family. RETAINED
@@ -158,8 +154,11 @@ inductive PositionalInputError
   -- already forces every leaf width == `iterationShape.size`); carried so the Dense predicate
   -- evaluator fails loud rather than silently, if ever handed an unchecked plan.
   | predicateWidthMismatch (expected : Nat) (actual : Nat)
-  /-- Two SOURCE coordinates of a scatter place a value at the same DESTINATION coordinate under
-      `CollisionReduce.rejectCollisions`. Raised by `runDenseScatterWith` (`Dense.lean`, behind
+  /-- RETAINED PRODUCER-LESS since S3a: `runDenseScatterWith` now folds colliding writes with the
+      destination algebra's `reduceOp` instead of raising this (the Source-oracle differential
+      still names the constructor; it goes with that cleanup). Originally: two SOURCE coordinates of
+      a scatter placing a value at the same DESTINATION coordinate under
+      `CollisionReduce.rejectCollisions`, raised by `runDenseScatterWith` (`Dense.lean`, behind
       both `runDenseScatter` and `runDenseScatter32`), and a runtime
       concern rather than a `PlanError` by construction: whether a placement map is injective over a
       given source domain is not decidable from the plan's rank/width/extent clauses, which is why
@@ -270,11 +269,10 @@ inductive CapabilityError
       from `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots);
       a hand-built `ScheduledProgram` handed to `prepareEvalPlan` is what can express it. -/
   | multiAxisScatterLhs  (context : String)
-  /-- A top-level scatter's `ScatterOpts` naming a fill or a collision policy the checked layer does
-      not implement: a `reduce` other than `rejectCollisions` (the only policy `checkScatter`
-      admits), or a `fill` that is not the destination algebra's own reduction identity
-      (`ContractionAlgebra.reduceId` — §2.5's coherence rule: fill and collision-reduce are the
-      identity and the operation of one monoid). Both are rejected HERE, at capability tier with a
+  /-- A top-level scatter's `ScatterOpts` naming a `fill` the checked layer does not implement: one
+      that is not the destination algebra's own reduction identity
+      (`ContractionAlgebra.reduceId` — §2.5's coherence rule). S3a: the collision `reduce` policy is
+      no longer an admission question — it is ignored. The fill is rejected HERE, at capability tier with a
       source locator, rather than left to surface from `checkScatter` as `invalidPlan`, which is the
       compiler-bug channel and would misreport a legitimately out-of-fragment source program as one.
 

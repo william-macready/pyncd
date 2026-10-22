@@ -113,7 +113,7 @@ structure CheckedEvalPlan where private mk ::
     slot or collide on a destination via the shared graph-level checks). **A `checkScatter` failure
     is `.assign (.nodeError ni e)` too, and for exactly that reason, not by oversight:**
     `checkScatter` returns a plain `PlanError` (its scatter-specific causes —
-    `scatterFillNotIdentity`, `scatterReduceNotAdmitted`, `scatterPlacementRankMismatch`,
+    `scatterFillNotIdentity`, `scatterPlacementRankMismatch`,
     `scatterPlacementWidthMismatch`, `scatterDestExtentUnknown`, `scatterDestExtentMismatch` — are
     all `PlanError`
     constructors), so the error's own shape is the `PlanError` this constructor names, and a
