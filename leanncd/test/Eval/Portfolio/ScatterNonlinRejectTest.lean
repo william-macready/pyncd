@@ -52,7 +52,7 @@ run_cmd do
   let sizes := ({} : HashMap UID Nat).insert 1 2
   -- names declared `f64`: an undeclared name is binary32 and `evalScatter` would refuse it first
   let decls : List Decl := [Decl.typedTensor .f64 "Out" [], Decl.typedTensor .f64 "X" []]
-  match evalScatter decls env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4] with
+  match evalScatter decls env sizes "Out" slots rhs [4] with
   | .error (.unsupportedScatterNonlin "Out") => pure ()
   | .error e => throwError s!"RSN3: wrong error, expected unsupportedScatterNonlin \"Out\", got: {e}"
   | .ok _    => throwError "RSN3: expected evalScatter to reject a non-identity nonlin scatter"

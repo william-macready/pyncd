@@ -5,7 +5,7 @@ import Eval.Plan.KernelDense32Test
 /-!
 # F32-D Task 1: the native binary32 scatter checker and worker
 
-Every plan here is a `ScatterDenseTest` plan with its dtypes, algebra, and `fill` moved to binary32
+Every plan here is a `ScatterDenseTest` plan with its dtypes and algebra moved to binary32
 (donor named per fixture). Values are exact `Float32.toBits` patterns; binary64 contrasts run the
 same plan through the Float checker/worker.
 -/
@@ -40,9 +40,9 @@ def sigsFor32 (destShape : Array Nat) : Array TensorSignature :=
 def srcCompute32 (alg : ContractionAlgebra) : AssignPlan :=
   { ScatterDenseTest.srcCompute with algebra := alg }
 
-/-- `ScatterDenseTest.placed #[6] #[#[2]] #[0]` (`Out[2*i] := X[i]`) under `alg`, fill coherent. -/
+/-- `ScatterDenseTest.placed #[6] #[#[2]] #[0]` (`Out[2*i] := X[i]`) under `alg`. -/
 def upScatter32 (alg : ContractionAlgebra) : ScatterPlan :=
-  { ScatterDenseTest.placed #[6] #[#[2]] #[0] with compute := srcCompute32 alg, fill := alg.reduceId }
+  { ScatterDenseTest.placed #[6] #[#[2]] #[0] with compute := srcCompute32 alg }
 
 /-- `X = [1, 2, 3]` as binary32 bits. -/
 def store32 : Array DenseTensor32 :=
@@ -60,11 +60,6 @@ def store32 : Array DenseTensor32 :=
 -- The binary32 checker refuses a binary64 table at the destination, through the shared core.
 #guard checkErrOf (checkScatterF32 (ScatterDenseTest.sigsFor #[6]) (ScatterDenseTest.placed #[6] #[#[2]] #[0]))
   == some (.dtypeNotAdmitted 1 .f64)
-
-/-! ## Fixture 1.3 — the fill clause runs under binary32: a binary64 `+0` fill is refused -/
-#guard checkErrOf (checkScatterF32 (sigsFor32 #[6])
-    { upScatter32 admittedAlgebraF32 with fill := admittedAlgebra.reduceId })
-  == some (.scatterFillNotIdentity (.f64 0) (.f32 0))
 
 /-! ## Fixture 1.4 — native rounding in the compute half, with an inline unary factor
 
@@ -111,7 +106,7 @@ def sumStore64 : Array DenseTensor :=
 -- ... whose lane 0, narrowed once, is binary32 `1`, not the native `+0` above.
 #guard (Float.ofBits 4607182418800017408).toFloat32.toBits == 1065353216
 
-/-! ## Fixture 1.5 — `fill` is decoded by the binary32 carrier: max-product's `-∞`
+/-! ## Fixture 1.5 — unwritten cells hold the binary32 algebra's `reduceId`: max-product's `-∞`
 (donor: `ScatterDenseTest.maxScatter`) -/
 #guard shapeBitsOf (run32 (sigsFor32 #[6]) (upScatter32 admittedAlgebraF32Max) store32)
   == some ([6], #[1065353216, 4286578688, 1073741824, 4286578688, 1077936128, 4286578688])
@@ -123,8 +118,7 @@ def collisionSigs32 : Array TensorSignature :=
 
 def collisionScatter32 : ScatterPlan :=
   { ScatterDenseTest.collisionScatter with
-    compute := { ScatterDenseTest.collisionCompute with algebra := admittedAlgebraF32 }
-    fill := admittedAlgebraF32.reduceId }
+    compute := { ScatterDenseTest.collisionCompute with algebra := admittedAlgebraF32 } }
 
 -- X = [1,2,3], Y = [10,100]: each cell is X[i]·10 + X[i]·100 = 110·X[i], exact in binary32.
 #guard shapeBitsOf (run32 collisionSigs32 collisionScatter32

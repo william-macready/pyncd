@@ -1598,8 +1598,7 @@ table — a strided placement would change the destination signature and confoun
 
 /-- `idAssign` as the compute half of a scatter whose placement map is the identity. -/
 def idScatter : ScatterPlan :=
-  { compute := idAssign, destShape := #[3], outCoeffs := #[#[1]], outBias := #[0]
-  , fill := admittedAlgebra.reduceId, reduce := .rejectCollisions }
+  { compute := idAssign, destShape := #[3], outCoeffs := #[#[1]], outBias := #[0] }
 
 /-- `idRaw` with its one step re-wrapped as a scatter; same slots, same signatures. -/
 def idScatterRaw : RawEvalPlan := { idRaw with steps := #[.scatter idScatter] }

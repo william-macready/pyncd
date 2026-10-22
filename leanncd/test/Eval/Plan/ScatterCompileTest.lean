@@ -118,10 +118,6 @@ def upsampleScatter : Option ScatterPlan := upsamplePrepared.bind (scatterStepAt
 -- One placement row per destination dimension, of source-basis width: `dest = 2 · i + 0`.
 #guard upsampleScatter.map (·.outCoeffs) == some #[#[2]]
 #guard upsampleScatter.map (·.outBias) == some #[0]
--- `fill` is the destination algebra's own reduction identity, which for real sum-product is `0.0`
--- — the same value `lowerArith` hard-codes as the source-level `ScatterOpts.fill`.
-#guard upsampleScatter.map (·.fill) == some (ScalarConst.f64 (Float.toBits 0.0))
-#guard upsampleScatter.map (·.reduce) == some LeanNCD.CollisionReduce.rejectCollisions
 -- The compute half contracts nothing: `scatterSourceAxes` unions the LHS axes with every RHS axis,
 -- so no axis is left to reduce over and each source coordinate carries exactly one value. That is
 -- the reference evaluator's own equation, and it is what makes the two legs comparable at all.

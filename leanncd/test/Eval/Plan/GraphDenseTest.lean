@@ -265,8 +265,7 @@ def scatterCompute : AssignPlan :=
 def scatterPlan : RawEvalPlan :=
   { tensorSigs := scatterSigs, inputSlots := #[0]
   , steps := #[.scatter { compute := scatterCompute, destShape := #[6]
-                        , outCoeffs := #[#[2]], outBias := #[0]
-                        , fill := admittedAlgebra.reduceId, reduce := .rejectCollisions }] }
+                        , outCoeffs := #[#[2]], outBias := #[0] }] }
 
 def scatterInputs : Array DenseTensor := #[ { shape := [3], data := #[1.0, 2.0, 3.0] } ]
 

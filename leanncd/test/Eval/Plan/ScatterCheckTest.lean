@@ -12,9 +12,9 @@ Two things are pinned that a value-comparing test would otherwise miss:
   `destSigShape?` fails with `destinationShapeMismatch #[3] #[6]` (the source iteration domain
   against the destination extent), and succeeds with `some #[6]`. If the parameter were ever
   defaulted the other way, or `checkScatter` stopped passing it, the first of those flips;
-* **fill coherence is a rejection, not a normalisation** — `fillMismatchScatter` disagrees with its
-  algebra's `reduceId` and asserts `scatterFillNotIdentity`. An implementation that silently rewrote
-  `fill` to the identity would return `.ok` here, so the two readings are separable by this fixture.
+* **no fill/reduce clause** (S3a) — `ScatterPlan` carries no `fill` or collision policy; the
+  worker folds collisions with the destination algebra's `reduceOp` and unwritten cells hold its
+  `reduceId`, so there is no policy field for the checker to cohere or reject.
 
 Every acceptance fixture's `destShape` is the `LHSSlot.outExtent` convention's answer, NOT
 max-coordinate + 1 and NOT the rejected memory-sufficient bound. Rejection fixture 4 pins the
@@ -54,8 +54,7 @@ def upCompute : AssignPlan :=
   , algebra := admittedAlgebra }
 
 def upScatter : ScatterPlan :=
-  { compute := upCompute, destShape := #[6], outCoeffs := #[#[2]], outBias := #[0]
-  , fill := admittedAlgebra.reduceId, reduce := .rejectCollisions }
+  { compute := upCompute, destShape := #[6], outCoeffs := #[#[2]], outBias := #[0] }
 
 /- The extraction, both directions. Without `destSigShape?`, `checkAssign` compares the registered
    destination signature (`#[6]`) against the compute half's own `outputShape` (`#[3]`) and rejects —
@@ -96,39 +95,18 @@ def diagSigs : Array TensorSignature :=
 #guard isOk (checkScatter diagSigs
   { upScatter with destShape := #[3, 3], outCoeffs := #[#[1], #[1]], outBias := #[0, 0] })
 
-/-! ## A tropical destination — fill coherence is not "fill is zero" -/
+/-! ## A tropical destination — the checker takes the destination algebra from the compute half -/
 
 def maxScatter : ScatterPlan :=
   { upScatter with
-    compute := { upCompute with algebra := admittedAlgebraMax }
-    fill := admittedAlgebraMax.reduceId }
+    compute := { upCompute with algebra := admittedAlgebraMax } }
 
-/- Acceptance 4: tropical max-product, whose `reduceId` is `-∞`, not `0.0`. The fill clause admits
-   it because it is checked against `compute.algebra.reduceId` rather than against a constant — a
-   checker hard-coding `0.0` would reject this. -/
+/- Acceptance 4: tropical max-product, whose `reduceId` is `-∞`, not `0.0`. The checker takes the
+   algebra from the compute half rather than hard-coding real sum-product — a checker hard-coding
+   `0.0` would reject this. -/
 #guard isOk (checkScatter upSigs maxScatter)
 
-#guard maxScatter.fill == ScalarConst.f64 (Float.toBits (-1.0 / 0.0))
-
 /-! ## Rejections — one per new clause -/
-
-/-- Mutation: a tropical scatter whose `fill` is real sum-product's `0.0`. This is the incoherent
-    pair §2.5 names: every unwritten cell would read `0.0` instead of `-∞`, so an all-negative
-    output cell reports `0` as its maximum. -/
-def fillMismatchScatter : ScatterPlan :=
-  { maxScatter with fill := admittedAlgebra.reduceId }
-
-/- Rejection 1 (fill coherence). Asserts the CONSTRUCTOR and both payloads: a checker that silently
-   normalised `fill` to the algebra's identity would return `.ok` and fail this `#guard`. -/
-#guard errOf (checkScatter upSigs fillMismatchScatter)
-  == some (.scatterFillNotIdentity (.f64 (Float.toBits 0.0))
-            (.f64 (Float.toBits (-1.0 / 0.0))))
-
-/- S3a: the collision policy is not a checker clause any more — the worker folds with the destination
-   algebra's `reduceOp`, so a stale `reduce` field is admitted (and ignored). Accept neighbour of the
-   `fill` rejection above. -/
-#guard isOk (checkScatter upSigs { upScatter with reduce := .sum })
-#guard isOk (checkScatter upSigs { upScatter with reduce := .overwrite })
 
 /- Rejection 3 (placement-row width — unchecked on the existing write path). The source iteration
    basis is `#[3]`, width 1; a two-wide row names a source position that does not exist. -/
@@ -222,12 +200,11 @@ def upSigsF32 : Array TensorSignature :=
 def upComputeF32 : AssignPlan := { upCompute with algebra := admittedAlgebraF32 }
 
 def upScatterF32 : ScatterPlan :=
-  { upScatter with compute := upComputeF32, fill := admittedAlgebraF32.reduceId }
+  { upScatter with compute := upComputeF32 }
 
 #guard errOf (checkScatter upSigsF32 upScatterF32) == some (.dtypeNotAdmitted 1 .f32)
 
--- The source-side half: destination restored to `f64` (with the f64 algebra and fill it commits
--- to), only the READ source retagged `f32`. Still rejected, now at the source slot — so the
+-- The source-side half: destination restored to `f64` (with the f64 algebra it commits to), only the READ source retagged `f32`. Still rejected, now at the source slot — so the
 -- Float-backed checker's f32 refusal covers both ends of a scatter, not just its destination.
 #guard errOf (checkScatter
   #[ { shape := #[3], dtype := .f32 }, { shape := #[6], dtype := .f64 } ] upScatter)

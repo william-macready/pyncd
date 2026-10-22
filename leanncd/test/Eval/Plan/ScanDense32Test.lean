@@ -132,7 +132,6 @@ def scatProg : ScheduledProgram :=
   let base : Stmt := .scatter "S" [.affine (.scale 2 jA), .iterAt lA 0]
     { body := { terms := [{ factors := [.read "X" [.axis jA, .axis kA], .read "W" [.axis kA]] }] },
       nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.free oA, .iterNext lA]
     { body := { terms := [{ factors := [.read "S" [.axis oA, .axis lA]] }] }, nonlin := .identity }
   { decls := [.axis jA (some 3), .axis kA none, .axis oA (some 6), .iter lA 2,
@@ -177,7 +176,7 @@ def oracle32 (p : ScheduledProgram) (inputs : NamedDenseEnv32) : Except String (
   match p.stmts with
   | [sc@(.scan _ _ base recur _)] =>
       let sizeStmts := (base ++ recur).map (fun
-        | .scatter nm slots rhs _ => Stmt.assign nm slots rhs
+        | .scatter nm slots rhs => Stmt.assign nm slots rhs
         | s => s)
       let env64 : HashMap String DenseTensor :=
         inputs.fold (fun m k v => m.insert k ⟨v.shape, v.data.map Float32.toFloat⟩) {}

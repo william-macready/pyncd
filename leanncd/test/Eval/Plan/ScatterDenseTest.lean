@@ -13,8 +13,8 @@ The collision fixture and the four audit pins after it are NOT measured referenc
 not be read as such: they are hand-derived from `evalScatter`'s algorithm and from
 `ScatterCheckTest`'s already-pinned `scatterDestExtent` answers. Three of them are unreachable from
 surface syntax at all (`elabTLLHSSlot` parses no negative placement coefficient or bias), and the
-tropical-`fill` pin asserts a value the reference evaluator provably CANNOT produce — see its own
-comment.
+tropical unwritten-cell pin asserts a value the reference evaluator provably CANNOT produce — see
+its own comment.
 
 Same discipline as `KernelDenseTest` for the value fixtures and as `ScatterCheckTest` for the error
 one: the collision fixture asserts the exact `PositionalInputError` constructor AND payload, so a
@@ -22,9 +22,9 @@ worker that detects a collision but cannot name both conflicting source coordina
 
 The four pins after the six fixtures cover the runtime cells `checkScatter`'s docstring explicitly
 leaves to this worker — the silent out-of-range skip, the two `.toNat` extent degeneracies, and a
-non-zero `fill`. None of the five measured programs can reach them: they are all in range, all have
-a non-empty destination, and all use real sum-product, whose `reduceId` is `0.0` — the same value a
-worker that ignored `fill` entirely would use.
+non-real unwritten-cell identity. None of the five measured programs can reach them: they are all in
+range, all have a non-empty destination, and all use real sum-product, whose `reduceId` is `0.0` —
+the same value a worker that ignored the algebra's identity entirely would use.
 -/
 
 namespace LeanNCD.Eval.Plan.ScatterDenseTest
@@ -63,8 +63,7 @@ def srcCompute : AssignPlan :=
 
 /-- The placement map is the only thing that varies across the first four fixtures. -/
 def placed (destShape : Array Nat) (coeffs : Array (Array Int)) (bias : Array Int) : ScatterPlan :=
-  { compute := srcCompute, destShape := destShape, outCoeffs := coeffs, outBias := bias
-  , fill := admittedAlgebra.reduceId, reduce := .rejectCollisions }
+  { compute := srcCompute, destShape := destShape, outCoeffs := coeffs, outBias := bias }
 
 def sigsFor (destShape : Array Nat) : Array TensorSignature :=
   #[ { shape := #[3], dtype := .f64 }, { shape := destShape, dtype := .f64 } ]
@@ -76,7 +75,7 @@ def storeFor (destShape : Array Nat) : Array DenseTensor :=
 /-! ## Fixture 1 — `Out[2*i] := X[i]`, the strided upsample
 
 Reference (§2.1): `shape=[6] data=#[1,0,2,0,3,0]`. Source coordinates `0,1,2` carry `1,2,3` and land
-at destination `0,2,4`; the three odd cells are never written and keep `fill = 0`. The extent is
+at destination `0,2,4`; the three odd cells are never written and keep the identity `0`. The extent is
 `outExtent`'s `2·3 = 6`, not max-coordinate + 1 = 5, so the trailing zero is load-bearing: a
 destination sized by the deleted `scatterOutDim` duplicate would have length 5 and end at `3`. -/
 #guard shapeDataOf (runScatter (sigsFor #[6]) (placed #[6] #[#[2]] #[0]) (storeFor #[6]))
@@ -93,7 +92,7 @@ A worker that dropped `outBias` from the placement would reproduce fixture 1 and
 /-! ## Fixture 3 — `Out[i+2] := X[i]`, a pure shift
 
 Reference (§2.1): `shape=[5] data=#[0,0,1,2,3]`. Coefficient 1 with bias 2, so the values are
-contiguous at destination `2,3,4` and only the two leading cells keep `fill`. This is the case where
+contiguous at destination `2,3,4` and only the two leading cells keep the identity. This is the case where
 `outExtent` and max-coordinate + 1 agree (both 5) — the reason the extent trap survived every
 pre-existing test until a strided write met it. -/
 #guard shapeDataOf (runScatter (sigsFor #[5]) (placed #[5] #[#[1]] #[2]) (storeFor #[5]))
@@ -103,7 +102,7 @@ pre-existing test until a strided write met it. -/
 
 Reference (§2.1): `shape=[3,3] data=#[7,0,0, 0,8,0, 0,0,9]`. A rank-2 destination from a rank-1
 source: both placement rows are the same single-source-position identity, so source coordinate `i`
-lands at `(i,i)` and the six off-diagonal cells keep `fill`. This is the only fixture where the
+lands at `(i,i)` and the six off-diagonal cells keep the identity. This is the only fixture where the
 placement map's rank exceeds the source domain's, which is what makes a destination-driven worker
 structurally unable to produce it. -/
 def diagStore : Array DenseTensor :=
@@ -186,8 +185,7 @@ def collisionCompute : AssignPlan :=
   , algebra := admittedAlgebra }
 
 def collisionScatter : ScatterPlan :=
-  { compute := collisionCompute, destShape := #[3], outCoeffs := #[#[1, 0]], outBias := #[0]
-  , fill := admittedAlgebra.reduceId, reduce := .rejectCollisions }
+  { compute := collisionCompute, destShape := #[3], outCoeffs := #[#[1, 0]], outBias := #[0] }
 
 def collisionStore : Array DenseTensor :=
   #[ { shape := [3], data := #[1.0, 2.0, 3.0] }
@@ -226,30 +224,21 @@ reach. -/
 #guard shapeDataOf (runScatter (sigsFor #[0]) (placed #[0] #[#[-1]] #[0]) (storeFor #[0]))
   == some ([0], #[])
 
-/- **`fill` is the plan's constant, not a hard-coded `0.0`.** Fixture 1's placement under tropical
-   max-product, whose `reduceId` — and therefore, by `checkScatter`'s coherence clause, whose `fill`
-   — is `-∞`. The three written cells are unchanged (`max(-∞, x) = x` through both folds); the three
-   unwritten ones read `-∞`, so a worker that initialised the destination to zero, or to the real
-   algebra's identity, fails here while passing every fixture above.
+/- **Unwritten cells hold the destination algebra's `reduceId`, not a hard-coded `0.0`.** Fixture
+   1's placement under tropical max-product, whose `reduceId` is `-∞`. The three written cells are
+   unchanged (`max(-∞, x) = x` through both folds); the three unwritten ones read `-∞`, so a worker
+   that initialised the destination to zero, or to the real algebra's identity, fails here while
+   passing every fixture above.
 
    **This expectation is CHECKED-LAYER-ONLY semantics that the reference evaluator cannot produce,
    and the divergence is adjudicated, permanent, and deliberate — not a parity target.** The
-   reference's `ScatterOpts.fill` is an `Int` (`DSL/Ast.lean`) widened by `Float.ofInt`, so
-   `evalScatter` can only ever fill with an integer-valued Float: on this program it would write
-   `0.0` into the three unwritten cells, giving `#[1,0,2,0,3,0]`, never `-∞`. The checked plan's
-   `fill : ScalarConst` CAN carry an infinity, and `checkScatter` requires it to
-   (`fill == compute.algebra.reduceId`), because `0.0` under max-product would let a spurious zero
-   win the reduction over an all-negative cell — the incoherence `scatterFillNotIdentity` exists to
-   reject. So the checked worker is the correct one here and the reference is the limited one.
-
-   Consequence for whoever builds the differential corpus: a TROPICAL scatter must not be a
-   parity-checked entry unless the comparison special-cases unwritten cells. Every fixture above
-   uses real sum-product, whose `reduceId` is `0.0` — the one value both layers can express — so
-   none of them is affected. -/
+   reference's empty-fibre value for real sum-product is `0.0`; on this program it has no tropical
+   counterpart, so a TROPICAL scatter must not be a parity-checked entry unless the comparison
+   special-cases unwritten cells. Every fixture above uses real sum-product, whose `reduceId` is
+   `0.0`, so none of them is affected. -/
 def maxScatter : ScatterPlan :=
   { placed #[6] #[#[2]] #[0] with
-    compute := { srcCompute with algebra := admittedAlgebraMax }
-    fill := admittedAlgebraMax.reduceId }
+    compute := { srcCompute with algebra := admittedAlgebraMax } }
 
 #guard shapeDataOf (runScatter (sigsFor #[6]) maxScatter (storeFor #[6]))
   == some ([6], #[1.0, -1.0 / 0.0, 2.0, -1.0 / 0.0, 3.0, -1.0 / 0.0])

@@ -96,9 +96,10 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
     `scatterOutShape` calls `outExtent` on the source slot and so gets `n + 1`; this emitter derives
     `destShape` through `scatterDestExtent`, the reconstruction `checkScatter` validates against,
     which always takes the `.affine` arm and so gets `n`. Admitting the form would ship that silent
-    disagreement. `lowerArith` rejects it on the source path too (`overlappingScatter` — a constant
-    coordinate collapses a dimension), and `elabTLLHSSlot` has no arm producing it, so this guards a
-    hand-built `ScheduledProgram` only.
+    disagreement. `lowerArith` rejects it on the surface `.assign` path (`overlappingScatter` — a
+    constant coordinate collapses a dimension) but no longer on a hand-built `.scatter` statement,
+    which compiles; `elabTLLHSSlot` has no arm producing it, so this guards a hand-built
+    `ScheduledProgram` only.
 
     **A row naming more than one source axis (`Out[i+j]`) — `multiAxisScatterLhs`**, by CALLING
     `idxAffineForm`/`normalizeCoeffs` rather than re-reading constructors; see that constructor's own

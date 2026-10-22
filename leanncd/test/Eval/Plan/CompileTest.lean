@@ -90,7 +90,7 @@ def acceptedSched : ScheduledProgram :=
 -- `badScatter` fixtures, which are S-B and deliberately unchanged.
 #guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
-        [.plain (.scatter "Out" [] { body := { terms := [] }, nonlin := .identity } {})] })
+        [.plain (.scatter "Out" [] { body := { terms := [] }, nonlin := .identity })] })
 
 -- ... but ONLY at top level, and only in the single-axis strided placement forms. A two-axis affine
 -- LHS slot (`Out[i+j]`) is `multiAxisScatterLhs` — its own constructor, asserted here rather than a
@@ -100,7 +100,7 @@ def acceptedSched : ScheduledProgram :=
     { acceptedSched with stmts :=
         [.plain (.scatter "Out"
           [.affine (.affine 0 [(1, ⟨"i", 0, .nat⟩), (1, ⟨"j", 1, .nat⟩)])]
-          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
   == some (.multiAxisScatterLhs "Out: affine LHS slot")
 
 -- The same two-axis coefficient row spelled as a REPEATED single axis is not multi-axis at all:
@@ -110,16 +110,17 @@ def acceptedSched : ScheduledProgram :=
     { acceptedSched with stmts :=
         [.plain (.scatter "Out"
           [.affine (.affine 0 [(1, ⟨"i", 0, .nat⟩), (1, ⟨"i", 0, .nat⟩)])]
-          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
 
 -- A constant affine LHS slot (`Out[3]`) stays rejected: it is the ONE slot form whose
 -- `LHSSlot.outExtent` answer (`.const`'s `n + 1`) disagrees with the placement-row reconstruction
--- `checkScatter` validates against, and `lowerArith` refuses it on the source path too
--- (`overlappingScatter` — a constant coordinate collapses a dimension).
+-- `checkScatter` validates against. (`lowerArith` refuses it on the surface `.assign` path with
+-- `overlappingScatter`; a hand-built `.scatter` const slot compiles and sums, so this preflight
+-- refusal is the only gate for that shape.)
 #guard errOf (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.scatter "Out" [.affine (.const 3)]
-          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
   == some (.scatterOrAffineLhs "Out: constant affine LHS slot")
 
 -- A ZERO-coefficient scale (`Out[0*i]`) is a DIFFERENT form and is ADMITTED. It is surface-reachable
@@ -132,14 +133,14 @@ def acceptedSched : ScheduledProgram :=
 #guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.scatter "Out" [.affine (.scale 0 ⟨"i", 0, .nat⟩)]
-          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
 
 -- … and so is the general-affine spelling of the same thing, `Out[0*i + 5]`, whose coefficient list
 -- likewise normalises to empty but whose extent (`5`) both derivations agree on.
 #guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.scatter "Out" [.affine (.affine 5 [(0, ⟨"i", 0, .nat⟩)])]
-          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
 
 -- A non-identity nonlinearity on a scatter is `unsupportedNonlin` — the constructor's restored
 -- producer. Step D's scatter emitter applies no nonlinearity, so admitting one would erase it
@@ -148,7 +149,7 @@ def acceptedSched : ScheduledProgram :=
     { acceptedSched with stmts :=
         [.plain (.scatter "Out" [.free ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors := [.read "X" []] }] }
-          , nonlin := .pointwise .relu } {})] })
+          , nonlin := .pointwise .relu })] })
   == some (.unsupportedNonlin "Out: scatter nonlinearity")
 
 -- S3a: the collision policy is no longer an admission question (every scatter folds collisions
@@ -157,20 +158,19 @@ def acceptedSched : ScheduledProgram :=
 #guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.scatter "Out" [.free ⟨"i", 0, .nat⟩]
-          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity }
-          { fill := 0, reduce := .sum })] })
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
 
 /-! Scan-scatter capability: iteration slots plus S-A's single-axis affine forms are admitted in
 both block halves. Capability remains deliberately narrower than source syntax for constant and
-multi-axis affine slots, nonlinear scatters, and non-default options. -/
+multi-axis affine slots and nonlinear scatters. -/
 
 def scanScatterAxis : AxisSpec := ⟨"l", 40, .nat⟩
 def scanScatterDataAxis : AxisSpec := ⟨"i", 41, .nat⟩
 
 def scanScatterStmt (nm : String) (slots : List LHSSlot) (rhs : RHSExpr :=
     { body := { terms := [{ factors := [.read "X" [.axis scanScatterDataAxis]] }] }
-    , nonlin := .identity }) (opts : ScatterOpts := {}) : Stmt :=
-  .scatter nm slots rhs opts
+    , nonlin := .identity }) : Stmt :=
+  .scatter nm slots rhs
 
 def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : ScheduledProgram :=
   { acceptedSched with
@@ -203,30 +203,6 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
   [scanScatterStmt "S" [.free scanScatterDataAxis, .iterAt scanScatterAxis 0]
     { body := { terms := [] }, nonlin := .pointwise .relu }] []))
   == some (.unsupportedNonlin "S: scatter nonlinearity")
-
--- Scatter options are checked after the RHS sub-constructs.
-#guard errOf (capabilityPreflight (scanScatterSched
-  [scanScatterStmt "S" [.free scanScatterDataAxis, .iterAt scanScatterAxis 0]
-    { body := { terms := [] }, nonlin := .pointwise .relu }
-    { fill := 1, reduce := .sum }] []))
-  == some (.unsupportedNonlin "S: scatter nonlinearity")
-
--- S3a: a non-default collision policy is no longer refused in a scan block (accept neighbour of
--- the nonzero-fill refusals below).
-#guard isOk (capabilityPreflight (scanScatterSched
-  [scanScatterStmt "S" [.free scanScatterDataAxis, .iterAt scanScatterAxis 0]
-    (opts := { fill := 0, reduce := .sum })] []))
-
--- Nonzero fill is pinned once in each traversal half.
-#guard errOf (capabilityPreflight (scanScatterSched
-  [scanScatterStmt "S" [.free scanScatterDataAxis, .iterAt scanScatterAxis 0]
-    (opts := { fill := 1, reduce := .rejectCollisions })] []))
-  == some (.scatterOptsNotAdmitted "S: fill")
-
-#guard errOf (capabilityPreflight (scanScatterSched []
-  [scanScatterStmt "S" [.free scanScatterDataAxis, .iterNext scanScatterAxis]
-    (opts := { fill := 1, reduce := .rejectCollisions })]))
-  == some (.scatterOptsNotAdmitted "S: fill")
 
 -- The capability post-pass traverses scan bodies as well as plain statements.
 #guard errOf (capabilityPreflight (scanScatterSched
@@ -358,7 +334,7 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
         decls := [.predicate "P" []]
       , stmts := [.plain (.scatter "Out"
           [.affine (.affine 0 [(1, ⟨"i", 0, .nat⟩), (1, ⟨"j", 1, .nat⟩)])]
-          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
   == some (.multiAxisScatterLhs "Out: affine LHS slot")
 
 -- `booleanOutput` has no producer left in this file (Task 4.3 replaced its one throw site), but the
@@ -386,7 +362,7 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
       , stmts :=
         [.plain (.scatter "Out" [.affine (.scale 2 ⟨"i", 0, .nat⟩)]
           { body := { terms := [{ factors := [.read "A" [.axis ⟨"i", 0, .nat⟩]] }] }
-          , nonlin := .identity } {})] })
+          , nonlin := .identity })] })
   == some (.predicateScatterDest "Out: predicate scatter destination")
 
 -- Same rejection on the diagonal-write shape (`Out[i, i]` for `predicate Out(i, j)`): a `.scatter`
@@ -398,7 +374,7 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
       , stmts :=
         [.plain (.scatter "Out" [.free ⟨"i", 0, .nat⟩, .free ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors := [.read "A" [.axis ⟨"i", 0, .nat⟩]] }] }
-          , nonlin := .identity } {})] })
+          , nonlin := .identity })] })
   == some (.predicateScatterDest "Out: predicate scatter destination")
 
 -- unloweredScatterAssign: a scatter-shaped `.assign` (LHS `slotsBecomeScatter`) that reached
@@ -458,7 +434,7 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
       , stmts :=
         [.plain (.scatter "Out" [.affine (.scale 2 ⟨"i", 0, .nat⟩)]
           { body := { terms := [{ factors := [.read "A" [.axis ⟨"i", 0, .nat⟩]] }] }
-          , nonlin := .identity } {})] })
+          , nonlin := .identity })] })
 
 
 -- unsupportedDtype: `capabilityPreflight` is per-declaration and per-statement — `checkDecl`
@@ -1294,42 +1270,24 @@ step whose factor 1 carries `unary := some .log`, factor 0 the lowered positiona
 def f32ScatterProg : ScheduledProgram :=
   { f32IdentitySched with
     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
-      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity }
-      { fill := 0, reduce := .rejectCollisions })] }
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity })] }
 
 #guard ((prepareEvalPlan f32ScatterProg f32IdentitySig).toOption.map (·.plan.storageKind))
   == some LeanNCD.StorageKind.float32
 
 #guard ((prepareEvalPlan f32ScatterProg f32IdentitySig).toOption.map (fun p =>
     match p.plan.raw.steps with
-    | #[.scatter s] => s.fill == .f32 0 && s.compute.algebra == admittedAlgebraF32
+    | #[.scatter s] => s.compute.algebra == admittedAlgebraF32
         && s.destShape == #[6] && p.plan.raw.tensorSigs[s.compute.destinationSlot]?.map (·.dtype) == some .f32
     | _ => false))
   == some true
 
--- 15(c) S3a: `fill` is not a policy any more — a sum scatter's non-identity `fill := 1` is IGNORED,
--- the plan's fill being the algebra's own `reduceId` (binary32 `+0`). Accept neighbour of the
--- tropical refusal below.
-def f32ScatterFill1Prog : ScheduledProgram :=
-  { f32ScatterProg with
-    stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
-      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity }
-      { fill := 1, reduce := .rejectCollisions })] }
-
-#guard ((prepareEvalPlan f32ScatterFill1Prog f32IdentitySig).toOption.map (fun p =>
-    match p.plan.raw.steps with
-    | #[.scatter s] => s.fill == .f32 0
-    | _ => false))
-  == some true
-
--- ...while a top-level max/min scatter stays refused, whatever its fill (the guard is on `agg`;
--- tropical scatter is S3b's): `-(2^128)` would round to `-∞`, binary32 max's own identity.
+-- A top-level max/min scatter stays refused (the guard is on `agg`; tropical scatter is S3b's).
 def f32ScatterOverflowFillProg : ScheduledProgram :=
   { f32ScatterProg with
     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
       { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity
-      , agg := .max }
-      { fill := -(2^128), reduce := .rejectCollisions })] }
+      , agg := .max })] }
 
 #guard causeOf (prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig) ==
   some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
@@ -1449,8 +1407,7 @@ FW2b still pins Step 0b ahead of Step A. -/
 def f32ScatterReluProg : ScheduledProgram :=
   { f32IdentitySched with
     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
-      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .pointwise .relu }
-      { fill := 0, reduce := .rejectCollisions })] }
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .pointwise .relu })] }
 
 -- The competing answer is real: Step A ALONE rejects this program, with a different payload.
 #guard errOf (capabilityPreflight f32ScatterReluProg)
