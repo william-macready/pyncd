@@ -1081,8 +1081,9 @@ E2a SCOPING DECISION (a deliberate divergence from §12.4): affine *reads* (e.g.
 `IdxExpr` into the consuming step's `reindexings` field (exactly where stride-maps live in
 `BrBase`, §2.3). So `lowerArith` emits NO separate Slice/Reindex intermediate steps. Its
 real job is the affine-LHS → `Stmt.scatter` reclassification plus a
-*conservative* `overlappingScatter` injectivity guard (a const LHS coord collapses a dimension
-and so needs `reduce sum`; strided coords like upsample `2*i` are injective). -/
+*conservative* `overlappingScatter` injectivity guard on the surface `.assign` arm (a const LHS coord
+collapses a dimension; strided coords like upsample `2*i` are injective). The `.scatter` arm has no
+guard since S3a: collisions sum. -/
 
 /-- A LHS slot that denotes an affine output coordinate (a Scatter write). Plain `free`
     axes and the scan slots (`iterAt`/`iterNext`) are NOT affine-scatter slots. -/
@@ -1094,7 +1095,7 @@ def LHSSlot.isAffine : LHSSlot → Bool
   | .iterNext _ => false
 
 /-- Conservative non-injectivity test (E2a): a constant LHS coordinate collapses a
-    dimension and so needs `reduce sum`; a strided coordinate (`scale`/general affine
+    dimension (guarded on the `.assign` arm of `lowerArith`); a strided coordinate (`scale`/general affine
     over an axis, e.g. upsample `2*i`) is injective. -/
 def LHSSlot.collapses : LHSSlot → Bool
   | .affine (.const _) => true
@@ -1112,10 +1113,10 @@ def lowerArith (rp : ResolvedProgram) : FreshM LoweredProgram := do
           if slots.any LHSSlot.collapses then throw (CompileError.overlappingScatter nm)
           else return Stmt.scatter nm slots rhs
         else return s
-    | .scatter nm slots _ =>
-        if slots.any LHSSlot.collapses then
-          throw (CompileError.overlappingScatter nm)
-        else return s
+    | .scatter .. =>
+        -- A hand-built `.scatter` is not guarded: collisions ⊕-accumulate (S3a), so a const slot
+        -- (a collapsing write) is a sum, not an error. Only the `.assign` arm above keeps the guard.
+        return s
     | .recurMorphism _ _ _ => return s)   -- no affine LHS; passes through unchanged
   return { decls := rp.decls, stmts := stmts', env := rp.env,
            extNames := rp.extNames }
