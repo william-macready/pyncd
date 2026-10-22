@@ -1154,7 +1154,7 @@ private def canceledLhsAxisSchedule : ScheduledProgram :=
     [.affine (.affine 0 [(2, sbCancelJ), (1, sbCancelQ), (-1, sbCancelQ)]),
      .iterAt sbCancelL 0]
     { body := { terms := [{ factors := [.read "X" [.axis sbCancelJ, .axis sbCancelQ]] }] },
-      nonlin := .identity } {}
+      nonlin := .identity }
   let recur : Stmt := .assign "S" [.free sbCancelK, .iterNext sbCancelL]
     { body := { terms := [{ factors := [.read "S" [.axis sbCancelK, .axis sbCancelL]] }] },
       nonlin := .identity }
@@ -1179,7 +1179,7 @@ private def crossSlotCanceledSchedule : ScheduledProgram :=
     [.affine (.affine 0 [(1, sbCancelQ), (-1, sbCancelQ), (1, sbCancelJ)]),
      .affine (.axis sbCancelQ), .iterAt sbCancelL 0]
     { body := { terms := [{ factors := [.read "X" [.axis sbCancelJ, .axis sbCancelQ]] }] },
-      nonlin := .identity } {}
+      nonlin := .identity }
   let recur : Stmt := .assign "S"
     [.free sbCancelJ, .free sbCancelQ, .iterNext sbCancelL]
     { body := { terms := [{ factors :=
@@ -1210,7 +1210,7 @@ private def canceledUnsizedLhsSchedule : ScheduledProgram :=
     LHSSlot.affine (.affine 0 [(2, sbCancelJ), (1, sbCancelQ), (-1, sbCancelQ)])
   let base : Stmt := .scatter "S" [canceled, .iterAt sbCancelL 0]
     { body := { terms := [{ factors := [.read "X" [.axis sbCancelJ]] }] },
-      nonlin := .identity } {}
+      nonlin := .identity }
   let recur : Stmt := .assign "S" [.free sbCancelK, .iterNext sbCancelL]
     { body := { terms := [{ factors := [.read "S" [.axis sbCancelK, .axis sbCancelL]] }] },
       nonlin := .identity }
@@ -1929,7 +1929,7 @@ run_cmd do
   | none => throwError "T5.4 structural: seededAxisZero has no scan node"
   | some sc =>
       let sizeStmts := sc.sourceStmts.map (fun
-        | .scatter nm slots rhs _ => Stmt.assign nm slots rhs
+        | .scatter nm slots rhs => Stmt.assign nm slots rhs
         | s => s)
       let sizes ← match inferAxisSizes (declaredAxisSizes sched.decls)
           ScanCompileTest.seededAxisZeroInputs sizeStmts with
