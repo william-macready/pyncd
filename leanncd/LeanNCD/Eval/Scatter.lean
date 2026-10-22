@@ -15,7 +15,8 @@ def scatterSourceAxes (slots : List LHSSlot) (rhs : RHSExpr) : List UID :=
     Colliding writes (two or more source coords landing on the same output coord) are merged with
     the DESTINATION's additive monoid ⊕ (real `+`; `predicate` destination `max` = `∨`) starting from
     its identity 0_K = 0, so an empty fibre is 0 and a collision is a sum, never an error.
-    Out-of-range output coordinates are skipped. -/
+    An output coordinate outside `outShape` (negative, or at or past an extent) is an error
+    (`EvalError.scatterWriteOutOfRange`), never a silent skip. -/
 def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) (outShape : List Nat) :
     Except EvalError (String × DenseTensor) := do
@@ -69,10 +70,11 @@ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : 
       val := c.combine val prod
     -- output coordinate = each slot's affine image at this source coord
     let outCoordZ : List Int := slots.map (fun sl => evalIdx coord sl.outIdx)
-    if (outCoordZ.zip outShape).all (fun (z, d) => 0 ≤ z && z < (d : Int)) then
-      let oc := outCoordZ.map Int.toNat
-      let prev := out.get! oc
-      out := out.set! oc (if boolDest then Max.max prev val else prev + val)
+    if !((outCoordZ.zip outShape).all (fun (z, d) => 0 ≤ z && z < (d : Int))) then
+      throw (.scatterWriteOutOfRange nm outCoordZ sc)
+    let oc := outCoordZ.map Int.toNat
+    let prev := out.get! oc
+    out := out.set! oc (if boolDest then Max.max prev val else prev + val)
   return (nm, out)
 
 end LeanNCD.Eval
