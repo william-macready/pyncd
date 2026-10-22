@@ -142,7 +142,8 @@ private def fMask : SourceSnapshot :=
 #guard tag (snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX]) == "parity"
 #guard tag fH9 == "known:extent"
 #guard tag fH6 == "refused:writeOutOfRange"
--- Constant slots: compile `overlappingScatter` under the reject policy, whatever the RHS.
+-- Constant slots written by `.assign`: compile `overlappingScatter` (the `lowerArith` `.assign` arm's
+-- guard, kept; the hand-built `.scatter` arm's guard was deleted in S3a, fD'), whatever the RHS.
 #guard tag fI1 == "nativeFailure"
 #guard tag fI2 == "nativeFailure"
 -- Legacy fails at compilation (the independent constant-slot statement on Z) and the checked leg
