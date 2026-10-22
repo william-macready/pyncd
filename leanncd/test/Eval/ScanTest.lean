@@ -132,7 +132,6 @@ run_cmd do
     { body := { terms := [{ factors := [.read "Z" []] }] }, nonlin := .identity }
   let scratch : Stmt := .scatter "Tmp" [.affine (.scale 2 i)]
     { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.iterNext l]
     { body := { terms := [{ factors := [.read "S" [.axis l]] }] }, nonlin := .identity }
   match evalScanF64 [] env sizes (.scan "S" [l] [base] [scratch, recur] false) with
@@ -352,7 +351,6 @@ run_cmd do
   let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 3
   let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
     { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.free o, .iterNext l]
     { body := { terms := [{ factors := [.read "S" [.axis o, .axis l]] }] }, nonlin := .identity }
   match evalScanF64 [] env sizes (.scan "S" [l] [base] [recur] false) with
@@ -376,7 +374,6 @@ run_cmd do
     { body := { terms := [{ factors := [.read "X" [.axis o]] }] }, nonlin := .identity }
   let recur : Stmt := .scatter "S" [.affine (.affine 1 [(2, j)]), .iterNext l]
     { body := { terms := [{ factors := [.read "S" [.scale 2 j, .axis l]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   match evalScanF64 [] env sizes (.scan "S" [l] [base] [recur] false) with
   | .error e => throwError s!"S-B strided recurrence errored: {e}"
   | .ok outs => match outs.find? (·.1 == "S") with
@@ -397,10 +394,8 @@ run_cmd do
   let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 2
   let evenBase : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
     { body := { terms := [{ factors := [.read "E" [.axis j]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let oddBase : Stmt := .scatter "S" [.affine (.affine 1 [(2, j)]), .iterAt l 0]
     { body := { terms := [{ factors := [.read "O" [.axis j]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.free o, .iterNext l]
     { body := { terms := [{ factors := [.read "S" [.axis o, .axis l]] }] }, nonlin := .identity }
   match evalScanF64 [] env sizes (.scan "S" [l] [evenBase, oddBase] [recur] false) with
@@ -424,7 +419,6 @@ run_cmd do
   let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
     { body := { terms := [{ factors := [.read "X" [.axis j, .axis k], .read "W" [.axis k]] }] },
       nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.free o, .iterNext l]
     { body := { terms := [{ factors := [.read "S" [.axis o, .axis l]] }] }, nonlin := .identity }
   match evalScanF64 [] env sizes (.scan "S" [l] [base] [recur] false) with
@@ -446,7 +440,6 @@ run_cmd do
   let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 3
   let base : Stmt := .scatter "S" [.iterAt l 0, .affine (.affine 1 [(2, j)])]
     { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.iterNext l, .free o]
     { body := { terms := [{ factors := [.read "S" [.axis l, .axis o]] }] }, nonlin := .identity }
   match evalScanF64 [] env sizes (.scan "S" [l] [base] [recur] false) with
@@ -476,7 +469,6 @@ run_cmd do
   let sizes := (({} : HashMap UID Nat).insert 2 6).insert 9 3   -- `j` (uid 1) deliberately unsized
   let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
     { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let decls : List Decl := [.typedTensor .f32 "X" [j], .typedTensor .f32 "S" [o, l]]
   match evalPlainF64 decls env sizes base with
   | Except.error (.unsupportedDtype "S") => pure ()
@@ -492,7 +484,6 @@ run_cmd do
   let sizes := (({} : HashMap UID Nat).insert 2 6).insert 9 3
   let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
     { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   match evalPlainF64 [.typedTensor .f64 "X" [j], .typedTensor .f64 "S" [o, l]] env sizes base with
   | Except.error (.shape (.unsizedScatterOutput _)) => pure ()
   | Except.error e => throwError s!"fixture 11 control: expected the unsized-output error, got {e}"
@@ -508,7 +499,6 @@ run_cmd do
   let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 3
   let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
     { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .pointwise .relu }
-    { fill := 0, reduce := .rejectCollisions }
   let seed : HashMap UID Int := {}
   match evalStmtSliceSeededF64 [.typedTensor .f32 "X" [j], .typedTensor .f32 "S" [o, l]]
       env sizes seed base with
@@ -524,7 +514,6 @@ run_cmd do
   let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 3
   let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
     { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .pointwise .relu }
-    { fill := 0, reduce := .rejectCollisions }
   let seed : HashMap UID Int := {}
   match evalStmtSliceSeededF64 [.typedTensor .f64 "X" [j], .typedTensor .f64 "S" [o, l]] env sizes seed base with
   | Except.error (.unsupportedScatterNonlin "S") => pure ()
@@ -542,7 +531,6 @@ run_cmd do
   let sizes := (({} : HashMap UID Nat).insert 1 3).insert 2 6   -- `l` (uid 9) deliberately unsized
   let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
     { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.free o, .iterNext l]
     { body := { terms := [{ factors := [.read "S" [.axis o, .axis l]] }] }, nonlin := .identity }
   let decls : List Decl := [.typedTensor .f32 "X" [j], .typedTensor .f32 "S" [o, l]]
@@ -559,7 +547,6 @@ run_cmd do
   let sizes := (({} : HashMap UID Nat).insert 1 3).insert 2 6
   let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
     { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.free o, .iterNext l]
     { body := { terms := [{ factors := [.read "S" [.axis o, .axis l]] }] }, nonlin := .identity }
   match evalScanF64 [.typedTensor .f64 "X" [j], .typedTensor .f64 "S" [o, l]] env sizes
@@ -687,11 +674,10 @@ run_cmd do
   let sizes := (({} : HashMap UID Nat).insert 1 3).insert 9 3
   let ev := IdxExpr.scale 2 j
   let od := IdxExpr.affine 1 [(2, j)]
-  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
-  let bE : Stmt := .scatter "S" [.affine ev, .iterAt l 0] (raRhs "X" [.axis j]) opts
-  let bO : Stmt := .scatter "S" [.affine od, .iterAt l 0] (raRhs "Y" [.axis j]) opts
-  let rE : Stmt := .scatter "S" [.affine ev, .iterNext l] (raRhs "S" [ev, .axis l]) opts
-  let rO : Stmt := .scatter "S" [.affine od, .iterNext l] (raRhs "S" [od, .axis l]) opts
+  let bE : Stmt := .scatter "S" [.affine ev, .iterAt l 0] (raRhs "X" [.axis j])
+  let bO : Stmt := .scatter "S" [.affine od, .iterAt l 0] (raRhs "Y" [.axis j])
+  let rE : Stmt := .scatter "S" [.affine ev, .iterNext l] (raRhs "S" [ev, .axis l])
+  let rO : Stmt := .scatter "S" [.affine od, .iterNext l] (raRhs "S" [od, .axis l])
   match evalScanF64 [] env sizes (.scan "S" [l] [bE, bO] [rE, rO] false) with
   | .error (.duplicateStateResult "S" "S" 0 1) => pure ()
   | .error e => throwError s!"shape 6 scatter: wrong rejection: {e}"
@@ -746,8 +732,7 @@ run_cmd do
 run_cmd do
   let j := ax "j" 1; let k := ax "k" 2; let l := ax "l" 9
   let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" (tensorOf [3] [1, 2, 3])
-  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
-  let b : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0] (raRhs "X" [.axis j]) opts
+  let b : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0] (raRhs "X" [.axis j])
   let r : Stmt := .assign "S" [.free k, .iterNext l] (raRhs "S" [.axis k, .axis l])
   let run (kk : Nat) := evalScanF64 [] env ((({} : HashMap UID Nat).insert 1 3).insert 2 kk |>.insert 9 3)
     (.scan "S" [l] [b] [r] false)
@@ -772,7 +757,7 @@ run_cmd do
   --   result agree at 6. The old reference let the LAST base's shape win ([4,3], cropping the
   --   first base's rows). Accept neighbour: m = 3 makes it 6 wide.
   let m := ax "m" 3
-  let b2 : Stmt := .scatter "S" [.affine (.affine 1 [(2, m)]), .iterAt l 0] (raRhs "Y" [.axis m]) opts
+  let b2 : Stmt := .scatter "S" [.affine (.affine 1 [(2, m)]), .iterAt l 0] (raRhs "Y" [.axis m])
   let env2 := env.insert "Y" (tensorOf [3] [10, 20, 30])
   let run2 (mm : Nat) := evalScanF64 [] env2 (((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 3 mm |>.insert 9 3)
     (.scan "S" [l] [b, b2] [r] false)
@@ -796,9 +781,8 @@ run_cmd do
   let j := ax "j" 1; let k := ax "k" 2; let l := ax "l" 9
   let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" (tensorOf [3] [1, 2, 3])
   let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 3).insert 9 3
-  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
   let wr (c : Int) (lit : Nat) : Stmt :=
-    .scatter "S" [.affine (.scale c j), .iterAt l lit] (raRhs "X" [.axis j]) opts
+    .scatter "S" [.affine (.scale c j), .iterAt l lit] (raRhs "X" [.axis j])
   let r : Stmt := .assign "S" [.free k, .iterNext l] (raRhs "S" [.axis k, .axis l])
   match evalScanF64 [] env sizes (.scan "S" [l] [wr 0 0] [r] false) with
   | .error (.scanWriteRowNotAdmitted "S" "S" true 0 0) => pure ()
@@ -811,7 +795,7 @@ run_cmd do
   | .error e => throwError s!"shape 9 second base: wrong rejection: {e}"
   | .ok outs => throwError (raAccepted outs)
   -- result placement (clone, change: the result is the zero-scale scatter).
-  let rz : Stmt := .scatter "S" [.affine (.scale 0 j), .iterNext l] (raRhs "S" [.axis j, .axis l]) opts
+  let rz : Stmt := .scatter "S" [.affine (.scale 0 j), .iterNext l] (raRhs "S" [.axis j, .axis l])
   match evalScanF64 [] env sizes6 (.scan "S" [l] [wr 2 0] [rz] false) with
   | .error (.scanWriteRowNotAdmitted "S" "S" false 0 0) => pure ()
   | .error e => throwError s!"shape 9 result: wrong rejection: {e}"
@@ -877,7 +861,6 @@ run_cmd do
   let j := ax "j" 1; let k := ax "k" 2; let l := ax "l" 9
   let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X0" (tensorOf [2] [1, 10])
   let sizes := ((({} : HashMap UID Nat).insert 1 2).insert 2 5).insert 9 3
-  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
   let b0 : Stmt := .assign "S" [.free j, .iterAt l 0] (raRhs "X0" [.axis j])
   let b1 : Stmt := .assign "S" [.free j, .iterAt l 1] (raRhs "X0" [.axis j])
   let step : Stmt := .assign "S" [.free j, .iterNext l] (raRhs "S" [.axis j, .axis l])
@@ -900,7 +883,7 @@ run_cmd do
   | .error (.duplicateStateResult "scn" "S" 0 1) => pure ()
   | .error e => throwError s!"order (c) state first: wrong rejection: {e}"
   | .ok outs => throwError (raAccepted outs)
-  let zeroReads : Stmt := .scatter "S" [.affine (.scale 0 j), .iterAt l 0] (raRhs "S" [.axis j, .const 0]) opts
+  let zeroReads : Stmt := .scatter "S" [.affine (.scale 0 j), .iterAt l 0] (raRhs "S" [.axis j, .const 0])
   match scanOf [zeroReads] [step] with
   | .error (.scanWriteRowNotAdmitted "scn" "S" true 0 0) => pure ()
   | .error e => throwError s!"order (d): wrong rejection: {e}"
@@ -939,10 +922,9 @@ run_cmd do
     (({} : HashMap String DenseTensor).insert "E" (tensorOf [3] [1, 2, 3])).insert "F" (tensorOf [2] [10, 20])
   -- `S[2*j]` (j = 3) and `S[2*m+2]` (m = 2) are both 6 wide, so only the overlap check can fire.
   let sizes := (((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 3 2).insert 9 2
-  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
-  let evenBase : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0] (raRhs "E" [.axis j]) opts
+  let evenBase : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0] (raRhs "E" [.axis j])
   let shifted : Stmt :=
-    .scatter "S" [.affine (.affine 2 [(2, m)]), .iterAt l 0] (raRhs "F" [.axis m]) opts
+    .scatter "S" [.affine (.affine 2 [(2, m)]), .iterAt l 0] (raRhs "F" [.axis m])
   let recur : Stmt := .assign "S" [.free o, .iterNext l] (raRhs "S" [.axis o, .axis l])
   match evalScanF64 [] env sizes (.scan "scn" [l] [evenBase, shifted] [recur] false) with
   | .error (.baseWritesOverlap "scn" "S" 0 1) => pure ()
@@ -1016,13 +998,12 @@ run_cmd do
   let i := ax "i" 1; let j := ax "j" 2
   let X := tensorOf [2, 2] [1, 2, 3, 4]
   let rhs := mkRhs "X" [.axis i, .axis j] .identity
-  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
-  match mkPlain (.scatter "Out" [.affine (.scale 2 i), .freeNorm j] rhs opts) [("X", X)] [(1, 2), (2, 2)] with
+  match mkPlain (.scatter "Out" [.affine (.scale 2 i), .freeNorm j] rhs) [("X", X)] [(1, 2), (2, 2)] with
   | .error (.unmarkedReductionAxis "Out" 1) => pure ()
   | .error e => throwError s!"shape 3 scatter: wrong rejection: {e}"
   | .ok (_, Out) => throwError s!"shape 3 scatter: accepted: {repr Out.data}"
   -- ACCEPT neighbour (clone, change: `.freeNorm j` -> `.free j`).
-  match mkPlain (.scatter "Out" [.affine (.scale 2 i), .free j] rhs opts) [("X", X)] [(1, 2), (2, 2)] with
+  match mkPlain (.scatter "Out" [.affine (.scale 2 i), .free j] rhs) [("X", X)] [(1, 2), (2, 2)] with
   | .error e => throwError s!"shape 3 scatter accept: {e}"
   | .ok (_, Out) =>
       unless Out.shape == [4, 2] && Out.data == #[1, 2, 0, 0, 3, 4, 0, 0] do
@@ -1033,7 +1014,7 @@ run_cmd do
   let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
   let sizes := ((({} : HashMap UID Nat).insert 2 2).insert 3 2).insert 9 3
   let sc (m : LHSSlot) : Stmt :=
-    .scatter "S" [.affine (.scale 2 j), m, .iterAt l 0] (mkRhs "X" [.axis j, .axis k] .identity) opts
+    .scatter "S" [.affine (.scale 2 j), m, .iterAt l 0] (mkRhs "X" [.axis j, .axis k] .identity)
   match evalStmtSliceSeededF64 [] env sizes seed (sc (.freeNorm k)) with
   | .error (.unmarkedReductionAxis "S" 1) => pure ()
   | .error e => throwError s!"shape 3 scan scatter: wrong rejection: {e}"
@@ -1084,7 +1065,7 @@ run_cmd do
   | .error e => throwError s!"shape 11 scan accept: {e}"
   | .ok _ => pure ()
 
--- Shape 1 (top-level max/min scatter whose fill is not the aggregation identity). REJECT donor:
+-- Shape 1 (top-level max/min scatter whose gap value `0` is not the aggregation identity). REJECT donor:
 --   ScatterTest "upsample"/"4g regression" scatter, here as an `evalPlain` `.scatter` statement
 --   `Out[2*i] := maxreduce(X[i])`, X = [-1,-2,-3]; the old reference filled the gaps with 0 and
 --   returned [-1,0,-2,0,-3,0], which is NOT the max identity. The checked path refuses every
@@ -1092,9 +1073,8 @@ run_cmd do
 run_cmd do
   let i := ax "i" 1
   let X := tensorOf [3] [-1, -2, -3]
-  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
   let rhsAgg (agg : AggOp) : RHSExpr := { mkRhs "X" [.axis i] .identity with agg := agg }
-  let stmtAgg (agg : AggOp) : Stmt := .scatter "Out" [.affine (.scale 2 i)] (rhsAgg agg) opts
+  let stmtAgg (agg : AggOp) : Stmt := .scatter "Out" [.affine (.scale 2 i)] (rhsAgg agg)
   match mkPlain (stmtAgg .max) [("X", X)] [(1, 3)] with
   | .error (.scatterFillNotIdentity "Out" .max) => pure ()
   | .error e => throwError s!"shape 1 max: wrong rejection: {e}"
@@ -1108,19 +1088,6 @@ run_cmd do
   | .error e => throwError s!"shape 1 accept (sum): {e}"
   | .ok (_, Out) =>
       unless Out.data == #[-1, 0, -2, 0, -3, 0] do throwError s!"shape 1 accept (sum): {repr Out.data}"
-  -- S3a: `fill` is no longer a policy. The one fill that used to denote -inf (`-(2^1024)`) no longer
-  --   rescues a max scatter (still refused: the guard is on `agg`), and a non-zero fill on a SUM
-  --   scatter is ignored — the gaps hold 0_K = 0, not the fill.
-  let optsInf : ScatterOpts := { fill := -(2 ^ 1024), reduce := .rejectCollisions }
-  match mkPlain (.scatter "Out" [.affine (.scale 2 i)] (rhsAgg .max) optsInf) [("X", X)] [(1, 3)] with
-  | .error (.scatterFillNotIdentity "Out" .max) => pure ()
-  | .error e => throwError s!"shape 1 max (-inf fill): wrong rejection: {e}"
-  | .ok (_, Out) => throwError s!"shape 1 max (-inf fill): accepted: {repr Out.data}"
-  let opts7 : ScatterOpts := { fill := 7, reduce := .rejectCollisions }
-  match mkPlain (.scatter "Out" [.affine (.scale 2 i)] (rhsAgg .sum) opts7) [("X", X)] [(1, 3)] with
-  | .error e => throwError s!"shape 1 sum (fill 7 ignored): {e}"
-  | .ok (_, Out) =>
-      unless Out.data == #[-1, 0, -2, 0, -3, 0] do throwError s!"shape 1 sum (fill 7 ignored): {repr Out.data}"
 
 -- Shape 1, the `+`-joined two-term max (the only case where a scatter max is meaningful: no gap
 --   cells when the terms cover every output cell). Donor: ScatterTest '4g regression' (A = [1,5,2],
@@ -1134,8 +1101,7 @@ run_cmd do
   let rhs : RHSExpr :=
     { body := { terms := [{ factors := [.read "A" [.axis i]] }, { factors := [.read "B" [.axis i]] }] }
       nonlin := .identity, agg := .max }
-  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
-  match mkPlain (.scatter "Out" [.affine (.axis i)] rhs opts) env [(1, 3)] with
+  match mkPlain (.scatter "Out" [.affine (.axis i)] rhs) env [(1, 3)] with
   | .error (.scatterFillNotIdentity "Out" .max) => pure ()
   | .error e => throwError s!"shape 1 joined: wrong rejection: {e}"
   | .ok (_, Out) => throwError s!"shape 1 joined: accepted: {repr Out.data}"
@@ -1146,7 +1112,7 @@ run_cmd do
   let senv : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" (tensorOf [2] [3, 7])
   let ssizes := (({} : HashMap UID Nat).insert 2 2).insert 9 3
   let sstmt : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
-    { mkRhs "X" [.axis j] .identity with agg := .max } opts
+    { mkRhs "X" [.axis j] .identity with agg := .max }
   match evalStmtSliceSeededF64 [] senv ssizes seed sstmt with
   | .error e => throwError s!"shape 1 scan-local max scatter: {e}"
   | .ok (_, t) =>
@@ -1170,11 +1136,10 @@ private def mkPlainD (decls : List Decl) (stmt : Stmt) (env : List (String × De
 run_cmd do
   let i := ax "i" 1
   let E := tensorOf [3] [1, 0, 1]
-  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
   let rhs : RHSExpr :=
     { body := { terms := [{ factors := [.read "E" [.axis i]] }, { factors := [.read "E" [.axis i]] }] }
       nonlin := .identity }
-  let st : Stmt := .scatter "Out" [.affine (.scale 2 i)] rhs opts
+  let st : Stmt := .scatter "Out" [.affine (.scale 2 i)] rhs
   match mkPlainD [.predicate "Out" [i]] st [("E", E)] [(1, 3)] with
   | .error e => throwError s!"shape 2 predicate: {e}"
   | .ok (_, Out) =>
@@ -1190,8 +1155,7 @@ run_cmd do
   --   Real fold gives 2; the Boolean destination folds with ∃ and stays 1.
   let collide (decls : List Decl) :=
     mkPlainD decls (.scatter "Out" [.affine (.const 0)]
-      { body := { terms := [{ factors := [.read "E" [.axis i]] }] }, nonlin := .identity }
-      { fill := 0, reduce := .sum }) [("E", E)] [(1, 3)]
+      { body := { terms := [{ factors := [.read "E" [.axis i]] }] }, nonlin := .identity }) [("E", E)] [(1, 3)]
   match collide [.predicate "Out" [i]] with
   | .error e => throwError s!"shape 2 collide predicate: {e}"
   | .ok (_, Out) => unless Out.data == #[1] do throwError s!"shape 2 collide predicate: {repr Out.data}"
@@ -1206,7 +1170,6 @@ run_cmd do
   let V := tensorOf [3] [1, 1, 1]
   let st : Stmt := .scatter "Eye" [.free i, .free i]
     { body := { terms := [{ factors := [.read "V" [.axis i]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   match mkPlainD [.predicate "Eye" [i, j]] st [("V", V)] [(1, 3)] with
   | .error e => throwError s!"shape 2 eye: {e}"
   | .ok (_, Eye) =>

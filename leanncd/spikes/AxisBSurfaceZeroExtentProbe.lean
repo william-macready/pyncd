@@ -57,10 +57,10 @@ def probeProg (label : String) (p : TLProgram) : String :=
 
 -- The slot lists those programs elaborate to.
 #eval progZeroScale.stmts.map (fun s => match s with
-  | .assign _ sl _ => sl | .scatter _ sl _ _ => sl | .recurMorphism .. => [])
+  | .assign _ sl _ => sl | .scatter _ sl _ => sl | .recurMorphism .. => [])
 
 #eval progStride2.stmts.map (fun s => match s with
-  | .assign _ sl _ => sl | .scatter _ sl _ _ => sl | .recurMorphism .. => [])
+  | .assign _ sl _ => sl | .scatter _ sl _ => sl | .recurMorphism .. => [])
 
 -- Does the zero-extent output get REJECTED once something reads it? (S24's question, at the
 -- surface.) `Y[k] := Out[k]` forces the sizing fixpoint to size `k` from the published shape.

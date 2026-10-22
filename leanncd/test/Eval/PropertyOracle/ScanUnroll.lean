@@ -207,16 +207,14 @@ structure ScanGeom where
 
 structure StmtParts where
   rhs     : RHSExpr
-  scatter : Option ScatterOpts
+  scatter : Bool
 
-/-- Preserve whether a source statement is an assignment or a scatter; the latter's placement and
-    options survive into the scan-free leaf program. -/
+/-- Preserve whether a source statement is an assignment or a scatter; the latter's placement
+    survives into the scan-free leaf program. -/
 private def partsOf (s : Stmt) : Except String StmtParts :=
   match s with
-  | .assign _ _ r         => .ok ⟨r, none⟩
-  | .scatter nm _ r opts  =>
-      if opts.fill == 0 then .ok ⟨r, some opts⟩
-      else .error s!"scatter `{nm}` has nonzero fill, outside the oracle's fragment"
+  | .assign _ _ r         => .ok ⟨r, false⟩
+  | .scatter _ _ r        => .ok ⟨r, true⟩
   | .recurMorphism nm _ _ => .error s!"recurMorphism `{nm}` inside a scan is outside the fragment"
 
 /-- Oracle-local copy of §2's extent rule. This deliberately does not call `LHSSlot.outExtent` or
@@ -654,7 +652,7 @@ private def predicateLeafDecl (decls : List Decl) (sourceName : String)
   if isPredicateName decls sourceName then
     match leaf with
     | .assign leafName slots _ => some (.predicate leafName (slots.filterMap (·.axisSpec?)))
-    | .scatter leafName _ _ _ => some (.predicate leafName fallbackAxes)
+    | .scatter leafName _ _ => some (.predicate leafName fallbackAxes)
     | .recurMorphism .. => none
   else none
 
@@ -672,7 +670,7 @@ private def emitStateLeaf (decls : List Decl) (g : ScanGeom)
     Except String LeafEmission := do
   let parts ← partsOf source
   match parts.scatter with
-  | none =>
+  | false =>
       let slots ← ordinaryLeafSlots st source
       let rename ← leafAxisRename st source
       let rhs ← rewriteRHS g σ hasLeaf stepCoord source.slots parts.rhs
@@ -680,7 +678,7 @@ private def emitStateLeaf (decls : List Decl) (g : ScanGeom)
       pure { stmts := [leaf]
            , decls := (predicateLeafDecl decls source.lhsName st.sliceAxes leaf).toList
            , checks := [(leafName, st.sliceExt)] }
-  | some opts =>
+  | true =>
       let slots ← residualPlacement st source σ
       let sourceAxes := placementAxes slots
       let rhs ← rewriteRHS g σ hasLeaf stepCoord source.slots parts.rhs
@@ -689,7 +687,7 @@ private def emitStateLeaf (decls : List Decl) (g : ScanGeom)
       let placedRhs : RHSExpr :=
         { body := { terms := [{ factors := [.read tempName (sourceAxes.map IdxExpr.axis)] }] }
         , nonlin := .identity }
-      let leaf := Stmt.scatter leafName slots placedRhs opts
+      let leaf := Stmt.scatter leafName slots placedRhs
       pure { stmts := [temp, leaf]
            , decls :=
                (predicateLeafDecl decls source.lhsName sourceAxes temp).toList ++
@@ -875,7 +873,7 @@ def independentRun (sched : ScheduledProgram) (inputs : HashMap String DenseTens
         | .error e => .error s!"independent run: plain statement `{s.lhsName}` failed: {e.error}"
     | .scan _ _ base recur _ => do
         let sizeStmts := (base ++ recur).map (fun
-          | .scatter nm slots rhs _ => Stmt.assign nm slots rhs
+          | .scatter nm slots rhs => Stmt.assign nm slots rhs
           | s => s)
         let sizes ← match inferAxisSizes (declaredAxisSizes sched.decls) env
             sizeStmts with
@@ -1106,10 +1104,8 @@ private def sbSizes1 (j o l : Nat) : HashMap UID Nat :=
 private def interleaveCase : ScanScatterOracleCase :=
   let evenBase : Stmt := .scatter "S" [.affine (.scale 2 sbJ), .iterAt sbL 0]
     { body := { terms := [{ factors := [.read "E" [.axis sbJ]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let oddBase : Stmt := .scatter "S" [.affine (.affine 1 [(2, sbJ)]), .iterAt sbL 0]
     { body := { terms := [{ factors := [.read "O" [.axis sbJ]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.free sbO, .iterNext sbL]
     { body := { terms := [{ factors := [.read "S" [.axis sbO, .axis sbL]] }] },
       nonlin := .identity }
@@ -1128,7 +1124,6 @@ private def stridedRecurrenceCase : ScanScatterOracleCase :=
   let recur : Stmt := .scatter "S" [.affine (.affine 1 [(2, sbJ)]), .iterNext sbL]
     { body := { terms := [{ factors := [.read "S" [.scale 2 sbJ, .axis sbL]] }] },
       nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   { label := "strided recurrence"
   , sched := sbSchedule
       [.axis sbJ (some 3), .axis sbO (some 6), .iter sbL 3, .typedTensor .f64 "X" [sbO]]
@@ -1141,7 +1136,6 @@ private def contractionCase : ScanScatterOracleCase :=
     { body := { terms := [{ factors :=
         [.read "X" [.axis sbJ, .axis sbK], .read "W" [.axis sbK]] }] },
       nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.free sbO, .iterNext sbL]
     { body := { terms := [{ factors := [.read "S" [.axis sbO, .axis sbL]] }] },
       nonlin := .identity }
@@ -1157,7 +1151,6 @@ private def contractionCase : ScanScatterOracleCase :=
 private def nonTrailingCase : ScanScatterOracleCase :=
   let base : Stmt := .scatter "S" [.iterAt sbL 0, .affine (.affine 1 [(2, sbJ)])]
     { body := { terms := [{ factors := [.read "X" [.axis sbJ]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.iterNext sbL, .free sbO]
     { body := { terms := [{ factors := [.read "S" [.axis sbL, .axis sbO]] }] },
       nonlin := .identity }
@@ -1173,7 +1166,6 @@ private def twoAffineCase : ScanScatterOracleCase :=
     [.affine (.scale 2 sbJ), .affine (.affine 1 [(2, sbK)]), .iterAt sbL 0]
     { body := { terms := [{ factors := [.read "X" [.axis sbJ, .axis sbK]] }] },
       nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.free sbO, .free sbP, .iterNext sbL]
     { body := { terms := [{ factors :=
         [.read "S" [.axis sbO, .axis sbP, .axis sbL]] }] }, nonlin := .identity }
@@ -1194,10 +1186,8 @@ private def twoAffineCase : ScanScatterOracleCase :=
 private def overlappingBaseSchedule : ScheduledProgram :=
   let first : Stmt := .scatter "S" [.affine (.scale 2 sbJ), .iterAt sbL 0]
     { body := { terms := [{ factors := [.read "E" [.axis sbJ]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let second : Stmt := .scatter "S" [.affine (.scale 2 sbJ), .iterAt sbL 0]
     { body := { terms := [{ factors := [.read "O" [.axis sbJ]] }] }, nonlin := .identity }
-    { fill := 0, reduce := .rejectCollisions }
   let recur : Stmt := .assign "S" [.free sbO, .iterNext sbL]
     { body := { terms := [{ factors := [.read "S" [.axis sbO, .axis sbL]] }] },
       nonlin := .identity }
@@ -1218,7 +1208,7 @@ private def scanNodeOf (sched : ScheduledProgram) : Except String ScanStmt :=
 /-- Every emitted scatter consumes exactly the dense temporary assigned immediately before it. -/
 private def assignmentThenScatter (stmts : List Stmt) : Bool :=
   stmts.zipIdx.all (fun (s, i) => match s with
-    | .scatter _ _ rhs _ =>
+    | .scatter _ _ rhs =>
         match stmts[i - 1]?, rhs.body.terms with
         | some (.assign temp _ _), [{ factors := [.read source _] }] =>
             i > 0 && temp == source
@@ -1302,7 +1292,7 @@ run_cmd do
   | .ok sc => match unrollScanNode twoAffineCase.sched.explicitSizes twoAffineCase.sched.decls sc with
       | .error _ => false
       | .ok un => match un.stmts.drop 1 with
-          | .assign _ [.free a, .free b] _ :: .scatter _ [.affine _, .affine _] _ _ :: _ =>
+          | .assign _ [.free a, .free b] _ :: .scatter _ [.affine _, .affine _] _ :: _ =>
               a.uid == sbJ.uid && b.uid == sbK.uid
           | _ => false
 
