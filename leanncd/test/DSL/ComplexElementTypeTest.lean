@@ -268,8 +268,7 @@ private def sl : AxisSpec := { name := "l", uid := 19, kind := .nat }
 private def scanNode : ScanStmt :=
   .scan "S" [sl]
     [.scatter "S" [.affine (.scale 2 sj), .iterAt sl 0]
-      { body := { terms := [{ factors := [.read "X" [.axis sj]] }] }, nonlin := .identity }
-      { fill := 0, reduce := .rejectCollisions }]
+      { body := { terms := [{ factors := [.read "X" [.axis sj]] }] }, nonlin := .identity }]
     [.assign "S" [.free so, .iterNext sl]
       { body := { terms := [{ factors := [.read "S" [.axis so, .axis sl]] }] }, nonlin := .identity }]
     false
@@ -314,7 +313,7 @@ private def entries : List (String × (List Decl → Obs)) :=
       ofEval (evalAssignDtypedSeeded ds inputs sizes {} "Y" [.free i] rhsAB))
   , ("evalStmtSliceSeeded", fun ds => ofEval (evalStmtSliceSeeded ds inputs sizes {} stmtY))
   , ("evalScatter", fun ds => ofEval (evalScatter ds inputs sizes "Y" [.affine (.scale 2 i)] rhsAB
-      { fill := 0, reduce := .rejectCollisions } [4]))
+      [4]))
   , ("evalScan", fun ds => ofEval (evalScan ds scanEnv scanSizes scanNode)) ]
 
 /-- The rejection each entry must report for a row: the typed `CompileError` (in the entry's own

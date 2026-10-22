@@ -125,7 +125,7 @@ private def readThenWrite : List Stmt :=
 -- (d) Slots with no plain `free` axis still give the right RANK: a scatter `.affine` LHS slot, a
 -- scan `.iterAt`/`.iterNext` slot, and an `.affine (.const _)` slot that names no axis of its own.
 private def slotStmts : List Stmt :=
-  [ .scatter "Sc" [.affine (.scale 2 axI), .affine (.shift axJ 1)] ⟨⟨[⟨[.read "X" [.axis axI, .axis axJ]]⟩]⟩, .identity, .sum⟩ {}
+  [ .scatter "Sc" [.affine (.scale 2 axI), .affine (.shift axJ 1)] ⟨⟨[⟨[.read "X" [.axis axI, .axis axJ]]⟩]⟩, .identity, .sum⟩
   , asg "G" [.free axJ, .iterAt axL 0] "G0" [.axis axJ]
   , asg "H" [.iterNext axL, .free axJ] "G" [.axis axJ, .axis axL]
   , asg "K" [.free axI, .affine (.const 0)] "M" [.axis axI, .axis axI] ]

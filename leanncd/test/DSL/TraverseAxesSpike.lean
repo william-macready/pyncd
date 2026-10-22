@@ -333,7 +333,7 @@ theorem traverseAxes_const_eq_specsLHS (s : LHSSlot) :
 
 private def specsStmt' : Stmt → List AxisSpec
   | .assign _ ls r => ls.flatMap specsLHS' ++ specsRHS' r
-  | .scatter _ ls r _ => ls.flatMap specsLHS' ++ specsRHS' r
+  | .scatter _ ls r => ls.flatMap specsLHS' ++ specsRHS' r
   | .recurMorphism _ ax _ => [ax]
 
 theorem traverseAxes_const_eq_specsStmt (s : Stmt) :
@@ -355,7 +355,7 @@ theorem traverseAxes_const_eq_specsStmt (s : Stmt) :
           (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run
         = ls.flatMap specsLHS' ++ specsRHS' r
       rw [core ls, traverseAxes_const_eq_specsRHS r]
-  | scatter nm ls r o =>
+  | scatter nm ls r =>
       show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ls).run ++
           (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run
         = ls.flatMap specsLHS' ++ specsRHS' r

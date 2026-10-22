@@ -16,7 +16,7 @@ run_cmd do
   let slots : List LHSSlot := [.affine (.scale 2 i), .affine (.scale 2 j)]
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity }
   let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2   -- i↦2, j↦2
-  match evalScatter f64Decls env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4,4] with
+  match evalScatter f64Decls env sizes "Out" slots rhs [4,4] with
   | .error e => throwError (toString e)
   | .ok (_, Out) =>
       -- X values at even coords:
@@ -34,7 +34,7 @@ run_cmd do
   let slots : List LHSSlot := [.affine (.const 0), .affine (.const 0)]
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity }
   let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2
-  match evalScatter f64Decls env sizes "Out" slots rhs { fill := 0, reduce := .sum } [4,4] with
+  match evalScatter f64Decls env sizes "Out" slots rhs [4,4] with
   | .error e => throwError (toString e)
   | .ok (_, Out) =>
       unless Out.get! [0,0] == 10.0 do throwError s!"reduce sum wrong: {repr Out.data}"
@@ -48,7 +48,7 @@ run_cmd do
   let slots : List LHSSlot := [.affine (.scale 2 i), .affine (.scale 2 j)]
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity }
   let sizes := ({} : HashMap UID Nat).insert 1 2          -- i↦2, but j (uid 2) deliberately unsized
-  match evalScatter f64Decls env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4,4] with
+  match evalScatter f64Decls env sizes "Out" slots rhs [4,4] with
   | .error _ => pure ()                                   -- expected
   | .ok _    => throwError "expected evalScatter to reject an unsized source axis"
 
@@ -67,7 +67,7 @@ run_cmd do
     { body := { terms := [{ factors := [.read "A" [.axis i]] }, { factors := [.read "B" [.axis i]] }] },
       nonlin := .identity, agg := .max }
   let sizes := ({} : HashMap UID Nat).insert 1 3
-  match evalScatter f64Decls env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [3] with
+  match evalScatter f64Decls env sizes "Out" slots rhs [3] with
   | .error e => throwError (toString e)
   | .ok (_, Out) => unless DenseTensor.approxEq Out (tensorOf [3] [10, 5, 2]) do
       throwError s!"4g regression: expected per-position max(A,B) = [10,5,2] (agg = .max), got \
@@ -83,26 +83,11 @@ run_cmd do
   let slots : List LHSSlot := [.affine (.const 0), .affine (.const 0)]
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity }
   let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2
-  match evalScatter f64Decls env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4,4] with
+  match evalScatter f64Decls env sizes "Out" slots rhs [4,4] with
   | .error e => throwError s!"S3a: a collision must sum under the default opts, got: {e}"
   | .ok (_, Out) =>
       unless Out.get! [0,0] == 10.0 && Out.get! [0,1] == 0.0 && Out.get! [3,3] == 0.0 do
         throwError s!"S3a: collision sum wrong: {repr Out.data}"
-
--- S3a (policy no longer honoured): a stale `reduce := .min` / `fill := 7` is ignored — the fold is
--- the destination ⊕ from 0_K. X = [5,-8,2] all colliding at output 0 ⇒ sum -1 (the old `.min` gave
--- -8); the unwritten cell Out[1] is 0_K = 0 (the old `fill := 7` gave 7).
-run_cmd do
-  let i := ax "i" 1
-  let X := tensorOf [3] [5, -8, 2]
-  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
-  let slots : List LHSSlot := [.affine (.const 0)]   -- every source coord collides at output 0
-  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
-  let sizes := ({} : HashMap UID Nat).insert 1 3
-  match evalScatter f64Decls env sizes "Out" slots rhs { fill := 7, reduce := .min } [2] with
-  | .error e => throwError (toString e)
-  | .ok (_, Out) => unless Out.get! [0] == -1.0 && Out.get! [1] == 0.0 do
-      throwError s!"S3a: stale reduce/fill must be ignored (sum -1, empty fibre 0), got {repr Out.data}"
 
 -- S3a (bool ⊕ = ∨): into a `predicate` destination colliding writes fold with `max`, staying in
 -- {0,1}. X = [1,1,0] all colliding ⇒ 1 (a real `+` would give 2).
@@ -114,7 +99,7 @@ run_cmd do
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
   let sizes := ({} : HashMap UID Nat).insert 1 3
   let decls : List Decl := [Decl.predicate "Out" [], Decl.typedTensor .f64 "X" []]
-  match evalScatter decls env sizes "Out" slots rhs {} [1] with
+  match evalScatter decls env sizes "Out" slots rhs [1] with
   | .error e => throwError (toString e)
   | .ok (_, Out) => unless Out.get! [0] == 1.0 do
       throwError s!"S3a: bool collision must fold with ∨ (1), got {repr Out.data}"
@@ -131,7 +116,7 @@ private def f32Program (nonlin : Nonlin) (decls : List Decl) :
   let slots : List LHSSlot := [.affine (.scale 2 i), .affine (.scale 2 j)]
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := nonlin }
   let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2
-  evalScatter decls env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4,4]
+  evalScatter decls env sizes "Out" slots rhs [4,4]
 
 -- PIN: undeclared names are binary32; the destination is reported first.
 run_cmd do

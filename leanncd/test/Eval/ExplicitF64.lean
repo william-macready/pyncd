@@ -66,7 +66,7 @@ private def stmtAxes (stmts : List Stmt) : List AxisSpec :=
 /-- The use-site axis list of `nm`: its first write's LHS slots, else its first read. -/
 private def useSiteAxes (stmts : List Stmt) (nm : String) : Option (List AxisSpec) :=
   let write := stmts.findSome? fun s => match s with
-    | .assign n ls _ | .scatter n ls _ _ => if n == nm then some (ls.map slotAxes) else none
+    | .assign n ls _ | .scatter n ls _ => if n == nm then some (ls.map slotAxes) else none
     | .recurMorphism _ _ _ => none
   let read := (stmts.flatMap Stmt.readFactors).findSome? fun (n, es) =>
     if n == nm then some (es.map idxAxes) else none
