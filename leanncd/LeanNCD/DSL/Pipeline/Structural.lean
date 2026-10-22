@@ -332,7 +332,7 @@ private theorem stmtAxisUidFusion (s : Stmt) :
         = (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run ++
           (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run
       rw [List.map_append, coreLHS ls, hRHS r]
-  | scatter nm ls r o =>
+  | scatter nm ls r =>
       show ((Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ls).run ++
           (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run).map (·.uid)
         = (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run ++
@@ -480,7 +480,7 @@ theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
         ++ r.body.terms.flatMap termAxisUIDs
         ++ (match r.nonlin with
             | .axiswise _ (some m) => boolAxisUIDs m | _ => [])
-    | .scatter _ ls r _ =>
+    | .scatter _ ls r =>
         ls.flatMap (fun sl => match sl with
           | .free a => [a.uid] | .freeNorm a => [a.uid]
           | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
@@ -559,7 +559,7 @@ theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
               ++ (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.nonlin).run)
         = _
       rw [hLS ls, hBody r.body.terms, hNonlin r.nonlin, ← List.append_assoc]
-  | scatter nm ls r o =>
+  | scatter nm ls r =>
       show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run
           ++ ((Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) r.body.terms).run
               ++ (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.nonlin).run)
@@ -812,7 +812,7 @@ def reclassifyIterSlots (rp : ResolvedProgram) : FreshM ResolvedProgram := do
   let iterUids := iterDeclUids rp.decls
   let stmts' ← rp.stmts.mapM (fun s => match s with
     | .assign nm ls rhs      => return Stmt.assign nm (← ls.mapM (reclassifyLHSSlot iterUids)) rhs
-    | .scatter nm ls rhs opt => return Stmt.scatter nm (← ls.mapM (reclassifyLHSSlot iterUids)) rhs opt
+    | .scatter nm ls rhs => return Stmt.scatter nm (← ls.mapM (reclassifyLHSSlot iterUids)) rhs
     | .recurMorphism _ _ _   => return s)
   return { rp with stmts := stmts' }
 
@@ -845,7 +845,7 @@ private def stmtReads (s : Stmt) : List (String × Nat) :=
     intermediates. -/
 private def stmtLhsRank (s : Stmt) : Nat :=
   match s with
-  | .assign _ ls _ | .scatter _ ls _ _ =>
+  | .assign _ ls _ | .scatter _ ls _ =>
       if slotsBecomeScatter ls then ls.length
       else (ls.filterMap (·.axisUID?)).eraseDups.length
   | .recurMorphism _ _ _ => 0
@@ -890,7 +890,7 @@ def checkReadRanksIn (env : DeclEnv) (extNames : Finset String) (stmts : List St
   -- intentionally distinct from `stmtLhsRank`, which describes an undeclared producer's output.
   for s in stmts do
     match s with
-    | .assign nm slots _ | .scatter nm slots _ _ =>
+    | .assign nm slots _ | .scatter nm slots _ =>
         match env[nm]? with
         | some decl =>
             let expected := decl.axisCount
@@ -960,7 +960,7 @@ private def isReal : AxisKind → Bool | .real => true | _ => false
 /-- Check the LHS axis-kind half of `checkDtypes` for one source statement. -/
 def checkStmtAxisKinds (s : Stmt) : Except CompileError Unit := do
   let slots : List LHSSlot := match s with
-    | .assign _ ls _ | .scatter _ ls _ _ => ls
+    | .assign _ ls _ | .scatter _ ls _ => ls
     | .recurMorphism _ _ _ => []
   for slot in slots do
     match slot with
@@ -979,7 +979,7 @@ def checkStmtAxisKinds (s : Stmt) : Except CompileError Unit := do
     (`checkDtypes` rejects it outright for an unrelated reason — see its own arm). -/
 def checkPredicateOutput (env : DeclEnv) (s : Stmt) : Except CompileError Unit :=
   match s with
-  | .assign nm _ rhs | .scatter nm _ rhs _ =>
+  | .assign nm _ rhs | .scatter nm _ rhs =>
       match env[nm]? with
       | some (.predicate _ _) =>
           if !(rhs.nonlin == .identity) then throw (CompileError.predicateNonlin nm)
@@ -1027,7 +1027,7 @@ def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
     | .error e => throw e
     -- Check B: predicate outputs must have identity nonlinearity and sum aggregation
     match s with
-    | .assign _ _ _ | .scatter _ _ _ _ =>
+    | .assign _ _ _ | .scatter _ _ _ =>
         match checkPredicateOutput rp.env s with
         | .ok ()   => pure ()
         | .error e => throw e
@@ -1068,7 +1068,7 @@ def checkScatterNonlin (rp : ResolvedProgram) : FreshM ResolvedProgram := do
     | .assign nm ls rhs =>
         if slotsBecomeScatter ls && rhs.nonlin ≠ Nonlin.identity then
           throw (.unsupportedNonlinScatter nm)
-    | .scatter nm _ rhs _ =>
+    | .scatter nm _ rhs =>
         if rhs.nonlin ≠ Nonlin.identity then
           throw (.unsupportedNonlinScatter nm)
     | .recurMorphism _ _ _ => pure ()
@@ -1110,10 +1110,10 @@ def lowerArith (rp : ResolvedProgram) : FreshM LoweredProgram := do
         -- injective (i ↦ (i,i)) so it passes.
         if slotsBecomeScatter slots then
           if slots.any LHSSlot.collapses then throw (CompileError.overlappingScatter nm)
-          else return Stmt.scatter nm slots rhs { fill := 0, reduce := .rejectCollisions }
+          else return Stmt.scatter nm slots rhs
         else return s
-    | .scatter nm slots _ opts =>
-        if (slots.any LHSSlot.collapses) && opts.reduce ≠ .sum then
+    | .scatter nm slots _ =>
+        if slots.any LHSSlot.collapses then
           throw (CompileError.overlappingScatter nm)
         else return s
     | .recurMorphism _ _ _ => return s)   -- no affine LHS; passes through unchanged
@@ -1159,7 +1159,7 @@ def Stmt.adoptBaseIterAxes (base step : Stmt) : Stmt :=
       | _ => sl)
   match base with
   | .assign nm ls r    => .assign  nm (remap ls) r
-  | .scatter nm ls r o => .scatter nm (remap ls) r o
+  | .scatter nm ls r => .scatter nm (remap ls) r
   | .recurMorphism _ _ _ => base
 
 /-- Group `iterAt`/`iterNext` stmts by iteration-axis UID into (coupled) `ScanStmt.scan` nodes;

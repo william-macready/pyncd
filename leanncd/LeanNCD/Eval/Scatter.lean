@@ -15,10 +15,9 @@ def scatterSourceAxes (slots : List LHSSlot) (rhs : RHSExpr) : List UID :=
     Colliding writes (two or more source coords landing on the same output coord) are merged with
     the DESTINATION's additive monoid ⊕ (real `+`; `predicate` destination `max` = `∨`) starting from
     its identity 0_K = 0, so an empty fibre is 0 and a collision is a sum, never an error.
-    `opts.reduce`/`opts.fill` are not honoured as policy (S3a; the fields remain until their
-    deletion). Out-of-range output coordinates are skipped. -/
+    Out-of-range output coordinates are skipped. -/
 def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
-    (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) (_opts : ScatterOpts) (outShape : List Nat) :
+    (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) (outShape : List Nat) :
     Except EvalError (String × DenseTensor) := do
   -- A complex declaration has no binary64 reading; this public entry builds no `DeclEnv`, so it
   -- cannot inherit `buildDeclEnv`'s rejection and applies the same rule directly.

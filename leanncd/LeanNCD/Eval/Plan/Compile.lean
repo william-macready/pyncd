@@ -154,14 +154,6 @@ def checkNonlinScatter (stmtName : String) : Nonlin → Except CapabilityError U
   | .pointwise _ => throw (.unsupportedNonlin s!"{stmtName}: scatter nonlinearity")
   | .axiswise .. => throw (.unsupportedNonlin s!"{stmtName}: scatter nonlinearity")
 
-/-- Scan scatters admit zero fill only (S3a: the collision policy is no longer an admission question —
-    every scatter folds collisions with the destination ⊕). Checked after slots, aggregation,
-    nonlinearity, and factors, matching the top-level scatter's sub-construct order. -/
-def checkScanScatterOpts (stmtName : String) (opts : ScatterOpts) :
-    Except CapabilityError Unit := do
-  if opts.fill != 0 then
-    throw (.scatterOptsNotAdmitted s!"{stmtName}: fill")
-
 /-- `.unaryFn` is now structurally admitted (unary-factor thread): `residualizeAssignment` lowers it
     to a `ReadPlan` carrying `unary := some op`, and Dense's `gatherFactorWith` applies the function
     after the out-of-bounds pad. This diverges from C0's frozen `classifyFactor`
@@ -225,8 +217,8 @@ def checkAggOp (_stmtName : String) : AggOp → Except CapabilityError Unit
     `classifyStmt` rejects a scatter statement outright without inspecting its payload, while S-A
     admits a TOP-LEVEL one and checks its sub-constructs in the same order an assignment's are
     checked (slots, `agg`, `nonlin`, factors), with `checkScatterLHSSlot`/`checkNonlinScatter` in
-    place of the assignment's own two (S3a: `ScatterOpts` is no longer checked here — collisions fold
-    with the destination ⊕). `recurMorphism` is still rejected outright. -/
+    place of the assignment's own two (collisions fold with the destination ⊕, so there is no
+    scatter-options check). `recurMorphism` is still rejected outright. -/
 def checkStmt : Stmt → Except CapabilityError Unit
   | .assign nm slots rhs => do
       for s in slots do checkLHSSlot nm s
@@ -234,7 +226,7 @@ def checkStmt : Stmt → Except CapabilityError Unit
       checkNonlinTopLevel nm rhs.nonlin
       for t in rhs.body.terms do
         for f in t.factors do checkFactor nm f
-  | .scatter nm slots rhs _ => do
+  | .scatter nm slots rhs => do
       for s in slots do checkScatterLHSSlot nm s
       checkAggOp nm rhs.agg
       checkNonlinScatter nm rhs.nonlin
@@ -263,7 +255,7 @@ def checkScanLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Un
   | .affine _   => throw (.scatterOrAffineLhs s!"{stmtName}: affine LHS slot")
 
 /-- One base/recurrence statement's capability check: the same sub-construct order `checkStmt`
-    applies (LHS slots, then `agg`, then `nonlin`, then factors, then scatter options). Assignments
+    applies (LHS slots, then `agg`, then `nonlin`, then factors). Assignments
     use `checkScanLHSSlot`; scatters use `checkScanScatterLHSSlot` and the identity-only
     `checkNonlinScatter`. The `nonlin` sub-check `checkNonlinScanBlock` for assignments
     (Thread 4 Task 4) admits `.pointwise`/`.axiswise` identically to `checkStmt`'s
@@ -284,13 +276,12 @@ def checkScanBlockStmt : Stmt → Except CapabilityError Unit
       checkNonlinScanBlock nm rhs.nonlin
       for t in rhs.body.terms do
         for f in t.factors do checkFactor nm f
-  | .scatter nm slots rhs opts => do
+  | .scatter nm slots rhs => do
       for s in slots do checkScanScatterLHSSlot nm s
       checkAggOp nm rhs.agg
       checkNonlinScatter nm rhs.nonlin
       for t in rhs.body.terms do
         for f in t.factors do checkFactor nm f
-      checkScanScatterOpts nm opts
   | .recurMorphism nm .. => throw (.recurrenceOrCallback nm)
 
 /-- Whole-`ScanStmt` capability check. `.plain` is unchanged Wave C. A `.scan` is now admitted
@@ -361,7 +352,7 @@ def capabilityPreflight (sched : ScheduledProgram) : Except CapabilityError Unit
   for sc in sched.stmts do
     for s in sc.sourceStmts do
       match s with
-      | .scatter nm _ _ _ =>
+      | .scatter nm _ _ =>
           if isPredicateName nm then
             throw (.predicateScatterDest s!"{nm}: predicate scatter destination")
       | .assign nm slots _ =>
@@ -464,7 +455,7 @@ private def assignPartsOrFail (context : String) : Stmt →
 private def scanPartsOrFail (context : String) : Stmt →
     Except CapabilityError (String × List LHSSlot × RHSExpr × Bool)
   | .assign nm slots rhs => pure (nm, slots, rhs, false)
-  | .scatter nm slots rhs _ => pure (nm, slots, rhs, true)
+  | .scatter nm slots rhs => pure (nm, slots, rhs, true)
   | .recurMorphism .. => throw (.recurrenceOrCallback context)
 
 private def scanOutputUids (slots : List LHSSlot) : List UID :=
@@ -547,9 +538,7 @@ private def scatterPlacementOrFail (srcUids : List UID) (srcShape : Array Nat)
   return (coeffsAcc, biasAcc, shapeAcc)
 
 /-- A top-level scatter is admitted only for `agg = .sum` (S3a): a `maxreduce`/`minreduce` scatter is
-    refused, tropical scatter being S3b's. `ScatterOpts.fill` is no longer a policy — the plan's
-    `fill` is always the algebra's own `reduceId`, derived at the call site, which `checkScatter`
-    still verifies until the field is deleted. The refusal keeps the `scatterOptsNotAdmitted
+    refused, tropical scatter being S3b's. The refusal keeps the `scatterOptsNotAdmitted
     "{nm}: fill"` constructor and text: `SortedDifferential.confirmsSorted` (Semantics/Source)
     matches it. -/
 private def scatterAggOrFail (context : String) : AggOp → Except CapabilityError Unit
@@ -1511,7 +1500,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     | .plain s => [s]
     | .scan _ _ base recur _ =>
         (base ++ recur).map (fun
-          | .scatter nm slots rhs _ => .assign nm slots rhs
+          | .scatter nm slots rhs => .assign nm slots rhs
           | s => s)
     | .scanPre .. => [])   -- unreachable post-preflight (Step A already rejected this)
   let (sizes, warnings) ← match inferAxisSizesFromSignature explicitSizes sig flatStmts with
@@ -1559,7 +1548,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- keeps the unreachable-post-preflight throw that used to cover all three.
   for sc in sched.stmts do
     match sc with
-    | .plain (.scatter nm slots rhs opts) =>
+    | .plain (.scatter nm slots rhs) =>
         -- S-A's scatter emitter. Matched BEFORE the general `.plain s` branch below, which is what
         -- keeps `assignPartsOrFail` (shared with `compileScan`) rejecting `.scatter` and the
         -- S-A/S-B boundary structural — see that helper's own doc comment.
@@ -1605,8 +1594,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         liftCapability warnings (scatterAggOrFail s!"{nm}: fill" rhs.agg)
         tensorSigsAcc := tensorSigsAcc.push { shape := destShape, dtype := destDtype }
         stepsAcc := stepsAcc.push (.scatter
-          { compute := computePlan, destShape, outCoeffs, outBias
-          , fill := computePlan.algebra.reduceId, reduce := opts.reduce })
+          { compute := computePlan, destShape, outCoeffs, outBias })
         materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
         slotOf := slotOf.insert nm destSlot
     | .plain s =>

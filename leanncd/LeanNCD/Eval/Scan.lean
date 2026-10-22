@@ -55,7 +55,7 @@ def evalStmtSliceSeeded (decls : List Decl) (env : HashMap String DenseTensor) (
   rejectUnsupportedStorage decls (stmtStorageNames s)
   -- Marker agreement covers the scatter arm too, which never reaches `resolveNonlin`.
   match s with
-  | .assign nm slots rhs | .scatter nm slots rhs _ => checkNormMarkers nm rhs.nonlin slots
+  | .assign nm slots rhs | .scatter nm slots rhs => checkNormMarkers nm rhs.nonlin slots
   | .recurMorphism .. => pure ()
   match s with
   | .assign nm slots rhs =>
@@ -63,7 +63,7 @@ def evalStmtSliceSeeded (decls : List Decl) (env : HashMap String DenseTensor) (
       let sliceUids := (slots.filterMap (·.axisUID?)).filter (fun u => ! seed.contains u)
       let rn ← resolveNonlin rhs.nonlin slots sliceUids
       return (nm, applyNonlin rn sliceUids slice)
-  | .scatter nm slots rhs _ =>
+  | .scatter nm slots rhs =>
       if rhs.nonlin ≠ Nonlin.identity then
         throw (.unsupportedScatterNonlin nm)
       let sourceAxes := (scanScatterSourceAxes slots).filter (fun a => ! seed.contains a.uid)
@@ -92,7 +92,7 @@ def writeScanStmtSlice (out : DenseTensor) (seed : HashMap UID Int) (s : Stmt)
   let sliceUids : List UID := match s with
     | .assign _ slots _ =>
         (slots.filterMap LHSSlot.axisUID?).filter (fun u => ! seed.contains u)
-    | .scatter _ slots _ _ =>
+    | .scatter _ slots _ =>
         ((scanScatterSourceAxes slots).filter
           (fun a => ! seed.contains a.uid)).map AxisSpec.uid
     | .recurMorphism _ _ _ => []
@@ -294,14 +294,14 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
       for s in recur do
         if !(stateNames.contains s.lhsName) then
           match s with
-          | .scatter _ _ _ _ => throw (.invalidScanNode .onlyAssignInSlice)
+          | .scatter _ _ _ => throw (.invalidScanNode .onlyAssignInSlice)
           | _ => pure ()
       checkScanStructure scanName axes sizes stateNames base recur
       -- 1. allocate each state tensor (zeros at full shape) from its base slots.
       let mut work := env
       for s in base do
         match s with
-        | .assign nm slots _ | .scatter nm slots _ _ =>
+        | .assign nm slots _ | .scatter nm slots _ =>
             let stateShape ← scanStateShape sizes slots
             work := work.insert nm (DenseTensor.zeros stateShape)
         | _ => throw (.invalidScanNode .baseMustBeAssign)

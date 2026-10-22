@@ -40,7 +40,7 @@ outright, which is exactly what the `Float32` instantiation does.
 /-- One carrier's scalar runtime: the complete set of scalar-level operations the assignment
     traversal below needs, and nothing else. -/
 private structure ScalarKernelOps (α : Type) where
-  /-- Decode one checked plan constant (an algebra identity, or a scatter `fill`) into this
+  /-- Decode one checked plan constant (an algebra identity) into this
       carrier's own exact value. A constant tagged for the OTHER real carrier is refused, never
       converted — that conversion is precisely the silent precision substitution this slice exists
       to prevent. -/
@@ -330,7 +330,7 @@ from source syntax; that is Task 5.
     difference from `runDenseAssignAt`: that worker enumerates its DESTINATION and pulls one value per
     destination cell, while this one enumerates `compute.outputShape` — the source iteration domain —
     evaluates the compute half there through the shared `denseValueAtWith ops`, and PUSHES the value to
-    `outCoeffs · sourceCoordinate + outBias`. Unwritten destination cells keep `fill`.
+    `outCoeffs · sourceCoordinate + outBias`. Unwritten destination cells keep `compute.algebra.reduceId`.
 
     Reproduces `Eval/Scatter.lean`'s `evalScatter` equation for equation **for the real sum-product
     algebra**, because differential parity against that evaluator is this feature's correctness gate
@@ -352,30 +352,19 @@ from source syntax; that is Task 5.
       at every source coordinate, so every write is skipped by the rule above and the result is the
       empty tensor the reference produces. Nothing special-cases it.
 
-    **A TROPICAL-algebra scatter's unwritten cells diverge from the reference BY DESIGN, and that
-    divergence is permanent.** The scoping of the parity claim above is load-bearing, not hedging:
-    the reference's `ScatterOpts.fill` is an `Int` (`DSL/Ast.lean`) which `evalScatter` widens with
-    `Float.ofInt`, so the reference layer can express `±∞` only through an `Int` that overflows
-    `Float.ofInt` (e.g. `-(2^1024)`), and for every fill source syntax can write it fills every
-    unwritten cell with an integer-valued Float — `0.0` in practice, its default. `checkScatter`
-    meanwhile forces `fill == compute.algebra.reduceId`, which for `admittedAlgebraMax`/`Min` IS
-    `∓∞`, and the checked plan's `fill : ScalarConst` can carry it. So on a max/min scatter the two
-    implementations disagree on every unwritten cell whenever the reference fill is finite (always,
-    from source), and this worker is the correct one: filling with `0.0`
-    under max-product would let a spurious zero win the reduction over an all-negative cell, the
-    exact incoherence `PlanError.scatterFillNotIdentity` exists to reject. `ScatterDenseTest`'s
-    tropical-`fill` fixture pins the checked-layer value and records the divergence; a differential
-    corpus must therefore not treat a tropical scatter as a parity-checked entry without special
-    casing the unwritten cells. (Since reference-alignment the reference REFUSES a top-level
-    max/min scatter from source, as `scatterFillNotIdentity`, so the divergence is no longer
-    observable through `TLProgram.eval`; it remains for direct `evalScatter` calls and raw plans.)
+    **A tropical-algebra scatter's unwritten cells hold `∓∞`** (`reduceId` of `admittedAlgebraMax`/
+    `Min`), not `0.0`: filling with `0.0` under max-product would let a spurious zero win the
+    reduction over an all-negative cell. Since reference-alignment the reference REFUSES a top-level
+    max/min scatter from source (`scatterFillNotIdentity`), so this is observable only for direct
+    `evalScatter` calls and raw plans; a differential corpus must not treat a tropical scatter as a
+    parity-checked entry without special-casing the unwritten cells (tropical carriers are S3b's).
 
     **Collisions are folded, not rejected (S3a).** Every in-range write is combined into its cell
     with the destination algebra's `reduceOp`, starting from `reduceId` (0_K): `+`/`0` for the real
     algebras (binary32 rides this same worker over `float32Ops`), `max`/`false` for a Boolean one,
     `max`/`min` from `∓∞` for a tropical one. The empty fibre is therefore `reduceId` and a
-    collision is a sum; `s.reduce` and `s.fill` are not read (the fields remain until their
-    deletion), `checkScatter` having already forced `fill == reduceId`. -/
+    collision is a sum; `ScatterPlan` carries no fill or collision-policy field, so `reduceId` and
+    `reduceOp` come from `compute.algebra` alone. -/
 private def runDenseScatterWith {α : Type} (ops : ScalarKernelOps α) (s : ScatterPlan)
     (store : Array (DenseTensorOf α)) : Except PositionalInputError (DenseTensorOf α) := do
   let a := s.compute
@@ -409,7 +398,7 @@ def runDenseScatter (c : CheckedScatterPlan) (store : Array DenseTensor) :
     throw (.storageKindMismatch .float64 c.storageKind)
   runDenseScatterWith floatOps c.plan store
 
-/-- Execute one checked BINARY32 scatter, natively: `fill` decoded by `float32Ops`, every compute
+/-- Execute one checked BINARY32 scatter, natively: `reduceId` decoded by `float32Ops`, every compute
     value from the shared traversal over `float32Ops`, nothing widened. **The storage-kind guard is
     first**, the mirror of `runDenseScatter`'s. -/
 def runDenseScatter32 (c : CheckedScatterPlan) (store : Array DenseTensor32) :

@@ -26,7 +26,7 @@ def scatterOutShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : Except Ev
     check is now simply "a top-level scatter whose RHS aggregation is not `.sum` is refused" — the
     tropical scatter carriers are S3b's. It keeps raising `EvalError.scatterFillNotIdentity` (same
     constructor and text) because `SortedDifferential.confirmsSorted` matches it. A `.sum` scatter
-    is accepted whatever its (ignored) `opts.fill`. Deliberately NOT in `evalScatter` — a SCAN-LOCAL max-reduce scatter is legal
+    is accepted. Deliberately NOT in `evalScatter` — a SCAN-LOCAL max-reduce scatter is legal
     (no gap cells survive in scan state) and the direct `evalScatter` unit tests call it with `.max`.
     It runs in `evalPlain`'s scatter arm, the only top-level entry. -/
 def checkScatterAgg (stmtName : String) (agg : AggOp) : Except EvalError Unit :=
@@ -45,7 +45,7 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
   rejectUnsupportedStorage decls (stmtStorageNames s)
   -- Marker agreement covers BOTH arms: the scatter arm never reaches `resolveNonlin`.
   match s with
-  | .assign nm slots rhs | .scatter nm slots rhs _ => checkNormMarkers nm rhs.nonlin slots
+  | .assign nm slots rhs | .scatter nm slots rhs => checkNormMarkers nm rhs.nonlin slots
   | .recurMorphism .. => pure ()
   match s with
   | .assign nm slots rhs =>
@@ -53,10 +53,10 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
       let axisUids := slots.filterMap (·.axisUID?)
       let rn ← resolveNonlin rhs.nonlin slots axisUids
       return (nm, applyNonlin rn axisUids pre)
-  | .scatter nm slots rhs opts =>
+  | .scatter nm slots rhs =>
       checkScatterAgg nm rhs.agg
       let outShape ← scatterOutShape sizes slots
-      evalScatter decls env sizes nm slots rhs opts outShape
+      evalScatter decls env sizes nm slots rhs outShape
   | .recurMorphism nm _ _ => .error (.unsupportedRecurMorphism .evalPlain nm)
 
 /-- Evaluate a `ScheduledProgram` on concrete inputs. This worker is compiler-independent: callers
@@ -162,7 +162,7 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
     | .plain s => [s]
     | .scan _ _ base recur _ =>
         (base ++ recur).map (fun
-          | .scatter nm slots rhs _ => .assign nm slots rhs
+          | .scatter nm slots rhs => .assign nm slots rhs
           | s => s)
     | .scanPre .. => [])
   match inferAxisSizes checked.explicitSizes inputs allStmts with

@@ -149,28 +149,9 @@ inductive LHSSlot
   | affine   : IdxExpr → LHSSlot
   deriving DecidableEq, Repr, Lean.ToExpr
 
-/-- Scatter collision-reduction policy: how to merge multiple source coordinates that write the
-    same output coordinate. Distinct from `RHSExpr.agg` (the 4b `Combine` selection in
-    `Contract`/`Scatter`), which governs how a SINGLE source coordinate's own RHS terms combine —
-    the two are independent (an RHS `maxreduce` with collision `sum` differs from RHS `sum` with
-    collision `max`). `rejectCollisions` is the default: absence of an explicit policy means a
-    collision is a validation failure, not an implicit overwrite. -/
-inductive CollisionReduce
-  | rejectCollisions
-  | overwrite
-  | sum
-  | max
-  | min
-  deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
-
-structure ScatterOpts where
-  fill   : Int := 0
-  reduce : CollisionReduce := .rejectCollisions
-  deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
-
 inductive Stmt
   | assign  : String → List LHSSlot → RHSExpr → Stmt
-  | scatter : String → List LHSSlot → RHSExpr → ScatterOpts → Stmt
+  | scatter : String → List LHSSlot → RHSExpr → Stmt
   | recurMorphism : String → AxisSpec → ThreadedComposed → Stmt
     -- escape hatch (§12.2): tensor name, iteration axis, a pre-built step morphism (programmatic-only)
   deriving DecidableEq, Repr, Lean.ToExpr
@@ -312,11 +293,11 @@ def storageConstraintOfName? (env : DeclEnv) (nm : String) : Option StorageKind 
 
 /-- The tensor name a stmt writes to (its LHS). -/
 def Stmt.lhsName : Stmt → String
-  | .assign n _ _ => n | .scatter n _ _ _ => n | .recurMorphism n _ _ => n
+  | .assign n _ _ => n | .scatter n _ _ => n | .recurMorphism n _ _ => n
 
 /-- The LHS slots of a statement. -/
 def Stmt.slots : Stmt → List LHSSlot
-  | .assign _ ls _ => ls | .scatter _ ls _ _ => ls | .recurMorphism _ _ _ => []
+  | .assign _ ls _ => ls | .scatter _ ls _ => ls | .recurMorphism _ _ _ => []
 
 /-- The nonlinearity wrapping a stmt's step. A `recurMorphism` is pre-built (already-lowered),
     so it is affine-neutral (`identity`). Used by `finalizeScans` to detect ScanAffine (Prop 8.7):
@@ -326,7 +307,7 @@ def Stmt.slots : Stmt → List LHSSlot
     (`Pipeline/RouteFragments.lean`), which `finalizeScans` runs strictly before. -/
 def Stmt.nonlinOf : Stmt → Nonlin
   | .assign _ _ r => r.nonlin
-  | .scatter _ _ r _ => r.nonlin
+  | .scatter _ _ r => r.nonlin
   | .recurMorphism _ _ _ => .identity
 
 /-- One iteration slot of a stmt: its axis, whether it advances a recurrence (`iterNext`),
@@ -494,7 +475,7 @@ def RHSExpr.readFactors (r : RHSExpr) : List (String × List IdxExpr) :=
 
 /-- The read factors of a stmt, in order (`recurMorphism` reads are not introspected). -/
 def Stmt.readFactors : Stmt → List (String × List IdxExpr)
-  | .assign _ _ r | .scatter _ _ r _ => r.readFactors
+  | .assign _ _ r | .scatter _ _ r => r.readFactors
   | .recurMorphism _ _ _ => []
 
 end LeanNCD

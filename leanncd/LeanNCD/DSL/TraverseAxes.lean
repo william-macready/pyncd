@@ -105,7 +105,7 @@ def LHSSlot.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : LHSSlot
 def Stmt.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : Stmt → f Stmt
   | .assign nm ls r         => (fun ls' r' => Stmt.assign nm ls' r') <$>
       Traversable.traverse (LHSSlot.traverseAxes g) ls <*> RHSExpr.traverseAxesWithMask g r
-  | .scatter nm ls r o      => (fun ls' r' => Stmt.scatter nm ls' r' o) <$>
+  | .scatter nm ls r        => (fun ls' r' => Stmt.scatter nm ls' r') <$>
       Traversable.traverse (LHSSlot.traverseAxes g) ls <*> RHSExpr.traverseAxesWithMask g r
   | .recurMorphism nm ax tc => (fun ax' => Stmt.recurMorphism nm ax' tc) <$> g ax
 

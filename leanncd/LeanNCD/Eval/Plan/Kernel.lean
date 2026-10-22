@@ -144,10 +144,6 @@ structure AssignPlan where
   algebra         : ContractionAlgebra
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- `CollisionReduce` (`DSL/Ast.lean`) derives `DecidableEq` but not `BEq`; `ScatterPlan` derives
-    `BEq`, so it needs one for its `reduce` field. Mirrors the `BEq UnaryOp` instance above. -/
-instance : BEq LeanNCD.CollisionReduce := ⟨fun a b => decide (a = b)⟩
-
 /-- One complete top-level scatter: a compute half producing values over a SOURCE iteration domain,
     and an affine placement map depositing each of those values into a separately-sized destination.
 
@@ -168,20 +164,14 @@ instance : BEq LeanNCD.CollisionReduce := ⟨fun a b => decide (a = b)⟩
     DESTINATION dimension, each row of source-iteration-basis width — the same
     row-per-codomain-dimension convention `AffineMap` uses on the read side.
 
-    `fill` is the value every unwritten destination cell holds. It is a `ScalarConst`, not the
-    `Int` that `DSL/Ast.lean`'s `ScatterOpts.fill` carries, because it must be able to express a
-    tropical identity; it is coherent with `compute.algebra.reduceId`, which a later task checks.
-
-    `reduce` is the collision policy for two source coordinates landing on one destination
-    coordinate — independent of `compute.algebra`, which governs how ONE source coordinate's own
-    terms combine. -/
+    Colliding source coordinates are merged with the destination algebra's ⊕ (`compute.algebra`),
+    starting from its identity `compute.algebra.reduceId` (so an unwritten cell holds 0_K); the plan
+    stores neither as a field. -/
 structure ScatterPlan where
   compute   : AssignPlan
   destShape : Array Nat
   outCoeffs : Array (Array Int)
   outBias   : Array Int
-  fill      : ScalarConst
-  reduce    : LeanNCD.CollisionReduce
   deriving DecidableEq, BEq, Repr, Inhabited
 
 end LeanNCD.Eval.Plan

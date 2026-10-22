@@ -57,13 +57,6 @@ inductive PlanError
       basis — and carried for the same reason `predicateWidthMismatch` below is: fail loud rather
       than silently, if the derivation is ever reached another way. -/
   | scatterDestExtentUnknown      (dim : Nat)
-  /-- A `ScatterPlan`'s `fill` is not the destination algebra's reduction identity. Fill and
-      collision-reduce are the identity and the operation of one monoid, so an incoherent pair
-      silently yields the identity's value for every unwritten cell instead of the true one
-      (`reduce := .max` with `fill := 0` loses every all-negative cell's maximum). Rejected here
-      rather than normalised: a checker that quietly rewrote `fill` would be indistinguishable, from
-      its return value, from one that never looked. -/
-  | scatterFillNotIdentity        (fill identity : ScalarConst)
   /-- An inline unary read factor inside an assignment whose graph storage kind has no unary
       implementation. Located at the ORIGINAL all-factor index (an Iverson ahead of the read does
       not shift it down), matching every other per-factor locator in this family. RETAINED
@@ -158,7 +151,7 @@ inductive PositionalInputError
       destination algebra's `reduceOp` instead of raising this (the Source-oracle differential
       still names the constructor; it goes with that cleanup). Originally: two SOURCE coordinates of
       a scatter placing a value at the same DESTINATION coordinate under
-      `CollisionReduce.rejectCollisions`, raised by `runDenseScatterWith` (`Dense.lean`, behind
+      the retired reject-collisions policy, raised by `runDenseScatterWith` (`Dense.lean`, behind
       both `runDenseScatter` and `runDenseScatter32`), and a runtime
       concern rather than a `PlanError` by construction: whether a placement map is injective over a
       given source domain is not decidable from the plan's rank/width/extent clauses, which is why
@@ -269,16 +262,13 @@ inductive CapabilityError
       from `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots);
       a hand-built `ScheduledProgram` handed to `prepareEvalPlan` is what can express it. -/
   | multiAxisScatterLhs  (context : String)
-  /-- A top-level scatter's `ScatterOpts` naming a `fill` the checked layer does not implement: one
-      that is not the destination algebra's own reduction identity
-      (`ContractionAlgebra.reduceId` — §2.5's coherence rule). S3a: the collision `reduce` policy is
-      no longer an admission question — it is ignored. The fill is rejected HERE, at capability tier with a
-      source locator, rather than left to surface from `checkScatter` as `invalidPlan`, which is the
-      compiler-bug channel and would misreport a legitimately out-of-fragment source program as one.
-
-      The live case is a `maxreduce`/`minreduce` scatter: `ScatterOpts.fill` is an `Int` and cannot
-      express the tropical `∓∞` its algebra's identity requires, so no admissible fill exists for
-      one. `agg = .sum` with `fill = 0` is coherent and admitted. A `predicate`/`bool`-declared
+  /-- A top-level scatter the checked layer does not implement: a `maxreduce`/`minreduce` one, whose
+      tropical `∓∞` identity the plain-sum scatter carrier cannot start from (tropical scatter
+      carriers are S3b's). Rejected HERE, at capability tier with a source locator, rather than left
+      to surface from `checkScatter` as `invalidPlan`, which is the compiler-bug channel and would
+      misreport a legitimately out-of-fragment source program as one. (Historical name: this once
+      guarded a `ScatterOpts.fill` the layer could not honour; the options were deleted in S3a.)
+      `agg = .sum` is admitted. A `predicate`/`bool`-declared
       scatter destination is NOT reachable from this constructor: it is rejected upstream by
       `predicateScatterDest` (below) at the same tier, before `scatterAggOrFail` is called at all.
       (Prior claim that a predicate destination with `fill = 0` was "coherent and admitted" was
