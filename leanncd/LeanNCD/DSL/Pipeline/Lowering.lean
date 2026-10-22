@@ -176,12 +176,12 @@ The executable back-end's final phase: turn the scheduled statements into a `Thr
 /-- The retained-output `AxisSpec`s of a stmt: those named by `free`/`iterAt`/`iterNext` slots.
     `.affine` (scatter) slots carry no single retained axis and are skipped. -/
 def Stmt.lhsAxes : Stmt → List AxisSpec
-  | .assign _ ls _ | .scatter _ ls _ _ => ls.filterMap (·.axisSpec?)
+  | .assign _ ls _ | .scatter _ ls _ => ls.filterMap (·.axisSpec?)
   | .recurMorphism _ _ _ => []
 
 /-- The `RHSExpr.agg` of a stmt. -/
 def Stmt.agg : Stmt → AggOp
-  | .assign _ _ r | .scatter _ _ r _ => r.agg
+  | .assign _ _ r | .scatter _ _ r => r.agg
   | .recurMorphism _ _ _ => .sum
 
 /-- Every `AxisSpec` appearing in a single read index expression. -/

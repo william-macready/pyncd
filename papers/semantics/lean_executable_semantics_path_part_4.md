@@ -606,11 +606,12 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   colliding write is summed. Production does not agree, and the differential classifies the difference as
   a `StructuralCondition` (`scatterCollisionRejected`, `multiWriterScatter`,
   `scatterExtentOverridesDeclared`) only when both native legs show the predicted outcome, with limited
-  precision: confirmation is origin-bound only for the legacy collision, the checked affine-slot refusal and
-  the extent condition; the checked runtime collision and multi-writer `scanAxisNotIter` are cause-only; only
-  the head condition is confirmed; the collision-sum scatters `fD`/`fD'` and a bare-slot `rejectCollisions`
-  over a contracted axis (F11) end as `nativeFailure` with no condition (S2a plan §2);
-  S3a converts these to agreement. While `scatterExtentOverridesDeclared` is confirmed no value of that
+  precision: confirmation is origin-bound only for the checked affine-slot refusal and the extent condition;
+  multi-writer `scanAxisNotIter` is cause-only; only the head condition is confirmed. S3a made every backend
+  sum colliding scatter writes, so the collision condition (`scatterCollisionRejected`) is gone: `fE` and the
+  bare-slot scatter over a contracted axis (F11) are parity, while the const-slot scatters `fD`/`fD'` still end
+  as `nativeFailure` with no condition (the checked plan refuses constant and multi-axis slots by capability).
+  While `scatterExtentOverridesDeclared` is confirmed no value of that
   program is compared (documented limitation, see the S2a plan §2). The raw-parse theorem for affine
   statements is a documented gap. See [the S2a record](additive_s2a_record.md).
   **Tropical carriers (S2b, merge cf7d6eee).** The oracle is generic in a scalar carrier `K` (`Oracle.Carrier`:
@@ -635,7 +636,7 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   Because the oracle and the Core leg share the semiring instance and `ofRat`/`observe`, their agreement checks
   scheduling and where embedding and observation happen, not those functions or the algebra; the algebra is pinned by hand-valued oracle fixtures and by production
   agreement on single-factor rows. This is executed evidence, not a theorem. Production tropical sorts, casts
-  and constants (S3b) and scatter collision ⊕ and range errors (S3a) remain planned. Parked: merging the two
+  and constants (S3b) remain planned; scatter collision ⊕ landed in S3a (range errors stay parked). Parked: merging the two
   harnesses, a tropical oracle-receipt re-check and Program theorems, f32 tropical production comparison.
   See [the S2b record](additive_s2b_record.md).
 - **Evidence.** 79 named fixtures (one of them, F16, evaluates a generated corpus

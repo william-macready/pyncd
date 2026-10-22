@@ -472,8 +472,7 @@ private def f13ScatterLogical (nl : Nonlin) : ScheduledProgram :=
   let i : AxisSpec := { name := "i", uid := 1, kind := .real }
   { decls := []
   , stmts := [.plain (.scatter "Out" [.affine (.scale 2 i)]
-      { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := nl, agg := .sum }
-      { fill := 0, reduce := .sum })]
+      { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := nl, agg := .sum })]
   , env := {}
   , extNames := insert "X" (∅ : Finset String)
   , explicitSizes := ∅ }
@@ -540,7 +539,7 @@ private def f14ScatterTwin (nl : Nonlin) : ScheduledProgram :=
   { f14AffineAssign f14AffineSlots nl with
     stmts := [.plain (.scatter "Y" f14AffineSlots
       { body := { terms := [{ factors := [.read "X" [.axis f14Axis]] }] }, nonlin := nl
-      , agg := .sum } { fill := 0, reduce := .sum })] }
+      , agg := .sum })] }
 
 -- byte-identical to the `.scatter` door's diagnostic, error state included (the reason no new
 -- constructor was minted: the two doors are indistinguishable to a caller).

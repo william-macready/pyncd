@@ -21,9 +21,6 @@ structure Site where
 
 inductive StructuralCondition
   | usedDType (origin : SourceOrigin) (name : String) (actual : TensorElementType)
-  /-- A non-bare write under `reject` policy whose support box has two assignments with one
-  destination image: production raises `scatterCollision`, the oracle sums them. -/
-  | scatterCollisionRejected (origin : SourceOrigin)
   /-- A tensor written by several statements, at least one non-bare. -/
   | multiWriterScatter (declaration : Nat)
   /-- A non-bare write whose declared destination shape differs from the extent production

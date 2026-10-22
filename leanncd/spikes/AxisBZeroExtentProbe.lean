@@ -34,11 +34,11 @@ def f64Decls : List Decl := ["Out", "X"].map (fun n => Decl.typedTensor .f64 n [
 
 -- Four scatter statements, one per negative affine form B1's S15 measured as `some 0`,
 -- plus one positive control (`.scale 2 i`, extent 8).
-def scNegShift : Stmt := .scatter "Out" [.affine (.shift axI (-9))] readX {}
-def scNegScale : Stmt := .scatter "Out" [.affine (.scale (-2) axI)] readX {}
-def scNegAff   : Stmt := .scatter "Out" [.affine (.affine (-100) [(1, axI)])] readX {}
-def scIterNeg  : Stmt := .scatter "Out" [.iterAt axI (-5)] readX {}
-def scControl  : Stmt := .scatter "Out" [.affine (.scale 2 axI)] readX {}
+def scNegShift : Stmt := .scatter "Out" [.affine (.shift axI (-9))] readX
+def scNegScale : Stmt := .scatter "Out" [.affine (.scale (-2) axI)] readX
+def scNegAff   : Stmt := .scatter "Out" [.affine (.affine (-100) [(1, axI)])] readX
+def scIterNeg  : Stmt := .scatter "Out" [.iterAt axI (-5)] readX
+def scControl  : Stmt := .scatter "Out" [.affine (.scale 2 axI)] readX
 
 /-! ## S23 — caller 1: `Eval.scatterOutShape` -> `Eval.evalScatter`, via `Eval.evalPlain`
 
@@ -70,16 +70,10 @@ def probePlain (label : String) (s : Stmt) : String :=
 -- (`if (outCoordZ.zip outShape).all (fun (z, d) => 0 ≤ z && z < (d : Int))`): with `d = 0` the
 -- guard is false at EVERY source coordinate, so every write is skipped — the same
 -- "out-of-range output coordinates are skipped" rule that exists for genuine overspill.
-#eval match evalScatter f64Decls envX sizesI "Out" [.affine (.shift axI (-9))] readX {} [0] with
+#eval match evalScatter f64Decls envX sizesI "Out" [.affine (.shift axI (-9))] readX [0] with
   | .error e => s!"S23f (evalScatter at outShape [0]): ERROR: {toString e}"
   | .ok (nm, t) => s!"S23f (evalScatter at outShape [0]): .ok; {nm} = {repr t.shape}/{repr t.data}"
 
--- The collision policy cannot fire either: `.rejectCollisions` is only reached INSIDE the bounds
--- guard, so four source coordinates all landing "on" a zero-extent output collide with nothing.
-#eval match evalScatter f64Decls envX sizesI "Out" [.affine (.shift axI (-9))] readX
-        { fill := 0, reduce := .rejectCollisions } [0] with
-  | .error e => s!"S23g (zero extent + rejectCollisions): ERROR: {toString e}"
-  | .ok (nm, t) => s!"S23g (zero extent + rejectCollisions): .ok; {nm} = {repr t.shape}"
 
 /-! ## S24 — caller 2: `SizeInfer.scatterOutputShapes`, and the fixpoint that consumes it
 
@@ -88,7 +82,7 @@ as a downstream-readable shape. The fixpoint then builds read positions against 
 
 #eval ( (scatterOutputShapes sizesI [scNegShift])["Out"]?
       , (scatterOutputShapes sizesI [scControl])["Out"]?
-      , (scatterOutputShapes sizesI [.scatter "Out" [.free axK] readX {}])["Out"]? )
+      , (scatterOutputShapes sizesI [.scatter "Out" [.free axK] readX])["Out"]? )
 
 -- A downstream read of the zero-extent scatter output: `Y[k] := Out[k]`, with `k` unsized, so
 -- the ONLY thing that can size `k` is the published scatter-out shape.
@@ -122,17 +116,17 @@ def probeChain (label : String) (sc : Stmt) : String :=
 
 /-! ## S25 — is a zero extent rejected anywhere ELSE on the scatter path?
 
-`ScatterOpts.fill` and `rhs.nonlin` are the only other gates in `evalScatter`, and both run BEFORE
+`rhs.nonlin` is the only other gate in `evalScatter`, and it runs BEFORE
 `outShape` is looked at; `scatterSourceAxes`/`srcSizes` fail loud on an unsized SOURCE axis only.
 Measured: the non-identity-nonlin gate still fires at a zero extent (so the ordering is
 nonlin-before-shape), and an unsized SOURCE axis still fails loud at a zero extent. -/
 
 #eval match evalScatter f64Decls envX sizesI "Out" [.affine (.shift axI (-9))]
-        { readX with nonlin := .pointwise .relu } {} [0] with
+        { readX with nonlin := .pointwise .relu } [0] with
   | .error e => s!"S25a (zero extent + relu): ERROR: {toString e}"
   | .ok (nm, t) => s!"S25a (zero extent + relu): .ok; {nm} = {repr t.shape}"
 
-#eval match evalScatter f64Decls envX ({} : HashMap UID Nat) "Out" [.affine (.shift axI (-9))] readX {} [0] with
+#eval match evalScatter f64Decls envX ({} : HashMap UID Nat) "Out" [.affine (.shift axI (-9))] readX [0] with
   | .error e => s!"S25b (zero extent + UNSIZED source axis): ERROR: {toString e}"
   | .ok (nm, t) => s!"S25b (zero extent + UNSIZED source axis): .ok; {nm} = {repr t.shape}"
 

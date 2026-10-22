@@ -170,7 +170,7 @@ section
 #guard classifyAggOp .min == .rejected "unsupportedAgg"
 
 -- Stmt / ScanStmt composition
-#guard classifyStmt (.scatter "Out" [] { body := { terms := [] }, nonlin := .identity } {}) ==
+#guard classifyStmt (.scatter "Out" [] { body := { terms := [] }, nonlin := .identity }) ==
   .rejected "scatterOrAffineLhs"
 #guard classifyStmt (.assign "Y" [.free ⟨"i", 0, .nat⟩]
   { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity }) == .accepted

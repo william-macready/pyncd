@@ -335,13 +335,13 @@ for affine left-hand slots and sum-only scatter: the Source oracle (`Source.Orac
 integer-affine writes and sums colliding writes, and the differential classifies some of the production
 contract differences as structural conditions (`scatterCollisionRejected`, `multiWriterScatter`,
 `scatterExtentOverridesDeclared`), with limited precision: confirmation is origin-bound only for the legacy
-collision, the checked affine-slot refusal and the extent condition; the checked runtime collision and
-multi-writer `scanAxisNotIter` are cause-only; only the head condition is confirmed; while
-`scatterExtentOverridesDeclared` is confirmed no value of that program is compared; the collision-sum
-scatters `fD`/`fD'` and a bare-slot `rejectCollisions` over a contracted axis (F11) end as `nativeFailure`
-with no condition (see `additive_s2a_plan.md` §2). It changes no production semantics. S2b (merge cf7d6eee) closes the oracle side of tropical carriers
-(single-sort, no scatter) in the same way and adds no production semantics. Still open: S3a (production
-scatter collision ⊕, range errors, deletion of `CollisionReduce`/`ScatterOpts.fill`) and S3b (tropical sorts,
+the checked affine-slot refusal and the extent condition; multi-writer `scanAxisNotIter` is cause-only; only
+the head condition is confirmed; while `scatterExtentOverridesDeclared` is confirmed no value of that program
+is compared (S2a recorded the collision condition and the `fD`/`fD'`/F11 `nativeFailure` rows; S3a removed the
+collision condition because every backend now sums, see below). S2a itself changed no production semantics. S2b (merge cf7d6eee) closes the oracle side of tropical carriers
+(single-sort, no scatter) in the same way and adds no production semantics. S3a (landed on its branch; merge hash recorded in `additive_s3a_record.md`) makes
+top-level scatter collisions ⊕-sum in the reference (`evalScatter`) and the checked plan (the scan-local reference write still overwrites; parked) and deletes `CollisionReduce` and
+`ScatterOpts`; top-level `max`/`min` scatter stays refused, and range errors stay parked. Still open: S3b (tropical sorts,
 casts, constants, multi-factor max-plus in production); affine READ slots and a raw-parse theorem for affine
 statements stay unowned (see `additive_s2a_plan.md` §2).*
 

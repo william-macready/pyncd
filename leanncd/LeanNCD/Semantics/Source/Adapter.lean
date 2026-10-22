@@ -30,7 +30,8 @@ inductive UnsupportedSource
   | iteration | predicate | complex
   | scatter | recurMorphism | marked | scanSlot | affine
   | nonSum | nonIdentity | iverson | unary
-  /-- A `Stmt.scatter` whose options are not `fill = 0` with `reduce ∈ {sum, rejectCollisions}`. -/
+  /-- A `Stmt.scatter` with a non-`sum` aggregation inside a sorted (tropical) program. The
+  `fill`/`reduce` options are not checked (production ignores them since S3a). -/
   | scatterPolicy
   deriving DecidableEq, Repr
 

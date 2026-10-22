@@ -698,7 +698,7 @@ theorem admitStatement_fields (source : AdaptedSource) (i : Nat) (ast : Stmt)
     (statement : AdmittedStatement source) (h : admitStatement source i ast = .ok statement) :
     StatementFields source i ast statement := by
   cases ast with
-  | scatter _ _ _ _ => simp [admitStatement] at h
+  | scatter _ _ _ => simp [admitStatement] at h
   | recurMorphism _ _ _ => simp [admitStatement] at h
   | assign name slots rhs =>
     simp only [admitStatement, bind, pure, Except.bind, Except.pure,
@@ -781,7 +781,7 @@ theorem admitSource_fields (snapshot : SourceSnapshot) (admitted : AdmittedSourc
 /-! ### Non-bare writes (S2a)
 
 A second admission entry, `admitSourceAffine`, also admits writes whose LHS slots are integer-
-affine (`LHSSlot.affine`) and `Stmt.scatter` with `fill = 0`, `reduce ∈ {sum, rejectCollisions}`.
+affine (`LHSSlot.affine`) and `Stmt.scatter` (it carries no `fill`/`reduce` options).
 The default entry `admitSource` (and so `admitRawSource`, `StatementFields` and the whole raw
 chain) is unchanged and still refuses them: affine statements get no raw-parse theorem, by
 construction. Bare `.assign` statements go through `admitStatement` unchanged in both entries. -/
@@ -899,7 +899,8 @@ private def admitAffineWrite (source : AdaptedSource) (original : Nat) (name : S
   else
     throw (sourceError .output origin (.role .defined (source.table.entry dst).role))
 
-/-- `admitStatement`, plus non-bare `.assign` and policy-checked `.scatter`. With `sorted`
+/-- `admitStatement`, plus non-bare `.assign` and `.scatter` (whose `fill`/`reduce` options production
+ignores since S3a: collisions sum, so they are not read here either). With `sorted`
 (S2b), a `max`/`min` statement is admitted as its sort-free structure (the aggregation is a
 program-level carrier key, read by `admitSourceSorted`), and a tropical `.scatter` is refused:
 `fill : Int` cannot be the carrier zero (`-inf`/`+inf`), so §2.3's `fill = 0_K` never holds. -/
@@ -909,9 +910,8 @@ def admitAffineStatement (source : AdaptedSource) (original : Nat) (sorted : Boo
     let rhs := if sorted then { rhs with agg := .sum } else rhs
     if slots.all LHSSlot.isFree then admitStatement source original (.assign name slots rhs)
     else admitAffineWrite source original name slots rhs
-  | .scatter name slots rhs opts =>
-    if opts.fill != 0 || !(opts.reduce == .sum || opts.reduce == .rejectCollisions) ||
-        (sorted && rhs.agg != .sum) then
+  | .scatter name slots rhs =>
+    if sorted && rhs.agg != .sum then
       .error (sourceError .statement { statement := some original } (.unsupported .scatterPolicy))
     else if slots.all LHSSlot.isFree then
       admitStatement source original (.assign name slots rhs)
@@ -927,7 +927,7 @@ def admitSourceAffine (snapshot : SourceSnapshot) (sorted : Bool := false) :
   pure ⟨source, statements⟩
 
 private def stmtAgg : Stmt → AggOp
-  | .assign _ _ rhs | .scatter _ _ rhs _ => rhs.agg
+  | .assign _ _ rhs | .scatter _ _ rhs => rhs.agg
   | _ => .sum
 
 /-- S2b: the selection key of each admitted statement, `(agg, destination element type)`. -/

@@ -101,7 +101,7 @@ including parsed and asymmetric sourceInput donors, in default `Tests`.
 Affine write slots (S2a, landed, merge 7a551faa): `Source.Admission` has TWO admission entries. `admitSource` (default, raw-parse chain) refuses
 affine and scatter statements. `admitSourceAffine` (the differential's reference entry, via
 `sourceDebugAffine`) also admits integer-affine and constant LEFT-hand slots and sum-only scatter
-(`fill = 0`, `reduce` in `{sum, rejectCollisions}`). Read slots stay bare; affine READS stay refused.
+(colliding writes ⊕-sum; S3a deleted `ScatterOpts`, so there is no fill/reduce policy to check). Read slots stay bare; affine READS stay refused.
 `AdmittedOutput` carries two views of the destination: `dest` (a function from the virtual write
 shape, for the proof chain) and `forms` (one integer-affine `WriteForm` per destination axis, as DATA,
 for the oracle). `AdmittedOutput.FormsSpec` ties them (proved by `admitOutput_formsSpec` and
@@ -120,7 +120,8 @@ Tropical carriers (S2b, merge cf7d6eee): the oracle is generic in a scalar carri
 carrier record plus ONE table entry, no edit to oracle evaluation (`SourceOracleCarrierTest` does it with a toy Boolean
 carrier; the limit is the DSL, `AggOp` is closed). `admitSourceSorted` (a `sorted` flag on `admitSourceAffine`) admits
 `max`/`min` statements as sort-free structure and selects ONE carrier per program from `sortKeys`; a mix is
-`SourceCause.sortSelection`; every tropical `.scatter` is refused (`fill : Int` cannot be ±inf); the unsorted entries
+`SourceCause.sortSelection`; every tropical `.scatter` is refused (`.unsupported .scatterPolicy`, whose name is a
+leftover of the deleted scatter options; production refuses it by the S3a agg guard); the unsorted entries
 still refuse `max`/`min` (`nonSum`). Cells are observed as `ExtVal`; the Core leg is `runSourceAt` (`Registry.none`; the
 real names are its rational instance, proofs untouched). `Source.SortedDifferential.compareSortedSource` is a SIBLING
 harness (real `compareSource`, `SourceRun`, `checkProfile` untouched) with a tropical profile (finite reads integers
@@ -149,18 +150,18 @@ mutation controls, and both final whole-branch reviews have landed. Nothing in
 `globalFiber`, and bit parity holds only on the bounded-integer, f64-declared
 profile. Same-LHS multi-statement programs are summed by every backend and compared
 by value on all four legs. `StructuralCondition` has `usedDType` (an untyped
-f32 tensor) and three affine-write conditions: `scatterCollisionRejected` (a colliding
-`rejectCollisions` write: legacy collision, checked capability refusal), `multiWriterScatter`
+f32 tensor) and two affine-write conditions: `multiWriterScatter`
 (any non-bare write among several writers of one tensor, `fG` is two `.assign`s:
 `scanAxisNotIter` on both native legs) and
 `scatterExtentOverridesDeclared` (production derives the destination extent, the oracle uses the
 declared one). `knownContractDifference` is produced only by these. A condition is confirmed only when
-the native legs show the predicted outcome, with limited precision: origin-bound only for the legacy
-collision, the checked affine-slot refusal and the extent condition; the checked runtime collision and
-multi-writer `scanAxisNotIter` are cause-only; only the head condition is confirmed; while the extent
-condition is confirmed no value of that program is compared; the collision-sum scatters `fD`/`fD'` and a
-bare-slot `rejectCollisions` over a contracted axis (F11) end as `nativeFailure` with no condition
-(plan section 2). See the
+the native legs show the predicted outcome, with limited precision: origin-bound only for the checked
+affine-slot refusal and the extent condition; multi-writer `scanAxisNotIter` is cause-only; only the
+head condition is confirmed; while the extent condition is confirmed no value of that program is compared.
+Since S3a every backend ⊕-sums colliding scatter writes, so collisions are agreement, not a condition:
+a bare-slot scatter over a contracted axis (F11) and `fE` are parity; the const-slot scatters `fD`/`fD'`
+still end as `nativeFailure` with no condition, because the checked plan refuses constant and multi-axis
+affine slots by capability (`scatterOrAffineLhs`, `multiAxisScatterLhs`). See the
 [source correspondence record](../../../papers/semantics/source_correspondence_record.md)
 for scope and limits.
 

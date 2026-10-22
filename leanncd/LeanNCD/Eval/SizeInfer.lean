@@ -63,7 +63,7 @@ private def insertSolvedSize (sizes : HashMap UID Nat) (u : UID) (sz : Nat) :
     scatter outputs, e.g. an upsampling decoder feeding a subsequent layer). -/
 def scatterOutputShapes (sizes : HashMap UID Nat) (stmts : List Stmt) : HashMap String (List Nat) :=
   stmts.foldl (fun m s => match s with
-    | .scatter nm slots _ _ =>
+    | .scatter nm slots _ =>
         match slots.mapM (fun sl => sl.outExtent (fun u => sizes[u]?)) with
         | some dims => m.insert nm dims
         | none      => m

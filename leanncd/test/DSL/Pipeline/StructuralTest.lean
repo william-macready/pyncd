@@ -217,7 +217,7 @@ run_cmd do
   match lowerArith rp |>.run 0 with
   | .ok lp _ =>
       match lp.stmts with
-      | [ .scatter "Out" _ _ _ ] => pure ()
+      | [ .scatter "Out" _ _ ] => pure ()
       | _ => throwError s!"expected one Stmt.scatter for Out, got {repr lp.stmts}"
   | .error e _ => throwError s!"lowerArith errored: {repr e}"
 

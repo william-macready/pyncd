@@ -180,29 +180,11 @@ inductive Classification
 
 /-! Source-shape contract differences for affine writes and scatters. `detectConditions` looks at
 the source alone; `confirms` additionally requires BOTH native legs to show exactly the predicted
-outcome. That keeps an unrelated native divergence visible only for the origin-bound legs: the
-checked runtime collision and the multi-writer `scanAxisNotIter` stay cause-only, and while
+outcome. The multi-writer `scanAxisNotIter` stays cause-only, and while
 `scatterExtentOverridesDeclared` fires it suppresses all value comparison for the program. -/
 
 def nonBareWrite (st : AdmittedStatement source) : Bool :=
   st.output.forms != st.output.indices.map WriteForm.single
-
-private def rejectsCollisions : Stmt → Bool
-  | .assign .. => true
-  | .scatter _ _ _ opts => opts.reduce == .rejectCollisions
-  | _ => false
-
-/-- Two distinct assignments of the support axes (forms uids and every term's read indices) share
-a destination image. -/
-private def writeCollides (source : AdmittedSource) (st : AdmittedStatement source.source) : Bool :=
-  let uids := st.output.forms.flatMap WriteForm.uids ++
-    st.terms.flatMap (·.sourceReads.flatMap (·.indices))
-  let axes := source.source.context.axes.filter (fun a => a.uid ∈ uids)
-  let image (c : List Nat) : List Int := st.output.forms.map fun f =>
-    f.1 + (f.2.map fun (coef, u) =>
-      coef * (((axes.zip c).find? (·.1.uid == u)).map (fun p => (p.2 : Int)) |>.getD 0)).sum
-  let images := (Oracle.coordinates (axes.map (·.extent))).map image
-  images.eraseDups.length < images.length
 
 /-- The extent production derives per destination dimension: `c0 + Σ coef * extent` (observed on
 P3 fixtures: `2*a` over 4 gives 8, `a+2` gives 6, `a+b` gives 7, a constant `c` gives `c+1`). -/
@@ -214,14 +196,8 @@ private def derivedShape (source : AdmittedSource) (st : AdmittedStatement sourc
       coef * ((source.source.context.axes.find? (·.uid == u)).map (fun a => (a.extent : Int))
         |>.getD 0)).sum).toNat
 
-def detectConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
+def detectConditions (source : AdmittedSource) :
     List StructuralCondition :=
-  let collisions := source.statements.filterMap fun st =>
-    if nonBareWrite st &&
-        (snapshot.resolved.stmts[st.original]?.map rejectsCollisions).getD false &&
-        writeCollides source st then
-      some (StructuralCondition.scatterCollisionRejected st.output.origin)
-    else none
   let decl (st : AdmittedStatement source.source) : Nat :=
     (source.source.table.entry st.output.tensor).declaration
   let multi := (source.statements.filter fun st =>
@@ -236,9 +212,9 @@ def detectConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
         (source.statements.filter fun o => decl o == decl st).length == 1 then
       some (StructuralCondition.scatterExtentOverridesDeclared st.output.origin (decl st) derived)
     else none
-  -- pipeline order: compile (multi-writer), evaluation (collision), output binding (extent). Only
-  -- the first can be observed, so `classification` confirms the head only.
-  multi ++ collisions ++ extents
+  -- pipeline order: compile (multi-writer), output binding (extent). Only the first can be
+  -- observed, so `classification` confirms the head only.
+  multi ++ extents
 
 /-- `name` is the source name of the tensor declared at `declaration` (the condition's origin):
 a native error that names a tensor confirms a condition only for that condition's own tensor. -/
@@ -246,35 +222,12 @@ def ownedBy (native : NativeRun) (declaration : Option Nat) (name : String) : Bo
   native.source.admitted.source.table.entries.any fun e =>
     e.name == name && some e.declaration == declaration
 
-/-- ORIGIN-BOUND: the legacy collision names its destination tensor (`evalScatter Y: ...`), so it
-confirms only when `owner` accepts that name. -/
-private def legacyCollision (owner : String → Bool) : LegacyOutcome → Bool
-  | .failure e => (match e.original.error with | .scatterCollision nm .. => owner nm | _ => false)
-  | _ => false
-
 /-- CAUSE-ONLY: the multi-writer refusal `scanAxisNotIter` names an AXIS, never a tensor or a
 statement, so a refusal raised by another tensor's writers over the same cause is not
 distinguishable here. -/
 private def legacyCompile (needle : String) : LegacyOutcome → Bool
   | .failure e => e.phase == .compilation &&
       ((toString e.original.error).splitOn needle).length > 1
-  | _ => false
-
-/-- The checked leg refuses a multi-axis/constant slot at preparation (capability) before it can
-reach the collision, so either is the predicted rejection. The preparation refusal is
-ORIGIN-BOUND: its context is `"{tensor}: ..."` and must name the condition's tensor (`owner`), so
-only the two affine-slot capability constructors, whose context is that locator, qualify. The
-runtime collision is CAUSE-ONLY: `PositionalInputError.scatterCollision` carries coordinates and no
-tensor or statement (the checked layer is positional), so this leg cannot bind it. -/
-private def checkedCollision (owner : String → Bool) : CheckedOutcome → Bool
-  | .runtime e => (match e.original.cause with
-      | .execution (.scatterCollision ..) => true | _ => false)
-  | .preparation e =>
-      let named (context : String) := owner ((context.splitOn ": ").headD "")
-      (match e.original.cause with
-        | .capability (.multiAxisScatterLhs context) => named context
-        | .capability (.scatterOrAffineLhs context) => named context
-        | _ => false)
   | _ => false
 
 private def shapeOnly (declaration : Nat) (derived : List Nat) (o : NativeObservation) : Bool :=
@@ -286,13 +239,9 @@ private def shapeOnly (declaration : Nat) (derived : List Nat) (o : NativeObserv
   | .ok _ => false
 
 /-- Every leg whose native error carries an identity is bound to the condition's origin
-(`scatterCollisionRejected`: legacy collision name, checked capability context;
-`scatterExtentOverridesDeclared`: the binding issue's declaration). `multiWriterScatter` stays
+(`scatterExtentOverridesDeclared`: the binding issue's declaration). `multiWriterScatter` stays
 cause-only on both legs (`scanAxisNotIter` names an axis only). -/
 def confirms (native : NativeRun) : StructuralCondition → Bool
-  | .scatterCollisionRejected origin =>
-      legacyCollision (ownedBy native origin.declaration) native.legacy &&
-        checkedCollision (ownedBy native origin.declaration) native.checked
   | .multiWriterScatter _ => legacyCompile "scanAxisNotIter" native.legacy &&
       (match native.checked with
         | .sourceCompilation e => (match e.cause with | .scanAxisNotIter _ => true | _ => false)
@@ -468,7 +417,7 @@ def compareSource (snapshot : SourceSnapshot) (fixtureDependencyOrder : Option (
     | .ok result => some (Differential.compareReference reference result)
   pure ⟨reference, fixtureDependencyOrder, oracle, native, profile, comparison,
     Differential.legacyComparison profile native, Differential.checkedComparison profile native,
-    Differential.detectConditions snapshot reference.source.admitted⟩
+    Differential.detectConditions reference.source.admitted⟩
 
 def renderSourceComparison (result : Except Debug.ExecutionError Differential.ComparisonRun) :
     String :=

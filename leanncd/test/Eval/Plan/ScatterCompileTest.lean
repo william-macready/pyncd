@@ -118,10 +118,6 @@ def upsampleScatter : Option ScatterPlan := upsamplePrepared.bind (scatterStepAt
 -- One placement row per destination dimension, of source-basis width: `dest = 2 · i + 0`.
 #guard upsampleScatter.map (·.outCoeffs) == some #[#[2]]
 #guard upsampleScatter.map (·.outBias) == some #[0]
--- `fill` is the destination algebra's own reduction identity, which for real sum-product is `0.0`
--- — the same value `lowerArith` hard-codes as the source-level `ScatterOpts.fill`.
-#guard upsampleScatter.map (·.fill) == some (ScalarConst.f64 (Float.toBits 0.0))
-#guard upsampleScatter.map (·.reduce) == some LeanNCD.CollisionReduce.rejectCollisions
 -- The compute half contracts nothing: `scatterSourceAxes` unions the LHS axes with every RHS axis,
 -- so no axis is left to reduce over and each source coordinate carries exactly one value. That is
 -- the reference evaluator's own equation, and it is what makes the two legs comparable at all.
@@ -251,8 +247,8 @@ been treated as an ordinary assignment's contracted axis instead, it would have 
 this program would still have produced a plausible rank-1 answer — of the wrong semantics.
 
 `Y` is deliberately extent 1, so the placement stays injective and the program has a value to
-compare at all: with a wider `Y` every source coordinate `(i, j)` would land on the same `2·i`, and
-BOTH backends would (correctly, and in agreement) refuse it as a collision. -/
+compare at all in the pre-S3a world; with a wider `Y` every source coordinate `(i, j)` lands on the
+same `2·i`, which since S3a both backends SUM (see S10). -/
 
 def rhsOnlyAxisProg : TLProgram := tlprog!{ Out[2*i] := X[i] · Y[j] }
 def rhsOnlyAxisEnv : HashMap String DenseTensor :=
@@ -298,5 +294,21 @@ def zeroCoeffScatter : Option ScatterPlan :=
 #guard zeroCoeffScatter.map (·.destShape) == some #[0]
 run_cmd do
   assertScatterParity "S9 Out[0*i] := X[i]" zeroCoeffProg upsampleEnv "Out" (dt [0] [])
+
+/-! ## S10 — a surface-reachable collision is folded with the destination ⊕ (S3a)
+
+`Out[2*i] := X[i, j]` has a source axis, `j`, absent from the LHS, so the `j` values of one `i` land
+on the same destination cell: a collision, which both backends resolve with the destination's
+additive monoid (real `+`, from 0_K = 0) instead of refusing it. `X = [[1,2],[3,4],[5,6]]` gives
+`Out[0] = 1+2`, `Out[2] = 3+4`, `Out[4] = 5+6`; the odd cells are the empty fibre, 0. The reference
+and the checked plan must agree with each other and with this hand-computed sum. Accept neighbour:
+S8 / S7, the injective placements of the same family. -/
+
+def collideProg : TLProgram := tlprog!{ Out[2*i] := X[i, j] }
+def collideEnv : HashMap String DenseTensor :=
+  HashMap.ofList [("X", dt [3, 2] [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])]
+run_cmd do
+  assertScatterParity "S10 Out[2*i] := X[i, j]" collideProg collideEnv "Out"
+    (dt [6] [3.0, 0.0, 7.0, 0.0, 11.0, 0.0])
 
 end LeanNCD.Eval.Plan.ScatterCompileTest

@@ -397,22 +397,15 @@ def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Op
 
 /-- Validate one raw `ScatterPlan` against the positional signature table.
 
-    Clause order: the compute half through `checkAssignCore kind`, then the two scalar
-    coherence clauses (`fill`, `reduce`), then the placement map's rank and its per-dimension width
-    and extent — global facts before the loop, the same shape `checkAssign` itself uses.
+    Clause order: the compute half through `checkAssignCore kind`, then the placement map's rank
+    and its per-dimension width and extent (no fill or collision-policy clause: the worker derives
+    its identity and folds collisions from `algebra.reduceId`/`reduceOp`) — global facts before the loop, the same shape `checkAssign` itself uses.
 
     The compute half is checked with `destSigShape? := some s.destShape`, which is the whole point of
     that parameter: the registered destination signature must carry the DESTINATION extent, while
     `s.compute.outputShape` is the SOURCE iteration domain. Every other `checkAssign` clause applies
     to a scatter's compute half unchanged (the destination dtype selects the algebra; each term's
     `outputProjection` pins to the source domain).
-
-    `fill`'s dtype needs no separate check: the algebra-admission clause inside `checkAssignCore kind` already
-    forces `compute.algebra` into the destination dtype's own row of `admittedAlgebrasFor`, whose
-    every member carries that dtype's constants, so `fill == compute.algebra.reduceId` makes the
-    fill's dtype track the destination's transitively. Writing a second `constMatchesDtype` check
-    here would be a second, weaker copy of that guard. Under `.float32` the same argument runs
-    over `admittedAlgebrasForF32`, so a coherent fill is an `.f32` or `.bool` constant.
 
     `s.compute.contextShape` is NOT checked here: a scatter is admitted only as a top-level step, and
     `checkPlan`'s own `contextCheck` arm already discharges that obligation on the nested plan's
@@ -434,11 +427,6 @@ def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Op
 private def checkScatterCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature)
     (s : ScatterPlan) : Except PlanError CheckedScatterPlan := do
   let _ ← checkAssignCore kind sigs s.compute (some s.destShape)
-  unless s.fill == s.compute.algebra.reduceId do
-    throw (.scatterFillNotIdentity s.fill s.compute.algebra.reduceId)
-  match s.reduce with
-  | .rejectCollisions => pure ()
-  | .overwrite | .sum | .max | .min => throw (.scatterReduceNotAdmitted s.reduce)
   unless s.outCoeffs.size == s.destShape.size && s.outBias.size == s.destShape.size do
     throw (.scatterPlacementRankMismatch s.destShape.size s.outCoeffs.size s.outBias.size)
   let srcRank := s.compute.outputShape.size
@@ -461,8 +449,7 @@ def checkScatter (sigs : Array TensorSignature) (s : ScatterPlan) :
     Except PlanError CheckedScatterPlan :=
   checkScatterCore .float64 sigs s
 
-/-- The FLOAT32 scatter checker, through the same private core: identical fill, collision-policy,
-    and placement clauses, with the compute half checked by `checkAssignCore .float32` (f32/bool
+/-- The FLOAT32 scatter checker, through the same private core: identical placement clauses, with the compute half checked by `checkAssignCore .float32` (f32/bool
     dtypes, `admittedAlgebrasForF32`). A sibling of `checkScatter`, never a relaxation of it. -/
 def checkScatterF32 (sigs : Array TensorSignature) (s : ScatterPlan) :
     Except PlanError CheckedScatterPlan :=

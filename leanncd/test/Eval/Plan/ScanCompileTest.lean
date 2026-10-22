@@ -821,7 +821,7 @@ def badUnary (nm : String) (adv : LHSSlot) : Stmt := .assign nm [adv]
   { body := { terms := [{ factors := [.unaryFn .log "S0" []] }] }, nonlin := .identity }
 def scanScatter (nm : String) (adv : LHSSlot) : Stmt :=
   .scatter nm [.affine (.scale 2 axJ), adv]
-    { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } {}
+    { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }
 def badRecurMorphism (nm : String) : Stmt := .recurMorphism nm axL default
 
 def pinL : LHSSlot := .iterAt axL 0
@@ -1241,7 +1241,7 @@ def emptySig : InputSignature := InputSignature.mk ({} : HashMap String TensorSi
 def capabilityBeforeInputScatter : Stmt :=
   .scatter "S"
     [.affine (.affine 0 [(1, axJ), (1, axK2)]), .iterNext axL]
-    { body := { terms := [{ factors := [.read "Missing" []] }] }, nonlin := .identity } {}
+    { body := { terms := [{ factors := [.read "Missing" []] }] }, nonlin := .identity }
 #guard causeOf (prepareEvalPlan
     (rejSchedRaw [okBase] [capabilityBeforeInputScatter]) emptySig)
   == some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
@@ -1942,7 +1942,7 @@ def s6Accept (label : String) (sched : ScheduledProgram) (scanIndex : Nat)
 
 def s6BaseStride : ScheduledProgram := s6Schedule
   (base := [.scatter "S" [.affine (.scale 2 s6j), .iterAt s6l 0]
-    (s6rhs "X3" [.axis s6j]) {}])
+    (s6rhs "X3" [.axis s6j])])
   (recur := [.assign "S" [.free s6k, .iterNext s6l] (s6rhs "S" [.axis s6k, .axis s6l])])
 
 def s6BaseStrideCheck : Except String Unit :=
@@ -1956,7 +1956,7 @@ run_cmd match s6BaseStrideCheck with | .ok _ => pure () | .error m => throwError
 def s6StepStride : ScheduledProgram := s6Schedule
   (base := [.assign "S" [.free s6k, .iterAt s6l 0] (s6rhs "X6" [.axis s6k])])
   (recur := [.scatter "S" [.affine (.affine 1 [(2, s6j)]), .iterNext s6l]
-    (s6rhs "S" [.scale 2 s6j, .axis s6l]) {}])
+    (s6rhs "S" [.scale 2 s6j, .axis s6l])])
 
 def s6StepStrideCheck : Except String Unit :=
  s6Accept "S-B/step stride" s6StepStride 0 { shape := #[6, 3], dtype := .f64 }
@@ -1968,9 +1968,9 @@ run_cmd match s6StepStrideCheck with | .ok _ => pure () | .error m => throwError
 
 def s6Interleave : ScheduledProgram := s6Schedule
   (base :=
-    [ .scatter "S" [.affine (.scale 2 s6j), .iterAt s6l 0] (s6rhs "X3" [.axis s6j]) {}
+    [ .scatter "S" [.affine (.scale 2 s6j), .iterAt s6l 0] (s6rhs "X3" [.axis s6j])
     , .scatter "S" [.affine (.affine 1 [(2, s6j)]), .iterAt s6l 0]
-        (s6rhs "Y3" [.axis s6j]) {} ])
+        (s6rhs "Y3" [.axis s6j]) ])
   (recur := [.assign "S" [.free s6k, .iterNext s6l] (s6rhs "S" [.axis s6k, .axis s6l])])
 
 def s6InterleaveCheck : Except String Unit :=
@@ -1985,7 +1985,7 @@ run_cmd match s6InterleaveCheck with | .ok _ => pure () | .error m => throwError
 def s6ContractBase : ScheduledProgram := s6Schedule
   (base := [.scatter "S" [.affine (.scale 2 s6j), .iterAt s6l 0]
     { body := { terms := [{ factors := [.read "Z32" [.axis s6j, .axis s6q]] }] }
-    , nonlin := .identity } {}])
+    , nonlin := .identity }])
   (recur := [.assign "S" [.free s6k, .iterNext s6l] (s6rhs "S" [.axis s6k, .axis s6l])])
 
 def s6ContractBaseCheck : Except String Unit :=
@@ -1998,7 +1998,7 @@ run_cmd match s6ContractBaseCheck with | .ok _ => pure () | .error m => throwErr
 
 def s6ScanFirst : ScheduledProgram := s6Schedule
   (base := [.scatter "S" [.iterAt s6l 0, .affine (.scale 2 s6j)]
-    (s6rhs "X3" [.axis s6j]) {}])
+    (s6rhs "X3" [.axis s6j])])
   (recur := [.assign "S" [.iterNext s6l, .free s6k] (s6rhs "S" [.axis s6l, .axis s6k])])
 
 def s6ScanFirstCheck : Except String Unit :=
@@ -2020,7 +2020,7 @@ run_cmd match s6ScanLastCheck with | .ok _ => pure () | .error m => throwError m
 def s6TwoAffine : ScheduledProgram := s6Schedule
   (base := [.scatter "S"
    [.affine (.affine 1 [(2, s6q)]), .affine (.scale 2 s6j), .iterAt s6l 0]
-    (s6rhs "Z32" [.axis s6j, .axis s6q]) {}])
+    (s6rhs "Z32" [.axis s6j, .axis s6q])])
  (recur := [.assign "S" [.free s6m, .free s6k, .iterNext s6l]
    (s6rhs "S" [.axis s6m, .axis s6k, .axis s6l])])
 
@@ -2037,7 +2037,7 @@ def s6TwoScans : ScheduledProgram :=
      stmts := selfRecurSched.stmts ++
        [.scan "T" [s6l]
          [.scatter "T" [.affine (.scale 2 s6j), .iterAt s6l 0]
-           (s6rhs "X3" [.axis s6j]) {}]
+           (s6rhs "X3" [.axis s6j])]
          [.assign "T" [.free s6k, .iterNext s6l]
            (s6rhs "T" [.axis s6k, .axis s6l])] false]
    , decls := .iter axL 3 :: s6Decls
@@ -2076,7 +2076,7 @@ def s6Cause (base recur : List Stmt) : Option PlanCompileCause :=
 
 def s6Scatter (nm : String) (slot adv : LHSSlot) (source : String)
     (idxs : List IdxExpr) : Stmt :=
-  .scatter nm [slot, adv] (s6rhs source idxs) {}
+  .scatter nm [slot, adv] (s6rhs source idxs)
 
 def s6ZeroBase := s6Scatter "S" (.affine (.scale 0 s6j)) (.iterAt s6l 0) "X3" [.axis s6j]
 def s6ZeroStep :=
@@ -2101,28 +2101,28 @@ def s6NegBiasStep :=
 
 def s6MultiAxis : Stmt :=
   .scatter "S" [.affine (.affine 0 [(1, s6j), (1, s6q)]), .iterAt s6l 0]
-    (s6rhs "Z32" [.axis s6j, .axis s6q]) {}
+    (s6rhs "Z32" [.axis s6j, .axis s6q])
 #guard s6Cause [s6MultiAxis]
     [.assign "S" [.free s6k, .iterNext s6l] (s6rhs "S" [.axis s6k, .axis s6l])] ==
   some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
 
 def s6Diagonal : Stmt :=
   .scatter "S" [.affine (.scale 2 s6j), .free s6j, .iterAt s6l 0]
-    (s6rhs "X3" [.axis s6j]) {}
+    (s6rhs "X3" [.axis s6j])
 #guard s6Cause [s6Diagonal]
     [.assign "S" [.free s6k, .free s6j, .iterNext s6l]
       (s6rhs "S" [.axis s6k, .axis s6j, .axis s6l])] ==
   some (.scan (.duplicateAxisInLhs "bad" "S" true 0 s6j.uid))
 
 def s6ContextAffine : Stmt :=
-  .scatter "S" [.affine (.scale 2 s6l), .iterAt s6l 0] (s6rhs "X3" [.axis s6j]) {}
+  .scatter "S" [.affine (.scale 2 s6l), .iterAt s6l 0] (s6rhs "X3" [.axis s6j])
 #guard s6Cause [s6ContextAffine]
     [.assign "S" [.free s6k, .iterNext s6l]
       (s6rhs "S" [.axis s6k, .axis s6l])] ==
   some (.scan (.contextAxisAsAffineOutput "bad" "S" true 0 s6l.uid))
 
 def s6ScratchScatter : Stmt :=
-  .scatter "T" [.affine (.scale 2 s6j)] (s6rhs "X3" [.axis s6j]) {}
+  .scatter "T" [.affine (.scale 2 s6j)] (s6rhs "X3" [.axis s6j])
 #guard s6Cause
     [.assign "S" [.iterAt s6l 0] (s6rhs "X3" [.const 0])]
     [s6ScratchScatter, .assign "S" [.iterNext s6l] (s6rhs "S" [.axis s6l])] ==

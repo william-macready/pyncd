@@ -242,7 +242,7 @@ def fragmentClass : ScanStmt → FragmentClass
                                                          --   consumer, so the width is the same)
           if slotsBecomeScatter slots || slotsCarryIterSlot slots then .rejectNonlinScatter
           else .split
-  | .plain (.scatter _ _ rhs _) =>
+  | .plain (.scatter _ _ rhs) =>
       match rhs.nonlin with
       | .identity              => .copy                  -- 5
       | .pointwise _           => .rejectNonlinScatter   -- 6  REJECT, never a silent copy
@@ -275,7 +275,7 @@ def physicalizeOne (sourceNames : List String) (logicalIndex firstStep : Nat)
               nonlin := rhs.nonlin, agg := .sum }
           .ok ([.plain producer, .plain consumer],
             ⟨logicalIndex, firstStep, firstStep + 1, some internal⟩)
-  | .plain (.scatter nm _ rhs _) =>
+  | .plain (.scatter nm _ rhs) =>
       match rhs.nonlin with
       | .identity => copyOne                                                        -- 5
       | .pointwise _ | .axiswise _ _ => throw (.unsupportedNonlinScatter nm)        -- 6

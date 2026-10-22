@@ -191,7 +191,7 @@ def enumPrograms : List (TLProgram × Std.HashMap String DenseTensor) :=
   p.stmts.any (fun s =>
     let lhsUids := (Stmt.lhsAxes s).map AxisSpec.uid
     let isMultiTerm : Bool := match s with
-      | .assign _ _ r | .scatter _ _ r _ => r.body.terms.length ≥ 2
+      | .assign _ _ r | .scatter _ _ r => r.body.terms.length ≥ 2
       | _ => false
     isMultiTerm && (Stmt.readFactors s).any (fun (_, idxs) =>
       idxs.any (fun e => (idxAffineForm e).2.any (fun (_, u) => !lhsUids.contains u)))))

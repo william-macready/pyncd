@@ -307,7 +307,7 @@ private def bumpUID : UData → UData := fun u => { u with uid := u.uid + 100 }
 
 private def Stmt.mapUID_ref (f : UData → UData) : Stmt → Stmt
   | .assign nm ls r      => .assign nm (ls.map (LHSSlot.mapUID_ref f)) (RHSExpr.mapUID_ref f r)
-  | .scatter nm ls r o   => .scatter nm (ls.map (LHSSlot.mapUID_ref f)) (RHSExpr.mapUID_ref f r) o
+  | .scatter nm ls r     => .scatter nm (ls.map (LHSSlot.mapUID_ref f)) (RHSExpr.mapUID_ref f r)
   | .recurMorphism nm ax tc => .recurMorphism nm (AxisSpec.mapUID f ax) tc
 
 theorem Stmt.mapUID_eq_ref (f : UData → UData) (s : Stmt) :
@@ -329,11 +329,11 @@ theorem Stmt.mapUID_eq_ref (f : UData → UData) (s : Stmt) :
           (Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ls) (RHSExpr.mapUID f r)
         = Stmt.assign nm (ls.map (LHSSlot.mapUID_ref f)) (RHSExpr.mapUID_ref f r)
       rw [core ls, RHSExpr.mapUID_eq_ref f r]
-  | scatter nm ls r o =>
+  | scatter nm ls r =>
       simp only [Stmt.mapUID, Stmt.traverseAxes, Stmt.mapUID_ref]
-      show (fun ls' r' => Stmt.scatter nm ls' r' o)
+      show (fun ls' r' => Stmt.scatter nm ls' r')
           (Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ls) (RHSExpr.mapUID f r)
-        = Stmt.scatter nm (ls.map (LHSSlot.mapUID_ref f)) (RHSExpr.mapUID_ref f r) o
+        = Stmt.scatter nm (ls.map (LHSSlot.mapUID_ref f)) (RHSExpr.mapUID_ref f r)
       rw [core ls, RHSExpr.mapUID_eq_ref f r]
   | recurMorphism nm ax tc => rfl
 

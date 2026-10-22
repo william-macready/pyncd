@@ -324,8 +324,7 @@ def stepOrderScatter (alg : ContractionAlgebra) : ScatterPlan :=
                , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0]
                             , reductionPos := #[], factors := #[.read (idRead 2)] }]
                , algebra := alg }
-  , destShape := #[4], outCoeffs := #[#[2]], outBias := #[0]
-  , fill := alg.reduceId, reduce := .rejectCollisions }
+  , destShape := #[4], outCoeffs := #[#[2]], outBias := #[0] }
 
 def f32UnsupportedStepOrder : RawEvalPlan :=
   { tensorSigs := #[ { shape := #[2], dtype := .f32 }
@@ -388,8 +387,7 @@ def f32ScatterCompute : AssignPlan :=
   , algebra := admittedAlgebraF32 }
 
 def f32Scatter : ScatterPlan :=
-  { compute := f32ScatterCompute, destShape := #[6], outCoeffs := #[#[2]], outBias := #[0]
-  , fill := admittedAlgebraF32.reduceId, reduce := .rejectCollisions }
+  { compute := f32ScatterCompute, destShape := #[6], outCoeffs := #[#[2]], outBias := #[0] }
 
 def f32ScatterPlan : RawEvalPlan :=
   { tensorSigs := #[ { shape := #[3], dtype := .f32 }, { shape := #[6], dtype := .f32 } ]

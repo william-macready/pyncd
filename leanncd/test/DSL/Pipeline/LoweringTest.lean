@@ -17,7 +17,7 @@ run_cmd do
       let stmts := lp.stmts.filterMap (fun | .plain s => some s | .scan .. => none | .scanPre .. => none)
       -- exactly two stmts: a linear (identity) and a softmax-carrying step
       unless stmts.length == 2 do throwError s!"expected 2 stmts after split, got {stmts.length}"
-      let nlins := stmts.map (fun | .assign _ _ r => r.nonlin | .scatter _ _ r _ => r.nonlin | .recurMorphism .. => .identity)
+      let nlins := stmts.map (fun | .assign _ _ r => r.nonlin | .scatter _ _ r => r.nonlin | .recurMorphism .. => .identity)
       unless nlins.any (· == .identity) do throwError "missing linear (identity) step"
       unless nlins.any (fun n => match n with | .axiswise .softmax (some _) => true | _ => false) do
         throwError "missing masked-softmax step"
@@ -169,7 +169,7 @@ run_cmd do
   | .ok lp _ =>
       let stmts := lp.stmts.filterMap (fun | .plain t => some t | .scan .. => none | .scanPre .. => none)
       unless stmts.length == 2 do throwError s!"AGG: expected 2 stmts after split, got {stmts.length}"
-      let pairs := stmts.map (fun | .assign _ _ r => (r.nonlin, r.agg) | .scatter _ _ r _ => (r.nonlin, r.agg) | .recurMorphism .. => (Nonlin.identity, AggOp.sum))
+      let pairs := stmts.map (fun | .assign _ _ r => (r.nonlin, r.agg) | .scatter _ _ r => (r.nonlin, r.agg) | .recurMorphism .. => (Nonlin.identity, AggOp.sum))
       -- AGG1: the linear (identity-nonlin) step must carry the original `.max`.
       unless pairs.any (fun (n, a) => n == .identity && a == .max) do
         throwError s!"AGG1: linear step lost agg (expected .max); got {repr pairs}"
@@ -197,10 +197,10 @@ run_cmd do
       nonlin := .axiswise .softmax none }
   let sp : ScanProgram := { decls := [], stmts := [ .plain stmt ], env := {}, extNames := ∅ }
   let slotsOf : Stmt → List LHSSlot :=
-    fun | .assign _ slots _ => slots | .scatter _ slots _ _ => slots | .recurMorphism .. => []
+    fun | .assign _ slots _ => slots | .scatter _ slots _ => slots | .recurMorphism .. => []
   let isIdentity : Stmt → Bool :=
     fun | .assign _ _ r => (match r.nonlin with | .identity => true | _ => false)
-        | .scatter _ _ r _ => (match r.nonlin with | .identity => true | _ => false)
+        | .scatter _ _ r => (match r.nonlin with | .identity => true | _ => false)
         | .recurMorphism .. => true
   let hasFreeNorm : List LHSSlot → Bool :=
     fun slots => slots.any (fun sl => match sl with | .freeNorm _ => true | _ => false)
@@ -233,10 +233,10 @@ run_cmd do
     { body := { terms := [ { factors := [ .read "A" [.axis q, .axis s] ] } ] },
       nonlin := .axiswise .softmax none }
   let slotsOf : Stmt → List LHSSlot :=
-    fun | .assign _ slots _ => slots | .scatter _ slots _ _ => slots | .recurMorphism .. => []
+    fun | .assign _ slots _ => slots | .scatter _ slots _ => slots | .recurMorphism .. => []
   let isIdentity : Stmt → Bool :=
     fun | .assign _ _ r => (match r.nonlin with | .identity => true | _ => false)
-        | .scatter _ _ r _ => (match r.nonlin with | .identity => true | _ => false)
+        | .scatter _ _ r => (match r.nonlin with | .identity => true | _ => false)
         | .recurMorphism .. => true
   match splitStmt stmt |>.run 0 with
   | .error e _ => throwError s!"PRODUCERSLOTS: splitStmt errored: {repr e}"

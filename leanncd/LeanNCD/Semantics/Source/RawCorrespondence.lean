@@ -363,7 +363,7 @@ private theorem rawStatement_fields {raw : TLProgram} {memo : Std.HashMap String
     RawStatementFields raw memo source i ast statement := by
   obtain ⟨name, slots, rhs, he, hi, hagg, hnonlin, ht, hn, hs, ho, hterms⟩ := h
   cases ast with
-  | scatter _ _ _ _ => cases he
+  | scatter _ _ _ => cases he
   | recurMorphism _ _ _ => cases he
   | assign nm original r =>
     change Stmt.assign nm
