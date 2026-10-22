@@ -27,6 +27,8 @@ def evalErrorEq : EvalError → EvalError → Bool
   | .invalidNormAxis a, .invalidNormAxis b => decide (a = b)
   | .scatterCollision na oa fa sa, .scatterCollision nb ob fb sb =>
       decide (na = nb ∧ oa = ob ∧ fa = fb ∧ sa = sb)
+  | .scatterWriteOutOfRange na oa sa, .scatterWriteOutOfRange nb ob sb =>
+      decide (na = nb ∧ oa = ob ∧ sa = sb)
   | .unsupportedScatterNonlin a, .unsupportedScatterNonlin b => decide (a = b)
   | .unsupportedRecurMorphism sa na, .unsupportedRecurMorphism sb nb =>
       decide (sa = sb ∧ na = nb)
@@ -99,5 +101,15 @@ private def failed (error : EvalError) (warnings : List EvalWarning := []) :
 #guard ! evalErrorEq (.unsupportedDtype "X") (.unsupportedDtype "Y")
 #guard evalAgreesOn [] (failed (.unsupportedDtype "X")) (failed (.unsupportedDtype "X"))
 #guard ! evalAgreesOn [] (failed (.unsupportedDtype "X")) (failed (.unsupportedDtype "Y"))
+
+-- B6: the out-of-range scatter write. Without its arm the `_ => false` catch-all makes two EQUAL
+-- rejections compare unequal (a spurious oracle divergence); with an arm that ignored a field, two
+-- different out-of-range writes would compare equal. Both directions, each field.
+#guard evalErrorEq (.scatterWriteOutOfRange "Out" [-1] [0]) (.scatterWriteOutOfRange "Out" [-1] [0])
+#guard ! evalErrorEq (.scatterWriteOutOfRange "Out" [-1] [0]) (.scatterWriteOutOfRange "Q" [-1] [0])
+#guard ! evalErrorEq (.scatterWriteOutOfRange "Out" [-1] [0]) (.scatterWriteOutOfRange "Out" [5] [0])
+#guard ! evalErrorEq (.scatterWriteOutOfRange "Out" [-1] [0]) (.scatterWriteOutOfRange "Out" [-1] [1])
+#guard evalAgreesOn [] (failed (.scatterWriteOutOfRange "Out" [5] [0]))
+  (failed (.scatterWriteOutOfRange "Out" [5] [0]))
 
 end LeanNCD.PropertyOracle

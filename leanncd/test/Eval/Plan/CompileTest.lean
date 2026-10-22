@@ -123,7 +123,11 @@ def acceptedSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
   == some (.scatterOrAffineLhs "Out: constant affine LHS slot")
 
--- A ZERO-coefficient scale (`Out[0*i]`) is a DIFFERENT form and is ADMITTED. It is surface-reachable
+-- B6: the two zero-coefficient fixtures below are CAPABILITY verdicts only. Both still pass
+-- `capabilityPreflight`, but every write they describe lands outside the derived destination extent
+-- (`0` and `5`), so the later `checkScatter` inside `prepareEvalPlan` REJECTS them with
+-- `scatterWriteOutOfRange`; `ScatterCompileTest` S9/S9b pin that end to end through the source pipeline.
+-- A ZERO-coefficient scale (`Out[0*i]`) is a DIFFERENT form and is ADMITTED by the preflight. It is surface-reachable
 -- (`elabTLLHSSlot`'s `n*x` arm with `n = 0`), passes `lowerArith`, and is the empty-destination
 -- degeneracy Task 3 designed `checkScatter` around — both extent derivations answer `0` for it, so
 -- there is nothing to disagree about. Pinned here because the two forms are easy to conflate: they
