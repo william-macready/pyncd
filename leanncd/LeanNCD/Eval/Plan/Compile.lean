@@ -546,35 +546,15 @@ private def scatterPlacementOrFail (srcUids : List UID) (srcShape : Array Nat)
     | none => throw (.unsizedScatterOutput sl)
   return (coeffsAcc, biasAcc, shapeAcc)
 
-/-- The `ScalarConst` a source `ScatterOpts.fill` compiles to, or a located rejection (§2.5).
-
-    `ScatterPlan.fill` is a `ScalarConst` and not the `Int` the source carries, because it must be
-    able to express a tropical identity; `checkScatter` then forces `fill == compute.algebra.reduceId`
-    so that the fill and the collision-reduction stay the identity and the operation of ONE monoid.
-    This function is therefore not a widening conversion `Int → ScalarConst` but an AGREEMENT check:
-    the returned constant is always the algebra's own `reduceId`, and the source `Int` only has to
-    denote the same value. Deriving it any other way (wrapping the `Int` as an `f64` and letting
-    `checkScatter` compare) would report a legitimately out-of-fragment program as `invalidPlan`,
-    the compiler-bug channel.
-
-    Admitted: `agg = .sum` with `fill = 0` (real sum-product's identity IS `0.0`, which is exactly
-    what `lowerArith` hard-codes), and a predicate destination with `fill = 0` (the Boolean identity
-    `false` decodes to `0.0`, `Dense.lean`'s `floatOps.decodeConst`), and a binary32 sum-product
-    scatter with `fill = 0` (binary32 `+0`, bits `0`, compared as native `Float32.ofInt` bits).
-    Rejected: a `maxreduce`/`minreduce` scatter, whose identity is `∓∞`, which no FINITE `Int` fill
-    denotes. The binary32 arm enforces that by also requiring `Float32.ofInt fill` to be finite,
-    since `Float32.ofInt (-(2^128))` IS `-∞`. The binary64 arm does not: `Float.ofInt (-(2^1024))`
-    overflows to `-∞` and is admitted, a pre-existing gap this function does not close
-    (`papers/f32d_evalplan.md` §1.2). Comparison is on the stored BITS, not on decoded `Float`s, so
-    it cannot be perturbed by float equality's own conventions. -/
-private def scatterFillOrFail (context : String) (algebra : ContractionAlgebra) (fill : Int) :
-    Except CapabilityError ScalarConst :=
-  let identity := algebra.reduceId
-  let agrees : Bool := match identity with
-    | .f64 bits => bits == Float.toBits (Float.ofInt fill)
-    | .bool b   => fill == (if b then 1 else 0)
-    | .f32 bits => (Float32.ofInt fill).isFinite && bits == (Float32.ofInt fill).toBits
-  if agrees then pure identity else throw (.scatterOptsNotAdmitted context)
+/-- A top-level scatter is admitted only for `agg = .sum` (S3a): a `maxreduce`/`minreduce` scatter is
+    refused, tropical scatter being S3b's. `ScatterOpts.fill` is no longer a policy — the plan's
+    `fill` is always the algebra's own `reduceId`, derived at the call site, which `checkScatter`
+    still verifies until the field is deleted. The refusal keeps the `scatterOptsNotAdmitted
+    "{nm}: fill"` constructor and text: `SortedDifferential.confirmsSorted` (Semantics/Source)
+    matches it. -/
+private def scatterAggOrFail (context : String) : AggOp → Except CapabilityError Unit
+  | .sum => pure ()
+  | .max | .min => throw (.scatterOptsNotAdmitted context)
 
 /-- First UID that recurs later in the list. Mirrors `Prepared.lean`'s `firstDuplicateName` and
     `Block.lean`'s `firstDuplicateSlot` (same shape, different element type) so a duplicate-axis
@@ -1622,11 +1602,11 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         let computePlan := { computePlan with algebra := algebraForDest destDtype rhs.agg }
         let (outCoeffs, outBias, destShape) ←
           liftShape warnings (scatterPlacementOrFail srcUids srcShape slots)
-        let fill ←
-          liftCapability warnings (scatterFillOrFail s!"{nm}: fill" computePlan.algebra opts.fill)
+        liftCapability warnings (scatterAggOrFail s!"{nm}: fill" rhs.agg)
         tensorSigsAcc := tensorSigsAcc.push { shape := destShape, dtype := destDtype }
         stepsAcc := stepsAcc.push (.scatter
-          { compute := computePlan, destShape, outCoeffs, outBias, fill, reduce := opts.reduce })
+          { compute := computePlan, destShape, outCoeffs, outBias
+          , fill := computePlan.algebra.reduceId, reduce := opts.reduce })
         materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
         slotOf := slotOf.insert nm destSlot
     | .plain s =>

@@ -11,7 +11,7 @@ no code with the scatter path:
 1. the scatter's RHS evaluated as an ordinary binary32 ASSIGNMENT (`twin`, free LHS over the same
    source axes) through the F32-A path — `prepareEvalPlan`'s plain branch, `checkAssignF32`,
    `runDenseAssign32` — which never touches `ScatterPlan`, `checkScatterF32`, `runDenseScatter32`,
-   Step D's scatter branch, or `scatterFillOrFail`;
+   Step D's scatter branch, or `scatterAggOrFail`;
 2. a placement written HERE from the source LHS text (`place`), with its own row-major helpers — not
    `outCoeffs`/`outBias`, not `applyAffine`/`flatIndex` — into a `destShape` taken from the
    REFERENCE-measured binary64 extents (`ScatterDenseTest` fixtures 1, 2, 4; `DifferentialTest`

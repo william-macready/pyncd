@@ -280,7 +280,7 @@ inductive CapabilityError
       express the tropical `∓∞` its algebra's identity requires, so no admissible fill exists for
       one. `agg = .sum` with `fill = 0` is coherent and admitted. A `predicate`/`bool`-declared
       scatter destination is NOT reachable from this constructor: it is rejected upstream by
-      `predicateScatterDest` (below) at the same tier, before `scatterFillOrFail` is called at all.
+      `predicateScatterDest` (below) at the same tier, before `scatterAggOrFail` is called at all.
       (Prior claim that a predicate destination with `fill = 0` was "coherent and admitted" was
       wrong — the reference `evalScatter` (`Eval/Scatter.lean`) then selected its algebra from
       `rhs.agg` only, never seeing `decls`, so a Boolean scatter destination silently diverged from

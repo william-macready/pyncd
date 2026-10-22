@@ -1307,18 +1307,23 @@ def f32ScatterProg : ScheduledProgram :=
     | _ => false))
   == some true
 
--- 15(c) refusals. A fill the algebra's identity does not equal (`1` on sum-product) is refused...
+-- 15(c) S3a: `fill` is not a policy any more — a sum scatter's non-identity `fill := 1` is IGNORED,
+-- the plan's fill being the algebra's own `reduceId` (binary32 `+0`). Accept neighbour of the
+-- tropical refusal below.
 def f32ScatterFill1Prog : ScheduledProgram :=
   { f32ScatterProg with
     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
       { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity }
       { fill := 1, reduce := .rejectCollisions })] }
 
-#guard causeOf (prepareEvalPlan f32ScatterFill1Prog f32IdentitySig) ==
-  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
+#guard ((prepareEvalPlan f32ScatterFill1Prog f32IdentitySig).toOption.map (fun p =>
+    match p.plan.raw.steps with
+    | #[.scatter s] => s.fill == .f32 0
+    | _ => false))
+  == some true
 
--- ...and so is an integer past binary32's range: `Float32.ofInt (-(2^128))` rounds to `-∞`, which IS
--- `admittedAlgebraF32Max.reduceId` bit for bit (4286578688), so only the finiteness test refuses it.
+-- ...while a top-level max/min scatter stays refused, whatever its fill (the guard is on `agg`;
+-- tropical scatter is S3b's): `-(2^128)` would round to `-∞`, binary32 max's own identity.
 def f32ScatterOverflowFillProg : ScheduledProgram :=
   { f32ScatterProg with
     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]

@@ -1088,7 +1088,7 @@ run_cmd do
 --   ScatterTest "upsample"/"4g regression" scatter, here as an `evalPlain` `.scatter` statement
 --   `Out[2*i] := maxreduce(X[i])`, X = [-1,-2,-3]; the old reference filled the gaps with 0 and
 --   returned [-1,0,-2,0,-3,0], which is NOT the max identity. The checked path refuses every
---   top-level max/min scatter (`scatterFillOrFail`: no finite fill is -inf).
+--   top-level max/min scatter (S3a: a guard on `agg`; tropical scatter is S3b's).
 run_cmd do
   let i := ax "i" 1
   let X := tensorOf [3] [-1, -2, -3]
@@ -1108,19 +1108,24 @@ run_cmd do
   | .error e => throwError s!"shape 1 accept (sum): {e}"
   | .ok (_, Out) =>
       unless Out.data == #[-1, 0, -2, 0, -3, 0] do throwError s!"shape 1 accept (sum): {repr Out.data}"
-  -- ACCEPT: the one fill that denotes -inf (`Float.ofInt (-(2^1024))` overflows) agrees with the
-  --   identity, exactly as `scatterFillOrFail`'s binary64 arm does; the gaps then hold -inf.
+  -- S3a: `fill` is no longer a policy. The one fill that used to denote -inf (`-(2^1024)`) no longer
+  --   rescues a max scatter (still refused: the guard is on `agg`), and a non-zero fill on a SUM
+  --   scatter is ignored — the gaps hold 0_K = 0, not the fill.
   let optsInf : ScatterOpts := { fill := -(2 ^ 1024), reduce := .rejectCollisions }
   match mkPlain (.scatter "Out" [.affine (.scale 2 i)] (rhsAgg .max) optsInf) [("X", X)] [(1, 3)] with
-  | .error e => throwError s!"shape 1 accept (-inf fill): {e}"
+  | .error (.scatterFillNotIdentity "Out" .max) => pure ()
+  | .error e => throwError s!"shape 1 max (-inf fill): wrong rejection: {e}"
+  | .ok (_, Out) => throwError s!"shape 1 max (-inf fill): accepted: {repr Out.data}"
+  let opts7 : ScatterOpts := { fill := 7, reduce := .rejectCollisions }
+  match mkPlain (.scatter "Out" [.affine (.scale 2 i)] (rhsAgg .sum) opts7) [("X", X)] [(1, 3)] with
+  | .error e => throwError s!"shape 1 sum (fill 7 ignored): {e}"
   | .ok (_, Out) =>
-      unless Out.get! [0] == -1 && Out.get! [1] == -1.0 / 0.0 && Out.get! [4] == -3 do
-        throwError s!"shape 1 accept (-inf fill): {repr Out.data}"
+      unless Out.data == #[-1, 0, -2, 0, -3, 0] do throwError s!"shape 1 sum (fill 7 ignored): {repr Out.data}"
 
 -- Shape 1, the `+`-joined two-term max (the only case where a scatter max is meaningful: no gap
 --   cells when the terms cover every output cell). Donor: ScatterTest '4g regression' (A = [1,5,2],
 --   B = [10,-1,-1], `Out[i] := A[i] + B[i]` with agg .max, per-position max [10,5,2]). The checked
---   rule refuses it all the same: the algebra comes from `agg`, and `scatterFillOrFail` never looks
+--   rule refuses it all the same: the algebra comes from `agg`, and the guard never looks
 --   at coverage, so the reference refuses it too (stricter than meaningful, but checked-aligned).
 --   The same scan-LOCAL scatter stays accepted (below).
 run_cmd do
