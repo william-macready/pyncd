@@ -358,6 +358,9 @@ from source syntax; that is Task 5.
     max/min scatter from source (`scatterFillNotIdentity`), so this is observable only for direct
     `evalScatter` calls and raw plans; a differential corpus must not treat a tropical scatter as a
     parity-checked entry without special-casing the unwritten cells (tropical carriers are S3b's).
+    Collisions diverge the same way: for a direct `evalScatter` call the reference sums colliding
+    writes from `0` (including a contracted source axis, e.g. `maxreduce(X[i,j])`), while this worker
+    takes the `max`/`min` from `∓∞`. Neither is reachable through `compile`/`evalPlain`.
 
     **Collisions are folded, not rejected (S3a).** Every in-range write is combined into its cell
     with the destination algebra's `reduceOp`, starting from `reduceId` (0_K): `+`/`0` for the real

@@ -148,8 +148,8 @@ inductive PositionalInputError
   -- evaluator fails loud rather than silently, if ever handed an unchecked plan.
   | predicateWidthMismatch (expected : Nat) (actual : Nat)
   /-- RETAINED PRODUCER-LESS since S3a: `runDenseScatterWith` now folds colliding writes with the
-      destination algebra's `reduceOp` instead of raising this (the Source-oracle differential
-      still names the constructor; it goes with that cleanup). Originally: two SOURCE coordinates of
+      destination algebra's `reduceOp` instead of raising this (nothing produces or reads the
+      constructor any more; it is kept producer-less). Originally: two SOURCE coordinates of
       a scatter placing a value at the same DESTINATION coordinate under
       the retired reject-collisions policy, raised by `runDenseScatterWith` (`Dense.lean`, behind
       both `runDenseScatter` and `runDenseScatter32`), and a runtime
