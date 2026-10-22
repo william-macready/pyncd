@@ -312,4 +312,22 @@ private def fOriginC := withZ 8 [.scatter "Z" [.affine (.const 3)] readX,
 -- Accept-neighbour: the injective affine `.scatter` fN' (no collision before or after S3a) stays parity.
 #guard tag fN' == "parity"
 
+-- B6: production now ERRORS on an out-of-range scatter write (before B6 both native legs skipped it
+-- silently). `fH6` (`Y[2a]`, declared extent 6) never reaches the native legs: the oracle's admission
+-- refuses the write against the DECLARED shape (`writeOutOfRange`, guard above). The surface-reachable
+-- case is the one where the declared shape fits but production's DERIVED extent does not:
+-- `Y[0*a + 5] := X[a]` (declared extent 6, derived extent 5). The oracle admits it (all four writes
+-- collide onto cell 5: 1+2+3+4 = 10); legacy raises `evalScatter ... outside the destination extent`
+-- and the checked plan rejects at preparation (`PlanStepError.assign`, carrying
+-- `PlanError.scatterWriteOutOfRange`). Both native legs fail, so the class is `nativeFailure`: no
+-- structural condition names this (an error is not a value difference). Accept-neighbour `fR1`
+-- (`Y[a+4]`, declared = derived extent 8) stays four-leg parity.
+private def fR := snap 6 [k] [.assign "Y" [.affine (.affine 5 [(0, a)])] readX]
+private def fR1 := snap 8 [k] [.assign "Y" [.affine (.shift a 4)] readX]
+#guard tag fR == "nativeFailure"
+#guard mentions fR "oracle=[(Y, ([6], [0, 0, 0, 0, 0, 10]))]"
+#guard mentions fR "legacy=failure phase=LeanNCD.Semantics.Source.NativeLegs.LegacyPhase.scheduledEvaluation cause=evalScatter Y: write to output coord [5] (from source coord [0]) is outside the destination extent"
+#guard mentions fR "checked=preparation checked preparation: cause=invalidPlan: LeanNCD.Eval.Plan.PlanStepError.assign"
+#guard tag fR1 == "parity"
+
 end SourceDifferentialScatterTest
