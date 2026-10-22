@@ -116,8 +116,8 @@ private def fH6 := snap 6 [k] [.assign "Y" [.affine (.scale 2 a)] readX]
 private def fH9 := snap 9 [k] [.assign "Y" [.affine (.scale 2 a)] readX]
 private def fI1 := snapB 1 5 [k] [.assign "Y" [.affine (.const 3)] readW]
 private def fI2 := snap 5 [k] [.assign "Y" [.affine (.const 3)] readX]
-/-- Masking negative: the collision of `fE` plus an independent constant-slot statement on `Z`
-that makes the legacy leg fail at COMPILATION (not at the predicted evaluation-time collision). -/
+/-- `fE` (now parity) plus an independent constant-slot statement on `Z` that makes the legacy leg
+fail at COMPILATION (`overlappingScatter "Z"`). -/
 private def fMask : SourceSnapshot :=
   let s := snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readXW,
     .assign "Z" [.affine (.const 3)] readX]
@@ -132,10 +132,11 @@ private def fMask : SourceSnapshot :=
 -- Checked leg refuses the multi-axis / constant slot (capability); legacy sums like the oracle.
 #guard tag fD == "nativeFailure"
 #guard tag fD' == "nativeFailure"
--- Collision under the reject policy: E vs its parity neighbour A (one RHS factor).
-#guard tag fE == "known:collision"
-#guard tag fF == "known:collision"
--- F's non-colliding neighbour (b coefficient 1 -> 4): no condition, native refusal stays a failure.
+-- Collisions sum (S3a): E (`b` contracted onto one cell) is parity like its one-factor neighbour A.
+-- F (`a+b`) and its neighbour F' (b coefficient 4) stay `nativeFailure`: the checked leg refuses the
+-- multi-axis slot (the capability refusal is pinned after `mentions` is defined).
+#guard tag fE == "parity"
+#guard tag fF == "nativeFailure"
 #guard tag fF' == "nativeFailure"
 -- Multi-writer vs single writer; extent override vs equal extent (A); out-of-range refusal.
 #guard tag fG == "known:multiWriter"
@@ -145,8 +146,8 @@ private def fMask : SourceSnapshot :=
 -- Constant slots: compile `overlappingScatter` under the reject policy, whatever the RHS.
 #guard tag fI1 == "nativeFailure"
 #guard tag fI2 == "nativeFailure"
--- Masking negative: fE's collision is detected, but legacy fails at compilation (the independent
--- constant-slot statement on Z), not with the predicted collision, so no condition applies.
+-- Legacy fails at compilation (the independent constant-slot statement on Z) and the checked leg
+-- refuses it the same way: `nativeFailure`, no condition applies.
 #guard tag fMask [5, 6] == "nativeFailure"
 
 /-- The structural conditions the source alone predicts for `s` (`compareSource`'s `conditions`). -/
@@ -265,12 +266,10 @@ private def fN' := snap 8 [k] [.scatter "Y" [.affine (.scale 2 a)] readX sumOpts
 #guard legacyCells fN' == handBits [1, 0, 2, 0, 3, 0, 4, 0]
 #guard legacyMatchesOracle fN'
 
-/-! T4-A1 (review F1): ORIGIN-BOUND confirmation. Each negative pair adds an independent statement
-on `Z` (declaration 6, over `a`) that raises the SAME native error kind as the detected `Y`
-collision but is not itself detected. Before A1 (`confirms` cause-only) both pairs classified
-`known:collision` (p4a1_findings.md); the leg that names `Z` must not confirm `Y`'s condition, so
-the run falls through to the native outcome (`nativeFailure`). The accept-neighbour gives `Z` a
-parity write instead, so the condition still fires when the failure IS `Y`'s. -/
+/-! T4-A1 two-tensor programs, after S3a (collisions sum, so the origin-bound collision rows that
+named `Y`/`Z` in a native collision error lost their referent and are deleted; `Z` is declaration 6,
+over `a`). Kept: the stale-`rejectCollisions` bare scatter (now parity) and the checked-leg
+constant-slot refusal naming `Z`. -/
 
 private def rejOpts : ScatterOpts := { reduce := .rejectCollisions }
 
@@ -284,32 +283,35 @@ private def withZ (kExtent : Nat) (stmts : List Stmt) : SourceSnapshot :=
 private def mentions (s : SourceSnapshot) (needle : String) : Bool :=
   ((observe s).splitOn needle).length > 1
 
--- Review F11 probe: a BARE-slot `rejectCollisions` scatter with `b` contracted, `Z[a] := X[a]*W[b]`.
--- Admitted as a plain assign and summed by the oracle; `detectConditions` skips it (bare slot); both
--- native legs reject it as a collision (legacy names Z, checked runtime is positional).
+-- Review F11 probe: a BARE-slot scatter with the stale `rejectCollisions` option and `b` contracted,
+-- `Z[a] := X[a]*W[b]`. Production ignores the option and sums (Z = X[a]*(1+10+100)), like the
+-- oracle: four-leg parity (observed; before S3a both native legs rejected it as a collision).
 private def zBare : Stmt := .scatter "Z" [.free a] readXW rejOpts
 private def fF11 := withZ 8 [zBare, .assign "Y" [.affine (.scale 2 a)] readX]
-#guard tag fF11 [5, 6] == "nativeFailure"
-#guard mentions fF11 "evalScatter Z: collision"
-#guard mentions fF11 "PositionalInputError.scatterCollision [0] [0, 0] [0, 1]"
+#guard tag fF11 [5, 6] == "parity"
+#guard mentions fF11 "legacy=value [(Y, ([8], [1.000000, 0.000000, 2.000000, 0.000000, 3.000000, 0.000000, 4.000000, 0.000000])), (Z, ([4], [111.000000, 222.000000, 333.000000, 444.000000]))]"
+#guard mentions fF11 "checked=value [(Y, ([8], [1.000000, 0.000000, 2.000000, 0.000000, 3.000000, 0.000000, 4.000000, 0.000000])), (Z, ([4], [111.000000, 222.000000, 333.000000, 444.000000]))]"
 
--- LEGACY leg: zBare (legacy fails FIRST on Z's collision) + fF's detected collision on Y (the
--- checked leg refuses Y's multi-axis slot, naming Y).
-private def fOriginL := withZ 6 [zBare, .assign "Y" [convSlot] readXW]
-#guard mentions fOriginL "evalScatter Z: collision"
-#guard mentions fOriginL "multiAxisScatterLhs \"Y: affine LHS slot\""
-#guard tag fOriginL [5, 6] == "nativeFailure"
-#guard tag (withZ 6 [.assign "Z" [.free a] readX, .assign "Y" [convSlot] readXW]) [5, 6] ==
-  "known:collision"
+-- fF/fF' stay `nativeFailure` through the checked leg's multi-axis capability refusal, not a collision.
+#guard mentions fF "multiAxisScatterLhs \"Y: affine LHS slot\""
+#guard mentions fF' "multiAxisScatterLhs \"Y: affine LHS slot\""
+#guard !mentions fF "collision"
 
--- CHECKED leg: Z's constant-slot scatter under the sum policy (legacy sums it; the checked plan
--- refuses it at preparation naming Z) + fE's detected collision on Y (legacy names Y).
+-- CHECKED-only refusal: Z's constant-slot scatter (legacy sums it into Z = [0,0,0,10]; the checked
+-- plan refuses it at preparation naming Z) next to fE's agreeing write on Y: the program is still a
+-- `nativeFailure` and the refusal names Z.
 private def fOriginC := withZ 8 [.scatter "Z" [.affine (.const 3)] readX sumOpts,
   .assign "Y" [.affine (.scale 2 a)] readXW]
-#guard mentions fOriginC "evalScatter Y: collision"
 #guard mentions fOriginC "scatterOrAffineLhs \"Z: constant affine LHS slot\""
+#guard mentions fOriginC "(Z, ([4], [0.000000, 0.000000, 0.000000, 10.000000]))"
 #guard tag fOriginC [5, 6] == "nativeFailure"
-#guard tag (withZ 8 [.assign "Z" [.free a] readX, .assign "Y" [.affine (.scale 2 a)] readXW])
-  [5, 6] == "known:collision"
+
+-- S3a: the colliding `fE` (`b` contracted onto the cell `2a`) is four-leg parity and its values are
+-- the contraction sums Y[2a] = X[a] * (1 + 10 + 100), from legacy and from the oracle alike.
+#guard legacyCells fE == handBits [111, 0, 222, 0, 333, 0, 444, 0]
+#guard oracleCells fE == handBits [111, 0, 222, 0, 333, 0, 444, 0]
+#guard legacyMatchesOracle fE
+-- Accept-neighbour: the injective affine `.scatter` fN' (no collision before or after S3a) stays parity.
+#guard tag fN' == "parity"
 
 end SourceDifferentialScatterTest
