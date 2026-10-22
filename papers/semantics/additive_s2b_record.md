@@ -85,7 +85,7 @@ killed only by the T4-04 pin when authored (after the extent-0 probe of section 
 `MaxPlus` instance/`observe` cycle (pinned by `#guard`/`#guard_msgs`). DEFERRED: T4B has no cycles (`tropicalMultiFactor`,
 `tropicalScatterFill` confirmers are not prototyped; `T4-M3..M5` are authored by the T4B dispatch after the observed causes).
 
-## 5. Execution record (2026-10-20/21; T1 to T4B and the T5 docs sweep; final reviews, unfiltered manifest and merge still open)
+## 5. Execution record (2026-10-20/21; T1 to T4B, T5 docs sweep, reviews, final verification; merge below)
 
 Executed inline by the controller (patch application, not prototyping); per-task Sonnet reviews read the commit through `git show`.
 Ledger with every step: `additive_s2b_ledger.md`. Reviews: `additive_s2b_review_T1.md` .. `_T4A.md`.
@@ -103,7 +103,7 @@ T4B (`1d35a72d`, manifest commit after it): partial build (LeanNCD + sorted/real
 reads the `NativeRun`, as S2a `confirms` does). `Differential.ownedBy` and `nonBareWrite` became public. M6 (legacy-leg owner drop) is an
 addition to the plan's M3..M5. Known limitation, as in S2a: the mismatch binding is the FIRST differing cell, so a second divergence
 in the same tensor, or head-only confirmation with two multi-factor outputs (declaration 6 confirmed, 7 not separately reported), is
-not reported separately. Full `LeanNCD Tests` build and the unfiltered manifest (14 + 4 cycles) are still to run.
+not reported separately. Final verification below.
 
 Deviation: T4A was built once on the post-cleanup state (the cleanup is docstring text only) instead of twice; the patch-only
 commit `79524517` was therefore not built on its own.
@@ -192,3 +192,9 @@ spec mention is a checked task line, not a section link, so no change. NOT YET D
 line and the decision note S2 row ("landed" with the merge hash). Parked stale wording ("landed on local main", S2a was pushed):
 `leanncd/AGENTS.md:219`, `lean_executable_semantics_path_part_5.md:18`, `additive_production_decision_note.md` S2 row (rewritten at
 merge), `oracle_extension_s2_design.md` lines 3 and 135 (rewritten at merge).
+
+### 5.4 Final verification (commit `37c58053`)
+
+Full `LeanNCD Tests`: 8823 jobs, Build completed successfully, AxiomAudit 7070 constants, standard axioms only. Unfiltered manifest: 22/22 cycles
+PASS (T1 2, T2 6, T3 3, T4 11), each restored byte-identical. Reviews: T4B Sonnet, Opus soundness, Opus regression (all APPROVE WITH FINDINGS, 0 Critical;
+fixes and parked items in 5.2). Pushed: no (`main` ahead of `origin/main`).
