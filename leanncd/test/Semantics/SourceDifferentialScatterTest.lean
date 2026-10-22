@@ -92,7 +92,6 @@ def tag (s : SourceSnapshot) (order : List Nat := [5]) : String :=
       then "refused:writeOutOfRange" else "error"
   | .ok run => match run.classification with
     | .fourLegParity => "parity"
-    | .knownContractDifference (.scatterCollisionRejected _) => "known:collision"
     | .knownContractDifference (.multiWriterScatter _) => "known:multiWriter"
     | .knownContractDifference (.scatterExtentOverridesDeclared ..) => "known:extent"
     | .knownContractDifference (.usedDType ..) => "known:usedDType"
@@ -149,6 +148,20 @@ private def fMask : SourceSnapshot :=
 -- Masking negative: fE's collision is detected, but legacy fails at compilation (the independent
 -- constant-slot statement on Z), not with the predicted collision, so no condition applies.
 #guard tag fMask [5, 6] == "nativeFailure"
+
+/-- The structural conditions the source alone predicts for `s` (`compareSource`'s `conditions`). -/
+private def conditionCount (s : SourceSnapshot) : Nat :=
+  match compareSource s (some [5]) with
+  | .ok run => run.conditions.length
+  | .error _ => 99
+
+-- S3a: collisions sum (production and oracle agree), so a colliding write predicts NO condition:
+-- `fE` (`Y[2a] := X[a]*W[b]`, `b` contracted onto one cell) and `fF` (`a+b`) have nothing to detect
+-- for collisions; `fF`'s declared extent 6 differs from the derived 7, so it keeps exactly the
+-- extent condition, and `fG`'s two non-bare writers keep the multi-writer condition.
+#guard conditionCount fE == 0
+#guard conditionCount fF == 1
+#guard conditionCount fG == 1
 
 /-- Profile verdict on `fE`'s oracle result with one occurrence of the first nonempty fiber dropped
 and every sum (fiber, contribution, tensor cell) adjusted so only the COUNT is inconsistent. -/
