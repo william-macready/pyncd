@@ -25,26 +25,26 @@ inductive ComparisonSide
   | left | right
   deriving DecidableEq, Repr
 
-inductive ComparisonCause
+inductive ComparisonCause (V : Type := ℚ)
   | duplicateTensor (tensorUID : UID)
-  | shapeMetadata (tensor : TensorObservation)
-  | bufferLength (tensor : TensorObservation) (expected actual : Nat)
+  | shapeMetadata (tensor : TensorObservation V)
+  | bufferLength (tensor : TensorObservation V) (expected actual : Nat)
   | duplicateOccurrence (key : OccurrenceKey)
   | coordinateLength (tensorUID : UID) (coordinates values : Nat)
   deriving DecidableEq, Repr
 
-structure ComparisonError where
+structure ComparisonError (V : Type := ℚ) where
   side : ComparisonSide
-  cause : ComparisonCause
+  cause : ComparisonCause V
   deriving DecidableEq, Repr
 
-inductive TensorDifference
-  | missing (tensor : TensorObservation)
-  | extra (tensor : TensorObservation)
-  | identity (left right : TensorObservation)
-  | shape (left right : TensorObservation)
-  | length (left right : TensorObservation)
-  | cell (address : AddressObservation) (left right : Option ℚ)
+inductive TensorDifference (V : Type := ℚ)
+  | missing (tensor : TensorObservation V)
+  | extra (tensor : TensorObservation V)
+  | identity (left right : TensorObservation V)
+  | shape (left right : TensorObservation V)
+  | length (left right : TensorObservation V)
+  | cell (address : AddressObservation) (left right : Option V)
   deriving DecidableEq, Repr
 
 inductive ContributionDifference
@@ -53,26 +53,27 @@ inductive ContributionDifference
   | value (left right : ContributionObservation)
   deriving DecidableEq, Repr
 
-def outputObservations (tensors : List TensorObservation) : List TensorObservation :=
+def outputObservations {V : Type} (tensors : List (TensorObservation V)) :
+    List (TensorObservation V) :=
   tensors.filter (fun t => t.role == .output)
 
-private def checkTensorUIDs (side : ComparisonSide) (tensors : List TensorObservation) :
-    Except ComparisonError Unit := do
+private def checkTensorUIDs {V : Type} (side : ComparisonSide) (tensors : List (TensorObservation V)) :
+    Except (ComparisonError V) Unit := do
   let mut seen : List UID := []
   for tensor in tensors do
     if tensor.tensorUID ∈ seen then throw ⟨side, .duplicateTensor tensor.tensorUID⟩
     seen := seen ++ [tensor.tensorUID]
 
-private def checkBuffer (side : ComparisonSide) (tensor : TensorObservation) :
-    Except ComparisonError Unit := do
+private def checkBuffer {V : Type} (side : ComparisonSide) (tensor : TensorObservation V) :
+    Except (ComparisonError V) Unit := do
   unless tensor.axes.map Axis.extent == tensor.shape do
     throw ⟨side, .shapeMetadata tensor⟩
   unless tensor.values.length == Oracle.cellCount tensor.shape do
     throw ⟨side, .bufferLength tensor (Oracle.cellCount tensor.shape) tensor.values.length⟩
 
-private def compareCells (tensor : TensorObservation) :
-    List (List Nat) → List (Option ℚ) → List (Option ℚ) →
-      Except ComparisonError (Comparison TensorDifference)
+private def compareCells {V : Type} [DecidableEq V] (tensor : TensorObservation V) :
+    List (List Nat) → List (Option V) → List (Option V) →
+      Except (ComparisonError V) (Comparison (TensorDifference V))
   | [], [], [] => .ok .agreement
   | coordinate :: coordinates, l :: ls, r :: rs =>
     if l == r then compareCells tensor coordinates ls rs
@@ -85,8 +86,8 @@ private def compareCells (tensor : TensorObservation) :
 
 /-- Inputs are not result bindings. Callers select outputs or all defined cells explicitly.
 Shape and buffer checks precede any cell comparison; no prefix zip is used. -/
-def compareTensors (left right : List TensorObservation) :
-    Except ComparisonError (Comparison TensorDifference) := do
+def compareTensors {V : Type} [DecidableEq V] (left right : List (TensorObservation V)) :
+    Except (ComparisonError V) (Comparison (TensorDifference V)) := do
   checkTensorUIDs .left left
   checkTensorUIDs .right right
   let left := left.mergeSort fun a b => a.tensorUID ≤ b.tensorUID
@@ -96,8 +97,8 @@ def compareTensors (left right : List TensorObservation) :
   | .agreement => compareValues left right
   | other => pure other
 where
-  checkStructure : List TensorObservation → List TensorObservation →
-      Except ComparisonError (Comparison TensorDifference)
+  checkStructure : List (TensorObservation V) → List (TensorObservation V) →
+      Except (ComparisonError V) (Comparison (TensorDifference V))
     | [], [] => .ok .agreement
     | l :: _, [] => .ok (.disagreement (.missing l))
     | [], r :: _ => .ok (.disagreement (.extra r))
@@ -111,8 +112,8 @@ where
       if l.declaration != r.declaration || l.axes != r.axes || l.role != r.role then
         return .disagreement (.identity l r)
       checkStructure ls rs
-  compareValues : List TensorObservation → List TensorObservation →
-      Except ComparisonError (Comparison TensorDifference)
+  compareValues : List (TensorObservation V) → List (TensorObservation V) →
+      Except (ComparisonError V) (Comparison (TensorDifference V))
     | [], [] => .ok .agreement
     | l :: _, [] => .ok (.disagreement (.missing l))
     | [], r :: _ => .ok (.disagreement (.extra r))

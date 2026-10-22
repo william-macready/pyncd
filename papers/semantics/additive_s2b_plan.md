@@ -9,9 +9,8 @@ Prototype evidence: `papers/semantics/additive_s2b_artifacts/p1_findings.md`, `p
 `proto-s2b-p1` `131bc192`, `proto-s2b-p2` `3fcb6c54`; do not merge them). Authoring-verification record:
 `papers/semantics/additive_s2b_record.md` (not here).
 Shipped patches: `papers/semantics/additive_s2b_files/patches/` (`leanncd/` paths only, names `T<k>-NN-slug.patch`).
-Manifest: `papers/additive_s2b_mutations_post.json`: 9 cycles (T1 2, T2 3, T3 2, T4A 2), all observed to fail with their
-`expect` strings and to restore (9/9, authoring dispatch B). T4B has NO cycles yet (not prototyped; `T4-M3..M5` are written by
-the T4B dispatch once the observed causes exist). No cycle may be hand-written during execution.
+Manifest: `papers/additive_s2b_mutations_post.json`: 9 cycles at authoring (T1 2, T2 3, T3 2, T4A 2; parked-item additions and T4B bring it to 18), all observed to fail with their
+`expect` strings and to restore (9/9, authoring dispatch B). T4B cycles `T4-M3..M6` were written by the T4B dispatch from the observed causes (record §5), so the manifest now has 18 cycles.
 
 ## 0. Goal, process weight, fixed decisions
 
@@ -123,7 +122,7 @@ dispatch per finding group, given only its plan sections.
 
   | Task | Test file | `#guard` | `#guard_msgs` | Intended cycles |
   |---|---|---|---|---|
-  | T1 | `SourceOracleCarrierTest.lean` | 12 + 3 audit | 3 | 2 |
+  | T1 | `SourceOracleCarrierTest.lean` | 12 + 3 audit + 15 closing | 3 | 2 |
   | T2 | `SourceSortedDifferentialTest.lean` (Q6) + `SourceSortedAuditTest.lean` | 6 audit | 6 | 3 |
   | T3 | `SourceSortedDifferentialTest.lean` (Q5 rows) | 0 | 6 | 2 |
   | T4A | `SourceSortedDifferentialTest.lean` (Q7/Q8 rows) | 2 bits pin | 8 | 2 |
@@ -160,8 +159,11 @@ dispatch per finding group, given only its plan sections.
   statement and collection add no magnitude; a finite output cell passes `checkValue .tensorCell`; `±inf` is its own class
   `ExtClass.negInf/posInf` with bits `0xFFF0000000000000` / `0x7FF0000000000000`, never an envelope failure; non-finite
   reads are absorbing and skipped in the bound.
-- **The `±inf` bit patterns are not exercised by any prototype fixture** (production refuses every program that yields one), so
-  they are pinned by a T4A audit fixture against Lean's own `Float.toBits`.
+- **The `±inf` bit patterns are not exercised by any prototype fixture** (the P2 fixtures only reach `±inf` through an affine write,
+  which production refuses), so they are pinned by a T4A audit fixture against Lean's own `Float.toBits`. CORRECTION found by the
+  extent-0 probe (2026-10-20): an EMPTY reduction axis (`|b| = 0`) yields `-inf` (max) / `+inf` (min) cells that production
+  ACCEPTS, and both production legs agree with the oracle on the bits (`fourLegParity`); five rows at the end of
+  `SourceSortedDifferentialTest` pin it, so `ExtClass.bits` does meet production output.
 
 ### Deliberately NOT done, with owner (Rule 14)
 
@@ -170,13 +172,13 @@ dispatch per finding group, given only its plan sections.
 | Merging the sorted harness into `ComparisonRun`/`Classification` (one harness, one render) | parked; ~1 task; needs `SourceRun` to carry a carrier (`Type 1`) or a sum type |
 | Tropical oracle-receipt re-check (`checkOracle` re-derives arithmetic in `ℚ`) | parked; ~1 task (generic `checkOracle` over semiring ops) |
 | Tropical Program/Global-model theorems (`ProgramCorrespondence` at `K`) | parked; ~1 task; not needed for executable parity; the `AdmittedSource.program_*` lemmas are already generic |
-| Extent-0 axis producing `±inf` that reaches production (not probed) | parked; ~0.5 task (one probe + fixture) |
+| Extent-0 axis producing `±inf` that reaches production | DONE during execution (2026-10-20): it does reach production and agrees (`fourLegParity`); five rows appended to `SourceSortedDifferentialTest`; cycle `T4-M2b` |
 | `observeTensors` duplicates `observeTensorsAt … id` (unify, under 10 lines) | parked; cleanup candidate, 0 dispatches of its own |
 | Cross-sort programs (`mixedSorts`) and casts, tropical constants, tropical sorts in production | S3b (production) / later sort-family item |
 | Scatter ⊕ semantics, `fill`/`CollisionReduce` deletion, range errors | S3a |
 | A real fourth carrier (needs a DSL key: closed `AggOp`, no Boolean element type) | unowned; DSL change |
-| `sortSelection` diagnostics carry an EMPTY statement origin (`sourceError .statement {}`); a fixture cannot bind a locator | parked; ~0.3 task |
-| Core leg exercised with the toy carrier (the toy runs through oracle and selection only) | parked; the Core code is generic over the same `[Semiring K]` that the tropical rows exercise |
+| `sortSelection` diagnostics carried an EMPTY statement origin | DONE during execution (2026-10-20, Direct path, test first): `selectionOffender` in `Admission.lean` locates the first offending statement; origin guards at the end of `SourceSortedAuditTest`; cycles `T2-M4..M6` in the manifest |
+| Core leg exercised with the toy carrier | DONE during execution (2026-10-20): three `toyCore` rows at the end of `SourceOracleCarrierTest` run the toy through `runSourceAt`/`Registry.none` and `observeTensorsAt`; cycle `T3-M3` |
 | f32-destination production comparison for tropical programs | unowned (same scope as S2a) |
 
 ## 3. Sibling audit (case x class): deliverable of T1, T2, T4A
@@ -245,8 +247,9 @@ Audit fixtures (T1-04, new): `A1` `selectCarrier [(.sum,.f64),(.sum,.f32)]` is `
 `selectCarrier [(.sum,.f64)] []` is `noCarrier sum f64`; `A3` `selectCarrier [] standardCarriers` selects `real`.
 Cycles (2, for dispatch B to write): `T1-M1` first-match order in `selectCarrier` (`find?` made to take the LAST admitting
 entry; breaks the toy rows); `T1-M2` the mixed refusal (`mixedSorts` branch returns the first agg's carrier; breaks
-`pickName` row 4 and audit rows). Note: the `MaxPlus` instance and `observe` fields are pinned by the max/min `#guard` and
-`#guard_msgs` rows, not by a cycle.
+`pickName` row 4 and audit rows). Note: the `MaxPlus` instance values are pinned by the max/min `#guard` and
+`#guard_msgs` rows (through `Repr`), not by a cycle. The `observe` fields are NOT reached by those rows; they are pinned
+by 15 closing guards appended to `SourceOracleCarrierTest` after the T1 review (before that, first by the T3 Core rows).
 Expected: all targets green; no existing test edited; no `sorry`; `Semantics.AxiomAudit` unchanged.
 Checklist: (a) `Oracle.run` is `runWith Carrier.real` and every pre-existing oracle test builds unchanged; (b) the default
 `ℚ` parameter appears on every structure and no existing mention was edited; (c) `Carrier.real.observe = .fin`, max-plus
@@ -280,8 +283,9 @@ NOT `sortSelection`; `A5` a bare-slot `.scatter` with `agg := .max` and one with
 `.scatter` with `.sum` and `reduce := .rejectCollisions` and bare slots, through `admitSourceSorted`, selects `real`; `A7`
 `admitSourceAffine (strided .max)` and `(strided .min)` are refused with `.unsupported .nonSum`.
 Cycles (3): `T2-M1` the sorted rewrite `{ rhs with agg := .sum }` removed (max falls back to the `nonSum` refusal; breaks Q6
-rows 2-3); `T2-M2` the scatter guard `(sorted && rhs.agg != .sum)` removed (tropical scatter admitted; breaks Q6 row 6 and
-`A5`); `T2-M3` `sortKeys` always reports `.sum` (selection picks `real`; breaks Q6 rows 2-3).
+rows 2-3); `T2-M2` the scatter guard `(sorted && rhs.agg != .sum)` removed (the `.scatter` arm never rewrites `rhs`, so a
+tropical scatter is then refused as `nonSum` instead of `scatterPolicy`; breaks Q6 row 6 and `A5`, which assert the
+cause); `T2-M3` `sortKeys` always reports `.sum` (selection picks `real`; breaks Q6 rows 2-3).
 Expected: green; `admitStatement`, `StatementFields`, `admitStatement_fields`, raw entry unchanged (the diff of
 `Admission.lean` touches only `admitAffineStatement`, `admitSourceAffine`, `sortKeys`, `admitSourceSorted`).
 Checklist: (a) §3 rows 1, 7-13 ticked with fixture names; (b) every caller of `admitSourceAffine` outside the sorted path still
@@ -333,13 +337,13 @@ Fixtures (8 `#guard_msgs`: the §2 classification table, plus the `compareSource
 Audit (T4-04, 2 `#guard`): `ExtClass.negInf.bits == (-(1.0 / 0.0) : Float).toBits` and
 `ExtClass.posInf.bits == (1.0 / 0.0 : Float).toBits` (independent of the constants in the source).
 Cycles (2): `T4-M1` the profile bound `bound + |q|` replaced by `bound * |q|` (the running bound starts at 0, so it never trips;
-breaks the `1048576` envelope-trip row); `T4-M2` swap the two `±inf` bit constants in `ExtClass.bits` (breaks the bits pin only: the
-prototype has NO classification row that compares a `±inf` cell with production bits).
+breaks the `1048576` envelope-trip row); `T4-M2` swap the two `±inf` bit constants in `ExtClass.bits` (breaks the bits pin; after the extent-0 probe it also breaks the two extent-0
+classification rows, which compare `±inf` cells with production bits; cycle `T4-M2b` expects those rows alone).
 Cleanup step at the end of dispatch A (one commit): the patched text carries prototype labels. Run
 `rg -n "S2b P[12]|\(prototype\)" leanncd/LeanNCD leanncd/test` and reword each docstring/comment to `S2b` (docstring text only; no
 code token changes), then rebuild `LeanNCD` and `Semantics.SourceSortedDifferentialTest` once.
 
-**Dispatch B (T4B: NOT PROTOTYPED; the one task part without a verified patch).** Add the two structural known-difference
+**Dispatch B (T4B: NOT PROTOTYPED; EXECUTED 2026-10-21, commit `1d35a72d`, see record §5; the text below is the plan as written, three cycles became four).** Add the two structural known-difference
 conditions with confirmers, following the S2a origin-bound pattern (`StructuralCondition`, `detectConditions`, `confirms`,
 `ownedBy`, `legacyCollision`, `checkedCollision` @ `Source/Differential.lean` and `Source/NumericalProfile.lean`).
 Files: `Source/NumericalProfile.lean` (two constructors), `Source/Differential.lean` (explicit `false` arms in `confirms` so the
@@ -370,21 +374,60 @@ S2a: check that a fixture with the condition's shape AND an unrelated mismatch i
 ### T5. Documentation sweep (no code)
 
 Commands (each hit is updated or recorded unchanged with the reason; historical records keep their dated counts):
-1. Job counts: `rg -n "8818|8822" leanncd/LeanNCD/Semantics/AGENTS.md leanncd/AGENTS.md papers/semantics/lean_executable_semantics_path.md papers/semantics/additive_production_decision_note.md`
-   (the author found 0 hits in these four files; a hit is a stale count to update, a dated record keeps its count).
+0. Doc layout (the spec and the Lean guide were split into parts after this plan was first written; verified 2026-10-20, merge `2f4727bd`).
+   `papers/semantics/lean_executable_semantics_path.md` and `papers/semantics/tensor_logic_semantics.md` are now INTRODUCTION/INDEX files; the
+   prose lives in `lean_executable_semantics_path_part_{1..6}.md` and `tensor_logic_semantics_part_{i..v}.md` + `_reference.md`
+   (map: `papers/semantics/README.md`). Every sweep command below names the part files. Before editing, re-run
+   `rg -n "S2a|S2b|tropical|max-plus|admitSourceAffine|landed on local main" papers/semantics --glob "lean_executable_semantics_path*.md" --glob "tensor_logic_semantics*.md" --glob "tensor_logic_semantic_gap_audit.md"`
+   and use its hits, not the line numbers quoted here (they will have moved). Heading anchors in the part files keep the original
+   section numbers (Section 4.7 is in `_part_4.md`); keep the `Each part has previous/contents/next links` navigation untouched.
+   Do not re-merge or re-split any document; edit prose in place.
+1. Job counts: `rg -n "8818|8822|8823" leanncd/LeanNCD/Semantics/AGENTS.md leanncd/AGENTS.md papers/semantics/additive_production_decision_note.md`
+   (the author found 0 hits in these files; the path-doc and spec files have none either, verified across `lean_executable_semantics_path*.md` and
+   `tensor_logic_semantics*.md`; a hit is a stale count to update, a dated record keeps its count).
 2. Semantics node (`leanncd/LeanNCD/Semantics/AGENTS.md`, the Source section): `rg -n "S2a|Test.lean|fixtures|nonSum|bare" leanncd/LeanNCD/Semantics/AGENTS.md`. Add: the carrier record and
    `standardCarriers` table (one new semiring = one record + one entry), the sorted admission entry and the unsorted refusal,
    `sortSelection`, the sibling sorted harness and why it is separate, the two known-difference conditions, the tropical profile
    rules, the independence caveat, and the parked items. Keep injected sections under ~3k characters (trim first if over).
-3. Path doc: `rg -n "S2a|S2b|tropical|max-plus|oracle" papers/semantics/lean_executable_semantics_path.md` (additive sections; there are S2a paragraphs near the
-   `admitSourceAffine` description and the "planned" list near the end that names max-plus as remaining).
-4. Gap audit: `rg -n "G04|F01|S2a" papers/semantics/tensor_logic_semantic_gap_audit.md`; state what S2b closes (tropical oracle) and what remains (S3a/S3b).
+3. Path doc (part files). Edit exactly these places, found by `rg -n "S2a|max-plus|admitSourceAffine" papers/semantics --glob "lean_executable_semantics_path_part_*.md"`:
+   - `lean_executable_semantics_path_part_4.md`, Section 4.7: the `admitSourceAffine` description (S2a sentence "also admits integer-affine and constant LEFT-hand slots")
+     gains the sorted entry `admitSourceSorted` (max/min programs, single-sort, tropical scatter refused, unsorted entry still refuses `nonSum`); the
+     "Affine writes and scatter (S2a, ...)" paragraph is followed by a new "Tropical carriers (S2b)" paragraph: carrier record + selection table,
+     `ExtVal`, the sibling sorted harness (real harness untouched), tropical profile rules, the two known-difference conditions, and the
+     parked items; link `additive_s2b_record.md`. Identifiers only, no line numbers. Use the S2a paragraph as the style donor.
+   - `lean_executable_semantics_path_part_5.md`, remaining-work: the two lists that name "max-plus and min-plus sorts" / "max-plus" as planned
+     (sentences beginning "The decision to remove overwrite..." and "...tropical carriers, out-of-range write errors, max-plus) remain planned") are
+     reworded: the ORACLE for max-plus/min-plus (S2b) is landed; production tropical sorts, casts and constants (S3b), scatter-collision ⊕ and range
+     errors (S3a) remain planned. Do not claim any production change.
+   - `lean_executable_semantics_path.md` (introduction/index only): `rg -n "S2|tropical|max-plus" papers/semantics/lean_executable_semantics_path.md`;
+     expected 0 hits (it holds no status prose); a hit is updated, otherwise record "no change".
+   - Parts 1-3 and 6: expected 0 hits (verified); record "no change".
+4. Gap audit (`papers/semantics/tensor_logic_semantic_gap_audit.md`, not split): `rg -n "G04|F01|S2a" papers/semantics/tensor_logic_semantic_gap_audit.md`;
+   the G04 row status cell (it currently says "S2b and S3 remain") and the F01 paragraph beginning "S2a ... closes the ORACLE side" get one S2b sentence
+   each: S2b closes the oracle side of tropical carriers (single-sort, no scatter) and adds no production semantics; still open: S3a (scatter ⊕, range
+   errors, delete `fill`/`CollisionReduce`) and S3b (tropical sorts, casts, constants, multi-factor max-plus in production).
+4b. Specification (`tensor_logic_semantics*.md`) is the semantic authority and S2b changes no semantics: NO edits to Parts I-V or the reference.
+   One check, in the introduction file `papers/semantics/tensor_logic_semantics.md` (the paragraph "The bounded source layer admits finite read-only sums of
+   products over bare slots..." and its "2026-10-10 snapshot" sentence): `rg -n "bounded source layer|four evaluation legs|2026-10-10 snapshot" papers/semantics/tensor_logic_semantics.md`.
+   That paragraph describes the proved bare-slot fragment and the dated snapshot; S2a/S2b extend only the executed oracle and differential, not the
+   proved fragment, so it stays UNCHANGED except one added sentence if (and only if) the reviewer judges the executed-evidence sentence misleading
+   without it: "The executed oracle also covers affine write slots (S2a) and single-sort max-plus/min-plus programs (S2b); these are executed
+   evidence, not theorems." Record the decision (changed or "no change, reason") in the record; do not touch the dated counts. Also check
+   `papers/semantics/README.md` for status prose: expected 0 hits.
+   The decision note has ONE link to the spec (`rg -n "tensor_logic_semantics" papers/semantics/additive_production_decision_note.md`, a bare
+   file link without anchor, verified 2026-10-20): it still resolves to the introduction file, so record "no change" unless the reviewer finds it
+   names a section that now lives in a part file.
 5. Decision note §E rows and design note: `rg -n "S2b|S2a|S3a" papers/semantics/additive_production_decision_note.md papers/semantics/oracle_extension_s2_design.md`;
    mark S2b landed with the merge hash AFTER the merge: the design note §7 status line (`rg -n "Status 2026-10-18" papers/semantics/oracle_extension_s2_design.md`)
    and the decision note's **S2** row in the §E table (`rg -n "^\| \*\*S2\*\*" papers/semantics/additive_production_decision_note.md`).
 6. Source docstrings: `rg -n "agg = sum|sum only|refuses.*max|nonSum|bare-slot" leanncd/LeanNCD/Semantics/Source/{Oracle,Admission,Observation,Differential,NumericalProfile,Adapter,Carrier,Schedule}.lean`;
    any docstring that says the oracle is sum-only is rewritten. Run `lake-build.sh <wt>/leanncd LeanNCD.Semantics.Source.Oracle` if a docstring edit is made.
-7. Value-grep for stale numbers after the final build: `rg -n "8818 jobs|accepted == |agg = .sum" papers leanncd --glob '*.md'`.
+7. Value-grep for stale numbers after the final build: `rg -n "8818 jobs|accepted == |agg = .sum" papers leanncd --glob '*.md'` (this covers the split part files).
+8. Stale "landed on local main" (S2a was pushed 2026-10-19 and is on origin/main): `rg -n "landed on local main" papers leanncd --glob '*.md'` (verified 2026-10-20:
+   AGENTS x2, path part_4 x2, part_5 x2, decision note x1, gap audit x2, design note x2). Rule 14: only the sentences T5 already edits (items 2-5) are
+   reworded to "landed (merge 7a551faa)"; the rest are LISTED in the record as parked stale wording, one line, not edited.
+9. Anchor/link check after editing the part files: `rg -n "lean_executable_semantics_path\.md#|tensor_logic_semantics\.md#" papers leanncd --glob '*.md'`
+   (anchors that point into a split-out section are broken links; fix only those introduced by this slice, list the rest).
 Discoverability (the deliverable): `import LeanNCD` reaches `Carrier` (via `Adapter`) and, after T4-03, `SortedDifferential`;
 the Semantics AGENTS node names both. No source line numbers in any shipped text; cite identifiers.
 
@@ -415,6 +458,5 @@ before `-D`.
 
 ## 6. Parked (one line each; see the §2 table for owners)
 
-Harness merge; tropical receipt re-check; tropical Program/Global-model theorems; extent-0 `∓inf` into production probe;
-`observeTensors`/`observeTensorsAt` dedup; sortSelection origin locator; toy carrier through the Core leg; cross-sort casts and
+Harness merge; tropical receipt re-check; tropical Program/Global-model theorems; `observeTensors`/`observeTensorsAt` dedup; cross-sort casts and
 S3a/S3b; a real fourth carrier (DSL key); f32 tropical production comparison.

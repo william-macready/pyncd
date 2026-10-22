@@ -16,3 +16,4 @@ import LeanNCD.Semantics.Source.Diagnostics
 import LeanNCD.Semantics.Source.NumericalProfile
 import LeanNCD.Semantics.Source.NativeLegs
 import LeanNCD.Semantics.Source.Differential
+import LeanNCD.Semantics.Source.SortedDifferential

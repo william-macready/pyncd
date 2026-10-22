@@ -98,7 +98,7 @@ input-buffer certification or unconditional completion is claimed.
 `Semantics.SourceRawCorrespondenceTest` covers ten structural/semantic families,
 including parsed and asymmetric sourceInput donors, in default `Tests`.
 
-Affine write slots (S2a, landed on local main, merge 7a551faa): `Source.Admission` has TWO admission entries. `admitSource` (default, raw-parse chain) refuses
+Affine write slots (S2a, landed, merge 7a551faa): `Source.Admission` has TWO admission entries. `admitSource` (default, raw-parse chain) refuses
 affine and scatter statements. `admitSourceAffine` (the differential's reference entry, via
 `sourceDebugAffine`) also admits integer-affine and constant LEFT-hand slots and sum-only scatter
 (`fill = 0`, `reduce` in `{sum, rejectCollisions}`). Read slots stay bare; affine READS stay refused.
@@ -113,6 +113,28 @@ EXPLICIT GAP: affine statements have no raw-parse theorem (`admitStatement_field
 collision sum is tested, not proved. Tests: `SourceAffineDestinationTest`, `SourceAdmissionAffineTest`,
 `SourceOracleAffineTest`, `SourceDifferentialScatterTest` (plan and record:
 `papers/semantics/additive_s2a_plan.md`, `additive_s2a_record.md`).
+Tropical carriers (S2b, merge pending): the oracle is generic in a scalar carrier (`Source.Carrier`: `Oracle.Carrier` =
+`admits`, `ofRat`, `observe`; `0/1/⊕/⊗` come from `[Semiring K]`, the instance the Core leg lowers through via
+`semiringOps`). `Oracle.standardCarriers` is a first-match table keyed on (aggregation, destination element type):
+`sum` real, `max` max-plus (`Tropical (WithBot ℚ)ᵒᵈ`), `min` min-plus (`Tropical (WithTop ℚ)`). A further semiring is ONE
+carrier record plus ONE table entry, no edit to oracle evaluation (`SourceOracleCarrierTest` does it with a toy Boolean
+carrier; the limit is the DSL, `AggOp` is closed). `admitSourceSorted` (a `sorted` flag on `admitSourceAffine`) admits
+`max`/`min` statements as sort-free structure and selects ONE carrier per program from `sortKeys`; a mix is
+`SourceCause.sortSelection`; every tropical `.scatter` is refused (`fill : Int` cannot be ±inf); the unsorted entries
+still refuse `max`/`min` (`nonSum`). Cells are observed as `ExtVal`; the Core leg is `runSourceAt` (`Registry.none`; the
+real names are its rational instance, proofs untouched). `Source.SortedDifferential.compareSortedSource` is a SIBLING
+harness (real `compareSource`, `SourceRun`, `checkProfile` untouched) with a tropical profile (finite reads integers
+within ±2^20, per-occurrence sum of magnitudes within 2^20, `±inf` its own class; an extent-0 reduction yields `±inf`
+that production matches). Production multiplies where tropical
+`⊗` adds, so multi-factor `max`/`min` and a tropical affine write are the structural conditions `tropicalMultiFactor`
+(both legs mismatch at the origin's declaration) and `tropicalScatterFill` (legacy `scatterFillNotIdentity` and checked
+`scatterOptsNotAdmitted "{tensor}: fill"` both name the origin's tensor), each bound to its own tensor
+(`detectSortedConditions`, `confirmsSorted`; the first listed condition that confirms wins, scatter-fill first; multi-factor also needs both
+legs to show the same first mismatch and every tensor without that condition to agree, `unexplainedAgree`). A `real` selection through
+`compareSortedSource` is a sibling check with the weaker tropical profile: use `compareSource` for real programs. Independence caveat: oracle
+and Core share the semiring instance and `ofRat`/`observe`, so their parity checks scheduling and where embedding and observation happen,
+not those functions or the algebra (pinned by hand-valued oracle fixtures; `⊗ = +` has no production check, production multiplies). Executed evidence, not theorems. Parked: merging the
+harnesses, tropical receipt re-check and Program theorems, f32 tropical comparison (`additive_s2b_plan.md`, `additive_s2b_record.md`).
 `Source.Observation` / `Source.Diagnostics` expose actual
 source-linked endpoints and canonical contribution data. `Source.NumericalProfile`
 checks the exact bounded-integer binary64 comparison profile;

@@ -1,6 +1,7 @@
 import LeanNCD.Semantics.Source.Context
 import LeanNCD.DSL.Pipeline.Structural
 import LeanNCD.Semantics.RationalReference
+import LeanNCD.Semantics.Source.Carrier
 
 namespace LeanNCD.Semantics.Source
 
@@ -57,6 +58,8 @@ inductive SourceCause
   /-- A non-bare write whose image can leave the destination shape; the origin's `slot` names
   the first destination axis whose affine form leaves `[0, extent)` somewhere on the box. -/
   | writeOutOfRange
+  /-- S2b: no single carrier interprets the program (`mixedSorts`, `noCarrier`, ...). -/
+  | sortSelection (error : Oracle.SelectionError)
   deriving Repr
 
 structure SourceDiagnostic where

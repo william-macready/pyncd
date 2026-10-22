@@ -184,7 +184,7 @@ outcome. That keeps an unrelated native divergence visible only for the origin-b
 checked runtime collision and the multi-writer `scanAxisNotIter` stay cause-only, and while
 `scatterExtentOverridesDeclared` fires it suppresses all value comparison for the program. -/
 
-private def nonBareWrite (st : AdmittedStatement source) : Bool :=
+def nonBareWrite (st : AdmittedStatement source) : Bool :=
   st.output.forms != st.output.indices.map WriteForm.single
 
 private def rejectsCollisions : Stmt → Bool
@@ -242,7 +242,7 @@ def detectConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
 
 /-- `name` is the source name of the tensor declared at `declaration` (the condition's origin):
 a native error that names a tensor confirms a condition only for that condition's own tensor. -/
-private def ownedBy (native : NativeRun) (declaration : Option Nat) (name : String) : Bool :=
+def ownedBy (native : NativeRun) (declaration : Option Nat) (name : String) : Bool :=
   native.source.admitted.source.table.entries.any fun e =>
     e.name == name && some e.declaration == declaration
 
@@ -302,6 +302,8 @@ def confirms (native : NativeRun) : StructuralCondition → Bool
         | .observed l, .observed c _ => shapeOnly declaration derived l && shapeOnly declaration derived c
         | _, _ => false)
   | .usedDType .. => false
+  -- the sorted harness's conditions (`SortedDifferential.confirmsSorted`): never the real path's
+  | .tropicalMultiFactor _ | .tropicalScatterFill _ => false
 
 structure ComparisonRun where
   reference : SourceRun

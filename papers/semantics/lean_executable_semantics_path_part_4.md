@@ -448,9 +448,13 @@ aggregation, predicates, complex types, and writes to input tensors. The
 generic theorems hold over any `Semiring`, not necessarily commutative. Results
 about runs hold over ℚ through the rational profile of Section 4.6.
 This paragraph describes the default entry `admitSource`. A second entry,
-`admitSourceAffine` (S2a, landed on local main, merge 7a551faa), also admits integer-affine and constant LEFT-hand slots and sum-only scatter; affine READ
+`admitSourceAffine` (S2a, landed, merge 7a551faa), also admits integer-affine and constant LEFT-hand slots and sum-only scatter; affine READ
 slots, guards and the other refusals above stay refused, and the raw-parse chain
 (`RawCorrespondence`, `RawSemanticConnection`) is not extended to affine statements.
+A third entry, `admitSourceSorted` (S2b, merge pending), runs the affine entry with a `sorted` flag that admits
+`max`/`min` statements as their sort-free structure, selects one carrier for the whole program (a mix is refused
+as `sortSelection`) and still refuses tropical scatter; `admitSource` and `admitSourceAffine` with their default
+flag still refuse `max`/`min` (`nonSum`).
 
 #### Binding and admission
 
@@ -540,8 +544,9 @@ of terms or factors.
 complete ordered schedule from the admitted source. It lists all tensors, an
 occurrence key for every defined tensor, targeting statement, and output
 valuation, and a publication key for every full-signature coordinate. It is
-kernel-checked duplicate-free and complete (`sourceOccurrenceKeys_*`,
-`sourcePublicationKeys_*`, `sourceTensors_*`), and duplicate statements receive
+kernel-checked duplicate-free and complete (`sourceOccurrenceKeysAt_*`,
+`sourcePublicationKeysAt_*`, `sourceTensors_*`; the schedule is generic in the carrier and
+`sourceSchedule` is its rational instance), and duplicate statements receive
 distinct keys. `runSource_not_exhausted` shows the default run is never
 exhausted, and `sourceResult_model`, `sourceResult_unique`, and
 `sourceResult_denotation` restate the executor's success results for source
@@ -596,7 +601,7 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   multi-definition programs are value-compared. Scatter, max/min and scan multi-writer sets are
   rejected (`CompileError.multiWriterScatter`, `multiWriterAlgebra`, `multiWriterScan`) and are not
   yet collected. See [the decision note](additive_production_decision_note.md).
-  **Affine writes and scatter (S2a, landed on local main, merge 7a551faa).** Through `admitSourceAffine` the oracle evaluates integer-affine left-hand slots
+  **Affine writes and scatter (S2a, landed, merge 7a551faa).** Through `admitSourceAffine` the oracle evaluates integer-affine left-hand slots
   (`AdmittedOutput.forms`, an integer-affine form per destination axis) and sum-only scatter, so a
   colliding write is summed. Production does not agree, and the differential classifies the difference as
   a `StructuralCondition` (`scatterCollisionRejected`, `multiWriterScatter`,
@@ -608,6 +613,31 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   S3a converts these to agreement. While `scatterExtentOverridesDeclared` is confirmed no value of that
   program is compared (documented limitation, see the S2a plan §2). The raw-parse theorem for affine
   statements is a documented gap. See [the S2a record](additive_s2a_record.md).
+  **Tropical carriers (S2b, merge pending).** The oracle is generic in a scalar carrier `K` (`Oracle.Carrier`:
+  `admits`, `ofRat`, `observe`; `0`, `1`, `+`, `*` come from `[Semiring K]`, the instance the Core leg lowers
+  through). `standardCarriers` is a first-match table keyed on (aggregation, destination element type): `sum`
+  is real, `max` is max-plus (`Tropical (WithBot ℚ)ᵒᵈ`), `min` is min-plus (`Tropical (WithTop ℚ)`); a further
+  semiring is one carrier record plus one table entry, with no edit to oracle evaluation (a toy Boolean carrier
+  in `SourceOracleCarrierTest` shows the mechanism; the real limit is the DSL, since `AggOp` is closed). Programs
+  are single-sort and a mix is refused (`sortSelection`); cells are observed as `ExtVal` (`fin q`, `negInf`,
+  `posInf`). The Core leg runs at the same carrier (`runSourceAt`, `Registry.none`); the real names are its
+  rational instance, so the proofs are unchanged. A sibling harness, `compareSortedSource`
+  ([SortedDifferential](../../leanncd/LeanNCD/Semantics/Source/SortedDifferential.lean)), compares Core, oracle
+  and both production legs under a tropical numerical profile (finite reads are integers within ±2^20, the
+  per-occurrence sum of magnitudes stays within 2^20, `±inf` is its own class; an empty reduction axis yields `±inf`
+  that production accepts and matches bit for bit); the real harness
+  (`compareSource`) is untouched and still refuses `max`/`min`. Production multiplies where the tropical `⊗`
+  adds, so a multi-factor `max`/`min` term and a tropical affine write (production refuses a `max` scatter that
+  fills with a finite value) are the structural conditions `tropicalMultiFactor` and `tropicalScatterFill`; each is
+  confirmed only when both native legs show the predicted outcome at the condition's own tensor (for multi-factor:
+  the same first mismatch on both legs and every tensor without that condition agreeing), otherwise the run
+  stays a `nativeDiscrepancy` / `nativeFailure`. A scatter-fill refusal compares no other tensor at all. Tropical scatter is refused at admission.
+  Because the oracle and the Core leg share the semiring instance and `ofRat`/`observe`, their agreement checks
+  scheduling and where embedding and observation happen, not those functions or the algebra; the algebra is pinned by hand-valued oracle fixtures and by production
+  agreement on single-factor rows. This is executed evidence, not a theorem. Production tropical sorts, casts
+  and constants (S3b) and scatter collision ⊕ and range errors (S3a) remain planned. Parked: merging the two
+  harnesses, a tropical oracle-receipt re-check and Program theorems, f32 tropical production comparison.
+  See [the S2b record](additive_s2b_record.md).
 - **Evidence.** 79 named fixtures (one of them, F16, evaluates a generated corpus
   of exactly 18 programs) and 39 implementation mutations: 18 proof-protected kills and 21
   executable-fixture kills, not 39 runtime differential samples. Six historical

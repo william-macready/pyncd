@@ -30,6 +30,14 @@ inductive StructuralCondition
   derives from the forms (`derived`); production's shape wins. -/
   | scatterExtentOverridesDeclared (origin : SourceOrigin) (declaration : Nat)
       (derived : List Nat)
+  /-- S2b: a `max`/`min` statement with a term of two or more factors. The oracle's `⊗` is `+`;
+  production multiplies (max-times / min-times), so both native legs disagree on that tensor. -/
+  | tropicalMultiFactor (origin : SourceOrigin)
+  /-- S2b: a `max`/`min` statement with a non-bare (affine) write. Production's legacy leg refuses
+  it (`scatterFillNotIdentity`: it fills unwritten cells with a finite value, not the `±inf`
+  identity) and the checked leg refuses it at preparation (`scatterOptsNotAdmitted "{tensor}: fill"`);
+  the oracle yields `±inf` in the unwritten cells. -/
+  | tropicalScatterFill (origin : SourceOrigin)
   deriving DecidableEq, Repr
 
 inductive ReceiptCondition

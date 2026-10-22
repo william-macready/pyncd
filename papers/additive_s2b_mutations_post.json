@@ -132,5 +132,178 @@
    "SourceSortedDifferentialTest.lean:121:0",
    "SourceSortedDifferentialTest.lean:122:0"
   ]
+ },
+ {
+  "label": "T2-M4 selectionOffender blames the last statement for mixedSorts (killed by the origin #guard on the sum,max,min program)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "| .mixedSorts _ => keys.head?.bind fun k0 => keys.findIdx? (·.1 != k0.1)",
+  "new": "| .mixedSorts _ => some (keys.length - 1)",
+  "targets": [
+   "Semantics.SourceSortedAuditTest"
+  ],
+  "expect": [
+   "SourceSortedAuditTest.lean:89:0"
+  ]
+ },
+ {
+  "label": "T2-M5 selectionOffender compares the aggregation for mixedElementTypes (killed by the origin #guard on the f64/f32 program)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "| .mixedElementTypes _ => keys.head?.bind fun k0 => keys.findIdx? (·.2 != k0.2)",
+  "new": "| .mixedElementTypes _ => keys.head?.bind fun k0 => keys.findIdx? (·.1 != k0.1)",
+  "targets": [
+   "Semantics.SourceSortedAuditTest"
+  ],
+  "expect": [
+   "SourceSortedAuditTest.lean:99:0"
+  ]
+ },
+ {
+  "label": "T2-M6 selectionOffender gives noCarrier no offender (killed by the origin #guard with the empty table)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "| .noCarrier agg ty => keys.findIdx? (· == (agg, ty))",
+  "new": "| .noCarrier agg ty => none",
+  "targets": [
+   "Semantics.SourceSortedAuditTest"
+  ],
+  "expect": [
+   "SourceSortedAuditTest.lean:90:0"
+  ]
+ },
+ {
+  "label": "T3-M3 Core input binding shift (killed ONLY by the toy-carrier Core row with zeroed inputs)",
+  "task": "T3",
+  "file": "LeanNCD/Semantics/Source/Schedule.lean",
+  "old": "C.ofRat ((source.source.inputs.buffers t h).value p)",
+  "new": "C.ofRat ((source.source.inputs.buffers t h).value p + 1)",
+  "targets": [
+   "Semantics.SourceOracleCarrierTest"
+  ],
+  "expect": [
+   "SourceOracleCarrierTest.lean:185:0"
+  ]
+ },
+ {
+  "label": "T4-M2b negInf and posInf bit constants swapped (killed by the extent-0 classification rows against production)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "  | .negInf => 0xFFF0000000000000\n  | .posInf => 0x7FF0000000000000",
+  "new": "  | .negInf => 0x7FF0000000000000\n  | .posInf => 0xFFF0000000000000",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:155:0",
+   "SourceSortedDifferentialTest.lean:157:0"
+  ]
+ },
+ {
+  "label": "T4-M3 multi-factor confirmer drops the declaration binding (killed by the other-tensor mismatch guard)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "          some l.declaration == origin.declaration && some c.declaration == origin.declaration",
+  "new": "          true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:244:0"
+  ]
+ },
+ {
+  "label": "T4-M4 scatter-fill confirmer accepts any tensor name (killed by the wrong-origin and both mixed-native guards)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "      let owner := Differential.ownedBy native origin.declaration",
+  "new": "      let owner : String → Bool := fun _ => true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:230:0",
+   "SourceSortedDifferentialTest.lean:231:0",
+   "SourceSortedDifferentialTest.lean:232:0",
+   "SourceSortedDifferentialTest.lean:233:0"
+  ]
+ },
+ {
+  "label": "T4-M5 scatter-fill confirmer accepts a cause-only checked leg (killed ONLY by the mixed-native guard with the other tensor's checked leg)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "                owner ((context.splitOn \": \").headD \"\")",
+  "new": "                true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:232:0"
+  ]
+ },
+ {
+  "label": "T4-M6 scatter-fill confirmer accepts a cause-only legacy leg (killed ONLY by the mixed-native guard with the other tensor's legacy leg)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "            | .scatterFillNotIdentity name _ => owner name",
+  "new": "            | .scatterFillNotIdentity name _ => true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:233:0"
+  ]
+ },
+ {
+  "label": "T4-M7 multi-factor confirmer accepts legs with different first mismatches (killed ONLY by the same-first-mismatch guard)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "            l.coordinate == c.coordinate && l.observed == c.observed",
+  "new": "            true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:273:0"
+  ]
+ },
+ {
+  "label": "T4-M8 unexplainedAgree treats a mismatch as agreement (killed ONLY by the corrupted-cell guard)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "    | .ok none => true\n    | _ => false\n  | .error _ => false",
+  "new": "    | .ok none => true\n    | _ => true\n  | .error _ => false",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:294:0"
+  ]
+ },
+ {
+  "label": "T4-M9 compareSortedSource skips the unexplained-tensors check (killed ONLY by the zero-factor beside multi-factor row)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "(match c with | .tropicalMultiFactor _ => othersAgree | _ => true)",
+  "new": "true",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:267:0"
+  ]
+ },
+ {
+  "label": "T4-M10 only the head condition is confirmed (killed ONLY by the statement-order row)",
+  "task": "T4",
+  "file": "LeanNCD/Semantics/Source/SortedDifferential.lean",
+  "old": "conditions.find? fun c =>",
+  "new": "conditions.head?.filter fun c =>",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "SourceSortedDifferentialTest.lean:270:0"
+  ]
  }
 ]

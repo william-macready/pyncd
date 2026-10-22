@@ -81,6 +81,120 @@ rows, lines 123 and 126 of `SourceOracleCarrierTest`), T2 3 (`SourceSortedDiffer
 rewrite and `sortKeys` cycles; `SourceSortedAuditTest` 56/62/63 and row 80 for the scatter guard), T3 2 (Core rows 85-105; the
 two cycles kill the same rows), T4A 2 (envelope-trip row 111; bits pin 121-122). Observations: `T2-M1` and `T2-M3` are killed
 by the same rows (they differ only in where the sort is lost); `T3-M1`/`T3-M2` likewise. The `±inf`-bits cycle `T4-M2` is
-killed only by the T4-04 pin, as the plan says. Dropped per the plan: the registry cycle (not fixture-killable) and any
+killed only by the T4-04 pin when authored (after the extent-0 probe of section 5.1b it is also killed by two production-facing rows). Dropped per the plan: the registry cycle (not fixture-killable) and any
 `MaxPlus` instance/`observe` cycle (pinned by `#guard`/`#guard_msgs`). DEFERRED: T4B has no cycles (`tropicalMultiFactor`,
 `tropicalScatterFill` confirmers are not prototyped; `T4-M3..M5` are authored by the T4B dispatch after the observed causes).
+
+## 5. Execution record (2026-10-20/21; T1 to T4B, T5 docs sweep, reviews, final verification; merge below)
+
+Executed inline by the controller (patch application, not prototyping); per-task Sonnet reviews read the commit through `git show`.
+Ledger with every step: `additive_s2b_ledger.md`. Reviews: `additive_s2b_review_T1.md` .. `_T4A.md`.
+
+| Task | Commit | Build (jobs) | Cycles | Review |
+|---|---|---|---|---|
+| T1 | `3bda8f69` | 8616, green | 2/2 PASS | accepted with changes, 0 Critical/Major |
+| T2 | `8b11ff79` | 8558, green | killed by the intended rows; manifest verdict as written FAIL (see 5.1) | approve |
+| T3 | `a56bc89a` | 8614, green | killed by all six Core rows; manifest verdict as written FAIL (see 5.1) | approve |
+| T4A | `79524517` + label cleanup `8e70b349` | full `LeanNCD Tests` 8824, green; AxiomAudit 6997 constants, standard axioms only | 2/2 PASS | approve |
+
+T4B (`1d35a72d`, manifest commit after it): partial build (LeanNCD + sorted/real differential tests) 8562 jobs green; `--task T4`
+7/7 PASS (M3..M6 new). Observed causes (probe): checked leg of a tropical affine write = `PlanCompileCause.capability
+(.scatterOptsNotAdmitted "Y: fill")`; legacy = `EvalError.scatterFillNotIdentity "Y" agg`. `LegResult` was NOT extended (the confirmer
+reads the `NativeRun`, as S2a `confirms` does). `Differential.ownedBy` and `nonBareWrite` became public. M6 (legacy-leg owner drop) is an
+addition to the plan's M3..M5. Known limitation, as in S2a: the mismatch binding is the FIRST differing cell, so a second divergence
+in the same tensor, or head-only confirmation with two multi-factor outputs (declaration 6 confirmed, 7 not separately reported), is
+not reported separately. Final verification below.
+
+Deviation: T4A was built once on the post-cleanup state (the cleanup is docstring text only) instead of twice; the patch-only
+commit `79524517` was therefore not built on its own.
+
+### 5.1 Plan defects found during execution (not code defects)
+
+1. **Per-task manifest `expect` strings are final-tree line numbers.** `SourceSortedDifferentialTest.lean` grows across T2, T3 and
+   T4, so `--task T2` and `--task T3` run on a shorter file and report FAIL although every mutation breaks the build at the
+   intended rows and restores byte-identical (T2: constant offset 15; T3: rows separated by T4A content). They are authoritative
+   only after T4A. RESOLVED: re-run on the T4A-state tree (2026-10-20), `--task T2` is 3/3 PASS and `--task T3` is 2/2 PASS
+   (restored byte-identical, tree clean), so the per-task verdicts in the table above read PASS on the final test file. Parked improvement: key `expect` on row text.
+2. **Plan §0 / T1 note: "the `MaxPlus` instance and `observe` fields are pinned by the max/min `#guard` and `#guard_msgs` rows" is
+   false for `observe`.** Those rows render through `Repr`; nothing calls `.observe` or `observeTensorsAt` until the T3 Core
+   rows (`T3-M2`).
+3. **Plan T2 cycle `T2-M2` wording ("tropical scatter admitted") is wrong.** The `.scatter` arm never rewrites `rhs`, so without
+   the guard a tropical scatter is still refused, but as `nonSum` instead of `scatterPolicy`; Q6 row 6 and audit `A5` kill it
+   because they assert the cause.
+4. **T3-01 deleted ten real names** (`sourceValuations_nodup/_complete`, `sourceOccurrences_nodup/_complete`,
+   `sourceOccurrenceKeys`, `sourcePublicationKeys` and their `_nodup/_complete`) instead of restating them at the real registry;
+   no Lean consumer exists (`git grep`), one doc citation was fixed in the T5 sweep (path part 4, schedule paragraph).
+5. T2-01 adds a private helper `stmtAgg` in `Admission.lean` that the plan's symbol list does not name.
+
+### 5.1b Parked items picked up during execution (user-requested, 2026-10-20)
+
+- T1 review F1-F3, F5, F6: 15 closing guards appended to `SourceOracleCarrierTest` (`observe` of all three carriers, `minPlus`
+  and `real` selection, the toy's `ofRat`/`observe`/algebra) and the `Carrier.lean` docstrings (commit `8041a187`); T1 cycles still 2/2.
+- `sortSelection` origin locator: `selectionOffender` (`Admission.lean`) blames the first statement that makes selection fail
+  (`mixedSorts`: first aggregation differing from statement 0, `mixedElementTypes`: first element type differing, `noCarrier`:
+  first with the unadmitted key; none for an empty program, which keeps the empty origin). Test first (four origin guards plus an
+  admitted-program guard appended at the end of `SourceSortedAuditTest`, red against the empty origin, then green); three
+  mutants each killed by exactly one intended guard and registered as manifest cycles `T2-M4..M6` (manifest is now 12 cycles).
+
+- Toy carrier through the Core leg: three `toyCore` rows at the end of `SourceOracleCarrierTest` (an `OrAnd` `(max, f32)` program admitted
+  under the extended table, run by `runSourceAt` with `Registry.none`, observed through the toy's `observe`; hand values `[1,1,1,1]`,
+  `[1,0,1,0,1,0,1]` and, with inputs `X = [0,2,0,4]`, `[0,1,0,1]`). Mutants: the Core input-binding shift is killed ONLY by the
+  zero-input row (registered as `T3-M3`, manifest now 13 cycles); an observed-cell mutant is killed by all three rows.
+- Stale "landed on local main" wording for S2a fixed in `leanncd/AGENTS.md` and path part 5; the decision-note S2 row and the design note
+  status lines are rewritten at merge.
+
+- Extent-0 probe: `Y[a] := max Z[a,b]` (and `min`, `sum` as a control) with `|b| = 0` is admitted, run and accepted by production; Core and
+  oracle give `-inf` (`+inf`) in every cell, both production legs agree on the bit patterns, classification `fourLegParity`. This
+  CORRECTS the plan's and the T4A review's claim that production refuses every program yielding `±inf` (only the affine write is
+  refused). Five rows appended to `SourceSortedDifferentialTest`; swapping the `ExtClass.bits` constants now fails the bits pin AND
+  both extent-0 classification rows (registered as manifest cycle `T4-M2b`, manifest now 14 cycles). No production change.
+
+### 5.2 Parked review findings (Rule 14; none fixed except those listed in 5.1b)
+
+T1: no `minPlus` selection row until T2 Q6; `OrAnd` rows weak as regression (nonzero inputs); `(WithBot ℚ)ᵒᵈ` instance is an
+unscoped orphan (sound); `runWith` never reads `admits` (the guard is `admitSourceSorted`); `selectCarrier []` docstring versus
+`pick .sum .f64` with a custom table. T2: `sortKeys` `getD .sum` fallback unreachable today; Q6 row 5 asserts `isSome = false` only.
+T3: five real names and `elaborateSource` became `abbrev` (no simp/unfold/decide uses today); no Core-vs-oracle parity row until
+T4A. T4A: `compareSortedSource` puts `.unavailable` before mismatch arms (never parity); `compareBindings` walks production
+bindings and relies on `NativeLegs` for missing/extra outputs; no row compares a `±inf` cell against production bits.
+
+T4B reviews (`additive_s2b_review_T4B.md`, `_final_regression.md`, `_final_soundness.md`; all APPROVE WITH FINDINGS, 0 Critical).
+FIXED in the review batch: multi-factor confirmer masked a wrong OTHER tensor once the origin tensor mismatched (now every tensor without a
+multiFactor condition must agree, `unexplainedAgree`) and accepted two different first mismatches on the two legs (now the same coordinate and
+bits); head-only confirmation gave `nativeDiscrepancy` when statement order differed from declaration order (now `find?`); docstrings state the
+masking limits; independence wording. Cycles T4-M7..M10 pin each. PARKED (Rule 14, all loud, none hides a divergence):
+(1) a `real` selection through `compareSortedSource` is judged by the weaker tropical profile (a 3-factor product near 2^55 is a false
+`nativeDiscrepancy` where `compareSource` refuses `partialProduct`); documented, a per-carrier profile hook is about one dispatch;
+(2) tropical multi-writer (two `max` writers of one tensor): oracle and Core take the max, production refuses `multiWriterAlgebra`
+(`Collect.lean`); an unencoded third known difference, reported as `nativeFailure`;
+(3) a zero-factor `max`/`min` term: oracle `1_K = 0`, production `1.0`, so detection would need `factors.length ≠ 1`; today it is an
+unexplained `nativeDiscrepancy` (pinned by the `zeroV` rows);
+(4) the extensibility claim ("one carrier record plus one table entry") covers oracle, Schedule, selection and the Core leg, NOT the
+sorted differential's conditions and profile (keyed on `agg != .sum` and `⊗ = +`); a new carrier also needs `Semiring`, `DecidableEq`, `Repr`;
+(5) `legOf` shows a leg that ran as `.unavailable` when the profile errors (display only);
+(6) T3 deleted TEN public real names from `Schedule.lean` (`sourceValuations_nodup/_complete`, `sourceOccurrences_nodup/_complete`,
+`sourceOccurrenceKeys`, `sourcePublicationKeys` and their `_nodup/_complete`) instead of restating them; no Lean consumer, the docs now cite the
+`…At_*` forms; `runSource` is not literally `runSourceAt Carrier.real` (it uses `RationalReference.ops`, same arithmetic).
+
+### 5.3 T5 docs sweep (commit `d6d4691f`)
+
+Edited: Semantics AGENTS node (S2b paragraph), path part 4 (`admitSourceSorted` sentence, "Tropical carriers (S2b)" paragraph, schedule
+citation to the `...At_*` forms), path part 5 (remaining-work sentence), gap audit (G04 row, F01 paragraph). Each carries "merge
+pending" for S2b; replace it with the merge hash after the merge (`rg -n "merge pending" papers leanncd`). The text says there is NO
+known-difference condition for the tropical divergences; T4B (commit `1d35a72d`) updated those two sentences (AGENTS, path part 4).
+Recorded unchanged: sweep items 1 (no 8818/8822/8823 in the named files), 6 (no docstring says the oracle is sum-only; the only
+`nonSum` mentions are the two refusal sites), 7 (no `8818 jobs` hit outside the S2b files; other `accepted ==` hits are unrelated
+historical corpus gates), 9 (no anchor into a split-out section introduced by this slice; the anchors `#proof-status-and-numbered-results` and `#notation-color-key` were checked and their headings exist in
+`tensor_logic_semantics.md`; one anchor inside `plan_layer_artifacts/wb_review_fidelity.md` was not checked), path parts 1-3 and 6, path introduction file and `README.md` (no hits). Spec 4b: the
+introduction paragraph about the bounded source layer and the 2026-10-10 snapshot is NOT changed (S2a/S2b extend only the executed
+oracle and differential, not the proved fragment); a reviewer may still ask for the one added sentence. Decision note: its only
+spec mention is a checked task line, not a section link, so no change. NOT YET DONE (post-merge by plan): design note §7 status
+line and the decision note S2 row ("landed" with the merge hash). Parked stale wording ("landed on local main", S2a was pushed):
+`leanncd/AGENTS.md:219`, `lean_executable_semantics_path_part_5.md:18`, `additive_production_decision_note.md` S2 row (rewritten at
+merge), `oracle_extension_s2_design.md` lines 3 and 135 (rewritten at merge).
+
+### 5.4 Final verification (commit `37c58053`)
+
+Full `LeanNCD Tests`: 8823 jobs, Build completed successfully, AxiomAudit 7070 constants, standard axioms only. Unfiltered manifest: 22/22 cycles
+PASS (T1 2, T2 6, T3 3, T4 11), each restored byte-identical. Reviews: T4B Sonnet, Opus soundness, Opus regression (all APPROVE WITH FINDINGS, 0 Critical;
+fixes and parked items in 5.2). Pushed: no (`main` ahead of `origin/main`).

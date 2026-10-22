@@ -899,14 +899,19 @@ private def admitAffineWrite (source : AdaptedSource) (original : Nat) (name : S
   else
     throw (sourceError .output origin (.role .defined (source.table.entry dst).role))
 
-/-- `admitStatement`, plus non-bare `.assign` and policy-checked `.scatter`. -/
-def admitAffineStatement (source : AdaptedSource) (original : Nat) :
+/-- `admitStatement`, plus non-bare `.assign` and policy-checked `.scatter`. With `sorted`
+(S2b), a `max`/`min` statement is admitted as its sort-free structure (the aggregation is a
+program-level carrier key, read by `admitSourceSorted`), and a tropical `.scatter` is refused:
+`fill : Int` cannot be the carrier zero (`-inf`/`+inf`), so §2.3's `fill = 0_K` never holds. -/
+def admitAffineStatement (source : AdaptedSource) (original : Nat) (sorted : Bool := false) :
     Stmt → Except SourceDiagnostic (AdmittedStatement source)
   | .assign name slots rhs =>
+    let rhs := if sorted then { rhs with agg := .sum } else rhs
     if slots.all LHSSlot.isFree then admitStatement source original (.assign name slots rhs)
     else admitAffineWrite source original name slots rhs
   | .scatter name slots rhs opts =>
-    if opts.fill != 0 || !(opts.reduce == .sum || opts.reduce == .rejectCollisions) then
+    if opts.fill != 0 || !(opts.reduce == .sum || opts.reduce == .rejectCollisions) ||
+        (sorted && rhs.agg != .sum) then
       .error (sourceError .statement { statement := some original } (.unsupported .scatterPolicy))
     else if slots.all LHSSlot.isFree then
       admitStatement source original (.assign name slots rhs)
@@ -914,10 +919,51 @@ def admitAffineStatement (source : AdaptedSource) (original : Nat) :
   | stmt => admitStatement source original stmt
 
 /-- The admission entry for the differential path: `admitSource` with non-bare writes. -/
-def admitSourceAffine (snapshot : SourceSnapshot) : Except SourceDiagnostic AdmittedSource := do
+def admitSourceAffine (snapshot : SourceSnapshot) (sorted : Bool := false) :
+    Except SourceDiagnostic AdmittedSource := do
   let source ← adaptSource snapshot
   let statements ← source.statements.mapM fun (i, statement) =>
-    admitAffineStatement source i statement
+    admitAffineStatement source i sorted statement
   pure ⟨source, statements⟩
+
+private def stmtAgg : Stmt → AggOp
+  | .assign _ _ rhs | .scatter _ _ rhs _ => rhs.agg
+  | _ => .sum
+
+/-- S2b: the selection key of each admitted statement, `(agg, destination element type)`. -/
+def sortKeys (snapshot : SourceSnapshot) (source : AdmittedSource) :
+    List (AggOp × TensorElementType) :=
+  source.statements.map fun st =>
+    ((snapshot.resolved.stmts[st.original]?.map stmtAgg).getD .sum,
+      (source.source.table.entry st.output.tensor).elementType)
+
+/-- S2b: the index (into the selection keys, i.e. the admitted statements) of the first statement
+responsible for a selection refusal: for `mixedSorts` the first whose aggregation differs from
+statement 0's, for `mixedElementTypes` the first whose destination element type differs, for
+`noCarrier` the first with the unadmitted key. `none` only for an empty program. -/
+def selectionOffender (keys : List (AggOp × TensorElementType)) :
+    Oracle.SelectionError → Option Nat
+  | .mixedSorts _ => keys.head?.bind fun k0 => keys.findIdx? (·.1 != k0.1)
+  | .mixedElementTypes _ => keys.head?.bind fun k0 => keys.findIdx? (·.2 != k0.2)
+  | .noCarrier agg ty => keys.findIdx? (· == (agg, ty))
+
+/-- S2b: `admitSourceAffine` for single-sort programs: admits `max`/`min` statements and selects
+the one carrier that interprets every statement (`table`, first match). A mix is refused
+(`sortSelection (mixedSorts ..)`), located at the first offending statement (`selectionOffender`). -/
+def admitSourceSorted (snapshot : SourceSnapshot)
+    (table : List Oracle.Sorted := Oracle.standardCarriers) :
+    Except SourceDiagnostic (AdmittedSource × Oracle.Sorted) :=
+  match admitSourceAffine snapshot (sorted := true) with
+  | .error e => .error e
+  | .ok admitted =>
+    let keys := sortKeys snapshot admitted
+    match Oracle.selectCarrier keys table with
+    | .error e =>
+      let origin : SourceOrigin :=
+        match (selectionOffender keys e).bind (admitted.statements[·]?) with
+        | some st => { statement := some st.original }
+        | none => {}
+      .error (sourceError .statement origin (.sortSelection e))
+    | .ok sorted => .ok (admitted, sorted)
 
 end LeanNCD.Semantics.Source
