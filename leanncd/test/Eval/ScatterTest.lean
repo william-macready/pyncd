@@ -73,8 +73,9 @@ run_cmd do
       throwError s!"4g regression: expected per-position max(A,B) = [10,5,2] (agg = .max), got \
 {repr Out.data} (evalScatter ignores rhs.agg and always computes a real sum, which gives [11,4,1])"
 
--- 4g: two source coords writing the same output coord under the default (.rejectCollisions)
--- policy must error, naming both conflicting source coordinates.
+-- S3a (⊕): two source coords writing the same output coord are MERGED with the destination's
+-- additive monoid (real: `+`), not an error. Out[0,0] := X[i,j] under default opts, X = [[1,2],[3,4]]
+-- ⇒ Out[0,0] = 1+2+3+4 = 10; the other cells stay 0_K = 0.
 run_cmd do
   let i := ax "i" 1; let j := ax "j" 2
   let X := tensorOf [2,2] [1,2, 3,4]
@@ -83,22 +84,14 @@ run_cmd do
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity }
   let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2
   match evalScatter f64Decls env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4,4] with
-  | .error e =>
-      -- Typed check (4h): the collision must be `EvalError.scatterCollision "Out" [0,0] .. ..`
-      -- (both source coords collapse to output coord [0,0] under `.affine (.const 0)` slots).
-      -- Source-coordinate fields are left as wildcards — WHICH of the two colliding coords is
-      -- "first" vs "second" is an iteration-order detail (`cartesian srcSizes`), not part of
-      -- this test's actual assertion. Retained renderer check (byte-identical text) alongside.
-      match e with
-      | .scatterCollision nm outCoord _ _ =>
-          unless nm == "Out" && outCoord == [0,0] do
-            throwError s!"4g: wrong collision fields: nm={nm} outCoord={outCoord}"
-      | _ => throwError s!"4g: expected a scatterCollision error, got: {e}"
-      unless ((toString e).splitOn "collision").length > 1 do throwError s!"4g: wrong error: {e}"
-  | .ok _ => throwError "4g: expected rejectCollisions to error on a genuine collision"
+  | .error e => throwError s!"S3a: a collision must sum under the default opts, got: {e}"
+  | .ok (_, Out) =>
+      unless Out.get! [0,0] == 10.0 && Out.get! [0,1] == 0.0 && Out.get! [3,3] == 0.0 do
+        throwError s!"S3a: collision sum wrong: {repr Out.data}"
 
--- 4g: .min collision policy folds every write (min), not just the last one — the never-before-
--- reachable case that used to silently fall through to overwrite.
+-- S3a (policy no longer honoured): a stale `reduce := .min` / `fill := 7` is ignored — the fold is
+-- the destination ⊕ from 0_K. X = [5,-8,2] all colliding at output 0 ⇒ sum -1 (the old `.min` gave
+-- -8); the unwritten cell Out[1] is 0_K = 0 (the old `fill := 7` gave 7).
 run_cmd do
   let i := ax "i" 1
   let X := tensorOf [3] [5, -8, 2]
@@ -106,10 +99,25 @@ run_cmd do
   let slots : List LHSSlot := [.affine (.const 0)]   -- every source coord collides at output 0
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
   let sizes := ({} : HashMap UID Nat).insert 1 3
-  match evalScatter f64Decls env sizes "Out" slots rhs { fill := 0, reduce := .min } [1] with
+  match evalScatter f64Decls env sizes "Out" slots rhs { fill := 7, reduce := .min } [2] with
   | .error e => throwError (toString e)
-  | .ok (_, Out) => unless Out.get! [0] == -8.0 do
-      throwError s!"4g: min collision should give -8, got {repr Out.data}"
+  | .ok (_, Out) => unless Out.get! [0] == -1.0 && Out.get! [1] == 0.0 do
+      throwError s!"S3a: stale reduce/fill must be ignored (sum -1, empty fibre 0), got {repr Out.data}"
+
+-- S3a (bool ⊕ = ∨): into a `predicate` destination colliding writes fold with `max`, staying in
+-- {0,1}. X = [1,1,0] all colliding ⇒ 1 (a real `+` would give 2).
+run_cmd do
+  let i := ax "i" 1
+  let X := tensorOf [3] [1, 1, 0]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let slots : List LHSSlot := [.affine (.const 0)]
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
+  let sizes := ({} : HashMap UID Nat).insert 1 3
+  let decls : List Decl := [Decl.predicate "Out" [], Decl.typedTensor .f64 "X" []]
+  match evalScatter decls env sizes "Out" slots rhs {} [1] with
+  | .error e => throwError (toString e)
+  | .ok (_, Out) => unless Out.get! [0] == 1.0 do
+      throwError s!"S3a: bool collision must fold with ∨ (1), got {repr Out.data}"
 
 -- F32 refusal at the ENTRY: the reference evaluator is binary64-only, so `evalScatter` refuses a
 -- name committed to binary32 (undeclared included) with `unsupportedDtype`, like every sibling
