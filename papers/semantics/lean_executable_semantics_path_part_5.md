@@ -34,7 +34,7 @@ for sum-algebra bare-slot writers (`collectDefinitions`, `desugarMultiWriters`,
 `ScanStmt.publications`, `PlanBindings.privateSlots`); the note's other slices (scatter,
 max/min and scan multi-writer sets, tropical sorts in production,
 out-of-range write errors) remain planned; the oracle for affine write slots (S2a, landed, merge 7a551faa)
-and the oracle and sorted differential for single-sort max-plus and min-plus programs (S2b, merge pending)
+and the oracle and sorted differential for single-sort max-plus and min-plus programs (S2b, merge cf7d6eee)
 are executed evidence, not theorems. Two slice-1 caveats on the routed
 path: `route` runs `desugarMultiWriters` before physicalization, and a routed collector step
 records the same step as a product (`.contract` is (×, Σ, 0)), so routed steps do not keep

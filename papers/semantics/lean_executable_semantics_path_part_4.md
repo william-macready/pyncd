@@ -451,7 +451,7 @@ This paragraph describes the default entry `admitSource`. A second entry,
 `admitSourceAffine` (S2a, landed, merge 7a551faa), also admits integer-affine and constant LEFT-hand slots and sum-only scatter; affine READ
 slots, guards and the other refusals above stay refused, and the raw-parse chain
 (`RawCorrespondence`, `RawSemanticConnection`) is not extended to affine statements.
-A third entry, `admitSourceSorted` (S2b, merge pending), runs the affine entry with a `sorted` flag that admits
+A third entry, `admitSourceSorted` (S2b, merge cf7d6eee), runs the affine entry with a `sorted` flag that admits
 `max`/`min` statements as their sort-free structure, selects one carrier for the whole program (a mix is refused
 as `sortSelection`) and still refuses tropical scatter; `admitSource` and `admitSourceAffine` with their default
 flag still refuse `max`/`min` (`nonSum`).
@@ -613,7 +613,7 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   S3a converts these to agreement. While `scatterExtentOverridesDeclared` is confirmed no value of that
   program is compared (documented limitation, see the S2a plan §2). The raw-parse theorem for affine
   statements is a documented gap. See [the S2a record](additive_s2a_record.md).
-  **Tropical carriers (S2b, merge pending).** The oracle is generic in a scalar carrier `K` (`Oracle.Carrier`:
+  **Tropical carriers (S2b, merge cf7d6eee).** The oracle is generic in a scalar carrier `K` (`Oracle.Carrier`:
   `admits`, `ofRat`, `observe`; `0`, `1`, `+`, `*` come from `[Semiring K]`, the instance the Core leg lowers
   through). `standardCarriers` is a first-match table keyed on (aggregation, destination element type): `sum`
   is real, `max` is max-plus (`Tropical (WithBot ℚ)ᵒᵈ`), `min` is min-plus (`Tropical (WithTop ℚ)`); a further

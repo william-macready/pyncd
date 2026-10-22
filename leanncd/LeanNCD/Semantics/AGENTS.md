@@ -113,7 +113,7 @@ EXPLICIT GAP: affine statements have no raw-parse theorem (`admitStatement_field
 collision sum is tested, not proved. Tests: `SourceAffineDestinationTest`, `SourceAdmissionAffineTest`,
 `SourceOracleAffineTest`, `SourceDifferentialScatterTest` (plan and record:
 `papers/semantics/additive_s2a_plan.md`, `additive_s2a_record.md`).
-Tropical carriers (S2b, merge pending): the oracle is generic in a scalar carrier (`Source.Carrier`: `Oracle.Carrier` =
+Tropical carriers (S2b, merge cf7d6eee): the oracle is generic in a scalar carrier (`Source.Carrier`: `Oracle.Carrier` =
 `admits`, `ofRat`, `observe`; `0/1/⊕/⊗` come from `[Semiring K]`, the instance the Core leg lowers through via
 `semiringOps`). `Oracle.standardCarriers` is a first-match table keyed on (aggregation, destination element type):
 `sum` real, `max` max-plus (`Tropical (WithBot ℚ)ᵒᵈ`), `min` min-plus (`Tropical (WithTop ℚ)`). A further semiring is ONE
