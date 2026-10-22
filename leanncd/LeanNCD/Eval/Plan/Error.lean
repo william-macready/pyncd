@@ -273,7 +273,7 @@ inductive CapabilityError
       `bias + Σ coeff · size` is the upsample-stride convention, designed for one strided axis. On
       a two-axis row it computes the sum of the two axes' extents (`i : 3`, `j : 4` ⇒ `7`) where the
       reachable coordinate set `i + j` spans only `0 … 5`, and with a mixed-sign row it admits
-      negative reachable coordinates that the worker's out-of-range skip silently absorbs. Neither
+      negative reachable coordinates that the worker's out-of-range skip silently absorbed (before B6; they are now a static `scatterWriteOutOfRange`). Neither
       is unsound, but neither is verified by this feature's worked examples or its differential
       corpus either, so it is refused with a locator instead of shipped unexercised. Unreachable
       from `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots);

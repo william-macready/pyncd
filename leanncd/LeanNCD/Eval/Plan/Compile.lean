@@ -110,7 +110,7 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
     `lowerArith` (`LHSSlot.collapses` matches only `.affine (.const _)`), and is the empty-destination
     degeneracy Task 3 designed for and `ScatterCheckTest` pins. Both extent derivations agree on it —
     `outExtent`'s `.scale` arm gives `0 · size = 0` and the placement-row reconstruction gives the
-    same `0` — so it compiles to a real `ScatterPlan` with `destShape = #[0]`. This is why the
+    same `0` — so it compiles to a real `ScatterPlan` with `destShape = #[0]` (since B6 `checkScatter` then rejects it with `scatterWriteOutOfRange`: every write is outside the empty destination). This is why the
     `.const` test above is on the constructor and not on "the normalised coefficient list is empty":
     `normalizeCoeffs` DROPS zero coefficients (`addCoeff`), so an emptiness test conflates
     `.scale 0 i` and `.affine c₀ [(0, i)]` with `.const n` and would reject all three under a locator

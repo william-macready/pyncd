@@ -204,13 +204,13 @@ Slice 1 does **not** change this. It stays a recorded divergence.
 
 **B6. FIXED (A), LANDED (separate slice after S3a, record `additive_b6_record.md`): out-of-range writes are an error.**
 - Reference: the silent skip at Scatter.lean:77 becomes `scatterWriteOutOfRange nm oc srcCoord`.
-- Checked: `checkScatterCore` (Check.lean:421-433 defers range to the worker today) rejects statically. It
+- Checked: `checkScatterCore` (it used to defer range to the worker) rejects statically, after the extent clauses. It
   computes each destination dimension's affine image over the source box (min and max are attained at
   corners; an empty source box is vacuously in range).
-- Both backends then reject exactly the same programs, and the dense skip (Dense.lean:339) becomes an
-  internal error.
-- Surface affine slots with a non-negative coefficient cannot produce out-of-range writes against their own
-  derived extent (Elab.lean:264-280; `outExtent`, Ast.lean:459-480). Landed finding: a ZERO coefficient reaches the
+- Both backends then reject exactly the same programs, and the dense skip becomes an
+  internal error (`PositionalInputError.scatterPlacementOutOfRange`, unreachable for a checked plan).
+- A surface affine slot with at least one positive coefficient cannot produce out-of-range writes against its own
+  derived extent (`elabTLLHSSlot`; `outExtent`). Landed finding: a ZERO coefficient reaches the
   error from surface syntax (`Out[0*i]` derives extent 0, `Out[0*i+5]` derives extent 5, so every write is outside);
   negative coefficients and biases need programmatic ASTs.
 

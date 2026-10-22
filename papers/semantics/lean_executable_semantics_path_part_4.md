@@ -636,7 +636,7 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   Because the oracle and the Core leg share the semiring instance and `ofRat`/`observe`, their agreement checks
   scheduling and where embedding and observation happen, not those functions or the algebra; the algebra is pinned by hand-valued oracle fixtures and by production
   agreement on single-factor rows. This is executed evidence, not a theorem. Production tropical sorts, casts
-  and constants (S3b) remain planned; scatter collision ⊕ landed in S3a (range errors stay parked). Parked: merging the two
+  and constants (S3b) remain planned; scatter collision ⊕ landed in S3a and out-of-range write errors in B6. Parked: merging the two
   harnesses, a tropical oracle-receipt re-check and Program theorems, f32 tropical production comparison.
   See [the S2b record](additive_s2b_record.md).
 - **Evidence.** 79 named fixtures (one of them, F16, evaluates a generated corpus

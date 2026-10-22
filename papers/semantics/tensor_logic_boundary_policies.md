@@ -288,7 +288,7 @@ reads, pad-then-unary evaluation, and empty-source reads in
 [`KernelDenseTest`](../../leanncd/test/Eval/Plan/KernelDenseTest.lean); native
 binary32 pad-then-unary behavior in
 [`KernelDense32Test`](../../leanncd/test/Eval/Plan/KernelDense32Test.lean);
-out-of-range scatter drops, empty-destination degeneracies, collisions, and
+out-of-range scatter rejections (B6), empty-destination degeneracies, collisions, and
 tropical fills in
 [`ScatterDenseTest`](../../leanncd/test/Eval/Plan/ScatterDenseTest.lean); and
 deep-history look-back padding and extent-one/zero cases in

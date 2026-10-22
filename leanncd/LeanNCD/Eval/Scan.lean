@@ -96,7 +96,9 @@ def scanStateShape (sizes : HashMap UID Nat) (slots : List LHSSlot) :
     scale is refused up front by `checkScanStructure` (zero-scale write rule). Only hand-built
     programs that the checked path refuses (a slot naming two source axes such as `S[j+q]`, or a
     repeated axis UID in an `.assign`) are known to reach the differing collision behaviour in the
-    reference; whether a scan-state write can be skipped out of range is not audited. -/
+    reference. Hand-built out-of-range scan writes (negative base or bias, `ScanCompileTest` `s6NegBase`
+    and `s6NegBiasBase`) are refused by the checked path, so the reference would skip them; that arm
+    is not otherwise audited. -/
 def writeScanStmtSlice (out : DenseTensor) (seed : HashMap UID Int) (s : Stmt)
     (slice : DenseTensor) : DenseTensor :=
   let sliceUids : List UID := match s with
