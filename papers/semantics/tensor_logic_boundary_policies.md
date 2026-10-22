@@ -156,7 +156,7 @@ collision handling, additive publication, or scan-history initialization.
 |---|---|
 | Plain and unary tensor reads | Read the original coordinate if every component is in range; otherwise return scalar zero. |
 | Ordinary assignment | Enumerate the finite output domain and compute every output cell; there is no out-of-range write to resolve. |
-| Top-level affine scatter | Evaluate the RHS first; retain an in-range placement, silently skip an out-of-range placement. |
+| Top-level affine scatter | Evaluate the RHS first; colliding in-range placements are ⊕-summed (S3a). An out-of-range placement is an error in both backends (B6: `EvalError.scatterWriteOutOfRange` in the reference, a static `PlanError.scatterWriteOutOfRange` in the checked plan); it used to be silently skipped. Scan-local reference writes still skip (parked). |
 | Persistent scan state | Allocate a complete zero-filled history, overlay base slices, then write successor slices in the recurrence interior. |
 | Checked scan writes | Require statically admitted, in-range placement geometry; invalid placement is rejected rather than delegated to a runtime drop policy. |
 
@@ -288,7 +288,7 @@ reads, pad-then-unary evaluation, and empty-source reads in
 [`KernelDenseTest`](../../leanncd/test/Eval/Plan/KernelDenseTest.lean); native
 binary32 pad-then-unary behavior in
 [`KernelDense32Test`](../../leanncd/test/Eval/Plan/KernelDense32Test.lean);
-out-of-range scatter drops, empty-destination degeneracies, collisions, and
+out-of-range scatter rejections (B6), empty-destination degeneracies, collisions, and
 tropical fills in
 [`ScatterDenseTest`](../../leanncd/test/Eval/Plan/ScatterDenseTest.lean); and
 deep-history look-back padding and extent-one/zero cases in

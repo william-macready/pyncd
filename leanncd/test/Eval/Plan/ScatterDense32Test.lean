@@ -125,6 +125,32 @@ def collisionScatter32 : ScatterPlan :=
     #[ t32 [3] #[0x3f800000, 0x40000000, 0x40400000], t32 [2] #[0x41200000, 0x42c80000], t32 [3] #[] ])
   == some ([3], #[0x42dc0000, 0x435c0000, 0x43a50000])
 
+/-! ## Fixture 1.6b — a binary32 collision folds in SOURCE order (binary32 is not associative)
+Same shape as 1.6 with `j : 3`, `Y = [1, 2^24, -2^24]`: cell `i` is the `j`-ordered fold
+`((0 + X[i]·1) + X[i]·2^24) + X[i]·(-2^24)`, whose small first term is absorbed by rounding in source
+order but survives when the fold is reversed. -/
+def collide3Compute32 : AssignPlan :=
+  { ScatterDenseTest.collisionCompute with
+    outputShape := #[3, 3]
+    terms := #[{ ScatterDenseTest.collisionCompute.terms[0]! with
+      iterationShape := #[3, 3]
+      factors := #[ ScatterDenseTest.collisionCompute.terms[0]!.factors[0]!
+                  , .read { sourceSlot := 1, map := { coeffs := #[#[0, 1]], bias := #[0] }
+                          , sourceShape := #[3], oobPolicy := .zeroPad } ] }]
+    algebra := admittedAlgebraF32 }
+
+def collide3Scatter32 : ScatterPlan :=
+  { ScatterDenseTest.collisionScatter with compute := collide3Compute32 }
+
+def collide3Sigs32 : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 } ]
+
+-- Observed source-order cells [0.0, 0.0, 4.0]; the reversed fold gives [1.0, 2.0, 3.0].
+#guard shapeBitsOf (run32 collide3Sigs32 collide3Scatter32
+    #[ t32 [3] #[0x3f800000, 0x40000000, 0x40400000]
+     , t32 [3] #[0x3f800000, 0x4b800000, 0xcb800000], t32 [3] #[] ])
+  == some ([3], #[0, 0, 0x40800000])
+
 /-! ## Fixture 1.7 — both doors check storage kind FIRST
 
 A compute half with `contextShape := #[1]` (`checkScatter` does not check it; `checkPlan` does), run

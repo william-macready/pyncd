@@ -114,7 +114,7 @@ structure CheckedEvalPlan where private mk ::
     is `.assign (.nodeError ni e)` too, and for exactly that reason, not by oversight:**
     `checkScatter` returns a plain `PlanError` (its scatter-specific causes —
     `scatterPlacementRankMismatch`,
-    `scatterPlacementWidthMismatch`, `scatterDestExtentUnknown`, `scatterDestExtentMismatch` — are
+    `scatterPlacementWidthMismatch`, `scatterDestExtentUnknown`, `scatterDestExtentMismatch`, `scatterWriteOutOfRange` — are
     all `PlanError`
     constructors), so the error's own shape is the `PlanError` this constructor names, and a
     scatter's two graph-level obligations (`topLevelContextNotEmpty`, `invalidForwardRead`) already

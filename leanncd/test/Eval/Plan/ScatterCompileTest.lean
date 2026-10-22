@@ -268,32 +268,57 @@ run_cmd do
   assertScatterParity "S8 Out[2*i] := X[i]·Y[j]" rhsOnlyAxisProg rhsOnlyAxisEnv "Out"
     (dt [6] [10.0, 0.0, 20.0, 0.0, 30.0, 0.0])
 
-/-! ## S9 — the zero-coefficient degeneracy, `Out[0*i]`, reaches the emitter
+/-! ## S9 / S9b — the zero-coefficient forms `Out[0*i]` and `Out[0*i+5]` are rejected by BOTH backends (B6)
 
 `Out[0*i]` elaborates to `.affine (.scale 0 i)` and is genuinely surface-reachable: `lowerArith`'s
-`LHSSlot.collapses` matches only `.affine (.const _)`, so it survives as a real `Stmt.scatter`.
-`LHSSlot.outExtent`'s `.scale` arm answers `0 · 3 = 0`, the placement-row reconstruction answers the
-same `0`, and the result is the empty destination tensor `checkScatter` was designed to admit and
-`ScatterCheckTest` pins at the CHECKER level.
+`LHSSlot.collapses` matches only `.affine (.const _)`, so it survives as a real `Stmt.scatter`, and
+it still passes `capabilityPreflight` (`CompileTest` pins that). Its derived destination extent is
+`0 · 3 = 0` (and `5` for `Out[0*i+5]`), so every write lands OUTSIDE the destination: an out-of-range
+scatter write is an error in both backends (decision note §B6). The reference evaluator raises
+`EvalError.scatterWriteOutOfRange` and `prepareEvalPlan`'s `checkScatter` rejects the plan with
+`PlanError.scatterWriteOutOfRange`. These fixtures USED to assert agreement on the empty tensor
+`dt [0] []` (S9) through `assertScatterParity`; they are flipped to a both-reject parity, not
+weakened. Because `prepareEvalPlan` now rejects, the compiled plan's fields can no longer be
+inspected through `preparedOf` — the former `outCoeffs`/`destShape` guards are replaced by the
+rejection payload, which carries the same facts (image and extent). Accept neighbour: S1/S6/S8, the
+in-range placements of the same family.
 
-This fixture pins it at the SOURCE level, which is a different claim and the one that was briefly
-false: `checkScatterLHSSlot` decided its constant-slot rejection by asking whether the NORMALISED
-coefficient list was empty, and `normalizeCoeffs` drops zero coefficients — so `.scale 0 i` and
-`.const n` were indistinguishable to it and this program was rejected under a locator naming the
-wrong form. A checker-level pin cannot see that, because it never asks whether the emitter can
-produce the plan from source at all. -/
+NOTE the channel: the checked-plan rejection reaches the caller as
+`PlanCompileCause.invalidPlan (.assign (.nodeError 0 cause))` — the compiler-bug channel — because `compile` only
+ever expected `checkPlan` to accept what the lowering emits. A surface `Out[0*i]` is a user error,
+not a compiler bug; that classification is recorded, not changed, here. -/
+
+/-- The `prepareEvalPlan` rejection cause, or `none` if it accepted (or the source did not compile). -/
+def prepareCauseOf (p : TLProgram) (env : HashMap String DenseTensor) : Option PlanCompileCause :=
+  match schedOf p with
+  | none => none
+  | some sched => match prepareEvalPlan sched (InputSignature.ofDenseInputs env) with
+      | .error f => some f.cause
+      | .ok _ => none
+
+/-- The reference evaluator's out-of-range rejection `(tensor, outCoord, sourceCoord)`, or `none`
+    if it accepted or failed any other way. -/
+def referenceWriteOutOfRange (p : TLProgram) (env : HashMap String DenseTensor) :
+    Option (String × List Int × List Nat) :=
+  match schedOf p with
+  | none => none
+  | some sched => match LeanNCD.Eval.evalScheduled sched env with
+      | .error e => match e.error with
+          | .scatterWriteOutOfRange nm oc sc => some (nm, oc, sc)
+          | _ => none
+      | .ok _ => none
 
 def zeroCoeffProg : TLProgram := tlprog!{ Out[0*i] := X[i] }
-def zeroCoeffScatter : Option ScatterPlan :=
-  (preparedOf zeroCoeffProg upsampleEnv).bind (scatterStepAt · 0)
--- The source domain is the full `i : 3` — nothing about the degeneracy shrinks the COMPUTE half …
-#guard zeroCoeffScatter.map (·.compute.outputShape) == some #[3]
--- … only the destination, whose single row is all-zero with a zero bias, giving extent `0`.
-#guard zeroCoeffScatter.map (·.outCoeffs) == some #[#[0]]
-#guard zeroCoeffScatter.map (·.outBias) == some #[0]
-#guard zeroCoeffScatter.map (·.destShape) == some #[0]
-run_cmd do
-  assertScatterParity "S9 Out[0*i] := X[i]" zeroCoeffProg upsampleEnv "Out" (dt [0] [])
+-- S9: both backends reject, with the same location (tensor `Out`, write at 0, source coordinate 0).
+#guard prepareCauseOf zeroCoeffProg upsampleEnv
+  == some (.invalidPlan (.assign (.nodeError 0 (.scatterWriteOutOfRange 0 0 0 0))))
+#guard referenceWriteOutOfRange zeroCoeffProg upsampleEnv == some ("Out", [0], [0])
+
+def zeroCoeffBiasProg : TLProgram := tlprog!{ Out[0*i+5] := X[i] }
+-- S9b: extent 5, every write at 5.
+#guard prepareCauseOf zeroCoeffBiasProg upsampleEnv
+  == some (.invalidPlan (.assign (.nodeError 0 (.scatterWriteOutOfRange 0 5 5 5))))
+#guard referenceWriteOutOfRange zeroCoeffBiasProg upsampleEnv == some ("Out", [5], [0])
 
 /-! ## S10 — a surface-reachable collision is folded with the destination ⊕ (S3a)
 
@@ -310,5 +335,19 @@ def collideEnv : HashMap String DenseTensor :=
 run_cmd do
   assertScatterParity "S10 Out[2*i] := X[i, j]" collideProg collideEnv "Out"
     (dt [6] [3.0, 0.0, 7.0, 0.0, 11.0, 0.0])
+
+/-! ## S10b — colliding writes fold in SOURCE order (binary64 is not associative)
+
+The same program over `X : [3, 3]`, rows chosen so the fold order is visible: row 0 `[1, 1e16, -1e16]`
+sums to 0.0 in source order (`1 + 1e16` rounds back to `1e16`) but 1.0 reversed; row 2
+`[-1e16, 1e16, 1]` sums to 1.0 in source order but 0.0 reversed; row 1 is an exact control. The
+reference and the checked plan must agree on the SOURCE-order values, so a worker that folds in
+another order fails here even though S10's integers cannot tell. -/
+
+def collideOrderEnv : HashMap String DenseTensor :=
+  HashMap.ofList [("X", dt [3, 3] [1.0, 1.0e16, -1.0e16, 3.0, 4.0, 5.0, -1.0e16, 1.0e16, 1.0])]
+run_cmd do
+  assertScatterParity "S10b Out[2*i] := X[i, j] (order)" collideProg collideOrderEnv "Out"
+    (dt [6] [0.0, 0.0, 12.0, 0.0, 1.0, 0.0])
 
 end LeanNCD.Eval.Plan.ScatterCompileTest

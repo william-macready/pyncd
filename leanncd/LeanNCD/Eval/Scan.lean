@@ -86,7 +86,19 @@ def scanStateShape (sizes : HashMap UID Nat) (slots : List LHSSlot) :
 
 /-- Place a completed dense source slice into a persistent scan state. Ordinary assignments retain
     their slot-order source basis; scatters use their first-seen LHS source-axis basis. In both cases
-    every original LHS expression is evaluated only after RHS contraction has produced `slice`. -/
+    every original LHS expression is evaluated only after RHS contraction has produced `slice`.
+
+    Two behaviours differ from the top-level `evalScatter`, deliberately left as they are (parked,
+    see `papers/semantics/additive_b6_record.md`). A write that lands outside `out` is SKIPPED, not an
+    error. A collision OVERWRITES (last write wins), not ⊕-sums. The checked scan path admits only
+    injective, in-range placements (`multiAxisScatterLhs`, `duplicateAxisInLhs`, `classifyWriteRow`),
+    so for the programs both backends accept (audited, not proved) overwrite and ⊕ agree; a zero
+    scale is refused up front by `checkScanStructure` (zero-scale write rule). Only hand-built
+    programs that the checked path refuses (a slot naming two source axes such as `S[j+q]`, or a
+    repeated axis UID in an `.assign`) are known to reach the differing collision behaviour in the
+    reference. Hand-built out-of-range scan writes (negative base or bias, `ScanCompileTest` `s6NegBase`
+    and `s6NegBiasBase`) are refused by the checked path, so the reference would skip them; that arm
+    is not otherwise audited. -/
 def writeScanStmtSlice (out : DenseTensor) (seed : HashMap UID Int) (s : Stmt)
     (slice : DenseTensor) : DenseTensor :=
   let sliceUids : List UID := match s with

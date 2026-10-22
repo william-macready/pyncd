@@ -282,6 +282,12 @@ inductive EvalError
   | unaryDomain (op : UnaryDomainOp) (value : Float) (context : EvalContext)
   | invalidNormAxis (reason : NormAxisReason)
   | scatterCollision (nm : String) (outCoord : List Nat) (firstSource : List Nat) (secondSource : List Nat)
+  /-- B6: a scatter source coordinate whose affine image lies outside the destination extent. This
+      was a silent skip (a vestige of overwrite semantics); it is now an error. `outCoord` is the
+      full destination coordinate (every slot, signed: a negative bias or coefficient gives a
+      negative entry); `sourceCoord` is the source coordinate that produced it, in
+      `scatterSourceAxes` order. -/
+  | scatterWriteOutOfRange (nm : String) (outCoord : List Int) (sourceCoord : List Nat)
   | unsupportedScatterNonlin (nm : String)
   | unsupportedRecurMorphism (site : RecurMorphismSite) (nm : String)
   | invalidScanNode (reason : InvalidScanReason)
@@ -384,6 +390,9 @@ def EvalError.render : EvalError → String
   | .scatterCollision nm outCoord firstSource secondSource =>
       s!"evalScatter {nm}: collision writing output coord {outCoord} — source coords \
 {firstSource} and {secondSource} both write here"
+  | .scatterWriteOutOfRange nm outCoord sourceCoord =>
+      s!"evalScatter {nm}: write to output coord {outCoord} (from source coord {sourceCoord}) \
+is outside the destination extent"
   | .unsupportedScatterNonlin nm =>
       s!"evalScatter: non-identity nonlinearity on scatter {nm} is unsupported (Spike-3 Stage-0 policy)"
   | .unsupportedRecurMorphism site nm =>

@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Scatter
+import Eval.Portfolio.Harness
 namespace LeanNCD.Eval
 open Std
 private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
@@ -151,5 +152,98 @@ run_cmd do
   | .error (.unsupportedScatterNonlin "Out") => pure ()
   | .error e => throwError s!"F32-d: f64 + relu must reach unsupportedScatterNonlin, got: {e}"
   | .ok _ => throwError "F32-d: expected nonlin rejection"
+
+-- B6: an out-of-range scatter write is an ERROR (it was a silent skip, a vestige of overwrite
+-- semantics). Shared fixture: `Out[<slot>] := X[i]` with X = [10,20,30] (i ↦ 3), run through
+-- `evalPlain` so the destination extent is the DERIVED one (`scatterOutShape` → `outExtent`).
+-- `n` is X's length (X is sized to match, so `n = 0` is the empty source box).
+private def b6Run (slot : LHSSlot) (n : Nat) : Except EvalError (String × DenseTensor) :=
+  let i := ax "i" 1
+  let X := tensorOf [n] ([10, 20, 30].take n)
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
+  evalPlain f64Decls env (({} : HashMap UID Nat).insert 1 n) (.scatter "Out" [slot] rhs)
+
+-- B6-a (hand AST, negative bias): `Out[i-1]`. The derived extent is `3 - 1 = 2`; source i = 0
+-- writes coordinate -1.
+run_cmd do
+  match b6Run (.affine (.shift (ax "i" 1) (-1))) 3 with
+  | .error (.scatterWriteOutOfRange "Out" [-1] [0]) => pure ()
+  | .error e => throwError s!"B6-a: expected scatterWriteOutOfRange \"Out\" [-1] [0], got: {e}"
+  | .ok (_, o) => throwError s!"B6-a: expected rejection, got {repr o.shape} {repr o.data}"
+
+-- B6-b (zero coefficient, surface-reachable): `Out[0*i+5]`. `outExtent` derives 5 (`5 + 0·3`), so
+-- the write at coordinate 5 is one past the end.
+run_cmd do
+  match b6Run (.affine (.affine 5 [(0, ax "i" 1)])) 3 with
+  | .error (.scatterWriteOutOfRange "Out" [5] [0]) => pure ()
+  | .error e => throwError s!"B6-b: expected scatterWriteOutOfRange \"Out\" [5] [0], got: {e}"
+  | .ok (_, o) => throwError s!"B6-b: expected rejection, got {repr o.shape} {repr o.data}"
+
+-- B6-c (zero coefficient, no bias, surface-reachable): `Out[0*i]`. The derived extent is 0, so
+-- the write at coordinate 0 lands in a zero-extent destination.
+run_cmd do
+  match b6Run (.affine (.scale 0 (ax "i" 1))) 3 with
+  | .error (.scatterWriteOutOfRange "Out" [0] [0]) => pure ()
+  | .error e => throwError s!"B6-c: expected scatterWriteOutOfRange \"Out\" [0] [0], got: {e}"
+  | .ok (_, o) => throwError s!"B6-c: expected rejection, got {repr o.shape} {repr o.data}"
+
+-- B6-d (hand AST, negative coefficient): `Out[-i]`. The derived extent clamps to 0, so even i = 0
+-- (coordinate 0) is out of range.
+run_cmd do
+  match b6Run (.affine (.scale (-1) (ax "i" 1))) 3 with
+  | .error (.scatterWriteOutOfRange "Out" [0] [0]) => pure ()
+  | .error e => throwError s!"B6-d: expected scatterWriteOutOfRange \"Out\" [0] [0], got: {e}"
+  | .ok (_, o) => throwError s!"B6-d: expected rejection, got {repr o.shape} {repr o.data}"
+
+-- B6-e (explicit smaller destination, direct entry): `Out[i]` into a 2-cell `outShape`. The
+-- offending write is the first one past the end, source i = 2 → coordinate 2.
+run_cmd do
+  let i := ax "i" 1
+  let env : HashMap String DenseTensor :=
+    ({} : HashMap String DenseTensor).insert "X" (tensorOf [3] [10, 20, 30])
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
+  match evalScatter f64Decls env (({} : HashMap UID Nat).insert 1 3) "Out" [.affine (.axis i)] rhs [2] with
+  | .error (.scatterWriteOutOfRange "Out" [2] [2]) => pure ()
+  | .error e => throwError s!"B6-e: expected scatterWriteOutOfRange \"Out\" [2] [2], got: {e}"
+  | .ok _ => throwError "B6-e: expected rejection"
+
+-- B6 ACCEPT NEIGHBOURS: the nearest legal programs still succeed with unchanged values.
+-- Injective stride `Out[2*i]`: derived extent 6, X at the even cells.
+run_cmd do
+  match b6Run (.affine (.scale 2 (ax "i" 1))) 3 with
+  | .error e => throwError s!"B6-f: Out[2*i] must evaluate, got: {e}"
+  | .ok (_, o) => unless o.shape == [6] && o.data == #[10, 0, 20, 0, 30, 0] do
+      throwError s!"B6-f: wrong value: {repr o.shape} {repr o.data}"
+
+-- Offset `Out[i+1]`: derived extent 4, cell 0 stays 0_K.
+run_cmd do
+  match b6Run (.affine (.shift (ax "i" 1) 1)) 3 with
+  | .error e => throwError s!"B6-g: Out[i+1] must evaluate, got: {e}"
+  | .ok (_, o) => unless o.shape == [4] && o.data == #[0, 10, 20, 30] do
+      throwError s!"B6-g: wrong value: {repr o.shape} {repr o.data}"
+
+-- Const slot `Out[2]`: extent `2 + 1 = 3`; the three writes collide at cell 2 and sum (S3a).
+run_cmd do
+  match b6Run (.affine (.const 2)) 3 with
+  | .error e => throwError s!"B6-h: Out[2] must evaluate, got: {e}"
+  | .ok (_, o) => unless o.shape == [3] && o.data == #[0, 0, 60] do
+      throwError s!"B6-h: wrong value: {repr o.shape} {repr o.data}"
+
+-- Empty source box (i ↦ 0) writes nothing, so even the zero-extent `Out[0*i]` of B6-c is fine.
+run_cmd do
+  match b6Run (.affine (.scale 0 (ax "i" 1))) 0 with
+  | .error e => throwError s!"B6-i: an empty source box writes nothing, got: {e}"
+  | .ok (_, o) => unless o.shape == [0] && o.data == #[] do
+      throwError s!"B6-i: wrong value: {repr o.shape} {repr o.data}"
+
+-- B6 through the SURFACE syntax (`elabTLLHSSlot` accepts `n*x+m` and `n*x`, including n = 0).
+run_cmd (assertEvalError "B6-surface-a" (tlprog!{ Out[0 * i + 5] := X[i] })
+  (HashMap.ofList [("X", tl [3] [10, 20, 30])]) "outside the destination extent")
+run_cmd (assertEvalError "B6-surface-b" (tlprog!{ Out[0 * i] := X[i] })
+  (HashMap.ofList [("X", tl [3] [10, 20, 30])]) "outside the destination extent")
+run_cmd (assertEval "B6-surface-accept" (tlprog!{ tensor f64 Out(i)
+                                                  Out[2 * i] := X[i] })
+  (HashMap.ofList [("X", tl [3] [10, 20, 30])]) "Out" (tl [6] [10, 0, 20, 0, 30, 0]))
 
 end LeanNCD.Eval

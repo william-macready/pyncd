@@ -20,9 +20,9 @@ Same discipline as `KernelDenseTest` for the value fixtures and as `ScatterCheck
 one: the collision fixture asserts the exact `PositionalInputError` constructor AND payload, so a
 worker that detects a collision but cannot name both conflicting source coordinates fails here.
 
-The four pins after the six fixtures cover the runtime cells `checkScatter`'s docstring explicitly
-leaves to this worker — the silent out-of-range skip, the two `.toNat` extent degeneracies, and a
-non-real unwritten-cell identity. None of the five measured programs can reach them: they are all in
+The pins after the six fixtures cover the cells that are not plain value fixtures: the out-of-range
+placement and the two `.toNat` extent degeneracies (all REJECTED at check time since B6, formerly
+silent skips) and a non-real unwritten-cell identity. None of the five measured programs can reach them: they are all in
 range, all have a non-empty destination, and all use real sum-product, whose `reduceId` is `0.0` —
 the same value a worker that ignored the algebra's identity entirely would use.
 -/
@@ -197,32 +197,39 @@ def collisionStore : Array DenseTensor :=
 
 /-! ## Runtime case-audit pins
 
-The four cells `checkScatter`'s docstring hands to this worker, none of which any fixture above can
-reach. -/
+The cells no value fixture above reaches: since B6 the out-of-range placement and the two `.toNat`
+extent degeneracies are rejected by `checkScatter` before the worker runs (the worker's own
+`scatterPlacementOutOfRange` backstop needs unchecked evidence, and `CheckedScatterPlan.mk` is
+private, so no test can construct it), plus the non-real unwritten-cell identity. -/
 
-/- **Out-of-range placement is skipped SILENTLY, not rejected.** `Out[i-1] := X[i]` over `i : 3`:
-   `outExtent` gives `(-1 + 3) = 2`, which `checkScatter` accepts, but source coordinate `0` places
-   at destination `-1`, outside `[0, 2)`. The reference simply does not write it, with no diagnostic,
-   so the result is the two remaining values — NOT an error and NOT `X[0]` aliased onto some valid
-   cell, which is what a flat-offset bounds test would produce (`(-1).toNat = 0` flattens to the same
-   address as destination `0`). Programmatic-only: `elabTLLHSSlot` parses no negative bias. -/
-#guard shapeDataOf (runScatter (sigsFor #[2]) (placed #[2] #[#[1]] #[-1]) (storeFor #[2]))
-  == some ([2], #[2.0, 3.0])
+/- **Out-of-range placement is an ERROR (B6), rejected at CHECK time.** `Out[i-1] := X[i]` over
+   `i : 3`: `outExtent` gives `(-1 + 3) = 2`, and source coordinate `0` places at destination `-1`,
+   outside `[0, 2)`. The reference raises `EvalError.scatterWriteOutOfRange`; `checkScatter` rejects
+   the plan (`scatterWriteOutOfRange dim min max extent` = `0 (-1) 1 2`), so `runScatter` never
+   reaches the worker. This fixture USED to assert the silent skip (`some ([2], #[2.0, 3.0])`) and was
+   flipped, not weakened: the same plan, now refused. The in-range neighbour right below keeps the
+   shifted placement accepted. Programmatic-only: `elabTLLHSSlot` parses no negative bias. -/
+def checkErrOf (sigs : Array TensorSignature) (s : ScatterPlan) : Option PlanError :=
+  match checkScatter sigs s with
+  | .error e => some e
+  | .ok _ => none
 
-/- **Degeneracy 1 — a ZERO placement coefficient.** `outExtent` gives `0·3 = 0`, so the destination
-   is empty and `checkScatter` admits the plan (`ScatterCheckTest` pins `scatterDestExtent #[3] #[0]
-   0 == some 0`). Every source coordinate places at destination `0`, which is out of range in a
-   zero-extent dimension, so the skip above swallows all three writes and the result is the empty
-   tensor. This is a reproduced reference degeneracy, not a repaired one. -/
-#guard shapeDataOf (runScatter (sigsFor #[0]) (placed #[0] #[#[0]] #[0]) (storeFor #[0]))
-  == some ([0], #[])
+#guard checkErrOf (sigsFor #[2]) (placed #[2] #[#[1]] #[-1]) == some (.scatterWriteOutOfRange 0 (-1) 1 2)
+-- Accept-neighbour: `Out[i+1]` (extent 4, image [1,3]) runs and lands at cells 1..3.
+#guard shapeDataOf (runScatter (sigsFor #[4]) (placed #[4] #[#[1]] #[1]) (storeFor #[4]))
+  == some ([4], #[0.0, 1.0, 2.0, 3.0])
+
+/- **Degeneracy 1 — a ZERO placement coefficient** (`Out[0*i] := X[i]`). `outExtent` gives `0·3 = 0`
+   (`ScatterCheckTest` pins `scatterDestExtent #[3] #[0] 0 == some 0`); every source coordinate
+   places at destination `0`, outside the zero-extent dimension, so the plan is now REJECTED
+   (`0 0 0 0`) instead of producing the empty tensor. Flipped from `some ([0], #[])`. -/
+#guard checkErrOf (sigsFor #[0]) (placed #[0] #[#[0]] #[0]) == some (.scatterWriteOutOfRange 0 0 0 0)
 
 /- **Degeneracy 2 — a NEGATIVE placement coefficient.** `outExtent`'s `(0 + (-1)·3).toNat` clamps to
-   `0`, so again an empty destination that `checkScatter` admits, and again three writes with nowhere
-   to go. Distinct from degeneracy 1 in origin (`Int.toNat` clamping a negative extent, versus a
-   genuinely zero one) even though both land on the same empty result. -/
-#guard shapeDataOf (runScatter (sigsFor #[0]) (placed #[0] #[#[-1]] #[0]) (storeFor #[0]))
-  == some ([0], #[])
+   `0`; the image is `[-2, 0]`, so the plan is REJECTED (`0 (-2) 0 0`). Distinct from degeneracy 1 in
+   origin (`Int.toNat` clamping a negative extent versus a genuinely zero one) and in payload (min
+   `-2` versus `0`). Flipped from `some ([0], #[])`. -/
+#guard checkErrOf (sigsFor #[0]) (placed #[0] #[#[-1]] #[0]) == some (.scatterWriteOutOfRange 0 (-2) 0 0)
 
 /- **Unwritten cells hold the destination algebra's `reduceId`, not a hard-coded `0.0`.** Fixture
    1's placement under tropical max-product, whose `reduceId` is `-∞`. The three written cells are

@@ -123,7 +123,11 @@ def acceptedSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
   == some (.scatterOrAffineLhs "Out: constant affine LHS slot")
 
--- A ZERO-coefficient scale (`Out[0*i]`) is a DIFFERENT form and is ADMITTED. It is surface-reachable
+-- B6: the two zero-coefficient fixtures below are CAPABILITY verdicts only. Both still pass
+-- `capabilityPreflight`, but every write they describe lands outside the derived destination extent
+-- (`0` and `5`), so the later `checkScatter` inside `prepareEvalPlan` REJECTS them with
+-- `scatterWriteOutOfRange`; `ScatterCompileTest` S9/S9b pin that end to end through the source pipeline.
+-- A ZERO-coefficient scale (`Out[0*i]`) is a DIFFERENT form and is ADMITTED by the preflight. It is surface-reachable
 -- (`elabTLLHSSlot`'s `n*x` arm with `n = 0`), passes `lowerArith`, and is the empty-destination
 -- degeneracy Task 3 designed `checkScatter` around — both extent derivations answer `0` for it, so
 -- there is nothing to disagree about. Pinned here because the two forms are easy to conflate: they
@@ -1290,6 +1294,17 @@ def f32ScatterOverflowFillProg : ScheduledProgram :=
       , agg := .max })] }
 
 #guard causeOf (prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig) ==
+  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
+
+-- The `.min` twin of the fixture above (the guard is on `agg`, so `.min` must be refused exactly like
+-- `.max`; the reference-side `.min` pin is ScanTest "Shape 1").
+def f32ScatterMinFillProg : ScheduledProgram :=
+  { f32ScatterOverflowFillProg with
+    stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity
+      , agg := .min })] }
+
+#guard causeOf (prepareEvalPlan f32ScatterMinFillProg f32IdentitySig) ==
   some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
 
 -- (d) scan: `ScanCompileTest.selfRecurSched`'s statement with binary32 declarations for its two
