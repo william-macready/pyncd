@@ -180,7 +180,12 @@ Execution findings (fill; one row each, with the fix commit or the parking reaso
 
 ## 7. Cost and process notes
 
-- Authoring cost: `TBD by the controller` (target <= ~50M; measure with `python3 .claude/skills/slice-plan/token-report.py <session-id>`). Authoring dispatches (ledger): read-only audit (283k tokens, 76 tool uses), builder check, eight prototypes P1-P8, a merge-and-observe manifest dispatch, this plan write-up.
+- Authoring cost (measured with `token-report.py` on the authoring session, 2026-10-23): **159.3M cumulative input tokens against the ~50M target, a 3.2x overrun** (S1 82M, S2a 110M, S2b about 2x were the earlier overruns).
+  Controller 21.2M (96 turns, peak 336k). Dispatches 138.1M: audit 12.7M (75 turns, peak 280k); builder check 0.6M; P1 12.2M (79 turns); P2 15.0M (86 turns, peak 259k); P3 8.0M (58); P4 6.9M (53);
+  P5 8.0M (53); P6 12.2M (72 turns, peak 246k); P7 9.1M (69); P8 9.9M (73); manifest dispatch 8.0M (64 turns); plan write-up 7.5M (43 turns, peak 281k); Opus plan review 18.6M (103 turns); review-fix dispatch 9.4M (50 turns, peak 252k).
+  Rule 6 breaches (dispatch cap: peak <= ~250k and <= ~60 turns): audit, P1, P2, P6, P7, P8, the manifest dispatch, the plan write-up (peak), the review (103 turns) and the fix dispatch (peak). Causes: hand mutation cycles in P1 and P2 (the manifest dispatch later reran them), Edit-hook echoes,
+  harness refusals, whole-log reads, and a review given three lenses in one dispatch. What would have cut it: prototyping T1+T2 without hand mutations from the start (P3 onward did, and stayed near 53-69 turns), and one reviewer lens per dispatch.
+  Execution budget is a separate line (Rule 6: <= ~175M) and is not yet spent.
 - Prototype tool-use counts (harness counts from the ledger; reported-by-agent counts in parentheses): P1 101 (75), P2 149 (90), P3 104 (68), P4 96 (55), P5 106 (52), P6 127 (62), P7 99 (60), P8 126 (75). Every prototype exceeded the ~60-call cap by the harness count; the cost drivers were hand mutations (P1, P2), harness refusals and builds.
 - Authoring-time process findings: interim `completed` notices arrive while a build still runs (check `ps` and `git log`); the full manifest is hours (measured: about 3 minutes per cycle averaged over 53 cycles, plan-root mutations included; expected serial total about 6-7 hours, plan §1): run `--task` filtered, serialized with every other use of the worktree; never Read a build log (use `rg`).
 - Execution cost (controller fills): TBD total input tokens (target <= ~175M, Rule 6), per-task turns and context peaks in §1, review cost, fix dispatch cost.
