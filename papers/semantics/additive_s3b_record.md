@@ -16,7 +16,8 @@ Line numbers are never written in this file (identifiers only).
 | T6 | TBD | T6-01, T6-02 | `Tests` | TBD (8824) | TBD (SSDT 19) | TBD | TBD | TBD |
 | T7 | TBD | T7-01, T7-02 | `Tests` | TBD (8824) | TBD (none) | TBD | TBD | TBD |
 | T8 | TBD | T8-01, T8-02 | `Tests` | TBD (8825) | TBD (none) | TBD | TBD | TBD |
-| T9 | TBD | none (commands) | `LeanNCD` if a docstring changed | TBD | n/a | TBD | TBD | TBD |
+| T9 (A) comments-only Lean, 7 files | TBD | none (commands) | `Tests` (full; builds the library and the touched test modules), then `JaxExperiment` | TBD (expect 8825) | TBD (expect none) | TBD | TBD | TBD |
+| T9 (B) docs, 12 docs | TBD | none (commands) | none (markdown only) | n/a | n/a | TBD | TBD | TBD |
 
 Prototype tips (scratch, unmerged): `proto-s3b-p1` `c9c8f537`, `p2` `398d197b`, `p3` `281a1719`, `p4` `ccf9f745`, `p5` `6b0cb23b`, `p6` `3476f129`, `p7` `7473023d`, `p8` `43e86c5d`. After T8 the slice tree should equal `proto-s3b-p8` outside `papers/` and the T9 docs:
 `/usr/bin/git -C <wt> diff --stat proto-s3b-p8 -- leanncd/LeanNCD leanncd/test leanncd/lakefile.toml` must be empty before T9 (TBD: result).
@@ -44,7 +45,8 @@ Prototype tips (scratch, unmerged): `proto-s3b-p1` `c9c8f537`, `p2` `398d197b`, 
 | T3 | same | shape 1 joined (A+B, `.max`) | `scatterFillNotIdentity` | `[10,5,2]` (min twin on negated data `[-10,-5,-2]`) | same |
 | T3 | `test/Eval/Plan/CompileTest.lean` | f32 `Out[2*i]` `.max` / `.min` | `scatterOptsNotAdmitted "Y: fill"` (rejection) | accepted: scatter step algebra == `admittedAlgebraF32Max` / `Min`, `destShape #[6]` | guard deleted |
 | T3 | `test/Eval/ScatterTest.lean` | 4g regression (`.max`, `[10,5,2]`) | `[10,5,2]` | unchanged value; comment fixed, min twin `[-10,-5,-2]` added | stale comment ("hardcodes real sum") |
-| T3 | `test/Eval/Plan/ScatterDenseTest.lean`, `ScatterDense32Test.lean`, `ScatterCheckTest.lean` | raw tropical plans (`maxScatter`, 1.5) | values | UNCHANGED (checked worker was already algebra-generic); a comment claiming the divergence was "adjudicated, permanent, deliberate" rewritten | |
+| T3 | `test/Eval/Plan/ScatterDenseTest.lean`, `ScatterDense32Test.lean` | raw tropical plans (`maxScatter`, 1.5) | values | UNCHANGED (checked worker was already algebra-generic); `ScatterDenseTest`: a comment claiming the divergence was "adjudicated, permanent, deliberate" rewritten; `ScatterDense32Test`: fixture 1.6c (max AND min collision, bits) added | |
+| T3 | `test/Eval/Plan/ScatterCheckTest.lean` | raw tropical plan (`maxScatter`) | value | UNTOUCHED: no patch edits this file (an earlier draft of this record said a comment was rewritten in T3; plan review F9). Its stale "max-product" wording is fixed in T9 (comments-only commit) | |
 | T3 | `test/Eval/Plan/DifferentialTest.lean` | classifier arm for `scatterOptsNotAdmitted` | reachable | comment only (arm must stay while the constructor exists); arm removed in T7 | exhaustive match |
 | T5 | `test/Eval/Portfolio/GnnScatterTest.lean` | GN4 | red (`[4,5,4,5]`) | green with the ORIGINAL expectation `[[3,4],[3,4]]` | bool -> max-plus cast (audit claim that the value is preserved holds exactly) |
 | T6 | `test/Eval/Portfolio/RecurrenceTest.lean` | RC10 | `[2,0,5,5]` | `[2,-inf,5,5]` (new twin `RC10m` `[-2,+inf,-5,-5]`) | state is max-plus; unwritten cell `G[0,1]` is 0_K |
@@ -113,18 +115,21 @@ Run 1: 53 cycles (106 builds) on tip `43e86c5d`, empty `expect`: 53/53 PASS (eve
 output (`verify_expect.py`, 0 missing) and for existence at each task tip (`tipexpect.py`), NOT by an enforced run: the per-task `--task` run is their first enforced run. Surviving mutants: none. Equivalent mutants: T4-M7, T5-M5b (not run). Bad text found and fixed: T3-M3 (first version replaced the combine for every `agg` and was killed by sum rows, not the NaN fixtures).
 Per-task entries: T1 6, T2 6, T3 6, T4 7, T5 9, T6 7, T7 2, T8 5.
 
-Execution (controller fills after each task's commit):
+Execution (controller fills after each task's commit). Rules (plan §1): the run happens with an otherwise idle worktree; after the run `git status --short` must be EMPTY before the next task starts (record "status empty: yes/no"); every cycle NOT run is listed
+in the `Skipped` column BY LABEL with the reason (a deferral per the plan's deferral order, or other), never omitted (Rule 12); "Skipped: none" is written explicitly when nothing was skipped.
 
-| Task | `--task` entries | PASS | Failing `expect` / finding | Wall time |
-|---|---|---|---|---|
-| T1 | 6 | TBD | TBD | TBD |
-| T2 | 6 | TBD | TBD | TBD |
-| T3 | 6 | TBD | TBD | TBD |
-| T4 | 7 | TBD | TBD | TBD |
-| T5 | 9 | TBD | TBD | TBD |
-| T6 | 7 | TBD | TBD | TBD |
-| T7 | 2 | TBD | TBD | TBD |
-| T8 | 5 | TBD | TBD | TBD |
+| Task | `--task` entries | Run | PASS | Skipped (labels, reason) | Failing `expect` / finding | Status empty after | Wall time |
+|---|---|---|---|---|---|---|---|
+| T1 | 6 | TBD | TBD | TBD | TBD | TBD | TBD |
+| T2 | 6 | TBD | TBD | TBD | TBD | TBD | TBD |
+| T3 | 6 | TBD | TBD | TBD | TBD | TBD | TBD |
+| T4 | 7 | TBD | TBD | TBD | TBD | TBD | TBD |
+| T5 | 9 | TBD | TBD | TBD | TBD | TBD | TBD |
+| T6 | 7 | TBD | TBD | TBD | TBD | TBD | TBD |
+| T7 | 2 | TBD | TBD | TBD | TBD | TBD | TBD |
+| T8 | 5 | TBD | TBD | TBD | TBD | TBD | TBD |
+
+Known-red line sets (plan §1 step 3): per task the SSDT failing-line set observed is recorded here and compared with the findings' sets, TBD (T1-T2: 11 lines; T3-T6: 19 lines).
 
 ## 5. Findings and disposition
 
@@ -142,8 +147,9 @@ Authoring-time findings (already resolved or parked):
 | A8 | 78 of 3832 sweep programs have a max result equal to the real result; reason not investigated | parked (curiosity, no correctness claim rests on it) |
 | A9 | Single-factor tropical statements normalise `-0.0` to `+0.0` | accepted |
 | A10 | An interim `completed` notice arrived while P7's final build ran | process lesson (plan §1) |
+| A11 | Silently-ignored cells not pinned: C23 (bool state read), neutral scratch, contracted-axis neutral condition, the cast under a contracted axis; C21 (multi-writer source read by a bool statement) is NOT in this list any more: it is unreachable for plain writer sets (collection refuses every multi-writer set with a tropical writer: `multiWriterScatter`/`multiWriterAlgebra`/`multiWriterScan`), only the order of refusals is unpinned (plan review F6) | parked (plan §2/§3) |
 | A12 | p8 (c) said `ScatterDense32Test` has no tropical fixture and parked it; `git grep` at `proto-s3b-p8` shows a max row and fixture 1.6c (max and min) | recorded: the parking was dropped from the plan |
-| A11 | Silently-ignored cells not pinned: C21 (multi-writer source read by a bool statement), C23 (bool state read), neutral scratch, contracted-axis neutral condition | parked (plan §2/§3) |
+| A13 | Plan review (Opus, 2026-10-23, `additive_s3b_review_plan.md`): 13 findings, no Critical; the plan's rejection table wrongly said `compileToScheduled` accepts `tropicalNonlin` (it runs `checkDtypes` and rejects); T9 omitted `DSL/AGENTS.md` and the stale Lean docstrings; mutation cycles needed serialization and a schedule | FIXED in plan §1, §3(iii), T9, and this record (commit "S3b plan: review fixes") |
 
 Execution findings (fill; one row each, with the fix commit or the parking reason):
 
@@ -166,7 +172,8 @@ Execution findings (fill; one row each, with the fix commit or the parking reaso
 | Annotated neutral scratch statement evaluated in the state's sort, no fixture | parked; ~1 Direct fixture |
 | Contracted-axis condition of the neutral-writer definition has no dedicated fixture | parked; ~1 Direct fixture |
 | Bool STATE read by a tropical scan step is cast, no fixture | parked; ~1 Direct fixture |
-| Multi-writer SOURCE name read by a bool statement (cast check sees the declaration) | parked; fold into S3b-ii |
+| Multi-writer SOURCE name read by a bool statement (cast check sees the declaration): unreachable for plain writer sets, collection refuses first; only the order of refusals is unpinned | parked; fold into S3b-ii |
+| `T5-M8`/`T5-M10` (scan-step and plain caller cycles of `residualizeAssignment`'s cast flag) pruned, never run: the step-caller flag has no killing observation | parked; ~1 Direct item (one cycle) |
 | Cast under a contracted axis has no fixture of its own | parked; ~1 Direct fixture |
 | Grid scan cases not in `DifferentialTest`'s three-way leg | parked; one list entry |
 | Stale S2a/S2b manifests | not edited; records |
@@ -175,7 +182,7 @@ Execution findings (fill; one row each, with the fix commit or the parking reaso
 
 - Authoring cost: `TBD by the controller` (target <= ~50M; measure with `python3 .claude/skills/slice-plan/token-report.py <session-id>`). Authoring dispatches (ledger): read-only audit (283k tokens, 76 tool uses), builder check, eight prototypes P1-P8, a merge-and-observe manifest dispatch, this plan write-up.
 - Prototype tool-use counts (harness counts from the ledger; reported-by-agent counts in parentheses): P1 101 (75), P2 149 (90), P3 104 (68), P4 96 (55), P5 106 (52), P6 127 (62), P7 99 (60), P8 126 (75). Every prototype exceeded the ~60-call cap by the harness count; the cost drivers were hand mutations (P1, P2), harness refusals and builds.
-- Authoring-time process findings: interim `completed` notices arrive while a build still runs (check `ps` and `git log`); production-level mutation cycles are expensive (the full manifest is hours: run `--task` filtered); never Read a build log (use `rg`).
+- Authoring-time process findings: interim `completed` notices arrive while a build still runs (check `ps` and `git log`); the full manifest is hours (measured: about 3 minutes per cycle averaged over 53 cycles, plan-root mutations included; expected serial total about 6-7 hours, plan §1): run `--task` filtered, serialized with every other use of the worktree; never Read a build log (use `rg`).
 - Execution cost (controller fills): TBD total input tokens (target <= ~175M, Rule 6), per-task turns and context peaks in §1, review cost, fix dispatch cost.
 
 ## 8. Merge
