@@ -1,0 +1,528 @@
+diff --git a/leanncd/test/Eval/ContractTest.lean b/leanncd/test/Eval/ContractTest.lean
+index 8f804d46..f9f0066c 100644
+--- a/leanncd/test/Eval/ContractTest.lean
++++ b/leanncd/test/Eval/ContractTest.lean
+@@ -242,4 +242,31 @@ private def nanF : Float := 0.0 / 0.0
+ #guard maxNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x40000000) == Float32.ofBits 0x40000000
+ #guard minNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x40000000) == Float32.ofBits 0x3f800000
+ 
++-- S3b T2 (reference; regression pins, the folds are seeded with the `Combine` identities): the empty
++-- product is `1_K` (tropical: 0.0), the empty sum and a zero-extent reduction are `0_K` (−∞ / +∞).
++-- Each case runs under max-plus, min-plus (duality twin) and real (accept-neighbour).
++private def negInfC : Float := -1.0 / 0.0
++private def posInfC : Float := 1.0 / 0.0
++private def refRows (c : Combine) (rhs : RHSExpr) : Option (Array Float) :=
++  let i := ax "i" 1; let k := ax "k" 2
++  let X : DenseTensor := ⟨[3, 0], #[]⟩
++  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
++  let sizes : HashMap UID Nat := (({} : HashMap UID Nat).insert 1 3).insert 2 0
++  match evalAssignWith c.mul c.combine c.unit0 c.unit1 env sizes "Y" [.free i] rhs with
++  | .ok (_, Y) => some Y.data
++  | .error _ => none
++private def emptyProdRhs : RHSExpr := { body := { terms := [{ factors := [] }] }, nonlin := .identity }
++private def emptySumRhs : RHSExpr := { body := { terms := [] }, nonlin := .identity }
++private def zeroExtRhs : RHSExpr :=
++  { body := { terms := [{ factors := [.read "X" [.axis (ax "i" 1), .axis (ax "k" 2)]] }] }, nonlin := .identity }
++#guard refRows Combine.max emptyProdRhs == some #[0.0, 0.0, 0.0]
++#guard refRows Combine.min emptyProdRhs == some #[0.0, 0.0, 0.0]
++#guard refRows Combine.real emptyProdRhs == some #[1.0, 1.0, 1.0]
++#guard refRows Combine.max emptySumRhs == some #[negInfC, negInfC, negInfC]
++#guard refRows Combine.min emptySumRhs == some #[posInfC, posInfC, posInfC]
++#guard refRows Combine.real emptySumRhs == some #[0.0, 0.0, 0.0]
++#guard refRows Combine.max zeroExtRhs == some #[negInfC, negInfC, negInfC]
++#guard refRows Combine.min zeroExtRhs == some #[posInfC, posInfC, posInfC]
++#guard refRows Combine.real zeroExtRhs == some #[0.0, 0.0, 0.0]
++
+ end LeanNCD.Eval
+diff --git a/leanncd/test/Eval/GatherTest.lean b/leanncd/test/Eval/GatherTest.lean
+index 15a24e46..4201ac10 100644
+--- a/leanncd/test/Eval/GatherTest.lean
++++ b/leanncd/test/Eval/GatherTest.lean
+@@ -15,11 +15,44 @@ run_cmd do
+   let X := (DenseTensor.zeros [3]).set! [1] 5.0    -- X = [0,5,0]
+   let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+   -- read X[i] at i=1 ⇒ 5.0
+-  match gather env (coordOf [(1,1)]) (.read "X" [.axis (ax 1)]) with | .ok v => unless v == 5.0 do throwError "read" | .error e => throwError (toString e)
++  match gather 0.0 1.0 env (coordOf [(1,1)]) (.read "X" [.axis (ax 1)]) with | .ok v => unless v == 5.0 do throwError "read" | .error e => throwError (toString e)
+   -- read X[i-1] at i=0 ⇒ out of range ⇒ 0.0
+-  match gather env (coordOf [(1,0)]) (.read "X" [.shift (ax 1) (-1)]) with | .ok v => unless v == 0.0 do throwError "pad" | .error e => throwError (toString e)
++  match gather 0.0 1.0 env (coordOf [(1,0)]) (.read "X" [.shift (ax 1) (-1)]) with | .ok v => unless v == 0.0 do throwError "pad" | .error e => throwError (toString e)
+   -- iverson [i ≤ 2] at i=1 ⇒ 1.0
+-  match gather env (coordOf [(1,1)]) (.iverson (.rel .le (.embed (.axis (ax 1))) (.embed (.const 2)))) with | .ok v => unless v == 1.0 do throwError "iverson" | .error e => throwError (toString e)
++  match gather 0.0 1.0 env (coordOf [(1,1)]) (.iverson (.rel .le (.embed (.axis (ax 1))) (.embed (.const 2)))) with | .ok v => unless v == 1.0 do throwError "iverson" | .error e => throwError (toString e)
++
++-- S3b T2: the statement's (0_K, 1_K) reach `gather`. A BARE out-of-range read pads with 0_K, an Iverson
++-- factor is 1_K / 0_K, and an out-of-range read UNDER a `.unaryFn` pads with the real 0.0 whatever the
++-- sort. Each max-plus row has a min-plus duality twin; the real/bool rows (0.0, 1.0) are the unchanged
++-- accept-neighbours (they are the existing rows above, which now pass the real/bool constants).
++private def negInf : Float := -1.0 / 0.0
++private def posInf : Float := 1.0 / 0.0
++private def okIs (r : Except EvalError Float) (x : Float) : Bool :=
++  match r with | .ok v => v == x | .error _ => false
++private def gEnv : HashMap String DenseTensor :=
++  ({} : HashMap String DenseTensor).insert "X" ((DenseTensor.zeros [3]).set! [1] 5.0)
++private def padRead : Factor := .read "X" [.shift (ax 1) (-1)]          -- at i=0: out of range
++private def inRead  : Factor := .read "X" [.axis (ax 1)]
++private def padExp  : Factor := .unaryFn .exp "X" [.shift (ax 1) (-1)]  -- at i=0: exp of the pad
++private def ivLe    : Factor := .iverson (.rel .le (.embed (.axis (ax 1))) (.embed (.const 2)))
++private def ivGt    : Factor := .iverson (.rel .gt (.embed (.axis (ax 1))) (.embed (.const 2)))
++-- bare OOB read: pad = 0_K
++#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,0)]) padRead) negInf   -- max-plus
++#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,0)]) padRead) posInf   -- min-plus
++#guard okIs (gather 0.0 1.0 gEnv (coordOf [(1,0)]) padRead) 0.0         -- real / bool
++-- in-range read is untouched by the sort
++#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,1)]) inRead) 5.0
++#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,1)]) inRead) 5.0
++-- OOB read under a unary stays the real 0.0: exp 0.0 = 1.0 (a -inf pad would give exp(-inf) = 0)
++#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,0)]) padExp) 1.0
++#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,0)]) padExp) 1.0
++-- Iverson: true = 1_K, false = 0_K
++#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,1)]) ivLe) 0.0         -- max-plus true
++#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,1)]) ivGt) negInf      -- max-plus false
++#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,1)]) ivLe) 0.0         -- min-plus true
++#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,1)]) ivGt) posInf      -- min-plus false
++#guard okIs (gather 0.0 1.0 gEnv (coordOf [(1,1)]) ivLe) 1.0            -- real / bool true
++#guard okIs (gather 0.0 1.0 gEnv (coordOf [(1,1)]) ivGt) 0.0            -- real / bool false
+ 
+ -- `.ieq` semantics (the DSL's intended *modular* equality, currently APPROXIMATED by structural
+ -- Int `==`; see `evalBool` in Gather.lean). These lock in the actual behavior so a future switch
+diff --git a/leanncd/test/Eval/Plan/KernelDense32Test.lean b/leanncd/test/Eval/Plan/KernelDense32Test.lean
+index 37e26ab8..efc53d0c 100644
+--- a/leanncd/test/Eval/Plan/KernelDense32Test.lean
++++ b/leanncd/test/Eval/Plan/KernelDense32Test.lean
+@@ -204,6 +204,25 @@ def zerdStore32 : Array DenseTensor32 := #[ t32 [2] #[1088421888, 1090519040], t
+ -- regardless of the source's values (`[7, 8]` here).
+ #guard bitsOf (run32 zerdSigs32 f32Zerd zerdStore32) == some #[0, 0]
+ 
++-- S3b T2 (regression pins: the folds are seeded with the algebra's ids, already true after T1). The
++-- tropical empty product is `1_K` = binary32 `+0` (`factorId` `0x00000000`), the empty sum and the
++-- zero-extent reduction are `0_K` = `0xff800000` (max-plus) / `0x7f800000` (min-plus).
++def f32EfpMax : AssignPlan := { KernelDenseTest.efpPlan with algebra := admittedAlgebraF32Max }
++def f32EfpMin : AssignPlan := { KernelDenseTest.efpPlan with algebra := admittedAlgebraF32Min }
++#guard bitsOf (run32 efpSigs32 f32EfpMax efpStore32) == some #[0, 0, 0]
++#guard bitsOf (run32 efpSigs32 f32EfpMin efpStore32) == some #[0, 0, 0]
++
++def etaSigs32 : Array TensorSignature := #[ { shape := #[2], dtype := .f32 } ]
++def etaStore32 : Array DenseTensor32 := #[ t32 [2] #[] ]
++#guard bitsOf (run32 etaSigs32 { KernelDenseTest.etaPlan with algebra := admittedAlgebraF32Max } etaStore32)
++  == some #[4286578688, 4286578688]
++#guard bitsOf (run32 etaSigs32 { KernelDenseTest.etaPlan with algebra := admittedAlgebraF32Min } etaStore32)
++  == some #[2139095040, 2139095040]
++#guard bitsOf (run32 zerdSigs32 { KernelDenseTest.zerdPlan with algebra := admittedAlgebraF32Max } zerdStore32)
++  == some #[4286578688, 4286578688]
++#guard bitsOf (run32 zerdSigs32 { KernelDenseTest.zerdPlan with algebra := admittedAlgebraF32Min } zerdStore32)
++  == some #[2139095040, 2139095040]
++
+ /-! ## Fixtures 7 and 8: the binary32 max-plus / min-plus semirings, independently
+ 
+ `contractPlan` under the max-plus and min-plus algebras (S3b-i task T1: the tropical ⊗ is `+` with
+@@ -313,26 +332,49 @@ def nanOut32 (sigs : Array TensorSignature) (alg : ContractionAlgebra) : Option
+ #guard nanOut32 nanSigs32 admittedAlgebraF32Min == some [0xFFFFFFFF, 0xFFFFFFFF, 0x3f800000]
+ #guard nanOut32 nanSigsBool32 admittedAlgebraBool == some [0xFFFFFFFF, 0xFFFFFFFF, 0x3f800000]
+ 
+-/-! ## Fixture 9: the out-of-bounds pad is the carrier's zero, not the reduction identity
++/-! ## Fixture 9: the out-of-bounds pad of a bare read is `0_K` of the statement's sort
+ 
+ `oobMaxPlan`: `Y[i] := max_j A[i,j]` with `j` ranging over three values but `A` only two columns
+-wide. The `j = 2` read is out of bounds and pads with native `+0`, which is a FACTOR value — it
+-flows through `factorOp` and enters the max fold as a genuine term value. With all-negative valid
+-data that padded `+0` therefore WINS. -/
++wide. The `j = 2` read is out of bounds and (S3b-i task T2) pads with the algebra's decoded `reduceId`:
++`0xff800000` (`−∞`) for max-plus, `0x7f800000` (`+∞`) for min-plus, `+0` for sum-product, `false`
++for the Boolean algebra. With all-negative valid data the pad no longer wins (before T2 it was native
++`+0` and returned `[0, 0]`). -/
+ 
+ def oobSigs32 : Array TensorSignature :=
+   #[ { shape := #[2, 2], dtype := .f32 }, { shape := #[2], dtype := .f32 } ]
+ 
+ def f32OobMax : AssignPlan :=
+   { KernelDenseTest.oobMaxPlan with algebra := admittedAlgebraF32Max }
++def f32OobMin : AssignPlan :=
++  { KernelDenseTest.oobMaxPlan with algebra := admittedAlgebraF32Min }
+ 
+ /-- `A = [[-1, -2], [-3, -4]]`. -/
+ def oobStore32 : Array DenseTensor32 :=
+   #[ t32 [2, 2] #[3212836864, 3221225472, 3225419776, 3229614080], t32 [2] #[] ]
+ 
+--- Zero-pad beats every valid (negative) value, as binary32 `+0`. If the pad were the reduction
+--- identity `−∞` instead, this would return `[-1, -3]`.
+-#guard bitsOf (run32 oobSigs32 f32OobMax oobStore32) == some #[0, 0]
++/-- `A = [[1, 2], [3, 4]]` — the negation of `oobStore32`. -/
++def oobStoreNeg32 : Array DenseTensor32 :=
++  #[ t32 [2, 2] #[1065353216, 1073741824, 1077936128, 1082130432], t32 [2] #[] ]
++
++-- The pad is `−∞`, so the result is the max of the valid cells, `[-1, -3]`. Observed. (A `+0` pad
++-- would return `[0, 0]`.)
++#guard bitsOf (run32 oobSigs32 f32OobMax oobStore32) == some #[3212836864, 3225419776]
++
++-- Duality twin: min-plus on the negated data: the pad is `+∞`, result `[1, 3]`. Observed.
++#guard bitsOf (run32 oobSigs32 f32OobMin oobStoreNeg32) == some #[1065353216, 1077936128]
++
++-- Accept-neighbour, real statement: the pad is still `+0`: `[-1 + -2, -3 + -4]` = `[-3, -7]`.
++#guard bitsOf (run32 oobSigs32 { KernelDenseTest.oobMaxPlan with algebra := admittedAlgebraF32 } oobStore32)
++  == some #[3225419776, 3235905536]
++
++-- Accept-neighbour, bool statement: the pad is `false` (`0`). Rows `[0, 0]` and `[1, 0]` give
++-- `[0, 1]` (a `true` pad would make row 0 `1`).
++def oobSigsBool32 : Array TensorSignature :=
++  #[ { shape := #[2, 2], dtype := .f32 }, { shape := #[2], dtype := .bool } ]
++def oobStoreBool32 : Array DenseTensor32 :=
++  #[ t32 [2, 2] #[0, 0, 1065353216, 0], t32 [2] #[] ]
++#guard bitsOf (run32 oobSigsBool32 { KernelDenseTest.oobMaxPlan with algebra := admittedAlgebraBool } oobStoreBool32)
++  == some #[0, 1065353216]
+ 
+ /-! ## Fixture 10: Iverson predicates become native one/zero
+ 
+@@ -359,6 +401,40 @@ def f32FalsePred : AssignPlan :=
+     algebra := admittedAlgebraF32 } storeAB32)
+   == some #[1114636288, 1142292480, 1169915904, 1198153728]
+ 
++/-! ## Fixture 10b: Iverson values under the tropical algebras (S3b T2)
++
++`[p]` is `1_K` (`factorId`, `+0`) if p else `0_K` (`reduceId`, `−∞`/`+∞`). `f32TruePred`/`f32FalsePred`
++under max-plus/min-plus: true is `A[i] + 3` / `A[i] + 1` (the old true-as-native-`1` would add one more),
++false makes every term `∓∞`. The coordinate-dependent `[i ≤ j]` plan has `B = [3, 2, 1]`, so
++`Y[i] = A[i] + max_{j ≥ i} B[j]` = `[13, 102, 1001, −∞]`; its duality twin is min-plus on the negated data. -/
++
++#guard bitsOf (run32 contractSigs32 { KernelDenseTest.truePredPlan with algebra := admittedAlgebraF32Max } storeAB32)
++  == some #[1095761920, 1120796672, 1148895232, 1176259584]
++#guard bitsOf (run32 contractSigs32 { KernelDenseTest.falsePredPlan with algebra := admittedAlgebraF32Max } storeAB32)
++  == some #[4286578688, 4286578688, 4286578688, 4286578688]
++#guard bitsOf (run32 contractSigs32 { KernelDenseTest.truePredPlan with algebra := admittedAlgebraF32Min } storeAB32)
++  == some #[1093664768, 1120534528, 1148862464, 1176257536]
++#guard bitsOf (run32 contractSigs32 { KernelDenseTest.falsePredPlan with algebra := admittedAlgebraF32Min } storeAB32)
++  == some #[2139095040, 2139095040, 2139095040, 2139095040]
++
++/-- `A = [10, 100, 1000, 10000]`, `B = [3, 2, 1]`. -/
++def storeAB3_32 : Array DenseTensor32 :=
++  #[ t32 [4] #[1092616192, 1120403456, 1148846080, 1176256512]
++   , t32 [3] #[1077936128, 1073741824, 1065353216]
++   , t32 [4] #[] ]
++/-- The negation of `storeAB3_32`. -/
++def storeNegAB3_32 : Array DenseTensor32 :=
++  #[ t32 [4] #[3240099840, 3267887104, 3296329728, 3323740160]
++   , t32 [3] #[3225419776, 3221225472, 3212836864]
++   , t32 [4] #[] ]
++#guard bitsOf (run32 contractSigs32 { KernelDenseTest.lePredPlan with algebra := admittedAlgebraF32Max } storeAB3_32)
++  == some #[1095761920, 1120665600, 1148862464, 4286578688]
++#guard bitsOf (run32 contractSigs32 { KernelDenseTest.lePredPlan with algebra := admittedAlgebraF32Min } storeNegAB3_32)
++  == some #[3243245568, 3268149248, 3296346112, 2139095040]
++-- Accept-neighbour, real statement: `A[i] · Σ_{j ≥ i} B[j]` = `[60, 300, 1000, 0]`, unchanged `1`/`+0`.
++#guard bitsOf (run32 contractSigs32 { KernelDenseTest.lePredPlan with algebra := admittedAlgebraF32 } storeAB3_32)
++  == some #[1114636288, 1133903872, 1148846080, 0]
++
+ /-! ## Fixture 12: the TERM fold is left-associated in array order
+ 
+ Fixture 2's three values as three SEPARATELY STORED terms rather than three reduction coordinates of
+@@ -517,6 +593,17 @@ def f32PadStore : Array DenseTensor32 :=
+ #guard bitsOf (run32 unaryF32Sigs2 (f32UnaryPlan .exp 1) f32PadStore) ==
+   some #[1101049646, 1034427438, 1061642109, 1065353216]
+ 
++/-! ### Fixture 2.3b: the OOB pad under a unary stays `+0` inside a TROPICAL statement
++
++S3b T2: `unaryPlan .exp 1` over `f32PadStore` with the tropical algebras. The out-of-bounds read pads
++with the real native `+0` (the primitive takes real input), so the last lane is `exp(+0) = 1`
++(`1065353216`) exactly as under sum-product; a `−∞` pad would give `exp(−∞) = +0` (bits `0`). -/
++
++#guard bitsOf (run32 unaryF32Sigs2 { f32UnaryPlan .exp 1 with algebra := admittedAlgebraF32Max } f32PadStore) ==
++  some #[1101049646, 1034427438, 1061642109, 1065353216]
++#guard bitsOf (run32 unaryF32Sigs2 { f32UnaryPlan .exp 1 with algebra := admittedAlgebraF32Min } f32PadStore) ==
++  some #[1101049646, 1034427438, 1061642109, 1065353216]
++
+ /-! ### Fixture 2.4: worker witnesses (PLATFORM-DEPENDENT)
+ 
+ `unaryPlan op 0` retagged, over `Nonlin32Test`'s own platform witness lanes for `exp`/`log`/`sin`/
+diff --git a/leanncd/test/Eval/Plan/KernelDenseTest.lean b/leanncd/test/Eval/Plan/KernelDenseTest.lean
+index 81bd0893..6ef8d759 100644
+--- a/leanncd/test/Eval/Plan/KernelDenseTest.lean
++++ b/leanncd/test/Eval/Plan/KernelDenseTest.lean
+@@ -100,14 +100,11 @@ def storeNegA_PosB : Array DenseTensor :=      -- negation of `storeNegB`
+ 
+ -- Out-of-bounds interaction with a tropical reduction — the plan's central subtlety, exercised
+ -- directly. `Y[i] := max_j A[i,j]` with the reduction axis `j` ranging over {0,1,2} but `A` only
+--- 2 columns wide, so the read at `j=2` is out of bounds and `zeroPad` returns `0.0`. That `0.0`
+--- is a FACTOR value (it flows through the factor fold's `factorOp` — `foldScalars` at its factor call
+--- site in `Dense.lean` — `0.0 + 0.0 = 0.0` under max-plus) and so enters the max fold as a genuine
+--- term value of `0.0` — it is NOT the reduction identity (which is `−∞`). With all-negative valid data
+--- the padded `0.0` therefore WINS the max: `Y[i] = max(A[i,0], A[i,1], 0.0) = 0.0`. This is observable
+--- and consistent with the reference's identical zero-extension (the pad affects the result, it just
+--- does so the same way in both evaluators), not an implementation divergence. A later S3b task
+--- changes a tropical bare read's pad to `0_K = −∞`. Observed unchanged by T1.
++-- 2 columns wide, so the read at `j=2` is out of bounds. S3b-i task T2: a BARE out-of-bounds read is
++-- padded with `0_K` of the statement's sort — the algebra's `reduceId` (`−∞` for max-plus) — so the pad
++-- is the identity of the reduction it flows into and never beats a valid cell: with all-negative valid
++-- data `Y[i] = max(A[i,0], A[i,1], −∞) = max(valid cells)`. Before T2 the pad was the real `0.0`, which
++-- WON every all-negative column (`Y = [0, 0]`); the all-negative store below is what separates the two.
+ def oobSigs : Array TensorSignature :=
+   #[ { shape := #[2, 2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
+ 
+@@ -124,7 +121,29 @@ def oobMaxPlan : AssignPlan :=
+ def oobStore : Array DenseTensor :=
+   #[ { shape := [2, 2], data := #[-1.0, -2.0, -3.0, -4.0] }, { shape := [2], data := #[] } ]
+ 
+-#guard dataOf (runIt oobSigs oobMaxPlan oobStore) == some #[0.0, 0.0]
++-- Observed: [-1, -3] (before T2, with the pad `0.0`: [0, 0]).
++#guard dataOf (runIt oobSigs oobMaxPlan oobStore) == some #[-1.0, -3.0]
++
++-- Duality twin: min-plus on the NEGATED data. The pad is `+∞` (the min-plus `reduceId`), so it never
++-- beats a valid cell; the result is the min of the valid cells, `[1, 3]` (the pad `0.0` would give `[0, 0]`).
++def oobMinPlan : AssignPlan := { oobMaxPlan with algebra := admittedAlgebraMin }
++def oobStoreNeg : Array DenseTensor :=
++  #[ { shape := [2, 2], data := #[1.0, 2.0, 3.0, 4.0] }, { shape := [2], data := #[] } ]
++#guard dataOf (runIt oobSigs oobMinPlan oobStoreNeg) == some #[1.0, 3.0]
++
++-- Accept-neighbour, real statement: the pad is still `0.0` (real `reduceId`), so the same read under
++-- sum-product adds nothing: `Y[i] = A[i,0] + A[i,1] + 0 = [-3, -7]`.
++def oobRealPlan : AssignPlan := { oobMaxPlan with algebra := admittedAlgebra }
++#guard dataOf (runIt oobSigs oobRealPlan oobStore) == some #[-3.0, -7.0]
++
++-- Accept-neighbour, bool statement: the pad is `false`. Rows `[0, 0]` and `[1, 0]`: `∃ j. A[i,j]` is
++-- `[0, 1]` (a `true` pad would make row 0 `1` too).
++def oobSigsBool : Array TensorSignature :=
++  #[ { shape := #[2, 2], dtype := .f64 }, { shape := #[2], dtype := .bool } ]
++def oobBoolPlan : AssignPlan := { oobMaxPlan with algebra := admittedAlgebraBool }
++def oobStoreBool : Array DenseTensor :=
++  #[ { shape := [2, 2], data := #[0.0, 0.0, 1.0, 0.0] }, { shape := [2], data := #[] } ]
++#guard dataOf (runIt oobSigsBool oobBoolPlan oobStoreBool) == some #[0.0, 1.0]
+ 
+ -- The constants themselves (f64): ⊗ of both tropical sorts is `add` with identity `+0.0` (`1_K`); ⊕ is
+ -- `max`/`min` with `∓∞` (`0_K`). `Float.toBits 0.0 ≠ Float.toBits (-0.0)`, so this pins `+0`.
+@@ -208,6 +227,14 @@ def unaryOnesStore : Array DenseTensor :=
+ #guard dataOf (runIt unarySigs (unaryPlan .exp 1) unaryOnesStore) ==
+   some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, Float.exp 0.0]
+ 
++-- S3b T2: the same OOB-under-unary read inside a TROPICAL statement keeps the real `0.0` pad (see the
++-- note on `oobMaxPlan`): `exp 0 = 1`, not `exp(−∞) = 0`. Single factor, no reduction: the result is the
++-- unary value itself (`0.0 + v`, then `max(−∞, v)` / `min(+∞, v)`).
++#guard dataOf (runIt unarySigs { unaryPlan .exp 1 with algebra := admittedAlgebraMax } unaryOnesStore) ==
++  some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, Float.exp 0.0]
++#guard dataOf (runIt unarySigs { unaryPlan .exp 1 with algebra := admittedAlgebraMin } unaryOnesStore) ==
++  some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, Float.exp 0.0]
++
+ /-!
+ ## Additional fixtures (Step 3)
+ -/
+@@ -422,6 +449,11 @@ def efpStore : Array DenseTensor := #[ { shape := [3], data := #[] } ]
+ -- empty) reduction coordinate folds that once into termAcc, so Y[i] = 1.0 for every i.
+ #guard dataOf (runIt efpSigs efpPlan efpStore) == some #[1.0, 1.0, 1.0]
+ 
++-- S3b T2 (regression pin: this already held after T1, the fold is seeded with `factorId`): under
++-- both tropical sorts the empty product is `1_K = 0.0`, then `max(−∞, 0.0)` / `min(+∞, 0.0)` keep it.
++#guard dataOf (runIt efpSigs { efpPlan with algebra := admittedAlgebraMax } efpStore) == some #[0.0, 0.0, 0.0]
++#guard dataOf (runIt efpSigs { efpPlan with algebra := admittedAlgebraMin } efpStore) == some #[0.0, 0.0, 0.0]
++
+ -- empty term array: terms := #[], expecting reduceId (0.0) per output coordinate.
+ 
+ def etaSigs : Array TensorSignature := #[ { shape := #[2], dtype := .f64 } ]
+@@ -435,6 +467,13 @@ def etaStore : Array DenseTensor := #[ { shape := [2], data := #[] } ]
+ -- terms := #[]: no term to fold, so Y[i] = reduceId = 0.0 for every i.
+ #guard dataOf (runIt etaSigs etaPlan etaStore) == some #[0.0, 0.0]
+ 
++-- S3b T2 (regression pin, folds seeded with `reduceId`): the empty sum is `0_K` = `−∞` (max-plus) /
++-- `+∞` (min-plus).
++#guard dataOf (runIt etaSigs { etaPlan with algebra := admittedAlgebraMax } etaStore) ==
++  some #[-1.0 / 0.0, -1.0 / 0.0]
++#guard dataOf (runIt etaSigs { etaPlan with algebra := admittedAlgebraMin } etaStore) ==
++  some #[1.0 / 0.0, 1.0 / 0.0]
++
+ -- zero-extent reduction domain: a non-empty term whose reduction position has extent 0, expecting
+ -- reduceId — distinct from the empty-term-array case above because a real, checker-accepted term
+ -- with a factor is present here.
+@@ -459,6 +498,12 @@ def zerdStore : Array DenseTensor :=
+ -- reduction fold never executes and the term contributes reduceId = 0.0 regardless of A's values.
+ #guard dataOf (runIt zerdSigs zerdPlan zerdStore) == some #[0.0, 0.0]
+ 
++-- S3b T2 (regression pin): a zero-extent reduction contributes `0_K` whatever A holds (A = [7, 8]).
++#guard dataOf (runIt zerdSigs { zerdPlan with algebra := admittedAlgebraMax } zerdStore) ==
++  some #[-1.0 / 0.0, -1.0 / 0.0]
++#guard dataOf (runIt zerdSigs { zerdPlan with algebra := admittedAlgebraMin } zerdStore) ==
++  some #[1.0 / 0.0, 1.0 / 0.0]
++
+ -- zero output extent: outputShape := #[0], expecting empty data.
+ 
+ def zoeSigs : Array TensorSignature :=
+@@ -815,6 +860,47 @@ def falsePredPlan : AssignPlan :=
+ -- False predicate contributes 0.0: it annihilates every term, so Y is all zeros.
+ #guard dataOf (runIt sigs falsePredPlan storeAB) == some #[0.0, 0.0, 0.0, 0.0]
+ 
++-- S3b T2: Iverson values come from the algebra: `[p]` is `1_K` (`factorId`) if p, else `0_K` (`reduceId`).
++-- Max-plus: true contributes `0.0`, so Y is unchanged from `maxContractPlan` (`A[i] + 3`; the old
++-- true-as-`1.0` would give `A[i] + 4`); false contributes `−∞`, so EVERY term is `−∞` (the old false
++-- `0.0` left Y at `A[i] + 3` as if the predicate were true). Min-plus twin: `+∞` for false.
++def maxTruePred : AssignPlan := { truePredPlan with algebra := admittedAlgebraMax }
++def maxFalsePred : AssignPlan := { falsePredPlan with algebra := admittedAlgebraMax }
++def minTruePred : AssignPlan := { truePredPlan with algebra := admittedAlgebraMin }
++def minFalsePred : AssignPlan := { falsePredPlan with algebra := admittedAlgebraMin }
++#guard dataOf (runIt sigs maxTruePred storeAB) == some #[13.0, 103.0, 1003.0, 10003.0]
++#guard dataOf (runIt sigs maxFalsePred storeAB) ==
++  some #[-1.0 / 0.0, -1.0 / 0.0, -1.0 / 0.0, -1.0 / 0.0]
++#guard dataOf (runIt sigs minTruePred storeAB) == some #[11.0, 101.0, 1001.0, 10001.0]
++#guard dataOf (runIt sigs minFalsePred storeAB) == some #[1.0 / 0.0, 1.0 / 0.0, 1.0 / 0.0, 1.0 / 0.0]
++
++-- A coordinate-DEPENDENT Iverson `[i ≤ j]` (output position 0, reduction position 1), so the mask keeps
++-- some terms and drops others; row `i = 3` has no kept `j` at all (`j ∈ {0,1,2}`), so it reduces over
++-- an all-false row. `Y[i] := max_j A[i] + [i ≤ j] + B[j]` = `A[i] + max_{j ≥ i} B[j]` with `B = [3,2,1]`:
++-- `[13, 102, 1001, −∞]` (before T2 the false terms contributed `0.0` and the mask was invisible:
++-- `[13, 103, 1003, 10003]`).
++def lePredD : PosBoolExpr :=
++  .rel .le (.affine { coeffs := #[1, 0], bias := 0 }) (.affine { coeffs := #[0, 1], bias := 0 })
++def lePredPlan : AssignPlan :=
++  { contractPlan with terms := #[{ contractPlan.terms[0]! with
++      factors := #[.read readA, .iverson lePredD, .read readB] }] }
++def storeAB3 : Array DenseTensor :=       -- `B = [3, 2, 1]`
++  #[ { shape := [4], data := #[10.0, 100.0, 1000.0, 10000.0] }
++   , { shape := [3], data := #[3.0, 2.0, 1.0] }
++   , { shape := [4], data := #[] } ]
++#guard dataOf (runIt sigs { lePredPlan with algebra := admittedAlgebraMax } storeAB3) ==
++  some #[13.0, 102.0, 1001.0, -1.0 / 0.0]
++-- Duality twin: negated data under min-plus, `[-13, -102, -1001, +∞]`.
++def storeNegAB3 : Array DenseTensor :=    -- negation of `storeAB3`
++  #[ { shape := [4], data := #[-10.0, -100.0, -1000.0, -10000.0] }
++   , { shape := [3], data := #[-3.0, -2.0, -1.0] }
++   , { shape := [4], data := #[] } ]
++#guard dataOf (runIt sigs { lePredPlan with algebra := admittedAlgebraMin } storeNegAB3) ==
++  some #[-13.0, -102.0, -1001.0, 1.0 / 0.0]
++-- Accept-neighbour, real statement: unchanged `1.0`/`0.0`: `A[i] · Σ_{j ≥ i} B[j]` = `[60, 300, 1000, 0]`.
++#guard dataOf (runIt sigs { lePredPlan with algebra := admittedAlgebra } storeAB3) ==
++  some #[60.0, 300.0, 1000.0, 0.0]
++
+ /-! ## Task 4.2: Float-backed Boolean execution
+ 
+ `ScalarDType.bool` is a semantic algebra tag over the SAME `Array Float` storage: `admittedAlgebraBool`
+diff --git a/leanncd/test/Eval/Portfolio/ConvPoolTest.lean b/leanncd/test/Eval/Portfolio/ConvPoolTest.lean
+index 58afd6f4..bdfa2804 100644
+--- a/leanncd/test/Eval/Portfolio/ConvPoolTest.lean
++++ b/leanncd/test/Eval/Portfolio/ConvPoolTest.lean
+@@ -46,6 +46,70 @@ test "CV5 maxpool"
+       (HashMap.ofList [("X", tl [4] [1,3,2,5])])
+       "P" (tl [2] [3,5])) $
+ 
++-- CV5o  S3b T2: max-pool whose window runs off the end. A bare out-of-range read is padded with 0_K
++--   of the statement's sort (`−∞` for max-plus), so the padded cell never wins. Window 3 stride 2:
++--   P[i] = max_p X[2i+p], p∈{0,1,2}; X=[-1,-3,-2,-5] all negative, i=1 reads X[2],X[3],X[4] (X[4] is
++--   out of range) ⇒ P = [max(-1,-3,-2), max(-2,-5,pad)] = [-1,-2]. (Before T2 the pad was the real 0
++--   and won: P = [-1, 0].)
++test "CV5o maxpool, padded window (max-plus pad -inf)"
++    (evalEqB (tlprog!{
++    axis i : ℕ = 2, p : ℕ = 3
++    P[i] := maxreduce(X[2 * i + p])
++  })
++      (HashMap.ofList [("X", tl [4] [-1,-3,-2,-5])])
++      "P" (tl [2] [-1,-2])) $
++
++-- CV5od  duality twin of CV5o: min-pool on the negated data, pad `+∞`; P = [1, 2].
++test "CV5od minpool, padded window (min-plus pad +inf)"
++    (evalEqB (tlprog!{
++    axis i : ℕ = 2, p : ℕ = 3
++    P[i] := minreduce(X[2 * i + p])
++  })
++      (HashMap.ofList [("X", tl [4] [1,3,2,5])])
++      "P" (tl [2] [1,2])) $
++
++-- CV5r  accept-neighbour, real statement: the same padded window under a sum keeps the real pad 0:
++--   P = [1+3+2, 2+5+0] = [6,7].
++test "CV5r sum over padded window (real pad 0)"
++    (evalEqB (tlprog!{
++    axis i : ℕ = 2, p : ℕ = 3
++    P[i] := X[2 * i + p]
++  })
++      (HashMap.ofList [("X", tl [4] [1,3,2,5])])
++      "P" (tl [2] [6,7])) $
++
++-- CV5b  accept-neighbour, bool statement: the pad is `false`. E=[1,0,0,0]: B[0]=∃p E[p]=1, and
++--   B[1]=∃p E[2+p] reads E[2],E[3],pad = 0 (a `true` pad would make it 1) ⇒ B=[1,0].
++test "CV5b bool statement pads false"
++    (evalEqB (tlprog!{
++    axis i : ℕ = 2, p : ℕ = 3
++    predicate E(j), B(i)
++    B[i] := E[2 * i + p]
++  })
++      (HashMap.ofList [("E", tl [4] [1,0,0,0])])
++      "B" (tl [2] [1,0])) $
++
++-- CV5u  OOB under a UNARY inside a tropical statement keeps the real 0.0 pad: `exp` takes real input.
++--   max-plus, X=[-1,-3,-2,-5]: P[0]=max(e^-1,e^-3,e^-2)=e^-1≈0.3678794, P[1]=max(e^-2,e^-5,exp(0)=1)=1
++--   (a `−∞` pad would give exp(−∞)=0 and P[1]=e^-2≈0.1353).
++test "CV5u OOB under exp in max-plus pads 0.0"
++    (evalEqB (tlprog!{
++    axis i : ℕ = 2, p : ℕ = 3
++    P[i] := maxreduce(exp(X[2 * i + p]))
++  })
++      (HashMap.ofList [("X", tl [4] [-1,-3,-2,-5])])
++      "P" (tl [2] [0.36787944117144233, 1])) $
++
++-- CV5ud  min-plus twin: X=[1,3,2,5], P[0]=min(e,e^3,e^2)=e≈2.7182818, P[1]=min(e^2,e^5,exp(0)=1)=1
++--   (a `+∞` pad would give exp(+∞)=+∞ and P[1]=e^2≈7.389).
++test "CV5ud OOB under exp in min-plus pads 0.0"
++    (evalEqB (tlprog!{
++    axis i : ℕ = 2, p : ℕ = 3
++    P[i] := minreduce(exp(X[2 * i + p]))
++  })
++      (HashMap.ofList [("X", tl [4] [1,3,2,5])])
++      "P" (tl [2] [2.718281828459045, 1])) $
++
+ -- CV6  avg-pool as weighted sum: P[i] = Σ_p X[2i+p]·w[p]
+ --   w=[0.5,0.5], X=[2,4,6,8] ⇒ [0.5·2+0.5·4, 0.5·6+0.5·8] = [3,7]
+ test "CV6 avgpool"
+diff --git a/leanncd/test/Eval/Portfolio/TropicalTest.lean b/leanncd/test/Eval/Portfolio/TropicalTest.lean
+index 430b60c2..c1081e5b 100644
+--- a/leanncd/test/Eval/Portfolio/TropicalTest.lean
++++ b/leanncd/test/Eval/Portfolio/TropicalTest.lean
+@@ -77,6 +77,38 @@ test "TR5 min-plus shortest path"
+ test "TR5d max-plus twin of TR5"
+     (evalEqB (tlprog!{ D2[i, k] := maxreduce(D[i, j] · D[j, k]) })
+       (HashMap.ofList [("D", tl [3,3] [0,-1,-5, -9,0,-2, -3,-9,0])])
+-      "D2" (tl [3,3] [0,-1,-3, -5,0,-2, -3,-4,0]))
++      "D2" (tl [3,3] [0,-1,-3, -5,0,-2, -3,-4,0])) $
++
++-- TR10  S3b T2: the Iverson factor is `1_K` if true else `0_K`: under max-plus true adds 0.0 and false
++--   contributes `−∞`, so `[j ≤ i]` is a MASK on the max. C[i] = max_{j ≤ i} X[j]; X=[-3,-1,-2]
++--   ⇒ C = [-3, -1, -1]. (Before T2 a false mask added 0.0 and was invisible: C = [-1,-1,-1].)
++test "TR10 iverson mask in max-plus"
++    (evalEqB (tlprog!{ axis i : ℕ = 3, j : ℕ = 3
++            C[i] := maxreduce(X[j] · [j ≤ i]) })
++      (HashMap.ofList [("X", tl [3] [-3,-1,-2])])
++      "C" (tl [3] [-3,-1,-1])) $
++
++-- TR10d  duality twin of TR10: min-plus on the negated data, false = `+∞`; C = [3, 1, 1].
++test "TR10d iverson mask in min-plus"
++    (evalEqB (tlprog!{ axis i : ℕ = 3, j : ℕ = 3
++            C[i] := minreduce(X[j] · [j ≤ i]) })
++      (HashMap.ofList [("X", tl [3] [3,1,2])])
++      "C" (tl [3] [3,1,1])) $
++
++-- TR10e  an all-false row reduces to `0_K`: `[j < i]` at i=0 keeps no j, so C[0] = −∞ (max-plus) and
++--   C[1] = X[0], C[2] = max(X[0], X[1]). X=[-3,-1,-2] ⇒ C = [−∞, -3, -1]. (`approxEq` compares the
++--   equal infinities equal.)
++test "TR10e empty masked reduction is -inf"
++    (evalEqB (tlprog!{ axis i : ℕ = 3, j : ℕ = 3
++            C[i] := maxreduce(X[j] · [j < i]) })
++      (HashMap.ofList [("X", tl [3] [-3,-1,-2])])
++      "C" (tl [3] [-1.0/0.0,-3,-1])) $
++
++-- TR10ed  min-plus twin of TR10e: C = [+∞, 3, 1] on X=[3,1,2].
++test "TR10ed empty masked reduction is +inf"
++    (evalEqB (tlprog!{ axis i : ℕ = 3, j : ℕ = 3
++            C[i] := minreduce(X[j] · [j < i]) })
++      (HashMap.ofList [("X", tl [3] [3,1,2])])
++      "C" (tl [3] [1.0/0.0,3,1]))
+ 
+ end LeanNCD.Eval
+diff --git a/leanncd/test/Eval/TensorTest.lean b/leanncd/test/Eval/TensorTest.lean
+index df055742..78423ac7 100644
+--- a/leanncd/test/Eval/TensorTest.lean
++++ b/leanncd/test/Eval/TensorTest.lean
+@@ -13,6 +13,13 @@ open DenseTensor
+ -- approxEq: reflexive true; perturbation false:
+ #guard approxEq (ofFn [3] (fun _ => 1.0)) (ofFn [3] (fun _ => 1.0))
+ #guard ! approxEq (ofFn [3] (fun _ => 1.0)) ((ofFn [3] (fun _ => 1.0)).set! [0] 2.0)
++-- S3b T2: equal infinities compare equal (`x - y` is NaN for them, so `|x - y| < ε` alone is false),
++-- unequal infinities and NaN do not.
++#guard approxEq (ofFn [2] (fun _ => 1.0 / 0.0)) (ofFn [2] (fun _ => 1.0 / 0.0))
++#guard approxEq (ofFn [2] (fun _ => -1.0 / 0.0)) (ofFn [2] (fun _ => -1.0 / 0.0))
++#guard ! approxEq (ofFn [2] (fun _ => 1.0 / 0.0)) (ofFn [2] (fun _ => -1.0 / 0.0))
++#guard ! approxEq (ofFn [2] (fun _ => 1.0 / 0.0)) (ofFn [2] (fun _ => 1.0))
++#guard ! approxEq (ofFn [2] (fun _ => 0.0 / 0.0)) (ofFn [2] (fun _ => 0.0 / 0.0))
+ -- allCoords enumerates the full space in row-major order:
+ #guard allCoords [2,2] == [[0,0],[0,1],[1,0],[1,1]]
+ 

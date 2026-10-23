@@ -1,0 +1,304 @@
+diff --git a/leanncd/LeanNCD/Eval/Contract.lean b/leanncd/LeanNCD/Eval/Contract.lean
+index dad0571a..84a50464 100644
+--- a/leanncd/LeanNCD/Eval/Contract.lean
++++ b/leanncd/LeanNCD/Eval/Contract.lean
+@@ -88,7 +88,8 @@ def cartesian (dims : List Nat) : List (List Nat) := DenseTensor.allCoords dims
+ def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Float → Float)
+     (unit0 : Float) (unit1 : Float)
+     (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
+-    (seed : HashMap UID Int) (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) :
++    (seed : HashMap UID Int) (nm : String) (slots : List LHSSlot) (rhs : RHSExpr)
++    (castOf : String → Float → Float := fun _ v => v) :
+     Except EvalError (String × DenseTensor) := do
+   for rn in (readNames rhs).eraseDups do
+     if !(env.contains rn) then
+@@ -130,7 +131,7 @@ def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Floa
+           let coord := (termContr.zip cc).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) baseCoord
+           let mut prod := unit1
+           for f in t.factors do
+-            match gather unit0 unit1 env coord f with
++            match gatherCast unit0 unit1 castOf env coord f with
+             | .ok v   => prod := mul prod v
+             | .error e => throw e
+           termAcc := combine termAcc prod
+@@ -202,6 +203,17 @@ def combineFor (decls : List Decl) (nm : String) (agg : AggOp) : Combine :=
+   | .min => Combine.min
+   | .sum => if isPredicateDest decls nm then Combine.bool else Combine.real
+ 
++/-- The bool -> tropical READ CAST (S3b design §3), as a per-source-name map for `gatherCast`. In a
++    statement of sort max-plus or min-plus (`agg` ≠ `.sum`; `c` is its `Combine`), a bare read of a
++    `predicate`-declared tensor reads a stored false (`0`) as `c.unit0` (0_K: `-inf`/`+inf`) and a
++    stored true (anything else) as `c.unit1` (1_K: `0.0`). Every other read, and every real or
++    Boolean statement, is the identity, so real/bool statements stay bit-identical. -/
++def boolReadCast (decls : List Decl) (c : Combine) (agg : AggOp) : String → Float → Float :=
++  match agg with
++  | .sum => fun _ v => v
++  | .max | .min => fun nm v =>
++      if isPredicateDest decls nm then (if v != 0.0 then c.unit1 else c.unit0) else v
++
+ /-! ## The storage boundary of the reference evaluator
+ 
+ Every worker in `Eval/` computes in `Float` (IEEE-754 binary64): `Combine`'s four fields, the
+@@ -261,6 +273,7 @@ def evalAssignDtypedSeeded (decls : List Decl)
+   rejectUnsupportedStorage decls (nm :: readNames rhs)
+   let c := combineFor decls nm rhs.agg
+   evalAssignSeeded c.mul c.combine c.unit0 c.unit1 env sizes seed nm slots rhs
++    (boolReadCast decls c rhs.agg)
+ 
+ /-- Unseeded dtype-aware assign: `evalAssignDtypedSeeded` with an empty seed. -/
+ def evalAssignDtyped (decls : List Decl)
+diff --git a/leanncd/LeanNCD/Eval/Gather.lean b/leanncd/LeanNCD/Eval/Gather.lean
+index 179fef83..98242884 100644
+--- a/leanncd/LeanNCD/Eval/Gather.lean
++++ b/leanncd/LeanNCD/Eval/Gather.lean
+@@ -41,16 +41,16 @@ def evalBool (coord : HashMap UID Int) : BoolExpr → Bool
+     `gather`'s `.read` and `.unaryFn` cases — a `.unaryFn` factor reads identically to a plain
+     `.read` (with its own `pad`, see `gather`), then applies its function to the resulting value. -/
+ def gatherRead (env : HashMap String DenseTensor) (coord : HashMap UID Int) (pad : Float)
+-    (nm : String) (es : List IdxExpr) : Except EvalError Float :=
++    (nm : String) (es : List IdxExpr) (cast : Float → Float := fun v => v) : Except EvalError Float :=
+   match env[nm]? with
+   | none => .error (.unknownTensor .gather nm)
+   | some t =>
+       let srcZ : List Int := es.map (evalIdx coord)
+-      -- bounds check against t.shape; out-of-range ⇒ pad
++      -- bounds check against t.shape; out-of-range ⇒ pad (never cast)
+       if (srcZ.zip t.shape).any (fun (z, d) => z < 0 || z ≥ (d : Int)) then
+         .ok pad
+       else
+-        .ok (t.get! (srcZ.map Int.toNat))
++        .ok (cast (t.get! (srcZ.map Int.toNat)))
+ 
+ /-- Apply a unary transcendental function to a gathered value. `log`/`sqrt`/`recip` fail loud on
+     a domain violation (consistent with this evaluator's fail-loud conventions elsewhere —
+@@ -70,13 +70,24 @@ def applyUnaryFn (ctx : EvalContext) : UnaryOp → Float → Except EvalError Fl
+     min-plus +inf). `.iverson b`: `one` if the predicate holds else `zero`. `.unaryFn op nm es`:
+     reads like `.read nm es` BUT an out-of-range read pads with the real 0.0 (the primitive takes
+     real input, so `f(0.0)` is what an out-of-range read contributes), then applies `op` to the
+-    resulting value; the result is taken as-is. -/
+-def gather (zero one : Float) (env : HashMap String DenseTensor) (coord : HashMap UID Int) :
++    resulting value; the result is taken as-is.
++
++    `castOf nm` is the statement's SOURCE READ CAST (S3b design §3): applied to the value of a BARE
++    in-bounds read of `nm` (the bool -> tropical cast: a Boolean source read by a tropical statement
++    is `0_K`/`1_K` of that statement, not the raw 0/1). It is NOT applied to the out-of-range pad
++    (already `zero`) nor under a `.unaryFn` (the primitive takes real input). -/
++def gatherCast (zero one : Float) (castOf : String → Float → Float)
++    (env : HashMap String DenseTensor) (coord : HashMap UID Int) :
+     Factor → Except EvalError Float
+   | .iverson b => .ok (if evalBool coord b then one else zero)
+-  | .read nm es => gatherRead env coord zero nm es
++  | .read nm es => gatherRead env coord zero nm es (castOf nm)
+   | .unaryFn op nm es =>
+       let ctx : EvalContext := { tensor := nm, coord := es.map (evalIdx coord) }
+       (gatherRead env coord 0.0 nm es).bind (applyUnaryFn ctx op)
+ 
++/-- `gatherCast` with no source cast: the real and Boolean statements' gather. -/
++def gather (zero one : Float) (env : HashMap String DenseTensor) (coord : HashMap UID Int) :
++    Factor → Except EvalError Float :=
++  gatherCast zero one (fun _ v => v) env coord
++
+ end LeanNCD.Eval
+diff --git a/leanncd/LeanNCD/Eval/Plan/Check.lean b/leanncd/LeanNCD/Eval/Plan/Check.lean
+index e76f6539..12c6042b 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Check.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Check.lean
+@@ -321,6 +321,13 @@ private def checkAssignCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSig
+         unless f.sourceShape == srcSig.shape do
+           throw (.sourceShapeMismatch ti fi f.sourceShape srcSig.shape)
+         unless f.oobPolicy == .zeroPad do throw (.policyNotAdmitted f.oobPolicy)
++        -- the bool -> tropical read cast: only a BARE read of a `.bool` source slot, under a tropical
++        -- algebra (`+` factors, `max`/`min` reduction); anything else is a malformed raw plan.
++        if f.boolToTropical then
++          let tropical := a.algebra.factorOp == .add &&
++            (a.algebra.reduceOp == .max || a.algebra.reduceOp == .min)
++          unless srcSig.dtype == .bool && f.unary.isNone && tropical do
++            throw (.castNotAdmitted ti fi)
+         unless f.map.coeffs.size == f.sourceShape.size && f.map.bias.size == f.sourceShape.size do
+           throw (.affineRankMismatch ti fi f.sourceShape.size f.map.coeffs.size)
+         for row in f.map.coeffs do
+diff --git a/leanncd/LeanNCD/Eval/Plan/Compile.lean b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+index 6c8259c2..17a63934 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Compile.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+@@ -711,9 +711,13 @@ def algebraForDest (destDtype : ScalarDType) (agg : AggOp) : ContractionAlgebra
+ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List EvalWarning)
+     (stmtName : String) (contextUids : List UID) (contextShape : Array Nat)
+     (outputUids : List UID) (pins : HashMap UID Int)
+-    (resolveSource : String → TensorSlot × Array Nat)
++    (resolveSource : String → TensorSlot × Array Nat) (isBoolSlot : TensorSlot → Bool)
+     (destSlot : TensorSlot) (outputShape : Array Nat) (agg : AggOp) (terms : List ProdTerm) :
+     Except PlanCompileFailure AssignPlan := do
++  -- S3b design §3: a statement is tropical iff its aggregation is `max`/`min` (the same selector
++  -- `algebraForAgg` uses), and a BARE read of a `.bool` source slot in such a statement is cast
++  -- (`ReadPlan.boolToTropical`). A `.unaryFn` read is never cast (it takes real input).
++  let tropical : Bool := match agg with | .sum => false | .max | .min => true
+   let mut termsAcc : Array TermPlan := #[]
+   for term in terms do
+     let termUids := (termAxisUIDs term).eraseDups
+@@ -740,7 +744,8 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
+           let coeffs : Array (Array Int) := (rows.map (fun r => r.1.toArray)).toArray
+           let biasArr : Array Int := (rows.map (fun r => r.2)).toArray
+           factorsAcc := factorsAcc.push
+-            (.read { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad })
++            (.read { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad
++                   , boolToTropical := tropical && isBoolSlot sourceSlot })
+       | .iverson pred =>
+           -- A source Iverson predicate lowers to a positional `PosBoolExpr` over the SAME ordered
+           -- basis a `.read` factor uses here (`context ++ output ++ reduction`, real pins folded in),
+@@ -1087,7 +1092,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
+       let s := baseLocalOf.getD name 0
+       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
+     let plan ← residualizeAssignment sizes warnings nm [] #[] outputUids pins resolveSource
+-      preSlot outputShape rhs.agg rhs.body.terms
++      (fun s => (sigsNow[s]?).any (·.dtype == .bool)) preSlot outputShape rhs.agg rhs.body.terms
+     -- Task 4.4: this statement's OWN destination (`nm`, a state or block-local scratch —
+     -- classification happens later, once `stateNames.contains nm` is checked in Phase 1 above) may
+     -- be `.predicate`-declared exactly like a top-level destination (`Compile.lean`'s `prepareEvalPlan`
+@@ -1195,7 +1200,8 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
+         | none => scratchNow.getD name 0
+       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
+     let plan ← residualizeAssignment stepSizes warnings nm ctxUids stepExtents outputUids
+-      ({} : HashMap UID Int) resolveSource preSlot outputShape rhs.agg rhs.body.terms
++      ({} : HashMap UID Int) resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool))
++      preSlot outputShape rhs.agg rhs.body.terms
+     -- Task 4.4: same per-statement destination-dtype derivation as the base block above — `nm`
+     -- here may be a persistent state's recurrence result OR block-local scratch (classification is
+     -- still `stateNames.contains nm`, decided below, AFTER this push — "shared by recurrence and
+@@ -1577,7 +1583,8 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
+           (sourceSlot, (sigsNow.getD sourceSlot { shape := #[], dtype := .f64 }).shape)
+         let computePlan ←
+           residualizeAssignment sizes warnings nm [] #[] srcUids ({} : HashMap UID Int)
+-            resolveSource destSlot srcShape rhs.agg rhs.body.terms
++            resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool)) destSlot srcShape
++            rhs.agg rhs.body.terms
+         -- Destination dtype and algebra are selected exactly as the plain branch selects them: by
+         -- the DESTINATION's own declaration, never by a source factor's.
+         let destDtype := dtypeOfDecl (declEnv[nm]?)
+@@ -1629,7 +1636,8 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
+         -- behavior exactly (Task 2's whole point; see `residualizeAssignment`'s doc comment).
+         let assignPlan ←
+           residualizeAssignment sizes warnings nm [] #[] retainedUids ({} : HashMap UID Int)
+-            resolveSource destSlot outputShape rhs.agg rhs.body.terms
++            resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool)) destSlot outputShape
++            rhs.agg rhs.body.terms
+         match rhs.nonlin with
+         | .identity =>
+             -- Byte-for-byte unchanged for a REAL destination (Thread 4 regression gate): single
+diff --git a/leanncd/LeanNCD/Eval/Plan/Dense.lean b/leanncd/LeanNCD/Eval/Plan/Dense.lean
+index 3d55cfb9..6bafdd87 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Dense.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Dense.lean
+@@ -49,6 +49,9 @@ private structure ScalarKernelOps (α : Type) where
+       real input, so an out-of-bounds read contributes `f(0)` whatever the statement's sort). A bare
+       read and an Iverson factor take their values from the algebra's decoded identities instead. -/
+   zero : α
++  /-- Whether a stored value reads as Boolean true (anything but this carrier's zero): the truth
++      test of the bool -> tropical read cast (`ReadPlan.boolToTropical`). -/
++  isTrue : α → Bool
+   /-- This carrier's implementation of one binary operation, or a refusal for one it has no
+       semantics for. -/
+   binOp : ScalarBinOp → Except PositionalInputError (α → α → α)
+@@ -76,6 +79,7 @@ private def floatOps : ScalarKernelOps Float :=
+       | .bool false => .ok 0.0
+       | .f32 _ => .error (.storageKindMismatch .float64 .float32)
+   , zero := 0.0
++  , isTrue := fun v => v != 0.0
+   , binOp := fun op => match op with
+       | .add => .ok (fun a b => a + b)
+       | .mul => .ok (fun a b => a * b)
+@@ -104,6 +108,7 @@ private def float32Ops : ScalarKernelOps Float32 :=
+       | .bool false => .ok (Float32.ofBits 0x00000000)
+       | .f64 _ => .error (.storageKindMismatch .float32 .float64)
+   , zero := Float32.ofBits 0x00000000
++  , isTrue := fun v => v != Float32.ofBits 0x00000000
+   , binOp := fun op => match op with
+       | .add => .ok (fun a b => a + b)
+       | .mul => .ok (fun a b => a * b)
+@@ -125,8 +130,12 @@ private def float32Ops : ScalarKernelOps Float32 :=
+     0, bool false, max-plus -inf, min-plus +inf), so a padded cell is the identity of the reduction
+     it flows into and never beats a valid cell. A `unary` read is padded with the carrier's real
+     zero (`ops.zero`) instead, because the primitive takes real input. A missing slot cannot occur
+-    past `validateStore` (it is `missingSlot` there); the branch pads like an out-of-bounds read. -/
+-private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (pad : α)
++    past `validateStore` (it is `missingSlot` there); the branch pads like an out-of-bounds read.
++
++    A read with `boolToTropical` set casts an IN-BOUNDS gathered value (S3b design §3): stored true
++    -> `one` (the algebra's decoded `factorId`, 1_K), stored false -> `pad` (its `reduceId`, 0_K).
++    The out-of-bounds/missing-slot pad is already 0_K and is not cast. -/
++private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (pad one : α)
+     (store : Array (DenseTensorOf α)) (f : ReadPlan) (iter : List Int) :
+     Except PositionalInputError α :=
+   let padV : α := match f.unary with
+@@ -138,7 +147,10 @@ private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (pad : α)
+     | some t =>
+         let src := applyAffine f.map iter
+         let shape := f.sourceShape.toList
+-        if inBoundsPerDim shape src then (t.data[flatIndex shape (src.map Int.toNat)]?).getD padV
++        if inBoundsPerDim shape src then
++          match t.data[flatIndex shape (src.map Int.toNat)]? with
++          | none => padV
++          | some v => if f.boolToTropical then (if ops.isTrue v then one else pad) else v
+         else padV
+   match f.unary with
+   | none => .ok base
+@@ -235,7 +247,7 @@ private def denseValueAtWith {α : Type} (ops : ScalarKernelOps α) (a : AssignP
+         for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
+         return iter
+       let factorVals ← t.factors.toList.mapM (fun f => match f with
+-        | .read r => gatherFactorWith ops reduceId store r iter.toList
++        | .read r => gatherFactorWith ops reduceId factorId store r iter.toList
+         | .iverson b =>
+             (evalPosBool iter.toList b
+               |>.mapError (fun e => match e with
+diff --git a/leanncd/LeanNCD/Eval/Plan/Error.lean b/leanncd/LeanNCD/Eval/Plan/Error.lean
+index 8e5e3e32..4c690e53 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Error.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Error.lean
+@@ -28,6 +28,9 @@ inductive PlanError
+   | constDtypeMismatch       (dtype : ScalarDType) (const : ScalarConst)
+   | algebraNotAdmitted       (algebra : ContractionAlgebra)
+   | policyNotAdmitted        (policy : OutOfBoundsPolicy)
++  /-- A read carries the bool -> tropical cast (`ReadPlan.boolToTropical`) but is not a bare read of
++      a `.bool` source under a tropical (`+`, `max`/`min`) algebra. -/
++  | castNotAdmitted          (termIndex : Nat) (factorIndex : Nat)
+   | destinationShapeMismatch (declared : Array Nat) (signature : Array Nat)
+   | duplicateInputSlot       (slot : TensorSlot)
+   | inputSlotsNotOrdered     (atIndex : Nat)
+diff --git a/leanncd/LeanNCD/Eval/Plan/Kernel.lean b/leanncd/LeanNCD/Eval/Plan/Kernel.lean
+index 7184aeac..54525743 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Kernel.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Kernel.lean
+@@ -31,13 +31,18 @@ structure AffineMap where
+ /-- One factor: a gather from `sourceSlot` through `map`, against a shape the checker has already
+     verified equals that slot's signature. `unary`, when present, is a transcendental function
+     (`log`/`exp`/…) applied to the gathered value AFTER the out-of-bounds zero-pad — so an
+-    out-of-bounds read contributes `f(0)`, matching the reference `gather` exactly. -/
++    out-of-bounds read contributes `f(0)`, matching the reference `gather` exactly.
++    `boolToTropical` is the bool -> tropical READ CAST (S3b design §3): when set, an IN-BOUNDS
++    gathered value that is stored true reads as the statement algebra's `factorId` (1_K) and one
++    stored false as its `reduceId` (0_K). The checker admits it only on a bare read of a `.bool`
++    source under a tropical algebra; the out-of-bounds pad is unaffected (already 0_K). -/
+ structure ReadPlan where
+   sourceSlot  : TensorSlot
+   map         : AffineMap
+   sourceShape : Array Nat
+   oobPolicy   : OutOfBoundsPolicy
+   unary       : Option UnaryOp := none
++  boolToTropical : Bool := false
+   deriving DecidableEq, BEq, Repr, Inhabited
+ 
+ /-- One affine predicate leaf over a positional iteration coordinate. -/
+diff --git a/leanncd/LeanNCD/Eval/Scatter.lean b/leanncd/LeanNCD/Eval/Scatter.lean
+index 21fbab46..9197187b 100644
+--- a/leanncd/LeanNCD/Eval/Scatter.lean
++++ b/leanncd/LeanNCD/Eval/Scatter.lean
+@@ -65,7 +65,7 @@ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes :
+     for t in rhs.body.terms do
+       let mut prod := c.unit1
+       for f in t.factors do
+-        match gather c.unit0 c.unit1 env coord f with
++        match gatherCast c.unit0 c.unit1 (boolReadCast decls c rhs.agg) env coord f with
+         | .ok v   => prod := c.mul prod v
+         | .error e => throw e   -- e.g. a .unaryFn domain violation; out-of-range reads are `.ok` of the pad, not `.error`
+       val := c.combine val prod

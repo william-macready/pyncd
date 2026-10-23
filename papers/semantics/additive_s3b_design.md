@@ -71,8 +71,12 @@ statements only, since `relu(maxreduce(..))` has no surface form); two annotated
 Where the rejections live (builder-check answers, verified against the code 2026-10-22):
 - They sit beside `checkPredicateOutput` (`Structural.lean`) and are enforced wherever that rule is: source `checkDtypes`, `checkScheduledDtypes`
   (so `validateScheduled`, hence `evalScheduled` and the checked compile entry). They run on the source schedule BEFORE collection.
-- `route` is semantics-free and stays so. It never enforces the predicate-output rule either (`physicalizeForRoute` does not call `validateScheduled`).
-  No sort, cast or A8 rejection is added on the route path; `RouteFragments` and its `physicalizeOne_length_eq_fragmentWidth` obligations are untouched.
+- `route` of a DIRECT `ScheduledProgram` is semantics-free and stays so (`physicalizeForRoute` does not call `validateScheduled`, so it never enforces the
+  predicate-output rule either). No sort, cast or A8 rejection is added on that path; `RouteFragments` and its `physicalizeOne_length_eq_fragmentWidth`
+  obligations are untouched. CORRECTION found while prototyping (P4): the SURFACE `compile` pipeline runs `checkDtypes`, which does enforce the predicate rule, so
+  the per-statement tropical-nonlin rule is also called from `checkDtypes` (surface programs are rejected at `compile` too). The cast and scan-state rules need the
+  schedule-level map and live only in `validateScheduled` (scan nodes are not grouped inside `checkDtypes`).
+- The sort type is named `SortAlgebra` (`real | bool | maxPlus | minPlus`): `LeanNCD.Algebra` is already a class and `Algebra` clashes in the aggregate build.
   Consequently `LoweringTest` AGG1/AGG2 (they call the regression-only `splitNonlins` directly) and `RouteFragmentCorpusTest`'s `aggregate` fixture
   (route, payload `.represented`) are UNCHANGED. The audit's "become rejections" list is wrong for those two; only execution-entry tests can flip.
 - `algebraOf` is computed on the SOURCE schedule inside `validateScheduled` and stored in `CheckedScheduledProgram.algebras`. It is a partial map; a lookup
@@ -115,7 +119,7 @@ f32: identical semantics; constants are bit patterns (⊗ identity `0x00000000`;
 | --- | --- |
 | Slice name "S3b" = the semiring flip for single-writer programs; tropical multi-writer collection (A4 agreement) is S3b-ii, planned after | multiWriterAlgebra is refused today and the oracle's multi-writer rows are unencoded; the flip does not need agreement except within a scan state |
 | Plan covers S3b only | Rule 13: one plan per slice |
-| `approxEq` is fixed in production source (`x == y \|\| |x-y| < ε`) | one-line test helper, needed for RC10's -inf cell |
+| `approxEq` is fixed in production source (equal values compare equal, so equal infinities do; NaN stays unequal) | one-line test helper, needed for RC10's -inf cell |
 | The tropical-nonlin rejection (execution entries only, beside `checkPredicateOutput`) and the scan-state annotation-agreement rejection are in scope | both are needed for a well-defined sort per statement/state; route is untouched (§3) |
 | A test pins ("become rejections") from the audit are not trusted until observed | audit §8c was unread for 3 of the 5 and wrong for 2 |
 | `EvalError.scatterFillNotIdentity` and `CapabilityError.scatterOptsNotAdmitted` are deleted with their only consumers (the sorted differential's condition) | audit §11.9; they are kept alive only by `confirmsSorted` |
@@ -131,3 +135,25 @@ Tropical multi-writer collection and the writer-agreement rule (S3b-ii); multi-w
 
 Execution budget about 175M (Rule 6). Expected breaches: casts (T4), sort derivation and rejection constructors (T3), oracle cleanup (T7), test migration (T8, three dispatches).
 Authoring target about 50M; S1, S2a and S2b each ran roughly 2x. Surface any breach in the record.
+
+## 9. The shape the prototype landed (supersedes §4 where they differ)
+
+Verified by an in-order replay of the 16 patches onto the slice tip: the tree is identical to the prototype tip. Eight prototype dispatches (P1-P8) built the whole slice as
+16 per-task patches (`additive_s3b_files/patches/`); the full `Tests` build is green at the tip (8825 jobs). Differences from §4:
+
+- **No `algebras` map in either backend.** Casts need only local facts: a bool source is `isPredicateDest decls src` (reference) or a `bool` slot signature (plan), and a statement is
+  tropical iff `agg ≠ .sum`. `CheckedScheduledProgram.algebras`/`algebraOf` exist for validation only. The cast is `ReadPlan.boolToTropical : Bool := false` (plan) and a trailing
+  cast argument of `gatherRead`/`gatherCast` (reference); truth is "stored value is not 0".
+- **Scan state sort and neutral writers: one mechanism.** `scanStateStmts` rewrites each sort-neutral statement's `agg` to the state's sort before evaluation or compilation, so the OOB
+  pad and the cast key move together; `scanStateSorts` (DSL/Ast.lean) is shared by validation and both scan entries. The checked plan carries the state's init as `StateInit`
+  (`zero`, `negInf`, `posInf`; `StateSlot.initValue`, default `.zero`), with `ScanPlanError.stateInitNotAdmitted` for a tropical init on a bool state.
+- **Neutral writers are decided by shape only.** A neutral statement's own annotation is ignored. Consequence (PARKED, pinned by `parkedAllNeutralScanState`): an all-neutral scan state
+  with a tropical annotation evaluates REAL; the alternative (a neutral annotation votes for the sort) is a design decision for a later slice.
+- **New errors:** `tropicalNonlin`, `scanStateAlgebraMismatch`, `sortCastUnsupported` (`CompileError`), `PlanError.castNotAdmitted`, `ScanPlanError.stateInitNotAdmitted`. No exhaustive `match` broke.
+  Deleted with their only consumers: `EvalError.scatterFillNotIdentity`, `CapabilityError.scatterOptsNotAdmitted`, the oracle's `scatterPolicy` refusal, `SortedClassification.knownContractDifference`,
+  and the conditions `tropicalMultiFactor`, `tropicalScatterFill`, `unexplainedAgree`. The oracle now admits top-level tropical scatter, and the sorted snapshots declare the strided axis as 8
+  (production's derived extent).
+- **Test shape actually built:** a duality property over the existing generators (`DualityTest`: 3832 + 13 + 2 + 2 programs on the reference, the f64 plan and the f32 plan; `enumPrograms` has no
+  max aggregation, so the property tropicalises it), hand twins for every fixture the property does not cover, a bool-cast module (`BoolCastTest`), and a test-side fix to the independent
+  scan oracle (`ScanUnroll` filled an unwritten tropical cell with the real 0).
+- **Authoring cost:** see the ledger. Every prototype exceeded the 60-call cap by the harness count (96 to 149 calls); the cost drivers were hand mutations (P1, P2), harness refusals and builds.

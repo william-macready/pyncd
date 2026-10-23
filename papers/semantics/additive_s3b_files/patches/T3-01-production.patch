@@ -1,0 +1,210 @@
+diff --git a/leanncd/LeanNCD/Eval/AGENTS.md b/leanncd/LeanNCD/Eval/AGENTS.md
+index 69ee72bc..a6a27545 100644
+--- a/leanncd/LeanNCD/Eval/AGENTS.md
++++ b/leanncd/LeanNCD/Eval/AGENTS.md
+@@ -66,7 +66,7 @@ back to `toString` for legacy renderer checks.
+ - **Warnings are outcome data, never trace output**: returned unchanged through `evalScheduled`/`TLProgram.eval`, in `EvalReport` on success and beside the error in `EvalFailure`. Do not reintroduce `dbg_trace` or an environment-only entry.
+ - **The legacy evaluator refuses `f32` permanently.** Every worker here computes in binary64, so a `tensor f32` has no correct reading. `evalScheduled` reports `EvalError.unsupportedDtype nm` for the first used f32 name (`scheduleFloat32Name?`) before sizing runs; `evalAssignDtypedSeeded`, `evalPlain`, `evalStmtSliceSeeded`, `evalScan`, and `evalScatter` each guard at their own ENTRY (`rejectUnsupportedStorage`), because the scatter and scan arms would otherwise hit shape/nonlinearity failures first and misreport. Consequence: **there is no legacy oracle for any f32 program** — binary32 fixtures assert exact `Float32.toBits` values instead. **Decided role (F32 default flip):** the legacy evaluator is the binary64 REFERENCE ORACLE (the 3832-case and 17-case differential gates), not a user-facing entry. Plain `tensor`/`linear` and undeclared names are now binary32, so a program run through it must spell `f64` (tests use `TLProgram.explicitF64`); no f32 reference evaluator and no f64 shim in the legacy entry are planned (`papers/f32_outside_paths_options.md`, Decision 1, option A).
+ 
+-- **The reference REJECTS what the checked backend rejects on principle** (reference-alignment slice; it used to accept these and return a meaningless value): scan structure in `checkScanStructure` (`Scan.lean`, order documented there: duplicate state result / scratch producer, zero-scale write, extent mismatch across placements, base reading a state, base off the boundary, overlapping base writes — overlap uses the checked path's residue rule, so strided `S[2*j,0]`/`S[2*j+1,0]` stays legal); marker disagreement in `checkNormMarkers` (`Nonlin.lean`, covers scatter arms, not only `resolveNonlin`); and a top-level `maxreduce`/`minreduce` scatter in `checkScatterAgg` (`Eval.lean`, deliberately NOT inside `evalScatter` or the scan-local arm). A new guard must sit where the sibling statements are visible, or it silently never fires. Still accepted by the reference and refused by the checked path: a scan-local scatter into a predicate state and `S[j,l+1] := S[j,2*l]` (`stateReadNotCausal`); see `papers/ref_align_prototype_notes.md`.
++- **The reference REJECTS what the checked backend rejects on principle** (reference-alignment slice; it used to accept these and return a meaningless value): scan structure in `checkScanStructure` (`Scan.lean`, order documented there: duplicate state result / scratch producer, zero-scale write, extent mismatch across placements, base reading a state, base off the boundary, overlapping base writes — overlap uses the checked path's residue rule, so strided `S[2*j,0]`/`S[2*j+1,0]` stays legal); marker disagreement in `checkNormMarkers` (`Nonlin.lean`, covers scatter arms, not only `resolveNonlin`); (a top-level `maxreduce`/`minreduce` scatter was refused by `checkScatterAgg` until S3b T3, which deleted the guard: a top-level scatter now starts from its sort's 0_K and folds collisions with ⊕; a scan-local scatter still overwrites, parked). A new guard must sit where the sibling statements are visible, or it silently never fires. Still accepted by the reference and refused by the checked path: a scan-local scatter into a predicate state and `S[j,l+1] := S[j,2*l]` (`stateReadNotCausal`); see `papers/ref_align_prototype_notes.md`.
+ - **A complex-typed declaration is rejected, in a different error shape per entry:** `prepareEvalPlan` as `sourceInvariant (.unsupportedElementType name spelling)` (Step 0 `buildDeclEnv`); direct `capabilityPreflight` as `.unsupportedDtype "<name>: <spelling> element type"`; `evalScatter` as `EvalError.compile (.unsupportedElementType …)`. Table: `test/DSL/ComplexElementTypeTest.lean`.
+ 
+ ## Patterns
+diff --git a/leanncd/LeanNCD/Eval/Error.lean b/leanncd/LeanNCD/Eval/Error.lean
+index 38bd6f93..aa51a9cf 100644
+--- a/leanncd/LeanNCD/Eval/Error.lean
++++ b/leanncd/LeanNCD/Eval/Error.lean
+@@ -379,9 +379,9 @@ inductive EvalError
+   | multipleMarkedReductionAxes (stmt : String) (firstPos secondPos : Nat)
+   /-- A top-level scatter aggregates with `max`/`min` but fills unwritten cells with a finite value,
+       which is not that aggregation's identity (`∓∞`). The old reference filled with 0, so
+-      `Out[2*i] := maxreduce(X[i])` returned `[-1,0,-2,0,-3,0]` for `X = [-1,-2,-3]`. Raised by
+-      `checkScatterAgg` (`Eval.lean`) in `evalPlain`'s scatter arm only; scan-local scatters are
+-      exempt. -/
++      `Out[2*i] := maxreduce(X[i])` returned `[-1,0,-2,0,-3,0]` for `X = [-1,-2,-3]`. No producer
++      since S3b T3 (a top-level scatter now starts from the sort's 0_K); deleted with the sorted
++      differential's matching condition (T7). -/
+   | scatterFillNotIdentity (stmt : String) (agg : AggOp)
+   /-- A supplied input names a tensor the program defines (writes), including a private
+       per-writer tensor `T#k` of additive collection. Inputs and defined tensors are disjoint
+diff --git a/leanncd/LeanNCD/Eval/Eval.lean b/leanncd/LeanNCD/Eval/Eval.lean
+index 62b0085b..311d5bfe 100644
+--- a/leanncd/LeanNCD/Eval/Eval.lean
++++ b/leanncd/LeanNCD/Eval/Eval.lean
+@@ -20,20 +20,6 @@ def scatterOutShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : Except Ev
+     | some n => pure n
+     | none   => throw (.shape (.unsizedScatterOutput sl)))
+ 
+-/-- A TOP-LEVEL scatter with a tropical aggregation must fill unwritten cells with that
+-    aggregation's identity. Mirrors the checked backend's `scatterAggOrFail` (`Plan/Compile.lean`)
+-    for `.max`/`.min`. S3a: `fill` is no longer a policy (every scatter starts from 0_K), so the
+-    check is now simply "a top-level scatter whose RHS aggregation is not `.sum` is refused" — the
+-    tropical scatter carriers are S3b's. It keeps raising `EvalError.scatterFillNotIdentity` (same
+-    constructor and text) because `SortedDifferential.confirmsSorted` matches it. A `.sum` scatter
+-    is accepted. Deliberately NOT in `evalScatter` — a SCAN-LOCAL max-reduce scatter is legal
+-    (no gap cells survive in scan state) and the direct `evalScatter` unit tests call it with `.max`.
+-    It runs in `evalPlain`'s scatter arm, the only top-level entry. -/
+-def checkScatterAgg (stmtName : String) (agg : AggOp) : Except EvalError Unit :=
+-  match agg with
+-  | .sum => pure ()
+-  | .max | .min => throw (.scatterFillNotIdentity stmtName agg)
+-
+ /-- Evaluate one `.plain` stmt → (name, tensor).
+ 
+     The storage refusal (`rejectUnsupportedStorage`, `Contract.lean`) is installed at the ENTRY,
+@@ -54,7 +40,6 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
+       let rn ← resolveNonlin rhs.nonlin slots axisUids
+       return (nm, applyNonlin rn axisUids pre)
+   | .scatter nm slots rhs =>
+-      checkScatterAgg nm rhs.agg
+       let outShape ← scatterOutShape sizes slots
+       evalScatter decls env sizes nm slots rhs outShape
+   | .recurMorphism nm _ _ => .error (.unsupportedRecurMorphism .evalPlain nm)
+diff --git a/leanncd/LeanNCD/Eval/Plan/Compile.lean b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+index 4f71c342..6c8259c2 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Compile.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+@@ -538,14 +538,6 @@ private def scatterPlacementOrFail (srcUids : List UID) (srcShape : Array Nat)
+     | none => throw (.unsizedScatterOutput sl)
+   return (coeffsAcc, biasAcc, shapeAcc)
+ 
+-/-- A top-level scatter is admitted only for `agg = .sum` (S3a): a `maxreduce`/`minreduce` scatter is
+-    refused, tropical scatter being S3b's. The refusal keeps the `scatterOptsNotAdmitted
+-    "{nm}: fill"` constructor and text: `SortedDifferential.confirmsSorted` (Semantics/Source)
+-    matches it. -/
+-private def scatterAggOrFail (context : String) : AggOp → Except CapabilityError Unit
+-  | .sum => pure ()
+-  | .max | .min => throw (.scatterOptsNotAdmitted context)
+-
+ /-- First UID that recurs later in the list. Mirrors `Prepared.lean`'s `firstDuplicateName` and
+     `Block.lean`'s `firstDuplicateSlot` (same shape, different element type) so a duplicate-axis
+     rejection can name the offending axis rather than merely reporting that one exists. -/
+@@ -1592,7 +1584,6 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
+         let computePlan := { computePlan with algebra := algebraForDest destDtype rhs.agg }
+         let (outCoeffs, outBias, destShape) ←
+           liftShape warnings (scatterPlacementOrFail srcUids srcShape slots)
+-        liftCapability warnings (scatterAggOrFail s!"{nm}: fill" rhs.agg)
+         tensorSigsAcc := tensorSigsAcc.push { shape := destShape, dtype := destDtype }
+         stepsAcc := stepsAcc.push (.scatter
+           { compute := computePlan, destShape, outCoeffs, outBias })
+diff --git a/leanncd/LeanNCD/Eval/Plan/Dense.lean b/leanncd/LeanNCD/Eval/Plan/Dense.lean
+index 3578f35e..3d55cfb9 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Dense.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Dense.lean
+@@ -356,14 +356,12 @@ from source syntax; that is Task 5.
+       slot, and it writes nothing.
+ 
+     **A tropical-algebra scatter's unwritten cells hold `∓∞`** (`reduceId` of `admittedAlgebraMax`/
+-    `Min`), not `0.0`: filling with `0.0` under max-product would let a spurious zero win the
+-    reduction over an all-negative cell. Since reference-alignment the reference REFUSES a top-level
+-    max/min scatter from source (`scatterFillNotIdentity`), so this is observable only for direct
+-    `evalScatter` calls and raw plans; a differential corpus must not treat a tropical scatter as a
+-    parity-checked entry without special-casing the unwritten cells (tropical carriers are S3b's).
+-    Collisions diverge the same way: for a direct `evalScatter` call the reference sums colliding
+-    writes from `0` (including a contracted source axis, e.g. `maxreduce(X[i,j])`), while this worker
+-    takes the `max`/`min` from `∓∞`. Neither is reachable through `compile`/`evalPlain`.
++    `Min`), not `0.0`: filling with `0.0` under max-plus would let a spurious zero win the
++    reduction over an all-negative cell. Since S3b the reference `evalScatter` starts from the same
++    `∓∞` (its `Combine.unit0`) and folds colliding writes with the same `max`/`min` (its
++    `Combine.combine`), so a top-level tropical scatter from source, a direct `evalScatter` call
++    (including a contracted source axis, e.g. `maxreduce(X[i,j])`) and a raw plan agree, empty
++    fibres included.
+ 
+     **Collisions are folded, not rejected (S3a).** Every in-range write is combined into its cell
+     with the destination algebra's `reduceOp`, starting from `reduceId` (0_K): `+`/`0` for the real
+diff --git a/leanncd/LeanNCD/Eval/Plan/Error.lean b/leanncd/LeanNCD/Eval/Plan/Error.lean
+index a3f04e49..8e5e3e32 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Error.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Error.lean
+@@ -279,21 +279,11 @@ inductive CapabilityError
+       from `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots);
+       a hand-built `ScheduledProgram` handed to `prepareEvalPlan` is what can express it. -/
+   | multiAxisScatterLhs  (context : String)
+-  /-- A top-level scatter the checked layer does not implement: a `maxreduce`/`minreduce` one, whose
+-      tropical `∓∞` identity the plain-sum scatter carrier cannot start from (tropical scatter
+-      carriers are S3b's). Rejected HERE, at capability tier with a source locator, rather than left
+-      to surface from `checkScatter` as `invalidPlan`, which is the compiler-bug channel and would
+-      misreport a legitimately out-of-fragment source program as one. (Historical name: this once
+-      guarded a `ScatterOpts.fill` the layer could not honour; the options were deleted in S3a.)
+-      `agg = .sum` is admitted. A `predicate`/`bool`-declared
+-      scatter destination is NOT reachable from this constructor: it is rejected upstream by
+-      `predicateScatterDest` (below) at the same tier, before `scatterAggOrFail` is called at all.
+-      (Prior claim that a predicate destination with `fill = 0` was "coherent and admitted" was
+-      wrong — the reference `evalScatter` (`Eval/Scatter.lean`) then selected its algebra from
+-      `rhs.agg` only, never seeing `decls`, so a Boolean scatter destination silently diverged from
+-      the reference in real sum arithmetic; the fix routed the rejection through the capability tier
+-      instead. The reference is now dtype-aware (reference-alignment), and the reference ALSO
+-      rejects a top-level `maxreduce`/`minreduce` scatter, as `scatterFillNotIdentity`.) -/
++  /-- No producer since S3b T3: a top-level `maxreduce`/`minreduce` scatter is now admitted, with the
++      sort's 0_K (`∓∞`) fill and its ⊕ on collisions. Kept only because
++      `SortedDifferential.confirmsSorted` (Semantics/Source) still matches it; deleted with that
++      matching condition (T7). (Historical name: this once guarded a `ScatterOpts.fill` the layer
++      could not honour; the options were deleted in S3a.) -/
+   | scatterOptsNotAdmitted (context : String)
+   /-- A top-level scatter's DESTINATION is `predicate`/`bool`-declared. The reference evaluator
+       `evalScatter` (`Eval/Scatter.lean`) WAS not dtype-aware (reference-alignment made it so, via
+@@ -302,10 +292,8 @@ inductive CapabilityError
+       checked backend's `algebraForDest` selects `admittedAlgebraBool` — a silent divergence with no
+       diagnostic. The rejection below is KEPT until the checked runner's Boolean scatter is
+       verified against the now-dtype-aware reference. Rejected here, at capability
+-      tier, with a source locator naming the destination — the same way a `maxreduce`/`minreduce`
+-      scatter (whose fill cannot denote `∓∞`) is refused, and for the same reason: no reference
+-      semantics can match it, so the honest report is "not in the fragment", not a differential
+-      failure downstream.
++      tier, with a source locator naming the destination, so the honest report is "not in the
++      fragment", not a differential failure downstream.
+       
+       Detected on the `Stmt.scatter` shape a source predicate scatter presents at capability tier
+       (post-`lowerArith`, the surface-compiled case). The OTHER shape a scatter-shaped write can take
+@@ -313,8 +301,8 @@ inductive CapabilityError
+       `ScheduledProgram` that bypassed `lowerArith` — is rejected one step earlier by
+       `unloweredScatterAssign` (below) regardless of destination dtype, since an unlowered
+       scatter-shaped assign is malformed for a reason that does not depend on the destination's
+-      declaration. S-A supports only real-sum-product and the two tropical semirings (rejected via
+-      `scatterOptsNotAdmitted`); a predicate scatter destination is a third algebra that had no
++      declaration. S-A supports only real-sum-product and (since S3b T3) the two tropical semirings;
++      a predicate scatter destination is a third algebra that had no
+       reference match, and closing it meant teaching the reference to be dtype-aware (done), not
+       admitting it in the checked backend alone; admitting it now needs the checked runner's Boolean
+       scatter verified against the reference. -/
+diff --git a/leanncd/LeanNCD/Eval/Scatter.lean b/leanncd/LeanNCD/Eval/Scatter.lean
+index bf0503fd..21fbab46 100644
+--- a/leanncd/LeanNCD/Eval/Scatter.lean
++++ b/leanncd/LeanNCD/Eval/Scatter.lean
+@@ -13,8 +13,10 @@ def scatterSourceAxes (slots : List LHSSlot) (rhs : RHSExpr) : List UID :=
+     Each source coord → rhs value (per the 4b `Combine` selected by `rhs.agg` — `.sum`/`.max`/
+     `.min` combine terms, not a hardcoded real sum) → written to the affine output coord.
+     Colliding writes (two or more source coords landing on the same output coord) are merged with
+-    the DESTINATION's additive monoid ⊕ (real `+`; `predicate` destination `max` = `∨`) starting from
+-    its identity 0_K = 0, so an empty fibre is 0 and a collision is a sum, never an error.
++    the sort's additive monoid ⊕ (`Combine.combine` of the selected algebra: real `+`; `predicate`
++    destination and `maxreduce` the NaN-propagating `max`; `minreduce` the NaN-propagating `min`)
++    starting from its identity 0_K (`Combine.unit0`: real 0, predicate false, max-plus `-inf`,
++    min-plus `+inf`), so an empty fibre is 0_K and a collision is a ⊕-fold, never an error.
+     An output coordinate outside `outShape` (negative, or at or past an extent) is an error
+     (`EvalError.scatterWriteOutOfRange`), never a silent skip. -/
+ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
+@@ -52,10 +54,9 @@ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes :
+   -- Dtype-aware, like every other worker: `combineFor` selects the Boolean `(∧, ∃)` algebra for a
+   -- `predicate`-declared destination, so a Boolean scatter's values stay {0,1}.
+   let c : Combine := combineFor decls nm rhs.agg
+-  -- The destination ⊕ folds colliding writes with `+`; into a predicate that would leave {0,1}, so
+-  -- there it folds with the Boolean `∃` (max) instead.
+-  let boolDest := isPredicateDest decls nm
+-  let mut out := DenseTensor.ofFn outShape (fun _ => 0.0)
++  -- The destination ⊕ is the same algebra's `combine` (real `+`, Boolean `∃`, tropical `max`/`min`),
++  -- and an unwritten cell is its identity `unit0` (S3b).
++  let mut out := DenseTensor.ofFn outShape (fun _ => c.unit0)
+   for sc in cartesian srcSizes do
+     let coord : HashMap UID Int := (srcAxes.zip sc).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) {}
+     -- rhs value at this source coord: ∏ over a term's factors (from c.unit1), combined over
+@@ -74,7 +75,7 @@ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes :
+       throw (.scatterWriteOutOfRange nm outCoordZ sc)
+     let oc := outCoordZ.map Int.toNat
+     let prev := out.get! oc
+-    out := out.set! oc (if boolDest then Max.max prev val else prev + val)
++    out := out.set! oc (c.combine prev val)
+   return (nm, out)
+ 
+ end LeanNCD.Eval

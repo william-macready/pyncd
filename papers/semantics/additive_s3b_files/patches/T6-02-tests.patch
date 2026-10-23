@@ -1,0 +1,212 @@
+diff --git a/leanncd/test/Eval/Plan/BoolCastTest.lean b/leanncd/test/Eval/Plan/BoolCastTest.lean
+index 80dd7671..a5e20ca2 100644
+--- a/leanncd/test/Eval/Plan/BoolCastTest.lean
++++ b/leanncd/test/Eval/Plan/BoolCastTest.lean
+@@ -258,4 +258,101 @@ def rejectedCast (sigs : Array TensorSignature) (a : AssignPlan) : Bool :=
+ -- reject: cast on a unary read (the unary takes real input)
+ #guard rejectedCast boolSigs (castPlan admittedAlgebraMax (castRead true (some .exp)))
+ 
++/-! ## S3b T6 — a scan state starts at `0_K` of the STATE's sort; a sort-neutral writer of the state
++(one bare read, no contracted axis) is evaluated in that sort
++
++The state's sort comes from the scan's own non-neutral statements (`scanStateAlgebra`). Every
++program runs in the reference, the binary64 plan and the binary32 plan (`assertAgree`).
++(a) RC10 shape (donor `RecurrenceTest` RC10): the unwritten cell `G[0,1]` holds `-inf` (max-plus)
++    or `+inf` (min-plus twin); (b) a SUM scan's unwritten cell stays `0`;
++(c) a neutral BASE with an out-of-bounds bare read `X0[j+1]` pads with the state's `0_K`: the old
++    code evaluated that base as a real `sum` statement and padded `0` (`axis j : ℕ = 3` gives the
++    shift an extent); (d) a neutral base bare-reading a PREDICATE tensor is cast bool -> tropical
++    (false `-inf`/`+inf`, true `0`), where the old base read the raw 0/1; (f) the compiled plan
++    states the sort (`StateSlot.initValue`). (e) a tropical SCRATCH cannot be written in the surface
++    (`scanProjectionUnsupported`): its raw-schedule fixture is in `ScanCompileTest`. Min-plus twins
++    come from negated data. -/
++def stateMax : TLProgram := tlprog!{
++  iter r = 2, c = 2
++  G[r, 0] := Z[r]
++  G[r + 1, c + 1] := maxreduce(G[r, c] · W[r, c, k]) }
++def stateMin : TLProgram := tlprog!{
++  iter r = 2, c = 2
++  G[r, 0] := Z[r]
++  G[r + 1, c + 1] := minreduce(G[r, c] · W[r, c, k]) }
++def stateSum : TLProgram := tlprog!{
++  iter r = 2, c = 2
++  G[r, 0] := Z[r]
++  G[r + 1, c + 1] := G[r, c] · W[r, c, k] }
++def neutralOobMax : TLProgram := tlprog!{
++  axis j : ℕ = 3
++  iter t = 2
++  S[j, 0] := X0[j + 1]
++  S[j, t + 1] := maxreduce(S[j, t] · E[j, t, k]) }
++def neutralOobMin : TLProgram := tlprog!{
++  axis j : ℕ = 3
++  iter t = 2
++  S[j, 0] := X0[j + 1]
++  S[j, t + 1] := minreduce(S[j, t] · E[j, t, k]) }
++def neutralPredMax : TLProgram := tlprog!{
++  iter t = 2
++  predicate P(j)
++  S[j, 0] := P[j]
++  S[j, t + 1] := maxreduce(S[j, t] · E[j, t, k]) }
++def neutralPredMin : TLProgram := tlprog!{
++  iter t = 2
++  predicate P(j)
++  S[j, 0] := P[j]
++  S[j, t + 1] := minreduce(S[j, t] · E[j, t, k]) }
++
++def wPos : List Float := [1, 3, 0, 0, 0, 0, 0, 0]
++def wNeg : List Float := [-1, -3, 0, 0, 0, 0, 0, 0]
++def eZero : List Float := [0, 0, 0, 0, 0, 0]
++
++run_cmd do
++  assertAgree "T6-a1 state max-plus" stateMax
++    [("Z", [2], [2, 5]), ("W", [2, 2, 2], wPos)] "G" [2, negInf, 5, 5]
++  assertAgree "T6-a2 state min-plus" stateMin
++    [("Z", [2], [-2, -5]), ("W", [2, 2, 2], wNeg)] "G" [-2, posInf, -5, -5]
++  assertAgree "T6-b sum state keeps 0" stateSum
++    [("Z", [2], [2, 5]), ("W", [2, 2, 2], wPos)] "G" [2, 0, 5, 8]
++  assertAgree "T6-c1 neutral oob max" neutralOobMax
++    [("X0", [3], [-1, -2, -3]), ("E", [3, 2, 1], eZero)] "S"
++    [-2, -2, -3, -3, negInf, negInf]
++  assertAgree "T6-c2 neutral oob min" neutralOobMin
++    [("X0", [3], [1, 2, 3]), ("E", [3, 2, 1], eZero)] "S"
++    [2, 2, 3, 3, posInf, posInf]
++  assertAgree "T6-d1 neutral predicate max" neutralPredMax
++    [("P", [3], [1, 0, 1]), ("E", [3, 2, 1], eZero)] "S" [0, 0, negInf, negInf, 0, 0]
++  assertAgree "T6-d2 neutral predicate min" neutralPredMin
++    [("P", [3], [1, 0, 1]), ("E", [3, 2, 1], eZero)] "S" [0, 0, posInf, posInf, 0, 0]
++
++/-- The `initValue` of every state of every scan step of the binary64 checked plan. -/
++def scanInits (p : TLProgram) (xs : Ins) : Except String (List (Array StateInit)) := do
++  let sched ← match p.explicitF64.compileToScheduled.run 0 with
++    | .ok s _ => .ok s
++    | .error e _ => .error s!"compile: {repr e}"
++  let sig ← match InputSignature.ofDenseInputsForDecls sched.decls (env64 xs) with
++    | .ok s => .ok s
++    | .error e => .error s!"signature64: {repr e}"
++  let prepared ← match prepareEvalPlan sched sig with
++    | .ok q => .ok q
++    | .error _ => .error "prepare64 failed"
++  pure (prepared.plan.raw.steps.toList.filterMap (fun st => match st with
++    | .scan s => some (s.states.map (·.initValue))
++    | _ => none))
++
++def assertInits (label : String) (p : TLProgram) (xs : Ins) (expected : List (Array StateInit)) :
++    Lean.Elab.Command.CommandElabM Unit :=
++  match scanInits p xs with
++  | .error e => throwError s!"{label}: {e}"
++  | .ok got => unless got == expected do throwError s!"{label}: inits {repr got} ≠ {repr expected}"
++
++-- The compiled plan states the sort: max-plus `negInf`, min-plus `posInf`, real/scratch-only `zero`.
++run_cmd do
++  let zw := [("Z", [2], [2, 5]), ("W", [2, 2, 2], wPos)]
++  assertInits "T6-f1 max-plus init" stateMax zw [#[.negInf]]
++  assertInits "T6-f2 min-plus init" stateMin zw [#[.posInf]]
++  assertInits "T6-f3 sum init" stateSum zw [#[.zero]]
++
+ end LeanNCD.Eval.Plan.BoolCastTest
+diff --git a/leanncd/test/Eval/Plan/ScanCompileTest.lean b/leanncd/test/Eval/Plan/ScanCompileTest.lean
+index c382f2e8..102175ee 100644
+--- a/leanncd/test/Eval/Plan/ScanCompileTest.lean
++++ b/leanncd/test/Eval/Plan/ScanCompileTest.lean
+@@ -2177,4 +2177,66 @@ def s6GeometryBeforeCausal : ScheduledProgram :=
+     (rejSchedRaw [okBase] [capabilityBeforeInputScatter]) emptySig) ==
+   some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
+ 
++/-! ### S3b T6: `StateSlot.initValue` well-formedness (`stateInitNotAdmitted`)
++
++A tropical `0_K` (`-inf`/`+inf`) is a float value, so a BOOLEAN state cannot start at it. Donor:
++`selfRecurExpected` (A) with its one state's `initValue` replaced; the outer signature table is A's
++(`S` = slot 2). The rule fires in the per-state loop, before any block is checked, so a bool state
++signature over A's f64 blocks isolates it. Accept neighbours: all three inits on the f64 state; the
++`zero` init on the bool state is NOT this rule's rejection. -/
++
++def withInit (i : StateInit) : RawScanPlan :=
++  { selfRecurExpected with states := #[{ selfRecurExpected.states[0]! with initValue := i }] }
++
++def sigsF64State : Array TensorSignature :=
++  #[{ shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }]
++
++def sigsBoolState : Array TensorSignature :=
++  #[{ shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .bool }]
++
++def initAccepted (sigs : Array TensorSignature) (i : StateInit) : Bool :=
++  match checkScanPlan sigs (withInit i) with | .ok _ => true | .error _ => false
++
++def initRejected (sigs : Array TensorSignature) (i : StateInit) : Bool :=
++  match checkScanPlan sigs (withInit i) with
++  | .error (.stateInitNotAdmitted 0 j .bool) => j == i
++  | _ => false
++
++/-- T6 (e), donor `scratchPredicateSched`: the block-local scratch `T` is a genuine max-plus
++    statement (two factors, `agg := .max`) while the state `S` is written only by neutral statements
++    (`S0`, `T[]`), so `S` stays real: a tropical scratch does not make the state tropical. -/
++def scratchMaxSched : ScheduledProgram :=
++  { decls := [.iter axM 3]
++  , stmts := [.scan "S" [axM]
++      [ .assign "S" [.iterAt axM 0]
++          { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } ]
++      [ .assign "T"
++          [] { body := { terms := [{ factors := [.read "S" [.axis axM], .read "K" [.axis axM]] }] }
++             , nonlin := .identity, agg := .max }
++      , .assign "S" [.iterNext axM]
++          { body := { terms := [{ factors := [.read "T" []] }] }, nonlin := .identity } ]
++      false ]
++  , env := {}, extNames := insert "S0" (insert "K" (∅ : Finset String))
++  , explicitSizes := (({} : HashMap UID Nat).insert axM.uid 3) }
++
++def scratchMaxCheck : Except String Unit :=
++  withPrepared "T6/scratchMax" scratchMaxSched scratchInputs (fun p => do
++    match scanAt p 0 with
++    | none => .error "T6/scratchMax: step 0 is not a scan"
++    | some s => do
++        expectEq "T6/scratchMax: scratch statement is max-plus"
++          (((s.stepBlock.steps.getD 0 default).assign?.getD default).algebra) admittedAlgebraMax
++        expectEq "T6/scratchMax: the state stays real" (s.states.map (·.initValue)) #[.zero]
++        checkerAgrees "T6/scratchMax" p 0)
++
++run_cmd match scratchMaxCheck with | .ok _ => pure () | .error m => throwError m
++
++#guard initAccepted sigsF64State .zero
++#guard initAccepted sigsF64State .negInf
++#guard initAccepted sigsF64State .posInf
++#guard initRejected sigsBoolState .negInf
++#guard initRejected sigsBoolState .posInf
++#guard !initRejected sigsBoolState .zero
++#guard !initRejected sigsF64State .negInf
++
+ end LeanNCD.Eval.Plan.ScanCompileTest
+diff --git a/leanncd/test/Eval/Portfolio/RecurrenceTest.lean b/leanncd/test/Eval/Portfolio/RecurrenceTest.lean
+index c5c48f8c..2655af17 100644
+--- a/leanncd/test/Eval/Portfolio/RecurrenceTest.lean
++++ b/leanncd/test/Eval/Portfolio/RecurrenceTest.lean
+@@ -126,15 +126,25 @@ test "RC8 3d-scan"
+ --   2×2 grid: base `G[r,0]` fills the c=0 column from Z=[2,5]; the step writes only the fully
+ --   advanced cell G[1,1] under zero-default boundaries. Only tuple (r,c)=(0,0) is iterated:
+ --     G[1,1] = maxₖ(G[0,0] + W[0,0,k]) = max(2+1, 2+3) = max(3,5) = 5   (max-plus, NOT sum=8).
+---   Boundary/base cells: G[0,0]=Z[0]=2, G[1,0]=Z[1]=5, G[0,1]=0 (r=0 boundary, unwritten).
+---   Row-major [r][c] ⇒ [[2,0],[5,5]] = [2,0,5,5]. (W[0,0,:]=[1,3]; other W cells unused.)
+---   (Before S3b-i, max-TIMES: G[1,1] = max(2·1, 2·3) = 6 ⇒ [2,0,5,6].) The unwritten cell G[0,1]
+---   is still the literal 0 here; the spec's value is 0_K = −∞ (a later S3b task, scan-state init).
++--   Boundary/base cells: G[0,0]=Z[0]=2, G[1,0]=Z[1]=5, G[0,1]=0_K=−∞ (r=0 boundary, unwritten:
++--   a scan state starts at 0_K of its sort, here max-plus via the recurrence; S3b T6).
++--   Row-major [r][c] ⇒ [[2,−∞],[5,5]] = [2,−∞,5,5]. (W[0,0,:]=[1,3]; other W cells unused.)
++--   (Before S3b-i, max-TIMES: G[1,1] = max(2·1, 2·3) = 6 ⇒ [2,0,5,6]; before T6 the unwritten
++--   cell G[0,1] was the real 0 ⇒ [2,0,5,5].)
+ test "RC10 multi-axis maxreduce (KG-scanagg × KG-2dscan)"
+     (evalEqB (tlprog!{ iter r = 2, c = 2
+             G[r, 0]       := Z[r]
+             G[r +1, c +1] := maxreduce(G[r, c] · W[r, c, k]) })
+       (HashMap.ofList [("Z", tl [2] [2,5]), ("W", tl [2,2,2] [1,3, 0,0, 0,0, 0,0])])
+-      "G" (tl [2,2] [2,0, 5,5]))
++      "G" (tl [2,2] [2,-1.0 / 0.0, 5,5])) $
++
++-- RC10m  min-plus duality twin of RC10 (negated data): the unwritten cell is 0_K = +∞.
++--   G[1,1] = minₖ(G[0,0] + W[0,0,k]) = min(−2−1, −2−3) = −5 ⇒ [[−2,+∞],[−5,−5]].
++test "RC10m multi-axis minreduce: unwritten cell is +inf"
++    (evalEqB (tlprog!{ iter r = 2, c = 2
++            G[r, 0]       := Z[r]
++            G[r +1, c +1] := minreduce(G[r, c] · W[r, c, k]) })
++      (HashMap.ofList [("Z", tl [2] [-2,-5]), ("W", tl [2,2,2] [-1,-3, 0,0, 0,0, 0,0])])
++      "G" (tl [2,2] [-2,1.0 / 0.0, -5,-5]))
+ 
+ end LeanNCD.Eval

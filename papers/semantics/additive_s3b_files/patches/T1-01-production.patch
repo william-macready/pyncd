@@ -1,0 +1,247 @@
+diff --git a/leanncd/LeanNCD/Eval/Contract.lean b/leanncd/LeanNCD/Eval/Contract.lean
+index c1ea731f..3767fd8e 100644
+--- a/leanncd/LeanNCD/Eval/Contract.lean
++++ b/leanncd/LeanNCD/Eval/Contract.lean
+@@ -159,16 +159,26 @@ structure Combine where
+ /-- The ℝ contraction `(×, Σ)`: multiply factors, then sum. -/
+ def Combine.real : Combine := ⟨(· * ·), (· + ·), 0.0, 1.0⟩
+ 
+-/-- The Boolean contraction `(∧, ∃)` on 0/1 Floats: `min` factors (∧), `max` terms (∃). -/
+-def Combine.bool : Combine := ⟨min, max, 0.0, 1.0⟩
+-
+-/-- The tropical max contraction `(×, max, −∞)`: multiply factors within a term, then take max
+-    across terms and contracted axes. Identity is `−∞` so all-negative inputs reduce correctly. -/
+-def Combine.max : Combine := ⟨(· * ·), fun (a b : Float) => Max.max a b, -1.0 / 0.0, 1.0⟩
+-
+-/-- The tropical min contraction `(×, min, +∞)`: multiply factors within a term, then take min
+-    across terms and contracted axes. Identity is `+∞` so all-positive inputs reduce correctly. -/
+-def Combine.min : Combine := ⟨(· * ·), fun (a b : Float) => Min.min a b, 1.0 / 0.0, 1.0⟩
++/-- The Boolean contraction `(∧, ∃)` on 0/1 Floats: `min` factors (∧), `max` terms (∃). Both are the
++    NaN-propagating `minNaN`/`maxNaN` (identical to `min`/`max` on 0/1 values; they differ only on a
++    non-binary NaN input). -/
++def Combine.bool : Combine := ⟨minNaN, maxNaN, 0.0, 1.0⟩
++
++/-- The shared shape of the two tropical semirings: ⊗ = `+` with identity `1_K = 0.0`, ⊕ = `op`
++    (NaN-propagating `max`/`min`) with identity `0_K = zero` (`−∞` for max-plus, `+∞` for min-plus).
++    `Combine.max` and `Combine.min` instantiate it once each, so the two directions share code and
++    differ only in `(op, zero)`. -/
++def Combine.tropical (op : Float → Float → Float) (zero : Float) : Combine :=
++  ⟨(· + ·), op, zero, 0.0⟩
++
++/-- Max-plus `(+, max, −∞, 0)`: ADD factors within a term, then take the NaN-propagating max across
++    terms and contracted axes. `unit0 = −∞` (`0_K`) so all-negative inputs reduce correctly;
++    `unit1 = 0` is the empty product. -/
++def Combine.max : Combine := Combine.tropical maxNaN (-1.0 / 0.0)
++
++/-- Min-plus `(+, min, +∞, 0)`: ADD factors within a term, then take the NaN-propagating min across
++    terms and contracted axes. `unit0 = +∞` (`0_K`) so all-positive inputs reduce correctly. -/
++def Combine.min : Combine := Combine.tropical minNaN (1.0 / 0.0)
+ 
+ /-- Whether `nm`'s declaration is a `predicate`, i.e. its values are Boolean {0,1}. Searches
+     TENSOR-BEARING declarations only (everything but `.axis`/`.iter`: `.tensor`, `.typedTensor`,
+diff --git a/leanncd/LeanNCD/Eval/Error.lean b/leanncd/LeanNCD/Eval/Error.lean
+index d0ca5cd6..38bd6f93 100644
+--- a/leanncd/LeanNCD/Eval/Error.lean
++++ b/leanncd/LeanNCD/Eval/Error.lean
+@@ -238,6 +238,32 @@ def _root_.LeanNCD.UnaryOp.applyChecked32 :
+       if v == Float32.ofBits 0x00000000 then .error .recip
+       else .ok (Float32.ofBits 0x3f800000 / v)
+ 
++/-! ### NaN-propagating `max` / `min`
++
++Lean's `Max.max`/`Min.min` on `Float` are `if a ≤ b then b else a` / `if a ≤ b then a else b`, which
++silently DROP a NaN that is the second argument (`max 1 NaN = 1`) but keep it as the first
++(`max NaN 1 = NaN`). The tropical ⊕ and the `ScalarBinOp.max`/`.min` of both backends are instead
++NaN-propagating — any NaN operand gives NaN, in either argument order — so a NaN never vanishes
++from a reduction depending on where it sits in the fold. These four helpers are the single home of
++that rule: the reference `Combine` (`Eval/Contract.lean`) and the checked plan's `floatOps`/`float32Ops`
++(`Eval/Plan/Dense.lean`) both import this file, so neither layer defines its own copy. -/
++
++/-- NaN-propagating binary64 `max`: a NaN in either argument is the result. -/
++def maxNaN (a b : Float) : Float :=
++  if a.isNaN then a else if b.isNaN then b else Max.max a b
++
++/-- NaN-propagating binary64 `min`: a NaN in either argument is the result. -/
++def minNaN (a b : Float) : Float :=
++  if a.isNaN then a else if b.isNaN then b else Min.min a b
++
++/-- NaN-propagating binary32 `max`: the native `Float32` sibling of `maxNaN`. -/
++def maxNaN32 (a b : Float32) : Float32 :=
++  if a.isNaN then a else if b.isNaN then b else Max.max a b
++
++/-- NaN-propagating binary32 `min`: the native `Float32` sibling of `minNaN`. -/
++def minNaN32 (a b : Float32) : Float32 :=
++  if a.isNaN then a else if b.isNaN then b else Min.min a b
++
+ /-- Why `resolveNonlin` rejected an `.axiswise` nonlinearity. Both cases are direct, unconditional
+     throws in `resolveNonlin` (no solver, no context) — a closed two-case enum, not a bare string,
+     since there are exactly two ways this can fail and neither will ever need extra payload. -/
+diff --git a/leanncd/LeanNCD/Eval/Plan/Check.lean b/leanncd/LeanNCD/Eval/Plan/Check.lean
+index bd4ba548..4f0c5e88 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Check.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Check.lean
+@@ -38,18 +38,22 @@ def admittedAlgebra : ContractionAlgebra :=
+   { factorOp := .mul, factorId := .f64 (Float.toBits 1.0)
+   , reduceOp := .add, reduceId := .f64 (Float.toBits 0.0) }
+ 
+-/-- Tropical max-product `(×, max, −∞)` — the algebra `AggOp.max` compiles to. Identity `−∞` so an
+-    all-negative reduction still returns its greatest element (a `0` identity would spuriously win).
+-    Mirrors the reference `Combine.max`. -/
+-def admittedAlgebraMax : ContractionAlgebra :=
+-  { factorOp := .mul, factorId := .f64 (Float.toBits 1.0)
+-  , reduceOp := .max, reduceId := .f64 (Float.toBits (-1.0 / 0.0)) }
+-
+-/-- Tropical min-product `(×, min, +∞)` — the algebra `AggOp.min` compiles to. Identity `+∞` so an
+-    all-positive reduction still returns its least element. Mirrors the reference `Combine.min`. -/
+-def admittedAlgebraMin : ContractionAlgebra :=
+-  { factorOp := .mul, factorId := .f64 (Float.toBits 1.0)
+-  , reduceOp := .min, reduceId := .f64 (Float.toBits (1.0 / 0.0)) }
++/-- The shared shape of the two binary64 tropical semirings: ⊗ = `+` with identity `+0.0` (the
++    `1_K` of a tropical sort), ⊕ = `reduceOp` with identity `reduceId` (`0_K`: `−∞` for max-plus, `+∞`
++    for min-plus). The two directions differ ONLY in `(reduceOp, reduceId)`; `admittedAlgebraMax` and
++    `admittedAlgebraMin` instantiate this once each. -/
++private def tropicalAlgebra (reduceOp : ScalarBinOp) (reduceId : Float) : ContractionAlgebra :=
++  { factorOp := .add, factorId := .f64 (Float.toBits 0.0)
++  , reduceOp := reduceOp, reduceId := .f64 (Float.toBits reduceId) }
++
++/-- Max-plus `(+, max, −∞, 0)` — the algebra `AggOp.max` compiles to. ⊗ is `+` with identity `0`, so
++    factors of a term ADD; ⊕ is NaN-propagating `max` with identity `−∞` (`0_K`), so an all-negative
++    reduction still returns its greatest element. Mirrors the reference `Combine.max`. -/
++def admittedAlgebraMax : ContractionAlgebra := tropicalAlgebra .max (-1.0 / 0.0)
++
++/-- Min-plus `(+, min, +∞, 0)` — the algebra `AggOp.min` compiles to. ⊗ is `+` with identity `0`; ⊕
++    is NaN-propagating `min` with identity `+∞` (`0_K`). Mirrors the reference `Combine.min`. -/
++def admittedAlgebraMin : ContractionAlgebra := tropicalAlgebra .min (1.0 / 0.0)
+ 
+ /-- Boolean conjunction/disjunction `(min, max)` with identities `true`/`false` — the algebra a
+     predicate destination compiles to. `min` with identity `true` conjoins a term's factors; `max`
+@@ -70,8 +74,9 @@ def admittedAlgebraBool : ContractionAlgebra :=
+ 
+ /-- The algebras `checkAssign` admits for an `f64` destination: real sum-product plus the two
+     tropical semirings that `AggOp.max`/`.min` select. The out-of-bounds `zeroPad` policy still pads
+-    reads with `0` in all three — a padded read is a factor value flowing through `factorOp` (mul),
+-    never the reduction identity — so only `reduceOp`/`reduceId` differ between them. -/
++    reads with `0` in all three — a padded read is a factor value flowing through `factorOp`, never
++    the reduction identity (a later S3b task changes the tropical pad to `0_K`). The tropical
++    algebras differ from the real one in `factorOp` (`+`, identity `0`) as well as `reduceOp`. -/
+ def admittedAlgebras : List ContractionAlgebra :=
+   [admittedAlgebra, admittedAlgebraMax, admittedAlgebraMin]
+ 
+@@ -105,17 +110,18 @@ def admittedAlgebraF32 : ContractionAlgebra :=
+   { factorOp := .mul, factorId := .f32 0x3f800000
+   , reduceOp := .add, reduceId := .f32 0x00000000 }
+ 
+-/-- Tropical binary32 max-product `(×, max, −∞)`. `reduceId` is `0xff800000` = binary32 `−∞`, so an
+-    all-negative reduction still returns its greatest element. Mirrors `admittedAlgebraMax`. -/
+-def admittedAlgebraF32Max : ContractionAlgebra :=
+-  { factorOp := .mul, factorId := .f32 0x3f800000
+-  , reduceOp := .max, reduceId := .f32 0xff800000 }
++/-- The binary32 twin of `tropicalAlgebra`: ⊗ = `+` with identity `0x00000000` (binary32 `+0.0`),
++    ⊕ = `reduceOp` with the binary32 bit pattern `reduceId` as its `0_K`. -/
++private def tropicalAlgebraF32 (reduceOp : ScalarBinOp) (reduceId : UInt32) : ContractionAlgebra :=
++  { factorOp := .add, factorId := .f32 0x00000000
++  , reduceOp := reduceOp, reduceId := .f32 reduceId }
+ 
+-/-- Tropical binary32 min-product `(×, min, +∞)`. `reduceId` is `0x7f800000` = binary32 `+∞`.
+-    Mirrors `admittedAlgebraMin`. -/
+-def admittedAlgebraF32Min : ContractionAlgebra :=
+-  { factorOp := .mul, factorId := .f32 0x3f800000
+-  , reduceOp := .min, reduceId := .f32 0x7f800000 }
++/-- Max-plus in binary32. `reduceId` is `0xff800000` = binary32 `−∞`, so an all-negative reduction
++    still returns its greatest element. Mirrors `admittedAlgebraMax`. -/
++def admittedAlgebraF32Max : ContractionAlgebra := tropicalAlgebraF32 .max 0xff800000
++
++/-- Min-plus in binary32. `reduceId` is `0x7f800000` = binary32 `+∞`. Mirrors `admittedAlgebraMin`. -/
++def admittedAlgebraF32Min : ContractionAlgebra := tropicalAlgebraF32 .min 0x7f800000
+ 
+ /-- The binary32 counterpart of `admittedAlgebras`. -/
+ def admittedAlgebrasF32 : List ContractionAlgebra :=
+diff --git a/leanncd/LeanNCD/Eval/Plan/Compile.lean b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+index 253ee5d2..aed7a15b 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Compile.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+@@ -198,7 +198,7 @@ def checkNonlinScanBlock (_stmtName : String) : Nonlin → Except CapabilityErro
+   | .axiswise .. => pure ()
+ 
+ /-- Aggregation-op admission. `.max`/`.min` are now admitted — they compile to the tropical
+-    semirings (`algebraForAgg`) the reference `Combine.max`/`Combine.min` already evaluate. Like
++    semirings max-plus / min-plus (`algebraForAgg`) the reference `Combine.max`/`Combine.min` evaluate. Like
+     `checkNonlinTopLevel`'s admission of `.pointwise`/`.axiswise`, this diverges from C0's frozen
+     `classifyAggOp` (`test/Eval/Plan/ContractTest.lean`), which still classifies `.max`/`.min` as
+     `unsupportedAgg`; the divergence is deliberate and documented, not a stale mirror. The
+@@ -648,10 +648,10 @@ def lowerMaskPredicate (outputUids : List UID) (mask : BoolExpr) : PosBoolExpr :
+   lowerBoolExprPos ({} : HashMap UID Int) outputUids mask
+ 
+ /-- Select the checked contraction algebra a source statement's aggregation op compiles to. `sum`
+-    is Wave C's real sum-product; `max`/`min` are the tropical semirings, whose reduction identity
+-    (`−∞`/`+∞`) differs from the `zeroPad` out-of-bounds pad (`0`) — the pad is a factor value that
+-    still flows through `factorOp` (mul), so only the reduction identity changes here, matching the
+-    reference `Combine.max`/`Combine.min`. -/
++    is Wave C's real sum-product; `max`/`min` are the tropical semirings max-plus / min-plus
++    (`⊗ = +` with identity `0`; `⊕` = NaN-propagating `max`/`min` with identity `−∞`/`+∞`), matching
++    the reference `Combine.max`/`Combine.min`. The `zeroPad` out-of-bounds pad (`0`) is still a factor
++    value that flows through `factorOp` (a later S3b task changes a tropical bare read's pad to `0_K`). -/
+ def algebraForAgg : AggOp → ContractionAlgebra
+   | .sum => admittedAlgebra
+   | .max => admittedAlgebraMax
+diff --git a/leanncd/LeanNCD/Eval/Plan/Dense.lean b/leanncd/LeanNCD/Eval/Plan/Dense.lean
+index f91cec0e..7c0b5559 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Dense.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Dense.lean
+@@ -80,8 +80,8 @@ private def floatOps : ScalarKernelOps Float :=
+   , binOp := fun op => match op with
+       | .add => .ok (fun a b => a + b)
+       | .mul => .ok (fun a b => a * b)
+-      | .min => .ok (fun a b => Min.min a b)
+-      | .max => .ok (fun a b => Max.max a b)
++      | .min => .ok minNaN
++      | .max => .ok maxNaN
+   , applyUnary := fun op x slot =>
+       (op.applyChecked x).mapError (fun dop => .unaryDomain dop (Float.toBits x) slot) }
+ 
+@@ -109,8 +109,8 @@ private def float32Ops : ScalarKernelOps Float32 :=
+   , binOp := fun op => match op with
+       | .add => .ok (fun a b => a + b)
+       | .mul => .ok (fun a b => a * b)
+-      | .min => .ok (fun a b => Min.min a b)
+-      | .max => .ok (fun a b => Max.max a b)
++      | .min => .ok minNaN32
++      | .max => .ok maxNaN32
+   , applyUnary := fun op x slot =>
+       (op.applyChecked32 x).mapError (fun dop => .unaryDomain32 dop (Float32.toBits x) slot) }
+ 
+diff --git a/leanncd/LeanNCD/Eval/Plan/Types.lean b/leanncd/LeanNCD/Eval/Plan/Types.lean
+index 77ef1a79..6d563a06 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Types.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Types.lean
+@@ -57,13 +57,15 @@ inductive OutOfBoundsPolicy
+ 
+     As with `ScalarDType`, `.f64` and `.bool` are admitted: `checkAssign`'s `algebraNotAdmitted`
+     guard forces `a.algebra ∈ admittedAlgebrasFor destDtype` (`Check.lean`) — a real destination
+-    selects the real sum-product plus the two tropical semirings `AggOp.max`/`.min` select, all of
+-    whose constants (`factorId`, `reduceId`) are `.f64 _`, and a predicate destination selects
++    selects the real sum-product plus the two tropical semirings `AggOp.max`/`.min` select (max-plus
++    and min-plus: `factorId = 0.0`, `reduceId = ∓∞`), all of whose constants (`factorId`,
++    `reduceId`) are `.f64 _`, and a predicate destination selects
+     `admittedAlgebraBool`, whose constants are `.bool true`/`.bool false` (decoded to `1.0`/`0.0` by
+     `Dense.lean`'s `floatOps.decodeConst`).
+ 
+     `.f32` is a live tag since the f32 slice's Task 2: `admittedAlgebrasF32` (`Check.lean`) carries
+-    the three binary32 identities `0x3f800000`/`0x00000000`/`0xff800000`/`0x7f800000`, and
++    the binary32 identities `0x3f800000` (real ⊗), `0x00000000` (real ⊕ and the tropical ⊗, `1_K`),
++    `0xff800000` (max-plus `0_K`) and `0x7f800000` (min-plus `0_K`), and
+     `checkAssignF32` admits exactly those for an `f32` destination. It can still never appear inside
+     a `.float64` checked plan's `ContractionAlgebra`: `admittedAlgebrasFor`'s `.f32` row is empty and
+     `checkAssign` rejects an `f32` destination outright. -/
+@@ -75,8 +77,9 @@ inductive ScalarConst
+ 
+ /-- Closed binary scalar operations. `min`/`max` back the tropical-semiring reductions that
+     `AggOp.max`/`.min` select (`admittedAlgebraMax`/`admittedAlgebraMin` in `Check.lean`) AND the
+-    Boolean conjunction/disjunction a predicate destination compiles to (`admittedAlgebraBool`);
+-    `add`/`mul` back Wave C's real sum-product. `logicalAnd`/`logicalOr` remain absent by design —
++    Boolean conjunction/disjunction a predicate destination compiles to (`admittedAlgebraBool`); both
++    are NaN-propagating in both carriers (`maxNaN`/`minNaN`, `Eval/Error.lean`). `add` backs the real
++    ⊕ and the tropical ⊗ (max-plus / min-plus factors ADD); `mul` backs the real ⊗. `logicalAnd`/`logicalOr` remain absent by design —
+     Boolean semantics is exactly Float `min`/`max` over `1.0`/`0.0`, per the reference `Combine.bool`,
+     so a dedicated pair of constructors would duplicate an existing semantics rather than add one.
+     Adding a constructor here is itself a semantic-version change (§9.2): `min`/`max` were added by

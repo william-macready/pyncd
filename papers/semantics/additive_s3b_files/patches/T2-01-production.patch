@@ -1,0 +1,277 @@
+diff --git a/leanncd/LeanNCD/Eval/AGENTS.md b/leanncd/LeanNCD/Eval/AGENTS.md
+index 636f77f8..69ee72bc 100644
+--- a/leanncd/LeanNCD/Eval/AGENTS.md
++++ b/leanncd/LeanNCD/Eval/AGENTS.md
+@@ -87,6 +87,6 @@ The Portfolio suite (`test/Eval/Portfolio/`, shared `Harness.lean`) has one file
+ ## Pitfalls
+ - **Scan is genuinely n-D** — `evalScan`'s `axes` drives a cartesian product over every advancing axis; code assuming 1-D scans misbehaves on a 2-D recurrence.
+ - **An unsized scan iteration axis is an error naming its own fix** ("pin it with ``axis l : ℕ = N``…"). An axis pinned explicitly to `0` still yields zero steps — a stated intent, not a sizing gap.
+-- **Out-of-range reads are `.ok 0.0`, not `.error`** (`Gather.gatherRead`). Don't conflate a padded zero with failure.
++- **Out-of-range reads are `.ok pad`, not `.error`** (`Gather.gatherRead`): `pad` is the statement's 0_K (real/bool `0.0`, max-plus `-inf`, min-plus `+inf`), and `0.0` under a `.unaryFn`. Don't conflate a padded value with failure.
+ - **`readAxisUIDs`/`termAxisUIDs`/`freeAxisUIDs` are NOT interchangeable** (`Contract.lean`) — `freeAxisUIDs` returns a subset (non-affine slots only); swapping them silently breaks shape inference or contraction scoping.
+ - **Scan state is allocated with `Slots.outputShape`** — there is no `stateShape`; don't reintroduce one.
+diff --git a/leanncd/LeanNCD/Eval/Contract.lean b/leanncd/LeanNCD/Eval/Contract.lean
+index 3767fd8e..dad0571a 100644
+--- a/leanncd/LeanNCD/Eval/Contract.lean
++++ b/leanncd/LeanNCD/Eval/Contract.lean
+@@ -84,7 +84,7 @@ def cartesian (dims : List Nat) : List (List Nat) := DenseTensor.allCoords dims
+     during accumulation is now genuinely reachable — a `.unaryFn` domain violation (e.g.
+     `log` of a non-positive value) — and propagates as a hard `.error`, per this evaluator's
+     fail-loud convention; it is never treated as an out-of-range pad (out-of-range reads return
+-    `.ok 0.0` directly from `gather`, they never reach the `.error` branch at all). -/
++    `.ok pad` directly from `gather`, they never reach the `.error` branch at all). -/
+ def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Float → Float)
+     (unit0 : Float) (unit1 : Float)
+     (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
+@@ -130,7 +130,7 @@ def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Floa
+           let coord := (termContr.zip cc).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) baseCoord
+           let mut prod := unit1
+           for f in t.factors do
+-            match gather env coord f with
++            match gather unit0 unit1 env coord f with
+             | .ok v   => prod := mul prod v
+             | .error e => throw e
+           termAcc := combine termAcc prod
+diff --git a/leanncd/LeanNCD/Eval/Gather.lean b/leanncd/LeanNCD/Eval/Gather.lean
+index 2be7fa3a..179fef83 100644
+--- a/leanncd/LeanNCD/Eval/Gather.lean
++++ b/leanncd/LeanNCD/Eval/Gather.lean
+@@ -37,18 +37,18 @@ def evalBool (coord : HashMap UID Int) : BoolExpr → Bool
+   | .not a   => ! evalBool coord a
+   | .ieq a b => evalPred coord a == evalPred coord b
+ 
+-/-- Read a tensor at a coordinate: bounds-checked, zero-padded on out-of-range (the standard
+-    zero-pad). Shared by `gather`'s `.read` and `.unaryFn` cases — a `.unaryFn` factor reads
+-    identically to a plain `.read`, then applies its function to the resulting value. -/
+-def gatherRead (env : HashMap String DenseTensor) (coord : HashMap UID Int)
++/-- Read a tensor at a coordinate: bounds-checked; an out-of-range coordinate yields `pad`. Shared by
++    `gather`'s `.read` and `.unaryFn` cases — a `.unaryFn` factor reads identically to a plain
++    `.read` (with its own `pad`, see `gather`), then applies its function to the resulting value. -/
++def gatherRead (env : HashMap String DenseTensor) (coord : HashMap UID Int) (pad : Float)
+     (nm : String) (es : List IdxExpr) : Except EvalError Float :=
+   match env[nm]? with
+   | none => .error (.unknownTensor .gather nm)
+   | some t =>
+       let srcZ : List Int := es.map (evalIdx coord)
+-      -- bounds check against t.shape; out-of-range ⇒ 0.0
++      -- bounds check against t.shape; out-of-range ⇒ pad
+       if (srcZ.zip t.shape).any (fun (z, d) => z < 0 || z ≥ (d : Int)) then
+-        .ok 0.0
++        .ok pad
+       else
+         .ok (t.get! (srcZ.map Int.toNat))
+ 
+@@ -63,16 +63,20 @@ def applyUnaryFn (ctx : EvalContext) : UnaryOp → Float → Except EvalError Fl
+   | op, v => (op.applyChecked v).mapError (fun dop => .unaryDomain dop v ctx)
+ 
+ 
+-/-- Gather one factor's value at a coordinate, from the input tensors.
++/-- Gather one factor's value at a coordinate, from the input tensors, for a statement whose
++    semiring has additive identity `zero` (0_K) and multiplicative identity `one` (1_K).
+     `.read nm es`: map each `eᵢ` to its source coord via `evalIdx`; out-of-range (any coord < 0
+-    or ≥ dim) pads with 0.0 (the standard zero-pad). `.iverson b`: 1.0 if the predicate holds
+-    else 0.0. `.unaryFn op nm es`: reads exactly like `.read nm es` (via `gatherRead`), then
+-    applies `op` to the resulting value. -/
+-def gather (env : HashMap String DenseTensor) (coord : HashMap UID Int) : Factor → Except EvalError Float
+-  | .iverson b => .ok (if evalBool coord b then 1.0 else 0.0)
+-  | .read nm es => gatherRead env coord nm es
++    or ≥ dim) pads with `zero` (0_K of the statement's sort: real 0.0, bool 0.0, max-plus -inf,
++    min-plus +inf). `.iverson b`: `one` if the predicate holds else `zero`. `.unaryFn op nm es`:
++    reads like `.read nm es` BUT an out-of-range read pads with the real 0.0 (the primitive takes
++    real input, so `f(0.0)` is what an out-of-range read contributes), then applies `op` to the
++    resulting value; the result is taken as-is. -/
++def gather (zero one : Float) (env : HashMap String DenseTensor) (coord : HashMap UID Int) :
++    Factor → Except EvalError Float
++  | .iverson b => .ok (if evalBool coord b then one else zero)
++  | .read nm es => gatherRead env coord zero nm es
+   | .unaryFn op nm es =>
+       let ctx : EvalContext := { tensor := nm, coord := es.map (evalIdx coord) }
+-      (gatherRead env coord nm es).bind (applyUnaryFn ctx op)
++      (gatherRead env coord 0.0 nm es).bind (applyUnaryFn ctx op)
+ 
+ end LeanNCD.Eval
+diff --git a/leanncd/LeanNCD/Eval/Plan/Check.lean b/leanncd/LeanNCD/Eval/Plan/Check.lean
+index 4f0c5e88..e76f6539 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Check.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Check.lean
+@@ -73,10 +73,10 @@ def admittedAlgebraBool : ContractionAlgebra :=
+   , reduceOp := .max, reduceId := .bool false }
+ 
+ /-- The algebras `checkAssign` admits for an `f64` destination: real sum-product plus the two
+-    tropical semirings that `AggOp.max`/`.min` select. The out-of-bounds `zeroPad` policy still pads
+-    reads with `0` in all three — a padded read is a factor value flowing through `factorOp`, never
+-    the reduction identity (a later S3b task changes the tropical pad to `0_K`). The tropical
+-    algebras differ from the real one in `factorOp` (`+`, identity `0`) as well as `reduceOp`. -/
++    tropical semirings that `AggOp.max`/`.min` select. The out-of-bounds `zeroPad` policy pads a
++    bare read with the algebra's `reduceId` (0_K: `0` for real, `-inf` for max-plus, `+inf` for
++    min-plus), and a unary read with the real `0`. The tropical algebras differ from the real one
++    in `factorOp` (`+`, identity `0`) as well as `reduceOp`. -/
+ def admittedAlgebras : List ContractionAlgebra :=
+   [admittedAlgebra, admittedAlgebraMax, admittedAlgebraMin]
+ 
+diff --git a/leanncd/LeanNCD/Eval/Plan/Compile.lean b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+index aed7a15b..4f71c342 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Compile.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+@@ -650,8 +650,8 @@ def lowerMaskPredicate (outputUids : List UID) (mask : BoolExpr) : PosBoolExpr :
+ /-- Select the checked contraction algebra a source statement's aggregation op compiles to. `sum`
+     is Wave C's real sum-product; `max`/`min` are the tropical semirings max-plus / min-plus
+     (`⊗ = +` with identity `0`; `⊕` = NaN-propagating `max`/`min` with identity `−∞`/`+∞`), matching
+-    the reference `Combine.max`/`Combine.min`. The `zeroPad` out-of-bounds pad (`0`) is still a factor
+-    value that flows through `factorOp` (a later S3b task changes a tropical bare read's pad to `0_K`). -/
++    the reference `Combine.max`/`Combine.min`. The `zeroPad` out-of-bounds pad of a bare read is
++    the algebra's `reduceId` (0_K: `-inf` for max-plus, `+inf` for min-plus); a unary read pads with `0`. -/
+ def algebraForAgg : AggOp → ContractionAlgebra
+   | .sum => admittedAlgebra
+   | .max => admittedAlgebraMax
+diff --git a/leanncd/LeanNCD/Eval/Plan/Dense.lean b/leanncd/LeanNCD/Eval/Plan/Dense.lean
+index 7c0b5559..3578f35e 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Dense.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Dense.lean
+@@ -45,10 +45,10 @@ private structure ScalarKernelOps (α : Type) where
+       converted — that conversion is precisely the silent precision substitution this slice exists
+       to prevent. -/
+   decodeConst : ScalarConst → Except PositionalInputError α
+-  /-- This carrier's exact zero: the out-of-bounds zero-pad value, and an Iverson `false`. -/
++  /-- This carrier's exact real zero: the out-of-bounds pad of a UNARY read (the primitive takes
++      real input, so an out-of-bounds read contributes `f(0)` whatever the statement's sort). A bare
++      read and an Iverson factor take their values from the algebra's decoded identities instead. -/
+   zero : α
+-  /-- This carrier's exact one: an Iverson `true`. -/
+-  one : α
+   /-- This carrier's implementation of one binary operation, or a refusal for one it has no
+       semantics for. -/
+   binOp : ScalarBinOp → Except PositionalInputError (α → α → α)
+@@ -76,7 +76,6 @@ private def floatOps : ScalarKernelOps Float :=
+       | .bool false => .ok 0.0
+       | .f32 _ => .error (.storageKindMismatch .float64 .float32)
+   , zero := 0.0
+-  , one := 1.0
+   , binOp := fun op => match op with
+       | .add => .ok (fun a b => a + b)
+       | .mul => .ok (fun a b => a * b)
+@@ -105,7 +104,6 @@ private def float32Ops : ScalarKernelOps Float32 :=
+       | .bool false => .ok (Float32.ofBits 0x00000000)
+       | .f64 _ => .error (.storageKindMismatch .float32 .float64)
+   , zero := Float32.ofBits 0x00000000
+-  , one := Float32.ofBits 0x3f800000
+   , binOp := fun op => match op with
+       | .add => .ok (fun a b => a + b)
+       | .mul => .ok (fun a b => a * b)
+@@ -117,25 +115,31 @@ private def float32Ops : ScalarKernelOps Float32 :=
+ /-- Gather one factor. Every source dimension is range-tested BEFORE flattening (`inBoundsPerDim`,
+     `Coordinates.lean`): testing the flat offset instead can alias distinct invalid coordinates onto
+     a valid address (proposal §8.3). A `unary` function is applied to the gathered value AFTER the
+-    out-of-bounds zero-pad (so an out-of-bounds read contributes `f(0)`, matching the reference
++    out-of-bounds pad (so an out-of-bounds read contributes `f(0.0)`, matching the reference
+     `gather`), and can fail loud on a domain violation (`log`/`sqrt`/`recip`) in EITHER carrier —
+     binary64 via `unaryDomain`, binary32 via `unaryDomain32` — since both `ScalarKernelOps`
+     instantiations (`floatOps`, `float32Ops`) supply a real `applyUnary` today; there is no current
+     carrier that takes a "no unary implementation" branch.
+ 
+-    The zero-pad is the CARRIER's own exact zero (`ops.zero`), never the algebra's reduction
+-    identity: a padded read is a FACTOR value flowing through `factorOp`, which is what makes a
+-    padded `0` beat an all-negative column under a tropical max reduction. -/
+-private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (store : Array (DenseTensorOf α))
+-    (f : ReadPlan) (iter : List Int) : Except PositionalInputError α :=
++    A BARE read is padded with `pad`, the statement's 0_K (its algebra's decoded `reduceId`: real
++    0, bool false, max-plus -inf, min-plus +inf), so a padded cell is the identity of the reduction
++    it flows into and never beats a valid cell. A `unary` read is padded with the carrier's real
++    zero (`ops.zero`) instead, because the primitive takes real input. A missing slot cannot occur
++    past `validateStore` (it is `missingSlot` there); the branch pads like an out-of-bounds read. -/
++private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (pad : α)
++    (store : Array (DenseTensorOf α)) (f : ReadPlan) (iter : List Int) :
++    Except PositionalInputError α :=
++  let padV : α := match f.unary with
++    | none => pad
++    | some _ => ops.zero
+   let base : α :=
+     match store[f.sourceSlot]? with
+-    | none => ops.zero
++    | none => padV
+     | some t =>
+         let src := applyAffine f.map iter
+         let shape := f.sourceShape.toList
+-        if inBoundsPerDim shape src then (t.data[flatIndex shape (src.map Int.toNat)]?).getD ops.zero
+-        else ops.zero
++        if inBoundsPerDim shape src then (t.data[flatIndex shape (src.map Int.toNat)]?).getD padV
++        else padV
+   match f.unary with
+   | none => .ok base
+   | some op => ops.applyUnary op base f.sourceSlot
+@@ -231,12 +235,12 @@ private def denseValueAtWith {α : Type} (ops : ScalarKernelOps α) (a : AssignP
+         for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
+         return iter
+       let factorVals ← t.factors.toList.mapM (fun f => match f with
+-        | .read r => gatherFactorWith ops store r iter.toList
++        | .read r => gatherFactorWith ops reduceId store r iter.toList
+         | .iverson b =>
+             (evalPosBool iter.toList b
+               |>.mapError (fun e => match e with
+                 | .affineWidthMismatch exp act => PositionalInputError.predicateWidthMismatch exp act)).map
+-              (fun v => if v then ops.one else ops.zero))
++              (fun v => if v then factorId else reduceId))
+       -- §2.2 fold 1: this term's FACTORS, left to right in stored order, seeded with `factorId`.
+       return foldScalars factorOp factorId factorVals)
+     -- §2.2 fold 2: this term's REDUCTION coordinates, left to right in row-major order, seeded with
+@@ -292,8 +296,9 @@ guard.
+ -/
+ 
+ /-- Execute one checked BINARY32 operation at a fixed context coordinate. Native `Float32`
+-    throughout: the store's buffers are `Array Float32`, the zero-pad is native `+0`, an Iverson
+-    predicate becomes native one/zero, and every factor/reduction/term fold step is a native
++    throughout: the store's buffers are `Array Float32`, a bare-read pad is the algebra's native
++    `reduceId` (a unary read pads with native `+0`), an Iverson predicate becomes the native
++    `factorId`/`reduceId`, and every factor/reduction/term fold step is a native
+     binary32 operation that rounds on its own. Nothing widens to `Float` anywhere on this path.
+ 
+     **The storage-kind guard is first, before the context and store checks** — the exact mirror of
+diff --git a/leanncd/LeanNCD/Eval/Plan/Types.lean b/leanncd/LeanNCD/Eval/Plan/Types.lean
+index 6d563a06..f05c8ee7 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Types.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Types.lean
+@@ -46,7 +46,9 @@ structure InputSignature where
+ /-- Index into a plan's `tensorSigs` table and the worker's parallel tensor store. -/
+ abbrev TensorSlot := Nat
+ 
+-/-- Out-of-range read policy. Wave C has exactly one. -/
++/-- Out-of-range read policy. Wave C has exactly one. The name is historical: the pad is 0_K of the
++    statement's sort for a bare read (the algebra's `reduceId`: real 0, bool false, max-plus `-inf`,
++    min-plus `+inf`) and the real `0.0` under a unary read. -/
+ inductive OutOfBoundsPolicy
+   | zeroPad
+   deriving DecidableEq, BEq, Repr, Inhabited
+diff --git a/leanncd/LeanNCD/Eval/Scatter.lean b/leanncd/LeanNCD/Eval/Scatter.lean
+index e2418e66..bf0503fd 100644
+--- a/leanncd/LeanNCD/Eval/Scatter.lean
++++ b/leanncd/LeanNCD/Eval/Scatter.lean
+@@ -64,9 +64,9 @@ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes :
+     for t in rhs.body.terms do
+       let mut prod := c.unit1
+       for f in t.factors do
+-        match gather env coord f with
++        match gather c.unit0 c.unit1 env coord f with
+         | .ok v   => prod := c.mul prod v
+-        | .error e => throw e   -- e.g. a .unaryFn domain violation; out-of-range reads are `.ok 0.0`, not `.error`
++        | .error e => throw e   -- e.g. a .unaryFn domain violation; out-of-range reads are `.ok` of the pad, not `.error`
+       val := c.combine val prod
+     -- output coordinate = each slot's affine image at this source coord
+     let outCoordZ : List Int := slots.map (fun sl => evalIdx coord sl.outIdx)
+diff --git a/leanncd/LeanNCD/Eval/Tensor.lean b/leanncd/LeanNCD/Eval/Tensor.lean
+index ca0b9d05..dbd3abb7 100644
+--- a/leanncd/LeanNCD/Eval/Tensor.lean
++++ b/leanncd/LeanNCD/Eval/Tensor.lean
+@@ -83,10 +83,11 @@ partial def allCoords (shape : List Nat) : List (List Nat) :=
+ def ofFn (shape : List Nat) (f : List Nat → Float) : DenseTensor :=
+   ⟨shape, ((allCoords shape).map f).toArray⟩
+ 
+-/-- elementwise approximate equality (tolerance) — for tests; Float isn't exactly comparable. -/
++/-- elementwise approximate equality (tolerance) — for tests; Float isn't exactly comparable.
++    Equal values (including equal infinities, where `x - y` is NaN) compare equal; NaN is never equal. -/
+ def approxEq (a b : DenseTensor) (ε : Float := 1e-6) : Bool :=
+   a.shape == b.shape && a.data.size == b.data.size &&
+-    (a.data.zip b.data).all (fun (x, y) => Float.abs (x - y) < ε)
++    (a.data.zip b.data).all (fun (x, y) => x == y || Float.abs (x - y) < ε)
+ 
+ end DenseTensor
+ end LeanNCD.Eval
