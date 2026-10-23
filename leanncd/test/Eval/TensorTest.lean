@@ -13,6 +13,13 @@ open DenseTensor
 -- approxEq: reflexive true; perturbation false:
 #guard approxEq (ofFn [3] (fun _ => 1.0)) (ofFn [3] (fun _ => 1.0))
 #guard ! approxEq (ofFn [3] (fun _ => 1.0)) ((ofFn [3] (fun _ => 1.0)).set! [0] 2.0)
+-- S3b T2: equal infinities compare equal (`x - y` is NaN for them, so `|x - y| < ε` alone is false),
+-- unequal infinities and NaN do not.
+#guard approxEq (ofFn [2] (fun _ => 1.0 / 0.0)) (ofFn [2] (fun _ => 1.0 / 0.0))
+#guard approxEq (ofFn [2] (fun _ => -1.0 / 0.0)) (ofFn [2] (fun _ => -1.0 / 0.0))
+#guard ! approxEq (ofFn [2] (fun _ => 1.0 / 0.0)) (ofFn [2] (fun _ => -1.0 / 0.0))
+#guard ! approxEq (ofFn [2] (fun _ => 1.0 / 0.0)) (ofFn [2] (fun _ => 1.0))
+#guard ! approxEq (ofFn [2] (fun _ => 0.0 / 0.0)) (ofFn [2] (fun _ => 0.0 / 0.0))
 -- allCoords enumerates the full space in row-major order:
 #guard allCoords [2,2] == [[0,0],[0,1],[1,0],[1,1]]
 

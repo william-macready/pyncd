@@ -84,7 +84,7 @@ def cartesian (dims : List Nat) : List (List Nat) := DenseTensor.allCoords dims
     during accumulation is now genuinely reachable — a `.unaryFn` domain violation (e.g.
     `log` of a non-positive value) — and propagates as a hard `.error`, per this evaluator's
     fail-loud convention; it is never treated as an out-of-range pad (out-of-range reads return
-    `.ok 0.0` directly from `gather`, they never reach the `.error` branch at all). -/
+    `.ok pad` directly from `gather`, they never reach the `.error` branch at all). -/
 def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Float → Float)
     (unit0 : Float) (unit1 : Float)
     (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
@@ -130,7 +130,7 @@ def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Floa
           let coord := (termContr.zip cc).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) baseCoord
           let mut prod := unit1
           for f in t.factors do
-            match gather env coord f with
+            match gather unit0 unit1 env coord f with
             | .ok v   => prod := mul prod v
             | .error e => throw e
           termAcc := combine termAcc prod

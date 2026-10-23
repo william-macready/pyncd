@@ -46,7 +46,9 @@ structure InputSignature where
 /-- Index into a plan's `tensorSigs` table and the worker's parallel tensor store. -/
 abbrev TensorSlot := Nat
 
-/-- Out-of-range read policy. Wave C has exactly one. -/
+/-- Out-of-range read policy. Wave C has exactly one. The name is historical: the pad is 0_K of the
+    statement's sort for a bare read (the algebra's `reduceId`: real 0, bool false, max-plus `-inf`,
+    min-plus `+inf`) and the real `0.0` under a unary read. -/
 inductive OutOfBoundsPolicy
   | zeroPad
   deriving DecidableEq, BEq, Repr, Inhabited

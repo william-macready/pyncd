@@ -46,6 +46,70 @@ test "CV5 maxpool"
       (HashMap.ofList [("X", tl [4] [1,3,2,5])])
       "P" (tl [2] [3,5])) $
 
+-- CV5o  S3b T2: max-pool whose window runs off the end. A bare out-of-range read is padded with 0_K
+--   of the statement's sort (`−∞` for max-plus), so the padded cell never wins. Window 3 stride 2:
+--   P[i] = max_p X[2i+p], p∈{0,1,2}; X=[-1,-3,-2,-5] all negative, i=1 reads X[2],X[3],X[4] (X[4] is
+--   out of range) ⇒ P = [max(-1,-3,-2), max(-2,-5,pad)] = [-1,-2]. (Before T2 the pad was the real 0
+--   and won: P = [-1, 0].)
+test "CV5o maxpool, padded window (max-plus pad -inf)"
+    (evalEqB (tlprog!{
+    axis i : ℕ = 2, p : ℕ = 3
+    P[i] := maxreduce(X[2 * i + p])
+  })
+      (HashMap.ofList [("X", tl [4] [-1,-3,-2,-5])])
+      "P" (tl [2] [-1,-2])) $
+
+-- CV5od  duality twin of CV5o: min-pool on the negated data, pad `+∞`; P = [1, 2].
+test "CV5od minpool, padded window (min-plus pad +inf)"
+    (evalEqB (tlprog!{
+    axis i : ℕ = 2, p : ℕ = 3
+    P[i] := minreduce(X[2 * i + p])
+  })
+      (HashMap.ofList [("X", tl [4] [1,3,2,5])])
+      "P" (tl [2] [1,2])) $
+
+-- CV5r  accept-neighbour, real statement: the same padded window under a sum keeps the real pad 0:
+--   P = [1+3+2, 2+5+0] = [6,7].
+test "CV5r sum over padded window (real pad 0)"
+    (evalEqB (tlprog!{
+    axis i : ℕ = 2, p : ℕ = 3
+    P[i] := X[2 * i + p]
+  })
+      (HashMap.ofList [("X", tl [4] [1,3,2,5])])
+      "P" (tl [2] [6,7])) $
+
+-- CV5b  accept-neighbour, bool statement: the pad is `false`. E=[1,0,0,0]: B[0]=∃p E[p]=1, and
+--   B[1]=∃p E[2+p] reads E[2],E[3],pad = 0 (a `true` pad would make it 1) ⇒ B=[1,0].
+test "CV5b bool statement pads false"
+    (evalEqB (tlprog!{
+    axis i : ℕ = 2, p : ℕ = 3
+    predicate E(j), B(i)
+    B[i] := E[2 * i + p]
+  })
+      (HashMap.ofList [("E", tl [4] [1,0,0,0])])
+      "B" (tl [2] [1,0])) $
+
+-- CV5u  OOB under a UNARY inside a tropical statement keeps the real 0.0 pad: `exp` takes real input.
+--   max-plus, X=[-1,-3,-2,-5]: P[0]=max(e^-1,e^-3,e^-2)=e^-1≈0.3678794, P[1]=max(e^-2,e^-5,exp(0)=1)=1
+--   (a `−∞` pad would give exp(−∞)=0 and P[1]=e^-2≈0.1353).
+test "CV5u OOB under exp in max-plus pads 0.0"
+    (evalEqB (tlprog!{
+    axis i : ℕ = 2, p : ℕ = 3
+    P[i] := maxreduce(exp(X[2 * i + p]))
+  })
+      (HashMap.ofList [("X", tl [4] [-1,-3,-2,-5])])
+      "P" (tl [2] [0.36787944117144233, 1])) $
+
+-- CV5ud  min-plus twin: X=[1,3,2,5], P[0]=min(e,e^3,e^2)=e≈2.7182818, P[1]=min(e^2,e^5,exp(0)=1)=1
+--   (a `+∞` pad would give exp(+∞)=+∞ and P[1]=e^2≈7.389).
+test "CV5ud OOB under exp in min-plus pads 0.0"
+    (evalEqB (tlprog!{
+    axis i : ℕ = 2, p : ℕ = 3
+    P[i] := minreduce(exp(X[2 * i + p]))
+  })
+      (HashMap.ofList [("X", tl [4] [1,3,2,5])])
+      "P" (tl [2] [2.718281828459045, 1])) $
+
 -- CV6  avg-pool as weighted sum: P[i] = Σ_p X[2i+p]·w[p]
 --   w=[0.5,0.5], X=[2,4,6,8] ⇒ [0.5·2+0.5·4, 0.5·6+0.5·8] = [3,7]
 test "CV6 avgpool"

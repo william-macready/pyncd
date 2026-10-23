@@ -83,10 +83,11 @@ partial def allCoords (shape : List Nat) : List (List Nat) :=
 def ofFn (shape : List Nat) (f : List Nat → Float) : DenseTensor :=
   ⟨shape, ((allCoords shape).map f).toArray⟩
 
-/-- elementwise approximate equality (tolerance) — for tests; Float isn't exactly comparable. -/
+/-- elementwise approximate equality (tolerance) — for tests; Float isn't exactly comparable.
+    Equal values (including equal infinities, where `x - y` is NaN) compare equal; NaN is never equal. -/
 def approxEq (a b : DenseTensor) (ε : Float := 1e-6) : Bool :=
   a.shape == b.shape && a.data.size == b.data.size &&
-    (a.data.zip b.data).all (fun (x, y) => Float.abs (x - y) < ε)
+    (a.data.zip b.data).all (fun (x, y) => x == y || Float.abs (x - y) < ε)
 
 end DenseTensor
 end LeanNCD.Eval

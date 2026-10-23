@@ -73,10 +73,10 @@ def admittedAlgebraBool : ContractionAlgebra :=
   , reduceOp := .max, reduceId := .bool false }
 
 /-- The algebras `checkAssign` admits for an `f64` destination: real sum-product plus the two
-    tropical semirings that `AggOp.max`/`.min` select. The out-of-bounds `zeroPad` policy still pads
-    reads with `0` in all three — a padded read is a factor value flowing through `factorOp`, never
-    the reduction identity (a later S3b task changes the tropical pad to `0_K`). The tropical
-    algebras differ from the real one in `factorOp` (`+`, identity `0`) as well as `reduceOp`. -/
+    tropical semirings that `AggOp.max`/`.min` select. The out-of-bounds `zeroPad` policy pads a
+    bare read with the algebra's `reduceId` (0_K: `0` for real, `-inf` for max-plus, `+inf` for
+    min-plus), and a unary read with the real `0`. The tropical algebras differ from the real one
+    in `factorOp` (`+`, identity `0`) as well as `reduceOp`. -/
 def admittedAlgebras : List ContractionAlgebra :=
   [admittedAlgebra, admittedAlgebraMax, admittedAlgebraMin]
 

@@ -242,4 +242,31 @@ private def nanF : Float := 0.0 / 0.0
 #guard maxNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x40000000) == Float32.ofBits 0x40000000
 #guard minNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x40000000) == Float32.ofBits 0x3f800000
 
+-- S3b T2 (reference; regression pins, the folds are seeded with the `Combine` identities): the empty
+-- product is `1_K` (tropical: 0.0), the empty sum and a zero-extent reduction are `0_K` (−∞ / +∞).
+-- Each case runs under max-plus, min-plus (duality twin) and real (accept-neighbour).
+private def negInfC : Float := -1.0 / 0.0
+private def posInfC : Float := 1.0 / 0.0
+private def refRows (c : Combine) (rhs : RHSExpr) : Option (Array Float) :=
+  let i := ax "i" 1; let k := ax "k" 2
+  let X : DenseTensor := ⟨[3, 0], #[]⟩
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes : HashMap UID Nat := (({} : HashMap UID Nat).insert 1 3).insert 2 0
+  match evalAssignWith c.mul c.combine c.unit0 c.unit1 env sizes "Y" [.free i] rhs with
+  | .ok (_, Y) => some Y.data
+  | .error _ => none
+private def emptyProdRhs : RHSExpr := { body := { terms := [{ factors := [] }] }, nonlin := .identity }
+private def emptySumRhs : RHSExpr := { body := { terms := [] }, nonlin := .identity }
+private def zeroExtRhs : RHSExpr :=
+  { body := { terms := [{ factors := [.read "X" [.axis (ax "i" 1), .axis (ax "k" 2)]] }] }, nonlin := .identity }
+#guard refRows Combine.max emptyProdRhs == some #[0.0, 0.0, 0.0]
+#guard refRows Combine.min emptyProdRhs == some #[0.0, 0.0, 0.0]
+#guard refRows Combine.real emptyProdRhs == some #[1.0, 1.0, 1.0]
+#guard refRows Combine.max emptySumRhs == some #[negInfC, negInfC, negInfC]
+#guard refRows Combine.min emptySumRhs == some #[posInfC, posInfC, posInfC]
+#guard refRows Combine.real emptySumRhs == some #[0.0, 0.0, 0.0]
+#guard refRows Combine.max zeroExtRhs == some #[negInfC, negInfC, negInfC]
+#guard refRows Combine.min zeroExtRhs == some #[posInfC, posInfC, posInfC]
+#guard refRows Combine.real zeroExtRhs == some #[0.0, 0.0, 0.0]
+
 end LeanNCD.Eval

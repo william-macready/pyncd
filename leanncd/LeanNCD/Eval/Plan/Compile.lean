@@ -650,8 +650,8 @@ def lowerMaskPredicate (outputUids : List UID) (mask : BoolExpr) : PosBoolExpr :
 /-- Select the checked contraction algebra a source statement's aggregation op compiles to. `sum`
     is Wave C's real sum-product; `max`/`min` are the tropical semirings max-plus / min-plus
     (`⊗ = +` with identity `0`; `⊕` = NaN-propagating `max`/`min` with identity `−∞`/`+∞`), matching
-    the reference `Combine.max`/`Combine.min`. The `zeroPad` out-of-bounds pad (`0`) is still a factor
-    value that flows through `factorOp` (a later S3b task changes a tropical bare read's pad to `0_K`). -/
+    the reference `Combine.max`/`Combine.min`. The `zeroPad` out-of-bounds pad of a bare read is
+    the algebra's `reduceId` (0_K: `-inf` for max-plus, `+inf` for min-plus); a unary read pads with `0`. -/
 def algebraForAgg : AggOp → ContractionAlgebra
   | .sum => admittedAlgebra
   | .max => admittedAlgebraMax

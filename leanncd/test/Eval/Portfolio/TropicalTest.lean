@@ -77,6 +77,38 @@ test "TR5 min-plus shortest path"
 test "TR5d max-plus twin of TR5"
     (evalEqB (tlprog!{ D2[i, k] := maxreduce(D[i, j] · D[j, k]) })
       (HashMap.ofList [("D", tl [3,3] [0,-1,-5, -9,0,-2, -3,-9,0])])
-      "D2" (tl [3,3] [0,-1,-3, -5,0,-2, -3,-4,0]))
+      "D2" (tl [3,3] [0,-1,-3, -5,0,-2, -3,-4,0])) $
+
+-- TR10  S3b T2: the Iverson factor is `1_K` if true else `0_K`: under max-plus true adds 0.0 and false
+--   contributes `−∞`, so `[j ≤ i]` is a MASK on the max. C[i] = max_{j ≤ i} X[j]; X=[-3,-1,-2]
+--   ⇒ C = [-3, -1, -1]. (Before T2 a false mask added 0.0 and was invisible: C = [-1,-1,-1].)
+test "TR10 iverson mask in max-plus"
+    (evalEqB (tlprog!{ axis i : ℕ = 3, j : ℕ = 3
+            C[i] := maxreduce(X[j] · [j ≤ i]) })
+      (HashMap.ofList [("X", tl [3] [-3,-1,-2])])
+      "C" (tl [3] [-3,-1,-1])) $
+
+-- TR10d  duality twin of TR10: min-plus on the negated data, false = `+∞`; C = [3, 1, 1].
+test "TR10d iverson mask in min-plus"
+    (evalEqB (tlprog!{ axis i : ℕ = 3, j : ℕ = 3
+            C[i] := minreduce(X[j] · [j ≤ i]) })
+      (HashMap.ofList [("X", tl [3] [3,1,2])])
+      "C" (tl [3] [3,1,1])) $
+
+-- TR10e  an all-false row reduces to `0_K`: `[j < i]` at i=0 keeps no j, so C[0] = −∞ (max-plus) and
+--   C[1] = X[0], C[2] = max(X[0], X[1]). X=[-3,-1,-2] ⇒ C = [−∞, -3, -1]. (`approxEq` compares the
+--   equal infinities equal.)
+test "TR10e empty masked reduction is -inf"
+    (evalEqB (tlprog!{ axis i : ℕ = 3, j : ℕ = 3
+            C[i] := maxreduce(X[j] · [j < i]) })
+      (HashMap.ofList [("X", tl [3] [-3,-1,-2])])
+      "C" (tl [3] [-1.0/0.0,-3,-1])) $
+
+-- TR10ed  min-plus twin of TR10e: C = [+∞, 3, 1] on X=[3,1,2].
+test "TR10ed empty masked reduction is +inf"
+    (evalEqB (tlprog!{ axis i : ℕ = 3, j : ℕ = 3
+            C[i] := minreduce(X[j] · [j < i]) })
+      (HashMap.ofList [("X", tl [3] [3,1,2])])
+      "C" (tl [3] [1.0/0.0,3,1]))
 
 end LeanNCD.Eval
