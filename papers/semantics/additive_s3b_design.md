@@ -65,9 +65,22 @@ Reads, by source sort (the tensor's `algebraOf`, bool if declared `predicate`) a
 | max-plus | id | REJECT `sortCastUnsupported` | id | REJECT |
 | min-plus | id | REJECT | REJECT | id |
 
-Rejections (new): tropical -> bool, max-plus <-> min-plus (cast table); a tropical destination with `nonlin ≠ identity` (decision note A8);
-two annotated writers of one scan state that disagree. The nonlin rejection must run on the ORIGINAL statement, before
-`RouteFragments.physicalizeOne` splits `relu(maxreduce(..))` into a tropical step and a real step (LoweringTest AGG1/AGG2 depend on it).
+Rejections (new): tropical -> bool, max-plus <-> min-plus (cast table); a tropical destination with `nonlin ≠ identity` (decision note A8; programmatic
+statements only, since `relu(maxreduce(..))` has no surface form); two annotated writers of one scan state that disagree.
+
+Where the rejections live (builder-check answers, verified against the code 2026-10-22):
+- They sit beside `checkPredicateOutput` (`Structural.lean`) and are enforced wherever that rule is: source `checkDtypes`, `checkScheduledDtypes`
+  (so `validateScheduled`, hence `evalScheduled` and the checked compile entry). They run on the source schedule BEFORE collection.
+- `route` is semantics-free and stays so. It never enforces the predicate-output rule either (`physicalizeForRoute` does not call `validateScheduled`).
+  No sort, cast or A8 rejection is added on the route path; `RouteFragments` and its `physicalizeOne_length_eq_fragmentWidth` obligations are untouched.
+  Consequently `LoweringTest` AGG1/AGG2 (they call the regression-only `splitNonlins` directly) and `RouteFragmentCorpusTest`'s `aggregate` fixture
+  (route, payload `.represented`) are UNCHANGED. The audit's "become rejections" list is wrong for those two; only execution-entry tests can flip.
+- `algebraOf` is computed on the SOURCE schedule inside `validateScheduled` and stored in `CheckedScheduledProgram.algebras`. It is a partial map; a lookup
+  of an absent name falls back to the declaration (`predicate` = bool, else real). A top-level name with two or more writers is NOT given an entry in S3b
+  (collection's `multiWriterAlgebra` remains the only refusal for tropical multi-writer sets, so `CollectTest` C6/C6b/C6c and `CollectEvalTest` J4 keep their
+  constructors), and the private `T#k` tensors need no entries because collection admits only real-sum and predicate multi-writer sets today.
+  Writer agreement is checked for scan states only (base plus recurrence statements).
+
 Accepted (new): top-level `maxreduce`/`minreduce` scatter, with 0_K fill and ⊕ collisions (the S3a guard exists only to wait for this slice).
 
 f32: identical semantics; constants are bit patterns (⊗ identity `0x00000000`; ⊕ identities `0xff800000`, `0x7f800000`).
@@ -103,7 +116,8 @@ f32: identical semantics; constants are bit patterns (⊗ identity `0x00000000`;
 | Slice name "S3b" = the semiring flip for single-writer programs; tropical multi-writer collection (A4 agreement) is S3b-ii, planned after | multiWriterAlgebra is refused today and the oracle's multi-writer rows are unencoded; the flip does not need agreement except within a scan state |
 | Plan covers S3b only | Rule 13: one plan per slice |
 | `approxEq` is fixed in production source (`x == y \|\| |x-y| < ε`) | one-line test helper, needed for RC10's -inf cell |
-| The pre-split nonlin rejection and the scan-state annotation-agreement rejection are in scope | both are required for a well-defined sort per statement/state |
+| The tropical-nonlin rejection (execution entries only, beside `checkPredicateOutput`) and the scan-state annotation-agreement rejection are in scope | both are needed for a well-defined sort per statement/state; route is untouched (§3) |
+| A test pins ("become rejections") from the audit are not trusted until observed | audit §8c was unread for 3 of the 5 and wrong for 2 |
 | `EvalError.scatterFillNotIdentity` and `CapabilityError.scatterOptsNotAdmitted` are deleted with their only consumers (the sorted differential's condition) | audit §11.9; they are kept alive only by `confirmsSorted` |
 | Prototype-first authoring in five dispatches, patches per task | slice-plan §6; T3/T4/T5 carry the design risk |
 | The cast mechanism (reference cast copy vs gather map; plan `ReadPlan.cast`) and where the per-state sort lives in the scan plan are left to the prototype | UNVERIFIED in the audit (`ScanStatePlan` not read) |
