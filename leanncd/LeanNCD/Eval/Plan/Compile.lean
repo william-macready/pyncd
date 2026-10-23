@@ -198,7 +198,7 @@ def checkNonlinScanBlock (_stmtName : String) : Nonlin → Except CapabilityErro
   | .axiswise .. => pure ()
 
 /-- Aggregation-op admission. `.max`/`.min` are now admitted — they compile to the tropical
-    semirings (`algebraForAgg`) the reference `Combine.max`/`Combine.min` already evaluate. Like
+    semirings max-plus / min-plus (`algebraForAgg`) the reference `Combine.max`/`Combine.min` evaluate. Like
     `checkNonlinTopLevel`'s admission of `.pointwise`/`.axiswise`, this diverges from C0's frozen
     `classifyAggOp` (`test/Eval/Plan/ContractTest.lean`), which still classifies `.max`/`.min` as
     `unsupportedAgg`; the divergence is deliberate and documented, not a stale mirror. The
@@ -648,10 +648,10 @@ def lowerMaskPredicate (outputUids : List UID) (mask : BoolExpr) : PosBoolExpr :
   lowerBoolExprPos ({} : HashMap UID Int) outputUids mask
 
 /-- Select the checked contraction algebra a source statement's aggregation op compiles to. `sum`
-    is Wave C's real sum-product; `max`/`min` are the tropical semirings, whose reduction identity
-    (`−∞`/`+∞`) differs from the `zeroPad` out-of-bounds pad (`0`) — the pad is a factor value that
-    still flows through `factorOp` (mul), so only the reduction identity changes here, matching the
-    reference `Combine.max`/`Combine.min`. -/
+    is Wave C's real sum-product; `max`/`min` are the tropical semirings max-plus / min-plus
+    (`⊗ = +` with identity `0`; `⊕` = NaN-propagating `max`/`min` with identity `−∞`/`+∞`), matching
+    the reference `Combine.max`/`Combine.min`. The `zeroPad` out-of-bounds pad (`0`) is still a factor
+    value that flows through `factorOp` (a later S3b task changes a tropical bare read's pad to `0_K`). -/
 def algebraForAgg : AggOp → ContractionAlgebra
   | .sum => admittedAlgebra
   | .max => admittedAlgebraMax

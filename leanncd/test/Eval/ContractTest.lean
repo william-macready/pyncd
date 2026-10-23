@@ -205,4 +205,41 @@ run_cmd do
   | Except.ok (_, a), Except.ok (_, b) => unless DenseTensor.approxEq a b do
       throwError s!"4a: evalAssignWith {repr a.data} ≠ evalAssignSeeded-with-empty-seed {repr b.data}"
   | _, _ => throwError "4a: one of the two calls errored unexpectedly"
+
+-- S3b-i task T1: `Combine.max`/`Combine.min` are the semirings max-plus `(+, max, −∞, 0)` and min-plus
+-- `(+, min, +∞, 0)`, and every `Combine`'s ⊕/⊗ on binary64 is NaN-propagating where it is max/min.
+
+-- ⊗ is `+` with identity `0.0` (before S3b-i it was `*` with identity `1.0`); ⊕ identity is `∓∞`.
+#guard Combine.max.mul 2.0 3.0 == 5.0 && Combine.max.unit1 == 0.0 && Combine.max.unit0 == -1.0 / 0.0
+#guard Combine.min.mul 2.0 3.0 == 5.0 && Combine.min.unit1 == 0.0 && Combine.min.unit0 == 1.0 / 0.0
+-- Accept-neighbour: the real semiring keeps `*` / `+` with `1.0` / `0.0`.
+#guard Combine.real.mul 2.0 3.0 == 6.0 && Combine.real.unit1 == 1.0 && Combine.real.unit0 == 0.0
+-- Accept-neighbour: non-NaN max/min behave as before.
+#guard Combine.max.combine 1.0 2.0 == 2.0 && Combine.max.combine 2.0 1.0 == 2.0
+#guard Combine.min.combine 1.0 2.0 == 1.0 && Combine.min.combine 2.0 1.0 == 1.0
+
+-- Negation duality: `min-plus(x) = −max-plus(−x)`, for ⊗ and ⊕ and the identities.
+#guard Combine.min.mul 2.0 3.0 == -(Combine.max.mul (-2.0) (-3.0))
+#guard Combine.min.combine 1.0 2.0 == -(Combine.max.combine (-1.0) (-2.0))
+#guard Combine.min.unit0 == -Combine.max.unit0
+
+private def nanF : Float := 0.0 / 0.0
+
+-- NaN propagation: a NaN in EITHER argument position is the result, for the tropical ⊕ and both
+-- Boolean operations (`min` for ∧, `max` for ∃). Lean's `Max.max` drops a NaN second operand and
+-- `Min.min` a NaN first operand, so each position catches one of the unfixed operators.
+#guard (Combine.max.combine nanF 1.0).isNaN && (Combine.max.combine 1.0 nanF).isNaN
+#guard (Combine.min.combine nanF 1.0).isNaN && (Combine.min.combine 1.0 nanF).isNaN
+#guard (Combine.bool.mul nanF 1.0).isNaN && (Combine.bool.mul 1.0 nanF).isNaN
+#guard (Combine.bool.combine nanF 1.0).isNaN && (Combine.bool.combine 1.0 nanF).isNaN
+-- The shared helpers directly, binary64 and binary32.
+#guard (maxNaN nanF 1.0).isNaN && (maxNaN 1.0 nanF).isNaN && (minNaN nanF 1.0).isNaN && (minNaN 1.0 nanF).isNaN
+#guard (maxNaN32 (Float32.ofBits 0x7fc00000) (Float32.ofBits 0x3f800000)).isNaN
+#guard (maxNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x7fc00000)).isNaN
+#guard (minNaN32 (Float32.ofBits 0x7fc00000) (Float32.ofBits 0x3f800000)).isNaN
+#guard (minNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x7fc00000)).isNaN
+-- Accept-neighbour (binary32): non-NaN operands behave as `max`/`min`.
+#guard maxNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x40000000) == Float32.ofBits 0x40000000
+#guard minNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x40000000) == Float32.ofBits 0x3f800000
+
 end LeanNCD.Eval

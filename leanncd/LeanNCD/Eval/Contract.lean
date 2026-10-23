@@ -159,16 +159,26 @@ structure Combine where
 /-- The ℝ contraction `(×, Σ)`: multiply factors, then sum. -/
 def Combine.real : Combine := ⟨(· * ·), (· + ·), 0.0, 1.0⟩
 
-/-- The Boolean contraction `(∧, ∃)` on 0/1 Floats: `min` factors (∧), `max` terms (∃). -/
-def Combine.bool : Combine := ⟨min, max, 0.0, 1.0⟩
+/-- The Boolean contraction `(∧, ∃)` on 0/1 Floats: `min` factors (∧), `max` terms (∃). Both are the
+    NaN-propagating `minNaN`/`maxNaN` (identical to `min`/`max` on 0/1 values; they differ only on a
+    non-binary NaN input). -/
+def Combine.bool : Combine := ⟨minNaN, maxNaN, 0.0, 1.0⟩
 
-/-- The tropical max contraction `(×, max, −∞)`: multiply factors within a term, then take max
-    across terms and contracted axes. Identity is `−∞` so all-negative inputs reduce correctly. -/
-def Combine.max : Combine := ⟨(· * ·), fun (a b : Float) => Max.max a b, -1.0 / 0.0, 1.0⟩
+/-- The shared shape of the two tropical semirings: ⊗ = `+` with identity `1_K = 0.0`, ⊕ = `op`
+    (NaN-propagating `max`/`min`) with identity `0_K = zero` (`−∞` for max-plus, `+∞` for min-plus).
+    `Combine.max` and `Combine.min` instantiate it once each, so the two directions share code and
+    differ only in `(op, zero)`. -/
+def Combine.tropical (op : Float → Float → Float) (zero : Float) : Combine :=
+  ⟨(· + ·), op, zero, 0.0⟩
 
-/-- The tropical min contraction `(×, min, +∞)`: multiply factors within a term, then take min
-    across terms and contracted axes. Identity is `+∞` so all-positive inputs reduce correctly. -/
-def Combine.min : Combine := ⟨(· * ·), fun (a b : Float) => Min.min a b, 1.0 / 0.0, 1.0⟩
+/-- Max-plus `(+, max, −∞, 0)`: ADD factors within a term, then take the NaN-propagating max across
+    terms and contracted axes. `unit0 = −∞` (`0_K`) so all-negative inputs reduce correctly;
+    `unit1 = 0` is the empty product. -/
+def Combine.max : Combine := Combine.tropical maxNaN (-1.0 / 0.0)
+
+/-- Min-plus `(+, min, +∞, 0)`: ADD factors within a term, then take the NaN-propagating min across
+    terms and contracted axes. `unit0 = +∞` (`0_K`) so all-positive inputs reduce correctly. -/
+def Combine.min : Combine := Combine.tropical minNaN (1.0 / 0.0)
 
 /-- Whether `nm`'s declaration is a `predicate`, i.e. its values are Boolean {0,1}. Searches
     TENSOR-BEARING declarations only (everything but `.axis`/`.iter`: `.tensor`, `.typedTensor`,

@@ -45,6 +45,11 @@ test "GN3 degree"
 --     i=0: max(X[0], X[1]) = max([1,2],[3,4]) = [3,4].
 --     i=1: max(0·X[0], X[1]) = max([0,0],[3,4]) = [3,4].
 --   ⇒ [[3,4],[3,4]] (sum-agg would give [4,6] for row 0, so this genuinely exercises max).
+--   KNOWN RED since S3b-i T1 (deferred to T5, the bool→max-plus cast): the tropical ⊗ is now `+`
+--   and the `predicate` factor `edge` is still read as the raw 0/1, so production computes
+--   max-plus(edge + X) = [[4,5],[4,5]]. The spec's cast sends false to 0_K = −∞ and true to
+--   1_K = 0, which gives max(X[0], X[1]) = [3,4] and max(−∞, X[1]) = [3,4] again: this
+--   expectation is correct once T5 lands, so it is left unchanged.
 test "GN4 max-aggregation"
     (evalEqB (tlprog!{ predicate edge(i, j)
             H[i, f] := maxreduce(edge[i, j] · X[j, f]) })

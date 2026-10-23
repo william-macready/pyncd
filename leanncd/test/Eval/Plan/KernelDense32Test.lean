@@ -204,11 +204,13 @@ def zerdStore32 : Array DenseTensor32 := #[ t32 [2] #[1088421888, 1090519040], t
 -- regardless of the source's values (`[7, 8]` here).
 #guard bitsOf (run32 zerdSigs32 f32Zerd zerdStore32) == some #[0, 0]
 
-/-! ## Fixtures 7 and 8: the two binary32 tropical identities, independently
+/-! ## Fixtures 7 and 8: the binary32 max-plus / min-plus semirings, independently
 
-`contractPlan` under the max and min algebras. In each the seed is LOAD-BEARING: with all-negative
-column values a `+0` max seed would win every column, and with all-positive column values a `+0` min
-seed would win every column. -/
+`contractPlan` under the max-plus and min-plus algebras (S3b-i task T1: the tropical ⊗ is `+` with
+identity binary32 `+0`, so `A[i]·B[j]` ADDS). In each direction the `⊕` seed is LOAD-BEARING on one
+fixture: with all-negative sums a `+0` max seed would win every column, and with all-positive sums a
+`+0` min seed would win every column. Every min-plus fixture has a negation-duality twin
+(`min-plus(x) = −max-plus(−x)`: flip every sign bit of the inputs and of the expectation). -/
 
 def contractSigs32 : Array TensorSignature :=
   #[ { shape := #[4], dtype := .f32 }, { shape := #[3], dtype := .f32 }
@@ -231,16 +233,85 @@ def storeAB32 : Array DenseTensor32 :=
    , t32 [3] #[1065353216, 1073741824, 1077936128]
    , t32 [4] #[] ]
 
--- Fixture 7: `max_j A[i]·B[j]` with every product negative is `A[i]·(-1)`, i.e.
--- `[-10, -100, -1000, -10000]`. Only the `0xff800000` (`−∞`) seed makes this right; a `+0` seed
--- would return `[0, 0, 0, 0]`.
-#guard bitsOf (run32 contractSigs32 f32MaxContract storeNegB32)
-  == some #[3240099840, 3267887104, 3296329728, 3323740160]
+/-- `A = [-10, -100, -1000, -10000]`, `B = [-1, -2, -3]` — the negation of `storeAB32`. -/
+def storeNegA_NegB32 : Array DenseTensor32 :=
+  #[ t32 [4] #[3240099840, 3267887104, 3296329728, 3323740160]
+   , t32 [3] #[3212836864, 3221225472, 3225419776]
+   , t32 [4] #[] ]
 
--- Fixture 8: `min_j A[i]·B[j]` with every product positive is `A[i]·1`, i.e.
--- `[10, 100, 1000, 10000]`. Only the `0x7f800000` (`+∞`) seed makes this right.
+/-- `A = [-10, -100, -1000, -10000]`, `B = [1, 2, 3]` — the negation of `storeNegB32`. -/
+def storeNegA_PosB32 : Array DenseTensor32 :=
+  #[ t32 [4] #[3240099840, 3267887104, 3296329728, 3323740160]
+   , t32 [3] #[1065353216, 1073741824, 1077936128]
+   , t32 [4] #[] ]
+
+-- Fixture 7: max-plus `max_j A[i] + B[j]` = `A[i] + max B` = `A[i] + 3` = `[13, 103, 1003, 10003]`
+-- (before S3b-i, max-times: `[30, 300, 3000, 30000]`). Observed.
+#guard bitsOf (run32 contractSigs32 f32MaxContract storeAB32)
+  == some #[1095761920, 1120796672, 1148895232, 1176259584]
+
+-- Fixture 7b: all-negative B with positive A, `A[i] + (-1)` = `[9, 99, 999, 9999]` (before S3b-i the
+-- products were negative, `[-10, ..]`, and this fixture was the `−∞`-seed one). Observed.
+#guard bitsOf (run32 contractSigs32 f32MaxContract storeNegB32)
+  == some #[1091567616, 1120272384, 1148829696, 1176255488]
+
+-- Fixture 7c: the `−∞`-seed fixture. `A` and `B` negative make every max-plus sum negative, so the
+-- result is `A[i] + (-1)` = `[-11, -101, -1001, -10001]`; only the `0xff800000` seed makes this right
+-- (a `+0` seed would return `[0, 0, 0, 0]`). Twin of fixture 8.
+#guard bitsOf (run32 contractSigs32 f32MaxContract storeNegA_NegB32)
+  == some #[3241148416, 3268018176, 3296346112, 3323741184]
+
+-- Fixture 8: min-plus `min_j A[i] + B[j]` = `A[i] + 1` = `[11, 101, 1001, 10001]`, every sum positive,
+-- so only the `0x7f800000` (`+∞`) seed makes this right. Twin of fixture 7c. Observed.
 #guard bitsOf (run32 contractSigs32 f32MinContract storeAB32)
-  == some #[1092616192, 1120403456, 1148846080, 1176256512]
+  == some #[1093664768, 1120534528, 1148862464, 1176257536]
+
+-- Fixture 8b: the duality twin of fixture 7: min-plus on the negated data, `A[i] + min B` with
+-- `B = [-1,-2,-3]` = `A[i] - 3` = `[-13, -103, -1003, -10003]`. Observed.
+#guard bitsOf (run32 contractSigs32 f32MinContract storeNegA_NegB32)
+  == some #[3243245568, 3268280320, 3296378880, 3323743232]
+
+-- Fixture 8c: the duality twin of fixture 7b: `A[i] + 1` = `[-9, -99, -999, -9999]`. Observed.
+#guard bitsOf (run32 contractSigs32 f32MinContract storeNegA_PosB32)
+  == some #[3239051264, 3267756032, 3296313344, 3323739136]
+
+-- Fixture 8d: the constants themselves. The tropical ⊗ identity (`factorId`) is binary32 `+0`
+-- (`0x00000000`, `1_K`); the ⊕ identities (`reduceId`, `0_K`) are `−∞` / `+∞`; ⊗ is `add`.
+#guard admittedAlgebraF32Max.factorId == .f32 0x00000000
+#guard admittedAlgebraF32Max.reduceId == .f32 0xff800000
+#guard admittedAlgebraF32Max.factorOp == .add && admittedAlgebraF32Max.reduceOp == .max
+#guard admittedAlgebraF32Min.factorId == .f32 0x00000000
+#guard admittedAlgebraF32Min.reduceId == .f32 0x7f800000
+#guard admittedAlgebraF32Min.factorOp == .add && admittedAlgebraF32Min.reduceOp == .min
+
+/-! ## Fixture 8e: NaN propagation in the native binary32 `max`/`min`
+
+The binary32 mirror of `KernelDenseTest`'s `nanPlan` fixtures: rows `[NaN, 1]` (NaN second operand of
+step 1, first operand of step 2), `[1, NaN]` (second operand of step 2) and the control `[2, 1]`.
+NaN is rendered as the sentinel `0xFFFFFFFF` (the bit pattern of a NaN is not canonical). -/
+
+def nan32 : Float32 := Float32.ofBits 0x7fc00000
+
+def nanSigs32 : Array TensorSignature :=
+  #[ { shape := #[3, 2], dtype := .f32 }, { shape := #[3], dtype := .f32 } ]
+def nanSigsBool32 : Array TensorSignature :=
+  #[ { shape := #[3, 2], dtype := .f32 }, { shape := #[3], dtype := .bool } ]
+
+def nanStore32 : Array DenseTensor32 :=
+  #[ { shape := [3, 2], data := #[nan32, Float32.ofBits 0x3f800000, Float32.ofBits 0x3f800000, nan32
+                                 , Float32.ofBits 0x40000000, Float32.ofBits 0x3f800000] }
+   , t32 [3] #[] ]
+
+def nanOut32 (sigs : Array TensorSignature) (alg : ContractionAlgebra) : Option (List UInt32) :=
+  match checkAssignF32 sigs (KernelDenseTest.nanPlan alg) with
+  | .error _ => none
+  | .ok c => match runDenseAssign32 c nanStore32 with
+             | .error _ => none
+             | .ok d => some (d.data.toList.map (fun x => if x.isNaN then 0xFFFFFFFF else x.toBits))
+
+#guard nanOut32 nanSigs32 admittedAlgebraF32Max == some [0xFFFFFFFF, 0xFFFFFFFF, 0x40000000]
+#guard nanOut32 nanSigs32 admittedAlgebraF32Min == some [0xFFFFFFFF, 0xFFFFFFFF, 0x3f800000]
+#guard nanOut32 nanSigsBool32 admittedAlgebraBool == some [0xFFFFFFFF, 0xFFFFFFFF, 0x3f800000]
 
 /-! ## Fixture 9: the out-of-bounds pad is the carrier's zero, not the reduction identity
 

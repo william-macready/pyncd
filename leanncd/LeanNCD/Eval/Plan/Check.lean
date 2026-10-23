@@ -38,18 +38,22 @@ def admittedAlgebra : ContractionAlgebra :=
   { factorOp := .mul, factorId := .f64 (Float.toBits 1.0)
   , reduceOp := .add, reduceId := .f64 (Float.toBits 0.0) }
 
-/-- Tropical max-product `(×, max, −∞)` — the algebra `AggOp.max` compiles to. Identity `−∞` so an
-    all-negative reduction still returns its greatest element (a `0` identity would spuriously win).
-    Mirrors the reference `Combine.max`. -/
-def admittedAlgebraMax : ContractionAlgebra :=
-  { factorOp := .mul, factorId := .f64 (Float.toBits 1.0)
-  , reduceOp := .max, reduceId := .f64 (Float.toBits (-1.0 / 0.0)) }
+/-- The shared shape of the two binary64 tropical semirings: ⊗ = `+` with identity `+0.0` (the
+    `1_K` of a tropical sort), ⊕ = `reduceOp` with identity `reduceId` (`0_K`: `−∞` for max-plus, `+∞`
+    for min-plus). The two directions differ ONLY in `(reduceOp, reduceId)`; `admittedAlgebraMax` and
+    `admittedAlgebraMin` instantiate this once each. -/
+private def tropicalAlgebra (reduceOp : ScalarBinOp) (reduceId : Float) : ContractionAlgebra :=
+  { factorOp := .add, factorId := .f64 (Float.toBits 0.0)
+  , reduceOp := reduceOp, reduceId := .f64 (Float.toBits reduceId) }
 
-/-- Tropical min-product `(×, min, +∞)` — the algebra `AggOp.min` compiles to. Identity `+∞` so an
-    all-positive reduction still returns its least element. Mirrors the reference `Combine.min`. -/
-def admittedAlgebraMin : ContractionAlgebra :=
-  { factorOp := .mul, factorId := .f64 (Float.toBits 1.0)
-  , reduceOp := .min, reduceId := .f64 (Float.toBits (1.0 / 0.0)) }
+/-- Max-plus `(+, max, −∞, 0)` — the algebra `AggOp.max` compiles to. ⊗ is `+` with identity `0`, so
+    factors of a term ADD; ⊕ is NaN-propagating `max` with identity `−∞` (`0_K`), so an all-negative
+    reduction still returns its greatest element. Mirrors the reference `Combine.max`. -/
+def admittedAlgebraMax : ContractionAlgebra := tropicalAlgebra .max (-1.0 / 0.0)
+
+/-- Min-plus `(+, min, +∞, 0)` — the algebra `AggOp.min` compiles to. ⊗ is `+` with identity `0`; ⊕
+    is NaN-propagating `min` with identity `+∞` (`0_K`). Mirrors the reference `Combine.min`. -/
+def admittedAlgebraMin : ContractionAlgebra := tropicalAlgebra .min (1.0 / 0.0)
 
 /-- Boolean conjunction/disjunction `(min, max)` with identities `true`/`false` — the algebra a
     predicate destination compiles to. `min` with identity `true` conjoins a term's factors; `max`
@@ -70,8 +74,9 @@ def admittedAlgebraBool : ContractionAlgebra :=
 
 /-- The algebras `checkAssign` admits for an `f64` destination: real sum-product plus the two
     tropical semirings that `AggOp.max`/`.min` select. The out-of-bounds `zeroPad` policy still pads
-    reads with `0` in all three — a padded read is a factor value flowing through `factorOp` (mul),
-    never the reduction identity — so only `reduceOp`/`reduceId` differ between them. -/
+    reads with `0` in all three — a padded read is a factor value flowing through `factorOp`, never
+    the reduction identity (a later S3b task changes the tropical pad to `0_K`). The tropical
+    algebras differ from the real one in `factorOp` (`+`, identity `0`) as well as `reduceOp`. -/
 def admittedAlgebras : List ContractionAlgebra :=
   [admittedAlgebra, admittedAlgebraMax, admittedAlgebraMin]
 
@@ -105,17 +110,18 @@ def admittedAlgebraF32 : ContractionAlgebra :=
   { factorOp := .mul, factorId := .f32 0x3f800000
   , reduceOp := .add, reduceId := .f32 0x00000000 }
 
-/-- Tropical binary32 max-product `(×, max, −∞)`. `reduceId` is `0xff800000` = binary32 `−∞`, so an
-    all-negative reduction still returns its greatest element. Mirrors `admittedAlgebraMax`. -/
-def admittedAlgebraF32Max : ContractionAlgebra :=
-  { factorOp := .mul, factorId := .f32 0x3f800000
-  , reduceOp := .max, reduceId := .f32 0xff800000 }
+/-- The binary32 twin of `tropicalAlgebra`: ⊗ = `+` with identity `0x00000000` (binary32 `+0.0`),
+    ⊕ = `reduceOp` with the binary32 bit pattern `reduceId` as its `0_K`. -/
+private def tropicalAlgebraF32 (reduceOp : ScalarBinOp) (reduceId : UInt32) : ContractionAlgebra :=
+  { factorOp := .add, factorId := .f32 0x00000000
+  , reduceOp := reduceOp, reduceId := .f32 reduceId }
 
-/-- Tropical binary32 min-product `(×, min, +∞)`. `reduceId` is `0x7f800000` = binary32 `+∞`.
-    Mirrors `admittedAlgebraMin`. -/
-def admittedAlgebraF32Min : ContractionAlgebra :=
-  { factorOp := .mul, factorId := .f32 0x3f800000
-  , reduceOp := .min, reduceId := .f32 0x7f800000 }
+/-- Max-plus in binary32. `reduceId` is `0xff800000` = binary32 `−∞`, so an all-negative reduction
+    still returns its greatest element. Mirrors `admittedAlgebraMax`. -/
+def admittedAlgebraF32Max : ContractionAlgebra := tropicalAlgebraF32 .max 0xff800000
+
+/-- Min-plus in binary32. `reduceId` is `0x7f800000` = binary32 `+∞`. Mirrors `admittedAlgebraMin`. -/
+def admittedAlgebraF32Min : ContractionAlgebra := tropicalAlgebraF32 .min 0x7f800000
 
 /-- The binary32 counterpart of `admittedAlgebras`. -/
 def admittedAlgebrasF32 : List ContractionAlgebra :=

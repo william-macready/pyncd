@@ -80,8 +80,8 @@ private def floatOps : ScalarKernelOps Float :=
   , binOp := fun op => match op with
       | .add => .ok (fun a b => a + b)
       | .mul => .ok (fun a b => a * b)
-      | .min => .ok (fun a b => Min.min a b)
-      | .max => .ok (fun a b => Max.max a b)
+      | .min => .ok minNaN
+      | .max => .ok maxNaN
   , applyUnary := fun op x slot =>
       (op.applyChecked x).mapError (fun dop => .unaryDomain dop (Float.toBits x) slot) }
 
@@ -109,8 +109,8 @@ private def float32Ops : ScalarKernelOps Float32 :=
   , binOp := fun op => match op with
       | .add => .ok (fun a b => a + b)
       | .mul => .ok (fun a b => a * b)
-      | .min => .ok (fun a b => Min.min a b)
-      | .max => .ok (fun a b => Max.max a b)
+      | .min => .ok minNaN32
+      | .max => .ok maxNaN32
   , applyUnary := fun op x slot =>
       (op.applyChecked32 x).mapError (fun dop => .unaryDomain32 dop (Float32.toBits x) slot) }
 
