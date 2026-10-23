@@ -1286,26 +1286,34 @@ def f32ScatterProg : ScheduledProgram :=
     | _ => false))
   == some true
 
--- A top-level max/min scatter stays refused (the guard is on `agg`; tropical scatter is S3b's).
+-- A top-level max/min scatter is ACCEPTED (S3b T3; formerly refused as `scatterOptsNotAdmitted
+-- "Y: fill"`): the scatter step carries the f32 tropical algebra, so its unwritten cells start from
+-- `reduceId` = -inf / +inf and collisions fold with max / min.
 def f32ScatterOverflowFillProg : ScheduledProgram :=
   { f32ScatterProg with
     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
       { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity
       , agg := .max })] }
 
-#guard causeOf (prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig) ==
-  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
+#guard ((prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig).toOption.map (fun p =>
+    match p.plan.raw.steps with
+    | #[.scatter s] => s.compute.algebra == admittedAlgebraF32Max && s.destShape == #[6]
+    | _ => false))
+  == some true
 
--- The `.min` twin of the fixture above (the guard is on `agg`, so `.min` must be refused exactly like
--- `.max`; the reference-side `.min` pin is ScanTest "Shape 1").
+-- The `.min` twin of the fixture above (the algebra comes from `agg`, so `.min` is admitted exactly
+-- like `.max`, with the f32 min-plus algebra; the reference-side pin is ScanTest "Shape 1").
 def f32ScatterMinFillProg : ScheduledProgram :=
   { f32ScatterOverflowFillProg with
     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
       { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity
       , agg := .min })] }
 
-#guard causeOf (prepareEvalPlan f32ScatterMinFillProg f32IdentitySig) ==
-  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
+#guard ((prepareEvalPlan f32ScatterMinFillProg f32IdentitySig).toOption.map (fun p =>
+    match p.plan.raw.steps with
+    | #[.scatter s] => s.compute.algebra == admittedAlgebraF32Min && s.destShape == #[6]
+    | _ => false))
+  == some true
 
 -- (d) scan: `ScanCompileTest.selfRecurSched`'s statement with binary32 declarations for its two
 -- externals and its state. The scan's representative name is `S`.

@@ -379,9 +379,9 @@ inductive EvalError
   | multipleMarkedReductionAxes (stmt : String) (firstPos secondPos : Nat)
   /-- A top-level scatter aggregates with `max`/`min` but fills unwritten cells with a finite value,
       which is not that aggregation's identity (`∓∞`). The old reference filled with 0, so
-      `Out[2*i] := maxreduce(X[i])` returned `[-1,0,-2,0,-3,0]` for `X = [-1,-2,-3]`. Raised by
-      `checkScatterAgg` (`Eval.lean`) in `evalPlain`'s scatter arm only; scan-local scatters are
-      exempt. -/
+      `Out[2*i] := maxreduce(X[i])` returned `[-1,0,-2,0,-3,0]` for `X = [-1,-2,-3]`. No producer
+      since S3b T3 (a top-level scatter now starts from the sort's 0_K); deleted with the sorted
+      differential's matching condition (T7). -/
   | scatterFillNotIdentity (stmt : String) (agg : AggOp)
   /-- A supplied input names a tensor the program defines (writes), including a private
       per-writer tensor `T#k` of additive collection. Inputs and defined tensors are disjoint

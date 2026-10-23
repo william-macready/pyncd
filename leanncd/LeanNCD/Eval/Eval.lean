@@ -20,20 +20,6 @@ def scatterOutShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : Except Ev
     | some n => pure n
     | none   => throw (.shape (.unsizedScatterOutput sl)))
 
-/-- A TOP-LEVEL scatter with a tropical aggregation must fill unwritten cells with that
-    aggregation's identity. Mirrors the checked backend's `scatterAggOrFail` (`Plan/Compile.lean`)
-    for `.max`/`.min`. S3a: `fill` is no longer a policy (every scatter starts from 0_K), so the
-    check is now simply "a top-level scatter whose RHS aggregation is not `.sum` is refused" — the
-    tropical scatter carriers are S3b's. It keeps raising `EvalError.scatterFillNotIdentity` (same
-    constructor and text) because `SortedDifferential.confirmsSorted` matches it. A `.sum` scatter
-    is accepted. Deliberately NOT in `evalScatter` — a SCAN-LOCAL max-reduce scatter is legal
-    (no gap cells survive in scan state) and the direct `evalScatter` unit tests call it with `.max`.
-    It runs in `evalPlain`'s scatter arm, the only top-level entry. -/
-def checkScatterAgg (stmtName : String) (agg : AggOp) : Except EvalError Unit :=
-  match agg with
-  | .sum => pure ()
-  | .max | .min => throw (.scatterFillNotIdentity stmtName agg)
-
 /-- Evaluate one `.plain` stmt → (name, tensor).
 
     The storage refusal (`rejectUnsupportedStorage`, `Contract.lean`) is installed at the ENTRY,
@@ -54,7 +40,6 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
       let rn ← resolveNonlin rhs.nonlin slots axisUids
       return (nm, applyNonlin rn axisUids pre)
   | .scatter nm slots rhs =>
-      checkScatterAgg nm rhs.agg
       let outShape ← scatterOutShape sizes slots
       evalScatter decls env sizes nm slots rhs outShape
   | .recurMorphism nm _ _ => .error (.unsupportedRecurMorphism .evalPlain nm)

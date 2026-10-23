@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.Dense
+import LeanNCD.Eval.Scatter
 
 /-!
 # S-A Task 4: the dense scatter worker
@@ -237,17 +238,89 @@ def checkErrOf (sigs : Array TensorSignature) (s : ScatterPlan) : Option PlanErr
    that initialised the destination to zero, or to the real algebra's identity, fails here while
    passing every fixture above.
 
-   **This expectation is CHECKED-LAYER-ONLY semantics that the reference evaluator cannot produce,
-   and the divergence is adjudicated, permanent, and deliberate — not a parity target.** The
-   reference's empty-fibre value for real sum-product is `0.0`; on this program it has no tropical
-   counterpart, so a TROPICAL scatter must not be a parity-checked entry unless the comparison
-   special-cases unwritten cells. Every fixture above uses real sum-product, whose `reduceId` is
-   `0.0`, so none of them is affected. -/
+   Since S3b this is no longer checked-layer-only: the reference `evalScatter` starts from the same
+   0_K and folds with the same ⊕, so a tropical scatter IS a parity-checked entry, empty fibres
+   included (fixtures 7 and 8 below, `ScatterTest` and `ScatterCompileTest` S11/S12). Every fixture
+   above this one uses real sum-product, whose `reduceId` is `0.0`. -/
 def maxScatter : ScatterPlan :=
   { placed #[6] #[#[2]] #[0] with
     compute := { srcCompute with algebra := admittedAlgebraMax } }
 
 #guard shapeDataOf (runScatter (sigsFor #[6]) maxScatter (storeFor #[6]))
   == some ([6], #[1.0, -1.0 / 0.0, 2.0, -1.0 / 0.0, 3.0, -1.0 / 0.0])
+
+/-! ## Fixture 7 — a tropical COLLISION folds with max/min, and the empty fibre is `∓∞` (S3b)
+
+Donor: fixture 6 (`collisionScatter`), algebra moved to max-plus (⊗ is `+`) and the destination
+widened to 4 cells with bias 1, so cell 0 is unwritten. `X = [1,2,3]`, `Y = [10,100]`: the two `j`
+writes to cell `i+1` are `X[i]+10` and `X[i]+100`; their max is `X[i]+100 = [101,102,103]`, where the
+sum fold (`2·X[i]+110`) or an overwrite by the first write (`X[i]+10`) would differ. Min-plus twin from
+negated data (`X = [-1,-2,-3]`, `Y = [-10,-100]`): min `= X[i]-100 = [-101,-102,-103]`, cell 0 `+∞`. -/
+def tropSigs4 : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[2], dtype := .f64 }, { shape := #[4], dtype := .f64 } ]
+
+def tropCollide (alg : ContractionAlgebra) : ScatterPlan :=
+  { collisionScatter with
+    compute := { collisionCompute with algebra := alg }
+    destShape := #[4], outBias := #[1] }
+
+#guard shapeDataOf (runScatter tropSigs4 (tropCollide admittedAlgebraMax) collisionStore)
+  == some ([4], #[-1.0 / 0.0, 101.0, 102.0, 103.0])
+
+def collisionStoreNeg : Array DenseTensor :=
+  #[ { shape := [3], data := #[-1.0, -2.0, -3.0] }
+   , { shape := [2], data := #[-10.0, -100.0] }
+   , { shape := [4], data := #[] } ]
+
+#guard shapeDataOf (runScatter tropSigs4 (tropCollide admittedAlgebraMin) collisionStoreNeg)
+  == some ([4], #[1.0 / 0.0, -101.0, -102.0, -103.0])
+
+/-! ## Fixture 8 — F4: the reference and the raw checked plan AGREE on a contracted source axis (S3b)
+
+`Out[i+1] := maxreduce(X[i,j])` over `i : 3`, `j : 2`; `j` is a CONTRACTED source axis (absent from
+the LHS) and cell 0 is an empty fibre. Before S3b the direct reference summed the colliding writes
+from `0` (`[0,6,10,6]`) while this worker took the max from `-∞`; now `evalScatter` starts at
+`Combine.unit0` and folds with `Combine.combine`, so both give `[-∞, 5, 7, 4]`. -/
+def f4Read : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0, 0] }
+  , sourceShape := #[3, 2], oobPolicy := .zeroPad }
+
+def f4Scatter (alg : ContractionAlgebra) : ScatterPlan :=
+  { compute :=
+      { contextShape := #[], destinationSlot := 1, outputShape := #[3, 2]
+      , terms := #[{ iterationShape := #[3, 2], contextPos := #[], outputPos := #[0, 1]
+                   , reductionPos := #[], factors := #[.read f4Read] }]
+      , algebra := alg }
+    destShape := #[4], outCoeffs := #[#[1, 0]], outBias := #[1] }
+
+def f4Sigs : Array TensorSignature :=
+  #[ { shape := #[3, 2], dtype := .f64 }, { shape := #[4], dtype := .f64 } ]
+
+def f4Store (xs : List Float) : Array DenseTensor :=
+  #[ { shape := [3, 2], data := xs.toArray }, { shape := [4], data := #[] } ]
+
+/-- The direct reference `evalScatter` on the same program (`Out[i+1] := agg(X[i,j])`). -/
+def f4Reference (agg : AggOp) (xs : List Float) : Option (Array Float) :=
+  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
+  let j : AxisSpec := { name := "j", uid := 2, kind := .real }
+  let env : Std.HashMap String DenseTensor :=
+    ({} : Std.HashMap String DenseTensor).insert "X" ⟨[3, 2], xs.toArray⟩
+  let rhs : RHSExpr :=
+    { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity, agg := agg }
+  let sizes := (({} : Std.HashMap UID Nat).insert 1 3).insert 2 2
+  (evalScatter [Decl.typedTensor .f64 "Out" [], Decl.typedTensor .f64 "X" []] env sizes "Out"
+    [.affine (.shift i 1)] rhs [4]).toOption.map (·.2.data)
+
+#guard (shapeDataOf (runScatter f4Sigs (f4Scatter admittedAlgebraMax) (f4Store [5, 1, 3, 7, 2, 4]))).map (·.2)
+  == some #[-1.0 / 0.0, 5.0, 7.0, 4.0]
+#guard f4Reference .max [5, 1, 3, 7, 2, 4] == some #[-1.0 / 0.0, 5.0, 7.0, 4.0]
+-- min-plus twin (negated data)
+#guard (shapeDataOf (runScatter f4Sigs (f4Scatter admittedAlgebraMin) (f4Store [-5, -1, -3, -7, -2, -4]))).map (·.2)
+  == some #[1.0 / 0.0, -5.0, -7.0, -4.0]
+#guard f4Reference .min [-5, -1, -3, -7, -2, -4] == some #[1.0 / 0.0, -5.0, -7.0, -4.0]
+-- real neighbour (S3a, unchanged): the same program under the real algebra sums.
+#guard f4Reference .sum [5, 1, 3, 7, 2, 4] == some #[0.0, 6.0, 10.0, 6.0]
+#guard (shapeDataOf (runScatter f4Sigs (f4Scatter admittedAlgebra) (f4Store [5, 1, 3, 7, 2, 4]))).map (·.2)
+  == some #[0.0, 6.0, 10.0, 6.0]
 
 end LeanNCD.Eval.Plan.ScatterDenseTest

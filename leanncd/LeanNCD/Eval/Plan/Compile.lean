@@ -538,14 +538,6 @@ private def scatterPlacementOrFail (srcUids : List UID) (srcShape : Array Nat)
     | none => throw (.unsizedScatterOutput sl)
   return (coeffsAcc, biasAcc, shapeAcc)
 
-/-- A top-level scatter is admitted only for `agg = .sum` (S3a): a `maxreduce`/`minreduce` scatter is
-    refused, tropical scatter being S3b's. The refusal keeps the `scatterOptsNotAdmitted
-    "{nm}: fill"` constructor and text: `SortedDifferential.confirmsSorted` (Semantics/Source)
-    matches it. -/
-private def scatterAggOrFail (context : String) : AggOp → Except CapabilityError Unit
-  | .sum => pure ()
-  | .max | .min => throw (.scatterOptsNotAdmitted context)
-
 /-- First UID that recurs later in the list. Mirrors `Prepared.lean`'s `firstDuplicateName` and
     `Block.lean`'s `firstDuplicateSlot` (same shape, different element type) so a duplicate-axis
     rejection can name the offending axis rather than merely reporting that one exists. -/
@@ -1592,7 +1584,6 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         let computePlan := { computePlan with algebra := algebraForDest destDtype rhs.agg }
         let (outCoeffs, outBias, destShape) ←
           liftShape warnings (scatterPlacementOrFail srcUids srcShape slots)
-        liftCapability warnings (scatterAggOrFail s!"{nm}: fill" rhs.agg)
         tensorSigsAcc := tensorSigsAcc.push { shape := destShape, dtype := destDtype }
         stepsAcc := stepsAcc.push (.scatter
           { compute := computePlan, destShape, outCoeffs, outBias })

@@ -356,14 +356,12 @@ from source syntax; that is Task 5.
       slot, and it writes nothing.
 
     **A tropical-algebra scatter's unwritten cells hold `∓∞`** (`reduceId` of `admittedAlgebraMax`/
-    `Min`), not `0.0`: filling with `0.0` under max-product would let a spurious zero win the
-    reduction over an all-negative cell. Since reference-alignment the reference REFUSES a top-level
-    max/min scatter from source (`scatterFillNotIdentity`), so this is observable only for direct
-    `evalScatter` calls and raw plans; a differential corpus must not treat a tropical scatter as a
-    parity-checked entry without special-casing the unwritten cells (tropical carriers are S3b's).
-    Collisions diverge the same way: for a direct `evalScatter` call the reference sums colliding
-    writes from `0` (including a contracted source axis, e.g. `maxreduce(X[i,j])`), while this worker
-    takes the `max`/`min` from `∓∞`. Neither is reachable through `compile`/`evalPlain`.
+    `Min`), not `0.0`: filling with `0.0` under max-plus would let a spurious zero win the
+    reduction over an all-negative cell. Since S3b the reference `evalScatter` starts from the same
+    `∓∞` (its `Combine.unit0`) and folds colliding writes with the same `max`/`min` (its
+    `Combine.combine`), so a top-level tropical scatter from source, a direct `evalScatter` call
+    (including a contracted source axis, e.g. `maxreduce(X[i,j])`) and a raw plan agree, empty
+    fibres included.
 
     **Collisions are folded, not rejected (S3a).** Every in-range write is combined into its cell
     with the destination algebra's `reduceOp`, starting from `reduceId` (0_K): `+`/`0` for the real

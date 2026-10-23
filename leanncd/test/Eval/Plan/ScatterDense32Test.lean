@@ -125,6 +125,25 @@ def collisionScatter32 : ScatterPlan :=
     #[ t32 [3] #[0x3f800000, 0x40000000, 0x40400000], t32 [2] #[0x41200000, 0x42c80000], t32 [3] #[] ])
   == some ([3], #[0x42dc0000, 0x435c0000, 0x43a50000])
 
+/-! ## Fixture 1.6c — a binary32 tropical COLLISION folds with max/min; the empty fibre is `∓∞` (S3b)
+(donor: `ScatterDenseTest` fixture 7, dtypes and algebra moved to binary32; ⊗ is `+`)
+`X = [1,2,3]`, `Y = [10,100]`: cell `i+1` is `max(X[i]+10, X[i]+100) = X[i]+100 = [101,102,103]`
+(`0x42ca0000, 0x42cc0000, 0x42ce0000`); cell 0 is `-∞` (`0xff800000`). Min-plus twin from negated data:
+`[+∞, -101, -102, -103]`. -/
+def tropSigs32 : Array TensorSignature :=
+  ScatterDenseTest.tropSigs4.map (fun s => { s with dtype := .f32 })
+
+def tropCollide32 (alg : ContractionAlgebra) : ScatterPlan :=
+  { ScatterDenseTest.tropCollide alg with compute := { ScatterDenseTest.collisionCompute with algebra := alg } }
+
+#guard shapeBitsOf (run32 tropSigs32 (tropCollide32 admittedAlgebraF32Max)
+    #[ t32 [3] #[0x3f800000, 0x40000000, 0x40400000], t32 [2] #[0x41200000, 0x42c80000], t32 [4] #[] ])
+  == some ([4], #[0xff800000, 0x42ca0000, 0x42cc0000, 0x42ce0000])
+
+#guard shapeBitsOf (run32 tropSigs32 (tropCollide32 admittedAlgebraF32Min)
+    #[ t32 [3] #[0xbf800000, 0xc0000000, 0xc0400000], t32 [2] #[0xc1200000, 0xc2c80000], t32 [4] #[] ])
+  == some ([4], #[0x7f800000, 0xc2ca0000, 0xc2cc0000, 0xc2ce0000])
+
 /-! ## Fixture 1.6b — a binary32 collision folds in SOURCE order (binary32 is not associative)
 Same shape as 1.6 with `j : 3`, `Y = [1, 2^24, -2^24]`: cell `i` is the `j`-ordered fold
 `((0 + X[i]·1) + X[i]·2^24) + X[i]·(-2^24)`, whose small first term is absorbed by rounding in source
