@@ -988,6 +988,19 @@ def checkPredicateOutput (env : DeclEnv) (s : Stmt) : Except CompileError Unit :
       | _ => pure ()
   | .recurMorphism _ _ _ => pure ()
 
+/-- A tropical-sort statement (non-predicate destination with `agg` max/min, `Stmt.algebra`) may
+    carry only the identity nonlinearity (S3b decision A8). Per-statement and map-free, so the two
+    pipelines enforce it from the same call sites as `checkPredicateOutput`: `checkScheduledDtypes`
+    and `checkDtypes`. A predicate destination is `bool`, never tropical, so it is not this rule's
+    business (`checkPredicateOutput` reports it, and runs first). -/
+def checkTropicalOutput (env : DeclEnv) (s : Stmt) : Except CompileError Unit :=
+  match s with
+  | .assign nm _ rhs | .scatter nm _ rhs =>
+      if (s.algebra env).isTropical && !(rhs.nonlin == .identity) then
+        throw (CompileError.tropicalNonlin nm)
+      else pure ()
+  | .recurMorphism _ _ _ => pure ()
+
 /-- `checkPredicateOutput` lifted to a whole SCHEDULED statement list — the shape both direct
     (`ScheduledProgram`-accepting) entries meet: `Eval.Plan.prepareEvalPlan`'s Step 0 and
     `Eval.evalScheduled`. The source pipeline reaches the rule through `checkDtypes` instead,
@@ -1018,6 +1031,7 @@ def checkScheduledDtypes (env : DeclEnv) (stmts : List ScanStmt) : Except Compil
     for s in sc.sourceStmts do
       checkStmtAxisKinds s
       checkPredicateOutput env s
+      checkTropicalOutput env s
 
 def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
   for s in rp.stmts do
@@ -1029,6 +1043,9 @@ def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
     match s with
     | .assign _ _ _ | .scatter _ _ _ =>
         match checkPredicateOutput rp.env s with
+        | .ok ()   => pure ()
+        | .error e => throw e
+        match checkTropicalOutput rp.env s with
         | .ok ()   => pure ()
         | .error e => throw e
     | .recurMorphism nm _ _ =>

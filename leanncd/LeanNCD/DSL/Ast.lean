@@ -120,6 +120,21 @@ def AxiswiseFn.toBrOp : AxiswiseFn → BrOp
 inductive AggOp | sum | max | min
   deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
 
+/-- The semiring a statement (or tensor) computes in — its SORT (S3b design note §3). There is no
+    declaration syntax: a destination declared `predicate` is `bool`; otherwise the statement's
+    `agg` annotation chooses (`sum` = `real`, `max` = `maxPlus`, `min` = `minPlus`). -/
+inductive SortAlgebra | real | bool | maxPlus | minPlus
+  deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
+
+/-- The sort an aggregation annotation selects for a non-predicate destination. -/
+def AggOp.algebra : AggOp → SortAlgebra
+  | .sum => .real | .max => .maxPlus | .min => .minPlus
+
+/-- Whether a sort is one of the two tropical semirings. -/
+def SortAlgebra.isTropical : SortAlgebra → Bool
+  | .maxPlus | .minPlus => true
+  | .real | .bool => false
+
 -- Unary transcendental functions applicable inline to a single factor's read (`log(P[i])`).
 -- `recip` has no keyword form of its own — it's produced only by the infix `/` sugar.
 inductive UnaryOp | log | exp | sin | cos | sqrt | recip
@@ -477,5 +492,46 @@ def RHSExpr.readFactors (r : RHSExpr) : List (String × List IdxExpr) :=
 def Stmt.readFactors : Stmt → List (String × List IdxExpr)
   | .assign _ _ r | .scatter _ _ r => r.readFactors
   | .recurMorphism _ _ _ => []
+
+/-- The tensor sort a declaration alone gives a name: `bool` for a `predicate`, else `real` (an
+    undeclared or never-written name is a real input). -/
+def DeclEnv.declAlgebra (env : DeclEnv) (nm : String) : SortAlgebra :=
+  match env[nm]? with
+  | some (.predicate _ _) => .bool
+  | _ => .real
+
+/-- Statement sort `S(stmt)`: `bool` if the destination is declared `predicate`; else the sort
+    of the statement's own `agg` annotation. A `recurMorphism` carries no annotation (`real`). -/
+def Stmt.algebra (env : DeclEnv) : Stmt → SortAlgebra
+  | .assign nm _ r | .scatter nm _ r =>
+      match env[nm]? with
+      | some (.predicate _ _) => .bool
+      | _ => r.agg.algebra
+  | .recurMorphism _ _ _ => .real
+
+/-- The axis UIDs one LHS slot names. -/
+def LHSSlot.axisUids : LHSSlot → List UID
+  | .free a | .freeNorm a | .iterNext a => [a.uid]
+  | .iterAt a _ => [a.uid]
+  | .affine e => (idxAffineForm e).2.map (·.2)
+
+/-- Sort-neutral writer (S3b design A4): one term, one `read`/`unaryFn` factor, and no contracted
+    axis (every read axis is on the LHS). With nothing to combine, such a statement has no
+    aggregation sort of its own; a scan state's neutral base adopts the annotation of the state's
+    other statements. -/
+def Stmt.isSortNeutral : Stmt → Bool
+  | .assign _ ls r | .scatter _ ls r =>
+      match r.body.terms with
+      | [t] =>
+          match t.factors with
+          | [f] =>
+              match f.read? with
+              | some (_, es) =>
+                  let lhs := ls.flatMap LHSSlot.axisUids
+                  es.all (fun e => (idxAffineForm e).2.all (fun p => lhs.contains p.2))
+              | none => false
+          | _ => false
+      | _ => false
+  | .recurMorphism _ _ _ => false
 
 end LeanNCD

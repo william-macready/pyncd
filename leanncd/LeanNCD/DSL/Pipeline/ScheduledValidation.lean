@@ -135,6 +135,77 @@ def collectDefinitions (sched : ScheduledProgram) :
     throw (.cyclicDataflow "collectDefinitions: desugared schedule is not in producer-before-consumer order")
   return (collected, privateNames)
 
+/-! ## Tensor sorts (`algebraOf`) and the sort rejections that need them
+
+S3b design note §3. A tensor's sort is the annotation of its writers; a read of a tensor into a
+statement of another sort is a CAST, legal except tropical -> bool and max-plus <-> min-plus.
+The map is PARTIAL and computed on the SOURCE schedule (before collection): a top-level name with
+two or more writers gets no entry, so collection's `multiWriterAlgebra` stays the only refusal for
+tropical multi-writer sets. -/
+
+/-- A statement's own sort, or `none` for a sort-neutral writer (`Stmt.isSortNeutral`: nothing to
+    combine, so no annotation of its own). A `predicate` destination is `bool` whatever the shape. -/
+def Stmt.ownAlgebra? (env : DeclEnv) (s : Stmt) : Option SortAlgebra :=
+  match env[s.lhsName]? with
+  | some (.predicate _ _) => some .bool
+  | _ => if s.isSortNeutral then none else some (s.algebra env)
+
+/-- The `algebraOf` map of a SOURCE schedule. Entries: each `predicate` declaration -> `bool`; a name
+    written by exactly one node -> that plain statement's sort, or, for a scan state (the node's
+    base and recurrence statements of one name), the sort its non-neutral statements agree on
+    (`real` if every statement is neutral). Two non-neutral statements of one scan state that
+    differ throw `scanStateAlgebraMismatch` (checked for every scan node, entry or not). -/
+def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
+    Except CompileError (Std.HashMap String SortAlgebra) := do
+  let mut m : Std.HashMap String SortAlgebra := {}
+  for (nm, d) in env.toList do
+    match d with
+    | .predicate _ _ => m := m.insert nm .bool
+    | _ => pure ()
+  for sc in stmts do
+    match sc with
+    | .scanPre .. => pure ()
+    | .plain s =>
+        let nm := s.lhsName
+        if (stmts.filter (fun n => n.writes.contains nm)).length == 1 then
+          m := m.insert nm (s.algebra env)
+    | .scan _ _ b r _ =>
+        let ss := b ++ r
+        for nm in (ss.map Stmt.lhsName).eraseDups do
+          let sorts := (ss.filter (fun s => s.lhsName == nm)).filterMap (Stmt.ownAlgebra? env)
+          let agreed ← match sorts with
+            | [] => pure SortAlgebra.real
+            | a :: rest =>
+                if rest.any (fun b => b != a) then throw (.scanStateAlgebraMismatch nm) else pure a
+          if (stmts.filter (fun n => n.writes.contains nm)).length == 1 then
+            m := m.insert nm agreed
+  return m
+
+/-- Cast table rejections (design note §3): a bare `read` factor of a tropical-sort source into a
+    `bool` statement, or between the two tropical sorts. Everything else is accepted unchanged
+    (real -> bool is parked decision 1). A read under `unaryFn` takes REAL input and is never
+    rejected. The statement's sort is the entry of its destination (so a neutral scan base takes
+    its state's sort), else its own. Runs after the per-statement rules. -/
+def checkSortCasts (env : DeclEnv) (algebras : Std.HashMap String SortAlgebra)
+    (stmts : List ScanStmt) : Except CompileError Unit := do
+  for sc in stmts do
+    for s in sc.sourceStmts do
+      match s with
+      | .assign nm _ rhs | .scatter nm _ rhs =>
+          -- A destination with no entry (a multi-writer name) has no single sort: not checked here.
+          match algebras[nm]? with
+          | none => pure ()
+          | some k =>
+              for t in rhs.body.terms do
+                for f in t.factors do
+                  match f with
+                  | .read src _ =>
+                      let a := algebras[src]?.getD (env.declAlgebra src)
+                      if a.isTropical && (k == .bool || (k.isTropical && a != k)) then
+                        throw (.sortCastUnsupported nm src)
+                  | .iverson _ | .unaryFn .. => pure ()
+      | .recurMorphism _ _ _ => pure ()
+
 /-- A scheduled program whose source invariants and derived authority have been checked.
 
     `program` is the COLLECTED schedule (`collectDefinitions`): at most one writer per name, with
@@ -147,6 +218,14 @@ structure CheckedScheduledProgram where private mk ::
   explicitSizes : Std.HashMap UID Nat
   extNames      : List String
   privateNames  : List String
+  /-- `scheduleAlgebras` of the SOURCE schedule: partial (see there). Read through `algebraOf`. -/
+  algebras      : Std.HashMap String SortAlgebra
+
+/-- The sort of tensor `nm`: its `algebras` entry, else the declaration's (`bool` for a
+    `predicate`, else `real`). Private `T#k` tensors fall through to `real`/`bool` by their cloned
+    declaration. -/
+def CheckedScheduledProgram.algebraOf (c : CheckedScheduledProgram) (nm : String) : SortAlgebra :=
+  c.algebras[nm]?.getD (c.declEnv.declAlgebra nm)
 
 /-- Check the complete source-invariant boundary for a direct scheduled program, then collect
     multi-writer tensors. The source checks run on the program as written; the declaration
@@ -156,6 +235,8 @@ def validateScheduled (sched : ScheduledProgram) : Except CompileError CheckedSc
   let sourceEnv ← buildDeclEnv sched.decls
   checkScheduledReadRanks sourceEnv sched.stmts
   checkScheduledDtypes sourceEnv sched.stmts
+  let algebras ← scheduleAlgebras sourceEnv sched.stmts
+  checkSortCasts sourceEnv algebras sched.stmts
   unless isTopoOrdered sched.stmts sched.stmts do
     throw (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
   let (collected, privateNames) ← collectDefinitions sched
@@ -164,6 +245,7 @@ def validateScheduled (sched : ScheduledProgram) : Except CompileError CheckedSc
          , declEnv
          , explicitSizes := declaredAxisSizes collected.decls
          , extNames := orderedExternalNames collected.stmts
-         , privateNames }
+         , privateNames
+         , algebras }
 
 end LeanNCD
