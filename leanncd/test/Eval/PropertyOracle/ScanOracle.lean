@@ -235,7 +235,7 @@ private def corpusStmts : List Stmt :=
 -- (2) over hand-built shapes the corpus lacks, each with the verdict the plan text dictates (pinned
 -- literally here, so neither definition can drift together): one bare read with every axis on the
 -- LHS is neutral; a contracted axis, a nonlinearity, a second factor, a second term, an Iverson
--- factor, no factor at all, or a `recurMorphism` is not. A scatter and a unary factor follow the
+-- factor, or no factor at all is not. A scatter and a unary factor follow the
 -- same rule.
 private def nbJ : AxisSpec := ⟨"j", 9101, .real⟩
 private def nbK : AxisSpec := ⟨"k", 9102, .real⟩

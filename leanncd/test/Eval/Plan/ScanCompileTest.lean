@@ -2235,6 +2235,8 @@ run_cmd match scratchMaxCheck with | .ok _ => pure () | .error m => throwError m
 #guard initRejected sigsBoolState .negInf
 #guard initRejected sigsBoolState .posInf
 #guard !initRejected sigsBoolState .zero
+-- `initRejected` matches only the bool rule: a real state with `negInf` is not rejected BY IT
+-- (the tie rule below rejects it: `tieRejected`).
 #guard !initRejected sigsF64State .negInf
 
 /-! ### S3b follow-up: a raw state's `initValue` must match the algebra of its writers

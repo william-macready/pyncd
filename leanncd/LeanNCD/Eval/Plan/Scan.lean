@@ -477,7 +477,8 @@ private def algebraStateInit (alg : ContractionAlgebra) : StateInit :=
     that no write has reached must hold the `0_K` of the algebra later writes fold into, so a state
     written under max-plus must start at `negInf`, under min-plus at `posInf`, and under real or
     Boolean at `zero`. Looks only at the `.assign` step that produces a write's output slot; a
-    nonlinear step producing the output has no algebra of its own and imposes nothing. Run after
+    nonlinear step producing the output, or a base write passed straight through from a block input,
+    has no algebra of its own and imposes nothing. Run after
     `checkWrites`, which has already bounded every `stateIndex`. -/
 private def checkStateInitTie (raw : RawScanPlan) : Except ScanPlanError Unit := do
   for (blk, writes) in [(raw.baseBlock, raw.baseWrites), (raw.stepBlock, raw.stepWrites)] do
