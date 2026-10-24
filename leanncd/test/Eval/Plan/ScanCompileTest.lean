@@ -2239,4 +2239,99 @@ run_cmd match scratchMaxCheck with | .ok _ => pure () | .error m => throwError m
 #guard !initRejected sigsBoolState .zero
 #guard !initRejected sigsF64State .negInf
 
+/-! ### S3b follow-up: the neutral-writer rule at the scan boundary (raw schedules)
+
+Donor `scratchMaxSched` (`S[m+1]` recurrence, `S0` scalar, `K = [2, 3, 4]`).
+
+(a) CONTRACTED-AXIS condition. A statement is sort-neutral only if every axis its read names is on
+    the LHS. The base `S[m@0] := X[c]` contracts `c`, so it is NOT neutral and its annotation
+    votes: `sum` against a max-plus recurrence is `scanStateAlgebraMismatch`, `max` agrees. The
+    nearest neutral base (`S[m@0] := S0[]`, no contraction) keeps the SAME `sum` annotation and is
+    accepted, the annotation ignored: the state runs max-plus (`[1, 3, 6]`, where a real state would
+    give `[1, 2, 6]`). Removing the contracted-axis condition from `isSortNeutral` turns the
+    mismatch fixture red (the base becomes neutral and is accepted).
+
+(b) A neutral SCRATCH statement carrying a tropical annotation. `T[j] := X0[j+1]` is one bare read
+    with every axis on the LHS, so it is neutral, and `T` has no non-neutral statement: its sort is
+    real whatever its annotation (`scanStateAlgebra`), applied through `scanStateStmts`. The read
+    `X0[2]` at `j = 1` is out of bounds and pads the REAL zero (a tropical pad would give `-inf` /
+    `+inf`): `S = [[3, 4, 4], [4, 0, 0]]` for `sum`, `max` and `min` alike. Both the checked plan and
+    the reference evaluator (`t4diff`). (A scalar `T[] := K[m+2]` is NOT neutral: the iteration axis
+    `m` is contracted, so it keeps its own tropical sort; the first draft of this fixture used it.) -/
+def axC2a : AxisSpec := ⟨"c", 2201, .nat⟩
+
+def contractBaseSched (contracted : Bool) (baseAg : AggOp) : ScheduledProgram :=
+  { decls := [.iter axM 3] ++ (if contracted then [.axis axC2a (some 2)] else [])
+  , stmts := [.scan "S" [axM]
+      [ .assign "S" [.iterAt axM 0]
+          { body := { terms := [{ factors :=
+              [if contracted then .read "X" [.axis axC2a] else .read "S0" []] }] }
+          , nonlin := .identity, agg := baseAg } ]
+      [ .assign "S" [.iterNext axM]
+          { body := { terms := [{ factors := [.read "S" [.axis axM], .read "K" [.axis axM]] }] }
+          , nonlin := .identity, agg := .max } ]
+      false ]
+  , env := {}, extNames := if contracted then {"X", "K"} else {"S0", "K"}
+  , explicitSizes := ((({} : HashMap UID Nat).insert axM.uid 3).insert axC2a.uid 2) }
+
+def s3bfInputs : HashMap String DenseTensor :=
+  scratchInputs.insert "X" ⟨[2], #[1.0, 4.0]⟩
+
+/-- Both entries refuse `sched` with `scanStateAlgebraMismatch "S"`. -/
+def mismatchOnBoth (label : String) (sched : ScheduledProgram) : Except String Unit :=
+  match evalScheduled (explicitF64Sched sched) s3bfInputs with
+  | .ok _ => .error s!"{label}: evalScheduled accepted it"
+  | .error f =>
+      match f.error with
+      | .compile c =>
+          if c == .scanStateAlgebraMismatch "S" then
+            match causeOf (prepareEvalPlan (explicitF64Sched sched)
+                (InputSignature.ofDenseInputs s3bfInputs)) with
+            | some (.sourceInvariant c') =>
+                if c' == .scanStateAlgebraMismatch "S" then .ok ()
+                else .error s!"{label}: checked cause {repr c'}"
+            | _ => .error s!"{label}: prepareEvalPlan did not report a source invariant"
+          else .error s!"{label}: reference cause {repr c}"
+      | e => .error s!"{label}: reference cause {e}"
+
+def okOrThrow (r : Except String Unit) : Lean.Elab.Command.CommandElabM Unit :=
+  match r with | .ok _ => pure () | .error m => throwError m
+
+def mkVec (xs : List Float) : DenseTensor := ⟨[xs.length], xs.toArray⟩
+
+-- reject: a contracted `sum` base votes real against the max-plus recurrence
+run_cmd okOrThrow (mismatchOnBoth "S3bF/contracted sum base" (contractBaseSched true .sum))
+-- accept neighbour 1: the same contracted base annotated `max` agrees; it takes the max of X
+run_cmd okOrThrow (t4diff "S3bF/contracted max base" (contractBaseSched true .max) s3bfInputs
+    "S" (mkVec [4.0, 6.0, 9.0]))
+-- accept neighbour 2: the nearest neutral base (no contraction) with the SAME `sum` annotation
+run_cmd okOrThrow (t4diff "S3bF/neutral sum base" (contractBaseSched false .sum) s3bfInputs
+    "S" (mkVec [1.0, 3.0, 6.0]))
+
+def axJ2b : AxisSpec := ⟨"j", 2202, .real⟩
+
+def neutralScratchSched (ag : AggOp) : ScheduledProgram :=
+  { decls := [.iter axM 3, .axis axJ2b (some 2)]
+  , stmts := [.scan "S" [axM]
+      [ .assign "S" [.free axJ2b, .iterAt axM 0] (t4rhs "X0" [.axis axJ2b]) ]
+      [ .assign "T" [.free axJ2b]
+          { body := { terms := [{ factors := [.read "X0" [.shift axJ2b 1]] }] }
+          , nonlin := .identity, agg := ag }
+      , .assign "S" [.free axJ2b, .iterNext axM] (t4rhs "T" [.axis axJ2b]) ]
+      false ]
+  , env := {}, extNames := {"X0"}
+  , explicitSizes := (({} : HashMap UID Nat).insert axM.uid 3).insert axJ2b.uid 2 }
+
+def scratchX0 : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X0" ⟨[2], #[3.0, 4.0]⟩
+
+def mkMat (xs : List Float) : DenseTensor := ⟨[2, 3], xs.toArray⟩
+
+run_cmd okOrThrow (t4diff "S3bF/neutral scratch sum" (neutralScratchSched .sum) scratchX0
+    "S" (mkMat [3.0, 4.0, 4.0, 4.0, 0.0, 0.0]))
+run_cmd okOrThrow (t4diff "S3bF/neutral scratch max" (neutralScratchSched .max) scratchX0
+    "S" (mkMat [3.0, 4.0, 4.0, 4.0, 0.0, 0.0]))
+run_cmd okOrThrow (t4diff "S3bF/neutral scratch min" (neutralScratchSched .min) scratchX0
+    "S" (mkMat [3.0, 4.0, 4.0, 4.0, 0.0, 0.0]))
+
 end LeanNCD.Eval.Plan.ScanCompileTest
