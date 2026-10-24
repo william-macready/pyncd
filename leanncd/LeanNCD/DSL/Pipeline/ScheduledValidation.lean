@@ -143,13 +143,6 @@ The map is PARTIAL and computed on the SOURCE schedule (before collection): a to
 two or more writers gets no entry, so collection's `multiWriterAlgebra` stays the only refusal for
 tropical multi-writer sets. -/
 
-/-- A statement's own sort, or `none` for a sort-neutral writer (`Stmt.isSortNeutral`: nothing to
-    combine, so no annotation of its own). A `predicate` destination is `bool` whatever the shape. -/
-def Stmt.ownAlgebra? (env : DeclEnv) (s : Stmt) : Option SortAlgebra :=
-  match env[s.lhsName]? with
-  | some (.predicate _ _) => some .bool
-  | _ => if s.isSortNeutral then none else some (s.algebra env)
-
 /-- The `algebraOf` map of a SOURCE schedule. Entries: each `predicate` declaration -> `bool`; a name
     written by exactly one node -> that plain statement's sort, or, for a scan state (the node's
     base and recurrence statements of one name), the sort its non-neutral statements agree on
@@ -172,8 +165,7 @@ def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
     | .scan _ _ b r _ =>
         let ss := b ++ r
         for nm in (ss.map Stmt.lhsName).eraseDups do
-          let sorts := (ss.filter (fun s => s.lhsName == nm)).filterMap (Stmt.ownAlgebra? env)
-          let agreed ← match sorts with
+          let agreed ← match scanStateSorts env ss nm with
             | [] => pure SortAlgebra.real
             | a :: rest =>
                 if rest.any (fun b => b != a) then throw (.scanStateAlgebraMismatch nm) else pure a

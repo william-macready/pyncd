@@ -126,15 +126,25 @@ test "RC8 3d-scan"
 --   2×2 grid: base `G[r,0]` fills the c=0 column from Z=[2,5]; the step writes only the fully
 --   advanced cell G[1,1] under zero-default boundaries. Only tuple (r,c)=(0,0) is iterated:
 --     G[1,1] = maxₖ(G[0,0] + W[0,0,k]) = max(2+1, 2+3) = max(3,5) = 5   (max-plus, NOT sum=8).
---   Boundary/base cells: G[0,0]=Z[0]=2, G[1,0]=Z[1]=5, G[0,1]=0 (r=0 boundary, unwritten).
---   Row-major [r][c] ⇒ [[2,0],[5,5]] = [2,0,5,5]. (W[0,0,:]=[1,3]; other W cells unused.)
---   (Before S3b-i, max-TIMES: G[1,1] = max(2·1, 2·3) = 6 ⇒ [2,0,5,6].) The unwritten cell G[0,1]
---   is still the literal 0 here; the spec's value is 0_K = −∞ (a later S3b task, scan-state init).
+--   Boundary/base cells: G[0,0]=Z[0]=2, G[1,0]=Z[1]=5, G[0,1]=0_K=−∞ (r=0 boundary, unwritten:
+--   a scan state starts at 0_K of its sort, here max-plus via the recurrence; S3b T6).
+--   Row-major [r][c] ⇒ [[2,−∞],[5,5]] = [2,−∞,5,5]. (W[0,0,:]=[1,3]; other W cells unused.)
+--   (Before S3b-i, max-TIMES: G[1,1] = max(2·1, 2·3) = 6 ⇒ [2,0,5,6]; before T6 the unwritten
+--   cell G[0,1] was the real 0 ⇒ [2,0,5,5].)
 test "RC10 multi-axis maxreduce (KG-scanagg × KG-2dscan)"
     (evalEqB (tlprog!{ iter r = 2, c = 2
             G[r, 0]       := Z[r]
             G[r +1, c +1] := maxreduce(G[r, c] · W[r, c, k]) })
       (HashMap.ofList [("Z", tl [2] [2,5]), ("W", tl [2,2,2] [1,3, 0,0, 0,0, 0,0])])
-      "G" (tl [2,2] [2,0, 5,5]))
+      "G" (tl [2,2] [2,-1.0 / 0.0, 5,5])) $
+
+-- RC10m  min-plus duality twin of RC10 (negated data): the unwritten cell is 0_K = +∞.
+--   G[1,1] = minₖ(G[0,0] + W[0,0,k]) = min(−2−1, −2−3) = −5 ⇒ [[−2,+∞],[−5,−5]].
+test "RC10m multi-axis minreduce: unwritten cell is +inf"
+    (evalEqB (tlprog!{ iter r = 2, c = 2
+            G[r, 0]       := Z[r]
+            G[r +1, c +1] := minreduce(G[r, c] · W[r, c, k]) })
+      (HashMap.ofList [("Z", tl [2] [-2,-5]), ("W", tl [2,2,2] [-1,-3, 0,0, 0,0, 0,0])])
+      "G" (tl [2,2] [-2,1.0 / 0.0, -5,-5]))
 
 end LeanNCD.Eval

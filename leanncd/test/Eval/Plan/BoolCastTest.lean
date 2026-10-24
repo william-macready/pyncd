@@ -258,4 +258,101 @@ def rejectedCast (sigs : Array TensorSignature) (a : AssignPlan) : Bool :=
 -- reject: cast on a unary read (the unary takes real input)
 #guard rejectedCast boolSigs (castPlan admittedAlgebraMax (castRead true (some .exp)))
 
+/-! ## S3b T6 — a scan state starts at `0_K` of the STATE's sort; a sort-neutral writer of the state
+(one bare read, no contracted axis) is evaluated in that sort
+
+The state's sort comes from the scan's own non-neutral statements (`scanStateAlgebra`). Every
+program runs in the reference, the binary64 plan and the binary32 plan (`assertAgree`).
+(a) RC10 shape (donor `RecurrenceTest` RC10): the unwritten cell `G[0,1]` holds `-inf` (max-plus)
+    or `+inf` (min-plus twin); (b) a SUM scan's unwritten cell stays `0`;
+(c) a neutral BASE with an out-of-bounds bare read `X0[j+1]` pads with the state's `0_K`: the old
+    code evaluated that base as a real `sum` statement and padded `0` (`axis j : ℕ = 3` gives the
+    shift an extent); (d) a neutral base bare-reading a PREDICATE tensor is cast bool -> tropical
+    (false `-inf`/`+inf`, true `0`), where the old base read the raw 0/1; (f) the compiled plan
+    states the sort (`StateSlot.initValue`). (e) a tropical SCRATCH cannot be written in the surface
+    (`scanProjectionUnsupported`): its raw-schedule fixture is in `ScanCompileTest`. Min-plus twins
+    come from negated data. -/
+def stateMax : TLProgram := tlprog!{
+  iter r = 2, c = 2
+  G[r, 0] := Z[r]
+  G[r + 1, c + 1] := maxreduce(G[r, c] · W[r, c, k]) }
+def stateMin : TLProgram := tlprog!{
+  iter r = 2, c = 2
+  G[r, 0] := Z[r]
+  G[r + 1, c + 1] := minreduce(G[r, c] · W[r, c, k]) }
+def stateSum : TLProgram := tlprog!{
+  iter r = 2, c = 2
+  G[r, 0] := Z[r]
+  G[r + 1, c + 1] := G[r, c] · W[r, c, k] }
+def neutralOobMax : TLProgram := tlprog!{
+  axis j : ℕ = 3
+  iter t = 2
+  S[j, 0] := X0[j + 1]
+  S[j, t + 1] := maxreduce(S[j, t] · E[j, t, k]) }
+def neutralOobMin : TLProgram := tlprog!{
+  axis j : ℕ = 3
+  iter t = 2
+  S[j, 0] := X0[j + 1]
+  S[j, t + 1] := minreduce(S[j, t] · E[j, t, k]) }
+def neutralPredMax : TLProgram := tlprog!{
+  iter t = 2
+  predicate P(j)
+  S[j, 0] := P[j]
+  S[j, t + 1] := maxreduce(S[j, t] · E[j, t, k]) }
+def neutralPredMin : TLProgram := tlprog!{
+  iter t = 2
+  predicate P(j)
+  S[j, 0] := P[j]
+  S[j, t + 1] := minreduce(S[j, t] · E[j, t, k]) }
+
+def wPos : List Float := [1, 3, 0, 0, 0, 0, 0, 0]
+def wNeg : List Float := [-1, -3, 0, 0, 0, 0, 0, 0]
+def eZero : List Float := [0, 0, 0, 0, 0, 0]
+
+run_cmd do
+  assertAgree "T6-a1 state max-plus" stateMax
+    [("Z", [2], [2, 5]), ("W", [2, 2, 2], wPos)] "G" [2, negInf, 5, 5]
+  assertAgree "T6-a2 state min-plus" stateMin
+    [("Z", [2], [-2, -5]), ("W", [2, 2, 2], wNeg)] "G" [-2, posInf, -5, -5]
+  assertAgree "T6-b sum state keeps 0" stateSum
+    [("Z", [2], [2, 5]), ("W", [2, 2, 2], wPos)] "G" [2, 0, 5, 8]
+  assertAgree "T6-c1 neutral oob max" neutralOobMax
+    [("X0", [3], [-1, -2, -3]), ("E", [3, 2, 1], eZero)] "S"
+    [-2, -2, -3, -3, negInf, negInf]
+  assertAgree "T6-c2 neutral oob min" neutralOobMin
+    [("X0", [3], [1, 2, 3]), ("E", [3, 2, 1], eZero)] "S"
+    [2, 2, 3, 3, posInf, posInf]
+  assertAgree "T6-d1 neutral predicate max" neutralPredMax
+    [("P", [3], [1, 0, 1]), ("E", [3, 2, 1], eZero)] "S" [0, 0, negInf, negInf, 0, 0]
+  assertAgree "T6-d2 neutral predicate min" neutralPredMin
+    [("P", [3], [1, 0, 1]), ("E", [3, 2, 1], eZero)] "S" [0, 0, posInf, posInf, 0, 0]
+
+/-- The `initValue` of every state of every scan step of the binary64 checked plan. -/
+def scanInits (p : TLProgram) (xs : Ins) : Except String (List (Array StateInit)) := do
+  let sched ← match p.explicitF64.compileToScheduled.run 0 with
+    | .ok s _ => .ok s
+    | .error e _ => .error s!"compile: {repr e}"
+  let sig ← match InputSignature.ofDenseInputsForDecls sched.decls (env64 xs) with
+    | .ok s => .ok s
+    | .error e => .error s!"signature64: {repr e}"
+  let prepared ← match prepareEvalPlan sched sig with
+    | .ok q => .ok q
+    | .error _ => .error "prepare64 failed"
+  pure (prepared.plan.raw.steps.toList.filterMap (fun st => match st with
+    | .scan s => some (s.states.map (·.initValue))
+    | _ => none))
+
+def assertInits (label : String) (p : TLProgram) (xs : Ins) (expected : List (Array StateInit)) :
+    Lean.Elab.Command.CommandElabM Unit :=
+  match scanInits p xs with
+  | .error e => throwError s!"{label}: {e}"
+  | .ok got => unless got == expected do throwError s!"{label}: inits {repr got} ≠ {repr expected}"
+
+-- The compiled plan states the sort: max-plus `negInf`, min-plus `posInf`, real/scratch-only `zero`.
+run_cmd do
+  let zw := [("Z", [2], [2, 5]), ("W", [2, 2, 2], wPos)]
+  assertInits "T6-f1 max-plus init" stateMax zw [#[.negInf]]
+  assertInits "T6-f2 min-plus init" stateMin zw [#[.posInf]]
+  assertInits "T6-f3 sum init" stateSum zw [#[.zero]]
+
 end LeanNCD.Eval.Plan.BoolCastTest

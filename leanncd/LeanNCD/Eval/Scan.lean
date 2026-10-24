@@ -270,10 +270,13 @@ def checkScanStructure (scanName : String) (axes : List AxisSpec) (sizes : HashM
           throw (.baseWritesOverlap scanName st ia ib)
 
 /-- Evaluate a ScanStmt → the scanned state tensors. Multi-axis (n-D) scans iterate the cartesian
-    product of `[0 … L_a − 2]` over every advancing axis. Boundary semantics (zero-default): the
+    product of `[0 … L_a − 2]` over every advancing axis. Boundary semantics (`0_K`-default): the
     step writes only fully-advanced cells (every advancing index `+1 ≥ 1`); boundary cells (any
-    advancing index `= 0`) keep the zero-allocated state, except where an explicit base stmt pins
-    a slice at index 0.
+    advancing index `= 0`) keep the allocated state, except where an explicit base stmt pins
+    a slice at index 0. Every allocated cell starts at `0_K` of the STATE's sort (S3b design §3:
+    real `0`, max-plus `-∞`, min-plus `+∞`), the sort being `scanStateAlgebra` over the scan's
+    own statements — so a cell no base or step ever writes reads as the state's additive identity.
+    A sort-neutral statement (`scanStateStmts`) is evaluated in that same sort.
 
     The storage refusal (`rejectUnsupportedStorage`, `Contract.lean`) is installed at this public
     ENTRY, over every base and recurrence statement's names in `base ++ recur` order, BEFORE the
@@ -286,6 +289,12 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
   | .scanPre nm _ _ => .error (.unsupportedRecurMorphism .evalScanNode nm)
   | .scan scanName axes base recur _ => do
       rejectUnsupportedStorage decls ((base ++ recur).flatMap stmtStorageNames)
+      -- Sort-neutral writers adopt their destination's sort (`scanStateStmts`); the state init
+      -- below reads the same sort. `rejectUnsupportedStorage` has already built this env once.
+      let denv : DeclEnv ← match buildDeclEnv decls with
+        | .ok e    => pure e
+        | .error e => throw (.compile e)
+      let (base, recur) := scanStateStmts denv base recur
       if axes.isEmpty then .error (.invalidScanNode .noIterationAxis) else
       let axUids := axes.map (·.uid)
       -- Per-axis length, in `axes` order. FAIL LOUD on an unsized iteration axis: an unspecified
@@ -309,13 +318,15 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
           | .scatter _ _ _ => throw (.invalidScanNode .onlyAssignInSlice)
           | _ => pure ()
       checkScanStructure scanName axes sizes stateNames base recur
-      -- 1. allocate each state tensor (zeros at full shape) from its base slots.
+      -- 1. allocate each state tensor (every cell at the state's `0_K`, full shape) from its base slots.
       let mut work := env
       for s in base do
         match s with
         | .assign nm slots _ | .scatter nm slots _ =>
             let stateShape ← scanStateShape sizes slots
-            work := work.insert nm (DenseTensor.zeros stateShape)
+            let zeroK :=
+              (combineFor decls nm (scanStateAlgebra denv (base ++ recur) nm).stateAgg).unit0
+            work := work.insert nm ⟨stateShape, Array.replicate (DenseTensor.sizeOf stateShape) zeroK⟩
         | _ => throw (.invalidScanNode .baseMustBeAssign)
       -- 2. fill boundaries from base stmts: each base pins a subset of axes to their literal index
       --    and fills that slice over its free axes (e.g. `G[r,0]` fills the c=0 column for all r).

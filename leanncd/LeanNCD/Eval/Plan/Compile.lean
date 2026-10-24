@@ -880,6 +880,10 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   ---------------------------------------------------------------------------
   -- Phase 1: destructure, per-statement slot discipline, and state/scratch classification.
   ---------------------------------------------------------------------------
+  -- S3b design §3: a sort-neutral writer is evaluated in its destination's sort, so its algebra
+  -- (`algebraForDest`) and its bool -> tropical read cast (`residualizeAssignment`'s `agg`) below
+  -- both follow the state's sort; `Phase 6`'s `initValue` reads the same `scanStateAlgebra`.
+  let (base, recur) := scanStateStmts declEnv base recur
   let baseParts ← liftCapability warnings (base.toArray.mapM (scanPartsOrFail "scan base"))
   let recurParts ←
     liftCapability warnings (recur.toArray.mapM (scanPartsOrFail "scan recurrence"))
@@ -1340,7 +1344,11 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   ---------------------------------------------------------------------------
   let states : Array StateSlot := (Array.range stateNames.size).map (fun si =>
     { destSlot := outerSigs.size + si, advancingDims := stateAdvDims.getD si #[]
-    , materialization := .completeHistory })
+    , materialization := .completeHistory
+    , initValue := match scanStateAlgebra declEnv (base ++ recur) (stateNames.getD si "") with
+        | .maxPlus => .negInf
+        | .minPlus => .posInf
+        | .real | .bool => .zero })
   let raw : RawScanPlan :=
     { states
     , baseBlock :=

@@ -14,8 +14,10 @@ inductive ScanIterationOrder
   | axisZeroFastest
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- How complete state histories are initialized before base writes apply. Wave F admits exactly
-    one. -/
+/-- How complete state histories are initialized before base writes apply: every cell takes its
+    state's `StateSlot.initValue` (`0_K` of the state's sort; the real `0` unless the state is
+    tropical), then the base writes overlay. The constructor keeps its Wave F name. Wave F admits
+    exactly one. -/
 inductive ScanBoundaryPolicy
   | zeroThenBaseOverlay
   deriving DecidableEq, BEq, Repr, Inhabited
@@ -25,13 +27,25 @@ inductive ScanSnapshotPolicy
   | immutablePreStep
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- The value every cell of a scan state holds before any write: `0_K` of the STATE's sort (S3b
+    design §3). Carrier-independent (the worker decodes it per carrier: binary64 `±∞`, binary32
+    `0xff800000`/`0x7f800000`), so a raw plan states its sort, not a bit pattern. `zero` is the real
+    and Boolean `0`; `negInf`/`posInf` are the max-plus and min-plus `0_K`. -/
+inductive StateInit
+  | zero
+  | negInf
+  | posInf
+  deriving DecidableEq, BEq, Repr, Inhabited
+
 /-- One persistent scan state: the outer graph slot that receives its complete history, which of
     its own tensor dimensions are advancing (in scan-context order, so `advancingDims[i]` is the
-    state dimension driven by context position `i`), and how it materializes. -/
+    state dimension driven by context position `i`), how it materializes, and what its unwritten
+    cells hold (`initValue`, default `zero`). -/
 structure StateSlot where
   destSlot        : TensorSlot
   advancingDims   : Array Nat
   materialization : MaterializationPolicy
+  initValue       : StateInit := .zero
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Where a block input's value comes from: an already-available outer graph slot, or a snapshot

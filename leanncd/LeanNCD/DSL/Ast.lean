@@ -135,6 +135,14 @@ def SortAlgebra.isTropical : SortAlgebra → Bool
   | .maxPlus | .minPlus => true
   | .real | .bool => false
 
+/-- The aggregation annotation that selects a sort's contraction: the inverse of `AggOp.algebra` on
+    the three annotation-selected sorts. `bool` has no annotation (a `predicate` destination picks
+    the Boolean algebra from its declaration), so it maps to `sum`. -/
+def SortAlgebra.stateAgg : SortAlgebra → AggOp
+  | .maxPlus => .max
+  | .minPlus => .min
+  | .real | .bool => .sum
+
 -- Unary transcendental functions applicable inline to a single factor's read (`log(P[i])`).
 -- `recip` has no keyword form of its own — it's produced only by the infix `/` sugar.
 inductive UnaryOp | log | exp | sin | cos | sqrt | recip
@@ -533,5 +541,42 @@ def Stmt.isSortNeutral : Stmt → Bool
           | _ => false
       | _ => false
   | .recurMorphism _ _ _ => false
+
+/-- A statement's own sort, or `none` for a sort-neutral writer (`Stmt.isSortNeutral`: nothing to
+    combine, so no annotation of its own). A `predicate` destination is `bool` whatever the shape. -/
+def Stmt.ownAlgebra? (env : DeclEnv) (s : Stmt) : Option SortAlgebra :=
+  match env[s.lhsName]? with
+  | some (.predicate _ _) => some .bool
+  | _ => if s.isSortNeutral then none else some (s.algebra env)
+
+/-- The own sorts of the statements of a scan that write `nm` (its base and recurrence statements,
+    in order), neutral writers contributing none. The one list `scheduleAlgebras` checks for
+    agreement and `scanStateAlgebra` reads the state's sort from. -/
+def scanStateSorts (env : DeclEnv) (ss : List Stmt) (nm : String) : List SortAlgebra :=
+  (ss.filter (fun s => s.lhsName == nm)).filterMap (Stmt.ownAlgebra? env)
+
+/-- The sort of the scan state (or scratch name) `nm`: the sort its non-neutral statements agree
+    on, `real` if every statement is neutral. Agreement itself is `scheduleAlgebras`' job
+    (`scanStateAlgebraMismatch`); on a disagreeing scan this is the first statement's sort. -/
+def scanStateAlgebra (env : DeclEnv) (ss : List Stmt) (nm : String) : SortAlgebra :=
+  (scanStateSorts env ss nm).headD .real
+
+/-- Replace a statement's aggregation annotation (`recurMorphism` carries none). -/
+def Stmt.withAgg (a : AggOp) : Stmt → Stmt
+  | .assign nm sl r => .assign nm sl { r with agg := a }
+  | .scatter nm sl r => .scatter nm sl { r with agg := a }
+  | s => s
+
+/-- A scan's statements with every sort-neutral writer evaluated in its destination's sort: its
+    annotation becomes the one `scanStateAlgebra` selects (S3b design §3, decision 3). A neutral
+    statement has nothing to combine, so the annotation only matters through the sort it picks for
+    an out-of-bounds pad and for the bool -> tropical read cast; both backends take that from the
+    annotation, so rewriting it is the single point where "a neutral base adopts its state's
+    sort" is realised. Returns `(base, recur)`. -/
+def scanStateStmts (env : DeclEnv) (base recur : List Stmt) : List Stmt × List Stmt :=
+  let ss := base ++ recur
+  let adopt (s : Stmt) : Stmt :=
+    if s.isSortNeutral then s.withAgg (scanStateAlgebra env ss s.lhsName).stateAgg else s
+  (base.map adopt, recur.map adopt)
 
 end LeanNCD
