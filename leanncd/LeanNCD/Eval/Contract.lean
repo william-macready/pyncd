@@ -88,7 +88,8 @@ def cartesian (dims : List Nat) : List (List Nat) := DenseTensor.allCoords dims
 def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Float → Float)
     (unit0 : Float) (unit1 : Float)
     (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
-    (seed : HashMap UID Int) (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) :
+    (seed : HashMap UID Int) (nm : String) (slots : List LHSSlot) (rhs : RHSExpr)
+    (castOf : String → Float → Float := fun _ v => v) :
     Except EvalError (String × DenseTensor) := do
   for rn in (readNames rhs).eraseDups do
     if !(env.contains rn) then
@@ -130,7 +131,7 @@ def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Floa
           let coord := (termContr.zip cc).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) baseCoord
           let mut prod := unit1
           for f in t.factors do
-            match gather unit0 unit1 env coord f with
+            match gatherCast unit0 unit1 castOf env coord f with
             | .ok v   => prod := mul prod v
             | .error e => throw e
           termAcc := combine termAcc prod
@@ -202,6 +203,17 @@ def combineFor (decls : List Decl) (nm : String) (agg : AggOp) : Combine :=
   | .min => Combine.min
   | .sum => if isPredicateDest decls nm then Combine.bool else Combine.real
 
+/-- The bool -> tropical READ CAST (S3b design §3), as a per-source-name map for `gatherCast`. In a
+    statement of sort max-plus or min-plus (`agg` ≠ `.sum`; `c` is its `Combine`), a bare read of a
+    `predicate`-declared tensor reads a stored false (`0`) as `c.unit0` (0_K: `-inf`/`+inf`) and a
+    stored true (anything else) as `c.unit1` (1_K: `0.0`). Every other read, and every real or
+    Boolean statement, is the identity, so real/bool statements stay bit-identical. -/
+def boolReadCast (decls : List Decl) (c : Combine) (agg : AggOp) : String → Float → Float :=
+  match agg with
+  | .sum => fun _ v => v
+  | .max | .min => fun nm v =>
+      if isPredicateDest decls nm then (if v != 0.0 then c.unit1 else c.unit0) else v
+
 /-! ## The storage boundary of the reference evaluator
 
 Every worker in `Eval/` computes in `Float` (IEEE-754 binary64): `Combine`'s four fields, the
@@ -261,6 +273,7 @@ def evalAssignDtypedSeeded (decls : List Decl)
   rejectUnsupportedStorage decls (nm :: readNames rhs)
   let c := combineFor decls nm rhs.agg
   evalAssignSeeded c.mul c.combine c.unit0 c.unit1 env sizes seed nm slots rhs
+    (boolReadCast decls c rhs.agg)
 
 /-- Unseeded dtype-aware assign: `evalAssignDtypedSeeded` with an empty seed. -/
 def evalAssignDtyped (decls : List Decl)

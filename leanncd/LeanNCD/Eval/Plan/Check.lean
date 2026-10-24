@@ -321,6 +321,13 @@ private def checkAssignCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSig
         unless f.sourceShape == srcSig.shape do
           throw (.sourceShapeMismatch ti fi f.sourceShape srcSig.shape)
         unless f.oobPolicy == .zeroPad do throw (.policyNotAdmitted f.oobPolicy)
+        -- the bool -> tropical read cast: only a BARE read of a `.bool` source slot, under a tropical
+        -- algebra (`+` factors, `max`/`min` reduction); anything else is a malformed raw plan.
+        if f.boolToTropical then
+          let tropical := a.algebra.factorOp == .add &&
+            (a.algebra.reduceOp == .max || a.algebra.reduceOp == .min)
+          unless srcSig.dtype == .bool && f.unary.isNone && tropical do
+            throw (.castNotAdmitted ti fi)
         unless f.map.coeffs.size == f.sourceShape.size && f.map.bias.size == f.sourceShape.size do
           throw (.affineRankMismatch ti fi f.sourceShape.size f.map.coeffs.size)
         for row in f.map.coeffs do

@@ -41,16 +41,16 @@ def evalBool (coord : HashMap UID Int) : BoolExpr → Bool
     `gather`'s `.read` and `.unaryFn` cases — a `.unaryFn` factor reads identically to a plain
     `.read` (with its own `pad`, see `gather`), then applies its function to the resulting value. -/
 def gatherRead (env : HashMap String DenseTensor) (coord : HashMap UID Int) (pad : Float)
-    (nm : String) (es : List IdxExpr) : Except EvalError Float :=
+    (nm : String) (es : List IdxExpr) (cast : Float → Float := fun v => v) : Except EvalError Float :=
   match env[nm]? with
   | none => .error (.unknownTensor .gather nm)
   | some t =>
       let srcZ : List Int := es.map (evalIdx coord)
-      -- bounds check against t.shape; out-of-range ⇒ pad
+      -- bounds check against t.shape; out-of-range ⇒ pad (never cast)
       if (srcZ.zip t.shape).any (fun (z, d) => z < 0 || z ≥ (d : Int)) then
         .ok pad
       else
-        .ok (t.get! (srcZ.map Int.toNat))
+        .ok (cast (t.get! (srcZ.map Int.toNat)))
 
 /-- Apply a unary transcendental function to a gathered value. `log`/`sqrt`/`recip` fail loud on
     a domain violation (consistent with this evaluator's fail-loud conventions elsewhere —
@@ -70,13 +70,24 @@ def applyUnaryFn (ctx : EvalContext) : UnaryOp → Float → Except EvalError Fl
     min-plus +inf). `.iverson b`: `one` if the predicate holds else `zero`. `.unaryFn op nm es`:
     reads like `.read nm es` BUT an out-of-range read pads with the real 0.0 (the primitive takes
     real input, so `f(0.0)` is what an out-of-range read contributes), then applies `op` to the
-    resulting value; the result is taken as-is. -/
-def gather (zero one : Float) (env : HashMap String DenseTensor) (coord : HashMap UID Int) :
+    resulting value; the result is taken as-is.
+
+    `castOf nm` is the statement's SOURCE READ CAST (S3b design §3): applied to the value of a BARE
+    in-bounds read of `nm` (the bool -> tropical cast: a Boolean source read by a tropical statement
+    is `0_K`/`1_K` of that statement, not the raw 0/1). It is NOT applied to the out-of-range pad
+    (already `zero`) nor under a `.unaryFn` (the primitive takes real input). -/
+def gatherCast (zero one : Float) (castOf : String → Float → Float)
+    (env : HashMap String DenseTensor) (coord : HashMap UID Int) :
     Factor → Except EvalError Float
   | .iverson b => .ok (if evalBool coord b then one else zero)
-  | .read nm es => gatherRead env coord zero nm es
+  | .read nm es => gatherRead env coord zero nm es (castOf nm)
   | .unaryFn op nm es =>
       let ctx : EvalContext := { tensor := nm, coord := es.map (evalIdx coord) }
       (gatherRead env coord 0.0 nm es).bind (applyUnaryFn ctx op)
+
+/-- `gatherCast` with no source cast: the real and Boolean statements' gather. -/
+def gather (zero one : Float) (env : HashMap String DenseTensor) (coord : HashMap UID Int) :
+    Factor → Except EvalError Float :=
+  gatherCast zero one (fun _ v => v) env coord
 
 end LeanNCD.Eval

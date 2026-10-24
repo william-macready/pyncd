@@ -28,6 +28,9 @@ inductive PlanError
   | constDtypeMismatch       (dtype : ScalarDType) (const : ScalarConst)
   | algebraNotAdmitted       (algebra : ContractionAlgebra)
   | policyNotAdmitted        (policy : OutOfBoundsPolicy)
+  /-- A read carries the bool -> tropical cast (`ReadPlan.boolToTropical`) but is not a bare read of
+      a `.bool` source under a tropical (`+`, `max`/`min`) algebra. -/
+  | castNotAdmitted          (termIndex : Nat) (factorIndex : Nat)
   | destinationShapeMismatch (declared : Array Nat) (signature : Array Nat)
   | duplicateInputSlot       (slot : TensorSlot)
   | inputSlotsNotOrdered     (atIndex : Nat)

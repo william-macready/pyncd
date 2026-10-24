@@ -49,6 +49,9 @@ private structure ScalarKernelOps (α : Type) where
       real input, so an out-of-bounds read contributes `f(0)` whatever the statement's sort). A bare
       read and an Iverson factor take their values from the algebra's decoded identities instead. -/
   zero : α
+  /-- Whether a stored value reads as Boolean true (anything but this carrier's zero): the truth
+      test of the bool -> tropical read cast (`ReadPlan.boolToTropical`). -/
+  isTrue : α → Bool
   /-- This carrier's implementation of one binary operation, or a refusal for one it has no
       semantics for. -/
   binOp : ScalarBinOp → Except PositionalInputError (α → α → α)
@@ -76,6 +79,7 @@ private def floatOps : ScalarKernelOps Float :=
       | .bool false => .ok 0.0
       | .f32 _ => .error (.storageKindMismatch .float64 .float32)
   , zero := 0.0
+  , isTrue := fun v => v != 0.0
   , binOp := fun op => match op with
       | .add => .ok (fun a b => a + b)
       | .mul => .ok (fun a b => a * b)
@@ -104,6 +108,7 @@ private def float32Ops : ScalarKernelOps Float32 :=
       | .bool false => .ok (Float32.ofBits 0x00000000)
       | .f64 _ => .error (.storageKindMismatch .float32 .float64)
   , zero := Float32.ofBits 0x00000000
+  , isTrue := fun v => v != Float32.ofBits 0x00000000
   , binOp := fun op => match op with
       | .add => .ok (fun a b => a + b)
       | .mul => .ok (fun a b => a * b)
@@ -125,8 +130,12 @@ private def float32Ops : ScalarKernelOps Float32 :=
     0, bool false, max-plus -inf, min-plus +inf), so a padded cell is the identity of the reduction
     it flows into and never beats a valid cell. A `unary` read is padded with the carrier's real
     zero (`ops.zero`) instead, because the primitive takes real input. A missing slot cannot occur
-    past `validateStore` (it is `missingSlot` there); the branch pads like an out-of-bounds read. -/
-private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (pad : α)
+    past `validateStore` (it is `missingSlot` there); the branch pads like an out-of-bounds read.
+
+    A read with `boolToTropical` set casts an IN-BOUNDS gathered value (S3b design §3): stored true
+    -> `one` (the algebra's decoded `factorId`, 1_K), stored false -> `pad` (its `reduceId`, 0_K).
+    The out-of-bounds/missing-slot pad is already 0_K and is not cast. -/
+private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (pad one : α)
     (store : Array (DenseTensorOf α)) (f : ReadPlan) (iter : List Int) :
     Except PositionalInputError α :=
   let padV : α := match f.unary with
@@ -138,7 +147,10 @@ private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (pad : α)
     | some t =>
         let src := applyAffine f.map iter
         let shape := f.sourceShape.toList
-        if inBoundsPerDim shape src then (t.data[flatIndex shape (src.map Int.toNat)]?).getD padV
+        if inBoundsPerDim shape src then
+          match t.data[flatIndex shape (src.map Int.toNat)]? with
+          | none => padV
+          | some v => if f.boolToTropical then (if ops.isTrue v then one else pad) else v
         else padV
   match f.unary with
   | none => .ok base
@@ -235,7 +247,7 @@ private def denseValueAtWith {α : Type} (ops : ScalarKernelOps α) (a : AssignP
         for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
         return iter
       let factorVals ← t.factors.toList.mapM (fun f => match f with
-        | .read r => gatherFactorWith ops reduceId store r iter.toList
+        | .read r => gatherFactorWith ops reduceId factorId store r iter.toList
         | .iverson b =>
             (evalPosBool iter.toList b
               |>.mapError (fun e => match e with
