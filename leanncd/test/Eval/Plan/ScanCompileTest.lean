@@ -2232,12 +2232,76 @@ def scratchMaxCheck : Except String Unit :=
 run_cmd match scratchMaxCheck with | .ok _ => pure () | .error m => throwError m
 
 #guard initAccepted sigsF64State .zero
-#guard initAccepted sigsF64State .negInf
-#guard initAccepted sigsF64State .posInf
 #guard initRejected sigsBoolState .negInf
 #guard initRejected sigsBoolState .posInf
 #guard !initRejected sigsBoolState .zero
 #guard !initRejected sigsF64State .negInf
+
+/-! ### S3b follow-up: a raw state's `initValue` must match the algebra of its writers
+(`stateInitAlgebraMismatch`)
+
+`checkScanCore` ties a state's `initValue` to the `0_K` of every assignment that writes it: a state
+cell no write has reached must hold the identity of the algebra later writes fold into, so max-plus
+needs `negInf`, min-plus `posInf`, real `zero`. Compiled plans always satisfy this (`compileScan`
+fills `initValue` from `scanStateAlgebra`). The rule fires after the write checks, so the donor
+(`selfRecurExpected`, real algebra, `zero` init) isolates it by swapping the algebra on one or both
+blocks' assignments and the init. The three inits on a REAL state used to be accepted unconditionally
+here; `negInf`/`posInf` under a real writer are now the rejections of this rule. -/
+
+def withAlg (alg : ContractionAlgebra) (blocks : Bool × Bool) (r : RawScanPlan) : RawScanPlan :=
+  let swap : RawPlanBlock → RawPlanBlock := fun b =>
+    { b with steps := b.steps.map (fun | .assign a => .assign { a with algebra := alg } | s => s) }
+  { r with baseBlock := if blocks.1 then swap r.baseBlock else r.baseBlock
+         , stepBlock := if blocks.2 then swap r.stepBlock else r.stepBlock }
+
+def asF32Sigs (xs : Array TensorSignature) : Array TensorSignature :=
+  xs.map (fun s => { s with dtype := if s.dtype == .f64 then .f32 else s.dtype })
+
+def asF32Raw (r : RawScanPlan) : RawScanPlan :=
+  { r with baseBlock := { r.baseBlock with tensorSigs := asF32Sigs r.baseBlock.tensorSigs }
+         , stepBlock := { r.stepBlock with tensorSigs := asF32Sigs r.stepBlock.tensorSigs } }
+
+def tieRaw (alg : ContractionAlgebra) (blocks : Bool × Bool) (i : StateInit) (f32 : Bool) :
+    Except ScanPlanError CheckedScanPlan :=
+  let r := withAlg alg blocks (withInit i)
+  if f32 then checkScanPlanF32 (asF32Sigs sigsF64State) (asF32Raw r)
+  else checkScanPlan sigsF64State r
+
+def tieAccepted (alg : ContractionAlgebra) (blocks : Bool × Bool) (i : StateInit) (f32 : Bool) :
+    Bool :=
+  match tieRaw alg blocks i f32 with | .ok _ => true | .error _ => false
+
+def tieRejected (alg : ContractionAlgebra) (blocks : Bool × Bool) (i expected : StateInit)
+    (f32 : Bool) : Bool :=
+  match tieRaw alg blocks i f32 with
+  | .error (.stateInitAlgebraMismatch 0 j e) => j == i && e == expected
+  | _ => false
+
+-- binary64. accept: each algebra with its own `0_K`
+#guard tieAccepted admittedAlgebra (true, true) .zero false
+#guard tieAccepted admittedAlgebraMax (true, true) .negInf false
+#guard tieAccepted admittedAlgebraMin (true, true) .posInf false
+-- reject: a tropical writer over the default `zero` init (the case the compiler never produces)
+#guard tieRejected admittedAlgebraMax (true, true) .zero .negInf false
+#guard tieRejected admittedAlgebraMin (true, true) .zero .posInf false
+-- reject: a real writer over a tropical init; the wrong tropical direction
+#guard tieRejected admittedAlgebra (true, true) .negInf .zero false
+#guard tieRejected admittedAlgebra (true, true) .posInf .zero false
+#guard tieRejected admittedAlgebraMax (true, true) .posInf .negInf false
+#guard tieRejected admittedAlgebraMin (true, true) .negInf .posInf false
+-- reject: ONE block disagrees (base real / step real, init agreeing with the other block)
+#guard tieRejected admittedAlgebraMax (false, true) .zero .negInf false
+#guard tieRejected admittedAlgebraMax (true, false) .zero .negInf false
+#guard tieRejected admittedAlgebraMax (false, true) .negInf .zero false
+#guard tieRejected admittedAlgebraMax (true, false) .negInf .zero false
+-- binary32: the same table over `admittedAlgebraF32*`
+#guard tieAccepted admittedAlgebraF32 (true, true) .zero true
+#guard tieAccepted admittedAlgebraF32Max (true, true) .negInf true
+#guard tieAccepted admittedAlgebraF32Min (true, true) .posInf true
+#guard tieRejected admittedAlgebraF32Max (true, true) .zero .negInf true
+#guard tieRejected admittedAlgebraF32Min (true, true) .zero .posInf true
+#guard tieRejected admittedAlgebraF32 (true, true) .negInf .zero true
+#guard tieRejected admittedAlgebraF32 (true, true) .posInf .zero true
 
 /-! ### S3b follow-up: the neutral-writer rule at the scan boundary (raw schedules)
 

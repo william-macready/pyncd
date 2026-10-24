@@ -74,15 +74,22 @@ def planOut32 (p : TLProgram) (xs : Ins) (nm : String) : Except String (List Flo
     | some t => .ok (t.data.toList.map Float32.toFloat)
     | none => .error s!"plan32: {nm} missing"
 
-/-- Reference, binary64 plan and binary32 plan all equal `expected`. -/
-def agree (label : String) (p : TLProgram) (xs : Ins) (nm : String) (expected : List Float) :
-    Except String Unit := do
+/-- Reference, binary64 plan and binary32 plan all equal `expected`, comparing cells with `eq`. -/
+def agreeWith (eq : Float → Float → Bool) (label : String) (p : TLProgram) (xs : Ins) (nm : String)
+    (expected : List Float) : Except String Unit := do
+  let same : List Float → Bool := fun v =>
+    v.length == expected.length && (v.zip expected).all (fun (a, b) => eq a b)
   let r ← refOut p xs nm
   let a ← planOut64 p xs nm
   let b ← planOut32 p xs nm
-  unless r == expected do throw s!"{label}: reference {r} ≠ {expected}"
-  unless a == expected do throw s!"{label}: plan f64 {a} ≠ {expected}"
-  unless b == expected do throw s!"{label}: plan f32 {b} ≠ {expected}"
+  unless same r do throw s!"{label}: reference {r} ≠ {expected}"
+  unless same a do throw s!"{label}: plan f64 {a} ≠ {expected}"
+  unless same b do throw s!"{label}: plan f32 {b} ≠ {expected}"
+
+/-- Reference, binary64 plan and binary32 plan all equal `expected`. -/
+def agree (label : String) (p : TLProgram) (xs : Ins) (nm : String) (expected : List Float) :
+    Except String Unit :=
+  agreeWith (· == ·) label p xs nm expected
 
 def assertAgree (label : String) (p : TLProgram) (xs : Ins) (nm : String) (expected : List Float) :
     Lean.Elab.Command.CommandElabM Unit :=
@@ -354,5 +361,138 @@ run_cmd do
   assertInits "T6-f1 max-plus init" stateMax zw [#[.negInf]]
   assertInits "T6-f2 min-plus init" stateMin zw [#[.posInf]]
   assertInits "T6-f3 sum init" stateSum zw [#[.zero]]
+
+/-! ## S3b follow-up (h): a tropical scan step reads a BOOL STATE
+
+Every fixture above reads a predicate that is an EXTERNAL input. Here the scan has two states: the
+predicate state `P` (bool recurrence `P[j,t+1] := P[j,t] + Q[j]`, base `P[j,0] := Pi[j]`) and a
+second state `S` whose step bare-reads `P[j,t]`. The reference casts through `isPredicateDest` on
+the state NAME; the plan casts through the capture slot's dtype (`isBoolSlot` on the state capture).
+`Pi = [1,0]`, `Q = [0,1]`: `P = [[1,1,1],[0,1,1]]`. Max-plus `S[j,t+1] := maxreduce(S[j,t] · P[j,t])`,
+`Z = [-2,-5]`: row 0 reads true (`0`), stays `-2`; row 1 reads false at `t = 0` (`-inf`), so `S[1,1]`
+and (`-inf + 0`) `S[1,2]` are `-inf`. The identity read would give `[-2,-1,0,-5,-4,-3]`. Min-plus twin
+(`Z = [2,5]`): `[2,2,2,5,+inf,+inf]`. Accept neighbour: a REAL step `S[j,t+1] := S[j,t] + P[j,t]`
+reads the same bool state as the plain 0/1: `[2,3,4,5,5,6]`. A structural fixture pins that the
+checked plan really does read a bool state, with the cast set exactly on the tropical read (`P`'s own
+recurrence is a bool statement and reads its state un-cast). -/
+def boolStateMax : TLProgram := tlprog!{
+  iter t = 3
+  predicate P(j, t)
+  P[j, 0] := Pi[j]
+  P[j, t + 1] := P[j, t] + Q[j]
+  S[j, 0] := Z[j]
+  S[j, t + 1] := maxreduce(S[j, t] · P[j, t]) }
+def boolStateMin : TLProgram := tlprog!{
+  iter t = 3
+  predicate P(j, t)
+  P[j, 0] := Pi[j]
+  P[j, t + 1] := P[j, t] + Q[j]
+  S[j, 0] := Z[j]
+  S[j, t + 1] := minreduce(S[j, t] · P[j, t]) }
+def boolStateReal : TLProgram := tlprog!{
+  iter t = 3
+  predicate P(j, t)
+  P[j, 0] := Pi[j]
+  P[j, t + 1] := P[j, t] + Q[j]
+  S[j, 0] := Z[j]
+  S[j, t + 1] := S[j, t] + P[j, t] }
+
+def hIns (z : List Float) : Ins := [("Pi", [2], [1, 0]), ("Q", [2], [0, 1]), ("Z", [2], z)]
+
+/-- For each factor of the binary64 checked plan's scan step blocks that reads a captured BOOL
+    state, its `boolToTropical` flag. -/
+def boolStateReadCasts (p : TLProgram) (xs : Ins) : Except String (List Bool) := do
+  let sched ← match p.explicitF64.compileToScheduled.run 0 with
+    | .ok s _ => .ok s
+    | .error e _ => .error s!"compile: {repr e}"
+  let sig ← match InputSignature.ofDenseInputsForDecls sched.decls (env64 xs) with
+    | .ok s => .ok s
+    | .error e => .error s!"signature64: {repr e}"
+  let prepared ← match prepareEvalPlan sched sig with
+    | .ok q => .ok q
+    | .error _ => .error "prepare64 failed"
+  let sigs := prepared.plan.raw.tensorSigs
+  pure (prepared.plan.raw.steps.toList.flatMap (fun st => match st with
+    | .scan s =>
+        let boolInputs := s.stepCaptures.toList.filterMap (fun c => match c.source with
+          | .state si =>
+              if (sigs.getD (s.states.getD si default).destSlot { shape := #[], dtype := .f64 }).dtype
+                  == .bool then some c.inputSlot else none
+          | .external _ => none)
+        s.stepBlock.steps.toList.flatMap (fun b => match b with
+          | .assign a => a.terms.toList.flatMap (fun t => t.factors.toList.filterMap (fun f =>
+              match f with
+              | .read r => if boolInputs.contains r.sourceSlot then some r.boolToTropical else none
+              | _ => none))
+          | _ => [])
+    | _ => []))
+
+def assertCasts (label : String) (p : TLProgram) (xs : Ins) (expected : List Bool) :
+    Lean.Elab.Command.CommandElabM Unit :=
+  match boolStateReadCasts p xs with
+  | .error e => throwError s!"{label}: {e}"
+  | .ok got => unless got == expected do throwError s!"{label}: casts {got} ≠ {expected}"
+
+run_cmd do
+  assertAgree "h1 bool state max" boolStateMax (hIns [-2, -5]) "S"
+    [-2, -2, -2, -5, negInf, negInf]
+  assertAgree "h2 bool state min" boolStateMin (hIns [2, 5]) "S"
+    [2, 2, 2, 5, posInf, posInf]
+  assertAgree "h3 bool state real neighbour" boolStateReal (hIns [2, 5]) "S" [2, 3, 4, 5, 5, 6]
+  -- `P`'s own recurrence reads its bool state un-cast (a bool statement); only `S`'s step casts
+  assertCasts "h1 cast flag" boolStateMax (hIns [-2, -5]) [false, true]
+  assertCasts "h2 cast flag" boolStateMin (hIns [2, 5]) [false, true]
+  assertCasts "h3 cast flag" boolStateReal (hIns [2, 5]) [false, false]
+
+/-! ## S3b follow-up (i): a NaN stored in a PREDICATE tensor, read through the bool -> tropical cast
+
+CURRENT CONVENTION, pinned and not endorsed as final (the intent is that truth is `!= 0`): a stored
+NaN is not `0`, so it reads as TRUE in a tropical statement, i.e. `1_K = 0.0` — and the NaN
+disappears. Every other reader keeps it: a bool -> real statement multiplies it through, a
+real -> tropical read (not cast) adds it and the NaN-propagating `max`/`min` carries it, and a bool
+statement keeps it too. `edge = [[NaN,1],[0,1]]`, so the cast programs equal `a1`/`a2` on `[[1,1],[0,1]]`
+(a NaN read as FALSE would give row 0 `[-3,-4]` / `[3,4]`). Cells compare NaN-aware (`both NaN`). -/
+def nan : Float := 0.0 / 0.0
+def nanEq (a b : Float) : Bool := (a.isNaN && b.isNaN) || a == b
+
+def assertAgreeNaN (label : String) (p : TLProgram) (xs : Ins) (nm : String)
+    (expected : List Float) : Lean.Elab.Command.CommandElabM Unit :=
+  match agreeWith nanEq label p xs nm expected with
+  | .ok () => pure ()
+  | .error e => throwError e
+
+/-- A program with no `f32` tensor runs the plan in binary64 only (the binary32 entry refuses it with
+    `storageKindMismatch`), so the bool-statement neighbour compares the reference and binary64 plan. -/
+def agreeNaN64 (label : String) (p : TLProgram) (xs : Ins) (nm : String) (expected : List Float) :
+    Lean.Elab.Command.CommandElabM Unit :=
+  match (do
+    let r ← refOut p xs nm
+    let a ← planOut64 p xs nm
+    let same : List Float → Bool := fun v =>
+      v.length == expected.length && (v.zip expected).all (fun (x, y) => nanEq x y)
+    unless same r do throw s!"{label}: reference {r} ≠ {expected}"
+    unless same a do throw s!"{label}: plan f64 {a} ≠ {expected}" : Except String Unit) with
+  | .ok () => pure ()
+  | .error e => throwError e
+
+def boolStmt : TLProgram := tlprog!{
+  predicate edge(i, j)
+  predicate M(i)
+  M[i] := edge[i, j] }
+
+run_cmd do
+  let edgeNaN : List Float := [nan, 1, 0, 1]
+  assertAgreeNaN "i1 NaN predicate max" bareMax
+    [("edge", [2, 2], edgeNaN), ("X", [2, 2], [-1, -2, -3, -4])] "H" [-1, -2, -3, -4]
+  assertAgreeNaN "i2 NaN predicate min" bareMin
+    [("edge", [2, 2], edgeNaN), ("X", [2, 2], [1, 2, 3, 4])] "H" [1, 2, 3, 4]
+  assertAgreeNaN "i3 NaN kept by bool->real" boolReal
+    [("edge", [2, 2], edgeNaN), ("X", [2, 2], [-1, -2, -3, -4])] "H" [nan, nan, -3, -4]
+  assertAgreeNaN "i4 NaN kept by real->max (no cast)" realMax
+    [("A", [2, 2], edgeNaN), ("X", [2, 2], [-1, -2, -3, -4])] "H" [nan, nan, -1, -2]
+  assertAgreeNaN "i5 NaN kept by real->min (no cast)" realMin
+    [("A", [2, 2], edgeNaN), ("X", [2, 2], [1, 2, 3, 4])] "H" [nan, nan, 1, 2]
+  agreeNaN64 "i6 NaN kept by a bool statement" boolStmt
+    [("edge", [2, 2], edgeNaN)] "M" [nan, 1]
 
 end LeanNCD.Eval.Plan.BoolCastTest
