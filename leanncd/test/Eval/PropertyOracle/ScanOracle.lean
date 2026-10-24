@@ -220,4 +220,49 @@ private def t1Reference : Option DenseTensor :=
   | .error _ => none)) ==
   [some #[2.0, -1.0 / 0.0, 5.0, 5.0], some #[-2.0, 1.0 / 0.0, -5.0, -5.0]]
 
+-- S3b follow-up: the oracle's neutrality (`oracleNeutral`, stated from the plan's text in its own
+-- shape) must agree with production's `Stmt.isSortNeutral`. The duality property and the unrolling
+-- law both take the state's sort from `oracleNeutral`, so a defect in production's rule is only
+-- visible if the two disagree somewhere: this is the place they are compared (the final-review M1
+-- defect, a nonlinearity ignored by the production rule, was invisible for want of this check).
+-- (1) over every statement of the scan corpora, program-level ones included;
+private def corpusStmts : List Stmt :=
+  (enumScanCases ++ tropicalUnwrittenScanCases).flatMap (fun c => c.base ++ c.recur ++ c.prog.stmts)
+#guard corpusStmts.all (fun s => oracleNeutral s == s.isSortNeutral)
+-- non-vacuity: the corpus holds both neutral statements (the bare-read bases) and non-neutral ones.
+#guard corpusStmts.any oracleNeutral
+#guard corpusStmts.any (fun s => !oracleNeutral s)
+-- (2) over hand-built shapes the corpus lacks, each with the verdict the plan text dictates (pinned
+-- literally here, so neither definition can drift together): one bare read with every axis on the
+-- LHS is neutral; a contracted axis, a nonlinearity, a second factor, a second term, an Iverson
+-- factor, or no factor at all is not. A scatter and a unary factor follow the
+-- same rule.
+private def nbJ : AxisSpec := ⟨"j", 9101, .real⟩
+private def nbK : AxisSpec := ⟨"k", 9102, .real⟩
+private def nbT : AxisSpec := ⟨"t", 9103, .nat⟩
+private def nbStmt (ls : List LHSSlot) (terms : List (List Factor))
+    (nl : Nonlin := .identity) (ag : AggOp := .sum) : Stmt :=
+  .assign "S" ls { body := { terms := terms.map (fun fs => { factors := fs }) }, nonlin := nl, agg := ag }
+private def nbScatter (fs : List Factor) : Stmt :=
+  .scatter "S" [.affine (.scale 2 nbJ)] { body := { terms := [{ factors := fs }] }, nonlin := .identity }
+private def nbRead (es : List IdxExpr) : Factor := .read "X" es
+private def nbTruth : Factor := .iverson (.ieq (.embed (.const 0)) (.embed (.const 0)))
+private def neutralShapes : List (Stmt × Bool) :=
+  [ (nbStmt [.free nbJ, .iterAt nbT 0] [[nbRead [.axis nbJ]]], true)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [[nbRead [.axis nbJ]]] .identity .max, true)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [[nbRead [.shift nbJ 1]]], true)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [[.unaryFn .exp "X" [.axis nbJ]]], true)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [[nbRead []]], true)
+  , (nbScatter [nbRead [.axis nbJ]], true)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [[nbRead [.axis nbJ, .axis nbK]]], false)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [[nbRead [.axis nbJ, .axis nbK]]] .identity .max, false)
+  , (nbScatter [nbRead [.axis nbK]], false)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [[nbRead [.axis nbJ]]] (.pointwise .relu), false)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [[nbRead [.axis nbJ], nbRead [.axis nbJ]]], false)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [[nbRead [.axis nbJ]], [nbRead [.axis nbJ]]], false)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [[nbTruth]], false)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [[]], false)
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [], false) ]
+#guard neutralShapes.all (fun (s, expected) => oracleNeutral s == expected && s.isSortNeutral == expected)
+
 end LeanNCD.PropertyOracle

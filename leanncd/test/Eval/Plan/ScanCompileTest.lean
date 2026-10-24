@@ -2232,11 +2232,172 @@ def scratchMaxCheck : Except String Unit :=
 run_cmd match scratchMaxCheck with | .ok _ => pure () | .error m => throwError m
 
 #guard initAccepted sigsF64State .zero
-#guard initAccepted sigsF64State .negInf
-#guard initAccepted sigsF64State .posInf
 #guard initRejected sigsBoolState .negInf
 #guard initRejected sigsBoolState .posInf
 #guard !initRejected sigsBoolState .zero
+-- `initRejected` matches only the bool rule: a real state with `negInf` is not rejected BY IT
+-- (the tie rule below rejects it: `tieRejected`).
 #guard !initRejected sigsF64State .negInf
+
+/-! ### S3b follow-up: a raw state's `initValue` must match the algebra of its writers
+(`stateInitAlgebraMismatch`)
+
+`checkScanCore` ties a state's `initValue` to the `0_K` of every assignment that writes it: a state
+cell no write has reached must hold the identity of the algebra later writes fold into, so max-plus
+needs `negInf`, min-plus `posInf`, real `zero`. Compiled plans always satisfy this (`compileScan`
+fills `initValue` from `scanStateAlgebra`). The rule fires after the write checks, so the donor
+(`selfRecurExpected`, real algebra, `zero` init) isolates it by swapping the algebra on one or both
+blocks' assignments and the init. The three inits on a REAL state used to be accepted unconditionally
+here; `negInf`/`posInf` under a real writer are now the rejections of this rule. -/
+
+def withAlg (alg : ContractionAlgebra) (blocks : Bool × Bool) (r : RawScanPlan) : RawScanPlan :=
+  let swap : RawPlanBlock → RawPlanBlock := fun b =>
+    { b with steps := b.steps.map (fun | .assign a => .assign { a with algebra := alg } | s => s) }
+  { r with baseBlock := if blocks.1 then swap r.baseBlock else r.baseBlock
+         , stepBlock := if blocks.2 then swap r.stepBlock else r.stepBlock }
+
+def asF32Sigs (xs : Array TensorSignature) : Array TensorSignature :=
+  xs.map (fun s => { s with dtype := if s.dtype == .f64 then .f32 else s.dtype })
+
+def asF32Raw (r : RawScanPlan) : RawScanPlan :=
+  { r with baseBlock := { r.baseBlock with tensorSigs := asF32Sigs r.baseBlock.tensorSigs }
+         , stepBlock := { r.stepBlock with tensorSigs := asF32Sigs r.stepBlock.tensorSigs } }
+
+def tieRaw (alg : ContractionAlgebra) (blocks : Bool × Bool) (i : StateInit) (f32 : Bool) :
+    Except ScanPlanError CheckedScanPlan :=
+  let r := withAlg alg blocks (withInit i)
+  if f32 then checkScanPlanF32 (asF32Sigs sigsF64State) (asF32Raw r)
+  else checkScanPlan sigsF64State r
+
+def tieAccepted (alg : ContractionAlgebra) (blocks : Bool × Bool) (i : StateInit) (f32 : Bool) :
+    Bool :=
+  match tieRaw alg blocks i f32 with | .ok _ => true | .error _ => false
+
+def tieRejected (alg : ContractionAlgebra) (blocks : Bool × Bool) (i expected : StateInit)
+    (f32 : Bool) : Bool :=
+  match tieRaw alg blocks i f32 with
+  | .error (.stateInitAlgebraMismatch 0 j e) => j == i && e == expected
+  | _ => false
+
+-- binary64. accept: each algebra with its own `0_K`
+#guard tieAccepted admittedAlgebra (true, true) .zero false
+#guard tieAccepted admittedAlgebraMax (true, true) .negInf false
+#guard tieAccepted admittedAlgebraMin (true, true) .posInf false
+-- reject: a tropical writer over the default `zero` init (the case the compiler never produces)
+#guard tieRejected admittedAlgebraMax (true, true) .zero .negInf false
+#guard tieRejected admittedAlgebraMin (true, true) .zero .posInf false
+-- reject: a real writer over a tropical init; the wrong tropical direction
+#guard tieRejected admittedAlgebra (true, true) .negInf .zero false
+#guard tieRejected admittedAlgebra (true, true) .posInf .zero false
+#guard tieRejected admittedAlgebraMax (true, true) .posInf .negInf false
+#guard tieRejected admittedAlgebraMin (true, true) .negInf .posInf false
+-- reject: ONE block disagrees (base real / step real, init agreeing with the other block)
+#guard tieRejected admittedAlgebraMax (false, true) .zero .negInf false
+#guard tieRejected admittedAlgebraMax (true, false) .zero .negInf false
+#guard tieRejected admittedAlgebraMax (false, true) .negInf .zero false
+#guard tieRejected admittedAlgebraMax (true, false) .negInf .zero false
+-- binary32: the same table over `admittedAlgebraF32*`
+#guard tieAccepted admittedAlgebraF32 (true, true) .zero true
+#guard tieAccepted admittedAlgebraF32Max (true, true) .negInf true
+#guard tieAccepted admittedAlgebraF32Min (true, true) .posInf true
+#guard tieRejected admittedAlgebraF32Max (true, true) .zero .negInf true
+#guard tieRejected admittedAlgebraF32Min (true, true) .zero .posInf true
+#guard tieRejected admittedAlgebraF32 (true, true) .negInf .zero true
+#guard tieRejected admittedAlgebraF32 (true, true) .posInf .zero true
+
+/-! ### S3b follow-up: the neutral-writer rule at the scan boundary (raw schedules)
+
+Donor `scratchMaxSched` (`S[m+1]` recurrence, `S0` scalar, `K = [2, 3, 4]`).
+
+(a) CONTRACTED-AXIS condition. A statement is sort-neutral only if every axis its read names is on
+    the LHS. The base `S[m@0] := X[c]` contracts `c`, so it is NOT neutral and its annotation
+    votes: `sum` against a max-plus recurrence is `scanStateAlgebraMismatch`, `max` agrees. The
+    nearest neutral base (`S[m@0] := S0[]`, no contraction) keeps the SAME `sum` annotation and is
+    accepted, the annotation ignored: the state runs max-plus (`[1, 3, 6]`, where a real state would
+    give `[1, 2, 6]`). Removing the contracted-axis condition from `isSortNeutral` turns the
+    mismatch fixture red (the base becomes neutral and is accepted).
+
+(b) A neutral SCRATCH statement carrying a tropical annotation. `T[j] := X0[j+1]` is one bare read
+    with every axis on the LHS, so it is neutral, and `T` has no non-neutral statement: its sort is
+    real whatever its annotation (`scanStateAlgebra`), applied through `scanStateStmts`. The read
+    `X0[2]` at `j = 1` is out of bounds and pads the REAL zero (a tropical pad would give `-inf` /
+    `+inf`): `S = [[3, 4, 4], [4, 0, 0]]` for `sum`, `max` and `min` alike. Both the checked plan and
+    the reference evaluator (`t4diff`). (A scalar `T[] := K[m+2]` is NOT neutral: the iteration axis
+    `m` is contracted, so it keeps its own tropical sort; the first draft of this fixture used it.) -/
+def axC2a : AxisSpec := ⟨"c", 2201, .nat⟩
+
+def contractBaseSched (contracted : Bool) (baseAg : AggOp) : ScheduledProgram :=
+  { decls := [.iter axM 3] ++ (if contracted then [.axis axC2a (some 2)] else [])
+  , stmts := [.scan "S" [axM]
+      [ .assign "S" [.iterAt axM 0]
+          { body := { terms := [{ factors :=
+              [if contracted then .read "X" [.axis axC2a] else .read "S0" []] }] }
+          , nonlin := .identity, agg := baseAg } ]
+      [ .assign "S" [.iterNext axM]
+          { body := { terms := [{ factors := [.read "S" [.axis axM], .read "K" [.axis axM]] }] }
+          , nonlin := .identity, agg := .max } ]
+      false ]
+  , env := {}, extNames := if contracted then {"X", "K"} else {"S0", "K"}
+  , explicitSizes := ((({} : HashMap UID Nat).insert axM.uid 3).insert axC2a.uid 2) }
+
+def s3bfInputs : HashMap String DenseTensor :=
+  scratchInputs.insert "X" ⟨[2], #[1.0, 4.0]⟩
+
+/-- Both entries refuse `sched` with `scanStateAlgebraMismatch "S"`. -/
+def mismatchOnBoth (label : String) (sched : ScheduledProgram) : Except String Unit :=
+  match evalScheduled (explicitF64Sched sched) s3bfInputs with
+  | .ok _ => .error s!"{label}: evalScheduled accepted it"
+  | .error f =>
+      match f.error with
+      | .compile c =>
+          if c == .scanStateAlgebraMismatch "S" then
+            match causeOf (prepareEvalPlan (explicitF64Sched sched)
+                (InputSignature.ofDenseInputs s3bfInputs)) with
+            | some (.sourceInvariant c') =>
+                if c' == .scanStateAlgebraMismatch "S" then .ok ()
+                else .error s!"{label}: checked cause {repr c'}"
+            | _ => .error s!"{label}: prepareEvalPlan did not report a source invariant"
+          else .error s!"{label}: reference cause {repr c}"
+      | e => .error s!"{label}: reference cause {e}"
+
+def okOrThrow (r : Except String Unit) : Lean.Elab.Command.CommandElabM Unit :=
+  match r with | .ok _ => pure () | .error m => throwError m
+
+def mkVec (xs : List Float) : DenseTensor := ⟨[xs.length], xs.toArray⟩
+
+-- reject: a contracted `sum` base votes real against the max-plus recurrence
+run_cmd okOrThrow (mismatchOnBoth "S3bF/contracted sum base" (contractBaseSched true .sum))
+-- accept neighbour 1: the same contracted base annotated `max` agrees; it takes the max of X
+run_cmd okOrThrow (t4diff "S3bF/contracted max base" (contractBaseSched true .max) s3bfInputs
+    "S" (mkVec [4.0, 6.0, 9.0]))
+-- accept neighbour 2: the nearest neutral base (no contraction) with the SAME `sum` annotation
+run_cmd okOrThrow (t4diff "S3bF/neutral sum base" (contractBaseSched false .sum) s3bfInputs
+    "S" (mkVec [1.0, 3.0, 6.0]))
+
+def axJ2b : AxisSpec := ⟨"j", 2202, .real⟩
+
+def neutralScratchSched (ag : AggOp) : ScheduledProgram :=
+  { decls := [.iter axM 3, .axis axJ2b (some 2)]
+  , stmts := [.scan "S" [axM]
+      [ .assign "S" [.free axJ2b, .iterAt axM 0] (t4rhs "X0" [.axis axJ2b]) ]
+      [ .assign "T" [.free axJ2b]
+          { body := { terms := [{ factors := [.read "X0" [.shift axJ2b 1]] }] }
+          , nonlin := .identity, agg := ag }
+      , .assign "S" [.free axJ2b, .iterNext axM] (t4rhs "T" [.axis axJ2b]) ]
+      false ]
+  , env := {}, extNames := {"X0"}
+  , explicitSizes := (({} : HashMap UID Nat).insert axM.uid 3).insert axJ2b.uid 2 }
+
+def scratchX0 : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X0" ⟨[2], #[3.0, 4.0]⟩
+
+def mkMat (xs : List Float) : DenseTensor := ⟨[2, 3], xs.toArray⟩
+
+run_cmd okOrThrow (t4diff "S3bF/neutral scratch sum" (neutralScratchSched .sum) scratchX0
+    "S" (mkMat [3.0, 4.0, 4.0, 4.0, 0.0, 0.0]))
+run_cmd okOrThrow (t4diff "S3bF/neutral scratch max" (neutralScratchSched .max) scratchX0
+    "S" (mkMat [3.0, 4.0, 4.0, 4.0, 0.0, 0.0]))
+run_cmd okOrThrow (t4diff "S3bF/neutral scratch min" (neutralScratchSched .min) scratchX0
+    "S" (mkMat [3.0, 4.0, 4.0, 4.0, 0.0, 0.0]))
 
 end LeanNCD.Eval.Plan.ScanCompileTest

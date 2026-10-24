@@ -256,6 +256,7 @@ inductive ScanPlanError
   | snapshotPolicyNotAdmitted     (policy : ScanSnapshotPolicy)
   | materializationPolicyNotAdmitted (stateIndex : Nat) (policy : MaterializationPolicy)
   | stateInitNotAdmitted          (stateIndex : Nat) (init : StateInit) (dtype : ScalarDType)
+  | stateInitAlgebraMismatch      (stateIndex : Nat) (init expected : StateInit)
   | causalityFailure             (stateIndex blockStepIndex termIndex factorIndex : Nat)  -- F3 Task 2
   deriving DecidableEq, BEq, Repr, Inhabited
 
@@ -462,6 +463,36 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
             if writesCollide stateRows[a].2 stateRows[b].2 then throw (.baseWritesOverlap si a b)
   return rowsByState
 
+/-- The `StateInit` (`0_K` of its sort) a writing algebra implies: max-plus (`+`, `max`) starts at
+    `negInf`, min-plus (`+`, `min`) at `posInf`, and every other admitted algebra (real sum-product,
+    Boolean) at `zero`. Keyed on the two operations, the same recognition `checkAssign`'s scatter
+    arm uses for a tropical algebra; the algebra tables admit exactly these shapes. -/
+private def algebraStateInit (alg : ContractionAlgebra) : StateInit :=
+  match alg.factorOp, alg.reduceOp with
+  | .add, .max => .negInf
+  | .add, .min => .posInf
+  | _, _ => .zero
+
+/-- Tie each state's `initValue` to the algebra of every assignment that writes it: a state cell
+    that no write has reached must hold the `0_K` of the algebra later writes fold into, so a state
+    written under max-plus must start at `negInf`, under min-plus at `posInf`, and under real or
+    Boolean at `zero`. Looks only at the `.assign` step that produces a write's output slot; a
+    nonlinear step producing the output, or a base write passed straight through from a block input,
+    has no algebra of its own and imposes nothing. Run after
+    `checkWrites`, which has already bounded every `stateIndex`. -/
+private def checkStateInitTie (raw : RawScanPlan) : Except ScanPlanError Unit := do
+  for (blk, writes) in [(raw.baseBlock, raw.baseWrites), (raw.stepBlock, raw.stepWrites)] do
+    for w in writes do
+      let st := raw.states.getD w.stateIndex default
+      for step in blk.steps do
+        match step with
+        | .assign a =>
+            if a.destinationSlot == w.outputSlot then
+              let expected := algebraStateInit a.algebra
+              unless st.initValue == expected do
+                throw (.stateInitAlgebraMismatch w.stateIndex st.initValue expected)
+        | .pointwise _ | .axiswise _ => pure ()
+
 /-- Validate an unchecked scan node (proposal §7.3), INCLUDING causality: the final loop before
     `return` walks every `.assign` step-block factor that reads a captured state and requires
     `stateReadCausal` of it, so a look-ahead or loop-axis-ignoring state read is rejected here
@@ -565,6 +596,7 @@ private def checkScanCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSigna
   checkCaptures kind sigs raw.stepBlock raw.stepCaptures raw.states.size raw.states false
   let baseRowsByState ← checkWrites sigs raw.baseBlock raw.baseWrites raw.states true
   let stepRowsByState ← checkWrites sigs raw.stepBlock raw.stepWrites raw.states false
+  checkStateInitTie raw
   for h : si in [0 : raw.states.size] do
     if (baseRowsByState.getD si #[]).size == 0 then throw (.noBaseWriteForState si) else pure ()
     let stateStepWrites := stepRowsByState.getD si #[]
