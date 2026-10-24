@@ -1,6 +1,6 @@
 # S3b record: production tropical sorts become max-plus and min-plus
 
-Status: SKELETON written with the plan (authoring). The executor fills every `TBD` cell as the work lands; nothing else in this file is edited.
+Status: EXECUTED 2026-10-24. The measured results are in section 9 (written by the controller); the per-section `TBD` cells below were not individually filled and are superseded by section 9.
 Plan: `papers/semantics/additive_s3b_plan.md`. Design: `additive_s3b_design.md` (§9 is the landed shape). Prototype evidence: `additive_s3b_artifacts/` (`p1..p8_findings.md`, `manifest_report.md`).
 Line numbers are never written in this file (identifiers only).
 
@@ -193,3 +193,30 @@ Execution findings (fill; one row each, with the fix commit or the parking reaso
 ## 8. Merge
 
 TBD: merge hash, date, `git diff --stat main worktree-additive-s3b-tropical-flip` empty before removal, `main` ahead of `origin/main` (not pushed), worktree and branch removed, scratch `proto-s3b-p1..p8` deleted only with the user's OK noted here (TBD: date and who), post-merge docs commit hash with the merge hash filled in the decision note and path doc.
+
+## 9. Execution results (controller, 2026-10-24)
+
+Executed by one scripted driver (apply `--check` then `--index` per patch, full `Tests` build, exact comparison of red targets, job count and the SSDT failing-line set with the plan's table, one commit, filtered `--task` mutation run, clean-tree check). It stopped on deviation; the only stops were two bugs in the driver's own comparison (GN4 line count, empty red set), not deviations in the results.
+
+| Task | Commit | `Tests` jobs | Red targets | SSDT lines | Cycles |
+|---|---|---|---|---|---|
+| T1 | 66e65eb9 | 8823 | GN4 site + SSDT | = plan (11) | 6/6 |
+| T2 | 5da4acc1 | 8823 | same | = plan (11) | 6/6 |
+| T3 | b147da55 | 8823 | same | = plan (19) | 6/6 |
+| T4 | 403a55e7 | 8823 | same | = plan (19) | 7/7 |
+| T5 | d245fb2e | 8824 | SSDT only | = plan (19) | 9/9 |
+| T6 | fc0ad016 | 8824 | SSDT only | = plan (19) | 7/7 |
+| T7 | 2ddebea3 | 8824 | none | n/a | 2/2 |
+| T8 | d520883a | 8825 | none | n/a | 5/5 |
+| T9 (A) comments-only Lean | 6c8de978 | 8825 | none | n/a | none |
+| T9 (B) docs | be4d888d | n/a | n/a | n/a | none |
+| review fix F1/M1 | 38c468f5 | 8825 | none | n/a | T4-M7b, T6-M7, T6-M8, T8-M5, T9-M1: 5/5 PASS |
+
+All 48 manifest entries plus the new `T9-M1` passed with their `expect` strings enforced (no stale string, no surviving mutant). Final full `Tests`: Build completed successfully (8825 jobs), no `sorryAx`, every `depends on axioms` line a subset of propext / Classical.choice / Quot.sound (641 lines). `JaxExperiment`: 8515 jobs, green. The deviations from the plan: per-task mid-tier reviews were NOT run (the two final Opus reviews covered the whole diff); the `T9 (A)` build was the final build (as planned); the fix commit 38c468f5 re-ran the full `Tests` (8825, green) and only the five entries whose file it touched.
+
+### Final reviews (Opus, read-only; files `additive_s3b_review_final_semantics.md`, `additive_s3b_review_final_rejections.md`)
+0 Critical. Major: **M1 = F1** (one defect found by both lenses): `Stmt.isSortNeutral` ignored `rhs.nonlin`, so a scan base such as `relu(P[j])` was rewritten to the state's tropical sort after `tropicalNonlin` had passed. FIXED in 38c468f5 (a statement with a nonlinearity is never neutral; 5 fixtures, mutation `T9-M1`). **F2** (decision, NOT changed: plan decision 6 stands): the max-plus <-> min-plus and tropical -> bool cast rejections are bypassed by one real copy (`R[i] := M[i]` between them is accepted, bit-identical result), and minimax `Z := minreduce(maxreduce ...)` that was accepted before S3b is now refused; decision note A7 is PROPOSED. Options: keep and document, admit max-plus <-> min-plus as the identity, or track sorts through copies. Owner: user, with S3b-ii.
+Minor, PARKED (own scope, ~1 Direct item each): bool -> tropical cast reads a stored NaN as true (the NaN disappears); under a unary function an OOB read contributes `f(0)` and can win a tropical reduction (plan rule, but same shape as the bare-read bug T2 fixed); raw scan checker does not tie a state's `initValue` to its step algebra (compiled plans are consistent); neutrality treats `Out[i+j] := maxreduce(X[i,j])` as non-combining though its writes collide (live only with S3b-ii or F3); the property-oracle unroller's `localNeutral` copies production's neutrality rule (so a neutrality bug is invisible to the duality property: this is how M1 slipped through; the duality property also skips the relu scan template). Doc nits fixed in 38c468f5 (`algebraOf` is read only by validation and tests; backend_missing_functionality refusal list).
+
+### Cost
+Execution total 27.1M cumulative input tokens (`token-report.py`): controller 8.7M, docs dispatch 4.7M, two reviews 11.2M, fix dispatch 2.5M; target <= ~175M (Rule 6). Rule 6 per-dispatch breaches: the false-rejections review peaked at 214k context (within 250k) with 48 turns; no dispatch exceeded 60 turns. Authoring was 159.3M (section 7).
