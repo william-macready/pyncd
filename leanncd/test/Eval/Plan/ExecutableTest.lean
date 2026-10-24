@@ -1864,7 +1864,7 @@ def f32BoolDestAssign : AssignPlan :=
       | .error e => e == JaxSupportError.destinationDType 7 2 .bool
       | .ok _ => false)
 
--- Tropical binary32 max-product over the same all-f32 table: refused as the located algebra, so
+-- Tropical binary32 max-plus over the same all-f32 table: refused as the located algebra, so
 -- the policy compares against binary32 SUM-product (`admittedAlgebraF32`), not "any f32 algebra".
 #guard (match checkAssignF32 f32DestSigs { f32DestAssign with algebra := admittedAlgebraF32Max } with
   | .error _ => false

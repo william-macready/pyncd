@@ -53,7 +53,7 @@ abbrev WeaveShapeP := List WeaveSlotP
     `BrOp.toString` converts back to the string the Python execution layer dispatches on. -/
 inductive BrOp
   | contract   -- standard tensor contraction (×, Σ, 0)
-  | maxreduce  -- tropical max contraction (×, max, −∞)
+  | maxreduce  -- max-plus contraction (+, max, −∞)
   | scatter    -- affine-LHS scatter write
   | relu       -- relu nonlinearity
   | softmax    -- softmax (with optional mask)
@@ -61,7 +61,7 @@ inductive BrOp
   | scan       -- recurrent scan (general)
   | scanAffine -- nonlinearity-free scan (Prop 8.7, O(log N) parallel prefix)
   | scanPre    -- scan step from recurMorphism escape hatch
-  | minreduce  -- tropical min contraction (×, min, +∞)
+  | minreduce  -- min-plus contraction (+, min, +∞)
   | sigmoid    -- sigmoid nonlinearity
   | tanh       -- tanh nonlinearity
   | gelu       -- gelu nonlinearity (tanh approximation)

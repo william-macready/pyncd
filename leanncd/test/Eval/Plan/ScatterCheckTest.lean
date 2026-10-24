@@ -101,7 +101,7 @@ def maxScatter : ScatterPlan :=
   { upScatter with
     compute := { upCompute with algebra := admittedAlgebraMax } }
 
-/- Acceptance 4: tropical max-product, whose `reduceId` is `-∞`, not `0.0`. The checker takes the
+/- Acceptance 4: tropical max-plus, whose `reduceId` is `-∞`, not `0.0`. The checker takes the
    algebra from the compute half rather than hard-coding real sum-product — a checker hard-coding
    `0.0` would reject this. -/
 #guard isOk (checkScatter upSigs maxScatter)

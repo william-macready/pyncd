@@ -106,7 +106,7 @@ def sumStore64 : Array DenseTensor :=
 -- ... whose lane 0, narrowed once, is binary32 `1`, not the native `+0` above.
 #guard (Float.ofBits 4607182418800017408).toFloat32.toBits == 1065353216
 
-/-! ## Fixture 1.5 — unwritten cells hold the binary32 algebra's `reduceId`: max-product's `-∞`
+/-! ## Fixture 1.5 — unwritten cells hold the binary32 algebra's `reduceId`: max-plus's `-∞`
 (donor: `ScatterDenseTest.maxScatter`) -/
 #guard shapeBitsOf (run32 (sigsFor32 #[6]) (upScatter32 admittedAlgebraF32Max) store32)
   == some ([6], #[1065353216, 4286578688, 1073741824, 4286578688, 1077936128, 4286578688])

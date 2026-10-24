@@ -256,7 +256,7 @@ def rejectUnsupportedStorage (decls : List Decl) (names : List String) :
     evaluate. Shared by `evalPlain` (via `evalAssignDtyped`, its empty-seed wrapper) AND
     `Scan.evalStmtSliceSeeded` — before Wave B (4c), the scan path matched `rhs.agg` manually and
     could never select `Combine.bool` for a predicate state, since it never saw `decls` at all.
-    `agg = .max` ⇒ tropical `(×, max, −∞)`;
+    `agg = .max` ⇒ max-plus `(+, max, −∞)`; `agg = .min` ⇒ min-plus `(+, min, +∞)`;
     `predicate` ⇒ Boolean `(∧, ∃)`;
     else ℝ `(×, Σ, 0)`.
 

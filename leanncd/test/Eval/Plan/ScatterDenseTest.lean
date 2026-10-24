@@ -233,7 +233,7 @@ def checkErrOf (sigs : Array TensorSignature) (s : ScatterPlan) : Option PlanErr
 #guard checkErrOf (sigsFor #[0]) (placed #[0] #[#[-1]] #[0]) == some (.scatterWriteOutOfRange 0 (-2) 0 0)
 
 /- **Unwritten cells hold the destination algebra's `reduceId`, not a hard-coded `0.0`.** Fixture
-   1's placement under tropical max-product, whose `reduceId` is `-∞`. The three written cells are
+   1's placement under tropical max-plus, whose `reduceId` is `-∞`. The three written cells are
    unchanged (`max(-∞, x) = x` through both folds); the three unwritten ones read `-∞`, so a worker
    that initialised the destination to zero, or to the real algebra's identity, fails here while
    passing every fixture above.
