@@ -59,7 +59,6 @@ private def outSlot (j : Nat) : SourceOrigin :=
 private def isOutOfRange : SourceCause → Bool | .writeOutOfRange => true | _ => false
 private def isAffine : SourceCause → Bool | .unsupported .affine => true | _ => false
 private def isScatter : SourceCause → Bool | .unsupported .scatter => true | _ => false
-private def isPolicy : SourceCause → Bool | .unsupported .scatterPolicy => true | _ => false
 private def isNonSum : SourceCause → Bool | .unsupported .nonSum => true | _ => false
 private def nonSumOrigin : SourceOrigin := { side := .output, statement := some 0 }
 
@@ -106,8 +105,8 @@ private def diagonal : SourceSnapshot := snap 3 [a, a] (.assign "Y" [.free a, .f
 #guard view (admitSourceAffine diagonal) == view (admitSource diagonal)
 
 /-! (d) scatter. Collisions sum (S3a; the `fill`/`reduce` options are gone), so a scatter on a real
-program is admitted with the same forms and images as an assign; the one remaining policy refusal is
-a non-`sum` aggregation under a sorted (tropical) program. -/
+program is admitted with the same forms and images as an assign, and (S3b T7) so is a `max`/`min`
+scatter under a sorted (tropical) program. -/
 private def scatter : SourceSnapshot :=
   snap 3 [k] (.scatter "Y" [.affine (.scale 2 a)] readX)
 
@@ -119,12 +118,13 @@ private def scaleView : Option (List (List WriteForm × List UID × List (List I
 #guard view (admitSourceAffine scatter) == scaleView
 #guard refused (admitSource scatter) policyOrigin isScatter
 
--- Sorted tropical refusal stays: a `max` aggregation on a `.scatter` under `sorted`. Neighbours: the same statement unsorted (refused by the other cause, `nonSum`), and a
--- `sum` aggregation sorted (admits).
+-- S3b T7: a `max` aggregation on a `.scatter` under `sorted` is ADMITTED as its sort-free
+-- structure (the same view as the `sum` scatter; the aggregation is the carrier key). Neighbours:
+-- the same statement unsorted (refused, `nonSum`), and a `sum` aggregation sorted (admits).
 private def maxRhs : RHSExpr := ⟨⟨[⟨[.read "X" [.axis a]]⟩]⟩, .identity, .max⟩
 private def maxScatter : SourceSnapshot :=
   snap 3 [k] (.scatter "Y" [.affine (.scale 2 a)] maxRhs)
-#guard refused (admitSourceAffine maxScatter (sorted := true)) policyOrigin isPolicy
+#guard view (admitSourceAffine maxScatter (sorted := true)) == scaleView
 #guard refused (admitSourceAffine maxScatter) nonSumOrigin isNonSum   -- unsorted: `nonSum`
 #guard view (admitSourceAffine scatter (sorted := true)) == scaleView
 -- A bare scatter goes through the bare path.
@@ -207,9 +207,9 @@ non-negative coefficients and failed only the UPPER bound). `|a| = 2`, `|b| = 3`
 #guard refused (admitSourceAffine (snap 3 [k]
     (.assign "Y" [.affine (.affine 3 [(-1, a)])] readX))) (outSlot 0) isOutOfRange
 
-/-! (h) BARE-slot scatter: the sorted policy is checked before the slot dispatch, so an all-free
-`.scatter` with a `max` aggregation under `sorted` is refused, not admitted as a plain `.assign`
-(kills: moving the policy test into the non-bare branch). A bare `sum` scatter admits. -/
+/-! (h) BARE-slot scatter: an all-free `.scatter` with a `max` aggregation under `sorted` is
+admitted through the bare path with the same structure as a bare `sum` scatter (S3b T7: the sorted
+scatter refusal is gone); unsorted it is still refused (`nonSum`). -/
 private def bareScatter : SourceSnapshot :=
   snap 3 [a] (.scatter "Y" [.free a] readX)
 
@@ -218,7 +218,7 @@ private def bareMaxScatter : SourceSnapshot :=
 private def bareView : Option (List (List WriteForm × List UID × List (List Int) × Bool)) :=
   some [([(0, [(1, 7)])], [7], [[0], [1]], true)]
 
-#guard refused (admitSourceAffine bareMaxScatter (sorted := true)) policyOrigin isPolicy
+#guard view (admitSourceAffine bareMaxScatter (sorted := true)) == bareView
 #guard refused (admitSourceAffine bareMaxScatter) nonSumOrigin isNonSum   -- unsorted: `nonSum`
 #guard view (admitSourceAffine bareScatter) == bareView
 

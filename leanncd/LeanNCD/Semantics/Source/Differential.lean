@@ -251,8 +251,6 @@ def confirms (native : NativeRun) : StructuralCondition → Bool
         | .observed l, .observed c _ => shapeOnly declaration derived l && shapeOnly declaration derived c
         | _, _ => false)
   | .usedDType .. => false
-  -- the sorted harness's conditions (`SortedDifferential.confirmsSorted`): never the real path's
-  | .tropicalMultiFactor _ | .tropicalScatterFill _ => false
 
 structure ComparisonRun where
   reference : SourceRun

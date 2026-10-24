@@ -282,12 +282,6 @@ inductive CapabilityError
       from `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots);
       a hand-built `ScheduledProgram` handed to `prepareEvalPlan` is what can express it. -/
   | multiAxisScatterLhs  (context : String)
-  /-- No producer since S3b T3: a top-level `maxreduce`/`minreduce` scatter is now admitted, with the
-      sort's 0_K (`∓∞`) fill and its ⊕ on collisions. Kept only because
-      `SortedDifferential.confirmsSorted` (Semantics/Source) still matches it; deleted with that
-      matching condition (T7). (Historical name: this once guarded a `ScatterOpts.fill` the layer
-      could not honour; the options were deleted in S3a.) -/
-  | scatterOptsNotAdmitted (context : String)
   /-- A top-level scatter's DESTINATION is `predicate`/`bool`-declared. The reference evaluator
       `evalScatter` (`Eval/Scatter.lean`) WAS not dtype-aware (reference-alignment made it so, via
       `combineFor`): it selected its algebra from `rhs.agg` only (`.sum ⇒ Combine.real`, real

@@ -123,7 +123,6 @@ inductive SortedClassification
   | referenceUnavailable (reason : String)
   | referenceDiscrepancy
   | unsupportedNumericalProfile (reason : Unsupported)
-  | knownContractDifference (condition : StructuralCondition)
   | nativeUnavailable
   | nativeFailure (legacy checked : LegResult)
   | nativeDiscrepancy (legacy checked : LegResult)
@@ -153,82 +152,6 @@ private def legOf (cells : Except Unsupported (List SortedCell)) :
       | .error message => .failure message
       | .ok none => .agrees
       | .ok (some cell) => .mismatch cell
-
-/-! ### Known contract differences (T4B)
-
-Both conditions are detected from the source alone (`detectSortedConditions`) and confirmed only
-when the native legs show exactly the predicted outcome (`confirmsSorted`), each bound to the
-condition's own tensor, so an unrelated native divergence stays `nativeDiscrepancy`/`nativeFailure`
-(with the masking limits below).
-Pipeline order: the scatter-fill refusal (preparation / evaluation) precedes the value comparison,
-so a program with both shapes lists `tropicalScatterFill` first, and `compareSortedSource` confirms
-the first listed condition whose confirmer accepts (a refused run has no values to mismatch, so a
-multi-factor condition cannot confirm beside a scatter-fill one).
-
-Masking. `tropicalScatterFill`: both legs refuse before producing any output, so no other tensor is
-compared at all (inherent, as for the real harness' scatter conditions). `tropicalMultiFactor`:
-`compareBindings` reports only the FIRST differing cell, so confirmation additionally requires
-(i) both legs show the SAME first mismatch (coordinate and bits) at the origin's declaration and
-(ii) every tensor that carries no multi-factor condition agrees with the oracle on both legs
-(`unexplainedAgree`). A second divergence inside a multi-factor tensor stays unreported. -/
-
-/-- `max`/`min` statements with a term of two or more factors (`tropicalMultiFactor`) or a non-bare
-write (`tropicalScatterFill`). -/
-def detectSortedConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
-    List StructuralCondition :=
-  let tropical (st : AdmittedStatement source.source) : Option RHSExpr :=
-    match snapshot.resolved.stmts[st.original]? with
-    | some (.assign _ _ rhs) => if rhs.agg == .sum then none else some rhs
-    | _ => none
-  let fills := source.statements.filterMap fun st =>
-    if (tropical st).isSome && Differential.nonBareWrite st then
-      some (StructuralCondition.tropicalScatterFill st.output.origin)
-    else none
-  let multis := source.statements.filterMap fun st =>
-    match tropical st with
-    | some rhs => if rhs.body.terms.any (·.factors.length ≥ 2) then
-        some (StructuralCondition.tropicalMultiFactor st.output.origin) else none
-    | none => none
-  fills ++ multis
-
-/-- Every output of this observation whose declaration is not in `explained` agrees with the
-profile's expected cells. -/
-def unexplainedAgree (explained : List Nat) (cells : List SortedCell) (o : NativeObservation) :
-    Bool :=
-  match o.outputs with
-  | .ok bindings =>
-    match compareBindings cells (bindings.filter fun b =>
-        !explained.contains b.metadata.declaration) with
-    | .ok none => true
-    | _ => false
-  | .error _ => false
-
-/-- ORIGIN-BOUND on both legs. `tropicalMultiFactor`: both legs are the same `mismatch` at the
-origin's declaration (the caller also checks `unexplainedAgree`). `tropicalScatterFill`: the legacy `scatterFillNotIdentity` names the origin's tensor
-and the checked preparation refusal's context (`"{tensor}: fill"`) names it too; a refusal that
-carries only the cause confirms nothing. -/
-def confirmsSorted (native : NativeRun) (legacy checked : LegResult) :
-    StructuralCondition → Bool
-  | .tropicalMultiFactor origin =>
-      match legacy, checked with
-      | .mismatch l, .mismatch c =>
-          some l.declaration == origin.declaration && some c.declaration == origin.declaration &&
-            l.coordinate == c.coordinate && l.observed == c.observed
-      | _, _ => false
-  | .tropicalScatterFill origin =>
-      let owner := Differential.ownedBy native origin.declaration
-      (match native.legacy with
-        | .failure e => (match e.original.error with
-            | .scatterFillNotIdentity name _ => owner name
-            | _ => false)
-        | _ => false) &&
-      (match native.checked with
-        | .preparation e => (match e.original.cause with
-            | .capability (.scatterOptsNotAdmitted context) =>
-                owner ((context.splitOn ": ").headD "")
-            | _ => false)
-        | _ => false)
-  | _ => false
 
 /-- The tropical/real single-sort differential. `table` is the carrier selection table. For a
 `real` selection this is a SIBLING check, not the authoritative real harness: its profile is the
@@ -264,20 +187,6 @@ def compareSortedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
           | .preparation _ => legOf profile none "checked preparation"
           | .runtime e => legOf profile none s!"checked runtime {repr e.original.cause}"
           | .unavailable _ => .unavailable)
-    let confirmed : Option StructuralCondition :=
-      match native, profile with
-      | .ok n, .ok cells =>
-        let conditions := detectSortedConditions snapshot source
-        let explained := conditions.filterMap fun c => match c with
-          | .tropicalMultiFactor o => o.declaration
-          | _ => none
-        let othersAgree := match n.legacy, n.checked with
-          | .observed l, .observed c _ =>
-            unexplainedAgree explained cells l && unexplainedAgree explained cells c
-          | _, _ => false
-        conditions.find? fun c => confirmsSorted n legacy checked c &&
-          (match c with | .tropicalMultiFactor _ => othersAgree | _ => true)
-      | _, _ => none
     let classification : SortedClassification :=
       match published with
       | .error e => .referenceUnavailable e
@@ -286,9 +195,6 @@ def compareSortedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
         match profile with
         | .error reason => .unsupportedNumericalProfile reason
         | .ok _ =>
-          match confirmed with
-          | some c => .knownContractDifference c
-          | none =>
           match legacy, checked with
           | .agrees, .agrees => .fourLegParity
           | .unavailable, _ | _, .unavailable => .nativeUnavailable

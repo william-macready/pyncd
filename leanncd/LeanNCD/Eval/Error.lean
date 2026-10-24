@@ -377,12 +377,6 @@ inductive EvalError
   /-- An axiswise statement marks two or more reduction axes. The old reference normalised along
       the FIRST silently. `firstPos`/`secondPos` are the first two marked slots. -/
   | multipleMarkedReductionAxes (stmt : String) (firstPos secondPos : Nat)
-  /-- A top-level scatter aggregates with `max`/`min` but fills unwritten cells with a finite value,
-      which is not that aggregation's identity (`∓∞`). The old reference filled with 0, so
-      `Out[2*i] := maxreduce(X[i])` returned `[-1,0,-2,0,-3,0]` for `X = [-1,-2,-3]`. No producer
-      since S3b T3 (a top-level scatter now starts from the sort's 0_K); deleted with the sorted
-      differential's matching condition (T7). -/
-  | scatterFillNotIdentity (stmt : String) (agg : AggOp)
   /-- A supplied input names a tensor the program defines (writes), including a private
       per-writer tensor `T#k` of additive collection. Inputs and defined tensors are disjoint
       (spec §13.6); the old reference silently replaced the supplied value. Raised by
@@ -458,9 +452,6 @@ affine slot at dimension {dim} that names no source axis"
   | .multipleMarkedReductionAxes stmt a b =>
       s!"{stmt}: LHS slots {a} and {b} are both marked (·) as reduction axes; an axiswise \
 statement marks exactly one"
-  | .scatterFillNotIdentity stmt agg =>
-      s!"evalPlain: scatter {stmt} aggregates with {if agg == .max then "max" else "min"} but fills \
-unwritten cells with a finite value, not the {if agg == .max then "-inf" else "+inf"} identity"
   | .inputIsDefined name =>
       s!"evalScheduled: supplied input {name} names a tensor the program defines"
 

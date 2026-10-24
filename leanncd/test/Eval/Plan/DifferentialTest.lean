@@ -112,7 +112,6 @@ private def capabilityCategory : CapabilityError → String
   | .recurrenceOrCallback _ => "recurrenceOrCallback"
   | .noAdvancingAxis _ => "noAdvancingAxis"
   | .multiAxisScatterLhs _ => "multiAxisScatterLhs"
-  | .scatterOptsNotAdmitted _ => "scatterOptsNotAdmitted"  -- no producer since S3b T3; arm required while the constructor exists (T7)
   | .predicateScatterDest _ => "predicateScatterDest"
   | .unloweredScatterAssign _ => "unloweredScatterAssign"
 
