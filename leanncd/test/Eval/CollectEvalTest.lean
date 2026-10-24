@@ -162,6 +162,15 @@ def j4 : TLProgram := tlprog!{
 #guard errOf j4 (inp [("A", tz [2, 2] [1, 2, 3, 4]), ("B", tz [2, 2] [5, 6, 7, 8])]) ==
   some "compile failed: LeanNCD.CompileError.multiWriterAlgebra \"Y\""
 
+-- J4m min-annotated multi-writer: the same refusal (S3b T8 duality twin of J4).
+def j4m : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := minreduce(A[i, j])
+  Y[i] := minreduce(B[i, j])
+}
+#guard errOf j4m (inp [("A", tz [2, 2] [1, 2, 3, 4]), ("B", tz [2, 2] [5, 6, 7, 8])]) ==
+  some "compile failed: LeanNCD.CompileError.multiWriterAlgebra \"Y\""
+
 -- J5 a supplied input naming a defined tensor (decision note B3; old: silently replaced).
 #guard errOf v8 (inp [("A", tz [2] [1, 2]), ("Y", tz [2] [7, 7])]) ==
   some "evalScheduled: supplied input Y names a tensor the program defines"

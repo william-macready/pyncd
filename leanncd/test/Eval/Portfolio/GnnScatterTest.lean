@@ -54,6 +54,18 @@ test "GN4 max-aggregation"
       (HashMap.ofList [("edge", tl [2,2] [1,1, 0,1]), ("X", tl [2,2] [1,2, 3,4])])
       "H" (tl [2,2] [3,4, 3,4])) $
 
+-- GN4m  min-plus duality twin of GN4 (negated X), with the mask moved so the masked-out row is the
+--   one that would WIN under a wrong cast. The bool cast maps false to 0_K = +inf (max-plus: -inf),
+--   true to 1_K = 0. edge = [[1,1],[1,0]], X = [[-1,-2],[-3,-4]]:
+--     i=0: min(X[0], X[1]) = [-3,-4];   i=1: min(X[0], +inf) = [-1,-2].
+--   ⇒ [[-3,-4],[-1,-2]]. A false cast of 0.0 would give i=1 = min(X[0], X[1]) = [-3,-4]; the raw
+--   0/1 read (no cast; true adds 1, false adds 0) would give [[-2,-3],[-3,-4]].
+test "GN4m min-aggregation (bool cast false = +inf)"
+    (evalEqB (tlprog!{ predicate edge(i, j)
+            H[i, f] := minreduce(edge[i, j] · X[j, f]) })
+      (HashMap.ofList [("edge", tl [2,2] [1,1, 1,0]), ("X", tl [2,2] [-1,-2, -3,-4])])
+      "H" (tl [2,2] [-3,-4, -1,-2])) $
+
 -- GN5  degree-normalized propagation Ĥ = D⁻¹AX, via the friendly `/` operator (KG-div).
 --   A=[[0,1,1],[1,0,0]] (3 nodes), X=[[1,2],[3,4],[5,6]].
 --   H[i,f]=Σⱼ A[i,j]X[j,f]: H[0]=X[1]+X[2]=[8,10]; H[1]=X[0]=[1,2].

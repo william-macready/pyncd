@@ -707,6 +707,35 @@ structure MergePart where
   axes       : List AxisSpec
   expected   : List Nat
 
+/-- Sort-neutral writer, restated test-side (one term, one read factor, every read axis on the LHS):
+    such a statement has nothing to combine and so says nothing about its state's sort. -/
+private def localNeutral (s : Stmt) : Bool :=
+  match s with
+  | .assign _ ls r | .scatter _ ls r =>
+      match r.body.terms with
+      | [t] =>
+          match t.factors with
+          | [f] =>
+              match f.read? with
+              | some (_, es) =>
+                  let lhs := ls.flatMap LHSSlot.axisUids
+                  es.all (fun e => (idxAffineForm e).2.all (fun p => lhs.contains p.2))
+              | none => false
+          | _ => false
+      | _ => false
+  | .recurMorphism _ _ _ => false
+
+/-- The aggregation (hence the semiring) the independent unrolling gives state `nm`'s zero leaf and
+    base merge (S3b T8): the annotation its first NON-neutral statement carries, `sum` (real) if every
+    statement is neutral. Derived here from the statements alone. It deliberately calls neither
+    `scanStateAlgebra`/`scanStateSorts` nor any production state-init helper, so that agreement with
+    the production scan worker's `0_K` start is a real check and not production compared with itself. -/
+def localStateAgg (g : ScanGeom) (nm : String) : AggOp :=
+  let own := (g.base ++ g.recur).filter (fun s => s.lhsName == nm && !localNeutral s)
+  match own.head? with
+  | some (.assign _ _ r) | some (.scatter _ _ r) => r.agg
+  | _ => .sum
+
 /-- Unroll one scan node into scan-free leaf statements.
 
     Emission order is: every state's zero leaf, every base contribution in source order, the
@@ -750,7 +779,7 @@ at history coordinate {a.hist}"
   -- 3. zero leaves.
   let zeroParts : List (String × Stmt) := g.states.map (fun st =>
     (st.name, .assign (zeroLeafName st.name) (st.sliceAxes.map LHSSlot.free)
-      { body := { terms := [] }, nonlin := .identity }))
+      { body := { terms := [] }, nonlin := .identity, agg := localStateAgg g st.name }))
   let zeroStmts := zeroParts.map Prod.snd
   let zeroDecls := zeroParts.filterMap (fun (sourceName, leaf) =>
     let axes := (g.states.find? (fun st => st.name == sourceName)).map (·.sliceAxes) |>.getD []
@@ -775,7 +804,7 @@ at history coordinate {a.hist}"
       let rhs : RHSExpr :=
         { body := { terms := names.map (fun nm =>
             { factors := [.read nm (st.sliceAxes.map IdxExpr.axis)] }) }
-        , nonlin := .identity }
+        , nonlin := .identity, agg := localStateAgg g st.name }
       ({ sourceName := st.name
        , stmt := Stmt.assign (stateLeafName st.name t) (st.sliceAxes.map LHSSlot.free) rhs
        , axes := st.sliceAxes, expected := st.sliceExt } : MergePart)))

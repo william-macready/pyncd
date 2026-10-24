@@ -380,4 +380,24 @@ run_cmd do
           throwError s!"Peak wrong: {repr p.data}"
       | none => throwError "multi-output: Peak missing"
 
+/- S3b T8: min-plus twin of the multi-output fixture above (`Trough` = min-contraction to a scalar).
+   X=[1,5,3]: Total=9, Trough=1 (max would give 5, sum 9). Both outputs present. -/
+run_cmd do
+  let env : HashMap String DenseTensor :=
+    ({} : HashMap String DenseTensor).insert "X" (tensorOf [3] [1,5,3])
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
+    Total[] := X[i]
+    Trough[] := minreduce(X[i])
+  }) env with
+  | .error e => throwError s!"multi-output min: {e}"
+  | .ok report =>
+      match report.env["Total"]? with
+      | some t => unless DenseTensor.approxEq t (tensorOf [] [9]) do
+          throwError s!"Total (min twin) wrong: {repr t.data}"
+      | none => throwError "multi-output min: Total silently dropped (KG-multiout regression)"
+      match report.env["Trough"]? with
+      | some p => unless DenseTensor.approxEq p (tensorOf [] [1]) do
+          throwError s!"Trough wrong: {repr p.data}"
+      | none => throwError "multi-output min: Trough missing"
+
 end LeanNCD.Eval
