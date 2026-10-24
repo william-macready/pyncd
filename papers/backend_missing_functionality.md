@@ -9,7 +9,7 @@ already evaluates most of the constructs listed here, so nearly every row is a *
 > max-plus `(+, max, −∞, 0)` / min-plus `(+, min, +∞, 0)` in both backends, a top-level tropical scatter folds
 > collisions with its sort's ⊕ from `0_K`, and a bare out-of-range read pads with `0_K`. CLOSED gaps: the
 > multi-factor (`×` versus `+`) divergence, the scatter-fill gap (`scatterFillNotIdentity` and
-> `scatterOptsNotAdmitted` are deleted, no `max`/`min` scatter is refused) and the padded-`0` interaction.
+> `scatterOptsNotAdmitted` are deleted; multi-writer, nonlinear, predicate-destination and out-of-range `max`/`min` scatters are still refused) and the padded-`0` interaction.
 > STILL OPEN: S3b-ii (tropical multi-writer collection and writer agreement), B5 (multi-writer scatter),
 > scan-local scatter overwrite (F3), `real -> bool` rejection, JAX/Python tropical execution, oracle
 > per-tensor sorts. Mentions of those constructors below are history.

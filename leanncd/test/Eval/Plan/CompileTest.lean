@@ -2741,6 +2741,60 @@ run_cmd do
       [s3bJ "M" "A" (.pointwise .relu) .max] [.typedTensor .f64 "M" [axJScan]])
     (.tropicalNonlin "M")
 
+-- Final review M1/F1: a statement carrying a nonlinearity is never sort-neutral, even when its shape
+-- is (one bare read, no contracted axis). Were it neutral, `scanStateStmts` would rewrite its `agg`
+-- to the state's tropical sort AFTER validation and execute a tropical statement under `relu`
+-- (A8 bypassed; for a predicate source the bool -> tropical cast also changes the value).
+-- `s3bBaseN src nl ag` is the neutral shape `S[j,0] := nl(src[j])`; `P` is a predicate source.
+def s3bBaseN (src : String) (nl : Nonlin) (ag : AggOp) : Stmt :=
+  .assign "S" [.free axJScan, .iterAt axLScan 0]
+    { body := { terms := [{ factors := [.read src [.axis axJScan]] }] }, nonlin := nl, agg := ag }
+
+-- (1) a sum-annotated `relu` base beside a max-plus recurrence: the base is a REAL statement now, so
+-- the two disagree. (Before the fix the base was "neutral", adopted max-plus, and ran with relu.)
+run_cmd do
+  assertScanPredicateParity "relu base (predicate source) beside a max-plus recurrence"
+    (s3bScanSched (s3bBaseN "P" (.pointwise .relu) .sum) (scanRecur .identity .max) []
+      [.predicate "P" [axJScan]])
+    (.scanStateAlgebraMismatch "S")
+run_cmd do
+  assertScanPredicateParity "relu base (real source) beside a max-plus recurrence"
+    (s3bScanSched (s3bBaseN "X" (.pointwise .relu) .sum) (scanRecur .identity .max))
+    (.scanStateAlgebraMismatch "S")
+-- (2) the same shape annotated `.max` is a max-plus statement with a nonlinearity (A8), whether the
+-- recurrence is max-plus or real (per-statement rules come before scan-state agreement). These two
+-- are pins, not discriminators: the annotation was already tropical, so they rejected before M1 too.
+run_cmd do
+  assertScanPredicateParity "max-annotated relu base, max-plus recurrence"
+    (s3bScanSched (s3bBaseN "X" (.pointwise .relu) .max) (scanRecur .identity .max))
+    (.tropicalNonlin "S")
+run_cmd do
+  assertScanPredicateParity "max-annotated relu base, real-state scan"
+    (s3bScanSched (s3bBaseN "X" (.pointwise .relu) .max) (scanRecur .identity .sum))
+    (.tropicalNonlin "S")
+-- ACCEPT neighbour: the same predicate-source base WITHOUT `relu` is still neutral; the state is
+-- max-plus and both entries run it. X = [1], A = [3]: max-plus gives 1, 3, 3 (a real state would
+-- give 1, 4, 7), so the value shows the neutral base adopted the recurrence's sort.
+#guard (s3bChecked (s3bScanSched (s3bBaseN "P" .identity .sum) (scanRecur .identity .max) []
+  [.predicate "P" [axJScan]])).map (·.algebraOf "S") == some .maxPlus
+def s3bNeutralAcceptSched : ScheduledProgram :=
+  s3bScanSched (s3bBaseN "X" .identity .sum) (scanRecur .identity .max)
+def s3bNeutralAcceptInputs : HashMap String DenseTensor :=
+  ((({} : HashMap String DenseTensor).insert "X" (⟨[1], #[1.0]⟩ : DenseTensor)).insert
+    "A" (⟨[1], #[3.0]⟩ : DenseTensor)).insert "XK" (⟨[1, 2], #[0.0, 0.0]⟩ : DenseTensor)
+run_cmd do
+  match evalScheduled s3bNeutralAcceptSched s3bNeutralAcceptInputs with
+  | .error failure => throwError s!"neutral base accept neighbour: evalScheduled rejected: {failure.error}"
+  | .ok report =>
+      match report.env.get? "S" with
+      | none => throwError "neutral base accept neighbour: S missing"
+      | some s =>
+          unless DenseTensor.approxEq s ⟨[1, 3], #[1.0, 3.0, 3.0]⟩ do
+            throwError s!"neutral base accept neighbour: S is {repr s.shape} {repr s.data}"
+  match causeOf (prepareEvalPlan s3bNeutralAcceptSched (InputSignature.ofDenseInputs s3bNeutralAcceptInputs)) with
+  | none => pure ()
+  | some f => throwError s!"neutral base accept neighbour: prepareEvalPlan rejected: {renderCompileCause f.cause}"
+
 -- (c) casts. `M` is max-plus, `N` min-plus (single writers), `Y`/`P` predicates.
 def s3bMN : List Stmt := [s3bStmt "M" "A" .identity .max, s3bStmt "N" "B" .identity .min]
 def s3bMNDecls : List Decl := [s3bT "M", s3bT "N"]

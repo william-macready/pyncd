@@ -524,11 +524,13 @@ def LHSSlot.axisUids : LHSSlot → List UID
   | .affine e => (idxAffineForm e).2.map (·.2)
 
 /-- Sort-neutral writer (S3b design A4): one term, one `read`/`unaryFn` factor, and no contracted
-    axis (every read axis is on the LHS). With nothing to combine, such a statement has no
-    aggregation sort of its own; a scan state's neutral base adopts the annotation of the state's
-    other statements. -/
+    axis (every read axis is on the LHS), with an identity nonlinearity (a statement carrying a
+    nonlinearity is never neutral: it must keep its own sort so `tropicalNonlin` sees it). With
+    nothing to combine, such a statement has no aggregation sort of its own; a scan state's neutral
+    base adopts the annotation of the state's other statements. -/
 def Stmt.isSortNeutral : Stmt → Bool
   | .assign _ ls r | .scatter _ ls r =>
+      r.nonlin == .identity &&
       match r.body.terms with
       | [t] =>
           match t.factors with

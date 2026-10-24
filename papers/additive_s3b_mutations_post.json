@@ -690,5 +690,20 @@
    "DUALITY VIOLATED on checked plan f32",
    "error: test/Eval/Plan/Adapter32Test.lean:"
   ]
+ },
+ {
+  "label": "T9-M1 (isSortNeutral ignores rhs.nonlin again)",
+  "task": "T9",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "      r.nonlin == .identity &&\n      match r.body.terms with",
+  "new": "      match r.body.terms with",
+  "targets": [
+   "Eval.Plan.CompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:",
+   "relu base (predicate source) beside a max-plus recurrence",
+   "relu base (real source) beside a max-plus recurrence"
+  ]
  }
 ]
