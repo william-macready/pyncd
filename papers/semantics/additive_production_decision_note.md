@@ -105,6 +105,8 @@ collection is not.
 
 **A7. PROPOSED: casts.**
 
+**DECIDED 2026-10-24 (S3b final review F2, option A):** keep the max-plus <-> min-plus and tropical -> bool cast rejections as they are and document their limits. The check looks only at the sort of the tensor a statement reads DIRECTLY, so one real copy (`R[i] := M[i]`) bypasses it with bit-identical values, and minimax (`minreduce` of a `maxreduce` result) is refused unless written through such a copy; the copy is the user's explicit choice of the `-inf`/`+inf` reinterpretation. Revisit (admit max-plus <-> min-plus as identity, or track sorts through copies) when S3b-ii plans writer agreement.
+
 | Reads → statement sort | Rule |
 | --- | --- |
 | real → tropical, tropical → real | identity on values (FIXED) |
