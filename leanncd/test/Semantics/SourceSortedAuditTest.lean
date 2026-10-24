@@ -37,8 +37,9 @@ private def strided (agg : AggOp) : SourceSnapshot :=
 private def bareScatter (agg : AggOp) : SourceSnapshot :=
   snap [a] [.scatter "Y" [.free a] (rhs agg [[.read "Z" [.axis a, .axis b]]])]
 
-private def isPolicy : SourceCause → Bool | .unsupported .scatterPolicy => true | _ => false
+private def isMixed : SourceCause → Bool | .sortSelection (.mixedSorts _) => true | _ => false
 private def isNonSum : SourceCause → Bool | .unsupported .nonSum => true | _ => false
+private def isOutOfRange : SourceCause → Bool | .writeOutOfRange => true | _ => false
 
 private def causeIs {α : Type _} (p : SourceCause → Bool) : Except SourceDiagnostic α → Bool
   | .error d => p d.cause
@@ -49,16 +50,21 @@ private def selected (s : SourceSnapshot) : String :=
   | .ok (_, S) => S.name
   | .error d => s!"refused {repr d.cause}"
 
-/-! Row 7: admission refuses before selection. A sum assign followed by an affine max scatter is
-BOTH a mix and a policy refusal; the statement's own cause (`scatterPolicy`) is reported, never
-`sortSelection`. -/
-#guard causeIs isPolicy (admitSourceSorted (snap [a]
+/-! Row 7: statement admission precedes selection. A sum assign followed by an affine max scatter
+whose write `Y[2a]` leaves `Y`'s extent 4 is BOTH a mix and an admission refusal; the statement's
+own cause (`writeOutOfRange`; before S3b T7 it was the sorted scatter refusal) is reported, never
+`sortSelection`. The in-range twin over `k` (extent 7) is admitted statement by statement and
+refused at selection as the mix. -/
+#guard causeIs isOutOfRange (admitSourceSorted (snap [a]
   [.assign "Y" [.free a] (rhs .sum [[.read "X" [.axis a]]]),
    .scatter "Y" [.affine (.scale 2 a)] (rhs .max [[.read "X" [.axis a]]])]))
+#guard causeIs isMixed (admitSourceSorted (snap [k]
+  [.assign "Y" [.affine (.scale 2 a)] (rhs .sum [[.read "X" [.axis a]]]),
+   .scatter "Y" [.affine (.scale 2 a)] (rhs .max [[.read "X" [.axis a]]])]))
 
-/-! Row 9: the tropical scatter guard fires before the bare/affine slot split. -/
-#guard causeIs isPolicy (admitSourceSorted (bareScatter .max))
-#guard causeIs isPolicy (admitSourceSorted (bareScatter .min))
+/-! Row 9: a bare tropical scatter is admitted and selects its tropical carrier (S3b T7). -/
+#guard selected (bareScatter .max) == "maxPlus"
+#guard selected (bareScatter .min) == "minPlus"
 
 /-! Row 10: accept-neighbour. The same bare scatter with `sum` is still admitted and selects `real`:
 the sorted flag must not over-refuse. -/

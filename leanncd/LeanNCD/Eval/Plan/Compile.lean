@@ -198,7 +198,7 @@ def checkNonlinScanBlock (_stmtName : String) : Nonlin → Except CapabilityErro
   | .axiswise .. => pure ()
 
 /-- Aggregation-op admission. `.max`/`.min` are now admitted — they compile to the tropical
-    semirings (`algebraForAgg`) the reference `Combine.max`/`Combine.min` already evaluate. Like
+    semirings max-plus / min-plus (`algebraForAgg`) the reference `Combine.max`/`Combine.min` evaluate. Like
     `checkNonlinTopLevel`'s admission of `.pointwise`/`.axiswise`, this diverges from C0's frozen
     `classifyAggOp` (`test/Eval/Plan/ContractTest.lean`), which still classifies `.max`/`.min` as
     `unsupportedAgg`; the divergence is deliberate and documented, not a stale mirror. The
@@ -538,14 +538,6 @@ private def scatterPlacementOrFail (srcUids : List UID) (srcShape : Array Nat)
     | none => throw (.unsizedScatterOutput sl)
   return (coeffsAcc, biasAcc, shapeAcc)
 
-/-- A top-level scatter is admitted only for `agg = .sum` (S3a): a `maxreduce`/`minreduce` scatter is
-    refused, tropical scatter being S3b's. The refusal keeps the `scatterOptsNotAdmitted
-    "{nm}: fill"` constructor and text: `SortedDifferential.confirmsSorted` (Semantics/Source)
-    matches it. -/
-private def scatterAggOrFail (context : String) : AggOp → Except CapabilityError Unit
-  | .sum => pure ()
-  | .max | .min => throw (.scatterOptsNotAdmitted context)
-
 /-- First UID that recurs later in the list. Mirrors `Prepared.lean`'s `firstDuplicateName` and
     `Block.lean`'s `firstDuplicateSlot` (same shape, different element type) so a duplicate-axis
     rejection can name the offending axis rather than merely reporting that one exists. -/
@@ -648,10 +640,10 @@ def lowerMaskPredicate (outputUids : List UID) (mask : BoolExpr) : PosBoolExpr :
   lowerBoolExprPos ({} : HashMap UID Int) outputUids mask
 
 /-- Select the checked contraction algebra a source statement's aggregation op compiles to. `sum`
-    is Wave C's real sum-product; `max`/`min` are the tropical semirings, whose reduction identity
-    (`−∞`/`+∞`) differs from the `zeroPad` out-of-bounds pad (`0`) — the pad is a factor value that
-    still flows through `factorOp` (mul), so only the reduction identity changes here, matching the
-    reference `Combine.max`/`Combine.min`. -/
+    is Wave C's real sum-product; `max`/`min` are the tropical semirings max-plus / min-plus
+    (`⊗ = +` with identity `0`; `⊕` = NaN-propagating `max`/`min` with identity `−∞`/`+∞`), matching
+    the reference `Combine.max`/`Combine.min`. The `zeroPad` out-of-bounds pad of a bare read is
+    the algebra's `reduceId` (0_K: `-inf` for max-plus, `+inf` for min-plus); a unary read pads with `0`. -/
 def algebraForAgg : AggOp → ContractionAlgebra
   | .sum => admittedAlgebra
   | .max => admittedAlgebraMax
@@ -719,9 +711,13 @@ def algebraForDest (destDtype : ScalarDType) (agg : AggOp) : ContractionAlgebra 
 private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     (stmtName : String) (contextUids : List UID) (contextShape : Array Nat)
     (outputUids : List UID) (pins : HashMap UID Int)
-    (resolveSource : String → TensorSlot × Array Nat)
+    (resolveSource : String → TensorSlot × Array Nat) (isBoolSlot : TensorSlot → Bool)
     (destSlot : TensorSlot) (outputShape : Array Nat) (agg : AggOp) (terms : List ProdTerm) :
     Except PlanCompileFailure AssignPlan := do
+  -- S3b design §3: a statement is tropical iff its aggregation is `max`/`min` (the same selector
+  -- `algebraForAgg` uses), and a BARE read of a `.bool` source slot in such a statement is cast
+  -- (`ReadPlan.boolToTropical`). A `.unaryFn` read is never cast (it takes real input).
+  let tropical : Bool := match agg with | .sum => false | .max | .min => true
   let mut termsAcc : Array TermPlan := #[]
   for term in terms do
     let termUids := (termAxisUIDs term).eraseDups
@@ -748,7 +744,8 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
           let coeffs : Array (Array Int) := (rows.map (fun r => r.1.toArray)).toArray
           let biasArr : Array Int := (rows.map (fun r => r.2)).toArray
           factorsAcc := factorsAcc.push
-            (.read { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad })
+            (.read { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad
+                   , boolToTropical := tropical && isBoolSlot sourceSlot })
       | .iverson pred =>
           -- A source Iverson predicate lowers to a positional `PosBoolExpr` over the SAME ordered
           -- basis a `.read` factor uses here (`context ++ output ++ reduction`, real pins folded in),
@@ -883,6 +880,10 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   ---------------------------------------------------------------------------
   -- Phase 1: destructure, per-statement slot discipline, and state/scratch classification.
   ---------------------------------------------------------------------------
+  -- S3b design §3: a sort-neutral writer is evaluated in its destination's sort, so its algebra
+  -- (`algebraForDest`) and its bool -> tropical read cast (`residualizeAssignment`'s `agg`) below
+  -- both follow the state's sort; `Phase 6`'s `initValue` reads the same `scanStateAlgebra`.
+  let (base, recur) := scanStateStmts declEnv base recur
   let baseParts ← liftCapability warnings (base.toArray.mapM (scanPartsOrFail "scan base"))
   let recurParts ←
     liftCapability warnings (recur.toArray.mapM (scanPartsOrFail "scan recurrence"))
@@ -1095,7 +1096,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       let s := baseLocalOf.getD name 0
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment sizes warnings nm [] #[] outputUids pins resolveSource
-      preSlot outputShape rhs.agg rhs.body.terms
+      (fun s => (sigsNow[s]?).any (·.dtype == .bool)) preSlot outputShape rhs.agg rhs.body.terms
     -- Task 4.4: this statement's OWN destination (`nm`, a state or block-local scratch —
     -- classification happens later, once `stateNames.contains nm` is checked in Phase 1 above) may
     -- be `.predicate`-declared exactly like a top-level destination (`Compile.lean`'s `prepareEvalPlan`
@@ -1203,7 +1204,8 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
         | none => scratchNow.getD name 0
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment stepSizes warnings nm ctxUids stepExtents outputUids
-      ({} : HashMap UID Int) resolveSource preSlot outputShape rhs.agg rhs.body.terms
+      ({} : HashMap UID Int) resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool))
+      preSlot outputShape rhs.agg rhs.body.terms
     -- Task 4.4: same per-statement destination-dtype derivation as the base block above — `nm`
     -- here may be a persistent state's recurrence result OR block-local scratch (classification is
     -- still `stateNames.contains nm`, decided below, AFTER this push — "shared by recurrence and
@@ -1342,7 +1344,11 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   ---------------------------------------------------------------------------
   let states : Array StateSlot := (Array.range stateNames.size).map (fun si =>
     { destSlot := outerSigs.size + si, advancingDims := stateAdvDims.getD si #[]
-    , materialization := .completeHistory })
+    , materialization := .completeHistory
+    , initValue := match scanStateAlgebra declEnv (base ++ recur) (stateNames.getD si "") with
+        | .maxPlus => .negInf
+        | .minPlus => .posInf
+        | .real | .bool => .zero })
   let raw : RawScanPlan :=
     { states
     , baseBlock :=
@@ -1585,14 +1591,14 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
           (sourceSlot, (sigsNow.getD sourceSlot { shape := #[], dtype := .f64 }).shape)
         let computePlan ←
           residualizeAssignment sizes warnings nm [] #[] srcUids ({} : HashMap UID Int)
-            resolveSource destSlot srcShape rhs.agg rhs.body.terms
+            resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool)) destSlot srcShape
+            rhs.agg rhs.body.terms
         -- Destination dtype and algebra are selected exactly as the plain branch selects them: by
         -- the DESTINATION's own declaration, never by a source factor's.
         let destDtype := dtypeOfDecl (declEnv[nm]?)
         let computePlan := { computePlan with algebra := algebraForDest destDtype rhs.agg }
         let (outCoeffs, outBias, destShape) ←
           liftShape warnings (scatterPlacementOrFail srcUids srcShape slots)
-        liftCapability warnings (scatterAggOrFail s!"{nm}: fill" rhs.agg)
         tensorSigsAcc := tensorSigsAcc.push { shape := destShape, dtype := destDtype }
         stepsAcc := stepsAcc.push (.scatter
           { compute := computePlan, destShape, outCoeffs, outBias })
@@ -1638,7 +1644,8 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         -- behavior exactly (Task 2's whole point; see `residualizeAssignment`'s doc comment).
         let assignPlan ←
           residualizeAssignment sizes warnings nm [] #[] retainedUids ({} : HashMap UID Int)
-            resolveSource destSlot outputShape rhs.agg rhs.body.terms
+            resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool)) destSlot outputShape
+            rhs.agg rhs.body.terms
         match rhs.nonlin with
         | .identity =>
             -- Byte-for-byte unchanged for a REAL destination (Thread 4 regression gate): single

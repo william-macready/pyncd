@@ -23,7 +23,7 @@ concrete `DenseTensor`).
 - [8b. Consuming scatter outputs (upsampling decoders / GNN readback)](#8b-consuming-scatter-outputs-upsampling-decoders--gnn-readback)
 - [9. Relational / logic (tensor-logic's logic side)](#9-relational--logic-tensor-logics-logic-side)
 - [10. Losses, reductions & statistics](#10-losses-reductions--statistics)
-- [11. Tropical / max-times semiring](#11-tropical--max-times-semiring)
+- [11. Tropical / max-plus & min-plus semirings](#11-tropical--max-plus--min-plus-semirings)
 - [12. Tensor networks / decomposition](#12-tensor-networks--decomposition)
 - [12b. Advanced & generative domains](#12b-advanced--generative-domains)
 - [12c. Classical ML, probabilistic & RL](#12c-classical-ml-probabilistic--rl)
@@ -79,13 +79,13 @@ reporting; `RejectTest` and `KnownGapTest` are unchanged; `RecurrenceTest` is hy
 | [`LinAlgTest.lean`](../test/Eval/Portfolio/LinAlgTest.lean) | §2 | LA1, LA3–LA9 | LA2 `[✔]` |
 | [`FeedforwardTest.lean`](../test/Eval/Portfolio/FeedforwardTest.lean) | §3 | FF1–FF8 (FF5–FF8: `sigmoid`/`tanh`/`gelu`/`leakyrelu`) | — |
 | [`AttentionTest.lean`](../test/Eval/Portfolio/AttentionTest.lean) | §4 | AT1, AT3–AT12 | AT2 `[✔]` |
-| [`ConvPoolTest.lean`](../test/Eval/Portfolio/ConvPoolTest.lean) | §5 | CV1, CV2, CV4–CV9 | CV3 `[✔]` |
+| [`ConvPoolTest.lean`](../test/Eval/Portfolio/ConvPoolTest.lean) | §5 | CV1, CV2, CV4–CV9; S3b padded-window rows CV5o, CV5od, CV5r, CV5b, CV5u, CV5ud | CV3 `[✔]` |
 | [`NormTest.lean`](../test/Eval/Portfolio/NormTest.lean) | §6 | NM1–NM5 | — |
 | [`RecurrenceTest.lean`](../test/Eval/Portfolio/RecurrenceTest.lean) | §7 | RC2–RC10 (RC4/RC9 reject via `run_cmd do`; RC5 asserts correct `maxreduce`-in-scan output; RC6 asserts correct 2-D scan output; RC6-compile checks (via `run_cmd do`) that the 2-D scan lowers to a single well-formed rank-2 Br `.scan` step; RC7 `minreduce`-in-scan; RC8 3-D nested scan; RC9 rejects a heterogeneous coupled multi-axis scan (`inconsistentScanAxes`); RC10 multi-axis `maxreduce`) — **hybrid file** | RC1 `[✔]` |
-| [`GnnScatterTest.lean`](../test/Eval/Portfolio/GnnScatterTest.lean) | §8, §8b | GN1–GN5 (GN5: friendly `/` operator), SC1–SC8 | GN6 `[F]` (comment) |
+| [`GnnScatterTest.lean`](../test/Eval/Portfolio/GnnScatterTest.lean) | §8, §8b | GN1–GN5 (GN5: friendly `/` operator; GN4m: min-plus bool-cast twin of GN4), SC1–SC8 | GN6 `[F]` (comment) |
 | [`RelationalTest.lean`](../test/Eval/Portfolio/RelationalTest.lean) | §9 | RL1–RL4, RL6–RL8 | RL5 `[✔]` |
 | [`StatsLossTest.lean`](../test/Eval/Portfolio/StatsLossTest.lean) | §10 | ST1–ST6 (ST6 uses inline `log(...)`) | — |
-| [`TropicalTest.lean`](../test/Eval/Portfolio/TropicalTest.lean) | §11 | TR3, TR6, TR7 (`minreduce` added) | TR1/TR2/TR4 `[✔]`; TR5 `[F]` (min-plus half, comment) |
+| [`TropicalTest.lean`](../test/Eval/Portfolio/TropicalTest.lean) | §11 | TR3, TR3d, TR5, TR5d, TR6, TR7, TR7d, TR9, TR9d, TR10, TR10d, TR10e, TR10ed (S3b: max-plus/min-plus values; `…d` = negation-duality twins) | TR1/TR2/TR4 `[✔]` |
 | [`TensorNetTest.lean`](../test/Eval/Portfolio/TensorNetTest.lean) | §12 | TN1–TN4 | — |
 | [`GenerativeTest.lean`](../test/Eval/Portfolio/GenerativeTest.lean) | §12b | DF1–DF4, ME1–ME3, SS1–SS3, PE1, CL1–CL4, CL3b (DF4/CL4 use inline `sin(...)`/`log(...)`; CL3/CL3b use `l2normalize`) | PE2/PE3 `[F]` (comment, see note); ME4 `[F]` gather; SS4 → `RejectTest` (comment) |
 | [`ClassicalMLTest.lean`](../test/Eval/Portfolio/ClassicalMLTest.lean) | §12c | CM1–CM6, CM1b (`sqrt(...)`) | CM7–CM9 `[F]` (comment) |
@@ -225,20 +225,20 @@ too) or target one file, e.g. `lake build Eval.Portfolio.AttentionTest`. LSpec g
 | RC2 | simple RNN `S[j,0]:=X0[j]` `S[j,l +1] := relu(S[j,l]·W[j,k])` | 1-feature, W=1 | single scan, self-recurrence | `[N]` |
 | RC3 | prefix-sum via mask `C[i] := X[j] · [j ≤ i]` | X=`[1,2,3]`, `axis i,j = 3` → `[1,3,6]` | **cumulative sum without a scan** (triangular Iverson) | `[N]` `[E]` |
 | RC4 | `S[j, l +1] := S[j, l] + X[j, l + 1]` (scan step reads external at advancing index) | `X=[[1,2,3]]` | compile → `causalityViolation "S"` | `[R]` |
-| RC5 | `M[j, l +1] := maxreduce(M[j,l] · W[j,k])` (`maxreduce` in a scan step) | `X=[2], W=[[1,3]]` → `[2,6,18]` (max-step `M×3`) | the scan step honors the `maxreduce` agg (tropical max) | `[N]` |
+| RC5 | `M[j, l +1] := maxreduce(M[j,l] · W[j,k])` (`maxreduce` in a scan step) | `X=[2], W=[[1,3]]` → `[2,5,8]` (max-plus step `M+3`; was max-times `[2,6,18]` before S3b) | the scan step honors the `maxreduce` agg (tropical max-plus) | `[N]` |
 | RC6 | **2D / nested recurrence** (grid-DP / PixelRNN) `G[r +1, c +1] := G[r,c] + A[r,c]` | base G=0, A=ones(2×2) → `[[0,0],[0,1]]` (only the fully-advanced cell `G[1,1]` is written; boundary cells `r=0`/`c=0` keep the zero-default) | both advancing iteration axes are tracked through the scan | `[N]` |
-| RC7 | `M[j, l +1] := minreduce(M[j,l] · W[j,k])` (`minreduce` in a scan step) | `X=[2], W=[[2,3]]` → `[2,4,8]` (min-step `M×2`) | **min-agg in a scan** (KG-min; mirrors RC5) — the scan step honors `minreduce` via the KG-scanagg plumbing | `[N]` |
+| RC7 | `M[j, l +1] := minreduce(M[j,l] · W[j,k])` (`minreduce` in a scan step) | `X=[2], W=[[2,3]]` → `[2,4,6]` (min-plus step `M+2`; was min-times `[2,4,8]` before S3b) | **min-agg in a scan** (KG-min; mirrors RC5) — the scan step honors `minreduce` via the KG-scanagg plumbing | `[N]` |
 | RC8 | **3-D nested scan** `G[a +1, b +1, d +1] := G[a,b,d] + T[a,b,d]` | axes a,b,d size 2; base S=0, T=ones(2×2×2) → 2×2×2 tensor with a single `1` at `[1,1,1]`, all boundary cells `0` | **generality of n-D support** (KG-2dscan): confirms multi-axis scans generalize past the 2-D case (RC6) to 3 axes, with the same zero-default boundary semantics | `[N]` |
 | RC9 | **heterogeneous coupled multi-axis scan** — `H[j, c +1]` (advances over `{c}`) coupled via shared `c` with `G[r +1, c +1]` (over `{r,c}`) | compile → `inconsistentScanAxes "H"` | **FAIL-LOUD guard (design §5)**: coupled state tensors advancing over *different* axis sets are rejected, not silently mis-addressed. Homogeneous couplings (RC1, both over `l`) and single-tensor multi-axis scans (RC6/RC8) are unaffected | `[R]` |
-| RC10 | **multi-axis scan with a tropical step** `G[r +1, c +1] := maxreduce(G[r,c] · W[r,c,k])` | Z=`[2,5]` (c=0 column base), W[0,0,:]=`[1,3]` → `[[2,0],[5,6]]` (`G[1,1]=max(2·1,2·3)=6`, not sum `8`) | **KG-scanagg × KG-2dscan interaction**: `maxreduce` agg inside a 2-D scan (agg-in-scan + multi-axis together); tropical max honored under zero-default boundaries | `[N]` `[E]` |
+| RC10 | **multi-axis scan with a tropical step** `G[r +1, c +1] := maxreduce(G[r,c] · W[r,c,k])` | Z=`[2,5]` (c=0 column base), W[0,0,:]=`[1,3]` → `[[2,-∞],[5,5]]` (`G[1,1]=max(2+1,2+3)=5`, not sum `8`; the unwritten cell `G[0,1]` is the sort's `0_K = -∞`; RC10m is the min-plus twin, unwritten cell `+∞`; was `[[2,0],[5,6]]` before S3b) | **KG-scanagg × KG-2dscan interaction**: `maxreduce` agg inside a 2-D scan (agg-in-scan + multi-axis together); tropical max honored under zero-default boundaries | `[N]` `[E]` |
 | SB1–SB7 | **affine scatter writes into scan state**: strided base, strided recurrence, even/odd base interleave, contraction-before-placement, non-trailing advancing dimension, two affine non-advancing dimensions, and two scans with one S-B node | exact histories, shapes, and materialized key sets pinned in `Eval.Plan.DifferentialTest.scanScatterPrograms` | seven source-generated programs compared pairwise across checked plan, legacy scan evaluator, and independent scan-free oracle; exact corpus length 7 | `[N]` `[E]` |
 
 > **RC4**: a scan step reading an external at the advancing index `l + 1` is rejected with
 > `CompileError.causalityViolation` (the compiler treats any next-index read as a future
 > dependency, even for non-state externals).
-> **RC5**: `maxreduce` inside a scan step reduces with tropical max `(×, max, −∞)`, via the
+> **RC5**: `maxreduce` inside a scan step reduces with tropical max-plus `(+, max, −∞, 0)`, via the
 > aggregator's `Combine` threaded through `evalStmtSlice`/`evalAssignSeeded` (`Eval/Scan.lean`,
-> `Eval/Contract.lean`); asserts `[2,6,18]`.
+> `Eval/Contract.lean`); asserts `[2,5,8]`.
 > **RC6/RC8**: multi-axis (n-D) recurrences evaluate correctly — positional base recovery plus
 > nested evaluation track every advancing axis, and a scan step writes only fully-advanced cells
 > (boundary cells keep their zero-allocated/base value — **zero-default** boundary semantics).
@@ -248,8 +248,8 @@ too) or target one file, e.g. `lake build Eval.Portfolio.AttentionTest`. LSpec g
 > **RC9/RC10:** RC9 pins the fail-loud guard (design §5) — a *heterogeneous* coupled multi-axis
 > scan (coupled tensors advancing over different axis sets) is rejected with
 > `inconsistentScanAxes` rather than silently mis-addressed. RC10 exercises a `maxreduce` step
-> inside a 2-D scan, confirming tropical aggregation and multi-axis nesting compose (tropical max
-> honored, zero-default boundaries).
+> inside a 2-D scan, confirming tropical aggregation and multi-axis nesting compose (max-plus
+> honored; a scan state starts at its sort's `0_K`, so the unwritten boundary cell is `-∞`, S3b T6).
 
 ## 8. Graph / message passing (GNN)
 
@@ -309,17 +309,21 @@ base is a 2× upsample `Out[2*i,2*j] := X[i,j]` with X=`[[1,2],[3,4]]`
 | ST5 | residual via `−1` scalar `r[i] := Yhat[i] + m1[]·Y[i]` (`m1=−1`) | Yhat=`[5,3]`, Y=`[2,1]` → `[3,2]` | no `−` operator, but subtraction works via a rank-0 `−1` (⇒ MSE `sse[]:=r[i]·r[i]` is expressible) | `[N]` `[E]` |
 | ST6 | cross-entropy `L[] := m1[]·Y[i]·log(P[i])` (`log(...)` inline on a factor, ST5's `−1` trick for the minus) | Y=`[1,0]`, P=`[0.5,0.5]` → `ln 2 ≈ 0.6931472` | inline unary transcendental function on a single factor (`Factor.unaryFn`) | `[N]` |
 
-## 11. Tropical / max-times semiring
+## 11. Tropical / max-plus & min-plus semirings
+
+Since S3b a `maxreduce`/`minreduce` statement is the true semiring max-plus `(+, max, −∞, 0)` / min-plus `(+, min, +∞, 0)`: the factors of a term add, `0_K` (`−∞`/`+∞`) is the empty reduction, the unwritten cell and the out-of-range pad, and a bool read is cast (false ↦ `0_K`, true ↦ `1_K = 0`). Record: `papers/semantics/additive_s3b_record.md`. Plan-level coverage: `Eval.Plan.BoolCastTest` (cast, scan state init) and `Eval.Plan.DualityTest` (negation duality `min-plus(x) = −max-plus(−x)` over the whole 3832-program sweep, 17 scan cases, scatters).
 
 | ID | Prog | Data → Expected | Probes | Tag |
 |----|------|-----------------|--------|-----|
 | TR1 | `C[i] := maxreduce(A[i,k])` | A=`[[3,1,4],[1,5,9]]` → `[4,9]` | basic max-reduction | `[✔]` |
-| TR2 | `C[i] := maxreduce(A[i,k] · B[k])` | max of products | max-times combine | `[✔]` |
-| TR3 | `R[i,k] := maxreduce(P[i,j] · P[j,k])` | P=reliability `[[0,0.9],[0.8,0]]` → most-reliable 2-hop | max-times "best path" | `[N]` `[E]` |
+| TR2 | `C[i] := maxreduce(A[i,k] · B[k])` | max of sums | max-plus combine | `[✔]` |
+| TR3 | `R[i,k] := maxreduce(P[i,j] · P[j,k])` | P=reliability `[[0,0.9],[0.8,0]]` → `[[1.7,0.9],[0.8,1.7]]` (was max-times `[0.72,0,0,0.72]`) | max-plus "best path" score; TR3d is the min-plus twin on negated data | `[N]` `[E]` |
 | TR4 | all-negative input max | A=`[[-2,-5,-1]]` → `[-1]` | `-∞` unit doesn't pollute | `[✔]` |
-| TR6 | `C[i] := minreduce(A[i,k])` | A=`[[3,1,4],[1,5,9]]` → `[1,1]` | **basic min-reduction** (min analog of TR1); tropical min `(×, min, +∞)` | `[N]` |
-| TR7 | `C[i] := minreduce(A[i,k] · B[k])` | A=`[[3,1,4],[2,2,2]]`, B=`[2,5,1]` → `[4,2]` | **min-times combine** (min analog of TR2) | `[N]` |
-| TR5 | min-*plus* shortest path (Viterbi/Bellman step) | — | `minreduce` supplies the `min` agg, but min-plus still needs `+` as the within-term combine ⇒ **partial gap** | `[F]` (KG-min, min-plus half) |
+| TR6 | `C[i] := minreduce(A[i,k])` | A=`[[3,1,4],[1,5,9]]` → `[1,1]` | **basic min-reduction** (min analog of TR1); tropical min `(+, min, +∞, 0)` | `[N]` |
+| TR7 | `C[i] := minreduce(A[i,k] · B[k])` | A=`[[3,1,4],[2,2,2]]`, B=`[2,5,1]` → `[5,3]` (was min-times `[4,2]`) | **min-plus combine** (min analog of TR2); TR7d is the max-plus twin | `[N]` |
+| TR5 | min-*plus* shortest path (Viterbi/Bellman step) `D2[i,k] := minreduce(D[i,j] · D[j,k])` | D=`[[0,1,5],[9,0,2],[3,9,0]]` → `[[0,1,3],[5,0,2],[3,4,0]]` | the former KG-min min-plus gap, CLOSED by S3b-i (same surface, the statement sort supplies `+`); TR5d is the max-plus twin | `[N]` |
+| TR9 | single-factor `C[i] := maxreduce(A[i,k])` | A=`[[3,1,4],[-2,-5,-9]]` → `[4,-2]` | accept-neighbour, unchanged by the flip (no `⊗` to apply); TR9d min-plus twin | `[N]` |
+| TR10 | Iverson mask under max-plus `C[i] := maxreduce(X[j] · [j ≤ i])` | X=`[-3,-1,-2]` → `[-3,-1,-1]`; TR10e: an all-false row is `0_K` (`[-∞,-3,-1]`) | false Iverson is `0_K`, true is `1_K = 0`, so the mask is visible on the max (was invisible: `[-1,-1,-1]`); TR10d/TR10ed min-plus twins | `[N]` |
 
 ## 12. Tensor networks / decomposition
 
@@ -472,14 +476,14 @@ gap is closed — a built-in regression alarm. Cross-referenced above by `KG-*`.
 | KG-datamask | `where` masks are **index predicates only** — cannot read a data tensor (`where edge[i,j] > 0`) — parse-fail | GAT / any graph-structured masked softmax over a runtime adjacency | `[F]` |
 | KG-solve | no linear **solve / inverse / eigendecomp / determinant** (only contraction) | closed-form regression, PCA, spectral GCN, normalizing-flow log-det | `[F]` |
 | KG-idxvalue | index arithmetic yields **booleans only** (via Iverson) — never a numeric tensor value; blocks computing `ω^i`/index-derived biases inside the DSL (they must be supplied as precomputed input tensors, e.g. DF4) | ALiBi, relative-position numeric bias, distance-decay weights | `[F]` |
-| KG-min | min aggregation (`minreduce`, tropical min-times `(×, min, +∞)` — see TR6/TR7, RC7) is supported. Still open: **additive within-term combine** (min-*plus* semiring, `+` instead of `×`) and **argmin** (index output, cf. KG-idxvalue) | shortest path, Viterbi, DTW (need min-plus); k-means (needs argmin) | `[F]` (partial) |
+| KG-min | min aggregation (`minreduce`, tropical min-plus `(+, min, +∞, 0)` since S3b-i — see TR5/TR6/TR7, RC7) is supported; the additive within-term combine gap is closed. Still open: **argmin** (index output, cf. KG-idxvalue) | k-means (needs argmin); (shortest path, Viterbi, DTW now expressible via min-plus, TR5) | `[F]` (partial) |
 | KG-gather | data-dependent gather/scatter with an **index tensor** (indices must be affine) — see [§19.1](#191-kg-gather--data-dependent-gatherscatter) for a fix design & proof-burden analysis | embedding lookup by ids, edge-list scatter-add, top-k | `[F]` |
 | KG-scale | free scalar literal on the RHS (e.g. `· 0.5`) | 1/√d attention scaling (workaround: rank-0 tensor, see AT6) | `[F]`? |
 | KG-recur | `recurMorphism` / `scanPre` escape hatch (AST-only) | programmatic recurrences | `[F]` |
 | KG-scanprojection | a per-step scan read-out (e.g. `y[j,l] := C[j,k]·h[k,l]`) written **inside** the same scan block as its state `h` — rejected at compile time (`scanProjectionUnsupported`), not silently dropped. Not a missing capability: the identical statement written standalone *after* the scan (reading the materialized state) already works — see SS2 (§12b) | any attempt to read out per-step scan state inline instead of as a separate post-scan statement | `[R]` |
 
 > **Design direction — general semiring notation (planned, not yet implemented).** The remaining
-> tropical/semiring gaps (KG-min's min-*plus* half, and future max-plus / log-sum-exp) should be
+> tropical/semiring gaps (KG-min's min-*plus* half is CLOSED since S3b-i; future log-sum-exp remains) should be
 > closed by adopting a **general semiring selector** — an aggregate `⊕` and a within-term
 > combine `⊗` named explicitly, e.g. `D[i,k] := agg(min, +)(D[i,j] · W[j,k])` — rather than one
 > bespoke `AggOp` keyword per combination. See [§19.2](#192-general-semiring-notation--min-plus)
@@ -518,7 +522,7 @@ gap is closed — a built-in regression alarm. Cross-referenced above by `KG-*`.
 | relu | scan, MLP | FF2, FF3 |
 | softmax (± mask) | causal attn | AT1, AT4, AT5, NM2, NM3 |
 | normalize (± mask) | normalize | NM1, NM4 |
-| maxreduce / minreduce | max-pool | CV5, GN4, TR3 (max); TR6, TR7, RC7 (min); RC5 (max-in-1-D-scan), RC10 (max-in-multi-axis-scan) |
+| maxreduce / minreduce | max-pool | CV5, CV5o, GN4, TR3 (max-plus); TR5, TR6, TR7, RC7, GN4m (min-plus); RC5 (max-in-1-D-scan), RC10/RC10m (max/min-in-multi-axis-scan); bool→tropical cast and scan state init: `Eval.Plan.BoolCastTest`; negation duality over the sweep, scan cases and scatters: `Eval.Plan.DualityTest` |
 | Iverson / predicates | band, masked-agg | RL1–RL7, RC3 |
 | Boolean/predicate DECLARED outputs (`predicate P(…)`) through the CHECKED backend | — | `Eval.Plan.DifferentialTest`'s curated `predicatePrograms` corpus — **10 entries** (Task 4.5): the six Iverson/mask donors RL1/RL6/RL7/RL8/NM4/AT12 plus four declared-predicate programs (GN2's predicate adjacency as a `bool` SOURCE into a real destination, an RL1 clone with `predicate I(i, j)`, and a scalar Boolean contraction twice — all-true and non-binary `0.25`/`0.75`). Each runs checked-vs-reference agreement under declaration-aware input signatures plus its observed value; the length is pinned by `#guard`. Deliberately OUTSIDE `PropertyOracle.enumPrograms`, which the affine JAX corpus consumes wholesale |
 | Boolean scan state / scratch (three-way oracle) | — | `Eval.Plan.DifferentialTest`'s curated three-way scan set — 7 entries, of which two are Boolean (`template4Bool`'s `predicate S(l)` and `template3BoolCase`'s coupled `predicate G(l)` / real `H`): compiled checked plan, legacy `evalScheduled`, and the independent scan-free unrolling must all agree |
@@ -589,7 +593,7 @@ them (there is no expressible program to test). Priority order for practical ML 
 | Priority | Gap | Blocks |
 |----------|-----|--------|
 | High | **KG-gather** — no data-dependent gather/scatter | Embedding lookup, edge-list scatter-add, top-k routing |
-| Medium | **KG-min** (partial) — `min` aggregation (`minreduce`) is supported; still missing additive within-term combine (min-plus) and argmin | Shortest path, Viterbi, DTW (min-plus); k-means argmin |
+| Medium | **KG-min** (partial) — `min` aggregation is min-plus since S3b-i (additive combine closed, TR5); still missing argmin | k-means argmin |
 | Lower | **KG-solve** — no linear solve/inverse | Closed-form regression, PCA, normalizing-flow log-det |
 | Lower | **KG-idxvalue** — index arithmetic yields booleans only | ALiBi, relative-position numeric bias |
 | Lower | **KG-datamask** — `where` clauses are index predicates only | GAT data-driven masked softmax |
@@ -682,6 +686,8 @@ fix's cost differs sharply between them:
   extension.
 
 ### 19.2 General semiring notation — min-plus
+
+> **Status (S3b-i):** the semantic half of this proposal landed differently: each statement has a SORT (`SortAlgebra`: real/bool/max-plus/min-plus, `DSL/AGENTS.md`), so `minreduce(A · B)` IS min-plus and TR5 is a live `[N]` test; the explicit `agg(⊕, ⊗)` surface below was not built. The text below is the original design, kept as history (its `⊗`-hardcoded-to-multiplication claim is stale).
 
 This expands the §14 "Design direction — general semiring notation" stub into a concrete,
 file-grounded plan. The gap it closes is the remaining half of **KG-min**: `minreduce` already

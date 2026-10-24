@@ -255,7 +255,8 @@ inductive ScanPlanError
   | boundaryPolicyNotAdmitted     (policy : ScanBoundaryPolicy)
   | snapshotPolicyNotAdmitted     (policy : ScanSnapshotPolicy)
   | materializationPolicyNotAdmitted (stateIndex : Nat) (policy : MaterializationPolicy)
-  | causalityFailure              (stateIndex blockStepIndex termIndex factorIndex : Nat)  -- F3 Task 2
+  | stateInitNotAdmitted          (stateIndex : Nat) (init : StateInit) (dtype : ScalarDType)
+  | causalityFailure             (stateIndex blockStepIndex termIndex factorIndex : Nat)  -- F3 Task 2
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Evidence that one `RawScanPlan` is a sound checked scan: both blocks are checked, every
@@ -542,6 +543,10 @@ private def checkScanCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSigna
         throw (.advancingSizeMismatch si i (raw.historyExtents.getD i 0) (stateSig.shape.getD d 0))
     unless st.materialization == .completeHistory do
       throw (.materializationPolicyNotAdmitted si st.materialization)
+    -- A tropical `0_K` (`±∞`) is a float value: a Boolean state holds `{0,1}` and cannot start at it.
+    -- (`scanDtypeAdmitted` above already admits only the carrier's own float dtype or `bool`.)
+    unless st.initValue == .zero || stateSig.dtype != .bool do
+      throw (.stateInitNotAdmitted si st.initValue stateSig.dtype)
   unless raw.iterationOrder == .axisZeroFastest do
     throw (.iterationOrderNotAdmitted raw.iterationOrder)
   unless raw.boundaryPolicy == .zeroThenBaseOverlay do
@@ -728,7 +733,7 @@ private def commitWrite {α : Type} (zero : α) (target : DenseTensorOf α) (w :
     built at exactly `raw.tensorSigs.size` and handed here unchanged) and the signature tie above:
     a differently-sized store is evidence the caller built it against a different table, which is
     the same lie the tie rejects. -/
-private def runDenseScanWith {α : Type} (zero : α)
+private def runDenseScanWith {α : Type} (zero negInf posInf : α)
     (runBlock : CheckedPlanBlock → List Int → Array (DenseTensorOf α) →
       Except PositionalInputError (Array (DenseTensorOf α)))
     (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array (DenseTensorOf α)) :
@@ -739,7 +744,11 @@ private def runDenseScanWith {α : Type} (zero : α)
   let raw := c.raw
   let mut states : Array (DenseTensorOf α) := raw.states.map (fun st =>
     let sig := c.sigs.getD st.destSlot { shape := #[], dtype := .f64 }
-    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) zero })
+    let init := match st.initValue with
+      | .zero => zero
+      | .negInf => negInf
+      | .posInf => posInf
+    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) init })
   let baseExternalInputs ← raw.baseBlock.inputs.mapM (fun inputSlot =>
     match raw.baseCaptures.find? (fun cap => cap.inputSlot == inputSlot) with
     | none => throw (PositionalInputError.arityMismatch 0 0)  -- unreachable: checked (checkCaptures)
@@ -777,14 +786,16 @@ def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStor
     Except PositionalInputError (Array DenseTensor) := do
   unless c.storageKind == .float64 do
     throw (.storageKindMismatch .float64 c.storageKind)
-  runDenseScanWith 0.0 runDenseBlock sigs c outerStore
+  runDenseScanWith 0.0 (-1.0 / 0.0) (1.0 / 0.0) runDenseBlock sigs c outerStore
 
-/-- Execute a checked BINARY32 scan: the same worker, native `Float32` state and `+0` zero
-    initialization, `runDenseBlock32` for both blocks. Storage-kind guard first. -/
+/-- Execute a checked BINARY32 scan: the same worker, native `Float32` state and per-state
+    `initValue` initialization (`+0`, or the binary32 `0xff800000`/`0x7f800000` `0_K`),
+    `runDenseBlock32` for both blocks. Storage-kind guard first. -/
 def runDenseScan32 (sigs : Array TensorSignature) (c : CheckedScanPlan)
     (outerStore : Array DenseTensor32) : Except PositionalInputError (Array DenseTensor32) := do
   unless c.storageKind == .float32 do
     throw (.storageKindMismatch .float32 c.storageKind)
-  runDenseScanWith (0.0 : Float32) runDenseBlock32 sigs c outerStore
+  runDenseScanWith (0.0 : Float32) (Float32.ofBits 0xff800000) (Float32.ofBits 0x7f800000)
+    runDenseBlock32 sigs c outerStore
 
 end LeanNCD.Eval.Plan

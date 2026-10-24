@@ -11,7 +11,7 @@ no code with the scatter path:
 1. the scatter's RHS evaluated as an ordinary binary32 ASSIGNMENT (`twin`, free LHS over the same
    source axes) through the F32-A path — `prepareEvalPlan`'s plain branch, `checkAssignF32`,
    `runDenseAssign32` — which never touches `ScatterPlan`, `checkScatterF32`, `runDenseScatter32`,
-   Step D's scatter branch, or `scatterAggOrFail`;
+   Step D's scatter branch;
 2. a placement written HERE from the source LHS text (`place`), with its own row-major helpers — not
    `outCoeffs`/`outBias`, not `applyAffine`/`flatIndex` — into a `destShape` taken from the
    REFERENCE-measured binary64 extents (`ScatterDenseTest` fixtures 1, 2, 4; `DifferentialTest`
@@ -29,8 +29,8 @@ oracle takes `destShape` as given); collision and out-of-range behaviour (every 
 is collision-free and in range — collisions and out-of-range placement are both expressible from
 OTHER surface syntax: collisions via an RHS-only axis with extent > 1, e.g. `Out[2*i] := X[i]·Y[j]`
 (`ScatterCompileTest` S8), out-of-range via the zero-coefficient degeneracy `Out[0*i]`
-(`ScatterCompileTest` S9)); and any tropical destination (source syntax admits only
-sum-product scatter, whose unwritten cells are `0`).
+(`ScatterCompileTest` S9)); and any tropical destination (a top-level max/min scatter is accepted since S3b T3, unwritten cells `-inf`/`+inf`:
+`ScatterCompileTest` S11, `ScatterDense32Test` fixture 1.6c; every case here is real sum-product, whose unwritten cells are `0`).
 -/
 
 namespace LeanNCD.Eval.Plan.Scatter32OracleTest

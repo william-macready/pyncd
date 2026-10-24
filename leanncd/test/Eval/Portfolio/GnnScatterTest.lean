@@ -45,11 +45,26 @@ test "GN3 degree"
 --     i=0: max(X[0], X[1]) = max([1,2],[3,4]) = [3,4].
 --     i=1: max(0·X[0], X[1]) = max([0,0],[3,4]) = [3,4].
 --   ⇒ [[3,4],[3,4]] (sum-agg would give [4,6] for row 0, so this genuinely exercises max).
+--   The tropical ⊗ is `+`, so the `predicate` factor `edge` is read through the bool→max-plus
+--   cast (T5): false ↦ 0_K = −∞, true ↦ 1_K = 0. That gives max(X[0], X[1]) = [3,4] and
+--   max(−∞, X[1]) = [3,4] (the raw 0/1 read would give max-plus(edge + X) = [[4,5],[4,5]]).
 test "GN4 max-aggregation"
     (evalEqB (tlprog!{ predicate edge(i, j)
             H[i, f] := maxreduce(edge[i, j] · X[j, f]) })
       (HashMap.ofList [("edge", tl [2,2] [1,1, 0,1]), ("X", tl [2,2] [1,2, 3,4])])
       "H" (tl [2,2] [3,4, 3,4])) $
+
+-- GN4m  min-plus duality twin of GN4 (negated X), with the mask moved so the masked-out row is the
+--   one that would WIN under a wrong cast. The bool cast maps false to 0_K = +inf (max-plus: -inf),
+--   true to 1_K = 0. edge = [[1,1],[1,0]], X = [[-1,-2],[-3,-4]]:
+--     i=0: min(X[0], X[1]) = [-3,-4];   i=1: min(X[0], +inf) = [-1,-2].
+--   ⇒ [[-3,-4],[-1,-2]]. A false cast of 0.0 would give i=1 = min(X[0], X[1]) = [-3,-4]; the raw
+--   0/1 read (no cast; true adds 1, false adds 0) would give [[-2,-3],[-3,-4]].
+test "GN4m min-aggregation (bool cast false = +inf)"
+    (evalEqB (tlprog!{ predicate edge(i, j)
+            H[i, f] := minreduce(edge[i, j] · X[j, f]) })
+      (HashMap.ofList [("edge", tl [2,2] [1,1, 1,0]), ("X", tl [2,2] [-1,-2, -3,-4])])
+      "H" (tl [2,2] [-3,-4, -1,-2])) $
 
 -- GN5  degree-normalized propagation Ĥ = D⁻¹AX, via the friendly `/` operator (KG-div).
 --   A=[[0,1,1],[1,0,0]] (3 nodes), X=[[1,2],[3,4],[5,6]].

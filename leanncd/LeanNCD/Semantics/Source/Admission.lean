@@ -899,22 +899,17 @@ private def admitAffineWrite (source : AdaptedSource) (original : Nat) (name : S
   else
     throw (sourceError .output origin (.role .defined (source.table.entry dst).role))
 
-/-- `admitStatement`, plus non-bare `.assign` and `.scatter` (whose `fill`/`reduce` options production
-ignores since S3a: collisions sum, so they are not read here either). With `sorted`
-(S2b), a `max`/`min` statement is admitted as its sort-free structure (the aggregation is a
-program-level carrier key, read by `admitSourceSorted`), and a tropical `.scatter` is refused:
-`fill : Int` cannot be the carrier zero (`-inf`/`+inf`), so §2.3's `fill = 0_K` never holds. -/
+/-- `admitStatement`, plus non-bare `.assign` and `.scatter` (admitted alike: since S3a a scatter has
+no options and colliding writes combine with ⊕). With `sorted` (S2b), a `max`/`min` statement,
+assignment or scatter, is admitted as its sort-free structure (the aggregation is a program-level
+carrier key, read by `admitSourceSorted`): the oracle combines colliding writes with the carrier's
+⊕ and leaves an unwritten cell at the carrier's zero (`-inf`/`+inf`), which is production's
+top-level scatter semantics since S3b. -/
 def admitAffineStatement (source : AdaptedSource) (original : Nat) (sorted : Bool := false) :
     Stmt → Except SourceDiagnostic (AdmittedStatement source)
-  | .assign name slots rhs =>
+  | .assign name slots rhs | .scatter name slots rhs =>
     let rhs := if sorted then { rhs with agg := .sum } else rhs
     if slots.all LHSSlot.isFree then admitStatement source original (.assign name slots rhs)
-    else admitAffineWrite source original name slots rhs
-  | .scatter name slots rhs =>
-    if sorted && rhs.agg != .sum then
-      .error (sourceError .statement { statement := some original } (.unsupported .scatterPolicy))
-    else if slots.all LHSSlot.isFree then
-      admitStatement source original (.assign name slots rhs)
     else admitAffineWrite source original name slots rhs
   | stmt => admitStatement source original stmt
 

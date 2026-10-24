@@ -79,15 +79,16 @@ test "RC3 prefix-sum"
       (HashMap.ofList [("X", tl [3] [1,2,3])])
       "C" (tl [3] [1,3,6])) $
 
--- RC5  KG-scanagg (FIXED): `maxreduce` inside a scan step now reduces with tropical max.
---   X0 = 2, W = [1,3].  Max-semantics: Mₗ₊₁ = max(Mₗ·1, Mₗ·3) = 3·Mₗ ⇒ [2,6,18].
---   (Was silently summed to 4·Mₗ ⇒ [2,8,32] before the fix — see §14 KG-scanagg / git history.)
+-- RC5  KG-scanagg (FIXED): `maxreduce` inside a scan step now reduces with tropical max-plus.
+--   X0 = 2, W = [1,3].  Max-plus semantics: Mₗ₊₁ = max(Mₗ+1, Mₗ+3) = Mₗ+3 ⇒ [2,5,8].
+--   (Was max-TIMES before S3b-i: Mₗ₊₁ = 3·Mₗ ⇒ [2,6,18]; and silently summed to 4·Mₗ ⇒ [2,8,32]
+--   before KG-scanagg — see §14 KG-scanagg / git history.)
 test "RC5 maxreduce-in-scan (KG-scanagg, fixed)"
     (evalEqB (tlprog!{ iter l = 3
             M[j, 0]    := X0[j]
             M[j, l +1] := maxreduce(M[j, l] · W[j, k]) })
       (HashMap.ofList [("X0", tl [1] [2]), ("W", tl [1,2] [1,3])])
-      "M" (tl [1,3] [2,6,18])) $
+      "M" (tl [1,3] [2,5,8])) $
 
 -- RC6  2-D / nested recurrence (grid-DP / PixelRNN). Base G=0, A=ones(2×2).
 --   Only the fully-advanced cell G[1,1] = G[0,0]+A[0,0] = 1 is written; boundary cells (r=0 or
@@ -100,14 +101,15 @@ test "RC6 2d-scan (KG-2dscan, fixed)"
       "G" (tl [2,2] [0,0, 0,1])) $
 
 -- RC7  `minreduce` inside a scan step (KG-min in a scan; mirrors RC5's maxreduce case).
---   X0 = 2, W = [2,3].  Min-semantics: Mₗ₊₁ = min(Mₗ·2, Mₗ·3) = 2·Mₗ ⇒ [2,4,8].
+--   X0 = 2, W = [2,3].  Min-plus semantics: Mₗ₊₁ = min(Mₗ+2, Mₗ+3) = Mₗ+2 ⇒ [2,4,6].
+--   (Was min-TIMES before S3b-i: Mₗ₊₁ = 2·Mₗ ⇒ [2,4,8].)
 --   Confirms the scan step honors `minreduce` (tropical min), not sum, via the KG-scanagg plumbing.
 test "RC7 minreduce-in-scan"
     (evalEqB (tlprog!{ iter l = 3
             M[j, 0]    := X0[j]
             M[j, l +1] := minreduce(M[j, l] · W[j, k]) })
       (HashMap.ofList [("X0", tl [1] [2]), ("W", tl [1,2] [2,3])])
-      "M" (tl [1,3] [2,4,8])) $
+      "M" (tl [1,3] [2,4,6])) $
 
 -- RC8  3-D nested scan (generality of n-D support). Axes a,b,d each size 2. Base S = 0 on the
 --   d=0 plane; step adds T=ones. Only the fully-advanced cell G[1,1,1] = G[0,0,0]+T[0,0,0] = 1
@@ -123,14 +125,26 @@ test "RC8 3d-scan"
 --   KG-scanagg × KG-2dscan interaction (RC5/RC7 are 1-D tropical; RC6/RC8 are multi-axis sum).
 --   2×2 grid: base `G[r,0]` fills the c=0 column from Z=[2,5]; the step writes only the fully
 --   advanced cell G[1,1] under zero-default boundaries. Only tuple (r,c)=(0,0) is iterated:
---     G[1,1] = maxₖ(G[0,0] · W[0,0,k]) = max(2·1, 2·3) = max(2,6) = 6   (tropical max, NOT sum=8).
---   Boundary/base cells: G[0,0]=Z[0]=2, G[1,0]=Z[1]=5, G[0,1]=0 (r=0 boundary, unwritten).
---   Row-major [r][c] ⇒ [[2,0],[5,6]] = [2,0,5,6]. (W[0,0,:]=[1,3]; other W cells unused.)
+--     G[1,1] = maxₖ(G[0,0] + W[0,0,k]) = max(2+1, 2+3) = max(3,5) = 5   (max-plus, NOT sum=8).
+--   Boundary/base cells: G[0,0]=Z[0]=2, G[1,0]=Z[1]=5, G[0,1]=0_K=−∞ (r=0 boundary, unwritten:
+--   a scan state starts at 0_K of its sort, here max-plus via the recurrence; S3b T6).
+--   Row-major [r][c] ⇒ [[2,−∞],[5,5]] = [2,−∞,5,5]. (W[0,0,:]=[1,3]; other W cells unused.)
+--   (Before S3b-i, max-TIMES: G[1,1] = max(2·1, 2·3) = 6 ⇒ [2,0,5,6]; before T6 the unwritten
+--   cell G[0,1] was the real 0 ⇒ [2,0,5,5].)
 test "RC10 multi-axis maxreduce (KG-scanagg × KG-2dscan)"
     (evalEqB (tlprog!{ iter r = 2, c = 2
             G[r, 0]       := Z[r]
             G[r +1, c +1] := maxreduce(G[r, c] · W[r, c, k]) })
       (HashMap.ofList [("Z", tl [2] [2,5]), ("W", tl [2,2,2] [1,3, 0,0, 0,0, 0,0])])
-      "G" (tl [2,2] [2,0, 5,6]))
+      "G" (tl [2,2] [2,-1.0 / 0.0, 5,5])) $
+
+-- RC10m  min-plus duality twin of RC10 (negated data): the unwritten cell is 0_K = +∞.
+--   G[1,1] = minₖ(G[0,0] + W[0,0,k]) = min(−2−1, −2−3) = −5 ⇒ [[−2,+∞],[−5,−5]].
+test "RC10m multi-axis minreduce: unwritten cell is +inf"
+    (evalEqB (tlprog!{ iter r = 2, c = 2
+            G[r, 0]       := Z[r]
+            G[r +1, c +1] := minreduce(G[r, c] · W[r, c, k]) })
+      (HashMap.ofList [("Z", tl [2] [-2,-5]), ("W", tl [2,2,2] [-1,-3, 0,0, 0,0, 0,0])])
+      "G" (tl [2,2] [-2,1.0 / 0.0, -5,-5]))
 
 end LeanNCD.Eval

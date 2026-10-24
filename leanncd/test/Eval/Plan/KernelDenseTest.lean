@@ -53,37 +53,58 @@ def dataOf : Except String DenseTensor → Option (Array Float)
 #guard dataOf (runIt sigs contractPlan storeAB) == some #[60.0, 600.0, 6000.0, 60000.0]
 
 -- Tropical reductions: clone `contractPlan`, change only the algebra. `Y[i] := A[i] · B[j]` reduced
--- over `j` under max/min instead of sum. The out-of-bounds zero-pad is untouched (there are no OOB
--- reads here); only the reduction identity/operator changes.
+-- over `j` under max-plus / min-plus instead of sum-product (S3b-i task T1: the tropical ⊗ is `+`,
+-- identity 0, so the two factors of a term ADD). The out-of-bounds zero-pad is untouched (there are
+-- no OOB reads here); the factor op, the reduction op and its identity change.
 
--- max over B = [1,2,3] is 3, so Y[i] = A[i] · 3.  Verified by execution.
+-- max-plus: Y[i] = max_j (A[i] + B[j]) = A[i] + max B = A[i] + 3.  Observed (before S3b-i, max-times:
+-- [30, 300, 3000, 30000]).
 def maxContractPlan : AssignPlan := { contractPlan with algebra := admittedAlgebraMax }
-#guard dataOf (runIt sigs maxContractPlan storeAB) == some #[30.0, 300.0, 3000.0, 30000.0]
+#guard dataOf (runIt sigs maxContractPlan storeAB) == some #[13.0, 103.0, 1003.0, 10003.0]
 
--- min over B = [1,2,3] is 1, so Y[i] = A[i] · 1.  Verified by execution.
+-- min-plus: Y[i] = min_j (A[i] + B[j]) = A[i] + min B = A[i] + 1.  Observed (before S3b-i, min-times:
+-- [10, 100, 1000, 10000]).
 def minContractPlan : AssignPlan := { contractPlan with algebra := admittedAlgebraMin }
-#guard dataOf (runIt sigs minContractPlan storeAB) == some #[10.0, 100.0, 1000.0, 10000.0]
+#guard dataOf (runIt sigs minContractPlan storeAB) == some #[11.0, 101.0, 1001.0, 10001.0]
 
--- Identity is load-bearing: with an all-NEGATIVE `B = [-1,-2,-3]`, max reduces to -1, so
--- Y[i] = A[i]·(-1). Only the `−∞` reduction seed makes this right — a `0` seed would win every
--- column and yield `[0,0,0,0]`. This is the fixture the §3.2 identity mutation flips (and only it,
--- since the two above have positive column maxima the seed never beats). Verified by execution.
+-- With an all-NEGATIVE `B = [-1,-2,-3]` and positive A, max-plus reduces to A[i] + (-1). Observed
+-- (before S3b-i, max-times: [-10, -100, -1000, -10000], where a `0` seed would have won; the sums
+-- are positive now, so THIS fixture no longer separates the `−∞` seed: `negAB` below does).
 def storeNegB : Array DenseTensor :=
   #[ { shape := [4], data := #[10.0, 100.0, 1000.0, 10000.0] }
    , { shape := [3], data := #[-1.0, -2.0, -3.0] }
    , { shape := [4], data := #[] } ]
-#guard dataOf (runIt sigs maxContractPlan storeNegB) == some #[-10.0, -100.0, -1000.0, -10000.0]
+#guard dataOf (runIt sigs maxContractPlan storeNegB) == some #[9.0, 99.0, 999.0, 9999.0]
+
+-- Negation-duality twins: min-plus(x) = -max-plus(-x), so each fixture above has a twin that negates
+-- every input and the expectation. The two directions share one definition (`tropicalAlgebra`), so a
+-- symmetric bug would pass the max-plus rows alone.
+def storeNegA_NegB : Array DenseTensor :=      -- negation of `storeAB`
+  #[ { shape := [4], data := #[-10.0, -100.0, -1000.0, -10000.0] }
+   , { shape := [3], data := #[-1.0, -2.0, -3.0] }
+   , { shape := [4], data := #[] } ]
+#guard dataOf (runIt sigs minContractPlan storeNegA_NegB) == some #[-13.0, -103.0, -1003.0, -10003.0]
+
+def storeNegA_PosB : Array DenseTensor :=      -- negation of `storeNegB`
+  #[ { shape := [4], data := #[-10.0, -100.0, -1000.0, -10000.0] }
+   , { shape := [3], data := #[1.0, 2.0, 3.0] }
+   , { shape := [4], data := #[] } ]
+#guard dataOf (runIt sigs minContractPlan storeNegA_PosB) == some #[-9.0, -99.0, -999.0, -9999.0]
+
+-- Identity is load-bearing: with NEGATIVE A and negative `B = [-1,-2,-3]` every max-plus sum is
+-- negative, so max reduces to A[i] + (-1) = [-11, -101, -1001, -10001]; only the `−∞` reduction seed
+-- makes this right — a `0` seed would win every column and yield `[0,0,0,0]`. This is the fixture the
+-- §3.2 identity mutation flips. Its duality twin is `minContractPlan` on `storeAB` above (A, B > 0,
+-- so every min-plus sum is positive and a `0` seed would win every column there). Observed.
+#guard dataOf (runIt sigs maxContractPlan storeNegA_NegB) == some #[-11.0, -101.0, -1001.0, -10001.0]
 
 -- Out-of-bounds interaction with a tropical reduction — the plan's central subtlety, exercised
 -- directly. `Y[i] := max_j A[i,j]` with the reduction axis `j` ranging over {0,1,2} but `A` only
--- 2 columns wide, so the read at `j=2` is out of bounds and `zeroPad` returns `0.0`. That `0.0`
--- is a FACTOR value (it flows through the factor fold's mul — `foldScalars` at its factor call
--- site in `Dense.lean` — `1.0 · 0.0 = 0.0`) and so enters the max fold as a genuine term value of
--- `0.0` — it is NOT the reduction identity (which is `−∞`). With all-negative valid data the padded
--- `0.0` therefore WINS the max: `Y[i] = max(A[i,0], A[i,1], 0.0) = 0.0`. This is observable and
--- consistent with the reference's identical zero-extension (the pad affects the result, it just
--- does so the same way in both evaluators), not an implementation divergence. Verified by
--- execution.
+-- 2 columns wide, so the read at `j=2` is out of bounds. S3b-i task T2: a BARE out-of-bounds read is
+-- padded with `0_K` of the statement's sort — the algebra's `reduceId` (`−∞` for max-plus) — so the pad
+-- is the identity of the reduction it flows into and never beats a valid cell: with all-negative valid
+-- data `Y[i] = max(A[i,0], A[i,1], −∞) = max(valid cells)`. Before T2 the pad was the real `0.0`, which
+-- WON every all-negative column (`Y = [0, 0]`); the all-negative store below is what separates the two.
 def oobSigs : Array TensorSignature :=
   #[ { shape := #[2, 2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
 
@@ -100,7 +121,77 @@ def oobMaxPlan : AssignPlan :=
 def oobStore : Array DenseTensor :=
   #[ { shape := [2, 2], data := #[-1.0, -2.0, -3.0, -4.0] }, { shape := [2], data := #[] } ]
 
-#guard dataOf (runIt oobSigs oobMaxPlan oobStore) == some #[0.0, 0.0]
+-- Observed: [-1, -3] (before T2, with the pad `0.0`: [0, 0]).
+#guard dataOf (runIt oobSigs oobMaxPlan oobStore) == some #[-1.0, -3.0]
+
+-- Duality twin: min-plus on the NEGATED data. The pad is `+∞` (the min-plus `reduceId`), so it never
+-- beats a valid cell; the result is the min of the valid cells, `[1, 3]` (the pad `0.0` would give `[0, 0]`).
+def oobMinPlan : AssignPlan := { oobMaxPlan with algebra := admittedAlgebraMin }
+def oobStoreNeg : Array DenseTensor :=
+  #[ { shape := [2, 2], data := #[1.0, 2.0, 3.0, 4.0] }, { shape := [2], data := #[] } ]
+#guard dataOf (runIt oobSigs oobMinPlan oobStoreNeg) == some #[1.0, 3.0]
+
+-- Accept-neighbour, real statement: the pad is still `0.0` (real `reduceId`), so the same read under
+-- sum-product adds nothing: `Y[i] = A[i,0] + A[i,1] + 0 = [-3, -7]`.
+def oobRealPlan : AssignPlan := { oobMaxPlan with algebra := admittedAlgebra }
+#guard dataOf (runIt oobSigs oobRealPlan oobStore) == some #[-3.0, -7.0]
+
+-- Accept-neighbour, bool statement: the pad is `false`. Rows `[0, 0]` and `[1, 0]`: `∃ j. A[i,j]` is
+-- `[0, 1]` (a `true` pad would make row 0 `1` too).
+def oobSigsBool : Array TensorSignature :=
+  #[ { shape := #[2, 2], dtype := .f64 }, { shape := #[2], dtype := .bool } ]
+def oobBoolPlan : AssignPlan := { oobMaxPlan with algebra := admittedAlgebraBool }
+def oobStoreBool : Array DenseTensor :=
+  #[ { shape := [2, 2], data := #[0.0, 0.0, 1.0, 0.0] }, { shape := [2], data := #[] } ]
+#guard dataOf (runIt oobSigsBool oobBoolPlan oobStoreBool) == some #[0.0, 1.0]
+
+-- The constants themselves (f64): ⊗ of both tropical sorts is `add` with identity `+0.0` (`1_K`); ⊕ is
+-- `max`/`min` with `∓∞` (`0_K`). `Float.toBits 0.0 ≠ Float.toBits (-0.0)`, so this pins `+0`.
+#guard admittedAlgebraMax.factorId == .f64 (Float.toBits 0.0)
+#guard admittedAlgebraMax.reduceId == .f64 (Float.toBits (-1.0 / 0.0))
+#guard admittedAlgebraMax.factorOp == .add && admittedAlgebraMax.reduceOp == .max
+#guard admittedAlgebraMin.factorId == .f64 (Float.toBits 0.0)
+#guard admittedAlgebraMin.reduceId == .f64 (Float.toBits (1.0 / 0.0))
+#guard admittedAlgebraMin.factorOp == .add && admittedAlgebraMin.reduceOp == .min
+
+-- NaN propagation (S3b design decision 2): `ScalarBinOp.max`/`.min` are NaN-propagating in BOTH
+-- argument positions, for every algebra. `Y[i] := ⊕_j A[i,j]` over a 3×2 source whose rows are
+-- `[NaN, 1]` (NaN reaches the fold as the SECOND operand of step 1, then as the FIRST of step 2),
+-- `[1, NaN]` (NaN as the second operand of step 2) and the control `[2, 1]` (no NaN). Lean's
+-- `Max.max`/`Min.min` drop a NaN second operand (`max`) / first operand (`min`), so each of the two
+-- NaN rows catches one of the unfixed operators. Output is rendered as strings (NaN ≠ NaN).
+def nan64 : Float := 0.0 / 0.0
+
+def nanSigs : Array TensorSignature :=
+  #[ { shape := #[3, 2], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+def nanSigsBool : Array TensorSignature :=
+  #[ { shape := #[3, 2], dtype := .f64 }, { shape := #[3], dtype := .bool } ]
+
+def nanRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0, 0] }
+  , sourceShape := #[3, 2], oobPolicy := .zeroPad }
+
+def nanPlan (alg : ContractionAlgebra) : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3, 2], contextPos := #[], outputPos := #[0], reductionPos := #[1]
+               , factors := #[.read nanRead] }]
+  , algebra := alg }
+
+def nanStore : Array DenseTensor :=
+  #[ { shape := [3, 2], data := #[nan64, 1.0, 1.0, nan64, 2.0, 1.0] }, { shape := [3], data := #[] } ]
+
+def nanOut (sigs : Array TensorSignature) (alg : ContractionAlgebra) : Option (List String) :=
+  match checkAssign sigs (nanPlan alg) with
+  | .error _ => none
+  | .ok c => match runDenseAssign c nanStore with
+             | .error _ => none
+             | .ok d => some (d.data.toList.map (fun x => if x.isNaN then "NaN" else toString x))
+
+#guard nanOut nanSigs admittedAlgebraMax == some ["NaN", "NaN", "2.000000"]
+#guard nanOut nanSigs admittedAlgebraMin == some ["NaN", "NaN", "1.000000"]
+-- The Boolean algebra (`min` factors, `max` terms) propagates NaN too; its control row is
+-- `max(min(1,2), min(1,1)) = 1`.
+#guard nanOut nanSigsBool admittedAlgebraBool == some ["NaN", "NaN", "1.000000"]
 
 -- Unary factors apply after the out-of-bounds zero-pad and fail loud on domain violations.
 -- These fixtures set `ReadPlan.unary` directly, independent of source lowering.
@@ -134,6 +225,14 @@ def unaryOnesStore : Array DenseTensor :=
 
 -- The final read is out of bounds, so zero-pad feeds `0.0` to `exp` and yields `exp 0 = 1.0`.
 #guard dataOf (runIt unarySigs (unaryPlan .exp 1) unaryOnesStore) ==
+  some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, Float.exp 0.0]
+
+-- S3b T2: the same OOB-under-unary read inside a TROPICAL statement keeps the real `0.0` pad (see the
+-- note on `oobMaxPlan`): `exp 0 = 1`, not `exp(−∞) = 0`. Single factor, no reduction: the result is the
+-- unary value itself (`0.0 + v`, then `max(−∞, v)` / `min(+∞, v)`).
+#guard dataOf (runIt unarySigs { unaryPlan .exp 1 with algebra := admittedAlgebraMax } unaryOnesStore) ==
+  some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, Float.exp 0.0]
+#guard dataOf (runIt unarySigs { unaryPlan .exp 1 with algebra := admittedAlgebraMin } unaryOnesStore) ==
   some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, Float.exp 0.0]
 
 /-!
@@ -350,6 +449,11 @@ def efpStore : Array DenseTensor := #[ { shape := [3], data := #[] } ]
 -- empty) reduction coordinate folds that once into termAcc, so Y[i] = 1.0 for every i.
 #guard dataOf (runIt efpSigs efpPlan efpStore) == some #[1.0, 1.0, 1.0]
 
+-- S3b T2 (regression pin: this already held after T1, the fold is seeded with `factorId`): under
+-- both tropical sorts the empty product is `1_K = 0.0`, then `max(−∞, 0.0)` / `min(+∞, 0.0)` keep it.
+#guard dataOf (runIt efpSigs { efpPlan with algebra := admittedAlgebraMax } efpStore) == some #[0.0, 0.0, 0.0]
+#guard dataOf (runIt efpSigs { efpPlan with algebra := admittedAlgebraMin } efpStore) == some #[0.0, 0.0, 0.0]
+
 -- empty term array: terms := #[], expecting reduceId (0.0) per output coordinate.
 
 def etaSigs : Array TensorSignature := #[ { shape := #[2], dtype := .f64 } ]
@@ -362,6 +466,13 @@ def etaStore : Array DenseTensor := #[ { shape := [2], data := #[] } ]
 
 -- terms := #[]: no term to fold, so Y[i] = reduceId = 0.0 for every i.
 #guard dataOf (runIt etaSigs etaPlan etaStore) == some #[0.0, 0.0]
+
+-- S3b T2 (regression pin, folds seeded with `reduceId`): the empty sum is `0_K` = `−∞` (max-plus) /
+-- `+∞` (min-plus).
+#guard dataOf (runIt etaSigs { etaPlan with algebra := admittedAlgebraMax } etaStore) ==
+  some #[-1.0 / 0.0, -1.0 / 0.0]
+#guard dataOf (runIt etaSigs { etaPlan with algebra := admittedAlgebraMin } etaStore) ==
+  some #[1.0 / 0.0, 1.0 / 0.0]
 
 -- zero-extent reduction domain: a non-empty term whose reduction position has extent 0, expecting
 -- reduceId — distinct from the empty-term-array case above because a real, checker-accepted term
@@ -386,6 +497,12 @@ def zerdStore : Array DenseTensor :=
 -- reductionPos names a basis position of extent 0, so its coordinate domain is empty: the
 -- reduction fold never executes and the term contributes reduceId = 0.0 regardless of A's values.
 #guard dataOf (runIt zerdSigs zerdPlan zerdStore) == some #[0.0, 0.0]
+
+-- S3b T2 (regression pin): a zero-extent reduction contributes `0_K` whatever A holds (A = [7, 8]).
+#guard dataOf (runIt zerdSigs { zerdPlan with algebra := admittedAlgebraMax } zerdStore) ==
+  some #[-1.0 / 0.0, -1.0 / 0.0]
+#guard dataOf (runIt zerdSigs { zerdPlan with algebra := admittedAlgebraMin } zerdStore) ==
+  some #[1.0 / 0.0, 1.0 / 0.0]
 
 -- zero output extent: outputShape := #[0], expecting empty data.
 
@@ -742,6 +859,47 @@ def falsePredPlan : AssignPlan :=
 
 -- False predicate contributes 0.0: it annihilates every term, so Y is all zeros.
 #guard dataOf (runIt sigs falsePredPlan storeAB) == some #[0.0, 0.0, 0.0, 0.0]
+
+-- S3b T2: Iverson values come from the algebra: `[p]` is `1_K` (`factorId`) if p, else `0_K` (`reduceId`).
+-- Max-plus: true contributes `0.0`, so Y is unchanged from `maxContractPlan` (`A[i] + 3`; the old
+-- true-as-`1.0` would give `A[i] + 4`); false contributes `−∞`, so EVERY term is `−∞` (the old false
+-- `0.0` left Y at `A[i] + 3` as if the predicate were true). Min-plus twin: `+∞` for false.
+def maxTruePred : AssignPlan := { truePredPlan with algebra := admittedAlgebraMax }
+def maxFalsePred : AssignPlan := { falsePredPlan with algebra := admittedAlgebraMax }
+def minTruePred : AssignPlan := { truePredPlan with algebra := admittedAlgebraMin }
+def minFalsePred : AssignPlan := { falsePredPlan with algebra := admittedAlgebraMin }
+#guard dataOf (runIt sigs maxTruePred storeAB) == some #[13.0, 103.0, 1003.0, 10003.0]
+#guard dataOf (runIt sigs maxFalsePred storeAB) ==
+  some #[-1.0 / 0.0, -1.0 / 0.0, -1.0 / 0.0, -1.0 / 0.0]
+#guard dataOf (runIt sigs minTruePred storeAB) == some #[11.0, 101.0, 1001.0, 10001.0]
+#guard dataOf (runIt sigs minFalsePred storeAB) == some #[1.0 / 0.0, 1.0 / 0.0, 1.0 / 0.0, 1.0 / 0.0]
+
+-- A coordinate-DEPENDENT Iverson `[i ≤ j]` (output position 0, reduction position 1), so the mask keeps
+-- some terms and drops others; row `i = 3` has no kept `j` at all (`j ∈ {0,1,2}`), so it reduces over
+-- an all-false row. `Y[i] := max_j A[i] + [i ≤ j] + B[j]` = `A[i] + max_{j ≥ i} B[j]` with `B = [3,2,1]`:
+-- `[13, 102, 1001, −∞]` (before T2 the false terms contributed `0.0` and the mask was invisible:
+-- `[13, 103, 1003, 10003]`).
+def lePredD : PosBoolExpr :=
+  .rel .le (.affine { coeffs := #[1, 0], bias := 0 }) (.affine { coeffs := #[0, 1], bias := 0 })
+def lePredPlan : AssignPlan :=
+  { contractPlan with terms := #[{ contractPlan.terms[0]! with
+      factors := #[.read readA, .iverson lePredD, .read readB] }] }
+def storeAB3 : Array DenseTensor :=       -- `B = [3, 2, 1]`
+  #[ { shape := [4], data := #[10.0, 100.0, 1000.0, 10000.0] }
+   , { shape := [3], data := #[3.0, 2.0, 1.0] }
+   , { shape := [4], data := #[] } ]
+#guard dataOf (runIt sigs { lePredPlan with algebra := admittedAlgebraMax } storeAB3) ==
+  some #[13.0, 102.0, 1001.0, -1.0 / 0.0]
+-- Duality twin: negated data under min-plus, `[-13, -102, -1001, +∞]`.
+def storeNegAB3 : Array DenseTensor :=    -- negation of `storeAB3`
+  #[ { shape := [4], data := #[-10.0, -100.0, -1000.0, -10000.0] }
+   , { shape := [3], data := #[-3.0, -2.0, -1.0] }
+   , { shape := [4], data := #[] } ]
+#guard dataOf (runIt sigs { lePredPlan with algebra := admittedAlgebraMin } storeNegAB3) ==
+  some #[-13.0, -102.0, -1001.0, 1.0 / 0.0]
+-- Accept-neighbour, real statement: unchanged `1.0`/`0.0`: `A[i] · Σ_{j ≥ i} B[j]` = `[60, 300, 1000, 0]`.
+#guard dataOf (runIt sigs { lePredPlan with algebra := admittedAlgebra } storeAB3) ==
+  some #[60.0, 300.0, 1000.0, 0.0]
 
 /-! ## Task 4.2: Float-backed Boolean execution
 

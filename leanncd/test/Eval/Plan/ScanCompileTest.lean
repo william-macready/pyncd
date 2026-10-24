@@ -2177,4 +2177,66 @@ def s6GeometryBeforeCausal : ScheduledProgram :=
     (rejSchedRaw [okBase] [capabilityBeforeInputScatter]) emptySig) ==
   some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
 
+/-! ### S3b T6: `StateSlot.initValue` well-formedness (`stateInitNotAdmitted`)
+
+A tropical `0_K` (`-inf`/`+inf`) is a float value, so a BOOLEAN state cannot start at it. Donor:
+`selfRecurExpected` (A) with its one state's `initValue` replaced; the outer signature table is A's
+(`S` = slot 2). The rule fires in the per-state loop, before any block is checked, so a bool state
+signature over A's f64 blocks isolates it. Accept neighbours: all three inits on the f64 state; the
+`zero` init on the bool state is NOT this rule's rejection. -/
+
+def withInit (i : StateInit) : RawScanPlan :=
+  { selfRecurExpected with states := #[{ selfRecurExpected.states[0]! with initValue := i }] }
+
+def sigsF64State : Array TensorSignature :=
+  #[{ shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }]
+
+def sigsBoolState : Array TensorSignature :=
+  #[{ shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .bool }]
+
+def initAccepted (sigs : Array TensorSignature) (i : StateInit) : Bool :=
+  match checkScanPlan sigs (withInit i) with | .ok _ => true | .error _ => false
+
+def initRejected (sigs : Array TensorSignature) (i : StateInit) : Bool :=
+  match checkScanPlan sigs (withInit i) with
+  | .error (.stateInitNotAdmitted 0 j .bool) => j == i
+  | _ => false
+
+/-- T6 (e), donor `scratchPredicateSched`: the block-local scratch `T` is a genuine max-plus
+    statement (two factors, `agg := .max`) while the state `S` is written only by neutral statements
+    (`S0`, `T[]`), so `S` stays real: a tropical scratch does not make the state tropical. -/
+def scratchMaxSched : ScheduledProgram :=
+  { decls := [.iter axM 3]
+  , stmts := [.scan "S" [axM]
+      [ .assign "S" [.iterAt axM 0]
+          { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } ]
+      [ .assign "T"
+          [] { body := { terms := [{ factors := [.read "S" [.axis axM], .read "K" [.axis axM]] }] }
+             , nonlin := .identity, agg := .max }
+      , .assign "S" [.iterNext axM]
+          { body := { terms := [{ factors := [.read "T" []] }] }, nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (insert "K" (∅ : Finset String))
+  , explicitSizes := (({} : HashMap UID Nat).insert axM.uid 3) }
+
+def scratchMaxCheck : Except String Unit :=
+  withPrepared "T6/scratchMax" scratchMaxSched scratchInputs (fun p => do
+    match scanAt p 0 with
+    | none => .error "T6/scratchMax: step 0 is not a scan"
+    | some s => do
+        expectEq "T6/scratchMax: scratch statement is max-plus"
+          (((s.stepBlock.steps.getD 0 default).assign?.getD default).algebra) admittedAlgebraMax
+        expectEq "T6/scratchMax: the state stays real" (s.states.map (·.initValue)) #[.zero]
+        checkerAgrees "T6/scratchMax" p 0)
+
+run_cmd match scratchMaxCheck with | .ok _ => pure () | .error m => throwError m
+
+#guard initAccepted sigsF64State .zero
+#guard initAccepted sigsF64State .negInf
+#guard initAccepted sigsF64State .posInf
+#guard initRejected sigsBoolState .negInf
+#guard initRejected sigsBoolState .posInf
+#guard !initRejected sigsBoolState .zero
+#guard !initRejected sigsF64State .negInf
+
 end LeanNCD.Eval.Plan.ScanCompileTest

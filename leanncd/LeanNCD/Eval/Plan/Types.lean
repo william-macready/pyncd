@@ -46,7 +46,9 @@ structure InputSignature where
 /-- Index into a plan's `tensorSigs` table and the worker's parallel tensor store. -/
 abbrev TensorSlot := Nat
 
-/-- Out-of-range read policy. Wave C has exactly one. -/
+/-- Out-of-range read policy. Wave C has exactly one. The name is historical: the pad is 0_K of the
+    statement's sort for a bare read (the algebra's `reduceId`: real 0, bool false, max-plus `-inf`,
+    min-plus `+inf`) and the real `0.0` under a unary read. -/
 inductive OutOfBoundsPolicy
   | zeroPad
   deriving DecidableEq, BEq, Repr, Inhabited
@@ -57,13 +59,15 @@ inductive OutOfBoundsPolicy
 
     As with `ScalarDType`, `.f64` and `.bool` are admitted: `checkAssign`'s `algebraNotAdmitted`
     guard forces `a.algebra ∈ admittedAlgebrasFor destDtype` (`Check.lean`) — a real destination
-    selects the real sum-product plus the two tropical semirings `AggOp.max`/`.min` select, all of
-    whose constants (`factorId`, `reduceId`) are `.f64 _`, and a predicate destination selects
+    selects the real sum-product plus the two tropical semirings `AggOp.max`/`.min` select (max-plus
+    and min-plus: `factorId = 0.0`, `reduceId = ∓∞`), all of whose constants (`factorId`,
+    `reduceId`) are `.f64 _`, and a predicate destination selects
     `admittedAlgebraBool`, whose constants are `.bool true`/`.bool false` (decoded to `1.0`/`0.0` by
     `Dense.lean`'s `floatOps.decodeConst`).
 
     `.f32` is a live tag since the f32 slice's Task 2: `admittedAlgebrasF32` (`Check.lean`) carries
-    the three binary32 identities `0x3f800000`/`0x00000000`/`0xff800000`/`0x7f800000`, and
+    the binary32 identities `0x3f800000` (real ⊗), `0x00000000` (real ⊕ and the tropical ⊗, `1_K`),
+    `0xff800000` (max-plus `0_K`) and `0x7f800000` (min-plus `0_K`), and
     `checkAssignF32` admits exactly those for an `f32` destination. It can still never appear inside
     a `.float64` checked plan's `ContractionAlgebra`: `admittedAlgebrasFor`'s `.f32` row is empty and
     `checkAssign` rejects an `f32` destination outright. -/
@@ -75,8 +79,9 @@ inductive ScalarConst
 
 /-- Closed binary scalar operations. `min`/`max` back the tropical-semiring reductions that
     `AggOp.max`/`.min` select (`admittedAlgebraMax`/`admittedAlgebraMin` in `Check.lean`) AND the
-    Boolean conjunction/disjunction a predicate destination compiles to (`admittedAlgebraBool`);
-    `add`/`mul` back Wave C's real sum-product. `logicalAnd`/`logicalOr` remain absent by design —
+    Boolean conjunction/disjunction a predicate destination compiles to (`admittedAlgebraBool`); both
+    are NaN-propagating in both carriers (`maxNaN`/`minNaN`, `Eval/Error.lean`). `add` backs the real
+    ⊕ and the tropical ⊗ (max-plus / min-plus factors ADD); `mul` backs the real ⊗. `logicalAnd`/`logicalOr` remain absent by design —
     Boolean semantics is exactly Float `min`/`max` over `1.0`/`0.0`, per the reference `Combine.bool`,
     so a dedicated pair of constructors would duplicate an existing semantics rather than add one.
     Adding a constructor here is itself a semantic-version change (§9.2): `min`/`max` were added by

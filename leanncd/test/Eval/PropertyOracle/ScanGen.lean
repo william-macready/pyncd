@@ -206,6 +206,34 @@ run_cmd do
         throwError s!"template6 wrong: {repr g.data}"
     | none => throwError "template6: no G in output"
 
+-- ===== Template 7 (S3b T8): tropical 2-D grid with an UNWRITTEN state cell (RC10-shaped) =====
+-- G[r,0] := Z[r]; G[r+1,c+1] := maxreduce/minreduce(G[r,c] · W[r,c,k])  (k contracted).
+-- The base fills the c=0 column and the step writes only the fully advanced cells, so G[0,1] is
+-- written by NOTHING: a tropical state starts at 0_K of its sort (-inf under max, +inf under min),
+-- which is exactly where a real-zero leaf / `.sum` merge in the independent unrolling would be wrong.
+-- Kept OUT of `enumScanCases` (whose length 17 several guards pin); `ScanOracle` and `DualityTest`
+-- consume `tropicalUnwrittenScanCases` directly.
+private def r7 : AxisSpec := ⟨"r", 261, .nat⟩
+private def c7 : AxisSpec := ⟨"c", 262, .nat⟩
+private def k7 : AxisSpec := ⟨"k", 263, .real⟩
+
+def templateTropGrid (useMax : Bool) : ScanCase :=
+  let base : Stmt := .assign "G" [.free r7, .iterAt c7 0]
+    { body := { terms := [{ factors := [.read "Z" [.axis r7]] }] }, nonlin := .identity }
+  let recur : Stmt := .assign "G" [.iterNext r7, .iterNext c7]
+    { body := { terms := [{ factors := [.read "G" [.axis r7, .axis c7], .read "W" [.axis r7, .axis c7, .axis k7]] }] },
+      nonlin := .identity, agg := if useMax then .max else .min }
+  let sgn : Float := if useMax then 1.0 else -1.0
+  let inputs : Std.HashMap String DenseTensor :=
+    (({} : Std.HashMap String DenseTensor).insert "Z" ⟨[2], #[2.0 * sgn, 5.0 * sgn]⟩).insert "W"
+      ⟨[2,2,2], #[1.0 * sgn, 3.0 * sgn, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]⟩
+  { prog := { decls := [.axis r7 (some 2), .axis c7 (some 2), .axis k7 (some 2),
+                        .typedTensor .f64 "Z" [r7], .typedTensor .f64 "W" [r7, c7, k7]],
+              stmts := [base, recur] },
+    inputs := inputs, axes := [r7, c7], Ls := [2, 2], base := [base], recur := [recur] }
+
+def tropicalUnwrittenScanCases : List ScanCase := [templateTropGrid true, templateTropGrid false]
+
 /-- The full curated six-template scan generator. -/
 def enumScanCases : List ScanCase :=
   partialScanCases ++

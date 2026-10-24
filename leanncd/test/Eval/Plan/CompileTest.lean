@@ -1286,26 +1286,34 @@ def f32ScatterProg : ScheduledProgram :=
     | _ => false))
   == some true
 
--- A top-level max/min scatter stays refused (the guard is on `agg`; tropical scatter is S3b's).
+-- A top-level max/min scatter is ACCEPTED (S3b T3; formerly refused as `scatterOptsNotAdmitted
+-- "Y: fill"`): the scatter step carries the f32 tropical algebra, so its unwritten cells start from
+-- `reduceId` = -inf / +inf and collisions fold with max / min.
 def f32ScatterOverflowFillProg : ScheduledProgram :=
   { f32ScatterProg with
     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
       { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity
       , agg := .max })] }
 
-#guard causeOf (prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig) ==
-  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
+#guard ((prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig).toOption.map (fun p =>
+    match p.plan.raw.steps with
+    | #[.scatter s] => s.compute.algebra == admittedAlgebraF32Max && s.destShape == #[6]
+    | _ => false))
+  == some true
 
--- The `.min` twin of the fixture above (the guard is on `agg`, so `.min` must be refused exactly like
--- `.max`; the reference-side `.min` pin is ScanTest "Shape 1").
+-- The `.min` twin of the fixture above (the algebra comes from `agg`, so `.min` is admitted exactly
+-- like `.max`, with the f32 min-plus algebra; the reference-side pin is ScanTest "Shape 1").
 def f32ScatterMinFillProg : ScheduledProgram :=
   { f32ScatterOverflowFillProg with
     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
       { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity
       , agg := .min })] }
 
-#guard causeOf (prepareEvalPlan f32ScatterMinFillProg f32IdentitySig) ==
-  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
+#guard ((prepareEvalPlan f32ScatterMinFillProg f32IdentitySig).toOption.map (fun p =>
+    match p.plan.raw.steps with
+    | #[.scatter s] => s.compute.algebra == admittedAlgebraF32Min && s.destShape == #[6]
+    | _ => false))
+  == some true
 
 -- (d) scan: `ScanCompileTest.selfRecurSched`'s statement with binary32 declarations for its two
 -- externals and its state. The scan's representative name is `S`.
@@ -2614,5 +2622,291 @@ run_cmd do
       | some y =>
          unless DenseTensor.approxEq y ⟨[2], #[0.5, 0.5]⟩ do
            throwError s!"valid axis-kind sibling: Y is {repr y.shape} {repr y.data}"
+
+-- ── S3b T4 — sort rejections at the schedule boundary ──────────────────────────────────────────
+--
+-- A statement's SORT is `bool` for a `predicate` destination, else the `agg` annotation (`sum` real,
+-- `max` max-plus, `min` min-plus). Three new rejections, all enforced through `validateScheduled`
+-- (so both `evalScheduled` and `prepareEvalPlan` Step 0 see them):
+--   * `tropicalNonlin dest`            — a tropical-sort statement with `nonlin ≠ identity` (per
+--     statement, beside `checkPredicateOutput`);
+--   * `scanStateAlgebraMismatch state` — two NON-NEUTRAL statements of one scan state disagree;
+--   * `sortCastUnsupported dest src`   — a BARE read of a tropical tensor into a `bool` statement or
+--     into the other tropical sort. Reads under `unaryFn` take real input and are never rejected.
+-- PRECEDENCE (all observed below): per-statement rules (axis kinds, predicate, tropicalNonlin) over
+-- the whole schedule first, then scan-state agreement, then casts, then topology.
+-- The donor is `predSchedWith`/`assertPredicateParity` above (same two f64 inputs `A`, `B`).
+
+def s3bStmt (dest src : String) (nl : Nonlin := .identity) (ag : AggOp := .sum) : Stmt :=
+  .assign dest [.free axIDup]
+    { body := { terms := [{ factors := [.read src [.axis axIDup]] }] }, nonlin := nl, agg := ag }
+
+def s3bT (nm : String) : Decl := .typedTensor .f64 nm [axIDup]
+
+def s3bSched (extra : List Decl) (stmts : List Stmt) : ScheduledProgram :=
+  { decls := [.axis axIDup (some 2), .typedTensor .f64 "A" [axIDup], .typedTensor .f64 "B" [axIDup]]
+             ++ extra
+  , stmts := stmts.map ScanStmt.plain
+  , env := {}, extNames := insert "A" (insert "B" (∅ : Finset String))
+  , explicitSizes := (({} : HashMap UID Nat).insert axIDup.uid 2) }
+
+/-- Both entries accept `sched` (the neighbours that keep a rejection from being "reject everything"). -/
+def assertSortAccepted (label : String) (sched : ScheduledProgram) :
+    Lean.Elab.Command.CommandElabM Unit := do
+  match evalScheduled sched dupDeclInputs with
+  | .error failure => throwError s!"{label}: evalScheduled rejected it: {failure.error}"
+  | .ok _ => pure ()
+  match causeOf (prepareEvalPlan sched dupDeclSig) with
+  | none => pure ()
+  | some f => throwError s!"{label}: prepareEvalPlan rejected it: {renderCompileCause f.cause}"
+
+def s3bErr (s : ScheduledProgram) : Option CompileError :=
+  match validateScheduled s with | .error e => some e | .ok _ => none
+
+def s3bChecked (s : ScheduledProgram) : Option CheckedScheduledProgram :=
+  match validateScheduled s with | .ok c => some c | .error _ => none
+
+-- (a) tropicalNonlin: relu on a max / min destination, and an axiswise nonlinearity.
+run_cmd do
+  assertPredicateParity "relu on a max-plus statement"
+    (s3bSched [s3bT "M"] [s3bStmt "M" "A" (.pointwise .relu) .max]) (.tropicalNonlin "M")
+run_cmd do
+  assertPredicateParity "relu on a min-plus statement"
+    (s3bSched [s3bT "M"] [s3bStmt "M" "A" (.pointwise .relu) .min]) (.tropicalNonlin "M")
+run_cmd do
+  assertPredicateParity "softmax on a max-plus statement"
+    (s3bSched [s3bT "M"] [s3bStmt "M" "A" (.axiswise .softmax none) .max]) (.tropicalNonlin "M")
+-- neighbours: the same nonlinearity on a sum statement, and a max statement with identity, are fine
+run_cmd do
+  assertSortAccepted "relu + sum" (s3bSched [s3bT "M"] [s3bStmt "M" "A" (.pointwise .relu) .sum])
+run_cmd do
+  assertSortAccepted "max + identity" (s3bSched [s3bT "M"] [s3bStmt "M" "A" .identity .max])
+-- the statement list is walked in source order: the FIRST violating statement is reported
+run_cmd do
+  assertPredicateParity "first tropicalNonlin wins"
+    (s3bSched [s3bT "M", s3bT "N"]
+      [s3bStmt "M" "A" (.pointwise .relu) .min, s3bStmt "N" "B" (.pointwise .relu) .max])
+    (.tropicalNonlin "M")
+-- ORDER (predicate before tropical): a predicate destination with relu AND `.max` is `bool`, not
+-- tropical, so `predicateNonlin` is reported (the pre-existing fixture `predSchedWith relu max` above
+-- is the same pin; restated here against the new rule).
+run_cmd do
+  assertPredicateParity "predicate relu max still predicateNonlin"
+    (s3bSched [.predicate "Y" [axIDup]] [s3bStmt "Y" "A" (.pointwise .relu) .max]) (.predicateNonlin "Y")
+
+-- (b) scan-state agreement. State `S` over (j, l): base writes `S[j,0]`, recurrence `S[j,l+1]`.
+-- `s3bBaseC ag` CONTRACTS `k` (non-neutral, sort = `ag`); `scanBase .identity ag` reads `X[j]` only
+-- (SORT-NEUTRAL: its `agg` is meaningless and the state adopts the recurrence's annotation).
+def axKScan : AxisSpec := { name := "k", uid := 13, kind := .nat }
+
+def s3bBaseC (ag : AggOp) : Stmt :=
+  .assign "S" [.free axJScan, .iterAt axLScan 0]
+    { body := { terms := [{ factors := [.read "XK" [.axis axJScan, .axis axKScan]] }] }
+    , nonlin := .identity, agg := ag }
+
+def s3bScanSched (base recur : Stmt) (more : List Stmt := []) (moreDecls : List Decl := []) :
+    ScheduledProgram :=
+  { decls := [.axis axJScan (some 1), .iter axLScan 3, .axis axKScan (some 2)
+             , .typedTensor .f64 "X" [axJScan], .typedTensor .f64 "XK" [axJScan, axKScan]
+             , .typedTensor .f64 "A" [axJScan], .typedTensor .f64 "S" [axJScan, axLScan]] ++ moreDecls
+  , stmts := .scan "S" [axLScan] [base] [recur] false :: more.map ScanStmt.plain
+  , env := {}, extNames := insert "X" (insert "XK" (insert "A" (∅ : Finset String)))
+  , explicitSizes := ((({} : HashMap UID Nat).insert axJScan.uid 1).insert axLScan.uid 3) }
+
+def s3bJ (dest src : String) (nl : Nonlin := .identity) (ag : AggOp := .sum) : Stmt :=
+  .assign dest [.free axJScan]
+    { body := { terms := [{ factors := [.read src [.axis axJScan]] }] }, nonlin := nl, agg := ag }
+
+run_cmd do
+  assertScanPredicateParity "scan base max / recurrence min"
+    (s3bScanSched (s3bBaseC .max) (scanRecur .identity .min)) (.scanStateAlgebraMismatch "S")
+run_cmd do
+  assertScanPredicateParity "scan base real-sum product / recurrence max"
+    (s3bScanSched (s3bBaseC .sum) (scanRecur .identity .max)) (.scanStateAlgebraMismatch "S")
+-- accepted: neutral base + annotated recurrence (the RC5/RC10 shape), neutral base whose own `agg`
+-- DISAGREES with the recurrence (neutral writers have no sort), both annotated alike
+#guard (s3bChecked (s3bScanSched (scanBase .identity .sum) (scanRecur .identity .max))).map
+  (·.algebraOf "S") == some .maxPlus
+#guard (s3bChecked (s3bScanSched (scanBase .identity .max) (scanRecur .identity .min))).map
+  (·.algebraOf "S") == some .minPlus
+#guard (s3bChecked (s3bScanSched (s3bBaseC .max) (scanRecur .identity .max))).map
+  (·.algebraOf "S") == some .maxPlus
+-- all-real state: unchanged
+#guard (s3bChecked (s3bScanSched (s3bBaseC .sum) (scanRecur .identity .sum))).map
+  (·.algebraOf "S") == some .real
+-- precedence: a per-statement violation LATER in the schedule beats the scan-state mismatch
+run_cmd do
+  assertScanPredicateParity "per-statement rule before scan-state agreement"
+    (s3bScanSched (s3bBaseC .max) (scanRecur .identity .min)
+      [s3bJ "M" "A" (.pointwise .relu) .max] [.typedTensor .f64 "M" [axJScan]])
+    (.tropicalNonlin "M")
+
+-- Final review M1/F1: a statement carrying a nonlinearity is never sort-neutral, even when its shape
+-- is (one bare read, no contracted axis). Were it neutral, `scanStateStmts` would rewrite its `agg`
+-- to the state's tropical sort AFTER validation and execute a tropical statement under `relu`
+-- (A8 bypassed; for a predicate source the bool -> tropical cast also changes the value).
+-- `s3bBaseN src nl ag` is the neutral shape `S[j,0] := nl(src[j])`; `P` is a predicate source.
+def s3bBaseN (src : String) (nl : Nonlin) (ag : AggOp) : Stmt :=
+  .assign "S" [.free axJScan, .iterAt axLScan 0]
+    { body := { terms := [{ factors := [.read src [.axis axJScan]] }] }, nonlin := nl, agg := ag }
+
+-- (1) a sum-annotated `relu` base beside a max-plus recurrence: the base is a REAL statement now, so
+-- the two disagree. (Before the fix the base was "neutral", adopted max-plus, and ran with relu.)
+run_cmd do
+  assertScanPredicateParity "relu base (predicate source) beside a max-plus recurrence"
+    (s3bScanSched (s3bBaseN "P" (.pointwise .relu) .sum) (scanRecur .identity .max) []
+      [.predicate "P" [axJScan]])
+    (.scanStateAlgebraMismatch "S")
+run_cmd do
+  assertScanPredicateParity "relu base (real source) beside a max-plus recurrence"
+    (s3bScanSched (s3bBaseN "X" (.pointwise .relu) .sum) (scanRecur .identity .max))
+    (.scanStateAlgebraMismatch "S")
+-- (2) the same shape annotated `.max` is a max-plus statement with a nonlinearity (A8), whether the
+-- recurrence is max-plus or real (per-statement rules come before scan-state agreement). These two
+-- are pins, not discriminators: the annotation was already tropical, so they rejected before M1 too.
+run_cmd do
+  assertScanPredicateParity "max-annotated relu base, max-plus recurrence"
+    (s3bScanSched (s3bBaseN "X" (.pointwise .relu) .max) (scanRecur .identity .max))
+    (.tropicalNonlin "S")
+run_cmd do
+  assertScanPredicateParity "max-annotated relu base, real-state scan"
+    (s3bScanSched (s3bBaseN "X" (.pointwise .relu) .max) (scanRecur .identity .sum))
+    (.tropicalNonlin "S")
+-- ACCEPT neighbour: the same predicate-source base WITHOUT `relu` is still neutral; the state is
+-- max-plus and both entries run it. X = [1], A = [3]: max-plus gives 1, 3, 3 (a real state would
+-- give 1, 4, 7), so the value shows the neutral base adopted the recurrence's sort.
+#guard (s3bChecked (s3bScanSched (s3bBaseN "P" .identity .sum) (scanRecur .identity .max) []
+  [.predicate "P" [axJScan]])).map (·.algebraOf "S") == some .maxPlus
+def s3bNeutralAcceptSched : ScheduledProgram :=
+  s3bScanSched (s3bBaseN "X" .identity .sum) (scanRecur .identity .max)
+def s3bNeutralAcceptInputs : HashMap String DenseTensor :=
+  ((({} : HashMap String DenseTensor).insert "X" (⟨[1], #[1.0]⟩ : DenseTensor)).insert
+    "A" (⟨[1], #[3.0]⟩ : DenseTensor)).insert "XK" (⟨[1, 2], #[0.0, 0.0]⟩ : DenseTensor)
+run_cmd do
+  match evalScheduled s3bNeutralAcceptSched s3bNeutralAcceptInputs with
+  | .error failure => throwError s!"neutral base accept neighbour: evalScheduled rejected: {failure.error}"
+  | .ok report =>
+      match report.env.get? "S" with
+      | none => throwError "neutral base accept neighbour: S missing"
+      | some s =>
+          unless DenseTensor.approxEq s ⟨[1, 3], #[1.0, 3.0, 3.0]⟩ do
+            throwError s!"neutral base accept neighbour: S is {repr s.shape} {repr s.data}"
+  match causeOf (prepareEvalPlan s3bNeutralAcceptSched (InputSignature.ofDenseInputs s3bNeutralAcceptInputs)) with
+  | none => pure ()
+  | some f => throwError s!"neutral base accept neighbour: prepareEvalPlan rejected: {renderCompileCause f.cause}"
+
+-- (c) casts. `M` is max-plus, `N` min-plus (single writers), `Y`/`P` predicates.
+def s3bMN : List Stmt := [s3bStmt "M" "A" .identity .max, s3bStmt "N" "B" .identity .min]
+def s3bMNDecls : List Decl := [s3bT "M", s3bT "N"]
+
+run_cmd do
+  assertPredicateParity "predicate reads a max-plus tensor"
+    (s3bSched (s3bMNDecls ++ [.predicate "Y" [axIDup]]) (s3bMN ++ [s3bStmt "Y" "M"]))
+    (.sortCastUnsupported "Y" "M")
+run_cmd do
+  assertPredicateParity "predicate reads a min-plus tensor"
+    (s3bSched (s3bMNDecls ++ [.predicate "Y" [axIDup]]) (s3bMN ++ [s3bStmt "Y" "N"]))
+    (.sortCastUnsupported "Y" "N")
+run_cmd do
+  assertPredicateParity "max-plus statement reads a min-plus tensor"
+    (s3bSched (s3bMNDecls ++ [s3bT "Z"]) (s3bMN ++ [s3bStmt "Z" "N" .identity .max]))
+    (.sortCastUnsupported "Z" "N")
+run_cmd do
+  assertPredicateParity "min-plus statement reads a max-plus tensor"
+    (s3bSched (s3bMNDecls ++ [s3bT "Z"]) (s3bMN ++ [s3bStmt "Z" "M" .identity .min]))
+    (.sortCastUnsupported "Z" "M")
+-- ACCEPT neighbours (their readings differ, so the reject above is not "reject any cross-sort read"):
+-- a max-plus statement reading a predicate tensor, a real input, and a max-plus tensor ...
+run_cmd do
+  assertSortAccepted "max-plus reads predicate / real / max-plus"
+    (s3bSched (s3bMNDecls ++ [.predicate "P" [axIDup], s3bT "Z1", s3bT "Z2", s3bT "Z3"])
+      (s3bMN ++ [s3bStmt "P" "A", s3bStmt "Z1" "P" .identity .max, s3bStmt "Z2" "A" .identity .max
+                , s3bStmt "Z3" "M" .identity .max]))
+-- ... a real (sum) statement reading a tropical tensor, and a min-plus statement reading min-plus ...
+run_cmd do
+  assertSortAccepted "real reads tropical, min-plus reads min-plus"
+    (s3bSched (s3bMNDecls ++ [s3bT "Z1", s3bT "Z2"])
+      (s3bMN ++ [s3bStmt "Z1" "M", s3bStmt "Z2" "N" .identity .min]))
+-- ... the SAME min-plus read of `N` in a max-plus statement, but under `unaryFn` (real input) ...
+def s3bUnary (dest src : String) (ag : AggOp) : Stmt :=
+  .assign dest [.free axIDup]
+    { body := { terms := [{ factors := [.unaryFn .exp src [.axis axIDup]] }] }
+    , nonlin := .identity, agg := ag }
+run_cmd do
+  assertSortAccepted "unaryFn read of a min-plus tensor in a max-plus statement"
+    (s3bSched (s3bMNDecls ++ [s3bT "Z"]) (s3bMN ++ [s3bUnary "Z" "N" .max]))
+-- ... and a predicate destination reading a REAL tensor (parked decision 1: real -> bool is the identity)
+run_cmd do
+  assertSortAccepted "predicate reads a real tensor"
+    (s3bSched [.predicate "Y" [axIDup]] [s3bStmt "Y" "A"])
+-- precedence: the scan-state mismatch is reported before a cast violation that comes EARLIER in source
+run_cmd do
+  assertScanPredicateParity "scan-state agreement before casts"
+    (s3bScanSched (s3bBaseC .max) (scanRecur .identity .min)
+      [s3bJ "N" "A" .identity .min, s3bJ "Y" "N"]
+      [.typedTensor .f64 "N" [axJScan], .predicate "Y" [axJScan]])
+    (.scanStateAlgebraMismatch "S")
+-- precedence: a per-statement violation beats an earlier cast violation
+run_cmd do
+  assertPredicateParity "per-statement rules before casts"
+    (s3bSched (s3bMNDecls ++ [s3bT "Z", s3bT "R"])
+      (s3bMN ++ [s3bStmt "Z" "N" .identity .max, s3bStmt "R" "A" (.pointwise .relu) .max]))
+    (.tropicalNonlin "R")
+
+-- (d) multi-writer tropical keeps collection's `multiWriterAlgebra`: `W` is written twice (no map
+-- entry), and its writer ALSO bare-reads the min-plus `N` — a cast that would reject if `W` had an
+-- entry. The error stays the collector's.
+run_cmd do
+  assertPredicateParity "multi-writer tropical set keeps multiWriterAlgebra"
+    (s3bSched (s3bMNDecls ++ [s3bT "W"])
+      (s3bMN ++ [s3bStmt "W" "N" .identity .max, s3bStmt "W" "B" .identity .max]))
+    (.multiWriterAlgebra "W")
+
+-- (e) the `algebras` map content: one schedule exercising every entry kind.
+def s3bPins : Option CheckedScheduledProgram :=
+  s3bChecked (s3bSched (s3bMNDecls ++ [s3bT "R", s3bT "W", .predicate "Y" [axIDup], .predicate "Q" [axIDup]])
+    (s3bMN ++ [s3bStmt "R" "A", s3bStmt "Y" "A", s3bStmt "W" "A", s3bStmt "W" "B"]))
+#guard s3bPins.map (·.algebraOf "M") == some .maxPlus      -- single-writer max
+#guard s3bPins.map (·.algebraOf "N") == some .minPlus      -- single-writer min
+#guard s3bPins.map (·.algebraOf "R") == some .real         -- single-writer sum
+#guard s3bPins.map (·.algebraOf "Y") == some .bool         -- written predicate
+#guard s3bPins.map (·.algebraOf "Q") == some .bool         -- UNWRITTEN predicate declaration
+#guard s3bPins.map (·.algebraOf "A") == some .real         -- unwritten input
+#guard s3bPins.map (·.algebras["M"]?) == some (some .maxPlus)
+-- a two-writer name has NO entry (the lookup falls back to its declaration)
+#guard s3bPins.map (·.algebras["W"]?) == some none
+#guard s3bPins.map (·.algebraOf "W") == some .real
+-- the unwritten input never gets an entry either
+#guard s3bPins.map (·.algebras["A"]?) == some none
+
+-- Surface-syntax example. `compile` stops before `validateScheduled`, which runs at execution; the
+-- reference entry (`TLProgram.eval`) and the checked entry both reject a predicate reading a
+-- `maxreduce`-defined tensor with the same typed error.
+def s3bSurface : TLProgram := tlprog!{
+  tensor f64 E(i, j)
+  tensor f64 M(i)
+  predicate Y(i)
+  M[i] := maxreduce(E[i, j])
+  Y[i] := M[i]
+}
+
+def s3bSurfaceInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "E" (⟨[2, 2], #[1.0, 2.0, 3.0, 4.0]⟩ : DenseTensor)
+
+run_cmd do
+  match LeanNCD.Eval.TLProgram.eval s3bSurface s3bSurfaceInputs with
+  | .ok _ => throwError "surface cast: TLProgram.eval accepted a predicate reading a max-plus tensor"
+  | .error failure =>
+      match failure.error with
+      | .compile (.sortCastUnsupported "Y" "M") => pure ()
+      | e => throwError s!"surface cast: wrong reference error: {e}"
+  match s3bSurface.compileToScheduled |>.run 0 with
+  | .error e _ => throwError s!"surface cast: compileToScheduled rejected early: {repr e}"
+  | .ok sched _ =>
+      match causeOf (prepareEvalPlan sched (InputSignature.ofDenseInputs s3bSurfaceInputs)) with
+      | none => throwError "surface cast: prepareEvalPlan accepted it"
+      | some f =>
+          unless f.cause == .sourceInvariant (.sortCastUnsupported "Y" "M") do
+            throwError s!"surface cast: wrong checked cause: {renderCompileCause f.cause}"
 
 end LeanNCD.Eval.Plan.CompileTest

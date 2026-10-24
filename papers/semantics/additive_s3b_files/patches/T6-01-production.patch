@@ -1,0 +1,281 @@
+diff --git a/leanncd/LeanNCD/DSL/Ast.lean b/leanncd/LeanNCD/DSL/Ast.lean
+index c9582786..30bc63e1 100644
+--- a/leanncd/LeanNCD/DSL/Ast.lean
++++ b/leanncd/LeanNCD/DSL/Ast.lean
+@@ -135,6 +135,14 @@ def SortAlgebra.isTropical : SortAlgebra → Bool
+   | .maxPlus | .minPlus => true
+   | .real | .bool => false
+ 
++/-- The aggregation annotation that selects a sort's contraction: the inverse of `AggOp.algebra` on
++    the three annotation-selected sorts. `bool` has no annotation (a `predicate` destination picks
++    the Boolean algebra from its declaration), so it maps to `sum`. -/
++def SortAlgebra.stateAgg : SortAlgebra → AggOp
++  | .maxPlus => .max
++  | .minPlus => .min
++  | .real | .bool => .sum
++
+ -- Unary transcendental functions applicable inline to a single factor's read (`log(P[i])`).
+ -- `recip` has no keyword form of its own — it's produced only by the infix `/` sugar.
+ inductive UnaryOp | log | exp | sin | cos | sqrt | recip
+@@ -534,4 +542,41 @@ def Stmt.isSortNeutral : Stmt → Bool
+       | _ => false
+   | .recurMorphism _ _ _ => false
+ 
++/-- A statement's own sort, or `none` for a sort-neutral writer (`Stmt.isSortNeutral`: nothing to
++    combine, so no annotation of its own). A `predicate` destination is `bool` whatever the shape. -/
++def Stmt.ownAlgebra? (env : DeclEnv) (s : Stmt) : Option SortAlgebra :=
++  match env[s.lhsName]? with
++  | some (.predicate _ _) => some .bool
++  | _ => if s.isSortNeutral then none else some (s.algebra env)
++
++/-- The own sorts of the statements of a scan that write `nm` (its base and recurrence statements,
++    in order), neutral writers contributing none. The one list `scheduleAlgebras` checks for
++    agreement and `scanStateAlgebra` reads the state's sort from. -/
++def scanStateSorts (env : DeclEnv) (ss : List Stmt) (nm : String) : List SortAlgebra :=
++  (ss.filter (fun s => s.lhsName == nm)).filterMap (Stmt.ownAlgebra? env)
++
++/-- The sort of the scan state (or scratch name) `nm`: the sort its non-neutral statements agree
++    on, `real` if every statement is neutral. Agreement itself is `scheduleAlgebras`' job
++    (`scanStateAlgebraMismatch`); on a disagreeing scan this is the first statement's sort. -/
++def scanStateAlgebra (env : DeclEnv) (ss : List Stmt) (nm : String) : SortAlgebra :=
++  (scanStateSorts env ss nm).headD .real
++
++/-- Replace a statement's aggregation annotation (`recurMorphism` carries none). -/
++def Stmt.withAgg (a : AggOp) : Stmt → Stmt
++  | .assign nm sl r => .assign nm sl { r with agg := a }
++  | .scatter nm sl r => .scatter nm sl { r with agg := a }
++  | s => s
++
++/-- A scan's statements with every sort-neutral writer evaluated in its destination's sort: its
++    annotation becomes the one `scanStateAlgebra` selects (S3b design §3, decision 3). A neutral
++    statement has nothing to combine, so the annotation only matters through the sort it picks for
++    an out-of-bounds pad and for the bool -> tropical read cast; both backends take that from the
++    annotation, so rewriting it is the single point where "a neutral base adopts its state's
++    sort" is realised. Returns `(base, recur)`. -/
++def scanStateStmts (env : DeclEnv) (base recur : List Stmt) : List Stmt × List Stmt :=
++  let ss := base ++ recur
++  let adopt (s : Stmt) : Stmt :=
++    if s.isSortNeutral then s.withAgg (scanStateAlgebra env ss s.lhsName).stateAgg else s
++  (base.map adopt, recur.map adopt)
++
+ end LeanNCD
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+index 6ad12307..51339572 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+@@ -143,13 +143,6 @@ The map is PARTIAL and computed on the SOURCE schedule (before collection): a to
+ two or more writers gets no entry, so collection's `multiWriterAlgebra` stays the only refusal for
+ tropical multi-writer sets. -/
+ 
+-/-- A statement's own sort, or `none` for a sort-neutral writer (`Stmt.isSortNeutral`: nothing to
+-    combine, so no annotation of its own). A `predicate` destination is `bool` whatever the shape. -/
+-def Stmt.ownAlgebra? (env : DeclEnv) (s : Stmt) : Option SortAlgebra :=
+-  match env[s.lhsName]? with
+-  | some (.predicate _ _) => some .bool
+-  | _ => if s.isSortNeutral then none else some (s.algebra env)
+-
+ /-- The `algebraOf` map of a SOURCE schedule. Entries: each `predicate` declaration -> `bool`; a name
+     written by exactly one node -> that plain statement's sort, or, for a scan state (the node's
+     base and recurrence statements of one name), the sort its non-neutral statements agree on
+@@ -172,8 +165,7 @@ def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
+     | .scan _ _ b r _ =>
+         let ss := b ++ r
+         for nm in (ss.map Stmt.lhsName).eraseDups do
+-          let sorts := (ss.filter (fun s => s.lhsName == nm)).filterMap (Stmt.ownAlgebra? env)
+-          let agreed ← match sorts with
++          let agreed ← match scanStateSorts env ss nm with
+             | [] => pure SortAlgebra.real
+             | a :: rest =>
+                 if rest.any (fun b => b != a) then throw (.scanStateAlgebraMismatch nm) else pure a
+diff --git a/leanncd/LeanNCD/Eval/Plan/Compile.lean b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+index 17a63934..aa4d448e 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Compile.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+@@ -880,6 +880,10 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
+   ---------------------------------------------------------------------------
+   -- Phase 1: destructure, per-statement slot discipline, and state/scratch classification.
+   ---------------------------------------------------------------------------
++  -- S3b design §3: a sort-neutral writer is evaluated in its destination's sort, so its algebra
++  -- (`algebraForDest`) and its bool -> tropical read cast (`residualizeAssignment`'s `agg`) below
++  -- both follow the state's sort; `Phase 6`'s `initValue` reads the same `scanStateAlgebra`.
++  let (base, recur) := scanStateStmts declEnv base recur
+   let baseParts ← liftCapability warnings (base.toArray.mapM (scanPartsOrFail "scan base"))
+   let recurParts ←
+     liftCapability warnings (recur.toArray.mapM (scanPartsOrFail "scan recurrence"))
+@@ -1340,7 +1344,11 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
+   ---------------------------------------------------------------------------
+   let states : Array StateSlot := (Array.range stateNames.size).map (fun si =>
+     { destSlot := outerSigs.size + si, advancingDims := stateAdvDims.getD si #[]
+-    , materialization := .completeHistory })
++    , materialization := .completeHistory
++    , initValue := match scanStateAlgebra declEnv (base ++ recur) (stateNames.getD si "") with
++        | .maxPlus => .negInf
++        | .minPlus => .posInf
++        | .real | .bool => .zero })
+   let raw : RawScanPlan :=
+     { states
+     , baseBlock :=
+diff --git a/leanncd/LeanNCD/Eval/Plan/RawStep.lean b/leanncd/LeanNCD/Eval/Plan/RawStep.lean
+index 90dc4da4..fe2fe64a 100644
+--- a/leanncd/LeanNCD/Eval/Plan/RawStep.lean
++++ b/leanncd/LeanNCD/Eval/Plan/RawStep.lean
+@@ -14,8 +14,10 @@ inductive ScanIterationOrder
+   | axisZeroFastest
+   deriving DecidableEq, BEq, Repr, Inhabited
+ 
+-/-- How complete state histories are initialized before base writes apply. Wave F admits exactly
+-    one. -/
++/-- How complete state histories are initialized before base writes apply: every cell takes its
++    state's `StateSlot.initValue` (`0_K` of the state's sort; the real `0` unless the state is
++    tropical), then the base writes overlay. The constructor keeps its Wave F name. Wave F admits
++    exactly one. -/
+ inductive ScanBoundaryPolicy
+   | zeroThenBaseOverlay
+   deriving DecidableEq, BEq, Repr, Inhabited
+@@ -25,13 +27,25 @@ inductive ScanSnapshotPolicy
+   | immutablePreStep
+   deriving DecidableEq, BEq, Repr, Inhabited
+ 
++/-- The value every cell of a scan state holds before any write: `0_K` of the STATE's sort (S3b
++    design §3). Carrier-independent (the worker decodes it per carrier: binary64 `±∞`, binary32
++    `0xff800000`/`0x7f800000`), so a raw plan states its sort, not a bit pattern. `zero` is the real
++    and Boolean `0`; `negInf`/`posInf` are the max-plus and min-plus `0_K`. -/
++inductive StateInit
++  | zero
++  | negInf
++  | posInf
++  deriving DecidableEq, BEq, Repr, Inhabited
++
+ /-- One persistent scan state: the outer graph slot that receives its complete history, which of
+     its own tensor dimensions are advancing (in scan-context order, so `advancingDims[i]` is the
+-    state dimension driven by context position `i`), and how it materializes. -/
++    state dimension driven by context position `i`), how it materializes, and what its unwritten
++    cells hold (`initValue`, default `zero`). -/
+ structure StateSlot where
+   destSlot        : TensorSlot
+   advancingDims   : Array Nat
+   materialization : MaterializationPolicy
++  initValue       : StateInit := .zero
+   deriving DecidableEq, BEq, Repr, Inhabited
+ 
+ /-- Where a block input's value comes from: an already-available outer graph slot, or a snapshot
+diff --git a/leanncd/LeanNCD/Eval/Plan/Scan.lean b/leanncd/LeanNCD/Eval/Plan/Scan.lean
+index ff5214fe..3090bbcd 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Scan.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Scan.lean
+@@ -255,7 +255,8 @@ inductive ScanPlanError
+   | boundaryPolicyNotAdmitted     (policy : ScanBoundaryPolicy)
+   | snapshotPolicyNotAdmitted     (policy : ScanSnapshotPolicy)
+   | materializationPolicyNotAdmitted (stateIndex : Nat) (policy : MaterializationPolicy)
+-  | causalityFailure              (stateIndex blockStepIndex termIndex factorIndex : Nat)  -- F3 Task 2
++  | stateInitNotAdmitted          (stateIndex : Nat) (init : StateInit) (dtype : ScalarDType)
++  | causalityFailure             (stateIndex blockStepIndex termIndex factorIndex : Nat)  -- F3 Task 2
+   deriving DecidableEq, BEq, Repr, Inhabited
+ 
+ /-- Evidence that one `RawScanPlan` is a sound checked scan: both blocks are checked, every
+@@ -542,6 +543,10 @@ private def checkScanCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSigna
+         throw (.advancingSizeMismatch si i (raw.historyExtents.getD i 0) (stateSig.shape.getD d 0))
+     unless st.materialization == .completeHistory do
+       throw (.materializationPolicyNotAdmitted si st.materialization)
++    -- A tropical `0_K` (`±∞`) is a float value: a Boolean state holds `{0,1}` and cannot start at it.
++    -- (`scanDtypeAdmitted` above already admits only the carrier's own float dtype or `bool`.)
++    unless st.initValue == .zero || stateSig.dtype != .bool do
++      throw (.stateInitNotAdmitted si st.initValue stateSig.dtype)
+   unless raw.iterationOrder == .axisZeroFastest do
+     throw (.iterationOrderNotAdmitted raw.iterationOrder)
+   unless raw.boundaryPolicy == .zeroThenBaseOverlay do
+@@ -728,7 +733,7 @@ private def commitWrite {α : Type} (zero : α) (target : DenseTensorOf α) (w :
+     built at exactly `raw.tensorSigs.size` and handed here unchanged) and the signature tie above:
+     a differently-sized store is evidence the caller built it against a different table, which is
+     the same lie the tie rejects. -/
+-private def runDenseScanWith {α : Type} (zero : α)
++private def runDenseScanWith {α : Type} (zero negInf posInf : α)
+     (runBlock : CheckedPlanBlock → List Int → Array (DenseTensorOf α) →
+       Except PositionalInputError (Array (DenseTensorOf α)))
+     (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array (DenseTensorOf α)) :
+@@ -739,7 +744,11 @@ private def runDenseScanWith {α : Type} (zero : α)
+   let raw := c.raw
+   let mut states : Array (DenseTensorOf α) := raw.states.map (fun st =>
+     let sig := c.sigs.getD st.destSlot { shape := #[], dtype := .f64 }
+-    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) zero })
++    let init := match st.initValue with
++      | .zero => zero
++      | .negInf => negInf
++      | .posInf => posInf
++    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) init })
+   let baseExternalInputs ← raw.baseBlock.inputs.mapM (fun inputSlot =>
+     match raw.baseCaptures.find? (fun cap => cap.inputSlot == inputSlot) with
+     | none => throw (PositionalInputError.arityMismatch 0 0)  -- unreachable: checked (checkCaptures)
+@@ -777,14 +786,16 @@ def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStor
+     Except PositionalInputError (Array DenseTensor) := do
+   unless c.storageKind == .float64 do
+     throw (.storageKindMismatch .float64 c.storageKind)
+-  runDenseScanWith 0.0 runDenseBlock sigs c outerStore
++  runDenseScanWith 0.0 (-1.0 / 0.0) (1.0 / 0.0) runDenseBlock sigs c outerStore
+ 
+-/-- Execute a checked BINARY32 scan: the same worker, native `Float32` state and `+0` zero
+-    initialization, `runDenseBlock32` for both blocks. Storage-kind guard first. -/
++/-- Execute a checked BINARY32 scan: the same worker, native `Float32` state and per-state
++    `initValue` initialization (`+0`, or the binary32 `0xff800000`/`0x7f800000` `0_K`),
++    `runDenseBlock32` for both blocks. Storage-kind guard first. -/
+ def runDenseScan32 (sigs : Array TensorSignature) (c : CheckedScanPlan)
+     (outerStore : Array DenseTensor32) : Except PositionalInputError (Array DenseTensor32) := do
+   unless c.storageKind == .float32 do
+     throw (.storageKindMismatch .float32 c.storageKind)
+-  runDenseScanWith (0.0 : Float32) runDenseBlock32 sigs c outerStore
++  runDenseScanWith (0.0 : Float32) (Float32.ofBits 0xff800000) (Float32.ofBits 0x7f800000)
++    runDenseBlock32 sigs c outerStore
+ 
+ end LeanNCD.Eval.Plan
+diff --git a/leanncd/LeanNCD/Eval/Scan.lean b/leanncd/LeanNCD/Eval/Scan.lean
+index d95c9d82..1b46fb2e 100644
+--- a/leanncd/LeanNCD/Eval/Scan.lean
++++ b/leanncd/LeanNCD/Eval/Scan.lean
+@@ -270,10 +270,13 @@ def checkScanStructure (scanName : String) (axes : List AxisSpec) (sizes : HashM
+           throw (.baseWritesOverlap scanName st ia ib)
+ 
+ /-- Evaluate a ScanStmt → the scanned state tensors. Multi-axis (n-D) scans iterate the cartesian
+-    product of `[0 … L_a − 2]` over every advancing axis. Boundary semantics (zero-default): the
++    product of `[0 … L_a − 2]` over every advancing axis. Boundary semantics (`0_K`-default): the
+     step writes only fully-advanced cells (every advancing index `+1 ≥ 1`); boundary cells (any
+-    advancing index `= 0`) keep the zero-allocated state, except where an explicit base stmt pins
+-    a slice at index 0.
++    advancing index `= 0`) keep the allocated state, except where an explicit base stmt pins
++    a slice at index 0. Every allocated cell starts at `0_K` of the STATE's sort (S3b design §3:
++    real `0`, max-plus `-∞`, min-plus `+∞`), the sort being `scanStateAlgebra` over the scan's
++    own statements — so a cell no base or step ever writes reads as the state's additive identity.
++    A sort-neutral statement (`scanStateStmts`) is evaluated in that same sort.
+ 
+     The storage refusal (`rejectUnsupportedStorage`, `Contract.lean`) is installed at this public
+     ENTRY, over every base and recurrence statement's names in `base ++ recur` order, BEFORE the
+@@ -286,6 +289,12 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
+   | .scanPre nm _ _ => .error (.unsupportedRecurMorphism .evalScanNode nm)
+   | .scan scanName axes base recur _ => do
+       rejectUnsupportedStorage decls ((base ++ recur).flatMap stmtStorageNames)
++      -- Sort-neutral writers adopt their destination's sort (`scanStateStmts`); the state init
++      -- below reads the same sort. `rejectUnsupportedStorage` has already built this env once.
++      let denv : DeclEnv ← match buildDeclEnv decls with
++        | .ok e    => pure e
++        | .error e => throw (.compile e)
++      let (base, recur) := scanStateStmts denv base recur
+       if axes.isEmpty then .error (.invalidScanNode .noIterationAxis) else
+       let axUids := axes.map (·.uid)
+       -- Per-axis length, in `axes` order. FAIL LOUD on an unsized iteration axis: an unspecified
+@@ -309,13 +318,15 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
+           | .scatter _ _ _ => throw (.invalidScanNode .onlyAssignInSlice)
+           | _ => pure ()
+       checkScanStructure scanName axes sizes stateNames base recur
+-      -- 1. allocate each state tensor (zeros at full shape) from its base slots.
++      -- 1. allocate each state tensor (every cell at the state's `0_K`, full shape) from its base slots.
+       let mut work := env
+       for s in base do
+         match s with
+         | .assign nm slots _ | .scatter nm slots _ =>
+             let stateShape ← scanStateShape sizes slots
+-            work := work.insert nm (DenseTensor.zeros stateShape)
++            let zeroK :=
++              (combineFor decls nm (scanStateAlgebra denv (base ++ recur) nm).stateAgg).unit0
++            work := work.insert nm ⟨stateShape, Array.replicate (DenseTensor.sizeOf stateShape) zeroK⟩
+         | _ => throw (.invalidScanNode .baseMustBeAssign)
+       -- 2. fill boundaries from base stmts: each base pins a subset of axes to their literal index
+       --    and fills that slice over its free axes (e.g. `G[r,0]` fills the c=0 column for all r).

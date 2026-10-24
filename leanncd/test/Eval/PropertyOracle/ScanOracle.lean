@@ -205,4 +205,19 @@ private def t1Reference : Option DenseTensor :=
   | .error m => m == s!"corrupted leaf program failed: evalAssign: unknown tensor {stateLeafName "S" [0]}"
   | .ok _    => false
 
+-- S3b T8: the SAME law on the tropical grid shapes with an UNWRITTEN state cell (`G[0,1]`, written by
+-- neither the base nor the step). The legacy evaluator starts a tropical state at `0_K` of its sort
+-- (-inf under max, +inf under min); the independent unrolling must therefore fill unreached
+-- coordinates with the state's own `0_K` and merge base contributions with the state's own `⊕`.
+-- The unrolling derives that sort from the statements' annotations (`ScanUnroll.localStateAgg`), not
+-- from production's `scanStateAlgebra`, so agreement is not circular.
+#guard tropicalUnwrittenScanCases.length == 2
+#guard (tropicalUnwrittenScanCases.findSome? checkScanLaw).isNone
+-- TEST-THE-TESTER: the shape really has an unwritten cell that only the state's `0_K` can fill
+-- (a real-zero leaf gave `[2, 0, 5, 5]` / `[-2, 0, -5, -5]` here before the fix).
+#guard (tropicalUnwrittenScanCases.map (fun c => match schedOfCase c with
+  | .ok s => (evalScheduledF64 s c.inputs).toOption.bind (fun r => r.env["G"]?) |>.map (·.data)
+  | .error _ => none)) ==
+  [some #[2.0, -1.0 / 0.0, 5.0, 5.0], some #[-2.0, 1.0 / 0.0, -5.0, -5.0]]
+
 end LeanNCD.PropertyOracle

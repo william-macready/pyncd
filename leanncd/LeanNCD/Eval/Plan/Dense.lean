@@ -45,10 +45,13 @@ private structure ScalarKernelOps (α : Type) where
       converted — that conversion is precisely the silent precision substitution this slice exists
       to prevent. -/
   decodeConst : ScalarConst → Except PositionalInputError α
-  /-- This carrier's exact zero: the out-of-bounds zero-pad value, and an Iverson `false`. -/
+  /-- This carrier's exact real zero: the out-of-bounds pad of a UNARY read (the primitive takes
+      real input, so an out-of-bounds read contributes `f(0)` whatever the statement's sort). A bare
+      read and an Iverson factor take their values from the algebra's decoded identities instead. -/
   zero : α
-  /-- This carrier's exact one: an Iverson `true`. -/
-  one : α
+  /-- Whether a stored value reads as Boolean true (anything but this carrier's zero): the truth
+      test of the bool -> tropical read cast (`ReadPlan.boolToTropical`). -/
+  isTrue : α → Bool
   /-- This carrier's implementation of one binary operation, or a refusal for one it has no
       semantics for. -/
   binOp : ScalarBinOp → Except PositionalInputError (α → α → α)
@@ -76,12 +79,12 @@ private def floatOps : ScalarKernelOps Float :=
       | .bool false => .ok 0.0
       | .f32 _ => .error (.storageKindMismatch .float64 .float32)
   , zero := 0.0
-  , one := 1.0
+  , isTrue := fun v => v != 0.0
   , binOp := fun op => match op with
       | .add => .ok (fun a b => a + b)
       | .mul => .ok (fun a b => a * b)
-      | .min => .ok (fun a b => Min.min a b)
-      | .max => .ok (fun a b => Max.max a b)
+      | .min => .ok minNaN
+      | .max => .ok maxNaN
   , applyUnary := fun op x slot =>
       (op.applyChecked x).mapError (fun dop => .unaryDomain dop (Float.toBits x) slot) }
 
@@ -105,37 +108,50 @@ private def float32Ops : ScalarKernelOps Float32 :=
       | .bool false => .ok (Float32.ofBits 0x00000000)
       | .f64 _ => .error (.storageKindMismatch .float32 .float64)
   , zero := Float32.ofBits 0x00000000
-  , one := Float32.ofBits 0x3f800000
+  , isTrue := fun v => v != Float32.ofBits 0x00000000
   , binOp := fun op => match op with
       | .add => .ok (fun a b => a + b)
       | .mul => .ok (fun a b => a * b)
-      | .min => .ok (fun a b => Min.min a b)
-      | .max => .ok (fun a b => Max.max a b)
+      | .min => .ok minNaN32
+      | .max => .ok maxNaN32
   , applyUnary := fun op x slot =>
       (op.applyChecked32 x).mapError (fun dop => .unaryDomain32 dop (Float32.toBits x) slot) }
 
 /-- Gather one factor. Every source dimension is range-tested BEFORE flattening (`inBoundsPerDim`,
     `Coordinates.lean`): testing the flat offset instead can alias distinct invalid coordinates onto
     a valid address (proposal §8.3). A `unary` function is applied to the gathered value AFTER the
-    out-of-bounds zero-pad (so an out-of-bounds read contributes `f(0)`, matching the reference
+    out-of-bounds pad (so an out-of-bounds read contributes `f(0.0)`, matching the reference
     `gather`), and can fail loud on a domain violation (`log`/`sqrt`/`recip`) in EITHER carrier —
     binary64 via `unaryDomain`, binary32 via `unaryDomain32` — since both `ScalarKernelOps`
     instantiations (`floatOps`, `float32Ops`) supply a real `applyUnary` today; there is no current
     carrier that takes a "no unary implementation" branch.
 
-    The zero-pad is the CARRIER's own exact zero (`ops.zero`), never the algebra's reduction
-    identity: a padded read is a FACTOR value flowing through `factorOp`, which is what makes a
-    padded `0` beat an all-negative column under a tropical max reduction. -/
-private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (store : Array (DenseTensorOf α))
-    (f : ReadPlan) (iter : List Int) : Except PositionalInputError α :=
+    A BARE read is padded with `pad`, the statement's 0_K (its algebra's decoded `reduceId`: real
+    0, bool false, max-plus -inf, min-plus +inf), so a padded cell is the identity of the reduction
+    it flows into and never beats a valid cell. A `unary` read is padded with the carrier's real
+    zero (`ops.zero`) instead, because the primitive takes real input. A missing slot cannot occur
+    past `validateStore` (it is `missingSlot` there); the branch pads like an out-of-bounds read.
+
+    A read with `boolToTropical` set casts an IN-BOUNDS gathered value (S3b design §3): stored true
+    -> `one` (the algebra's decoded `factorId`, 1_K), stored false -> `pad` (its `reduceId`, 0_K).
+    The out-of-bounds/missing-slot pad is already 0_K and is not cast. -/
+private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (pad one : α)
+    (store : Array (DenseTensorOf α)) (f : ReadPlan) (iter : List Int) :
+    Except PositionalInputError α :=
+  let padV : α := match f.unary with
+    | none => pad
+    | some _ => ops.zero
   let base : α :=
     match store[f.sourceSlot]? with
-    | none => ops.zero
+    | none => padV
     | some t =>
         let src := applyAffine f.map iter
         let shape := f.sourceShape.toList
-        if inBoundsPerDim shape src then (t.data[flatIndex shape (src.map Int.toNat)]?).getD ops.zero
-        else ops.zero
+        if inBoundsPerDim shape src then
+          match t.data[flatIndex shape (src.map Int.toNat)]? with
+          | none => padV
+          | some v => if f.boolToTropical then (if ops.isTrue v then one else pad) else v
+        else padV
   match f.unary with
   | none => .ok base
   | some op => ops.applyUnary op base f.sourceSlot
@@ -231,12 +247,12 @@ private def denseValueAtWith {α : Type} (ops : ScalarKernelOps α) (a : AssignP
         for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
         return iter
       let factorVals ← t.factors.toList.mapM (fun f => match f with
-        | .read r => gatherFactorWith ops store r iter.toList
+        | .read r => gatherFactorWith ops reduceId factorId store r iter.toList
         | .iverson b =>
             (evalPosBool iter.toList b
               |>.mapError (fun e => match e with
                 | .affineWidthMismatch exp act => PositionalInputError.predicateWidthMismatch exp act)).map
-              (fun v => if v then ops.one else ops.zero))
+              (fun v => if v then factorId else reduceId))
       -- §2.2 fold 1: this term's FACTORS, left to right in stored order, seeded with `factorId`.
       return foldScalars factorOp factorId factorVals)
     -- §2.2 fold 2: this term's REDUCTION coordinates, left to right in row-major order, seeded with
@@ -292,8 +308,9 @@ guard.
 -/
 
 /-- Execute one checked BINARY32 operation at a fixed context coordinate. Native `Float32`
-    throughout: the store's buffers are `Array Float32`, the zero-pad is native `+0`, an Iverson
-    predicate becomes native one/zero, and every factor/reduction/term fold step is a native
+    throughout: the store's buffers are `Array Float32`, a bare-read pad is the algebra's native
+    `reduceId` (a unary read pads with native `+0`), an Iverson predicate becomes the native
+    `factorId`/`reduceId`, and every factor/reduction/term fold step is a native
     binary32 operation that rounds on its own. Nothing widens to `Float` anywhere on this path.
 
     **The storage-kind guard is first, before the context and store checks** — the exact mirror of
@@ -351,14 +368,12 @@ from source syntax; that is Task 5.
       slot, and it writes nothing.
 
     **A tropical-algebra scatter's unwritten cells hold `∓∞`** (`reduceId` of `admittedAlgebraMax`/
-    `Min`), not `0.0`: filling with `0.0` under max-product would let a spurious zero win the
-    reduction over an all-negative cell. Since reference-alignment the reference REFUSES a top-level
-    max/min scatter from source (`scatterFillNotIdentity`), so this is observable only for direct
-    `evalScatter` calls and raw plans; a differential corpus must not treat a tropical scatter as a
-    parity-checked entry without special-casing the unwritten cells (tropical carriers are S3b's).
-    Collisions diverge the same way: for a direct `evalScatter` call the reference sums colliding
-    writes from `0` (including a contracted source axis, e.g. `maxreduce(X[i,j])`), while this worker
-    takes the `max`/`min` from `∓∞`. Neither is reachable through `compile`/`evalPlain`.
+    `Min`), not `0.0`: filling with `0.0` under max-plus would let a spurious zero win the
+    reduction over an all-negative cell. Since S3b the reference `evalScatter` starts from the same
+    `∓∞` (its `Combine.unit0`) and folds colliding writes with the same `max`/`min` (its
+    `Combine.combine`), so a top-level tropical scatter from source, a direct `evalScatter` call
+    (including a contracted source axis, e.g. `maxreduce(X[i,j])`) and a raw plan agree, empty
+    fibres included.
 
     **Collisions are folded, not rejected (S3a).** Every in-range write is combined into its cell
     with the destination algebra's `reduceOp`, starting from `reduceId` (0_K): `+`/`0` for the real

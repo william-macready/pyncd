@@ -84,11 +84,12 @@ def cartesian (dims : List Nat) : List (List Nat) := DenseTensor.allCoords dims
     during accumulation is now genuinely reachable — a `.unaryFn` domain violation (e.g.
     `log` of a non-positive value) — and propagates as a hard `.error`, per this evaluator's
     fail-loud convention; it is never treated as an out-of-range pad (out-of-range reads return
-    `.ok 0.0` directly from `gather`, they never reach the `.error` branch at all). -/
+    `.ok pad` directly from `gather`, they never reach the `.error` branch at all). -/
 def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Float → Float)
     (unit0 : Float) (unit1 : Float)
     (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
-    (seed : HashMap UID Int) (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) :
+    (seed : HashMap UID Int) (nm : String) (slots : List LHSSlot) (rhs : RHSExpr)
+    (castOf : String → Float → Float := fun _ v => v) :
     Except EvalError (String × DenseTensor) := do
   for rn in (readNames rhs).eraseDups do
     if !(env.contains rn) then
@@ -130,7 +131,7 @@ def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Floa
           let coord := (termContr.zip cc).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) baseCoord
           let mut prod := unit1
           for f in t.factors do
-            match gather env coord f with
+            match gatherCast unit0 unit1 castOf env coord f with
             | .ok v   => prod := mul prod v
             | .error e => throw e
           termAcc := combine termAcc prod
@@ -159,16 +160,26 @@ structure Combine where
 /-- The ℝ contraction `(×, Σ)`: multiply factors, then sum. -/
 def Combine.real : Combine := ⟨(· * ·), (· + ·), 0.0, 1.0⟩
 
-/-- The Boolean contraction `(∧, ∃)` on 0/1 Floats: `min` factors (∧), `max` terms (∃). -/
-def Combine.bool : Combine := ⟨min, max, 0.0, 1.0⟩
+/-- The Boolean contraction `(∧, ∃)` on 0/1 Floats: `min` factors (∧), `max` terms (∃). Both are the
+    NaN-propagating `minNaN`/`maxNaN` (identical to `min`/`max` on 0/1 values; they differ only on a
+    non-binary NaN input). -/
+def Combine.bool : Combine := ⟨minNaN, maxNaN, 0.0, 1.0⟩
 
-/-- The tropical max contraction `(×, max, −∞)`: multiply factors within a term, then take max
-    across terms and contracted axes. Identity is `−∞` so all-negative inputs reduce correctly. -/
-def Combine.max : Combine := ⟨(· * ·), fun (a b : Float) => Max.max a b, -1.0 / 0.0, 1.0⟩
+/-- The shared shape of the two tropical semirings: ⊗ = `+` with identity `1_K = 0.0`, ⊕ = `op`
+    (NaN-propagating `max`/`min`) with identity `0_K = zero` (`−∞` for max-plus, `+∞` for min-plus).
+    `Combine.max` and `Combine.min` instantiate it once each, so the two directions share code and
+    differ only in `(op, zero)`. -/
+def Combine.tropical (op : Float → Float → Float) (zero : Float) : Combine :=
+  ⟨(· + ·), op, zero, 0.0⟩
 
-/-- The tropical min contraction `(×, min, +∞)`: multiply factors within a term, then take min
-    across terms and contracted axes. Identity is `+∞` so all-positive inputs reduce correctly. -/
-def Combine.min : Combine := ⟨(· * ·), fun (a b : Float) => Min.min a b, 1.0 / 0.0, 1.0⟩
+/-- Max-plus `(+, max, −∞, 0)`: ADD factors within a term, then take the NaN-propagating max across
+    terms and contracted axes. `unit0 = −∞` (`0_K`) so all-negative inputs reduce correctly;
+    `unit1 = 0` is the empty product. -/
+def Combine.max : Combine := Combine.tropical maxNaN (-1.0 / 0.0)
+
+/-- Min-plus `(+, min, +∞, 0)`: ADD factors within a term, then take the NaN-propagating min across
+    terms and contracted axes. `unit0 = +∞` (`0_K`) so all-positive inputs reduce correctly. -/
+def Combine.min : Combine := Combine.tropical minNaN (1.0 / 0.0)
 
 /-- Whether `nm`'s declaration is a `predicate`, i.e. its values are Boolean {0,1}. Searches
     TENSOR-BEARING declarations only (everything but `.axis`/`.iter`: `.tensor`, `.typedTensor`,
@@ -191,6 +202,17 @@ def combineFor (decls : List Decl) (nm : String) (agg : AggOp) : Combine :=
   | .max => Combine.max
   | .min => Combine.min
   | .sum => if isPredicateDest decls nm then Combine.bool else Combine.real
+
+/-- The bool -> tropical READ CAST (S3b design §3), as a per-source-name map for `gatherCast`. In a
+    statement of sort max-plus or min-plus (`agg` ≠ `.sum`; `c` is its `Combine`), a bare read of a
+    `predicate`-declared tensor reads a stored false (`0`) as `c.unit0` (0_K: `-inf`/`+inf`) and a
+    stored true (anything else) as `c.unit1` (1_K: `0.0`). Every other read, and every real or
+    Boolean statement, is the identity, so real/bool statements stay bit-identical. -/
+def boolReadCast (decls : List Decl) (c : Combine) (agg : AggOp) : String → Float → Float :=
+  match agg with
+  | .sum => fun _ v => v
+  | .max | .min => fun nm v =>
+      if isPredicateDest decls nm then (if v != 0.0 then c.unit1 else c.unit0) else v
 
 /-! ## The storage boundary of the reference evaluator
 
@@ -234,7 +256,7 @@ def rejectUnsupportedStorage (decls : List Decl) (names : List String) :
     evaluate. Shared by `evalPlain` (via `evalAssignDtyped`, its empty-seed wrapper) AND
     `Scan.evalStmtSliceSeeded` — before Wave B (4c), the scan path matched `rhs.agg` manually and
     could never select `Combine.bool` for a predicate state, since it never saw `decls` at all.
-    `agg = .max` ⇒ tropical `(×, max, −∞)`;
+    `agg = .max` ⇒ max-plus `(+, max, −∞)`; `agg = .min` ⇒ min-plus `(+, min, +∞)`;
     `predicate` ⇒ Boolean `(∧, ∃)`;
     else ℝ `(×, Σ, 0)`.
 
@@ -251,6 +273,7 @@ def evalAssignDtypedSeeded (decls : List Decl)
   rejectUnsupportedStorage decls (nm :: readNames rhs)
   let c := combineFor decls nm rhs.agg
   evalAssignSeeded c.mul c.combine c.unit0 c.unit1 env sizes seed nm slots rhs
+    (boolReadCast decls c rhs.agg)
 
 /-- Unseeded dtype-aware assign: `evalAssignDtypedSeeded` with an empty seed. -/
 def evalAssignDtyped (decls : List Decl)

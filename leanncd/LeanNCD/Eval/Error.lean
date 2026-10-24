@@ -238,6 +238,32 @@ def _root_.LeanNCD.UnaryOp.applyChecked32 :
       if v == Float32.ofBits 0x00000000 then .error .recip
       else .ok (Float32.ofBits 0x3f800000 / v)
 
+/-! ### NaN-propagating `max` / `min`
+
+Lean's `Max.max`/`Min.min` on `Float` are `if a ≤ b then b else a` / `if a ≤ b then a else b`, which
+silently DROP a NaN that is the second argument (`max 1 NaN = 1`) but keep it as the first
+(`max NaN 1 = NaN`). The tropical ⊕ and the `ScalarBinOp.max`/`.min` of both backends are instead
+NaN-propagating — any NaN operand gives NaN, in either argument order — so a NaN never vanishes
+from a reduction depending on where it sits in the fold. These four helpers are the single home of
+that rule: the reference `Combine` (`Eval/Contract.lean`) and the checked plan's `floatOps`/`float32Ops`
+(`Eval/Plan/Dense.lean`) both import this file, so neither layer defines its own copy. -/
+
+/-- NaN-propagating binary64 `max`: a NaN in either argument is the result. -/
+def maxNaN (a b : Float) : Float :=
+  if a.isNaN then a else if b.isNaN then b else Max.max a b
+
+/-- NaN-propagating binary64 `min`: a NaN in either argument is the result. -/
+def minNaN (a b : Float) : Float :=
+  if a.isNaN then a else if b.isNaN then b else Min.min a b
+
+/-- NaN-propagating binary32 `max`: the native `Float32` sibling of `maxNaN`. -/
+def maxNaN32 (a b : Float32) : Float32 :=
+  if a.isNaN then a else if b.isNaN then b else Max.max a b
+
+/-- NaN-propagating binary32 `min`: the native `Float32` sibling of `minNaN`. -/
+def minNaN32 (a b : Float32) : Float32 :=
+  if a.isNaN then a else if b.isNaN then b else Min.min a b
+
 /-- Why `resolveNonlin` rejected an `.axiswise` nonlinearity. Both cases are direct, unconditional
     throws in `resolveNonlin` (no solver, no context) — a closed two-case enum, not a bare string,
     since there are exactly two ways this can fail and neither will ever need extra payload. -/
@@ -351,12 +377,6 @@ inductive EvalError
   /-- An axiswise statement marks two or more reduction axes. The old reference normalised along
       the FIRST silently. `firstPos`/`secondPos` are the first two marked slots. -/
   | multipleMarkedReductionAxes (stmt : String) (firstPos secondPos : Nat)
-  /-- A top-level scatter aggregates with `max`/`min` but fills unwritten cells with a finite value,
-      which is not that aggregation's identity (`∓∞`). The old reference filled with 0, so
-      `Out[2*i] := maxreduce(X[i])` returned `[-1,0,-2,0,-3,0]` for `X = [-1,-2,-3]`. Raised by
-      `checkScatterAgg` (`Eval.lean`) in `evalPlain`'s scatter arm only; scan-local scatters are
-      exempt. -/
-  | scatterFillNotIdentity (stmt : String) (agg : AggOp)
   /-- A supplied input names a tensor the program defines (writes), including a private
       per-writer tensor `T#k` of additive collection. Inputs and defined tensors are disjoint
       (spec §13.6); the old reference silently replaced the supplied value. Raised by
@@ -432,9 +452,6 @@ affine slot at dimension {dim} that names no source axis"
   | .multipleMarkedReductionAxes stmt a b =>
       s!"{stmt}: LHS slots {a} and {b} are both marked (·) as reduction axes; an axiswise \
 statement marks exactly one"
-  | .scatterFillNotIdentity stmt agg =>
-      s!"evalPlain: scatter {stmt} aggregates with {if agg == .max then "max" else "min"} but fills \
-unwritten cells with a finite value, not the {if agg == .max then "-inf" else "+inf"} identity"
   | .inputIsDefined name =>
       s!"evalScheduled: supplied input {name} names a tensor the program defines"
 

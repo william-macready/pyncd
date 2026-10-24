@@ -192,12 +192,12 @@ Does not own: the Python implementation (`../data_structure/`, `../acset/`, etc.
 | DSL + routing | `LeanNCD/DSL/AGENTS.md` | `tl!{...}` parse/elaborate/compile/route pipeline (largest, most active subsystem) |
 | Bridge | `LeanNCD/Bridge/AGENTS.md` | `realize`, acset codec + round-trip proofs, DSL/CSV agreement — highest-churn subsystem |
 | Evaluation | `LeanNCD/Eval/AGENTS.md` | reference-semantics interpreter + the Portfolio test suite |
-| Checked plan backend | `LeanNCD/Eval/Plan/AGENTS.md` | checked, positional plan IR: source compiler, checkers, binary64/binary32 dense workers, adapters, JAX executable phase |
+| Checked plan backend | `LeanNCD/Eval/Plan/AGENTS.md` | checked, positional plan IR: source compiler, checkers, binary64/binary32 dense workers, adapters, JAX executable phase; tropical sorts, casts and constants (S3b): `papers/semantics/additive_s3b_record.md` |
 | Acset schema | `LeanNCD/Acset/AGENTS.md` | row-table schema + CSV text mechanics (mirrors Python `acset/`) |
 | Algebra | `LeanNCD/Algebra/AGENTS.md` | algebra-functor signatures (`Algebra`/`TargetActegory`); deliberately no concrete instance yet |
 | Semantic explorations | `LeanNCD/Semantics/AGENTS.md` | typed expression/readiness, finite additive collection/models, reference-machine soundness, coordinate-ranked progress, finite termination, and a computable validated reference executor with exact rational primitives via `LeanNCD.Semantics` and default semantic fixtures; Part V slices 1-5 plan layer, including certified bounded full-history scans (`Semantics/Plan/`; not the `Eval/Plan` checked backend); prior spike retains its non-default target |
 
-Small subsystems (no dedicated node — each <170 lines, single-file or near it): `Core/` (`Graded.lean` — `sh_act`/DGraded machinery consumed by `Algebra`; `Weave.lean` — `weave_unique`, itself a deferred sorry), `Mixins/`, `Props/` (`Generic.lean`), `Seam/` (`Adapter.lean` — strictifies `ColoredPROP` onto Mathlib's `MonoidalCategory`/`SymmetricCategory`, fully sorry-free), `Grothendieck/`, `Exec/` (`Uid.lean` — `CompileError` variants), `Instances/` (`StBr.lean`).
+Small subsystems (no dedicated node — each <170 lines, single-file or near it): `Core/` (`Graded.lean` — `sh_act`/DGraded machinery consumed by `Algebra`; `Weave.lean` — `weave_unique`, itself a deferred sorry), `Mixins/`, `Props/` (`Generic.lean`), `Seam/` (`Adapter.lean` — strictifies `ColoredPROP` onto Mathlib's `MonoidalCategory`/`SymmetricCategory`, fully sorry-free), `Grothendieck/`, `Exec/` (`Uid.lean` — `CompileError` variants, incl. the S3b sort rejections `tropicalNonlin`/`scanStateAlgebraMismatch`/`sortCastUnsupported`, raised from `DSL/`), `Instances/` (`StBr.lean`).
 
 ### Downlinks
 

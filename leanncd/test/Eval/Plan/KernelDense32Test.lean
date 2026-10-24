@@ -204,11 +204,32 @@ def zerdStore32 : Array DenseTensor32 := #[ t32 [2] #[1088421888, 1090519040], t
 -- regardless of the source's values (`[7, 8]` here).
 #guard bitsOf (run32 zerdSigs32 f32Zerd zerdStore32) == some #[0, 0]
 
-/-! ## Fixtures 7 and 8: the two binary32 tropical identities, independently
+-- S3b T2 (regression pins: the folds are seeded with the algebra's ids, already true after T1). The
+-- tropical empty product is `1_K` = binary32 `+0` (`factorId` `0x00000000`), the empty sum and the
+-- zero-extent reduction are `0_K` = `0xff800000` (max-plus) / `0x7f800000` (min-plus).
+def f32EfpMax : AssignPlan := { KernelDenseTest.efpPlan with algebra := admittedAlgebraF32Max }
+def f32EfpMin : AssignPlan := { KernelDenseTest.efpPlan with algebra := admittedAlgebraF32Min }
+#guard bitsOf (run32 efpSigs32 f32EfpMax efpStore32) == some #[0, 0, 0]
+#guard bitsOf (run32 efpSigs32 f32EfpMin efpStore32) == some #[0, 0, 0]
 
-`contractPlan` under the max and min algebras. In each the seed is LOAD-BEARING: with all-negative
-column values a `+0` max seed would win every column, and with all-positive column values a `+0` min
-seed would win every column. -/
+def etaSigs32 : Array TensorSignature := #[ { shape := #[2], dtype := .f32 } ]
+def etaStore32 : Array DenseTensor32 := #[ t32 [2] #[] ]
+#guard bitsOf (run32 etaSigs32 { KernelDenseTest.etaPlan with algebra := admittedAlgebraF32Max } etaStore32)
+  == some #[4286578688, 4286578688]
+#guard bitsOf (run32 etaSigs32 { KernelDenseTest.etaPlan with algebra := admittedAlgebraF32Min } etaStore32)
+  == some #[2139095040, 2139095040]
+#guard bitsOf (run32 zerdSigs32 { KernelDenseTest.zerdPlan with algebra := admittedAlgebraF32Max } zerdStore32)
+  == some #[4286578688, 4286578688]
+#guard bitsOf (run32 zerdSigs32 { KernelDenseTest.zerdPlan with algebra := admittedAlgebraF32Min } zerdStore32)
+  == some #[2139095040, 2139095040]
+
+/-! ## Fixtures 7 and 8: the binary32 max-plus / min-plus semirings, independently
+
+`contractPlan` under the max-plus and min-plus algebras (S3b-i task T1: the tropical ⊗ is `+` with
+identity binary32 `+0`, so `A[i]·B[j]` ADDS). In each direction the `⊕` seed is LOAD-BEARING on one
+fixture: with all-negative sums a `+0` max seed would win every column, and with all-positive sums a
+`+0` min seed would win every column. Every min-plus fixture has a negation-duality twin
+(`min-plus(x) = −max-plus(−x)`: flip every sign bit of the inputs and of the expectation). -/
 
 def contractSigs32 : Array TensorSignature :=
   #[ { shape := #[4], dtype := .f32 }, { shape := #[3], dtype := .f32 }
@@ -231,37 +252,129 @@ def storeAB32 : Array DenseTensor32 :=
    , t32 [3] #[1065353216, 1073741824, 1077936128]
    , t32 [4] #[] ]
 
--- Fixture 7: `max_j A[i]·B[j]` with every product negative is `A[i]·(-1)`, i.e.
--- `[-10, -100, -1000, -10000]`. Only the `0xff800000` (`−∞`) seed makes this right; a `+0` seed
--- would return `[0, 0, 0, 0]`.
+/-- `A = [-10, -100, -1000, -10000]`, `B = [-1, -2, -3]` — the negation of `storeAB32`. -/
+def storeNegA_NegB32 : Array DenseTensor32 :=
+  #[ t32 [4] #[3240099840, 3267887104, 3296329728, 3323740160]
+   , t32 [3] #[3212836864, 3221225472, 3225419776]
+   , t32 [4] #[] ]
+
+/-- `A = [-10, -100, -1000, -10000]`, `B = [1, 2, 3]` — the negation of `storeNegB32`. -/
+def storeNegA_PosB32 : Array DenseTensor32 :=
+  #[ t32 [4] #[3240099840, 3267887104, 3296329728, 3323740160]
+   , t32 [3] #[1065353216, 1073741824, 1077936128]
+   , t32 [4] #[] ]
+
+-- Fixture 7: max-plus `max_j A[i] + B[j]` = `A[i] + max B` = `A[i] + 3` = `[13, 103, 1003, 10003]`
+-- (before S3b-i, max-times: `[30, 300, 3000, 30000]`). Observed.
+#guard bitsOf (run32 contractSigs32 f32MaxContract storeAB32)
+  == some #[1095761920, 1120796672, 1148895232, 1176259584]
+
+-- Fixture 7b: all-negative B with positive A, `A[i] + (-1)` = `[9, 99, 999, 9999]` (before S3b-i the
+-- products were negative, `[-10, ..]`, and this fixture was the `−∞`-seed one). Observed.
 #guard bitsOf (run32 contractSigs32 f32MaxContract storeNegB32)
-  == some #[3240099840, 3267887104, 3296329728, 3323740160]
+  == some #[1091567616, 1120272384, 1148829696, 1176255488]
 
--- Fixture 8: `min_j A[i]·B[j]` with every product positive is `A[i]·1`, i.e.
--- `[10, 100, 1000, 10000]`. Only the `0x7f800000` (`+∞`) seed makes this right.
+-- Fixture 7c: the `−∞`-seed fixture. `A` and `B` negative make every max-plus sum negative, so the
+-- result is `A[i] + (-1)` = `[-11, -101, -1001, -10001]`; only the `0xff800000` seed makes this right
+-- (a `+0` seed would return `[0, 0, 0, 0]`). Twin of fixture 8.
+#guard bitsOf (run32 contractSigs32 f32MaxContract storeNegA_NegB32)
+  == some #[3241148416, 3268018176, 3296346112, 3323741184]
+
+-- Fixture 8: min-plus `min_j A[i] + B[j]` = `A[i] + 1` = `[11, 101, 1001, 10001]`, every sum positive,
+-- so only the `0x7f800000` (`+∞`) seed makes this right. Twin of fixture 7c. Observed.
 #guard bitsOf (run32 contractSigs32 f32MinContract storeAB32)
-  == some #[1092616192, 1120403456, 1148846080, 1176256512]
+  == some #[1093664768, 1120534528, 1148862464, 1176257536]
 
-/-! ## Fixture 9: the out-of-bounds pad is the carrier's zero, not the reduction identity
+-- Fixture 8b: the duality twin of fixture 7: min-plus on the negated data, `A[i] + min B` with
+-- `B = [-1,-2,-3]` = `A[i] - 3` = `[-13, -103, -1003, -10003]`. Observed.
+#guard bitsOf (run32 contractSigs32 f32MinContract storeNegA_NegB32)
+  == some #[3243245568, 3268280320, 3296378880, 3323743232]
+
+-- Fixture 8c: the duality twin of fixture 7b: `A[i] + 1` = `[-9, -99, -999, -9999]`. Observed.
+#guard bitsOf (run32 contractSigs32 f32MinContract storeNegA_PosB32)
+  == some #[3239051264, 3267756032, 3296313344, 3323739136]
+
+-- Fixture 8d: the constants themselves. The tropical ⊗ identity (`factorId`) is binary32 `+0`
+-- (`0x00000000`, `1_K`); the ⊕ identities (`reduceId`, `0_K`) are `−∞` / `+∞`; ⊗ is `add`.
+#guard admittedAlgebraF32Max.factorId == .f32 0x00000000
+#guard admittedAlgebraF32Max.reduceId == .f32 0xff800000
+#guard admittedAlgebraF32Max.factorOp == .add && admittedAlgebraF32Max.reduceOp == .max
+#guard admittedAlgebraF32Min.factorId == .f32 0x00000000
+#guard admittedAlgebraF32Min.reduceId == .f32 0x7f800000
+#guard admittedAlgebraF32Min.factorOp == .add && admittedAlgebraF32Min.reduceOp == .min
+
+/-! ## Fixture 8e: NaN propagation in the native binary32 `max`/`min`
+
+The binary32 mirror of `KernelDenseTest`'s `nanPlan` fixtures: rows `[NaN, 1]` (NaN second operand of
+step 1, first operand of step 2), `[1, NaN]` (second operand of step 2) and the control `[2, 1]`.
+NaN is rendered as the sentinel `0xFFFFFFFF` (the bit pattern of a NaN is not canonical). -/
+
+def nan32 : Float32 := Float32.ofBits 0x7fc00000
+
+def nanSigs32 : Array TensorSignature :=
+  #[ { shape := #[3, 2], dtype := .f32 }, { shape := #[3], dtype := .f32 } ]
+def nanSigsBool32 : Array TensorSignature :=
+  #[ { shape := #[3, 2], dtype := .f32 }, { shape := #[3], dtype := .bool } ]
+
+def nanStore32 : Array DenseTensor32 :=
+  #[ { shape := [3, 2], data := #[nan32, Float32.ofBits 0x3f800000, Float32.ofBits 0x3f800000, nan32
+                                 , Float32.ofBits 0x40000000, Float32.ofBits 0x3f800000] }
+   , t32 [3] #[] ]
+
+def nanOut32 (sigs : Array TensorSignature) (alg : ContractionAlgebra) : Option (List UInt32) :=
+  match checkAssignF32 sigs (KernelDenseTest.nanPlan alg) with
+  | .error _ => none
+  | .ok c => match runDenseAssign32 c nanStore32 with
+             | .error _ => none
+             | .ok d => some (d.data.toList.map (fun x => if x.isNaN then 0xFFFFFFFF else x.toBits))
+
+#guard nanOut32 nanSigs32 admittedAlgebraF32Max == some [0xFFFFFFFF, 0xFFFFFFFF, 0x40000000]
+#guard nanOut32 nanSigs32 admittedAlgebraF32Min == some [0xFFFFFFFF, 0xFFFFFFFF, 0x3f800000]
+#guard nanOut32 nanSigsBool32 admittedAlgebraBool == some [0xFFFFFFFF, 0xFFFFFFFF, 0x3f800000]
+
+/-! ## Fixture 9: the out-of-bounds pad of a bare read is `0_K` of the statement's sort
 
 `oobMaxPlan`: `Y[i] := max_j A[i,j]` with `j` ranging over three values but `A` only two columns
-wide. The `j = 2` read is out of bounds and pads with native `+0`, which is a FACTOR value — it
-flows through `factorOp` and enters the max fold as a genuine term value. With all-negative valid
-data that padded `+0` therefore WINS. -/
+wide. The `j = 2` read is out of bounds and (S3b-i task T2) pads with the algebra's decoded `reduceId`:
+`0xff800000` (`−∞`) for max-plus, `0x7f800000` (`+∞`) for min-plus, `+0` for sum-product, `false`
+for the Boolean algebra. With all-negative valid data the pad no longer wins (before T2 it was native
+`+0` and returned `[0, 0]`). -/
 
 def oobSigs32 : Array TensorSignature :=
   #[ { shape := #[2, 2], dtype := .f32 }, { shape := #[2], dtype := .f32 } ]
 
 def f32OobMax : AssignPlan :=
   { KernelDenseTest.oobMaxPlan with algebra := admittedAlgebraF32Max }
+def f32OobMin : AssignPlan :=
+  { KernelDenseTest.oobMaxPlan with algebra := admittedAlgebraF32Min }
 
 /-- `A = [[-1, -2], [-3, -4]]`. -/
 def oobStore32 : Array DenseTensor32 :=
   #[ t32 [2, 2] #[3212836864, 3221225472, 3225419776, 3229614080], t32 [2] #[] ]
 
--- Zero-pad beats every valid (negative) value, as binary32 `+0`. If the pad were the reduction
--- identity `−∞` instead, this would return `[-1, -3]`.
-#guard bitsOf (run32 oobSigs32 f32OobMax oobStore32) == some #[0, 0]
+/-- `A = [[1, 2], [3, 4]]` — the negation of `oobStore32`. -/
+def oobStoreNeg32 : Array DenseTensor32 :=
+  #[ t32 [2, 2] #[1065353216, 1073741824, 1077936128, 1082130432], t32 [2] #[] ]
+
+-- The pad is `−∞`, so the result is the max of the valid cells, `[-1, -3]`. Observed. (A `+0` pad
+-- would return `[0, 0]`.)
+#guard bitsOf (run32 oobSigs32 f32OobMax oobStore32) == some #[3212836864, 3225419776]
+
+-- Duality twin: min-plus on the negated data: the pad is `+∞`, result `[1, 3]`. Observed.
+#guard bitsOf (run32 oobSigs32 f32OobMin oobStoreNeg32) == some #[1065353216, 1077936128]
+
+-- Accept-neighbour, real statement: the pad is still `+0`: `[-1 + -2, -3 + -4]` = `[-3, -7]`.
+#guard bitsOf (run32 oobSigs32 { KernelDenseTest.oobMaxPlan with algebra := admittedAlgebraF32 } oobStore32)
+  == some #[3225419776, 3235905536]
+
+-- Accept-neighbour, bool statement: the pad is `false` (`0`). Rows `[0, 0]` and `[1, 0]` give
+-- `[0, 1]` (a `true` pad would make row 0 `1`).
+def oobSigsBool32 : Array TensorSignature :=
+  #[ { shape := #[2, 2], dtype := .f32 }, { shape := #[2], dtype := .bool } ]
+def oobStoreBool32 : Array DenseTensor32 :=
+  #[ t32 [2, 2] #[0, 0, 1065353216, 0], t32 [2] #[] ]
+#guard bitsOf (run32 oobSigsBool32 { KernelDenseTest.oobMaxPlan with algebra := admittedAlgebraBool } oobStoreBool32)
+  == some #[0, 1065353216]
 
 /-! ## Fixture 10: Iverson predicates become native one/zero
 
@@ -287,6 +400,40 @@ def f32FalsePred : AssignPlan :=
 #guard bitsOf (run32 contractSigs32 { KernelDenseTest.contractPlan with
     algebra := admittedAlgebraF32 } storeAB32)
   == some #[1114636288, 1142292480, 1169915904, 1198153728]
+
+/-! ## Fixture 10b: Iverson values under the tropical algebras (S3b T2)
+
+`[p]` is `1_K` (`factorId`, `+0`) if p else `0_K` (`reduceId`, `−∞`/`+∞`). `f32TruePred`/`f32FalsePred`
+under max-plus/min-plus: true is `A[i] + 3` / `A[i] + 1` (the old true-as-native-`1` would add one more),
+false makes every term `∓∞`. The coordinate-dependent `[i ≤ j]` plan has `B = [3, 2, 1]`, so
+`Y[i] = A[i] + max_{j ≥ i} B[j]` = `[13, 102, 1001, −∞]`; its duality twin is min-plus on the negated data. -/
+
+#guard bitsOf (run32 contractSigs32 { KernelDenseTest.truePredPlan with algebra := admittedAlgebraF32Max } storeAB32)
+  == some #[1095761920, 1120796672, 1148895232, 1176259584]
+#guard bitsOf (run32 contractSigs32 { KernelDenseTest.falsePredPlan with algebra := admittedAlgebraF32Max } storeAB32)
+  == some #[4286578688, 4286578688, 4286578688, 4286578688]
+#guard bitsOf (run32 contractSigs32 { KernelDenseTest.truePredPlan with algebra := admittedAlgebraF32Min } storeAB32)
+  == some #[1093664768, 1120534528, 1148862464, 1176257536]
+#guard bitsOf (run32 contractSigs32 { KernelDenseTest.falsePredPlan with algebra := admittedAlgebraF32Min } storeAB32)
+  == some #[2139095040, 2139095040, 2139095040, 2139095040]
+
+/-- `A = [10, 100, 1000, 10000]`, `B = [3, 2, 1]`. -/
+def storeAB3_32 : Array DenseTensor32 :=
+  #[ t32 [4] #[1092616192, 1120403456, 1148846080, 1176256512]
+   , t32 [3] #[1077936128, 1073741824, 1065353216]
+   , t32 [4] #[] ]
+/-- The negation of `storeAB3_32`. -/
+def storeNegAB3_32 : Array DenseTensor32 :=
+  #[ t32 [4] #[3240099840, 3267887104, 3296329728, 3323740160]
+   , t32 [3] #[3225419776, 3221225472, 3212836864]
+   , t32 [4] #[] ]
+#guard bitsOf (run32 contractSigs32 { KernelDenseTest.lePredPlan with algebra := admittedAlgebraF32Max } storeAB3_32)
+  == some #[1095761920, 1120665600, 1148862464, 4286578688]
+#guard bitsOf (run32 contractSigs32 { KernelDenseTest.lePredPlan with algebra := admittedAlgebraF32Min } storeNegAB3_32)
+  == some #[3243245568, 3268149248, 3296346112, 2139095040]
+-- Accept-neighbour, real statement: `A[i] · Σ_{j ≥ i} B[j]` = `[60, 300, 1000, 0]`, unchanged `1`/`+0`.
+#guard bitsOf (run32 contractSigs32 { KernelDenseTest.lePredPlan with algebra := admittedAlgebraF32 } storeAB3_32)
+  == some #[1114636288, 1133903872, 1148846080, 0]
 
 /-! ## Fixture 12: the TERM fold is left-associated in array order
 
@@ -444,6 +591,17 @@ def f32PadStore : Array DenseTensor32 :=
   #[ t32 [4] #[0, 1077936128, 3223322624, 3196059648], t32 [4] #[] ]
 
 #guard bitsOf (run32 unaryF32Sigs2 (f32UnaryPlan .exp 1) f32PadStore) ==
+  some #[1101049646, 1034427438, 1061642109, 1065353216]
+
+/-! ### Fixture 2.3b: the OOB pad under a unary stays `+0` inside a TROPICAL statement
+
+S3b T2: `unaryPlan .exp 1` over `f32PadStore` with the tropical algebras. The out-of-bounds read pads
+with the real native `+0` (the primitive takes real input), so the last lane is `exp(+0) = 1`
+(`1065353216`) exactly as under sum-product; a `−∞` pad would give `exp(−∞) = +0` (bits `0`). -/
+
+#guard bitsOf (run32 unaryF32Sigs2 { f32UnaryPlan .exp 1 with algebra := admittedAlgebraF32Max } f32PadStore) ==
+  some #[1101049646, 1034427438, 1061642109, 1065353216]
+#guard bitsOf (run32 unaryF32Sigs2 { f32UnaryPlan .exp 1 with algebra := admittedAlgebraF32Min } f32PadStore) ==
   some #[1101049646, 1034427438, 1061642109, 1065353216]
 
 /-! ### Fixture 2.4: worker witnesses (PLATFORM-DEPENDENT)

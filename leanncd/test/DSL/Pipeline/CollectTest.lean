@@ -204,6 +204,27 @@ def c6c : TLProgram := tlprog!{
 }
 #guard errorOf c6c == some (.multiWriterAlgebra "Y")
 
+-- S3b T8: the min twins of C6/C6b/C6c. The refusal is decided from the writers' sorts, so a check
+-- that only tested `agg == .max` would admit all three of these.
+def c6min : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := minreduce(A[i, j])
+  Y[i] := minreduce(B[i, j])
+}
+#guard errorOf c6min == some (.multiWriterAlgebra "Y")
+def c6bm : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i]
+  Y[i] := minreduce(B[i, j])
+}
+#guard errorOf c6bm == some (.multiWriterAlgebra "Y")
+def c6cm : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := minreduce(A[i, j])
+  Y[i] := B[i]
+}
+#guard errorOf c6cm == some (.multiWriterAlgebra "Y")
+
 -- C11 admitted `.freeNorm` class (donor: `RouteFragmentCorpusTest.axiswise`'s `Y[q, s.] := softmax`):
 -- each writer keeps its marker; the collector's slots are plain `.free`, so no
 -- `unmarkedReductionAxis` is raised for the collector's sum over `Y#k`.

@@ -112,7 +112,6 @@ private def capabilityCategory : CapabilityError → String
   | .recurrenceOrCallback _ => "recurrenceOrCallback"
   | .noAdvancingAxis _ => "noAdvancingAxis"
   | .multiAxisScatterLhs _ => "multiAxisScatterLhs"
-  | .scatterOptsNotAdmitted _ => "scatterOptsNotAdmitted"
   | .predicateScatterDest _ => "predicateScatterDest"
   | .unloweredScatterAssign _ => "unloweredScatterAssign"
 
@@ -2078,6 +2077,50 @@ run_cmd do
   match scanParityCheck "retained-axis predicate" PropertyOracle.retainedPredicateSched
       PropertyOracle.retainedPredicateInputs [] with
   | .error m => throwError s!"retained-axis predicate three-way parity failed: {m}"
+  | .ok () => pure ()
+
+-- ── S3b: a top-level `maxreduce`/`minreduce` SCATTER is in the fragment and the checked plan
+-- agrees with the reference (it was `scatterFillNotIdentity` / `scatterOptsNotAdmitted "Out: fill"`).
+-- Donor: `maxPlainProg`/`minPlainProg` above (the plain-assignment version of the same fold).
+-- `Out[2 * i] := maxreduce(X[i, j])`: rows [5,1], [3,7], [2,4] ⇒ [5,-inf,7,-inf,4,-inf] (the odd
+-- cells are the empty fibre; the real sum would be [6,0,10,0,6,0]). ──
+
+private def maxScatterProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  axis j : ℕ = 2
+  Out[2 * i] := maxreduce(X[i, j])
+}
+
+private def minScatterProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  axis j : ℕ = 2
+  Out[2 * i] := minreduce(X[i, j])
+}
+
+private def maxScatterInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[3, 2], #[5.0, 1.0, 3.0, 7.0, 2.0, 4.0]⟩
+
+private def minScatterInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[3, 2], #[-5.0, -1.0, -3.0, -7.0, -2.0, -4.0]⟩
+
+private def scatterAgreesWith (label : String) (p : TLProgram) (env : HashMap String DenseTensor)
+    (expect : Array Float) : Except String Unit := do
+  match planAgrees p env with
+  | .error e => throw s!"{label}: {e}"
+  | .ok () => pure ()
+  match (← envOf p env)["Out"]? with
+  | some o => unless o.shape == [6] && o.data == expect do
+      throw s!"{label}: expected {expect}, got {o.shape}/{o.data}"
+  | none => throw s!"{label}: Out missing from the reference env"
+
+run_cmd do
+  match scatterAgreesWith "scatter max" maxScatterProg maxScatterInputs
+      #[5.0, -1.0 / 0.0, 7.0, -1.0 / 0.0, 4.0, -1.0 / 0.0] with
+  | .error e => throwError e
+  | .ok () => pure ()
+  match scatterAgreesWith "scatter min" minScatterProg minScatterInputs
+      #[-5.0, 1.0 / 0.0, -7.0, 1.0 / 0.0, -4.0, 1.0 / 0.0] with
+  | .error e => throwError e
   | .ok () => pure ()
 
 end LeanNCD.Eval.Plan.DifferentialTest

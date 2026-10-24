@@ -18,6 +18,14 @@ run_cmd do
   unless r.nonlin == Nonlin.identity do throwError s!"expected nonlin = .identity, got {repr r.nonlin}"
   unless r.body.terms.length == 1 do throwError "expected one product term"
 
+-- S3b T8: the min twin. minreduce(A[i,k]) parses to agg = .min, nonlin = .identity (the max/min split is
+-- made at parse time, so a parser that mapped both keywords to `.max` would pass every max-only test).
+run_cmd do
+  let r ← Command.liftTermElabM <| LeanNCD.elabTLRHS (← `(tl_rhs| minreduce(A[i, k])))
+  unless r.agg == AggOp.min do throwError s!"expected agg = .min, got {repr r.agg}"
+  unless r.nonlin == Nonlin.identity do throwError s!"expected nonlin = .identity, got {repr r.nonlin}"
+  unless r.body.terms.length == 1 do throwError "expected one product term"
+
 -- bare sum_expr still has agg = .sum
 run_cmd do
   let r ← Command.liftTermElabM <| LeanNCD.elabTLRHS (← `(tl_rhs| A[i, k]))

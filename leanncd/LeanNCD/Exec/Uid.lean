@@ -27,6 +27,13 @@ inductive CompileError
   | normAxisNotReal      : String → CompileError            -- axis used in freeNorm but kind is ℕ
   | predicateNonlin      : String → CompileError            -- predicate tensor with non-identity nonlin
   | predicateAgg         : String → CompileError            -- predicate tensor with non-sum aggregation
+  | tropicalNonlin       : String → CompileError            -- tropical-sort statement (destination not a
+                                                             -- predicate, `agg` max/min) with non-identity nonlin
+  | scanStateAlgebraMismatch : String → CompileError        -- two non-neutral statements of one scan state
+                                                             -- (base and recurrence) carry different sorts
+  | sortCastUnsupported  : String → String → CompileError   -- destination, source: a bare read whose source sort
+                                                             -- has no legal cast into the statement's sort
+                                                             -- (tropical -> bool, max-plus <-> min-plus)
   | cyclicDataflow       : String → CompileError            -- cyclic dataflow (topoSort cycle fallback)
   | inconsistentScanAxes : String → CompileError            -- coupled scan outputs disagree on shared axis order
   | emptyScanOutputs     : String → CompileError            -- scan step with no true outputs (empty base∩recur)

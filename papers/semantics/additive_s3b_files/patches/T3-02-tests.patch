@@ -1,0 +1,475 @@
+diff --git a/leanncd/test/Eval/Plan/CompileTest.lean b/leanncd/test/Eval/Plan/CompileTest.lean
+index 526ad850..b30dfd49 100644
+--- a/leanncd/test/Eval/Plan/CompileTest.lean
++++ b/leanncd/test/Eval/Plan/CompileTest.lean
+@@ -1286,26 +1286,34 @@ def f32ScatterProg : ScheduledProgram :=
+     | _ => false))
+   == some true
+ 
+--- A top-level max/min scatter stays refused (the guard is on `agg`; tropical scatter is S3b's).
++-- A top-level max/min scatter is ACCEPTED (S3b T3; formerly refused as `scatterOptsNotAdmitted
++-- "Y: fill"`): the scatter step carries the f32 tropical algebra, so its unwritten cells start from
++-- `reduceId` = -inf / +inf and collisions fold with max / min.
+ def f32ScatterOverflowFillProg : ScheduledProgram :=
+   { f32ScatterProg with
+     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
+       { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity
+       , agg := .max })] }
+ 
+-#guard causeOf (prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig) ==
+-  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
++#guard ((prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig).toOption.map (fun p =>
++    match p.plan.raw.steps with
++    | #[.scatter s] => s.compute.algebra == admittedAlgebraF32Max && s.destShape == #[6]
++    | _ => false))
++  == some true
+ 
+--- The `.min` twin of the fixture above (the guard is on `agg`, so `.min` must be refused exactly like
+--- `.max`; the reference-side `.min` pin is ScanTest "Shape 1").
++-- The `.min` twin of the fixture above (the algebra comes from `agg`, so `.min` is admitted exactly
++-- like `.max`, with the f32 min-plus algebra; the reference-side pin is ScanTest "Shape 1").
+ def f32ScatterMinFillProg : ScheduledProgram :=
+   { f32ScatterOverflowFillProg with
+     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
+       { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity
+       , agg := .min })] }
+ 
+-#guard causeOf (prepareEvalPlan f32ScatterMinFillProg f32IdentitySig) ==
+-  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
++#guard ((prepareEvalPlan f32ScatterMinFillProg f32IdentitySig).toOption.map (fun p =>
++    match p.plan.raw.steps with
++    | #[.scatter s] => s.compute.algebra == admittedAlgebraF32Min && s.destShape == #[6]
++    | _ => false))
++  == some true
+ 
+ -- (d) scan: `ScanCompileTest.selfRecurSched`'s statement with binary32 declarations for its two
+ -- externals and its state. The scan's representative name is `S`.
+diff --git a/leanncd/test/Eval/Plan/DifferentialTest.lean b/leanncd/test/Eval/Plan/DifferentialTest.lean
+index 245ee8dc..3faa6149 100644
+--- a/leanncd/test/Eval/Plan/DifferentialTest.lean
++++ b/leanncd/test/Eval/Plan/DifferentialTest.lean
+@@ -112,7 +112,7 @@ private def capabilityCategory : CapabilityError → String
+   | .recurrenceOrCallback _ => "recurrenceOrCallback"
+   | .noAdvancingAxis _ => "noAdvancingAxis"
+   | .multiAxisScatterLhs _ => "multiAxisScatterLhs"
+-  | .scatterOptsNotAdmitted _ => "scatterOptsNotAdmitted"
++  | .scatterOptsNotAdmitted _ => "scatterOptsNotAdmitted"  -- no producer since S3b T3; arm required while the constructor exists (T7)
+   | .predicateScatterDest _ => "predicateScatterDest"
+   | .unloweredScatterAssign _ => "unloweredScatterAssign"
+ 
+@@ -2080,4 +2080,48 @@ run_cmd do
+   | .error m => throwError s!"retained-axis predicate three-way parity failed: {m}"
+   | .ok () => pure ()
+ 
++-- ── S3b: a top-level `maxreduce`/`minreduce` SCATTER is in the fragment and the checked plan
++-- agrees with the reference (it was `scatterFillNotIdentity` / `scatterOptsNotAdmitted "Out: fill"`).
++-- Donor: `maxPlainProg`/`minPlainProg` above (the plain-assignment version of the same fold).
++-- `Out[2 * i] := maxreduce(X[i, j])`: rows [5,1], [3,7], [2,4] ⇒ [5,-inf,7,-inf,4,-inf] (the odd
++-- cells are the empty fibre; the real sum would be [6,0,10,0,6,0]). ──
++
++private def maxScatterProg : TLProgram := tlprog!{
++  axis i : ℕ = 3
++  axis j : ℕ = 2
++  Out[2 * i] := maxreduce(X[i, j])
++}
++
++private def minScatterProg : TLProgram := tlprog!{
++  axis i : ℕ = 3
++  axis j : ℕ = 2
++  Out[2 * i] := minreduce(X[i, j])
++}
++
++private def maxScatterInputs : HashMap String DenseTensor :=
++  ({} : HashMap String DenseTensor).insert "X" ⟨[3, 2], #[5.0, 1.0, 3.0, 7.0, 2.0, 4.0]⟩
++
++private def minScatterInputs : HashMap String DenseTensor :=
++  ({} : HashMap String DenseTensor).insert "X" ⟨[3, 2], #[-5.0, -1.0, -3.0, -7.0, -2.0, -4.0]⟩
++
++private def scatterAgreesWith (label : String) (p : TLProgram) (env : HashMap String DenseTensor)
++    (expect : Array Float) : Except String Unit := do
++  match planAgrees p env with
++  | .error e => throw s!"{label}: {e}"
++  | .ok () => pure ()
++  match (← envOf p env)["Out"]? with
++  | some o => unless o.shape == [6] && o.data == expect do
++      throw s!"{label}: expected {expect}, got {o.shape}/{o.data}"
++  | none => throw s!"{label}: Out missing from the reference env"
++
++run_cmd do
++  match scatterAgreesWith "scatter max" maxScatterProg maxScatterInputs
++      #[5.0, -1.0 / 0.0, 7.0, -1.0 / 0.0, 4.0, -1.0 / 0.0] with
++  | .error e => throwError e
++  | .ok () => pure ()
++  match scatterAgreesWith "scatter min" minScatterProg minScatterInputs
++      #[-5.0, 1.0 / 0.0, -7.0, 1.0 / 0.0, -4.0, 1.0 / 0.0] with
++  | .error e => throwError e
++  | .ok () => pure ()
++
+ end LeanNCD.Eval.Plan.DifferentialTest
+diff --git a/leanncd/test/Eval/Plan/ScatterCompileTest.lean b/leanncd/test/Eval/Plan/ScatterCompileTest.lean
+index 041ba1be..091eb179 100644
+--- a/leanncd/test/Eval/Plan/ScatterCompileTest.lean
++++ b/leanncd/test/Eval/Plan/ScatterCompileTest.lean
+@@ -350,4 +350,38 @@ run_cmd do
+   assertScatterParity "S10b Out[2*i] := X[i, j] (order)" collideProg collideOrderEnv "Out"
+     (dt [6] [0.0, 0.0, 12.0, 0.0, 1.0, 0.0])
+ 
++/-! ## S11 — a surface `maxreduce`/`minreduce` scatter, through the reference AND the checked plan (S3b)
++
++`Out[2*i] := maxreduce(X[i, j])` (donor: S10, the same program with the real sum): the `j` writes of
++one `i` collide and are folded with `max`; the odd cells are the empty fibre `-inf`. `X = [[5,1],[3,7],
++[2,4]]` gives `[5, -inf, 7, -inf, 4, -inf]`; the sum would be `[6,.,10,.,6,.]`, an overwrite by the last
++write `[1,.,7,.,4,.]`. `assertScatterParity` demands the checked plan and the reference be equal to
++each other and to this value. Formerly BOTH refused it. Min-plus twin on negated data. -/
++
++def maxCollideProg : TLProgram := tlprog!{ Out[2*i] := maxreduce(X[i, j]) }
++def minCollideProg : TLProgram := tlprog!{ Out[2*i] := minreduce(X[i, j]) }
++run_cmd do
++  assertScatterParity "S11 Out[2*i] := maxreduce(X[i, j])" maxCollideProg
++    (HashMap.ofList [("X", dt [3, 2] [5.0, 1.0, 3.0, 7.0, 2.0, 4.0])]) "Out"
++    (dt [6] [5.0, -1.0 / 0.0, 7.0, -1.0 / 0.0, 4.0, -1.0 / 0.0])
++  assertScatterParity "S11 Out[2*i] := minreduce(X[i, j])" minCollideProg
++    (HashMap.ofList [("X", dt [3, 2] [-5.0, -1.0, -3.0, -7.0, -2.0, -4.0])]) "Out"
++    (dt [6] [-5.0, 1.0 / 0.0, -7.0, 1.0 / 0.0, -4.0, 1.0 / 0.0])
++
++/-! ## S12 — a multi-factor tropical scatter source: ⊗ is `+` (S3b, T1's ⊗ reaching the compute half)
++
++`Out[2*i] := maxreduce(X[i, j] · Y[j])`, `Y = [10, 100]`: each write is `X[i,j] + Y[j]`, so cell `2*i`
++is `max(5+10, 1+100) = 101`, `max(3+10, 7+100) = 107`, `max(2+10, 4+100) = 104` (a real product would
++give `100, 100, 400`-ish values). Min-plus twin from negated data. -/
++
++def maxProdProg : TLProgram := tlprog!{ Out[2*i] := maxreduce(X[i, j] · Y[j]) }
++def minProdProg : TLProgram := tlprog!{ Out[2*i] := minreduce(X[i, j] · Y[j]) }
++run_cmd do
++  assertScatterParity "S12 Out[2*i] := maxreduce(X[i, j] · Y[j])" maxProdProg
++    (HashMap.ofList [("X", dt [3, 2] [5.0, 1.0, 3.0, 7.0, 2.0, 4.0]), ("Y", dt [2] [10.0, 100.0])]) "Out"
++    (dt [6] [101.0, -1.0 / 0.0, 107.0, -1.0 / 0.0, 104.0, -1.0 / 0.0])
++  assertScatterParity "S12 Out[2*i] := minreduce(X[i, j] · Y[j])" minProdProg
++    (HashMap.ofList [("X", dt [3, 2] [-5.0, -1.0, -3.0, -7.0, -2.0, -4.0]), ("Y", dt [2] [-10.0, -100.0])])
++    "Out" (dt [6] [-101.0, 1.0 / 0.0, -107.0, 1.0 / 0.0, -104.0, 1.0 / 0.0])
++
+ end LeanNCD.Eval.Plan.ScatterCompileTest
+diff --git a/leanncd/test/Eval/Plan/ScatterDense32Test.lean b/leanncd/test/Eval/Plan/ScatterDense32Test.lean
+index 58ed0b2f..242a9e9d 100644
+--- a/leanncd/test/Eval/Plan/ScatterDense32Test.lean
++++ b/leanncd/test/Eval/Plan/ScatterDense32Test.lean
+@@ -125,6 +125,25 @@ def collisionScatter32 : ScatterPlan :=
+     #[ t32 [3] #[0x3f800000, 0x40000000, 0x40400000], t32 [2] #[0x41200000, 0x42c80000], t32 [3] #[] ])
+   == some ([3], #[0x42dc0000, 0x435c0000, 0x43a50000])
+ 
++/-! ## Fixture 1.6c — a binary32 tropical COLLISION folds with max/min; the empty fibre is `∓∞` (S3b)
++(donor: `ScatterDenseTest` fixture 7, dtypes and algebra moved to binary32; ⊗ is `+`)
++`X = [1,2,3]`, `Y = [10,100]`: cell `i+1` is `max(X[i]+10, X[i]+100) = X[i]+100 = [101,102,103]`
++(`0x42ca0000, 0x42cc0000, 0x42ce0000`); cell 0 is `-∞` (`0xff800000`). Min-plus twin from negated data:
++`[+∞, -101, -102, -103]`. -/
++def tropSigs32 : Array TensorSignature :=
++  ScatterDenseTest.tropSigs4.map (fun s => { s with dtype := .f32 })
++
++def tropCollide32 (alg : ContractionAlgebra) : ScatterPlan :=
++  { ScatterDenseTest.tropCollide alg with compute := { ScatterDenseTest.collisionCompute with algebra := alg } }
++
++#guard shapeBitsOf (run32 tropSigs32 (tropCollide32 admittedAlgebraF32Max)
++    #[ t32 [3] #[0x3f800000, 0x40000000, 0x40400000], t32 [2] #[0x41200000, 0x42c80000], t32 [4] #[] ])
++  == some ([4], #[0xff800000, 0x42ca0000, 0x42cc0000, 0x42ce0000])
++
++#guard shapeBitsOf (run32 tropSigs32 (tropCollide32 admittedAlgebraF32Min)
++    #[ t32 [3] #[0xbf800000, 0xc0000000, 0xc0400000], t32 [2] #[0xc1200000, 0xc2c80000], t32 [4] #[] ])
++  == some ([4], #[0x7f800000, 0xc2ca0000, 0xc2cc0000, 0xc2ce0000])
++
+ /-! ## Fixture 1.6b — a binary32 collision folds in SOURCE order (binary32 is not associative)
+ Same shape as 1.6 with `j : 3`, `Y = [1, 2^24, -2^24]`: cell `i` is the `j`-ordered fold
+ `((0 + X[i]·1) + X[i]·2^24) + X[i]·(-2^24)`, whose small first term is absorbed by rounding in source
+diff --git a/leanncd/test/Eval/Plan/ScatterDenseTest.lean b/leanncd/test/Eval/Plan/ScatterDenseTest.lean
+index 1ca0ccd2..8bf3fe42 100644
+--- a/leanncd/test/Eval/Plan/ScatterDenseTest.lean
++++ b/leanncd/test/Eval/Plan/ScatterDenseTest.lean
+@@ -1,4 +1,5 @@
+ import LeanNCD.Eval.Plan.Dense
++import LeanNCD.Eval.Scatter
+ 
+ /-!
+ # S-A Task 4: the dense scatter worker
+@@ -237,12 +238,10 @@ def checkErrOf (sigs : Array TensorSignature) (s : ScatterPlan) : Option PlanErr
+    that initialised the destination to zero, or to the real algebra's identity, fails here while
+    passing every fixture above.
+ 
+-   **This expectation is CHECKED-LAYER-ONLY semantics that the reference evaluator cannot produce,
+-   and the divergence is adjudicated, permanent, and deliberate — not a parity target.** The
+-   reference's empty-fibre value for real sum-product is `0.0`; on this program it has no tropical
+-   counterpart, so a TROPICAL scatter must not be a parity-checked entry unless the comparison
+-   special-cases unwritten cells. Every fixture above uses real sum-product, whose `reduceId` is
+-   `0.0`, so none of them is affected. -/
++   Since S3b this is no longer checked-layer-only: the reference `evalScatter` starts from the same
++   0_K and folds with the same ⊕, so a tropical scatter IS a parity-checked entry, empty fibres
++   included (fixtures 7 and 8 below, `ScatterTest` and `ScatterCompileTest` S11/S12). Every fixture
++   above this one uses real sum-product, whose `reduceId` is `0.0`. -/
+ def maxScatter : ScatterPlan :=
+   { placed #[6] #[#[2]] #[0] with
+     compute := { srcCompute with algebra := admittedAlgebraMax } }
+@@ -250,4 +249,78 @@ def maxScatter : ScatterPlan :=
+ #guard shapeDataOf (runScatter (sigsFor #[6]) maxScatter (storeFor #[6]))
+   == some ([6], #[1.0, -1.0 / 0.0, 2.0, -1.0 / 0.0, 3.0, -1.0 / 0.0])
+ 
++/-! ## Fixture 7 — a tropical COLLISION folds with max/min, and the empty fibre is `∓∞` (S3b)
++
++Donor: fixture 6 (`collisionScatter`), algebra moved to max-plus (⊗ is `+`) and the destination
++widened to 4 cells with bias 1, so cell 0 is unwritten. `X = [1,2,3]`, `Y = [10,100]`: the two `j`
++writes to cell `i+1` are `X[i]+10` and `X[i]+100`; their max is `X[i]+100 = [101,102,103]`, where the
++sum fold (`2·X[i]+110`) or an overwrite by the first write (`X[i]+10`) would differ. Min-plus twin from
++negated data (`X = [-1,-2,-3]`, `Y = [-10,-100]`): min `= X[i]-100 = [-101,-102,-103]`, cell 0 `+∞`. -/
++def tropSigs4 : Array TensorSignature :=
++  #[ { shape := #[3], dtype := .f64 }, { shape := #[2], dtype := .f64 }, { shape := #[4], dtype := .f64 } ]
++
++def tropCollide (alg : ContractionAlgebra) : ScatterPlan :=
++  { collisionScatter with
++    compute := { collisionCompute with algebra := alg }
++    destShape := #[4], outBias := #[1] }
++
++#guard shapeDataOf (runScatter tropSigs4 (tropCollide admittedAlgebraMax) collisionStore)
++  == some ([4], #[-1.0 / 0.0, 101.0, 102.0, 103.0])
++
++def collisionStoreNeg : Array DenseTensor :=
++  #[ { shape := [3], data := #[-1.0, -2.0, -3.0] }
++   , { shape := [2], data := #[-10.0, -100.0] }
++   , { shape := [4], data := #[] } ]
++
++#guard shapeDataOf (runScatter tropSigs4 (tropCollide admittedAlgebraMin) collisionStoreNeg)
++  == some ([4], #[1.0 / 0.0, -101.0, -102.0, -103.0])
++
++/-! ## Fixture 8 — F4: the reference and the raw checked plan AGREE on a contracted source axis (S3b)
++
++`Out[i+1] := maxreduce(X[i,j])` over `i : 3`, `j : 2`; `j` is a CONTRACTED source axis (absent from
++the LHS) and cell 0 is an empty fibre. Before S3b the direct reference summed the colliding writes
++from `0` (`[0,6,10,6]`) while this worker took the max from `-∞`; now `evalScatter` starts at
++`Combine.unit0` and folds with `Combine.combine`, so both give `[-∞, 5, 7, 4]`. -/
++def f4Read : ReadPlan :=
++  { sourceSlot := 0, map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0, 0] }
++  , sourceShape := #[3, 2], oobPolicy := .zeroPad }
++
++def f4Scatter (alg : ContractionAlgebra) : ScatterPlan :=
++  { compute :=
++      { contextShape := #[], destinationSlot := 1, outputShape := #[3, 2]
++      , terms := #[{ iterationShape := #[3, 2], contextPos := #[], outputPos := #[0, 1]
++                   , reductionPos := #[], factors := #[.read f4Read] }]
++      , algebra := alg }
++    destShape := #[4], outCoeffs := #[#[1, 0]], outBias := #[1] }
++
++def f4Sigs : Array TensorSignature :=
++  #[ { shape := #[3, 2], dtype := .f64 }, { shape := #[4], dtype := .f64 } ]
++
++def f4Store (xs : List Float) : Array DenseTensor :=
++  #[ { shape := [3, 2], data := xs.toArray }, { shape := [4], data := #[] } ]
++
++/-- The direct reference `evalScatter` on the same program (`Out[i+1] := agg(X[i,j])`). -/
++def f4Reference (agg : AggOp) (xs : List Float) : Option (Array Float) :=
++  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
++  let j : AxisSpec := { name := "j", uid := 2, kind := .real }
++  let env : Std.HashMap String DenseTensor :=
++    ({} : Std.HashMap String DenseTensor).insert "X" ⟨[3, 2], xs.toArray⟩
++  let rhs : RHSExpr :=
++    { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity, agg := agg }
++  let sizes := (({} : Std.HashMap UID Nat).insert 1 3).insert 2 2
++  (evalScatter [Decl.typedTensor .f64 "Out" [], Decl.typedTensor .f64 "X" []] env sizes "Out"
++    [.affine (.shift i 1)] rhs [4]).toOption.map (·.2.data)
++
++#guard (shapeDataOf (runScatter f4Sigs (f4Scatter admittedAlgebraMax) (f4Store [5, 1, 3, 7, 2, 4]))).map (·.2)
++  == some #[-1.0 / 0.0, 5.0, 7.0, 4.0]
++#guard f4Reference .max [5, 1, 3, 7, 2, 4] == some #[-1.0 / 0.0, 5.0, 7.0, 4.0]
++-- min-plus twin (negated data)
++#guard (shapeDataOf (runScatter f4Sigs (f4Scatter admittedAlgebraMin) (f4Store [-5, -1, -3, -7, -2, -4]))).map (·.2)
++  == some #[1.0 / 0.0, -5.0, -7.0, -4.0]
++#guard f4Reference .min [-5, -1, -3, -7, -2, -4] == some #[1.0 / 0.0, -5.0, -7.0, -4.0]
++-- real neighbour (S3a, unchanged): the same program under the real algebra sums.
++#guard f4Reference .sum [5, 1, 3, 7, 2, 4] == some #[0.0, 6.0, 10.0, 6.0]
++#guard (shapeDataOf (runScatter f4Sigs (f4Scatter admittedAlgebra) (f4Store [5, 1, 3, 7, 2, 4]))).map (·.2)
++  == some #[0.0, 6.0, 10.0, 6.0]
++
+ end LeanNCD.Eval.Plan.ScatterDenseTest
+diff --git a/leanncd/test/Eval/ScanTest.lean b/leanncd/test/Eval/ScanTest.lean
+index cfa6a3e1..ae79e38a 100644
+--- a/leanncd/test/Eval/ScanTest.lean
++++ b/leanncd/test/Eval/ScanTest.lean
+@@ -1065,46 +1065,52 @@ run_cmd do
+   | .error e => throwError s!"shape 11 scan accept: {e}"
+   | .ok _ => pure ()
+ 
+--- Shape 1 (top-level max/min scatter whose gap value `0` is not the aggregation identity). REJECT donor:
+---   ScatterTest "upsample"/"4g regression" scatter, here as an `evalPlain` `.scatter` statement
+---   `Out[2*i] := maxreduce(X[i])`, X = [-1,-2,-3]; the old reference filled the gaps with 0 and
+---   returned [-1,0,-2,0,-3,0], which is NOT the max identity. The checked path refuses every
+---   top-level max/min scatter (S3a: a guard on `agg`; tropical scatter is S3b's).
++-- Shape 1 (top-level max/min scatter: unwritten cells are the sort's 0_K, not `0`). Formerly a REJECT
++--   (`scatterFillNotIdentity`); S3b T3 flips it to a VALUE test. Donor: ScatterTest
++--   "upsample"/"4g regression" scatter, here as an `evalPlain` `.scatter` statement
++--   `Out[2*i] := maxreduce(X[i])`, X = [-1,-2,-3]. The old reference filled the gaps with 0
++--   ([-1,0,-2,0,-3,0]); now they are -inf (max-plus) / +inf (min-plus). The min twin uses the
++--   negated data X = [1,2,3].
+ run_cmd do
+   let i := ax "i" 1
+   let X := tensorOf [3] [-1, -2, -3]
++  let Xn := tensorOf [3] [1, 2, 3]
++  let ninf : Float := -1.0 / 0.0
++  let pinf : Float := 1.0 / 0.0
+   let rhsAgg (agg : AggOp) : RHSExpr := { mkRhs "X" [.axis i] .identity with agg := agg }
+   let stmtAgg (agg : AggOp) : Stmt := .scatter "Out" [.affine (.scale 2 i)] (rhsAgg agg)
+   match mkPlain (stmtAgg .max) [("X", X)] [(1, 3)] with
+-  | .error (.scatterFillNotIdentity "Out" .max) => pure ()
+-  | .error e => throwError s!"shape 1 max: wrong rejection: {e}"
+-  | .ok (_, Out) => throwError s!"shape 1 max: accepted: {repr Out.data}"
+-  match mkPlain (stmtAgg .min) [("X", X)] [(1, 3)] with
+-  | .error (.scatterFillNotIdentity "Out" .min) => pure ()
+-  | .error e => throwError s!"shape 1 min: wrong rejection: {e}"
+-  | .ok (_, Out) => throwError s!"shape 1 min: accepted: {repr Out.data}"
++  | .error e => throwError s!"shape 1 max: {e}"
++  | .ok (_, Out) =>
++      unless Out.data == #[-1, ninf, -2, ninf, -3, ninf] do throwError s!"shape 1 max: {repr Out.data}"
++  match mkPlain (stmtAgg .min) [("X", Xn)] [(1, 3)] with
++  | .error e => throwError s!"shape 1 min: {e}"
++  | .ok (_, Out) =>
++      unless Out.data == #[1, pinf, 2, pinf, 3, pinf] do throwError s!"shape 1 min: {repr Out.data}"
+   -- ACCEPT neighbour (clone, change: agg .max -> .sum): a sum scatter's identity IS the fill 0.
+   match mkPlain (stmtAgg .sum) [("X", X)] [(1, 3)] with
+   | .error e => throwError s!"shape 1 accept (sum): {e}"
+   | .ok (_, Out) =>
+       unless Out.data == #[-1, 0, -2, 0, -3, 0] do throwError s!"shape 1 accept (sum): {repr Out.data}"
+ 
+--- Shape 1, the `+`-joined two-term max (the only case where a scatter max is meaningful: no gap
+---   cells when the terms cover every output cell). Donor: ScatterTest '4g regression' (A = [1,5,2],
+---   B = [10,-1,-1], `Out[i] := A[i] + B[i]` with agg .max, per-position max [10,5,2]). The checked
+---   rule refuses it all the same: the algebra comes from `agg`, and the guard never looks
+---   at coverage, so the reference refuses it too (stricter than meaningful, but checked-aligned).
++-- Shape 1, the `+`-joined two-term max (no gap cells: the terms cover every output cell). Formerly a
++--   REJECT; now a VALUE test. Donor: ScatterTest '4g regression' (A = [1,5,2], B = [10,-1,-1],
++--   `Out[i] := A[i] + B[i]` with agg .max, per-position max [10,5,2]). The min twin uses the
++--   negated data (A = [-1,-5,-2], B = [-10,1,1]): per-position min [-10,-5,-2].
+ --   The same scan-LOCAL scatter stays accepted (below).
+ run_cmd do
+   let i := ax "i" 1
+   let env := [("A", tensorOf [3] [1, 5, 2]), ("B", tensorOf [3] [10, -1, -1])]
+-  let rhs : RHSExpr :=
++  let envn := [("A", tensorOf [3] [-1, -5, -2]), ("B", tensorOf [3] [-10, 1, 1])]
++  let rhsOf (agg : AggOp) : RHSExpr :=
+     { body := { terms := [{ factors := [.read "A" [.axis i]] }, { factors := [.read "B" [.axis i]] }] }
+-      nonlin := .identity, agg := .max }
+-  match mkPlain (.scatter "Out" [.affine (.axis i)] rhs) env [(1, 3)] with
+-  | .error (.scatterFillNotIdentity "Out" .max) => pure ()
+-  | .error e => throwError s!"shape 1 joined: wrong rejection: {e}"
+-  | .ok (_, Out) => throwError s!"shape 1 joined: accepted: {repr Out.data}"
++      nonlin := .identity, agg := agg }
++  match mkPlain (.scatter "Out" [.affine (.axis i)] (rhsOf .max)) env [(1, 3)] with
++  | .error e => throwError s!"shape 1 joined max: {e}"
++  | .ok (_, Out) => unless Out.data == #[10, 5, 2] do throwError s!"shape 1 joined max: {repr Out.data}"
++  match mkPlain (.scatter "Out" [.affine (.axis i)] (rhsOf .min)) envn [(1, 3)] with
++  | .error e => throwError s!"shape 1 joined min: {e}"
++  | .ok (_, Out) => unless Out.data == #[-10, -5, -2] do throwError s!"shape 1 joined min: {repr Out.data}"
+   -- ACCEPT: the SCAN-LOCAL max-reduce scatter (the checked path accepts it; the check is not in
+   --   `evalScatter` nor in the scan arm): slice `S[2*j, 0]` with agg .max over X = [3, 7].
+   let j := ax "j" 2; let l := ax "l" 9
+diff --git a/leanncd/test/Eval/ScatterTest.lean b/leanncd/test/Eval/ScatterTest.lean
+index 821704b0..3524c794 100644
+--- a/leanncd/test/Eval/ScatterTest.lean
++++ b/leanncd/test/Eval/ScatterTest.lean
+@@ -53,10 +53,12 @@ run_cmd do
+   | .error _ => pure ()                                   -- expected
+   | .ok _    => throwError "expected evalScatter to reject an unsized source axis"
+ 
+--- 4g regression: evalScatter ignores rhs.agg entirely — it hardcodes real sum-of-products for
++-- 4g regression: evalScatter once ignored rhs.agg entirely — it hardcoded real sum-of-products for
+ -- every RHS term regardless of the declared aggregation. A maxreduce-style scatter RHS must use
+ -- tropical max, not silently compute a real sum instead. A[i]=[1,5,2], B[i]=[10,-1,-1]; per-
+--- position max = [10,5,2] (today's real sum would wrongly give [11,4,1]).
++-- position max = [10,5,2] (the real sum would wrongly give [11,4,1]). S3b: the destination now
++-- starts from 0_K = -inf instead of 0 and folds with the same max; every cell is written, so the
++-- expected value is unchanged (the min-plus twin on negated data follows).
+ run_cmd do
+   let i := ax "i" 1
+   let A := tensorOf [3] [1, 5, 2]
+@@ -90,6 +92,88 @@ run_cmd do
+       unless Out.get! [0,0] == 10.0 && Out.get! [0,1] == 0.0 && Out.get! [3,3] == 0.0 do
+         throwError s!"S3a: collision sum wrong: {repr Out.data}"
+ 
++-- 4g regression, min-plus twin: negated data A = [-1,-5,-2], B = [-10,1,1]; per-position min =
++-- [-10,-5,-2] (the destination starts from +inf; a start of 0 would wrongly cap the cells at 0).
++run_cmd do
++  let i := ax "i" 1
++  let env : HashMap String DenseTensor :=
++    (({} : HashMap String DenseTensor).insert "A" (tensorOf [3] [-1, -5, -2])).insert "B"
++      (tensorOf [3] [-10, 1, 1])
++  let rhs : RHSExpr :=
++    { body := { terms := [{ factors := [.read "A" [.axis i]] }, { factors := [.read "B" [.axis i]] }] },
++      nonlin := .identity, agg := .min }
++  let sizes := ({} : HashMap UID Nat).insert 1 3
++  match evalScatter f64Decls env sizes "Out" [.affine (.axis i)] rhs [3] with
++  | .error e => throwError (toString e)
++  | .ok (_, Out) => unless Out.data == #[-10, -5, -2] do
++      throwError s!"4g regression min twin: expected [-10,-5,-2], got {repr Out.data}"
++
++-- S3b: top-level tropical scatter. `Out[2*i] := agg(X[i,j])`, source axes i (uid 1, extent 3) and
++-- j (uid 2, extent 2); `j` is absent from the LHS, so the two `j` writes of one `i` COLLIDE on the
++-- cell `2*i`, and the odd cells are the EMPTY fibre. Donor: the S3a sum-collision fixture above.
++-- A max-plus scatter starts at -inf and folds with max; min-plus starts at +inf and folds with min.
++private def ninf : Float := -1.0 / 0.0
++private def pinf : Float := 1.0 / 0.0
++
++private def s3bRhs (agg : AggOp) (twoFactor : Bool) : RHSExpr :=
++  let i := ax "i" 1; let j := ax "j" 2
++  { body := { terms := [{ factors :=
++      if twoFactor then [.read "X" [.axis i, .axis j], .read "Y" [.axis j]]
++      else [.read "X" [.axis i, .axis j]] }] }
++    nonlin := .identity, agg := agg }
++
++private def s3bRun (agg : AggOp) (twoFactor : Bool) (X Y : List Float) :
++    Except EvalError (String × DenseTensor) :=
++  let env : HashMap String DenseTensor :=
++    (({} : HashMap String DenseTensor).insert "X" (tensorOf [3, 2] X)).insert "Y" (tensorOf [2] Y)
++  let sizes := (({} : HashMap UID Nat).insert 1 3).insert 2 2
++  evalScatter (f64Decls ++ [Decl.typedTensor .f64 "Y" []]) env sizes "Out"
++    [.affine (.scale 2 (ax "i" 1))] (s3bRhs agg twoFactor) [6]
++
++-- (a) collision = max, not the sum [6,.,10,.,6,.] and not an overwrite; unwritten = -inf.
++run_cmd do
++  match s3bRun .max false [5, 1, 3, 7, 2, 4] [0, 0] with
++  | .error e => throwError s!"S3b max collision: {e}"
++  | .ok (_, Out) => unless Out.shape == [6] && Out.data == #[5, ninf, 7, ninf, 4, ninf] do
++      throwError s!"S3b max collision: {repr Out.shape} {repr Out.data}"
++-- min-plus twin from negated data.
++run_cmd do
++  match s3bRun .min false [-5, -1, -3, -7, -2, -4] [0, 0] with
++  | .error e => throwError s!"S3b min collision: {e}"
++  | .ok (_, Out) => unless Out.shape == [6] && Out.data == #[-5, pinf, -7, pinf, -4, pinf] do
++      throwError s!"S3b min collision: {repr Out.shape} {repr Out.data}"
++
++-- (b) F4: the CONTRACTED source axis `j` with an empty fibre, direct `evalScatter` against the raw
++-- checked plan, is `ScatterDenseTest` fixture 7 (same data): both give the same cells.
++
++-- (e) NaN in a colliding write propagates (f64 only): row 0 = [5, nan] (NaN second), row 2 =
++-- [nan, 4] (NaN first); the NaN-free row keeps its max and the empty fibre stays -inf.
++run_cmd do
++  let nan : Float := 0.0 / 0.0
++  match s3bRun .max false [5, nan, 3, 7, nan, 4] [0, 0] with
++  | .error e => throwError s!"S3b NaN: {e}"
++  | .ok (_, Out) =>
++      unless Out.data[0]!.isNaN && Out.data[4]!.isNaN && Out.data[2]! == 7 && Out.data[1]! == ninf do
++        throwError s!"S3b NaN must propagate through the collision fold: {repr Out.data}"
++
++-- (f) multi-factor source `maxreduce(X[i,j] * Y[j])`: the tropical ⊗ is `+`, so each write is
++-- X[i,j] + Y[j] (a real product would give 50/100/...): row 0 = max(5+10, 1+100) = 101, row 1 =
++-- max(3+10, 7+100) = 107, row 2 = max(2+10, 4+100) = 104.
++run_cmd do
++  match s3bRun .max true [5, 1, 3, 7, 2, 4] [10, 100] with
++  | .error e => throwError s!"S3b multi-factor max: {e}"
++  | .ok (_, Out) => unless Out.data == #[101, ninf, 107, ninf, 104, ninf] do
++      throwError s!"S3b multi-factor max: {repr Out.data}"
++-- twin: negated data, min-plus: row 0 = min(-5-10, -1-100) = -101, row 1 = -107, row 2 = -104.
++run_cmd do
++  match s3bRun .min true [-5, -1, -3, -7, -2, -4] [-10, -100] with
++  | .error e => throwError s!"S3b multi-factor min: {e}"
++  | .ok (_, Out) => unless Out.data == #[-101, pinf, -107, pinf, -104, pinf] do
++      throwError s!"S3b multi-factor min: {repr Out.data}"
++
++-- (d) real and predicate neighbours are unchanged: the real sum collision above (S3a) still sums
++-- (10), and the predicate collision below still folds with the Boolean OR (1).
++
+ -- S3a (bool ⊕ = ∨): into a `predicate` destination colliding writes fold with `max`, staying in
+ -- {0,1}. X = [1,1,0] all colliding ⇒ 1 (a real `+` would give 2).
+ run_cmd do

@@ -1,0 +1,709 @@
+[
+ {
+  "label": "T1-M1 reference Combine.tropical multiplies factors with * (not +)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Contract.lean",
+  "old": "⟨(· + ·), op, zero, 0.0⟩",
+  "new": "⟨(· * ·), op, zero, 1.0⟩",
+  "targets": [
+   "Eval.ContractTest",
+   "Eval.Portfolio.TropicalTest",
+   "Eval.Portfolio.RecurrenceTest"
+  ],
+  "expect": [
+   "error: test/Eval/ContractTest.lean:",
+   "error: test/Eval/Portfolio/TropicalTest.lean:",
+   "error: test/Eval/Portfolio/RecurrenceTest.lean:"
+  ]
+ },
+ {
+  "label": "T1-M2 checked plan f64 tropical factorOp back to .mul",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Plan/Check.lean",
+  "old": "{ factorOp := .add, factorId := .f64 (Float.toBits 0.0)",
+  "new": "{ factorOp := .mul, factorId := .f64 (Float.toBits 1.0)",
+  "targets": [
+   "Eval.Plan.KernelDenseTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/KernelDenseTest.lean:"
+  ]
+ },
+ {
+  "label": "T1-M3 checked plan f32 tropical factorOp back to .mul",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Plan/Check.lean",
+  "old": "{ factorOp := .add, factorId := .f32 0x00000000",
+  "new": "{ factorOp := .mul, factorId := .f32 0x3f800000",
+  "targets": [
+   "Eval.Plan.KernelDense32Test"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/KernelDense32Test.lean:"
+  ]
+ },
+ {
+  "label": "T1-M4 maxNaN loses NaN propagation (Max.max)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Error.lean",
+  "old": "def maxNaN (a b : Float) : Float :=\n  if a.isNaN then a else if b.isNaN then b else Max.max a b",
+  "new": "def maxNaN (a b : Float) : Float :=\n  Max.max a b",
+  "targets": [
+   "Eval.ContractTest",
+   "Eval.Plan.KernelDenseTest"
+  ],
+  "expect": [
+   "error: test/Eval/ContractTest.lean:",
+   "error: test/Eval/Plan/KernelDenseTest.lean:"
+  ]
+ },
+ {
+  "label": "T1-M5 minNaN32 loses NaN propagation (Min.min)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Error.lean",
+  "old": "def minNaN32 (a b : Float32) : Float32 :=\n  if a.isNaN then a else if b.isNaN then b else Min.min a b",
+  "new": "def minNaN32 (a b : Float32) : Float32 :=\n  Min.min a b",
+  "targets": [
+   "Eval.ContractTest",
+   "Eval.Plan.KernelDense32Test"
+  ],
+  "expect": [
+   "error: test/Eval/ContractTest.lean:",
+   "error: test/Eval/Plan/KernelDense32Test.lean:"
+  ]
+ },
+ {
+  "label": "T1-M6 plan f64 floatOps min arm bypasses minNaN (Min.min)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Plan/Dense.lean",
+  "old": "| .min => .ok minNaN\n",
+  "new": "| .min => .ok Min.min\n",
+  "targets": [
+   "Eval.Plan.KernelDenseTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/KernelDenseTest.lean:"
+  ]
+ },
+ {
+  "label": "T2-M1 plan bare OOB pad -> ops.zero (real 0) instead of the statement's 0_K",
+  "task": "T2",
+  "file": "LeanNCD/Eval/Plan/Dense.lean",
+  "old": "    | none => pad\n    | some _ => ops.zero",
+  "new": "    | none => ops.zero\n    | some _ => ops.zero",
+  "targets": [
+   "Eval.Plan.KernelDenseTest",
+   "Eval.Plan.KernelDense32Test"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/KernelDenseTest.lean:"
+  ]
+ },
+ {
+  "label": "T2-M2 plan unary OOB pad -> pad (0_K) instead of the real zero",
+  "task": "T2",
+  "file": "LeanNCD/Eval/Plan/Dense.lean",
+  "old": "    | some _ => ops.zero\n  let base",
+  "new": "    | some _ => pad\n  let base",
+  "targets": [
+   "Eval.Plan.KernelDenseTest",
+   "Eval.Plan.KernelDense32Test"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/KernelDenseTest.lean:"
+  ]
+ },
+ {
+  "label": "T2-M3 plan Iverson false -> ops.zero (real 0) instead of 0_K",
+  "task": "T2",
+  "file": "LeanNCD/Eval/Plan/Dense.lean",
+  "old": "(fun v => if v then factorId else reduceId))",
+  "new": "(fun v => if v then factorId else ops.zero))",
+  "targets": [
+   "Eval.Plan.KernelDenseTest",
+   "Eval.Plan.KernelDense32Test"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/KernelDenseTest.lean:"
+  ]
+ },
+ {
+  "label": "T2-M4 plan Iverson true -> decoded real one instead of 1_K",
+  "task": "T2",
+  "file": "LeanNCD/Eval/Plan/Dense.lean",
+  "old": "(fun v => if v then factorId else reduceId))",
+  "new": "(fun v => if v then (match ops.decodeConst (.bool true) with | .ok x => x | .error _ => factorId) else reduceId))",
+  "targets": [
+   "Eval.Plan.KernelDenseTest",
+   "Eval.Plan.KernelDense32Test"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/KernelDenseTest.lean:"
+  ]
+ },
+ {
+  "label": "T2-M5 reference gather bare OOB pad -> 0.0 instead of the statement's 0_K",
+  "task": "T2",
+  "file": "LeanNCD/Eval/Gather.lean",
+  "old": "gatherRead env coord zero nm es",
+  "new": "gatherRead env coord 0.0 nm es",
+  "targets": [
+   "Eval.GatherTest",
+   "Eval.Portfolio.ConvPoolTest"
+  ],
+  "expect": [
+   "error: test/Eval/GatherTest.lean:",
+   "error: test/Eval/Portfolio/ConvPoolTest.lean:"
+  ]
+ },
+ {
+  "label": "T2-M6 reference Combine.tropical (unit0, unit1) -> (0.0, 1.0): empty sum / empty product",
+  "task": "T2",
+  "file": "LeanNCD/Eval/Contract.lean",
+  "old": "⟨(· + ·), op, zero, 0.0⟩",
+  "new": "⟨(· + ·), op, 0.0, 1.0⟩",
+  "targets": [
+   "Eval.ContractTest"
+  ],
+  "expect": [
+   "error: test/Eval/ContractTest.lean:"
+  ]
+ },
+ {
+  "label": "T3-M1 reference scatter fold: combine -> + (max/min collisions summed)",
+  "task": "T3",
+  "file": "LeanNCD/Eval/Scatter.lean",
+  "old": "out := out.set! oc (c.combine prev val)",
+  "new": "out := out.set! oc (prev + val)",
+  "targets": [
+   "Eval.ScatterTest",
+   "Eval.Plan.ScatterCompileTest",
+   "Eval.Plan.DifferentialTest",
+   "Eval.Plan.ScatterDenseTest",
+   "Eval.ScanTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterDenseTest.lean:",
+   "error: test/Eval/Plan/ScatterCompileTest.lean:",
+   "S11 Out[2*i] := maxreduce(X[i, j])",
+   "error: test/Eval/ScanTest.lean:",
+   "shape 1 max"
+  ]
+ },
+ {
+  "label": "T3-M2 reference scatter init: unit0 -> 0.0",
+  "task": "T3",
+  "file": "LeanNCD/Eval/Scatter.lean",
+  "old": "DenseTensor.ofFn outShape (fun _ => c.unit0)",
+  "new": "DenseTensor.ofFn outShape (fun _ => 0.0)",
+  "targets": [
+   "Eval.ScatterTest",
+   "Eval.ScanTest"
+  ],
+  "expect": [
+   "error: test/Eval/ScatterTest.lean:",
+   "error: test/Eval/ScanTest.lean:",
+   "S3b max collision"
+  ]
+ },
+ {
+  "label": "T3-M3 reference scatter fold: max-plus combine -> non-NaN-propagating max",
+  "task": "T3",
+  "file": "LeanNCD/Eval/Scatter.lean",
+  "old": "out := out.set! oc (c.combine prev val)",
+  "new": "out := out.set! oc (if c.unit0 == -1.0 / 0.0 then Max.max prev val else c.combine prev val)",
+  "targets": [
+   "Eval.ScatterTest"
+  ],
+  "expect": [
+   "error: test/Eval/ScatterTest.lean:"
+  ]
+ },
+ {
+  "label": "T3-M5 checked worker fill: reduceId -> ops.zero",
+  "task": "T3",
+  "file": "LeanNCD/Eval/Plan/Dense.lean",
+  "old": "Array.replicate (destShape.foldl (· * ·) 1) reduceId",
+  "new": "Array.replicate (destShape.foldl (· * ·) 1) ops.zero",
+  "targets": [
+   "Eval.Plan.ScatterDenseTest",
+   "Eval.Plan.ScatterCompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterDenseTest.lean:",
+   "error: test/Eval/Plan/ScatterCompileTest.lean:",
+   "S11 Out[2*i] := maxreduce(X[i, j])"
+  ]
+ },
+ {
+  "label": "T3-M6 checked worker fold: reduceOp -> overwrite",
+  "task": "T3",
+  "file": "LeanNCD/Eval/Plan/Dense.lean",
+  "old": "data := data.set! fi (reduceOp (data.getD fi reduceId) val)",
+  "new": "data := data.set! fi val",
+  "targets": [
+   "Eval.Plan.ScatterDenseTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterDenseTest.lean:"
+  ]
+ },
+ {
+  "label": "T3-M7 compile: scatter step algebra ignores agg",
+  "task": "T3",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "        -- the DESTINATION's own declaration, never by a source factor's.\n        let destDtype := dtypeOfDecl (declEnv[nm]?)\n        let computePlan := { computePlan with algebra := algebraForDest destDtype rhs.agg }",
+  "new": "        -- the DESTINATION's own declaration, never by a source factor's.\n        let destDtype := dtypeOfDecl (declEnv[nm]?)\n        let computePlan := { computePlan with algebra := algebraForDest destDtype .sum }",
+  "targets": [
+   "Eval.Plan.CompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:"
+  ]
+ },
+ {
+  "label": "T4-M1 (tropicalNonlin removed from checkScheduledDtypes)",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "      checkPredicateOutput env s\n      checkTropicalOutput env s",
+  "new": "      checkPredicateOutput env s",
+  "targets": [
+   "Eval.Plan.CompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:",
+   "relu on a max-plus statement"
+  ]
+ },
+ {
+  "label": "T4-M2 (scanStateAlgebraMismatch removed)",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "if rest.any (fun b => b != a) then throw (.scanStateAlgebraMismatch nm) else pure a",
+  "new": "pure a",
+  "targets": [
+   "Eval.Plan.CompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:",
+   "scan base max / recurrence min"
+  ]
+ },
+ {
+  "label": "T4-M3b (cast table: tropical -> bool accepted)",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "(k == .bool || (k.isTropical && a != k))",
+  "new": "(k.isTropical && a != k)",
+  "targets": [
+   "Eval.Plan.CompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:",
+   "predicate reads a max-plus tensor"
+  ]
+ },
+ {
+  "label": "T4-M3c (cast table: max-plus <-> min-plus accepted)",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "(k == .bool || (k.isTropical && a != k))",
+  "new": "(k == .bool)",
+  "targets": [
+   "Eval.Plan.CompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:",
+   "max-plus statement reads a min-plus"
+  ]
+ },
+ {
+  "label": "T4-M3d (cast table: real -> bool also rejected, parked decision 1 broken)",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "if a.isTropical && (k == .bool || (k.isTropical && a != k)) then",
+  "new": "if (a.isTropical || (a == .real && k == .bool)) && (k == .bool || (k.isTropical && a != k)) then",
+  "targets": [
+   "Eval.Plan.CompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:"
+  ]
+ },
+ {
+  "label": "T4-M5 (unaryFn exemption removed: unary read cast-checked like a bare read)",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "                  | .iverson _ | .unaryFn .. => pure ()",
+  "new": "                  | .unaryFn _ src _ =>\n                      let a := algebras[src]?.getD (env.declAlgebra src)\n                      if a.isTropical && (k == .bool || (k.isTropical && a != k)) then\n                        throw (.sortCastUnsupported nm src)\n                  | .iverson _ => pure ()",
+  "targets": [
+   "Eval.Plan.CompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:",
+   "unaryFn read of a min-plus tensor"
+  ]
+ },
+ {
+  "label": "T4-M7b (Stmt.algebra ignores the predicate declaration: predicate-ness dropped from the sort)",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "      match env[nm]? with\n      | some (.predicate _ _) => .bool\n      | _ => r.agg.algebra",
+  "new": "      r.agg.algebra",
+  "targets": [
+   "Eval.Plan.CompileTest",
+   "DSL.Pipeline.StructuralTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:",
+   "predicate reads a max-plus tensor"
+  ]
+ },
+ {
+  "label": "T5-M1 (cast removed in reference gather: bare read)",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Gather.lean",
+  "old": "  | .read nm es => gatherRead env coord zero nm es (castOf nm)",
+  "new": "  | .read nm es => gatherRead env coord zero nm es",
+  "targets": [
+   "Eval.Plan.BoolCastTest",
+   "Eval.Portfolio.GnnScatterTest"
+  ],
+  "expect": [
+   "error: test/Eval/Portfolio/GnnScatterTest.lean:",
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "a1 max: reference"
+  ]
+ },
+ {
+  "label": "T5-M2 (cast removed in plan Dense)",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Dense.lean",
+  "old": "          | some v => if f.boolToTropical then (if ops.isTrue v then one else pad) else v",
+  "new": "          | some v => v",
+  "targets": [
+   "Eval.Plan.BoolCastTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "a1 max: plan f64"
+  ]
+ },
+ {
+  "label": "T5-M3 (truth convention flipped, plan Dense)",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Dense.lean",
+  "old": "(if ops.isTrue v then one else pad)",
+  "new": "(if ops.isTrue v then pad else one)",
+  "targets": [
+   "Eval.Plan.BoolCastTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "a1 max: plan f64"
+  ]
+ },
+ {
+  "label": "T5-M4b (cast applied under unary, plan compile)",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "                   , oobPolicy := .zeroPad, unary := some op })",
+  "new": "                   , oobPolicy := .zeroPad, unary := some op, boolToTropical := tropical && isBoolSlot sourceSlot })",
+  "targets": [
+   "Eval.Plan.BoolCastTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "prepare64 failed"
+  ]
+ },
+ {
+  "label": "T5-M5 (cast applied for real statements, plan compile: tropical guard dropped)",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "                   , boolToTropical := tropical && isBoolSlot sourceSlot })",
+  "new": "                   , boolToTropical := isBoolSlot sourceSlot })",
+  "targets": [
+   "Eval.Plan.BoolCastTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "prepare64 failed"
+  ]
+ },
+ {
+  "label": "T5-M6 (cast applied to the OOB pad, reference)",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Gather.lean",
+  "old": "        .ok pad\n      else",
+  "new": "        .ok (cast pad)\n      else",
+  "targets": [
+   "Eval.Plan.BoolCastTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "g1 oob max: reference"
+  ]
+ },
+ {
+  "label": "T5-M7 (cast field not filled: scan base caller)",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "(fun s => (sigsNow[s]?).any (·.dtype == .bool)) preSlot outputShape",
+  "new": "(fun _ => false) preSlot outputShape",
+  "targets": [
+   "Eval.Plan.BoolCastTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "d3 scan max: plan f64"
+  ]
+ },
+ {
+  "label": "T5-M9 (cast field not filled: scatter caller)",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool)) destSlot srcShape",
+  "new": "resolveSource (fun _ => false) destSlot srcShape",
+  "targets": [
+   "Eval.Plan.BoolCastTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "d1 scatter max: plan f64"
+  ]
+ },
+ {
+  "label": "T5-M11 (checker: castNotAdmitted rejection removed)",
+  "task": "T5",
+  "file": "LeanNCD/Eval/Plan/Check.lean",
+  "old": "            throw (.castNotAdmitted ti fi)",
+  "new": "            pure ()",
+  "targets": [
+   "Eval.Plan.BoolCastTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:"
+  ]
+ },
+ {
+  "label": "T6-M1 (reference state init back to zeros)",
+  "task": "T6",
+  "file": "LeanNCD/Eval/Scan.lean",
+  "old": "work := work.insert nm ⟨stateShape, Array.replicate (DenseTensor.sizeOf stateShape) zeroK⟩",
+  "new": "work := work.insert nm (DenseTensor.zeros stateShape)",
+  "targets": [
+   "Eval.Plan.BoolCastTest",
+   "Eval.Portfolio.RecurrenceTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "T6-a1 state max-plus: reference",
+   "error: test/Eval/Portfolio/RecurrenceTest.lean:"
+  ]
+ },
+ {
+  "label": "T6-M2 (plan f64 state init back to 0.0)",
+  "task": "T6",
+  "file": "LeanNCD/Eval/Plan/Scan.lean",
+  "old": "runDenseScanWith 0.0 (-1.0 / 0.0) (1.0 / 0.0) runDenseBlock sigs c outerStore",
+  "new": "runDenseScanWith 0.0 0.0 0.0 runDenseBlock sigs c outerStore",
+  "targets": [
+   "Eval.Plan.BoolCastTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "T6-a1 state max-plus: plan f64"
+  ]
+ },
+ {
+  "label": "T6-M7 (neutral writers forced real in both backends: pad and cast key lose the state's sort)",
+  "task": "T6",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "if s.isSortNeutral then s.withAgg (scanStateAlgebra env ss s.lhsName).stateAgg else s",
+  "new": "if s.isSortNeutral then s.withAgg .sum else s",
+  "targets": [
+   "Eval.Plan.BoolCastTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "T6-c1 neutral oob max: reference"
+  ]
+ },
+ {
+  "label": "T6-M8 (state sort leaks from scratch / other names: sorts not filtered by name)",
+  "task": "T6",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "(ss.filter (fun s => s.lhsName == nm)).filterMap (Stmt.ownAlgebra? env)",
+  "new": "ss.filterMap (Stmt.ownAlgebra? env)",
+  "targets": [
+   "Eval.Plan.ScanCompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScanCompileTest.lean:",
+   "T6/scratchMax: the state stays real"
+  ]
+ },
+ {
+  "label": "T6-M9 (compile: max-plus state gets zero init)",
+  "task": "T6",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "        | .maxPlus => .negInf",
+  "new": "        | .maxPlus => .zero",
+  "targets": [
+   "Eval.Plan.BoolCastTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "T6-a1 state max-plus: plan f64"
+  ]
+ },
+ {
+  "label": "T6-M11 (checker: stateInitNotAdmitted rule removed)",
+  "task": "T6",
+  "file": "LeanNCD/Eval/Plan/Scan.lean",
+  "old": "unless st.initValue == .zero || stateSig.dtype != .bool do",
+  "new": "unless true do",
+  "targets": [
+   "Eval.Plan.ScanCompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScanCompileTest.lean:"
+  ]
+ },
+ {
+  "label": "T6-M12 (checker: rule rejects tropical init on every state, not only bool)",
+  "task": "T6",
+  "file": "LeanNCD/Eval/Plan/Scan.lean",
+  "old": "unless st.initValue == .zero || stateSig.dtype != .bool do",
+  "new": "unless st.initValue == .zero do",
+  "targets": [
+   "Eval.Plan.ScanCompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScanCompileTest.lean:"
+  ]
+ },
+ {
+  "label": "T7-M1 (oracle: sorted tropical scatter refused again: keeps its max/min agg, so admission refuses nonSum)",
+  "task": "T7",
+  "file": "LeanNCD/Semantics/Source/Admission.lean",
+  "old": "  | .assign name slots rhs | .scatter name slots rhs =>\n    let rhs := if sorted then { rhs with agg := .sum } else rhs\n    if slots.all LHSSlot.isFree then admitStatement source original (.assign name slots rhs)\n    else admitAffineWrite source original name slots rhs",
+  "new": "  | .assign name slots rhs =>\n    let rhs := if sorted then { rhs with agg := .sum } else rhs\n    if slots.all LHSSlot.isFree then admitStatement source original (.assign name slots rhs)\n    else admitAffineWrite source original name slots rhs\n  | .scatter name slots rhs =>\n    if slots.all LHSSlot.isFree then admitStatement source original (.assign name slots rhs)\n    else admitAffineWrite source original name slots rhs",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest",
+   "Semantics.SourceSortedAuditTest",
+   "Semantics.SourceAdmissionAffineTest"
+  ],
+  "expect": [
+   "error: test/Semantics/SourceSortedAuditTest.lean:",
+   "error: test/Semantics/SourceAdmissionAffineTest.lean:",
+   "error: test/Semantics/SourceSortedDifferentialTest.lean:"
+  ]
+ },
+ {
+  "label": "T7-M5 (oracle: empty-fibre total starts at 1_K, i.e. real 0 in a tropical carrier)",
+  "task": "T7",
+  "file": "LeanNCD/Semantics/Source/Oracle.lean",
+  "old": "  let mut total : K := 0\n  for assignment in assignments axes do\n    let output ← destination statement.output.origin shape assignment statement.output.forms",
+  "new": "  let mut total : K := 1\n  for assignment in assignments axes do\n    let output ← destination statement.output.origin shape assignment statement.output.forms",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest",
+   "Semantics.SourceOracleCarrierTest"
+  ],
+  "expect": [
+   "error: test/Semantics/SourceOracleCarrierTest.lean:",
+   "error: test/Semantics/SourceSortedDifferentialTest.lean:"
+  ]
+ },
+ {
+  "label": "T8-M1 (PRODUCTION: min-plus scan state starts at -inf in the checked plan; mirror-asymmetric, caught by the min hand twin RC10m AND by the duality property's grid min case)",
+  "task": "T8",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "        | .minPlus => .posInf",
+  "new": "        | .minPlus => .negInf",
+  "targets": [
+   "Eval.Plan.DualityTest",
+   "Eval.Plan.DifferentialTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/DualityTest.lean:",
+   "DUALITY VIOLATED on checked plan f64"
+  ]
+ },
+ {
+  "label": "T8-M3 (PRODUCTION: predicate read casts false to 0.0 in BOTH tropical sorts; 0.0 is negation-fixed and predicate programs are outside the property, so ONLY the one-sort BoolCastTest hand fixtures catch it, and GN4/GN4m do not discriminate unless the masked row would win)",
+  "task": "T8",
+  "file": "LeanNCD/Eval/Contract.lean",
+  "old": "if v != 0.0 then c.unit1 else c.unit0",
+  "new": "if v != 0.0 then c.unit1 else 0.0",
+  "targets": [
+   "Eval.Plan.BoolCastTest",
+   "Eval.Portfolio.GnnScatterTest"
+  ],
+  "expect": [
+   "error: test/Eval/Portfolio/GnnScatterTest.lean:",
+   "error: test/Eval/Plan/BoolCastTest.lean:",
+   "a1 max: reference"
+  ]
+ },
+ {
+  "label": "T8-M4 (ORACLE test-side: the independent unrolling's zero leaf / merge go back to the real sum, i.e. state init back to 0)",
+  "task": "T8",
+  "file": "test/Eval/PropertyOracle/ScanUnroll.lean",
+  "old": "  | some (.assign _ _ r) | some (.scatter _ _ r) => r.agg",
+  "new": "  | some (.assign _ _ r) | some (.scatter _ _ r) => AggOp.sum",
+  "targets": [
+   "Eval.PropertyOracle.ScanOracle"
+  ],
+  "expect": [
+   "error: test/Eval/PropertyOracle/ScanOracle.lean:"
+  ]
+ },
+ {
+  "label": "T8-M5 (PRODUCTION: a sort-neutral writer votes for the state's sort; flips the PARKED all-neutral pin, and RC10-style neutral-base behaviour where annotations disagree)",
+  "task": "T8",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "  | _ => if s.isSortNeutral then none else some (s.algebra env)",
+  "new": "  | _ => some (s.algebra env)",
+  "targets": [
+   "Eval.Plan.DualityTest",
+   "Eval.Plan.CompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/PropertyOracle/ScanGen.lean:",
+   "error: test/Eval/Plan/CompileTest.lean:"
+  ]
+ },
+ {
+  "label": "T8-M6 (PRODUCTION: binary32 min-plus reduce identity is -inf; asymmetric f32-only bug; caught by the property's plan32 leg AND by Adapter32Test fixture 9 min)",
+  "task": "T8",
+  "file": "LeanNCD/Eval/Plan/Check.lean",
+  "old": "def admittedAlgebraF32Min : ContractionAlgebra := tropicalAlgebraF32 .min 0x7f800000",
+  "new": "def admittedAlgebraF32Min : ContractionAlgebra := tropicalAlgebraF32 .min 0xff800000",
+  "targets": [
+   "Eval.Plan.DualityTest",
+   "Eval.Plan.Adapter32Test"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/DualityTest.lean:",
+   "DUALITY VIOLATED on checked plan f32",
+   "error: test/Eval/Plan/Adapter32Test.lean:"
+  ]
+ },
+ {
+  "label": "T9-M1 (isSortNeutral ignores rhs.nonlin again)",
+  "task": "T9",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "      r.nonlin == .identity &&\n      match r.body.terms with",
+  "new": "      match r.body.terms with",
+  "targets": [
+   "Eval.Plan.CompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:",
+   "relu base (predicate source) beside a max-plus recurrence",
+   "relu base (real source) beside a max-plus recurrence"
+  ]
+ }
+]

@@ -350,4 +350,38 @@ run_cmd do
   assertScatterParity "S10b Out[2*i] := X[i, j] (order)" collideProg collideOrderEnv "Out"
     (dt [6] [0.0, 0.0, 12.0, 0.0, 1.0, 0.0])
 
+/-! ## S11 — a surface `maxreduce`/`minreduce` scatter, through the reference AND the checked plan (S3b)
+
+`Out[2*i] := maxreduce(X[i, j])` (donor: S10, the same program with the real sum): the `j` writes of
+one `i` collide and are folded with `max`; the odd cells are the empty fibre `-inf`. `X = [[5,1],[3,7],
+[2,4]]` gives `[5, -inf, 7, -inf, 4, -inf]`; the sum would be `[6,.,10,.,6,.]`, an overwrite by the last
+write `[1,.,7,.,4,.]`. `assertScatterParity` demands the checked plan and the reference be equal to
+each other and to this value. Formerly BOTH refused it. Min-plus twin on negated data. -/
+
+def maxCollideProg : TLProgram := tlprog!{ Out[2*i] := maxreduce(X[i, j]) }
+def minCollideProg : TLProgram := tlprog!{ Out[2*i] := minreduce(X[i, j]) }
+run_cmd do
+  assertScatterParity "S11 Out[2*i] := maxreduce(X[i, j])" maxCollideProg
+    (HashMap.ofList [("X", dt [3, 2] [5.0, 1.0, 3.0, 7.0, 2.0, 4.0])]) "Out"
+    (dt [6] [5.0, -1.0 / 0.0, 7.0, -1.0 / 0.0, 4.0, -1.0 / 0.0])
+  assertScatterParity "S11 Out[2*i] := minreduce(X[i, j])" minCollideProg
+    (HashMap.ofList [("X", dt [3, 2] [-5.0, -1.0, -3.0, -7.0, -2.0, -4.0])]) "Out"
+    (dt [6] [-5.0, 1.0 / 0.0, -7.0, 1.0 / 0.0, -4.0, 1.0 / 0.0])
+
+/-! ## S12 — a multi-factor tropical scatter source: ⊗ is `+` (S3b, T1's ⊗ reaching the compute half)
+
+`Out[2*i] := maxreduce(X[i, j] · Y[j])`, `Y = [10, 100]`: each write is `X[i,j] + Y[j]`, so cell `2*i`
+is `max(5+10, 1+100) = 101`, `max(3+10, 7+100) = 107`, `max(2+10, 4+100) = 104` (a real product would
+give `100, 100, 400`-ish values). Min-plus twin from negated data. -/
+
+def maxProdProg : TLProgram := tlprog!{ Out[2*i] := maxreduce(X[i, j] · Y[j]) }
+def minProdProg : TLProgram := tlprog!{ Out[2*i] := minreduce(X[i, j] · Y[j]) }
+run_cmd do
+  assertScatterParity "S12 Out[2*i] := maxreduce(X[i, j] · Y[j])" maxProdProg
+    (HashMap.ofList [("X", dt [3, 2] [5.0, 1.0, 3.0, 7.0, 2.0, 4.0]), ("Y", dt [2] [10.0, 100.0])]) "Out"
+    (dt [6] [101.0, -1.0 / 0.0, 107.0, -1.0 / 0.0, 104.0, -1.0 / 0.0])
+  assertScatterParity "S12 Out[2*i] := minreduce(X[i, j] · Y[j])" minProdProg
+    (HashMap.ofList [("X", dt [3, 2] [-5.0, -1.0, -3.0, -7.0, -2.0, -4.0]), ("Y", dt [2] [-10.0, -100.0])])
+    "Out" (dt [6] [-101.0, 1.0 / 0.0, -107.0, 1.0 / 0.0, -104.0, 1.0 / 0.0])
+
 end LeanNCD.Eval.Plan.ScatterCompileTest

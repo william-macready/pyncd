@@ -498,6 +498,47 @@ run_cmd do
   | .error e _ => throwError s!"expected predicateNonlin before predicateAgg, got: {repr e}"
   | .ok _ _    => throwError "expected predicateNonlin for a pointwise max-agg predicate output"
 
+-- S3b T4: `checkDtypes` (the SOURCE pipeline) carries the same per-statement tropical rule as
+-- `checkScheduledDtypes`. Donor: fixture 6 above (programmatic statement, hand-built `DeclEnv`).
+-- A max/min-annotated statement with a non-identity nonlinearity is `tropicalNonlin`.
+private def tropicalStmtResult (nm : String) (nl : Nonlin) (ag : AggOp) (pred : Bool := false) :
+    Except CompileError Unit :=
+  let ax : AxisSpec := { name := "i", uid := 1, kind := .real }
+  let s : Stmt := .assign nm [.free ax]
+    { body := { terms := [{ factors := [.read "X" [.axis ax]] }] }, nonlin := nl, agg := ag }
+  let env : DeclEnv :=
+    if pred then ({} : Std.HashMap String Decl).insert nm (.predicate nm [ax]) else {}
+  let rp : ResolvedProgram := { decls := [], env, extNames := ∅, stmts := [s] }
+  match checkDtypes rp |>.run 0 with
+  | .ok _ _    => .ok ()
+  | .error e _ => .error e
+
+#guard tropicalStmtResult "M" (.pointwise .relu) .max == .error (.tropicalNonlin "M")
+#guard tropicalStmtResult "M" (.pointwise .relu) .min == .error (.tropicalNonlin "M")
+#guard tropicalStmtResult "M" (.axiswise .softmax none) .max == .error (.tropicalNonlin "M")
+-- neighbours: the same nonlinearity on a `sum`, and `max`/`min` with identity, are accepted
+#guard tropicalStmtResult "M" (.pointwise .relu) .sum == .ok ()
+#guard tropicalStmtResult "M" .identity .max == .ok ()
+#guard tropicalStmtResult "M" .identity .min == .ok ()
+-- a predicate destination is `bool`, not tropical: relu + max reports the predicate rule, which runs
+-- first (`predicateNonlin`, then `predicateAgg`), never `tropicalNonlin`
+#guard tropicalStmtResult "P" (.pointwise .relu) .max (pred := true) == .error (.predicateNonlin "P")
+#guard tropicalStmtResult "P" .identity .max (pred := true) == .error (.predicateAgg "P")
+
+-- The `TLProgram.compile` path reaches the same rule (a programmatic statement: `relu(maxreduce ..)`
+-- has no surface form).
+run_cmd do
+  let ax : AxisSpec := { name := "i", uid := 1, kind := .real }
+  let p : TLProgram :=
+    { decls := [.tensor "M" [ax]]
+    , stmts := [.assign "M" [.free ax]
+        { body := { terms := [{ factors := [.read "X" [.axis ax]] }] }
+        , nonlin := .pointwise .relu, agg := .max }] }
+  match p.compile |>.run 0 with
+  | .error (.tropicalNonlin "M") _ => pure ()
+  | .error e _ => throwError s!"compile: wrong error: {repr e}"
+  | .ok _ _    => throwError "compile: expected tropicalNonlin, compile succeeded"
+
 private def baseScatterScan : TLProgram := tlprog!{
   iter l = 3
   S[2 * i, 0] := X[i]

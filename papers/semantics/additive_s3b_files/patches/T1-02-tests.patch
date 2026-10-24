@@ -1,0 +1,483 @@
+diff --git a/leanncd/test/Eval/ContractTest.lean b/leanncd/test/Eval/ContractTest.lean
+index 371567bd..8f804d46 100644
+--- a/leanncd/test/Eval/ContractTest.lean
++++ b/leanncd/test/Eval/ContractTest.lean
+@@ -205,4 +205,41 @@ run_cmd do
+   | Except.ok (_, a), Except.ok (_, b) => unless DenseTensor.approxEq a b do
+       throwError s!"4a: evalAssignWith {repr a.data} ≠ evalAssignSeeded-with-empty-seed {repr b.data}"
+   | _, _ => throwError "4a: one of the two calls errored unexpectedly"
++
++-- S3b-i task T1: `Combine.max`/`Combine.min` are the semirings max-plus `(+, max, −∞, 0)` and min-plus
++-- `(+, min, +∞, 0)`, and every `Combine`'s ⊕/⊗ on binary64 is NaN-propagating where it is max/min.
++
++-- ⊗ is `+` with identity `0.0` (before S3b-i it was `*` with identity `1.0`); ⊕ identity is `∓∞`.
++#guard Combine.max.mul 2.0 3.0 == 5.0 && Combine.max.unit1 == 0.0 && Combine.max.unit0 == -1.0 / 0.0
++#guard Combine.min.mul 2.0 3.0 == 5.0 && Combine.min.unit1 == 0.0 && Combine.min.unit0 == 1.0 / 0.0
++-- Accept-neighbour: the real semiring keeps `*` / `+` with `1.0` / `0.0`.
++#guard Combine.real.mul 2.0 3.0 == 6.0 && Combine.real.unit1 == 1.0 && Combine.real.unit0 == 0.0
++-- Accept-neighbour: non-NaN max/min behave as before.
++#guard Combine.max.combine 1.0 2.0 == 2.0 && Combine.max.combine 2.0 1.0 == 2.0
++#guard Combine.min.combine 1.0 2.0 == 1.0 && Combine.min.combine 2.0 1.0 == 1.0
++
++-- Negation duality: `min-plus(x) = −max-plus(−x)`, for ⊗ and ⊕ and the identities.
++#guard Combine.min.mul 2.0 3.0 == -(Combine.max.mul (-2.0) (-3.0))
++#guard Combine.min.combine 1.0 2.0 == -(Combine.max.combine (-1.0) (-2.0))
++#guard Combine.min.unit0 == -Combine.max.unit0
++
++private def nanF : Float := 0.0 / 0.0
++
++-- NaN propagation: a NaN in EITHER argument position is the result, for the tropical ⊕ and both
++-- Boolean operations (`min` for ∧, `max` for ∃). Lean's `Max.max` drops a NaN second operand and
++-- `Min.min` a NaN first operand, so each position catches one of the unfixed operators.
++#guard (Combine.max.combine nanF 1.0).isNaN && (Combine.max.combine 1.0 nanF).isNaN
++#guard (Combine.min.combine nanF 1.0).isNaN && (Combine.min.combine 1.0 nanF).isNaN
++#guard (Combine.bool.mul nanF 1.0).isNaN && (Combine.bool.mul 1.0 nanF).isNaN
++#guard (Combine.bool.combine nanF 1.0).isNaN && (Combine.bool.combine 1.0 nanF).isNaN
++-- The shared helpers directly, binary64 and binary32.
++#guard (maxNaN nanF 1.0).isNaN && (maxNaN 1.0 nanF).isNaN && (minNaN nanF 1.0).isNaN && (minNaN 1.0 nanF).isNaN
++#guard (maxNaN32 (Float32.ofBits 0x7fc00000) (Float32.ofBits 0x3f800000)).isNaN
++#guard (maxNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x7fc00000)).isNaN
++#guard (minNaN32 (Float32.ofBits 0x7fc00000) (Float32.ofBits 0x3f800000)).isNaN
++#guard (minNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x7fc00000)).isNaN
++-- Accept-neighbour (binary32): non-NaN operands behave as `max`/`min`.
++#guard maxNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x40000000) == Float32.ofBits 0x40000000
++#guard minNaN32 (Float32.ofBits 0x3f800000) (Float32.ofBits 0x40000000) == Float32.ofBits 0x3f800000
++
+ end LeanNCD.Eval
+diff --git a/leanncd/test/Eval/Plan/KernelDense32Test.lean b/leanncd/test/Eval/Plan/KernelDense32Test.lean
+index 8ce26b99..37e26ab8 100644
+--- a/leanncd/test/Eval/Plan/KernelDense32Test.lean
++++ b/leanncd/test/Eval/Plan/KernelDense32Test.lean
+@@ -204,11 +204,13 @@ def zerdStore32 : Array DenseTensor32 := #[ t32 [2] #[1088421888, 1090519040], t
+ -- regardless of the source's values (`[7, 8]` here).
+ #guard bitsOf (run32 zerdSigs32 f32Zerd zerdStore32) == some #[0, 0]
+ 
+-/-! ## Fixtures 7 and 8: the two binary32 tropical identities, independently
++/-! ## Fixtures 7 and 8: the binary32 max-plus / min-plus semirings, independently
+ 
+-`contractPlan` under the max and min algebras. In each the seed is LOAD-BEARING: with all-negative
+-column values a `+0` max seed would win every column, and with all-positive column values a `+0` min
+-seed would win every column. -/
++`contractPlan` under the max-plus and min-plus algebras (S3b-i task T1: the tropical ⊗ is `+` with
++identity binary32 `+0`, so `A[i]·B[j]` ADDS). In each direction the `⊕` seed is LOAD-BEARING on one
++fixture: with all-negative sums a `+0` max seed would win every column, and with all-positive sums a
++`+0` min seed would win every column. Every min-plus fixture has a negation-duality twin
++(`min-plus(x) = −max-plus(−x)`: flip every sign bit of the inputs and of the expectation). -/
+ 
+ def contractSigs32 : Array TensorSignature :=
+   #[ { shape := #[4], dtype := .f32 }, { shape := #[3], dtype := .f32 }
+@@ -231,16 +233,85 @@ def storeAB32 : Array DenseTensor32 :=
+    , t32 [3] #[1065353216, 1073741824, 1077936128]
+    , t32 [4] #[] ]
+ 
+--- Fixture 7: `max_j A[i]·B[j]` with every product negative is `A[i]·(-1)`, i.e.
+--- `[-10, -100, -1000, -10000]`. Only the `0xff800000` (`−∞`) seed makes this right; a `+0` seed
+--- would return `[0, 0, 0, 0]`.
++/-- `A = [-10, -100, -1000, -10000]`, `B = [-1, -2, -3]` — the negation of `storeAB32`. -/
++def storeNegA_NegB32 : Array DenseTensor32 :=
++  #[ t32 [4] #[3240099840, 3267887104, 3296329728, 3323740160]
++   , t32 [3] #[3212836864, 3221225472, 3225419776]
++   , t32 [4] #[] ]
++
++/-- `A = [-10, -100, -1000, -10000]`, `B = [1, 2, 3]` — the negation of `storeNegB32`. -/
++def storeNegA_PosB32 : Array DenseTensor32 :=
++  #[ t32 [4] #[3240099840, 3267887104, 3296329728, 3323740160]
++   , t32 [3] #[1065353216, 1073741824, 1077936128]
++   , t32 [4] #[] ]
++
++-- Fixture 7: max-plus `max_j A[i] + B[j]` = `A[i] + max B` = `A[i] + 3` = `[13, 103, 1003, 10003]`
++-- (before S3b-i, max-times: `[30, 300, 3000, 30000]`). Observed.
++#guard bitsOf (run32 contractSigs32 f32MaxContract storeAB32)
++  == some #[1095761920, 1120796672, 1148895232, 1176259584]
++
++-- Fixture 7b: all-negative B with positive A, `A[i] + (-1)` = `[9, 99, 999, 9999]` (before S3b-i the
++-- products were negative, `[-10, ..]`, and this fixture was the `−∞`-seed one). Observed.
+ #guard bitsOf (run32 contractSigs32 f32MaxContract storeNegB32)
+-  == some #[3240099840, 3267887104, 3296329728, 3323740160]
++  == some #[1091567616, 1120272384, 1148829696, 1176255488]
++
++-- Fixture 7c: the `−∞`-seed fixture. `A` and `B` negative make every max-plus sum negative, so the
++-- result is `A[i] + (-1)` = `[-11, -101, -1001, -10001]`; only the `0xff800000` seed makes this right
++-- (a `+0` seed would return `[0, 0, 0, 0]`). Twin of fixture 8.
++#guard bitsOf (run32 contractSigs32 f32MaxContract storeNegA_NegB32)
++  == some #[3241148416, 3268018176, 3296346112, 3323741184]
+ 
+--- Fixture 8: `min_j A[i]·B[j]` with every product positive is `A[i]·1`, i.e.
+--- `[10, 100, 1000, 10000]`. Only the `0x7f800000` (`+∞`) seed makes this right.
++-- Fixture 8: min-plus `min_j A[i] + B[j]` = `A[i] + 1` = `[11, 101, 1001, 10001]`, every sum positive,
++-- so only the `0x7f800000` (`+∞`) seed makes this right. Twin of fixture 7c. Observed.
+ #guard bitsOf (run32 contractSigs32 f32MinContract storeAB32)
+-  == some #[1092616192, 1120403456, 1148846080, 1176256512]
++  == some #[1093664768, 1120534528, 1148862464, 1176257536]
++
++-- Fixture 8b: the duality twin of fixture 7: min-plus on the negated data, `A[i] + min B` with
++-- `B = [-1,-2,-3]` = `A[i] - 3` = `[-13, -103, -1003, -10003]`. Observed.
++#guard bitsOf (run32 contractSigs32 f32MinContract storeNegA_NegB32)
++  == some #[3243245568, 3268280320, 3296378880, 3323743232]
++
++-- Fixture 8c: the duality twin of fixture 7b: `A[i] + 1` = `[-9, -99, -999, -9999]`. Observed.
++#guard bitsOf (run32 contractSigs32 f32MinContract storeNegA_PosB32)
++  == some #[3239051264, 3267756032, 3296313344, 3323739136]
++
++-- Fixture 8d: the constants themselves. The tropical ⊗ identity (`factorId`) is binary32 `+0`
++-- (`0x00000000`, `1_K`); the ⊕ identities (`reduceId`, `0_K`) are `−∞` / `+∞`; ⊗ is `add`.
++#guard admittedAlgebraF32Max.factorId == .f32 0x00000000
++#guard admittedAlgebraF32Max.reduceId == .f32 0xff800000
++#guard admittedAlgebraF32Max.factorOp == .add && admittedAlgebraF32Max.reduceOp == .max
++#guard admittedAlgebraF32Min.factorId == .f32 0x00000000
++#guard admittedAlgebraF32Min.reduceId == .f32 0x7f800000
++#guard admittedAlgebraF32Min.factorOp == .add && admittedAlgebraF32Min.reduceOp == .min
++
++/-! ## Fixture 8e: NaN propagation in the native binary32 `max`/`min`
++
++The binary32 mirror of `KernelDenseTest`'s `nanPlan` fixtures: rows `[NaN, 1]` (NaN second operand of
++step 1, first operand of step 2), `[1, NaN]` (second operand of step 2) and the control `[2, 1]`.
++NaN is rendered as the sentinel `0xFFFFFFFF` (the bit pattern of a NaN is not canonical). -/
++
++def nan32 : Float32 := Float32.ofBits 0x7fc00000
++
++def nanSigs32 : Array TensorSignature :=
++  #[ { shape := #[3, 2], dtype := .f32 }, { shape := #[3], dtype := .f32 } ]
++def nanSigsBool32 : Array TensorSignature :=
++  #[ { shape := #[3, 2], dtype := .f32 }, { shape := #[3], dtype := .bool } ]
++
++def nanStore32 : Array DenseTensor32 :=
++  #[ { shape := [3, 2], data := #[nan32, Float32.ofBits 0x3f800000, Float32.ofBits 0x3f800000, nan32
++                                 , Float32.ofBits 0x40000000, Float32.ofBits 0x3f800000] }
++   , t32 [3] #[] ]
++
++def nanOut32 (sigs : Array TensorSignature) (alg : ContractionAlgebra) : Option (List UInt32) :=
++  match checkAssignF32 sigs (KernelDenseTest.nanPlan alg) with
++  | .error _ => none
++  | .ok c => match runDenseAssign32 c nanStore32 with
++             | .error _ => none
++             | .ok d => some (d.data.toList.map (fun x => if x.isNaN then 0xFFFFFFFF else x.toBits))
++
++#guard nanOut32 nanSigs32 admittedAlgebraF32Max == some [0xFFFFFFFF, 0xFFFFFFFF, 0x40000000]
++#guard nanOut32 nanSigs32 admittedAlgebraF32Min == some [0xFFFFFFFF, 0xFFFFFFFF, 0x3f800000]
++#guard nanOut32 nanSigsBool32 admittedAlgebraBool == some [0xFFFFFFFF, 0xFFFFFFFF, 0x3f800000]
+ 
+ /-! ## Fixture 9: the out-of-bounds pad is the carrier's zero, not the reduction identity
+ 
+diff --git a/leanncd/test/Eval/Plan/KernelDenseTest.lean b/leanncd/test/Eval/Plan/KernelDenseTest.lean
+index d40cf2cc..81bd0893 100644
+--- a/leanncd/test/Eval/Plan/KernelDenseTest.lean
++++ b/leanncd/test/Eval/Plan/KernelDenseTest.lean
+@@ -53,37 +53,61 @@ def dataOf : Except String DenseTensor → Option (Array Float)
+ #guard dataOf (runIt sigs contractPlan storeAB) == some #[60.0, 600.0, 6000.0, 60000.0]
+ 
+ -- Tropical reductions: clone `contractPlan`, change only the algebra. `Y[i] := A[i] · B[j]` reduced
+--- over `j` under max/min instead of sum. The out-of-bounds zero-pad is untouched (there are no OOB
+--- reads here); only the reduction identity/operator changes.
++-- over `j` under max-plus / min-plus instead of sum-product (S3b-i task T1: the tropical ⊗ is `+`,
++-- identity 0, so the two factors of a term ADD). The out-of-bounds zero-pad is untouched (there are
++-- no OOB reads here); the factor op, the reduction op and its identity change.
+ 
+--- max over B = [1,2,3] is 3, so Y[i] = A[i] · 3.  Verified by execution.
++-- max-plus: Y[i] = max_j (A[i] + B[j]) = A[i] + max B = A[i] + 3.  Observed (before S3b-i, max-times:
++-- [30, 300, 3000, 30000]).
+ def maxContractPlan : AssignPlan := { contractPlan with algebra := admittedAlgebraMax }
+-#guard dataOf (runIt sigs maxContractPlan storeAB) == some #[30.0, 300.0, 3000.0, 30000.0]
++#guard dataOf (runIt sigs maxContractPlan storeAB) == some #[13.0, 103.0, 1003.0, 10003.0]
+ 
+--- min over B = [1,2,3] is 1, so Y[i] = A[i] · 1.  Verified by execution.
++-- min-plus: Y[i] = min_j (A[i] + B[j]) = A[i] + min B = A[i] + 1.  Observed (before S3b-i, min-times:
++-- [10, 100, 1000, 10000]).
+ def minContractPlan : AssignPlan := { contractPlan with algebra := admittedAlgebraMin }
+-#guard dataOf (runIt sigs minContractPlan storeAB) == some #[10.0, 100.0, 1000.0, 10000.0]
++#guard dataOf (runIt sigs minContractPlan storeAB) == some #[11.0, 101.0, 1001.0, 10001.0]
+ 
+--- Identity is load-bearing: with an all-NEGATIVE `B = [-1,-2,-3]`, max reduces to -1, so
+--- Y[i] = A[i]·(-1). Only the `−∞` reduction seed makes this right — a `0` seed would win every
+--- column and yield `[0,0,0,0]`. This is the fixture the §3.2 identity mutation flips (and only it,
+--- since the two above have positive column maxima the seed never beats). Verified by execution.
++-- With an all-NEGATIVE `B = [-1,-2,-3]` and positive A, max-plus reduces to A[i] + (-1). Observed
++-- (before S3b-i, max-times: [-10, -100, -1000, -10000], where a `0` seed would have won; the sums
++-- are positive now, so THIS fixture no longer separates the `−∞` seed: `negAB` below does).
+ def storeNegB : Array DenseTensor :=
+   #[ { shape := [4], data := #[10.0, 100.0, 1000.0, 10000.0] }
+    , { shape := [3], data := #[-1.0, -2.0, -3.0] }
+    , { shape := [4], data := #[] } ]
+-#guard dataOf (runIt sigs maxContractPlan storeNegB) == some #[-10.0, -100.0, -1000.0, -10000.0]
++#guard dataOf (runIt sigs maxContractPlan storeNegB) == some #[9.0, 99.0, 999.0, 9999.0]
++
++-- Negation-duality twins: min-plus(x) = -max-plus(-x), so each fixture above has a twin that negates
++-- every input and the expectation. The two directions share one definition (`tropicalAlgebra`), so a
++-- symmetric bug would pass the max-plus rows alone.
++def storeNegA_NegB : Array DenseTensor :=      -- negation of `storeAB`
++  #[ { shape := [4], data := #[-10.0, -100.0, -1000.0, -10000.0] }
++   , { shape := [3], data := #[-1.0, -2.0, -3.0] }
++   , { shape := [4], data := #[] } ]
++#guard dataOf (runIt sigs minContractPlan storeNegA_NegB) == some #[-13.0, -103.0, -1003.0, -10003.0]
++
++def storeNegA_PosB : Array DenseTensor :=      -- negation of `storeNegB`
++  #[ { shape := [4], data := #[-10.0, -100.0, -1000.0, -10000.0] }
++   , { shape := [3], data := #[1.0, 2.0, 3.0] }
++   , { shape := [4], data := #[] } ]
++#guard dataOf (runIt sigs minContractPlan storeNegA_PosB) == some #[-9.0, -99.0, -999.0, -9999.0]
++
++-- Identity is load-bearing: with NEGATIVE A and negative `B = [-1,-2,-3]` every max-plus sum is
++-- negative, so max reduces to A[i] + (-1) = [-11, -101, -1001, -10001]; only the `−∞` reduction seed
++-- makes this right — a `0` seed would win every column and yield `[0,0,0,0]`. This is the fixture the
++-- §3.2 identity mutation flips. Its duality twin is `minContractPlan` on `storeAB` above (A, B > 0,
++-- so every min-plus sum is positive and a `0` seed would win every column there). Observed.
++#guard dataOf (runIt sigs maxContractPlan storeNegA_NegB) == some #[-11.0, -101.0, -1001.0, -10001.0]
+ 
+ -- Out-of-bounds interaction with a tropical reduction — the plan's central subtlety, exercised
+ -- directly. `Y[i] := max_j A[i,j]` with the reduction axis `j` ranging over {0,1,2} but `A` only
+ -- 2 columns wide, so the read at `j=2` is out of bounds and `zeroPad` returns `0.0`. That `0.0`
+--- is a FACTOR value (it flows through the factor fold's mul — `foldScalars` at its factor call
+--- site in `Dense.lean` — `1.0 · 0.0 = 0.0`) and so enters the max fold as a genuine term value of
+--- `0.0` — it is NOT the reduction identity (which is `−∞`). With all-negative valid data the padded
+--- `0.0` therefore WINS the max: `Y[i] = max(A[i,0], A[i,1], 0.0) = 0.0`. This is observable and
+--- consistent with the reference's identical zero-extension (the pad affects the result, it just
+--- does so the same way in both evaluators), not an implementation divergence. Verified by
+--- execution.
++-- is a FACTOR value (it flows through the factor fold's `factorOp` — `foldScalars` at its factor call
++-- site in `Dense.lean` — `0.0 + 0.0 = 0.0` under max-plus) and so enters the max fold as a genuine
++-- term value of `0.0` — it is NOT the reduction identity (which is `−∞`). With all-negative valid data
++-- the padded `0.0` therefore WINS the max: `Y[i] = max(A[i,0], A[i,1], 0.0) = 0.0`. This is observable
++-- and consistent with the reference's identical zero-extension (the pad affects the result, it just
++-- does so the same way in both evaluators), not an implementation divergence. A later S3b task
++-- changes a tropical bare read's pad to `0_K = −∞`. Observed unchanged by T1.
+ def oobSigs : Array TensorSignature :=
+   #[ { shape := #[2, 2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
+ 
+@@ -102,6 +126,54 @@ def oobStore : Array DenseTensor :=
+ 
+ #guard dataOf (runIt oobSigs oobMaxPlan oobStore) == some #[0.0, 0.0]
+ 
++-- The constants themselves (f64): ⊗ of both tropical sorts is `add` with identity `+0.0` (`1_K`); ⊕ is
++-- `max`/`min` with `∓∞` (`0_K`). `Float.toBits 0.0 ≠ Float.toBits (-0.0)`, so this pins `+0`.
++#guard admittedAlgebraMax.factorId == .f64 (Float.toBits 0.0)
++#guard admittedAlgebraMax.reduceId == .f64 (Float.toBits (-1.0 / 0.0))
++#guard admittedAlgebraMax.factorOp == .add && admittedAlgebraMax.reduceOp == .max
++#guard admittedAlgebraMin.factorId == .f64 (Float.toBits 0.0)
++#guard admittedAlgebraMin.reduceId == .f64 (Float.toBits (1.0 / 0.0))
++#guard admittedAlgebraMin.factorOp == .add && admittedAlgebraMin.reduceOp == .min
++
++-- NaN propagation (S3b design decision 2): `ScalarBinOp.max`/`.min` are NaN-propagating in BOTH
++-- argument positions, for every algebra. `Y[i] := ⊕_j A[i,j]` over a 3×2 source whose rows are
++-- `[NaN, 1]` (NaN reaches the fold as the SECOND operand of step 1, then as the FIRST of step 2),
++-- `[1, NaN]` (NaN as the second operand of step 2) and the control `[2, 1]` (no NaN). Lean's
++-- `Max.max`/`Min.min` drop a NaN second operand (`max`) / first operand (`min`), so each of the two
++-- NaN rows catches one of the unfixed operators. Output is rendered as strings (NaN ≠ NaN).
++def nan64 : Float := 0.0 / 0.0
++
++def nanSigs : Array TensorSignature :=
++  #[ { shape := #[3, 2], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
++def nanSigsBool : Array TensorSignature :=
++  #[ { shape := #[3, 2], dtype := .f64 }, { shape := #[3], dtype := .bool } ]
++
++def nanRead : ReadPlan :=
++  { sourceSlot := 0, map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0, 0] }
++  , sourceShape := #[3, 2], oobPolicy := .zeroPad }
++
++def nanPlan (alg : ContractionAlgebra) : AssignPlan :=
++  { contextShape := #[], destinationSlot := 1, outputShape := #[3]
++  , terms := #[{ iterationShape := #[3, 2], contextPos := #[], outputPos := #[0], reductionPos := #[1]
++               , factors := #[.read nanRead] }]
++  , algebra := alg }
++
++def nanStore : Array DenseTensor :=
++  #[ { shape := [3, 2], data := #[nan64, 1.0, 1.0, nan64, 2.0, 1.0] }, { shape := [3], data := #[] } ]
++
++def nanOut (sigs : Array TensorSignature) (alg : ContractionAlgebra) : Option (List String) :=
++  match checkAssign sigs (nanPlan alg) with
++  | .error _ => none
++  | .ok c => match runDenseAssign c nanStore with
++             | .error _ => none
++             | .ok d => some (d.data.toList.map (fun x => if x.isNaN then "NaN" else toString x))
++
++#guard nanOut nanSigs admittedAlgebraMax == some ["NaN", "NaN", "2.000000"]
++#guard nanOut nanSigs admittedAlgebraMin == some ["NaN", "NaN", "1.000000"]
++-- The Boolean algebra (`min` factors, `max` terms) propagates NaN too; its control row is
++-- `max(min(1,2), min(1,1)) = 1`.
++#guard nanOut nanSigsBool admittedAlgebraBool == some ["NaN", "NaN", "1.000000"]
++
+ -- Unary factors apply after the out-of-bounds zero-pad and fail loud on domain violations.
+ -- These fixtures set `ReadPlan.unary` directly, independent of source lowering.
+ def unarySigs : Array TensorSignature :=
+diff --git a/leanncd/test/Eval/Portfolio/GnnScatterTest.lean b/leanncd/test/Eval/Portfolio/GnnScatterTest.lean
+index dffe6586..5a56ba98 100644
+--- a/leanncd/test/Eval/Portfolio/GnnScatterTest.lean
++++ b/leanncd/test/Eval/Portfolio/GnnScatterTest.lean
+@@ -45,6 +45,11 @@ test "GN3 degree"
+ --     i=0: max(X[0], X[1]) = max([1,2],[3,4]) = [3,4].
+ --     i=1: max(0·X[0], X[1]) = max([0,0],[3,4]) = [3,4].
+ --   ⇒ [[3,4],[3,4]] (sum-agg would give [4,6] for row 0, so this genuinely exercises max).
++--   KNOWN RED since S3b-i T1 (deferred to T5, the bool→max-plus cast): the tropical ⊗ is now `+`
++--   and the `predicate` factor `edge` is still read as the raw 0/1, so production computes
++--   max-plus(edge + X) = [[4,5],[4,5]]. The spec's cast sends false to 0_K = −∞ and true to
++--   1_K = 0, which gives max(X[0], X[1]) = [3,4] and max(−∞, X[1]) = [3,4] again: this
++--   expectation is correct once T5 lands, so it is left unchanged.
+ test "GN4 max-aggregation"
+     (evalEqB (tlprog!{ predicate edge(i, j)
+             H[i, f] := maxreduce(edge[i, j] · X[j, f]) })
+diff --git a/leanncd/test/Eval/Portfolio/RecurrenceTest.lean b/leanncd/test/Eval/Portfolio/RecurrenceTest.lean
+index 650731e7..c5c48f8c 100644
+--- a/leanncd/test/Eval/Portfolio/RecurrenceTest.lean
++++ b/leanncd/test/Eval/Portfolio/RecurrenceTest.lean
+@@ -79,15 +79,16 @@ test "RC3 prefix-sum"
+       (HashMap.ofList [("X", tl [3] [1,2,3])])
+       "C" (tl [3] [1,3,6])) $
+ 
+--- RC5  KG-scanagg (FIXED): `maxreduce` inside a scan step now reduces with tropical max.
+---   X0 = 2, W = [1,3].  Max-semantics: Mₗ₊₁ = max(Mₗ·1, Mₗ·3) = 3·Mₗ ⇒ [2,6,18].
+---   (Was silently summed to 4·Mₗ ⇒ [2,8,32] before the fix — see §14 KG-scanagg / git history.)
++-- RC5  KG-scanagg (FIXED): `maxreduce` inside a scan step now reduces with tropical max-plus.
++--   X0 = 2, W = [1,3].  Max-plus semantics: Mₗ₊₁ = max(Mₗ+1, Mₗ+3) = Mₗ+3 ⇒ [2,5,8].
++--   (Was max-TIMES before S3b-i: Mₗ₊₁ = 3·Mₗ ⇒ [2,6,18]; and silently summed to 4·Mₗ ⇒ [2,8,32]
++--   before KG-scanagg — see §14 KG-scanagg / git history.)
+ test "RC5 maxreduce-in-scan (KG-scanagg, fixed)"
+     (evalEqB (tlprog!{ iter l = 3
+             M[j, 0]    := X0[j]
+             M[j, l +1] := maxreduce(M[j, l] · W[j, k]) })
+       (HashMap.ofList [("X0", tl [1] [2]), ("W", tl [1,2] [1,3])])
+-      "M" (tl [1,3] [2,6,18])) $
++      "M" (tl [1,3] [2,5,8])) $
+ 
+ -- RC6  2-D / nested recurrence (grid-DP / PixelRNN). Base G=0, A=ones(2×2).
+ --   Only the fully-advanced cell G[1,1] = G[0,0]+A[0,0] = 1 is written; boundary cells (r=0 or
+@@ -100,14 +101,15 @@ test "RC6 2d-scan (KG-2dscan, fixed)"
+       "G" (tl [2,2] [0,0, 0,1])) $
+ 
+ -- RC7  `minreduce` inside a scan step (KG-min in a scan; mirrors RC5's maxreduce case).
+---   X0 = 2, W = [2,3].  Min-semantics: Mₗ₊₁ = min(Mₗ·2, Mₗ·3) = 2·Mₗ ⇒ [2,4,8].
++--   X0 = 2, W = [2,3].  Min-plus semantics: Mₗ₊₁ = min(Mₗ+2, Mₗ+3) = Mₗ+2 ⇒ [2,4,6].
++--   (Was min-TIMES before S3b-i: Mₗ₊₁ = 2·Mₗ ⇒ [2,4,8].)
+ --   Confirms the scan step honors `minreduce` (tropical min), not sum, via the KG-scanagg plumbing.
+ test "RC7 minreduce-in-scan"
+     (evalEqB (tlprog!{ iter l = 3
+             M[j, 0]    := X0[j]
+             M[j, l +1] := minreduce(M[j, l] · W[j, k]) })
+       (HashMap.ofList [("X0", tl [1] [2]), ("W", tl [1,2] [2,3])])
+-      "M" (tl [1,3] [2,4,8])) $
++      "M" (tl [1,3] [2,4,6])) $
+ 
+ -- RC8  3-D nested scan (generality of n-D support). Axes a,b,d each size 2. Base S = 0 on the
+ --   d=0 plane; step adds T=ones. Only the fully-advanced cell G[1,1,1] = G[0,0,0]+T[0,0,0] = 1
+@@ -123,14 +125,16 @@ test "RC8 3d-scan"
+ --   KG-scanagg × KG-2dscan interaction (RC5/RC7 are 1-D tropical; RC6/RC8 are multi-axis sum).
+ --   2×2 grid: base `G[r,0]` fills the c=0 column from Z=[2,5]; the step writes only the fully
+ --   advanced cell G[1,1] under zero-default boundaries. Only tuple (r,c)=(0,0) is iterated:
+---     G[1,1] = maxₖ(G[0,0] · W[0,0,k]) = max(2·1, 2·3) = max(2,6) = 6   (tropical max, NOT sum=8).
++--     G[1,1] = maxₖ(G[0,0] + W[0,0,k]) = max(2+1, 2+3) = max(3,5) = 5   (max-plus, NOT sum=8).
+ --   Boundary/base cells: G[0,0]=Z[0]=2, G[1,0]=Z[1]=5, G[0,1]=0 (r=0 boundary, unwritten).
+---   Row-major [r][c] ⇒ [[2,0],[5,6]] = [2,0,5,6]. (W[0,0,:]=[1,3]; other W cells unused.)
++--   Row-major [r][c] ⇒ [[2,0],[5,5]] = [2,0,5,5]. (W[0,0,:]=[1,3]; other W cells unused.)
++--   (Before S3b-i, max-TIMES: G[1,1] = max(2·1, 2·3) = 6 ⇒ [2,0,5,6].) The unwritten cell G[0,1]
++--   is still the literal 0 here; the spec's value is 0_K = −∞ (a later S3b task, scan-state init).
+ test "RC10 multi-axis maxreduce (KG-scanagg × KG-2dscan)"
+     (evalEqB (tlprog!{ iter r = 2, c = 2
+             G[r, 0]       := Z[r]
+             G[r +1, c +1] := maxreduce(G[r, c] · W[r, c, k]) })
+       (HashMap.ofList [("Z", tl [2] [2,5]), ("W", tl [2,2,2] [1,3, 0,0, 0,0, 0,0])])
+-      "G" (tl [2,2] [2,0, 5,6]))
++      "G" (tl [2,2] [2,0, 5,5]))
+ 
+ end LeanNCD.Eval
+diff --git a/leanncd/test/Eval/Portfolio/TropicalTest.lean b/leanncd/test/Eval/Portfolio/TropicalTest.lean
+index 5692b02e..430b60c2 100644
+--- a/leanncd/test/Eval/Portfolio/TropicalTest.lean
++++ b/leanncd/test/Eval/Portfolio/TropicalTest.lean
+@@ -1,26 +1,34 @@
+ import Eval.Portfolio.Harness
+ import LSpec
+ /-!
+-# Portfolio §11 — Tropical / max-times & min-times semirings
++# Portfolio §11 — Tropical / max-plus & min-plus semirings
+ 
+-`maxreduce`/`minreduce` combined with products for best/worst-path reachability.
++`maxreduce`/`minreduce` combined with products for best/worst-path reachability. Since S3b-i
++(task T1) the two aggregations are the true semirings max-plus `(+, max, −∞, 0)` and min-plus
++`(+, min, +∞, 0)`: the factors of a term ADD (the surface `·` of a tropical statement is the
++semiring product), then the NaN-propagating max/min is taken across terms and contracted axes.
+ (TR1/TR2/TR4 basic max-reductions are already covered elsewhere; not re-authored here.)
+-`minreduce` is the tropical min-times contraction `(×, min, +∞)` — the min analog of `maxreduce`;
+-added 2026-07-08 to close the min-*aggregation* half of KG-min. TR5 (min-*plus* shortest path)
+-still needs an additive within-term combine (`+` instead of `×`), which `minreduce` does not
+-provide — that half of KG-min remains open.
++Each max-plus fixture has a negation-duality twin (`min-plus(x) = −max-plus(−x)`): the two
++directions share one definition per layer, so a symmetric bug would pass a one-sorted suite.
+ -/
+ namespace LeanNCD.Eval
+ open Std LSpec
+ 
+-#lspec group "§11 — Tropical / max-times & min-times semirings" <|
+--- TR3  max-times "best path" 2-hop reliability: R[i,k]=max_j P[i,j]·P[j,k], P=[[0,0.9],[0.8,0]].
+---   R[0,0]=max(0·0, 0.9·0.8)=0.72,  R[0,1]=max(0·0.9, 0.9·0)=0,
+---   R[1,0]=max(0.8·0, 0·0.8)=0,     R[1,1]=max(0.8·0.9, 0·0)=0.72.
++#lspec group "§11 — Tropical / max-plus & min-plus semirings" <|
++-- TR3  max-plus "best path" 2-hop score: R[i,k]=max_j P[i,j]+P[j,k], P=[[0,0.9],[0.8,0]].
++--   R[0,0]=max(0+0, 0.9+0.8)=1.7,  R[0,1]=max(0+0.9, 0.9+0)=0.9,
++--   R[1,0]=max(0.8+0, 0+0.8)=0.8,  R[1,1]=max(0.8+0.9, 0+0)=1.7.
++--   (Before S3b-i this was max-TIMES: [0.72, 0, 0, 0.72].)
+ test "TR3 best-path"
+     (evalEqB (tlprog!{ R[i, k] := maxreduce(P[i, j] · P[j, k]) })
+       (HashMap.ofList [("P", tl [2,2] [0,0.9, 0.8,0])])
+-      "R" (tl [2,2] [0.72,0, 0,0.72])) $
++      "R" (tl [2,2] [1.7,0.9, 0.8,1.7])) $
++
++-- TR3d  duality twin of TR3: min-plus on the NEGATED data, expectation negated.
++test "TR3d min-plus twin of TR3"
++    (evalEqB (tlprog!{ R[i, k] := minreduce(P[i, j] · P[j, k]) })
++      (HashMap.ofList [("P", tl [2,2] [0,-0.9, -0.8,0])])
++      "R" (tl [2,2] [-1.7,-0.9, -0.8,-1.7])) $
+ 
+ -- TR6  basic min-reduction (min analog of TR1): C[i] = min_k A[i,k].
+ --   A=[[3,1,4],[1,5,9]] ⇒ C=[min(3,1,4), min(1,5,9)] = [1,1].
+@@ -29,15 +37,46 @@ test "TR6 min-reduction"
+       (HashMap.ofList [("A", tl [2,3] [3,1,4, 1,5,9])])
+       "C" (tl [2] [1,1])) $
+ 
+--- TR7  min-times combine (min analog of TR2): C[i] = min_k A[i,k]·B[k].
+---   A=[[3,1,4],[2,2,2]], B=[2,5,1] ⇒ products row0=[6,5,4]→4, row1=[4,10,2]→2 ⇒ C=[4,2].
+-test "TR7 min-times"
++-- TR7  min-plus combine (min analog of TR2): C[i] = min_k A[i,k]+B[k].
++--   A=[[3,1,4],[2,2,2]], B=[2,5,1] ⇒ sums row0=[5,6,5]→5, row1=[4,7,3]→3 ⇒ C=[5,3].
++--   (Before S3b-i this was min-TIMES: [4, 2].)
++test "TR7 min-plus"
+     (evalEqB (tlprog!{ C[i] := minreduce(A[i, k] · B[k]) })
+       (HashMap.ofList [("A", tl [2,3] [3,1,4, 2,2,2]), ("B", tl [3] [2,5,1])])
+-      "C" (tl [2] [4,2]))
++      "C" (tl [2] [5,3])) $
++
++-- TR7d  duality twin of TR7: max-plus on the NEGATED data, expectation negated.
++test "TR7d max-plus twin of TR7"
++    (evalEqB (tlprog!{ C[i] := maxreduce(A[i, k] · B[k]) })
++      (HashMap.ofList [("A", tl [2,3] [-3,-1,-4, -2,-2,-2]), ("B", tl [3] [-2,-5,-1])])
++      "C" (tl [2] [-5,-3])) $
++
++-- TR9  single-factor `maxreduce` (accept-neighbour: unchanged by the flip, there is no ⊗ to apply):
++--   C[i] = max_k A[i,k], A=[[3,1,4],[-2,-5,-9]] ⇒ [4,-2]; TR9d is the min-plus twin on −A.
++test "TR9 single-factor maxreduce"
++    (evalEqB (tlprog!{ C[i] := maxreduce(A[i, k]) })
++      (HashMap.ofList [("A", tl [2,3] [3,1,4, -2,-5,-9])])
++      "C" (tl [2] [4,-2])) $
++
++test "TR9d single-factor minreduce, negated twin"
++    (evalEqB (tlprog!{ C[i] := minreduce(A[i, k]) })
++      (HashMap.ofList [("A", tl [2,3] [-3,-1,-4, 2,5,9])])
++      "C" (tl [2] [-4,2])) $
++
++-- TR5  min-plus shortest path (Viterbi/Bellman step): D2[i,k] = min_j D[i,j]+D[j,k] on the 3-node
++--   graph D=[[0,1,5],[9,0,2],[3,9,0]]. It was an [F] gap (min-plus needed `+` as the within-term
++--   combine); with S3b-i it is the same `minreduce(A · B)` surface. Two-hop improvements:
++--   D2[0,2]=min(0+5, 1+2, 5+0)=3 (via node 1) and D2[1,0]=min(9+0, 0+9, 2+3)=5 (via node 2).
++--   row0=[0,1,3], row1=[5,0,2], row2=[3,4,0].
++test "TR5 min-plus shortest path"
++    (evalEqB (tlprog!{ D2[i, k] := minreduce(D[i, j] · D[j, k]) })
++      (HashMap.ofList [("D", tl [3,3] [0,1,5, 9,0,2, 3,9,0])])
++      "D2" (tl [3,3] [0,1,3, 5,0,2, 3,4,0])) $
+ 
+--- TR5  min-plus shortest path (Viterbi/Bellman step) — still an [F] gap: `minreduce` supplies the
+---       `min` aggregation, but min-plus needs `+` as the within-term combine (no expressible
+---       program yet). Documented, not authored.
++-- TR5d  duality twin of TR5: max-plus (longest 2-hop path) on the negated graph, negated.
++test "TR5d max-plus twin of TR5"
++    (evalEqB (tlprog!{ D2[i, k] := maxreduce(D[i, j] · D[j, k]) })
++      (HashMap.ofList [("D", tl [3,3] [0,-1,-5, -9,0,-2, -3,-9,0])])
++      "D2" (tl [3,3] [0,-1,-3, -5,0,-2, -3,-4,0]))
+ 
+ end LeanNCD.Eval

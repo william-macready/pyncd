@@ -15,11 +15,44 @@ run_cmd do
   let X := (DenseTensor.zeros [3]).set! [1] 5.0    -- X = [0,5,0]
   let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
   -- read X[i] at i=1 ⇒ 5.0
-  match gather env (coordOf [(1,1)]) (.read "X" [.axis (ax 1)]) with | .ok v => unless v == 5.0 do throwError "read" | .error e => throwError (toString e)
+  match gather 0.0 1.0 env (coordOf [(1,1)]) (.read "X" [.axis (ax 1)]) with | .ok v => unless v == 5.0 do throwError "read" | .error e => throwError (toString e)
   -- read X[i-1] at i=0 ⇒ out of range ⇒ 0.0
-  match gather env (coordOf [(1,0)]) (.read "X" [.shift (ax 1) (-1)]) with | .ok v => unless v == 0.0 do throwError "pad" | .error e => throwError (toString e)
+  match gather 0.0 1.0 env (coordOf [(1,0)]) (.read "X" [.shift (ax 1) (-1)]) with | .ok v => unless v == 0.0 do throwError "pad" | .error e => throwError (toString e)
   -- iverson [i ≤ 2] at i=1 ⇒ 1.0
-  match gather env (coordOf [(1,1)]) (.iverson (.rel .le (.embed (.axis (ax 1))) (.embed (.const 2)))) with | .ok v => unless v == 1.0 do throwError "iverson" | .error e => throwError (toString e)
+  match gather 0.0 1.0 env (coordOf [(1,1)]) (.iverson (.rel .le (.embed (.axis (ax 1))) (.embed (.const 2)))) with | .ok v => unless v == 1.0 do throwError "iverson" | .error e => throwError (toString e)
+
+-- S3b T2: the statement's (0_K, 1_K) reach `gather`. A BARE out-of-range read pads with 0_K, an Iverson
+-- factor is 1_K / 0_K, and an out-of-range read UNDER a `.unaryFn` pads with the real 0.0 whatever the
+-- sort. Each max-plus row has a min-plus duality twin; the real/bool rows (0.0, 1.0) are the unchanged
+-- accept-neighbours (they are the existing rows above, which now pass the real/bool constants).
+private def negInf : Float := -1.0 / 0.0
+private def posInf : Float := 1.0 / 0.0
+private def okIs (r : Except EvalError Float) (x : Float) : Bool :=
+  match r with | .ok v => v == x | .error _ => false
+private def gEnv : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ((DenseTensor.zeros [3]).set! [1] 5.0)
+private def padRead : Factor := .read "X" [.shift (ax 1) (-1)]          -- at i=0: out of range
+private def inRead  : Factor := .read "X" [.axis (ax 1)]
+private def padExp  : Factor := .unaryFn .exp "X" [.shift (ax 1) (-1)]  -- at i=0: exp of the pad
+private def ivLe    : Factor := .iverson (.rel .le (.embed (.axis (ax 1))) (.embed (.const 2)))
+private def ivGt    : Factor := .iverson (.rel .gt (.embed (.axis (ax 1))) (.embed (.const 2)))
+-- bare OOB read: pad = 0_K
+#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,0)]) padRead) negInf   -- max-plus
+#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,0)]) padRead) posInf   -- min-plus
+#guard okIs (gather 0.0 1.0 gEnv (coordOf [(1,0)]) padRead) 0.0         -- real / bool
+-- in-range read is untouched by the sort
+#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,1)]) inRead) 5.0
+#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,1)]) inRead) 5.0
+-- OOB read under a unary stays the real 0.0: exp 0.0 = 1.0 (a -inf pad would give exp(-inf) = 0)
+#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,0)]) padExp) 1.0
+#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,0)]) padExp) 1.0
+-- Iverson: true = 1_K, false = 0_K
+#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,1)]) ivLe) 0.0         -- max-plus true
+#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,1)]) ivGt) negInf      -- max-plus false
+#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,1)]) ivLe) 0.0         -- min-plus true
+#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,1)]) ivGt) posInf      -- min-plus false
+#guard okIs (gather 0.0 1.0 gEnv (coordOf [(1,1)]) ivLe) 1.0            -- real / bool true
+#guard okIs (gather 0.0 1.0 gEnv (coordOf [(1,1)]) ivGt) 0.0            -- real / bool false
 
 -- `.ieq` semantics (the DSL's intended *modular* equality, currently APPROXIMATED by structural
 -- Int `==`; see `evalBool` in Gather.lean). These lock in the actual behavior so a future switch

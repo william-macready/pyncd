@@ -120,6 +120,29 @@ def AxiswiseFn.toBrOp : AxiswiseFn → BrOp
 inductive AggOp | sum | max | min
   deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
 
+/-- The semiring a statement (or tensor) computes in — its SORT (S3b design note §3). There is no
+    declaration syntax: a destination declared `predicate` is `bool`; otherwise the statement's
+    `agg` annotation chooses (`sum` = `real`, `max` = `maxPlus`, `min` = `minPlus`). -/
+inductive SortAlgebra | real | bool | maxPlus | minPlus
+  deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
+
+/-- The sort an aggregation annotation selects for a non-predicate destination. -/
+def AggOp.algebra : AggOp → SortAlgebra
+  | .sum => .real | .max => .maxPlus | .min => .minPlus
+
+/-- Whether a sort is one of the two tropical semirings. -/
+def SortAlgebra.isTropical : SortAlgebra → Bool
+  | .maxPlus | .minPlus => true
+  | .real | .bool => false
+
+/-- The aggregation annotation that selects a sort's contraction: the inverse of `AggOp.algebra` on
+    the three annotation-selected sorts. `bool` has no annotation (a `predicate` destination picks
+    the Boolean algebra from its declaration), so it maps to `sum`. -/
+def SortAlgebra.stateAgg : SortAlgebra → AggOp
+  | .maxPlus => .max
+  | .minPlus => .min
+  | .real | .bool => .sum
+
 -- Unary transcendental functions applicable inline to a single factor's read (`log(P[i])`).
 -- `recip` has no keyword form of its own — it's produced only by the infix `/` sugar.
 inductive UnaryOp | log | exp | sin | cos | sqrt | recip
@@ -477,5 +500,85 @@ def RHSExpr.readFactors (r : RHSExpr) : List (String × List IdxExpr) :=
 def Stmt.readFactors : Stmt → List (String × List IdxExpr)
   | .assign _ _ r | .scatter _ _ r => r.readFactors
   | .recurMorphism _ _ _ => []
+
+/-- The tensor sort a declaration alone gives a name: `bool` for a `predicate`, else `real` (an
+    undeclared or never-written name is a real input). -/
+def DeclEnv.declAlgebra (env : DeclEnv) (nm : String) : SortAlgebra :=
+  match env[nm]? with
+  | some (.predicate _ _) => .bool
+  | _ => .real
+
+/-- Statement sort `S(stmt)`: `bool` if the destination is declared `predicate`; else the sort
+    of the statement's own `agg` annotation. A `recurMorphism` carries no annotation (`real`). -/
+def Stmt.algebra (env : DeclEnv) : Stmt → SortAlgebra
+  | .assign nm _ r | .scatter nm _ r =>
+      match env[nm]? with
+      | some (.predicate _ _) => .bool
+      | _ => r.agg.algebra
+  | .recurMorphism _ _ _ => .real
+
+/-- The axis UIDs one LHS slot names. -/
+def LHSSlot.axisUids : LHSSlot → List UID
+  | .free a | .freeNorm a | .iterNext a => [a.uid]
+  | .iterAt a _ => [a.uid]
+  | .affine e => (idxAffineForm e).2.map (·.2)
+
+/-- Sort-neutral writer (S3b design A4): one term, one `read`/`unaryFn` factor, and no contracted
+    axis (every read axis is on the LHS), with an identity nonlinearity (a statement carrying a
+    nonlinearity is never neutral: it must keep its own sort so `tropicalNonlin` sees it). With
+    nothing to combine, such a statement has no aggregation sort of its own; a scan state's neutral
+    base adopts the annotation of the state's other statements. -/
+def Stmt.isSortNeutral : Stmt → Bool
+  | .assign _ ls r | .scatter _ ls r =>
+      r.nonlin == .identity &&
+      match r.body.terms with
+      | [t] =>
+          match t.factors with
+          | [f] =>
+              match f.read? with
+              | some (_, es) =>
+                  let lhs := ls.flatMap LHSSlot.axisUids
+                  es.all (fun e => (idxAffineForm e).2.all (fun p => lhs.contains p.2))
+              | none => false
+          | _ => false
+      | _ => false
+  | .recurMorphism _ _ _ => false
+
+/-- A statement's own sort, or `none` for a sort-neutral writer (`Stmt.isSortNeutral`: nothing to
+    combine, so no annotation of its own). A `predicate` destination is `bool` whatever the shape. -/
+def Stmt.ownAlgebra? (env : DeclEnv) (s : Stmt) : Option SortAlgebra :=
+  match env[s.lhsName]? with
+  | some (.predicate _ _) => some .bool
+  | _ => if s.isSortNeutral then none else some (s.algebra env)
+
+/-- The own sorts of the statements of a scan that write `nm` (its base and recurrence statements,
+    in order), neutral writers contributing none. The one list `scheduleAlgebras` checks for
+    agreement and `scanStateAlgebra` reads the state's sort from. -/
+def scanStateSorts (env : DeclEnv) (ss : List Stmt) (nm : String) : List SortAlgebra :=
+  (ss.filter (fun s => s.lhsName == nm)).filterMap (Stmt.ownAlgebra? env)
+
+/-- The sort of the scan state (or scratch name) `nm`: the sort its non-neutral statements agree
+    on, `real` if every statement is neutral. Agreement itself is `scheduleAlgebras`' job
+    (`scanStateAlgebraMismatch`); on a disagreeing scan this is the first statement's sort. -/
+def scanStateAlgebra (env : DeclEnv) (ss : List Stmt) (nm : String) : SortAlgebra :=
+  (scanStateSorts env ss nm).headD .real
+
+/-- Replace a statement's aggregation annotation (`recurMorphism` carries none). -/
+def Stmt.withAgg (a : AggOp) : Stmt → Stmt
+  | .assign nm sl r => .assign nm sl { r with agg := a }
+  | .scatter nm sl r => .scatter nm sl { r with agg := a }
+  | s => s
+
+/-- A scan's statements with every sort-neutral writer evaluated in its destination's sort: its
+    annotation becomes the one `scanStateAlgebra` selects (S3b design §3, decision 3). A neutral
+    statement has nothing to combine, so the annotation only matters through the sort it picks for
+    an out-of-bounds pad and for the bool -> tropical read cast; both backends take that from the
+    annotation, so rewriting it is the single point where "a neutral base adopts its state's
+    sort" is realised. Returns `(base, recur)`. -/
+def scanStateStmts (env : DeclEnv) (base recur : List Stmt) : List Stmt × List Stmt :=
+  let ss := base ++ recur
+  let adopt (s : Stmt) : Stmt :=
+    if s.isSortNeutral then s.withAgg (scanStateAlgebra env ss s.lhsName).stateAgg else s
+  (base.map adopt, recur.map adopt)
 
 end LeanNCD

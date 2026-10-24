@@ -1,0 +1,322 @@
+diff --git a/leanncd/test/Semantics/SourceSortedDifferentialTest.lean b/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
+index bcdecc2b..80c27593 100644
+--- a/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
++++ b/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
+@@ -3,7 +3,7 @@ import LeanNCD.Semantics.Source.SortedDifferential
+ /-! S2b: single-sort programs end to end (admission + selection -> oracle -> Core
+ leg -> ExtVal observation -> tropical profile -> production bits).
+ 
+-Declarations: axes `a` (4), `b` (3), `k` (7); `X[a] = [1,2,3,4]` (3), `W[b] = [1,10,100]` (4),
++Declarations: axes `a` (4), `b` (3), `k` (8: the extent production derives for the `2*a` write); `X[a] = [1,2,3,4]` (3), `W[b] = [1,10,100]` (4),
+ `Z[a,b] = 10a + b - 5` (5); `Y` (6). -/
+ 
+ open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
+@@ -22,9 +22,9 @@ private def zValues : List ℚ := [-5, -4, -3, 5, 6, 7, 15, 16, 17, 25, 26, 27]
+ 
+ private def snap (yAxes : List AxisSpec) (stmts : List Stmt)
+     (xValues : List ℚ := [1, 2, 3, 4]) : SourceSnapshot :=
+-  let extent (ax : AxisSpec) : Nat := if ax.uid = 7 then 4 else if ax.uid = 8 then 3 else 7
++  let extent (ax : AxisSpec) : Nat := if ax.uid = 7 then 4 else if ax.uid = 8 then 3 else 8
+   { resolved := {
+-      decls := [.axis a (some 4), .axis b (some 3), .axis k (some 7),
++      decls := [.axis a (some 4), .axis b (some 3), .axis k (some 8),
+         .typedTensor .f64 "X" [a], .typedTensor .f64 "W" [b], .typedTensor .f64 "Z" [a, b],
+         .typedTensor .f64 "Y" yAxes]
+       stmts := stmts
+@@ -40,7 +40,7 @@ private def product (agg : AggOp) (xValues : List ℚ := [1, 2, 3, 4]) : SourceS
+   snap [a] [.assign "Y" [.free a] (rhs agg [[.read "X" [.axis a], .read "W" [.axis b]]])]
+     xValues
+ 
+-/-- `Y[2*a] := max X[a]` as a hand-built affine `.assign`: odd cells are empty fibers. -/
++/-- `Y[2*a] := max X[a]` as a hand-built affine `.assign`: odd cells (and cell 7) are empty fibers. -/
+ private def strided (agg : AggOp) : SourceSnapshot :=
+   snap [k] [.assign "Y" [.affine (.scale 2 a)] (rhs agg [[.read "X" [.axis a]]])]
+ 
+@@ -76,7 +76,8 @@ private def classOf (s : SourceSnapshot) : String :=
+   .assign "Y" [.free a] (rhs .max [[.read "Z" [.axis a, .axis b]]])])
+ /-- info: false -/
+ #guard_msgs in #eval (admitSourceAffine (single .max)).toOption.isSome
+-/-- info: "refused LeanNCD.Semantics.Source.SourceCause.unsupported (LeanNCD.Semantics.Source.UnsupportedSource.scatterPolicy)" -/
++-- S3b T7: a tropical `.scatter` is admitted (formerly refused, `scatterPolicy`) and selects its carrier.
++/-- info: "maxPlus" -/
+ #guard_msgs in #eval carrierOf (snap [k] [.scatter "Y" [.affine (.scale 2 a)] (rhs .max [[.read "X" [.axis a]]])])
+ 
+ /-! Q5: Core leg values (must equal the oracle: `published` agreement is in the classification). -/
+@@ -86,9 +87,9 @@ private def classOf (s : SourceSnapshot) : String :=
+ #guard_msgs in #eval yCore (single .min)
+ /-- info: "some [some 101, some 102, some 103, some 104]" -/
+ #guard_msgs in #eval yCore (product .max)
+-/-- info: "some [some 1, some -inf, some 2, some -inf, some 3, some -inf, some 4]" -/
++/-- info: "some [some 1, some -inf, some 2, some -inf, some 3, some -inf, some 4, some -inf]" -/
+ #guard_msgs in #eval yCore (strided .max)
+-/-- info: "some [some 1, some +inf, some 2, some +inf, some 3, some +inf, some 4]" -/
++/-- info: "some [some 1, some +inf, some 2, some +inf, some 3, some +inf, some 4, some +inf]" -/
+ #guard_msgs in #eval yCore (strided .min)
+ /-- info: "some [some -12, some 18, some 48, some 78]" -/
+ #guard_msgs in #eval yCore (single .sum)
+@@ -100,11 +101,11 @@ private def classOf (s : SourceSnapshot) : String :=
+ #guard_msgs in #eval classOf (single .max)
+ /-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
+ #guard_msgs in #eval classOf (single .min)
+-/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.knownContractDifference\n  (LeanNCD.Semantics.Source.NumericalProfile.StructuralCondition.tropicalMultiFactor\n    { side := LeanNCD.Semantics.Source.SourceSide.output,\n      declaration := some 6,\n      statement := some 0,\n      term := none,\n      factor := none,\n      slot := none })" -/
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
+ #guard_msgs in #eval classOf (product .max)
+-/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.knownContractDifference\n  (LeanNCD.Semantics.Source.NumericalProfile.StructuralCondition.tropicalMultiFactor\n    { side := LeanNCD.Semantics.Source.SourceSide.output,\n      declaration := some 6,\n      statement := some 0,\n      term := none,\n      factor := none,\n      slot := none })" -/
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
+ #guard_msgs in #eval classOf (product .min)
+-/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.knownContractDifference\n  (LeanNCD.Semantics.Source.NumericalProfile.StructuralCondition.tropicalScatterFill\n    { side := LeanNCD.Semantics.Source.SourceSide.output,\n      declaration := some 6,\n      statement := some 0,\n      term := none,\n      factor := none,\n      slot := none })" -/
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
+ #guard_msgs in #eval classOf (strided .max)
+ /-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.unsupportedNumericalProfile\n  (LeanNCD.Semantics.Source.NumericalProfile.Unsupported.outsideEnvelope\n    { origin := { side := LeanNCD.Semantics.Source.SourceSide.read,\n                  declaration := none,\n                  statement := some 0,\n                  term := some 0,\n                  factor := none,\n                  slot := none },\n      coordinate := [0],\n      assignment := [(7, 0), (8, 0)],\n      slots := [],\n      cell := none }\n    (LeanNCD.Semantics.Source.NumericalProfile.ValueKind.subsetProductBound)\n    1048577\n    1048576)" -/
+ #guard_msgs in #eval classOf (product .max [1048576, 2, 3, 4])
+@@ -115,15 +116,14 @@ private def classOf (s : SourceSnapshot) : String :=
+   | .error (.admission d) => toString (repr d.cause)
+   | _ => "ran"
+ 
+-/-! The `±inf` bit patterns, pinned against Lean's own IEEE `Float`. No row above compares an
+-infinite cell with production (an affine write that yields one is refused); the extent-0 rows do. -/
++/-! The `±inf` bit patterns, pinned against Lean's own IEEE `Float`. The `strided` rows above and the
++extent-0 rows below compare infinite cells with production. -/
+ #guard ExtClass.negInf.bits == (-(1.0 / 0.0) : Float).toBits
+ #guard ExtClass.posInf.bits == (1.0 / 0.0 : Float).toBits
+ 
+ /-! Extent-0 reduction axis (probe, 2026-10-20). With `|b| = 0`, `Y[a] := agg Z[a,b]` reduces over an
+-EMPTY axis, so every cell is the empty reduction: `-inf` (max) or `+inf` (min). Unlike the strided
+-write this is admitted AND runs in production, whose two legs agree with the oracle on the `±inf` bit
+-patterns: these rows are the only place `ExtClass.bits` meets production output. `Y` is declaration 3
++EMPTY axis, so every cell is the empty reduction: `-inf` (max) or `+inf` (min). Production's two
++legs agree with the oracle on the `±inf` bit patterns. `Y` is declaration 3
+ here (axes 0-1, `Z` 2). -/
+ private def empty0 (agg : AggOp) : SourceSnapshot :=
+   { resolved := {
+@@ -157,12 +157,16 @@ private def yCore0 (s : SourceSnapshot) : String :=
+ /-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
+ #guard_msgs in #eval classOf0 (empty0 .sum)
+ 
+-/-! T4B: the two structural known-difference conditions (`tropicalMultiFactor`,
+-`tropicalScatterFill`). The `product`/`strided` rows above carry the full classification; these
+-rows bind each condition to its own tensor. Two outputs: `Y` is declaration 6, `V` declaration 7. -/
++/-! Multi-tensor programs (S3b T7). These were the T4B known-difference fixtures
++(`tropicalMultiFactor`, `tropicalScatterFill`: production multiplied tropical factors, refused a
++tropical affine write, and gave an empty product `1.0`). Production now computes `⊗` as `+`, fills
++an empty fiber with `0_K` and gives an empty product `1_K = 0`, so the conditions and their
++confirmers are gone and every program here is a plain four-leg parity row: any divergence on
++either tensor is a real `nativeDiscrepancy`/`nativeFailure`. Two outputs: `Y` is declaration 6,
++`V` declaration 7. -/
+ private def snap2 (yAxes vAxes : List AxisSpec) (stmts : List Stmt) : SourceSnapshot :=
+   let base := snap yAxes stmts
+-  let extent (ax : AxisSpec) : Nat := if ax.uid = 7 then 4 else if ax.uid = 8 then 3 else 7
++  let extent (ax : AxisSpec) : Nat := if ax.uid = 7 then 4 else if ax.uid = 8 then 3 else 8
+   { base with
+     resolved := { base.resolved with
+       decls := base.resolved.decls ++ [.typedTensor .f64 "V" vAxes] }
+@@ -174,123 +178,103 @@ private def bareV : Stmt := .assign "V" [.free a] (rhs .max [[.read "Z" [.axis a
+ private def multiV : Stmt := .assign "V" [.free a] (rhs .max [[.read "X" [.axis a], .read "W" [.axis b]]])
+ private def stridedY : Stmt := .assign "Y" [.affine (.scale 2 a)] (rhs .max [[.read "X" [.axis a]]])
+ private def stridedV : Stmt := .assign "V" [.affine (.scale 2 a)] (rhs .max [[.read "X" [.axis a]]])
+-
+-private def known (s : SourceSnapshot) (order : List Nat := [6]) : String :=
+-  match compareSortedSource s (some order) with
+-  | .ok r => match r.classification with
+-    | .knownContractDifference (.tropicalMultiFactor o) => s!"multiFactor {o.declaration}"
+-    | .knownContractDifference (.tropicalScatterFill o) => s!"scatterFill {o.declaration}"
+-    | .knownContractDifference _ => "other condition"
+-    | c => s!"not known: {repr c}"
+-  | .error d => s!"refused {repr d.cause}"
+-
+-/-- info: "scatterFill (some 6)" -/
+-#guard_msgs in #eval known (strided .min)
+--- differing origin: only `V` (declaration 7) is multi-factor, the condition binds to it
+-/-- info: "multiFactor (some 7)" -/
+-#guard_msgs in #eval known (snap2 [a] [a] [bareY, multiV]) [6, 7]
+-/-- info: "multiFactor (some 6)" -/
+-#guard_msgs in #eval known (snap2 [a] [a] [multiY, bareV]) [6, 7]
+--- both multi-factor: the head (declaration 6) is confirmed, as in the real harness
+-/-- info: "multiFactor (some 6)" -/
+-#guard_msgs in #eval known (snap2 [a] [a] [multiY, multiV]) [6, 7]
+--- accept-neighbour: no condition, plain parity
+-/-- info: "not known: LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
+-#guard_msgs in #eval known (snap2 [a] [a] [bareY, bareV]) [6, 7]
+-/-- info: "scatterFill (some 6)" -/
+-#guard_msgs in #eval known (snap2 [k] [a] [stridedY, bareV]) [6, 7]
+--- only `V` is strided: bound to declaration 7
+-/-- info: "scatterFill (some 7)" -/
+-#guard_msgs in #eval known (snap2 [a] [k] [bareY, stridedV]) [6, 7]
+-/-- info: "scatterFill (some 6)" -/
+-#guard_msgs in #eval known (snap2 [k] [k] [stridedY, stridedV]) [6, 7]
+--- both shapes: scatter-fill precedes the value comparison (pipeline order), head only
+-/-- info: "scatterFill (some 6)" -/
+-#guard_msgs in #eval known (snap2 [k] [a] [stridedY, multiV]) [6, 7]
+-
+-/-! The confirmer on its own (`confirmsSorted`): each leg of each binding is pinned separately, with
+-natives from two programs that differ only in WHICH tensor is strided (`nY`: `Y`, `nV`: `V`). The
+-mixed natives carry one leg of each, so a confirmer that ignored the owner on one leg would accept. -/
+-private def nativeOf (s : SourceSnapshot) : Option NativeLegs.NativeRun :=
+-  (NativeLegs.runNative s (sorted := true)).toOption
+-
+-private def originOf (d : Nat) : SourceOrigin := { side := .output, declaration := some d }
+-
+-private def fills (n : Option NativeLegs.NativeRun) (d : Nat) : Bool :=
+-  match n with
+-  | some n => confirmsSorted n .agrees .agrees (.tropicalScatterFill (originOf d))
+-  | none => false
+-
+-private def nY := nativeOf (snap2 [k] [a] [stridedY, bareV])
+-private def nV := nativeOf (snap2 [a] [k] [bareY, stridedV])
+-
+-#guard fills nY 6
+-#guard fills nV 7
+-#guard !fills nY 7   -- same cause, other tensor
+-#guard !fills nY 3   -- a tensor that is not written at all
+-#guard !fills (nY.bind fun y => nV.map fun v => { y with checked := v.checked }) 6
+-#guard !fills (nY.bind fun y => nV.map fun v => { y with legacy := v.legacy }) 6
+-
+-/-- Multi-factor: both legs must mismatch at the origin's declaration (`oneSided`: only the legacy leg). -/
+-private def multi (origin : Nat) (oneSided : Bool := false) : Bool :=
+-  let s := snap2 [a] [a] [bareY, multiV]
+-  match nativeOf s, compareSortedSource s (some [6, 7]) with
+-  | some n, .ok r => confirmsSorted n r.legacy (if oneSided then .agrees else r.checked)
+-      (.tropicalMultiFactor (originOf origin))
+-  | _, _ => false
+-
+-#guard multi 7
+-#guard !multi 6   -- the mismatch is on `V`, not `Y`: a condition elsewhere hides nothing
+-#guard !multi 7 (oneSided := true)
+-
+-/-! T4B review fixes. Unexplained divergence: a zero-factor `max` term is `1_K = 0` for the oracle
+-and `1.0` for production, a mismatch no condition explains. Beside a multi-factor tensor it must
+-stay reported (the first mismatch is the multi-factor tensor's, declaration 6). -/
++/-- A zero-factor `max` term: the empty product `1_K = 0` in every cell. -/
+ private def zeroV : Stmt := .assign "V" [.free a] (rhs .max [[]])
+ 
+ private def tagOf (s : SourceSnapshot) (order : List Nat := [6, 7]) : String :=
+   match compareSortedSource s (some order) with
+   | .ok r => match r.classification with
+     | .fourLegParity => "parity"
+-    | .knownContractDifference (.tropicalMultiFactor o) => s!"multiFactor {o.declaration}"
+-    | .knownContractDifference (.tropicalScatterFill o) => s!"scatterFill {o.declaration}"
+     | .nativeDiscrepancy (.mismatch l) _ => s!"nativeDiscrepancy at {l.declaration}, bits {l.observed}"
+-    | _ => "other"
++    | c => s!"other {repr c}"
+   | .error d => s!"refused {repr d.cause}"
+ 
+-/-- info: "nativeDiscrepancy at 7, bits 4607182418800017408" -/
+-#guard_msgs in #eval tagOf (snap2 [a] [a] [bareY, zeroV])
+-/-- info: "multiFactor (some 6)" -/
++-- formerly `scatterFill (some 6)`
++/-- info: "parity" -/
++#guard_msgs in #eval tagOf (strided .min) [6]
++-- formerly `multiFactor (some 7)`, `(some 6)`, `(some 6)`
++/-- info: "parity" -/
++#guard_msgs in #eval tagOf (snap2 [a] [a] [bareY, multiV])
++/-- info: "parity" -/
+ #guard_msgs in #eval tagOf (snap2 [a] [a] [multiY, bareV])
+--- the same multi-factor tensor with the unexplained zero-factor divergence beside it is NOT known
+-#guard (tagOf (snap2 [a] [a] [multiY, zeroV])).startsWith "nativeDiscrepancy"
+--- statement order differs from declaration order: the matching condition is found, not just the head
+-/-- info: "multiFactor (some 6)" -/
++/-- info: "parity" -/
++#guard_msgs in #eval tagOf (snap2 [a] [a] [multiY, multiV])
++/-- info: "parity" -/
++#guard_msgs in #eval tagOf (snap2 [a] [a] [bareY, bareV])
++-- formerly `scatterFill (some 6)`, `(some 7)`, `(some 6)`, `(some 6)`
++/-- info: "parity" -/
++#guard_msgs in #eval tagOf (snap2 [k] [a] [stridedY, bareV])
++/-- info: "parity" -/
++#guard_msgs in #eval tagOf (snap2 [a] [k] [bareY, stridedV])
++/-- info: "parity" -/
++#guard_msgs in #eval tagOf (snap2 [k] [k] [stridedY, stridedV])
++/-- info: "parity" -/
++#guard_msgs in #eval tagOf (snap2 [k] [a] [stridedY, multiV])
++-- the zero-factor term (formerly `nativeDiscrepancy at 7`: production's empty product was `1.0`)
++/-- info: "parity" -/
++#guard_msgs in #eval tagOf (snap2 [a] [a] [bareY, zeroV])
++/-- info: "parity" -/
++#guard_msgs in #eval tagOf (snap2 [a] [a] [multiY, zeroV])
++-- statement order differs from declaration order
++/-- info: "parity" -/
+ #guard_msgs in #eval tagOf (snap2 [a] [a] [multiV, multiY])
+ 
+--- both legs must show the SAME first mismatch: a checked leg with other bits is not explained
+-#guard !(match nativeOf (snap2 [a] [a] [bareY, multiV]), compareSortedSource (snap2 [a] [a] [bareY, multiV]) (some [6, 7]) with
+-  | some n, .ok r => match r.checked with
+-    | .mismatch c => confirmsSorted n r.legacy (.mismatch { c with observed := c.observed + 1 })
+-        (.tropicalMultiFactor (originOf 7))
+-    | _ => true
+-  | _, _ => true)
+-
+-/-- `unexplainedAgree` on the legacy observation of `[bareY, multiV]`: excluding the multi-factor
+-tensor (declaration 7) leaves only `Y`, which agrees; corrupting `Y`'s expected cell is seen unless
+-`Y` is excluded too. -/
+-private def unexplained (explained : List Nat) (corrupt : Bool) : Bool :=
+-  let s := snap2 [a] [a] [bareY, multiV]
+-  match nativeOf s, compareSortedSource s (some [6, 7]) with
+-  | some n, .ok r => match n.legacy, r.profile with
+-    | .observed o, .ok cells =>
+-      unexplainedAgree explained
+-        (if corrupt then cells.map (fun c => if c.declaration == 6 then { c with expected := .posInf } else c) else cells) o
+-    | _, _ => false
+-  | _, _ => false
+-
+-#guard unexplained [7] false
+-#guard !unexplained [7] true
+-#guard unexplained [6, 7] true
++/-! S3b T7 parity rows: each value differs from what the pre-S3b production computed (max-times
++`⊗`, scatter fill `0`, empty product `1`), so each row fails against that semantics. -/
++
++/-- (a) A tropical scatter: the three `b` writes of each `a` collide in cell `2a` (combined with
++`⊕`), and the odd cells and cell 7 are never written (`0_K`). Donor: `ScatterCompileTest` S11
++(`Out[2*i] := maxreduce(X[i, j])`). Max over `b` of `Z`: `-3, 7, 17, 27`; min: `-5, 5, 15, 25`. -/
++private def collide (agg : AggOp) : SourceSnapshot :=
++  snap [k] [.scatter "Y" [.affine (.scale 2 a)] (rhs agg [[.read "Z" [.axis a, .axis b]]])]
++
++/-- info: "some [some -3, some -inf, some 7, some -inf, some 17, some -inf, some 27, some -inf]" -/
++#guard_msgs in #eval yCore (collide .max)
++/-- info: "some [some -5, some +inf, some 5, some +inf, some 15, some +inf, some 25, some +inf]" -/
++#guard_msgs in #eval yCore (collide .min)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (collide .max)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (collide .min)
++
++/-- (b) A multi-factor contraction over the shared axis `b`: `Y[a] = ⊕_b Z[a,b] ⊗ W[b]`. Donors: the
++`product` rows above and the TR3/TR7 shape. Max-plus: `Z[a,2] + 100` = `97, 107, 117, 127`
++(max-times would give `-5, 50, 1500, 2500`); min-plus: `Z[a,0] + 1` = `-4, 6, 16, 26`. -/
++private def contract (agg : AggOp) : SourceSnapshot :=
++  snap [a] [.assign "Y" [.free a] (rhs agg [[.read "Z" [.axis a, .axis b], .read "W" [.axis b]]])]
++
++/-- info: "some [some 97, some 107, some 117, some 127]" -/
++#guard_msgs in #eval yCore (contract .max)
++/-- info: "some [some -4, some 6, some 16, some 26]" -/
++#guard_msgs in #eval yCore (contract .min)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (contract .max)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (contract .min)
++
++/-- (c) The empty product alone: `Y[a] := agg ()` is `1_K = 0` in every cell, for both sorts. -/
++private def zeroY (agg : AggOp) : SourceSnapshot :=
++  snap [a] [.assign "Y" [.free a] (rhs agg [[]])]
++
++/-- info: "some [some 0, some 0, some 0, some 0]" -/
++#guard_msgs in #eval yCore (zeroY .max)
++/-- info: "some [some 0, some 0, some 0, some 0]" -/
++#guard_msgs in #eval yCore (zeroY .min)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (zeroY .max)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (zeroY .min)
++
++/-! (d) Negative inputs, where max-times and max-plus disagree: `X = [-1,-2,-3,-4]`,
++`Y[a] = ⊕_b X[a] ⊗ W[b]`. Max-plus `X[a] + 100` = `99, 98, 97, 96` (max-times: `-1, -2, -3, -4`);
++min-plus `X[a] + 1` = `0, -1, -2, -3` (min-times: `-100, -200, -300, -400`). -/
++/-- info: "some [some 99, some 98, some 97, some 96]" -/
++#guard_msgs in #eval yCore (product .max [-1, -2, -3, -4])
++/-- info: "some [some 0, some -1, some -2, some -3]" -/
++#guard_msgs in #eval yCore (product .min [-1, -2, -3, -4])
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (product .max [-1, -2, -3, -4])
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (product .min [-1, -2, -3, -4])
+ 
+ end SourceSortedDifferentialTest

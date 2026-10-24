@@ -13,8 +13,10 @@ def scatterSourceAxes (slots : List LHSSlot) (rhs : RHSExpr) : List UID :=
     Each source coord → rhs value (per the 4b `Combine` selected by `rhs.agg` — `.sum`/`.max`/
     `.min` combine terms, not a hardcoded real sum) → written to the affine output coord.
     Colliding writes (two or more source coords landing on the same output coord) are merged with
-    the DESTINATION's additive monoid ⊕ (real `+`; `predicate` destination `max` = `∨`) starting from
-    its identity 0_K = 0, so an empty fibre is 0 and a collision is a sum, never an error.
+    the sort's additive monoid ⊕ (`Combine.combine` of the selected algebra: real `+`; `predicate`
+    destination and `maxreduce` the NaN-propagating `max`; `minreduce` the NaN-propagating `min`)
+    starting from its identity 0_K (`Combine.unit0`: real 0, predicate false, max-plus `-inf`,
+    min-plus `+inf`), so an empty fibre is 0_K and a collision is a ⊕-fold, never an error.
     An output coordinate outside `outShape` (negative, or at or past an extent) is an error
     (`EvalError.scatterWriteOutOfRange`), never a silent skip. -/
 def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
@@ -52,10 +54,9 @@ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : 
   -- Dtype-aware, like every other worker: `combineFor` selects the Boolean `(∧, ∃)` algebra for a
   -- `predicate`-declared destination, so a Boolean scatter's values stay {0,1}.
   let c : Combine := combineFor decls nm rhs.agg
-  -- The destination ⊕ folds colliding writes with `+`; into a predicate that would leave {0,1}, so
-  -- there it folds with the Boolean `∃` (max) instead.
-  let boolDest := isPredicateDest decls nm
-  let mut out := DenseTensor.ofFn outShape (fun _ => 0.0)
+  -- The destination ⊕ is the same algebra's `combine` (real `+`, Boolean `∃`, tropical `max`/`min`),
+  -- and an unwritten cell is its identity `unit0` (S3b).
+  let mut out := DenseTensor.ofFn outShape (fun _ => c.unit0)
   for sc in cartesian srcSizes do
     let coord : HashMap UID Int := (srcAxes.zip sc).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) {}
     -- rhs value at this source coord: ∏ over a term's factors (from c.unit1), combined over
@@ -64,9 +65,9 @@ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : 
     for t in rhs.body.terms do
       let mut prod := c.unit1
       for f in t.factors do
-        match gather env coord f with
+        match gatherCast c.unit0 c.unit1 (boolReadCast decls c rhs.agg) env coord f with
         | .ok v   => prod := c.mul prod v
-        | .error e => throw e   -- e.g. a .unaryFn domain violation; out-of-range reads are `.ok 0.0`, not `.error`
+        | .error e => throw e   -- e.g. a .unaryFn domain violation; out-of-range reads are `.ok` of the pad, not `.error`
       val := c.combine val prod
     -- output coordinate = each slot's affine image at this source coord
     let outCoordZ : List Int := slots.map (fun sl => evalIdx coord sl.outIdx)
@@ -74,7 +75,7 @@ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : 
       throw (.scatterWriteOutOfRange nm outCoordZ sc)
     let oc := outCoordZ.map Int.toNat
     let prev := out.get! oc
-    out := out.set! oc (if boolDest then Max.max prev val else prev + val)
+    out := out.set! oc (c.combine prev val)
   return (nm, out)
 
 end LeanNCD.Eval

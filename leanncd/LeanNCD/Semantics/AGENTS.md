@@ -120,22 +120,20 @@ Tropical carriers (S2b, merge cf7d6eee): the oracle is generic in a scalar carri
 carrier record plus ONE table entry, no edit to oracle evaluation (`SourceOracleCarrierTest` does it with a toy Boolean
 carrier; the limit is the DSL, `AggOp` is closed). `admitSourceSorted` (a `sorted` flag on `admitSourceAffine`) admits
 `max`/`min` statements as sort-free structure and selects ONE carrier per program from `sortKeys`; a mix is
-`SourceCause.sortSelection`; every tropical `.scatter` is refused (`.unsupported .scatterPolicy`, whose name is a
-leftover of the deleted scatter options; production refuses it by the S3a agg guard); the unsorted entries
+`SourceCause.sortSelection`; since S3b a tropical `.scatter` is admitted like a tropical `.assign` (the `sorted` flag
+erases the statement's agg to `.sum` structure, the carrier supplies ⊕ and the unwritten-cell zero `-inf`/`+inf`); the unsorted entries
 still refuse `max`/`min` (`nonSum`). Cells are observed as `ExtVal`; the Core leg is `runSourceAt` (`Registry.none`; the
 real names are its rational instance, proofs untouched). `Source.SortedDifferential.compareSortedSource` is a SIBLING
 harness (real `compareSource`, `SourceRun`, `checkProfile` untouched) with a tropical profile (finite reads integers
 within ±2^20, per-occurrence sum of magnitudes within 2^20, `±inf` its own class; an extent-0 reduction yields `±inf`
-that production matches). Production multiplies where tropical
-`⊗` adds, so multi-factor `max`/`min` and a tropical affine write are the structural conditions `tropicalMultiFactor`
-(both legs mismatch at the origin's declaration) and `tropicalScatterFill` (legacy `scatterFillNotIdentity` and checked
-`scatterOptsNotAdmitted "{tensor}: fill"` both name the origin's tensor), each bound to its own tensor
-(`detectSortedConditions`, `confirmsSorted`; the first listed condition that confirms wins, scatter-fill first; multi-factor also needs both
-legs to show the same first mismatch and every tensor without that condition to agree, `unexplainedAgree`). A `real` selection through
+that production matches). Since S3b production is max-plus/min-plus (`⊗` is `+`; sorts: `DSL/AGENTS.md` `SortAlgebra`) and tropical programs reach `fourLegParity`,
+the sorted harness has no known-difference apparatus (`SortedClassification` has no `knownContractDifference`; the earlier structural conditions for multi-factor and scatter-fill are deleted). Strided
+snapshots (`2*a` writes) declare the destination extent production derives (8). The negation-duality property (`Eval.Plan.DualityTest`) and the bool -> tropical
+read cast (`Eval.Plan.BoolCastTest`) are production-only coverage: the oracle has no per-tensor sorts and no cast. A `real` selection through
 `compareSortedSource` is a sibling check with the weaker tropical profile: use `compareSource` for real programs. Independence caveat: oracle
 and Core share the semiring instance and `ofRat`/`observe`, so their parity checks scheduling and where embedding and observation happen,
-not those functions or the algebra (pinned by hand-valued oracle fixtures; `⊗ = +` has no production check, production multiplies). Executed evidence, not theorems. Parked: merging the
-harnesses, tropical receipt re-check and Program theorems, f32 tropical comparison (`additive_s2b_plan.md`, `additive_s2b_record.md`).
+not those functions or the algebra (pinned by hand-valued oracle fixtures; `⊗ = +` is checked against production by the hand-valued tropical fixtures and the duality property). Executed evidence, not theorems. Parked: merging the
+harnesses, tropical receipt re-check and Program theorems, f32 tropical comparison (`additive_s2b_plan.md`, `additive_s2b_record.md`; S3b: `additive_s3b_record.md`).
 `Source.Observation` / `Source.Diagnostics` expose actual
 source-linked endpoints and canonical contribution data. `Source.NumericalProfile`
 checks the exact bounded-integer binary64 comparison profile;
@@ -154,7 +152,7 @@ f32 tensor) and two affine-write conditions: `multiWriterScatter`
 (any non-bare write among several writers of one tensor, `fG` is two `.assign`s:
 `scanAxisNotIter` on both native legs) and
 `scatterExtentOverridesDeclared` (production derives the destination extent, the oracle uses the
-declared one). `knownContractDifference` is produced only by these. A condition is confirmed only when
+declared one). The real harness's `Differential.Classification.knownContractDifference` is produced only by these. A condition is confirmed only when
 the native legs show the predicted outcome, with limited precision: origin-bound only for the checked
 affine-slot refusal and the extent condition; multi-writer `scanAxisNotIter` is cause-only; only the
 head condition is confirmed; while the extent condition is confirmed no value of that program is compared.

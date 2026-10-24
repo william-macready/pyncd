@@ -1,5 +1,20 @@
 # Max / min aggregation in the checked `EvalPlan` backend
 
+> **S3b update (supersedes the (max, ×) description and the padding discussion below).** Since S3b
+> (`semantics/additive_s3b_record.md`) `maxreduce`/`minreduce` are the true semirings max-plus
+> `(+, max, −∞, 0)` and min-plus `(+, min, +∞, 0)`, in both backends: a term's factors ADD, the
+> NaN-propagating max/min folds terms and contracted coordinates, and `0_K` (`−∞`/`+∞`) is the empty
+> reduction, the unwritten scatter cell, the unwritten scan-state cell, a false Iverson factor and the
+> bare out-of-range read pad (an OOB read under a `unaryFn` keeps the real `0.0`). A `bool` read inside a
+> tropical statement is cast (false to `0_K`, true to `1_K = 0`). Gaps recorded here and CLOSED by S3b:
+> multi-factor products (was `×`), scatter fill (a top-level scatter now folds collisions with ⊕ from
+> `0_K`; `scatterFillNotIdentity`/`scatterOptsNotAdmitted` are deleted), and the padded-`0` interaction
+> (an all-negative max no longer sees the pad win; `oobMaxPlan` is now `[-1,-3]`, not `[0,0]`). STILL
+> OPEN: S3b-ii (tropical multi-writer collection, `multiWriterAlgebra`), B5 (multi-writer scatter),
+> scan-local scatter overwrite (F3), the all-neutral scan state with a tropical annotation evaluating real,
+> JAX/Python tropical execution, oracle per-tensor sorts. The text below is the original (max-times)
+> design, kept as the record of that slice.
+
 **Status:** **Executed and reviewed.** All three tasks landed; `lake build Tests` is green (8657
 jobs) and the `enumScanCases` corpus gate reads `total=17 accepted=17 unsupportedNonlin=0
 unsupportedAgg=0`. Two independent final reviews were run over the whole branch (a `code-review`
@@ -49,7 +64,7 @@ compiled and run against the tree before being written into this plan (see §5).
 
 **Decision.** Thread the source `AggOp` into the plan's existing `ContractionAlgebra` reduction slot.
 `sum` keeps Wave C's real sum-product; `max`/`min` select the two tropical semirings
-`(×, max, −∞)` / `(×, min, +∞)`, mirroring the reference `Combine.max` / `Combine.min` exactly. No
+`(×, max, −∞)` / `(×, min, +∞)` as first landed (S3b changed ⊗ to `+`: max-plus / min-plus, see the update above), mirroring the reference `Combine.max` / `Combine.min` exactly. No
 new `PlanStep`, no new geometry, no new dtype, no new write-map machinery — this fits the reduction
 slot that already exists.
 
@@ -73,7 +88,7 @@ The gap is confined and single-sited:
 - The source AST already carries `AggOp | sum | max | min` (`DSL/Ast.lean`), and `RHSExpr.agg`
   reaches the backend on every statement.
 - The reference interpreter is the ready-made oracle: `Combine.max` = `(×, max, −∞, 1.0)` and
-  `Combine.min` = `(×, min, +∞, 1.0)` in `LeanNCD/Eval/Contract.lean`, selected by `combineFor` from
+  `Combine.min` = `(×, min, +∞, 1.0)` when first written (now max-plus `(+, max, −∞, 0.0)` / min-plus `(+, min, +∞, 0.0)`) in `LeanNCD/Eval/Contract.lean`, selected by `combineFor` from
   `rhs.agg`. Both the per-term reduction fold and the across-terms fold use the same `combine`,
   which is exactly why the checked `ContractionAlgebra` reuses one `reduceOp`/`reduceId` pair for
   both layers.
@@ -92,7 +107,7 @@ return `0.0` for an out-of-range coordinate, and that `0.0` flows through `facto
 term's product, forming a term whose value then participates in the reduction. Neither evaluator
 makes the pad depend on the aggregation. Therefore:
 
-- **Do not** change the out-of-bounds pad to `±∞`. Leaving it at `0.0` is exactly what keeps the
+- **(Superseded by S3b: a bare OOB read now pads with the statement's `0_K`, `±∞` for tropical.)** Originally: **do not** change the out-of-bounds pad to `±∞`. Leaving it at `0.0` is exactly what keeps the
   Dense worker byte-for-byte equal to the reference under `max`/`min`.
 - **Be precise about what this does and does not mean.** The pad is *not* neutral — an out-of-bounds
   term contributes a `0.0` into the max/min fold, so with all-negative data an OOB `0.0` term can

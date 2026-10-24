@@ -1065,46 +1065,52 @@ run_cmd do
   | .error e => throwError s!"shape 11 scan accept: {e}"
   | .ok _ => pure ()
 
--- Shape 1 (top-level max/min scatter whose gap value `0` is not the aggregation identity). REJECT donor:
---   ScatterTest "upsample"/"4g regression" scatter, here as an `evalPlain` `.scatter` statement
---   `Out[2*i] := maxreduce(X[i])`, X = [-1,-2,-3]; the old reference filled the gaps with 0 and
---   returned [-1,0,-2,0,-3,0], which is NOT the max identity. The checked path refuses every
---   top-level max/min scatter (S3a: a guard on `agg`; tropical scatter is S3b's).
+-- Shape 1 (top-level max/min scatter: unwritten cells are the sort's 0_K, not `0`). Formerly a REJECT
+--   (`scatterFillNotIdentity`); S3b T3 flips it to a VALUE test. Donor: ScatterTest
+--   "upsample"/"4g regression" scatter, here as an `evalPlain` `.scatter` statement
+--   `Out[2*i] := maxreduce(X[i])`, X = [-1,-2,-3]. The old reference filled the gaps with 0
+--   ([-1,0,-2,0,-3,0]); now they are -inf (max-plus) / +inf (min-plus). The min twin uses the
+--   negated data X = [1,2,3].
 run_cmd do
   let i := ax "i" 1
   let X := tensorOf [3] [-1, -2, -3]
+  let Xn := tensorOf [3] [1, 2, 3]
+  let ninf : Float := -1.0 / 0.0
+  let pinf : Float := 1.0 / 0.0
   let rhsAgg (agg : AggOp) : RHSExpr := { mkRhs "X" [.axis i] .identity with agg := agg }
   let stmtAgg (agg : AggOp) : Stmt := .scatter "Out" [.affine (.scale 2 i)] (rhsAgg agg)
   match mkPlain (stmtAgg .max) [("X", X)] [(1, 3)] with
-  | .error (.scatterFillNotIdentity "Out" .max) => pure ()
-  | .error e => throwError s!"shape 1 max: wrong rejection: {e}"
-  | .ok (_, Out) => throwError s!"shape 1 max: accepted: {repr Out.data}"
-  match mkPlain (stmtAgg .min) [("X", X)] [(1, 3)] with
-  | .error (.scatterFillNotIdentity "Out" .min) => pure ()
-  | .error e => throwError s!"shape 1 min: wrong rejection: {e}"
-  | .ok (_, Out) => throwError s!"shape 1 min: accepted: {repr Out.data}"
+  | .error e => throwError s!"shape 1 max: {e}"
+  | .ok (_, Out) =>
+      unless Out.data == #[-1, ninf, -2, ninf, -3, ninf] do throwError s!"shape 1 max: {repr Out.data}"
+  match mkPlain (stmtAgg .min) [("X", Xn)] [(1, 3)] with
+  | .error e => throwError s!"shape 1 min: {e}"
+  | .ok (_, Out) =>
+      unless Out.data == #[1, pinf, 2, pinf, 3, pinf] do throwError s!"shape 1 min: {repr Out.data}"
   -- ACCEPT neighbour (clone, change: agg .max -> .sum): a sum scatter's identity IS the fill 0.
   match mkPlain (stmtAgg .sum) [("X", X)] [(1, 3)] with
   | .error e => throwError s!"shape 1 accept (sum): {e}"
   | .ok (_, Out) =>
       unless Out.data == #[-1, 0, -2, 0, -3, 0] do throwError s!"shape 1 accept (sum): {repr Out.data}"
 
--- Shape 1, the `+`-joined two-term max (the only case where a scatter max is meaningful: no gap
---   cells when the terms cover every output cell). Donor: ScatterTest '4g regression' (A = [1,5,2],
---   B = [10,-1,-1], `Out[i] := A[i] + B[i]` with agg .max, per-position max [10,5,2]). The checked
---   rule refuses it all the same: the algebra comes from `agg`, and the guard never looks
---   at coverage, so the reference refuses it too (stricter than meaningful, but checked-aligned).
+-- Shape 1, the `+`-joined two-term max (no gap cells: the terms cover every output cell). Formerly a
+--   REJECT; now a VALUE test. Donor: ScatterTest '4g regression' (A = [1,5,2], B = [10,-1,-1],
+--   `Out[i] := A[i] + B[i]` with agg .max, per-position max [10,5,2]). The min twin uses the
+--   negated data (A = [-1,-5,-2], B = [-10,1,1]): per-position min [-10,-5,-2].
 --   The same scan-LOCAL scatter stays accepted (below).
 run_cmd do
   let i := ax "i" 1
   let env := [("A", tensorOf [3] [1, 5, 2]), ("B", tensorOf [3] [10, -1, -1])]
-  let rhs : RHSExpr :=
+  let envn := [("A", tensorOf [3] [-1, -5, -2]), ("B", tensorOf [3] [-10, 1, 1])]
+  let rhsOf (agg : AggOp) : RHSExpr :=
     { body := { terms := [{ factors := [.read "A" [.axis i]] }, { factors := [.read "B" [.axis i]] }] }
-      nonlin := .identity, agg := .max }
-  match mkPlain (.scatter "Out" [.affine (.axis i)] rhs) env [(1, 3)] with
-  | .error (.scatterFillNotIdentity "Out" .max) => pure ()
-  | .error e => throwError s!"shape 1 joined: wrong rejection: {e}"
-  | .ok (_, Out) => throwError s!"shape 1 joined: accepted: {repr Out.data}"
+      nonlin := .identity, agg := agg }
+  match mkPlain (.scatter "Out" [.affine (.axis i)] (rhsOf .max)) env [(1, 3)] with
+  | .error e => throwError s!"shape 1 joined max: {e}"
+  | .ok (_, Out) => unless Out.data == #[10, 5, 2] do throwError s!"shape 1 joined max: {repr Out.data}"
+  match mkPlain (.scatter "Out" [.affine (.axis i)] (rhsOf .min)) envn [(1, 3)] with
+  | .error e => throwError s!"shape 1 joined min: {e}"
+  | .ok (_, Out) => unless Out.data == #[-10, -5, -2] do throwError s!"shape 1 joined min: {repr Out.data}"
   -- ACCEPT: the SCAN-LOCAL max-reduce scatter (the checked path accepts it; the check is not in
   --   `evalScatter` nor in the scan arm): slice `S[2*j, 0]` with agg .max over X = [3, 7].
   let j := ax "j" 2; let l := ax "l" 9

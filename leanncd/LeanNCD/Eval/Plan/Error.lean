@@ -28,6 +28,9 @@ inductive PlanError
   | constDtypeMismatch       (dtype : ScalarDType) (const : ScalarConst)
   | algebraNotAdmitted       (algebra : ContractionAlgebra)
   | policyNotAdmitted        (policy : OutOfBoundsPolicy)
+  /-- A read carries the bool -> tropical cast (`ReadPlan.boolToTropical`) but is not a bare read of
+      a `.bool` source under a tropical (`+`, `max`/`min`) algebra. -/
+  | castNotAdmitted          (termIndex : Nat) (factorIndex : Nat)
   | destinationShapeMismatch (declared : Array Nat) (signature : Array Nat)
   | duplicateInputSlot       (slot : TensorSlot)
   | inputSlotsNotOrdered     (atIndex : Nat)
@@ -279,22 +282,6 @@ inductive CapabilityError
       from `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots);
       a hand-built `ScheduledProgram` handed to `prepareEvalPlan` is what can express it. -/
   | multiAxisScatterLhs  (context : String)
-  /-- A top-level scatter the checked layer does not implement: a `maxreduce`/`minreduce` one, whose
-      tropical `∓∞` identity the plain-sum scatter carrier cannot start from (tropical scatter
-      carriers are S3b's). Rejected HERE, at capability tier with a source locator, rather than left
-      to surface from `checkScatter` as `invalidPlan`, which is the compiler-bug channel and would
-      misreport a legitimately out-of-fragment source program as one. (Historical name: this once
-      guarded a `ScatterOpts.fill` the layer could not honour; the options were deleted in S3a.)
-      `agg = .sum` is admitted. A `predicate`/`bool`-declared
-      scatter destination is NOT reachable from this constructor: it is rejected upstream by
-      `predicateScatterDest` (below) at the same tier, before `scatterAggOrFail` is called at all.
-      (Prior claim that a predicate destination with `fill = 0` was "coherent and admitted" was
-      wrong — the reference `evalScatter` (`Eval/Scatter.lean`) then selected its algebra from
-      `rhs.agg` only, never seeing `decls`, so a Boolean scatter destination silently diverged from
-      the reference in real sum arithmetic; the fix routed the rejection through the capability tier
-      instead. The reference is now dtype-aware (reference-alignment), and the reference ALSO
-      rejects a top-level `maxreduce`/`minreduce` scatter, as `scatterFillNotIdentity`.) -/
-  | scatterOptsNotAdmitted (context : String)
   /-- A top-level scatter's DESTINATION is `predicate`/`bool`-declared. The reference evaluator
       `evalScatter` (`Eval/Scatter.lean`) WAS not dtype-aware (reference-alignment made it so, via
       `combineFor`): it selected its algebra from `rhs.agg` only (`.sum ⇒ Combine.real`, real
@@ -302,10 +289,8 @@ inductive CapabilityError
       checked backend's `algebraForDest` selects `admittedAlgebraBool` — a silent divergence with no
       diagnostic. The rejection below is KEPT until the checked runner's Boolean scatter is
       verified against the now-dtype-aware reference. Rejected here, at capability
-      tier, with a source locator naming the destination — the same way a `maxreduce`/`minreduce`
-      scatter (whose fill cannot denote `∓∞`) is refused, and for the same reason: no reference
-      semantics can match it, so the honest report is "not in the fragment", not a differential
-      failure downstream.
+      tier, with a source locator naming the destination, so the honest report is "not in the
+      fragment", not a differential failure downstream.
       
       Detected on the `Stmt.scatter` shape a source predicate scatter presents at capability tier
       (post-`lowerArith`, the surface-compiled case). The OTHER shape a scatter-shaped write can take
@@ -313,8 +298,8 @@ inductive CapabilityError
       `ScheduledProgram` that bypassed `lowerArith` — is rejected one step earlier by
       `unloweredScatterAssign` (below) regardless of destination dtype, since an unlowered
       scatter-shaped assign is malformed for a reason that does not depend on the destination's
-      declaration. S-A supports only real-sum-product and the two tropical semirings (rejected via
-      `scatterOptsNotAdmitted`); a predicate scatter destination is a third algebra that had no
+      declaration. S-A supports only real-sum-product and (since S3b T3) the two tropical semirings;
+      a predicate scatter destination is a third algebra that had no
       reference match, and closing it meant teaching the reference to be dtype-aware (done), not
       admitting it in the checked backend alone; admitting it now needs the checked runner's Boolean
       scatter verified against the reference. -/

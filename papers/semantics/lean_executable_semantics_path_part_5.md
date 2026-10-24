@@ -32,8 +32,9 @@ algebra, max-plus and min-plus sorts, out-of-range writes as errors) is recorded
 [the decision note](additive_production_decision_note.md). Slice 1 implemented collection
 for sum-algebra bare-slot writers (`collectDefinitions`, `desugarMultiWriters`,
 `ScanStmt.publications`, `PlanBindings.privateSlots`); the note's other slices (scatter,
-max/min and scan multi-writer sets, tropical sorts in production) remain planned;
-scatter collision ⊕ (S3a) and out-of-range write errors (B6) have landed for top-level scatters; the oracle for affine write slots (S2a, landed, merge 7a551faa)
+max/min and scan multi-writer sets (S3b-ii), scatter multi-writer B5, scan-local scatter overwrite F3) remain planned;
+scatter collision ⊕ (S3a), out-of-range write errors (B6) and, in S3b, production tropical sorts, the bool -> tropical cast and the
+`0_K` constants (`additive_s3b_record.md`) have been implemented for top-level scatters; the oracle for affine write slots (S2a, landed, merge 7a551faa)
 and the oracle and sorted differential for single-sort max-plus and min-plus programs (S2b, merge cf7d6eee)
 are executed evidence, not theorems. Two slice-1 caveats on the routed
 path: `route` runs `desugarMultiWriters` before physicalization, and a routed collector step

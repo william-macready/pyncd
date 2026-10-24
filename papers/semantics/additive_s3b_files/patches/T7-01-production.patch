@@ -1,0 +1,388 @@
+diff --git a/leanncd/LeanNCD/Eval/Error.lean b/leanncd/LeanNCD/Eval/Error.lean
+index aa51a9cf..323d7cf4 100644
+--- a/leanncd/LeanNCD/Eval/Error.lean
++++ b/leanncd/LeanNCD/Eval/Error.lean
+@@ -377,12 +377,6 @@ inductive EvalError
+   /-- An axiswise statement marks two or more reduction axes. The old reference normalised along
+       the FIRST silently. `firstPos`/`secondPos` are the first two marked slots. -/
+   | multipleMarkedReductionAxes (stmt : String) (firstPos secondPos : Nat)
+-  /-- A top-level scatter aggregates with `max`/`min` but fills unwritten cells with a finite value,
+-      which is not that aggregation's identity (`∓∞`). The old reference filled with 0, so
+-      `Out[2*i] := maxreduce(X[i])` returned `[-1,0,-2,0,-3,0]` for `X = [-1,-2,-3]`. No producer
+-      since S3b T3 (a top-level scatter now starts from the sort's 0_K); deleted with the sorted
+-      differential's matching condition (T7). -/
+-  | scatterFillNotIdentity (stmt : String) (agg : AggOp)
+   /-- A supplied input names a tensor the program defines (writes), including a private
+       per-writer tensor `T#k` of additive collection. Inputs and defined tensors are disjoint
+       (spec §13.6); the old reference silently replaced the supplied value. Raised by
+@@ -458,9 +452,6 @@ affine slot at dimension {dim} that names no source axis"
+   | .multipleMarkedReductionAxes stmt a b =>
+       s!"{stmt}: LHS slots {a} and {b} are both marked (·) as reduction axes; an axiswise \
+ statement marks exactly one"
+-  | .scatterFillNotIdentity stmt agg =>
+-      s!"evalPlain: scatter {stmt} aggregates with {if agg == .max then "max" else "min"} but fills \
+-unwritten cells with a finite value, not the {if agg == .max then "-inf" else "+inf"} identity"
+   | .inputIsDefined name =>
+       s!"evalScheduled: supplied input {name} names a tensor the program defines"
+ 
+diff --git a/leanncd/LeanNCD/Eval/Plan/Error.lean b/leanncd/LeanNCD/Eval/Plan/Error.lean
+index 4c690e53..9d74f10d 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Error.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Error.lean
+@@ -282,12 +282,6 @@ inductive CapabilityError
+       from `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots);
+       a hand-built `ScheduledProgram` handed to `prepareEvalPlan` is what can express it. -/
+   | multiAxisScatterLhs  (context : String)
+-  /-- No producer since S3b T3: a top-level `maxreduce`/`minreduce` scatter is now admitted, with the
+-      sort's 0_K (`∓∞`) fill and its ⊕ on collisions. Kept only because
+-      `SortedDifferential.confirmsSorted` (Semantics/Source) still matches it; deleted with that
+-      matching condition (T7). (Historical name: this once guarded a `ScatterOpts.fill` the layer
+-      could not honour; the options were deleted in S3a.) -/
+-  | scatterOptsNotAdmitted (context : String)
+   /-- A top-level scatter's DESTINATION is `predicate`/`bool`-declared. The reference evaluator
+       `evalScatter` (`Eval/Scatter.lean`) WAS not dtype-aware (reference-alignment made it so, via
+       `combineFor`): it selected its algebra from `rhs.agg` only (`.sum ⇒ Combine.real`, real
+diff --git a/leanncd/LeanNCD/Eval/Scan.lean b/leanncd/LeanNCD/Eval/Scan.lean
+index 1b46fb2e..ecf961d9 100644
+--- a/leanncd/LeanNCD/Eval/Scan.lean
++++ b/leanncd/LeanNCD/Eval/Scan.lean
+@@ -241,12 +241,10 @@ private def checkBaseReads (scanName : String) (stateNames : List String)
+     5. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
+        `base` order.
+ 
+-    Two orderings differ from the checked backend and are deliberately left so. The reduction-
++    One ordering differs from the checked backend and is deliberately left so. The reduction-
+     marker checks (`checkNormMarkers`) run at statement evaluation, AFTER this structure check: a
+     scan with both a marker fault and a structure fault reports the structure constructor first,
+-    while the checked backend reports the marker fault first. And on a top-level max/min scatter
+-    with an unsized destination the reference reports the fill error (`scatterFillNotIdentity`)
+-    before the shape error, while the checked path reports the shape error first. -/
++    while the checked backend reports the marker fault first. -/
+ def checkScanStructure (scanName : String) (axes : List AxisSpec) (sizes : HashMap UID Nat)
+     (stateNames : List String) (base recur : List Stmt) : Except EvalError Unit := do
+   let axUids := axes.map (·.uid)
+diff --git a/leanncd/LeanNCD/Semantics/Source/Adapter.lean b/leanncd/LeanNCD/Semantics/Source/Adapter.lean
+index 6beeee53..a3439b79 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Adapter.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Adapter.lean
+@@ -30,9 +30,6 @@ inductive UnsupportedSource
+   | iteration | predicate | complex
+   | scatter | recurMorphism | marked | scanSlot | affine
+   | nonSum | nonIdentity | iverson | unary
+-  /-- A `Stmt.scatter` with a non-`sum` aggregation inside a sorted (tropical) program. The
+-  `fill`/`reduce` options are not checked (production ignores them since S3a). -/
+-  | scatterPolicy
+   deriving DecidableEq, Repr
+ 
+ inductive SourceCause
+diff --git a/leanncd/LeanNCD/Semantics/Source/Admission.lean b/leanncd/LeanNCD/Semantics/Source/Admission.lean
+index 4075edaf..e38da6a0 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Admission.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Admission.lean
+@@ -899,23 +899,18 @@ private def admitAffineWrite (source : AdaptedSource) (original : Nat) (name : S
+   else
+     throw (sourceError .output origin (.role .defined (source.table.entry dst).role))
+ 
+-/-- `admitStatement`, plus non-bare `.assign` and `.scatter` (whose `fill`/`reduce` options production
+-ignores since S3a: collisions sum, so they are not read here either). With `sorted`
+-(S2b), a `max`/`min` statement is admitted as its sort-free structure (the aggregation is a
+-program-level carrier key, read by `admitSourceSorted`), and a tropical `.scatter` is refused:
+-`fill : Int` cannot be the carrier zero (`-inf`/`+inf`), so §2.3's `fill = 0_K` never holds. -/
++/-- `admitStatement`, plus non-bare `.assign` and `.scatter` (admitted alike: since S3a a scatter has
++no options and colliding writes combine with ⊕). With `sorted` (S2b), a `max`/`min` statement,
++assignment or scatter, is admitted as its sort-free structure (the aggregation is a program-level
++carrier key, read by `admitSourceSorted`): the oracle combines colliding writes with the carrier's
++⊕ and leaves an unwritten cell at the carrier's zero (`-inf`/`+inf`), which is production's
++top-level scatter semantics since S3b. -/
+ def admitAffineStatement (source : AdaptedSource) (original : Nat) (sorted : Bool := false) :
+     Stmt → Except SourceDiagnostic (AdmittedStatement source)
+-  | .assign name slots rhs =>
++  | .assign name slots rhs | .scatter name slots rhs =>
+     let rhs := if sorted then { rhs with agg := .sum } else rhs
+     if slots.all LHSSlot.isFree then admitStatement source original (.assign name slots rhs)
+     else admitAffineWrite source original name slots rhs
+-  | .scatter name slots rhs =>
+-    if sorted && rhs.agg != .sum then
+-      .error (sourceError .statement { statement := some original } (.unsupported .scatterPolicy))
+-    else if slots.all LHSSlot.isFree then
+-      admitStatement source original (.assign name slots rhs)
+-    else admitAffineWrite source original name slots rhs
+   | stmt => admitStatement source original stmt
+ 
+ /-- The admission entry for the differential path: `admitSource` with non-bare writes. -/
+diff --git a/leanncd/LeanNCD/Semantics/Source/Differential.lean b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+index 70c75b4f..91c0f32e 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Differential.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+@@ -251,8 +251,6 @@ def confirms (native : NativeRun) : StructuralCondition → Bool
+         | .observed l, .observed c _ => shapeOnly declaration derived l && shapeOnly declaration derived c
+         | _, _ => false)
+   | .usedDType .. => false
+-  -- the sorted harness's conditions (`SortedDifferential.confirmsSorted`): never the real path's
+-  | .tropicalMultiFactor _ | .tropicalScatterFill _ => false
+ 
+ structure ComparisonRun where
+   reference : SourceRun
+diff --git a/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean b/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
+index 59d3b858..1a80d67c 100644
+--- a/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
++++ b/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
+@@ -27,14 +27,6 @@ inductive StructuralCondition
+   derives from the forms (`derived`); production's shape wins. -/
+   | scatterExtentOverridesDeclared (origin : SourceOrigin) (declaration : Nat)
+       (derived : List Nat)
+-  /-- S2b: a `max`/`min` statement with a term of two or more factors. The oracle's `⊗` is `+`;
+-  production multiplies (max-times / min-times), so both native legs disagree on that tensor. -/
+-  | tropicalMultiFactor (origin : SourceOrigin)
+-  /-- S2b: a `max`/`min` statement with a non-bare (affine) write. Production's legacy leg refuses
+-  it (`scatterFillNotIdentity`: it fills unwritten cells with a finite value, not the `±inf`
+-  identity) and the checked leg refuses it at preparation (`scatterOptsNotAdmitted "{tensor}: fill"`);
+-  the oracle yields `±inf` in the unwritten cells. -/
+-  | tropicalScatterFill (origin : SourceOrigin)
+   deriving DecidableEq, Repr
+ 
+ inductive ReceiptCondition
+diff --git a/leanncd/LeanNCD/Semantics/Source/SortedDifferential.lean b/leanncd/LeanNCD/Semantics/Source/SortedDifferential.lean
+index 2a231610..8ef5e9cf 100644
+--- a/leanncd/LeanNCD/Semantics/Source/SortedDifferential.lean
++++ b/leanncd/LeanNCD/Semantics/Source/SortedDifferential.lean
+@@ -123,7 +123,6 @@ inductive SortedClassification
+   | referenceUnavailable (reason : String)
+   | referenceDiscrepancy
+   | unsupportedNumericalProfile (reason : Unsupported)
+-  | knownContractDifference (condition : StructuralCondition)
+   | nativeUnavailable
+   | nativeFailure (legacy checked : LegResult)
+   | nativeDiscrepancy (legacy checked : LegResult)
+@@ -154,82 +153,6 @@ private def legOf (cells : Except Unsupported (List SortedCell)) :
+       | .ok none => .agrees
+       | .ok (some cell) => .mismatch cell
+ 
+-/-! ### Known contract differences (T4B)
+-
+-Both conditions are detected from the source alone (`detectSortedConditions`) and confirmed only
+-when the native legs show exactly the predicted outcome (`confirmsSorted`), each bound to the
+-condition's own tensor, so an unrelated native divergence stays `nativeDiscrepancy`/`nativeFailure`
+-(with the masking limits below).
+-Pipeline order: the scatter-fill refusal (preparation / evaluation) precedes the value comparison,
+-so a program with both shapes lists `tropicalScatterFill` first, and `compareSortedSource` confirms
+-the first listed condition whose confirmer accepts (a refused run has no values to mismatch, so a
+-multi-factor condition cannot confirm beside a scatter-fill one).
+-
+-Masking. `tropicalScatterFill`: both legs refuse before producing any output, so no other tensor is
+-compared at all (inherent, as for the real harness' scatter conditions). `tropicalMultiFactor`:
+-`compareBindings` reports only the FIRST differing cell, so confirmation additionally requires
+-(i) both legs show the SAME first mismatch (coordinate and bits) at the origin's declaration and
+-(ii) every tensor that carries no multi-factor condition agrees with the oracle on both legs
+-(`unexplainedAgree`). A second divergence inside a multi-factor tensor stays unreported. -/
+-
+-/-- `max`/`min` statements with a term of two or more factors (`tropicalMultiFactor`) or a non-bare
+-write (`tropicalScatterFill`). -/
+-def detectSortedConditions (snapshot : SourceSnapshot) (source : AdmittedSource) :
+-    List StructuralCondition :=
+-  let tropical (st : AdmittedStatement source.source) : Option RHSExpr :=
+-    match snapshot.resolved.stmts[st.original]? with
+-    | some (.assign _ _ rhs) => if rhs.agg == .sum then none else some rhs
+-    | _ => none
+-  let fills := source.statements.filterMap fun st =>
+-    if (tropical st).isSome && Differential.nonBareWrite st then
+-      some (StructuralCondition.tropicalScatterFill st.output.origin)
+-    else none
+-  let multis := source.statements.filterMap fun st =>
+-    match tropical st with
+-    | some rhs => if rhs.body.terms.any (·.factors.length ≥ 2) then
+-        some (StructuralCondition.tropicalMultiFactor st.output.origin) else none
+-    | none => none
+-  fills ++ multis
+-
+-/-- Every output of this observation whose declaration is not in `explained` agrees with the
+-profile's expected cells. -/
+-def unexplainedAgree (explained : List Nat) (cells : List SortedCell) (o : NativeObservation) :
+-    Bool :=
+-  match o.outputs with
+-  | .ok bindings =>
+-    match compareBindings cells (bindings.filter fun b =>
+-        !explained.contains b.metadata.declaration) with
+-    | .ok none => true
+-    | _ => false
+-  | .error _ => false
+-
+-/-- ORIGIN-BOUND on both legs. `tropicalMultiFactor`: both legs are the same `mismatch` at the
+-origin's declaration (the caller also checks `unexplainedAgree`). `tropicalScatterFill`: the legacy `scatterFillNotIdentity` names the origin's tensor
+-and the checked preparation refusal's context (`"{tensor}: fill"`) names it too; a refusal that
+-carries only the cause confirms nothing. -/
+-def confirmsSorted (native : NativeRun) (legacy checked : LegResult) :
+-    StructuralCondition → Bool
+-  | .tropicalMultiFactor origin =>
+-      match legacy, checked with
+-      | .mismatch l, .mismatch c =>
+-          some l.declaration == origin.declaration && some c.declaration == origin.declaration &&
+-            l.coordinate == c.coordinate && l.observed == c.observed
+-      | _, _ => false
+-  | .tropicalScatterFill origin =>
+-      let owner := Differential.ownedBy native origin.declaration
+-      (match native.legacy with
+-        | .failure e => (match e.original.error with
+-            | .scatterFillNotIdentity name _ => owner name
+-            | _ => false)
+-        | _ => false) &&
+-      (match native.checked with
+-        | .preparation e => (match e.original.cause with
+-            | .capability (.scatterOptsNotAdmitted context) =>
+-                owner ((context.splitOn ": ").headD "")
+-            | _ => false)
+-        | _ => false)
+-  | _ => false
+-
+ /-- The tropical/real single-sort differential. `table` is the carrier selection table. For a
+ `real` selection this is a SIBLING check, not the authoritative real harness: its profile is the
+ tropical one (per-occurrence sum of magnitudes), weaker than `checkProfile`'s product bounds, so
+@@ -264,20 +187,6 @@ def compareSortedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
+           | .preparation _ => legOf profile none "checked preparation"
+           | .runtime e => legOf profile none s!"checked runtime {repr e.original.cause}"
+           | .unavailable _ => .unavailable)
+-    let confirmed : Option StructuralCondition :=
+-      match native, profile with
+-      | .ok n, .ok cells =>
+-        let conditions := detectSortedConditions snapshot source
+-        let explained := conditions.filterMap fun c => match c with
+-          | .tropicalMultiFactor o => o.declaration
+-          | _ => none
+-        let othersAgree := match n.legacy, n.checked with
+-          | .observed l, .observed c _ =>
+-            unexplainedAgree explained cells l && unexplainedAgree explained cells c
+-          | _, _ => false
+-        conditions.find? fun c => confirmsSorted n legacy checked c &&
+-          (match c with | .tropicalMultiFactor _ => othersAgree | _ => true)
+-      | _, _ => none
+     let classification : SortedClassification :=
+       match published with
+       | .error e => .referenceUnavailable e
+@@ -286,9 +195,6 @@ def compareSortedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
+         match profile with
+         | .error reason => .unsupportedNumericalProfile reason
+         | .ok _ =>
+-          match confirmed with
+-          | some c => .knownContractDifference c
+-          | none =>
+           match legacy, checked with
+           | .agrees, .agrees => .fourLegParity
+           | .unavailable, _ | _, .unavailable => .nativeUnavailable
+diff --git a/leanncd/test/Eval/Plan/DifferentialTest.lean b/leanncd/test/Eval/Plan/DifferentialTest.lean
+index 3faa6149..85739b4f 100644
+--- a/leanncd/test/Eval/Plan/DifferentialTest.lean
++++ b/leanncd/test/Eval/Plan/DifferentialTest.lean
+@@ -112,7 +112,6 @@ private def capabilityCategory : CapabilityError → String
+   | .recurrenceOrCallback _ => "recurrenceOrCallback"
+   | .noAdvancingAxis _ => "noAdvancingAxis"
+   | .multiAxisScatterLhs _ => "multiAxisScatterLhs"
+-  | .scatterOptsNotAdmitted _ => "scatterOptsNotAdmitted"  -- no producer since S3b T3; arm required while the constructor exists (T7)
+   | .predicateScatterDest _ => "predicateScatterDest"
+   | .unloweredScatterAssign _ => "unloweredScatterAssign"
+ 
+diff --git a/leanncd/test/Semantics/SourceAdmissionAffineTest.lean b/leanncd/test/Semantics/SourceAdmissionAffineTest.lean
+index 87a48ac2..25fcd7ea 100644
+--- a/leanncd/test/Semantics/SourceAdmissionAffineTest.lean
++++ b/leanncd/test/Semantics/SourceAdmissionAffineTest.lean
+@@ -59,7 +59,6 @@ private def outSlot (j : Nat) : SourceOrigin :=
+ private def isOutOfRange : SourceCause → Bool | .writeOutOfRange => true | _ => false
+ private def isAffine : SourceCause → Bool | .unsupported .affine => true | _ => false
+ private def isScatter : SourceCause → Bool | .unsupported .scatter => true | _ => false
+-private def isPolicy : SourceCause → Bool | .unsupported .scatterPolicy => true | _ => false
+ private def isNonSum : SourceCause → Bool | .unsupported .nonSum => true | _ => false
+ private def nonSumOrigin : SourceOrigin := { side := .output, statement := some 0 }
+ 
+@@ -106,8 +105,8 @@ private def diagonal : SourceSnapshot := snap 3 [a, a] (.assign "Y" [.free a, .f
+ #guard view (admitSourceAffine diagonal) == view (admitSource diagonal)
+ 
+ /-! (d) scatter. Collisions sum (S3a; the `fill`/`reduce` options are gone), so a scatter on a real
+-program is admitted with the same forms and images as an assign; the one remaining policy refusal is
+-a non-`sum` aggregation under a sorted (tropical) program. -/
++program is admitted with the same forms and images as an assign, and (S3b T7) so is a `max`/`min`
++scatter under a sorted (tropical) program. -/
+ private def scatter : SourceSnapshot :=
+   snap 3 [k] (.scatter "Y" [.affine (.scale 2 a)] readX)
+ 
+@@ -119,12 +118,13 @@ private def scaleView : Option (List (List WriteForm × List UID × List (List I
+ #guard view (admitSourceAffine scatter) == scaleView
+ #guard refused (admitSource scatter) policyOrigin isScatter
+ 
+--- Sorted tropical refusal stays: a `max` aggregation on a `.scatter` under `sorted`. Neighbours: the same statement unsorted (refused by the other cause, `nonSum`), and a
+--- `sum` aggregation sorted (admits).
++-- S3b T7: a `max` aggregation on a `.scatter` under `sorted` is ADMITTED as its sort-free
++-- structure (the same view as the `sum` scatter; the aggregation is the carrier key). Neighbours:
++-- the same statement unsorted (refused, `nonSum`), and a `sum` aggregation sorted (admits).
+ private def maxRhs : RHSExpr := ⟨⟨[⟨[.read "X" [.axis a]]⟩]⟩, .identity, .max⟩
+ private def maxScatter : SourceSnapshot :=
+   snap 3 [k] (.scatter "Y" [.affine (.scale 2 a)] maxRhs)
+-#guard refused (admitSourceAffine maxScatter (sorted := true)) policyOrigin isPolicy
++#guard view (admitSourceAffine maxScatter (sorted := true)) == scaleView
+ #guard refused (admitSourceAffine maxScatter) nonSumOrigin isNonSum   -- unsorted: `nonSum`
+ #guard view (admitSourceAffine scatter (sorted := true)) == scaleView
+ -- A bare scatter goes through the bare path.
+@@ -207,9 +207,9 @@ non-negative coefficients and failed only the UPPER bound). `|a| = 2`, `|b| = 3`
+ #guard refused (admitSourceAffine (snap 3 [k]
+     (.assign "Y" [.affine (.affine 3 [(-1, a)])] readX))) (outSlot 0) isOutOfRange
+ 
+-/-! (h) BARE-slot scatter: the sorted policy is checked before the slot dispatch, so an all-free
+-`.scatter` with a `max` aggregation under `sorted` is refused, not admitted as a plain `.assign`
+-(kills: moving the policy test into the non-bare branch). A bare `sum` scatter admits. -/
++/-! (h) BARE-slot scatter: an all-free `.scatter` with a `max` aggregation under `sorted` is
++admitted through the bare path with the same structure as a bare `sum` scatter (S3b T7: the sorted
++scatter refusal is gone); unsorted it is still refused (`nonSum`). -/
+ private def bareScatter : SourceSnapshot :=
+   snap 3 [a] (.scatter "Y" [.free a] readX)
+ 
+@@ -218,7 +218,7 @@ private def bareMaxScatter : SourceSnapshot :=
+ private def bareView : Option (List (List WriteForm × List UID × List (List Int) × Bool)) :=
+   some [([(0, [(1, 7)])], [7], [[0], [1]], true)]
+ 
+-#guard refused (admitSourceAffine bareMaxScatter (sorted := true)) policyOrigin isPolicy
++#guard view (admitSourceAffine bareMaxScatter (sorted := true)) == bareView
+ #guard refused (admitSourceAffine bareMaxScatter) nonSumOrigin isNonSum   -- unsorted: `nonSum`
+ #guard view (admitSourceAffine bareScatter) == bareView
+ 
+diff --git a/leanncd/test/Semantics/SourceSortedAuditTest.lean b/leanncd/test/Semantics/SourceSortedAuditTest.lean
+index 417c5577..09109215 100644
+--- a/leanncd/test/Semantics/SourceSortedAuditTest.lean
++++ b/leanncd/test/Semantics/SourceSortedAuditTest.lean
+@@ -37,8 +37,9 @@ private def strided (agg : AggOp) : SourceSnapshot :=
+ private def bareScatter (agg : AggOp) : SourceSnapshot :=
+   snap [a] [.scatter "Y" [.free a] (rhs agg [[.read "Z" [.axis a, .axis b]]])]
+ 
+-private def isPolicy : SourceCause → Bool | .unsupported .scatterPolicy => true | _ => false
++private def isMixed : SourceCause → Bool | .sortSelection (.mixedSorts _) => true | _ => false
+ private def isNonSum : SourceCause → Bool | .unsupported .nonSum => true | _ => false
++private def isOutOfRange : SourceCause → Bool | .writeOutOfRange => true | _ => false
+ 
+ private def causeIs {α : Type _} (p : SourceCause → Bool) : Except SourceDiagnostic α → Bool
+   | .error d => p d.cause
+@@ -49,16 +50,21 @@ private def selected (s : SourceSnapshot) : String :=
+   | .ok (_, S) => S.name
+   | .error d => s!"refused {repr d.cause}"
+ 
+-/-! Row 7: admission refuses before selection. A sum assign followed by an affine max scatter is
+-BOTH a mix and a policy refusal; the statement's own cause (`scatterPolicy`) is reported, never
+-`sortSelection`. -/
+-#guard causeIs isPolicy (admitSourceSorted (snap [a]
++/-! Row 7: statement admission precedes selection. A sum assign followed by an affine max scatter
++whose write `Y[2a]` leaves `Y`'s extent 4 is BOTH a mix and an admission refusal; the statement's
++own cause (`writeOutOfRange`; before S3b T7 it was the sorted scatter refusal) is reported, never
++`sortSelection`. The in-range twin over `k` (extent 7) is admitted statement by statement and
++refused at selection as the mix. -/
++#guard causeIs isOutOfRange (admitSourceSorted (snap [a]
+   [.assign "Y" [.free a] (rhs .sum [[.read "X" [.axis a]]]),
+    .scatter "Y" [.affine (.scale 2 a)] (rhs .max [[.read "X" [.axis a]]])]))
++#guard causeIs isMixed (admitSourceSorted (snap [k]
++  [.assign "Y" [.affine (.scale 2 a)] (rhs .sum [[.read "X" [.axis a]]]),
++   .scatter "Y" [.affine (.scale 2 a)] (rhs .max [[.read "X" [.axis a]]])]))
+ 
+-/-! Row 9: the tropical scatter guard fires before the bare/affine slot split. -/
+-#guard causeIs isPolicy (admitSourceSorted (bareScatter .max))
+-#guard causeIs isPolicy (admitSourceSorted (bareScatter .min))
++/-! Row 9: a bare tropical scatter is admitted and selects its tropical carrier (S3b T7). -/
++#guard selected (bareScatter .max) == "maxPlus"
++#guard selected (bareScatter .min) == "minPlus"
+ 
+ /-! Row 10: accept-neighbour. The same bare scatter with `sum` is still admitted and selects `real`:
+ the sorted flag must not over-refuse. -/
