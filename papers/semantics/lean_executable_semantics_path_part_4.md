@@ -453,7 +453,7 @@ slots, guards and the other refusals above stay refused, and the raw-parse chain
 (`RawCorrespondence`, `RawSemanticConnection`) is not extended to affine statements.
 A third entry, `admitSourceSorted` (S2b, merge cf7d6eee), runs the affine entry with a `sorted` flag that admits
 `max`/`min` statements as their sort-free structure, selects one carrier for the whole program (a mix is refused
-as `sortSelection`) and still refuses tropical scatter; `admitSource` and `admitSourceAffine` with their default
+as `sortSelection`); since S3b it also admits tropical scatter like a tropical assignment; `admitSource` and `admitSourceAffine` with their default
 flag still refuse `max`/`min` (`nonSum`).
 
 #### Binding and admission
@@ -627,16 +627,19 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   and both production legs under a tropical numerical profile (finite reads are integers within ±2^20, the
   per-occurrence sum of magnitudes stays within 2^20, `±inf` is its own class; an empty reduction axis yields `±inf`
   that production accepts and matches bit for bit); the real harness
-  (`compareSource`) is untouched and still refuses `max`/`min`. Production multiplies where the tropical `⊗`
-  adds, so a multi-factor `max`/`min` term and a tropical affine write (production refuses a `max` scatter that
-  fills with a finite value) are the structural conditions `tropicalMultiFactor` and `tropicalScatterFill`; each is
-  confirmed only when both native legs show the predicted outcome at the condition's own tensor (for multi-factor:
-  the same first mismatch on both legs and every tensor without that condition agreeing), otherwise the run
-  stays a `nativeDiscrepancy` / `nativeFailure`. A scatter-fill refusal compares no other tensor at all. Tropical scatter is refused at admission.
+  (`compareSource`) is untouched and still refuses `max`/`min`. S2b recorded two structural conditions for a
+  production that still multiplied where the tropical `⊗` adds and refused a tropical scatter; S3b (see
+  [the S3b record](additive_s3b_record.md)) made production max-plus/min-plus, admitted tropical scatter in the
+  oracle (the `sorted` flag erases the agg to structure; the carrier supplies ⊕ and the unwritten-cell zero), and
+  deleted those conditions and the sorted known-difference apparatus, so tropical programs now reach
+  `fourLegParity`; strided snapshots declare the destination extent production derives (8).
   Because the oracle and the Core leg share the semiring instance and `ofRat`/`observe`, their agreement checks
   scheduling and where embedding and observation happen, not those functions or the algebra; the algebra is pinned by hand-valued oracle fixtures and by production
-  agreement on single-factor rows. This is executed evidence, not a theorem. Production tropical sorts, casts
-  and constants (S3b) remain planned; scatter collision ⊕ landed in S3a and out-of-range write errors in B6. Parked: merging the two
+  agreement, now including multi-factor rows after S3b. This is executed evidence, not a theorem. Production tropical sorts, casts
+  and constants are implemented by S3b (max-plus `(+, max, −∞, 0)` / min-plus `(+, min, +∞, 0)`; `SortAlgebra`
+  and the per-statement sort rules; the bool -> tropical read cast; scan state at `0_K`; rejections `tropicalNonlin`,
+  `scanStateAlgebraMismatch`, `sortCastUnsupported`; the negation-duality property is production-only coverage; record
+  [the S3b record](additive_s3b_record.md)); scatter collision ⊕ landed in S3a and out-of-range write errors in B6. Parked: merging the two
   harnesses, a tropical oracle-receipt re-check and Program theorems, f32 tropical production comparison.
   See [the S2b record](additive_s2b_record.md).
 - **Evidence.** 79 named fixtures (one of them, F16, evaluates a generated corpus

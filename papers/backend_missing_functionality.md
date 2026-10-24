@@ -5,6 +5,15 @@ support. Scope is the static compiler backend only — the reference dense inter
 already evaluates most of the constructs listed here, so nearly every row is a *backend-parity* gap
 (the checked plan compiler has not caught up to the reference semantics), not a missing semantic.
 
+> **S3b update (tropical sorts, `papers/semantics/additive_s3b_record.md`).** `maxreduce`/`minreduce` are
+> max-plus `(+, max, −∞, 0)` / min-plus `(+, min, +∞, 0)` in both backends, a top-level tropical scatter folds
+> collisions with its sort's ⊕ from `0_K`, and a bare out-of-range read pads with `0_K`. CLOSED gaps: the
+> multi-factor (`×` versus `+`) divergence, the scatter-fill gap (`scatterFillNotIdentity` and
+> `scatterOptsNotAdmitted` are deleted, no `max`/`min` scatter is refused) and the padded-`0` interaction.
+> STILL OPEN: S3b-ii (tropical multi-writer collection and writer agreement), B5 (multi-writer scatter),
+> scan-local scatter overwrite (F3), `real -> bool` rejection, JAX/Python tropical execution, oracle
+> per-tensor sorts. Mentions of those constructors below are history.
+
 > **The "Hard" Scatter row below has been audited in depth. Start at
 > `papers/scatter_affine_lhs_writes.md`** — it is the current authority and supersedes
 > `post_audit_roadmap.md` Section B, which is now a stub. `pre_scatter_backend_audit.md` remains the
@@ -63,7 +72,7 @@ all ahead of Step D's plan construction, **plus one live site inside Step D itse
 3. `f32CapabilityCheck` (Step 0c) — the binary32 source fragment, run for a `.float32` schedule only
    and placed before `capabilityPreflight` so an f32 program outside the admitted fragment reports
    its own f32 reason rather than a generic capability one.
-4. **Step D, `scatterFillOrFail`** — a top-level scatter whose source-level `fill` is not the
+4. **Step D, `scatterFillOrFail`** (HISTORY: gone since S3a; S3b deleted the constructor it raised) — a top-level scatter whose source-level `fill` is not the
    destination algebra's own reduction identity, which needs the algebra Step D selects and so
    cannot be decided in preflight. Live: a top-level `maxreduce`/`minreduce` scatter passes
    `capabilityPreflight` and is rejected here as `scatterOptsNotAdmitted "{nm}: fill"` (its identity
@@ -300,8 +309,8 @@ fragment.
   (`Out[i+j]`, `multiAxisScatterLhs`), a collision policy other than reject-on-collision
   (`scatterOptsNotAdmitted`), a non-identity nonlinearity on a scatter (`unsupportedScatterNonlin`),
   and a Boolean/predicate destination (`predicateScatterDest`); a tropical-algebra scatter's
-  unwritten cells used to diverge from the reference (fill 0, not `∓∞`) and is not a parity-corpus
-  entry. **Update (reference-alignment slice):** the reference now REJECTS a top-level
+  unwritten cells used to diverge from the reference (fill 0, not `∓∞`) and was not a parity-corpus
+  entry (S3b: both backends start the cells at `0_K`, `∓∞`, and the closed form is the same). **Update (reference-alignment slice):** the reference now REJECTS a top-level
   `maxreduce`/`minreduce` scatter too (`scatterFillNotIdentity`), so the divergence is closed by a
   shared refusal, and `evalScatter` is now dtype-aware for predicate destinations (`combineFor`);
   the checked `predicateScatterDest` rejection is kept until the checked Boolean scatter is verified.

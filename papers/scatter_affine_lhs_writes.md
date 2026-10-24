@@ -392,8 +392,8 @@ exist in `Eval/Plan/Check.lean` [read]:
 | Algebra | `reduceId` |
 |---|---|
 | real sum-product (`admittedAlgebra`) | `0.0` |
-| tropical max-product (`admittedAlgebraMax`) | `Float.toBits (-1.0 / 0.0)` — **−∞** |
-| tropical min-product (`admittedAlgebraMin`) | `Float.toBits (1.0 / 0.0)` — **+∞** |
+| tropical max (`admittedAlgebraMax`; max-product when written, max-plus since S3b: the `reduceId` is unchanged) | `Float.toBits (-1.0 / 0.0)` — **−∞** |
+| tropical min (`admittedAlgebraMin`; min-product when written, min-plus since S3b) | `Float.toBits (1.0 / 0.0)` — **+∞** |
 | Boolean (`admittedAlgebraBool`) | `false` |
 
 `admittedAlgebraMax`'s own docstring gives the reason this matters: *"Identity `−∞` so an
