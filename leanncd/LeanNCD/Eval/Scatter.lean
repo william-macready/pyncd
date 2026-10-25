@@ -65,7 +65,7 @@ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : 
     for t in rhs.body.terms do
       let mut prod := c.unit1
       for f in t.factors do
-        match gatherCast c.unit0 c.unit1 (boolReadCast decls c rhs.agg) env coord f with
+        match gatherCast c.unit0 c.unit1 (boolReadCast decls nm c rhs.agg) env coord f with
         | .ok v   => prod := c.mul prod v
         | .error e => throw e   -- e.g. a .unaryFn domain violation; out-of-range reads are `.ok` of the pad, not `.error`
       val := c.combine val prod

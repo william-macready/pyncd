@@ -269,4 +269,77 @@ private def zeroExtRhs : RHSExpr :=
 #guard refRows Combine.min zeroExtRhs == some #[posInfC, posInfC, posInfC]
 #guard refRows Combine.real zeroExtRhs == some #[0.0, 0.0, 0.0]
 
+-- S3b-ii T3a (D1, reference side): a `real -> bool` READ COERCES. A `predicate` destination reading
+-- a non-predicate (real) tensor with a BARE read sees truth = (stored != 0), mapped to 1.0 / 0.0 —
+-- the same rule as the bool -> tropical cast (`boolReadCast`). NaN `!= 0`, so it reads TRUE: this is
+-- the existing convention, PINNED here, not endorsed. (The plan layer follows in T3b.)
+private def d1Same (a b : Array Float) : Bool :=
+  a.size == b.size && (a.zip b).all fun (x, y) => x == y || (x.isNaN && y.isNaN)
+private def d1Nan : Float := 0.0 / 0.0
+private def d1Real : DenseTensor := tensorOf [5] [0.25, 0.75, 0, d1Nan, -2]
+private def d1Rhs (f : Factor) : RHSExpr := { body := { terms := [{ factors := [f] }] }, nonlin := .identity }
+private def d1Run (decls : List Decl) (x : DenseTensor) (n : Nat) (slots : List LHSSlot) (f : Factor) :
+    Except EvalError DenseTensor :=
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" x
+  let sizes : HashMap UID Nat := ({} : HashMap UID Nat).insert 1 n
+  (evalPlainF64 decls env sizes (.assign "R" slots (d1Rhs f))).map (·.2)
+
+-- real source {0.25, 0.75, 0, NaN, -2} read by a bare predicate statement ⇒ {1, 1, 0, 1, 1}
+run_cmd do
+  match d1Run [.predicate "R" []] d1Real 5 [.free (ax "i" 1)] (.read "X" [.axis (ax "i" 1)]) with
+  | .error e => throwError s!"D1 real->bool bare read: {e}"
+  | .ok R => unless d1Same R.data #[1, 1, 0, 1, 1] do throwError s!"D1 real->bool coerce: {repr R.data}"
+
+-- the SAME program with a BOOL source is unchanged: the predicate source is read as stored (the
+-- statement is `max(0, min(1, v))`, so a stored 0.25 stays 0.25, NaN stays NaN and -2 floors at 0:
+-- the Boolean accumulator's own arithmetic, no coerce on bool -> bool).
+run_cmd do
+  match d1Run [.predicate "R" [], .predicate "X" []] d1Real 5 [.free (ax "i" 1)]
+      (.read "X" [.axis (ax "i" 1)]) with
+  | .error e => throwError s!"D1 bool->bool unchanged: {e}"
+  | .ok R => unless d1Same R.data #[0.25, 0.75, 0, d1Nan, 0] do
+      throwError s!"D1 bool->bool must stay uncoerced: {repr R.data}"
+
+-- binary-valued real source: unchanged ({0,1} is its own truth image)
+run_cmd do
+  match d1Run [.predicate "R" []] (tensorOf [5] [1, 0, 1, 1, 0]) 5 [.free (ax "i" 1)]
+      (.read "X" [.axis (ax "i" 1)]) with
+  | .error e => throwError s!"D1 binary: {e}"
+  | .ok R => unless d1Same R.data #[1, 0, 1, 1, 0] do throwError s!"D1 binary: {repr R.data}"
+
+-- a CONTRACTED axis: `R[] := X[k]` is an ∃ over the coerced bare reads: X = [0.25, 0, 0, 0, 0]
+-- ⇒ 1 (uncoerced it would be 0.25).
+run_cmd do
+  match d1Run [.predicate "R" []] (tensorOf [5] [0.25, 0, 0, 0, 0]) 5 [] (.read "X" [.axis (ax "i" 1)]) with
+  | .error e => throwError s!"D1 contracted: {e}"
+  | .ok R => unless d1Same R.data #[1] do throwError s!"D1 contracted: {repr R.data}"
+
+-- a UNARY-FUNCTION read is NOT coerced (the primitive takes real input; the cast is bare reads
+-- only, exactly as for the bool -> tropical cast): R[i] := sqrt(X[i]), X = [0.25, 4] ⇒ the Boolean
+-- ∧ with 1 gives min(1, 0.5) = 0.5 and min(1, 2) = 1 (a coerced read would give sqrt(1) = 1 twice).
+run_cmd do
+  match d1Run [.predicate "R" []] (tensorOf [2] [0.25, 4]) 2 [.free (ax "i" 1)]
+      (.unaryFn .sqrt "X" [.axis (ax "i" 1)]) with
+  | .error e => throwError s!"D1 unary: {e}"
+  | .ok R => unless d1Same R.data #[0.5, 1] do throwError s!"D1 unary read must not coerce: {repr R.data}"
+
+-- the OUT-OF-RANGE PAD is not coerced: R[i] := X[i+1], X = [0.25, 0.75] ⇒ [1, 0] (the pad is the
+-- Boolean 0_K = 0.0; for a Boolean statement the coerce could not change it, so this pins the shape).
+run_cmd do
+  match d1Run [.predicate "R" []] (tensorOf [2] [0.25, 0.75]) 2 [.free (ax "i" 1)]
+      (.read "X" [.shift (ax "i" 1) 1]) with
+  | .error e => throwError s!"D1 pad: {e}"
+  | .ok R => unless d1Same R.data #[1, 0] do throwError s!"D1 pad: {repr R.data}"
+
+-- a tropical (`agg = .max`) statement into a predicate-named destination is NOT a Boolean
+-- statement (`combineFor`: agg first): its real source reads stay the identity.
+run_cmd do
+  let i := ax "i" 1
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity, agg := .max }
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" (tensorOf [2] [0.25, 0.75])
+  match evalPlainF64 [.predicate "R" []] env (({} : HashMap UID Nat).insert 1 2) (.assign "R" [] rhs) with
+  | .error e => throwError s!"D1 max agg: {e}"
+  | .ok (_, R) => unless d1Same R.data #[0.75] do throwError s!"D1 max agg identity: {repr R.data}"
+
+
 end LeanNCD.Eval

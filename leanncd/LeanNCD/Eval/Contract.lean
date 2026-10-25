@@ -203,16 +203,27 @@ def combineFor (decls : List Decl) (nm : String) (agg : AggOp) : Combine :=
   | .min => Combine.min
   | .sum => if isPredicateDest decls nm then Combine.bool else Combine.real
 
-/-- The bool -> tropical READ CAST (S3b design §3), as a per-source-name map for `gatherCast`. In a
-    statement of sort max-plus or min-plus (`agg` ≠ `.sum`; `c` is its `Combine`), a bare read of a
-    `predicate`-declared tensor reads a stored false (`0`) as `c.unit0` (0_K: `-inf`/`+inf`) and a
-    stored true (anything else) as `c.unit1` (1_K: `0.0`). Every other read, and every real or
-    Boolean statement, is the identity, so real/bool statements stay bit-identical. -/
-def boolReadCast (decls : List Decl) (c : Combine) (agg : AggOp) : String → Float → Float :=
+/-- The per-source READ CAST of a statement, as a per-source-name map for `gatherCast` (applied to
+    BARE in-bounds reads only: never a unary-function read, never the out-of-range pad).
+    `nm` is the statement's DESTINATION; `c`/`agg` its `Combine`/aggregation.
+    * Tropical statement (`agg` ≠ `.sum`; S3b design §3), the bool -> tropical cast: a bare read of
+      a `predicate`-declared tensor reads a stored false (`0`) as `c.unit0` (0_K: `-inf`/`+inf`) and
+      a stored true (anything else) as `c.unit1` (1_K: `0.0`).
+    * Boolean statement (`agg = .sum` into a `predicate` destination; S3b-ii D1), the real -> bool
+      cast: a bare read of a NON-`predicate` tensor reads `v != 0` as `c.unit1` (`1.0`) else
+      `c.unit0` (`0.0`) — the same truth rule as the bool -> tropical cast (NaN is `!= 0`, so it
+      reads true: pinned, not endorsed).
+    Every other read, and every real statement, is the identity, so real statements stay
+    bit-identical and a bool -> bool read is unchanged. -/
+def boolReadCast (decls : List Decl) (nm : String) (c : Combine) (agg : AggOp) :
+    String → Float → Float :=
   match agg with
-  | .sum => fun _ v => v
-  | .max | .min => fun nm v =>
-      if isPredicateDest decls nm then (if v != 0.0 then c.unit1 else c.unit0) else v
+  | .sum => fun src v =>
+      if isPredicateDest decls nm && !isPredicateDest decls src then
+        (if v != 0.0 then c.unit1 else c.unit0)
+      else v
+  | .max | .min => fun src v =>
+      if isPredicateDest decls src then (if v != 0.0 then c.unit1 else c.unit0) else v
 
 /-! ## The storage boundary of the reference evaluator
 
@@ -273,7 +284,7 @@ def evalAssignDtypedSeeded (decls : List Decl)
   rejectUnsupportedStorage decls (nm :: readNames rhs)
   let c := combineFor decls nm rhs.agg
   evalAssignSeeded c.mul c.combine c.unit0 c.unit1 env sizes seed nm slots rhs
-    (boolReadCast decls c rhs.agg)
+    (boolReadCast decls nm c rhs.agg)
 
 /-- Unseeded dtype-aware assign: `evalAssignDtypedSeeded` with an empty seed. -/
 def evalAssignDtyped (decls : List Decl)
