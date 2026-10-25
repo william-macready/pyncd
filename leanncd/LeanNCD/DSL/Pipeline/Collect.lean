@@ -10,16 +10,19 @@ the private tensor `T#k` in place, and one collector statement
   `T[slots'] := T#1[idx] + … + T#n[idx]`
 
 is inserted immediately after the last writer. The collector carries the identity nonlinearity
-and the sum annotation (slice 1 admits only `.sum` writers; the max/min slice owns threading the
-writers' agreed annotation through the collector), so each `T#k` keeps its own nonlinearity, and a
-predicate `T` collects by `Combine.bool` (OR) through its own declaration.
+and the group's agreed annotation (`writerSort?`: `sum` for a real or predicate group, `max`/`min`
+for a tropical one), so each `T#k` keeps its own nonlinearity, and a predicate `T` collects by
+`Combine.bool` (OR) through its own declaration.
 
 `desugarMultiWriters` is the identity on every schedule in which each name has at most one writer,
 so single-writer programs are byte-identical through every later phase.
 
-Slice 1 admits only real-sum and predicate multi-writer sets whose writers are plain `.assign`
-statements with bare free slots on the same axis UIDs; every other multi-writer set fails loud
-(`multiWriterScatter`, `multiWriterAlgebra`, `writerShapeMismatch`). A name written by two or more
+Real-sum, predicate and tropical (all-max or all-min) multi-writer sets are admitted when the
+writers are plain `.assign` statements with bare free slots on the same axis UIDs; every other
+multi-writer set fails loud (`multiWriterScatter`, `multiWriterAlgebra`, `writerShapeMismatch`).
+A group's sort is the one its writers' votes agree on (`writerSort?`); sort-neutral copy writers
+abstain beside a non-neutral writer and are rewritten to the agreed sort (`Stmt.withAgg`), so a
+copy's bare out-of-range read pads the group's `0_K`. A name written by two or more
 nodes of which one is a scan node is rejected outright (`multiWriterScan`). The topological-order
 assertion on the result is made by `collectDefinitions` in `ScheduledValidation.lean`, which wraps
 this pass (`desugarMultiWriters` itself does not check order), because the readiness predicate
@@ -85,20 +88,20 @@ def writerGroups (stmts : List ScanStmt) : List WriterGroup :=
       | _ => false
     if writers.length ≥ 2 && allPlain then some ⟨nm, writers⟩ else none
 
-/-- The slice-1 admission rule for one multi-writer set, checked writer by writer in schedule
-    order: no scatter, then no `max`/`min` annotation, then bare free slots whose UIDs agree with
-    writer 1's position by position. -/
-def checkWriterGroup (stmts : List ScanStmt) (g : WriterGroup) : Except CompileError Unit := do
+/-- The admission rule for one multi-writer set, checked in schedule order: no scatter, then the
+    writers' votes agree on one sort (`writerSort?`, else `multiWriterAlgebra`), then bare free
+    slots whose UIDs agree with writer 1's position by position. Returns the agreed sort. -/
+def checkWriterGroup (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
+    Except CompileError SortAlgebra := do
   let ws := g.writers.filterMap (plainAt? stmts)
   for s in ws do
     match s with
     | .scatter .. => throw (.multiWriterScatter g.name)
     | .assign _ ls _ => if slotsBecomeScatter ls then throw (.multiWriterScatter g.name)
     | .recurMorphism .. => pure ()
-  for s in ws do
-    match s with
-    | .assign _ _ r => unless r.agg == .sum do throw (.multiWriterAlgebra g.name)
-    | _ => pure ()
+  let agreed ← match writerSort? env ws with
+    | none => throw (.multiWriterAlgebra g.name)
+    | some a => pure a
   let first := (ws.head?.map Stmt.slots).getD []
   for (s, k) in ws.zipIdx 1 do
     let ls := s.slots
@@ -108,17 +111,17 @@ def checkWriterGroup (stmts : List ScanStmt) (g : WriterGroup) : Except CompileE
       | _, _ => throw (.writerShapeMismatch g.name k pos)
     unless ls.length == first.length do
       throw (.writerShapeMismatch g.name k (min ls.length first.length))
+  return agreed
 
-/-- The collector statement for `T` with `n` writers, built from writer 1's slots. -/
-def collectorStmt (nm : String) (firstSlots : List LHSSlot) (n : Nat) : Stmt :=
+/-- The collector statement for `T` with `n` writers, built from writer 1's slots; `agg` is the
+    group's agreed annotation. -/
+def collectorStmt (nm : String) (firstSlots : List LHSSlot) (n : Nat) (agg : AggOp) : Stmt :=
   let slots' := producerSlots firstSlots
   let idx := slots'.filterMap LHSSlot.toReadIdx
   .assign nm slots'
     { body := ⟨(List.range n).map fun k => ⟨[.read (collectorName nm (k + 1)) idx]⟩⟩
       nonlin := .identity
-      -- Sound only because `checkWriterGroup` rejects every non-sum writer; lifting
-      -- `multiWriterAlgebra` must thread the writers' agreed annotation here.
-      agg := .sum }
+      agg }
 
 /-- Additive-collection desugar (decision note §C). Returns the desugared schedule and the
     generated private names in group order. The identity on single-writer schedules.
@@ -133,7 +136,8 @@ def desugarMultiWriters (sched : ScheduledProgram) :
   if let some nm := scanWriterConflict? sched.stmts then throw (.multiWriterScan nm)
   let groups := writerGroups sched.stmts
   if groups.isEmpty then return (sched, [])
-  for g in groups do checkWriterGroup sched.stmts g
+  let mut agreed : List SortAlgebra := []
+  for g in groups do agreed := agreed ++ [← checkWriterGroup sched.env sched.stmts g]
   let generated := groups.flatMap fun g =>
     (List.range g.writers.length).map fun k => collectorName g.name (k + 1)
   let inventory := routeNameInventory sched
@@ -142,16 +146,18 @@ def desugarMultiWriters (sched : ScheduledProgram) :
       throw (.reservedNameCollision nm)
   -- Rename each writer in place; emit the collector right after its group's last writer.
   let stmts := sched.stmts.zipIdx.flatMap fun (sc, i) =>
-    match groups.find? (fun g => g.writers.contains i) with
+    match groups.zip agreed |>.find? (fun (g, _) => g.writers.contains i) with
     | none => [sc]
-    | some g =>
+    | some (g, sort) =>
         let k := g.writers.idxOf i + 1
         let renamed : ScanStmt := match sc with
-          | .plain (.assign _ ls r) => .plain (.assign (collectorName g.name k) ls r)
+          | .plain (.assign _ ls r) =>
+              let w := Stmt.assign (collectorName g.name k) ls r
+              .plain (if w.isSortNeutral then w.withAgg sort.stateAgg else w)
           | other => other
         if some i == g.writers.getLast? then
           let firstSlots := ((g.writers.head?.bind (plainAt? sched.stmts)).map Stmt.slots).getD []
-          [renamed, .plain (collectorStmt g.name firstSlots g.writers.length)]
+          [renamed, .plain (collectorStmt g.name firstSlots g.writers.length sort.stateAgg)]
         else [renamed]
   -- One clone per writer of each DECLARED destination; undeclared destinations get none.
   let clones := groups.flatMap fun g =>

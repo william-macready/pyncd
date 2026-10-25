@@ -464,4 +464,150 @@ def mixedDeclF32Y : TLProgram := tlprog!{
 #guard (sched32 h4f64).bind (prepDtypeErr · h1In) == none
 #guard ((sched32 h4f64).bind fun s => (prepareEvalPlan s (InputSignature.ofDenseInputs h1In)).toOption).isSome
 
+/-! ## S3b-ii T2: tropical (all-max / all-min) multi-writer collection
+
+A tensor written only by `maxreduce` (resp. `minreduce`) statements collects with max (min), not
+sum, through the reference evaluator, the checked plan on binary64 and the checked plan on binary32.
+The data is chosen so that the wrong collector (sum) and the wrong `0` pad each change the result:
+the max groups hold NEGATIVE values (a sum is more negative, a `0` pad beats every cell), the min
+groups POSITIVE ones. A sort-neutral copy writer (`Y[i] := A[i + 1]`, sum-annotated) beside a
+non-neutral writer abstains and is evaluated in the group's sort, so its out-of-range read (`i = 2`
+of a 3-element `A`) pads `-inf` (max) / `+inf` (min), not `0`. Every expected value was observed from
+a run, binary32 bits included. -/
+
+private def pinf : Float := 1.0 / 0.0
+private def pinf32 : Float32 := 1.0 / 0.0
+
+def tmax : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := maxreduce(A[i, j])
+  Y[i] := maxreduce(B[i, j])
+}
+def tmin : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := minreduce(A[i, j])
+  Y[i] := minreduce(B[i, j])
+}
+def tmax32 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 2
+  tensor f32 A(i, j), B(i, j), Y(i)
+  Y[i] := maxreduce(A[i, j])
+  Y[i] := maxreduce(B[i, j])
+}
+private def tmaxIn : NamedDenseEnv :=
+  mk64 [("A", [2, 2], #[-5.0, -2.0, -7.0, -4.0]), ("B", [2, 2], #[-9.0, -6.0, -3.0, -8.0])]
+private def tmaxIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [2, 2], #[-5.0, -2.0, -7.0, -4.0]), ("B", [2, 2], #[-9.0, -6.0, -3.0, -8.0])]
+private def tminIn : NamedDenseEnv :=
+  mk64 [("A", [2, 2], #[5.0, 2.0, 7.0, 4.0]), ("B", [2, 2], #[9.0, 6.0, 3.0, 8.0])]
+private def tminIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [2, 2], #[5.0, 2.0, 7.0, 4.0]), ("B", [2, 2], #[9.0, 6.0, 3.0, 8.0])]
+
+-- max group: Y = [max(-2,-6), max(-4,-3)] = [-2, -3]  (sum collector: [-8, -7])
+#guard bits64 (ref64 tmax tmaxIn) "Y" == f64bits #[-2.0, -3.0]
+#guard bits64 (plan64 tmax tmaxIn) "Y" == f64bits #[-2.0, -3.0]
+#guard bits32 (plan32 tmax tmaxIn32) "Y" == f32bits #[-2.0, -3.0]
+#guard bits32 (plan32 tmax32 tmaxIn32) "Y" == f32bits #[-2.0, -3.0]
+-- min group: Y = [min(2,6), min(4,3)] = [2, 3]  (sum collector: [8, 7])
+#guard bits64 (ref64 tmin tminIn) "Y" == f64bits #[2.0, 3.0]
+#guard bits64 (plan64 tmin tminIn) "Y" == f64bits #[2.0, 3.0]
+#guard bits32 (plan32 tmin tminIn32) "Y" == f32bits #[2.0, 3.0]
+-- the private clones stay hidden and the public inventory is unchanged
+#guard keysOf <$> plan64 tmax tmaxIn == some ["A", "B", "Y"]
+#guard keysOf <$> plan32 tmax32 tmaxIn32 == some ["A", "B", "Y"]
+
+/-- Neutral copy beside a non-neutral writer, both orders: the copy abstains (its `sum` annotation
+    does not make the group real) and is rewritten to the group's sort. -/
+def tpadMax : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := maxreduce(B[i, j])
+  Y[i] := A[i + 1]
+}
+def tpadMaxR : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := A[i + 1]
+  Y[i] := maxreduce(B[i, j])
+}
+def tpadMin : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := minreduce(B[i, j])
+  Y[i] := A[i + 1]
+}
+private def tpadMaxIn : NamedDenseEnv :=
+  mk64 [("A", [3], #[-10.0, -1.0, -8.0]), ("B", [3, 2], #[-5.0, -2.0, -7.0, -4.0, -9.0, -6.0])]
+private def tpadMaxIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [3], #[-10.0, -1.0, -8.0]), ("B", [3, 2], #[-5.0, -2.0, -7.0, -4.0, -9.0, -6.0])]
+private def tpadMinIn : NamedDenseEnv :=
+  mk64 [("A", [3], #[10.0, 1.0, 8.0]), ("B", [3, 2], #[5.0, 2.0, 7.0, 4.0, 9.0, 6.0])]
+private def tpadMinIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [3], #[10.0, 1.0, 8.0]), ("B", [3, 2], #[5.0, 2.0, 7.0, 4.0, 9.0, 6.0])]
+
+-- max: Y = [max(-2, A[1]=-1), max(-4, A[2]=-8), max(-6, pad)] = [-1, -4, -6] (a 0 pad gives 0 last)
+#guard bits64 (ref64 tpadMax tpadMaxIn) "Y" == f64bits #[-1.0, -4.0, -6.0]
+#guard bits64 (plan64 tpadMax tpadMaxIn) "Y" == f64bits #[-1.0, -4.0, -6.0]
+#guard bits32 (plan32 tpadMax tpadMaxIn32) "Y" == f32bits #[-1.0, -4.0, -6.0]
+#guard bits64 (ref64 tpadMaxR tpadMaxIn) "Y" == f64bits #[-1.0, -4.0, -6.0]
+#guard bits64 (plan64 tpadMaxR tpadMaxIn) "Y" == f64bits #[-1.0, -4.0, -6.0]
+#guard bits32 (plan32 tpadMaxR tpadMaxIn32) "Y" == f32bits #[-1.0, -4.0, -6.0]
+-- min: Y = [min(2, 1), min(4, 8), min(6, pad)] = [1, 4, 6] (a 0 pad gives 0 last)
+#guard bits64 (ref64 tpadMin tpadMinIn) "Y" == f64bits #[1.0, 4.0, 6.0]
+#guard bits64 (plan64 tpadMin tpadMinIn) "Y" == f64bits #[1.0, 4.0, 6.0]
+#guard bits32 (plan32 tpadMin tpadMinIn32) "Y" == f32bits #[1.0, 4.0, 6.0]
+
+/-- All-neutral group: the `maxreduce` copy votes `max`, the sum copy abstains and is rewritten, so
+    the cell no writer reads is `0_K` itself: `-inf` (max) / `+inf` (min), observable directly. -/
+def tinfMax : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := maxreduce(A[i + 1])
+  Y[i] := B[i + 1]
+}
+def tinfMin : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := minreduce(A[i + 1])
+  Y[i] := B[i + 1]
+}
+private def tinfIn : NamedDenseEnv :=
+  mk64 [("A", [3], #[-10.0, -1.0, -8.0]), ("B", [3], #[-20.0, -30.0, -40.0])]
+private def tinfIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [3], #[-10.0, -1.0, -8.0]), ("B", [3], #[-20.0, -30.0, -40.0])]
+private def tinfMinIn : NamedDenseEnv :=
+  mk64 [("A", [3], #[10.0, 1.0, 8.0]), ("B", [3], #[20.0, 30.0, 40.0])]
+private def tinfMinIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [3], #[10.0, 1.0, 8.0]), ("B", [3], #[20.0, 30.0, 40.0])]
+-- max: [max(-1,-30), max(-8,-40), -inf]; min: [min(1,30), min(8,40), +inf]
+#guard bits64 (ref64 tinfMax tinfIn) "Y" == f64bits #[-1.0, -8.0, -pinf]
+#guard bits64 (plan64 tinfMax tinfIn) "Y" == f64bits #[-1.0, -8.0, -pinf]
+#guard bits32 (plan32 tinfMax tinfIn32) "Y" == f32bits #[-1.0, -8.0, -pinf32]
+#guard bits64 (ref64 tinfMin tinfMinIn) "Y" == f64bits #[1.0, 8.0, pinf]
+#guard bits64 (plan64 tinfMin tinfMinIn) "Y" == f64bits #[1.0, 8.0, pinf]
+#guard bits32 (plan32 tinfMin tinfMinIn32) "Y" == f32bits #[1.0, 8.0, pinf32]
+
+/-- The Bellman shape: a sum-annotated NEUTRAL copy beside a `maxreduce` (resp. `minreduce`) writer
+    abstains and collects with max (min). Sum would give `[-3, -13]` (resp. `[6, 13]`). -/
+def tcopyMax : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := maxreduce(B[i, j])
+  Y[i] := A[i]
+}
+def tcopyMin : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := minreduce(B[i, j])
+  Y[i] := A[i]
+}
+private def tcopyMaxIn : NamedDenseEnv :=
+  mk64 [("A", [2], #[-1.0, -9.0]), ("B", [2, 2], #[-5.0, -2.0, -7.0, -4.0])]
+private def tcopyMaxIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [2], #[-1.0, -9.0]), ("B", [2, 2], #[-5.0, -2.0, -7.0, -4.0])]
+private def tcopyMinIn : NamedDenseEnv :=
+  mk64 [("A", [2], #[1.0, 9.0]), ("B", [2, 2], #[5.0, 2.0, 7.0, 4.0])]
+private def tcopyMinIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [2], #[1.0, 9.0]), ("B", [2, 2], #[5.0, 2.0, 7.0, 4.0])]
+#guard bits64 (ref64 tcopyMax tcopyMaxIn) "Y" == f64bits #[-1.0, -4.0]
+#guard bits64 (plan64 tcopyMax tcopyMaxIn) "Y" == f64bits #[-1.0, -4.0]
+#guard bits32 (plan32 tcopyMax tcopyMaxIn32) "Y" == f32bits #[-1.0, -4.0]
+#guard bits64 (ref64 tcopyMin tcopyMinIn) "Y" == f64bits #[1.0, 4.0]
+#guard bits64 (plan64 tcopyMin tcopyMinIn) "Y" == f64bits #[1.0, 4.0]
+#guard bits32 (plan32 tcopyMin tcopyMinIn32) "Y" == f32bits #[1.0, 4.0]
+
 end LeanNCD.Eval.Plan.CollectPlanTest

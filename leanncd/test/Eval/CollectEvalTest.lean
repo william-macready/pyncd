@@ -153,23 +153,24 @@ def j3 : TLProgram := tlprog!{
 #guard errOf j3 (inp [("X", tz [2] [1, 2]), ("Y", tz [2] [10, 20])]) ==
   some "compile failed: LeanNCD.CompileError.multiWriterScatter \"S\""
 
--- J4 max-annotated multi-writer (slice 1 admits only sum).
+-- J4 max-annotated multi-writer (S3b-ii: collected with max). Y[i] = max(max_j A[i,j], max_j B[i,j]);
+-- the sum collector would give [8, 12].
 def j4 : TLProgram := tlprog!{
   axis i : ℕ = 2
   Y[i] := maxreduce(A[i, j])
   Y[i] := maxreduce(B[i, j])
 }
-#guard errOf j4 (inp [("A", tz [2, 2] [1, 2, 3, 4]), ("B", tz [2, 2] [5, 6, 7, 8])]) ==
-  some "compile failed: LeanNCD.CompileError.multiWriterAlgebra \"Y\""
+private def j4In := inp [("A", tz [2, 2] [1, 2, 3, 4]), ("B", tz [2, 2] [5, 6, 7, 8])]
+#guard bitsOf j4 j4In "Y" == some (bits [6, 8])
+#guard keysOf j4 j4In == some ["A", "B", "Y"]
 
--- J4m min-annotated multi-writer: the same refusal (S3b T8 duality twin of J4).
+-- J4m min-annotated multi-writer: collected with min (duality twin of J4; the sum would be [4, 8]).
 def j4m : TLProgram := tlprog!{
   axis i : ℕ = 2
   Y[i] := minreduce(A[i, j])
   Y[i] := minreduce(B[i, j])
 }
-#guard errOf j4m (inp [("A", tz [2, 2] [1, 2, 3, 4]), ("B", tz [2, 2] [5, 6, 7, 8])]) ==
-  some "compile failed: LeanNCD.CompileError.multiWriterAlgebra \"Y\""
+#guard bitsOf j4m j4In "Y" == some (bits [1, 3])
 
 -- J5 a supplied input naming a defined tensor (decision note B3; old: silently replaced).
 #guard errOf v8 (inp [("A", tz [2] [1, 2]), ("Y", tz [2] [7, 7])]) ==

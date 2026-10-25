@@ -140,14 +140,16 @@ def collectDefinitions (sched : ScheduledProgram) :
 S3b design note §3. A tensor's sort is the annotation of its writers; a read of a tensor into a
 statement of another sort is a CAST, legal except tropical -> bool and max-plus <-> min-plus.
 The map is PARTIAL and computed on the SOURCE schedule (before collection): a top-level name with
-two or more writers gets no entry, so collection's `multiWriterAlgebra` stays the only refusal for
-tropical multi-writer sets. -/
+two or more plain writers gets an entry only when its writers' votes agree on a TROPICAL sort (the
+sort collection will give the collector); a conflicting group gets none, so collection's
+`multiWriterAlgebra` stays its refusal, and real/bool groups fall back to their declaration. -/
 
 /-- The `algebraOf` map of a SOURCE schedule. Entries: each `predicate` declaration -> `bool`; a name
     written by exactly one node -> that plain statement's sort, or, for a scan state (the node's
     base and recurrence statements of one name), the sort its writers vote (`writerSort?`:
     non-neutral statements, else an all-neutral state's non-`sum` annotations; `real` if nobody
-    votes). Two voters of one scan state that differ throw `scanStateAlgebraMismatch` (checked for
+    votes); a multi-writer group of plain `.assign` writers whose votes agree on a tropical sort.
+    Two voters of one scan state that differ throw `scanStateAlgebraMismatch` (checked for
     every scan node, entry or not). -/
 def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
     Except CompileError (Std.HashMap String SortAlgebra) := do
@@ -161,8 +163,20 @@ def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
     | .scanPre .. => pure ()
     | .plain s =>
         let nm := s.lhsName
-        if (stmts.filter (fun n => n.writes.contains nm)).length == 1 then
+        let writers := stmts.filter (fun n => n.writes.contains nm)
+        if writers.length == 1 then
           m := m.insert nm (s.algebra env)
+        else
+          -- A multi-writer group of plain `.assign` writers gets its agreed sort when that sort is
+          -- tropical (collection will realize it); a conflict gets no entry, so collection's
+          -- `multiWriterAlgebra` stays the refusal. Real and bool groups get none.
+          let ws := writers.filterMap fun
+            | .plain w@(.assign ..) => some w
+            | _ => none
+          if ws.length == writers.length then
+            match writerSort? env ws with
+            | some a => if a.isTropical then m := m.insert nm a
+            | none => pure ()
     | .scan _ _ b r _ =>
         let ss := b ++ r
         for nm in (ss.map Stmt.lhsName).eraseDups do
@@ -184,7 +198,7 @@ def checkSortCasts (env : DeclEnv) (algebras : Std.HashMap String SortAlgebra)
     for s in sc.sourceStmts do
       match s with
       | .assign nm _ rhs | .scatter nm _ rhs =>
-          -- A destination with no entry (a multi-writer name) has no single sort: not checked here.
+          -- A destination with no entry (a real/bool or conflicting multi-writer name) is not checked here.
           match algebras[nm]? with
           | none => pure ()
           | some k =>

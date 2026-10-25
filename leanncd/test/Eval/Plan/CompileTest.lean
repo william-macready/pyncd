@@ -2853,14 +2853,50 @@ run_cmd do
       (s3bMN ++ [s3bStmt "Z" "N" .identity .max, s3bStmt "R" "A" (.pointwise .relu) .max]))
     (.tropicalNonlin "R")
 
--- (d) multi-writer tropical keeps collection's `multiWriterAlgebra`: `W` is written twice (no map
--- entry), and its writer ALSO bare-reads the min-plus `N` — a cast that would reject if `W` had an
--- entry. The error stays the collector's.
+-- (d) a multi-writer tropical set has an `algebras` entry (S3b-ii): `W` is written twice, both
+-- writers max-annotated, so its agreed sort is max-plus; its first writer ALSO bare-reads the
+-- min-plus `N`, a cast the entry now rejects (before the entry existed, W had no sort and the
+-- cast was never checked). Both entries report the same typed error.
 run_cmd do
-  assertPredicateParity "multi-writer tropical set keeps multiWriterAlgebra"
+  assertPredicateParity "multi-writer tropical set checks casts against its agreed sort"
     (s3bSched (s3bMNDecls ++ [s3bT "W"])
       (s3bMN ++ [s3bStmt "W" "N" .identity .max, s3bStmt "W" "B" .identity .max]))
-    (.multiWriterAlgebra "W")
+    (.sortCastUnsupported "W" "N")
+
+-- (d2) the agreed sort of a collected max-plus `T` is what its READERS are checked against: a bool
+-- statement and a min-plus statement reading it are rejected, in both entries; a real reader and a
+-- max-plus reader are accepted (the same bare read, so the rejection is the cast, not the read).
+def s3bTG : List Stmt := [s3bStmt "T" "A" .identity .max, s3bStmt "T" "B" .identity .max]
+run_cmd do
+  assertPredicateParity "bool statement reads a collected max-plus tensor"
+    (s3bSched [s3bT "T", .predicate "Y" [axIDup]] (s3bTG ++ [s3bStmt "Y" "T"]))
+    (.sortCastUnsupported "Y" "T")
+run_cmd do
+  assertPredicateParity "min-plus statement reads a collected max-plus tensor"
+    (s3bSched [s3bT "T", s3bT "Z"] (s3bTG ++ [s3bStmt "Z" "T" .identity .min]))
+    (.sortCastUnsupported "Z" "T")
+run_cmd do
+  assertSortAccepted "real and max-plus statements read a collected max-plus tensor"
+    (s3bSched [s3bT "T", s3bT "Z1", s3bT "Z2"]
+      (s3bTG ++ [s3bStmt "Z1" "T", s3bStmt "Z2" "T" .identity .max]))
+-- the min twin: a bool reader of a collected min-plus tensor is rejected
+run_cmd do
+  assertPredicateParity "bool statement reads a collected min-plus tensor"
+    (s3bSched [s3bT "T", .predicate "Y" [axIDup]]
+      ([s3bStmt "T" "A" .identity .min, s3bStmt "T" "B" .identity .min] ++ [s3bStmt "Y" "T"]))
+    (.sortCastUnsupported "Y" "T")
+-- a CONFLICTING group (all-neutral max + min) has no entry and keeps collection's refusal
+run_cmd do
+  assertPredicateParity "all-neutral max + min group is refused by collection"
+    (s3bSched [s3bT "T"] [s3bStmt "T" "A" .identity .max, s3bStmt "T" "B" .identity .min])
+    (.multiWriterAlgebra "T")
+def s3bTGPins : Option CheckedScheduledProgram :=
+  s3bChecked (s3bSched [s3bT "T", s3bT "U", s3bT "V"]
+    (s3bTG ++ [s3bStmt "U" "A" .identity .min, s3bStmt "U" "B" .identity .min
+              , s3bStmt "V" "A", s3bStmt "V" "B"]))
+#guard s3bTGPins.map (·.algebras["T"]?) == some (some .maxPlus)   -- max group: agreed sort
+#guard s3bTGPins.map (·.algebras["U"]?) == some (some .minPlus)   -- min group
+#guard s3bTGPins.map (·.algebras["V"]?) == some none              -- sum group: no entry (unchanged)
 
 -- (e) the `algebras` map content: one schedule exercising every entry kind.
 def s3bPins : Option CheckedScheduledProgram :=
