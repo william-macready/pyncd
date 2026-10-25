@@ -601,7 +601,7 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   multi-definition programs are value-compared. Scatter and scan multi-writer sets, and
   mixed groups (max+min, or a non-neutral sum writer beside a tropical one), are rejected
   (`CompileError.multiWriterScatter`, `multiWriterScan`, `multiWriterAlgebra`) and are not collected. (Top-level
-  all-max and all-min groups ARE collected, with max/min, on the S3b-ii slice branch, not merged; in-scan multi-writer stays refused; see `additive_s3bii_design.md`.) See [the decision note](additive_production_decision_note.md).
+  all-max and all-min groups ARE collected, with max/min, merged to local main as 349b6127 (S3b-ii); in-scan multi-writer stays refused; see `additive_s3bii_design.md`.) See [the decision note](additive_production_decision_note.md).
   **Affine writes and scatter (S2a, landed, merge 7a551faa).** Through `admitSourceAffine` the oracle evaluates integer-affine left-hand slots
   (`AdmittedOutput.forms`, an integer-affine form per destination axis) and sum-only scatter, so a
   colliding write is summed. Production does not agree, and the differential classifies the difference as
