@@ -262,7 +262,19 @@ private def neutralShapes : List (Stmt × Bool) :=
   , (nbStmt [.free nbJ, .iterAt nbT 0] [[nbRead [.axis nbJ]], [nbRead [.axis nbJ]]], false)
   , (nbStmt [.free nbJ, .iterAt nbT 0] [[nbTruth]], false)
   , (nbStmt [.free nbJ, .iterAt nbT 0] [[]], false)
-  , (nbStmt [.free nbJ, .iterAt nbT 0] [], false) ]
+  , (nbStmt [.free nbJ, .iterAt nbT 0] [], false)
+  -- an LHS slot over TWO axes writes one cell from many (j, k): those writes combine, so the
+  -- statement is not neutral (it has its own sort), sum or max; a slot over ONE axis (scaled,
+  -- shifted, constant offset) or one axis per slot places injectively and stays neutral.
+  , (nbStmt [.affine (.affine 0 [(1, nbJ), (1, nbK)])] [[nbRead [.axis nbJ, .axis nbK]]], false)
+  , (nbStmt [.affine (.affine 0 [(1, nbJ), (1, nbK)])] [[nbRead [.axis nbJ, .axis nbK]]] .identity .max, false)
+  , (nbStmt [.affine (.affine 0 [(1, nbJ), (2, nbK)])] [[nbRead [.axis nbJ, .axis nbK]]], false)
+  , (nbStmt [.affine (.affine 0 [(1, nbJ), (1, nbK)])] [[nbRead [.axis nbJ]]], false)
+  , (nbStmt [.affine (.affine 1 [(2, nbJ)])] [[nbRead [.axis nbJ]]], true)
+  , (nbStmt [.affine (.shift nbJ 1), .iterAt nbT 0] [[nbRead [.axis nbJ]]], true)
+  , (nbStmt [.affine (.scale 2 nbJ), .affine (.const 3)] [[nbRead [.axis nbJ]]], true)
+  , (nbStmt [.free nbJ, .free nbK] [[nbRead [.axis nbJ, .axis nbK]]], true)
+  , (nbStmt [.free nbJ, .free nbK] [[nbRead [.axis nbJ, .axis nbK]]] .identity .max, true) ]
 #guard neutralShapes.all (fun (s, expected) => oracleNeutral s == expected && s.isSortNeutral == expected)
 
 -- S3b-ii T1 (D2): the state's sort rule, the part that depends on neutrality, is compared here too.

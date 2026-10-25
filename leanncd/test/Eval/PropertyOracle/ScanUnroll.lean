@@ -721,8 +721,9 @@ private def oracleSlotUids : LHSSlot → List UID
 /-- Sort-neutral writer, stated test-side from the plan's TEXT and deliberately in a different shape
     from production's `Stmt.isSortNeutral` (which nests `match`es on the first term and factor): the
     statement has exactly one factor in total, that factor is a read (so no Iverson factor), the
-    nonlinearity is the identity, and the CONTRACTED axes (the read's axes minus the LHS axes) are
-    none. Such a statement has nothing to combine and so says nothing about its state's sort. Public
+    nonlinearity is the identity, the CONTRACTED axes (the read's axes minus the LHS axes) are none,
+    and no LHS slot mentions two distinct axes (such a slot writes one cell from many axis points, so
+    those writes combine). Such a statement has nothing to combine and so says nothing about its state's sort. Public
     so `ScanOracle` can pin its agreement with production on the scan corpus. -/
 def oracleNeutral (s : Stmt) : Bool :=
   match s with
@@ -737,7 +738,9 @@ def oracleNeutral (s : Stmt) : Bool :=
         | _ => true))
       let lhsAxes := ls.flatMap oracleSlotUids
       let contracted := readAxes.filter (fun u => !lhsAxes.contains u)
+      let collidingSlot := ls.any (fun sl => (oracleSlotUids sl).eraseDups.length > 1)
       factorCounts == [1] && readFactors.length == 1 && r.nonlin == .identity && contracted.isEmpty
+        && !collidingSlot
 
 /-- The aggregation (hence the semiring) the independent unrolling gives state `nm`'s zero leaf and
     base merge (S3b T8): the annotation its first NON-neutral statement carries; if every statement is
