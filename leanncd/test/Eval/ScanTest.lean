@@ -1182,4 +1182,44 @@ run_cmd do
       unless Eye.shape == [3, 3] && Eye.data == #[1, 0, 0, 0, 1, 0, 0, 0, 1] do
         throwError s!"shape 2 eye: {Eye.shape} {repr Eye.data}"
 
+-- S3b-ii T3a (D1, reference side): a `real -> bool` read coerces (stored != 0) in a scan too. Both
+-- fixtures read the real tensor {0.25, 0.75, 0, NaN, -2} into a `predicate` state `S`; `evalScan`
+-- reaches `evalAssignDtypedSeeded` for the base and for every step alike.
+private def d1ScanReal : DenseTensor := tensorOf [5] [0.25, 0.75, 0, 0.0 / 0.0, -2]
+private def d1ScanRun (decls : List Decl) (env : HashMap String DenseTensor) (base recur : Stmt) :
+    Except EvalError DenseTensor :=
+  let sizes := (({} : HashMap UID Nat).insert 1 5).insert 9 2   -- j↦5, l↦2
+  (evalScanF64 decls env sizes (.scan "S" [ax "l" 9] [base] [recur] false)).map fun outs =>
+    (outs.find? (·.1 == "S")).elim (tensorOf [0] []) (·.2)
+private def d1ScanRhs (fs : List Factor) : RHSExpr :=
+  { body := { terms := [{ factors := fs }] }, nonlin := .identity }
+
+-- scan BASE: S[j,0] := X[j] (X real), S[j,l+1] := S[j,l] (a bool read, unchanged)
+--   ⇒ S[:,0] = S[:,1] = [1, 1, 0, 1, 1], laid out j-major.
+run_cmd do
+  let j := ax "j" 1; let l := ax "l" 9
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" d1ScanReal
+  let base : Stmt := .assign "S" [.free j, .iterAt l 0] (d1ScanRhs [.read "X" [.axis j]])
+  let recur : Stmt := .assign "S" [.free j, .iterNext l] (d1ScanRhs [.read "S" [.axis j, .axis l]])
+  match d1ScanRun [.predicate "S" []] env base recur with
+  | .error e => throwError s!"D1 scan base: {e}"
+  | .ok S => unless S.data == #[1, 1, 1, 1, 0, 0, 1, 1, 1, 1] do
+      throwError s!"D1 scan base must coerce a real read: {repr S.data}"
+
+-- scan STEP: the base reads a PREDICATE tensor P (all true, unchanged), the step reads the real Y:
+--   S[j,l+1] := S[j,l] · Y[j]  ⇒  S[:,1] = min(1, [Y != 0]) = [1, 1, 0, 1, 1]
+--   (uncoerced it would be min(1, Y) = [0.25, 0.75, 0, NaN, -2]).
+run_cmd do
+  let j := ax "j" 1; let l := ax "l" 9
+  let env : HashMap String DenseTensor :=
+    (({} : HashMap String DenseTensor).insert "P" (tensorOf [5] [1, 1, 1, 1, 1])).insert "Y" d1ScanReal
+  let base : Stmt := .assign "S" [.free j, .iterAt l 0] (d1ScanRhs [.read "P" [.axis j]])
+  let recur : Stmt := .assign "S" [.free j, .iterNext l]
+    (d1ScanRhs [.read "S" [.axis j, .axis l], .read "Y" [.axis j]])
+  match d1ScanRun [.predicate "S" [], .predicate "P" []] env base recur with
+  | .error e => throwError s!"D1 scan step: {e}"
+  | .ok S => unless S.data == #[1, 1, 1, 1, 1, 0, 1, 1, 1, 1] do
+      throwError s!"D1 scan step must coerce a real read: {repr S.data}"
+
+
 end LeanNCD.Eval

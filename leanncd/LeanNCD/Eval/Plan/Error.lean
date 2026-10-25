@@ -29,7 +29,9 @@ inductive PlanError
   | algebraNotAdmitted       (algebra : ContractionAlgebra)
   | policyNotAdmitted        (policy : OutOfBoundsPolicy)
   /-- A read carries the bool -> tropical cast (`ReadPlan.boolToTropical`) but is not a bare read of
-      a `.bool` source under a tropical (`+`, `max`/`min`) algebra. -/
+      a `.bool` source under a tropical (`+`, `max`/`min`) algebra, or carries the real -> bool
+      coerce (`ReadPlan.realToBool`) but is not a bare read of a non-`.bool` source under the bool
+      algebra. -/
   | castNotAdmitted          (termIndex : Nat) (factorIndex : Nat)
   | destinationShapeMismatch (declared : Array Nat) (signature : Array Nat)
   | duplicateInputSlot       (slot : TensorSlot)

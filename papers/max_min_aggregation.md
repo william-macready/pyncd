@@ -9,9 +9,13 @@
 > tropical statement is cast (false to `0_K`, true to `1_K = 0`). Gaps recorded here and CLOSED by S3b:
 > multi-factor products (was `×`), scatter fill (a top-level scatter now folds collisions with ⊕ from
 > `0_K`; `scatterFillNotIdentity`/`scatterOptsNotAdmitted` are deleted), and the padded-`0` interaction
-> (an all-negative max no longer sees the pad win; `oobMaxPlan` is now `[-1,-3]`, not `[0,0]`). STILL
-> OPEN: S3b-ii (tropical multi-writer collection, `multiWriterAlgebra`), B5 (multi-writer scatter),
-> scan-local scatter overwrite (F3), the all-neutral scan state with a tropical annotation evaluating real,
+> (an all-negative max no longer sees the pad win; `oobMaxPlan` is now `[-1,-3]`, not `[0,0]`).
+> S3b-ii is closed on its slice branch (NOT merged: `additive_s3bii_plan.md`, `additive_s3bii_design.md`): top-level
+> multi-writer collection works, so an all-`max` or all-`min` writer group is collected with max/min
+> (`multiWriterAlgebra` remains only for a conflicting group such as max+min, or a non-neutral sum writer beside a
+> tropical one), the all-neutral scan state with a tropical annotation votes that sort instead of
+> evaluating real, and a `real -> bool` read now coerces (stored `!= 0`) instead of passing through. STILL OPEN: in-scan
+> multi-writer collection (still refused), B5 (multi-writer scatter), scan-local scatter overwrite (F3),
 > JAX/Python tropical execution, oracle per-tensor sorts. The text below is the original (max-times)
 > design, kept as the record of that slice.
 

@@ -301,7 +301,8 @@ private def checkAssignCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSig
           | none => throw (.slotOutOfRange f.sourceSlot sigs.size)
         -- A source dtype does not have to equal the destination's: the DESTINATION selects the
         -- algebra, and gathering is dtype-blind (a carrier's gather reads the same store either
-        -- way, applies no truth check, and performs no conversion). So within one storage kind an
+        -- way, applies no truth check, and performs no conversion beyond the two flagged read casts
+        -- (`boolToTropical`, `realToBool`, validated below). So within one storage kind an
         -- `f64` source may feed a predicate destination and a `bool` source may feed a real one.
         -- What a source may NOT do is name the OTHER real carrier:
         --   * in a `.float64` graph an `f32` source is `dtypeNotAdmitted` — the binary64 checker's
@@ -327,6 +328,11 @@ private def checkAssignCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSig
           let tropical := a.algebra.factorOp == .add &&
             (a.algebra.reduceOp == .max || a.algebra.reduceOp == .min)
           unless srcSig.dtype == .bool && f.unary.isNone && tropical do
+            throw (.castNotAdmitted ti fi)
+        -- the real -> bool read cast (S3b-ii D1): only a BARE read of a NON-`.bool` source under the
+        -- bool algebra (`and`-style factors/`or`-style reduction as `admittedAlgebraBool` fixes them).
+        if f.realToBool then
+          unless srcSig.dtype != .bool && f.unary.isNone && a.algebra == admittedAlgebraBool do
             throw (.castNotAdmitted ti fi)
         unless f.map.coeffs.size == f.sourceShape.size && f.map.bias.size == f.sourceShape.size do
           throw (.affineRankMismatch ti fi f.sourceShape.size f.map.coeffs.size)

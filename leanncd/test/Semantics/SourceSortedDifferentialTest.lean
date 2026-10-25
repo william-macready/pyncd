@@ -277,4 +277,42 @@ min-plus `X[a] + 1` = `0, -1, -2, -3` (min-times: `-100, -200, -300, -400`). -/
 /-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
 #guard_msgs in #eval classOf (product .min [-1, -2, -3, -4])
 
+
+/-! S3b-ii T4: TWO writers of one tensor (the Bellman shape), no oracle or production change. The
+oracle collects by target and picks one carrier, so an all-max / all-min program is a plain four-leg
+parity row. `Y` is written by a contraction `Y[a] := agg_b Z[a,b]` and by a terminal/source value
+`Y[a] := agg X[a]` with `X = [20, 2, 3, 40]`, so the second writer wins in some cells and loses in
+others: max-plus `[max(-3,20), max(7,2), max(17,3), max(27,40)] = [20, 7, 17, 40]`, min-plus
+`[min(-5,20), min(5,2), min(15,3), min(25,40)] = [-5, 2, 3, 25]` (observed from the Core leg; production
+agrees on the bits, `fourLegParity`). The sum-annotated COPY form the user prefers
+(`Y[a] := X[a]` beside a `max`) is NOT a four-leg row: the oracle selects its carrier from every
+statement's annotation, so it refuses a mixed group at admission (`sortSelection (mixedSorts ..)`),
+while production accepts it (the neutral copy abstains). The oracle therefore covers only the
+all-annotated spelling of the Bellman programs; the copy form and every mixed group are
+production-only (`CollectPlanTest`). -/
+private def contY (agg : AggOp) : Stmt :=
+  .assign "Y" [.free a] (rhs agg [[.read "Z" [.axis a, .axis b]]])
+private def termY (agg : AggOp) : Stmt := .assign "Y" [.free a] (rhs agg [[.read "X" [.axis a]]])
+private def bellman (s1 s2 : AggOp) : SourceSnapshot :=
+  snap [a] [contY s1, termY s2] [20, 2, 3, 40]
+
+/-- info: "maxPlus" -/
+#guard_msgs in #eval carrierOf (bellman .max .max)
+/-- info: "some [some 20, some 7, some 17, some 40]" -/
+#guard_msgs in #eval yCore (bellman .max .max)
+/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
+#guard_msgs in #eval classOf (bellman .max .max)
+/-- info: "minPlus" -/
+#guard_msgs in #eval carrierOf (bellman .min .min)
+/-- info: "some [some -5, some 2, some 3, some 25]" -/
+#guard_msgs in #eval yCore (bellman .min .min)
+/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
+#guard_msgs in #eval classOf (bellman .min .min)
+-- mixed groups: refused by the oracle at admission, in both orders; production refuses max + min
+-- (`multiWriterAlgebra`) and accepts max + the sum copy, so there is no common classification
+/-- info: "refused LeanNCD.Semantics.Source.SourceCause.sortSelection\n  (LeanNCD.Semantics.Source.Oracle.SelectionError.mixedSorts [LeanNCD.AggOp.max, LeanNCD.AggOp.min])" -/
+#guard_msgs in #eval classOf (bellman .max .min)
+/-- info: "refused LeanNCD.Semantics.Source.SourceCause.sortSelection\n  (LeanNCD.Semantics.Source.Oracle.SelectionError.mixedSorts [LeanNCD.AggOp.max, LeanNCD.AggOp.sum])" -/
+#guard_msgs in #eval classOf (bellman .max .sum)
+
 end SourceSortedDifferentialTest

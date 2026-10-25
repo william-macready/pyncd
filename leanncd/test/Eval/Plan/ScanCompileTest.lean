@@ -2319,9 +2319,10 @@ Donor `scratchMaxSched` (`S[m+1]` recurrence, `S0` scalar, `K = [2, 3, 4]`).
 
 (b) A neutral SCRATCH statement carrying a tropical annotation. `T[j] := X0[j+1]` is one bare read
     with every axis on the LHS, so it is neutral, and `T` has no non-neutral statement: its sort is
-    real whatever its annotation (`scanStateAlgebra`), applied through `scanStateStmts`. The read
-    `X0[2]` at `j = 1` is out of bounds and pads the REAL zero (a tropical pad would give `-inf` /
-    `+inf`): `S = [[3, 4, 4], [4, 0, 0]]` for `sum`, `max` and `min` alike. Both the checked plan and
+    voted by its non-sum annotation (S3b-ii D2; it was real whatever its annotation before),
+    applied through `scanStateStmts`. The read `X0[2]` at `j = 1` is out of bounds and pads the
+    sort's zero: `S = [[3, 4, 4], [4, 0, 0]]` for `sum`, `[[3, 4, 4], [4, -inf, -inf]]` for `max`
+    and `+inf` tails for `min`. Both the checked plan and
     the reference evaluator (`t4diff`). (A scalar `T[] := K[m+2]` is NOT neutral: the iteration axis
     `m` is contracted, so it keeps its own tropical sort; the first draft of this fixture used it.) -/
 def axC2a : AxisSpec := ⟨"c", 2201, .nat⟩
@@ -2395,9 +2396,138 @@ def mkMat (xs : List Float) : DenseTensor := ⟨[2, 3], xs.toArray⟩
 
 run_cmd okOrThrow (t4diff "S3bF/neutral scratch sum" (neutralScratchSched .sum) scratchX0
     "S" (mkMat [3.0, 4.0, 4.0, 4.0, 0.0, 0.0]))
+-- S3b-ii D2: an all-neutral scratch's tropical annotation now votes, so the out-of-range pad is
+-- its `0_K` (these two tails were `0` while the all-neutral rule was "real").
 run_cmd okOrThrow (t4diff "S3bF/neutral scratch max" (neutralScratchSched .max) scratchX0
-    "S" (mkMat [3.0, 4.0, 4.0, 4.0, 0.0, 0.0]))
+    "S" (mkMat [3.0, 4.0, 4.0, 4.0, -1.0 / 0.0, -1.0 / 0.0]))
 run_cmd okOrThrow (t4diff "S3bF/neutral scratch min" (neutralScratchSched .min) scratchX0
-    "S" (mkMat [3.0, 4.0, 4.0, 4.0, 0.0, 0.0]))
+    "S" (mkMat [3.0, 4.0, 4.0, 4.0, 1.0 / 0.0, 1.0 / 0.0]))
+
+/-! ### S3b-ii T1 (D2): an all-neutral scan STATE votes by its non-sum annotations
+
+State `S[j,m]`: base `S[j,0] := X0[j+1]` and recurrence `S[j,m+1] := S[j,m]` are both neutral (one
+bare read, every axis on the LHS), so there is no non-neutral writer and the annotations vote:
+`max`/`max` is max-plus (pad `-inf`), `min`/`min` min-plus (pad `+inf`), `sum`/`sum` real (pad `0`),
+`sum` beside `max` (or `min`) takes the non-sum sort (a `sum` abstains), and `max` against `min` is
+a conflict, refused by BOTH entries as `scanStateAlgebraMismatch`. The mixed-state pins (a neutral
+`max` base beside a non-neutral `min` recurrence is min-plus) are unchanged and live in
+`CompileTest`. -/
+def allNeutralStateSched (baseAg recurAg : AggOp) : ScheduledProgram :=
+  { decls := [.iter axM 3, .axis axJ2b (some 2)]
+  , stmts := [.scan "S" [axM]
+      [ .assign "S" [.free axJ2b, .iterAt axM 0]
+          { body := { terms := [{ factors := [.read "X0" [.shift axJ2b 1]] }] }
+          , nonlin := .identity, agg := baseAg } ]
+      [ .assign "S" [.free axJ2b, .iterNext axM]
+          { body := { terms := [{ factors := [.read "S" [.axis axJ2b, .axis axM]] }] }
+          , nonlin := .identity, agg := recurAg } ]
+      false ]
+  , env := {}, extNames := {"X0"}
+  , explicitSizes := (({} : HashMap UID Nat).insert axM.uid 3).insert axJ2b.uid 2 }
+
+def allNeutralTail (tail : Float) : DenseTensor := mkMat [4.0, 4.0, 4.0, tail, tail, tail]
+
+run_cmd okOrThrow (t4diff "D2/all-neutral max" (allNeutralStateSched .max .max) scratchX0
+    "S" (allNeutralTail (-1.0 / 0.0)))
+run_cmd okOrThrow (t4diff "D2/all-neutral min" (allNeutralStateSched .min .min) scratchX0
+    "S" (allNeutralTail (1.0 / 0.0)))
+run_cmd okOrThrow (t4diff "D2/all-neutral sum stays real" (allNeutralStateSched .sum .sum) scratchX0
+    "S" (allNeutralTail 0.0))
+run_cmd okOrThrow (t4diff "D2/all-neutral sum base abstains beside max"
+    (allNeutralStateSched .sum .max) scratchX0 "S" (allNeutralTail (-1.0 / 0.0)))
+run_cmd okOrThrow (t4diff "D2/all-neutral sum base abstains beside min"
+    (allNeutralStateSched .sum .min) scratchX0 "S" (allNeutralTail (1.0 / 0.0)))
+
+/-- Both entries refuse the all-neutral `sched` with `scanStateAlgebraMismatch "S"`. -/
+def allNeutralMismatch (label : String) (sched : ScheduledProgram) : Except String Unit :=
+  match evalScheduled (explicitF64Sched sched) scratchX0 with
+  | .ok _ => .error s!"{label}: evalScheduled accepted it"
+  | .error f =>
+      match f.error with
+      | .compile c =>
+          if c == .scanStateAlgebraMismatch "S" then
+            match causeOf (prepareEvalPlan (explicitF64Sched sched)
+                (InputSignature.ofDenseInputs scratchX0)) with
+            | some (.sourceInvariant c') =>
+                if c' == .scanStateAlgebraMismatch "S" then .ok ()
+                else .error s!"{label}: checked cause {repr c'}"
+            | _ => .error s!"{label}: prepareEvalPlan did not report a source invariant"
+          else .error s!"{label}: reference cause {repr c}"
+      | e => .error s!"{label}: reference cause {e}"
+
+run_cmd okOrThrow (allNeutralMismatch "D2/all-neutral max vs min" (allNeutralStateSched .max .min))
+run_cmd okOrThrow (allNeutralMismatch "D2/all-neutral min vs max" (allNeutralStateSched .min .max))
+
+
+/-! ### S3b-ii review follow-up (rej F2): D2 also adds cast REFUSALS for all-neutral scratch
+
+An all-neutral max scratch `T[j] := maxreduce(X0[j+1])` is max-plus since D2 (it was real), so the
+casts out of and into it follow the tropical table, as for a top-level single neutral max writer:
+a bool reader (`R[j] := T[j]`, `R` a predicate) and a min-plus reader (`Z[j] := minreduce(T[j])`) are
+`sortCastUnsupported "R" "T"` / `"Z" "T"`, and a max scratch reading a min-plus tensor
+(`N[j] := minreduce(X0[j])`, `T[j] := maxreduce(N[j])`) is `sortCastUnsupported "T" "N"`. All three
+were accepted before D2 and are refused identically by the reference and the checked plan. Accept
+neighbours (observed): the same bool reader of a `sum` scratch, a max or real reader of the max
+scratch, a min reader of a `sum` scratch, and a `sum` or `min` scratch reading the min-plus `N`. -/
+def d2Scratch (tAg : AggOp) (extraDecls : List Decl) (pre mid : List Stmt) (tSrc : String := "X0")
+    (tIdx : IdxExpr := .shift axJ2b 1) : ScheduledProgram :=
+  { decls := [.iter axM 3, .axis axJ2b (some 2)] ++ extraDecls
+  , stmts := [.scan "S" [axM]
+      [ .assign "S" [.free axJ2b, .iterAt axM 0] (t4rhs "X0" [.axis axJ2b]) ]
+      (pre ++
+       [ .assign "T" [.free axJ2b]
+          { body := { terms := [{ factors := [.read tSrc [tIdx]] }] }
+          , nonlin := .identity, agg := tAg } ] ++ mid ++
+       [ .assign "S" [.free axJ2b, .iterNext axM] (t4rhs "T" [.axis axJ2b]) ])
+      false ]
+  , env := {}, extNames := {"X0"}
+  , explicitSizes := (({} : HashMap UID Nat).insert axM.uid 3).insert axJ2b.uid 2 }
+
+def d2Rd (dest : String) (ag : AggOp) : Stmt :=
+  .assign dest [.free axJ2b]
+    { body := { terms := [{ factors := [.read "T" [.axis axJ2b]] }] }, nonlin := .identity, agg := ag }
+
+def d2RefusedOnBoth (label : String) (sched : ScheduledProgram) (c : CompileError) : Except String Unit :=
+  match evalScheduled (explicitF64Sched sched) scratchX0 with
+  | .ok _ => .error s!"{label}: evalScheduled accepted it"
+  | .error f =>
+      match f.error with
+      | .compile c' =>
+          if c' == c then
+            match causeOf (prepareEvalPlan (explicitF64Sched sched)
+                (InputSignature.ofDenseInputs scratchX0)) with
+            | some (.sourceInvariant c'') =>
+                if c'' == c then .ok () else .error s!"{label}: checked cause {repr c''}"
+            | _ => .error s!"{label}: prepareEvalPlan did not report a source invariant"
+          else .error s!"{label}: reference cause {repr c'}"
+      | e => .error s!"{label}: reference cause {e}"
+
+def d2AcceptedOnBoth (label : String) (sched : ScheduledProgram) : Except String Unit :=
+  match evalScheduled (explicitF64Sched sched) scratchX0 with
+  | .error _ => .error s!"{label}: evalScheduled refused it"
+  | .ok _ =>
+      match causeOf (prepareEvalPlan (explicitF64Sched sched) (InputSignature.ofDenseInputs scratchX0)) with
+      | none => .ok ()
+      | some c => .error s!"{label}: checked plan refused it: {render c}"
+
+def d2NStmt : Stmt :=
+  .assign "N" [.free axJ2b]
+    { body := { terms := [{ factors := [.read "X0" [.axis axJ2b]] }] }, nonlin := .identity, agg := .min }
+
+run_cmd okOrThrow (d2RefusedOnBoth "D2/bool reader of max scratch"
+  (d2Scratch .max [.predicate "R" [axJ2b]] [] [d2Rd "R" .sum]) (.sortCastUnsupported "R" "T"))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/bool reader of sum scratch"
+  (d2Scratch .sum [.predicate "R" [axJ2b]] [] [d2Rd "R" .sum]))
+run_cmd okOrThrow (d2RefusedOnBoth "D2/min reader of max scratch"
+  (d2Scratch .max [] [] [d2Rd "Z" .min]) (.sortCastUnsupported "Z" "T"))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/max reader of max scratch" (d2Scratch .max [] [] [d2Rd "Z" .max]))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/real reader of max scratch" (d2Scratch .max [] [] [d2Rd "Z" .sum]))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/min reader of sum scratch" (d2Scratch .sum [] [] [d2Rd "Z" .min]))
+run_cmd okOrThrow (d2RefusedOnBoth "D2/max scratch reads min-plus N"
+  (d2Scratch .max [] [d2NStmt] [] "N" (.axis axJ2b)) (.sortCastUnsupported "T" "N"))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/sum scratch reads min-plus N"
+  (d2Scratch .sum [] [d2NStmt] [] "N" (.axis axJ2b)))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/min scratch reads min-plus N"
+  (d2Scratch .min [] [d2NStmt] [] "N" (.axis axJ2b)))
 
 end LeanNCD.Eval.Plan.ScanCompileTest

@@ -134,7 +134,11 @@ private def float32Ops : ScalarKernelOps Float32 :=
 
     A read with `boolToTropical` set casts an IN-BOUNDS gathered value (S3b design §3): stored true
     -> `one` (the algebra's decoded `factorId`, 1_K), stored false -> `pad` (its `reduceId`, 0_K).
-    The out-of-bounds/missing-slot pad is already 0_K and is not cast. -/
+    The out-of-bounds/missing-slot pad is already 0_K and is not cast.
+
+    A read with `realToBool` set (S3b-ii D1) casts the same way: an in-bounds value that
+    `ops.isTrue` (nonzero, NaN included) reads as `one`, else `pad` (the bool algebra's 1 / 0). Both
+    carriers share this path (f32 tests the stored bits through its own `isTrue`). -/
 private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (pad one : α)
     (store : Array (DenseTensorOf α)) (f : ReadPlan) (iter : List Int) :
     Except PositionalInputError α :=
@@ -150,7 +154,8 @@ private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (pad one : �
         if inBoundsPerDim shape src then
           match t.data[flatIndex shape (src.map Int.toNat)]? with
           | none => padV
-          | some v => if f.boolToTropical then (if ops.isTrue v then one else pad) else v
+          | some v =>
+              if f.boolToTropical || f.realToBool then (if ops.isTrue v then one else pad) else v
         else padV
   match f.unary with
   | none => .ok base

@@ -712,12 +712,15 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
     (stmtName : String) (contextUids : List UID) (contextShape : Array Nat)
     (outputUids : List UID) (pins : HashMap UID Int)
     (resolveSource : String → TensorSlot × Array Nat) (isBoolSlot : TensorSlot → Bool)
-    (destSlot : TensorSlot) (outputShape : Array Nat) (agg : AggOp) (terms : List ProdTerm) :
+    (destIsBool : Bool) (destSlot : TensorSlot) (outputShape : Array Nat) (agg : AggOp) (terms : List ProdTerm) :
     Except PlanCompileFailure AssignPlan := do
   -- S3b design §3: a statement is tropical iff its aggregation is `max`/`min` (the same selector
   -- `algebraForAgg` uses), and a BARE read of a `.bool` source slot in such a statement is cast
   -- (`ReadPlan.boolToTropical`). A `.unaryFn` read is never cast (it takes real input).
   let tropical : Bool := match agg with | .sum => false | .max | .min => true
+  -- S3b-ii D1: a bare read of a NON-`.bool` source slot into a `.bool` DESTINATION (a Boolean
+  -- statement; `agg = .sum` is forced by `checkPredicateOutput`) is the real -> bool cast
+  -- (`ReadPlan.realToBool`: stored != 0). Never a `.unaryFn` read, never the out-of-range pad.
   let mut termsAcc : Array TermPlan := #[]
   for term in terms do
     let termUids := (termAxisUIDs term).eraseDups
@@ -745,7 +748,8 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
           let biasArr : Array Int := (rows.map (fun r => r.2)).toArray
           factorsAcc := factorsAcc.push
             (.read { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad
-                   , boolToTropical := tropical && isBoolSlot sourceSlot })
+                   , boolToTropical := tropical && isBoolSlot sourceSlot
+                   , realToBool := destIsBool && !isBoolSlot sourceSlot })
       | .iverson pred =>
           -- A source Iverson predicate lowers to a positional `PosBoolExpr` over the SAME ordered
           -- basis a `.read` factor uses here (`context ++ output ++ reduction`, real pins folded in),
@@ -1096,7 +1100,8 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       let s := baseLocalOf.getD name 0
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment sizes warnings nm [] #[] outputUids pins resolveSource
-      (fun s => (sigsNow[s]?).any (·.dtype == .bool)) preSlot outputShape rhs.agg rhs.body.terms
+      (fun s => (sigsNow[s]?).any (·.dtype == .bool)) (dtypeOfDecl (declEnv[nm]?) == .bool)
+      preSlot outputShape rhs.agg rhs.body.terms
     -- Task 4.4: this statement's OWN destination (`nm`, a state or block-local scratch —
     -- classification happens later, once `stateNames.contains nm` is checked in Phase 1 above) may
     -- be `.predicate`-declared exactly like a top-level destination (`Compile.lean`'s `prepareEvalPlan`
@@ -1205,7 +1210,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment stepSizes warnings nm ctxUids stepExtents outputUids
       ({} : HashMap UID Int) resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool))
-      preSlot outputShape rhs.agg rhs.body.terms
+      (dtypeOfDecl (declEnv[nm]?) == .bool) preSlot outputShape rhs.agg rhs.body.terms
     -- Task 4.4: same per-statement destination-dtype derivation as the base block above — `nm`
     -- here may be a persistent state's recurrence result OR block-local scratch (classification is
     -- still `stateNames.contains nm`, decided below, AFTER this push — "shared by recurrence and
@@ -1591,8 +1596,8 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
           (sourceSlot, (sigsNow.getD sourceSlot { shape := #[], dtype := .f64 }).shape)
         let computePlan ←
           residualizeAssignment sizes warnings nm [] #[] srcUids ({} : HashMap UID Int)
-            resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool)) destSlot srcShape
-            rhs.agg rhs.body.terms
+            resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool))
+            (dtypeOfDecl (declEnv[nm]?) == .bool) destSlot srcShape rhs.agg rhs.body.terms
         -- Destination dtype and algebra are selected exactly as the plain branch selects them: by
         -- the DESTINATION's own declaration, never by a source factor's.
         let destDtype := dtypeOfDecl (declEnv[nm]?)
@@ -1644,8 +1649,8 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         -- behavior exactly (Task 2's whole point; see `residualizeAssignment`'s doc comment).
         let assignPlan ←
           residualizeAssignment sizes warnings nm [] #[] retainedUids ({} : HashMap UID Int)
-            resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool)) destSlot outputShape
-            rhs.agg rhs.body.terms
+            resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool))
+            (dtypeOfDecl (declEnv[nm]?) == .bool) destSlot outputShape rhs.agg rhs.body.terms
         match rhs.nonlin with
         | .identity =>
             -- Byte-for-byte unchanged for a REAL destination (Thread 4 regression gate): single

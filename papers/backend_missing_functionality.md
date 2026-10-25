@@ -10,9 +10,11 @@ already evaluates most of the constructs listed here, so nearly every row is a *
 > collisions with its sort's ⊕ from `0_K`, and a bare out-of-range read pads with `0_K`. CLOSED gaps: the
 > multi-factor (`×` versus `+`) divergence, the scatter-fill gap (`scatterFillNotIdentity` and
 > `scatterOptsNotAdmitted` are deleted; multi-writer, nonlinear, predicate-destination and out-of-range `max`/`min` scatters are still refused) and the padded-`0` interaction.
-> STILL OPEN: S3b-ii (tropical multi-writer collection and writer agreement), B5 (multi-writer scatter),
-> scan-local scatter overwrite (F3), `real -> bool` rejection, JAX/Python tropical execution, oracle
-> per-tensor sorts. Mentions of those constructors below are history.
+> S3b-ii (on its slice branch, NOT merged: `additive_s3bii_plan.md`) closes the top-level tropical multi-writer
+> gap (an all-max or all-min writer group is collected; mixed groups stay refused with `multiWriterAlgebra`) and
+> makes `real -> bool` reads coerce (stored `!= 0`; the rejection is superseded, not pending). STILL OPEN: in-scan
+> multi-writer collection (refused), B5 (multi-writer scatter), scan-local scatter overwrite (F3), JAX/Python
+> tropical execution, oracle per-tensor sorts. Mentions of those constructors below are history.
 
 > **The "Hard" Scatter row below has been audited in depth. Start at
 > `papers/scatter_affine_lhs_writes.md`** — it is the current authority and supersedes

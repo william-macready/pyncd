@@ -37,6 +37,15 @@ private def readsOf (p : TLProgram) (nm : String) : Option (List String) :=
       (fun s => s.readFactors.map (·.1))
   | _ => none
 
+/-- The aggregation annotation of the desugared statement writing `nm`. -/
+private def aggOf (p : TLProgram) (nm : String) : Option AggOp :=
+  match desugared p with
+  | some (.ok (sp, _)) =>
+      ((plainStmts sp.stmts).bind (·.find? (·.lhsName == nm))).bind fun
+        | .assign _ _ r => some r.agg
+        | _ => none
+  | _ => none
+
 private def errorOf (p : TLProgram) : Option CompileError :=
   match desugared p with
   | some (.error e) => some e
@@ -122,13 +131,18 @@ def c5 : TLProgram := tlprog!{
 }
 #guard errorOf c5 == some (.multiWriterScatter "S")
 
--- C6 rejection: max-annotated multi-writer set (clone c1, change agg to maxreduce).
+-- C6 (was a rejection until S3b-ii): max-annotated multi-writer set (clone c1, agg maxreduce).
 def c6 : TLProgram := tlprog!{
   axis i : ℕ = 2
   Y[i] := maxreduce(A[i, j])
   Y[i] := maxreduce(B[i, j])
 }
-#guard errorOf c6 == some (.multiWriterAlgebra "Y")
+-- S3b-ii: now admitted; the collector carries the agreed annotation (a sum collector would give
+-- the wrong values, see `CollectEvalTest` J4).
+#guard errorOf c6 == none
+#guard dests c6 == some ["Y#1", "Y#2", "Y"]
+#guard aggOf c6 "Y" == some .max
+#guard aggOf c6 "Y#1" == some .max
 
 -- C7 rejection: axis-UID mismatch (clone c1, writer 2 on axis j).
 def c7 : TLProgram := tlprog!{
@@ -190,40 +204,127 @@ def c10c : TLProgram := tlprog!{
 #guard dests c10c == some ["Y#1", "Y#2", "Y"]
 
 -- C6b/C6c rejection (clone c6): a MIXED set, one sum writer and one max writer, in both orders, so a
--- check of only the first or only the last writer's annotation survives neither.
+-- check of only the first or only the last writer's annotation survives neither. The sum writer is
+-- NON-neutral (it contracts `j`), so it votes real; a sum-annotated NEUTRAL copy would abstain
+-- instead (C6bN/C6cN below). S3b-ii: these fixtures used a neutral copy `Y[i] := A[i]` until the
+-- abstain rule made that the accepted Bellman form.
 def c6b : TLProgram := tlprog!{
   axis i : ℕ = 2
-  Y[i] := A[i]
+  Y[i] := A[i, j]
   Y[i] := maxreduce(B[i, j])
 }
 #guard errorOf c6b == some (.multiWriterAlgebra "Y")
 def c6c : TLProgram := tlprog!{
   axis i : ℕ = 2
   Y[i] := maxreduce(A[i, j])
-  Y[i] := B[i]
+  Y[i] := B[i, j]
 }
 #guard errorOf c6c == some (.multiWriterAlgebra "Y")
 
--- S3b T8: the min twins of C6/C6b/C6c. The refusal is decided from the writers' sorts, so a check
--- that only tested `agg == .max` would admit all three of these.
+-- C6bN/C6cN accept neighbours (S3b-ii, rule D5): a sum-annotated sort-neutral copy beside a
+-- max writer abstains, in either order; the group is max-plus and the copy is rewritten to `max`.
+def c6bN : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i]
+  Y[i] := maxreduce(B[i, j])
+}
+#guard errorOf c6bN == none
+#guard dests c6bN == some ["Y#1", "Y#2", "Y"]
+#guard aggOf c6bN "Y" == some .max
+#guard aggOf c6bN "Y#1" == some .max   -- the neutral copy now pads with the group's 0_K
+#guard aggOf c6bN "Y#2" == some .max
+def c6cN : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := maxreduce(A[i, j])
+  Y[i] := B[i]
+}
+#guard errorOf c6cN == none
+#guard aggOf c6cN "Y" == some .max
+#guard aggOf c6cN "Y#2" == some .max
+-- the vote of a neutral writer beside a non-neutral one is ignored whatever its annotation:
+-- a `minreduce` copy beside a `maxreduce(A[i, j])` writer is max-plus.
+def c6dN : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := maxreduce(A[i, j])
+  Y[i] := minreduce(B[i])
+}
+#guard errorOf c6dN == none
+#guard aggOf c6dN "Y" == some .max
+#guard aggOf c6dN "Y#2" == some .max
+-- ... but an ALL-neutral max + min group is a conflict, in both orders.
+def c6eN : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := maxreduce(A[i])
+  Y[i] := minreduce(B[i])
+}
+#guard errorOf c6eN == some (.multiWriterAlgebra "Y")
+def c6fN : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := minreduce(A[i])
+  Y[i] := maxreduce(B[i])
+}
+#guard errorOf c6fN == some (.multiWriterAlgebra "Y")
+-- max + min with NON-neutral writers, both orders.
+def c6g : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := maxreduce(A[i, j])
+  Y[i] := minreduce(B[i, j])
+}
+#guard errorOf c6g == some (.multiWriterAlgebra "Y")
+def c6h : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := minreduce(A[i, j])
+  Y[i] := maxreduce(B[i, j])
+}
+#guard errorOf c6h == some (.multiWriterAlgebra "Y")
+-- sum + max with three writers (the non-neutral sum writer in the middle).
+def c6i : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := maxreduce(A[i, j])
+  Y[i] := B[i, j]
+  Y[i] := maxreduce(C[i, j])
+}
+#guard errorOf c6i == some (.multiWriterAlgebra "Y")
+
+-- S3b T8: the min twins of C6/C6b/C6c. `c6min` (all-min) is admitted; `c6bm`/`c6cm` are refused. The
+-- refusal is decided from the writers' sorts, so a check that only tested `agg == .max` would admit
+-- the two refused ones.
 def c6min : TLProgram := tlprog!{
   axis i : ℕ = 2
   Y[i] := minreduce(A[i, j])
   Y[i] := minreduce(B[i, j])
 }
-#guard errorOf c6min == some (.multiWriterAlgebra "Y")
+#guard errorOf c6min == none
+#guard dests c6min == some ["Y#1", "Y#2", "Y"]
+#guard aggOf c6min "Y" == some .min
 def c6bm : TLProgram := tlprog!{
   axis i : ℕ = 2
-  Y[i] := A[i]
+  Y[i] := A[i, j]
   Y[i] := minreduce(B[i, j])
 }
 #guard errorOf c6bm == some (.multiWriterAlgebra "Y")
 def c6cm : TLProgram := tlprog!{
   axis i : ℕ = 2
   Y[i] := minreduce(A[i, j])
-  Y[i] := B[i]
+  Y[i] := B[i, j]
 }
 #guard errorOf c6cm == some (.multiWriterAlgebra "Y")
+-- accept neighbours: the neutral sum copy beside a min writer abstains.
+def c6bmN : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i]
+  Y[i] := minreduce(B[i, j])
+}
+#guard errorOf c6bmN == none
+#guard aggOf c6bmN "Y" == some .min
+#guard aggOf c6bmN "Y#1" == some .min
+def c6cmN : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := minreduce(A[i, j])
+  Y[i] := B[i]
+}
+#guard errorOf c6cmN == none
+#guard aggOf c6cmN "Y#2" == some .min
 
 -- C11 admitted `.freeNorm` class (donor: `RouteFragmentCorpusTest.axiswise`'s `Y[q, s.] := softmax`):
 -- each writer keeps its marker; the collector's slots are plain `.free`, so no

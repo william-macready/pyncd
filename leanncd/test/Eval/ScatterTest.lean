@@ -330,4 +330,27 @@ run_cmd (assertEval "B6-surface-accept" (tlprog!{ tensor f64 Out(i)
                                                   Out[2 * i] := X[i] })
   (HashMap.ofList [("X", tl [3] [10, 20, 30])]) "Out" (tl [6] [10, 0, 20, 0, 30, 0]))
 
+-- S3b-ii T3a (D1, reference side): a scatter into a `predicate` destination reads a real source
+-- with the `real -> bool` coerce (stored != 0; NaN reads true, the existing convention, pinned not
+-- endorsed). Out[2*i] := X[i], X = [0.25, 0.75, 0, NaN, -2] ⇒ [1,0, 1,0, 0,0, 1,0, 1,0]
+-- (uncoerced the written cells would carry the raw 0.25, 0.75, NaN, -2).
+run_cmd do
+  let i := ax "i" 1
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X"
+    (tensorOf [5] [0.25, 0.75, 0, 0.0 / 0.0, -2])
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
+  let sizes := ({} : HashMap UID Nat).insert 1 5
+  let decls : List Decl := [Decl.predicate "Out" [], Decl.typedTensor .f64 "X" []]
+  match evalScatter decls env sizes "Out" [.affine (.scale 2 i)] rhs [10] with
+  | .error e => throwError s!"D1 scatter: {e}"
+  | .ok (_, Out) => unless Out.data == #[1, 0, 1, 0, 0, 0, 1, 0, 1, 0] do
+      throwError s!"D1 scatter must coerce a real read: {repr Out.data}"
+  -- the same scatter with a predicate SOURCE reads it as stored (bool -> bool unchanged)
+  match evalScatter [Decl.predicate "Out" [], Decl.predicate "X" []] env sizes "Out"
+      [.affine (.scale 2 i)] rhs [10] with
+  | .error e => throwError s!"D1 scatter bool source: {e}"
+  | .ok (_, Out) => unless Out.data[0]! == 0.25 && Out.data[2]! == 0.75 do
+      throwError s!"D1 scatter bool source must stay uncoerced: {repr Out.data}"
+
+
 end LeanNCD.Eval

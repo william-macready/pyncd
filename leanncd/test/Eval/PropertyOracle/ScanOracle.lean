@@ -265,4 +265,34 @@ private def neutralShapes : List (Stmt × Bool) :=
   , (nbStmt [.free nbJ, .iterAt nbT 0] [], false) ]
 #guard neutralShapes.all (fun (s, expected) => oracleNeutral s == expected && s.isSortNeutral == expected)
 
+-- S3b-ii T1 (D2): the state's sort rule, the part that depends on neutrality, is compared here too.
+-- `localStateAgg` (a first-hit search in `ScanUnroll`, never calling the production vote helper) must
+-- give the aggregation production's `scanStateAlgebra` selects, for every state of the scan corpora
+-- and for hand-built states whose expected annotation is pinned LITERALLY (so the two cannot drift
+-- together): an all-neutral state votes by its non-`sum` annotations; a state with a non-neutral
+-- writer takes that writer's sort and the neutral writers abstain.
+private def bareGeom (base recur : List Stmt) : ScanGeom :=
+  { axes := [], ext := [], states := [], scratch := [], advScratch := [], base := base, recur := recur }
+#guard (enumScanCases ++ tropicalUnwrittenScanCases).all (fun c =>
+  (c.base ++ c.recur).all (fun s =>
+    localStateAgg (bareGeom c.base c.recur) s.lhsName ==
+      (scanStateAlgebra {} (c.base ++ c.recur) s.lhsName).stateAgg))
+private def nbBase (ag : AggOp) : Stmt :=
+  nbStmt [.free nbJ, .iterAt nbT 0] [[nbRead [.axis nbJ]]] .identity ag
+private def nbStep (ag : AggOp) : Stmt :=
+  nbStmt [.free nbJ, .iterNext nbT] [[nbRead [.axis nbJ]]] .identity ag
+private def nbContracted (ag : AggOp) : Stmt :=
+  nbStmt [.free nbJ, .iterNext nbT] [[nbRead [.axis nbJ, .axis nbK]]] .identity ag
+private def stateVotes : List (List Stmt × List Stmt × AggOp) :=
+  [ ([nbBase .max], [nbStep .max], .max)
+  , ([nbBase .min], [nbStep .min], .min)
+  , ([nbBase .sum], [nbStep .sum], .sum)
+  , ([nbBase .sum], [nbStep .max], .max)
+  , ([nbBase .min], [nbStep .sum], .min)
+  , ([nbBase .max], [nbContracted .min], .min)
+  , ([nbBase .min], [nbContracted .sum], .sum) ]
+#guard stateVotes.all (fun (b, r, expected) =>
+  localStateAgg (bareGeom b r) "S" == expected &&
+  (scanStateAlgebra {} (b ++ r) "S").stateAgg == expected)
+
 end LeanNCD.PropertyOracle

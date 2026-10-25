@@ -2835,7 +2835,8 @@ def s3bUnary (dest src : String) (ag : AggOp) : Stmt :=
 run_cmd do
   assertSortAccepted "unaryFn read of a min-plus tensor in a max-plus statement"
     (s3bSched (s3bMNDecls ++ [s3bT "Z"]) (s3bMN ++ [s3bUnary "Z" "N" .max]))
--- ... and a predicate destination reading a REAL tensor (parked decision 1: real -> bool is the identity)
+-- ... and a predicate destination reading a REAL tensor: still ACCEPTED, and since S3b-ii D1 the read
+-- COERCES (stored != 0; values in BoolCastTest (j)) rather than passing through as the identity
 run_cmd do
   assertSortAccepted "predicate reads a real tensor"
     (s3bSched [.predicate "Y" [axIDup]] [s3bStmt "Y" "A"])
@@ -2853,14 +2854,77 @@ run_cmd do
       (s3bMN ++ [s3bStmt "Z" "N" .identity .max, s3bStmt "R" "A" (.pointwise .relu) .max]))
     (.tropicalNonlin "R")
 
--- (d) multi-writer tropical keeps collection's `multiWriterAlgebra`: `W` is written twice (no map
--- entry), and its writer ALSO bare-reads the min-plus `N` — a cast that would reject if `W` had an
--- entry. The error stays the collector's.
+-- (d) a multi-writer tropical set has an `algebras` entry (S3b-ii): `W` is written twice, both
+-- writers max-annotated, so its agreed sort is max-plus; its first writer ALSO bare-reads the
+-- min-plus `N`, a cast the entry now rejects (before the entry existed, W had no sort and the
+-- cast was never checked). Both entries report the same typed error.
 run_cmd do
-  assertPredicateParity "multi-writer tropical set keeps multiWriterAlgebra"
+  assertPredicateParity "multi-writer tropical set checks casts against its agreed sort"
     (s3bSched (s3bMNDecls ++ [s3bT "W"])
       (s3bMN ++ [s3bStmt "W" "N" .identity .max, s3bStmt "W" "B" .identity .max]))
+    (.sortCastUnsupported "W" "N")
+
+-- (d2) the agreed sort of a collected max-plus `T` is what its READERS are checked against: a bool
+-- statement and a min-plus statement reading it are rejected, in both entries; a real reader and a
+-- max-plus reader are accepted (the same bare read, so the rejection is the cast, not the read).
+def s3bTG : List Stmt := [s3bStmt "T" "A" .identity .max, s3bStmt "T" "B" .identity .max]
+run_cmd do
+  assertPredicateParity "bool statement reads a collected max-plus tensor"
+    (s3bSched [s3bT "T", .predicate "Y" [axIDup]] (s3bTG ++ [s3bStmt "Y" "T"]))
+    (.sortCastUnsupported "Y" "T")
+run_cmd do
+  assertPredicateParity "min-plus statement reads a collected max-plus tensor"
+    (s3bSched [s3bT "T", s3bT "Z"] (s3bTG ++ [s3bStmt "Z" "T" .identity .min]))
+    (.sortCastUnsupported "Z" "T")
+run_cmd do
+  assertSortAccepted "real and max-plus statements read a collected max-plus tensor"
+    (s3bSched [s3bT "T", s3bT "Z1", s3bT "Z2"]
+      (s3bTG ++ [s3bStmt "Z1" "T", s3bStmt "Z2" "T" .identity .max]))
+-- the min twin: a bool reader of a collected min-plus tensor is rejected
+run_cmd do
+  assertPredicateParity "bool statement reads a collected min-plus tensor"
+    (s3bSched [s3bT "T", .predicate "Y" [axIDup]]
+      ([s3bStmt "T" "A" .identity .min, s3bStmt "T" "B" .identity .min] ++ [s3bStmt "Y" "T"]))
+    (.sortCastUnsupported "Y" "T")
+-- a CONFLICTING group (all-neutral max + min) has no entry and keeps collection's refusal
+run_cmd do
+  assertPredicateParity "all-neutral max + min group is refused by collection"
+    (s3bSched [s3bT "T"] [s3bStmt "T" "A" .identity .max, s3bStmt "T" "B" .identity .min])
+    (.multiWriterAlgebra "T")
+-- (d3) "no entry on a conflicting group" made observable (rej F3): `W` is written by a max writer
+-- that bare-reads the min-plus `N` and by a min writer, so the group conflicts. If a conflicting group
+-- LEAKED an entry (say its first vote, max-plus), the cast check would reject the max writer's read of
+-- `N` as `sortCastUnsupported "W" "N"`; the refusal must stay collection's `multiWriterAlgebra "W"`,
+-- in either writer order. A bool reader and a min-plus reader of the conflicting `W` likewise must hit
+-- `multiWriterAlgebra`, not `sortCastUnsupported "Y" "W"` / `"Z" "W"`. The non-conflicting neighbour
+-- is (d): the same max writer beside a max writer gives `sortCastUnsupported "W" "N"`.
+run_cmd do
+  assertPredicateParity "conflicting group has no entry: writer reads min-plus"
+    (s3bSched (s3bMNDecls ++ [s3bT "W"])
+      (s3bMN ++ [s3bStmt "W" "N" .identity .max, s3bStmt "W" "B" .identity .min]))
     (.multiWriterAlgebra "W")
+run_cmd do
+  assertPredicateParity "conflicting group has no entry: writer order reversed"
+    (s3bSched (s3bMNDecls ++ [s3bT "W"])
+      (s3bMN ++ [s3bStmt "W" "B" .identity .min, s3bStmt "W" "N" .identity .max]))
+    (.multiWriterAlgebra "W")
+run_cmd do
+  assertPredicateParity "conflicting group has no entry: bool reader"
+    (s3bSched [s3bT "W", .predicate "Y" [axIDup]]
+      [s3bStmt "W" "A" .identity .max, s3bStmt "W" "B" .identity .min, s3bStmt "Y" "W"])
+    (.multiWriterAlgebra "W")
+run_cmd do
+  assertPredicateParity "conflicting group has no entry: min-plus reader"
+    (s3bSched [s3bT "W", s3bT "Z"]
+      [s3bStmt "W" "A" .identity .max, s3bStmt "W" "B" .identity .min, s3bStmt "Z" "W" .identity .min])
+    (.multiWriterAlgebra "W")
+def s3bTGPins : Option CheckedScheduledProgram :=
+  s3bChecked (s3bSched [s3bT "T", s3bT "U", s3bT "V"]
+    (s3bTG ++ [s3bStmt "U" "A" .identity .min, s3bStmt "U" "B" .identity .min
+              , s3bStmt "V" "A", s3bStmt "V" "B"]))
+#guard s3bTGPins.map (·.algebras["T"]?) == some (some .maxPlus)   -- max group: agreed sort
+#guard s3bTGPins.map (·.algebras["U"]?) == some (some .minPlus)   -- min group
+#guard s3bTGPins.map (·.algebras["V"]?) == some none              -- sum group: no entry (unchanged)
 
 -- (e) the `algebras` map content: one schedule exercising every entry kind.
 def s3bPins : Option CheckedScheduledProgram :=
@@ -2873,7 +2937,8 @@ def s3bPins : Option CheckedScheduledProgram :=
 #guard s3bPins.map (·.algebraOf "Q") == some .bool         -- UNWRITTEN predicate declaration
 #guard s3bPins.map (·.algebraOf "A") == some .real         -- unwritten input
 #guard s3bPins.map (·.algebras["M"]?) == some (some .maxPlus)
--- a two-writer name has NO entry (the lookup falls back to its declaration)
+-- a two-writer SUM name has NO entry (the lookup falls back to its declaration); a tropical group has
+-- one (`s3bTGPins`), and a conflicting group gets none (it is refused)
 #guard s3bPins.map (·.algebras["W"]?) == some none
 #guard s3bPins.map (·.algebraOf "W") == some .real
 -- the unwritten input never gets an entry either
@@ -2908,5 +2973,6 @@ run_cmd do
       | some f =>
           unless f.cause == .sourceInvariant (.sortCastUnsupported "Y" "M") do
             throwError s!"surface cast: wrong checked cause: {renderCompileCause f.cause}"
+
 
 end LeanNCD.Eval.Plan.CompileTest
