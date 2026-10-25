@@ -531,8 +531,9 @@ NaN, 0}` (the Boolean accumulator's `max(0, min(1, v))`). One fixture per plan C
 `residualizeAssignment` that can carry a predicate destination: top-level plain assign, scan BASE and scan
 STEP. The fourth caller, a scatter compute half, can never see one: `capabilityPreflight` rejects a
 predicate scatter destination (`predicateScatterDest`), so its flag is structurally always false.
-Neighbours: a bool source is unchanged (identity, NaN kept), a unary-function read is not coerced, the
-out-of-range pad is not coerced. -/
+Neighbours: a bool source is unchanged (identity, NaN kept), a unary-function read is not coerced, and the
+out-of-range pad stays `0` (j5; under the bool algebra the pad is `0` and coercing `0` gives `0`, so j5
+cannot distinguish a coerced pad from an uncoerced one: it pins the value only). -/
 def rtbTop : TLProgram := tlprog!{
   predicate P(i)
   P[i] := X[i] }
@@ -567,7 +568,7 @@ run_cmd do
   agreeNaN64 "j3 bool source unchanged (identity, NaN kept)" rtbBoolSrc [("Q", [5], rtbReal)] "P"
     [0.25, 0.75, 0, nan, 0]
   assertAgree "j4 unary read not coerced" rtbUnary [("X", [2], [0.25, 4])] "P" [0.5, 1]
-  assertAgree "j5 pad not coerced" rtbOob [("X", [3], [0.25, 0, -2])] "P" [0, 1, 0]
+  assertAgree "j5 pad stays 0 (coerce-blind)" rtbOob [("X", [3], [0.25, 0, -2])] "P" [0, 1, 0]
   assertAgree "j6 scan base" rtbScanBase [("X", [5], rtbReal)] "S"
     [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1]
   assertAgree "j7 scan step" rtbScanStep

@@ -29,7 +29,8 @@ inductive CompileError
   | predicateAgg         : String → CompileError            -- predicate tensor with non-sum aggregation
   | tropicalNonlin       : String → CompileError            -- tropical-sort statement (destination not a
                                                              -- predicate, `agg` max/min) with non-identity nonlin
-  | scanStateAlgebraMismatch : String → CompileError        -- two non-neutral statements of one scan state
+  | scanStateAlgebraMismatch : String → CompileError        -- the statements of one scan state vote conflicting
+                                                             -- sorts (non-neutral ones; all-neutral max vs min)
                                                              -- (base and recurrence) carry different sorts
   | sortCastUnsupported  : String → String → CompileError   -- destination, source: a bare read whose source sort
                                                              -- has no legal cast into the statement's sort
@@ -107,8 +108,9 @@ inductive CompileError
   -- collector does not admit yet. Each names the destination tensor `T`.
   | multiWriterScatter   : String → CompileError            -- a writer of a multi-writer `T` is a
                                                              -- scatter (affine or diagonal LHS)
-  | multiWriterAlgebra   : String → CompileError            -- a writer of a multi-writer `T`
-                                                             -- aggregates with `max`/`min`
+  | multiWriterAlgebra   : String → CompileError            -- the writers of a multi-writer `T`
+                                                             -- conflict in sort (max vs min, or a non-neutral
+                                                             -- sum writer beside a tropical one)
   | multiWriterScan      : String → CompileError            -- `T` is written by two or more nodes
                                                              -- and at least one is a scan node
                                                              -- (plain + scan, or scan + scan)

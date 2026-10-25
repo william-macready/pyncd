@@ -164,7 +164,7 @@ private def j4In := inp [("A", tz [2, 2] [1, 2, 3, 4]), ("B", tz [2, 2] [5, 6, 7
 #guard bitsOf j4 j4In "Y" == some (bits [6, 8])
 #guard keysOf j4 j4In == some ["A", "B", "Y"]
 
--- J4m min-annotated multi-writer: collected with min (duality twin of J4; the sum would be [4, 8]).
+-- J4m min-annotated multi-writer: collected with min (duality twin of J4; the sum would be [6, 10]).
 def j4m : TLProgram := tlprog!{
   axis i : ℕ = 2
   Y[i] := minreduce(A[i, j])

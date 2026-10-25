@@ -584,7 +584,7 @@ private def tinfMinIn32 : NamedDenseEnv32 :=
 #guard bits32 (plan32 tinfMin tinfMinIn32) "Y" == f32bits #[1.0, 8.0, pinf32]
 
 /-- The Bellman shape: a sum-annotated NEUTRAL copy beside a `maxreduce` (resp. `minreduce`) writer
-    abstains and collects with max (min). Sum would give `[-3, -13]` (resp. `[6, 13]`). -/
+    abstains and collects with max (min). Sum would give `[-3, -13]` (resp. `[3, 13]`). -/
 def tcopyMax : TLProgram := tlprog!{
   axis i : ℕ = 2
   Y[i] := maxreduce(B[i, j])

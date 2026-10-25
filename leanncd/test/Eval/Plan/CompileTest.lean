@@ -2937,7 +2937,8 @@ def s3bPins : Option CheckedScheduledProgram :=
 #guard s3bPins.map (·.algebraOf "Q") == some .bool         -- UNWRITTEN predicate declaration
 #guard s3bPins.map (·.algebraOf "A") == some .real         -- unwritten input
 #guard s3bPins.map (·.algebras["M"]?) == some (some .maxPlus)
--- a two-writer name has NO entry (the lookup falls back to its declaration)
+-- a two-writer SUM name has NO entry (the lookup falls back to its declaration); a tropical group has
+-- one (`s3bTGPins`), and a conflicting group gets none (it is refused)
 #guard s3bPins.map (·.algebras["W"]?) == some none
 #guard s3bPins.map (·.algebraOf "W") == some .real
 -- the unwritten input never gets an entry either

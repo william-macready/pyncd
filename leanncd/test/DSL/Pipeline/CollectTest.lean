@@ -286,8 +286,9 @@ def c6i : TLProgram := tlprog!{
 }
 #guard errorOf c6i == some (.multiWriterAlgebra "Y")
 
--- S3b T8: the min twins of C6/C6b/C6c. The refusal is decided from the writers' sorts, so a check
--- that only tested `agg == .max` would admit all three of these.
+-- S3b T8: the min twins of C6/C6b/C6c. `c6min` (all-min) is admitted; `c6bm`/`c6cm` are refused. The
+-- refusal is decided from the writers' sorts, so a check that only tested `agg == .max` would admit
+-- the two refused ones.
 def c6min : TLProgram := tlprog!{
   axis i : ℕ = 2
   Y[i] := minreduce(A[i, j])

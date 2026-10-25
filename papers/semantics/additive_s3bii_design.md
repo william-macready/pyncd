@@ -32,8 +32,8 @@ a max/min writer group accepted whose writers disagree; a bool reader of a max-p
 ## 4. The rule (one helper, two consumers)
 
 Writer votes. For a set of writer statements of one name: every NON-neutral writer votes its `Stmt.algebra env` (`isSortNeutral`: one term, one bare read/unary factor, no contracted axis, identity nonlinearity).
-Neutral writers ABSTAIN while any non-neutral writer exists (so `Vn[s] := Term[s]` and even `Vn[s] := minreduce(Term[s])` beside a `maxreduce(...)` writer give max-plus; a neutral copy's annotation
-cannot change values, only its out-of-range pad, which the rewrite fixes). If NO writer is non-neutral, neutral writers vote by their non-sum annotations: all non-sum votes agree -> that sort; max vs min -> refusal;
+Neutral writers ABSTAIN while any non-neutral writer exists (so `Vn[s] := Term[s]` and even `Vn[s] := minreduce(Term[s])` beside a `maxreduce(...)` writer give max-plus; the rewrite fixes a neutral copy's out-of-range pad AND changes how it reads a PREDICATE: the bool -> tropical
+cast is selected by the statement's annotation, so `Vn[s] := Reach[s]` beside a max writer reads true/false as `0`/`-inf`, not `1`/`0`; pinned by `cpMax`/`cpMin` in `CollectPlanTest`, and the same holds for an all-neutral max scan state whose base copies a predicate, pinned in `DualityTest`). If NO writer is non-neutral, neutral writers vote by their non-sum annotations: all non-sum votes agree -> that sort; max vs min -> refusal;
 only `sum` -> real. The agreed sort is the group's sort; every abstaining neutral writer is rewritten to it (`Stmt.withAgg`, the `scanStateStmts` mechanism) so its bare out-of-range read pads the group's 0_K.
 Disagreement among voters: scan state -> `scanStateAlgebraMismatch` (unchanged); top-level group -> `multiWriterAlgebra name` (unchanged constructor). A predicate destination stays bool (agg must be sum: `predicateAgg` fires first).
 
@@ -55,6 +55,7 @@ Raw-plan tests build `ReadPlan`s directly: the flag defaults to false so they st
 ## 6. Refusals that stay, and tests that flip (audit section 5)
 
 STAY: mixed groups (max+min, sum+max, max+sum, min+sum, sum+min), scatter writers (`multiWriterScatter`), scan-node writers (`multiWriterScan`), nonlinear tropical writers (`tropicalNonlin`), shape mismatches (`writerShapeMismatch`).
+VOTE-RULE CONSEQUENCES (observed, pinned in `CollectPlanTest`): a neutral `maxreduce`/`minreduce` copy beside a NON-neutral sum writer is ACCEPTED and runs as sum (its annotation is dropped and its pad is `0`; it used to be refused `multiWriterAlgebra`; `vrSumMax`/`vrSumMin`), so "sum+max STAY" means a NON-neutral max writer; a relu or Iverson-only copy beside a max writer is non-neutral and votes real, so it is refused `multiWriterAlgebra` (`vrRelu`/`vrIv`); D2 also newly refuses scan programs that read an all-neutral max scratch with a bool or min-plus statement, or have it read a min-plus tensor (`sortCastUnsupported`, pinned in `ScanCompileTest`).
 FLIP: `CollectTest` C6 and `c6min` (admitted: assert `dests` and collector agg); `CollectEvalTest` J4 and `j4m` (values A=[[1,2],[3,4]], B=[[5,6],[7,8]] -> `[6,8]` / `[1,3]`, hand-derived, to be observed);
 `CompileTest` (d) "multi-writer tropical set" -> `sortCastUnsupported "W" "N"`. KEEP C5, C6b, C6c, `c6bm`, `c6cm`, scan-writer and priority blocks; ADD max+min both orders. D1 flips: `DifferentialTest` "T4.3/7 boolean scalar non-binary" (0.75 -> 1.0) and its direct check, plus comment/pin updates
 (`CompileTest` predicate reads real, `BoolCastTest` (c)). D2 flips: `DualityTest.parkedAllNeutralScanState` (`[[4,4],[0,0]]` -> `[[4,4],[-inf,-inf]]`), `ScanCompileTest` "S3bF/neutral scratch max/min" (`[3,4,4,4,0,0]` -> `[3,4,4,4,-inf,-inf]` / `+inf`; sum unchanged),

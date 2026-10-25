@@ -22,7 +22,9 @@ writers are plain `.assign` statements with bare free slots on the same axis UID
 multi-writer set fails loud (`multiWriterScatter`, `multiWriterAlgebra`, `writerShapeMismatch`).
 A group's sort is the one its writers' votes agree on (`writerSort?`); sort-neutral copy writers
 abstain beside a non-neutral writer and are rewritten to the agreed sort (`Stmt.withAgg`), so a
-copy's bare out-of-range read pads the group's `0_K`. A name written by two or more
+copy's bare out-of-range read pads the group's `0_K` and a copy of a predicate reads it through the group's
+bool -> tropical cast (true/false as `1_K`/`0_K`, i.e. `0`/`-inf` for max, not `1`/`0`: the cast follows
+the statement's annotation, so the rewrite changes values, not only the pad). A name written by two or more
 nodes of which one is a scan node is rejected outright (`multiWriterScan`). The topological-order
 assertion on the result is made by `collectDefinitions` in `ScheduledValidation.lean`, which wraps
 this pass (`desugarMultiWriters` itself does not check order), because the readiness predicate
