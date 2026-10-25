@@ -740,15 +740,24 @@ def oracleNeutral (s : Stmt) : Bool :=
       factorCounts == [1] && readFactors.length == 1 && r.nonlin == .identity && contracted.isEmpty
 
 /-- The aggregation (hence the semiring) the independent unrolling gives state `nm`'s zero leaf and
-    base merge (S3b T8): the annotation its first NON-neutral statement carries, `sum` (real) if every
-    statement is neutral. Derived here from the statements alone. It deliberately calls neither
-    `scanStateAlgebra`/`scanStateSorts` nor any production state-init helper, so that agreement with
-    the production scan worker's `0_K` start is a real check and not production compared with itself. -/
+    base merge (S3b T8): the annotation its first NON-neutral statement carries; if every statement is
+    neutral (S3b-ii D2) the first NON-`sum` annotation among them, else `sum` (real). (Conflicts are
+    refused before any unrolling, so "first" is never a choice between disagreeing sorts.) Derived
+    here from the statements alone, as a first-hit search rather than production's vote list. It
+    deliberately calls neither `scanStateAlgebra`/`scanStateSorts`/`writerVotes` nor any production
+    state-init helper, so that agreement with the production scan worker's `0_K` start is a real
+    check and not production compared with itself. -/
 def localStateAgg (g : ScanGeom) (nm : String) : AggOp :=
-  let own := (g.base ++ g.recur).filter (fun s => s.lhsName == nm && !oracleNeutral s)
-  match own.head? with
+  let mine := (g.base ++ g.recur).filter (fun s => s.lhsName == nm)
+  match (mine.filter (fun s => !oracleNeutral s)).head? with
   | some (.assign _ _ r) | some (.scatter _ _ r) => r.agg
-  | _ => .sum
+  | some _ => .sum
+  | none =>
+      match mine.find? (fun s => match s with
+          | .assign _ _ r | .scatter _ _ r => r.agg != .sum
+          | .recurMorphism _ _ _ => false) with
+      | some (.assign _ _ r) | some (.scatter _ _ r) => r.agg
+      | _ => .sum
 
 /-- Unroll one scan node into scan-free leaf statements.
 

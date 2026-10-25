@@ -551,15 +551,34 @@ def Stmt.ownAlgebra? (env : DeclEnv) (s : Stmt) : Option SortAlgebra :=
   | some (.predicate _ _) => some .bool
   | _ => if s.isSortNeutral then none else some (s.algebra env)
 
-/-- The own sorts of the statements of a scan that write `nm` (its base and recurrence statements,
-    in order), neutral writers contributing none. The one list `scheduleAlgebras` checks for
-    agreement and `scanStateAlgebra` reads the state's sort from. -/
-def scanStateSorts (env : DeclEnv) (ss : List Stmt) (nm : String) : List SortAlgebra :=
-  (ss.filter (fun s => s.lhsName == nm)).filterMap (Stmt.ownAlgebra? env)
+/-- The writer-vote rule (S3b-ii design section 4), the one list both the scan-state consumer
+    (`scanStateSorts`) and the top-level writer group consume. Every NON-neutral writer votes its own
+    sort (`Stmt.ownAlgebra?`; a `predicate` destination votes `bool`). Sort-neutral writers abstain
+    while any such voter exists; if there is none, the neutral writers vote by their non-`sum`
+    annotations (`sum` abstains: a neutral writer has nothing to combine, so `sum` is the absence
+    of a tropical choice). No votes at all is an empty list (`real`). -/
+def writerVotes (env : DeclEnv) (ws : List Stmt) : List SortAlgebra :=
+  match ws.filterMap (Stmt.ownAlgebra? env) with
+  | [] => (ws.map (Stmt.algebra env)).filter (· != .real)
+  | own => own
 
-/-- The sort of the scan state (or scratch name) `nm`: the sort its non-neutral statements agree
-    on, `real` if every statement is neutral. Agreement itself is `scheduleAlgebras`' job
-    (`scanStateAlgebraMismatch`); on a disagreeing scan this is the first statement's sort. -/
+/-- The sort `writerVotes` agrees on: `none` is a CONFLICT (two votes differ), `some .real` when
+    nobody votes. The caller raises its own error (`scanStateAlgebraMismatch` for a scan state). -/
+def writerSort? (env : DeclEnv) (ws : List Stmt) : Option SortAlgebra :=
+  match writerVotes env ws with
+  | [] => some .real
+  | a :: rest => if rest.any (fun b => b != a) then none else some a
+
+/-- The votes of the statements of a scan that write `nm` (its base and recurrence statements, in
+    order): `writerVotes`. The one list `scheduleAlgebras` checks for agreement and
+    `scanStateAlgebra` reads the state's sort from. -/
+def scanStateSorts (env : DeclEnv) (ss : List Stmt) (nm : String) : List SortAlgebra :=
+  writerVotes env (ss.filter (fun s => s.lhsName == nm))
+
+/-- The sort of the scan state (or scratch name) `nm`: the sort its voters agree on (`writerVotes`:
+    non-neutral writers, else the non-`sum` annotations of an all-neutral state), `real` if nobody
+    votes. Agreement itself is `scheduleAlgebras`' job (`scanStateAlgebraMismatch`); on a
+    disagreeing scan this is the first vote. -/
 def scanStateAlgebra (env : DeclEnv) (ss : List Stmt) (nm : String) : SortAlgebra :=
   (scanStateSorts env ss nm).headD .real
 

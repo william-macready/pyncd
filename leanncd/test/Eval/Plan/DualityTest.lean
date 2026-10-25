@@ -228,33 +228,56 @@ private def gridG (run : TLProgram → HashMap String DenseTensor → Option (Ha
 #guard gridG refRun false == some #[-2.0, pinf, -5.0, -5.0]
 #guard gridG planRun false == some #[-2.0, pinf, -5.0, -5.0]
 
--- PARKED (S3b): an ALL-NEUTRAL scan state whose statements carry a tropical annotation is evaluated
--- as REAL. `M[j,0] := maxreduce(X0[j+1])` and `M[j,l+1] := maxreduce(M[j,l])` are both sort-neutral
--- writers (one term, one read, no contracted axis), so they contribute no sort, and a state with no
--- non-neutral statement is `real` (`scanStateAlgebra` = `.headD .real`); the neutral annotations are
--- rewritten to `.sum` (`scanStateStmts`), so the out-of-range read `X0[2]` pads with the REAL zero:
--- M[1,0] = 0 and the recurrence copies it, giving [[4,4],[0,0]].
--- The alternative design would let a neutral annotation SELECT the sort when nothing else does (a
--- `maxreduce` copy chain is max-plus): the pad would be -inf, giving [[4,4],[-inf,-inf]]. Which of
--- the two is right is a design decision for the task that revisits neutral writers
--- (design note S3b section 3 / A4 follow-up: "neutral annotation as a sort vote"); no such task is
--- planned in S3b. A change in either direction fails this fixture loudly on BOTH backends.
-private def parkedJ : AxisSpec := ⟨"j", 271, .real⟩
-private def parkedL : AxisSpec := ⟨"l", 272, .nat⟩
-private def parkedAllNeutralScanState : TLProgram :=
-  { decls := [.axis parkedJ (some 2), .axis parkedL (some 2), .typedTensor .f64 "X0" [parkedJ]]
+-- S3b-ii D2 (was PARKED in S3b as `parkedAllNeutralScanState`): an ALL-NEUTRAL scan state whose
+-- statements carry a tropical annotation now VOTES that sort. `M[j,0] := maxreduce(X0[j+1])` and
+-- `M[j,l+1] := maxreduce(M[j,l])` are both sort-neutral writers (one term, one read, no contracted
+-- axis); with no non-neutral writer the non-sum annotations vote, so the state is max-plus and the
+-- out-of-range read `X0[2]` pads `-inf`: M = [[4,4],[-inf,-inf]]. Before D2 the state was `real` (the
+-- annotations were rewritten to `.sum`, the pad was the REAL zero) and M was [[4,4],[0,0]].
+private def allNeutralJ : AxisSpec := ⟨"j", 271, .real⟩
+private def allNeutralL : AxisSpec := ⟨"l", 272, .nat⟩
+private def allNeutralScanState (base recur : AggOp) : TLProgram :=
+  { decls := [.axis allNeutralJ (some 2), .axis allNeutralL (some 2),
+              .typedTensor .f64 "X0" [allNeutralJ]]
     stmts :=
-      [ .assign "M" [.free parkedJ, .iterAt parkedL 0]
-          { body := { terms := [{ factors := [.read "X0" [.shift parkedJ 1]] }] },
-            nonlin := .identity, agg := .max }
-      , .assign "M" [.free parkedJ, .iterNext parkedL]
-          { body := { terms := [{ factors := [.read "M" [.axis parkedJ, .axis parkedL]] }] },
-            nonlin := .identity, agg := .max } ] }
-private def parkedAllNeutralInputs : HashMap String DenseTensor :=
+      [ .assign "M" [.free allNeutralJ, .iterAt allNeutralL 0]
+          { body := { terms := [{ factors := [.read "X0" [.shift allNeutralJ 1]] }] },
+            nonlin := .identity, agg := base }
+      , .assign "M" [.free allNeutralJ, .iterNext allNeutralL]
+          { body := { terms := [{ factors := [.read "M" [.axis allNeutralJ, .axis allNeutralL]] }] },
+            nonlin := .identity, agg := recur } ] }
+private def allNeutralInputs : HashMap String DenseTensor :=
   ({} : HashMap String DenseTensor).insert "X0" ⟨[2], #[3.0, 4.0]⟩
-#guard ((refRun parkedAllNeutralScanState parkedAllNeutralInputs).bind (fun e => e["M"]?)).map
-    (fun t => (t.shape, t.data)) == some ([2, 2], #[4.0, 4.0, 0.0, 0.0])
-#guard ((planRun parkedAllNeutralScanState parkedAllNeutralInputs).bind (fun e => e["M"]?)).map
-    (fun t => (t.shape, t.data)) == some ([2, 2], #[4.0, 4.0, 0.0, 0.0])
+private def allNeutralOn (run : TLProgram → HashMap String DenseTensor →
+      Option (HashMap String DenseTensor)) (base recur : AggOp) : Option (List Nat × Array Float) :=
+  ((run (allNeutralScanState base recur) allNeutralInputs).bind (fun e => e["M"]?)).map
+    (fun t => (t.shape, t.data))
+-- the flip, on the reference and on the checked plan (f64)
+#guard allNeutralOn refRun .max .max == some ([2, 2], #[4.0, 4.0, -pinf, -pinf])
+#guard allNeutralOn planRun .max .max == some ([2, 2], #[4.0, 4.0, -pinf, -pinf])
+-- all-neutral min: the pad is +inf
+#guard allNeutralOn refRun .min .min == some ([2, 2], #[4.0, 4.0, pinf, pinf])
+#guard allNeutralOn planRun .min .min == some ([2, 2], #[4.0, 4.0, pinf, pinf])
+-- all-neutral sum stays real (pad 0)
+#guard allNeutralOn refRun .sum .sum == some ([2, 2], #[4.0, 4.0, 0.0, 0.0])
+#guard allNeutralOn planRun .sum .sum == some ([2, 2], #[4.0, 4.0, 0.0, 0.0])
+-- a `sum` neutral writer abstains beside a `max` one: only the non-sum annotations vote
+#guard allNeutralOn refRun .sum .max == some ([2, 2], #[4.0, 4.0, -pinf, -pinf])
+#guard allNeutralOn planRun .sum .max == some ([2, 2], #[4.0, 4.0, -pinf, -pinf])
+-- plan f32, exact binary32 bits (4.0 = 0x40800000, -inf = 0xff800000, +inf = 0x7f800000, 0 = 0)
+private def allNeutralBits32 (base recur : AggOp) : Option (List Nat × Array UInt32) :=
+  ((planRun32 (allNeutralScanState base recur) (env32 allNeutralInputs)).bind (fun e => e["M"]?)).map
+    (fun t => (t.shape, t.data.map Float32.toBits))
+#guard allNeutralBits32 .max .max ==
+  some ([2, 2], #[0x40800000, 0x40800000, 0xff800000, 0xff800000])
+#guard allNeutralBits32 .min .min ==
+  some ([2, 2], #[0x40800000, 0x40800000, 0x7f800000, 0x7f800000])
+#guard allNeutralBits32 .sum .sum == some ([2, 2], #[0x40800000, 0x40800000, 0, 0])
+-- an all-neutral max-vs-min conflict is refused by the reference and by the checked plan, in both
+-- orders (`scanStateAlgebraMismatch`; the exact constructor is pinned in ScanCompileTest)
+#guard (allNeutralOn refRun .max .min).isNone
+#guard (allNeutralOn planRun .max .min).isNone
+#guard (allNeutralOn refRun .min .max).isNone
+#guard (allNeutralOn planRun .min .max).isNone
 
 end LeanNCD.Eval.Plan.DualityTest

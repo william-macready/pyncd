@@ -145,9 +145,10 @@ tropical multi-writer sets. -/
 
 /-- The `algebraOf` map of a SOURCE schedule. Entries: each `predicate` declaration -> `bool`; a name
     written by exactly one node -> that plain statement's sort, or, for a scan state (the node's
-    base and recurrence statements of one name), the sort its non-neutral statements agree on
-    (`real` if every statement is neutral). Two non-neutral statements of one scan state that
-    differ throw `scanStateAlgebraMismatch` (checked for every scan node, entry or not). -/
+    base and recurrence statements of one name), the sort its writers vote (`writerSort?`:
+    non-neutral statements, else an all-neutral state's non-`sum` annotations; `real` if nobody
+    votes). Two voters of one scan state that differ throw `scanStateAlgebraMismatch` (checked for
+    every scan node, entry or not). -/
 def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
     Except CompileError (Std.HashMap String SortAlgebra) := do
   let mut m : Std.HashMap String SortAlgebra := {}
@@ -165,10 +166,9 @@ def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
     | .scan _ _ b r _ =>
         let ss := b ++ r
         for nm in (ss.map Stmt.lhsName).eraseDups do
-          let agreed ← match scanStateSorts env ss nm with
-            | [] => pure SortAlgebra.real
-            | a :: rest =>
-                if rest.any (fun b => b != a) then throw (.scanStateAlgebraMismatch nm) else pure a
+          let agreed ← match writerSort? env (ss.filter (fun s => s.lhsName == nm)) with
+            | none => throw (.scanStateAlgebraMismatch nm)
+            | some a => pure a
           if (stmts.filter (fun n => n.writes.contains nm)).length == 1 then
             m := m.insert nm agreed
   return m
