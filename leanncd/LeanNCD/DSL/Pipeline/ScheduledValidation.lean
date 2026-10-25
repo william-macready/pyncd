@@ -189,7 +189,7 @@ def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
 
 /-- Cast table rejections (design note §3): a bare `read` factor of a tropical-sort source into a
     `bool` statement, or between the two tropical sorts. Everything else is accepted unchanged
-    (real -> bool is parked decision 1). A read under `unaryFn` takes REAL input and is never
+    (real -> bool is accepted: since S3b-ii D1 it coerces, stored != 0, in both backends). A read under `unaryFn` takes REAL input and is never
     rejected. The statement's sort is the entry of its destination (so a neutral scan base takes
     its state's sort), else its own. Runs after the per-statement rules. -/
 def checkSortCasts (env : DeclEnv) (algebras : Std.HashMap String SortAlgebra)
