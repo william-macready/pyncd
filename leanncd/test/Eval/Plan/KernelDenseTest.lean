@@ -227,13 +227,14 @@ def unaryOnesStore : Array DenseTensor :=
 #guard dataOf (runIt unarySigs (unaryPlan .exp 1) unaryOnesStore) ==
   some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, Float.exp 0.0]
 
--- S3b T2: the same OOB-under-unary read inside a TROPICAL statement keeps the real `0.0` pad (see the
--- note on `oobMaxPlan`): `exp 0 = 1`, not `exp(−∞) = 0`. Single factor, no reduction: the result is the
--- unary value itself (`0.0 + v`, then `max(−∞, v)` / `min(+∞, v)`).
+-- The same OOB-under-unary read inside a TROPICAL statement is the algebra's 0_K, unapplied (see the
+-- note on `oobMaxPlan`): the last lane is absent, so `-inf` (max-plus) / `+inf` (min-plus), NOT
+-- `exp 0 = 1` (the pre-fix pad, which could win a reduction) and not `exp(∓inf)`. Single factor, no
+-- reduction: the in-range lanes are the unary value itself (`0.0 + v`, then `max(−∞, v)` / `min(+∞, v)`).
 #guard dataOf (runIt unarySigs { unaryPlan .exp 1 with algebra := admittedAlgebraMax } unaryOnesStore) ==
-  some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, Float.exp 0.0]
+  some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, -1.0 / 0.0]
 #guard dataOf (runIt unarySigs { unaryPlan .exp 1 with algebra := admittedAlgebraMin } unaryOnesStore) ==
-  some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, Float.exp 0.0]
+  some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, 1.0 / 0.0]
 
 /-!
 ## Additional fixtures (Step 3)

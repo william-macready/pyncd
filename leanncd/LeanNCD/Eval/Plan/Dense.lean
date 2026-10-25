@@ -45,9 +45,10 @@ private structure ScalarKernelOps (α : Type) where
       converted — that conversion is precisely the silent precision substitution this slice exists
       to prevent. -/
   decodeConst : ScalarConst → Except PositionalInputError α
-  /-- This carrier's exact real zero: the out-of-bounds pad of a UNARY read (the primitive takes
-      real input, so an out-of-bounds read contributes `f(0)` whatever the statement's sort). A bare
-      read and an Iverson factor take their values from the algebra's decoded identities instead. -/
+  /-- This carrier's exact real zero: the out-of-bounds pad of a UNARY read in a real or Boolean
+      statement (there an out-of-bounds read contributes `f(0)`). In a tropical statement a unary
+      out-of-bounds read is the algebra's decoded 0_K instead, and a bare read and an Iverson factor
+      take their values from the algebra's decoded identities. -/
   zero : α
   /-- Whether a stored value reads as Boolean true (anything but this carrier's zero): the truth
       test of the bool -> tropical read cast (`ReadPlan.boolToTropical`). -/
@@ -120,16 +121,20 @@ private def float32Ops : ScalarKernelOps Float32 :=
 /-- Gather one factor. Every source dimension is range-tested BEFORE flattening (`inBoundsPerDim`,
     `Coordinates.lean`): testing the flat offset instead can alias distinct invalid coordinates onto
     a valid address (proposal §8.3). A `unary` function is applied to the gathered value AFTER the
-    out-of-bounds pad (so an out-of-bounds read contributes `f(0.0)`, matching the reference
-    `gather`), and can fail loud on a domain violation (`log`/`sqrt`/`recip`) in EITHER carrier —
+    out-of-bounds pad in a real or Boolean statement (so an out-of-bounds read contributes `f(0.0)`,
+    matching the reference `gather`), but NOT in a tropical statement (`tropical`, the algebra's
+    `factorOp = .add`): there the out-of-bounds factor is `pad` (0_K) itself, `f` is not applied, and
+    `f(0)` can never win the reduction. A unary function can fail loud on a domain violation (`log`/`sqrt`/`recip`) in EITHER carrier —
     binary64 via `unaryDomain`, binary32 via `unaryDomain32` — since both `ScalarKernelOps`
     instantiations (`floatOps`, `float32Ops`) supply a real `applyUnary` today; there is no current
     carrier that takes a "no unary implementation" branch.
 
     A BARE read is padded with `pad`, the statement's 0_K (its algebra's decoded `reduceId`: real
     0, bool false, max-plus -inf, min-plus +inf), so a padded cell is the identity of the reduction
-    it flows into and never beats a valid cell. A `unary` read is padded with the carrier's real
-    zero (`ops.zero`) instead, because the primitive takes real input. A missing slot cannot occur
+    it flows into and never beats a valid cell. A `unary` read in a real or Boolean statement is
+    padded with the carrier's real zero (`ops.zero`) instead, because the primitive takes real
+    input (`pad` is that zero there anyway); in a tropical statement it is `pad` too, unapplied.
+    A missing slot cannot occur
     past `validateStore` (it is `missingSlot` there); the branch pads like an out-of-bounds read.
 
     A read with `boolToTropical` set casts an IN-BOUNDS gathered value (S3b design §3): stored true
@@ -139,27 +144,24 @@ private def float32Ops : ScalarKernelOps Float32 :=
     A read with `realToBool` set (S3b-ii D1) casts the same way: an in-bounds value that
     `ops.isTrue` (nonzero, NaN included) reads as `one`, else `pad` (the bool algebra's 1 / 0). Both
     carriers share this path (f32 tests the stored bits through its own `isTrue`). -/
-private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (pad one : α)
+private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (tropical : Bool) (pad one : α)
     (store : Array (DenseTensorOf α)) (f : ReadPlan) (iter : List Int) :
     Except PositionalInputError α :=
-  let padV : α := match f.unary with
-    | none => pad
-    | some _ => ops.zero
-  let base : α :=
+  -- `none` is an out-of-bounds (or missing-slot) read, `some v` the stored value (after any cast).
+  let cell : Option α :=
     match store[f.sourceSlot]? with
-    | none => padV
+    | none => none
     | some t =>
         let src := applyAffine f.map iter
         let shape := f.sourceShape.toList
         if inBoundsPerDim shape src then
-          match t.data[flatIndex shape (src.map Int.toNat)]? with
-          | none => padV
-          | some v =>
-              if f.boolToTropical || f.realToBool then (if ops.isTrue v then one else pad) else v
-        else padV
-  match f.unary with
-  | none => .ok base
-  | some op => ops.applyUnary op base f.sourceSlot
+          (t.data[flatIndex shape (src.map Int.toNat)]?).map (fun v =>
+            if f.boolToTropical || f.realToBool then (if ops.isTrue v then one else pad) else v)
+        else none
+  match f.unary, cell with
+  | none, _ => .ok (cell.getD pad)
+  | some op, some v => ops.applyUnary op v f.sourceSlot
+  | some op, none => if tropical then .ok pad else ops.applyUnary op ops.zero f.sourceSlot
 
 /-- The ONE left-associated scalar fold behind all three of architecture doc §2.2's fold equations —
     a term's factor product, a term's reduction over its contracted coordinates, and the combination
@@ -252,7 +254,7 @@ private def denseValueAtWith {α : Type} (ops : ScalarKernelOps α) (a : AssignP
         for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
         return iter
       let factorVals ← t.factors.toList.mapM (fun f => match f with
-        | .read r => gatherFactorWith ops reduceId factorId store r iter.toList
+        | .read r => gatherFactorWith ops (alg.factorOp == .add) reduceId factorId store r iter.toList
         | .iverson b =>
             (evalPosBool iter.toList b
               |>.mapError (fun e => match e with
@@ -314,7 +316,7 @@ guard.
 
 /-- Execute one checked BINARY32 operation at a fixed context coordinate. Native `Float32`
     throughout: the store's buffers are `Array Float32`, a bare-read pad is the algebra's native
-    `reduceId` (a unary read pads with native `+0`), an Iverson predicate becomes the native
+    `reduceId` (a unary read pads with native `+0` in a real or Boolean statement, and with the same `reduceId` unapplied in a tropical one), an Iverson predicate becomes the native
     `factorId`/`reduceId`, and every factor/reduction/term fold step is a native
     binary32 operation that rounds on its own. Nothing widens to `Float` anywhere on this path.
 

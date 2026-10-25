@@ -22,8 +22,8 @@ run_cmd do
   match gather 0.0 1.0 env (coordOf [(1,1)]) (.iverson (.rel .le (.embed (.axis (ax 1))) (.embed (.const 2)))) with | .ok v => unless v == 1.0 do throwError "iverson" | .error e => throwError (toString e)
 
 -- S3b T2: the statement's (0_K, 1_K) reach `gather`. A BARE out-of-range read pads with 0_K, an Iverson
--- factor is 1_K / 0_K, and an out-of-range read UNDER a `.unaryFn` pads with the real 0.0 whatever the
--- sort. Each max-plus row has a min-plus duality twin; the real/bool rows (0.0, 1.0) are the unchanged
+-- factor is 1_K / 0_K, and an out-of-range read UNDER a `.unaryFn` is 0_K too in a tropical sort (the
+-- function is not applied) but `f(0.0)` in a real/bool sort. Each max-plus row has a min-plus duality twin; the real/bool rows (0.0, 1.0) are the unchanged
 -- accept-neighbours (they are the existing rows above, which now pass the real/bool constants).
 private def negInf : Float := -1.0 / 0.0
 private def posInf : Float := 1.0 / 0.0
@@ -43,9 +43,16 @@ private def ivGt    : Factor := .iverson (.rel .gt (.embed (.axis (ax 1))) (.emb
 -- in-range read is untouched by the sort
 #guard okIs (gather negInf 0.0 gEnv (coordOf [(1,1)]) inRead) 5.0
 #guard okIs (gather posInf 0.0 gEnv (coordOf [(1,1)]) inRead) 5.0
--- OOB read under a unary stays the real 0.0: exp 0.0 = 1.0 (a -inf pad would give exp(-inf) = 0)
-#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,0)]) padExp) 1.0
-#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,0)]) padExp) 1.0
+-- OOB read under a unary: 0_K, `exp` not applied, in a tropical sort (the pre-fix value was exp 0.0 = 1.0)
+#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,0)]) padExp) negInf
+#guard okIs (gather posInf 0.0 gEnv (coordOf [(1,0)]) padExp) posInf
+-- real / bool neighbour: the pad is the real 0.0 and `exp` is applied, exp 0.0 = 1.0 still contributes
+#guard okIs (gather 0.0 1.0 gEnv (coordOf [(1,0)]) padExp) 1.0
+-- in-range value under a unary in a tropical sort is still `exp` of the value (X[1] = 5.0), and a
+-- stored -inf in range is NOT the OOB case: exp(-inf) = 0.0 is applied
+#guard okIs (gather negInf 0.0 gEnv (coordOf [(1,1)]) (.unaryFn .exp "X" [.axis (ax 1)])) (Float.exp 5.0)
+#guard okIs (gather negInf 0.0 (gEnv.insert "X" ((DenseTensor.zeros [3]).set! [1] negInf)) (coordOf [(1,1)])
+  (.unaryFn .exp "X" [.axis (ax 1)])) 0.0
 -- Iverson: true = 1_K, false = 0_K
 #guard okIs (gather negInf 0.0 gEnv (coordOf [(1,1)]) ivLe) 0.0         -- max-plus true
 #guard okIs (gather negInf 0.0 gEnv (coordOf [(1,1)]) ivGt) negInf      -- max-plus false

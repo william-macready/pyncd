@@ -593,16 +593,18 @@ def f32PadStore : Array DenseTensor32 :=
 #guard bitsOf (run32 unaryF32Sigs2 (f32UnaryPlan .exp 1) f32PadStore) ==
   some #[1101049646, 1034427438, 1061642109, 1065353216]
 
-/-! ### Fixture 2.3b: the OOB pad under a unary stays `+0` inside a TROPICAL statement
+/-! ### Fixture 2.3b: the OOB pad under a unary is 0_K, unapplied, inside a TROPICAL statement
 
-S3b T2: `unaryPlan .exp 1` over `f32PadStore` with the tropical algebras. The out-of-bounds read pads
-with the real native `+0` (the primitive takes real input), so the last lane is `exp(+0) = 1`
-(`1065353216`) exactly as under sum-product; a `−∞` pad would give `exp(−∞) = +0` (bits `0`). -/
+`unaryPlan .exp 1` over `f32PadStore` with the tropical algebras. The out-of-bounds read is the
+algebra's decoded `reduceId` and `exp` is NOT applied to it: the last lane is `−∞` (bits
+`0xff800000 = 4286578688`) under max-plus and `+∞` (`0x7f800000 = 2139095040`) under min-plus, not
+`exp(+0) = 1` (`1065353216`, the pre-fix pad, which could win a reduction; sum-product keeps it, 2.3
+above) and not `exp(∓∞)`. -/
 
 #guard bitsOf (run32 unaryF32Sigs2 { f32UnaryPlan .exp 1 with algebra := admittedAlgebraF32Max } f32PadStore) ==
-  some #[1101049646, 1034427438, 1061642109, 1065353216]
+  some #[1101049646, 1034427438, 1061642109, 4286578688]
 #guard bitsOf (run32 unaryF32Sigs2 { f32UnaryPlan .exp 1 with algebra := admittedAlgebraF32Min } f32PadStore) ==
-  some #[1101049646, 1034427438, 1061642109, 1065353216]
+  some #[1101049646, 1034427438, 1061642109, 2139095040]
 
 /-! ### Fixture 2.4: worker witnesses (PLATFORM-DEPENDENT)
 

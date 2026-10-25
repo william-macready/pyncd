@@ -48,7 +48,7 @@ abbrev TensorSlot := Nat
 
 /-- Out-of-range read policy. Wave C has exactly one. The name is historical: the pad is 0_K of the
     statement's sort for a bare read (the algebra's `reduceId`: real 0, bool false, max-plus `-inf`,
-    min-plus `+inf`) and the real `0.0` under a unary read. -/
+    min-plus `+inf`) and, under a unary read, the real `0.0` (the function is then applied) in a real or Boolean statement but the same 0_K, unapplied, in a tropical one. -/
 inductive OutOfBoundsPolicy
   | zeroPad
   deriving DecidableEq, BEq, Repr, Inhabited
