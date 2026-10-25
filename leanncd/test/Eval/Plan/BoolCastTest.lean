@@ -143,7 +143,7 @@ run_cmd do
   assertAgree "b2 unary min" unaryMin
     [("edge", [2, 2], [1, 1, 0, 1]), ("X", [2], [1, 3])] "H" [2, 1]
 
-/-! ## (c) neighbours: bool -> real and real -> tropical are the identity
+/-! ## (c) neighbours: bool -> real and real -> tropical are the identity (real -> bool is NOT: see (j))
 
 bool -> real sum, `X = [[-1,-2],[-3,-4]]`: `H = [[-4,-6],[-3,-4]]` (a cast would be a bug here).
 real -> max-plus: `A = [[1,1],[0,1]]` is added, not cast: `[[0,-1],[-1,-2]]`; min-plus twin on
@@ -264,6 +264,33 @@ def rejectedCast (sigs : Array TensorSignature) (a : AssignPlan) : Bool :=
 #guard rejectedCast boolSigs (castPlan admittedAlgebra (castRead true))
 -- reject: cast on a unary read (the unary takes real input)
 #guard rejectedCast boolSigs (castPlan admittedAlgebraMax (castRead true (some .exp)))
+
+-- S3b-ii T3b (D1): the real -> bool cast flag `realToBool`, admitted ONLY on a bare read of a non-bool
+-- source under the bool algebra. Same guard shape as the tropical flag above.
+def rtbRead (cast : Bool) (unary : Option UnaryOp := none) : ReadPlan :=
+  { sourceSlot := 0, map := AffineMap.mk #[#[1]] #[0], sourceShape := #[3]
+  , oobPolicy := .zeroPad, unary := unary, realToBool := cast }
+-- (the bool algebra needs a `.bool` DESTINATION slot, so these use their own signature tables)
+def rtbRealSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .bool } ]
+def rtbRealSigs32 : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .bool } ]
+def rtbBoolSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .bool } ]
+-- accept: the flag on a real (f64) source under the bool algebra (and the f32 checker on an f32 source)
+#guard accepted rtbRealSigs (castPlan admittedAlgebraBool (rtbRead true))
+#guard (match checkAssignF32 rtbRealSigs32 (castPlan admittedAlgebraBool (rtbRead true)) with
+        | .ok _ => true | _ => false)
+-- accept neighbours: no flag (any source) under the bool algebra
+#guard accepted rtbRealSigs (castPlan admittedAlgebraBool (rtbRead false))
+#guard accepted rtbBoolSigs (castPlan admittedAlgebraBool (rtbRead false))
+-- reject: flag on a BOOL source (bool -> bool is the identity)
+#guard rejectedCast rtbBoolSigs (castPlan admittedAlgebraBool (rtbRead true))
+-- reject: flag under the real algebra, and under a tropical one
+#guard rejectedCast realSigs (castPlan admittedAlgebra (rtbRead true))
+#guard rejectedCast realSigs (castPlan admittedAlgebraMax (rtbRead true))
+-- reject: flag on a unary read (the unary takes real input)
+#guard rejectedCast rtbRealSigs (castPlan admittedAlgebraBool (rtbRead true (some .exp)))
 
 /-! ## S3b T6 — a scan state starts at `0_K` of the STATE's sort; a sort-neutral writer of the state
 (one bare read, no contracted axis) is evaluated in that sort
@@ -494,5 +521,57 @@ run_cmd do
     [("A", [2, 2], edgeNaN), ("X", [2, 2], [1, 2, 3, 4])] "H" [nan, nan, 1, 2]
   agreeNaN64 "i6 NaN kept by a bool statement" boolStmt
     [("edge", [2, 2], edgeNaN)] "M" [nan, 1]
+
+/-! ## S3b-ii T3b (j): a `real -> bool` read COERCES (D1): a predicate statement's bare read of a
+non-predicate source sees truth `stored != 0`, as 1 / 0, on reference, binary64 plan and binary32 plan
+
+`X = {0.25, 0.75, 0, NaN, -2}` (NaN reads TRUE, the same convention as (i): pinned, not endorsed) into a
+predicate `P` gives `{1, 1, 0, 1, 1}`; the identity read (the pre-D1 behaviour) gives `{0.25, 0.75, 0,
+NaN, 0}` (the Boolean accumulator's `max(0, min(1, v))`). One fixture per plan CALLER of
+`residualizeAssignment` that can carry a predicate destination: top-level plain assign, scan BASE and scan
+STEP. The fourth caller, a scatter compute half, can never see one: `capabilityPreflight` rejects a
+predicate scatter destination (`predicateScatterDest`), so its flag is structurally always false.
+Neighbours: a bool source is unchanged (identity, NaN kept), a unary-function read is not coerced, the
+out-of-range pad is not coerced. -/
+def rtbTop : TLProgram := tlprog!{
+  predicate P(i)
+  P[i] := X[i] }
+def rtbBoolSrc : TLProgram := tlprog!{
+  predicate Q(i)
+  predicate P(i)
+  P[i] := Q[i] }
+def rtbUnary : TLProgram := tlprog!{
+  predicate P(i)
+  P[i] := sqrt(X[i]) }
+def rtbOob : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  predicate P(i)
+  P[i] := X[i + 1] }
+def rtbScanBase : TLProgram := tlprog!{
+  iter t = 3
+  predicate S(j, t)
+  S[j, 0] := X[j]
+  S[j, t + 1] := S[j, t] }
+def rtbScanStep : TLProgram := tlprog!{
+  iter t = 3
+  predicate S(j, t)
+  predicate B(j)
+  S[j, 0] := B[j]
+  S[j, t + 1] := S[j, t] · Y[j] }
+
+def rtbReal : List Float := [0.25, 0.75, 0, nan, -2]
+
+run_cmd do
+  assertAgree "j1 top-level real->bool" rtbTop [("X", [5], rtbReal)] "P" [1, 1, 0, 1, 1]
+  assertAgree "j2 binary source unchanged" rtbTop [("X", [5], [1, 0, 1, 1, 0])] "P" [1, 0, 1, 1, 0]
+  agreeNaN64 "j3 bool source unchanged (identity, NaN kept)" rtbBoolSrc [("Q", [5], rtbReal)] "P"
+    [0.25, 0.75, 0, nan, 0]
+  assertAgree "j4 unary read not coerced" rtbUnary [("X", [2], [0.25, 4])] "P" [0.5, 1]
+  assertAgree "j5 pad not coerced" rtbOob [("X", [3], [0.25, 0, -2])] "P" [0, 1, 0]
+  assertAgree "j6 scan base" rtbScanBase [("X", [5], rtbReal)] "S"
+    [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1]
+  assertAgree "j7 scan step" rtbScanStep
+    [("B", [5], [1, 1, 1, 1, 1]), ("Y", [5], rtbReal)] "S"
+    [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1]
 
 end LeanNCD.Eval.Plan.BoolCastTest

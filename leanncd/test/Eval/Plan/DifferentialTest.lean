@@ -1650,7 +1650,7 @@ def predicatePrograms :
   , ("T4.3/6 boolean scalar contraction", boolScalarProg, boolScalarInputsAllTrue,
       "Result", tl54 [] [1.0])
   , ("T4.3/7 boolean scalar non-binary", boolScalarProg, boolScalarInputsNonBinary,
-      "Result", tl54 [] [0.75]) ]
+      "Result", tl54 [] [1.0]) ]
 
 -- Exact length, pinned (Task 4.5): six original Iverson/mask entries plus the four Boolean ones.
 -- A silently dropped Boolean entry fails here rather than shrinking the corpus unnoticed.
@@ -1972,8 +1972,7 @@ Three fixtures closing Task 4.3's own differential story: a declared-predicate c
 identity donor (fixture 5), and a scalar Boolean contraction cloned from `test/Eval/ContractTest.lean`'s
 "Masked aggregation" example as a source program with a declared predicate destination — once with
 its original all-1/identity-edge values (fixture 6, real sum-product 2.0 vs Boolean 1.0) and once
-with non-binary Float sources 0.25/0.75 (fixture 7, literal `min`/`max` behavior, no runtime
-truth-check or coercion). -/
+with non-binary Float sources 0.25/0.75 (fixture 7: the real -> bool read coerces them to 1.0, D1). -/
 
 private def renderCompileCause43 : PlanCompileCause → String
   | .inputSignature c => s!"inputSignature: {repr c}"
@@ -2009,10 +2008,11 @@ run_cmd do
 -- `Result` declared a predicate destination. `F=[[1,1]]`, `edge`=2×2 identity: real sum-product
 -- there is 2.0 (`(t,i,j)=(0,0,0)` and `(0,1,1)` each contribute `1.0`), while the Boolean
 -- (min-factor/max-reduce) algebra a predicate destination selects gives 1.0 (a true term exists).
--- Fixture 7 is the SAME program with `F` replaced by non-binary Floats `0.25`/`0.75`: at
--- (i,j)=(0,0) min(0.25,0.25,1)=0.25, at (1,1) min(0.75,0.75,1)=0.75, the other two read `edge=0`
--- and contribute `0.0`; Boolean max-reduce gives `0.75` — literal Float min/max, not a value
--- coerced to {0,1} or rejected as non-binary.
+-- Fixture 7 is the SAME program with `F` replaced by non-binary Floats `0.25`/`0.75`. Since S3b-ii D1
+-- a `real -> bool` read COERCES: the bare `F` reads of the predicate statement see truth `stored != 0`
+-- (1.0 for both `0.25` and `0.75`), so at (i,j)=(0,0) and (1,1) every factor is 1 and the term is 1.0,
+-- the other two read `edge=0` and contribute `0.0`; Boolean max-reduce gives `1.0` on the checked plan
+-- and the reference alike (before D1 the plan returned the literal Float min/max `0.75`).
 -- (`boolScalarProg` and both input maps are likewise defined next to `predicatePrograms` above.)
 
 private def checkBoolScalar (name : String) (inputs : HashMap String DenseTensor) (expected : Float) :
@@ -2042,7 +2042,7 @@ run_cmd do
   match checkBoolScalar "T4.3 bool-scalar all-true" boolScalarInputsAllTrue 1.0 with
   | .error m => throwError m
   | .ok () => pure ()
-  match checkBoolScalar "T4.3 bool-scalar non-binary" boolScalarInputsNonBinary 0.75 with
+  match checkBoolScalar "T4.3 bool-scalar non-binary" boolScalarInputsNonBinary 1.0 with
   | .error m => throwError m
   | .ok () => pure ()
 

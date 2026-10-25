@@ -2835,7 +2835,8 @@ def s3bUnary (dest src : String) (ag : AggOp) : Stmt :=
 run_cmd do
   assertSortAccepted "unaryFn read of a min-plus tensor in a max-plus statement"
     (s3bSched (s3bMNDecls ++ [s3bT "Z"]) (s3bMN ++ [s3bUnary "Z" "N" .max]))
--- ... and a predicate destination reading a REAL tensor (parked decision 1: real -> bool is the identity)
+-- ... and a predicate destination reading a REAL tensor: still ACCEPTED, and since S3b-ii D1 the read
+-- COERCES (stored != 0; values in BoolCastTest (j)) rather than passing through as the identity
 run_cmd do
   assertSortAccepted "predicate reads a real tensor"
     (s3bSched [.predicate "Y" [axIDup]] [s3bStmt "Y" "A"])

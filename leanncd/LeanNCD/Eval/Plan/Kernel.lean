@@ -35,7 +35,11 @@ structure AffineMap where
     `boolToTropical` is the bool -> tropical READ CAST (S3b design §3): when set, an IN-BOUNDS
     gathered value that is stored true reads as the statement algebra's `factorId` (1_K) and one
     stored false as its `reduceId` (0_K). The checker admits it only on a bare read of a `.bool`
-    source under a tropical algebra; the out-of-bounds pad is unaffected (already 0_K). -/
+    source under a tropical algebra; the out-of-bounds pad is unaffected (already 0_K).
+    `realToBool` is the real -> bool READ CAST (S3b-ii D1): when set, an IN-BOUNDS gathered value
+    reads as the bool algebra's `factorId` (1) if it is nonzero (`ScalarKernelOps.isTrue`; NaN reads
+    true) and as its `reduceId` (0) otherwise. The checker admits it only on a bare read of a
+    non-`.bool` source under the bool algebra; the out-of-bounds pad is never coerced. -/
 structure ReadPlan where
   sourceSlot  : TensorSlot
   map         : AffineMap
@@ -43,6 +47,7 @@ structure ReadPlan where
   oobPolicy   : OutOfBoundsPolicy
   unary       : Option UnaryOp := none
   boolToTropical : Bool := false
+  realToBool : Bool := false
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- One affine predicate leaf over a positional iteration coordinate. -/
