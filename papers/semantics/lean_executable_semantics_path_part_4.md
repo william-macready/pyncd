@@ -600,7 +600,7 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   `desugarMultiWriters`); the overwrite behavior was removed rather than kept as an option, so
   multi-definition programs are value-compared. Scatter, max/min and scan multi-writer sets are
   rejected (`CompileError.multiWriterScatter`, `multiWriterAlgebra`, `multiWriterScan`) and are not
-  yet collected. See [the decision note](additive_production_decision_note.md).
+  yet collected; mixed max/min/sum groups still are. (Top-level all-max and all-min groups are collected on the S3b-ii slice branch, not merged; see `additive_s3bii_design.md`.) See [the decision note](additive_production_decision_note.md).
   **Affine writes and scatter (S2a, landed, merge 7a551faa).** Through `admitSourceAffine` the oracle evaluates integer-affine left-hand slots
   (`AdmittedOutput.forms`, an integer-affine form per destination axis) and sum-only scatter, so a
   colliding write is summed. Production does not agree, and the differential classifies the difference as
