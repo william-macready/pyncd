@@ -2458,4 +2458,76 @@ def allNeutralMismatch (label : String) (sched : ScheduledProgram) : Except Stri
 run_cmd okOrThrow (allNeutralMismatch "D2/all-neutral max vs min" (allNeutralStateSched .max .min))
 run_cmd okOrThrow (allNeutralMismatch "D2/all-neutral min vs max" (allNeutralStateSched .min .max))
 
+
+/-! ### S3b-ii review follow-up (rej F2): D2 also adds cast REFUSALS for all-neutral scratch
+
+An all-neutral max scratch `T[j] := maxreduce(X0[j+1])` is max-plus since D2 (it was real), so the
+casts out of and into it follow the tropical table, as for a top-level single neutral max writer:
+a bool reader (`R[j] := T[j]`, `R` a predicate) and a min-plus reader (`Z[j] := minreduce(T[j])`) are
+`sortCastUnsupported "R" "T"` / `"Z" "T"`, and a max scratch reading a min-plus tensor
+(`N[j] := minreduce(X0[j])`, `T[j] := maxreduce(N[j])`) is `sortCastUnsupported "T" "N"`. All three
+were accepted before D2 and are refused identically by the reference and the checked plan. Accept
+neighbours (observed): the same bool reader of a `sum` scratch, a max or real reader of the max
+scratch, a min reader of a `sum` scratch, and a `sum` or `min` scratch reading the min-plus `N`. -/
+def d2Scratch (tAg : AggOp) (extraDecls : List Decl) (pre mid : List Stmt) (tSrc : String := "X0")
+    (tIdx : IdxExpr := .shift axJ2b 1) : ScheduledProgram :=
+  { decls := [.iter axM 3, .axis axJ2b (some 2)] ++ extraDecls
+  , stmts := [.scan "S" [axM]
+      [ .assign "S" [.free axJ2b, .iterAt axM 0] (t4rhs "X0" [.axis axJ2b]) ]
+      (pre ++
+       [ .assign "T" [.free axJ2b]
+          { body := { terms := [{ factors := [.read tSrc [tIdx]] }] }
+          , nonlin := .identity, agg := tAg } ] ++ mid ++
+       [ .assign "S" [.free axJ2b, .iterNext axM] (t4rhs "T" [.axis axJ2b]) ])
+      false ]
+  , env := {}, extNames := {"X0"}
+  , explicitSizes := (({} : HashMap UID Nat).insert axM.uid 3).insert axJ2b.uid 2 }
+
+def d2Rd (dest : String) (ag : AggOp) : Stmt :=
+  .assign dest [.free axJ2b]
+    { body := { terms := [{ factors := [.read "T" [.axis axJ2b]] }] }, nonlin := .identity, agg := ag }
+
+def d2RefusedOnBoth (label : String) (sched : ScheduledProgram) (c : CompileError) : Except String Unit :=
+  match evalScheduled (explicitF64Sched sched) scratchX0 with
+  | .ok _ => .error s!"{label}: evalScheduled accepted it"
+  | .error f =>
+      match f.error with
+      | .compile c' =>
+          if c' == c then
+            match causeOf (prepareEvalPlan (explicitF64Sched sched)
+                (InputSignature.ofDenseInputs scratchX0)) with
+            | some (.sourceInvariant c'') =>
+                if c'' == c then .ok () else .error s!"{label}: checked cause {repr c''}"
+            | _ => .error s!"{label}: prepareEvalPlan did not report a source invariant"
+          else .error s!"{label}: reference cause {repr c'}"
+      | e => .error s!"{label}: reference cause {e}"
+
+def d2AcceptedOnBoth (label : String) (sched : ScheduledProgram) : Except String Unit :=
+  match evalScheduled (explicitF64Sched sched) scratchX0 with
+  | .error _ => .error s!"{label}: evalScheduled refused it"
+  | .ok _ =>
+      match causeOf (prepareEvalPlan (explicitF64Sched sched) (InputSignature.ofDenseInputs scratchX0)) with
+      | none => .ok ()
+      | some c => .error s!"{label}: checked plan refused it: {render c}"
+
+def d2NStmt : Stmt :=
+  .assign "N" [.free axJ2b]
+    { body := { terms := [{ factors := [.read "X0" [.axis axJ2b]] }] }, nonlin := .identity, agg := .min }
+
+run_cmd okOrThrow (d2RefusedOnBoth "D2/bool reader of max scratch"
+  (d2Scratch .max [.predicate "R" [axJ2b]] [] [d2Rd "R" .sum]) (.sortCastUnsupported "R" "T"))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/bool reader of sum scratch"
+  (d2Scratch .sum [.predicate "R" [axJ2b]] [] [d2Rd "R" .sum]))
+run_cmd okOrThrow (d2RefusedOnBoth "D2/min reader of max scratch"
+  (d2Scratch .max [] [] [d2Rd "Z" .min]) (.sortCastUnsupported "Z" "T"))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/max reader of max scratch" (d2Scratch .max [] [] [d2Rd "Z" .max]))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/real reader of max scratch" (d2Scratch .max [] [] [d2Rd "Z" .sum]))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/min reader of sum scratch" (d2Scratch .sum [] [] [d2Rd "Z" .min]))
+run_cmd okOrThrow (d2RefusedOnBoth "D2/max scratch reads min-plus N"
+  (d2Scratch .max [] [d2NStmt] [] "N" (.axis axJ2b)) (.sortCastUnsupported "T" "N"))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/sum scratch reads min-plus N"
+  (d2Scratch .sum [] [d2NStmt] [] "N" (.axis axJ2b)))
+run_cmd okOrThrow (d2AcceptedOnBoth "D2/min scratch reads min-plus N"
+  (d2Scratch .min [] [d2NStmt] [] "N" (.axis axJ2b)))
+
 end LeanNCD.Eval.Plan.ScanCompileTest

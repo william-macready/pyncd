@@ -2891,6 +2891,33 @@ run_cmd do
   assertPredicateParity "all-neutral max + min group is refused by collection"
     (s3bSched [s3bT "T"] [s3bStmt "T" "A" .identity .max, s3bStmt "T" "B" .identity .min])
     (.multiWriterAlgebra "T")
+-- (d3) "no entry on a conflicting group" made observable (rej F3): `W` is written by a max writer
+-- that bare-reads the min-plus `N` and by a min writer, so the group conflicts. If a conflicting group
+-- LEAKED an entry (say its first vote, max-plus), the cast check would reject the max writer's read of
+-- `N` as `sortCastUnsupported "W" "N"`; the refusal must stay collection's `multiWriterAlgebra "W"`,
+-- in either writer order. A bool reader and a min-plus reader of the conflicting `W` likewise must hit
+-- `multiWriterAlgebra`, not `sortCastUnsupported "Y" "W"` / `"Z" "W"`. The non-conflicting neighbour
+-- is (d): the same max writer beside a max writer gives `sortCastUnsupported "W" "N"`.
+run_cmd do
+  assertPredicateParity "conflicting group has no entry: writer reads min-plus"
+    (s3bSched (s3bMNDecls ++ [s3bT "W"])
+      (s3bMN ++ [s3bStmt "W" "N" .identity .max, s3bStmt "W" "B" .identity .min]))
+    (.multiWriterAlgebra "W")
+run_cmd do
+  assertPredicateParity "conflicting group has no entry: writer order reversed"
+    (s3bSched (s3bMNDecls ++ [s3bT "W"])
+      (s3bMN ++ [s3bStmt "W" "B" .identity .min, s3bStmt "W" "N" .identity .max]))
+    (.multiWriterAlgebra "W")
+run_cmd do
+  assertPredicateParity "conflicting group has no entry: bool reader"
+    (s3bSched [s3bT "W", .predicate "Y" [axIDup]]
+      [s3bStmt "W" "A" .identity .max, s3bStmt "W" "B" .identity .min, s3bStmt "Y" "W"])
+    (.multiWriterAlgebra "W")
+run_cmd do
+  assertPredicateParity "conflicting group has no entry: min-plus reader"
+    (s3bSched [s3bT "W", s3bT "Z"]
+      [s3bStmt "W" "A" .identity .max, s3bStmt "W" "B" .identity .min, s3bStmt "Z" "W" .identity .min])
+    (.multiWriterAlgebra "W")
 def s3bTGPins : Option CheckedScheduledProgram :=
   s3bChecked (s3bSched [s3bT "T", s3bT "U", s3bT "V"]
     (s3bTG ++ [s3bStmt "U" "A" .identity .min, s3bStmt "U" "B" .identity .min
@@ -2945,5 +2972,6 @@ run_cmd do
       | some f =>
           unless f.cause == .sourceInvariant (.sortCastUnsupported "Y" "M") do
             throwError s!"surface cast: wrong checked cause: {renderCompileCause f.cause}"
+
 
 end LeanNCD.Eval.Plan.CompileTest

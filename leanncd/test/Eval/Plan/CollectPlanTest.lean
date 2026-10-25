@@ -886,4 +886,231 @@ are accepted. The real reader sits BETWEEN the two writers in source, so it sees
 #guard agree rdReal rdIn rdIn32 "Tot" #[12.0] #[12.0]
 #guard agree rdReal rdIn rdIn32 "Vn" #[9.0, 3.0] #[9.0, 3.0]
 
+
+/-! ## S3b-ii review follow-up: abstaining-copy casts, vote-rule neighbours, NaN, signed zero, `route`
+
+Every expected value was observed from a run (reference, binary64 plan, binary32 plan) before it was
+pinned; the predicate programs use the `ForDecls` signature (a predicate input is typed by its
+declaration), so their binary64 plan leg is `plan64p`. -/
+
+private def plan64p (p : TLProgram) (inputs : NamedDenseEnv) : Option NamedDenseEnv :=
+  (sched64 p).bind fun s =>
+    (InputSignature.ofDenseInputsForDecls s.decls inputs).toOption.bind fun sig =>
+      (prepareEvalPlan s sig).toOption.bind fun pp => (runPreparedDense pp inputs).toOption.map (·.env)
+
+/-- Reference, binary64 plan (predicate-aware signature) and binary32 plan hold exactly these BITS. -/
+private def agreeP (p : TLProgram) (i : NamedDenseEnv) (i32 : NamedDenseEnv32) (nm : String)
+    (xs : Array Float) (xs32 : Array Float32) : Bool :=
+  bits64 (ref64 p i) nm == f64bits xs && bits64 (plan64p p i) nm == f64bits xs &&
+    bits32 (plan32 p i32) nm == f32bits xs32
+
+private def nanEqA (a b : Array Float) : Bool :=
+  a.size == b.size && (a.zip b).all fun (x, y) => (x.isNaN && y.isNaN) || x == y
+
+/-- NaN-aware: all three backends hold `xs` (a NaN cell matches any NaN). -/
+private def agreeNaN (p : TLProgram) (i : NamedDenseEnv) (i32 : NamedDenseEnv32) (nm : String)
+    (xs : Array Float) : Bool :=
+  (dat64 (ref64 p i) nm).map (nanEqA · xs) == some true &&
+  (dat64 (plan64 p i) nm).map (nanEqA · xs) == some true &&
+  (dat32 (plan32 p i32) nm).map (fun a => nanEqA (a.map Float32.toFloat) xs) == some true
+
+/-! ### Abstaining copy of a PREDICATE beside a tropical writer (review rej F1)
+
+`Vn[s] := maxreduce(Q[s, a]); Vn[s] := Reach[s]` with `predicate Reach`. The copy is neutral, so it
+abstains and is rewritten to the group's sort; that rewrite changes its BOOL CAST, not only its pad:
+the copy reads true/false as `0` / `-inf` (max-plus cast), where the same statement alone (the
+neighbour `cpAlone`, a real `Vn`) reads `1` / `0`. With `Q = [[-5,-2],[-7,-4]]`, `Reach = [1, 0]`:
+`Vn = [max(-2, 0), max(-4, -inf)] = [0, -4]`; the real cast would give `[max(-2,1), max(-4,0)] = [1, 0]`.
+The min twin (`Q = [[5,2],[7,4]]`) gives `[min(2,0), min(4,+inf)] = [0, 4]` (real cast: `[1, 0]`).
+A `minreduce(Reach[s])` copy beside a `maxreduce` writer is rewritten to MAX too: the user wrote min
+(false -> `+inf`) and gets max (false -> `-inf`), so `Vn = [0, -4]`. Design section 4's claim that the
+annotation "cannot change values, only the pad" is therefore false for a bool source. -/
+
+def cpMax : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  predicate Reach(s)
+  Vn[s] := maxreduce(Q[s, a])
+  Vn[s] := Reach[s]
+}
+def cpMin : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  predicate Reach(s)
+  Vn[s] := minreduce(Q[s, a])
+  Vn[s] := Reach[s]
+}
+def cpMinOnMax : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  predicate Reach(s)
+  Vn[s] := maxreduce(Q[s, a])
+  Vn[s] := minreduce(Reach[s])
+}
+def cpAlone : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  predicate Reach(s)
+  Vn[s] := Reach[s]
+}
+private def cpMaxIn : NamedDenseEnv :=
+  mk64 [("Q", [2, 2], #[-5.0, -2.0, -7.0, -4.0]), ("Reach", [2], #[1.0, 0.0])]
+private def cpMaxIn32 : NamedDenseEnv32 :=
+  mk32 [("Q", [2, 2], #[-5.0, -2.0, -7.0, -4.0]), ("Reach", [2], #[1.0, 0.0])]
+private def cpMinIn : NamedDenseEnv :=
+  mk64 [("Q", [2, 2], #[5.0, 2.0, 7.0, 4.0]), ("Reach", [2], #[1.0, 0.0])]
+private def cpMinIn32 : NamedDenseEnv32 :=
+  mk32 [("Q", [2, 2], #[5.0, 2.0, 7.0, 4.0]), ("Reach", [2], #[1.0, 0.0])]
+private def cpAloneIn : NamedDenseEnv := mk64 [("Reach", [2], #[1.0, 0.0])]
+private def cpAloneIn32 : NamedDenseEnv32 := mk32 [("Reach", [2], #[1.0, 0.0])]
+
+#guard agreeP cpMax cpMaxIn cpMaxIn32 "Vn" #[0.0, -4.0] #[0.0, -4.0]
+#guard agreeP cpMin cpMinIn cpMinIn32 "Vn" #[0.0, 4.0] #[0.0, 4.0]
+#guard agreeP cpMinOnMax cpMaxIn cpMaxIn32 "Vn" #[0.0, -4.0] #[0.0, -4.0]
+-- accept-neighbour: the same copy alone keeps the real cast (1 / 0)
+#guard agreeP cpAlone cpAloneIn cpAloneIn32 "Vn" #[1.0, 0.0] #[1.0, 0.0]
+
+/-! ### Vote rule: a neutral tropical copy beside a NON-neutral SUM writer is absorbed (rej F4a, sem F3)
+
+`Y[i] := A[i, j]` (non-neutral: contracts `j`) beside `Y[i] := maxreduce(B[i + 1])` (neutral). The
+tropical copy ABSTAINS, the group is real, and the copy is rewritten to `sum`: its `maxreduce`
+annotation is dropped and its out-of-range read pads the REAL `0`. Accepted (it was
+`multiWriterAlgebra` before the slice) and run as SUM on all three backends:
+`Y = [3 + B[1], 7 + B[2], 11 + 0] = [2, -1, 11]` (`A = [[1,2],[3,4],[5,6]]`, `B = [-10,-1,-8]`); a max
+collector would not give these values and a `-inf` pad would give `-inf` in the last cell.
+Both orders and the min twin; neighbour `vrSumOnly` (the sum-annotated copy) gives the same values. -/
+
+def vrSumMax : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := A[i, j]
+  Y[i] := maxreduce(B[i + 1])
+}
+def vrSumMaxR : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := maxreduce(B[i + 1])
+  Y[i] := A[i, j]
+}
+def vrSumMin : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := A[i, j]
+  Y[i] := minreduce(B[i + 1])
+}
+def vrSumOnly : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := A[i, j]
+  Y[i] := B[i + 1]
+}
+private def vrIn : NamedDenseEnv :=
+  mk64 [("A", [3, 2], #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]), ("B", [3], #[-10.0, -1.0, -8.0])]
+private def vrIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [3, 2], #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]), ("B", [3], #[-10.0, -1.0, -8.0])]
+#guard agree vrSumMax vrIn vrIn32 "Y" #[2.0, -1.0, 11.0] #[2.0, -1.0, 11.0]
+#guard agree vrSumMaxR vrIn vrIn32 "Y" #[2.0, -1.0, 11.0] #[2.0, -1.0, 11.0]
+#guard agree vrSumMin vrIn vrIn32 "Y" #[2.0, -1.0, 11.0] #[2.0, -1.0, 11.0]
+#guard agree vrSumOnly vrIn vrIn32 "Y" #[2.0, -1.0, 11.0] #[2.0, -1.0, 11.0]
+
+/-! ### Vote rule: a relu or Iverson-only copy beside a `maxreduce` writer is REFUSED (rej F4b)
+
+A non-identity nonlinearity (`relu`) and an Iverson-only body (`f.read? = none`) are non-neutral, so
+the copy votes real against the max writer: `multiWriterAlgebra "Y"` on the reference and both plan
+precisions (the schedule itself compiles). Accept-neighbours: the same copies beside a NON-neutral SUM
+writer (real group): `relu(A) + sum_j B = [0 + -7, 3 + -11] = [-7, -8]`, `[i <= 0] + sum_j B = [1 + -7,
+0 + -11] = [-6, -11]`. -/
+
+def vrRelu : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := relu(A[i])
+  Y[i] := maxreduce(B[i, j])
+}
+def vrReluSum : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := relu(A[i])
+  Y[i] := B[i, j]
+}
+def vrIv : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := [i ≤ 0]
+  Y[i] := maxreduce(B[i, j])
+}
+def vrIvSum : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := [i ≤ 0]
+  Y[i] := B[i, j]
+}
+private def vrBIn : NamedDenseEnv :=
+  mk64 [("A", [2], #[-1.0, 3.0]), ("B", [2, 2], #[-5.0, -2.0, -7.0, -4.0])]
+private def vrBIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [2], #[-1.0, 3.0]), ("B", [2, 2], #[-5.0, -2.0, -7.0, -4.0])]
+#guard refusedBy vrRelu vrBIn vrBIn32 (.multiWriterAlgebra "Y")
+#guard refusedBy vrIv vrBIn vrBIn32 (.multiWriterAlgebra "Y")
+#guard agree vrReluSum vrBIn vrBIn32 "Y" #[-7.0, -8.0] #[-7.0, -8.0]
+#guard agree vrIvSum vrBIn vrBIn32 "Y" #[-6.0, -11.0] #[-6.0, -11.0]
+
+/-! ### NaN and signed zero through the tropical collector (sem F5, rej F8)
+
+The collector is an ordinary multi-term statement, so NaN propagates through `max` and `min` exactly
+as in the per-writer fold, on all three backends: with `A = [[NaN,1],[2,3]]`, `B = 0`, max gives
+`[NaN, 3]` and min `[NaN, 0]`, in either writer position. Signed zero: `max`/`min` of `-0.0` and `+0.0`
+in either order gives `+0.0` on all three backends (bits pinned); the all-`-0.0` input is the neighbour. -/
+
+private def nanF : Float := 0.0 / 0.0
+private def nanF32 : Float32 := 0.0 / 0.0
+private def nanIn : NamedDenseEnv :=
+  mk64 [("A", [2, 2], #[nanF, 1.0, 2.0, 3.0]), ("B", [2, 2], #[0.0, 0.0, 0.0, 0.0])]
+private def nanIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [2, 2], #[nanF32, 1.0, 2.0, 3.0]), ("B", [2, 2], #[0.0, 0.0, 0.0, 0.0])]
+private def nanSwapIn : NamedDenseEnv :=
+  mk64 [("B", [2, 2], #[nanF, 1.0, 2.0, 3.0]), ("A", [2, 2], #[0.0, 0.0, 0.0, 0.0])]
+private def nanSwapIn32 : NamedDenseEnv32 :=
+  mk32 [("B", [2, 2], #[nanF32, 1.0, 2.0, 3.0]), ("A", [2, 2], #[0.0, 0.0, 0.0, 0.0])]
+#guard agreeNaN tmax nanIn nanIn32 "Y" #[nanF, 3.0]
+#guard agreeNaN tmin nanIn nanIn32 "Y" #[nanF, 0.0]
+#guard agreeNaN tmax nanSwapIn nanSwapIn32 "Y" #[nanF, 3.0]
+-- accept-neighbour: the same program without a NaN is ordinary
+#guard agreeNaN tmax (nanIn.insert "A" ⟨[2, 2], #[-1.0, 1.0, 2.0, 3.0]⟩)
+  (nanIn32.insert "A" ⟨[2, 2], #[-1.0, 1.0, 2.0, 3.0]⟩) "Y" #[1.0, 3.0]
+
+private def zIn : NamedDenseEnv :=
+  mk64 [("A", [2, 2], #[-0.0, -0.0, 0.0, 0.0]), ("B", [2, 2], #[0.0, 0.0, -0.0, -0.0])]
+private def zIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [2, 2], #[-0.0, -0.0, 0.0, 0.0]), ("B", [2, 2], #[0.0, 0.0, -0.0, -0.0])]
+private def nzIn : NamedDenseEnv :=
+  mk64 [("A", [2, 2], #[-0.0, -0.0, -0.0, -0.0]), ("B", [2, 2], #[-0.0, -0.0, -0.0, -0.0])]
+private def nzIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [2, 2], #[-0.0, -0.0, -0.0, -0.0]), ("B", [2, 2], #[-0.0, -0.0, -0.0, -0.0])]
+#guard bits64 (ref64 tmax zIn) "Y" == f64bits #[0.0, 0.0]
+#guard bits64 (plan64 tmax zIn) "Y" == f64bits #[0.0, 0.0]
+#guard bits32 (plan32 tmax zIn32) "Y" == f32bits #[0.0, 0.0]
+#guard bits64 (ref64 tmin zIn) "Y" == f64bits #[0.0, 0.0]
+#guard bits64 (plan64 tmin zIn) "Y" == f64bits #[0.0, 0.0]
+#guard bits32 (plan32 tmin zIn32) "Y" == f32bits #[0.0, 0.0]
+-- neighbour: an all-`-0.0` input also gives `+0.0` (bits 0) on all three backends, so the collector
+-- does not preserve a negative zero (observed; the sign of a zero result is not specified).
+#guard bits64 (ref64 tmax nzIn) "Y" == f64bits #[0.0, 0.0]
+#guard bits64 (plan64 tmax nzIn) "Y" == f64bits #[0.0, 0.0]
+#guard bits32 (plan32 tmax nzIn32) "Y" == f32bits #[0.0, 0.0]
+#guard bits64 (ref64 tmin nzIn) "Y" == f64bits #[0.0, 0.0]
+#guard bits64 (plan64 tmin nzIn) "Y" == f64bits #[0.0, 0.0]
+#guard bits32 (plan32 tmin nzIn32) "Y" == f32bits #[0.0, 0.0]
+
+/-! ### `route` on a tropical multi-writer program (rej F5): OBSERVED, not endorsed
+
+`route` (the `compile` entry) runs `desugarMultiWriters` but never `checkSortCasts`. Observed: the
+two-writer max (min) program routes to two private writer steps and a `maxreduce` (`minreduce`)
+collector reading both; a bool reader of a collected max-plus tensor (`rdBool`), which BOTH evaluation
+entries refuse with `sortCastUnsupported`, routes WITHOUT complaint (a `contract` step reads the
+collector), and so does the min-plus reader `rdMin`. -/
+
+private def routedOps (p : TLProgram) : Option (List BrOp × List (List Wire)) :=
+  match p.compile.run 0 with
+  | .ok tc _ => some (tc.steps.map (·.op), tc.routing)
+  | .error _ _ => none
+#guard routedOps tmax == some ([.maxreduce, .maxreduce, .maxreduce],
+  [[.external 0], [.external 1], [.internal 0 0, .internal 1 0]])
+#guard routedOps tmin == some ([.minreduce, .minreduce, .minreduce],
+  [[.external 0], [.external 1], [.internal 0 0, .internal 1 0]])
+#guard routedOps rdBool == some ([.maxreduce, .maxreduce, .maxreduce, .contract],
+  [[.external 0], [.external 1], [.internal 0 0, .internal 1 0], [.internal 2 0]])
+#guard routedOps rdMin == some ([.maxreduce, .maxreduce, .maxreduce, .minreduce],
+  [[.external 0], [.external 1], [.internal 0 0, .internal 1 0], [.internal 2 0]])
+
 end LeanNCD.Eval.Plan.CollectPlanTest

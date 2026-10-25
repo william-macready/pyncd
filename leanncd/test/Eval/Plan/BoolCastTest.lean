@@ -574,4 +574,15 @@ run_cmd do
     [("B", [5], [1, 1, 1, 1, 1]), ("Y", [5], rtbReal)] "S"
     [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1]
 
+
+-- j8-j10 (rej F8): a real source `-0.0` is FALSE (IEEE `!=`, never a bit-pattern test) on all three
+-- backends and all three callers, next to `+0.0` (false) and a nonzero (true); a bit-pattern
+-- `isTrue` (`toBits != 0`) would read `-0.0` as TRUE on binary32 only.
+run_cmd do
+  assertAgree "j8 negative zero, top-level" rtbTop [("X", [4], [-0.0, 0.0, 1, -2])] "P" [0, 0, 1, 1]
+  assertAgree "j9 negative zero, scan base" rtbScanBase [("X", [3], [-0.0, 0.0, 1])] "S"
+    [0, 0, 0, 0, 0, 0, 1, 1, 1]
+  assertAgree "j10 negative zero, scan step" rtbScanStep
+    [("B", [3], [1, 1, 1]), ("Y", [3], [-0.0, 0.0, 1])] "S" [1, 0, 0, 1, 0, 0, 1, 1, 1]
+
 end LeanNCD.Eval.Plan.BoolCastTest

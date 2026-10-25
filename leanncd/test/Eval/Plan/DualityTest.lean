@@ -280,4 +280,56 @@ private def allNeutralBits32 (base recur : AggOp) : Option (List Nat × Array UI
 #guard (allNeutralOn refRun .min .max).isNone
 #guard (allNeutralOn planRun .min .max).isNone
 
+
+-- S3b-ii review follow-up (rej F1, D2): an all-neutral tropical scan state whose BASE copies a
+-- PREDICATE `P = [1, 0]`. The state votes max (min), so the base's bool cast is the tropical one:
+-- true -> `0` (= `1_K`), false -> `-inf` (`+inf`), and the recurrence copies it: M = [[0,0],[-inf,-inf]]
+-- (min: `+inf`). Before D2 the state was real and read the predicate as 1/0: [[1,1],[0,0]], which
+-- is what the all-`sum` neighbour still gives. A `sum` base beside a `max` recurrence takes the max
+-- cast too. Reference, checked plan f64 (predicate-aware signature) and checked plan f32 (bits).
+private def allNeutralPredState (base recur : AggOp) : TLProgram :=
+  { allNeutralScanState base recur with
+    decls := [.axis allNeutralJ (some 2), .axis allNeutralL (some 2), .predicate "P" [allNeutralJ]]
+    stmts :=
+      [ .assign "M" [.free allNeutralJ, .iterAt allNeutralL 0]
+          { body := { terms := [{ factors := [.read "P" [.axis allNeutralJ]] }] },
+            nonlin := .identity, agg := base }
+      , .assign "M" [.free allNeutralJ, .iterNext allNeutralL]
+          { body := { terms := [{ factors := [.read "M" [.axis allNeutralJ, .axis allNeutralL]] }] },
+            nonlin := .identity, agg := recur } ] }
+private def allNeutralPredInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "P" ⟨[2], #[1.0, 0.0]⟩
+/-- the checked plan on binary64: a predicate input is typed by its declaration -/
+private def planRunP (p : TLProgram) (env : HashMap String DenseTensor) :
+    Option (HashMap String DenseTensor) :=
+  match p.explicitF64.compileToScheduled.run 0 with
+  | .ok sched _ =>
+      match (InputSignature.ofDenseInputsForDecls sched.decls env).toOption with
+      | some sig =>
+          match (prepareEvalPlan sched sig).toOption with
+          | some prepared => (runPreparedDense prepared env).toOption.map (·.env)
+          | none => none
+      | none => none
+  | .error _ _ => none
+private def predOn (run : TLProgram → HashMap String DenseTensor →
+      Option (HashMap String DenseTensor)) (base recur : AggOp) : Option (List Nat × Array Float) :=
+  ((run (allNeutralPredState base recur) allNeutralPredInputs).bind (fun e => e["M"]?)).map
+    (fun t => (t.shape, t.data))
+private def predBits32 (base recur : AggOp) : Option (List Nat × Array UInt32) :=
+  ((planRun32 (allNeutralPredState base recur) (env32 allNeutralPredInputs)).bind (fun e => e["M"]?)).map
+    (fun t => (t.shape, t.data.map Float32.toBits))
+#guard predOn refRun .max .max == some ([2, 2], #[0.0, 0.0, -pinf, -pinf])
+#guard predOn planRunP .max .max == some ([2, 2], #[0.0, 0.0, -pinf, -pinf])
+#guard predBits32 .max .max == some ([2, 2], #[0, 0, 0xff800000, 0xff800000])
+#guard predOn refRun .min .min == some ([2, 2], #[0.0, 0.0, pinf, pinf])
+#guard predOn planRunP .min .min == some ([2, 2], #[0.0, 0.0, pinf, pinf])
+#guard predBits32 .min .min == some ([2, 2], #[0, 0, 0x7f800000, 0x7f800000])
+#guard predOn refRun .sum .max == some ([2, 2], #[0.0, 0.0, -pinf, -pinf])
+#guard predOn planRunP .sum .max == some ([2, 2], #[0.0, 0.0, -pinf, -pinf])
+#guard predBits32 .sum .max == some ([2, 2], #[0, 0, 0xff800000, 0xff800000])
+-- accept-neighbour: the all-`sum` state stays real (1 / 0)
+#guard predOn refRun .sum .sum == some ([2, 2], #[1.0, 1.0, 0.0, 0.0])
+#guard predOn planRunP .sum .sum == some ([2, 2], #[1.0, 1.0, 0.0, 0.0])
+#guard predBits32 .sum .sum == some ([2, 2], #[0x3f800000, 0x3f800000, 0, 0])
+
 end LeanNCD.Eval.Plan.DualityTest
