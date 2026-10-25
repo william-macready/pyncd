@@ -610,4 +610,280 @@ private def tcopyMinIn32 : NamedDenseEnv32 :=
 #guard bits64 (plan64 tcopyMin tcopyMinIn) "Y" == f64bits #[1.0, 4.0]
 #guard bits32 (plan32 tcopyMin tcopyMinIn32) "Y" == f32bits #[1.0, 4.0]
 
+
+/-! ## S3b-ii T4: the Bellman target programs and their neighbours
+
+Value iteration (max-plus) and shortest paths (min-plus) written as SEPARATE statements of one
+tensor, the form the user wants: a `maxreduce`/`minreduce` writer plus a terminal / source-init writer,
+which is either a `maxreduce` of the terminal vector or a bare sum-annotated COPY of it (the copy
+abstains and collects in the group's sort). Each program is compared on the reference evaluator, the
+checked plan on binary64 and the checked plan on binary32; every expected value was observed from a
+run and equals the hand value of the audit (P1 `[5,3]`, P2 `[22,100]`, P3 `[2,1]`). The one-statement
+forms (P5) give the same values, which pins that the multi-writer and single-statement spellings
+agree. Undeclared tensors are the default `f32` on the binary32 leg; `belP1d` declares them. -/
+
+private def ninf : Float := -(1.0 / 0.0)
+private def ninf32 : Float32 := -(1.0 / 0.0)
+
+private def dat64 (env : Option NamedDenseEnv) (nm : String) : Option (Array Float) :=
+  env.bind fun e => (e[nm]?).map (·.data)
+private def dat32 (env : Option NamedDenseEnv32) (nm : String) : Option (Array Float32) :=
+  env.bind fun e => (e[nm]?).map (·.data)
+
+/-- the three backends' values of `nm` -/
+private def obs (p : TLProgram) (i : NamedDenseEnv) (i32 : NamedDenseEnv32) (nm : String) :
+    Option (Array Float) × Option (Array Float) × Option (Array Float32) :=
+  (dat64 (ref64 p i) nm, dat64 (plan64 p i) nm, dat32 (plan32 p i32) nm)
+
+private def compErr (p : TLProgram) : Option CompileError :=
+  match p.compileToScheduled.run 0 with | .error e _ => some e | .ok _ _ => none
+private def refErr64 (p : TLProgram) (i : NamedDenseEnv) : Option CompileError :=
+  (sched64 p).bind fun s => match evalScheduled s i with
+    | .error f => (match f.error with | .compile c => some c | _ => none) | .ok _ => none
+private def srcErr : Option PlanCompileCause → Option CompileError
+  | some (.sourceInvariant c) => some c | _ => none
+private def planCause64 (p : TLProgram) (i : NamedDenseEnv) : Option PlanCompileCause :=
+  (sched64 p).bind fun s => match prepareEvalPlan s (InputSignature.ofDenseInputs i) with
+    | .error f => some f.cause | .ok _ => none
+private def planCause32 (p : TLProgram) (i : NamedDenseEnv32) : Option PlanCompileCause :=
+  (sched32 p).bind fun s => (InputSignature.ofDenseInputs32ForDecls s.decls i).toOption.bind fun sig =>
+    match prepareEvalPlan s sig with | .error f => some f.cause | .ok _ => none
+
+def belP1 : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  Vn[s] := maxreduce(Q[s, a])
+  Vn[s] := maxreduce(Term[s])
+}
+def belP1c : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  Vn[s] := maxreduce(Q[s, a])
+  Vn[s] := Term[s]
+}
+def belP5 : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  Vn[s] := maxreduce(Q[s, a] + Term[s])
+}
+def belP1d : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  tensor f32 Q(s, a), Term(s), Vn(s)
+  Vn[s] := maxreduce(Q[s, a])
+  Vn[s] := Term[s]
+}
+def belP2 : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  axis t : ℕ = 2
+  Vn[s] := maxreduce(R[s, a] · Tr[s, a, t] · V[t])
+  Vn[s] := maxreduce(Term[s])
+}
+def belP2c : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  axis t : ℕ = 2
+  Vn[s] := maxreduce(R[s, a] · Tr[s, a, t] · V[t])
+  Vn[s] := Term[s]
+}
+def belP3 : TLProgram := tlprog!{
+  axis u : ℕ = 2
+  axis v : ℕ = 2
+  D[v] := minreduce(W[u, v] · D0[u])
+  D[v] := minreduce(S[v])
+}
+def belP3c : TLProgram := tlprog!{
+  axis u : ℕ = 2
+  axis v : ℕ = 2
+  D[v] := minreduce(W[u, v] · D0[u])
+  D[v] := S[v]
+}
+def belP5m : TLProgram := tlprog!{
+  axis u : ℕ = 2
+  axis v : ℕ = 2
+  D[v] := minreduce(W[u, v] · D0[u] + S[v])
+}
+private def belIn : NamedDenseEnv :=
+  mk64 [("Q", [2, 2], #[1.0, 5.0, 2.0, 3.0]), ("Term", [2], #[4.0, 1.0])]
+private def belIn32 : NamedDenseEnv32 :=
+  mk32 [("Q", [2, 2], #[1.0, 5.0, 2.0, 3.0]), ("Term", [2], #[4.0, 1.0])]
+private def bel2In : NamedDenseEnv :=
+  mk64 [("R", [2, 2], #[1.0, 2.0, 0.0, 3.0]), ("V", [2], #[10.0, 20.0]), ("Term", [2], #[5.0, 100.0]),
+        ("Tr", [2, 2, 2], #[0.0, ninf, ninf, 0.0, 0.0, ninf, ninf, 0.0])]
+private def bel2In32 : NamedDenseEnv32 :=
+  mk32 [("R", [2, 2], #[1.0, 2.0, 0.0, 3.0]), ("V", [2], #[10.0, 20.0]), ("Term", [2], #[5.0, 100.0]),
+        ("Tr", [2, 2, 2], #[0.0, ninf32, ninf32, 0.0, 0.0, ninf32, ninf32, 0.0])]
+private def bel3In : NamedDenseEnv :=
+  mk64 [("W", [2, 2], #[0.0, 4.0, 1.0, 0.0]), ("D0", [2], #[3.0, 1.0]), ("S", [2], #[2.0, 9.0])]
+private def bel3In32 : NamedDenseEnv32 :=
+  mk32 [("W", [2, 2], #[0.0, 4.0, 1.0, 0.0]), ("D0", [2], #[3.0, 1.0]), ("S", [2], #[2.0, 9.0])]
+
+
+def nbMM : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := maxreduce(A[i, j])
+  Y[i] := minreduce(B[i, j])
+}
+def nbMMr : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := minreduce(A[i, j])
+  Y[i] := maxreduce(B[i, j])
+}
+def nbSM : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i, j]
+  Y[i] := maxreduce(B[i, j])
+}
+def nbMS : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := maxreduce(B[i, j])
+  Y[i] := A[i, j]
+}
+def nbScat : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  S[2*i] := maxreduce(X[i])
+  S[2*i + 1] := maxreduce(Y[i])
+}
+def nbScan : TLProgram := tlprog!{
+  iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := maxreduce(S[j, l] · A[j, k])
+  S[j, l] := maxreduce(Y[j, l])
+}
+def rdBool : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  predicate B(s)
+  Vn[s] := maxreduce(Q[s, a])
+  Vn[s] := Term[s]
+  B[s] := Vn[s]
+}
+def rdMin : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  Vn[s] := maxreduce(Q[s, a])
+  Vn[s] := Term[s]
+  Z[s] := minreduce(Vn[s])
+}
+def rdMax : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  Vn[s] := maxreduce(Q[s, a])
+  Vn[s] := Term[s]
+  Z[s] := maxreduce(Vn[s])
+}
+def rdReal : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  Vn[s] := maxreduce(Q[s, a])
+  Tot[] := Vn[s]
+  Vn[s] := Term[s]
+}
+private def abIn : NamedDenseEnv :=
+  mk64 [("A", [2, 2], #[1.0, 2.0, 3.0, 4.0]), ("B", [2, 2], #[5.0, 6.0, 7.0, 8.0])]
+private def rdIn : NamedDenseEnv :=
+  mk64 [("Q", [2, 2], #[1.0, 5.0, 2.0, 3.0]), ("Term", [2], #[9.0, 1.0])]
+private def rdIn32 : NamedDenseEnv32 :=
+  mk32 [("Q", [2, 2], #[1.0, 5.0, 2.0, 3.0]), ("Term", [2], #[9.0, 1.0])]
+
+
+/-- All three backends hold exactly `xs` (binary64 expectation) / `xs32` (binary32, observed) in `nm`. -/
+private def agree (p : TLProgram) (i : NamedDenseEnv) (i32 : NamedDenseEnv32) (nm : String)
+    (xs : Array Float) (xs32 : Array Float32) : Bool :=
+  bits64 (ref64 p i) nm == f64bits xs && bits64 (plan64 p i) nm == f64bits xs &&
+    bits32 (plan32 p i32) nm == f32bits xs32
+
+-- P1: continuing value beside a terminal value; Vn = [max(5,4), max(3,1)]. Sum would give [9, 4].
+#guard agree belP1 belIn belIn32 "Vn" #[5.0, 3.0] #[5.0, 3.0]
+-- P1' (the form the user wants): the terminal value is a bare copy. Same values.
+#guard agree belP1c belIn belIn32 "Vn" #[5.0, 3.0] #[5.0, 3.0]
+-- P1' with the tensors DECLARED f32 (binary32 leg only; the binary64 legs refuse mixed storage).
+#guard bits32 (plan32 belP1d belIn32) "Vn" == f32bits #[5.0, 3.0]
+-- P5: the single-statement equivalent agrees with the multi-writer form.
+#guard agree belP5 belIn belIn32 "Vn" #[5.0, 3.0] #[5.0, 3.0]
+-- the private clones stay hidden
+#guard keysOf <$> plan64 belP1c belIn == some ["Q", "Term", "Vn"]
+-- P2: deterministic transition, `-inf` is `0_K` in `Tr`. Vn = [max(1+10, 2+20, 5), max(0+10, 3+20, 100)].
+#guard agree belP2 bel2In bel2In32 "Vn" #[22.0, 100.0] #[22.0, 100.0]
+#guard agree belP2c bel2In bel2In32 "Vn" #[22.0, 100.0] #[22.0, 100.0]
+-- P3: shortest paths with source init. D = [min(0+3, 1+1, 2), min(4+3, 0+1, 9)].
+#guard agree belP3 bel3In bel3In32 "D" #[2.0, 1.0] #[2.0, 1.0]
+#guard agree belP3c bel3In bel3In32 "D" #[2.0, 1.0] #[2.0, 1.0]
+#guard agree belP5m bel3In bel3In32 "D" #[2.0, 1.0] #[2.0, 1.0]
+
+private def scanBase : TLProgram := tlprog!{
+  iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := maxreduce(S[j, l] · A[j, k])
+}
+private def axJ : AxisSpec := { name := "j", uid := 1, kind := .nat }
+private def axL : AxisSpec := { name := "l", uid := 2, kind := .nat }
+private def scanPlusMax : Option ScheduledProgram :=
+  (sched64 scanBase).map fun sp =>
+    { sp with stmts := sp.stmts ++ [.plain (.assign "S" [.free axJ, .free axL]
+      { body := ⟨[⟨[.read "Y" [.axis axJ, .axis axL]]⟩]⟩, nonlin := .identity, agg := .max })] }
+
+def belP1p : TLProgram := tlprog!{
+  axis s : ℕ = 2
+  axis a : ℕ = 2
+  Vn[s] := maxreduce(Q[s, a])
+  Vn[s] := Term[s + 1]
+}
+def belP3p : TLProgram := tlprog!{
+  axis u : ℕ = 2
+  axis v : ℕ = 2
+  D[v] := minreduce(W[u, v] · D0[u])
+  D[v] := S[v + 1]
+}
+private def belPIn : NamedDenseEnv :=
+  mk64 [("Q", [2, 2], #[-5.0, -2.0, -7.0, -4.0]), ("Term", [2], #[-10.0, -20.0])]
+private def belPIn32 : NamedDenseEnv32 :=
+  mk32 [("Q", [2, 2], #[-5.0, -2.0, -7.0, -4.0]), ("Term", [2], #[-10.0, -20.0])]
+
+-- P1'/P3' with a SHIFTED terminal copy: the copy's out-of-range read (`s = 1`) pads the group's
+-- `0_K`, not `0`. Negative values make a `0` pad visible: Vn = [max(-2, Term[1] = -20), max(-4, pad)]
+-- = [-2, -4] (a `0` pad would give [-2, 0]); min twin D = [min(2, S[1] = 9), min(1, pad)] = [2, 1]
+-- (a `0` pad would give [2, 0]).
+#guard agree belP1p belPIn belPIn32 "Vn" #[-2.0, -4.0] #[-2.0, -4.0]
+#guard agree belP3p bel3In bel3In32 "D" #[2.0, 1.0] #[2.0, 1.0]
+
+/-! Refusals that stay, observed on all three backends (the refusal is raised by collection, so the
+schedule itself compiles). -/
+
+private def abIn32 : NamedDenseEnv32 :=
+  mk32 [("A", [2, 2], #[1.0, 2.0, 3.0, 4.0]), ("B", [2, 2], #[5.0, 6.0, 7.0, 8.0])]
+private def refusedBy (p : TLProgram) (i : NamedDenseEnv) (i32 : NamedDenseEnv32) (c : CompileError) :
+    Bool :=
+  refErr64 p i == some c && srcErr (planCause64 p i) == some c && srcErr (planCause32 p i32) == some c
+
+-- max + min (non-neutral writers), both orders
+#guard refusedBy nbMM abIn abIn32 (.multiWriterAlgebra "Y")
+#guard refusedBy nbMMr abIn abIn32 (.multiWriterAlgebra "Y")
+-- sum + max with a NON-neutral sum writer (it contracts `j`), both orders
+#guard refusedBy nbSM abIn abIn32 (.multiWriterAlgebra "Y")
+#guard refusedBy nbMS abIn abIn32 (.multiWriterAlgebra "Y")
+-- two affine scatter writers, even max-annotated
+#guard refusedBy nbScat abIn abIn32 (.multiWriterScatter "S")
+-- a scan node of `S` plus a max-annotated plain writer of `S` (hand-built: the surface cannot
+-- spell it, `nbScan` fails earlier with `scanProjectionUnsupported`)
+#guard (scanPlusMax.bind fun sp => match evalScheduled sp {} with
+    | .error f => (match f.error with | .compile c => some c | _ => none) | .ok _ => none) ==
+  some (.multiWriterScan "S")
+#guard (scanPlusMax.bind fun sp =>
+    srcErr (match prepareEvalPlan sp (InputSignature.ofDenseInputs {}) with
+      | .error f => some f.cause | .ok _ => none)) == some (.multiWriterScan "S")
+#guard (compErr nbScan) == some (.scanProjectionUnsupported "S")
+
+/-! Readers of a collected max-plus `Vn`: a bool reader and a min-plus reader are refused with
+`sortCastUnsupported` (the agreed sort is the tensor's sort), a max-plus reader and a real reader
+are accepted. The real reader sits BETWEEN the two writers in source, so it sees the collected
+`Vn = [max(5,9), max(3,1)] = [9, 3]` (writer 1 alone would give `[5, 3]`, a sum 8), `Tot = 12`. -/
+
+#guard refusedBy rdBool rdIn rdIn32 (.sortCastUnsupported "B" "Vn")
+#guard refusedBy rdMin rdIn rdIn32 (.sortCastUnsupported "Z" "Vn")
+#guard agree rdMax rdIn rdIn32 "Z" #[9.0, 3.0] #[9.0, 3.0]
+#guard agree rdReal rdIn rdIn32 "Tot" #[12.0] #[12.0]
+#guard agree rdReal rdIn rdIn32 "Vn" #[9.0, 3.0] #[9.0, 3.0]
+
 end LeanNCD.Eval.Plan.CollectPlanTest
