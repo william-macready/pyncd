@@ -30,8 +30,10 @@ structure AffineMap where
 
 /-- One factor: a gather from `sourceSlot` through `map`, against a shape the checker has already
     verified equals that slot's signature. `unary`, when present, is a transcendental function
-    (`log`/`exp`/…) applied to the gathered value AFTER the out-of-bounds zero-pad — so an
-    out-of-bounds read contributes `f(0)`, matching the reference `gather` exactly.
+    (`log`/`exp`/…) applied to the gathered value. In a real or Boolean statement it is applied AFTER the
+    out-of-bounds zero-pad, so an out-of-bounds read contributes `f(0)`; in a tropical (max-plus /
+    min-plus) statement an out-of-bounds unary read is the algebra's 0_K, unapplied. Both match the
+    reference `gather`.
     `boolToTropical` is the bool -> tropical READ CAST (S3b design §3): when set, an IN-BOUNDS
     gathered value that is stored true reads as the statement algebra's `factorId` (1_K) and one
     stored false as its `reduceId` (0_K). The checker admits it only on a bare read of a `.bool`

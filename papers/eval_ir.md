@@ -648,8 +648,9 @@ classify their iteration coordinates as context, output, or reduction positions.
 `ReadPlan`, which names a positional `sourceSlot` and records how those iteration coordinates select
 a coordinate from that source tensor. A `ReadPlan` may also carry a `unary : Option UnaryOp` — an
 inline transcendental function (`log`/`exp`/`sin`/`cos`/`sqrt`/`recip`) that Dense's `gatherFactorWith`
-applies to the gathered value *after* the out-of-bounds zero-pad, so an out-of-bounds read contributes
-`f(0)`. The math and its domain partiality live once in `UnaryOp.applyChecked` (shared with the
+applies to the gathered value *after* the out-of-bounds zero-pad in a real or Boolean statement, so an
+out-of-bounds read contributes `f(0)`; in a tropical (max-plus / min-plus) statement an out-of-bounds
+unary read is the algebra's `0_K` and `f` is not applied (c0867dd9). The math and its domain partiality live once in `UnaryOp.applyChecked` (shared with the
 reference `applyUnaryFn`); `log`/`sqrt`/`recip` fail loud on a domain violation as
 `PositionalInputError.unaryDomain`.
 

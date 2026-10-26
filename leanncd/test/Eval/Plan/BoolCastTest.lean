@@ -664,4 +664,53 @@ run_cmd do
   assertNear "k9 scatter unary oob" unScatter [("X", [2], [-1, -3])] "Out"
     [0.049787068367863944, negInf, negInf, negInf]
 
+-- k10-k13: an out-of-range `log` / `recip` (friendly `/`) under max/min used to be a domain error
+-- (the pad `0.0` was fed to `f`); it is now `0_K` and no error. OBSERVED three-way. k14/k15: the real
+-- contrast, unchanged: the same read in a REAL statement still fails loud (`log(0)`, `1/0`).
+def lgMax : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := maxreduce(log(X[i + 1])) }
+def lgMin : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := minreduce(log(X[i + 1])) }
+def rcMax : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := maxreduce(W[i] / X[i + 1]) }
+def rcMin : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := minreduce(W[i] / X[i + 1]) }
+def lgReal : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := log(X[i + 1]) }
+def rcReal : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := W[i] / X[i + 1] }
+
+/-- All three backends fail on the program, each with its own domain error (reference `EvalError.unaryDomain`
+    text, plan f64 `unaryDomain`, plan f32 `unaryDomain32`). -/
+def assertDomainError (label : String) (p : TLProgram) (xs : Ins) (op : String) :
+    Lean.Elab.Command.CommandElabM Unit := do
+  let has (needle : String) (r : Except String (List Float)) : Bool :=
+    match r with
+    | .error e => (e.splitOn needle).length > 1
+    | .ok _ => false
+  unless has "domain error" (refOut p xs "H") do throwError s!"{label}: reference did not fail with a domain error"
+  unless has s!"unaryDomain (LeanNCD.Eval.UnaryDomainOp.{op})" (planOut64 p xs "H") do
+    throwError s!"{label}: plan f64 did not fail with unaryDomain {op}"
+  unless has s!"unaryDomain32 (LeanNCD.Eval.UnaryDomainOp.{op})" (planOut32 p xs "H") do
+    throwError s!"{label}: plan f32 did not fail with unaryDomain32 {op}"
+
+run_cmd do
+  assertNear "k10 oob log max is absent, no domain error" lgMax [("X", [3], [1, 2, 3])] "H"
+    [0.6931471805599453, 1.0986122886681098, negInf]
+  assertNear "k11 oob log min is absent, no domain error" lgMin [("X", [3], [1, 2, 3])] "H"
+    [0.6931471805599453, 1.0986122886681098, posInf]
+  assertNear "k12 oob recip max is absent, no domain error" rcMax
+    [("X", [3], [1, 2, 4]), ("W", [3], [0, 0, 0])] "H" [0.5, 0.25, negInf]
+  assertNear "k13 oob recip min is absent, no domain error" rcMin
+    [("X", [3], [1, 2, 4]), ("W", [3], [0, 0, 0])] "H" [0.5, 0.25, posInf]
+  assertDomainError "k14 real oob log still fails loud" lgReal [("X", [3], [1, 2, 3])] "log"
+  assertDomainError "k15 real oob recip still fails loud" rcReal
+    [("X", [3], [1, 2, 4]), ("W", [3], [0, 0, 0])] "recip"
+
 end LeanNCD.Eval.Plan.BoolCastTest
