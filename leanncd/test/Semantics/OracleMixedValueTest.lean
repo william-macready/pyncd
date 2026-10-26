@@ -210,4 +210,223 @@ private def maxReadsMax := unwritten .max .max [rd "M" [axK]]
 #guard classOf maxReadsMax == three
 #guard legsAgree maxReadsMax
 
+/-! ### Existing programs re-expressed (T4 dispatch 2)
+
+Each program below exists elsewhere in the test tree as a typed-path row (`SourceSortedDifferentialTest`)
+or a TL/plan fixture (`CollectEvalTest`, `CollectPlanTest`). Here it runs through `compareMixedSource`
+on the shared fixture inputs, in the Source sublanguage: f64 tensors, bare-index monomials. Extents are
+the fixture's (`a` 4, `b` 3, `k` 8), so the inputs differ from the donors and every expected value is
+derived from `X=[20,2,3,40]`, `Z`, `Q`, `W=[1,10,100]` by hand. Each row asserts the classification
+(`threeLegParity`), both legs, the oracle's cells and the sorts the statements ran in; a program that
+ran in the wrong sort would flip the cells. -/
+
+/-- As `parity`, for cells that may be `-inf`/`+inf`. -/
+private def parityExt (f : Fx) (n : String) (vs : List ExtVal) : Bool :=
+  classOf f == three && legsAgree f && cellsOf f n == some vs
+
+private def tWb : T := ⟨"W", [axB], .input, [1, 10, 100]⟩
+private def tXneg : T := ⟨"X", [axA], .input, [-1, -2, -3, -4]⟩
+private def tS : T := ⟨"S", [axB], .input, [2, 9, 5]⟩
+private def tA (vals : List ℚ) : T := ⟨"A", [axA], .input, vals⟩
+/-- `Tr[a,b,k]` is `0` where `k = a + b` and `-100` elsewhere (finite: inputs are rationals, so the
+donors' `-inf` entries are not expressible). -/
+private def tTr : T :=
+  ⟨"Tr", [axA, axB, axK], .input,
+    (List.range 96).map fun i => if i % 8 = i / 24 + (i / 8) % 3 then (0 : ℚ) else -100⟩
+
+private def contract (agg : AggOp) : Fx :=
+  fx [tZ, tWb, tOut "Y"] [zR "Y" free1 agg [rd "Z" [axA, axB], rd "W" [axB]]]
+private def productX (agg : AggOp) (x : T := tX) : Fx :=
+  fx [x, tWb, tOut "Y"] [zR "Y" free1 agg [rd "X" [axA], rd "W" [axB]]]
+private def strided (agg : AggOp) : Fx :=
+  fx [tX, tOut "Y" [axK]] [zR "Y" [.affine (.scale 2 axA)] agg [rd "X" [axA]]]
+private def collide (agg : AggOp) : Fx :=
+  fx [tZ, tOut "Y" [axK]] [.scatter "Y" [.affine (.scale 2 axA)] (rhs agg [[rd "Z" [axA, axB]]])]
+private def zeroY (agg : AggOp) : Fx := fx [tOut "Y"] [.assign "Y" free1 (rhs agg [[]])]
+
+-- product (`SourceSortedDifferentialTest`): `Y[a] = (+)_b X[a] (x) W[b]`; max-plus `X[a] + 100`
+#guard parity (productX .max) "Y" [120, 102, 103, 140]
+#guard ranIn (productX .max) == some [.maxPlus]
+-- min-plus `X[a] + 1`
+#guard parity (productX .min) "Y" [21, 3, 4, 41]
+#guard ranIn (productX .min) == some [.minPlus]
+-- negative inputs, where max-times and max-plus disagree (max-times would give `-1,-2,-3,-4`)
+#guard parity (productX .max tXneg) "Y" [99, 98, 97, 96]
+#guard parity (productX .min tXneg) "Y" [0, -1, -2, -3]
+-- the real sort multiplies: `X[a] * 111`
+#guard parity (productX .sum) "Y" [2220, 222, 333, 4440]
+#guard ranIn (productX .sum) == some [.real]
+
+-- contract: `Y[a] = (+)_b Z[a,b] (x) W[b]`; max-plus `Z[a,2] + 100`, min-plus `Z[a,0] + 1`
+#guard parity (contract .max) "Y" [97, 107, 117, 127]
+#guard parity (contract .min) "Y" [-4, 6, 16, 26]
+#guard ranIn (contract .max) == some [.maxPlus]
+#guard ranIn (contract .min) == some [.minPlus]
+
+-- strided (`Y[2*a] := agg X[a]`): odd cells are never written and hold the sort's zero
+#guard parityExt (strided .max) "Y"
+  [.fin 20, .negInf, .fin 2, .negInf, .fin 3, .negInf, .fin 40, .negInf]
+#guard parityExt (strided .min) "Y"
+  [.fin 20, .posInf, .fin 2, .posInf, .fin 3, .posInf, .fin 40, .posInf]
+
+-- collide (`.scatter`, `Y[2*a] := agg_b Z[a,b]`): the three `b` writes of each `a` meet in cell `2a`
+#guard parityExt (collide .max) "Y"
+  [.fin (-3), .negInf, .fin 7, .negInf, .fin 17, .negInf, .fin 27, .negInf]
+#guard parityExt (collide .min) "Y"
+  [.fin (-5), .posInf, .fin 5, .posInf, .fin 15, .posInf, .fin 25, .posInf]
+
+-- zeroY: the empty product is the sort's one (`0` for both tropical sorts, `1` for the real sort)
+#guard parity (zeroY .max) "Y" [0, 0, 0, 0]
+#guard parity (zeroY .min) "Y" [0, 0, 0, 0]
+#guard parity (zeroY .sum) "Y" [1, 1, 1, 1]
+
+-- bellman, min twin of the homogeneous control: `[min(-5,20), min(5,2), min(15,3), min(25,40)]`
+#guard parity (bellman .min .min) "Y" [-5, 2, 3, 25]
+#guard ranIn (bellman .min .min) == some [.minPlus, .minPlus]
+
+-- J4 / j4m (`CollectEvalTest`): two same-sort contraction writers collected with that sort
+private def j4 (agg : AggOp) : Fx :=
+  fx [tZ, tQ, tOut "Y"] [st "Y" agg (rd "Z" [axA, axB]), st "Y" agg (rd "Q" [axA, axB])]
+-- max: `max([-3,7,17,27], [9,8,7,11])`; the sum collector would give `[6,15,24,38]`
+#guard parity (j4 .max) "Y" [9, 8, 17, 27]
+#guard ranIn (j4 .max) == some [.maxPlus, .maxPlus]
+-- min: `min([-5,5,15,25], [1,3,5,0])`
+#guard parity (j4 .min) "Y" [-5, 3, 5, 0]
+#guard ranIn (j4 .min) == some [.minPlus, .minPlus]
+
+-- tcopyMax / tcopyMin (`CollectPlanTest`): a sum-annotated neutral copy beside a max (min) writer
+private def tcopy (agg : AggOp) (vals : List ℚ) : Fx :=
+  fx [tZ, tA vals, tOut "Y"] [st "Y" agg (rd "Z" [axA, axB]), st "Y" .sum (rd "A" [axA])]
+-- `max([-3,7,17,27], [-1,-9,20,0])`; the sum would give `[-4,-2,37,27]`
+#guard parity (tcopy .max [-1, -9, 20, 0]) "Y" [-1, 7, 20, 27]
+#guard ranIn (tcopy .max [-1, -9, 20, 0]) == some [.maxPlus, .maxPlus]
+-- `min([-5,5,15,25], [1,9,20,0])`; the sum would give `[-4,14,35,25]`
+#guard parity (tcopy .min [1, 9, 20, 0]) "Y" [-5, 5, 15, 0]
+#guard ranIn (tcopy .min [1, 9, 20, 0]) == some [.minPlus, .minPlus]
+
+-- Bellman P1 / P1c / P5 (`CollectPlanTest`): `Q` row maxima `[9,8,7,11]` against the terminal `X`
+private def p1 : Fx := fx [tQ, tX, tOut "Y"] [st "Y" .max (rd "Q" [axA, axB]), st "Y" .max (rd "X" [axA])]
+private def p1c : Fx := fx [tQ, tX, tOut "Y"] [st "Y" .max (rd "Q" [axA, axB]), st "Y" .sum (rd "X" [axA])]
+private def p5 : Fx :=
+  fx [tQ, tX, tOut "Y"] [.assign "Y" free1 (rhs .max [[rd "Q" [axA, axB]], [rd "X" [axA]]])]
+#guard parity p1 "Y" [20, 8, 7, 40]
+#guard parity p1c "Y" [20, 8, 7, 40]
+#guard parity p5 "Y" [20, 8, 7, 40]
+#guard ranIn p1 == some [.maxPlus, .maxPlus]
+#guard ranIn p1c == some [.maxPlus, .maxPlus]
+#guard ranIn p5 == some [.maxPlus]
+
+-- Bellman P2 / P2c: `Y[a] = max_{b,k} Q[a,b] + Tr[a,b,k] + W8[k]` against the terminal `X`.
+-- `Tr` is `0` only at `k = a + b`, so the contraction is `max_b Q[a,b] + W8[a+b]` = `[9,10,10,16]`
+-- (a=3: `10 + W8[4] = 14`, `11 + W8[5] = 16`).
+private def p2 (copy : AggOp) : Fx :=
+  fx [tQ, tTr, tW8, tX, tOut "Y"]
+    [zR "Y" free1 .max [rd "Q" [axA, axB], rd "Tr" [axA, axB, axK], rd "W8" [axK]],
+     st "Y" copy (rd "X" [axA])]
+#guard parity (p2 .max) "Y" [20, 10, 10, 40]
+#guard parity (p2 .sum) "Y" [20, 10, 10, 40]
+#guard ranIn (p2 .sum) == some [.maxPlus, .maxPlus]
+
+-- Bellman P3 / P3c / P5m: shortest paths `D[b] = min_a Q[a,b] + X[a]` = `[5,8,6]`, source init `S=[2,9,5]`
+private def p3 : Fx :=
+  fx [tQ, tX, tS, tOut "D" [axB]]
+    [zR "D" [.free axB] .min [rd "Q" [axA, axB], rd "X" [axA]], zR "D" [.free axB] .min [rd "S" [axB]]]
+private def p3c : Fx :=
+  fx [tQ, tX, tS, tOut "D" [axB]]
+    [zR "D" [.free axB] .min [rd "Q" [axA, axB], rd "X" [axA]], zR "D" [.free axB] .sum [rd "S" [axB]]]
+private def p5m : Fx :=
+  fx [tQ, tX, tS, tOut "D" [axB]]
+    [.assign "D" [.free axB] (rhs .min [[rd "Q" [axA, axB], rd "X" [axA]], [rd "S" [axB]]])]
+#guard parity p3 "D" [2, 8, 5]
+#guard parity p3c "D" [2, 8, 5]
+#guard parity p5m "D" [2, 8, 5]
+#guard ranIn p3c == some [.minPlus, .minPlus]
+
+-- vrSumMax / vrSumMaxR / vrSumMin / vrSumOnly (`CollectPlanTest`), bare-index form (the donors' `B[i+1]`
+-- pads out of range, which is an affine read): a non-neutral SUM contraction beside a neutral max/min
+-- copy. The copy abstains and runs as sum: `Q` row sums `[12,15,18,21]` plus `X`; a max collector would
+-- give `[20,15,18,40]`.
+private def vr (first : Bool) (copy : AggOp) : Fx :=
+  let c := st "Y" .sum (rd "Q" [axA, axB])
+  let t := st "Y" copy (rd "X" [axA])
+  fx [tQ, tX, tOut "Y"] (if first then [c, t] else [t, c])
+#guard parity (vr true .max) "Y" [32, 17, 21, 61]
+#guard parity (vr false .max) "Y" [32, 17, 21, 61]
+#guard parity (vr true .min) "Y" [32, 17, 21, 61]
+#guard parity (vr true .sum) "Y" [32, 17, 21, 61]
+#guard ranIn (vr true .max) == some [.real, .real]
+#guard ranIn (vr false .max) == some [.real, .real]
+#guard ranIn (vr true .min) == some [.real, .real]
+
+/-! ### Existing refusal and reader programs (`CollectPlanTest`: `nbMM`, `nbMMr`, `nbSM`, `nbMS`,
+`rdMin`, `rdMax`, `rdReal`)
+
+Two NON-neutral writers of different sorts vote against each other, in both orders; a min reader of a
+max group is a cast the rules refuse; a max reader and a real (sum) reader of it are accepted. -/
+
+private def nb (a1 a2 : AggOp) : Fx :=
+  fx [tZ, tQ, tOut "Y"] [st "Y" a1 (rd "Z" [axA, axB]), st "Y" a2 (rd "Q" [axA, axB])]
+private def rdGroup (reader : Stmt) (out : T) : Fx :=
+  fx [tQ, tX, tDef "Vn", out]
+    [st "Vn" .max (rd "Q" [axA, axB]), reader, st "Vn" .sum (rd "X" [axA])]
+
+#guard classOf (nb .max .min) == "OracleMixed.MixedClassification.refusalParity \"multiWriterAlgebra\""
+#guard classOf (nb .min .max) == "OracleMixed.MixedClassification.refusalParity \"multiWriterAlgebra\""
+#guard classOf (nb .sum .max) == "OracleMixed.MixedClassification.refusalParity \"multiWriterAlgebra\""
+#guard classOf (nb .max .sum) == "OracleMixed.MixedClassification.refusalParity \"multiWriterAlgebra\""
+-- rdMin: a min statement reading the max group
+#guard classOf (rdGroup (st "Z" .min (rd "Vn" [axA])) (tOut "Z")) ==
+  "OracleMixed.MixedClassification.refusalParity \"sortCastUnsupported\""
+-- rdMax: `Vn = max([9,8,7,11], X)`, read by a max statement
+#guard parity (rdGroup (st "Z" .max (rd "Vn" [axA])) (tOut "Z")) "Z" [20, 8, 7, 40]
+-- rdReal: a real statement sums the group's cells: `20 + 8 + 7 + 40`
+#guard parity (rdGroup (zR "Tot" [] .sum [rd "Vn" [axA]]) (tOut "Tot" [])) "Tot" [75]
+
+/-! ### Negative control: a doctored prediction is caught, never agreed with
+
+`compareMixedSource` takes the rule predictor's verdict through `doctor`. Rewriting `stmtSorts` so a max
+(min) group runs as sum makes the oracle evaluate a different program than the native legs ran, so
+the classification must be `nativeDiscrepancy`; it may never be a parity. The undoctored rows
+are the same programs, accepted as `threeLegParity` above. -/
+
+private def allReal (p : Prediction) : Prediction := { p with stmtSorts := p.stmtSorts.map fun _ => .real }
+
+private def runDoctored (f : Fx) : Except String MixedRun :=
+  (compareMixedSource f.snap (some f.order) allReal).mapError (fun d => s!"refused {repr d.cause}")
+
+private def isDiscrepancy (f : Fx) : Bool :=
+  match runDoctored f with
+  | .ok r => match r.classification with
+    | .nativeDiscrepancy _ _ => true
+    | _ => false
+  | .error _ => false
+
+private def isParity (f : Fx) : Bool :=
+  match runDoctored f with
+  | .ok r => match r.classification with
+    | .threeLegParity _ | .fourLegParity => true
+    | _ => false
+  | .error _ => false
+
+-- the doctored run really ran as sum: the oracle's cells are the real-sum values, not the max ones
+private def doctoredCells (f : Fx) (n : String) : Option (List ExtVal) :=
+  match runDoctored f with
+  | .ok r => match r.oracle with
+    | .ok ts => (ts.find? (·.name == some n)).map (fun t => t.values.filterMap id)
+    | .error _ => none
+  | .error _ => none
+
+-- the control programs themselves are parity rows when undoctored
+#guard parity (bellman .max .max) "Y" [20, 7, 17, 40]
+#guard parity (bellman .min .min) "Y" [-5, 2, 3, 25]
+#guard parity (j4 .max) "Y" [9, 8, 17, 27]
+-- doctored: `[max(-3,20), ..]` run as sum is `[-12 + 20, 18 + 2, 48 + 3, 78 + 40]`
+#guard isDiscrepancy (bellman .max .max)
+#guard !isParity (bellman .max .max)
+#guard doctoredCells (bellman .max .max) "Y" == some (fins [8, 20, 51, 118])
+#guard isDiscrepancy (bellman .min .min)
+#guard isDiscrepancy (j4 .max)
+#guard isDiscrepancy (contract .max)
+#guard isDiscrepancy (tcopy .max [-1, -9, 20, 0])
+
 end OracleMixedValueTest

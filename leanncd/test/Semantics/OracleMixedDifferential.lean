@@ -185,11 +185,14 @@ consulted first only for a native leg that refuses or is unavailable (`refusalMi
 `nativeUnavailable`); its sentinel for "both legs accepted" is never a verdict, it means "now compare
 values": `runMixed`, the mixed profile and both legs' bits. Both legs agreeing with the oracle is
 `threeLegParity` (the Core leg is not run for mixed programs here). `order` names the declaration
-ordinals of the non-input tensors in dependency order. -/
-def compareMixedSource (snapshot : SourceSnapshot) (order : Option (List Nat)) :
+ordinals of the non-input tensors in dependency order. `doctor` rewrites the rule predictor's verdict
+before it is used (identity by default); it exists only for negative controls, to show that a wrong
+prediction is caught rather than agreed with. -/
+def compareMixedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
+    (doctor : Prediction → Prediction := id) :
     Except SourceDiagnostic MixedRun := do
   let admitted ← admitSourceAffine snapshot true
-  let p := predict snapshot.resolved.decls snapshot.resolved.stmts
+  let p := doctor (predict snapshot.resolved.decls snapshot.resolved.stmts)
   let n ← runNative snapshot (sorted := true)
   let refusal := classifyRefusal p n
   if !p.refusals.isEmpty then
