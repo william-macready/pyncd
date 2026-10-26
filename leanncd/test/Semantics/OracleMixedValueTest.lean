@@ -4,15 +4,17 @@ import Semantics.OracleMixedDifferential
 program is accepted, production accepts it, both native legs run), the mixed numerical profile, and
 the non-finite class.
 
-Every accepted row asserts three things, so none is vacuous: the classification is `threeLegParity`
-(oracle, legacy and checked bits agree; the Core leg is not run for mixed programs, T5 upgrades finite
-rows to `fourLegParity`), the oracle's own cells equal hand-derived values, and the sort each
-statement RAN in (the predictor's `stmtSorts`). Values are derived from the inputs of
+Every accepted row asserts three things, so none is vacuous: the classification is `fourLegParity`
+(oracle, Core, legacy and checked agree; Core runs per target, stratified), the oracle's own and the
+Core leg's own cells equal hand-derived values, and the sort each statement RAN in (the predictor's
+`stmtSorts`). The only rows that stay `threeLegParity "core not run: non-finite intermediate"` are
+those where a later statement reads an earlier tropical cell that was never written (`-inf`/`+inf`):
+Core inputs are rationals, so the Core leg is not run, and `MixedRun.core` is `none`. Values are derived from the inputs of
 `Semantics.OracleMixedFixtures` (`X=[20,2,3,40]`, `Z` rows `[-5,-4,-3] [5,6,7] [15,16,17] [25,26,27]`,
 `B=Q` rows `[1,9,2] [3,8,4] [7,5,6] [0,10,11]`), not copied from production. -/
 
 open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
-open Oracle NativeLegs SortedDifferential LeanNCD.OracleSorts OracleMixed
+open Debug Oracle NativeLegs SortedDifferential LeanNCD.OracleSorts OracleMixed
 
 namespace OracleMixedValueTest
 
@@ -31,18 +33,58 @@ private def classOf (f : Fx) : String :=
   | .ok r => toString (repr r.classification)
   | .error e => e
 
-private def three : String := "OracleMixed.MixedClassification.threeLegParity \"core leg not run\""
+private def four : String := "OracleMixed.MixedClassification.fourLegParity"
+
+/-- The classification of a row whose Core leg was not run: an earlier cell it needs is non-finite, and
+Core inputs are rationals. -/
+private def threeNotRun : String :=
+  "OracleMixed.MixedClassification.threeLegParity \"core not run: non-finite intermediate\""
+
+/-- Is the classification any parity (three- or four-leg)? -/
+private def isParityClass (f : Fx) : Bool :=
+  match run f with
+  | .ok r => match r.classification with
+    | .threeLegParity _ | .fourLegParity => true
+    | _ => false
+  | .error _ => false
+
+/-- The cells of the tensor named `n` in a list of observations. -/
+private def cellsIn (ts : List (TensorObservation ExtVal)) (n : String) : Option (List ExtVal) :=
+  (ts.find? (·.name == some n)).map (fun t => t.values.filterMap id)
 
 /-- The oracle's cells of the tensor named `n`. -/
 private def cellsOf (f : Fx) (n : String) : Option (List ExtVal) :=
   match run f with
   | .ok r =>
     match r.oracle with
-    | .ok ts => (ts.find? (·.name == some n)).map (fun t => t.values.filterMap id)
+    | .ok ts => cellsIn ts n
     | .error _ => none
   | .error _ => none
 
+/-- The Core leg's cells of the tensor named `n` (`none` when the Core leg was not run or failed). -/
+private def coreCellsOf (f : Fx) (n : String) : Option (List ExtVal) :=
+  match run f with
+  | .ok r =>
+    match r.core with
+    | some (.ok ts) => cellsIn ts n
+    | _ => none
+  | .error _ => none
+
+/-- Was the Core leg not run (as opposed to run and failed)? -/
+private def coreNotRun (f : Fx) : Bool :=
+  match run f with
+  | .ok r => r.core.isNone
+  | .error _ => false
+
 private def fins (qs : List ℚ) : List ExtVal := qs.map .fin
+
+/-- Both legs are `.unavailable` (the profile errored, so no bits were compared). -/
+private def legsUnavailable (f : Fx) : Bool :=
+  match run f with
+  | .ok r => match r.legacy, r.checked with
+    | .unavailable, .unavailable => true
+    | _, _ => false
+  | .error _ => false
 
 /-- Both legs agree with the oracle bit for bit (a real comparison, not an absent one). -/
 private def legsAgree (f : Fx) : Bool :=
@@ -52,9 +94,10 @@ private def legsAgree (f : Fx) : Bool :=
     | _, _ => false
   | .error _ => false
 
-/-- An accepted row: `threeLegParity`, legs agreeing, and the oracle's cells of `n` equal `qs`. -/
+/-- An accepted row: `fourLegParity`, legs agreeing, and both the oracle's and the Core leg's own cells
+of `n` equal `qs` (so the Core leg really ran and produced them). -/
 private def parity (f : Fx) (n : String) (qs : List ℚ) : Bool :=
-  classOf f == three && legsAgree f && cellsOf f n == some (fins qs)
+  classOf f == four && legsAgree f && cellsOf f n == some (fins qs) && coreCellsOf f n == some (fins qs)
 
 /-- The sorts the statements RAN in (the predictor's, aligned with the statement list). -/
 private def ranIn (f : Fx) : Option (List MSort) :=
@@ -202,13 +245,27 @@ private def maxReadsMax := unwritten .max .max [rd "M" [axK]]
 #guard nonFiniteAt copyMax 5 [1]
 #guard nonFiniteAt productMax 5 [1]
 #guard nonFiniteAt copyMin 5 [1]
-#guard !(classOf copyMax == three)
-#guard !(classOf productMax == three)
-#guard !(classOf copyMin == three)
+#guard !isParityClass copyMax
+#guard !isParityClass productMax
+#guard !isParityClass copyMin
+-- the legs are `.unavailable` on these rows because the profile errored (as in the typed path's
+-- `legOf`): the native bits are deliberately not compared (D5), and the Core leg is not run
+#guard legsUnavailable copyMax
+#guard legsUnavailable productMax
+#guard legsUnavailable copyMin
 #guard cellsOf maxReadsMax "R" ==
   some [.fin 20, .negInf, .fin 2, .negInf, .fin 3, .negInf, .fin 40, .negInf]
-#guard classOf maxReadsMax == three
+-- the Core leg is NOT run here: `R` reads `M`'s `-inf` cells and Core inputs are rationals. The row
+-- stays `threeLegParity` with its note, never a silent four-leg claim (Review Focus 5)
+#guard classOf maxReadsMax == threeNotRun
+#guard coreNotRun maxReadsMax
 #guard legsAgree maxReadsMax
+private def minReadsMin := unwritten .min .min [rd "M" [axK]]
+#guard cellsOf minReadsMin "R" ==
+  some [.fin 20, .posInf, .fin 2, .posInf, .fin 3, .posInf, .fin 40, .posInf]
+#guard classOf minReadsMin == threeNotRun
+#guard coreNotRun minReadsMin
+#guard legsAgree minReadsMin
 
 /-! ### Existing programs re-expressed (T4 dispatch 2)
 
@@ -217,12 +274,12 @@ or a TL/plan fixture (`CollectEvalTest`, `CollectPlanTest`). Here it runs throug
 on the shared fixture inputs, in the Source sublanguage: f64 tensors, bare-index monomials. Extents are
 the fixture's (`a` 4, `b` 3, `k` 8), so the inputs differ from the donors and every expected value is
 derived from `X=[20,2,3,40]`, `Z`, `Q`, `W=[1,10,100]` by hand. Each row asserts the classification
-(`threeLegParity`), both legs, the oracle's cells and the sorts the statements ran in; a program that
+(`fourLegParity`), both legs, the oracle's and Core's cells and the sorts the statements ran in; a program that
 ran in the wrong sort would flip the cells. -/
 
 /-- As `parity`, for cells that may be `-inf`/`+inf`. -/
 private def parityExt (f : Fx) (n : String) (vs : List ExtVal) : Bool :=
-  classOf f == three && legsAgree f && cellsOf f n == some vs
+  classOf f == four && legsAgree f && cellsOf f n == some vs && coreCellsOf f n == some vs
 
 private def tWb : T := ⟨"W", [axB], .input, [1, 10, 100]⟩
 private def tXneg : T := ⟨"X", [axA], .input, [-1, -2, -3, -4]⟩
@@ -386,8 +443,9 @@ private def rdGroup (reader : Stmt) (out : T) : Fx :=
 
 `compareMixedSource` takes the rule predictor's verdict through `doctor`. Rewriting `stmtSorts` so a max
 (min) group runs as sum makes the oracle evaluate a different program than the native legs ran, so
-the classification must be `nativeDiscrepancy`; it may never be a parity. The undoctored rows
-are the same programs, accepted as `threeLegParity` above. -/
+the classification must be `nativeDiscrepancy`; it may never be a parity. (The Core leg takes the same
+doctored sorts, so it agrees with the doctored oracle: only the native legs expose the lie.) The
+undoctored rows are the same programs, accepted as `fourLegParity` above. -/
 
 private def allReal (p : Prediction) : Prediction := { p with stmtSorts := p.stmtSorts.map fun _ => .real }
 
@@ -428,5 +486,82 @@ private def doctoredCells (f : Fx) (n : String) : Option (List ExtVal) :=
 #guard isDiscrepancy (j4 .max)
 #guard isDiscrepancy (contract .max)
 #guard isDiscrepancy (tcopy .max [-1, -9, 20, 0])
+
+/-! ### Stratified chains (T5): three or more targets, each group run in its own sort
+
+The Core leg runs one single-sort group at a time: each target's statements (with `agg` set to the
+group's sort) over the inputs and the Core leg's OWN earlier outputs. -/
+
+/-- Three targets: max-plus row maxima, a real product reading them, a min-plus copy of that.
+`T1 = max_b Z[a,b] = [-3,7,17,27]`; `T2 = T1 * X = [-60,14,51,1080]`; `O = T2`. -/
+private def chain3 : Fx :=
+  fx [tX, tZ, tDef "T1", tDef "T2", tOut "O"]
+    [st "T1" .max (rd "Z" [axA, axB]), zR "T2" free1 .sum [rd "T1" [axA], rd "X" [axA]],
+     st "O" .min (rd "T2" [axA])]
+
+/-- Four targets crossing every sort: min-plus row minima `U = [1,3,5,0]`; a real group `V` (a
+non-neutral sum product beside a neutral max copy that abstains and runs as sum)
+`V = U * X + X = [40,8,18,40]`; a max-plus group `W = max(V, max_b Z) = [40,8,18,40]`; a real total
+`O = 106`. -/
+private def chain4 : Fx :=
+  fx [tX, tZ, tQ, tDef "U", tDef "V", tDef "W", tOut "O" []]
+    [st "U" .min (rd "Q" [axA, axB]), zR "V" free1 .sum [rd "U" [axA], rd "X" [axA]], st "V" .max (rd "X" [axA]),
+     st "W" .max (rd "V" [axA]), st "W" .max (rd "Z" [axA, axB]), zR "O" [] .sum [rd "W" [axA]]]
+
+#guard parity chain3 "O" [-60, 14, 51, 1080]
+#guard ranIn chain3 == some [.maxPlus, .real, .minPlus]
+-- the Core leg's own intermediates are the stratified ones
+#guard coreCellsOf chain3 "T1" == some (fins [-3, 7, 17, 27])
+#guard coreCellsOf chain3 "T2" == some (fins [-60, 14, 51, 1080])
+#guard parity chain4 "O" [106]
+#guard ranIn chain4 == some [.minPlus, .real, .real, .maxPlus, .maxPlus, .real]
+#guard coreCellsOf chain4 "U" == some (fins [1, 3, 5, 0])
+#guard coreCellsOf chain4 "V" == some (fins [40, 8, 18, 40])
+#guard coreCellsOf chain4 "W" == some (fins [40, 8, 18, 40])
+
+/-! ### Negative control: a wrong earlier value fed to Core is a `referenceDiscrepancy`
+
+`feed` rewrites the rational cells of an earlier target (by declaration) before they enter a later
+group's Core run as inputs. The oracle and both native legs still agree with each other, so the only
+detector is the Core comparison. The identity feed is the parity row above. -/
+
+private def runFed (f : Fx) (feed : Nat → List ℚ → List ℚ) : Option MixedRun :=
+  match compareMixedSource f.snap (some f.order) id feed with
+  | .ok r => some r
+  | .error _ => none
+
+private def isRefDiscrepancy (f : Fx) (feed : Nat → List ℚ → List ℚ) : Bool :=
+  match runFed f feed with
+  | some r => match r.classification with
+    | .referenceDiscrepancy => true
+    | _ => false
+  | none => false
+
+private def bump (d : Nat) : Nat → List ℚ → List ℚ :=
+  fun x vs => if x == d then vs.map (· + 1) else vs
+
+-- `T1` is declaration 5, `T2` declaration 6; `U` is 6, `V` 7, `W` 8 (`X`,`Z`,`Q` are 3,4,5)
+#guard isRefDiscrepancy chain3 (bump 5)
+#guard isRefDiscrepancy chain3 (bump 6)
+#guard isRefDiscrepancy chain4 (bump 6)
+#guard isRefDiscrepancy chain4 (bump 8)
+-- the native legs and the oracle are untouched by the feed: they still agree with each other
+#guard match runFed chain3 (bump 5) with
+  | some r => match r.legacy, r.checked with
+    | .agrees, .agrees => true
+    | _, _ => false
+  | none => false
+-- the wrong value really reached the Core leg's output: `(T1 + 1) * X`, not `T1 * X`
+#guard match runFed chain3 (bump 5) with
+  | some r => match r.core with
+    | some (.ok ts) => cellsIn ts "T2" == some (fins [-40, 16, 54, 1120])
+    | _ => false
+  | none => false
+-- a feed that changes nothing (a bump on a declaration no group reads) is still parity
+#guard match runFed chain3 (bump 99) with
+  | some r => match r.classification with
+    | .fourLegParity => true
+    | _ => false
+  | none => false
 
 end OracleMixedValueTest
