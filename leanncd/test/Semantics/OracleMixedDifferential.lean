@@ -1,16 +1,18 @@
 import LeanNCD.Semantics.Source.SortedDifferential
 import Semantics.OracleSortRules
 import Semantics.OracleMixedFixtures
+import Semantics.OracleMixedEval
 
 /-! Oracle sorts T2: the classification of a mixed-sort Source program against the independent rule
 predictor (`Semantics.OracleSortRules`).
 
 `MixedClassification` is test-side by design: it must call the test-side predictor, which a library
 module cannot import. The typed path (`SortedClassification`, `compareSortedSource`) is untouched.
-This file is appended to by later tasks (the heterogeneous run and `compareMixedSource`). -/
+`compareMixedSource` is the accepted-path driver: predicted refusals go to `classifyRefusal`, the rest
+run through the heterogeneous evaluator and the mixed numerical profile. -/
 
 open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
-open NativeLegs SortedDifferential LeanNCD.OracleSorts
+open Debug Oracle NativeLegs SortedDifferential NumericalProfile LeanNCD.OracleSorts
 
 namespace OracleMixed
 
@@ -78,5 +80,172 @@ def classifyRefusal (p : Prediction) (run : NativeRun) : MixedClassification :=
     else .refusalMismatch [] observed
   else if l == c && p.refusals.any (fun r => r.1 == l) then .refusalParity l
   else .refusalMismatch p.refusals observed
+
+/-! ### The mixed run -/
+
+/-- One mixed-sort comparison. `profile` is `.ok []` and `oracle` an error when nothing was evaluated
+(a predicted refusal). The rule predictor's `prediction` is kept for the record. -/
+structure MixedRun where
+  prediction : Prediction
+  oracle : Except String (List (TensorObservation ExtVal))
+  profile : Except Unsupported (List SortedCell)
+  legacy : LegResult
+  checked : LegResult
+  classification : MixedClassification
+
+/-- The mixed numerical profile. Inputs and every cell are integers inside the envelope. Per
+occurrence: a real statement uses the PRODUCT envelope exactly as `NumericalProfile.checkProfile`
+does (read, partial product, running `max 1 |read|` product, final product); a tropical statement
+the sum-of-magnitudes envelope of `checkSortedProfile` over its finite reads. -/
+def checkMixedProfile (source : AdmittedSource) (r : MixedResult) :
+    Except Unsupported (List SortedCell) := do
+  let _ ← checkStructure source
+  for t in r.tensors do
+    if t.role == .input then
+      for (coordinate, v) in (Oracle.coordinates t.shape).zip t.values do
+        let origin : SourceOrigin := { side := .input, declaration := some t.declaration }
+        let _ ← checkExt { origin := origin, coordinate := coordinate } .input v
+  for o in r.occurrences do
+    let site : Site := ⟨{ statement := some o.statement }, o.coordinate, o.assignment, [], none⟩
+    if o.sort == .real then
+      let mut product : ℚ := 1
+      let mut envelope : ℚ := 1
+      for read in o.reads do
+        match read with
+        | .fin q =>
+          let _ ← checkValue site .read q
+          product := product * q
+          let _ ← checkValue site .partialProduct product
+          envelope := envelope * max 1 |q|
+          let _ ← checkValue site .subsetProductBound envelope
+        | _ => pure ()
+      let _ ← checkValue site .product product
+    else
+      let mut bound : ℚ := 0
+      for read in o.reads do
+        match read with
+        | .fin q =>
+          let _ ← checkValue site .read q
+          bound := bound + |q|
+          let _ ← checkValue site .subsetProductBound bound
+        | _ => pure ()
+  let mut cells := []
+  for out in r.tensors do
+    if out.role != .input then
+      for (coordinate, value) in (Oracle.coordinates out.shape).zip out.values do
+        let origin : SourceOrigin := { side := .output, declaration := some out.declaration }
+        let expected ← checkExt { origin := origin, coordinate := coordinate } .tensorCell value
+        cells := cells ++ [(⟨out.declaration, coordinate, expected⟩ : SortedCell)]
+  pure cells
+
+/-- A native leg against the profile cells (`SortedDifferential.legOf` is private; restated). -/
+private def mixedLegOf (cells : Except Unsupported (List SortedCell)) :
+    Option NativeObservation → String → LegResult
+  | none, "" => .unavailable
+  | none, message => .failure message
+  | some observation, _ =>
+    match cells, observation.outputs with
+    | .error _, _ => .unavailable
+    | _, .error issues => .failure s!"binding issues {repr issues}"
+    | .ok cells, .ok bindings =>
+      match compareBindings cells bindings with
+      | .error message => .failure message
+      | .ok none => .agrees
+      | .ok (some cell) => .mismatch cell
+
+/-- The legs' results against the profile cells. -/
+private def legResults (profile : Except Unsupported (List SortedCell)) (n : NativeRun) :
+    LegResult × LegResult :=
+  (match n.legacy with
+    | .observed o => mixedLegOf profile (some o) ""
+    | .failure e => mixedLegOf profile none s!"legacy {e.original.error}"
+    | .unavailable _ => .unavailable,
+   match n.checked with
+    | .observed o _ => mixedLegOf profile (some o) ""
+    | .sourceCompilation e => mixedLegOf profile none s!"checked compile {repr e.cause}"
+    | .preparation _ => mixedLegOf profile none "checked preparation"
+    | .runtime e => mixedLegOf profile none s!"checked runtime {repr e.original.cause}"
+    | .unavailable _ => .unavailable)
+
+/-- A leg's result on a predicted-refusal row: no values were evaluated, so only the refusal itself is
+recorded (an accepting leg is a contradiction of the prediction). -/
+private def refusalLeg (tag : String) : LegResult :=
+  if tag == "unavailable" then .unavailable
+  else if tag == "accepted" then .failure "accepted although a refusal was predicted"
+  else .failure s!"refused {tag}"
+
+/-- The site of a non-finite read: the read tensor's declaration and the cell. -/
+private def nonFiniteSite (declaration : Nat) (coordinate : List Nat) : Site :=
+  { origin := { side := .declaration, declaration := some declaration }, coordinate := coordinate }
+
+/-- The oracle verdict on a mixed-sort Source program.
+
+Predicted refusals (`p.refusals` non-empty) go to `classifyRefusal`. Otherwise `classifyRefusal` is
+consulted first only for a native leg that refuses or is unavailable (`refusalMismatch [] ..`,
+`nativeUnavailable`); its sentinel for "both legs accepted" is never a verdict, it means "now compare
+values": `runMixed`, the mixed profile and both legs' bits. Both legs agreeing with the oracle is
+`threeLegParity` (the Core leg is not run for mixed programs here). `order` names the declaration
+ordinals of the non-input tensors in dependency order. -/
+def compareMixedSource (snapshot : SourceSnapshot) (order : Option (List Nat)) :
+    Except SourceDiagnostic MixedRun := do
+  let admitted ← admitSourceAffine snapshot true
+  let p := predict snapshot.resolved.decls snapshot.resolved.stmts
+  let n ← runNative snapshot (sorted := true)
+  let refusal := classifyRefusal p n
+  if !p.refusals.isEmpty then
+    pure { prediction := p, oracle := .error "predicted refusal: nothing evaluated", profile := .ok [],
+           legacy := refusalLeg (legacyTag n.legacy), checked := refusalLeg (checkedTag n.checked),
+           classification := refusal }
+  else
+    match refusal with
+    | .referenceUnavailable _ =>
+      -- predicted accept and both legs accepted: evaluate and compare values
+      match order with
+      | none =>
+        let u : Oracle.Unavailable := ⟨{}, .missingOrder⟩
+        let profile : Except Unsupported (List SortedCell) := .error (.oracleUnavailable u)
+        pure { prediction := p, oracle := .error s!"oracle unavailable {repr u}", profile := profile,
+               legacy := .unavailable, checked := .unavailable,
+               classification := .referenceUnavailable s!"oracle unavailable {repr u}" }
+      | some order =>
+        match runMixed admitted snapshot.resolved.stmts p order with
+        | .error (.unavailable u) =>
+          let profile : Except Unsupported (List SortedCell) := .error (.oracleUnavailable u)
+          let (l, c) := legResults profile n
+          pure { prediction := p, oracle := .error s!"oracle unavailable {repr u}",
+                 profile := profile, legacy := l, checked := c,
+                 classification := .referenceUnavailable s!"oracle unavailable {repr u}" }
+        | .error (.inconsistent m) =>
+          let profile : Except Unsupported (List SortedCell) := .ok []
+          pure { prediction := p, oracle := .error m, profile := profile, legacy := .unavailable,
+                 checked := .unavailable, classification := .referenceUnavailable m }
+        | .error (.nonFiniteIntoReal d c) =>
+          let reason := Unsupported.nonFiniteIntoReal (nonFiniteSite d c)
+          let profile : Except Unsupported (List SortedCell) := .error reason
+          let (l, c') := legResults profile n
+          pure { prediction := p, oracle := .error "non-finite cell read by a real statement",
+                 profile := profile, legacy := l, checked := c',
+                 classification := .unsupportedNumericalProfile reason }
+        | .ok r =>
+          let oracle := oracleTensorsAt id admitted ⟨r.tensors, []⟩
+          let profile := checkMixedProfile admitted r
+          let (l, c) := legResults profile n
+          let classification : MixedClassification :=
+            match oracle, profile with
+            | .error e, _ => .referenceUnavailable e
+            | _, .error reason => .unsupportedNumericalProfile reason
+            | .ok _, .ok _ =>
+              match l, c with
+              | .agrees, .agrees => .threeLegParity "core leg not run"
+              | .unavailable, _ | _, .unavailable => .nativeUnavailable
+              | .failure _, _ | _, .failure _ => .nativeFailure l c
+              | _, _ => .nativeDiscrepancy l c
+          pure { prediction := p, oracle := oracle, profile := profile, legacy := l, checked := c,
+                 classification := classification }
+    | other =>
+      -- a leg refused a predicted-accept program (`refusalMismatch [] ..`), or is unavailable
+      pure { prediction := p, oracle := .error "legs did not both accept: nothing evaluated",
+             profile := .ok [], legacy := refusalLeg (legacyTag n.legacy),
+             checked := refusalLeg (checkedTag n.checked), classification := other }
 
 end OracleMixed
