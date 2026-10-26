@@ -84,5 +84,55 @@
    "Semantics.OracleMixedRefusalTest"
   ],
   "task": "oracle-sorts"
+ },
+ {
+  "label": "T3-E1 (max-plus additive identity is 0, not -inf)",
+  "file": "test/Semantics/OracleMixedEval.lean",
+  "old": "  | .maxPlus => .negInf",
+  "new": "  | .maxPlus => .fin 0",
+  "targets": [
+   "Semantics.OracleMixedEvalTest"
+  ],
+  "task": "oracle-sorts"
+ },
+ {
+  "label": "T3-E2 (min-plus add uses max)",
+  "file": "test/Semantics/OracleMixedEval.lean",
+  "old": "  | .minPlus, x, y => extMin x y",
+  "new": "  | .minPlus, x, y => extMax x y",
+  "targets": [
+   "Semantics.OracleMixedEvalTest"
+  ],
+  "task": "oracle-sorts"
+ },
+ {
+  "label": "T3-E3 (abstaining neutral copy runs in its own annotation, not the group's)",
+  "file": "test/Semantics/OracleMixedEval.lean",
+  "old": "    runs := runs ++ [(statement.original, run, own)]",
+  "new": "    runs := runs ++ [(statement.original, own, own)]",
+  "targets": [
+   "Semantics.OracleMixedEvalTest"
+  ],
+  "task": "oracle-sorts"
+ },
+ {
+  "label": "T3-E4 (read cast treats a tropical -inf as finite)",
+  "file": "test/Semantics/OracleMixedEval.lean",
+  "old": "    | .fin _ => pure v\n    | .negInf | .posInf => throw (.nonFiniteIntoReal declaration coordinate)",
+  "new": "    | .fin _ | .negInf => pure v\n    | .posInf => throw (.nonFiniteIntoReal declaration coordinate)",
+  "targets": [
+   "Semantics.OracleMixedEvalTest"
+  ],
+  "task": "oracle-sorts"
+ },
+ {
+  "label": "T3-E5 (nonFiniteIntoReal check removed)",
+  "file": "test/Semantics/OracleMixedEval.lean",
+  "old": "    | .negInf | .posInf => throw (.nonFiniteIntoReal declaration coordinate)",
+  "new": "    | .negInf | .posInf => pure v",
+  "targets": [
+   "Semantics.OracleMixedEvalTest"
+  ],
+  "task": "oracle-sorts"
  }
 ]
