@@ -89,26 +89,36 @@ test "CV5b bool statement pads false"
       (HashMap.ofList [("E", tl [4] [1,0,0,0])])
       "B" (tl [2] [1,0])) $
 
--- CV5u  OOB under a UNARY inside a tropical statement keeps the real 0.0 pad: `exp` takes real input.
---   max-plus, X=[-1,-3,-2,-5]: P[0]=max(e^-1,e^-3,e^-2)=e^-1≈0.3678794, P[1]=max(e^-2,e^-5,exp(0)=1)=1
---   (a `−∞` pad would give exp(−∞)=0 and P[1]=e^-2≈0.1353).
-test "CV5u OOB under exp in max-plus pads 0.0"
+-- CV5u  OOB under a UNARY inside a tropical statement is 0_K, NOT f(0): the factor is absent and `exp`
+--   is not applied to the pad. max-plus, X=[-1,-3,-2,-5]: P[0]=max(e^-1,e^-3,e^-2)=e^-1≈0.3678794,
+--   P[1]=max(e^-2,e^-5,absent)=e^-2≈0.1353 (the pre-fix `exp(0)=1` pad would have WON: P[1]=1).
+test "CV5u OOB under exp in max-plus is absent (0_K), exp(0) does not win"
     (evalEqB (tlprog!{
     axis i : ℕ = 2, p : ℕ = 3
     P[i] := maxreduce(exp(X[2 * i + p]))
   })
       (HashMap.ofList [("X", tl [4] [-1,-3,-2,-5])])
-      "P" (tl [2] [0.36787944117144233, 1])) $
+      "P" (tl [2] [0.36787944117144233, 0.1353352832366127])) $
 
--- CV5ud  min-plus twin: X=[1,3,2,5], P[0]=min(e,e^3,e^2)=e≈2.7182818, P[1]=min(e^2,e^5,exp(0)=1)=1
---   (a `+∞` pad would give exp(+∞)=+∞ and P[1]=e^2≈7.389).
-test "CV5ud OOB under exp in min-plus pads 0.0"
+-- CV5ud  min-plus twin: X=[1,3,2,5], P[0]=min(e,e^3,e^2)=e≈2.7182818, P[1]=min(e^2,e^5,absent)=e^2≈7.389
+--   (the pre-fix `exp(0)=1` pad would have WON: P[1]=1).
+test "CV5ud OOB under exp in min-plus is absent (0_K), exp(0) does not win"
     (evalEqB (tlprog!{
     axis i : ℕ = 2, p : ℕ = 3
     P[i] := minreduce(exp(X[2 * i + p]))
   })
       (HashMap.ofList [("X", tl [4] [1,3,2,5])])
-      "P" (tl [2] [2.718281828459045, 1])) $
+      "P" (tl [2] [2.718281828459045, 7.38905609893065])) $
+
+-- CV5ur  accept-neighbour, REAL statement: the same padded window under `exp` and a sum keeps the real pad
+--   0 then applies `exp`: X=0, P[0]=3, P[1]=exp(0)+exp(0)+exp(pad 0)=3 (an absent pad would give 2).
+test "CV5ur sum of exp over padded window (pad 0, exp(0)=1 contributes)"
+    (evalEqB (tlprog!{
+    axis i : ℕ = 2, p : ℕ = 3
+    P[i] := exp(X[2 * i + p])
+  })
+      (HashMap.ofList [("X", tl [4] [0,0,0,0])])
+      "P" (tl [2] [3,3])) $
 
 -- CV6  avg-pool as weighted sum: P[i] = Σ_p X[2i+p]·w[p]
 --   w=[0.5,0.5], X=[2,4,6,8] ⇒ [0.5·2+0.5·4, 0.5·6+0.5·8] = [3,7]

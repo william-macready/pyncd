@@ -216,8 +216,9 @@ fragment.
 - **Unary factor functions** — admitted end-to-end (top level and inside scan `base`/`recur` blocks).
   `checkFactor` admits `.unaryFn`; `residualizeAssignment` lowers it to the same `ReadPlan` a `.read`
   produces with a new `unary : Option UnaryOp` field, and Dense's `gatherFactorWith` applies the function
-  *after* the `zeroPad` out-of-bounds pad — so an out-of-bounds read contributes `f(0)`, matching the
-  reference `gather`. The math and domain partiality live once in `UnaryOp.applyChecked`, which the
+  *after* the `zeroPad` out-of-bounds pad in a real or Boolean statement — so an out-of-bounds read
+  contributes `f(0)`, matching the reference `gather`; in a tropical (max/min) statement an out-of-bounds
+  unary read is the statement's `0_K`, unapplied (c0867dd9). The math and domain partiality live once in `UnaryOp.applyChecked`, which the
   reference `applyUnaryFn` also wraps (`log`/`sqrt`/`recip` fail loud — the checked path as
   `PositionalInputError.unaryDomain`, the reference as `EvalError.unaryDomain`). No new `PlanStep`,
   geometry, or dtype. The `unaryFactor` constructor is retained producer-less, like `scanNode`. Closed

@@ -37,20 +37,29 @@ def evalBool (coord : HashMap UID Int) : BoolExpr → Bool
   | .not a   => ! evalBool coord a
   | .ieq a b => evalPred coord a == evalPred coord b
 
-/-- Read a tensor at a coordinate: bounds-checked; an out-of-range coordinate yields `pad`. Shared by
-    `gather`'s `.read` and `.unaryFn` cases — a `.unaryFn` factor reads identically to a plain
-    `.read` (with its own `pad`, see `gather`), then applies its function to the resulting value. -/
-def gatherRead (env : HashMap String DenseTensor) (coord : HashMap UID Int) (pad : Float)
-    (nm : String) (es : List IdxExpr) (cast : Float → Float := fun v => v) : Except EvalError Float :=
+/-- Read a tensor at a coordinate: bounds-checked. `none` is an out-of-range coordinate (any coord
+    < 0 or ≥ its dim), `some v` the stored value. The one place the bounds test lives; `gatherRead`
+    (bare read: out-of-range ⇒ `pad`) and `gatherCast`'s `.unaryFn` case (out-of-range ⇒ the sort's
+    0_K or `f(0)`, see there) both build on it. -/
+def gatherCell (env : HashMap String DenseTensor) (coord : HashMap UID Int)
+    (nm : String) (es : List IdxExpr) : Except EvalError (Option Float) :=
   match env[nm]? with
   | none => .error (.unknownTensor .gather nm)
   | some t =>
       let srcZ : List Int := es.map (evalIdx coord)
-      -- bounds check against t.shape; out-of-range ⇒ pad (never cast)
+      -- bounds check against t.shape
       if (srcZ.zip t.shape).any (fun (z, d) => z < 0 || z ≥ (d : Int)) then
-        .ok pad
+        .ok none
       else
-        .ok (cast (t.get! (srcZ.map Int.toNat)))
+        .ok (some (t.get! (srcZ.map Int.toNat)))
+
+/-- Read a tensor at a coordinate: bounds-checked; an out-of-range coordinate yields `pad`, an
+    in-range one the (optionally cast) stored value. -/
+def gatherRead (env : HashMap String DenseTensor) (coord : HashMap UID Int) (pad : Float)
+    (nm : String) (es : List IdxExpr) (cast : Float → Float := fun v => v) : Except EvalError Float :=
+  (gatherCell env coord nm es).map (fun
+    | none => pad          -- out-of-range ⇒ pad (never cast)
+    | some v => cast v)
 
 /-- Apply a unary transcendental function to a gathered value. `log`/`sqrt`/`recip` fail loud on
     a domain violation (consistent with this evaluator's fail-loud conventions elsewhere —
@@ -68,9 +77,12 @@ def applyUnaryFn (ctx : EvalContext) : UnaryOp → Float → Except EvalError Fl
     `.read nm es`: map each `eᵢ` to its source coord via `evalIdx`; out-of-range (any coord < 0
     or ≥ dim) pads with `zero` (0_K of the statement's sort: real 0.0, bool 0.0, max-plus -inf,
     min-plus +inf). `.iverson b`: `one` if the predicate holds else `zero`. `.unaryFn op nm es`:
-    reads like `.read nm es` BUT an out-of-range read pads with the real 0.0 (the primitive takes
-    real input, so `f(0.0)` is what an out-of-range read contributes), then applies `op` to the
-    resulting value; the result is taken as-is.
+    reads like `.read nm es`, then applies `op` to an in-range value (the result is taken as-is). An
+    out-of-range read under `op` depends on the statement's sort (`zero` tells them apart: a
+    tropical sort's 0_K is infinite, the real and Boolean sorts' is 0.0): in a TROPICAL statement
+    the factor is `zero` itself (absent, like a bare out-of-range read; `op` is NOT applied to the
+    pad, so `f(0)` can never win the reduction); in a real or Boolean statement the pad is the real
+    0.0 and `op` is applied (`exp(0) = 1` still contributes).
 
     `castOf nm` is the statement's SOURCE READ CAST (S3b design §3): applied to the value of a BARE
     in-bounds read of `nm` (the bool -> tropical cast: a Boolean source read by a tropical statement
@@ -83,7 +95,9 @@ def gatherCast (zero one : Float) (castOf : String → Float → Float)
   | .read nm es => gatherRead env coord zero nm es (castOf nm)
   | .unaryFn op nm es =>
       let ctx : EvalContext := { tensor := nm, coord := es.map (evalIdx coord) }
-      (gatherRead env coord 0.0 nm es).bind (applyUnaryFn ctx op)
+      (gatherCell env coord nm es).bind (fun
+        | some v => applyUnaryFn ctx op v
+        | none => if zero == 0.0 then applyUnaryFn ctx op 0.0 else .ok zero)
 
 /-- `gatherCast` with no source cast: the real and Boolean statements' gather. -/
 def gather (zero one : Float) (env : HashMap String DenseTensor) (coord : HashMap UID Int) :

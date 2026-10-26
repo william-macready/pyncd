@@ -586,4 +586,131 @@ run_cmd do
   assertAgree "j10 negative zero, scan step" rtbScanStep
     [("B", [3], [1, 1, 1]), ("Y", [3], [-0.0, 0.0, 1])] "S" [1, 0, 0, 1, 0, 0, 1, 1, 1]
 
+/-! ## (k) an out-of-range read UNDER a `unaryFn` in a TROPICAL statement is 0_K, not `f(0)`
+
+The reference, the binary64 plan and the binary32 plan all agree (comparing within a relative `1e-5`:
+`exp` is libm, binary32 is narrower). `H[i] := maxreduce(exp(X[i+1]))` over `i : 3`: the last cell
+reads out of range, so its only term is absent: `-inf` (max-plus) / `+inf` (min-plus). The pre-fix
+value there was `exp(0) = 1`, which also WINS over the negative-data in-range cells in the pooling
+window (`P[1]`, k3/k4: `exp(0) = 1` beat `e^-2`). The real neighbour (k5) keeps `exp(0) = 1`
+(`exp` of the real pad `0`), the bool neighbour (k6) too. Scan base and step (k7/k8) and a scatter
+compute half (k9) read the same rule. -/
+def near (a b : Float) : Bool := a == b || (a - b).abs <= 1e-5 * (1 + b.abs)
+
+def assertNear (label : String) (p : TLProgram) (xs : Ins) (nm : String) (expected : List Float) :
+    Lean.Elab.Command.CommandElabM Unit :=
+  match agreeWith near label p xs nm expected with
+  | .ok () => pure ()
+  | .error e => throwError e
+
+def unOobMax : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := maxreduce(exp(X[i + 1])) }
+def unOobMin : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := minreduce(exp(X[i + 1])) }
+def unOobReal : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := exp(X[i + 1]) }
+def unOobBool : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  predicate B(i)
+  B[i] := exp(X[i + 1]) }
+def unWinMax : TLProgram := tlprog!{
+  axis i : ℕ = 2, p : ℕ = 3
+  P[i] := maxreduce(exp(X[2 * i + p])) }
+def unWinMin : TLProgram := tlprog!{
+  axis i : ℕ = 2, p : ℕ = 3
+  P[i] := minreduce(exp(X[2 * i + p])) }
+
+run_cmd do
+  assertNear "k1 unary oob max" unOobMax [("X", [3], [-1, -2, -3])] "H"
+    [0.1353352832366127, 0.049787068367863944, negInf]
+  assertNear "k2 unary oob min" unOobMin [("X", [3], [1, 2, 3])] "H"
+    [7.38905609893065, 20.085536923187668, posInf]
+  assertNear "k3 f(0) would win, max" unWinMax [("X", [4], [-1, -3, -2, -5])] "P"
+    [0.36787944117144233, 0.1353352832366127]
+  assertNear "k4 f(0) would win, min" unWinMin [("X", [4], [1, 3, 2, 5])] "P"
+    [2.718281828459045, 7.38905609893065]
+  assertNear "k5 real neighbour keeps exp(0)" unOobReal [("X", [3], [-1, -2, -3])] "H"
+    [0.1353352832366127, 0.049787068367863944, 1]
+  assertNear "k6 bool neighbour keeps exp(0)" unOobBool [("X", [3], [-1, -2, -3])] "B"
+    [0.1353352832366127, 0.049787068367863944, 1]
+
+def unScanStep : TLProgram := tlprog!{
+  iter t = 3
+  axis j : ℕ = 2
+  S[j, 0] := maxreduce(Z[j])
+  S[j, t + 1] := maxreduce(S[j, t] · exp(E[j + 1, t])) }
+def unScanBase : TLProgram := tlprog!{
+  iter t = 3
+  axis j : ℕ = 2
+  S[j, 0] := maxreduce(exp(Z[j + 1]))
+  S[j, t + 1] := maxreduce(S[j, t] · E[j, t]) }
+def unScatter : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Out[2 * i] := maxreduce(exp(X[i + 1])) }
+
+-- k7 step: row 1 reads `E[2, t]` out of range, so `S[1, t+1]` is absent (`-inf`; pre-fix `S[1,t] + 1`).
+-- k8 base: `S[1, 0]` is absent (`-inf`, pre-fix `exp(0) = 1`), the step adds `E` to it (still `-inf`).
+-- k9 scatter compute half: `Out[2] = -inf` (pre-fix `exp(0) = 1`); `Out` has 4 cells, the unwritten ones are `-inf`.
+run_cmd do
+  assertNear "k7 scan step unary oob" unScanStep
+    [("Z", [2], [-1, -2]), ("E", [2, 3], [9, 9, 9, 0, 1, 0])] "S"
+    [-1, 0, 2.718281828459045, -2, negInf, negInf]
+  assertNear "k8 scan base unary oob" unScanBase
+    [("Z", [2], [-1, -2]), ("E", [2, 3], [0, 1, 9, 0, 0, 9])] "S"
+    [0.1353352832366127, 0.1353352832366127, 1.1353352832366127, negInf, negInf, negInf]
+  assertNear "k9 scatter unary oob" unScatter [("X", [2], [-1, -3])] "Out"
+    [0.049787068367863944, negInf, negInf, negInf]
+
+-- k10-k13: an out-of-range `log` / `recip` (friendly `/`) under max/min used to be a domain error
+-- (the pad `0.0` was fed to `f`); it is now `0_K` and no error. OBSERVED three-way. k14/k15: the real
+-- contrast, unchanged: the same read in a REAL statement still fails loud (`log(0)`, `1/0`).
+def lgMax : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := maxreduce(log(X[i + 1])) }
+def lgMin : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := minreduce(log(X[i + 1])) }
+def rcMax : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := maxreduce(W[i] / X[i + 1]) }
+def rcMin : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := minreduce(W[i] / X[i + 1]) }
+def lgReal : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := log(X[i + 1]) }
+def rcReal : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  H[i] := W[i] / X[i + 1] }
+
+/-- All three backends fail on the program, each with its own domain error (reference `EvalError.unaryDomain`
+    text, plan f64 `unaryDomain`, plan f32 `unaryDomain32`). -/
+def assertDomainError (label : String) (p : TLProgram) (xs : Ins) (op : String) :
+    Lean.Elab.Command.CommandElabM Unit := do
+  let has (needle : String) (r : Except String (List Float)) : Bool :=
+    match r with
+    | .error e => (e.splitOn needle).length > 1
+    | .ok _ => false
+  unless has "domain error" (refOut p xs "H") do throwError s!"{label}: reference did not fail with a domain error"
+  unless has s!"unaryDomain (LeanNCD.Eval.UnaryDomainOp.{op})" (planOut64 p xs "H") do
+    throwError s!"{label}: plan f64 did not fail with unaryDomain {op}"
+  unless has s!"unaryDomain32 (LeanNCD.Eval.UnaryDomainOp.{op})" (planOut32 p xs "H") do
+    throwError s!"{label}: plan f32 did not fail with unaryDomain32 {op}"
+
+run_cmd do
+  assertNear "k10 oob log max is absent, no domain error" lgMax [("X", [3], [1, 2, 3])] "H"
+    [0.6931471805599453, 1.0986122886681098, negInf]
+  assertNear "k11 oob log min is absent, no domain error" lgMin [("X", [3], [1, 2, 3])] "H"
+    [0.6931471805599453, 1.0986122886681098, posInf]
+  assertNear "k12 oob recip max is absent, no domain error" rcMax
+    [("X", [3], [1, 2, 4]), ("W", [3], [0, 0, 0])] "H" [0.5, 0.25, negInf]
+  assertNear "k13 oob recip min is absent, no domain error" rcMin
+    [("X", [3], [1, 2, 4]), ("W", [3], [0, 0, 0])] "H" [0.5, 0.25, posInf]
+  assertDomainError "k14 real oob log still fails loud" lgReal [("X", [3], [1, 2, 3])] "log"
+  assertDomainError "k15 real oob recip still fails loud" rcReal
+    [("X", [3], [1, 2, 4]), ("W", [3], [0, 0, 0])] "recip"
+
 end LeanNCD.Eval.Plan.BoolCastTest

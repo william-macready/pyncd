@@ -99,8 +99,10 @@ collection is not.
 - Out-of-bounds padding is 0_K of the sort *at the read position*:
   - a bare read is padded with the statement sort's 0_K (Gather.lean:43-53; Dense.lean:126-138 uses
     `reduceId`);
-  - a read under a `unaryFn` is padded with 0.0, the real input sort of the primitive. The primitive is
-    then applied, and the result is cast.
+  - a read under a `unaryFn` in a REAL or BOOL statement is padded with 0.0, the real input sort of the
+    primitive, and the primitive is then applied, f(0). In a TROPICAL statement it is the statement's 0_K
+    and the primitive is NOT applied (the term is absent, so `f(0)` can never win; c0867dd9, superseding
+    the original "pad 0.0, apply" rule of this row).
   - This matches boundary-policies §8.4.3 (L1174, "Const of the selected additive identity").
 
 **A7. PROPOSED: casts.**

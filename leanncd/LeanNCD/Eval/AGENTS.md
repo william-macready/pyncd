@@ -87,6 +87,6 @@ The Portfolio suite (`test/Eval/Portfolio/`, shared `Harness.lean`) has one file
 ## Pitfalls
 - **Scan is genuinely n-D** — `evalScan`'s `axes` drives a cartesian product over every advancing axis; code assuming 1-D scans misbehaves on a 2-D recurrence.
 - **An unsized scan iteration axis is an error naming its own fix** ("pin it with ``axis l : ℕ = N``…"). An axis pinned explicitly to `0` still yields zero steps — a stated intent, not a sizing gap.
-- **Out-of-range reads are `.ok pad`, not `.error`** (`Gather.gatherRead`): `pad` is the statement's 0_K (real/bool `0.0`, max-plus `-inf`, min-plus `+inf`), and `0.0` under a `.unaryFn`. Don't conflate a padded value with failure.
+- **Out-of-range reads are `.ok pad`, not `.error`** (`Gather.gatherRead`): `pad` is the statement's 0_K (real/bool `0.0`, max-plus `-inf`, min-plus `+inf`), and, under a `.unaryFn`, `f(0.0)` in a real/bool statement but the statement's 0_K (unapplied) in a tropical one. Don't conflate a padded value with failure.
 - **`readAxisUIDs`/`termAxisUIDs`/`freeAxisUIDs` are NOT interchangeable** (`Contract.lean`) — `freeAxisUIDs` returns a subset (non-affine slots only); swapping them silently breaks shape inference or contraction scoping.
 - **Scan state is allocated with `Slots.outputShape`** — there is no `stateShape`; don't reintroduce one.

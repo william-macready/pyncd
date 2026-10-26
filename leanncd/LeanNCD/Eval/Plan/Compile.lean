@@ -643,7 +643,7 @@ def lowerMaskPredicate (outputUids : List UID) (mask : BoolExpr) : PosBoolExpr :
     is Wave C's real sum-product; `max`/`min` are the tropical semirings max-plus / min-plus
     (`⊗ = +` with identity `0`; `⊕` = NaN-propagating `max`/`min` with identity `−∞`/`+∞`), matching
     the reference `Combine.max`/`Combine.min`. The `zeroPad` out-of-bounds pad of a bare read is
-    the algebra's `reduceId` (0_K: `-inf` for max-plus, `+inf` for min-plus); a unary read pads with `0`. -/
+    the algebra's `reduceId` (0_K: `-inf` for max-plus, `+inf` for min-plus); a unary read pads with `0` (then applies its function) in a real or Boolean statement, and with that same 0_K, unapplied, in a tropical one. -/
 def algebraForAgg : AggOp → ContractionAlgebra
   | .sum => admittedAlgebra
   | .max => admittedAlgebraMax
@@ -762,7 +762,7 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
       | .unaryFn op name idxs =>
           -- Reads exactly like `.read name idxs` (same slot resolution, same affine rows, same
           -- zero-pad), then carries the unary function so `gatherFactorWith` applies it after the
-          -- pad.
+          -- pad (real/Boolean statement; in a tropical one an out-of-range factor is 0_K, unapplied).
           let (sourceSlot, sourceShape) := resolveSource name
           let rows := idxs.map (fun e => substitutePins pins basisUids (idxToRow basisUids e))
           let coeffs : Array (Array Int) := (rows.map (fun r => r.1.toArray)).toArray

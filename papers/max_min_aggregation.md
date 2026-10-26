@@ -5,7 +5,7 @@
 > `(+, max, −∞, 0)` and min-plus `(+, min, +∞, 0)`, in both backends: a term's factors ADD, the
 > NaN-propagating max/min folds terms and contracted coordinates, and `0_K` (`−∞`/`+∞`) is the empty
 > reduction, the unwritten scatter cell, the unwritten scan-state cell, a false Iverson factor and the
-> bare out-of-range read pad (an OOB read under a `unaryFn` keeps the real `0.0`). A `bool` read inside a
+> bare out-of-range read pad (an OOB read under a `unaryFn` is also `0_K` in a tropical statement, unapplied, since c0867dd9; real and bool statements keep `f(0.0)`). A `bool` read inside a
 > tropical statement is cast (false to `0_K`, true to `1_K = 0`). Gaps recorded here and CLOSED by S3b:
 > multi-factor products (was `×`), scatter fill (a top-level scatter now folds collisions with ⊕ from
 > `0_K`; `scatterFillNotIdentity`/`scatterOptsNotAdmitted` are deleted), and the padded-`0` interaction
