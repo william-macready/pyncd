@@ -134,5 +134,15 @@
    "Semantics.OracleMixedEvalTest"
   ],
   "task": "oracle-sorts"
+ },
+ {
+  "label": "T3-E6 (max-plus multiplicative identity is -inf, not 0)",
+  "file": "test/Semantics/OracleMixedEval.lean",
+  "old": "  | .maxPlus => .fin 0",
+  "new": "  | .maxPlus => .negInf",
+  "targets": [
+   "Semantics.OracleMixedEvalTest"
+  ],
+  "task": "oracle-sorts"
  }
 ]

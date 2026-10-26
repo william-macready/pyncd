@@ -75,12 +75,12 @@ def agrees (p : Prediction) (v : Except (String × String) (List (String × MSor
 /-! ### The rules, stated from the design -/
 
 /-- Annotation sort: `sum` is real, `max` max-plus, `min` min-plus. -/
-private def annotationSort : AggOp → MSort
+def annotationSort : AggOp → MSort
   | .sum => .real
   | .max => .maxPlus
   | .min => .minPlus
 
-private def annotationOf : Stmt → AggOp
+def annotationOf : Stmt → AggOp
   | .assign _ _ r | .scatter _ _ r => r.agg
   | .recurMorphism .. => .sum
 

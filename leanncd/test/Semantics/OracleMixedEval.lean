@@ -77,15 +77,6 @@ def MSort.mul : MSort → ExtVal → ExtVal → ExtVal
   | .minPlus, .fin x, .fin y => .fin (x + y)
   | .minPlus, _, _ => .negInf
 
-/-- The sort a statement's own annotation names. -/
-def ownSortOf : Stmt → MSort
-  | .assign _ _ r | .scatter _ _ r =>
-    match r.agg with
-    | .sum => .real
-    | .max => .maxPlus
-    | .min => .minPlus
-  | .recurMorphism .. => .real
-
 /-! ### The evaluator -/
 
 inductive MixedEvalError
@@ -193,7 +184,7 @@ def runMixed (admitted : AdmittedSource) (stmts : List Stmt) (p : Prediction) (o
       | some k => pure k
       | none => throw (.inconsistent s!"no predicted sort for statement {statement.original}")
     let own ← match stmts[statement.original]? with
-      | some s => pure (ownSortOf s)
+      | some s => pure (annotationSort (annotationOf s))
       | none => throw (.inconsistent s!"no statement {statement.original}")
     if run == .bool then throw (.inconsistent "bool statements are outside the Source sublanguage")
     runs := runs ++ [(statement.original, run, own)]
