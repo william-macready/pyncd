@@ -1,0 +1,88 @@
+[
+ {
+  "label": "T4-M3b (cast table: tropical -> bool accepted)",
+  "task": "oracle-sorts",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "(k == .bool || (k.isTropical && a != k))",
+  "new": "(k.isTropical && a != k)",
+  "targets": [
+   "Semantics.OracleSortRulesTest"
+  ]
+ },
+ {
+  "label": "T4-M3c (cast table: max-plus <-> min-plus accepted)",
+  "task": "oracle-sorts",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "(k == .bool || (k.isTropical && a != k))",
+  "new": "(k == .bool)",
+  "targets": [
+   "Semantics.OracleSortRulesTest",
+   "Semantics.OracleMixedRefusalTest"
+  ]
+ },
+ {
+  "label": "T9-M1 (isSortNeutral ignores rhs.nonlin again)",
+  "task": "oracle-sorts",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "      r.nonlin == .identity &&\n      match r.body.terms with",
+  "new": "      match r.body.terms with",
+  "targets": [
+   "Semantics.OracleSortRulesTest"
+  ]
+ },
+ {
+  "label": "R6 (colliding-LHS conjunct dropped from isSortNeutral)",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "ls.all (fun l => l.axisUids.eraseDups.length \u2264 1) &&\n                  es.all",
+  "new": "es.all",
+  "targets": [
+   "Eval.PropertyOracle.ScanOracle",
+   "Semantics.OracleSortRulesTest"
+  ],
+  "task": "oracle-sorts"
+ },
+ {
+  "label": "R16 (contracted-axis conjunct dropped from isSortNeutral)",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "(idxAffineForm e).2.all (fun p => lhs.contains p.2)",
+  "new": "(idxAffineForm e).2.all (fun p => lhs.contains p.2 || true)",
+  "targets": [
+   "Semantics.OracleSortRulesTest",
+   "Semantics.OracleMixedRefusalTest"
+  ],
+  "task": "oracle-sorts"
+ },
+ {
+  "label": "R11 (neutral writers vote beside non-neutral ones)",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "  | own => own\n",
+  "new": "  | own => own ++ (ws.filter Stmt.isSortNeutral).map (Stmt.algebra env)\n",
+  "targets": [
+   "Semantics.OracleSortRulesTest",
+   "Semantics.OracleMixedRefusalTest",
+   "Semantics.OracleMixedValueTest"
+  ],
+  "task": "oracle-sorts"
+ },
+ {
+  "label": "R9 (all-neutral fallback arm of writerVotes returns [])",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "  | [] => (ws.map (Stmt.algebra env)).filter (\u00b7 != .real)",
+  "new": "  | [] => []",
+  "targets": [
+   "Semantics.OracleSortRulesTest"
+  ],
+  "task": "oracle-sorts"
+ },
+ {
+  "label": "R10 (conflicting group leaks its first vote into the sort map)",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "            | none => pure ()\n    | .scan _ _ b r _ =>",
+  "new": "            | none =>\n              match writerVotes env ws with\n              | a :: _ => m := m.insert nm a\n              | [] => pure ()\n    | .scan _ _ b r _ =>",
+  "targets": [
+   "Semantics.OracleSortRulesTest",
+   "Semantics.OracleMixedRefusalTest"
+  ],
+  "task": "oracle-sorts"
+ }
+]
