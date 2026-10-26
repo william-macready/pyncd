@@ -308,8 +308,10 @@ private def bellman (s1 s2 : AggOp) : SourceSnapshot :=
 #guard_msgs in #eval yCore (bellman .min .min)
 /-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
 #guard_msgs in #eval classOf (bellman .min .min)
--- mixed groups: refused by the oracle at admission, in both orders; production refuses max + min
--- (`multiWriterAlgebra`) and accepts max + the sum copy, so there is no common classification
+-- mixed groups: refused by this typed single-sort path at admission, in both orders. Production
+-- accepts all of them (the min or sum copy is neutral, abstains, and runs in the group's sort), and
+-- refuses only a group of two non-neutral voters that disagree; the per-tensor-sort oracle
+-- (`compareMixedSource`, `OracleMixedValueTest`) pins their values
 /-- info: "refused LeanNCD.Semantics.Source.SourceCause.sortSelection\n  (LeanNCD.Semantics.Source.Oracle.SelectionError.mixedSorts [LeanNCD.AggOp.max, LeanNCD.AggOp.min])" -/
 #guard_msgs in #eval classOf (bellman .max .min)
 /-- info: "refused LeanNCD.Semantics.Source.SourceCause.sortSelection\n  (LeanNCD.Semantics.Source.Oracle.SelectionError.mixedSorts [LeanNCD.AggOp.max, LeanNCD.AggOp.sum])" -/

@@ -7,6 +7,10 @@
   "new": "(k.isTropical && a != k)",
   "targets": [
    "Semantics.OracleSortRulesTest"
+  ],
+  "expect": [
+   "error: test/Semantics/OracleSortRulesTest.lean:",
+   "C2 pinned verdicts: [cell 7: refused=true, production accepted"
   ]
  },
  {
@@ -18,6 +22,11 @@
   "targets": [
    "Semantics.OracleSortRulesTest",
    "Semantics.OracleMixedRefusalTest"
+  ],
+  "expect": [
+   "error: test/Semantics/OracleSortRulesTest.lean:",
+   "error: test/Semantics/OracleMixedRefusalTest.lean:",
+   "direct max-plus -> min-plus cast is refused (decision A): production verdict differs"
   ]
  },
  {
@@ -28,6 +37,10 @@
   "new": "      match r.body.terms with",
   "targets": [
    "Semantics.OracleSortRulesTest"
+  ],
+  "expect": [
+   "error: test/Semantics/OracleSortRulesTest.lean:",
+   "C1 predictor/production disagreements: [#27: production accepted, predicted []"
   ]
  },
  {
@@ -39,7 +52,10 @@
    "Eval.PropertyOracle.ScanOracle",
    "Semantics.OracleSortRulesTest"
   ],
-  "task": "oracle-sorts"
+  "task": "oracle-sorts",
+  "expect": [
+   "error: test/Eval/PropertyOracle/ScanOracle.lean:"
+  ]
  },
  {
   "label": "R16 (contracted-axis conjunct dropped from isSortNeutral)",
@@ -50,7 +66,12 @@
    "Semantics.OracleSortRulesTest",
    "Semantics.OracleMixedRefusalTest"
   ],
-  "task": "oracle-sorts"
+  "task": "oracle-sorts",
+  "expect": [
+   "error: test/Semantics/OracleSortRulesTest.lean:",
+   "error: test/Semantics/OracleMixedRefusalTest.lean:",
+   "C3 hand rows: [R11 sum contraction + neutral max copy: production verdict differs"
+  ]
  },
  {
   "label": "R11 (neutral writers vote beside non-neutral ones)",
@@ -62,7 +83,10 @@
    "Semantics.OracleMixedRefusalTest",
    "Semantics.OracleMixedValueTest"
   ],
-  "task": "oracle-sorts"
+  "task": "oracle-sorts",
+  "expect": [
+   "error: test/Eval/PropertyOracle/ScanGen.lean:"
+  ]
  },
  {
   "label": "R9 (all-neutral fallback arm of writerVotes returns [])",
@@ -72,7 +96,12 @@
   "targets": [
    "Semantics.OracleSortRulesTest"
   ],
-  "task": "oracle-sorts"
+  "task": "oracle-sorts",
+  "expect": [
+   "error: test/Semantics/OracleSortRulesTest.lean:",
+   "C1 predictor/production disagreements: [#1: production accepted, predicted []",
+   "all-neutral group: sum copy abstains, max copy votes: production verdict differs"
+  ]
  },
  {
   "label": "R10 (conflicting group leaks its first vote into the sort map)",
@@ -83,7 +112,12 @@
    "Semantics.OracleSortRulesTest",
    "Semantics.OracleMixedRefusalTest"
   ],
-  "task": "oracle-sorts"
+  "task": "oracle-sorts",
+  "expect": [
+   "error: test/Semantics/OracleSortRulesTest.lean:",
+   "error: test/Semantics/OracleMixedRefusalTest.lean:",
+   "C3 hand rows: [R10 max writer first: production verdict differs"
+  ]
  },
  {
   "label": "T3-E1 (max-plus additive identity is 0, not -inf)",
@@ -93,7 +127,10 @@
   "targets": [
    "Semantics.OracleMixedEvalTest"
   ],
-  "task": "oracle-sorts"
+  "task": "oracle-sorts",
+  "expect": [
+   "error: test/Semantics/OracleMixedEvalTest.lean:"
+  ]
  },
  {
   "label": "T3-E2 (min-plus add uses max)",
@@ -103,7 +140,10 @@
   "targets": [
    "Semantics.OracleMixedEvalTest"
   ],
-  "task": "oracle-sorts"
+  "task": "oracle-sorts",
+  "expect": [
+   "error: test/Semantics/OracleMixedEvalTest.lean:"
+  ]
  },
  {
   "label": "T3-E3 (abstaining neutral copy runs in its own annotation, not the group's)",
@@ -113,7 +153,10 @@
   "targets": [
    "Semantics.OracleMixedEvalTest"
   ],
-  "task": "oracle-sorts"
+  "task": "oracle-sorts",
+  "expect": [
+   "error: test/Semantics/OracleMixedEvalTest.lean:"
+  ]
  },
  {
   "label": "T3-E4 (read cast treats a tropical -inf as finite)",
@@ -123,7 +166,10 @@
   "targets": [
    "Semantics.OracleMixedEvalTest"
   ],
-  "task": "oracle-sorts"
+  "task": "oracle-sorts",
+  "expect": [
+   "error: test/Semantics/OracleMixedEvalTest.lean:"
+  ]
  },
  {
   "label": "T3-E5 (nonFiniteIntoReal check removed)",
@@ -133,7 +179,10 @@
   "targets": [
    "Semantics.OracleMixedEvalTest"
   ],
-  "task": "oracle-sorts"
+  "task": "oracle-sorts",
+  "expect": [
+   "error: test/Semantics/OracleMixedEvalTest.lean:"
+  ]
  },
  {
   "label": "T3-E6 (max-plus multiplicative identity is -inf, not 0)",
@@ -143,6 +192,9 @@
   "targets": [
    "Semantics.OracleMixedEvalTest"
   ],
-  "task": "oracle-sorts"
+  "task": "oracle-sorts",
+  "expect": [
+   "error: test/Semantics/OracleMixedEvalTest.lean:"
+  ]
  }
 ]
