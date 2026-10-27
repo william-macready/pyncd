@@ -8,8 +8,10 @@ predictor (`Semantics.OracleSortRules`).
 
 `MixedClassification` is test-side by design: it must call the test-side predictor, which a library
 module cannot import. The typed path (`SortedClassification`, `compareSortedSource`) is untouched.
-`compareMixedSource` is the accepted-path driver: predicted refusals go to `classifyRefusal`, the rest
-run through the heterogeneous evaluator and the mixed numerical profile. -/
+`compareMixedSource` is the driver. It consults `classifyRefusal` first on every program: a predicted
+refusal, or a leg that refused a predicted-accept program, is classified there (`some`); when it
+returns `none` (nothing predicted and both legs accepted) the program runs through the heterogeneous
+evaluator, the mixed numerical profile, both native legs and the stratified Core leg. -/
 
 open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
 open Debug Oracle NativeLegs SortedDifferential NumericalProfile LeanNCD.OracleSorts
