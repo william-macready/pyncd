@@ -102,13 +102,43 @@ run_cmd assertNone "C1 predictor/production disagreements" (disagreements c1Decl
 private def refusalsOf (ss : List Stmt) : Nat := (predict c1Decls ss).refusals.length
 
 -- Of the 505 C1 programs: 141 are predicted accepted, 258 have exactly one predicted refusal and 106
--- have two or more. For the last group `agrees` is membership only (the observed constructor is among
--- the predicted ones), so a spurious EXTRA predicted refusal there is not detected; the 258 + 141 are
--- exact (the constructor must equal the single predicted one, and an accepted program must publish the
--- predicted sorts).
+-- have two or more. The first two are the STRICT class (`agreesStrict`: the constructor must equal the
+-- single predicted one, and an accepted program must publish the predicted sorts). The last is the
+-- MULTI class (`agreesMember`: the observed constructor is among the predicted ones). A spurious EXTRA
+-- predicted refusal inside a multi-refusal program is NOT detected (see `agreesMember`); each rule's
+-- refusal is pinned by equality on strict programs instead (coverage guard in C4).
 #guard (corpusC1.filter (refusalsOf · == 0)).length == 141
 #guard (corpusC1.filter (refusalsOf · == 1)).length == 258
 #guard (corpusC1.filter (refusalsOf · ≥ 2)).length == 106
+
+/-- Each program is held to the predicate of its own class, so a strict-class program cannot hide
+    behind membership. -/
+private def classDisagreements (decls : List Decl) (corpus : List (List Stmt)) : List String :=
+  corpus.zipIdx.filterMap (fun (ss, i) =>
+    let p := predict decls ss
+    let v := productionVerdict decls ss
+    if p.refusals.length ≤ 1 then
+      if agreesStrict p v then none
+      else some s!"#{i}: strict class, production {tag v}, predicted {p.refusals.map (·.1)}"
+    else
+      if agreesMember p v then none
+      else some s!"#{i}: multi class, production {tag v}, predicted {p.refusals.map (·.1)}")
+
+run_cmd assertNone "C1 class-specific disagreements" (classDisagreements c1Decls corpusC1)
+
+-- The two predicates are not interchangeable: membership accepts a wrong constructor only when there
+-- are several predicted refusals, and the strict predicate rejects a multi prediction outright.
+#guard corpusC1.any (fun ss =>
+  let p := predict c1Decls ss
+  let v := productionVerdict c1Decls ss
+  p.refusals.length == 1 && agreesStrict p v && !agreesMember p v &&
+  !agreesStrict { p with refusals := [("sortCastUnsupported", "Y")] } v)
+#guard corpusC1.any (fun ss =>
+  let p := predict c1Decls ss
+  p.refusals.length ≥ 2 && agreesMember p (productionVerdict c1Decls ss) &&
+  !agreesStrict p (productionVerdict c1Decls ss) &&
+  !agreesMember { p with refusals := [("sortCastUnsupported", "Y"), ("sortCastUnsupported", "Z")] }
+    (productionVerdict c1Decls ss))
 
 /-! ### Shared declarations for C2 and C3 -/
 
@@ -323,6 +353,38 @@ private def observedTags : List String :=
 private def unmodelledTags : List String := observedTags.filter (fun t => !modelled.contains t)
 
 run_cmd assertNone "production constructors the predictor does not model" unmodelledTags
+
+-- Coverage of the strict class. Over-prediction inside a multi-refusal program is undetectable
+-- (`agreesMember`), so each modelled refusal must be observed as production's ACTUAL error on at least
+-- one STRICT program (at most one predicted refusal), where `agreesStrict` pins the constructor by
+-- equality. The strict programs are drawn from every corpus: C1 holds the vote, scatter and
+-- nonlinearity refusals; the cast refusal only occurs in C2 / C2 extras / C3, which therefore count
+-- as strict here (each of their programs predicts at most one refusal, checked below).
+private def strictPrograms : List (List Decl × List Stmt) :=
+  everything.filter (fun (d, ss) => (predict d ss).refusals.length ≤ 1)
+
+private def strictFailures : List String :=
+  (strictPrograms.filter (fun (d, ss) =>
+      !agreesStrict (predict d ss) (productionVerdict d ss))).map (fun (_, ss) => s!"{ss.length} stmts")
+
+run_cmd assertNone "strict programs that do not satisfy agreesStrict" strictFailures
+
+-- Every C2, C2-extras and C3 program is strict: the cast refusal's coverage may rely on them.
+#guard (corpusC2.map (hDecls, ·) ++ c2Rows.map (hDecls, ·.stmts) ++ c3Rows.map (hDecls, ·.stmts)).all
+  (fun (d, ss) => (predict d ss).refusals.length ≤ 1)
+
+private def uncoveredStrict : List String :=
+  (modelled.filter (· != "accepted")).filter (fun k =>
+    !strictPrograms.any (fun (d, ss) => tag (productionVerdict d ss) == k))
+
+run_cmd assertNone "modelled refusal constructors never observed on a strict program" uncoveredStrict
+
+-- C1's strict programs alone cover the vote, scatter and nonlinearity refusals; only the cast refusal
+-- needs C2 / C3 (C1's writers read inputs only).
+private def strictC1Tags : List String :=
+  ((corpusC1.filter (fun ss => refusalsOf ss ≤ 1)).map (fun ss => tag (productionVerdict c1Decls ss))).eraseDups
+
+#guard ["multiWriterAlgebra", "multiWriterScatter", "tropicalNonlin"].all strictC1Tags.contains
 
 -- An accepted REAL group with a neutral tropical copy (the copy abstains).
 #guard corpusC1.any (fun ss =>

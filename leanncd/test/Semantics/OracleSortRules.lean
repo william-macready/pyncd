@@ -59,20 +59,41 @@ where
 private def tropicalEntries (m : List (String × MSort)) : List (String × MSort) :=
   m.filter (fun p => p.2.isTropical)
 
-/-- Does the prediction match the observed verdict? Accepted: every entry production publishes (real
-    entries of single-writer tensors included) has the same predicted sort, and the tropical entries
-    agree in both directions (a predicted tropical sort production did not publish is a disagreement).
-    One predicted refusal: the same constructor name (payload names are not compared). Several: the
-    observed constructor is among them. -/
-def agrees (p : Prediction) (v : Except (String × String) (List (String × MSort))) : Bool :=
+/-- Agreement on the STRICT class: a prediction with zero or exactly one refusal. Accepted: every
+    entry production publishes (real entries of single-writer tensors included) has the same predicted
+    sort, and the tropical entries agree in both directions (a predicted tropical sort production did
+    not publish is a disagreement). One predicted refusal: production's observed constructor name equals
+    it (payload names are not compared). `false` for a prediction outside the class (two or more
+    refusals); those are `agreesMember`'s. -/
+def agreesStrict (p : Prediction) (v : Except (String × String) (List (String × MSort))) : Bool :=
   match p.refusals, v with
   | [], .ok m =>
       let x := tropicalEntries m
       let y := tropicalEntries p.sorts
       m.all (p.sorts.contains ·) && x.all (y.contains ·) && y.all (x.contains ·)
   | [], .error _ => false
-  | _ :: _, .ok _ => false
-  | rs, .error e => rs.any (fun r => r.1 == e.1)
+  | [r], .error e => r.1 == e.1
+  | [_], .ok _ => false
+  | _ :: _ :: _, _ => false
+
+/-- Agreement on the MULTI class: a prediction with two or more refusals. Production raised exactly one
+    error, so the check is membership: the observed constructor is among the predicted ones.
+
+    Over-prediction stays undetectable here. A spurious extra predicted refusal inside a multi-refusal
+    program leaves the observed constructor in the set, so membership still holds. Pinning which
+    refusal production raises first would mean modelling production's raise order, which the
+    independent predictor deliberately does not do. The rule behind each constructor is instead pinned
+    by equality on STRICT programs (see the coverage guard in `OracleSortRulesTest`). `false` for a
+    prediction outside the class. -/
+def agreesMember (p : Prediction) (v : Except (String × String) (List (String × MSort))) : Bool :=
+  match p.refusals, v with
+  | _ :: _ :: _, .error e => p.refusals.any (fun r => r.1 == e.1)
+  | _, _ => false
+
+/-- Does the prediction match the observed verdict? `agreesStrict` for zero or one predicted refusal,
+    `agreesMember` for two or more. -/
+def agrees (p : Prediction) (v : Except (String × String) (List (String × MSort))) : Bool :=
+  agreesStrict p v || agreesMember p v
 
 /-! ### The rules, stated from the design -/
 

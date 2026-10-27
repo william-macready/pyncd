@@ -14,10 +14,14 @@ namespace OracleMixedRefusalTest
 private def parity (ctor : String) : String :=
   s!"OracleMixed.MixedClassification.refusalParity \"{ctor}\""
 
-/-- The classification under a given prediction of the snapshot's refusals. -/
+/-- The classification under a given prediction of the snapshot's refusals; `none` is printed as
+`"none"` (no refusal verdict: the accepted path continues to value comparison). -/
 private def classWith (s : SourceSnapshot) (adjust : Prediction → Prediction) : String :=
   match runNative s (sorted := true) with
-  | .ok run => toString (repr (classifyRefusal (adjust (predict s.resolved.decls s.resolved.stmts)) run))
+  | .ok run =>
+    match classifyRefusal (adjust (predict s.resolved.decls s.resolved.stmts)) run with
+    | some k => toString (repr k)
+    | none => "none"
   | .error d => s!"refused {repr d.cause}"
 
 private def classOf (s : SourceSnapshot) : String := classWith s id
@@ -91,12 +95,11 @@ private def falseNativeFailure : String :=
 #guard sortedOf d7AffineBare (orderOf d7AffTs) == falseNativeFailure
 
 /-! Accept neighbour: the laundered cast is accepted, so with the true (empty) prediction
-`classifyRefusal` reports no mismatch (the sentinel, not `refusalMismatch`). -/
+`classifyRefusal` reports no verdict (`none`, not a `refusalMismatch`). -/
 private def isMismatch (s : String) : Bool := (s.splitOn "refusalMismatch").length > 1
 
 #guard !isMismatch (classOf castLaundered)
-#guard classOf castLaundered ==
-  "OracleMixed.MixedClassification.referenceUnavailable\n  \"accepted: no refusal observed, values not compared by classifyRefusal\""
+#guard classOf castLaundered == "none"
 
 /-! Negative controls: a doctored prediction is a mismatch, never a parity. -/
 private def predictAccepted : Prediction → Prediction := fun p => { p with refusals := [] }
@@ -110,5 +113,28 @@ private def predictVote : Prediction → Prediction :=
   "OracleMixed.MixedClassification.refusalMismatch [(\"sortCastUnsupported\", \"Y\")] \"multiWriterScatter\""
 #guard classWith castLaundered predictVote ==
   "OracleMixed.MixedClassification.refusalMismatch [(\"multiWriterAlgebra\", \"M\")] \"accepted\""
+
+/-! Two legs that refuse with DIFFERENT constructors are never `refusalParity`, even when one of the
+constructors is predicted: a run is assembled from the legacy leg of one real refusal and the checked
+leg of another. -/
+private def splitRun (legacySide checkedSide : SourceSnapshot) : Option NativeRun :=
+  match runNative legacySide (sorted := true), runNative checkedSide (sorted := true) with
+  | .ok a, .ok b => some { a with checked := b.checked }
+  | _, _ => none
+
+private def splitClass (p : Prediction) : Option NativeRun → String
+  | some run => match classifyRefusal p run with
+    | some k => toString (repr k)
+    | none => "none"
+  | none => "no run"
+
+private def predictScatter : Prediction :=
+  { refusals := [("multiWriterScatter", "Y")], sorts := [], stmtSorts := [] }
+
+-- legacy `multiWriterScatter`, checked `multiWriterAlgebra`; the scatter is predicted
+#guard splitClass predictScatter (splitRun d7Scatter r16a) ==
+  "OracleMixed.MixedClassification.refusalMismatch\n  [(\"multiWriterScatter\", \"Y\")]\n  \"legacy multiWriterScatter, checked multiWriterAlgebra\""
+-- the same legs from one program are parity
+#guard splitClass predictScatter (splitRun d7Scatter d7Scatter) == parity "multiWriterScatter"
 
 end OracleMixedRefusalTest
