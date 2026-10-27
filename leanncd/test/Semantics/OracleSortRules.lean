@@ -120,7 +120,11 @@ private def bareSlot : LHSSlot → Bool
   | _ => false
 
 private def hasNonBareSlot : Stmt → Bool
-  | .assign _ ls _ | .scatter _ ls _ => ls.any (fun l => !bareSlot l)
+  | .assign _ ls _ | .scatter _ ls _ =>
+      let freeUIDs := ls.filterMap (fun
+        | .free a | .freeNorm a => some a.uid
+        | _ => none)
+      ls.any (fun l => !bareSlot l) || freeUIDs.length != freeUIDs.eraseDups.length
   | .recurMorphism .. => false
 
 /-- The source tensors a statement reads through a bare (`read`) factor. Iverson and unary factors

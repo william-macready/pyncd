@@ -317,6 +317,63 @@ private def c3Rows : List Row :=
 run_cmd assertNone "C3 hand rows" (rowsProblems c3Rows)
 #guard c3Rows.length == 19
 
+/-! Supplemental rows use rank-correct declarations without expanding C1's writer product. -/
+
+private def matrixA : AxisSpec := { a with kind := .real }
+private def matrixB : AxisSpec := { b with kind := .real }
+
+private def matrixDecls (second : AxisSpec) : List Decl :=
+  [.axis matrixA (some 4), .axis second (some 3),
+   .typedTensor .f64 "Z" [matrixA, second], .typedTensor .f64 "Y" [matrixA, second]]
+
+private def matrixWriters (slots : List LHSSlot) (second : AxisSpec) : List Stmt :=
+  List.replicate 2 (.assign "Y" slots (rhs .sum .identity [[rd "Z" [matrixA, second]]]))
+
+private def sameNameB : AxisSpec := { matrixB with name := matrixA.name }
+
+private def supplementalRows : List (List Decl × Row) :=
+  [ (matrixDecls matrixB,
+      { label := "duplicate free UID makes diagonal Y[a,a] a scatter"
+        stmts := matrixWriters [.free matrixA, .free matrixA] matrixB
+        expect := .error ("multiWriterScatter", "Y") })
+  , (matrixDecls matrixB,
+      { label := "free/freeNorm duplicate UID also makes a scatter"
+        stmts := matrixWriters [.free matrixA, .freeNorm matrixA] matrixB
+        expect := .error ("multiWriterScatter", "Y") })
+  , (matrixDecls matrixB,
+      { label := "distinct bare UIDs Y[a,b] remain legal"
+        stmts := matrixWriters [.free matrixA, .free matrixB] matrixB
+        expect := .ok [], runs := some [.real, .real] })
+  -- The structural gate requires sum on predicate outputs; their running sort is still bool.
+  , (hDecls,
+      { label := "predicate contractions run in bool rather than annotation real"
+        stmts := [ct "OP" .sum "Z", ct "OP" .sum "Q"]
+        expect := .ok [], runs := some [.bool, .bool] })
+  , (hDecls,
+      { label := "predicate neutral writers also run in bool rather than annotation real"
+        stmts := [cp "OP" .sum "X", cp "OP" .sum "X"]
+        expect := .ok [], runs := some [.bool, .bool] })
+  , (hDecls,
+      { label := "tropical source into predicate multi-writer group is refused"
+        stmts := [ct "M" .max "Z", cp "OP" .sum "M", cp "OP" .sum "X"]
+        expect := .error ("sortCastUnsupported", "OP"), runs := some [maxS, .bool, .bool] })
+  , (hDecls,
+      { label := "real source into predicate multi-writer group is accepted"
+        stmts := [ct "M" .sum "Z", cp "OP" .sum "M", cp "OP" .sum "X"]
+        expect := .ok [], runs := some [.real, .bool, .bool] }) ]
+
+run_cmd assertNone "supplemental hand rows" <|
+  (supplementalRows.flatMap (fun (d, r) => rowProblems d r))
+
+#guard (productionVerdict hDecls [ct "OP" .sum "Z", ct "OP" .sum "Q"]).toOption.any
+  (·.contains ("OP", .bool))
+#guard (productionVerdict hDecls [cp "OP" .sum "X", cp "OP" .sum "X"]).toOption.any
+  (·.contains ("OP", .bool))
+
+-- A predictor-only identity control: source compilation re-resolves printable axis names.
+#guard (predict (matrixDecls sameNameB)
+  (matrixWriters [.free matrixA, .freeNorm sameNameB] sameNameB)).refusals.isEmpty
+
 /-! ### C4: the corpora are not vacuous -/
 
 private def aggOf : Stmt → AggOp
@@ -341,7 +398,7 @@ private def verdictC1 (ss : List Stmt) := productionVerdict c1Decls ss
 /-- Every (decls, program) pair in every corpus. -/
 private def everything : List (List Decl × List Stmt) :=
   corpusC1.map (c1Decls, ·) ++ corpusC2.map (hDecls, ·) ++ c2Rows.map (hDecls, ·.stmts) ++
-  c3Rows.map (hDecls, ·.stmts)
+  c3Rows.map (hDecls, ·.stmts) ++ supplementalRows.map (fun (d, r) => (d, r.stmts))
 
 private def modelled : List String :=
   ["accepted", "multiWriterAlgebra", "multiWriterScatter", "tropicalNonlin", "sortCastUnsupported"]
@@ -372,6 +429,7 @@ run_cmd assertNone "strict programs that do not satisfy agreesStrict" strictFail
 -- Every C2, C2-extras and C3 program is strict: the cast refusal's coverage may rely on them.
 #guard (corpusC2.map (hDecls, ·) ++ c2Rows.map (hDecls, ·.stmts) ++ c3Rows.map (hDecls, ·.stmts)).all
   (fun (d, ss) => (predict d ss).refusals.length ≤ 1)
+#guard supplementalRows.all (fun (d, r) => (predict d r.stmts).refusals.length ≤ 1)
 
 private def uncoveredStrict : List String :=
   (modelled.filter (· != "accepted")).filter (fun k =>
