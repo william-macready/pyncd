@@ -34,6 +34,10 @@ def mk (ts : List T) (stmts : List Stmt) : SourceSnapshot :=
     inputs := (ts.zipIdx.filter (fun (t, _) => t.role == .input)).map
       (fun (t, i) => ⟨i + 3, t.axes.map ext, t.vals⟩) }
 
+/-- Resolve a fixture name to its original declaration ordinal, without a missing-name default. -/
+def declarationIndex (s : SourceSnapshot) (n : String) : Option Nat :=
+  (s.resolved.decls.zipIdx.find? (fun (d, _) => d.name == n)).map (·.2)
+
 /-- Declaration ordinals of the non-input tensors, in definition order (the `order` argument of
 `compareSortedSource`). -/
 def orderOf (ts : List T) : List Nat :=

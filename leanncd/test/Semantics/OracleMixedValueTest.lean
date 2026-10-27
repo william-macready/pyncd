@@ -226,26 +226,34 @@ private def unwritten (agg : AggOp) (reader : AggOp) (fs : List Factor) : Fx :=
   fx [tX, tW8, tDef "M" [axK], tOut "R" [axK]]
     [zR "M" [.affine (.scale 2 axA)] agg [rd "X" [axA]], zR "R" [.free axK] reader fs]
 
-/-- Is the classification `nonFiniteIntoReal` at declaration `d`, cell `c`? -/
-private def nonFiniteAt (f : Fx) (d : Nat) (c : List Nat) : Bool :=
-  match run f with
-  | .ok r =>
+/-- Is the classification `nonFiniteIntoReal` at the named declaration, cell `c`? -/
+private def nonFiniteAt (f : Fx) (n : String) (c : List Nat) : Bool :=
+  match declarationIndex f.snap n, run f with
+  | some d, .ok r =>
     match r.classification with
     | .unsupportedNumericalProfile (.nonFiniteIntoReal site) =>
       site.origin.declaration == some d && site.coordinate == c
     | _ => false
-  | .error _ => false
+  | _, _ => false
 
 private def copyMax := unwritten .max .sum [rd "M" [axK]]
 private def productMax := unwritten .max .sum [rd "M" [axK], rd "W8" [axK]]
 private def copyMin := unwritten .min .sum [rd "M" [axK]]
+private def copyMaxMoved : Fx :=
+  fx [tX, tDef "M" [axK], tW8, tOut "R" [axK]] copyMax.snap.resolved.stmts
 -- a tropical reader of the same unwritten cells is fine: `-inf` is its own value
 private def maxReadsMax := unwritten .max .max [rd "M" [axK]]
 
--- `M` is declaration 5; its first unwritten cell is `[1]`
-#guard nonFiniteAt copyMax 5 [1]
-#guard nonFiniteAt productMax 5 [1]
-#guard nonFiniteAt copyMin 5 [1]
+-- The first unwritten cell is `[1]`, independently of `M`'s declaration position.
+#guard nonFiniteAt copyMax "M" [1]
+#guard nonFiniteAt productMax "M" [1]
+#guard nonFiniteAt copyMin "M" [1]
+#guard nonFiniteAt copyMaxMoved "M" [1]
+#guard declarationIndex copyMaxMoved.snap "M" != declarationIndex copyMax.snap "M"
+#guard declarationIndex copyMaxMoved.snap "missing" == none
+#guard !nonFiniteAt copyMaxMoved "W8" [1]
+#guard !nonFiniteAt copyMaxMoved "missing" [1]
+#guard !nonFiniteAt copyMaxMoved "M" [0]
 #guard !isParityClass copyMax
 #guard !isParityClass productMax
 #guard !isParityClass copyMin

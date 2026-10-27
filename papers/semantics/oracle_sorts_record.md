@@ -20,10 +20,10 @@ Commits (base 67af0367): rule predictor and corpora; refusal harness and rows; h
 
 ## Counts
 
-- C1: 441 ordered pairs plus 64 ordered triples = 505 programs, each `agrees (predict ..) (productionVerdict ..)`. C2: 16 reader cells, plus laundered and reader-of-group rows. C3: 19 hand rows with observed production verdicts. C4 vacuity guards.
+- C1: 441 ordered pairs plus 64 ordered triples = 505 programs, each `agrees (predict ..) (productionVerdict ..)`. C2: 16 reader cells, plus laundered and reader-of-group rows. C3: 19 hand rows with observed production verdicts, plus seven supplemental rows for diagonal geometry and predicate multi-writers (all included in strict-class coverage). C4 vacuity guards.
 - Refusal parity: 9 rows (R16 x2, R10 x2, cast decision A, single-writer neutral copy read by min, D7 x3), plus 3 doctored-prediction controls and the D7 contrast pins.
-- Evaluator: 41 guards (agreement with the typed `runWith` on 14 homogeneous fixtures, the observed mixed values, cast cells, non-finite shapes).
-- Value rows: 167 `#guard`s. Four-leg rows: 62 `parity` guard lines covering 55 distinct program instances (the 60 flips of T5 are 60 lines, 53 distinct instances, plus the two chain rows with 3 and 4 targets). Two rows stay `threeLegParity` (`maxReadsMax`, `minReadsMin`: Core stops at a non-finite intermediate; the computed prefix is still compared with the oracle). Three rows are `unsupportedNumericalProfile nonFiniteIntoReal` (legs `.unavailable`, native values deliberately not compared). Negative controls: one all-real doctored `stmtSorts` (5 programs, `nativeDiscrepancy`), `feed` controls (wrong earlier value, `referenceDiscrepancy`, including one that blocks Core mid-chain), and two profile-reject guards (a real product past the 2^20 envelope, a tropical sum of magnitudes past it) with in-envelope controls.
+- Evaluator: 47 guards (agreement with the typed `runWith` on 14 homogeneous fixtures, the observed mixed values, cast cells, non-finite shapes, and declaration-name/payload controls).
+- Value rows: 173 `#guard`s. Four-leg rows: 62 `parity` guard lines covering 55 distinct program instances (the 60 flips of T5 are 60 lines, 53 distinct instances, plus the two chain rows with 3 and 4 targets). Two rows stay `threeLegParity` (`maxReadsMax`, `minReadsMin`: Core stops at a non-finite intermediate; the computed prefix is still compared with the oracle). Three original programs plus a reordered-declaration control are `unsupportedNumericalProfile nonFiniteIntoReal` (legs `.unavailable`, native values deliberately not compared). Negative controls: one all-real doctored `stmtSorts` (5 programs, `nativeDiscrepancy`), `feed` controls (wrong earlier value, `referenceDiscrepancy`, including one that blocks Core mid-chain), and two profile-reject guards (a real product past the 2^20 envelope, a tropical sum of magnitudes past it) with in-envelope controls.
 - Re-expressed existing programs (commit "re-express ..."): its body says 22 distinct; that counts donor names. 14 are single-sort programs the typed path could already express, 8 are copy-form Bellman twins with different data. About 12 structurally distinct shapes in that dispatch, about 18 with the first dispatch's rows. Donors adapted to the Source sublanguage (e.g. `P2`'s `Tr` finite, `vrSum*` bare-index reads); not expressible: f32 `belP1d`, affine-read `belP1p`/`belP3p`/`B[i+1]`, `-inf` `Tr`, predicate/relu/Iverson/scan/`route`/NaN rows, `nbScat`.
 
 ## Mutation bar (22 entries, 22/22 killed after the 2026-10-27 follow-up; 15/15 at the original merge; Rule 12: none survived)
@@ -42,7 +42,7 @@ Eight design rows (T4-M3b, T4-M3c, T9-M1, R6, R16, R11, R9, R10), a ninth for R1
 - Production-only rows (hand fixtures stay): `T4-M5` (unary exemption in the cast check), `T4-M3d` (real -> bool rejection), R2, R3/R15, R5, R7, R8, R13 (`route`), R14 (NaN and `-0.0`; `compareBindings` normalises zero bits), B5, in-scan collection, JAX, F2 cast bypass.
 - D5: a non-finite cell read by a real statement is `unsupportedNumericalProfile nonFiniteIntoReal`; native bits there are not compared. `checkMixedProfile` checks occurrence-level envelopes and per-cell `checkExt` only (no fiber, statement or collection bounds, no receipt re-checks of `checkProfile`); that cannot cause a false parity (every cell is checked exactly and parity needs equal bits), only a false discrepancy on f64 rounding.
 - Native legs bind only `.output` tensors, so chain intermediates are compared oracle-vs-Core only.
-- Predictor scope: the cast rule is keyed on the destination's entry, which was aligned to production (design corrected after the builder check), so P cannot catch a defect in WHICH sort keys the cast check, only the accept/refuse arms; the single-writer own-annotation arm has the same origin. `agrees` now requires every entry production publishes (including real entries for single-writer tensors) to equal the predicted sort, and tropical entries both ways; predicted bool sorts are compared only where production publishes an entry. `stmtSorts` is not compared with production (production publishes no per-statement sort). The repeated-free-axis slot `Y[a,a]` (non-bare in production) is not modelled; it would surface loudly as `refusalMismatch [] "multiWriterScatter"`. The predicate-destination multi-writer branch of `predict` has no corpus program. (Closed by the follow-up: `classifyRefusal`'s `l == c` conjunct is now exercised, and `classifyRefusal` returns an `Option`, so the accepted path no longer depends on a sentinel `referenceUnavailable`.)
+- Predictor scope: the cast rule is keyed on the destination's entry, which was aligned to production (design corrected after the builder check), so P cannot catch a defect in WHICH sort keys the cast check, only the accept/refuse arms; the single-writer own-annotation arm has the same origin. `agrees` now requires every entry production publishes (including real entries for single-writer tensors) to equal the predicted sort, and tropical entries both ways; predicted bool sorts are compared only where production publishes an entry. `stmtSorts` is not compared with production (production publishes no per-statement sort). The Direct cleanup models repeated free/freeNorm UIDs (`Y[a,a]`) independently and covers predicate-destination multi-writers, including tropical-to-bool refusal and real-to-bool acceptance; bool evaluation remains outside the mixed evaluator's language. (Closed by the follow-up: `classifyRefusal`'s `l == c` conjunct is now exercised, and `classifyRefusal` returns an `Option`, so the accepted path no longer depends on a sentinel `referenceUnavailable`.)
 - Evidence quality: value rows were hand-derived and passed on their first build, so there is no printed-then-pinned RED for them (the RED evidence is a compile-level failure, plus the controls above).
 
 ## Parked (Rule 14)
@@ -52,8 +52,37 @@ Eight design rows (T4-M3b, T4-M3c, T9-M1, R6, R16, R11, R9, R10), a ninth for R1
 | ~~Move `oracleNeutral` to a leaf test module (cures the R11 masking)~~ | done 2026-10-27 | follow-up, commit "move oracleNeutral to a leaf module ..." |
 | ~~Split `agrees` into strict and membership classes~~ | done 2026-10-27 (`agreesStrict`/`agreesMember`, 141 / 258 / 106 pinned, each modelled refusal constructor observed on a strict program). Residual: over-prediction of a refusal inside a multi-refusal program stays undetectable without modelling production's raise order, which the design forbids | deviation 5 |
 | ~~`classifyRefusal` `l == c` row; sentinel -> `Option`~~ | done 2026-10-27 | follow-up |
-| Fixture-index derivation by name; drop the redundant `isMismatch` guard; the predictor corpus gaps (`Y[a,a]`, a predicate-destination multi-writer program) | small | cosmetic or latent, still open |
+| ~~Fixture-index derivation by name; drop the redundant `isMismatch` guard; the predictor corpus gaps (`Y[a,a]`, a predicate-destination multi-writer program)~~ | done 2026-10-27 | Direct cleanup; evidence below |
 | Stale wording: `compareMixedSource` docstring and two `OracleMixedValueTest` comments say the Core leg is "not run" though it now runs to the blocked target (the note string `core not run: non-finite intermediate` is kept so pins do not move) | trivial | doc only |
+
+## Direct cleanup (2026-10-27)
+
+One test-first implementer, three work items; no plan document or mutation-manifest additions.
+`declarationIndex` resolves names against each snapshot's declarations with an `Option` result.
+Evaluator and profile fixtures retain exact constructor/coordinate checks, exercise moving `M` to a
+different declaration ordinal, and reject wrong names, missing names and wrong coordinates.
+The redundant substring guard is removed; the stronger exact `none` guard and doctored controls stay.
+
+The predictor independently counts free/freeNorm UIDs for multi-writer scatter refusal. Supplemental
+rows cover duplicate free slots, mixed free/freeNorm duplicates and the legal distinct-axis neighbour.
+A predictor-only same-name/different-UID control pins identity without compilation's name re-resolution.
+Predicate contraction and neutral-copy groups pin bool running sorts and the published bool entry;
+real-source and tropical-source neighbours distinguish cast acceptance from refusal. These use legal
+sum annotations: `checkPredicateOutput` refuses non-sum predicate outputs before sort validation.
+No production rule or mixed evaluator capability changed.
+
+Observed RED: moved-index expectations failed in both evaluator and profile tests; diagonal rows
+reported an empty predicted refusal list. All four targeted test modules then built successfully.
+Seven controller-run `mutation-cycle.sh` checks each failed at the intended guard and passed after
+restoration: hard-code evaluator declaration 5; hard-code profile declaration 5; return a verdict
+instead of `none` on accepted refusal classification; omit duplicate detection; use axis names instead
+of UIDs; omit freeNorm UIDs; bypass the predicate group's bool override. These are additional manual
+checks, separate from the unchanged 22-entry manifest above.
+
+Whole-branch review covered independent rule restatement and diagnostic payloads, plus false-rejection
+risks and legal neighbours; no outstanding findings. The controller's full default build passed
+(8835 jobs), including the test library. Budget measurement via `token-report.py` could
+not report this Copilot session (no Claude transcript); no measured token total is claimed.
 
 ## Process and budget
 

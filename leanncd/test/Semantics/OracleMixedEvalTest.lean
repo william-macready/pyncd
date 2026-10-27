@@ -166,11 +166,24 @@ private def unwritten (agg : AggOp) (fs : List Factor) : Fx :=
 private def copyMax := unwritten .max [rd "M" [axK]]
 private def productMax := unwritten .max [rd "M" [axK], rd "W8" [axK]]
 private def copyMin := unwritten .min [rd "M" [axK]]
+private def copyMaxMoved : Fx :=
+  fx [tX, tDef "M" [axK], tW8, tOut "R" [axK]] copyMax.snap.resolved.stmts
 
--- `M` is declaration 5 and its first unwritten cell is `[1]`.
-#guard failure copyMax == "LeanNCD.OracleSorts.MixedEvalError.nonFiniteIntoReal 5 [1]"
-#guard failure productMax == "LeanNCD.OracleSorts.MixedEvalError.nonFiniteIntoReal 5 [1]"
-#guard failure copyMin == "LeanNCD.OracleSorts.MixedEvalError.nonFiniteIntoReal 5 [1]"
+private def nonFiniteAt (f : Fx) (n : String) (c : List Nat) : Bool :=
+  match declarationIndex f.snap n with
+  | some d => failure f == toString (repr (MixedEvalError.nonFiniteIntoReal d c))
+  | none => false
+
+-- The first unwritten cell is `[1]`, even when `M` moves in the declaration list.
+#guard nonFiniteAt copyMax "M" [1]
+#guard nonFiniteAt productMax "M" [1]
+#guard nonFiniteAt copyMin "M" [1]
+#guard nonFiniteAt copyMaxMoved "M" [1]
+#guard declarationIndex copyMaxMoved.snap "M" != declarationIndex copyMax.snap "M"
+#guard declarationIndex copyMaxMoved.snap "missing" == none
+#guard !nonFiniteAt copyMaxMoved "W8" [1]
+#guard !nonFiniteAt copyMaxMoved "missing" [1]
+#guard !nonFiniteAt copyMaxMoved "M" [0]
 
 -- The same unwritten cells are legal for a tropical reader of the same sort.
 #guard (named (fx [tX, tW8, tDef "M" [axK], tOut "R" [axK]]

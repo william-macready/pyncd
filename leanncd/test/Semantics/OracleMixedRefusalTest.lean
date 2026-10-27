@@ -96,9 +96,6 @@ private def falseNativeFailure : String :=
 
 /-! Accept neighbour: the laundered cast is accepted, so with the true (empty) prediction
 `classifyRefusal` reports no verdict (`none`, not a `refusalMismatch`). -/
-private def isMismatch (s : String) : Bool := (s.splitOn "refusalMismatch").length > 1
-
-#guard !isMismatch (classOf castLaundered)
 #guard classOf castLaundered == "none"
 
 /-! Negative controls: a doctored prediction is a mismatch, never a parity. -/
