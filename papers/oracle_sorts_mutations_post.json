@@ -85,7 +85,10 @@
   ],
   "task": "oracle-sorts",
   "expect": [
-   "error: test/Eval/PropertyOracle/ScanGen.lean:"
+   "error: test/Semantics/OracleSortRulesTest.lean:",
+   "C1 predictor/production disagreements: [#4: production multiWriterAlgebra, predicted []",
+   "C3 hand rows: [R11 sum contraction + neutral max copy: production verdict differs",
+   "error: test/Semantics/OracleMixedValueTest.lean:"
   ]
  },
  {
