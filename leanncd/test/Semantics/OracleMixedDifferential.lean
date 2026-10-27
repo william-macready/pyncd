@@ -8,8 +8,10 @@ predictor (`Semantics.OracleSortRules`).
 
 `MixedClassification` is test-side by design: it must call the test-side predictor, which a library
 module cannot import. The typed path (`SortedClassification`, `compareSortedSource`) is untouched.
-`compareMixedSource` is the accepted-path driver: predicted refusals go to `classifyRefusal`, the rest
-run through the heterogeneous evaluator and the mixed numerical profile. -/
+`compareMixedSource` is the driver. It consults `classifyRefusal` first on every program: a predicted
+refusal, or a leg that refused a predicted-accept program, is classified there (`some`); when it
+returns `none` (nothing predicted and both legs accepted) the program runs through the heterogeneous
+evaluator, the mixed numerical profile, both native legs and the stratified Core leg. -/
 
 open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
 open Debug Oracle NativeLegs SortedDifferential NumericalProfile LeanNCD.OracleSorts
@@ -73,20 +75,19 @@ def checkedTag : CheckedOutcome → String
 both legs refused with one constructor, among the predicted names, is `refusalParity`; anything else
 (an accepting leg, a constructor outside the predicted set, legs that disagree) is
 `refusalMismatch`. With none predicted: a leg that refused is `refusalMismatch [] ..`; both legs
-accepting returns `referenceUnavailable "accepted: ..."`, a sentinel meaning "no refusal observed,
-values not compared here" (never a mismatch); an unavailable leg is `nativeUnavailable`. -/
-def classifyRefusal (p : Prediction) (run : NativeRun) : MixedClassification :=
+accepting returns `none`: no refusal verdict, the accepted path continues to value comparison (never
+a mismatch); an unavailable leg is `nativeUnavailable`. Every other case is `some`. -/
+def classifyRefusal (p : Prediction) (run : NativeRun) : Option MixedClassification :=
   let l := legacyTag run.legacy
   let c := checkedTag run.checked
   let observed := if l == c then l else s!"legacy {l}, checked {c}"
   if p.refusals.isEmpty then
-    if l == "accepted" && c == "accepted" then
-      .referenceUnavailable "accepted: no refusal observed, values not compared by classifyRefusal"
+    if l == "accepted" && c == "accepted" then none
     else if (l == "unavailable" || l == "accepted") && (c == "unavailable" || c == "accepted") then
-      .nativeUnavailable
-    else .refusalMismatch [] observed
-  else if l == c && p.refusals.any (fun r => r.1 == l) then .refusalParity l
-  else .refusalMismatch p.refusals observed
+      some .nativeUnavailable
+    else some (.refusalMismatch [] observed)
+  else if l == c && p.refusals.any (fun r => r.1 == l) then some (.refusalParity l)
+  else some (.refusalMismatch p.refusals observed)
 
 /-! ### The mixed run -/
 
@@ -292,10 +293,11 @@ private def coreLeg (snapshot : SourceSnapshot) (admitted : AdmittedSource) (p :
 
 /-- The oracle verdict on a mixed-sort Source program.
 
-Predicted refusals (`p.refusals` non-empty) go to `classifyRefusal`. Otherwise `classifyRefusal` is
-consulted first only for a native leg that refuses or is unavailable (`refusalMismatch [] ..`,
-`nativeUnavailable`); its sentinel for "both legs accepted" is never a verdict, it means "now compare
-values": `runMixed`, the mixed profile, both legs' bits and the stratified Core leg (`coreLeg`).
+`classifyRefusal` is consulted first. Predicted refusals (`p.refusals` non-empty) always get a verdict
+from it, as does a native leg that refuses or is unavailable (`refusalMismatch [] ..`,
+`nativeUnavailable`). Its `none` ("both legs accepted, nothing predicted") is not a verdict, it means
+"now compare values": `runMixed`, the mixed profile, both legs' bits and the stratified Core leg
+(`coreLeg`).
 Precedence, as in the typed path: oracle or Core unavailable, then Core against oracle
 (`referenceDiscrepancy`), then the profile, then the native legs. All four agreeing is `fourLegParity`;
 a Core leg that was not run (non-finite intermediate) leaves `threeLegParity` with its note. `order`
@@ -310,17 +312,22 @@ def compareMixedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
   let admitted ← admitSourceAffine snapshot true
   let p := doctor (predict snapshot.resolved.decls snapshot.resolved.stmts)
   let n ← runNative snapshot (sorted := true)
-  let refusal := classifyRefusal p n
-  if !p.refusals.isEmpty then
-    pure { prediction := p, oracle := .error "predicted refusal: nothing evaluated", profile := .ok [],
-           legacy := refusalLeg predictedRefusal (legacyTag n.legacy),
-           checked := refusalLeg predictedRefusal (checkedTag n.checked),
-           classification := refusal }
-  else
-    match refusal with
-    | .referenceUnavailable _ =>
-      -- predicted accept and both legs accepted: evaluate and compare values
-      match order with
+  match classifyRefusal p n with
+  | some refusal =>
+    -- a predicted refusal, or a predicted-accept program a leg refused or was unavailable on
+    -- (`refusalMismatch [] ..`, `nativeUnavailable`): nothing is evaluated
+    if !p.refusals.isEmpty then
+      pure { prediction := p, oracle := .error "predicted refusal: nothing evaluated", profile := .ok [],
+             legacy := refusalLeg predictedRefusal (legacyTag n.legacy),
+             checked := refusalLeg predictedRefusal (checkedTag n.checked),
+             classification := refusal }
+    else
+      pure { prediction := p, oracle := .error "legs did not both accept: nothing evaluated",
+             profile := .ok [], legacy := refusalLeg otherLegDid (legacyTag n.legacy),
+             checked := refusalLeg otherLegDid (checkedTag n.checked), classification := refusal }
+  | none =>
+    -- predicted accept and both legs accepted: evaluate and compare values
+    match order with
       | none =>
         let u : Oracle.Unavailable := ⟨{}, .missingOrder⟩
         let profile : Except Unsupported (List SortedCell) := .error (.oracleUnavailable u)
@@ -389,10 +396,5 @@ def compareMixedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
             | _ => []
           pure { prediction := p, oracle := oracle, profile := profile, legacy := l, checked := c,
                  classification := classification, core := coreField, corePrefix := corePrefix }
-    | other =>
-      -- a leg refused a predicted-accept program (`refusalMismatch [] ..`), or is unavailable
-      pure { prediction := p, oracle := .error "legs did not both accept: nothing evaluated",
-             profile := .ok [], legacy := refusalLeg otherLegDid (legacyTag n.legacy),
-             checked := refusalLeg otherLegDid (checkedTag n.checked), classification := other }
 
 end OracleMixed

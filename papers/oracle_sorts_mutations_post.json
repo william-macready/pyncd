@@ -85,7 +85,10 @@
   ],
   "task": "oracle-sorts",
   "expect": [
-   "error: test/Eval/PropertyOracle/ScanGen.lean:"
+   "error: test/Semantics/OracleSortRulesTest.lean:",
+   "C1 predictor/production disagreements: [#4: production multiWriterAlgebra, predicted []",
+   "C3 hand rows: [R11 sum contraction + neutral max copy: production verdict differs",
+   "error: test/Semantics/OracleMixedValueTest.lean:"
   ]
  },
  {
@@ -209,6 +212,111 @@
   "expect": [
    "error: test/Semantics/OracleSortRulesTest.lean:",
    "C1 predictor/production disagreements: [#30: production accepted, predicted []"
+  ]
+ },
+ {
+  "label": "F2-1 (classifyRefusal: membership conjunct replaced by true)",
+  "task": "oracle-sorts",
+  "file": "test/Semantics/OracleMixedDifferential.lean",
+  "old": "l == c && p.refusals.any (fun r => r.1 == l)",
+  "new": "l == c && true",
+  "targets": [
+   "Semantics.OracleMixedRefusalTest"
+  ],
+  "expect": [
+   "error: test/Semantics/OracleMixedRefusalTest.lean:",
+   "did not evaluate to `true`",
+   "classWith castLaundered predictVote"
+  ]
+ },
+ {
+  "label": "F2-2 (classifyRefusal: legs need not name the same constructor)",
+  "task": "oracle-sorts",
+  "file": "test/Semantics/OracleMixedDifferential.lean",
+  "old": "else if l == c && p.refusals.any",
+  "new": "else if p.refusals.any",
+  "targets": [
+   "Semantics.OracleMixedRefusalTest"
+  ],
+  "expect": [
+   "error: test/Semantics/OracleMixedRefusalTest.lean:",
+   "did not evaluate to `true`",
+   "splitClass predictScatter (splitRun d7Scatter r16a)"
+  ]
+ },
+ {
+  "label": "F2-3 (Core prefix is no longer compared with the oracle)",
+  "task": "oracle-sorts",
+  "file": "test/Semantics/OracleMixedDifferential.lean",
+  "old": "match compareTensors (coreObs.filter (\u00b7.role != .input)) expected with",
+  "new": "match (if complete then compareTensors (coreObs.filter (\u00b7.role != .input)) expected else .ok .agreement) with",
+  "targets": [
+   "Semantics.OracleMixedValueTest"
+  ],
+  "expect": [
+   "error: test/Semantics/OracleMixedValueTest.lean:",
+   "did not evaluate to `true`",
+   "isRefDiscrepancy blockedAfterT (bump 5)"
+  ]
+ },
+ {
+  "label": "F2-4a (Core leg does not stop at a non-finite intermediate)",
+  "task": "oracle-sorts",
+  "file": "test/Semantics/OracleMixedDifferential.lean",
+  "old": "            return (observed, false)",
+  "new": "            pure ()",
+  "targets": [
+   "Semantics.OracleMixedValueTest"
+  ],
+  "expect": [
+   "error: test/Semantics/OracleMixedValueTest.lean:",
+   "did not evaluate to `true`",
+   "coreNotRun blockedAfterT"
+  ]
+ },
+ {
+  "label": "F2-4b (the complete flag is forced true: never threeLegParity)",
+  "task": "oracle-sorts",
+  "file": "test/Semantics/OracleMixedDifferential.lean",
+  "old": "if complete then .fourLegParity",
+  "new": "if true then .fourLegParity",
+  "targets": [
+   "Semantics.OracleMixedValueTest"
+  ],
+  "expect": [
+   "error: test/Semantics/OracleMixedValueTest.lean:",
+   "did not evaluate to `true`",
+   "classOf blockedAfterT == threeNotRun"
+  ]
+ },
+ {
+  "label": "F2-5a (mixed profile: tropical statements use the product envelope)",
+  "task": "oracle-sorts",
+  "file": "test/Semantics/OracleMixedDifferential.lean",
+  "old": "bound := bound + |q|",
+  "new": "bound := max 1 bound * max 1 |q|",
+  "targets": [
+   "Semantics.OracleMixedValueTest"
+  ],
+  "expect": [
+   "error: test/Semantics/OracleMixedValueTest.lean:",
+   "did not evaluate to `true`",
+   "rejectedSum"
+  ]
+ },
+ {
+  "label": "F2-5b (mixed profile: the occurrence loop is skipped)",
+  "task": "oracle-sorts",
+  "file": "test/Semantics/OracleMixedDifferential.lean",
+  "old": "for o in r.occurrences do",
+  "new": "for o in r.occurrences.take 0 do",
+  "targets": [
+   "Semantics.OracleMixedValueTest"
+  ],
+  "expect": [
+   "error: test/Semantics/OracleMixedValueTest.lean:",
+   "did not evaluate to `true`",
+   "rejectedProduct"
   ]
  }
 ]
