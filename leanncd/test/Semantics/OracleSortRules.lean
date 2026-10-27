@@ -1,6 +1,6 @@
 import LeanNCD.DSL.Compile
 import LeanNCD.DSL.Pipeline.ScheduledValidation
-import Eval.PropertyOracle.ScanUnroll
+import Eval.PropertyOracle.Neutral
 
 /-! Oracle sorts T1: an INDEPENDENT predictor of the sort/vote/cast/refusal rules.
 
