@@ -98,6 +98,18 @@ private def disagreements (decls : List Decl) (corpus : List (List Stmt)) : List
 
 run_cmd assertNone "C1 predictor/production disagreements" (disagreements c1Decls corpusC1)
 
+/-- How many refusals the predictor names for a C1 program. -/
+private def refusalsOf (ss : List Stmt) : Nat := (predict c1Decls ss).refusals.length
+
+-- Of the 505 C1 programs: 141 are predicted accepted, 258 have exactly one predicted refusal and 106
+-- have two or more. For the last group `agrees` is membership only (the observed constructor is among
+-- the predicted ones), so a spurious EXTRA predicted refusal there is not detected; the 258 + 141 are
+-- exact (the constructor must equal the single predicted one, and an accepted program must publish the
+-- predicted sorts).
+#guard (corpusC1.filter (refusalsOf · == 0)).length == 141
+#guard (corpusC1.filter (refusalsOf · == 1)).length == 258
+#guard (corpusC1.filter (refusalsOf · ≥ 2)).length == 106
+
 /-! ### Shared declarations for C2 and C3 -/
 
 /-- Inputs `X[a]`, `Z[a,b]`, `Q[a,b]` and predicate input `P[a]`; every other name is a tensor
@@ -148,7 +160,8 @@ runs in. -/
 private structure Row where
   label : String
   stmts : List Stmt
-  /-- Observed production verdict, tropical entries only (real/bool carry no entry in `agrees`). -/
+  /-- Observed production verdict, TROPICAL entries only (production also publishes `real` entries for
+      single-writer tensors; `agrees` compares those against the full verdict, not against this field). -/
   expect : Except (String × String) (List (String × MSort))
   /-- The sort each input statement runs in (the predictor's claim; not observable at the pipeline). -/
   runs : Option (List MSort) := none
@@ -341,6 +354,17 @@ private def acceptedWith (f : List (String × MSort) → Bool) : Bool :=
   everything.any (fun (d, ss) => match productionVerdict d ss with
     | .ok m => f m
     | .error _ => false)
+
+-- `agrees` compares real entries too: some accepted program publishes one, and a prediction with that
+-- sort changed to bool no longer agrees.
+#guard acceptedWith (fun m => m.any (fun p => p.2 == .real))
+#guard everything.any (fun (d, ss) =>
+  match productionVerdict d ss with
+  | .ok m =>
+    m.any (fun p => p.2 == .real) &&
+    !agrees { predict d ss with
+              sorts := (predict d ss).sorts.map (fun (n, k) => (n, if k == .real then .bool else k)) } (.ok m)
+  | .error _ => false)
 
 -- Each accepted sort class and each modelled refusal occurs at least once.
 #guard acceptedWith (fun m => !m.any (fun p => p.2.isTropical))

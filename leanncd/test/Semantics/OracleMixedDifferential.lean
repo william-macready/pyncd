@@ -19,8 +19,13 @@ namespace OracleMixed
 /-- The verdict on a mixed-sort program. `refusalParity` and `refusalMismatch` come from
 `classifyRefusal`; the value constructors come from `compareMixedSource`. `fourLegParity` means the
 oracle, the stratified Core leg, legacy and checked all agree. `threeLegParity note` means the oracle,
-legacy and checked agree and the Core leg was NOT run (the note says why: a later statement needs an
-earlier non-finite cell, and Core inputs are rationals). -/
+legacy and checked agree and the Core leg stopped before the end (the note says why: a later statement
+needs an earlier non-finite cell, and Core inputs are rationals); the targets it did run before stopping
+were still compared with the oracle (a disagreement there is `referenceDiscrepancy`).
+
+"All agree" is as strong as what each leg observes: the native legs (legacy, checked) bind only the
+`.output` tensors, so a defined intermediate in a chain is compared oracle-against-Core only, never
+against the native legs. -/
 inductive MixedClassification
   | fourLegParity
   | threeLegParity (note : String)
@@ -89,7 +94,9 @@ def classifyRefusal (p : Prediction) (run : NativeRun) : MixedClassification :=
 (a predicted refusal). The rule predictor's `prediction` is kept for the record. `core` is `none` when
 the Core leg was not run (a predicted refusal, an oracle that did not evaluate, or a non-finite
 intermediate), and `some (.error ..)` when it ran and failed; the two are never conflated. It defaults
-to `none`: only the arm that evaluates sets it. -/
+to `none`: only the arm that evaluates sets it. `corePrefix` holds the observations of the targets the
+Core leg did run before it stopped at a blocked target (`core` is then `none`); it is compared with the
+oracle and is empty otherwise. -/
 structure MixedRun where
   prediction : Prediction
   oracle : Except String (List (TensorObservation ExtVal))
@@ -98,11 +105,19 @@ structure MixedRun where
   checked : LegResult
   classification : MixedClassification
   core : Option (Except String (List (TensorObservation ExtVal))) := none
+  corePrefix : List (TensorObservation ExtVal) := []
 
 /-- The mixed numerical profile. Inputs and every cell are integers inside the envelope. Per
 occurrence: a real statement uses the PRODUCT envelope exactly as `NumericalProfile.checkProfile`
 does (read, partial product, running `max 1 |read|` product, final product); a tropical statement
-the sum-of-magnitudes envelope of `checkSortedProfile` over its finite reads. -/
+the sum-of-magnitudes envelope of `checkSortedProfile` over its finite reads.
+
+Weaker than `checkProfile`: the summation, fiber and collection bounds, and the receipt re-checks of
+the oracle's occurrences (occurrence count, assignment, read coordinate), are NOT performed; only the
+occurrence-level envelopes above and the per-cell `checkExt` are. A false parity cannot result: every
+non-input cell passes `checkExt`, so its exact value is a representable integer, and parity requires
+the native bits to equal the exact value's bits. The weaker check can only turn an f64 rounding
+difference in an unbounded sum into a `nativeDiscrepancy`, which is loud. -/
 def checkMixedProfile (source : AdmittedSource) (r : MixedResult) :
     Except Unsupported (List SortedCell) := do
   let _ ← checkStructure source
@@ -173,12 +188,17 @@ private def legResults (profile : Except Unsupported (List SortedCell)) (n : Nat
     | .runtime e => mixedLegOf profile none s!"checked runtime {repr e.original.cause}"
     | .unavailable _ => .unavailable)
 
-/-- A leg's result on a predicted-refusal row: no values were evaluated, so only the refusal itself is
-recorded (an accepting leg is a contradiction of the prediction). -/
-private def refusalLeg (tag : String) : LegResult :=
+/-- A leg's result when no values were evaluated: only what the leg did is recorded. On a
+predicted-refusal row an accepting leg contradicts the prediction (`accepted`); on a predicted-accept
+row where the other leg refused or was unavailable, an accepting leg is merely not the refusing one. -/
+private def refusalLeg (accepted : String) (tag : String) : LegResult :=
   if tag == "unavailable" then .unavailable
-  else if tag == "accepted" then .failure "accepted although a refusal was predicted"
+  else if tag == "accepted" then .failure accepted
   else .failure s!"refused {tag}"
+
+private def predictedRefusal : String := "accepted although a refusal was predicted"
+
+private def otherLegDid : String := "accepted; other leg did not"
 
 /-- The site of a non-finite read: the read tensor's declaration and the cell. -/
 private def nonFiniteSite (declaration : Nat) (coordinate : List Nat) : Site :=
@@ -217,14 +237,16 @@ private def coreGroup (sub : SourceSnapshot) (target : Nat) :
     | some t => pure t
     | none => throw s!"core leg: no observation for declaration {target}"
 
-/-- The Core leg over every target in `order`. `ok none`: not run, because a later group reads an
-earlier target that has a non-finite Core cell (inputs are rationals; the check is per read tensor,
-so it never runs a group on a value it cannot represent). `error`: it ran and failed. `ok (some ts)`:
-the Core observations of the non-input tensors. `feed` rewrites an earlier target's rational cells
-(by declaration) before they enter later groups; it is the identity except in negative controls. -/
+/-- The Core leg over every target in `order`. `error`: it ran and failed. `ok (ts, true)`: it ran to
+the end and `ts` are the Core observations of the non-input tensors. `ok (ts, false)`: it STOPPED at a
+target because a later group reads an earlier target that has a non-finite Core cell (inputs are
+rationals; the check is per read tensor, so it never runs a group on a value it cannot represent);
+`ts` are the observations of the targets it did run before stopping, which the caller still compares
+with the oracle. `feed` rewrites an earlier target's rational cells (by declaration) before they enter
+later groups; it is the identity except in negative controls. -/
 private def coreLeg (snapshot : SourceSnapshot) (admitted : AdmittedSource) (p : Prediction)
     (order : List Nat) (feed : Nat → List ℚ → List ℚ) :
-    Except String (Option (List (TensorObservation ExtVal))) := do
+    Except String (List (TensorObservation ExtVal) × Bool) := do
   let mut observed : List (TensorObservation ExtVal) := []
   let mut fed : List (Nat × List ℚ) := []
   let mut nonFinite : List Nat := []
@@ -235,7 +257,7 @@ private def coreLeg (snapshot : SourceSnapshot) (admitted : AdmittedSource) (p :
       for term in s.terms do
         for read in term.sourceReads do
           if (admitted.source.table.entry read.read.tensor).declaration ∈ nonFinite then
-            return none
+            return (observed, false)
     let mut stmts : List Stmt := []
     for s in group do
       let some k := p.stmtSorts[s.original]?
@@ -245,7 +267,9 @@ private def coreLeg (snapshot : SourceSnapshot) (admitted : AdmittedSource) (p :
         | throw s!"no statement {s.original}"
       stmts := stmts ++ [withAgg a stmt]
     -- every other non-input tensor enters as an input: an earlier target at the Core leg's value,
-    -- a later or unrelated one (never read by this group) as zeros
+    -- a later or unrelated one (never read by this group) as zeros. Reading a zero placeholder would be
+    -- unsound; that never happens because `runMixed` ran `Oracle.checkOrder` first, which rejects any
+    -- read of a declaration that is not earlier in `order`.
     let extra := snapshot.specs.filterMap fun spec =>
       if spec.declaration == target || spec.role == .input then none
       else
@@ -264,7 +288,7 @@ private def coreLeg (snapshot : SourceSnapshot) (admitted : AdmittedSource) (p :
     match t.values.mapM (fun v => match v with | some (.fin q) => some q | _ => none) with
     | some qs => fed := fed ++ [(target, feed target qs)]
     | none => nonFinite := nonFinite ++ [target]
-  pure (some observed)
+  pure (observed, true)
 
 /-- The oracle verdict on a mixed-sort Source program.
 
@@ -289,7 +313,8 @@ def compareMixedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
   let refusal := classifyRefusal p n
   if !p.refusals.isEmpty then
     pure { prediction := p, oracle := .error "predicted refusal: nothing evaluated", profile := .ok [],
-           legacy := refusalLeg (legacyTag n.legacy), checked := refusalLeg (checkedTag n.checked),
+           legacy := refusalLeg predictedRefusal (legacyTag n.legacy),
+           checked := refusalLeg predictedRefusal (checkedTag n.checked),
            classification := refusal }
   else
     match refusal with
@@ -330,15 +355,15 @@ def compareMixedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
             match oracle, core with
             | .error e, _ => .referenceUnavailable e
             | _, .error e => .referenceUnavailable s!"core leg failed: {e}"
-            | .ok o, .ok coreObs =>
+            | .ok o, .ok (coreObs, complete) =>
+              -- a Core leg that stopped is compared on the targets it did run (its prefix)
+              let expected := o.filter fun t =>
+                t.role != .input && (complete || coreObs.any (·.declaration == t.declaration))
               let agreement : Except String Bool :=
-                match coreObs with
-                | none => .ok true
-                | some cs =>
-                  match compareTensors (cs.filter (·.role != .input)) (o.filter (·.role != .input)) with
-                  | .error e => .error s!"{repr e}"
-                  | .ok .agreement => .ok true
-                  | .ok (.disagreement _) | .ok (.unobserved _) => .ok false
+                match compareTensors (coreObs.filter (·.role != .input)) expected with
+                | .error e => .error s!"{repr e}"
+                | .ok .agreement => .ok true
+                | .ok (.disagreement _) | .ok (.unobserved _) => .ok false
               match agreement with
               | .error e => .referenceUnavailable e
               | .ok false => .referenceDiscrepancy
@@ -348,23 +373,26 @@ def compareMixedSource (snapshot : SourceSnapshot) (order : Option (List Nat))
                 | .ok _ =>
                   match l, c with
                   | .agrees, .agrees =>
-                    match coreObs with
-                    | some _ => .fourLegParity
-                    | none => .threeLegParity "core not run: non-finite intermediate"
+                    if complete then .fourLegParity
+                    else .threeLegParity "core not run: non-finite intermediate"
                   | .unavailable, _ | _, .unavailable => .nativeUnavailable
                   | .failure _, _ | _, .failure _ => .nativeFailure l c
                   | _, _ => .nativeDiscrepancy l c
           let coreField : Option (Except String (List (TensorObservation ExtVal))) :=
             match core with
             | .error e => some (.error e)
-            | .ok none => none
-            | .ok (some cs) => some (.ok cs)
+            | .ok (_, false) => none
+            | .ok (cs, true) => some (.ok cs)
+          let corePrefix : List (TensorObservation ExtVal) :=
+            match core with
+            | .ok (cs, false) => cs
+            | _ => []
           pure { prediction := p, oracle := oracle, profile := profile, legacy := l, checked := c,
-                 classification := classification, core := coreField }
+                 classification := classification, core := coreField, corePrefix := corePrefix }
     | other =>
       -- a leg refused a predicted-accept program (`refusalMismatch [] ..`), or is unavailable
       pure { prediction := p, oracle := .error "legs did not both accept: nothing evaluated",
-             profile := .ok [], legacy := refusalLeg (legacyTag n.legacy),
-             checked := refusalLeg (checkedTag n.checked), classification := other }
+             profile := .ok [], legacy := refusalLeg otherLegDid (legacyTag n.legacy),
+             checked := refusalLeg otherLegDid (checkedTag n.checked), classification := other }
 
 end OracleMixed

@@ -9,7 +9,8 @@ Every accepted row asserts three things, so none is vacuous: the classification 
 Core leg's own cells equal hand-derived values, and the sort each statement RAN in (the predictor's
 `stmtSorts`). The only rows that stay `threeLegParity "core not run: non-finite intermediate"` are
 those where a later statement reads an earlier tropical cell that was never written (`-inf`/`+inf`):
-Core inputs are rationals, so the Core leg is not run, and `MixedRun.core` is `none`. Values are derived from the inputs of
+Core inputs are rationals, so the Core leg stops there (`MixedRun.core` is `none`; the targets it ran
+before stopping are `MixedRun.corePrefix`, compared with the oracle). Values are derived from the inputs of
 `Semantics.OracleMixedFixtures` (`X=[20,2,3,40]`, `Z` rows `[-5,-4,-3] [5,6,7] [15,16,17] [25,26,27]`,
 `B=Q` rows `[1,9,2] [3,8,4] [7,5,6] [0,10,11]`), not copied from production. -/
 
@@ -112,7 +113,7 @@ private def termY (agg : AggOp) : Stmt := st "Y" agg (rd "X" [axA])
 private def bellman (s1 s2 : AggOp) : Fx := fx [tX, tZ, tOut "Y"] [contY s1, termY s2]
 private def bellmanRev (s1 s2 : AggOp) : Fx := fx [tX, tZ, tOut "Y"] [termY s2, contY s1]
 
--- homogeneous control (the typed path says `fourLegParity`; here Core is not run)
+-- homogeneous control (the typed path says `fourLegParity`; here too it is `fourLegParity`)
 #guard parity (bellman .max .max) "Y" [20, 7, 17, 40]
 #guard ranIn (bellman .max .max) == some [.maxPlus, .maxPlus]
 
@@ -266,6 +267,24 @@ private def minReadsMin := unwritten .min .min [rd "M" [axK]]
 #guard classOf minReadsMin == threeNotRun
 #guard coreNotRun minReadsMin
 #guard legsAgree minReadsMin
+
+/-- The Core observations computed before the Core leg stopped at a blocked target (`MixedRun.corePrefix`),
+for the tensor named `n`. -/
+private def corePrefixOf (f : Fx) (n : String) : Option (List ExtVal) :=
+  match run f with
+  | .ok r => cellsIn r.corePrefix n
+  | .error _ => none
+
+-- the stopped Core leg is not discarded: the `M` it computed before it stopped is compared with the
+-- oracle's `M` (the two are the same cells), and `R`, the blocked target, is not in the prefix
+#guard corePrefixOf maxReadsMax "M" ==
+  some [.fin 20, .negInf, .fin 2, .negInf, .fin 3, .negInf, .fin 40, .negInf]
+#guard corePrefixOf maxReadsMax "M" == cellsOf maxReadsMax "M"
+#guard corePrefixOf maxReadsMax "R" == none
+#guard corePrefixOf minReadsMin "M" ==
+  some [.fin 20, .posInf, .fin 2, .posInf, .fin 3, .posInf, .fin 40, .posInf]
+#guard corePrefixOf minReadsMin "M" == cellsOf minReadsMin "M"
+#guard corePrefixOf minReadsMin "R" == none
 
 /-! ### Existing programs re-expressed (T4 dispatch 2)
 
@@ -563,5 +582,90 @@ private def bump (d : Nat) : Nat → List ℚ → List ℚ :=
     | .fourLegParity => true
     | _ => false
   | none => false
+
+/-! ### Negative control: a disagreeing Core PREFIX is a `referenceDiscrepancy`, not `threeLegParity`
+
+The Core leg stops at a target whose read tensor has a non-finite cell (`R` reads `M`, whose odd cells
+are `-inf`). What it computed before stopping (`T`, `M`) is still compared with the oracle. Here `T`
+(declaration 5, a real copy of `X`) is bumped on its way into `M`'s Core run, so Core's `M` differs from
+the oracle's although Core never reached `R`: the class is `referenceDiscrepancy`, where the unbumped
+row is `threeLegParity` (the prefix agrees). -/
+
+private def blockedAfterT : Fx :=
+  fx [tX, tW8, tDef "T", tDef "M" [axK], tOut "R" [axK]]
+    [st "T" .sum (rd "X" [axA]), zR "M" [.affine (.scale 2 axA)] .max [rd "T" [axA]],
+     zR "R" [.free axK] .max [rd "M" [axK]]]
+
+#guard classOf blockedAfterT == threeNotRun
+#guard coreNotRun blockedAfterT
+#guard corePrefixOf blockedAfterT "T" == some (fins [20, 2, 3, 40])
+#guard isRefDiscrepancy blockedAfterT (bump 5)
+#guard match runFed blockedAfterT (bump 5) with
+  | some r => match r.classification with
+    | .threeLegParity _ => false
+    | _ => true
+  | none => false
+-- the oracle and both native legs are untouched by the feed
+#guard match runFed blockedAfterT (bump 5) with
+  | some r => match r.legacy, r.checked with
+    | .agrees, .agrees => true
+    | _, _ => false
+  | none => false
+-- the wrong value is in the Core PREFIX (not a finished Core leg): `M` at the even cells is `X + 1`
+#guard match runFed blockedAfterT (bump 5) with
+  | some r => r.core.isNone &&
+      cellsIn r.corePrefix "M" == some [.fin 21, .negInf, .fin 3, .negInf, .fin 4, .negInf, .fin 41, .negInf]
+  | none => false
+
+/-! ### The mixed profile REJECTS an occurrence outside the numerical envelope
+
+`checkMixedProfile` is the only gate between the oracle's exact rationals and the f64 native legs, so
+its rejection arm is exercised here, not just its accepting arm. The envelope is `NumericalProfile.limit`
+(`2^20`): every input, read, partial product and cell must be an integer of at most that magnitude. The
+rejection is pinned by kind and value, so it is the per-OCCURRENCE check that fires (a statement-level or
+final-cell check would report `tensorCell`): a real statement is bounded by its PRODUCT of reads
+(`partialProduct`), a tropical one by the SUM of the magnitudes of its reads (`subsetProductBound`).
+Each rejected row has an accepted control one step inside the envelope (so it is the magnitude, nothing
+else, that rejects). The legs are `.unavailable` on a rejected row: their bits are not compared. -/
+
+private def tBigX (x0 : ℚ) : T := ⟨"X", [axA], .input, [x0, 2, 3, 40]⟩
+private def tBigA (a0 : ℚ) : T := ⟨"A", [axA], .input, [a0, 1, 1, 1]⟩
+private def twoReads (agg : AggOp) (x0 a0 : ℚ) : Fx :=
+  fx [tBigX x0, tBigA a0, tOut "Y"] [zR "Y" free1 agg [rd "X" [axA], rd "A" [axA]]]
+
+/-- Rejected at statement 0, cell `[0]`, as a partial product of value `v`. -/
+private def rejectedProduct (f : Fx) (v : ℚ) : Bool :=
+  match run f with
+  | .ok r =>
+    match r.classification with
+    | .unsupportedNumericalProfile (.outsideEnvelope site .partialProduct value _) =>
+      value == v && site.origin.statement == some 0 && site.coordinate == [0]
+    | _ => false
+  | .error _ => false
+
+/-- Rejected at statement 0, cell `[0]`, as a sum of magnitudes of value `v`. -/
+private def rejectedSum (f : Fx) (v : ℚ) : Bool :=
+  match run f with
+  | .ok r =>
+    match r.classification with
+    | .unsupportedNumericalProfile (.outsideEnvelope site .subsetProductBound value _) =>
+      value == v && site.origin.statement == some 0 && site.coordinate == [0]
+    | _ => false
+  | .error _ => false
+
+-- real: `2048 * 2048 = 4194304 > 2^20`; the control `1024 * 1024 = 2^20` is at the limit, accepted
+#guard rejectedProduct (twoReads .sum 2048 2048) 4194304
+#guard legsUnavailable (twoReads .sum 2048 2048)
+#guard !isParityClass (twoReads .sum 2048 2048)
+#guard parity (twoReads .sum 1024 1024) "Y" [1048576, 2, 3, 40]
+-- tropical: `600000 + 600000 = 1200000 > 2^20` (each read alone is inside); the control sums to `10^6`
+#guard rejectedSum (twoReads .max 600000 600000) 1200000
+#guard rejectedSum (twoReads .min 600000 600000) 1200000
+#guard legsUnavailable (twoReads .max 600000 600000)
+#guard !isParityClass (twoReads .max 600000 600000)
+#guard parity (twoReads .max 500000 500000) "Y" [1000000, 3, 4, 41]
+#guard parity (twoReads .min 500000 500000) "Y" [1000000, 3, 4, 41]
+-- the two bounds differ: the same inputs `2048, 2048` are fine for a tropical statement (sum 4096)
+#guard parity (twoReads .max 2048 2048) "Y" [4096, 3, 4, 41]
 
 end OracleMixedValueTest

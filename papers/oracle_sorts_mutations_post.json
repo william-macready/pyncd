@@ -196,5 +196,15 @@
   "expect": [
    "error: test/Semantics/OracleMixedEvalTest.lean:"
   ]
+ },
+ {
+  "label": "R12 (Iverson-only copy counted neutral)",
+  "task": "oracle-sorts",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "lhs.contains p.2))\n              | none => false",
+  "new": "lhs.contains p.2))\n              | none => true",
+  "targets": [
+   "Semantics.OracleSortRulesTest"
+  ]
  }
 ]

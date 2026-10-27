@@ -59,15 +59,17 @@ where
 private def tropicalEntries (m : List (String × MSort)) : List (String × MSort) :=
   m.filter (fun p => p.2.isTropical)
 
-/-- Does the prediction match the observed verdict? Accepted: the tropical entries agree in both
-    directions (real and bool carry no entry). One predicted refusal: the same constructor name
-    (payload names are not compared). Several: the observed constructor is among them. -/
+/-- Does the prediction match the observed verdict? Accepted: every entry production publishes (real
+    entries of single-writer tensors included) has the same predicted sort, and the tropical entries
+    agree in both directions (a predicted tropical sort production did not publish is a disagreement).
+    One predicted refusal: the same constructor name (payload names are not compared). Several: the
+    observed constructor is among them. -/
 def agrees (p : Prediction) (v : Except (String × String) (List (String × MSort))) : Bool :=
   match p.refusals, v with
   | [], .ok m =>
       let x := tropicalEntries m
       let y := tropicalEntries p.sorts
-      x.all (y.contains ·) && y.all (x.contains ·)
+      m.all (p.sorts.contains ·) && x.all (y.contains ·) && y.all (x.contains ·)
   | [], .error _ => false
   | _ :: _, .ok _ => false
   | rs, .error e => rs.any (fun r => r.1 == e.1)
