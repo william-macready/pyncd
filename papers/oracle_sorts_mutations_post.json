@@ -205,6 +205,10 @@
   "new": "lhs.contains p.2))\n              | none => true",
   "targets": [
    "Semantics.OracleSortRulesTest"
+  ],
+  "expect": [
+   "error: test/Semantics/OracleSortRulesTest.lean:",
+   "C1 predictor/production disagreements: [#30: production accepted, predicted []"
   ]
  }
 ]
