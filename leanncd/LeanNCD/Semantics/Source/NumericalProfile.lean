@@ -55,6 +55,9 @@ inductive Unsupported
   | oracleUnavailable (reason : Oracle.Unavailable)
   | receipt (site : Site) (condition : ReceiptCondition)
   | coreNotComplete (endpoint : CoreEndpoint)
+  /-- A tropical `±inf` cell read by a real statement (mixed-sort programs): no finite value to
+  compare, so the row is excluded from parity. -/
+  | nonFiniteIntoReal (site : Site)
   deriving DecidableEq, Repr
 
 structure BoundedInteger where

@@ -101,7 +101,7 @@ def lookup {K : Type} (origin : SourceOrigin) (expectedShape : List Nat)
   else
     throw (unavailable origin (.offsetBound i tensor.values.length))
 
-private def slots (origin : SourceOrigin) (assignment : List (UID × Nat))
+def slots (origin : SourceOrigin) (assignment : List (UID × Nat))
     (uids : List UID) : Except Unavailable (List Nat) :=
   uids.zipIdx.mapM fun (uid, slot) =>
     match assignment.find? (fun p => p.1 == uid) with
@@ -111,7 +111,7 @@ private def slots (origin : SourceOrigin) (assignment : List (UID × Nat))
 /-- Destination coordinate of one occurrence: each write form `c0 + Σ coef * value(uid)` is
 evaluated over the assignment as an `Int`. Independent of `dest`. An image outside
 `[0, extent)` is an error here, never wrapped, even though admission already rules it out. -/
-private def destination (origin : SourceOrigin) (shape : List Nat)
+def destination (origin : SourceOrigin) (shape : List Nat)
     (assignment : List (UID × Nat)) (forms : List WriteForm) :
     Except Unavailable (List Nat) := do
   unless forms.length == shape.length do
@@ -126,7 +126,7 @@ private def destination (origin : SourceOrigin) (shape : List Nat)
     if 0 ≤ value ∧ value < (extent : Int) then pure value.toNat
     else throw (unavailable here (.writeOutOfRange slot value extent))
 
-private def assignments : List Axis → List (List (UID × Nat))
+def assignments : List Axis → List (List (UID × Nat))
   | [] => [[]]
   | a :: rest =>
     (List.range a.extent).flatMap fun i => (assignments rest).map ((a.uid, i) :: ·)
@@ -137,7 +137,7 @@ private def tensorAt {K : Type} (origin : SourceOrigin) (store : List (Tensor K)
   | some t => .ok t
   | none => .error (unavailable origin (.missingTensor declaration))
 
-private def checkOrder (admitted : AdmittedSource) (order : List Nat) :
+def checkOrder (admitted : AdmittedSource) (order : List Nat) :
     Except Unavailable Unit := do
   let entries := admitted.source.table.entries
   let targets := (entries.filter (fun t => t.role != .input)).map (·.declaration)
