@@ -16,7 +16,8 @@ already evaluates most of the constructs listed here, so nearly every row is a *
 > makes `real -> bool` reads coerce (stored `!= 0`; the rejection is superseded, not pending). STILL OPEN: in-scan
 > multi-writer collection (refused), scan-local scatter overwrite (F3) and JAX/Python
 > tropical execution. B5 now admits bounded native real/tropical multi-writer scatter with exact
-> post-inference shape equality (`papers/semantics/additive_b5_record.md`); predicate, explicit-constant
+> post-inference shape equality, relaxed by B5b to fit-inside for a declared destination whose every
+> axis is pinned (`papers/semantics/additive_b5_record.md`, `additive_b5b_record.md`); predicate, explicit-constant
 > and multi-axis groups remain refused, and public `route`/JAX execution do not widen.
 > Oracle per-tensor sorts landed separately; B5 adds independent SOURCE/SHAPED predictions and
 > actual four-leg value rows. Mentions of the superseded blanket refusals below are history.

@@ -1,5 +1,9 @@
 # B5 bounded multi-writer scatter: execution record
 
+> **Superseded in part by B5b (`additive_b5b_record.md`):** the exact-equality rule below now applies
+> only to groups that are not boxed. A declared destination whose every axis is pinned by
+> `axis … = n` accepts writers that fit inside it.
+
 ## Authority and scope
 
 The owner requested implementation on 2026-10-27, superseding the planning-only

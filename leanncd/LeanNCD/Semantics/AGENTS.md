@@ -157,7 +157,10 @@ confirmed only when both native binding failures name its declaration; only the
 head condition is confirmed, and confirmed extent differences suppress all value comparison.
 B5's independent test-side predictor separates SOURCE eligibility (C1
 222/195/88 over 505 rows) from SHAPED preparation: 81 SOURCE-admitted corpus rows
-fail `sizeConflict`, while nine hand rows give five accepts and four shape refusals.
+stay refused, now as `writerExtentExceedsBox` (C1 declares extent 4 against realized 8), while
+eleven hand rows give seven accepts and four shape refusals. The predictor restates the B5b box
+rule independently (`pinnedBox`, per-dimension fit); boxed overlap donors have actual four-leg
+value rows in `OracleMixedRefusalTest`.
 `markedSquare` passes shape prediction but still refuses a normalization marker;
 neither stage is a universal preparation model. Six mixed rows require actual
 four-leg values and pinned running sorts. See `papers/semantics/additive_b5_record.md`.
