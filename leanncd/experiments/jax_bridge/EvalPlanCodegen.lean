@@ -1988,4 +1988,47 @@ def f32PadAssign : AssignPlan := retag32Assign (padAssign 2)
            | .ok k => k.evidence == .orderedReference32
            | .error _ => false))
 
+-- Donor: B5's declared interleaving geometry, kept local to the experiment.
+def b5ScatterScheduled : ScheduledProgram :=
+  let i : AxisSpec := { name := "i", uid := 0, kind := .nat }
+  let k : AxisSpec := { name := "k", uid := 1, kind := .nat }
+  { decls := [.axis i (some 2), .axis k (some 4),
+      .typedTensor .f64 "A" [i], .typedTensor .f64 "B" [i], .typedTensor .f64 "S" [k]]
+  , stmts := [
+      .plain (.scatter "S" [.affine (.scale 2 i)]
+        { body := { terms := [{ factors := [.read "A" [.axis i]] }] }, nonlin := .identity }),
+      .plain (.scatter "S" [.affine (.affine 1 [(2, i)])]
+        { body := { terms := [{ factors := [.read "B" [.axis i]] }] }, nonlin := .identity })]
+  , env := {}, extNames := insert "A" (insert "B" ∅)
+  , explicitSizes := (({} : HashMap UID Nat).insert 0 2).insert 1 4 }
+def b5ScatterInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "A" ⟨[2], #[-5, -2]⟩
+    |>.insert "B" ⟨[2], #[-7, -3]⟩
+def b5ScatterPrepared : Option PreparedPlan :=
+  (prepareEvalPlan b5ScatterScheduled (InputSignature.ofDenseInputs b5ScatterInputs)).toOption
+
+#eval b5ScatterPrepared.map fun p => p.plan.raw.steps.map fun
+  | .scatter _ => "scatter"
+  | .assign _ => "assign"
+  | _ => "other"
+#eval b5ScatterPrepared.map fun p => match lowerPlan p.plan with
+  | .error e => reprStr e
+  | .ok _ => "accepted"
+
+def b5ScatterRejectedBeforeEmission : Bool :=
+  match b5ScatterPrepared with
+  | none => false
+  | some p =>
+      let kinds := p.plan.raw.steps.map fun
+        | .scatter _ => "scatter"
+        | .assign _ => "assign"
+        | _ => "other"
+      kinds == #["scatter", "scatter", "assign"] &&
+      match lowerPlan p.plan, generateForward p with
+      | .error (.unsupportedStep 0), .error (.unsupportedStep 0) => true
+      | _, _ => false
+run_cmd do
+  unless b5ScatterRejectedBeforeEmission do
+    throwError "B5 prepared scatter: lowerPlan and generateForward must reject actual scatter node 0 before emission"
+
 end JaxBridge
