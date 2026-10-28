@@ -140,7 +140,10 @@ def checkWriterGroup (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
     | .scatter _ ls _ =>
         unless ls.all LHSSlot.boundedScatter && env.declAlgebra g.name != .bool do
           throw (.multiWriterScatter g.name)
-    | .assign _ ls _ => if slotsBecomeScatter ls then throw (.multiWriterScatter g.name)
+    | .assign _ ls _ =>
+        if slotsBecomeScatter ls ||
+            (g.needsB5 stmts && ls.any (fun s => s.freeUID?.isNone)) then
+          throw (.multiWriterScatter g.name)
     | .recurMorphism .. => pure ()
   let agreed ← match writerSort? env ws with
     | none => throw (.multiWriterAlgebra g.name)

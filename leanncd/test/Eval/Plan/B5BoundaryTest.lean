@@ -83,4 +83,68 @@ def late32 : NamedDenseEnv32 :=
 #guard planShape lateMismatch late64 == some (.writerExtentMismatch "S" 3 1 3 2)
 #guard planShape32 lateMismatch late32 == some (.writerExtentMismatch "S" 3 1 3 2)
 
+private def k : AxisSpec := ⟨"k", 92, .nat⟩
+private def a : AxisSpec := ⟨"a", 93, .nat⟩
+
+-- Direct schedules keep iteration slots plain instead of compiling them into scans.
+def directMixed (source : AxisSpec) (extent : Nat) (slot : LHSSlot)
+    (nonlin : Nonlin := .identity) : ScheduledProgram :=
+  { decls := [.axis k (some 2), .axis source (some extent),
+      .typedTensor .f64 "S" [k], .typedTensor .f64 "Y" [k],
+      .typedTensor .f64 "X" [source]]
+    stmts := [
+      .plain (.scatter "S" [.free k]
+        { body := { terms := [{ factors := [.read "Y" [.axis k]] }] },
+          nonlin := .identity }),
+      .plain (.assign "S" [slot]
+        { body := { terms := [{ factors := [.read "X" [.axis source]] }] }, nonlin })]
+    env := {}, extNames := ∅, explicitSizes := {} }
+
+def directInputs (xs : Array Float) : NamedDenseEnv :=
+  ({} : NamedDenseEnv).insert "Y" ⟨[2], #[10, 20]⟩
+    |>.insert "X" ⟨[xs.size], xs⟩
+
+def directSourceErrors (s : ScheduledProgram) (inputs : NamedDenseEnv) :
+    Option CompileError × Option CompileError :=
+  (match evalScheduled s inputs with
+   | .error f => match f.error with | .compile e => some e | _ => none
+   | .ok _ => none,
+   match prepareEvalPlan s (InputSignature.ofDenseInputs inputs) with
+   | .error f => match f.cause with | .sourceInvariant e => some e | _ => none
+   | .ok _ => none)
+
+def directBits (s : ScheduledProgram) (inputs : NamedDenseEnv) :=
+  (((evalScheduled s inputs).toOption.bind fun r =>
+      r.env["S"]?.map fun t => t.data.map Float.toBits),
+   ((prepareEvalPlan s (InputSignature.ofDenseInputs inputs)).toOption.bind fun pp =>
+      (runPreparedDense pp inputs).toOption.bind fun r =>
+        r.env["S"]?.map fun t => t.data.map Float.toBits))
+
+#eval directSourceErrors (directMixed a 3 (.iterAt a 1)) (directInputs #[1, 2, 99])
+#eval directSourceErrors (directMixed a 3 (.iterNext a)) (directInputs #[1, 2, 99])
+
+-- Both boundaries must reject before either scratch allocation or capability preflight.
+#guard directSourceErrors (directMixed a 3 (.iterAt a 1)) (directInputs #[1, 2, 99]) ==
+  (some (.multiWriterScatter "S"), some (.multiWriterScatter "S"))
+#guard directSourceErrors (directMixed a 3 (.iterNext a)) (directInputs #[1, 2, 99]) ==
+  (some (.multiWriterScatter "S"), some (.multiWriterScatter "S"))
+
+-- Without a scatter writer, retain the legacy positional diagnostic.
+#guard
+  let s := directMixed a 3 (.iterAt a 1)
+  let bare := { s with stmts := s.stmts.map fun
+    | .plain (.scatter n ls r) => .plain (.assign n ls r)
+    | stmt => stmt }
+  directSourceErrors bare (directInputs #[1, 2, 99]) ==
+    (some (.writerShapeMismatch "S" 2 0), some (.writerShapeMismatch "S" 2 0))
+
+-- Distinct ordinary placement UIDs remain legal when their full extents agree.
+#guard directBits (directMixed a 2 (.free a)) (directInputs #[1, 2]) ==
+  (some (#[11, 22].map Float.toBits), some (#[11, 22].map Float.toBits))
+
+private def normA : AxisSpec := { a with kind := .real }
+#guard directBits (directMixed normA 2 (.freeNorm normA) (.axiswise .normalize none))
+    (directInputs #[1, 3]) ==
+  (some (#[10.25, 20.75].map Float.toBits), some (#[10.25, 20.75].map Float.toBits))
+
 end LeanNCD.Eval.Plan.B5BoundaryTest
