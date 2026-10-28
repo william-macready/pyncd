@@ -1,0 +1,137 @@
+diff --git a/leanncd/AGENTS.md b/leanncd/AGENTS.md
+index 7f1aa2d1..4302acdc 100644
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -219,7 +219,7 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
+ | UID-keyed semantic binding, finite read-only source execution and correspondence | `LeanNCD/Semantics/Source/Context.lean`, `Source/Admission.lean`, `Source/Schedule.lean`, and `Source/ProgramCorrespondence.lean`; `Source/RawCorrespondence.lean` and `Source/RawSemanticConnection.lean` certify actual successful raw admission and conditional existing-semantic applicability. All reachable through `LeanNCD`; differential diagnostic gates remain separate. `Source/Admission.lean` has a second entry, `admitSourceAffine` (affine/constant write slots and sum-only scatter, S2a; landed, merge 7a551faa), with no raw-parse theorem: see `LeanNCD/Semantics/AGENTS.md` |
+ | Check or run a Part V reference plan (not `EvalPlan`) | `LeanNCD/Semantics/Plan/Validity.lean` (`checkPlan`), `Plan/Correctness.lean` (`done_correct`) |
+ | Debug finite resolved source or compare exact shared-fragment results | `LeanNCD/Semantics/Source/Diagnostics.lean` (`Debug.sourceDebug`) and `Source/Differential.lean` (`compareSource`); explicit oracle dependency order and bounded-integer profile, with typed refusals |
+-| Bounded multi-writer scatter (B5), shape obligations and precision boundaries | `LeanNCD/DSL/Pipeline/Collect.lean`, `LeanNCD/Eval/CollectorShape.lean` (reachable through `LeanNCD` via `Eval.Eval` and plan compilation); native fixtures `test/Eval/Plan/B5NativeTest.lean` / `B5BoundaryTest.lean`; current evidence `../papers/semantics/additive_b5_record.md` |
++| Bounded multi-writer scatter (B5), shape obligations and precision boundaries | `LeanNCD/DSL/Pipeline/Collect.lean`, `LeanNCD/Eval/CollectorShape.lean` (reachable through `LeanNCD` via `Eval.Eval` and plan compilation); native fixtures `test/Eval/Plan/B5NativeTest.lean` / `B5BoundaryTest.lean` / `B5bBoxTest.lean`; current evidence `../papers/semantics/additive_b5_record.md` |
+ | Differential-check a mixed-sort or copy-form Source program (per-tensor sorts) | `test/Semantics/OracleMixedDifferential.lean` (`compareMixedSource`; test-side only, so production never imports the independent rule predictor `test/Semantics/OracleSortRules.lean`); `fourLegParity` needs the stratified Core leg, `threeLegParity` states why it did not run; scope and not-covered list in `../papers/semantics/oracle_sorts_record.md` |
+ | Check current sorry/proof status authoritatively | `SORRY_INVENTORY.md` (more current than scattered doc comments) |
+ | Understand the `realize` bridge problem in depth | `realize.md` (companion to `SORRY_INVENTORY.md`) |
+diff --git a/leanncd/LeanNCD/DSL/AGENTS.md b/leanncd/LeanNCD/DSL/AGENTS.md
+index 7abcd098..8bd7671a 100644
+--- a/leanncd/LeanNCD/DSL/AGENTS.md
++++ b/leanncd/LeanNCD/DSL/AGENTS.md
+@@ -23,7 +23,7 @@ Does not own: evaluation semantics (`../Eval/`) or the acset bridge (`../Bridge/
+ |---|---|
+ | Intermediate types (`ResolvedProgram`, `ScanStmt`, `ScheduledProgram`) | `Types.lean` |
+ | Phases 1–5 (`assignUIDs`, `resolveDecls`, `reclassifyIterSlots`, `checkReadRanks`, `checkDtypes`, `checkScatterNonlin`, `lowerArith`, `finalizeScans`) and the shared statement-level rules (`declaredAxisSizes`, `externalReadNames`, rank, LHS axis-kind, predicate-output checks, `checkTropicalOutput` = `tropicalNonlin`, called from `checkDtypes` AND `checkScheduledDtypes`) | `Structural.lean` |
+-| Additive collection (`desugarMultiWriters`): assign/scatter writer `k` of `T` becomes private `T#k`, followed by one full-domain collector in the agreed sort. Neutral writers adopt that sort via `Stmt.withAgg`; conflicting votes give `multiWriterAlgebra`. Legacy all-bare groups keep positionwise UID agreement (`writerShapeMismatch`). B5 admits bounded real/tropical scatters using shared `scatterAffineClass`/`LHSSlot.boundedScatter` from `Ast.lean`; predicate, explicit-constant, multi-axis and unlowered scatter-shaped assigns keep `multiWriterScatter`. `writerGroupBasis` selects distinct declared axes (`multiWriterRepeatedBasis`) or the first ordinary bare assign, never an explicit scatter (`multiWriterNeedsDeclaredShape` otherwise). `collectorShapeObligations` retains original shapes for post-inference equality. Scan conflicts/freshness checks stay unchanged; single-writer identity is preserved. Public `route` refuses B5 groups with `routeUnsupportedMultiWriter`, but legacy tropical all-bare routing still omits cast checks. Imports `RouteFragments` only | `Collect.lean` |
++| Additive collection (`desugarMultiWriters`): assign/scatter writer `k` of `T` becomes private `T#k`, followed by one full-domain collector in the agreed sort. Neutral writers adopt that sort via `Stmt.withAgg`; conflicting votes give `multiWriterAlgebra`. Legacy all-bare groups keep positionwise UID agreement (`writerShapeMismatch`). B5 admits bounded real/tropical scatters using shared `scatterAffineClass`/`LHSSlot.boundedScatter` from `Ast.lean`; predicate, explicit-constant, multi-axis and unlowered scatter-shaped assigns keep `multiWriterScatter`. `writerGroupBasis` selects distinct declared axes (`multiWriterRepeatedBasis`) or the first ordinary bare assign, never an explicit scatter (`multiWriterNeedsDeclaredShape` otherwise). `collectorShapeObligations` retains original shapes and a `boxed` flag (declared destination, every axis pinned in `declaredAxisSizes`) for the post-inference check: fit inside a box, equality otherwise. Scan conflicts/freshness checks stay unchanged; single-writer identity is preserved. Public `route` refuses B5 groups with `routeUnsupportedMultiWriter`, but legacy tropical all-bare routing still omits cast checks. Imports `RouteFragments` only | `Collect.lean` |
+ | Whole-schedule validation (`validateScheduled`, the execution/preparation boundary), topology helpers, sort agreement and casts (`scheduleAlgebras`, `checkSortCasts`: `scanStateAlgebraMismatch`, `sortCastUnsupported`). Plain assign/scatter multi-writer groups publish a tropical `algebraOf` entry only when votes agree; conflicts retain `multiWriterAlgebra`. Source declarations rebuild the environment before collection; `CheckedScheduledProgram.shapeObligations` survives desugaring. `algebras` is read by tests/validation only: workers use statement annotations, declarations and neutral rewrites. External-name order and storage rules (`scheduleStorageKind`, `scheduleStorageNames`, `scheduleFloat32Name?`) are unchanged | `ScheduledValidation.lean` |
+ | Phases 6–8 (`schedule`, `route`, `buildStep`, `routeCore`); `splitNonlins`/`splitStmt` survive only as a regression comparator | `Lowering.lean` |
+ | Logical schedule → physical `routeCore` input (`physicalizeForRoute`, `physicalizeOne`, `fragmentClass`) | `RouteFragments.lean` |
+diff --git a/leanncd/LeanNCD/Eval/AGENTS.md b/leanncd/LeanNCD/Eval/AGENTS.md
+index 9f6a3125..34786909 100644
+--- a/leanncd/LeanNCD/Eval/AGENTS.md
++++ b/leanncd/LeanNCD/Eval/AGENTS.md
+@@ -21,7 +21,7 @@ Does not own: parsing/compilation/routing (`../DSL/`). The checked, positional p
+ | LHS-slot shape vocabulary (`normAxisUidOf`, `outputShape`) | `Slots.lean` |
+ | Pure affine constraint solver (RREF over `ℚ`) | `SizeSolve.lean` |
+ | Axis-size inference fixpoint (`inferAxisSizes`, `scatterOutputShapes`) | `SizeInfer.lean` |
+-| B5 post-inference writer/basis extent equality (`checkCollectorShapes`) shared with checked preparation | `CollectorShape.lean` |
++| B5/B5b post-inference writer/basis extent rule (`checkCollectorShapes`: fit inside a pinned declared box, equality otherwise) and the sizing view of boxed scratches (`boxedScratchNames`, `sizingView`), shared with checked preparation | `CollectorShape.lean` |
+ | Compatibility umbrella re-exporting `Slots`/`SizeSolve`/`SizeInfer` (no code) | `Shape.lean` |
+ | Every typed diagnostic (`EvalError`, `ShapeError`, `EvalWarning`, `SolveDiagnostic`, `EvalFailure`) and their sole renderers | `Error.lean` |
+ | Checked positional plan IR, compiler, workers, adapters, JAX executable phase | `Plan/` — see [`Plan/AGENTS.md`](Plan/AGENTS.md) |
+@@ -56,7 +56,7 @@ failures necessarily carry `[]`. Tests match constructors where that strengthens
+ back to `toString` for legacy renderer checks.
+ 
+ ## Contracts
+-- **B5 collection checks shape after inference, before execution.** `evalScheduled` and checked `prepareEvalPlan` both call `checkCollectorShapes` on retained source obligations. Every writer's realized extents must equal the ordered basis, never just fit inside it; `LHSSlot.outExtent` remains the sole formula. A mismatch is `ShapeError.writerExtentMismatch T writer dimension expected actual` (1-based writer, 0-based dimension). Existing inference errors can win first. Each scratch folds its own collisions before the collector folds writers in schedule order; holes use the agreed algebra's additive identity. No reassociation claim. See `papers/semantics/additive_b5_record.md` and `test/Eval/Plan/B5NativeTest.lean` / `B5BoundaryTest.lean`.
++- **B5 collection checks shape after inference, before execution.** `evalScheduled` and checked `prepareEvalPlan` both call `checkCollectorShapes` on retained source obligations. A group is boxed when its destination is declared and every declared axis is pinned by `axis … = n`: each writer's realized extent must then fit inside the box (`ShapeError.writerExtentExceedsBox T writer dimension box actual`), short writers leave `0_K` holes through the collector's padded read, and boxed groups' scatter scratches are presented to size inference as assignments (`sizingView`) so a short scratch cannot raise the scatter-output `sizeConflict`. Every other group (inferred sizes, undeclared basis) keeps exact equality with the ordered basis (`ShapeError.writerExtentMismatch T writer dimension expected actual`). `LHSSlot.outExtent` remains the sole formula; indices are 1-based writer, 0-based dimension. Existing inference errors can win first. Each scratch folds its own collisions before the collector folds writers in schedule order; holes use the agreed algebra's additive identity. No reassociation claim. See `papers/semantics/additive_b5_record.md` and `test/Eval/Plan/B5NativeTest.lean` / `B5BoundaryTest.lean` / `B5bBoxTest.lean`; record `papers/semantics/additive_b5b_record.md`.
+ - **Every scatter extent MUST equal `LHSSlot.outExtent`** (`../DSL/Ast.lean`), the sole stride-aligned formula. `Eval.scatterOutShape` and `SizeInfer.scatterOutputShapes` call it directly; the checked scan geometry reaches it through `scatterDestExtent`. For one normalized positive coefficient `c`, nonnegative bias `b`, and source extent `n > 0` it is `c*n + (b/c)*c`; other forms keep the linear fallback. A duplicate formula once produced an unsound cropped read (fix `fc10d70`). **Do not add a second extent formula.**
+ - **Fail-loud unsized axis at every materialization site**: `evalAssignSeeded` (the sole contraction implementation) throws before building an output shape if any non-seeded free output axis, any per-term contracted axis, or any seeded axis has no inferable size, and rejects an out-of-range seed coordinate. Mirrored in `Eval.scatterOutShape`, `Scatter.evalScatter`, and `Scan.evalScan`. Each site is a distinct `UnsizedAxisSite` tag on `ShapeError.unsizedAxis`. Keep the list complete: `evalScan` once used `getD 0`, conflating "no extent" with "extent 0", and panicked on an unpinned scan axis.
+ - **Non-identity scatter is rejected, not dropped**: `Scatter.evalScatter` throws if `rhs.nonlin ≠ .identity` (defensive; the primary gate is `checkScatterNonlin` in `../DSL/Pipeline/Structural.lean`).
+diff --git a/leanncd/LeanNCD/Eval/Plan/AGENTS.md b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+index 6ca6e2be..de816a54 100644
+--- a/leanncd/LeanNCD/Eval/Plan/AGENTS.md
++++ b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+@@ -25,7 +25,7 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
+ | `Adapter.lean` | named↔positional boundary: `pack`/`unpack`/`runPreparedDense`, built on the carrier-polymorphic cores `packBodyOf`/`unpackBodyOf`/`runPreparedDenseOf` over `NamedDenseEnvOf α`; `StorageCarrier α` maps a buffer type to its storage kind |
+ | `Adapter32.lean` | named binary32 boundary — `pack32`/`unpack32`/`runPreparedDense32` over `NamedDenseEnv32`/`EvalReport32`; the same three cores at `α := Float32`, no traversal of its own |
+ | `Compile.lean` | source compiler — `prepareEvalPlan` (Step 0c `f32CapabilityCheck` DELETED by F32-C; Step D emission), `compileScan`, `resolveNonlinAxis` |
+-| `../CollectorShape.lean` | shared B5 `checkCollectorShapes`: retained source writer/basis obligations, exact extent equality after inference and before Step D; typed `ShapeError.writerExtentMismatch` |
++| `../CollectorShape.lean` | shared B5 `checkCollectorShapes`: retained source writer/basis obligations, writer extents after inference and before Step D (fit inside a pinned declared box, else exact equality); typed `ShapeError.writerExtentMismatch` / `writerExtentExceedsBox`; `boxedScratchNames` / `sizingView` feed Step C |
+ | `RawStep.lean` | raw graph vocabulary — `BlockStep` (`.assign`/`.pointwise`/`.axiswise`), `RawPlanBlock`, `RawScanPlan`, and the outer node type `PlanStep` (`.assign`/`.scatter`/`.scan`/`.pointwise`/`.axiswise`; deliberately a separate sum from `BlockStep`) |
+ | `Nonlin.lean` | checked nonlinearity IR — `RawPointwisePlan`/`RawAxiswisePlan`, `NonlinPlanError`, `checkNonlinIO` (private core `checkNonlinIOCore kind`), `checkPointwise`/`checkAxiswise` and `…F32` siblings (`checkAxiswise` adds `axisPositionOutOfRange` and `maskWidthMismatch`), workers `runDensePointwise`/`runDenseAxiswise` and `…32` siblings; all per-function math delegates to `../Nonlin.lean` |
+ | `Block.lean` | checked local block — `checkPlanBlock`/`CheckedPlanBlock`, `runDenseBlock`, reusing the per-step checkers/workers and the shared `checkStepGraph` wiring loop; `checkPlanBlock`/`checkPlanBlockF32` over one private `checkPlanBlockCore kind`; `runDenseBlock`/`runDenseBlock32` over one private `runDenseBlockWith` |
+diff --git a/leanncd/LeanNCD/Semantics/AGENTS.md b/leanncd/LeanNCD/Semantics/AGENTS.md
+index 456e0b24..49e06291 100644
+--- a/leanncd/LeanNCD/Semantics/AGENTS.md
++++ b/leanncd/LeanNCD/Semantics/AGENTS.md
+@@ -157,7 +157,10 @@ confirmed only when both native binding failures name its declaration; only the
+ head condition is confirmed, and confirmed extent differences suppress all value comparison.
+ B5's independent test-side predictor separates SOURCE eligibility (C1
+ 222/195/88 over 505 rows) from SHAPED preparation: 81 SOURCE-admitted corpus rows
+-fail `sizeConflict`, while nine hand rows give five accepts and four shape refusals.
++stay refused, now as `writerExtentExceedsBox` (C1 declares extent 4 against realized 8), while
++eleven hand rows give seven accepts and four shape refusals. The predictor restates the B5b box
++rule independently (`pinnedBox`, per-dimension fit); boxed overlap donors have actual four-leg
++value rows in `OracleMixedRefusalTest`.
+ `markedSquare` passes shape prediction but still refuses a normalization marker;
+ neither stage is a universal preparation model. Six mixed rows require actual
+ four-leg values and pinned running sorts. See `papers/semantics/additive_b5_record.md`.
+diff --git a/papers/backend_missing_functionality.md b/papers/backend_missing_functionality.md
+index e3caf029..911d4f5b 100644
+--- a/papers/backend_missing_functionality.md
++++ b/papers/backend_missing_functionality.md
+@@ -16,7 +16,8 @@ already evaluates most of the constructs listed here, so nearly every row is a *
+ > makes `real -> bool` reads coerce (stored `!= 0`; the rejection is superseded, not pending). STILL OPEN: in-scan
+ > multi-writer collection (refused), scan-local scatter overwrite (F3) and JAX/Python
+ > tropical execution. B5 now admits bounded native real/tropical multi-writer scatter with exact
+-> post-inference shape equality (`papers/semantics/additive_b5_record.md`); predicate, explicit-constant
++> post-inference shape equality, relaxed by B5b to fit-inside for a declared destination whose every
++> axis is pinned (`papers/semantics/additive_b5_record.md`, `additive_b5b_record.md`); predicate, explicit-constant
+ > and multi-axis groups remain refused, and public `route`/JAX execution do not widen.
+ > Oracle per-tensor sorts landed separately; B5 adds independent SOURCE/SHAPED predictions and
+ > actual four-leg value rows. Mentions of the superseded blanket refusals below are history.
+diff --git a/papers/semantics/additive_b5_record.md b/papers/semantics/additive_b5_record.md
+index ef57e1a8..c7b2f585 100644
+--- a/papers/semantics/additive_b5_record.md
++++ b/papers/semantics/additive_b5_record.md
+@@ -1,5 +1,9 @@
+ # B5 bounded multi-writer scatter: execution record
+ 
++> **Superseded in part by B5b (`additive_b5b_record.md`):** the exact-equality rule below now applies
++> only to groups that are not boxed. A declared destination whose every axis is pinned by
++> `axis … = n` accepts writers that fit inside it.
++
+ ## Authority and scope
+ 
+ The owner requested implementation on 2026-10-27, superseding the planning-only
+diff --git a/papers/semantics/additive_b5b_containing_box_design.md b/papers/semantics/additive_b5b_containing_box_design.md
+index b5960cb7..5b960cde 100644
+--- a/papers/semantics/additive_b5b_containing_box_design.md
++++ b/papers/semantics/additive_b5b_containing_box_design.md
+@@ -1,9 +1,9 @@
+ # B5b: declared containing box for multi-writer scatter
+ 
+-**Status: proposal for owner approval, 2026-10-28. Not approved, not a plan, no production
+-change.** Read against local `main` `342106e4`. It narrows the one option the B5 design
++**Status: approved by the owner 2026-10-28 (all three recommendations: M1, leave the single-writer
++asymmetry, accept the M4 slack); implementation plan `additive_b5b_plan.md`.** Read against local `main` `342106e4`. It narrows the one option the B5 design
+ ([additive_b5_design.md](additive_b5_design.md) section 1) deferred: *"declared shape is an
+-arbitrary containing box"*. Approval authorizes writing one implementation plan, nothing more.
++arbitrary containing box"*. Approval authorized writing one implementation plan.
+ 
+ ## 1. The problem
+ 
+diff --git a/papers/semantics/additive_production_decision_note.md b/papers/semantics/additive_production_decision_note.md
+index 501a4e74..3b6fad2e 100644
+--- a/papers/semantics/additive_production_decision_note.md
++++ b/papers/semantics/additive_production_decision_note.md
+@@ -200,7 +200,9 @@ Slice 1 does **not** change this. It stays a recorded divergence.
+   Declared basis UIDs must be distinct (`multiWriterRepeatedBasis`); otherwise
+   the first ordinary bare assign supplies the basis, never an explicit scatter.
+   `checkCollectorShapes` enforces exact post-inference extent equality in both
+-  native entries (`writerExtentMismatch T writer dimension expected actual`).
++  native entries (`writerExtentMismatch T writer dimension expected actual`). B5b
++  (`additive_b5b_record.md`) relaxes this to fit-inside for a declared destination whose every
++  axis is pinned (`writerExtentExceedsBox`); every other group keeps equality.
+   Existing inference and B6 checks remain unchanged. `route` explicitly refuses
+   B5; JAX refuses actual prepared scatter nodes before emission.
+ - The S1/S3 bullets below preserve the original staging history, not the current

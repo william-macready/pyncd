@@ -1,0 +1,347 @@
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/Collect.lean b/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
+index 48819496..50b81b77 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
+@@ -19,8 +19,10 @@ so single-writer programs are byte-identical through every later phase.
+ 
+ Existing all-bare groups keep positionwise UID agreement. Real and tropical groups may also
+ contain bounded scatter writers, using a distinct declared coordinate basis or the first ordinary
+-bare assignment. Their retained shape obligations require exact realized extent equality after
+-inference; predicate, explicit-constant and multi-axis scatter groups remain refused.
++bare assignment. Their retained shape obligations are checked after inference: a destination
++declared with every axis pinned by `axis … = n` is a box that each writer's realized extent must fit
++(`writerExtentExceedsBox`); every other group requires exact extent equality
++(`writerExtentMismatch`). Predicate, explicit-constant and multi-axis scatter groups remain refused.
+ A group's sort is the one its writers' votes agree on (`writerSort?`); sort-neutral copy writers
+ abstain beside a non-neutral writer and are rewritten to the agreed sort (`Stmt.withAgg`), so a
+ copy's bare out-of-range read pads the group's `0_K` and a copy of a predicate reads it through the group's
+@@ -122,13 +124,20 @@ structure CollectorShapeObligation where
+   name : String
+   basis : List LHSSlot
+   writers : List (List LHSSlot)
++  /-- A declared destination whose every axis is pinned by `axis … = n` (`pinned`): writers need only
++      fit inside it. Any other group keeps exact extent equality. -/
++  boxed : Bool
+ 
+-def collectorShapeObligations (sched : ScheduledProgram) :
++def collectorShapeObligations (sched : ScheduledProgram) (pinned : Std.HashMap UID Nat) :
+     Except CompileError (List CollectorShapeObligation) :=
+   ((writerGroups sched.stmts).filter (·.needsB5 sched.stmts)).mapM fun g => do
++    let boxed := match (sched.env[g.name]?).bind Decl.tensorAxes? with
++      | some ax => ax.all (fun a => pinned.contains a.uid)
++      | none => false
+     return { name := g.name
+              basis := ← writerGroupBasis sched.env sched.stmts g
+-             writers := (g.writers.filterMap (plainAt? sched.stmts)).map Stmt.slots }
++             writers := (g.writers.filterMap (plainAt? sched.stmts)).map Stmt.slots
++             boxed }
+ 
+ /-- Static geometry, agreed sort, then basis/rank checks for bounded scatter groups.
+     Legacy all-bare groups instead retain positionwise UID agreement. -/
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+index 23c73d7d..cc8efc18 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+@@ -248,7 +248,7 @@ def validateScheduled (sched : ScheduledProgram) : Except CompileError CheckedSc
+     throw (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
+   let source := { sched with env := sourceEnv }
+   let (collected, privateNames) ← collectDefinitions source
+-  let shapeObligations ← collectorShapeObligations source
++  let shapeObligations ← collectorShapeObligations source (declaredAxisSizes sched.decls)
+   let declEnv ← buildDeclEnv collected.decls
+   return { program := collected
+          , declEnv
+diff --git a/leanncd/LeanNCD/Eval/CollectorShape.lean b/leanncd/LeanNCD/Eval/CollectorShape.lean
+index f520ebe8..5ba6422c 100644
+--- a/leanncd/LeanNCD/Eval/CollectorShape.lean
++++ b/leanncd/LeanNCD/Eval/CollectorShape.lean
+@@ -3,8 +3,10 @@ import LeanNCD.Eval.Error
+ 
+ namespace LeanNCD.Eval
+ 
+-/-- Strict S3 equality for newly enabled groups, after ordinary size inference.
+-    Dimension indices are zero-based; writer indices are one-based schedule order. -/
++/-- Shape rule for newly enabled groups, after ordinary size inference. A boxed group (declared
++    destination, every axis pinned) requires each writer's extent to fit the box; every other group
++    keeps strict equality. Dimension indices are zero-based; writer indices are one-based schedule
++    order. -/
+ def checkCollectorShapes (obligations : List CollectorShapeObligation)
+     (sizes : Std.HashMap UID Nat) : Except ShapeError Unit := do
+   for g in obligations do
+@@ -18,7 +20,23 @@ def checkCollectorShapes (obligations : List CollectorShapeObligation)
+           | some n => pure n
+           | none => throw (.unsizedScatterOutput sl)
+         let want := expected[dim]?.getD 0
+-        unless want == actual do
+-          throw (.writerExtentMismatch g.name k dim want actual)
++        if g.boxed then
++          unless actual ≤ want do
++            throw (.writerExtentExceedsBox g.name k dim want actual)
++        else
++          unless want == actual do
++            throw (.writerExtentMismatch g.name k dim want actual)
++
++/-- Private scratch names of boxed groups. Their scatter outputs may be shorter than the box. -/
++def boxedScratchNames (obligations : List CollectorShapeObligation) : List String :=
++  obligations.flatMap fun g =>
++    if g.boxed then (List.range g.writers.length).map (collectorName g.name ∘ (· + 1)) else []
++
++/-- Size inference sees a boxed group's scatter scratches as assignments, so a collector's bare read
++    of a short scratch cannot raise the scatter-output `sizeConflict`. Their right-hand reads still
++    size axes, as for scan-local scatters. -/
++def sizingView (padded : List String) : Stmt → Stmt
++  | .scatter nm slots rhs => if padded.contains nm then .assign nm slots rhs else .scatter nm slots rhs
++  | s => s
+ 
+ end LeanNCD.Eval
+diff --git a/leanncd/LeanNCD/Eval/Error.lean b/leanncd/LeanNCD/Eval/Error.lean
+index 15fb5309..73460910 100644
+--- a/leanncd/LeanNCD/Eval/Error.lean
++++ b/leanncd/LeanNCD/Eval/Error.lean
+@@ -133,6 +133,7 @@ inductive ShapeError
+   | solveFailure (diagnostic : SolveDiagnostic)
+   | negativeOnlyAxis (uid : UID) (sources : List String)
+   | writerExtentMismatch (name : String) (writer dimension expected actual : Nat)
++  | writerExtentExceedsBox (name : String) (writer dimension box actual : Nat)
+   deriving DecidableEq
+ 
+ /-- The sole renderer for `ShapeError` — reproduces every pre-4h message byte-for-byte. -/
+@@ -156,6 +157,8 @@ def ShapeError.render : ShapeError → String
+ coefficients in all reads; sources: {sources}); add an explicit axis declaration"
+   | .writerExtentMismatch name writer dimension expected actual =>
+       s!"multi-writer {name}: writer {writer}, dimension {dimension}: expected extent {expected}, actual {actual}"
++  | .writerExtentExceedsBox name writer dimension box actual =>
++      s!"multi-writer {name}: writer {writer}, dimension {dimension}: extent {actual} exceeds declared box extent {box}"
+ 
+ instance : ToString ShapeError := ⟨ShapeError.render⟩
+ 
+diff --git a/leanncd/LeanNCD/Eval/Eval.lean b/leanncd/LeanNCD/Eval/Eval.lean
+index 1dea2853..4a3589dd 100644
+--- a/leanncd/LeanNCD/Eval/Eval.lean
++++ b/leanncd/LeanNCD/Eval/Eval.lean
+@@ -144,8 +144,9 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
+   | none =>
+   -- A scan-local scatter's LHS describes placement into persistent state, not a standalone scatter
+   -- output whose placement extent should constrain later reads of that state.
++  let padded := boxedScratchNames checked.shapeObligations
+   let allStmts : List Stmt := sched.stmts.flatMap (fun
+-    | .plain s => [s]
++    | .plain s => [sizingView padded s]
+     | .scan _ _ base recur _ =>
+         (base ++ recur).map (fun
+           | .scatter nm slots rhs => .assign nm slots rhs
+diff --git a/leanncd/LeanNCD/Eval/Plan/Compile.lean b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+index c8686813..5684743c 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Compile.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+@@ -1508,8 +1508,9 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
+   -- whose `.iterAt` extent should constrain a later state read. Their RHS reads still contribute the
+   -- same size constraints. Top-level scatters remain unchanged so downstream scatter-output shape
+   -- inference continues to work. `.scanPre` stays unreachable (Step A rejects it).
++  let padded := boxedScratchNames checked.shapeObligations
+   let flatStmts : List Stmt := sched.stmts.flatMap (fun
+-    | .plain s => [s]
++    | .plain s => [sizingView padded s]
+     | .scan _ _ base recur _ =>
+         (base ++ recur).map (fun
+           | .scatter nm slots rhs => .assign nm slots rhs
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index c939d0c2..d6ccd66d 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -50,7 +50,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Eval.ScanTest", "Eval.EvalExamplesTest", "Eval.EntryTest", "Eval.CollectEvalTest", "Eval.ExplicitF64", "Eval.ExplicitF64Test",
+          "Eval.Plan.ContractTest", "Eval.Plan.ScanContractTest", "Eval.Plan.SignatureTest",
+          "Eval.Plan.CoordinatesTest",
+-         "Eval.Plan.B5NativeTest", "Eval.Plan.B5BoundaryTest",
++         "Eval.Plan.B5NativeTest", "Eval.Plan.B5BoundaryTest", "Eval.Plan.B5bBoxTest",
+          "Eval.Plan.KernelCheckTest", "Eval.Plan.KernelDenseTest",
+          "Eval.Plan.KernelDense32Test",
+          "Eval.Plan.ScatterCheckTest", "Eval.Plan.ScatterDenseTest",
+diff --git a/leanncd/test/Eval/Plan/B5BoundaryTest.lean b/leanncd/test/Eval/Plan/B5BoundaryTest.lean
+index 6a59bf88..fd1ac0e2 100644
+--- a/leanncd/test/Eval/Plan/B5BoundaryTest.lean
++++ b/leanncd/test/Eval/Plan/B5BoundaryTest.lean
+@@ -79,9 +79,6 @@ def late32 : NamedDenseEnv32 :=
+ #guard sourceError explicitConstant == some (.multiWriterScatter "S")
+ #guard sourceError predicateDest == some (.multiWriterScatter "S")
+ #guard sourceError bareScatterFallback == some (.multiWriterNeedsDeclaredShape "S")
+-#guard refShape lateMismatch late64 == some (.writerExtentMismatch "S" 3 1 3 2)
+-#guard planShape lateMismatch late64 == some (.writerExtentMismatch "S" 3 1 3 2)
+-#guard planShape32 lateMismatch late32 == some (.writerExtentMismatch "S" 3 1 3 2)
+ 
+ private def k : AxisSpec := ⟨"k", 92, .nat⟩
+ private def a : AxisSpec := ⟨"a", 93, .nat⟩
+diff --git a/leanncd/test/Eval/Plan/B5NativeTest.lean b/leanncd/test/Eval/Plan/B5NativeTest.lean
+index f1c9050c..2d1261ef 100644
+--- a/leanncd/test/Eval/Plan/B5NativeTest.lean
++++ b/leanncd/test/Eval/Plan/B5NativeTest.lean
+@@ -32,6 +32,10 @@ def run64 (p : TLProgram) (i := in64) : Option NamedDenseEnv :=
+   (prep64 p i).bind fun pp => (runPreparedDense pp i).toOption.map (·.env)
+ def run32 (p : TLProgram) (i := in32) : Option NamedDenseEnv32 :=
+   (prep32 p i).bind fun pp => (runPreparedDense32 pp i).toOption.map (·.env)
++def obsWith (p : TLProgram) (i : NamedDenseEnv) (j : NamedDenseEnv32) :=
++  ((ref64 p i).bind (fun e => e["S"]?.map (·.data)),
++   (run64 p i).bind (fun e => e["S"]?.map (·.data)),
++   (run32 p j).bind (fun e => e["S"]?.map (·.data)))
+ def obs (p : TLProgram) :=
+   ((ref64 p).bind (fun e => e["S"]?.map (·.data)),
+    (run64 p).bind (fun e => e["S"]?.map (·.data)),
+@@ -168,10 +172,15 @@ def agree (p : TLProgram) (i : NamedDenseEnv) (j : NamedDenseEnv32)
+ #guard agree (reverseWriters mixed) mixIn64 mixIn32 #[5, 20, 28, 40] #[5, 20, 28, 40]
+ #guard agree diagonal in64 in32 #[-12, 0, 0, -5] #[-12, 0, 0, -5]
+ #guard agree emptySource emptyIn64 emptyIn32 #[] #[]
+-#guard refShape bareMismatch badIn64 ==
+-  some (.writerExtentMismatch "S" 2 0 4 3)
+-#guard planShape bareMismatch badIn64 ==
+-  some (.writerExtentMismatch "S" 2 0 4 3)
++-- Pinned box `k = 4`: the shorter bare writer fits and leaves a hole. B5b boundary exact twins live
++-- in B5bBoxTest.
++#guard agree bareMismatch badIn64 badIn32 #[5, 20, 28, 0] #[5, 20, 28, 0]
++-- Exact twin: `k` left to inference (sized by the scatter scratch) keeps the equality payload.
++def bareExact : TLProgram := { bareMismatch with decls := bareMismatch.decls.map fun
++  | .axis a n => if a.name == "k" then .axis a none else .axis a n
++  | d => d }
++#guard refShape bareExact badIn64 == some (.writerExtentMismatch "S" 2 0 4 3)
++#guard planShape bareExact badIn64 == some (.writerExtentMismatch "S" 2 0 4 3)
+ #guard sourceError (undeclare interleave) == some (.multiWriterNeedsDeclaredShape "S")
+ #guard sourceError repeatedBasis == some (.multiWriterRepeatedBasis "S")
+ 
+@@ -181,7 +190,6 @@ def planShape32 (p : TLProgram) (i : NamedDenseEnv32) : Option ShapeError :=
+       match prepareEvalPlan s sig with
+       | .error f => match f.cause with | .shape e => some e | _ => none
+       | .ok _ => none
+-#guard planShape32 bareMismatch badIn32 == some (.writerExtentMismatch "S" 2 0 4 3)
+ #guard (run32 (undeclare mixed) mixIn32).map (fun e => e["S"]!.data.map Float32.toBits) ==
+   some ((#[5, 20, 28, 40] : Array Float32).map Float32.toBits)
+ #guard (run32 (reverseWriters (undeclare mixed)) mixIn32).map
+@@ -237,9 +245,8 @@ def orderIn32 : NamedDenseEnv32 :=
+   | .ok _ => none
+ 
+ #guard agree orderPin orderIn64 orderIn32 #[2, 0] #[1, 0]
+-#guard planShape declaredMismatch in64 == some (.sizeConflict 2 5 4)
+-#guard refShape declaredMismatch in64 == some (.sizeConflict 2 5 4)
+-#guard planShape32 declaredMismatch in32 == some (.sizeConflict 2 5 4)
++-- Pinned box `k = 5` larger than the scatter extent 4: accepted, with a hole at index 4.
++#guard agree declaredMismatch in64 in32 #[-5, -7, -2, -3, 0] #[-5, -7, -2, -3, 0]
+ #guard
+   match scheduled (as64 zeroScale) with
+   | some s => match evalScheduled s in64 with
+@@ -376,8 +383,9 @@ run_cmd do
+ 
+ -- Donor: interleave; writer 1 stays `S[2*i]`, writer 2 is replaced by an offset or
+ -- negative-coefficient placement. The offset keeps the stride-aligned extent (4) and collides
+--- with writer 1 at S[2]; the negative form takes the legacy linear boundary (3 - 1*2 = 1), so the
+--- exact-extent rule refuses it on all three legs instead of reaching a range check.
++-- with writer 1 at S[2]; the negative form takes the legacy linear boundary (3 - 1*2 = 1), which
++-- fits the pinned box `k = 4`, so it reaches B6 (the write at 3 is outside extent 1; see
++-- B5bBoxTest).
+ def withSecondPlacement (slot : LHSSlot) : TLProgram :=
+   { interleave with stmts := interleave.stmts.mapIdx fun n s =>
+     match s with
+@@ -393,8 +401,5 @@ def negativeWriter : TLProgram :=
+ #guard sourceError offsetWriter == none
+ #guard agree offsetWriter in64 in32 #[-5, 0, -9, -3] #[-5, 0, -9, -3]
+ #guard sourceError negativeWriter == none
+-#guard refShape negativeWriter in64 == planShape negativeWriter in64
+-#guard (refShape negativeWriter in64).isSome
+-#guard (run64 negativeWriter).isNone && (run32 negativeWriter).isNone
+ 
+ end LeanNCD.Eval.Plan.B5NativeTest
+diff --git a/leanncd/test/Eval/Plan/B5bBoxTest.lean b/leanncd/test/Eval/Plan/B5bBoxTest.lean
+new file mode 100644
+index 00000000..39cc162f
+--- /dev/null
++++ b/leanncd/test/Eval/Plan/B5bBoxTest.lean
+@@ -0,0 +1,91 @@
++import Eval.Plan.B5BoundaryTest
++
++namespace LeanNCD.Eval.Plan.B5bBoxTest
++open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan LeanNCD.Eval.Plan.B5NativeTest
++  LeanNCD.Eval.Plan.B5BoundaryTest Std
++
++def unpin (n : String) (p : TLProgram) : TLProgram :=
++  { p with decls := p.decls.map fun
++    | .axis a v => if a.name == n then .axis a none else .axis a v
++    | d => d }
++def pinTo (n : String) (size : Nat) (p : TLProgram) : TLProgram :=
++  { p with decls := p.decls.map fun
++    | .axis a v => if a.name == n then .axis a (some size) else .axis a v
++    | d => d }
++
++-- Donor: interleave (axes i = 2, k = 4; A(i), B(i), S(k)); concatenation instead of interleave.
++def concat : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis k : ℕ = 4
++  tensor f32 A(i), B(i), S(k)
++  S[i] := A[i]
++  S[1*i + 2] := B[i]
++}
++def concatExact : TLProgram := unpin "k" concat
++def concatExceeds : TLProgram := pinTo "k" 3 concat
++
++-- Donors: tropical / tropMin with the declared box one larger than the scatter extent.
++def tropBox : TLProgram := pinTo "k" 5 tropical
++def tropMinBox : TLProgram := pinTo "k" 5 tropMin
++
++-- Donor: bareMismatch with the bare writer's axis wider than the box.
++def bareExceeds : TLProgram := pinTo "j" 5 bareMismatch
++def wideIn64 : NamedDenseEnv := in64.insert "B" ⟨[5], #[10, 20, 30, 40, 50]⟩
++def wideIn32 : NamedDenseEnv32 := in32.insert "B" ⟨[5], #[10, 20, 30, 40, 50]⟩
++
++-- Donors: B5BoundaryTest.lateMismatch.
++def lateExact : TLProgram := unpin "l" lateMismatch
++def lateExceeds : TLProgram := pinTo "m" 4 lateMismatch
++def lateWide64 : NamedDenseEnv := late64.insert "Extra" ⟨[4, 4], #[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]⟩
++
++def refError (p : TLProgram) (i : NamedDenseEnv) : Option EvalError :=
++  (scheduled (as64 p)).bind fun s => match evalScheduled s i with
++    | .error f => some f.error
++    | .ok _ => none
++def planCause (p : TLProgram) : Option PlanCompileCause :=
++  (scheduled p).bind fun s =>
++    (InputSignature.ofDenseInputs32ForDecls s.decls in32).toOption.bind fun sig =>
++      match prepareEvalPlan s sig with
++      | .error f => some f.cause
++      | .ok _ => none
++
++-- Concatenation into a pinned box: three native legs, both writer orders.
++#guard agree concat in64 in32 #[-5, -2, -7, -3] #[-5, -2, -7, -3]
++#guard agree (reverseWriters concat) in64 in32 #[-5, -2, -7, -3] #[-5, -2, -7, -3]
++#guard sourceError concat == none
++-- Exact twin: the box size left to inference keeps B5's equality and its payload.
++#guard refShape concatExact in64 == some (.writerExtentMismatch "S" 1 0 4 2)
++#guard planShape concatExact in64 == some (.writerExtentMismatch "S" 1 0 4 2)
++#guard planShape32 concatExact in32 == some (.writerExtentMismatch "S" 1 0 4 2)
++-- Nearest refused neighbour: the scatter writer exceeds the box by one.
++#guard refShape concatExceeds in64 == some (.writerExtentExceedsBox "S" 2 0 3 4)
++#guard planShape concatExceeds in64 == some (.writerExtentExceedsBox "S" 2 0 3 4)
++#guard planShape32 concatExceeds in32 == some (.writerExtentExceedsBox "S" 2 0 3 4)
++-- Bare writer wider than the box.
++#guard refShape bareExceeds wideIn64 == some (.writerExtentExceedsBox "S" 2 0 4 5)
++#guard planShape bareExceeds wideIn64 == some (.writerExtentExceedsBox "S" 2 0 4 5)
++#guard planShape32 bareExceeds wideIn32 == some (.writerExtentExceedsBox "S" 2 0 4 5)
++-- Tropical holes under a larger box, native f32 bits included.
++#guard agree tropBox tropIn64 tropIn32 #[-5, -(1/0), -2, -(1/0), -(1/0)]
++  #[-5, -(1/0), -2, -(1/0), -(1/0)]
++#guard agree tropMinBox tropIn64 tropIn32 #[-7, 1/0, -3, 1/0, 1/0] #[-7, 1/0, -3, 1/0, 1/0]
++-- Multi-dimensional box: writer 3's second dimension (2) fits the pinned 3; the exact twin and the
++-- exceeding neighbour keep their diagnostics.
++#guard (ref64 lateMismatch late64).bind (fun e => e["S"]?.map (·.data)) ==
++  some #[3, 6, 6, 3, 4, 0, 13, 16, 12, 7, 8, 0]
++#guard (run64 lateMismatch late64).bind (fun e => e["S"]?.map (·.data)) ==
++  some #[3, 6, 6, 3, 4, 0, 13, 16, 12, 7, 8, 0]
++#guard refShape lateExact late64 == some (.writerExtentMismatch "S" 3 1 3 2)
++#guard planShape lateExact late64 == some (.writerExtentMismatch "S" 3 1 3 2)
++#guard refShape lateExceeds lateWide64 == some (.writerExtentExceedsBox "S" 3 1 3 4)
++#guard planShape lateExceeds lateWide64 == some (.writerExtentExceedsBox "S" 3 1 3 4)
++-- B6 is unchanged: the negative writer fits the pinned box by derived extent (1 <= 4)
++-- and then fails its own range check on both native paths.
++#guard
++  match refError negativeWriter in64 with
++  | some (.scatterWriteOutOfRange "S#2" [3] [0]) => true
++  | _ => false
++#guard planCause negativeWriter ==
++  some (.invalidPlan (.assign (.nodeError 1 (.scatterWriteOutOfRange 0 2 3 1))))
++
++end LeanNCD.Eval.Plan.B5bBoxTest

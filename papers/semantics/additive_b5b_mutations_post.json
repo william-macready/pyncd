@@ -1,0 +1,178 @@
+[
+ {
+  "label": "B5b-M01 (fit becomes strict less-than)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/CollectorShape.lean",
+  "old": "unless actual ≤ want do",
+  "new": "unless actual < want do",
+  "targets": [
+   "Eval.Plan.B5NativeTest",
+   "Eval.Plan.B5bBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5NativeTest.lean:"
+  ]
+ },
+ {
+  "label": "B5b-M02 (boxed groups keep equality)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/CollectorShape.lean",
+  "old": "        if g.boxed then\n          unless actual ≤ want do",
+  "new": "        if false then\n          unless actual ≤ want do",
+  "targets": [
+   "Eval.Plan.B5NativeTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5NativeTest.lean:"
+  ]
+ },
+ {
+  "label": "B5b-M03 (fit check dropped)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/CollectorShape.lean",
+  "old": "unless actual ≤ want do",
+  "new": "unless true do",
+  "targets": [
+   "Eval.Plan.B5bBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5bBoxTest.lean:"
+  ]
+ },
+ {
+  "label": "B5b-M04 (any declaration is a box)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "| some ax => ax.all (fun a => pinned.contains a.uid)",
+  "new": "| some _ => true",
+  "targets": [
+   "Eval.Plan.B5NativeTest",
+   "Eval.Plan.B5bBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5NativeTest.lean:"
+  ]
+ },
+ {
+  "label": "B5b-M05 (partially pinned declaration is a box)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "ax.all (fun a => pinned.contains a.uid)",
+  "new": "ax.any (fun a => pinned.contains a.uid)",
+  "targets": [
+   "Eval.Plan.B5bBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5bBoxTest.lean:"
+  ]
+ },
+ {
+  "label": "B5b-M06 (no scratch exemption)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/CollectorShape.lean",
+  "old": "    if g.boxed then (List.range",
+  "new": "    if false then (List.range",
+  "targets": [
+   "Eval.Plan.B5NativeTest",
+   "Eval.Plan.B5bBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5NativeTest.lean:"
+  ]
+ },
+ {
+  "label": "B5b-M07 (exemption applies to exact groups)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/CollectorShape.lean",
+  "old": "    if g.boxed then (List.range",
+  "new": "    if true then (List.range",
+  "targets": [
+   "Eval.Plan.B5NativeTest",
+   "Eval.Plan.B5bBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5NativeTest.lean:"
+  ]
+ },
+ {
+  "label": "B5b-M08 (reference sizing ignores the exemption)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Eval.lean",
+  "old": "[sizingView padded s]",
+  "new": "[s]",
+  "targets": [
+   "Eval.Plan.B5NativeTest",
+   "Eval.Plan.B5bBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5NativeTest.lean:"
+  ]
+ },
+ {
+  "label": "B5b-M09 (checked sizing ignores the exemption)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "[sizingView padded s]",
+  "new": "[s]",
+  "targets": [
+   "Eval.Plan.B5NativeTest",
+   "Eval.Plan.B5bBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5NativeTest.lean:"
+  ]
+ },
+ {
+  "label": "B5b-M10 (no pinned sizes reach obligations)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "collectorShapeObligations source (declaredAxisSizes sched.decls)",
+  "new": "collectorShapeObligations source {}",
+  "targets": [
+   "Eval.Plan.B5NativeTest",
+   "Eval.Plan.B5bBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5NativeTest.lean:"
+  ]
+ },
+ {
+  "label": "B5b-M11 (predictor ignores boxes)",
+  "task": "T2",
+  "file": "test/Semantics/OracleSortRules.lean",
+  "old": "if pinnedBox decls n then",
+  "new": "if false then",
+  "targets": [
+   "Semantics.OracleSortRulesTest"
+  ],
+  "expect": [
+   "hand SHAPED disagreements"
+  ]
+ },
+ {
+  "label": "B5b-M12 (predictor fit direction reversed)",
+  "task": "T2",
+  "file": "test/Semantics/OracleSortRules.lean",
+  "old": "(e.zip a).all fun (x, y) => y ≤ x",
+  "new": "(e.zip a).all fun (x, y) => x ≤ y",
+  "targets": [
+   "Semantics.OracleSortRulesTest"
+  ],
+  "expect": [
+   "hand SHAPED disagreements"
+  ]
+ },
+ {
+  "label": "B5b-M13 (observation maps the box error to mismatch)",
+  "task": "T2",
+  "file": "test/Semantics/OracleSortRules.lean",
+  "old": ".error (\"writerExtentExceedsBox\", n)\n",
+  "new": ".error (\"writerExtentMismatch\", n)\n",
+  "targets": [
+   "Semantics.OracleSortRulesTest"
+  ],
+  "expect": [
+   "hand SHAPED disagreements"
+  ]
+ }
+]

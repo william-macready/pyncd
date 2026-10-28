@@ -1,0 +1,132 @@
+diff --git a/leanncd/test/Semantics/OracleMixedRefusalTest.lean b/leanncd/test/Semantics/OracleMixedRefusalTest.lean
+index b463dfca..3912d02a 100644
+--- a/leanncd/test/Semantics/OracleMixedRefusalTest.lean
++++ b/leanncd/test/Semantics/OracleMixedRefusalTest.lean
+@@ -115,6 +115,27 @@ private def overlap (ag : AggOp) : SourceSnapshot :=
+ #guard valueParity (overlap .min) [tZ, tX, tOut "Y" [axK]] .minPlus
+   [.fin (-5), .posInf, .fin 2, .posInf, .fin 3, .posInf, .fin 25, .posInf]
+ 
++/-! B5b: the same overlap donors under a pinned box (extent 10) larger than the realized extent 8.
++The two trailing cells are holes holding the sort's `0_K`. -/
++private def extBox (ax : AxisSpec) : Nat := if ax.uid = 9 then 10 else ext ax
++private def mkBox (ts : List T) (stmts : List Stmt) : SourceSnapshot :=
++  { resolved := { decls := [.axis axA (some 4), .axis axB (some 3), .axis axK (some 10)]
++                    ++ ts.map (fun t => .typedTensor .f64 t.name t.axes)
++                  stmts := stmts, env := {}, extNames := ∅ }
++    specs := ts.zipIdx.map (fun (t, i) => ⟨i + 3, t.role, t.axes.map extBox⟩)
++    inputs := (ts.zipIdx.filter (fun (t, _) => t.role == .input)).map
++      (fun (t, i) => ⟨i + 3, t.axes.map extBox, t.vals⟩) }
++private def overlapBox (ag : AggOp) : SourceSnapshot :=
++  mkBox [tZ, tX, tOut "Y" [axK]] (overlap ag).resolved.stmts
++private def boxTs : List T := [tZ, tX, tOut "Y" [axK]]
++
++#guard valueParity (overlapBox .sum) boxTs .real
++  ([8, 0, 20, 0, 51, 0, 118, 0, 0, 0].map ExtVal.fin)
++#guard valueParity (overlapBox .max) boxTs .maxPlus
++  [.fin 20, .negInf, .fin 7, .negInf, .fin 17, .negInf, .fin 40, .negInf, .negInf, .negInf]
++#guard valueParity (overlapBox .min) boxTs .minPlus
++  [.fin (-5), .posInf, .fin 2, .posInf, .fin 3, .posInf, .fin 25, .posInf, .posInf, .posInf]
++
+ /-! Refusal controls retain genuine unsupported geometry, not B5's now-accepted donors. -/
+ private def multiAxis : SourceSnapshot :=
+   mk [tZ, tQ, tOut "Y" [axK]]
+diff --git a/leanncd/test/Semantics/OracleSortRules.lean b/leanncd/test/Semantics/OracleSortRules.lean
+index 5e047018..0d5d4979 100644
+--- a/leanncd/test/Semantics/OracleSortRules.lean
++++ b/leanncd/test/Semantics/OracleSortRules.lean
+@@ -282,8 +282,20 @@ def predictedExtent (sl : LHSSlot) (sizes : List (UID × Nat)) : Option Nat := d
+         else some legacy
+     | _ => some legacy
+ 
++/-- A box: the destination is declared and every declared axis is pinned by an `axis … = n`
++    declaration in the source. Restated from the declarations, not from production's `pinned` map. -/
++private def pinnedBox (decls : List Decl) (n : String) : Bool :=
++  match declaredAxes decls n with
++  | some ax => ax.all fun a => decls.any fun
++      | .axis b (some _) => b.uid == a.uid
++      | .iter b _ => b.uid == a.uid
++      | _ => false
++  | none => false
++
+ /-- Concrete shape-stage prediction. Callers supply independently known concrete axis sizes.
+-    This does not claim to model signature, capability, inference or range-check failures. -/
++    A boxed group (`pinnedBox`) requires each writer extent to fit the basis extent; every other
++    group requires equality. This does not claim to model signature, capability, inference or
++    range-check failures. -/
+ def predictShaped (decls : List Decl) (stmts : List Stmt) (sizes : List (UID × Nat)) :
+     Prediction :=
+   let p := predict decls stmts
+@@ -295,8 +307,15 @@ def predictShaped (decls : List Decl) (stmts : List Stmt) (sizes : List (UID ×
+     | .error e => some e
+     | .ok bs =>
+       let expected := bs.mapM (predictedExtent · sizes)
+-      if ws.any (fun w => (slotsOf w).mapM (predictedExtent · sizes) != expected)
+-      then some ("writerExtentMismatch", n) else none
++      if pinnedBox decls n then
++        let fits (w : Stmt) : Bool :=
++          match expected, (slotsOf w).mapM (predictedExtent · sizes) with
++          | some e, some a => e.length == a.length && (e.zip a).all fun (x, y) => y ≤ x
++          | _, _ => false
++        if ws.any (!fits ·) then some ("writerExtentExceedsBox", n) else none
++      else
++        if ws.any (fun w => (slotsOf w).mapM (predictedExtent · sizes) != expected)
++        then some ("writerExtentMismatch", n) else none
+   { p with refusals := errors }
+ 
+ /-- SHAPED observation uses actual input signatures and checked preparation. SOURCE observation
+@@ -313,6 +332,7 @@ def productionShapedVerdict (decls : List Decl) (stmts : List Stmt)
+     | .error e =>
+       match e.cause with
+       | .shape (.writerExtentMismatch n _ _ _ _) => .error ("writerExtentMismatch", n)
++      | .shape (.writerExtentExceedsBox n _ _ _ _) => .error ("writerExtentExceedsBox", n)
+       | .shape (.sizeConflict _ _ _) => .error ("sizeConflict", "")
+       | .shape e => .error (s!"unmodelled shape: {e}", "")
+       | .capability e => .error (s!"unmodelled capability: {repr e}", "")
+diff --git a/leanncd/test/Semantics/OracleSortRulesTest.lean b/leanncd/test/Semantics/OracleSortRulesTest.lean
+index c88a5859..f17b78c7 100644
+--- a/leanncd/test/Semantics/OracleSortRulesTest.lean
++++ b/leanncd/test/Semantics/OracleSortRulesTest.lean
+@@ -450,6 +450,11 @@ private def extent8Decls : List Decl :=
+   .axis k (some 8) :: hDecls.map (fun
+     | .typedTensor t "Y" _ => .typedTensor t "Y" [k]
+     | d => d)
++-- Pinned box 12 holds the realized extent 8 of both writers; the bare writer spans the whole box.
++private def box12Decls : List Decl :=
++  .axis k (some 12) :: hDecls.map (fun
++    | .typedTensor t "Y" _ => .typedTensor t "Y" [k]
++    | d => d)
+ private def squareDecls : List Decl :=
+   (matrixDecls matrixB).map (fun
+     | .axis ax _ => .axis ax (some 4)
+@@ -458,7 +463,10 @@ private def squareDecls : List Decl :=
+ private def stagedRows : List (String × List Decl × List Stmt) :=
+   (c3Rows.filter (fun r => ["plain writer + scatter writer", "two affine writers",
+     "affine writer + bare writer"].contains r.label)).map (fun r => (r.label, hDecls, r.stmts)) ++
+-  [("two affine extent8 twin", extent8Decls, [writer 5 .max, writer 5 .max]),
++  [("two affine box12", box12Decls, [writer 5 .max, writer 5 .max]),
++   ("affine/bare box12", box12Decls,
++     [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])]),
++   ("two affine extent8 twin", extent8Decls, [writer 5 .max, writer 5 .max]),
+    ("affine/bare extent8 twin", extent8Decls,
+      [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])])] ++
+   [false, true].flatMap (fun norm =>
+@@ -471,9 +479,18 @@ private def stagedRows : List (String × List Decl × List Stmt) :=
+ run_cmd assertNone "hand SHAPED disagreements" (stagedRows.flatMap fun (l, ds, ss) =>
+   shapedProblems l ds ss)
+ 
++-- Eleven hand rows: seven shape accepts (two box12, two extent8 twins, two square twins, the
++-- bool plain+scatter row) and four refusals (two exceed-box affine rows, two rectangular diagonals).
++#guard stagedRows.length == 11
++#guard (stagedRows.filter fun (_, ds, ss) =>
++  (predictShaped ds ss (sizesOf ds)).refusals.isEmpty).length == 7
++
+ #guard concreteC1.length == 81
++-- C1 declares extent 4 against realized extent 8, so no candidate fits the pinned box: all 81 stay
++-- refused, now by the box rule itself rather than by a scatter-output `sizeConflict`.
+ #guard histogram (concreteC1.map (fun ss =>
+-  tag (productionShapedVerdict c1Decls ss (signatureOf c1Decls ss)))) == [("sizeConflict", 81)]
++  tag (productionShapedVerdict c1Decls ss (signatureOf c1Decls ss)))) ==
++    [("writerExtentExceedsBox", 81)]
+ #eval
+   let containsShape (shape : Nat) (ss : List Stmt) :=
+     ss.any (fun s => [AggOp.sum, .max, .min].any (fun ag => s == writer shape ag))
