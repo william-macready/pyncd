@@ -91,7 +91,6 @@ def tag (s : SourceSnapshot) (order : List Nat := [5]) : String :=
       then "refused:writeOutOfRange" else "error"
   | .ok run => match run.classification with
     | .fourLegParity => "parity"
-    | .knownContractDifference (.multiWriterScatter _) => "known:multiWriter"
     | .knownContractDifference (.scatterExtentOverridesDeclared ..) => "known:extent"
     | .knownContractDifference (.usedDType ..) => "known:usedDType"
     | .nativeFailure => "nativeFailure"
@@ -138,7 +137,7 @@ private def fMask : SourceSnapshot :=
 #guard tag fF == "nativeFailure"
 #guard tag fF' == "nativeFailure"
 -- Multi-writer vs single writer; extent override vs equal extent (A); out-of-range refusal.
-#guard tag fG == "known:multiWriter"
+#guard tag fG == "nativeFailure"
 #guard tag (snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX]) == "parity"
 #guard tag fH9 == "known:extent"
 #guard tag fH6 == "refused:writeOutOfRange"
@@ -159,10 +158,10 @@ private def conditionCount (s : SourceSnapshot) : Nat :=
 -- S3a: collisions sum (production and oracle agree), so a colliding write predicts NO condition:
 -- `fE` (`Y[2a] := X[a]*W[b]`, `b` contracted onto one cell) and `fF` (`a+b`) have nothing to detect
 -- for collisions; `fF`'s declared extent 6 differs from the derived 7, so it keeps exactly the
--- extent condition, and `fG`'s two non-bare writers keep the multi-writer condition.
+-- extent condition. `fG` has no blanket multi-writer allowance.
 #guard conditionCount fE == 0
 #guard conditionCount fF == 1
-#guard conditionCount fG == 1
+#guard conditionCount fG == 0
 
 /-- Profile verdict on `fE`'s oracle result with one occurrence of the first nonempty fiber dropped
 and every sum (fiber, contribution, tensor cell) adjusted so only the COUNT is inconsistent. -/
@@ -333,5 +332,17 @@ private def fR1 := snap 8 [k] [.assign "Y" [.affine (.shift a 4)] readX]
 #guard mentions fR "checked=preparation checked preparation: cause=invalidPlan: LeanNCD.Eval.Plan.PlanStepError.assign"
 #guard conditionCount fR == 1
 #guard tag fR1 == "parity"
+
+/-! B5: keep the old syntax-negative donor honest, and add an equal-extent stride twin. -/
+private def fGStride := snap 8 [k]
+  [.assign "Y" [.affine (.scale 2 a)] readX,
+   .assign "Y" [.affine (.affine 1 [(2, a)])] readX]
+
+#guard mentions fG "compile failed: LeanNCD.CompileError.scanAxisNotIter \"a\""
+#guard mentions fG "checked=sourceCompilation LeanNCD.CompileError.scanAxisNotIter \"a\""
+#guard tag fGStride == "parity"
+#guard legacyCells fGStride == handBits [1, 1, 2, 2, 3, 3, 4, 4]
+#guard oracleCells fGStride == handBits [1, 1, 2, 2, 3, 3, 4, 4]
+#guard conditionCount fGStride == 0
 
 end SourceDifferentialScatterTest

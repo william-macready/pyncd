@@ -592,6 +592,9 @@ def route (logical : ScheduledProgram) : FreshM ThreadedComposed := do
   match desugarMultiWriters logical with
   | .error e => throw e
   | .ok (collected, _) =>
+  match (writerGroups logical.stmts).find? (·.needsB5 logical.stmts) with
+  | some g => throw (.multiWriterScatter g.name)
+  | none =>
   match physicalizeForRoute collected with
   | .error e => throw e
   | .ok physical =>

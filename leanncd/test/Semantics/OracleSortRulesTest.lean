@@ -1,9 +1,10 @@
 import Semantics.OracleSortRules
 
-/-! Oracle sorts T1: agreement corpora for the independent rule predictor (guards only).
+/-! Oracle sorts T1: SOURCE and SHAPED agreement corpora for the independent rule predictor.
 
 Every corpus program is run through the real pipeline (`productionVerdict`) and through the
 independent predictor (`predict`); `agrees` must hold for all of them.
+New B5 candidates additionally reach concrete preparation with actual input signatures.
 
 * C1: pairs and triples of writers over one tensor `Y` (the vote / neutrality / scatter rules).
 * C2: reader programs (the cast rules), plus the laundered pair and group readers.
@@ -101,15 +102,15 @@ run_cmd assertNone "C1 predictor/production disagreements" (disagreements c1Decl
 /-- How many refusals the predictor names for a C1 program. -/
 private def refusalsOf (ss : List Stmt) : Nat := (predict c1Decls ss).refusals.length
 
--- Of the 505 C1 programs: 141 are predicted accepted, 258 have exactly one predicted refusal and 106
--- have two or more. The first two are the STRICT class (`agreesStrict`: the constructor must equal the
+-- SOURCE-stage counts only: an empty refusal list does not imply concrete shape acceptance.
+-- The first two are the STRICT class (`agreesStrict`: the constructor must equal the
 -- single predicted one, and an accepted program must publish the predicted sorts). The last is the
 -- MULTI class (`agreesMember`: the observed constructor is among the predicted ones). A spurious EXTRA
 -- predicted refusal inside a multi-refusal program is NOT detected (see `agreesMember`); each rule's
 -- refusal is pinned by equality on strict programs instead (coverage guard in C4).
-#guard (corpusC1.filter (refusalsOf · == 0)).length == 141
-#guard (corpusC1.filter (refusalsOf · == 1)).length == 258
-#guard (corpusC1.filter (refusalsOf · ≥ 2)).length == 106
+#guard [(corpusC1.filter (refusalsOf · == 0)).length,
+  (corpusC1.filter (refusalsOf · == 1)).length,
+  (corpusC1.filter (refusalsOf · ≥ 2)).length] == [222, 195, 88]
 
 /-- Each program is held to the predicate of its own class, so a strict-class program cannot hide
     behind membership. -/
@@ -304,11 +305,13 @@ private def c3Rows : List Row :=
   -- D7: scatters and non-bare slots in a multi-writer group
   , { label := "plain writer + scatter writer"
       stmts := [ct "Y" .max "Z", .scatter "Y" [.free a] (rhs .max .identity [[rd "Q" [a, b]]])]
-      expect := .error ("multiWriterScatter", "Y") }
+      expect := .ok [("Y", maxS)], runs := some [maxS, maxS] }
   , { label := "two affine writers"
-      stmts := [writer 5 .max, writer 5 .max], expect := .error ("multiWriterScatter", "Y") }
+      stmts := [writer 5 .max, writer 5 .max], expect := .ok [("Y", maxS)]
+      runs := some [maxS, maxS] }
   , { label := "affine writer + bare writer"
-      stmts := [writer 5 .max, writer 0 .max], expect := .error ("multiWriterScatter", "Y") }
+      stmts := [writer 5 .max, writer 0 .max], expect := .ok [("Y", maxS)]
+      runs := some [maxS, maxS] }
   -- tropical statements take no nonlinearity
   , { label := "relu on a max statement"
       stmts := [.assign "Y" [.free a] (rhs .max (.pointwise .relu) [[rd "X" [a]]])]
@@ -335,15 +338,45 @@ private def supplementalRows : List (List Decl × Row) :=
   [ (matrixDecls matrixB,
       { label := "duplicate free UID makes diagonal Y[a,a] a scatter"
         stmts := matrixWriters [.free matrixA, .free matrixA] matrixB
-        expect := .error ("multiWriterScatter", "Y") })
+        expect := .ok [], runs := some [.real, .real] })
   , (matrixDecls matrixB,
       { label := "free/freeNorm duplicate UID also makes a scatter"
         stmts := matrixWriters [.free matrixA, .freeNorm matrixA] matrixB
-        expect := .error ("multiWriterScatter", "Y") })
+        expect := .ok [], runs := some [.real, .real] })
   , (matrixDecls matrixB,
       { label := "distinct bare UIDs Y[a,b] remain legal"
         stmts := matrixWriters [.free matrixA, .free matrixB] matrixB
         expect := .ok [], runs := some [.real, .real] })
+  , ((matrixDecls matrixB).map (fun
+        | .typedTensor t "Y" _ => .typedTensor t "Y" [matrixA, matrixA]
+        | d => d),
+      { label := "declared repeated collector UID is refused"
+        stmts := matrixWriters [.free matrixA, .free matrixA] matrixB
+        expect := .error ("multiWriterRepeatedBasis", "Y") })
+  , (hDecls.filter (fun d => d.name != "Y"),
+      { label := "undeclared allscatter needs a declared basis"
+        stmts := List.replicate 2 (.scatter "Y" [.free a] (rhs .sum .identity [[rd "X" [a]]]))
+        expect := .error ("multiWriterNeedsDeclaredShape", "Y") })
+  , (hDecls.filter (fun d => d.name != "Y"),
+      { label := "ordinary bare assignment supplies undeclared fallback"
+        stmts := [.scatter "Y" [.free a] (rhs .sum .identity [[rd "X" [a]]]), cp "Y" .sum "X"]
+        expect := .ok [], runs := some [.real, .real] })
+  , (hDecls,
+      { label := "explicit constant scatter groups remain unsupported"
+        stmts := List.replicate 2 (.scatter "Y" [.affine (.const 3)]
+          (rhs .sum .identity [[rd "X" [a]]]))
+        expect := .error ("multiWriterScatter", "Y") })
+  , (hDecls,
+      { label := "canceled multi-axis syntax is bounded after UID normalization"
+        stmts := List.replicate 2 (.scatter "Y"
+          [.affine (.affine 1 [(3, a), (-1, a), (1, b), (-1, b)])]
+          (rhs .max .identity [[rd "X" [a]]]))
+        expect := .ok [("Y", maxS)], runs := some [maxS, maxS] })
+  , (hDecls,
+      { label := "predicate scatter groups remain unsupported"
+        stmts := List.replicate 2 (.scatter "OP" [.free a]
+          (rhs .sum .identity [[rd "X" [a]]]))
+        expect := .error ("multiWriterScatter", "OP") })
   -- The structural gate requires sum on predicate outputs; their running sort is still bool.
   , (hDecls,
       { label := "predicate contractions run in bool rather than annotation real"
@@ -374,6 +407,106 @@ run_cmd assertNone "supplemental hand rows" <|
 #guard (predict (matrixDecls sameNameB)
   (matrixWriters [.free matrixA, .freeNorm sameNameB] sameNameB)).refusals.isEmpty
 
+/-! SHAPED rows are explicitly separate from the SOURCE corpora. Concrete external signatures
+    come from each row's real input declarations, not from compiler inference. -/
+
+private def sizesOf (ds : List Decl) : List (UID × Nat) :=
+  ds.filterMap (fun | .axis ax (some n) => some (ax.uid, n) | _ => none)
+
+private def signatureOf (ds : List Decl) (ss : List Stmt) : Eval.Plan.InputSignature :=
+  let written := ss.filterMap (fun
+    | .assign n .. | .scatter n .. => some n
+    | _ => none)
+  let sizes := sizesOf ds
+  let entries := ds.filterMap fun d =>
+    let entry := match d with
+      | .typedTensor _ n ax | .tensor n ax => some (n, ax, Eval.Plan.ScalarDType.f64)
+      | .predicate n ax => some (n, ax, Eval.Plan.ScalarDType.bool)
+      | _ => none
+    entry.bind fun (n, ax, dt) =>
+      if written.contains n then none else
+      some (n, ({ shape := (ax.map (fun x =>
+        ((sizes.find? (·.1 == x.uid)).map (·.2)).getD 0)).toArray, dtype := dt } :
+          Eval.Plan.TensorSignature))
+  ⟨Std.HashMap.ofList entries⟩
+
+private def shapedProblems (label : String) (ds : List Decl) (ss : List Stmt) : List String :=
+  let p := predictShaped ds ss (sizesOf ds)
+  let v := productionShapedVerdict ds ss (signatureOf ds ss)
+  if agreesShaped p v then [] else [s!"{label}: predicted {repr p.refusals}, observed {repr v}"]
+
+/-- Stage only newly admitted B5 candidates, not legacy allbare/singlewriter corpus rows.
+    All 81 candidates were observed to reach inference, including relu/Iverson neighbours. -/
+private def concreteC1 : List (List Stmt) :=
+  corpusC1.filter fun ss =>
+    (predict c1Decls ss).refusals.isEmpty &&
+    ss.any (fun s => [AggOp.sum, .max, .min].any (fun ag => s == writer 5 ag))
+
+run_cmd assertNone "C1 SHAPED disagreements" <|
+  (concreteC1.zipIdx.flatMap fun (ss, i) => shapedProblems s!"C1#{i}" c1Decls ss)
+
+private def k : AxisSpec := ⟨"k", 44, .nat⟩
+private def extent8Decls : List Decl :=
+  .axis k (some 8) :: hDecls.map (fun
+    | .typedTensor t "Y" _ => .typedTensor t "Y" [k]
+    | d => d)
+private def squareDecls : List Decl :=
+  (matrixDecls matrixB).map (fun
+    | .axis ax _ => .axis ax (some 4)
+    | d => d)
+
+private def stagedRows : List (String × List Decl × List Stmt) :=
+  (c3Rows.filter (fun r => ["plain writer + scatter writer", "two affine writers",
+    "affine writer + bare writer"].contains r.label)).map (fun r => (r.label, hDecls, r.stmts)) ++
+  [("two affine extent8 twin", extent8Decls, [writer 5 .max, writer 5 .max]),
+   ("affine/bare extent8 twin", extent8Decls,
+     [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])])] ++
+  [false, true].flatMap (fun norm =>
+    let ss := matrixWriters [.free matrixA, if norm then .freeNorm matrixA else .free matrixA] matrixB
+    -- Identity statements cannot carry a normalization marker. De-mark the second donor's twin.
+    let square := matrixWriters [.free matrixA, .free matrixA] matrixB
+    [(s!"diagonal rectangular donor {norm}", matrixDecls matrixB, ss),
+     (s!"diagonal square twin {norm}", squareDecls, square)])
+
+run_cmd assertNone "hand SHAPED disagreements" (stagedRows.flatMap fun (l, ds, ss) =>
+  shapedProblems l ds ss)
+
+#guard concreteC1.length == 81
+#guard histogram (concreteC1.map (fun ss =>
+  tag (productionShapedVerdict c1Decls ss (signatureOf c1Decls ss)))) == [("sizeConflict", 81)]
+#eval
+  let containsShape (shape : Nat) (ss : List Stmt) :=
+    ss.any (fun s => [AggOp.sum, .max, .min].any (fun ag => s == writer shape ag))
+  [(corpusC1.filter (fun ss => containsShape 4 ss || containsShape 5 ss)).length,
+   (corpusC1.filter (containsShape 4)).length,
+   (corpusC1.filter (fun ss => containsShape 5 ss && !containsShape 4 ss)).length]
+#eval stagedRows.map (fun (l, ds, ss) =>
+  (l, (predictShaped ds ss (sizesOf ds)).refusals,
+    productionShapedVerdict ds ss (signatureOf ds ss)))
+
+/-- This donor passes B5 geometry and shape but retains its independent, pre-existing marker
+    refusal. Do not call a shape-only prediction a full preparation-acceptance prediction. -/
+private def markedSquare := matrixWriters [.free matrixA, .freeNorm matrixA] matrixB
+#guard (predictShaped squareDecls markedSquare (sizesOf squareDecls)).refusals.isEmpty
+#guard productionShapedVerdict squareDecls markedSquare (signatureOf squareDecls markedSquare) ==
+  .error ("unmodelled nonlin: LeanNCD.Eval.Plan.NonlinCompileError.unmarkedReductionAxis \"Y#1\" 1", "")
+
+-- Stride alignment, normalization and raw-axis sizing are independent of production's formula.
+#eval [predictedExtent (.affine (.affine 1 [(2, a)])) [(a.uid, 4)],
+  predictedExtent (.affine (.affine 3 [(2, a)])) [(a.uid, 4)],
+  predictedExtent (.affine (.affine 1 [(3, a), (-1, a), (0, b)])) [(a.uid, 4), (b.uid, 3)],
+  predictedExtent (.affine (.affine 1 [(3, a), (-1, a), (0, b)])) [(a.uid, 4)],
+  predictedExtent (.affine (.scale 0 a)) [(a.uid, 4)]]
+#guard predictedExtent (.affine (.affine 1 [(2, a)])) [(a.uid, 4)] == some 8
+#guard predictedExtent (.affine (.affine 3 [(2, a)])) [(a.uid, 4)] == some 10
+#guard predictedExtent (.affine (.affine 1 [(3, a), (-1, a), (0, b)]))
+  [(a.uid, 4), (b.uid, 3)] == some 8
+#guard predictedExtent (.affine (.affine 1 [(3, a), (-1, a), (0, b)]))
+  [(a.uid, 4)] == none
+#guard predictedExtent (.affine (.scale 0 a)) [(a.uid, 4)] == some 0
+#guard (predict hDecls (List.replicate 2 (.scatter "Y" [.affine (.scale 0 a)]
+  (rhs .sum .identity [[rd "X" [a]]])))).refusals.isEmpty
+
 /-! ### C4: the corpora are not vacuous -/
 
 private def aggOf : Stmt → AggOp
@@ -401,7 +534,8 @@ private def everything : List (List Decl × List Stmt) :=
   c3Rows.map (hDecls, ·.stmts) ++ supplementalRows.map (fun (d, r) => (d, r.stmts))
 
 private def modelled : List String :=
-  ["accepted", "multiWriterAlgebra", "multiWriterScatter", "tropicalNonlin", "sortCastUnsupported"]
+  ["accepted", "multiWriterAlgebra", "multiWriterScatter", "multiWriterNeedsDeclaredShape",
+   "multiWriterRepeatedBasis", "tropicalNonlin", "sortCastUnsupported"]
 
 private def observedTags : List String :=
   (everything.map (fun (d, ss) => tag (productionVerdict d ss))).eraseDups

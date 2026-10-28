@@ -129,7 +129,7 @@ def c5 : TLProgram := tlprog!{
   S[2*i] := X[i]
   S[2*i + 1] := Y[i]
 }
-#guard errorOf c5 == some (.multiWriterScatter "S")
+#guard errorOf c5 == some (.multiWriterNeedsDeclaredShape "S")
 
 -- C6 (was a rejection until S3b-ii): max-annotated multi-writer set (clone c1, agg maxreduce).
 def c6 : TLProgram := tlprog!{
@@ -635,7 +635,7 @@ private def priorityError (scanConflict : Bool) : Option CompileError :=
   | _, _ => none
 #guard priorityError true == some (.multiWriterScan "G")
 -- C9e' accept-neighbour (clone C9e, no scan conflict): the scatter group's own error surfaces.
-#guard priorityError false == some (.multiWriterScatter "S")
+#guard priorityError false == some (.multiWriterNeedsDeclaredShape "S")
 
 /-! ## Direct `route` on a hand-built schedule (review T6-F4)
 

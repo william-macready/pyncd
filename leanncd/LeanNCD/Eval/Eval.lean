@@ -2,6 +2,7 @@ import LeanNCD.Eval.Scan        -- (transitively brings Contract/Nonlin/Gather/S
 import LeanNCD.Eval.Scatter
 import LeanNCD.Eval.SizeInfer   -- `inferAxisSizes`, called directly below
 import LeanNCD.Eval.Error
+import LeanNCD.Eval.CollectorShape
 import LeanNCD.Eval.Report      -- `EvalReport` (C4): moved to a neutral leaf shared with `Plan/Adapter.lean`
 import LeanNCD.DSL.Pipeline.ScheduledValidation
 namespace LeanNCD.Eval
@@ -156,6 +157,9 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
       -- Execute under the workers' narrow `Except EvalError` type, then attach the already-known
       -- inference warnings to either outcome at this orchestration boundary.
       let execution : Except EvalError (HashMap String DenseTensor) := do
+        match checkCollectorShapes checked.shapeObligations sizes with
+        | .ok () => pure ()
+        | .error e => throw (.shape e)
         let mut env := inputs
         for sc in sched.stmts do
           match sc with

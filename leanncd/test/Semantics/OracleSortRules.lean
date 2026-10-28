@@ -1,12 +1,14 @@
 import LeanNCD.DSL.Compile
 import LeanNCD.DSL.Pipeline.ScheduledValidation
 import Eval.PropertyOracle.Neutral
+import LeanNCD.Eval.Plan.Compile
 
 /-! Oracle sorts T1: an INDEPENDENT predictor of the sort/vote/cast/refusal rules.
 
 The rules are stated here from the design (`papers/semantics/oracle_sorts_design.md`) and never by
-calling production's rule helpers. Production is observed only through the real pipeline
-(`compileToScheduled`, then `validateScheduled`), via `productionVerdict`. The one shared piece is
+calling production's rule helpers. SOURCE observations use `compileToScheduled` then
+`validateScheduled` via `productionVerdict`; SHAPED observations additionally use real checked
+preparation and external input signatures. The one shared piece is
 `oracleNeutral`, the test-side neutrality predicate whose agreement with production is pinned in
 `Eval.PropertyOracle.ScanOracle`. -/
 
@@ -19,7 +21,8 @@ inductive MSort | real | maxPlus | minPlus | bool
   deriving DecidableEq, Repr
 
 /-- What the rules say about a program. `refusals` are (constructor name, tensor name) pairs the
-    rules say apply (`[]` means accepted); `sorts` has one entry per declared tensor; `stmtSorts` is
+    rules say apply (`[]` means no refusal at the predicted stage, not full pipeline acceptance);
+    `sorts` has one entry per declared tensor; `stmtSorts` is
     the sort each input statement RUNS in, aligned with the input list. `sorts` and `stmtSorts` are
     meaningful only when `refusals = []`. -/
 structure Prediction where
@@ -127,6 +130,49 @@ private def hasNonBareSlot : Stmt → Bool
       ls.any (fun l => !bareSlot l) || freeUIDs.length != freeUIDs.eraseDups.length
   | .recurMorphism .. => false
 
+private def slotsOf : Stmt → List LHSSlot
+  | .assign _ ls _ | .scatter _ ls _ => ls
+  | .recurMorphism .. => []
+
+/-- Test-side normalization, deliberately independent of the DSL's affine helpers. -/
+private def coefficients : IdxExpr → Int × List (Int × UID)
+  | .axis a => (0, [(1, a.uid)])
+  | .const n => (n, [])
+  | .scale c a => (0, [(c, a.uid)])
+  | .shift a n => (n, [(1, a.uid)])
+  | .affine n cs => (n, cs.map fun (c, a) => (c, a.uid))
+
+private def normalized (cs : List (Int × UID)) : List (Int × UID) :=
+  (cs.map (·.2)).eraseDups.map fun u =>
+    ((cs.filter (·.2 == u)).foldl (fun n p => n + p.1) 0, u)
+
+private def bounded : LHSSlot → Bool
+  | .free _ | .freeNorm _ => true
+  | .affine (.const _) => false
+  | .affine e => ((normalized (coefficients e).2).filter (·.1 != 0)).length ≤ 1
+  | _ => false
+
+private def declaredAxes (decls : List Decl) (n : String) : Option (List AxisSpec) :=
+  decls.findSome? fun
+    | .tensor m ax | .typedTensor _ m ax | .predicate m ax
+    | .linear m ax _ | .typedLinear _ m ax _ => if m == n then some ax else none
+    | _ => none
+
+private def basis (decls : List Decl) (n : String) (ws : List Stmt) :
+    Except (String × String) (List LHSSlot) :=
+  match declaredAxes decls n with
+  | some ax =>
+      let us := ax.map (·.uid)
+      if us.length != us.eraseDups.length then .error ("multiWriterRepeatedBasis", n)
+      else .ok (ax.map LHSSlot.free)
+  | none =>
+      match ws.find? (fun w => isPlainAssign w && !hasNonBareSlot w) with
+      | some w => .ok (slotsOf w)
+      | none => .error ("multiWriterNeedsDeclaredShape", n)
+
+private def needsB5 (ws : List Stmt) : Bool :=
+  ws.length > 1 && ws.any (fun s => !isPlainAssign s || hasNonBareSlot s)
+
 /-- The source tensors a statement reads through a bare (`read`) factor. Iverson and unary factors
     are not cast-checked. -/
 private def bareReads : Stmt → List String
@@ -170,12 +216,11 @@ def predict (decls : List Decl) (stmts : List Stmt) : Prediction :=
   -- a group's sort: a predicate destination is bool; else the vote (`none` = conflict)
   let sortOfGroup (n : String) : Option MSort :=
     if preds.contains n then some .bool else groupSort (writersOf n)
-  -- a tropical group publishes an entry, unless it holds a scatter (such a group is refused)
+  -- Tropical scatter groups publish entries too; geometry is an independent refusal rule.
   let entryOf (n : String) : Option MSort :=
     match sortOfGroup n with
     | some k =>
-        if k.isTropical && ((writersOf n).length == 1 || (writersOf n).all isPlainAssign)
-        then some k else none
+        if k.isTropical then some k else none
     | none => none
   -- the sort a tensor is read at: its entry, else its declaration
   let sourceSort (n : String) : MSort :=
@@ -187,8 +232,13 @@ def predict (decls : List Decl) (stmts : List Stmt) : Prediction :=
     if preds.contains n then some .bool else entryOf n
   let scatterRefusals := dests.filterMap (fun n =>
     let ws := writersOf n
-    if ws.length > 1 && ws.any (fun s => !isPlainAssign s || hasNonBareSlot s)
-    then some ("multiWriterScatter", n) else none)
+    if needsB5 ws then
+      if preds.contains n || !(ws.all (fun w => (slotsOf w).all bounded)) then
+        some ("multiWriterScatter", n)
+      else match basis decls n ws with
+        | .error e => some e
+        | .ok _ => none
+    else none)
   let voteRefusals := dests.filterMap (fun n =>
     if (writersOf n).length > 1 && (sortOfGroup n).isNone then some ("multiWriterAlgebra", n)
     else none)
@@ -209,5 +259,76 @@ def predict (decls : List Decl) (stmts : List Stmt) : Prediction :=
     | some k => k
     | none => annotationSort (annotationOf s))
   ⟨(scatterRefusals ++ voteRefusals ++ nonlinRefusals ++ castRefusals).eraseDups, sorts, stmtSorts⟩
+
+/-- Independent stride-aligned extent, NOT the maximum visited index plus one. Raw canceled
+    axes remain sizing obligations. Explicit constants have their own legacy convention. -/
+def predictedExtent (sl : LHSSlot) (sizes : List (UID × Nat)) : Option Nat := do
+  let lookup (u : UID) := (sizes.find? (·.1 == u)).map (·.2)
+  let e ← match sl with
+    | .free a | .freeNorm a => some (IdxExpr.axis a)
+    | .affine e => some e
+    | _ => none
+  match e with
+  | .const n => some (n + 1).toNat
+  | _ =>
+    let (offset, cs) := coefficients e
+    let terms ← cs.mapM fun (c, u) => do pure (c * Int.ofNat (← lookup u))
+    let legacy := (offset + terms.sum).toNat
+    match (normalized cs).filter (·.1 != 0) with
+    | [(c, u)] =>
+        let n ← lookup u
+        if c > 0 && offset ≥ 0 && n > 0 then
+          some (c * Int.ofNat n + (offset / c) * c).toNat
+        else some legacy
+    | _ => some legacy
+
+/-- Concrete shape-stage prediction. Callers supply independently known concrete axis sizes.
+    This does not claim to model signature, capability, inference or range-check failures. -/
+def predictShaped (decls : List Decl) (stmts : List Stmt) (sizes : List (UID × Nat)) :
+    Prediction :=
+  let p := predict decls stmts
+  if !p.refusals.isEmpty then p else
+  let errors := (stmts.map destOf).eraseDups.filterMap fun n =>
+    let ws := stmts.filter (fun s => destOf s == n)
+    if !needsB5 ws then none else
+    match basis decls n ws with
+    | .error e => some e
+    | .ok bs =>
+      let expected := bs.mapM (predictedExtent · sizes)
+      if ws.any (fun w => (slotsOf w).mapM (predictedExtent · sizes) != expected)
+      then some ("writerExtentMismatch", n) else none
+  { p with refusals := errors }
+
+/-- SHAPED observation uses actual input signatures and checked preparation. SOURCE observation
+    remains `productionVerdict`, preserving corpora outside checked backend capabilities. -/
+def productionShapedVerdict (decls : List Decl) (stmts : List Stmt)
+    (sig : Eval.Plan.InputSignature) : Except (String × String) (List (String × MSort)) := do
+  let v ← productionVerdict decls stmts
+  let p : TLProgram := ⟨decls, stmts⟩
+  match p.compileToScheduled.run 0 with
+  | .error _ _ => .error ("sourceCompilation", "")
+  | .ok sch _ =>
+    match Eval.Plan.prepareEvalPlan sch sig with
+    | .ok _ => .ok v
+    | .error e =>
+      match e.cause with
+      | .shape (.writerExtentMismatch n _ _ _ _) => .error ("writerExtentMismatch", n)
+      | .shape (.sizeConflict _ _ _) => .error ("sizeConflict", "")
+      | .shape e => .error (s!"unmodelled shape: {e}", "")
+      | .capability e => .error (s!"unmodelled capability: {repr e}", "")
+      | .inputSignature e => .error (s!"unmodelled signature: {repr e}", "")
+      | .scan e => .error (s!"unmodelled scan: {repr e}", "")
+      | .invalidPlan e => .error (s!"unmodelled plan: {repr e}", "")
+      | .bindings e => .error (s!"unmodelled bindings: {repr e}", "")
+      | .nonlin e => .error (s!"unmodelled nonlin: {repr e}", "")
+      | .sourceInvariant e => .error (s!"unmodelled source invariant: {repr e}", "")
+
+/-- Inference may detect inconsistent concrete shapes before the collector equality check.
+    Keep the raw observed constructor, allowing it only for a predicted shape disagreement. -/
+def agreesShaped (p : Prediction)
+    (v : Except (String × String) (List (String × MSort))) : Bool :=
+  agrees p v || (match v with
+    | .error ("sizeConflict", _) => p.refusals.any (·.1 == "writerExtentMismatch")
+    | _ => false)
 
 end LeanNCD.OracleSorts

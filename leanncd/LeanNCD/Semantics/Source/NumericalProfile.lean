@@ -21,8 +21,6 @@ structure Site where
 
 inductive StructuralCondition
   | usedDType (origin : SourceOrigin) (name : String) (actual : TensorElementType)
-  /-- A tensor written by several statements, at least one non-bare. -/
-  | multiWriterScatter (declaration : Nat)
   /-- A non-bare write whose declared destination shape differs from the extent production
   derives from the forms (`derived`); production's shape wins. -/
   | scatterExtentOverridesDeclared (origin : SourceOrigin) (declaration : Nat)

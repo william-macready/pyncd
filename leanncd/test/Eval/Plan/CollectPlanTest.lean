@@ -864,7 +864,19 @@ private def refusedBy (p : TLProgram) (i : NamedDenseEnv) (i32 : NamedDenseEnv32
 #guard refusedBy nbSM abIn abIn32 (.multiWriterAlgebra "Y")
 #guard refusedBy nbMS abIn abIn32 (.multiWriterAlgebra "Y")
 -- two affine scatter writers, even max-annotated
-#guard refusedBy nbScat abIn abIn32 (.multiWriterScatter "S")
+#guard
+  match nbScat.compileToScheduled.run 0 with
+  | .ok s _ =>
+      let ref := match evalScheduled s abIn with
+        | .error f => match f.error with
+          | .compile (.multiWriterNeedsDeclaredShape "S") => true
+          | _ => false
+        | .ok _ => false
+      let plan := match prepareEvalPlan s { tensors := {} } with
+        | .error f => f.cause == .sourceInvariant (.multiWriterNeedsDeclaredShape "S")
+        | .ok _ => false
+      ref && plan
+  | .error _ _ => false
 -- a scan node of `S` plus a max-annotated plain writer of `S` (hand-built: the surface cannot
 -- spell it, `nbScan` fails earlier with `scanProjectionUnsupported`)
 #guard (scanPlusMax.bind fun sp => match evalScheduled sp {} with

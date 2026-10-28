@@ -180,8 +180,8 @@ inductive Classification
 
 /-! Source-shape contract differences for affine writes and scatters. `detectConditions` looks at
 the source alone; `confirms` additionally requires BOTH native legs to show exactly the predicted
-outcome. The multi-writer `scanAxisNotIter` stays cause-only, and while
-`scatterExtentOverridesDeclared` fires it suppresses all value comparison for the program. -/
+outcome. While `scatterExtentOverridesDeclared` fires it suppresses all value comparison
+for the program. Multi-writer syntax or shape refusals are ordinary native failures. -/
 
 def nonBareWrite (st : AdmittedStatement source) : Bool :=
   st.output.forms != st.output.indices.map WriteForm.single
@@ -200,10 +200,6 @@ def detectConditions (source : AdmittedSource) :
     List StructuralCondition :=
   let decl (st : AdmittedStatement source.source) : Nat :=
     (source.source.table.entry st.output.tensor).declaration
-  let multi := (source.statements.filter fun st =>
-      nonBareWrite st &&
-        (source.statements.filter fun o => decl o == decl st).length > 1).map decl
-    |>.eraseDups |>.map StructuralCondition.multiWriterScatter
   let extents := source.statements.filterMap fun st =>
     let declared := (source.source.table.entry st.output.tensor).axes.map (·.extent)
     let derived := derivedShape source st
@@ -212,23 +208,13 @@ def detectConditions (source : AdmittedSource) :
         (source.statements.filter fun o => decl o == decl st).length == 1 then
       some (StructuralCondition.scatterExtentOverridesDeclared st.output.origin (decl st) derived)
     else none
-  -- pipeline order: compile (multi-writer), output binding (extent). Only the first can be
-  -- observed, so `classification` confirms the head only.
-  multi ++ extents
+  extents
 
 /-- `name` is the source name of the tensor declared at `declaration` (the condition's origin):
 a native error that names a tensor confirms a condition only for that condition's own tensor. -/
 def ownedBy (native : NativeRun) (declaration : Option Nat) (name : String) : Bool :=
   native.source.admitted.source.table.entries.any fun e =>
     e.name == name && some e.declaration == declaration
-
-/-- CAUSE-ONLY: the multi-writer refusal `scanAxisNotIter` names an AXIS, never a tensor or a
-statement, so a refusal raised by another tensor's writers over the same cause is not
-distinguishable here. -/
-private def legacyCompile (needle : String) : LegacyOutcome → Bool
-  | .failure e => e.phase == .compilation &&
-      ((toString e.original.error).splitOn needle).length > 1
-  | _ => false
 
 private def shapeOnly (declaration : Nat) (derived : List Nat) (o : NativeObservation) : Bool :=
   match o.outputs with
@@ -238,14 +224,8 @@ private def shapeOnly (declaration : Nat) (derived : List Nat) (o : NativeObserv
       | _ => false
   | .ok _ => false
 
-/-- Every leg whose native error carries an identity is bound to the condition's origin
-(`scatterExtentOverridesDeclared`: the binding issue's declaration). `multiWriterScatter` stays
-cause-only on both legs (`scanAxisNotIter` names an axis only). -/
+/-- Each native binding issue is bound to the condition's declaration. -/
 def confirms (native : NativeRun) : StructuralCondition → Bool
-  | .multiWriterScatter _ => legacyCompile "scanAxisNotIter" native.legacy &&
-      (match native.checked with
-        | .sourceCompilation e => (match e.cause with | .scanAxisNotIter _ => true | _ => false)
-        | _ => false)
   | .scatterExtentOverridesDeclared _ declaration derived =>
       (match native.legacy, native.checked with
         | .observed l, .observed c _ => shapeOnly declaration derived l && shapeOnly declaration derived c

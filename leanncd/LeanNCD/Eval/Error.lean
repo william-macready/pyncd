@@ -132,6 +132,7 @@ inductive ShapeError
   | sizeConflict (uid : UID) (existing : Nat) (new : Nat)
   | solveFailure (diagnostic : SolveDiagnostic)
   | negativeOnlyAxis (uid : UID) (sources : List String)
+  | writerExtentMismatch (name : String) (writer dimension expected actual : Nat)
   deriving DecidableEq
 
 /-- The sole renderer for `ShapeError` — reproduces every pre-4h message byte-for-byte. -/
@@ -153,6 +154,8 @@ def ShapeError.render : ShapeError → String
   | .negativeOnlyAxis uid sources =>
       s!"axis uid {uid} is purely negatively constrained (appears only with non-positive \
 coefficients in all reads; sources: {sources}); add an explicit axis declaration"
+  | .writerExtentMismatch name writer dimension expected actual =>
+      s!"multi-writer {name}: writer {writer}, dimension {dimension}: expected extent {expected}, actual {actual}"
 
 instance : ToString ShapeError := ⟨ShapeError.render⟩
 

@@ -1,13 +1,14 @@
 import Semantics.OracleMixedDifferential
 
-/-! Oracle sorts T2: refusal-parity rows. For each program production refuses (observed in
+/-! Oracle sorts T2: refusal-parity rows and B5's migrated four-leg value donors.
+For each program production refuses (observed in
 `papers/semantics/oracle_sorts_plan_facts.md` section 5), the independent predictor names the
 refusal, both native legs refuse with the same `CompileError` constructor, and `classifyRefusal`
 reports `refusalParity`. Negative controls doctor the prediction and must flip to `refusalMismatch`.
-The D7 rows also pin the typed path's false `nativeFailure` as the contrast. -/
+True unsupported-geometry rows also pin the typed path's false `nativeFailure` as the contrast. -/
 
 open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
-open NativeLegs SortedDifferential LeanNCD.OracleSorts OracleMixed
+open NativeLegs SortedDifferential LeanNCD.OracleSorts OracleMixed Oracle
 
 namespace OracleMixedRefusalTest
 
@@ -70,8 +71,7 @@ private def neutralCopyRead : SourceSnapshot :=
 
 #guard classOf neutralCopyRead == parity "sortCastUnsupported"
 
-/-! D7: a multi-writer group holding a scatter or an affine write is refused as
-`multiWriterScatter`; the typed path reports a false `nativeFailure`. -/
+/-! D7: the three shape-correct former refusal donors now require actual four-leg values. -/
 private def d7ScatterTs : List T := [tZ, tQ, tOut "Y"]
 private def d7Scatter : SourceSnapshot :=
   mk d7ScatterTs [st "Y" .max (rd "Z" [axA, axB]),
@@ -82,17 +82,58 @@ private def d7TwoAffine : SourceSnapshot := mk d7AffTs [affine2, affine2]
 private def d7AffineBare : SourceSnapshot :=
   mk d7AffTs [affine2, zR "Y" [.free axK] .max [rd "W8" [axK]]]
 
-#guard classOf d7Scatter == parity "multiWriterScatter"
-#guard classOf d7TwoAffine == parity "multiWriterScatter"
-#guard classOf d7AffineBare == parity "multiWriterScatter"
+private def mixed (s : SourceSnapshot) (ts : List T) : Except String MixedRun :=
+  (compareMixedSource s (some (orderOf ts))).mapError (fun d => s!"{repr d.cause}")
 
-/-- The typed path's false report for the D7 rows (contrast pins). -/
+private def valueParity (s : SourceSnapshot) (ts : List T) (sort : MSort)
+    (expected : List ExtVal) : Bool :=
+  match mixed s ts with
+  | .error _ => false
+  | .ok r =>
+    let cells := r.oracle.toOption.map (fun tensors =>
+      tensors.filterMap fun t => if t.name == some "Y" then some t.values else none)
+    let core := r.core.bind (fun c => c.toOption.map fun tensors =>
+      tensors.filterMap fun t => if t.name == some "Y" then some t.values else none)
+    (match r.classification with | .fourLegParity => true | _ => false) &&
+      r.prediction.stmtSorts == [sort, sort] &&
+      cells == some [expected.map some] && core == some [expected.map some]
+
+private def overlap (ag : AggOp) : SourceSnapshot :=
+  mk [tZ, tX, tOut "Y" [axK]]
+    [.scatter "Y" [.affine (.scale 2 axA)] (rhs ag [[rd "Z" [axA, axB]]]),
+     .scatter "Y" [.affine (.scale 2 axA)] (rhs .sum [[rd "X" [axA]]])]
+
+#guard valueParity d7Scatter d7ScatterTs .maxPlus ([9, 8, 17, 27].map ExtVal.fin)
+#guard valueParity d7TwoAffine d7AffTs .maxPlus
+  [.fin 20, .negInf, .fin 2, .negInf, .fin 3, .negInf, .fin 40, .negInf]
+#guard valueParity d7AffineBare d7AffTs .maxPlus
+  ([20, 0, 2, 3, 4, 5, 40, 7].map ExtVal.fin)
+#guard valueParity (overlap .sum) [tZ, tX, tOut "Y" [axK]] .real
+  ([8, 0, 20, 0, 51, 0, 118, 0].map ExtVal.fin)
+#guard valueParity (overlap .max) [tZ, tX, tOut "Y" [axK]] .maxPlus
+  [.fin 20, .negInf, .fin 7, .negInf, .fin 17, .negInf, .fin 40, .negInf]
+#guard valueParity (overlap .min) [tZ, tX, tOut "Y" [axK]] .minPlus
+  [.fin (-5), .posInf, .fin 2, .posInf, .fin 3, .posInf, .fin 25, .posInf]
+
+/-! Refusal controls retain genuine unsupported geometry, not B5's now-accepted donors. -/
+private def multiAxis : SourceSnapshot :=
+  mk [tZ, tQ, tOut "Y" [axK]]
+    [.scatter "Y" [.affine (.affine 0 [(1, axA), (1, axB)])]
+      (rhs .max [[rd "Z" [axA, axB]]]),
+     .scatter "Y" [.affine (.affine 0 [(1, axA), (1, axB)])]
+      (rhs .max [[rd "Q" [axA, axB]]])]
+private def constant : SourceSnapshot :=
+  mk d7AffTs (List.replicate 2 (.scatter "Y" [.affine (.const 3)] (rhs .max [[rd "X" [axA]]])))
+
+#guard classOf multiAxis == parity "multiWriterScatter"
+#guard classOf constant == parity "multiWriterScatter"
+
+/-- The typed API's false report remains a contrast on true refusals only. -/
 private def falseNativeFailure : String :=
   "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.nativeFailure\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.failure\n    \"legacy compile failed: LeanNCD.CompileError.multiWriterScatter \\\"Y\\\"\")\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.failure \"checked preparation\")"
 
-#guard sortedOf d7Scatter (orderOf d7ScatterTs) == falseNativeFailure
-#guard sortedOf d7TwoAffine (orderOf d7AffTs) == falseNativeFailure
-#guard sortedOf d7AffineBare (orderOf d7AffTs) == falseNativeFailure
+#guard sortedOf multiAxis (orderOf [tZ, tQ, tOut "Y" [axK]]) == falseNativeFailure
+#guard sortedOf constant (orderOf d7AffTs) == falseNativeFailure
 
 /-! Accept neighbour: the laundered cast is accepted, so with the true (empty) prediction
 `classifyRefusal` reports no verdict (`none`, not a `refusalMismatch`). -/
@@ -106,7 +147,7 @@ private def predictVote : Prediction → Prediction :=
   fun p => { p with refusals := [("multiWriterAlgebra", "M")] }
 
 #guard classWith r16a predictAccepted == "OracleMixed.MixedClassification.refusalMismatch [] \"multiWriterAlgebra\""
-#guard classWith d7Scatter predictCast ==
+#guard classWith multiAxis predictCast ==
   "OracleMixed.MixedClassification.refusalMismatch [(\"sortCastUnsupported\", \"Y\")] \"multiWriterScatter\""
 #guard classWith castLaundered predictVote ==
   "OracleMixed.MixedClassification.refusalMismatch [(\"multiWriterAlgebra\", \"M\")] \"accepted\""
@@ -129,9 +170,9 @@ private def predictScatter : Prediction :=
   { refusals := [("multiWriterScatter", "Y")], sorts := [], stmtSorts := [] }
 
 -- legacy `multiWriterScatter`, checked `multiWriterAlgebra`; the scatter is predicted
-#guard splitClass predictScatter (splitRun d7Scatter r16a) ==
+#guard splitClass predictScatter (splitRun multiAxis r16a) ==
   "OracleMixed.MixedClassification.refusalMismatch\n  [(\"multiWriterScatter\", \"Y\")]\n  \"legacy multiWriterScatter, checked multiWriterAlgebra\""
 -- the same legs from one program are parity
-#guard splitClass predictScatter (splitRun d7Scatter d7Scatter) == parity "multiWriterScatter"
+#guard splitClass predictScatter (splitRun multiAxis multiAxis) == parity "multiWriterScatter"
 
 end OracleMixedRefusalTest
