@@ -111,6 +111,9 @@ inductive CompileError
                                                              -- unlowered scatter-shaped assign
   | multiWriterNeedsDeclaredShape : String → CompileError
   | multiWriterRepeatedBasis : String → CompileError
+  | routeUnsupportedMultiWriter : String → CompileError    -- `route` only: a bounded B5 group
+                                                             -- (valid for collection and the
+                                                             -- native backends, not routable)
   | multiWriterAlgebra   : String → CompileError            -- the writers of a multi-writer `T`
                                                              -- conflict in sort (max vs min, or a non-neutral
                                                              -- sum writer beside a tropical one)

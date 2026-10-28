@@ -195,7 +195,7 @@ def routeError (p : TLProgram) : Option CompileError :=
   (scheduled p).bind fun s => match (route s).run 0 with
     | .error e _ => some e
     | .ok _ _ => none
-#guard routeError interleave == some (.multiWriterScatter "S")
+#guard routeError interleave == some (.routeUnsupportedMultiWriter "S")
 
 -- Donor: tropical; append an illegal max-plus to min-plus direct reader.
 def badCast : TLProgram := { tropical with

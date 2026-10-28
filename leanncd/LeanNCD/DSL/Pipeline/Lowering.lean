@@ -564,9 +564,10 @@ def routeCore(sp : ScheduledProgram) : Except CompileError (List BrBaseP × List
     after collection (`cyclicDataflow` from `routeCore`), because the collector, the only writer
     its reader sees, comes after it (pinned in `test/DSL/Pipeline/CollectTest.lean`).
     Error priority on this path: collection errors first (`desugarMultiWriters`), then the
-    refusal of every bounded B5 group (`needsB5`: `multiWriterScatter` even though collection
-    admits it, because the routed diagram has no shape-obligation check; the native backends
-    admit these groups, route does not), then physicalization errors (`rejectComplexDecls`, nonlinear scatter), then `routeCore`'s. So a
+    refusal of every bounded B5 group (`needsB5`: `routeUnsupportedMultiWriter`, because collection
+    admits the group but the routed diagram has no shape-obligation check; the native backends
+    admit these groups, route does not), then physicalization errors (`rejectComplexDecls`,
+    nonlinear scatter), then `routeCore`'s. So a
     hand-built schedule that is both a multi-writer scatter and complex-declared reports
     `multiWriterScatter`; `compile` is unaffected because `buildDeclEnv` rejects complex
     declarations first.
@@ -595,7 +596,7 @@ def route (logical : ScheduledProgram) : FreshM ThreadedComposed := do
   | .error e => throw e
   | .ok (collected, _) =>
   match (writerGroups logical.stmts).find? (·.needsB5 logical.stmts) with
-  | some g => throw (.multiWriterScatter g.name)
+  | some g => throw (.routeUnsupportedMultiWriter g.name)
   | none =>
   match physicalizeForRoute collected with
   | .error e => throw e
