@@ -1,9 +1,9 @@
 # B5b: declared containing box for multi-writer scatter
 
-**Status: proposal for owner approval, 2026-10-28. Not approved, not a plan, no production
-change.** Read against local `main` `342106e4`. It narrows the one option the B5 design
+**Status: approved by the owner 2026-10-28 (all three recommendations: M1, leave the single-writer
+asymmetry, accept the M4 slack); implementation plan `additive_b5b_plan.md`.** Read against local `main` `342106e4`. It narrows the one option the B5 design
 ([additive_b5_design.md](additive_b5_design.md) section 1) deferred: *"declared shape is an
-arbitrary containing box"*. Approval authorizes writing one implementation plan, nothing more.
+arbitrary containing box"*. Approval authorized writing one implementation plan.
 
 ## 1. The problem
 

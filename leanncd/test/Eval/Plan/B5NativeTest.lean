@@ -32,6 +32,10 @@ def run64 (p : TLProgram) (i := in64) : Option NamedDenseEnv :=
   (prep64 p i).bind fun pp => (runPreparedDense pp i).toOption.map (·.env)
 def run32 (p : TLProgram) (i := in32) : Option NamedDenseEnv32 :=
   (prep32 p i).bind fun pp => (runPreparedDense32 pp i).toOption.map (·.env)
+def obsWith (p : TLProgram) (i : NamedDenseEnv) (j : NamedDenseEnv32) :=
+  ((ref64 p i).bind (fun e => e["S"]?.map (·.data)),
+   (run64 p i).bind (fun e => e["S"]?.map (·.data)),
+   (run32 p j).bind (fun e => e["S"]?.map (·.data)))
 def obs (p : TLProgram) :=
   ((ref64 p).bind (fun e => e["S"]?.map (·.data)),
    (run64 p).bind (fun e => e["S"]?.map (·.data)),
@@ -168,10 +172,15 @@ def agree (p : TLProgram) (i : NamedDenseEnv) (j : NamedDenseEnv32)
 #guard agree (reverseWriters mixed) mixIn64 mixIn32 #[5, 20, 28, 40] #[5, 20, 28, 40]
 #guard agree diagonal in64 in32 #[-12, 0, 0, -5] #[-12, 0, 0, -5]
 #guard agree emptySource emptyIn64 emptyIn32 #[] #[]
-#guard refShape bareMismatch badIn64 ==
-  some (.writerExtentMismatch "S" 2 0 4 3)
-#guard planShape bareMismatch badIn64 ==
-  some (.writerExtentMismatch "S" 2 0 4 3)
+-- Pinned box `k = 4`: the shorter bare writer fits and leaves a hole. B5b boundary exact twins live
+-- in B5bBoxTest.
+#guard agree bareMismatch badIn64 badIn32 #[5, 20, 28, 0] #[5, 20, 28, 0]
+-- Exact twin: `k` left to inference (sized by the scatter scratch) keeps the equality payload.
+def bareExact : TLProgram := { bareMismatch with decls := bareMismatch.decls.map fun
+  | .axis a n => if a.name == "k" then .axis a none else .axis a n
+  | d => d }
+#guard refShape bareExact badIn64 == some (.writerExtentMismatch "S" 2 0 4 3)
+#guard planShape bareExact badIn64 == some (.writerExtentMismatch "S" 2 0 4 3)
 #guard sourceError (undeclare interleave) == some (.multiWriterNeedsDeclaredShape "S")
 #guard sourceError repeatedBasis == some (.multiWriterRepeatedBasis "S")
 
@@ -181,7 +190,6 @@ def planShape32 (p : TLProgram) (i : NamedDenseEnv32) : Option ShapeError :=
       match prepareEvalPlan s sig with
       | .error f => match f.cause with | .shape e => some e | _ => none
       | .ok _ => none
-#guard planShape32 bareMismatch badIn32 == some (.writerExtentMismatch "S" 2 0 4 3)
 #guard (run32 (undeclare mixed) mixIn32).map (fun e => e["S"]!.data.map Float32.toBits) ==
   some ((#[5, 20, 28, 40] : Array Float32).map Float32.toBits)
 #guard (run32 (reverseWriters (undeclare mixed)) mixIn32).map
@@ -237,9 +245,8 @@ def orderIn32 : NamedDenseEnv32 :=
   | .ok _ => none
 
 #guard agree orderPin orderIn64 orderIn32 #[2, 0] #[1, 0]
-#guard planShape declaredMismatch in64 == some (.sizeConflict 2 5 4)
-#guard refShape declaredMismatch in64 == some (.sizeConflict 2 5 4)
-#guard planShape32 declaredMismatch in32 == some (.sizeConflict 2 5 4)
+-- Pinned box `k = 5` larger than the scatter extent 4: accepted, with a hole at index 4.
+#guard agree declaredMismatch in64 in32 #[-5, -7, -2, -3, 0] #[-5, -7, -2, -3, 0]
 #guard
   match scheduled (as64 zeroScale) with
   | some s => match evalScheduled s in64 with
@@ -376,8 +383,9 @@ run_cmd do
 
 -- Donor: interleave; writer 1 stays `S[2*i]`, writer 2 is replaced by an offset or
 -- negative-coefficient placement. The offset keeps the stride-aligned extent (4) and collides
--- with writer 1 at S[2]; the negative form takes the legacy linear boundary (3 - 1*2 = 1), so the
--- exact-extent rule refuses it on all three legs instead of reaching a range check.
+-- with writer 1 at S[2]; the negative form takes the legacy linear boundary (3 - 1*2 = 1), which
+-- fits the pinned box `k = 4`, so it reaches B6 (the write at 3 is outside extent 1; see
+-- B5bBoxTest).
 def withSecondPlacement (slot : LHSSlot) : TLProgram :=
   { interleave with stmts := interleave.stmts.mapIdx fun n s =>
     match s with
@@ -393,8 +401,5 @@ def negativeWriter : TLProgram :=
 #guard sourceError offsetWriter == none
 #guard agree offsetWriter in64 in32 #[-5, 0, -9, -3] #[-5, 0, -9, -3]
 #guard sourceError negativeWriter == none
-#guard refShape negativeWriter in64 == planShape negativeWriter in64
-#guard (refShape negativeWriter in64).isSome
-#guard (run64 negativeWriter).isNone && (run32 negativeWriter).isNone
 
 end LeanNCD.Eval.Plan.B5NativeTest

@@ -133,6 +133,7 @@ inductive ShapeError
   | solveFailure (diagnostic : SolveDiagnostic)
   | negativeOnlyAxis (uid : UID) (sources : List String)
   | writerExtentMismatch (name : String) (writer dimension expected actual : Nat)
+  | writerExtentExceedsBox (name : String) (writer dimension box actual : Nat)
   deriving DecidableEq
 
 /-- The sole renderer for `ShapeError` — reproduces every pre-4h message byte-for-byte. -/
@@ -156,6 +157,8 @@ def ShapeError.render : ShapeError → String
 coefficients in all reads; sources: {sources}); add an explicit axis declaration"
   | .writerExtentMismatch name writer dimension expected actual =>
       s!"multi-writer {name}: writer {writer}, dimension {dimension}: expected extent {expected}, actual {actual}"
+  | .writerExtentExceedsBox name writer dimension box actual =>
+      s!"multi-writer {name}: writer {writer}, dimension {dimension}: extent {actual} exceeds declared box extent {box}"
 
 instance : ToString ShapeError := ⟨ShapeError.render⟩
 

@@ -79,9 +79,6 @@ def late32 : NamedDenseEnv32 :=
 #guard sourceError explicitConstant == some (.multiWriterScatter "S")
 #guard sourceError predicateDest == some (.multiWriterScatter "S")
 #guard sourceError bareScatterFallback == some (.multiWriterNeedsDeclaredShape "S")
-#guard refShape lateMismatch late64 == some (.writerExtentMismatch "S" 3 1 3 2)
-#guard planShape lateMismatch late64 == some (.writerExtentMismatch "S" 3 1 3 2)
-#guard planShape32 lateMismatch late32 == some (.writerExtentMismatch "S" 3 1 3 2)
 
 private def k : AxisSpec := ⟨"k", 92, .nat⟩
 private def a : AxisSpec := ⟨"a", 93, .nat⟩

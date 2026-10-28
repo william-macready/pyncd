@@ -19,8 +19,10 @@ so single-writer programs are byte-identical through every later phase.
 
 Existing all-bare groups keep positionwise UID agreement. Real and tropical groups may also
 contain bounded scatter writers, using a distinct declared coordinate basis or the first ordinary
-bare assignment. Their retained shape obligations require exact realized extent equality after
-inference; predicate, explicit-constant and multi-axis scatter groups remain refused.
+bare assignment. Their retained shape obligations are checked after inference: a destination
+declared with every axis pinned by `axis … = n` is a box that each writer's realized extent must fit
+(`writerExtentExceedsBox`); every other group requires exact extent equality
+(`writerExtentMismatch`). Predicate, explicit-constant and multi-axis scatter groups remain refused.
 A group's sort is the one its writers' votes agree on (`writerSort?`); sort-neutral copy writers
 abstain beside a non-neutral writer and are rewritten to the agreed sort (`Stmt.withAgg`), so a
 copy's bare out-of-range read pads the group's `0_K` and a copy of a predicate reads it through the group's
@@ -122,13 +124,20 @@ structure CollectorShapeObligation where
   name : String
   basis : List LHSSlot
   writers : List (List LHSSlot)
+  /-- A declared destination whose every axis is pinned by `axis … = n` (`pinned`): writers need only
+      fit inside it. Any other group keeps exact extent equality. -/
+  boxed : Bool
 
-def collectorShapeObligations (sched : ScheduledProgram) :
+def collectorShapeObligations (sched : ScheduledProgram) (pinned : Std.HashMap UID Nat) :
     Except CompileError (List CollectorShapeObligation) :=
   ((writerGroups sched.stmts).filter (·.needsB5 sched.stmts)).mapM fun g => do
+    let boxed := match (sched.env[g.name]?).bind Decl.tensorAxes? with
+      | some ax => ax.all (fun a => pinned.contains a.uid)
+      | none => false
     return { name := g.name
              basis := ← writerGroupBasis sched.env sched.stmts g
-             writers := (g.writers.filterMap (plainAt? sched.stmts)).map Stmt.slots }
+             writers := (g.writers.filterMap (plainAt? sched.stmts)).map Stmt.slots
+             boxed }
 
 /-- Static geometry, agreed sort, then basis/rank checks for bounded scatter groups.
     Legacy all-bare groups instead retain positionwise UID agreement. -/

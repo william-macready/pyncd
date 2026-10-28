@@ -450,6 +450,11 @@ private def extent8Decls : List Decl :=
   .axis k (some 8) :: hDecls.map (fun
     | .typedTensor t "Y" _ => .typedTensor t "Y" [k]
     | d => d)
+-- Pinned box 12 holds the realized extent 8 of both writers; the bare writer spans the whole box.
+private def box12Decls : List Decl :=
+  .axis k (some 12) :: hDecls.map (fun
+    | .typedTensor t "Y" _ => .typedTensor t "Y" [k]
+    | d => d)
 private def squareDecls : List Decl :=
   (matrixDecls matrixB).map (fun
     | .axis ax _ => .axis ax (some 4)
@@ -458,7 +463,10 @@ private def squareDecls : List Decl :=
 private def stagedRows : List (String × List Decl × List Stmt) :=
   (c3Rows.filter (fun r => ["plain writer + scatter writer", "two affine writers",
     "affine writer + bare writer"].contains r.label)).map (fun r => (r.label, hDecls, r.stmts)) ++
-  [("two affine extent8 twin", extent8Decls, [writer 5 .max, writer 5 .max]),
+  [("two affine box12", box12Decls, [writer 5 .max, writer 5 .max]),
+   ("affine/bare box12", box12Decls,
+     [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])]),
+   ("two affine extent8 twin", extent8Decls, [writer 5 .max, writer 5 .max]),
    ("affine/bare extent8 twin", extent8Decls,
      [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])])] ++
   [false, true].flatMap (fun norm =>
@@ -471,9 +479,18 @@ private def stagedRows : List (String × List Decl × List Stmt) :=
 run_cmd assertNone "hand SHAPED disagreements" (stagedRows.flatMap fun (l, ds, ss) =>
   shapedProblems l ds ss)
 
+-- Eleven hand rows: seven shape accepts (two box12, two extent8 twins, two square twins, the
+-- bool plain+scatter row) and four refusals (two exceed-box affine rows, two rectangular diagonals).
+#guard stagedRows.length == 11
+#guard (stagedRows.filter fun (_, ds, ss) =>
+  (predictShaped ds ss (sizesOf ds)).refusals.isEmpty).length == 7
+
 #guard concreteC1.length == 81
+-- C1 declares extent 4 against realized extent 8, so no candidate fits the pinned box: all 81 stay
+-- refused, now by the box rule itself rather than by a scatter-output `sizeConflict`.
 #guard histogram (concreteC1.map (fun ss =>
-  tag (productionShapedVerdict c1Decls ss (signatureOf c1Decls ss)))) == [("sizeConflict", 81)]
+  tag (productionShapedVerdict c1Decls ss (signatureOf c1Decls ss)))) ==
+    [("writerExtentExceedsBox", 81)]
 #eval
   let containsShape (shape : Nat) (ss : List Stmt) :=
     ss.any (fun s => [AggOp.sum, .max, .min].any (fun ag => s == writer shape ag))
