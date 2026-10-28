@@ -193,7 +193,18 @@ Slice 1 does **not** change this. It stays a recorded divergence.
 - Sizes come from reads of inputs and scatter outputs (SizeInfer.lean:113-131), plus `axis`/`iter` pins.
 - Assign outputs are never a shape source, which is why mismatched assign writers truncated silently.
 
-**B5. PROPOSED: agreement rule.**
+**B5. Bounded agreement implemented (2026-10-27; record `additive_b5_record.md`).**
+- Current cut: top-level bounded real/max-plus/min-plus assign/scatter groups,
+  UID-normalized at most one nonzero affine coefficient per slot. Explicit
+  constant syntax, multi-axis and predicate scatter groups remain refused.
+  Declared basis UIDs must be distinct (`multiWriterRepeatedBasis`); otherwise
+  the first ordinary bare assign supplies the basis, never an explicit scatter.
+  `checkCollectorShapes` enforces exact post-inference extent equality in both
+  native entries (`writerExtentMismatch T writer dimension expected actual`).
+  Existing inference and B6 checks remain unchanged. `route` explicitly refuses
+  B5; JAX refuses actual prepared scatter nodes before emission.
+- The S1/S3 bullets below preserve the original staging history, not the current
+  blanket-refusal boundary.
 - **S1, assign writers only.** Every writer is a `.plain (.assign)` with only `.free`/`.freeNorm` slots, and
   each position has the same `freeUID?` across writers (FIXED rule). Equal UIDs imply equal sizes, so a
   static check suffices. A mismatch gives `writerShapeMismatch T k pos`.

@@ -1,0 +1,659 @@
+diff --git a/leanncd/LeanNCD/Semantics/Source/Differential.lean b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+index 91c0f32e5688f7b880c76a2da02bc5836808e9ec..6611927f112fa1a325bb9b09c6f130388994c071 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Differential.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+@@ -180,8 +180,8 @@ inductive Classification
+ 
+ /-! Source-shape contract differences for affine writes and scatters. `detectConditions` looks at
+ the source alone; `confirms` additionally requires BOTH native legs to show exactly the predicted
+-outcome. The multi-writer `scanAxisNotIter` stays cause-only, and while
+-`scatterExtentOverridesDeclared` fires it suppresses all value comparison for the program. -/
++outcome. While `scatterExtentOverridesDeclared` fires it suppresses all value comparison
++for the program. Multi-writer syntax or shape refusals are ordinary native failures. -/
+ 
+ def nonBareWrite (st : AdmittedStatement source) : Bool :=
+   st.output.forms != st.output.indices.map WriteForm.single
+@@ -200,10 +200,6 @@ def detectConditions (source : AdmittedSource) :
+     List StructuralCondition :=
+   let decl (st : AdmittedStatement source.source) : Nat :=
+     (source.source.table.entry st.output.tensor).declaration
+-  let multi := (source.statements.filter fun st =>
+-      nonBareWrite st &&
+-        (source.statements.filter fun o => decl o == decl st).length > 1).map decl
+-    |>.eraseDups |>.map StructuralCondition.multiWriterScatter
+   let extents := source.statements.filterMap fun st =>
+     let declared := (source.source.table.entry st.output.tensor).axes.map (·.extent)
+     let derived := derivedShape source st
+@@ -212,9 +208,7 @@ def detectConditions (source : AdmittedSource) :
+         (source.statements.filter fun o => decl o == decl st).length == 1 then
+       some (StructuralCondition.scatterExtentOverridesDeclared st.output.origin (decl st) derived)
+     else none
+-  -- pipeline order: compile (multi-writer), output binding (extent). Only the first can be
+-  -- observed, so `classification` confirms the head only.
+-  multi ++ extents
++  extents
+ 
+ /-- `name` is the source name of the tensor declared at `declaration` (the condition's origin):
+ a native error that names a tensor confirms a condition only for that condition's own tensor. -/
+@@ -222,14 +216,6 @@ def ownedBy (native : NativeRun) (declaration : Option Nat) (name : String) : Bo
+   native.source.admitted.source.table.entries.any fun e =>
+     e.name == name && some e.declaration == declaration
+ 
+-/-- CAUSE-ONLY: the multi-writer refusal `scanAxisNotIter` names an AXIS, never a tensor or a
+-statement, so a refusal raised by another tensor's writers over the same cause is not
+-distinguishable here. -/
+-private def legacyCompile (needle : String) : LegacyOutcome → Bool
+-  | .failure e => e.phase == .compilation &&
+-      ((toString e.original.error).splitOn needle).length > 1
+-  | _ => false
+-
+ private def shapeOnly (declaration : Nat) (derived : List Nat) (o : NativeObservation) : Bool :=
+   match o.outputs with
+   | .error issues => !issues.isEmpty && issues.all fun
+@@ -238,14 +224,8 @@ private def shapeOnly (declaration : Nat) (derived : List Nat) (o : NativeObserv
+       | _ => false
+   | .ok _ => false
+ 
+-/-- Every leg whose native error carries an identity is bound to the condition's origin
+-(`scatterExtentOverridesDeclared`: the binding issue's declaration). `multiWriterScatter` stays
+-cause-only on both legs (`scanAxisNotIter` names an axis only). -/
++/-- Each native binding issue is bound to the condition's declaration. -/
+ def confirms (native : NativeRun) : StructuralCondition → Bool
+-  | .multiWriterScatter _ => legacyCompile "scanAxisNotIter" native.legacy &&
+-      (match native.checked with
+-        | .sourceCompilation e => (match e.cause with | .scanAxisNotIter _ => true | _ => false)
+-        | _ => false)
+   | .scatterExtentOverridesDeclared _ declaration derived =>
+       (match native.legacy, native.checked with
+         | .observed l, .observed c _ => shapeOnly declaration derived l && shapeOnly declaration derived c
+diff --git a/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean b/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
+index 5e9c5295ea76b6882b8b6a888cd3af9c405c2f30..68028e85ead4dc2d9709204551dce5b09c1f7eba 100644
+--- a/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
++++ b/leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean
+@@ -21,8 +21,6 @@ structure Site where
+ 
+ inductive StructuralCondition
+   | usedDType (origin : SourceOrigin) (name : String) (actual : TensorElementType)
+-  /-- A tensor written by several statements, at least one non-bare. -/
+-  | multiWriterScatter (declaration : Nat)
+   /-- A non-bare write whose declared destination shape differs from the extent production
+   derives from the forms (`derived`); production's shape wins. -/
+   | scatterExtentOverridesDeclared (origin : SourceOrigin) (declaration : Nat)
+diff --git a/leanncd/test/Semantics/OracleMixedRefusalTest.lean b/leanncd/test/Semantics/OracleMixedRefusalTest.lean
+index c2fa95fa068545a206abb50aff3e6c65620e4c54..b463dfca2e2d1c09ab0ce162b350ca7a7c5e8559 100644
+--- a/leanncd/test/Semantics/OracleMixedRefusalTest.lean
++++ b/leanncd/test/Semantics/OracleMixedRefusalTest.lean
+@@ -1,13 +1,14 @@
+ import Semantics.OracleMixedDifferential
+ 
+-/-! Oracle sorts T2: refusal-parity rows. For each program production refuses (observed in
++/-! Oracle sorts T2: refusal-parity rows and B5's migrated four-leg value donors.
++For each program production refuses (observed in
+ `papers/semantics/oracle_sorts_plan_facts.md` section 5), the independent predictor names the
+ refusal, both native legs refuse with the same `CompileError` constructor, and `classifyRefusal`
+ reports `refusalParity`. Negative controls doctor the prediction and must flip to `refusalMismatch`.
+-The D7 rows also pin the typed path's false `nativeFailure` as the contrast. -/
++True unsupported-geometry rows also pin the typed path's false `nativeFailure` as the contrast. -/
+ 
+ open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
+-open NativeLegs SortedDifferential LeanNCD.OracleSorts OracleMixed
++open NativeLegs SortedDifferential LeanNCD.OracleSorts OracleMixed Oracle
+ 
+ namespace OracleMixedRefusalTest
+ 
+@@ -70,8 +71,7 @@ private def neutralCopyRead : SourceSnapshot :=
+ 
+ #guard classOf neutralCopyRead == parity "sortCastUnsupported"
+ 
+-/-! D7: a multi-writer group holding a scatter or an affine write is refused as
+-`multiWriterScatter`; the typed path reports a false `nativeFailure`. -/
++/-! D7: the three shape-correct former refusal donors now require actual four-leg values. -/
+ private def d7ScatterTs : List T := [tZ, tQ, tOut "Y"]
+ private def d7Scatter : SourceSnapshot :=
+   mk d7ScatterTs [st "Y" .max (rd "Z" [axA, axB]),
+@@ -82,17 +82,58 @@ private def d7TwoAffine : SourceSnapshot := mk d7AffTs [affine2, affine2]
+ private def d7AffineBare : SourceSnapshot :=
+   mk d7AffTs [affine2, zR "Y" [.free axK] .max [rd "W8" [axK]]]
+ 
+-#guard classOf d7Scatter == parity "multiWriterScatter"
+-#guard classOf d7TwoAffine == parity "multiWriterScatter"
+-#guard classOf d7AffineBare == parity "multiWriterScatter"
+-
+-/-- The typed path's false report for the D7 rows (contrast pins). -/
++private def mixed (s : SourceSnapshot) (ts : List T) : Except String MixedRun :=
++  (compareMixedSource s (some (orderOf ts))).mapError (fun d => s!"{repr d.cause}")
++
++private def valueParity (s : SourceSnapshot) (ts : List T) (sort : MSort)
++    (expected : List ExtVal) : Bool :=
++  match mixed s ts with
++  | .error _ => false
++  | .ok r =>
++    let cells := r.oracle.toOption.map (fun tensors =>
++      tensors.filterMap fun t => if t.name == some "Y" then some t.values else none)
++    let core := r.core.bind (fun c => c.toOption.map fun tensors =>
++      tensors.filterMap fun t => if t.name == some "Y" then some t.values else none)
++    (match r.classification with | .fourLegParity => true | _ => false) &&
++      r.prediction.stmtSorts == [sort, sort] &&
++      cells == some [expected.map some] && core == some [expected.map some]
++
++private def overlap (ag : AggOp) : SourceSnapshot :=
++  mk [tZ, tX, tOut "Y" [axK]]
++    [.scatter "Y" [.affine (.scale 2 axA)] (rhs ag [[rd "Z" [axA, axB]]]),
++     .scatter "Y" [.affine (.scale 2 axA)] (rhs .sum [[rd "X" [axA]]])]
++
++#guard valueParity d7Scatter d7ScatterTs .maxPlus ([9, 8, 17, 27].map ExtVal.fin)
++#guard valueParity d7TwoAffine d7AffTs .maxPlus
++  [.fin 20, .negInf, .fin 2, .negInf, .fin 3, .negInf, .fin 40, .negInf]
++#guard valueParity d7AffineBare d7AffTs .maxPlus
++  ([20, 0, 2, 3, 4, 5, 40, 7].map ExtVal.fin)
++#guard valueParity (overlap .sum) [tZ, tX, tOut "Y" [axK]] .real
++  ([8, 0, 20, 0, 51, 0, 118, 0].map ExtVal.fin)
++#guard valueParity (overlap .max) [tZ, tX, tOut "Y" [axK]] .maxPlus
++  [.fin 20, .negInf, .fin 7, .negInf, .fin 17, .negInf, .fin 40, .negInf]
++#guard valueParity (overlap .min) [tZ, tX, tOut "Y" [axK]] .minPlus
++  [.fin (-5), .posInf, .fin 2, .posInf, .fin 3, .posInf, .fin 25, .posInf]
++
++/-! Refusal controls retain genuine unsupported geometry, not B5's now-accepted donors. -/
++private def multiAxis : SourceSnapshot :=
++  mk [tZ, tQ, tOut "Y" [axK]]
++    [.scatter "Y" [.affine (.affine 0 [(1, axA), (1, axB)])]
++      (rhs .max [[rd "Z" [axA, axB]]]),
++     .scatter "Y" [.affine (.affine 0 [(1, axA), (1, axB)])]
++      (rhs .max [[rd "Q" [axA, axB]]])]
++private def constant : SourceSnapshot :=
++  mk d7AffTs (List.replicate 2 (.scatter "Y" [.affine (.const 3)] (rhs .max [[rd "X" [axA]]])))
++
++#guard classOf multiAxis == parity "multiWriterScatter"
++#guard classOf constant == parity "multiWriterScatter"
++
++/-- The typed API's false report remains a contrast on true refusals only. -/
+ private def falseNativeFailure : String :=
+   "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.nativeFailure\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.failure\n    \"legacy compile failed: LeanNCD.CompileError.multiWriterScatter \\\"Y\\\"\")\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.failure \"checked preparation\")"
+ 
+-#guard sortedOf d7Scatter (orderOf d7ScatterTs) == falseNativeFailure
+-#guard sortedOf d7TwoAffine (orderOf d7AffTs) == falseNativeFailure
+-#guard sortedOf d7AffineBare (orderOf d7AffTs) == falseNativeFailure
++#guard sortedOf multiAxis (orderOf [tZ, tQ, tOut "Y" [axK]]) == falseNativeFailure
++#guard sortedOf constant (orderOf d7AffTs) == falseNativeFailure
+ 
+ /-! Accept neighbour: the laundered cast is accepted, so with the true (empty) prediction
+ `classifyRefusal` reports no verdict (`none`, not a `refusalMismatch`). -/
+@@ -106,7 +147,7 @@ private def predictVote : Prediction → Prediction :=
+   fun p => { p with refusals := [("multiWriterAlgebra", "M")] }
+ 
+ #guard classWith r16a predictAccepted == "OracleMixed.MixedClassification.refusalMismatch [] \"multiWriterAlgebra\""
+-#guard classWith d7Scatter predictCast ==
++#guard classWith multiAxis predictCast ==
+   "OracleMixed.MixedClassification.refusalMismatch [(\"sortCastUnsupported\", \"Y\")] \"multiWriterScatter\""
+ #guard classWith castLaundered predictVote ==
+   "OracleMixed.MixedClassification.refusalMismatch [(\"multiWriterAlgebra\", \"M\")] \"accepted\""
+@@ -129,9 +170,9 @@ private def predictScatter : Prediction :=
+   { refusals := [("multiWriterScatter", "Y")], sorts := [], stmtSorts := [] }
+ 
+ -- legacy `multiWriterScatter`, checked `multiWriterAlgebra`; the scatter is predicted
+-#guard splitClass predictScatter (splitRun d7Scatter r16a) ==
++#guard splitClass predictScatter (splitRun multiAxis r16a) ==
+   "OracleMixed.MixedClassification.refusalMismatch\n  [(\"multiWriterScatter\", \"Y\")]\n  \"legacy multiWriterScatter, checked multiWriterAlgebra\""
+ -- the same legs from one program are parity
+-#guard splitClass predictScatter (splitRun d7Scatter d7Scatter) == parity "multiWriterScatter"
++#guard splitClass predictScatter (splitRun multiAxis multiAxis) == parity "multiWriterScatter"
+ 
+ end OracleMixedRefusalTest
+diff --git a/leanncd/test/Semantics/OracleSortRules.lean b/leanncd/test/Semantics/OracleSortRules.lean
+index f87bb73d2f5fa257e02e53465547b01c86b15876..5e047018cda07ba0ec001de38bf97ff3e0e4b619 100644
+--- a/leanncd/test/Semantics/OracleSortRules.lean
++++ b/leanncd/test/Semantics/OracleSortRules.lean
+@@ -1,12 +1,14 @@
+ import LeanNCD.DSL.Compile
+ import LeanNCD.DSL.Pipeline.ScheduledValidation
+ import Eval.PropertyOracle.Neutral
++import LeanNCD.Eval.Plan.Compile
+ 
+ /-! Oracle sorts T1: an INDEPENDENT predictor of the sort/vote/cast/refusal rules.
+ 
+ The rules are stated here from the design (`papers/semantics/oracle_sorts_design.md`) and never by
+-calling production's rule helpers. Production is observed only through the real pipeline
+-(`compileToScheduled`, then `validateScheduled`), via `productionVerdict`. The one shared piece is
++calling production's rule helpers. SOURCE observations use `compileToScheduled` then
++`validateScheduled` via `productionVerdict`; SHAPED observations additionally use real checked
++preparation and external input signatures. The one shared piece is
+ `oracleNeutral`, the test-side neutrality predicate whose agreement with production is pinned in
+ `Eval.PropertyOracle.ScanOracle`. -/
+ 
+@@ -19,7 +21,8 @@ inductive MSort | real | maxPlus | minPlus | bool
+   deriving DecidableEq, Repr
+ 
+ /-- What the rules say about a program. `refusals` are (constructor name, tensor name) pairs the
+-    rules say apply (`[]` means accepted); `sorts` has one entry per declared tensor; `stmtSorts` is
++    rules say apply (`[]` means no refusal at the predicted stage, not full pipeline acceptance);
++    `sorts` has one entry per declared tensor; `stmtSorts` is
+     the sort each input statement RUNS in, aligned with the input list. `sorts` and `stmtSorts` are
+     meaningful only when `refusals = []`. -/
+ structure Prediction where
+@@ -127,6 +130,49 @@ private def hasNonBareSlot : Stmt → Bool
+       ls.any (fun l => !bareSlot l) || freeUIDs.length != freeUIDs.eraseDups.length
+   | .recurMorphism .. => false
+ 
++private def slotsOf : Stmt → List LHSSlot
++  | .assign _ ls _ | .scatter _ ls _ => ls
++  | .recurMorphism .. => []
++
++/-- Test-side normalization, deliberately independent of the DSL's affine helpers. -/
++private def coefficients : IdxExpr → Int × List (Int × UID)
++  | .axis a => (0, [(1, a.uid)])
++  | .const n => (n, [])
++  | .scale c a => (0, [(c, a.uid)])
++  | .shift a n => (n, [(1, a.uid)])
++  | .affine n cs => (n, cs.map fun (c, a) => (c, a.uid))
++
++private def normalized (cs : List (Int × UID)) : List (Int × UID) :=
++  (cs.map (·.2)).eraseDups.map fun u =>
++    ((cs.filter (·.2 == u)).foldl (fun n p => n + p.1) 0, u)
++
++private def bounded : LHSSlot → Bool
++  | .free _ | .freeNorm _ => true
++  | .affine (.const _) => false
++  | .affine e => ((normalized (coefficients e).2).filter (·.1 != 0)).length ≤ 1
++  | _ => false
++
++private def declaredAxes (decls : List Decl) (n : String) : Option (List AxisSpec) :=
++  decls.findSome? fun
++    | .tensor m ax | .typedTensor _ m ax | .predicate m ax
++    | .linear m ax _ | .typedLinear _ m ax _ => if m == n then some ax else none
++    | _ => none
++
++private def basis (decls : List Decl) (n : String) (ws : List Stmt) :
++    Except (String × String) (List LHSSlot) :=
++  match declaredAxes decls n with
++  | some ax =>
++      let us := ax.map (·.uid)
++      if us.length != us.eraseDups.length then .error ("multiWriterRepeatedBasis", n)
++      else .ok (ax.map LHSSlot.free)
++  | none =>
++      match ws.find? (fun w => isPlainAssign w && !hasNonBareSlot w) with
++      | some w => .ok (slotsOf w)
++      | none => .error ("multiWriterNeedsDeclaredShape", n)
++
++private def needsB5 (ws : List Stmt) : Bool :=
++  ws.length > 1 && ws.any (fun s => !isPlainAssign s || hasNonBareSlot s)
++
+ /-- The source tensors a statement reads through a bare (`read`) factor. Iverson and unary factors
+     are not cast-checked. -/
+ private def bareReads : Stmt → List String
+@@ -170,12 +216,11 @@ def predict (decls : List Decl) (stmts : List Stmt) : Prediction :=
+   -- a group's sort: a predicate destination is bool; else the vote (`none` = conflict)
+   let sortOfGroup (n : String) : Option MSort :=
+     if preds.contains n then some .bool else groupSort (writersOf n)
+-  -- a tropical group publishes an entry, unless it holds a scatter (such a group is refused)
++  -- Tropical scatter groups publish entries too; geometry is an independent refusal rule.
+   let entryOf (n : String) : Option MSort :=
+     match sortOfGroup n with
+     | some k =>
+-        if k.isTropical && ((writersOf n).length == 1 || (writersOf n).all isPlainAssign)
+-        then some k else none
++        if k.isTropical then some k else none
+     | none => none
+   -- the sort a tensor is read at: its entry, else its declaration
+   let sourceSort (n : String) : MSort :=
+@@ -187,8 +232,13 @@ def predict (decls : List Decl) (stmts : List Stmt) : Prediction :=
+     if preds.contains n then some .bool else entryOf n
+   let scatterRefusals := dests.filterMap (fun n =>
+     let ws := writersOf n
+-    if ws.length > 1 && ws.any (fun s => !isPlainAssign s || hasNonBareSlot s)
+-    then some ("multiWriterScatter", n) else none)
++    if needsB5 ws then
++      if preds.contains n || !(ws.all (fun w => (slotsOf w).all bounded)) then
++        some ("multiWriterScatter", n)
++      else match basis decls n ws with
++        | .error e => some e
++        | .ok _ => none
++    else none)
+   let voteRefusals := dests.filterMap (fun n =>
+     if (writersOf n).length > 1 && (sortOfGroup n).isNone then some ("multiWriterAlgebra", n)
+     else none)
+@@ -210,4 +260,75 @@ def predict (decls : List Decl) (stmts : List Stmt) : Prediction :=
+     | none => annotationSort (annotationOf s))
+   ⟨(scatterRefusals ++ voteRefusals ++ nonlinRefusals ++ castRefusals).eraseDups, sorts, stmtSorts⟩
+ 
++/-- Independent stride-aligned extent, NOT the maximum visited index plus one. Raw canceled
++    axes remain sizing obligations. Explicit constants have their own legacy convention. -/
++def predictedExtent (sl : LHSSlot) (sizes : List (UID × Nat)) : Option Nat := do
++  let lookup (u : UID) := (sizes.find? (·.1 == u)).map (·.2)
++  let e ← match sl with
++    | .free a | .freeNorm a => some (IdxExpr.axis a)
++    | .affine e => some e
++    | _ => none
++  match e with
++  | .const n => some (n + 1).toNat
++  | _ =>
++    let (offset, cs) := coefficients e
++    let terms ← cs.mapM fun (c, u) => do pure (c * Int.ofNat (← lookup u))
++    let legacy := (offset + terms.sum).toNat
++    match (normalized cs).filter (·.1 != 0) with
++    | [(c, u)] =>
++        let n ← lookup u
++        if c > 0 && offset ≥ 0 && n > 0 then
++          some (c * Int.ofNat n + (offset / c) * c).toNat
++        else some legacy
++    | _ => some legacy
++
++/-- Concrete shape-stage prediction. Callers supply independently known concrete axis sizes.
++    This does not claim to model signature, capability, inference or range-check failures. -/
++def predictShaped (decls : List Decl) (stmts : List Stmt) (sizes : List (UID × Nat)) :
++    Prediction :=
++  let p := predict decls stmts
++  if !p.refusals.isEmpty then p else
++  let errors := (stmts.map destOf).eraseDups.filterMap fun n =>
++    let ws := stmts.filter (fun s => destOf s == n)
++    if !needsB5 ws then none else
++    match basis decls n ws with
++    | .error e => some e
++    | .ok bs =>
++      let expected := bs.mapM (predictedExtent · sizes)
++      if ws.any (fun w => (slotsOf w).mapM (predictedExtent · sizes) != expected)
++      then some ("writerExtentMismatch", n) else none
++  { p with refusals := errors }
++
++/-- SHAPED observation uses actual input signatures and checked preparation. SOURCE observation
++    remains `productionVerdict`, preserving corpora outside checked backend capabilities. -/
++def productionShapedVerdict (decls : List Decl) (stmts : List Stmt)
++    (sig : Eval.Plan.InputSignature) : Except (String × String) (List (String × MSort)) := do
++  let v ← productionVerdict decls stmts
++  let p : TLProgram := ⟨decls, stmts⟩
++  match p.compileToScheduled.run 0 with
++  | .error _ _ => .error ("sourceCompilation", "")
++  | .ok sch _ =>
++    match Eval.Plan.prepareEvalPlan sch sig with
++    | .ok _ => .ok v
++    | .error e =>
++      match e.cause with
++      | .shape (.writerExtentMismatch n _ _ _ _) => .error ("writerExtentMismatch", n)
++      | .shape (.sizeConflict _ _ _) => .error ("sizeConflict", "")
++      | .shape e => .error (s!"unmodelled shape: {e}", "")
++      | .capability e => .error (s!"unmodelled capability: {repr e}", "")
++      | .inputSignature e => .error (s!"unmodelled signature: {repr e}", "")
++      | .scan e => .error (s!"unmodelled scan: {repr e}", "")
++      | .invalidPlan e => .error (s!"unmodelled plan: {repr e}", "")
++      | .bindings e => .error (s!"unmodelled bindings: {repr e}", "")
++      | .nonlin e => .error (s!"unmodelled nonlin: {repr e}", "")
++      | .sourceInvariant e => .error (s!"unmodelled source invariant: {repr e}", "")
++
++/-- Inference may detect inconsistent concrete shapes before the collector equality check.
++    Keep the raw observed constructor, allowing it only for a predicted shape disagreement. -/
++def agreesShaped (p : Prediction)
++    (v : Except (String × String) (List (String × MSort))) : Bool :=
++  agrees p v || (match v with
++    | .error ("sizeConflict", _) => p.refusals.any (·.1 == "writerExtentMismatch")
++    | _ => false)
++
+ end LeanNCD.OracleSorts
+diff --git a/leanncd/test/Semantics/OracleSortRulesTest.lean b/leanncd/test/Semantics/OracleSortRulesTest.lean
+index 25c6aad9365d6555e14da135922c89add45ba925..c88a585960d5e2bd76c1484d8e988a6c2f40e934 100644
+--- a/leanncd/test/Semantics/OracleSortRulesTest.lean
++++ b/leanncd/test/Semantics/OracleSortRulesTest.lean
+@@ -1,9 +1,10 @@
+ import Semantics.OracleSortRules
+ 
+-/-! Oracle sorts T1: agreement corpora for the independent rule predictor (guards only).
++/-! Oracle sorts T1: SOURCE and SHAPED agreement corpora for the independent rule predictor.
+ 
+ Every corpus program is run through the real pipeline (`productionVerdict`) and through the
+ independent predictor (`predict`); `agrees` must hold for all of them.
++New B5 candidates additionally reach concrete preparation with actual input signatures.
+ 
+ * C1: pairs and triples of writers over one tensor `Y` (the vote / neutrality / scatter rules).
+ * C2: reader programs (the cast rules), plus the laundered pair and group readers.
+@@ -101,15 +102,15 @@ run_cmd assertNone "C1 predictor/production disagreements" (disagreements c1Decl
+ /-- How many refusals the predictor names for a C1 program. -/
+ private def refusalsOf (ss : List Stmt) : Nat := (predict c1Decls ss).refusals.length
+ 
+--- Of the 505 C1 programs: 141 are predicted accepted, 258 have exactly one predicted refusal and 106
+--- have two or more. The first two are the STRICT class (`agreesStrict`: the constructor must equal the
++-- SOURCE-stage counts only: an empty refusal list does not imply concrete shape acceptance.
++-- The first two are the STRICT class (`agreesStrict`: the constructor must equal the
+ -- single predicted one, and an accepted program must publish the predicted sorts). The last is the
+ -- MULTI class (`agreesMember`: the observed constructor is among the predicted ones). A spurious EXTRA
+ -- predicted refusal inside a multi-refusal program is NOT detected (see `agreesMember`); each rule's
+ -- refusal is pinned by equality on strict programs instead (coverage guard in C4).
+-#guard (corpusC1.filter (refusalsOf · == 0)).length == 141
+-#guard (corpusC1.filter (refusalsOf · == 1)).length == 258
+-#guard (corpusC1.filter (refusalsOf · ≥ 2)).length == 106
++#guard [(corpusC1.filter (refusalsOf · == 0)).length,
++  (corpusC1.filter (refusalsOf · == 1)).length,
++  (corpusC1.filter (refusalsOf · ≥ 2)).length] == [222, 195, 88]
+ 
+ /-- Each program is held to the predicate of its own class, so a strict-class program cannot hide
+     behind membership. -/
+@@ -304,11 +305,13 @@ private def c3Rows : List Row :=
+   -- D7: scatters and non-bare slots in a multi-writer group
+   , { label := "plain writer + scatter writer"
+       stmts := [ct "Y" .max "Z", .scatter "Y" [.free a] (rhs .max .identity [[rd "Q" [a, b]]])]
+-      expect := .error ("multiWriterScatter", "Y") }
++      expect := .ok [("Y", maxS)], runs := some [maxS, maxS] }
+   , { label := "two affine writers"
+-      stmts := [writer 5 .max, writer 5 .max], expect := .error ("multiWriterScatter", "Y") }
++      stmts := [writer 5 .max, writer 5 .max], expect := .ok [("Y", maxS)]
++      runs := some [maxS, maxS] }
+   , { label := "affine writer + bare writer"
+-      stmts := [writer 5 .max, writer 0 .max], expect := .error ("multiWriterScatter", "Y") }
++      stmts := [writer 5 .max, writer 0 .max], expect := .ok [("Y", maxS)]
++      runs := some [maxS, maxS] }
+   -- tropical statements take no nonlinearity
+   , { label := "relu on a max statement"
+       stmts := [.assign "Y" [.free a] (rhs .max (.pointwise .relu) [[rd "X" [a]]])]
+@@ -335,15 +338,45 @@ private def supplementalRows : List (List Decl × Row) :=
+   [ (matrixDecls matrixB,
+       { label := "duplicate free UID makes diagonal Y[a,a] a scatter"
+         stmts := matrixWriters [.free matrixA, .free matrixA] matrixB
+-        expect := .error ("multiWriterScatter", "Y") })
++        expect := .ok [], runs := some [.real, .real] })
+   , (matrixDecls matrixB,
+       { label := "free/freeNorm duplicate UID also makes a scatter"
+         stmts := matrixWriters [.free matrixA, .freeNorm matrixA] matrixB
+-        expect := .error ("multiWriterScatter", "Y") })
++        expect := .ok [], runs := some [.real, .real] })
+   , (matrixDecls matrixB,
+       { label := "distinct bare UIDs Y[a,b] remain legal"
+         stmts := matrixWriters [.free matrixA, .free matrixB] matrixB
+         expect := .ok [], runs := some [.real, .real] })
++  , ((matrixDecls matrixB).map (fun
++        | .typedTensor t "Y" _ => .typedTensor t "Y" [matrixA, matrixA]
++        | d => d),
++      { label := "declared repeated collector UID is refused"
++        stmts := matrixWriters [.free matrixA, .free matrixA] matrixB
++        expect := .error ("multiWriterRepeatedBasis", "Y") })
++  , (hDecls.filter (fun d => d.name != "Y"),
++      { label := "undeclared allscatter needs a declared basis"
++        stmts := List.replicate 2 (.scatter "Y" [.free a] (rhs .sum .identity [[rd "X" [a]]]))
++        expect := .error ("multiWriterNeedsDeclaredShape", "Y") })
++  , (hDecls.filter (fun d => d.name != "Y"),
++      { label := "ordinary bare assignment supplies undeclared fallback"
++        stmts := [.scatter "Y" [.free a] (rhs .sum .identity [[rd "X" [a]]]), cp "Y" .sum "X"]
++        expect := .ok [], runs := some [.real, .real] })
++  , (hDecls,
++      { label := "explicit constant scatter groups remain unsupported"
++        stmts := List.replicate 2 (.scatter "Y" [.affine (.const 3)]
++          (rhs .sum .identity [[rd "X" [a]]]))
++        expect := .error ("multiWriterScatter", "Y") })
++  , (hDecls,
++      { label := "canceled multi-axis syntax is bounded after UID normalization"
++        stmts := List.replicate 2 (.scatter "Y"
++          [.affine (.affine 1 [(3, a), (-1, a), (1, b), (-1, b)])]
++          (rhs .max .identity [[rd "X" [a]]]))
++        expect := .ok [("Y", maxS)], runs := some [maxS, maxS] })
++  , (hDecls,
++      { label := "predicate scatter groups remain unsupported"
++        stmts := List.replicate 2 (.scatter "OP" [.free a]
++          (rhs .sum .identity [[rd "X" [a]]]))
++        expect := .error ("multiWriterScatter", "OP") })
+   -- The structural gate requires sum on predicate outputs; their running sort is still bool.
+   , (hDecls,
+       { label := "predicate contractions run in bool rather than annotation real"
+@@ -374,6 +407,106 @@ run_cmd assertNone "supplemental hand rows" <|
+ #guard (predict (matrixDecls sameNameB)
+   (matrixWriters [.free matrixA, .freeNorm sameNameB] sameNameB)).refusals.isEmpty
+ 
++/-! SHAPED rows are explicitly separate from the SOURCE corpora. Concrete external signatures
++    come from each row's real input declarations, not from compiler inference. -/
++
++private def sizesOf (ds : List Decl) : List (UID × Nat) :=
++  ds.filterMap (fun | .axis ax (some n) => some (ax.uid, n) | _ => none)
++
++private def signatureOf (ds : List Decl) (ss : List Stmt) : Eval.Plan.InputSignature :=
++  let written := ss.filterMap (fun
++    | .assign n .. | .scatter n .. => some n
++    | _ => none)
++  let sizes := sizesOf ds
++  let entries := ds.filterMap fun d =>
++    let entry := match d with
++      | .typedTensor _ n ax | .tensor n ax => some (n, ax, Eval.Plan.ScalarDType.f64)
++      | .predicate n ax => some (n, ax, Eval.Plan.ScalarDType.bool)
++      | _ => none
++    entry.bind fun (n, ax, dt) =>
++      if written.contains n then none else
++      some (n, ({ shape := (ax.map (fun x =>
++        ((sizes.find? (·.1 == x.uid)).map (·.2)).getD 0)).toArray, dtype := dt } :
++          Eval.Plan.TensorSignature))
++  ⟨Std.HashMap.ofList entries⟩
++
++private def shapedProblems (label : String) (ds : List Decl) (ss : List Stmt) : List String :=
++  let p := predictShaped ds ss (sizesOf ds)
++  let v := productionShapedVerdict ds ss (signatureOf ds ss)
++  if agreesShaped p v then [] else [s!"{label}: predicted {repr p.refusals}, observed {repr v}"]
++
++/-- Stage only newly admitted B5 candidates, not legacy allbare/singlewriter corpus rows.
++    All 81 candidates were observed to reach inference, including relu/Iverson neighbours. -/
++private def concreteC1 : List (List Stmt) :=
++  corpusC1.filter fun ss =>
++    (predict c1Decls ss).refusals.isEmpty &&
++    ss.any (fun s => [AggOp.sum, .max, .min].any (fun ag => s == writer 5 ag))
++
++run_cmd assertNone "C1 SHAPED disagreements" <|
++  (concreteC1.zipIdx.flatMap fun (ss, i) => shapedProblems s!"C1#{i}" c1Decls ss)
++
++private def k : AxisSpec := ⟨"k", 44, .nat⟩
++private def extent8Decls : List Decl :=
++  .axis k (some 8) :: hDecls.map (fun
++    | .typedTensor t "Y" _ => .typedTensor t "Y" [k]
++    | d => d)
++private def squareDecls : List Decl :=
++  (matrixDecls matrixB).map (fun
++    | .axis ax _ => .axis ax (some 4)
++    | d => d)
++
++private def stagedRows : List (String × List Decl × List Stmt) :=
++  (c3Rows.filter (fun r => ["plain writer + scatter writer", "two affine writers",
++    "affine writer + bare writer"].contains r.label)).map (fun r => (r.label, hDecls, r.stmts)) ++
++  [("two affine extent8 twin", extent8Decls, [writer 5 .max, writer 5 .max]),
++   ("affine/bare extent8 twin", extent8Decls,
++     [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])])] ++
++  [false, true].flatMap (fun norm =>
++    let ss := matrixWriters [.free matrixA, if norm then .freeNorm matrixA else .free matrixA] matrixB
++    -- Identity statements cannot carry a normalization marker. De-mark the second donor's twin.
++    let square := matrixWriters [.free matrixA, .free matrixA] matrixB
++    [(s!"diagonal rectangular donor {norm}", matrixDecls matrixB, ss),
++     (s!"diagonal square twin {norm}", squareDecls, square)])
++
++run_cmd assertNone "hand SHAPED disagreements" (stagedRows.flatMap fun (l, ds, ss) =>
++  shapedProblems l ds ss)
++
++#guard concreteC1.length == 81
++#guard histogram (concreteC1.map (fun ss =>
++  tag (productionShapedVerdict c1Decls ss (signatureOf c1Decls ss)))) == [("sizeConflict", 81)]
++#eval
++  let containsShape (shape : Nat) (ss : List Stmt) :=
++    ss.any (fun s => [AggOp.sum, .max, .min].any (fun ag => s == writer shape ag))
++  [(corpusC1.filter (fun ss => containsShape 4 ss || containsShape 5 ss)).length,
++   (corpusC1.filter (containsShape 4)).length,
++   (corpusC1.filter (fun ss => containsShape 5 ss && !containsShape 4 ss)).length]
++#eval stagedRows.map (fun (l, ds, ss) =>
++  (l, (predictShaped ds ss (sizesOf ds)).refusals,
++    productionShapedVerdict ds ss (signatureOf ds ss)))
++
++/-- This donor passes B5 geometry and shape but retains its independent, pre-existing marker
++    refusal. Do not call a shape-only prediction a full preparation-acceptance prediction. -/
++private def markedSquare := matrixWriters [.free matrixA, .freeNorm matrixA] matrixB
++#guard (predictShaped squareDecls markedSquare (sizesOf squareDecls)).refusals.isEmpty
++#guard productionShapedVerdict squareDecls markedSquare (signatureOf squareDecls markedSquare) ==
++  .error ("unmodelled nonlin: LeanNCD.Eval.Plan.NonlinCompileError.unmarkedReductionAxis \"Y#1\" 1", "")
++
++-- Stride alignment, normalization and raw-axis sizing are independent of production's formula.
++#eval [predictedExtent (.affine (.affine 1 [(2, a)])) [(a.uid, 4)],
++  predictedExtent (.affine (.affine 3 [(2, a)])) [(a.uid, 4)],
++  predictedExtent (.affine (.affine 1 [(3, a), (-1, a), (0, b)])) [(a.uid, 4), (b.uid, 3)],
++  predictedExtent (.affine (.affine 1 [(3, a), (-1, a), (0, b)])) [(a.uid, 4)],
++  predictedExtent (.affine (.scale 0 a)) [(a.uid, 4)]]
++#guard predictedExtent (.affine (.affine 1 [(2, a)])) [(a.uid, 4)] == some 8
++#guard predictedExtent (.affine (.affine 3 [(2, a)])) [(a.uid, 4)] == some 10
++#guard predictedExtent (.affine (.affine 1 [(3, a), (-1, a), (0, b)]))
++  [(a.uid, 4), (b.uid, 3)] == some 8
++#guard predictedExtent (.affine (.affine 1 [(3, a), (-1, a), (0, b)]))
++  [(a.uid, 4)] == none
++#guard predictedExtent (.affine (.scale 0 a)) [(a.uid, 4)] == some 0
++#guard (predict hDecls (List.replicate 2 (.scatter "Y" [.affine (.scale 0 a)]
++  (rhs .sum .identity [[rd "X" [a]]])))).refusals.isEmpty
++
+ /-! ### C4: the corpora are not vacuous -/
+ 
+ private def aggOf : Stmt → AggOp
+@@ -401,7 +534,8 @@ private def everything : List (List Decl × List Stmt) :=
+   c3Rows.map (hDecls, ·.stmts) ++ supplementalRows.map (fun (d, r) => (d, r.stmts))
+ 
+ private def modelled : List String :=
+-  ["accepted", "multiWriterAlgebra", "multiWriterScatter", "tropicalNonlin", "sortCastUnsupported"]
++  ["accepted", "multiWriterAlgebra", "multiWriterScatter", "multiWriterNeedsDeclaredShape",
++   "multiWriterRepeatedBasis", "tropicalNonlin", "sortCastUnsupported"]
+ 
+ private def observedTags : List String :=
+   (everything.map (fun (d, ss) => tag (productionVerdict d ss))).eraseDups
+diff --git a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+index e14e6ab71c40233ff1208de534cdba861d56171b..801e33d3f522aa648f8ec6a2e85d75e8da920084 100644
+--- a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
++++ b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+@@ -91,7 +91,6 @@ def tag (s : SourceSnapshot) (order : List Nat := [5]) : String :=
+       then "refused:writeOutOfRange" else "error"
+   | .ok run => match run.classification with
+     | .fourLegParity => "parity"
+-    | .knownContractDifference (.multiWriterScatter _) => "known:multiWriter"
+     | .knownContractDifference (.scatterExtentOverridesDeclared ..) => "known:extent"
+     | .knownContractDifference (.usedDType ..) => "known:usedDType"
+     | .nativeFailure => "nativeFailure"
+@@ -138,7 +137,7 @@ private def fMask : SourceSnapshot :=
+ #guard tag fF == "nativeFailure"
+ #guard tag fF' == "nativeFailure"
+ -- Multi-writer vs single writer; extent override vs equal extent (A); out-of-range refusal.
+-#guard tag fG == "known:multiWriter"
++#guard tag fG == "nativeFailure"
+ #guard tag (snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX]) == "parity"
+ #guard tag fH9 == "known:extent"
+ #guard tag fH6 == "refused:writeOutOfRange"
+@@ -159,10 +158,10 @@ private def conditionCount (s : SourceSnapshot) : Nat :=
+ -- S3a: collisions sum (production and oracle agree), so a colliding write predicts NO condition:
+ -- `fE` (`Y[2a] := X[a]*W[b]`, `b` contracted onto one cell) and `fF` (`a+b`) have nothing to detect
+ -- for collisions; `fF`'s declared extent 6 differs from the derived 7, so it keeps exactly the
+--- extent condition, and `fG`'s two non-bare writers keep the multi-writer condition.
++-- extent condition. `fG` has no blanket multi-writer allowance.
+ #guard conditionCount fE == 0
+ #guard conditionCount fF == 1
+-#guard conditionCount fG == 1
++#guard conditionCount fG == 0
+ 
+ /-- Profile verdict on `fE`'s oracle result with one occurrence of the first nonempty fiber dropped
+ and every sum (fiber, contribution, tensor cell) adjusted so only the COUNT is inconsistent. -/
+@@ -334,4 +333,16 @@ private def fR1 := snap 8 [k] [.assign "Y" [.affine (.shift a 4)] readX]
+ #guard conditionCount fR == 1
+ #guard tag fR1 == "parity"
+ 
++/-! B5: keep the old syntax-negative donor honest, and add an equal-extent stride twin. -/
++private def fGStride := snap 8 [k]
++  [.assign "Y" [.affine (.scale 2 a)] readX,
++   .assign "Y" [.affine (.affine 1 [(2, a)])] readX]
++
++#guard mentions fG "compile failed: LeanNCD.CompileError.scanAxisNotIter \"a\""
++#guard mentions fG "checked=sourceCompilation LeanNCD.CompileError.scanAxisNotIter \"a\""
++#guard tag fGStride == "parity"
++#guard legacyCells fGStride == handBits [1, 1, 2, 2, 3, 3, 4, 4]
++#guard oracleCells fGStride == handBits [1, 1, 2, 2, 3, 3, 4, 4]
++#guard conditionCount fGStride == 0
++
+ end SourceDifferentialScatterTest

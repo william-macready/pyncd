@@ -1,5 +1,9 @@
 # Oracle per-tensor sorts and coverage: implementation plan
 
+Historical executed plan. B5 subsequently changes bounded scatter admission,
+D7 donors and corpus counts; current SOURCE/SHAPED measurements and remaining
+limits are in [the B5 record](additive_b5_record.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkbox syntax. Every brief opens with the shell-harness preamble in `.claude/skills/new-slice/SKILL.md`.
 
 **Goal:** mixed-sort and copy-form Source programs get an independent oracle verdict (value parity or predicted-refusal parity), and re-introducing each defect in design section 4 flips an oracle classification or an agreement-corpus guard, observed by a mutation manifest.

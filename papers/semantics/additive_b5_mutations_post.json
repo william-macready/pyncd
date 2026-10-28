@@ -1,0 +1,221 @@
+[
+  {
+    "label": "B5-M01 (strict writer extent equality)",
+    "task": "T3",
+    "file": "LeanNCD/Eval/CollectorShape.lean",
+    "old": "unless want == actual do",
+    "new": "unless actual <= want do",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M02 (neutral scatter adopts the agreed algebra)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+    "old": "let w := Stmt.scatter (collectorName g.name k) ls r\n              .plain (if w.isSortNeutral then w.withAgg sort.stateAgg else w)",
+    "new": "let w := Stmt.scatter (collectorName g.name k) ls r\n              .plain w",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M04 (scatter group publishes a tropical sort)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+    "old": "| .plain w@(.assign ..) | .plain w@(.scatter ..) => some w",
+    "new": "| .plain w@(.assign ..) => some w",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M05 (all-scatter needs a declaration)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+    "old": "| none => throw (.multiWriterNeedsDeclaredShape g.name)",
+    "new": "| none => return producerSlots ((ws.head?.map Stmt.slots).getD [])",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M06 (collector basis UIDs are distinct)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+    "old": "unless us.length == us.eraseDups.length do throw (.multiWriterRepeatedBasis g.name)",
+    "new": "unless true do throw (.multiWriterRepeatedBasis g.name)",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M07 (an explicit bare scatter is not a fallback assign)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+    "old": "| .assign _ ls _ => !slotsBecomeScatter ls && ls.all (fun s => s.freeUID?.isSome)\n    | _ => false) with",
+    "new": "| .assign _ ls _ => !slotsBecomeScatter ls && ls.all (fun s => s.freeUID?.isSome)\n    | .scatter _ ls _ => ls.all (fun s => s.freeUID?.isSome)\n    | _ => false) with",
+    "targets": [
+      "Eval.Plan.B5BoundaryTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5BoundaryTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M08 (multi-axis geometry remains refused)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Ast.lean",
+    "old": "if ((idxDensify cf us).filter (\u00b7 != 0)).length > 1 then .multiAxis else .bounded",
+    "new": "if ((idxDensify cf us).filter (\u00b7 != 0)).length > 1 then .bounded else .bounded",
+    "targets": [
+      "Eval.Plan.B5BoundaryTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5BoundaryTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M09 (geometry normalizes cancelling coefficients)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Ast.lean",
+    "old": "if ((idxDensify cf us).filter (\u00b7 != 0)).length > 1 then .multiAxis else .bounded",
+    "new": "if (cf.filter (fun p => p.1 != 0)).length > 1 then .multiAxis else .bounded",
+    "targets": [
+      "Eval.Plan.B5BoundaryTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5BoundaryTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M10 (the mismatch reports the actual dimension)",
+    "task": "T3",
+    "file": "LeanNCD/Eval/CollectorShape.lean",
+    "old": "throw (.writerExtentMismatch g.name k dim want actual)",
+    "new": "throw (.writerExtentMismatch g.name k 0 want actual)",
+    "targets": [
+      "Eval.Plan.B5BoundaryTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5BoundaryTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M17 (route does not silently admit B5)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Pipeline/Lowering.lean",
+    "old": "(writerGroups logical.stmts).find? (\u00b7.needsB5 logical.stmts)",
+    "new": "(writerGroups logical.stmts).find? (fun _ => false)",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-O01 (independent normalized geometry)",
+    "task": "T2b",
+    "file": "test/Semantics/OracleSortRules.lean",
+    "old": "| .affine e => ((normalized (coefficients e).2).filter (\u00b7.1 != 0)).length \u2264 1",
+    "new": "| .affine e => (coefficients e).2.length \u2264 1",
+    "targets": [
+      "Semantics.OracleSortRulesTest"
+    ],
+    "expect": [
+      "canceled multi-axis syntax is bounded after UID normalization: predictor disagrees with production"
+    ]
+  },
+  {
+    "label": "B5-O02 (independent stride-aligned extent)",
+    "task": "T2b",
+    "file": "test/Semantics/OracleSortRules.lean",
+    "old": "some (c * Int.ofNat n + (offset / c) * c).toNat",
+    "new": "some (c * Int.ofNat n + offset).toNat",
+    "targets": [
+      "Semantics.OracleSortRulesTest"
+    ],
+    "expect": [
+      "hand SHAPED disagreements: [two affine extent8 twin: predicted"
+    ]
+  },
+  {
+    "label": "B5-O03 (independent tropical scatter entry)",
+    "task": "T2b",
+    "file": "test/Semantics/OracleSortRules.lean",
+    "old": "if k.isTropical then some k else none",
+    "new": "if k.isTropical && (writersOf n).all isPlainAssign then some k else none",
+    "targets": [
+      "Semantics.OracleSortRulesTest",
+      "Semantics.OracleMixedRefusalTest"
+    ],
+    "expect": [
+      "C3 hand rows: [plain writer + scatter writer: predictor disagrees with production]"
+    ]
+  },
+  {
+    "label": "B5-O04 (independent exact writer shape)",
+    "task": "T2b",
+    "file": "test/Semantics/OracleSortRules.lean",
+    "old": "if ws.any (fun w => (slotsOf w).mapM (predictedExtent \u00b7 sizes) != expected)",
+    "new": "if false",
+    "targets": [
+      "Semantics.OracleSortRulesTest"
+    ],
+    "expect": [
+      "C1 SHAPED disagreements: [C1#0: predicted [], observed Except.error"
+    ]
+  },
+  {
+    "label": "B5-C01 unsized source diagnosis",
+    "task": "T3",
+    "file": "LeanNCD/Eval/CollectorShape.lean",
+    "old": "let actual \u2190 match sl.outExtent (fun u => sizes[u]?) with\n          | some n => pure n\n          | none => throw (.unsizedScatterOutput sl)",
+    "new": "let actual \u2190 match sl.outExtent (fun u => sizes[u]?) with\n          | some n => pure n\n          | none => pure 0",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "B5 closure unsized-source: expected typed unsizedScatterOutput, never default extent 0"
+    ]
+  },
+  {
+    "label": "B5-R01 undeclared fallback basis rank",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+    "old": "unless s.slots.length == basis.length do",
+    "new": "unless true do",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "B5 fallback basis rank: undeclared S[k] basis must reject two-slot affine writer"
+    ]
+  }
+]

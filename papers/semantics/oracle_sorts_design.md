@@ -1,5 +1,10 @@
 # Oracle per-tensor sorts and coverage: design note
 
+Historical design: B5 has since widened the bounded native collection boundary,
+replacing the three shape-correct D7 refusal donors with actual four-leg value
+rows and adding separate SOURCE/SHAPED stages. Unsupported multi-axis/constant
+donors retain refusal controls. See [the B5 record](additive_b5_record.md).
+
 Status: DESIGN, 2026-10-26, base main 9507c5af (local main is pushed). Evidence: `oracle_sorts_audit.md` (read-only; every "audit" claim is code reading, unobserved until a task observes it).
 Predecessors: `additive_s3b_record.md` sections 9-10, `additive_s3bii_record.md` section 4, `additive_production_decision_note.md` (A1-A2, A7 casts).
 

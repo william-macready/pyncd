@@ -1,0 +1,375 @@
+diff --git a/leanncd/LeanNCD/Bridge/Agreement.lean b/leanncd/LeanNCD/Bridge/Agreement.lean
+index 5c511012dda44fd4876144fbf1e31af182ea0c97..3be65b33d9fc2f11114f590d4994393594d0cefe 100644
+--- a/leanncd/LeanNCD/Bridge/Agreement.lean
++++ b/leanncd/LeanNCD/Bridge/Agreement.lean
+@@ -52,6 +52,8 @@ theorem compile_eq_physical_route {p : TLProgram} {s : Nat} {tc : ThreadedCompos
+         simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
+       rw [hcd] at h
+       dsimp only at h
++      split at h
++      · simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
+       cases hp : physicalizeForRoute collected with
+       | error e =>
+           rw [hp] at h
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/Collect.lean b/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
+index 74b4b3cb95b334fa59d47e16f3b8785ab3e37d87..b029264a0ef46c03aa847ad3f08a49d5062b1f70 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
+@@ -17,9 +17,10 @@ for a tropical one), so each `T#k` keeps its own nonlinearity, and a predicate `
+ `desugarMultiWriters` is the identity on every schedule in which each name has at most one writer,
+ so single-writer programs are byte-identical through every later phase.
+ 
+-Real-sum, predicate and tropical (all-max or all-min) multi-writer sets are admitted when the
+-writers are plain `.assign` statements with bare free slots on the same axis UIDs; every other
+-multi-writer set fails loud (`multiWriterScatter`, `multiWriterAlgebra`, `writerShapeMismatch`).
++Existing all-bare groups keep positionwise UID agreement. Real and tropical groups may also
++contain bounded scatter writers, using a distinct declared coordinate basis or the first ordinary
++bare assignment. Their retained shape obligations require exact realized extent equality after
++inference; predicate, explicit-constant and multi-axis scatter groups remain refused.
+ A group's sort is the one its writers' votes agree on (`writerSort?`); sort-neutral copy writers
+ abstain beside a non-neutral writer and are rewritten to the agreed sort (`Stmt.withAgg`), so a
+ copy's bare out-of-range read pads the group's `0_K` and a copy of a predicate reads it through the group's
+@@ -90,20 +91,66 @@ def writerGroups (stmts : List ScanStmt) : List WriterGroup :=
+       | _ => false
+     if writers.length ≥ 2 && allPlain then some ⟨nm, writers⟩ else none
+ 
+-/-- The admission rule for one multi-writer set, checked in schedule order: no scatter, then the
+-    writers' votes agree on one sort (`writerSort?`, else `multiWriterAlgebra`), then bare free
+-    slots whose UIDs agree with writer 1's position by position. Returns the agreed sort. -/
++/-- True only for the newly admitted collection surface, not legacy all-bare groups. -/
++def WriterGroup.needsB5 (g : WriterGroup) (stmts : List ScanStmt) : Bool :=
++  (g.writers.filterMap (plainAt? stmts)).any fun
++    | .scatter .. => true
++    | .assign _ ls _ => slotsBecomeScatter ls
++    | _ => false
++
++def Decl.tensorAxes? : Decl → Option (List AxisSpec)
++  | .tensor _ ax | .typedTensor _ _ ax | .predicate _ ax
++  | .linear _ ax _ | .typedLinear _ _ ax _ => some ax
++  | _ => none
++
++/-- Select a full-domain basis. An explicit bare scatter is not a fallback assignment. -/
++def writerGroupBasis (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
++    Except CompileError (List LHSSlot) := do
++  if let some ax := (env[g.name]?).bind Decl.tensorAxes? then
++    let us := ax.map (·.uid)
++    unless us.length == us.eraseDups.length do throw (.multiWriterRepeatedBasis g.name)
++    return ax.map LHSSlot.free
++  let ws := g.writers.filterMap (plainAt? stmts)
++  match ws.find? (fun
++    | .assign _ ls _ => !slotsBecomeScatter ls && ls.all (fun s => s.freeUID?.isSome)
++    | _ => false) with
++  | some s => return producerSlots s.slots
++  | none => throw (.multiWriterNeedsDeclaredShape g.name)
++
++/-- Source geometry retained across renaming for a post-inference equality check. -/
++structure CollectorShapeObligation where
++  name : String
++  basis : List LHSSlot
++  writers : List (List LHSSlot)
++
++def collectorShapeObligations (sched : ScheduledProgram) :
++    Except CompileError (List CollectorShapeObligation) :=
++  ((writerGroups sched.stmts).filter (·.needsB5 sched.stmts)).mapM fun g => do
++    return { name := g.name
++             basis := ← writerGroupBasis sched.env sched.stmts g
++             writers := (g.writers.filterMap (plainAt? sched.stmts)).map Stmt.slots }
++
++/-- Static geometry, agreed sort, then basis/rank checks for bounded scatter groups.
++    Legacy all-bare groups instead retain positionwise UID agreement. -/
+ def checkWriterGroup (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
+     Except CompileError SortAlgebra := do
+   let ws := g.writers.filterMap (plainAt? stmts)
+   for s in ws do
+     match s with
+-    | .scatter .. => throw (.multiWriterScatter g.name)
++    | .scatter _ ls _ =>
++        unless ls.all LHSSlot.boundedScatter && env.declAlgebra g.name != .bool do
++          throw (.multiWriterScatter g.name)
+     | .assign _ ls _ => if slotsBecomeScatter ls then throw (.multiWriterScatter g.name)
+     | .recurMorphism .. => pure ()
+   let agreed ← match writerSort? env ws with
+     | none => throw (.multiWriterAlgebra g.name)
+     | some a => pure a
++  if g.needsB5 stmts then
++    let basis ← writerGroupBasis env stmts g
++    for s in ws do
++      unless s.slots.length == basis.length do
++        throw (.rankMismatch g.name basis.length s.slots.length)
++    return agreed
+   let first := (ws.head?.map Stmt.slots).getD []
+   for (s, k) in ws.zipIdx 1 do
+     let ls := s.slots
+@@ -130,7 +177,7 @@ def collectorStmt (nm : String) (firstSlots : List LHSSlot) (n : Nat) (agg : Agg
+ 
+     Error priority (the first failing check wins, whatever the order of names in the schedule):
+     `multiWriterScan` (any name, `scanWriterConflict?`) first; then, per group in first-writer
+-    order, `multiWriterScatter`, `multiWriterAlgebra`, `writerShapeMismatch` (the order of checks
++    order, geometry, algebra, then basis/shape diagnostics (the order of checks
+     inside `checkWriterGroup`; a group's failure stops the pass before the next group is looked
+     at); `reservedNameCollision` last, after every group has passed. -/
+ def desugarMultiWriters (sched : ScheduledProgram) :
+@@ -156,9 +203,14 @@ def desugarMultiWriters (sched : ScheduledProgram) :
+           | .plain (.assign _ ls r) =>
+               let w := Stmt.assign (collectorName g.name k) ls r
+               .plain (if w.isSortNeutral then w.withAgg sort.stateAgg else w)
++          | .plain (.scatter _ ls r) =>
++              let w := Stmt.scatter (collectorName g.name k) ls r
++              .plain (if w.isSortNeutral then w.withAgg sort.stateAgg else w)
+           | other => other
+         if some i == g.writers.getLast? then
+-          let firstSlots := ((g.writers.head?.bind (plainAt? sched.stmts)).map Stmt.slots).getD []
++          let firstSlots := if g.needsB5 sched.stmts then
++              (writerGroupBasis sched.env sched.stmts g).toOption.getD []
++            else ((g.writers.head?.bind (plainAt? sched.stmts)).map Stmt.slots).getD []
+           [renamed, .plain (collectorStmt g.name firstSlots g.writers.length sort.stateAgg)]
+         else [renamed]
+   -- One clone per writer of each DECLARED destination; undeclared destinations get none.
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean b/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean
+index c2fef61f1190c5dd976037d30ed15012c2a3c2fe..0a7d2dcc8801816e030406ddf7db7222ea33ea4c 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean
+@@ -592,6 +592,9 @@ def route (logical : ScheduledProgram) : FreshM ThreadedComposed := do
+   match desugarMultiWriters logical with
+   | .error e => throw e
+   | .ok (collected, _) =>
++  match (writerGroups logical.stmts).find? (·.needsB5 logical.stmts) with
++  | some g => throw (.multiWriterScatter g.name)
++  | none =>
+   match physicalizeForRoute collected with
+   | .error e => throw e
+   | .ok physical =>
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+index ca56f685915998180d4e00b7556defd5abc14ded..23c73d7d03b2ffa08b85d57d647911a50beb7c24 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+@@ -148,7 +148,7 @@ sort collection will give the collector); a conflicting group gets none, so coll
+     written by exactly one node -> that plain statement's sort, or, for a scan state (the node's
+     base and recurrence statements of one name), the sort its writers vote (`writerSort?`:
+     non-neutral statements, else an all-neutral state's non-`sum` annotations; `real` if nobody
+-    votes); a multi-writer group of plain `.assign` writers whose votes agree on a tropical sort.
++    votes); a multi-writer group of plain assign/scatter writers whose votes agree on a tropical sort.
+     Two voters of one scan state that differ throw `scanStateAlgebraMismatch` (checked for
+     every scan node, entry or not). -/
+ def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
+@@ -167,11 +167,11 @@ def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
+         if writers.length == 1 then
+           m := m.insert nm (s.algebra env)
+         else
+-          -- A multi-writer group of plain `.assign` writers gets its agreed sort when that sort is
++          -- A multi-writer group of plain assign/scatter writers gets its agreed sort when that sort is
+           -- tropical (collection will realize it); a conflict gets no entry, so collection's
+           -- `multiWriterAlgebra` stays the refusal. Real and bool groups get none.
+           let ws := writers.filterMap fun
+-            | .plain w@(.assign ..) => some w
++            | .plain w@(.assign ..) | .plain w@(.scatter ..) => some w
+             | _ => none
+           if ws.length == writers.length then
+             match writerSort? env ws with
+@@ -224,6 +224,7 @@ structure CheckedScheduledProgram where private mk ::
+   explicitSizes : Std.HashMap UID Nat
+   extNames      : List String
+   privateNames  : List String
++  shapeObligations : List CollectorShapeObligation
+   /-- `scheduleAlgebras` of the SOURCE schedule: partial (see there). Read through `algebraOf`. -/
+   algebras      : Std.HashMap String SortAlgebra
+ 
+@@ -245,13 +246,16 @@ def validateScheduled (sched : ScheduledProgram) : Except CompileError CheckedSc
+   checkSortCasts sourceEnv algebras sched.stmts
+   unless isTopoOrdered sched.stmts sched.stmts do
+     throw (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
+-  let (collected, privateNames) ← collectDefinitions sched
++  let source := { sched with env := sourceEnv }
++  let (collected, privateNames) ← collectDefinitions source
++  let shapeObligations ← collectorShapeObligations source
+   let declEnv ← buildDeclEnv collected.decls
+   return { program := collected
+          , declEnv
+          , explicitSizes := declaredAxisSizes collected.decls
+          , extNames := orderedExternalNames collected.stmts
+          , privateNames
++         , shapeObligations
+          , algebras }
+ 
+ end LeanNCD
+diff --git a/leanncd/LeanNCD/Eval/CollectorShape.lean b/leanncd/LeanNCD/Eval/CollectorShape.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..f520ebe842f4d7d92647256e9d16f89bc0a195c2
+--- /dev/null
++++ b/leanncd/LeanNCD/Eval/CollectorShape.lean
+@@ -0,0 +1,24 @@
++import LeanNCD.DSL.Pipeline.Collect
++import LeanNCD.Eval.Error
++
++namespace LeanNCD.Eval
++
++/-- Strict S3 equality for newly enabled groups, after ordinary size inference.
++    Dimension indices are zero-based; writer indices are one-based schedule order. -/
++def checkCollectorShapes (obligations : List CollectorShapeObligation)
++    (sizes : Std.HashMap UID Nat) : Except ShapeError Unit := do
++  for g in obligations do
++    let expected ← g.basis.mapM fun sl =>
++      match sl.outExtent (fun u => sizes[u]?) with
++      | some n => pure n
++      | none => throw (.unsizedScatterOutput sl)
++    for (slots, k) in g.writers.zipIdx 1 do
++      for (sl, dim) in slots.zipIdx do
++        let actual ← match sl.outExtent (fun u => sizes[u]?) with
++          | some n => pure n
++          | none => throw (.unsizedScatterOutput sl)
++        let want := expected[dim]?.getD 0
++        unless want == actual do
++          throw (.writerExtentMismatch g.name k dim want actual)
++
++end LeanNCD.Eval
+diff --git a/leanncd/LeanNCD/Eval/Error.lean b/leanncd/LeanNCD/Eval/Error.lean
+index 323d7cf4382b07b2a6f0e095b18d2319b28f4dfe..15fb53092ae28a8da6a57c8b50d484307a8f6d96 100644
+--- a/leanncd/LeanNCD/Eval/Error.lean
++++ b/leanncd/LeanNCD/Eval/Error.lean
+@@ -132,6 +132,7 @@ inductive ShapeError
+   | sizeConflict (uid : UID) (existing : Nat) (new : Nat)
+   | solveFailure (diagnostic : SolveDiagnostic)
+   | negativeOnlyAxis (uid : UID) (sources : List String)
++  | writerExtentMismatch (name : String) (writer dimension expected actual : Nat)
+   deriving DecidableEq
+ 
+ /-- The sole renderer for `ShapeError` — reproduces every pre-4h message byte-for-byte. -/
+@@ -153,6 +154,8 @@ def ShapeError.render : ShapeError → String
+   | .negativeOnlyAxis uid sources =>
+       s!"axis uid {uid} is purely negatively constrained (appears only with non-positive \
+ coefficients in all reads; sources: {sources}); add an explicit axis declaration"
++  | .writerExtentMismatch name writer dimension expected actual =>
++      s!"multi-writer {name}: writer {writer}, dimension {dimension}: expected extent {expected}, actual {actual}"
+ 
+ instance : ToString ShapeError := ⟨ShapeError.render⟩
+ 
+diff --git a/leanncd/LeanNCD/Eval/Eval.lean b/leanncd/LeanNCD/Eval/Eval.lean
+index 311d5bfe8c12dc6bbe18991a2884982ff3e89e82..1dea285323a6c0ed1ed81beb2dd168f9815d177f 100644
+--- a/leanncd/LeanNCD/Eval/Eval.lean
++++ b/leanncd/LeanNCD/Eval/Eval.lean
+@@ -2,6 +2,7 @@ import LeanNCD.Eval.Scan        -- (transitively brings Contract/Nonlin/Gather/S
+ import LeanNCD.Eval.Scatter
+ import LeanNCD.Eval.SizeInfer   -- `inferAxisSizes`, called directly below
+ import LeanNCD.Eval.Error
++import LeanNCD.Eval.CollectorShape
+ import LeanNCD.Eval.Report      -- `EvalReport` (C4): moved to a neutral leaf shared with `Plan/Adapter.lean`
+ import LeanNCD.DSL.Pipeline.ScheduledValidation
+ namespace LeanNCD.Eval
+@@ -156,6 +157,9 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
+       -- Execute under the workers' narrow `Except EvalError` type, then attach the already-known
+       -- inference warnings to either outcome at this orchestration boundary.
+       let execution : Except EvalError (HashMap String DenseTensor) := do
++        match checkCollectorShapes checked.shapeObligations sizes with
++        | .ok () => pure ()
++        | .error e => throw (.shape e)
+         let mut env := inputs
+         for sc in sched.stmts do
+           match sc with
+diff --git a/leanncd/LeanNCD/Eval/Plan/Compile.lean b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+index 20137706c40b5b6e2cb6227f835df1e6358b1d27..c86868139b334f96d6616e13ff687df5cd823635 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Compile.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+@@ -9,6 +9,7 @@ import LeanNCD.Eval.Scatter   -- `scatterSourceAxes`: ONE definition of a scatte
+                               -- shared with the reference evaluator (see Step D's scatter branch)
+ import LeanNCD.DSL.Pipeline.Lowering
+ import LeanNCD.DSL.Pipeline.ScheduledValidation
++import LeanNCD.Eval.CollectorShape
+ 
+ /-!
+ # Source compiler: capability preflight (Wave C C4) and scan specialization (Wave F F4)
+@@ -116,13 +117,12 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
+     `.scale 0 i` and `.affine c₀ [(0, i)]` with `.const n` and would reject all three under a locator
+     naming only the last. It did, briefly; `CompileTest`'s `Out[0*i]` fixture and
+     `ScatterCompileTest`'s S9 now pin the distinction from both ends. -/
+-private def checkScatterAffineExpr (stmtName : String) : IdxExpr → Except CapabilityError Unit
+-  | .const _ => throw (.scatterOrAffineLhs s!"{stmtName}: constant affine LHS slot")
+-  | e =>
+-      let (_, coeffs) := idxAffineForm e
+-      if (SizeSolve.normalizeCoeffs coeffs).length > 1 then
+-        throw (.multiAxisScatterLhs s!"{stmtName}: affine LHS slot")
+-      else pure ()
++private def checkScatterAffineExpr (stmtName : String) (e : IdxExpr) :
++    Except CapabilityError Unit :=
++  match scatterAffineClass e with
++  | .constant => throw (.scatterOrAffineLhs s!"{stmtName}: constant affine LHS slot")
++  | .multiAxis => throw (.multiAxisScatterLhs s!"{stmtName}: affine LHS slot")
++  | .bounded => pure ()
+ 
+ def checkScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
+   | .free _     => pure ()
+@@ -1527,6 +1527,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
+             -- every `PlanCompileCause` arm, not just this one.
+             throw { cause := .shape (.solveFailure { kind := .inconsistent, detail? := some "unreachable: non-.shape EvalError from shape inference" })
+                    , warnings := f.warnings }
++  liftShape warnings (checkCollectorShapes checked.shapeObligations sizes)
+   -- Step D: slot allocation + per-statement/per-term compilation, interleaved.
+   let mut slotOf : HashMap String TensorSlot := {}
+   let mut tensorSigsAcc : Array TensorSignature := #[]
+diff --git a/leanncd/test/DSL/Pipeline/CollectTest.lean b/leanncd/test/DSL/Pipeline/CollectTest.lean
+index 2856dda9ca9cdae525c9c5d38403397229262b03..66a0953d3a0efc7fecf514828da10982f4c9147e 100644
+--- a/leanncd/test/DSL/Pipeline/CollectTest.lean
++++ b/leanncd/test/DSL/Pipeline/CollectTest.lean
+@@ -129,7 +129,7 @@ def c5 : TLProgram := tlprog!{
+   S[2*i] := X[i]
+   S[2*i + 1] := Y[i]
+ }
+-#guard errorOf c5 == some (.multiWriterScatter "S")
++#guard errorOf c5 == some (.multiWriterNeedsDeclaredShape "S")
+ 
+ -- C6 (was a rejection until S3b-ii): max-annotated multi-writer set (clone c1, agg maxreduce).
+ def c6 : TLProgram := tlprog!{
+@@ -635,7 +635,7 @@ private def priorityError (scanConflict : Bool) : Option CompileError :=
+   | _, _ => none
+ #guard priorityError true == some (.multiWriterScan "G")
+ -- C9e' accept-neighbour (clone C9e, no scan conflict): the scatter group's own error surfaces.
+-#guard priorityError false == some (.multiWriterScatter "S")
++#guard priorityError false == some (.multiWriterNeedsDeclaredShape "S")
+ 
+ /-! ## Direct `route` on a hand-built schedule (review T6-F4)
+ 
+diff --git a/leanncd/test/Eval/CollectEvalTest.lean b/leanncd/test/Eval/CollectEvalTest.lean
+index 83b3e91409a901efa1faa155d52a96b7b835790d..8be4d8516833aceb19e1be1bf2394d07f02d7349 100644
+--- a/leanncd/test/Eval/CollectEvalTest.lean
++++ b/leanncd/test/Eval/CollectEvalTest.lean
+@@ -150,8 +150,14 @@ def j3 : TLProgram := tlprog!{
+   S[2*i] := X[i]
+   S[2*i + 1] := Y[i]
+ }
+-#guard errOf j3 (inp [("X", tz [2] [1, 2]), ("Y", tz [2] [10, 20])]) ==
+-  some "compile failed: LeanNCD.CompileError.multiWriterScatter \"S\""
++#guard
++  match j3.compileToScheduled.run 0 with
++  | .ok s _ => match evalScheduled s (inp [("X", tz [2] [1, 2]), ("Y", tz [2] [10, 20])]) with
++    | .error f => match f.error with
++      | .compile (.multiWriterNeedsDeclaredShape "S") => true
++      | _ => false
++    | .ok _ => false
++  | .error _ _ => false
+ 
+ -- J4 max-annotated multi-writer (S3b-ii: collected with max). Y[i] = max(max_j A[i,j], max_j B[i,j]);
+ -- the sum collector would give [8, 12].
+diff --git a/leanncd/test/Eval/Plan/CollectPlanTest.lean b/leanncd/test/Eval/Plan/CollectPlanTest.lean
+index 569ca1c8665953718ea975b2ca0c297b12fa5706..3ad5c4edc23f269208b79731404991de4a0e74ef 100644
+--- a/leanncd/test/Eval/Plan/CollectPlanTest.lean
++++ b/leanncd/test/Eval/Plan/CollectPlanTest.lean
+@@ -864,7 +864,19 @@ private def refusedBy (p : TLProgram) (i : NamedDenseEnv) (i32 : NamedDenseEnv32
+ #guard refusedBy nbSM abIn abIn32 (.multiWriterAlgebra "Y")
+ #guard refusedBy nbMS abIn abIn32 (.multiWriterAlgebra "Y")
+ -- two affine scatter writers, even max-annotated
+-#guard refusedBy nbScat abIn abIn32 (.multiWriterScatter "S")
++#guard
++  match nbScat.compileToScheduled.run 0 with
++  | .ok s _ =>
++      let ref := match evalScheduled s abIn with
++        | .error f => match f.error with
++          | .compile (.multiWriterNeedsDeclaredShape "S") => true
++          | _ => false
++        | .ok _ => false
++      let plan := match prepareEvalPlan s { tensors := {} } with
++        | .error f => f.cause == .sourceInvariant (.multiWriterNeedsDeclaredShape "S")
++        | .ok _ => false
++      ref && plan
++  | .error _ _ => false
+ -- a scan node of `S` plus a max-annotated plain writer of `S` (hand-built: the surface cannot
+ -- spell it, `nbScan` fails earlier with `scanProjectionUnsupported`)
+ #guard (scanPlusMax.bind fun sp => match evalScheduled sp {} with

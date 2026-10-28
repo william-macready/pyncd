@@ -144,7 +144,7 @@ def j2 : TLProgram := tlprog!{
 #guard errOf j2 (inp [("A", tz [2] [1, 2]), ("B", tz [3] [10, 20, 30])]) ==
   some "compile failed: LeanNCD.CompileError.writerShapeMismatch \"Y\" 2 0"
 
--- J3 scatter multi-writer (old: S = [0,10,0,20], X lost).
+-- J3 undeclared all-scatter group still needs a basis (old: S = [0,10,0,20], X lost).
 def j3 : TLProgram := tlprog!{
   axis i : ℕ = 2
   S[2*i] := X[i]

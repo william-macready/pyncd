@@ -21,6 +21,7 @@ Does not own: parsing/compilation/routing (`../DSL/`). The checked, positional p
 | LHS-slot shape vocabulary (`normAxisUidOf`, `outputShape`) | `Slots.lean` |
 | Pure affine constraint solver (RREF over `ℚ`) | `SizeSolve.lean` |
 | Axis-size inference fixpoint (`inferAxisSizes`, `scatterOutputShapes`) | `SizeInfer.lean` |
+| B5 post-inference writer/basis extent equality (`checkCollectorShapes`) shared with checked preparation | `CollectorShape.lean` |
 | Compatibility umbrella re-exporting `Slots`/`SizeSolve`/`SizeInfer` (no code) | `Shape.lean` |
 | Every typed diagnostic (`EvalError`, `ShapeError`, `EvalWarning`, `SolveDiagnostic`, `EvalFailure`) and their sole renderers | `Error.lean` |
 | Checked positional plan IR, compiler, workers, adapters, JAX executable phase | `Plan/` — see [`Plan/AGENTS.md`](Plan/AGENTS.md) |
@@ -29,7 +30,8 @@ Does not own: parsing/compilation/routing (`../DSL/`). The checked, positional p
 ### Import structure
 Branched, not linear: `DSL.Ast → Slots → Nonlin/Scan`; `Tensor → Gather → Contract → Scatter`;
 `Exec.Uid + Error → SizeSolve`, then `SizeSolve + Tensor + DSL.Ast → SizeInfer`;
-`Contract + Nonlin + Slots + SizeSolve → Scan`; `Eval` joins `Scan`, `Scatter`, `SizeInfer`; `Entry`
+`Contract + Nonlin + Slots + SizeSolve → Scan`; `Eval` joins `Scan`, `Scatter`, `SizeInfer` and
+`CollectorShape` (which imports `DSL.Pipeline.Collect` and `Error`); `Entry`
 joins `Eval` with `DSL.Compile` (`Eval.lean` itself never imports the compiler). Production modules
 import the narrow module they need, not the `Shape.lean` umbrella. `Error.lean` is a leaf (imports
 only `Exec.Uid`/`DSL.Ast`); files that throw or render diagnostics import it explicitly, while
@@ -54,6 +56,7 @@ failures necessarily carry `[]`. Tests match constructors where that strengthens
 back to `toString` for legacy renderer checks.
 
 ## Contracts
+- **B5 collection checks shape after inference, before execution.** `evalScheduled` and checked `prepareEvalPlan` both call `checkCollectorShapes` on retained source obligations. Every writer's realized extents must equal the ordered basis, never just fit inside it; `LHSSlot.outExtent` remains the sole formula. A mismatch is `ShapeError.writerExtentMismatch T writer dimension expected actual` (1-based writer, 0-based dimension). Existing inference errors can win first. Each scratch folds its own collisions before the collector folds writers in schedule order; holes use the agreed algebra's additive identity. No reassociation claim. See `papers/semantics/additive_b5_record.md` and `test/Eval/Plan/B5NativeTest.lean` / `B5BoundaryTest.lean`.
 - **Every scatter extent MUST equal `LHSSlot.outExtent`** (`../DSL/Ast.lean`), the sole stride-aligned formula. `Eval.scatterOutShape` and `SizeInfer.scatterOutputShapes` call it directly; the checked scan geometry reaches it through `scatterDestExtent`. For one normalized positive coefficient `c`, nonnegative bias `b`, and source extent `n > 0` it is `c*n + (b/c)*c`; other forms keep the linear fallback. A duplicate formula once produced an unsound cropped read (fix `fc10d70`). **Do not add a second extent formula.**
 - **Fail-loud unsized axis at every materialization site**: `evalAssignSeeded` (the sole contraction implementation) throws before building an output shape if any non-seeded free output axis, any per-term contracted axis, or any seeded axis has no inferable size, and rejects an out-of-range seed coordinate. Mirrored in `Eval.scatterOutShape`, `Scatter.evalScatter`, and `Scan.evalScan`. Each site is a distinct `UnsizedAxisSite` tag on `ShapeError.unsizedAxis`. Keep the list complete: `evalScan` once used `getD 0`, conflating "no extent" with "extent 0", and panicked on an unpinned scan axis.
 - **Non-identity scatter is rejected, not dropped**: `Scatter.evalScatter` throws if `rhs.nonlin ≠ .identity` (defensive; the primary gate is `checkScatterNonlin` in `../DSL/Pipeline/Structural.lean`).

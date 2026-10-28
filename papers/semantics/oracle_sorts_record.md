@@ -1,5 +1,17 @@
 # Oracle per-tensor sorts: record
 
+B5 supersession (2026-10-27): the original counts and D7 refusal observations
+below remain historical. Current C1 SOURCE counts are 222/195/88, not
+141/258/106; SHAPED prediction separately rejects all 81 newly SOURCE-admitted
+shape5-only corpus candidates. Nine hand SHAPED rows have five accepts and four
+shape refusals; `markedSquare` retains a later marker refusal. The three
+shape-correct D7 donors now require four-leg values, alongside sum/max/min
+overlap rows; refusal doctors use genuine multi-axis/constant donors.
+B5 is no longer wholly production-only. Typed mixed-sort refusal is unchanged,
+and bool/unary/Iverson/nonlinear/affine-read/scan values, f32 oracle comparison,
+route and executable JAX remain outside the mixed value harness.
+See [the B5 execution record](additive_b5_record.md).
+
 Landed on local main 2026-10-26 (merge of branch `worktree-oracle-sorts`; not pushed). Plan `oracle_sorts_plan.md`, spec `oracle_sorts_design.md` (D1-D8 held fixed), observed values `oracle_sorts_plan_facts.md`, audit `oracle_sorts_audit.md`, ledger `oracle_sorts_ledger.md`, mutation results `oracle_sorts_mutation_results.md`, final reviews `oracle_sorts_review_final_A.md` (independence and soundness) and `_B.md` (coverage and honesty).
 
 ## What landed

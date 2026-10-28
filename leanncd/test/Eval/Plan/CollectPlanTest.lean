@@ -863,7 +863,7 @@ private def refusedBy (p : TLProgram) (i : NamedDenseEnv) (i32 : NamedDenseEnv32
 -- sum + max with a NON-neutral sum writer (it contracts `j`), both orders
 #guard refusedBy nbSM abIn abIn32 (.multiWriterAlgebra "Y")
 #guard refusedBy nbMS abIn abIn32 (.multiWriterAlgebra "Y")
--- two affine scatter writers, even max-annotated
+-- Undeclared all-scatter still needs a basis, even when max-annotated.
 #guard
   match nbScat.compileToScheduled.run 0 with
   | .ok s _ =>

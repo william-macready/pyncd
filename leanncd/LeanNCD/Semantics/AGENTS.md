@@ -148,14 +148,19 @@ mutation controls, and both final whole-branch reviews have landed. Nothing in
 `globalFiber`, and bit parity holds only on the bounded-integer, f64-declared
 profile. Same-LHS multi-statement programs are summed by every backend and compared
 by value on all four legs. `StructuralCondition` has `usedDType` (an untyped
-f32 tensor) and two affine-write conditions: `multiWriterScatter`
-(any non-bare write among several writers of one tensor, `fG` is two `.assign`s:
-`scanAxisNotIter` on both native legs) and
-`scatterExtentOverridesDeclared` (production derives the destination extent, the oracle uses the
-declared one). The real harness's `Differential.Classification.knownContractDifference` is produced only by these. A condition is confirmed only when
-the native legs show the predicted outcome, with limited precision: origin-bound only for the checked
-affine-slot refusal and the extent condition; multi-writer `scanAxisNotIter` is cause-only; only the
-head condition is confirmed; while the extent condition is confirmed no value of that program is compared.
+f32 tensor) and the single-writer `scatterExtentOverridesDeclared` condition
+(production derives the destination extent, the oracle uses the declared one).
+B5 removed the blanket `multiWriterScatter` allowance: `fG` still reports
+`nativeFailure` with `scanAxisNotIter "a"` on both native legs and zero conditions;
+its equal-extent stride twin has actual four-leg parity. An extent condition is
+confirmed only when both native binding failures name its declaration; only the
+head condition is confirmed, and confirmed extent differences suppress all value comparison.
+B5's independent test-side predictor separates SOURCE eligibility (C1
+222/195/88 over 505 rows) from SHAPED preparation: 81 SOURCE-admitted corpus rows
+fail `sizeConflict`, while nine hand rows give five accepts and four shape refusals.
+`markedSquare` passes shape prediction but still refuses a normalization marker;
+neither stage is a universal preparation model. Six mixed rows require actual
+four-leg values and pinned running sorts. See `papers/semantics/additive_b5_record.md`.
 Since S3a every backend ⊕-sums colliding scatter writes, so collisions are agreement, not a condition:
 a bare-slot scatter over a contracted axis (F11) and `fE` are parity; the const-slot scatters `fD`/`fD'`
 still end as `nativeFailure` with no condition, because the checked plan refuses constant and multi-axis

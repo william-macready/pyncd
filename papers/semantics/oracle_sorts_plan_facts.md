@@ -1,5 +1,9 @@
 # Oracle sorts: plan facts (explore/observe dispatch)
 
+Historical observations on the base below. B5 replaces the shape-correct D7
+refusals with four-leg values; see [the B5 record](additive_b5_record.md) for
+current SOURCE/SHAPED counts and boundaries.
+
 Base 1b8bfc9a, main. Everything marked "observed" was printed by a real `lean-file.sh` run of an untracked scratch file (deleted afterwards; the builder and helper source are reproduced in section 5 so the plan can clone them). "read" = read, not run. Identifiers are cited `@ file`, never by line number.
 
 ## 0. T0 HARD GATE: **PASS**

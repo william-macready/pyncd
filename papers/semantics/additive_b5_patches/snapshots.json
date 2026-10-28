@@ -1,0 +1,209 @@
+{
+  "base": "d62c885707fe10e0679d85b8cdbcf8d7d6e1e9a9",
+  "inputs": [
+    {
+      "name": "native_prototype.patch",
+      "bytes": 35619,
+      "sha256": "5976cb28247cd24e6cee08995595f805c992361802bacd3a6d84fd1dcaad33e4"
+    },
+    {
+      "name": "oracle_prototype.patch",
+      "bytes": 36896,
+      "sha256": "e6db2c45db4d77f401af267e1000cb7e417cce66f3b3fd1aee13c234efa206e1"
+    },
+    {
+      "name": "boundary_prototype.patch",
+      "bytes": 3636,
+      "sha256": "8d53b92cc83386d30c24c824123ff2cea0a807b5e47224b5b28e849dd041a513"
+    },
+    {
+      "name": "closure_prototype.patch",
+      "bytes": 7993,
+      "sha256": "df3b12cd431972f1098f0e5f8d2940508e5b8eb1cb7cd4c0ff06371cdcaa142d"
+    },
+    {
+      "name": "rank_prototype.patch",
+      "bytes": 1017,
+      "sha256": "ab528315b7487f3dfdb9e6e57c605cb752ad8f723190cdcfd469252e57784075"
+    }
+  ],
+  "final_tree": "45b78959139948adea38bb9e557858574be263e1",
+  "stages": [
+    {
+      "task": "T1",
+      "patch": "T1-api.patch",
+      "paths": [
+        "leanncd/LeanNCD/DSL/Ast.lean",
+        "leanncd/LeanNCD/Exec/Uid.lean"
+      ],
+      "sha256": "be88761570db8a477d590cad687f606867fc6982d48dd6fa82cfb07f2c231bf5",
+      "bytes": 2707,
+      "tree": "96f220af4682ebb1fb222b5606b22ca559e8b8b7"
+    },
+    {
+      "task": "T2a",
+      "patch": "T2a-native-activation.patch",
+      "paths": [
+        "leanncd/LeanNCD/Bridge/Agreement.lean",
+        "leanncd/LeanNCD/DSL/Pipeline/Collect.lean",
+        "leanncd/LeanNCD/DSL/Pipeline/Lowering.lean",
+        "leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+        "leanncd/LeanNCD/Eval/CollectorShape.lean",
+        "leanncd/LeanNCD/Eval/Error.lean",
+        "leanncd/LeanNCD/Eval/Eval.lean",
+        "leanncd/LeanNCD/Eval/Plan/Compile.lean",
+        "leanncd/test/DSL/Pipeline/CollectTest.lean",
+        "leanncd/test/Eval/CollectEvalTest.lean",
+        "leanncd/test/Eval/Plan/CollectPlanTest.lean"
+      ],
+      "sha256": "b503bbad4d22c6ebbc60acd42a96ee8abe59e9eb738f26cc5afafb019c684dec",
+      "bytes": 21089,
+      "tree": "f242321b1275c77a0c9821bedf1e603b7932bcd5"
+    },
+    {
+      "task": "T2b",
+      "patch": "T2b-independent-oracle.patch",
+      "paths": [
+        "leanncd/LeanNCD/Semantics/Source/Differential.lean",
+        "leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean",
+        "leanncd/test/Semantics/OracleMixedRefusalTest.lean",
+        "leanncd/test/Semantics/OracleSortRules.lean",
+        "leanncd/test/Semantics/OracleSortRulesTest.lean",
+        "leanncd/test/Semantics/SourceDifferentialScatterTest.lean"
+      ],
+      "sha256": "9ea0b90d88286e6bd67f154d568668d1810e520665c03371b3f2c6b0549b1509",
+      "bytes": 37280,
+      "tree": "0e86f0399e966c64cb6dbe9e9cf792f9b6fdd5c3"
+    },
+    {
+      "task": "T3",
+      "patch": "T3-native-boundary-tests.patch",
+      "paths": [
+        "leanncd/test/Eval/Plan/B5NativeTest.lean",
+        "leanncd/test/Eval/Plan/B5BoundaryTest.lean",
+        "leanncd/lakefile.toml",
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean"
+      ],
+      "sha256": "a3b596f7cc3f477ed2859e639b92503be9bceb84c543831842370813eec1025d",
+      "bytes": 24731,
+      "tree": "45b78959139948adea38bb9e557858574be263e1"
+    }
+  ],
+  "files": [
+    {
+      "path": "leanncd/LeanNCD/Bridge/Agreement.lean",
+      "bytes": 25858,
+      "sha256": "c552336d597f0d21bcc4fd1f472136be8ca057a593b4ba24ed0911b4ad3fd909"
+    },
+    {
+      "path": "leanncd/LeanNCD/DSL/Ast.lean",
+      "bytes": 32934,
+      "sha256": "7374e3e3d8006b9578b4ea50274771c9748e8d9ede0a9a59032a6b87d5d01570"
+    },
+    {
+      "path": "leanncd/LeanNCD/DSL/Pipeline/Collect.lean",
+      "bytes": 12031,
+      "sha256": "b6342623e726c6fbbdbf66aedfec9e1b955b55ee1089f093c594713206da271c"
+    },
+    {
+      "path": "leanncd/LeanNCD/DSL/Pipeline/Lowering.lean",
+      "bytes": 37128,
+      "sha256": "9c0af11df432f2030d1762874032ec75f15050d32d6932de2b2996afa534b748"
+    },
+    {
+      "path": "leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+      "bytes": 14319,
+      "sha256": "fe1665a962f8e4812c11305714004e24741699bd4df513b3d076a4b38074da94"
+    },
+    {
+      "path": "leanncd/LeanNCD/Eval/CollectorShape.lean",
+      "bytes": 975,
+      "sha256": "7fa6e896b8a3568744c4d50b17edd0e6e1b3b67619f4db530643565e6295cccf"
+    },
+    {
+      "path": "leanncd/LeanNCD/Eval/Error.lean",
+      "bytes": 29161,
+      "sha256": "364d11e46956de447d976735329a2888e0d3255ce588ae8378e1b0998d1a6a16"
+    },
+    {
+      "path": "leanncd/LeanNCD/Eval/Eval.lean",
+      "bytes": 12404,
+      "sha256": "81be3e0860f99b2f1364a571df64a3206ff07d1e578609913ad015075a9e020a"
+    },
+    {
+      "path": "leanncd/LeanNCD/Eval/Plan/Compile.lean",
+      "bytes": 118034,
+      "sha256": "25ec3987e0909143d9ea90c70a0fbb1504d864697db1072e989792ebfa365a44"
+    },
+    {
+      "path": "leanncd/LeanNCD/Exec/Uid.lean",
+      "bytes": 11927,
+      "sha256": "d1e16ae9d63041441606e96fb82345171d5768dcd6496c992099395f00fc7bc1"
+    },
+    {
+      "path": "leanncd/LeanNCD/Semantics/Source/Differential.lean",
+      "bytes": 20814,
+      "sha256": "cebcee1979e10e991f82df66d2e2257e2145e54c59ca7e254f27e87910bc204f"
+    },
+    {
+      "path": "leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean",
+      "bytes": 20222,
+      "sha256": "787c793f0b0d99a89d36fc059a50616877195a3811a5101b717d2e4961731e10"
+    },
+    {
+      "path": "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean",
+      "bytes": 109305,
+      "sha256": "4510ffaf6ced613b0087f887ae5b072a1b723769e49f9de58051595706b0aed8"
+    },
+    {
+      "path": "leanncd/lakefile.toml",
+      "bytes": 8748,
+      "sha256": "b34da3c649e00ff61a7f793b8d1533d3c839505d563b65451d68467df7e51801"
+    },
+    {
+      "path": "leanncd/test/DSL/Pipeline/CollectTest.lean",
+      "bytes": 26834,
+      "sha256": "f2229d9bf5b492ea89935100678205de8991f3ea964b25244a4987847bb88b9d"
+    },
+    {
+      "path": "leanncd/test/Eval/CollectEvalTest.lean",
+      "bytes": 11673,
+      "sha256": "1c56329c85c003e1a1d64af399f9d1c1a2162e2f777c214b427754f2b3906116"
+    },
+    {
+      "path": "leanncd/test/Eval/Plan/B5BoundaryTest.lean",
+      "bytes": 3323,
+      "sha256": "6f27e72a5e4c264d6cd9ab3abe7790a4c4ce5cffaccaa42afc84255231f006fd"
+    },
+    {
+      "path": "leanncd/test/Eval/Plan/B5NativeTest.lean",
+      "bytes": 16992,
+      "sha256": "bfcc0a0c856331e42d462560069b73aae747682a9988a947f21197dd8305312f"
+    },
+    {
+      "path": "leanncd/test/Eval/Plan/CollectPlanTest.lean",
+      "bytes": 54414,
+      "sha256": "daa264c07af825ff0359a886834be4804868ddb034edbb4101976e27602f3dba"
+    },
+    {
+      "path": "leanncd/test/Semantics/OracleMixedRefusalTest.lean",
+      "bytes": 9382,
+      "sha256": "82bac3e6af4adb9f5497316d574c141c2c8bc49b5664192dcb7fd7660ebe5762"
+    },
+    {
+      "path": "leanncd/test/Semantics/OracleSortRules.lean",
+      "bytes": 15414,
+      "sha256": "65f05cd6bc3aa30dab128da4c53df5f0d3d69de5adc9ccd832045479d20ff96f"
+    },
+    {
+      "path": "leanncd/test/Semantics/OracleSortRulesTest.lean",
+      "bytes": 33137,
+      "sha256": "67ae32742e180a987b9f3912ec4f8fce3880ea77f49bfe11e44bf508118bead2"
+    },
+    {
+      "path": "leanncd/test/Semantics/SourceDifferentialScatterTest.lean",
+      "bytes": 19238,
+      "sha256": "7aeb1af6c0eeb26f4b37fefe0eb4b679c8b5087bc00485219e2d1b8c01007926"
+    }
+  ]
+}

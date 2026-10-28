@@ -1,5 +1,10 @@
 # S2 design: oracle extension (affine write slots, exact tropical carriers) and prepare-time B3
 
+Historical design: later S3/B6 work changed collision/range behavior, and B5
+now admits bounded native real/tropical multi-writer scatter with exact shape
+agreement. The blanket Source multi-writer allowance is removed; the distinct
+single-writer extent condition remains. See [the B5 record](additive_b5_record.md).
+
 Status: brainstormed 2026-10-17; user approved the note and the cut. Not a plan. §5 (B3) landed 2026-10-17 on the Direct path. §4 (S2a) is landed on local main, merge 7a551faa (plan `additive_s2a_plan.md`, record `additive_s2a_record.md`); §6 (S2b) is not started. Parent:
 `additive_production_decision_note.md` §E (slice outline) and `additive_collection_slice1_record.md` (parked list).
 
