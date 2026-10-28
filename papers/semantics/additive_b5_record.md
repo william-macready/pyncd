@@ -109,8 +109,104 @@ complete outputs are retained as execution-session logs.
   limitation. Neither the 216 scatter-bearing rows nor the 81 source-admitted
   rows is described as concrete native acceptance.
 
-## Remaining execution gates
+## Final validation gates
 
-All 24 controller-run mutation rows;
-two whole-branch reviews; final `Tests JaxExperiment` and default full build;
-measured accounting and local integration. No push is authorized.
+- Both final manifests passed on guard-fixed source: **8/8 pre, 16/16 post**.
+  Every actual mutation failed with its required `expect` strings, restored
+  byte-identically and rebuilt green. Both stock commands exited 0; final fix
+  checkout clean. [Per-row results](additive_b5_mutation_results.md).
+- The original activation's 24 cycles and early four oracle cycles also passed;
+  repeated observations are not counted as new distinct mutants.
+- Controller final `Tests JaxExperiment`: green, 8839 jobs.
+- Controller default full build: green, 8838 jobs.
+- Exact source comparison: integrated `b5028559` matches the final mutation
+  checkout's `8a8505d1` throughout `leanncd/`. No mutated source remained.
+- Two whole-branch review lenses completed; oracle approved without findings,
+  shape's sole P2 finding was reproduced, fixed, mutation-tested and adjudicated
+  by the controller's complete two-file delta review.
+- Whitespace and local document-link checks passed. No target/guard silently
+  skipped and no unresolved load-bearing finding or parked B5-reachable issue.
+
+All implementation gates are satisfied. Local integration follows the standing
+merge authorization; no remote push is authorized. Git history records the
+actual local merge, rather than predicting its hash in this pre-merge record.
+
+## Final review checkpoint
+
+The shape/acceptance reviewer completed the whole-branch sibling audit and
+reported one P2 finding: a direct B5 schedule can mix a proper scatter with a
+top-level `.assign` carrying an iteration slot. The B5 early return bypasses the
+legacy ordinary-bare slot guard; the extent obligation can then describe a
+different shape from reference assignment materialization. This is within B5's
+exact-shape contract, not an invitation to widen scan support.
+
+A separate isolated fix checkout is being prepared for a test-first reproduction,
+ordinary-bare assignment guard and accept-neighbor/mutation checks. Original
+24-row mutation runs continue sequentially on the implementation checkout; the
+read-only reviewers use a separate immutable committed snapshot. No mutation
+success or final approval is inferred from this static finding.
+
+The independent oracle/false-success whole-branch review approved `7432b162`
+with no high-confidence findings. It audited the independent predictor,
+SOURCE/SHAPED limits, actual four-leg rows, refusal doctors, native precision
+and payload controls, JAX pre-emission rejection, unchanged immediate
+preconditions and all 24 mutation entries. It did not rerun or claim the pending
+controller cycles. The shape finding still requires its isolated fix and
+review-delta adjudication before integration.
+
+### Shape finding adjudicated
+
+Fix commit `8a8505d19d7242d3a1c62aa13d0a2fbb86b02307` observed the actual
+reference truncation `[11,22]` from inputs containing a third value `99`;
+checked preparation instead reported an iteration-slot capability refusal.
+The reachable `iterNext` sibling had an extent mismatch, not truncation.
+New tests first failed, then passed with exact `multiWriterScatter "S"`
+compile/source-invariant errors in both native entries.
+
+The controller reviewed the complete two-file fix delta: only B5 assignment
+writers gain the ordinary-free/freeNorm precondition, while the existing
+unlowered affine/diagonal refusal remains. An all-assignment neighbor retains
+`writerShapeMismatch "S" 2 0`; legal direct free/freeNorm neighbors compare exact
+bits `[11,22]` / `[10.25,20.75]`. Native/boundary targets passed, and the stock
+`B5-assignment-ordinary-slots` cycle removed only the new predicate, failed only
+the new guards, restored both source hashes and rebuilt green.
+
+The finding is adjudicated as fixed, without changing standalone iteration or
+scan policy. Both original manifests still pass unfiltered applicability checks
+on this fixed source. The controller is rerunning all 24 entries on the fixed
+commit in its separate exclusive checkout; original activation runs are
+retained as intermediate evidence, not substituted for final-tree validation.
+No new manifest entry was added for this Direct-path guard fix.
+
+## Measured execution budget and process deviations
+
+SDK `session.usage_record` accounting at final-validation close-out measured
+**13,430,961 cumulative input tokens (13.431M)** across this controller and
+three child contexts, well below the execution ceiling of approximately 175M.
+`inputTokens` already includes cache tokens; caches were not added again.
+The Claude transcript script found no transcript, so SDK events were used.
+The separate authoring record's measured 33.46M is not folded into this execution
+figure. Administrative record/commit/merge calls after this checkpoint add a
+small further amount and are not represented as already measured.
+
+| Context / SDK source session | API calls at checkpoint | Cumulative input | Peak input |
+|---|---:|---:|---:|
+| Controller `867b0edd-6fc7-4048-8541-11d89d3e347e` | 60 | 7,463,066 | 178,929 |
+| Child `3e9b516f-3c21-47e9-a5fa-1e6a4478b3bf` | 30 | 2,668,174 | 156,402 |
+| Child `2bb2ebe2-7989-4649-83c7-9adeab49f000` | 25 | 1,659,222 | 115,583 |
+| Child `3c185c6f-5ebe-4e02-ab0b-b17eabbbc2fc` | 34 | 1,640,499 | 64,312 |
+
+Reviewers reported 25 and 28 tool-call turns; the bounded fixer reported 37
+assistant messages, all within their 45-turn budgets. SDK calls and reported
+tool/message counts have different denominators. All measured contexts are below
+250k. The controller reaches the approximately 60-call target at this checkpoint
+and exceeds it modestly during administrative close-out; that process overrun is
+explicit, not hidden. Long compiler invalidations and sequential mutations were
+waited on rather than converted into speculative passes.
+
+The controller replayed verified patches directly instead of spending separate
+implementer contexts reapplying them. Final reviews ran on an immutable detached
+snapshot while mutation runs owned their separate source checkout. The required
+Direct guard fix used a third isolated checkout; final manifests were fully rerun
+there and the controller proved source equality with the integration checkout.
+These scheduling changes preserve all semantic, mutation and final build gates.
