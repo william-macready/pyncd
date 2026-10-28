@@ -108,6 +108,8 @@ inductive CompileError
   -- collector does not admit yet. Each names the destination tensor `T`.
   | multiWriterScatter   : String → CompileError            -- a writer of a multi-writer `T` is a
                                                              -- scatter (affine or diagonal LHS)
+  | multiWriterNeedsDeclaredShape : String → CompileError
+  | multiWriterRepeatedBasis : String → CompileError
   | multiWriterAlgebra   : String → CompileError            -- the writers of a multi-writer `T`
                                                              -- conflict in sort (max vs min, or a non-neutral
                                                              -- sum writer beside a tropical one)

@@ -69,6 +69,19 @@ def idxAffineForm : IdxExpr → Int × List (Int × UID)
 def idxDensify (cf : List (Int × UID)) (us : List UID) : List Int :=
   us.map (fun u => cf.foldl (fun acc p => if p.2 == u then acc + p.1 else acc) 0)
 
+/-- Geometry shared by bounded collection and checked scatter preflight. Zero-scale syntax
+    remains admitted; only the explicit constant constructor is classified as constant. -/
+inductive ScatterAffineClass
+  | bounded | constant | multiAxis
+  deriving DecidableEq, BEq
+
+def scatterAffineClass : IdxExpr → ScatterAffineClass
+  | .const _ => .constant
+  | e =>
+      let (_, cf) := idxAffineForm e
+      let us := (cf.map (·.2)).eraseDups
+      if ((idxDensify cf us).filter (· != 0)).length > 1 then .multiAxis else .bounded
+
 inductive PredArith
   | embed : IdxExpr → PredArith
   | mul   : PredArith → PredArith → PredArith
@@ -455,6 +468,11 @@ def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
   slots.any (fun sl => match sl with | .affine _ => true | _ => false)
   || (let us := slots.filterMap (·.freeUID?)
       us.length ≠ us.eraseDups.length)
+
+def LHSSlot.boundedScatter : LHSSlot → Bool
+  | .free _ | .freeNorm _ => true
+  | .affine e => scatterAffineClass e == .bounded
+  | _ => false
 
 /-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
     The single home of the scatter-extent convention. A positive one-axis affine placement uses the
