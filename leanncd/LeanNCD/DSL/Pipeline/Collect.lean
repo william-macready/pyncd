@@ -17,9 +17,10 @@ for a tropical one), so each `T#k` keeps its own nonlinearity, and a predicate `
 `desugarMultiWriters` is the identity on every schedule in which each name has at most one writer,
 so single-writer programs are byte-identical through every later phase.
 
-Real-sum, predicate and tropical (all-max or all-min) multi-writer sets are admitted when the
-writers are plain `.assign` statements with bare free slots on the same axis UIDs; every other
-multi-writer set fails loud (`multiWriterScatter`, `multiWriterAlgebra`, `writerShapeMismatch`).
+Existing all-bare groups keep positionwise UID agreement. Real and tropical groups may also
+contain bounded scatter writers, using a distinct declared coordinate basis or the first ordinary
+bare assignment. Their retained shape obligations require exact realized extent equality after
+inference; predicate, explicit-constant and multi-axis scatter groups remain refused.
 A group's sort is the one its writers' votes agree on (`writerSort?`); sort-neutral copy writers
 abstain beside a non-neutral writer and are rewritten to the agreed sort (`Stmt.withAgg`), so a
 copy's bare out-of-range read pads the group's `0_K` and a copy of a predicate reads it through the group's
@@ -90,20 +91,69 @@ def writerGroups (stmts : List ScanStmt) : List WriterGroup :=
       | _ => false
     if writers.length ≥ 2 && allPlain then some ⟨nm, writers⟩ else none
 
-/-- The admission rule for one multi-writer set, checked in schedule order: no scatter, then the
-    writers' votes agree on one sort (`writerSort?`, else `multiWriterAlgebra`), then bare free
-    slots whose UIDs agree with writer 1's position by position. Returns the agreed sort. -/
+/-- True only for the newly admitted collection surface, not legacy all-bare groups. -/
+def WriterGroup.needsB5 (g : WriterGroup) (stmts : List ScanStmt) : Bool :=
+  (g.writers.filterMap (plainAt? stmts)).any fun
+    | .scatter .. => true
+    | .assign _ ls _ => slotsBecomeScatter ls
+    | _ => false
+
+def Decl.tensorAxes? : Decl → Option (List AxisSpec)
+  | .tensor _ ax | .typedTensor _ _ ax | .predicate _ ax
+  | .linear _ ax _ | .typedLinear _ _ ax _ => some ax
+  | _ => none
+
+/-- Select a full-domain basis. An explicit bare scatter is not a fallback assignment. -/
+def writerGroupBasis (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
+    Except CompileError (List LHSSlot) := do
+  if let some ax := (env[g.name]?).bind Decl.tensorAxes? then
+    let us := ax.map (·.uid)
+    unless us.length == us.eraseDups.length do throw (.multiWriterRepeatedBasis g.name)
+    return ax.map LHSSlot.free
+  let ws := g.writers.filterMap (plainAt? stmts)
+  match ws.find? (fun
+    | .assign _ ls _ => !slotsBecomeScatter ls && ls.all (fun s => s.freeUID?.isSome)
+    | _ => false) with
+  | some s => return producerSlots s.slots
+  | none => throw (.multiWriterNeedsDeclaredShape g.name)
+
+/-- Source geometry retained across renaming for a post-inference equality check. -/
+structure CollectorShapeObligation where
+  name : String
+  basis : List LHSSlot
+  writers : List (List LHSSlot)
+
+def collectorShapeObligations (sched : ScheduledProgram) :
+    Except CompileError (List CollectorShapeObligation) :=
+  ((writerGroups sched.stmts).filter (·.needsB5 sched.stmts)).mapM fun g => do
+    return { name := g.name
+             basis := ← writerGroupBasis sched.env sched.stmts g
+             writers := (g.writers.filterMap (plainAt? sched.stmts)).map Stmt.slots }
+
+/-- Static geometry, agreed sort, then basis/rank checks for bounded scatter groups.
+    Legacy all-bare groups instead retain positionwise UID agreement. -/
 def checkWriterGroup (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
     Except CompileError SortAlgebra := do
   let ws := g.writers.filterMap (plainAt? stmts)
   for s in ws do
     match s with
-    | .scatter .. => throw (.multiWriterScatter g.name)
-    | .assign _ ls _ => if slotsBecomeScatter ls then throw (.multiWriterScatter g.name)
+    | .scatter _ ls _ =>
+        unless ls.all LHSSlot.boundedScatter && env.declAlgebra g.name != .bool do
+          throw (.multiWriterScatter g.name)
+    | .assign _ ls _ =>
+        if slotsBecomeScatter ls ||
+            (g.needsB5 stmts && ls.any (fun s => s.freeUID?.isNone)) then
+          throw (.multiWriterScatter g.name)
     | .recurMorphism .. => pure ()
   let agreed ← match writerSort? env ws with
     | none => throw (.multiWriterAlgebra g.name)
     | some a => pure a
+  if g.needsB5 stmts then
+    let basis ← writerGroupBasis env stmts g
+    for s in ws do
+      unless s.slots.length == basis.length do
+        throw (.rankMismatch g.name basis.length s.slots.length)
+    return agreed
   let first := (ws.head?.map Stmt.slots).getD []
   for (s, k) in ws.zipIdx 1 do
     let ls := s.slots
@@ -130,7 +180,7 @@ def collectorStmt (nm : String) (firstSlots : List LHSSlot) (n : Nat) (agg : Agg
 
     Error priority (the first failing check wins, whatever the order of names in the schedule):
     `multiWriterScan` (any name, `scanWriterConflict?`) first; then, per group in first-writer
-    order, `multiWriterScatter`, `multiWriterAlgebra`, `writerShapeMismatch` (the order of checks
+    order, geometry, algebra, then basis/shape diagnostics (the order of checks
     inside `checkWriterGroup`; a group's failure stops the pass before the next group is looked
     at); `reservedNameCollision` last, after every group has passed. -/
 def desugarMultiWriters (sched : ScheduledProgram) :
@@ -156,9 +206,14 @@ def desugarMultiWriters (sched : ScheduledProgram) :
           | .plain (.assign _ ls r) =>
               let w := Stmt.assign (collectorName g.name k) ls r
               .plain (if w.isSortNeutral then w.withAgg sort.stateAgg else w)
+          | .plain (.scatter _ ls r) =>
+              let w := Stmt.scatter (collectorName g.name k) ls r
+              .plain (if w.isSortNeutral then w.withAgg sort.stateAgg else w)
           | other => other
         if some i == g.writers.getLast? then
-          let firstSlots := ((g.writers.head?.bind (plainAt? sched.stmts)).map Stmt.slots).getD []
+          let firstSlots := if g.needsB5 sched.stmts then
+              (writerGroupBasis sched.env sched.stmts g).toOption.getD []
+            else ((g.writers.head?.bind (plainAt? sched.stmts)).map Stmt.slots).getD []
           [renamed, .plain (collectorStmt g.name firstSlots g.writers.length sort.stateAgg)]
         else [renamed]
   -- One clone per writer of each DECLARED destination; undeclared destinations get none.

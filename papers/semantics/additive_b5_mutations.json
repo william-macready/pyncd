@@ -1,0 +1,112 @@
+[
+  {
+    "label": "B5-M03 (collector uses the destination tropical algebra)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+    "old": "collectorStmt g.name firstSlots g.writers.length sort.stateAgg",
+    "new": "collectorStmt g.name firstSlots g.writers.length .sum",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M11 (B6 static range error is retained)",
+    "task": "T3",
+    "file": "LeanNCD/Eval/Plan/Check.lean",
+    "old": "unless 0 \u2264 lo && hi < (declared : Int) do",
+    "new": "unless true do",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M12 (scatter folds rather than overwrites)",
+    "task": "T3",
+    "file": "LeanNCD/Eval/Plan/Dense.lean",
+    "old": "data := data.set! fi (reduceOp (data.getD fi reduceId) val)",
+    "new": "data := data.set! fi val",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M13 (native f32 source fold order)",
+    "task": "T3",
+    "file": "LeanNCD/Eval/Plan/Dense.lean",
+    "old": "for sc in allCoords a.outputShape.toList do",
+    "new": "for sc in (allCoords a.outputShape.toList).reverse do",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M14 (scatter holes use the additive identity)",
+    "task": "T3",
+    "file": "LeanNCD/Eval/Plan/Dense.lean",
+    "old": "let reduceId \u2190 ops.decodeConst a.algebra.reduceId",
+    "new": "let reduceId \u2190 ops.decodeConst a.algebra.factorId",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M15 (collector retains every writer)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+    "old": "(List.range n).map fun k => \u27e8[.read (collectorName nm (k + 1)) idx]\u27e9",
+    "new": "(List.range (n - 1)).map fun k => \u27e8[.read (collectorName nm (k + 1)) idx]\u27e9",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "error: test/Eval/Plan/B5NativeTest.lean:",
+      "Expression"
+    ]
+  },
+  {
+    "label": "B5-M16-FIX reference scratch privacy",
+    "task": "T3",
+    "file": "LeanNCD/Eval/Eval.lean",
+    "old": "env := checked.privateNames.foldl (\u00b7.erase \u00b7) env",
+    "new": "env := env",
+    "targets": [
+      "Eval.Plan.B5NativeTest"
+    ],
+    "expect": [
+      "B5 reference scratch privacy: ref64 interleave must hide S#1 and S#2"
+    ]
+  },
+  {
+    "label": "B5-C02 JAX B5 pre-emission scatter gate",
+    "task": "T3",
+    "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+    "old": "| .assign a => nodes := nodes.push (\u2190 lowerAssign sigs ni a)\n    | .scatter _ | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)\n  return nodes",
+    "new": "| .assign a => nodes := nodes.push (\u2190 lowerAssign sigs ni a)\n    | .scatter _ => pure ()\n    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)\n  return nodes",
+    "targets": [
+      "JaxExperiment"
+    ],
+    "expect": [
+      "B5 prepared scatter: lowerPlan and generateForward must reject actual scatter node 0 before emission"
+    ]
+  }
+]

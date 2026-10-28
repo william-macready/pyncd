@@ -148,7 +148,7 @@ sort collection will give the collector); a conflicting group gets none, so coll
     written by exactly one node -> that plain statement's sort, or, for a scan state (the node's
     base and recurrence statements of one name), the sort its writers vote (`writerSort?`:
     non-neutral statements, else an all-neutral state's non-`sum` annotations; `real` if nobody
-    votes); a multi-writer group of plain `.assign` writers whose votes agree on a tropical sort.
+    votes); a multi-writer group of plain assign/scatter writers whose votes agree on a tropical sort.
     Two voters of one scan state that differ throw `scanStateAlgebraMismatch` (checked for
     every scan node, entry or not). -/
 def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
@@ -167,11 +167,11 @@ def scheduleAlgebras (env : DeclEnv) (stmts : List ScanStmt) :
         if writers.length == 1 then
           m := m.insert nm (s.algebra env)
         else
-          -- A multi-writer group of plain `.assign` writers gets its agreed sort when that sort is
+          -- A multi-writer group of plain assign/scatter writers gets its agreed sort when that sort is
           -- tropical (collection will realize it); a conflict gets no entry, so collection's
           -- `multiWriterAlgebra` stays the refusal. Real and bool groups get none.
           let ws := writers.filterMap fun
-            | .plain w@(.assign ..) => some w
+            | .plain w@(.assign ..) | .plain w@(.scatter ..) => some w
             | _ => none
           if ws.length == writers.length then
             match writerSort? env ws with
@@ -224,6 +224,7 @@ structure CheckedScheduledProgram where private mk ::
   explicitSizes : Std.HashMap UID Nat
   extNames      : List String
   privateNames  : List String
+  shapeObligations : List CollectorShapeObligation
   /-- `scheduleAlgebras` of the SOURCE schedule: partial (see there). Read through `algebraOf`. -/
   algebras      : Std.HashMap String SortAlgebra
 
@@ -245,13 +246,16 @@ def validateScheduled (sched : ScheduledProgram) : Except CompileError CheckedSc
   checkSortCasts sourceEnv algebras sched.stmts
   unless isTopoOrdered sched.stmts sched.stmts do
     throw (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
-  let (collected, privateNames) ← collectDefinitions sched
+  let source := { sched with env := sourceEnv }
+  let (collected, privateNames) ← collectDefinitions source
+  let shapeObligations ← collectorShapeObligations source
   let declEnv ← buildDeclEnv collected.decls
   return { program := collected
          , declEnv
          , explicitSizes := declaredAxisSizes collected.decls
          , extNames := orderedExternalNames collected.stmts
          , privateNames
+         , shapeObligations
          , algebras }
 
 end LeanNCD

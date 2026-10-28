@@ -1,5 +1,9 @@
 # B6 record: an out-of-range scatter write is an error (landed 2026-10-22)
 
+Later boundary update: [B5](additive_b5_record.md) enables bounded native
+multi-writer scatter, while preserving these raw extent/range checks and their
+extent-before-range diagnostic order. The parked B5 row below is historical.
+
 Process weight: **Direct** (slice-plan §0): no plan document. B6 is decision-note §B6 (user decision 2026-10-14, option A): the silent
 skip of an out-of-range scatter write was a vestige of overwrite semantics and is replaced by an error in both backends. The Source oracle
 already errored (`writeOutOfRange`) against the declared shape. Branch `worktree-b6-range-error`, base `db812255` (S3a landed and pushed).

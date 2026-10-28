@@ -144,14 +144,20 @@ def j2 : TLProgram := tlprog!{
 #guard errOf j2 (inp [("A", tz [2] [1, 2]), ("B", tz [3] [10, 20, 30])]) ==
   some "compile failed: LeanNCD.CompileError.writerShapeMismatch \"Y\" 2 0"
 
--- J3 scatter multi-writer (old: S = [0,10,0,20], X lost).
+-- J3 undeclared all-scatter group still needs a basis (old: S = [0,10,0,20], X lost).
 def j3 : TLProgram := tlprog!{
   axis i : ℕ = 2
   S[2*i] := X[i]
   S[2*i + 1] := Y[i]
 }
-#guard errOf j3 (inp [("X", tz [2] [1, 2]), ("Y", tz [2] [10, 20])]) ==
-  some "compile failed: LeanNCD.CompileError.multiWriterScatter \"S\""
+#guard
+  match j3.compileToScheduled.run 0 with
+  | .ok s _ => match evalScheduled s (inp [("X", tz [2] [1, 2]), ("Y", tz [2] [10, 20])]) with
+    | .error f => match f.error with
+      | .compile (.multiWriterNeedsDeclaredShape "S") => true
+      | _ => false
+    | .ok _ => false
+  | .error _ _ => false
 
 -- J4 max-annotated multi-writer (S3b-ii: collected with max). Y[i] = max(max_j A[i,j], max_j B[i,j]);
 -- the sum collector would give [8, 12].

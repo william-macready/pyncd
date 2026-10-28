@@ -52,6 +52,8 @@ theorem compile_eq_physical_route {p : TLProgram} {s : Nat} {tc : ThreadedCompos
         simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
       rw [hcd] at h
       dsimp only at h
+      split at h
+      · simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
       cases hp : physicalizeForRoute collected with
       | error e =>
           rw [hp] at h

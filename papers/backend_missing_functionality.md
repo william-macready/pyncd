@@ -9,12 +9,17 @@ already evaluates most of the constructs listed here, so nearly every row is a *
 > max-plus `(+, max, −∞, 0)` / min-plus `(+, min, +∞, 0)` in both backends, a top-level tropical scatter folds
 > collisions with its sort's ⊕ from `0_K`, and a bare out-of-range read pads with `0_K`. CLOSED gaps: the
 > multi-factor (`×` versus `+`) divergence, the scatter-fill gap (`scatterFillNotIdentity` and
-> `scatterOptsNotAdmitted` are deleted; multi-writer, nonlinear, predicate-destination and out-of-range `max`/`min` scatters are still refused) and the padded-`0` interaction.
+> `scatterOptsNotAdmitted` are deleted; nonlinear, predicate-destination and out-of-range
+> `max`/`min` scatters are still refused) and the padded-`0` interaction.
 > S3b-ii (merged to local main as 349b6127: `additive_s3bii_plan.md`) closes the top-level tropical multi-writer
 > gap (an all-max or all-min writer group is collected; mixed groups stay refused with `multiWriterAlgebra`) and
 > makes `real -> bool` reads coerce (stored `!= 0`; the rejection is superseded, not pending). STILL OPEN: in-scan
-> multi-writer collection (refused), B5 (multi-writer scatter), scan-local scatter overwrite (F3), JAX/Python
-> tropical execution, oracle per-tensor sorts. Mentions of those constructors below are history.
+> multi-writer collection (refused), scan-local scatter overwrite (F3) and JAX/Python
+> tropical execution. B5 now admits bounded native real/tropical multi-writer scatter with exact
+> post-inference shape equality (`papers/semantics/additive_b5_record.md`); predicate, explicit-constant
+> and multi-axis groups remain refused, and public `route`/JAX execution do not widen.
+> Oracle per-tensor sorts landed separately; B5 adds independent SOURCE/SHAPED predictions and
+> actual four-leg value rows. Mentions of the superseded blanket refusals below are history.
 
 > **The "Hard" Scatter row below has been audited in depth. Start at
 > `papers/scatter_affine_lhs_writes.md`** — it is the current authority and supersedes

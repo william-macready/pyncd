@@ -9,6 +9,7 @@ import LeanNCD.Eval.Scatter   -- `scatterSourceAxes`: ONE definition of a scatte
                               -- shared with the reference evaluator (see Step D's scatter branch)
 import LeanNCD.DSL.Pipeline.Lowering
 import LeanNCD.DSL.Pipeline.ScheduledValidation
+import LeanNCD.Eval.CollectorShape
 
 /-!
 # Source compiler: capability preflight (Wave C C4) and scan specialization (Wave F F4)
@@ -116,13 +117,12 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
     `.scale 0 i` and `.affine c₀ [(0, i)]` with `.const n` and would reject all three under a locator
     naming only the last. It did, briefly; `CompileTest`'s `Out[0*i]` fixture and
     `ScatterCompileTest`'s S9 now pin the distinction from both ends. -/
-private def checkScatterAffineExpr (stmtName : String) : IdxExpr → Except CapabilityError Unit
-  | .const _ => throw (.scatterOrAffineLhs s!"{stmtName}: constant affine LHS slot")
-  | e =>
-      let (_, coeffs) := idxAffineForm e
-      if (SizeSolve.normalizeCoeffs coeffs).length > 1 then
-        throw (.multiAxisScatterLhs s!"{stmtName}: affine LHS slot")
-      else pure ()
+private def checkScatterAffineExpr (stmtName : String) (e : IdxExpr) :
+    Except CapabilityError Unit :=
+  match scatterAffineClass e with
+  | .constant => throw (.scatterOrAffineLhs s!"{stmtName}: constant affine LHS slot")
+  | .multiAxis => throw (.multiAxisScatterLhs s!"{stmtName}: affine LHS slot")
+  | .bounded => pure ()
 
 def checkScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
   | .free _     => pure ()
@@ -1527,6 +1527,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
             -- every `PlanCompileCause` arm, not just this one.
             throw { cause := .shape (.solveFailure { kind := .inconsistent, detail? := some "unreachable: non-.shape EvalError from shape inference" })
                    , warnings := f.warnings }
+  liftShape warnings (checkCollectorShapes checked.shapeObligations sizes)
   -- Step D: slot allocation + per-statement/per-term compilation, interleaved.
   let mut slotOf : HashMap String TensorSlot := {}
   let mut tensorSigsAcc : Array TensorSignature := #[]

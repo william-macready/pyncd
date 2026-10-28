@@ -1,0 +1,49 @@
+diff --git a/leanncd/LeanNCD/DSL/Ast.lean b/leanncd/LeanNCD/DSL/Ast.lean
+index 585a95df23d8c0fe1b7f283871e6f3b84815e539..2fc28c773243480e701b6363406b9f0e07674a06 100644
+--- a/leanncd/LeanNCD/DSL/Ast.lean
++++ b/leanncd/LeanNCD/DSL/Ast.lean
+@@ -69,6 +69,19 @@ def idxAffineForm : IdxExpr → Int × List (Int × UID)
+ def idxDensify (cf : List (Int × UID)) (us : List UID) : List Int :=
+   us.map (fun u => cf.foldl (fun acc p => if p.2 == u then acc + p.1 else acc) 0)
+ 
++/-- Geometry shared by bounded collection and checked scatter preflight. Zero-scale syntax
++    remains admitted; only the explicit constant constructor is classified as constant. -/
++inductive ScatterAffineClass
++  | bounded | constant | multiAxis
++  deriving DecidableEq, BEq
++
++def scatterAffineClass : IdxExpr → ScatterAffineClass
++  | .const _ => .constant
++  | e =>
++      let (_, cf) := idxAffineForm e
++      let us := (cf.map (·.2)).eraseDups
++      if ((idxDensify cf us).filter (· != 0)).length > 1 then .multiAxis else .bounded
++
+ inductive PredArith
+   | embed : IdxExpr → PredArith
+   | mul   : PredArith → PredArith → PredArith
+@@ -456,6 +469,11 @@ def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
+   || (let us := slots.filterMap (·.freeUID?)
+       us.length ≠ us.eraseDups.length)
+ 
++def LHSSlot.boundedScatter : LHSSlot → Bool
++  | .free _ | .freeNorm _ => true
++  | .affine e => scatterAffineClass e == .bounded
++  | _ => false
++
+ /-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
+     The single home of the scatter-extent convention. A positive one-axis affine placement uses the
+     stride-aligned boundary; every other affine form keeps the legacy linear boundary. `none` if any
+diff --git a/leanncd/LeanNCD/Exec/Uid.lean b/leanncd/LeanNCD/Exec/Uid.lean
+index b28a8bce94cbb50d89af3efdf6428053a6156588..041ba52833f4ab670018c696569a4836cce02ad4 100644
+--- a/leanncd/LeanNCD/Exec/Uid.lean
++++ b/leanncd/LeanNCD/Exec/Uid.lean
+@@ -108,6 +108,8 @@ inductive CompileError
+   -- collector does not admit yet. Each names the destination tensor `T`.
+   | multiWriterScatter   : String → CompileError            -- a writer of a multi-writer `T` is a
+                                                              -- scatter (affine or diagonal LHS)
++  | multiWriterNeedsDeclaredShape : String → CompileError
++  | multiWriterRepeatedBasis : String → CompileError
+   | multiWriterAlgebra   : String → CompileError            -- the writers of a multi-writer `T`
+                                                              -- conflict in sort (max vs min, or a non-neutral
+                                                              -- sum writer beside a tropical one)
