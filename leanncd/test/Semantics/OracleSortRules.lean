@@ -282,8 +282,20 @@ def predictedExtent (sl : LHSSlot) (sizes : List (UID × Nat)) : Option Nat := d
         else some legacy
     | _ => some legacy
 
+/-- A box: the destination is declared and every declared axis is pinned by an `axis … = n`
+    declaration in the source. Restated from the declarations, not from production's `pinned` map. -/
+private def pinnedBox (decls : List Decl) (n : String) : Bool :=
+  match declaredAxes decls n with
+  | some ax => ax.all fun a => decls.any fun
+      | .axis b (some _) => b.uid == a.uid
+      | .iter b _ => b.uid == a.uid
+      | _ => false
+  | none => false
+
 /-- Concrete shape-stage prediction. Callers supply independently known concrete axis sizes.
-    This does not claim to model signature, capability, inference or range-check failures. -/
+    A boxed group (`pinnedBox`) requires each writer extent to fit the basis extent; every other
+    group requires equality. This does not claim to model signature, capability, inference or
+    range-check failures. -/
 def predictShaped (decls : List Decl) (stmts : List Stmt) (sizes : List (UID × Nat)) :
     Prediction :=
   let p := predict decls stmts
@@ -295,8 +307,15 @@ def predictShaped (decls : List Decl) (stmts : List Stmt) (sizes : List (UID × 
     | .error e => some e
     | .ok bs =>
       let expected := bs.mapM (predictedExtent · sizes)
-      if ws.any (fun w => (slotsOf w).mapM (predictedExtent · sizes) != expected)
-      then some ("writerExtentMismatch", n) else none
+      if pinnedBox decls n then
+        let fits (w : Stmt) : Bool :=
+          match expected, (slotsOf w).mapM (predictedExtent · sizes) with
+          | some e, some a => e.length == a.length && (e.zip a).all fun (x, y) => y ≤ x
+          | _, _ => false
+        if ws.any (!fits ·) then some ("writerExtentExceedsBox", n) else none
+      else
+        if ws.any (fun w => (slotsOf w).mapM (predictedExtent · sizes) != expected)
+        then some ("writerExtentMismatch", n) else none
   { p with refusals := errors }
 
 /-- SHAPED observation uses actual input signatures and checked preparation. SOURCE observation
@@ -313,6 +332,7 @@ def productionShapedVerdict (decls : List Decl) (stmts : List Stmt)
     | .error e =>
       match e.cause with
       | .shape (.writerExtentMismatch n _ _ _ _) => .error ("writerExtentMismatch", n)
+      | .shape (.writerExtentExceedsBox n _ _ _ _) => .error ("writerExtentExceedsBox", n)
       | .shape (.sizeConflict _ _ _) => .error ("sizeConflict", "")
       | .shape e => .error (s!"unmodelled shape: {e}", "")
       | .capability e => .error (s!"unmodelled capability: {repr e}", "")

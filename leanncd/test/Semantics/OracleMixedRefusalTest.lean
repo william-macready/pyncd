@@ -115,6 +115,27 @@ private def overlap (ag : AggOp) : SourceSnapshot :=
 #guard valueParity (overlap .min) [tZ, tX, tOut "Y" [axK]] .minPlus
   [.fin (-5), .posInf, .fin 2, .posInf, .fin 3, .posInf, .fin 25, .posInf]
 
+/-! B5b: the same overlap donors under a pinned box (extent 10) larger than the realized extent 8.
+The two trailing cells are holes holding the sort's `0_K`. -/
+private def extBox (ax : AxisSpec) : Nat := if ax.uid = 9 then 10 else ext ax
+private def mkBox (ts : List T) (stmts : List Stmt) : SourceSnapshot :=
+  { resolved := { decls := [.axis axA (some 4), .axis axB (some 3), .axis axK (some 10)]
+                    ++ ts.map (fun t => .typedTensor .f64 t.name t.axes)
+                  stmts := stmts, env := {}, extNames := ∅ }
+    specs := ts.zipIdx.map (fun (t, i) => ⟨i + 3, t.role, t.axes.map extBox⟩)
+    inputs := (ts.zipIdx.filter (fun (t, _) => t.role == .input)).map
+      (fun (t, i) => ⟨i + 3, t.axes.map extBox, t.vals⟩) }
+private def overlapBox (ag : AggOp) : SourceSnapshot :=
+  mkBox [tZ, tX, tOut "Y" [axK]] (overlap ag).resolved.stmts
+private def boxTs : List T := [tZ, tX, tOut "Y" [axK]]
+
+#guard valueParity (overlapBox .sum) boxTs .real
+  ([8, 0, 20, 0, 51, 0, 118, 0, 0, 0].map ExtVal.fin)
+#guard valueParity (overlapBox .max) boxTs .maxPlus
+  [.fin 20, .negInf, .fin 7, .negInf, .fin 17, .negInf, .fin 40, .negInf, .negInf, .negInf]
+#guard valueParity (overlapBox .min) boxTs .minPlus
+  [.fin (-5), .posInf, .fin 2, .posInf, .fin 3, .posInf, .fin 25, .posInf, .posInf, .posInf]
+
 /-! Refusal controls retain genuine unsupported geometry, not B5's now-accepted donors. -/
 private def multiAxis : SourceSnapshot :=
   mk [tZ, tQ, tOut "Y" [axK]]
