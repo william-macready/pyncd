@@ -1508,8 +1508,9 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- whose `.iterAt` extent should constrain a later state read. Their RHS reads still contribute the
   -- same size constraints. Top-level scatters remain unchanged so downstream scatter-output shape
   -- inference continues to work. `.scanPre` stays unreachable (Step A rejects it).
+  let padded := boxedScratchNames checked.shapeObligations
   let flatStmts : List Stmt := sched.stmts.flatMap (fun
-    | .plain s => [s]
+    | .plain s => [sizingView padded s]
     | .scan _ _ base recur _ =>
         (base ++ recur).map (fun
           | .scatter nm slots rhs => .assign nm slots rhs

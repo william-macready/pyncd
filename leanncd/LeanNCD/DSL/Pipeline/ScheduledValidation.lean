@@ -248,7 +248,7 @@ def validateScheduled (sched : ScheduledProgram) : Except CompileError CheckedSc
     throw (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
   let source := { sched with env := sourceEnv }
   let (collected, privateNames) ← collectDefinitions source
-  let shapeObligations ← collectorShapeObligations source
+  let shapeObligations ← collectorShapeObligations source (declaredAxisSizes sched.decls)
   let declEnv ← buildDeclEnv collected.decls
   return { program := collected
          , declEnv

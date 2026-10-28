@@ -144,8 +144,9 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
   | none =>
   -- A scan-local scatter's LHS describes placement into persistent state, not a standalone scatter
   -- output whose placement extent should constrain later reads of that state.
+  let padded := boxedScratchNames checked.shapeObligations
   let allStmts : List Stmt := sched.stmts.flatMap (fun
-    | .plain s => [s]
+    | .plain s => [sizingView padded s]
     | .scan _ _ base recur _ =>
         (base ++ recur).map (fun
           | .scatter nm slots rhs => .assign nm slots rhs
