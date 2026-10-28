@@ -374,4 +374,27 @@ run_cmd do
   unless fallbackRankRejected do
     throwError "B5 fallback basis rank: undeclared S[k] basis must reject two-slot affine writer"
 
+-- Donor: interleave; writer 1 stays `S[2*i]`, writer 2 is replaced by an offset or
+-- negative-coefficient placement. The offset keeps the stride-aligned extent (4) and collides
+-- with writer 1 at S[2]; the negative form takes the legacy linear boundary (3 - 1*2 = 1), so the
+-- exact-extent rule refuses it on all three legs instead of reaching a range check.
+def withSecondPlacement (slot : LHSSlot) : TLProgram :=
+  { interleave with stmts := interleave.stmts.mapIdx fun n s =>
+    match s with
+    | .assign nm _ r | .scatter nm _ r =>
+        .scatter nm [if n == 1 then slot
+          else .affine (.scale 2 { name := "i", uid := 0, kind := .nat })] r
+    | s => s }
+def offsetWriter : TLProgram :=
+  withSecondPlacement (.affine (.affine 2 [(1, { name := "i", uid := 0, kind := .nat })]))
+def negativeWriter : TLProgram :=
+  withSecondPlacement (.affine (.affine 3 [(-1, { name := "i", uid := 0, kind := .nat })]))
+
+#guard sourceError offsetWriter == none
+#guard agree offsetWriter in64 in32 #[-5, 0, -9, -3] #[-5, 0, -9, -3]
+#guard sourceError negativeWriter == none
+#guard refShape negativeWriter in64 == planShape negativeWriter in64
+#guard (refShape negativeWriter in64).isSome
+#guard (run64 negativeWriter).isNone && (run32 negativeWriter).isNone
+
 end LeanNCD.Eval.Plan.B5NativeTest

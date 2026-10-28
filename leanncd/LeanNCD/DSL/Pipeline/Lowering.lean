@@ -563,8 +563,10 @@ def routeCore(sp : ScheduledProgram) : Except CompileError (List BrBaseP × List
     A reader placed BEFORE the last writer of a multi-writer name is rejected by `routableInOrder`
     after collection (`cyclicDataflow` from `routeCore`), because the collector, the only writer
     its reader sees, comes after it (pinned in `test/DSL/Pipeline/CollectTest.lean`).
-    Error priority on this path: collection errors first (`desugarMultiWriters`), then
-    physicalization errors (`rejectComplexDecls`, nonlinear scatter), then `routeCore`'s. So a
+    Error priority on this path: collection errors first (`desugarMultiWriters`), then the
+    refusal of every bounded B5 group (`needsB5`: `multiWriterScatter` even though collection
+    admits it, because the routed diagram has no shape-obligation check; the native backends
+    admit these groups, route does not), then physicalization errors (`rejectComplexDecls`, nonlinear scatter), then `routeCore`'s. So a
     hand-built schedule that is both a multi-writer scatter and complex-declared reports
     `multiWriterScatter`; `compile` is unaffected because `buildDeclEnv` rejects complex
     declarations first.

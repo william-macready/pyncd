@@ -165,10 +165,10 @@ def checkWriterGroup (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
       throw (.writerShapeMismatch g.name k (min ls.length first.length))
   return agreed
 
-/-- The collector statement for `T` with `n` writers, built from writer 1's slots; `agg` is the
-    group's agreed annotation. -/
-def collectorStmt (nm : String) (firstSlots : List LHSSlot) (n : Nat) (agg : AggOp) : Stmt :=
-  let slots' := producerSlots firstSlots
+/-- The collector statement for `T` with `n` writers, built from the group's coordinate basis
+    (writer 1's slots for a legacy all-bare group); `agg` is the group's agreed annotation. -/
+def collectorStmt (nm : String) (basis : List LHSSlot) (n : Nat) (agg : AggOp) : Stmt :=
+  let slots' := producerSlots basis
   let idx := slots'.filterMap LHSSlot.toReadIdx
   .assign nm slots'
     { body := ⟨(List.range n).map fun k => ⟨[.read (collectorName nm (k + 1)) idx]⟩⟩
@@ -189,7 +189,11 @@ def desugarMultiWriters (sched : ScheduledProgram) :
   let groups := writerGroups sched.stmts
   if groups.isEmpty then return (sched, [])
   let mut agreed : List SortAlgebra := []
-  for g in groups do agreed := agreed ++ [← checkWriterGroup sched.env sched.stmts g]
+  let mut bases : List (List LHSSlot) := []
+  for g in groups do
+    agreed := agreed ++ [← checkWriterGroup sched.env sched.stmts g]
+    bases := bases ++ [← if g.needsB5 sched.stmts then writerGroupBasis sched.env sched.stmts g
+      else pure (((g.writers.head?.bind (plainAt? sched.stmts)).map Stmt.slots).getD [])]
   let generated := groups.flatMap fun g =>
     (List.range g.writers.length).map fun k => collectorName g.name (k + 1)
   let inventory := routeNameInventory sched
@@ -198,9 +202,9 @@ def desugarMultiWriters (sched : ScheduledProgram) :
       throw (.reservedNameCollision nm)
   -- Rename each writer in place; emit the collector right after its group's last writer.
   let stmts := sched.stmts.zipIdx.flatMap fun (sc, i) =>
-    match groups.zip agreed |>.find? (fun (g, _) => g.writers.contains i) with
+    match groups.zip (agreed.zip bases) |>.find? (fun (g, _) => g.writers.contains i) with
     | none => [sc]
-    | some (g, sort) =>
+    | some (g, sort, basis) =>
         let k := g.writers.idxOf i + 1
         let renamed : ScanStmt := match sc with
           | .plain (.assign _ ls r) =>
@@ -211,10 +215,7 @@ def desugarMultiWriters (sched : ScheduledProgram) :
               .plain (if w.isSortNeutral then w.withAgg sort.stateAgg else w)
           | other => other
         if some i == g.writers.getLast? then
-          let firstSlots := if g.needsB5 sched.stmts then
-              (writerGroupBasis sched.env sched.stmts g).toOption.getD []
-            else ((g.writers.head?.bind (plainAt? sched.stmts)).map Stmt.slots).getD []
-          [renamed, .plain (collectorStmt g.name firstSlots g.writers.length sort.stateAgg)]
+          [renamed, .plain (collectorStmt g.name basis g.writers.length sort.stateAgg)]
         else [renamed]
   -- One clone per writer of each DECLARED destination; undeclared destinations get none.
   let clones := groups.flatMap fun g =>
