@@ -34,8 +34,27 @@ def evalErrorEq : EvalError → EvalError → Bool
       decide (sa = sb ∧ na = nb)
   | .invalidScanNode a, .invalidScanNode b => decide (a = b)
   | .unsupportedDtype a, .unsupportedDtype b => decide (a = b)
-  -- Catches only cross-constructor pairs today. Adding an `EvalError` constructor needs a new
-  -- arm above it here too, or two equal instances of it will silently compare unequal.
+  | .baseWriteNotAtBoundary sa ta ia, .baseWriteNotAtBoundary sb tb ib =>
+      decide (sa = sb ∧ ta = tb ∧ ia = ib)
+  | .baseWritesOverlap sa ta fa ga, .baseWritesOverlap sb tb fb gb =>
+      decide (sa = sb ∧ ta = tb ∧ fa = fb ∧ ga = gb)
+  | .duplicateStateResult sa ta fa ga, .duplicateStateResult sb tb fb gb =>
+      decide (sa = sb ∧ ta = tb ∧ fa = fb ∧ ga = gb)
+  | .duplicateScratchProducer sa na fa ga, .duplicateScratchProducer sb nb fb gb =>
+      decide (sa = sb ∧ na = nb ∧ fa = fb ∧ ga = gb)
+  | .inconsistentStateExtent sa ta da ea aa, .inconsistentStateExtent sb tb db eb ab =>
+      decide (sa = sb ∧ ta = tb ∧ da = db ∧ ea = eb ∧ aa = ab)
+  | .scanWriteRowNotAdmitted sa na ba ia da, .scanWriteRowNotAdmitted sb nb bb ib db =>
+      decide (sa = sb ∧ na = nb ∧ ba = bb ∧ ia = ib ∧ da = db)
+  | .stateReadInBaseBlock sa ia ta, .stateReadInBaseBlock sb ib tb =>
+      decide (sa = sb ∧ ia = ib ∧ ta = tb)
+  | .unmarkedReductionAxis ta pa, .unmarkedReductionAxis tb pb => decide (ta = tb ∧ pa = pb)
+  | .multipleMarkedReductionAxes ta fa sa, .multipleMarkedReductionAxes tb fb sb =>
+      decide (ta = tb ∧ fa = fb ∧ sa = sb)
+  | .inputIsDefined a, .inputIsDefined b => decide (a = b)
+  -- Catches only cross-constructor pairs: every `EvalError` constructor has its own arm above, and
+  -- the completeness check at the end of this file fails the build when a new one has none. Without
+  -- an arm, two equal instances would silently compare unequal.
   | _, _ => false
 
 /-- Two complete evaluation outcomes agree on a set of names and on their diagnostics. Successful
@@ -111,5 +130,70 @@ private def failed (error : EvalError) (warnings : List EvalWarning := []) :
 #guard ! evalErrorEq (.scatterWriteOutOfRange "Out" [-1] [0]) (.scatterWriteOutOfRange "Out" [-1] [1])
 #guard evalAgreesOn [] (failed (.scatterWriteOutOfRange "Out" [5] [0]))
   (failed (.scatterWriteOutOfRange "Out" [5] [0]))
+
+-- The remaining `EvalError` constructors (the scan-structure refusals, the reduction-marker
+-- refusals and `inputIsDefined`). Each needs its OWN arm in `evalErrorEq`: without one the
+-- `| _, _ => false` catch-all makes two EQUAL errors compare unequal (a spurious oracle
+-- divergence), and an arm that ignores a field makes two different errors compare equal. So every
+-- row below is a base error and one variant per field, each differing in that field alone.
+private def fieldVariants : List (EvalError × List EvalError) := [
+  (.baseWriteNotAtBoundary "s" "S" 1,
+    [.baseWriteNotAtBoundary "t" "S" 1, .baseWriteNotAtBoundary "s" "T" 1,
+     .baseWriteNotAtBoundary "s" "S" 2]),
+  (.baseWritesOverlap "s" "S" 0 1,
+    [.baseWritesOverlap "t" "S" 0 1, .baseWritesOverlap "s" "T" 0 1,
+     .baseWritesOverlap "s" "S" 2 1, .baseWritesOverlap "s" "S" 0 2]),
+  (.duplicateStateResult "s" "S" 0 1,
+    [.duplicateStateResult "t" "S" 0 1, .duplicateStateResult "s" "T" 0 1,
+     .duplicateStateResult "s" "S" 2 1, .duplicateStateResult "s" "S" 0 2]),
+  (.duplicateScratchProducer "s" "T" 0 1,
+    [.duplicateScratchProducer "t" "T" 0 1, .duplicateScratchProducer "s" "U" 0 1,
+     .duplicateScratchProducer "s" "T" 2 1, .duplicateScratchProducer "s" "T" 0 2]),
+  (.inconsistentStateExtent "s" "S" 0 3 4,
+    [.inconsistentStateExtent "t" "S" 0 3 4, .inconsistentStateExtent "s" "T" 0 3 4,
+     .inconsistentStateExtent "s" "S" 1 3 4, .inconsistentStateExtent "s" "S" 0 5 4,
+     .inconsistentStateExtent "s" "S" 0 3 5]),
+  (.scanWriteRowNotAdmitted "s" "T" true 1 0,
+    [.scanWriteRowNotAdmitted "t" "T" true 1 0, .scanWriteRowNotAdmitted "s" "U" true 1 0,
+     .scanWriteRowNotAdmitted "s" "T" false 1 0, .scanWriteRowNotAdmitted "s" "T" true 2 0,
+     .scanWriteRowNotAdmitted "s" "T" true 1 1]),
+  (.stateReadInBaseBlock "s" 1 "S",
+    [.stateReadInBaseBlock "t" 1 "S", .stateReadInBaseBlock "s" 2 "S",
+     .stateReadInBaseBlock "s" 1 "T"]),
+  (.unmarkedReductionAxis "Y" 0,
+    [.unmarkedReductionAxis "Z" 0, .unmarkedReductionAxis "Y" 1]),
+  (.multipleMarkedReductionAxes "Y" 0 1,
+    [.multipleMarkedReductionAxes "Z" 0 1, .multipleMarkedReductionAxes "Y" 2 1,
+     .multipleMarkedReductionAxes "Y" 0 2]),
+  (.inputIsDefined "X", [.inputIsDefined "Y"])]
+
+#guard fieldVariants.all fun (e, vs) =>
+  evalErrorEq e e && vs.all fun v => !evalErrorEq e v && !evalErrorEq v e
+-- Distinct constructors never agree, whichever order.
+#guard fieldVariants.zipIdx.all fun ((e, _), i) =>
+  fieldVariants.zipIdx.all fun ((f, _), j) => i == j || !evalErrorEq e f
+
+-- Completeness: a new `EvalError` constructor fails this build until it is added to the list
+-- below, which is the prompt to give it an `evalErrorEq` arm (and a `fieldVariants` row if it is
+-- not one of the twelve constructors the guards above already pin individually).
+open Lean Elab Command in
+run_cmd do
+  let info ← getConstInfoInduct ``LeanNCD.Eval.EvalError
+  let covered : List Name :=
+    [``EvalError.compile, ``EvalError.shape, ``EvalError.unknownTensor, ``EvalError.invalidSeed,
+     ``EvalError.unaryDomain, ``EvalError.invalidNormAxis, ``EvalError.scatterCollision,
+     ``EvalError.scatterWriteOutOfRange, ``EvalError.unsupportedScatterNonlin,
+     ``EvalError.unsupportedRecurMorphism, ``EvalError.invalidScanNode,
+     ``EvalError.unsupportedDtype, ``EvalError.baseWriteNotAtBoundary,
+     ``EvalError.baseWritesOverlap, ``EvalError.duplicateStateResult,
+     ``EvalError.duplicateScratchProducer, ``EvalError.inconsistentStateExtent,
+     ``EvalError.scanWriteRowNotAdmitted, ``EvalError.stateReadInBaseBlock,
+     ``EvalError.unmarkedReductionAxis, ``EvalError.multipleMarkedReductionAxes,
+     ``EvalError.inputIsDefined]
+  for c in info.ctors do
+    unless covered.contains c do
+      throwError "EvalError.{c} has no evalErrorEq coverage: add an arm in Compare.lean, a fieldVariants row, and list it here"
+  unless info.ctors.length == covered.length do
+    throwError "evalErrorEq coverage list names a constructor EvalError no longer has"
 
 end LeanNCD.PropertyOracle
