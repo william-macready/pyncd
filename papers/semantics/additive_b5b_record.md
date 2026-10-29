@@ -195,3 +195,21 @@ integration follows this evidence commit using `merge --no-ff`, an empty
 `git diff --stat main b5b-exec` check, worktree removal and branch deletion.
 The controller reports the resulting merge hash; embedding this evidence
 commit's own hash in itself is not attempted. **No push is authorized or performed.**
+
+## Post-landing coverage widening (2026-10-28)
+
+Follow-up to the review's parked optional gaps, test-only (no production change), `B5bBoxTest` and
+`OracleSortRulesTest`:
+
+- checked-f32 guards for the later-dimension cases (`lateExact`, `lateExceeds`, `lateMismatch` bits)
+  and for `bareExact`;
+- direct output-shape assertions on all three native legs for `concat` (`[4]`), `bareMismatch`
+  (`[4]`), `declaredMismatch` (`[5]`), `tropBox` (`[5]`), `lateMismatch` (`[4, 3]`);
+- `iter`-pinned boxes: native `iterBox` (accepted, `[-5, -2, -7, -3]`, shape `[4]`) and
+  `iterExceeds` (`writerExtentExceedsBox "S" 2 0 3 4` on all three legs), plus two oracle staged rows
+  (iter box 12 accepted, iter box 4 refused). `sizesOf` in the oracle test now reads `.iter` pins;
+  staged rows are 13, eight predicted accepts.
+
+The f32 and f64 checked entries share `checkCollectorShapes`, so the f32 guards pin the f32 entry's
+wiring rather than additional logic, and no mutant isolates them. No isolating mutant was built for
+the shape assertions either; they were observed passing, not shown able to fail on their own.

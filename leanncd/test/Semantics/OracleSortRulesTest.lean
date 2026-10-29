@@ -411,7 +411,7 @@ run_cmd assertNone "supplemental hand rows" <|
     come from each row's real input declarations, not from compiler inference. -/
 
 private def sizesOf (ds : List Decl) : List (UID × Nat) :=
-  ds.filterMap (fun | .axis ax (some n) => some (ax.uid, n) | _ => none)
+  ds.filterMap (fun | .axis ax (some n) => some (ax.uid, n) | .iter ax n => some (ax.uid, n) | _ => none)
 
 private def signatureOf (ds : List Decl) (ss : List Stmt) : Eval.Plan.InputSignature :=
   let written := ss.filterMap (fun
@@ -455,6 +455,12 @@ private def box12Decls : List Decl :=
   .axis k (some 12) :: hDecls.map (fun
     | .typedTensor t "Y" _ => .typedTensor t "Y" [k]
     | d => d)
+-- The same destination pinned through an `iter` declaration: a box of 12 holds the extent 8, a box
+-- of 4 does not.
+private def iterBoxDecls (n : Nat) : List Decl :=
+  .iter k n :: hDecls.map (fun
+    | .typedTensor t "Y" _ => .typedTensor t "Y" [k]
+    | d => d)
 private def squareDecls : List Decl :=
   (matrixDecls matrixB).map (fun
     | .axis ax _ => .axis ax (some 4)
@@ -466,6 +472,8 @@ private def stagedRows : List (String × List Decl × List Stmt) :=
   [("two affine box12", box12Decls, [writer 5 .max, writer 5 .max]),
    ("affine/bare box12", box12Decls,
      [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])]),
+   ("two affine iter box12", iterBoxDecls 12, [writer 5 .max, writer 5 .max]),
+   ("two affine iter box4", iterBoxDecls 4, [writer 5 .max, writer 5 .max]),
    ("two affine extent8 twin", extent8Decls, [writer 5 .max, writer 5 .max]),
    ("affine/bare extent8 twin", extent8Decls,
      [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])])] ++
@@ -479,11 +487,12 @@ private def stagedRows : List (String × List Decl × List Stmt) :=
 run_cmd assertNone "hand SHAPED disagreements" (stagedRows.flatMap fun (l, ds, ss) =>
   shapedProblems l ds ss)
 
--- Eleven hand rows: seven shape accepts (two box12, two extent8 twins, two square twins, the
--- max-plus plain+scatter row) and four refusals (two exceed-box affine rows, two rectangular diagonals).
-#guard stagedRows.length == 11
+-- Thirteen hand rows: eight shape accepts (two box12, the iter box12, two extent8 twins, two square
+-- twins, the max-plus plain+scatter row) and five refusals (two exceed-box affine rows, the iter
+-- box4 row, two rectangular diagonals).
+#guard stagedRows.length == 13
 #guard (stagedRows.filter fun (_, ds, ss) =>
-  (predictShaped ds ss (sizesOf ds)).refusals.isEmpty).length == 7
+  (predictShaped ds ss (sizesOf ds)).refusals.isEmpty).length == 8
 
 #guard concreteC1.length == 81
 -- C1 declares extent 4 against realized extent 8, so no candidate fits the pinned box: all 81 stay

@@ -88,4 +88,38 @@ def planCause (p : TLProgram) : Option PlanCompileCause :=
 #guard planCause negativeWriter ==
   some (.invalidPlan (.assign (.nodeError 1 (.scatterWriteOutOfRange 0 2 3 1))))
 
+-- Coverage widening after the post-landing review. Precision note: the f32 and f64 checked entries
+-- share `checkCollectorShapes`, so the f32 guards pin the f32 entry's wiring, not extra logic.
+def lateWide32 : NamedDenseEnv32 :=
+  late32.insert "Extra" ⟨[4, 4], #[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]⟩
+#guard planShape32 lateExact late32 == some (.writerExtentMismatch "S" 3 1 3 2)
+#guard planShape32 lateExceeds lateWide32 == some (.writerExtentExceedsBox "S" 3 1 3 4)
+#guard planShape32 bareExact badIn32 == some (.writerExtentMismatch "S" 2 0 4 3)
+#guard (run32 lateMismatch late32).bind (fun e => e["S"]?.map (·.data.map Float32.toBits)) ==
+  some ((#[3, 6, 6, 3, 4, 0, 13, 16, 12, 7, 8, 0] : Array Float32).map Float32.toBits)
+
+-- The published tensor has the box shape on every native leg, not just the right values.
+def shapesOf (p : TLProgram) (i : NamedDenseEnv) (j : NamedDenseEnv32) :=
+  ((ref64 p i).bind fun e => e["S"]?.map (·.shape),
+   (run64 p i).bind fun e => e["S"]?.map (·.shape),
+   (run32 p j).bind fun e => e["S"]?.map (·.shape))
+#guard shapesOf concat in64 in32 == (some [4], some [4], some [4])
+#guard shapesOf bareMismatch badIn64 badIn32 == (some [4], some [4], some [4])
+#guard shapesOf declaredMismatch in64 in32 == (some [5], some [5], some [5])
+#guard shapesOf tropBox tropIn64 tropIn32 == (some [5], some [5], some [5])
+#guard shapesOf lateMismatch late64 late32 == (some [4, 3], some [4, 3], some [4, 3])
+
+-- A box pinned through an `iter` declaration is a box too (`declaredAxisSizes` seeds both).
+def iterPin (size : Nat) (p : TLProgram) : TLProgram :=
+  { p with decls := p.decls.map fun
+    | .axis a v => if a.name == "k" then .iter a size else .axis a v
+    | d => d }
+def iterBox : TLProgram := iterPin 4 concat
+def iterExceeds : TLProgram := iterPin 3 concat
+#guard agree iterBox in64 in32 #[-5, -2, -7, -3] #[-5, -2, -7, -3]
+#guard shapesOf iterBox in64 in32 == (some [4], some [4], some [4])
+#guard refShape iterExceeds in64 == some (.writerExtentExceedsBox "S" 2 0 3 4)
+#guard planShape iterExceeds in64 == some (.writerExtentExceedsBox "S" 2 0 3 4)
+#guard planShape32 iterExceeds in32 == some (.writerExtentExceedsBox "S" 2 0 3 4)
+
 end LeanNCD.Eval.Plan.B5bBoxTest
