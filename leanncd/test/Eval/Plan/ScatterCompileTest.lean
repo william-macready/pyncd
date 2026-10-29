@@ -283,10 +283,12 @@ inspected through `preparedOf` — the former `outCoeffs`/`destShape` guards are
 rejection payload, which carries the same facts (image and extent). Accept neighbour: S1/S6/S8, the
 in-range placements of the same family.
 
-NOTE the channel: the checked-plan rejection reaches the caller as
-`PlanCompileCause.invalidPlan (.assign (.nodeError 0 cause))` — the compiler-bug channel — because `compile` only
-ever expected `checkPlan` to accept what the lowering emits. A surface `Out[0*i]` is a user error,
-not a compiler bug; that classification is recorded, not changed, here. -/
+NOTE the channel: the rejection reaches the caller as
+`PlanCompileCause.shape (.scatterImageOutOfRange tensor dimension minImage maxImage extent)`, raised
+by `prepareEvalPlan`'s source-facing range check (`scatterRangeOrFail`) before Step E. It USED to
+surface as `invalidPlan (.assign (.nodeError 0 (.scatterWriteOutOfRange ..)))`, the compiler-bug
+channel, which a surface `Out[0*i]` (a user error) does not belong in; `checkScatterCore` still
+holds the same rule as an unreachable safety net (`ScatterCheckTest` pins it directly). -/
 
 /-- The `prepareEvalPlan` rejection cause, or `none` if it accepted (or the source did not compile). -/
 def prepareCauseOf (p : TLProgram) (env : HashMap String DenseTensor) : Option PlanCompileCause :=
@@ -311,14 +313,22 @@ def referenceWriteOutOfRange (p : TLProgram) (env : HashMap String DenseTensor) 
 def zeroCoeffProg : TLProgram := tlprog!{ Out[0*i] := X[i] }
 -- S9: both backends reject, with the same location (tensor `Out`, write at 0, source coordinate 0).
 #guard prepareCauseOf zeroCoeffProg upsampleEnv
-  == some (.invalidPlan (.assign (.nodeError 0 (.scatterWriteOutOfRange 0 0 0 0))))
+  == some (.shape (.scatterImageOutOfRange "Out" 0 0 0 0))
 #guard referenceWriteOutOfRange zeroCoeffProg upsampleEnv == some ("Out", [0], [0])
 
 def zeroCoeffBiasProg : TLProgram := tlprog!{ Out[0*i+5] := X[i] }
 -- S9b: extent 5, every write at 5.
 #guard prepareCauseOf zeroCoeffBiasProg upsampleEnv
-  == some (.invalidPlan (.assign (.nodeError 0 (.scatterWriteOutOfRange 0 5 5 5))))
+  == some (.shape (.scatterImageOutOfRange "Out" 0 5 5 5))
 #guard referenceWriteOutOfRange zeroCoeffBiasProg upsampleEnv == some ("Out", [5], [0])
+
+-- S9c: only the SECOND destination dimension is out of range (`0*j` writes row 0 of an extent-0
+-- axis), so the payload must name dimension 1; a locator stuck at dimension 0 would fail here.
+def zeroSecondDimProg : TLProgram := tlprog!{ Out[i, 0*j] := X[i, j] }
+def pairEnv : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[3, 2], #[1, 2, 3, 4, 5, 6]⟩
+#guard prepareCauseOf zeroSecondDimProg pairEnv
+  == some (.shape (.scatterImageOutOfRange "Out" 1 0 0 0))
 
 /-! ## S10 — a surface-reachable collision is folded with the destination ⊕ (S3a)
 

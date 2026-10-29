@@ -111,7 +111,7 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
     `lowerArith` (`LHSSlot.collapses` matches only `.affine (.const _)`), and is the empty-destination
     degeneracy Task 3 designed for and `ScatterCheckTest` pins. Both extent derivations agree on it —
     `outExtent`'s `.scale` arm gives `0 · size = 0` and the placement-row reconstruction gives the
-    same `0` — so it compiles to a real `ScatterPlan` with `destShape = #[0]` (since B6 `checkScatter` then rejects it with `scatterWriteOutOfRange`: every write is outside the empty destination). This is why the
+    same `0` — so it compiles to a real `ScatterPlan` with `destShape = #[0]` (since B6 `prepareEvalPlan` then rejects it with `ShapeError.scatterImageOutOfRange`: every write is outside the empty destination). This is why the
     `.const` test above is on the constructor and not on "the normalised coefficient list is empty":
     `normalizeCoeffs` DROPS zero coefficients (`addCoeff`), so an emptiness test conflates
     `.scale 0 i` and `.affine c₀ [(0, i)]` with `.const n` and would reject all three under a locator
@@ -537,6 +537,18 @@ private def scatterPlacementOrFail (srcUids : List UID) (srcShape : Array Nat)
         shapeAcc := shapeAcc.push n
     | none => throw (.unsizedScatterOutput sl)
   return (coeffsAcc, biasAcc, shapeAcc)
+
+/-- The source-facing out-of-range placement rejection (B6). A scatter write outside the destination
+    is a user error in both backends; `checkScatterCore` rejects the same placements at Step E, but
+    there the failure would travel as `invalidPlan`, the compiler-bug channel. This reports it first,
+    as `ShapeError.scatterImageOutOfRange` naming the tensor and destination dimension, using the
+    SAME rule (`scatterRangeViolation`) so the Step E check stays an unreachable safety net. -/
+private def scatterRangeOrFail (nm : String) (srcShape : Array Nat)
+    (coeffs : Array (Array Int)) (bias : Array Int) (destShape : Array Nat) :
+    Except ShapeError Unit :=
+  match scatterRangeViolation srcShape coeffs bias destShape with
+  | some (d, lo, hi, extent) => throw (.scatterImageOutOfRange nm d lo hi extent)
+  | none => pure ()
 
 /-- First UID that recurs later in the list. Mirrors `Prepared.lean`'s `firstDuplicateName` and
     `Block.lean`'s `firstDuplicateSlot` (same shape, different element type) so a duplicate-axis
@@ -1606,6 +1618,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         let computePlan := { computePlan with algebra := algebraForDest destDtype rhs.agg }
         let (outCoeffs, outBias, destShape) ←
           liftShape warnings (scatterPlacementOrFail srcUids srcShape slots)
+        liftShape warnings (scatterRangeOrFail nm srcShape outCoeffs outBias destShape)
         tensorSigsAcc := tensorSigsAcc.push { shape := destShape, dtype := destDtype }
         stepsAcc := stepsAcc.push (.scatter
           { compute := computePlan, destShape, outCoeffs, outBias })

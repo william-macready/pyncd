@@ -134,6 +134,11 @@ inductive ShapeError
   | negativeOnlyAxis (uid : UID) (sources : List String)
   | writerExtentMismatch (name : String) (writer dimension expected actual : Nat)
   | writerExtentExceedsBox (name : String) (writer dimension box actual : Nat)
+  /-- A scatter placement whose image over the source box leaves the destination at `dimension`
+      (0-based): the writes span `[minImage, maxImage]` but the destination is `extent` wide. The
+      user-facing, source-located form of `PlanError.scatterWriteOutOfRange`, raised while
+      compiling so that error never has to travel as the compiler-bug `invalidPlan`. -/
+  | scatterImageOutOfRange (name : String) (dimension : Nat) (minImage maxImage : Int) (extent : Nat)
   deriving DecidableEq
 
 /-- The sole renderer for `ShapeError` — reproduces every pre-4h message byte-for-byte. -/
@@ -159,6 +164,8 @@ coefficients in all reads; sources: {sources}); add an explicit axis declaration
       s!"multi-writer {name}: writer {writer}, dimension {dimension}: expected extent {expected}, actual {actual}"
   | .writerExtentExceedsBox name writer dimension box actual =>
       s!"multi-writer {name}: writer {writer}, dimension {dimension}: extent {actual} exceeds declared box extent {box}"
+  | .scatterImageOutOfRange name dimension minImage maxImage extent =>
+      s!"scatter {name}: dimension {dimension}: writes span [{minImage}, {maxImage}] but the destination extent is {extent}"
 
 instance : ToString ShapeError := ⟨ShapeError.render⟩
 

@@ -86,7 +86,7 @@ def planCause (p : TLProgram) : Option PlanCompileCause :=
   | some (.scatterWriteOutOfRange "S#2" [3] [0]) => true
   | _ => false
 #guard planCause negativeWriter ==
-  some (.invalidPlan (.assign (.nodeError 1 (.scatterWriteOutOfRange 0 2 3 1))))
+  some (.shape (.scatterImageOutOfRange "S#2" 0 2 3 1))
 
 -- Coverage widening after the post-landing review. Precision note: the f32 and f64 checked entries
 -- share `checkCollectorShapes`, so the f32 guards pin the f32 entry's wiring, not extra logic.

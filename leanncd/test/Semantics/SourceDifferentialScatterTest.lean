@@ -317,8 +317,7 @@ private def fOriginC := withZ 8 [.scatter "Z" [.affine (.const 3)] readX,
 -- case is the one where the declared shape fits but production's DERIVED extent does not:
 -- `Y[0*a + 5] := X[a]` (declared extent 6, derived extent 5). The oracle admits it (all four writes
 -- collide onto cell 5: 1+2+3+4 = 10); legacy raises `evalScatter ... outside the destination extent`
--- and the checked plan rejects at preparation (`PlanStepError.assign`, carrying
--- `PlanError.scatterWriteOutOfRange`). Both native legs fail, so the class is `nativeFailure`. The
+-- and the checked plan rejects at preparation (`ShapeError.scatterImageOutOfRange`). Both native legs fail, so the class is `nativeFailure`. The
 -- source alone PREDICTS exactly one condition, `scatterExtentOverridesDeclared` (declared 6 vs
 -- derived 5, observed by printing `run.conditions`), but it is never confirmed (a condition needs
 -- the native legs to show its predicted outcome, and an error is not a value difference), so the
@@ -329,7 +328,7 @@ private def fR1 := snap 8 [k] [.assign "Y" [.affine (.shift a 4)] readX]
 #guard tag fR == "nativeFailure"
 #guard mentions fR "oracle=[(Y, ([6], [0, 0, 0, 0, 0, 10]))]"
 #guard mentions fR "legacy=failure phase=LeanNCD.Semantics.Source.NativeLegs.LegacyPhase.scheduledEvaluation cause=evalScatter Y: write to output coord [5] (from source coord [0]) is outside the destination extent"
-#guard mentions fR "checked=preparation checked preparation: cause=invalidPlan: LeanNCD.Eval.Plan.PlanStepError.assign"
+#guard mentions fR "checked=preparation checked preparation: cause=shape: scatter Y: dimension 0: writes span [5, 5] but the destination extent is 5"
 #guard conditionCount fR == 1
 #guard tag fR1 == "parity"
 

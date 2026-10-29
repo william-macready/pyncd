@@ -427,6 +427,19 @@ def scatterImageBounds (srcShape : Array Nat) (row : Array Int) (bias : Int) : I
       (lo + min 0 span, hi + max 0 span))
     (bias, bias)
 
+/-- The first destination dimension whose slot image over the (non-empty) source box leaves
+    `[0, destShape[d])`, as `(d, minImage, maxImage, extent)`; `none` when every write is in range.
+    An EMPTY source box writes nothing and is vacuously in range. The ONE range rule, shared by
+    `checkScatterCore` (the internal checker) and `prepareEvalPlan`'s source-facing rejection
+    (`ShapeError.scatterImageOutOfRange`), so the two cannot disagree on what is out of range. -/
+def scatterRangeViolation (srcShape : Array Nat) (coeffs : Array (Array Int)) (bias : Array Int)
+    (destShape : Array Nat) : Option (Nat × Int × Int × Nat) :=
+  if srcShape.any (· == 0) then none else
+  (coeffs.toList.zip (bias.toList.zip destShape.toList)).zipIdx.findSome?
+    fun ((row, b, declared), d) =>
+      let (lo, hi) := scatterImageBounds srcShape row b
+      if 0 ≤ lo && hi < (declared : Int) then none else some (d, lo, hi, declared)
+
 /-- Validate one raw `ScatterPlan` against the positional signature table.
 
     Clause order: the compute half through `checkAssignCore kind`, then the placement map's rank
@@ -475,12 +488,9 @@ private def checkScatterCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSi
         unless declared == derived do
           throw (.scatterDestExtentMismatch d declared derived)
   -- Range, after EVERY extent clause (see the docstring). An empty source box writes nothing.
-  unless s.compute.outputShape.any (· == 0) do
-    for ((row, bias, declared), d) in
-        (s.outCoeffs.toList.zip (s.outBias.toList.zip s.destShape.toList)).zipIdx do
-      let (lo, hi) := scatterImageBounds s.compute.outputShape row bias
-      unless 0 ≤ lo && hi < (declared : Int) do
-        throw (.scatterWriteOutOfRange d lo hi declared)
+  if let some (d, lo, hi, declared) :=
+      scatterRangeViolation s.compute.outputShape s.outCoeffs s.outBias s.destShape then
+    throw (.scatterWriteOutOfRange d lo hi declared)
   return CheckedScatterPlan.mk s kind
 
 /-- The FLOAT64 scatter checker: the S-A policy, unchanged in every clause, now naming its storage

@@ -266,7 +266,7 @@ def zeroPlanCause : Option PlanCompileCause :=
   | .invalidPlan e => reprStr e
   | _ => "other"
 #guard zeroPlanCause ==
-  some (.invalidPlan (.assign (.nodeError 0 (.scatterWriteOutOfRange 0 0 0 0))))
+  some (.shape (.scatterImageOutOfRange "S#1" 0 0 0 0))
 
 -- Donor: interleave; the declaration supplies k's UID but not its extent.
 def inferredBasis : TLProgram := { interleave with decls := interleave.decls.map fun
