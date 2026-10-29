@@ -321,6 +321,44 @@ run_cmd do
   | .ok (_, o) => unless o.shape == [0] && o.data == #[] do
       throwError s!"B6-i: wrong value: {repr o.shape} {repr o.data}"
 
+-- Direct hand calls of `evalScatter`: `outShape` is caller-supplied and needs one slot per destination
+-- dimension. A mismatch used to be absorbed silently (the range check `zip`ped the shorter list, and
+-- `set!` wrote at a wrong-rank coordinate); it is now `rankMismatch name destinationRank slotCount`.
+-- `evalPlain` derives `outShape` from the slots, so only a direct call can reach it.
+private def rankRun (slots : List LHSSlot) (outShape : List Nat) :
+    Except EvalError (String × DenseTensor) :=
+  let i := ax "i" 1
+  let env : HashMap String DenseTensor :=
+    ({} : HashMap String DenseTensor).insert "X" (tensorOf [3] [10, 20, 30])
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
+  evalScatter f64Decls env (({} : HashMap UID Nat).insert 1 3) "Out" slots rhs outShape
+
+-- Two slots into a rank-1 destination.
+run_cmd do
+  match rankRun [.free (ax "i" 1), .affine (.const 0)] [3] with
+  | .error (.compile (.rankMismatch "Out" 1 2)) => pure ()
+  | .error e => throwError s!"rank-a: expected rankMismatch \"Out\" 1 2, got: {e}"
+  | .ok (_, o) => throwError s!"rank-a: expected rejection, got {repr o.shape} {repr o.data}"
+
+-- One slot into a rank-2 destination.
+run_cmd do
+  match rankRun [.free (ax "i" 1)] [3, 2] with
+  | .error (.compile (.rankMismatch "Out" 2 1)) => pure ()
+  | .error e => throwError s!"rank-b: expected rankMismatch \"Out\" 2 1, got: {e}"
+  | .ok (_, o) => throwError s!"rank-b: expected rejection, got {repr o.shape} {repr o.data}"
+
+-- Accept neighbours: slot count equal to the destination rank still evaluates.
+run_cmd do
+  match rankRun [.free (ax "i" 1)] [3] with
+  | .error e => throwError s!"rank-c: matching rank 1 must evaluate, got: {e}"
+  | .ok (_, o) => unless o.shape == [3] && o.data == #[10, 20, 30] do
+      throwError s!"rank-c: wrong value: {repr o.shape} {repr o.data}"
+run_cmd do
+  match rankRun [.free (ax "i" 1), .affine (.const 0)] [3, 1] with
+  | .error e => throwError s!"rank-d: matching rank 2 must evaluate, got: {e}"
+  | .ok (_, o) => unless o.shape == [3, 1] && o.data == #[10, 20, 30] do
+      throwError s!"rank-d: wrong value: {repr o.shape} {repr o.data}"
+
 -- B6 through the SURFACE syntax (`elabTLLHSSlot` accepts `n*x+m` and `n*x`, including n = 0).
 run_cmd (assertEvalError "B6-surface-a" (tlprog!{ Out[0 * i + 5] := X[i] })
   (HashMap.ofList [("X", tl [3] [10, 20, 30])]) "outside the destination extent")

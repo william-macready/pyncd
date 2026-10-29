@@ -18,7 +18,8 @@ def scatterSourceAxes (slots : List LHSSlot) (rhs : RHSExpr) : List UID :=
     starting from its identity 0_K (`Combine.unit0`: real 0, predicate false, max-plus `-inf`,
     min-plus `+inf`), so an empty fibre is 0_K and a collision is a ⊕-fold, never an error.
     An output coordinate outside `outShape` (negative, or at or past an extent) is an error
-    (`EvalError.scatterWriteOutOfRange`), never a silent skip. -/
+    (`EvalError.scatterWriteOutOfRange`), never a silent skip. `slots` and `outShape` must have the
+    same length (`CompileError.rankMismatch nm outRank slotCount`). -/
 def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) (outShape : List Nat) :
     Except EvalError (String × DenseTensor) := do
@@ -38,6 +39,12 @@ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : 
   -- dropping it (the bug this Stage fixes). Fail loud instead of silently erasing it.
   if rhs.nonlin ≠ Nonlin.identity then
     throw (.unsupportedScatterNonlin nm)
+  -- `outShape` is caller-supplied and needs one entry per slot. A mismatch used to be absorbed
+  -- silently: the range check below `zip`s the two lists (truncating to the shorter) and `set!`
+  -- writes at a coordinate of the wrong rank. `evalPlain` derives `outShape` from `slots`, so only
+  -- a direct hand call can reach this; fail loud instead.
+  unless slots.length == outShape.length do
+    throw (.compile (.rankMismatch nm outShape.length slots.length))
   -- up-front validation: every read name must be a known tensor
   for rn in (readNames rhs).eraseDups do
     if !(env.contains rn) then
