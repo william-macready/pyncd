@@ -480,7 +480,7 @@ run_cmd assertNone "hand SHAPED disagreements" (stagedRows.flatMap fun (l, ds, s
   shapedProblems l ds ss)
 
 -- Eleven hand rows: seven shape accepts (two box12, two extent8 twins, two square twins, the
--- bool plain+scatter row) and four refusals (two exceed-box affine rows, two rectangular diagonals).
+-- max-plus plain+scatter row) and four refusals (two exceed-box affine rows, two rectangular diagonals).
 #guard stagedRows.length == 11
 #guard (stagedRows.filter fun (_, ds, ss) =>
   (predictShaped ds ss (sizesOf ds)).refusals.isEmpty).length == 7

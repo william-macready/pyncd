@@ -205,7 +205,7 @@ The only `S` cell is the owner-accepted M4 slack; it must stay documented, not w
 
 ## 7. Verification gates and exact values
 
-- Hashes after each patch (sha256 of the final file):
+- Hashes after each patch (Git blob IDs of the final file, as `git hash-object` prints them):
   `git hash-object <file>` of each file after the three patches (T1 files after T1, T2 after T2):
 
   | File | blob |
@@ -222,7 +222,7 @@ The only `S` cell is the owner-accepted M4 slack; it must stay documented, not w
   | `leanncd/test/Eval/Plan/B5bBoxTest.lean` | `39cc162f95a86c3d14157965ea0402d2011b0319` |
   | `leanncd/test/Semantics/OracleMixedRefusalTest.lean` | `3912d02a7ac668b9bd667d89d66ecea619572a9e` |
   | `leanncd/test/Semantics/OracleSortRules.lean` | `0d5d497926f29ca457a23c118f6979d2a7657520` |
-  | `leanncd/test/Semantics/OracleSortRulesTest.lean` | `f17b78c744d22ecce3f1bc6410bb1d0c5308ce4f` |
+  | `leanncd/test/Semantics/OracleSortRulesTest.lean` | `f17b78c744d22ecce3f1bc6410bb1d0c5308ce4f` (as `T2-oracle.patch` produces it; the live file on `main` is `8a0b73c2c8aada61953f5640bf1be440d0a6273d` after a one-word comment fix, "bool" to "max-plus") |
 - Targeted builds per task as above; then the controller's full build:
   `lake-build.sh <worktree>/leanncd Tests JaxExperiment` expects `Build completed successfully (8840 jobs)`
   (B5's was 8839; the one extra job is `B5bBoxTest`).
@@ -265,7 +265,7 @@ The only `S` cell is the owner-accepted M4 slack; it must stay documented, not w
 ## 8. Close-out record (executor writes `papers/semantics/additive_b5b_record.md`)
 
 Required fields, each from a real run: base and final commit hashes; per-task build results; the
-sha256 table result; full build job count; mutation table (13 PASS lines and restore results);
+file-hash table result; full build job count; mutation table (13 PASS lines and restore results);
 review findings and adjudication; the section 3 values re-observed on the executed tree; measured
 token usage (`python3 .claude/skills/slice-plan/token-report.py <session-id>` where available,
 otherwise say it was not measured) against the target of about 25M for execution; every skipped

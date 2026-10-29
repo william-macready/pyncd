@@ -37,7 +37,7 @@ T1 targets: `Eval.Plan.B5NativeTest`, `Eval.Plan.B5BoundaryTest`,
 ### Fidelity table
 
 All 13 results match plan section 7, first immediately after the applicable patch,
-then together after T3 and again after all mutation restorations. The plan calls these "sha256", but its specified command
+then together after T3 and again after all mutation restorations. The plan as executed called these "sha256" (corrected afterwards to Git blob IDs), but its specified command
 `git hash-object` and its 40-hex expected values are Git SHA-1 blob IDs; the exact
 specified values were checked, not substituted with a different hash algorithm.
 
