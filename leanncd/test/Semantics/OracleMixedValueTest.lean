@@ -36,8 +36,9 @@ private def classOf (f : Fx) : String :=
 
 private def four : String := "OracleMixed.MixedClassification.fourLegParity"
 
-/-- The classification of a row whose Core leg was not run: an earlier cell it needs is non-finite, and
-Core inputs are rationals. -/
+/-- The classification of a row whose Core leg stopped at a blocked target: an earlier cell it needs
+is non-finite, and Core inputs are rationals. (The note string says "not run" for historical reasons;
+the targets before the blocked one did run and are compared as the Core prefix.) -/
 private def threeNotRun : String :=
   "OracleMixed.MixedClassification.threeLegParity \"core not run: non-finite intermediate\""
 
@@ -71,7 +72,7 @@ private def coreCellsOf (f : Fx) (n : String) : Option (List ExtVal) :=
     | _ => none
   | .error _ => none
 
-/-- Was the Core leg not run (as opposed to run and failed)? -/
+/-- Did the Core leg not complete (`MixedRun.core` is `none`, as opposed to run and failed)? -/
 private def coreNotRun (f : Fx) : Bool :=
   match run f with
   | .ok r => r.core.isNone
@@ -264,7 +265,8 @@ private def maxReadsMax := unwritten .max .max [rd "M" [axK]]
 #guard legsUnavailable copyMin
 #guard cellsOf maxReadsMax "R" ==
   some [.fin 20, .negInf, .fin 2, .negInf, .fin 3, .negInf, .fin 40, .negInf]
--- the Core leg is NOT run here: `R` reads `M`'s `-inf` cells and Core inputs are rationals. The row
+-- the Core leg does NOT complete here: `R` reads `M`'s `-inf` cells and Core inputs are rationals, so
+-- it stops at `R` after running `M` (the prefix, compared below). The row
 -- stays `threeLegParity` with its note, never a silent four-leg claim (Review Focus 5)
 #guard classOf maxReadsMax == threeNotRun
 #guard coreNotRun maxReadsMax

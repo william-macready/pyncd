@@ -65,7 +65,7 @@ Eight design rows (T4-M3b, T4-M3c, T9-M1, R6, R16, R11, R9, R10), a ninth for R1
 | ~~Split `agrees` into strict and membership classes~~ | done 2026-10-27 (`agreesStrict`/`agreesMember`, 141 / 258 / 106 pinned, each modelled refusal constructor observed on a strict program). Residual: over-prediction of a refusal inside a multi-refusal program stays undetectable without modelling production's raise order, which the design forbids | deviation 5 |
 | ~~`classifyRefusal` `l == c` row; sentinel -> `Option`~~ | done 2026-10-27 | follow-up |
 | ~~Fixture-index derivation by name; drop the redundant `isMismatch` guard; the predictor corpus gaps (`Y[a,a]`, a predicate-destination multi-writer program)~~ | done 2026-10-27 | Direct cleanup; evidence below |
-| Stale wording: `compareMixedSource` docstring and two `OracleMixedValueTest` comments say the Core leg is "not run" though it now runs to the blocked target (the note string `core not run: non-finite intermediate` is kept so pins do not move) | trivial | doc only |
+| ~~Stale wording: `compareMixedSource` docstring and two `OracleMixedValueTest` comments say the Core leg is "not run" though it now runs to the blocked target~~ | done 2026-10-28: the `MixedRun` and `compareMixedSource` docstrings and three `OracleMixedValueTest` comments now say the leg stopped at a blocked target (prefix compared); the note string `core not run: non-finite intermediate` is kept so pins do not move | doc only |
 
 ## Direct cleanup (2026-10-27)
 

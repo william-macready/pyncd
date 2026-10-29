@@ -93,8 +93,9 @@ def classifyRefusal (p : Prediction) (run : NativeRun) : Option MixedClassificat
 
 /-- One mixed-sort comparison. `profile` is `.ok []` and `oracle` an error when nothing was evaluated
 (a predicted refusal). The rule predictor's `prediction` is kept for the record. `core` is `none` when
-the Core leg was not run (a predicted refusal, an oracle that did not evaluate, or a non-finite
-intermediate), and `some (.error ..)` when it ran and failed; the two are never conflated. It defaults
+the Core leg did not run to completion (a predicted refusal, an oracle that did not evaluate, or a
+target blocked by a non-finite intermediate, where `corePrefix` holds what it did run), and
+`some (.error ..)` when it ran and failed; the two are never conflated. It defaults
 to `none`: only the arm that evaluates sets it. `corePrefix` holds the observations of the targets the
 Core leg did run before it stopped at a blocked target (`core` is then `none`); it is compared with the
 oracle and is empty otherwise. -/
@@ -300,7 +301,8 @@ from it, as does a native leg that refuses or is unavailable (`refusalMismatch [
 (`coreLeg`).
 Precedence, as in the typed path: oracle or Core unavailable, then Core against oracle
 (`referenceDiscrepancy`), then the profile, then the native legs. All four agreeing is `fourLegParity`;
-a Core leg that was not run (non-finite intermediate) leaves `threeLegParity` with its note. `order`
+a Core leg that stopped at a blocked target (non-finite intermediate; its `corePrefix` is still
+compared) leaves `threeLegParity` with its note (the note string keeps the older "core not run"). `order`
 names the declaration ordinals of the non-input tensors in dependency order. `doctor` rewrites the
 rule predictor's verdict before it is used (identity by default) and `feed` rewrites the Core leg's
 earlier outputs before later groups read them (identity by default); both exist only for negative
