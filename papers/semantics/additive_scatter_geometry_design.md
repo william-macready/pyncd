@@ -1,7 +1,8 @@
 # Scatter geometry: multi-axis (`S[a+b]`) and constant-slot (`S[3]`) writes
 
-**Proposed, not approved; not an implementation plan.** Approval of the decisions in section 7
-authorizes writing the plan for slice A only. Read against local `main` `87cfb2fb` on 2026-10-30. No
+**Decisions D1-D6 approved by the owner on 2026-10-30, all as recommended (section 7); not an
+implementation plan.** Approval authorizes the P0 probe and then the plan for slice A only; slice B's
+plan is written after A lands. Read against local `main` `87cfb2fb` on 2026-10-30. No
 production change, prototype, or Lean run accompanies this note; every current-behaviour claim is read
 from the linked source or from the S2a observation table
 ([p3_observed.md](additive_s2a_artifacts/p3_observed.md)) and is marked **(probe)** where P0 (section 6)
@@ -137,7 +138,7 @@ Cheap facts the design leans on and this note has not measured:
 4. M1 blast radius: run the full `Tests` build with the extent change and list failing modules and
    guards, as the B5c spike did.
 
-## 7. Decisions requested
+## 7. Decisions (all approved as recommended, 2026-10-30)
 
 * **D1 scope.** Checked f64/f32, legacy and oracle in slice A; `route`, JAX and scan-local unchanged.
   Recommended: accept (the same cut B5 and B5b made).
