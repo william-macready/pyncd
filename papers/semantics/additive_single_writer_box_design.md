@@ -1,8 +1,9 @@
 # B5c: a pinned declaration decides the shape for every writer count
 
-**Status: approved by the owner 2026-10-29: the rule (option A, all writers), D1-D3 as recommended,
-the go decision (D4) and the D5 refinement. Implementation plan `additive_b5c_plan.md` (D3's identity
-criterion is subsumed by D5, plus a rank-0 exclusion, see the plan section 2). Not yet executed.** Read against local
+**Status: implemented, record `additive_b5c_record.md`. Approved by the owner 2026-10-29:
+the rule (option A, all writers), D1-D3 as recommended, the go decision (D4) and the D5 refinement.
+Implementation plan `additive_b5c_plan.md` (D3's identity criterion is subsumed by D5, plus a rank-0
+exclusion, see the plan section 2).** Read against local
 `main` `b45deb9b`. It removes the asymmetry B5b left between a single writer and a boxed group
 ([additive_b5b_containing_box_design.md](additive_b5b_containing_box_design.md) section 5).
 

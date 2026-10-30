@@ -149,7 +149,9 @@ mutation controls, and both final whole-branch reviews have landed. Nothing in
 profile. Same-LHS multi-statement programs are summed by every backend and compared
 by value on all four legs. `StructuralCondition` has `usedDType` (an untyped
 f32 tensor) and the single-writer `scatterExtentOverridesDeclared` condition
-(production derives the destination extent, the oracle uses the declared one).
+(production derives the destination extent, the oracle uses the declared one; since B5c only for a
+single write that is not boxed: `declaredShapeWins` in `Differential.lean` retires the condition when
+production publishes the declared shape, e.g. `fH9` is now parity).
 B5 removed the blanket `multiWriterScatter` allowance: `fG` still reports
 `nativeFailure` with `scanAxisNotIter "a"` on both native legs and zero conditions;
 its equal-extent stride twin has actual four-leg parity. An extent condition is
@@ -158,8 +160,8 @@ head condition is confirmed, and confirmed extent differences suppress all value
 B5's independent test-side predictor separates SOURCE eligibility (C1
 222/195/88 over 505 rows) from SHAPED preparation: 81 SOURCE-admitted corpus rows
 stay refused, now as `writerExtentExceedsBox` (C1 declares extent 4 against realized 8), while
-thirteen hand rows give eight accepts and five shape refusals (two rows pin the box through an
-`iter` declaration). The predictor restates the B5b box
+seventeen hand rows give eleven accepts and six shape refusals (two rows pin the box through an
+`iter` declaration; four are single-writer rows, `singleBoxed`). The predictor restates the B5b box
 rule independently (`pinnedBox`, per-dimension fit); boxed overlap donors have actual four-leg
 value rows in `OracleMixedRefusalTest`.
 `markedSquare` passes shape prediction but still refuses a normalization marker;

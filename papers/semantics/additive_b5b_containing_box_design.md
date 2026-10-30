@@ -88,6 +88,10 @@ Unchanged by M1: B6 (a write outside the scratch's own derived extent still erro
 casts, route (`routeUnsupportedMultiWriter`), JAX, undeclared and exact groups, scan
 conflicts, all-bare UID agreement, single-writer programs.
 
+> **Update (B5c):** the single-writer declaration asymmetry listed first below is resolved by
+> [additive_single_writer_box_design.md](additive_single_writer_box_design.md): a pinned declaration
+> decides the shape for every writer count.
+
 ## 5. Conflicts and risks to settle before a plan
 
 - **Declaration authority differs by writer count (Rule 7).** A *single* scatter into a
