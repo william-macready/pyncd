@@ -1,0 +1,316 @@
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/Collect.lean b/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
+index 50b81b77..37bc3dae 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
+@@ -15,7 +15,9 @@ for a tropical one), so each `T#k` keeps its own nonlinearity, and a predicate `
+ `Combine.bool` (OR) through its own declaration.
+ 
+ `desugarMultiWriters` is the identity on every schedule in which each name has at most one writer,
+-so single-writer programs are byte-identical through every later phase.
++so single-writer programs are byte-identical through every later phase, with one exception (B5c):
++a single plain writer of a BOXED destination (`boxedSingleGroups`) is collected like a group of one,
++so that the declared shape decides the published shape for every writer count.
+ 
+ Existing all-bare groups keep positionwise UID agreement. Real and tropical groups may also
+ contain bounded scatter writers, using a distinct declared coordinate basis or the first ordinary
+@@ -57,7 +59,8 @@ def Decl.cloneAs (fresh : String) : Decl → Option Decl
+   | .typedLinear ty _ ax b => some (.typedLinear ty fresh ax b)
+   | .axis .. | .iter .. => none
+ 
+-/-- One multi-writer destination: its name and the schedule positions of its writers, in order. -/
++/-- One collected destination: its name and the schedule positions of its writers, in order (two or
++    more, or one for a boxed single writer, `boxedSingleGroups`). -/
+ structure WriterGroup where
+   name    : String
+   writers : List Nat
+@@ -95,7 +98,7 @@ def writerGroups (stmts : List ScanStmt) : List WriterGroup :=
+ 
+ /-- True only for the newly admitted collection surface, not legacy all-bare groups. -/
+ def WriterGroup.needsB5 (g : WriterGroup) (stmts : List ScanStmt) : Bool :=
+-  (g.writers.filterMap (plainAt? stmts)).any fun
++  g.writers.length == 1 || (g.writers.filterMap (plainAt? stmts)).any fun
+     | .scatter .. => true
+     | .assign _ ls _ => slotsBecomeScatter ls
+     | _ => false
+@@ -119,6 +122,46 @@ def writerGroupBasis (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
+   | some s => return producerSlots s.slots
+   | none => throw (.multiWriterNeedsDeclaredShape g.name)
+ 
++/-- B5c: the names with ONE plain writer that is collected like a group of one, so a pinned
++    declaration decides the published shape for every writer count (the rule B5b gave groups).
++
++    A name qualifies when its destination is boxed (a tensor declaration with at least one axis, every
++    axis UID in `pinned`, and not a `predicate`: D1, bool collection is not admitted for groups
++    either; a rank-0 destination has nothing to pad and the D5 test below is vacuous for it) and its
++    writer is one of:
++
++    * an explicit scatter with bounded geometry (`LHSSlot.boundedScatter`: no constant or multi-axis
++      slot, D2);
++    * a plain assign whose slots are distinct free axes;
++
++    **unless a declared axis occurs among the writer's own SOURCE axes** (D5): `tensor Out(i)` with
++    `Out[2*i] := X[i]` declares `Out` over its own source axis, so such a writer keeps the derived
++    shape. This also covers the identity writer (`tensor S(i)` with `S[i] := A[i]`, same axis and same
++    pinned size, so the shape is the declared one already) and a transposed write over the declared
++    axes. Every excluded case keeps today's behaviour. -/
++def boxedSingleGroups (env : DeclEnv) (pinned : Std.HashMap UID Nat) (stmts : List ScanStmt) :
++    List WriterGroup :=
++  let names := (stmts.flatMap routeWrites).eraseDups
++  names.filterMap fun nm =>
++    let writers := (List.range stmts.length).filter fun i =>
++      (stmts[i]?.map (fun sc => (routeWrites sc).contains nm)).getD false
++    match writers, (env[nm]?).bind Decl.tensorAxes? with
++    | [i], some ax =>
++        let declUIDs := ax.map (·.uid)
++        let boxed := !ax.isEmpty && ax.all (fun a => pinned.contains a.uid) && env.declAlgebra nm != .bool
++        let sourceUIDs (ls : List LHSSlot) : List UID :=
++          ls.flatMap fun sl => (idxAffineForm sl.outIdx).2.map (·.2)
++        let collected := match plainAt? stmts i with
++          | some (.scatter _ ls _) =>
++              ls.all LHSSlot.boundedScatter && !(sourceUIDs ls).any declUIDs.contains
++          | some (.assign _ ls _) =>
++              let us := ls.filterMap (·.freeUID?)
++              us.length == ls.length && us.length == us.eraseDups.length &&
++                !(sourceUIDs ls).any declUIDs.contains
++          | _ => false
++        if boxed && collected then some ⟨nm, [i]⟩ else none
++    | _, _ => none
++
+ /-- Source geometry retained across renaming for a post-inference equality check. -/
+ structure CollectorShapeObligation where
+   name : String
+@@ -130,7 +173,8 @@ structure CollectorShapeObligation where
+ 
+ def collectorShapeObligations (sched : ScheduledProgram) (pinned : Std.HashMap UID Nat) :
+     Except CompileError (List CollectorShapeObligation) :=
+-  ((writerGroups sched.stmts).filter (·.needsB5 sched.stmts)).mapM fun g => do
++  ((writerGroups sched.stmts ++ boxedSingleGroups sched.env pinned sched.stmts).filter
++    (·.needsB5 sched.stmts)).mapM fun g => do
+     let boxed := match (sched.env[g.name]?).bind Decl.tensorAxes? with
+       | some ax => ax.all (fun a => pinned.contains a.uid)
+       | none => false
+@@ -191,11 +235,13 @@ def collectorStmt (nm : String) (basis : List LHSSlot) (n : Nat) (agg : AggOp) :
+     `multiWriterScan` (any name, `scanWriterConflict?`) first; then, per group in first-writer
+     order, geometry, algebra, then basis/shape diagnostics (the order of checks
+     inside `checkWriterGroup`; a group's failure stops the pass before the next group is looked
+-    at); `reservedNameCollision` last, after every group has passed. -/
+-def desugarMultiWriters (sched : ScheduledProgram) :
++    at); `reservedNameCollision` last, after every group has passed. The groups are the multi-writer
++    groups in first-writer order, then (when `pinned` is given) the boxed single writers
++    (`boxedSingleGroups`) in first-writer order. -/
++def desugarMultiWriters (sched : ScheduledProgram) (pinned : Std.HashMap UID Nat := {}) :
+     Except CompileError (ScheduledProgram × List String) := do
+   if let some nm := scanWriterConflict? sched.stmts then throw (.multiWriterScan nm)
+-  let groups := writerGroups sched.stmts
++  let groups := writerGroups sched.stmts ++ boxedSingleGroups sched.env pinned sched.stmts
+   if groups.isEmpty then return (sched, [])
+   let mut agreed : List SortAlgebra := []
+   let mut bases : List (List LHSSlot) := []
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+index cc8efc18..ff9b226c 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean
+@@ -127,10 +127,12 @@ def scheduleFloat32Name? (env : DeclEnv) (stmts : List ScanStmt) : Option String
+ /-- Additive collection (decision note §C): `desugarMultiWriters`, with its result asserted to be in
+     producer-before-consumer order. The entry `validateScheduled` calls; `route` calls
+     `desugarMultiWriters` directly, because `routeCore`'s `routableInOrder` is its single topology
+-    gate. The identity on single-writer schedules. -/
+-def collectDefinitions (sched : ScheduledProgram) :
++    gate. The identity on single-writer schedules, except a single non-identity writer of a boxed
++    destination (`boxedSingleGroups`, B5c), which `pinned` (`declaredAxisSizes`) makes visible.
++    `route` passes no `pinned`, so the routed diagram is unchanged. -/
++def collectDefinitions (sched : ScheduledProgram) (pinned : Std.HashMap UID Nat := {}) :
+     Except CompileError (ScheduledProgram × List String) := do
+-  let (collected, privateNames) ← desugarMultiWriters sched
++  let (collected, privateNames) ← desugarMultiWriters sched pinned
+   unless isTopoOrdered collected.stmts collected.stmts do
+     throw (.cyclicDataflow "collectDefinitions: desugared schedule is not in producer-before-consumer order")
+   return (collected, privateNames)
+@@ -247,7 +249,7 @@ def validateScheduled (sched : ScheduledProgram) : Except CompileError CheckedSc
+   unless isTopoOrdered sched.stmts sched.stmts do
+     throw (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
+   let source := { sched with env := sourceEnv }
+-  let (collected, privateNames) ← collectDefinitions source
++  let (collected, privateNames) ← collectDefinitions source (declaredAxisSizes sched.decls)
+   let shapeObligations ← collectorShapeObligations source (declaredAxisSizes sched.decls)
+   let declEnv ← buildDeclEnv collected.decls
+   return { program := collected
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index d6ccd66d..daf11e8f 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -50,7 +50,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Eval.ScanTest", "Eval.EvalExamplesTest", "Eval.EntryTest", "Eval.CollectEvalTest", "Eval.ExplicitF64", "Eval.ExplicitF64Test",
+          "Eval.Plan.ContractTest", "Eval.Plan.ScanContractTest", "Eval.Plan.SignatureTest",
+          "Eval.Plan.CoordinatesTest",
+-         "Eval.Plan.B5NativeTest", "Eval.Plan.B5BoundaryTest", "Eval.Plan.B5bBoxTest",
++         "Eval.Plan.B5NativeTest", "Eval.Plan.B5BoundaryTest", "Eval.Plan.B5bBoxTest", "Eval.Plan.B5cSingleBoxTest",
+          "Eval.Plan.KernelCheckTest", "Eval.Plan.KernelDenseTest",
+          "Eval.Plan.KernelDense32Test",
+          "Eval.Plan.ScatterCheckTest", "Eval.Plan.ScatterDenseTest",
+diff --git a/leanncd/test/Eval/Plan/B5cSingleBoxTest.lean b/leanncd/test/Eval/Plan/B5cSingleBoxTest.lean
+new file mode 100644
+index 00000000..9e91221b
+--- /dev/null
++++ b/leanncd/test/Eval/Plan/B5cSingleBoxTest.lean
+@@ -0,0 +1,146 @@
++import Eval.Plan.B5bBoxTest
++
++namespace LeanNCD.Eval.Plan.B5cSingleBoxTest
++open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan LeanNCD.Eval.Plan.B5NativeTest
++  LeanNCD.Eval.Plan.B5BoundaryTest LeanNCD.Eval.Plan.B5bBoxTest Std
++
++-- Donor: B5bBoxTest.concat, reduced to ONE scatter writer into a pinned `S(k)`, `k = 8`.
++def one : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis k : ℕ = 8
++  tensor f32 A(i), S(k)
++  S[2*i] := A[i]
++}
++def oneEqual : TLProgram := pinTo "k" 4 one
++def oneExceeds : TLProgram := pinTo "k" 3 one
++def oneInferred : TLProgram := unpin "k" one
++
++-- A single bare assign over an axis that differs from the declared one.
++def bareOne : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis k : ℕ = 4
++  tensor f32 A(i), S(k)
++  S[i] := A[i]
++}
++def bareOneTight : TLProgram := pinTo "k" 2 bareOne
++def bareOneExceeds : TLProgram := pinTo "k" 1 bareOne
++
++-- D5: the declared axis is the writer's own source axis (`Out(i)` with `Out[2*i]`).
++def idiom : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  tensor f32 A(i), S(i)
++  S[2*i] := A[i]
++}
++-- A transposed write over the declared axes (`S(i, j)` with `S[j, i]`) uses declared axes as its source
++-- axes (D5), so it keeps the derived shape `[3, 2]`; collected as a box it would exceed `[2, 3]`.
++def transposeOne : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis j : ℕ = 3
++  tensor f32 M(j, i), S(i, j)
++  S[j, i] := M[j, i]
++}
++def transposeIn64 : NamedDenseEnv :=
++  ({} : NamedDenseEnv).insert "M" ⟨[3, 2], #[1, 2, 3, 4, 5, 6]⟩
++def transposeIn32 : NamedDenseEnv32 :=
++  ({} : NamedDenseEnv32).insert "M" ⟨[3, 2], #[1, 2, 3, 4, 5, 6]⟩
++-- A scalar (rank-0) destination has nothing to pad: never collected (the D5 test is vacuous for it).
++def scalarOne : TLProgram := tlprog!{
++  tensor f32 A(), S()
++  S[] := A[]
++}
++def scalarIn64 : NamedDenseEnv := ({} : NamedDenseEnv).insert "A" ⟨[], #[3]⟩
++def scalarIn32 : NamedDenseEnv32 := ({} : NamedDenseEnv32).insert "A" ⟨[], #[3]⟩
++-- Identity writer: declared axes are the written axes.
++def identityOne : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  tensor f32 A(i), S(i)
++  S[i] := A[i]
++}
++-- Donor: B5NativeTest.tropical reduced to one max writer, holes under a larger box.
++def tropOne : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis j : ℕ = 1
++  axis k : ℕ = 8
++  tensor f32 A(i, j), S(k)
++  S[2*i] := maxreduce(A[i, j])
++}
++-- A reader of the boxed destination over its declared axis.
++def oneReader : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis k : ℕ = 8
++  tensor f32 A(i), S(k), R(k)
++  S[2*i] := A[i]
++  R[k] := S[k]
++}
++def predOne : TLProgram := { one with decls := one.decls.map fun
++  | .typedTensor _ "S" axes => .predicate "S" axes
++  | d => d }
++
++def groupsOf (p : TLProgram) : List String :=
++  match scheduled p with
++  | some s => (boxedSingleGroups s.env (declaredAxisSizes s.decls) s.stmts).map (·.name)
++  | none => []
++
++def replaceSlot (slot : LHSSlot) (p : TLProgram) : TLProgram :=
++  { p with stmts := p.stmts.map fun
++    | .assign n _ r | .scatter n _ r => .scatter n [slot] r
++    | s => s }
++def multiAxisOne : TLProgram :=
++  replaceSlot (.affine (.affine 0 [(1, ⟨"i", 0, .nat⟩), (1, ⟨"j", 91, .nat⟩)])) one
++def constOne : TLProgram := replaceSlot (.affine (.const 3)) one
++
++-- One scatter writer into a pinned box: the declaration decides the shape (three native legs).
++#guard agree one in64 in32 #[-5, 0, -2, 0, 0, 0, 0, 0] #[-5, 0, -2, 0, 0, 0, 0, 0]
++#guard shapesOf one in64 in32 == (some [8], some [8], some [8])
++-- Accept neighbour: the declared extent equals the derived one.
++#guard agree oneEqual in64 in32 #[-5, 0, -2, 0] #[-5, 0, -2, 0]
++-- Nearest refused neighbour: a declared extent smaller than the derived one, even though the writes
++-- at 0 and 2 would fit (the M4 slack, deliberately).
++#guard refShape oneExceeds in64 == some (.writerExtentExceedsBox "S" 1 0 3 4)
++#guard planShape oneExceeds in64 == some (.writerExtentExceedsBox "S" 1 0 3 4)
++#guard planShape32 oneExceeds in32 == some (.writerExtentExceedsBox "S" 1 0 3 4)
++-- Unpinned declaration: unchanged, the derived shape.
++#guard shapesOf oneInferred in64 in32 == (some [4], some [4], some [4])
++
++-- A single bare assign over a different axis is padded to the box, refused when it exceeds it.
++#guard agree bareOne in64 in32 #[-5, -2, 0, 0] #[-5, -2, 0, 0]
++#guard shapesOf bareOneTight in64 in32 == (some [2], some [2], some [2])
++#guard refShape bareOneExceeds in64 == some (.writerExtentExceedsBox "S" 1 0 1 2)
++#guard planShape bareOneExceeds in64 == some (.writerExtentExceedsBox "S" 1 0 1 2)
++#guard planShape32 bareOneExceeds in32 == some (.writerExtentExceedsBox "S" 1 0 1 2)
++
++-- D5: a declared axis the writer uses as its own source axis names it, it does not claim an extent.
++#guard shapesOf idiom in64 in32 == (some [4], some [4], some [4])
++#guard shapesOf transposeOne transposeIn64 transposeIn32 == (some [3, 2], some [3, 2], some [3, 2])
++#guard shapesOf scalarOne scalarIn64 scalarIn32 == (some [], some [], some [])
++-- An identity writer is untouched.
++#guard shapesOf identityOne in64 in32 == (some [2], some [2], some [2])
++
++-- Tropical holes hold `-inf`, native f32 bits included.
++#guard agree tropOne tropIn64 tropIn32 #[-5, -(1/0), -2, -(1/0), -(1/0), -(1/0), -(1/0), -(1/0)]
++  #[-5, -(1/0), -2, -(1/0), -(1/0), -(1/0), -(1/0), -(1/0)]
++
++-- A reader over the declared axis: `S` and `R` both have the box shape (before the rule this was
++-- a `sizeConflict 8 vs 4`).
++#guard ((ref64 oneReader in64).bind fun e => e["R"]?.map fun t => (t.shape, t.data)) ==
++  some ([8], #[-5, 0, -2, 0, 0, 0, 0, 0])
++#guard ((run64 oneReader in64).bind fun e => e["R"]?.map fun t => (t.shape, t.data)) ==
++  some ([8], #[-5, 0, -2, 0, 0, 0, 0, 0])
++#guard ((run32 oneReader in32).bind fun e => e["R"]?.map (·.shape)) == some [8]
++
++-- D1: a predicate destination keeps the derived shape (reference leg; the checked legs refuse a
++-- real-valued input into a predicate unrelated to boxing).
++#guard ((ref64 predOne in64).bind fun e => e["S"]?.map (·.shape)) == some [4]
++
++-- Which single writers are collected (`boxedSingleGroups`), with every exclusion: unpinned
++-- declaration, D5 idiom, identity and transposed writers (D5), a scalar destination, predicate (D1),
++-- multi-axis and constant slots (D2), and a two-writer group (collected by `writerGroups`, not here).
++#guard [groupsOf one, groupsOf oneEqual, groupsOf oneInferred, groupsOf bareOne, groupsOf idiom,
++  groupsOf identityOne, groupsOf tropOne, groupsOf predOne, groupsOf multiAxisOne, groupsOf constOne,
++  groupsOf concat, groupsOf transposeOne, groupsOf scalarOne] ==
++  [["S"], ["S"], [], ["S"], [], [], ["S"], [], [], [], [], [], []]
++
++-- `route` is unchanged: a single boxed writer still routes (route carries no extents).
++#guard routeError one == none && routeError bareOne == none
++
++end LeanNCD.Eval.Plan.B5cSingleBoxTest
+diff --git a/leanncd/test/Eval/Plan/DefaultF32Test.lean b/leanncd/test/Eval/Plan/DefaultF32Test.lean
+index 2815db5c..f08770bf 100644
+--- a/leanncd/test/Eval/Plan/DefaultF32Test.lean
++++ b/leanncd/test/Eval/Plan/DefaultF32Test.lean
+@@ -236,8 +236,7 @@ def corpus : List Case :=
+       env32 [("A", [2, 3], #[1, 2, 3, 4, 5, 6])]⟩
+   , ⟨"scatter", .inl tlprog!{
+         axis i : ℕ = 3
+-        axis o : ℕ = 6
+-        tensor f32 X(i), Out(o)
++        tensor f32 X(i), Out(i)
+         Out[2*i] := X[i] },
+       env32 [("X", [3], #[1, 2, 3])]⟩
+   , ⟨"pred-mixed", .inl tlprog!{

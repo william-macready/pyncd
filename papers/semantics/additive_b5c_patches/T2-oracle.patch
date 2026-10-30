@@ -1,0 +1,165 @@
+diff --git a/leanncd/LeanNCD/Semantics/Source/Differential.lean b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+index 6611927f..39f30eae 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Differential.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+@@ -196,6 +196,22 @@ private def derivedShape (source : AdmittedSource) (st : AdmittedStatement sourc
+       coef * ((source.source.context.axes.find? (·.uid == u)).map (fun a => (a.extent : Int))
+         |>.getD 0)).sum).toNat
+ 
++/-- B5c: production publishes the DECLARED shape for a single write whose destination is boxed (a
++    declared destination with pinned axes): every slot is a bounded, non-constant form and no
++    destination axis is one of the writer's own source axes (such an axis names the source axis, D5,
++    and the derived shape stays). The oracle also uses the declared shape, so there is nothing to
++    override. Stated from the admitted statement alone, not from production's `boxedSingleGroups`.
++    The oracle cannot see whether an axis was pinned: declared extents are taken as pinned. -/
++private def declaredShapeWins (source : AdmittedSource) (st : AdmittedStatement source.source) :
++    Bool :=
++  let destUIDs := (source.source.table.entry st.output.tensor).axes.map (·.uid)
++  let sourceUIDs := st.output.forms.flatMap fun f => f.2.map (·.2)
++  let bounded (f : Int × List (Int × UID)) : Bool :=
++    !f.2.isEmpty &&
++      (((f.2.map (·.2)).eraseDups.filter fun u =>
++        (f.2.filter (·.2 == u)).foldl (fun acc p => acc + p.1) 0 != 0).length ≤ 1)
++  st.output.forms.all bounded && !sourceUIDs.any destUIDs.contains
++
+ def detectConditions (source : AdmittedSource) :
+     List StructuralCondition :=
+   let decl (st : AdmittedStatement source.source) : Nat :=
+@@ -204,7 +220,7 @@ def detectConditions (source : AdmittedSource) :
+     let declared := (source.source.table.entry st.output.tensor).axes.map (·.extent)
+     let derived := derivedShape source st
+     -- single-writer tensors only: with several writers production's shape is not one form's extent
+-    if nonBareWrite st && declared != derived &&
++    if nonBareWrite st && declared != derived && !declaredShapeWins source st &&
+         (source.statements.filter fun o => decl o == decl st).length == 1 then
+       some (StructuralCondition.scatterExtentOverridesDeclared st.output.origin (decl st) derived)
+     else none
+diff --git a/leanncd/test/Semantics/OracleSortRules.lean b/leanncd/test/Semantics/OracleSortRules.lean
+index 0d5d4979..831a6fd1 100644
+--- a/leanncd/test/Semantics/OracleSortRules.lean
++++ b/leanncd/test/Semantics/OracleSortRules.lean
+@@ -292,6 +292,30 @@ private def pinnedBox (decls : List Decl) (n : String) : Bool :=
+       | _ => false
+   | none => false
+ 
++/-- B5c: a single plain writer whose destination is boxed and which production collects like a group
++    of one (the declared shape decides, as for a group). Restated from the declarations and the
++    statement, not from production's `boxedSingleGroups`: pinned declared destination, not a
++    predicate, with at least one axis; a scatter with bounded slots or an assign over distinct free
++    axes; and no declared axis among the writer's source axes (D5), which also excludes the identity
++    writer. -/
++private def singleBoxed (decls : List Decl) (n : String) (ws : List Stmt) : Bool :=
++  match ws, declaredAxes decls n with
++  | [w], some ax =>
++      let declUIDs := ax.map (·.uid)
++      let slots := slotsOf w
++      let sourceUIDs := slots.flatMap fun
++        | .free a | .freeNorm a => [a.uid]
++        | .affine e => (coefficients e).2.map (·.2)
++        | _ => []
++      -- an `.assign` with an affine or repeated slot is a scatter after lowering, so one rule covers
++      -- both statement forms: bounded slots
++      let shaped := match w with
++        | .recurMorphism .. => false
++        | _ => slots.all bounded
++      !declUIDs.isEmpty && pinnedBox decls n && !(predicateNames decls).contains n && shaped &&
++        !sourceUIDs.any declUIDs.contains
++  | _, _ => false
++
+ /-- Concrete shape-stage prediction. Callers supply independently known concrete axis sizes.
+     A boxed group (`pinnedBox`) requires each writer extent to fit the basis extent; every other
+     group requires equality. This does not claim to model signature, capability, inference or
+@@ -302,7 +326,7 @@ def predictShaped (decls : List Decl) (stmts : List Stmt) (sizes : List (UID ×
+   if !p.refusals.isEmpty then p else
+   let errors := (stmts.map destOf).eraseDups.filterMap fun n =>
+     let ws := stmts.filter (fun s => destOf s == n)
+-    if !needsB5 ws then none else
++    if !(needsB5 ws || singleBoxed decls n ws) then none else
+     match basis decls n ws with
+     | .error e => some e
+     | .ok bs =>
+diff --git a/leanncd/test/Semantics/OracleSortRulesTest.lean b/leanncd/test/Semantics/OracleSortRulesTest.lean
+index c232e5af..39856ef0 100644
+--- a/leanncd/test/Semantics/OracleSortRulesTest.lean
++++ b/leanncd/test/Semantics/OracleSortRulesTest.lean
+@@ -474,6 +474,12 @@ private def stagedRows : List (String × List Decl × List Stmt) :=
+      [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])]),
+    ("two affine iter box12", iterBoxDecls 12, [writer 5 .max, writer 5 .max]),
+    ("two affine iter box4", iterBoxDecls 4, [writer 5 .max, writer 5 .max]),
++   -- B5c: ONE writer. Boxed (the destination `Y(k)` is pinned and `k` is not the writer's source
++   -- axis `a`): fits box 12, exceeds box 4. The D5 idiom `Y(a)` with `Y[2a]` keeps the derived shape.
++   ("single affine iter box12", iterBoxDecls 12, [writer 5 .max]),
++   ("single affine iter box4", iterBoxDecls 4, [writer 5 .max]),
++   ("single affine box12", box12Decls, [writer 5 .max]),
++   ("single affine idiom (declared over its source axis)", hDecls, [writer 5 .max]),
+    ("two affine extent8 twin", extent8Decls, [writer 5 .max, writer 5 .max]),
+    ("affine/bare extent8 twin", extent8Decls,
+      [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])])] ++
+@@ -487,12 +493,13 @@ private def stagedRows : List (String × List Decl × List Stmt) :=
+ run_cmd assertNone "hand SHAPED disagreements" (stagedRows.flatMap fun (l, ds, ss) =>
+   shapedProblems l ds ss)
+ 
+--- Thirteen hand rows: eight shape accepts (two box12, the iter box12, two extent8 twins, two square
+--- twins, the max-plus plain+scatter row) and five refusals (two exceed-box affine rows, the iter
++-- Seventeen hand rows: eleven shape accepts (two box12, the iter box12, two extent8 twins, two square
++-- twins, the max-plus plain+scatter row, and three single-writer rows: iter box12, box12 and the D5
++-- idiom) and six refusals (two exceed-box affine rows, the iter box4 row, the single-writer iter
+ -- box4 row, two rectangular diagonals).
+-#guard stagedRows.length == 13
++#guard stagedRows.length == 17
+ #guard (stagedRows.filter fun (_, ds, ss) =>
+-  (predictShaped ds ss (sizesOf ds)).refusals.isEmpty).length == 8
++  (predictShaped ds ss (sizesOf ds)).refusals.isEmpty).length == 11
+ 
+ #guard concreteC1.length == 81
+ -- C1 declares extent 4 against realized extent 8, so no candidate fits the pinned box: all 81 stay
+diff --git a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+index 61158fda..96d55ce8 100644
+--- a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
++++ b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+@@ -139,7 +139,9 @@ private def fMask : SourceSnapshot :=
+ -- Multi-writer vs single writer; extent override vs equal extent (A); out-of-range refusal.
+ #guard tag fG == "nativeFailure"
+ #guard tag (snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX]) == "parity"
+-#guard tag fH9 == "known:extent"
++-- B5c: `fH9` (`Y[2a]` declared extent 9, derived 8) is a boxed single write, so production publishes
++-- the declared shape like the oracle: parity, and no `scatterExtentOverridesDeclared` condition.
++#guard tag fH9 == "parity"
+ #guard tag fH6 == "refused:writeOutOfRange"
+ -- Constant slots written by `.assign`: compile `overlappingScatter` (the `lowerArith` `.assign` arm's
+ -- guard, kept; the hand-built `.scatter` arm's guard was deleted in S3a, fD'), whatever the RHS.
+@@ -317,19 +319,26 @@ private def fOriginC := withZ 8 [.scatter "Z" [.affine (.const 3)] readX,
+ -- case is the one where the declared shape fits but production's DERIVED extent does not:
+ -- `Y[0*a + 5] := X[a]` (declared extent 6, derived extent 5). The oracle admits it (all four writes
+ -- collide onto cell 5: 1+2+3+4 = 10); legacy raises `evalScatter ... outside the destination extent`
+--- and the checked plan rejects at preparation (`ShapeError.scatterImageOutOfRange`). Both native legs fail, so the class is `nativeFailure`. The
+--- source alone PREDICTS exactly one condition, `scatterExtentOverridesDeclared` (declared 6 vs
+--- derived 5, observed by printing `run.conditions`), but it is never confirmed (a condition needs
+--- the native legs to show its predicted outcome, and an error is not a value difference), so the
+--- tag stays `nativeFailure` and no value is compared. Accept-neighbour `fR1`
++-- and the checked plan rejects at preparation (`ShapeError.scatterImageOutOfRange`). Both native legs
++-- fail, so the class is `nativeFailure`. Since B5c `fR` is a BOXED single write (declared 6, pinned):
++-- production collects it through the scratch `Y#1`, whose derived extent 5 still rejects the write at
++-- 5, so both native legs name `Y#1` (the M4 slack: fit is judged by derived extent, not by the writes).
++-- No `scatterExtentOverridesDeclared` condition is predicted any more (the declared shape wins for a
++-- boxed write), and no value is compared. Accept-neighbour `fR1`
+ -- (`Y[a+4]`, declared = derived extent 8) stays four-leg parity.
+ private def fR := snap 6 [k] [.assign "Y" [.affine (.affine 5 [(0, a)])] readX]
+ private def fR1 := snap 8 [k] [.assign "Y" [.affine (.shift a 4)] readX]
+ #guard tag fR == "nativeFailure"
+ #guard mentions fR "oracle=[(Y, ([6], [0, 0, 0, 0, 0, 10]))]"
+-#guard mentions fR "legacy=failure phase=LeanNCD.Semantics.Source.NativeLegs.LegacyPhase.scheduledEvaluation cause=evalScatter Y: write to output coord [5] (from source coord [0]) is outside the destination extent"
+-#guard mentions fR "checked=preparation checked preparation: cause=shape: scatter Y: dimension 0: writes span [5, 5] but the destination extent is 5"
+-#guard conditionCount fR == 1
++#guard mentions fR "legacy=failure phase=LeanNCD.Semantics.Source.NativeLegs.LegacyPhase.scheduledEvaluation cause=evalScatter Y#1: write to output coord [5] (from source coord [0]) is outside the destination extent"
++#guard mentions fR "checked=preparation checked preparation: cause=shape: scatter Y#1: dimension 0: writes span [5, 5] but the destination extent is 5"
++#guard conditionCount fR == 0
++#guard conditionCount fH9 == 0
++-- D5 (a destination declared over the writer's own source axis, `Y(a)` with `Y[2a]`) never reaches the
++-- native legs here: the oracle refuses it first as `writeOutOfRange` (the writes exceed the declared
++-- extent, as for `fH6`), so the idiom is observed through the SHAPED predictor rows in
++-- `OracleSortRulesTest`, which run production, not through this differential. The matching clause in
++-- `declaredShapeWins` mirrors production's rule and has no isolating fixture.
+ #guard tag fR1 == "parity"
+ 
+ /-! B5: keep the old syntax-negative donor honest, and add an equal-extent stride twin. -/

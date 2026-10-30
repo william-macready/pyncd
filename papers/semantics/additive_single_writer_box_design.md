@@ -1,9 +1,8 @@
 # B5c: a pinned declaration decides the shape for every writer count
 
-**Status: rule approved by the owner 2026-10-28 (option A, all writers); D1-D3 taken as recommended;
-the blast-radius spike (section 5) found that A as first written would refuse a common existing
-idiom, so section 2 carries a refinement, D5, that needs the owner's approval. Not a plan, no
-production change.** Read against local
+**Status: approved by the owner 2026-10-29: the rule (option A, all writers), D1-D3 as recommended,
+the go decision (D4) and the D5 refinement. Implementation plan `additive_b5c_plan.md` (D3's identity
+criterion is subsumed by D5, plus a rank-0 exclusion, see the plan section 2). Not yet executed.** Read against local
 `main` `b45deb9b`. It removes the asymmetry B5b left between a single writer and a boxed group
 ([additive_b5b_containing_box_design.md](additive_b5b_containing_box_design.md) section 5).
 

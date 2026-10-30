@@ -1,0 +1,145 @@
+[
+ {
+  "label": "B5c-N01 (pinned test dropped: any declaration is a box)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "        let boxed := !ax.isEmpty && ax.all (fun a => pinned.contains a.uid) && env.declAlgebra nm != .bool\n",
+  "new": "        let boxed := !ax.isEmpty && env.declAlgebra nm != .bool\n",
+  "targets": [
+   "Eval.Plan.B5cSingleBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5cSingleBoxTest.lean:"
+  ]
+ },
+ {
+  "label": "B5c-N02 (D5 exclusion dropped for scatters)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "              ls.all LHSSlot.boundedScatter && !(sourceUIDs ls).any declUIDs.contains\n",
+  "new": "              ls.all LHSSlot.boundedScatter\n",
+  "targets": [
+   "Eval.Plan.B5cSingleBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5cSingleBoxTest.lean:"
+  ]
+ },
+ {
+  "label": "B5c-N03 (D5 exclusion dropped for assigns)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "us.length == us.eraseDups.length &&\n                !(sourceUIDs ls).any declUIDs.contains\n",
+  "new": "us.length == us.eraseDups.length\n",
+  "targets": [
+   "Eval.Plan.B5cSingleBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5cSingleBoxTest.lean:"
+  ]
+ },
+ {
+  "label": "B5c-N04 (predicate destinations are boxed)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "        let boxed := !ax.isEmpty && ax.all (fun a => pinned.contains a.uid) && env.declAlgebra nm != .bool\n",
+  "new": "        let boxed := !ax.isEmpty && ax.all (fun a => pinned.contains a.uid)\n",
+  "targets": [
+   "Eval.Plan.B5cSingleBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5cSingleBoxTest.lean:"
+  ]
+ },
+ {
+  "label": "B5c-N05 (constant and multi-axis slots are collected)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "              ls.all LHSSlot.boundedScatter && !(sourceUIDs ls).any declUIDs.contains\n",
+  "new": "              !(sourceUIDs ls).any declUIDs.contains\n",
+  "targets": [
+   "Eval.Plan.B5cSingleBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5cSingleBoxTest.lean:"
+  ]
+ },
+ {
+  "label": "B5c-N06 (a one-writer group skips the B5 path)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "  g.writers.length == 1 || (g.writers.filterMap (plainAt? stmts)).any fun",
+  "new": "  (g.writers.filterMap (plainAt? stmts)).any fun",
+  "targets": [
+   "Eval.Plan.B5cSingleBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5cSingleBoxTest.lean:"
+  ]
+ },
+ {
+  "label": "B5c-N07 (collectDefinitions gets no pinned sizes)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/ScheduledValidation.lean",
+  "old": "collectDefinitions source (declaredAxisSizes sched.decls)",
+  "new": "collectDefinitions source",
+  "targets": [
+   "Eval.Plan.B5cSingleBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5cSingleBoxTest.lean:"
+  ]
+ },
+ {
+  "label": "B5c-N08 (a rank-0 destination is boxed)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "        let boxed := !ax.isEmpty && ax.all (fun a => pinned.contains a.uid) && env.declAlgebra nm != .bool\n",
+  "new": "        let boxed := ax.all (fun a => pinned.contains a.uid) && env.declAlgebra nm != .bool\n",
+  "targets": [
+   "Eval.Plan.B5cSingleBoxTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5cSingleBoxTest.lean:"
+  ]
+ },
+ {
+  "label": "B5c-N09 (oracle always predicts the override condition)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "  st.output.forms.all bounded && !sourceUIDs.any destUIDs.contains\n",
+  "new": "  false\n",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "error: test/Semantics/SourceDifferentialScatterTest.lean:"
+  ]
+ },
+ {
+  "label": "B5c-N10 (predictor ignores single-writer boxes)",
+  "task": "T2",
+  "file": "test/Semantics/OracleSortRules.lean",
+  "old": "if !(needsB5 ws || singleBoxed decls n ws) then none else",
+  "new": "if !needsB5 ws then none else",
+  "targets": [
+   "Semantics.OracleSortRulesTest"
+  ],
+  "expect": [
+   "hand SHAPED disagreements"
+  ]
+ },
+ {
+  "label": "B5c-N11 (predictor drops the D5 exclusion)",
+  "task": "T2",
+  "file": "test/Semantics/OracleSortRules.lean",
+  "old": "      !declUIDs.isEmpty && pinnedBox decls n && !(predicateNames decls).contains n && shaped &&\n        !sourceUIDs.any declUIDs.contains\n",
+  "new": "      !declUIDs.isEmpty && pinnedBox decls n && !(predicateNames decls).contains n && shaped\n",
+  "targets": [
+   "Semantics.OracleSortRulesTest"
+  ],
+  "expect": [
+   "hand SHAPED disagreements"
+  ]
+ }
+]
