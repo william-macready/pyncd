@@ -22,7 +22,8 @@ leg must report `SortedClassification.fourLegParity`.
 
 1. Base is local `main` AFTER slice A (T1-T4) has merged. Check: `rg -n "affineImageBounds" leanncd/LeanNCD/DSL/Ast.lean`
    finds a definition; `leanncd/test/Eval/Plan/ScatterGeometryTest.lean` exists; `rg -n "throw .*overlappingScatter" leanncd/LeanNCD/DSL/Pipeline/Structural.lean`
-   finds nothing (the stale guard is gone).
+   finds exactly one throw, inside the scan branch of `lowerConstSlots` (slice A deletes the stale guard
+   for ordinary constant slots and keeps it only for a constant inside a scan statement).
 2. `bash leanncd/scripts/lake-build.sh <your worktree>/leanncd LeanNCD Tests JaxExperiment` is green BEFORE you edit.
 
 ## 3. Setup
