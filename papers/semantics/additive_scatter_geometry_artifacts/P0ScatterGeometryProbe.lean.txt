@@ -1,0 +1,70 @@
+/-
+P0 probe for papers/semantics/additive_scatter_geometry_design.md section 6. THROWAWAY, FINDINGS-ONLY.
+Not in lakefile.toml. Run with:  bash scripts/lean-file.sh <leanncd> spikes/P0ScatterGeometryProbe.lean
+Each case prints reference (evalScheduled) vs checked (prepareEvalPlan + runPreparedDense).
+-/
+import LeanNCD.Eval.Entry
+import LeanNCD.Eval.Plan.Compile
+import LeanNCD.Eval.Plan.Adapter
+import Eval.ExplicitF64
+
+namespace LeanNCD.P0Probe
+open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan LeanNCD.Eval.ExplicitF64 Std
+deriving instance Repr for LeanNCD.Eval.UnsizedAxisSite
+deriving instance Repr for LeanNCD.Eval.SolveDiagnostic
+deriving instance Repr for LeanNCD.Eval.ShapeError
+deriving instance Repr for LeanNCD.Eval.Plan.PlanCompileCause
+deriving instance Repr for LeanNCD.Eval.EvalWarning
+deriving instance Repr for LeanNCD.Eval.Plan.PlanCompileFailure
+
+def dt (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArray⟩
+
+def fmt (d : DenseTensor) : String := s!"{d.shape}/{d.data.toList}"
+
+def runCase (nm : String) (prog : TLProgram) (env : HashMap String DenseTensor) (key : String) :
+    String :=
+  match prog.explicitF64.compileToScheduled.run 0 with
+  | .error e _ => s!"{nm}\n  COMPILE-ERR {repr e}"
+  | .ok sched _ =>
+    let ref := match LeanNCD.Eval.evalScheduled sched env with
+      | .ok r => (match r.env[key]? with | some d => fmt d | none => "unpublished")
+      | .error e => s!"ERR {e.error}"
+    let chk := match prepareEvalPlan sched (InputSignature.ofDenseInputs env) with
+      | .error e => s!"PREPARE-ERR {repr e}"
+      | .ok p => match runPreparedDense p env with
+        | .ok r => (match r.env[key]? with | some d => fmt d | none => "unpublished")
+        | .error e => s!"RUN-ERR {repr e.cause}"
+    let rt := match (LeanNCD.route sched).run 0 with
+      | .ok _ _ => "route OK"
+      | .error e _ => s!"route ERR {repr e}"
+    s!"{nm}\n  reference: {ref}\n  checked:   {chk}\n  route:     {rt}"
+
+def ax (n : String) : AxisSpec := { name := n, uid := 0, kind := .real }
+
+def xw : HashMap String DenseTensor :=
+  HashMap.ofList [("X", dt [4] [1, 2, 3, 4]), ("W", dt [3] [1, 10, 100])]
+def xOnly : HashMap String DenseTensor := HashMap.ofList [("X", dt [4] [1, 2, 3, 4])]
+
+def rhsXW : RHSExpr :=
+  { body := { terms := [{ factors := [.read "X" [.axis (ax "a")], .read "W" [.axis (ax "b")]] }] },
+    nonlin := .identity }
+def rhsX : RHSExpr :=
+  { body := { terms := [{ factors := [.read "X" [.axis (ax "a")]] }] }, nonlin := .identity }
+
+def scatterProg (slots : List LHSSlot) (rhs : RHSExpr) : TLProgram :=
+  { decls := [], stmts := [.scatter "Y" slots rhs] }
+
+-- (d) multi-axis a+b: oracle shape 6 (declared), derived 7 today
+#eval runCase "d  Y[a+b] := X[a]*W[b]" (scatterProg [.affine (.affine 0 [(1, ax "a"), (1, ax "b")])] rhsXW) xw "Y"
+-- (f') a+4b: derived 16, true reach 12
+#eval runCase "f' Y[a+4b] := X[a]*W[b]" (scatterProg [.affine (.affine 0 [(1, ax "a"), (4, ax "b")])] rhsXW) xw "Y"
+-- (d') constant slot: reference extent 4, plan row [0] bias 3 => extent 3?
+#eval runCase "d' Y[const 3] := X[a]" (scatterProg [.affine (.const 3)] rhsX) xOnly "Y"
+-- mixed sign: a - b reaches negative
+#eval runCase "ms Y[a-b] := X[a]*W[b]" (scatterProg [.affine (.affine 0 [(1, ax "a"), (-1, ax "b")])] rhsXW) xw "Y"
+-- C1 emulation at source level: unit axis u = 1 placed at u+3, `u` read by no tensor
+#eval runCase "C1 Y[u+3] := X[a], axis u = 1" (tlprog!{ axis u : ℕ = 1  Y[u+3] := X[a] }) xOnly "Y"
+-- control: single-axis stride (admitted today)
+#eval runCase "ctl Y[2*a] := X[a]" (tlprog!{ Y[2*a] := X[a] }) xOnly "Y"
+
+end LeanNCD.P0Probe

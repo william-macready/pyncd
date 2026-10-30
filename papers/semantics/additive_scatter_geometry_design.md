@@ -138,6 +138,49 @@ Cheap facts the design leans on and this note has not measured:
 4. M1 blast radius: run the full `Tests` build with the extent change and list failing modules and
    guards, as the B5c spike did.
 
+### P0 results (run 2026-10-30, throwaway worktree on `6c4a737e`, since removed)
+
+Probe source: [P0ScatterGeometryProbe.lean.txt](additive_scatter_geometry_artifacts/P0ScatterGeometryProbe.lean.txt)
+(each case prints reference, checked, and `route` outcomes). Inputs `X=[1,2,3,4]`, `W=[1,10,100]`. The
+edits (the `checkScatterAffineExpr` throws, an M1 arm in `LHSSlot.outExtent`) were never committed.
+
+1. **Lifting the refusal: confirmed for multi-axis, confirmed as predicted for constants.** With the
+   throws removed and no M1: `Y[a+b]` and `Y[a+4b]` give checked = reference in value and shape
+   (`[7]`, `[16]`). So the kernel, the placement rows and the range check are multi-axis-ready. A
+   constant slot fails in `prepareEvalPlan` with `scatterImageOutOfRange "Y" 0 3 3 3` (image 3..3 in
+   extent 3) while the reference publishes `[4]`: exactly P-const. Mixed-sign `a-b` is an error in both
+   backends (reference `coord [-1]`, checked `scatterImageOutOfRange`).
+2. **C1 holds at source level, which suggests it is a `lowerArith` rewrite, not a plan change.**
+   `tlprog!{ axis u : ℕ = 1  Y[u+3] := X[a] }` (an extent-1 axis read by no tensor) gives `[4]`,
+   `[0,0,0,10]` in both backends, with `route` OK. The compute half accepts an unread output axis, and
+   the existing `.affine` arm derives `n+1`. Not tested: the rewrite itself (a fresh UID plus a size-1
+   pin from inside `FreshM`), and its interplay with groups and boxed declarations. P0 does not
+   exercise those, so the plan must.
+3. **`route` and JAX.** `route` returned OK for every case, including the four the checked backend
+   refuses today (it carries no extents), so the "unchanged" stance in D1 holds. The JAX codegen
+   refuses every `.scatter` step categorically (`unsupportedStep`, `EvalPlanCodegen.lean`), by
+   reading only: geometry cannot change that. The bridge agreement proof was not examined; `Bridge/`
+   mentions scatter only in the `AcsetCodec` tag table, and `route` is untouched by slice A.
+4. **M1 blast radius, two full builds (`LeanNCD Tests JaxExperiment`).** Not checked: whether Lake
+   skipped dependents of a failing module.
+
+   | Build | Failing modules | Guards |
+   | --- | --- | --- |
+   | M1 only (refusals kept) | 2 | `ScatterCheckTest` 162, 220, 238; `SourceDifferentialScatterTest` 250, 252, 265, 266 |
+   | M1 plus top-level lift | 3 | the 7 above, plus `CompileTest` 99, 120 (refusal pins) and 336 (a still-refused donor that must be re-donored), `SourceDifferentialScatterTest` 131, 137, 138, 295, 296, 304 (nativeFailure tags and refusal-text pins) |
+
+   Every failing guard pins the legacy extent convention or a refusal slice A deliberately removes;
+   no other `Tests` module and nothing in `JaxExperiment` moved. Reference shapes under M1: `a+b` →
+   `[6]` (the oracle's declared shape), `a+4b` → `[12]`.
+
+**Wrinkle P0 found in M1.** For rows with a negative coefficient the legacy `c0 + Σ c·n` is not an
+over-approximation; it can be *smaller* than the reach. `ScatterCheckTest` 220 and 238 build their B6
+boundary cases from that (`2a - b + 1` over `[3,2]`: legacy extent 5, image `[0,5]`, so a write at 5 is out
+of range). Under M1 the extent is 6 and the same row is in range. M1 therefore also *widens* acceptance
+for mixed-sign rows whose minimum is already non-negative (hand-built only; refused by the checked
+backend until slice A). D3 stands, since reach is the right extent, but the slice-A plan must re-pin
+those guards with an explicit `destShape` rather than a derived extent, and must say so in the record.
+
 ## 7. Decisions (all approved as recommended, 2026-10-30)
 
 * **D1 scope.** Checked f64/f32, legacy and oracle in slice A; `route`, JAX and scan-local unchanged.
