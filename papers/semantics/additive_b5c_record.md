@@ -200,3 +200,20 @@ verify `git diff --stat main b5c-exec` is empty, remove the clean execution
 worktree, then delete `b5c-exec`. The controller reports the actual merge hash
 and cleanup outcome after those commands. No remote push is authorized or
 performed; local `main` is to remain ahead of `origin/main`.
+
+## Post-landing review (2026-10-30)
+
+Landed `main` `e33ee410` was reviewed independently: the nine code hashes match plan section 7; the
+docs differ from the T3 patch only in the adjudicated `two rows` to `four rows` fix (an error in the
+patch text); a full `Tests JaxExperiment` build on the landed tree is `Build completed successfully
+(8841 jobs)`.
+
+**Finding (low, parked, not fixed here): the experimental JAX codegen newly refuses a class of programs.**
+`generateForward` on the prepared f64 plan (`bareOne`: a single bare `S[i] := A[i]` into a pinned
+`S(k = 4)`) is `labelExtentMismatch 1 0 0 0 0 2 (some 4)`, while the same program with `k` unpinned,
+and an identity writer generate (probed; scalar destinations were not). B5c collects the boxed single bare assign, and
+the collector's padded read of the shorter scratch is not expressible in the JAX lowering. The refusal
+is typed and loud, the path is experimental (`JaxExperiment`, not imported by `LeanNCD`), and no test
+covers it, so the plan's "JAX unchanged" was inaccurate for this subset; the plan, design note and
+`DSL/AGENTS.md` now say so. Cost to close: teach the JAX lowering a padded bare read, or refuse it
+earlier with a source-level diagnostic; roughly one focused dispatch.

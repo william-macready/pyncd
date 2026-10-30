@@ -77,8 +77,14 @@ Open every implementation, review and fix brief with this preamble (resolve `<wo
 5. **Oracle.** `declaredShapeWins` (Differential.lean) retires `scatterExtentOverridesDeclared` for a
    boxed single write; the predictor's `singleBoxed` restates the rule independently of production.
 6. **Unchanged**: multi-writer behaviour, scan-local writers (top-level plain statements only),
-   votes and casts, JAX, B6, unpinned destinations, all-bare UID agreement.
-7. **Not done here**: fit by actual write image (M4: `Y[0*a + 5]` into a declared 6 is still refused
+   votes and casts, B6, unpinned destinations, all-bare UID agreement. (JAX codegen is not edited, but
+   it is affected: see item 7.)
+7. **JAX consequence (found in post-landing review, not in the original plan):** the experimental JAX
+   codegen (`generateForward`) refuses a boxed single bare assign over a different axis, because its
+   collector's padded read is not expressible (`labelExtentMismatch`), where it accepted the same
+   program before B5c; it refuses loudly. Identity writers and unpinned destinations still
+   generate (probed). Parked, see the record.
+8. **Not done here**: fit by actual write image (M4: `Y[0*a + 5]` into a declared 6 is still refused
    because the scratch `Y#1` has derived extent 5), inferred-size boxes, route/JAX shapes, predicate
    (D1) and multi-axis/constant-slot (D2) single writers, F3.
 

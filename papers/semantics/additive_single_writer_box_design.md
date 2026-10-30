@@ -82,7 +82,9 @@ into a boxed destination (any scatter; an assign over different axes) becomes a 
   value parity); `predictShaped` / `pinnedBox` extend to one-writer groups. The unpinned/undeclared
   single-writer case keeps the condition.
 - **Unchanged**: B6, scan-local writers (top-level plain statements only), votes and casts,
-  JAX, unpinned destinations, all multi-writer behaviour.
+  unpinned destinations, all multi-writer behaviour. The experimental JAX codegen is not edited but
+  now refuses a boxed single bare assign over a different axis (its collector's padded read; found in
+  post-landing review, parked in `additive_b5c_record.md`).
 
 ## 5. Blast radius (measured by a throwaway spike, 2026-10-29)
 
