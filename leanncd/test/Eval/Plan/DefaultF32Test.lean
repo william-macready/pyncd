@@ -236,8 +236,7 @@ def corpus : List Case :=
       env32 [("A", [2, 3], #[1, 2, 3, 4, 5, 6])]⟩
   , ⟨"scatter", .inl tlprog!{
         axis i : ℕ = 3
-        axis o : ℕ = 6
-        tensor f32 X(i), Out(o)
+        tensor f32 X(i), Out(i)
         Out[2*i] := X[i] },
       env32 [("X", [3], #[1, 2, 3])]⟩
   , ⟨"pred-mixed", .inl tlprog!{

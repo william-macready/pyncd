@@ -15,7 +15,9 @@ for a tropical one), so each `T#k` keeps its own nonlinearity, and a predicate `
 `Combine.bool` (OR) through its own declaration.
 
 `desugarMultiWriters` is the identity on every schedule in which each name has at most one writer,
-so single-writer programs are byte-identical through every later phase.
+so single-writer programs are byte-identical through every later phase, with one exception (B5c):
+a single plain writer of a BOXED destination (`boxedSingleGroups`) is collected like a group of one,
+so that the declared shape decides the published shape for every writer count.
 
 Existing all-bare groups keep positionwise UID agreement. Real and tropical groups may also
 contain bounded scatter writers, using a distinct declared coordinate basis or the first ordinary
@@ -57,7 +59,8 @@ def Decl.cloneAs (fresh : String) : Decl → Option Decl
   | .typedLinear ty _ ax b => some (.typedLinear ty fresh ax b)
   | .axis .. | .iter .. => none
 
-/-- One multi-writer destination: its name and the schedule positions of its writers, in order. -/
+/-- One collected destination: its name and the schedule positions of its writers, in order (two or
+    more, or one for a boxed single writer, `boxedSingleGroups`). -/
 structure WriterGroup where
   name    : String
   writers : List Nat
@@ -95,7 +98,7 @@ def writerGroups (stmts : List ScanStmt) : List WriterGroup :=
 
 /-- True only for the newly admitted collection surface, not legacy all-bare groups. -/
 def WriterGroup.needsB5 (g : WriterGroup) (stmts : List ScanStmt) : Bool :=
-  (g.writers.filterMap (plainAt? stmts)).any fun
+  g.writers.length == 1 || (g.writers.filterMap (plainAt? stmts)).any fun
     | .scatter .. => true
     | .assign _ ls _ => slotsBecomeScatter ls
     | _ => false
@@ -119,6 +122,46 @@ def writerGroupBasis (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
   | some s => return producerSlots s.slots
   | none => throw (.multiWriterNeedsDeclaredShape g.name)
 
+/-- B5c: the names with ONE plain writer that is collected like a group of one, so a pinned
+    declaration decides the published shape for every writer count (the rule B5b gave groups).
+
+    A name qualifies when its destination is boxed (a tensor declaration with at least one axis, every
+    axis UID in `pinned`, and not a `predicate`: D1, bool collection is not admitted for groups
+    either; a rank-0 destination has nothing to pad and the D5 test below is vacuous for it) and its
+    writer is one of:
+
+    * an explicit scatter with bounded geometry (`LHSSlot.boundedScatter`: no constant or multi-axis
+      slot, D2);
+    * a plain assign whose slots are distinct free axes;
+
+    **unless a declared axis occurs among the writer's own SOURCE axes** (D5): `tensor Out(i)` with
+    `Out[2*i] := X[i]` declares `Out` over its own source axis, so such a writer keeps the derived
+    shape. This also covers the identity writer (`tensor S(i)` with `S[i] := A[i]`, same axis and same
+    pinned size, so the shape is the declared one already) and a transposed write over the declared
+    axes. Every excluded case keeps today's behaviour. -/
+def boxedSingleGroups (env : DeclEnv) (pinned : Std.HashMap UID Nat) (stmts : List ScanStmt) :
+    List WriterGroup :=
+  let names := (stmts.flatMap routeWrites).eraseDups
+  names.filterMap fun nm =>
+    let writers := (List.range stmts.length).filter fun i =>
+      (stmts[i]?.map (fun sc => (routeWrites sc).contains nm)).getD false
+    match writers, (env[nm]?).bind Decl.tensorAxes? with
+    | [i], some ax =>
+        let declUIDs := ax.map (·.uid)
+        let boxed := !ax.isEmpty && ax.all (fun a => pinned.contains a.uid) && env.declAlgebra nm != .bool
+        let sourceUIDs (ls : List LHSSlot) : List UID :=
+          ls.flatMap fun sl => (idxAffineForm sl.outIdx).2.map (·.2)
+        let collected := match plainAt? stmts i with
+          | some (.scatter _ ls _) =>
+              ls.all LHSSlot.boundedScatter && !(sourceUIDs ls).any declUIDs.contains
+          | some (.assign _ ls _) =>
+              let us := ls.filterMap (·.freeUID?)
+              us.length == ls.length && us.length == us.eraseDups.length &&
+                !(sourceUIDs ls).any declUIDs.contains
+          | _ => false
+        if boxed && collected then some ⟨nm, [i]⟩ else none
+    | _, _ => none
+
 /-- Source geometry retained across renaming for a post-inference equality check. -/
 structure CollectorShapeObligation where
   name : String
@@ -130,7 +173,8 @@ structure CollectorShapeObligation where
 
 def collectorShapeObligations (sched : ScheduledProgram) (pinned : Std.HashMap UID Nat) :
     Except CompileError (List CollectorShapeObligation) :=
-  ((writerGroups sched.stmts).filter (·.needsB5 sched.stmts)).mapM fun g => do
+  ((writerGroups sched.stmts ++ boxedSingleGroups sched.env pinned sched.stmts).filter
+    (·.needsB5 sched.stmts)).mapM fun g => do
     let boxed := match (sched.env[g.name]?).bind Decl.tensorAxes? with
       | some ax => ax.all (fun a => pinned.contains a.uid)
       | none => false
@@ -191,11 +235,13 @@ def collectorStmt (nm : String) (basis : List LHSSlot) (n : Nat) (agg : AggOp) :
     `multiWriterScan` (any name, `scanWriterConflict?`) first; then, per group in first-writer
     order, geometry, algebra, then basis/shape diagnostics (the order of checks
     inside `checkWriterGroup`; a group's failure stops the pass before the next group is looked
-    at); `reservedNameCollision` last, after every group has passed. -/
-def desugarMultiWriters (sched : ScheduledProgram) :
+    at); `reservedNameCollision` last, after every group has passed. The groups are the multi-writer
+    groups in first-writer order, then (when `pinned` is given) the boxed single writers
+    (`boxedSingleGroups`) in first-writer order. -/
+def desugarMultiWriters (sched : ScheduledProgram) (pinned : Std.HashMap UID Nat := {}) :
     Except CompileError (ScheduledProgram × List String) := do
   if let some nm := scanWriterConflict? sched.stmts then throw (.multiWriterScan nm)
-  let groups := writerGroups sched.stmts
+  let groups := writerGroups sched.stmts ++ boxedSingleGroups sched.env pinned sched.stmts
   if groups.isEmpty then return (sched, [])
   let mut agreed : List SortAlgebra := []
   let mut bases : List (List LHSSlot) := []
