@@ -160,7 +160,7 @@ head condition is confirmed, and confirmed extent differences suppress all value
 B5's independent test-side predictor separates SOURCE eligibility (C1
 222/195/88 over 505 rows) from SHAPED preparation: 81 SOURCE-admitted corpus rows
 stay refused, now as `writerExtentExceedsBox` (C1 declares extent 4 against realized 8), while
-seventeen hand rows give eleven accepts and six shape refusals (two rows pin the box through an
+seventeen hand rows give eleven accepts and six shape refusals (four rows pin the box through an
 `iter` declaration; four are single-writer rows, `singleBoxed`). The predictor restates the B5b box
 rule independently (`pinnedBox`, per-dimension fit); boxed overlap donors have actual four-leg
 value rows in `OracleMixedRefusalTest`.
