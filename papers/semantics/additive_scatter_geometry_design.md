@@ -107,10 +107,18 @@ Two slices, engine first (the B5 → B5b → B5c ordering that worked):
    first, so none reaches that arm. `checkScanScatterLHSSlot` keeps both refusals (scan-local placement
    is non-injective for multi-axis and overwrites in the reference, F3), so `scatterAffineClass` stays.
 3. Drop the `.assign`-arm `overlappingScatter` guard for constant slots (stale since S3a; the
-   `.scatter` arm has had none since then). The constructor becomes producerless and is retained as a
-   compatibility constructor, as `scatterInScan` was.
+   `.scatter` arm has had none since then). *Refined at plan time (owner, 2026-10-30):* the guard stays,
+   narrowed, for a constant slot inside a scan statement (one carrying `iterAt`/`iterNext`), because
+   deleting it outright made such a program compile and then overwrite in the reference and legacy
+   evaluators (F3) while the checked preflight refuses it: a fail-loud regression. So
+   `overlappingScatter` keeps one producer (scan-local `.assign`), it does **not** become producerless.
 4. Oracle/differential: retire the capability-gap `nativeFailure` for (d), (d'), (f'); they become parity
-   fixtures. Add: tropical convolution, f32, mixed-sign and negative rows (B6 error, both backends).
+   fixtures. Add: tropical convolution **on the four-leg sorted differential** (owner, 2026-10-30:
+   `Source.SortedDifferential.compareSortedSource`, brief
+   [additive_scatter_geometry_tropical_fixture_brief.md](additive_scatter_geometry_tropical_fixture_brief.md)),
+   f32, mixed-sign and negative rows (B6 error, both backends). Parked, not in slice A: mutation-checking
+   the new-module pins independently of the older B5 pins (they share an import chain, about 0.3
+   dispatch).
    *Refined at plan time:* the constant-writer-under-a-boxed-declaration fixture (fit failure reports
    `writerExtentExceedsBox`) is **slice B**, because boxed single writers of these geometries stay on the
    derived-shape rule until `boundedScatter` stops gating (B5c D2). Slice A pins that residual instead.
