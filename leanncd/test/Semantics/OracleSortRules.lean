@@ -292,6 +292,30 @@ private def pinnedBox (decls : List Decl) (n : String) : Bool :=
       | _ => false
   | none => false
 
+/-- B5c: a single plain writer whose destination is boxed and which production collects like a group
+    of one (the declared shape decides, as for a group). Restated from the declarations and the
+    statement, not from production's `boxedSingleGroups`: pinned declared destination, not a
+    predicate, with at least one axis; a scatter with bounded slots or an assign over distinct free
+    axes; and no declared axis among the writer's source axes (D5), which also excludes the identity
+    writer. -/
+private def singleBoxed (decls : List Decl) (n : String) (ws : List Stmt) : Bool :=
+  match ws, declaredAxes decls n with
+  | [w], some ax =>
+      let declUIDs := ax.map (·.uid)
+      let slots := slotsOf w
+      let sourceUIDs := slots.flatMap fun
+        | .free a | .freeNorm a => [a.uid]
+        | .affine e => (coefficients e).2.map (·.2)
+        | _ => []
+      -- an `.assign` with an affine or repeated slot is a scatter after lowering, so one rule covers
+      -- both statement forms: bounded slots
+      let shaped := match w with
+        | .recurMorphism .. => false
+        | _ => slots.all bounded
+      !declUIDs.isEmpty && pinnedBox decls n && !(predicateNames decls).contains n && shaped &&
+        !sourceUIDs.any declUIDs.contains
+  | _, _ => false
+
 /-- Concrete shape-stage prediction. Callers supply independently known concrete axis sizes.
     A boxed group (`pinnedBox`) requires each writer extent to fit the basis extent; every other
     group requires equality. This does not claim to model signature, capability, inference or
@@ -302,7 +326,7 @@ def predictShaped (decls : List Decl) (stmts : List Stmt) (sizes : List (UID × 
   if !p.refusals.isEmpty then p else
   let errors := (stmts.map destOf).eraseDups.filterMap fun n =>
     let ws := stmts.filter (fun s => destOf s == n)
-    if !needsB5 ws then none else
+    if !(needsB5 ws || singleBoxed decls n ws) then none else
     match basis decls n ws with
     | .error e => some e
     | .ok bs =>

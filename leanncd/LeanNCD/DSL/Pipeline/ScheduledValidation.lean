@@ -127,10 +127,12 @@ def scheduleFloat32Name? (env : DeclEnv) (stmts : List ScanStmt) : Option String
 /-- Additive collection (decision note §C): `desugarMultiWriters`, with its result asserted to be in
     producer-before-consumer order. The entry `validateScheduled` calls; `route` calls
     `desugarMultiWriters` directly, because `routeCore`'s `routableInOrder` is its single topology
-    gate. The identity on single-writer schedules. -/
-def collectDefinitions (sched : ScheduledProgram) :
+    gate. The identity on single-writer schedules, except a single non-identity writer of a boxed
+    destination (`boxedSingleGroups`, B5c), which `pinned` (`declaredAxisSizes`) makes visible.
+    `route` passes no `pinned`, so the routed diagram is unchanged. -/
+def collectDefinitions (sched : ScheduledProgram) (pinned : Std.HashMap UID Nat := {}) :
     Except CompileError (ScheduledProgram × List String) := do
-  let (collected, privateNames) ← desugarMultiWriters sched
+  let (collected, privateNames) ← desugarMultiWriters sched pinned
   unless isTopoOrdered collected.stmts collected.stmts do
     throw (.cyclicDataflow "collectDefinitions: desugared schedule is not in producer-before-consumer order")
   return (collected, privateNames)
@@ -247,7 +249,7 @@ def validateScheduled (sched : ScheduledProgram) : Except CompileError CheckedSc
   unless isTopoOrdered sched.stmts sched.stmts do
     throw (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
   let source := { sched with env := sourceEnv }
-  let (collected, privateNames) ← collectDefinitions source
+  let (collected, privateNames) ← collectDefinitions source (declaredAxisSizes sched.decls)
   let shapeObligations ← collectorShapeObligations source (declaredAxisSizes sched.decls)
   let declEnv ← buildDeclEnv collected.decls
   return { program := collected

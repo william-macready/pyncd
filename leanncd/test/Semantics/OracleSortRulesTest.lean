@@ -474,6 +474,12 @@ private def stagedRows : List (String × List Decl × List Stmt) :=
      [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])]),
    ("two affine iter box12", iterBoxDecls 12, [writer 5 .max, writer 5 .max]),
    ("two affine iter box4", iterBoxDecls 4, [writer 5 .max, writer 5 .max]),
+   -- B5c: ONE writer. Boxed (the destination `Y(k)` is pinned and `k` is not the writer's source
+   -- axis `a`): fits box 12, exceeds box 4. The D5 idiom `Y(a)` with `Y[2a]` keeps the derived shape.
+   ("single affine iter box12", iterBoxDecls 12, [writer 5 .max]),
+   ("single affine iter box4", iterBoxDecls 4, [writer 5 .max]),
+   ("single affine box12", box12Decls, [writer 5 .max]),
+   ("single affine idiom (declared over its source axis)", hDecls, [writer 5 .max]),
    ("two affine extent8 twin", extent8Decls, [writer 5 .max, writer 5 .max]),
    ("affine/bare extent8 twin", extent8Decls,
      [writer 5 .max, .assign "Y" [.free k] (rhs .max .identity [[rd "X" [a]]])])] ++
@@ -487,12 +493,13 @@ private def stagedRows : List (String × List Decl × List Stmt) :=
 run_cmd assertNone "hand SHAPED disagreements" (stagedRows.flatMap fun (l, ds, ss) =>
   shapedProblems l ds ss)
 
--- Thirteen hand rows: eight shape accepts (two box12, the iter box12, two extent8 twins, two square
--- twins, the max-plus plain+scatter row) and five refusals (two exceed-box affine rows, the iter
+-- Seventeen hand rows: eleven shape accepts (two box12, the iter box12, two extent8 twins, two square
+-- twins, the max-plus plain+scatter row, and three single-writer rows: iter box12, box12 and the D5
+-- idiom) and six refusals (two exceed-box affine rows, the iter box4 row, the single-writer iter
 -- box4 row, two rectangular diagonals).
-#guard stagedRows.length == 13
+#guard stagedRows.length == 17
 #guard (stagedRows.filter fun (_, ds, ss) =>
-  (predictShaped ds ss (sizesOf ds)).refusals.isEmpty).length == 8
+  (predictShaped ds ss (sizesOf ds)).refusals.isEmpty).length == 11
 
 #guard concreteC1.length == 81
 -- C1 declares extent 4 against realized extent 8, so no candidate fits the pinned box: all 81 stay

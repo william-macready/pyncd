@@ -202,7 +202,9 @@ Slice 1 does **not** change this. It stays a recorded divergence.
   `checkCollectorShapes` enforces exact post-inference extent equality in both
   native entries (`writerExtentMismatch T writer dimension expected actual`). B5b
   (`additive_b5b_record.md`) relaxes this to fit-inside for a declared destination whose every
-  axis is pinned (`writerExtentExceedsBox`); every other group keeps equality.
+  axis is pinned (`writerExtentExceedsBox`); every other group keeps equality. B5c
+  (`additive_b5c_record.md`) extends the box to a single non-identity writer, so the declared shape
+  decides for every writer count.
   Existing inference and B6 checks remain unchanged. `route` explicitly refuses
   B5; JAX refuses actual prepared scatter nodes before emission.
 - The S1/S3 bullets below preserve the original staging history, not the current
