@@ -98,16 +98,22 @@ Two slices, engine first (the B5 → B5b → B5c ordering that worked):
 
 **Slice A, engine and oracle (programmatic forms).**
 1. `outExtent`: multi-axis reach (M1). Constant arm unchanged.
-2. Compile the constant slot as a unit-axis placement (C1); delete the `.constant` and `.multiAxis`
-   throws at **top level** in `checkScatterLHSSlot`. `checkScanScatterLHSSlot` keeps both refusals
-   (scan-local placement is non-injective for multi-axis and overwrites in the reference, F3), so
-   `scatterAffineClass` stays for that call site.
+2. Compile the constant slot as a unit-axis placement (C1), as a `lowerArith` rewrite (P0 item 2);
+   delete the `.multiAxis` throw at **top level** in `checkScatterLHSSlot`. *Refined at plan time,
+   2026-10-30:* the top-level `.constant` throw **stays**, narrowed to its true remaining meaning: a
+   hand-built schedule that bypasses `lowerArith` and hands the preflight a raw constant slot is refused
+   with `scatterOrAffineLhs` (without it, P0 item 1 shows that program failing later with a confusing
+   `scatterImageOutOfRange`). Every program through `compileToScheduled` has its constants rewritten
+   first, so none reaches that arm. `checkScanScatterLHSSlot` keeps both refusals (scan-local placement
+   is non-injective for multi-axis and overwrites in the reference, F3), so `scatterAffineClass` stays.
 3. Drop the `.assign`-arm `overlappingScatter` guard for constant slots (stale since S3a; the
    `.scatter` arm has had none since then). The constructor becomes producerless and is retained as a
    compatibility constructor, as `scatterInScan` was.
 4. Oracle/differential: retire the capability-gap `nativeFailure` for (d), (d'), (f'); they become parity
-   fixtures. Add: tropical convolution, f32, a constant writer under a boxed declaration (fit failure
-   reports `writerExtentExceedsBox`), mixed-sign and negative rows (B6 error, both backends).
+   fixtures. Add: tropical convolution, f32, mixed-sign and negative rows (B6 error, both backends).
+   *Refined at plan time:* the constant-writer-under-a-boxed-declaration fixture (fit failure reports
+   `writerExtentExceedsBox`) is **slice B**, because boxed single writers of these geometries stay on the
+   derived-shape rule until `boundedScatter` stops gating (B5c D2). Slice A pins that residual instead.
 5. Update the live nodes in the same plan (`Eval/Plan/AGENTS.md`, `Semantics/AGENTS.md` lines about
    `scatterOrAffineLhs`/`multiAxisScatterLhs`, `Error.lean` doc comments), not as a later audit.
 
