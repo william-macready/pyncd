@@ -255,9 +255,26 @@ run_cmd do
       | s, d => throwError s!"expected one unit-axis scatter + one pinned decl, got {repr s} / {repr d}"
   | .error e _ => throwError s!"constant LHS must lower, got {repr e}"
 
--- A statement that carries a scan slot is NOT rewritten (slice A T3): a constant next to an `iterAt`
--- stays a raw `.affine (.const 3)`, with no synthetic decl, so the scan-local preflight keeps its own
--- constant refusal (`checkScanScatterLHSSlot`). Donor: the `.assign` fixture above plus an iteration slot.
+-- A statement that carries a scan slot is NOT rewritten (slice A T3): a non-constant affine slot next
+-- to an `iterAt` stays as written, with no synthetic decl. Donor: the `.assign` fixture above plus an
+-- iteration slot (the slot was a constant before T3b, which now refuses it, see the next two pins).
+run_cmd do
+  let l : AxisSpec := { name := "l", uid := 4, kind := .nat }
+  let j : AxisSpec := { name := "j", uid := 5, kind := .nat }
+  let st : Stmt := .assign "S" [ .iterAt l 0, .affine (.scale 2 j) ]
+    { body := { terms := [ { factors := [ .read "X" [ .const 0 ] ] } ] }, nonlin := .identity }
+  let rp : ResolvedProgram :=
+    { decls := [], stmts := [st], env := {}, extNames := ∅ }
+  match lowerArith rp |>.run 0 with
+  | .ok lp _ =>
+      match lp.stmts, lp.decls with
+      | [ .scatter "S" [ .iterAt _ 0, .affine (.scale 2 _) ] _ ], [] => pure ()
+      | s, d => throwError s!"scan-slot statement must keep its slots, got {repr s} / {repr d}"
+  | .error e _ => throwError s!"errored: {repr e}"
+
+-- Slice A T3b (fail-loud repair): a scan statement that carries a RAW constant slot is refused with
+-- `overlappingScatter` again, exactly as before T3. Without it the statement compiles (T3 skips scan
+-- statements) and the reference/legacy evaluators overwrite it (F3) while the checked preflight refuses.
 run_cmd do
   let l : AxisSpec := { name := "l", uid := 4, kind := .nat }
   let st : Stmt := .assign "S" [ .iterAt l 0, .affine (.const 3) ]
@@ -265,11 +282,44 @@ run_cmd do
   let rp : ResolvedProgram :=
     { decls := [], stmts := [st], env := {}, extNames := ∅ }
   match lowerArith rp |>.run 0 with
+  | .error (.overlappingScatter "S") _ => pure ()
+  | .error e _ => throwError s!"wrong error: {repr e}"
+  | .ok lp _ => throwError s!"scan statement with a constant slot must be refused, got {repr lp.stmts}"
+
+-- A HAND-BUILT `.scatter` with a scan slot and a raw constant is not refused by `lowerArith` (T3b only
+-- touches the `.assign` arm) and is not rewritten: `lowerConstSlots` leaves scan statements alone, so the
+-- checked preflight keeps its `scatterOrAffineLhs` refusal. This is the pin that keeps the scan skip live.
+run_cmd do
+  let l : AxisSpec := { name := "l", uid := 4, kind := .nat }
+  let st : Stmt := .scatter "S" [ .iterAt l 0, .affine (.const 3) ]
+    { body := { terms := [ { factors := [ .read "X" [ .const 0 ] ] } ] }, nonlin := .identity }
+  let rp : ResolvedProgram :=
+    { decls := [], stmts := [st], env := {}, extNames := ∅ }
+  match lowerArith rp |>.run 0 with
   | .ok lp _ =>
       match lp.stmts, lp.decls with
       | [ .scatter "S" [ .iterAt _ 0, .affine (.const 3) ] _ ], [] => pure ()
-      | s, d => throwError s!"scan-slot statement must keep its raw constant, got {repr s} / {repr d}"
+      | s, d => throwError s!"hand-built scan scatter must keep its raw constant, got {repr s} / {repr d}"
   | .error e _ => throwError s!"errored: {repr e}"
+
+-- The same through the whole pipeline (`compileToScheduled`), built from a surface scan program whose
+-- base case has its free slot replaced by a constant (surface syntax cannot spell a raw constant slot:
+-- a numeral is always `.iterAt`). The accept-neighbour is the unmodified program.
+private def scanSurface : TLProgram := tlprog!{ iter l = 3
+  S[i, 0] := X[i]
+  S[i, l + 1] := S[i, l] }
+
+private def scanSurfaceConst : TLProgram :=
+  { scanSurface with stmts := scanSurface.stmts.map fun
+      | .assign nm [.free _, .iterAt a n] rhs => .assign nm [.affine (.const 3), .iterAt a n] rhs
+      | s => s }
+
+#guard match scanSurfaceConst.compileToScheduled.run 0 with
+  | .error (.overlappingScatter "S") _ => true
+  | _ => false
+#guard match scanSurface.compileToScheduled.run 0 with
+  | .ok _ _ => true
+  | _ => false
 
 -- Coupled scan: G and H both recur over `l` (uid 9) ⇒ ONE ScanStmt.scan whose recur list
 -- has BOTH G and H steps; each has a base case (no missingBaseCase).

@@ -19,7 +19,7 @@ inductive CompileError
   | shapeMismatch        : String → String → CompileError   -- expected shape, actual shape
   | missingBaseCase      : String → CompileError            -- tensor name missing iterAt stmt
   | causalityViolation   : String → CompileError            -- l+1 on RHS for iteration axis l
-  | overlappingScatter   : String → CompileError            -- COMPATIBILITY ONLY, no producer since slice A T3 (a constant LHS slot lowers to a unit-axis scatter; collisions are summed)
+  | overlappingScatter   : String → CompileError            -- only a scan statement that carries a constant LHS slot (slice A T3b); a top-level constant lowers to a unit-axis scatter
   | linearWeightAmbiguous : String → CompileError           -- linear weight in ≠1 product factors
   | undeclaredName       : String → CompileError            -- name used but not declared
   | rankMismatch         : String → Nat → Nat → CompileError -- tensor name, expected rank, actual rank
