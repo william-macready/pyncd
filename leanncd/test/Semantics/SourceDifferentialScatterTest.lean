@@ -127,15 +127,17 @@ private def fMask : SourceSnapshot :=
 #guard tag fA == "parity"
 #guard tag fB == "parity"
 #guard tag fC == "parity"
--- Checked leg refuses the multi-axis / constant slot (capability); legacy sums like the oracle.
-#guard tag fD == "nativeFailure"
+-- The multi-axis scatter `fD` (`a+b`) is four-leg parity since the checked backend admits multi-axis
+-- geometry at top level (it was `nativeFailure`, the capability refusal); the constant slot `fD'` stays
+-- a checked-leg refusal (`scatterOrAffineLhs`), legacy sums like the oracle.
+#guard tag fD == "parity"
 #guard tag fD' == "nativeFailure"
 -- Collisions sum (S3a): E (`b` contracted onto one cell) is parity like its one-factor neighbour A.
--- F (`a+b`) and its neighbour F' (b coefficient 4) stay `nativeFailure`: the checked leg refuses the
--- multi-axis slot (the capability refusal is pinned after `mentions` is defined).
+-- F (`a+b`) and its neighbour F' (b coefficient 4) are four-leg parity: the checked leg admits the
+-- multi-axis slot and every leg publishes the exact reach (6 and 12); they were `nativeFailure`.
 #guard tag fE == "parity"
-#guard tag fF == "nativeFailure"
-#guard tag fF' == "nativeFailure"
+#guard tag fF == "parity"
+#guard tag fF' == "parity"
 -- Multi-writer vs single writer; extent override vs equal extent (A); out-of-range refusal.
 #guard tag fG == "nativeFailure"
 #guard tag (snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX]) == "parity"
@@ -201,8 +203,9 @@ private def dropOccurrence (drop : Bool) : String :=
 #guard dropOccurrence false == "accepted"
 #guard dropOccurrence true == "occurrences 3 2"
 
-/-! T4-A2 (review F4): LEGACY-ONLY agreement. The checked plan refuses `fD`/`fD'` by capability,
-so four-leg parity is impossible and `tag` is `nativeFailure`; the legacy production leg's VALUES
+/-! T4-A2 (review F4): LEGACY-ONLY agreement. The checked plan refuses `fD'` by capability (`fD` is
+four-leg parity since multi-axis admission), so four-leg parity is impossible for `fD'` and `tag` is
+`nativeFailure`; the legacy production leg's VALUES
 (which sum collisions) are asserted here against the oracle and against hand-computed cells. -/
 
 /-- Cells of the legacy leg's declaration-5 output, as raw bits (`none` unless the leg is observed
@@ -294,7 +297,7 @@ private def oracleShape (s : SourceSnapshot) : Option (List Nat) :=
 
 -- M1 shape agreement (donors: fD, fN): legacy production and the oracle publish the exact reach,
 -- `a+b` -> 6 and `a+4b` -> 12. Before M1 production derived 7 and 16 against the oracle's declared
--- 6 and 12 (`known:extent`). The checked leg still refuses both here (T2 lifts it).
+-- 6 and 12 (`known:extent`).
 #guard legacyShape fD == some [6]
 #guard oracleShape fD == some [6]
 #guard legacyShape fN == some [12]
@@ -324,13 +327,34 @@ private def fF11 := withZ 8 [zBare, .assign "Y" [.affine (.scale 2 a)] readX]
 #guard mentions fF11 "legacy=value [(Y, ([8], [1.000000, 0.000000, 2.000000, 0.000000, 3.000000, 0.000000, 4.000000, 0.000000])), (Z, ([4], [111.000000, 222.000000, 333.000000, 444.000000]))]"
 #guard mentions fF11 "checked=value [(Y, ([8], [1.000000, 0.000000, 2.000000, 0.000000, 3.000000, 0.000000, 4.000000, 0.000000])), (Z, ([4], [111.000000, 222.000000, 333.000000, 444.000000]))]"
 
--- fF/fF' stay `nativeFailure` through the checked leg's multi-axis capability refusal, not a collision.
-#guard mentions fF "multiAxisScatterLhs \"Y: affine LHS slot\""
-#guard mentions fF' "multiAxisScatterLhs \"Y: affine LHS slot\""
+-- fF/fF' no longer carry the checked leg's multi-axis capability refusal: the checked leg publishes the
+-- convolution (`a+b` over X=[1,2,3,4], W=[1,10,100]; observed with `observe fF`), no collision error.
+#guard !mentions fF "multiAxisScatterLhs"
+#guard !mentions fF' "multiAxisScatterLhs"
+#guard mentions fF "checked=value [(Y, ([6], [1.000000, 12.000000, 123.000000, 234.000000, 340.000000, 400.000000]))]"
+#guard mentions fF' "checked=value [(Y, ([12], [1.000000, 2.000000, 3.000000, 4.000000, 10.000000, 20.000000, 30.000000, 40.000000, 100.000000, 200.000000, 300.000000, 400.000000]))]"
 #guard !mentions fF "collision"
--- (T1) the same refusal for the legacy-only donors fD (`a+b`) and fN (`a+4b`).
-#guard mentions fD "multiAxisScatterLhs \"Y: affine LHS slot\""
-#guard mentions fN "multiAxisScatterLhs \"Y: affine LHS slot\""
+-- (T1, flipped at T2) the legacy-only donors fD (`a+b`) and fN (`a+4b`) are now four-leg parity too.
+#guard tag fD == "parity"
+#guard tag fN == "parity"
+-- A multi-axis write declared one cell too big (`fFbig`, `|k| = 7`, reach 6) is a boxed-looking write the
+-- production derived-shape rule does NOT box (B5c D2 residual, closed in slice B): both native legs publish
+-- the derived shape `[6]` against the oracle's declared `[7]`, a `known:extent` contract difference, not
+-- a failure. Pinned so slice B's change to this residual is visible here.
+#guard tag fFbig == "known:extent"
+-- B6 for a mixed-sign row with NEGATIVE minimum: `Y[a-b]` (reach -2..3). The oracle refuses the write
+-- against the declared shape (`writeOutOfRange`, no native leg runs); the native twins of this pin
+-- (reference and checked, both erroring) are in `ScatterGeometryTest`.
+private def diffSlot : LHSSlot := .affine (.affine 0 [(1, a), (-1, b)])
+private def fSign := snap 4 [k] [.scatter "Y" [diffSlot] readXW]
+#guard tag fSign == "refused:writeOutOfRange"
+-- Mixed sign with NON-NEGATIVE minimum (`Y[a-b+2]`, reach 0..5, the cross-correlation): accepted and
+-- parity. Hand values (observed with `observe fSignOk`, checked by hand): cell0 = A0*B2 = 100;
+-- cell1 = A0*B1 + A1*B2 = 10 + 200; cell2 = 1 + 20 + 300; cell3 = 2 + 30 + 400; cell4 = 3 + 40; cell5 = 4.
+private def fSignOk := snap 6 [k] [.scatter "Y" [.affine (.affine 2 [(1, a), (-1, b)])] readXW]
+#guard tag fSignOk == "parity"
+#guard legacyCells fSignOk == handBits [100, 210, 321, 432, 43, 4]
+#guard oracleCells fSignOk == handBits [100, 210, 321, 432, 43, 4]
 
 -- CHECKED-only refusal: Z's constant-slot scatter (legacy sums it into Z = [0,0,0,10]; the checked
 -- plan refuses it at preparation naming Z) next to fE's agreeing write on Y: the program is still a

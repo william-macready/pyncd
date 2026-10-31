@@ -88,7 +88,10 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
     scan-block sibling below admits them.
 
     The `.affine` arm admits every form whose destination extent this file can derive in agreement
-    with both of the other two derivations of it, and rejects exactly two shapes.
+    with both of the other two derivations of it. At top level it rejects exactly ONE shape (the
+    constant slot, below); a row naming more than one source axis (`Out[i+j]`) is ADMITTED since the
+    multi-axis extent rule (M1: `LHSSlot.outExtent` is the exact reach, computed from the same corner
+    formula as the range check), and only the scan-block sibling still refuses it.
 
     **`.affine (.const n)` (`Out[3]`) — `scatterOrAffineLhs`.** The rejection is decided on the index
     expression's own CONSTRUCTOR, deliberately, because that is precisely what the divergence turns
@@ -102,9 +105,10 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
     which compiles; `elabTLLHSSlot` has no arm producing it, so this guards a hand-built
     `ScheduledProgram` only.
 
-    **A row naming more than one source axis (`Out[i+j]`) — `multiAxisScatterLhs`**, by CALLING
-    `idxAffineForm`/`normalizeCoeffs` rather than re-reading constructors; see that constructor's own
-    doc comment for why the form is refused.
+    **A row naming more than one source axis (`Out[i+j]`) — `multiAxisScatterLhs`, scan-local only**
+    (`multiAxisAdmitted := false`), classified by `scatterAffineClass`, which calls `idxAffineForm`
+    rather than re-reading constructors. Top level admits it: the placement row already carries one
+    coefficient per source axis and the extent and range checks share one corner formula.
 
     **A ZERO coefficient is NOT a rejection, and is not the `.const` case.** `Out[0*i]` elaborates to
     `.affine (.scale 0 i)` (`elabTLLHSSlot`'s `n*x` arm, `n = 0`), is surface-reachable, passes
@@ -117,11 +121,13 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
     `.scale 0 i` and `.affine c₀ [(0, i)]` with `.const n` and would reject all three under a locator
     naming only the last. It did, briefly; `CompileTest`'s `Out[0*i]` fixture and
     `ScatterCompileTest`'s S9 now pin the distinction from both ends. -/
-private def checkScatterAffineExpr (stmtName : String) (e : IdxExpr) :
+private def checkScatterAffineExpr (multiAxisAdmitted : Bool) (stmtName : String) (e : IdxExpr) :
     Except CapabilityError Unit :=
   match scatterAffineClass e with
   | .constant => throw (.scatterOrAffineLhs s!"{stmtName}: constant affine LHS slot")
-  | .multiAxis => throw (.multiAxisScatterLhs s!"{stmtName}: affine LHS slot")
+  | .multiAxis =>
+      if multiAxisAdmitted then pure ()
+      else throw (.multiAxisScatterLhs s!"{stmtName}: affine LHS slot")
   | .bounded => pure ()
 
 def checkScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
@@ -129,18 +135,19 @@ def checkScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError
   | .freeNorm _ => pure ()
   | .iterAt a _ => throw (.unsupportedLhsSlot s!"{stmtName}: iterAt {a.name}")
   | .iterNext a => throw (.unsupportedLhsSlot s!"{stmtName}: iterNext {a.name}")
-  | .affine e   => checkScatterAffineExpr stmtName e
+  | .affine e   => checkScatterAffineExpr true stmtName e
 
 /-- The scan-block scatter analogue of `checkScatterLHSSlot`. Iteration slots are meaningful inside
     a scan and are therefore admitted in addition to S-A's free and single-axis affine forms.
-    Constant affine slots and normalized multi-axis rows retain the same diagnostics as top-level
-    scatter. -/
+    Constant affine slots and normalized multi-axis rows are BOTH still refused here (scan-local
+    placement is non-injective for a multi-axis row and the reference overwrites instead of summing,
+    F3); only the top-level sibling admits a multi-axis row. -/
 def checkScanScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
   | .free _     => pure ()
   | .freeNorm _ => pure ()
   | .iterAt ..  => pure ()
   | .iterNext _ => pure ()
-  | .affine e   => checkScatterAffineExpr stmtName e
+  | .affine e   => checkScatterAffineExpr false stmtName e
 
 /-- A scatter's own nonlinearity admission, and the one restored producer of the retained
     `unsupportedNonlin` constructor. Only `.identity` is admitted, matching the reference evaluator
