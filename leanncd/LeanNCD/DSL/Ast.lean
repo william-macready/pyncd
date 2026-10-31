@@ -474,9 +474,28 @@ def LHSSlot.boundedScatter : LHSSlot → Bool
   | .affine e => scatterAffineClass e == .bounded
   | _ => false
 
+/-- The corner extremes `(min, max)` of the affine image `c0 + Σ c_k·x_k` over the box
+    `x_k ∈ [0, n_k)`, given as `(c_k, n_k)` pairs: an affine image attains both at box corners, so
+    `min = c0 + Σ min 0 (c_k·(n_k-1))` and `max = c0 + Σ max 0 (c_k·(n_k-1))`. A zero coefficient
+    contributes nothing. Meaningful only for a NON-EMPTY box (`n_k = 0` would make `n_k-1` a spurious
+    `-1`); callers test emptiness first.
+
+    The ONE corner formula: `LHSSlot.outExtent`'s multi-axis arm (its reach is `max + 1`) and the
+    checked plan's `scatterImageBounds` (the B6 range rule) both call it, so the extent a program is
+    given and the range it is checked against cannot disagree. Lives here because `DSL/Ast` is
+    upstream of `Eval/Plan`. -/
+def affineImageBounds (c0 : Int) (terms : List (Int × Nat)) : Int × Int :=
+  terms.foldl
+    (fun (lo, hi) (c, n) =>
+      let span := c * ((n : Int) - 1)
+      (lo + min 0 span, hi + max 0 span))
+    (c0, c0)
+
 /-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
     The single home of the scatter-extent convention. A positive one-axis affine placement uses the
-    stride-aligned boundary; every other affine form keeps the legacy linear boundary. `none` if any
+    stride-aligned boundary; a placement naming two or more distinct nonzero-coefficient axes uses
+    its exact reach `max image + 1` (clamped at 0, via `affineImageBounds`) when every named axis is
+    non-empty; every other affine form keeps the legacy linear boundary. `none` if any
     syntactically mentioned source axis is unsized. -/
 def LHSSlot.outExtent (sl : LHSSlot) (sz : UID → Option Nat) : Option Nat :=
   let affineExtent (c0 : Int) (cf : List (Int × UID)) : Option Nat :=
@@ -492,6 +511,12 @@ def LHSSlot.outExtent (sl : LHSSlot) (sz : UID → Option Nat) : Option Nat :=
             some (c * Int.ofNat n + (c0 / c) * c).toNat
           else
             some legacy
+      | _ :: _ :: _ =>
+          let terms := (coeffs.zip us).map (fun (c, u) => (c, (sz u).getD 0))
+          if terms.any (fun (_, n) => n == 0) then
+            some legacy
+          else
+            some ((affineImageBounds c0 terms).2 + 1).toNat
       | _ => some legacy
     else
       none

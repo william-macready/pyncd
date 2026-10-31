@@ -103,7 +103,7 @@ def tag (s : SourceSnapshot) (order : List Nat := [5]) : String :=
 private def fA := snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX]
 private def fB := snap 6 [k] [.assign "Y" [.affine (.shift a 2)] readX]
 private def fC := snap 4 [a, a] [.assign "Y" [.free a, .free a] readX]
-private def fD := snap 7 [k] [.scatter "Y" [convSlot] readXW]
+private def fD := snap 6 [k] [.scatter "Y" [convSlot] readXW]
 private def fD' := snap 4 [k] [.scatter "Y" [.affine (.const 3)] readX]
 private def fE := snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readXW]
 private def fF := snap 6 [k] [.assign "Y" [convSlot] readXW]
@@ -159,10 +159,14 @@ private def conditionCount (s : SourceSnapshot) : Nat :=
 
 -- S3a: collisions sum (production and oracle agree), so a colliding write predicts NO condition:
 -- `fE` (`Y[2a] := X[a]*W[b]`, `b` contracted onto one cell) and `fF` (`a+b`) have nothing to detect
--- for collisions; `fF`'s declared extent 6 differs from the derived 7, so it keeps exactly the
--- extent condition. `fG` has no blanket multi-writer allowance.
+-- for collisions. M1: `fF`'s declared extent 6 IS the derived exact reach (it used to differ from the
+-- derived 7 and carry the extent condition; the predictor `derivedShape` now calls `outExtent`, so a
+-- stale predictor would flip this back to 1). The declared-too-big twin `fFbig` (declared 7, derived 6)
+-- keeps exactly the extent condition. `fG` has no blanket multi-writer allowance.
+private def fFbig := snap 7 [k] [.assign "Y" [convSlot] readXW]
 #guard conditionCount fE == 0
-#guard conditionCount fF == 1
+#guard conditionCount fF == 0
+#guard conditionCount fFbig == 1
 #guard conditionCount fG == 0
 
 /-- Profile verdict on `fE`'s oracle result with one occurrence of the first nonempty fiber dropped
@@ -243,12 +247,13 @@ private def legacyMatchesOracle (s : SourceSnapshot) : Bool :=
   | some l, some o => !l.isEmpty && l == o && legacyCompared s
   | _, _ => false
 
--- Hand values, from X = [1,2,3,4], W = [1,10,100], Y[a+b] += X[a]*W[b], |k| = 7:
+-- Hand values, from X = [1,2,3,4], W = [1,10,100], Y[a+b] += X[a]*W[b], |k| = 6 (the exact reach
+-- 0..5; before the multi-axis extent rule (M1) production derived 7 and appended a trailing 0):
 --   cell0 = 1*1 = 1; cell1 = 2*1 + 1*10 = 12; cell2 = 3*1 + 2*10 + 1*100 = 123;
---   cell3 = 4*1 + 3*10 + 2*100 = 234; cell4 = 4*10 + 3*100 = 340; cell5 = 4*100 = 400; cell6 = 0.
+--   cell3 = 4*1 + 3*10 + 2*100 = 234; cell4 = 4*10 + 3*100 = 340; cell5 = 4*100 = 400.
 -- A last-write-wins or dropped-occurrence total changes cells 1..5 (e.g. cell1 would be 10 or 2).
-#guard legacyCells fD == handBits [1, 12, 123, 234, 340, 400, 0]
-#guard oracleCells fD == handBits [1, 12, 123, 234, 340, 400, 0]
+#guard legacyCells fD == handBits [1, 12, 123, 234, 340, 400]
+#guard oracleCells fD == handBits [1, 12, 123, 234, 340, 400]
 #guard legacyMatchesOracle fD
 -- fD': Y[3] += X[a] over a: 1+2+3+4 = 10; the other cells are 0 (|k| = 4).
 #guard legacyCells fD' == handBits [0, 0, 0, 10]
@@ -256,16 +261,44 @@ private def legacyMatchesOracle (s : SourceSnapshot) : Bool :=
 #guard legacyMatchesOracle fD'
 
 -- ACCEPT-NEIGHBOURS (collision-free `.scatter`, same assertion shape; not vacuous):
--- fN: Y[a+4b] += X[a]*W[b], |k| = 16 (production derives shape 16 from the write form, p3_observed
+-- fN: Y[a+4b] += X[a]*W[b], |k| = 12 (production derives shape 12 from the write form, p3_observed
 --   (f'): a declared 12 gives a shape-binding issue, not a value): slots a+4b are distinct, so
---   Y = X[a]*W[b] laid out as b=0: 1,2,3,4; b=1: 10,20,30,40; b=2: 100,200,300,400; cells 12..15 = 0.
-private def fN := snap 16 [k] [.scatter "Y" [.affine (.affine 0 [(1, a), (4, b)])] readXW]
+--   Y = X[a]*W[b] laid out as b=0: 1,2,3,4; b=1: 10,20,30,40; b=2: 100,200,300,400. Under M1 the
+--   derived shape is the exact reach 12 (before: 16, with cells 12..15 = 0), so |k| = 12.
+private def fN := snap 12 [k] [.scatter "Y" [.affine (.affine 0 [(1, a), (4, b)])] readXW]
 -- fN': Y[2a] += X[a], |k| = 8: Y = 1,0,2,0,3,0,4,0.
 private def fN' := snap 8 [k] [.scatter "Y" [.affine (.scale 2 a)] readX]
-#guard legacyCells fN == handBits [1, 2, 3, 4, 10, 20, 30, 40, 100, 200, 300, 400, 0, 0, 0, 0]
+#guard legacyCells fN == handBits [1, 2, 3, 4, 10, 20, 30, 40, 100, 200, 300, 400]
 #guard legacyMatchesOracle fN
 #guard legacyCells fN' == handBits [1, 0, 2, 0, 3, 0, 4, 0]
 #guard legacyMatchesOracle fN'
+
+/-- Shapes of the declaration-5 output as each leg publishes it: legacy production leg and oracle. -/
+private def legacyShape (s : SourceSnapshot) : Option (List Nat) :=
+  match compareSource s (some [5]) with
+  | .error _ => none
+  | .ok run => match run.native with
+    | .error _ => none
+    | .ok n => match n.legacy with
+      | .observed o => match o.outputs with
+        | .ok bs => (bs.find? fun x => x.metadata.declaration == 5).map fun x => x.shape
+        | .error _ => none
+      | _ => none
+
+private def oracleShape (s : SourceSnapshot) : Option (List Nat) :=
+  match compareSource s (some [5]) with
+  | .error _ => none
+  | .ok run => match run.oracle with
+    | .error _ => none
+    | .ok r => (r.tensors.find? (fun (t : Oracle.Tensor) => t.declaration == 5)).map (·.shape)
+
+-- M1 shape agreement (donors: fD, fN): legacy production and the oracle publish the exact reach,
+-- `a+b` -> 6 and `a+4b` -> 12. Before M1 production derived 7 and 16 against the oracle's declared
+-- 6 and 12 (`known:extent`). The checked leg still refuses both here (T2 lifts it).
+#guard legacyShape fD == some [6]
+#guard oracleShape fD == some [6]
+#guard legacyShape fN == some [12]
+#guard oracleShape fN == some [12]
 
 /-! T4-A1 two-tensor programs, after S3a (collisions sum, so the origin-bound collision rows that
 named `Y`/`Z` in a native collision error lost their referent and are deleted; `Z` is declaration 6,
@@ -295,6 +328,9 @@ private def fF11 := withZ 8 [zBare, .assign "Y" [.affine (.scale 2 a)] readX]
 #guard mentions fF "multiAxisScatterLhs \"Y: affine LHS slot\""
 #guard mentions fF' "multiAxisScatterLhs \"Y: affine LHS slot\""
 #guard !mentions fF "collision"
+-- (T1) the same refusal for the legacy-only donors fD (`a+b`) and fN (`a+4b`).
+#guard mentions fD "multiAxisScatterLhs \"Y: affine LHS slot\""
+#guard mentions fN "multiAxisScatterLhs \"Y: affine LHS slot\""
 
 -- CHECKED-only refusal: Z's constant-slot scatter (legacy sums it into Z = [0,0,0,10]; the checked
 -- plan refuses it at preparation naming Z) next to fE's agreeing write on Y: the program is still a
