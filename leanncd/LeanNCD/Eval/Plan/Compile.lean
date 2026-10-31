@@ -100,10 +100,11 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
     `scatterOutShape` calls `outExtent` on the source slot and so gets `n + 1`; this emitter derives
     `destShape` through `scatterDestExtent`, the reconstruction `checkScatter` validates against,
     which always takes the `.affine` arm and so gets `n`. Admitting the form would ship that silent
-    disagreement. `lowerArith` rejects it on the surface `.assign` path (`overlappingScatter` — a
-    constant coordinate collapses a dimension) but no longer on a hand-built `.scatter` statement,
-    which compiles; `elabTLLHSSlot` has no arm producing it, so this guards a hand-built
-    `ScheduledProgram` only.
+    disagreement. Since slice A T3 `lowerArith` never lets the form through: it lowers a constant slot
+    (on both the `.assign` and the `.scatter` arm) to the unit-axis placement `n + 1·u`
+    (`lowerConstSlots`), whose extent both derivations agree on. This arm therefore means "a
+    hand-built `ScheduledProgram` that bypassed `lowerArith` handed the preflight a raw constant"
+    (or a scan statement, which `lowerConstSlots` leaves alone).
 
     **A row naming more than one source axis (`Out[i+j]`) — `multiAxisScatterLhs`, scan-local only**
     (`multiAxisAdmitted := false`), classified by `scatterAffineClass`, which calls `idxAffineForm`
@@ -112,7 +113,7 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
 
     **A ZERO coefficient is NOT a rejection, and is not the `.const` case.** `Out[0*i]` elaborates to
     `.affine (.scale 0 i)` (`elabTLLHSSlot`'s `n*x` arm, `n = 0`), is surface-reachable, passes
-    `lowerArith` (`LHSSlot.collapses` matches only `.affine (.const _)`), and is the empty-destination
+    `lowerArith` (`lowerConstSlots` rewrites only `.affine (.const _)`), and is the empty-destination
     degeneracy Task 3 designed for and `ScatterCheckTest` pins. Both extent derivations agree on it —
     `outExtent`'s `.scale` arm gives `0 · size = 0` and the placement-row reconstruction gives the
     same `0` — so it compiles to a real `ScatterPlan` with `destShape = #[0]` (since B6 `prepareEvalPlan` then rejects it with `ShapeError.scatterImageOutOfRange`: every write is outside the empty destination). This is why the

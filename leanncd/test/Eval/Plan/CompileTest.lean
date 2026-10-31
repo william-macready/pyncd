@@ -114,9 +114,9 @@ def acceptedSched : ScheduledProgram :=
 
 -- A constant affine LHS slot (`Out[3]`) stays rejected: it is the ONE slot form whose
 -- `LHSSlot.outExtent` answer (`.const`'s `n + 1`) disagrees with the placement-row reconstruction
--- `checkScatter` validates against. (`lowerArith` refuses it on the surface `.assign` path with
--- `overlappingScatter`; a hand-built `.scatter` const slot compiles and sums, so this preflight
--- refusal is the only gate for that shape.)
+-- `checkScatter` validates against. (Slice A T3: `lowerArith` lowers a surface constant slot to a
+-- unit-axis placement, so this preflight refusal now only fires for a hand-built schedule that
+-- BYPASSED `lowerArith`, which is exactly what this fixture is.)
 #guard errOf (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.scatter "Out" [.affine (.const 3)]

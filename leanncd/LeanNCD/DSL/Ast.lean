@@ -469,9 +469,21 @@ def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
   || (let us := slots.filterMap (·.freeUID?)
       us.length ≠ us.eraseDups.length)
 
+/-- Name prefix of the synthetic unit axis `lowerArith` mints for a constant LHS slot
+    (`Y[3]` becomes `Y[#constN + 3]` over an axis pinned to size 1). `#` is not an identifier
+    character, so no source axis can carry it. Axis identity is by UID; the prefix only MARKS the
+    synthetic axis so the multi-writer collector (`boundedScatter`) can keep treating the slot as the
+    constant it still is (slice A, D2: the collector's admission is unchanged). -/
+def constUnitPrefix : String := "#const"
+
+/-- Is this index the rewritten form of a constant slot: `n + 1·u` over a synthetic unit axis. -/
+def IdxExpr.isConstUnit : IdxExpr → Bool
+  | .affine _ [(1, a)] => a.name.startsWith constUnitPrefix
+  | _ => false
+
 def LHSSlot.boundedScatter : LHSSlot → Bool
   | .free _ | .freeNorm _ => true
-  | .affine e => scatterAffineClass e == .bounded
+  | .affine e => !e.isConstUnit && scatterAffineClass e == .bounded
   | _ => false
 
 /-- The corner extremes `(min, max)` of the affine image `c0 + Σ c_k·x_k` over the box

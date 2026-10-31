@@ -1097,10 +1097,10 @@ E2a SCOPING DECISION (a deliberate divergence from §12.4): affine *reads* (e.g.
 `X[i+p, 2*j+r]`) are LEFT IN PLACE here — the later `route` phase absorbs each read's affine
 `IdxExpr` into the consuming step's `reindexings` field (exactly where stride-maps live in
 `BrBase`, §2.3). So `lowerArith` emits NO separate Slice/Reindex intermediate steps. Its
-real job is the affine-LHS → `Stmt.scatter` reclassification plus a
-*conservative* `overlappingScatter` injectivity guard on the surface `.assign` arm (a const LHS coord
-collapses a dimension; strided coords like upsample `2*i` are injective). The `.scatter` arm has no
-guard since S3a: collisions sum. -/
+real job is the affine-LHS → `Stmt.scatter` reclassification. There is no injectivity guard: collisions
+sum (S3a), and a constant LHS coord (`Y[3]`) is lowered to a unit-axis placement (`lowerConstSlots`,
+slice A T3; the `overlappingScatter` guard on the `.assign` arm is gone — the `CompileError` constructor is
+kept, producerless, for serialized compatibility like `scatterInScan`). -/
 
 /-- A LHS slot that denotes an affine output coordinate (a Scatter write). Plain `free`
     axes and the scan slots (`iterAt`/`iterNext`) are NOT affine-scatter slots. -/
@@ -1111,31 +1111,48 @@ def LHSSlot.isAffine : LHSSlot → Bool
   | .iterAt _ _ => false
   | .iterNext _ => false
 
-/-- Conservative non-injectivity test (E2a): a constant LHS coordinate collapses a
-    dimension (guarded on the `.assign` arm of `lowerArith`); a strided coordinate (`scale`/general affine
-    over an axis, e.g. upsample `2*i`) is injective. -/
-def LHSSlot.collapses : LHSSlot → Bool
-  | .affine (.const _) => true
-  | _                  => false
+/-- Scatter-geometry slice A (D2/D5): a constant LHS slot `Y[n]` is the single-axis placement
+    `n + 1·u` over a FRESH synthetic axis `u` pinned to size 1 (`constUnitPrefix` names it). The
+    stride-aligned extent arm of `LHSSlot.outExtent` then gives `1·1 + n = n + 1`, the image is
+    exactly `{n}`, and the reference's extent and the checked plan's derived extent agree. Returns the
+    rewritten slots and the pinned axis declarations to append.
+
+    A statement that carries a scan slot (`iterAt`/`iterNext`) is left untouched: the scan-local
+    preflight keeps its own constant refusal (`checkScanScatterLHSSlot`), and a synthetic axis inside
+    a scan body is not part of slice A. -/
+def lowerConstSlots (slots : List LHSSlot) : FreshM (List LHSSlot × List Decl) := do
+  if slots.any (fun sl => match sl with | .iterAt .. | .iterNext .. => true | _ => false) then
+    return (slots, [])
+  let mut out : List LHSSlot := []
+  let mut ds : List Decl := []
+  for sl in slots do
+    match sl with
+    | .affine (.const n) =>
+        let u ← freshNonZero
+        let ax : AxisSpec := ⟨constUnitPrefix ++ toString u, u, .nat⟩
+        out := out ++ [.affine (.affine n [(1, ax)])]
+        ds := ds ++ [.axis ax (some 1)]
+    | _ => out := out ++ [sl]
+  return (out, ds)
 
 def lowerArith (rp : ResolvedProgram) : FreshM LoweredProgram := do
-  let stmts' ← rp.stmts.mapM (fun s => do
+  let pairs ← rp.stmts.mapM (fun s => do
     match s with
     | .assign nm slots rhs =>
         -- Reclassify affine (Out[2*i,2*j]) OR diagonal (Y[i,i], a repeated free axis) LHS to a
         -- scatter that publishes its full placement rank — so declared/full-rank reads of it are
-        -- sound (B1). `collapses` only guards affine `.const` dimension-collapse; a diagonal is
-        -- injective (i ↦ (i,i)) so it passes.
+        -- sound (B1). A constant slot is a scatter like any other (D5: the `overlappingScatter`
+        -- guard was deleted); it is lowered to a unit-axis placement by `lowerConstSlots`.
         if slotsBecomeScatter slots then
-          if slots.any LHSSlot.collapses then throw (CompileError.overlappingScatter nm)
-          else return Stmt.scatter nm slots rhs
-        else return s
-    | .scatter .. =>
-        -- A hand-built `.scatter` is not guarded: collisions ⊕-accumulate (S3a), so a const slot
-        -- (a collapsing write) is a sum, not an error. Only the `.assign` arm above keeps the guard.
-        return s
-    | .recurMorphism _ _ _ => return s)   -- no affine LHS; passes through unchanged
-  return { decls := rp.decls, stmts := stmts', env := rp.env,
+          let (slots', ds) ← lowerConstSlots slots
+          return (Stmt.scatter nm slots' rhs, ds)
+        else return (s, [])
+    | .scatter nm slots rhs =>
+        -- A hand-built `.scatter` gets the same constant-slot lowering; collisions ⊕-accumulate (S3a).
+        let (slots', ds) ← lowerConstSlots slots
+        return (Stmt.scatter nm slots' rhs, ds)
+    | .recurMorphism _ _ _ => return (s, []))   -- no affine LHS; passes through unchanged
+  return { decls := rp.decls ++ (pairs.map (·.2)).flatten, stmts := pairs.map (·.1), env := rp.env,
            extNames := rp.extNames }
 
 /-! ## The `finalizeScans` phase (Phase 5 — recurrence → Scan nodes)

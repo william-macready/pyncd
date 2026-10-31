@@ -113,10 +113,7 @@ def refWriteOutOfRange (p : TLProgram) : Option (String × List Int × List Nat)
 #guard refWriteOutOfRange (convOf signSlot) == some ("S", [-1], [0, 1])
 #guard prepCause (convOf signSlot) == some (.shape (.scatterImageOutOfRange "S" 0 (-2) 3 4))
 
--- A constant slot is STILL refused by the top-level preflight (a hand-built schedule that bypassed
--- `lowerArith`); slice B/T3 will change what a constant means, not this arm.
-#guard prepCause (convOf (.affine (.const 3))) ==
-  some (.capability (.scatterOrAffineLhs "S: constant affine LHS slot"))
+-- The constant-slot refusal pin moved to the T3 section (`bypass`): a surface-compiled constant now lowers.
 
 -- A multi-writer group containing a multi-axis scatter is still refused (`multiWriterScatter`):
 -- donor B5BoundaryTest.twoAxes. Pinned here against the lift (the destination is pinned `k = 6`).
@@ -188,5 +185,150 @@ def narrowedBits : Option (Array UInt32) :=
 #guard twinBits == nativeBits
 #guard narrowedBits == some #[1022739087, 1046562734, 1047233823, 1061830001, 1050253722, 1059145646]
 #guard nativeBits != narrowedBits
+
+/-! ## T3: a constant slot `S[n]` is a unit-axis scatter
+
+`lowerArith` rewrites a constant LHS slot to `n + 1·u` over a fresh axis `u` pinned to size 1
+(`lowerConstSlots`), on BOTH the `.assign` and the `.scatter` arm. The image is exactly `{n}`, the
+destination extent is `n + 1` in the reference and the checked plan alike, and `u` is never a published
+dimension. Inputs: `A = [1,2,3,4]`, `B = [1,10,100]`. -/
+
+private def m : AxisSpec := ⟨"m", 94, .nat⟩
+
+def rhsOf (fs : List Factor) (agg : AggOp := .sum) : RHSExpr :=
+  { body := { terms := [{ factors := fs }] }, nonlin := .identity, agg := agg }
+def facA : List Factor := [.read "A" [.axis a]]
+def facAB : List Factor := [.read "A" [.axis a], .read "B" [.axis b]]
+
+/-- Donor: `convOf`, generalised over destination axes, slots and factors, plus the `.assign` spelling. -/
+def cstProg (dst : List AxisSpec) (slots : List LHSSlot) (fs : List Factor)
+    (asAssign : Bool := false) (agg : AggOp := .sum) : TLProgram :=
+  { decls := [.axis a (some 4), .axis b (some 3)] ++ (dst.filter (· != a)).map (fun ax => .axis ax none) ++
+      [.typedTensor .f32 "A" [a], .typedTensor .f32 "B" [b], .typedTensor .f32 "S" dst]
+    stmts := [if asAssign then .assign "S" slots (rhsOf fs agg) else .scatter "S" slots (rhsOf fs agg)] }
+
+def cst (n : Int) : LHSSlot := .affine (.const n)
+def pinAll (n : Nat) (p : TLProgram) : TLProgram :=
+  { p with decls := p.decls.map (fun | .axis ax none => .axis ax (some n) | d => d) }
+
+/-- Shape and cells in the three legs: reference, checked binary64, checked binary32 (bits). -/
+def cells (p : TLProgram) :=
+  ((ref64 p convIn64).bind fun e => e["S"]?.map fun t => (t.shape, t.data.map Float.toBits),
+   (run64 p convIn64).bind fun e => e["S"]?.map fun t => (t.shape, t.data.map Float.toBits),
+   (run32 p convIn32).bind fun e => e["S"]?.map fun t => (t.shape, t.data.map Float32.toBits))
+def planFields (p : TLProgram) :=
+  (scatterPlanOf p).map (fun s => (s.outCoeffs, s.outBias, s.destShape, s.compute.outputShape))
+
+def S3 := cstProg [k] [cst 3] facA
+def S3a := cstProg [k] [cst 3] facA (asAssign := true)
+def bigIn32 : NamedDenseEnv32 :=
+  ({} : NamedDenseEnv32).insert "A" ⟨[4], #[16777216, 1, 1, 1]⟩ |>.insert "B" ⟨[3], #[1, 10, 100]⟩
+def bigIn64 : NamedDenseEnv :=
+  ({} : NamedDenseEnv).insert "A" ⟨[4], #[16777216, 1, 1, 1]⟩ |>.insert "B" ⟨[3], #[1, 10, 100]⟩
+def twinS : TLProgram :=
+  { decls := [.axis a (some 4), .typedTensor .f32 "A" [a], .typedTensor .f32 "T" [a]]
+    stmts := [.assign "T" [.free a] (rhsOf facA)] }
+
+-- Observed (`lean-file.sh test/Eval/Plan/ScatterGeometryTest.lean`, `#eval cells S3` etc.; the pre-T3
+-- baseline refused every program below in both checked legs). Reference == checked f64 == checked f32,
+-- the shape is `n + 1` and the cells are the sum over the contracted axes at the constant coordinate.
+-- `Y[3] := A[a]`: shape [4], cells [0,0,0,10] (1+2+3+4), as the P0 source-level probe
+-- `axis u = 1; Y[u+3] := X[a]` observed. The synthetic axis is not a published dimension.
+#guard shapesOf S3 == (some [4], some [4], some [4])
+#guard shapesOf S3a == (some [4], some [4], some [4])
+#guard agree S3 convIn64 convIn32 #[0, 0, 0, 10] #[0, 0, 0, 10]
+#guard agree S3a convIn64 convIn32 #[0, 0, 0, 10] #[0, 0, 0, 10]
+-- Plan fields: columns are `compute.outputShape = [1 (synthetic u), 4 (a)]`, so the placement row is
+-- `[1, 0]` (u with coefficient 1, a with 0), bias 3 (the constant), extent `1*1 + 3 = 4`.
+#guard planFields S3 == some (#[#[1, 0]], #[3], #[4], #[1, 4])
+#guard planFields S3a == some (#[#[1, 0]], #[3], #[4], #[1, 4])
+-- The synthetic axis is declared (pinned to 1, `#const<uid>` name: `#` is not an identifier character,
+-- so no source axis can collide) and is the ONLY declaration `lowerArith` added.
+#guard ((scheduled (as64 S3)).map fun s => s.decls.map fun
+    | .axis ax n => some (ax.name.startsWith constUnitPrefix, n) | _ => none)
+  == some [some (false, some 4), some (false, some 3), some (false, none), none, none, none,
+    some (true, some 1)]
+-- A constant next to a free axis (`S[a, 3] := A[a]`, dst `[a, k]`): shape [4,4], column 3 is `A`.
+def colProg := cstProg [a, k] [.free a, cst 3] facA
+def colProgA := cstProg [a, k] [.free a, cst 3] facA true
+#guard shapesOf colProg == (some [4, 4], some [4, 4], some [4, 4])
+#guard agree colProg convIn64 convIn32 #[0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4]
+  #[0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4]
+#guard agree colProgA convIn64 convIn32 #[0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4]
+  #[0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4]
+-- Two constant slots in one statement (`S[3, 4]`, dst `[k, m]`): shape [4, 5], one nonzero cell, two
+-- synthetic axes (one per slot).
+def twoConst := cstProg [k, m] [cst 3, cst 4] facA
+def twoConstA := cstProg [k, m] [cst 3, cst 4] facA true
+#guard shapesOf twoConst == (some [4, 5], some [4, 5], some [4, 5])
+#guard planFields twoConst == some (#[#[1, 0, 0], #[0, 1, 0]], #[3, 4], #[4, 5], #[1, 1, 4])
+#guard agree twoConst convIn64 convIn32 (#[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10])
+  (#[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10])
+#guard agree twoConstA convIn64 convIn32 (#[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10])
+  (#[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10])
+-- A contracted RHS axis summing (`S[3] := A[a]*B[b]`): (1+2+3+4)*(1+10+100) = 1110.
+#guard agree (cstProg [k] [cst 3] facAB) convIn64 convIn32 #[0, 0, 0, 1110] #[0, 0, 0, 1110]
+-- Constant 0: extent 1.
+#guard shapesOf (cstProg [k] [cst 0] facA) == (some [1], some [1], some [1])
+#guard agree (cstProg [k] [cst 0] facA) convIn64 convIn32 #[10] #[10]
+-- Max-plus (`agg max`): constant 0 gives max(A) = 4; constant 3 leaves identity-filled (-inf) holes.
+#guard agree (cstProg [k] [cst 0] facA (agg := .max)) convIn64 convIn32 #[4] #[4]
+#guard agree (cstProg [k] [cst 3] facA (agg := .max)) convIn64 convIn32
+  #[-(1/0), -(1/0), -(1/0), 4] #[-(1/0), -(1/0), -(1/0), 4]
+-- RISK (ii): a BOXED single constant writer (`k` pinned 8) still publishes the DERIVED shape [4], in all
+-- three legs, and the collector does not box it (the synthetic slot is not `boundedScatter`; B5c D2
+-- residual, unchanged by T3). Donor: `convBoxed`/`B5cSingleBoxTest.groupsOf`.
+#guard shapesOf (pinAll 8 S3) == (some [4], some [4], some [4])
+#guard shapesOf (pinAll 8 S3a) == (some [4], some [4], some [4])
+#guard B5cSingleBoxTest.groupsOf (pinAll 8 S3) == []
+#guard B5cSingleBoxTest.groupsOf (pinAll 8 S3a) == []
+-- RISK (i): a multi-writer group with a constant writer is refused exactly as before T3
+-- (`multiWriterScatter`; observed on the T2 commit for the `.scatter` pairs). Donor: `convTwo`.
+#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ S3.stmts }) == some (.multiWriterScatter "S")
+#guard sourceError (pinAll 6 { S3a with stmts := S3a.stmts ++ S3a.stmts }) == some (.multiWriterScatter "S")
+#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ conv.stmts }) == some (.multiWriterScatter "S")
+-- `route` accepts the constant-slot program.
+#guard routeError S3 == none && routeError S3a == none
+-- No `EvalWarning` (unused-axis, size inference) mentions the synthetic axis: the reference evaluator
+-- emits none for either arm, with the pinned `#const` axis declared.
+#guard ((scheduled (as64 S3)).bind fun s => (evalScheduled s convIn64).toOption).map
+    (·.warnings.length) == some 0
+#guard ((scheduled (as64 S3a)).bind fun s => (evalScheduled s convIn64).toOption).map
+    (·.warnings.length) == some 0
+-- The hand-built bypass: a raw constant `.scatter` handed STRAIGHT to the preflight (no `lowerArith`)
+-- is still refused, `checkScatterAffineExpr`'s top-level `.constant` arm (it now means "a schedule that
+-- bypassed `lowerArith`"). Replaces the T2 pin that went through `compileToScheduled`.
+def bypass (p : TLProgram) : Option ScheduledProgram :=
+  (scheduled (as64 p)).map fun s => { s with stmts := s.stmts.map fun
+    | .plain (.scatter nm _ r) => .plain (.scatter nm [cst 3] r)
+    | x => x }
+#guard ((bypass S3).bind fun s => match prepareEvalPlan s (InputSignature.ofDenseInputs convIn64) with
+  | .error f => some f.cause
+  | .ok _ => none) == some (.capability (.scatterOrAffineLhs "S: constant affine LHS slot"))
+-- Binary32 discriminator (the T2 pattern: independent twin + a lane the narrowed binary64 answer gets
+-- wrong). `A = [2^24, 1, 1, 1]`: binary32 absorbs every `+1` (2^24 + 1 ties to even), so the native f32
+-- sum is 16777216 (bits 1266679808), the independent twin (ordinary assign `T[a] := A[a]`, summed in
+-- binary32 source order with a `+0` seed) is the same word, and the binary64 answer 16777219 narrows to
+-- 16777220 (bits 1266679810). All three read from `#eval` of this file, not derived by narrowing.
+#guard ((run32 S3 bigIn32).bind fun e => e["S"]?.map fun t => t.data.map Float32.toBits) ==
+  some #[0, 0, 0, 1266679808]
+#guard ((run32 twinS bigIn32).bind fun e => e["T"]?.map fun t =>
+  (t.data.foldl (· + ·) (0 : Float32)).toBits) == some 1266679808
+#guard ((run64 S3 bigIn64).bind fun e => e["S"]?.map fun t => t.data.map (·.toFloat32.toBits)) ==
+  some #[0, 0, 0, 1266679810]
+
+-- The surface grammar is untouched: a lone numeral in a scan base slot (`S[i, 0]`) is still the scan
+-- base case `.iterAt`, never a constant `.affine (.const 0)`, and the program still compiles to a scan.
+def scanBase : TLProgram := tlprog!{
+  iter l = 3
+  S[i, 0] := X[i]
+  S[i, l + 1] := S[i, l]
+}
+#guard (match scanBase.stmts with
+  | .assign "S" [_, .iterAt _ 0] _ :: _ => true
+  | _ => false)
+#guard (match scanBase.compileToScheduled.run 0 with
+  | .ok s _ => s.stmts.any (fun | ScanStmt.scan .. => true | _ => false)
+  | .error _ _ => false)
 
 end LeanNCD.Eval.Plan.ScatterGeometryTest

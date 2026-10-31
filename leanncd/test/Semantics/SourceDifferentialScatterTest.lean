@@ -128,10 +128,12 @@ private def fMask : SourceSnapshot :=
 #guard tag fB == "parity"
 #guard tag fC == "parity"
 -- The multi-axis scatter `fD` (`a+b`) is four-leg parity since the checked backend admits multi-axis
--- geometry at top level (it was `nativeFailure`, the capability refusal); the constant slot `fD'` stays
--- a checked-leg refusal (`scatterOrAffineLhs`), legacy sums like the oracle.
+-- geometry at top level (it was `nativeFailure`, the capability refusal). Slice A T3: the constant slot
+-- `fD'` (`Y[3] += X[a]`, declared 4 = derived `3 + 1`) is four-leg parity too: `lowerArith` lowers the
+-- constant to a unit-axis placement, so the checked leg no longer refuses it (observed:
+-- `checked=value [(Y, ([4], [0, 0, 0, 10]))]`, equal to the oracle and the legacy leg).
 #guard tag fD == "parity"
-#guard tag fD' == "nativeFailure"
+#guard tag fD' == "parity"
 -- Collisions sum (S3a): E (`b` contracted onto one cell) is parity like its one-factor neighbour A.
 -- F (`a+b`) and its neighbour F' (b coefficient 4) are four-leg parity: the checked leg admits the
 -- multi-axis slot and every leg publishes the exact reach (6 and 12); they were `nativeFailure`.
@@ -145,13 +147,18 @@ private def fMask : SourceSnapshot :=
 -- the declared shape like the oracle: parity, and no `scatterExtentOverridesDeclared` condition.
 #guard tag fH9 == "parity"
 #guard tag fH6 == "refused:writeOutOfRange"
--- Constant slots written by `.assign`: compile `overlappingScatter` (the `lowerArith` `.assign` arm's
--- guard, kept; the hand-built `.scatter` arm's guard was deleted in S3a, fD'), whatever the RHS.
-#guard tag fI1 == "nativeFailure"
-#guard tag fI2 == "nativeFailure"
--- Legacy fails at compilation (the independent constant-slot statement on Z) and the checked leg
--- refuses it the same way: `nativeFailure`, no condition applies.
-#guard tag fMask [5, 6] == "nativeFailure"
+-- Constant slots written by `.assign`: they used to fail compilation (`overlappingScatter`, the
+-- `lowerArith` `.assign` arm's guard, deleted by slice A T3/D5: it predated S3a and the oracle and the
+-- reference define the write). They now compile and run, and the class is `known:extent` for these
+-- three: each destination is DECLARED larger than the derived `n + 1` (5 vs 4; `fMask`'s `Z` 8 vs 4),
+-- the oracle publishes the declared shape and both native legs the derived one. That is the B5c D2
+-- residual for a constant writer (the collector does not box a constant slot; slice B closes it), the
+-- same class as `fFbig` for a multi-axis writer. Whatever the RHS.
+#guard tag fI1 == "known:extent"
+#guard tag fI2 == "known:extent"
+-- `fMask` (the independent constant-slot statement on `Z`) no longer fails the legacy leg at
+-- compilation, so it no longer masks conditions: it reports `Z`'s extent condition like `fI2`.
+#guard tag fMask [5, 6] == "known:extent"
 
 /-- The structural conditions the source alone predicts for `s` (`compareSource`'s `conditions`). -/
 private def conditionCount (s : SourceSnapshot) : Nat :=
@@ -203,9 +210,9 @@ private def dropOccurrence (drop : Bool) : String :=
 #guard dropOccurrence false == "accepted"
 #guard dropOccurrence true == "occurrences 3 2"
 
-/-! T4-A2 (review F4): LEGACY-ONLY agreement. The checked plan refuses `fD'` by capability (`fD` is
-four-leg parity since multi-axis admission), so four-leg parity is impossible for `fD'` and `tag` is
-`nativeFailure`; the legacy production leg's VALUES
+/-! T4-A2 (review F4): LEGACY-ONLY agreement. (The checked plan used to refuse `fD'` by capability;
+since slice A T3 `fD'` is four-leg parity like `fD`, and these cells stay as the hand-computed values.)
+The legacy production leg's VALUES
 (which sum collisions) are asserted here against the oracle and against hand-computed cells. -/
 
 /-- Cells of the legacy leg's declaration-5 output, as raw bits (`none` unless the leg is observed
@@ -356,14 +363,17 @@ private def fSignOk := snap 6 [k] [.scatter "Y" [.affine (.affine 2 [(1, a), (-1
 #guard legacyCells fSignOk == handBits [100, 210, 321, 432, 43, 4]
 #guard oracleCells fSignOk == handBits [100, 210, 321, 432, 43, 4]
 
--- CHECKED-only refusal: Z's constant-slot scatter (legacy sums it into Z = [0,0,0,10]; the checked
--- plan refuses it at preparation naming Z) next to fE's agreeing write on Y: the program is still a
--- `nativeFailure` and the refusal names Z.
+-- Slice A T3: Z's constant-slot scatter used to be a CHECKED-only refusal (legacy summed it into
+-- Z = [0,0,0,10]; the checked plan refused it at preparation naming Z), making the program a
+-- `nativeFailure`. The constant now lowers to a unit-axis placement, so no leg refuses: next to fE's
+-- agreeing write on Y the program is four-leg parity, Z = [0,0,0,10] in the oracle and the native legs.
 private def fOriginC := withZ 8 [.scatter "Z" [.affine (.const 3)] readX,
   .assign "Y" [.affine (.scale 2 a)] readXW]
-#guard mentions fOriginC "scatterOrAffineLhs \"Z: constant affine LHS slot\""
+#guard !mentions fOriginC "scatterOrAffineLhs"
+#guard mentions fOriginC "checked=value"
 #guard mentions fOriginC "(Z, ([4], [0.000000, 0.000000, 0.000000, 10.000000]))"
-#guard tag fOriginC [5, 6] == "nativeFailure"
+#guard tag fOriginC [5, 6] == "parity"
+#guard mentions fD' "checked=value [(Y, ([4], [0.000000, 0.000000, 0.000000, 10.000000]))]"
 
 -- S3a: the colliding `fE` (`b` contracted onto the cell `2a`) is four-leg parity and its values are
 -- the contraction sums Y[2a] = X[a] * (1 + 10 + 100), from legacy and from the oracle alike.

@@ -238,16 +238,38 @@ run_cmd do
                 | _ => throwError "matmul assign should remain Stmt.assign"
   | .error e _ => throwError s!"errored: {repr e}"
 
--- A collapsing constant LHS coord without reduce ⇒ overlappingScatter.
+-- A constant LHS coord is no longer refused (D5: the `overlappingScatter` guard is gone): it is
+-- reclassified to a `Stmt.scatter` whose slot is the unit-axis placement `0 + 1·u`, and the synthetic
+-- axis `u` (a `#const…` name) is declared pinned to size 1. (Was: `.error (.overlappingScatter "Z")`.)
 run_cmd do
   let collapse : Stmt := .assign "Z" [ .affine (.const 0) ]
     { body := { terms := [ { factors := [ .read "X" [ .const 0 ] ] } ] }, nonlin := .identity }
   let rp : ResolvedProgram :=
     { decls := [], stmts := [collapse], env := {}, extNames := ∅ }
   match lowerArith rp |>.run 0 with
-  | .error (.overlappingScatter "Z") _ => pure ()
-  | .error e _ => throwError s!"wrong error: {repr e}"
-  | .ok _ _ => throwError "expected overlappingScatter for collapsing const LHS"
+  | .ok lp _ =>
+      match lp.stmts, lp.decls with
+      | [ .scatter "Z" [ .affine (.affine 0 [(1, u)]) ] _ ], [ .axis u' (some 1) ] =>
+          unless u == u' && u.name.startsWith constUnitPrefix do
+            throwError s!"slot axis {repr u} is not the declared synthetic axis {repr u'}"
+      | s, d => throwError s!"expected one unit-axis scatter + one pinned decl, got {repr s} / {repr d}"
+  | .error e _ => throwError s!"constant LHS must lower, got {repr e}"
+
+-- A statement that carries a scan slot is NOT rewritten (slice A T3): a constant next to an `iterAt`
+-- stays a raw `.affine (.const 3)`, with no synthetic decl, so the scan-local preflight keeps its own
+-- constant refusal (`checkScanScatterLHSSlot`). Donor: the `.assign` fixture above plus an iteration slot.
+run_cmd do
+  let l : AxisSpec := { name := "l", uid := 4, kind := .nat }
+  let st : Stmt := .assign "S" [ .iterAt l 0, .affine (.const 3) ]
+    { body := { terms := [ { factors := [ .read "X" [ .const 0 ] ] } ] }, nonlin := .identity }
+  let rp : ResolvedProgram :=
+    { decls := [], stmts := [st], env := {}, extNames := ∅ }
+  match lowerArith rp |>.run 0 with
+  | .ok lp _ =>
+      match lp.stmts, lp.decls with
+      | [ .scatter "S" [ .iterAt _ 0, .affine (.const 3) ] _ ], [] => pure ()
+      | s, d => throwError s!"scan-slot statement must keep its raw constant, got {repr s} / {repr d}"
+  | .error e _ => throwError s!"errored: {repr e}"
 
 -- Coupled scan: G and H both recur over `l` (uid 9) ⇒ ONE ScanStmt.scan whose recur list
 -- has BOTH G and H steps; each has a base case (no missingBaseCase).
