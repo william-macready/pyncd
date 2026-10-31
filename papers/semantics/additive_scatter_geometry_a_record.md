@@ -239,16 +239,17 @@ deduplicated by accounting `sourceSessionId`/`usageId`. `inputTokens` already
 includes cache tokens, so cache reads/writes are not added again.
 The cross-session usage database had no row for this live session.
 
-Snapshot immediately before writing this close-out:
+Snapshot after the initial close-out evidence commit
+`f892862fc5ba8ae0c22708ca4eeeeed7c0a76e1b`:
 
 | Execution context | API calls | Cumulative input tokens | Output tokens | Peak input context |
 | --- | --- | --- | --- | --- |
-| Controller | 42 | 3449770 | 22311 | 120108 |
+| Controller | 46 | 3959035 | 30675 | 130009 |
 | Review context 1 | 32 | 2539558 | 17368 | 132317 |
 | Review context 2 | 23 | 1386124 | 16323 | 96522 |
-| Total | 97 | **7375452** | **56002** | 132317 maximum |
+| Total | 101 | **7884717** | **64366** | 132317 maximum |
 
-Combined input/output total is 7431454 at this snapshot. It excludes the
+Combined input/output total is 7949083 at this snapshot. It excludes the
 small subsequent close-out/commit/final-response tail; it is not presented
 as complete lifetime accounting. No measured context exceeds 250k, each
 dispatch is below 60 API turns, and cumulative input is well below both
@@ -263,4 +264,6 @@ was performed. No step is silently treated as passed.
 **Final status: BLOCKED.** Preserve the six implementation commits, this
 record, and both reviews on the isolated branch for repair. Local `main`
 remains at the execution base. Do not merge or delete the worktree while
-the load-bearing findings remain unresolved.
+the load-bearing findings remain unresolved. Local `main` remains eight
+commits ahead of `origin/main`; none of this execution's commits were
+merged or pushed.
