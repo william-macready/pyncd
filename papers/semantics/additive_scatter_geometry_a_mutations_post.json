@@ -1,0 +1,413 @@
+[
+ {
+  "label": "SGA-T1-01 (multi-axis arm reverted to the legacy sum rule)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "            some ((affineImageBounds c0 terms).2 + 1).toNat\n",
+  "new": "            some legacy\n",
+  "targets": [
+   "Eval.Plan.ScatterCheckTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterCheckTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T1-02 (reach loses its + 1: extent = max image)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "            some ((affineImageBounds c0 terms).2 + 1).toNat\n",
+  "new": "            some ((affineImageBounds c0 terms).2).toNat\n",
+  "targets": [
+   "Eval.Plan.ScatterCheckTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterCheckTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T1-03 (reach uses the MIN corner instead of the max)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "            some ((affineImageBounds c0 terms).2 + 1).toNat\n",
+  "new": "            some ((affineImageBounds c0 terms).1 + 1).toNat\n",
+  "targets": [
+   "Eval.Plan.ScatterCheckTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterCheckTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T1-04 (zero-size axis arm dropped: corner of an empty box)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "          if terms.any (fun (_, n) => n == 0) then\n            some legacy\n          else\n            some ((affineImageBounds c0 terms).2 + 1).toNat\n",
+  "new": "          some ((affineImageBounds c0 terms).2 + 1).toNat\n",
+  "targets": [
+   "Eval.Plan.ScatterCheckTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterCheckTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T1-05 (bias dropped from the corner start)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "    (c0, c0)\n",
+  "new": "    (0, 0)\n",
+  "targets": [
+   "Eval.Plan.ScatterCheckTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterCheckTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T1-06 (positive corner drops its max 0 clamp)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "      (lo + min 0 span, hi + max 0 span))\n",
+  "new": "      (lo + min 0 span, hi + span))\n",
+  "targets": [
+   "Eval.Plan.ScatterCheckTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterCheckTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T1-07 (negative corner drops its min 0 clamp: B6 min rule)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "      (lo + min 0 span, hi + max 0 span))\n",
+  "new": "      (lo + span, hi + max 0 span))\n",
+  "targets": [
+   "Eval.Plan.ScatterCheckTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterCheckTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T1-08 (single-axis stride arm widened to the reach: control must hold)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "            some (c * Int.ofNat n + (c0 / c) * c).toNat\n",
+  "new": "            some ((affineImageBounds c0 [(c, n)]).2 + 1).toNat\n",
+  "targets": [
+   "Eval.Plan.ScatterCheckTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterCheckTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T1-09 (oracle predictor back to the legacy sum formula)",
+  "task": "T1",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "    ((LHSSlot.affine (.affine f.1 (f.2.map fun (coef, u) => (coef, ⟨\"\", u, .nat⟩)))).outExtent\n      (fun u => (source.source.context.axes.find? (·.uid == u)).map (·.extent))).getD 0\n",
+  "new": "    (f.1 + (f.2.map fun (coef, u) =>\n      coef * ((source.source.context.axes.find? (·.uid == u)).map (fun a => (a.extent : Int))\n        |>.getD 0)).sum).toNat\n",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "error: test/Semantics/SourceDifferentialScatterTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T2-01 (top-level preflight refuses multi-axis again)",
+  "task": "T2",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "  | .affine e   => checkScatterAffineExpr true stmtName e\n",
+  "new": "  | .affine e   => checkScatterAffineExpr false stmtName e\n",
+  "targets": [
+   "Eval.Plan.CompileTest",
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T2-02 (scan-local preflight admits multi-axis)",
+  "task": "T2",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "  | .affine e   => checkScatterAffineExpr false stmtName e",
+  "new": "  | .affine e   => checkScatterAffineExpr true stmtName e",
+  "targets": [
+   "Eval.Plan.CompileTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T2-03 (constant slot admitted by the preflight)",
+  "task": "T2",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "  | .constant => throw (.scatterOrAffineLhs s!\"{stmtName}: constant affine LHS slot\")\n",
+  "new": "  | .constant => pure ()\n",
+  "targets": [
+   "Eval.Plan.CompileTest",
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/CompileTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T2-04 (multi-writer group admits a multi-axis scatter; killed by upstream pin B5BoundaryTest twoAxes, imported by ScatterGeometryTest so it builds first; the new convTwo pin is the same assertion)",
+  "task": "T2",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "        unless ls.all LHSSlot.boundedScatter && env.declAlgebra g.name != .bool do\n",
+  "new": "        unless env.declAlgebra g.name != .bool do\n",
+  "targets": [
+   "Eval.Plan.B5BoundaryTest",
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5BoundaryTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T2-05 (boxed single writer collects a multi-axis scatter; killed by upstream pin B5cSingleBoxTest multiAxisOne, which ScatterGeometryTest imports so it always builds first: it is the same assertion as the new convBoxed pin)",
+  "task": "T2",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "              ls.all LHSSlot.boundedScatter && !(sourceUIDs ls).any declUIDs.contains\n",
+  "new": "              !(sourceUIDs ls).any declUIDs.contains\n",
+  "targets": [
+   "Eval.Plan.B5cSingleBoxTest",
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5cSingleBoxTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T2-06 (range rule zips coefficients against reversed extents; killed by upstream pin B5NativeTest B6 guards, imported by ScatterGeometryTest so they build first; the new module's mixed-sign B6 pins are the same assertion)",
+  "task": "T2",
+  "file": "LeanNCD/Eval/Plan/Check.lean",
+  "old": "  affineImageBounds bias (row.toList.zip srcShape.toList)\n",
+  "new": "  affineImageBounds bias (row.toList.reverse.zip srcShape.toList)\n",
+  "targets": [
+   "Eval.Plan.B5NativeTest",
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5NativeTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T2-07 (oracle predictor boxes multi-axis writes)",
+  "task": "T2",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "(f.2.filter (·.2 == u)).foldl (fun acc p => acc + p.1) 0 != 0).length ≤ 1)",
+  "new": "(f.2.filter (·.2 == u)).foldl (fun acc p => acc + p.1) 0 != 0).length ≤ 2)",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "error: test/Semantics/SourceDifferentialScatterTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3-01 (synthetic axis pinned to 2 instead of 1)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "        ds := ds ++ [.axis ax (some 1)]\n",
+  "new": "        ds := ds ++ [.axis ax (some 2)]\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterGeometryTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3-02 (placement bias n+1 instead of n)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "        out := out ++ [.affine (.affine n [(1, ax)])]\n",
+  "new": "        out := out ++ [.affine (.affine (n + 1) [(1, ax)])]\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterGeometryTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3-03 (rewrite skipped on the .assign arm)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "          let (slots', ds) ← lowerConstSlots slots\n          return (Stmt.scatter nm slots' rhs, ds)\n",
+  "new": "          return (Stmt.scatter nm slots rhs, [])\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterGeometryTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3-04 (rewrite skipped on the .scatter arm)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "        let (slots', ds) ← lowerConstSlots slots\n        return (Stmt.scatter nm slots' rhs, ds)\n",
+  "new": "        return (Stmt.scatter nm slots rhs, [])\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterGeometryTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3-05 (overlappingScatter throw re-added on the .assign arm)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "          let (slots', ds) ← lowerConstSlots slots\n          return (Stmt.scatter nm slots' rhs, ds)\n",
+  "new": "          if slots.any (fun sl => match sl with | .affine (.const _) => true | _ => false) then\n            throw (CompileError.overlappingScatter nm)\n          let (slots', ds) ← lowerConstSlots slots\n          return (Stmt.scatter nm slots' rhs, ds)\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterGeometryTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3-06 (unit coefficient dropped to 0; killed by upstream pin B5BoundaryTest explicitConstant: the 0-coefficient synthetic slot stops being isConstUnit, so the group is admitted)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "        out := out ++ [.affine (.affine n [(1, ax)])]\n",
+  "new": "        out := out ++ [.affine (.affine n [(0, ax)])]\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5BoundaryTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3-07 (collector gate widened: synthetic slot counts as boundedScatter; killed by upstream pin B5BoundaryTest explicitConstant, risk (i))",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "  | .affine e => !e.isConstUnit && scatterAffineClass e == .bounded\n",
+  "new": "  | .affine e => scatterAffineClass e == .bounded\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5BoundaryTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3-08 (synthetic axis declaration dropped)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "        ds := ds ++ [.axis ax (some 1)]\n",
+  "new": "        ds := ds\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterGeometryTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3-09 (scan statements no longer skipped; constants inside scans rewritten)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "  if slots.any LHSSlot.isScanSlot then\n    return (slots, [])\n",
+  "new": "",
+  "targets": [
+   "DSL.Pipeline.StructuralTest"
+  ],
+  "expect": [
+   "error: test/DSL/Pipeline/StructuralTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3b-01 (scan statement with a raw constant slot no longer refused)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "          if slots.any LHSSlot.isScanSlot && slots.any LHSSlot.isRawConst then\n            throw (CompileError.overlappingScatter nm)\n",
+  "new": "",
+  "targets": [
+   "DSL.Pipeline.StructuralTest"
+  ],
+  "expect": [
+   "error: test/DSL/Pipeline/StructuralTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3b-02 (every scan statement refused, constant or not)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "          if slots.any LHSSlot.isScanSlot && slots.any LHSSlot.isRawConst then\n",
+  "new": "          if slots.any LHSSlot.isScanSlot then\n",
+  "targets": [
+   "DSL.Pipeline.StructuralTest"
+  ],
+  "expect": [
+   "error: test/DSL/Pipeline/StructuralTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T3b-03 (every raw constant refused again, scan or not: the pre-T3 guard)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "          if slots.any LHSSlot.isScanSlot && slots.any LHSSlot.isRawConst then\n",
+  "new": "          if slots.any LHSSlot.isRawConst then\n",
+  "targets": [
+   "DSL.Pipeline.StructuralTest"
+  ],
+  "expect": [
+   "error: test/DSL/Pipeline/StructuralTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-T4-01 (multi-axis extent back to the legacy sum rule: W1 declares 6, derived 7)",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "            some ((affineImageBounds c0 terms).2 + 1).toNat\n",
+  "new": "            some legacy\n",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "error: test/Semantics/SourceSortedDifferentialTest.lean:",
+   "Docstring on `#guard_msgs` does not match generated message:"
+  ]
+ },
+ {
+  "label": "SGA-T4-02 (top-level preflight refuses multi-axis again: W2 checked leg refuses)",
+  "task": "T4",
+  "file": "LeanNCD/Eval/Plan/Compile.lean",
+  "old": "  | .affine e   => checkScatterAffineExpr true stmtName e\n",
+  "new": "  | .affine e   => checkScatterAffineExpr false stmtName e\n",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "error: test/Semantics/SourceSortedDifferentialTest.lean:",
+   "Docstring on `#guard_msgs` does not match generated message:"
+  ]
+ },
+ {
+  "label": "SGA-T4-03 (constant placement bias n+1: W3 cells shift)",
+  "task": "T4",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "        out := out ++ [.affine (.affine n [(1, ax)])]\n",
+  "new": "        out := out ++ [.affine (.affine (n + 1) [(1, ax)])]\n",
+  "targets": [
+   "Semantics.SourceSortedDifferentialTest"
+  ],
+  "expect": [
+   "error: test/Semantics/SourceSortedDifferentialTest.lean:",
+   "Docstring on `#guard_msgs` does not match generated message:"
+  ]
+ }
+]

@@ -1,0 +1,352 @@
+diff --git a/leanncd/LeanNCD/Eval/Plan/Compile.lean b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+index d0b16818..ff2057a7 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Compile.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+@@ -88,7 +88,10 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
+     scan-block sibling below admits them.
+ 
+     The `.affine` arm admits every form whose destination extent this file can derive in agreement
+-    with both of the other two derivations of it, and rejects exactly two shapes.
++    with both of the other two derivations of it. At top level it rejects exactly ONE shape (the
++    constant slot, below); a row naming more than one source axis (`Out[i+j]`) is ADMITTED since the
++    multi-axis extent rule (M1: `LHSSlot.outExtent` is the exact reach, computed from the same corner
++    formula as the range check), and only the scan-block sibling still refuses it.
+ 
+     **`.affine (.const n)` (`Out[3]`) — `scatterOrAffineLhs`.** The rejection is decided on the index
+     expression's own CONSTRUCTOR, deliberately, because that is precisely what the divergence turns
+@@ -102,9 +105,10 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
+     which compiles; `elabTLLHSSlot` has no arm producing it, so this guards a hand-built
+     `ScheduledProgram` only.
+ 
+-    **A row naming more than one source axis (`Out[i+j]`) — `multiAxisScatterLhs`**, by CALLING
+-    `idxAffineForm`/`normalizeCoeffs` rather than re-reading constructors; see that constructor's own
+-    doc comment for why the form is refused.
++    **A row naming more than one source axis (`Out[i+j]`) — `multiAxisScatterLhs`, scan-local only**
++    (`multiAxisAdmitted := false`), classified by `scatterAffineClass`, which calls `idxAffineForm`
++    rather than re-reading constructors. Top level admits it: the placement row already carries one
++    coefficient per source axis and the extent and range checks share one corner formula.
+ 
+     **A ZERO coefficient is NOT a rejection, and is not the `.const` case.** `Out[0*i]` elaborates to
+     `.affine (.scale 0 i)` (`elabTLLHSSlot`'s `n*x` arm, `n = 0`), is surface-reachable, passes
+@@ -117,11 +121,13 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
+     `.scale 0 i` and `.affine c₀ [(0, i)]` with `.const n` and would reject all three under a locator
+     naming only the last. It did, briefly; `CompileTest`'s `Out[0*i]` fixture and
+     `ScatterCompileTest`'s S9 now pin the distinction from both ends. -/
+-private def checkScatterAffineExpr (stmtName : String) (e : IdxExpr) :
++private def checkScatterAffineExpr (multiAxisAdmitted : Bool) (stmtName : String) (e : IdxExpr) :
+     Except CapabilityError Unit :=
+   match scatterAffineClass e with
+   | .constant => throw (.scatterOrAffineLhs s!"{stmtName}: constant affine LHS slot")
+-  | .multiAxis => throw (.multiAxisScatterLhs s!"{stmtName}: affine LHS slot")
++  | .multiAxis =>
++      if multiAxisAdmitted then pure ()
++      else throw (.multiAxisScatterLhs s!"{stmtName}: affine LHS slot")
+   | .bounded => pure ()
+ 
+ def checkScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
+@@ -129,18 +135,19 @@ def checkScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError
+   | .freeNorm _ => pure ()
+   | .iterAt a _ => throw (.unsupportedLhsSlot s!"{stmtName}: iterAt {a.name}")
+   | .iterNext a => throw (.unsupportedLhsSlot s!"{stmtName}: iterNext {a.name}")
+-  | .affine e   => checkScatterAffineExpr stmtName e
++  | .affine e   => checkScatterAffineExpr true stmtName e
+ 
+ /-- The scan-block scatter analogue of `checkScatterLHSSlot`. Iteration slots are meaningful inside
+     a scan and are therefore admitted in addition to S-A's free and single-axis affine forms.
+-    Constant affine slots and normalized multi-axis rows retain the same diagnostics as top-level
+-    scatter. -/
++    Constant affine slots and normalized multi-axis rows are BOTH still refused here (scan-local
++    placement is non-injective for a multi-axis row and the reference overwrites instead of summing,
++    F3); only the top-level sibling admits a multi-axis row. -/
+ def checkScanScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
+   | .free _     => pure ()
+   | .freeNorm _ => pure ()
+   | .iterAt ..  => pure ()
+   | .iterNext _ => pure ()
+-  | .affine e   => checkScatterAffineExpr stmtName e
++  | .affine e   => checkScatterAffineExpr false stmtName e
+ 
+ /-- A scatter's own nonlinearity admission, and the one restored producer of the retained
+     `unsupportedNonlin` constructor. Only `.identity` is admitted, matching the reference evaluator
+diff --git a/leanncd/test/Eval/Plan/CompileTest.lean b/leanncd/test/Eval/Plan/CompileTest.lean
+index 85fe63b7..e311034f 100644
+--- a/leanncd/test/Eval/Plan/CompileTest.lean
++++ b/leanncd/test/Eval/Plan/CompileTest.lean
+@@ -92,16 +92,16 @@ def acceptedSched : ScheduledProgram :=
+     { acceptedSched with stmts :=
+         [.plain (.scatter "Out" [] { body := { terms := [] }, nonlin := .identity })] })
+ 
+--- ... but ONLY at top level, and only in the single-axis strided placement forms. A two-axis affine
+--- LHS slot (`Out[i+j]`) is `multiAxisScatterLhs` — its own constructor, asserted here rather than a
+--- bare "rejected", since dropping this arm would still leave the program rejected (one phase later,
+--- by a different family) and a fixture checking only rejection could not tell the two apart.
+-#guard errOf (capabilityPreflight
++-- ... and, since the multi-axis extent rule (M1: `outExtent` is the exact reach, from the same corner
++-- formula as the B6 range check), a two-axis affine LHS slot (`Out[i+j]`) is ADMITTED at top level.
++-- It used to be `multiAxisScatterLhs`; the scan-block sibling still refuses it (`ScanCompileTest`'s
++-- `badScatter` pins), so this admission is top-level only. End-to-end values live in
++-- `ScatterGeometryTest`.
++#guard isOk (capabilityPreflight
+     { acceptedSched with stmts :=
+         [.plain (.scatter "Out"
+           [.affine (.affine 0 [(1, ⟨"i", 0, .nat⟩), (1, ⟨"j", 1, .nat⟩)])]
+           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
+-  == some (.multiAxisScatterLhs "Out: affine LHS slot")
+ 
+ -- The same two-axis coefficient row spelled as a REPEATED single axis is not multi-axis at all:
+ -- `idxAffineForm`/`normalizeCoeffs` fold `i + i` to the single coefficient `2` on `i`, which is
+@@ -332,14 +332,15 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
+ -- checked" from a preflight that accidentally short-circuits after admitting a predicate
+ -- declaration and skips statement checking entirely. S-A re-donored this from the bare
+ -- `scatterOrAffineLhs` scatter (now ADMITTED at top level, so it would no longer discriminate) to
+--- the two-axis affine LHS, which keeps a scatter statement as the donor and still rejects.
++-- the two-axis affine LHS; the multi-axis slice (M1) re-donors it once more, to the CONSTANT-slot
++-- scatter (`Out[3]`), because the two-axis slot is now admitted too. The constant slot is the one
++-- scatter geometry the top-level preflight still refuses, so the donor stays a scatter statement.
+ #guard errOf (capabilityPreflight
+     { acceptedSched with
+         decls := [.predicate "P" []]
+-      , stmts := [.plain (.scatter "Out"
+-          [.affine (.affine 0 [(1, ⟨"i", 0, .nat⟩), (1, ⟨"j", 1, .nat⟩)])]
++      , stmts := [.plain (.scatter "Out" [.affine (.const 3)]
+           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
+-  == some (.multiAxisScatterLhs "Out: affine LHS slot")
++  == some (.scatterOrAffineLhs "Out: constant affine LHS slot")
+ 
+ -- `booleanOutput` has no producer left in this file (Task 4.3 replaced its one throw site), but the
+ -- constructor is retained on `CapabilityError` — deleting a shipped closed-family constructor is
+diff --git a/leanncd/test/Eval/Plan/ScatterGeometryTest.lean b/leanncd/test/Eval/Plan/ScatterGeometryTest.lean
+index c7d6ea20..54957bf2 100644
+--- a/leanncd/test/Eval/Plan/ScatterGeometryTest.lean
++++ b/leanncd/test/Eval/Plan/ScatterGeometryTest.lean
+@@ -57,9 +57,136 @@ def prepCause (p : TLProgram) : Option PlanCompileCause :=
+ -- ... and the values are the polynomial product (no trailing zero cell).
+ #guard ((ref64 conv convIn64).bind fun e => e["S"]?.map (·.data)) ==
+   some #[1, 12, 123, 234, 340, 400]
+--- The checked leg still REFUSES multi-axis geometry at this task (T2 lifts it), by its own
+--- capability constructor, not by a shape or range error.
+-#guard prepCause conv == some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
+-#guard prepCause convWide == some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
++/-! ## T2: the checked backend admits multi-axis geometry (top level only)
++
++`checkScatterLHSSlot` no longer refuses a multi-axis slot (the constant slot and the scan-local
++sibling still refuse). Every program below goes through `compileToScheduled`, `prepareEvalPlan` and both
++dtype workers and is compared with `evalScheduled` (the reference) through the B5 harness `agree`:
++reference, checked binary64 and checked binary32 must all give the stated cells, bit for bit. -/
++
++/-- The `ScatterPlan` of the program's first step, or `none` if that step is not a scatter. -/
++def scatterStepAt (pp : PreparedPlan) (i : Nat) : Option ScatterPlan :=
++  match pp.plan.raw.steps[i]? with
++  | some (.scatter s) => some s
++  | _ => none
++
++def scatterPlanOf (p : TLProgram) : Option ScatterPlan :=
++  (prep64 p convIn64).bind (scatterStepAt · 0)
++
++-- Plan fields as observed (`#eval` of the prepared `ScatterPlan`): one placement row per destination
++-- dimension, one coefficient per SOURCE axis in `compute.outputShape` order `[a, b] = [4, 3]`; the
++-- destination extent is the exact reach.
++#guard prepCause conv == none
++#guard prepCause convWide == none
++#guard (scatterPlanOf conv).map (fun s => (s.outCoeffs, s.outBias, s.destShape, s.compute.outputShape))
++  == some (#[#[1, 1]], #[0], #[6], #[4, 3])
++#guard (scatterPlanOf convWide).map (fun s => (s.outCoeffs, s.outBias, s.destShape, s.compute.outputShape))
++  == some (#[#[1, 4]], #[0], #[12], #[4, 3])
++
++-- Reference, checked binary64 and checked binary32 agree bit for bit. Collisions SUM (S3a): cell 2 is
++-- `A2*B0 + A1*B1 + A0*B2 = 3*1 + 2*10 + 1*100 = 123`; a last-write-wins fold would give 3, 20 or 100.
++#guard agree conv convIn64 convIn32 #[1, 12, 123, 234, 340, 400] #[1, 12, 123, 234, 340, 400]
++-- `a+4b` is collision-free: `b` selects a block of four.
++#guard agree convWide convIn64 convIn32
++  #[1, 2, 3, 4, 10, 20, 30, 40, 100, 200, 300, 400] #[1, 2, 3, 4, 10, 20, 30, 40, 100, 200, 300, 400]
++-- Mixed sign with NON-NEGATIVE minimum (`a - b + 2`, reach 0..5): the cross-correlation. Before M1 its
++-- legacy extent was 3 and the row was a range error.
++def crossSlot : LHSSlot := .affine (.affine 2 [(1, a), (-1, b)])
++#guard agree (convOf crossSlot) convIn64 convIn32 #[100, 210, 321, 432, 43, 4] #[100, 210, 321, 432, 43, 4]
++
++-- Max-plus convolution: `agg max`, ⊗ is `+`, ⊕ is `max`: cell n = max over a+b=n of A[a]+B[b].
++-- A=[1,2,3,4], B=[1,10,100]: n0 = 2; n1 = max(3, 11); n2 = max(4, 12, 101); n3 = max(5, 13, 102);
++-- n4 = max(14, 103); n5 = 104. Every cell is written, so no `-inf` hole.
++def convMax : TLProgram := convOf sumSlot .max
++#guard agree convMax convIn64 convIn32 #[2, 11, 101, 102, 103, 104] #[2, 11, 101, 102, 103, 104]
++
++-- B6 in BOTH backends for a mixed-sign row with NEGATIVE minimum (`a - b`, reach -2..3, extent 4):
++-- the checked backend refuses at preparation with the range payload (dimension 0, min -2, max 3,
++-- extent 4); the reference errors on the first write below zero (source coordinate `[0, 1]` -> `[-1]`).
++def signSlot : LHSSlot := .affine (.affine 0 [(1, a), (-1, b)])
++def refWriteOutOfRange (p : TLProgram) : Option (String × List Int × List Nat) :=
++  (scheduled (as64 p)).bind fun s => match evalScheduled s convIn64 with
++    | .error e => match e.error with
++        | .scatterWriteOutOfRange nm oc sc => some (nm, oc, sc)
++        | _ => none
++    | .ok _ => none
++#guard refWriteOutOfRange (convOf signSlot) == some ("S", [-1], [0, 1])
++#guard prepCause (convOf signSlot) == some (.shape (.scatterImageOutOfRange "S" 0 (-2) 3 4))
++
++-- A constant slot is STILL refused by the top-level preflight (a hand-built schedule that bypassed
++-- `lowerArith`); slice B/T3 will change what a constant means, not this arm.
++#guard prepCause (convOf (.affine (.const 3))) ==
++  some (.capability (.scatterOrAffineLhs "S: constant affine LHS slot"))
++
++-- A multi-writer group containing a multi-axis scatter is still refused (`multiWriterScatter`):
++-- donor B5BoundaryTest.twoAxes. Pinned here against the lift (the destination is pinned `k = 6`).
++def convTwo : TLProgram :=
++  { conv with
++    decls := conv.decls.map (fun | .axis ax none => .axis ax (some 6) | d => d)
++    stmts := conv.stmts ++ conv.stmts }
++#guard sourceError convTwo == some (.multiWriterScatter "S")
++
++-- A BOXED single multi-axis writer keeps the derived shape (B5c D2 residual, closed in slice B): `S`
++-- declared over a pinned `k = 8` still publishes `[6]` in all three legs, and the collector does not
++-- box it.
++def convBoxed : TLProgram :=
++  { conv with decls := conv.decls.map (fun | .axis ax none => .axis ax (some 8) | d => d) }
++def shapesOf (p : TLProgram) :=
++  ((ref64 p convIn64).bind fun e => e["S"]?.map (·.shape),
++   (run64 p convIn64).bind fun e => e["S"]?.map (·.shape),
++   (run32 p convIn32).bind fun e => e["S"]?.map (·.shape))
++#guard shapesOf convBoxed == (some [6], some [6], some [6])
++#guard B5cSingleBoxTest.groupsOf convBoxed == []
++
++-- `route` carries no extents and accepts the multi-axis program.
++#guard routeError conv == none
++
++/-! ### Binary32 parity with a lane that binary64-then-narrow would get wrong
++
++`agree` above proves the integer cells. For a binary32-discriminating case the reference evaluator is
++no help (it refuses every f32 program), so the expectation is assembled from an INDEPENDENT binary32
++twin: the same product as an ordinary assignment `T[a,b] := A[a]*B[b]` (the plain F32 path, no
++`ScatterPlan`), then anti-diagonal sums written here, in source order (a-major), in binary32 with
++`+0` seeds. The pinned bits are the observed values of the native scatter (see the `#eval` that
++produced them in the notes), never a narrowing of a binary64 result; one lane is required to differ
++from the narrowed binary64 answer so a binary64 worker could not pass. -/
++
++def twin : TLProgram :=
++  { decls := [.axis a (some 4), .axis b (some 3), .typedTensor .f32 "A" [a],
++      .typedTensor .f32 "B" [b], .typedTensor .f32 "T" [a, b]]
++    stmts := [.assign "T" [.free a, .free b]
++      { body := { terms := [{ factors := [.read "A" [.axis a], .read "B" [.axis b]] }] }
++        nonlin := .identity }] }
++
++def fracIn32 : NamedDenseEnv32 :=
++  ({} : NamedDenseEnv32).insert "A" ⟨[4], #[0.1, 0.7, 0.3, 0.9]⟩
++    |>.insert "B" ⟨[3], #[0.3, 0.1, 0.7]⟩
++def fracIn64 : NamedDenseEnv :=
++  ({} : NamedDenseEnv).insert "A" ⟨[4], #[0.1, 0.7, 0.3, 0.9]⟩
++    |>.insert "B" ⟨[3], #[0.3, 0.1, 0.7]⟩
++
++/-- Anti-diagonal sums of a `[4, 3]` binary32 tensor, source order, `+0` seeds. -/
++def antiDiagBits (t : DenseTensor32) : Array UInt32 := Id.run do
++  let mut out : Array Float32 := Array.replicate 6 0
++  for ai in [0:4] do
++    for bi in [0:3] do
++      out := out.modify (ai + bi) (· + t.data[ai * 3 + bi]!)
++  return out.map Float32.toBits
++
++def nativeBits : Option (Array UInt32) :=
++  (run32 conv fracIn32).bind fun e => e["S"]?.map fun t => t.data.map Float32.toBits
++def twinBits : Option (Array UInt32) :=
++  (run32 twin fracIn32).bind fun e => e["T"]?.map antiDiagBits
++/-- The binary64 program's answer, narrowed to binary32 bits. -/
++def narrowedBits : Option (Array UInt32) :=
++  (run64 conv fracIn64).bind fun e => e["S"]?.map fun t => t.data.map (·.toFloat32.toBits)
++
++-- Observed (`lean-file.sh test/Eval/Plan/ScatterGeometryTest.lean`, `#eval nativeBits` etc.): the
++-- native scatter and the independent twin agree on these six words; the narrowed binary64 answer
++-- differs in lanes 0, 1 and 3 (`...087`, `...734`, `...001`).
++#guard nativeBits == some #[1022739088, 1046562735, 1047233823, 1061830000, 1050253722, 1059145646]
++#guard twinBits == nativeBits
++#guard narrowedBits == some #[1022739087, 1046562734, 1047233823, 1061830001, 1050253722, 1059145646]
++#guard nativeBits != narrowedBits
+ 
+ end LeanNCD.Eval.Plan.ScatterGeometryTest
+diff --git a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+index ab801d1e..b61aaa79 100644
+--- a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
++++ b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+@@ -127,15 +127,17 @@ private def fMask : SourceSnapshot :=
+ #guard tag fA == "parity"
+ #guard tag fB == "parity"
+ #guard tag fC == "parity"
+--- Checked leg refuses the multi-axis / constant slot (capability); legacy sums like the oracle.
+-#guard tag fD == "nativeFailure"
++-- The multi-axis scatter `fD` (`a+b`) is four-leg parity since the checked backend admits multi-axis
++-- geometry at top level (it was `nativeFailure`, the capability refusal); the constant slot `fD'` stays
++-- a checked-leg refusal (`scatterOrAffineLhs`), legacy sums like the oracle.
++#guard tag fD == "parity"
+ #guard tag fD' == "nativeFailure"
+ -- Collisions sum (S3a): E (`b` contracted onto one cell) is parity like its one-factor neighbour A.
+--- F (`a+b`) and its neighbour F' (b coefficient 4) stay `nativeFailure`: the checked leg refuses the
+--- multi-axis slot (the capability refusal is pinned after `mentions` is defined).
++-- F (`a+b`) and its neighbour F' (b coefficient 4) are four-leg parity: the checked leg admits the
++-- multi-axis slot and every leg publishes the exact reach (6 and 12); they were `nativeFailure`.
+ #guard tag fE == "parity"
+-#guard tag fF == "nativeFailure"
+-#guard tag fF' == "nativeFailure"
++#guard tag fF == "parity"
++#guard tag fF' == "parity"
+ -- Multi-writer vs single writer; extent override vs equal extent (A); out-of-range refusal.
+ #guard tag fG == "nativeFailure"
+ #guard tag (snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX]) == "parity"
+@@ -201,8 +203,9 @@ private def dropOccurrence (drop : Bool) : String :=
+ #guard dropOccurrence false == "accepted"
+ #guard dropOccurrence true == "occurrences 3 2"
+ 
+-/-! T4-A2 (review F4): LEGACY-ONLY agreement. The checked plan refuses `fD`/`fD'` by capability,
+-so four-leg parity is impossible and `tag` is `nativeFailure`; the legacy production leg's VALUES
++/-! T4-A2 (review F4): LEGACY-ONLY agreement. The checked plan refuses `fD'` by capability (`fD` is
++four-leg parity since multi-axis admission), so four-leg parity is impossible for `fD'` and `tag` is
++`nativeFailure`; the legacy production leg's VALUES
+ (which sum collisions) are asserted here against the oracle and against hand-computed cells. -/
+ 
+ /-- Cells of the legacy leg's declaration-5 output, as raw bits (`none` unless the leg is observed
+@@ -294,7 +297,7 @@ private def oracleShape (s : SourceSnapshot) : Option (List Nat) :=
+ 
+ -- M1 shape agreement (donors: fD, fN): legacy production and the oracle publish the exact reach,
+ -- `a+b` -> 6 and `a+4b` -> 12. Before M1 production derived 7 and 16 against the oracle's declared
+--- 6 and 12 (`known:extent`). The checked leg still refuses both here (T2 lifts it).
++-- 6 and 12 (`known:extent`).
+ #guard legacyShape fD == some [6]
+ #guard oracleShape fD == some [6]
+ #guard legacyShape fN == some [12]
+@@ -324,13 +327,34 @@ private def fF11 := withZ 8 [zBare, .assign "Y" [.affine (.scale 2 a)] readX]
+ #guard mentions fF11 "legacy=value [(Y, ([8], [1.000000, 0.000000, 2.000000, 0.000000, 3.000000, 0.000000, 4.000000, 0.000000])), (Z, ([4], [111.000000, 222.000000, 333.000000, 444.000000]))]"
+ #guard mentions fF11 "checked=value [(Y, ([8], [1.000000, 0.000000, 2.000000, 0.000000, 3.000000, 0.000000, 4.000000, 0.000000])), (Z, ([4], [111.000000, 222.000000, 333.000000, 444.000000]))]"
+ 
+--- fF/fF' stay `nativeFailure` through the checked leg's multi-axis capability refusal, not a collision.
+-#guard mentions fF "multiAxisScatterLhs \"Y: affine LHS slot\""
+-#guard mentions fF' "multiAxisScatterLhs \"Y: affine LHS slot\""
++-- fF/fF' no longer carry the checked leg's multi-axis capability refusal: the checked leg publishes the
++-- convolution (`a+b` over X=[1,2,3,4], W=[1,10,100]; observed with `observe fF`), no collision error.
++#guard !mentions fF "multiAxisScatterLhs"
++#guard !mentions fF' "multiAxisScatterLhs"
++#guard mentions fF "checked=value [(Y, ([6], [1.000000, 12.000000, 123.000000, 234.000000, 340.000000, 400.000000]))]"
++#guard mentions fF' "checked=value [(Y, ([12], [1.000000, 2.000000, 3.000000, 4.000000, 10.000000, 20.000000, 30.000000, 40.000000, 100.000000, 200.000000, 300.000000, 400.000000]))]"
+ #guard !mentions fF "collision"
+--- (T1) the same refusal for the legacy-only donors fD (`a+b`) and fN (`a+4b`).
+-#guard mentions fD "multiAxisScatterLhs \"Y: affine LHS slot\""
+-#guard mentions fN "multiAxisScatterLhs \"Y: affine LHS slot\""
++-- (T1, flipped at T2) the legacy-only donors fD (`a+b`) and fN (`a+4b`) are now four-leg parity too.
++#guard tag fD == "parity"
++#guard tag fN == "parity"
++-- A multi-axis write declared one cell too big (`fFbig`, `|k| = 7`, reach 6) is a boxed-looking write the
++-- production derived-shape rule does NOT box (B5c D2 residual, closed in slice B): both native legs publish
++-- the derived shape `[6]` against the oracle's declared `[7]`, a `known:extent` contract difference, not
++-- a failure. Pinned so slice B's change to this residual is visible here.
++#guard tag fFbig == "known:extent"
++-- B6 for a mixed-sign row with NEGATIVE minimum: `Y[a-b]` (reach -2..3). The oracle refuses the write
++-- against the declared shape (`writeOutOfRange`, no native leg runs); the native twins of this pin
++-- (reference and checked, both erroring) are in `ScatterGeometryTest`.
++private def diffSlot : LHSSlot := .affine (.affine 0 [(1, a), (-1, b)])
++private def fSign := snap 4 [k] [.scatter "Y" [diffSlot] readXW]
++#guard tag fSign == "refused:writeOutOfRange"
++-- Mixed sign with NON-NEGATIVE minimum (`Y[a-b+2]`, reach 0..5, the cross-correlation): accepted and
++-- parity. Hand values (observed with `observe fSignOk`, checked by hand): cell0 = A0*B2 = 100;
++-- cell1 = A0*B1 + A1*B2 = 10 + 200; cell2 = 1 + 20 + 300; cell3 = 2 + 30 + 400; cell4 = 3 + 40; cell5 = 4.
++private def fSignOk := snap 6 [k] [.scatter "Y" [.affine (.affine 2 [(1, a), (-1, b)])] readXW]
++#guard tag fSignOk == "parity"
++#guard legacyCells fSignOk == handBits [100, 210, 321, 432, 43, 4]
++#guard oracleCells fSignOk == handBits [100, 210, 321, 432, 43, 4]
+ 
+ -- CHECKED-only refusal: Z's constant-slot scatter (legacy sums it into Z = [0,0,0,10]; the checked
+ -- plan refuses it at preparation naming Z) next to fE's agreeing write on Y: the program is still a

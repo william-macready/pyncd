@@ -1,0 +1,155 @@
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/Structural.lean b/leanncd/LeanNCD/DSL/Pipeline/Structural.lean
+index 57815ab6..769135b7 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/Structural.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/Structural.lean
+@@ -1099,8 +1099,9 @@ E2a SCOPING DECISION (a deliberate divergence from §12.4): affine *reads* (e.g.
+ `BrBase`, §2.3). So `lowerArith` emits NO separate Slice/Reindex intermediate steps. Its
+ real job is the affine-LHS → `Stmt.scatter` reclassification. There is no injectivity guard: collisions
+ sum (S3a), and a constant LHS coord (`Y[3]`) is lowered to a unit-axis placement (`lowerConstSlots`,
+-slice A T3; the `overlappingScatter` guard on the `.assign` arm is gone — the `CompileError` constructor is
+-kept, producerless, for serialized compatibility like `scatterInScan`). -/
++slice A T3; the unconditional `overlappingScatter` guard on the `.assign` arm is gone). A scan statement
++(`iterAt`/`iterNext` slot) that carries a raw constant slot is still refused with `overlappingScatter`
++(slice A T3b: the reference and legacy evaluators would overwrite it, the F3 family). -/
+ 
+ /-- A LHS slot that denotes an affine output coordinate (a Scatter write). Plain `free`
+     axes and the scan slots (`iterAt`/`iterNext`) are NOT affine-scatter slots. -/
+@@ -1111,6 +1112,17 @@ def LHSSlot.isAffine : LHSSlot → Bool
+   | .iterAt _ _ => false
+   | .iterNext _ => false
+ 
++/-- A scan slot (`iterAt`/`iterNext`). -/
++def LHSSlot.isScanSlot : LHSSlot → Bool
++  | .iterAt .. => true
++  | .iterNext _ => true
++  | _ => false
++
++/-- A raw constant affine slot (`Y[3]`), as opposed to its lowered unit-axis placement. -/
++def LHSSlot.isRawConst : LHSSlot → Bool
++  | .affine (.const _) => true
++  | _ => false
++
+ /-- Scatter-geometry slice A (D2/D5): a constant LHS slot `Y[n]` is the single-axis placement
+     `n + 1·u` over a FRESH synthetic axis `u` pinned to size 1 (`constUnitPrefix` names it). The
+     stride-aligned extent arm of `LHSSlot.outExtent` then gives `1·1 + n = n + 1`, the image is
+@@ -1119,9 +1131,10 @@ def LHSSlot.isAffine : LHSSlot → Bool
+ 
+     A statement that carries a scan slot (`iterAt`/`iterNext`) is left untouched: the scan-local
+     preflight keeps its own constant refusal (`checkScanScatterLHSSlot`), and a synthetic axis inside
+-    a scan body is not part of slice A. -/
++    a scan body is not part of slice A. (`lowerArith` refuses such an `.assign` that also carries a raw
++    constant slot before calling this; a hand-built `.scatter` reaches the preflight refusal.) -/
+ def lowerConstSlots (slots : List LHSSlot) : FreshM (List LHSSlot × List Decl) := do
+-  if slots.any (fun sl => match sl with | .iterAt .. | .iterNext .. => true | _ => false) then
++  if slots.any LHSSlot.isScanSlot then
+     return (slots, [])
+   let mut out : List LHSSlot := []
+   let mut ds : List Decl := []
+@@ -1142,8 +1155,12 @@ def lowerArith (rp : ResolvedProgram) : FreshM LoweredProgram := do
+         -- Reclassify affine (Out[2*i,2*j]) OR diagonal (Y[i,i], a repeated free axis) LHS to a
+         -- scatter that publishes its full placement rank — so declared/full-rank reads of it are
+         -- sound (B1). A constant slot is a scatter like any other (D5: the `overlappingScatter`
+-        -- guard was deleted); it is lowered to a unit-axis placement by `lowerConstSlots`.
++        -- guard was deleted); it is lowered to a unit-axis placement by `lowerConstSlots`. Except in
++        -- a scan statement (T3b): `lowerConstSlots` leaves those untouched, and a raw constant there
++        -- would be accepted and overwritten by the reference/legacy evaluators (F3), so refuse it.
+         if slotsBecomeScatter slots then
++          if slots.any LHSSlot.isScanSlot && slots.any LHSSlot.isRawConst then
++            throw (CompileError.overlappingScatter nm)
+           let (slots', ds) ← lowerConstSlots slots
+           return (Stmt.scatter nm slots' rhs, ds)
+         else return (s, [])
+diff --git a/leanncd/LeanNCD/Exec/Uid.lean b/leanncd/LeanNCD/Exec/Uid.lean
+index b3cc1256..637fbafd 100644
+--- a/leanncd/LeanNCD/Exec/Uid.lean
++++ b/leanncd/LeanNCD/Exec/Uid.lean
+@@ -19,7 +19,7 @@ inductive CompileError
+   | shapeMismatch        : String → String → CompileError   -- expected shape, actual shape
+   | missingBaseCase      : String → CompileError            -- tensor name missing iterAt stmt
+   | causalityViolation   : String → CompileError            -- l+1 on RHS for iteration axis l
+-  | overlappingScatter   : String → CompileError            -- COMPATIBILITY ONLY, no producer since slice A T3 (a constant LHS slot lowers to a unit-axis scatter; collisions are summed)
++  | overlappingScatter   : String → CompileError            -- only a scan statement that carries a constant LHS slot (slice A T3b); a top-level constant lowers to a unit-axis scatter
+   | linearWeightAmbiguous : String → CompileError           -- linear weight in ≠1 product factors
+   | undeclaredName       : String → CompileError            -- name used but not declared
+   | rankMismatch         : String → Nat → Nat → CompileError -- tensor name, expected rank, actual rank
+diff --git a/leanncd/test/DSL/Pipeline/StructuralTest.lean b/leanncd/test/DSL/Pipeline/StructuralTest.lean
+index e94cf335..1e419a9e 100644
+--- a/leanncd/test/DSL/Pipeline/StructuralTest.lean
++++ b/leanncd/test/DSL/Pipeline/StructuralTest.lean
+@@ -255,9 +255,26 @@ run_cmd do
+       | s, d => throwError s!"expected one unit-axis scatter + one pinned decl, got {repr s} / {repr d}"
+   | .error e _ => throwError s!"constant LHS must lower, got {repr e}"
+ 
+--- A statement that carries a scan slot is NOT rewritten (slice A T3): a constant next to an `iterAt`
+--- stays a raw `.affine (.const 3)`, with no synthetic decl, so the scan-local preflight keeps its own
+--- constant refusal (`checkScanScatterLHSSlot`). Donor: the `.assign` fixture above plus an iteration slot.
++-- A statement that carries a scan slot is NOT rewritten (slice A T3): a non-constant affine slot next
++-- to an `iterAt` stays as written, with no synthetic decl. Donor: the `.assign` fixture above plus an
++-- iteration slot (the slot was a constant before T3b, which now refuses it, see the next two pins).
++run_cmd do
++  let l : AxisSpec := { name := "l", uid := 4, kind := .nat }
++  let j : AxisSpec := { name := "j", uid := 5, kind := .nat }
++  let st : Stmt := .assign "S" [ .iterAt l 0, .affine (.scale 2 j) ]
++    { body := { terms := [ { factors := [ .read "X" [ .const 0 ] ] } ] }, nonlin := .identity }
++  let rp : ResolvedProgram :=
++    { decls := [], stmts := [st], env := {}, extNames := ∅ }
++  match lowerArith rp |>.run 0 with
++  | .ok lp _ =>
++      match lp.stmts, lp.decls with
++      | [ .scatter "S" [ .iterAt _ 0, .affine (.scale 2 _) ] _ ], [] => pure ()
++      | s, d => throwError s!"scan-slot statement must keep its slots, got {repr s} / {repr d}"
++  | .error e _ => throwError s!"errored: {repr e}"
++
++-- Slice A T3b (fail-loud repair): a scan statement that carries a RAW constant slot is refused with
++-- `overlappingScatter` again, exactly as before T3. Without it the statement compiles (T3 skips scan
++-- statements) and the reference/legacy evaluators overwrite it (F3) while the checked preflight refuses.
+ run_cmd do
+   let l : AxisSpec := { name := "l", uid := 4, kind := .nat }
+   let st : Stmt := .assign "S" [ .iterAt l 0, .affine (.const 3) ]
+@@ -265,12 +282,45 @@ run_cmd do
+   let rp : ResolvedProgram :=
+     { decls := [], stmts := [st], env := {}, extNames := ∅ }
+   match lowerArith rp |>.run 0 with
++  | .error (.overlappingScatter "S") _ => pure ()
++  | .error e _ => throwError s!"wrong error: {repr e}"
++  | .ok lp _ => throwError s!"scan statement with a constant slot must be refused, got {repr lp.stmts}"
++
++-- A HAND-BUILT `.scatter` with a scan slot and a raw constant is not refused by `lowerArith` (T3b only
++-- touches the `.assign` arm) and is not rewritten: `lowerConstSlots` leaves scan statements alone, so the
++-- checked preflight keeps its `scatterOrAffineLhs` refusal. This is the pin that keeps the scan skip live.
++run_cmd do
++  let l : AxisSpec := { name := "l", uid := 4, kind := .nat }
++  let st : Stmt := .scatter "S" [ .iterAt l 0, .affine (.const 3) ]
++    { body := { terms := [ { factors := [ .read "X" [ .const 0 ] ] } ] }, nonlin := .identity }
++  let rp : ResolvedProgram :=
++    { decls := [], stmts := [st], env := {}, extNames := ∅ }
++  match lowerArith rp |>.run 0 with
+   | .ok lp _ =>
+       match lp.stmts, lp.decls with
+       | [ .scatter "S" [ .iterAt _ 0, .affine (.const 3) ] _ ], [] => pure ()
+-      | s, d => throwError s!"scan-slot statement must keep its raw constant, got {repr s} / {repr d}"
++      | s, d => throwError s!"hand-built scan scatter must keep its raw constant, got {repr s} / {repr d}"
+   | .error e _ => throwError s!"errored: {repr e}"
+ 
++-- The same through the whole pipeline (`compileToScheduled`), built from a surface scan program whose
++-- base case has its free slot replaced by a constant (surface syntax cannot spell a raw constant slot:
++-- a numeral is always `.iterAt`). The accept-neighbour is the unmodified program.
++private def scanSurface : TLProgram := tlprog!{ iter l = 3
++  S[i, 0] := X[i]
++  S[i, l + 1] := S[i, l] }
++
++private def scanSurfaceConst : TLProgram :=
++  { scanSurface with stmts := scanSurface.stmts.map fun
++      | .assign nm [.free _, .iterAt a n] rhs => .assign nm [.affine (.const 3), .iterAt a n] rhs
++      | s => s }
++
++#guard match scanSurfaceConst.compileToScheduled.run 0 with
++  | .error (.overlappingScatter "S") _ => true
++  | _ => false
++#guard match scanSurface.compileToScheduled.run 0 with
++  | .ok _ _ => true
++  | _ => false
++
+ -- Coupled scan: G and H both recur over `l` (uid 9) ⇒ ONE ScanStmt.scan whose recur list
+ -- has BOTH G and H steps; each has a base case (no missingBaseCase).
+ run_cmd do

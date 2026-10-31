@@ -1,0 +1,130 @@
+diff --git a/leanncd/LeanNCD/DSL/AGENTS.md b/leanncd/LeanNCD/DSL/AGENTS.md
+index 09ba7ddf..077d2170 100644
+--- a/leanncd/LeanNCD/DSL/AGENTS.md
++++ b/leanncd/LeanNCD/DSL/AGENTS.md
+@@ -111,3 +111,4 @@ Every input class is classified explicitly by `fragmentClass`; no catch-all arm
+ - **The binary32 default has four documented regressions for UNANNOTATED programs (spell `f64`):** (1) no `einsumOnly` JAX evidence (`einsumStorageAdmitted` is binary64-only); (2) `runPreparedDense` and the Float adapters refuse the now-`.float32` plan with `storageKindMismatch`; (3) Float `InputSignature`s (`ofDenseInputs`, `ofDenseInputsForDecls`) get a typed rejection (`dtypeMismatch`/`storageKindMismatch`) — use `ofDenseInputs32ForDecls` + `runPreparedDense32`; (4) the reference evaluator refuses them (`unsupportedDtype`, an existing non-goal now user-facing).
+ - **`relu(where=...)` is unrepresentable by design** — only `tl_axiswise_kw` has a mask clause; `tl_pointwise_kw` does not.
+ - **The producer/consumer split's `.freeNorm` degradation is safe only by phase order** — read the Contracts entry before adding any reader of a slot's norm marker.
++- **A constant LHS slot is a placement over a `#const<uid>` unit axis, and `IdxExpr.isConstUnit` is what keeps it out of multi-writer groups until slice B** — `LHSSlot.boundedScatter` answers false for it so groups and boxed single writers still refuse it (`multiWriterScatter`, derived shape wins). Admitting constants there means unmarking BOTH `boundedScatter` and `declaredShapeWins` (Semantics/Source/Differential).
+diff --git a/leanncd/LeanNCD/Eval/AGENTS.md b/leanncd/LeanNCD/Eval/AGENTS.md
+index 6705f96b..5636792e 100644
+--- a/leanncd/LeanNCD/Eval/AGENTS.md
++++ b/leanncd/LeanNCD/Eval/AGENTS.md
+@@ -61,7 +61,7 @@ back to `toString` for legacy renderer checks.
+ - **Fail-loud unsized axis at every materialization site**: `evalAssignSeeded` (the sole contraction implementation) throws before building an output shape if any non-seeded free output axis, any per-term contracted axis, or any seeded axis has no inferable size, and rejects an out-of-range seed coordinate. Mirrored in `Eval.scatterOutShape`, `Scatter.evalScatter`, and `Scan.evalScan`. Each site is a distinct `UnsizedAxisSite` tag on `ShapeError.unsizedAxis`. Keep the list complete: `evalScan` once used `getD 0`, conflating "no extent" with "extent 0", and panicked on an unpinned scan axis.
+ - **Non-identity scatter is rejected, not dropped**: `Scatter.evalScatter` throws if `rhs.nonlin ≠ .identity` (defensive; the primary gate is `checkScatterNonlin` in `../DSL/Pipeline/Structural.lean`).
+ - **Scatter values use `Contract.lean`'s `Combine`, selected by `rhs.agg` and, for a `predicate` destination, by `decls`** (`isPredicateDest`/`combineFor`) — never a hardcoded real sum-of-products (a `maxreduce` scatter once computed a real sum, and a predicate scatter once left non-{0,1} values in a Boolean tensor).
+-- **Scatter collisions are ⊕-summed; there is no collision policy** (S3a deleted `ScatterOpts` and `CollisionReduce`; `Stmt.scatter` is `nm slots rhs`). `evalScatter` folds colliding writes with the destination's ⊕ (real `+`, predicate `Max`) from 0; an empty fibre is 0. This holds for top-level scatters only: the scan-local write (`writeScanStmtSlice`) still overwrites on a collision (parked). An out-of-range write is an error (B6: `EvalError.scatterWriteOutOfRange`; `prepareEvalPlan` rejects it first with the typed `ShapeError.scatterImageOutOfRange tensor dimension minImage maxImage extent`, and `checkScatterCore` holds the same rule as `PlanError.scatterWriteOutOfRange`, an unreachable safety net; both use `scatterRangeViolation`); surface syntax reaches it only through a zero coefficient (`Out[0*i]`, `Out[0*i+5]`). The scan-local `writeScanStmtSlice` still skips silently (parked). `lowerArith` still rejects a constant-LHS `.assign` slot (`overlappingScatter`); a hand-built const-slot `.scatter` compiles and sums.
++- **Scatter collisions are ⊕-summed; there is no collision policy** (S3a deleted `ScatterOpts` and `CollisionReduce`; `Stmt.scatter` is `nm slots rhs`). `evalScatter` folds colliding writes with the destination's ⊕ (real `+`, predicate `Max`) from 0; an empty fibre is 0. This holds for top-level scatters only: the scan-local write (`writeScanStmtSlice`) still overwrites on a collision (parked). An out-of-range write is an error (B6: `EvalError.scatterWriteOutOfRange`; `prepareEvalPlan` rejects it first with the typed `ShapeError.scatterImageOutOfRange tensor dimension minImage maxImage extent`, and `checkScatterCore` holds the same rule as `PlanError.scatterWriteOutOfRange`, an unreachable safety net; both use `scatterRangeViolation`); surface syntax reaches it only through a zero coefficient (`Out[0*i]`, `Out[0*i+5]`). The scan-local `writeScanStmtSlice` still skips silently (parked). Since scatter-geometry slice A, `lowerArith` lowers a top-level constant-LHS slot to a placement over a synthetic size-1 axis (`#const<uid>`), so it compiles and sums; only a constant slot inside a scan statement is still refused (`overlappingScatter`).
+ - **Per-term contraction scoping**: each `+`-joined RHS term contracts over only the axes it mentions (`termAxisUIDs`), not the union across the equation.
+ - **`readAxisUIDs` excludes nonlin-mask axes** — it must stay `traverseAxesNoMask`, or mask-only UIDs corrupt shape inference.
+ - **RREF floor-then-verify** (`SizeSolve.lean`, driven by `inferAxisSizes`): an upper-envelope affine constraint per unsized read position, RREF over `Rat`, floor any fractional solution (padding/stride semantics), then re-verify against every original constraint. Failure kinds `inconsistent`/`underdetermined`/`nonIntegral`/`nonPositive` carry remediation hints.
+diff --git a/leanncd/LeanNCD/Eval/Plan/AGENTS.md b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+index 3b9d3c8e..91affebe 100644
+--- a/leanncd/LeanNCD/Eval/Plan/AGENTS.md
++++ b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+@@ -34,7 +34,7 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
+ | `Executable.lean` | JAX executable phase — `ExecutionEvidence`, candidates, private-constructor `JaxKernel`/`JaxExecutable`, `validateAffineTable`/`validateEinsum`/`einsumTermLabelExtents`, the support gate `checkJaxAssignSupport`, `validateAndConstructExecutable` |
+ 
+ ## Contracts
+-- **B5 is native collection, not a new scatter worker.** Bounded real/max-plus/min-plus groups use the declared distinct-UID basis, or first ordinary bare assign when undeclared; predicate, explicit-constant and multi-axis groups remain refused. `CheckedScheduledProgram.shapeObligations` enforces exact writer/basis extents, with existing inference errors allowed first. Both f64 and native f32 run; undeclared fallback is checked f32 only, not reference f64 evidence. `Eval.Plan.B5NativeTest` / `B5BoundaryTest` pin values, precision, payloads, unsized/rank errors and privacy. `route` explicitly refuses B5; the JAX codegen fixture requires actual prepared scatter nodes to refuse before emission. Current scope/evidence: `papers/semantics/additive_b5_record.md`.
++- **B5 is native collection, not a new scatter worker.** Bounded real/max-plus/min-plus groups use the declared distinct-UID basis, or first ordinary bare assign when undeclared; predicate, explicit-constant and multi-axis groups remain refused (not yet admitted: slice B). `CheckedScheduledProgram.shapeObligations` enforces exact writer/basis extents, with existing inference errors allowed first. Both f64 and native f32 run; undeclared fallback is checked f32 only, not reference f64 evidence. `Eval.Plan.B5NativeTest` / `B5BoundaryTest` pin values, precision, payloads, unsized/rank errors and privacy. `route` explicitly refuses B5; the JAX codegen fixture requires actual prepared scatter nodes to refuse before emission. Current scope/evidence: `papers/semantics/additive_b5_record.md`.
+ - **Evidence is the only way in.** Every worker takes private-constructor checked evidence; no raw-plan-plus-ops entry is exported. A checker reuses the local checkers' obligations instead of re-deriving them (`checkPlan` dispatches `checkAssign`/`checkScatter`/`checkScanPlan`/`checkPointwise`/`checkAxiswise`; `checkPlanBlock` reuses them plus `checkStepGraph`).
+ - **One formula, two carriers; storage kind keeps them apart.** Binary64 and binary32 share each traversal through a private ops record (`ScalarKernelOps`, `NonlinScalarOps`) and differ only in the instance. Checked evidence records the `storageKind` it was checked for. **Every worker and adapter core checks that kind as its FIRST statement**, before arity or store work, and a mismatch is `storageKindMismatch`, never a conversion. The one ordering exception: the named `pack`/`unpack`/`pack32`/`unpack32` entries run `checkPreparedBindings` before reaching their core's guard (the runners' guard runs before bindings). Fixtures pin guard ORDER, not just existence. A new door needs its own guard; a new carrier follows the f32 shape (a `kind` parameter on each checker core, an ops instance, a graph worker beside `Dense32.lean`, a `StorageCarrier` instance and named boundary, and a guard at every door in `papers/f32_evalplan.md` §3.5).
+ - **Current binary32 boundary.** Since F32-C, every step kind is admitted; nothing is refused by capability any more (§ "Still refused" in `f32c_evalplan.md` §1.2 for what remains refused by policy or by a different backend). Binary32 scan's independent oracle: `ScanDense32Test` Part D (`oracle32`). Binary32 scatter's independent oracle: `Scatter32OracleTest`.
+@@ -53,7 +53,7 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
+ | Compile and run a checked plan | `Compile.lean` — `prepareEvalPlan`; `Adapter.lean` — `runPreparedDense` |
+ | Run a binary32 plan by name | `Signature.lean` — `ofDenseInputs32ForDecls`; `prepareEvalPlan`; `Adapter32.lean` — `runPreparedDense32` |
+ | Why was a source program rejected? | Match `PlanCompileCause`: `.capability` (preflight, syntactic), `.scan` (`ScanCompileError`), `.nonlin` (`NonlinCompileError`), `.shape` (including `scatterImageOutOfRange`, an out-of-range scatter placement), `.invalidPlan` (a checker rejected COMPILER output — a compiler bug). Fixtures: `test/Eval/Plan/ScanCompileTest.lean`, `NonlinCompileTest.lean` |
+-| Why was a source scatter rejected? | `lowerArith` (`DSL/Pipeline/Structural.lean`) reclassifies an affine/diagonal LHS into `Stmt.scatter`. Top level: constant-affine and multi-axis placement, nonlinear placement, and predicate destinations fail at capability tier; colliding writes are summed, never rejected. In a scan, only positive one-axis affine placement with nonnegative bias in non-advancing state dims and identity nonlinearity is admitted; other failures are typed `ScanCompileError`s |
++| Why was a source scatter rejected? | `lowerArith` (`DSL/Pipeline/Structural.lean`) reclassifies an affine/diagonal LHS into `Stmt.scatter`. Top level: constant and multi-axis placements are admitted (`lowerArith` rewrites a constant slot to a placement over a synthetic size-1 `#const<uid>` axis; a multi-axis row takes the exact-reach extent `LHSSlot.outExtent`); nonlinear placement and predicate destinations fail at capability tier; colliding writes are summed, never rejected. Not yet admitted (slice B): constant/multi-axis writers in multi-writer groups or boxed single writers, and surface syntax for either; scan-local constant/multi-axis slots stay refused (F3: `scatterOrAffineLhs`, `multiAxisScatterLhs`). In a scan, only positive one-axis affine placement with nonnegative bias in non-advancing state dims and identity nonlinearity is admitted; other failures are typed `ScanCompileError`s |
+ | Differential checks | `test/Eval/Plan/DifferentialTest.lean`: `scanParityCheck` (checked plan vs legacy vs scan-free oracle), `scatterPrograms` (9 top-level cases) and `scanScatterPrograms` (7 cases, three-way). The 3,832-case scan-free and 17-case scan corpora are binary64 reference gates |
+ | An oracle that is neither evaluator | `test/Eval/PropertyOracle/ScanUnroll.lean` — `independentRun` rewrites a scan into a scan-free program; calls no checked geometry or scan-worker helper. `test/Eval/Plan/Scatter32OracleTest.lean` — an independent binary32 top-level scatter oracle, pinning observed bits case by case |
+ | Run checked plans against JAX | `experiments/jax_bridge/run-evalplan-affine.sh` (curated fixtures), `run-evalplan-affine-corpus.sh` (all `PropertyOracle.enumPrograms`), `run-evalplan-affine32.sh` (binary32 `affineReference`, `orderedReference32`) |
+diff --git a/leanncd/LeanNCD/Eval/Plan/Error.lean b/leanncd/LeanNCD/Eval/Plan/Error.lean
+index 2a139ac9..0701c926 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Error.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Error.lean
+@@ -268,21 +268,16 @@ inductive CapabilityError
+   | dynamicShape         (context : String)  -- backend- or value-dependent shapes
+   | recurrenceOrCallback (context : String)
+   | noAdvancingAxis      (context : String)  -- `.scan` declaring an empty advancing-axis list
+-  /-- A top-level scatter's affine LHS slot whose coefficient row names MORE THAN ONE source axis
++  /-- A SCAN-LOCAL scatter's affine LHS slot whose coefficient row names MORE THAN ONE source axis
+       (`Out[i+j]`), where the single-axis strided forms (`Out[2*i]`, `Out[i+2]`) are admitted.
+-      Its own constructor rather than a reuse of `scatterOrAffineLhs`, because "a scatter is not
+-      supported at all" and "this one placement form is not supported" are different facts and the
+-      fixture distinguishing them has to be able to see which was meant.
+-
+-      Why the form is rejected rather than compiled: `LHSSlot.outExtent`'s
+-      `bias + Σ coeff · size` is the upsample-stride convention, designed for one strided axis. On
+-      a two-axis row it computes the sum of the two axes' extents (`i : 3`, `j : 4` ⇒ `7`) where the
+-      reachable coordinate set `i + j` spans only `0 … 5`, and with a mixed-sign row it admits
+-      negative reachable coordinates that the worker's out-of-range skip silently absorbed (before B6; they are now a static `scatterWriteOutOfRange`). Neither
+-      is unsound, but neither is verified by this feature's worked examples or its differential
+-      corpus either, so it is refused with a locator instead of shipped unexercised. Unreachable
+-      from `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots);
+-      a hand-built `ScheduledProgram` handed to `prepareEvalPlan` is what can express it. -/
++      Since scatter-geometry slice A the TOP-LEVEL checked plan admits such a row (its extent is the
++      exact reach `LHSSlot.outExtent`, from the same corner formula `affineImageBounds` as the B6
++      range rule), so only a scan statement can raise this: scan-local placement is non-injective for
++      a multi-axis row and the reference overwrites there instead of summing (F3). Its own
++      constructor rather than a reuse of `scatterOrAffineLhs`, because "a scatter is not supported at
++      all" and "this one placement form is not supported" are different facts. Unreachable from
++      `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots; surface
++      syntax for multi-axis rows is slice B); a hand-built `ScheduledProgram` can express it. -/
+   | multiAxisScatterLhs  (context : String)
+   /-- A top-level scatter's DESTINATION is `predicate`/`bool`-declared. The reference evaluator
+       `evalScatter` (`Eval/Scatter.lean`) WAS not dtype-aware (reference-alignment made it so, via
+diff --git a/leanncd/LeanNCD/Semantics/AGENTS.md b/leanncd/LeanNCD/Semantics/AGENTS.md
+index 1f3c2a06..d9c750e5 100644
+--- a/leanncd/LeanNCD/Semantics/AGENTS.md
++++ b/leanncd/LeanNCD/Semantics/AGENTS.md
+@@ -168,9 +168,11 @@ value rows in `OracleMixedRefusalTest`.
+ neither stage is a universal preparation model. Six mixed rows require actual
+ four-leg values and pinned running sorts. See `papers/semantics/additive_b5_record.md`.
+ Since S3a every backend ⊕-sums colliding scatter writes, so collisions are agreement, not a condition:
+-a bare-slot scatter over a contracted axis (F11) and `fE` are parity; the const-slot scatters `fD`/`fD'`
+-still end as `nativeFailure` with no condition, because the checked plan refuses constant and multi-axis
+-affine slots by capability (`scatterOrAffineLhs`, `multiAxisScatterLhs`). See the
++a bare-slot scatter over a contracted axis (F11) and `fE` are parity; the multi-axis scatter `fD` (`a+b`) and the
++constant-slot scatter `fD'` are parity too, since scatter-geometry slice A: the checked plan admits top-level
++multi-axis and constant slots (`lowerArith` rewrites a constant to a placement over a synthetic unit axis).
++A constant writer into a destination declared larger than `n+1` reports `known:extent` (slice B closes it);
++scan-local multi-axis/constant slots stay refused by capability (`scatterOrAffineLhs`, `multiAxisScatterLhs`, F3). See the
+ [source correspondence record](../../../papers/semantics/source_correspondence_record.md)
+ for scope and limits.
+ 
+diff --git a/papers/backend_missing_functionality.md b/papers/backend_missing_functionality.md
+index a7c38eb8..1bfd3c03 100644
+--- a/papers/backend_missing_functionality.md
++++ b/papers/backend_missing_functionality.md
+@@ -314,12 +314,11 @@ fragment.
+   slice; see the update below). The parity gate is the curated
+   `scatterPrograms` corpus (`DifferentialTest.lean`, 9 accepted programs), checked bit-for-bit
+   against the reference `Eval/Scatter.lean` evaluator over the real sum-product algebra. Still
+-  rejected, deliberately: a constant-affine slot (`Out[3]`, `scatterOrAffineLhs`), a multi-axis slot
+-  (`Out[i+j]`, `multiAxisScatterLhs`), a collision policy other than reject-on-collision
++  rejected, deliberately: a collision policy other than reject-on-collision
+   (`scatterOptsNotAdmitted`), a non-identity nonlinearity on a scatter (`unsupportedScatterNonlin`),
+   and a Boolean/predicate destination (`predicateScatterDest`); a tropical-algebra scatter's
+   unwritten cells used to diverge from the reference (fill 0, not `∓∞`) and was not a parity-corpus
+-  entry (S3b: both backends start the cells at `0_K`, `∓∞`, and the closed form is the same). **Update (reference-alignment slice):** the reference now REJECTS a top-level
++  entry (S3b: both backends start the cells at `0_K`, `∓∞`, and the closed form is the same). **Update (scatter-geometry slice A):** a top-level constant-affine slot (`Out[3]`) and a multi-axis slot (`Out[i+j]`) are now ADMITTED (`lowerArith` places a constant on a synthetic size-1 axis; a multi-axis row takes the exact-reach extent); both stay refused in scan-local scatter (`scatterOrAffineLhs`, `multiAxisScatterLhs`), and are not yet admitted in multi-writer groups, boxed single writers or surface syntax (slice B). **Update (reference-alignment slice):** the reference now REJECTS a top-level
+   `maxreduce`/`minreduce` scatter too (`scatterFillNotIdentity`), so the divergence is closed by a
+   shared refusal, and `evalScatter` is now dtype-aware for predicate destinations (`combineFor`);
+   the checked `predicateScatterDest` rejection is kept until the checked Boolean scatter is verified.
+diff --git a/papers/scatter_affine_lhs_writes.md b/papers/scatter_affine_lhs_writes.md
+index c75bffc1..c6a13747 100644
+--- a/papers/scatter_affine_lhs_writes.md
++++ b/papers/scatter_affine_lhs_writes.md
+@@ -772,6 +772,8 @@ Zero/cancelled raw terms still require their named sizes to resolve before norma
+ zero source extent, negative forms, missing sizes, and multi-axis expressions retain the legacy
+ result. Checked scan geometry calls the shared `scatterDestExtent` adapter; it does not introduce a
+ `stridedExtent` formula beside `outExtent`.
++Since scatter-geometry slice A a row naming two or more nonzero-coefficient axes no longer takes the legacy
++result: `outExtent` gives it the exact reach `max image + 1` (via `affineImageBounds`); the table above is the S-B state.
+ 
+ ### 3.2 Classifier and checked geometry
+ 

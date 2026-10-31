@@ -1,5 +1,10 @@
 # Brief: four-leg tropical fixtures for multi-axis and constant-slot scatter
 
+**Superseded (2026-10-31).** This work now ships as Task 4 of the slice A plan
+([additive_scatter_geometry_a_plan.md](additive_scatter_geometry_a_plan.md)) as the verified patch
+`additive_scatter_geometry_a_patches/T4-tropical-fixtures.patch`. Kept as the specification the patch
+was built from; execute the plan, not this brief.
+
 For the executor. Self-contained: read this file, `CLAUDE.md` (repo root) and
 `papers/semantics/additive_scatter_geometry_design.md` sections 1-5 (read only; its decisions D1-D6 are
 approved). You cannot ask questions mid-run: where this brief says STOP, stop and report.

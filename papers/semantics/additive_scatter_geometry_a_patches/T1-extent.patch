@@ -1,0 +1,419 @@
+diff --git a/leanncd/LeanNCD/DSL/Ast.lean b/leanncd/LeanNCD/DSL/Ast.lean
+index 2fc28c77..342797df 100644
+--- a/leanncd/LeanNCD/DSL/Ast.lean
++++ b/leanncd/LeanNCD/DSL/Ast.lean
+@@ -474,9 +474,28 @@ def LHSSlot.boundedScatter : LHSSlot → Bool
+   | .affine e => scatterAffineClass e == .bounded
+   | _ => false
+ 
++/-- The corner extremes `(min, max)` of the affine image `c0 + Σ c_k·x_k` over the box
++    `x_k ∈ [0, n_k)`, given as `(c_k, n_k)` pairs: an affine image attains both at box corners, so
++    `min = c0 + Σ min 0 (c_k·(n_k-1))` and `max = c0 + Σ max 0 (c_k·(n_k-1))`. A zero coefficient
++    contributes nothing. Meaningful only for a NON-EMPTY box (`n_k = 0` would make `n_k-1` a spurious
++    `-1`); callers test emptiness first.
++
++    The ONE corner formula: `LHSSlot.outExtent`'s multi-axis arm (its reach is `max + 1`) and the
++    checked plan's `scatterImageBounds` (the B6 range rule) both call it, so the extent a program is
++    given and the range it is checked against cannot disagree. Lives here because `DSL/Ast` is
++    upstream of `Eval/Plan`. -/
++def affineImageBounds (c0 : Int) (terms : List (Int × Nat)) : Int × Int :=
++  terms.foldl
++    (fun (lo, hi) (c, n) =>
++      let span := c * ((n : Int) - 1)
++      (lo + min 0 span, hi + max 0 span))
++    (c0, c0)
++
+ /-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
+     The single home of the scatter-extent convention. A positive one-axis affine placement uses the
+-    stride-aligned boundary; every other affine form keeps the legacy linear boundary. `none` if any
++    stride-aligned boundary; a placement naming two or more distinct nonzero-coefficient axes uses
++    its exact reach `max image + 1` (clamped at 0, via `affineImageBounds`) when every named axis is
++    non-empty; every other affine form keeps the legacy linear boundary. `none` if any
+     syntactically mentioned source axis is unsized. -/
+ def LHSSlot.outExtent (sl : LHSSlot) (sz : UID → Option Nat) : Option Nat :=
+   let affineExtent (c0 : Int) (cf : List (Int × UID)) : Option Nat :=
+@@ -492,6 +511,12 @@ def LHSSlot.outExtent (sl : LHSSlot) (sz : UID → Option Nat) : Option Nat :=
+             some (c * Int.ofNat n + (c0 / c) * c).toNat
+           else
+             some legacy
++      | _ :: _ :: _ =>
++          let terms := (coeffs.zip us).map (fun (c, u) => (c, (sz u).getD 0))
++          if terms.any (fun (_, n) => n == 0) then
++            some legacy
++          else
++            some ((affineImageBounds c0 terms).2 + 1).toNat
+       | _ => some legacy
+     else
+       none
+diff --git a/leanncd/LeanNCD/Eval/Plan/Check.lean b/leanncd/LeanNCD/Eval/Plan/Check.lean
+index 7e762630..ad4b61eb 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Check.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Check.lean
+@@ -415,17 +415,12 @@ def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Op
+   (scatterPlacementSlot row bias).outExtent (fun u => srcShape[u]?)
+ 
+ /-- The corner extremes `(min, max)` of one placement slot's image `bias + Σ c_k·x_k` over the
+-    source box `x_k ∈ [0, n_k)`: an affine image attains both at box corners, so
+-    `min = bias + Σ min 0 (c_k·(n_k-1))` and `max = bias + Σ max 0 (c_k·(n_k-1))`. A zero coefficient
+-    contributes nothing (the axis does not move the image). Meaningful only for a NON-EMPTY box —
+-    callers test emptiness first (`n_k = 0` would make `n_k-1` a spurious `-1`). Rows are zipped
+-    against `srcShape`, so the caller's width clause makes the zip lossless. -/
++    source box `x_k ∈ [0, n_k)`: `affineImageBounds` (`DSL/Ast.lean`, the ONE corner formula, which
++    `LHSSlot.outExtent`'s multi-axis arm also calls) applied to the row zipped against `srcShape`, so
++    the caller's width clause makes the zip lossless. Meaningful only for a NON-EMPTY box —
++    callers test emptiness first. -/
+ def scatterImageBounds (srcShape : Array Nat) (row : Array Int) (bias : Int) : Int × Int :=
+-  (row.toList.zip srcShape.toList).foldl
+-    (fun (lo, hi) (c, n) =>
+-      let span := c * ((n : Int) - 1)
+-      (lo + min 0 span, hi + max 0 span))
+-    (bias, bias)
++  affineImageBounds bias (row.toList.zip srcShape.toList)
+ 
+ /-- The first destination dimension whose slot image over the (non-empty) source box leaves
+     `[0, destShape[d])`, as `(d, minImage, maxImage, extent)`; `none` when every write is in range.
+diff --git a/leanncd/LeanNCD/Semantics/Source/Differential.lean b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+index 39f30eae..66a88a8d 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Differential.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+@@ -186,15 +186,16 @@ for the program. Multi-writer syntax or shape refusals are ordinary native failu
+ def nonBareWrite (st : AdmittedStatement source) : Bool :=
+   st.output.forms != st.output.indices.map WriteForm.single
+ 
+-/-- The extent production derives per destination dimension: `c0 + Σ coef * extent` (observed on
+-P3 fixtures: `2*a` over 4 gives 8, `a+2` gives 6, `a+b` gives 7, a constant `c` gives `c+1`). -/
++/-- The extent production derives per destination dimension: a constant `c` gives `c+1`, every other
++form is `LHSSlot.outExtent` itself (observed on P3 fixtures: `2*a` over 4 gives 8, `a+2` gives 6; since
++M1 `a+b` over (4,3) gives its exact reach 6, not 7). Calling the one extent home rather than restating
++it is the point: a second copy of the rule went stale at M1 (it still predicted 7 for `a+b`). -/
+ private def derivedShape (source : AdmittedSource) (st : AdmittedStatement source.source) :
+     List Nat :=
+   st.output.forms.map fun f =>
+     if f.2.isEmpty then (f.1 + 1).toNat else
+-    (f.1 + (f.2.map fun (coef, u) =>
+-      coef * ((source.source.context.axes.find? (·.uid == u)).map (fun a => (a.extent : Int))
+-        |>.getD 0)).sum).toNat
++    ((LHSSlot.affine (.affine f.1 (f.2.map fun (coef, u) => (coef, ⟨"", u, .nat⟩)))).outExtent
++      (fun u => (source.source.context.axes.find? (·.uid == u)).map (·.extent))).getD 0
+ 
+ /-- B5c: production publishes the DECLARED shape for a single write whose destination is boxed (a
+     declared destination with pinned axes): every slot is a bounded, non-constant form and no
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index daf11e8f..235b03c2 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -50,7 +50,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Eval.ScanTest", "Eval.EvalExamplesTest", "Eval.EntryTest", "Eval.CollectEvalTest", "Eval.ExplicitF64", "Eval.ExplicitF64Test",
+          "Eval.Plan.ContractTest", "Eval.Plan.ScanContractTest", "Eval.Plan.SignatureTest",
+          "Eval.Plan.CoordinatesTest",
+-         "Eval.Plan.B5NativeTest", "Eval.Plan.B5BoundaryTest", "Eval.Plan.B5bBoxTest", "Eval.Plan.B5cSingleBoxTest",
++         "Eval.Plan.B5NativeTest", "Eval.Plan.B5BoundaryTest", "Eval.Plan.B5bBoxTest", "Eval.Plan.B5cSingleBoxTest", "Eval.Plan.ScatterGeometryTest",
+          "Eval.Plan.KernelCheckTest", "Eval.Plan.KernelDenseTest",
+          "Eval.Plan.KernelDense32Test",
+          "Eval.Plan.ScatterCheckTest", "Eval.Plan.ScatterDenseTest",
+diff --git a/leanncd/test/Eval/Plan/ScatterCheckTest.lean b/leanncd/test/Eval/Plan/ScatterCheckTest.lean
+index 04b4d583..4697dc72 100644
+--- a/leanncd/test/Eval/Plan/ScatterCheckTest.lean
++++ b/leanncd/test/Eval/Plan/ScatterCheckTest.lean
+@@ -159,7 +159,9 @@ def zeroExtentSizes : UID → Option Nat
+ #guard (LHSSlot.affine (.shift extentI 2)).outExtent extentSizes == some 5
+ #guard (LHSSlot.affine (.affine 1 [(1, extentI), (1, extentI)])).outExtent extentSizes == some 6
+ #guard (LHSSlot.affine (.affine 1 [(1, extentI), (-1, extentI)])).outExtent extentSizes == some 1
+-#guard (LHSSlot.affine (.affine 1 [(2, extentI), (1, extentJ)])).outExtent extentSizes == some 11
++-- M1: a row naming two axes has its exact reach `max image + 1` (`1 + 2*2 + 1*3 = 8`, so 9); the legacy
++-- linear boundary `1 + 2*3 + 1*4` gave 11.
++#guard (LHSSlot.affine (.affine 1 [(2, extentI), (1, extentJ)])).outExtent extentSizes == some 9
+ #guard (LHSSlot.affine (.affine (-1) [(2, extentI)])).outExtent extentSizes == some 5
+ #guard (LHSSlot.affine (.affine 1 [(-2, extentI)])).outExtent extentSizes == some 0
+ #guard (LHSSlot.affine (.affine 1 [(2, extentI)])).outExtent zeroExtentSizes == some 1
+@@ -168,6 +170,69 @@ def zeroExtentSizes : UID → Option Nat
+ #guard (LHSSlot.affine (.affine 0 [(0, extentJ)])).outExtent (fun _ => none) == none
+ #guard (LHSSlot.iterAt extentI 3).outExtent extentSizes == some 4
+ 
++/-! ### The multi-axis extent table (M1: `max image + 1`)
++
++A row naming two or more distinct nonzero-coefficient axes is sized by its EXACT REACH, not by the
++legacy `c0 + Σ c·n` (which over-approximated positive rows and under-approximated negative ones). The
++single-axis stride-aligned arm and the zero-coefficient arm are deliberately unchanged: the control
++rows at the end pin that. Sizes: `i : 3`, `j : 4`, `k : 2`. Every value below was observed from a real
++`lean-file.sh` run of this file, then checked by hand against the corner formula. -/
++
++def extentK : AxisSpec := { name := "k", uid := 42, kind := .nat }
++def tripleSizes : UID → Option Nat
++  | 40 => some 3
++  | 41 => some 4
++  | 42 => some 2
++  | _ => none
++def emptyAxisSizes : UID → Option Nat
++  | 40 => some 0
++  | 41 => some 4
++  | _ => none
++
++def multiExtent (c0 : Int) (cf : List (Int × AxisSpec)) (sz : UID → Option Nat := extentSizes) :
++    Option Nat :=
++  (LHSSlot.affine (.affine c0 cf)).outExtent sz
++
++-- `i + j`: reach 0..(2+3), so 6 (the legacy sum is 7).
++#guard multiExtent 0 [(1, extentI), (1, extentJ)] == some 6
++-- With a bias: `i + j + 3` reaches 3..8, extent 9 (legacy 10).
++#guard multiExtent 3 [(1, extentI), (1, extentJ)] == some 9
++-- A coefficient: `4i + j` reaches 0..(8+3), extent 12 (legacy 16) -- the `a+4b` convolution shape.
++#guard multiExtent 0 [(4, extentI), (1, extentJ)] == some 12
++-- Three axes: `i + j + k` reaches 0..(2+3+1), extent 7 (legacy 9).
++#guard multiExtent 0 [(1, extentI), (1, extentJ), (1, extentK)] tripleSizes == some 7
++-- A repeated axis is densified first: `i + j + i` is `2i + j`, reaching 0..(4+3), extent 8.
++#guard multiExtent 0 [(1, extentI), (1, extentJ), (1, extentI)] == some 8
++-- Mixed sign, non-negative minimum: `2i - j + 3` reaches 0..7, extent 8 (legacy 5 sat BELOW the
++-- reach: M1 widens acceptance for such rows).
++#guard multiExtent 3 [(2, extentI), (-1, extentJ)] == some 8
++-- Mixed sign, NEGATIVE minimum: `i - j` reaches -3..2, extent 3 (legacy clamped to 0). The row is
++-- still an out-of-range write (min -3), reported by the range clause, not hidden by the extent.
++#guard multiExtent 0 [(1, extentI), (-1, extentJ)] == some 3
++-- All-negative: `-i - j` reaches -5..0, extent 1 (legacy 0).
++#guard multiExtent 0 [(-1, extentI), (-1, extentJ)] == some 1
++-- A zero-size named axis keeps the LEGACY value (the box is empty, there is no corner to reach):
++-- `i + j` with `|i| = 0, |j| = 4` is `0 + 0 + 4`.
++#guard multiExtent 0 [(1, extentI), (1, extentJ)] emptyAxisSizes == some 4
++-- ... and the negative-coefficient twin, where a corner of the EMPTY box would add a spurious
++-- `-1 * -1` (`-i + j`: legacy `0 + 0 + 4 = 4`; reach without the guard would be 5).
++#guard multiExtent 0 [(-1, extentI), (1, extentJ)] emptyAxisSizes == some 4
++-- An unsized named axis is still `none`.
++#guard multiExtent 0 [(1, extentI), (1, extentK)] extentSizes == none
++-- CONTROLS, unchanged by M1. Single-axis stride-aligned: `2i` is 6, `2i + 3` is 8.
++#guard multiExtent 0 [(2, extentI)] == some 6
++#guard multiExtent 3 [(2, extentI)] == some 8
++-- Zero coefficient next to ONE nonzero axis: the nonzero axis alone decides (`j`, stride-aligned 4).
++#guard multiExtent 0 [(0, extentI), (1, extentJ)] == some 4
++-- Zero coefficient on the only axes: the bias alone (`3 + 0·n`), the documented degeneracy.
++#guard multiExtent 3 [(0, extentI), (0, extentJ)] == some 3
++-- The constant constructor keeps `n + 1`.
++#guard (LHSSlot.affine (.const 3)).outExtent extentSizes == some 4
++-- ONE corner formula: the extent is `max + 1` of the SAME bounds the B6 range rule uses.
++#guard scatterImageBounds #[3, 4] #[1, 1] 0 == (0, 5)
++#guard scatterDestExtent #[3, 4] #[1, 1] 0 == some 6
++#guard scatterDestExtent #[3, 4] #[4, 1] 0 == some 12
++
+ /-! ## The zero-coefficient degeneracy, pinned
+ 
+ An all-zero placement row is reconstructed as `outExtent`'s `.affine` arm, never its `.const` arm:
+@@ -217,7 +282,10 @@ def boxCheck (row : Array Int) (bias : Int) : Except PlanError CheckedScatterPla
+ -- The derived extents the cases below rely on (so a change to `outExtent` fails HERE, not obscurely).
+ #guard scatterDestExtent #[3, 2] #[3, -1] 1 == some 8
+ #guard scatterDestExtent #[3, 2] #[3, -1] 0 == some 7
+-#guard scatterDestExtent #[3, 2] #[2, -1] 1 == some 5
++-- M1: `2a - b + 1` over `[3,2]` reaches [0,5], so its derived extent is 6 (the legacy boundary 5 sat
++-- AT the max image and made this row a B6 error; the row is now in range, see the direct
++-- `scatterRangeViolation` guards below for the corner off-by-one it used to carry).
++#guard scatterDestExtent #[3, 2] #[2, -1] 1 == some 6
+ 
+ -- Rejections. Negative bias `Out[i-1]`: image [-1, 1] in extent 2.
+ #guard errOf (boxCheck #[1, 0] (-1)) == some (.scatterWriteOutOfRange 0 (-1) 1 2)
+@@ -233,9 +301,16 @@ def boxCheck (row : Array Int) (bias : Int) : Except PlanError CheckedScatterPla
+ #guard isOk (boxCheck #[3, -1] 1)
+ -- MIN corner one below: bias 0 makes the min -1 (image [-1,6] in extent 7); max is still in range.
+ #guard errOf (boxCheck #[3, -1] 0) == some (.scatterWriteOutOfRange 0 (-1) 6 7)
+--- MAX corner at the extent, one over: coefficient 2 makes extent = max (image [0,5] in extent 5);
+--- min is still exactly 0.
+-#guard errOf (boxCheck #[2, -1] 1) == some (.scatterWriteOutOfRange 0 0 5 5)
++-- MAX corner: under M1 a 2-axis row's derived extent is always `max + 1`, so the MAX off-by-one can no
++-- longer be built through `checkScatter` (its extent clause forces `destShape` to the derived value).
++-- `2a - b + 1` (image [0,5]) is now ACCEPTED at its derived extent 6 ...
++#guard isOk (boxCheck #[2, -1] 1)
++-- ... and the shared range rule is pinned directly with an explicit `destShape`: extent 5 is exactly
++-- `max` (one over) and is rejected with the same payload the checker used to report; extent 6 passes.
++#guard scatterRangeViolation #[3, 2] #[#[2, -1]] #[1] #[5] == some (0, 0, 5, 5)
++#guard scatterRangeViolation #[3, 2] #[#[2, -1]] #[1] #[6] == none
++-- MIN corner through the same direct door: bias 0 gives min -1 whatever the extent.
++#guard scatterRangeViolation #[3, 2] #[#[2, -1]] #[0] #[6] == some (0, -1, 4, 6)
+ 
+ -- `destShape` one too small is NOT a range error: the extent clause fires first, which pins the order.
+ #guard errOf (checkScatter (boxSigs #[7]) (boxScatter 7 #[3, -1] 1))
+@@ -255,7 +330,7 @@ def boxCheck (row : Array Int) (bias : Int) : Except PlanError CheckedScatterPla
+   == some (.scatterWriteOutOfRange 0 (-1) 1 2)
+ 
+ -- Accept neighbours: identity, stride 2 (`2*i`, derived extent 6, image [0,4]), offset `i+1`
+--- (extent 4, image [1,3]), and a two-axis positive slot `i+j` (extent 5, image [0,3]).
++-- (extent 4, image [1,3]), and a two-axis positive slot `i+j` (extent 4 under M1, image [0,3]).
+ #guard isOk (boxCheck #[1, 0] 0)
+ #guard isOk (boxCheck #[2, 0] 0)
+ #guard isOk (boxCheck #[1, 0] 1)
+diff --git a/leanncd/test/Eval/Plan/ScatterGeometryTest.lean b/leanncd/test/Eval/Plan/ScatterGeometryTest.lean
+new file mode 100644
+index 00000000..c7d6ea20
+--- /dev/null
++++ b/leanncd/test/Eval/Plan/ScatterGeometryTest.lean
+@@ -0,0 +1,65 @@
++import Eval.Plan.B5cSingleBoxTest
++
++/-!
++# Scatter geometry slice A: multi-axis `Y[a+b]` (programmatic forms)
++
++Hand-built `TLProgram`s (the surface cannot say a multi-axis slot; slice B adds it) with an explicit
++`.scatter` statement, run through the real pipeline (`compileToScheduled`, `prepareEvalPlan`,
++`runPreparedDense`/`runPreparedDense32`, `evalScheduled`) by the B5 harness (`B5NativeTest`).
++
++Inputs throughout: `A[a] = [1,2,3,4]` (`|a| = 4`), `B[b] = [1,10,100]` (`|b| = 3`). The anti-diagonal
++sums of `A[a]*B[b]` are the polynomial product `[1, 12, 123, 234, 340, 400]`, whose exact reach is
++`0..5`, so the destination extent is 6 (M1; the legacy sum rule gave 7 and a trailing `0`).
++-/
++
++namespace LeanNCD.Eval.Plan.ScatterGeometryTest
++open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan LeanNCD.Eval.Plan.B5NativeTest Std
++
++private def a : AxisSpec := ⟨"a", 90, .nat⟩
++private def b : AxisSpec := ⟨"b", 91, .nat⟩
++private def k : AxisSpec := ⟨"k", 92, .nat⟩
++
++/-- Donor: `B5BoundaryTest.twoAxes` reduced to ONE scatter writer. `S` is declared over the
++    unpinned axis `k`, so its shape is derived from the write form (no box). -/
++def convOf (slot : LHSSlot) (agg : AggOp := .sum) : TLProgram :=
++  { decls := [.axis a (some 4), .axis b (some 3), .axis k none,
++      .typedTensor .f32 "A" [a], .typedTensor .f32 "B" [b], .typedTensor .f32 "S" [k]]
++    stmts := [.scatter "S" [slot]
++      { body := { terms := [{ factors := [.read "A" [.axis a], .read "B" [.axis b]] }] }
++        nonlin := .identity, agg := agg }] }
++
++def sumSlot : LHSSlot := .affine (.affine 0 [(1, a), (1, b)])
++def wideSlot : LHSSlot := .affine (.affine 0 [(1, a), (4, b)])
++
++def conv : TLProgram := convOf sumSlot
++def convWide : TLProgram := convOf wideSlot
++
++def convIn64 : NamedDenseEnv :=
++  ({} : NamedDenseEnv).insert "A" ⟨[4], #[1, 2, 3, 4]⟩ |>.insert "B" ⟨[3], #[1, 10, 100]⟩
++def convIn32 : NamedDenseEnv32 :=
++  ({} : NamedDenseEnv32).insert "A" ⟨[4], #[1, 2, 3, 4]⟩ |>.insert "B" ⟨[3], #[1, 10, 100]⟩
++
++/-- The reference evaluator's published shape of `S`. -/
++def refShapeOf (p : TLProgram) : Option (List Nat) :=
++  (ref64 p convIn64).bind fun e => e["S"]?.map (·.shape)
++
++/-- The checked backend's refusal cause at preparation, or `none` if it accepted. -/
++def prepCause (p : TLProgram) : Option PlanCompileCause :=
++  (scheduled (as64 p)).bind fun s =>
++    match prepareEvalPlan s (InputSignature.ofDenseInputs convIn64) with
++    | .error f => some f.cause
++    | .ok _ => none
++
++-- T1 (M1): the reference publishes the EXACT REACH. `a+b`: 0..5, extent 6 (the legacy rule: 7);
++-- `a+4b`: 0..11, extent 12 (legacy 16).
++#guard refShapeOf conv == some [6]
++#guard refShapeOf convWide == some [12]
++-- ... and the values are the polynomial product (no trailing zero cell).
++#guard ((ref64 conv convIn64).bind fun e => e["S"]?.map (·.data)) ==
++  some #[1, 12, 123, 234, 340, 400]
++-- The checked leg still REFUSES multi-axis geometry at this task (T2 lifts it), by its own
++-- capability constructor, not by a shape or range error.
++#guard prepCause conv == some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
++#guard prepCause convWide == some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
++
++end LeanNCD.Eval.Plan.ScatterGeometryTest
+diff --git a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+index 96d55ce8..ab801d1e 100644
+--- a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
++++ b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+@@ -103,7 +103,7 @@ def tag (s : SourceSnapshot) (order : List Nat := [5]) : String :=
+ private def fA := snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readX]
+ private def fB := snap 6 [k] [.assign "Y" [.affine (.shift a 2)] readX]
+ private def fC := snap 4 [a, a] [.assign "Y" [.free a, .free a] readX]
+-private def fD := snap 7 [k] [.scatter "Y" [convSlot] readXW]
++private def fD := snap 6 [k] [.scatter "Y" [convSlot] readXW]
+ private def fD' := snap 4 [k] [.scatter "Y" [.affine (.const 3)] readX]
+ private def fE := snap 8 [k] [.assign "Y" [.affine (.scale 2 a)] readXW]
+ private def fF := snap 6 [k] [.assign "Y" [convSlot] readXW]
+@@ -159,10 +159,14 @@ private def conditionCount (s : SourceSnapshot) : Nat :=
+ 
+ -- S3a: collisions sum (production and oracle agree), so a colliding write predicts NO condition:
+ -- `fE` (`Y[2a] := X[a]*W[b]`, `b` contracted onto one cell) and `fF` (`a+b`) have nothing to detect
+--- for collisions; `fF`'s declared extent 6 differs from the derived 7, so it keeps exactly the
+--- extent condition. `fG` has no blanket multi-writer allowance.
++-- for collisions. M1: `fF`'s declared extent 6 IS the derived exact reach (it used to differ from the
++-- derived 7 and carry the extent condition; the predictor `derivedShape` now calls `outExtent`, so a
++-- stale predictor would flip this back to 1). The declared-too-big twin `fFbig` (declared 7, derived 6)
++-- keeps exactly the extent condition. `fG` has no blanket multi-writer allowance.
++private def fFbig := snap 7 [k] [.assign "Y" [convSlot] readXW]
+ #guard conditionCount fE == 0
+-#guard conditionCount fF == 1
++#guard conditionCount fF == 0
++#guard conditionCount fFbig == 1
+ #guard conditionCount fG == 0
+ 
+ /-- Profile verdict on `fE`'s oracle result with one occurrence of the first nonempty fiber dropped
+@@ -243,12 +247,13 @@ private def legacyMatchesOracle (s : SourceSnapshot) : Bool :=
+   | some l, some o => !l.isEmpty && l == o && legacyCompared s
+   | _, _ => false
+ 
+--- Hand values, from X = [1,2,3,4], W = [1,10,100], Y[a+b] += X[a]*W[b], |k| = 7:
++-- Hand values, from X = [1,2,3,4], W = [1,10,100], Y[a+b] += X[a]*W[b], |k| = 6 (the exact reach
++-- 0..5; before the multi-axis extent rule (M1) production derived 7 and appended a trailing 0):
+ --   cell0 = 1*1 = 1; cell1 = 2*1 + 1*10 = 12; cell2 = 3*1 + 2*10 + 1*100 = 123;
+---   cell3 = 4*1 + 3*10 + 2*100 = 234; cell4 = 4*10 + 3*100 = 340; cell5 = 4*100 = 400; cell6 = 0.
++--   cell3 = 4*1 + 3*10 + 2*100 = 234; cell4 = 4*10 + 3*100 = 340; cell5 = 4*100 = 400.
+ -- A last-write-wins or dropped-occurrence total changes cells 1..5 (e.g. cell1 would be 10 or 2).
+-#guard legacyCells fD == handBits [1, 12, 123, 234, 340, 400, 0]
+-#guard oracleCells fD == handBits [1, 12, 123, 234, 340, 400, 0]
++#guard legacyCells fD == handBits [1, 12, 123, 234, 340, 400]
++#guard oracleCells fD == handBits [1, 12, 123, 234, 340, 400]
+ #guard legacyMatchesOracle fD
+ -- fD': Y[3] += X[a] over a: 1+2+3+4 = 10; the other cells are 0 (|k| = 4).
+ #guard legacyCells fD' == handBits [0, 0, 0, 10]
+@@ -256,17 +261,45 @@ private def legacyMatchesOracle (s : SourceSnapshot) : Bool :=
+ #guard legacyMatchesOracle fD'
+ 
+ -- ACCEPT-NEIGHBOURS (collision-free `.scatter`, same assertion shape; not vacuous):
+--- fN: Y[a+4b] += X[a]*W[b], |k| = 16 (production derives shape 16 from the write form, p3_observed
++-- fN: Y[a+4b] += X[a]*W[b], |k| = 12 (production derives shape 12 from the write form, p3_observed
+ --   (f'): a declared 12 gives a shape-binding issue, not a value): slots a+4b are distinct, so
+---   Y = X[a]*W[b] laid out as b=0: 1,2,3,4; b=1: 10,20,30,40; b=2: 100,200,300,400; cells 12..15 = 0.
+-private def fN := snap 16 [k] [.scatter "Y" [.affine (.affine 0 [(1, a), (4, b)])] readXW]
++--   Y = X[a]*W[b] laid out as b=0: 1,2,3,4; b=1: 10,20,30,40; b=2: 100,200,300,400. Under M1 the
++--   derived shape is the exact reach 12 (before: 16, with cells 12..15 = 0), so |k| = 12.
++private def fN := snap 12 [k] [.scatter "Y" [.affine (.affine 0 [(1, a), (4, b)])] readXW]
+ -- fN': Y[2a] += X[a], |k| = 8: Y = 1,0,2,0,3,0,4,0.
+ private def fN' := snap 8 [k] [.scatter "Y" [.affine (.scale 2 a)] readX]
+-#guard legacyCells fN == handBits [1, 2, 3, 4, 10, 20, 30, 40, 100, 200, 300, 400, 0, 0, 0, 0]
++#guard legacyCells fN == handBits [1, 2, 3, 4, 10, 20, 30, 40, 100, 200, 300, 400]
+ #guard legacyMatchesOracle fN
+ #guard legacyCells fN' == handBits [1, 0, 2, 0, 3, 0, 4, 0]
+ #guard legacyMatchesOracle fN'
+ 
++/-- Shapes of the declaration-5 output as each leg publishes it: legacy production leg and oracle. -/
++private def legacyShape (s : SourceSnapshot) : Option (List Nat) :=
++  match compareSource s (some [5]) with
++  | .error _ => none
++  | .ok run => match run.native with
++    | .error _ => none
++    | .ok n => match n.legacy with
++      | .observed o => match o.outputs with
++        | .ok bs => (bs.find? fun x => x.metadata.declaration == 5).map fun x => x.shape
++        | .error _ => none
++      | _ => none
++
++private def oracleShape (s : SourceSnapshot) : Option (List Nat) :=
++  match compareSource s (some [5]) with
++  | .error _ => none
++  | .ok run => match run.oracle with
++    | .error _ => none
++    | .ok r => (r.tensors.find? (fun (t : Oracle.Tensor) => t.declaration == 5)).map (·.shape)
++
++-- M1 shape agreement (donors: fD, fN): legacy production and the oracle publish the exact reach,
++-- `a+b` -> 6 and `a+4b` -> 12. Before M1 production derived 7 and 16 against the oracle's declared
++-- 6 and 12 (`known:extent`). The checked leg still refuses both here (T2 lifts it).
++#guard legacyShape fD == some [6]
++#guard oracleShape fD == some [6]
++#guard legacyShape fN == some [12]
++#guard oracleShape fN == some [12]
++
+ /-! T4-A1 two-tensor programs, after S3a (collisions sum, so the origin-bound collision rows that
+ named `Y`/`Z` in a native collision error lost their referent and are deleted; `Z` is declaration 6,
+ over `a`). Kept: the bare scatter with a contracted axis (now parity) and the checked-leg
+@@ -295,6 +328,9 @@ private def fF11 := withZ 8 [zBare, .assign "Y" [.affine (.scale 2 a)] readX]
+ #guard mentions fF "multiAxisScatterLhs \"Y: affine LHS slot\""
+ #guard mentions fF' "multiAxisScatterLhs \"Y: affine LHS slot\""
+ #guard !mentions fF "collision"
++-- (T1) the same refusal for the legacy-only donors fD (`a+b`) and fN (`a+4b`).
++#guard mentions fD "multiAxisScatterLhs \"Y: affine LHS slot\""
++#guard mentions fN "multiAxisScatterLhs \"Y: affine LHS slot\""
+ 
+ -- CHECKED-only refusal: Z's constant-slot scatter (legacy sums it into Z = [0,0,0,10]; the checked
+ -- plan refuses it at preparation naming Z) next to fE's agreeing write on Y: the program is still a

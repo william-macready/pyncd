@@ -1,0 +1,80 @@
+diff --git a/leanncd/test/Semantics/SourceSortedDifferentialTest.lean b/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
+index 4e729492..1fcc04a7 100644
+--- a/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
++++ b/leanncd/test/Semantics/SourceSortedDifferentialTest.lean
+@@ -318,4 +318,75 @@ private def bellman (s1 s2 : AggOp) : SourceSnapshot :=
+ /-- info: "refused LeanNCD.Semantics.Source.SourceCause.sortSelection\n  (LeanNCD.Semantics.Source.Oracle.SelectionError.mixedSorts [LeanNCD.AggOp.max, LeanNCD.AggOp.sum])" -/
+ #guard_msgs in #eval classOf (bellman .max .sum)
+ 
++/-! Scatter-geometry slice A, T5: four-leg tropical rows for the multi-axis and constant-slot scatters.
++The real harness `compareSource` refuses `agg max`/`min` (`nonSum`), so the tropical legs of these
++geometries are vouched for here: oracle, Core leg, legacy native leg and checked native leg must all agree.
++The destination axis is declared with exactly the exact reach production derives (slice A decision M1). -/
++private def o6 : AxisSpec := ⟨"o6", 10, .real⟩
++private def o13 : AxisSpec := ⟨"o13", 11, .real⟩
++private def o4 : AxisSpec := ⟨"o4", 12, .real⟩
++
++/-- `snap` with a destination axis `yAxis` of declared extent `n` (new uids, so `snap` is untouched). -/
++private def snapG (yAxis : AxisSpec) (n : Nat) (stmts : List Stmt) : SourceSnapshot :=
++  { resolved := {
++      decls := [.axis a (some 4), .axis b (some 3), .axis yAxis (some n),
++        .typedTensor .f64 "X" [a], .typedTensor .f64 "W" [b], .typedTensor .f64 "Z" [a, b],
++        .typedTensor .f64 "Y" [yAxis]]
++      stmts := stmts
++      env := {}, extNames := ∅ }
++    specs := [⟨3, .input, [4]⟩, ⟨4, .input, [3]⟩, ⟨5, .input, [4, 3]⟩, ⟨6, .output, [n]⟩]
++    inputs := [⟨3, [4], [1, 2, 3, 4]⟩, ⟨4, [3], [1, 10, 100]⟩, ⟨5, [4, 3], zValues⟩] }
++
++private def xw (agg : AggOp) : RHSExpr := rhs agg [[.read "X" [.axis a], .read "W" [.axis b]]]
++/-- W1: `Y[a+b]`, extent 6 = 3 + 2 + 1. -/
++private def conv (agg : AggOp) : SourceSnapshot :=
++  snapG o6 6 [.scatter "Y" [.affine (.affine 0 [(1, a), (1, b)])] (xw agg)]
++/-- W2: `Y[2a+3b]`, extent 13: cells 1 and 11 are empty fibres, cell 6 collides. -/
++private def conv23 (agg : AggOp) : SourceSnapshot :=
++  snapG o13 13 [.scatter "Y" [.affine (.affine 0 [(2, a), (3, b)])] (xw agg)]
++/-- W3: constant slot `Y[3]` on a fresh extent-4 axis, as `.scatter` and as `.assign`. -/
++private def constSc (agg : AggOp) : SourceSnapshot :=
++  snapG o4 4 [.scatter "Y" [.affine (.const 3)] (rhs agg [[.read "X" [.axis a]]])]
++private def constAs (agg : AggOp) : SourceSnapshot :=
++  snapG o4 4 [.assign "Y" [.affine (.const 3)] (rhs agg [[.read "X" [.axis a]]])]
++
++-- Observed values (the hand derivations agree). Max-plus convolution `Y[a+b] = max X[a] + W[b]`: cell 1 is
++-- `max(X0+W1, X1+W0) = max(1+10, 2+1) = 11`; under max-TIMES semantics it would be `max(10, 2) = 10`, so
++-- cell 1 is the row that fails if the tropical `⊗` were a product.
++/-- info: "some [some 2, some 11, some 101, some 102, some 103, some 104]" -/
++#guard_msgs in #eval yCore (conv .max)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (conv .max)
++/-- info: "some [some 2, some 3, some 4, some 5, some 14, some 104]" -/
++#guard_msgs in #eval yCore (conv .min)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (conv .min)
++-- `Y[2a+3b]`: cells 1 and 11 are empty fibres (`-inf` / `+inf`); cell 6 collides (a=3,b=0 and a=0,b=2).
++/-- info: "some [some 2,\n some -inf,\n some 3,\n some 11,\n some 4,\n some 12,\n some 101,\n some 13,\n some 102,\n some 14,\n some 103,\n some -inf,\n some 104]" -/
++#guard_msgs in #eval yCore (conv23 .max)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (conv23 .max)
++/-- info: "some [some 2,\n some +inf,\n some 3,\n some 11,\n some 4,\n some 12,\n some 5,\n some 13,\n some 102,\n some 14,\n some 103,\n some +inf,\n some 104]" -/
++#guard_msgs in #eval yCore (conv23 .min)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (conv23 .min)
++-- Constant slot `Y[3]` (the only independent check of slice A's unit-axis lowering): the oracle reads the
++-- raw constant, production rewrites it in `lowerArith` (`.assign` arm) or `lowerConstSlots` (`.scatter`).
++/-- info: "some [some -inf, some -inf, some -inf, some 4]" -/
++#guard_msgs in #eval yCore (constSc .max)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (constSc .max)
++/-- info: "some [some +inf, some +inf, some +inf, some 1]" -/
++#guard_msgs in #eval yCore (constSc .min)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (constSc .min)
++/-- info: "some [some -inf, some -inf, some -inf, some 4]" -/
++#guard_msgs in #eval yCore (constAs .max)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (constAs .max)
++/-- info: "some [some +inf, some +inf, some +inf, some 1]" -/
++#guard_msgs in #eval yCore (constAs .min)
++/-- info: "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.fourLegParity" -/
++#guard_msgs in #eval classOf (constAs .min)
++
+ end SourceSortedDifferentialTest
