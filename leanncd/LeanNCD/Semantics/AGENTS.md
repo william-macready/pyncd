@@ -168,9 +168,11 @@ value rows in `OracleMixedRefusalTest`.
 neither stage is a universal preparation model. Six mixed rows require actual
 four-leg values and pinned running sorts. See `papers/semantics/additive_b5_record.md`.
 Since S3a every backend ⊕-sums colliding scatter writes, so collisions are agreement, not a condition:
-a bare-slot scatter over a contracted axis (F11) and `fE` are parity; the const-slot scatters `fD`/`fD'`
-still end as `nativeFailure` with no condition, because the checked plan refuses constant and multi-axis
-affine slots by capability (`scatterOrAffineLhs`, `multiAxisScatterLhs`). See the
+a bare-slot scatter over a contracted axis (F11) and `fE` are parity; the multi-axis scatter `fD` (`a+b`) and the
+constant-slot scatter `fD'` are parity too, since scatter-geometry slice A: the checked plan admits top-level
+multi-axis and constant slots (`lowerArith` rewrites a constant to a placement over a synthetic unit axis).
+A constant writer into a destination declared larger than `n+1` reports `known:extent` (slice B closes it);
+scan-local multi-axis/constant slots stay refused by capability (`scatterOrAffineLhs`, `multiAxisScatterLhs`, F3). See the
 [source correspondence record](../../../papers/semantics/source_correspondence_record.md)
 for scope and limits.
 

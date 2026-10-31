@@ -268,21 +268,16 @@ inductive CapabilityError
   | dynamicShape         (context : String)  -- backend- or value-dependent shapes
   | recurrenceOrCallback (context : String)
   | noAdvancingAxis      (context : String)  -- `.scan` declaring an empty advancing-axis list
-  /-- A top-level scatter's affine LHS slot whose coefficient row names MORE THAN ONE source axis
+  /-- A SCAN-LOCAL scatter's affine LHS slot whose coefficient row names MORE THAN ONE source axis
       (`Out[i+j]`), where the single-axis strided forms (`Out[2*i]`, `Out[i+2]`) are admitted.
-      Its own constructor rather than a reuse of `scatterOrAffineLhs`, because "a scatter is not
-      supported at all" and "this one placement form is not supported" are different facts and the
-      fixture distinguishing them has to be able to see which was meant.
-
-      Why the form is rejected rather than compiled: `LHSSlot.outExtent`'s
-      `bias + Σ coeff · size` is the upsample-stride convention, designed for one strided axis. On
-      a two-axis row it computes the sum of the two axes' extents (`i : 3`, `j : 4` ⇒ `7`) where the
-      reachable coordinate set `i + j` spans only `0 … 5`, and with a mixed-sign row it admits
-      negative reachable coordinates that the worker's out-of-range skip silently absorbed (before B6; they are now a static `scatterWriteOutOfRange`). Neither
-      is unsound, but neither is verified by this feature's worked examples or its differential
-      corpus either, so it is refused with a locator instead of shipped unexercised. Unreachable
-      from `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots);
-      a hand-built `ScheduledProgram` handed to `prepareEvalPlan` is what can express it. -/
+      Since scatter-geometry slice A the TOP-LEVEL checked plan admits such a row (its extent is the
+      exact reach `LHSSlot.outExtent`, from the same corner formula `affineImageBounds` as the B6
+      range rule), so only a scan statement can raise this: scan-local placement is non-injective for
+      a multi-axis row and the reference overwrites there instead of summing (F3). Its own
+      constructor rather than a reuse of `scatterOrAffineLhs`, because "a scatter is not supported at
+      all" and "this one placement form is not supported" are different facts. Unreachable from
+      `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots; surface
+      syntax for multi-axis rows is slice B); a hand-built `ScheduledProgram` can express it. -/
   | multiAxisScatterLhs  (context : String)
   /-- A top-level scatter's DESTINATION is `predicate`/`bool`-declared. The reference evaluator
       `evalScatter` (`Eval/Scatter.lean`) WAS not dtype-aware (reference-alignment made it so, via

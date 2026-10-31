@@ -772,6 +772,8 @@ Zero/cancelled raw terms still require their named sizes to resolve before norma
 zero source extent, negative forms, missing sizes, and multi-axis expressions retain the legacy
 result. Checked scan geometry calls the shared `scatterDestExtent` adapter; it does not introduce a
 `stridedExtent` formula beside `outExtent`.
+Since scatter-geometry slice A a row naming two or more nonzero-coefficient axes no longer takes the legacy
+result: `outExtent` gives it the exact reach `max image + 1` (via `affineImageBounds`); the table above is the S-B state.
 
 ### 3.2 Classifier and checked geometry
 
