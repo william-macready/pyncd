@@ -469,23 +469,16 @@ def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
   || (let us := slots.filterMap (·.freeUID?)
       us.length ≠ us.eraseDups.length)
 
-/-- Name prefix of the synthetic unit axis `lowerArith` mints for a constant LHS slot
-    (`Y[3]` becomes `Y[#constN + 3]` over an axis pinned to size 1). `#` is not an identifier
-    character, so no SURFACE axis can carry it. Axis identity is by UID; the prefix only MARKS the
-    synthetic axis so the multi-writer collector (`boundedScatter`) can keep treating the slot as the
-    constant it still is (slice A, D2: the collector's admission is unchanged). The prefix is
-    RESERVED: a hand-built `TLProgram` naming a source axis so is rejected by
-    `checkReservedAxisNames` (`reservedAxisName`), first in both compile chains. -/
-def constUnitPrefix : String := "#const"
-
-/-- Is this index the rewritten form of a constant slot: `n + 1·u` over a synthetic unit axis. -/
-def IdxExpr.isConstUnit : IdxExpr → Bool
-  | .affine _ [(1, a)] => a.name.startsWith constUnitPrefix
-  | _ => false
-
-def LHSSlot.boundedScatter : LHSSlot → Bool
+/-- Can the multi-writer collector (`checkWriterGroup`) and the boxed-single-writer rule
+    (`boxedSingleGroups`) take this slot? Slice B (B-D1): every slot whose extent `LHSSlot.outExtent`
+    can state, i.e. a free axis, a single-axis affine form, a multi-axis affine form, and the lowered
+    constant (`n + 1·u` over a synthetic size-1 axis, an ordinary single-axis form here: nothing reads
+    the axis' NAME). Refused, by constructor: a raw `.affine (.const _)` (only a hand-built schedule
+    that skipped `lowerArith` carries one) and the scan slots. Replaces the slice A name test. -/
+def LHSSlot.collectable : LHSSlot → Bool
   | .free _ | .freeNorm _ => true
-  | .affine e => !e.isConstUnit && scatterAffineClass e == .bounded
+  | .affine (.const _) => false
+  | .affine _ => true
   | _ => false
 
 /-- The corner extremes `(min, max)` of the affine image `c0 + Σ c_k·x_k` over the box

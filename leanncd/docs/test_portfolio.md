@@ -474,7 +474,7 @@ gap is closed — a built-in regression alarm. Cross-referenced above by `KG-*`.
 |----|-----|----------------|-----|
 | KG-sub | no `−` operator in the RHS sum — **but** subtraction is achievable via a rank-0 `−1` scalar (`a[i] + neg[]·b[i]` — see ST5). Only a *soft* gap: the ergonomic form is missing, the capability is not | residuals, MSE, centering | `[F]` (soft) |
 | KG-functor | axes are flat `Fin n` only — no **structured/applicative-functor index spaces** (trees, functions, nested containers) | generalized transformers over non-sequence data (parsing, image→function); see AT8 & `NaperianTypingIntegrationPlan.md` | `[F]` |
-| KG-reshape | LHS index slots are **single-axis affine only** (`2*i`, `i+num`); no multi-axis-into-one-slot (`i+j`, `2*i+k`) — parse-fail | reshape/flatten, Kronecker product, im2col, overlapping-accumulate scatter (also unreachable via surface syntax) | `[F]` |
+| KG-reshape | **Closed at the surface by scatter-geometry slice B**: a multi-axis LHS slot (`Out[i + j]`, `Out[2*i + k]`) now parses and runs as a ⊕-summing scatter (`Eval.Plan.ScatterSurfaceTest`); the old text was "single-axis affine only — parse-fail". Not claimed: that reshape/flatten, Kronecker or im2col programs are now covered (no portfolio row tests them) | reshape/flatten, Kronecker product, im2col | `[F]` |
 | KG-datamask | `where` masks are **index predicates only** — cannot read a data tensor (`where edge[i,j] > 0`) — parse-fail | GAT / any graph-structured masked softmax over a runtime adjacency | `[F]` |
 | KG-solve | no linear **solve / inverse / eigendecomp / determinant** (only contraction) | closed-form regression, PCA, spectral GCN, normalizing-flow log-det | `[F]` |
 | KG-idxvalue | index arithmetic yields **booleans only** (via Iverson) — never a numeric tensor value; blocks computing `ω^i`/index-derived biases inside the DSL (they must be supplied as precomputed input tensors, e.g. DF4) | ALiBi, relative-position numeric bias, distance-decay weights | `[F]` |
@@ -503,7 +503,7 @@ gap is closed — a built-in regression alarm. Cross-referenced above by `KG-*`.
 | EC6 | `t[] := M[i,i]` | M above → `5` | trace (diagonal read + full contraction) — valid | `[N]` `[E]` |
 | EC7 | `D[i,i] := v[i]` | v=`[5,6]` → `[[5,0],[0,6]]` | **diagonal write** (scatter reclassification) | `[N]` `[E]` |
 | EC8 | `Out[2*i,2*j] := X[i,j]` | 2×2 → 4×4 placement | upsample scatter | `[✔]` |
-| EC9 | `Out[i + j] := X[i,j]` | — | does not parse — LHS slots are single-axis affine only (`i + num`, `2*i`); `i + j` (two axes → one slot) is rejected. See KG-reshape (§14); overlapping-accumulate scatter is unreachable via surface syntax | `[F]` |
+| EC9 | `Out[i + j] := X[i,j]` | — | parsed as a gap when this row was written (LHS slots were single-axis affine only); since scatter-geometry slice B `i + j` (two axes → one slot) parses and runs as a ⊕-summing scatter, pinned in `Eval.Plan.ScatterSurfaceTest`, not here (the row stays comment-only). See KG-reshape (§14) | `[F]` |
 | EC10 | `Y[i,j,k,l] := A[i,j,m] · B[m,k,l]` | small | **high-rank** (4 free + 1 contracted) tensor contraction | `[N]` `[E]` |
 | EC11 | `Z := A · B · C · D` (n-ary product, all scalar reads) | → product | n-ary `·` associativity | `[N]` `[E]` |
 | EC12 | `Y[i] := X[2*i + 3*j - 1]` chained affine | multi-term affine read index; both `i` and `j` are unconstrained by any input shape (the read is the only occurrence of either), so this needs `axis i : ℕ = 2, j : ℕ = 2` pins to evaluate; `j` is RHS-only so it's summed | general integer-affine reindex | `[N]` |
@@ -599,7 +599,7 @@ them (there is no expressible program to test). Priority order for practical ML 
 | Lower | **KG-solve** — no linear solve/inverse | Closed-form regression, PCA, normalizing-flow log-det |
 | Lower | **KG-idxvalue** — index arithmetic yields booleans only | ALiBi, relative-position numeric bias |
 | Lower | **KG-datamask** — `where` clauses are index predicates only | GAT data-driven masked softmax |
-| Lower | **KG-reshape** — no multi-axis-into-one-slot LHS | Reshape/flatten, Kronecker, im2col |
+| Lower | **KG-reshape** — multi-axis-into-one-slot LHS now parses (slice B); reshape/flatten, Kronecker, im2col programs are untested here | Reshape/flatten, Kronecker, im2col |
 | Lower | **KG-functor** — axes are flat `Fin n` only | Generalized transformers over non-sequence data |
 | Lower | **KG-recur** — `recurMorphism`/`scanPre` AST-only | Programmatic recurrences |
 

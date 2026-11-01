@@ -250,6 +250,12 @@ partial def elabTLRHS : Syntax → MetaM RHSExpr
 
 /-! ## Layers 5–6: LHS slots, statements, whole program (Task E1.5) -/
 
+/-- One term of a multi-axis slot: `x` is coefficient 1, `n*x` is coefficient `n`. -/
+def elabTLAxisTerm : Syntax → MetaM (Int × AxisSpec)
+  | `(tl_axis_term| $x:ident) => return (1, idxAxis (identStr x))
+  | `(tl_axis_term| $n:num * $x:ident) => return (Int.ofNat n.getNat, idxAxis (identStr x))
+  | _ => throwUnsupportedSyntax
+
 /-- Elaborate a single `tl_lhs_slot` into an `LHSSlot`.
 
     * `x`          → `.free` (a free output axis);
@@ -258,10 +264,22 @@ partial def elabTLRHS : Syntax → MetaM RHSExpr
       axis cannot be named at parse time (it is recovered from the matching
       `iterNext` slot during E2's lowering), so we use a placeholder name `""`
       via `idxAxis ""`. REPORTED simplification.
-    * `x +1`       → `.iterNext` (the scan step);
-    * `n*x`, `x+n`, `n*x+n` → `.affine` of the corresponding integer-affine
-      `IdxExpr`, built directly from the slot's pieces. -/
+    * `x +1`       → `.affine (.shift x 1)`; scan lowering (`Structural.lean`) reclassifies it to
+      `.iterNext` when `x` is a scan iteration axis (the scan step);
+    * `n*x`, `x+n`, `n*x+m` → `.affine` of the corresponding integer-affine
+      `IdxExpr`, built directly from the slot's pieces;
+    * `a + b`, `2*a + b`, `a + 2*b + 3` (at least two axis terms `x` or `n*x`, then an optional
+      numeral bias) → `.affine (.affine bias [(coeff, axis), …])`, terms in source order and
+      unmerged (`a + a` stays two terms; `0*a + b` keeps its zero coefficient);
+    * `=n`         → `.affine (.const n)`, a constant write (every source coordinate writes cell
+      `n`); a lone numeral `n` stays the scan base case above. -/
 partial def elabTLLHSSlot : Syntax → MetaM LHSSlot
+  | `(tl_lhs_slot| $t:tl_axis_term $[+ $ts:tl_axis_term]* $[+ $b:num]?) => do
+      let terms ← (#[t] ++ ts).toList.mapM elabTLAxisTerm
+      let c0 : Int := match b with | some b => Int.ofNat b.getNat | none => 0
+      return .affine (.affine c0 terms)
+  | `(tl_lhs_slot| = $n:num) =>
+      return .affine (.const (Int.ofNat n.getNat))
   | `(tl_lhs_slot| $x:ident .) =>
       return .freeNorm (idxAxis (identStr x))
   | `(tl_lhs_slot| $x:ident) =>

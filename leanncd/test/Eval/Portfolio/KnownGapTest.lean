@@ -20,9 +20,10 @@ regression test (linked below) that will flip when the gap closes.
   `GenerativeTest`). Live: `UF5` (`RejectTest`).
 
 ## Parse-level gaps (cannot be automated — hard parse errors fail the build)
-* **KG-reshape** — multi-axis-into-one LHS slot: `Out[i + j] := X[i,j]`, `Out[2*i + k] := …`
-  → `unexpected identifier; expected numeral`. No reshape / flatten / Kronecker / im2col; the
-  overlapping-accumulate scatter is likewise unreachable via surface syntax.
+* **KG-reshape** (historical; the parse error is CLOSED by scatter-geometry slice B, see
+  `Eval.Plan.ScatterSurfaceTest`) — multi-axis-into-one LHS slot: `Out[i + j] := X[i,j]`,
+  `Out[2*i + k] := …` used to give `unexpected identifier; expected numeral`. Reshape / flatten /
+  Kronecker / im2col programs are not tested here.
 * **KG-datamask** — data-driven mask: `softmax(where edge[i,j] > 0)(…)`
   → `unexpected token '['`; `where` clauses are index predicates only.
 

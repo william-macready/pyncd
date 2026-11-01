@@ -567,20 +567,6 @@ theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
       rw [hLS ls, hBody r.body.terms, hNonlin r.nonlin, ← List.append_assoc]
   | recurMorphism nm ax tc => rfl
 
-/-! ## The `checkReservedAxisNames` phase -/
-
-/-- Reject a source axis spelled with `constUnitPrefix`. `IdxExpr.isConstUnit` recognises the unit
-    axes `lowerArith` mints for constant LHS slots by that spelling alone, so a source axis carrying
-    it would be mistaken for a lowered constant and silently dropped from multi-writer collection.
-    The surface grammar cannot spell it (`#` is not an identifier character); a hand-built
-    `TLProgram` can, so this runs first in both compile chains, before any axis is minted. A
-    hand-built `ScheduledProgram` that skips these chains and spells an axis so is claiming to be a
-    lowered constant. -/
-def checkReservedAxisNames (p : TLProgram) : FreshM TLProgram :=
-  match p.axisNames.find? (·.startsWith constUnitPrefix) with
-  | some nm => throw (.reservedAxisName nm)
-  | none => pure p
-
 /-! ## The `assignUIDs` phase -/
 
 /-- Mint a fresh UID that is guaranteed non-zero. `0` is E1's "unassigned" sentinel
@@ -1138,7 +1124,8 @@ def LHSSlot.isRawConst : LHSSlot → Bool
   | _ => false
 
 /-- Scatter-geometry slice A (D2/D5): a constant LHS slot `Y[n]` is the single-axis placement
-    `n + 1·u` over a FRESH synthetic axis `u` pinned to size 1 (`constUnitPrefix` names it). The
+    `n + 1·u` over a FRESH synthetic axis `u` pinned to size 1 (named `#const<uid>` for display only:
+    axis identity is the UID and nothing reads the name, slice B B-D2). The
     stride-aligned extent arm of `LHSSlot.outExtent` then gives `1·1 + n = n + 1`, the image is
     exactly `{n}`, and the reference's extent and the checked plan's derived extent agree. Returns the
     rewritten slots and the pinned axis declarations to append.
@@ -1156,7 +1143,7 @@ def lowerConstSlots (slots : List LHSSlot) : FreshM (List LHSSlot × List Decl) 
     match sl with
     | .affine (.const n) =>
         let u ← freshNonZero
-        let ax : AxisSpec := ⟨constUnitPrefix ++ toString u, u, .nat⟩
+        let ax : AxisSpec := ⟨"#const" ++ toString u, u, .nat⟩
         out := out ++ [.affine (.affine n [(1, ax)])]
         ds := ds ++ [.axis ax (some 1)]
     | _ => out := out ++ [sl]

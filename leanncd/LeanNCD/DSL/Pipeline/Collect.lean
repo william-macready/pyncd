@@ -24,7 +24,9 @@ contain bounded scatter writers, using a distinct declared coordinate basis or t
 bare assignment. Their retained shape obligations are checked after inference: a destination
 declared with every axis pinned by `axis … = n` is a box that each writer's realized extent must fit
 (`writerExtentExceedsBox`); every other group requires exact extent equality
-(`writerExtentMismatch`). Predicate, explicit-constant and multi-axis scatter groups remain refused.
+(`writerExtentMismatch`). Single-axis, multi-axis and lowered-constant scatter writers are all
+collectable (`LHSSlot.collectable`); predicate-destination scatter groups and raw `.affine (.const _)`
+writers (only a hand-built schedule that skipped `lowerArith` carries one) remain refused.
 A group's sort is the one its writers' votes agree on (`writerSort?`); sort-neutral copy writers
 abstain beside a non-neutral writer and are rewritten to the agreed sort (`Stmt.withAgg`), so a
 copy's bare out-of-range read pads the group's `0_K` and a copy of a predicate reads it through the group's
@@ -130,15 +132,20 @@ def writerGroupBasis (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
     either; a rank-0 destination has nothing to pad and the D5 test below is vacuous for it) and its
     writer is one of:
 
-    * an explicit scatter with bounded geometry (`LHSSlot.boundedScatter`: no constant or multi-axis
-      slot, D2);
+    * an explicit scatter whose every slot is `LHSSlot.collectable` (slice B, B-D1: single-axis,
+      multi-axis and lowered-constant forms; not a raw `.affine (.const _)`);
     * a plain assign whose slots are distinct free axes;
 
     **unless a declared axis occurs among the writer's own SOURCE axes** (D5): `tensor Out(i)` with
     `Out[2*i] := X[i]` declares `Out` over its own source axis, so such a writer keeps the derived
     shape. This also covers the identity writer (`tensor S(i)` with `S[i] := A[i]`, same axis and same
     pinned size, so the shape is the declared one already) and a transposed write over the declared
-    axes. Every excluded case keeps today's behaviour. -/
+    axes. The exclusion fires whenever ANY declared axis occurs among the writer's own source axes,
+    including an IDENTITY slot over a declared axis: with `tensor S(k, b)` pinned, the lone writer
+    `S[=3, b]` is not boxed and keeps the derived shape `[4, 3]`, while two such writers (`S[=3, b]`,
+    `S[=5, b]`) are collected and publish the declared `[8, 3]` (fixtures `r1Surf`/`r2Surf` in
+    `ScatterSurfaceTest`). So for such a writer the published shape depends on the writer count; this is
+    the documented consequence of D5, not a defect. Every excluded case keeps today's behaviour. -/
 def boxedSingleGroups (env : DeclEnv) (pinned : Std.HashMap UID Nat) (stmts : List ScanStmt) :
     List WriterGroup :=
   let names := (stmts.flatMap routeWrites).eraseDups
@@ -153,7 +160,7 @@ def boxedSingleGroups (env : DeclEnv) (pinned : Std.HashMap UID Nat) (stmts : Li
           ls.flatMap fun sl => (idxAffineForm sl.outIdx).2.map (·.2)
         let collected := match plainAt? stmts i with
           | some (.scatter _ ls _) =>
-              ls.all LHSSlot.boundedScatter && !(sourceUIDs ls).any declUIDs.contains
+              ls.all LHSSlot.collectable && !(sourceUIDs ls).any declUIDs.contains
           | some (.assign _ ls _) =>
               let us := ls.filterMap (·.freeUID?)
               us.length == ls.length && us.length == us.eraseDups.length &&
@@ -191,7 +198,7 @@ def checkWriterGroup (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
   for s in ws do
     match s with
     | .scatter _ ls _ =>
-        unless ls.all LHSSlot.boundedScatter && env.declAlgebra g.name != .bool do
+        unless ls.all LHSSlot.collectable && env.declAlgebra g.name != .bool do
           throw (.multiWriterScatter g.name)
     | .assign _ ls _ =>
         if slotsBecomeScatter ls ||

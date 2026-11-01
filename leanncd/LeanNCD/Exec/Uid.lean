@@ -106,9 +106,9 @@ inductive CompileError
   -- Additive collection (`desugarMultiWriters`, `DSL/Pipeline/Collect.lean`; wrapped by
   -- `collectDefinitions`, `DSL/Pipeline/ScheduledValidation.lean`): the multi-writer sets the
   -- collector does not admit yet. Each names the destination tensor `T`.
-  | multiWriterScatter   : String → CompileError            -- outside bounded B5: predicate,
-                                                             -- constant/multi-axis scatter, or
-                                                             -- unlowered scatter-shaped assign
+  | multiWriterScatter   : String → CompileError            -- outside bounded B5: predicate
+                                                             -- destination, raw constant scatter,
+                                                             -- or unlowered scatter-shaped assign
   | multiWriterNeedsDeclaredShape : String → CompileError
   | multiWriterRepeatedBasis : String → CompileError
   | routeUnsupportedMultiWriter : String → CompileError    -- `route` only: a bounded B5 group
@@ -126,10 +126,6 @@ inductive CompileError
                                                              -- axis UID (or the slot counts differ)
   | reservedNameCollision : String → CompileError           -- a generated private name `T#k` is
                                                              -- already a source name
-  | reservedAxisName     : String → CompileError            -- a source axis is spelled with the
-                                                             -- `#const` prefix (`constUnitPrefix`,
-                                                             -- `DSL/Ast.lean`), reserved for the
-                                                             -- unit axes `lowerArith` mints
   deriving Repr, DecidableEq, BEq, Inhabited
 
 /-- Combined error + UID-counter monad (`EStateM ε σ α = σ → Result ε σ α`, Lean core). Mints fresh

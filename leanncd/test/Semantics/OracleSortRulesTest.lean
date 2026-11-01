@@ -108,9 +108,11 @@ private def refusalsOf (ss : List Stmt) : Nat := (predict c1Decls ss).refusals.l
 -- MULTI class (`agreesMember`: the observed constructor is among the predicted ones). A spurious EXTRA
 -- predicted refusal inside a multi-refusal program is NOT detected (see `agreesMember`); each rule's
 -- refusal is pinned by equality on strict programs instead (coverage guard in C4).
+-- Slice B: the multi-axis/constant/colliding writers are admitted, so the refusal-free class grows
+-- (was [222, 195, 88]; observed [281, 186, 38] with the same 505 programs).
 #guard [(corpusC1.filter (refusalsOf · == 0)).length,
   (corpusC1.filter (refusalsOf · == 1)).length,
-  (corpusC1.filter (refusalsOf · ≥ 2)).length] == [222, 195, 88]
+  (corpusC1.filter (refusalsOf · ≥ 2)).length] == [281, 186, 38]
 
 /-- Each program is held to the predicate of its own class, so a strict-class program cannot hide
     behind membership. -/
@@ -362,10 +364,10 @@ private def supplementalRows : List (List Decl × Row) :=
         stmts := [.scatter "Y" [.free a] (rhs .sum .identity [[rd "X" [a]]]), cp "Y" .sum "X"]
         expect := .ok [], runs := some [.real, .real] })
   , (hDecls,
-      { label := "explicit constant scatter groups remain unsupported"
+      { label := "explicit constant scatter groups are admitted (slice B, B-D1)"
         stmts := List.replicate 2 (.scatter "Y" [.affine (.const 3)]
           (rhs .sum .identity [[rd "X" [a]]]))
-        expect := .error ("multiWriterScatter", "Y") })
+        expect := .ok [], runs := some [.real, .real] })
   , (hDecls,
       { label := "canceled multi-axis syntax is bounded after UID normalization"
         stmts := List.replicate 2 (.scatter "Y"
@@ -501,12 +503,14 @@ run_cmd assertNone "hand SHAPED disagreements" (stagedRows.flatMap fun (l, ds, s
 #guard (stagedRows.filter fun (_, ds, ss) =>
   (predictShaped ds ss (sizesOf ds)).refusals.isEmpty).length == 11
 
-#guard concreteC1.length == 81
--- C1 declares extent 4 against realized extent 8, so no candidate fits the pinned box: all 81 stay
+-- Slice B: 99 (was 81) concrete programs now reach the shape stage, because the multi-axis/constant
+-- writers are no longer refused earlier.
+#guard concreteC1.length == 99
+-- C1 declares extent 4 against realized extent 8, so no candidate fits the pinned box: all 99 stay
 -- refused, now by the box rule itself rather than by a scatter-output `sizeConflict`.
 #guard histogram (concreteC1.map (fun ss =>
   tag (productionShapedVerdict c1Decls ss (signatureOf c1Decls ss)))) ==
-    [("writerExtentExceedsBox", 81)]
+    [("writerExtentExceedsBox", 99)]
 #eval
   let containsShape (shape : Nat) (ss : List Stmt) :=
     ss.any (fun s => [AggOp.sum, .max, .min].any (fun ag => s == writer shape ag))
@@ -609,7 +613,11 @@ run_cmd assertNone "modelled refusal constructors never observed on a strict pro
 private def strictC1Tags : List String :=
   ((corpusC1.filter (fun ss => refusalsOf ss ≤ 1)).map (fun ss => tag (productionVerdict c1Decls ss))).eraseDups
 
-#guard ["multiWriterAlgebra", "multiWriterScatter", "tropicalNonlin"].all strictC1Tags.contains
+-- Slice B: C1's colliding/multi-axis/constant writers are admitted, so C1 no longer carries a
+-- `multiWriterScatter` refusal; that constructor's strict coverage is the supplemental predicate row
+-- (`uncoveredStrict` above).
+#guard ["multiWriterAlgebra", "tropicalNonlin"].all strictC1Tags.contains
+#guard !strictC1Tags.contains "multiWriterScatter"
 
 -- An accepted REAL group with a neutral tropical copy (the copy abstains).
 #guard corpusC1.any (fun ss =>
@@ -626,11 +634,12 @@ private def strictC1Tags : List String :=
 -- the contracted writer replaced by its neutral copy is accepted.
 #guard pairsC1.any (fun ss => ss == [writer 1 .sum, writer 0 .max] && tag (verdictC1 ss) == "accepted") &&
   pairsC1.any (fun ss => ss == [writer 1 .sum, writer 1 .max] && tag (verdictC1 ss) == "multiWriterAlgebra")
--- A relu x max pair (tropicalNonlin) and a colliding-slot pair (multiWriterScatter).
+-- A relu x max pair (tropicalNonlin); and (slice B) a pair containing the multi-axis/constant `writer 4`
+-- is now accepted, where it was `multiWriterScatter`.
 #guard pairsC1.any (fun ss =>
   ss.any (fun s => isRelu s && aggOf s == .max) && tag (verdictC1 ss) == "tropicalNonlin")
 #guard pairsC1.any (fun ss =>
-  ss.any (fun s => s == writer 4 .max) && tag (verdictC1 ss) == "multiWriterScatter")
+  ss.any (fun s => s == writer 4 .max) && tag (verdictC1 ss) == "accepted")
 -- Both orders of the same pair occur (order never matters to the predictor).
 #guard pairsC1.any (fun ss => ss == [writer 0 .max, writer 0 .min] &&
     tag (verdictC1 ss) == "multiWriterAlgebra") &&

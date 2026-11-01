@@ -9,8 +9,8 @@ products (EC11), affine reindex (EC12), precedence (EC13) and per-term contracti
 scoping in a multi-term sum (EC15).
 
 EC8 (`Out[2*i,2*j]:=X[i,j]` upsample) is `[✔]` — already covered by `EvalExamplesTest`.
-EC9 (`Out[i+j]:=X[i,j]`) does NOT parse — LHS slots are single-axis affine only (`i+num`,
-`2*i`); a two-axis-into-one-slot write is rejected (KG-reshape). Comment only.
+EC9 (`Out[i+j]:=X[i,j]`) did NOT parse when authored (LHS slots were single-axis affine only; KG-reshape);
+scatter-geometry slice B made it parse, and it is pinned in `Eval.Plan.ScatterSurfaceTest`. Comment only.
 -/
 namespace LeanNCD.Eval
 open Std LSpec
@@ -67,8 +67,8 @@ test "EC7 diagonal-write"
 
 -- EC8  [✔] upsample scatter `Out[2*i,2*j]:=X[i,j]` — already in EvalExamplesTest; not re-authored.
 
--- EC9  ~~`Out[i+j]:=X[i,j]`~~ does NOT parse — LHS slots are single-axis affine only
---   (`i+num`, `2*i`); `i+j` (two axes → one slot) is rejected. See KG-reshape (§14).
+-- EC9  ~~`Out[i+j]:=X[i,j]`~~ did NOT parse when authored (single-axis affine slots only); slice B made
+--   it parse (pinned in `ScatterSurfaceTest`). See KG-reshape (§14).
 
 -- EC10  high-rank contraction (4 free + 1 contracted).  Y[i,j,k,l]=Σ_m A[i,j,m]·B[m,k,l].
 --   A (i=2,j=1,m=2)=[[[1,2]],[[3,4]]], B (m=2,k=1,l=2)=[[[1,0]],[[0,1]]] ⇒

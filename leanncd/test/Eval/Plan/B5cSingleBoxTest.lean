@@ -134,11 +134,12 @@ def constOne : TLProgram := replaceSlot (.affine (.const 3)) one
 
 -- Which single writers are collected (`boxedSingleGroups`), with every exclusion: unpinned
 -- declaration, D5 idiom, identity and transposed writers (D5), a scalar destination, predicate (D1),
--- multi-axis and constant slots (D2), and a two-writer group (collected by `writerGroups`, not here).
+-- and a two-writer group (collected by `writerGroups`, not here). Slice B (B-D1): multi-axis and
+-- constant slots are no longer excluded (D2 closed), so `multiAxisOne` and `constOne` are collected.
 #guard [groupsOf one, groupsOf oneEqual, groupsOf oneInferred, groupsOf bareOne, groupsOf idiom,
   groupsOf identityOne, groupsOf tropOne, groupsOf predOne, groupsOf multiAxisOne, groupsOf constOne,
   groupsOf concat, groupsOf transposeOne, groupsOf scalarOne] ==
-  [["S"], ["S"], [], ["S"], [], [], ["S"], [], [], [], [], [], []]
+  [["S"], ["S"], [], ["S"], [], [], ["S"], [], ["S"], ["S"], [], [], []]
 
 -- `route` is unchanged: a single boxed writer still routes (route carries no extents).
 #guard routeError one == none && routeError bareOne == none

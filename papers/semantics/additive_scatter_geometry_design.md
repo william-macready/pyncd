@@ -1,5 +1,17 @@
 # Scatter geometry: multi-axis (`S[a+b]`) and constant-slot (`S[3]`) writes
 
+## Execution status
+
+| Slice | Implemented scope | Evidence |
+| --- | --- | --- |
+| A | Exact-reach multi-axis extents, constant lowering, top-level checked admission | [Slice A record](additive_scatter_geometry_a_record.md) |
+| B | Multi-axis and lowered-constant groups and boxed single writers; surface `S[a + b]` and `S[=3]`; name marker deleted | [Slice B execution record](additive_scatter_geometry_b_record.md) |
+
+The original admission table and probe descriptions below describe the pre-slice baseline, not
+the current boundary. A lone numeral still denotes a scan base case. D5 still excludes a single
+writer whenever any declared axis occurs among its source axes, including identity positions.
+Scan-local multi-axis/constant slots, predicate groups and routed/JAX scatter remain outside scope.
+
 **Decisions D1-D6 approved by the owner on 2026-10-30, all as recommended (section 7); not an
 implementation plan.** Approval authorizes the P0 probe and then the plan for slice A only; slice B's
 plan is written after A lands. Read against local `main` `87cfb2fb` on 2026-10-30. No

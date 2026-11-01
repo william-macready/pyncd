@@ -146,10 +146,12 @@ private def normalized (cs : List (Int × UID)) : List (Int × UID) :=
   (cs.map (·.2)).eraseDups.map fun u =>
     ((cs.filter (·.2 == u)).foldl (fun n p => n + p.1) 0, u)
 
+/-- Slice B (B-D1): the collector takes every free or affine slot (single-axis, multi-axis, and a
+    constant, which `lowerArith` turns into a single-axis unit-axis form). Mirrors
+    `LHSSlot.collectable` on SOURCE slots; scan slots are not collectable. -/
 private def bounded : LHSSlot → Bool
   | .free _ | .freeNorm _ => true
-  | .affine (.const _) => false
-  | .affine e => ((normalized (coefficients e).2).filter (·.1 != 0)).length ≤ 1
+  | .affine _ => true
   | _ => false
 
 private def declaredAxes (decls : List Decl) (n : String) : Option (List AxisSpec) :=
