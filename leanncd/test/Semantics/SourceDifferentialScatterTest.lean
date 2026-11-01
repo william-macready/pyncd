@@ -179,6 +179,10 @@ private def fFbig := snap 7 [k] [.assign "Y" [convSlot] readXW]
 #guard conditionCount fF == 0
 -- (slice B: `fFbig` is a boxed single multi-axis write, the declared shape wins, so 0 conditions; was 1)
 #guard conditionCount fFbig == 0
+-- Same for a single CONSTANT writer into an oversized declared box (`fI2`: declared 5, derived 4): the
+-- predictor (`declaredShapeWins`) must not predict a condition. `tag` alone cannot pin this, because the
+-- native legs now publish the declared shape and so never `confirm` a predicted condition.
+#guard conditionCount fI2 == 0
 #guard conditionCount fG == 0
 
 /-- Profile verdict on `fE`'s oracle result with one occurrence of the first nonempty fiber dropped

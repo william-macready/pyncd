@@ -413,4 +413,64 @@ def ordIn32 : NamedDenseEnv32 := ({} : NamedDenseEnv32).insert "A" ⟨[2], #[1, 
 #guard agree (ordAxisBox ⟨"#constUser", 95, .nat⟩) ordIn64 ordIn32
   #[1, 2, 0, 0, 0, 0, 0, 0] #[1, 2, 0, 0, 0, 0, 0, 0]
 
+/-! ## Slice B: multi-axis and constant writers in groups and boxed single writers
+
+Values are the OBSERVED output of `#eval` of this file (reference == checked f64 == checked f32 via
+`agree`), never derived by hand. `S` is declared `S(k)` and, where pinned, `k = 8`. Inputs as above:
+`A = [1,2,3,4]`, `B = [1,10,100]`. -/
+
+/-- Donor: `cstProg [k] [cst 3] facA`, with the statement list replaced and `k` pinned to `n`. -/
+def grpN (n : Nat) (ss : List Stmt) : TLProgram :=
+  pinAll n { cstProg [k] [cst 3] facA with stmts := ss }
+def scS (slots : List LHSSlot) (fs : List Factor) (agg : AggOp := .sum) : Stmt :=
+  .scatter "S" slots (rhsOf fs agg)
+def bareA : Stmt := .assign "S" [.free a] (rhsOf facA)
+
+-- F1: two constant writers at the SAME coordinate plus a bare writer, pinned box. Collisions SUM: cell 3
+-- is 10 + 10 + 4 (an overwrite reading gives 4 or 10), and the shape is the declared 8.
+def f1 : TLProgram := grpN 8 [scS [cst 3] facA, scS [cst 3] facA, bareA]
+#guard sourceError f1 == none
+#guard shapesOf f1 == (some [8], some [8], some [8])
+#guard agree f1 convIn64 convIn32 #[1, 2, 3, 24, 0, 0, 0, 0] #[1, 2, 3, 24, 0, 0, 0, 0]
+-- F2: multi-axis + constant + bare writers (donors: `conv` slot, `cst`, `bareA`).
+def f2 : TLProgram := grpN 8 [scS [sumSlot] facAB, scS [cst 3] facA, bareA]
+#guard shapesOf f2 == (some [8], some [8], some [8])
+#guard agree f2 convIn64 convIn32 #[2, 14, 126, 248, 340, 400, 0, 0] #[2, 14, 126, 248, 340, 400, 0, 0]
+-- F3: tropical group with a constant writer (cell 6) and a multi-axis writer; unwritten cell 7 is `-inf`.
+def f3 : TLProgram := grpN 8 [scS [sumSlot] facAB .max, scS [cst 6] facA .max]
+#guard agree f3 convIn64 convIn32 #[2, 11, 101, 102, 103, 104, 4, -(1/0)] #[2, 11, 101, 102, 103, 104, 4, -(1/0)]
+-- F4: boxed SINGLE constant / multi-axis writers publish the declared shape (flip of the slice A "not
+-- boxed" pins above); a writer whose reach exceeds the box fails with `writerExtentExceedsBox`.
+#guard agree (pinAll 8 S3) convIn64 convIn32 #[0, 0, 0, 10, 0, 0, 0, 0] #[0, 0, 0, 10, 0, 0, 0, 0]
+#guard agree convBoxed convIn64 convIn32 #[1, 12, 123, 234, 340, 400, 0, 0] #[1, 12, 123, 234, 340, 400, 0, 0]
+#guard refShape (pinAll 3 S3) convIn64 == some (.writerExtentExceedsBox "S" 1 0 3 4)
+#guard planShape (pinAll 3 S3) convIn64 == some (.writerExtentExceedsBox "S" 1 0 3 4)
+#guard refShape (pinAll 5 conv) convIn64 == some (.writerExtentExceedsBox "S" 1 0 5 6)
+#guard planShape (pinAll 5 conv) convIn64 == some (.writerExtentExceedsBox "S" 1 0 5 6)
+-- F5: D5 with a multi-axis writer: `S(a)` declared over the writer's own source axis `a` keeps the
+-- DERIVED shape (reach 6), not the declared 4, and the collector does not box it.
+def f5 : TLProgram := cstProg [a] [sumSlot] facAB
+#guard shapesOf f5 == (some [6], some [6], some [6])
+#guard B5cSingleBoxTest.groupsOf f5 == []
+-- F6: an UNPINNED group has no box: two writers of different extents are `writerExtentMismatch`,
+-- equal extents are accepted. Donors: `conv` (extent 6), `bareA` (extent 4).
+def f6bad : TLProgram := { conv with stmts := conv.stmts ++ [bareA] }
+def f6ok : TLProgram := { conv with stmts := conv.stmts ++ conv.stmts }
+#guard refShape f6bad convIn64 == some (.writerExtentMismatch "S" 2 0 6 4)
+#guard planShape f6bad convIn64 == some (.writerExtentMismatch "S" 2 0 6 4)
+#guard sourceError f6ok == none
+#guard agree f6ok convIn64 convIn32 #[2, 24, 246, 468, 680, 800] #[2, 24, 246, 468, 680, 800]
+-- F8: a RAW `.affine (.const _)` slot in a group (a hand-built schedule that skipped `lowerArith`) is
+-- refused by constructor. Unreachable through `compile`/`compileToScheduled`: `lowerArith` lowers every
+-- raw constant of a plain statement (only a statement carrying a scan slot keeps one, and scan bodies are
+-- not collected). Donor: `bypass`.
+def rawInGroup : Option CompileError :=
+  (scheduled (as64 f1)).bind fun s =>
+    match validateScheduled { s with stmts := s.stmts.map fun
+      | .plain (.scatter nm _ r) => .plain (.scatter nm [cst 3] r)
+      | x => x } with
+    | .error e => some e
+    | .ok _ => none
+#guard rawInGroup == some (.multiWriterScatter "S")
+
 end LeanNCD.Eval.Plan.ScatterGeometryTest
