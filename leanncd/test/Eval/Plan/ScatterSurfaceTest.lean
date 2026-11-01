@@ -171,4 +171,41 @@ def scanMultiStep : TLProgram := tlprog!{
 #guard compErr scanMultiStep ==
   some "preflight LeanNCD.Eval.Plan.CapabilityError.multiAxisScatterLhs \"G: affine LHS slot\""
 
+-- R1/R2 (D5 pinned observation; review finding L1-1). Donor: the surface fixture `f1Surf` above (same
+-- pinned-declaration constant writers), with a rank-2 destination `S(k, b)` where EVERY declared axis is
+-- pinned and the row writer carries an IDENTITY slot `b` over its own declared axis. The D5 exclusion fires
+-- whenever any declared axis occurs among the writer's own source axes, identity slot included, so the
+-- lone writer is NOT boxed and keeps the derived shape [4, 3]; two such writers publish the declared
+-- [8, 3]. R1 vs R2 differing is the documented consequence of that exclusion (the writer count changes
+-- the shape when a writer has an identity slot over a declared axis), not a bug; if D5 is ever narrowed,
+-- R1 must move to [8, 3] deliberately. Cells are OBSERVED (rows of 3, row-major); B = [1, 10, 100], so a
+-- transposed or shifted reading differs.
+def r1Surf : TLProgram := tlprog!{
+  axis k : ℕ = 8, b : ℕ = 3
+  tensor f32 B(b), S(k, b)
+  S[=3, b] := B[b]
+}
+#guard compErr r1Surf == none
+#guard (cells r1Surf).1.map (·.1) == some [4, 3]
+#guard (cells r1Surf).2.1.map (·.1) == some [4, 3]
+#guard (cells r1Surf).2.2.map (·.1) == some [4, 3]
+#guard agree r1Surf convIn64 convIn32 #[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 10, 100]
+  #[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 10, 100]
+
+-- R2: two row writers (`=3` and `=5`) into the same pinned declaration: declared shape [8, 3], row 3 holds
+-- B and row 5 holds B again (cells observed). Compare R1: same declaration, shape [4, 3] vs [8, 3].
+def r2Surf : TLProgram := tlprog!{
+  axis k : ℕ = 8, b : ℕ = 3
+  tensor f32 B(b), S(k, b)
+  S[=3, b] := B[b]
+  S[=5, b] := B[b]
+}
+#guard compErr r2Surf == none
+#guard (cells r2Surf).1.map (·.1) == some [8, 3]
+#guard (cells r2Surf).2.1.map (·.1) == some [8, 3]
+#guard (cells r2Surf).2.2.map (·.1) == some [8, 3]
+#guard agree r2Surf convIn64 convIn32
+  #[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 10, 100, 0, 0, 0, 1, 10, 100, 0, 0, 0, 0, 0, 0]
+  #[0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 10, 100, 0, 0, 0, 1, 10, 100, 0, 0, 0, 0, 0, 0]
+
 end LeanNCD.Eval.Plan.ScatterSurfaceTest

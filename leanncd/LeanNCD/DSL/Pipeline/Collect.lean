@@ -140,7 +140,12 @@ def writerGroupBasis (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
     `Out[2*i] := X[i]` declares `Out` over its own source axis, so such a writer keeps the derived
     shape. This also covers the identity writer (`tensor S(i)` with `S[i] := A[i]`, same axis and same
     pinned size, so the shape is the declared one already) and a transposed write over the declared
-    axes. Every excluded case keeps today's behaviour. -/
+    axes. The exclusion fires whenever ANY declared axis occurs among the writer's own source axes,
+    including an IDENTITY slot over a declared axis: with `tensor S(k, b)` pinned, the lone writer
+    `S[=3, b]` is not boxed and keeps the derived shape `[4, 3]`, while two such writers (`S[=3, b]`,
+    `S[=5, b]`) are collected and publish the declared `[8, 3]` (fixtures `r1Surf`/`r2Surf` in
+    `ScatterSurfaceTest`). So for such a writer the published shape depends on the writer count; this is
+    the documented consequence of D5, not a defect. Every excluded case keeps today's behaviour. -/
 def boxedSingleGroups (env : DeclEnv) (pinned : Std.HashMap UID Nat) (stmts : List ScanStmt) :
     List WriterGroup :=
   let names := (stmts.flatMap routeWrites).eraseDups

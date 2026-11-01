@@ -200,7 +200,10 @@ private def derivedShape (source : AdmittedSource) (st : AdmittedStatement sourc
 /-- B5c + slice B (B-D3): production publishes the DECLARED shape for a single write whose destination
     is boxed (a declared destination with pinned axes), whatever the writer's slot forms (single-axis,
     multi-axis, constant), unless a destination axis is one of the writer's own source axes (such an
-    axis names the source axis, D5, and the derived shape stays). The oracle also uses the declared
+    axis names the source axis, D5, and the derived shape stays). The test fires for ANY declared axis
+    among the source axes, an IDENTITY slot over a declared axis included: with `tensor S(k, b)`
+    pinned, `S[=3, b]` alone keeps the derived `[4, 3]`, while two such writers publish the declared
+    `[8, 3]` (fixtures `r1Surf`/`r2Surf` in `ScatterSurfaceTest`). The oracle also uses the declared
     shape, so there is nothing to override. Stated from the admitted statement alone, not from
     production's `boxedSingleGroups`. The oracle cannot see whether an axis was pinned: declared
     extents are taken as pinned. -/
