@@ -1,7 +1,9 @@
 # Scatter geometry slice B: groups, boxed writers, surface syntax
 
 **Scope approved 2026-10-30 (slice A design note, D6: "A then B") and the one new choice, the constant
-marker spelling `S[=3]`, approved by the owner on 2026-10-31. Not an implementation plan.** Read against
+marker spelling `S[=3]`, approved by the owner on 2026-10-31. Not an implementation plan: the plan exists as
+[additive_scatter_geometry_b_plan.md](additive_scatter_geometry_b_plan.md) (this note stays binding; its
+section 4 task list became the plan's T1-T5).** Read against
 local `main` `eab7dded`. Claims about current code were read from the tree on 2026-10-31; claims marked
 **(probe)** are what the prototype dispatch must confirm before the plan ships. Slice A's design note
 ([additive_scatter_geometry_design.md](additive_scatter_geometry_design.md) section 5, "Slice B") and record
