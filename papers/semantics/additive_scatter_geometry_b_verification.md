@@ -112,15 +112,32 @@ Run in the proto worktree at the T5 tip:
 | No `File.lean:NNN` in shipped text | Met: patches, plan, record, this file (greps above) |
 | Recurring-defect family: siblings named, case x class table is a deliverable, every S cell owned | Met in plan section 5; S cells are owned in section 2 or parked in section 5 with costs; two lens-1 observations are requested |
 | Every required fixture names its donor | Partly: T2 donors named in plan T2 and in the test file; T4 donors (`convOf sumSlot`, F1) named; ParseProgramTest pins have no donor beyond the pre-change arms (U2) |
-| Task boundaries pass the reviewer test, tiny additions merged | Met: five tasks, each with its own risk row; T4 is the smallest (one new file) and is separate because it is the surface evidence |
+| Task boundaries pass the reviewer test, tiny additions merged | Met: six tasks (T6 added after review), each with its own risk row; T4 is the smallest (one new file) and is separate because it is the surface evidence |
 | Risk entry states fixture and mutation-cycle count | Met (plan section 4 table) |
 | Global Constraints exact values; "does NOT do" with owners | Met (plan section 2, section 7); job counts 8843 / 8844 are observed; T3-alone job count stated as not built |
 | New subsystem discoverable | Met: `ScatterSurfaceTest` is in the `Tests` glob (lakefile row) and described in two `AGENTS.md` rows; no new subsystem otherwise |
 | Briefs list symbols as `identifier @ file` with window-read instruction | Met (plan section 4, preamble in section 1) |
 | `AGENTS.md` injected sections at most about 3k characters | Met for `DSL/AGENTS.md` (2562); the other two nodes' injected sections were not edited |
-| Mutation cycles in `papers/<plan>_mutations*.json`, expects from observed failures, `--check` passes | Met: `manifest OK: 17 entries`; T3 expects are file prefixes (weak, stated) |
-| Close-out and authoring records in `_record.md`, live plan at most about 800 lines | Met: plan 468 lines |
+| Mutation cycles in `papers/<plan>_mutations*.json`, expects from observed failures, `--check` passes | Met: `manifest OK: 18 entries` (re-run by the controller against the T6 tip after adding `SGB-T6-01`); T3 expects are file prefixes (weak, stated) |
+| Close-out and authoring records in `_record.md`, live plan at most about 800 lines | Met: plan 517 lines after the review fixes (was 468) |
 | Documentation-sweep steps written as commands | Met (T5 section) |
 | Task expected over about 60 turns marked for a two-dispatch split | N/A as a patch: T1 is applied, not authored; the prototype breach is recorded |
 | Authoring ran as two dispatches, code ships as patches that apply in order | Met: prototype (two dispatches) plus this write-up; replay verified |
 | Reviewer and fixer briefs give window sizes; reviewers append findings; one fix dispatch per group | Met in plan section 6 and section 1 (reviewers write to named files); the fix-per-group rule is stated by the skill, not repeated |
+
+## Review-time and T6 checks (2026-11-01, controller unless noted)
+
+| Check | Result |
+| --- | --- |
+| Authoring-time review, two lenses | `additive_scatter_geometry_b_review_siblings.md` (0 P1, 1 P2, 2 P3) and `additive_scatter_geometry_b_review_surface.md` (0 P1, 0 P2, 5 P3); adjudication in the record |
+| Lens 2 recomputed the plan's 32 blob rows at the T4 and T5 tips | all matched (lens report; the controller did not repeat it) |
+| T6 tip identity | proto branch tip `8b8eaabe4ea8080cb4679748b1931cac726cbcbe`, worktree clean (controller `git status`) |
+| T6 post-state blobs, controller `git rev-parse 8b8eaabe:<path>` | the four hashes in plan section 7 match the fixer's list exactly |
+| T6 patch file | 108 lines, `diff --git` headers for exactly the four paths; blob `bbfd3509b118a5b537263dff29e76f30f5ea8d93` (`git hash-object`) |
+| T6 replay onto `2ad72b7c` | done by the fixer (detached checkout, `git apply`, four blob matches, branch restored, clean); NOT repeated by the controller, and T1-T6 were not replayed in one run from the base after T6 was added (T1-T5 were, by the write-up dispatch; T1-T4 by the controller) |
+| Full build `LeanNCD Tests JaxExperiment` | controller: 8844 jobs green at `2ad72b7c` and again at `8b8eaabe` |
+| Manifest `--check` with `SGB-T6-01` added | controller: `manifest OK: 18 entries, 18 selected, every old-string unique` against the T6 tip |
+| `SGB-T6-01` real run | fixer only (one-entry manifest): PASS, killed by `Eval.Plan.ScatterSurfaceTest` with only the four `r1Surf` guards failing; the controller did not repeat it |
+| 17-entry real run after T5 and T6 | NOT repeated (observed 17/17 on the T4 tip by the prototype agents) |
+| `r1Surf`/`r2Surf` exercise only native legs | confirmed by grep: no oracle or `conditionCount` use; the oracle's D5 agreement for the identity-slot row is therefore not pinned (stated in plan section 5) |
+| plan has no code fences and no `File.lean:NNN` after the edits | controller grep: no hit (checked after the last edit) |

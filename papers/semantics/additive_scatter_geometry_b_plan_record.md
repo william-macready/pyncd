@@ -96,7 +96,10 @@ is unbounded; the executor never hand-edits the re-pins.
 | validation of degenerate slots `a + a`, `0*a + b` | about 1 (Direct path) |
 | shared predicate between `boxedSingleGroups` and the oracle | about 0.5 |
 | `OracleSortRules.predictedExtent` multi-axis exact reach | about 0.3 |
-| rank-0 destination in `declaredShapeWins` (`!declaredAxes.isEmpty`) | about 0.3 (Direct path) |
+| rank-0 destination in `declaredShapeWins` (`!declaredAxes.isEmpty`) | CLOSED 2026-11-01: unreachable (lens 1 observed `rankMismatch "S" 0 1` at `compileToScheduled` and the oracle's admission refusal) |
+| narrow the D5 exclusion to non-identity positions (review L1-1; owner chose "keep D5") | about 1 (Direct path, may re-pin corpus programs) |
+| zero-coefficient multi-axis writer in a group: observed bit-equal (lens 1), no pin | about 0.2 |
+| `writerExtentExceedsBox` message says "multi-writer ... writer 1" for a single boxed writer (L2-4) | about 0.1 |
 | independent kill power of F1-F6 (per-file `lean-file.sh` against each engine mutant) | about 1 |
 | tighten T3 manifest `expect` strings to line pins | about 0.3 |
 | zero-coefficient writer in a group or boxed destination: no pin | about 0.3 |
@@ -104,3 +107,28 @@ is unbounded; the executor never hand-edits the re-pins.
 | wording of the three historical narrative notes | about 0.2 |
 | predicate destination groups; negative surface coefficients; route/JAX | not estimated |
 | other slice A parked nits | see slice A record, not re-derived |
+
+## Authoring-time review and adjudication (2026-11-01)
+
+Two lenses over the package at the T5 tip `2ad72b7c`, each writing findings incrementally to its own file:
+`additive_scatter_geometry_b_review_siblings.md` (lens 1, siblings and soundness, opus, about 61 tool calls,
+181k subagent tokens) and `additive_scatter_geometry_b_review_surface.md` (lens 2, grammar, degenerate forms,
+package truth, sonnet, about 74 tool calls, 176k subagent tokens). No P1 from either. The numbers are the
+harness's per-agent figures, not the Rule 6 cumulative-input measure (not run).
+
+| Finding | Severity | Disposition |
+| --- | --- | --- |
+| L1-1: D5 fires on an identity slot over a declared axis, so one `S[=3, b]` writer publishes `[4, 3]` and two publish `[8, 3]` (B-D3's sentence was too broad) | P2 | Owner decision 2026-11-01: KEEP D5. B-D3 reworded in the plan, docstrings fixed and the pair pinned by `r1Surf`/`r2Surf` (T6); narrowing parked (about 1) |
+| L1-2: `route` ignores the declared box, now also for constant and multi-axis writers | P3 | T6 `DSL/AGENTS.md` sentence |
+| L1-3 / L2-3: all-zero slots fail at run time, zero-coefficient declared axis fires D5, `0*a + b` makes `a` a collision axis | P3 | T6 `DSL/AGENTS.md`; degenerate-slot validation stays parked |
+| L2-1: unspaced `a+b+1` is also a parse error | P3 | T6 `DSL/AGENTS.md` |
+| L2-2: T2 guard count wording | P3 | plan section 4 corrected (20 `#guard` lines in all, including `conditionCount`) |
+| unconfirmed (lens 2): "15 re-pinned guards in 7 modules" | P3 | Counted by the controller: the T1 patch changes 25 `#guard` lines; the ledger's 15 counts logical guards. The plan now states both |
+| L2-4: `writerExtentExceedsBox` wording for a single writer | P3 | parked (about 0.1) |
+| L2-5: master design doc status table stale until the section 8 completion note | P3 | already an executor step (plan section 8) |
+| rank-0 and zero-coefficient group cells (plan marked unprobed) | info | rank-0 closed as unreachable; the group value is recorded as observed and parked (plan sections 2 and 5) |
+
+Lens 2 did not run `git apply --check`, the real manifest, or the remaining risk-table fixture counts, and did
+not re-observe the 8843/8844 job counts; the controller re-ran the full build at the T5 tip (8844) and at the T6
+tip (8844). The fixer for T6 (about 81 tool calls against the 60 cap, 121k subagent tokens) is a Rule 6 call-count
+breach. Authoring tokens in total were not measured with `token-report.py`.

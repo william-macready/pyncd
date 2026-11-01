@@ -2,13 +2,13 @@
 
 **Status: execution-ready package; execution not yet started.** The design note
 ([additive_scatter_geometry_b_design.md](additive_scatter_geometry_b_design.md)) is BINDING: scope approved
-2026-10-30, constant spelling `S[=3]` approved 2026-10-31. Its section 4 task list became T1-T5 below. The
+2026-10-30, constant spelling `S[=3]` approved 2026-10-31. Its section 4 task list became T1-T5 below, and T6 (the pre-execution review fixes, section 9) was added on top. The
 patches were generated against `759bbf56a9be779b26dfc675405cb62794b17ad7` (the design-note commit; local
 `main` was `5cee18a3` when this package was authored, which only adds papers); the executor does not trust that sha: it re-checks `git apply --check` on whatever
 local `main` is, and any descendant that has not touched the 26 paths of section 7 applies.
 
 **Process: Full.** A new capability (two surface slot forms) on a soundness surface (what the collector admits
-and which shape is published), five tasks, all code authored and replayed in a prototype worktree and shipped
+and which shape is published), six tasks, all code authored and replayed in a prototype worktree and shipped
 as patches; the executor replays and verifies, it does not design.
 
 **Goal.** A top-level scatter whose slot names two or more axes (`S[a + b] := ...`) or is a constant
@@ -45,10 +45,11 @@ Open every implementation, review and fix brief with this preamble (resolve `<wo
 - **Do not push.** Local `main` stays ahead of `origin/main`; say so in the final report.
 - **Patches are the code.** Directory `papers/semantics/additive_scatter_geometry_b_patches/`: apply
   `T1-engine.patch`, `T2-engine-fixtures.patch`, `T3-surface.patch`, `T4-surface-fixtures.patch`,
-  `T5-docs.patch` in that order, each after `git apply --check <absolute patch path>` run in the worktree
-  root. One commit per patch: five commits. Stage by explicit path. Do not retype Lean from this document;
-  it has no Lean code fences on purpose. **T1 must be applied as one patch, never reconstructed by hand:**
-  the engine change forces 15 re-pinned guards across 7 test modules (section 3), and the prototype's first
+  `T5-docs.patch`, `T6-review-fixes.patch` in that order, each after `git apply --check <absolute patch path>`
+  run in the worktree root. One commit per patch: six commits. Stage by explicit path. Do not retype Lean from
+  this document; it has no Lean code fences on purpose. **T1 must be applied as one patch, never reconstructed
+  by hand:** the engine change forces 15 logically re-pinned guards (25 `#guard` lines changed in the patch;
+  the prototype ledger counts the 15) across 7 test modules (section 3), and the prototype's first
   attempt to hand-edit them took about 152 tool calls.
 - **BLOCKED rule.** A patch that does not apply, or a blob hash (section 7) that differs after the owning
   task, is BLOCKED: stop and report with the command output. Never repair a patch by hand and never loosen a
@@ -60,8 +61,8 @@ Open every implementation, review and fix brief with this preamble (resolve `<wo
   first error, not the last.
 - **Mutation manifest.** `bash leanncd/scripts/mutation-manifest.sh --check <worktree>/leanncd
   <worktree>/papers/semantics/additive_scatter_geometry_b_mutations_post.json` unfiltered first (expect
-  `manifest OK: 17 entries`), then, only after all five patches are applied, the REAL run (not only
-  `--check`): `--task T1` (9 entries) and `--task T3` (8 entries), one at a time, each in the background with
+  `manifest OK: 18 entries`), then, only after all six patches are applied, the REAL run (not only
+  `--check`): `--task T1` (9 entries), `--task T3` (8 entries) and `--task T6` (1 entry), one at a time, each in the background with
   `--out <scratch file>`. Run `git status` after each; the tree must be clean.
 - **Budget.** At most three substantive work items per dispatch, 60 turns, 250k peak context per dispatch;
   report measured usage and any breach. No nested delegation.
@@ -87,9 +88,17 @@ Decisions, all BINDING (design note section 2):
   axis `"#const" ++ toString u`, for display only. A user axis spelled `#constUser` is now an ordinary axis
   (fixture F7 pins both compile chains).
 - **B-D3 Shape change, intended.** A single constant or multi-axis writer into a destination declared with
-  every axis pinned now publishes the DECLARED shape; a writer reaching past the box fails with
-  `writerExtentExceedsBox`. The D5 idiom exclusion (a declared axis that is also one of the writer's source
-  axes keeps the derived shape) is unchanged. Observed programs whose published shape moved (all other
+  every axis pinned now publishes the DECLARED shape, PROVIDED no declared axis occurs among the writer's own
+  source axes; a writer reaching past the box fails with `writerExtentExceedsBox`. The D5 idiom exclusion (a
+  declared axis that is also one of the writer's source axes keeps the derived shape) is unchanged, and it
+  fires for an IDENTITY slot too. Consequence, decided by the owner on 2026-11-01 (review finding L1-1: keep
+  D5, document and pin): with `tensor S(k, b)`, `axis k = 8`, `axis b = 3`, ONE writer `S[=3, b] := B[b]`
+  publishes `[4, 3]` (the `b` slot is an identity over declared `b`, so the derived shape stays), while TWO
+  such writers (`S[=3, b]`, `S[=5, b]`) publish the declared `[8, 3]`. So for a writer with an identity slot
+  over a declared axis the published shape depends on the writer count; this already held for single-axis
+  writers (`S[2*a + 1, b]`) since B5c and is pinned by `r1Surf`/`r2Surf` in `ScatterSurfaceTest` (T6).
+  Narrowing D5 to non-identity positions is parked (about 1 dispatch, Direct path, would re-pin corpus
+  programs). Observed programs whose published shape moved (all other
   accepted programs unchanged; the full build is green with only the re-pins of section 3):
   `convBoxed` (`S[a+b]`, declared `k = 8`) `[6]` to `[8]`; `S3` pinned 8 (`S[3]`, both `.scatter` and
   `.assign` spellings) `[4]` to `[8]`; `SourceDifferentialScatterTest` `fI1`, `fI2`, `fMask`, `fFbig` derived
@@ -122,7 +131,11 @@ Decisions, all BINDING (design note section 2):
 | validation of degenerate slots `a + a` (acts as `2*a`) and `0*a + b` (accepted, `a` becomes a collision axis) | parked | about 1 (Direct path, plus re-pin of the two U5 pins) |
 | shared predicate between `boxedSingleGroups` and the oracle (`declaredShapeWins`, test-side `bounded`, `singleBoxed`) | parked | about 0.5 |
 | test-side `OracleSortRules.predictedExtent` uses the legacy sum rule for a multi-axis slot (a+b over 4,3 gives 7, production gives 6); now reachable, unexercised by any corpus program | parked | about 0.3 |
-| `declaredShapeWins` does not test `!declaredAxes.isEmpty` like production's `boxed`: for a RANK-0 destination with a non-empty write it is vacuously true (pre-existing for single-axis forms, now also constants); NOT probed by this slice | parked, review lens 1 should observe it | about 0.3 (Direct path) |
+| `declaredShapeWins` does not test `!declaredAxes.isEmpty` like production's `boxed`. OBSERVED by review lens 1 (2026-11-01): UNREACHABLE for a non-empty write, because a rank-0 destination with a scatter writer is refused at `compileToScheduled` (`rankMismatch "S" 0 1`) and by the source oracle's admission; so the vacuous-truth cell cannot disagree with production | closed as unreachable (no work) | 0 |
+| narrow the D5 exclusion to declared axes used in a NON-identity position (review L1-1; changes B5c semantics, mirrored in `declaredShapeWins` and test-side `singleBoxed`) | owner chose "keep D5" on 2026-11-01; parked | about 1 (Direct path, may re-pin corpus programs) |
+| `S[0*a + 0*b + 3]` (a slot with NO placing term) has extent 3 and every leg fails with a range error, while `S[=3]` has extent 4; in `tensor S(a)` the writer `S[0*a + b]` fires D5 through the zero-coefficient declared axis `a` (review L1-3, L2-3); documented in `DSL/AGENTS.md` by T6, not validated | parked (same row as degenerate-slot validation) | included in the 1 above |
+| zero-coefficient multi-axis writers in a GROUP: OBSERVED by lens 1, two `S[0*a + b]` writers give `[20, 200, 2000]` unboxed and `[20, 200, 2000, 0, 0, 0, 0, 0]` boxed, reference and both checked legs bit-equal; no fixture pins it | parked | about 0.2 (one fixture) |
+| `writerExtentExceedsBox` reports "multi-writer ... writer 1" for a single boxed writer (wording of the pre-existing message, review L2-4) | parked | about 0.1 |
 | independent kill power of fixtures F1-F6 (the manifest cannot show it, section 7) | parked | about 1 |
 | tighten the T3 manifest `expect` strings to line pins | parked | about 0.3 |
 | the other slice A parked nits (record `additive_scatter_geometry_a_record.md`, "Parked scope") | slice A record | not restated here, not re-derived |
@@ -185,19 +198,21 @@ guards pass; none was adjusted to fit).
   `G[=2, l +1]` and base `G[=1, 0]`: `compile CompileError.overlappingScatter "G"`; `G[j + k, l +1]`:
   `preflight CapabilityError.multiAxisScatterLhs "G: affine LHS slot"`.
 - **Job counts (full build `LeanNCD Tests JaxExperiment`).** T1 only (first engine commit): 8843. T1+T2:
-  8843. T1-T4 and T1-T5: 8844 (the `+1` is `ScatterSurfaceTest`). T3 alone was not built separately.
+  8843. T1-T4, T1-T5 and T1-T6: 8844 (the `+1` is `ScatterSurfaceTest`; T6 adds no module). T3 alone was not
+  built separately.
 
 ## 4. Tasks
 
 | Task | Patch | Fixtures / pins | Mutation cycles | Risk |
 | --- | --- | --- | --- | --- |
-| T1 engine | `T1-engine.patch` (14 files) | 15 re-pinned guards in 7 modules; 0 new fixtures | 9 (`SGB-T1-01..09`, shared with T2) | high: `Ast.lean` rebuild, many re-pins |
-| T2 engine fixtures | `T2-engine-fixtures.patch` (2 files) | F1-F8 in `ScatterGeometryTest` (8 families, 20 added guard lines) plus `conditionCount fI2 == 0` | (the same 9) | medium |
+| T1 engine | `T1-engine.patch` (14 files) | 15 logically re-pinned guards (25 `#guard` lines changed) in 7 modules; 0 new fixtures | 9 (`SGB-T1-01..09`, shared with T2) | high: `Ast.lean` rebuild, many re-pins |
+| T2 engine fixtures | `T2-engine-fixtures.patch` (2 files) | F1-F8 in `ScatterGeometryTest` (8 families) plus `conditionCount fI2 == 0` in `SourceDifferentialScatterTest`: 20 added `#guard` lines in all | (the same 9) | medium |
 | T3 surface syntax | `T3-surface.patch` (3 files) | pins U1, U2, U3, U5 (elaboration half) in `ParseProgramTest` (14 added guard lines) | 8 (`SGB-T3-01..08`) | medium |
 | T4 surface fixtures | `T4-surface-fixtures.patch` (2 files) | `ScatterSurfaceTest`: convSurf, biasSurf, f1Surf, constPinSurf, constLoneSurf, U5 value pins, U6 scan refusals (21 added guard lines) | (the T3 8) | low |
 | T5 docs | `T5-docs.patch` (13 files) | none | none | low, but rebuilds downstream (comments in `.lean` files) |
+| T6 review fixes | `T6-review-fixes.patch` (4 files: `ScatterSurfaceTest.lean`, `Collect.lean`, `Differential.lean`, `DSL/AGENTS.md`) | `r1Surf`, `r2Surf` (10 added `#guard` lines): the D5 identity-slot pair of B-D3; docstring wording in `boxedSingleGroups` and `declaredShapeWins`; `DSL/AGENTS.md` notes (parse spellings, zero-coefficient slots, `route` ignores the box) | 1 (`SGB-T6-01`: D5 exclusion removed, killed by `ScatterSurfaceTest` alone, kill site `r1Surf`) | low, but rebuilds downstream (docstrings) |
 
-Total: 17 manifest entries; 5 commits; one full build (8844 jobs) at the end of T1 and again at the end.
+Total: 18 manifest entries; 6 commits; one full build (8844 jobs) at the end of T1 and again at the end.
 Task boundaries: T1 and T2 are separate because a reviewer could reject the production change and re-pins
 while approving the new fixtures, or the reverse; T3 and T4 for the same reason on the surface. T1's expected
 turn count was above 60 in the prototype; as a patch it is one `git apply` plus one full build.
@@ -299,6 +314,21 @@ Docs sweep as commands, run in the worktree root after T5 (record counts in the 
   remaining hit must be correct under section 2.
 - `rg -n "^\+.*[A-Za-z]+\.lean:[0-9]+" papers/semantics/additive_scatter_geometry_b_patches` must report nothing.
 
+### T6: pre-execution review fixes (`T6-review-fixes.patch`)
+
+Added after the authoring-time review (section 9), on top of T5. Four files: `r1Surf` and `r2Surf` appended at
+the end of `ScatterSurfaceTest.lean` (no earlier line moves; the T3 manifest entries are file-prefix matches,
+so they are unaffected); the D5 paragraph of the `boxedSingleGroups` docstring in `Collect.lean` and the
+`declaredShapeWins` docstring in `Differential.lean` (comment text only, no code); and `DSL/AGENTS.md` notes:
+`a + b +1` and `a+b+1` are both parse errors (the `+1` token) and the bias spelling is `a + b + 1`; `0*a + b`
+is accepted with `a` a summed collision axis whereas `Out[0*i]` is rejected, and a slot with no placing term
+compiles but fails at run time; `route` / `TLProgram.compile` never applies a declared box (it calls
+`desugarMultiWriters` without the pinned map), so a boxed single writer whose reach exceeds the box compiles
+through `route` but is refused natively with `writerExtentExceedsBox`, now also for constant and multi-axis
+writers. Check: `git apply --check`, the four hash rows marked T6, full build 8844 jobs, `--task T6` PASS.
+Observed at authoring: `r1Surf` shape `[4, 3]` and cells nine zeros then `1, 10, 100`; `r2Surf` shape `[8, 3]`
+with rows 3 and 5 each `1, 10, 100`, all other cells 0; reference, checked f64 and checked f32 agree.
+
 ## 5. Recurring-defect audit (case x class)
 
 The defect family (slice A defects A1 and A2 both shipped because a diff reader could not see them): a slot
@@ -330,18 +360,19 @@ and pinned, **S** = silently ignored (no pin).
 | multi-axis (`a+b`) | R (`conv`, `convSurf`) | admitted since T1: R (`convTwo`, `twoAxes`, F2, F6) | collected, declared shape wins: R (F4, `convBoxed`, `multiAxisOne`, `fFbig`); D5 with multi-axis: R (F5) | refused `multiAxisScatterLhs` at preflight: F (U6); reference/legacy overwrite there (F3): **S**, owner F3 |
 | constant, lowered (`S[=3]`, hand-built `.affine (.const n)`) | R (`constPinSurf`, `fI1`..) | admitted: R (`explicitConstant`, F1, F2, `f1Surf`) | collected, declared shape wins: R (F4, `constOne`, `fI1`, `fI2`, `fMask`) | `overlappingScatter` at compile: F (U6, `StructuralTest`) |
 | constant, RAW (hand-built schedule that skipped `lowerArith`) | refused by preflight (`scatterOrAffineLhs`, `CompileTest`): R | `multiWriterScatter`: F (F8, fixture `rawInGroup`) | not collected: F (by constructor; F8) | refused: R |
-| zero coefficient (`0*a + b`, `0*i`) | multi-axis surface form accepted: R as observed (U5); single-axis `Out[0*i]` rejected out of range: R | single-axis `0*i` group admitted: R (`zeroScale` @ `B5NativeTest`); multi-axis `0*a + b` in a group: **S** | collected: **S** (not separately pinned) | slot admitted, scan refused: R |
+| zero coefficient (`0*a + b`, `0*i`) | multi-axis surface form accepted: R as observed (U5); single-axis `Out[0*i]` rejected out of range: R; a slot with no placing term (`0*a + 0*b + k`) compiles and fails at run time with a range error in every leg: observed by lens 2, documented (T6), not pinned: **S** | single-axis `0*i` group admitted: R (`zeroScale` @ `B5NativeTest`); multi-axis `0*a + b` in a group: observed bit-equal across reference and both checked legs by lens 1, not pinned: **S**, parked 0.2 | collected: **S** (not separately pinned); a zero-coefficient declared axis fires D5: observed, documented (T6) | slot admitted, scan refused: R |
+| constant or multi-axis slot beside an IDENTITY slot over a declared axis (`S[=3, b]`, `tensor S(k, b)` pinned) | R (`r1Surf`) | two writers publish the declared shape: R (`r2Surf`) | D5 fires, derived shape `[4, 3]`: R as the documented consequence of the exclusion (`r1Surf`; owner decision 2026-11-01) | refused as for a plain constant: F (U6) |
 | repeated axis (`a + a`) | accepted, behaves as `2*a`: R as observed (U5) | **S** | **S** | **S** |
 | diagonal (`Y[i,i]`) | R (`diagonal`) | R | D5 excludes the repeated free slot: R | **S** (no pin, slice A parked) |
 | axis spelled `#const...` | ordinary axis: R (F7, both compile chains) | **S** | collected into the declared box: R (F7) | **S** |
 | predicate destination | refused at capability tier: R | `multiWriterScatter`: F (`B5BoundaryTest` `predicateDest`) | not boxed: R | n/a |
-| rank-0 destination (no declared axes) | **S** | **S** | not boxed in production (`boxed` needs `!ax.isEmpty`); `declaredShapeWins` is vacuously true: **S** | n/a |
+| rank-0 destination (no declared axes) | a non-empty scatter write is refused at `compileToScheduled` (`rankMismatch "S" 0 1`) and by the source oracle's admission: unreachable (observed by lens 1) | same refusal | not boxed in production (`boxed` needs `!ax.isEmpty`); `declaredShapeWins` is vacuously true but the cell is unreachable | n/a |
 
 Oracle and predictor cells:
 
 | predictor | production rule it restates | agreement pinned by | status |
 | --- | --- | --- | --- |
-| `declaredShapeWins` | `boxedSingleGroups` boxed and D5 | `conditionCount fI2 == 0` (T2), `fFbig`, `fI1`, `fI2`, `fMask` `parity`; mutants `SGB-T1-04`, `-05` | R, except the rank-0 cell above (**S**) |
+| `declaredShapeWins` | `boxedSingleGroups` boxed and D5 | `conditionCount fI2 == 0` (T2), `fFbig`, `fI1`, `fI2`, `fMask` `parity`; mutants `SGB-T1-04`, `-05`; D5 identity-slot row `r1Surf` (T6, mutant `SGB-T6-01` mutates production, not the oracle: the oracle's own D5 agreement for that row is not pinned) | R; rank-0 cell unreachable (above) |
 | `derivedShape` | `LHSSlot.outExtent` (calls it) | `fF`, `fD` (M1) | R (calls the single home, not a restatement) |
 | `nonBareWrite` | classifies forms | `fA`..`fN` | R |
 | test `bounded` / `singleBoxed` | `LHSSlot.collectable` on source slots | `OracleSortRulesTest` C1 counts, `strictC1Tags` guards, hand rows (17 rows, 11 accepts) | R; `bounded` accepts a raw `.affine (.const _)` that production refuses, unreachable from source: **S**, harmless |
@@ -349,10 +380,11 @@ Oracle and predictor cells:
 
 Every **S** cell has an owner in section 2 (parked with an estimated cost) or is the F3 slice, EXCEPT the
 following, which this plan parks here: zero-coefficient writer in a group or boxed destination (about 0.3,
-Direct path, one fixture each), repeated axis in a group (covered by the degenerate-slot validation row of
-section 2), `#const...` axis in a group or scan context (about 0.2), diagonal scatter in a scan (about 0.3,
-inherited from slice A), rank-0 destination (section 2). The reviewers of section 6 should try to turn at
-least the rank-0 cell and the zero-coefficient group cell into observations; neither was probed here.
+Direct path, one fixture each; the group value was observed by lens 1, section 2), repeated axis in a group
+(covered by the degenerate-slot validation row of section 2), `#const...` axis in a group or scan context
+(about 0.2), diagonal scatter in a scan (about 0.3, inherited from slice A). The authoring-time review
+(section 9) probed the rank-0 cell (unreachable) and the zero-coefficient group cell (observed); the executor's
+lenses (section 6) need not repeat those two probes.
 
 ## 6. Review focus
 
@@ -412,20 +444,31 @@ Each finding gets a verdict (fix now, park with cost, reject with reason) in the
   | `leanncd/docs/test_portfolio.md` | `9d8b50d8100437be5c87a10853b7709a2fe09b01` | T5 |
   | `leanncd/test/Eval/Portfolio/EdgeCaseTest.lean` | `20141972bd7a4ab6ce1fd5208d19245531c64e63` | T5 |
   | `leanncd/test/Eval/Portfolio/KnownGapTest.lean` | `61c34ece35a12c196c005e2f6c02dfb6809a4910` | T5 |
+  | `leanncd/test/Eval/Plan/ScatterSurfaceTest.lean` | `dc44f29bee5713223b75736cdc65ca3127e4dbad` | T6 |
+  | `leanncd/LeanNCD/DSL/Pipeline/Collect.lean` | `380cba607b4b6fee37d86edaae4ed01f3c942a4e` | T6 |
+  | `leanncd/LeanNCD/Semantics/Source/Differential.lean` | `3f6f0360cb7fd0c7bb9900bef806d3bd8ea83c4b` | T6 |
+  | `leanncd/LeanNCD/DSL/AGENTS.md` | `81ce262de3c0a00bed5942a56b87c2dce543971b` | T6 |
 
   Patch file blobs (to detect a corrupted copy of the package): `T1-engine.patch`
   `0264270c1065d3469d0ad036c07e62419a4d5362`, `T2-engine-fixtures.patch`
   `9f1a2da8292977950f7cd78eea389c943473162f`, `T3-surface.patch` `260faaa6adabd0cb84accb82ac8ecf115015a6f3`,
   `T4-surface-fixtures.patch` `60747c3fd9dfd34f92ec5216bab070b5635e3048`, `T5-docs.patch`
-  `5a5c3b4174f671632667e6731f296999878798dc`.
+  `5a5c3b4174f671632667e6731f296999878798dc`, `T6-review-fixes.patch`
+  `bbfd3509b118a5b537263dff29e76f30f5ea8d93`. The T1 row of `Differential.lean` and the T4/T5 rows of
+  `Collect.lean`, `ScatterSurfaceTest.lean` and `DSL/AGENTS.md` are checked at their own stage and are
+  superseded by the T6 rows once T6 is applied.
 
 - **Final build.** `lake-build.sh <worktree>/leanncd LeanNCD Tests JaxExperiment` expects
-  `Build completed successfully (8844 jobs)` after T4 and after T5 (8843 after T1 and after T2). The count
+  `Build completed successfully (8844 jobs)` after T4, T5 and T6 (8843 after T1 and after T2; T6 observed
+  at authoring by the fixer and again by the controller). The count
   can drift by a few if main moved; any failure is BLOCKED.
-- **Manifest.** `--check` unfiltered expects `manifest OK: 17 entries, 17 selected, every old-string unique`.
-  The real run after all five patches: `--task T1` 9/9 and `--task T3` 8/8, every verdict PASS, each mutated
-  file restored byte-identically and each restore build green (`git status` clean after each). Observed at
-  authoring on the T4 tip: 17/17 killed. If a verdict is FAIL do not edit the manifest: a patch or hash
+- **Manifest.** `--check` unfiltered expects `manifest OK: 18 entries, 18 selected, every old-string unique`.
+  The real run after all six patches: `--task T1` 9/9, `--task T3` 8/8 and `--task T6` 1/1, every verdict PASS,
+  each mutated file restored byte-identically and each restore build green (`git status` clean after each).
+  Observed at authoring: 17/17 on the T4 tip (prototype agents) and `SGB-T6-01` PASS on the T6 tip (fixer, one
+  entry); the controller ran `--check` on all 18 against the T6 tip, not a real run of all 18. T6-01's `expect`
+  strings are line pins on the second and fifth `#guard` lines of `r1Surf` (read them in the manifest), so
+  they go stale if lines are inserted above `r1Surf`. If a verdict is FAIL do not edit the manifest: a patch or hash
   differs from the prototype. **What the manifest does NOT establish** (do not claim it in the record):
   (a) `ScatterGeometryTest` imports `B5cSingleBoxTest`, which imports `B5bBoxTest`, `B5BoundaryTest`,
   `B5NativeTest`; when a mutant breaks an upstream module Lake never builds `ScatterGeometryTest`, so only
@@ -439,18 +482,18 @@ Each finding gets a verdict (fix now, park with cost, reject with reason) in the
   order-invariant, so the surface cells cannot see it. (d) `SGB-T3-06..08` are killed by `ParseProgramTest`
   only. (e) a mutant breaking single-axis `Out[0*i]` behaviour is covered by `CompileTest` and
   `ScatterCompileTest` S9 in the full build only, not by any manifest entry.
-- **Diff size.** `git diff --stat <base>..HEAD -- leanncd` over the five commits touches 26 distinct paths;
-  the table above is the list (32 rows, because six paths are checked after T4 and again after T5). A
-  different count is a finding.
+- **Diff size.** `git diff --stat <base>..HEAD -- leanncd` over the six commits touches 26 distinct paths
+  (T6 adds no new path); the table above is the list (36 rows: six paths are checked after T4 and again
+  after T5, and four paths get one more row after T6). A different count is a finding.
 - **No line numbers shipped.** `rg -n "^\+.*[A-Za-z]+\.lean:[0-9]+" papers/semantics/additive_scatter_geometry_b_patches`
   reports nothing (checked at authoring), and the same pattern over the executed documentation diff
   (`git diff <base>..HEAD -- "*.md"`) must be empty.
 
 ## 8. Close-out record (executor writes `papers/semantics/additive_scatter_geometry_b_record.md`)
 
-Required fields, each from a real run: base and final commit hashes and the five commit hashes; per-task
+Required fields, each from a real run: base and final commit hashes and the six commit hashes; per-task
 `git apply --check` results; the section 7 hash table result; per-task build results and the final job count;
-the mutation table (17 lines, killer module and file, restore results) with a line stating which kills are
+the mutation table (18 lines, killer module and file, restore results) with a line stating which kills are
 by new fixtures versus upstream guards (section 7 caveat a); the section 3 values re-observed on the executed
 tree; review findings and adjudication; the T5 sweep command outputs; the observation for the rank-0 and
 zero-coefficient cells if attempted; **measured token total from the executor's own usage telemetry, naming
@@ -462,6 +505,13 @@ the Slice B row to the master plan documents the repo keeps (value-grep `scatter
 
 ## 9. Authoring evidence
 
-Record: `additive_scatter_geometry_b_plan_record.md` (deviations, decisions, call counts, parked list).
-Verification: `additive_scatter_geometry_b_verification.md` (replay, greps, manifest check, checklist).
-Prototype ledger: `additive_scatter_geometry_b_files/proto_notes.md`.
+Record: `additive_scatter_geometry_b_plan_record.md` (deviations, decisions, call counts, parked list, review
+adjudication). Verification: `additive_scatter_geometry_b_verification.md` (replay, greps, manifest check,
+checklist, T6 checks). Prototype ledger: `additive_scatter_geometry_b_files/proto_notes.md`.
+
+Authoring-time review (2026-11-01, two lenses over the package at the T5 tip `2ad72b7c`): lens 1 (what a diff
+cannot show) `additive_scatter_geometry_b_review_siblings.md`, 0 P1, 1 P2 (L1-1), 2 P3; lens 2 (grammar,
+degenerate forms, package truth) `additive_scatter_geometry_b_review_surface.md`, 0 P1, 0 P2, 5 P3. T6
+(`T6-review-fixes.patch`) is the fix batch for L1-1 (owner chose "keep D5, document and pin"), L1-2, L1-3,
+L2-1 and L2-3; the other findings are plan-text corrections or parked rows (record). The executor's own two
+lenses (section 6) still run on the executed tree.
