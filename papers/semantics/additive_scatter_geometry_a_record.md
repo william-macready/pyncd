@@ -261,9 +261,63 @@ approval, integration to local `main`, branch deletion, and worktree removal.
 The historical P0 and prior authoring runs were not rerun. No remote push
 was performed. No step is silently treated as passed.
 
-**Final status: BLOCKED.** Preserve the six implementation commits, this
+**Status at first close-out: BLOCKED (superseded by the Repair section below).** Preserve the six implementation commits, this
 record, and both reviews on the isolated branch for repair. Local `main`
 remains at the execution base. Do not merge or delete the worktree while
 the load-bearing findings remain unresolved. Local `main` remains eight
 commits ahead of `origin/main`; none of this execution's commits were
 merged or pushed.
+
+## Repair (2026-10-31)
+
+The owner chose to reserve the `#const` prefix (A2, "Option 1") and asked for all review findings to be
+fixed. Process: Direct (a localized fix plus fixtures and docs on top of the verified patches); the six
+patches are NOT regenerated, so the branch now deviates from them by exactly the two repair commits.
+
+| Finding | Repair | Evidence |
+| --- | --- | --- |
+| A1 (P1): an unrelated empty axis changed the multi-axis extent | `LHSSlot.outExtent` tests emptiness over the nonzero-coefficient terms only | `scatterDestExtent #[4,3,0] #[1,1,0] 0 = some 6`; `S[a+b] := A[a]*B[b]*C[c]` with `|c| = 0` publishes `[6]` on reference, checked f64 and checked f32; an unrelated empty free LHS axis gives `[6, 0]` on all three |
+| A2 (P2): `#const` name marker misclassified ordinary axes | new phase `checkReservedAxisNames`, first in both compile chains, throws new `CompileError.reservedAxisName` | an ordinary axis named `constUser` is still collected into the declared box (`[8]` on every leg, the measured baseline the first review only traced); `#constUser` is rejected by both `compile` and `compileToScheduled`; `#cons` is accepted |
+| D1 (P3): stale live docs | docstrings for `capabilityPreflight` and `scatterOutShape`; boxed-writer wording in `Eval/Plan/AGENTS.md`, `DSL/AGENTS.md`, `papers/backend_missing_functionality.md`; `Eval/AGENTS.md` extent sentence | repair review item 5: every edited sentence checked true against the code |
+| ORACLE-AUDIT-01 | the plan's audit row says slot admitted, whole scan refused (`s6ZeroBase`, `scanWriteRowNotAdmitted`) | wording only |
+
+Commits: `c0a094c1` (production, fixtures, repair manifest), `deae5c78` (documentation), plus the
+documentation follow-up committed with this record.
+
+Verification, all run on this branch after the repair:
+
+- Full `LeanNCD Tests JaxExperiment`: successful, 8843 jobs. (The pre-repair count was also 8843.)
+- `mutation-manifest.sh --check` on the original 31 entries: every old-string still unique, so the
+  `outExtent` edit invalidated none of them. The original manifest was NOT re-run after the repair:
+  entries 8-31 were never run by the executor, and the independent authoring replay that killed all 31
+  predates the repair. Only the two new entries below were run.
+- `additive_scatter_geometry_a_repair_mutations.json`, run with `mutation-manifest.sh`: SGA-R-A1
+  (emptiness over every term again) and SGA-R-A2 (reserved-axis check never fires) each break
+  `Eval.Plan.ScatterGeometryTest` with the expected error, restore byte-identically, and rebuild green.
+  2/2 cycles.
+- Independent review of `19046d3d..deae5c78` (one reviewer, report
+  `additive_scatter_geometry_a_repair_review.md`): PASS, no P1 or P2. A1 completeness traced across
+  negative, repeated, coalescing and unsized axes with no counterexample; A2 reaches the collector only
+  through the paths listed below.
+
+Residuals and parked items (the reviewer's P3 findings, adjudicated):
+
+- F5, accepted: a `#const` axis passes the oracle (`resolveSource` does not run the check; the oracle
+  never reaches `isConstUnit`) and is refused by both native legs, so the differential classifies it as
+  the generic native failure, with the cause in the rendered text. A hand-built `ScheduledProgram` that
+  skips the compile chains and spells an axis `#const...` is claiming to be a lowered constant (stated
+  on `constUnitPrefix`). Slice B deletes the marker, and with it this reservation.
+- F1, parked (about 0.1 dispatch, a docstring edit that rebuilds downstream): `scatterOutShape`'s
+  docstring still says `sizes[u]` defaults to 0 for an unseen UID; the code fails loud with
+  `unsizedScatterOutput`. Stale before this branch.
+- F3, not done (cosmetic): two edited lines are long (the `compileToScheduled` chain, the
+  `capabilityPreflight` docstring line).
+- F4, parked (about 0.3 dispatch): optional fixtures, a program-level `a+b+c` with an empty `c`, a
+  negative-coefficient or coalescing row, a contains-but-not-prefix reject row, and a reserved-name row
+  where the axis appears only in a declaration or only in a statement slot. Two new rows pin nothing
+  about A1/A2 (`[1,1,1] == 7` and the `#cons` row guard a kept branch and prefix drift only).
+- Authoring and execution token counts for the repair were not measured.
+
+**Status after repair: ready to merge to local `main`** (build green, repair mutants killed, repair
+review clean, findings adjudicated above). Not merged and not pushed at the time this record was
+written; the merge is a separate step.
