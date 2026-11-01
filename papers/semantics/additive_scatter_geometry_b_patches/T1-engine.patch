@@ -1,0 +1,579 @@
+diff --git a/leanncd/LeanNCD/DSL/Ast.lean b/leanncd/LeanNCD/DSL/Ast.lean
+index d1885b12..68bfb627 100644
+--- a/leanncd/LeanNCD/DSL/Ast.lean
++++ b/leanncd/LeanNCD/DSL/Ast.lean
+@@ -469,23 +469,16 @@ def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
+   || (let us := slots.filterMap (·.freeUID?)
+       us.length ≠ us.eraseDups.length)
+ 
+-/-- Name prefix of the synthetic unit axis `lowerArith` mints for a constant LHS slot
+-    (`Y[3]` becomes `Y[#constN + 3]` over an axis pinned to size 1). `#` is not an identifier
+-    character, so no SURFACE axis can carry it. Axis identity is by UID; the prefix only MARKS the
+-    synthetic axis so the multi-writer collector (`boundedScatter`) can keep treating the slot as the
+-    constant it still is (slice A, D2: the collector's admission is unchanged). The prefix is
+-    RESERVED: a hand-built `TLProgram` naming a source axis so is rejected by
+-    `checkReservedAxisNames` (`reservedAxisName`), first in both compile chains. -/
+-def constUnitPrefix : String := "#const"
+-
+-/-- Is this index the rewritten form of a constant slot: `n + 1·u` over a synthetic unit axis. -/
+-def IdxExpr.isConstUnit : IdxExpr → Bool
+-  | .affine _ [(1, a)] => a.name.startsWith constUnitPrefix
+-  | _ => false
+-
+-def LHSSlot.boundedScatter : LHSSlot → Bool
++/-- Can the multi-writer collector (`checkWriterGroup`) and the boxed-single-writer rule
++    (`boxedSingleGroups`) take this slot? Slice B (B-D1): every slot whose extent `LHSSlot.outExtent`
++    can state, i.e. a free axis, a single-axis affine form, a multi-axis affine form, and the lowered
++    constant (`n + 1·u` over a synthetic size-1 axis, an ordinary single-axis form here: nothing reads
++    the axis' NAME). Refused, by constructor: a raw `.affine (.const _)` (only a hand-built schedule
++    that skipped `lowerArith` carries one) and the scan slots. Replaces the slice A name test. -/
++def LHSSlot.collectable : LHSSlot → Bool
+   | .free _ | .freeNorm _ => true
+-  | .affine e => !e.isConstUnit && scatterAffineClass e == .bounded
++  | .affine (.const _) => false
++  | .affine _ => true
+   | _ => false
+ 
+ /-- The corner extremes `(min, max)` of the affine image `c0 + Σ c_k·x_k` over the box
+diff --git a/leanncd/LeanNCD/DSL/Compile.lean b/leanncd/LeanNCD/DSL/Compile.lean
+index f437e722..ad9e73cd 100644
+--- a/leanncd/LeanNCD/DSL/Compile.lean
++++ b/leanncd/LeanNCD/DSL/Compile.lean
+@@ -22,7 +22,6 @@ open Lean
+     producer/consumer pair is built privately inside `route` (`physicalizeForRoute`), only at the
+     categorical-routing boundary. `compile = compileToScheduled >>= route` still holds. -/
+ def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
+-  let p ← checkReservedAxisNames p
+   let a ← assignUIDs p
+   let b ← resolveDecls a
+   let b ← reclassifyIterSlots b
+@@ -41,7 +40,7 @@ def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
+     §2.1: its statement count now equals the source statement count and it contains **no**
+     generated `%nl…` name — nonlinearities reach Eval on the statement that owns them. -/
+ def TLProgram.compileToScheduled : TLProgram → FreshM ScheduledProgram :=
+-  checkReservedAxisNames >=> assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=>
++  assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=>
+     checkScatterNonlin >=> lowerArith >=> finalizeScans >=> schedule
+ 
+ /-- Stage 1 (parse) + Stage 2 (compile) at elaboration time; embed the computable
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/Collect.lean b/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
+index 37bc3dae..d455e05f 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/Collect.lean
+@@ -130,8 +130,8 @@ def writerGroupBasis (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
+     either; a rank-0 destination has nothing to pad and the D5 test below is vacuous for it) and its
+     writer is one of:
+ 
+-    * an explicit scatter with bounded geometry (`LHSSlot.boundedScatter`: no constant or multi-axis
+-      slot, D2);
++    * an explicit scatter whose every slot is `LHSSlot.collectable` (slice B, B-D1: single-axis,
++      multi-axis and lowered-constant forms; not a raw `.affine (.const _)`);
+     * a plain assign whose slots are distinct free axes;
+ 
+     **unless a declared axis occurs among the writer's own SOURCE axes** (D5): `tensor Out(i)` with
+@@ -153,7 +153,7 @@ def boxedSingleGroups (env : DeclEnv) (pinned : Std.HashMap UID Nat) (stmts : Li
+           ls.flatMap fun sl => (idxAffineForm sl.outIdx).2.map (·.2)
+         let collected := match plainAt? stmts i with
+           | some (.scatter _ ls _) =>
+-              ls.all LHSSlot.boundedScatter && !(sourceUIDs ls).any declUIDs.contains
++              ls.all LHSSlot.collectable && !(sourceUIDs ls).any declUIDs.contains
+           | some (.assign _ ls _) =>
+               let us := ls.filterMap (·.freeUID?)
+               us.length == ls.length && us.length == us.eraseDups.length &&
+@@ -191,7 +191,7 @@ def checkWriterGroup (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
+   for s in ws do
+     match s with
+     | .scatter _ ls _ =>
+-        unless ls.all LHSSlot.boundedScatter && env.declAlgebra g.name != .bool do
++        unless ls.all LHSSlot.collectable && env.declAlgebra g.name != .bool do
+           throw (.multiWriterScatter g.name)
+     | .assign _ ls _ =>
+         if slotsBecomeScatter ls ||
+diff --git a/leanncd/LeanNCD/DSL/Pipeline/Structural.lean b/leanncd/LeanNCD/DSL/Pipeline/Structural.lean
+index 68099a2a..1354a205 100644
+--- a/leanncd/LeanNCD/DSL/Pipeline/Structural.lean
++++ b/leanncd/LeanNCD/DSL/Pipeline/Structural.lean
+@@ -567,20 +567,6 @@ theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
+       rw [hLS ls, hBody r.body.terms, hNonlin r.nonlin, ← List.append_assoc]
+   | recurMorphism nm ax tc => rfl
+ 
+-/-! ## The `checkReservedAxisNames` phase -/
+-
+-/-- Reject a source axis spelled with `constUnitPrefix`. `IdxExpr.isConstUnit` recognises the unit
+-    axes `lowerArith` mints for constant LHS slots by that spelling alone, so a source axis carrying
+-    it would be mistaken for a lowered constant and silently dropped from multi-writer collection.
+-    The surface grammar cannot spell it (`#` is not an identifier character); a hand-built
+-    `TLProgram` can, so this runs first in both compile chains, before any axis is minted. A
+-    hand-built `ScheduledProgram` that skips these chains and spells an axis so is claiming to be a
+-    lowered constant. -/
+-def checkReservedAxisNames (p : TLProgram) : FreshM TLProgram :=
+-  match p.axisNames.find? (·.startsWith constUnitPrefix) with
+-  | some nm => throw (.reservedAxisName nm)
+-  | none => pure p
+-
+ /-! ## The `assignUIDs` phase -/
+ 
+ /-- Mint a fresh UID that is guaranteed non-zero. `0` is E1's "unassigned" sentinel
+@@ -1138,7 +1124,8 @@ def LHSSlot.isRawConst : LHSSlot → Bool
+   | _ => false
+ 
+ /-- Scatter-geometry slice A (D2/D5): a constant LHS slot `Y[n]` is the single-axis placement
+-    `n + 1·u` over a FRESH synthetic axis `u` pinned to size 1 (`constUnitPrefix` names it). The
++    `n + 1·u` over a FRESH synthetic axis `u` pinned to size 1 (named `#const<uid>` for display only:
++    axis identity is the UID and nothing reads the name, slice B B-D2). The
+     stride-aligned extent arm of `LHSSlot.outExtent` then gives `1·1 + n = n + 1`, the image is
+     exactly `{n}`, and the reference's extent and the checked plan's derived extent agree. Returns the
+     rewritten slots and the pinned axis declarations to append.
+@@ -1156,7 +1143,7 @@ def lowerConstSlots (slots : List LHSSlot) : FreshM (List LHSSlot × List Decl)
+     match sl with
+     | .affine (.const n) =>
+         let u ← freshNonZero
+-        let ax : AxisSpec := ⟨constUnitPrefix ++ toString u, u, .nat⟩
++        let ax : AxisSpec := ⟨"#const" ++ toString u, u, .nat⟩
+         out := out ++ [.affine (.affine n [(1, ax)])]
+         ds := ds ++ [.axis ax (some 1)]
+     | _ => out := out ++ [sl]
+diff --git a/leanncd/LeanNCD/Exec/Uid.lean b/leanncd/LeanNCD/Exec/Uid.lean
+index 2639a093..637fbafd 100644
+--- a/leanncd/LeanNCD/Exec/Uid.lean
++++ b/leanncd/LeanNCD/Exec/Uid.lean
+@@ -126,10 +126,6 @@ inductive CompileError
+                                                              -- axis UID (or the slot counts differ)
+   | reservedNameCollision : String → CompileError           -- a generated private name `T#k` is
+                                                              -- already a source name
+-  | reservedAxisName     : String → CompileError            -- a source axis is spelled with the
+-                                                             -- `#const` prefix (`constUnitPrefix`,
+-                                                             -- `DSL/Ast.lean`), reserved for the
+-                                                             -- unit axes `lowerArith` mints
+   deriving Repr, DecidableEq, BEq, Inhabited
+ 
+ /-- Combined error + UID-counter monad (`EStateM ε σ α = σ → Result ε σ α`, Lean core). Mints fresh
+diff --git a/leanncd/LeanNCD/Semantics/Source/Differential.lean b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+index 66a88a8d..29dd768c 100644
+--- a/leanncd/LeanNCD/Semantics/Source/Differential.lean
++++ b/leanncd/LeanNCD/Semantics/Source/Differential.lean
+@@ -197,21 +197,18 @@ private def derivedShape (source : AdmittedSource) (st : AdmittedStatement sourc
+     ((LHSSlot.affine (.affine f.1 (f.2.map fun (coef, u) => (coef, ⟨"", u, .nat⟩)))).outExtent
+       (fun u => (source.source.context.axes.find? (·.uid == u)).map (·.extent))).getD 0
+ 
+-/-- B5c: production publishes the DECLARED shape for a single write whose destination is boxed (a
+-    declared destination with pinned axes): every slot is a bounded, non-constant form and no
+-    destination axis is one of the writer's own source axes (such an axis names the source axis, D5,
+-    and the derived shape stays). The oracle also uses the declared shape, so there is nothing to
+-    override. Stated from the admitted statement alone, not from production's `boxedSingleGroups`.
+-    The oracle cannot see whether an axis was pinned: declared extents are taken as pinned. -/
++/-- B5c + slice B (B-D3): production publishes the DECLARED shape for a single write whose destination
++    is boxed (a declared destination with pinned axes), whatever the writer's slot forms (single-axis,
++    multi-axis, constant), unless a destination axis is one of the writer's own source axes (such an
++    axis names the source axis, D5, and the derived shape stays). The oracle also uses the declared
++    shape, so there is nothing to override. Stated from the admitted statement alone, not from
++    production's `boxedSingleGroups`. The oracle cannot see whether an axis was pinned: declared
++    extents are taken as pinned. -/
+ private def declaredShapeWins (source : AdmittedSource) (st : AdmittedStatement source.source) :
+     Bool :=
+   let destUIDs := (source.source.table.entry st.output.tensor).axes.map (·.uid)
+   let sourceUIDs := st.output.forms.flatMap fun f => f.2.map (·.2)
+-  let bounded (f : Int × List (Int × UID)) : Bool :=
+-    !f.2.isEmpty &&
+-      (((f.2.map (·.2)).eraseDups.filter fun u =>
+-        (f.2.filter (·.2 == u)).foldl (fun acc p => acc + p.1) 0 != 0).length ≤ 1)
+-  st.output.forms.all bounded && !sourceUIDs.any destUIDs.contains
++  !sourceUIDs.any destUIDs.contains
+ 
+ def detectConditions (source : AdmittedSource) :
+     List StructuralCondition :=
+diff --git a/leanncd/test/DSL/Pipeline/StructuralTest.lean b/leanncd/test/DSL/Pipeline/StructuralTest.lean
+index 1e419a9e..3869378a 100644
+--- a/leanncd/test/DSL/Pipeline/StructuralTest.lean
++++ b/leanncd/test/DSL/Pipeline/StructuralTest.lean
+@@ -240,7 +240,7 @@ run_cmd do
+ 
+ -- A constant LHS coord is no longer refused (D5: the `overlappingScatter` guard is gone): it is
+ -- reclassified to a `Stmt.scatter` whose slot is the unit-axis placement `0 + 1·u`, and the synthetic
+--- axis `u` (a `#const…` name) is declared pinned to size 1. (Was: `.error (.overlappingScatter "Z")`.)
++-- axis `u` (its name is display only, nothing reads it) is declared pinned to size 1. (Was: `.error (.overlappingScatter "Z")`.)
+ run_cmd do
+   let collapse : Stmt := .assign "Z" [ .affine (.const 0) ]
+     { body := { terms := [ { factors := [ .read "X" [ .const 0 ] ] } ] }, nonlin := .identity }
+@@ -250,7 +250,7 @@ run_cmd do
+   | .ok lp _ =>
+       match lp.stmts, lp.decls with
+       | [ .scatter "Z" [ .affine (.affine 0 [(1, u)]) ] _ ], [ .axis u' (some 1) ] =>
+-          unless u == u' && u.name.startsWith constUnitPrefix do
++          unless u == u' do
+             throwError s!"slot axis {repr u} is not the declared synthetic axis {repr u'}"
+       | s, d => throwError s!"expected one unit-axis scatter + one pinned decl, got {repr s} / {repr d}"
+   | .error e _ => throwError s!"constant LHS must lower, got {repr e}"
+diff --git a/leanncd/test/Eval/Plan/B5BoundaryTest.lean b/leanncd/test/Eval/Plan/B5BoundaryTest.lean
+index fd1ac0e2..32430358 100644
+--- a/leanncd/test/Eval/Plan/B5BoundaryTest.lean
++++ b/leanncd/test/Eval/Plan/B5BoundaryTest.lean
+@@ -75,8 +75,10 @@ def late32 : NamedDenseEnv32 :=
+ 
+ #guard sourceError cancellation == none
+ #guard agree cancellation in64 in32 #[-12, 0, -5, 0] #[-12, 0, -5, 0]
+-#guard sourceError twoAxes == some (.multiWriterScatter "S")
+-#guard sourceError explicitConstant == some (.multiWriterScatter "S")
++-- Slice B (B-D1): a group with a multi-axis or constant writer is admitted at the source boundary
++-- (it was `multiWriterScatter`); values and shapes are pinned in `ScatterGeometryTest`.
++#guard sourceError twoAxes == none
++#guard sourceError explicitConstant == none
+ #guard sourceError predicateDest == some (.multiWriterScatter "S")
+ #guard sourceError bareScatterFallback == some (.multiWriterNeedsDeclaredShape "S")
+ 
+diff --git a/leanncd/test/Eval/Plan/B5cSingleBoxTest.lean b/leanncd/test/Eval/Plan/B5cSingleBoxTest.lean
+index 9e91221b..4dfba98e 100644
+--- a/leanncd/test/Eval/Plan/B5cSingleBoxTest.lean
++++ b/leanncd/test/Eval/Plan/B5cSingleBoxTest.lean
+@@ -134,11 +134,12 @@ def constOne : TLProgram := replaceSlot (.affine (.const 3)) one
+ 
+ -- Which single writers are collected (`boxedSingleGroups`), with every exclusion: unpinned
+ -- declaration, D5 idiom, identity and transposed writers (D5), a scalar destination, predicate (D1),
+--- multi-axis and constant slots (D2), and a two-writer group (collected by `writerGroups`, not here).
++-- and a two-writer group (collected by `writerGroups`, not here). Slice B (B-D1): multi-axis and
++-- constant slots are no longer excluded (D2 closed), so `multiAxisOne` and `constOne` are collected.
+ #guard [groupsOf one, groupsOf oneEqual, groupsOf oneInferred, groupsOf bareOne, groupsOf idiom,
+   groupsOf identityOne, groupsOf tropOne, groupsOf predOne, groupsOf multiAxisOne, groupsOf constOne,
+   groupsOf concat, groupsOf transposeOne, groupsOf scalarOne] ==
+-  [["S"], ["S"], [], ["S"], [], [], ["S"], [], [], [], [], [], []]
++  [["S"], ["S"], [], ["S"], [], [], ["S"], [], ["S"], ["S"], [], [], []]
+ 
+ -- `route` is unchanged: a single boxed writer still routes (route carries no extents).
+ #guard routeError one == none && routeError bareOne == none
+diff --git a/leanncd/test/Eval/Plan/ScatterGeometryTest.lean b/leanncd/test/Eval/Plan/ScatterGeometryTest.lean
+index 811a014b..9e3b7242 100644
+--- a/leanncd/test/Eval/Plan/ScatterGeometryTest.lean
++++ b/leanncd/test/Eval/Plan/ScatterGeometryTest.lean
+@@ -115,25 +115,25 @@ def refWriteOutOfRange (p : TLProgram) : Option (String × List Int × List Nat)
+ 
+ -- The constant-slot refusal pin moved to the T3 section (`bypass`): a surface-compiled constant now lowers.
+ 
+--- A multi-writer group containing a multi-axis scatter is still refused (`multiWriterScatter`):
+--- donor B5BoundaryTest.twoAxes. Pinned here against the lift (the destination is pinned `k = 6`).
++-- Slice B (B-D1): a multi-writer group containing a multi-axis scatter is ADMITTED (it was refused with
++-- `multiWriterScatter`): donor B5BoundaryTest.twoAxes. The destination is pinned `k = 6`.
+ def convTwo : TLProgram :=
+   { conv with
+     decls := conv.decls.map (fun | .axis ax none => .axis ax (some 6) | d => d)
+     stmts := conv.stmts ++ conv.stmts }
+-#guard sourceError convTwo == some (.multiWriterScatter "S")
++#guard sourceError convTwo == none
+ 
+--- A BOXED single multi-axis writer keeps the derived shape (B5c D2 residual, closed in slice B): `S`
+--- declared over a pinned `k = 8` still publishes `[6]` in all three legs, and the collector does not
+--- box it.
++-- Slice B (B-D3): a BOXED single multi-axis writer publishes the DECLARED shape (it kept the derived
++-- `[6]` and was not collected, B5c D2 residual): `S` declared over a pinned `k = 8` publishes `[8]` in
++-- all three legs, and the collector boxes it.
+ def convBoxed : TLProgram :=
+   { conv with decls := conv.decls.map (fun | .axis ax none => .axis ax (some 8) | d => d) }
+ def shapesOf (p : TLProgram) :=
+   ((ref64 p convIn64).bind fun e => e["S"]?.map (·.shape),
+    (run64 p convIn64).bind fun e => e["S"]?.map (·.shape),
+    (run32 p convIn32).bind fun e => e["S"]?.map (·.shape))
+-#guard shapesOf convBoxed == (some [6], some [6], some [6])
+-#guard B5cSingleBoxTest.groupsOf convBoxed == []
++#guard shapesOf convBoxed == (some [8], some [8], some [8])
++#guard B5cSingleBoxTest.groupsOf convBoxed == ["S"]
+ 
+ -- `route` carries no extents and accepts the multi-axis program.
+ #guard routeError conv == none
+@@ -245,9 +245,8 @@ def twinS : TLProgram :=
+ -- The synthetic axis is declared (pinned to 1, `#const<uid>` name: `#` is not an identifier character,
+ -- so no source axis can collide) and is the ONLY declaration `lowerArith` added.
+ #guard ((scheduled (as64 S3)).map fun s => s.decls.map fun
+-    | .axis ax n => some (ax.name.startsWith constUnitPrefix, n) | _ => none)
+-  == some [some (false, some 4), some (false, some 3), some (false, none), none, none, none,
+-    some (true, some 1)]
++    | .axis _ n => some n | _ => none)
++  == some [some (some 4), some (some 3), some none, none, none, none, some (some 1)]
+ -- A constant next to a free axis (`S[a, 3] := A[a]`, dst `[a, k]`): shape [4,4], column 3 is `A`.
+ def colProg := cstProg [a, k] [.free a, cst 3] facA
+ def colProgA := cstProg [a, k] [.free a, cst 3] facA true
+@@ -275,18 +274,20 @@ def twoConstA := cstProg [k, m] [cst 3, cst 4] facA true
+ #guard agree (cstProg [k] [cst 0] facA (agg := .max)) convIn64 convIn32 #[4] #[4]
+ #guard agree (cstProg [k] [cst 3] facA (agg := .max)) convIn64 convIn32
+   #[-(1/0), -(1/0), -(1/0), 4] #[-(1/0), -(1/0), -(1/0), 4]
+--- RISK (ii): a BOXED single constant writer (`k` pinned 8) still publishes the DERIVED shape [4], in all
+--- three legs, and the collector does not box it (the synthetic slot is not `boundedScatter`; B5c D2
+--- residual, unchanged by T3). Donor: `convBoxed`/`B5cSingleBoxTest.groupsOf`.
+-#guard shapesOf (pinAll 8 S3) == (some [4], some [4], some [4])
+-#guard shapesOf (pinAll 8 S3a) == (some [4], some [4], some [4])
+-#guard B5cSingleBoxTest.groupsOf (pinAll 8 S3) == []
+-#guard B5cSingleBoxTest.groupsOf (pinAll 8 S3a) == []
+--- RISK (i): a multi-writer group with a constant writer is refused exactly as before T3
+--- (`multiWriterScatter`; observed on the T2 commit for the `.scatter` pairs). Donor: `convTwo`.
+-#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ S3.stmts }) == some (.multiWriterScatter "S")
+-#guard sourceError (pinAll 6 { S3a with stmts := S3a.stmts ++ S3a.stmts }) == some (.multiWriterScatter "S")
+-#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ conv.stmts }) == some (.multiWriterScatter "S")
++-- RISK (ii): a BOXED single constant writer (`k` pinned 8). Slice A published the DERIVED shape [4] and
++-- did not box it (B5c D2 residual); slice B publishes the declared shape (pins below).
++-- Donor: `convBoxed`/`B5cSingleBoxTest.groupsOf`.
++-- Slice B (B-D3): the boxed single constant writer now publishes the DECLARED shape [8] (was the derived
++-- [4], "not boxed") and the collector boxes it.
++#guard shapesOf (pinAll 8 S3) == (some [8], some [8], some [8])
++#guard shapesOf (pinAll 8 S3a) == (some [8], some [8], some [8])
++#guard B5cSingleBoxTest.groupsOf (pinAll 8 S3) == ["S"]
++#guard B5cSingleBoxTest.groupsOf (pinAll 8 S3a) == ["S"]
++-- Slice B (B-D1): a multi-writer group with a constant writer is ADMITTED (was `multiWriterScatter`).
++-- Donor: `convTwo`.
++#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ S3.stmts }) == none
++#guard sourceError (pinAll 6 { S3a with stmts := S3a.stmts ++ S3a.stmts }) == none
++#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ conv.stmts }) == none
+ -- `route` accepts the constant-slot program.
+ #guard routeError S3 == none && routeError S3a == none
+ -- No `EvalWarning` (unused-axis, size inference) mentions the synthetic axis: the reference evaluator
+@@ -381,10 +382,10 @@ def emptyShapesOf (p : TLProgram) : Option (List Nat) × Option (List Nat) × Op
+ 
+ /-! ## Review repair A2: `#const` is a reserved axis spelling
+ 
+-`IdxExpr.isConstUnit` recognises the unit axes `lowerArith` mints by their `#const` spelling alone.
+-An ordinary one-axis writer over a source axis so spelled used to be mistaken for a lowered constant
+-and silently skipped by boxed-single-writer collection (published `[2]` instead of `[8]`).
+-`checkReservedAxisNames` now rejects the spelling first in both compile chains. -/
++(Slice A history; reversed in slice B, see the pins below.) `IdxExpr.isConstUnit` recognised the unit
++axes `lowerArith` mints by their `#const` spelling alone, so an ordinary one-axis writer over a source
++axis so spelled was mistaken for a lowered constant and skipped by boxed-single-writer collection
++(published `[2]` instead of `[8]`); `checkReservedAxisNames` rejected the spelling. Both are deleted. -/
+ 
+ def ordAxisBox (i : AxisSpec) : TLProgram :=
+   { decls := [.axis i (some 2), .axis k (some 8),
+@@ -402,12 +403,14 @@ def ordIn32 : NamedDenseEnv32 := ({} : NamedDenseEnv32).insert "A" ⟨[2], #[1,
+   #[1, 2, 0, 0, 0, 0, 0, 0] #[1, 2, 0, 0, 0, 0, 0, 0]
+ -- A near-miss spelling (shorter than the prefix) is not reserved.
+ #guard (scheduled (ordAxisBox ⟨"#cons", 95, .nat⟩)).isSome
+--- The reserved spelling is rejected, with the offending name, before anything is minted.
++-- Slice B (B-D2), reversal of A2: nothing reads an axis NAME, so the former reserved spelling is an
++-- ordinary source axis. It compiles through BOTH chains and behaves as `ordAxisBox ⟨"constUser", ..⟩`
++-- does: collected into the declared box, eight cells in every leg (it used to be `reservedAxisName`).
+ #guard (match (ordAxisBox ⟨"#constUser", 95, .nat⟩).compileToScheduled.run 0 with
+-  | .error e _ => e == .reservedAxisName "#constUser"
+-  | .ok _ _ => false)
++  | .ok _ _ => true | .error _ _ => false)
+ #guard (match (ordAxisBox ⟨"#constUser", 95, .nat⟩).compile.run 0 with
+-  | .error e _ => e == .reservedAxisName "#constUser"
+-  | .ok _ _ => false)
++  | .ok _ _ => true | .error _ _ => false)
++#guard agree (ordAxisBox ⟨"#constUser", 95, .nat⟩) ordIn64 ordIn32
++  #[1, 2, 0, 0, 0, 0, 0, 0] #[1, 2, 0, 0, 0, 0, 0, 0]
+ 
+ end LeanNCD.Eval.Plan.ScatterGeometryTest
+diff --git a/leanncd/test/Semantics/OracleMixedRefusalTest.lean b/leanncd/test/Semantics/OracleMixedRefusalTest.lean
+index 3912d02a..c7bb3f3f 100644
+--- a/leanncd/test/Semantics/OracleMixedRefusalTest.lean
++++ b/leanncd/test/Semantics/OracleMixedRefusalTest.lean
+@@ -5,7 +5,7 @@ For each program production refuses (observed in
+ `papers/semantics/oracle_sorts_plan_facts.md` section 5), the independent predictor names the
+ refusal, both native legs refuse with the same `CompileError` constructor, and `classifyRefusal`
+ reports `refusalParity`. Negative controls doctor the prediction and must flip to `refusalMismatch`.
+-True unsupported-geometry rows also pin the typed path's false `nativeFailure` as the contrast. -/
++(Slice B removed the unsupported-geometry rows: multi-axis and constant groups are admitted.) -/
+ 
+ open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
+ open NativeLegs SortedDifferential LeanNCD.OracleSorts OracleMixed Oracle
+@@ -136,7 +136,12 @@ private def boxTs : List T := [tZ, tX, tOut "Y" [axK]]
+ #guard valueParity (overlapBox .min) boxTs .minPlus
+   [.fin (-5), .posInf, .fin 2, .posInf, .fin 3, .posInf, .fin 25, .posInf, .posInf, .posInf]
+ 
+-/-! Refusal controls retain genuine unsupported geometry, not B5's now-accepted donors. -/
++/-! Slice B (B-D1): a multi-axis or constant scatter group is ADMITTED, so these two former
++unsupported-geometry controls (they were `multiWriterScatter` refusal parity, with the typed path's
++false `nativeFailure` as the contrast) are now accept neighbours: no refusal verdict. The only
++surviving `multiWriterScatter` refusal is a predicate destination, which the source oracle does not
++admit (`UnsupportedSource.predicate`), so no source-admitted program reaches that refusal here; its
++predictor coverage is the predicate row of `OracleSortRulesTest`. -/
+ private def multiAxis : SourceSnapshot :=
+   mk [tZ, tQ, tOut "Y" [axK]]
+     [.scatter "Y" [.affine (.affine 0 [(1, axA), (1, axB)])]
+@@ -146,15 +151,8 @@ private def multiAxis : SourceSnapshot :=
+ private def constant : SourceSnapshot :=
+   mk d7AffTs (List.replicate 2 (.scatter "Y" [.affine (.const 3)] (rhs .max [[rd "X" [axA]]])))
+ 
+-#guard classOf multiAxis == parity "multiWriterScatter"
+-#guard classOf constant == parity "multiWriterScatter"
+-
+-/-- The typed API's false report remains a contrast on true refusals only. -/
+-private def falseNativeFailure : String :=
+-  "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.nativeFailure\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.failure\n    \"legacy compile failed: LeanNCD.CompileError.multiWriterScatter \\\"Y\\\"\")\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.failure \"checked preparation\")"
+-
+-#guard sortedOf multiAxis (orderOf [tZ, tQ, tOut "Y" [axK]]) == falseNativeFailure
+-#guard sortedOf constant (orderOf d7AffTs) == falseNativeFailure
++#guard classOf multiAxis == "none"
++#guard classOf constant == "none"
+ 
+ /-! Accept neighbour: the laundered cast is accepted, so with the true (empty) prediction
+ `classifyRefusal` reports no verdict (`none`, not a `refusalMismatch`). -/
+@@ -169,7 +167,7 @@ private def predictVote : Prediction → Prediction :=
+ 
+ #guard classWith r16a predictAccepted == "OracleMixed.MixedClassification.refusalMismatch [] \"multiWriterAlgebra\""
+ #guard classWith multiAxis predictCast ==
+-  "OracleMixed.MixedClassification.refusalMismatch [(\"sortCastUnsupported\", \"Y\")] \"multiWriterScatter\""
++  "OracleMixed.MixedClassification.refusalMismatch [(\"sortCastUnsupported\", \"Y\")] \"accepted\""
+ #guard classWith castLaundered predictVote ==
+   "OracleMixed.MixedClassification.refusalMismatch [(\"multiWriterAlgebra\", \"M\")] \"accepted\""
+ 
+@@ -187,13 +185,14 @@ private def splitClass (p : Prediction) : Option NativeRun → String
+     | none => "none"
+   | none => "no run"
+ 
+-private def predictScatter : Prediction :=
+-  { refusals := [("multiWriterScatter", "Y")], sorts := [], stmtSorts := [] }
++private def predictCastY : Prediction :=
++  { refusals := [("sortCastUnsupported", "Y")], sorts := [], stmtSorts := [] }
+ 
+--- legacy `multiWriterScatter`, checked `multiWriterAlgebra`; the scatter is predicted
+-#guard splitClass predictScatter (splitRun multiAxis r16a) ==
+-  "OracleMixed.MixedClassification.refusalMismatch\n  [(\"multiWriterScatter\", \"Y\")]\n  \"legacy multiWriterScatter, checked multiWriterAlgebra\""
++-- (slice B: was `multiAxis`/`multiWriterScatter`, which is now admitted; donor `castDirect`)
++-- legacy `sortCastUnsupported`, checked `multiWriterAlgebra`; the cast is predicted
++#guard splitClass predictCastY (splitRun castDirect r16a) ==
++  "OracleMixed.MixedClassification.refusalMismatch\n  [(\"sortCastUnsupported\", \"Y\")]\n  \"legacy sortCastUnsupported, checked multiWriterAlgebra\""
+ -- the same legs from one program are parity
+-#guard splitClass predictScatter (splitRun multiAxis multiAxis) == parity "multiWriterScatter"
++#guard splitClass predictCastY (splitRun castDirect castDirect) == parity "sortCastUnsupported"
+ 
+ end OracleMixedRefusalTest
+diff --git a/leanncd/test/Semantics/OracleSortRules.lean b/leanncd/test/Semantics/OracleSortRules.lean
+index 831a6fd1..d95b9fe5 100644
+--- a/leanncd/test/Semantics/OracleSortRules.lean
++++ b/leanncd/test/Semantics/OracleSortRules.lean
+@@ -146,10 +146,12 @@ private def normalized (cs : List (Int × UID)) : List (Int × UID) :=
+   (cs.map (·.2)).eraseDups.map fun u =>
+     ((cs.filter (·.2 == u)).foldl (fun n p => n + p.1) 0, u)
+ 
++/-- Slice B (B-D1): the collector takes every free or affine slot (single-axis, multi-axis, and a
++    constant, which `lowerArith` turns into a single-axis unit-axis form). Mirrors
++    `LHSSlot.collectable` on SOURCE slots; scan slots are not collectable. -/
+ private def bounded : LHSSlot → Bool
+   | .free _ | .freeNorm _ => true
+-  | .affine (.const _) => false
+-  | .affine e => ((normalized (coefficients e).2).filter (·.1 != 0)).length ≤ 1
++  | .affine _ => true
+   | _ => false
+ 
+ private def declaredAxes (decls : List Decl) (n : String) : Option (List AxisSpec) :=
+diff --git a/leanncd/test/Semantics/OracleSortRulesTest.lean b/leanncd/test/Semantics/OracleSortRulesTest.lean
+index 39856ef0..1ffd58ca 100644
+--- a/leanncd/test/Semantics/OracleSortRulesTest.lean
++++ b/leanncd/test/Semantics/OracleSortRulesTest.lean
+@@ -108,9 +108,11 @@ private def refusalsOf (ss : List Stmt) : Nat := (predict c1Decls ss).refusals.l
+ -- MULTI class (`agreesMember`: the observed constructor is among the predicted ones). A spurious EXTRA
+ -- predicted refusal inside a multi-refusal program is NOT detected (see `agreesMember`); each rule's
+ -- refusal is pinned by equality on strict programs instead (coverage guard in C4).
++-- Slice B: the multi-axis/constant/colliding writers are admitted, so the refusal-free class grows
++-- (was [222, 195, 88]; observed [281, 186, 38] with the same 505 programs).
+ #guard [(corpusC1.filter (refusalsOf · == 0)).length,
+   (corpusC1.filter (refusalsOf · == 1)).length,
+-  (corpusC1.filter (refusalsOf · ≥ 2)).length] == [222, 195, 88]
++  (corpusC1.filter (refusalsOf · ≥ 2)).length] == [281, 186, 38]
+ 
+ /-- Each program is held to the predicate of its own class, so a strict-class program cannot hide
+     behind membership. -/
+@@ -362,10 +364,10 @@ private def supplementalRows : List (List Decl × Row) :=
+         stmts := [.scatter "Y" [.free a] (rhs .sum .identity [[rd "X" [a]]]), cp "Y" .sum "X"]
+         expect := .ok [], runs := some [.real, .real] })
+   , (hDecls,
+-      { label := "explicit constant scatter groups remain unsupported"
++      { label := "explicit constant scatter groups are admitted (slice B, B-D1)"
+         stmts := List.replicate 2 (.scatter "Y" [.affine (.const 3)]
+           (rhs .sum .identity [[rd "X" [a]]]))
+-        expect := .error ("multiWriterScatter", "Y") })
++        expect := .ok [], runs := some [.real, .real] })
+   , (hDecls,
+       { label := "canceled multi-axis syntax is bounded after UID normalization"
+         stmts := List.replicate 2 (.scatter "Y"
+@@ -501,12 +503,14 @@ run_cmd assertNone "hand SHAPED disagreements" (stagedRows.flatMap fun (l, ds, s
+ #guard (stagedRows.filter fun (_, ds, ss) =>
+   (predictShaped ds ss (sizesOf ds)).refusals.isEmpty).length == 11
+ 
+-#guard concreteC1.length == 81
+--- C1 declares extent 4 against realized extent 8, so no candidate fits the pinned box: all 81 stay
++-- Slice B: 99 (was 81) concrete programs now reach the shape stage, because the multi-axis/constant
++-- writers are no longer refused earlier.
++#guard concreteC1.length == 99
++-- C1 declares extent 4 against realized extent 8, so no candidate fits the pinned box: all 99 stay
+ -- refused, now by the box rule itself rather than by a scatter-output `sizeConflict`.
+ #guard histogram (concreteC1.map (fun ss =>
+   tag (productionShapedVerdict c1Decls ss (signatureOf c1Decls ss)))) ==
+-    [("writerExtentExceedsBox", 81)]
++    [("writerExtentExceedsBox", 99)]
+ #eval
+   let containsShape (shape : Nat) (ss : List Stmt) :=
+     ss.any (fun s => [AggOp.sum, .max, .min].any (fun ag => s == writer shape ag))
+@@ -609,7 +613,11 @@ run_cmd assertNone "modelled refusal constructors never observed on a strict pro
+ private def strictC1Tags : List String :=
+   ((corpusC1.filter (fun ss => refusalsOf ss ≤ 1)).map (fun ss => tag (productionVerdict c1Decls ss))).eraseDups
+ 
+-#guard ["multiWriterAlgebra", "multiWriterScatter", "tropicalNonlin"].all strictC1Tags.contains
++-- Slice B: C1's colliding/multi-axis/constant writers are admitted, so C1 no longer carries a
++-- `multiWriterScatter` refusal; that constructor's strict coverage is the supplemental predicate row
++-- (`uncoveredStrict` above).
++#guard ["multiWriterAlgebra", "tropicalNonlin"].all strictC1Tags.contains
++#guard !strictC1Tags.contains "multiWriterScatter"
+ 
+ -- An accepted REAL group with a neutral tropical copy (the copy abstains).
+ #guard corpusC1.any (fun ss =>
+@@ -626,11 +634,12 @@ private def strictC1Tags : List String :=
+ -- the contracted writer replaced by its neutral copy is accepted.
+ #guard pairsC1.any (fun ss => ss == [writer 1 .sum, writer 0 .max] && tag (verdictC1 ss) == "accepted") &&
+   pairsC1.any (fun ss => ss == [writer 1 .sum, writer 1 .max] && tag (verdictC1 ss) == "multiWriterAlgebra")
+--- A relu x max pair (tropicalNonlin) and a colliding-slot pair (multiWriterScatter).
++-- A relu x max pair (tropicalNonlin); and (slice B) a pair containing the multi-axis/constant `writer 4`
++-- is now accepted, where it was `multiWriterScatter`.
+ #guard pairsC1.any (fun ss =>
+   ss.any (fun s => isRelu s && aggOf s == .max) && tag (verdictC1 ss) == "tropicalNonlin")
+ #guard pairsC1.any (fun ss =>
+-  ss.any (fun s => s == writer 4 .max) && tag (verdictC1 ss) == "multiWriterScatter")
++  ss.any (fun s => s == writer 4 .max) && tag (verdictC1 ss) == "accepted")
+ -- Both orders of the same pair occur (order never matters to the predictor).
+ #guard pairsC1.any (fun ss => ss == [writer 0 .max, writer 0 .min] &&
+     tag (verdictC1 ss) == "multiWriterAlgebra") &&
+diff --git a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+index 42a3c0d9..b2bd41e4 100644
+--- a/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
++++ b/leanncd/test/Semantics/SourceDifferentialScatterTest.lean
+@@ -154,11 +154,13 @@ private def fMask : SourceSnapshot :=
+ -- the oracle publishes the declared shape and both native legs the derived one. That is the B5c D2
+ -- residual for a constant writer (the collector does not box a constant slot; slice B closes it), the
+ -- same class as `fFbig` for a multi-axis writer. Whatever the RHS.
+-#guard tag fI1 == "known:extent"
+-#guard tag fI2 == "known:extent"
+--- `fMask` (the independent constant-slot statement on `Z`) no longer fails the legacy leg at
+--- compilation, so it no longer masks conditions: it reports `Z`'s extent condition like `fI2`.
+-#guard tag fMask [5, 6] == "known:extent"
++-- Slice B (B-D3), observed: all three were `known:extent` and are now `parity`: a single constant writer
++-- into an oversized declared destination is boxed, so production publishes the DECLARED shape like the
++-- oracle (and `declaredShapeWins` predicts no condition).
++#guard tag fI1 == "parity"
++#guard tag fI2 == "parity"
++-- `fMask` (the independent constant-slot statement on `Z`): parity like `fI2`.
++#guard tag fMask [5, 6] == "parity"
+ 
+ /-- The structural conditions the source alone predicts for `s` (`compareSource`'s `conditions`). -/
+ private def conditionCount (s : SourceSnapshot) : Nat :=
+@@ -175,7 +177,8 @@ private def conditionCount (s : SourceSnapshot) : Nat :=
+ private def fFbig := snap 7 [k] [.assign "Y" [convSlot] readXW]
+ #guard conditionCount fE == 0
+ #guard conditionCount fF == 0
+-#guard conditionCount fFbig == 1
++-- (slice B: `fFbig` is a boxed single multi-axis write, the declared shape wins, so 0 conditions; was 1)
++#guard conditionCount fFbig == 0
+ #guard conditionCount fG == 0
+ 
+ /-- Profile verdict on `fE`'s oracle result with one occurrence of the first nonempty fiber dropped
+@@ -344,11 +347,10 @@ private def fF11 := withZ 8 [zBare, .assign "Y" [.affine (.scale 2 a)] readX]
+ -- (T1, flipped at T2) the legacy-only donors fD (`a+b`) and fN (`a+4b`) are now four-leg parity too.
+ #guard tag fD == "parity"
+ #guard tag fN == "parity"
+--- A multi-axis write declared one cell too big (`fFbig`, `|k| = 7`, reach 6) is a boxed-looking write the
+--- production derived-shape rule does NOT box (B5c D2 residual, closed in slice B): both native legs publish
+--- the derived shape `[6]` against the oracle's declared `[7]`, a `known:extent` contract difference, not
+--- a failure. Pinned so slice B's change to this residual is visible here.
+-#guard tag fFbig == "known:extent"
++-- A multi-axis write declared one cell too big (`fFbig`, `|k| = 7`, reach 6) is a boxed single write
++-- (slice B closes the B5c D2 residual): both native legs publish the declared `[7]` like the oracle, so
++-- the class is `parity` (it was a `known:extent` difference: derived `[6]` against declared `[7]`).
++#guard tag fFbig == "parity"
+ -- B6 for a mixed-sign row with NEGATIVE minimum: `Y[a-b]` (reach -2..3). The oracle refuses the write
+ -- against the declared shape (`writeOutOfRange`, no native leg runs); the native twins of this pin
+ -- (reference and checked, both erroring) are in `ScatterGeometryTest`.

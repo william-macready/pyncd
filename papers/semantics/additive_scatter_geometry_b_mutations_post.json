@@ -1,0 +1,191 @@
+[
+ {
+  "label": "SGB-T1-01 (group admission refuses a multi-axis slot again)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "  | .affine (.const _) => false\n  | .affine _ => true\n",
+  "new": "  | .affine (.const _) => false\n  | .affine e => scatterAffineClass e == .bounded\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5BoundaryTest.lean:80:0: Expression"
+  ]
+ },
+ {
+  "label": "SGB-T1-02 (name test back: a slot over an axis spelled #const is refused, constants and #constUser)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "  | .affine (.const _) => false\n  | .affine _ => true\n",
+  "new": "  | .affine (.const _) => false\n  | .affine (.affine _ [(1, a)]) => !a.name.startsWith \"#const\"\n  | .affine _ => true\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5BoundaryTest.lean:81:0: Expression"
+  ]
+ },
+ {
+  "label": "SGB-T1-03 (boxed single writer: constant slot not collected again)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "              ls.all LHSSlot.collectable && !(sourceUIDs ls).any declUIDs.contains",
+  "new": "              ls.all (fun s => LHSSlot.collectable s && !(match s with | .affine (.affine _ [(1, ax)]) => ax.name.startsWith \"#const\" | _ => false)) && !(sourceUIDs ls).any declUIDs.contains",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5cSingleBoxTest.lean:139:0: Expression"
+  ]
+ },
+ {
+  "label": "SGB-T1-04 (oracle declaredShapeWins excludes constant writers again)",
+  "task": "T1",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "  !sourceUIDs.any destUIDs.contains\n",
+  "new": "  !sourceUIDs.any destUIDs.contains && st.output.forms.all (fun f => !f.2.isEmpty)\n",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "error: test/Semantics/SourceDifferentialScatterTest.lean:185:0: Expression"
+  ]
+ },
+ {
+  "label": "SGB-T1-05 (oracle declaredShapeWins excludes multi-axis writers again)",
+  "task": "T1",
+  "file": "LeanNCD/Semantics/Source/Differential.lean",
+  "old": "  !sourceUIDs.any destUIDs.contains\n",
+  "new": "  !sourceUIDs.any destUIDs.contains && st.output.forms.all (fun f => f.2.length ≤ 1)\n",
+  "targets": [
+   "Semantics.SourceDifferentialScatterTest"
+  ],
+  "expect": [
+   "error: test/Semantics/SourceDifferentialScatterTest.lean:181:0: Expression"
+  ]
+ },
+ {
+  "label": "SGB-T1-06 (D5 source-axis exclusion removed from boxed single writers)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Pipeline/Collect.lean",
+  "old": "              ls.all LHSSlot.collectable && !(sourceUIDs ls).any declUIDs.contains",
+  "new": "              ls.all LHSSlot.collectable",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5cSingleBoxTest.lean:113:0: Expression"
+  ]
+ },
+ {
+  "label": "SGB-T1-07 (raw constant slot admitted by the collector)",
+  "task": "T1",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "  | .affine (.const _) => false\n  | .affine _ => true\n",
+  "new": "  | .affine _ => true\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterGeometryTest.lean:474:0: Expression"
+  ]
+ },
+ {
+  "label": "SGB-T1-08 (box fit weakened by one cell)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/CollectorShape.lean",
+  "old": "          unless actual ≤ want do",
+  "new": "          unless actual ≤ want + 1 do",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5bBoxTest.lean:61:0: Expression"
+  ]
+ },
+ {
+  "label": "SGB-T1-09 (unpinned group: equality replaced by fit)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/CollectorShape.lean",
+  "old": "          unless want == actual do",
+  "new": "          unless actual ≤ want do",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/B5NativeTest.lean:182:0: Expression"
+  ]
+ },
+ {
+  "label": "SGB-T3-01 (multi-axis arm drops the bias)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Elab.lean",
+  "old": "      return .affine (.affine c0 terms)",
+  "new": "      return .affine (.affine 0 terms)",
+  "targets": ["DSL.ParseProgramTest", "Eval.Plan.ScatterSurfaceTest"],
+  "expect": ["error: test/DSL/ParseProgramTest.lean:", "error: test/Eval/Plan/ScatterSurfaceTest.lean:"]
+ },
+ {
+  "label": "SGB-T3-02 (multi-axis arm reverses the term order; killer: ParseProgramTest only, the affine function is unchanged)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Elab.lean",
+  "old": "(#[t] ++ ts).toList.mapM elabTLAxisTerm",
+  "new": "(#[t] ++ ts).toList.reverse.mapM elabTLAxisTerm",
+  "targets": ["DSL.ParseProgramTest"],
+  "expect": ["error: test/DSL/ParseProgramTest.lean:"]
+ },
+ {
+  "label": "SGB-T3-03 (multi-axis arm drops every term after the first)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Elab.lean",
+  "old": "(#[t] ++ ts).toList.mapM elabTLAxisTerm",
+  "new": "#[t].toList.mapM elabTLAxisTerm",
+  "targets": ["DSL.ParseProgramTest", "Eval.Plan.ScatterSurfaceTest"],
+  "expect": ["error: test/DSL/ParseProgramTest.lean:", "error: test/Eval/Plan/ScatterSurfaceTest.lean:"]
+ },
+ {
+  "label": "SGB-T3-04 (coefficient ignored in an axis term)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Elab.lean",
+  "old": "$n:num * $x:ident) => return (Int.ofNat n.getNat, idxAxis (identStr x))",
+  "new": "$n:num * $x:ident) => return (1, idxAxis (identStr x))",
+  "targets": ["DSL.ParseProgramTest", "Eval.Plan.ScatterSurfaceTest"],
+  "expect": ["error: test/DSL/ParseProgramTest.lean:", "error: test/Eval/Plan/ScatterSurfaceTest.lean:"]
+ },
+ {
+  "label": "SGB-T3-05 (=n elaborates as the lone-numeral scan base case)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Elab.lean",
+  "old": "      return .affine (.const (Int.ofNat n.getNat))",
+  "new": "      return .iterAt (scanAxis \"\") (Int.ofNat n.getNat)",
+  "targets": ["DSL.ParseProgramTest", "Eval.Plan.ScatterSurfaceTest"],
+  "expect": ["error: test/DSL/ParseProgramTest.lean:", "error: test/Eval/Plan/ScatterSurfaceTest.lean:"]
+ },
+ {
+  "label": "SGB-T3-06 (single-axis x + n routed through the multi-axis constructor)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Elab.lean",
+  "old": "      return .affine (.shift (idxAxis (identStr x)) (Int.ofNat n.getNat))",
+  "new": "      return .affine (.affine (Int.ofNat n.getNat) [(1, idxAxis (identStr x))])",
+  "targets": ["DSL.ParseProgramTest"],
+  "expect": ["error: test/DSL/ParseProgramTest.lean:"]
+ },
+ {
+  "label": "SGB-T3-07 (single-axis n*x routed through the multi-axis constructor)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Elab.lean",
+  "old": "      return .affine (.scale (Int.ofNat n.getNat) (idxAxis (identStr x)))",
+  "new": "      return .affine (.affine 0 [(Int.ofNat n.getNat, idxAxis (identStr x))])",
+  "targets": ["DSL.ParseProgramTest"],
+  "expect": ["error: test/DSL/ParseProgramTest.lean:"]
+ },
+ {
+  "label": "SGB-T3-08 (single-axis n*x + m arm loses its bias)",
+  "task": "T3",
+  "file": "LeanNCD/DSL/Elab.lean",
+  "old": "      return .affine (.affine (Int.ofNat m.getNat)\n        [(Int.ofNat n.getNat, idxAxis (identStr x))])",
+  "new": "      return .affine (.affine 0\n        [(Int.ofNat n.getNat, idxAxis (identStr x))])",
+  "targets": ["DSL.ParseProgramTest"],
+  "expect": ["error: test/DSL/ParseProgramTest.lean:"]
+ }
+]
