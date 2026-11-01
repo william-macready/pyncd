@@ -567,6 +567,20 @@ theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
       rw [hLS ls, hBody r.body.terms, hNonlin r.nonlin, ← List.append_assoc]
   | recurMorphism nm ax tc => rfl
 
+/-! ## The `checkReservedAxisNames` phase -/
+
+/-- Reject a source axis spelled with `constUnitPrefix`. `IdxExpr.isConstUnit` recognises the unit
+    axes `lowerArith` mints for constant LHS slots by that spelling alone, so a source axis carrying
+    it would be mistaken for a lowered constant and silently dropped from multi-writer collection.
+    The surface grammar cannot spell it (`#` is not an identifier character); a hand-built
+    `TLProgram` can, so this runs first in both compile chains, before any axis is minted. A
+    hand-built `ScheduledProgram` that skips these chains and spells an axis so is claiming to be a
+    lowered constant. -/
+def checkReservedAxisNames (p : TLProgram) : FreshM TLProgram :=
+  match p.axisNames.find? (·.startsWith constUnitPrefix) with
+  | some nm => throw (.reservedAxisName nm)
+  | none => pure p
+
 /-! ## The `assignUIDs` phase -/
 
 /-- Mint a fresh UID that is guaranteed non-zero. `0` is E1's "unassigned" sentinel

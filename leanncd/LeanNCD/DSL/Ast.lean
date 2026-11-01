@@ -471,9 +471,11 @@ def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
 
 /-- Name prefix of the synthetic unit axis `lowerArith` mints for a constant LHS slot
     (`Y[3]` becomes `Y[#constN + 3]` over an axis pinned to size 1). `#` is not an identifier
-    character, so no source axis can carry it. Axis identity is by UID; the prefix only MARKS the
+    character, so no SURFACE axis can carry it. Axis identity is by UID; the prefix only MARKS the
     synthetic axis so the multi-writer collector (`boundedScatter`) can keep treating the slot as the
-    constant it still is (slice A, D2: the collector's admission is unchanged). -/
+    constant it still is (slice A, D2: the collector's admission is unchanged). The prefix is
+    RESERVED: a hand-built `TLProgram` naming a source axis so is rejected by
+    `checkReservedAxisNames` (`reservedAxisName`), first in both compile chains. -/
 def constUnitPrefix : String := "#const"
 
 /-- Is this index the rewritten form of a constant slot: `n + 1·u` over a synthetic unit axis. -/
@@ -506,9 +508,10 @@ def affineImageBounds (c0 : Int) (terms : List (Int × Nat)) : Int × Int :=
 /-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
     The single home of the scatter-extent convention. A positive one-axis affine placement uses the
     stride-aligned boundary; a placement naming two or more distinct nonzero-coefficient axes uses
-    its exact reach `max image + 1` (clamped at 0, via `affineImageBounds`) when every named axis is
-    non-empty; every other affine form keeps the legacy linear boundary. `none` if any
-    syntactically mentioned source axis is unsized. -/
+    its exact reach `max image + 1` (clamped at 0, via `affineImageBounds`) when every
+    nonzero-coefficient axis is non-empty (a zero-coefficient axis never matters, empty or not);
+    every other affine form keeps the legacy linear boundary. `none` if any syntactically mentioned
+    source axis is unsized. -/
 def LHSSlot.outExtent (sl : LHSSlot) (sz : UID → Option Nat) : Option Nat :=
   let affineExtent (c0 : Int) (cf : List (Int × UID)) : Option Nat :=
     if cf.all (fun (_, u) => (sz u).isSome) then
@@ -516,7 +519,8 @@ def LHSSlot.outExtent (sl : LHSSlot) (sz : UID → Option Nat) : Option Nat :=
         (fun acc (c, u) => acc + c * Int.ofNat ((sz u).getD 0)) c0).toNat
       let us := (cf.map (·.2)).eraseDups
       let coeffs := idxDensify cf us
-      match (coeffs.zip us).filter (fun (c, _) => c != 0) with
+      let nonzero := (coeffs.zip us).filter (fun (c, _) => c != 0)
+      match nonzero with
       | [(c, u)] =>
           let n := (sz u).getD 0
           if c > 0 && c0 >= 0 && n > 0 then
@@ -524,7 +528,10 @@ def LHSSlot.outExtent (sl : LHSSlot) (sz : UID → Option Nat) : Option Nat :=
           else
             some legacy
       | _ :: _ :: _ =>
-          let terms := (coeffs.zip us).map (fun (c, u) => (c, (sz u).getD 0))
+          -- Emptiness is tested over the NONZERO terms only: a zero-coefficient axis does not shape
+          -- the image, and the checked path hands this rule a dense row over every source axis
+          -- (`scatterDestExtent`), so an unrelated empty axis must not change the answer.
+          let terms := nonzero.map (fun (c, u) => (c, (sz u).getD 0))
           if terms.any (fun (_, n) => n == 0) then
             some legacy
           else

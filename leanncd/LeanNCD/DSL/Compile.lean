@@ -22,6 +22,7 @@ open Lean
     producer/consumer pair is built privately inside `route` (`physicalizeForRoute`), only at the
     categorical-routing boundary. `compile = compileToScheduled >>= route` still holds. -/
 def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
+  let p ← checkReservedAxisNames p
   let a ← assignUIDs p
   let b ← resolveDecls a
   let b ← reclassifyIterSlots b
@@ -40,7 +41,7 @@ def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
     §2.1: its statement count now equals the source statement count and it contains **no**
     generated `%nl…` name — nonlinearities reach Eval on the statement that owns them. -/
 def TLProgram.compileToScheduled : TLProgram → FreshM ScheduledProgram :=
-  assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=>
+  checkReservedAxisNames >=> assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=>
     checkScatterNonlin >=> lowerArith >=> finalizeScans >=> schedule
 
 /-- Stage 1 (parse) + Stage 2 (compile) at elaboration time; embed the computable

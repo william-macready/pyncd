@@ -1,0 +1,28 @@
+[
+ {
+  "label": "SGA-R-A1 (multi-axis emptiness tested over every term again, zero coefficients included)",
+  "task": "R",
+  "file": "LeanNCD/DSL/Ast.lean",
+  "old": "          let terms := nonzero.map (fun (c, u) => (c, (sz u).getD 0))\n",
+  "new": "          let terms := (coeffs.zip us).map (fun (c, u) => (c, (sz u).getD 0))\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterGeometryTest.lean:"
+  ]
+ },
+ {
+  "label": "SGA-R-A2 (reserved-axis check never fires)",
+  "task": "R",
+  "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+  "old": "  match p.axisNames.find? (·.startsWith constUnitPrefix) with\n",
+  "new": "  match p.axisNames.find? (fun _ => false) with\n",
+  "targets": [
+   "Eval.Plan.ScatterGeometryTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScatterGeometryTest.lean:"
+  ]
+ }
+]

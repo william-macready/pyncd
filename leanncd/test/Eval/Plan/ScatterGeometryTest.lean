@@ -331,4 +331,83 @@ def scanBase : TLProgram := tlprog!{
   | .ok s _ => s.stmts.any (fun | ScanStmt.scan .. => true | _ => false)
   | .error _ _ => false)
 
+/-! ## Review repair A1: an unrelated empty axis does not change a multi-axis extent
+
+`LHSSlot.outExtent` is called on the SPARSE slot by the reference (`derived shape`) and on a DENSE
+row over every source axis by the checked path (`scatterDestExtent`). The empty-axis fallback is
+tested over the nonzero-coefficient terms only, so the two cannot disagree: `S[a+b] := A[a]*B[b]*C[c]`
+with `|c| = 0` has extent 6 on every leg (before the repair the checked legs gave 7). The domain is
+empty, so every cell is the identity `0`; the SHAPE is what these rows pin. -/
+
+private def c : AxisSpec := ⟨"c", 93, .nat⟩
+private def d : AxisSpec := ⟨"d", 94, .nat⟩
+
+/-- Donor: `convOf sumSlot`, plus an unrelated source axis `c` of size 0 read by the right-hand side. -/
+def convEmptyC : TLProgram :=
+  { decls := [.axis a (some 4), .axis b (some 3), .axis c (some 0), .axis k none,
+      .typedTensor .f32 "A" [a], .typedTensor .f32 "B" [b], .typedTensor .f32 "C" [c],
+      .typedTensor .f32 "S" [k]]
+    stmts := [.scatter "S" [sumSlot]
+      { body := { terms := [{ factors := [.read "A" [.axis a], .read "B" [.axis b],
+          .read "C" [.axis c]] }] }
+        nonlin := .identity, agg := .sum }] }
+
+/-- Donor: `convEmptyC`, with the empty axis `d` on a separate free destination slot instead. -/
+def convEmptyFree : TLProgram :=
+  { decls := [.axis a (some 4), .axis b (some 3), .axis d (some 0), .axis k none,
+      .typedTensor .f32 "A" [a], .typedTensor .f32 "B" [b], .typedTensor .f32 "D" [d],
+      .typedTensor .f32 "S" [k, d]]
+    stmts := [.scatter "S" [sumSlot, .free d]
+      { body := { terms := [{ factors := [.read "A" [.axis a], .read "B" [.axis b],
+          .read "D" [.axis d]] }] }
+        nonlin := .identity, agg := .sum }] }
+
+def emptyCIn64 : NamedDenseEnv := convIn64.insert "C" ⟨[0], #[]⟩ |>.insert "D" ⟨[0], #[]⟩
+def emptyCIn32 : NamedDenseEnv32 := convIn32.insert "C" ⟨[0], #[]⟩ |>.insert "D" ⟨[0], #[]⟩
+
+/-- The published shape of `S` on the reference, checked binary64 and checked binary32 legs. -/
+def emptyShapesOf (p : TLProgram) : Option (List Nat) × Option (List Nat) × Option (List Nat) :=
+  ((ref64 p emptyCIn64).bind fun e => e["S"]?.map (·.shape),
+   (run64 p emptyCIn64).bind fun e => e["S"]?.map (·.shape),
+   (run32 p emptyCIn32).bind fun e => e["S"]?.map (·.shape))
+
+-- The helper pin: the dense row `[1,1,0]` over source shape `[4,3,0]` is the sparse slot `a + b`.
+#guard scatterDestExtent #[4, 3, 0] #[1, 1, 0] 0 == some 6
+-- Accept-neighbour: the SAME empty axis with a NONZERO coefficient keeps the legacy rule (`4+3+0 = 7`).
+#guard scatterDestExtent #[4, 3, 0] #[1, 1, 1] 0 == some 7
+#guard emptyShapesOf convEmptyC == (some [6], some [6], some [6])
+#guard agree convEmptyC emptyCIn64 emptyCIn32 #[0, 0, 0, 0, 0, 0] #[0, 0, 0, 0, 0, 0]
+#guard emptyShapesOf convEmptyFree == (some [6, 0], some [6, 0], some [6, 0])
+
+/-! ## Review repair A2: `#const` is a reserved axis spelling
+
+`IdxExpr.isConstUnit` recognises the unit axes `lowerArith` mints by their `#const` spelling alone.
+An ordinary one-axis writer over a source axis so spelled used to be mistaken for a lowered constant
+and silently skipped by boxed-single-writer collection (published `[2]` instead of `[8]`).
+`checkReservedAxisNames` now rejects the spelling first in both compile chains. -/
+
+def ordAxisBox (i : AxisSpec) : TLProgram :=
+  { decls := [.axis i (some 2), .axis k (some 8),
+      .typedTensor .f32 "A" [i], .typedTensor .f32 "S" [k]]
+    stmts := [.scatter "S" [.affine (.affine 0 [(1, i)])]
+      { body := { terms := [{ factors := [.read "A" [.axis i]] }] }
+        nonlin := .identity, agg := .sum }] }
+
+def ordIn64 : NamedDenseEnv := ({} : NamedDenseEnv).insert "A" ⟨[2], #[1, 2]⟩
+def ordIn32 : NamedDenseEnv32 := ({} : NamedDenseEnv32).insert "A" ⟨[2], #[1, 2]⟩
+
+-- Accept-neighbour: the same program over an ordinarily spelled axis IS collected into the declared
+-- box (`k` pinned to 8): every leg publishes eight cells.
+#guard agree (ordAxisBox ⟨"constUser", 95, .nat⟩) ordIn64 ordIn32
+  #[1, 2, 0, 0, 0, 0, 0, 0] #[1, 2, 0, 0, 0, 0, 0, 0]
+-- A near-miss spelling (shorter than the prefix) is not reserved.
+#guard (scheduled (ordAxisBox ⟨"#cons", 95, .nat⟩)).isSome
+-- The reserved spelling is rejected, with the offending name, before anything is minted.
+#guard (match (ordAxisBox ⟨"#constUser", 95, .nat⟩).compileToScheduled.run 0 with
+  | .error e _ => e == .reservedAxisName "#constUser"
+  | .ok _ _ => false)
+#guard (match (ordAxisBox ⟨"#constUser", 95, .nat⟩).compile.run 0 with
+  | .error e _ => e == .reservedAxisName "#constUser"
+  | .ok _ _ => false)
+
 end LeanNCD.Eval.Plan.ScatterGeometryTest

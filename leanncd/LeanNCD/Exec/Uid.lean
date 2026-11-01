@@ -126,6 +126,10 @@ inductive CompileError
                                                              -- axis UID (or the slot counts differ)
   | reservedNameCollision : String → CompileError           -- a generated private name `T#k` is
                                                              -- already a source name
+  | reservedAxisName     : String → CompileError            -- a source axis is spelled with the
+                                                             -- `#const` prefix (`constUnitPrefix`,
+                                                             -- `DSL/Ast.lean`), reserved for the
+                                                             -- unit axes `lowerArith` mints
   deriving Repr, DecidableEq, BEq, Inhabited
 
 /-- Combined error + UID-counter monad (`EStateM ε σ α = σ → Result ε σ α`, Lean core). Mints fresh
