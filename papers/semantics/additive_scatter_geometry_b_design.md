@@ -1,5 +1,11 @@
 # Scatter geometry slice B: groups, boxed writers, surface syntax
 
+**Execution update (2026-11-01).** T1-T6 were replayed verbatim on local `main` base `fd922285`;
+all 36 stage-specific blob checks and all prescribed builds passed (final graph: 8844 jobs).
+The real mutation manifest passed 18/18 with byte-identical restoration. Review and integration
+evidence is maintained in [the execution record](additive_scatter_geometry_b_record.md).
+The pre-implementation descriptions and probes below remain the approved historical design.
+
 **Scope approved 2026-10-30 (slice A design note, D6: "A then B") and the one new choice, the constant
 marker spelling `S[=3]`, approved by the owner on 2026-10-31. Not an implementation plan: the plan exists as
 [additive_scatter_geometry_b_plan.md](additive_scatter_geometry_b_plan.md) (this note stays binding; its

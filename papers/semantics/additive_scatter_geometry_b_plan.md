@@ -1,6 +1,7 @@
 # Scatter geometry, slice B: groups, boxed writers and surface syntax for multi-axis and constant scatters: implementation plan
 
-**Status: execution-ready package; execution not yet started.** The design note
+**Status: T1-T6 executed; verification and integration evidence is in
+[the execution record](additive_scatter_geometry_b_record.md).** The design note
 ([additive_scatter_geometry_b_design.md](additive_scatter_geometry_b_design.md)) is BINDING: scope approved
 2026-10-30, constant spelling `S[=3]` approved 2026-10-31. Its section 4 task list became T1-T5 below, and T6 (the pre-execution review fixes, section 9) was added on top. The
 patches were generated against `759bbf56a9be779b26dfc675405cb62794b17ad7` (the design-note commit; local
