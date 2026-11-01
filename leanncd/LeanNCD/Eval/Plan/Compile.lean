@@ -336,8 +336,8 @@ def checkScanStmt : ScanStmt → Except CapabilityError Unit
       between the two backends, so it is refused rather than run.
 
     Placed AFTER the per-statement sub-construct checks so a program violating both (e.g.
-    `predicate Out(i)` with `Out[i+j]`) is reported by the FORM error (`multiAxisScatterLhs`) rather
-    than by the DEST error, preserving the sub-construct-first precedence the rest of this file's
+    `predicate Out(i)` with a raw constant `Out[3]` that bypassed `lowerArith`) is reported by the
+    FORM error (`scatterOrAffineLhs`) rather than by the DEST error, preserving the sub-construct-first precedence the rest of this file's
     fixtures rely on. See the constructor docstrings on `CapabilityError.predicateScatterDest` and
     `CapabilityError.unloweredScatterAssign` for why each is a rejection and not an admission. -/
 def capabilityPreflight (sched : ScheduledProgram) : Except CapabilityError Unit := do

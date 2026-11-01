@@ -10,9 +10,11 @@ open Std
 
 /-- The declared output shape for a scatter `nm[slots] := …`, computed from the inferred source
     axis sizes (`sizes`): each affine slot's output extent is its affine map applied to the source
-    sizes — `c0 + Σ cᵢ·size(aᵢ)` for an `.affine`, `c·size(a)` for a `.scale` (e.g. upsample
-    `Out[2·i]` ⇒ `2·size(i)`), `size(a)+c` for a `.shift`, `n+1` for a `.const n`, `size(a)` for a
-    bare axis. (`sizes[u]` defaults to 0 for an unseen UID.) -/
+    sizes, by `LHSSlot.outExtent` (the single home of the convention): a positive one-axis placement
+    uses the stride-aligned boundary (e.g. upsample `Out[2·i]` ⇒ `2·size(i)`), a placement naming two
+    or more nonzero-coefficient axes its exact reach `max image + 1` (`Out[i+j]` ⇒ `size(i)+size(j)-1`),
+    `n+1` for a `.const n`, `size(a)` for a bare axis, and every other form the legacy linear
+    `c0 + Σ cᵢ·size(aᵢ)`. (`sizes[u]` defaults to 0 for an unseen UID.) -/
 def scatterOutShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : Except EvalError (List Nat) :=
   -- Every axis in a scatter output coordinate must have an inferred size. An unsized axis means
   -- it is unbound by any read (an upstream sizing gap), so FAIL LOUD rather than defaulting its
