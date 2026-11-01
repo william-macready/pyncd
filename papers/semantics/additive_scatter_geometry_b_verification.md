@@ -134,7 +134,8 @@ Run in the proto worktree at the T5 tip:
 | T6 tip identity | proto branch tip `8b8eaabe4ea8080cb4679748b1931cac726cbcbe`, worktree clean (controller `git status`) |
 | T6 post-state blobs, controller `git rev-parse 8b8eaabe:<path>` | the four hashes in plan section 7 match the fixer's list exactly |
 | T6 patch file | 108 lines, `diff --git` headers for exactly the four paths; blob `bbfd3509b118a5b537263dff29e76f30f5ea8d93` (`git hash-object`) |
-| T6 replay onto `2ad72b7c` | done by the fixer (detached checkout, `git apply`, four blob matches, branch restored, clean); NOT repeated by the controller, and T1-T6 were not replayed in one run from the base after T6 was added (T1-T5 were, by the write-up dispatch; T1-T4 by the controller) |
+| T6 replay onto `2ad72b7c` | done by the fixer (detached checkout, `git apply`, four blob matches, branch restored, clean) |
+| T1-T6 replayed in one run from base `759bbf56` (controller, after the commit of this package) | `git apply --check` on T1 then `git apply` of T1, T2, T3, T4, T5, T6 in order, all clean; `git diff 8b8eaabe --stat -- leanncd` differs only by the untracked new `ScatterSurfaceTest.lean`, whose `git hash-object` is `dc44f29bee5713223b75736cdc65ca3127e4dbad`, equal to the T6 row; branch restored, `git status` clean. `apply --check` was run only for T1 in this run, the others were applied directly |
 | Full build `LeanNCD Tests JaxExperiment` | controller: 8844 jobs green at `2ad72b7c` and again at `8b8eaabe` |
 | Manifest `--check` with `SGB-T6-01` added | controller: `manifest OK: 18 entries, 18 selected, every old-string unique` against the T6 tip |
 | `SGB-T6-01` real run | fixer only (one-entry manifest): PASS, killed by `Eval.Plan.ScatterSurfaceTest` with only the four `r1Surf` guards failing; the controller did not repeat it |
