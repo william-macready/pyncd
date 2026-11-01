@@ -5,7 +5,7 @@ For each program production refuses (observed in
 `papers/semantics/oracle_sorts_plan_facts.md` section 5), the independent predictor names the
 refusal, both native legs refuse with the same `CompileError` constructor, and `classifyRefusal`
 reports `refusalParity`. Negative controls doctor the prediction and must flip to `refusalMismatch`.
-True unsupported-geometry rows also pin the typed path's false `nativeFailure` as the contrast. -/
+(Slice B removed the unsupported-geometry rows: multi-axis and constant groups are admitted.) -/
 
 open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
 open NativeLegs SortedDifferential LeanNCD.OracleSorts OracleMixed Oracle
@@ -136,7 +136,12 @@ private def boxTs : List T := [tZ, tX, tOut "Y" [axK]]
 #guard valueParity (overlapBox .min) boxTs .minPlus
   [.fin (-5), .posInf, .fin 2, .posInf, .fin 3, .posInf, .fin 25, .posInf, .posInf, .posInf]
 
-/-! Refusal controls retain genuine unsupported geometry, not B5's now-accepted donors. -/
+/-! Slice B (B-D1): a multi-axis or constant scatter group is ADMITTED, so these two former
+unsupported-geometry controls (they were `multiWriterScatter` refusal parity, with the typed path's
+false `nativeFailure` as the contrast) are now accept neighbours: no refusal verdict. The only
+surviving `multiWriterScatter` refusal is a predicate destination, which the source oracle does not
+admit (`UnsupportedSource.predicate`), so no source-admitted program reaches that refusal here; its
+predictor coverage is the predicate row of `OracleSortRulesTest`. -/
 private def multiAxis : SourceSnapshot :=
   mk [tZ, tQ, tOut "Y" [axK]]
     [.scatter "Y" [.affine (.affine 0 [(1, axA), (1, axB)])]
@@ -146,15 +151,8 @@ private def multiAxis : SourceSnapshot :=
 private def constant : SourceSnapshot :=
   mk d7AffTs (List.replicate 2 (.scatter "Y" [.affine (.const 3)] (rhs .max [[rd "X" [axA]]])))
 
-#guard classOf multiAxis == parity "multiWriterScatter"
-#guard classOf constant == parity "multiWriterScatter"
-
-/-- The typed API's false report remains a contrast on true refusals only. -/
-private def falseNativeFailure : String :=
-  "LeanNCD.Semantics.Source.SortedDifferential.SortedClassification.nativeFailure\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.failure\n    \"legacy compile failed: LeanNCD.CompileError.multiWriterScatter \\\"Y\\\"\")\n  (LeanNCD.Semantics.Source.SortedDifferential.LegResult.failure \"checked preparation\")"
-
-#guard sortedOf multiAxis (orderOf [tZ, tQ, tOut "Y" [axK]]) == falseNativeFailure
-#guard sortedOf constant (orderOf d7AffTs) == falseNativeFailure
+#guard classOf multiAxis == "none"
+#guard classOf constant == "none"
 
 /-! Accept neighbour: the laundered cast is accepted, so with the true (empty) prediction
 `classifyRefusal` reports no verdict (`none`, not a `refusalMismatch`). -/
@@ -169,7 +167,7 @@ private def predictVote : Prediction → Prediction :=
 
 #guard classWith r16a predictAccepted == "OracleMixed.MixedClassification.refusalMismatch [] \"multiWriterAlgebra\""
 #guard classWith multiAxis predictCast ==
-  "OracleMixed.MixedClassification.refusalMismatch [(\"sortCastUnsupported\", \"Y\")] \"multiWriterScatter\""
+  "OracleMixed.MixedClassification.refusalMismatch [(\"sortCastUnsupported\", \"Y\")] \"accepted\""
 #guard classWith castLaundered predictVote ==
   "OracleMixed.MixedClassification.refusalMismatch [(\"multiWriterAlgebra\", \"M\")] \"accepted\""
 
@@ -187,13 +185,14 @@ private def splitClass (p : Prediction) : Option NativeRun → String
     | none => "none"
   | none => "no run"
 
-private def predictScatter : Prediction :=
-  { refusals := [("multiWriterScatter", "Y")], sorts := [], stmtSorts := [] }
+private def predictCastY : Prediction :=
+  { refusals := [("sortCastUnsupported", "Y")], sorts := [], stmtSorts := [] }
 
--- legacy `multiWriterScatter`, checked `multiWriterAlgebra`; the scatter is predicted
-#guard splitClass predictScatter (splitRun multiAxis r16a) ==
-  "OracleMixed.MixedClassification.refusalMismatch\n  [(\"multiWriterScatter\", \"Y\")]\n  \"legacy multiWriterScatter, checked multiWriterAlgebra\""
+-- (slice B: was `multiAxis`/`multiWriterScatter`, which is now admitted; donor `castDirect`)
+-- legacy `sortCastUnsupported`, checked `multiWriterAlgebra`; the cast is predicted
+#guard splitClass predictCastY (splitRun castDirect r16a) ==
+  "OracleMixed.MixedClassification.refusalMismatch\n  [(\"sortCastUnsupported\", \"Y\")]\n  \"legacy sortCastUnsupported, checked multiWriterAlgebra\""
 -- the same legs from one program are parity
-#guard splitClass predictScatter (splitRun multiAxis multiAxis) == parity "multiWriterScatter"
+#guard splitClass predictCastY (splitRun castDirect castDirect) == parity "sortCastUnsupported"
 
 end OracleMixedRefusalTest

@@ -240,7 +240,7 @@ run_cmd do
 
 -- A constant LHS coord is no longer refused (D5: the `overlappingScatter` guard is gone): it is
 -- reclassified to a `Stmt.scatter` whose slot is the unit-axis placement `0 + 1·u`, and the synthetic
--- axis `u` (a `#const…` name) is declared pinned to size 1. (Was: `.error (.overlappingScatter "Z")`.)
+-- axis `u` (its name is display only, nothing reads it) is declared pinned to size 1. (Was: `.error (.overlappingScatter "Z")`.)
 run_cmd do
   let collapse : Stmt := .assign "Z" [ .affine (.const 0) ]
     { body := { terms := [ { factors := [ .read "X" [ .const 0 ] ] } ] }, nonlin := .identity }
@@ -250,7 +250,7 @@ run_cmd do
   | .ok lp _ =>
       match lp.stmts, lp.decls with
       | [ .scatter "Z" [ .affine (.affine 0 [(1, u)]) ] _ ], [ .axis u' (some 1) ] =>
-          unless u == u' && u.name.startsWith constUnitPrefix do
+          unless u == u' do
             throwError s!"slot axis {repr u} is not the declared synthetic axis {repr u'}"
       | s, d => throwError s!"expected one unit-axis scatter + one pinned decl, got {repr s} / {repr d}"
   | .error e _ => throwError s!"constant LHS must lower, got {repr e}"

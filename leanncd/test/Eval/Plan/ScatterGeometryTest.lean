@@ -115,25 +115,25 @@ def refWriteOutOfRange (p : TLProgram) : Option (String × List Int × List Nat)
 
 -- The constant-slot refusal pin moved to the T3 section (`bypass`): a surface-compiled constant now lowers.
 
--- A multi-writer group containing a multi-axis scatter is still refused (`multiWriterScatter`):
--- donor B5BoundaryTest.twoAxes. Pinned here against the lift (the destination is pinned `k = 6`).
+-- Slice B (B-D1): a multi-writer group containing a multi-axis scatter is ADMITTED (it was refused with
+-- `multiWriterScatter`): donor B5BoundaryTest.twoAxes. The destination is pinned `k = 6`.
 def convTwo : TLProgram :=
   { conv with
     decls := conv.decls.map (fun | .axis ax none => .axis ax (some 6) | d => d)
     stmts := conv.stmts ++ conv.stmts }
-#guard sourceError convTwo == some (.multiWriterScatter "S")
+#guard sourceError convTwo == none
 
--- A BOXED single multi-axis writer keeps the derived shape (B5c D2 residual, closed in slice B): `S`
--- declared over a pinned `k = 8` still publishes `[6]` in all three legs, and the collector does not
--- box it.
+-- Slice B (B-D3): a BOXED single multi-axis writer publishes the DECLARED shape (it kept the derived
+-- `[6]` and was not collected, B5c D2 residual): `S` declared over a pinned `k = 8` publishes `[8]` in
+-- all three legs, and the collector boxes it.
 def convBoxed : TLProgram :=
   { conv with decls := conv.decls.map (fun | .axis ax none => .axis ax (some 8) | d => d) }
 def shapesOf (p : TLProgram) :=
   ((ref64 p convIn64).bind fun e => e["S"]?.map (·.shape),
    (run64 p convIn64).bind fun e => e["S"]?.map (·.shape),
    (run32 p convIn32).bind fun e => e["S"]?.map (·.shape))
-#guard shapesOf convBoxed == (some [6], some [6], some [6])
-#guard B5cSingleBoxTest.groupsOf convBoxed == []
+#guard shapesOf convBoxed == (some [8], some [8], some [8])
+#guard B5cSingleBoxTest.groupsOf convBoxed == ["S"]
 
 -- `route` carries no extents and accepts the multi-axis program.
 #guard routeError conv == none
@@ -245,9 +245,8 @@ def twinS : TLProgram :=
 -- The synthetic axis is declared (pinned to 1, `#const<uid>` name: `#` is not an identifier character,
 -- so no source axis can collide) and is the ONLY declaration `lowerArith` added.
 #guard ((scheduled (as64 S3)).map fun s => s.decls.map fun
-    | .axis ax n => some (ax.name.startsWith constUnitPrefix, n) | _ => none)
-  == some [some (false, some 4), some (false, some 3), some (false, none), none, none, none,
-    some (true, some 1)]
+    | .axis _ n => some n | _ => none)
+  == some [some (some 4), some (some 3), some none, none, none, none, some (some 1)]
 -- A constant next to a free axis (`S[a, 3] := A[a]`, dst `[a, k]`): shape [4,4], column 3 is `A`.
 def colProg := cstProg [a, k] [.free a, cst 3] facA
 def colProgA := cstProg [a, k] [.free a, cst 3] facA true
@@ -275,18 +274,20 @@ def twoConstA := cstProg [k, m] [cst 3, cst 4] facA true
 #guard agree (cstProg [k] [cst 0] facA (agg := .max)) convIn64 convIn32 #[4] #[4]
 #guard agree (cstProg [k] [cst 3] facA (agg := .max)) convIn64 convIn32
   #[-(1/0), -(1/0), -(1/0), 4] #[-(1/0), -(1/0), -(1/0), 4]
--- RISK (ii): a BOXED single constant writer (`k` pinned 8) still publishes the DERIVED shape [4], in all
--- three legs, and the collector does not box it (the synthetic slot is not `boundedScatter`; B5c D2
--- residual, unchanged by T3). Donor: `convBoxed`/`B5cSingleBoxTest.groupsOf`.
-#guard shapesOf (pinAll 8 S3) == (some [4], some [4], some [4])
-#guard shapesOf (pinAll 8 S3a) == (some [4], some [4], some [4])
-#guard B5cSingleBoxTest.groupsOf (pinAll 8 S3) == []
-#guard B5cSingleBoxTest.groupsOf (pinAll 8 S3a) == []
--- RISK (i): a multi-writer group with a constant writer is refused exactly as before T3
--- (`multiWriterScatter`; observed on the T2 commit for the `.scatter` pairs). Donor: `convTwo`.
-#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ S3.stmts }) == some (.multiWriterScatter "S")
-#guard sourceError (pinAll 6 { S3a with stmts := S3a.stmts ++ S3a.stmts }) == some (.multiWriterScatter "S")
-#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ conv.stmts }) == some (.multiWriterScatter "S")
+-- RISK (ii): a BOXED single constant writer (`k` pinned 8). Slice A published the DERIVED shape [4] and
+-- did not box it (B5c D2 residual); slice B publishes the declared shape (pins below).
+-- Donor: `convBoxed`/`B5cSingleBoxTest.groupsOf`.
+-- Slice B (B-D3): the boxed single constant writer now publishes the DECLARED shape [8] (was the derived
+-- [4], "not boxed") and the collector boxes it.
+#guard shapesOf (pinAll 8 S3) == (some [8], some [8], some [8])
+#guard shapesOf (pinAll 8 S3a) == (some [8], some [8], some [8])
+#guard B5cSingleBoxTest.groupsOf (pinAll 8 S3) == ["S"]
+#guard B5cSingleBoxTest.groupsOf (pinAll 8 S3a) == ["S"]
+-- Slice B (B-D1): a multi-writer group with a constant writer is ADMITTED (was `multiWriterScatter`).
+-- Donor: `convTwo`.
+#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ S3.stmts }) == none
+#guard sourceError (pinAll 6 { S3a with stmts := S3a.stmts ++ S3a.stmts }) == none
+#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ conv.stmts }) == none
 -- `route` accepts the constant-slot program.
 #guard routeError S3 == none && routeError S3a == none
 -- No `EvalWarning` (unused-axis, size inference) mentions the synthetic axis: the reference evaluator
@@ -381,10 +382,10 @@ def emptyShapesOf (p : TLProgram) : Option (List Nat) × Option (List Nat) × Op
 
 /-! ## Review repair A2: `#const` is a reserved axis spelling
 
-`IdxExpr.isConstUnit` recognises the unit axes `lowerArith` mints by their `#const` spelling alone.
-An ordinary one-axis writer over a source axis so spelled used to be mistaken for a lowered constant
-and silently skipped by boxed-single-writer collection (published `[2]` instead of `[8]`).
-`checkReservedAxisNames` now rejects the spelling first in both compile chains. -/
+(Slice A history; reversed in slice B, see the pins below.) `IdxExpr.isConstUnit` recognised the unit
+axes `lowerArith` mints by their `#const` spelling alone, so an ordinary one-axis writer over a source
+axis so spelled was mistaken for a lowered constant and skipped by boxed-single-writer collection
+(published `[2]` instead of `[8]`); `checkReservedAxisNames` rejected the spelling. Both are deleted. -/
 
 def ordAxisBox (i : AxisSpec) : TLProgram :=
   { decls := [.axis i (some 2), .axis k (some 8),
@@ -402,12 +403,14 @@ def ordIn32 : NamedDenseEnv32 := ({} : NamedDenseEnv32).insert "A" ⟨[2], #[1, 
   #[1, 2, 0, 0, 0, 0, 0, 0] #[1, 2, 0, 0, 0, 0, 0, 0]
 -- A near-miss spelling (shorter than the prefix) is not reserved.
 #guard (scheduled (ordAxisBox ⟨"#cons", 95, .nat⟩)).isSome
--- The reserved spelling is rejected, with the offending name, before anything is minted.
+-- Slice B (B-D2), reversal of A2: nothing reads an axis NAME, so the former reserved spelling is an
+-- ordinary source axis. It compiles through BOTH chains and behaves as `ordAxisBox ⟨"constUser", ..⟩`
+-- does: collected into the declared box, eight cells in every leg (it used to be `reservedAxisName`).
 #guard (match (ordAxisBox ⟨"#constUser", 95, .nat⟩).compileToScheduled.run 0 with
-  | .error e _ => e == .reservedAxisName "#constUser"
-  | .ok _ _ => false)
+  | .ok _ _ => true | .error _ _ => false)
 #guard (match (ordAxisBox ⟨"#constUser", 95, .nat⟩).compile.run 0 with
-  | .error e _ => e == .reservedAxisName "#constUser"
-  | .ok _ _ => false)
+  | .ok _ _ => true | .error _ _ => false)
+#guard agree (ordAxisBox ⟨"#constUser", 95, .nat⟩) ordIn64 ordIn32
+  #[1, 2, 0, 0, 0, 0, 0, 0] #[1, 2, 0, 0, 0, 0, 0, 0]
 
 end LeanNCD.Eval.Plan.ScatterGeometryTest

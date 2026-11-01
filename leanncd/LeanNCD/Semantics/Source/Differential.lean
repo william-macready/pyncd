@@ -197,21 +197,18 @@ private def derivedShape (source : AdmittedSource) (st : AdmittedStatement sourc
     ((LHSSlot.affine (.affine f.1 (f.2.map fun (coef, u) => (coef, ⟨"", u, .nat⟩)))).outExtent
       (fun u => (source.source.context.axes.find? (·.uid == u)).map (·.extent))).getD 0
 
-/-- B5c: production publishes the DECLARED shape for a single write whose destination is boxed (a
-    declared destination with pinned axes): every slot is a bounded, non-constant form and no
-    destination axis is one of the writer's own source axes (such an axis names the source axis, D5,
-    and the derived shape stays). The oracle also uses the declared shape, so there is nothing to
-    override. Stated from the admitted statement alone, not from production's `boxedSingleGroups`.
-    The oracle cannot see whether an axis was pinned: declared extents are taken as pinned. -/
+/-- B5c + slice B (B-D3): production publishes the DECLARED shape for a single write whose destination
+    is boxed (a declared destination with pinned axes), whatever the writer's slot forms (single-axis,
+    multi-axis, constant), unless a destination axis is one of the writer's own source axes (such an
+    axis names the source axis, D5, and the derived shape stays). The oracle also uses the declared
+    shape, so there is nothing to override. Stated from the admitted statement alone, not from
+    production's `boxedSingleGroups`. The oracle cannot see whether an axis was pinned: declared
+    extents are taken as pinned. -/
 private def declaredShapeWins (source : AdmittedSource) (st : AdmittedStatement source.source) :
     Bool :=
   let destUIDs := (source.source.table.entry st.output.tensor).axes.map (·.uid)
   let sourceUIDs := st.output.forms.flatMap fun f => f.2.map (·.2)
-  let bounded (f : Int × List (Int × UID)) : Bool :=
-    !f.2.isEmpty &&
-      (((f.2.map (·.2)).eraseDups.filter fun u =>
-        (f.2.filter (·.2 == u)).foldl (fun acc p => acc + p.1) 0 != 0).length ≤ 1)
-  st.output.forms.all bounded && !sourceUIDs.any destUIDs.contains
+  !sourceUIDs.any destUIDs.contains
 
 def detectConditions (source : AdmittedSource) :
     List StructuralCondition :=

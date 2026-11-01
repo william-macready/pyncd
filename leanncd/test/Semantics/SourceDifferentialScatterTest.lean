@@ -154,11 +154,13 @@ private def fMask : SourceSnapshot :=
 -- the oracle publishes the declared shape and both native legs the derived one. That is the B5c D2
 -- residual for a constant writer (the collector does not box a constant slot; slice B closes it), the
 -- same class as `fFbig` for a multi-axis writer. Whatever the RHS.
-#guard tag fI1 == "known:extent"
-#guard tag fI2 == "known:extent"
--- `fMask` (the independent constant-slot statement on `Z`) no longer fails the legacy leg at
--- compilation, so it no longer masks conditions: it reports `Z`'s extent condition like `fI2`.
-#guard tag fMask [5, 6] == "known:extent"
+-- Slice B (B-D3), observed: all three were `known:extent` and are now `parity`: a single constant writer
+-- into an oversized declared destination is boxed, so production publishes the DECLARED shape like the
+-- oracle (and `declaredShapeWins` predicts no condition).
+#guard tag fI1 == "parity"
+#guard tag fI2 == "parity"
+-- `fMask` (the independent constant-slot statement on `Z`): parity like `fI2`.
+#guard tag fMask [5, 6] == "parity"
 
 /-- The structural conditions the source alone predicts for `s` (`compareSource`'s `conditions`). -/
 private def conditionCount (s : SourceSnapshot) : Nat :=
@@ -175,7 +177,8 @@ private def conditionCount (s : SourceSnapshot) : Nat :=
 private def fFbig := snap 7 [k] [.assign "Y" [convSlot] readXW]
 #guard conditionCount fE == 0
 #guard conditionCount fF == 0
-#guard conditionCount fFbig == 1
+-- (slice B: `fFbig` is a boxed single multi-axis write, the declared shape wins, so 0 conditions; was 1)
+#guard conditionCount fFbig == 0
 #guard conditionCount fG == 0
 
 /-- Profile verdict on `fE`'s oracle result with one occurrence of the first nonempty fiber dropped
@@ -344,11 +347,10 @@ private def fF11 := withZ 8 [zBare, .assign "Y" [.affine (.scale 2 a)] readX]
 -- (T1, flipped at T2) the legacy-only donors fD (`a+b`) and fN (`a+4b`) are now four-leg parity too.
 #guard tag fD == "parity"
 #guard tag fN == "parity"
--- A multi-axis write declared one cell too big (`fFbig`, `|k| = 7`, reach 6) is a boxed-looking write the
--- production derived-shape rule does NOT box (B5c D2 residual, closed in slice B): both native legs publish
--- the derived shape `[6]` against the oracle's declared `[7]`, a `known:extent` contract difference, not
--- a failure. Pinned so slice B's change to this residual is visible here.
-#guard tag fFbig == "known:extent"
+-- A multi-axis write declared one cell too big (`fFbig`, `|k| = 7`, reach 6) is a boxed single write
+-- (slice B closes the B5c D2 residual): both native legs publish the declared `[7]` like the oracle, so
+-- the class is `parity` (it was a `known:extent` difference: derived `[6]` against declared `[7]`).
+#guard tag fFbig == "parity"
 -- B6 for a mixed-sign row with NEGATIVE minimum: `Y[a-b]` (reach -2..3). The oracle refuses the write
 -- against the declared shape (`writeOutOfRange`, no native leg runs); the native twins of this pin
 -- (reference and checked, both erroring) are in `ScatterGeometryTest`.

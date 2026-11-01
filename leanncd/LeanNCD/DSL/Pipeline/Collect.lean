@@ -130,8 +130,8 @@ def writerGroupBasis (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
     either; a rank-0 destination has nothing to pad and the D5 test below is vacuous for it) and its
     writer is one of:
 
-    * an explicit scatter with bounded geometry (`LHSSlot.boundedScatter`: no constant or multi-axis
-      slot, D2);
+    * an explicit scatter whose every slot is `LHSSlot.collectable` (slice B, B-D1: single-axis,
+      multi-axis and lowered-constant forms; not a raw `.affine (.const _)`);
     * a plain assign whose slots are distinct free axes;
 
     **unless a declared axis occurs among the writer's own SOURCE axes** (D5): `tensor Out(i)` with
@@ -153,7 +153,7 @@ def boxedSingleGroups (env : DeclEnv) (pinned : Std.HashMap UID Nat) (stmts : Li
           ls.flatMap fun sl => (idxAffineForm sl.outIdx).2.map (·.2)
         let collected := match plainAt? stmts i with
           | some (.scatter _ ls _) =>
-              ls.all LHSSlot.boundedScatter && !(sourceUIDs ls).any declUIDs.contains
+              ls.all LHSSlot.collectable && !(sourceUIDs ls).any declUIDs.contains
           | some (.assign _ ls _) =>
               let us := ls.filterMap (·.freeUID?)
               us.length == ls.length && us.length == us.eraseDups.length &&
@@ -191,7 +191,7 @@ def checkWriterGroup (env : DeclEnv) (stmts : List ScanStmt) (g : WriterGroup) :
   for s in ws do
     match s with
     | .scatter _ ls _ =>
-        unless ls.all LHSSlot.boundedScatter && env.declAlgebra g.name != .bool do
+        unless ls.all LHSSlot.collectable && env.declAlgebra g.name != .bool do
           throw (.multiWriterScatter g.name)
     | .assign _ ls _ =>
         if slotsBecomeScatter ls ||
