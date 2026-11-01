@@ -216,7 +216,8 @@ syntax ident "[" tl_lhs_slot,* "]" ":=" tl_rhs : tl_stmt
 
 -- Multi-axis slot `a + b`, `2*a + b`, `a + 2*b + 3`: at least TWO axis terms (`ident` or
 -- `num "*" ident`) joined by `+`, then an optional numeral bias. A lone `num` is not an axis term, so
--- `x + n` / `n*x + m` (one axis term) never match this rule and keep their own rules above.
+-- `x + n` / `n*x + m` (one axis term) never match this rule and keep their own rules below.
+-- A trailing bias must be spaced (`a + b + 1`): `+1` is one token, so `a + b +1` is a parse error.
 declare_syntax_cat tl_axis_term
 syntax:max ident         : tl_axis_term
 syntax     num "*" ident : tl_axis_term

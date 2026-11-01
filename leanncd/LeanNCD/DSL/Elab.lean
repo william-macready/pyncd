@@ -264,9 +264,15 @@ def elabTLAxisTerm : Syntax → MetaM (Int × AxisSpec)
       axis cannot be named at parse time (it is recovered from the matching
       `iterNext` slot during E2's lowering), so we use a placeholder name `""`
       via `idxAxis ""`. REPORTED simplification.
-    * `x +1`       → `.iterNext` (the scan step);
-    * `n*x`, `x+n`, `n*x+n` → `.affine` of the corresponding integer-affine
-      `IdxExpr`, built directly from the slot's pieces. -/
+    * `x +1`       → `.affine (.shift x 1)`; scan lowering (`Structural.lean`) reclassifies it to
+      `.iterNext` when `x` is a scan iteration axis (the scan step);
+    * `n*x`, `x+n`, `n*x+m` → `.affine` of the corresponding integer-affine
+      `IdxExpr`, built directly from the slot's pieces;
+    * `a + b`, `2*a + b`, `a + 2*b + 3` (at least two axis terms `x` or `n*x`, then an optional
+      numeral bias) → `.affine (.affine bias [(coeff, axis), …])`, terms in source order and
+      unmerged (`a + a` stays two terms; `0*a + b` keeps its zero coefficient);
+    * `=n`         → `.affine (.const n)`, a constant write (every source coordinate writes cell
+      `n`); a lone numeral `n` stays the scan base case above. -/
 partial def elabTLLHSSlot : Syntax → MetaM LHSSlot
   | `(tl_lhs_slot| $t:tl_axis_term $[+ $ts:tl_axis_term]* $[+ $b:num]?) => do
       let terms ← (#[t] ++ ts).toList.mapM elabTLAxisTerm

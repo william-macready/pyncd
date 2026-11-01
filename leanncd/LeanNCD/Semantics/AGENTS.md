@@ -158,7 +158,7 @@ its equal-extent stride twin has actual four-leg parity. An extent condition is
 confirmed only when both native binding failures name its declaration; only the
 head condition is confirmed, and confirmed extent differences suppress all value comparison.
 B5's independent test-side predictor separates SOURCE eligibility (C1
-222/195/88 over 505 rows) from SHAPED preparation: 81 SOURCE-admitted corpus rows
+281/186/38 over 505 rows) from SHAPED preparation: 99 SOURCE-admitted corpus rows
 stay refused, now as `writerExtentExceedsBox` (C1 declares extent 4 against realized 8), while
 seventeen hand rows give eleven accepts and six shape refusals (four rows pin the box through an
 `iter` declaration; four are single-writer rows, `singleBoxed`). The predictor restates the B5b box
@@ -171,8 +171,11 @@ Since S3a every backend ⊕-sums colliding scatter writes, so collisions are agr
 a bare-slot scatter over a contracted axis (F11) and `fE` are parity; the multi-axis scatter `fD` (`a+b`) and the
 constant-slot scatter `fD'` are parity too, since scatter-geometry slice A: the checked plan admits top-level
 multi-axis and constant slots (`lowerArith` rewrites a constant to a placement over a synthetic unit axis).
-A constant writer into a destination declared larger than `n+1` reports `known:extent` (slice B closes it);
-scan-local multi-axis/constant slots stay refused by capability (`scatterOrAffineLhs`, `multiAxisScatterLhs`, F3). See the
+Since slice B a single constant or multi-axis writer into a destination with every axis pinned publishes the
+DECLARED shape in production too (`declaredShapeWins` no longer excludes those forms), so `fI1`/`fI2`/`fMask`/`fFbig`
+are `parity`, not `known:extent` (the condition remains only where production derives the shape, an unboxed single write). Multi-axis and constant
+groups are admitted by the oracle sort rules (`OracleSortRules`). The test-side `predictedExtent` still uses the legacy
+sum rule for a multi-axis slot (unexercised; parked). Scan-local multi-axis/constant slots stay refused by capability (`scatterOrAffineLhs`, `multiAxisScatterLhs`, F3). See the
 [source correspondence record](../../../papers/semantics/source_correspondence_record.md)
 for scope and limits.
 

@@ -1,9 +1,9 @@
 import Eval.Plan.B5cSingleBoxTest
 
 /-!
-# Scatter geometry slice A: multi-axis `Y[a+b]` (programmatic forms)
+# Scatter geometry slices A and B: multi-axis `Y[a+b]` and constant writers (programmatic forms)
 
-Hand-built `TLProgram`s (the surface cannot say a multi-axis slot; slice B adds it) with an explicit
+Hand-built `TLProgram`s (the surface spelling of these slots is pinned in `ScatterSurfaceTest`) with an explicit
 `.scatter` statement, run through the real pipeline (`compileToScheduled`, `prepareEvalPlan`,
 `runPreparedDense`/`runPreparedDense32`, `evalScheduled`) by the B5 harness (`B5NativeTest`).
 

@@ -24,7 +24,9 @@ contain bounded scatter writers, using a distinct declared coordinate basis or t
 bare assignment. Their retained shape obligations are checked after inference: a destination
 declared with every axis pinned by `axis … = n` is a box that each writer's realized extent must fit
 (`writerExtentExceedsBox`); every other group requires exact extent equality
-(`writerExtentMismatch`). Predicate, explicit-constant and multi-axis scatter groups remain refused.
+(`writerExtentMismatch`). Single-axis, multi-axis and lowered-constant scatter writers are all
+collectable (`LHSSlot.collectable`); predicate-destination scatter groups and raw `.affine (.const _)`
+writers (only a hand-built schedule that skipped `lowerArith` carries one) remain refused.
 A group's sort is the one its writers' votes agree on (`writerSort?`); sort-neutral copy writers
 abstain beside a non-neutral writer and are rewritten to the agreed sort (`Stmt.withAgg`), so a
 copy's bare out-of-range read pads the group's `0_K` and a copy of a predicate reads it through the group's

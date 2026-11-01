@@ -275,9 +275,10 @@ inductive CapabilityError
       range rule), so only a scan statement can raise this: scan-local placement is non-injective for
       a multi-axis row and the reference overwrites there instead of summing (F3). Its own
       constructor rather than a reuse of `scatterOrAffineLhs`, because "a scatter is not supported at
-      all" and "this one placement form is not supported" are different facts. Unreachable from
-      `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots; surface
-      syntax for multi-axis rows is slice B); a hand-built `ScheduledProgram` can express it. -/
+      all" and "this one placement form is not supported" are different facts. Reachable from
+      `tl!{…}` surface syntax since slice B added the multi-axis slot (`elabTLLHSSlot`): a scan
+      statement such as `G[j + k, l +1]` raises it at preflight (pinned in `ScatterSurfaceTest`);
+      a hand-built `ScheduledProgram` reaches it too. -/
   | multiAxisScatterLhs  (context : String)
   /-- A top-level scatter's DESTINATION is `predicate`/`bool`-declared. The reference evaluator
       `evalScatter` (`Eval/Scatter.lean`) WAS not dtype-aware (reference-alignment made it so, via

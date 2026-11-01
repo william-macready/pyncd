@@ -106,9 +106,9 @@ inductive CompileError
   -- Additive collection (`desugarMultiWriters`, `DSL/Pipeline/Collect.lean`; wrapped by
   -- `collectDefinitions`, `DSL/Pipeline/ScheduledValidation.lean`): the multi-writer sets the
   -- collector does not admit yet. Each names the destination tensor `T`.
-  | multiWriterScatter   : String → CompileError            -- outside bounded B5: predicate,
-                                                             -- constant/multi-axis scatter, or
-                                                             -- unlowered scatter-shaped assign
+  | multiWriterScatter   : String → CompileError            -- outside bounded B5: predicate
+                                                             -- destination, raw constant scatter,
+                                                             -- or unlowered scatter-shaped assign
   | multiWriterNeedsDeclaredShape : String → CompileError
   | multiWriterRepeatedBasis : String → CompileError
   | routeUnsupportedMultiWriter : String → CompileError    -- `route` only: a bounded B5 group

@@ -149,11 +149,11 @@ private def fMask : SourceSnapshot :=
 #guard tag fH6 == "refused:writeOutOfRange"
 -- Constant slots written by `.assign`: they used to fail compilation (`overlappingScatter`, the
 -- `lowerArith` `.assign` arm's guard, deleted by slice A T3/D5: it predated S3a and the oracle and the
--- reference define the write). They now compile and run, and the class is `known:extent` for these
--- three: each destination is DECLARED larger than the derived `n + 1` (5 vs 4; `fMask`'s `Z` 8 vs 4),
--- the oracle publishes the declared shape and both native legs the derived one. That is the B5c D2
--- residual for a constant writer (the collector does not box a constant slot; slice B closes it), the
--- same class as `fFbig` for a multi-axis writer. Whatever the RHS.
+-- reference define the write). They now compile and run. Each destination is DECLARED larger than the
+-- derived `n + 1` (5 vs 4; `fMask`'s `Z` 8 vs 4); before slice B the class was `known:extent` (the
+-- oracle published the declared shape, both native legs the derived one: the B5c D2 residual, the same
+-- class as `fFbig` for a multi-axis writer).
+-- The three programs are `fI1`, `fI2` and `fMask`.
 -- Slice B (B-D3), observed: all three were `known:extent` and are now `parity`: a single constant writer
 -- into an oversized declared destination is boxed, so production publishes the DECLARED shape like the
 -- oracle (and `declaredShapeWins` predicts no condition).
