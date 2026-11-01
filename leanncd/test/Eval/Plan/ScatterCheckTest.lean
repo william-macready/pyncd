@@ -159,7 +159,9 @@ def zeroExtentSizes : UID → Option Nat
 #guard (LHSSlot.affine (.shift extentI 2)).outExtent extentSizes == some 5
 #guard (LHSSlot.affine (.affine 1 [(1, extentI), (1, extentI)])).outExtent extentSizes == some 6
 #guard (LHSSlot.affine (.affine 1 [(1, extentI), (-1, extentI)])).outExtent extentSizes == some 1
-#guard (LHSSlot.affine (.affine 1 [(2, extentI), (1, extentJ)])).outExtent extentSizes == some 11
+-- M1: a row naming two axes has its exact reach `max image + 1` (`1 + 2*2 + 1*3 = 8`, so 9); the legacy
+-- linear boundary `1 + 2*3 + 1*4` gave 11.
+#guard (LHSSlot.affine (.affine 1 [(2, extentI), (1, extentJ)])).outExtent extentSizes == some 9
 #guard (LHSSlot.affine (.affine (-1) [(2, extentI)])).outExtent extentSizes == some 5
 #guard (LHSSlot.affine (.affine 1 [(-2, extentI)])).outExtent extentSizes == some 0
 #guard (LHSSlot.affine (.affine 1 [(2, extentI)])).outExtent zeroExtentSizes == some 1
@@ -167,6 +169,69 @@ def zeroExtentSizes : UID → Option Nat
 #guard (LHSSlot.affine (.affine 3 [(0, extentI)])).outExtent extentSizes == some 3
 #guard (LHSSlot.affine (.affine 0 [(0, extentJ)])).outExtent (fun _ => none) == none
 #guard (LHSSlot.iterAt extentI 3).outExtent extentSizes == some 4
+
+/-! ### The multi-axis extent table (M1: `max image + 1`)
+
+A row naming two or more distinct nonzero-coefficient axes is sized by its EXACT REACH, not by the
+legacy `c0 + Σ c·n` (which over-approximated positive rows and under-approximated negative ones). The
+single-axis stride-aligned arm and the zero-coefficient arm are deliberately unchanged: the control
+rows at the end pin that. Sizes: `i : 3`, `j : 4`, `k : 2`. Every value below was observed from a real
+`lean-file.sh` run of this file, then checked by hand against the corner formula. -/
+
+def extentK : AxisSpec := { name := "k", uid := 42, kind := .nat }
+def tripleSizes : UID → Option Nat
+  | 40 => some 3
+  | 41 => some 4
+  | 42 => some 2
+  | _ => none
+def emptyAxisSizes : UID → Option Nat
+  | 40 => some 0
+  | 41 => some 4
+  | _ => none
+
+def multiExtent (c0 : Int) (cf : List (Int × AxisSpec)) (sz : UID → Option Nat := extentSizes) :
+    Option Nat :=
+  (LHSSlot.affine (.affine c0 cf)).outExtent sz
+
+-- `i + j`: reach 0..(2+3), so 6 (the legacy sum is 7).
+#guard multiExtent 0 [(1, extentI), (1, extentJ)] == some 6
+-- With a bias: `i + j + 3` reaches 3..8, extent 9 (legacy 10).
+#guard multiExtent 3 [(1, extentI), (1, extentJ)] == some 9
+-- A coefficient: `4i + j` reaches 0..(8+3), extent 12 (legacy 16) -- the `a+4b` convolution shape.
+#guard multiExtent 0 [(4, extentI), (1, extentJ)] == some 12
+-- Three axes: `i + j + k` reaches 0..(2+3+1), extent 7 (legacy 9).
+#guard multiExtent 0 [(1, extentI), (1, extentJ), (1, extentK)] tripleSizes == some 7
+-- A repeated axis is densified first: `i + j + i` is `2i + j`, reaching 0..(4+3), extent 8.
+#guard multiExtent 0 [(1, extentI), (1, extentJ), (1, extentI)] == some 8
+-- Mixed sign, non-negative minimum: `2i - j + 3` reaches 0..7, extent 8 (legacy 5 sat BELOW the
+-- reach: M1 widens acceptance for such rows).
+#guard multiExtent 3 [(2, extentI), (-1, extentJ)] == some 8
+-- Mixed sign, NEGATIVE minimum: `i - j` reaches -3..2, extent 3 (legacy clamped to 0). The row is
+-- still an out-of-range write (min -3), reported by the range clause, not hidden by the extent.
+#guard multiExtent 0 [(1, extentI), (-1, extentJ)] == some 3
+-- All-negative: `-i - j` reaches -5..0, extent 1 (legacy 0).
+#guard multiExtent 0 [(-1, extentI), (-1, extentJ)] == some 1
+-- A zero-size named axis keeps the LEGACY value (the box is empty, there is no corner to reach):
+-- `i + j` with `|i| = 0, |j| = 4` is `0 + 0 + 4`.
+#guard multiExtent 0 [(1, extentI), (1, extentJ)] emptyAxisSizes == some 4
+-- ... and the negative-coefficient twin, where a corner of the EMPTY box would add a spurious
+-- `-1 * -1` (`-i + j`: legacy `0 + 0 + 4 = 4`; reach without the guard would be 5).
+#guard multiExtent 0 [(-1, extentI), (1, extentJ)] emptyAxisSizes == some 4
+-- An unsized named axis is still `none`.
+#guard multiExtent 0 [(1, extentI), (1, extentK)] extentSizes == none
+-- CONTROLS, unchanged by M1. Single-axis stride-aligned: `2i` is 6, `2i + 3` is 8.
+#guard multiExtent 0 [(2, extentI)] == some 6
+#guard multiExtent 3 [(2, extentI)] == some 8
+-- Zero coefficient next to ONE nonzero axis: the nonzero axis alone decides (`j`, stride-aligned 4).
+#guard multiExtent 0 [(0, extentI), (1, extentJ)] == some 4
+-- Zero coefficient on the only axes: the bias alone (`3 + 0·n`), the documented degeneracy.
+#guard multiExtent 3 [(0, extentI), (0, extentJ)] == some 3
+-- The constant constructor keeps `n + 1`.
+#guard (LHSSlot.affine (.const 3)).outExtent extentSizes == some 4
+-- ONE corner formula: the extent is `max + 1` of the SAME bounds the B6 range rule uses.
+#guard scatterImageBounds #[3, 4] #[1, 1] 0 == (0, 5)
+#guard scatterDestExtent #[3, 4] #[1, 1] 0 == some 6
+#guard scatterDestExtent #[3, 4] #[4, 1] 0 == some 12
 
 /-! ## The zero-coefficient degeneracy, pinned
 
@@ -217,7 +282,10 @@ def boxCheck (row : Array Int) (bias : Int) : Except PlanError CheckedScatterPla
 -- The derived extents the cases below rely on (so a change to `outExtent` fails HERE, not obscurely).
 #guard scatterDestExtent #[3, 2] #[3, -1] 1 == some 8
 #guard scatterDestExtent #[3, 2] #[3, -1] 0 == some 7
-#guard scatterDestExtent #[3, 2] #[2, -1] 1 == some 5
+-- M1: `2a - b + 1` over `[3,2]` reaches [0,5], so its derived extent is 6 (the legacy boundary 5 sat
+-- AT the max image and made this row a B6 error; the row is now in range, see the direct
+-- `scatterRangeViolation` guards below for the corner off-by-one it used to carry).
+#guard scatterDestExtent #[3, 2] #[2, -1] 1 == some 6
 
 -- Rejections. Negative bias `Out[i-1]`: image [-1, 1] in extent 2.
 #guard errOf (boxCheck #[1, 0] (-1)) == some (.scatterWriteOutOfRange 0 (-1) 1 2)
@@ -233,9 +301,16 @@ def boxCheck (row : Array Int) (bias : Int) : Except PlanError CheckedScatterPla
 #guard isOk (boxCheck #[3, -1] 1)
 -- MIN corner one below: bias 0 makes the min -1 (image [-1,6] in extent 7); max is still in range.
 #guard errOf (boxCheck #[3, -1] 0) == some (.scatterWriteOutOfRange 0 (-1) 6 7)
--- MAX corner at the extent, one over: coefficient 2 makes extent = max (image [0,5] in extent 5);
--- min is still exactly 0.
-#guard errOf (boxCheck #[2, -1] 1) == some (.scatterWriteOutOfRange 0 0 5 5)
+-- MAX corner: under M1 a 2-axis row's derived extent is always `max + 1`, so the MAX off-by-one can no
+-- longer be built through `checkScatter` (its extent clause forces `destShape` to the derived value).
+-- `2a - b + 1` (image [0,5]) is now ACCEPTED at its derived extent 6 ...
+#guard isOk (boxCheck #[2, -1] 1)
+-- ... and the shared range rule is pinned directly with an explicit `destShape`: extent 5 is exactly
+-- `max` (one over) and is rejected with the same payload the checker used to report; extent 6 passes.
+#guard scatterRangeViolation #[3, 2] #[#[2, -1]] #[1] #[5] == some (0, 0, 5, 5)
+#guard scatterRangeViolation #[3, 2] #[#[2, -1]] #[1] #[6] == none
+-- MIN corner through the same direct door: bias 0 gives min -1 whatever the extent.
+#guard scatterRangeViolation #[3, 2] #[#[2, -1]] #[0] #[6] == some (0, -1, 4, 6)
 
 -- `destShape` one too small is NOT a range error: the extent clause fires first, which pins the order.
 #guard errOf (checkScatter (boxSigs #[7]) (boxScatter 7 #[3, -1] 1))
@@ -255,7 +330,7 @@ def boxCheck (row : Array Int) (bias : Int) : Except PlanError CheckedScatterPla
   == some (.scatterWriteOutOfRange 0 (-1) 1 2)
 
 -- Accept neighbours: identity, stride 2 (`2*i`, derived extent 6, image [0,4]), offset `i+1`
--- (extent 4, image [1,3]), and a two-axis positive slot `i+j` (extent 5, image [0,3]).
+-- (extent 4, image [1,3]), and a two-axis positive slot `i+j` (extent 4 under M1, image [0,3]).
 #guard isOk (boxCheck #[1, 0] 0)
 #guard isOk (boxCheck #[2, 0] 0)
 #guard isOk (boxCheck #[1, 0] 1)

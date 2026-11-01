@@ -314,12 +314,11 @@ fragment.
   slice; see the update below). The parity gate is the curated
   `scatterPrograms` corpus (`DifferentialTest.lean`, 9 accepted programs), checked bit-for-bit
   against the reference `Eval/Scatter.lean` evaluator over the real sum-product algebra. Still
-  rejected, deliberately: a constant-affine slot (`Out[3]`, `scatterOrAffineLhs`), a multi-axis slot
-  (`Out[i+j]`, `multiAxisScatterLhs`), a collision policy other than reject-on-collision
+  rejected, deliberately: a collision policy other than reject-on-collision
   (`scatterOptsNotAdmitted`), a non-identity nonlinearity on a scatter (`unsupportedScatterNonlin`),
   and a Boolean/predicate destination (`predicateScatterDest`); a tropical-algebra scatter's
   unwritten cells used to diverge from the reference (fill 0, not `∓∞`) and was not a parity-corpus
-  entry (S3b: both backends start the cells at `0_K`, `∓∞`, and the closed form is the same). **Update (reference-alignment slice):** the reference now REJECTS a top-level
+  entry (S3b: both backends start the cells at `0_K`, `∓∞`, and the closed form is the same). **Update (scatter-geometry slice A):** a top-level constant-affine slot (`Out[3]`) and a multi-axis slot (`Out[i+j]`) are now ADMITTED (`lowerArith` places a constant on a synthetic size-1 axis; a multi-axis row takes the exact-reach extent); both stay refused in scan-local scatter (`scatterOrAffineLhs`, `multiAxisScatterLhs`), and are not yet admitted in multi-writer groups (`multiWriterScatter`), nor collected into a declared box as a boxed single writer (such a writer runs with its derived shape and ignores the pinned declaration), nor in surface syntax (slice B). **Update (reference-alignment slice):** the reference now REJECTS a top-level
   `maxreduce`/`minreduce` scatter too (`scatterFillNotIdentity`), so the divergence is closed by a
   shared refusal, and `evalScatter` is now dtype-aware for predicate destinations (`combineFor`);
   the checked `predicateScatterDest` rejection is kept until the checked Boolean scatter is verified.

@@ -92,16 +92,16 @@ def acceptedSched : ScheduledProgram :=
     { acceptedSched with stmts :=
         [.plain (.scatter "Out" [] { body := { terms := [] }, nonlin := .identity })] })
 
--- ... but ONLY at top level, and only in the single-axis strided placement forms. A two-axis affine
--- LHS slot (`Out[i+j]`) is `multiAxisScatterLhs` — its own constructor, asserted here rather than a
--- bare "rejected", since dropping this arm would still leave the program rejected (one phase later,
--- by a different family) and a fixture checking only rejection could not tell the two apart.
-#guard errOf (capabilityPreflight
+-- ... and, since the multi-axis extent rule (M1: `outExtent` is the exact reach, from the same corner
+-- formula as the B6 range check), a two-axis affine LHS slot (`Out[i+j]`) is ADMITTED at top level.
+-- It used to be `multiAxisScatterLhs`; the scan-block sibling still refuses it (`ScanCompileTest`'s
+-- `badScatter` pins), so this admission is top-level only. End-to-end values live in
+-- `ScatterGeometryTest`.
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.scatter "Out"
           [.affine (.affine 0 [(1, ⟨"i", 0, .nat⟩), (1, ⟨"j", 1, .nat⟩)])]
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
-  == some (.multiAxisScatterLhs "Out: affine LHS slot")
 
 -- The same two-axis coefficient row spelled as a REPEATED single axis is not multi-axis at all:
 -- `idxAffineForm`/`normalizeCoeffs` fold `i + i` to the single coefficient `2` on `i`, which is
@@ -114,9 +114,9 @@ def acceptedSched : ScheduledProgram :=
 
 -- A constant affine LHS slot (`Out[3]`) stays rejected: it is the ONE slot form whose
 -- `LHSSlot.outExtent` answer (`.const`'s `n + 1`) disagrees with the placement-row reconstruction
--- `checkScatter` validates against. (`lowerArith` refuses it on the surface `.assign` path with
--- `overlappingScatter`; a hand-built `.scatter` const slot compiles and sums, so this preflight
--- refusal is the only gate for that shape.)
+-- `checkScatter` validates against. (Slice A T3: `lowerArith` lowers a surface constant slot to a
+-- unit-axis placement, so this preflight refusal now only fires for a hand-built schedule that
+-- BYPASSED `lowerArith`, which is exactly what this fixture is.)
 #guard errOf (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.scatter "Out" [.affine (.const 3)]
@@ -332,14 +332,15 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
 -- checked" from a preflight that accidentally short-circuits after admitting a predicate
 -- declaration and skips statement checking entirely. S-A re-donored this from the bare
 -- `scatterOrAffineLhs` scatter (now ADMITTED at top level, so it would no longer discriminate) to
--- the two-axis affine LHS, which keeps a scatter statement as the donor and still rejects.
+-- the two-axis affine LHS; the multi-axis slice (M1) re-donors it once more, to the CONSTANT-slot
+-- scatter (`Out[3]`), because the two-axis slot is now admitted too. The constant slot is the one
+-- scatter geometry the top-level preflight still refuses, so the donor stays a scatter statement.
 #guard errOf (capabilityPreflight
     { acceptedSched with
         decls := [.predicate "P" []]
-      , stmts := [.plain (.scatter "Out"
-          [.affine (.affine 0 [(1, ⟨"i", 0, .nat⟩), (1, ⟨"j", 1, .nat⟩)])]
+      , stmts := [.plain (.scatter "Out" [.affine (.const 3)]
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
-  == some (.multiAxisScatterLhs "Out: affine LHS slot")
+  == some (.scatterOrAffineLhs "Out: constant affine LHS slot")
 
 -- `booleanOutput` has no producer left in this file (Task 4.3 replaced its one throw site), but the
 -- constructor is retained on `CapabilityError` — deleting a shipped closed-family constructor is

@@ -415,17 +415,12 @@ def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Op
   (scatterPlacementSlot row bias).outExtent (fun u => srcShape[u]?)
 
 /-- The corner extremes `(min, max)` of one placement slot's image `bias + Σ c_k·x_k` over the
-    source box `x_k ∈ [0, n_k)`: an affine image attains both at box corners, so
-    `min = bias + Σ min 0 (c_k·(n_k-1))` and `max = bias + Σ max 0 (c_k·(n_k-1))`. A zero coefficient
-    contributes nothing (the axis does not move the image). Meaningful only for a NON-EMPTY box —
-    callers test emptiness first (`n_k = 0` would make `n_k-1` a spurious `-1`). Rows are zipped
-    against `srcShape`, so the caller's width clause makes the zip lossless. -/
+    source box `x_k ∈ [0, n_k)`: `affineImageBounds` (`DSL/Ast.lean`, the ONE corner formula, which
+    `LHSSlot.outExtent`'s multi-axis arm also calls) applied to the row zipped against `srcShape`, so
+    the caller's width clause makes the zip lossless. Meaningful only for a NON-EMPTY box —
+    callers test emptiness first. -/
 def scatterImageBounds (srcShape : Array Nat) (row : Array Int) (bias : Int) : Int × Int :=
-  (row.toList.zip srcShape.toList).foldl
-    (fun (lo, hi) (c, n) =>
-      let span := c * ((n : Int) - 1)
-      (lo + min 0 span, hi + max 0 span))
-    (bias, bias)
+  affineImageBounds bias (row.toList.zip srcShape.toList)
 
 /-- The first destination dimension whose slot image over the (non-empty) source box leaves
     `[0, destShape[d])`, as `(d, minImage, maxImage, extent)`; `none` when every write is in range.

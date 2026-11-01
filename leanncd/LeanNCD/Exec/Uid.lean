@@ -19,7 +19,7 @@ inductive CompileError
   | shapeMismatch        : String → String → CompileError   -- expected shape, actual shape
   | missingBaseCase      : String → CompileError            -- tensor name missing iterAt stmt
   | causalityViolation   : String → CompileError            -- l+1 on RHS for iteration axis l
-  | overlappingScatter   : String → CompileError            -- constant LHS slot collapsing a dimension (`.assign` arm only; scatter collisions are summed)
+  | overlappingScatter   : String → CompileError            -- only a scan statement that carries a constant LHS slot (slice A T3b); a top-level constant lowers to a unit-axis scatter
   | linearWeightAmbiguous : String → CompileError           -- linear weight in ≠1 product factors
   | undeclaredName       : String → CompileError            -- name used but not declared
   | rankMismatch         : String → Nat → Nat → CompileError -- tensor name, expected rank, actual rank
@@ -126,6 +126,10 @@ inductive CompileError
                                                              -- axis UID (or the slot counts differ)
   | reservedNameCollision : String → CompileError           -- a generated private name `T#k` is
                                                              -- already a source name
+  | reservedAxisName     : String → CompileError            -- a source axis is spelled with the
+                                                             -- `#const` prefix (`constUnitPrefix`,
+                                                             -- `DSL/Ast.lean`), reserved for the
+                                                             -- unit axes `lowerArith` mints
   deriving Repr, DecidableEq, BEq, Inhabited
 
 /-- Combined error + UID-counter monad (`EStateM ε σ α = σ → Result ε σ α`, Lean core). Mints fresh

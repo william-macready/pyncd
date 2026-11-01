@@ -186,15 +186,16 @@ for the program. Multi-writer syntax or shape refusals are ordinary native failu
 def nonBareWrite (st : AdmittedStatement source) : Bool :=
   st.output.forms != st.output.indices.map WriteForm.single
 
-/-- The extent production derives per destination dimension: `c0 + Σ coef * extent` (observed on
-P3 fixtures: `2*a` over 4 gives 8, `a+2` gives 6, `a+b` gives 7, a constant `c` gives `c+1`). -/
+/-- The extent production derives per destination dimension: a constant `c` gives `c+1`, every other
+form is `LHSSlot.outExtent` itself (observed on P3 fixtures: `2*a` over 4 gives 8, `a+2` gives 6; since
+M1 `a+b` over (4,3) gives its exact reach 6, not 7). Calling the one extent home rather than restating
+it is the point: a second copy of the rule went stale at M1 (it still predicted 7 for `a+b`). -/
 private def derivedShape (source : AdmittedSource) (st : AdmittedStatement source.source) :
     List Nat :=
   st.output.forms.map fun f =>
     if f.2.isEmpty then (f.1 + 1).toNat else
-    (f.1 + (f.2.map fun (coef, u) =>
-      coef * ((source.source.context.axes.find? (·.uid == u)).map (fun a => (a.extent : Int))
-        |>.getD 0)).sum).toNat
+    ((LHSSlot.affine (.affine f.1 (f.2.map fun (coef, u) => (coef, ⟨"", u, .nat⟩)))).outExtent
+      (fun u => (source.source.context.axes.find? (·.uid == u)).map (·.extent))).getD 0
 
 /-- B5c: production publishes the DECLARED shape for a single write whose destination is boxed (a
     declared destination with pinned axes): every slot is a bounded, non-constant form and no
