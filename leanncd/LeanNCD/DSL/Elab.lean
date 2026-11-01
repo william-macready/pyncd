@@ -250,6 +250,12 @@ partial def elabTLRHS : Syntax → MetaM RHSExpr
 
 /-! ## Layers 5–6: LHS slots, statements, whole program (Task E1.5) -/
 
+/-- One term of a multi-axis slot: `x` is coefficient 1, `n*x` is coefficient `n`. -/
+def elabTLAxisTerm : Syntax → MetaM (Int × AxisSpec)
+  | `(tl_axis_term| $x:ident) => return (1, idxAxis (identStr x))
+  | `(tl_axis_term| $n:num * $x:ident) => return (Int.ofNat n.getNat, idxAxis (identStr x))
+  | _ => throwUnsupportedSyntax
+
 /-- Elaborate a single `tl_lhs_slot` into an `LHSSlot`.
 
     * `x`          → `.free` (a free output axis);
@@ -262,6 +268,12 @@ partial def elabTLRHS : Syntax → MetaM RHSExpr
     * `n*x`, `x+n`, `n*x+n` → `.affine` of the corresponding integer-affine
       `IdxExpr`, built directly from the slot's pieces. -/
 partial def elabTLLHSSlot : Syntax → MetaM LHSSlot
+  | `(tl_lhs_slot| $t:tl_axis_term $[+ $ts:tl_axis_term]* $[+ $b:num]?) => do
+      let terms ← (#[t] ++ ts).toList.mapM elabTLAxisTerm
+      let c0 : Int := match b with | some b => Int.ofNat b.getNat | none => 0
+      return .affine (.affine c0 terms)
+  | `(tl_lhs_slot| = $n:num) =>
+      return .affine (.const (Int.ofNat n.getNat))
   | `(tl_lhs_slot| $x:ident .) =>
       return .freeNorm (idxAxis (identStr x))
   | `(tl_lhs_slot| $x:ident) =>

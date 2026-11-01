@@ -214,6 +214,17 @@ syntax tl_sum_expr                      : tl_rhs
 -- Layer 5: statements
 syntax ident "[" tl_lhs_slot,* "]" ":=" tl_rhs : tl_stmt
 
+-- Multi-axis slot `a + b`, `2*a + b`, `a + 2*b + 3`: at least TWO axis terms (`ident` or
+-- `num "*" ident`) joined by `+`, then an optional numeral bias. A lone `num` is not an axis term, so
+-- `x + n` / `n*x + m` (one axis term) never match this rule and keep their own rules above.
+declare_syntax_cat tl_axis_term
+syntax:max ident         : tl_axis_term
+syntax     num "*" ident : tl_axis_term
+syntax:55 tl_axis_term (atomic("+" tl_axis_term))+ ("+" num)? : tl_lhs_slot
+-- Constant slot `S[=3]`: every source coordinate writes cell 3. The `=` marker keeps a lone numeral
+-- `S[3]` meaning the scan base case (`.iterAt`).
+syntax:max "=" num       : tl_lhs_slot
+
 syntax:60 num "*" ident "+" num : tl_lhs_slot
 syntax:55 num "*" ident         : tl_lhs_slot
 syntax:55 ident "+1"            : tl_lhs_slot

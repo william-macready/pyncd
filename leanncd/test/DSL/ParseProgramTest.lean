@@ -170,4 +170,50 @@ private def namedC128prog : TLProgram := tlprog!{
 }
 #guard namedC128prog.decls == [Decl.tensor "complex128" [ax0 "i"]]
 
+/-! ## LHS slot forms: multi-axis `a + b` and constant `=n` (scatter geometry B, B-D4)
+
+The surface grammar gained a multi-axis rule (>= 2 axis terms, optional numeral bias) and a constant
+rule `=n`. Single-axis and lone-numeral forms keep their constructors (U2 below pins every one);
+the multi-axis arm emits `.affine (.affine bias [(coeff, axis) ...])` in SOURCE order (U1). -/
+
+private def slotsOf (p : TLProgram) : List LHSSlot :=
+  match p.stmts with
+  | [.assign _ s _] => s
+  | _ => []
+private def axA : AxisSpec := ax0 "a"
+private def axB : AxisSpec := ax0 "b"
+private def axC : AxisSpec := ax0 "c"
+private def axX : AxisSpec := ax0 "x"
+
+-- U1: multi-axis. Distinct coefficients, bias and term count make a bias-dropping, order-reversing,
+-- term-dropping or coefficient-ignoring arm each give a different list.
+#guard slotsOf tlprog!{ S[a + b] := A[a] · B[b] } == [.affine (.affine 0 [(1, axA), (1, axB)])]
+#guard slotsOf tlprog!{ S[2*a + b] := A[a] · B[b] } == [.affine (.affine 0 [(2, axA), (1, axB)])]
+#guard slotsOf tlprog!{ S[a + 2*b + 3] := A[a] · B[b] } == [.affine (.affine 3 [(1, axA), (2, axB)])]
+#guard slotsOf tlprog!{ S[a + b + c] := A[a] · B[b] } ==
+  [.affine (.affine 0 [(1, axA), (1, axB), (1, axC)])]
+#guard slotsOf tlprog!{ S[a + b + 3*c + 5] := A[a] · B[b] } ==
+  [.affine (.affine 5 [(1, axA), (1, axB), (3, axC)])]
+-- ... and is NOT the single-axis constructor (`a + 2` is `.shift`, `3*a + 2` is `.affine` of ONE term).
+#guard slotsOf tlprog!{ S[a + b] := A[a] } != slotsOf tlprog!{ S[a + 2] := A[a] }
+#guard slotsOf tlprog!{ S[a + b] := A[a] } != slotsOf tlprog!{ S[3*a + 2] := A[a] }
+
+-- U2: every pre-existing slot form elaborates to its pre-change constructor.
+#guard slotsOf tlprog!{ S[x, x ., 3, x +1, x + 2, 2*x, 2*x + 3] := A[a] } ==
+  [.free axX, .freeNorm axX, .iterAt { name := "", uid := 0, kind := .nat } 3,
+   .affine (.shift axX 1), .affine (.shift axX 2), .affine (.scale 2 axX),
+   .affine (.affine 3 [(2, axX)])]
+
+-- U3: `=n` is a constant placement; the lone numeral stays the scan base case, with or without a space.
+#guard slotsOf tlprog!{ S[=3] := A[a] } == [.affine (.const 3)]
+#guard slotsOf tlprog!{ S[= 3] := A[a] } == [.affine (.const 3)]
+#guard slotsOf tlprog!{ S[3] := A[a] } == [.iterAt { name := "", uid := 0, kind := .nat } 3]
+#guard slotsOf tlprog!{ S[i, =3, a + b] := A[a] } ==
+  [.free (ax0 "i"), .affine (.const 3), .affine (.affine 0 [(1, axA), (1, axB)])]
+
+-- U5 (observed, documented): the elaborator does no validation of the term list. A repeated axis is
+-- kept as two terms (not merged to coefficient 2), and a zero coefficient is kept as a `(0, axis)` term.
+#guard slotsOf tlprog!{ S[a + a] := A[a] } == [.affine (.affine 0 [(1, axA), (1, axA)])]
+#guard slotsOf tlprog!{ S[0*a + b] := A[a] } == [.affine (.affine 0 [(0, axA), (1, axB)])]
+
 end LeanNCD
