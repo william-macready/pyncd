@@ -200,3 +200,71 @@ The host session's original worktree is not the execution worktree and is not re
 No push is authorized or attempted. Before close-out, the implementation topic was 12 commits ahead of
 `origin/main`; this documentation commit and the no-ff merge add two. The final response reports the
 observed integration hash and ahead count.
+
+## Post-landing controller review (2026-11-01, written by the plan author after the merge)
+
+Scope: an independent check of the landed merge `79be6d2c` (parents `fd922285`, the base, and `4cdae7a3`, the
+documentation close-out, as this record states) against the plan, and of this record's claims. The executor's
+own two lenses are not repeated; their findings are adjudicated below. Nothing in this section changed code.
+
+**Verdict: accept.** No P1 or P2 finding. The landed `leanncd/` tree is byte-identical to the authoring
+prototype tip, so the two authoring-time review lenses and the replay verification apply to it unchanged.
+Two real P3 findings the executor parked are confirmed and one is sharper than the record says; two record
+statements are overbroad.
+
+### Evidence I produced
+
+| Check | Command or method | Observed |
+| --- | --- | --- |
+| Landed code equals the verified prototype | `git diff 8b8eaabe 79be6d2c -- leanncd` | empty: all 26 `leanncd` paths identical to the prototype tip |
+| Each executor commit applied its patch verbatim | hash of `git diff <commit>^ <commit> -- leanncd` against `git hash-object` of the committed patch, all six | all six equal (T1 `0264270c`, T2 `9f1a2da8`, T3 `260faaa6`, T4 `60747c3f`, T5 `5a5c3b41`, T6 `bbfd3509`, the plan's patch-blob table) |
+| Full build on `main`, primary checkout | `lake-build.sh <primary>/leanncd LeanNCD Tests JaxExperiment`, background | `Build completed successfully (8844 jobs)`, `git status` clean |
+| Nothing pushed | `git rev-list --count origin/main..main` | 14, as this record predicts |
+| Executor worktree and branch gone, prototype kept | `git worktree list`, `git branch -a` | `scatter-geometry-b-exec` absent; `proto-scatter-geometry-b` and its branch still present (the brief said not to touch them) |
+| Manifest spot-check, one entry | `mutation-manifest.sh --task T6 --out <scratch>` on the prototype worktree (its `leanncd` equals `main`'s) | `SGB-T6-01` PASS: cycle broke then restored green, file byte-identical, expected failure seen; worktree clean afterwards |
+| Production diff read in full | T1 (`Ast`, `Compile`, `Collect`, `Structural`, `Uid`, `Differential`) and T3 (`Syntax`, `Elab`) | matches the plan's B-D1, B-D2, B-D4, B-D6 text; `collectable` refuses only a raw `.affine (.const _)` by constructor; the unspaced `+` in `a + b +1` is the documented `+1` token case |
+| Plan's `.lean:NNN` gate | `git diff fd922285 79be6d2c -- "*.md"` filtered for `[A-Za-z]+\.lean:[0-9]+` | 0 hits, so this record's "0 hits" statement is true for that regex |
+| Docs-only edits | read the diff of the plan status line, the slice B design note and the master design note | accurate; the master note's status table and its "D5 still excludes any declared source axis, identity included" sentence are correct |
+
+### Adjudication of the executor's findings
+
+| Finding | My verdict | Evidence and note |
+| --- | --- | --- |
+| L1-N1: `sourceError p == none` also holds when scheduling fails | CONFIRMED, real, low severity, sharper than recorded | By reading, `sourceError` is `(scheduled p).bind …` and `scheduled` maps any `compileToScheduled` error to `none`. By probe (untracked scratch file in the prototype worktree, deleted afterwards): for a program with a rank mismatch (declared `S(k, b)`, writer `S[=3]`), `scheduled` is `none`, `sourceError` is `none`, and `sourceError … == none` is `true`. Reach: the slice B acceptance re-pins `twoAxes` and `explicitConstant` in `B5BoundaryTest` have NO other guard on those programs anywhere in the repo (`rg` finds them only as donors and `#eval` lines), so those two pins would still pass if the programs stopped compiling for an unrelated reason. They do still detect the reintroduction of the old `multiWriterScatter` refusal (mutants `SGB-T1-01`, `-02` are killed there). `convTwo` and the `S3` pairs share the pattern; whether other guards cover them I did not check. Agree with parking at about 0.1 dispatch (add `(scheduled p).isSome`), Direct path. |
+| S-3: `Semantics/AGENTS.md` shape summary omits D5 | CONFIRMED, wording only | The paragraph beginning "Since slice B a single constant or multi-axis writer into a destination with every axis pinned publishes the DECLARED shape in production too" is unconditional; `r1Surf` pins the `[4, 3]` exception. The next sentence ("the condition remains only where production derives the shape, an unboxed single write") only half-covers it. Agree: about 0.1, wording. |
+| L1-K1: test-side `predictedExtent` legacy sum rule | agree, parked as authored | unchanged from the plan |
+| S-1, S-4 rejected; S-2 parked | agree | grammar disjointness was independently checked by the authoring-time lens 2 and by my read of the grammar diff |
+
+### New findings from this review (all P3, none fixed)
+
+- **R-1, the record's line-number statement is overbroad.** It says review reports "normalize volatile source line
+  numbers before shipping". As landed, the surface report carries 26 lines with absolute paths into the now-removed
+  execution worktree and 11 `file.md:NNN:` transcript lines, and the siblings report carries 6 `Test:NNN-NNN`
+  ranges (one more worktree path in the siblings report and one in this record). None is a `.lean:NNN` citation,
+  so the plan's literal gate passes, and the reports are records, not text a task ships; but "normalized" is not
+  accurate and the worktree paths now point nowhere. Cost: about 0.1, wording or an optional scrub; not done.
+- **R-2, refusal-parity coverage for `multiWriterScatter` is gone end to end.** The `OracleMixedRefusalTest`
+  redesign is sound (the two former refusal rows became accept neighbours, the cast control was re-donored to
+  `castDirect`, and the executor's lens 1 notes the new `"none"` pins require both native legs to be observed).
+  The consequence is that no source-admitted program now reaches that refusal in the oracle-vs-native check; the
+  predicate-destination refusal is predicted only (`OracleSortRulesTest`), not observed through both native legs.
+  Informational; inherent to admitting these groups.
+
+### Limitations of this review (what I did not verify)
+
+- 17 of the 18 manifest entries were not re-run by me; the 18/18 result and the per-entry killer modules are the
+  executor's. The prototype agents' earlier 17/17 on the T4 tip and my one-entry T6 check agree with it, but are
+  not an independent re-run.
+- The per-task build counts (8567, 8481, 8523 targeted; 8843 and 8844 full) and the telemetry totals (7.2M input
+  tokens) are the executor's; I observed only the final 8844 on `main`.
+- I read the production diffs, the grammar diff, one test re-pin (`OracleMixedRefusalTest`) and the two doc
+  design-note edits myself. I did not re-read the other test re-pins, `ScatterGeometryTest`, `ScatterSurfaceTest`
+  or the T5 documentation hunks; for those I rely on blob identity with the prototype that two authoring-time
+  lenses and two executor lenses read, plus the executor's S-3 sweep.
+- Blob identity proves the executor changed nothing; it does not prove the prototype is right. Soundness rests on
+  the authoring-time reviews, the full build and the differential fixtures, with the independent-kill-power gap for
+  F1-F6 still open (parked).
+- The L1-N1 probe ran on the prototype worktree, whose `leanncd` equals `main`'s (checked), not on the primary
+  checkout.
+- `main` is 14 commits ahead of `origin/main` plus this record edit; nothing is pushed. The prototype worktree
+  and branch (`proto-scatter-geometry-b`) still exist and can be removed since the patches reproduce the code.
