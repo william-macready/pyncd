@@ -325,7 +325,11 @@ inductive EvalError
       was a silent skip (a vestige of overwrite semantics); it is now an error. `outCoord` is the
       full destination coordinate (every slot, signed: a negative bias or coefficient gives a
       negative entry); `sourceCoord` is the source coordinate that produced it, in
-      `scatterSourceAxes` order. -/
+      `scatterSourceAxes` order. The scan-local write (`writeScanStmtSlice`) raises it too since
+      F3-a: for an out-of-range write, and also when the slot count differs from the state rank
+      (the pipeline refuses that with `rankMismatch`). In the rank case the message below, which
+      names `evalScatter` and the destination extent, is misleading; a dedicated constructor is
+      parked. -/
   | scatterWriteOutOfRange (nm : String) (outCoord : List Int) (sourceCoord : List Nat)
   | unsupportedScatterNonlin (nm : String)
   | unsupportedRecurMorphism (site : RecurMorphismSite) (nm : String)

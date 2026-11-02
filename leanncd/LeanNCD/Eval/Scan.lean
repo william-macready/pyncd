@@ -95,7 +95,8 @@ def scanStateShape (sizes : HashMap UID Nat) (slots : List LHSSlot) :
     `0_K`. A cell whose bits still equal `0_K` is untouched and the write COPIES onto it. That is
     value-equivalent to `⊕` from `0_K` except for the sign of a zero (real sort: `0.0 + -0.0 = +0.0`),
     and it keeps the reference bit-identical to the checked path, which copies a single write; every
-    later write to the cell is folded with `⊕`.
+    later write to the cell is folded with `⊕`, except that a cell whose written value is bitwise
+    `0_K` still looks untouched, so the next write copies (value-equivalent: `0_K ⊕ w = w`).
 
     The checked scan path admits only injective, in-range placements (`multiAxisScatterLhs`,
     `duplicateAxisInLhs`, `classifyWriteRow`), so for the programs both backends accept (audited, not
@@ -131,9 +132,9 @@ def writeScanStmtSlice (c : Combine) (nm : String) (out : DenseTensor) (seed : H
       let oc := outCoordZ.map Int.toNat
       -- A cell still at its `0_K` bits is untouched: COPY the value onto it. That equals `⊕` from `0_K`
       -- (`0_K` is the identity) except for the sign of a zero (real sort: `0.0 + -0.0 = +0.0`), and it
-      -- keeps the reference bit-identical to the checked path, which copies a single write. A written
-      -- value that equals `0_K` bitwise and is then hit by a hand-built collision is folded, which is
-      -- value-equivalent (`0_K ⊕ w = w`). No written-mask is kept.
+      -- keeps the reference bit-identical to the checked path, which copies a single write. No
+      -- written-mask is kept, so a cell whose WRITTEN value is bitwise `0_K` still looks untouched and
+      -- the next write COPIES over it; that is value-equivalent (`0_K ⊕ w = w`).
       let v := slice.get! scoord
       let prev := cur.get! oc
       pure (cur.set! oc (if prev.toBits == c.unit0.toBits then v else c.combine prev v))
