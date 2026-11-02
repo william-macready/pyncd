@@ -14,7 +14,8 @@ already evaluates most of the constructs listed here, so nearly every row is a *
 > S3b-ii (merged to local main as 349b6127: `additive_s3bii_plan.md`) closes the top-level tropical multi-writer
 > gap (an all-max or all-min writer group is collected; mixed groups stay refused with `multiWriterAlgebra`) and
 > makes `real -> bool` reads coerce (stored `!= 0`; the rejection is superseded, not pending). STILL OPEN: in-scan
-> multi-writer collection (refused), scan-local scatter overwrite (F3) and JAX/Python
+> multi-writer collection (refused), scan-local collisions (the REFERENCE now sums and errors out of range, F3-a,
+> landed; checked-path support for constant and multi-axis scan slots, F3-b, is still open) and JAX/Python
 > tropical execution. B5 now admits bounded native real/tropical multi-writer scatter with exact
 > post-inference shape equality, relaxed by B5b to fit-inside for a declared destination whose every
 > axis is pinned (`papers/semantics/additive_b5_record.md`, `additive_b5b_record.md`), and by B5c to a single non-identity writer (`additive_b5c_record.md`); predicate, explicit-constant

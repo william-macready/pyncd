@@ -272,8 +272,8 @@ inductive CapabilityError
       (`Out[i+j]`), where the single-axis strided forms (`Out[2*i]`, `Out[i+2]`) are admitted.
       Since scatter-geometry slice A the TOP-LEVEL checked plan admits such a row (its extent is the
       exact reach `LHSSlot.outExtent`, from the same corner formula `affineImageBounds` as the B6
-      range rule), so only a scan statement can raise this: scan-local placement is non-injective for
-      a multi-axis row and the reference overwrites there instead of summing (F3). Its own
+      range rule), so only a scan statement can raise this: the checked scan path does not support a
+      non-injective scan-local placement yet (F3-b; the reference already sums it, F3-a). Its own
       constructor rather than a reuse of `scatterOrAffineLhs`, because "a scatter is not supported at
       all" and "this one placement form is not supported" are different facts. Reachable from
       `tl!{…}` surface syntax since slice B added the multi-axis slot (`elabTLLHSSlot`): a scan

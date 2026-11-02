@@ -1101,7 +1101,9 @@ real job is the affine-LHS → `Stmt.scatter` reclassification. There is no inje
 sum (S3a), and a constant LHS coord (`Y[3]`) is lowered to a unit-axis placement (`lowerConstSlots`,
 slice A T3; the unconditional `overlappingScatter` guard on the `.assign` arm is gone). A scan statement
 (`iterAt`/`iterNext` slot) that carries a raw constant slot is still refused with `overlappingScatter`
-(slice A T3b: the reference and legacy evaluators would overwrite it, the F3 family). -/
+(slice A T3b: the checked scan path cannot place a raw constant there yet, F3-b, and the reference
+refuses it too, `scanWriteRowNotAdmitted`: a constant names no source axis. The reference sums only
+colliding multi-axis scan rows, F3-a). -/
 
 /-- A LHS slot that denotes an affine output coordinate (a Scatter write). Plain `free`
     axes and the scan slots (`iterAt`/`iterNext`) are NOT affine-scatter slots. -/
@@ -1157,8 +1159,9 @@ def lowerArith (rp : ResolvedProgram) : FreshM LoweredProgram := do
         -- scatter that publishes its full placement rank — so declared/full-rank reads of it are
         -- sound (B1). A constant slot is a scatter like any other (D5: the `overlappingScatter`
         -- guard was deleted); it is lowered to a unit-axis placement by `lowerConstSlots`. Except in
-        -- a scan statement (T3b): `lowerConstSlots` leaves those untouched, and a raw constant there
-        -- would be accepted and overwritten by the reference/legacy evaluators (F3), so refuse it.
+        -- a scan statement (T3b): `lowerConstSlots` leaves those untouched, and the checked scan
+        -- path cannot place a raw constant there yet (F3-b) and the reference refuses it too
+        -- (`scanWriteRowNotAdmitted`), so refuse it.
         if slotsBecomeScatter slots then
           if slots.any LHSSlot.isScanSlot && slots.any LHSSlot.isRawConst then
             throw (CompileError.overlappingScatter nm)

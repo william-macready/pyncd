@@ -12,6 +12,14 @@ the current boundary. A lone numeral still denotes a scan base case. D5 still ex
 writer whenever any declared axis occurs among its source axes, including identity positions.
 Scan-local multi-axis/constant slots, predicate groups and routed/JAX scatter remain outside scope.
 
+Labels used below and in the source comments. **F3** = scan-local scatter semantics (collision:
+overwrite vs ⊕; out-of-range: skip vs error). **F3-a** = the reference scan write aligned with the
+top level (⊕-sums collisions in the state's sort, errors out of range); landed on branch
+`worktree-scatter-f3a`. **F3-b** = the checked scan path admitting constant and multi-axis slots
+(open). It needs, besides new write-row kinds, reworked placement and collision checks and a summing
+write in the compiled step (f64 and f32); the reference to admit CONSTANT scan slots (today refused
+by `checkStatePlacements`); and the surface `S[=n]` in a scan (today `overlappingScatter`) lifted.
+
 **Decisions D1-D6 approved by the owner on 2026-10-30, all as recommended (section 7); not an
 implementation plan.** Approval authorizes the P0 probe and then the plan for slice A only; slice B's
 plan is written after A lands. Read against local `main` `87cfb2fb` on 2026-10-30. No
@@ -32,7 +40,7 @@ must confirm it before the plan ships. This is the "scatter-geometry slice" that
 | Reference `evalScatter` | defined: source-driven, ⊕-fold, B6 range error | defined, same |
 | Checked plan preflight (`checkScatterAffineExpr`, `Eval/Plan/Compile.lean`) | `multiAxisScatterLhs` | `scatterOrAffineLhs` |
 | B5/B5b/B5c collector (`LHSSlot.boundedScatter`, `Collect.lean`) | group refused (`multiWriterScatter`); boxed single writer keeps the derived shape (B5c D2) | same |
-| Scan-local scatter | checked refuses; reference overwrites instead of summing (F3) | same |
+| Scan-local scatter | checked refuses (F3-b); reference sums in the state's sort since F3-a (was: overwrote) | checked refuses (F3-b); the reference refuses it too (`scanWriteRowNotAdmitted`, the slot names no source axis), so it neither sums nor overwrites |
 | Oracle / differential | admits both; fixtures (d), (d'), (f') end as `nativeFailure` with no condition | same |
 
 So the gap is not semantics, and it is not (probably) the kernel. The reference already defines both
@@ -225,7 +233,7 @@ those guards with an explicit `destShape` rather than a derived extent, and must
 
 ## 8. Non-goals and anti-goals
 
-* Not in scope: scan-local multi-axis/constant (needs F3, overwrite versus ⊕), predicate/bool
+* Not in scope: scan-local multi-axis/constant (checked-path support is F3-b; the reference side, F3-a, landed: it sums), predicate/bool
   destinations (B5 D1), negative coefficients or biases in surface syntax, a new `route` or JAX scatter
   capability, M4 actual-image box fit.
 * **Anti-goals (a failure even if tests pass):** changing the stride-aligned single-axis extent;

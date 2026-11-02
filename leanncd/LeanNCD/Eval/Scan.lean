@@ -88,19 +88,34 @@ def scanStateShape (sizes : HashMap UID Nat) (slots : List LHSSlot) :
     their slot-order source basis; scatters use their first-seen LHS source-axis basis. In both cases
     every original LHS expression is evaluated only after RHS contraction has produced `slice`.
 
-    Two behaviours differ from the top-level `evalScatter`, deliberately left as they are (parked,
-    see `papers/semantics/additive_b6_record.md`). A write that lands outside `out` is SKIPPED, not an
-    error. A collision OVERWRITES (last write wins), not ⊕-sums. The checked scan path admits only
-    injective, in-range placements (`multiAxisScatterLhs`, `duplicateAxisInLhs`, `classifyWriteRow`),
-    so for the programs both backends accept (audited, not proved) overwrite and ⊕ agree; a zero
-    scale is refused up front by `checkScanStructure` (zero-scale write rule). Only hand-built
-    programs that the checked path refuses (a slot naming two source axes such as `S[j+q]`, or a
-    repeated axis UID in an `.assign`) are known to reach the differing collision behaviour in the
-    reference. Hand-built out-of-range scan writes (negative base or bias, `ScanCompileTest` `s6NegBase`
-    and `s6NegBiasBase`) are refused by the checked path, so the reference would skip them; that arm
-    is not otherwise audited. -/
-def writeScanStmtSlice (out : DenseTensor) (seed : HashMap UID Int) (s : Stmt)
-    (slice : DenseTensor) : DenseTensor :=
+    Like the top-level `evalScatter` (S3a, B6; scatter-geometry F3-a closed the scan-local gap): a write
+    ⊕-folds into its cell with the STATE's own `Combine` (`stateCombine` in `evalScan`: real `+`,
+    boolean `∃`, tropical `max`/`min`), and a write that lands outside `out` is an ERROR
+    (`scatterWriteOutOfRange`), never a silent skip or an overwrite. A cell starts at the state's
+    `0_K`. A cell whose bits still equal `0_K` is untouched and the write COPIES onto it. That is
+    value-equivalent to `⊕` from `0_K` except for the sign of a zero (real sort: `0.0 + -0.0 = +0.0`),
+    and it keeps the reference bit-identical to the checked path, which copies a single write; every
+    later write to the cell is folded with `⊕`, except that a cell whose written value is bitwise
+    `0_K` still looks untouched, so the next write copies (value-equivalent: `0_K ⊕ w = w`).
+
+    The checked scan path admits only injective, in-range placements (`multiAxisScatterLhs`,
+    `duplicateAxisInLhs`, `classifyWriteRow`), so for the programs both backends accept (audited, not
+    proved) a cell is written at most once; a zero scale is refused up front by `checkScanStructure`
+    (zero-scale write rule). Only hand-built programs that the checked path refuses reach a collision
+    here, and they now sum. In-call collisions (one call writes a cell twice): a slot naming two source
+    axes such as `S[j+q]` (`multiAxisScatterLhs`), and a repeated axis UID in an `.assign`
+    (`duplicateAxisInLhs`). Cross-call collisions (two calls write the same cell): a step that writes
+    the cell it reads, `S[l] := S[l]·X` (the pipeline refuses it with `scanProjectionUnsupported`),
+    and a 2-D scan whose state omits an advancing axis (refused by `inconsistentScanAxes` and
+    `advancingAxisNotInLhs`), whose sum depends on the loop order. A CONSTANT slot never reaches this
+    write: the reference refuses it first (`checkStatePlacements`, `affineWithoutSource`,
+    `scanWriteRowNotAdmitted`), because the slot names no source axis. A slot count that differs from
+    the state's rank also raises `scatterWriteOutOfRange` (the pipeline refuses it with `rankMismatch`;
+    the error message names the top-level scatter, a known wart). Hand-built out-of-range scan writes
+    (negative base or bias, `ScanCompileTest` `s6NegBase` and `s6NegBiasBase`) are refused by the
+    checked path and are now an error in the reference too. -/
+def writeScanStmtSlice (c : Combine) (nm : String) (out : DenseTensor) (seed : HashMap UID Int)
+    (s : Stmt) (slice : DenseTensor) : Except EvalError DenseTensor :=
   let sliceUids : List UID := match s with
     | .assign _ slots _ =>
         (slots.filterMap LHSSlot.axisUID?).filter (fun u => ! seed.contains u)
@@ -108,15 +123,23 @@ def writeScanStmtSlice (out : DenseTensor) (seed : HashMap UID Int) (s : Stmt)
         ((scanScatterSourceAxes slots).filter
           (fun a => ! seed.contains a.uid)).map AxisSpec.uid
     | .recurMorphism _ _ _ => []
-  (DenseTensor.allCoords slice.shape).foldl (fun cur scoord =>
+  (DenseTensor.allCoords slice.shape).foldlM (fun cur scoord => do
     let coord := (sliceUids.zip scoord).foldl
       (fun m (u, v) => m.insert u (Int.ofNat v)) seed
     let outCoordZ := s.slots.map (fun sl => evalIdx coord sl.outIdx)
     if outCoordZ.length == out.shape.length &&
         (outCoordZ.zip out.shape).all (fun (z, d) => 0 ≤ z && z < (d : Int)) then
-      cur.set! (outCoordZ.map Int.toNat) (slice.get! scoord)
+      let oc := outCoordZ.map Int.toNat
+      -- A cell still at its `0_K` bits is untouched: COPY the value onto it. That equals `⊕` from `0_K`
+      -- (`0_K` is the identity) except for the sign of a zero (real sort: `0.0 + -0.0 = +0.0`), and it
+      -- keeps the reference bit-identical to the checked path, which copies a single write. No
+      -- written-mask is kept, so a cell whose WRITTEN value is bitwise `0_K` still looks untouched and
+      -- the next write COPIES over it; that is value-equivalent (`0_K ⊕ w = w`).
+      let v := slice.get! scoord
+      let prev := cur.get! oc
+      pure (cur.set! oc (if prev.toBits == c.unit0.toBits then v else c.combine prev v))
     else
-      cur) out
+      throw (.scatterWriteOutOfRange nm outCoordZ scoord)) out
 
 /-- One state dimension of a base write, read off its LHS slot. This is the reference's OWN
     classification (it deliberately does not call the checked backend's `classifyWriteRow`): a
@@ -316,14 +339,16 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
           | .scatter _ _ _ => throw (.invalidScanNode .onlyAssignInSlice)
           | _ => pure ()
       checkScanStructure scanName axes sizes stateNames base recur
+      -- The state's own sort: its `unit0` allocates a cell, its `combine` is the ⊕ a write folds in.
+      let stateCombine : String → Combine := fun nm =>
+        combineFor decls nm (scanStateAlgebra denv (base ++ recur) nm).stateAgg
       -- 1. allocate each state tensor (every cell at the state's `0_K`, full shape) from its base slots.
       let mut work := env
       for s in base do
         match s with
         | .assign nm slots _ | .scatter nm slots _ =>
             let stateShape ← scanStateShape sizes slots
-            let zeroK :=
-              (combineFor decls nm (scanStateAlgebra denv (base ++ recur) nm).stateAgg).unit0
+            let zeroK := (stateCombine nm).unit0
             work := work.insert nm ⟨stateShape, Array.replicate (DenseTensor.sizeOf stateShape) zeroK⟩
         | _ => throw (.invalidScanNode .baseMustBeAssign)
       -- 2. fill boundaries from base stmts: each base pins a subset of axes to their literal index
@@ -333,7 +358,7 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
             | .iterAt a n => some (a.uid, n) | _ => none)).foldl (fun m (u, n) => m.insert u n) {}
         let (nm, slice) ← evalStmtSliceSeeded decls work sizes seed s
         let priorState := (work[nm]?).getD (DenseTensor.zeros [])
-        work := work.insert nm (writeScanStmtSlice priorState seed s slice)
+        work := work.insert nm (← writeScanStmtSlice (stateCombine nm) nm priorState seed s slice)
       -- 3. nested loop over ∏ [0 … L_a − 2]: run the recur list at each tuple; intermediates into
       --    the step env; write final state slices at (position, index+1) per advancing axis.
       let ranges := Ls.map (fun L => List.range (L - 1))
@@ -349,8 +374,8 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
           -- is NOT an allocated state — keep it as a raw slice in the step env only. (This is the
           -- crucial distinction from a slot-based test.)
           if stateNames.contains nm then
-            let updated :=
-              writeScanStmtSlice ((work[nm]?).getD (DenseTensor.zeros [])) seed s slice
+            let updated ← writeScanStmtSlice (stateCombine nm) nm
+              ((work[nm]?).getD (DenseTensor.zeros [])) seed s slice
             work := work.insert nm updated
             stepEnv := stepEnv.insert nm updated
           else
