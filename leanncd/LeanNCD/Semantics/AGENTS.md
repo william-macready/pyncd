@@ -172,7 +172,9 @@ a bare-slot scatter over a contracted axis (F11) and `fE` are parity; the multi-
 constant-slot scatter `fD'` are parity too, since scatter-geometry slice A: the checked plan admits top-level
 multi-axis and constant slots (`lowerArith` rewrites a constant to a placement over a synthetic unit axis).
 Since slice B a single constant or multi-axis writer into a destination with every axis pinned publishes the
-DECLARED shape in production too (`declaredShapeWins` no longer excludes those forms), so `fI1`/`fI2`/`fMask`/`fFbig`
+DECLARED shape in production too (`declaredShapeWins` no longer excludes those forms), unless a declared axis
+occurs among the writer's own source axes (D5, identity slots included: with `S(k, b)` pinned, one `S[=3, b]` writer
+keeps the derived `[4, 3]` (`r1Surf`), two such writers publish the declared `[8, 3]` (`r2Surf`)), so `fI1`/`fI2`/`fMask`/`fFbig`
 are `parity`, not `known:extent` (the condition remains only where production derives the shape, an unboxed single write). Multi-axis and constant
 groups are admitted by the oracle sort rules (`OracleSortRules`). The test-side `predictedExtent` still uses the legacy
 sum rule for a multi-axis slot (unexercised; parked). Scan-local multi-axis/constant slots stay refused by capability (`scatterOrAffineLhs`, `multiAxisScatterLhs`, F3). See the
