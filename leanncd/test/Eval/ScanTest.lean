@@ -1,6 +1,8 @@
 import Eval.ExplicitF64
 import LeanNCD.Eval.Scan
 import LeanNCD.Eval.Eval   -- `evalPlain`, exercised directly by the f32 entry-guard fixtures below
+import LeanNCD.Eval.Plan.Compile   -- `prepareEvalPlan`, for the F3-a (g) reference-vs-checked bit fixture
+import LeanNCD.Eval.Plan.Adapter   -- `runPreparedDense`, same
 namespace LeanNCD.Eval
 open Std
 private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
@@ -1224,8 +1226,8 @@ run_cmd do
 -- F3-a: scan-local state writes fold in the STATE's sort (`⊕`) and an out-of-range write is an ERROR.
 -- Every program below is HAND-BUILT: the checked scan path refuses these slots (`multiAxisScatterLhs`,
 -- `scanWriteRowNotAdmitted`), so only the reference reaches the collision / range behaviour. All
--- values are observed from a real run, never derived. Each construction makes the candidate readings
--- differ (sum vs overwrite vs skip). A CONSTANT slot cannot collide here (its source axis is
+-- values are observed from a real run, never derived. Fixtures (a)-(c) make sum and overwrite differ
+-- (none has an out-of-range write, so skip is a distinct reading only in (d)). A CONSTANT slot cannot collide here (its source axis is
 -- contracted by the RHS before placement), so the collisions come from a two-axis slot `j+q`.
 -- Donors: the S-B 1/2 scatter-in-scan fixtures above (`.scatter "S" [slot, .iterAt l 0]` base plus a
 -- dense copy recurrence `S[o,l+1] := S[o,l]`), the shape-1 tropical fixtures (`agg := .max/.min`),
@@ -1248,7 +1250,7 @@ private def f3Base (slot : LHSSlot) (fs : List Factor) (agg : AggOp) : Stmt :=
 -- (a) COLLISION SUMS, real. Base `S[j+q, 0] := X[j]` (q a broadcast axis the RHS never reads),
 --   X = [1,10,100], j<3, q<2: cell c receives X[j] for every (j,q) with j+q=c, so
 --   S[:,0] = [1, 1+10, 10+100, 100] = [1,11,110,100] (rows are cells, columns l=0,1; the copy fills l=1).
---   Overwrite would give [1,10,100,100] (the last write per cell), skip would leave 0.
+--   Overwrite would give [1,10,100,100] (the last write per cell).
 run_cmd do
   let j := ax "j" 1; let q := ax "q" 2
   match f3Run [("X", tensorOf [3] [1, 10, 100])] [(1, 3), (2, 2), (3, 4), (9, 2)]
@@ -1325,4 +1327,64 @@ run_cmd do
 
 -- (e) The injective ACCEPT neighbour is NOT duplicated: the S-B 1 / S-B 2 / S-B 3 fixtures above
 --   (`.scatter "S" [.affine (.scale 2 j), .iterAt l 0]` etc.) are the unchanged-value guards.
+
+-- (f) RECURRENCE-SITE COLLISION SUMS (the recur call of `writeScanStmtSlice`; (a)-(d) collide only in
+--   the BASE). Base `S[o,0] := X[o]`, X = [1,10,100,1000]; recurrence `S[j+q,l+1] := S[j+q,l]`
+--   (j<3, q<2, l<3): cell c is written by every (j,q) with j+q=c, i.e. 1,2,2,1 times per step, so each
+--   step multiplies S[:,l] by [1,2,2,1]: columns l=1,2 are [1,20,200,1000], [1,40,400,1000]. Overwrite
+--   at the recur site would keep [1,10,100,1000] in every column.
+run_cmd do
+  let j := ax "j" 1; let q := ax "q" 2; let o := ax "o" 3; let l := ax "l" 9
+  let slot : IdxExpr := .affine 0 [(1, j), (1, q)]
+  let base : Stmt := .assign "S" [.free o, .iterAt l 0]
+    { body := { terms := [{ factors := [.read "X" [.axis o]] }] }, nonlin := .identity }
+  let recur : Stmt := .scatter "S" [.affine slot, .iterNext l]
+    { body := { terms := [{ factors := [.read "S" [slot, .axis l]] }] }, nonlin := .identity }
+  match f3Run [("X", tensorOf [4] [1, 10, 100, 1000])] [(1, 3), (2, 2), (3, 4), (9, 3)] base recur with
+  | .error e => throwError s!"F3-a (f): {e}"
+  | .ok S =>
+      unless S.shape == [4, 3] &&
+          S.data == #[1, 1, 1, 10, 20, 40, 100, 200, 400, 1000, 1000, 1000] do
+        throwError s!"F3-a (f) recurrence-site collisions must sum: {S.shape} {repr S.data}"
+
+-- (g) SIGN OF A WRITTEN ZERO, reference vs checked path. `S[j,0] := leakyrelu(X[j])`,
+--   `S[j,l+1] := S[j,l]`, j<1, l<2, X = [-5e-324]: `leakyrelu` gives 0.01 * -5e-324, which rounds to
+--   -0.0. The checked path COPIES a single write, so S[0,0] keeps the bits 0x8000000000000000; the
+--   reference starts the cell at `0_K = +0.0` and `0.0 + -0.0 = +0.0`, so it must copy onto an
+--   untouched cell too (`writeScanStmtSlice`), else the two backends differ by one sign bit. The
+--   comparison is on `Float.toBits` (`==` and `approxEq` equate the two zeros). Bits are observed.
+open LeanNCD.Eval.Plan in
+run_cmd do
+  let j := ax "j" 1; let l : AxisSpec := ⟨"l", 9, .nat⟩
+  let base : Stmt := .assign "S" [.free j, .iterAt l 0]
+    { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .pointwise .leakyrelu }
+  let recur : Stmt := .assign "S" [.free j, .iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.axis j, .axis l]] }] }, nonlin := .identity }
+  let sched0 : ScheduledProgram :=
+    { decls := [.iter l 2, .axis j (some 1)], stmts := [.scan "S" [l] [base] [recur] false]
+    , env := {}, extNames := {"X"}, explicitSizes := {} }
+  let sched : ScheduledProgram :=
+    { sched0 with decls := LeanNCD.Eval.ExplicitF64.explicitF64Decls sched0.decls (sched0.stmts.flatMap ScanStmt.sourceStmts) }
+  let inputs : HashMap String DenseTensor :=
+    ({} : HashMap String DenseTensor).insert "X" (tensorOf [1] [-5e-324])
+  let bitsOf (t : DenseTensor) : List UInt64 := t.data.toList.map Float.toBits
+  let negZero : UInt64 := 0x8000000000000000
+  let ref ← match evalScheduled sched inputs with
+    | .error _ => throwError "F3-a (g): reference evalScheduled failed"
+    | .ok report => match report.env["S"]? with
+        | some t => pure t | none => throwError "F3-a (g): reference produced no S"
+  let chk ← match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+    | .error _ => throwError "F3-a (g): the checked path refused the program"
+    | .ok p => match runPreparedDense p inputs with
+        | .error _ => throwError "F3-a (g): the checked run failed"
+        | .ok report => match report.env["S"]? with
+            | some t => pure t | none => throwError "F3-a (g): checked produced no S"
+  unless ref.shape == [1, 2] && chk.shape == [1, 2] do
+    throwError s!"F3-a (g) shapes: {ref.shape} {chk.shape}"
+  unless bitsOf chk == [negZero, 0] do
+    throwError s!"F3-a (g) checked bits: {bitsOf chk}"
+  unless bitsOf ref == bitsOf chk do
+    throwError s!"F3-a (g) the reference must be bit-identical to the checked path: {bitsOf ref} vs {bitsOf chk}"
+
+end LeanNCD.Eval
 

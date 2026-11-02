@@ -116,7 +116,14 @@ def writeScanStmtSlice (c : Combine) (nm : String) (out : DenseTensor) (seed : H
     if outCoordZ.length == out.shape.length &&
         (outCoordZ.zip out.shape).all (fun (z, d) => 0 ≤ z && z < (d : Int)) then
       let oc := outCoordZ.map Int.toNat
-      pure (cur.set! oc (c.combine (cur.get! oc) (slice.get! scoord)))
+      -- A cell still at its `0_K` bits is untouched: COPY the value onto it. That equals `⊕` from `0_K`
+      -- (`0_K` is the identity) except for the sign of a zero (real sort: `0.0 + -0.0 = +0.0`), and it
+      -- keeps the reference bit-identical to the checked path, which copies a single write. A written
+      -- value that equals `0_K` bitwise and is then hit by a hand-built collision is folded, which is
+      -- value-equivalent (`0_K ⊕ w = w`). No written-mask is kept.
+      let v := slice.get! scoord
+      let prev := cur.get! oc
+      pure (cur.set! oc (if prev.toBits == c.unit0.toBits then v else c.combine prev v))
     else
       throw (.scatterWriteOutOfRange nm outCoordZ scoord)) out
 
