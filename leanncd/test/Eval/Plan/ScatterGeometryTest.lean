@@ -121,7 +121,7 @@ def convTwo : TLProgram :=
   { conv with
     decls := conv.decls.map (fun | .axis ax none => .axis ax (some 6) | d => d)
     stmts := conv.stmts ++ conv.stmts }
-#guard sourceError convTwo == none
+#guard (scheduled convTwo).isSome && sourceError convTwo == none
 
 -- Slice B (B-D3): a BOXED single multi-axis writer publishes the DECLARED shape (it kept the derived
 -- `[6]` and was not collected, B5c D2 residual): `S` declared over a pinned `k = 8` publishes `[8]` in
@@ -285,9 +285,9 @@ def twoConstA := cstProg [k, m] [cst 3, cst 4] facA true
 #guard B5cSingleBoxTest.groupsOf (pinAll 8 S3a) == ["S"]
 -- Slice B (B-D1): a multi-writer group with a constant writer is ADMITTED (was `multiWriterScatter`).
 -- Donor: `convTwo`.
-#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ S3.stmts }) == none
-#guard sourceError (pinAll 6 { S3a with stmts := S3a.stmts ++ S3a.stmts }) == none
-#guard sourceError (pinAll 6 { S3 with stmts := S3.stmts ++ conv.stmts }) == none
+#guard (fun p => (scheduled p).isSome && sourceError p == none) (pinAll 6 { S3 with stmts := S3.stmts ++ S3.stmts })
+#guard (fun p => (scheduled p).isSome && sourceError p == none) (pinAll 6 { S3a with stmts := S3a.stmts ++ S3a.stmts })
+#guard (fun p => (scheduled p).isSome && sourceError p == none) (pinAll 6 { S3 with stmts := S3.stmts ++ conv.stmts })
 -- `route` accepts the constant-slot program.
 #guard routeError S3 == none && routeError S3a == none
 -- No `EvalWarning` (unused-axis, size inference) mentions the synthetic axis: the reference evaluator

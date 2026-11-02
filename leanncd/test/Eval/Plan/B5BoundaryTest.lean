@@ -77,8 +77,8 @@ def late32 : NamedDenseEnv32 :=
 #guard agree cancellation in64 in32 #[-12, 0, -5, 0] #[-12, 0, -5, 0]
 -- Slice B (B-D1): a group with a multi-axis or constant writer is admitted at the source boundary
 -- (it was `multiWriterScatter`); values and shapes are pinned in `ScatterGeometryTest`.
-#guard sourceError twoAxes == none
-#guard sourceError explicitConstant == none
+#guard (scheduled twoAxes).isSome && sourceError twoAxes == none
+#guard (scheduled explicitConstant).isSome && sourceError explicitConstant == none
 #guard sourceError predicateDest == some (.multiWriterScatter "S")
 #guard sourceError bareScatterFallback == some (.multiWriterNeedsDeclaredShape "S")
 
