@@ -32,7 +32,7 @@ must confirm it before the plan ships. This is the "scatter-geometry slice" that
 | Reference `evalScatter` | defined: source-driven, ⊕-fold, B6 range error | defined, same |
 | Checked plan preflight (`checkScatterAffineExpr`, `Eval/Plan/Compile.lean`) | `multiAxisScatterLhs` | `scatterOrAffineLhs` |
 | B5/B5b/B5c collector (`LHSSlot.boundedScatter`, `Collect.lean`) | group refused (`multiWriterScatter`); boxed single writer keeps the derived shape (B5c D2) | same |
-| Scan-local scatter | checked refuses; reference overwrites instead of summing (F3) | same |
+| Scan-local scatter | checked refuses (F3-b); reference sums in the state's sort since F3-a (was: overwrote) | same |
 | Oracle / differential | admits both; fixtures (d), (d'), (f') end as `nativeFailure` with no condition | same |
 
 So the gap is not semantics, and it is not (probably) the kernel. The reference already defines both
@@ -225,7 +225,7 @@ those guards with an explicit `destShape` rather than a derived extent, and must
 
 ## 8. Non-goals and anti-goals
 
-* Not in scope: scan-local multi-axis/constant (needs F3, overwrite versus ⊕), predicate/bool
+* Not in scope: scan-local multi-axis/constant (checked-path support is F3-b; the reference side, F3-a, landed: it sums), predicate/bool
   destinations (B5 D1), negative coefficients or biases in surface syntax, a new `route` or JAX scatter
   capability, M4 actual-image box fit.
 * **Anti-goals (a failure even if tests pass):** changing the stride-aligned single-axis extent;

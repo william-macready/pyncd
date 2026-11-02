@@ -274,7 +274,7 @@ run_cmd do
 
 -- Slice A T3b (fail-loud repair): a scan statement that carries a RAW constant slot is refused with
 -- `overlappingScatter` again, exactly as before T3. Without it the statement compiles (T3 skips scan
--- statements) and the reference/legacy evaluators overwrite it (F3) while the checked preflight refuses.
+-- statements) while the checked scan path cannot place it yet (F3-b) and its preflight refuses.
 run_cmd do
   let l : AxisSpec := { name := "l", uid := 4, kind := .nat }
   let st : Stmt := .assign "S" [ .iterAt l 0, .affine (.const 3) ]

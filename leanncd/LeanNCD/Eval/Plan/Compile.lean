@@ -140,9 +140,9 @@ def checkScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError
 
 /-- The scan-block scatter analogue of `checkScatterLHSSlot`. Iteration slots are meaningful inside
     a scan and are therefore admitted in addition to S-A's free and single-axis affine forms.
-    Constant affine slots and normalized multi-axis rows are BOTH still refused here (scan-local
-    placement is non-injective for a multi-axis row and the reference overwrites instead of summing,
-    F3); only the top-level sibling admits a multi-axis row. -/
+    Constant affine slots and normalized multi-axis rows are BOTH still refused here: the checked
+    scan path does not support colliding scan-local writes yet (F3-b; the reference already sums
+    them, F3-a); only the top-level sibling admits a multi-axis row. -/
 def checkScanScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
   | .free _     => pure ()
   | .freeNorm _ => pure ()
