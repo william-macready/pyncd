@@ -92,12 +92,25 @@ def scanStateShape (sizes : HashMap UID Nat) (slots : List LHSSlot) :
     ⊕-folds into its cell with the STATE's own `Combine` (`stateCombine` in `evalScan`: real `+`,
     boolean `∃`, tropical `max`/`min`), and a write that lands outside `out` is an ERROR
     (`scatterWriteOutOfRange`), never a silent skip or an overwrite. A cell starts at the state's
-    `0_K`. The checked scan path admits only injective, in-range placements (`multiAxisScatterLhs`,
+    `0_K`. A cell whose bits still equal `0_K` is untouched and the write COPIES onto it. That is
+    value-equivalent to `⊕` from `0_K` except for the sign of a zero (real sort: `0.0 + -0.0 = +0.0`),
+    and it keeps the reference bit-identical to the checked path, which copies a single write; every
+    later write to the cell is folded with `⊕`.
+
+    The checked scan path admits only injective, in-range placements (`multiAxisScatterLhs`,
     `duplicateAxisInLhs`, `classifyWriteRow`), so for the programs both backends accept (audited, not
-    proved) a cell is written at most once and holds the written value; a zero scale is refused up
-    front by `checkScanStructure` (zero-scale write rule). Only hand-built programs that the checked
-    path refuses (a slot naming two source axes such as `S[j+q]`, a constant slot, or a repeated axis
-    UID in an `.assign`) reach a collision here, and they now sum. Hand-built out-of-range scan writes
+    proved) a cell is written at most once; a zero scale is refused up front by `checkScanStructure`
+    (zero-scale write rule). Only hand-built programs that the checked path refuses reach a collision
+    here, and they now sum. In-call collisions (one call writes a cell twice): a slot naming two source
+    axes such as `S[j+q]` (`multiAxisScatterLhs`), and a repeated axis UID in an `.assign`
+    (`duplicateAxisInLhs`). Cross-call collisions (two calls write the same cell): a step that writes
+    the cell it reads, `S[l] := S[l]·X` (the pipeline refuses it with `scanProjectionUnsupported`),
+    and a 2-D scan whose state omits an advancing axis (refused by `inconsistentScanAxes` and
+    `advancingAxisNotInLhs`), whose sum depends on the loop order. A CONSTANT slot never reaches this
+    write: the reference refuses it first (`checkStatePlacements`, `affineWithoutSource`,
+    `scanWriteRowNotAdmitted`), because the slot names no source axis. A slot count that differs from
+    the state's rank also raises `scatterWriteOutOfRange` (the pipeline refuses it with `rankMismatch`;
+    the error message names the top-level scatter, a known wart). Hand-built out-of-range scan writes
     (negative base or bias, `ScanCompileTest` `s6NegBase` and `s6NegBiasBase`) are refused by the
     checked path and are now an error in the reference too. -/
 def writeScanStmtSlice (c : Combine) (nm : String) (out : DenseTensor) (seed : HashMap UID Int)
