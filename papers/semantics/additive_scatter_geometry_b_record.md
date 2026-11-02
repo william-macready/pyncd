@@ -268,3 +268,19 @@ statements are overbroad.
   checkout.
 - `main` is 14 commits ahead of `origin/main` plus this record edit; nothing is pushed. The prototype worktree
   and branch (`proto-scatter-geometry-b`) still exist and can be removed since the patches reproduce the code.
+
+### Post-landing fixes (2026-11-01, Direct path, merged as `ae4ece01`)
+
+At the owner's request the two confirmed findings above were fixed on a branch and merged locally, two commits,
+no push. R-1 and R-2 stay open; the parked-list rows for L1-N1 and S-3 above are superseded by this note.
+
+| Finding | Fix | Evidence |
+| --- | --- | --- |
+| L1-N1 | six acceptance guards strengthened IN PLACE to `(scheduled p).isSome && sourceError p == none`: `twoAxes`, `explicitConstant` (`B5BoundaryTest`); `convTwo` and the three `S3` group programs (`ScatterGeometryTest`). `f1` and `f6ok` were left alone: each is followed by a shape or value guard that already fails if scheduling fails | Hand mutation check with a throwaway probe file (removed): with every writer's slot list duplicated so scheduling fails, all six programs give scheduling failed = true, OLD guard true, NEW guard false; intact programs give true and true. An earlier probe variant (all declarations removed) did NOT fail scheduling, so it proved nothing and was discarded. Manifest entries `SGB-T1-01`, `-02`, `-07` (the ones pinned to lines in the two edited files) re-run: 3/3 PASS, since the edits keep every line count |
+| S-3 | one sentence added to the slice B paragraph of `Semantics/AGENTS.md`: the declared shape applies unless a declared axis occurs among the writer's own source axes (D5, identity slots included), naming `r1Surf` and `r2Surf` | read back; wording only |
+
+Verification of the merge: full `LeanNCD Tests JaxExperiment` on the fix branch tip, `Build completed
+successfully (8844 jobs)`; both edited modules built on their own first; `git diff --stat main <branch>` empty
+after the merge. Limits: the other 15 manifest entries were not re-run after these edits (the edits touch only the
+two test files and one `AGENTS.md`, and the 3 entries pinned to those files pass); the `Semantics/AGENTS.md`
+injected-section size (the roughly 3k character guidance) was not measured for the added sentence.
