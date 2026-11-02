@@ -1221,5 +1221,108 @@ run_cmd do
   | .ok S => unless S.data == #[1, 1, 1, 1, 1, 0, 1, 1, 1, 1] do
       throwError s!"D1 scan step must coerce a real read: {repr S.data}"
 
+-- F3-a: scan-local state writes fold in the STATE's sort (`⊕`) and an out-of-range write is an ERROR.
+-- Every program below is HAND-BUILT: the checked scan path refuses these slots (`multiAxisScatterLhs`,
+-- `scanWriteRowNotAdmitted`), so only the reference reaches the collision / range behaviour. All
+-- values are observed from a real run, never derived. Each construction makes the candidate readings
+-- differ (sum vs overwrite vs skip). A CONSTANT slot cannot collide here (its source axis is
+-- contracted by the RHS before placement), so the collisions come from a two-axis slot `j+q`.
+-- Donors: the S-B 1/2 scatter-in-scan fixtures above (`.scatter "S" [slot, .iterAt l 0]` base plus a
+-- dense copy recurrence `S[o,l+1] := S[o,l]`), the shape-1 tropical fixtures (`agg := .max/.min`),
+-- and ScanCompileTest `s6NegBiasBase`/`s6NegBase` (negative bias/scale slots).
+private def f3Run (env : List (String × DenseTensor)) (sizes : List (Nat × Nat)) (base recur : Stmt) :
+    Except EvalError DenseTensor :=
+  (evalScanF64 [] (HashMap.ofList env) (HashMap.ofList sizes)
+      (.scan "S" [ax "l" 9] [base] [recur] false)).map fun outs =>
+    (outs.find? (·.1 == "S")).elim (tensorOf [0] []) (·.2)
 
-end LeanNCD.Eval
+private def f3Copy (agg : AggOp) : Stmt :=
+  .assign "S" [.free (ax "o" 3), .iterNext (ax "l" 9)]
+    { body := { terms := [{ factors := [.read "S" [.axis (ax "o" 3), .axis (ax "l" 9)]] }] },
+      nonlin := .identity, agg := agg }
+
+private def f3Base (slot : LHSSlot) (fs : List Factor) (agg : AggOp) : Stmt :=
+  .scatter "S" [slot, .iterAt (ax "l" 9) 0]
+    { body := { terms := [{ factors := fs }] }, nonlin := .identity, agg := agg }
+
+-- (a) COLLISION SUMS, real. Base `S[j+q, 0] := X[j]` (q a broadcast axis the RHS never reads),
+--   X = [1,10,100], j<3, q<2: cell c receives X[j] for every (j,q) with j+q=c, so
+--   S[:,0] = [1, 1+10, 10+100, 100] = [1,11,110,100] (rows are cells, columns l=0,1; the copy fills l=1).
+--   Overwrite would give [1,10,100,100] (the last write per cell), skip would leave 0.
+run_cmd do
+  let j := ax "j" 1; let q := ax "q" 2
+  match f3Run [("X", tensorOf [3] [1, 10, 100])] [(1, 3), (2, 2), (3, 4), (9, 2)]
+      (f3Base (.affine (.affine 0 [(1, j), (1, q)])) [.read "X" [.axis j]] .sum) (f3Copy .sum) with
+  | .error e => throwError s!"F3-a (a): {e}"
+  | .ok S =>
+      unless S.shape == [4, 2] && S.data == #[1, 1, 11, 11, 110, 110, 100, 100] do
+        throwError s!"F3-a (a) collisions must sum: {S.shape} {repr S.data}"
+
+-- (b) MULTI-AXIS slot, two read source axes: `S[j+q, 0] := X[j] · Y[q]`, X = [1,10,100], Y = [3,7]:
+--   anti-diagonal sums [1·3, 1·7 + 10·3, 10·7 + 100·3, 100·7] = [3,37,370,700]. Overwrite would give
+--   [3,30,300,700] (the last (j,q) per cell).
+run_cmd do
+  let j := ax "j" 1; let q := ax "q" 2
+  match f3Run [("X", tensorOf [3] [1, 10, 100]), ("Y", tensorOf [2] [3, 7])]
+      [(1, 3), (2, 2), (3, 4), (9, 2)]
+      (f3Base (.affine (.affine 0 [(1, j), (1, q)])) [.read "X" [.axis j], .read "Y" [.axis q]] .sum)
+      (f3Copy .sum) with
+  | .error e => throwError s!"F3-a (b): {e}"
+  | .ok S =>
+      unless S.shape == [4, 2] && S.data == #[3, 3, 37, 37, 370, 370, 700, 700] do
+        throwError s!"F3-a (b) anti-diagonals must sum: {S.shape} {repr S.data}"
+
+-- (c) TROPICAL twin of (a), with gaps: base `S[2j+2q, 0] := maxreduce(X[j])` (`agg := .max` on the base
+--   and the copy), X = [-1,-10,-100], j<3, q<2: cells 0,2,4,6 are written (2 and 4 twice), cells 1,3,5
+--   are untouched. Collisions fold with MAX, untouched cells are -inf. A sum fold would give
+--   [-1,0,-11,0,-110,0,-100] (observed), overwrite [-1,-inf,-10,-inf,-100,-inf,-100].
+--   The min twin uses X = [1,10,100]: collisions fold with MIN, untouched cells are +inf.
+run_cmd do
+  let j := ax "j" 1; let q := ax "q" 2
+  let ninf : Float := -1.0 / 0.0
+  let pinf : Float := 1.0 / 0.0
+  let slot : LHSSlot := .affine (.affine 0 [(2, j), (2, q)])
+  let sizes := [(1, 3), (2, 2), (3, 7), (9, 2)]
+  match f3Run [("X", tensorOf [3] [-1, -10, -100])] sizes
+      (f3Base slot [.read "X" [.axis j]] .max) (f3Copy .max) with
+  | .error e => throwError s!"F3-a (c) max: {e}"
+  | .ok S =>
+      unless S.shape == [7, 2] &&
+          S.data == #[-1, -1, ninf, ninf, -1, -1, ninf, ninf, -10, -10, ninf, ninf, -100, -100] do
+        throwError s!"F3-a (c) max collisions must fold with max: {S.shape} {repr S.data}"
+  match f3Run [("X", tensorOf [3] [1, 10, 100])] sizes
+      (f3Base slot [.read "X" [.axis j]] .min) (f3Copy .min) with
+  | .error e => throwError s!"F3-a (c) min: {e}"
+  | .ok S =>
+      unless S.shape == [7, 2] &&
+          S.data == #[1, 1, pinf, pinf, 1, 1, pinf, pinf, 10, 10, pinf, pinf, 100, 100] do
+        throwError s!"F3-a (c) min collisions must fold with min: {S.shape} {repr S.data}"
+
+-- (d) OUT OF RANGE IS AN ERROR (it used to be skipped). Donors `s6NegBiasBase` / `s6NegBase`, here as
+--   reference scan bases over X = [1,10,100]: `S[j-1, 0]` has extent 2 and its write at j=0 lands on
+--   -1; `S[-2*j, 0]` has extent 0 (a non-positive scale) and its write at j=0 lands on 0. Skipping
+--   would drop that write and return the rest. ACCEPT neighbour (clone, change: bias -1 -> 0): the
+--   same program with the in-range placement `S[j, 0]` is accepted with S = X in both columns.
+run_cmd do
+  let j := ax "j" 1
+  let env := [("X", tensorOf [3] [1, 10, 100])]
+  match f3Run env [(1, 3), (3, 2), (9, 2)]
+      (f3Base (.affine (.affine (-1) [(1, j)])) [.read "X" [.axis j]] .sum) (f3Copy .sum) with
+  | .error (.scatterWriteOutOfRange "S" [-1, 0] [0]) => pure ()
+  | .error e => throwError s!"F3-a (d) negative bias: wrong error: {e}"
+  | .ok S => throwError s!"F3-a (d) negative bias: expected an error, got {repr S.data}"
+  match f3Run env [(1, 3), (3, 0), (9, 2)]
+      (f3Base (.affine (.scale (-2) j)) [.read "X" [.axis j]] .sum) (f3Copy .sum) with
+  | .error (.scatterWriteOutOfRange "S" [0, 0] [0]) => pure ()
+  | .error e => throwError s!"F3-a (d) negative scale: wrong error: {e}"
+  | .ok S => throwError s!"F3-a (d) negative scale: expected an error, got {repr S.data}"
+  match f3Run env [(1, 3), (3, 3), (9, 2)]
+      (f3Base (.affine (.affine 0 [(1, j)])) [.read "X" [.axis j]] .sum) (f3Copy .sum) with
+  | .error e => throwError s!"F3-a (d) in-range neighbour: {e}"
+  | .ok S =>
+      unless S.shape == [3, 2] && S.data == #[1, 1, 10, 10, 100, 100] do
+        throwError s!"F3-a (d) in-range neighbour: {S.shape} {repr S.data}"
+
+-- (e) The injective ACCEPT neighbour is NOT duplicated: the S-B 1 / S-B 2 / S-B 3 fixtures above
+--   (`.scatter "S" [.affine (.scale 2 j), .iterAt l 0]` etc.) are the unchanged-value guards.
+
