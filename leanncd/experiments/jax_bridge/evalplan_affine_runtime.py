@@ -27,6 +27,13 @@ Load-bearing properties (whole-branch review gate):
   all-zero output; a zero reduction extent yields zeros; a zero output extent yields empty storage.
 * **Graph order.** Positional nodes execute in checked order, each writing its destination slot
   before any later node reads it.
+* **Scatter nodes (`"kind": "scatter"`).** The compute half runs through the unchanged assignment
+  machinery (a SOURCE-shaped tensor, `output_shape`); the destination starts at `reduceId` (`0`, both
+  admitted real algebras) and absorbs the source values one at a time, in the static
+  `dest_flat_index` order (the dense worker's `allCoords` order), each with `dest[c] = dest[c] + v`
+  in a sequential `fori_loop` — the same left fold `runDenseScatter`/`runDenseScatter32` perform, so
+  colliding writes agree bit-for-bit. Placement indices are static and checked in range by Lean; the
+  runtime never relies on JAX's out-of-bounds scatter behavior. A node of unknown kind fails loud.
 * **Differentiable** with respect to the floating input tensors (integer gather + `where` + loops).
 """
 
@@ -148,6 +155,35 @@ def _run_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.A
     return jax.lax.fori_loop(0, len(terms), term_body, zero)
 
 
+def _run_scatter_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
+    """One scatter node: source-shaped compute half, then the ordered placement fold."""
+    source = jnp.reshape(_run_node(node, store, dtype), (-1,))
+    dest_shape = tuple(node["dest_shape"])
+    idx = node["dest_flat_index"]
+    if int(source.shape[0]) != len(idx):
+        raise ValueError(f"scatter table has {len(idx)} entries for {int(source.shape[0])} sources")
+    dest = jnp.zeros((_prod(list(dest_shape)),), dtype=dtype)  # reduceId of the real sum-product
+    if not idx:
+        return jnp.reshape(dest, dest_shape)  # empty source box: nothing is written
+    idx_arr = jnp.asarray(idx, dtype=_index_dtype())
+
+    def body(k, acc):
+        c = idx_arr[k]
+        return acc.at[c].set(acc[c] + source[k])
+
+    return jnp.reshape(jax.lax.fori_loop(0, len(idx), body, dest), dest_shape)
+
+
+def _exec_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
+    """Dispatch one positional node on its `kind` (absent ⇒ assignment, the pre-scatter record)."""
+    kind = node.get("kind", "assign")
+    if kind == "assign":
+        return _run_node(node, store, dtype)
+    if kind == "scatter":
+        return _run_scatter_node(node, store, dtype)
+    raise ValueError(f"unsupported node kind {kind!r}")
+
+
 def run_assign(node: dict[str, Any], store: list[jax.Array], dtype: Any = jnp.float64) -> jax.Array:
     """Execute one positional checked-assignment node against a positional store, returning one
     result tensor — the direct parallel of `runDenseAssign` (`runDenseAssign32` for float32)."""
@@ -166,7 +202,7 @@ def run_plan_positional(
     for slot, tensor in zip(plan["input_slots"], inputs):
         store[slot] = tensor
     for node in plan["nodes"]:
-        store[node["dest"]] = _run_node(node, store, dtype)
+        store[node["dest"]] = _exec_node(node, store, dtype)
     return store
 
 
@@ -182,7 +218,7 @@ def run_named(
     for name, slot in plan["required_inputs"]:
         store[slot] = inputs_by_name[name]
     for node in plan["nodes"]:
-        store[node["dest"]] = _run_node(node, store, dtype)
+        store[node["dest"]] = _exec_node(node, store, dtype)
     outputs: dict[str, jax.Array] = {}
     for name, slot in plan["materialized"]:
         outputs[name] = store[slot]
