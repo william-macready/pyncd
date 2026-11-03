@@ -299,6 +299,50 @@ excluding it. `orderedReference64` and `orderedReference32` carry the same limit
 fixed: that would mean defeating XLA's flush-to-zero and its algebraic simplifier, and no XLA
 flag that does either was found. Scan lowering remains future work.
 
+### Scatter steps (ordered mode, JAX scatter slice)
+
+A prepared plan whose steps include a `.scatter` (a source statement with a non-plain LHS slot such
+as `Y[2*i]`, `Y[a+b]`, `Y[i, =2]`, and every B5 multi-writer group, whose writers are scatters into
+private slots feeding one collector assignment) now renders and runs under `affineReference`, in both
+precisions. `renderScatterNode` emits the compute half's tables (a SOURCE-shaped tensor) plus
+`"kind": "scatter"`, `"dest_shape"` and a static `"dest_flat_index"` table: one destination offset per
+source coordinate, in the dense worker's `allCoords` order, computed in Lean by the worker's own
+`applyAffine`/`inBoundsPerDim`/`flatIndex`. The runtime (`_run_scatter_node`) starts the destination at
+`reduceId` (`0`) and adds the source values one at a time in table order (`fori_loop`), the exact left
+fold of `runDenseScatter`/`runDenseScatter32`, so colliding float writes are BIT-identical to Lean.
+An out-of-range placement is unreachable for a checked plan (`scatterRangeViolation`); the codegen
+still refuses it (`scatterPlacementOutOfRange`) rather than emit the index.
+
+**Fast mode** (`scatter_mode="fast"` on `run_named` / `run_plan_positional`; default `"ordered"`, an
+unknown value raises `ValueError`) swaps ONLY the placement fold for one vectorised
+`zeros.at[dest_flat_index].add(source, mode="promise_in_bounds")` (XLA scatter-add) over the same static
+table and the same ordered compute half, so it needs no Lean change and works under `jax.jit` and
+`jax.grad`. Exactness: it is bit-identical to ordered mode and to Lean when no two source coordinates
+share a destination cell (all collision-free fixtures, both precisions, eager and jit, including signed
+zero: `0 + (-0.0)` is `+0.0`), or when every partial sum is exactly representable. With colliding
+writes XLA's accumulation order is unspecified, so the result is only guaranteed within rounding; the
+verifier compares fixtures whose scatter TABLE collides (`multi`, `contract`; the `b5Overlap` writers
+write private slots and its collision is in the ordered collector assign) within a scale-relative
+`RTOL` (`1e-12` binary64, `1e-5` binary32), and against random well-conditioned inputs (fast vs ordered).
+On this CPU backend those fixtures (including the `1e16`/`2^24` ordering pins) and 200 random trials per
+fixture were nonetheless bit-identical to ordered/Lean (XLA CPU applies updates in order): an
+observation that proves nothing about other backends or a future XLA. The static table is range-checked at trace time (`ValueError`), because JAX's default
+for a scatter would silently DROP an out-of-range update; with the check, `promise_in_bounds` is a fact.
+The verifier tells the folds apart by counting `scatter-add` primitives in the traced program (default
+and ordered: none; fast: one per non-empty scatter node), since results alone cannot.
+
+| Still refused | Where |
+| --- | --- |
+| scatter under `einsumOnly` | `unsupportedStep` (einsum is a gather; no scatter form) |
+| scatter in the evidence path | `lowerCheckPlanToCandidate` / `JaxExecutableWellFormed`: `unsupportedStep` (no `ExecutionEvidence` for a scatter) |
+| tropical, Boolean, contextful or unary-read scatter | the compute-half gate (`checkJaxScatterSupport`): `unsupportedAlgebra` etc. |
+| scan, pointwise, axiswise | `unsupportedStep` |
+
+Run: `./run-evalplan-scatter.sh` (generates `EvalPlanScatterSmoke.lean`'s binary64 + binary32
+fixtures, then `evalplan_scatter_smoke.py float64|float32`: eager and jit bit comparison, a pinned
+collision-order case, a signed-zero case, a gradient). Mutation record for the Python half:
+`mutation_python_manifest.py` (`papers/semantics/jax_scatter_mutations_python.json`).
+
 ## Scaling probe
 
 `run-scaling-probe.sh` measures one mid-sized contraction — `Y[i] := Σⱼ W[i,j]·x[j]`, `i,j` both

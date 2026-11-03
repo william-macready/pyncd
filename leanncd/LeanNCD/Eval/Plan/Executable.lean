@@ -307,6 +307,26 @@ def checkJaxAssignSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
   | .ok _ => pure ()
   jaxAssignSupported sigs nodeIndex checked.storageKind checked.plan
 
+/-- The scatter counterpart of `checkJaxAssignSupport`: a scatter's COMPUTE half is graded by the very
+    same private policy (`jaxAssignSupported` — one rule, no second copy), after the scatter checker
+    is re-run under `sigs` through the carrier matching the evidence's own `storageKind`
+    (`checkScatter`/`checkScatterF32`). The re-run is the scatter checker, not `checkAssign`: a
+    scatter's compute half registers the DESTINATION extent while its `outputShape` is the SOURCE
+    domain, so `checkAssign` would refuse every scatter. This verdict covers only the compute half's
+    semantics (dtype, algebra, context, plain reads); the placement map's own rendering is the
+    caller's. Evidence for the rendering path only: no `JaxKernelCandidate` carries a scatter, so
+    `JaxExecutableWellFormed` still refuses every scatter step. -/
+def checkJaxScatterSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (checked : CheckedScatterPlan) : Except JaxSupportError Unit := do
+  let recheck :=
+    match checked.storageKind with
+    | .float64 => checkScatter sigs checked.plan
+    | .float32 => checkScatterF32 sigs checked.plan
+  match recheck with
+  | .error e => throw (.invalidSignatureContext nodeIndex e)
+  | .ok _ => pure ()
+  jaxAssignSupported sigs nodeIndex checked.storageKind checked.plan.compute
+
 /-- `Bool` view of the support gate, for the `Bool`-valued validators below. -/
 private def jaxSupportOk (sigs : Array TensorSignature) (checked : CheckedAssignPlan) : Bool :=
   match checkJaxAssignSupport sigs 0 checked with

@@ -67,6 +67,11 @@ inductive JaxCodegenError
   -- outer-graph index (not a per-term/factor locator — these kinds have no term/factor structure).
   -- Assignment steps never reach it; they route through the existing affine/einsum path unchanged.
   | unsupportedStep       (stepIndex : Nat)
+  -- A scatter's static placement table would put a source coordinate OUTSIDE `[0, destShape)`.
+  -- Unreachable for a `CheckedScatterPlan` (`checkScatter` rejects it as `scatterWriteOutOfRange`,
+  -- and the dense worker fails loud the same way), so this is the codegen's own backstop: the
+  -- table is never emitted with an out-of-range entry. Carries the node and both coordinates.
+  | scatterPlacementOutOfRange (nodeIndex : Nat) (destCoord sourceCoord : List Int)
   -- A `.iverson` predicate factor inside an assignment term: this JAX backend lowers only affine
   -- reads to einsum/affine-table kernels, so a term carrying an Iverson factor is rejected here with
   -- its node/term/factor location. (Predicate/mask execution is not lowered to JAX — Global
@@ -349,6 +354,8 @@ def lowerPlan (c : CheckedEvalPlan) : Except JaxCodegenError (Array NodeLowering
   for h : ni in [0 : c.checkedNodes.size] do
     match c.checkedNodes[ni] with
     | .assign a => nodes := nodes.push (← lowerAssign sigs ni a)
+    -- einsum has no scatter form (a scatter is source-driven; `jnp.einsum` is a gather), so a
+    -- scatter stays the located `unsupportedStep` here; only `affineReference` renders it.
     | .scatter _ | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return nodes
 
@@ -519,6 +526,63 @@ private def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
     ", \"reduction_pos\": " ++ pyNatListLit t.reductionPos ++
     ", \"factors\": [" ++ facs ++ "]}"
 
+/-- The compute-half fields of one node record (`"dest"`, `"output_shape"`, `"terms"`), without the
+    braces: shared by an assignment node and a scatter node, whose compute half is an `AssignPlan`
+    rendered by exactly the same tables. PRIVATE and gate-free: every caller has already applied its
+    own support gate (`requireJaxSupport` / `requireJaxScatterSupport`). -/
+private def renderAffineFields (nodeIndex : Nat) (a : AssignPlan) : Except JaxCodegenError String := do
+  let mut termStrs : Array String := #[]
+  for h : ti in [0 : a.terms.size] do
+    termStrs := termStrs.push (← renderAffineTerm nodeIndex ti a.terms[ti])
+  let terms := String.intercalate ", " termStrs.toList
+  return "\"dest\": " ++ toString a.destinationSlot ++
+    ", \"output_shape\": " ++ pyNatListLit a.outputShape ++
+    ", \"terms\": [" ++ terms ++ "]"
+
+/-- The scatter counterpart of `requireJaxSupport` (`checkJaxScatterSupport` in `Executable.lean`):
+    the scatter checker is re-run under `sigs`, then the one JAX support policy grades the compute
+    half. Located at `nodeIndex`. -/
+def requireJaxScatterSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (checked : CheckedScatterPlan) : Except JaxCodegenError Unit :=
+  match checkJaxScatterSupport sigs nodeIndex checked with
+  | .ok _ => .ok ()
+  | .error e => .error (codegenErrorOfSupport e)
+
+/-- A scatter's static placement table: for every SOURCE coordinate, in the dense worker's own order
+    (`allCoords s.compute.outputShape`, row-major), the flat offset of its destination cell. Composed
+    from the very primitives `runDenseScatterWith` composes — `applyAffine` over the placement map,
+    `inBoundsPerDim` BEFORE `flatIndex` (a flat-offset test can alias distinct invalid coordinates,
+    proposal §8.3). An out-of-range placement is unreachable for a checked plan (`checkScatter`'s
+    `scatterRangeViolation`); here it throws `scatterPlacementOutOfRange` rather than emit an index
+    the runtime would silently clamp or alias. Takes the raw `ScatterPlan` so the backstop is
+    testable on a hand-built out-of-range plan. -/
+def buildScatterPlacement (nodeIndex : Nat) (s : ScatterPlan) :
+    Except JaxCodegenError (Array Nat) := do
+  let destShape := s.destShape.toList
+  let placement : AffineMap := { coeffs := s.outCoeffs, bias := s.outBias }
+  let mut idxs : Array Nat := #[]
+  for sc in allCoords s.compute.outputShape.toList do
+    let dc := applyAffine placement sc
+    unless inBoundsPerDim destShape dc do
+      throw (.scatterPlacementOutOfRange nodeIndex dc sc)
+    idxs := idxs.push (flatIndex destShape (dc.map Int.toNat))
+  return idxs
+
+/-- One scatter node's static record: `"kind": "scatter"`, the compute half's fields (so the runtime
+    evaluates the SOURCE-shaped tensor with the unchanged assignment machinery), `"dest_shape"`, and
+    `"dest_flat_index"` — one entry per source coordinate in worker order. No fill or collision
+    policy is emitted: like the worker, the runtime starts from `reduceId` (0 for both admitted real
+    algebras) and folds each write with `+`, in table order. PRIVATE: reached only through
+    `renderAffineNodesArray`, after the scatter support gate. -/
+private def renderScatterNode (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (checked : CheckedScatterPlan) : Except JaxCodegenError String := do
+  requireJaxScatterSupport sigs nodeIndex checked
+  let s := checked.plan
+  let idxs ← buildScatterPlacement nodeIndex s
+  return "{\"kind\": \"scatter\", " ++ (← renderAffineFields nodeIndex s.compute) ++
+    ", \"dest_shape\": " ++ pyNatListLit s.destShape ++
+    ", \"dest_flat_index\": " ++ pyNatListLit idxs ++ "}"
+
 /-- One assignment node's static data: destination slot, output shape, and every term's precomputed
     tables in checked term-array order. Rejects a term carrying an Iverson factor with its located
     error (via `renderAffineTerm`).
@@ -530,35 +594,23 @@ private def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
 private def renderAffineNode (sigs : Array TensorSignature) (nodeIndex : Nat)
     (checked : CheckedAssignPlan) : Except JaxCodegenError String := do
   requireJaxSupport sigs nodeIndex checked
-  let a := checked.plan
-  let mut termStrs : Array String := #[]
-  for h : ti in [0 : a.terms.size] do
-    termStrs := termStrs.push (← renderAffineTerm nodeIndex ti a.terms[ti])
-  let terms := String.intercalate ", " termStrs.toList
-  return "{\"dest\": " ++ toString a.destinationSlot ++
-    ", \"output_shape\": " ++ pyNatListLit a.outputShape ++
-    ", \"terms\": [" ++ terms ++ "]}"
+  return "{" ++ (← renderAffineFields nodeIndex checked.plan) ++ "}"
 
 /-- Every checked node in graph order (`checkedNodes` order is exactly raw-graph order, by
     `checkPlan`'s construction). Supported assignments pass `renderAffineNode`'s semantic gate; a
-    `.scatter`/`.pointwise`/`.axiswise`/`.scan` node has no affine-table lowering here, so the array
-    build rejects it with the one located unsupported-step error carrying that node's outer-graph
-    index.
-
-    A scatter (S-A) joins that bucket CATEGORICALLY, not subject to any finer per-step check: the
-    affine-table record this file emits is output-driven (`dest`/`output_shape`/`terms`, one safe
-    index and mask per DESTINATION cell), while a scatter is source-driven and additionally carries a
-    placement map, a `fill`, and a collision policy that the record has no field for at all. Whether
-    its COMPUTE half would pass `checkJaxAssignSupport` is therefore irrelevant — the placement half
-    has no rendering regardless, which is why no `checkJaxScatterSupport` counterpart exists to call
-    here. -/
+    `.scatter` node passes `requireJaxScatterSupport` (its compute half graded by the same policy)
+    and renders as a source-driven record (`renderScatterNode`: compute fields + `dest_shape` + the
+    static `dest_flat_index` placement table, ordered mode); a `.pointwise`/`.axiswise`/`.scan` node
+    has no affine-table lowering here, so the array build rejects it with the one located
+    unsupported-step error carrying that node's outer-graph index. -/
 private def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenError String := do
   let sigs := c.raw.tensorSigs
   let mut entries : Array String := #[]
   for h : ni in [0 : c.checkedNodes.size] do
     match c.checkedNodes[ni] with
     | .assign a => entries := entries.push (← renderAffineNode sigs ni a)
-    | .scatter _ | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
+    | .scatter s => entries := entries.push (← renderScatterNode sigs ni s)
+    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return "[" ++ String.intercalate ", " entries.toList ++ "]"
 
 private def renderBindingList (bs : Array SlotBinding) : String :=
@@ -760,10 +812,11 @@ def lowerCheckPlanToCandidate (plan : PreparedPlan) :
         | .ok k => steps := steps.push k
         | .error (.unsupported e) => throw (codegenErrorOfSupport e)
         | .error .invalidCandidate => throw (.unsupportedStep ni)
-    -- A scatter joins the categorical bucket for the reason `renderAffineNodesArray` states: there
-    -- is no `JaxKernelCandidate` shape a placement map fits into, so handing this loop
-    -- `s.compute` — the one thing here that IS a checked assignment — would build a kernel for the
-    -- source-shaped compute result and stamp it with this step's index.
+    -- A scatter stays refused HERE (the evidence path): there is no `JaxKernelCandidate` shape a
+    -- placement map fits into, so handing this loop `s.compute` — the one thing here that IS a
+    -- checked assignment — would build a kernel for the source-shaped compute result and stamp it
+    -- with this step's index. The RENDERING path (`renderAffineNodesArray`) does admit a scatter;
+    -- it carries no `ExecutionEvidence`.
     | .scatter _ | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return { source := plan, steps
          , evidence := aggregateEvidenceList plan.plan.storageKind (steps.map (·.evidence))
@@ -2011,6 +2064,7 @@ def b5ScatterPrepared : Option PreparedPlan :=
   | .scatter _ => "scatter"
   | .assign _ => "assign"
   | _ => "other"
+-- (einsum refusal pin; since the JAX scatter slice only `einsumOnly` refuses, see section 10.)
 #eval b5ScatterPrepared.map fun p => match lowerPlan p.plan with
   | .error e => reprStr e
   | .ok _ => "accepted"
@@ -2030,5 +2084,89 @@ def b5ScatterRejectedBeforeEmission : Bool :=
 run_cmd do
   unless b5ScatterRejectedBeforeEmission do
     throwError "B5 prepared scatter: lowerPlan and generateForward must reject actual scatter node 0 before emission"
+
+
+/-! ## 10. Scatter rendering (JAX scatter slice, ordered mode)
+
+`b5ScatterScheduled` above is the donor: a B5 group, i.e. prepared nodes `[scatter, scatter, assign]`
+(two writers into private slots, then the collector assignment). `affineReference` now RENDERS the
+scatters (`renderScatterNode`); `einsumOnly` still refuses node 0 (asserted above). -/
+
+/-- The prepared plan's checked scatter payloads, with their node indices, in graph order. -/
+def b5Scatters : Array (Nat × CheckedScatterPlan) :=
+  match b5ScatterPrepared with
+  | none => #[]
+  | some p => (p.plan.checkedNodes.mapIdx fun ni n => (ni, n)).filterMap fun (ni, n) =>
+      match n with
+      | .scatter s => some (ni, s)
+      | _ => none
+
+/-- First checked scatter of the donor, with its node index and the plan's signature table. -/
+def b5FirstScatter : Option (Nat × CheckedScatterPlan × Array TensorSignature) :=
+  match b5ScatterPrepared, b5Scatters[0]? with
+  | some p, some (ni, s) => some (ni, s, p.plan.raw.tensorSigs)
+  | _, _ => none
+
+-- Placement tables, observed from a real run (`#eval` over this donor: scatter 0 `S[2*i]` -> flat
+-- cells 0,2; scatter 1 `S[2*i+1]` -> 1,3, both over destination extent 4), in source-coordinate order.
+#guard b5Scatters.map (fun (ni, s) => (ni, s.plan.destShape, (buildScatterPlacement ni s.plan).toOption))
+  == #[(0, #[4], some #[0, 2]), (1, #[4], some #[1, 3])]
+
+-- `affineReference` renders the whole B5 plan: two scatter records then the collector assignment,
+-- the private slots 2 and 3 NOT among the materialized names (only `S`, slot 4).
+#guard (match b5ScatterPrepared with
+  | none => false
+  | some p => match renderAffinePlanNamed p with
+    | .error _ => false
+    | .ok t => (t.splitOn "\"kind\": \"scatter\"").length == 3 &&
+        (t.splitOn "\"dest_flat_index\": [0, 2]").length == 2 &&
+        (t.splitOn "\"dest_flat_index\": [1, 3]").length == 2 &&
+        (t.splitOn "\"materialized\": [(\"S\", 4)]").length == 2)
+
+-- The other two doors stay shut for a scatter: `einsumOnly` (no scatter form) and the evidence
+-- candidate (no `JaxKernelCandidate` carries a placement map).
+#guard (match b5ScatterPrepared with
+  | none => false
+  | some p =>
+    (match generateNamed .einsumOnly p with | .error (.unsupportedStep 0) => true | _ => false) &&
+    (match lowerCheckPlanToCandidate p with | .error (.unsupportedStep 0) => true | _ => false))
+
+-- Fail-loud backstop on a hand-built out-of-range placement (unreachable for a checked plan):
+-- clone `b5FirstScatter`'s raw plan, change `outBias` only (`#[0]` -> `#[10]`, then `#[-1]`).
+#guard (match b5FirstScatter with
+  | none => false
+  | some (ni, s, _) =>
+    (match buildScatterPlacement ni { s.plan with outBias := #[10] } with
+     | .error (.scatterPlacementOutOfRange 0 [10] [0]) => true | _ => false) &&
+    (match buildScatterPlacement ni { s.plan with outBias := #[-1] } with
+     | .error (.scatterPlacementOutOfRange 0 [-1] [0]) => true | _ => false))
+
+-- The scatter support gate grades the compute half: clone the donor's checked scatter, change the
+-- compute algebra only (max-plus; real-only support) and re-check.
+#guard (match b5FirstScatter with
+  | none => false
+  | some (ni, s, sigs) =>
+    match checkScatter sigs { s.plan with compute := { s.plan.compute with algebra := admittedAlgebraMax } } with
+    | .error _ => false
+    | .ok cs => match requireJaxScatterSupport sigs ni cs with
+        | .error (.unsupportedAlgebra 0) => true
+        | _ => false)
+
+-- END-TO-END compute-half gate (found by mutation JS-T1-05: removing the gate from the renderer
+-- survived the direct `requireJaxScatterSupport` guard above): clone the donor's raw plan, change the
+-- FIRST scatter's compute algebra only (max-plus), re-check, and render the plan.
+#guard (match b5ScatterPrepared with
+  | none => false
+  | some p =>
+    match p.plan.raw.steps[0]? with
+    | some (PlanStep.scatter s) =>
+        let tropical : PlanStep :=
+          PlanStep.scatter { s with compute := { s.compute with algebra := admittedAlgebraMax } }
+        let raw : RawEvalPlan := { p.plan.raw with steps := p.plan.raw.steps.set! 0 tropical }
+        match checkPlan raw with
+        | .ok c => (match renderAffinePlanPositional c with
+                    | .error (.unsupportedAlgebra 0) => true | _ => false)
+        | .error _ => false
+    | _ => false)
 
 end JaxBridge
