@@ -206,7 +206,8 @@ Slice 1 does **not** change this. It stays a recorded divergence.
   (`additive_b5c_record.md`) extends the box to a single non-identity writer, so the declared shape
   decides for every writer count.
   Existing inference and B6 checks remain unchanged. `route` explicitly refuses
-  B5; JAX refuses actual prepared scatter nodes before emission.
+  B5; JAX `einsumOnly` refuses actual prepared scatter nodes before emission (`affineReference`
+  renders them since the JAX scatter slice).
 - The S1/S3 bullets below preserve the original staging history, not the current
   blanket-refusal boundary.
 - **S1, assign writers only.** Every writer is a `.plain (.assign)` with only `.free`/`.freeNorm` slots, and

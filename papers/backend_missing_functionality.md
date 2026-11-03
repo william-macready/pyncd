@@ -324,7 +324,8 @@ fragment.
   shared refusal, and `evalScatter` is now dtype-aware for predicate destinations (`combineFor`);
   the checked `predicateScatterDest` rejection is kept until the checked Boolean scatter is verified.
   The experimental `jax_bridge` backend rejects a `.scatter` step categorically (`unsupportedStep`)
-  — there is no JAX scatter execution.
+  — there is no JAX scatter execution. (Superseded by the JAX scatter slice: `affineReference`
+  now renders and runs scatter steps; `einsumOnly` and the evidence path still refuse them.)
   **Not** included: Boolean/predicate scatter destinations — deferred, rejected at capability tier
   as `predicateScatterDest` rather than admitted; closing them required teaching the reference
   `evalScatter` to be dtype-aware (done), and now needs the checked Boolean scatter verified.
