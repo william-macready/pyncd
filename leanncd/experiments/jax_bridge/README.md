@@ -313,6 +313,24 @@ fold of `runDenseScatter`/`runDenseScatter32`, so colliding float writes are BIT
 An out-of-range placement is unreachable for a checked plan (`scatterRangeViolation`); the codegen
 still refuses it (`scatterPlacementOutOfRange`) rather than emit the index.
 
+**Fast mode** (`scatter_mode="fast"` on `run_named` / `run_plan_positional`; default `"ordered"`, an
+unknown value raises `ValueError`) swaps ONLY the placement fold for one vectorised
+`zeros.at[dest_flat_index].add(source, mode="promise_in_bounds")` (XLA scatter-add) over the same static
+table and the same ordered compute half, so it needs no Lean change and works under `jax.jit` and
+`jax.grad`. Exactness: it is bit-identical to ordered mode and to Lean when no two source coordinates
+share a destination cell (all collision-free fixtures, both precisions, eager and jit, including signed
+zero: `0 + (-0.0)` is `+0.0`), or when every partial sum is exactly representable. With colliding
+writes XLA's accumulation order is unspecified, so the result is only guaranteed within rounding; the
+verifier compares fixtures whose scatter TABLE collides (`multi`, `contract`; the `b5Overlap` writers
+write private slots and its collision is in the ordered collector assign) within a scale-relative
+`RTOL` (`1e-12` binary64, `1e-5` binary32), and against random well-conditioned inputs (fast vs ordered).
+On this CPU backend those fixtures (including the `1e16`/`2^24` ordering pins) and 200 random trials per
+fixture were nonetheless bit-identical to ordered/Lean (XLA CPU applies updates in order): an
+observation that proves nothing about other backends or a future XLA. The static table is range-checked at trace time (`ValueError`), because JAX's default
+for a scatter would silently DROP an out-of-range update; with the check, `promise_in_bounds` is a fact.
+The verifier tells the folds apart by counting `scatter-add` primitives in the traced program (default
+and ordered: none; fast: one per non-empty scatter node), since results alone cannot.
+
 | Still refused | Where |
 | --- | --- |
 | scatter under `einsumOnly` | `unsupportedStep` (einsum is a gather; no scatter form) |

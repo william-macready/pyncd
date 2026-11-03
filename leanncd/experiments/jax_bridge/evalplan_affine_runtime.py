@@ -34,6 +34,11 @@ Load-bearing properties (whole-branch review gate):
   in a sequential `fori_loop` — the same left fold `runDenseScatter`/`runDenseScatter32` perform, so
   colliding writes agree bit-for-bit. Placement indices are static and checked in range by Lean; the
   runtime never relies on JAX's out-of-bounds scatter behavior. A node of unknown kind fails loud.
+  `scatter_mode="fast"` (opt-in; default `"ordered"`) replaces ONLY this fold with one vectorised
+  `zeros.at[dest_flat_index].add(source)` (XLA scatter-add, same static table, same compute half).
+  It is bit-identical to ordered/Lean when no two source coordinates share a destination cell (or
+  every partial sum is exactly representable); with collisions XLA's accumulation order is
+  unspecified, so float results agree only within rounding. The table is range-checked at trace time.
 * **Differentiable** with respect to the floating input tensors (integer gather + `where` + loops).
 """
 
@@ -55,6 +60,12 @@ def require_x64() -> None:
 
 
 _DTYPES = (jnp.float64, jnp.float32)
+SCATTER_MODES = ("ordered", "fast")
+
+
+def _require_scatter_mode(scatter_mode: Any) -> None:
+    if scatter_mode not in SCATTER_MODES:
+        raise ValueError(f"unsupported scatter_mode {scatter_mode!r}; expected one of {SCATTER_MODES}")
 
 
 def _require_dtype(dtype: Any, tensors: Any) -> None:
@@ -155,8 +166,10 @@ def _run_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.A
     return jax.lax.fori_loop(0, len(terms), term_body, zero)
 
 
-def _run_scatter_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
-    """One scatter node: source-shaped compute half, then the ordered placement fold."""
+def _run_scatter_node(
+    node: dict[str, Any], store: list[jax.Array], dtype: Any, scatter_mode: str = "ordered"
+) -> jax.Array:
+    """One scatter node: source-shaped compute half, then the ordered (default) or fast placement fold."""
     source = jnp.reshape(_run_node(node, store, dtype), (-1,))
     dest_shape = tuple(node["dest_shape"])
     idx = node["dest_flat_index"]
@@ -166,6 +179,13 @@ def _run_scatter_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) 
     if not idx:
         return jnp.reshape(dest, dest_shape)  # empty source box: nothing is written
     idx_arr = jnp.asarray(idx, dtype=_index_dtype())
+    if scatter_mode == "fast":
+        if min(idx) < 0 or max(idx) >= int(dest.shape[0]):
+            raise ValueError(f"scatter table has an index outside [0, {int(dest.shape[0])})")
+        # Static table checked just above, so "promise_in_bounds" is a fact, not a hope; JAX's default
+        # would silently DROP an out-of-range update.
+        out = dest.at[idx_arr].add(source, mode="promise_in_bounds")
+        return jnp.reshape(out, dest_shape)
 
     def body(k, acc):
         c = idx_arr[k]
@@ -174,13 +194,15 @@ def _run_scatter_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) 
     return jnp.reshape(jax.lax.fori_loop(0, len(idx), body, dest), dest_shape)
 
 
-def _exec_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
+def _exec_node(
+    node: dict[str, Any], store: list[jax.Array], dtype: Any, scatter_mode: str = "ordered"
+) -> jax.Array:
     """Dispatch one positional node on its `kind` (absent ⇒ assignment, the pre-scatter record)."""
     kind = node.get("kind", "assign")
     if kind == "assign":
         return _run_node(node, store, dtype)
     if kind == "scatter":
-        return _run_scatter_node(node, store, dtype)
+        return _run_scatter_node(node, store, dtype, scatter_mode)
     raise ValueError(f"unsupported node kind {kind!r}")
 
 
@@ -192,33 +214,42 @@ def run_assign(node: dict[str, Any], store: list[jax.Array], dtype: Any = jnp.fl
 
 
 def run_plan_positional(
-    plan: dict[str, Any], inputs: list[jax.Array], dtype: Any = jnp.float64
+    plan: dict[str, Any],
+    inputs: list[jax.Array],
+    dtype: Any = jnp.float64,
+    scatter_mode: str = "ordered",
 ) -> list[jax.Array]:
     """Execute a positional `CheckedEvalPlan` over positional inputs (in `input_slots` order),
-    returning the full positional slot store after every node has run in checked graph order."""
+    returning the full positional slot store after every node has run in checked graph order.
+    `scatter_mode` selects the scatter fold only: `"ordered"` (default, bit-exact) or `"fast"`."""
+    _require_scatter_mode(scatter_mode)
     num_slots = plan["num_slots"]
     store: list[Any] = [None] * num_slots
     _require_dtype(dtype, inputs)
     for slot, tensor in zip(plan["input_slots"], inputs):
         store[slot] = tensor
     for node in plan["nodes"]:
-        store[node["dest"]] = _exec_node(node, store, dtype)
+        store[node["dest"]] = _exec_node(node, store, dtype, scatter_mode)
     return store
 
 
 def run_named(
-    plan: dict[str, Any], inputs_by_name: dict[str, jax.Array], dtype: Any = jnp.float64
+    plan: dict[str, Any],
+    inputs_by_name: dict[str, jax.Array],
+    dtype: Any = jnp.float64,
+    scatter_mode: str = "ordered",
 ) -> dict[str, jax.Array]:
     """Execute a named `PreparedPlan`: place inputs by source-name binding, run every node in graph
     order, then reconstruct each materialized name (later writes overwrite earlier ones, matching
-    `Adapter.unpack`)."""
+    `Adapter.unpack`). `scatter_mode` as in `run_plan_positional`."""
+    _require_scatter_mode(scatter_mode)
     num_slots = plan["num_slots"]
     store: list[Any] = [None] * num_slots
     _require_dtype(dtype, inputs_by_name.values())
     for name, slot in plan["required_inputs"]:
         store[slot] = inputs_by_name[name]
     for node in plan["nodes"]:
-        store[node["dest"]] = _exec_node(node, store, dtype)
+        store[node["dest"]] = _exec_node(node, store, dtype, scatter_mode)
     outputs: dict[str, jax.Array] = {}
     for name, slot in plan["materialized"]:
         outputs[name] = store[slot]
