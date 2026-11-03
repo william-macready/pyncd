@@ -148,20 +148,137 @@ def scanBase : TLProgram := tlprog!{
   G[j, l +1] := G[j, l] · W[j, k]
 }
 #guard compErr scanBase == none
+-- F3-b stage 1: a scan statement may carry a surface constant slot `[=n]`, lowered to a unit-axis
+-- placement (extent n + 1) exactly as at top level. Inputs: `X(j) = [1,2,3]`, `W(j,k) = 1..6` (3x2).
+def scanIn64 : NamedDenseEnv :=
+  ({} : NamedDenseEnv).insert "X" ⟨[3], #[1, 2, 3]⟩ |>.insert "W" ⟨[3, 2], #[1, 2, 3, 4, 5, 6]⟩
+def scanIn32 : NamedDenseEnv32 :=
+  ({} : NamedDenseEnv32).insert "X" ⟨[3], #[1, 2, 3]⟩ |>.insert "W" ⟨[3, 2], #[1, 2, 3, 4, 5, 6]⟩
+/-- Like `cells` but for the tensor named `nm` (the scan state), under the scan inputs. -/
+def cellsOf (nm : String) (p : TLProgram) (i := scanIn64) (j := scanIn32) :=
+  ((ref64 p i).bind fun e => e[nm]?.map fun t => (t.shape, t.data.map Float.toBits),
+   (run64 p i).bind fun e => e[nm]?.map fun t => (t.shape, t.data.map Float.toBits),
+   (run32 p j).bind fun e => e[nm]?.map fun t => (t.shape, t.data.map Float32.toBits))
+/-- The state `nm` has shape `sh` and bit-equal cells `x` in the reference, the binary64 plan and (as
+    `Float32`) the binary32 plan. -/
+def agreeOf (nm : String) (p : TLProgram) (sh : List Nat) (x : Array Float) (y : Array Float32)
+    (i := scanIn64) (j := scanIn32) : Bool :=
+  cellsOf nm p i j == (some (sh, x.map Float.toBits), some (sh, x.map Float.toBits),
+                       some (sh, y.map Float32.toBits))
+
+/-- Why the reference evaluator refuses `p`; `none` if it runs. -/
+def refErr (p : TLProgram) (i := scanIn64) : Option String :=
+  (scheduled (as64 p)).bind fun s => match evalScheduled s i with
+    | .error e => some (toString e)
+    | .ok _ => none
+/-- The cause when preparing the checked binary64 plan for `p` refuses it; `some none` if it prepares,
+    `none` if the program does not even schedule. -/
+def planErr64 (p : TLProgram) (i := scanIn64) : Option (Option PlanCompileCause) :=
+  (scheduled (as64 p)).map fun s => match prepareEvalPlan s (InputSignature.ofDenseInputs i) with
+    | .error e => some e.cause
+    | .ok _ => none
+/-- `planErr64` for the binary32 plan (`none` also if the input signature is refused). -/
+def planErr32 (p : TLProgram) (i := scanIn32) : Option (Option PlanCompileCause) :=
+  (scheduled p).bind fun s => (InputSignature.ofDenseInputs32ForDecls s.decls i).toOption.map fun sig =>
+    match prepareEvalPlan s sig with
+    | .error e => some e.cause
+    | .ok _ => none
 def scanConstStep : TLProgram := tlprog!{
   iter l = 3
   tensor f32 G(j, l), X(j), W(j, k)
   G[j, 0] := X[j]
   G[=2, l +1] := G[j, l] · W[j, k]
 }
-#guard compErr scanConstStep == some "compile LeanNCD.CompileError.overlappingScatter \"G\""
+#guard compErr scanConstStep == none
+-- Observed (shape [3,3], rows j, cols l): the base writes column 0 = X; the step writes ONLY row 2,
+-- cell (2, l+1) = sum_{j,k} G[j,l]·W[j,k]: 1·3 + 2·7 + 3·11 = 50, then 50·11 = 550 (rows 0, 1 keep their
+-- base value and are never written again). A write to row `j` instead of row 2 changes the cells.
+#guard agreeOf "G" scanConstStep [3, 3] #[1, 0, 0, 2, 0, 0, 3, 50, 550] #[1, 0, 0, 2, 0, 0, 3, 50, 550]
+-- A constant `=1` in the base against a free `j` in the step is a typed refusal: the constant's extent is
+-- `n + 1 = 2`, the free `j` is 3 wide. The refusal is at evaluation / plan preparation, not at compile.
 def scanConstBase : TLProgram := tlprog!{
   iter l = 3
   tensor f32 G(j, l), X(j), W(j, k)
   G[=1, 0] := X[j]
   G[j, l +1] := G[j, l] · W[j, k]
 }
-#guard compErr scanConstBase == some "compile LeanNCD.CompileError.overlappingScatter \"G\""
+#guard compErr scanConstBase == none
+#guard refErr scanConstBase ==
+  some "evalScan G: state G dimension 0 is 2 wide in its first placement but 3 wide in a later one"
+#guard planErr64 scanConstBase == some (some (.scan (.inconsistentStateExtent "G" "G" 0 2 3)))
+#guard planErr32 scanConstBase == some (some (.scan (.inconsistentStateExtent "G" "G" 0 2 3)))
+-- Accept-neighbour: the SAME constant `=2` in base and step (extent 3 = the free `j`). Only row 2 is ever
+-- written: base 1+2+3 = 6, then 6·11 = 66, then 66·11 = 726; rows 0, 1 are exactly 0.
+def scanConstBoth : TLProgram := tlprog!{
+  iter l = 3
+  tensor f32 G(j, l), X(j), W(j, k)
+  G[=2, 0] := X[j]
+  G[=2, l +1] := G[j, l] · W[j, k]
+}
+#guard compErr scanConstBoth == none
+#guard agreeOf "G" scanConstBoth [3, 3] #[0, 0, 0, 0, 0, 0, 6, 66, 726] #[0, 0, 0, 0, 0, 0, 6, 66, 726]
+-- Tropical state (`maxreduce`, ⊗ = +, unit -inf): every cell never written is -inf, not 0; row 2 is
+-- max X = 3, then max_{j,k} (G[j,l] + W[j,k]) = 3 + 6 = 9, then 9 + 6 = 15. A sum-of-products reading gives
+-- 0 for the unwritten rows and 6, 66, 726 style values on row 2.
+def scanConstTrop : TLProgram := tlprog!{
+  iter l = 3
+  tensor f32 G(j, l), X(j), W(j, k)
+  G[=2, 0] := maxreduce(X[j])
+  G[=2, l +1] := maxreduce(G[j, l] · W[j, k])
+}
+#guard compErr scanConstTrop == none
+#guard agreeOf "G" scanConstTrop [3, 3]
+  #[-(1/0), -(1/0), -(1/0), -(1/0), -(1/0), -(1/0), 3, 9, 15]
+  #[-(1/0), -(1/0), -(1/0), -(1/0), -(1/0), -(1/0), 3, 9, 15]
+-- Scan axis FIRST (`G(l, j)`, constant in the second slot): shape [3,3] with rows l, cols j; column 2 holds
+-- 6, 66, 726 (the same recurrence as `scanConstBoth`, transposed); columns 0 and 1 are 0.
+def scanConstFirst : TLProgram := tlprog!{
+  iter l = 3
+  tensor f32 G(l, j), X(j), W(j, k)
+  G[0, =2] := X[j]
+  G[l +1, =2] := G[l, j] · W[j, k]
+}
+#guard compErr scanConstFirst == none
+#guard agreeOf "G" scanConstFirst [3, 3] #[0, 0, 6, 0, 0, 66, 0, 0, 726] #[0, 0, 6, 0, 0, 66, 0, 0, 726]
+-- A constant PAST the reach of the free `j` (`=5`, `j` is 3 wide): extent 6, shape [6,3]. Only row 5
+-- is written (the base 6 at l = 0; the step reads rows 0..2, which are 0, so it writes 0 afterwards);
+-- rows 0..4 are exactly 0 (real sort 0), they are not -inf, NaN or uninitialised.
+def scanConstFar : TLProgram := tlprog!{
+  iter l = 3
+  tensor f32 G(j, l), X(j), W(j, k)
+  G[=5, 0] := X[j]
+  G[=5, l +1] := G[j, l] · W[j, k]
+}
+#guard compErr scanConstFar == none
+#guard agreeOf "G" scanConstFar [6, 3] #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0]
+  #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0]
+def scanTwoConst : TLProgram := tlprog!{
+  iter l = 3
+  tensor f32 G(p, q, l), X(j), V(p, q)
+  G[=1, =2, 0] := X[j]
+  G[=1, =2, l +1] := G[p, q, l] · V[p, q]
+}
+def twoIn64 : NamedDenseEnv := scanIn64.insert "V" ⟨[2, 3], #[1, 2, 3, 4, 5, 6]⟩
+def twoIn32 : NamedDenseEnv32 := scanIn32.insert "V" ⟨[2, 3], #[1, 2, 3, 4, 5, 6]⟩
+-- TWO constants in one scan statement: accepted; shape [2,3,3], only cell (1, 2, l) is written:
+-- base 6, then 6·V[1,2] = 36, then 36·6 = 216.
+#guard compErr scanTwoConst == none
+#guard agreeOf "G" scanTwoConst [2, 3, 3] (#[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 36, 216])
+  (#[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 36, 216]) twoIn64 twoIn32
+def scanCoupled : TLProgram := tlprog!{
+  iter l = 3
+  tensor f32 G(j, l), H(j, l), X(j), W(j, k)
+  G[j, 0] := X[j]
+  H[=2, 0] := X[j]
+  G[j, l +1] := G[j, l] · W[j, k]
+  H[=2, l +1] := G[j, l] · W[j, k]
+}
+-- COUPLED scan, one state with a constant: `G` is free-`j`, `H` writes row 2 and reads `G`. `G`
+-- is the base X scaled by the row sums 3, 7, 11 per step; `H[2, l+1] = sum_j G[j,l]·rowsum_j` =
+-- 50 then 470 (= 3·3 + 14·7 + 33·11); `H` rows 0, 1 are 0.
+#guard compErr scanCoupled == none
+#guard agreeOf "G" scanCoupled [3, 3] #[1, 3, 9, 2, 14, 98, 3, 33, 363] #[1, 3, 9, 2, 14, 98, 3, 33, 363]
+#guard agreeOf "H" scanCoupled [3, 3] #[0, 0, 0, 0, 0, 0, 6, 50, 470] #[0, 0, 0, 0, 0, 0, 6, 50, 470]
 def scanMultiStep : TLProgram := tlprog!{
   iter l = 3
   tensor f32 G(j, l), X(j), W(j, k)
@@ -170,6 +287,37 @@ def scanMultiStep : TLProgram := tlprog!{
 }
 #guard compErr scanMultiStep ==
   some "preflight LeanNCD.Eval.Plan.CapabilityError.multiAxisScatterLhs \"G: affine LHS slot\""
+-- KNOWN LIMIT (F3-b stage 1 review R1, parked): a scan state's published extent comes from its slots, not
+-- from a pinned declaration of the axis. `j` is declared 3 wide, yet `=1` publishes `G` with 2 rows; the
+-- top-level twin `S(j=3)`, `S[=5]` is refused (`writerExtentExceedsBox`), a strided scan slot `G[2*j, ..]`
+-- behaves the same way (pre-existing, scan-wide). All three legs agree. If a pinned declaration is ever
+-- enforced for scan states, this fixture must flip to a typed refusal deliberately.
+def scanConstPinned : TLProgram := tlprog!{
+  axis j : ℕ = 3
+  iter l = 3
+  tensor f32 G(j, l), X(j), W(j, k)
+  G[=1, 0] := X[j]
+  G[=1, l +1] := G[j, l] · W[j, k]
+}
+#guard compErr scanConstPinned == none
+#guard agreeOf "G" scanConstPinned [2, 3] #[0, 0, 0, 6, 42, 294] #[0, 0, 0, 6, 42, 294]
+-- Review R3: a PREDICATE scan state with a constant slot. The reference runs it; both checked plans refuse
+-- it at the existing predicate-scatter-destination capability tier (no new geometry; same split as the
+-- top-level predicate scatter in `ScanTest`).
+def scanConstPred : TLProgram := tlprog!{
+  iter l = 3
+  predicate G(j, l)
+  tensor f32 X(j), W(j, k)
+  G[=2, 0] := X[j]
+  G[=2, l +1] := G[j, l] · W[j, k]
+}
+#guard compErr scanConstPred ==
+  some "preflight LeanNCD.Eval.Plan.CapabilityError.predicateScatterDest \"G: predicate scatter destination\""
+#guard refErr scanConstPred == none
+#guard planErr64 scanConstPred ==
+  some (some (.capability (.predicateScatterDest "G: predicate scatter destination")))
+#guard planErr32 scanConstPred ==
+  some (some (.capability (.predicateScatterDest "G: predicate scatter destination")))
 
 -- R1/R2 (D5 pinned observation; review finding L1-1). Donor: the surface fixture `f1Surf` above (same
 -- pinned-declaration constant writers), with a rank-2 destination `S(k, b)` where EVERY declared axis is

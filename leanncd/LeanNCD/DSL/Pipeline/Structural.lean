@@ -1100,10 +1100,11 @@ E2a SCOPING DECISION (a deliberate divergence from §12.4): affine *reads* (e.g.
 real job is the affine-LHS → `Stmt.scatter` reclassification. There is no injectivity guard: collisions
 sum (S3a), and a constant LHS coord (`Y[3]`) is lowered to a unit-axis placement (`lowerConstSlots`,
 slice A T3; the unconditional `overlappingScatter` guard on the `.assign` arm is gone). A scan statement
-(`iterAt`/`iterNext` slot) that carries a raw constant slot is still refused with `overlappingScatter`
-(slice A T3b: the checked scan path cannot place a raw constant there yet, F3-b, and the reference
-refuses it too, `scanWriteRowNotAdmitted`: a constant names no source axis. The reference sums only
-colliding multi-axis scan rows, F3-a). -/
+(`iterAt`/`iterNext` slot) lowers its constant slot the same way (F3-b stage 1): the unit-axis row
+`n + 1·u` is a single-axis strided scan write that the reference and the checked scan path both place.
+Base and step constants must agree (`inconsistentStateExtent` otherwise). A constant of `-1` is not
+surface-spellable; hand-built, the reference refuses it with `scatterWriteOutOfRange` and the checked
+plan with `scanWriteRowNotAdmitted`. The reference sums only colliding multi-axis scan rows (F3-a). -/
 
 /-- A LHS slot that denotes an affine output coordinate (a Scatter write). Plain `free`
     axes and the scan slots (`iterAt`/`iterNext`) are NOT affine-scatter slots. -/
@@ -1120,11 +1121,6 @@ def LHSSlot.isScanSlot : LHSSlot → Bool
   | .iterNext _ => true
   | _ => false
 
-/-- A raw constant affine slot (`Y[3]`), as opposed to its lowered unit-axis placement. -/
-def LHSSlot.isRawConst : LHSSlot → Bool
-  | .affine (.const _) => true
-  | _ => false
-
 /-- Scatter-geometry slice A (D2/D5): a constant LHS slot `Y[n]` is the single-axis placement
     `n + 1·u` over a FRESH synthetic axis `u` pinned to size 1 (named `#const<uid>` for display only:
     axis identity is the UID and nothing reads the name, slice B B-D2). The
@@ -1132,13 +1128,10 @@ def LHSSlot.isRawConst : LHSSlot → Bool
     exactly `{n}`, and the reference's extent and the checked plan's derived extent agree. Returns the
     rewritten slots and the pinned axis declarations to append.
 
-    A statement that carries a scan slot (`iterAt`/`iterNext`) is left untouched: the scan-local
-    preflight keeps its own constant refusal (`checkScanScatterLHSSlot`), and a synthetic axis inside
-    a scan body is not part of slice A. (`lowerArith` refuses such an `.assign` that also carries a raw
-    constant slot before calling this; a hand-built `.scatter` reaches the preflight refusal.) -/
+    A statement that carries a scan slot (`iterAt`/`iterNext`) is lowered the same way (F3-b stage 1):
+    the constant slot becomes a single-axis strided row over the size-1 synthetic axis, which the
+    reference and the checked scan path both place (extent `n + 1`). -/
 def lowerConstSlots (slots : List LHSSlot) : FreshM (List LHSSlot × List Decl) := do
-  if slots.any LHSSlot.isScanSlot then
-    return (slots, [])
   let mut out : List LHSSlot := []
   let mut ds : List Decl := []
   for sl in slots do
@@ -1158,13 +1151,9 @@ def lowerArith (rp : ResolvedProgram) : FreshM LoweredProgram := do
         -- Reclassify affine (Out[2*i,2*j]) OR diagonal (Y[i,i], a repeated free axis) LHS to a
         -- scatter that publishes its full placement rank — so declared/full-rank reads of it are
         -- sound (B1). A constant slot is a scatter like any other (D5: the `overlappingScatter`
-        -- guard was deleted); it is lowered to a unit-axis placement by `lowerConstSlots`. Except in
-        -- a scan statement (T3b): `lowerConstSlots` leaves those untouched, and the checked scan
-        -- path cannot place a raw constant there yet (F3-b) and the reference refuses it too
-        -- (`scanWriteRowNotAdmitted`), so refuse it.
+        -- guard was deleted); it is lowered to a unit-axis placement by `lowerConstSlots`, in a scan
+        -- statement too (F3-b stage 1).
         if slotsBecomeScatter slots then
-          if slots.any LHSSlot.isScanSlot && slots.any LHSSlot.isRawConst then
-            throw (CompileError.overlappingScatter nm)
           let (slots', ds) ← lowerConstSlots slots
           return (Stmt.scatter nm slots' rhs, ds)
         else return (s, [])

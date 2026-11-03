@@ -255,9 +255,9 @@ run_cmd do
       | s, d => throwError s!"expected one unit-axis scatter + one pinned decl, got {repr s} / {repr d}"
   | .error e _ => throwError s!"constant LHS must lower, got {repr e}"
 
--- A statement that carries a scan slot is NOT rewritten (slice A T3): a non-constant affine slot next
--- to an `iterAt` stays as written, with no synthetic decl. Donor: the `.assign` fixture above plus an
--- iteration slot (the slot was a constant before T3b, which now refuses it, see the next two pins).
+-- A non-constant affine slot next to an `iterAt` is NOT rewritten (only a CONSTANT slot is lowered, see
+-- the next two pins): it stays as written, with no synthetic decl. Donor: the `.assign` fixture above
+-- plus an iteration slot.
 run_cmd do
   let l : AxisSpec := { name := "l", uid := 4, kind := .nat }
   let j : AxisSpec := { name := "j", uid := 5, kind := .nat }
@@ -272,9 +272,10 @@ run_cmd do
       | s, d => throwError s!"scan-slot statement must keep its slots, got {repr s} / {repr d}"
   | .error e _ => throwError s!"errored: {repr e}"
 
--- Slice A T3b (fail-loud repair): a scan statement that carries a RAW constant slot is refused with
--- `overlappingScatter` again, exactly as before T3. Without it the statement compiles (T3 skips scan
--- statements) while the checked scan path cannot place it yet (F3-b) and its preflight refuses.
+-- F3-b stage 1: a scan statement that carries a RAW constant slot is lowered like a top-level one. Donor:
+-- the top-level `collapse` pin above plus an iteration slot. The slot becomes the unit-axis placement
+-- `3 + 1·u` (`.affine 3 [(1, u)]`) and exactly one `.axis u (some 1)` is declared, with `u` the same axis
+-- in slot and decl. (Was `.error (.overlappingScatter "S")`.)
 run_cmd do
   let l : AxisSpec := { name := "l", uid := 4, kind := .nat }
   let st : Stmt := .assign "S" [ .iterAt l 0, .affine (.const 3) ]
@@ -282,13 +283,15 @@ run_cmd do
   let rp : ResolvedProgram :=
     { decls := [], stmts := [st], env := {}, extNames := ∅ }
   match lowerArith rp |>.run 0 with
-  | .error (.overlappingScatter "S") _ => pure ()
-  | .error e _ => throwError s!"wrong error: {repr e}"
-  | .ok lp _ => throwError s!"scan statement with a constant slot must be refused, got {repr lp.stmts}"
+  | .ok lp _ =>
+      match lp.stmts, lp.decls with
+      | [ .scatter "S" [ .iterAt _ 0, .affine (.affine 3 [(1, u)]) ] _ ], [ .axis u' (some 1) ] =>
+          unless u == u' do
+            throwError s!"slot axis {repr u} is not the declared synthetic axis {repr u'}"
+      | s, d => throwError s!"expected a scan scatter with a unit-axis placement + one pinned decl, got {repr s} / {repr d}"
+  | .error e _ => throwError s!"scan statement with a constant slot must lower, got {repr e}"
 
--- A HAND-BUILT `.scatter` with a scan slot and a raw constant is not refused by `lowerArith` (T3b only
--- touches the `.assign` arm) and is not rewritten: `lowerConstSlots` leaves scan statements alone, so the
--- checked preflight keeps its `scatterOrAffineLhs` refusal. This is the pin that keeps the scan skip live.
+-- The same for a HAND-BUILT `.scatter` (the `.scatter` arm of `lowerArith` calls `lowerConstSlots` too).
 run_cmd do
   let l : AxisSpec := { name := "l", uid := 4, kind := .nat }
   let st : Stmt := .scatter "S" [ .iterAt l 0, .affine (.const 3) ]
@@ -298,13 +301,15 @@ run_cmd do
   match lowerArith rp |>.run 0 with
   | .ok lp _ =>
       match lp.stmts, lp.decls with
-      | [ .scatter "S" [ .iterAt _ 0, .affine (.const 3) ] _ ], [] => pure ()
-      | s, d => throwError s!"hand-built scan scatter must keep its raw constant, got {repr s} / {repr d}"
+      | [ .scatter "S" [ .iterAt _ 0, .affine (.affine 3 [(1, u)]) ] _ ], [ .axis u' (some 1) ] =>
+          unless u == u' do
+            throwError s!"slot axis {repr u} is not the declared synthetic axis {repr u'}"
+      | s, d => throwError s!"hand-built scan scatter must lower its constant, got {repr s} / {repr d}"
   | .error e _ => throwError s!"errored: {repr e}"
 
 -- The same through the whole pipeline (`compileToScheduled`), built from a surface scan program whose
 -- base case has its free slot replaced by a constant (surface syntax cannot spell a raw constant slot:
--- a numeral is always `.iterAt`). The accept-neighbour is the unmodified program.
+-- a numeral is always `.iterAt`). The accept-neighbour is the unmodified program; both now compile.
 private def scanSurface : TLProgram := tlprog!{ iter l = 3
   S[i, 0] := X[i]
   S[i, l + 1] := S[i, l] }
@@ -315,7 +320,7 @@ private def scanSurfaceConst : TLProgram :=
       | s => s }
 
 #guard match scanSurfaceConst.compileToScheduled.run 0 with
-  | .error (.overlappingScatter "S") _ => true
+  | .ok _ _ => true
   | _ => false
 #guard match scanSurface.compileToScheduled.run 0 with
   | .ok _ _ => true

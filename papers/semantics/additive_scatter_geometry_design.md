@@ -10,15 +10,18 @@
 The original admission table and probe descriptions below describe the pre-slice baseline, not
 the current boundary. A lone numeral still denotes a scan base case. D5 still excludes a single
 writer whenever any declared axis occurs among its source axes, including identity positions.
-Scan-local multi-axis/constant slots, predicate groups and routed/JAX scatter remain outside scope.
+Scan-local multi-axis slots (F3-b stage 2), predicate groups and routed/JAX scatter remain outside scope. A scan-local surface constant slot was admitted afterwards (F3-b stage 1).
 
 Labels used below and in the source comments. **F3** = scan-local scatter semantics (collision:
 overwrite vs ⊕; out-of-range: skip vs error). **F3-a** = the reference scan write aligned with the
 top level (⊕-sums collisions in the state's sort, errors out of range); landed on branch
-`worktree-scatter-f3a`. **F3-b** = the checked scan path admitting constant and multi-axis slots
-(open). It needs, besides new write-row kinds, reworked placement and collision checks and a summing
-write in the compiled step (f64 and f32); the reference to admit CONSTANT scan slots (today refused
-by `checkStatePlacements`); and the surface `S[=n]` in a scan (today `overlappingScatter`) lifted.
+`worktree-scatter-f3a`. **F3-b** = the checked scan path admitting constant and multi-axis slots,
+staged. **Stage 1 (constants), landed:** `lowerArith` lowers a surface `S[=n]` in a scan to a
+single-axis unit-axis row exactly as at top level; no new write-row kind and no change to the checked
+path or the reference was needed (see `additive_f3b1_record.md`). **Stage 2 (multi-axis rows),
+open:** it needs a new write-row kind, reworked placement and collision checks, and a summing write
+in the compiled step (f64 and f32); decide it only when a real program needs a colliding scan-local
+multi-axis write.
 
 **Decisions D1-D6 approved by the owner on 2026-10-30, all as recommended (section 7); not an
 implementation plan.** Approval authorizes the P0 probe and then the plan for slice A only; slice B's
