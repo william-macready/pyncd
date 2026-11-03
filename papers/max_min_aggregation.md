@@ -16,7 +16,7 @@
 > tropical one), the all-neutral scan state with a tropical annotation votes that sort instead of
 > evaluating real, and a `real -> bool` read now coerces (stored `!= 0`) instead of passing through. STILL OPEN: in-scan
 > multi-writer collection (still refused), B5 (multi-writer scatter), scan-local collisions (the REFERENCE now sums and
-> errors out of range, F3-a, landed; checked-path support for constant and multi-axis scan slots, F3-b, is still open),
+> errors out of range, F3-a, landed; checked-path support for multi-axis scan slots, F3-b stage 2, is still open; constant scan slots landed as stage 1),
 > JAX/Python tropical execution, oracle per-tensor sorts. The text below is the original (max-times)
 > design, kept as the record of that slice.
 
