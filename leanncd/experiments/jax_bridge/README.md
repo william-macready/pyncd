@@ -299,6 +299,32 @@ excluding it. `orderedReference64` and `orderedReference32` carry the same limit
 fixed: that would mean defeating XLA's flush-to-zero and its algebraic simplifier, and no XLA
 flag that does either was found. Scan lowering remains future work.
 
+### Scatter steps (ordered mode, JAX scatter slice)
+
+A prepared plan whose steps include a `.scatter` (a source statement with a non-plain LHS slot such
+as `Y[2*i]`, `Y[a+b]`, `Y[i, =2]`, and every B5 multi-writer group, whose writers are scatters into
+private slots feeding one collector assignment) now renders and runs under `affineReference`, in both
+precisions. `renderScatterNode` emits the compute half's tables (a SOURCE-shaped tensor) plus
+`"kind": "scatter"`, `"dest_shape"` and a static `"dest_flat_index"` table: one destination offset per
+source coordinate, in the dense worker's `allCoords` order, computed in Lean by the worker's own
+`applyAffine`/`inBoundsPerDim`/`flatIndex`. The runtime (`_run_scatter_node`) starts the destination at
+`reduceId` (`0`) and adds the source values one at a time in table order (`fori_loop`), the exact left
+fold of `runDenseScatter`/`runDenseScatter32`, so colliding float writes are BIT-identical to Lean.
+An out-of-range placement is unreachable for a checked plan (`scatterRangeViolation`); the codegen
+still refuses it (`scatterPlacementOutOfRange`) rather than emit the index.
+
+| Still refused | Where |
+| --- | --- |
+| scatter under `einsumOnly` | `unsupportedStep` (einsum is a gather; no scatter form) |
+| scatter in the evidence path | `lowerCheckPlanToCandidate` / `JaxExecutableWellFormed`: `unsupportedStep` (no `ExecutionEvidence` for a scatter) |
+| tropical, Boolean, contextful or unary-read scatter | the compute-half gate (`checkJaxScatterSupport`): `unsupportedAlgebra` etc. |
+| scan, pointwise, axiswise | `unsupportedStep` |
+
+Run: `./run-evalplan-scatter.sh` (generates `EvalPlanScatterSmoke.lean`'s binary64 + binary32
+fixtures, then `evalplan_scatter_smoke.py float64|float32`: eager and jit bit comparison, a pinned
+collision-order case, a signed-zero case, a gradient). Mutation record for the Python half:
+`mutation_python_manifest.py` (`papers/semantics/jax_scatter_mutations_python.json`).
+
 ## Scaling probe
 
 `run-scaling-probe.sh` measures one mid-sized contraction — `Y[i] := Σⱼ W[i,j]·x[j]`, `i,j` both
