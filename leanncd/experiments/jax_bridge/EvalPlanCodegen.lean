@@ -2152,4 +2152,21 @@ def b5FirstScatter : Option (Nat × CheckedScatterPlan × Array TensorSignature)
         | .error (.unsupportedAlgebra 0) => true
         | _ => false)
 
+-- END-TO-END compute-half gate (found by mutation JS-T1-05: removing the gate from the renderer
+-- survived the direct `requireJaxScatterSupport` guard above): clone the donor's raw plan, change the
+-- FIRST scatter's compute algebra only (max-plus), re-check, and render the plan.
+#guard (match b5ScatterPrepared with
+  | none => false
+  | some p =>
+    match p.plan.raw.steps[0]? with
+    | some (PlanStep.scatter s) =>
+        let tropical : PlanStep :=
+          PlanStep.scatter { s with compute := { s.compute with algebra := admittedAlgebraMax } }
+        let raw : RawEvalPlan := { p.plan.raw with steps := p.plan.raw.steps.set! 0 tropical }
+        match checkPlan raw with
+        | .ok c => (match renderAffinePlanPositional c with
+                    | .error (.unsupportedAlgebra 0) => true | _ => false)
+        | .error _ => false
+    | _ => false)
+
 end JaxBridge
