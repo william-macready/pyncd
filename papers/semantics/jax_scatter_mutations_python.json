@@ -1,0 +1,220 @@
+[
+ {
+  "label": "JS-T2-01 (ordered fold reversed)",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "        c = idx_arr[k]\n        return acc.at[c].set(acc[c] + source[k])",
+  "new": "        j = len(idx) - 1 - k\n        c = idx_arr[j]\n        return acc.at[c].set(acc[c] + source[j])",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: bits differ from Lean: {got.tolist()} vs {exp.tolist()"
+  ]
+ },
+ {
+  "label": "JS-T2-02 (reduceId init wrong: ones, not the real sum-product identity 0)",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "dest = jnp.zeros((_prod(list(dest_shape)),), dtype=dtype)",
+  "new": "dest = jnp.ones((_prod(list(dest_shape)),), dtype=dtype)",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: bits differ from Lean: {got.tolist()} vs {exp.tolist()"
+  ]
+ },
+ {
+  "label": "JS-T2-03 (collision overwrites instead of summing)",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "acc.at[c].set(acc[c] + source[k])",
+  "new": "acc.at[c].set(source[k])",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: bits differ from Lean: {got.tolist()} vs {exp.tolist()"
+  ]
+ },
+ {
+  "label": "JS-T2-04 (copy-on-first-write: signed zero kept instead of reduceId + v)",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "acc.at[c].set(acc[c] + source[k])",
+  "new": "acc.at[c].set(jnp.where(acc[c] == 0, source[k], acc[c] + source[k]))",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: bits differ from Lean: {got.tolist()} vs {exp.tolist()"
+  ]
+ },
+ {
+  "label": "JS-T2-05 (node-kind dispatch drops scatter)",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "    if kind == \"scatter\":\n        return _run_scatter_node(node, store, dtype, scatter_mode)",
+  "new": "    if kind == \"scatter\":\n        return _run_node(node, store, dtype)",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: bits differ from Lean: {got.tolist()} vs {exp.tolist()"
+  ]
+ },
+ {
+  "label": "JS-T2-06 (float32 destination inside a float64 run: precision path mixed)",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "dest = jnp.zeros((_prod(list(dest_shape)),), dtype=dtype)",
+  "new": "dest = jnp.zeros((_prod(list(dest_shape)),), dtype=jnp.float32)",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: expected {NDT.__name__}, got {a.dtype}\")"
+  ]
+ },
+ {
+  "label": "JS-T2-07 (runtime placement index shifted by one)",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "idx_arr = jnp.asarray(idx, dtype=_index_dtype())",
+  "new": "idx_arr = jnp.asarray(idx, dtype=_index_dtype()) + 1",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: bits differ from Lean: {got.tolist()} vs {exp.tolist()"
+  ]
+ },
+ {
+  "label": "JS-T6-01 (fast fold overwrites with .set instead of .add)",
+  "task": "T6",
+  "file": "evalplan_affine_runtime.py",
+  "old": "dest.at[idx_arr].add(source, mode=\"promise_in_bounds\")",
+  "new": "dest.at[idx_arr].set(source, mode=\"promise_in_bounds\")",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{f['name']}: {label} program has {got} scatter-add, expected {w"
+  ]
+ },
+ {
+  "label": "JS-T6-02 (fast fold index shifted by one)",
+  "task": "T6",
+  "file": "evalplan_affine_runtime.py",
+  "old": "dest.at[idx_arr].add(source, mode=\"promise_in_bounds\")",
+  "new": "dest.at[idx_arr + 1].add(source, mode=\"promise_in_bounds\")",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: bits differ from Lean: {got.tolist()} vs {exp.tolist()"
+  ]
+ },
+ {
+  "label": "JS-T6-03 (default mode leaks: run_named defaults to fast)",
+  "task": "T6",
+  "file": "evalplan_affine_runtime.py",
+  "old": "    scatter_mode: str = \"ordered\",\n) -> dict[str, jax.Array]:",
+  "new": "    scatter_mode: str = \"fast\",\n) -> dict[str, jax.Array]:",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{f['name']}: {label} program has {got} scatter-add, expected {w"
+  ]
+ },
+ {
+  "label": "JS-T6-04 (fast fold used even when mode is ordered)",
+  "task": "T6",
+  "file": "evalplan_affine_runtime.py",
+  "old": "    if scatter_mode == \"fast\":",
+  "new": "    if scatter_mode in (\"fast\", \"ordered\"):",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{f['name']}: {label} program has {got} scatter-add, expected {w"
+  ]
+ },
+ {
+  "label": "JS-T6-05 (fast requested but ordered fold silently used)",
+  "task": "T6",
+  "file": "evalplan_affine_runtime.py",
+  "old": "    if scatter_mode == \"fast\":",
+  "new": "    if False and scatter_mode == \"fast\":",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{f['name']}: {label} program has {got} scatter-add, expected {w"
+  ]
+ },
+ {
+  "label": "JS-T6-06 (unknown scatter_mode not rejected)",
+  "task": "T6",
+  "file": "evalplan_affine_runtime.py",
+  "old": "    if scatter_mode not in SCATTER_MODES:",
+  "new": "    if False:",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(\"unknown scatter_mode was accepted\")"
+  ]
+ },
+ {
+  "label": "JS-T6-07 (tolerance vacuous: RTOL huge)",
+  "task": "T6",
+  "file": "evalplan_scatter_smoke.py",
+  "old": "RTOL = {\"float64\": 1e-12, \"float32\": 1e-5}",
+  "new": "RTOL = {\"float64\": 1e30, \"float32\": 1e30}",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(\"tolerance check accepts a 1e-3 relative perturbation: vacuous\")"
+  ]
+ },
+ {
+  "label": "JS-T6-08 (tolerance check compares fast against itself)",
+  "task": "T6",
+  "file": "evalplan_scatter_smoke.py",
+  "old": "                require_close(res[name], reconstruct(exp), label)",
+  "new": "                require_close(res[name], res[name], label)",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: comparing a result against itself is vacuous\")"
+  ]
+ },
+ {
+  "label": "JS-T6-09 (fast range check dropped)",
+  "task": "T6",
+  "file": "evalplan_affine_runtime.py",
+  "old": "        if min(idx) < 0 or max(idx) >= int(dest.shape[0]):",
+  "new": "        if False:",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"fast mode accepted out-of-range placement {bad}\")"
+  ]
+ }
+]

@@ -1,0 +1,81 @@
+[
+ {
+  "label": "JS-T1-01 (placement table off by one)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "idxs := idxs.push (flatIndex destShape (dc.map Int.toNat))",
+  "new": "idxs := idxs.push (flatIndex destShape (dc.map Int.toNat) + 1)",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2112:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-T1-02 (placement table in reversed source order)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "  for sc in allCoords s.compute.outputShape.toList do\n    let dc := applyAffine placement sc",
+  "new": "  for sc in (allCoords s.compute.outputShape.toList).reverse do\n    let dc := applyAffine placement sc",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2112:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-T1-03 (out-of-range placement backstop dropped)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "    unless inBoundsPerDim destShape dc do\n      throw (.scatterPlacementOutOfRange nodeIndex dc sc)\n",
+  "new": "",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2134:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-T1-04 (affineReference refuses scatter again)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "    | .scatter s => entries := entries.push (← renderScatterNode sigs ni s)\n    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)",
+  "new": "    | .scatter _ | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2116:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-T1-05 (scatter support gate not applied)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "  requireJaxScatterSupport sigs nodeIndex checked\n  let s := checked.plan",
+  "new": "  let s := checked.plan",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2157:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-T1-06 (checkJaxScatterSupport skips the compute-half policy)",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Plan/Executable.lean",
+  "old": "  jaxAssignSupported sigs nodeIndex checked.storageKind checked.plan.compute\n",
+  "new": "  pure ()\n",
+  "targets": [
+   "Eval.Plan.ExecutableTest",
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ExecutableTest.lean:1673:0: Expression"
+  ]
+ }
+]

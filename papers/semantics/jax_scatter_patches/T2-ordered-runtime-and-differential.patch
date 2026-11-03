@@ -1,0 +1,546 @@
+From 4c34e8cb94fbe4a261273a7678f2f1d123816873 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Tue, 3 Nov 2026 09:08:18 -0700
+Subject: [PATCH 2/5] feat(jax): ordered scatter runtime and Lean-vs-JAX
+ scatter differential
+
+run_scatter folds source values into a reduceId-initialised destination in the static
+placement-table order; node-kind dispatch in run_plan_positional/run_named. New driver
+EvalPlanScatterSmoke + verifier cover 10 binary64 and 5 binary32 fixtures (stride, multi-axis
+collisions with order-sensitive floats, constant slot, contraction, empty box, B5 groups, chain,
+signed zero), bit-compared against runPreparedDense/runPreparedDense32.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ .../jax_bridge/EvalPlanScatterSmoke.lean      | 269 ++++++++++++++++++
+ .../jax_bridge/check-lean-drivers.sh          |   5 +-
+ .../jax_bridge/evalplan_affine_runtime.py     |  40 ++-
+ .../jax_bridge/evalplan_scatter_smoke.py      | 102 +++++++
+ .../jax_bridge/run-evalplan-scatter.sh        |  35 +++
+ 5 files changed, 447 insertions(+), 4 deletions(-)
+ create mode 100644 leanncd/experiments/jax_bridge/EvalPlanScatterSmoke.lean
+ create mode 100644 leanncd/experiments/jax_bridge/evalplan_scatter_smoke.py
+ create mode 100644 leanncd/experiments/jax_bridge/run-evalplan-scatter.sh
+
+diff --git a/leanncd/experiments/jax_bridge/EvalPlanScatterSmoke.lean b/leanncd/experiments/jax_bridge/EvalPlanScatterSmoke.lean
+new file mode 100644
+index 00000000..3934eb72
+--- /dev/null
++++ b/leanncd/experiments/jax_bridge/EvalPlanScatterSmoke.lean
+@@ -0,0 +1,269 @@
++import LeanNCD.Eval.Entry
++import LeanNCD.DSL.Compile
++import LeanNCD.Eval.Plan.Adapter32
++import EvalPlanCodegen
++
++/-!
++# JAX scatter smoke — driver (JAX scatter slice, ordered mode)
++
++Emits static plan DATA (`renderAffinePlanNamed`) for source programs whose prepared plan CONTAINS
++scatter steps, plus the Lean reference worker's own result (`runPreparedDense` /
++`runPreparedDense32`) as raw bit payloads, for `evalplan_scatter_smoke.py` to compare bit-for-bit
++against the committed runtime (`evalplan_affine_runtime.py`). Two outputs: argv[0] the binary64
++module, argv[1] the binary32 module. Like the other drivers it lives outside every Lake target; run
++via `lake env lean --run` (`run-evalplan-scatter.sh`).
++
++Every fixture asserts, before any Python is written, that its prepared plan really has a scatter
++step (a program that silently compiled to plain assignments would test nothing), that
++`einsumOnly` still refuses it, and that `affineReference` renders it.
++-/
++
++namespace JaxBridge.ScatterSmoke
++
++open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan Std
++open JaxBridge
++
++/-- Local copy of `EvalPlanAffineSmoke32`'s binary32 payload renderer (that driver's only caller; a
++    `main` file cannot be imported). Parked: factor both into `EvalPlanCodegen`. -/
++def pyTensorEntry32 (t : DenseTensor32) : String :=
++  "{\"shape\": " ++ pyShapeTuple t.shape.toArray ++ ", \"dtype\": \"float32\", \"bits\": [" ++
++  String.intercalate ", " (t.data.toList.map fun x => toString x.toBits) ++ "]}"
++
++def countScatters (p : PreparedPlan) : Nat :=
++  p.plan.raw.steps.foldl (fun n st => match st with | .scatter _ => n + 1 | _ => n) 0
++
++/-- The assertions every fixture shares; returns the rendered plan data. -/
++def checkAndRender (name : String) (p : PreparedPlan) (minScatters : Nat) : IO String := do
++  unless countScatters p ≥ minScatters do
++    throw (IO.userError s!"{name}: expected >= {minScatters} scatter steps, prepared plan has {countScatters p}")
++  match generateNamed .einsumOnly p with
++  | .error (.unsupportedStep _) | .error (.unsupportedStorageKind _) => pure ()
++  | other => throw (IO.userError s!"{name}: einsumOnly did not refuse: {repr other.toOption}")
++  match renderAffinePlanNamed p with
++  | .ok s => pure s
++  | .error e => throw (IO.userError s!"{name} affineReference render failed: {repr e}")
++
++def scheduled (name : String) (prog : TLProgram) : IO ScheduledProgram :=
++  match prog.compileToScheduled.run 0 with
++  | .ok s _ => pure s
++  | .error e _ => throw (IO.userError s!"{name} compile failed: {repr e}")
++
++def prepared (name : String) (sched : ScheduledProgram) (sig : InputSignature) : IO PreparedPlan :=
++  match prepareEvalPlan sched sig with
++  | .ok p => pure p
++  | .error f => throw (IO.userError s!"{name} prepare failed: {renderCompileCause f.cause}")
++
++/-- One binary64 named fixture: `{"name", "kind": "named", "plan", "inputs", "expected", "n_scatter"}`. -/
++def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseTensor)
++    (minScatters : Nat := 1) : IO String := do
++  let sched ← scheduled name prog
++  let p ← prepared name sched (InputSignature.ofDenseInputs inputs)
++  let planData ← checkAndRender name p minScatters
++  let report ← match runPreparedDense p inputs with
++    | .ok r => pure r
++    | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e.cause}")
++  let mut ins : Array String := #[]
++  for b in p.bindings.requiredInputs.bindings do
++    let t ← match inputs[b.name]? with
++      | some t => pure t
++      | none => throw (IO.userError s!"{name}: missing input {b.name}")
++    ins := ins.push (pyStrLit b.name ++ ": " ++ pyTensorEntry t)
++  let mut outs : Array String := #[]
++  for b in p.bindings.materializedNames do
++    let t ← match report.env[b.name]? with
++      | some t => pure t
++      | none => throw (IO.userError s!"{name}: materialized {b.name} absent")
++    outs := outs.push (pyStrLit b.name ++ ": " ++ pyTensorEntry t)
++  pure ("{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"named\", \"n_scatter\": " ++
++    toString (countScatters p) ++ ", \"plan\": " ++ planData ++
++    ", \"inputs\": {" ++ String.intercalate ", " ins.toList ++
++    "}, \"expected\": {" ++ String.intercalate ", " outs.toList ++ "}}")
++
++/-- The binary32 sibling, over `runPreparedDense32`; also pins that the plan is binary32. -/
++def fixture32 (name : String) (prog : TLProgram) (inputs : NamedDenseEnv32)
++    (minScatters : Nat := 1) : IO String := do
++  let sched ← scheduled name prog
++  let sig ← match InputSignature.ofDenseInputs32ForDecls sched.decls inputs with
++    | .ok s => pure s
++    | .error e => throw (IO.userError s!"{name} binary32 signature failed: {repr e}")
++  let p ← prepared name sched sig
++  unless p.plan.storageKind == .float32 do throw (IO.userError s!"{name} is not a binary32 plan")
++  let planData ← checkAndRender name p minScatters
++  let report ← match runPreparedDense32 p inputs with
++    | .ok r => pure r
++    | .error e => throw (IO.userError s!"{name} binary32 Dense run failed: {repr e.cause}")
++  let mut ins : Array String := #[]
++  for b in p.bindings.requiredInputs.bindings do
++    let t ← match inputs[b.name]? with
++      | some t => pure t
++      | none => throw (IO.userError s!"{name}: missing input {b.name}")
++    ins := ins.push (pyStrLit b.name ++ ": " ++ pyTensorEntry32 t)
++  let mut outs : Array String := #[]
++  for b in p.bindings.materializedNames do
++    let t ← match report.env[b.name]? with
++      | some t => pure t
++      | none => throw (IO.userError s!"{name}: materialized {b.name} absent")
++    outs := outs.push (pyStrLit b.name ++ ": " ++ pyTensorEntry32 t)
++  pure ("{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"named\", \"n_scatter\": " ++
++    toString (countScatters p) ++ ", \"plan\": " ++ planData ++
++    ", \"inputs\": {" ++ String.intercalate ", " ins.toList ++
++    "}, \"expected\": {" ++ String.intercalate ", " outs.toList ++ "}}")
++
++def t64 (shape : List Nat) (data : Array Float) : DenseTensor := ⟨shape, data⟩
++def t32 (shape : List Nat) (data : Array Float) : DenseTensor32 :=
++  ⟨shape, data.map Float.toFloat32⟩
++def env64 (xs : List (String × DenseTensor)) : HashMap String DenseTensor := HashMap.ofList xs
++def env32 (xs : List (String × DenseTensor32)) : NamedDenseEnv32 := HashMap.ofList xs
++
++/-! ## binary64 corpus -/
++
++-- Biased stride `Y[2*i+1]` (`Y[i+1]` parses as a scan lookback, not a scatter): extent 6, the even
++-- cells are never written (hold `reduceId`).
++def shiftProg : TLProgram := tlprog!{
++  axis i : ℕ = 3
++  axis k : ℕ = 6
++  tensor f64 A(i), Y(k)
++  Y[2 * i + 1] := A[i]
++}
++-- Strided placement `Y[2*i]` (donor: `Scatter32OracleTest` O1 placement): odd cells unwritten.
++def strideProg : TLProgram := tlprog!{
++  axis i : ℕ = 3
++  tensor f64 A(i), Y(i)
++  Y[2 * i] := A[i]
++}
++-- Multi-axis `Y[a+b]`: cell 2 collects three writes in row-major order [1e16, 1, 1] — forward fold
++-- lands on 1e16, the reversed fold on 1.0000000000000002e16.
++def multiProg : TLProgram := tlprog!{
++  axis a : ℕ = 3
++  axis b : ℕ = 3
++  axis k : ℕ = 5
++  tensor f64 X(a, b), Y(k)
++  Y[a + b] := X[a, b]
++}
++-- Constant slot (`=2`): a unit-axis row, every write lands in column 2.
++def constProg : TLProgram := tlprog!{
++  axis i : ℕ = 3
++  axis k : ℕ = 3
++  tensor f64 A(i), Y(i, k)
++  Y[i, =2] := A[i]
++}
++-- Compute half with a contraction: scatter `Y[2*i] := Σ_j A[i,j]·B[j]`.
++def contractProg : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis j : ℕ = 3
++  tensor f64 A(i, j), B(j), Y(i)
++  Y[2 * i] := A[i, j] · B[j]
++}
++-- Empty source box: `i` has extent 0, nothing is written.
++def emptyProg : TLProgram := tlprog!{
++  axis i : ℕ = 0
++  tensor f64 A(i), Y(i)
++  Y[2 * i] := A[i]
++}
++-- B5 interleave (donor: `EvalPlanCodegen.b5ScatterScheduled`): two writers, a collector, private slots.
++def b5Prog : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis k : ℕ = 4
++  tensor f64 A(i), B(i), S(k)
++  S[2 * i] := A[i]
++  S[2 * i + 1] := B[i]
++}
++-- B5 with OVERLAPPING writers (`S[2*i]`, `S[2*i+2]`, k = 6): cell 2 receives A[1] and B[0] — the
++-- collector sums them.
++def b5OverlapProg : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis k : ℕ = 6
++  tensor f64 A(i), B(i), S(k)
++  S[2 * i] := A[i]
++  S[2 * i + 2] := B[i]
++}
++-- A later assignment READS the scatter's destination (graph order, strided read of the placed cells).
++def chainProg : TLProgram := tlprog!{
++  axis i : ℕ = 3
++  axis m : ℕ = 6
++  tensor f64 A(i), Y(m), Z(i)
++  Y[2 * i] := A[i]
++  Z[i] := Y[2 * i]
++}
++
++def corpus64 : IO (Array String) := do
++  let one := #[1.0, 2.0, 3.0]
++  return #[
++    ← fixture64 "shift" shiftProg (env64 [("A", t64 [3] one)]),
++    ← fixture64 "stride" strideProg (env64 [("A", t64 [3] #[1.5, 2.5, -4.0])]),
++    ← fixture64 "multi" multiProg
++        (env64 [("X", t64 [3, 3] #[0.0, 0.0, 1e16, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0])]),
++    ← fixture64 "const" constProg (env64 [("A", t64 [3] one)]),
++    ← fixture64 "contract" contractProg
++        (env64 [("A", t64 [2, 3] #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]), ("B", t64 [3] #[0.5, 0.25, 2.0])]),
++    ← fixture64 "empty" emptyProg (env64 [("A", t64 [0] #[])]),
++    ← fixture64 "b5" b5Prog (env64 [("A", t64 [2] #[-5.0, -2.0]), ("B", t64 [2] #[-7.0, -3.0])]) 2,
++    ← fixture64 "b5Overlap" b5OverlapProg
++        (env64 [("A", t64 [2] #[1e16, 1.0]), ("B", t64 [2] #[1.0, 7.0])]) 2,
++    ← fixture64 "chain" chainProg (env64 [("A", t64 [3] one)]),
++    -- Signed zero: `reduceId + (-0.0)` is `+0.0` in the worker; a copy-on-first-write runtime
++    -- would produce `-0.0`. Eager-only in the verifier (jit drops the +0 fold seed).
++    ← fixture64 "negZero" shiftProg (env64 [("A", t64 [3] #[-0.0, 0.0, 2.0])])]
++
++/-! ## binary32 corpus -/
++
++def stride32Prog : TLProgram := tlprog!{
++  axis i : ℕ = 3
++  tensor f32 A(i), B(i), Out(i)
++  Out[2 * i + 1] := A[i] · B[i]
++}
++-- f32 collision order: row-major writes [2^24, 1, 1] into one cell; forward fold stays at 2^24
++-- (each +1 ties to even), the reversed fold gives 2^24 + 2.
++def multi32Prog : TLProgram := tlprog!{
++  axis a : ℕ = 3
++  axis b : ℕ = 3
++  axis k : ℕ = 5
++  tensor f32 X(a, b), Y(k)
++  Y[a + b] := X[a, b]
++}
++def contract32Prog : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis j : ℕ = 3
++  tensor f32 A(i, j), B(j), Y(i)
++  Y[2 * i] := A[i, j] · B[j]
++}
++def b5Overlap32Prog : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis k : ℕ = 6
++  tensor f32 A(i), B(i), S(k)
++  S[2 * i] := A[i]
++  S[2 * i + 2] := B[i]
++}
++def empty32Prog : TLProgram := tlprog!{
++  axis i : ℕ = 0
++  tensor f32 A(i), Y(i)
++  Y[2 * i] := A[i]
++}
++
++def corpus32 : IO (Array String) := do
++  return #[
++    ← fixture32 "stride32" stride32Prog
++        (env32 [("A", t32 [3] #[4097.0, 3.0, 0.1]), ("B", t32 [3] #[4097.0, 0.1, 3.0])]),
++    ← fixture32 "multi32" multi32Prog
++        (env32 [("X", t32 [3, 3] #[0.0, 0.0, 16777216.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0])]),
++    ← fixture32 "contract32" contract32Prog
++        (env32 [("A", t32 [2, 3] #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]), ("B", t32 [3] #[0.5, 0.25, 2.0])]),
++    ← fixture32 "b5Overlap32" b5Overlap32Prog
++        (env32 [("A", t32 [2] #[16777216.0, 1.0]), ("B", t32 [2] #[1.0, 0.1])]) 2,
++    ← fixture32 "empty32" empty32Prog (env32 [("A", t32 [0] #[])])]
++
++end JaxBridge.ScatterSmoke
++
++open JaxBridge.ScatterSmoke in
++def main (args : List String) : IO Unit := do
++  let out64 := args.head?.getD "generated_evalplan_scatter_smoke64.py"
++  let out32 := (args.drop 1).head?.getD "generated_evalplan_scatter_smoke32.py"
++  let f64s ← corpus64
++  let f32s ← corpus32
++  IO.FS.writeFile out64
++    ("# Generated by EvalPlanScatterSmoke.lean — do not edit.\nFIXTURES = [\n" ++
++      String.intercalate ",\n" f64s.toList ++ "\n]\n")
++  IO.FS.writeFile out32
++    ("# Generated by EvalPlanScatterSmoke.lean — do not edit.\nFIXTURES = [\n" ++
++      String.intercalate ",\n" f32s.toList ++ "\n]\n")
++  IO.println s!"wrote {f64s.size} binary64 fixtures to {out64} and {f32s.size} binary32 to {out32}"
+diff --git a/leanncd/experiments/jax_bridge/check-lean-drivers.sh b/leanncd/experiments/jax_bridge/check-lean-drivers.sh
+index d4051a43..fe35d10e 100644
+--- a/leanncd/experiments/jax_bridge/check-lean-drivers.sh
++++ b/leanncd/experiments/jax_bridge/check-lean-drivers.sh
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env bash
+-# Lean-side regression check for the four JAX-bridge drivers. NO Python and NO JAX: it only runs the
++# Lean-side regression check for the five JAX-bridge drivers. NO Python and NO JAX: it only runs the
+ # Lean generators and fails if any of them exits non-zero.
+ #
+ # Why: the drivers are `lake env lean --run` scripts outside every Lake target (`JaxExperiment` globs
+@@ -55,9 +55,10 @@ run_driver EvalPlanSmoke "$OUT/evalplan_smoke.py"
+ run_driver EvalPlanAffineSmoke "$OUT/evalplan_affine_smoke.py"
+ run_driver EvalPlanAffineCorpus "$OUT/evalplan_affine_corpus.py"
+ run_driver EvalPlanAffineSmoke32 "$OUT/evalplan_affine_smoke32.py" "$STRIDE"
++run_driver EvalPlanScatterSmoke "$OUT/evalplan_scatter_smoke64.py" "$OUT/evalplan_scatter_smoke32.py"
+ 
+ if [[ ${#failed[@]} -gt 0 ]]; then
+   echo "FAILED drivers: ${failed[*]}"
+   exit 1
+ fi
+-echo "all four drivers ran clean (Lean side only; the Python/JAX verifiers were not run)"
++echo "all five drivers ran clean (Lean side only; the Python/JAX verifiers were not run)"
+diff --git a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+index 93bf3e8b..6c2cbab9 100644
+--- a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
++++ b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+@@ -27,6 +27,13 @@ Load-bearing properties (whole-branch review gate):
+   all-zero output; a zero reduction extent yields zeros; a zero output extent yields empty storage.
+ * **Graph order.** Positional nodes execute in checked order, each writing its destination slot
+   before any later node reads it.
++* **Scatter nodes (`"kind": "scatter"`).** The compute half runs through the unchanged assignment
++  machinery (a SOURCE-shaped tensor, `output_shape`); the destination starts at `reduceId` (`0`, both
++  admitted real algebras) and absorbs the source values one at a time, in the static
++  `dest_flat_index` order (the dense worker's `allCoords` order), each with `dest[c] = dest[c] + v`
++  in a sequential `fori_loop` — the same left fold `runDenseScatter`/`runDenseScatter32` perform, so
++  colliding writes agree bit-for-bit. Placement indices are static and checked in range by Lean; the
++  runtime never relies on JAX's out-of-bounds scatter behavior. A node of unknown kind fails loud.
+ * **Differentiable** with respect to the floating input tensors (integer gather + `where` + loops).
+ """
+ 
+@@ -148,6 +155,35 @@ def _run_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.A
+     return jax.lax.fori_loop(0, len(terms), term_body, zero)
+ 
+ 
++def _run_scatter_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
++    """One scatter node: source-shaped compute half, then the ordered placement fold."""
++    source = jnp.reshape(_run_node(node, store, dtype), (-1,))
++    dest_shape = tuple(node["dest_shape"])
++    idx = node["dest_flat_index"]
++    if int(source.shape[0]) != len(idx):
++        raise ValueError(f"scatter table has {len(idx)} entries for {int(source.shape[0])} sources")
++    dest = jnp.zeros((_prod(list(dest_shape)),), dtype=dtype)  # reduceId of the real sum-product
++    if not idx:
++        return jnp.reshape(dest, dest_shape)  # empty source box: nothing is written
++    idx_arr = jnp.asarray(idx, dtype=_index_dtype())
++
++    def body(k, acc):
++        c = idx_arr[k]
++        return acc.at[c].set(acc[c] + source[k])
++
++    return jnp.reshape(jax.lax.fori_loop(0, len(idx), body, dest), dest_shape)
++
++
++def _exec_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
++    """Dispatch one positional node on its `kind` (absent ⇒ assignment, the pre-scatter record)."""
++    kind = node.get("kind", "assign")
++    if kind == "assign":
++        return _run_node(node, store, dtype)
++    if kind == "scatter":
++        return _run_scatter_node(node, store, dtype)
++    raise ValueError(f"unsupported node kind {kind!r}")
++
++
+ def run_assign(node: dict[str, Any], store: list[jax.Array], dtype: Any = jnp.float64) -> jax.Array:
+     """Execute one positional checked-assignment node against a positional store, returning one
+     result tensor — the direct parallel of `runDenseAssign` (`runDenseAssign32` for float32)."""
+@@ -166,7 +202,7 @@ def run_plan_positional(
+     for slot, tensor in zip(plan["input_slots"], inputs):
+         store[slot] = tensor
+     for node in plan["nodes"]:
+-        store[node["dest"]] = _run_node(node, store, dtype)
++        store[node["dest"]] = _exec_node(node, store, dtype)
+     return store
+ 
+ 
+@@ -182,7 +218,7 @@ def run_named(
+     for name, slot in plan["required_inputs"]:
+         store[slot] = inputs_by_name[name]
+     for node in plan["nodes"]:
+-        store[node["dest"]] = _run_node(node, store, dtype)
++        store[node["dest"]] = _exec_node(node, store, dtype)
+     outputs: dict[str, jax.Array] = {}
+     for name, slot in plan["materialized"]:
+         outputs[name] = store[slot]
+diff --git a/leanncd/experiments/jax_bridge/evalplan_scatter_smoke.py b/leanncd/experiments/jax_bridge/evalplan_scatter_smoke.py
+new file mode 100644
+index 00000000..db216aeb
+--- /dev/null
++++ b/leanncd/experiments/jax_bridge/evalplan_scatter_smoke.py
+@@ -0,0 +1,102 @@
++"""Scatter differential verifier (JAX scatter slice, ordered mode).
++
++Loads the Lean-generated module (`EvalPlanScatterSmoke.lean`): per fixture the static plan data
++(`renderAffinePlanNamed`, scatter nodes included) and the Lean reference worker's own result bits
++(`runPreparedDense` / `runPreparedDense32`). Runs every fixture through the committed runtime
++(`evalplan_affine_runtime.py`) eagerly and under `jax.jit` and requires exact dtype/shape/bit
++agreement with Lean. Fixtures were chosen so an ordered fold, a placement table, a `reduceId` init
++or a node-kind dispatch that is subtly wrong cannot also agree with Lean.
++
++Usage: evalplan_scatter_smoke.py float64|float32 GENERATED_MODULE
++float64 runs with x64 enabled; float32 with x64 DISABLED (no float64 can arise at all).
++"""
++from __future__ import annotations
++
++import importlib.util
++import sys
++from pathlib import Path
++
++import jax
++
++_DT = sys.argv[1] if len(sys.argv) == 3 else ""
++if _DT not in ("float64", "float32"):
++    raise SystemExit(f"usage: {Path(sys.argv[0]).name} float64|float32 GENERATED_MODULE")
++jax.config.update("jax_enable_x64", _DT == "float64")
++import jax.numpy as jnp  # noqa: E402
++import numpy as np  # noqa: E402
++
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++import evalplan_affine_runtime as rt  # noqa: E402
++
++JDT = jnp.float64 if _DT == "float64" else jnp.float32
++NDT = np.float64 if _DT == "float64" else np.float32
++UDT = np.uint64 if _DT == "float64" else np.uint32
++
++# Fixtures whose jit result may differ from eager in the sign of zero only (XLA drops a `+0` fold
++# seed under jit; see the AGENTS.md pitfall "JAX ordered-reference labels are measured").
++JIT_SKIP: set[str] = set()
++
++
++def reconstruct(entry: dict) -> jax.Array:
++    arr = np.array(entry["bits"], dtype=UDT).view(NDT)
++    return jnp.asarray(arr.reshape(tuple(entry["shape"])))
++
++
++def require_bits(actual, entry: dict, label: str) -> None:
++    a = np.asarray(actual)
++    if a.dtype != NDT:
++        raise AssertionError(f"{label}: expected {NDT.__name__}, got {a.dtype}")
++    if a.shape != tuple(entry["shape"]):
++        raise AssertionError(f"{label}: shape {a.shape} != {tuple(entry['shape'])}")
++    got = a.reshape(-1).view(UDT)
++    exp = np.array(entry["bits"], dtype=UDT)
++    if not np.array_equal(got, exp):
++        raise AssertionError(f"{label}: bits differ from Lean: {got.tolist()} vs {exp.tolist()}")
++
++
++def run_fixture(f: dict) -> None:
++    plan = f["plan"]
++    kinds = [n.get("kind", "assign") for n in plan["nodes"]]
++    if kinds.count("scatter") != f["n_scatter"] or f["n_scatter"] < 1:
++        raise AssertionError(f"{f['name']}: plan nodes {kinds} vs n_scatter {f['n_scatter']}")
++    inputs = {n: reconstruct(e) for n, e in f["inputs"].items()}
++    eager = rt.run_named(plan, inputs, JDT)
++    jitted = jax.jit(lambda i: rt.run_named(plan, i, JDT))(inputs)
++    for name, exp in f["expected"].items():
++        require_bits(eager[name], exp, f"{f['name']} eager {name}")
++        if f["name"] not in JIT_SKIP:
++            require_bits(jitted[name], exp, f"{f['name']} jit {name}")
++
++
++def main() -> None:
++    spec = importlib.util.spec_from_file_location("gen_scatter", Path(sys.argv[2]).resolve())
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    by = {f["name"]: f for f in mod.FIXTURES}
++    for f in mod.FIXTURES:
++        run_fixture(f)
++    print(f"{len(mod.FIXTURES)} {_DT} scatter fixtures bit-identical to Lean (eager + jit)")
++
++    # Collision ORDER: one cell receives [big, 1, 1] in row-major order; the forward left fold stays
++    # at `big`, the reversed fold (1 + 1 first) lands above it. Lean's bits are the forward one.
++    key = "multi" if _DT == "float64" else "multi32"
++    cell2 = np.array(by[key]["expected"]["Y"]["bits"], dtype=UDT).view(NDT)[2]
++    big = NDT(1e16 if _DT == "float64" else 16777216.0)
++    assert cell2 == big, f"{key}: cell 2 = {cell2!r}, forward fold must give {big!r}"
++    assert (NDT(1.0) + NDT(1.0)) + big != big, "fixture would not distinguish fold order"
++    print(f"collision order pinned: {key} cell 2 = {cell2!r} (the reversed fold differs)")
++
++    if _DT == "float64":
++        # Signed zero: Lean computes reduceId + (-0.0) = +0.0; copy-on-first-write would keep -0.0.
++        nz = np.array(by["negZero"]["expected"]["Y"]["bits"], dtype=np.uint64)
++        assert nz[1] == 0, f"reduceId + (-0.0) must be +0.0, got bits {nz[1]:#x}"
++        # Differentiable through the ordered fold: d sum(Y) / dA = 1 for a one-to-one placement.
++        f = by["stride"]
++        ins = {n: reconstruct(e) for n, e in f["inputs"].items()}
++        g = np.asarray(jax.grad(lambda a: jnp.sum(rt.run_named(f["plan"], {"A": a}, JDT)["Y"]))(ins["A"]))
++        assert g.tolist() == [1.0, 1.0, 1.0], g
++        print("signed-zero and gradient pins ok")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/leanncd/experiments/jax_bridge/run-evalplan-scatter.sh b/leanncd/experiments/jax_bridge/run-evalplan-scatter.sh
+new file mode 100644
+index 00000000..354367d8
+--- /dev/null
++++ b/leanncd/experiments/jax_bridge/run-evalplan-scatter.sh
+@@ -0,0 +1,35 @@
++#!/usr/bin/env bash
++# Scatter differential: generate the Lean fixtures (binary64 + binary32), then verify the committed
++# ordered runtime against the Lean reference worker's bits in both precisions (JAX scatter slice).
++#
++# Usage: ./run-evalplan-scatter.sh        (needs ./setup-python.sh first)
++
++set -euo pipefail
++
++HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
++LEANNCD_ROOT=$(cd "$HERE/../.." && pwd)
++CACHE_DIR="$HERE/.cache"
++GEN64="$CACHE_DIR/generated_evalplan_scatter_smoke64.py"
++GEN32="$CACHE_DIR/generated_evalplan_scatter_smoke32.py"
++LAKE="${LAKE:-$HOME/.elan/bin/lake}"
++PYTHON="${PYTHON:-$CACHE_DIR/python/bin/python}"
++
++if [[ ! -x "$LAKE" ]]; then
++  echo "Lake not found at $LAKE; set LAKE to the executable path." >&2
++  exit 1
++fi
++if [[ ! -x "$PYTHON" ]]; then
++  echo "Experiment Python not found at $PYTHON; run ./setup-python.sh first (or set PYTHON)." >&2
++  exit 1
++fi
++
++mkdir -p "$CACHE_DIR"
++(
++  cd "$LEANNCD_ROOT"
++  "$LAKE" build LeanNCD
++  "$LAKE" build JaxExperiment
++  "$LAKE" env lean --run "$HERE/EvalPlanScatterSmoke.lean" "$GEN64" "$GEN32"
++)
++
++"$PYTHON" "$HERE/evalplan_scatter_smoke.py" float64 "$GEN64"
++"$PYTHON" "$HERE/evalplan_scatter_smoke.py" float32 "$GEN32"
+-- 
+2.50.1 (Apple Git-155)
+

@@ -1,0 +1,344 @@
+From a76b6b01d6ae186904edfa54c400751d0fd1fa5b Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Tue, 3 Nov 2026 12:07:25 -0700
+Subject: [PATCH] feat(jax): fast vectorised scatter fold (opt-in,
+ tolerance-compared)
+
+scatter_mode='fast' on run_plan_positional/run_named folds the compute half into the destination with a single .at[].add over the static placement table (promise_in_bounds after a trace-time range check). Ordered stays the default and bit-exact. Exact only without collisions or with exactly representable partial sums; otherwise tolerance-compared. No Lean change.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ leanncd/LeanNCD/Eval/Plan/AGENTS.md           |   2 +-
+ leanncd/experiments/jax_bridge/README.md      |  18 +++
+ .../jax_bridge/evalplan_affine_runtime.py     |  51 ++++++--
+ .../jax_bridge/evalplan_scatter_smoke.py      | 114 ++++++++++++++++++
+ 4 files changed, 174 insertions(+), 11 deletions(-)
+
+diff --git a/leanncd/LeanNCD/Eval/Plan/AGENTS.md b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+index 968fa0eb..3826c2d9 100644
+--- a/leanncd/LeanNCD/Eval/Plan/AGENTS.md
++++ b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+@@ -45,7 +45,7 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
+ - **A block's `.pointwise`/`.axiswise` source must be a PRECEDING `.assign` destination** (`nonlinearSourceNotLocalAssignment`) — what keeps `Scan.lean`'s assignment-only causality walk complete.
+ - **Additive-collection private names are published but not persistent outputs.** `prepareEvalPlan` compiles the COLLECTED schedule (`CheckedScheduledProgram.privateNames` is the generated per-writer `T#k` only; the collector keeps the public name `T`). Step F splits the publications: `PlanBindings.materializedNames` holds only public names, `privateSlots` the hidden publication slots, and `checkPreparedBindings` requires `materializedNames`' slots to equal the raw publication sequence MINUS `privateSlots` (a hidden slot the plan does not publish is `PreparedBindingsError.privateSlotUnpublished`). `PlanBindings.definedNames` (every name the schedule writes, scan scratch included) backs B3: `packBodyOf`/`unpackBodyOf` refuse a supplied environment that names one (`InputBindingError.inputIsDefined`, first in write order, the name `EvalError.inputIsDefined` reports on the reference). `prepareEvalPlan` also refuses a signature entry naming a defined name (`InputSignatureError.definedName`, first in write order, checked before the required-input checks). A new publication site must push into `materializedAcc` unconditionally and let Step F partition it.
+ - **Error-constructor shape, not step kind:** a `checkScatter` failure surfaces as `PlanStepError.assign (.nodeError ni e)`, because the payload is a plain `PlanError`.
+-- **JAX is context-free; `affineReference` runs binary64 and binary32, `einsumOnly` binary64 only.** Per node, `checkJaxAssignSupport` re-runs the evidence's own checker and admits only the storage kind's real carrier (`jaxRealCarrier`: `f64`+`admittedAlgebra` or `f32`+`admittedAlgebraF32`), rejecting (located, in the order destination/algebra/context/factors) a Boolean destination or source, tropical max/min, a unary read, and a non-empty `contextShape` under either kind. A `.scatter` is RENDERED by `affineReference` only (ordered mode: `renderScatterNode` = the compute half's tables + `dest_shape` + a static `dest_flat_index` placement table in the worker's `allCoords` order; `checkJaxScatterSupport` grades the compute half with the same `jaxAssignSupported` policy); `einsumOnly` (no scatter form) and the evidence path (`lowerCheckPlanToCandidate`, `JaxExecutableWellFormed`: only an `.assign` step at a kernel's index) still refuse it as `unsupportedStep`, so a scatter plan runs through JAX but exposes no `ExecutionEvidence`. Tropical, Boolean and contextful scatters stay refused by the same compute-half gate. Evidence is storage-keyed (`orderedReferenceFor`): an affine kernel is `orderedReference64` or `orderedReference32` by its evidence's kind, and `aggregateEvidenceList kind` folds to the PLAN's claim, so a zero-step f32 plan gets `orderedReference32`, never `orderedReference64`. Binary32 einsum is refused at every door: `validateEinsum` conjoins `einsumStorageAdmitted`, and every einsum entry and every plan-level entry of `EvalPlanCodegen.lean` opens with the mode-aware `requireModeStorage` (plan-level at plan entries, per-assignment at the standalone `lowerAssign`/`loweringToEinsumCandidate`); the standalone affine entries (`renderAffineAssign`, `loweringToAffineTableCandidate`) and `buildAssignFixture` do not. A new einsum or plan-level JAX entry point needs its own `requireModeStorage`. Certification implies rendering: `validateEinsum` mirrors the emitter via `einsumTermRenderable` and the public `einsumTermLabelExtents`, which `lowerAssign` also calls — every factor's source extent must equal its label's iteration extent, since a shorter zero-padded read renders as `a->a` and returns a different shape than Dense. Which NAME belongs to which slot is deliberately not re-checked there (`raw` carries no names).
++- **JAX is context-free; `affineReference` runs binary64 and binary32, `einsumOnly` binary64 only.** Per node, `checkJaxAssignSupport` re-runs the evidence's own checker and admits only the storage kind's real carrier (`jaxRealCarrier`: `f64`+`admittedAlgebra` or `f32`+`admittedAlgebraF32`), rejecting (located, in the order destination/algebra/context/factors) a Boolean destination or source, tropical max/min, a unary read, and a non-empty `contextShape` under either kind. A `.scatter` is RENDERED by `affineReference` only (ordered mode, bit-exact; the Python runtime's opt-in `scatter_mode="fast"` is a vectorised `.at[].add` over the SAME table, exact only without colliding writes, so no Lean change: `renderScatterNode` = the compute half's tables + `dest_shape` + a static `dest_flat_index` placement table in the worker's `allCoords` order; `checkJaxScatterSupport` grades the compute half with the same `jaxAssignSupported` policy); `einsumOnly` (no scatter form) and the evidence path (`lowerCheckPlanToCandidate`, `JaxExecutableWellFormed`: only an `.assign` step at a kernel's index) still refuse it as `unsupportedStep`, so a scatter plan runs through JAX but exposes no `ExecutionEvidence`. Tropical, Boolean and contextful scatters stay refused by the same compute-half gate. Evidence is storage-keyed (`orderedReferenceFor`): an affine kernel is `orderedReference64` or `orderedReference32` by its evidence's kind, and `aggregateEvidenceList kind` folds to the PLAN's claim, so a zero-step f32 plan gets `orderedReference32`, never `orderedReference64`. Binary32 einsum is refused at every door: `validateEinsum` conjoins `einsumStorageAdmitted`, and every einsum entry and every plan-level entry of `EvalPlanCodegen.lean` opens with the mode-aware `requireModeStorage` (plan-level at plan entries, per-assignment at the standalone `lowerAssign`/`loweringToEinsumCandidate`); the standalone affine entries (`renderAffineAssign`, `loweringToAffineTableCandidate`) and `buildAssignFixture` do not. A new einsum or plan-level JAX entry point needs its own `requireModeStorage`. Certification implies rendering: `validateEinsum` mirrors the emitter via `einsumTermRenderable` and the public `einsumTermLabelExtents`, which `lowerAssign` also calls — every factor's source extent must equal its label's iteration extent, since a shorter zero-padded read renders as `a->a` and returns a different shape than Dense. Which NAME belongs to which slot is deliberately not re-checked there (`raw` carries no names).
+ 
+ ## Entry Points
+ | Task | Start Here |
+diff --git a/leanncd/experiments/jax_bridge/README.md b/leanncd/experiments/jax_bridge/README.md
+index 748a46b7..b3ddbd13 100644
+--- a/leanncd/experiments/jax_bridge/README.md
++++ b/leanncd/experiments/jax_bridge/README.md
+@@ -313,6 +313,24 @@ fold of `runDenseScatter`/`runDenseScatter32`, so colliding float writes are BIT
+ An out-of-range placement is unreachable for a checked plan (`scatterRangeViolation`); the codegen
+ still refuses it (`scatterPlacementOutOfRange`) rather than emit the index.
+ 
++**Fast mode** (`scatter_mode="fast"` on `run_named` / `run_plan_positional`; default `"ordered"`, an
++unknown value raises `ValueError`) swaps ONLY the placement fold for one vectorised
++`zeros.at[dest_flat_index].add(source, mode="promise_in_bounds")` (XLA scatter-add) over the same static
++table and the same ordered compute half, so it needs no Lean change and works under `jax.jit` and
++`jax.grad`. Exactness: it is bit-identical to ordered mode and to Lean when no two source coordinates
++share a destination cell (all collision-free fixtures, both precisions, eager and jit, including signed
++zero: `0 + (-0.0)` is `+0.0`), or when every partial sum is exactly representable. With colliding
++writes XLA's accumulation order is unspecified, so the result is only guaranteed within rounding; the
++verifier compares fixtures whose scatter TABLE collides (`multi`, `contract`; the `b5Overlap` writers
++write private slots and its collision is in the ordered collector assign) within a scale-relative
++`RTOL` (`1e-12` binary64, `1e-5` binary32), and against random well-conditioned inputs (fast vs ordered).
++On this CPU backend those fixtures (including the `1e16`/`2^24` ordering pins) and 200 random trials per
++fixture were nonetheless bit-identical to ordered/Lean (XLA CPU applies updates in order): an
++observation that proves nothing about other backends or a future XLA. The static table is range-checked at trace time (`ValueError`), because JAX's default
++for a scatter would silently DROP an out-of-range update; with the check, `promise_in_bounds` is a fact.
++The verifier tells the folds apart by counting `scatter-add` primitives in the traced program (default
++and ordered: none; fast: one per non-empty scatter node), since results alone cannot.
++
+ | Still refused | Where |
+ | --- | --- |
+ | scatter under `einsumOnly` | `unsupportedStep` (einsum is a gather; no scatter form) |
+diff --git a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+index 6c2cbab9..954dc5aa 100644
+--- a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
++++ b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+@@ -34,6 +34,11 @@ Load-bearing properties (whole-branch review gate):
+   in a sequential `fori_loop` — the same left fold `runDenseScatter`/`runDenseScatter32` perform, so
+   colliding writes agree bit-for-bit. Placement indices are static and checked in range by Lean; the
+   runtime never relies on JAX's out-of-bounds scatter behavior. A node of unknown kind fails loud.
++  `scatter_mode="fast"` (opt-in; default `"ordered"`) replaces ONLY this fold with one vectorised
++  `zeros.at[dest_flat_index].add(source)` (XLA scatter-add, same static table, same compute half).
++  It is bit-identical to ordered/Lean when no two source coordinates share a destination cell (or
++  every partial sum is exactly representable); with collisions XLA's accumulation order is
++  unspecified, so float results agree only within rounding. The table is range-checked at trace time.
+ * **Differentiable** with respect to the floating input tensors (integer gather + `where` + loops).
+ """
+ 
+@@ -55,6 +60,12 @@ def require_x64() -> None:
+ 
+ 
+ _DTYPES = (jnp.float64, jnp.float32)
++SCATTER_MODES = ("ordered", "fast")
++
++
++def _require_scatter_mode(scatter_mode: Any) -> None:
++    if scatter_mode not in SCATTER_MODES:
++        raise ValueError(f"unsupported scatter_mode {scatter_mode!r}; expected one of {SCATTER_MODES}")
+ 
+ 
+ def _require_dtype(dtype: Any, tensors: Any) -> None:
+@@ -155,8 +166,10 @@ def _run_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.A
+     return jax.lax.fori_loop(0, len(terms), term_body, zero)
+ 
+ 
+-def _run_scatter_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
+-    """One scatter node: source-shaped compute half, then the ordered placement fold."""
++def _run_scatter_node(
++    node: dict[str, Any], store: list[jax.Array], dtype: Any, scatter_mode: str = "ordered"
++) -> jax.Array:
++    """One scatter node: source-shaped compute half, then the ordered (default) or fast placement fold."""
+     source = jnp.reshape(_run_node(node, store, dtype), (-1,))
+     dest_shape = tuple(node["dest_shape"])
+     idx = node["dest_flat_index"]
+@@ -166,6 +179,13 @@ def _run_scatter_node(node: dict[str, Any], store: list[jax.Array], dtype: Any)
+     if not idx:
+         return jnp.reshape(dest, dest_shape)  # empty source box: nothing is written
+     idx_arr = jnp.asarray(idx, dtype=_index_dtype())
++    if scatter_mode == "fast":
++        if min(idx) < 0 or max(idx) >= int(dest.shape[0]):
++            raise ValueError(f"scatter table has an index outside [0, {int(dest.shape[0])})")
++        # Static table checked just above, so "promise_in_bounds" is a fact, not a hope; JAX's default
++        # would silently DROP an out-of-range update.
++        out = dest.at[idx_arr].add(source, mode="promise_in_bounds")
++        return jnp.reshape(out, dest_shape)
+ 
+     def body(k, acc):
+         c = idx_arr[k]
+@@ -174,13 +194,15 @@ def _run_scatter_node(node: dict[str, Any], store: list[jax.Array], dtype: Any)
+     return jnp.reshape(jax.lax.fori_loop(0, len(idx), body, dest), dest_shape)
+ 
+ 
+-def _exec_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
++def _exec_node(
++    node: dict[str, Any], store: list[jax.Array], dtype: Any, scatter_mode: str = "ordered"
++) -> jax.Array:
+     """Dispatch one positional node on its `kind` (absent ⇒ assignment, the pre-scatter record)."""
+     kind = node.get("kind", "assign")
+     if kind == "assign":
+         return _run_node(node, store, dtype)
+     if kind == "scatter":
+-        return _run_scatter_node(node, store, dtype)
++        return _run_scatter_node(node, store, dtype, scatter_mode)
+     raise ValueError(f"unsupported node kind {kind!r}")
+ 
+ 
+@@ -192,33 +214,42 @@ def run_assign(node: dict[str, Any], store: list[jax.Array], dtype: Any = jnp.fl
+ 
+ 
+ def run_plan_positional(
+-    plan: dict[str, Any], inputs: list[jax.Array], dtype: Any = jnp.float64
++    plan: dict[str, Any],
++    inputs: list[jax.Array],
++    dtype: Any = jnp.float64,
++    scatter_mode: str = "ordered",
+ ) -> list[jax.Array]:
+     """Execute a positional `CheckedEvalPlan` over positional inputs (in `input_slots` order),
+-    returning the full positional slot store after every node has run in checked graph order."""
++    returning the full positional slot store after every node has run in checked graph order.
++    `scatter_mode` selects the scatter fold only: `"ordered"` (default, bit-exact) or `"fast"`."""
++    _require_scatter_mode(scatter_mode)
+     num_slots = plan["num_slots"]
+     store: list[Any] = [None] * num_slots
+     _require_dtype(dtype, inputs)
+     for slot, tensor in zip(plan["input_slots"], inputs):
+         store[slot] = tensor
+     for node in plan["nodes"]:
+-        store[node["dest"]] = _exec_node(node, store, dtype)
++        store[node["dest"]] = _exec_node(node, store, dtype, scatter_mode)
+     return store
+ 
+ 
+ def run_named(
+-    plan: dict[str, Any], inputs_by_name: dict[str, jax.Array], dtype: Any = jnp.float64
++    plan: dict[str, Any],
++    inputs_by_name: dict[str, jax.Array],
++    dtype: Any = jnp.float64,
++    scatter_mode: str = "ordered",
+ ) -> dict[str, jax.Array]:
+     """Execute a named `PreparedPlan`: place inputs by source-name binding, run every node in graph
+     order, then reconstruct each materialized name (later writes overwrite earlier ones, matching
+-    `Adapter.unpack`)."""
++    `Adapter.unpack`). `scatter_mode` as in `run_plan_positional`."""
++    _require_scatter_mode(scatter_mode)
+     num_slots = plan["num_slots"]
+     store: list[Any] = [None] * num_slots
+     _require_dtype(dtype, inputs_by_name.values())
+     for name, slot in plan["required_inputs"]:
+         store[slot] = inputs_by_name[name]
+     for node in plan["nodes"]:
+-        store[node["dest"]] = _exec_node(node, store, dtype)
++        store[node["dest"]] = _exec_node(node, store, dtype, scatter_mode)
+     outputs: dict[str, jax.Array] = {}
+     for name, slot in plan["materialized"]:
+         outputs[name] = store[slot]
+diff --git a/leanncd/experiments/jax_bridge/evalplan_scatter_smoke.py b/leanncd/experiments/jax_bridge/evalplan_scatter_smoke.py
+index db216aeb..059d1b67 100644
+--- a/leanncd/experiments/jax_bridge/evalplan_scatter_smoke.py
++++ b/leanncd/experiments/jax_bridge/evalplan_scatter_smoke.py
+@@ -7,6 +7,11 @@ Loads the Lean-generated module (`EvalPlanScatterSmoke.lean`): per fixture the s
+ agreement with Lean. Fixtures were chosen so an ordered fold, a placement table, a `reduceId` init
+ or a node-kind dispatch that is subtly wrong cannot also agree with Lean.
+ 
++Fast mode (`scatter_mode="fast"`, one vectorised `.at[].add`) is checked after the ordered pass:
++bit-exact against Lean wherever the plan has no two source coordinates on one destination cell,
++within RTOL (scale-relative) where it does, plus jaxpr checks that say WHICH fold ran, a mode-name
++check, a range check, a signed-zero pin and a gradient pin.
++
+ Usage: evalplan_scatter_smoke.py float64|float32 GENERATED_MODULE
+ float64 runs with x64 enabled; float32 with x64 DISABLED (no float64 can arise at all).
+ """
+@@ -28,6 +33,11 @@ import numpy as np  # noqa: E402
+ sys.path.insert(0, str(Path(__file__).resolve().parent))
+ import evalplan_affine_runtime as rt  # noqa: E402
+ 
++# Scale-relative tolerance for fast-mode fixtures whose scatter table has colliding writes (XLA's accumulation order for
++# colliding scatter-add updates is unspecified): |fast - lean| <= RTOL * max|lean| elementwise.
++# Observed error on this CPU is exactly 0 (see README); the margin covers a reordered sum of a few terms.
++RTOL = {"float64": 1e-12, "float32": 1e-5}
++
+ JDT = jnp.float64 if _DT == "float64" else jnp.float32
+ NDT = np.float64 if _DT == "float64" else np.float32
+ UDT = np.uint64 if _DT == "float64" else np.uint32
+@@ -54,6 +64,50 @@ def require_bits(actual, entry: dict, label: str) -> None:
+         raise AssertionError(f"{label}: bits differ from Lean: {got.tolist()} vs {exp.tolist()}")
+ 
+ 
++def require_close(got, want, label: str) -> None:
++    g, w = np.asarray(got), np.asarray(want)
++    if g.dtype != NDT or w.dtype != NDT or g.shape != w.shape:
++        raise AssertionError(f"{label}: dtype/shape mismatch {g.dtype}{g.shape} vs {w.dtype}{w.shape}")
++    if np.shares_memory(g, w):
++        raise AssertionError(f"{label}: comparing a result against itself is vacuous")
++    scale = float(np.max(np.abs(w.astype(np.float64)))) if w.size else 0.0
++    if not np.all(np.abs(g.astype(np.float64) - w.astype(np.float64)) <= RTOL[_DT] * scale):
++        raise AssertionError(f"{label}: not within rtol {RTOL[_DT]}: {g.tolist()} vs {w.tolist()}")
++
++
++def collides(plan: dict) -> bool:
++    return any(len(set(n["dest_flat_index"])) != len(n["dest_flat_index"])
++               for n in plan["nodes"] if n.get("kind") == "scatter")
++
++
++def scatter_adds(plan: dict, inputs: dict, mode: str | None) -> int:
++    """How many `scatter-add` primitives the traced program contains: says which fold ran."""
++    run = (lambda i: rt.run_named(plan, i, JDT)) if mode is None else (lambda i: rt.run_named(plan, i, JDT, mode))
++    return str(jax.make_jaxpr(run)(inputs)).count("scatter-add")
++
++
++def run_fast_fixture(f: dict) -> bool:
++    plan, col = f["plan"], collides(f["plan"])
++    inputs = {n: reconstruct(e) for n, e in f["inputs"].items()}
++    expect_adds = sum(1 for n in plan["nodes"] if n.get("kind") == "scatter" and n["dest_flat_index"])
++    for label, mode, want in (("default", None, 0), ("ordered", "ordered", 0), ("fast", "fast", expect_adds)):
++        got = scatter_adds(plan, inputs, mode)
++        if got != want:
++            raise AssertionError(f"{f['name']}: {label} program has {got} scatter-add, expected {want}")
++    eager = rt.run_named(plan, inputs, JDT, "fast")
++    jitted = jax.jit(lambda i: rt.run_named(plan, i, JDT, "fast"))(inputs)
++    same = True
++    for name, exp in f["expected"].items():
++        for tag, res in (("eager", eager), ("jit", jitted)):
++            label = f"{f['name']} fast {tag} {name}"
++            if col:
++                require_close(res[name], reconstruct(exp), label)
++                same = same and np.array_equal(np.asarray(res[name]).reshape(-1).view(UDT), np.array(exp["bits"], dtype=UDT))
++            else:
++                require_bits(res[name], exp, label)
++    return col and same
++
++
+ def run_fixture(f: dict) -> None:
+     plan = f["plan"]
+     kinds = [n.get("kind", "assign") for n in plan["nodes"]]
+@@ -68,6 +122,58 @@ def run_fixture(f: dict) -> None:
+             require_bits(jitted[name], exp, f"{f['name']} jit {name}")
+ 
+ 
++def run_fast(mod, by: dict) -> None:
++    cols = [f["name"] for f in mod.FIXTURES if collides(f["plan"])]
++    assert sorted(cols) == sorted(k for k in by if k.startswith(("multi", "contract"))), cols
++    agree = {f["name"]: run_fast_fixture(f) for f in mod.FIXTURES}
++    n_exact = len(mod.FIXTURES) - len(cols)
++    print(f"fast mode: {n_exact} collision-free fixtures bit-identical to Lean, {len(cols)} colliding "
++          f"within rtol {RTOL[_DT]} (eager + jit); default/ordered traced without scatter-add, fast with it")
++    print(f"fast colliding fixtures also bit-identical to Lean on this backend (observation, not a guarantee): "
++          f"{ {k: agree[k] for k in cols} }")
++    # Self-test of the tolerance check: a 1e-3 relative perturbation must be rejected (RTOL ceiling).
++    probe = np.array([1.0, 2.0, 3.0], dtype=NDT)
++    try:
++        require_close(probe * NDT(1.001), probe.copy(), "tolerance self-test")
++    except AssertionError:
++        pass
++    else:
++        raise AssertionError("tolerance check accepts a 1e-3 relative perturbation: vacuous")
++    # Well-conditioned colliding inputs: fast within RTOL of ordered (same plan, random values).
++    rng = np.random.default_rng(0)
++    for name in cols + [k for k in by if k.startswith("b5")]:  # b5*: private slots + ordered collector
++        f = by[name]
++        for _ in range(3):
++            ins = {n: jnp.asarray(rng.normal(size=tuple(e["shape"])).astype(NDT)) for n, e in f["inputs"].items()}
++            ordered = rt.run_named(f["plan"], ins, JDT)
++            fast = rt.run_named(f["plan"], ins, JDT, "fast")
++            for k in ordered:
++                require_close(fast[k], np.array(ordered[k]), f"{name} random fast vs ordered {k}")
++    print(f"fast mode: random well-conditioned collisions within rtol {RTOL[_DT]} of ordered")
++    # Mode names and range check.
++    f = by["stride"] if "stride" in by else by["stride32"]
++    ins = {n: reconstruct(e) for n, e in f["inputs"].items()}
++    for call in (lambda: rt.run_named(f["plan"], ins, JDT, "bogus"),
++                 lambda: rt.run_plan_positional(f["plan"], [], JDT, "Fast")):
++        try:
++            call()
++        except ValueError as e:
++            assert "scatter_mode" in str(e), e
++        else:
++            raise AssertionError("unknown scatter_mode was accepted")
++    for bad in (10**6, -1):
++        plan = {**f["plan"], "nodes": [dict(n) for n in f["plan"]["nodes"]]}
++        node = next(n for n in plan["nodes"] if n.get("kind") == "scatter")
++        node["dest_flat_index"] = [bad] + list(node["dest_flat_index"][1:])
++        try:
++            rt.run_named(plan, ins, JDT, "fast")
++        except ValueError as e:
++            assert "outside" in str(e), e
++        else:
++            raise AssertionError(f"fast mode accepted out-of-range placement {bad}")
++    print("fast mode: unknown scatter_mode and out-of-range placement rejected")
++
++
+ def main() -> None:
+     spec = importlib.util.spec_from_file_location("gen_scatter", Path(sys.argv[2]).resolve())
+     mod = importlib.util.module_from_spec(spec)
+@@ -86,6 +192,8 @@ def main() -> None:
+     assert (NDT(1.0) + NDT(1.0)) + big != big, "fixture would not distinguish fold order"
+     print(f"collision order pinned: {key} cell 2 = {cell2!r} (the reversed fold differs)")
+ 
++    run_fast(mod, by)
++
+     if _DT == "float64":
+         # Signed zero: Lean computes reduceId + (-0.0) = +0.0; copy-on-first-write would keep -0.0.
+         nz = np.array(by["negZero"]["expected"]["Y"]["bits"], dtype=np.uint64)
+@@ -96,6 +204,12 @@ def main() -> None:
+         g = np.asarray(jax.grad(lambda a: jnp.sum(rt.run_named(f["plan"], {"A": a}, JDT)["Y"]))(ins["A"]))
+         assert g.tolist() == [1.0, 1.0, 1.0], g
+         print("signed-zero and gradient pins ok")
++        g = np.asarray(jax.jit(jax.grad(lambda a: jnp.sum(rt.run_named(f["plan"], {"A": a}, JDT, "fast")["Y"])))(ins["A"]))
++        assert g.tolist() == [1.0, 1.0, 1.0], g
++        nz = np.asarray(rt.run_named(by["negZero"]["plan"], {n: reconstruct(e) for n, e in by["negZero"]["inputs"].items()},
++                                     JDT, "fast")["Y"]).reshape(-1).view(np.uint64)
++        assert nz[1] == 0, f"fast: zeros + (-0.0) must be +0.0, got bits {nz[1]:#x}"
++        print("fast-mode gradient (jit(grad)) and signed-zero pins ok")
+ 
+ 
+ if __name__ == "__main__":
+-- 
+2.50.1 (Apple Git-155)
+

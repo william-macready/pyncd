@@ -1,0 +1,43 @@
+From e3f8cc8ca49d7bd59b4a6315dc694b303f7dbea1 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Tue, 3 Nov 2026 09:14:16 -0700
+Subject: [PATCH 3/5] test(jax): end-to-end compute-half gate guard for scatter
+ rendering
+
+Found by mutation JS-T1-05: removing requireJaxScatterSupport from renderScatterNode survived
+the direct gate guard. Clone the donor plan, change only the compute algebra, render.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ .../experiments/jax_bridge/EvalPlanCodegen.lean | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/leanncd/experiments/jax_bridge/EvalPlanCodegen.lean b/leanncd/experiments/jax_bridge/EvalPlanCodegen.lean
+index b7df0edd..7eea4699 100644
+--- a/leanncd/experiments/jax_bridge/EvalPlanCodegen.lean
++++ b/leanncd/experiments/jax_bridge/EvalPlanCodegen.lean
+@@ -2152,4 +2152,21 @@ def b5FirstScatter : Option (Nat × CheckedScatterPlan × Array TensorSignature)
+         | .error (.unsupportedAlgebra 0) => true
+         | _ => false)
+ 
++-- END-TO-END compute-half gate (found by mutation JS-T1-05: removing the gate from the renderer
++-- survived the direct `requireJaxScatterSupport` guard above): clone the donor's raw plan, change the
++-- FIRST scatter's compute algebra only (max-plus), re-check, and render the plan.
++#guard (match b5ScatterPrepared with
++  | none => false
++  | some p =>
++    match p.plan.raw.steps[0]? with
++    | some (PlanStep.scatter s) =>
++        let tropical : PlanStep :=
++          PlanStep.scatter { s with compute := { s.compute with algebra := admittedAlgebraMax } }
++        let raw : RawEvalPlan := { p.plan.raw with steps := p.plan.raw.steps.set! 0 tropical }
++        match checkPlan raw with
++        | .ok c => (match renderAffinePlanPositional c with
++                    | .error (.unsupportedAlgebra 0) => true | _ => false)
++        | .error _ => false
++    | _ => false)
++
+ end JaxBridge
+-- 
+2.50.1 (Apple Git-155)
+

@@ -1,0 +1,65 @@
+From a6b6039cc7561180a6c1010a9cd3a7899c0efcea Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Tue, 3 Nov 2026 09:14:16 -0700
+Subject: [PATCH 5/5] docs(jax): scatter rendering is admitted in
+ affineReference (ordered mode)
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ leanncd/LeanNCD/Eval/Plan/AGENTS.md      |  2 +-
+ leanncd/experiments/jax_bridge/README.md | 26 ++++++++++++++++++++++++
+ 2 files changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/leanncd/LeanNCD/Eval/Plan/AGENTS.md b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+index 543ece2f..968fa0eb 100644
+--- a/leanncd/LeanNCD/Eval/Plan/AGENTS.md
++++ b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+@@ -45,7 +45,7 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
+ - **A block's `.pointwise`/`.axiswise` source must be a PRECEDING `.assign` destination** (`nonlinearSourceNotLocalAssignment`) — what keeps `Scan.lean`'s assignment-only causality walk complete.
+ - **Additive-collection private names are published but not persistent outputs.** `prepareEvalPlan` compiles the COLLECTED schedule (`CheckedScheduledProgram.privateNames` is the generated per-writer `T#k` only; the collector keeps the public name `T`). Step F splits the publications: `PlanBindings.materializedNames` holds only public names, `privateSlots` the hidden publication slots, and `checkPreparedBindings` requires `materializedNames`' slots to equal the raw publication sequence MINUS `privateSlots` (a hidden slot the plan does not publish is `PreparedBindingsError.privateSlotUnpublished`). `PlanBindings.definedNames` (every name the schedule writes, scan scratch included) backs B3: `packBodyOf`/`unpackBodyOf` refuse a supplied environment that names one (`InputBindingError.inputIsDefined`, first in write order, the name `EvalError.inputIsDefined` reports on the reference). `prepareEvalPlan` also refuses a signature entry naming a defined name (`InputSignatureError.definedName`, first in write order, checked before the required-input checks). A new publication site must push into `materializedAcc` unconditionally and let Step F partition it.
+ - **Error-constructor shape, not step kind:** a `checkScatter` failure surfaces as `PlanStepError.assign (.nodeError ni e)`, because the payload is a plain `PlanError`.
+-- **JAX is context-free; `affineReference` runs binary64 and binary32, `einsumOnly` binary64 only.** Per node, `checkJaxAssignSupport` re-runs the evidence's own checker and admits only the storage kind's real carrier (`jaxRealCarrier`: `f64`+`admittedAlgebra` or `f32`+`admittedAlgebraF32`), rejecting (located, in the order destination/algebra/context/factors) a Boolean destination or source, tropical max/min, a unary read, and a non-empty `contextShape` under either kind. A `.scatter` is refused categorically (no `checkJaxScatterSupport` exists: neither lowering represents placement, `fill`, or collision); `JaxExecutableWellFormed` admits only an `.assign` step at a kernel's index. Evidence is storage-keyed (`orderedReferenceFor`): an affine kernel is `orderedReference64` or `orderedReference32` by its evidence's kind, and `aggregateEvidenceList kind` folds to the PLAN's claim, so a zero-step f32 plan gets `orderedReference32`, never `orderedReference64`. Binary32 einsum is refused at every door: `validateEinsum` conjoins `einsumStorageAdmitted`, and every einsum entry and every plan-level entry of `EvalPlanCodegen.lean` opens with the mode-aware `requireModeStorage` (plan-level at plan entries, per-assignment at the standalone `lowerAssign`/`loweringToEinsumCandidate`); the standalone affine entries (`renderAffineAssign`, `loweringToAffineTableCandidate`) and `buildAssignFixture` do not. A new einsum or plan-level JAX entry point needs its own `requireModeStorage`. Certification implies rendering: `validateEinsum` mirrors the emitter via `einsumTermRenderable` and the public `einsumTermLabelExtents`, which `lowerAssign` also calls — every factor's source extent must equal its label's iteration extent, since a shorter zero-padded read renders as `a->a` and returns a different shape than Dense. Which NAME belongs to which slot is deliberately not re-checked there (`raw` carries no names).
++- **JAX is context-free; `affineReference` runs binary64 and binary32, `einsumOnly` binary64 only.** Per node, `checkJaxAssignSupport` re-runs the evidence's own checker and admits only the storage kind's real carrier (`jaxRealCarrier`: `f64`+`admittedAlgebra` or `f32`+`admittedAlgebraF32`), rejecting (located, in the order destination/algebra/context/factors) a Boolean destination or source, tropical max/min, a unary read, and a non-empty `contextShape` under either kind. A `.scatter` is RENDERED by `affineReference` only (ordered mode: `renderScatterNode` = the compute half's tables + `dest_shape` + a static `dest_flat_index` placement table in the worker's `allCoords` order; `checkJaxScatterSupport` grades the compute half with the same `jaxAssignSupported` policy); `einsumOnly` (no scatter form) and the evidence path (`lowerCheckPlanToCandidate`, `JaxExecutableWellFormed`: only an `.assign` step at a kernel's index) still refuse it as `unsupportedStep`, so a scatter plan runs through JAX but exposes no `ExecutionEvidence`. Tropical, Boolean and contextful scatters stay refused by the same compute-half gate. Evidence is storage-keyed (`orderedReferenceFor`): an affine kernel is `orderedReference64` or `orderedReference32` by its evidence's kind, and `aggregateEvidenceList kind` folds to the PLAN's claim, so a zero-step f32 plan gets `orderedReference32`, never `orderedReference64`. Binary32 einsum is refused at every door: `validateEinsum` conjoins `einsumStorageAdmitted`, and every einsum entry and every plan-level entry of `EvalPlanCodegen.lean` opens with the mode-aware `requireModeStorage` (plan-level at plan entries, per-assignment at the standalone `lowerAssign`/`loweringToEinsumCandidate`); the standalone affine entries (`renderAffineAssign`, `loweringToAffineTableCandidate`) and `buildAssignFixture` do not. A new einsum or plan-level JAX entry point needs its own `requireModeStorage`. Certification implies rendering: `validateEinsum` mirrors the emitter via `einsumTermRenderable` and the public `einsumTermLabelExtents`, which `lowerAssign` also calls — every factor's source extent must equal its label's iteration extent, since a shorter zero-padded read renders as `a->a` and returns a different shape than Dense. Which NAME belongs to which slot is deliberately not re-checked there (`raw` carries no names).
+ 
+ ## Entry Points
+ | Task | Start Here |
+diff --git a/leanncd/experiments/jax_bridge/README.md b/leanncd/experiments/jax_bridge/README.md
+index 9df75308..748a46b7 100644
+--- a/leanncd/experiments/jax_bridge/README.md
++++ b/leanncd/experiments/jax_bridge/README.md
+@@ -299,6 +299,32 @@ excluding it. `orderedReference64` and `orderedReference32` carry the same limit
+ fixed: that would mean defeating XLA's flush-to-zero and its algebraic simplifier, and no XLA
+ flag that does either was found. Scan lowering remains future work.
+ 
++### Scatter steps (ordered mode, JAX scatter slice)
++
++A prepared plan whose steps include a `.scatter` (a source statement with a non-plain LHS slot such
++as `Y[2*i]`, `Y[a+b]`, `Y[i, =2]`, and every B5 multi-writer group, whose writers are scatters into
++private slots feeding one collector assignment) now renders and runs under `affineReference`, in both
++precisions. `renderScatterNode` emits the compute half's tables (a SOURCE-shaped tensor) plus
++`"kind": "scatter"`, `"dest_shape"` and a static `"dest_flat_index"` table: one destination offset per
++source coordinate, in the dense worker's `allCoords` order, computed in Lean by the worker's own
++`applyAffine`/`inBoundsPerDim`/`flatIndex`. The runtime (`_run_scatter_node`) starts the destination at
++`reduceId` (`0`) and adds the source values one at a time in table order (`fori_loop`), the exact left
++fold of `runDenseScatter`/`runDenseScatter32`, so colliding float writes are BIT-identical to Lean.
++An out-of-range placement is unreachable for a checked plan (`scatterRangeViolation`); the codegen
++still refuses it (`scatterPlacementOutOfRange`) rather than emit the index.
++
++| Still refused | Where |
++| --- | --- |
++| scatter under `einsumOnly` | `unsupportedStep` (einsum is a gather; no scatter form) |
++| scatter in the evidence path | `lowerCheckPlanToCandidate` / `JaxExecutableWellFormed`: `unsupportedStep` (no `ExecutionEvidence` for a scatter) |
++| tropical, Boolean, contextful or unary-read scatter | the compute-half gate (`checkJaxScatterSupport`): `unsupportedAlgebra` etc. |
++| scan, pointwise, axiswise | `unsupportedStep` |
++
++Run: `./run-evalplan-scatter.sh` (generates `EvalPlanScatterSmoke.lean`'s binary64 + binary32
++fixtures, then `evalplan_scatter_smoke.py float64|float32`: eager and jit bit comparison, a pinned
++collision-order case, a signed-zero case, a gradient). Mutation record for the Python half:
++`mutation_python_manifest.py` (`papers/semantics/jax_scatter_mutations_python.json`).
++
+ ## Scaling probe
+ 
+ `run-scaling-probe.sh` measures one mid-sized contraction — `Y[i] := Σⱼ W[i,j]·x[j]`, `i,j` both
+-- 
+2.50.1 (Apple Git-155)
+
