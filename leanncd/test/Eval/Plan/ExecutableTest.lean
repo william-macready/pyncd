@@ -1574,16 +1574,16 @@ def mixedCandidateWith (materialized : Array SlotBinding) : Option JaxExecutable
 /-! ### S-A Task 2: the checked/JAX boundary says NO to a scatter step
 
 A scatter (`PlanStep.scatter`) is now a fully checked outer step — `checkPlan` publishes real
-`CheckedPlanStepEvidence.scatter` for it and `runDensePlan` executes it — but it has NO JAX
-rendering at all, and the guards below pin that boundary from the default build target.
+`CheckedPlanStepEvidence.scatter` for it and `runDensePlan` executes it. Since the JAX scatter
+slice `EvalPlanCodegen.lean`'s `affineReference` RENDERS a scatter (a source-driven record graded by
+`checkJaxScatterSupport`, below); what stays refused is the EVIDENCE path: no `JaxKernelCandidate`
+carries a placement map, so no `ExecutionEvidence` is exposed for a scatter step, and the guards
+below pin that boundary from the default build target. (`einsumOnly` has no scatter form either.)
 
-Why there is no `checkJaxScatterSupport` to call here: `checkJaxAssignSupport` grades ONE
-assignment's own semantics, and a scatter's refusal is not a verdict about its compute half. The
-placement map, the `fill`, and the collision policy have no representation in either lowering
-(`EvalPlanCodegen.lean`'s affine-table record is destination-driven — `dest`/`output_shape`/`terms`
-— and its einsum path has no scatter form), so a scatter is refused CATEGORICALLY, exactly as
-`.scan`/`.pointwise`/`.axiswise` already are; a categorical refusal has no property to consult and
-so needs no support function. The gate that actually enforces it in THIS target is
+`checkJaxAssignSupport` grades ONE assignment's own semantics and cannot be handed a scatter's
+compute half (its re-run `checkAssign` would reject the source-shaped output against the destination
+signature); `checkJaxScatterSupport` is the scatter-checker re-run plus the same compute-half policy.
+The gate that actually enforces the evidence refusal in THIS target is
 `JaxExecutableWellFormed`'s per-step tie, which requires the step at index `i` to be an `.assign`
 whose checked plan is exactly the candidate's semantic assignment. That is what makes the tempting
 wrong move — validating a kernel from `s.compute` and presenting it as step `i` — fail loud here
@@ -1662,6 +1662,18 @@ def idStepCandidate (raw : RawEvalPlan) : Option JaxExecutableCandidate :=
        | .ok _ => true
        | _ => false)
   | none => false
+
+-- `checkJaxScatterSupport` (the render path's gate) admits the identity scatter's compute half, and
+-- grades it with the SAME policy as an assignment: clone `idScatter`, change the compute algebra
+-- only (max-plus) and it is refused as `unsupportedAlgebra`, exactly what `checkJaxAssignSupport`
+-- says of the same assignment.
+#guard match checkScatter idSigs idScatter with
+  | .ok c => (match checkJaxScatterSupport idSigs 0 c with | .ok _ => true | .error _ => false)
+  | .error _ => false
+#guard match checkScatter idSigs { idScatter with compute := { idAssign with algebra := admittedAlgebraMax } } with
+  | .ok c => (match checkJaxScatterSupport idSigs 0 c with
+              | .error (.unsupportedAlgebra 0 _) => true | _ => false)
+  | .error _ => false
 
 /-! ## f32 slice Task 2, fixtures 23 and 24: `validateAndConstructExecutable`'s plan-level gate
 
