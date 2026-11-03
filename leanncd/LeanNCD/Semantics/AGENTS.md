@@ -177,7 +177,7 @@ occurs among the writer's own source axes (D5, identity slots included: with `S(
 keeps the derived `[4, 3]` (`r1Surf`), two such writers publish the declared `[8, 3]` (`r2Surf`)), so `fI1`/`fI2`/`fMask`/`fFbig`
 are `parity`, not `known:extent` (the condition remains only where production derives the shape, an unboxed single write). Multi-axis and constant
 groups are admitted by the oracle sort rules (`OracleSortRules`). The test-side `predictedExtent` still uses the legacy
-sum rule for a multi-axis slot (unexercised; parked). Scan-local multi-axis slots stay refused by capability (`multiAxisScatterLhs`; F3-b stage 2: the checked scan path cannot place a colliding multi-axis write yet, while the reference already sums those, F3-a). A surface constant scan slot is admitted since F3-b stage 1 (lowered to a unit-axis row; a hand-built raw one is still refused, `scatterOrAffineLhs` and `scanWriteRowNotAdmitted`). See the
+sum rule for a multi-axis slot (unexercised; parked). Scan-local multi-axis slots stay refused by capability (`multiAxisScatterLhs`; F3-b stage 2: the checked scan path cannot place a colliding multi-axis write yet, while the reference already sums those, F3-a). A surface constant scan slot is admitted since F3-b stage 1 (lowered to a unit-axis row; a raw one in a hand-built `ScheduledProgram` is still refused, `scatterOrAffineLhs` and `scanWriteRowNotAdmitted`). See the
 [source correspondence record](../../../papers/semantics/source_correspondence_record.md)
 for scope and limits.
 

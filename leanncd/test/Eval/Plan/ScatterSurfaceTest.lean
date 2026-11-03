@@ -287,6 +287,37 @@ def scanMultiStep : TLProgram := tlprog!{
 }
 #guard compErr scanMultiStep ==
   some "preflight LeanNCD.Eval.Plan.CapabilityError.multiAxisScatterLhs \"G: affine LHS slot\""
+-- KNOWN LIMIT (F3-b stage 1 review R1, parked): a scan state's published extent comes from its slots, not
+-- from a pinned declaration of the axis. `j` is declared 3 wide, yet `=1` publishes `G` with 2 rows; the
+-- top-level twin `S(j=3)`, `S[=5]` is refused (`writerExtentExceedsBox`), a strided scan slot `G[2*j, ..]`
+-- behaves the same way (pre-existing, scan-wide). All three legs agree. If a pinned declaration is ever
+-- enforced for scan states, this fixture must flip to a typed refusal deliberately.
+def scanConstPinned : TLProgram := tlprog!{
+  axis j : ℕ = 3
+  iter l = 3
+  tensor f32 G(j, l), X(j), W(j, k)
+  G[=1, 0] := X[j]
+  G[=1, l +1] := G[j, l] · W[j, k]
+}
+#guard compErr scanConstPinned == none
+#guard agreeOf "G" scanConstPinned [2, 3] #[0, 0, 0, 6, 42, 294] #[0, 0, 0, 6, 42, 294]
+-- Review R3: a PREDICATE scan state with a constant slot. The reference runs it; both checked plans refuse
+-- it at the existing predicate-scatter-destination capability tier (no new geometry; same split as the
+-- top-level predicate scatter in `ScanTest`).
+def scanConstPred : TLProgram := tlprog!{
+  iter l = 3
+  predicate G(j, l)
+  tensor f32 X(j), W(j, k)
+  G[=2, 0] := X[j]
+  G[=2, l +1] := G[j, l] · W[j, k]
+}
+#guard compErr scanConstPred ==
+  some "preflight LeanNCD.Eval.Plan.CapabilityError.predicateScatterDest \"G: predicate scatter destination\""
+#guard refErr scanConstPred == none
+#guard planErr64 scanConstPred ==
+  some (some (.capability (.predicateScatterDest "G: predicate scatter destination")))
+#guard planErr32 scanConstPred ==
+  some (some (.capability (.predicateScatterDest "G: predicate scatter destination")))
 
 -- R1/R2 (D5 pinned observation; review finding L1-1). Donor: the surface fixture `f1Surf` above (same
 -- pinned-declaration constant writers), with a rank-2 destination `S(k, b)` where EVERY declared axis is
