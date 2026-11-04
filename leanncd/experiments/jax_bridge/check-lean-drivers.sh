@@ -56,6 +56,7 @@ run_driver EvalPlanAffineSmoke "$OUT/evalplan_affine_smoke.py"
 run_driver EvalPlanAffineCorpus "$OUT/evalplan_affine_corpus.py"
 run_driver EvalPlanAffineSmoke32 "$OUT/evalplan_affine_smoke32.py" "$STRIDE"
 run_driver EvalPlanScatterSmoke "$OUT/evalplan_scatter_smoke64.py" "$OUT/evalplan_scatter_smoke32.py"
+run_driver EvalPlanNonlinSmoke "$OUT/evalplan_nonlin_smoke64.py" "$OUT/evalplan_nonlin_smoke32.py"
 
 if [[ ${#failed[@]} -gt 0 ]]; then
   echo "FAILED drivers: ${failed[*]}"
