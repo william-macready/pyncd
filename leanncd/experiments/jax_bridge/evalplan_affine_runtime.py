@@ -39,6 +39,13 @@ Load-bearing properties (whole-branch review gate):
   It is bit-identical to ordered/Lean when no two source coordinates share a destination cell (or
   every partial sum is exactly representable); with collisions XLA's accumulation order is
   unspecified, so float results agree only within rounding. The table is range-checked at trace time.
+* **Pointwise and axiswise nodes (`"kind": "pointwise"` / `"axiswise"`).** One source slot to one
+  destination slot, shape-preserving. Each formula mirrors `LeanNCD.Eval.Nonlin` operation for
+  operation: relu is `where(0 <= x, x, 0)` (Lean's `max 0 x`), row sums and the softmax row maximum
+  are sequential left folds over the UNMASKED entries (a masked step carries a static row-major
+  `include` table decided in Lean; the runtime never sees a predicate), and an all-masked, zero-sum
+  or all-zero row is exactly zero. The result agrees with Lean only within a tolerance, not bit for
+  bit: `exp`/`tanh`/`pow` come from XLA, not Lean's libm.
 * **Differentiable** with respect to the floating input tensors (integer gather + `where` + loops).
 """
 

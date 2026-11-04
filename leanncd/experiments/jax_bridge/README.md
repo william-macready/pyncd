@@ -336,12 +336,54 @@ and ordered: none; fast: one per non-empty scatter node), since results alone ca
 | scatter under `einsumOnly` | `unsupportedStep` (einsum is a gather; no scatter form) |
 | scatter in the evidence path | `lowerCheckPlanToCandidate` / `JaxExecutableWellFormed`: `unsupportedStep` (no `ExecutionEvidence` for a scatter) |
 | tropical, Boolean, contextful or unary-read scatter | the compute-half gate (`checkJaxScatterSupport`): `unsupportedAlgebra` etc. |
-| scan, pointwise, axiswise | `unsupportedStep` |
+| scan | `unsupportedStep` |
 
 Run: `./run-evalplan-scatter.sh` (generates `EvalPlanScatterSmoke.lean`'s binary64 + binary32
 fixtures, then `evalplan_scatter_smoke.py float64|float32`: eager and jit bit comparison, a pinned
 collision-order case, a signed-zero case, a gradient). Mutation record for the Python half:
 `mutation_python_manifest.py` (`papers/semantics/jax_scatter_mutations_python.json`).
+
+### Pointwise and axiswise steps (tolerance-compared, JAX pointwise slice)
+
+A prepared plan whose steps include a `.pointwise` (`relu`, `sigmoid`, `tanh`, `gelu`, `leakyrelu`) or an
+`.axiswise` (`softmax`, `normalize`, `l2normalize`, with or without a `where` mask) step now renders and
+runs under `affineReference`, in both precisions; with the assignments JAX already ran, a single-layer
+transformer (attention, causal softmax, `normalize`, relu feed-forward) runs end to end. `renderPointwiseNode`
+emits `"kind": "pointwise"`, the source and destination slots, the shape and the function name;
+`renderAxiswiseNode` adds `"axis_pos"` and, for a MASKED step only, a static `"include"` table: one `0`/`1`
+per coordinate in row-major order, decided in Lean by the dense worker's own predicate
+(`axiswiseIncludedPredicate`, a delegation to the worker's mask handling), so the runtime never sees a
+predicate. A mask the worker refuses is unreachable for a checked plan (`maskWidthMismatch`); the codegen
+still refuses it (`axiswiseIncludeRefused`) rather than emit an unmasked table. There is no separate support
+gate: `checkPlan` already ran the nonlinearity checkers under the plan's own signature table, and these
+steps have no compute half to grade.
+
+The runtime mirrors `LeanNCD.Eval.Nonlin` operation for operation: relu is `where(0 <= x, x, 0)` (Lean's
+`max 0 x`, so `relu(NaN)` is `+0`; never `jnp.maximum`), row sums and the softmax row maximum are sequential
+left folds (`fori_loop` over the row axis, vectorised across rows) over the UNMASKED entries, an all-masked
+row and a zero-sum or all-zero row are exactly zero, and the binary32 constants are the exact bit patterns of
+Lean's. Unlike scatter, the result is NOT bit-identical to Lean: `exp`, `tanh` and `pow` come from XLA, not
+from Lean's libm, so the verifier compares within `rtol`/`atol` (`1e-12`/`1e-14` binary64, `1e-5`/`1e-6`
+binary32), measured, not guessed. On this CPU backend `normalize`, `l2normalize`, `sigmoid`, `leakyrelu` and
+`relu` were bit-identical to Lean in both precisions and so was binary32 `softmax`; binary64 `softmax`,
+`tanh` and `gelu` differed by at most a few ulps (binary32 `gelu`: up to `2.5e-5` relative, at outputs near
+`4e-3`, which the absolute tolerance covers). An observation about this backend, not a guarantee. Relu is bit-exact
+in eager mode only: the surface language emits an assignment copy before a pointwise step and XLA drops
+that copy's `+0` seed under `jax.jit` (the pitfall above), so a jit run can flip the sign of a zero.
+
+| Still refused | Where |
+| --- | --- |
+| pointwise or axiswise under `einsumOnly` | `unsupportedStep` (no einsum form) |
+| pointwise or axiswise in the evidence path | `lowerCheckPlanToCandidate` / `JaxExecutableWellFormed`: `unsupportedStep` (no `ExecutionEvidence`) |
+| an inline unary read (`sqrt`, `exp`, `log`, `sin`, `cos`, reciprocal `/`) | the assignment gate (`checkJaxAssignSupport`): `unaryFactor`; so a LayerNorm with `eps` (`sqrt` and division) does not render, while `normalize`/`l2normalize` do |
+
+Run: `./run-evalplan-nonlin.sh` (generates `EvalPlanNonlinSmoke.lean`'s binary64 + binary32 fixtures, then
+`evalplan_nonlin_smoke.py float64|float32`: 15 fixtures per precision, eager and jit, including the
+single-layer transformer with every materialized output compared, a pinned reduction-order case, rows that
+pin the softmax maximum, relu over a NaN, and a `jit(grad)` finite check). Mutation records:
+`papers/semantics/jax_nonlin_mutations_post.json` (Lean render, `mutation-manifest.sh`) and
+`papers/semantics/jax_nonlin_mutations_python.json` (runtime and verifier, `mutation_python_manifest.py`,
+which takes a per-entry `verifier`).
 
 ## Scaling probe
 
