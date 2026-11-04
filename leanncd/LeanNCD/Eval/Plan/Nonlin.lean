@@ -194,6 +194,13 @@ private def axiswiseIncluded (a : RawAxiswisePlan) :
     | none => true
     | some m => (evalPosBool (coord.map (Int.ofNat ·)) m).toOption.getD true
 
+/-- Public view of `axiswiseIncluded` for static renderers (the JAX bridge's include table): the very
+    same predicate the dense workers hand to `applyCore`/`applyCore32`, width check included — a
+    delegation, not a second copy, so a renderer cannot drift from the worker. -/
+def axiswiseIncludedPredicate (a : RawAxiswisePlan) :
+    Except PositionalInputError (List Nat → Bool) :=
+  axiswiseIncluded a
+
 /-- Run one checked pointwise operation over a binary64 store. **The storage-kind guard is the FIRST
     statement, before the store is looked at:** `.float32` evidence (from `checkPointwiseF32`) is
     refused as `storageKindMismatch .float64 .float32` even when the store is empty, rather than

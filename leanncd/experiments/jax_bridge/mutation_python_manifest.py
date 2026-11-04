@@ -4,7 +4,9 @@
 `evalplan_affine_runtime.py`. This is its Python counterpart, over the SAME entry fields
 (`label`, `task`, `file`, `old`, `new`, `expect`), except that `targets` is replaced by `runs`: the
 verifier invocations (`float64` / `float32`) executed against the pre-generated Lean modules in
-`.cache` (produced by `run-evalplan-scatter.sh`).
+`.cache` (produced by `run-evalplan-scatter.sh`). An entry may carry `"verifier": "<stem>"` (default
+`evalplan_scatter_smoke`) to run `<stem>.py` against `.cache/generated_<stem>{64,32}.py` instead, e.g.
+`evalplan_nonlin_smoke` (produced by `run-evalplan-nonlin.sh`).
 
 Usage: mutation_python_manifest.py [--observe] <manifest.json>   (run from anywhere)
 Per entry: sha256 the file, require `old` to occur exactly once, mutate, run every verifier, require
@@ -16,21 +18,26 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PY = HERE / ".cache" / "python" / "bin" / "python"
-MODULE = {"float64": HERE / ".cache" / "generated_evalplan_scatter_smoke64.py",
-          "float32": HERE / ".cache" / "generated_evalplan_scatter_smoke32.py"}
+DEFAULT_VERIFIER = "evalplan_scatter_smoke"  # an entry may name another with a `verifier` field
+SUFFIX = {"float64": "64", "float32": "32"}
+# A mutation that keeps the file size, restored within the same second, would leave a stale `.pyc`
+# (validated by whole-second mtime and size) and make the post-restore baseline run the mutant.
+ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
 
 
-def verify(runs: list[str]) -> tuple[int, str]:
+def verify(runs: list[str], verifier: str = DEFAULT_VERIFIER) -> tuple[int, str]:
     out, code = "", 0
     for r in runs:
-        p = subprocess.run([str(PY), str(HERE / "evalplan_scatter_smoke.py"), r, str(MODULE[r])],
-                           capture_output=True, text=True)
+        module = HERE / ".cache" / f"generated_{verifier}{SUFFIX[r]}.py"
+        p = subprocess.run([str(PY), str(HERE / f"{verifier}.py"), r, str(module)],
+                           capture_output=True, text=True, env=ENV)
         out += p.stdout + p.stderr
         code = code or p.returncode
     return code, out
@@ -45,12 +52,14 @@ def main() -> int:
     observe = "--observe" in args
     manifest = Path([a for a in args if not a.startswith("--")][0]).resolve()
     entries = json.loads(manifest.read_text())
-    code0, out0 = verify(["float64", "float32"])
-    if code0:
-        print("baseline FAILS:\n" + out0)
-        return 1
+    for v in sorted({e.get("verifier", DEFAULT_VERIFIER) for e in entries}):
+        code0, out0 = verify(["float64", "float32"], v)
+        if code0:
+            print(f"baseline FAILS ({v}):\n" + out0)
+            return 1
     failed = 0
     for e in entries:
+        v = e.get("verifier", DEFAULT_VERIFIER)
         path = HERE / e["file"]
         before, text = sha(path), path.read_text()
         if text.count(e["old"]) != 1:
@@ -59,11 +68,11 @@ def main() -> int:
             continue
         try:
             path.write_text(text.replace(e["old"], e["new"]))
-            code, out = verify(e["runs"])
+            code, out = verify(e["runs"], v)
         finally:
             path.write_text(text)
         restored = sha(path) == before
-        rcode, _ = verify(["float64", "float32"])
+        rcode, _ = verify(["float64", "float32"], v)
         killed = code != 0
         if observe and killed:
             lines = [l for l in out.splitlines() if "Error" in l]

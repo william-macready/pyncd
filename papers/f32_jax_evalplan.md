@@ -56,7 +56,7 @@ precisions.
 |---|---|---|
 | binary32 under `einsumOnly` (any plan, any assignment, zero-step included) | `requireModeStorage .einsumOnly` at every einsum door; `einsumStorageAdmitted` in `validateEinsum` | **closed decision, no owner** (§6 item 2) |
 | Boolean dest/source, tropical algebra, unary read, Iverson factor, contextful assignment | `checkJaxAssignSupport` / `requireNoIverson` / `renderAffineTerm`, unchanged under both kinds | permanent fail-loud boundary (README "What this backend REJECTS") |
-| scan, scatter, pointwise/axiswise steps on JAX | `JaxExecutableWellFormed` / `lowerCheckPlanToCandidate` (`unsupportedStep`), in every precision | not this slice; no JAX scan/nonlinearity exists in either precision. Scatter: since the JAX scatter slice `affineReference` renders and runs it in both precisions, but this evidence path and `einsumOnly` still refuse it |
+| scan, scatter, pointwise/axiswise steps on JAX | `JaxExecutableWellFormed` / `lowerCheckPlanToCandidate` (`unsupportedStep`), in every precision | not this slice; no JAX scan exists in either precision. Scatter and pointwise/axiswise: since the JAX scatter slice and the JAX pointwise slice `affineReference` renders and runs them in both precisions (pointwise/axiswise within a measured tolerance, not bit for bit), but this evidence path and `einsumOnly` still refuse them |
 | mixed f32/f64 | Step 0b | F32-E (contingent) |
 
 **`einsumOnly` binary32 is NOT deferred-but-planned.** It is refused, with no tolerance label, as a

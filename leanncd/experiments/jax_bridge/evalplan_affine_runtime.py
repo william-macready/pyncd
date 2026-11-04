@@ -39,6 +39,13 @@ Load-bearing properties (whole-branch review gate):
   It is bit-identical to ordered/Lean when no two source coordinates share a destination cell (or
   every partial sum is exactly representable); with collisions XLA's accumulation order is
   unspecified, so float results agree only within rounding. The table is range-checked at trace time.
+* **Pointwise and axiswise nodes (`"kind": "pointwise"` / `"axiswise"`).** One source slot to one
+  destination slot, shape-preserving. Each formula mirrors `LeanNCD.Eval.Nonlin` operation for
+  operation: relu is `where(0 <= x, x, 0)` (Lean's `max 0 x`), row sums and the softmax row maximum
+  are sequential left folds over the UNMASKED entries (a masked step carries a static row-major
+  `include` table decided in Lean; the runtime never sees a predicate), and an all-masked, zero-sum
+  or all-zero row is exactly zero. The result agrees with Lean only within a tolerance, not bit for
+  bit: `exp`/`tanh`/`pow` come from XLA, not Lean's libm.
 * **Differentiable** with respect to the floating input tensors (integer gather + `where` + loops).
 """
 
@@ -49,6 +56,7 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 def require_x64() -> None:
     """Fail loud if JAX x64 is not enabled before reference execution."""
@@ -194,6 +202,108 @@ def _run_scatter_node(
     return jnp.reshape(jax.lax.fori_loop(0, len(idx), body, dest), dest_shape)
 
 
+# --- Pointwise / axiswise nonlinearities (tolerance-compared, not bit-exact) -----------------------
+#
+# Each formula mirrors `LeanNCD.Eval.Nonlin` (`pointwiseWith`, `softmaxRowWith`, `normalizeRowWith`,
+# `l2normalizeRowWith`) operation for operation and association for association. Row sums and the
+# softmax row maximum are sequential left folds (`fori_loop` over the row axis, vectorised across
+# rows), so the only expected difference from the Lean worker is the libm-vs-XLA implementation of
+# `exp`/`tanh`/`pow`/`sqrt`. Lean's `max a b` is `if a <= b then b else a`, so relu is
+# `where(0 <= x, x, 0)`, never `jnp.maximum`.
+
+# binary32 constants are the exact bit patterns of `float32NonlinOps` (not a rounded Python literal).
+_F32_CONST_BITS = {"gelu_scale": 0x3F4C422A, "gelu_cubic": 0x3D372713, "leak_slope": 0x3C23D70A}
+_F64_CONST = {"gelu_scale": 0.7978845608028654, "gelu_cubic": 0.044715, "leak_slope": 0.01}
+
+
+def _nonlin_const(name: str, dtype: Any) -> jax.Array:
+    if dtype == jnp.float32:
+        return jnp.asarray(np.array([_F32_CONST_BITS[name]], dtype=np.uint32).view(np.float32)[0])
+    return jnp.asarray(_F64_CONST[name], dtype=dtype)
+
+
+def _pointwise(fn: str, x: jax.Array, dtype: Any) -> jax.Array:
+    zero = jnp.zeros((), dtype)
+    one = jnp.ones((), dtype)
+    if fn == "relu":
+        return jnp.where(zero <= x, x, zero)
+    if fn == "sigmoid":
+        return one / (one + jnp.exp(-x))
+    if fn == "tanh":
+        return jnp.tanh(x)
+    if fn == "gelu":
+        half, three = jnp.asarray(0.5, dtype), jnp.asarray(3.0, dtype)
+        cube = jnp.power(x, three)  # float exponent: `powf`/`pow`, not the integer-power x*x*x
+        inner = _nonlin_const("gelu_scale", dtype) * (x + _nonlin_const("gelu_cubic", dtype) * cube)
+        return (half * x) * (one + jnp.tanh(inner))
+    if fn == "leakyrelu":
+        return jnp.where(zero <= x, x, _nonlin_const("leak_slope", dtype) * x)
+    raise ValueError(f"unsupported pointwise fn {fn!r}")
+
+
+def _run_pointwise_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
+    x = store[node["source"]]
+    if tuple(x.shape) != tuple(node["shape"]):
+        raise ValueError(f"pointwise source has shape {tuple(x.shape)}, record says {tuple(node['shape'])}")
+    return _pointwise(node["fn"], x, dtype)
+
+
+def _row_fold(n: int, init: jax.Array, step: Any) -> jax.Array:
+    """Sequential left fold over the last axis' `n` entries, vectorised across the other axes."""
+    return jax.lax.fori_loop(0, n, step, init)
+
+
+def _axiswise(fn: str, xm: jax.Array, inc: jax.Array, dtype: Any) -> jax.Array:
+    """Rows are the last axis of `xm`; `inc` is the static include table (bool, same shape)."""
+    n = xm.shape[-1]
+    zero = jnp.zeros((), dtype)
+    one = jnp.ones((), dtype)
+    row0 = jnp.zeros(xm.shape[:-1], dtype)
+    if fn == "softmax":
+        def max_step(i, carry):
+            m, seen = carry
+            xi, ii = xm[..., i], inc[..., i]
+            folded = jnp.where(seen, jnp.where(m <= xi, xi, m), xi)  # Lean max a b = if a <= b then b else a
+            return jnp.where(ii, folded, m), seen | ii
+        m, seen = _row_fold(n, (row0, jnp.zeros(xm.shape[:-1], bool)), max_step)
+        m = jnp.where(seen, m, row0)  # no unmasked entry: 0
+        e = jnp.exp(jnp.where(inc, xm - m[..., None], zero))
+        e = jnp.where(inc, e, zero)
+        s = _row_fold(n, row0, lambda i, acc: acc + e[..., i])
+        ok = inc & (s != zero)[..., None]
+        return jnp.where(ok, e / jnp.where(s != zero, s, one)[..., None], zero)
+    if fn == "normalize":
+        s = _row_fold(n, row0, lambda i, acc: jnp.where(inc[..., i], acc + xm[..., i], acc))
+        ok = inc & (s != zero)[..., None]
+        return jnp.where(ok, xm / jnp.where(s != zero, s, one)[..., None], zero)
+    if fn == "l2normalize":
+        ss = _row_fold(n, row0, lambda i, acc: jnp.where(inc[..., i], acc + xm[..., i] * xm[..., i], acc))
+        nz = ss != zero  # sqrt(ss) == 0 exactly when ss == 0
+        s = jnp.sqrt(jnp.where(nz, ss, one))
+        return jnp.where(inc & nz[..., None], xm / s[..., None], zero)
+    raise ValueError(f"unsupported axiswise fn {fn!r}")
+
+
+def _run_axiswise_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
+    x = store[node["source"]]
+    shape, axis = tuple(node["shape"]), node["axis_pos"]
+    if tuple(x.shape) != shape:
+        raise ValueError(f"axiswise source has shape {tuple(x.shape)}, record says {shape}")
+    if not 0 <= axis < len(shape):
+        raise ValueError(f"axiswise axis_pos {axis} out of range for shape {shape}")
+    table = node.get("include")  # static row-major 0/1 table; absent for an unmasked step
+    if table is None:
+        inc = np.ones(shape, dtype=bool)
+    else:
+        if len(table) != _prod(list(shape)):
+            raise ValueError(f"axiswise include table has {len(table)} entries for shape {shape}")
+        inc = np.array(table, dtype=bool).reshape(shape)
+    if x.size == 0:
+        return x
+    out = _axiswise(node["fn"], jnp.moveaxis(x, axis, -1), jnp.asarray(np.moveaxis(inc, axis, -1)), dtype)
+    return jnp.moveaxis(out, -1, axis)
+
+
 def _exec_node(
     node: dict[str, Any], store: list[jax.Array], dtype: Any, scatter_mode: str = "ordered"
 ) -> jax.Array:
@@ -203,6 +313,10 @@ def _exec_node(
         return _run_node(node, store, dtype)
     if kind == "scatter":
         return _run_scatter_node(node, store, dtype, scatter_mode)
+    if kind == "pointwise":
+        return _run_pointwise_node(node, store, dtype)
+    if kind == "axiswise":
+        return _run_axiswise_node(node, store, dtype)
     raise ValueError(f"unsupported node kind {kind!r}")
 
 
