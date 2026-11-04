@@ -72,6 +72,12 @@ inductive JaxCodegenError
   -- and the dense worker fails loud the same way), so this is the codegen's own backstop: the
   -- table is never emitted with an out-of-range entry. Carries the node and both coordinates.
   | scatterPlacementOutOfRange (nodeIndex : Nat) (destCoord sourceCoord : List Int)
+  -- The dense worker's own mask handling (`axiswiseIncludedPredicate`) refuses an axiswise step's
+  -- mask — in practice a leaf whose width is not the step's rank (`predicateWidthMismatch`).
+  -- Unreachable for a `CheckedAxiswisePlan` (`checkAxiswise`'s `maskWidthMismatch`), so this is the
+  -- codegen's own backstop: the include table is never built from a mask the worker would refuse.
+  -- Carries the node and the worker's own refusal.
+  | axiswiseIncludeRefused (nodeIndex : Nat) (cause : PositionalInputError)
   -- A `.iverson` predicate factor inside an assignment term: this JAX backend lowers only affine
   -- reads to einsum/affine-table kernels, so a term carrying an Iverson factor is rejected here with
   -- its node/term/factor location. (Predicate/mask execution is not lowered to JAX — Global
@@ -583,6 +589,56 @@ private def renderScatterNode (sigs : Array TensorSignature) (nodeIndex : Nat)
     ", \"dest_shape\": " ++ pyNatListLit s.destShape ++
     ", \"dest_flat_index\": " ++ pyNatListLit idxs ++ "}"
 
+/-- The name the Python runtime dispatches a pointwise function on. -/
+def pointwiseFnName : PointwiseFn → String
+  | .relu => "relu" | .sigmoid => "sigmoid" | .tanh => "tanh" | .gelu => "gelu"
+  | .leakyrelu => "leakyrelu"
+
+/-- The name the Python runtime dispatches an axiswise function on. -/
+def axiswiseFnName : AxiswiseFn → String
+  | .softmax => "softmax" | .normalize => "normalize" | .l2normalize => "l2normalize"
+
+/-- An axiswise step's static include table: `none` for an unmasked step (every coordinate
+    included), otherwise one `1`/`0` per coordinate of `shape` in row-major order
+    (`DenseTensor.allCoords`, the order the dense worker's `perRowCoreWith` walks), decided by the
+    SAME predicate the worker applies (`axiswiseIncludedPredicate`, a delegation to the worker's own
+    `axiswiseIncluded`: width check, then `evalPosBool`, an evaluation error counting as included).
+    The runtime never sees the mask. A refusal by the worker's handling (a width-mismatched mask,
+    unreachable for a checked step) throws the located `axiswiseIncludeRefused` instead of an
+    unmasked or partial table. Takes the raw step so the backstop is testable on a hand-built plan. -/
+def buildAxiswiseInclude (nodeIndex : Nat) (a : RawAxiswisePlan) :
+    Except JaxCodegenError (Option (Array Nat)) :=
+  match a.mask with
+  | none => .ok none
+  | some _ =>
+    match axiswiseIncludedPredicate a with
+    | .error e => .error (.axiswiseIncludeRefused nodeIndex e)
+    | .ok inc =>
+        .ok (some ((DenseTensor.allCoords a.shape.toList).toArray.map fun c => if inc c then 1 else 0))
+
+/-- One pointwise node's static record: `"source"`/`"dest"` slots, the (shape-preserving) `"shape"`,
+    and the function name. No support gate: the evidence's own checker (`checkPlan` under the very
+    `tensorSigs` this renderer reads) is the only authority — see `renderAffineNodesArray`. -/
+private def renderPointwiseNode (p : CheckedPointwisePlan) : String :=
+  "{\"kind\": \"pointwise\", \"source\": " ++ toString p.raw.sourceSlot ++
+    ", \"dest\": " ++ toString p.raw.destinationSlot ++
+    ", \"shape\": " ++ pyNatListLit p.raw.shape ++
+    ", \"fn\": " ++ pyStrLit (pointwiseFnName p.raw.fn) ++ "}"
+
+/-- One axiswise node's static record: as pointwise plus `"axis_pos"`, and, for a MASKED step only, the
+    `"include"` table (`buildAxiswiseInclude`); an unmasked step omits the key (all included). -/
+private def renderAxiswiseNode (nodeIndex : Nat) (a : CheckedAxiswisePlan) :
+    Except JaxCodegenError String := do
+  let inc ← buildAxiswiseInclude nodeIndex a.raw
+  let incStr := match inc with
+    | none => ""
+    | some t => ", \"include\": " ++ pyNatListLit t
+  return "{\"kind\": \"axiswise\", \"source\": " ++ toString a.raw.sourceSlot ++
+    ", \"dest\": " ++ toString a.raw.destinationSlot ++
+    ", \"shape\": " ++ pyNatListLit a.raw.shape ++
+    ", \"axis_pos\": " ++ toString a.raw.axisPos ++
+    ", \"fn\": " ++ pyStrLit (axiswiseFnName a.raw.fn) ++ incStr ++ "}"
+
 /-- One assignment node's static data: destination slot, output shape, and every term's precomputed
     tables in checked term-array order. Rejects a term carrying an Iverson factor with its located
     error (via `renderAffineTerm`).
@@ -600,7 +656,10 @@ private def renderAffineNode (sigs : Array TensorSignature) (nodeIndex : Nat)
     `checkPlan`'s construction). Supported assignments pass `renderAffineNode`'s semantic gate; a
     `.scatter` node passes `requireJaxScatterSupport` (its compute half graded by the same policy)
     and renders as a source-driven record (`renderScatterNode`: compute fields + `dest_shape` + the
-    static `dest_flat_index` placement table, ordered mode); a `.pointwise`/`.axiswise`/`.scan` node
+    static `dest_flat_index` placement table, ordered mode); a `.pointwise`/`.axiswise` node renders
+    as a gate-free record (`renderPointwiseNode`/`renderAxiswiseNode`: slots, shape, function name,
+    and for a masked axiswise step the static `include` table — the checker that produced the
+    evidence already ran under this very `tensorSigs`, so a re-run would add nothing); a `.scan` node
     has no affine-table lowering here, so the array build rejects it with the one located
     unsupported-step error carrying that node's outer-graph index. -/
 private def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenError String := do
@@ -610,7 +669,9 @@ private def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenErro
     match c.checkedNodes[ni] with
     | .assign a => entries := entries.push (← renderAffineNode sigs ni a)
     | .scatter s => entries := entries.push (← renderScatterNode sigs ni s)
-    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
+    | .pointwise p => entries := entries.push (renderPointwiseNode p)
+    | .axiswise a => entries := entries.push (← renderAxiswiseNode ni a)
+    | .scan _ => throw (.unsupportedStep ni)
   return "[" ++ String.intercalate ", " entries.toList ++ "]"
 
 private def renderBindingList (bs : Array SlotBinding) : String :=
@@ -2168,5 +2229,92 @@ def b5FirstScatter : Option (Nat × CheckedScatterPlan × Array TensorSignature)
                     | .error (.unsupportedAlgebra 0) => true | _ => false)
         | .error _ => false
     | _ => false)
+
+/-! ## 11. Pointwise and axiswise rendering (JAX pointwise slice, tolerance-compared)
+
+`affineReference` now RENDERS `.pointwise`/`.axiswise` steps (`renderPointwiseNode`/
+`renderAxiswiseNode`); `einsumOnly` and the evidence door (`lowerCheckPlanToCandidate`) still refuse
+them (the three Slice 5 guards above are unchanged). -/
+
+def ntSigs64 (shape : Array Nat) : Array TensorSignature :=
+  #[ { shape := shape, dtype := .f64 }, { shape := shape, dtype := .f64 } ]
+
+/-- Input slot 0, one pointwise relu step 0 -> 1 over `[3]`. -/
+def ntPointwiseRaw : RawEvalPlan :=
+  { tensorSigs := ntSigs64 #[3], inputSlots := #[0]
+  , steps := #[PlanStep.pointwise { sourceSlot := 0, destinationSlot := 1, shape := #[3], fn := .relu }] }
+
+/-- Causal mask over the local output coordinate `[q, s]`: `s <= q`. -/
+def causalMask : PosBoolExpr :=
+  .rel .le (.affine ⟨#[0, 1], 0⟩) (.affine ⟨#[1, 0], 0⟩)
+
+def causalStep : RawAxiswisePlan :=
+  { sourceSlot := 0, destinationSlot := 1, shape := #[3, 3], axisPos := 1, fn := .softmax
+  , mask := some causalMask }
+
+def ntCausalRaw : RawEvalPlan :=
+  { tensorSigs := ntSigs64 #[3, 3], inputSlots := #[0], steps := #[PlanStep.axiswise causalStep] }
+
+def ntPlainRaw : RawEvalPlan :=
+  { tensorSigs := ntSigs64 #[2, 3], inputSlots := #[0]
+  , steps := #[PlanStep.axiswise { sourceSlot := 0, destinationSlot := 1, shape := #[2, 3]
+                                  , axisPos := 0, fn := .l2normalize }] }
+
+def ntRender (raw : RawEvalPlan) : Option String :=
+  match checkPlan raw with
+  | .ok c => (renderAffinePlanPositional c).toOption
+  | .error _ => none
+
+def ntPrepared (raw : RawEvalPlan) (shapeSlots : Array TensorSlot) : Option PreparedPlan :=
+  match checkPlan raw with
+  | .error _ => none
+  | .ok c => match checkBindings raw.inputSlots #[{ name := "x", slot := 0 }] with
+    | .error _ => none
+    | .ok requiredInputs =>
+        some { plan := c
+             , bindings := { requiredInputs
+                           , materializedNames := shapeSlots.map (fun slot => { name := "out", slot }) }
+             , warnings := [] }
+
+-- Record text, observed from a real run (`#eval ntRender …`): a pointwise node …
+#guard ntRender ntPointwiseRaw ==
+  some "{\"num_slots\": 2, \"input_slots\": [0], \"nodes\": [{\"kind\": \"pointwise\", \"source\": 0, \"dest\": 1, \"shape\": [3], \"fn\": \"relu\"}]}"
+
+-- … a MASKED axiswise node: the include table is the causal `s <= q` mask, row-major over `[3, 3]`
+-- (row q = 0 keeps only s = 0, q = 1 keeps s <= 1, q = 2 keeps all) …
+#guard ntRender ntCausalRaw ==
+  some "{\"num_slots\": 2, \"input_slots\": [0], \"nodes\": [{\"kind\": \"axiswise\", \"source\": 0, \"dest\": 1, \"shape\": [3, 3], \"axis_pos\": 1, \"fn\": \"softmax\", \"include\": [1, 0, 0, 1, 1, 0, 1, 1, 1]}]}"
+
+-- … and an UNMASKED axiswise node carries no `include` key at all (every coordinate included).
+#guard ntRender ntPlainRaw ==
+  some "{\"num_slots\": 2, \"input_slots\": [0], \"nodes\": [{\"kind\": \"axiswise\", \"source\": 0, \"dest\": 1, \"shape\": [2, 3], \"axis_pos\": 0, \"fn\": \"l2normalize\"}]}"
+
+-- The record is dtype-free: the same plan retagged binary32 renders the identical text.
+#guard (ntRender { ntPointwiseRaw with tensorSigs := #[{ shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 }] }
+  == ntRender ntPointwiseRaw) && (ntRender ntPointwiseRaw).isSome
+
+-- Include table: clone `causalStep`, change the relation ONLY (`s <= q` -> `s < q`): the diagonal drops.
+#guard (buildAxiswiseInclude 0
+    { causalStep with mask := some (.rel .lt (.affine ⟨#[0, 1], 0⟩) (.affine ⟨#[1, 0], 0⟩)) }).toOption
+  == some (some #[0, 0, 0, 1, 0, 0, 1, 1, 0])
+
+-- The other two doors stay shut: `einsumOnly` (no pointwise/axiswise form) and the evidence candidate
+-- (no `JaxKernelCandidate` carries one), both with the located `unsupportedStep 0`.
+#guard [ntPointwiseRaw, ntCausalRaw, ntPlainRaw].all fun raw =>
+  match ntPrepared raw #[1] with
+  | none => false
+  | some p =>
+    (match generateNamed .einsumOnly p with | .error (.unsupportedStep 0) => true | _ => false) &&
+    (match lowerCheckPlanToCandidate p with | .error (.unsupportedStep 0) => true | _ => false) &&
+    (renderAffinePlanNamed p).toOption.isSome
+
+-- Fail-loud backstop on a hand-built width-mismatched mask (`maskInclude` is width 1, the step is
+-- rank 2): clone `causalStep`, change `mask` only. The checker refuses it (`maskWidthMismatch 2 1`) so
+-- no `CheckedAxiswisePlan` can reach the renderer; the table builder refuses it with a located error
+-- rather than emit an unmasked or partial table.
+#guard (match checkAxiswise (ntSigs64 #[3, 3]) { causalStep with mask := some maskInclude } with
+    | .error (.maskWidthMismatch 2 1) => true | _ => false) &&
+  (match buildAxiswiseInclude 7 { causalStep with mask := some maskInclude } with
+    | .error (.axiswiseIncludeRefused 7 (.predicateWidthMismatch 2 1)) => true | _ => false)
 
 end JaxBridge
