@@ -312,6 +312,19 @@ def transformerProg32 : TLProgram := tlprog!{
   H[q, m.]         := normalize(Y[q, m] + A[q, m])
 }
 
+-- relu alone, so a NaN input leaves the output finite (Lean's `relu NaN = +0`: `max 0 x` is `x` only
+-- when `0 ≤ x`); the other four functions would return NaN and are covered by `pw`/`pw32`.
+def reluNanProg : TLProgram := tlprog!{
+  axis i : ℕ = 4
+  tensor f64 X(i), R(i)
+  R[i] := relu(X[i])
+}
+def reluNanProg32 : TLProgram := tlprog!{
+  axis i : ℕ = 4
+  tensor f32 X(i), R(i)
+  R[i] := relu(X[i])
+}
+
 /-! ## Inputs (shared by both precisions; `t32` narrows) -/
 
 def pwX : Array Float := #[-3.0, -0.5, 0.0, -0.0, 0.5, 1.0, 2.5]
@@ -319,7 +332,16 @@ def awPlain : Array Float := #[1.0, 2.0, 3.0, 4.0, 0.5, -1.5, 2.0, 0.25]
 def awZeroSum : Array Float := #[1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 0.5, -0.5]
 def awZero : Array Float := #[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 def awLarge : Array Float := #[1000.0, 1001.0, 999.0, 1000.0, -1000.0, -1001.0, 5.0, 6.0]
-def sq3 : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0]
+-- Every entry of row 0 is below `-999`, so a row max folded from `0` instead of from the row's own first
+-- entry makes `exp (x - 0)` underflow to exactly 0 and the whole row collapse to zeros (Lean: a real
+-- distribution). Row 1 is large-negative too.
+def awNegLarge : Array Float := #[-1000.0, -1001.0, -999.0, -1000.0, -500.0, -501.0, -502.0, -503.0]
+-- Causal mask `s ≤ q`: every MASKED entry (row 0: s = 1, 2; row 1: s = 2) is huge. A row max that
+-- includes masked entries makes `exp (x - 2000)` underflow and the row collapse to zeros.
+def causalBig : Array Float := #[0.5, 1000.0, 2000.0, 1.5, 0.25, 900.0, 3.0, 1.0, -2.0]
+def nanX : Float := 0.0 / 0.0
+def reluNanX : Array Float := #[nanX, -1.0, 2.0, 0.0]
+def sq3 : Array Float :=#[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0]
 def firstAxisX : Array Float := #[0.5, -1.0, 2.0, 1.5, -0.25, 3.0]
 def rank3X : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0, 0.0, 0.1, 4.0]
 
@@ -356,6 +378,9 @@ def corpus64 : IO (Array String) := do
         (env64 [("W", t64 [2, 2] #[1.0, -2.0, -1.0, 1.0]), ("X", t64 [2] #[3.0, 1.0]),
                 ("Q", t64 [2, 2] #[1.0, 0.0, 0.0, 1.0]), ("K", t64 [2, 2] #[0.5, -0.5, 1.0, 2.0])]) 1 1,
     ← fixture64 "order" orderProg (env64 [("A", t64 [4] #[1e16, 1.0, -1e16, 1.0])]) 0 1,
+    ← fixture64 "aw_neglarge" awProg (env64 [("A", t64 [2, 4] awNegLarge)]) 0 3,
+    ← fixture64 "causal_big" causalProg (env64 [("X", t64 [3, 3] causalBig)]) 0 3,
+    ← fixture64 "relu_nan" reluNanProg (env64 [("X", t64 [4] reluNanX)]) 1,
     ← fixture64 "transformer" transformerProg
         (env64 [("X", t64 [3, 4] trX), ("W_Q", t64 [2, 2, 4] trWQ), ("W_K", t64 [2, 2, 4] trWK),
                 ("W_V", t64 [2, 2, 4] trWV), ("W_O", t64 [4, 2, 2] trWO),
@@ -377,6 +402,9 @@ def corpus32 : IO (Array String) := do
         (env32 [("W", t32 [2, 2] #[1.0, -2.0, -1.0, 1.0]), ("X", t32 [2] #[3.0, 1.0]),
                 ("Q", t32 [2, 2] #[1.0, 0.0, 0.0, 1.0]), ("K", t32 [2, 2] #[0.5, -0.5, 1.0, 2.0])]) 1 1,
     ← fixture32 "order32" orderProg32 (env32 [("A", t32 [4] #[1e10, 1.0, -1e10, 1.0])]) 0 1,
+    ← fixture32 "aw_neglarge32" awProg32 (env32 [("A", t32 [2, 4] awNegLarge)]) 0 3,
+    ← fixture32 "causal_big32" causalProg32 (env32 [("X", t32 [3, 3] causalBig)]) 0 3,
+    ← fixture32 "relu_nan32" reluNanProg32 (env32 [("X", t32 [4] reluNanX)]) 1,
     ← fixture32 "transformer32" transformerProg32
         (env32 [("X", t32 [3, 4] trX), ("W_Q", t32 [2, 2, 4] trWQ), ("W_K", t32 [2, 2, 4] trWK),
                 ("W_V", t32 [2, 2, 4] trWV), ("W_O", t32 [4, 2, 2] trWO),

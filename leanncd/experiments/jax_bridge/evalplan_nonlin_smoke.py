@@ -149,6 +149,28 @@ def main() -> None:
     assert not within((w * NDT(1.001)).astype(NDT), w), "tolerance accepts a 1e-3 perturbation: vacuous"
     assert not within(np.where(w > 0, NDT(0), w).astype(NDT), w), "tolerance accepts a zeroed output: vacuous"
     print("tolerance self-test: 1e-3 relative perturbation and a zeroed output are rejected")
+    # `require_close` itself must reject a wrong value end to end (not only `within`): a verifier that
+    # compared the JAX output with itself would accept this perturbed output.
+    try:
+        require_close((w * NDT(1.001)).astype(NDT), e, "canary", None)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("require_close accepted a 1e-3 perturbed output: vacuous verifier")
+    print("require_close canary: a 1e-3 perturbed output is rejected end to end")
+
+    # Fixtures that exist to pin semantics a shift-invariant or finite-only comparison would miss:
+    # Lean's `relu NaN` is +0 (`jnp.maximum` would give NaN); the softmax row max must range over the
+    # UNMASKED entries only and start at the row's own first entry, not at 0 (the large-negative and
+    # huge-masked rows underflow to all-zeros otherwise). They only discriminate if Lean's rows are
+    # real distributions, which is asserted here.
+    rn = lean_array(by["relu_nan" + sfx]["expected"]["R"])
+    assert rn.tolist() == [0.0, 0.0, 2.0, 0.0] and not np.signbit(rn[0]), rn.tolist()
+    nl = lean_array(by["aw_neglarge" + sfx]["expected"]["Sm"])
+    assert np.all(np.abs(nl.sum(axis=1) - 1) < 1e-5) and np.all(nl > 0), nl.tolist()
+    cb = lean_array(by["causal_big" + sfx]["expected"]["Sm"])
+    assert cb[0].tolist() == [1.0, 0.0, 0.0] and abs(float(cb[1].sum()) - 1) < 1e-5, cb.tolist()
+    print("pins: relu(NaN) = +0, large-negative and huge-masked softmax rows are real distributions")
 
     # Signed zero: the input `-0.0` reaches relu through the assign copy, which starts from +0 (`+0 + -0 =
     # +0`), so Lean's relu input is +0.0 and its output +0.0; relu is required bit-exact (eager) above.
