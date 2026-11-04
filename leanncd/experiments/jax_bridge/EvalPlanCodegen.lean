@@ -12,11 +12,12 @@ them (plan "Two explicit lowerings"):
 * `einsumOnly` — the completed smoke path. Recognizes a projection-only contraction and emits a real
   `jnp.einsum` call, rejecting every non-projection read with a closed `JaxCodegenError`.
 * `affineReference` — accepts the context-free `f64`/`f32` sum-product, assign-only fragment, with
-  every present factor a plain affine read. It precomputes exact per-factor affine lookup tables
+  every present factor an affine read (an inline unary read is rendered as a `"unary"` key on the
+  factor record; `einsumOnly` and the evidence path still reject it). It precomputes exact per-factor affine lookup tables
   (safe index + validity mask) in Lean using the shared coordinate primitives
   (`Eval.Plan.Coordinates`), and emits static plan DATA that the committed generic runtime
   (`evalplan_affine_runtime.py`) interprets with ordered factor/reduction/term folds. Boolean
-  sources/destinations, tropical algebras, unary or Iverson factors, contextual assignments, and
+  sources/destinations, tropical algebras, Iverson factors, contextual assignments, and
   non-assignment steps fail loud with located typed errors. No `einsum`/`jnp.sum`/tree reduction is
   used on this path.
 
@@ -152,8 +153,8 @@ def codegenErrorOfSupport : JaxSupportError → JaxCodegenError
     support policy decides. Located at `nodeIndex` — the real outer step index at a plan-level
     caller, `0` at a standalone one. -/
 def requireJaxSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
-    (checked : CheckedAssignPlan) : Except JaxCodegenError Unit :=
-  match checkJaxAssignSupport sigs nodeIndex checked with
+    (checked : CheckedAssignPlan) (allowUnary : Bool := false) : Except JaxCodegenError Unit :=
+  match checkJaxAssignSupport sigs nodeIndex checked allowUnary with
   | .ok _ => .ok ()
   | .error e => .error (codegenErrorOfSupport e)
 
@@ -306,8 +307,8 @@ structure NodeLowering where
 /-- One checked assignment's `einsum`-mode lowering, under an explicit complete signature table
     (Task 4.5). `sigs` is this standalone entry's semantic authority: `requireJaxSupport` re-runs
     `checkAssign` under it and applies the JAX support policy before a single subscript is derived,
-    so a Boolean destination/source, a tropical algebra, a unary read, a contextful assignment, or a
-    structurally incompatible table is rejected here with its located error rather than silently
+    so a Boolean destination/source, a tropical algebra, a unary read (this einsum door never opts in
+    to one), a contextful assignment, or a structurally incompatible table is rejected here with its located error rather than silently
     rendered. The input is a `CheckedAssignPlan`, not a raw `AssignPlan`: a caller cannot hand this
     function an unchecked assignment at all.
 
@@ -510,13 +511,22 @@ def buildFactorTable (iterationShape : Array Nat) (f : ReadPlan) : Array Nat × 
         (idxs.push 0, masks.push false))
     (#[], #[])
 
+/-- The name the Python runtime dispatches an inline unary read on. Total, no wildcard arm. -/
+def unaryOpName : UnaryOp → String
+  | .log => "log" | .exp => "exp" | .sin => "sin" | .cos => "cos" | .sqrt => "sqrt"
+  | .recip => "recip"
+
 /-- PRIVATE (Task 4.5): emits one factor's gather semantics; reachable only behind
-    `renderAffineNode`'s contextual support gate. -/
+    `renderAffineNode`'s contextual support gate. A unary read adds a trailing `"unary"` key (the
+    runtime applies it AFTER the zero-pad mask, as Dense does); a plain read's record is unchanged. -/
 private def renderAffineFactor (iterationShape : Array Nat) (f : ReadPlan) : String :=
   let (idxs, masks) := buildFactorTable iterationShape f
+  let unaryStr := match f.unary with
+    | none => ""
+    | some op => ", \"unary\": " ++ pyStrLit (unaryOpName op)
   "{\"source_slot\": " ++ toString f.sourceSlot ++
   ", \"safe_index\": " ++ pyNatListLit idxs ++
-  ", \"mask\": " ++ pyBoolListLit masks ++ "}"
+  ", \"mask\": " ++ pyBoolListLit masks ++ unaryStr ++ "}"
 
 /-- PRIVATE (Task 4.5): emits one term's semantics; same gate. -/
 private def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
@@ -646,10 +656,11 @@ private def renderAxiswiseNode (nodeIndex : Nat) (a : CheckedAxiswisePlan) :
     PRIVATE (Task 4.5), and the single contextual gate of the whole `affineReference` mode: every
     public affine emitter — both plan renderers and the standalone `renderAffineAssign` — reaches a
     node only through here, so `requireJaxSupport` is applied exactly once per node, under the
-    table that entry point established (derived for a plan, explicit for a standalone call). -/
+    table that entry point established (derived for a plan, explicit for a standalone call). It is
+    also the only caller that opts in to an inline unary read (`allowUnary := true`). -/
 private def renderAffineNode (sigs : Array TensorSignature) (nodeIndex : Nat)
     (checked : CheckedAssignPlan) : Except JaxCodegenError String := do
-  requireJaxSupport sigs nodeIndex checked
+  requireJaxSupport sigs nodeIndex checked (allowUnary := true)
   return "{" ++ (← renderAffineFields nodeIndex checked.plan) ++ "}"
 
 /-- Every checked node in graph order (`checkedNodes` order is exactly raw-graph order, by
@@ -1331,7 +1342,8 @@ private def boolSourceError : JaxCodegenError := .unsupportedSourceDType 0 0 0 .
   unless (outcome.splitOn "render failed").length == 2 do
     throw (IO.userError s!"buildAssignFixture did not reject the Boolean source at render: {outcome}")
 
-/-! #### Fixture 4 (rendering half) — an inline unary read is a located rejection in BOTH modes. -/
+/-! #### Fixture 4 (rendering half) — an inline unary read is a located rejection in `einsumOnly` and on
+the evidence path; `affineReference` rendering alone admits it. -/
 
 def unaryRead : ReadPlan := { idRead with unary := some .exp }
 
@@ -1349,8 +1361,28 @@ def unaryPrepared? : Option PreparedPlan :=
 #guard (match unaryPrepared? with
   | some prepared =>
       rejectedWith (.unaryFactor 0 0 0) (generateNamed .einsumOnly prepared) &&
-      rejectedWith (.unaryFactor 0 0 0) (generateNamed .affineReference prepared)
+      (match generateNamed .affineReference prepared with
+        | .ok text => (text.splitOn "\"unary\": \"exp\"").length == 2
+        | .error _ => false)
   | none => false)
+
+-- Accept-neighbour: the same plan WITHOUT `unary` still renders, and its record carries no
+-- `"unary"` key at all (non-unary factor records are unchanged).
+def plainPrepared? : Option PreparedPlan :=
+  preparedOf { unaryRaw with steps := #[PlanStep.assign idAssign] }
+    #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }]
+
+#guard (match plainPrepared? with
+  | some prepared =>
+      (match generateNamed .affineReference prepared with
+        | .ok text => (text.splitOn "\"unary\"").length == 1
+        | .error _ => false)
+  | none => false)
+
+-- The standalone render entry admits it too (it goes through the same `renderAffineNode` gate).
+#guard (match checkAssign idSigs unaryAssign with
+  | .error _ => false
+  | .ok checked => (match renderAffineAssign idSigs checked with | .ok _ => true | .error _ => false))
 
 #guard (match checkAssign idSigs unaryAssign with
   | .error _ => false

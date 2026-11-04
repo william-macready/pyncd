@@ -686,6 +686,18 @@ def unaryAssign : AssignPlan :=
 #guard rejectedBy (.unsupported (.unaryFactor 0 0 0))
   (einsumOutcome idSigs unaryAssign #[#[0, 0]] #[0])
 
+-- The shared gate's opt-in: the default refuses (as above), `allowUnary := true` admits the same
+-- plan. Only the `affineReference` assignment renderer passes it.
+#guard (match checkAssign idSigs unaryAssign with
+  | .error _ => false
+  | .ok checked =>
+      (match checkJaxAssignSupport idSigs 0 checked with
+        | .error e => e == .unaryFactor 0 0 0
+        | .ok _ => false) &&
+      (match checkJaxAssignSupport idSigs 0 checked (allowUnary := true) with
+        | .ok _ => true
+        | .error _ => false))
+
 /-! ### Fixture 7 — declared support-check ORDER: a Boolean destination whose source is Boolean too
 reports the DESTINATION, not the source. Without a declared order this fixture would be satisfied by
 either error, which is exactly why fixture 1 (real source) and this one (Boolean source) are

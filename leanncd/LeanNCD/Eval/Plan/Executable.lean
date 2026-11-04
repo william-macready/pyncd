@@ -171,7 +171,8 @@ destination under real sum-product (`jaxRealCarrier kind`), gathering plain (non
 that same real dtype, at NO runtime context coordinate.
 Boolean algebra, tropical max/min, a Boolean source, an inline unary read, and a contextful
 assignment are all admitted by the CHECKED plan and executed by Dense, but have no JAX rendering at
-all — so they must be rejected with a located, typed error BEFORE any Python is emitted, any
+all (an inline unary read has one, in `affineReference` assignments only, behind the explicit
+`allowUnary` opt-in) — so they must be rejected with a located, typed error BEFORE any Python is emitted, any
 candidate is built, or any `ExecutionEvidence` is exposed. That is the fail-loud half of the
 sibling-audit table in `papers/boolean_predicate_output_evalplan.md` §2.5: every "forbidden" cell is
 a located rejection here, not a silently-stamped `orderedReference64`.
@@ -247,9 +248,16 @@ private def jaxRealCarrier : LeanNCD.StorageKind → ScalarDType × ContractionA
     `invalidSignatureContext` carrying the checker's own `PlanError` — NOT conflated into this
     rejection — which the fixtures pin. Same judgement (and same reason: mutation cannot reach a
     conjunct nothing can construct the state for) that `einsumFactorLabelExtentsAgree` records for
-    its own absent size tie. -/
+    its own absent size tie.
+
+    `allowUnary` (default `false`) is the one opt-in for an inline unary read: only the
+    `affineReference` assignment renderer passes `true` (its runtime applies the function after the
+    zero-pad). Every other caller — `einsumOnly`, both candidate conversions, the production
+    validators, scatter — keeps the default and so keeps the located `unaryFactor` refusal. The
+    declared order is unchanged: source dtype is still checked before the unary. -/
 private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
-    (kind : LeanNCD.StorageKind) (a : AssignPlan) : Except JaxSupportError Unit := do
+    (kind : LeanNCD.StorageKind) (a : AssignPlan) (allowUnary : Bool := false) :
+    Except JaxSupportError Unit := do
   let (realDType, realAlgebra) := jaxRealCarrier kind
   match sigs[a.destinationSlot]? with
   | none => throw (.invalidSignatureContext nodeIndex (.slotOutOfRange a.destinationSlot sigs.size))
@@ -271,7 +279,7 @@ private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
         | some srcSig =>
             unless srcSig.dtype == realDType do
               throw (.sourceDType nodeIndex ti fi srcSig.dtype)
-        unless f.unary.isNone do
+        unless allowUnary || f.unary.isNone do
           throw (.unaryFactor nodeIndex ti fi)
 
 /-- The typed, context-bearing cross-module support gate: the supplied complete signature table is
@@ -293,11 +301,13 @@ private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
     caller convention. There is deliberately no third arm: a later carrier extends
     `LeanNCD.StorageKind` and this match fails to compile until its checker is named here.
 
+    `allowUnary` defaults to `false`; see `jaxAssignSupported`.
+
     This is the one helper both the production validators here and the experimental renderers /
     candidate conversions in `experiments/jax_bridge/EvalPlanCodegen.lean` call; the latter maps its
     result into that module's own `JaxCodegenError` vocabulary. -/
 def checkJaxAssignSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
-    (checked : CheckedAssignPlan) : Except JaxSupportError Unit := do
+    (checked : CheckedAssignPlan) (allowUnary : Bool := false) : Except JaxSupportError Unit := do
   let recheck :=
     match checked.storageKind with
     | .float64 => checkAssign sigs checked.plan
@@ -305,7 +315,7 @@ def checkJaxAssignSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
   match recheck with
   | .error e => throw (.invalidSignatureContext nodeIndex e)
   | .ok _ => pure ()
-  jaxAssignSupported sigs nodeIndex checked.storageKind checked.plan
+  jaxAssignSupported sigs nodeIndex checked.storageKind checked.plan allowUnary
 
 /-- The scatter counterpart of `checkJaxAssignSupport`: a scatter's COMPUTE half is graded by the very
     same private policy (`jaxAssignSupported` — one rule, no second copy), after the scatter checker
