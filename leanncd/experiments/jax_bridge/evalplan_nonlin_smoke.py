@@ -42,6 +42,8 @@ UDT = np.uint64 if _DT == "float64" else np.uint32
 
 # fn -> [max_rel, max_abs, bit_exact_entries, total_entries], accumulated over every fixture/mode.
 STATS: dict[str, list] = {}
+# Transformer fixture only: output name -> [max_rel, max_abs, bit_exact_entries, total_entries].
+OUT_STATS: dict[str, list] = {}
 
 
 def reconstruct(entry: dict) -> jax.Array:
@@ -90,6 +92,18 @@ def require_close(got, entry: dict, label: str, fn: str | None) -> None:
             raise AssertionError(f"{label}: relu is a selection and must be bit-exact: {g.tolist()} vs {w.tolist()}")
 
 
+def record_output(key: str, got, entry: dict) -> None:
+    """Per-output measurement for the transformer fixture (every materialized output, incl. assignments)."""
+    g, w = np.asarray(got), lean_array(entry)
+    diff = np.abs(g.astype(np.float64) - w.astype(np.float64))
+    nz = w != 0
+    rel = float(np.max(diff[nz] / np.abs(w.astype(np.float64))[nz])) if nz.any() else 0.0
+    s = OUT_STATS.setdefault(key, [0.0, 0.0, 0, 0])
+    s[0], s[1] = max(s[0], rel), max(s[1], float(np.max(diff)))
+    s[2] += int(np.sum(g.reshape(-1).view(UDT) == w.reshape(-1).view(UDT)))
+    s[3] += g.size
+
+
 def run_fixture(f: dict) -> None:
     plan = f["plan"]
     kinds = [n.get("kind", "assign") for n in plan["nodes"]]
@@ -97,13 +111,18 @@ def run_fixture(f: dict) -> None:
         raise AssertionError(f"{f['name']}: plan nodes {kinds} vs counts {f['n_pointwise']}/{f['n_axiswise']}")
     if f["n_pointwise"] + f["n_axiswise"] < 1:
         raise AssertionError(f"{f['name']}: fixture exercises no nonlinearity")
-    fns = out_fns(plan)
+    # Transformer: relu's INPUT already carries the upstream exp/normalize libm-vs-XLA difference (~1 ulp),
+    # so "relu is bit-exact" does not apply; its outputs get the tolerance gate and `record_output` only.
+    fns = {} if f["name"].startswith("transformer") else out_fns(plan)
     inputs = {n: reconstruct(e) for n, e in f["inputs"].items()}
     eager = rt.run_named(plan, inputs, JDT)
     jitted = jax.jit(lambda i: rt.run_named(plan, i, JDT))(inputs)
     for name, exp in f["expected"].items():
         require_close(eager[name], exp, f"{f['name']} eager {name}", fns.get(name))
         require_close(jitted[name], exp, f"{f['name']} jit {name}", fns.get(name))
+        if f["name"].startswith("transformer"):
+            record_output(name, eager[name], exp)
+            record_output(name, jitted[name], exp)
 
 
 def main() -> None:
@@ -162,6 +181,23 @@ def main() -> None:
     assert np.array_equal(ord_out, row / fwd), ord_out.tolist()  # Lean folded forward
     print(f"reduction order pinned: forward sum {fwd!r}, reversed {rev!r}, tree {tree!r}; Lean row = x / forward "
           f"sum, JAX matches it within tolerance (a reordered sum would give all zeros)")
+
+    # Single-layer transformer (14 plan nodes): every materialized output was compared above within the
+    # same tolerance; pin that the fixture is non-degenerate, then print the per-output measurement.
+    tf = by["transformer" + sfx]
+    outs = {n: lean_array(e) for n, e in tf["expected"].items()}
+    assert {"S", "A", "H"} <= set(outs), sorted(outs)
+    S3 = outs["S"]  # [h, q, s]: causal rows keep 1, 2, 3 entries (row q=1: more than one, not all)
+    assert [int(np.sum(S3[0, q] != 0)) for q in range(3)] == [1, 2, 3], S3.tolist()
+    assert np.all(S3[:, 0, 1:] == 0) and np.all(S3[:, 1, 2] == 0) and np.allclose(S3.sum(axis=2), 1.0, atol=1e-6)
+    assert np.allclose(outs["H"].sum(axis=1), 1.0, atol=1e-6) and np.allclose(outs["A"].sum(axis=1), 1.0, atol=1e-6)
+    if "F" in outs:  # relu clamps some entries and passes others
+        assert np.any(outs["F"] == 0) and np.any(outs["F"] > 0), outs["F"].tolist()
+    print(f"transformer: {len(outs)} outputs {sorted(outs)} within tolerance (eager + jit); "
+          f"causal rows keep [1, 2, 3] entries; per-output measured difference vs Lean:")
+    for n in sorted(OUT_STATS):
+        rel, ab, ex, tot = OUT_STATS[n]
+        print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
 
     # Differentiable: jit(grad) is finite for softmax (weighted sum, masked and unmasked) and gelu.
     for fx, name, shape in (("pw" + sfx, "G", (7,)), ("aw_plain" + sfx, "Sm", (2, 4)),
