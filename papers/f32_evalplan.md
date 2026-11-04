@@ -290,7 +290,7 @@ The experimental JAX backend is explicitly reference64-only:
 - support validation rejects a non-f64 destination or source, unsupported algebra, unary factor,
   context, and unsupported plan step before evidence;
 - generated fixtures and Python runtimes encode `UInt64` bits and assert `np.float64`/`jnp.float64`;
-- no JAX scan, scatter, nonlinearity, predicate, or f32 implementation exists. (Historical baseline: JAX f32 landed with F32-JAX, and `affineReference` renders scatter since the JAX scatter slice.)
+- no JAX scan, scatter, nonlinearity, predicate, or f32 implementation exists. (Historical baseline: JAX f32 landed with F32-JAX, and `affineReference` renders scatter since the JAX scatter slice, and pointwise/axiswise steps since the JAX pointwise slice.)
 
 After the f32 checker lands, JAX validation must revalidate an f32 assignment with the
 storage-aware
