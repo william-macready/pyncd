@@ -1,0 +1,112 @@
+From 5b6933ac217c4ac8f947a208970b4e54efc9b235 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Tue, 3 Nov 2026 18:09:24 -0700
+Subject: [PATCH 5/6] test(jax): fixtures that pin softmax row max, relu NaN
+ and the compare path
+
+Three fixtures per precision (large-negative softmax rows, a causal softmax with huge masked entries, relu over a NaN input) and a require_close canary, so a row max folded from 0 or over masked entries, a NaN-propagating relu and a verifier that compares the JAX output with itself are all rejected.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ .../jax_bridge/EvalPlanNonlinSmoke.lean       | 30 ++++++++++++++++++-
+ .../jax_bridge/evalplan_nonlin_smoke.py       | 22 ++++++++++++++
+ 2 files changed, 51 insertions(+), 1 deletion(-)
+
+diff --git a/leanncd/experiments/jax_bridge/EvalPlanNonlinSmoke.lean b/leanncd/experiments/jax_bridge/EvalPlanNonlinSmoke.lean
+index c33ebd77..3ca00cd9 100644
+--- a/leanncd/experiments/jax_bridge/EvalPlanNonlinSmoke.lean
++++ b/leanncd/experiments/jax_bridge/EvalPlanNonlinSmoke.lean
+@@ -312,6 +312,19 @@ def transformerProg32 : TLProgram := tlprog!{
+   H[q, m.]         := normalize(Y[q, m] + A[q, m])
+ }
+ 
++-- relu alone, so a NaN input leaves the output finite (Lean's `relu NaN = +0`: `max 0 x` is `x` only
++-- when `0 ≤ x`); the other four functions would return NaN and are covered by `pw`/`pw32`.
++def reluNanProg : TLProgram := tlprog!{
++  axis i : ℕ = 4
++  tensor f64 X(i), R(i)
++  R[i] := relu(X[i])
++}
++def reluNanProg32 : TLProgram := tlprog!{
++  axis i : ℕ = 4
++  tensor f32 X(i), R(i)
++  R[i] := relu(X[i])
++}
++
+ /-! ## Inputs (shared by both precisions; `t32` narrows) -/
+ 
+ def pwX : Array Float := #[-3.0, -0.5, 0.0, -0.0, 0.5, 1.0, 2.5]
+@@ -319,7 +332,16 @@ def awPlain : Array Float := #[1.0, 2.0, 3.0, 4.0, 0.5, -1.5, 2.0, 0.25]
+ def awZeroSum : Array Float := #[1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 0.5, -0.5]
+ def awZero : Array Float := #[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+ def awLarge : Array Float := #[1000.0, 1001.0, 999.0, 1000.0, -1000.0, -1001.0, 5.0, 6.0]
+-def sq3 : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0]
++-- Every entry of row 0 is below `-999`, so a row max folded from `0` instead of from the row's own first
++-- entry makes `exp (x - 0)` underflow to exactly 0 and the whole row collapse to zeros (Lean: a real
++-- distribution). Row 1 is large-negative too.
++def awNegLarge : Array Float := #[-1000.0, -1001.0, -999.0, -1000.0, -500.0, -501.0, -502.0, -503.0]
++-- Causal mask `s ≤ q`: every MASKED entry (row 0: s = 1, 2; row 1: s = 2) is huge. A row max that
++-- includes masked entries makes `exp (x - 2000)` underflow and the row collapse to zeros.
++def causalBig : Array Float := #[0.5, 1000.0, 2000.0, 1.5, 0.25, 900.0, 3.0, 1.0, -2.0]
++def nanX : Float := 0.0 / 0.0
++def reluNanX : Array Float := #[nanX, -1.0, 2.0, 0.0]
++def sq3 : Array Float :=#[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0]
+ def firstAxisX : Array Float := #[0.5, -1.0, 2.0, 1.5, -0.25, 3.0]
+ def rank3X : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0, 0.0, 0.1, 4.0]
+ 
+@@ -356,6 +378,9 @@ def corpus64 : IO (Array String) := do
+         (env64 [("W", t64 [2, 2] #[1.0, -2.0, -1.0, 1.0]), ("X", t64 [2] #[3.0, 1.0]),
+                 ("Q", t64 [2, 2] #[1.0, 0.0, 0.0, 1.0]), ("K", t64 [2, 2] #[0.5, -0.5, 1.0, 2.0])]) 1 1,
+     ← fixture64 "order" orderProg (env64 [("A", t64 [4] #[1e16, 1.0, -1e16, 1.0])]) 0 1,
++    ← fixture64 "aw_neglarge" awProg (env64 [("A", t64 [2, 4] awNegLarge)]) 0 3,
++    ← fixture64 "causal_big" causalProg (env64 [("X", t64 [3, 3] causalBig)]) 0 3,
++    ← fixture64 "relu_nan" reluNanProg (env64 [("X", t64 [4] reluNanX)]) 1,
+     ← fixture64 "transformer" transformerProg
+         (env64 [("X", t64 [3, 4] trX), ("W_Q", t64 [2, 2, 4] trWQ), ("W_K", t64 [2, 2, 4] trWK),
+                 ("W_V", t64 [2, 2, 4] trWV), ("W_O", t64 [4, 2, 2] trWO),
+@@ -377,6 +402,9 @@ def corpus32 : IO (Array String) := do
+         (env32 [("W", t32 [2, 2] #[1.0, -2.0, -1.0, 1.0]), ("X", t32 [2] #[3.0, 1.0]),
+                 ("Q", t32 [2, 2] #[1.0, 0.0, 0.0, 1.0]), ("K", t32 [2, 2] #[0.5, -0.5, 1.0, 2.0])]) 1 1,
+     ← fixture32 "order32" orderProg32 (env32 [("A", t32 [4] #[1e10, 1.0, -1e10, 1.0])]) 0 1,
++    ← fixture32 "aw_neglarge32" awProg32 (env32 [("A", t32 [2, 4] awNegLarge)]) 0 3,
++    ← fixture32 "causal_big32" causalProg32 (env32 [("X", t32 [3, 3] causalBig)]) 0 3,
++    ← fixture32 "relu_nan32" reluNanProg32 (env32 [("X", t32 [4] reluNanX)]) 1,
+     ← fixture32 "transformer32" transformerProg32
+         (env32 [("X", t32 [3, 4] trX), ("W_Q", t32 [2, 2, 4] trWQ), ("W_K", t32 [2, 2, 4] trWK),
+                 ("W_V", t32 [2, 2, 4] trWV), ("W_O", t32 [4, 2, 2] trWO),
+diff --git a/leanncd/experiments/jax_bridge/evalplan_nonlin_smoke.py b/leanncd/experiments/jax_bridge/evalplan_nonlin_smoke.py
+index ac4828cd..ee512bed 100644
+--- a/leanncd/experiments/jax_bridge/evalplan_nonlin_smoke.py
++++ b/leanncd/experiments/jax_bridge/evalplan_nonlin_smoke.py
+@@ -149,6 +149,28 @@ def main() -> None:
+     assert not within((w * NDT(1.001)).astype(NDT), w), "tolerance accepts a 1e-3 perturbation: vacuous"
+     assert not within(np.where(w > 0, NDT(0), w).astype(NDT), w), "tolerance accepts a zeroed output: vacuous"
+     print("tolerance self-test: 1e-3 relative perturbation and a zeroed output are rejected")
++    # `require_close` itself must reject a wrong value end to end (not only `within`): a verifier that
++    # compared the JAX output with itself would accept this perturbed output.
++    try:
++        require_close((w * NDT(1.001)).astype(NDT), e, "canary", None)
++    except AssertionError:
++        pass
++    else:
++        raise AssertionError("require_close accepted a 1e-3 perturbed output: vacuous verifier")
++    print("require_close canary: a 1e-3 perturbed output is rejected end to end")
++
++    # Fixtures that exist to pin semantics a shift-invariant or finite-only comparison would miss:
++    # Lean's `relu NaN` is +0 (`jnp.maximum` would give NaN); the softmax row max must range over the
++    # UNMASKED entries only and start at the row's own first entry, not at 0 (the large-negative and
++    # huge-masked rows underflow to all-zeros otherwise). They only discriminate if Lean's rows are
++    # real distributions, which is asserted here.
++    rn = lean_array(by["relu_nan" + sfx]["expected"]["R"])
++    assert rn.tolist() == [0.0, 0.0, 2.0, 0.0] and not np.signbit(rn[0]), rn.tolist()
++    nl = lean_array(by["aw_neglarge" + sfx]["expected"]["Sm"])
++    assert np.all(np.abs(nl.sum(axis=1) - 1) < 1e-5) and np.all(nl > 0), nl.tolist()
++    cb = lean_array(by["causal_big" + sfx]["expected"]["Sm"])
++    assert cb[0].tolist() == [1.0, 0.0, 0.0] and abs(float(cb[1].sum()) - 1) < 1e-5, cb.tolist()
++    print("pins: relu(NaN) = +0, large-negative and huge-masked softmax rows are real distributions")
+ 
+     # Signed zero: the input `-0.0` reaches relu through the assign copy, which starts from +0 (`+0 + -0 =
+     # +0`), so Lean's relu input is +0.0 and its output +0.0; relu is required bit-exact (eager) above.
+-- 
+2.50.1 (Apple Git-155)
+

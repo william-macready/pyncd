@@ -1,0 +1,721 @@
+From 465aabbbf5d3923955901d4e89e762d5156dec2f Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Tue, 3 Nov 2026 17:51:22 -0700
+Subject: [PATCH 2/6] feat(jax): pointwise and axiswise runtime and Lean-vs-JAX
+ differential
+
+Python runtime arms for pointwise/axiswise nodes (left-fold row sums and max, float32 constants as exact bit patterns), the EvalPlanNonlinSmoke Lean driver, the evalplan_nonlin_smoke.py verifier (tolerance-compared, measured), run-evalplan-nonlin.sh, and the check-lean-drivers.sh entry.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ .../jax_bridge/EvalPlanNonlinSmoke.lean       | 319 ++++++++++++++++++
+ .../jax_bridge/check-lean-drivers.sh          |   1 +
+ .../jax_bridge/evalplan_affine_runtime.py     | 107 ++++++
+ .../jax_bridge/evalplan_nonlin_smoke.py       | 181 ++++++++++
+ .../jax_bridge/run-evalplan-nonlin.sh         |  36 ++
+ 5 files changed, 644 insertions(+)
+ create mode 100644 leanncd/experiments/jax_bridge/EvalPlanNonlinSmoke.lean
+ create mode 100644 leanncd/experiments/jax_bridge/evalplan_nonlin_smoke.py
+ create mode 100644 leanncd/experiments/jax_bridge/run-evalplan-nonlin.sh
+
+diff --git a/leanncd/experiments/jax_bridge/EvalPlanNonlinSmoke.lean b/leanncd/experiments/jax_bridge/EvalPlanNonlinSmoke.lean
+new file mode 100644
+index 00000000..6bcc1472
+--- /dev/null
++++ b/leanncd/experiments/jax_bridge/EvalPlanNonlinSmoke.lean
+@@ -0,0 +1,319 @@
++import LeanNCD.Eval.Entry
++import LeanNCD.DSL.Compile
++import LeanNCD.Eval.Plan.Adapter32
++import EvalPlanCodegen
++
++/-!
++# JAX pointwise/axiswise smoke — driver (JAX pointwise slice, tolerance-compared)
++
++Emits static plan DATA (`renderAffinePlanNamed`) for source programs whose prepared plan CONTAINS
++`.pointwise`/`.axiswise` steps, plus the Lean reference worker's own result (`runPreparedDense` /
++`runPreparedDense32`) as raw bit payloads, for `evalplan_nonlin_smoke.py` to compare against the
++committed runtime (`evalplan_affine_runtime.py`) WITHIN A TOLERANCE (the libm-vs-XLA `exp`/`tanh`/
++`pow`/`sqrt` difference). Two outputs: argv[0] the binary64 module, argv[1] the binary32 module.
++Like the other drivers it lives outside every Lake target; run via `lake env lean --run`
++(`run-evalplan-nonlin.sh`).
++
++Every fixture asserts, before any Python is written, that its prepared plan really has at least the
++expected number of pointwise/axiswise steps (a program that silently compiled to plain assignments
++would test nothing), that `einsumOnly` and the evidence door (`lowerCheckPlanToCandidate`) still
++refuse it, and that `affineReference` renders it.
++-/
++
++namespace JaxBridge.NonlinSmoke
++
++open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan Std
++open JaxBridge
++
++/-- Local copy of `EvalPlanScatterSmoke`'s binary32 payload renderer (a `main` file cannot be
++    imported). Parked: factor the drivers' copies into `EvalPlanCodegen`. -/
++def pyTensorEntry32 (t : DenseTensor32) : String :=
++  "{\"shape\": " ++ pyShapeTuple t.shape.toArray ++ ", \"dtype\": \"float32\", \"bits\": [" ++
++  String.intercalate ", " (t.data.toList.map fun x => toString x.toBits) ++ "]}"
++
++def countSteps (p : PreparedPlan) : Nat × Nat :=
++  p.plan.raw.steps.foldl (fun (pw, aw) st => match st with
++    | .pointwise _ => (pw + 1, aw) | .axiswise _ => (pw, aw + 1) | _ => (pw, aw)) (0, 0)
++
++/-- The assertions every fixture shares; returns the rendered plan data. -/
++def checkAndRender (name : String) (p : PreparedPlan) (minPw minAw : Nat) : IO String := do
++  let (pw, aw) := countSteps p
++  unless pw ≥ minPw && aw ≥ minAw do
++    throw (IO.userError s!"{name}: expected >= {minPw} pointwise and >= {minAw} axiswise steps, prepared plan has {pw} and {aw}")
++  match generateNamed .einsumOnly p with
++  | .error (.unsupportedStep _) | .error (.unsupportedStorageKind _) => pure ()
++  | other => throw (IO.userError s!"{name}: einsumOnly did not refuse: {repr other.toOption}")
++  match lowerCheckPlanToCandidate p with
++  | .error (.unsupportedStep _) | .error (.unsupportedStorageKind _) => pure ()
++  | _ => throw (IO.userError s!"{name}: the evidence door did not refuse")
++  match renderAffinePlanNamed p with
++  | .ok s => pure s
++  | .error e => throw (IO.userError s!"{name} affineReference render failed: {repr e}")
++
++def scheduled (name : String) (prog : TLProgram) : IO ScheduledProgram :=
++  match prog.compileToScheduled.run 0 with
++  | .ok s _ => pure s
++  | .error e _ => throw (IO.userError s!"{name} compile failed: {repr e}")
++
++def prepared (name : String) (sched : ScheduledProgram) (sig : InputSignature) : IO PreparedPlan :=
++  match prepareEvalPlan sched sig with
++  | .ok p => pure p
++  | .error f => throw (IO.userError s!"{name} prepare failed: {renderCompileCause f.cause}")
++
++def header (name : String) (p : PreparedPlan) (planData : String) : String :=
++  let (pw, aw) := countSteps p
++  "{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"named\", \"n_pointwise\": " ++ toString pw ++
++    ", \"n_axiswise\": " ++ toString aw ++ ", \"plan\": " ++ planData
++
++/-- One binary64 named fixture. -/
++def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseTensor)
++    (minPw : Nat := 0) (minAw : Nat := 0) : IO String := do
++  let sched ← scheduled name prog
++  let p ← prepared name sched (InputSignature.ofDenseInputs inputs)
++  let planData ← checkAndRender name p minPw minAw
++  let report ← match runPreparedDense p inputs with
++    | .ok r => pure r
++    | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e.cause}")
++  let mut ins : Array String := #[]
++  for b in p.bindings.requiredInputs.bindings do
++    let t ← match inputs[b.name]? with
++      | some t => pure t
++      | none => throw (IO.userError s!"{name}: missing input {b.name}")
++    ins := ins.push (pyStrLit b.name ++ ": " ++ pyTensorEntry t)
++  let mut outs : Array String := #[]
++  for b in p.bindings.materializedNames do
++    let t ← match report.env[b.name]? with
++      | some t => pure t
++      | none => throw (IO.userError s!"{name}: materialized {b.name} absent")
++    outs := outs.push (pyStrLit b.name ++ ": " ++ pyTensorEntry t)
++  pure (header name p planData ++ ", \"inputs\": {" ++ String.intercalate ", " ins.toList ++
++    "}, \"expected\": {" ++ String.intercalate ", " outs.toList ++ "}}")
++
++/-- The binary32 sibling, over `runPreparedDense32`; also pins that the plan is binary32. -/
++def fixture32 (name : String) (prog : TLProgram) (inputs : NamedDenseEnv32)
++    (minPw : Nat := 0) (minAw : Nat := 0) : IO String := do
++  let sched ← scheduled name prog
++  let sig ← match InputSignature.ofDenseInputs32ForDecls sched.decls inputs with
++    | .ok s => pure s
++    | .error e => throw (IO.userError s!"{name} binary32 signature failed: {repr e}")
++  let p ← prepared name sched sig
++  unless p.plan.storageKind == .float32 do throw (IO.userError s!"{name} is not a binary32 plan")
++  let planData ← checkAndRender name p minPw minAw
++  let report ← match runPreparedDense32 p inputs with
++    | .ok r => pure r
++    | .error e => throw (IO.userError s!"{name} binary32 Dense run failed: {repr e.cause}")
++  let mut ins : Array String := #[]
++  for b in p.bindings.requiredInputs.bindings do
++    let t ← match inputs[b.name]? with
++      | some t => pure t
++      | none => throw (IO.userError s!"{name}: missing input {b.name}")
++    ins := ins.push (pyStrLit b.name ++ ": " ++ pyTensorEntry32 t)
++  let mut outs : Array String := #[]
++  for b in p.bindings.materializedNames do
++    let t ← match report.env[b.name]? with
++      | some t => pure t
++      | none => throw (IO.userError s!"{name}: materialized {b.name} absent")
++    outs := outs.push (pyStrLit b.name ++ ": " ++ pyTensorEntry32 t)
++  pure (header name p planData ++ ", \"inputs\": {" ++ String.intercalate ", " ins.toList ++
++    "}, \"expected\": {" ++ String.intercalate ", " outs.toList ++ "}}")
++
++def t64 (shape : List Nat) (data : Array Float) : DenseTensor := ⟨shape, data⟩
++def t32 (shape : List Nat) (data : Array Float) : DenseTensor32 :=
++  ⟨shape, data.map Float.toFloat32⟩
++def env64 (xs : List (String × DenseTensor)) : HashMap String DenseTensor := HashMap.ofList xs
++def env32 (xs : List (String × DenseTensor32)) : NamedDenseEnv32 := HashMap.ofList xs
++
++/-! ## Programs (binary64; the binary32 siblings differ only in the `f32` tag) -/
++
++-- All five pointwise functions over one input (negative, zero, signed zero, positive).
++def pwProg : TLProgram := tlprog!{
++  axis i : ℕ = 7
++  tensor f64 X(i), R(i), S(i), Th(i), G(i), L(i)
++  R[i] := relu(X[i])
++  S[i] := sigmoid(X[i])
++  Th[i] := tanh(X[i])
++  G[i] := gelu(X[i])
++  L[i] := leakyrelu(X[i])
++}
++-- The three axiswise functions along the last axis of a `[2, 4]` tensor.
++def awProg : TLProgram := tlprog!{
++  axis q : ℕ = 2
++  axis s : ℕ = 4
++  tensor f64 A(q, s), Sm(q, s), Nm(q, s), L2(q, s)
++  Sm[q, s.] := softmax(A[q, s])
++  Nm[q, s.] := normalize(A[q, s])
++  L2[q, s.] := l2normalize(A[q, s])
++}
++-- Causal mask `s ≤ q` (donor: `test/Eval/EvalExamplesTest.lean` example 2): softmax, normalize, L2.
++def causalProg : TLProgram := tlprog!{
++  axis q : ℕ = 3
++  axis s : ℕ = 3
++  tensor f64 X(q, s), Sm(q, s), Nm(q, s), L2(q, s)
++  Sm[q, s.] := softmax(where s ≤ q)(X[q, s])
++  Nm[q, s.] := normalize(where s ≤ q)(X[q, s])
++  L2[q, s.] := l2normalize(where s ≤ q)(X[q, s])
++}
++-- Strict mask `s < q`: row q=0 has NO unmasked entry (all zeros, not uniform).
++def allMaskedProg : TLProgram := tlprog!{
++  axis q : ℕ = 3
++  axis s : ℕ = 3
++  tensor f64 X(q, s), Sm(q, s), Nm(q, s)
++  Sm[q, s.] := softmax(where s < q)(X[q, s])
++  Nm[q, s.] := normalize(where s < q)(X[q, s])
++}
++-- Softmax over the FIRST axis (`q.`), a non-last axis, of a `[3, 2]` tensor.
++def firstAxisProg : TLProgram := tlprog!{
++  axis q : ℕ = 3
++  axis s : ℕ = 2
++  tensor f64 A(q, s), Y(q, s)
++  Y[q., s] := softmax(A[q, s])
++}
++-- Rank 3: softmax over the last axis and over the MIDDLE axis.
++def rank3Prog : TLProgram := tlprog!{
++  axis b : ℕ = 2
++  axis q : ℕ = 2
++  axis s : ℕ = 3
++  tensor f64 A(b, q, s), Last(b, q, s), Mid(b, q, s)
++  Last[b, q, s.] := softmax(A[b, q, s])
++  Mid[b, q., s] := softmax(A[b, q, s])
++}
++-- assign -> pointwise (donor: example 10) and assign -> axiswise (donor: example 12 unmasked).
++def chainProg : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis k : ℕ = 2
++  axis q : ℕ = 2
++  axis s : ℕ = 2
++  axis d : ℕ = 2
++  tensor f64 W(i, k), X(k), Y(i), Q(q, d), K(s, d), A(q, s)
++  Y[i] := relu(W[i, k] · X[k])
++  A[q, s.] := softmax(Q[q, d] · K[s, d])
++}
++-- Reduction ORDER: one row whose left-to-right sum differs from every other order. `[1e16, 1, -1e16, 1]`:
++-- the forward fold gives 1 (so the row is `x / 1`), the reversed fold and the pairwise tree give 0
++-- (so the row would be all zeros).
++def orderProg : TLProgram := tlprog!{
++  axis s : ℕ = 4
++  tensor f64 A(s), Nm(s)
++  Nm[s.] := normalize(A[s])
++}
++
++def pwProg32 : TLProgram := tlprog!{
++  axis i : ℕ = 7
++  tensor f32 X(i), R(i), S(i), Th(i), G(i), L(i)
++  R[i] := relu(X[i])
++  S[i] := sigmoid(X[i])
++  Th[i] := tanh(X[i])
++  G[i] := gelu(X[i])
++  L[i] := leakyrelu(X[i])
++}
++def awProg32 : TLProgram := tlprog!{
++  axis q : ℕ = 2
++  axis s : ℕ = 4
++  tensor f32 A(q, s), Sm(q, s), Nm(q, s), L2(q, s)
++  Sm[q, s.] := softmax(A[q, s])
++  Nm[q, s.] := normalize(A[q, s])
++  L2[q, s.] := l2normalize(A[q, s])
++}
++def causalProg32 : TLProgram := tlprog!{
++  axis q : ℕ = 3
++  axis s : ℕ = 3
++  tensor f32 X(q, s), Sm(q, s), Nm(q, s), L2(q, s)
++  Sm[q, s.] := softmax(where s ≤ q)(X[q, s])
++  Nm[q, s.] := normalize(where s ≤ q)(X[q, s])
++  L2[q, s.] := l2normalize(where s ≤ q)(X[q, s])
++}
++def allMaskedProg32 : TLProgram := tlprog!{
++  axis q : ℕ = 3
++  axis s : ℕ = 3
++  tensor f32 X(q, s), Sm(q, s), Nm(q, s)
++  Sm[q, s.] := softmax(where s < q)(X[q, s])
++  Nm[q, s.] := normalize(where s < q)(X[q, s])
++}
++def firstAxisProg32 : TLProgram := tlprog!{
++  axis q : ℕ = 3
++  axis s : ℕ = 2
++  tensor f32 A(q, s), Y(q, s)
++  Y[q., s] := softmax(A[q, s])
++}
++def rank3Prog32 : TLProgram := tlprog!{
++  axis b : ℕ = 2
++  axis q : ℕ = 2
++  axis s : ℕ = 3
++  tensor f32 A(b, q, s), Last(b, q, s), Mid(b, q, s)
++  Last[b, q, s.] := softmax(A[b, q, s])
++  Mid[b, q., s] := softmax(A[b, q, s])
++}
++def chainProg32 : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis k : ℕ = 2
++  axis q : ℕ = 2
++  axis s : ℕ = 2
++  axis d : ℕ = 2
++  tensor f32 W(i, k), X(k), Y(i), Q(q, d), K(s, d), A(q, s)
++  Y[i] := relu(W[i, k] · X[k])
++  A[q, s.] := softmax(Q[q, d] · K[s, d])
++}
++def orderProg32 : TLProgram := tlprog!{
++  axis s : ℕ = 4
++  tensor f32 A(s), Nm(s)
++  Nm[s.] := normalize(A[s])
++}
++
++/-! ## Inputs (shared by both precisions; `t32` narrows) -/
++
++def pwX : Array Float := #[-3.0, -0.5, 0.0, -0.0, 0.5, 1.0, 2.5]
++def awPlain : Array Float := #[1.0, 2.0, 3.0, 4.0, 0.5, -1.5, 2.0, 0.25]
++def awZeroSum : Array Float := #[1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 0.5, -0.5]
++def awZero : Array Float := #[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
++def awLarge : Array Float := #[1000.0, 1001.0, 999.0, 1000.0, -1000.0, -1001.0, 5.0, 6.0]
++def sq3 : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0]
++def firstAxisX : Array Float := #[0.5, -1.0, 2.0, 1.5, -0.25, 3.0]
++def rank3X : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0, 0.0, 0.1, 4.0]
++
++def corpus64 : IO (Array String) := do
++  return #[
++    ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
++    ← fixture64 "aw_plain" awProg (env64 [("A", t64 [2, 4] awPlain)]) 0 3,
++    ← fixture64 "aw_zerosum" awProg (env64 [("A", t64 [2, 4] awZeroSum)]) 0 3,
++    ← fixture64 "aw_zero" awProg (env64 [("A", t64 [2, 4] awZero)]) 0 3,
++    ← fixture64 "aw_large" awProg (env64 [("A", t64 [2, 4] awLarge)]) 0 3,
++    ← fixture64 "causal" causalProg (env64 [("X", t64 [3, 3] sq3)]) 0 3,
++    ← fixture64 "allmasked" allMaskedProg (env64 [("X", t64 [3, 3] sq3)]) 0 2,
++    ← fixture64 "firstaxis" firstAxisProg (env64 [("A", t64 [3, 2] firstAxisX)]) 0 1,
++    ← fixture64 "rank3" rank3Prog (env64 [("A", t64 [2, 2, 3] rank3X)]) 0 2,
++    ← fixture64 "chain" chainProg
++        (env64 [("W", t64 [2, 2] #[1.0, -2.0, -1.0, 1.0]), ("X", t64 [2] #[3.0, 1.0]),
++                ("Q", t64 [2, 2] #[1.0, 0.0, 0.0, 1.0]), ("K", t64 [2, 2] #[0.5, -0.5, 1.0, 2.0])]) 1 1,
++    ← fixture64 "order" orderProg (env64 [("A", t64 [4] #[1e16, 1.0, -1e16, 1.0])]) 0 1]
++
++def corpus32 : IO (Array String) := do
++  return #[
++    ← fixture32 "pw32" pwProg32 (env32 [("X", t32 [7] pwX)]) 5,
++    ← fixture32 "aw_plain32" awProg32 (env32 [("A", t32 [2, 4] awPlain)]) 0 3,
++    ← fixture32 "aw_zerosum32" awProg32 (env32 [("A", t32 [2, 4] awZeroSum)]) 0 3,
++    ← fixture32 "aw_zero32" awProg32 (env32 [("A", t32 [2, 4] awZero)]) 0 3,
++    ← fixture32 "aw_large32" awProg32 (env32 [("A", t32 [2, 4] awLarge)]) 0 3,
++    ← fixture32 "causal32" causalProg32 (env32 [("X", t32 [3, 3] sq3)]) 0 3,
++    ← fixture32 "allmasked32" allMaskedProg32 (env32 [("X", t32 [3, 3] sq3)]) 0 2,
++    ← fixture32 "firstaxis32" firstAxisProg32 (env32 [("A", t32 [3, 2] firstAxisX)]) 0 1,
++    ← fixture32 "rank332" rank3Prog32 (env32 [("A", t32 [2, 2, 3] rank3X)]) 0 2,
++    ← fixture32 "chain32" chainProg32
++        (env32 [("W", t32 [2, 2] #[1.0, -2.0, -1.0, 1.0]), ("X", t32 [2] #[3.0, 1.0]),
++                ("Q", t32 [2, 2] #[1.0, 0.0, 0.0, 1.0]), ("K", t32 [2, 2] #[0.5, -0.5, 1.0, 2.0])]) 1 1,
++    ← fixture32 "order32" orderProg32 (env32 [("A", t32 [4] #[1e10, 1.0, -1e10, 1.0])]) 0 1]
++
++end JaxBridge.NonlinSmoke
++
++open JaxBridge.NonlinSmoke in
++def main (args : List String) : IO Unit := do
++  let out64 := args.head?.getD "generated_evalplan_nonlin_smoke64.py"
++  let out32 := (args.drop 1).head?.getD "generated_evalplan_nonlin_smoke32.py"
++  let f64s ← corpus64
++  let f32s ← corpus32
++  IO.FS.writeFile out64
++    ("# Generated by EvalPlanNonlinSmoke.lean — do not edit.\nFIXTURES = [\n" ++
++      String.intercalate ",\n" f64s.toList ++ "\n]\n")
++  IO.FS.writeFile out32
++    ("# Generated by EvalPlanNonlinSmoke.lean — do not edit.\nFIXTURES = [\n" ++
++      String.intercalate ",\n" f32s.toList ++ "\n]\n")
++  IO.println s!"wrote {f64s.size} binary64 fixtures to {out64} and {f32s.size} binary32 to {out32}"
+diff --git a/leanncd/experiments/jax_bridge/check-lean-drivers.sh b/leanncd/experiments/jax_bridge/check-lean-drivers.sh
+index fe35d10e..2fdace3a 100644
+--- a/leanncd/experiments/jax_bridge/check-lean-drivers.sh
++++ b/leanncd/experiments/jax_bridge/check-lean-drivers.sh
+@@ -56,6 +56,7 @@ run_driver EvalPlanAffineSmoke "$OUT/evalplan_affine_smoke.py"
+ run_driver EvalPlanAffineCorpus "$OUT/evalplan_affine_corpus.py"
+ run_driver EvalPlanAffineSmoke32 "$OUT/evalplan_affine_smoke32.py" "$STRIDE"
+ run_driver EvalPlanScatterSmoke "$OUT/evalplan_scatter_smoke64.py" "$OUT/evalplan_scatter_smoke32.py"
++run_driver EvalPlanNonlinSmoke "$OUT/evalplan_nonlin_smoke64.py" "$OUT/evalplan_nonlin_smoke32.py"
+ 
+ if [[ ${#failed[@]} -gt 0 ]]; then
+   echo "FAILED drivers: ${failed[*]}"
+diff --git a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+index 954dc5aa..b6e15bd6 100644
+--- a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
++++ b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+@@ -49,6 +49,7 @@ from typing import Any
+ 
+ import jax
+ import jax.numpy as jnp
++import numpy as np
+ 
+ def require_x64() -> None:
+     """Fail loud if JAX x64 is not enabled before reference execution."""
+@@ -194,6 +195,108 @@ def _run_scatter_node(
+     return jnp.reshape(jax.lax.fori_loop(0, len(idx), body, dest), dest_shape)
+ 
+ 
++# --- Pointwise / axiswise nonlinearities (tolerance-compared, not bit-exact) -----------------------
++#
++# Each formula mirrors `LeanNCD.Eval.Nonlin` (`pointwiseWith`, `softmaxRowWith`, `normalizeRowWith`,
++# `l2normalizeRowWith`) operation for operation and association for association. Row sums and the
++# softmax row maximum are sequential left folds (`fori_loop` over the row axis, vectorised across
++# rows), so the only expected difference from the Lean worker is the libm-vs-XLA implementation of
++# `exp`/`tanh`/`pow`/`sqrt`. Lean's `max a b` is `if a <= b then b else a`, so relu is
++# `where(0 <= x, x, 0)`, never `jnp.maximum`.
++
++# binary32 constants are the exact bit patterns of `float32NonlinOps` (not a rounded Python literal).
++_F32_CONST_BITS = {"gelu_scale": 0x3F4C422A, "gelu_cubic": 0x3D372713, "leak_slope": 0x3C23D70A}
++_F64_CONST = {"gelu_scale": 0.7978845608028654, "gelu_cubic": 0.044715, "leak_slope": 0.01}
++
++
++def _nonlin_const(name: str, dtype: Any) -> jax.Array:
++    if dtype == jnp.float32:
++        return jnp.asarray(np.array([_F32_CONST_BITS[name]], dtype=np.uint32).view(np.float32)[0])
++    return jnp.asarray(_F64_CONST[name], dtype=dtype)
++
++
++def _pointwise(fn: str, x: jax.Array, dtype: Any) -> jax.Array:
++    zero = jnp.zeros((), dtype)
++    one = jnp.ones((), dtype)
++    if fn == "relu":
++        return jnp.where(zero <= x, x, zero)
++    if fn == "sigmoid":
++        return one / (one + jnp.exp(-x))
++    if fn == "tanh":
++        return jnp.tanh(x)
++    if fn == "gelu":
++        half, three = jnp.asarray(0.5, dtype), jnp.asarray(3.0, dtype)
++        cube = jnp.power(x, three)  # float exponent: `powf`/`pow`, not the integer-power x*x*x
++        inner = _nonlin_const("gelu_scale", dtype) * (x + _nonlin_const("gelu_cubic", dtype) * cube)
++        return (half * x) * (one + jnp.tanh(inner))
++    if fn == "leakyrelu":
++        return jnp.where(zero <= x, x, _nonlin_const("leak_slope", dtype) * x)
++    raise ValueError(f"unsupported pointwise fn {fn!r}")
++
++
++def _run_pointwise_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
++    x = store[node["source"]]
++    if tuple(x.shape) != tuple(node["shape"]):
++        raise ValueError(f"pointwise source has shape {tuple(x.shape)}, record says {tuple(node['shape'])}")
++    return _pointwise(node["fn"], x, dtype)
++
++
++def _row_fold(n: int, init: jax.Array, step: Any) -> jax.Array:
++    """Sequential left fold over the last axis' `n` entries, vectorised across the other axes."""
++    return jax.lax.fori_loop(0, n, step, init)
++
++
++def _axiswise(fn: str, xm: jax.Array, inc: jax.Array, dtype: Any) -> jax.Array:
++    """Rows are the last axis of `xm`; `inc` is the static include table (bool, same shape)."""
++    n = xm.shape[-1]
++    zero = jnp.zeros((), dtype)
++    one = jnp.ones((), dtype)
++    row0 = jnp.zeros(xm.shape[:-1], dtype)
++    if fn == "softmax":
++        def max_step(i, carry):
++            m, seen = carry
++            xi, ii = xm[..., i], inc[..., i]
++            folded = jnp.where(seen, jnp.where(m <= xi, xi, m), xi)  # Lean max a b = if a <= b then b else a
++            return jnp.where(ii, folded, m), seen | ii
++        m, seen = _row_fold(n, (row0, jnp.zeros(xm.shape[:-1], bool)), max_step)
++        m = jnp.where(seen, m, row0)  # no unmasked entry: 0
++        e = jnp.exp(jnp.where(inc, xm - m[..., None], zero))
++        e = jnp.where(inc, e, zero)
++        s = _row_fold(n, row0, lambda i, acc: acc + e[..., i])
++        ok = inc & (s != zero)[..., None]
++        return jnp.where(ok, e / jnp.where(s != zero, s, one)[..., None], zero)
++    if fn == "normalize":
++        s = _row_fold(n, row0, lambda i, acc: jnp.where(inc[..., i], acc + xm[..., i], acc))
++        ok = inc & (s != zero)[..., None]
++        return jnp.where(ok, xm / jnp.where(s != zero, s, one)[..., None], zero)
++    if fn == "l2normalize":
++        ss = _row_fold(n, row0, lambda i, acc: jnp.where(inc[..., i], acc + xm[..., i] * xm[..., i], acc))
++        nz = ss != zero  # sqrt(ss) == 0 exactly when ss == 0
++        s = jnp.sqrt(jnp.where(nz, ss, one))
++        return jnp.where(inc & nz[..., None], xm / s[..., None], zero)
++    raise ValueError(f"unsupported axiswise fn {fn!r}")
++
++
++def _run_axiswise_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
++    x = store[node["source"]]
++    shape, axis = tuple(node["shape"]), node["axis_pos"]
++    if tuple(x.shape) != shape:
++        raise ValueError(f"axiswise source has shape {tuple(x.shape)}, record says {shape}")
++    if not 0 <= axis < len(shape):
++        raise ValueError(f"axiswise axis_pos {axis} out of range for shape {shape}")
++    table = node.get("include")  # static row-major 0/1 table; absent for an unmasked step
++    if table is None:
++        inc = np.ones(shape, dtype=bool)
++    else:
++        if len(table) != _prod(list(shape)):
++            raise ValueError(f"axiswise include table has {len(table)} entries for shape {shape}")
++        inc = np.array(table, dtype=bool).reshape(shape)
++    if x.size == 0:
++        return x
++    out = _axiswise(node["fn"], jnp.moveaxis(x, axis, -1), jnp.asarray(np.moveaxis(inc, axis, -1)), dtype)
++    return jnp.moveaxis(out, -1, axis)
++
++
+ def _exec_node(
+     node: dict[str, Any], store: list[jax.Array], dtype: Any, scatter_mode: str = "ordered"
+ ) -> jax.Array:
+@@ -203,6 +306,10 @@ def _exec_node(
+         return _run_node(node, store, dtype)
+     if kind == "scatter":
+         return _run_scatter_node(node, store, dtype, scatter_mode)
++    if kind == "pointwise":
++        return _run_pointwise_node(node, store, dtype)
++    if kind == "axiswise":
++        return _run_axiswise_node(node, store, dtype)
+     raise ValueError(f"unsupported node kind {kind!r}")
+ 
+ 
+diff --git a/leanncd/experiments/jax_bridge/evalplan_nonlin_smoke.py b/leanncd/experiments/jax_bridge/evalplan_nonlin_smoke.py
+new file mode 100644
+index 00000000..db391b7b
+--- /dev/null
++++ b/leanncd/experiments/jax_bridge/evalplan_nonlin_smoke.py
+@@ -0,0 +1,181 @@
++"""Pointwise/axiswise differential verifier (JAX pointwise slice, tolerance-compared).
++
++Loads the Lean-generated module (`EvalPlanNonlinSmoke.lean`): per fixture the static plan data
++(`renderAffinePlanNamed`, `.pointwise`/`.axiswise` nodes included) and the Lean reference worker's
++own result bits (`runPreparedDense` / `runPreparedDense32`). Runs every fixture through the committed
++runtime (`evalplan_affine_runtime.py`) eagerly and under `jax.jit` and requires every output to agree
++with Lean WITHIN (RTOL, ATOL) — the only expected difference is the libm-vs-XLA implementation of
++`exp`/`tanh`/`pow`/`sqrt`, since every sum and the softmax row maximum are sequential left folds in
++both. Beside the tolerance gate it requires: the exact-zero pattern (masked, all-masked and zero-sum
++entries are exactly 0 in BOTH), relu bit-exact (it is a selection, `relu(-0) = -0`), and a pinned
++reduction-order fixture. Bit-exactness elsewhere is printed as an observation only.
++
++Usage: evalplan_nonlin_smoke.py float64|float32 GENERATED_MODULE
++float64 runs with x64 enabled; float32 with x64 DISABLED (no float64 can arise at all).
++"""
++from __future__ import annotations
++
++import importlib.util
++import sys
++from pathlib import Path
++
++import jax
++
++_DT = sys.argv[1] if len(sys.argv) == 3 else ""
++if _DT not in ("float64", "float32"):
++    raise SystemExit(f"usage: {Path(sys.argv[0]).name} float64|float32 GENERATED_MODULE")
++jax.config.update("jax_enable_x64", _DT == "float64")
++import jax.numpy as jnp  # noqa: E402
++import numpy as np  # noqa: E402
++
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++import evalplan_affine_runtime as rt  # noqa: E402
++
++# Chosen from the MEASURED differences below (see README): each is a stated margin over the worst
++# observed relative / absolute difference of any function, eager or jit, over this corpus.
++RTOL = {"float64": 1e-12, "float32": 1e-5}
++ATOL = {"float64": 1e-14, "float32": 1e-6}
++
++JDT = jnp.float64 if _DT == "float64" else jnp.float32
++NDT = np.float64 if _DT == "float64" else np.float32
++UDT = np.uint64 if _DT == "float64" else np.uint32
++
++# fn -> [max_rel, max_abs, bit_exact_entries, total_entries], accumulated over every fixture/mode.
++STATS: dict[str, list] = {}
++
++
++def reconstruct(entry: dict) -> jax.Array:
++    arr = np.array(entry["bits"], dtype=UDT).view(NDT)
++    return jnp.asarray(arr.reshape(tuple(entry["shape"])))
++
++
++def lean_array(entry: dict) -> np.ndarray:
++    return np.array(entry["bits"], dtype=UDT).view(NDT).reshape(tuple(entry["shape"]))
++
++
++def out_fns(plan: dict) -> dict[str, str]:
++    """Materialized output name -> the function of the node that wrote its slot."""
++    by_slot = {n["dest"]: n["fn"] for n in plan["nodes"] if n.get("kind") in ("pointwise", "axiswise")}
++    return {name: by_slot[slot] for name, slot in plan["materialized"] if slot in by_slot}
++
++
++def within(g: np.ndarray, w: np.ndarray) -> bool:
++    gg, ww = g.astype(np.float64), w.astype(np.float64)
++    return bool(np.all(np.abs(gg - ww) <= ATOL[_DT] + RTOL[_DT] * np.abs(ww)))
++
++
++def require_close(got, entry: dict, label: str, fn: str | None) -> None:
++    g, w = np.asarray(got), lean_array(entry)
++    if g.dtype != NDT:
++        raise AssertionError(f"{label}: expected {NDT.__name__}, got {g.dtype}")
++    if g.shape != w.shape:
++        raise AssertionError(f"{label}: shape {g.shape} != {w.shape}")
++    if not np.all(np.isfinite(g)) or not np.all(np.isfinite(w)):
++        raise AssertionError(f"{label}: non-finite value: {g.tolist()} vs {w.tolist()}")
++    if not np.array_equal(g == 0, w == 0):
++        raise AssertionError(f"{label}: exact-zero pattern differs from Lean: {g.tolist()} vs {w.tolist()}")
++    if not within(g, w):
++        raise AssertionError(f"{label}: not within rtol {RTOL[_DT]} / atol {ATOL[_DT]}: {g.tolist()} vs {w.tolist()}")
++    if fn is not None and g.size:
++        diff = np.abs(g.astype(np.float64) - w.astype(np.float64))
++        nz = w != 0
++        rel = float(np.max(diff[nz] / np.abs(w.astype(np.float64))[nz])) if nz.any() else 0.0
++        s = STATS.setdefault(fn, [0.0, 0.0, 0, 0])
++        s[0], s[1] = max(s[0], rel), max(s[1], float(np.max(diff)))
++        s[2] += int(np.sum(g.reshape(-1).view(UDT) == w.reshape(-1).view(UDT)))
++        s[3] += g.size
++        # jit may flip the sign of a zero only: the assign step feeding relu starts from `+0` and XLA drops
++        # that seed under jit (AGENTS pitfall), so the jit run compares by value, the eager run by bits.
++        if fn == "relu" and " jit " not in label and not np.array_equal(g.reshape(-1).view(UDT), w.reshape(-1).view(UDT)):
++            raise AssertionError(f"{label}: relu is a selection and must be bit-exact: {g.tolist()} vs {w.tolist()}")
++
++
++def run_fixture(f: dict) -> None:
++    plan = f["plan"]
++    kinds = [n.get("kind", "assign") for n in plan["nodes"]]
++    if kinds.count("pointwise") != f["n_pointwise"] or kinds.count("axiswise") != f["n_axiswise"]:
++        raise AssertionError(f"{f['name']}: plan nodes {kinds} vs counts {f['n_pointwise']}/{f['n_axiswise']}")
++    if f["n_pointwise"] + f["n_axiswise"] < 1:
++        raise AssertionError(f"{f['name']}: fixture exercises no nonlinearity")
++    fns = out_fns(plan)
++    inputs = {n: reconstruct(e) for n, e in f["inputs"].items()}
++    eager = rt.run_named(plan, inputs, JDT)
++    jitted = jax.jit(lambda i: rt.run_named(plan, i, JDT))(inputs)
++    for name, exp in f["expected"].items():
++        require_close(eager[name], exp, f"{f['name']} eager {name}", fns.get(name))
++        require_close(jitted[name], exp, f"{f['name']} jit {name}", fns.get(name))
++
++
++def main() -> None:
++    spec = importlib.util.spec_from_file_location("gen_nonlin", Path(sys.argv[2]).resolve())
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    by = {f["name"]: f for f in mod.FIXTURES}
++    for f in mod.FIXTURES:
++        run_fixture(f)
++    print(f"{len(mod.FIXTURES)} {_DT} nonlinearity fixtures within rtol {RTOL[_DT]} / atol {ATOL[_DT]} "
++          f"of Lean (eager + jit)")
++    covered = set(STATS)
++    want = {"relu", "sigmoid", "tanh", "gelu", "leakyrelu", "softmax", "normalize", "l2normalize"}
++    assert covered == want, f"functions not exercised: {want - covered}"
++    print(f"measured {_DT} differences vs Lean (max over fixtures, eager + jit):")
++    for fn in sorted(STATS):
++        rel, ab, ex, tot = STATS[fn]
++        print(f"  {fn:12s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
++
++    sfx = "" if _DT == "float64" else "32"
++    # Tolerance self-test: a 1e-3 relative perturbation of a real fixture output must be rejected.
++    e = by["aw_plain" + sfx]["expected"]["Sm"]
++    w = lean_array(e)
++    assert not within((w * NDT(1.001)).astype(NDT), w), "tolerance accepts a 1e-3 perturbation: vacuous"
++    assert not within(np.where(w > 0, NDT(0), w).astype(NDT), w), "tolerance accepts a zeroed output: vacuous"
++    print("tolerance self-test: 1e-3 relative perturbation and a zeroed output are rejected")
++
++    # Signed zero: the input `-0.0` reaches relu through the assign copy, which starts from +0 (`+0 + -0 =
++    # +0`), so Lean's relu input is +0.0 and its output +0.0; relu is required bit-exact (eager) above.
++    # A signed zero fed DIRECTLY into a pointwise step needs a raw-plan fixture (parked).
++    R = lean_array(by["pw" + sfx]["expected"]["R"])
++    assert R[3] == 0 and not np.signbit(R[3]) and not np.signbit(R[2]), R.tolist()
++    print("relu signed zero: assign copy turns -0.0 into +0.0 in Lean; relu bit-exact in eager JAX")
++
++    # Masked / zero-sum / all-zero / all-masked rows are exactly 0, not uniform, in Lean AND JAX
++    # (the exact-zero-pattern gate above); pin the Lean values the fixtures were chosen for.
++    am = lean_array(by["allmasked" + sfx]["expected"]["Sm"])
++    assert np.all(am[0] == 0) and np.all(am[1:].sum(axis=1) > 0.99), am.tolist()  # row 0 all masked
++    zs = lean_array(by["aw_zerosum" + sfx]["expected"]["Nm"])
++    assert np.all(zs == 0), zs.tolist()  # zero-sum rows normalize to zeros
++    z2 = lean_array(by["aw_zero" + sfx]["expected"]["L2"])
++    assert np.all(z2 == 0), z2.tolist()  # all-zero row: l2normalize gives zeros
++    lg = lean_array(by["aw_large" + sfx]["expected"]["Sm"])
++    assert np.all(np.isfinite(lg)) and np.allclose(lg.sum(axis=1), 1.0, atol=1e-6), lg.tolist()
++    print("pinned: all-masked row = zeros (not uniform), zero-sum normalize = zeros, all-zero l2 = zeros, "
++          "large logits [1000, 1001, ...] finite and sum to 1 (max subtraction)")
++
++    # Reduction ORDER: normalize over [big, 1, -big, 1]. Forward left fold: ((big+1)+-big)+1 = 1, so the
++    # row is x / 1. A reversed fold or a pairwise tree sums to 0, so the row would be all zeros.
++    row = np.array([1e16 if _DT == "float64" else 1e10, 1.0, -(1e16 if _DT == "float64" else 1e10), 1.0], dtype=NDT)
++    fwd = ((row[0] + row[1]) + row[2]) + row[3]
++    rev = ((row[3] + row[2]) + row[1]) + row[0]
++    tree = (row[0] + row[1]) + (row[2] + row[3])
++    assert fwd == NDT(1.0) and rev == 0 and tree == 0, (fwd, rev, tree)
++    ord_out = lean_array(by["order" + sfx]["expected"]["Nm"])
++    assert np.array_equal(ord_out, row / fwd), ord_out.tolist()  # Lean folded forward
++    print(f"reduction order pinned: forward sum {fwd!r}, reversed {rev!r}, tree {tree!r}; Lean row = x / forward "
++          f"sum, JAX matches it within tolerance (a reordered sum would give all zeros)")
++
++    # Differentiable: jit(grad) is finite for softmax (weighted sum, masked and unmasked) and gelu.
++    for fx, name, shape in (("pw" + sfx, "G", (7,)), ("aw_plain" + sfx, "Sm", (2, 4)),
++                            ("causal" + sfx, "Sm", (3, 3))):
++        f = by[fx]
++        in_name = next(iter(f["inputs"]))
++        x0 = reconstruct(f["inputs"][in_name])
++        wts = jnp.arange(1, x0.size + 1, dtype=JDT).reshape(x0.shape)
++        grad = jax.jit(jax.grad(lambda x: jnp.sum(wts * rt.run_named(f["plan"], {in_name: x}, JDT)[name])))
++        g = np.asarray(grad(x0))
++        assert g.dtype == NDT and np.all(np.isfinite(g)), (fx, g.tolist())
++        assert np.any(g != 0), (fx, "gradient is identically zero")
++    print("jit(grad) finite and non-trivial for gelu, softmax and causal softmax")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/leanncd/experiments/jax_bridge/run-evalplan-nonlin.sh b/leanncd/experiments/jax_bridge/run-evalplan-nonlin.sh
+new file mode 100644
+index 00000000..e530c727
+--- /dev/null
++++ b/leanncd/experiments/jax_bridge/run-evalplan-nonlin.sh
+@@ -0,0 +1,36 @@
++#!/usr/bin/env bash
++# Pointwise/axiswise differential: generate the Lean fixtures (binary64 + binary32), then verify the
++# committed runtime against the Lean reference worker's results within a measured tolerance in both
++# precisions (JAX pointwise slice).
++#
++# Usage: ./run-evalplan-nonlin.sh        (needs ./setup-python.sh first)
++
++set -euo pipefail
++
++HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
++LEANNCD_ROOT=$(cd "$HERE/../.." && pwd)
++CACHE_DIR="$HERE/.cache"
++GEN64="$CACHE_DIR/generated_evalplan_nonlin_smoke64.py"
++GEN32="$CACHE_DIR/generated_evalplan_nonlin_smoke32.py"
++LAKE="${LAKE:-$HOME/.elan/bin/lake}"
++PYTHON="${PYTHON:-$CACHE_DIR/python/bin/python}"
++
++if [[ ! -x "$LAKE" ]]; then
++  echo "Lake not found at $LAKE; set LAKE to the executable path." >&2
++  exit 1
++fi
++if [[ ! -x "$PYTHON" ]]; then
++  echo "Experiment Python not found at $PYTHON; run ./setup-python.sh first (or set PYTHON)." >&2
++  exit 1
++fi
++
++mkdir -p "$CACHE_DIR"
++(
++  cd "$LEANNCD_ROOT"
++  "$LAKE" build LeanNCD
++  "$LAKE" build JaxExperiment
++  "$LAKE" env lean --run "$HERE/EvalPlanNonlinSmoke.lean" "$GEN64" "$GEN32"
++)
++
++"$PYTHON" "$HERE/evalplan_nonlin_smoke.py" float64 "$GEN64"
++"$PYTHON" "$HERE/evalplan_nonlin_smoke.py" float32 "$GEN32"
+-- 
+2.50.1 (Apple Git-155)
+

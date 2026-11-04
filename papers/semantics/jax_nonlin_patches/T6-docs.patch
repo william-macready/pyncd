@@ -1,0 +1,165 @@
+From f66bbf1bd622c2b38bb6faca827af5d0efb44f5b Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Tue, 3 Nov 2026 20:28:13 -0700
+Subject: [PATCH] docs(jax): pointwise and axiswise steps render in
+ affineReference (tolerance-compared)
+
+README section, runtime docstring, the Plan AGENTS JAX bullet and run table, two papers that said JAX refuses nonlinearities or masked axiswise steps, and the driver count in check-lean-drivers.sh (six drivers now). The evidence path, einsumOnly, scan and unary reads are stated as still refused.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ leanncd/LeanNCD/Eval/Plan/AGENTS.md           |  4 +-
+ leanncd/experiments/jax_bridge/README.md      | 44 ++++++++++++++++++-
+ .../jax_bridge/check-lean-drivers.sh          |  4 +-
+ .../jax_bridge/evalplan_affine_runtime.py     |  7 +++
+ papers/f32_jax_evalplan.md                    |  2 +-
+ papers/predicate_boolean_backend_parity.md    |  2 +-
+ 6 files changed, 56 insertions(+), 7 deletions(-)
+
+diff --git a/leanncd/LeanNCD/Eval/Plan/AGENTS.md b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+index ffe68114..4ba20583 100644
+--- a/leanncd/LeanNCD/Eval/Plan/AGENTS.md
++++ b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+@@ -45,7 +45,7 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
+ - **A block's `.pointwise`/`.axiswise` source must be a PRECEDING `.assign` destination** (`nonlinearSourceNotLocalAssignment`) — what keeps `Scan.lean`'s assignment-only causality walk complete.
+ - **Additive-collection private names are published but not persistent outputs.** `prepareEvalPlan` compiles the COLLECTED schedule (`CheckedScheduledProgram.privateNames` is the generated per-writer `T#k` only; the collector keeps the public name `T`). Step F splits the publications: `PlanBindings.materializedNames` holds only public names, `privateSlots` the hidden publication slots, and `checkPreparedBindings` requires `materializedNames`' slots to equal the raw publication sequence MINUS `privateSlots` (a hidden slot the plan does not publish is `PreparedBindingsError.privateSlotUnpublished`). `PlanBindings.definedNames` (every name the schedule writes, scan scratch included) backs B3: `packBodyOf`/`unpackBodyOf` refuse a supplied environment that names one (`InputBindingError.inputIsDefined`, first in write order, the name `EvalError.inputIsDefined` reports on the reference). `prepareEvalPlan` also refuses a signature entry naming a defined name (`InputSignatureError.definedName`, first in write order, checked before the required-input checks). A new publication site must push into `materializedAcc` unconditionally and let Step F partition it.
+ - **Error-constructor shape, not step kind:** a `checkScatter` failure surfaces as `PlanStepError.assign (.nodeError ni e)`, because the payload is a plain `PlanError`.
+-- **JAX is context-free; `affineReference` runs binary64 and binary32, `einsumOnly` binary64 only.** Per node, `checkJaxAssignSupport` re-runs the evidence's own checker and admits only the storage kind's real carrier (`jaxRealCarrier`: `f64`+`admittedAlgebra` or `f32`+`admittedAlgebraF32`), rejecting (located, in the order destination/algebra/context/factors) a Boolean destination or source, tropical max/min, a unary read, and a non-empty `contextShape` under either kind. A `.scatter` is RENDERED by `affineReference` only (ordered mode, bit-exact; the Python runtime's opt-in `scatter_mode="fast"` is a vectorised `.at[].add` over the SAME table, exact only without colliding writes, so no Lean change: `renderScatterNode` = the compute half's tables + `dest_shape` + a static `dest_flat_index` placement table in the worker's `allCoords` order; `checkJaxScatterSupport` grades the compute half with the same `jaxAssignSupported` policy); `einsumOnly` (no scatter form) and the evidence path (`lowerCheckPlanToCandidate`, `JaxExecutableWellFormed`: only an `.assign` step at a kernel's index) still refuse it as `unsupportedStep`, so a scatter plan runs through JAX but exposes no `ExecutionEvidence`. Tropical, Boolean and contextful scatters stay refused by the same compute-half gate. Evidence is storage-keyed (`orderedReferenceFor`): an affine kernel is `orderedReference64` or `orderedReference32` by its evidence's kind, and `aggregateEvidenceList kind` folds to the PLAN's claim, so a zero-step f32 plan gets `orderedReference32`, never `orderedReference64`. Binary32 einsum is refused at every door: `validateEinsum` conjoins `einsumStorageAdmitted`, and every einsum entry and every plan-level entry of `EvalPlanCodegen.lean` opens with the mode-aware `requireModeStorage` (plan-level at plan entries, per-assignment at the standalone `lowerAssign`/`loweringToEinsumCandidate`); the standalone affine entries (`renderAffineAssign`, `loweringToAffineTableCandidate`) and `buildAssignFixture` do not. A new einsum or plan-level JAX entry point needs its own `requireModeStorage`. Certification implies rendering: `validateEinsum` mirrors the emitter via `einsumTermRenderable` and the public `einsumTermLabelExtents`, which `lowerAssign` also calls — every factor's source extent must equal its label's iteration extent, since a shorter zero-padded read renders as `a->a` and returns a different shape than Dense. Which NAME belongs to which slot is deliberately not re-checked there (`raw` carries no names).
++- **JAX is context-free; `affineReference` runs binary64 and binary32, `einsumOnly` binary64 only.** Per node, `checkJaxAssignSupport` re-runs the evidence's own checker and admits only the storage kind's real carrier (`jaxRealCarrier`: `f64`+`admittedAlgebra` or `f32`+`admittedAlgebraF32`), rejecting (located, in the order destination/algebra/context/factors) a Boolean destination or source, tropical max/min, a unary read, and a non-empty `contextShape` under either kind. A `.scatter` is RENDERED by `affineReference` only (ordered mode, bit-exact; the Python runtime's opt-in `scatter_mode="fast"` is a vectorised `.at[].add` over the SAME table, exact only without colliding writes, so no Lean change: `renderScatterNode` = the compute half's tables + `dest_shape` + a static `dest_flat_index` placement table in the worker's `allCoords` order; `checkJaxScatterSupport` grades the compute half with the same `jaxAssignSupported` policy); `einsumOnly` (no scatter form) and the evidence path (`lowerCheckPlanToCandidate`, `JaxExecutableWellFormed`: only an `.assign` step at a kernel's index) still refuse it as `unsupportedStep`, so a scatter plan runs through JAX but exposes no `ExecutionEvidence`. Tropical, Boolean and contextful scatters stay refused by the same compute-half gate. A `.pointwise`/`.axiswise` step is RENDERED by `affineReference` only (`renderPointwiseNode`/`renderAxiswiseNode`: slots, shape, function name, `axis_pos`, and for a masked axiswise step a static row-major `include` table built in Lean by `axiswiseIncludedPredicate`, the dense worker's own mask handling; no support gate, because `checkPlan` already ran the nonlinearity checkers under the plan's own table) and compared to Lean within a measured tolerance, not bit for bit (`exp`/`tanh`/`pow` come from XLA); `einsumOnly` and the evidence path still refuse it as `unsupportedStep`, `.scan` stays refused, and an inline unary read (`sqrt`, `exp`, `log`, `sin`, `cos`, reciprocal) is still refused by the assignment gate (`unaryFactor`), so a LayerNorm with `eps` does not render. Evidence is storage-keyed (`orderedReferenceFor`): an affine kernel is `orderedReference64` or `orderedReference32` by its evidence's kind, and `aggregateEvidenceList kind` folds to the PLAN's claim, so a zero-step f32 plan gets `orderedReference32`, never `orderedReference64`. Binary32 einsum is refused at every door: `validateEinsum` conjoins `einsumStorageAdmitted`, and every einsum entry and every plan-level entry of `EvalPlanCodegen.lean` opens with the mode-aware `requireModeStorage` (plan-level at plan entries, per-assignment at the standalone `lowerAssign`/`loweringToEinsumCandidate`); the standalone affine entries (`renderAffineAssign`, `loweringToAffineTableCandidate`) and `buildAssignFixture` do not. A new einsum or plan-level JAX entry point needs its own `requireModeStorage`. Certification implies rendering: `validateEinsum` mirrors the emitter via `einsumTermRenderable` and the public `einsumTermLabelExtents`, which `lowerAssign` also calls — every factor's source extent must equal its label's iteration extent, since a shorter zero-padded read renders as `a->a` and returns a different shape than Dense. Which NAME belongs to which slot is deliberately not re-checked there (`raw` carries no names).
+ 
+ ## Entry Points
+ | Task | Start Here |
+@@ -56,7 +56,7 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
+ | Why was a source scatter rejected? | `lowerArith` (`DSL/Pipeline/Structural.lean`) reclassifies an affine/diagonal LHS into `Stmt.scatter`. Top level: constant and multi-axis placements are admitted (`lowerArith` rewrites a constant slot to a placement over a synthetic size-1 `#const<uid>` axis; a multi-axis row takes the exact-reach extent `LHSSlot.outExtent`); nonlinear placement and predicate destinations fail at capability tier; colliding writes are summed, never rejected. Since slice B constant/multi-axis writers are also collected in multi-writer groups and into a boxed single writer's declared box (`LHSSlot.collectable`; a raw `.affine (.const _)` still gives `multiWriterScatter`), and the surface spells them (`S[a + b]`, `S[=3]`); a scan-local surface constant slot is admitted since F3-b stage 1 (lowered to a unit-axis row; only a raw one in a hand-built `ScheduledProgram` is refused, `scatterOrAffineLhs` and `scanWriteRowNotAdmitted`), while a scan-local multi-axis slot stays refused (F3-b stage 2: `multiAxisScatterLhs`; the checked scan path cannot place a colliding multi-axis write yet, though the reference sums it since F3-a). In a scan, only positive one-axis affine placement with nonnegative bias in non-advancing state dims and identity nonlinearity is admitted; other failures are typed `ScanCompileError`s |
+ | Differential checks | `test/Eval/Plan/DifferentialTest.lean`: `scanParityCheck` (checked plan vs legacy vs scan-free oracle), `scatterPrograms` (9 top-level cases) and `scanScatterPrograms` (7 cases, three-way). The 3,832-case scan-free and 17-case scan corpora are binary64 reference gates |
+ | An oracle that is neither evaluator | `test/Eval/PropertyOracle/ScanUnroll.lean` — `independentRun` rewrites a scan into a scan-free program; calls no checked geometry or scan-worker helper. `test/Eval/Plan/Scatter32OracleTest.lean` — an independent binary32 top-level scatter oracle, pinning observed bits case by case |
+-| Run checked plans against JAX | `experiments/jax_bridge/run-evalplan-affine.sh` (curated fixtures), `run-evalplan-affine-corpus.sh` (all `PropertyOracle.enumPrograms`), `run-evalplan-affine32.sh` (binary32 `affineReference`, `orderedReference32`), `run-evalplan-scatter.sh` (scatter steps, ordered and `scatter_mode="fast"`, binary64 and binary32) |
++| Run checked plans against JAX | `experiments/jax_bridge/run-evalplan-affine.sh` (curated fixtures), `run-evalplan-affine-corpus.sh` (all `PropertyOracle.enumPrograms`), `run-evalplan-affine32.sh` (binary32 `affineReference`, `orderedReference32`), `run-evalplan-scatter.sh` (scatter steps, ordered and `scatter_mode="fast"`, binary64 and binary32), `run-evalplan-nonlin.sh` (pointwise and axiswise steps and a single-layer transformer, tolerance-compared, binary64 and binary32) |
+ 
+ ## Pitfalls
+ - **"Admitted by the checked backend" ≠ "runs on JAX" ≠ "runs in binary32".** Check each boundary separately (Contracts).
+diff --git a/leanncd/experiments/jax_bridge/README.md b/leanncd/experiments/jax_bridge/README.md
+index b3ddbd13..4288ceee 100644
+--- a/leanncd/experiments/jax_bridge/README.md
++++ b/leanncd/experiments/jax_bridge/README.md
+@@ -336,13 +336,55 @@ and ordered: none; fast: one per non-empty scatter node), since results alone ca
+ | scatter under `einsumOnly` | `unsupportedStep` (einsum is a gather; no scatter form) |
+ | scatter in the evidence path | `lowerCheckPlanToCandidate` / `JaxExecutableWellFormed`: `unsupportedStep` (no `ExecutionEvidence` for a scatter) |
+ | tropical, Boolean, contextful or unary-read scatter | the compute-half gate (`checkJaxScatterSupport`): `unsupportedAlgebra` etc. |
+-| scan, pointwise, axiswise | `unsupportedStep` |
++| scan | `unsupportedStep` |
+ 
+ Run: `./run-evalplan-scatter.sh` (generates `EvalPlanScatterSmoke.lean`'s binary64 + binary32
+ fixtures, then `evalplan_scatter_smoke.py float64|float32`: eager and jit bit comparison, a pinned
+ collision-order case, a signed-zero case, a gradient). Mutation record for the Python half:
+ `mutation_python_manifest.py` (`papers/semantics/jax_scatter_mutations_python.json`).
+ 
++### Pointwise and axiswise steps (tolerance-compared, JAX pointwise slice)
++
++A prepared plan whose steps include a `.pointwise` (`relu`, `sigmoid`, `tanh`, `gelu`, `leakyrelu`) or an
++`.axiswise` (`softmax`, `normalize`, `l2normalize`, with or without a `where` mask) step now renders and
++runs under `affineReference`, in both precisions; with the assignments JAX already ran, a single-layer
++transformer (attention, causal softmax, `normalize`, relu feed-forward) runs end to end. `renderPointwiseNode`
++emits `"kind": "pointwise"`, the source and destination slots, the shape and the function name;
++`renderAxiswiseNode` adds `"axis_pos"` and, for a MASKED step only, a static `"include"` table: one `0`/`1`
++per coordinate in row-major order, decided in Lean by the dense worker's own predicate
++(`axiswiseIncludedPredicate`, a delegation to the worker's mask handling), so the runtime never sees a
++predicate. A mask the worker refuses is unreachable for a checked plan (`maskWidthMismatch`); the codegen
++still refuses it (`axiswiseIncludeRefused`) rather than emit an unmasked table. There is no separate support
++gate: `checkPlan` already ran the nonlinearity checkers under the plan's own signature table, and these
++steps have no compute half to grade.
++
++The runtime mirrors `LeanNCD.Eval.Nonlin` operation for operation: relu is `where(0 <= x, x, 0)` (Lean's
++`max 0 x`, so `relu(NaN)` is `+0`; never `jnp.maximum`), row sums and the softmax row maximum are sequential
++left folds (`fori_loop` over the row axis, vectorised across rows) over the UNMASKED entries, an all-masked
++row and a zero-sum or all-zero row are exactly zero, and the binary32 constants are the exact bit patterns of
++Lean's. Unlike scatter, the result is NOT bit-identical to Lean: `exp`, `tanh` and `pow` come from XLA, not
++from Lean's libm, so the verifier compares within `rtol`/`atol` (`1e-12`/`1e-14` binary64, `1e-5`/`1e-6`
++binary32), measured, not guessed. On this CPU backend `normalize`, `l2normalize`, `sigmoid`, `leakyrelu` and
++`relu` were bit-identical to Lean in both precisions and so was binary32 `softmax`; binary64 `softmax`,
++`tanh` and `gelu` differed by at most a few ulps (binary32 `gelu`: up to `2.5e-5` relative, at outputs near
++`4e-3`, which the absolute tolerance covers). An observation about this backend, not a guarantee. Relu is bit-exact
++in eager mode only: the surface language emits an assignment copy before a pointwise step and XLA drops
++that copy's `+0` seed under `jax.jit` (the pitfall above), so a jit run can flip the sign of a zero.
++
++| Still refused | Where |
++| --- | --- |
++| pointwise or axiswise under `einsumOnly` | `unsupportedStep` (no einsum form) |
++| pointwise or axiswise in the evidence path | `lowerCheckPlanToCandidate` / `JaxExecutableWellFormed`: `unsupportedStep` (no `ExecutionEvidence`) |
++| an inline unary read (`sqrt`, `exp`, `log`, `sin`, `cos`, reciprocal `/`) | the assignment gate (`checkJaxAssignSupport`): `unaryFactor`; so a LayerNorm with `eps` (`sqrt` and division) does not render, while `normalize`/`l2normalize` do |
++
++Run: `./run-evalplan-nonlin.sh` (generates `EvalPlanNonlinSmoke.lean`'s binary64 + binary32 fixtures, then
++`evalplan_nonlin_smoke.py float64|float32`: 15 fixtures per precision, eager and jit, including the
++single-layer transformer with every materialized output compared, a pinned reduction-order case, rows that
++pin the softmax maximum, relu over a NaN, and a `jit(grad)` finite check). Mutation records:
++`papers/semantics/jax_nonlin_mutations_post.json` (Lean render, `mutation-manifest.sh`) and
++`papers/semantics/jax_nonlin_mutations_python.json` (runtime and verifier, `mutation_python_manifest.py`,
++which takes a per-entry `verifier`).
++
+ ## Scaling probe
+ 
+ `run-scaling-probe.sh` measures one mid-sized contraction — `Y[i] := Σⱼ W[i,j]·x[j]`, `i,j` both
+diff --git a/leanncd/experiments/jax_bridge/check-lean-drivers.sh b/leanncd/experiments/jax_bridge/check-lean-drivers.sh
+index 2fdace3a..2388fcfc 100644
+--- a/leanncd/experiments/jax_bridge/check-lean-drivers.sh
++++ b/leanncd/experiments/jax_bridge/check-lean-drivers.sh
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env bash
+-# Lean-side regression check for the five JAX-bridge drivers. NO Python and NO JAX: it only runs the
++# Lean-side regression check for the six JAX-bridge drivers. NO Python and NO JAX: it only runs the
+ # Lean generators and fails if any of them exits non-zero.
+ #
+ # Why: the drivers are `lake env lean --run` scripts outside every Lake target (`JaxExperiment` globs
+@@ -62,4 +62,4 @@ if [[ ${#failed[@]} -gt 0 ]]; then
+   echo "FAILED drivers: ${failed[*]}"
+   exit 1
+ fi
+-echo "all five drivers ran clean (Lean side only; the Python/JAX verifiers were not run)"
++echo "all six drivers ran clean (Lean side only; the Python/JAX verifiers were not run)"
+diff --git a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+index b6e15bd6..14885bd6 100644
+--- a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
++++ b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+@@ -39,6 +39,13 @@ Load-bearing properties (whole-branch review gate):
+   It is bit-identical to ordered/Lean when no two source coordinates share a destination cell (or
+   every partial sum is exactly representable); with collisions XLA's accumulation order is
+   unspecified, so float results agree only within rounding. The table is range-checked at trace time.
++* **Pointwise and axiswise nodes (`"kind": "pointwise"` / `"axiswise"`).** One source slot to one
++  destination slot, shape-preserving. Each formula mirrors `LeanNCD.Eval.Nonlin` operation for
++  operation: relu is `where(0 <= x, x, 0)` (Lean's `max 0 x`), row sums and the softmax row maximum
++  are sequential left folds over the UNMASKED entries (a masked step carries a static row-major
++  `include` table decided in Lean; the runtime never sees a predicate), and an all-masked, zero-sum
++  or all-zero row is exactly zero. The result agrees with Lean only within a tolerance, not bit for
++  bit: `exp`/`tanh`/`pow` come from XLA, not Lean's libm.
+ * **Differentiable** with respect to the floating input tensors (integer gather + `where` + loops).
+ """
+ 
+diff --git a/papers/f32_jax_evalplan.md b/papers/f32_jax_evalplan.md
+index 55ef8aee..1c054986 100644
+--- a/papers/f32_jax_evalplan.md
++++ b/papers/f32_jax_evalplan.md
+@@ -56,7 +56,7 @@ precisions.
+ |---|---|---|
+ | binary32 under `einsumOnly` (any plan, any assignment, zero-step included) | `requireModeStorage .einsumOnly` at every einsum door; `einsumStorageAdmitted` in `validateEinsum` | **closed decision, no owner** (§6 item 2) |
+ | Boolean dest/source, tropical algebra, unary read, Iverson factor, contextful assignment | `checkJaxAssignSupport` / `requireNoIverson` / `renderAffineTerm`, unchanged under both kinds | permanent fail-loud boundary (README "What this backend REJECTS") |
+-| scan, scatter, pointwise/axiswise steps on JAX | `JaxExecutableWellFormed` / `lowerCheckPlanToCandidate` (`unsupportedStep`), in every precision | not this slice; no JAX scan/nonlinearity exists in either precision. Scatter: since the JAX scatter slice `affineReference` renders and runs it in both precisions, but this evidence path and `einsumOnly` still refuse it |
++| scan, scatter, pointwise/axiswise steps on JAX | `JaxExecutableWellFormed` / `lowerCheckPlanToCandidate` (`unsupportedStep`), in every precision | not this slice; no JAX scan exists in either precision. Scatter and pointwise/axiswise: since the JAX scatter slice and the JAX pointwise slice `affineReference` renders and runs them in both precisions (pointwise/axiswise within a measured tolerance, not bit for bit), but this evidence path and `einsumOnly` still refuse them |
+ | mixed f32/f64 | Step 0b | F32-E (contingent) |
+ 
+ **`einsumOnly` binary32 is NOT deferred-but-planned.** It is refused, with no tolerance label, as a
+diff --git a/papers/predicate_boolean_backend_parity.md b/papers/predicate_boolean_backend_parity.md
+index f35de3ec..6137c698 100644
+--- a/papers/predicate_boolean_backend_parity.md
++++ b/papers/predicate_boolean_backend_parity.md
+@@ -73,7 +73,7 @@ implementation.
+ | Predicate destination with max/min | Continue treating this as invalid source. Backend parity in these slices is for schedules satisfying the DSL pipeline's existing `checkDtypes` invariant; add the same typed rejection at the direct `ScheduledProgram` boundary. |
+ | Input signatures | Keep `InputSignature.ofDenseInputs` as its existing f64 compatibility helper. Add a separate declaration-aware helper. |
+ | Result dtype | Keep shared `EvalReport` unchanged. Expose materialized name/signature pairs from `PreparedPlan`. |
+-| JAX | Reject Iverson factors, masked axiswise operations, and Bool algebra/dtypes explicitly. Do not implement JAX predicate semantics in these slices. **As shipped** (Task 4.5 and its reviews): the rejection is a located typed gate (`JaxSupportError`/`checkJaxAssignSupport`) covering a Boolean destination, a Boolean source, tropical max/min algebra, an inline unary read, and a CONTEXTFUL assignment (non-empty `AssignPlan.contextShape`, `contextualAssignment` — neither lowering has a kernel parameter for the runtime context coordinate), applied at every public renderer, lowerer, candidate conversion, and validator before Python or evidence exists. Iverson factors keep their own located `iversonFactor`, and `einsumOnly` additionally rejects a zero-padded read whose source extent disagrees with its own iteration extent (`labelExtentMismatch`, decided by the validator's own `einsumTermLabelExtents`). |
++| JAX | Reject Iverson factors, masked axiswise operations, and Bool algebra/dtypes explicitly. Do not implement JAX predicate semantics in these slices. *(Superseded for masked axiswise by the JAX pointwise slice: `affineReference` now renders a masked axiswise step through a static include table decided in Lean by the dense worker's own predicate, so JAX still holds no predicate semantics; `einsumOnly` and the evidence path still refuse it, and Iverson factors and Bool algebra/dtypes are still rejected.)* **As shipped** (Task 4.5 and its reviews): the rejection is a located typed gate (`JaxSupportError`/`checkJaxAssignSupport`) covering a Boolean destination, a Boolean source, tropical max/min algebra, an inline unary read, and a CONTEXTFUL assignment (non-empty `AssignPlan.contextShape`, `contextualAssignment` — neither lowering has a kernel parameter for the runtime context coordinate), applied at every public renderer, lowerer, candidate conversion, and validator before Python or evidence exists. Iverson factors keep their own located `iversonFactor`, and `einsumOnly` additionally rejects a zero-padded read whose source extent disagrees with its own iteration extent (`labelExtentMismatch`, decided by the validator's own `einsumTermLabelExtents`). |
+ | Capability errors | Retain `maskOrPredicate`, `maskedAxiswiseNotSupported`, and `booleanOutput` as producer-less compatibility constructors after their last producer is removed. |
+ 
+ ## 2. Three different meanings of "predicate"
+-- 
+2.50.1 (Apple Git-155)
+

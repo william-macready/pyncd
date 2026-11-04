@@ -1,0 +1,108 @@
+[
+ {
+  "label": "JN-T1-01 (include table in reversed row-major order)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "        .ok (some ((DenseTensor.allCoords a.shape.toList).toArray.map fun c => if inc c then 1 else 0))",
+  "new": "        .ok (some ((DenseTensor.allCoords a.shape.toList).toArray.reverse.map fun c => if inc c then 1 else 0))",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2285:0: Expression",
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2297:0: Expression"
+  ]
+ },
+ {
+  "label": "JN-T1-02 (include table inverted: masked coordinates included)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "fun c => if inc c then 1 else 0))",
+  "new": "fun c => if inc c then 0 else 1))",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2285:0: Expression",
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2297:0: Expression"
+  ]
+ },
+ {
+  "label": "JN-T1-03 (axiswise function names swapped: softmax <-> normalize)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "  | .softmax => \"softmax\" | .normalize => \"normalize\" | .l2normalize => \"l2normalize\"",
+  "new": "  | .softmax => \"normalize\" | .normalize => \"softmax\" | .l2normalize => \"l2normalize\"",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2285:0: Expression"
+  ]
+ },
+ {
+  "label": "JN-T1-04 (the include key dropped: a masked step renders as unmasked)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "    | some t => \", \\\"include\\\": \" ++ pyNatListLit t",
+  "new": "    | some _ => \"\"",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2285:0: Expression"
+  ]
+ },
+ {
+  "label": "JN-T1-05 (pointwise function names swapped: relu <-> sigmoid)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "  | .relu => \"relu\" | .sigmoid => \"sigmoid\"",
+  "new": "  | .relu => \"sigmoid\" | .sigmoid => \"relu\"",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2280:0: Expression"
+  ]
+ },
+ {
+  "label": "JN-T1-06 (affineReference refuses pointwise and axiswise steps again)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "    | .pointwise p => entries := entries.push (renderPointwiseNode p)\n    | .axiswise a => entries := entries.push (← renderAxiswiseNode ni a)\n    | .scan _ => throw (.unsupportedStep ni)",
+  "new": "    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2278:0: Expression"
+  ]
+ },
+ {
+  "label": "JN-T1-07 (axis_pos always rendered as 0)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "    \", \\\"axis_pos\\\": \" ++ toString a.raw.axisPos ++",
+  "new": "    \", \\\"axis_pos\\\": \" ++ toString 0 ++",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2285:0: Expression"
+  ]
+ },
+ {
+  "label": "JN-T1-08 (a mask the worker refuses fails open: rendered unmasked)",
+  "task": "T1",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "    | .error e => .error (.axiswiseIncludeRefused nodeIndex e)",
+  "new": "    | .error _ => .ok none",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2315:0: Expression"
+  ]
+ }
+]

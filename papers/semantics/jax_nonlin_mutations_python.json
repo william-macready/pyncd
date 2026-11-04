@@ -1,0 +1,254 @@
+[
+ {
+  "label": "JN-P-01 (relu via jnp.maximum)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "        return jnp.where(zero <= x, x, zero)",
+  "new": "        return jnp.maximum(x, zero)",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: non-finite value: {g.tolist()} vs {w.tolist()}\")"
+  ]
+ },
+ {
+  "label": "JN-P-02 (softmax row max folded over ALL entries, masked included)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "            return jnp.where(ii, folded, m), seen | ii",
+  "new": "            return folded, seen | ii",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: exact-zero pattern differs from Lean: {g.tolist()} vs "
+  ]
+ },
+ {
+  "label": "JN-P-03 (softmax row max via plain jnp.maximum from 0)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "            folded = jnp.where(seen, jnp.where(m <= xi, xi, m), xi)  # Lean max a b = if a <= b then b else a",
+  "new": "            folded = jnp.maximum(m, xi)",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: exact-zero pattern differs from Lean: {g.tolist()} vs "
+  ]
+ },
+ {
+  "label": "JN-P-04 (softmax masked entries still summed)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "        e = jnp.where(inc, e, zero)\n",
+  "new": "",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: not within rtol {RTOL[_DT]} / atol {ATOL[_DT]}: {g.tol"
+  ]
+ },
+ {
+  "label": "JN-P-05 (normalize masked entries still summed)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "        s = _row_fold(n, row0, lambda i, acc: jnp.where(inc[..., i], acc + xm[..., i], acc))",
+  "new": "        s = _row_fold(n, row0, lambda i, acc: acc + xm[..., i])",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: not within rtol {RTOL[_DT]} / atol {ATOL[_DT]}: {g.tol"
+  ]
+ },
+ {
+  "label": "JN-P-06 (row fold reversed, right to left)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "    return jax.lax.fori_loop(0, n, step, init)",
+  "new": "    return jax.lax.fori_loop(0, n, lambda i, c: step(n - 1 - i, c), init)",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: exact-zero pattern differs from Lean: {g.tolist()} vs "
+  ]
+ },
+ {
+  "label": "JN-P-07 (all-masked softmax row uniform instead of zeros)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "        return jnp.where(ok, e / jnp.where(s != zero, s, one)[..., None], zero)\n    if fn == \"normalize\":",
+  "new": "        return jnp.where(ok, e / jnp.where(s != zero, s, one)[..., None], jnp.where(seen[..., None], zero, one / n))\n    if fn == \"normalize\":",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: exact-zero pattern differs from Lean: {g.tolist()} vs "
+  ]
+ },
+ {
+  "label": "JN-P-08 (normalize zero-sum guard dropped)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "        return jnp.where(ok, xm / jnp.where(s != zero, s, one)[..., None], zero)\n    if fn == \"l2normalize\":",
+  "new": "        return jnp.where(inc, xm / s[..., None], zero)\n    if fn == \"l2normalize\":",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: non-finite value: {g.tolist()} vs {w.tolist()}\")"
+  ]
+ },
+ {
+  "label": "JN-P-09 (l2normalize without the sqrt)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "        s = jnp.sqrt(jnp.where(nz, ss, one))",
+  "new": "        s = jnp.where(nz, ss, one)",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: not within rtol {RTOL[_DT]} / atol {ATOL[_DT]}: {g.tol"
+  ]
+ },
+ {
+  "label": "JN-P-10 (sigmoid sign flipped)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "        return one / (one + jnp.exp(-x))",
+  "new": "        return one / (one + jnp.exp(x))",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: not within rtol {RTOL[_DT]} / atol {ATOL[_DT]}: {g.tol"
+  ]
+ },
+ {
+  "label": "JN-P-11 (leakyrelu slope 0.1, binary64)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "\"leak_slope\": 0.01}",
+  "new": "\"leak_slope\": 0.1}",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: not within rtol {RTOL[_DT]} / atol {ATOL[_DT]}: {g.tol"
+  ]
+ },
+ {
+  "label": "JN-P-12 (gelu cubic coefficient perturbed, binary64)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "\"gelu_cubic\": 0.044715,",
+  "new": "\"gelu_cubic\": 0.044716,",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: not within rtol {RTOL[_DT]} / atol {ATOL[_DT]}: {g.tol"
+  ]
+ },
+ {
+  "label": "JN-P-13 (axis_pos ignored: always the last axis)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "    shape, axis = tuple(node[\"shape\"]), node[\"axis_pos\"]",
+  "new": "    shape, axis = tuple(node[\"shape\"]), len(node[\"shape\"]) - 1",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: not within rtol {RTOL[_DT]} / atol {ATOL[_DT]}: {g.tol"
+  ]
+ },
+ {
+  "label": "JN-P-14 (include table ignored: treated as all-true)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "        inc = np.array(table, dtype=bool).reshape(shape)",
+  "new": "        inc = np.ones(shape, dtype=bool)",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: exact-zero pattern differs from Lean: {g.tolist()} vs "
+  ]
+ },
+ {
+  "label": "JN-P-15 (f32 gelu_scale bit pattern perturbed in a mantissa bit)",
+  "task": "T2",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "\"gelu_scale\": 0x3F4C422A,",
+  "new": "\"gelu_scale\": 0x3F4C522A,",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: not within rtol {RTOL[_DT]} / atol {ATOL[_DT]}: {g.tol"
+  ]
+ },
+ {
+  "label": "JN-P-16 (verifier tolerance made huge)",
+  "task": "T3",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_nonlin_smoke.py",
+  "old": "RTOL = {\"float64\": 1e-12, \"float32\": 1e-5}",
+  "new": "RTOL = {\"float64\": 1e3, \"float32\": 1e3}",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: tolerance accepts a 1e-3 perturbation: vacuous"
+  ]
+ },
+ {
+  "label": "JN-P-17 (verifier compares the JAX output against itself)",
+  "task": "T3",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_nonlin_smoke.py",
+  "old": "    g, w = np.asarray(got), lean_array(entry)\n    if g.dtype != NDT:",
+  "new": "    g, w = np.asarray(got), np.asarray(got)\n    if g.dtype != NDT:",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(\"require_close accepted a 1e-3 perturbed output: vacuous verifier"
+  ]
+ }
+]
