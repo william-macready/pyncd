@@ -17,7 +17,9 @@ Like the other drivers it lives outside every Lake target; run via `lake env lea
 Every fixture asserts, before any Python is written, that its prepared plan really has at least the
 expected number of pointwise/axiswise steps (a program that silently compiled to plain assignments
 would test nothing), that `einsumOnly` and the evidence door (`lowerCheckPlanToCandidate`) still
-refuse it, and that `affineReference` renders it.
+refuse it, and that `affineReference` renders it. A fixture with an inline unary read (`unaryOk`)
+is the one place those two doors refuse with `unaryFactor` (binary64) instead of `unsupportedStep`:
+they keep refusing unary reads; only `affineReference` admits one.
 -/
 
 namespace JaxBridge.NonlinSmoke
@@ -42,11 +44,19 @@ def countKinds (p : PreparedPlan) : Nat × Nat × Nat :=
     | .assign _ => (a + 1, pw, aw) | .pointwise _ => (a, pw + 1, aw)
     | .axiswise _ => (a, pw, aw + 1) | _ => (a, pw, aw)) (0, 0, 0)
 
+/-- Number of inline unary reads in the prepared plan's assignment steps. -/
+def countUnary (p : PreparedPlan) : Nat :=
+  p.plan.raw.steps.foldl (fun n st => match st with
+    | .assign a => a.terms.foldl (fun n t => t.factors.foldl (fun n f => match f with
+        | .read r => if r.unary.isSome then n + 1 else n
+        | .iverson _ => n) n) n
+    | _ => n) 0
+
 /-- The assertions every fixture shares; returns the rendered plan data. `exact`, when given, pins
     the total step count and the `(assign, pointwise, axiswise)` counts exactly, so a silent change
     to how a program compiles is loud. -/
 def checkAndRender (name : String) (p : PreparedPlan) (minPw minAw : Nat)
-    (exact : Option (Nat × Nat × Nat) := none) : IO String := do
+    (exact : Option (Nat × Nat × Nat) := none) (unaryOk : Bool := false) : IO String := do
   let (pw, aw) := countSteps p
   unless pw ≥ minPw && aw ≥ minAw do
     throw (IO.userError s!"{name}: expected >= {minPw} pointwise and >= {minAw} axiswise steps, prepared plan has {pw} and {aw}")
@@ -56,9 +66,11 @@ def checkAndRender (name : String) (p : PreparedPlan) (minPw minAw : Nat)
       throw (IO.userError s!"{name}: expected {ea} assign / {epw} pointwise / {eaw} axiswise ({ea + epw + eaw} steps), prepared plan has {a} / {pw'} / {aw'} ({p.plan.raw.steps.size} steps)")
   match generateNamed .einsumOnly p with
   | .error (.unsupportedStep _) | .error (.unsupportedStorageKind _) => pure ()
+  | .error (.unaryFactor _ _ _) => unless unaryOk do throw (IO.userError s!"{name}: einsumOnly refused with unaryFactor on a fixture without a unary read")
   | other => throw (IO.userError s!"{name}: einsumOnly did not refuse: {repr other.toOption}")
   match lowerCheckPlanToCandidate p with
   | .error (.unsupportedStep _) | .error (.unsupportedStorageKind _) => pure ()
+  | .error (.unaryFactor _ _ _) => unless unaryOk do throw (IO.userError s!"{name}: the evidence door refused with unaryFactor on a fixture without a unary read")
   | _ => throw (IO.userError s!"{name}: the evidence door did not refuse")
   match renderAffinePlanNamed p with
   | .ok s => pure s
@@ -77,14 +89,16 @@ def prepared (name : String) (sched : ScheduledProgram) (sig : InputSignature) :
 def header (name : String) (p : PreparedPlan) (planData : String) : String :=
   let (pw, aw) := countSteps p
   "{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"named\", \"n_pointwise\": " ++ toString pw ++
-    ", \"n_axiswise\": " ++ toString aw ++ ", \"plan\": " ++ planData
+    ", \"n_axiswise\": " ++ toString aw ++ ", \"n_unary\": " ++ toString (countUnary p) ++
+    ", \"plan\": " ++ planData
 
 /-- One binary64 named fixture. -/
 def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseTensor)
-    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none) : IO String := do
+    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none)
+    (unaryOk : Bool := false) : IO String := do
   let sched ← scheduled name prog
   let p ← prepared name sched (InputSignature.ofDenseInputs inputs)
-  let planData ← checkAndRender name p minPw minAw exact
+  let planData ← checkAndRender name p minPw minAw exact unaryOk
   let report ← match runPreparedDense p inputs with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e.cause}")
@@ -105,14 +119,15 @@ def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseT
 
 /-- The binary32 sibling, over `runPreparedDense32`; also pins that the plan is binary32. -/
 def fixture32 (name : String) (prog : TLProgram) (inputs : NamedDenseEnv32)
-    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none) : IO String := do
+    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none)
+    (unaryOk : Bool := false) : IO String := do
   let sched ← scheduled name prog
   let sig ← match InputSignature.ofDenseInputs32ForDecls sched.decls inputs with
     | .ok s => pure s
     | .error e => throw (IO.userError s!"{name} binary32 signature failed: {repr e}")
   let p ← prepared name sched sig
   unless p.plan.storageKind == .float32 do throw (IO.userError s!"{name} is not a binary32 plan")
-  let planData ← checkAndRender name p minPw minAw exact
+  let planData ← checkAndRender name p minPw minAw exact unaryOk
   let report ← match runPreparedDense32 p inputs with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"{name} binary32 Dense run failed: {repr e.cause}")
@@ -325,6 +340,21 @@ def reluNanProg32 : TLProgram := tlprog!{
   R[i] := relu(X[i])
 }
 
+-- One inline unary read whose last output lane reads out of bounds: `A[i + 1]` at `i = 2` is
+-- `A[3]`, zero-padded, and Dense applies `exp` AFTER the pad, so that lane is `exp 0 = 1` (a runtime
+-- that applied `exp` before the pad, or dropped it, would give 0 or the raw padded value there).
+-- Every lane is a Lean-ok input (`exp` is total).
+def unaryExpProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  tensor f64 A(i), E(i)
+  E[i] := exp(A[i + 1])
+}
+def unaryExpProg32 : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  tensor f32 A(i), E(i)
+  E[i] := exp(A[i + 1])
+}
+
 /-! ## Inputs (shared by both precisions; `t32` narrows) -/
 
 def pwX : Array Float := #[-3.0, -0.5, 0.0, -0.0, 0.5, 1.0, 2.5]
@@ -341,6 +371,7 @@ def awNegLarge : Array Float := #[-1000.0, -1001.0, -999.0, -1000.0, -500.0, -50
 def causalBig : Array Float := #[0.5, 1000.0, 2000.0, 1.5, 0.25, 900.0, 3.0, 1.0, -2.0]
 def nanX : Float := 0.0 / 0.0
 def reluNanX : Array Float := #[nanX, -1.0, 2.0, 0.0]
+def unaryExpA : Array Float := #[0.5, -1.0, 2.0]
 def sq3 : Array Float :=#[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0]
 def firstAxisX : Array Float := #[0.5, -1.0, 2.0, 1.5, -0.25, 3.0]
 def rank3X : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0, 0.0, 0.1, 4.0]
@@ -385,7 +416,9 @@ def corpus64 : IO (Array String) := do
         (env64 [("X", t64 [3, 4] trX), ("W_Q", t64 [2, 2, 4] trWQ), ("W_K", t64 [2, 2, 4] trWK),
                 ("W_V", t64 [2, 2, 4] trWV), ("W_O", t64 [4, 2, 2] trWO),
                 ("W_in", t64 [4, 4] trWin), ("W_out", t64 [4, 4] trWout)])
-        1 3 (some (10, 1, 3))]
+        1 3 (some (10, 1, 3)),
+    ← fixture64 "unary_exp_oob" unaryExpProg (env64 [("A", t64 [3] unaryExpA)])
+        0 0 (some (1, 0, 0)) true]
 
 def corpus32 : IO (Array String) := do
   return #[
@@ -409,7 +442,9 @@ def corpus32 : IO (Array String) := do
         (env32 [("X", t32 [3, 4] trX), ("W_Q", t32 [2, 2, 4] trWQ), ("W_K", t32 [2, 2, 4] trWK),
                 ("W_V", t32 [2, 2, 4] trWV), ("W_O", t32 [4, 2, 2] trWO),
                 ("W_in", t32 [4, 4] trWin), ("W_out", t32 [4, 4] trWout)])
-        1 3 (some (10, 1, 3))]
+        1 3 (some (10, 1, 3)),
+    ← fixture32 "unary_exp_oob32" unaryExpProg32 (env32 [("A", t32 [3] unaryExpA)])
+        0 0 (some (1, 0, 0)) true]
 
 end JaxBridge.NonlinSmoke
 

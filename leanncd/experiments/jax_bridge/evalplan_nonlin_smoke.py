@@ -109,7 +109,10 @@ def run_fixture(f: dict) -> None:
     kinds = [n.get("kind", "assign") for n in plan["nodes"]]
     if kinds.count("pointwise") != f["n_pointwise"] or kinds.count("axiswise") != f["n_axiswise"]:
         raise AssertionError(f"{f['name']}: plan nodes {kinds} vs counts {f['n_pointwise']}/{f['n_axiswise']}")
-    if f["n_pointwise"] + f["n_axiswise"] < 1:
+    n_unary_keys = sum("unary" in fac for n in plan["nodes"] for t in n.get("terms", []) for fac in t["factors"])
+    if n_unary_keys != f["n_unary"]:
+        raise AssertionError(f"{f['name']}: plan has {n_unary_keys} unary factors vs count {f['n_unary']}")
+    if f["n_pointwise"] + f["n_axiswise"] + f["n_unary"] < 1:
         raise AssertionError(f"{f['name']}: fixture exercises no nonlinearity")
     # Transformer: relu's INPUT already carries the upstream exp/normalize libm-vs-XLA difference (~1 ulp),
     # so "relu is bit-exact" does not apply; its outputs get the tolerance gate and `record_output` only.
@@ -220,6 +223,17 @@ def main() -> None:
     for n in sorted(OUT_STATS):
         rel, ab, ex, tot = OUT_STATS[n]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+    # Inline unary read (`E[i] := exp(A[i + 1])`, A = [0.5, -1, 2]): the last lane reads A[3], out of
+    # bounds, which Dense zero-pads FIRST and then applies exp to, so it is exactly exp(0) = 1. Applying
+    # exp before the pad (or not at all) would give 0 there, so the two orderings differ on this lane.
+    # Domain violations are an unchecked precondition (Lean errors, JAX does not): every lane is Lean-ok.
+    ue = lean_array(by["unary_exp_oob" + sfx]["expected"]["E"])
+    a_in = lean_array(by["unary_exp_oob" + sfx]["inputs"]["A"])
+    assert ue[2] == NDT(1.0) and np.allclose(ue[:2], np.exp(a_in[1:].astype(np.float64)), rtol=1e-6), ue.tolist()
+    assert any("unary" in fac for n in by["unary_exp_oob" + sfx]["plan"]["nodes"] for t in n["terms"] for fac in t["factors"])
+    print(f"inline unary read: out-of-bounds lane is exp(0) = 1 (pad, then apply), in-bounds lanes exp(A[i+1]): "
+          f"{ue.tolist()}")
 
     # Differentiable: jit(grad) is finite for softmax (weighted sum, masked and unmasked) and gelu.
     for fx, name, shape in (("pw" + sfx, "G", (7,)), ("aw_plain" + sfx, "Sm", (2, 4)),
