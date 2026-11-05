@@ -403,6 +403,42 @@ def unaryRedProg32 : TLProgram := tlprog!{
   Zr[i] := exp(Vv[i, j]) · Ww[j]
 }
 
+-- LayerNorm-with-eps shape, from source: `Vs` = mean of squares (`Inv` = 1/3 per lane), `Ve = Vs + eps`
+-- (eps > 0, so sqrt's argument is >= eps), `Sd = sqrt(Ve)` (unary read of an intermediate) and
+-- `Yl = Xl / Sd` (recip, a unary read of the intermediate `Sd`, times the plain `Xl`).
+def unaryLnProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis k : ℕ = 3
+  tensor f64 Xl(i, k), Inv(k), Eps(i), Vs(i), Ve(i), Sd(i), Yl(i, k)
+  Vs[i] := Xl[i, k] · Xl[i, k] · Inv[k]
+  Ve[i] := Vs[i] + Eps[i]
+  Sd[i] := sqrt(Ve[i])
+  Yl[i, k] := Xl[i, k] / Sd[i]
+}
+def unaryLnProg32 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis k : ℕ = 3
+  tensor f32 Xl(i, k), Inv(k), Eps(i), Vs(i), Ve(i), Sd(i), Yl(i, k)
+  Vs[i] := Xl[i, k] · Xl[i, k] · Inv[k]
+  Ve[i] := Vs[i] + Eps[i]
+  Sd[i] := sqrt(Ve[i])
+  Yl[i, k] := Xl[i, k] / Sd[i]
+}
+-- Empty source: a constant read `Ae[0]` of a ZERO-extent tensor by a non-empty iteration; the read is
+-- out of bounds on every lane, so Dense zero-pads and applies `exp`: `exp 0 = 1` per lane.
+def unaryEmptyProg : TLProgram := tlprog!{
+  axis e : ℕ = 0
+  axis i : ℕ = 3
+  tensor f64 Ae(e), Ee(i)
+  Ee[i] := exp(Ae[0])
+}
+def unaryEmptyProg32 : TLProgram := tlprog!{
+  axis e : ℕ = 0
+  axis i : ℕ = 3
+  tensor f32 Ae(e), Ee(i)
+  Ee[i] := exp(Ae[0])
+}
+
 /-! ## Inputs (shared by both precisions; `t32` narrows) -/
 
 def pwX : Array Float := #[-3.0, -0.5, 0.0, -0.0, 0.5, 1.0, 2.5]
@@ -430,6 +466,9 @@ def unaryBb : Array Float := #[0.5, -1.0, 2.0]
 def unaryCc : Array Float := #[3.0, 0.25, -1.5]
 def unaryVv : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75]
 def unaryWw : Array Float := #[1.0, -0.5, 2.0]
+def unaryXl : Array Float := #[1.0, 2.0, 3.0, -1.0, 0.5, 0.0]
+def unaryInv : Array Float := #[0.3333333333333333, 0.3333333333333333, 0.3333333333333333]
+def unaryEps : Array Float := #[1e-5, 1e-5]
 def sq3 : Array Float :=#[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0]
 def firstAxisX : Array Float := #[0.5, -1.0, 2.0, 1.5, -0.25, 3.0]
 def rank3X : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0, 0.0, 0.1, 4.0]
@@ -486,6 +525,11 @@ def corpus64 : IO (Array String) := do
         0 0 (some (1, 0, 0)) true,
     ← fixture64 "unary_red" unaryRedProg
         (env64 [("Vv", t64 [2, 3] unaryVv), ("Ww", t64 [3] unaryWw)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture64 "unary_ln" unaryLnProg
+        (env64 [("Xl", t64 [2, 3] unaryXl), ("Inv", t64 [3] unaryInv), ("Eps", t64 [2] unaryEps)])
+        0 0 (some (4, 0, 0)) true,
+    ← fixture64 "unary_empty" unaryEmptyProg (env64 [("Ae", t64 [0] #[])])
         0 0 (some (1, 0, 0)) true]
 
 def corpus32 : IO (Array String) := do
@@ -522,7 +566,62 @@ def corpus32 : IO (Array String) := do
         0 0 (some (1, 0, 0)) true,
     ← fixture32 "unary_red32" unaryRedProg32
         (env32 [("Vv", t32 [2, 3] unaryVv), ("Ww", t32 [3] unaryWw)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture32 "unary_ln32" unaryLnProg32
+        (env32 [("Xl", t32 [2, 3] unaryXl), ("Inv", t32 [3] unaryInv), ("Eps", t32 [2] unaryEps)])
+        0 0 (some (4, 0, 0)) true,
+    ← fixture32 "unary_empty32" unaryEmptyProg32 (env32 [("Ae", t32 [0] #[])])
         0 0 (some (1, 0, 0)) true]
+
+/-! ## Boundary pins: Lean REJECTS domain-violating unary reads (the JAX runtime does not check)
+
+The JAX runtime treats `log(v <= 0)`, `sqrt(v < 0)` and `recip(0)` as an unchecked precondition and
+agrees with Lean only where Lean returns ok. These pins observe the Lean side end to end (source ->
+prepared plan -> Dense): each violating input returns the typed unary-domain error for that op, in
+both precisions. They run on every driver invocation and throw (so the runner fails) if one stops
+erroring. -/
+
+def domainOpName : UnaryDomainOp → String
+  | .log => "log" | .sqrt => "sqrt" | .recip => "recip"
+
+def domainPins : IO Unit := do
+  let okEnv : List (String × Array Float) :=
+    [("Pp", unaryPp), ("Qq", unaryQq), ("Tt", unaryTt), ("Rr", unaryRr), ("Nn", unaryNn)]
+  let swap (k : String) (v : Array Float) := okEnv.map fun (n, d) => (n, if n == k then v else d)
+  let cases : List (String × String × Array Float × String) :=
+    [("log of 0.0", "Pp", #[0.25, 0.0, 2.0, 7.5], "log"),
+     ("log of -1.0", "Pp", #[0.25, -1.0, 2.0, 7.5], "log"),
+     ("sqrt of -4.0", "Qq", #[0.0, 0.25, -4.0, 9.0], "sqrt"),
+     ("recip of 0.0", "Rr", #[0.5, -2.0, 0.0, -0.125], "recip")]
+  -- The un-violated environment must run (so each error below is caused by the one swapped tensor).
+  let sched64 ← scheduled "domain" unaryOpsProg
+  let sched32 ← scheduled "domain32" unaryOpsProg32
+  let ok64 := env64 (okEnv.map fun (n, d) => (n, t64 [4] d))
+  let p64ok ← prepared "domain" sched64 (InputSignature.ofDenseInputs ok64)
+  match runPreparedDense p64ok ok64 with
+  | .ok _ => pure ()
+  | .error e => throw (IO.userError s!"domain pins: the in-domain environment failed: {repr e.cause}")
+  for (label, k, v, want) in cases do
+    let in64 := env64 ((swap k v).map fun (n, d) => (n, t64 [4] d))
+    let p64 ← prepared "domain" sched64 (InputSignature.ofDenseInputs in64)
+    match runPreparedDense p64 in64 with
+    | .error e => match e.cause with
+      | .execution (.unaryDomain op _ _) =>
+        unless domainOpName op == want do throw (IO.userError s!"domain pin (binary64) {label}: got op {domainOpName op}")
+      | other => throw (IO.userError s!"domain pin (binary64) {label}: wrong error {repr other}")
+    | .ok _ => throw (IO.userError s!"domain pin (binary64) {label}: Dense returned ok")
+    let in32 := env32 ((swap k v).map fun (n, d) => (n, t32 [4] d))
+    let sig32 ← match InputSignature.ofDenseInputs32ForDecls sched32.decls in32 with
+      | .ok s => pure s
+      | .error e => throw (IO.userError s!"domain pin signature failed: {repr e}")
+    let p32 ← prepared "domain32" sched32 sig32
+    match runPreparedDense32 p32 in32 with
+    | .error e => match e.cause with
+      | .execution (.unaryDomain32 op _ _) =>
+        unless domainOpName op == want do throw (IO.userError s!"domain pin (binary32) {label}: got op {domainOpName op}")
+      | other => throw (IO.userError s!"domain pin (binary32) {label}: wrong error {repr other}")
+    | .ok _ => throw (IO.userError s!"domain pin (binary32) {label}: Dense returned ok")
+  IO.println "domain pins: log(0.0), log(-1.0), sqrt(-4.0), recip(0.0) are typed unary-domain errors in Dense (binary64 and binary32)"
 
 end JaxBridge.NonlinSmoke
 
@@ -530,6 +629,7 @@ open JaxBridge.NonlinSmoke in
 def main (args : List String) : IO Unit := do
   let out64 := args.head?.getD "generated_evalplan_nonlin_smoke64.py"
   let out32 := (args.drop 1).head?.getD "generated_evalplan_nonlin_smoke32.py"
+  domainPins
   let f64s ← corpus64
   let f32s ← corpus32
   IO.FS.writeFile out64

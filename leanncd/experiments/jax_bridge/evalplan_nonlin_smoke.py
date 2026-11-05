@@ -257,6 +257,18 @@ def main() -> None:
     ur = by["unary_red" + sfx]
     ri = {k: lean_array(v).astype(np.float64) for k, v in ur["inputs"].items()}
     assert np.allclose(lean_array(ur["expected"]["Zr"]), (np.exp(ri["Vv"]) * ri["Ww"]).sum(axis=1), rtol=1e-5)
+    # LayerNorm-eps chain from source: Yl = Xl / sqrt(mean(Xl^2) + eps), through two unary reads of
+    # intermediates (sqrt of Ve, recip of Sd); eps > 0 keeps sqrt's argument >= eps (Lean-ok).
+    ul = by["unary_ln" + sfx]
+    li = {k: lean_array(v).astype(np.float64) for k, v in ul["inputs"].items()}
+    ln_ref = li["Xl"] / np.sqrt((li["Xl"] ** 2 * li["Inv"]).sum(axis=1) + li["Eps"])[:, None]
+    assert np.allclose(lean_array(ul["expected"]["Yl"]), ln_ref, rtol=1e-5), ln_ref.tolist()
+    assert sum("unary" in fac for n in ul["plan"]["nodes"] for t in n["terms"] for fac in t["factors"]) == 2
+    # Empty source: exp over a zero-extent tensor is exp(0) = 1 on every lane (Dense pads, then applies).
+    ue0 = lean_array(by["unary_empty" + sfx]["expected"]["Ee"])
+    assert by["unary_empty" + sfx]["inputs"]["Ae"]["shape"] in ([0], (0,)) and ue0.tolist() == [1.0, 1.0, 1.0], ue0.tolist()
+    print(f"unary LayerNorm-eps chain and empty-source exp match Lean: {lean_array(ul['expected']['Yl']).tolist()}, "
+          f"{ue0.tolist()}")
     print("inline unary ops: log/sqrt/sin/cos/recip, a unary read between plain reads, and a unary read "
           "under a reduced axis match Lean within tolerance; op-swap alternatives differ on these inputs")
 
