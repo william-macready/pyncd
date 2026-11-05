@@ -33,20 +33,35 @@ def pyTensorEntry32 (t : DenseTensor32) : String :=
   "{\"shape\": " ++ pyShapeTuple t.shape.toArray ++ ", \"dtype\": \"float32\", \"bits\": [" ++
   String.intercalate ", " (t.data.toList.map fun x => toString x.toBits) ++ "]}"
 
+/-- The prepared plan's steps with every `.scan` step replaced by its base-block then step-block steps
+    (blocks hold ordinary steps), so a scan's nonlinearities and unary reads are counted like any
+    other fixture's. A plan without a scan is returned unchanged. The scan itself is counted by
+    `countScans`. -/
+def flatSteps (p : PreparedPlan) : Array PlanStep :=
+  let asPlan : BlockStep → PlanStep
+    | .assign a => .assign a | .pointwise q => .pointwise q | .axiswise a => .axiswise a
+  p.plan.raw.steps.foldl (fun acc st => match st with
+    | .scan sc => acc ++ sc.baseBlock.steps.map asPlan ++ sc.stepBlock.steps.map asPlan
+    | _ => acc.push st) #[]
+
+/-- Number of `.scan` steps of the prepared plan (top level). -/
+def countScans (p : PreparedPlan) : Nat :=
+  p.plan.raw.steps.foldl (fun n st => match st with | .scan _ => n + 1 | _ => n) 0
+
 def countSteps (p : PreparedPlan) : Nat × Nat :=
-  p.plan.raw.steps.foldl (fun (pw, aw) st => match st with
+  (flatSteps p).foldl (fun (pw, aw) st => match st with
     | .pointwise _ => (pw + 1, aw) | .axiswise _ => (pw, aw + 1) | _ => (pw, aw)) (0, 0)
 
 /-- Exact step-kind counts `(assign, pointwise, axiswise)`; any other step kind is counted nowhere,
     so a plan with a scatter or scan step fails an exact pin. -/
 def countKinds (p : PreparedPlan) : Nat × Nat × Nat :=
-  p.plan.raw.steps.foldl (fun (a, pw, aw) st => match st with
+  (flatSteps p).foldl (fun (a, pw, aw) st => match st with
     | .assign _ => (a + 1, pw, aw) | .pointwise _ => (a, pw + 1, aw)
     | .axiswise _ => (a, pw, aw + 1) | _ => (a, pw, aw)) (0, 0, 0)
 
 /-- Number of inline unary reads in the prepared plan's assignment steps. -/
 def countUnary (p : PreparedPlan) : Nat :=
-  p.plan.raw.steps.foldl (fun n st => match st with
+  (flatSteps p).foldl (fun n st => match st with
     | .assign a => a.terms.foldl (fun n t => t.factors.foldl (fun n f => match f with
         | .read r => if r.unary.isSome then n + 1 else n
         | .iverson _ => n) n) n
@@ -54,16 +69,21 @@ def countUnary (p : PreparedPlan) : Nat :=
 
 /-- The assertions every fixture shares; returns the rendered plan data. `exact`, when given, pins
     the total step count and the `(assign, pointwise, axiswise)` counts exactly, so a silent change
-    to how a program compiles is loud. -/
+    to how a program compiles is loud. For a scan fixture those counts are over the steps INSIDE the
+    scan's base and step blocks (`flatSteps`), and `scans` pins the number of scan steps (default 0:
+    a fixture that unexpectedly compiles to a scan fails). -/
 def checkAndRender (name : String) (p : PreparedPlan) (minPw minAw : Nat)
-    (exact : Option (Nat × Nat × Nat) := none) (unaryOk : Bool := false) : IO String := do
+    (exact : Option (Nat × Nat × Nat) := none) (unaryOk : Bool := false) (scans : Nat := 0) :
+    IO String := do
+  unless countScans p == scans do
+    throw (IO.userError s!"{name}: expected {scans} scan step(s), prepared plan has {countScans p}")
   let (pw, aw) := countSteps p
   unless pw ≥ minPw && aw ≥ minAw do
     throw (IO.userError s!"{name}: expected >= {minPw} pointwise and >= {minAw} axiswise steps, prepared plan has {pw} and {aw}")
   if let some (ea, epw, eaw) := exact then
     let (a, pw', aw') := countKinds p
-    unless (a, pw', aw') == (ea, epw, eaw) && p.plan.raw.steps.size == ea + epw + eaw do
-      throw (IO.userError s!"{name}: expected {ea} assign / {epw} pointwise / {eaw} axiswise ({ea + epw + eaw} steps), prepared plan has {a} / {pw'} / {aw'} ({p.plan.raw.steps.size} steps)")
+    unless (a, pw', aw') == (ea, epw, eaw) && (flatSteps p).size == ea + epw + eaw do
+      throw (IO.userError s!"{name}: expected {ea} assign / {epw} pointwise / {eaw} axiswise ({ea + epw + eaw} steps), prepared plan has {a} / {pw'} / {aw'} ({(flatSteps p).size} steps)")
   match generateNamed .einsumOnly p with
   | .error (.unsupportedStep _) | .error (.unsupportedStorageKind _) => pure ()
   | .error (.unaryFactor _ _ _) => unless unaryOk do throw (IO.userError s!"{name}: einsumOnly refused with unaryFactor on a fixture without a unary read")
@@ -95,10 +115,10 @@ def header (name : String) (p : PreparedPlan) (planData : String) : String :=
 /-- One binary64 named fixture. -/
 def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseTensor)
     (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none)
-    (unaryOk : Bool := false) : IO String := do
+    (unaryOk : Bool := false) (scans : Nat := 0) : IO String := do
   let sched ← scheduled name prog
   let p ← prepared name sched (InputSignature.ofDenseInputs inputs)
-  let planData ← checkAndRender name p minPw minAw exact unaryOk
+  let planData ← checkAndRender name p minPw minAw exact unaryOk scans
   let report ← match runPreparedDense p inputs with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e.cause}")
@@ -120,14 +140,14 @@ def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseT
 /-- The binary32 sibling, over `runPreparedDense32`; also pins that the plan is binary32. -/
 def fixture32 (name : String) (prog : TLProgram) (inputs : NamedDenseEnv32)
     (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none)
-    (unaryOk : Bool := false) : IO String := do
+    (unaryOk : Bool := false) (scans : Nat := 0) : IO String := do
   let sched ← scheduled name prog
   let sig ← match InputSignature.ofDenseInputs32ForDecls sched.decls inputs with
     | .ok s => pure s
     | .error e => throw (IO.userError s!"{name} binary32 signature failed: {repr e}")
   let p ← prepared name sched sig
   unless p.plan.storageKind == .float32 do throw (IO.userError s!"{name} is not a binary32 plan")
-  let planData ← checkAndRender name p minPw minAw exact unaryOk
+  let planData ← checkAndRender name p minPw minAw exact unaryOk scans
   let report ← match runPreparedDense32 p inputs with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"{name} binary32 Dense run failed: {repr e.cause}")
@@ -553,6 +573,75 @@ def trWout : Array Float :=
 def trInv : Array Float := #[0.25, 0.25, 0.25, 0.25]
 def trEps : Array Float := #[1e-5, 1e-5, 1e-5]
 
+/-! ### Two-layer transformer as a scan over the layer axis (`transformer_scan`, `transformer_scan32`)
+
+The one-layer `transformerRmsProg` with `iter l = 3` (history extent 3 = two steps, state `H(q, m, l)`)
+and UNTIED per-layer weights read as `W[l, ...]`. Weight stacks hold layer 0 (the one-layer fixture's
+weights), a derived, genuinely different layer 1 and a NaN layer-2 slice that a correct two-step scan
+never reads (a step reading past layer 1 would make every output NaN). -/
+
+/-- Layer-1 weights: layer 0's entries rotated by 5 positions and scaled by 0.8 (both signs, distinct). -/
+def scanLayer1 (w : Array Float) : Array Float :=
+  (Array.range w.size).map fun i => 0.8 * w[(i + 5) % w.size]!
+def scanNanSlice (w : Array Float) : Array Float := w.map fun _ => (0.0 : Float) / 0.0
+def scanStack (w : Array Float) : Array Float := w ++ scanLayer1 w ++ scanNanSlice w
+
+def scanProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 3
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q)
+  tensor f64 H(q, m, l)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 Z1(q, m), Ss1(q), Ve1(q), Sd1(q), A(q, m), F(q, d), Y(q, m)
+  tensor f64 Z2(q, m), Ss2(q), Ve2(q), Sd2(q)
+  H[q, m, 0]       := X[q, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · H[q, m, l]
+  K[s, h, k]       := W_K[l, h, k, m] · H[s, m, l]
+  V[s, h, k]       := W_V[l, h, k, m] · H[s, m, l]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  Z1[q, m]         := Attn[q, m] + H[q, m, l]
+  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  A[q, m]          := Z1[q, m] / Sd1[q]
+  F[q, d]          := relu(W_in[l, d, m] · A[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  Z2[q, m]         := Y[q, m] + A[q, m]
+  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  H[q, m, l +1]    := Z2[q, m] / Sd2[q]
+}
+/-- The binary32 sibling: only the declarations that pin axis order and the history shape. -/
+def scanProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 3
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  H[q, m, 0]       := X[q, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · H[q, m, l]
+  K[s, h, k]       := W_K[l, h, k, m] · H[s, m, l]
+  V[s, h, k]       := W_V[l, h, k, m] · H[s, m, l]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  Z1[q, m]         := Attn[q, m] + H[q, m, l]
+  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  A[q, m]          := Z1[q, m] / Sd1[q]
+  F[q, d]          := relu(W_in[l, d, m] · A[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  Z2[q, m]         := Y[q, m] + A[q, m]
+  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  H[q, m, l +1]    := Z2[q, m] / Sd2[q]
+}
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -598,7 +687,14 @@ def corpus64 : IO (Array String) := do
         (env64 [("Xl", t64 [2, 3] unaryXl), ("Inv", t64 [3] unaryInv), ("Eps", t64 [2] unaryEps)])
         0 0 (some (4, 0, 0)) true,
     ← fixture64 "unary_empty" unaryEmptyProg (env64 [("Ae", t64 [0] #[])])
-        0 0 (some (1, 0, 0)) true]
+        0 0 (some (1, 0, 0)) true,
+    ← fixture64 "transformer_scan" scanProg
+        (env64 [("X", t64 [3, 4] trX),
+                ("W_Q", t64 [3, 2, 2, 4] (scanStack trWQ)), ("W_K", t64 [3, 2, 2, 4] (scanStack trWK)),
+                ("W_V", t64 [3, 2, 2, 4] (scanStack trWV)), ("W_O", t64 [3, 4, 2, 2] (scanStack trWO)),
+                ("W_in", t64 [3, 4, 4] (scanStack trWin)), ("W_out", t64 [3, 4, 4] (scanStack trWout)),
+                ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps)])
+        1 1 (some (19, 1, 1)) true (scans := 1)]
 
 def corpus32 : IO (Array String) := do
   return #[
@@ -645,7 +741,14 @@ def corpus32 : IO (Array String) := do
         (env32 [("Xl", t32 [2, 3] unaryXl), ("Inv", t32 [3] unaryInv), ("Eps", t32 [2] unaryEps)])
         0 0 (some (4, 0, 0)) true,
     ← fixture32 "unary_empty32" unaryEmptyProg32 (env32 [("Ae", t32 [0] #[])])
-        0 0 (some (1, 0, 0)) true]
+        0 0 (some (1, 0, 0)) true,
+    ← fixture32 "transformer_scan32" scanProg32
+        (env32 [("X", t32 [3, 4] trX),
+                ("W_Q", t32 [3, 2, 2, 4] (scanStack trWQ)), ("W_K", t32 [3, 2, 2, 4] (scanStack trWK)),
+                ("W_V", t32 [3, 2, 2, 4] (scanStack trWV)), ("W_O", t32 [3, 4, 2, 2] (scanStack trWO)),
+                ("W_in", t32 [3, 4, 4] (scanStack trWin)), ("W_out", t32 [3, 4, 4] (scanStack trWout)),
+                ("Inv", t32 [4] trInv), ("Eps", t32 [3] trEps)])
+        1 1 (some (19, 1, 1)) true (scans := 1)]
 
 /-! ## Boundary pins: Lean REJECTS domain-violating unary reads (the JAX runtime does not check)
 

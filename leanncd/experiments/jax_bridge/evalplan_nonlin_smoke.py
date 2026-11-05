@@ -45,7 +45,20 @@ UDT = np.uint64 if _DT == "float64" else np.uint32
 STATS: dict[str, list] = {}
 # Transformer fixture only: output name -> [max_rel, max_abs, bit_exact_entries, total_entries].
 OUT_STATS: dict[tuple[str, str], list] = {}  # (fixture, output name) -> stats; one table per transformer fixture
-TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "transformer_rms32"}
+TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "transformer_rms32",
+                        "transformer_scan", "transformer_scan32"}
+EAGER: dict[str, dict] = {}  # scan fixtures only: fixture name -> {"eager": outputs, "jit": outputs}
+
+
+def flat_nodes(nodes):
+    """Plan nodes with every scan record replaced by the nodes of its base then step block (the counts in
+    the generated header, like Lean's `flatSteps`, are over those inner nodes)."""
+    for n in nodes:
+        if n.get("kind") == "scan":
+            yield from flat_nodes(n["base"]["nodes"])
+            yield from flat_nodes(n["step"]["nodes"])
+        else:
+            yield n
 
 
 def is_transformer(name: str) -> bool:
@@ -112,10 +125,10 @@ def record_output(fixture: str, key: str, got, entry: dict) -> None:
 
 def run_fixture(f: dict) -> None:
     plan = f["plan"]
-    kinds = [n.get("kind", "assign") for n in plan["nodes"]]
+    kinds = [n.get("kind", "assign") for n in flat_nodes(plan["nodes"])]
     if kinds.count("pointwise") != f["n_pointwise"] or kinds.count("axiswise") != f["n_axiswise"]:
         raise AssertionError(f"{f['name']}: plan nodes {kinds} vs counts {f['n_pointwise']}/{f['n_axiswise']}")
-    n_unary_keys = sum("unary" in fac for n in plan["nodes"] for t in n.get("terms", []) for fac in t["factors"])
+    n_unary_keys = sum("unary" in fac for n in flat_nodes(plan["nodes"]) for t in n.get("terms", []) for fac in t["factors"])
     if n_unary_keys != f["n_unary"]:
         raise AssertionError(f"{f['name']}: plan has {n_unary_keys} unary factors vs count {f['n_unary']}")
     if f["n_pointwise"] + f["n_axiswise"] + f["n_unary"] < 1:
@@ -126,6 +139,8 @@ def run_fixture(f: dict) -> None:
     inputs = {n: reconstruct(e) for n, e in f["inputs"].items()}
     eager = rt.run_named(plan, inputs, JDT)
     jitted = jax.jit(lambda i: rt.run_named(plan, i, JDT))(inputs)
+    if any(n.get("kind") == "scan" for n in plan["nodes"]):
+        EAGER[f["name"]] = {"eager": eager, "jit": jitted}
     for name, exp in f["expected"].items():
         require_close(eager[name], exp, f"{f['name']} eager {name}", fns.get(name))
         require_close(jitted[name], exp, f"{f['name']} jit {name}", fns.get(name))
@@ -251,6 +266,42 @@ def main() -> None:
           f"pointwise (relu); per-output measured difference vs Lean:")
     for n in sorted(n for fx, n in OUT_STATS if fx == rn_name):
         rel, ab, ex, tot = OUT_STATS[(rn_name, n)]
+        print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+    # Two-layer transformer as ONE scan record (`lax.scan`, 2 steps over the layer axis). Lean and JAX agreeing
+    # is not evidence the scan is right (a shared mistake passes), so the pins below are value-independent
+    # properties of the state `H(q, m, l)`, checked on Lean's result and on the eager and jit JAX results.
+    sc_name = "transformer_scan" + sfx
+    sc = by[sc_name]
+    scans = [n for n in sc["plan"]["nodes"] if n.get("kind") == "scan"]
+    assert len(sc["plan"]["nodes"]) == 1 and len(scans) == 1 and scans[0]["step_count"] == 2, sc["plan"]["nodes"]
+    sin = {n: lean_array(e) for n, e in sc["inputs"].items()}
+    # (b) the layer-2 weight slice is NaN in the INPUTS, layers 0 and 1 are finite, and every output is
+    # finite: a step that read past layer 1 would turn the whole state NaN.
+    for w in ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out"):
+        assert sin[w].shape[0] == 3 and np.all(np.isnan(sin[w][2])) and np.all(np.isfinite(sin[w][:2])), w
+    views = {"lean": {n: lean_array(e) for n, e in sc["expected"].items()},
+             "eager": {n: np.asarray(v) for n, v in EAGER[sc_name]["eager"].items()},
+             "jit": {n: np.asarray(v) for n, v in EAGER[sc_name]["jit"].items()}}
+    for who, outs_sc in views.items():
+        assert "H" in outs_sc and all(np.all(np.isfinite(v)) for v in outs_sc.values()), (who, sorted(outs_sc))
+        H = outs_sc["H"]
+        assert H.shape == (3, 4, 3), (who, H.shape)
+        # (c) layer 0 of the state is X, bit for bit (the base block's write)
+        assert np.array_equal(np.ascontiguousarray(H[:, :, 0]).view(UDT), np.ascontiguousarray(sin["X"]).view(UDT)), who
+        # (a) layers 1 and 2 are RMS-normalised (unit mean square up to eps); layer 0 (= X) is not
+        ms = [np.mean(H[:, :, l].astype(np.float64) ** 2, axis=1) for l in range(3)]
+        assert np.any(np.abs(ms[0] - 1.0) > 0.05), (who, ms[0].tolist())
+        for l in (1, 2):
+            assert np.all(np.abs(ms[l] - 1.0) < 1e-3), (who, l, ms[l].tolist())
+        # (d) the two layers differ: a step that ignored its context coordinate would repeat layer 1
+        gap = float(np.max(np.abs(H[:, :, 1].astype(np.float64) - H[:, :, 2].astype(np.float64))))
+        assert gap > 1e-2, (who, gap)
+    print(f"transformer_scan: one scan record, 2 steps, layer-2 weights NaN in the inputs and every output finite; "
+          f"H layer 0 == X bitwise, layers 1 and 2 have unit mean square (eps-close) and differ (max abs gap "
+          f"{gap:.3f}); pins hold on Lean, eager and jit; per-output measured difference vs Lean:")
+    for n in sorted(n for fx, n in OUT_STATS if fx == sc_name):
+        rel, ab, ex, tot = OUT_STATS[(sc_name, n)]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
 
     # Inline unary read (`E[i] := exp(A[i + 1])`, A = [0.5, -1, 2]): the last lane reads A[3], out of
