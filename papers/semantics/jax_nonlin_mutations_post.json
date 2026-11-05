@@ -9,8 +9,8 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2285:0: Expression",
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2297:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2317:0: Expression",
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2329:0: Expression"
   ]
  },
  {
@@ -23,8 +23,8 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2285:0: Expression",
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2297:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2317:0: Expression",
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2329:0: Expression"
   ]
  },
  {
@@ -37,7 +37,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2285:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2317:0: Expression"
   ]
  },
  {
@@ -50,7 +50,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2285:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2317:0: Expression"
   ]
  },
  {
@@ -63,7 +63,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2280:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2312:0: Expression"
   ]
  },
  {
@@ -76,7 +76,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2278:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2310:0: Expression"
   ]
  },
  {
@@ -89,7 +89,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2285:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2317:0: Expression"
   ]
  },
  {
@@ -102,7 +102,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2315:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2347:0: Expression"
   ]
  }
 ]

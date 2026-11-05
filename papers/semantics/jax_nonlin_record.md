@@ -422,6 +422,17 @@ path (no plan document), two implementer dispatches on branch `worktree-jax-unar
   (about 3 dispatches with the evidence path), f32 domain-boundary values such as signed zero
   (about 1 dispatch; plan-level pins exist in `KernelDense32Test`), the relu/NaN and `-inf`
   swallowing interaction (documented in the jax_bridge README, not changed).
+- **Controller verification** (run by the controller, not read from the implementers' reports): full
+  `Tests` build 8841 jobs; `run-evalplan-nonlin.sh` 21 + 21 fixtures with the domain pins;
+  `check-lean-drivers.sh` all six drivers clean; corpus 3832 cases, 0 eager mismatches, 45 feature
+  masks, 65 JIT cases; Python manifests 17/17 (nonlin) and 16/16 (scatter); Lean manifest 8/8.
+- **Manifest line pins.** `jax_nonlin_mutations_post.json` pins `EvalPlanCodegen.lean:N:0` guard
+  lines in its `expect` strings, so adding 32 lines above them made the first manifest run report
+  0/8 although every mutation was still killed by the same guards. The ten line numbers were
+  shifted by +32 after checking each entry's observed failing lines against its expected lines plus
+  32 (7 of 8 entries matched exactly; JN-T1-06 observed four extra pre-existing guards failing, which
+  the manifest does not require). Any later slice that edits `EvalPlanCodegen.lean` above line 2300
+  must re-run this manifest and shift the pins.
 - **Budget (Rule 6).** Both implementer dispatches breached the 60-turn cap: 80 and 87 tool calls
   (the harness count; each report under-stated its own), context peaks about 150k. Waiting on
   5-minute runner builds drove most of it. Authoring tokens were not measured with `token-report.py`.
