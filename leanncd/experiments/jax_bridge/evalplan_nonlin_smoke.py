@@ -235,6 +235,31 @@ def main() -> None:
     print(f"inline unary read: out-of-bounds lane is exp(0) = 1 (pad, then apply), in-bounds lanes exp(A[i+1]): "
           f"{ue.tolist()}")
 
+    # The other five unary ops (all Lean-ok inputs). Each Lean output is checked against numpy on the
+    # fixture's own inputs, and the op-swap alternatives are checked to DIFFER on those inputs, so a
+    # runtime that swapped sin/cos, log/sqrt or dropped `1 / x` could not pass the tolerance gate above.
+    uo = by["unary_ops" + sfx]
+    ui = {k: lean_array(v).astype(np.float64) for k, v in uo["inputs"].items()}
+    uex = {k: lean_array(v).astype(np.float64) for k, v in uo["expected"].items()}
+    rt_ = 1e-5 if _DT == "float32" else 1e-12
+    refs = {"Lg": np.log(ui["Pp"]), "Sq": np.sqrt(ui["Qq"]), "Sn": np.sin(ui["Tt"]),
+            "Cs": np.cos(ui["Tt"]), "Rc": ui["Nn"] / ui["Rr"]}
+    for k, r in refs.items():
+        assert np.allclose(uex[k], r, rtol=rt_, atol=1e-6), (k, uex[k].tolist(), r.tolist())
+    swaps = {"Lg": np.sqrt(ui["Pp"]), "Sq": np.log(np.maximum(ui["Qq"], 1e-300)), "Sn": np.cos(ui["Tt"]),
+             "Cs": np.sin(ui["Tt"]), "Rc": ui["Nn"] * ui["Rr"]}
+    for k, s in swaps.items():
+        assert not np.allclose(uex[k], s, rtol=1e-3, atol=1e-3), (k, "op swap indistinguishable")
+    assert uex["Sq"][0] == 0 and ui["Qq"][0] == 0  # sqrt(0) is Lean-ok and exactly 0
+    um = by["unary_mix" + sfx]
+    mi = {k: lean_array(v).astype(np.float64) for k, v in um["inputs"].items()}
+    assert np.allclose(lean_array(um["expected"]["Mx"]), mi["Aa"] * np.sin(mi["Bb"]) * mi["Cc"], rtol=1e-5)
+    ur = by["unary_red" + sfx]
+    ri = {k: lean_array(v).astype(np.float64) for k, v in ur["inputs"].items()}
+    assert np.allclose(lean_array(ur["expected"]["Zr"]), (np.exp(ri["Vv"]) * ri["Ww"]).sum(axis=1), rtol=1e-5)
+    print("inline unary ops: log/sqrt/sin/cos/recip, a unary read between plain reads, and a unary read "
+          "under a reduced axis match Lean within tolerance; op-swap alternatives differ on these inputs")
+
     # Differentiable: jit(grad) is finite for softmax (weighted sum, masked and unmasked) and gelu.
     for fx, name, shape in (("pw" + sfx, "G", (7,)), ("aw_plain" + sfx, "Sm", (2, 4)),
                             ("causal" + sfx, "Sm", (3, 3))):

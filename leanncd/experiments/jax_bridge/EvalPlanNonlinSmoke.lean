@@ -355,6 +355,54 @@ def unaryExpProg32 : TLProgram := tlprog!{
   E[i] := exp(A[i + 1])
 }
 
+-- The five remaining unary ops, one output each (`recip` is the source's friendly division
+-- `Nn[i] / Rr[i]`, i.e. `Nn * recip(Rr)`, so it is also a unary-times-plain product). Every lane is
+-- a Lean-ok input: `log` over strictly positive `Pp`, `sqrt` over `Qq` incl. an exact `0.0` (ok),
+-- `recip` over nonzero `Rr` of both signs. `sin`/`cos` share `Tt`, so swapping them changes every lane.
+def unaryOpsProg : TLProgram := tlprog!{
+  axis i : ℕ = 4
+  tensor f64 Pp(i), Qq(i), Tt(i), Rr(i), Nn(i), Lg(i), Sq(i), Sn(i), Cs(i), Rc(i)
+  Lg[i] := log(Pp[i])
+  Sq[i] := sqrt(Qq[i])
+  Sn[i] := sin(Tt[i])
+  Cs[i] := cos(Tt[i])
+  Rc[i] := Nn[i] / Rr[i]
+}
+def unaryOpsProg32 : TLProgram := tlprog!{
+  axis i : ℕ = 4
+  tensor f32 Pp(i), Qq(i), Tt(i), Rr(i), Nn(i), Lg(i), Sq(i), Sn(i), Cs(i), Rc(i)
+  Lg[i] := log(Pp[i])
+  Sq[i] := sqrt(Qq[i])
+  Sn[i] := sin(Tt[i])
+  Cs[i] := cos(Tt[i])
+  Rc[i] := Nn[i] / Rr[i]
+}
+-- Factor product order: a plain read, a unary read, a plain read, in one term.
+def unaryMixProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  tensor f64 Aa(i), Bb(i), Cc(i), Mx(i)
+  Mx[i] := Aa[i] · sin(Bb[i]) · Cc[i]
+}
+def unaryMixProg32 : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  tensor f32 Aa(i), Bb(i), Cc(i), Mx(i)
+  Mx[i] := Aa[i] · sin(Bb[i]) · Cc[i]
+}
+-- A unary read inside a REDUCED axis: `Zr[i] = Σ_j exp(Vv[i, j]) · Ww[j]`, so the per-row fold sums
+-- unary-applied factors.
+def unaryRedProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 3
+  tensor f64 Vv(i, j), Ww(j), Zr(i)
+  Zr[i] := exp(Vv[i, j]) · Ww[j]
+}
+def unaryRedProg32 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 3
+  tensor f32 Vv(i, j), Ww(j), Zr(i)
+  Zr[i] := exp(Vv[i, j]) · Ww[j]
+}
+
 /-! ## Inputs (shared by both precisions; `t32` narrows) -/
 
 def pwX : Array Float := #[-3.0, -0.5, 0.0, -0.0, 0.5, 1.0, 2.5]
@@ -372,6 +420,16 @@ def causalBig : Array Float := #[0.5, 1000.0, 2000.0, 1.5, 0.25, 900.0, 3.0, 1.0
 def nanX : Float := 0.0 / 0.0
 def reluNanX : Array Float := #[nanX, -1.0, 2.0, 0.0]
 def unaryExpA : Array Float := #[0.5, -1.0, 2.0]
+def unaryPp : Array Float := #[0.25, 1.0, 2.0, 7.5]
+def unaryQq : Array Float := #[0.0, 0.25, 2.0, 9.0]
+def unaryTt : Array Float := #[0.5, -1.0, 2.0, 3.0]
+def unaryRr : Array Float := #[0.5, -2.0, 4.0, -0.125]
+def unaryNn : Array Float := #[1.0, 3.0, -2.0, 5.0]
+def unaryAa : Array Float := #[1.5, -2.0, 0.5]
+def unaryBb : Array Float := #[0.5, -1.0, 2.0]
+def unaryCc : Array Float := #[3.0, 0.25, -1.5]
+def unaryVv : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75]
+def unaryWw : Array Float := #[1.0, -0.5, 2.0]
 def sq3 : Array Float :=#[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0]
 def firstAxisX : Array Float := #[0.5, -1.0, 2.0, 1.5, -0.25, 3.0]
 def rank3X : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0, 0.0, 0.1, 4.0]
@@ -418,6 +476,16 @@ def corpus64 : IO (Array String) := do
                 ("W_in", t64 [4, 4] trWin), ("W_out", t64 [4, 4] trWout)])
         1 3 (some (10, 1, 3)),
     ← fixture64 "unary_exp_oob" unaryExpProg (env64 [("A", t64 [3] unaryExpA)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture64 "unary_ops" unaryOpsProg
+        (env64 [("Pp", t64 [4] unaryPp), ("Qq", t64 [4] unaryQq), ("Tt", t64 [4] unaryTt),
+                ("Rr", t64 [4] unaryRr), ("Nn", t64 [4] unaryNn)])
+        0 0 (some (5, 0, 0)) true,
+    ← fixture64 "unary_mix" unaryMixProg
+        (env64 [("Aa", t64 [3] unaryAa), ("Bb", t64 [3] unaryBb), ("Cc", t64 [3] unaryCc)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture64 "unary_red" unaryRedProg
+        (env64 [("Vv", t64 [2, 3] unaryVv), ("Ww", t64 [3] unaryWw)])
         0 0 (some (1, 0, 0)) true]
 
 def corpus32 : IO (Array String) := do
@@ -444,6 +512,16 @@ def corpus32 : IO (Array String) := do
                 ("W_in", t32 [4, 4] trWin), ("W_out", t32 [4, 4] trWout)])
         1 3 (some (10, 1, 3)),
     ← fixture32 "unary_exp_oob32" unaryExpProg32 (env32 [("A", t32 [3] unaryExpA)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture32 "unary_ops32" unaryOpsProg32
+        (env32 [("Pp", t32 [4] unaryPp), ("Qq", t32 [4] unaryQq), ("Tt", t32 [4] unaryTt),
+                ("Rr", t32 [4] unaryRr), ("Nn", t32 [4] unaryNn)])
+        0 0 (some (5, 0, 0)) true,
+    ← fixture32 "unary_mix32" unaryMixProg32
+        (env32 [("Aa", t32 [3] unaryAa), ("Bb", t32 [3] unaryBb), ("Cc", t32 [3] unaryCc)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture32 "unary_red32" unaryRedProg32
+        (env32 [("Vv", t32 [2, 3] unaryVv), ("Ww", t32 [3] unaryWw)])
         0 0 (some (1, 0, 0)) true]
 
 end JaxBridge.NonlinSmoke
