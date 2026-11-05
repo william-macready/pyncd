@@ -103,6 +103,11 @@ inductive JaxCodegenError
   -- assignment (`checkAssign` re-run under it fails): a caller-supplied table is that entry's
   -- semantic authority, so it is rejected outright rather than consulted for its dtype tags alone.
   | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
+  -- The scan support gate (`checkJaxScanSupport`): a scan state whose cells start non-zero (a
+  -- tropical state), and a scan over other than exactly one history axis. Both located at the scan's
+  -- outer step index (the state's index too for the first).
+  | unsupportedScanState   (nodeIndex stateIndex : Nat)
+  | unsupportedScanAxes    (nodeIndex : Nat)
   -- The storage gate (`requireModeStorage`) every einsum entry and every plan-level entry runs
   -- FIRST, before node iteration, prepared-binding validation, and any Python or constants text.
   -- Since F32-JAX it is MODE-aware: `affineReference` renders `.float32` (`orderedReference32`),
@@ -147,6 +152,8 @@ def codegenErrorOfSupport : JaxSupportError → JaxCodegenError
   | .sourceDType n ti fi dt          => .unsupportedSourceDType n ti fi dt
   | .unaryFactor n ti fi             => .unaryFactor n ti fi
   | .invalidSignatureContext n cause => .invalidSignatureContext n cause
+  | .scanNonRealState n si           => .unsupportedScanState n si
+  | .scanMultiAxis n                 => .unsupportedScanAxes n
 
 /-- The one shared support gate every semantic entry point in this module runs first: the supplied
     complete table is the assignment's authority (`checkAssign` is re-run under it), then the JAX

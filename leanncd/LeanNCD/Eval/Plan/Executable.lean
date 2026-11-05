@@ -210,6 +210,13 @@ inductive JaxSupportError
   | sourceDType            (nodeIndex termIndex factorIndex : Nat) (dtype : ScalarDType)
   | unaryFactor            (nodeIndex termIndex factorIndex : Nat)
   | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
+  -- A scan state whose cells start at a non-`zero` `initValue` (a tropical max-plus/min-plus state):
+  -- the scan renderer's states are real sum-product tensors, zero-initialised. Located at the scan's
+  -- outer step index and the state's index in `RawScanPlan.states`.
+  | scanNonRealState       (nodeIndex stateIndex : Nat)
+  -- A scan over more (or fewer) than one history axis: the scan runtime steps ONE axis. Located at
+  -- the scan's outer step index.
+  | scanMultiAxis          (nodeIndex : Nat)
   deriving DecidableEq, BEq, Repr
 
 /-- The one real dtype and the one real sum-product algebra this backend renders for a plan of
@@ -255,9 +262,15 @@ private def jaxRealCarrier : LeanNCD.StorageKind → ScalarDType × ContractionA
     `affineReference` assignment renderer passes `true` (its runtime applies the function after the
     zero-pad). Every other caller — `einsumOnly`, both candidate conversions, the production
     validators, scatter — keeps the default and so keeps the located `unaryFactor` refusal. The
-    declared order is unchanged: source dtype is still checked before the unary. -/
+    declared order is unchanged: source dtype is still checked before the unary.
+
+    `allowContext` (default `false`) is the one opt-in for a contextful assignment: only
+    `checkJaxScanSupport` below passes `true`, for the assignments of a scan's two blocks (the step
+    block's assignments are contextful by construction; the scan runtime binds the step axis). Every
+    other caller keeps the located `contextualAssignment` refusal. -/
 private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
-    (kind : LeanNCD.StorageKind) (a : AssignPlan) (allowUnary : Bool := false) :
+    (kind : LeanNCD.StorageKind) (a : AssignPlan) (allowUnary : Bool := false)
+    (allowContext : Bool := false) :
     Except JaxSupportError Unit := do
   let (realDType, realAlgebra) := jaxRealCarrier kind
   match sigs[a.destinationSlot]? with
@@ -267,7 +280,7 @@ private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
         throw (.destinationDType nodeIndex a.destinationSlot destSig.dtype)
   unless a.algebra == realAlgebra do
     throw (.unsupportedAlgebra nodeIndex a.algebra)
-  unless a.contextShape.isEmpty do
+  unless allowContext || a.contextShape.isEmpty do
     throw (.contextualAssignment nodeIndex a.contextShape)
   for h : ti in [0 : a.terms.size] do
     let t := a.terms[ti]
@@ -282,6 +295,20 @@ private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
               throw (.sourceDType nodeIndex ti fi srcSig.dtype)
         unless allowUnary || f.unary.isNone do
           throw (.unaryFactor nodeIndex ti fi)
+
+/-- The one body behind `checkJaxAssignSupport` (`allowContext := false`) and `checkJaxScanSupport`
+    (`allowContext := true`): re-run the mode-appropriate assignment checker under `sigs`, then the
+    private support policy. PRIVATE so the context opt-in is reachable only from the scan gate. -/
+private def checkJaxAssignSupportCtx (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (checked : CheckedAssignPlan) (allowUnary allowContext : Bool) : Except JaxSupportError Unit := do
+  let recheck :=
+    match checked.storageKind with
+    | .float64 => checkAssign sigs checked.plan
+    | .float32 => checkAssignF32 sigs checked.plan
+  match recheck with
+  | .error e => throw (.invalidSignatureContext nodeIndex e)
+  | .ok _ => pure ()
+  jaxAssignSupported sigs nodeIndex checked.storageKind checked.plan allowUnary allowContext
 
 /-- The typed, context-bearing cross-module support gate: the supplied complete signature table is
     the assignment's semantic authority, so the assignment checker is RE-RUN under it before the JAX
@@ -308,15 +335,8 @@ private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
     candidate conversions in `experiments/jax_bridge/EvalPlanCodegen.lean` call; the latter maps its
     result into that module's own `JaxCodegenError` vocabulary. -/
 def checkJaxAssignSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
-    (checked : CheckedAssignPlan) (allowUnary : Bool := false) : Except JaxSupportError Unit := do
-  let recheck :=
-    match checked.storageKind with
-    | .float64 => checkAssign sigs checked.plan
-    | .float32 => checkAssignF32 sigs checked.plan
-  match recheck with
-  | .error e => throw (.invalidSignatureContext nodeIndex e)
-  | .ok _ => pure ()
-  jaxAssignSupported sigs nodeIndex checked.storageKind checked.plan allowUnary
+    (checked : CheckedAssignPlan) (allowUnary : Bool := false) : Except JaxSupportError Unit :=
+  checkJaxAssignSupportCtx sigs nodeIndex checked allowUnary false
 
 /-- The scatter counterpart of `checkJaxAssignSupport`: a scatter's COMPUTE half is graded by the very
     same private policy (`jaxAssignSupported` — one rule, no second copy), after the scatter checker
@@ -337,6 +357,36 @@ def checkJaxScatterSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
   | .error e => throw (.invalidSignatureContext nodeIndex e)
   | .ok _ => pure ()
   jaxAssignSupported sigs nodeIndex checked.storageKind checked.plan.compute
+
+/-- The scan runtime steps exactly one history axis. Its own predicate so it is testable on a raw
+    plan (a checked multi-axis scan is not constructible today). -/
+def jaxScanSingleAxis (raw : RawScanPlan) : Bool := raw.historyExtents.size == 1
+
+/-- The scan counterpart of `checkJaxAssignSupport`: one verdict for a checked scan node, decided in
+    this declared order (fixtures pin it): the history-axis count (`scanMultiAxis`, unless there is
+    exactly one), each state's `initValue` in state order (`scanNonRealState`, unless `.zero`), then
+    every `.assign` step of the BASE block followed by every one of the STEP block, each through the
+    same re-run + private policy as an outer assignment but under the BLOCK's own `tensorSigs` (the
+    table `checkPlanBlock` checked it against), with `allowUnary := true` (the `affineReference`
+    runtime applies a unary read) and `allowContext := true` (the step block's assignments are
+    contextful by construction). `.pointwise`/`.axiswise` block steps need no gate here, exactly as
+    at the outer level (their checkers already ran under the block's table). The closed scan
+    policies (`iterationOrder`/`boundaryPolicy`/`snapshotPolicy`) are single-valued, so no check.
+    Every error is located at the scan's OUTER step index `nodeIndex`; an assignment refusal's
+    term/factor indices are relative to its own block, which this verdict does not name. -/
+def checkJaxScanSupport (nodeIndex : Nat) (checked : CheckedScanPlan) :
+    Except JaxSupportError Unit := do
+  let raw := checked.raw
+  unless jaxScanSingleAxis raw do
+    throw (.scanMultiAxis nodeIndex)
+  for h : si in [0 : raw.states.size] do
+    unless raw.states[si].initValue == .zero do
+      throw (.scanNonRealState nodeIndex si)
+  for (block, evidence) in [(raw.baseBlock, checked.checkedBase), (raw.stepBlock, checked.checkedStep)] do
+    for e in evidence.checkedNodes do
+      match e with
+      | .assign a => checkJaxAssignSupportCtx block.tensorSigs nodeIndex a true true
+      | .pointwise _ | .axiswise _ => pure ()
 
 /-- `Bool` view of the support gate, for the `Bool`-valued validators below. -/
 private def jaxSupportOk (sigs : Array TensorSignature) (checked : CheckedAssignPlan) : Bool :=

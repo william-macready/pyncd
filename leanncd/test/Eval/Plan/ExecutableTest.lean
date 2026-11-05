@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.Executable
+import Eval.Plan.ScanTest
 
 /-!
 # Thread 5 (Tasks 1-5) — `ExecutionEvidence` / kernel-candidate / executable tests
@@ -1950,5 +1951,66 @@ def f32BoolDestAssign : AssignPlan :=
       match checkJaxAssignSupport f32DestSigs 7 checked with
       | .error e => e == JaxSupportError.unaryFactor 7 0 0
       | .ok _ => false)
+
+/-! ### `checkJaxScanSupport` — the scan gate
+
+Donors are `ScanTest`'s hand-built scans (one real f64 linear self-recurrence with a CONTEXTFUL step
+assignment, one accepted Boolean scan). The verdict is `none` for accept, `some e` for a refusal. -/
+
+def scanVerdict (sigs : Array TensorSignature) (raw : RawScanPlan) : Option JaxSupportError :=
+  match checkScanPlan sigs raw with
+  | .error _ => some (.scanMultiAxis 999)  -- sentinel: the donor itself must check (guarded below)
+  | .ok c => match checkJaxScanSupport 5 c with
+    | .ok _ => none
+    | .error e => some e
+
+def scanChecks (sigs : Array TensorSignature) (raw : RawScanPlan) : Bool :=
+  match checkScanPlan sigs raw with | .ok _ => true | .error _ => false
+
+open LeanNCD.Eval.Plan.ScanTest
+
+-- Accept: the real linear scan. Its step assignment is contextful (`contextShape := #[2]`), which the
+-- outer gate refuses as `contextualAssignment` — the scan gate admits it.
+#guard scanChecks outerSigs linearScan
+#guard scanVerdict outerSigs linearScan == none
+#guard (match checkScanPlan outerSigs linearScan with
+  | .ok c => match c.checkedStep.checkedNodes[0]? with
+    | some (CheckedBlockStepEvidence.assign a) => (match checkJaxAssignSupport c.raw.stepBlock.tensorSigs 5 a with
+        | .error e => e == .contextualAssignment 5 #[2]
+        | .ok _ => false)
+    | _ => false
+  | .error _ => false)
+
+-- Accept neighbour for the unary opt-in: a unary read inside the step block is admitted.
+def linearScanUnary : RawScanPlan :=
+  { linearScan with stepBlock := { stepBlock with steps := #[.assign
+      { stepAssign with terms := #[{ termX with factors := #[.read { stepReadX with unary := some .exp }] }, termS] }] } }
+#guard scanChecks outerSigs linearScanUnary
+#guard scanVerdict outerSigs linearScanUnary == none
+
+-- Refusal 1 (non-real state): a tropical max-plus scan. Clone `linearScan`; change ONLY the state's
+-- `initValue` to `.negInf` and the step assignment's algebra to max-plus (the checker ties the two).
+-- The accept neighbour is `linearScan` above. The state check precedes the assignment gate, so the
+-- verdict is the state's locator, not `unsupportedAlgebra`.
+def tropicalScan : RawScanPlan :=
+  { linearScan with
+    states := #[{ stateS with initValue := .negInf }]
+    stepBlock := { stepBlock with steps := #[.assign { stepAssign with algebra := admittedAlgebraMax }] } }
+#guard scanChecks outerSigs tropicalScan
+#guard scanVerdict outerSigs tropicalScan == some (.scanNonRealState 5 0)
+
+-- Refusal 3 (multi-axis): no valid two-axis `RawScanPlan` exists to check (F3-b stage 2 is open) and
+-- `CheckedScanPlan` cannot be re-labelled (private constructor), so the gate's predicate
+-- `jaxScanSingleAxis` is pinned on the raw plan: the donor passes; the donor with ONLY
+-- `historyExtents := #[3, 3]` (or `#[]`) fails. The `throw` wiring in `checkJaxScanSupport` is not
+-- reachable from a fixture today.
+#guard jaxScanSingleAxis linearScan
+#guard !jaxScanSingleAxis { linearScan with historyExtents := #[3, 3] }
+#guard !jaxScanSingleAxis { linearScan with historyExtents := #[] }
+
+-- Refusal 2 (assignment gate, BASE block): the accepted Boolean scan's base assignment writes a
+-- Boolean slot, refused at the outer step index, slot 1 (the base block's own signature table).
+#guard scanChecks outerSigsBool linearScanBool
+#guard scanVerdict outerSigsBool linearScanBool == some (.destinationDType 5 1 .bool)
 
 end LeanNCD.Eval.Plan.ExecutableTest
