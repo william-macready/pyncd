@@ -143,3 +143,9 @@ globs = ["EvalPlanCodegen"]
 [[lean_lib]]
 name = "SemanticCoreSpike"
 globs = ["LeanNCD.Semantics.TensorLogicSemanticCoreSpike"]
+
+# Non-default proof-free experiment; reference test fixtures stay outside LeanNCD.
+[[lean_lib]]
+name = "IndexedExecutionExperiment"
+srcDir = "experiments/indexed_execution"
+globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest"]

@@ -6,9 +6,9 @@
 
 ## Status and purpose
 
-This note describes an experiment, not a replacement semantics or an
-implementation already shown to be correct. It explains the proposed idea,
-the design of a small executable Lean prototype, and the evidence that would
+This note describes an experiment, not a replacement semantics or a
+generally proved implementation. It explains the proposed idea, the
+design of a small executable Lean prototype, and the evidence that would
 justify continuing with it.
 
 The prototype will use ordinary Lean data and executable functions. It will
@@ -16,9 +16,9 @@ not require new correctness theorems, category instances with coherence
 proofs, new axioms, or `sorry`. Reusing existing proved definitions and
 validation infrastructure is compatible with that restriction.
 
-No prototype execution results are claimed in this note. The examples and
-checks below are intended requirements, not reports of successful runs.
-Preparing this note precedes implementing the prototype.
+Sections 1-10 describe the design and its intended requirements.
+Section 11 records the first implemented prototype and observed checks;
+these are finite experimental results, not a general correspondence proof.
 
 ## 1. The question we want to answer
 
@@ -716,30 +716,85 @@ An honest no-go result includes:
 - A representation that cannot plausibly retain a compact symbolic form
   for larger finite domains.
 
-## 11. Suggested sequence after this note is reviewed
+## 11. First implementation and observed evidence
 
-1. **Confirm the reuse boundary.** Import the smallest existing program,
-   schedule, and exact reference donor. Resolve any visibility or build
-   issue before creating a new language or adapter framework.
-2. **Build the closed graph and data observations.** Establish one
-   matched-priority, intermediate-state comparison.
-3. **Add discriminating families and interface checks.** Prioritise
-   multiplicity, readiness, strictness, internal completion, and empty
-   declarations. Label missing adapters explicitly.
-4. **Explore alternative graph schedules and run controlled defects.**
-   Keep reference-priority coverage separate from graph-side exploration.
-5. **Assess the design, not just parity.** Record what became structural,
-   what remained global, what was shared, and what was deferred.
+### 11.1. Files and invocation
 
-Keep the first executable experiment isolated from production compilation
-and from general category-theory instances. Use existing build and test
-conventions; decide its exact file placement and invocation when the
-reference import boundary has been confirmed.
+The non-default `IndexedExecutionExperiment` Lake target builds:
 
-Only if these experiments are informative should a later effort prove
-a generic graph/reference correspondence, build a uniform indexed
-categorical package, or refine graph execution into physical kernels.
-Those are different deliverables from this proof-free prototype.
+- [`IndexedExecutionPrototype.lean`](../../leanncd/experiments/indexed_execution/IndexedExecutionPrototype.lean):
+  explicit occurrence/read/writer ports, structural closure, graph state,
+  independent priority selection, and data-only reference comparisons.
+- [`IndexedExecutionPrototypeTest.lean`](../../leanncd/experiments/indexed_execution/IndexedExecutionPrototypeTest.lean):
+  executable fixture assertions, malformed graph controls, expression pins,
+  and finite-family checks.
+
+Neither module is imported by production `LeanNCD`. No new theorems,
+axioms, `sorry`, or hand-written proof terms were added.
+
+From the checkout root, build dependencies and then execute the checks
+afresh:
+
+```bash
+bash leanncd/scripts/lake-build.sh leanncd IndexedExecutionExperiment
+bash leanncd/scripts/lean-file.sh leanncd experiments/indexed_execution/IndexedExecutionPrototypeTest.lean
+```
+
+The second command elaborates the test file again, so its executable
+assertions run even when Lake has cached the module.
+
+### 11.2. Observed coverage
+
+The first implementation passes **36 executable check rows**, containing
+**18 matched-priority graph/reference comparison invocations**. Those
+numbers count assertions and invocations, not distinct programs or
+exhaustive schedules.
+
+| Evidence class | Observed coverage |
+| --- | --- |
+| Matched graph/reference runs | Duplicate writes; colliding tagged valuations; selected reversed priorities; ready undefinedness and failure snapshots; guards; empty fibers; empty input presence/absence; internal nonoutput work; coordinate chains and a blocked cycle; reciprocal and square |
+| Intermediate-state pins | Open writer bundles remain unavailable; produced zero differs from missing; outputs alone do not complete internal work; full footprints wait for required coordinates |
+| Construction controls | Fragment recomposition; missing node, duplicate tag, missing writer and dropped read rejection; malformed graph rejected by reference comparison |
+| Expression-only evidence | Existing strict array selection/tabulation, zero-strictness, empty reduction and demanded empty-array cases |
+| Total-family evidence | Concrete pushforward grouping/composition and reindex composition checks |
+
+The comparison checks terminal kinds, located failures, every intermediate
+available/accumulator/pending snapshot, event identities and values, and
+blocked-read observations. It enumerates all declared coordinate rows,
+including nonoutputs, and separately compares tensor-level input presence.
+
+Two real source mutations were run through the
+[mutation manifest](categorical_tensor_logic_prototype_mutations.json):
+changing the collector's zero seed to one and removing the full-footprint
+readiness gate. Both caused the intended fixture failures; both restored
+byte-identically and rebuilt successfully. These are implementation
+mutations, not changes to expected assertion values.
+
+The full default Lean library and test build also completed successfully.
+Existing repository proof warnings remain outside this prototype; the new
+modules introduced no source warnings.
+
+### 11.3. What remains untested or deliberately limited
+
+- There is no exhaustive graph-state or reference-schedule explorer;
+  only the selected complete priorities and reversals were exercised.
+- Strict array selection has expression-level pins, not a graph adapter
+  over the prototype's rational registry.
+- The ranked chain is not a full bounded-history or symbolic scan adapter.
+- Arbitrary source-program admission, general partial-primitive registries,
+  and independently authored open-program composition are not implemented.
+- The body interpreter and footprint construction are deliberately shared
+  with the reference. Parity does not independently verify them.
+- Structural closure validates a fixed program's canonical port lists.
+  It is not yet a phase-typed open-interface calculus or a general account
+  of port isomorphisms.
+
+The observed structural gain is limited but real: the runner stores
+available values and produced occurrences, while reference pending sets
+and accumulators are derived only for comparison. Runtime eligibility
+uses explicit graph ports rather than reference `attempt` or `select`.
+Whether that scales to a simpler general categorical foundation remains
+the next research question, not a conclusion of these checks.
 
 ## 12. What we will and will not learn
 
