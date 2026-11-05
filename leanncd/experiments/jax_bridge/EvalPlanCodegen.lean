@@ -113,7 +113,10 @@ inductive JaxCodegenError
   -- such an entry), and a step-block assignment term whose context position is not exactly `#[0]`
   -- (the runtime reads stacked tables as step-major over a leading step axis).
   | scanWriteOutOfRange    (nodeIndex stateIndex : Nat) (coord : List Int)
-  | scanContextPos         (nodeIndex termIndex : Nat) (contextPos : Array Nat)
+  -- Two output coordinates of ONE step's write (or of one base write) land on the same flat offset:
+  -- the runtime's `.at[idx].set` is unspecified for duplicates (Lean's `commitWrite` is last-wins).
+  | scanWriteCollision     (nodeIndex stateIndex flatOffset : Nat)
+  | scanContextPos        (nodeIndex termIndex : Nat) (contextPos : Array Nat)
   -- The storage gate (`requireModeStorage`) every einsum entry and every plan-level entry runs
   -- FIRST, before node iteration, prepared-binding validation, and any Python or constants text.
   -- Since F32-JAX it is MODE-aware: `affineReference` renders `.float32` (`orderedReference32`),
@@ -689,11 +692,19 @@ def buildScanWriteIndex (nodeIndex stateIndex : Nat) (stateShape outShape : List
     (w : StateWriteMap) (ctxs : List (List Int)) : Except JaxCodegenError (Array Nat) := do
   let mut idxs : Array Nat := #[]
   for ctx in ctxs do
+    let mut slice : Array Nat := #[]
     for oc in allCoords outShape do
       let coord := applyAffine w.map (ctx ++ oc)
       unless inBoundsPerDim stateShape coord do
         throw (.scanWriteOutOfRange nodeIndex stateIndex coord)
-      idxs := idxs.push (flatIndex stateShape (coord.map Int.toNat))
+      slice := slice.push (flatIndex stateShape (coord.map Int.toNat))
+    -- one step's (or the base write's) slice must be injective: the runtime scatter is unspecified
+    -- for duplicate indices; duplicates ACROSS steps are different carries and are fine.
+    let sorted := slice.qsort (· < ·)
+    for i in [1 : sorted.size] do
+      if sorted[i]! == sorted[i - 1]! then
+        throw (.scanWriteCollision nodeIndex stateIndex sorted[i]!)
+    idxs := idxs ++ slice
   return idxs
 
 /-- The node records of one scan block, in block-step order. Assignments render through the SAME
@@ -2545,6 +2556,19 @@ def scanTropicalRaw : RawEvalPlan :=
     | .error (.scanWriteOutOfRange 4 0 [3]) => true | _ => false) &&
   (buildScanWriteIndex 4 0 [3] [] { scanStepWrite with map := { coeffs := #[#[]], bias := #[2] } } [[]]).toOption
     == some #[2]
+
+-- Collision backstop on a hand-built write (state `[3]`, output shape `[2]`): the map `oc ↦ 0·oc + 1`
+-- sends both output coordinates to cell 1 (located error with the offset); the injective map
+-- `oc ↦ oc + 1` renders `#[1, 2]`. The same colliding map over TWO step contexts is still an error
+-- (per-step slice), while a map that collides only ACROSS steps (`ctx ↦ ctx`, output rank 0) renders.
+#guard (match buildScanWriteIndex 4 0 [3] [2] { scanStepWrite with map := { coeffs := #[#[0]], bias := #[1] } } [[]] with
+    | .error (.scanWriteCollision 4 0 1) => true | _ => false) &&
+  (match buildScanWriteIndex 4 0 [3] [2] { scanStepWrite with map := { coeffs := #[#[0, 0]], bias := #[1] } } [[0], [1]] with
+    | .error (.scanWriteCollision 4 0 1) => true | _ => false) &&
+  (buildScanWriteIndex 4 0 [3] [2] { scanStepWrite with map := { coeffs := #[#[1]], bias := #[1] } } [[]]).toOption
+    == some #[1, 2] &&
+  (buildScanWriteIndex 4 0 [3] [] { scanStepWrite with map := { coeffs := #[#[0]], bias := #[1] } } [[0], [1]]).toOption
+    == some #[1, 1]
 
 -- Accept neighbour: clone `scanRejectRaw`, replace ONLY step 1 (the scan) with a pointwise step into
 -- the same slot 2. The plan stays checked and `affineReference` now renders it, so the refusal above
