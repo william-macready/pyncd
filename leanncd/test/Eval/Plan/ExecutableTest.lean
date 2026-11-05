@@ -686,6 +686,18 @@ def unaryAssign : AssignPlan :=
 #guard rejectedBy (.unsupported (.unaryFactor 0 0 0))
   (einsumOutcome idSigs unaryAssign #[#[0, 0]] #[0])
 
+-- The shared gate's opt-in: the default refuses (as above), `allowUnary := true` admits the same
+-- plan. Only the `affineReference` assignment renderer passes it.
+#guard (match checkAssign idSigs unaryAssign with
+  | .error _ => false
+  | .ok checked =>
+      (match checkJaxAssignSupport idSigs 0 checked with
+        | .error e => e == .unaryFactor 0 0 0
+        | .ok _ => false) &&
+      (match checkJaxAssignSupport idSigs 0 checked (allowUnary := true) with
+        | .ok _ => true
+        | .error _ => false))
+
 /-! ### Fixture 7 — declared support-check ORDER: a Boolean destination whose source is Boolean too
 reports the DESTINATION, not the source. Without a declared order this fixture would be satisfied by
 either error, which is exactly why fixture 1 (real source) and this one (Boolean source) are
@@ -1673,6 +1685,14 @@ def idStepCandidate (raw : RawEvalPlan) : Option JaxExecutableCandidate :=
 #guard match checkScatter idSigs { idScatter with compute := { idAssign with algebra := admittedAlgebraMax } } with
   | .ok c => (match checkJaxScatterSupport idSigs 0 c with
               | .error (.unsupportedAlgebra 0 _) => true | _ => false)
+  | .error _ => false
+-- A scatter's compute half with an inline unary read stays refused: `allowUnary` is the
+-- `affineReference` ASSIGNMENT renderer's opt-in only, and `checkJaxScatterSupport` keeps the default.
+-- Clone `idScatter`, change the compute half to `unaryAssign` (fixture 4); the `.ok c` arm of
+-- `checkScatter` is what keeps this from passing on a checker rejection.
+#guard match checkScatter idSigs { idScatter with compute := unaryAssign } with
+  | .ok c => (match checkJaxScatterSupport idSigs 0 c with
+              | .error (.unaryFactor 0 0 0) => true | _ => false)
   | .error _ => false
 
 /-! ### The same evidence refusal for pointwise and axiswise steps

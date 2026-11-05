@@ -17,7 +17,9 @@ Like the other drivers it lives outside every Lake target; run via `lake env lea
 Every fixture asserts, before any Python is written, that its prepared plan really has at least the
 expected number of pointwise/axiswise steps (a program that silently compiled to plain assignments
 would test nothing), that `einsumOnly` and the evidence door (`lowerCheckPlanToCandidate`) still
-refuse it, and that `affineReference` renders it.
+refuse it, and that `affineReference` renders it. A fixture with an inline unary read (`unaryOk`)
+is the one place those two doors refuse with `unaryFactor` (binary64) instead of `unsupportedStep`:
+they keep refusing unary reads; only `affineReference` admits one.
 -/
 
 namespace JaxBridge.NonlinSmoke
@@ -42,11 +44,19 @@ def countKinds (p : PreparedPlan) : Nat × Nat × Nat :=
     | .assign _ => (a + 1, pw, aw) | .pointwise _ => (a, pw + 1, aw)
     | .axiswise _ => (a, pw, aw + 1) | _ => (a, pw, aw)) (0, 0, 0)
 
+/-- Number of inline unary reads in the prepared plan's assignment steps. -/
+def countUnary (p : PreparedPlan) : Nat :=
+  p.plan.raw.steps.foldl (fun n st => match st with
+    | .assign a => a.terms.foldl (fun n t => t.factors.foldl (fun n f => match f with
+        | .read r => if r.unary.isSome then n + 1 else n
+        | .iverson _ => n) n) n
+    | _ => n) 0
+
 /-- The assertions every fixture shares; returns the rendered plan data. `exact`, when given, pins
     the total step count and the `(assign, pointwise, axiswise)` counts exactly, so a silent change
     to how a program compiles is loud. -/
 def checkAndRender (name : String) (p : PreparedPlan) (minPw minAw : Nat)
-    (exact : Option (Nat × Nat × Nat) := none) : IO String := do
+    (exact : Option (Nat × Nat × Nat) := none) (unaryOk : Bool := false) : IO String := do
   let (pw, aw) := countSteps p
   unless pw ≥ minPw && aw ≥ minAw do
     throw (IO.userError s!"{name}: expected >= {minPw} pointwise and >= {minAw} axiswise steps, prepared plan has {pw} and {aw}")
@@ -56,9 +66,11 @@ def checkAndRender (name : String) (p : PreparedPlan) (minPw minAw : Nat)
       throw (IO.userError s!"{name}: expected {ea} assign / {epw} pointwise / {eaw} axiswise ({ea + epw + eaw} steps), prepared plan has {a} / {pw'} / {aw'} ({p.plan.raw.steps.size} steps)")
   match generateNamed .einsumOnly p with
   | .error (.unsupportedStep _) | .error (.unsupportedStorageKind _) => pure ()
+  | .error (.unaryFactor _ _ _) => unless unaryOk do throw (IO.userError s!"{name}: einsumOnly refused with unaryFactor on a fixture without a unary read")
   | other => throw (IO.userError s!"{name}: einsumOnly did not refuse: {repr other.toOption}")
   match lowerCheckPlanToCandidate p with
   | .error (.unsupportedStep _) | .error (.unsupportedStorageKind _) => pure ()
+  | .error (.unaryFactor _ _ _) => unless unaryOk do throw (IO.userError s!"{name}: the evidence door refused with unaryFactor on a fixture without a unary read")
   | _ => throw (IO.userError s!"{name}: the evidence door did not refuse")
   match renderAffinePlanNamed p with
   | .ok s => pure s
@@ -77,14 +89,16 @@ def prepared (name : String) (sched : ScheduledProgram) (sig : InputSignature) :
 def header (name : String) (p : PreparedPlan) (planData : String) : String :=
   let (pw, aw) := countSteps p
   "{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"named\", \"n_pointwise\": " ++ toString pw ++
-    ", \"n_axiswise\": " ++ toString aw ++ ", \"plan\": " ++ planData
+    ", \"n_axiswise\": " ++ toString aw ++ ", \"n_unary\": " ++ toString (countUnary p) ++
+    ", \"plan\": " ++ planData
 
 /-- One binary64 named fixture. -/
 def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseTensor)
-    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none) : IO String := do
+    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none)
+    (unaryOk : Bool := false) : IO String := do
   let sched ← scheduled name prog
   let p ← prepared name sched (InputSignature.ofDenseInputs inputs)
-  let planData ← checkAndRender name p minPw minAw exact
+  let planData ← checkAndRender name p minPw minAw exact unaryOk
   let report ← match runPreparedDense p inputs with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e.cause}")
@@ -105,14 +119,15 @@ def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseT
 
 /-- The binary32 sibling, over `runPreparedDense32`; also pins that the plan is binary32. -/
 def fixture32 (name : String) (prog : TLProgram) (inputs : NamedDenseEnv32)
-    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none) : IO String := do
+    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none)
+    (unaryOk : Bool := false) : IO String := do
   let sched ← scheduled name prog
   let sig ← match InputSignature.ofDenseInputs32ForDecls sched.decls inputs with
     | .ok s => pure s
     | .error e => throw (IO.userError s!"{name} binary32 signature failed: {repr e}")
   let p ← prepared name sched sig
   unless p.plan.storageKind == .float32 do throw (IO.userError s!"{name} is not a binary32 plan")
-  let planData ← checkAndRender name p minPw minAw exact
+  let planData ← checkAndRender name p minPw minAw exact unaryOk
   let report ← match runPreparedDense32 p inputs with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"{name} binary32 Dense run failed: {repr e.cause}")
@@ -325,6 +340,107 @@ def reluNanProg32 : TLProgram := tlprog!{
   R[i] := relu(X[i])
 }
 
+-- One inline unary read whose last output lane reads out of bounds: `A[i + 1]` at `i = 2` is
+-- `A[3]`, zero-padded, and Dense applies `exp` AFTER the pad, so that lane is `exp 0 = 1` (a runtime
+-- that applied `exp` before the pad, or dropped it, would give 0 or the raw padded value there).
+-- Every lane is a Lean-ok input (`exp` is total).
+def unaryExpProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  tensor f64 A(i), E(i)
+  E[i] := exp(A[i + 1])
+}
+def unaryExpProg32 : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  tensor f32 A(i), E(i)
+  E[i] := exp(A[i + 1])
+}
+
+-- The five remaining unary ops, one output each (`recip` is the source's friendly division
+-- `Nn[i] / Rr[i]`, i.e. `Nn * recip(Rr)`, so it is also a unary-times-plain product). Every lane is
+-- a Lean-ok input: `log` over strictly positive `Pp`, `sqrt` over `Qq` incl. an exact `0.0` (ok),
+-- `recip` over nonzero `Rr` of both signs. `sin`/`cos` share `Tt`, so swapping them changes every lane.
+def unaryOpsProg : TLProgram := tlprog!{
+  axis i : ℕ = 4
+  tensor f64 Pp(i), Qq(i), Tt(i), Rr(i), Nn(i), Lg(i), Sq(i), Sn(i), Cs(i), Rc(i)
+  Lg[i] := log(Pp[i])
+  Sq[i] := sqrt(Qq[i])
+  Sn[i] := sin(Tt[i])
+  Cs[i] := cos(Tt[i])
+  Rc[i] := Nn[i] / Rr[i]
+}
+def unaryOpsProg32 : TLProgram := tlprog!{
+  axis i : ℕ = 4
+  tensor f32 Pp(i), Qq(i), Tt(i), Rr(i), Nn(i), Lg(i), Sq(i), Sn(i), Cs(i), Rc(i)
+  Lg[i] := log(Pp[i])
+  Sq[i] := sqrt(Qq[i])
+  Sn[i] := sin(Tt[i])
+  Cs[i] := cos(Tt[i])
+  Rc[i] := Nn[i] / Rr[i]
+}
+-- A unary read between two plain reads in one term. This pins that the unary attaches to ITS OWN
+-- factor (`Aa · sin(Bb) · Cc`); it does not pin the product order, since a reordering differs by
+-- about 1e-16 relative, inside the comparison tolerance.
+def unaryMixProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  tensor f64 Aa(i), Bb(i), Cc(i), Mx(i)
+  Mx[i] := Aa[i] · sin(Bb[i]) · Cc[i]
+}
+def unaryMixProg32 : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  tensor f32 Aa(i), Bb(i), Cc(i), Mx(i)
+  Mx[i] := Aa[i] · sin(Bb[i]) · Cc[i]
+}
+-- A unary read inside a REDUCED axis: `Zr[i] = Σ_j exp(Vv[i, j]) · Ww[j]`, so the per-row fold sums
+-- unary-applied factors.
+def unaryRedProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 3
+  tensor f64 Vv(i, j), Ww(j), Zr(i)
+  Zr[i] := exp(Vv[i, j]) · Ww[j]
+}
+def unaryRedProg32 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 3
+  tensor f32 Vv(i, j), Ww(j), Zr(i)
+  Zr[i] := exp(Vv[i, j]) · Ww[j]
+}
+
+-- LayerNorm-with-eps shape, from source: `Vs` = mean of squares (`Inv` = 1/3 per lane), `Ve = Vs + eps`
+-- (eps > 0, so sqrt's argument is >= eps), `Sd = sqrt(Ve)` (unary read of an intermediate) and
+-- `Yl = Xl / Sd` (recip, a unary read of the intermediate `Sd`, times the plain `Xl`).
+def unaryLnProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis k : ℕ = 3
+  tensor f64 Xl(i, k), Inv(k), Eps(i), Vs(i), Ve(i), Sd(i), Yl(i, k)
+  Vs[i] := Xl[i, k] · Xl[i, k] · Inv[k]
+  Ve[i] := Vs[i] + Eps[i]
+  Sd[i] := sqrt(Ve[i])
+  Yl[i, k] := Xl[i, k] / Sd[i]
+}
+def unaryLnProg32 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis k : ℕ = 3
+  tensor f32 Xl(i, k), Inv(k), Eps(i), Vs(i), Ve(i), Sd(i), Yl(i, k)
+  Vs[i] := Xl[i, k] · Xl[i, k] · Inv[k]
+  Ve[i] := Vs[i] + Eps[i]
+  Sd[i] := sqrt(Ve[i])
+  Yl[i, k] := Xl[i, k] / Sd[i]
+}
+-- Empty source: a constant read `Ae[0]` of a ZERO-extent tensor by a non-empty iteration; the read is
+-- out of bounds on every lane, so Dense zero-pads and applies `exp`: `exp 0 = 1` per lane.
+def unaryEmptyProg : TLProgram := tlprog!{
+  axis e : ℕ = 0
+  axis i : ℕ = 3
+  tensor f64 Ae(e), Ee(i)
+  Ee[i] := exp(Ae[0])
+}
+def unaryEmptyProg32 : TLProgram := tlprog!{
+  axis e : ℕ = 0
+  axis i : ℕ = 3
+  tensor f32 Ae(e), Ee(i)
+  Ee[i] := exp(Ae[0])
+}
+
 /-! ## Inputs (shared by both precisions; `t32` narrows) -/
 
 def pwX : Array Float := #[-3.0, -0.5, 0.0, -0.0, 0.5, 1.0, 2.5]
@@ -341,6 +457,20 @@ def awNegLarge : Array Float := #[-1000.0, -1001.0, -999.0, -1000.0, -500.0, -50
 def causalBig : Array Float := #[0.5, 1000.0, 2000.0, 1.5, 0.25, 900.0, 3.0, 1.0, -2.0]
 def nanX : Float := 0.0 / 0.0
 def reluNanX : Array Float := #[nanX, -1.0, 2.0, 0.0]
+def unaryExpA : Array Float := #[0.5, -1.0, 2.0]
+def unaryPp : Array Float := #[0.25, 1.0, 2.0, 7.5]
+def unaryQq : Array Float := #[0.0, 0.25, 2.0, 9.0]
+def unaryTt : Array Float := #[0.5, -1.0, 2.0, 3.0]
+def unaryRr : Array Float := #[0.5, -2.0, 4.0, -0.125]
+def unaryNn : Array Float := #[1.0, 3.0, -2.0, 5.0]
+def unaryAa : Array Float := #[1.5, -2.0, 0.5]
+def unaryBb : Array Float := #[0.5, -1.0, 2.0]
+def unaryCc : Array Float := #[3.0, 0.25, -1.5]
+def unaryVv : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75]
+def unaryWw : Array Float := #[1.0, -0.5, 2.0]
+def unaryXl : Array Float := #[1.0, 2.0, 3.0, -1.0, 0.5, 0.0]
+def unaryInv : Array Float := #[0.3333333333333333, 0.3333333333333333, 0.3333333333333333]
+def unaryEps : Array Float := #[1e-5, 1e-5]
 def sq3 : Array Float :=#[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0]
 def firstAxisX : Array Float := #[0.5, -1.0, 2.0, 1.5, -0.25, 3.0]
 def rank3X : Array Float := #[0.5, -1.0, 2.0, 1.5, 0.25, -0.75, 3.0, 1.0, -2.0, 0.0, 0.1, 4.0]
@@ -385,7 +515,24 @@ def corpus64 : IO (Array String) := do
         (env64 [("X", t64 [3, 4] trX), ("W_Q", t64 [2, 2, 4] trWQ), ("W_K", t64 [2, 2, 4] trWK),
                 ("W_V", t64 [2, 2, 4] trWV), ("W_O", t64 [4, 2, 2] trWO),
                 ("W_in", t64 [4, 4] trWin), ("W_out", t64 [4, 4] trWout)])
-        1 3 (some (10, 1, 3))]
+        1 3 (some (10, 1, 3)),
+    ← fixture64 "unary_exp_oob" unaryExpProg (env64 [("A", t64 [3] unaryExpA)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture64 "unary_ops" unaryOpsProg
+        (env64 [("Pp", t64 [4] unaryPp), ("Qq", t64 [4] unaryQq), ("Tt", t64 [4] unaryTt),
+                ("Rr", t64 [4] unaryRr), ("Nn", t64 [4] unaryNn)])
+        0 0 (some (5, 0, 0)) true,
+    ← fixture64 "unary_mix" unaryMixProg
+        (env64 [("Aa", t64 [3] unaryAa), ("Bb", t64 [3] unaryBb), ("Cc", t64 [3] unaryCc)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture64 "unary_red" unaryRedProg
+        (env64 [("Vv", t64 [2, 3] unaryVv), ("Ww", t64 [3] unaryWw)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture64 "unary_ln" unaryLnProg
+        (env64 [("Xl", t64 [2, 3] unaryXl), ("Inv", t64 [3] unaryInv), ("Eps", t64 [2] unaryEps)])
+        0 0 (some (4, 0, 0)) true,
+    ← fixture64 "unary_empty" unaryEmptyProg (env64 [("Ae", t64 [0] #[])])
+        0 0 (some (1, 0, 0)) true]
 
 def corpus32 : IO (Array String) := do
   return #[
@@ -409,7 +556,74 @@ def corpus32 : IO (Array String) := do
         (env32 [("X", t32 [3, 4] trX), ("W_Q", t32 [2, 2, 4] trWQ), ("W_K", t32 [2, 2, 4] trWK),
                 ("W_V", t32 [2, 2, 4] trWV), ("W_O", t32 [4, 2, 2] trWO),
                 ("W_in", t32 [4, 4] trWin), ("W_out", t32 [4, 4] trWout)])
-        1 3 (some (10, 1, 3))]
+        1 3 (some (10, 1, 3)),
+    ← fixture32 "unary_exp_oob32" unaryExpProg32 (env32 [("A", t32 [3] unaryExpA)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture32 "unary_ops32" unaryOpsProg32
+        (env32 [("Pp", t32 [4] unaryPp), ("Qq", t32 [4] unaryQq), ("Tt", t32 [4] unaryTt),
+                ("Rr", t32 [4] unaryRr), ("Nn", t32 [4] unaryNn)])
+        0 0 (some (5, 0, 0)) true,
+    ← fixture32 "unary_mix32" unaryMixProg32
+        (env32 [("Aa", t32 [3] unaryAa), ("Bb", t32 [3] unaryBb), ("Cc", t32 [3] unaryCc)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture32 "unary_red32" unaryRedProg32
+        (env32 [("Vv", t32 [2, 3] unaryVv), ("Ww", t32 [3] unaryWw)])
+        0 0 (some (1, 0, 0)) true,
+    ← fixture32 "unary_ln32" unaryLnProg32
+        (env32 [("Xl", t32 [2, 3] unaryXl), ("Inv", t32 [3] unaryInv), ("Eps", t32 [2] unaryEps)])
+        0 0 (some (4, 0, 0)) true,
+    ← fixture32 "unary_empty32" unaryEmptyProg32 (env32 [("Ae", t32 [0] #[])])
+        0 0 (some (1, 0, 0)) true]
+
+/-! ## Boundary pins: Lean REJECTS domain-violating unary reads (the JAX runtime does not check)
+
+The JAX runtime treats `log(v <= 0)`, `sqrt(v < 0)` and `recip(0)` as an unchecked precondition and
+agrees with Lean only where Lean returns ok. These pins observe the Lean side end to end (source ->
+prepared plan -> Dense): each violating input returns the typed unary-domain error for that op, in
+both precisions. They run on every driver invocation and throw (so the runner fails) if one stops
+erroring. -/
+
+def domainOpName : UnaryDomainOp → String
+  | .log => "log" | .sqrt => "sqrt" | .recip => "recip"
+
+def domainPins : IO Unit := do
+  let okEnv : List (String × Array Float) :=
+    [("Pp", unaryPp), ("Qq", unaryQq), ("Tt", unaryTt), ("Rr", unaryRr), ("Nn", unaryNn)]
+  let swap (k : String) (v : Array Float) := okEnv.map fun (n, d) => (n, if n == k then v else d)
+  let cases : List (String × String × Array Float × String) :=
+    [("log of 0.0", "Pp", #[0.25, 0.0, 2.0, 7.5], "log"),
+     ("log of -1.0", "Pp", #[0.25, -1.0, 2.0, 7.5], "log"),
+     ("sqrt of -4.0", "Qq", #[0.0, 0.25, -4.0, 9.0], "sqrt"),
+     ("recip of 0.0", "Rr", #[0.5, -2.0, 0.0, -0.125], "recip")]
+  -- The un-violated environment must run (so each error below is caused by the one swapped tensor).
+  let sched64 ← scheduled "domain" unaryOpsProg
+  let sched32 ← scheduled "domain32" unaryOpsProg32
+  let ok64 := env64 (okEnv.map fun (n, d) => (n, t64 [4] d))
+  let p64ok ← prepared "domain" sched64 (InputSignature.ofDenseInputs ok64)
+  match runPreparedDense p64ok ok64 with
+  | .ok _ => pure ()
+  | .error e => throw (IO.userError s!"domain pins: the in-domain environment failed: {repr e.cause}")
+  for (label, k, v, want) in cases do
+    let in64 := env64 ((swap k v).map fun (n, d) => (n, t64 [4] d))
+    let p64 ← prepared "domain" sched64 (InputSignature.ofDenseInputs in64)
+    match runPreparedDense p64 in64 with
+    | .error e => match e.cause with
+      | .execution (.unaryDomain op _ _) =>
+        unless domainOpName op == want do throw (IO.userError s!"domain pin (binary64) {label}: got op {domainOpName op}")
+      | other => throw (IO.userError s!"domain pin (binary64) {label}: wrong error {repr other}")
+    | .ok _ => throw (IO.userError s!"domain pin (binary64) {label}: Dense returned ok")
+    let in32 := env32 ((swap k v).map fun (n, d) => (n, t32 [4] d))
+    let sig32 ← match InputSignature.ofDenseInputs32ForDecls sched32.decls in32 with
+      | .ok s => pure s
+      | .error e => throw (IO.userError s!"domain pin signature failed: {repr e}")
+    let p32 ← prepared "domain32" sched32 sig32
+    match runPreparedDense32 p32 in32 with
+    | .error e => match e.cause with
+      | .execution (.unaryDomain32 op _ _) =>
+        unless domainOpName op == want do throw (IO.userError s!"domain pin (binary32) {label}: got op {domainOpName op}")
+      | other => throw (IO.userError s!"domain pin (binary32) {label}: wrong error {repr other}")
+    | .ok _ => throw (IO.userError s!"domain pin (binary32) {label}: Dense returned ok")
+  IO.println "domain pins: log(0.0), log(-1.0), sqrt(-4.0), recip(0.0) are typed unary-domain errors in Dense (binary64 and binary32)"
 
 end JaxBridge.NonlinSmoke
 
@@ -417,6 +631,7 @@ open JaxBridge.NonlinSmoke in
 def main (args : List String) : IO Unit := do
   let out64 := args.head?.getD "generated_evalplan_nonlin_smoke64.py"
   let out32 := (args.drop 1).head?.getD "generated_evalplan_nonlin_smoke32.py"
+  domainPins
   let f64s ← corpus64
   let f32s ← corpus32
   IO.FS.writeFile out64

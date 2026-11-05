@@ -97,6 +97,29 @@ def _prod(xs: list[int]) -> int:
     return math.prod(xs) if xs else 1
 
 
+def _apply_unary(op: str, x: jax.Array, dtype: Any) -> jax.Array:
+    """An inline unary read's function (`LeanNCD.UnaryOp`), applied to the already zero-padded gather.
+
+    Domain violations (log of v <= 0, sqrt of v < 0, recip of 0) are an UNCHECKED precondition here:
+    Lean rejects them with a typed error, this runtime does not check and promises no NaN/inf, so it
+    agrees with Lean only where Lean returns ok. Transcendentals match Dense within tolerance, not
+    bit for bit (libm vs XLA); `recip` is `1.0 / x` in the carrier dtype.
+    """
+    if op == "log":
+        return jnp.log(x)
+    if op == "sqrt":
+        return jnp.sqrt(x)
+    if op == "exp":
+        return jnp.exp(x)
+    if op == "sin":
+        return jnp.sin(x)
+    if op == "cos":
+        return jnp.cos(x)
+    if op == "recip":
+        return dtype(1.0) / x
+    raise ValueError(f"unknown unary op {op!r}")
+
+
 def _run_term(term: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
     iter_shape = tuple(term["iteration_shape"])
     output_pos = list(term["output_pos"])
@@ -120,13 +143,19 @@ def _run_term(term: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.A
         source = store[f["source_slot"]]
         src_flat = jnp.reshape(source, (-1,))
         if int(src_flat.shape[0]) == 0:
-            # Empty source storage: emit an all-zero factor tensor without any index access.
-            factor_tensors.append(jnp.zeros(iter_shape, dtype=dtype))
+            # Empty source storage: emit an all-zero factor tensor without any index access. A unary
+            # read still applies its function to those zero-padded zeros (Dense: pad, THEN apply).
+            zeros = jnp.zeros(iter_shape, dtype=dtype)
+            if "unary" in f:
+                zeros = _apply_unary(f["unary"], zeros, dtype)
+            factor_tensors.append(zeros)
             continue
         safe = jnp.asarray(f["safe_index"], dtype=_index_dtype())
         mask = jnp.asarray(f["mask"], dtype=bool)
         gathered = src_flat[safe]
         padded = jnp.where(mask, gathered, dtype(0.0))
+        if "unary" in f:
+            padded = _apply_unary(f["unary"], padded, dtype)  # AFTER the pad: OOB exp read is exp(0)
         factor_tensors.append(jnp.reshape(padded, iter_shape))
 
     # --- fold the factor product from 1.0 in factor-array order (empty ⇒ ones) ------------------

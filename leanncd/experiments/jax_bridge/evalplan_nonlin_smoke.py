@@ -110,7 +110,10 @@ def run_fixture(f: dict) -> None:
     kinds = [n.get("kind", "assign") for n in plan["nodes"]]
     if kinds.count("pointwise") != f["n_pointwise"] or kinds.count("axiswise") != f["n_axiswise"]:
         raise AssertionError(f"{f['name']}: plan nodes {kinds} vs counts {f['n_pointwise']}/{f['n_axiswise']}")
-    if f["n_pointwise"] + f["n_axiswise"] < 1:
+    n_unary_keys = sum("unary" in fac for n in plan["nodes"] for t in n.get("terms", []) for fac in t["factors"])
+    if n_unary_keys != f["n_unary"]:
+        raise AssertionError(f"{f['name']}: plan has {n_unary_keys} unary factors vs count {f['n_unary']}")
+    if f["n_pointwise"] + f["n_axiswise"] + f["n_unary"] < 1:
         raise AssertionError(f"{f['name']}: fixture exercises no nonlinearity")
     # Transformer: relu's INPUT already carries the upstream exp/normalize libm-vs-XLA difference (~1 ulp),
     # so "relu is bit-exact" does not apply; its outputs get the tolerance gate and `record_output` only.
@@ -221,6 +224,54 @@ def main() -> None:
     for n in sorted(OUT_STATS):
         rel, ab, ex, tot = OUT_STATS[n]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+    # Inline unary read (`E[i] := exp(A[i + 1])`, A = [0.5, -1, 2]): the last lane reads A[3], out of
+    # bounds, which Dense zero-pads FIRST and then applies exp to, so it is exactly exp(0) = 1. Applying
+    # exp before the pad (or not at all) would give 0 there, so the two orderings differ on this lane.
+    # Domain violations are an unchecked precondition (Lean errors, JAX does not): every lane is Lean-ok.
+    ue = lean_array(by["unary_exp_oob" + sfx]["expected"]["E"])
+    a_in = lean_array(by["unary_exp_oob" + sfx]["inputs"]["A"])
+    assert ue[2] == NDT(1.0) and np.allclose(ue[:2], np.exp(a_in[1:].astype(np.float64)), rtol=1e-6), ue.tolist()
+    assert any("unary" in fac for n in by["unary_exp_oob" + sfx]["plan"]["nodes"] for t in n["terms"] for fac in t["factors"])
+    print(f"inline unary read: out-of-bounds lane is exp(0) = 1 (pad, then apply), in-bounds lanes exp(A[i+1]): "
+          f"{ue.tolist()}")
+
+    # The other five unary ops (all Lean-ok inputs). Each Lean output is checked against numpy on the
+    # fixture's own inputs, and the op-swap alternatives are checked to DIFFER on those inputs, so a
+    # runtime that swapped sin/cos, log/sqrt or dropped `1 / x` could not pass the tolerance gate above.
+    uo = by["unary_ops" + sfx]
+    ui = {k: lean_array(v).astype(np.float64) for k, v in uo["inputs"].items()}
+    uex = {k: lean_array(v).astype(np.float64) for k, v in uo["expected"].items()}
+    rt_ = 1e-5 if _DT == "float32" else 1e-12
+    refs = {"Lg": np.log(ui["Pp"]), "Sq": np.sqrt(ui["Qq"]), "Sn": np.sin(ui["Tt"]),
+            "Cs": np.cos(ui["Tt"]), "Rc": ui["Nn"] / ui["Rr"]}
+    for k, r in refs.items():
+        assert np.allclose(uex[k], r, rtol=rt_, atol=1e-6), (k, uex[k].tolist(), r.tolist())
+    swaps = {"Lg": np.sqrt(ui["Pp"]), "Sq": np.log(np.maximum(ui["Qq"], 1e-300)), "Sn": np.cos(ui["Tt"]),
+             "Cs": np.sin(ui["Tt"]), "Rc": ui["Nn"] * ui["Rr"]}
+    for k, s in swaps.items():
+        assert not np.allclose(uex[k], s, rtol=1e-3, atol=1e-3), (k, "op swap indistinguishable")
+    assert uex["Sq"][0] == 0 and ui["Qq"][0] == 0  # sqrt(0) is Lean-ok and exactly 0
+    um = by["unary_mix" + sfx]
+    mi = {k: lean_array(v).astype(np.float64) for k, v in um["inputs"].items()}
+    assert np.allclose(lean_array(um["expected"]["Mx"]), mi["Aa"] * np.sin(mi["Bb"]) * mi["Cc"], rtol=1e-5)
+    ur = by["unary_red" + sfx]
+    ri = {k: lean_array(v).astype(np.float64) for k, v in ur["inputs"].items()}
+    assert np.allclose(lean_array(ur["expected"]["Zr"]), (np.exp(ri["Vv"]) * ri["Ww"]).sum(axis=1), rtol=1e-5)
+    # LayerNorm-eps chain from source: Yl = Xl / sqrt(mean(Xl^2) + eps), through two unary reads of
+    # intermediates (sqrt of Ve, recip of Sd); eps > 0 keeps sqrt's argument >= eps (Lean-ok).
+    ul = by["unary_ln" + sfx]
+    li = {k: lean_array(v).astype(np.float64) for k, v in ul["inputs"].items()}
+    ln_ref = li["Xl"] / np.sqrt((li["Xl"] ** 2 * li["Inv"]).sum(axis=1) + li["Eps"])[:, None]
+    assert np.allclose(lean_array(ul["expected"]["Yl"]), ln_ref, rtol=1e-5), ln_ref.tolist()
+    assert sum("unary" in fac for n in ul["plan"]["nodes"] for t in n["terms"] for fac in t["factors"]) == 2
+    # Empty source: exp over a zero-extent tensor is exp(0) = 1 on every lane (Dense pads, then applies).
+    ue0 = lean_array(by["unary_empty" + sfx]["expected"]["Ee"])
+    assert by["unary_empty" + sfx]["inputs"]["Ae"]["shape"] in ([0], (0,)) and ue0.tolist() == [1.0, 1.0, 1.0], ue0.tolist()
+    print(f"unary LayerNorm-eps chain and empty-source exp match Lean: {lean_array(ul['expected']['Yl']).tolist()}, "
+          f"{ue0.tolist()}")
+    print("inline unary ops: log/sqrt/sin/cos/recip, a unary read between plain reads, and a unary read "
+          "under a reduced axis match Lean within tolerance; op-swap alternatives differ on these inputs")
 
     # An unknown function name is refused loud, never given a default formula: clone a real fixture's
     # plan and change ONLY the first node of the kind to an unlisted `fn`; the unmodified plan is the

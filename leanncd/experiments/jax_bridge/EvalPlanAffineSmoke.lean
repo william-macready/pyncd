@@ -167,7 +167,7 @@ def buildNamedFixture (name : String) (prog : TLProgram) (inputs : HashMap Strin
   let inputsDict ← renderInputsDict prepared inputs
   let expectedDict ← renderExpectedDict prepared report
   -- `renderAffinePlanNamed` is `Except JaxCodegenError String` (it rejects the semantics this
-  -- backend implements no lowering for — Boolean dtypes, tropical algebras, unary factors,
+  -- backend implements no lowering for — Boolean dtypes, tropical algebras, Iverson factors,
   -- contextful assignments, non-assignment steps). Unwrap it and fail loud with the fixture and
   -- mode that produced it; never append the `Except` itself to the emitted Python.
   let planData ← match renderAffinePlanNamed prepared with

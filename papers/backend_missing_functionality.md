@@ -293,7 +293,7 @@ fragment.
   `bool` tensor now follows whichever real carrier its graph selected. **Not** included: JAX Boolean
   execution —
   the experimental `jax_bridge` backend now REJECTS a Boolean destination, a Boolean source, tropical
-  algebra, a unary read, and a CONTEXTFUL assignment (non-empty `AssignPlan.contextShape`) with
+  algebra, a unary read (by default; since 2026-11-04 `affineReference` assignments render it, the rest still refuse), and a CONTEXTFUL assignment (non-empty `AssignPlan.contextShape`) with
   located typed errors before emitting Python or stamping evidence, plus — in `einsumOnly` mode only
   — a zero-padded read whose source extent disagrees with its own iteration extent
   (`labelExtentMismatch`) (see `jax_evalplan_architecture.md`). Closed by `boolean_predicate_output_evalplan.md`.

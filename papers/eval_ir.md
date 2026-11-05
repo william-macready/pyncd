@@ -144,7 +144,7 @@ narrower reason than this section used to give. The non-default `JaxExperiment` 
 `CheckedPlanStepEvidence`, and it is assignment-only by SCOPE, fail-loud rather than broken. A
 `.scan`/`.pointwise`/`.axiswise` step is rejected with a located `unsupportedStep <stepIndex>`, and
 an assignment the backend cannot render — a Boolean destination or source, a tropical `max`/`min`
-algebra, an inline unary read, an Iverson factor, a CONTEXTFUL assignment (non-empty
+algebra, an inline unary read (`einsumOnly` and the evidence path; `affineReference` renders it since 2026-11-04), an Iverson factor, a CONTEXTFUL assignment (non-empty
 `AssignPlan.contextShape`, which neither lowering has a kernel parameter for), or, in `einsumOnly`
 mode, a zero-padded read whose source extent disagrees with its own iteration extent — is rejected
 with its own located typed error before any Python is emitted. Since slice F32-JAX its `affineReference` mode also runs binary32 under its own label,
