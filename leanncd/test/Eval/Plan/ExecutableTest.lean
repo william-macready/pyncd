@@ -1675,6 +1675,42 @@ def idStepCandidate (raw : RawEvalPlan) : Option JaxExecutableCandidate :=
               | .error (.unsupportedAlgebra 0 _) => true | _ => false)
   | .error _ => false
 
+/-! ### The same evidence refusal for pointwise and axiswise steps
+
+The scatter block above pins the wildcard arm of `stepTiedToPreparedStep` for a scatter only. A
+`.pointwise`/`.axiswise` step has no JAX kernel either (`affineReference` renders it, with no
+`ExecutionEvidence`), so a candidate whose validated kernel claims that step's index must also make
+`JaxExecutableWellFormed` false. Same builder (`idStepCandidate`) and same kernel as the scatter guard
+and its positive control (`idRaw`, accepted): only the declared step kind differs, so the refusal is
+attributable to the step kind and nothing else. -/
+
+def idPointwiseRaw : RawEvalPlan :=
+  { idRaw with steps := #[.pointwise { sourceSlot := 0, destinationSlot := 1, shape := #[3], fn := .relu }] }
+
+def idAxiswiseStep : RawAxiswisePlan :=
+  { sourceSlot := 0, destinationSlot := 1, shape := #[3], axisPos := 0, fn := .softmax, mask := none }
+
+def idAxiswiseRaw : RawEvalPlan := { idRaw with steps := #[.axiswise idAxiswiseStep] }
+
+/-- Clone `idAxiswiseStep`, change `mask` only (a width-1 always-true positional mask). -/
+def idMaskedAxiswiseRaw : RawEvalPlan :=
+  { idRaw with steps := #[.axiswise { idAxiswiseStep with
+                                      mask := some (.rel .eq (.affine ⟨#[0], 0⟩) (.affine ⟨#[0], 0⟩)) }] }
+
+/-- `none` (the fixture's own plumbing failing, including `checkPlan`) is `false`, so it cannot pass. -/
+def evidenceRefusedAtStep (raw : RawEvalPlan) : Bool :=
+  match idStepCandidate raw with
+  | some c =>
+      decide (JaxExecutableWellFormed c) == false &&
+      (match validateAndConstructExecutable c with
+       | .error .invalidCandidate => true
+       | _ => false)
+  | none => false
+
+#guard evidenceRefusedAtStep idPointwiseRaw
+#guard evidenceRefusedAtStep idAxiswiseRaw
+#guard evidenceRefusedAtStep idMaskedAxiswiseRaw
+
 /-! ## f32 slice Task 2, fixtures 23 and 24: `validateAndConstructExecutable`'s plan-level gate
 
 `idRaw` cloned LOCALLY with its only step removed, both slots turned into inputs, and the table
