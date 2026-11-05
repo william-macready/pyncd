@@ -131,7 +131,7 @@ def run_fixture(f: dict) -> None:
     n_unary_keys = sum("unary" in fac for n in flat_nodes(plan["nodes"]) for t in n.get("terms", []) for fac in t["factors"])
     if n_unary_keys != f["n_unary"]:
         raise AssertionError(f"{f['name']}: plan has {n_unary_keys} unary factors vs count {f['n_unary']}")
-    if f["n_pointwise"] + f["n_axiswise"] + f["n_unary"] < 1:
+    if f["n_pointwise"] + f["n_axiswise"] + f["n_unary"] < 1 and not f.get("linear_ok"):
         raise AssertionError(f"{f['name']}: fixture exercises no nonlinearity")
     # Transformer: relu's INPUT already carries the upstream exp/normalize libm-vs-XLA difference (~1 ulp),
     # so "relu is bit-exact" does not apply; its outputs get the tolerance gate and `record_output` only.
@@ -303,6 +303,37 @@ def main() -> None:
     for n in sorted(n for fx, n in OUT_STATS if fx == sc_name):
         rel, ab, ex, tot = OUT_STATS[(sc_name, n)]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+    # Scan survey (binary64 only: the donors are f64). Value-independent pins: each recomputes the expected
+    # state in plain Python/numpy from the fixture's own inputs, then checks Lean, eager and jit against it.
+    if _DT == "float64":
+        def views_of(n):
+            return (lean_array, lambda e: e), {"lean": {k: lean_array(e) for k, e in by[n]["expected"].items()},
+                    "eager": {k: np.asarray(v) for k, v in EAGER[n]["eager"].items()},
+                    "jit": {k: np.asarray(v) for k, v in EAGER[n]["jit"].items()}}
+        # extent one: zero steps, the result is exactly the base-written state (the step block never runs)
+        s0 = float(lean_array(by["scan_extentone"]["inputs"]["S0"]))
+        for who, o in views_of("scan_extentone")[1].items():
+            assert o["S"].shape == (1,) and o["S"][0] == s0, (who, o["S"].tolist(), s0)
+        assert by["scan_extentone"]["plan"]["nodes"][0]["step_count"] == 0, by["scan_extentone"]["plan"]["nodes"][0]
+        # deep history: S[l+1] = S[l] + S[l-2] (zero-padded), recomputed with plain Python (reads at l and l-2)
+        s0 = float(lean_array(by["scan_deephistory"]["inputs"]["S0"]))
+        ref = [s0]
+        for l in range(3):
+            ref.append(ref[l] + (ref[l - 2] if l - 2 >= 0 else 0.0))
+        assert ref != [s0] * 4 and ref[3] != ref[2], ref  # discriminates a wrong lag
+        for who, o in views_of("scan_deephistory")[1].items():
+            assert np.array_equal(o["S"], np.array(ref)), (who, o["S"].tolist(), ref)
+        # two scans in one plan: both produce outputs; the plain statement Z reads both histories
+        ts = by["scan_twoscan"]
+        assert sum(n.get("kind") == "scan" for n in ts["plan"]["nodes"]) == 2, ts["plan"]["nodes"]
+        a0, b0 = float(lean_array(ts["inputs"]["A0"])), float(lean_array(ts["inputs"]["B0"]))
+        for who, o in views_of("scan_twoscan")[1].items():
+            assert np.array_equal(o["A"], np.full(3, a0)) and np.array_equal(o["B"], np.full(3, b0)), (who, o)
+            assert np.array_equal(o["Z"], np.full(3, a0 * b0)) and a0 != b0, (who, o["Z"].tolist())
+        print(f"scan survey: {sum(1 for f in mod.FIXTURES if f.get('linear_ok'))} donor scan fixtures within tolerance; "
+              f"extent-one result == base state, deep-history (l and l-2) == plain-Python {ref}, "
+              f"two-scan outputs A, B, Z == plain-Python recomputation")
 
     # Inline unary read (`E[i] := exp(A[i + 1])`, A = [0.5, -1, 2]): the last lane reads A[3], out of
     # bounds, which Dense zero-pads FIRST and then applies exp to, so it is exactly exp(0) = 1. Applying

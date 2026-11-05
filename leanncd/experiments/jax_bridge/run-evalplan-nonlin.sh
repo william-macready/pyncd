@@ -29,6 +29,7 @@ mkdir -p "$CACHE_DIR"
   cd "$LEANNCD_ROOT"
   "$LAKE" build LeanNCD
   "$LAKE" build JaxExperiment
+  "$LAKE" build Eval.Plan.ScanCompileTest   # donor schedules for the scan survey fixtures
   "$LAKE" env lean --run "$HERE/EvalPlanNonlinSmoke.lean" "$GEN64" "$GEN32"
 )
 

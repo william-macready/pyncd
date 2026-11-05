@@ -2,6 +2,7 @@ import LeanNCD.Eval.Entry
 import LeanNCD.DSL.Compile
 import LeanNCD.Eval.Plan.Adapter32
 import EvalPlanCodegen
+import Eval.Plan.ScanCompileTest
 
 /-!
 # JAX pointwise/axiswise smoke — driver (JAX pointwise slice, tolerance-compared)
@@ -642,6 +643,55 @@ def scanProg32 : TLProgram := tlprog!{
   H[q, m, l +1]    := Z2[q, m] / Sd2[q]
 }
 
+/-! ### Scan survey (A3): the existing Lean scan fixtures through the same differential
+
+The donors are IMPORTED from `test/Eval/Plan/ScanCompileTest.lean` (`import Eval.Plan.ScanCompileTest`; the
+runner builds that module first), so a fixture cannot drift from the Lean test it came from. Each is run
+through its donor's own `explicitF64Sched` (undeclared names are binary64). They are LINEAR (no pointwise,
+axiswise or unary step), so the header carries `"linear_ok": true` and the driver skips the "exercises a
+nonlinearity" requirement for them. Registry = `scanSurvey64`'s list: adding a fixture is one line.
+Classification of every candidate (accepted here, refused by the gate/emitter, refused at prepare) is in
+`papers/semantics/jax_scan_fixture_survey.md`. -/
+
+/-- A scan-survey fixture: `checkAndRender` with the scan count pinned, plus Lean's own result. A copy of
+    `fixture64`'s body over a `ScheduledProgram` (parked: factor `fixture64` through this). -/
+def surveyFixture64 (name : String) (sched0 : ScheduledProgram) (inputs : HashMap String DenseTensor)
+    (scans : Nat) : IO String := do
+  let sched := ScanCompileTest.explicitF64Sched sched0
+  let p ← prepared name sched (InputSignature.ofDenseInputs inputs)
+  let planData ← checkAndRender name p 0 0 none false scans
+  let report ← match runPreparedDense p inputs with
+    | .ok r => pure r
+    | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e.cause}")
+  let mut ins : Array String := #[]
+  for b in p.bindings.requiredInputs.bindings do
+    let t ← match inputs[b.name]? with
+      | some t => pure t
+      | none => throw (IO.userError s!"{name}: missing input {b.name}")
+    ins := ins.push (pyStrLit b.name ++ ": " ++ pyTensorEntry t)
+  let mut outs : Array String := #[]
+  for b in p.bindings.materializedNames do
+    let t ← match report.env[b.name]? with
+      | some t => pure t
+      | none => throw (IO.userError s!"{name}: materialized {b.name} absent")
+    outs := outs.push (pyStrLit b.name ++ ": " ++ pyTensorEntry t)
+  pure ((header name p planData ++ ", \"inputs\": {" ++ String.intercalate ", " ins.toList ++
+    "}, \"expected\": {" ++ String.intercalate ", " outs.toList ++ "}}").replace
+      "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True")
+
+/-- The accepted (class A) donors: (fixture name, donor schedule, donor inputs, number of scan steps). -/
+def scanSurvey64 : IO (Array String) := do
+  let cands : List (String × ScheduledProgram × HashMap String DenseTensor × Nat) :=
+    [ ("scan_selfrecur", ScanCompileTest.selfRecurSched, ScanCompileTest.selfRecurInputs, 1)
+    , ("scan_scratch", ScanCompileTest.scratchSched, ScanCompileTest.scratchInputs, 1)
+    , ("scan_contract", ScanCompileTest.contractSched, ScanCompileTest.contractInputs, 1)
+    , ("scan_deephistory", ScanCompileTest.deepHistorySched, ScanCompileTest.deepHistoryInputs, 1)
+    , ("scan_extentone", ScanCompileTest.extentOneSched, ScanCompileTest.deepHistoryInputs, 1)
+    , ("scan_axispos", ScanCompileTest.axisPosSched, ScanCompileTest.axisPosInputs, 1)
+    , ("scan_twoscan", ScanCompileTest.twoScanSched, ScanCompileTest.twoScanInputs, 2)
+    , ("scan_stateplainread", ScanCompileTest.statePlainReadSched, ScanCompileTest.rejInputs, 2) ]
+  cands.toArray.mapM fun (n, s, i, k) => surveyFixture64 n s i k
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -694,7 +744,7 @@ def corpus64 : IO (Array String) := do
                 ("W_V", t64 [3, 2, 2, 4] (scanStack trWV)), ("W_O", t64 [3, 4, 2, 2] (scanStack trWO)),
                 ("W_in", t64 [3, 4, 4] (scanStack trWin)), ("W_out", t64 [3, 4, 4] (scanStack trWout)),
                 ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps)])
-        1 1 (some (19, 1, 1)) true (scans := 1)]
+        1 1 (some (19, 1, 1)) true (scans := 1)] ++ (← scanSurvey64)
 
 def corpus32 : IO (Array String) := do
   return #[
