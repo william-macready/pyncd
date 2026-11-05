@@ -137,7 +137,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
 [[lean_lib]]
 name = "JaxExperiment"
 srcDir = "experiments/jax_bridge"
-globs = ["EvalPlanCodegen"]
+globs = ["EvalPlanCodegen", "ScanAffineEmitTest"]
 
 # Non-default semantic feasibility experiment; not imported by LeanNCD.
 [[lean_lib]]
