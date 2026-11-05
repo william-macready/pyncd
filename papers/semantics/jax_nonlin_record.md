@@ -449,3 +449,36 @@ applied before the pad, in the body of `7366b736`), then the controller's review
 - **Budget (Rule 6).** Both implementer dispatches breached the 60-turn cap: 80 and 87 tool calls
   (the harness count; each report under-stated its own), context peaks about 150k. Waiting on
   5-minute runner builds drove most of it. Authoring tokens were not measured with `token-report.py`.
+
+## Follow-on: the one-layer transformer with a real RMSNorm (2026-11-05, Direct path)
+
+Step 1 of the transformer goal (structure at small scale; the user scoped realistic sizes out). The
+existing `transformer` fixture used `normalize` (sum normalisation) as a stand-in for the paper's
+RMSNorm. Unary reads on JAX made the real norm expressible, so this adds, beside it and without
+changing it, `transformer_rms` and `transformer_rms32` (sizes SEQ=3, m=4, h=2, k=2, d=4, the same
+non-identity weights; two extra input tensors, `Inv` = 1/4 per lane and `Eps` = 1e-5 per row).
+Commits `6ae2ab24` (fixtures) and `54bd32ac` (verifier; mutation results in its body).
+
+- **Program.** Each norm is five statements: `Z[q,m] := a + b`, `Ss[q] := Z·Z·Inv`, `Ve[q] := Ss + Eps`,
+  `Sd[q] := sqrt(Ve)`, `Out[q,m] := Z / Sd[q]`. The surface language accepted all of it with no
+  production change. The driver enforces the plan counts (`exact (18, 1, 1)`: 18 assignments, 1 axiswise
+  softmax, 1 pointwise relu; 4 unary factors, two `sqrt` and two reciprocal).
+- **Value-independent pin.** Lean/JAX agreement says only that both compute the same function, so the
+  verifier also pins that the norm is what it claims: every row of `A` and `H` has mean square within
+  1e-3 of 1, while the pre-norm `Z1` and `Z2` do not (some row more than 0.05 from 1), so the pin cannot
+  pass with the norm acting as the identity. Mutation (reported by the implementer): `Inv` set to 1.0
+  (a sum of squares) leaves the differential green and fails this pin.
+- **Verifier change.** The `startswith("transformer")` test and the per-output statistics, keyed by
+  output name only, would have mixed the two fixtures; they are now an explicit `TRANSFORMER_FIXTURES`
+  set and statistics keyed by (fixture, output). The original `transformer` table is identical, line
+  for line, before and after, in both precisions (controller compared the two run logs).
+- **Controller verification** (run by the controller): `run-evalplan-nonlin.sh` 22 + 22 fixtures, the
+  `transformer_rms` summary line present in both precisions; nonlin Python manifest 17/17; Lean manifest
+  8/8; `Tests`, `JaxExperiment` and the drivers built by the runner. Not re-run: the 3832-case corpus and
+  the scatter manifest, because no runtime, gate or production file changed.
+- **Not done (next for the goal):** several layers written as unrolled flat equations; the paper's
+  scan-over-layers form needs scan on JAX. The unary precondition (README) applies here: `Ve` is at least
+  `Eps` by construction, so the `sqrt` and reciprocal inputs are always in domain.
+- **Budget (Rule 6).** The implementer reported about 62 tool calls; the harness counted 71, over the
+  cap of 60 again (cause given: a dropped space in a Lean edit, self-matching `pgrep` waits, one
+  unfiltered build log). Context peak about 150-170k.

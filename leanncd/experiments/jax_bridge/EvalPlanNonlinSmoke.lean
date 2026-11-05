@@ -327,6 +327,62 @@ def transformerProg32 : TLProgram := tlprog!{
   H[q, m.]         := normalize(Y[q, m] + A[q, m])
 }
 
+-- The same layer with a REAL RMSNorm, `z / sqrt(mean(z^2) + eps)`, in place of the `normalize` stand-in
+-- (a sum-normalisation). Each norm is the `unaryLnProg` chain: `Ss` = mean of squares (`Inv` = 1/m per
+-- lane), `Ve = Ss + Eps` (eps > 0, so sqrt's argument is >= eps: Lean-ok), `Sd = sqrt(Ve)`, then
+-- `z / Sd` (recip, a unary read of the intermediate `Sd`, times the plain `z`). The only axiswise step
+-- left is the causal softmax; the only pointwise step is relu. Every tensor is declared `f64` by hand.
+def transformerRmsProg : TLProgram := tlprog!{
+  tensor f64 X(q, m), W_Q(h, k, m), W_K(h, k, m), W_V(h, k, m), W_O(m, h, k), W_in(d, m), W_out(m, d)
+  tensor f64 Inv(m), Eps(q)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), AttnOut(q, h, k), Attn(q, m), F(q, d), Y(q, m)
+  tensor f64 Z1(q, m), Ss1(q), Ve1(q), Sd1(q), Z2(q, m), Ss2(q), Ve2(q), Sd2(q)
+  Q[q, h, k]       := W_Q[h, k, m] · X[q, m]
+  K[s, h, k]       := W_K[h, k, m] · X[s, m]
+  V[s, h, k]       := W_V[h, k, m] · X[s, m]
+  tensor f64 S(h, q, s)
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[m, h, k] · AttnOut[q, h, k]
+  Z1[q, m]         := Attn[q, m] + X[q, m]
+  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  tensor f64 A(q, m)
+  A[q, m]          := Z1[q, m] / Sd1[q]
+  F[q, d]          := relu(W_in[d, m] · A[q, m])
+  Y[q, m]          := W_out[m, d] · F[q, d]
+  Z2[q, m]         := Y[q, m] + A[q, m]
+  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  tensor f64 H(q, m)
+  H[q, m]          := Z2[q, m] / Sd2[q]
+}
+def transformerRmsProg32 : TLProgram := tlprog!{
+  Q[q, h, k]       := W_Q[h, k, m] · X[q, m]
+  K[s, h, k]       := W_K[h, k, m] · X[s, m]
+  V[s, h, k]       := W_V[h, k, m] · X[s, m]
+  tensor S(h, q, s)
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[m, h, k] · AttnOut[q, h, k]
+  Z1[q, m]         := Attn[q, m] + X[q, m]
+  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  tensor A(q, m)
+  A[q, m]          := Z1[q, m] / Sd1[q]
+  F[q, d]          := relu(W_in[d, m] · A[q, m])
+  Y[q, m]          := W_out[m, d] · F[q, d]
+  Z2[q, m]         := Y[q, m] + A[q, m]
+  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  tensor H(q, m)
+  H[q, m]          := Z2[q, m] / Sd2[q]
+}
+
 -- relu alone, so a NaN input leaves the output finite (Lean's `relu NaN = +0`: `max 0 x` is `x` only
 -- when `0 ≤ x`); the other four functions would return NaN and are covered by `pw`/`pw32`.
 def reluNanProg : TLProgram := tlprog!{
@@ -493,6 +549,10 @@ def trWin : Array Float :=
 def trWout : Array Float :=
   #[0.4, 0.6, -0.2, 0.3,  -0.5, 0.1, 0.7, -0.3,  0.8, -0.4, 0.25, 0.5,  0.2, 0.35, -0.6, 0.9]
 
+/-- RMSNorm inputs of `transformerRmsProg`: `Inv[m=4]` = 1/4 per lane (mean of squares), `Eps[q=3]` = 1e-5. -/
+def trInv : Array Float := #[0.25, 0.25, 0.25, 0.25]
+def trEps : Array Float := #[1e-5, 1e-5, 1e-5]
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -516,6 +576,12 @@ def corpus64 : IO (Array String) := do
                 ("W_V", t64 [2, 2, 4] trWV), ("W_O", t64 [4, 2, 2] trWO),
                 ("W_in", t64 [4, 4] trWin), ("W_out", t64 [4, 4] trWout)])
         1 3 (some (10, 1, 3)),
+    ← fixture64 "transformer_rms" transformerRmsProg
+        (env64 [("X", t64 [3, 4] trX), ("W_Q", t64 [2, 2, 4] trWQ), ("W_K", t64 [2, 2, 4] trWK),
+                ("W_V", t64 [2, 2, 4] trWV), ("W_O", t64 [4, 2, 2] trWO),
+                ("W_in", t64 [4, 4] trWin), ("W_out", t64 [4, 4] trWout),
+                ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps)])
+        1 1 (some (18, 1, 1)) true,
     ← fixture64 "unary_exp_oob" unaryExpProg (env64 [("A", t64 [3] unaryExpA)])
         0 0 (some (1, 0, 0)) true,
     ← fixture64 "unary_ops" unaryOpsProg
@@ -557,6 +623,12 @@ def corpus32 : IO (Array String) := do
                 ("W_V", t32 [2, 2, 4] trWV), ("W_O", t32 [4, 2, 2] trWO),
                 ("W_in", t32 [4, 4] trWin), ("W_out", t32 [4, 4] trWout)])
         1 3 (some (10, 1, 3)),
+    ← fixture32 "transformer_rms32" transformerRmsProg32
+        (env32 [("X", t32 [3, 4] trX), ("W_Q", t32 [2, 2, 4] trWQ), ("W_K", t32 [2, 2, 4] trWK),
+                ("W_V", t32 [2, 2, 4] trWV), ("W_O", t32 [4, 2, 2] trWO),
+                ("W_in", t32 [4, 4] trWin), ("W_out", t32 [4, 4] trWout),
+                ("Inv", t32 [4] trInv), ("Eps", t32 [3] trEps)])
+        1 1 (some (18, 1, 1)) true,
     ← fixture32 "unary_exp_oob32" unaryExpProg32 (env32 [("A", t32 [3] unaryExpA)])
         0 0 (some (1, 0, 0)) true,
     ← fixture32 "unary_ops32" unaryOpsProg32

@@ -382,8 +382,10 @@ that copy's `+0` seed under `jax.jit` (the pitfall above), so a jit run can flip
 **Domain errors are an unchecked precondition (decision B1, 2026-11-04).** Lean rejects `log` of `v <= 0`, `sqrt` of `v < 0` and reciprocal of `0` with a typed unary-domain error. This backend lowers to plain `jnp` ops, checks nothing, and promises nothing on such inputs (neither NaN nor an error): it agrees with Lean only where Lean returns ok. Do not read "NaN on bad input" into it. Lean's `relu(NaN)` is `+0` and `exp(log 0) = exp(-inf) = 0` is finite, so a violation can come out as an ordinary-looking number. Lean-error inputs are out of contract and are excluded from the differential comparison; the Lean side of the boundary is pinned by `domainPins` in `EvalPlanNonlinSmoke.lean` (`log(0.0)`, `log(-1.0)`, `sqrt(-4.0)` and `recip(0.0)` are typed errors in Dense, binary64 and binary32). The motivating use is a LayerNorm with `eps` (`sqrt(v + eps)`, then division): its `sqrt` argument is at least `eps` and its divisor is non-zero by construction (fixture `unary_ln`). Fixtures: `unary_exp_oob`, `unary_ops`, `unary_mix`, `unary_red`, `unary_ln`, `unary_empty`.
 
 Run: `./run-evalplan-nonlin.sh` (generates `EvalPlanNonlinSmoke.lean`'s binary64 + binary32 fixtures, then
-`evalplan_nonlin_smoke.py float64|float32`: 21 fixtures per precision, eager and jit, including the
-single-layer transformer with every materialized output compared, a pinned reduction-order case, rows that
+`evalplan_nonlin_smoke.py float64|float32`: 22 fixtures per precision, eager and jit, including the
+single-layer transformer with every materialized output compared (and the same layer with a real RMSNorm,
+`transformer_rms`: 20 plan nodes, 4 unary factors, with a unit-mean-square pin on the norm outputs that Lean/JAX
+agreement alone would not catch), a pinned reduction-order case, rows that
 pin the softmax maximum, relu over a NaN, unknown function names refused, a `jit(grad)` finite check, and the
 six unary-read fixtures above). Mutation records:
 `papers/semantics/jax_nonlin_mutations_post.json` (Lean render, `mutation-manifest.sh`) and

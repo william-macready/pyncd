@@ -44,7 +44,12 @@ UDT = np.uint64 if _DT == "float64" else np.uint32
 # fn -> [max_rel, max_abs, bit_exact_entries, total_entries], accumulated over every fixture/mode.
 STATS: dict[str, list] = {}
 # Transformer fixture only: output name -> [max_rel, max_abs, bit_exact_entries, total_entries].
-OUT_STATS: dict[str, list] = {}
+OUT_STATS: dict[tuple[str, str], list] = {}  # (fixture, output name) -> stats; one table per transformer fixture
+TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "transformer_rms32"}
+
+
+def is_transformer(name: str) -> bool:
+    return name in TRANSFORMER_FIXTURES
 
 
 def reconstruct(entry: dict) -> jax.Array:
@@ -93,13 +98,13 @@ def require_close(got, entry: dict, label: str, fn: str | None) -> None:
             raise AssertionError(f"{label}: relu is a selection and must be bit-exact: {g.tolist()} vs {w.tolist()}")
 
 
-def record_output(key: str, got, entry: dict) -> None:
-    """Per-output measurement for the transformer fixture (every materialized output, incl. assignments)."""
+def record_output(fixture: str, key: str, got, entry: dict) -> None:
+    """Per-output measurement for a transformer fixture (every materialized output, incl. assignments)."""
     g, w = np.asarray(got), lean_array(entry)
     diff = np.abs(g.astype(np.float64) - w.astype(np.float64))
     nz = w != 0
     rel = float(np.max(diff[nz] / np.abs(w.astype(np.float64))[nz])) if nz.any() else 0.0
-    s = OUT_STATS.setdefault(key, [0.0, 0.0, 0, 0])
+    s = OUT_STATS.setdefault((fixture, key), [0.0, 0.0, 0, 0])
     s[0], s[1] = max(s[0], rel), max(s[1], float(np.max(diff)))
     s[2] += int(np.sum(g.reshape(-1).view(UDT) == w.reshape(-1).view(UDT)))
     s[3] += g.size
@@ -117,16 +122,16 @@ def run_fixture(f: dict) -> None:
         raise AssertionError(f"{f['name']}: fixture exercises no nonlinearity")
     # Transformer: relu's INPUT already carries the upstream exp/normalize libm-vs-XLA difference (~1 ulp),
     # so "relu is bit-exact" does not apply; its outputs get the tolerance gate and `record_output` only.
-    fns = {} if f["name"].startswith("transformer") else out_fns(plan)
+    fns = {} if is_transformer(f["name"]) else out_fns(plan)
     inputs = {n: reconstruct(e) for n, e in f["inputs"].items()}
     eager = rt.run_named(plan, inputs, JDT)
     jitted = jax.jit(lambda i: rt.run_named(plan, i, JDT))(inputs)
     for name, exp in f["expected"].items():
         require_close(eager[name], exp, f"{f['name']} eager {name}", fns.get(name))
         require_close(jitted[name], exp, f"{f['name']} jit {name}", fns.get(name))
-        if f["name"].startswith("transformer"):
-            record_output(name, eager[name], exp)
-            record_output(name, jitted[name], exp)
+        if is_transformer(f["name"]):
+            record_output(f["name"], name, eager[name], exp)
+            record_output(f["name"], name, jitted[name], exp)
 
 
 def main() -> None:
@@ -221,8 +226,31 @@ def main() -> None:
         assert np.any(outs["F"] == 0) and np.any(outs["F"] > 0), outs["F"].tolist()
     print(f"transformer: {len(outs)} outputs {sorted(outs)} within tolerance (eager + jit); "
           f"causal rows keep [1, 2, 3] entries; per-output measured difference vs Lean:")
-    for n in sorted(OUT_STATS):
-        rel, ab, ex, tot = OUT_STATS[n]
+    for n in sorted(n for fx, n in OUT_STATS if fx == "transformer" + sfx):
+        rel, ab, ex, tot = OUT_STATS[("transformer" + sfx, n)]
+        print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+    # Same layer with a REAL RMSNorm (`z / sqrt(mean(z^2) + eps)`): the differential above only says Lean
+    # and JAX agree, so pin value-independently that the norm is what it claims. `A` and `H` are the norm
+    # outputs: every row has unit mean square up to eps. A sum of squares (Inv = 1) or a dropped recip
+    # would break that, while Lean and JAX would still agree with each other. The pre-norm inputs `Z1` and
+    # `Z2` are far from unit mean square, so the unit-RMS check cannot hold vacuously (norm = identity).
+    rn_name = "transformer_rms" + sfx
+    rms = by[rn_name]
+    ro = {n: lean_array(e) for n, e in rms["expected"].items()}
+    assert {"S", "Z1", "A", "Z2", "H"} <= set(ro), sorted(ro)
+    for out_name, pre_name in (("A", "Z1"), ("H", "Z2")):
+        ms = np.mean(ro[out_name].astype(np.float64) ** 2, axis=1)
+        assert np.all(np.abs(ms - 1.0) < 1e-3), (out_name, ms.tolist())
+        pre = np.mean(ro[pre_name].astype(np.float64) ** 2, axis=1)
+        assert np.any(np.abs(pre - 1.0) > 0.05), (pre_name, pre.tolist())
+    assert rms["n_unary"] > 0 and (rms["n_axiswise"], rms["n_pointwise"]) == (1, 1), \
+        (rms["n_unary"], rms["n_axiswise"], rms["n_pointwise"])
+    print(f"transformer_rms: real RMSNorm rows of A and H have unit mean square (eps-close), pre-norm Z1/Z2 do "
+          f"not; {rms['n_unary']} unary factors, {rms['n_axiswise']} axiswise (softmax) + {rms['n_pointwise']} "
+          f"pointwise (relu); per-output measured difference vs Lean:")
+    for n in sorted(n for fx, n in OUT_STATS if fx == rn_name):
+        rel, ab, ex, tot = OUT_STATS[(rn_name, n)]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
 
     # Inline unary read (`E[i] := exp(A[i + 1])`, A = [0.5, -1, 2]): the last lane reads A[3], out of
