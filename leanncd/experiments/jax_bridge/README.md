@@ -384,7 +384,8 @@ that copy's `+0` seed under `jax.jit` (the pitfall above), so a jit run can flip
 Run: `./run-evalplan-nonlin.sh` (generates `EvalPlanNonlinSmoke.lean`'s binary64 + binary32 fixtures, then
 `evalplan_nonlin_smoke.py float64|float32`: 21 fixtures per precision, eager and jit, including the
 single-layer transformer with every materialized output compared, a pinned reduction-order case, rows that
-pin the softmax maximum, relu over a NaN, a `jit(grad)` finite check, and the six unary-read fixtures above). Mutation records:
+pin the softmax maximum, relu over a NaN, unknown function names refused, a `jit(grad)` finite check, and the
+six unary-read fixtures above). Mutation records:
 `papers/semantics/jax_nonlin_mutations_post.json` (Lean render, `mutation-manifest.sh`) and
 `papers/semantics/jax_nonlin_mutations_python.json` (runtime and verifier, `mutation_python_manifest.py`,
 which takes a per-entry `verifier`).

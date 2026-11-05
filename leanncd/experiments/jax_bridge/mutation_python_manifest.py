@@ -12,7 +12,9 @@ Usage: mutation_python_manifest.py [--observe] <manifest.json>   (run from anywh
 Per entry: sha256 the file, require `old` to occur exactly once, mutate, run every verifier, require
 a non-zero exit and every `expect` string in the combined output (a mutation that survives is a
 FINDING and fails the run), restore, require the sha256 is unchanged, rerun and require a clean
-pass. `--observe` instead RECORDS the first failure line of each killed mutation as its `expect`.
+pass. `--observe` instead RECORDS, as the `expect` of each killed mutation, the first failure line
+(the assertion KIND) plus each failing run's `AssertionError: <fixture> <mode> <output>` prefix (WHICH
+fixture killed it), so a mutant killed by an unrelated earlier assertion no longer passes.
 """
 from __future__ import annotations
 
@@ -76,7 +78,16 @@ def main() -> int:
         killed = code != 0
         if observe and killed:
             lines = [l for l in out.splitlines() if "Error" in l]
-            e["expect"] = [lines[0][:90]] if lines else []
+            # The traceback's `raise` line only names the assertion KIND; also pin WHICH fixture failed
+            # (the `AssertionError: <fixture> <mode> <output>` prefix of each failing run's last line),
+            # so a mutant killed by an unrelated earlier assertion no longer passes.
+            who = []
+            for l in out.splitlines():
+                if l.startswith("AssertionError: "):
+                    w = "AssertionError: " + l[len("AssertionError: "):].split(": ")[0]
+                    if w not in who:
+                        who.append(w)
+            e["expect"] = ([lines[0][:90]] if lines else []) + who
         ok = killed and restored and rcode == 0 and all(x in out for x in e.get("expect", []))
         print(("PASS" if ok else "FAIL"), e["label"], "| killed" if killed else "| SURVIVED",
               "| restored" if restored and rcode == 0 else "| NOT RESTORED/GREEN")

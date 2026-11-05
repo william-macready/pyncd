@@ -2349,4 +2349,61 @@ def ntPrepared (raw : RawEvalPlan) (shapeSlots : Array TensorSlot) : Option Prep
   (match buildAxiswiseInclude 7 { causalStep with mask := some maskInclude } with
     | .error (.axiswiseIncludeRefused 7 (.predicateWidthMismatch 2 1)) => true | _ => false)
 
+/-! ### Cells the slice did not create: a scan step, and non-real storage
+
+A `.scan` has no affine-table form, so `affineReference` and `einsumOnly` both refuse it with the
+located `unsupportedStep` (the evidence door is pinned by `testScanStepRejectedLocated` above). And a
+pointwise/axiswise step has no render-side gate (D4: `checkPlan` already ran the nonlinearity checkers
+under the plan's own table), so the claim that non-real storage never reaches the renderer rests on
+the CHECKER alone: `nonlinDtypeFor` admits one real dtype per carrier, a Boolean slot is refused as
+`dtypeNotAdmitted`, and mixed binary64/binary32 slots are refused at the graph level. -/
+
+/-- `PreparedPlan` over `raw` with explicit input names and published slots (the shape
+    `rejectsLocatedAt1` builds), for the multi-input scan donor. -/
+def ntPreparedNamed (raw : RawEvalPlan) (inputs : Array SlotBinding) (published : Array TensorSlot) :
+    Option PreparedPlan :=
+  match checkPlan raw with
+  | .error _ => none
+  | .ok c => match checkBindings raw.inputSlots inputs with
+    | .error _ => none
+    | .ok requiredInputs =>
+        some { plan := c
+             , bindings := { requiredInputs
+                           , materializedNames := published.map (fun slot => { name := "out", slot }) }
+             , warnings := [] }
+
+def ntScanInputs : Array SlotBinding := #[{ name := "s0", slot := 0 }, { name := "x", slot := 1 }]
+
+-- A scan at step 1 is refused under BOTH plan-level doors with the located `unsupportedStep 1`
+-- (donor `scanRejectRaw`, the one plan whose scan the checker admits).
+#guard match ntPreparedNamed scanRejectRaw ntScanInputs #[3, 2] with
+  | some p =>
+    (match renderAffinePlanNamed p with | .error (.unsupportedStep 1) => true | _ => false) &&
+    (match generateNamed .einsumOnly p with | .error (.unsupportedStep 1) => true | _ => false)
+  | none => false
+
+-- Accept neighbour: clone `scanRejectRaw`, replace ONLY step 1 (the scan) with a pointwise step into
+-- the same slot 2. The plan stays checked and `affineReference` now renders it, so the refusal above
+-- is attributable to the scan and not to the surrounding plan.
+#guard match ntPreparedNamed
+    { scanRejectRaw with
+      steps := #[PlanStep.assign scanAssign
+                , PlanStep.pointwise { sourceSlot := 3, destinationSlot := 2, shape := #[3], fn := .relu }] }
+    ntScanInputs #[2] with
+  | some p => (renderAffinePlanNamed p).toOption.isSome
+  | none => false
+
+-- Non-real storage: clone `ntPointwiseRaw` / `ntPlainRaw`, change ONLY the signature table. A Boolean
+-- slot is refused by the nonlinearity checker itself (destination slot reported first), so no
+-- `CheckedEvalPlan` exists for the renderer to see; mixed f64/f32 slots are refused at graph level.
+-- The unchanged plans render (guards above), so each refusal is attributable to the dtype alone.
+#guard (match checkPlan { ntPointwiseRaw with tensorSigs := #[{ shape := #[3], dtype := .bool }, { shape := #[3], dtype := .bool }] } with
+    | .error (.nonlin 0 (.dtypeNotAdmitted 1 .bool)) => true | _ => false) &&
+  (match checkPlan { ntPlainRaw with tensorSigs := #[{ shape := #[2, 3], dtype := .bool }, { shape := #[2, 3], dtype := .bool }] } with
+    | .error (.nonlin 0 (.dtypeNotAdmitted 1 .bool)) => true | _ => false) &&
+  (match checkPlan { ntPointwiseRaw with tensorSigs := #[{ shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f32 }] } with
+    | .error (.assign (.mixedStorageKinds 1 .f64 .f32)) => true | _ => false) &&
+  (match checkPlan { ntPlainRaw with tensorSigs := #[{ shape := #[2, 3], dtype := .f64 }, { shape := #[2, 3], dtype := .f32 }] } with
+    | .error (.assign (.mixedStorageKinds 1 .f64 .f32)) => true | _ => false)
+
 end JaxBridge

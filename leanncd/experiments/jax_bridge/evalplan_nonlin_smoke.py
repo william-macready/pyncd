@@ -15,6 +15,7 @@ float64 runs with x64 enabled; float32 with x64 DISABLED (no float64 can arise a
 """
 from __future__ import annotations
 
+import copy
 import importlib.util
 import sys
 from pathlib import Path
@@ -271,6 +272,24 @@ def main() -> None:
           f"{ue0.tolist()}")
     print("inline unary ops: log/sqrt/sin/cos/recip, a unary read between plain reads, and a unary read "
           "under a reduced axis match Lean within tolerance; op-swap alternatives differ on these inputs")
+
+    # An unknown function name is refused loud, never given a default formula: clone a real fixture's
+    # plan and change ONLY the first node of the kind to an unlisted `fn`; the unmodified plan is the
+    # fixture that already passed above, so the refusal is attributable to the name alone.
+    for fx, kind, what in (("pw" + sfx, "pointwise", "unsupported pointwise fn"),
+                           ("aw_plain" + sfx, "axiswise", "unsupported axiswise fn")):
+        f = by[fx]
+        bad = copy.deepcopy(f["plan"])
+        node = next(n for n in bad["nodes"] if n.get("kind") == kind)
+        node["fn"] = "bogus"
+        inputs = {n: reconstruct(e) for n, e in f["inputs"].items()}
+        try:
+            rt.run_named(bad, inputs, JDT)
+        except ValueError as err:
+            assert what in str(err) and "bogus" in str(err), (fx, str(err))
+        else:
+            raise AssertionError(f"{fx}: an unknown {kind} fn was accepted")
+    print("unknown pointwise and axiswise function names are rejected (ValueError), not defaulted")
 
     # Differentiable: jit(grad) is finite for softmax (weighted sum, masked and unmasked) and gelu.
     for fx, name, shape in (("pw" + sfx, "G", (7,)), ("aw_plain" + sfx, "Sm", (2, 4)),
