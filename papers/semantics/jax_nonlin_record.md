@@ -396,7 +396,8 @@ started. The literal results and filtered comparison are reported above instead.
 Not part of the slice above; recorded here because it closes the first parked row. Process: Direct
 path (no plan document), two implementer dispatches on branch `worktree-jax-unary-reads`, commits
 `d19580e6` (gate opt-in and rendering), `9609aed6` (runtime), `7366b736`, `cb218347`, `694ae628`
-(fixtures and pins), `797764bf` (mutation results, in its body).
+(fixtures and pins), `797764bf` (empty commit; five mutation results in its body, the sixth, unary
+applied before the pad, in the body of `7366b736`), then the controller's review fixes below.
 
 - **Decision (user, 2026-11-04): B1, an unchecked precondition.** JAX lowers to plain `jnp` ops and
   agrees with Lean within tolerance only where Lean returns ok. Rejected: a NaN promise (Lean's
@@ -418,6 +419,18 @@ path (no plan document), two implementer dispatches on branch `worktree-jax-unar
 - **Hand mutations** (each failed its fixture, restored): sin/cos swapped, log/sqrt swapped,
   reciprocal as `x`, empty-source shortcut dropping the unary, `unaryOpName` sin/cos crosswise,
   and the unary applied before the pad.
+- **Whole-branch review** (one reviewer, one lens, read-only): no behavioural defect. Findings and
+  disposition: (1) scatter's compute half refused a unary read only by omission, no fixture pinned
+  it; fixed with a guard in `ExecutableTest.lean` (clone `idScatter`, compute half `unaryAssign`,
+  expect `unaryFactor 0 0 0`), hand-mutation-checked below. (2) `unary_mix` was described as pinning
+  the factor product order but cannot (a reordering differs by about 1e-16, inside tolerance); the
+  comment now says it pins that the unary attaches to its own factor. (3) Four stale live comments
+  and one inventory doc (`backend_missing_functionality.md`) still said JAX refuses a unary read;
+  fixed. (4) The hand mutations live only in commit bodies and are not manifest entries (Direct
+  path, no new manifest entries); this record's earlier wording put all six in one commit body.
+- **Parked, new:** the six unary hand mutations plus the scatter-gate default are not manifest
+  entries (about 1 dispatch to add them to `jax_nonlin_mutations_python.json` and
+  `jax_nonlin_mutations_post.json` with observed `expect` strings).
 - **Parked, unchanged:** unary reads in the evidence path, `einsumOnly` and scatter's compute half
   (about 3 dispatches with the evidence path), f32 domain-boundary values such as signed zero
   (about 1 dispatch; plan-level pins exist in `KernelDense32Test`), the relu/NaN and `-inf`

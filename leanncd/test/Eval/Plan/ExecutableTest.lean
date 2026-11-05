@@ -1686,6 +1686,14 @@ def idStepCandidate (raw : RawEvalPlan) : Option JaxExecutableCandidate :=
   | .ok c => (match checkJaxScatterSupport idSigs 0 c with
               | .error (.unsupportedAlgebra 0 _) => true | _ => false)
   | .error _ => false
+-- A scatter's compute half with an inline unary read stays refused: `allowUnary` is the
+-- `affineReference` ASSIGNMENT renderer's opt-in only, and `checkJaxScatterSupport` keeps the default.
+-- Clone `idScatter`, change the compute half to `unaryAssign` (fixture 4); the `.ok c` arm of
+-- `checkScatter` is what keeps this from passing on a checker rejection.
+#guard match checkScatter idSigs { idScatter with compute := unaryAssign } with
+  | .ok c => (match checkJaxScatterSupport idSigs 0 c with
+              | .error (.unaryFactor 0 0 0) => true | _ => false)
+  | .error _ => false
 
 /-! ## f32 slice Task 2, fixtures 23 and 24: `validateAndConstructExecutable`'s plan-level gate
 

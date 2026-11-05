@@ -377,7 +377,9 @@ def unaryOpsProg32 : TLProgram := tlprog!{
   Cs[i] := cos(Tt[i])
   Rc[i] := Nn[i] / Rr[i]
 }
--- Factor product order: a plain read, a unary read, a plain read, in one term.
+-- A unary read between two plain reads in one term. This pins that the unary attaches to ITS OWN
+-- factor (`Aa · sin(Bb) · Cc`); it does not pin the product order, since a reordering differs by
+-- about 1e-16 relative, inside the comparison tolerance.
 def unaryMixProg : TLProgram := tlprog!{
   axis i : ℕ = 3
   tensor f64 Aa(i), Bb(i), Cc(i), Mx(i)

@@ -30,7 +30,8 @@ decision GO B):
 
 * `JaxSupportError`/`checkJaxAssignSupport` reject, with a located typed error, every assignment the
   checked backend admits but this experimental backend cannot render at all — a Boolean destination,
-  a Boolean source, tropical max/min algebra, an inline unary read, and (Task 4.5 closure) a
+  a Boolean source, tropical max/min algebra, an inline unary read (by default: only the
+  `affineReference` assignment renderer opts in, via `allowUnary`), and (Task 4.5 closure) a
   CONTEXTFUL assignment. Rejection happens BEFORE any candidate, evidence label, or Python emission.
 * A standalone entry (`validateAffineTable`/`validateEinsum`/`kernelWellFormedBool`/
   `validateAndConstructKernel`, and the experimental renderers/conversions) takes ONE explicit

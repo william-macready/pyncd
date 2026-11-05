@@ -757,7 +757,7 @@ def buildAssignFixture (name : String) (sigs : Array TensorSignature) (a : Assig
 /-- Generate the named-plan representation for a source/corpus `PreparedPlan` under an explicit
     mode. `einsumOnly` returns the `forward(inputs)` body (or a closed `JaxCodegenError` rejection);
     `affineReference` returns static plan DATA only for the context-free `f64`/`f32` sum-product,
-    assignment-only plain-read fragment described at the top of this file; every unsupported
+    assignment-only plain/unary-read fragment described at the top of this file; every unsupported
     category fails loud with its located `JaxCodegenError`. -/
 def generateNamed (mode : LoweringMode) (plan : PreparedPlan) :
     Except JaxCodegenError String := do
