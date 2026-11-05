@@ -649,6 +649,137 @@ def scanProg32 : TLProgram := tlprog!{
   H[q, m, l +1]    := Z2[q, m] / Sd2[q]
 }
 
+/-! ### Shared inputs of the scan and the unrolled oracle (`transformer_unrolled`, `transformer_unrolled32`)
+
+One definition: `scanWeights` holds each weight's per-layer shape and its layer-stacked data (layer 0,
+layer 1, NaN layer 2). The scan fixtures take the stacks whole; the unrolled oracle takes layer 0 as
+`W_x1` and layer 1 as `W_x2` (the NaN slice does not exist in the two-layer unrolled model), sliced out of
+the SAME arrays, so scan and unrolled cannot see different values. -/
+
+def scanWeights : List (String × List Nat × Array Float) :=
+  [("W_Q", [2, 2, 4], scanStack trWQ), ("W_K", [2, 2, 4], scanStack trWK),
+   ("W_V", [2, 2, 4], scanStack trWV), ("W_O", [4, 2, 2], scanStack trWO),
+   ("W_in", [4, 4], scanStack trWin), ("W_out", [4, 4], scanStack trWout)]
+
+/-- Layer `i` of a 3-layer stack. -/
+def layerSlice (d : Array Float) (i : Nat) : Array Float :=
+  d.extract (i * (d.size / 3)) ((i + 1) * (d.size / 3))
+
+def scanEnv64 : HashMap String DenseTensor :=
+  env64 ([("X", t64 [3, 4] trX), ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps)] ++
+    scanWeights.map fun (n, sh, d) => (n, t64 (3 :: sh) d))
+def scanEnv32 : NamedDenseEnv32 :=
+  env32 ([("X", t32 [3, 4] trX), ("Inv", t32 [4] trInv), ("Eps", t32 [3] trEps)] ++
+    scanWeights.map fun (n, sh, d) => (n, t32 (3 :: sh) d))
+def unrolledEnv64 : HashMap String DenseTensor :=
+  env64 ([("X", t64 [3, 4] trX), ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps)] ++
+    scanWeights.flatMap fun (n, sh, d) =>
+      [(n ++ "1", t64 sh (layerSlice d 0)), (n ++ "2", t64 sh (layerSlice d 1))])
+def unrolledEnv32 : NamedDenseEnv32 :=
+  env32 ([("X", t32 [3, 4] trX), ("Inv", t32 [4] trInv), ("Eps", t32 [3] trEps)] ++
+    scanWeights.flatMap fun (n, sh, d) =>
+      [(n ++ "1", t32 sh (layerSlice d 0)), (n ++ "2", t32 sh (layerSlice d 1))])
+
+/-- Unrolled oracle: the two layers of `scanProg` as two hand-copied flat layers (no scan); layer `n`
+    writes `Hn(q, m)`. The program text is `unrollProg64` of `ScanTransformerProto.lean`. -/
+def unrolledProg : TLProgram := tlprog!{
+  tensor f64 X(q, m), W_Q1(h, k, m), W_K1(h, k, m), W_V1(h, k, m), W_O1(m, h, k), W_in1(d, m), W_out1(m, d)
+  tensor f64 W_Q2(h, k, m), W_K2(h, k, m), W_V2(h, k, m), W_O2(m, h, k), W_in2(d, m), W_out2(m, d)
+  tensor f64 Inv(m), Eps(q)
+  tensor f64 Q1(q, h, k), K1(s, h, k), V1(s, h, k), AO1(q, h, k), At1(q, m), F1(q, d), Y1(q, m)
+  tensor f64 Za1(q, m), Ssa1(q), Vea1(q), Sda1(q), Zb1(q, m), Ssb1(q), Veb1(q), Sdb1(q)
+  tensor f64 Q2(q, h, k), K2(s, h, k), V2(s, h, k), AO2(q, h, k), At2(q, m), F2(q, d), Y2(q, m)
+  tensor f64 Za2(q, m), Ssa2(q), Vea2(q), Sda2(q), Zb2(q, m), Ssb2(q), Veb2(q), Sdb2(q)
+  Q1[q, h, k]      := W_Q1[h, k, m] · X[q, m]
+  K1[s, h, k]      := W_K1[h, k, m] · X[s, m]
+  V1[s, h, k]      := W_V1[h, k, m] · X[s, m]
+  tensor f64 S1(h, q, s)
+  S1[h, q, s.]     := softmax(where s ≤ q)(Q1[q, h, k] · K1[s, h, k])
+  AO1[q, h, k]     := S1[h, q, s] · V1[s, h, k]
+  At1[q, m]        := W_O1[m, h, k] · AO1[q, h, k]
+  Za1[q, m]        := At1[q, m] + X[q, m]
+  Ssa1[q]          := Za1[q, m] · Za1[q, m] · Inv[m]
+  Vea1[q]          := Ssa1[q] + Eps[q]
+  Sda1[q]          := sqrt(Vea1[q])
+  tensor f64 A1(q, m)
+  A1[q, m]         := Za1[q, m] / Sda1[q]
+  F1[q, d]         := relu(W_in1[d, m] · A1[q, m])
+  Y1[q, m]         := W_out1[m, d] · F1[q, d]
+  Zb1[q, m]        := Y1[q, m] + A1[q, m]
+  Ssb1[q]          := Zb1[q, m] · Zb1[q, m] · Inv[m]
+  Veb1[q]          := Ssb1[q] + Eps[q]
+  Sdb1[q]          := sqrt(Veb1[q])
+  tensor f64 H1(q, m)
+  H1[q, m]         := Zb1[q, m] / Sdb1[q]
+  Q2[q, h, k]      := W_Q2[h, k, m] · H1[q, m]
+  K2[s, h, k]      := W_K2[h, k, m] · H1[s, m]
+  V2[s, h, k]      := W_V2[h, k, m] · H1[s, m]
+  tensor f64 S2(h, q, s)
+  S2[h, q, s.]     := softmax(where s ≤ q)(Q2[q, h, k] · K2[s, h, k])
+  AO2[q, h, k]     := S2[h, q, s] · V2[s, h, k]
+  At2[q, m]        := W_O2[m, h, k] · AO2[q, h, k]
+  Za2[q, m]        := At2[q, m] + H1[q, m]
+  Ssa2[q]          := Za2[q, m] · Za2[q, m] · Inv[m]
+  Vea2[q]          := Ssa2[q] + Eps[q]
+  Sda2[q]          := sqrt(Vea2[q])
+  tensor f64 A2(q, m)
+  A2[q, m]         := Za2[q, m] / Sda2[q]
+  F2[q, d]         := relu(W_in2[d, m] · A2[q, m])
+  Y2[q, m]         := W_out2[m, d] · F2[q, d]
+  Zb2[q, m]        := Y2[q, m] + A2[q, m]
+  Ssb2[q]          := Zb2[q, m] · Zb2[q, m] · Inv[m]
+  Veb2[q]          := Ssb2[q] + Eps[q]
+  Sdb2[q]          := sqrt(Veb2[q])
+  tensor f64 H2(q, m)
+  H2[q, m]         := Zb2[q, m] / Sdb2[q]
+}
+
+/-- The binary32 sibling (`unrollProg32` of the prototype file): only the declarations that pin axis order. -/
+def unrolledProg32 : TLProgram := tlprog!{
+  Q1[q, h, k]      := W_Q1[h, k, m] · X[q, m]
+  K1[s, h, k]      := W_K1[h, k, m] · X[s, m]
+  V1[s, h, k]      := W_V1[h, k, m] · X[s, m]
+  tensor S1(h, q, s)
+  S1[h, q, s.]     := softmax(where s ≤ q)(Q1[q, h, k] · K1[s, h, k])
+  AO1[q, h, k]     := S1[h, q, s] · V1[s, h, k]
+  At1[q, m]        := W_O1[m, h, k] · AO1[q, h, k]
+  Za1[q, m]        := At1[q, m] + X[q, m]
+  Ssa1[q]          := Za1[q, m] · Za1[q, m] · Inv[m]
+  Vea1[q]          := Ssa1[q] + Eps[q]
+  Sda1[q]          := sqrt(Vea1[q])
+  tensor A1(q, m)
+  A1[q, m]         := Za1[q, m] / Sda1[q]
+  F1[q, d]         := relu(W_in1[d, m] · A1[q, m])
+  Y1[q, m]         := W_out1[m, d] · F1[q, d]
+  Zb1[q, m]        := Y1[q, m] + A1[q, m]
+  Ssb1[q]          := Zb1[q, m] · Zb1[q, m] · Inv[m]
+  Veb1[q]          := Ssb1[q] + Eps[q]
+  Sdb1[q]          := sqrt(Veb1[q])
+  tensor H1(q, m)
+  H1[q, m]         := Zb1[q, m] / Sdb1[q]
+  Q2[q, h, k]      := W_Q2[h, k, m] · H1[q, m]
+  K2[s, h, k]      := W_K2[h, k, m] · H1[s, m]
+  V2[s, h, k]      := W_V2[h, k, m] · H1[s, m]
+  tensor S2(h, q, s)
+  S2[h, q, s.]     := softmax(where s ≤ q)(Q2[q, h, k] · K2[s, h, k])
+  AO2[q, h, k]     := S2[h, q, s] · V2[s, h, k]
+  At2[q, m]        := W_O2[m, h, k] · AO2[q, h, k]
+  Za2[q, m]        := At2[q, m] + H1[q, m]
+  Ssa2[q]          := Za2[q, m] · Za2[q, m] · Inv[m]
+  Vea2[q]          := Ssa2[q] + Eps[q]
+  Sda2[q]          := sqrt(Vea2[q])
+  tensor A2(q, m)
+  A2[q, m]         := Za2[q, m] / Sda2[q]
+  F2[q, d]         := relu(W_in2[d, m] · A2[q, m])
+  Y2[q, m]         := W_out2[m, d] · F2[q, d]
+  Zb2[q, m]        := Y2[q, m] + A2[q, m]
+  Ssb2[q]          := Zb2[q, m] · Zb2[q, m] · Inv[m]
+  Veb2[q]          := Ssb2[q] + Eps[q]
+  Sdb2[q]          := sqrt(Veb2[q])
+  tensor H2(q, m)
+  H2[q, m]         := Zb2[q, m] / Sdb2[q]
+}
+
 /-! ### Scan survey (A3): the existing Lean scan fixtures through the same differential
 
 The donors are IMPORTED from `test/Eval/Plan/ScanCompileTest.lean` (`import Eval.Plan.ScanCompileTest`; the
@@ -724,13 +855,9 @@ def corpus64 : IO (Array String) := do
         0 0 (some (4, 0, 0)) true,
     ← fixture64 "unary_empty" unaryEmptyProg (env64 [("Ae", t64 [0] #[])])
         0 0 (some (1, 0, 0)) true,
-    ← fixture64 "transformer_scan" scanProg
-        (env64 [("X", t64 [3, 4] trX),
-                ("W_Q", t64 [3, 2, 2, 4] (scanStack trWQ)), ("W_K", t64 [3, 2, 2, 4] (scanStack trWK)),
-                ("W_V", t64 [3, 2, 2, 4] (scanStack trWV)), ("W_O", t64 [3, 4, 2, 2] (scanStack trWO)),
-                ("W_in", t64 [3, 4, 4] (scanStack trWin)), ("W_out", t64 [3, 4, 4] (scanStack trWout)),
-                ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps)])
-        1 1 (some (19, 1, 1)) true (scans := 1)] ++ (← scanSurvey64)
+    ← fixture64 "transformer_scan" scanProg scanEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture64 "transformer_unrolled" unrolledProg unrolledEnv64 2 2 (some (36, 2, 2)) true] ++
+    (← scanSurvey64)
 
 def corpus32 : IO (Array String) := do
   return #[
@@ -778,13 +905,8 @@ def corpus32 : IO (Array String) := do
         0 0 (some (4, 0, 0)) true,
     ← fixture32 "unary_empty32" unaryEmptyProg32 (env32 [("Ae", t32 [0] #[])])
         0 0 (some (1, 0, 0)) true,
-    ← fixture32 "transformer_scan32" scanProg32
-        (env32 [("X", t32 [3, 4] trX),
-                ("W_Q", t32 [3, 2, 2, 4] (scanStack trWQ)), ("W_K", t32 [3, 2, 2, 4] (scanStack trWK)),
-                ("W_V", t32 [3, 2, 2, 4] (scanStack trWV)), ("W_O", t32 [3, 4, 2, 2] (scanStack trWO)),
-                ("W_in", t32 [3, 4, 4] (scanStack trWin)), ("W_out", t32 [3, 4, 4] (scanStack trWout)),
-                ("Inv", t32 [4] trInv), ("Eps", t32 [3] trEps)])
-        1 1 (some (19, 1, 1)) true (scans := 1)]
+    ← fixture32 "transformer_scan32" scanProg32 scanEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture32 "transformer_unrolled32" unrolledProg32 unrolledEnv32 2 2 (some (36, 2, 2)) true]
 
 /-! ## Boundary pins: Lean REJECTS domain-violating unary reads (the JAX runtime does not check)
 

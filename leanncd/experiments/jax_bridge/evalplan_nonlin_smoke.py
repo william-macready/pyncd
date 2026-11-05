@@ -46,8 +46,14 @@ STATS: dict[str, list] = {}
 # Transformer fixture only: output name -> [max_rel, max_abs, bit_exact_entries, total_entries].
 OUT_STATS: dict[tuple[str, str], list] = {}  # (fixture, output name) -> stats; one table per transformer fixture
 TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "transformer_rms32",
-                        "transformer_scan", "transformer_scan32"}
-EAGER: dict[str, dict] = {}  # scan fixtures only: fixture name -> {"eager": outputs, "jit": outputs}
+                        "transformer_scan", "transformer_scan32",
+                        "transformer_unrolled", "transformer_unrolled32"}
+# Scan-vs-unrolled oracle (both JAX results, no Lean): (rtol, atol) per precision. MEASURED: scan and
+# unrolled are bit-identical in float64 and float32, eager and jit (24/24 entries per precision), so
+# the tolerance is exactly zero (value equality; the observed bit-identical count is printed).
+ORACLE_TOL = {"float64": (0.0, 0.0), "float32": (0.0, 0.0)}
+# fixture name -> {"eager": outputs, "jit": outputs}, kept for the scan fixtures and the unrolled oracle.
+EAGER: dict[str, dict] = {}
 
 
 def flat_nodes(nodes):
@@ -139,7 +145,7 @@ def run_fixture(f: dict) -> None:
     inputs = {n: reconstruct(e) for n, e in f["inputs"].items()}
     eager = rt.run_named(plan, inputs, JDT)
     jitted = jax.jit(lambda i: rt.run_named(plan, i, JDT))(inputs)
-    if any(n.get("kind") == "scan" for n in plan["nodes"]):
+    if any(n.get("kind") == "scan" for n in plan["nodes"]) or f["name"].startswith("transformer_unrolled"):
         EAGER[f["name"]] = {"eager": eager, "jit": jitted}
     for name, exp in f["expected"].items():
         require_close(eager[name], exp, f"{f['name']} eager {name}", fns.get(name))
@@ -303,6 +309,37 @@ def main() -> None:
     for n in sorted(n for fx, n in OUT_STATS if fx == sc_name):
         rel, ab, ex, tot = OUT_STATS[(sc_name, n)]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+    # UNROLLED ORACLE: the same two layers as two hand-copied flat layers (no scan; the old, trusted flat
+    # lowering). Scan and unrolled take their weights from ONE Lean definition; the inputs are re-checked
+    # bitwise here. The JAX scan state `H[:, :, 1]`, `H[:, :, 2]` must equal the JAX unrolled `H1`, `H2` within
+    # ORACLE_TOL, eager and jit. This ties the scan lowering to the flat lowering WITHOUT Lean.
+    un_name = "transformer_unrolled" + sfx
+    un = by[un_name]
+    assert not any(n.get("kind") == "scan" for n in un["plan"]["nodes"]), "the oracle must not contain a scan"
+    uin = {n: lean_array(e) for n, e in un["inputs"].items()}
+    bits = lambda a: np.ascontiguousarray(a).view(UDT)  # noqa: E731
+    for n in ("X", "Inv", "Eps"):
+        assert np.array_equal(bits(sin[n]), bits(uin[n])), n
+    for w in ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out"):
+        for l in (0, 1):
+            assert np.array_equal(bits(sin[w][l]), bits(uin[f"{w}{l + 1}"])), (w, l)
+    assert len(uin) == 15 and not any(np.any(np.isnan(v)) for v in uin.values()), sorted(uin)
+    o_rtol, o_atol = ORACLE_TOL[_DT]
+    for mode in ("eager", "jit"):
+        h_scan = np.asarray(EAGER[sc_name][mode]["H"])
+        for l in (1, 2):
+            g, u = h_scan[:, :, l], np.asarray(EAGER[un_name][mode][f"H{l}"])
+            assert g.shape == u.shape == (3, 4) and g.dtype == u.dtype == NDT, (mode, l, g.shape, u.shape)
+            d = np.abs(g.astype(np.float64) - u.astype(np.float64))
+            nbit = int(np.sum(bits(g) == bits(u)))
+            print(f"  oracle {mode} layer {l}: max abs {float(d.max()):.3e}  bit-identical {nbit}/{g.size}")
+            assert np.all(d <= o_atol + o_rtol * np.abs(u.astype(np.float64))), (mode, l, g.tolist(), u.tolist())
+        # non-vacuous: the layers differ, so swapping them is rejected by the same comparison
+        assert float(np.max(np.abs(h_scan[:, :, 1].astype(np.float64)
+                                   - np.asarray(EAGER[un_name][mode]["H2"]).astype(np.float64)))) > 1e-2
+    print(f"scan-vs-unrolled oracle: JAX scan H layers 1, 2 == JAX unrolled H1, H2 within rtol {o_rtol} / atol "
+          f"{o_atol} (eager + jit), identical inputs checked bitwise, layers swapped would be rejected")
 
     # Scan survey (binary64 only: the donors are f64). Value-independent pins: each recomputes the expected
     # state in plain Python/numpy from the fixture's own inputs, then checks Lean, eager and jit against it.
