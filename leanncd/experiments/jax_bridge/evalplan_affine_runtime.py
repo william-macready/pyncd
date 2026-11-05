@@ -120,10 +120,18 @@ def _apply_unary(op: str, x: jax.Array, dtype: Any) -> jax.Array:
     raise ValueError(f"unknown unary op {op!r}")
 
 
-def _run_term(term: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
-    iter_shape = tuple(term["iteration_shape"])
-    output_pos = list(term["output_pos"])
-    reduction_pos = list(term["reduction_pos"])
+def _run_term(
+    term: dict[str, Any], store: list[jax.Array], dtype: Any, slicer: Any = None, shift: int = 0
+) -> jax.Array:
+    """One term over its iteration box. `slicer`/`shift` serve a scan step block only: `shift = 1` drops
+    the leading step axis (never an output or reduction axis) from the shape and the position lists, and
+    `slicer(factor)` returns that factor's `(safe_index, mask)` for the current step, already sliced to
+    the local box. Without them (`slicer is None`, `shift = 0`) the tables are the record's own lists."""
+    iter_shape = tuple(term["iteration_shape"][shift:])
+    output_pos = [p - shift for p in term["output_pos"]]
+    reduction_pos = [p - shift for p in term["reduction_pos"]]
+    if min(output_pos + reduction_pos, default=0) < 0:
+        raise ValueError(f"term uses position {shift - 1} (the step axis) as an output or reduction axis")
     factors = term["factors"]
 
     out_extents = [iter_shape[p] for p in output_pos]
@@ -150,8 +158,11 @@ def _run_term(term: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.A
                 zeros = _apply_unary(f["unary"], zeros, dtype)
             factor_tensors.append(zeros)
             continue
-        safe = jnp.asarray(f["safe_index"], dtype=_index_dtype())
-        mask = jnp.asarray(f["mask"], dtype=bool)
+        if slicer is None:
+            safe = jnp.asarray(f["safe_index"], dtype=_index_dtype())
+            mask = jnp.asarray(f["mask"], dtype=bool)
+        else:
+            safe, mask = slicer(f)
         gathered = src_flat[safe]
         padded = jnp.where(mask, gathered, dtype(0.0))
         if "unary" in f:
@@ -186,14 +197,16 @@ def _run_term(term: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.A
     return jnp.reshape(reduced, tuple(out_extents))
 
 
-def _run_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> jax.Array:
+def _run_node(
+    node: dict[str, Any], store: list[jax.Array], dtype: Any, slicer: Any = None, shift: int = 0
+) -> jax.Array:
     output_shape = tuple(node["output_shape"])
     terms = node["terms"]
     if not terms:
         # Empty term array yields an all-zero output.
         return jnp.zeros(output_shape, dtype=dtype)
 
-    term_results = [_run_term(t, store, dtype) for t in terms]
+    term_results = [_run_term(t, store, dtype, slicer, shift) for t in terms]
     stacked = jnp.stack(term_results, axis=0)
 
     def term_body(k, acc):
@@ -334,12 +347,24 @@ def _run_axiswise_node(node: dict[str, Any], store: list[jax.Array], dtype: Any)
 
 
 def _exec_node(
-    node: dict[str, Any], store: list[jax.Array], dtype: Any, scatter_mode: str = "ordered"
-) -> jax.Array:
-    """Dispatch one positional node on its `kind` (absent ⇒ assignment, the pre-scatter record)."""
+    node: dict[str, Any],
+    store: list[jax.Array],
+    dtype: Any,
+    scatter_mode: str = "ordered",
+    slicer: Any = None,
+):
+    """Dispatch one positional node on its `kind` (absent ⇒ assignment, the pre-scatter record).
+    A scan returns a LIST of state tensors (one per `dests`); every other kind returns one tensor.
+    `slicer` is passed only while executing a scan's step block (see `_run_scan_node`)."""
     kind = node.get("kind", "assign")
     if kind == "assign":
+        if "context_pos" in node:  # step-block assignment: stacked tables, step axis at position 0
+            if slicer is None or list(node["context_pos"]) != [0]:
+                raise ValueError(f"step assignment needs a step slicer and context_pos [0], got {node.get('context_pos')!r}")
+            return _run_node(node, store, dtype, slicer, 1)
         return _run_node(node, store, dtype)
+    if kind == "scan":
+        return _run_scan_node(node, store, dtype)
     if kind == "scatter":
         return _run_scatter_node(node, store, dtype, scatter_mode)
     if kind == "pointwise":
@@ -347,6 +372,115 @@ def _exec_node(
     if kind == "axiswise":
         return _run_axiswise_node(node, store, dtype)
     raise ValueError(f"unsupported node kind {kind!r}")
+
+
+# --- Scan (`lax.scan`) ------------------------------------------------------------------------------------
+#
+# One scan record = several state tensors. Mirrors `runDenseScanWith`: states start at zeros; the base
+# block runs once and its writes place into the states; then for r = 0 .. T-1 the step block runs on the
+# PRE-step states (the scan carry) and its writes place into a copy of the carry, which is the next carry.
+
+
+def _check_index(index: list[int], size: int, what: str) -> None:
+    if index and (min(index) < 0 or max(index) >= size):
+        raise ValueError(f"{what}: index outside [0, {size})")  # static table: promise_in_bounds is then a fact
+
+
+def _place(state: jax.Array, index: jax.Array, values: jax.Array) -> jax.Array:
+    flat = jnp.reshape(state, (-1,))
+    out = flat.at[index].set(jnp.reshape(values, (-1,)), mode="promise_in_bounds")
+    return jnp.reshape(out, state.shape)
+
+
+def _bind_captures(
+    block: dict[str, Any], captures: list[dict[str, Any]], outer: list[jax.Array], states: Any
+) -> list[Any]:
+    local: list[Any] = [None] * block["num_slots"]
+    for c in captures:
+        if "external" in c:
+            local[c["input_slot"]] = outer[c["external"]]
+        elif states is None:
+            raise ValueError("a base block cannot capture a scan state")
+        else:
+            local[c["input_slot"]] = states[c["state"]]
+    return local
+
+
+def _run_block(block: dict[str, Any], local: list[Any], dtype: Any, slicer: Any = None) -> list[Any]:
+    for node in block["nodes"]:
+        local[node["dest"]] = _exec_node(node, local, dtype, "ordered", slicer)
+    return local
+
+
+def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> list[jax.Array]:
+    steps = int(node["step_count"])
+    states = [jnp.zeros(tuple(s), dtype=dtype) for s in node["state_shapes"]]
+
+    # Base block: once, no context.
+    local = _run_block(node["base"], _bind_captures(node["base"], node["base_captures"], store, None), dtype)
+    for w in node["base_writes"]:
+        i = w["state"]
+        out = local[w["output_slot"]]
+        if len(w["index"]) != int(out.size):
+            raise ValueError(f"base write has {len(w['index'])} entries for {int(out.size)} values")
+        _check_index(w["index"], int(states[i].size), "base write")
+        if w["index"]:
+            states[i] = _place(states[i], jnp.asarray(w["index"], dtype=_index_dtype()), out)
+    if steps == 0:
+        return states
+
+    # Step block: the carry is the pre-step snapshot. Tables are STACKED step-major, so they are reshaped
+    # to (T, local) once, closed over (constants of the trace), and row r is taken inside the body.
+    step = node["step"]
+    stacked: dict[int, tuple[jax.Array, jax.Array]] = {}
+    for n in step["nodes"]:
+        for t in n.get("terms", []):
+            local_size = _prod(list(t["iteration_shape"][1:]))
+            if t["iteration_shape"][0] != steps:
+                raise ValueError(f"step term iteration_shape {t['iteration_shape']} has step extent != {steps}")
+            for f in t["factors"]:
+                if len(f["safe_index"]) != steps * local_size or len(f["mask"]) != steps * local_size:
+                    raise ValueError("step factor table is not steps * local entries")
+                stacked[id(f)] = (
+                    jnp.reshape(jnp.asarray(f["safe_index"], dtype=_index_dtype()), (steps, local_size)),
+                    jnp.reshape(jnp.asarray(f["mask"], dtype=bool), (steps, local_size)),
+                )
+    write_idx: list[jax.Array | None] = []
+    for w in node["step_writes"]:
+        idx = w["index"]
+        out_size = len(idx) // steps
+        if out_size * steps != len(idx):
+            raise ValueError(f"step write index has {len(idx)} entries, not a multiple of {steps}")
+        _check_index(idx, int(states[w["state"]].size), "step write")
+        write_idx.append(jnp.reshape(jnp.asarray(idx, dtype=_index_dtype()), (steps, out_size)) if idx else None)
+
+    def body(carry, r):
+        def slicer(f):
+            safe, mask = stacked[id(f)]
+            return (
+                jax.lax.dynamic_index_in_dim(safe, r, 0, keepdims=False),
+                jax.lax.dynamic_index_in_dim(mask, r, 0, keepdims=False),
+            )
+
+        blk = _run_block(step, _bind_captures(step, node["step_captures"], store, carry), dtype, slicer)
+        nxt = list(carry)  # writes land on a copy; `carry` itself stays the pre-step snapshot
+        for w, tbl in zip(node["step_writes"], write_idx):
+            if tbl is not None:
+                row = jax.lax.dynamic_index_in_dim(tbl, r, 0, keepdims=False)
+                nxt[w["state"]] = _place(nxt[w["state"]], row, blk[w["output_slot"]])
+        return tuple(nxt), None
+
+    final, _ = jax.lax.scan(body, tuple(states), jnp.arange(steps))
+    return list(final)
+
+
+def _store_result(store: list[Any], node: dict[str, Any], result: Any) -> None:
+    """Commit one node's result: a scan fills each of its `dests`, every other kind its one `dest`."""
+    if node.get("kind") == "scan":
+        for d, t in zip(node["dests"], result):
+            store[d] = t
+    else:
+        store[node["dest"]] = result
 
 
 def run_assign(node: dict[str, Any], store: list[jax.Array], dtype: Any = jnp.float64) -> jax.Array:
@@ -372,7 +506,7 @@ def run_plan_positional(
     for slot, tensor in zip(plan["input_slots"], inputs):
         store[slot] = tensor
     for node in plan["nodes"]:
-        store[node["dest"]] = _exec_node(node, store, dtype, scatter_mode)
+        _store_result(store, node, _exec_node(node, store, dtype, scatter_mode))
     return store
 
 
@@ -392,7 +526,7 @@ def run_named(
     for name, slot in plan["required_inputs"]:
         store[slot] = inputs_by_name[name]
     for node in plan["nodes"]:
-        store[node["dest"]] = _exec_node(node, store, dtype, scatter_mode)
+        _store_result(store, node, _exec_node(node, store, dtype, scatter_mode))
     outputs: dict[str, jax.Array] = {}
     for name, slot in plan["materialized"]:
         outputs[name] = store[slot]
