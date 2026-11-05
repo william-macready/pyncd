@@ -113,11 +113,11 @@ def header (name : String) (p : PreparedPlan) (planData : String) : String :=
     ", \"n_axiswise\": " ++ toString aw ++ ", \"n_unary\": " ++ toString (countUnary p) ++
     ", \"plan\": " ++ planData
 
-/-- One binary64 named fixture. -/
-def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseTensor)
-    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none)
-    (unaryOk : Bool := false) (scans : Nat := 0) : IO String := do
-  let sched ← scheduled name prog
+/-- The body of one binary64 named fixture, over an already scheduled program (shared by `fixture64` and
+    the scan survey's `surveyFixture64`). -/
+def fixtureOfSched64 (name : String) (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
+    (minPw : Nat) (minAw : Nat) (exact : Option (Nat × Nat × Nat))
+    (unaryOk : Bool) (scans : Nat) : IO String := do
   let p ← prepared name sched (InputSignature.ofDenseInputs inputs)
   let planData ← checkAndRender name p minPw minAw exact unaryOk scans
   let report ← match runPreparedDense p inputs with
@@ -137,6 +137,12 @@ def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseT
     outs := outs.push (pyStrLit b.name ++ ": " ++ pyTensorEntry t)
   pure (header name p planData ++ ", \"inputs\": {" ++ String.intercalate ", " ins.toList ++
     "}, \"expected\": {" ++ String.intercalate ", " outs.toList ++ "}}")
+
+/-- One binary64 named fixture. -/
+def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseTensor)
+    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none)
+    (unaryOk : Bool := false) (scans : Nat := 0) : IO String := do
+  fixtureOfSched64 name (← scheduled name prog) inputs minPw minAw exact unaryOk scans
 
 /-- The binary32 sibling, over `runPreparedDense32`; also pins that the plan is binary32. -/
 def fixture32 (name : String) (prog : TLProgram) (inputs : NamedDenseEnv32)
@@ -653,31 +659,11 @@ nonlinearity" requirement for them. Registry = `scanSurvey64`'s list: adding a f
 Classification of every candidate (accepted here, refused by the gate/emitter, refused at prepare) is in
 `papers/semantics/jax_scan_fixture_survey.md`. -/
 
-/-- A scan-survey fixture: `checkAndRender` with the scan count pinned, plus Lean's own result. A copy of
-    `fixture64`'s body over a `ScheduledProgram` (parked: factor `fixture64` through this). -/
+/-- A scan-survey fixture: `fixtureOfSched64` with the scan count pinned, marked `linear_ok`. -/
 def surveyFixture64 (name : String) (sched0 : ScheduledProgram) (inputs : HashMap String DenseTensor)
     (scans : Nat) : IO String := do
-  let sched := ScanCompileTest.explicitF64Sched sched0
-  let p ← prepared name sched (InputSignature.ofDenseInputs inputs)
-  let planData ← checkAndRender name p 0 0 none false scans
-  let report ← match runPreparedDense p inputs with
-    | .ok r => pure r
-    | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e.cause}")
-  let mut ins : Array String := #[]
-  for b in p.bindings.requiredInputs.bindings do
-    let t ← match inputs[b.name]? with
-      | some t => pure t
-      | none => throw (IO.userError s!"{name}: missing input {b.name}")
-    ins := ins.push (pyStrLit b.name ++ ": " ++ pyTensorEntry t)
-  let mut outs : Array String := #[]
-  for b in p.bindings.materializedNames do
-    let t ← match report.env[b.name]? with
-      | some t => pure t
-      | none => throw (IO.userError s!"{name}: materialized {b.name} absent")
-    outs := outs.push (pyStrLit b.name ++ ": " ++ pyTensorEntry t)
-  pure ((header name p planData ++ ", \"inputs\": {" ++ String.intercalate ", " ins.toList ++
-    "}, \"expected\": {" ++ String.intercalate ", " outs.toList ++ "}}").replace
-      "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True")
+  let s ← fixtureOfSched64 name (ScanCompileTest.explicitF64Sched sched0) inputs 0 0 none false scans
+  pure (s.replace "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True")
 
 /-- The accepted (class A) donors: (fixture name, donor schedule, donor inputs, number of scan steps). -/
 def scanSurvey64 : IO (Array String) := do
