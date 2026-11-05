@@ -375,7 +375,7 @@ reviewer does not mistake silence for omission. Cost lines are the controller's 
 
 | Not done | Consequence / cost line |
 | --- | --- |
-| **Unary reads on JAX** (`sqrt`, `exp`, `log`, `sin`, `cos`, reciprocal; LayerNorm with `eps`) | Still refused by the assignment gate (`unaryFactor`). Needs a domain-error decision first (Lean fails loud on a negative `sqrt`; `jit` cannot raise). About 1 to 2 dispatches. |
+| ~~**Unary reads on JAX**~~ (`sqrt`, `exp`, `log`, `sin`, `cos`, reciprocal; LayerNorm with `eps`) | **Done 2026-11-04** in the follow-on slice (last section of this record): `affineReference` renders them; `einsumOnly`, the evidence path and scatter's compute half still refuse (`unaryFactor`, about 3 dispatches with the evidence path). |
 | **Scan on JAX** | `.scan` still throws `unsupportedStep` in `renderAffineNodesArray`. About 3 to 5 dispatches. |
 | **The evidence path** for scatter, pointwise and axiswise (`JaxKernelCandidate` arm, `stepTiedToPreparedStep`, `ExecutableTest.lean` rewrite) | A scatter, pointwise or axiswise plan runs through JAX with no `ExecutionEvidence`. About 3 dispatches, do all three together; touches core `Executable.lean`; needs a fast-mode-versus-label style decision (scatter's `scatter_mode`). |
 | Tropical and Boolean pointwise/axiswise steps | Not rendered; the plan-level storage gate of `affineReference` is inherited (section 8 notes it was not measured for these steps). Not estimated. |
@@ -390,3 +390,38 @@ Additional parked observation: the package's absolute-root value-grep exclusions
 do not remove their intended historical paths in this invocation. Fixing those
 future instructions is not required for this slice; estimated 0.25 dispatch, not
 started. The literal results and filtered comparison are reported above instead.
+
+## Follow-on: unary reads on JAX (2026-11-04, Direct path)
+
+Not part of the slice above; recorded here because it closes the first parked row. Process: Direct
+path (no plan document), two implementer dispatches on branch `worktree-jax-unary-reads`, commits
+`d19580e6` (gate opt-in and rendering), `9609aed6` (runtime), `7366b736`, `cb218347`, `694ae628`
+(fixtures and pins), `797764bf` (mutation results, in its body).
+
+- **Decision (user, 2026-11-04): B1, an unchecked precondition.** JAX lowers to plain `jnp` ops and
+  agrees with Lean within tolerance only where Lean returns ok. Rejected: a NaN promise (Lean's
+  `relu(NaN)` is `+0`, and `exp(log 0) = exp(-inf) = 0` is finite, so it cannot be kept), a
+  canonicalised NaN, and a checked variant (`checkify` or a validity-flag output; changes the
+  generated signature, its own slice).
+- **Gate.** `jaxAssignSupported` takes `allowUnary : Bool := false`, threaded through
+  `checkJaxAssignSupport` and `requireJaxSupport`; only `renderAffineNode` passes `true`.
+  `einsumOnly`, both candidate conversions, the evidence path and scatter's compute half keep the
+  `unaryFactor` refusal (fixture 4 in `EvalPlanCodegen.lean` pins both halves).
+- **Runtime.** `_apply_unary` runs after the zero-pad `where`, and in the empty-source shortcut
+  (Dense pads with 0, then applies the function: an out-of-bounds `exp` read is 1).
+- **Fixtures** (21 per precision, up from 15): `unary_exp_oob`, `unary_ops` (log, sqrt, sin, cos,
+  reciprocal), `unary_mix` (unary times plain factor), `unary_red` (unary read under a reduced
+  axis), `unary_ln` (LayerNorm with `eps = 1e-5`, compiled from source), `unary_empty` (zero-extent
+  source). Every input is Lean-ok. `domainPins` in `EvalPlanNonlinSmoke.lean` observes that `log(0.0)`,
+  `log(-1.0)`, `sqrt(-4.0)` and `recip(0.0)` are typed unary-domain errors in Dense, binary64 and
+  binary32: those inputs are out of contract and excluded from the comparison.
+- **Hand mutations** (each failed its fixture, restored): sin/cos swapped, log/sqrt swapped,
+  reciprocal as `x`, empty-source shortcut dropping the unary, `unaryOpName` sin/cos crosswise,
+  and the unary applied before the pad.
+- **Parked, unchanged:** unary reads in the evidence path, `einsumOnly` and scatter's compute half
+  (about 3 dispatches with the evidence path), f32 domain-boundary values such as signed zero
+  (about 1 dispatch; plan-level pins exist in `KernelDense32Test`), the relu/NaN and `-inf`
+  swallowing interaction (documented in the jax_bridge README, not changed).
+- **Budget (Rule 6).** Both implementer dispatches breached the 60-turn cap: 80 and 87 tool calls
+  (the harness count; each report under-stated its own), context peaks about 150k. Waiting on
+  5-minute runner builds drove most of it. Authoring tokens were not measured with `token-report.py`.

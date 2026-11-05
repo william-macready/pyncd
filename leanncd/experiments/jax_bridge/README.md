@@ -217,7 +217,7 @@ label (`orderedReference64`/`orderedReference32`):
 | `f64`, tropical max/min (`admittedAlgebraMax`/`Min`) | required | forbidden (`unsupportedAlgebra`) | forbidden |
 | `bool` destination, Boolean algebra | required | forbidden (`unsupportedDestDType`) | forbidden |
 | `bool` source into a real destination | required | forbidden (`unsupportedSourceDType`) | forbidden |
-| unary read (`ReadPlan.unary`) | required | forbidden (`unaryFactor`) | forbidden |
+| unary read (`ReadPlan.unary`) | required | `affineReference`: required (opt-in `allowUnary`, tolerance-compared, unchecked domain precondition); `einsumOnly` and the candidate conversions: forbidden (`unaryFactor`) | forbidden |
 | Iverson factor | required | forbidden (`iversonFactor`, original all-factor index) | forbidden |
 | contextful assignment (`AssignPlan.contextShape` non-empty) | required | forbidden (`unsupportedContext`) | forbidden |
 | zero-padded read shorter than its iteration basis | required | `einsumOnly` forbidden (`labelExtentMismatch`); `affineReference` required | einsum forbidden, affine required |
@@ -375,12 +375,16 @@ that copy's `+0` seed under `jax.jit` (the pitfall above), so a jit run can flip
 | --- | --- |
 | pointwise or axiswise under `einsumOnly` | `unsupportedStep` (no einsum form) |
 | pointwise or axiswise in the evidence path | `lowerCheckPlanToCandidate` / `JaxExecutableWellFormed`: `unsupportedStep` (no `ExecutionEvidence`) |
-| an inline unary read (`sqrt`, `exp`, `log`, `sin`, `cos`, reciprocal `/`) | the assignment gate (`checkJaxAssignSupport`): `unaryFactor`; so a LayerNorm with `eps` (`sqrt` and division) does not render, while `normalize`/`l2normalize` do |
+| an inline unary read (`sqrt`, `exp`, `log`, `sin`, `cos`, reciprocal `/`) under `einsumOnly`, the candidate conversions or the evidence path | the assignment gate's default (`checkJaxAssignSupport`): `unaryFactor`; only `affineReference` assignment rendering opts in (`allowUnary`), and scatter's compute half stays refused |
+
+**Unary reads (`affineReference` only).** An inline unary read renders as a `"unary"` key on its factor record, and the runtime applies the function AFTER the zero-pad gather (`_apply_unary` in `evalplan_affine_runtime.py`), as Dense does: an out-of-bounds `exp` read is `exp(0) = 1`, and a zero-extent source gives the same. The result is compared within the nonlinearity tolerances, not bit for bit.
+
+**Domain errors are an unchecked precondition (decision B1, 2026-11-04).** Lean rejects `log` of `v <= 0`, `sqrt` of `v < 0` and reciprocal of `0` with a typed unary-domain error. This backend lowers to plain `jnp` ops, checks nothing, and promises nothing on such inputs (neither NaN nor an error): it agrees with Lean only where Lean returns ok. Do not read "NaN on bad input" into it. Lean's `relu(NaN)` is `+0` and `exp(log 0) = exp(-inf) = 0` is finite, so a violation can come out as an ordinary-looking number. Lean-error inputs are out of contract and are excluded from the differential comparison; the Lean side of the boundary is pinned by `domainPins` in `EvalPlanNonlinSmoke.lean` (`log(0.0)`, `log(-1.0)`, `sqrt(-4.0)` and `recip(0.0)` are typed errors in Dense, binary64 and binary32). The motivating use is a LayerNorm with `eps` (`sqrt(v + eps)`, then division): its `sqrt` argument is at least `eps` and its divisor is non-zero by construction (fixture `unary_ln`). Fixtures: `unary_exp_oob`, `unary_ops`, `unary_mix`, `unary_red`, `unary_ln`, `unary_empty`.
 
 Run: `./run-evalplan-nonlin.sh` (generates `EvalPlanNonlinSmoke.lean`'s binary64 + binary32 fixtures, then
-`evalplan_nonlin_smoke.py float64|float32`: 15 fixtures per precision, eager and jit, including the
+`evalplan_nonlin_smoke.py float64|float32`: 21 fixtures per precision, eager and jit, including the
 single-layer transformer with every materialized output compared, a pinned reduction-order case, rows that
-pin the softmax maximum, relu over a NaN, and a `jit(grad)` finite check). Mutation records:
+pin the softmax maximum, relu over a NaN, a `jit(grad)` finite check, and the six unary-read fixtures above). Mutation records:
 `papers/semantics/jax_nonlin_mutations_post.json` (Lean render, `mutation-manifest.sh`) and
 `papers/semantics/jax_nonlin_mutations_python.json` (runtime and verifier, `mutation_python_manifest.py`,
 which takes a per-entry `verifier`).
