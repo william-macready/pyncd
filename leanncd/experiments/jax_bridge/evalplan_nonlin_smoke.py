@@ -47,6 +47,7 @@ STATS: dict[str, list] = {}
 OUT_STATS: dict[tuple[str, str], list] = {}  # (fixture, output name) -> stats; one table per transformer fixture
 TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "transformer_rms32",
                         "transformer_scan", "transformer_scan32",
+                        "transformer_head", "transformer_head32",
                         "transformer_unrolled", "transformer_unrolled32"}
 # Scan-vs-unrolled oracle (both JAX results, no Lean): (rtol, atol) per precision. MEASURED: scan and
 # unrolled are bit-identical in float64 and float32, eager and jit (24/24 entries per precision), so
@@ -54,6 +55,13 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
 ORACLE_TOL = {"float64": (0.0, 0.0), "float32": (0.0, 0.0)}
 # fixture name -> {"eager": outputs, "jit": outputs}, kept for the scan fixtures and the unrolled oracle.
 EAGER: dict[str, dict] = {}
+
+
+# Head pins (transformer_head): row-sum deviation of the vocabulary softmax and Logits-vs-numpy max abs, per
+# precision. MEASURED (Lean, eager, jit): float64 1.1e-16 / 2.2e-16, float32 6.7e-8 / 8.5e-8; the tolerances
+# leave ~3.7 orders (float64) / ~1.1 orders (float32) of headroom and are far below any wrong-head effect (~1e-1).
+HEAD_ROWSUM_TOL = {"float64": 1e-12, "float32": 1e-6}
+HEAD_LOGITS_TOL = {"float64": 1e-12, "float32": 1e-6}
 
 
 def flat_nodes(nodes):
@@ -308,6 +316,59 @@ def main() -> None:
           f"{gap:.3f}); pins hold on Lean, eager and jit; per-output measured difference vs Lean:")
     for n in sorted(n for fx, n in OUT_STATS if fx == sc_name):
         rel, ab, ex, tot = OUT_STATS[(sc_name, n)]
+        print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+    # Scan transformer WITH A HEAD: after the scan, a final RMSNorm of the pre-norm residual
+    # `Zf = H[:, :, 2] + X`, an unembedding `Logits = Hf @ W_U.T` over a vocabulary axis of extent 5, and a
+    # softmax over the vocabulary. Lean and JAX agreeing proves nothing about the head, so every pin
+    # recomputes the head in plain numpy (float64) from the fixture's INPUTS and the state `H` slice 2 of the
+    # SAME view (Lean, eager, jit), never from that view's own Zf / Hf / Logits / P outputs.
+    hd_name = "transformer_head" + sfx
+    hd = by[hd_name]
+    hin = {n: lean_array(e) for n, e in hd["inputs"].items()}
+    hnodes = hd["plan"]["nodes"]
+    h_scans = [i for i, n in enumerate(hnodes) if n.get("kind") == "scan"]
+    h_after = hnodes[h_scans[0] + 1:] if h_scans else []
+    # (d, plan) exactly one scan record, first, with the same body as transformer_scan; the head is the
+    # plain nodes AFTER it (not inside the scan, not before it)
+    assert len(h_scans) == 1 and h_scans[0] == 0 and hnodes[0]["step_count"] == 2, [n.get("kind") for n in hnodes]
+    assert all(n.get("kind") != "scan" for n in h_after) and len(hnodes) == 1 + len(h_after), hnodes
+    assert len(list(flat_nodes([hnodes[0]]))) == len(list(flat_nodes([scans[0]]))), "scan body differs from transformer_scan"
+    # (d, shapes) the vocabulary extent 5 differs from every other extent, and appears only on the v axis
+    assert hin["W_U"].shape == (5, 4) and set(hin) == set(sin) | {"W_U"}, (hin["W_U"].shape, sorted(hin))
+    assert 5 not in {3, 4, 2} and all(5 not in hin[n].shape for n in hin if n != "W_U")
+    for who, outs_hd in {"lean": {n: lean_array(e) for n, e in hd["expected"].items()},
+                         "eager": {n: np.asarray(v) for n, v in EAGER[hd_name]["eager"].items()},
+                         "jit": {n: np.asarray(v) for n, v in EAGER[hd_name]["jit"].items()}}.items():
+        assert {"H", "Logits", "P", "Hf", "Zf"} <= set(outs_hd), (who, sorted(outs_hd))
+        assert all(np.all(np.isfinite(v)) for v in outs_hd.values()), who
+        assert outs_hd["Logits"].shape == outs_hd["P"].shape == (3, 5), (who, outs_hd["Logits"].shape)
+        assert all(5 not in v.shape for n, v in outs_hd.items() if n not in ("Logits", "P")), who
+        P = outs_hd["P"].astype(np.float64)
+        # (a) every row of P is a probability vector over the vocabulary
+        rowdev = float(np.max(np.abs(P.sum(axis=1) - 1.0)))
+        assert np.all(P > 0) and rowdev < HEAD_ROWSUM_TOL[_DT], ("pin (a) P rows positive and sum to 1", who, rowdev, P.tolist())
+        # (c) the final norm output has unit mean square (Inv-weighted, eps-close); the pre-norm Zf does not
+        X, Inv, Eps, WU = (hin[n].astype(np.float64) for n in ("X", "Inv", "Eps", "W_U"))
+        Zf = outs_hd["H"][:, :, 2].astype(np.float64) + X
+        Hf = Zf / np.sqrt(np.sum(Zf * Zf * Inv, axis=1) + Eps)[:, None]
+        ms_hf = np.sum(Hf * Hf * Inv, axis=1)
+        ms_hf_out = np.sum(outs_hd["Hf"].astype(np.float64) ** 2 * Inv, axis=1)
+        ms_zf = np.sum(Zf * Zf * Inv, axis=1)
+        assert np.all(np.abs(ms_hf - 1.0) < 1e-3) and np.all(np.abs(ms_hf_out - 1.0) < 1e-3), \
+            ("pin (c) Hf unit mean square", who, ms_hf_out.tolist())
+        assert np.any(np.abs(ms_zf - 1.0) > 0.05), ("pin (c) pre-norm Zf is not unit mean square", who, ms_zf.tolist())
+        # (b) Logits recomputed in numpy from the inputs and THIS view's H slice 2
+        want = Hf @ WU.T
+        ldiff = float(np.max(np.abs(outs_hd["Logits"].astype(np.float64) - want)))
+        assert ldiff < HEAD_LOGITS_TOL[_DT], ("pin (b) Logits == numpy from H slice 2", who, ldiff, outs_hd["Logits"].tolist(), want.tolist())
+        print(f"  head {who}: P row-sum dev {rowdev:.3e}, Hf mean-square {[round(float(x), 6) for x in ms_hf_out]}, "
+              f"pre-norm Zf mean-square {[round(float(x), 4) for x in ms_zf]}, Logits vs numpy max abs {ldiff:.3e}")
+    print(f"transformer_head: plan = 1 scan + {len(h_after)} plain nodes {[n.get('kind', 'assign') for n in h_after]}; "
+          f"vocabulary extent 5 appears only on W_U[0], Logits[1], P[1]; P rows positive and sum to 1; Logits == numpy "
+          f"recomputation from H slice 2; Hf unit mean square, pre-norm Zf not; per-output measured difference vs Lean:")
+    for n in sorted(n for fx, n in OUT_STATS if fx == hd_name):
+        rel, ab, ex, tot = OUT_STATS[(hd_name, n)]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
 
     # UNROLLED ORACLE: the same two layers as two hand-copied flat layers (no scan; the old, trusted flat
