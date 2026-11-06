@@ -824,16 +824,18 @@ proposal:
    yet its failure prevents success after `Out` is published.
    The graph's obligation to finish internal work therefore agrees
    with the source's complete-model semantics in this test.
-5. **A precise operational correspondence is now a concrete proof target.**
+5. **A precise conditional operational correspondence is now proved.**
    The two state representations agree throughout the matched executions,
    including derived accumulator and pending data. This gives a tested
-   candidate relation to generalise, rather than requiring a new
-   evaluator or an assumed global graded-action law first.
+   candidate relation that the separate semantic proof layer generalises,
+   without requiring a new evaluator or an assumed global graded-action law.
 
-The remaining gap is consequently sharper: we need to establish that
+The retained caller obligation is consequently sharper: establish that
 a source program and an independently supplied writer contract describe
 the same typed occurrences, reads, destinations and completion
-obligations, then prove that their executions correspond.
+obligations and ordered priorities. The conditional theorem then proves
+that their executions correspond; see the
+[proof record](categorical_tensor_logic_proof_record.md).
 Contract acceptance alone cannot establish this source-to-contract match.
 
 An important restraint follows: **the prototype validates a different
@@ -1057,12 +1059,17 @@ representation arguments.
 
 ## 9. The most valuable theorem targets
 
-### 9.1. Closed-graph/reference correspondence: unproved
+### 9.1. Closed-graph/reference correspondence: conditional proof
 
 The scoped design for the contract-based runner is developed in the
 [theorem-design brief](categorical_tensor_logic_theorem_brief.md).
 The baseline outline below introduces the state relationship; the brief
-separates the supplied source-contract match from the new proof obligations.
+separates the supplied source-contract match from the proof obligations.
+The contract-based `runChecked`/`runValidated` result is now implemented;
+its exact scope is recorded in the
+[proof record](categorical_tensor_logic_proof_record.md).
+The older fixed-program baseline outline below is explanatory, not a
+formal theorem about `IndexedExecution.run`.
 
 For the baseline runner, fix a well-formed finite program $P$ over
 the prototype's exact-rational
@@ -1218,10 +1225,10 @@ without supplying its writer contract. This strengthens the case for
 explicit completion boundaries and effect-sensitive interpretation,
 while leaving the choice of a general categorical presentation open.
 
-The next step is to generalise the tested state relation, make the
-source-to-contract correspondence explicit, and prove a scoped
-graph/reference result. More interfaces and schedules can test those
-requirements before a general composition theorem is attempted.
+The tested state relation has now been generalised into a conditional
+graph/reference theorem with explicit source-to-contract correspondence.
+More interfaces and schedules can exercise its supplied-match obligations
+before a general composition theorem is attempted.
 Composition that retains complete-model witnesses remains a further
 theorem target.
 

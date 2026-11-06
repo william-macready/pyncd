@@ -71,6 +71,22 @@ structure Closed (σ : Declarations Unit) where
   contract : Contract σ
   steps : List (Step σ)
 
+def validateWriter (contract : Contract σ) (w : Writer σ) : Except Error Unit := do
+  letI : DecidableEq (Address σ) := addressEq (σ := σ)
+  match contract.collectors.find? (fun row => row.2.contains w.capability) with
+  | none => throw .extraCapability
+  | some row => do
+      if !(decide (w.destination = row.1)) then throw .wrongDestination
+      if !(decide (w.reads = footprint w.body ())) then throw .badFootprint
+      if !(w.reads.all (readable contract)) then throw .unreadableRead
+      return ()
+
+def validateWriters (contract : Contract σ) : List (Writer σ) → Except Error Unit
+  | [] => .ok ()
+  | w :: ws => do
+    validateWriter contract w
+    validateWriters contract ws
+
 def close (contract : Contract σ) (fragment : Fragment σ) :
     Except Error (Closed σ) :=
   letI : DecidableEq (Address σ) := addressEq (σ := σ)
@@ -102,13 +118,8 @@ def close (contract : Contract σ) (fragment : Fragment σ) :
       return .error .missingCapability
     if fragment.writers.any (fun w => !(capabilities.contains w.capability)) then
       return .error .extraCapability
-    for w in fragment.writers do
-      match contract.collectors.find? (fun row => row.2.contains w.capability) with
-      | none => return .error .extraCapability
-      | some row =>
-        if !(decide (w.destination = row.1)) then return .error .wrongDestination
-      if !(decide (w.reads = footprint w.body ())) then return .error .badFootprint
-      if !(w.reads.all (readable contract)) then return .error .unreadableRead
+    if let .error error := validateWriters contract fragment.writers then
+      return .error error
     let steps := contract.collectors.flatMap fun row =>
       (row.2.filterMap fun cap =>
         fragment.writers.find? (fun w => w.capability == cap)).map Step.write ++
@@ -192,7 +203,7 @@ structure Run (σ : Declarations Unit) where
   events : List (Event σ)
   states : List (State σ)
 
-private def stepFuel (steps : List (Step σ)) : Nat → State σ → Run σ
+def stepFuel (steps : List (Step σ)) : Nat → State σ → Run σ
   | fuel, state =>
     if complete steps state then ⟨.complete state, [], [state]⟩
     else
@@ -225,7 +236,7 @@ private def stepFuel (steps : List (Step σ)) : Nat → State σ → Run σ
                 let tail := stepFuel steps fuel next
                 ⟨tail.outcome, .sealed a value :: tail.events, state :: tail.states⟩
 
-private def execute (graph : Closed σ)
+def execute (graph : Closed σ)
     (η : InputBinding (K := RationalReference.Carrier) (σ := σ))
     (fuel : Option Nat := none) : Run σ :=
   match graph.contract.tensors.find?

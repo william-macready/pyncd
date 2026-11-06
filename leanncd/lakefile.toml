@@ -150,4 +150,11 @@ name = "IndexedExecutionExperiment"
 srcDir = "experiments/indexed_execution"
 globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
          "IndexedEffectSequencingTest", "IndexedOpenComposition",
-         "IndexedOpenCompositionTest", "IndexedCompositionParityTest"]
+         "IndexedOpenCompositionTest", "IndexedCompositionParityTest",
+         "IndexedCompositionClosure", "IndexedCompositionMatch",
+         "IndexedCompositionRunner", "IndexedCompositionSelection",
+         "IndexedCompositionSteps", "IndexedCompositionFixtureProof",
+         "IndexedCompositionProofAudit", "IndexedCompositionTerminal",
+         "IndexedCompositionCorrespondence", "IndexedCompositionPublication",
+         "IndexedCompositionDiagnostics", "IndexedCompositionValidated",
+         "IndexedCompositionSemanticResults", "IndexedCompositionFibers"]

@@ -6,21 +6,23 @@
 
 ## Purpose and status
 
-The next theorem should establish a conditional correspondence between
+The implemented theorem establishes a conditional correspondence between
 the **contract-based graph runner** and the existing reference executor.
 It should not attempt a general categorical compositionality theorem first.
 
 This brief fixes the scope, assumptions, state relation, and proof
-dependencies. **No semantic proof has been implemented.** The proposed
-definitions and lemma names below are design targets, not existing Lean APIs.
-Existing APIs are identified separately by their containing files.
+dependencies. **The conditional semantic proof is implemented** in the
+separate experimental proof layer. See the
+[proof record](categorical_tensor_logic_proof_record.md) for actual declarations,
+validation and limits. Historical proposed names below remain design labels;
+they are not aliases for the implemented Lean APIs.
 
 The motivating evidence is the independent three-scalar validation:
 both executions fail at internal `Audit` after six events in the strict
 case, and complete after seven events in its total neighbour.
 Mapped terminal observations, events, and intermediate states agree.
-Those executable results are evidence for the proposed relation, not
-a general proof of it.
+Those executable results remain finite evidence. The new general proof uses
+a supplied local source-contract match, not those parity checks as hypotheses.
 
 ## Contents
 
@@ -404,8 +406,10 @@ The proof stage would be complete when:
 5. The existing executable checks still pass after any proof-interface
    refactoring.
 
-This would be a conditional semantic theorem, not merely more finite
-structural certificates. Its implementation is a separate next stage.
+These obligations are now implemented by the separate experimental proof
+layer, including both actual fixture instances. This is a conditional semantic
+theorem, not merely more finite structural certificates or automatic contract
+inference. See the proof record for the exact theorem and retained hypotheses.
 
 Excluded from that stage are general open-program composition,
 automatic contract inference, parser correctness, other scalar sorts,
