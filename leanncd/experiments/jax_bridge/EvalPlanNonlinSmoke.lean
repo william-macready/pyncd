@@ -810,6 +810,94 @@ def scanSurvey64 : IO (Array String) := do
     , ("scan_stateplainread", ScanCompileTest.statePlainReadSched, ScanCompileTest.rejInputs, 2) ]
   cands.toArray.mapM fun (n, s, i, k) => surveyFixture64 n s i k
 
+/-! ### Two-layer scan transformer with a head (`transformer_head`, `transformer_head32`)
+
+`scanProg` plus, AFTER the scan: a final RMSNorm of the pre-norm residual `Zf = H[q, m, 2] + X[q, m]` (the last
+layer's slice read pinned, plus the embedding, so `Zf` is not already unit-RMS; statements as the
+per-layer norm), an unembedding `Logits[q, v] = W_U[v, m] · Hf[q, m]` over a new
+vocabulary axis `v` of extent 5 (differs from every other extent: q=3, m=4, h=2, k=2, d=4, s=3, l=3), and
+a softmax over the vocabulary. `W_U` is a separate input (no weight tying); the scan weights are the SAME
+arrays as `scanEnv64`/`scanEnv32`. -/
+
+def trWU : Array Float :=
+  #[0.5, -0.3, 0.8, 0.1,  -0.6, 0.4, 0.2, 0.7,  0.3, 0.9, -0.5, -0.2,  0.15, -0.45, 0.65, 0.35,
+    -0.25, 0.55, -0.7, 0.05]
+
+def headProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 3
+  axis v : ℕ = 5
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), W_U(v, m)
+  tensor f64 H(q, m, l)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 Z1(q, m), Ss1(q), Ve1(q), Sd1(q), A(q, m), F(q, d), Y(q, m)
+  tensor f64 Z2(q, m), Ss2(q), Ve2(q), Sd2(q)
+  tensor f64 Zf(q, m), Ssf(q), Vef(q), Sdf(q), Hf(q, m), Logits(q, v), P(q, v)
+  H[q, m, 0]       := X[q, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · H[q, m, l]
+  K[s, h, k]       := W_K[l, h, k, m] · H[s, m, l]
+  V[s, h, k]       := W_V[l, h, k, m] · H[s, m, l]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  Z1[q, m]         := Attn[q, m] + H[q, m, l]
+  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  A[q, m]          := Z1[q, m] / Sd1[q]
+  F[q, d]          := relu(W_in[l, d, m] · A[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  Z2[q, m]         := Y[q, m] + A[q, m]
+  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  H[q, m, l +1]    := Z2[q, m] / Sd2[q]
+  Zf[q, m]         := H[q, m, 2] + X[q, m]
+  Ssf[q]           := Zf[q, m] · Zf[q, m] · Inv[m]
+  Vef[q]           := Ssf[q] + Eps[q]
+  Sdf[q]           := sqrt(Vef[q])
+  Hf[q, m]         := Zf[q, m] / Sdf[q]
+  Logits[q, v]     := W_U[v, m] · Hf[q, m]
+  P[q, v.]         := softmax(Logits[q, v])
+}
+/-- The binary32 sibling: only the declarations that pin axis order and the history shape. -/
+def headProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 3
+  axis v : ℕ = 5
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  H[q, m, 0]       := X[q, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · H[q, m, l]
+  K[s, h, k]       := W_K[l, h, k, m] · H[s, m, l]
+  V[s, h, k]       := W_V[l, h, k, m] · H[s, m, l]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  Z1[q, m]         := Attn[q, m] + H[q, m, l]
+  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  A[q, m]          := Z1[q, m] / Sd1[q]
+  F[q, d]          := relu(W_in[l, d, m] · A[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  Z2[q, m]         := Y[q, m] + A[q, m]
+  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  H[q, m, l +1]    := Z2[q, m] / Sd2[q]
+  Zf[q, m]         := H[q, m, 2] + X[q, m]
+  Ssf[q]           := Zf[q, m] · Zf[q, m] · Inv[m]
+  Vef[q]           := Ssf[q] + Eps[q]
+  Sdf[q]           := sqrt(Vef[q])
+  Hf[q, m]         := Zf[q, m] / Sdf[q]
+  Logits[q, v]     := W_U[v, m] · Hf[q, m]
+  P[q, v.]         := softmax(Logits[q, v])
+}
+def headEnv64 : HashMap String DenseTensor := scanEnv64.insert "W_U" (t64 [5, 4] trWU)
+def headEnv32 : NamedDenseEnv32 := scanEnv32.insert "W_U" (t32 [5, 4] trWU)
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -857,6 +945,7 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "unary_empty" unaryEmptyProg (env64 [("Ae", t64 [0] #[])])
         0 0 (some (1, 0, 0)) true,
     ← fixture64 "transformer_scan" scanProg scanEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture64 "transformer_head" headProg headEnv64 1 2 none true (scans := 1),
     ← fixture64 "transformer_unrolled" unrolledProg unrolledEnv64 2 2 (some (36, 2, 2)) true] ++
     (← scanSurvey64)
 
@@ -907,6 +996,7 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "unary_empty32" unaryEmptyProg32 (env32 [("Ae", t32 [0] #[])])
         0 0 (some (1, 0, 0)) true,
     ← fixture32 "transformer_scan32" scanProg32 scanEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture32 "transformer_head32" headProg32 headEnv32 1 2 none true (scans := 1),
     ← fixture32 "transformer_unrolled32" unrolledProg32 unrolledEnv32 2 2 (some (36, 2, 2)) true]
 
 /-! ## Boundary pins: Lean REJECTS domain-violating unary reads (the JAX runtime does not check)
