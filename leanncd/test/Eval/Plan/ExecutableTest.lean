@@ -1999,11 +1999,11 @@ def tropicalScan : RawScanPlan :=
 #guard scanChecks outerSigs tropicalScan
 #guard scanVerdict outerSigs tropicalScan == some (.scanNonRealState 5 0)
 
--- Refusal 3 (multi-axis): no valid two-axis `RawScanPlan` exists to check (F3-b stage 2 is open) and
--- `CheckedScanPlan` cannot be re-labelled (private constructor), so the gate's predicate
--- `jaxScanSingleAxis` is pinned on the raw plan: the donor passes; the donor with ONLY
--- `historyExtents := #[3, 3]` (or `#[]`) fails. The `throw` wiring in `checkJaxScanSupport` is not
--- reachable from a fixture today.
+-- Refusal 3 (multi-axis): the gate's predicate `jaxScanSingleAxis` is pinned on the raw plan here:
+-- the donor passes; the donor with ONLY `historyExtents := #[3, 3]` (or `#[]`) fails. The `throw`
+-- wiring in `checkJaxScanSupport` is pinned on a real compiled two-axis scan in
+-- `ScanJaxGateTest.lean` (`ScanCompileTest.coupledSched`); a hand-built checked two-axis plan is not
+-- constructible from `ScanTest`'s donors, and `CheckedScanPlan` has a private constructor.
 #guard jaxScanSingleAxis linearScan
 #guard !jaxScanSingleAxis { linearScan with historyExtents := #[3, 3] }
 #guard !jaxScanSingleAxis { linearScan with historyExtents := #[] }

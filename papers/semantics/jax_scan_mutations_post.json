@@ -13,6 +13,19 @@
   ]
  },
  {
+  "label": "JS-L-g2 (scan gate: the jaxScanSingleAxis check replaced by true)",
+  "task": "scan",
+  "file": "LeanNCD/Eval/Plan/Executable.lean",
+  "old": "  unless jaxScanSingleAxis raw do",
+  "new": "  unless true do",
+  "targets": [
+   "Eval.Plan.ScanJaxGateTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScanJaxGateTest.lean:26:0: Expression"
+  ]
+ },
+ {
   "label": "JS-L-g3 (scan gate: the assign arm replaced by pure ())",
   "task": "scan",
   "file": "LeanNCD/Eval/Plan/Executable.lean",
