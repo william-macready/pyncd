@@ -1,0 +1,96 @@
+[
+  {
+    "label": "CP1 (copied translator iverson predicate lost)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportProbe.lean",
+    "old": ".iverson q => .iverson (q \u2218 h)",
+    "new": ".iverson q => .iverson (fun _ => false)",
+    "targets": [
+      "IndexedComponentTransportProbe"
+    ],
+    "expect": [
+      "transport.context-precompose",
+      "transport.identity-context-observations",
+      "transport.composition-context-observations"
+    ]
+  },
+  {
+    "label": "CP2 (copied translator multiplication changed to addition)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportProbe.lean",
+    "old": ".binary b l r => .binary b",
+    "new": ".binary b l r => .binary .add",
+    "targets": [
+      "IndexedComponentTransportProbe"
+    ],
+    "expect": [
+      "transport.strict-full-array"
+    ]
+  },
+  {
+    "label": "CP3 (copied translator reduction binder pinned to zero)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportProbe.lean",
+    "old": ".reduce n (probeTransport f (fun \u03b3 => (h \u03b3.1, \u03b3.2)) body)",
+    "new": ".reduce n (probeTransport f (fun \u03b3 => (h \u03b3.1, \u27e80, by have := \u03b3.2.isLt; omega\u27e9)) body)",
+    "targets": [
+      "IndexedComponentTransportProbe"
+    ],
+    "expect": [
+      "transport.reduce-binder"
+    ]
+  },
+  {
+    "label": "CP4 (copied policy constant result mapped to zero)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportProbe.lean",
+    "old": "| .const c => .const c",
+    "new": "| .const c => .const 0",
+    "targets": [
+      "IndexedComponentTransportProbe"
+    ],
+    "expect": [
+      "transport.boundary-constant"
+    ]
+  },
+  {
+    "label": "CP5 (copied policy raw inverse ignores argument)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportProbe.lean",
+    "old": "p.resolve (d.raw.symm q)",
+    "new": "p.resolve (d.raw.symm (fun _ => -2))",
+    "targets": [
+      "IndexedComponentTransportProbe"
+    ],
+    "expect": [
+      "transport.boundary-constant"
+    ]
+  },
+  {
+    "label": "CP6 (zero reduction donor becomes nonzero fixture control)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportProbe.lean",
+    "old": ".reduce 0 (.lit 99)",
+    "new": ".reduce 1 (.lit 99)",
+    "targets": [
+      "IndexedComponentTransportProbe"
+    ],
+    "expect": [
+      "transport.zero-reduction"
+    ]
+  },
+  {
+    "label": "CP7 (empty domain gains a coordinate fixture control)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportProbe.lean",
+    "old": "def emptyShape : Shape := [\u27e855, 0\u27e9]",
+    "new": "def emptyShape : Shape := [\u27e855, 1\u27e9]",
+    "targets": [
+      "IndexedComponentTransportProbe"
+    ],
+    "expect": [
+      "transport.empty-tab",
+      "transport.empty-scalar-metadata"
+    ]
+  }
+]
