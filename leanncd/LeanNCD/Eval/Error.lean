@@ -383,7 +383,8 @@ inductive EvalError
       reading base came before or after the state's own base. `state` is the first state name read,
       in right-hand-side order. -/
   | stateReadInBaseBlock (scan : String) (baseIdx : Nat) (state : String)
-  /-- A PLAIN (post-scan) statement `stmt` reads scan state `state` with dimension `dim`, one of the
+  /-- (Also raised for a LATER scan's base/step statement `stmt` reading an earlier scan's state; the
+      name predates the block case.) A PLAIN (post-scan) statement `stmt` reads scan state `state` with dimension `dim`, one of the
       state's ADVANCING dimensions, pinned to the literal `lit` outside `[0, extent)`. Unlike a free
       or shifted read, which zero-pads out of range, a pinned literal on an advancing dimension names
       a history slot that does not exist, and the old reference silently read `0`. Mirrors the checked

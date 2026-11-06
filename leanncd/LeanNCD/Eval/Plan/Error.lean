@@ -392,7 +392,10 @@ inductive ScanCompileError
   | stateReadNotCausal       (scan state : String) (stmtIndex termIndex factorIndex : Nat)
   -- a PLAIN (post-scan) statement's read of a scan state: the advancing dimension `dim` is pinned to
   -- a literal outside `[0, extent)`. Unlike the shifted/free reads, which zero-pad out of range, a
-  -- pinned literal on an advancing dimension names a history slot that does not exist.
+  -- pinned literal on an advancing dimension names a history slot that does not exist. Also raised
+  -- for a LATER scan's base/step block reading an earlier scan's state (the name predates the block
+  -- case): `stmtIndex` is then the `.scan`'s statement index and `termIndex`/`factorIndex` index
+  -- within the offending block assignment (base assignments first, then step).
   | plainStatePinOutOfRange  (state : String) (stmtIndex termIndex factorIndex dim : Nat)
                              (lit : Int) (extent : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited

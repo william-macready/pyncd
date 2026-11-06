@@ -1460,6 +1460,58 @@ run_cmd do
   | .error m => throwError m
   | .ok () => pure ()
 
+-- A LATER scan's base or step block reading an earlier scan's state `S` at a pinned out-of-range
+-- literal is the same error on both backends (`laterScanReadsState`, third statement `T`; the
+-- reference names the block statement's lhs `T` as the offender).
+private def laterScanReadRejects : Except String Unit := do
+  let one (inBase : Bool) (f : Factor) :=
+    (refPlain (Plan.ScanCompileTest.laterScanReadsState inBase f) Plan.ScanCompileTest.rejInputs,
+     Plan.ScanCompileTest.laterScanReadCause inBase f)
+  let (r, c) := one true (.read "S" [.const 3])
+  rejectedOnBoth "base S[3]" r c
+    (fun | .plainStatePinOutOfRange "S" "T" 0 3 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 3 3))
+  let (r, c) := one true (.read "S" [.const (-1)])
+  rejectedOnBoth "base S[-1]" r c
+    (fun | .plainStatePinOutOfRange "S" "T" 0 (-1) 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 (-1) 3))
+  let (r, c) := one false (.read "S" [.const 3])
+  rejectedOnBoth "step S[3]" r c
+    (fun | .plainStatePinOutOfRange "S" "T" 0 3 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "S" 2 0 1 0 3 3))
+  let (r, c) := one false (.read "S" [.const (-1)])
+  rejectedOnBoth "step S[-1]" r c
+    (fun | .plainStatePinOutOfRange "S" "T" 0 (-1) 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "S" 2 0 1 0 (-1) 3))
+
+run_cmd do
+  match laterScanReadRejects with
+  | .error m => throwError m
+  | .ok () => pure ()
+
+-- ACCEPT neighbours for a later scan's block: pinned in range reads `S`'s own slot (`S0 = 1`, so
+-- the pad `0` and the slot value differ), and a shifted step read still zero-pads at `l = 0`.
+run_cmd do
+  let ax := Plan.ScanCompileTest.axL
+  let run (inBase : Bool) (f : Factor) :=
+    match refPlain (Plan.ScanCompileTest.laterScanReadsState inBase f) Plan.ScanCompileTest.rejInputs with
+    | .error e => throwError s!"later scan read: {e.error}"
+    | .ok rep => match rep.env["S"]?, rep.env["T"]? with
+        | some S, some T => pure (S, T)
+        | _, _ => throwError "later scan read: no S or T in the report"
+  let (S, T) ← run true (.read "S" [.const 2])
+  unless S.data[2]! != 0 && T.shape == [3] && T.data == #[S.data[2]!, S.data[2]!, S.data[2]!] do
+    throwError s!"base S[2] must read S's last slot: S {repr S.data}, T {repr T.data}"
+  let (S, T) ← run false (.read "S" [.const 2])
+  unless S.data[2]! != 0 && T.data == #[1.0, S.data[2]!, S.data[2]! * S.data[2]!] do
+    throwError s!"step S[2] must read S's last slot: S {repr S.data}, T {repr T.data}"
+  let (_, T) ← run false (.read "S" [.shift ax (-1)])
+  unless T.data == #[1.0, 0.0, 0.0] do
+    throwError s!"step S[l-1] must zero-pad at l = 0: T {repr T.data}"
+  let (S, T) ← run false (.read "S" [.axis ax])
+  unless T.data == #[1.0, S.data[0]!, S.data[0]! * S.data[1]!] do
+    throwError s!"step S[l] must read S slice by slice: S {repr S.data}, T {repr T.data}"
+
 -- ACCEPT neighbours, one-axis state `S`. A pin at the last slot reads `S`'s own slice; a free read
 -- is the whole state; `l - 1` at `l = 0` and `l + 1` at `l = 2` still zero-pad (the pad is `0`).
 run_cmd do

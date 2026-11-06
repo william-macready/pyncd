@@ -310,7 +310,9 @@ def pinnedReadOutOfRange (idx : IdxExpr) (extent : Nat) : Option Int :=
 
 /-- A plain statement's read of a scan state at a literal outside `[0, extent)` on an advancing
     dimension is an error (`plainStatePinOutOfRange`), the reference twin of the checked backend's
-    rule. `stateAdv` maps a published state to its advancing dimensions; `env` supplies the state's
+    rule. The rule covers a plain statement AND the base/step statements of a LATER scan reading an
+    earlier scan's state (`evalScheduled` calls this per block statement before `evalScan`; the
+    constructor name predates the block case). `stateAdv` maps a published state to its advancing dimensions; `env` supplies the state's
     extents. The first offending read in right-hand-side order wins, then its lowest dimension. -/
 def checkPlainStateReads (stateAdv : HashMap String (List Nat)) (env : HashMap String DenseTensor)
     (s : Stmt) : Except EvalError Unit := do

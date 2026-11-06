@@ -409,16 +409,21 @@ private def scanErr (warnings : List EvalWarning) (e : ScanCompileError) : PlanC
 
 /-- A pinned literal on a scan state's ADVANCING dimension names a history slot, so outside
     `[0, extent)` it is an error rather than a zero-pad (free, shifted and non-advancing-dimension
-    reads keep the pad). `statePinOutOfRange` is the pure rule. Shared by the general `.plain` branch
-    and the `.plain (.scatter …)` branch of `prepareEvalPlan`, which range-check the `AssignPlan` of
-    the statement's own compute half. -/
+    reads keep the pad). `statePinOutOfRange` is the pure rule. The rule covers a plain statement AND
+    a LATER scan's base/step block reading an earlier scan's published state (the constructor keeps
+    its `plain` name, which predates the block case). Shared by the general `.plain` branch and the
+    `.plain (.scatter …)` branch of `prepareEvalPlan`, which range-check the `AssignPlan` of the
+    statement's own compute half (a read's `sourceSlot` is already an outer slot: `outerSlot` is
+    `some`), and by `checkScanBlockStatePins`, whose block-local read `sourceSlot` is a capture input
+    index that `outerSlot` maps to the outer slot it captures (`none`: not an outer slot). -/
 private def checkPlainStatePins (warnings : List EvalWarning)
     (stateSlotInfo : HashMap TensorSlot (String × Array Nat)) (stmtIdx : Nat)
-    (plan : AssignPlan) : Except PlanCompileFailure Unit := do
+    (plan : AssignPlan) (outerSlot : TensorSlot → Option TensorSlot := some) :
+    Except PlanCompileFailure Unit := do
   for ti in [0 : plan.terms.size] do
     let t := plan.terms.getD ti default
     for (fi, f) in t.readFactorsIndexed do
-      match stateSlotInfo[f.sourceSlot]? with
+      match outerSlot f.sourceSlot >>= (stateSlotInfo[·]?) with
       | none => pure ()
       | some (stateName, advDims) =>
           for d in advDims do
@@ -427,6 +432,23 @@ private def checkPlainStatePins (warnings : List EvalWarning)
             if statePinOutOfRange (f.map.coeffs.getD d #[]) bias extent then
               throw (scanErr warnings
                 (.plainStatePinOutOfRange stateName stmtIdx ti fi d bias extent))
+
+/-- The block half of the pinned-read rule (`checkPlainStatePins`): a scan's base block and step block
+    read an EARLIER scan's published state through an `.external` capture. Each block's assignments
+    are checked in order (base, then step); `termIndex`/`factorIndex` index within the offending
+    assignment, and `stmtIdx` is the `.scan`'s statement index. Called before this scan's own states
+    enter `stateSlotInfo`, so only earlier scans' states are consulted; the scan's own states are
+    `.state` captures (not `.external`), checked by `stateReadCausal`. -/
+private def checkScanBlockStatePins (warnings : List EvalWarning)
+    (stateSlotInfo : HashMap TensorSlot (String × Array Nat)) (stmtIdx : Nat)
+    (raw : RawScanPlan) : Except PlanCompileFailure Unit := do
+  for (blk, caps) in [(raw.baseBlock, raw.baseCaptures), (raw.stepBlock, raw.stepCaptures)] do
+    let outer (s : TensorSlot) : Option TensorSlot :=
+      (caps.find? (·.inputSlot == s)).bind (fun c =>
+        match c.source with | .external g => some g | .state _ => none)
+    for step in blk.steps do
+      if let some a := step.assign? then
+        checkPlainStatePins warnings stateSlotInfo stmtIdx a outer
 
 /-- External names in first-seen-read order, DERIVED from `sched.stmts` (reads minus produced) by
     the shared `orderedExternalNames` (`DSL/Pipeline/Lowering.lean`) — the same calculation
@@ -1769,6 +1791,9 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     | .scan scanName axes base recur _ =>
         let compiled ←
           compileScan sizes warnings declEnv scanName axes base recur tensorSigsAcc slotOf
+        -- a pinned out-of-range read of an EARLIER scan's state from this scan's blocks (this scan's
+        -- own states are not in `stateSlotInfo` yet)
+        checkScanBlockStatePins warnings stateSlotInfo stmtIdx compiled.raw
         stepsAcc := stepsAcc.push (.scan compiled.raw)
         -- All state histories publish together, AFTER the scan step (§4.6): the outer signatures
         -- must land at exactly the destination slots `compileScan` already fixed

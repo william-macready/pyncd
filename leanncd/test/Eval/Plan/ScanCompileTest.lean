@@ -1122,6 +1122,57 @@ def plainReadAfterCoupledCause (lhs : List LHSSlot) (f : Factor) : Option PlanCo
 #guard plainReadAfterCoupledCause [.free axR, .free axC]
     (.read "G" [.axis axR, .const 5, .axis axC]) == none
 
+/-! #### A LATER scan's block reading an earlier scan's state at a pinned literal
+
+The same rule for a scan whose base block (`inBase`) or step block reads the published state `S` of
+the earlier scan `sc` (extent 3): a literal outside `[0, extent)` on `S`'s advancing dimension is
+`plainStatePinOutOfRange` (the constructor name predates the block case), reported against the
+`.scan`'s statement index (2, after `pre` and `sc`) and the term/factor within the offending block
+assignment. The third scan `T` is `T[0] := <base>`, `T[l+1] := <step>`; `f` is the read under test
+placed in the base block or, as the second factor of `T[l] * f`, in the step block. -/
+
+def laterScanReadsState (inBase : Bool) (f : Factor) : ScheduledProgram :=
+  { scratchThenPlainReadSched with
+      stmts := (scratchThenPlainReadSched.stmts.dropLast ++
+        [ .scan "T" [axL]
+            [ .assign "T" [.iterAt axL 0]
+                { body := { terms := [{ factors := [if inBase then f else .read "S0" []] }] }
+                , nonlin := .identity } ]
+            [ .assign "T" [.iterNext axL]
+                { body := { terms := [{ factors :=
+                    if inBase then [.read "T" [.axis axL]] else [.read "T" [.axis axL], f] }] }
+                , nonlin := .identity } ]
+            false ]) }
+
+def laterScanReadCause (inBase : Bool) (f : Factor) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan (explicitF64Sched (laterScanReadsState inBase f)) rejSig)
+
+-- REJECT: pinned at the extent and pinned negative, base block (term 0, factor 0) and step block
+-- (`T[l] * S[k]`: the pinned read is factor 1).
+#guard laterScanReadCause true (.read "S" [.const 3])
+  == some (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 3 3))
+#guard laterScanReadCause true (.read "S" [.const (-1)])
+  == some (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 (-1) 3))
+#guard laterScanReadCause false (.read "S" [.const 3])
+  == some (.scan (.plainStatePinOutOfRange "S" 2 0 1 0 3 3))
+#guard laterScanReadCause false (.read "S" [.const (-1)])
+  == some (.scan (.plainStatePinOutOfRange "S" 2 0 1 0 (-1) 3))
+
+-- ACCEPT neighbours: pinned in range compiles and the block's capture is `S`'s own outer slot (2:
+-- `S0`, `pre`'s `P`, then `S`); a shifted step read that is out of range at the boundary (`l - 1` at
+-- `l = 0`) still zero-pads, and so does the free read `S[l]`.
+#guard laterScanReadCause true (.read "S" [.const 2]) == none
+#guard laterScanReadCause false (.read "S" [.const 2]) == none
+#guard laterScanReadCause false (.read "S" [.shift axL (-1)]) == none
+#guard laterScanReadCause false (.read "S" [.axis axL]) == none
+#guard (prepared (laterScanReadsState true (.read "S" [.const 2])) rejInputs).bind (fun p =>
+    (scanAt p 2).map (fun s => s.baseCaptures.map (·.source)))
+  == some #[.external 2]
+#guard (prepared (laterScanReadsState false (.read "S" [.const 2])) rejInputs).bind (fun p =>
+    (scanAt p 2).map (fun s => s.stepCaptures.filterMap (fun c => match c.source with
+      | .external g => some g | .state _ => none)))
+  == some #[2]
+
 /-! ### 2.5 `ScanCompileError` — context axes and per-state geometry -/
 
 -- the same axis declared twice as scan context.
