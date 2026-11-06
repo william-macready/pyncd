@@ -158,4 +158,5 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
          "IndexedCompositionCorrespondence", "IndexedCompositionPublication",
          "IndexedCompositionDiagnostics", "IndexedCompositionValidated",
          "IndexedCompositionSemanticResults", "IndexedCompositionFibers",
-         "IndexedComponentTransport"]
+         "IndexedComponentTransport", "IndexedComponentTransportExpr",
+         "IndexedComponentTransportEval"]
