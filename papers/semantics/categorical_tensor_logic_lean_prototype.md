@@ -12,12 +12,11 @@ The runner records available values and produced contributions. Reference
 accumulators and pending occurrences are reconstructed for comparison,
 not maintained as additional runtime state.
 
-**All 77 executable check rows pass**: 36 baseline checks, 12 strict-effect
-checks, and 29 open-composition checks. The suites contain 23
-matched-priority comparison invocations, including two repeated baseline
-regression controls, not 23 independently covered programs.
-The new composition runner is checked by explicit expected outcomes;
-it has no whole-program reference-parity claim.
+**All 93 executable check rows pass**: 36 baseline checks, 12 strict-effect
+checks, 29 open-composition checks, and 16 independent parity checks.
+The new parity fixture directly compares the composition runner with an
+independently authored three-scalar reference program in a failing case
+and its successful neighbour. It does not establish general program parity.
 
 The result supports a narrower claim than a new categorical foundation:
 this representation reproduces the tested reference executions without
@@ -26,7 +25,10 @@ establish a general compositionality theorem, an independently implemented
 expression semantics, or a more efficient implementation.
 
 The prototype is isolated from production imports and uses exact rational
-values. It adds no theorems, hand-written proof terms, axioms, or `sorry`.
+values. The execution modules remain proof-free. With explicit approval,
+the parity fixture adds finite structural certificates for read admission,
+output roles and schedule coverage, but no semantic correctness theorem,
+new axiom or `sorry`.
 
 ## 1. The question and the semantic contract
 
@@ -422,6 +424,58 @@ capability coverage, and execution of forged rather than validated
 collector ports. Each mutation produced its named assertion failure and
 restored byte-identically with a passing rebuild.
 
+### 5.5. Independently authored reference validation
+
+[`IndexedCompositionParityTest.lean`](../../leanncd/experiments/indexed_execution/IndexedCompositionParityTest.lean)
+adds 16 passing checks. It declares three distinct scalar tensors:
+`Pre` and `Audit` are internal, only `Out` is an output, and none is an
+input. The reference program and fragment contract are authored separately.
+Neither supplies the other's writer family or execution structure.
+Both deliberately reuse the same typed expression helpers and interpreter.
+
+The computation has four contributions:
+
+```text
+Pre += 1
+Pre += -1
+Out += square(Pre)
+Audit += Pre + first(strict_array(reciprocal(2), reciprocal(other)))
+```
+
+This is explanatory notation: `+=` introduces a contribution, `strict_array`
+requires both entries to be defined, and `first` selects the first entry
+only after the array is constructed. The parameter `other` distinguishes
+the two executed cases.
+
+| Case | Observed reference and composition outcome |
+| --- | --- |
+| `other = 0` | Six events, then failure at `Audit`; `Pre = 0` and `Out = 0` are published, `Audit` remains unavailable, and its occurrence remains pending |
+| `other = 4` | Seven events, then completion; `Pre = 0`, `Out = 0`, `Audit = 1/2`, with no pending occurrences |
+
+The checks explicitly verify no-input and output roles, the mapping between
+source occurrence identities and graph tags/capabilities, ordered events,
+and every recorded available/accumulator/pending snapshot.
+The terminal, event and intermediate-state comparison components are all
+true in both cases. Failure trace observations account explicitly for the
+two runners' different representations of the terminal failure snapshot.
+
+Unknown source occurrences, unknown graph tags, and incorrect capability
+observations return explicit errors; matching observation errors cannot
+count as parity. A graph-only shortcut is also checked to disagree with
+the strict reference execution.
+
+The reference-only mutation V1 replaced `Audit`'s strict array evaluation
+with its selected valid reciprocal, leaving the graph unchanged. The
+failure/parity assertions broke as intended; the source was restored
+byte-identically and rebuilt successfully. This is a hand-run mutation
+cycle, separate from the earlier manifests.
+
+Constructing this exact fixture required new structural evidence:
+scalar read bounds/admission, `Program.output_defined`, and the reference
+schedule's tensor/key duplicate-freedom and coverage. These certificates
+allow the existing executor to accept the concrete fixture; they do not
+prove equivalence of the two execution models.
+
 ## 6. What the experiment establishes
 
 The tested executions support a modest structural improvement:
@@ -439,10 +493,11 @@ collection and readiness.
 
 The baseline `close` still validates against a fixed whole program.
 The composition extension removes that dependency, checking independent
-fragments against a declared writer contract instead. This is stronger
-evidence for interface-based composition, but not a proof that every
-composition obligation is local or that the contract can be inferred
-from arbitrary source programs.
+fragments against a declared writer contract instead. The parity fixture
+now connects one such independently assembled contract to a separately
+declared reference program. This is stronger evidence for interface-based
+composition, but not a proof that every composition obligation is local
+or that contracts can be inferred from arbitrary source programs.
 
 Nor is storing all produced values necessarily cheaper than incremental
 accumulation. The experiment measures semantic fidelity, not execution
@@ -455,23 +510,23 @@ The implemented scope does not include:
 - Exhaustive graph-state or reference-schedule exploration.
 - Full bounded-history execution or a compact symbolic scan adapter.
 - Arbitrary source admission, general independent source-program
-  composition, or a reference adapter for the new multi-target
-  composition runner.
+  composition, or a generic reference adapter beyond the concrete
+  three-scalar validation fixture.
 - A general effect-sensitive indexed category or Turi-Plotkin
   compositionality theorem.
 - Primitive-level execution, physical memory reuse, floating-point
   arithmetic, or general cyclic solvers.
 
 Existing programs and schedules carry proofs for roles, typed reads, and
-complete enumeration. Reusing those objects avoids new proof obligations;
-constructing arbitrary new fixtures without that infrastructure remains
-a separate problem.
+complete enumeration. The exact parity fixture now supplies those
+structural certificates directly. Constructing and relating arbitrary
+new fixtures remains separate from proving semantic correspondence.
 
 The most informative follow-ups are:
 
-1. Connect the independent composition runner to an independently
-   constructed reference program, without deriving its contract from
-   that program.
+1. Extend independent reference comparison beyond the tested three-scalar
+   cases, preserving explicit source/contract identity mappings, then
+   prove a suitably scoped correspondence theorem.
 2. Exercise a bounded history while retaining coordinate-level causality
    and the whole-history output contract.
 3. Explore small graph schedules with explicit limits, distinguishing
@@ -490,6 +545,7 @@ bash leanncd/scripts/lake-build.sh leanncd IndexedExecutionExperiment
 bash leanncd/scripts/lean-file.sh leanncd experiments/indexed_execution/IndexedExecutionPrototypeTest.lean
 bash leanncd/scripts/lean-file.sh leanncd experiments/indexed_execution/IndexedEffectSequencingTest.lean
 bash leanncd/scripts/lean-file.sh leanncd experiments/indexed_execution/IndexedOpenCompositionTest.lean
+bash leanncd/scripts/lean-file.sh leanncd experiments/indexed_execution/IndexedCompositionParityTest.lean
 ```
 
 The first command builds dependencies and the experiment. The second

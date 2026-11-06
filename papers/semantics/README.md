@@ -76,9 +76,10 @@ It distinguishes the categorical structure already documented from proposed
 work on constructor compatibility, shared-writer interfaces, and refinement.
 
 [Effect-sensitive indexed Tensor Logic: prototype and results](categorical_tensor_logic_lean_prototype.md)
-describes the implemented proof-free Lean experiment, its graph/reference
-comparisons and mutation controls, what the results establish, and the
-remaining limitations.
+describes the executable Lean experiment, its graph/reference comparisons
+and mutation controls, what the results establish, and the remaining limits.
+Execution modules are proof-free; the independently authored reference
+validation fixture supplies finite structural certificates.
 
 [Categorical Tensor Logic semantics: a prototype-grounded proposal](categorical_tensor_logic_semantics.md)
 brings together St/Br and Naperian arrays, partial maps, additive collection,
@@ -86,3 +87,13 @@ open diagrams, model witnesses, causal iteration, and Turi-Plotkin-style
 compatibility. It separates mathematical laws from prototype evidence
 and states correspondence and composition targets without assuming
 one formalism is the best foundation.
+
+[Source-contract execution correspondence: theorem-design brief](categorical_tensor_logic_theorem_brief.md)
+fixes the first semantic theorem's scope, supplied match, state relation,
+proof dependencies, and output-metadata boundary. It distinguishes existing
+reference results from new proof obligations; no proof implementation is
+claimed.
+
+[New-session proof execution brief](categorical_tensor_logic_proof_handoff.md)
+is the handoff for implementing that scoped correspondence theorem,
+including code entry points, proof obligations, validation and exclusions.
