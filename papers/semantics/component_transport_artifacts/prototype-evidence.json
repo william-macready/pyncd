@@ -1,0 +1,132 @@
+{
+  "phase": "A compiled scratch prototype; not implementation or release",
+  "followup": {
+    "patch": "0004 (new commit, no history rewrite; resolve exact hash from patch header)",
+    "final_production_fixture_count": 21,
+    "additional_probe_parity_fixture": 1,
+    "total_mutation_controls": 12,
+    "new_symbols": ["Domain.policy_id", "Domain.policy_comp"],
+    "policy_laws": "Pointwise equality at every arbitrary raw argument, including rejected and constant outcomes.",
+    "added_observations": {
+      "transport.admitted-constant": "evalReady missing store = evaluated (some 7), exact empty footprint",
+      "transport.strict-full-array": "successful full array entries are 1/2 and 1/4 under missing store",
+      "transport.empty-tab": "actual transported empty tab evaluates successfully under missing store, empty footprint",
+      "transport.identity-context-observations": "context Unit to Fin2 value 1; footprint [(0,1,2)], evaluated (some 18)",
+      "transport.composition-context-observations": "nested versus composed contextual transport: same ordered footprints and evaluated (some 28)"
+    },
+    "namespace_axiom_audits": {
+      "IndexedComponentTransport": 97,
+      "IndexedComponentTransportTest": 82,
+      "IndexedComponentTransportProbe": 90,
+      "allowed": ["propext", "Classical.choice", "Quot.sound"],
+      "observed": "all pass"
+    },
+    "copied_production_probes": "generate-probe.py mechanically extracts exact transport recursion, mapOutcome computation and policy resolve RHS. No accompanying general transport proofs. Generated spikes module repeats the same 21 consumers and checks unmutated production/probe footprint and ready-result parity on six scalar donors under both present and missing stores.",
+    "probe_mutation_scope": "CP1-CP3 mutate mechanically copied translator; CP4-CP5 mutate mechanically copied policy computation. CP6-CP7 are honest donor-fixture sensitivity controls. All seven reached named fixture failures and restored green byte-identically; no claim that live production was mutated.",
+    "probe_receipts": ["probe-source-hashes.json", "probe-baseline.log", "probe-mutation-run.log", "probe-mutation-observations.md", "component_transport_probe_mutations_post.json"],
+    "exact_donor_identifiers": {
+      "scalar read and ordered binary": "LeanNCD.Semantics.Fixtures.direct; nested; nestedSwapped @ test/Semantics/ExpressionTest.lean",
+      "policy reject": "LeanNCD.Semantics.Fixtures.strictPolicy @ test/Semantics/ExpressionTest.lean",
+      "constant read": "LeanNCD.Semantics.Fixtures.constantPolicy; constRead @ test/Semantics/ExpressionTest.lean",
+      "tab/at": "LeanNCD.Semantics.Fixtures.tabulated; selected; nonselectedUndefined @ test/Semantics/ExpressionTest.lean",
+      "empty": "LeanNCD.Semantics.Fixtures.emptyReduction; emptyTab @ test/Semantics/ExpressionTest.lean",
+      "coordinate metadata": "matrixContext; renamedContext; zeroContext; emptyContext @ test/Semantics/SourceBindingBoundaryTest.lean",
+      "strict arrays": "IndexedCompositionParityTest.strictArray; auditBody @ experiments/indexed_execution/IndexedCompositionParityTest.lean"
+    }
+  },
+  "base": "c26e68bc6caa24a40f794cf8a9de207a1f7d9604",
+  "scratch": "/Users/williammacready/.copilot/session-state/cd0f9bbb-9e81-4009-befa-fe71e49624ff/files/transport-prototype",
+  "production_changes": false,
+  "lean_blocks_for_plan": 0,
+  "tasks": [
+    {
+      "id": "1",
+      "commit": "efa0950c56d05a73fbaf96e6330d9ed16e3447b6",
+      "files": ["leanncd/experiments/indexed_execution/IndexedComponentTransport.lean", "leanncd/lakefile.toml"],
+      "public_symbols": ["Domain", "Domain.id", "Domain.comp", "Domain.policy", "Domain.read", "mapOutcome", "mapResolved", "outcome_map", "Embedding", "Embedding.address", "Embedding.address_injective", "Embedding.pull", "Embedding.pullComplete", "Embedding.id", "Embedding.comp", "Embedding.address_id", "Embedding.address_comp", "Embedding.pull_comp"],
+      "target": "IndexedComponentTransport",
+      "fixtures": 0,
+      "mutation_cycles": 0
+    },
+    {
+      "id": "2",
+      "commit": "5505631605ab0902a229c77098db8234e6053ebc",
+      "files": ["leanncd/experiments/indexed_execution/IndexedComponentTransportExpr.lean", "leanncd/experiments/indexed_execution/IndexedComponentTransportEval.lean", "leanncd/lakefile.toml"],
+      "public_symbols": ["transport", "footprint_transport", "evalWith_transport", "checkReads_map", "evalReady_transport", "interpret_transport", "evalWith_id", "evalWith_comp", "footprint_id", "footprint_comp"],
+      "target": "IndexedComponentTransportEval",
+      "fixtures": 0,
+      "mutation_cycles": 0,
+      "boundary_reason": "Context transport and its structural proofs share one elaboration/review cycle and were consolidated."
+    },
+    {
+      "id": "3",
+      "commit": "619f65f85155249c1ed88b7d078ae428a08730a2",
+      "files": ["leanncd/experiments/indexed_execution/IndexedComponentTransportTest.lean", "leanncd/lakefile.toml", "leanncd/AGENTS.md"],
+      "target": "IndexedComponentTransportTest",
+      "fixtures": 16,
+      "mutation_cycles": 5,
+      "mutation_scope": "Isolated fixture/observational-consumer sensitivity controls, NOT mutations of production transport definitions. No claim of production-mutant kill coverage."
+    }
+  ],
+  "verified": {
+    "all_eight_expr_constructors": true,
+    "all_contexts_types_partial_stores": "Universally quantified footprint_transport, evalWith_transport and evalReady_transport, no reached-store restriction.",
+    "sort": "Unit indexed RationalReference.Carrier (exact rationals), RationalReference.registry and ops",
+    "domain_profile": "Explicit axis-position equivalence and extent preservation, explicit Coord and RawCoord equivalences, raw_axis certification and Coord.raw commuting law. Certified adapters, NOT an automatic derivation constructor.",
+    "nondefault": "All four new modules registered only under IndexedExecutionExperiment; discovery note in leanncd/AGENTS.md; no LeanNCD production import.",
+    "axioms": ["propext", "Classical.choice", "Quot.sound"],
+    "no_sorry": true,
+    "build_wrapper": "bash <scratch>/leanncd/scripts/lake-build.sh <scratch>/leanncd <target>",
+    "observed_order_and_value": "([(1, 2, 0), (2, 0, 1), (1, 2, 0)], some 53)",
+    "logs": ["../transport-prototype/domain-build.log", "../transport-prototype/eval-build.log", "../transport-prototype/fixture-build.log", "mutation-run.log", "mutation-observations.md"]
+  },
+  "fixtures": [
+    {"name": "transport.ordered-repetition", "donor": "ExpressionTest scalar binary/read fixtures", "delta": "Nested reads at source (0,p),(1,q),(0,p), then unequal-axis swap into larger target; assert ordered triple, not set.", "observed": "[(1,2,0),(2,0,1),(1,2,0)]", "mutation": ["CT1", "CT2"], "caution": "[a,b,a] is palindromic: rotation, NOT reversal, is the discriminating mutation."},
+    {"name": "transport.axis-raw", "donor": "SourceBindingBoundaryTest positional coordinate fixtures", "delta": "Explicit 2x3 to 3x2 axis swap with renamed UIDs and raw (-4,9).", "observed": "raw becomes (9,-4); coordinate (0,2) becomes (2,0)"},
+    {"name": "transport.boundary-constant", "donor": "ExpressionTest.strictPolicy", "delta": "Out-of-bounds raw with source first coordinate -1 resolves constant 7; conjugate raw argument.", "observed": "const 7"},
+    {"name": "transport.boundary-reject", "donor": "ExpressionTest.strictPolicy", "delta": "Raw (-2,-2) rejects after permutation; rejected_not_admitted proves reject cannot admit a resolved read.", "observed": "reject"},
+    {"name": "transport.context-precompose", "donor": "ExpressionTest iverson/read", "delta": "Unit maps to Fin2 value 1, both predicate and read index depend on context.", "observed": "some 18", "mutation": ["CT3", "CT4"]},
+    {"name": "transport.strict-selection-failure", "donor": "IndexedCompositionParityTest.strictArray/auditBody", "delta": "Use transported selected coordinate of strict reciprocal array with other=0.", "observed": "evaluated none", "mutation": ["CT5"]},
+    {"name": "transport.strict-selection-success", "donor": "IndexedCompositionParityTest.strictArray/auditBody", "delta": "Same selected array, other=4.", "observed": "evaluated (some (1/2))"},
+    {"name": "transport.readiness-missing", "donor": "Readiness.evalReady", "delta": "All addresses absent despite nonempty ordered footprint.", "observed": "notReady"},
+    {"name": "transport.readiness-success", "donor": "Readiness.evalReady", "delta": "All reads present in nonconstant target store.", "observed": "evaluated (some 53)", "mutation": ["CT4"]},
+    {"name": "transport.reduce-binder", "donor": "ExpressionTest reduction fixtures", "delta": "Reduction binder supplies first source coordinate, retained under context extension.", "observed": "some 33"},
+    {"name": "transport.zero-reduction", "donor": "ExpressionTest empty/reduction fixtures", "delta": "Zero-length reduce over literal 99 under entirely missing store.", "observed": "evaluated (some 0)"},
+    {"name": "transport.tab-at-context", "donor": "ExpressionTest array/tab/at fixtures", "delta": "Tab binder supplies coordinate; at index uses precomposed outer Fin2 context.", "observed": "some 17", "mutation": ["CT3"]},
+    {"name": "transport.identity", "donor": "transport.ordered-repetition", "delta": "Identity transport on source using pulled target store.", "observed": "some 53"},
+    {"name": "transport.empty-scalar-metadata", "donor": "SourceBindingBoundaryTest.zeroContext/emptyContext", "delta": "One zero-extent axis versus no axes.", "observed": "layout counts 0 versus 1, shapes unequal"},
+    {"name": "transport.unused-target", "donor": "transport.ordered-repetition", "delta": "Unused extra target tensor absent while image tensors remain available.", "observed": "some 53"},
+    {"name": "transport.composition", "donor": "transport.ordered-repetition", "delta": "After nontrivial coordinate swap, cyclic tensor embedding changes tensors again; compare ordered observations of nested versus composed transport.", "observed": "equal ordered address projections"}
+  ],
+  "sibling_case_class_audit": {
+    "Expr.lit": {"required": "same rational literal", "forbidden": "tensor/context access", "silently_ignored": "context h, deliberately constant"},
+    "Expr.read": {"required": "tensor injection, policy conjugation, raw and resolved adapters, context precomposition", "forbidden": "name/extent inferred identity; absent-to-zero", "silently_ignored": "none"},
+    "Expr.iverson": {"required": "predicate precomposition", "forbidden": "unchanged free predicate", "silently_ignored": "none"},
+    "Expr.binary": {"required": "left then right footprint concatenation including repeats", "forbidden": "reorder or deduplicate", "silently_ignored": "none"},
+    "Expr.reduce": {"required": "extend h by identity on Fin binder, retain n and enumeration", "forbidden": "replace bound coordinate or skip zero identity", "silently_ignored": "none"},
+    "Expr.tab": {"required": "extend h by identity on Coord binder; preserve ArrayShape/Layout and full strict array", "forbidden": "adapt local shape with tensor-domain adapter", "silently_ignored": "none"},
+    "Expr.at": {"required": "precompose index, evaluate entire array first", "forbidden": "select-first shortcut", "silently_ignored": "none"},
+    "Expr.prim": {"required": "same R primitive and Ty, all argument transports in original order", "forbidden": "registry renaming or ignored undefined argument", "silently_ignored": "none"},
+    "ReadOutcome.at": {"required": "map coordinate", "forbidden": "tensor-domain mismatch", "silently_ignored": "none"},
+    "ReadOutcome.const": {"required": "same rational, empty footprint", "forbidden": "turn into ordinary read or missing", "silently_ignored": "coordinate adapter, deliberately no coordinate"},
+    "ReadOutcome.reject": {"required": "preserve reject; cannot inhabit admitted resolved read", "forbidden": "silently admit", "silently_ignored": "coordinate adapter, deliberately no coordinate"}
+  },
+  "remaining_authoring_gates": [
+    "Twenty-one production controls and copied-probe parity pass. Twelve mutation controls pass, including five copied-production computation mutations; no live-production mutation claim.",
+    "No dedicated mutant observed for admitted constant-read consumer or boundary-reject consumer specifically; copied policy const/raw mutants hit boundary-constant. Full per-fixture mutation coverage is not claimed.",
+    "No same-old-numeric-UID collision or display-name fixture: declarations have no display names; fixture uses fresh distinct target UIDs. Whole-component disjoint namespace allocation is outside the present embedding API.",
+    "Automatically derived axis adapter constructor remains absent by accepted explicit-certified-adapter profile. Pointwise policy identity/composition theorems now compile.",
+    "No full default build or whole IndexedExecutionExperiment build; authoring checked new targeted modules only.",
+    "No check-snippet run: handoff deliberately ships zero Lean prose blocks, only exact compiled patches.",
+    "Patches generated from scratch commits but not replayed in a second checkout; parent must replay and validate exact task-order applicability."
+  ],
+  "execution_estimate": {
+    "tasks": 4,
+    "implementer_dispatches": "3 bounded patch-apply/build/review units; optional fourth fixture-probe follow-up to close coverage gates",
+    "max_fixture_cases": 21,
+    "current_cycles": 12,
+    "estimated_extra_cycles_for_strict_fixture_coverage": "6-9 grouped controls",
+    "per_dispatch_turn_target": "under 40, split if approaching 55",
+    "budget_status": "Initial phase stayed within 55 turns. Parent explicitly authorized at most 25 further turns; this follow-up stays within that extension. Cumulative authoring exceeds the original single-dispatch 55-turn cap; reported, not silently treated as a fresh context. Retained context remains below 250k. Parent owns aggregate token-report accounting."
+  }
+}

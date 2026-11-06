@@ -65,6 +65,18 @@ def Domain.read (d : Domain x y) (h : Δ → Γ) (a : AdmittedRead ℚ x Γ) :
     intro γ
     simp only [Domain.policy, Equiv.symm_apply_apply, a.admission, outcome_map]
 
+theorem Domain.policy_id (p : ReadPolicy ℚ x) (q : RawCoord x) :
+    ((Domain.id x).policy p).resolve q = p.resolve q := by
+  change mapOutcome (Equiv.refl (Coord x)) (p.resolve q) = p.resolve q
+  cases p.resolve q <;> rfl
+
+theorem Domain.policy_comp (a : Domain x y) (b : Domain y z)
+    (p : ReadPolicy ℚ x) (q : RawCoord z) :
+    ((a.comp b).policy p).resolve q = (b.policy (a.policy p)).resolve q := by
+  change mapOutcome (a.coord.trans b.coord) (p.resolve (a.raw.symm (b.raw.symm q))) =
+    mapOutcome b.coord (mapOutcome a.coord (p.resolve (a.raw.symm (b.raw.symm q))))
+  cases p.resolve (a.raw.symm (b.raw.symm q)) <;> rfl
+
 structure Embedding (src dst : Declarations Unit) where
   tensor : src.Tensor → dst.Tensor
   injective : Function.Injective tensor
