@@ -250,6 +250,24 @@ so it cannot see an orientation error by itself).
 - The wording in `KnownGapTest`, `RejectTest` (UF5 comment) and `GenerativeTest` (SS2) still describes the
   "write it standalone after the scan" workaround; it is accurate for free-read read-outs but does not mention the
   pinned-literal path. About 0.3 dispatch.
+- Whole-branch review (one read-only adversarial reviewer on the classification rule, code reading only, no
+  build): no Critical or Major finding; no previously accepted program changes meaning (a pinned read of a state
+  was always rejected by `stateReadNotCausal`, so those statements never produced an observable value), and
+  nothing accepted before is rejected now. Four Minor findings, parked:
+  - An out-of-range pinned read (`Zf[j] := S[j, 3]` with history extent 3) is now a plain statement and
+    zero-pads identically in the reference, the checked plan and JAX, so no differential catches it; it used to
+    be rejected. A range check on pinned reads of scan states (cf. `pinnedLiteralsInRange` for scan writes)
+    would. About 1 dispatch, plus a decision whether zero-padding of out-of-range reads is intended here.
+  - The predicate exclusion is partial: an axiswise `where=` mask over a scan axis is not inspected, and a post
+    statement may mention the iteration axis through an external tensor (`Y[q] := H[q,2] · c[l]`, or a left-hand
+    side carrying `l`: `y[j,l] := C·h[k,2]`, previously `scanProjectionUnsupported`); these now get ordinary
+    plain-statement meaning. The comment at the rule does not say so. About 0.5 dispatch to state it or tighten it.
+  - Verifier pins in the head block: `P` is never compared with a numpy softmax of the expected `Logits` (a
+    softmax applied to the wrong tensor would pass); `assert 5 not in {3, 4, 2}` compares literals (the shape
+    clause after it is the real check); the head's `H` is tied to `transformer_scan` by a node count only. About
+    0.3 dispatch.
+  - Clauses no test decides alone: the Iverson clause of `postCand`, demotion when a scan BASE case reads a
+    candidate, demotion across two scans, and the left-hand-side clause (above). About 0.5 dispatch.
 - Mutations ran on the f64 leg only; the Python mutation manifests were not re-run (no runtime or emitter code
   changed).
 - Harness counts: production dispatch about 110 calls (cap 60), head-fixture dispatch about 110 (cap 60), most
