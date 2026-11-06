@@ -16,7 +16,8 @@ not maintained as additional runtime state.
 checks, 29 open-composition checks, and 16 independent parity checks.
 The new parity fixture directly compares the composition runner with an
 independently authored three-scalar reference program in a failing case
-and its successful neighbour. It does not establish general program parity.
+and its successful neighbour. The executable checks alone do not establish
+general program parity; a separate conditional proof is described below.
 
 The result supports a narrower claim than a new categorical foundation:
 this representation reproduces the tested reference executions without
@@ -25,10 +26,11 @@ establish a general compositionality theorem, an independently implemented
 expression semantics, or a more efficient implementation.
 
 The prototype is isolated from production imports and uses exact rational
-values. The execution modules remain proof-free. With explicit approval,
-the parity fixture adds finite structural certificates for read admission,
-output roles and schedule coverage, but no semantic correctness theorem,
-new axiom or `sorry`.
+values. The execution modules remain proof-free; a separate experimental
+proof layer now establishes conditional source-contract execution
+correspondence. Its actual match includes read admission, output roles,
+occurrence identities, local body agreement and ordered priorities.
+No new axiom or `sorry` is used.
 
 ## 1. The question and the semantic contract
 
@@ -499,6 +501,25 @@ declared reference program. This is stronger evidence for interface-based
 composition, but not a proof that every composition obligation is local
 or that contracts can be inferred from arbitrary source programs.
 
+### Conditional semantic correspondence
+
+The [proof record](categorical_tensor_logic_proof_record.md) identifies
+`default_run_correspondence`: accepted canonical closure and a supplied
+`SourceContractMatch` imply agreement of the actual `runChecked` and
+`runValidated` default executions. The proof covers input rejection,
+ordered events, related intermediate data, complete/failed/blocked endpoints,
+and sufficient budgets. Failure snapshots omit the reference-only final
+failed wrapper. Complete endpoints transfer whole-store model, uniqueness
+and output denotation; failure transfers absence of a model. Ranking is only
+needed for the additional no-blocking corollary.
+
+The independently authored fixture supplies real matches for every rational
+`other`, with explicit strict (`0`) and total (`4`) theorem instances.
+The numerical endpoint observations above remain executable evidence,
+not substitute hypotheses for the general proof. Contract inference,
+general component composition and independent expression interpretation
+remain outside the result.
+
 Nor is storing all produced values necessarily cheaper than incremental
 accumulation. The experiment measures semantic fidelity, not execution
 speed, memory reduction, or optimality of the abstraction.
@@ -525,8 +546,8 @@ new fixtures remains separate from proving semantic correspondence.
 The most informative follow-ups are:
 
 1. Extend independent reference comparison beyond the tested three-scalar
-   cases, preserving explicit source/contract identity mappings, then
-   prove a suitably scoped correspondence theorem.
+   cases, preserving explicit source/contract identity mappings and supplying
+   the hypotheses of the now-proved conditional correspondence theorem.
 2. Exercise a bounded history while retaining coordinate-level causality
    and the whole-history output contract.
 3. Explore small graph schedules with explicit limits, distinguishing
