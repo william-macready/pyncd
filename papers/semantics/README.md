@@ -87,3 +87,13 @@ open diagrams, model witnesses, causal iteration, and Turi-Plotkin-style
 compatibility. It separates mathematical laws from prototype evidence
 and states correspondence and composition targets without assuming
 one formalism is the best foundation.
+
+[Source-contract execution correspondence: theorem-design brief](categorical_tensor_logic_theorem_brief.md)
+fixes the first semantic theorem's scope, supplied match, state relation,
+proof dependencies, and output-metadata boundary. It distinguishes existing
+reference results from new proof obligations; no proof implementation is
+claimed.
+
+[New-session proof execution brief](categorical_tensor_logic_proof_handoff.md)
+is the handoff for implementing that scoped correspondence theorem,
+including code entry points, proof obligations, validation and exclusions.

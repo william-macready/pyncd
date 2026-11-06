@@ -41,6 +41,11 @@ the tested reference executions while storing produced contributions and
 available values, rather than separately updating reference accumulators
 and pending sets.
 
+The independent reference validation strengthens this evidence: the
+contract-based runner agrees with a separately declared source program
+on both a successful computation and a demanded internal failure.
+Agreement includes intermediate states and event order, not just outputs.
+
 The strongest defensible conclusion is:
 
 > A finite, typed dependency graph with partial expression interpretation
@@ -794,12 +799,54 @@ assembly, completed values, and computation effects. They strengthen
 the case for interface-based logical execution without requiring
 separately mutable accumulators and pending sets.
 
+The independent validation has five consequences for the categorical
+proposal:
+
+1. **The writer interface has an external semantic check.** The contract
+   is no longer tested only against its own expected result. A separately
+   authored reference program agrees on contribution accounting,
+   publication and failure. This supports the contract representation
+   for the tested computation, not automatic contract correctness for
+   arbitrary source programs.
+2. **Completed-value boundaries preserve nonlinear placement.** Both
+   executions collect the two `Pre` contributions before squaring its
+   value. This supports distinguishing an open contribution interface
+   from a readable completed value, rather than treating a subtotal
+   as another interchangeable wire value.
+3. **Definedness is part of the behaviour to preserve.** The strict case
+   fails while its neighbour succeeds. Removing nonselected work on
+   only the reference side changes failure to success and breaks parity.
+   Thus an interpretation or rewrite must preserve demanded work's
+   definedness, not merely numerical results on successful runs.
+   This reinforces the domain-sensitive laws of Section 3.
+4. **Whole-program completion is not an arbitrary graph convention.**
+   `Audit` is genuinely internal in the independently declared reference,
+   yet its failure prevents success after `Out` is published.
+   The graph's obligation to finish internal work therefore agrees
+   with the source's complete-model semantics in this test.
+5. **A precise operational correspondence is now a concrete proof target.**
+   The two state representations agree throughout the matched executions,
+   including derived accumulator and pending data. This gives a tested
+   candidate relation to generalise, rather than requiring a new
+   evaluator or an assumed global graded-action law first.
+
+The remaining gap is consequently sharper: we need to establish that
+a source program and an independently supplied writer contract describe
+the same typed occurrences, reads, destinations and completion
+obligations, then prove that their executions correspond.
+Contract acceptance alone cannot establish this source-to-contract match.
+
 An important restraint follows: **the prototype validates a different
 state representation more strongly than it validates a general composition
 theory**. Independent-fragment composition has contract-based checks and
 two direct reference comparisons. Contract inference, a composition
 theorem, and coverage beyond the tested finite interfaces remain
 unestablished.
+
+Neither the matched event traces nor the mutation control proves that
+all schedules, all program contexts, or all St/Br constructions preserve
+the same behaviour. Expression interpretation is still shared, and no
+memory-efficiency or floating-point conclusion follows.
 
 ## 7. St/Br, indexed arrays, and open diagrams
 
@@ -1012,7 +1059,13 @@ representation arguments.
 
 ### 9.1. Closed-graph/reference correspondence: unproved
 
-Fix a well-formed finite program $P$ over the prototype's exact-rational
+The scoped design for the contract-based runner is developed in the
+[theorem-design brief](categorical_tensor_logic_theorem_brief.md).
+The baseline outline below introduces the state relationship; the brief
+separates the supplied source-contract match from the new proof obligations.
+
+For the baseline runner, fix a well-formed finite program $P$ over
+the prototype's exact-rational
 registry and a complete priority schedule $S$.
 Let $\beta$ be a raw input binding, which may omit required inputs,
 and $G$ a fragment accepted by `close` for $P$ and $S$.
@@ -1048,11 +1101,26 @@ arbitrary different schedules.
 This theorem is deliberately concrete. It should precede a general
 categorical packaging of the operational rules.
 
-For the separate contract-based runner, a general result also needs
-explicit correspondence between source roles, occurrences, body meanings,
-destinations, and the complete contract writer/collector interfaces.
-Contract acceptance alone does not establish that source correspondence.
-The independent fixture checks one such correspondence experimentally.
+For the separate contract-based runner, the independent validation
+suggests the following source-to-contract correspondence requirements:
+
+1. Input/output roles and coordinate domains agree, including empty
+   tensors and internal nonoutputs.
+2. Every actual source occurrence corresponds to exactly one writer,
+   preserving distinct duplicate contributions and guard-admitted
+   assignments.
+3. Matched writers have the same destination, full read requirements,
+   and body interpretation, including definedness.
+4. Collectors cover every defined coordinate and exactly its complete
+   writer family, including zero-writer fibers.
+5. The chosen priorities and observation identities are matched
+   explicitly; invalid or missing mappings are rejected.
+
+Given these requirements, the proposed proof would establish a step
+correspondence using the state relation above. Rank conditions would
+add progress, not substitute for the source-to-contract correspondence.
+The independent fixture checks one instance experimentally; none of
+these general requirements is proved merely by accepting a contract.
 
 ### 9.2. Sealed sequential composition: unproved
 
@@ -1146,10 +1214,16 @@ Tensor Logic or establish a universal composition theorem.
 
 The independently constructed three-scalar reference now agrees with
 the composition runner in the strict-failure and total-neighbour cases,
-without supplying its writer contract. The next step is to generalise
-that evidence to more interfaces and schedules and prove a scoped
-graph/reference correspondence. Composition that retains complete-model
-witnesses remains a further theorem target.
+without supplying its writer contract. This strengthens the case for
+explicit completion boundaries and effect-sensitive interpretation,
+while leaving the choice of a general categorical presentation open.
+
+The next step is to generalise the tested state relation, make the
+source-to-contract correspondence explicit, and prove a scoped
+graph/reference result. More interfaces and schedules can test those
+requirements before a general composition theorem is attempted.
+Composition that retains complete-model witnesses remains a further
+theorem target.
 
 This ordering keeps elegance accountable to the actual semantics:
 make the concrete structure sound and compositional, then choose the
