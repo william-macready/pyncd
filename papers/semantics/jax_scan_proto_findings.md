@@ -1,8 +1,10 @@
 # Two-layer transformer as a checked-plan scan: prototype findings (Lean only)
 
 Date 2026-11-05. Serves `leanncd/docs/superpowers/specs/2026-11-05-jax-scan-lax-design.md`, open questions 1-3.
-Prototype: `leanncd/experiments/jax_bridge/ScanTransformerProto.lean` (scratch; not in the lakefile; no production
-Lean and no JAX code touched). Every number below is from a real run of that file.
+Prototype: `leanncd/experiments/jax_bridge/ScanTransformerProto.lean` as committed in `a4dbfbda` (scratch; it was
+never in the lakefile and has since been REMOVED: its program text now lives in `EvalPlanNonlinSmoke.lean`
+(`scanProg`, `unrolledProg`) and `ScanAffineEmitTest.lean`). No production Lean and no JAX code was touched.
+Every number below is from a real run of that file.
 
 ## Verdict: ACCEPTED (no change needed)
 
@@ -13,7 +15,10 @@ precisions. Open questions 1, 2 and 3 of the design note are answered yes; the w
 
 ## Reproduce
 
+The file is only in history now. Restore it from `a4dbfbda`, then run it:
+
 ```
+git show a4dbfbda:leanncd/experiments/jax_bridge/ScanTransformerProto.lean > leanncd/experiments/jax_bridge/ScanTransformerProto.lean
 bash /abs/path/to/worktree/leanncd/scripts/lean-file.sh /abs/path/to/worktree/leanncd experiments/jax_bridge/ScanTransformerProto.lean
 ```
 

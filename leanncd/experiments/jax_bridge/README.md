@@ -412,13 +412,15 @@ the emitter), a tropical or otherwise non-real state (`scanNonRealState` / `unsu
 scratch tensor inside a scan (`unsupportedDestDType`), a state write outside the complete state
 (`scanWriteOutOfRange`), a step-block context position other than `#[0]` (`scanContextPos`), and two
 coordinates of one write landing on one offset (`scanWriteCollision`; the runtime scatter `.at[idx].set` is
-unspecified for duplicates). `einsumOnly`, both candidate conversions and the evidence path still refuse a
-scan with `unsupportedStep`.
+unspecified for duplicates). An Iverson (predicate) factor inside a scan block assignment passes the gate and is
+refused by the emitter with `iversonFactor`, located by the outer node index with block-relative term and factor
+indices, exactly as for an outer assignment; no test pins the scan case. `einsumOnly`, both candidate
+conversions and the evidence path still refuse a scan with `unsupportedStep`.
 
 Fixtures (in `run-evalplan-nonlin.sh`'s differential): `transformer_scan` / `transformer_scan32`, a two-layer
 real-RMSNorm transformer as a scan over the layer axis with untied per-layer weights, and
 `transformer_unrolled` / `transformer_unrolled32`, the same model as two flat layers. The unrolled pair is the
-oracle: scan H layers 1 and 2 equal unrolled H1 and H2 bit for bit, in both precisions, eager and jit
+oracle: scan H layers 1 and 2 equal unrolled H1 and H2 bit for bit on CPU, in both precisions, eager and jit
 (`ORACLE_TOL` is exactly 0). Eight donor scans from `Eval.Plan.ScanCompileTest` (list `scanSurvey64`, binary64
 only, flag `linear_ok`) are listed in `papers/semantics/jax_scan_fixture_survey.md`. Slice record:
 `papers/semantics/jax_scan_record.md`.

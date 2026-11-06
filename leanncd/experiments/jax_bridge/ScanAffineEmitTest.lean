@@ -6,7 +6,7 @@ import EvalPlanCodegen
 /-!
 # `renderScanNode` structural pins on the two-layer transformer scan
 
-The plan is the real checked scan of `ScanTransformerProto.lean` (the one-layer-per-step transformer,
+The plan is the real checked scan of the two-layer transformer (as `scanProg` in `EvalPlanNonlinSmoke.lean`;
 `iter l = 3`, history extent 3 = two steps, state `H(q, m, l)` of shape `[3, 4, 3]`, untied weights read
 as `W[l, ...]`), built through `compileToScheduled` -> `prepareEvalPlan`. Only SIGNATURES matter here
 (zero-filled inputs): every pin below is VALUE-INDEPENDENT and is computed from the plan's own geometry

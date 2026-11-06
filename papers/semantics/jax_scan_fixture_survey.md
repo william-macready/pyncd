@@ -7,9 +7,13 @@ refusals say about the next increments.
 
 ## Classification
 
-Every donor schedule in `ScanCompileTest` was pushed through the nonlinearity differential's pipeline
-(prepare, JAX gate, Lean dense run, JAX eager and jit, compare). No MISMATCH was found: every donor that the
-gate accepts agrees with Lean within the differential's tolerance.
+The 14 donor schedules of `ScanCompileTest` in the table below were pushed through the nonlinearity
+differential's pipeline (prepare, JAX gate, Lean dense run, JAX eager and jit, compare). About a dozen other
+schedules in that file (for example `scratchUnusedF32Sched`, `scratchThenPlainReadSched`, `lateNopeSched`,
+`scratchMaxSched`, `contractBaseSched`, `neutralScratchSched`, `allNeutralStateSched`, `rejSched`) were NOT
+classified: they are mostly negative guards or tropical/f32 variants, but that is not checked here. No MISMATCH
+was found among the classified donors: every one the gate accepts agrees with Lean within the differential's
+tolerance.
 
 | Class | Donor | What the donor is | Outcome |
 |---|---|---|---|

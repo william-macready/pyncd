@@ -681,7 +681,8 @@ def unrolledEnv32 : NamedDenseEnv32 :=
       [(n ++ "1", t32 sh (layerSlice d 0)), (n ++ "2", t32 sh (layerSlice d 1))])
 
 /-- Unrolled oracle: the two layers of `scanProg` as two hand-copied flat layers (no scan); layer `n`
-    writes `Hn(q, m)`. The program text is `unrollProg64` of `ScanTransformerProto.lean`. -/
+    writes `Hn(q, m)`. Same model as `scanProg`; the scan fixtures are tied to it by the oracle in
+    `evalplan_nonlin_smoke.py`. -/
 def unrolledProg : TLProgram := tlprog!{
   tensor f64 X(q, m), W_Q1(h, k, m), W_K1(h, k, m), W_V1(h, k, m), W_O1(m, h, k), W_in1(d, m), W_out1(m, d)
   tensor f64 W_Q2(h, k, m), W_K2(h, k, m), W_V2(h, k, m), W_O2(m, h, k), W_in2(d, m), W_out2(m, d)

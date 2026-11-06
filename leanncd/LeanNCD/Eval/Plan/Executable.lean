@@ -359,11 +359,11 @@ def checkJaxScatterSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
   jaxAssignSupported sigs nodeIndex checked.storageKind checked.plan.compute
 
 /-- The scan runtime steps exactly one history axis. Its own predicate so it is testable on a raw
-    plan (a checked multi-axis scan is not constructible today). -/
+    plan too (`ScanJaxGateTest` also pins it on the compiled two-axis `coupledSched`). -/
 def jaxScanSingleAxis (raw : RawScanPlan) : Bool := raw.historyExtents.size == 1
 
 /-- The scan counterpart of `checkJaxAssignSupport`: one verdict for a checked scan node, decided in
-    this declared order (fixtures pin it): the history-axis count (`scanMultiAxis`, unless there is
+    this declared order (only state-before-assign is pinned): the history-axis count (`scanMultiAxis`, unless there is
     exactly one), each state's `initValue` in state order (`scanNonRealState`, unless `.zero`), then
     every `.assign` step of the BASE block followed by every one of the STEP block, each through the
     same re-run + private policy as an outer assignment but under the BLOCK's own `tensorSigs` (the

@@ -19,7 +19,7 @@ through `jax.lax.scan`. Evidence, all observed on the branch tip:
 | --- | --- |
 | Build: `Tests` + `JaxExperiment` | green, 8844 jobs |
 | Nonlinearity differential (`run-evalplan-nonlin.sh`) | 32 binary64 and 24 binary32 fixtures pass (was 22 + 22); rtol/atol `1e-12`/`1e-14` (f64), `1e-5`/`1e-6` (f32) |
-| Unrolled oracle | JAX scan H layers 1,2 equal JAX unrolled H1,H2 bit for bit, f64 and f32, eager and jit; `ORACLE_TOL` is exactly 0 |
+| Unrolled oracle | JAX scan H layers 1,2 equal JAX unrolled H1,H2 bit for bit on CPU, f64 and f32, eager and jit; `ORACLE_TOL` is exactly 0 |
 | Python mutation manifest `jax_scan_mutations_python.json` | 6/6 killed (JS-P-01..06) |
 | Lean mutation manifest `jax_scan_mutations_post.json` | 11 entries, all killed (g1..g5 gate, e1..e5 emitter, c1) |
 | Re-pinned `jax_nonlin_mutations_post.json` | 8/8; five line pins moved +148 and entry JN-T1-06 was rewritten for the new `.scan` arm |
@@ -109,7 +109,13 @@ Costs are the controller's rough estimates in dispatches (one dispatch is the Ru
 | Fixture separating snapshot from updated state | NOT possible for single-axis causal scans (finding 4); revisit only with multi-axis scans |
 | GPU tolerance | Tolerances were measured on CPU only. About 1 dispatch on a GPU host |
 | f32 siblings of the eight donor scans | The donors are binary64 only. About 1 dispatch |
-| Re-run the fixture survey against the gate | Update its refusal column (`scanMultiAxis`). About 0.5 dispatch |
+| Re-run the fixture survey against the gate | Update its refusal column (`scanMultiAxis`) and classify the dozen schedules it leaves out. About 0.5 dispatch |
+| Harden the runtime against malformed records (review R1, Minor) | Step writes check only that the index length is a multiple of the step count, not `steps * output size` (a base write checks it); a step assign without `context_pos` dies on an accidental `TypeError`; `zip(dests, result)` would drop states if `dests` were short. All unreachable from `renderScanNode`. About 0.5 dispatch, then re-run the Python manifest and the differential |
+| `scanContextPos` backstop has no test (review R2, Major) | The check is unreachable from a checked plan (`Block.lean` forces the step assign's context shape) and not constructible from checked input (private constructors); manifest entry JS-L-e3 (`#[0]` to `#[1]`) is killed by the happy path only. Decide: delete the check, or build a `CheckedPlanBlock` test hook. About 0.5 dispatch; deleting shifts the `EvalPlanCodegen.lean` pins |
+| Mutation coverage beyond `transformer_scan` (review R2, Minor) | The Python manifest mutates only that fixture; the T = 0 early return, multi-scan, `_check_index`, `_store_result` and step-write collisions have fixtures but are never mutated on purpose. About 1 dispatch |
+| Independent pins for five of the eight donor scans (review R2, Minor) | Only `scan_extentone`, `scan_deephistory` and `scan_twoscan` have a plain-Python recomputation; the other five are Lean-versus-JAX only, so a bug shared by both would pass. About 1 dispatch |
+| Scan block assignment with an Iverson factor (review R2, Minor) | The gate admits it, the emitter refuses with `iversonFactor`; unpinned. About 0.3 dispatch |
+| `allowContext` scope (review R2, Minor) | It is applied to the base block too (unreachable: a base block's context shape is empty) and its `false` default is observationally unpinned. Tie it to `isStep`. About 0.3 dispatch |
 
 ## 6. Budget (Rule 6)
 
@@ -123,8 +129,11 @@ Harness-counted tool calls per dispatch, against the Rule 6 cap for that dispatc
 | A3 | 54 | 55 |
 | A4 | 50 | 50 |
 | A5 | 74 | 50 |
+| Docs sweep and record | 67 | 45 |
+| Review R1 (correctness) | 34 | 45 |
+| Review R2 (gate, tests, docs) | 37 | 45 |
 
-A1, A2, A5 and the prototype breached the cap; A3 and A4 were within it. Slice total input tokens were NOT
+A1, A2, A5, the docs dispatch and the prototype breached the cap; A3, A4 and both reviewers were within it. Slice total input tokens were NOT
 measured (no `token-report.py` run), so the 175M execution and 50M authoring figures cannot be checked here.
 Earlier dispatches under-reported their own call counts by roughly 2x, so these are the harness counts.
 
@@ -153,3 +162,32 @@ leanncd/scripts/mutation-manifest.sh leanncd papers/semantics/jax_nonlin_mutatio
 ```
 
 `jax_scatter_mutations_post.json` fails `--check` today (finding 7).
+
+**Re-pin after edits.** Every entry of `jax_scan_mutations_post.json` pins a `file:line:0` failure location:
+`ExecutableTest.lean` (g1, g3, g4, g5), `ScanJaxGateTest.lean` (g2), `ScanAffineEmitTest.lean` (e1, e2) and
+`EvalPlanCodegen.lean` (e3, e4, e5, c1), and `jax_nonlin_mutations_post.json` pins five `EvalPlanCodegen.lean`
+lines. Any edit that adds or removes lines above a pinned line breaks the pin (this slice moved the nonlin pins by
++148). After such an edit: run the manifest, read each mismatching `expect`, and re-pin to the observed line. The
+Python manifest keys on message text, not lines, so it does not need this.
+
+## 8. Whole-branch review
+
+Two read-only reviewers with different lenses ran on the branch tip before the merge.
+
+- **R1, correctness against `runDenseScanWith`:** no Critical or Major findings. Hand-built scan records (deep
+  history at `l-1` and `l-2` over a state with a NaN at a masked lane's placeholder index; two coupled states;
+  overlapping writes, last write wins as in Lean; T = 0; f32 with x64 on and off; two chained scans) all matched a
+  numpy re-implementation of Lean's semantics bit for bit, eager and jit. Three Minor findings about malformed
+  records the emitter never produces are parked above. One correction to the review brief: Lean's `writesCollide` is
+  applied to BASE writes only, so two step writes of one step may overlap; Lean and the runtime both apply step
+  writes in `stepWrites` order, last write wins, so they agree and the emitter does not rely on that check.
+- **R2, gate, tests, documentation:** no Critical findings. Fixed before the merge: the unbuilt scratch prototype
+  `ScanTransformerProto.lean` is removed (the program text lives in `EvalPlanNonlinSmoke.lean` and
+  `ScanAffineEmitTest.lean`; the prototype findings file says how to restore it from `a4dbfbda`); the survey no
+  longer claims it classified every donor; the README names the CPU scope of "bit for bit" and the unpinned
+  Iverson-in-scan refusal; the gate's doc comments no longer claim a fixture pins the full check order or that a
+  checked multi-axis scan cannot be constructed; the re-pin instruction above was added. Parked above: the
+  `scanContextPos` backstop, mutation coverage beyond `transformer_scan`, independent pins for five donors, and the
+  `allowContext` scope.
+- **Not reviewed by anyone:** the f32 behaviour of the eight donor scans (binary64 only), GPU behaviour, and scan
+  nodes inside the evidence path (refused).
