@@ -383,6 +383,13 @@ inductive EvalError
       reading base came before or after the state's own base. `state` is the first state name read,
       in right-hand-side order. -/
   | stateReadInBaseBlock (scan : String) (baseIdx : Nat) (state : String)
+  /-- A PLAIN (post-scan) statement `stmt` reads scan state `state` with dimension `dim`, one of the
+      state's ADVANCING dimensions, pinned to the literal `lit` outside `[0, extent)`. Unlike a free
+      or shifted read, which zero-pads out of range, a pinned literal on an advancing dimension names
+      a history slot that does not exist, and the old reference silently read `0`. Mirrors the checked
+      backend's `ScanCompileError.plainStatePinOutOfRange`. Raised by `evalScheduled` for the first
+      offending read of `stmt`, in right-hand-side order, then its lowest advancing dimension. -/
+  | plainStatePinOutOfRange (state stmt : String) (dim : Nat) (lit : Int) (extent : Nat)
   -- Reduction-marker refusals (reference-alignment, marker group), raised by `checkNormMarkers`
   -- (`Nonlin.lean`) at the entry of every statement evaluator. Positions are 0-based indices into
   -- the statement's WHOLE LHS slot list (iteration slots included), exactly as the checked
@@ -464,6 +471,9 @@ but {actual} wide in a later one"
 affine slot at dimension {dim} that names no source axis"
   | .stateReadInBaseBlock scan baseIdx state =>
       s!"evalScan {scan}: base statement {baseIdx} reads scan state {state}"
+  | .plainStatePinOutOfRange state stmt dim lit extent =>
+      s!"evalScheduled: statement {stmt} reads scan state {state} at {lit} on advancing dimension \
+{dim}, outside [0, {extent})"
   | .unmarkedReductionAxis stmt pos =>
       s!"{stmt}: LHS slot {pos} is marked (·) as a reduction axis but the statement is not axiswise"
   | .multipleMarkedReductionAxes stmt a b =>

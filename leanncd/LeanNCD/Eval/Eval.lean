@@ -164,14 +164,19 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
         | .ok () => pure ()
         | .error e => throw (.shape e)
         let mut env := inputs
+        -- published scan state -> its advancing dimensions, for the plain-read pin check below
+        let mut stateAdv : HashMap String (List Nat) := {}
         for sc in sched.stmts do
           match sc with
           | .plain s =>
+              checkPlainStateReads stateAdv env s
               let (nm, t) ← evalPlain sched.decls env sizes s
               env := env.insert nm t
-          | .scan .. =>
+          | .scan _ _ _ recur _ =>
               let outs ← evalScan sched.decls env sizes sc
               for (nm, t) in outs do env := env.insert nm t
+              for (nm, adv) in scanStateAdvancingDims (outs.map (·.1)) recur do
+                stateAdv := stateAdv.insert nm adv
           | .scanPre nm _ _ => throw (.unsupportedRecurMorphism .evalScheduled nm)
         return env
       match execution with

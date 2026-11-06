@@ -3,6 +3,7 @@ import LeanNCD.Eval.Scan
 import LeanNCD.Eval.Eval   -- `evalPlain`, exercised directly by the f32 entry-guard fixtures below
 import LeanNCD.Eval.Plan.Compile   -- `prepareEvalPlan`, for the F3-a (g) reference-vs-checked bit fixture
 import LeanNCD.Eval.Plan.Adapter   -- `runPreparedDense`, same
+import Eval.Plan.ScanCompileTest   -- the checked-plan fixtures the pinned-state-read twins below reuse
 namespace LeanNCD.Eval
 open Std
 private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
@@ -1385,6 +1386,120 @@ run_cmd do
     throwError s!"F3-a (g) checked bits: {bitsOf chk}"
   unless bitsOf ref == bitsOf chk do
     throwError s!"F3-a (g) the reference must be bit-identical to the checked path: {bitsOf ref} vs {bitsOf chk}"
+
+/-! ### Reference-alignment: a plain read of a scan state pinned out of range on an advancing dimension
+
+Twins of the checked-plan fixtures in `ScanCompileTest` (`plainReadAfterScans`, `plainReadAfterCoupled`,
+whose doc states the geometry): a plain statement reading a scan state at a literal outside
+`[0, extent)` on an ADVANCING dimension names a history slot that does not exist, so the reference
+rejects it exactly where `prepareEvalPlan` does (`plainStatePinOutOfRange`). Free, shifted and
+non-advancing-dimension reads keep the zero-pad. Each REJECT is pinned on both backends at once. -/
+
+/-- The reference's outcome for `sched` against `ScanCompileTest`'s explicit-f64 declarations. -/
+private def refPlain (sched : ScheduledProgram) (inputs : HashMap String DenseTensor) :
+    Except EvalFailure EvalReport :=
+  evalScheduled (Plan.ScanCompileTest.explicitF64Sched sched) inputs
+
+/-- A REJECT row: the reference raises the wanted `EvalError` AND the checked plan the wanted cause. -/
+private def rejectedOnBoth (what : String) (ref : Except EvalFailure EvalReport)
+    (chk : Option Plan.PlanCompileCause) (wantRef : EvalError → Bool)
+    (wantChk : Plan.PlanCompileCause) : Except String Unit :=
+  match ref with
+  | .ok _ => .error s!"{what}: the reference accepted a pinned out-of-range state read"
+  | .error f =>
+      if !wantRef f.error then .error s!"{what}: wrong reference rejection: {f.error}"
+      else if chk != some wantChk then .error s!"{what}: the checked plan disagrees"
+      else .ok ()
+
+private def pinnedStateReadRejects : Except String Unit := do
+  let one (lhs : List LHSSlot) (f : Factor) :=
+    (refPlain (Plan.ScanCompileTest.plainReadAfterScans lhs f) Plan.ScanCompileTest.rejInputs,
+     Plan.ScanCompileTest.plainReadAfterScansCause lhs f)
+  let coupled (lhs : List LHSSlot) (f : Factor) :=
+    (refPlain (Plan.ScanCompileTest.plainReadAfterCoupled lhs f) Plan.ScanCompileTest.coupledInputs,
+     Plan.ScanCompileTest.plainReadAfterCoupledCause lhs f)
+  -- one-axis state `S`, extent 3: pinned at the extent, pinned negative, through a unary factor.
+  let (r, c) := one [] (.read "S" [.const 3])
+  rejectedOnBoth "S[3]" r c
+    (fun | .plainStatePinOutOfRange "S" "Y" 0 3 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 3 3))
+  let (r, c) := one [] (.read "S" [.const (-1)])
+  rejectedOnBoth "S[-1]" r c
+    (fun | .plainStatePinOutOfRange "S" "Y" 0 (-1) 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 (-1) 3))
+  let (r, c) := one [] (.unaryFn .exp "S" [.const 3])
+  rejectedOnBoth "exp S[3]" r c
+    (fun | .plainStatePinOutOfRange "S" "Y" 0 3 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 3 3))
+  -- two-axis state `G` (dims `(r, j, c)`, advancing 0 and 2), each advancing dim on its own.
+  let (r, c) := coupled [.free Plan.ScanCompileTest.axJ]
+    (.read "G" [.const 3, .axis Plan.ScanCompileTest.axJ, .const 2])
+  rejectedOnBoth "G[3,j,2]" r c
+    (fun | .plainStatePinOutOfRange "G" "Y" 0 3 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "G" 1 0 0 0 3 3))
+  let (r, c) := coupled [.free Plan.ScanCompileTest.axJ]
+    (.read "G" [.const 0, .axis Plan.ScanCompileTest.axJ, .const 3])
+  rejectedOnBoth "G[0,j,3]" r c
+    (fun | .plainStatePinOutOfRange "G" "Y" 2 3 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "G" 1 0 0 2 3 3))
+
+run_cmd do
+  match pinnedStateReadRejects with
+  | .error m => throwError m
+  | .ok () => pure ()
+
+-- ACCEPT neighbours, one-axis state `S`. A pin at the last slot reads `S`'s own slice; a free read
+-- is the whole state; `l - 1` at `l = 0` and `l + 1` at `l = 2` still zero-pad (the pad is `0`).
+run_cmd do
+  let run (lhs : List LHSSlot) (f : Factor) :=
+    refPlain (Plan.ScanCompileTest.plainReadAfterScans lhs f) Plan.ScanCompileTest.rejInputs
+  let ax := Plan.ScanCompileTest.axL
+  let outs (what : String) (lhs : List LHSSlot) (f : Factor) : Except String (DenseTensor × DenseTensor) :=
+    match run lhs f with
+    | .error e => .error s!"{what}: {e.error}"
+    | .ok rep => match rep.env["S"]?, rep.env["Y"]? with
+        | some S, some Y => .ok (S, Y)
+        | _, _ => .error s!"{what}: no S or Y in the report"
+  let fail (m : String) : Lean.Elab.Command.CommandElabM Unit := throwError m
+  match outs "S[2]" [] (.read "S" [.const 2]) with
+  | .error m => fail m
+  | .ok (S, Y) =>
+      unless S.shape == [3] && Y.data == #[S.data[2]!] do
+        fail s!"S[2] must read S's own last slot: S {repr S.data}, Y {repr Y.data}"
+  match outs "S[l]" [.free ax] (.read "S" [.axis ax]) with
+  | .error m => fail m
+  | .ok (S, Y) => unless Y.data == S.data do fail s!"S[l] must equal S: {repr S.data} vs {repr Y.data}"
+  match outs "S[l-1]" [.free ax] (.read "S" [.shift ax (-1)]) with
+  | .error m => fail m
+  | .ok (S, Y) =>
+      unless Y.data == #[(0 : Float), S.data[0]!, S.data[1]!] do
+        fail s!"S[l-1] must zero-pad at l = 0: S {repr S.data}, Y {repr Y.data}"
+  match outs "S[l+1]" [.free ax] (.read "S" [.shift ax 1]) with
+  | .error m => fail m
+  | .ok (S, Y) =>
+      unless Y.data == #[S.data[1]!, S.data[2]!, (0 : Float)] do
+        fail s!"S[l+1] must zero-pad at l = 2: S {repr S.data}, Y {repr Y.data}"
+
+-- ACCEPT neighbours, two-axis state `G`: in range on both advancing dims reads the state's slice;
+-- an out-of-range pin on the NON-advancing dimension `j` (extent 2, pinned at 5) zero-pads.
+run_cmd do
+  let axR := Plan.ScanCompileTest.axR; let axC := Plan.ScanCompileTest.axC
+  let axJ := Plan.ScanCompileTest.axJ
+  let run (lhs : List LHSSlot) (f : Factor) :=
+    refPlain (Plan.ScanCompileTest.plainReadAfterCoupled lhs f) Plan.ScanCompileTest.coupledInputs
+  match run [.free axJ] (.read "G" [.const 2, .axis axJ, .const 2]) with
+  | .error e => throwError s!"G[2,j,2]: {e.error}"
+  | .ok rep => match rep.env["G"]?, rep.env["Y"]? with
+      | some G, some Y =>
+          unless G.shape == [3, 2, 3] && Y.data == #[G.data[14]!, G.data[17]!] do
+            throwError s!"G[2,j,2] must read G's slice: G {repr G.data}, Y {repr Y.data}"
+      | _, _ => throwError "G[2,j,2]: no G or Y in the report"
+  match run [.free axR, .free axC] (.read "G" [.axis axR, .const 5, .axis axC]) with
+  | .error e => throwError s!"G[r,5,c]: a non-advancing pin must keep the zero-pad, got {e.error}"
+  | .ok rep => match rep.env["Y"]? with
+      | some Y => unless Y.data == Array.replicate 9 (0 : Float) do
+          throwError s!"G[r,5,c] must read zeros: {repr Y.data}"
+      | none => throwError "G[r,5,c]: no Y in the report"
 
 end LeanNCD.Eval
 
