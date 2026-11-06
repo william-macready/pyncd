@@ -412,9 +412,11 @@ reached by $r$.
 
 For example, reciprocal applied strictly to the rational array $(2,0)$
 fails. Selecting its first coordinate before taking reciprocal succeeds.
-This logical example illustrates the domain distinction; the prototype's
-strict-array checks use the existing expression fixtures rather than a
-new graph-level batching implementation.
+This logical example illustrates the domain distinction. The effect
+extension now tests strict tabulation and selection inside graph/reference
+execution, and the composition extension retains that failure after
+joining independent fragments. Both reuse expression interpretation;
+neither introduces a generic batching implementation.
 
 A more accurate statement uses a **definedness order**. For partial
 functions $h$ and $k$ with the same source and target, write
@@ -602,7 +604,17 @@ fixed program, then runtime completion. Its `Fragment.append` merely
 concatenates node lists; it does not yet implement general open
 interfaces, writer ownership, or independent source-program gluing.
 
-That limitation is the central remaining compositional issue.
+The separate composition extension goes further: independently authored
+fragments claim writer capability IDs against a declared contract.
+Its `combine` checks identity collisions and `close` requires exact
+capability coverage, correct destinations and footprints, readable
+ports, and complete collectors. It uses no canonical whole-program graph
+as its closure oracle.
+
+The completeness assumption has moved to the declared contract, not
+disappeared. Numeric capability IDs are checked identities rather than
+unforgeable tokens. General source-program gluing and derivation of
+correct writer contracts remain open.
 
 ### 5.3. Causal execution is not arbitrary equation solving
 
@@ -630,23 +642,25 @@ records the executable observations and reproduction commands.
 
 | Evidence | Supported conclusion | Boundary |
 | --- | --- | --- |
-| 36 passing checks, including 18 matched-priority comparison invocations | Tested graph executions match terminal outcomes, event data, intermediate snapshots, and blocked-read observations | Not 36 distinct programs, exhaustive schedules, or a general proof |
+| 77 passing checks: 36 baseline, 12 effect, 29 composition; 23 matched-priority comparison invocations | Baseline/effect executions match reference observations; independent composition cases meet explicit expected outcomes | Two reference controls repeat original-runner cases; the new composition runner has no general reference-parity adapter |
 | Independent readiness and collector rules | Explicit ports can control tested executions without mutable pending and accumulator state | The program, footprints, and body interpreter are shared with the reference |
 | Full-coordinate snapshots and input-presence checks | The comparison retains internal nonoutputs, unavailable values, zero values, occurrence identities, and empty-input validation | Reference snapshots are replayed from its witnessed events |
 | Nonlinear, failure, chain, cycle, and malformed-port cases | Tests distinguish premature publication, nonlinear placement, waiting, undefinedness, and blocking | No general source admission or bounded-history adapter |
-| Strict-array expression pins | Existing complete-array definedness is retained | Not graph-level evidence for a new strict-array node |
+| Strict-array graph/reference cases and their composition | Undefined nonselected work still fails; the all-defined neighbour succeeds; a select-first shortcut is non-equivalent | The interpreter is shared, and there is no generic array-node lowering theorem |
+| Declared-contract open fragments | Missing and extra writers, identity collisions, incorrect destinations, early closure and forged closed payloads are detected or safely regenerated | Closure is relative to the supplied contract, not discovery of unknown writers |
 | Finite-family grouping/reindex checks | Concrete total-family laws have executable witnesses | No generic partial-lift or graph-batching theorem |
-| Two implementation mutation controls | Tests detect an incorrect collector identity and removal of full-footprint readiness | Not evidence that every possible defect is covered |
+| Two baseline and four extension implementation mutation controls | Tests detect incorrect collection, dropped readiness, bypassed strictness, incomplete closure, and forged collector execution | Not evidence that every possible defect is covered |
 
 The whole Lean build and branch review passed; the experiment adds no
 new proofs, axioms, or `sorry`. This supports the implementation
 hypothesis without establishing universal categorical laws.
 
 An important restraint follows: **the prototype validates a different
-state representation more strongly than it validates a new composition
-theory**. Global writer information is still obtained from the known
-whole program, and the strongest effect-sensitive examples remain
-outside the new graph adapter.
+state representation more strongly than it validates a general composition
+theory**. Independent-fragment composition now has explicit contract-based
+evidence, but those cases use direct expectations rather than full
+reference comparison. Contract inference, a composition theorem, and
+coverage beyond the tested finite interfaces remain unestablished.
 
 ## 7. St/Br, indexed arrays, and open diagrams
 
@@ -983,9 +997,11 @@ tested instances and catches two meaningful implementation defects.
 It does not yet decide the best categorical presentation of general
 Tensor Logic.
 
-The next decisive evidence should be a graph-level strict-array example
-and genuine composition of independently authored writer fragments.
-The next decisive theorem should be closed-graph/reference correspondence,
+The effect and composition extensions now provide the strict-array and
+independently authored writer-fragment examples. The next decisive
+evidence should connect the new composition runner to an independently
+constructed reference program without borrowing its writer contract.
+The next decisive theorem remains closed-graph/reference correspondence,
 followed by composition that retains complete-model witnesses.
 
 This ordering keeps elegance accountable to the actual semantics:

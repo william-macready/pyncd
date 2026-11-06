@@ -1,0 +1,49 @@
+[
+  {
+    "label": "E1 (strict array before selection)",
+    "task": "effect-sequencing",
+    "file": "experiments/indexed_execution/IndexedEffectSequencingTest.lean",
+    "old": "  .at (twoArray other Γ) (fun _ => Program.Plan.ScanHistory.stateCoord (d := 2) 0)",
+    "new": "  .prim (r := RationalReference.registry) RationalReference.Primitive.reciprocal (fun _ => .lit 2)",
+    "targets": ["IndexedExecutionExperiment"],
+    "expect": [
+      "indexed-effect strict-graph-outcome: expected",
+      "indexed-effect shortcut-is-not-strict: expected"
+    ]
+  },
+  {
+    "label": "C1 (all declared writers before publication)",
+    "task": "open-composition",
+    "file": "experiments/indexed_execution/IndexedOpenComposition.lean",
+    "old": "caps.all (fun cap => (producedValue state cap).isSome)",
+    "new": "caps.any (fun cap => (producedValue state cap).isSome)",
+    "targets": ["IndexedExecutionExperiment"],
+    "expect": [
+      "indexed-open open-three-writer-two-target-square-not-premature: failed",
+      "indexed-open intermediate-not-early-readable: failed"
+    ]
+  },
+  {
+    "label": "C2 (complete writer capability closure)",
+    "task": "open-composition",
+    "file": "experiments/indexed_execution/IndexedOpenComposition.lean",
+    "old": "!(fragment.writers.any fun w => w.capability == cap)",
+    "new": "false",
+    "targets": ["IndexedExecutionExperiment"],
+    "expect": [
+      "indexed-open reject-early-closure: failed",
+      "indexed-open invalid-graph-input-and-debug-fuel-distinct: failed"
+    ]
+  },
+  {
+    "label": "C3 (execute validated collector ports)",
+    "task": "open-composition",
+    "file": "experiments/indexed_execution/IndexedOpenComposition.lean",
+    "old": "| .ok checked => execute checked η fuel",
+    "new": "| .ok checked => execute graph η fuel",
+    "targets": ["IndexedExecutionExperiment"],
+    "expect": [
+      "indexed-open forged-collector-ports-cannot-publish-subtotal: failed"
+    ]
+  }
+]
