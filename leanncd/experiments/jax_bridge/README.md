@@ -382,7 +382,7 @@ that copy's `+0` seed under `jax.jit` (the pitfall above), so a jit run can flip
 **Domain errors are an unchecked precondition (decision B1, 2026-11-04).** Lean rejects `log` of `v <= 0`, `sqrt` of `v < 0` and reciprocal of `0` with a typed unary-domain error. This backend lowers to plain `jnp` ops, checks nothing, and promises nothing on such inputs (neither NaN nor an error): it agrees with Lean only where Lean returns ok. Do not read "NaN on bad input" into it. Lean's `relu(NaN)` is `+0` and `exp(log 0) = exp(-inf) = 0` is finite, so a violation can come out as an ordinary-looking number. Lean-error inputs are out of contract and are excluded from the differential comparison; the Lean side of the boundary is pinned by `domainPins` in `EvalPlanNonlinSmoke.lean` (`log(0.0)`, `log(-1.0)`, `sqrt(-4.0)` and `recip(0.0)` are typed errors in Dense, binary64 and binary32). The motivating use is a LayerNorm with `eps` (`sqrt(v + eps)`, then division): its `sqrt` argument is at least `eps` and its divisor is non-zero by construction (fixture `unary_ln`). Fixtures: `unary_exp_oob`, `unary_ops`, `unary_mix`, `unary_red`, `unary_ln`, `unary_empty`.
 
 Run: `./run-evalplan-nonlin.sh` (generates `EvalPlanNonlinSmoke.lean`'s binary64 + binary32 fixtures, then
-`evalplan_nonlin_smoke.py float64|float32`: 32 binary64 and 24 binary32 fixtures (22 + 22 before the scan
+`evalplan_nonlin_smoke.py float64|float32`: 33 binary64 and 25 binary32 fixtures (22 + 22 before the scan
 slice; the added ones are listed under "Scan (affineReference)" below), eager and jit, including the
 single-layer transformer with every materialized output compared (and the same layer with a real RMSNorm,
 `transformer_rms`: 20 plan nodes, 4 unary factors, with a unit-mean-square pin on the norm outputs that Lean/JAX
@@ -424,6 +424,15 @@ oracle: scan H layers 1 and 2 equal unrolled H1 and H2 bit for bit on CPU, in bo
 (`ORACLE_TOL` is exactly 0). Eight donor scans from `Eval.Plan.ScanCompileTest` (list `scanSurvey64`, binary64
 only, flag `linear_ok`) are listed in `papers/semantics/jax_scan_fixture_survey.md`. Slice record:
 `papers/semantics/jax_scan_record.md`.
+
+`transformer_head` / `transformer_head32` append a head to the two-layer scan: a final RMSNorm of
+`Zf = H[q, m, 2] + X[q, m]`, an unembedding `Logits[q, v] := W_U[v, m] · Hf[q, m]` over a vocabulary axis of
+extent 5 (differs from every other extent), and a softmax over `v`. The head is written in the same program as
+the scan: a statement that reads a scan state only through PINNED literal indices on the state's advancing axes
+(`H[q, m, 2]`) is a post-scan consumer (`finalizeScans`, `postNames`) and becomes a plain node AFTER the scan
+node; a statement that reads the state with a free iteration axis is still a per-step intermediate. The
+verifier recomputes the head in numpy from the fixture's inputs and Lean's `H` slice 2 (not from the head's own
+outputs). Details and the mutation checks: the "Head fixture" section of `papers/semantics/jax_scan_record.md`.
 
 Run: `./run-evalplan-nonlin.sh` (and `./run-evalplan-scatter.sh`) first. The generated `.cache` modules go
 stale, and a Python mutation manifest runs against whatever is there. Then, from the repository root:

@@ -490,6 +490,24 @@ run_cmd do
   | .error e => throwError s!"scanUnaryProg: {e}"
   | .ok () => pure ()
 
+-- Post-scan consumer (`Zf[j] := S[j, 2]`, the pinned read of a finished scan history, emitted as a
+-- `.plain` node after the scan): the checked plan matches `evalScheduled` over the whole environment,
+-- the explicit `Zf` value was observed from a run, and `Zf` is exactly the reference's own `S` slice
+-- at `l = 2` (`S` is `[j, l]`, row-major, so the slice is data indices `2` and `5`).
+run_cmd do
+  match checkedPlanOutputEq "postReadProg" ScanCompileTest.postReadProg ScanCompileTest.postReadInputs
+      "Zf" ⟨[2], #[4.0, 18.0]⟩ with
+  | .error e => throwError e
+  | .ok () => pure ()
+  match envOf ScanCompileTest.postReadProg ScanCompileTest.postReadInputs with
+  | .error e => throwError e
+  | .ok env =>
+      match env["S"]?, env["Zf"]? with
+      | some s, some z =>
+          unless z.data == #[s.data[2]!, s.data[5]!] do
+            throwError s!"Zf {repr z.data} is not S's l = 2 slice of {repr s.data}"
+      | _, _ => throwError "S or Zf missing from the reference environment"
+
 /-- Confirm mutating `original` into `mutated` actually changes `outputName`'s value relative to
     `original`'s OWN `evalScheduled` result — a mutation that doesn't break agreement is worse than
     no mutation test at all. -/

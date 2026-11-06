@@ -191,3 +191,84 @@ Two read-only reviewers with different lenses ran on the branch tip before the m
   `allowContext` scope.
 - **Not reviewed by anyone:** the f32 behaviour of the eight donor scans (binary64 only), GPU behaviour, and scan
   nodes inside the evidence path (refused).
+
+## 9. Follow-on: the head fixture and post-scan consumers (2026-11-06)
+
+Goal: run a head after the last layer through both backends: final RMSNorm, unembedding over a vocabulary axis,
+softmax over the vocabulary. Fixtures `transformer_head` / `transformer_head32` (the two-layer scan plus the
+head, one program); the differential is now 33 binary64 and 25 binary32 fixtures (was 32 + 24).
+
+**A production gap, closed.** The first attempt (`Zf[q, m] := H[q, m, 2]` after the scan) failed with
+`ScanCompileError.stateReadNotCausal`: `finalizeScans` classified every non-iteration statement that reads a scan
+state, however it reads it, as a per-step intermediate and folded it into the scan body, where every pinned
+literal read is non-causal. A statement that reads a state only through pinned literal indices on the state's
+advancing axes consumes the finished history, so it is now classified post-scan (`postNames` in `finalizeScans`,
+helpers `readPinsAdvancing` and `Stmt.iversonUids`) and emitted as a `.plain` node AFTER the scan nodes. The rule
+(all must hold, greatest fixpoint): every scan-state read in its statements is pinned on every advancing position
+and no Iverson predicate mentions a scan axis; every other scan-dependent name it reads is itself post (chains
+allowed, no per-step intermediate); its left-hand side is not a state name; no statement that stays in a scan body
+reads it (such a candidate is demoted, which keeps today's loud rejection, because `schedule` would otherwise
+report `cyclicDataflow`). A free read-out (`y[j, l] := C · h[k, l]`) is unchanged and still rejected with
+`scanProjectionUnsupported`. A read-only audit before the change found no existing `tlprog!` program with a pinned
+state read in a non-iteration statement, no theorem about `finalizeScans` output or statement order, and that
+`schedule` (a stable topological sort), the reference evaluator (list order) and the checked-plan compile (the
+hand-built `statePlainReadSched`) already handle a plain statement after a scan. Tests: `StructuralTest`
+(layout pins: post, chain, free read-out, mixed free, mixed intermediate, demoted), `ScanCompileTest` (the real
+pipeline through `prepareEvalPlan`; the assign reads the state's materialized slot) and `DifferentialTest`
+(checked plan equals `evalScheduled` for the post read).
+
+**Pins** (all in `evalplan_nonlin_smoke.py`, value-independent, recomputed in numpy from the fixture's inputs and
+the same view's `H` slice 2, for Lean, eager and jit): every row of `P` positive and summing to 1; `Logits`
+equals `Hf @ W_U.T`; `Hf` has unit (Inv-weighted) mean square while the pre-norm `Zf = H[:, :, 2] + X` does not
+(the residual with `X` is deliberate: `H`'s last slice is already normalised, so a bare copy would make the
+contrast vacuous); vocabulary extent 5 differs from every other extent and appears only on `W_U[0]`, `Logits[1]`,
+`P[1]`; the plan is one scan node followed by 8 plain nodes (7 assigns, 1 axiswise).
+
+**Observed** (this machine, CPU): float64, Lean = eager = jit: P row-sum deviation 1.1e-16, Logits versus numpy
+2.2e-16, `Hf` mean square [0.999996, 0.999997, 0.999997], pre-norm `Zf` mean square [2.5452, 3.0751, 3.7971];
+float32: P row-sum deviation 4.5e-8 (Lean) and 6.7e-8 (eager, jit), Logits versus numpy 8.5e-8. Tolerances:
+1e-12 (f64) and 1e-6 (f32) for both the row sum and the Logits pin. All 33 / 25 fixtures pass within the
+existing rtol/atol, eager and jit. Build `Tests` + `JaxExperiment`: green, 8845 jobs.
+
+**Hand mutations** (f64 leg; commit body of the fixture slice): softmax over `q` instead of `v` fails the row-sum
+pin (deviation 0.82); head reads layer slice 1 fails the Logits pin (0.49); the final norm without `Inv` fails
+the unit-mean-square pin (0.25 per row); `Logits := W_U · Zf` fails the Logits pin (1.14); `W_U` declared
+transposed fails only the `W_U.shape == (5, 4)` assertion (the Logits pin recomputes from the exported `W_U`,
+so it cannot see an orientation error by itself).
+
+**Not verified, parked.**
+
+- The existing fixtures' per-output tables were not diffed against a pre-change run (no stored baseline). What
+  is established: the fixture file change is additions only, every existing fixture passes at unchanged
+  tolerances, and the audit found no existing program the new rule reclassifies.
+- The `finalizeScans` left-hand-side-is-not-a-state-name clause has no fixture that it alone decides (mutation
+  of it was not caught; the `nbScan` case is already demoted by the other clauses). About 0.3 dispatch to
+  construct one or delete the clause.
+- An axiswise `where=` mask that mentions a scan axis is not inspected by the post rule (only Iverson factors
+  are); multi-axis scans and a post statement spanning two scan components have no fixture; a name with several
+  non-iteration writers where one is post-eligible and one is not is untested. About 1 dispatch.
+- The wording in `KnownGapTest`, `RejectTest` (UF5 comment) and `GenerativeTest` (SS2) still describes the
+  "write it standalone after the scan" workaround; it is accurate for free-read read-outs but does not mention the
+  pinned-literal path. About 0.3 dispatch.
+- Whole-branch review (one read-only adversarial reviewer on the classification rule, code reading only, no
+  build): no Critical or Major finding; no previously accepted program changes meaning (a pinned read of a state
+  was always rejected by `stateReadNotCausal`, so those statements never produced an observable value), and
+  nothing accepted before is rejected now. Four Minor findings, parked:
+  - An out-of-range pinned read (`Zf[j] := S[j, 3]` with history extent 3) is now a plain statement and
+    zero-pads identically in the reference, the checked plan and JAX, so no differential catches it; it used to
+    be rejected. A range check on pinned reads of scan states (cf. `pinnedLiteralsInRange` for scan writes)
+    would. About 1 dispatch, plus a decision whether zero-padding of out-of-range reads is intended here.
+  - The predicate exclusion is partial: an axiswise `where=` mask over a scan axis is not inspected, and a post
+    statement may mention the iteration axis through an external tensor (`Y[q] := H[q,2] · c[l]`, or a left-hand
+    side carrying `l`: `y[j,l] := C·h[k,2]`, previously `scanProjectionUnsupported`); these now get ordinary
+    plain-statement meaning. The comment at the rule does not say so. About 0.5 dispatch to state it or tighten it.
+  - Verifier pins in the head block: `P` is never compared with a numpy softmax of the expected `Logits` (a
+    softmax applied to the wrong tensor would pass); `assert 5 not in {3, 4, 2}` compares literals (the shape
+    clause after it is the real check); the head's `H` is tied to `transformer_scan` by a node count only. About
+    0.3 dispatch.
+  - Clauses no test decides alone: the Iverson clause of `postCand`, demotion when a scan BASE case reads a
+    candidate, demotion across two scans, and the left-hand-side clause (above). About 0.5 dispatch.
+- Mutations ran on the f64 leg only; the Python mutation manifests were not re-run (no runtime or emitter code
+  changed).
+- Harness counts: production dispatch about 110 calls (cap 60), head-fixture dispatch about 110 (cap 60), most
+  of it waiting on builds and five mutation builds; the first, stopped attempt about 40.

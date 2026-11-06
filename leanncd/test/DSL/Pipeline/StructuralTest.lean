@@ -358,6 +358,83 @@ run_cmd do
   | .error (.missingBaseCase "S") _ => pure ()
   | .error e _ => throwError s!"wrong error: {repr e}"
   | .ok _ _ => throwError "expected missingBaseCase for orphan recurrence"
+
+/-! ### Post-scan consumers
+
+A non-iteration statement that reads a scan state ONLY at pinned (`.const`) positions of the
+state's advancing axes consumes the finished, materialized history, so `finalizeScans` emits it as a
+`.plain` node AFTER the scan nodes instead of folding it into the recurrence body (where the checked
+plan rejects every pinned read as non-causal). A free read (`S[j, l]`) is a per-step read and stays a
+body statement; a candidate that a recurrence reads, or one that also reads a per-step intermediate,
+stays in the body too. The pins are `layoutOf` renderings observed from a run. -/
+
+private def finalizedOf (p : TLProgram) : FreshM ScanProgram :=
+  (assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=>
+    checkScatterNonlin >=> lowerArith >=> finalizeScans) p
+
+/-- One token per outer node, in list order: `plain N`, or `scan base=[..] body=[..]` by LHS name. -/
+private def layoutOf (p : TLProgram) : Except CompileError (List String) :=
+  match (finalizedOf p).run 0 with
+  | .ok sp _ => .ok (sp.stmts.map fun
+      | .plain s => s!"plain {s.lhsName}"
+      | .scan _ _ b r _ => s!"scan base={b.map Stmt.lhsName} body={r.map Stmt.lhsName}"
+      | .scanPre nm _ _ => s!"pre {nm}")
+  | .error e _ => .error e
+
+private def postPin : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  Zf[j]      := S[j, 2] }
+
+private def postChain : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  Inv[j]     := X[j]
+  Zf[j]      := S[j, 2]
+  Zf2[j]     := Zf[j] · Inv[j] }
+
+private def postFreeRead : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  Zr[j]      := S[j, l] }
+
+private def postMixedFree : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  Zm[j]      := S[j, 2] · S[j, l] }
+
+private def postMixedInter : TLProgram := tlprog!{ iter l = 3
+  H[j, 0]    := X[j]
+  T[j]       := H[j, l]
+  H[j, l +1] := T[j]
+  M[j]       := H[j, 2] · T[j] }
+
+private def postDemoted : TLProgram := tlprog!{ iter l = 3
+  H[j, 0]    := X[j]
+  Skip[j]    := H[j, 0]
+  H[j, l +1] := Skip[j] }
+
+private def postReadOut : TLProgram := tlprog!{ iter l = 3
+  h[j, 0]    := h0[j]
+  h[j, l +1] := A[j, k] · h[k, l]
+  y[j, l]    := C[j, k] · h[k, l] }
+
+-- The pinned read `Zf := S[j, 2]` is a post-scan consumer: a `.plain` node AFTER the scan, and the
+-- scan body holds only the state recurrence.
+#guard layoutOf postPin == .ok ["scan base=[S] body=[S]", "plain Zf"]
+-- Chains of post statements stay post, in source order; a loop-invariant name (`Inv`, no scan
+-- dependency) is read freely and stays a plain node BEFORE the scan.
+#guard layoutOf postChain == .ok ["plain Inv", "scan base=[S] body=[S]", "plain Zf", "plain Zf2"]
+-- Accept-neighbours that stay as they were: a free read of the state is a per-step read (body); so is a
+-- statement mixing a pinned and a free read of the state, and one mixing a pinned state read with a
+-- per-step intermediate (`T`); a candidate the recurrence itself reads (`Skip`) is demoted back into
+-- the body rather than becoming a plain node the scan would depend on.
+#guard layoutOf postFreeRead == .ok ["scan base=[S] body=[S, Zr]"]
+#guard layoutOf postMixedFree == .ok ["scan base=[S] body=[S, Zm]"]
+#guard layoutOf postMixedInter == .ok ["scan base=[H] body=[T, H, M]"]
+#guard layoutOf postDemoted == .ok ["scan base=[H] body=[Skip, H]"]
+-- A per-step read-out whose OWN LHS carries the scan axis is still rejected, not reclassified.
+#guard layoutOf postReadOut == .error (.scanProjectionUnsupported "y")
 -- checkReadRanks: declared tensor read with matching rank passes through.
 run_cmd do
   let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real }
