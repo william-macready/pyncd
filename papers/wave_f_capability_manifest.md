@@ -110,6 +110,7 @@ group them into:
 | Per-state geometry | `inconsistentStateRank`, `inconsistentAdvancingDim`, `inconsistentStateExtent` |
 | Base write placement (§5.1: in range, boundary-touching, pairwise disjoint) | `baseWriteNotAtBoundary`, `baseWritePinOutOfRange`, `baseWritesOverlap` |
 | §7.4 causality | `stateReadNotCausal` |
+| Post-scan plain read of a state: pinned literal outside `[0, extent)` on an advancing dimension | `plainStatePinOutOfRange` (reference twin: `EvalError.plainStatePinOutOfRange`) |
 
 No `unsupportedScan : String` escape hatch exists in either family.
 
