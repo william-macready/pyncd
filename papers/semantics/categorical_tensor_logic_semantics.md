@@ -83,6 +83,11 @@ and Section 9 states the remaining proof targets.
   - [5.2. Open contributions and completed values are different interfaces](#52-open-contributions-and-completed-values-are-different-interfaces)
   - [5.3. Causal execution is not arbitrary equation solving](#53-causal-execution-is-not-arbitrary-equation-solving)
 - [6. What the prototype actually supports](#6-what-the-prototype-actually-supports)
+  - [6.1. Verified evidence and its scope](#61-verified-evidence-and-its-scope)
+  - [6.2. Composition results](#62-composition-results)
+  - [6.3. Effect-sequencing results](#63-effect-sequencing-results)
+  - [6.4. The combined test](#64-the-combined-test)
+  - [6.5. What these results establish](#65-what-these-results-establish)
 - [7. St/Br, indexed arrays, and open diagrams](#7-stbr-indexed-arrays-and-open-diagrams)
   - [7.1. St/Br remains a serious syntax candidate](#71-stbr-remains-a-serious-syntax-candidate)
   - [7.2. Naperian representation connects compact syntax to values](#72-naperian-representation-connects-compact-syntax-to-values)
@@ -633,17 +638,25 @@ Neither the graph picture nor the word "coalgebra" chooses a solution.
 
 ## 6. What the prototype actually supports
 
-The implementation is
+### 6.1. Verified evidence and its scope
+
+The baseline implementation is
 [`IndexedExecutionPrototype.lean`](../../leanncd/experiments/indexed_execution/IndexedExecutionPrototype.lean);
 the checks are in
 [`IndexedExecutionPrototypeTest.lean`](../../leanncd/experiments/indexed_execution/IndexedExecutionPrototypeTest.lean).
+The separate extensions are
+[`IndexedEffectSequencingTest.lean`](../../leanncd/experiments/indexed_execution/IndexedEffectSequencingTest.lean)
+and
+[`IndexedOpenComposition.lean`](../../leanncd/experiments/indexed_execution/IndexedOpenComposition.lean),
+with composition checks in
+[`IndexedOpenCompositionTest.lean`](../../leanncd/experiments/indexed_execution/IndexedOpenCompositionTest.lean).
 The [results note](categorical_tensor_logic_lean_prototype.md#5-observed-results)
 records the executable observations and reproduction commands.
 
 | Evidence | Supported conclusion | Boundary |
 | --- | --- | --- |
 | 77 passing checks: 36 baseline, 12 effect, 29 composition; 23 matched-priority comparison invocations | Baseline/effect executions match reference observations; independent composition cases meet explicit expected outcomes | Two reference controls repeat original-runner cases; the new composition runner has no general reference-parity adapter |
-| Independent readiness and collector rules | Explicit ports can control tested executions without mutable pending and accumulator state | The program, footprints, and body interpreter are shared with the reference |
+| Independent readiness and collector rules | Explicit ports can control tested executions without mutable pending and accumulator state | Expression interpretation is shared; the baseline also shares the reference program, while the composition runner uses a separate declared contract |
 | Full-coordinate snapshots and input-presence checks | The comparison retains internal nonoutputs, unavailable values, zero values, occurrence identities, and empty-input validation | Reference snapshots are replayed from its witnessed events |
 | Nonlinear, failure, chain, cycle, and malformed-port cases | Tests distinguish premature publication, nonlinear placement, waiting, undefinedness, and blocking | No general source admission or bounded-history adapter |
 | Strict-array graph/reference cases and their composition | Undefined nonselected work still fails; the all-defined neighbour succeeds; a select-first shortcut is non-equivalent | The interpreter is shared, and there is no generic array-node lowering theorem |
@@ -654,6 +667,90 @@ records the executable observations and reproduction commands.
 The whole Lean build and branch review passed; the experiment adds no
 new proofs, axioms, or `sorry`. This supports the implementation
 hypothesis without establishing universal categorical laws.
+
+The six mutation controls deliberately introduced faults in collection,
+readiness, strict assembly, writer coverage, and validated execution.
+Each faulty version triggered its intended assertions; restoration was
+byte-identical and the restored builds passed. This shows sensitivity to
+these particular defects, not completeness of the test suite.
+
+### 6.2. Composition results
+
+Three independently built fragments contribute 1 and -1 to one
+intermediate scalar and square its completed value. The collected
+intermediate and squared result are both zero. After only the first
+contribution, the intermediate is unavailable and the consumer is
+disabled: it cannot square a subtotal of 1.
+
+The tests also confirm that:
+
+- Reversing or regrouping valid joins preserves the results.
+- Distinct equal-valued contributions remain separate and both count.
+- Missing writers, extra writers, overlapping capability claims, and
+  duplicate tags are rejected.
+- Structural closure cannot be followed by adding another fragment
+  through the assembly interface.
+- Publicly constructed closed payloads cannot bypass validation by
+  omitting work or supplying premature collector ports.
+
+**Conclusion:** an explicit writer contract provides a useful boundary
+between assembling contributions and consuming completed values.
+These tests do not establish arbitrary source-program composition.
+The contract declares the complete permitted writer family; the
+prototype neither discovers unknown writers nor proves that a contract
+faithfully describes an independently supplied source program.
+
+### 6.3. Effect-sequencing results
+
+The strict-effect case tabulates reciprocal over the two entries 2 and
+0, then selects the first result. The whole computation fails because
+the nonselected reciprocal of zero is demanded by array construction.
+The neighbouring case with entries 2 and 4 succeeds and returns $1/2$.
+Both outcomes match their reference executions, including the checked
+events and intermediate snapshots.
+
+A deliberately different select-first computation returns $1/2$
+without evaluating the invalid second reciprocal. Its success is
+recorded as evidence that the transformation is non-equivalent,
+not as an accepted optimisation.
+
+**Conclusion:** restricting successful values and restricting the work
+performed by a partial computation are different operations. Strict
+effect sequencing must preserve the required domain of definition;
+the unrestricted reindexing equation in Section 3.3 is not valid
+for this computation.
+
+This is graph-level evidence for the distinction, but it still uses
+the existing expression interpreter. It does not independently prove
+that interpreter correct or establish a generic effect-sequencing law.
+
+### 6.4. The combined test
+
+The composition test adds an internal nonoutput contribution that reads
+the completed intermediate and performs the strict array computation.
+It waits while the intermediate is incomplete. Once ready, the
+undefined nonselected reciprocal causes failure even though the
+designated output has already been published as zero.
+
+The all-defined neighbour completes, including its internal value
+$1/2$. Replacing strict construction by the select-first shortcut
+also succeeds, and is explicitly distinguished from the failing case.
+
+**Conclusion:** correct composition must preserve both value
+dependencies and completion/definedness obligations. Having the desired
+output value available does not justify ignoring demanded internal work.
+
+These new composition outcomes are checked against explicit
+expectations. They are not full reference comparisons of the composed
+multi-target program; the two reference controls in that test module
+exercise the original runner.
+
+### 6.5. What these results establish
+
+Together, the results support the proposed separation of contribution
+assembly, completed values, and computation effects. They strengthen
+the case for interface-based logical execution without requiring
+separately mutable accumulators and pending sets.
 
 An important restraint follows: **the prototype validates a different
 state representation more strongly than it validates a general composition
@@ -992,10 +1089,12 @@ The approach now has a plausible concrete centre:
 > **Identity-aware index geometry, strict partial expression interpretation,
 > multiplicity-preserving collection, and closed-writer dependency graphs.**
 
-The prototype supports the graph/reference state relationship on its
-tested instances and catches two meaningful implementation defects.
-It does not yet decide the best categorical presentation of general
-Tensor Logic.
+The 77 checks and six mutation controls support the tested state
+relationship, contract-based composition, and preservation of strict
+effects. In particular, the combined test confirms that available
+outputs do not erase internal completion obligations.
+This does not yet decide the best categorical presentation of general
+Tensor Logic or establish a universal composition theorem.
 
 The effect and composition extensions now provide the strict-array and
 independently authored writer-fragment examples. The next decisive
@@ -1041,5 +1140,5 @@ ones; it does not add assumptions beyond their definitions.
 | $\operatorname{El}(L)$ | Points of shape $L$, represented by morphisms $1_D\to L$ |
 | $[X,L],\mathsf{V}(X)$ | Lifted interface and interpreted value space |
 | $S,G$ | Complete priority schedule and accepted graph fragment |
-| $\rho_P,\rho_Q,\rho_P|_Y$ | Complete component models and upstream restriction to boundary $Y$ |
+| $\rho_P,\rho_Q,\rho_P\vert_Y$ | Complete component models and upstream restriction to boundary $Y$ |
 | $\circ,\operatorname{id},\cong$ | Composition, identity, and bijective correspondence, as typed in each use |
