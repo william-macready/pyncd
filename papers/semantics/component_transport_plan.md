@@ -7,6 +7,11 @@ both mutation manifests and the combined default/experiment build. See the
 [authoring record](component_transport_authoring_record.md) for receipts and
 coverage limitations. This does not execute or land the implementation.
 
+Execution is now complete; the [execution record](component_transport_execution_record.md)
+contains actual task commits, controller checks and final review adjudication.
+The task instructions and their future-path labels below retain the original
+rollout/replay context.
+
 ## 1. Authority, inputs and release boundary
 
 Authority: [component-interface design](categorical_tensor_logic_component_interfaces.md), sections 1–2 (local declarations and explicit adapters), 7 (observation levels), and 9 (discriminating examples). This is only the first **transport** slice, not component composition.

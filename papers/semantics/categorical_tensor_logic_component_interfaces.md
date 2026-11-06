@@ -529,11 +529,12 @@ associativity. None may be replaced by assumed execution agreement.
 - Indexed programs, explicit witnesses and ports are the smallest foundation
   matching the available theorem. St/Br, open-diagram libraries or a
   witness-span categorical presentation can be interpretations later; none
-  discharges the missing transport or match-construction lemmas by itself.
+  substitutes for the explicit transport or match-construction obligations.
 
 There is no known semantic blocker for this restricted target. The substantive
-unproved work is admitted-read/expression transport and preservation of
-canonical closure/priority, followed by phase and complete-model gluing.
+admitted-read/expression transport prerequisite is now proved. Remaining
+unproved work is component match construction and preservation of canonical
+closure/priority, followed by ranked phase execution and complete-model gluing.
 Wider coordinate adapters, residual inputs, fan-out and open contribution
 ports remain out of scope. Whether to adjoin administrative wire identities
 is a packaging decision after associative core composition; requiring a

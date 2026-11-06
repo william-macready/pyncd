@@ -5,7 +5,7 @@
 
 ## Scope and preflight
 
-Execute only the typed transport slice: certified declaration/read adapters,
+Executed only the typed transport slice: certified declaration/read adapters,
 context-aware expressions, ordered footprints and strict partial evaluation.
 Composite matches, ranked phase execution and model gluing remain unimplemented.
 
@@ -106,15 +106,41 @@ byte-identically, and rebuilt green. These are the declared copied/observer/
 donor controls, not live-production mutation kills or per-fixture-complete
 coverage.
 
-Task 3 is ready to commit after its direct review; final whole-branch
-reviews and integrated build remain pending.
+Committed as `7dd97846` after direct task review.
 
 ## Release validation and whole-branch review
 
-Pending. Authoring receipts are not substituted for execution checks.
+The controller's actual
+`lake-build.sh <execution-checkout>/leanncd LeanNCD Tests IndexedExecutionExperiment`
+passed (8,869 jobs). Both default targets and the nondefault experiment are
+covered by this one command. No authoring receipt was substituted.
+
+The final build re-observed the 97 / 82 / 90 namespace audits with only the
+allowed standard axioms. The two final review lenses examine
+`b68f56c4..7dd97846` and write findings to separate execution receipts.
+
+The integration/observation review found one current documentation
+contradiction: the design's remaining-work paragraph still called the
+implemented transport prerequisite unproved. It was corrected without code
+changes. The revised paragraph retains component match construction,
+closure/priority, ranked phase execution and model gluing as unproved.
+Both final reviews are complete:
+
+- [Soundness review](component_transport_artifacts/execution-review-soundness.md):
+  clean, no required semantic/proof/API finding or scoped blocker.
+- [Integration/observation review](component_transport_artifacts/execution-review-integration.md):
+  its sole documentation finding was corrected and verified; the review is
+  clean after adjudication.
+
+No Lean source changed after the full build and reviewed `7dd97846`.
+Final review citations were normalized to stable identifiers before landing,
+without changing their findings or evidence.
 
 ## Accounting and integration
 
 The repository token-report tool returned no SDK session transcript, so
 cumulative input tokens cannot be measured and numerical budget compliance
-is not asserted. Integration is pending; no remote push is authorized.
+is not asserted. Both reviewers reported staying within their dispatch
+turn/context caps. The full build and adjudicated whole-branch reviews are
+green. Integrate to local main, preserve its existing edits, and remove only
+the execution worktree/branch; do not push.
