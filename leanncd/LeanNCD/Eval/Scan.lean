@@ -290,6 +290,42 @@ def checkScanStructure (scanName : String) (axes : List AxisSpec) (sizes : HashM
               (fun (x, y) => baseDimsSeparate (baseDimOf x) (baseDimOf y))) then
           throw (.baseWritesOverlap scanName st ia ib)
 
+/-- The advancing dimensions of each state a scan publishes: for every recurrence statement that
+    writes one of `stateNames` and has `iterNext` slots, the LHS positions of those slots (the
+    state's history dimensions). The checked backend's `advancingDims` for the same state. -/
+def scanStateAdvancingDims (stateNames : List String) (recur : List Stmt) :
+    List (String × List Nat) :=
+  recur.filterMap (fun s =>
+    let adv := (s.iterInfo.filter (·.isRecur)).map (·.pos)
+    if stateNames.contains s.lhsName && !adv.isEmpty then some (s.lhsName, adv) else none)
+
+/-- The literal when `idx` is a PINNED read (no axis coefficient other than zero) of a state
+    dimension of extent `extent` and that literal lies outside `[0, extent)`. Free and shifted
+    reads (some nonzero coefficient) zero-pad out of range and return `none`. The reference keeps its
+    own copy of this one-line range test rather than calling the checked plan's
+    `statePinOutOfRange`: the reference does not import the plan layer. -/
+def pinnedReadOutOfRange (idx : IdxExpr) (extent : Nat) : Option Int :=
+  let (bias, coeffs) := idxAffineForm idx
+  if coeffs.all (·.1 == 0) && (bias < 0 || bias ≥ (extent : Int)) then some bias else none
+
+/-- A plain statement's read of a scan state at a literal outside `[0, extent)` on an advancing
+    dimension is an error (`plainStatePinOutOfRange`), the reference twin of the checked backend's
+    rule. `stateAdv` maps a published state to its advancing dimensions; `env` supplies the state's
+    extents. The first offending read in right-hand-side order wins, then its lowest dimension. -/
+def checkPlainStateReads (stateAdv : HashMap String (List Nat)) (env : HashMap String DenseTensor)
+    (s : Stmt) : Except EvalError Unit := do
+  for (rn, idxs) in s.readFactors do
+    match stateAdv[rn]?, env[rn]? with
+    | some advDims, some t =>
+        for d in advDims do
+          match idxs[d]? with
+          | some idx =>
+              match pinnedReadOutOfRange idx (t.shape.getD d 0) with
+              | some lit => throw (.plainStatePinOutOfRange rn s.lhsName d lit (t.shape.getD d 0))
+              | none => pure ()
+          | none => pure ()
+    | _, _ => pure ()
+
 /-- Evaluate a ScanStmt → the scanned state tensors. Multi-axis (n-D) scans iterate the cartesian
     product of `[0 … L_a − 2]` over every advancing axis. Boundary semantics (`0_K`-default): the
     step writes only fully-advanced cells (every advancing index `+1 ≥ 1`); boundary cells (any

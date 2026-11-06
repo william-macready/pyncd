@@ -155,6 +155,14 @@ def pinnedLiteralsInRange (stateShape : Array Nat) (rows : Array (Option WriteRo
     | some (.pinned lit) => 0 ≤ lit && lit.toNat < stateShape.getD d 0
     | some (.free _) | some (.advancing _) | some (.strided ..) | none => true)
 
+/-- A plain statement's read of one dimension of a scan state is a PINNED literal outside the
+    dimension's `[0, extent)`. `coeffs` and `bias` are that dimension's row of the read's
+    `AffineMap` (an all-zero coefficient row is a pinned literal, `bias`); the range rule itself is
+    `pinnedLiteralsInRange`'s, called on the one row. Free and shifted rows (some nonzero
+    coefficient) are never flagged: they zero-pad out of range by design. -/
+def statePinOutOfRange (coeffs : Array Int) (bias : Int) (extent : Nat) : Bool :=
+  coeffs.all (· == 0) && !pinnedLiteralsInRange #[extent] #[some (.pinned bias)]
+
 /-- Two writes' declared regions collide iff no dimension forces them apart. Different pinned
     literals separate a dimension. Two positive strided rows also separate it when their scales are
     equal and their offsets have different residues modulo that scale. Every other pairing remains

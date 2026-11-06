@@ -254,10 +254,31 @@ so it cannot see an orientation error by itself).
   build): no Critical or Major finding; no previously accepted program changes meaning (a pinned read of a state
   was always rejected by `stateReadNotCausal`, so those statements never produced an observable value), and
   nothing accepted before is rejected now. Four Minor findings, parked:
-  - An out-of-range pinned read (`Zf[j] := S[j, 3]` with history extent 3) is now a plain statement and
-    zero-pads identically in the reference, the checked plan and JAX, so no differential catches it; it used to
-    be rejected. A range check on pinned reads of scan states (cf. `pinnedLiteralsInRange` for scan writes)
-    would. About 1 dispatch, plus a decision whether zero-padding of out-of-range reads is intended here.
+  - CLOSED (2026-11-06, decision: an error): an out-of-range pinned read (`Zf[j] := S[j, 3]` with history
+    extent 3) was a plain statement that zero-padded identically in the reference, the checked plan and JAX, so
+    no differential could catch it. A plain statement's read of a scan state pinned to a literal outside
+    `[0, extent)` on an ADVANCING dimension is now `ScanCompileError.plainStatePinOutOfRange` in the checked plan
+    (`prepareEvalPlan`, `.plain` branch, rule `statePinOutOfRange`) and `EvalError.plainStatePinOutOfRange` in the
+    reference (`checkPlainStateReads`, called from `evalScheduled`); the JAX bridge never sees such a plan. Free
+    reads, shifted reads (`l-1`) and out-of-range pins on a NON-advancing dimension keep the zero-pad. The
+    reference keeps its own copy of the one-line range test (it does not import the plan layer). A review of
+    this change found one Major, fixed before the merge: `prepareEvalPlan` matches a top-level
+    `.plain (.scatter ..)` BEFORE the general `.plain` branch, so a scatter reading a state at an out-of-range pin
+    was still zero-padded by the plan while the reference rejected it. Both arms now call one helper,
+    `checkPlainStatePins`, and a scatter fixture is asserted on both backends. Parked Minors of that review
+    (about 1 dispatch together): the two backends report the offending dimension in different orders for a
+    multi-axis state whose scan-context order differs from its left-hand-side order (same verdict, different
+    `dim`); the plan error's `stmtIndex` counts the collected schedule (collector and private statements
+    included) and does not name the reading statement, unlike every other `ScanCompileError` locator, which
+    counts within one scan block, and the reference names the statement by its possibly private name; cancelling
+    affine coefficients (`5 + l - l`) are pinned for the plan and not for the reference; a statement with both a
+    marker error and an out-of-range pin gets a different cause in each backend (same verdict); a LATER scan's
+    base or step body reading an earlier scan's state at an out-of-range pin still zero-pads in both (the rule
+    covers plain statements only); with history extent 0 every pinned read is now an error, and if parked
+    bug R1 makes a state's computed extent smaller than its declared one, a read in range of the declaration
+    errors; remaining test gaps: no fixture with the offending read in a later term or factor, none with
+    different extents on two advancing dimensions, none pinning that an out-of-range pin on a NON-state tensor is
+    still accepted.
   - The predicate exclusion is partial: an axiswise `where=` mask over a scan axis is not inspected, and a post
     statement may mention the iteration axis through an external tensor (`Y[q] := H[q,2] · c[l]`, or a left-hand
     side carrying `l`: `y[j,l] := C·h[k,2]`, previously `scanProjectionUnsupported`); these now get ordinary

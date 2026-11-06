@@ -390,6 +390,11 @@ inductive ScanCompileError
   | baseWritesOverlap        (scan state : String) (firstWriteIndex secondWriteIndex : Nat)
   -- §7.4 causality, checked against the lowered step-block read rows
   | stateReadNotCausal       (scan state : String) (stmtIndex termIndex factorIndex : Nat)
+  -- a PLAIN (post-scan) statement's read of a scan state: the advancing dimension `dim` is pinned to
+  -- a literal outside `[0, extent)`. Unlike the shifted/free reads, which zero-pad out of range, a
+  -- pinned literal on an advancing dimension names a history slot that does not exist.
+  | plainStatePinOutOfRange  (state : String) (stmtIndex termIndex factorIndex dim : Nat)
+                             (lit : Int) (extent : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Wave "Thread 4" (nonlinearity) source-compile rejection: which sub-case of §3's LHS-slot vs

@@ -48,6 +48,8 @@ def evalErrorEq : EvalError → EvalError → Bool
       decide (sa = sb ∧ na = nb ∧ ba = bb ∧ ia = ib ∧ da = db)
   | .stateReadInBaseBlock sa ia ta, .stateReadInBaseBlock sb ib tb =>
       decide (sa = sb ∧ ia = ib ∧ ta = tb)
+  | .plainStatePinOutOfRange sa ta da la ea, .plainStatePinOutOfRange sb tb db lb eb =>
+      decide (sa = sb ∧ ta = tb ∧ da = db ∧ la = lb ∧ ea = eb)
   | .unmarkedReductionAxis ta pa, .unmarkedReductionAxis tb pb => decide (ta = tb ∧ pa = pb)
   | .multipleMarkedReductionAxes ta fa sa, .multipleMarkedReductionAxes tb fb sb =>
       decide (ta = tb ∧ fa = fb ∧ sa = sb)
@@ -160,6 +162,10 @@ private def fieldVariants : List (EvalError × List EvalError) := [
   (.stateReadInBaseBlock "s" 1 "S",
     [.stateReadInBaseBlock "t" 1 "S", .stateReadInBaseBlock "s" 2 "S",
      .stateReadInBaseBlock "s" 1 "T"]),
+  (.plainStatePinOutOfRange "S" "Y" 0 3 3,
+    [.plainStatePinOutOfRange "T" "Y" 0 3 3, .plainStatePinOutOfRange "S" "Z" 0 3 3,
+     .plainStatePinOutOfRange "S" "Y" 1 3 3, .plainStatePinOutOfRange "S" "Y" 0 4 3,
+     .plainStatePinOutOfRange "S" "Y" 0 3 4]),
   (.unmarkedReductionAxis "Y" 0,
     [.unmarkedReductionAxis "Z" 0, .unmarkedReductionAxis "Y" 1]),
   (.multipleMarkedReductionAxes "Y" 0 1,
@@ -188,7 +194,7 @@ run_cmd do
      ``EvalError.baseWritesOverlap, ``EvalError.duplicateStateResult,
      ``EvalError.duplicateScratchProducer, ``EvalError.inconsistentStateExtent,
      ``EvalError.scanWriteRowNotAdmitted, ``EvalError.stateReadInBaseBlock,
-     ``EvalError.unmarkedReductionAxis, ``EvalError.multipleMarkedReductionAxes,
+     ``EvalError.plainStatePinOutOfRange, ``EvalError.unmarkedReductionAxis, ``EvalError.multipleMarkedReductionAxes,
      ``EvalError.inputIsDefined]
   for c in info.ctors do
     unless covered.contains c do
