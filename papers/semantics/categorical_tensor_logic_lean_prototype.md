@@ -12,10 +12,12 @@ The runner records available values and produced contributions. Reference
 accumulators and pending occurrences are reconstructed for comparison,
 not maintained as additional runtime state.
 
-**All 36 executable check rows pass**, including **18 matched-priority
-graph/reference comparison invocations**. Two implementation mutation
-controls also pass: the deliberately broken versions fail the intended
-assertions, and their restored versions rebuild successfully.
+**All 77 executable check rows pass**: 36 baseline checks, 12 strict-effect
+checks, and 29 open-composition checks. The suites contain 23
+matched-priority comparison invocations, including two repeated baseline
+regression controls, not 23 independently covered programs.
+The new composition runner is checked by explicit expected outcomes;
+it has no whole-program reference-parity claim.
 
 The result supports a narrower claim than a new categorical foundation:
 this representation reproduces the tested reference executions without
@@ -119,9 +121,10 @@ assembly of the complete family would encounter. Consequently, ordinary
 total-function reindexing equations do not hold unconditionally for
 strict partial computations.
 
-The prototype preserves this distinction through the existing interpreter
-and expression-level checks. It does not implement a new effect calculus
-or a generic graph representation of strict array assembly.
+The prototype preserves this distinction through the existing interpreter.
+The strict-effect extension also exercises it inside graph execution and
+reference comparison. It does not implement a new effect calculus or a
+generic array-assembly node.
 
 ### 2.2. Contributions and collectors
 
@@ -369,6 +372,56 @@ checkout. The whole-branch code review found no significant issues.
 The new modules introduced no source warnings; pre-existing repository
 proof warnings remain outside the prototype.
 
+### 5.4. Separate effect and composition extensions
+
+The extensions are deliberately separated:
+
+| Module | Executable checks | Evidence |
+| --- | --- | --- |
+| [`IndexedEffectSequencingTest.lean`](../../leanncd/experiments/indexed_execution/IndexedEffectSequencingTest.lean) | 12 | Strict two-entry tabulation followed by selection fails on an undefined nonselected reciprocal; the all-defined neighbour returns $1/2$. Both and the deliberately non-equivalent select-first shortcut match their respective reference executions. |
+| [`IndexedOpenCompositionTest.lean`](../../leanncd/experiments/indexed_execution/IndexedOpenCompositionTest.lean) | 29 | Independently built writer fragments, closure, consumer readiness, join order, identity checks, failure, empty declarations, and composition with strict effects. Two checks rerun original-runner reference controls; they are not comparisons of the new composition runner. |
+
+[`IndexedOpenComposition.lean`](../../leanncd/experiments/indexed_execution/IndexedOpenComposition.lean)
+does not take a `Program` or reference `Schedule`. A separately supplied
+`Contract` lists tensor roles, all defined-coordinate collectors, readable
+and output ports, and the complete permitted writer capability IDs.
+A capability ID is a checked numeric identity, not an unforgeable token.
+
+`combine` rejects overlapping tags or capability claims. `close` requires
+exact capability coverage, matching destinations and body footprints,
+readable ports, and complete collector coverage, including nonoutputs and
+empty fibers. It generates collectors from this contract, rather than a
+canonical reference program graph.
+
+The contract remains the declared completeness assumption: the experiment
+does not discover all possible future writers. `sealAssembly` and `extend`
+distinguish an open assembly from a sealed one and reject later extension.
+`Closed` is publicly constructible data, not a proof of validation:
+public `run` revalidates the writers and regenerates collectors, while
+`runChecked` validates a contract and fragment directly.
+Forged empty graphs and forged collector ports cannot bypass these entry
+points.
+
+The central composition fixture supplies contributions 1 and -1 to an
+intermediate, then squares its completed value. The intermediate and result
+are both zero; the intermediate stays unavailable after only one writer.
+Reversed and parenthesised joins preserve results. Distinct equal-valued
+writers retain their multiplicity.
+
+The combined effect case has an additional internal nonoutput writer that
+reads the completed intermediate and evaluates strict array selection.
+Its undefined nonselected reciprocal causes failure even though the
+designated output is already available. The total neighbour completes
+with internal value $1/2$. The invalid select-first rewrite instead
+succeeds, and is explicitly distinguished from the strict computation.
+
+Four extension implementation controls in the
+[extension mutation manifest](categorical_tensor_logic_extensions_mutations.json)
+exercise bypassed strict assembly, weakened all-writer completion, omitted
+capability coverage, and execution of forged rather than validated
+collector ports. Each mutation produced its named assertion failure and
+restored byte-identically with a passing rebuild.
+
 ## 6. What the experiment establishes
 
 The tested executions support a modest structural improvement:
@@ -384,10 +437,12 @@ This is more than checking final tensor numbers. It tests the state
 relationship throughout execution and catches meaningful defects in
 collection and readiness.
 
-It is not yet evidence that all composition obligations have become local.
-`close` still obtains the authoritative node and port structure from the
-fixed whole program. Fragment composition is list recomposition, not a
-general open-program calculus.
+The baseline `close` still validates against a fixed whole program.
+The composition extension removes that dependency, checking independent
+fragments against a declared writer contract instead. This is stronger
+evidence for interface-based composition, but not a proof that every
+composition obligation is local or that the contract can be inferred
+from arbitrary source programs.
 
 Nor is storing all produced values necessarily cheaper than incremental
 accumulation. The experiment measures semantic fidelity, not execution
@@ -398,10 +453,10 @@ speed, memory reduction, or optimality of the abstraction.
 The implemented scope does not include:
 
 - Exhaustive graph-state or reference-schedule exploration.
-- A rational graph adapter for strict array construction and selection.
 - Full bounded-history execution or a compact symbolic scan adapter.
-- Arbitrary source admission or independently authored open-program
-  composition.
+- Arbitrary source admission, general independent source-program
+  composition, or a reference adapter for the new multi-target
+  composition runner.
 - A general effect-sensitive indexed category or Turi-Plotkin
   compositionality theorem.
 - Primitive-level execution, physical memory reuse, floating-point
@@ -414,13 +469,12 @@ a separate problem.
 
 The most informative follow-ups are:
 
-1. Add a graph-level strict-array case so effect sequencing is tested
-   through the new representation, not only the shared interpreter.
-2. Replace list recomposition with an explicit open-writer interface and
-   test closure under a genuinely compositional operation.
-3. Exercise a bounded history while retaining coordinate-level causality
+1. Connect the independent composition runner to an independently
+   constructed reference program, without deriving its contract from
+   that program.
+2. Exercise a bounded history while retaining coordinate-level causality
    and the whole-history output contract.
-4. Explore small graph schedules with explicit limits, distinguishing
+3. Explore small graph schedules with explicit limits, distinguishing
    graph-only exploration from independently compared reference priorities.
 
 These experiments should precede claims that the candidate is a simpler
@@ -434,16 +488,19 @@ From the checkout root:
 ```bash
 bash leanncd/scripts/lake-build.sh leanncd IndexedExecutionExperiment
 bash leanncd/scripts/lean-file.sh leanncd experiments/indexed_execution/IndexedExecutionPrototypeTest.lean
+bash leanncd/scripts/lean-file.sh leanncd experiments/indexed_execution/IndexedEffectSequencingTest.lean
+bash leanncd/scripts/lean-file.sh leanncd experiments/indexed_execution/IndexedOpenCompositionTest.lean
 ```
 
 The first command builds dependencies and the experiment. The second
 elaborates the test file afresh, executing its checks even when Lake has
 cached the module.
 
-To repeat both mutation controls:
+To repeat the baseline and extension mutation controls:
 
 ```bash
 bash leanncd/scripts/mutation-manifest.sh leanncd papers/semantics/categorical_tensor_logic_prototype_mutations.json
+bash leanncd/scripts/mutation-manifest.sh leanncd papers/semantics/categorical_tensor_logic_extensions_mutations.json
 ```
 
 The experiment is non-default and not imported by production `LeanNCD`.

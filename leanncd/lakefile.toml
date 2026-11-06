@@ -148,4 +148,6 @@ globs = ["LeanNCD.Semantics.TensorLogicSemanticCoreSpike"]
 [[lean_lib]]
 name = "IndexedExecutionExperiment"
 srcDir = "experiments/indexed_execution"
-globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest"]
+globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
+         "IndexedEffectSequencingTest", "IndexedOpenComposition",
+         "IndexedOpenCompositionTest"]
