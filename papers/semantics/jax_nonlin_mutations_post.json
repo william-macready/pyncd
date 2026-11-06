@@ -9,8 +9,8 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2317:0: Expression",
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2329:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2465:0: Expression",
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2477:0: Expression"
   ]
  },
  {
@@ -23,8 +23,8 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2317:0: Expression",
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2329:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2465:0: Expression",
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2477:0: Expression"
   ]
  },
  {
@@ -37,7 +37,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2317:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2465:0: Expression"
   ]
  },
  {
@@ -50,7 +50,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2317:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2465:0: Expression"
   ]
  },
  {
@@ -63,20 +63,20 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2312:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2460:0: Expression"
   ]
  },
  {
   "label": "JN-T1-06 (affineReference refuses pointwise and axiswise steps again)",
   "task": "T1",
   "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
-  "old": "    | .pointwise p => entries := entries.push (renderPointwiseNode p)\n    | .axiswise a => entries := entries.push (← renderAxiswiseNode ni a)\n    | .scan _ => throw (.unsupportedStep ni)",
+  "old": "    | .pointwise p => entries := entries.push (renderPointwiseNode p)\n    | .axiswise a => entries := entries.push (← renderAxiswiseNode ni a)\n    | .scan sc => entries := entries.push (← renderScanNode ni sc)",
   "new": "    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)",
   "targets": [
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2310:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2458:0: Expression"
   ]
  },
  {
@@ -89,7 +89,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2317:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2465:0: Expression"
   ]
  },
  {
@@ -102,7 +102,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2347:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2495:0: Expression"
   ]
  }
 ]
