@@ -75,7 +75,14 @@ relates the existing specification and reference machine to that framework.
 It distinguishes the categorical structure already documented from proposed
 work on constructor compatibility, shared-writer interfaces, and refinement.
 
-[Effect-sensitive indexed Tensor Logic: Lean prototype design](categorical_tensor_logic_lean_prototype.md)
-describes a proposed alternative organisation, a proof-free executable
-experiment, the existing reference APIs it can reuse, and the evidence
-needed to decide whether it simplifies operational semantics.
+[Effect-sensitive indexed Tensor Logic: prototype and results](categorical_tensor_logic_lean_prototype.md)
+describes the implemented proof-free Lean experiment, its graph/reference
+comparisons and mutation controls, what the results establish, and the
+remaining limitations.
+
+[Categorical Tensor Logic semantics: a prototype-grounded proposal](categorical_tensor_logic_semantics.md)
+brings together St/Br and Naperian arrays, partial maps, additive collection,
+open diagrams, model witnesses, causal iteration, and Turi-Plotkin-style
+compatibility. It separates mathematical laws from prototype evidence
+and states correspondence and composition targets without assuming
+one formalism is the best foundation.

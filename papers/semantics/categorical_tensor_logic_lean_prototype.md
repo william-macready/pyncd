@@ -1,129 +1,104 @@
-# An effect-sensitive indexed model of Tensor Logic: Lean prototype design
+# An effect-sensitive indexed model of Tensor Logic: prototype and results
 
 [Semantics contents](README.md) |
-[Tensor Logic specification](tensor_logic_semantics.md) |
-[Earlier categorical assessment](categorical_tensor_logic_assessment.md)
+[Tensor Logic specification](tensor_logic_semantics.md)
 
-## Status and purpose
+## Summary
 
-This note describes an experiment, not a replacement semantics or a
-generally proved implementation. It explains the proposed idea, the
-design of a small executable Lean prototype, and the evidence that would
-justify continuing with it.
+The executable Lean prototype represents computation using two node kinds:
+an occurrence evaluates its contribution when all its reads are available,
+and a collector publishes a coordinate when all its writers have succeeded.
+The runner records available values and produced contributions. Reference
+accumulators and pending occurrences are reconstructed for comparison,
+not maintained as additional runtime state.
 
-The prototype will use ordinary Lean data and executable functions. It will
-not require new correctness theorems, category instances with coherence
-proofs, new axioms, or `sorry`. Reusing existing proved definitions and
-validation infrastructure is compatible with that restriction.
+**All 36 executable check rows pass**, including **18 matched-priority
+graph/reference comparison invocations**. Two implementation mutation
+controls also pass: the deliberately broken versions fail the intended
+assertions, and their restored versions rebuild successfully.
 
-Sections 1-10 describe the design and its intended requirements.
-Section 11 records the first implemented prototype and observed checks;
-these are finite experimental results, not a general correspondence proof.
+The result supports a narrower claim than a new categorical foundation:
+this representation reproduces the tested reference executions without
+storing separate mutable accumulators and pending sets. It does not yet
+establish a general compositionality theorem, an independently implemented
+expression semantics, or a more efficient implementation.
 
-## 1. The question we want to answer
+The prototype is isolated from production imports and uses exact rational
+values. It adds no theorems, hand-written proof terms, axioms, or `sorry`.
 
-The existing specification separates mathematical meaning, logical
-execution, and physical implementation. The experiment retains that
-separation. It asks whether a different presentation of logical computation
-would make the middle layer easier to compose and implement:
+## 1. The question and the semantic contract
 
-> Can explicit contribution interfaces, completed-value interfaces, and
-> strict effect sequencing make the reference machine's bookkeeping a
-> derived execution strategy rather than the primary definition?
+The experiment asks:
 
-There are two failure modes for this investigation:
+> Can explicit contribution and completed-value interfaces make execution
+> easier to describe, compose, and implement while preserving Tensor Logic?
 
-- The new presentation changes Tensor Logic's meaning to obtain simpler
-  categorical laws.
-- It preserves meaning but merely renames stores, accumulators, and pending
-  sets without simplifying composition or correctness obligations.
+The specification remains authoritative. The relevant requirements are:
 
-The prototype must test against both possibilities.
+- Statements generate tagged occurrences. Duplicate statements and
+  colliding destinations retain multiplicity.
+- Guards and finite domains determine which occurrences exist before
+  their bodies are evaluated.
+- Empty contribution fibers yield the additive identity. Missing inputs
+  do not become implicit zeros.
+- Incomplete subtotals are not readable tensor values.
+- Primitives retain their domains and placement. Nonlinear operations
+  cannot be moved across collection without justification.
+- Array construction and selection preserve strict definedness, including
+  failures in demanded coordinates not subsequently selected.
+- All actual contributions and all defined coordinates participate in
+  completion, including internal nonoutputs.
+- Blocking, undefinedness, and successful completion are different.
+  Blocking does not establish that the equations have no model.
+- Logical coordinates remain distinct from physical storage locations.
 
-The [St/Br framework](../graded_prop.md) is a source of useful constructions,
-not a conclusion we presuppose. Its separation of coordinate geometry,
-typed operations, lifting, and causal iteration should be reused where
-helpful. A successful prototype need not realise every proposed graded-PROP
-axiom, nor replace that framework wholesale.
-
-## 2. What must not change
-
-The [Tensor Logic specification](tensor_logic_semantics.md) remains the
-behavioural contract. In particular:
-
-1. A source statement generates tagged contribution occurrences. Duplicate
-   statements and colliding destinations retain their multiplicity.
-2. Guards and finite domains determine which occurrences exist before their
-   bodies are evaluated. Nonexistent instances do not fail.
-3. Collection combines contributions on their declared coordinate domains.
-   Empty collections yield the additive identity; omitted inputs are not
-   supplied by that rule.
-4. An incomplete subtotal is not a readable tensor value.
-5. Primitive operations retain their declared domains and placement.
-   Nonlinear operations cannot be moved across collection without a
-   separate justification.
-6. Array construction and selection retain strict definedness: selecting
-   one coordinate does not bypass failures elsewhere in the demanded array.
-7. Every actual contribution and every defined coordinate participates in
-   whole-program completion, including internal tensors not returned as
-   outputs.
-8. The unrestricted denotation remains a relation between inputs and
-   complete models. The unique-complete-model criterion is not replaced
-   by uniqueness of outputs.
-9. Direct execution remains restricted to supported dependency forms.
-   Rejecting an unsupported cycle does not establish that it has no model.
-10. Logical identities are not physical locations. This first experiment
-    does not introduce buffer reuse or floating-point arithmetic.
-
-These are drawn from
+These requirements come from
 [core statements](tensor_logic_semantics_part_ii.md#135-core-contribution-statements),
 [strict interpretation](tensor_logic_semantics_part_iii.md#18-expression-interpretation-and-definedness),
-[model semantics](tensor_logic_semantics_part_iii.md#20-program-models-and-functional-denotation),
+[models](tensor_logic_semantics_part_iii.md#20-program-models-and-functional-denotation),
 and [reference execution](tensor_logic_semantics_part_iv.md#part-iv-operational-semantics).
 
-## 3. The proposed mathematical organisation
+The [St/Br framework](../graded_prop.md) remains a possible source of
+structure, not an assumed optimal foundation. The prototype tests explicit
+indexed interfaces without constructing a general graded PROP or imposing
+its strongest equations on partial computations.
 
-### 3.1. Value families are not computations producing value families
+## 2. The mathematical organisation
+
+### 2.1. Indexed values and strict computations are different
 
 Let $I$ be a finite index set and $A$ a set of values. Write $A^I$ for
-the set of functions from $I$ to $A$. Such a function is an indexed family
-of values.
-
+functions from $I$ to $A$, representing indexed value families.
 For another finite index set $J$, a coordinate map
-$r:I\longrightarrow J$ induces a read operation
-$r^*:A^J\longrightarrow A^I$ by
+$r:I\longrightarrow J$ induces a pullback
+$r^*:A^J\longrightarrow A^I$:
 
 $$
 r^*(v)=v\circ r.
 $$
 
-Here $v:J\longrightarrow A$ is a family, $\circ$ is function composition,
-and the superscript $*$ names pullback by precomposition.
+Here $v:J\longrightarrow A$ is a value family, $\circ$ denotes function
+composition, and the superscript $*$ names precomposition along $r$.
+Affine expressions and guarded domains provide particular coordinate maps;
+not every guarded domain needs to be treated as a rectangular shape.
 
-This is the familiar geometric content of reindexing. A checked affine
-expression is one way of presenting such a map. Guarded index domains may
-be subsets of rectangular domains; the prototype need not assume that
-every such domain is already an ordinary St shape.
-
-Now let $B$ be a set of result values. Define
+Let $B$ be a set of result values. Define
 $\operatorname{Result}(B)=B+\{\bot\}$, where $+$ is a tagged disjoint union
-and $\bot$ denotes undefinedness. A partial computation can be represented
+and $\bot$ denotes undefinedness. A partial computation is represented
 by a total function
 
 $$
 f:A\longrightarrow\operatorname{Result}(B).
 $$
 
-Applying this function independently at each coordinate gives a function
-named $f^I$:
+Pointwise application, named $f^I$, produces individual results:
 
 $$
 f^I:A^I\longrightarrow\operatorname{Result}(B)^I.
 $$
 
-That result is a family of individual results. It is not yet a successfully
-constructed complete array. A separate function,
-$\operatorname{sequence}_I$, imposes the strict completion requirement:
+Strict array assembly is a separate function,
+$\operatorname{sequence}_I$:
 
 $$
 \operatorname{sequence}_I:
@@ -133,688 +108,344 @@ $$
 $$
 
 It succeeds exactly when every member succeeds. An empty family succeeds
-with the unique empty value family. Strict batch evaluation is therefore
-the composite
+with its unique empty value. Strict batching is the composite
 
 $$
 \operatorname{batch}_I(f)=\operatorname{sequence}_I\circ f^I.
 $$
 
-The prototype should make this distinction executable. Restricting the
-index set before sequencing can remove a failure; restricting afterward
-cannot. Thus the usual total-function reindexing equations must not be
-assumed for every partial computation.
+Restricting coordinates before strict assembly can omit a failure that
+assembly of the complete family would encounter. Consequently, ordinary
+total-function reindexing equations do not hold unconditionally for
+strict partial computations.
 
-The proposed benefit is not a different result convention. It is making
-the existing strictness visible in the compositional interface.
+The prototype preserves this distinction through the existing interpreter
+and expression-level checks. It does not implement a new effect calculus
+or a generic graph representation of strict array assembly.
 
-### 3.2. Contributions have identities and destinations
+### 2.2. Contributions and collectors
 
-For a fixed finite core program, let $O$ denote its set of actual tagged
-contribution occurrences, and let $C$ denote its set of defined coordinate
-addresses. An address identifies a tensor together with its coordinate.
-Let $d:O\longrightarrow C$ be the destination map.
+For a fixed finite core program, let $O$ be its set of actual tagged
+contribution occurrences and $C$ its set of defined coordinate addresses.
+An address identifies a tensor and its coordinate. Let
+$d:O\longrightarrow C$ assign each occurrence its destination.
 
-For this first experiment, fix one exact scalar carrier $K$, with
-associative, commutative contribution combination $\oplus$ and identity
-$0_K$. These operations form a commutative monoid. The intended executable
-carrier is Lean's exact rational arithmetic; multiplication and partial
-primitives belong to expression interpretation rather than the collection
-interface.
+Let $K$ be the scalar carrier, with associative, commutative combination
+$\oplus$ and identity $0_K$. These data form a commutative monoid.
+The implementation fixes $K$ to exact rational values and uses ordinary
+addition for $\oplus$.
 
-For each occurrence $o\in O$, let $R_o$ denote its read footprint. The
-notation $K^{R_o}$ means assignments of scalar values to those addresses.
-The occurrence's body determines a partial function
+For each occurrence $o\in O$, let $R_o$ be its complete read footprint:
+the addresses that must be available before its body is evaluated.
+The body determines a partial function
 
 $$
 g_o:K^{R_o}\rightharpoonup K.
 $$
 
-The hooked arrow $\rightharpoonup$ means a partial function.
+Here $K^{R_o}$ is the set of value assignments on the footprint and
+$\rightharpoonup$ denotes a partial function.
 [Read stability](tensor_logic_semantics_part_iv.md#233-stable-evaluation-from-a-partial-store)
-justifies this factorisation: the full environment matters only through
-the required coordinates, including its effect on definedness.
+justifies dependence on those coordinates rather than the whole environment.
 
-This is not permission to evaluate the body before its entire footprint
-is available.
-
-### 3.3. A collector has a closed family of input contributions
-
-For a coordinate $a\in C$, define its writer family
-$O_a=\{o\in O\mid d(o)=a\}$. The braces describe the occurrences whose
-destination is $a$.
-
-Its collector is the total function $\mu_a:K^{O_a}\longrightarrow K$
-defined by
+For a destination $a\in C$, its writer family is
+$O_a=\{o\in O\mid d(o)=a\}$. A collector
+$\mu_a:K^{O_a}\longrightarrow K$ combines that family:
 
 $$
 \mu_a(v)=\bigoplus_{o\in O_a}v(o).
 $$
 
 Here $v:O_a\longrightarrow K$ supplies one value per occurrence, and
-$\bigoplus$ denotes finite combination using $\oplus$. An empty
-combination is $0_K$.
+$\bigoplus$ is finite combination using $\oplus$, with empty result $0_K$.
+Equal-valued occurrences remain distinct inputs.
 
-The writer family consists of identities, not distinct numerical values.
-The collector cannot expose a readable result until every member has
-succeeded. Its closed input interface expresses the publication barrier.
+A collector's writer family must be fixed before execution. Runtime
+publication requires every member to have produced a successful value.
+Structural writer closure and runtime completion are different conditions.
 
-An open contribution interface can still accept writers. A completed-value
-interface cannot. Combining open contributions and composing completed
-values are different operations.
+## 3. The implemented graph and runner
 
-### 3.4. Causality is a separate capability
+### 3.1. Scope and representation
 
-The first executable graphs are acyclic at coordinate level.
-Independent coordinates can be evaluated in either order; a bounded
-history has explicit dependencies on earlier coordinates.
+The implementation is parameterised by an existing
+`LeanNCD.Semantics.Program` over `RationalReference.registry`, a complete
+reference `Schedule`, and a raw input binding.
+The registry provides reciprocal and square; ReLU is not a supported
+primitive in this prototype.
 
-This does not turn recurrence into independent broadcasting. It also
-does not interpret arbitrary feedback as a solver. A cyclic source
-program can retain its model relation while being rejected by this
-prototype's execution admission.
+The program and schedule supply finite, dependent tensor, coordinate,
+and occurrence identities. The prototype reuses their existing evidence
+rather than adding proofs to construct new fixtures.
 
-The symbolic representation of finite histories can later use the
-existing [temporal grading](../graded_prop.md#34-the-temporal-grading-and-making-scan-first-class).
-The first experiment should establish behaviour on small concrete
-histories before adding a symbolic scan representation.
+The implementation is
+[`IndexedExecutionPrototype.lean`](../../leanncd/experiments/indexed_execution/IndexedExecutionPrototype.lean).
 
-## 4. Why the first prototype is deliberately not a category library
+### 3.2. Explicit ports and structural validation
 
-The categorical ideas determine the proposed interfaces and laws, but
-the experiment should begin with executable representations:
+`Node.evaluate` contains an occurrence identity, its full read-port list,
+and its destination. Its body is obtained from the fixed program.
+`Node.collect` contains a defined coordinate and its complete writer-port list.
 
-- Finite, identity-labelled coordinate domains.
-- Typed value and contribution ports.
-- Explicit writer closure.
-- Strict result assembly.
-- Dependency-respecting graph execution.
-- Comparisons with the existing reference semantics.
+`fragment` constructs the canonical graph from the program and schedule.
+`Fragment.append` concatenates node fragments. `close` validates:
 
-It should not begin by implementing a general PROP, fibration, actegory,
-restriction category, or double category. Such packaging is justified
-only after we know which operations and laws the prototype actually needs.
+1. The required number of nodes.
+2. Unique occurrence and collector identities.
+3. Presence of every required node.
+4. Exact read, destination, and writer ports.
 
-In particular, the prototype is not required to exhibit a global natural
-transformation expressing every Tensor Logic constructor. It tests a
-candidate foundation from which a sound compositional statement might
-later be formulated.
+The validation compares against canonical lists, including their order.
+It is not a general account of port isomorphisms.
 
-## 5. The evidence we seek
+Fragment recomposition is exercised within one fixed program. The
+implementation does not provide phase-typed open contribution ports,
+incremental sealing, or arbitrary composition of independently authored
+programs. The collection interface makes writer completeness explicit,
+but its correctness still depends on validation against the whole program.
 
-There are three different levels of evidence:
+### 3.3. Runtime state and eligibility
 
-1. **Semantic fidelity:** the graph and reference machine agree on
-   successful complete environments and the specified terminal outcomes.
-2. **Structural improvement:** interface construction prevents meaningful
-   errors, such as reading an unsealed collector, rather than detecting
-   exactly the same mistakes with renamed pending-set tests.
-3. **Reusable reasoning:** at least one useful transformation has a
-   compact, reusable preservation argument, while a tempting invalid
-   transformation is explicitly rejected or shown to change behaviour.
+`State` contains:
 
-Finite execution and executable checks can provide evidence for these
-claims on the tested instances. They do not prove a general correspondence
-theorem, a universal property, compiler correctness, or optimality of the
-chosen categorical foundation.
+- `available`: inputs and completed collector values.
+- `produced`: successful occurrence identities paired with their values.
+- `failure`: the failed occurrence, if any.
 
-## 6. The smallest executable Lean design
+It retains produced values after collection. No separately mutated
+pending set or accumulator map is stored.
 
-### 6.1. Start from an existing core program
+`enabled` checks eligibility directly from ports:
 
-The initial prototype should be parameterised by an already constructed
-`LeanNCD.Semantics.Program` over the selected rational registry and an
-already constructed complete reference `Schedule` for that program.
-These supply the finite tensor, coordinate, occurrence, and enumeration
-data. Donors over a different declaration or primitive registry cannot be
-inserted into that schedule unchanged.
+- An evaluation node is enabled when it has not produced a value and all
+  its read ports are available.
+- A collector is enabled when its coordinate is unavailable and all
+  its writer ports have produced values.
 
-The graph's scalar values use the existing exact-rational registry.
-Its initial nonlinear and partial witnesses should therefore use square
-and reciprocal. ReLU is useful conceptually, but it is not an operation
-we should claim is available in that particular reference registry.
+Evaluation is atomic at occurrence level. The runner uses the existing
+`evalReady` to interpret the whole body only after the graph's readiness
+gate succeeds. An undefined body terminates execution; a successful body
+records its contribution exactly once.
 
-Do not begin with a new parser, a replacement tensor declaration system,
-or a generic St/Br interpreter. Keep the existing identity distinctions.
-For generic core fixtures, use their actual tensor and occurrence
-identities; use source UIDs when the donor actually carries them, not an
-invented UID interpretation of every finite carrier.
+If graph eligibility and the interpreter's readiness disagree, the runner
+reports `contractMismatch`, not a fallback scheduling decision.
+A collector likewise reports `collectorMismatch` if its supposedly
+available writer values cannot be assembled.
 
-### 6.2. Separate structural closure from runtime completion
+Atomic evaluation preserves an important boundary: an undefined
+subexpression must not be reported early when another required read
+prevents the whole occurrence from ever becoming ready.
 
-Two different events must not share an ambiguous meaning of "seal":
+### 3.4. Inputs, scheduling, and terminal outcomes
 
-- **Structural closure:** the builder fixes the complete writer family
-  for a coordinate. No later writer may be added.
-- **Runtime completion:** every writer in that closed family has produced
-  a successful value, so the collector can expose its result.
+Input presence is checked independently from the reference validator:
+each supplied tensor must match the program's input role. A missing
+zero-coordinate input is still invalid. Typed input values already
+carry their coordinate domains; malformed untyped external shapes are
+outside this interface.
 
-The builder can accept open fragments of the program's known occurrence
-family, combine them by disjoint identity-preserving union, and close
-their destination interfaces. Closing checks that the declared writers
-match the original program's complete fiber.
+The runner uses the supplied schedule as priority data, finds the first
+eligible graph node, and restarts from the beginning after each action.
+It does not call reference `attempt` or `select`.
 
-For the first prototype, this is composition of fragments of one fixed
-program. It is not yet a semantics for arbitrary independently authored
-open source programs. That larger interface problem remains a possible
-follow-up.
+The executable outcomes distinguish:
 
-The checks should reject duplicate occurrence identities, missing or
-misrouted writers, incompatible ports, reads presented as completed values
-before their collector interface is established, and attempts to extend
-a structurally closed writer family.
-
-### 6.3. Use two runtime node kinds
-
-Each graph contains:
-
-1. **EvaluateOccurrence:** a node with an occurrence identity, its entire
-   read footprint, its destination, and its body interpretation.
-2. **CollectCoordinate:** a node with a defined coordinate identity and
-   the complete list of writer ports fixed by structural closure.
-
-No separate operational "finish program" node is needed initially.
-Whole-program completion can be a terminal predicate checked by the
-runner.
-
-The state records:
-
-- Available input and completed-collector values.
-- Successfully produced occurrence values.
-- A terminal failure, if one has occurred.
-
-A missing value and a produced zero are different states.
-The prototype should not maintain a separately mutated pending set or
-accumulator map: those are derived for comparison with the reference.
-It may retain produced values after collection; this is a logical
-prototype, not a memory-saving representation.
-
-### 6.4. Keep occurrence evaluation atomic
-
-An evaluation node becomes eligible only when it has not already
-produced a value and every coordinate in its strict footprint is
-available. It then evaluates its whole body:
-
-- On success, record one produced value for that occurrence.
-- On undefinedness, terminate with its occurrence identity and the
-  preceding graph snapshot.
-- Never convert an unavailable read to zero or to undefinedness.
-
-This granularity is deliberate. Suppose one subexpression is undefined
-but another required read can never become available. Evaluating the
-undefined subexpression early could report a failure for an occurrence
-that is never ready in the reference machine. That is not a harmless
-change in evaluation order.
-
-Decomposing bodies into primitive-level graph nodes is deferred until
-there is an explicit account of the whole-footprint readiness barrier
-and the resulting failure observations.
-
-### 6.5. Collection creates availability
-
-A collection node becomes eligible only when its coordinate is not
-already available and every writer port has a produced value. It
-combines exactly those values and makes the result available.
-
-The graph performs no partial publication. A zero-writer collector can
-complete without evaluating any body. An input coordinate cannot be
-the destination of a collection node.
-
-Eligibility should depend on the node's explicit ports, not a call to
-the reference machine's `attempt` or `select` function.
-
-### 6.6. Terminal observations are part of the design
-
-Distinguish:
-
-| Observation | Meaning |
+| Outcome | Meaning |
 | --- | --- |
-| Complete | Every actual occurrence has succeeded and every defined coordinate is available |
-| Failed | A ready occurrence's body is undefined |
-| Blocked | Work remains, but no node is eligible |
-| Invalid input | Required tensor-level input presence was not established |
-| Unsupported | A requested feature has no justified prototype representation or adapter |
-| Exhausted | A debugging/exploration budget was reached; the experiment is inconclusive |
-| Invalid graph | A structural or adapter contract was violated |
+| `complete` | Every occurrence has succeeded and every defined coordinate is available |
+| `failed` | A ready occurrence is undefined; its identity and failure state are retained |
+| `blocked` | Work remains and no graph node is enabled |
+| `invalidInput` | Tensor-level bindings do not match input roles |
+| `invalidGraph` | Structural validation failed |
+| `exhausted` | A requested debugging budget ended before an enabled step |
+| `contractMismatch` / `collectorMismatch` | An internal graph contract was violated |
 
-These are conceptual observation categories, not promised Lean constructor
-names. They must not collapse into one another.
+An `unsupported` outcome constructor exists, but the runner does not
+implement general feature admission through it.
 
-The reference validates presence at tensor level, including zero-coordinate
-inputs. The candidate must check the same requirement independently from
-the raw binding. Typed core input values already carry coordinate-domain
-information; testing arbitrary malformed external shapes would require
-an additional, separately scoped untyped input interface.
+The default budget is the number of graph nodes plus one. Successful
+actions finish previously unfinished nodes, and undefinedness is terminal.
+No new termination theorem is claimed. Running the blocked-cycle fixture
+requires no rank certificate and does not solve its equations.
 
-The initial runner need not construct rank proofs. Normal progress tests
-use ranked examples; deliberately unranked diagnostic examples may run
-and report blocking without attempting to solve their equations.
-Successful behaviour on the ranked examples is not a claim that the
-prototype recognises the whole ranked fragment.
+## 4. What the reference comparison checks
 
-## 7. Reuse the reference implementation without hiding its proof boundary
+### 4.1. Shared and independent components
 
-GPT Sol's read-only API investigation identified the following reuse
-surface. These are source-inspection findings, not compiled or executed
-prototype observations.
+The reference entry point is `runValidated` in
+[`ReferenceExecutor.lean`](../../leanncd/LeanNCD/Semantics/ReferenceExecutor.lean).
+It validates inputs and returns the existing exact-reference execution.
 
-### 7.1. The reference oracle
+The graph shares the program, schedule data, scalar operations, body
+interpreter, and footprint construction. Therefore agreement does not
+independently validate expression interpretation.
 
-The relevant entry points are in
-[`ReferenceExecutor.lean`](../../leanncd/LeanNCD/Semantics/ReferenceExecutor.lean),
-in the `LeanNCD.Semantics.Program.Executor` namespace:
+The graph independently computes node eligibility, input presence,
+collector completion, its execution loop, and its state changes.
+`graphSnapshot` derives a reference-shaped observation:
 
-- `runValidated` validates raw tensor-level input presence, then runs the
-  executor and retains the admitted input and execution result.
-- `run` executes with its existing finite initial budget and does not
-  require a rank certificate.
-- `runFuel` is a debugging facility, not evidence that arbitrary exhaustion
-  means semantic failure.
+- Published values are the graph's available values.
+- An accumulator is the sum of contributions already produced for its
+  destination.
+- Pending occurrences are those without produced values.
 
-An execution result exposes its terminal outcome and typed events.
-The ordinary reference outcomes distinguish `complete`, `failed`,
-`blocked`, and `exhausted`. The ranked no-blocking theorem is a
-separate result requiring a rank certificate; we do not need to
-manufacture that certificate merely to run a comparison.
+This derivation is used for observation only. It does not drive execution.
 
-The exact scalar interpretation is in
-[`RationalReference.lean`](../../leanncd/LeanNCD/Semantics/RationalReference.lean):
-`Carrier`, `ops`, `registry`, and the `Primitive.reciprocal` and
-`Primitive.square` operations.
+### 4.2. Intermediate states, not just final outputs
 
-### 7.2. "No proofs" is a real construction constraint
+`compare` checks four components:
 
-The existing core is not entirely proof-free data:
+- Matching terminal outcome, including the located failure occurrence.
+- Equal snapshots at every recorded step.
+- Matching event identities and exact values.
+- Matching unavailable-read observations for blocked states.
 
-- `Program` carries an `output_defined` obligation.
-- Typed reads carry in-bounds/admission evidence.
-- The reference `Schedule` carries duplicate-freedom and enumeration
-  coverage evidence.
+Snapshots enumerate all declared coordinates, including internal
+nonoutputs. They retain unavailable versus available-zero distinctions,
+derived accumulators, pending identities, and tensor-level input presence.
+They compare ordinary data rather than dependent proof fields.
 
-These structures appear in
-[`Program.lean`](../../leanncd/LeanNCD/Semantics/Program.lean),
-[`Types.lean`](../../leanncd/LeanNCD/Semantics/Types.lean),
-and [`ExecutableState.lean`](../../leanncd/LeanNCD/Semantics/ExecutableState.lean).
-Calling `runValidated` does not remove their construction requirements.
+Reference snapshots are reconstructed from its initial state and
+recorded event effects. This is a comparison of the witnessed execution,
+not an independent reference interpreter.
 
-For the initial experiment, adopt the conservative rule:
+The comparison is deliberately stronger than result equality under a
+matched priority. Across different priorities, the tested successful
+stores agree; identical traces or first failure locations are not asserted.
 
-> Reuse existing constructed programs, schedules, and admitted-read
-> evidence. Do not introduce new theorem declarations or hand-written
-> proof terms merely to populate the fixture suite.
+## 5. Observed results
 
-Even a short `by decide` would be a new proof term; it should not be
-quietly described as absent. If a desired case has no proof-free
-construction route through existing infrastructure, record that
-limitation and defer it rather than add `sorry`, invent a certificate,
-or silently reduce the advertised coverage.
+### 5.1. Executable coverage
 
-The admitted-source layer has existing proved schedule builders:
-`sourceScheduleAt`, `sourceSchedule`, `sourceInputBinding`, and `runSource`
-in [`Source/Schedule.lean`](../../leanncd/LeanNCD/Semantics/Source/Schedule.lean),
-with `AdmittedSource.program` in
-[`Source/Program.lean`](../../leanncd/LeanNCD/Semantics/Source/Program.lean).
-Its source admission is restricted; it is not a generic adapter for
-partial-primitive, guard, or cycle examples.
+[`IndexedExecutionPrototypeTest.lean`](../../leanncd/experiments/indexed_execution/IndexedExecutionPrototypeTest.lean)
+contains **36 passing executable check rows** and **18 unchanged
+graph/reference comparison invocations**. These counts are assertions
+and invocations, not distinct programs or exhaustive schedules.
 
-### 7.3. Share expression semantics, not the scheduler
-
-For the first prototype, reuse the existing whole-body ready evaluator:
-`evalReady` and `ReadyResult` in
-[`Readiness.lean`](../../leanncd/LeanNCD/Semantics/Readiness.lean).
-The expression operations `footprint`, `evalWith`, `interpret`, and
-`sequence` live in
-[`Interpret.lean`](../../leanncd/LeanNCD/Semantics/Interpret.lean).
-
-The graph must compute eligibility from its own available-value ports.
-If it declares an occurrence ready but the shared evaluator reports
-waiting, that is a graph-contract discrepancy, not an excuse to fall
-back to the reference scheduler.
-
-This division intentionally shares expression interpretation. It tests
-graph construction, availability, collection closure, scheduling, and
-terminal observation independently. It does not independently verify
-the shared interpreter's arithmetic or strictness.
-
-The existing collection operations `Family`, `pullback`, and
-`pushforward` in
-[`Collection.lean`](../../leanncd/LeanNCD/Semantics/Collection.lean)
-are useful total-family operations. They do not justify filling missing
-produced values with zero before a collector is complete.
-
-Do not use the reference `attempt` or `select` as the candidate's
-eligibility predicate. Do not write another reference executor and
-describe agreement between two new implementations as independent
-verification.
-
-## 8. Comparison observations and scheduling
-
-### 8.1. Derive a reference-shaped view
-
-From any nonfailed graph state, derive:
-
-- The reference published store from inputs and completed collectors.
-- The reference accumulator at each destination by combining its
-  successfully produced occurrence values.
-- The reference pending family from occurrences without produced values.
-
-This is a computed comparison view, not additional state updated by
-the graph runner.
-
-Initially compare both complete outcomes and intermediate views under
-a matched priority order. Restart selection at the beginning of that
-order after every action, matching the reference selection discipline.
-Event comparison should use explicit occurrence and address identities,
-not numerical values or display names as substitutes.
-
-### 8.2. Compare data, not dependent proof fields
-
-Do not attempt direct equality on dependent execution objects containing
-proof fields. Project both sides to ordinary runtime observations:
-
-- Stable tensor identity and coordinate.
-- Available versus missing value.
-- Exact rational value when available.
-- Stable statement and valuation identity.
-- Terminal kind and located failure occurrence.
-- Derived accumulator and pending rows for diagnostic snapshots.
-
-Inspect every declared tensor, including internal nonoutputs. Empty
-tensor metadata and input presence need their own observations because
-there are no coordinate rows to reveal omission.
-
-The existing `eventRow`, `vectorStore`, and `snapshot` definitions in
-[`ExecutableReferenceTest.lean`](../../leanncd/test/Semantics/ExecutableReferenceTest.lean)
-are possible narrow donors.
-[`Source/Observation.lean`](../../leanncd/LeanNCD/Semantics/Source/Observation.lean)
-and [`Source/Diagnostics.lean`](../../leanncd/LeanNCD/Semantics/Source/Diagnostics.lean)
-have richer observations for admitted sources, but not every helper is
-an independent graph check: `observeSnapshot.eligible`, for example,
-uses reference `attempt`.
-
-A small generic data projection may be clearer than reusing a helper
-whose eligibility logic would couple the two implementations.
-
-### 8.3. Do not overstate schedule coverage
-
-There are two different experiments:
-
-1. Run the graph and reference using already available matched,
-   complete priorities.
-2. Explore every eligible graph successor on tiny finite instances.
-
-The second does not automatically compare every reference schedule:
-arbitrary new reference schedules require their coverage evidence.
-Report exactly which reference priorities were exercised.
-
-Different successful priorities should agree on the complete exact
-environment. Different failing priorities need not choose the same
-occurrence or snapshot. Under a matched priority, a failure-location
-disagreement is an informative discrepancy and must not be hidden by
-comparing only a generic failure flag.
-
-State exploration needs explicit size and fuel limits. Reaching a limit
-is inconclusive, not success, blocking, or proof of nontermination.
-
-## 9. Fixture families and what each would teach us
-
-Every row below is a proposed experiment. Donor names identify existing
-material to assess for reuse; they do not assert that a fresh prototype
-run has occurred or that every donor already has a usable schedule.
-
-| Family | Distinguishing requirement | What agreement would tell us |
-| --- | --- | --- |
-| Duplicate and colliding contributions | Equal values with different occurrence identities must remain separate writers | The graph preserves occurrence identity, not merely a set of values |
-| Nonlinear boundary | Compare operation-per-occurrence with operation-after-collection as intentionally different constructions | Collector closure preserves the placement of nonlinear operations |
-| Strict partial expressions | A ready undefined operand remains undefined even with a zero multiplier; array selection cannot bypass demanded nonselected entries | The interface does not silently introduce short-circuit or lazy semantics |
-| Unready partial occurrence | A missing footprint input prevents body evaluation even if another subexpression would be undefined | Atomic node readiness preserves legally reportable failures |
-| Guards and empty domains | Excluded or nonexistent body instances are not evaluated; empty writer fibers complete as zero | Absence of work is distinguished from a failed or zero-valued result |
-| Empty inputs | Omitted tensor-level input presence is rejected even when there are no coordinates | The graph has not confused declarations with coordinate enumeration |
-| Internal work and completion | An undefined internal nonoutput cannot be ignored after outputs become available | Whole-program completion still matches the complete-model contract |
-| Ranked chains and finite histories | Consumers wait for complete earlier values; relevant alternate priorities still progress | Availability is sufficient to express the intended causal execution |
-| Unranked cycles | Blocking remains distinct from undefinedness and from the existence of equation models | The graph has not become an accidental cyclic solver |
-| Interface composition | Combine disjoint occurrence fragments, close writers, then connect completed values; reject invalid alterations | The design supports more than a renamed closed-program loop |
-
-### 9.1. Existing material to reuse
-
-The source investigation confirmed that the named donors are public
-definitions or abbreviations. The test modules are importable through
-Lake's `test` library, whose source directory is `test` in
-[`lakefile.toml`](../../leanncd/lakefile.toml). The import names include
-`Semantics.ExecutableReferenceTest`, `Semantics.ExpressionTest`, and
-`Semantics.CollectionModelTest`. They are not exported by the production
-`LeanNCD.Semantics` module.
-
-The most useful executable pairs are in
-[`ExecutableReferenceTest.lean`](../../leanncd/test/Semantics/ExecutableReferenceTest.lean):
-
-| Purpose | Existing program/body and schedule material |
+| Evidence | Passing checks and observations |
 | --- | --- |
-| Duplicate writes | `program`, `duplicateBody`, and generic `schedule` |
-| Colliding tagged valuations | `tagged`, `taggedSchedule` |
-| Ready undefinedness and failure snapshots | `failureBody`, `failureAfterSchedule` |
-| Guard exclusion | `excluded`, `excludedSchedule` |
-| Zero-coordinate input presence | `emptyRole`, `emptySchedule` |
-| Dependency chain and cycle | `routed`, `chainBody`, `cycleBody`, `routedSchedule` |
-| Executable nonlinear and partial bodies | `squareBody`, `reciprocalBody`, and generic `schedule` |
+| Duplicate contributions | Exact complete-store entries are 4, 0, 0; five execution events |
+| Colliding tagged valuations | The shared destination is 14 under both tested priorities; seven events in the original priority |
+| Writer completion | After one of four writers succeeds, the destination remains unavailable and its collector is disabled |
+| Missing versus zero | A produced zero exists as a contribution while its destination remains unpublished |
+| Failure | Ready undefinedness matches; failure snapshots retain earlier produced contributions and published values |
+| Guards and empty fibers | Excluded bodies are not evaluated; zero-writer coordinates complete |
+| Empty input declarations | Present empty input is accepted; absent empty input is rejected; empty defined tensors complete |
+| Whole-program completion | An available output does not hide an unfinished, failing internal nonoutput |
+| Coordinate dependencies | Original and reversed chain priorities match; the checked dependent coordinate values are 3 and 4 |
+| Unranked cycle | The graph and reference both block, retaining missing-read observations |
+| Nonlinear placement | Per-occurrence reciprocals collect to $3/4$, not $1/6$; square is also exercised |
+| Debug budgets | Unfinished work at zero budget is exhausted, while an already complete empty computation remains complete |
+| Graph construction | Recomposition is accepted; missing node, duplicate tag, missing writer and dropped read ports are rejected |
+| Expression-only strictness | Existing pins cover strict selection/tabulation, undefined nonselected work, zero strictness, empty reduction, and demanded empty-array undefinedness |
+| Total finite families | Concrete pushforward grouping/composition and reindex composition checks pass |
 
-These are source-checked reuse candidates with existing schedule
-infrastructure, not reports of prototype executions. Reuse an existing
-schedule or its already-supported `.reverse` operation rather than
-construct a new schedule with manual coverage proofs.
+The strict-array row is expression-level evidence from the existing
+interpreter, not a graph/reference adapter for array selection.
+The finite-family row tests concrete laws; it is not a batched graph
+kernel or a general proof of those laws.
 
-Other useful donors have a narrower role:
+### 5.2. Implementation mutation controls
 
-- [`CollectionModelTest.lean`](../../leanncd/test/Semantics/CollectionModelTest.lean):
-  `duplicate`, `collision`, `noStatements`, `partialProgram`, and
-  `reciprocalProgram`. These include model-level donors; do not presume
-  they all come with reusable executor schedules.
-- [`ExpressionTest.lean`](../../leanncd/test/Semantics/ExpressionTest.lean):
-  `zeroStrict`, `emptyReduction`, `emptyTab`, `selected`, and
-  `nonselectedUndefined`. These pin expression semantics, not by
-  themselves graph/reference end-to-end execution.
-- [`RankedMachineTest.lean`](../../leanncd/test/Semantics/RankedMachineTest.lean):
-  ranked dependencies, zero extents, and the distinction between cyclic
-  model existence and blocked execution. Existing semantic witnesses
-  are not automatically new executable graph adapters.
+Both entries of the
+[mutation manifest](categorical_tensor_logic_prototype_mutations.json)
+were executed against the prototype:
 
-The expression and collection-model donors use different declarations,
-carriers, or registries from the executable-reference fixtures. Their
-existence does not supply an end-to-end adapter for strict tabulation,
-selection, or every proposed history case.
+| Control | Deliberate defect | Observed failure | Restoration |
+| --- | --- | --- | --- |
+| P1 | Seed every collector with one instead of zero | `duplicate-exact-store` and `tagged-final`, among other assertions, fail | Source restored byte-identically; build passes |
+| P2 | Remove the full-footprint readiness condition | `coordinate-chain` and `full-footprint-waiting`, among other assertions, fail | Source restored byte-identically; build passes |
 
-No generic proof-free complete-schedule constructor or exhaustive
-legal-reference-step enumerator was found in the inspected APIs.
-The existing admitted-source schedule builder remains useful within
-its own restricted fragment.
+These controls alter implementation behaviour, not expected assertion
+values. The manifest also checks that the intended failure diagnostics
+appear. Separate malformed-graph checks exercise validation rejection;
+they are not additional source-mutation cycles.
 
-The first implementation checkpoint must confirm that these public
-imports build in the chosen experimental location, exercise the selected
-constructions, and record actual observations.
-Keep three coverage labels in the result table: full graph/reference
-comparison, expression/interface-only check, and deferred adapter.
-Never report the union of those labels as end-to-end coverage.
+### 5.3. Build and review
 
-### 9.2. Laws and deliberate non-laws
+The full `LeanNCD` and default `Tests` build, the non-default experiment
+target, and fresh test-file elaboration all passed in the integrated
+checkout. The whole-branch code review found no significant issues.
+The new modules introduced no source warnings; pre-existing repository
+proof warnings remain outside the prototype.
 
-On the appropriate total, closed fragment, check:
+## 6. What the experiment establishes
 
-- Pullback identity and composition.
-- Additive pushforward identity, composition, grouping, and occurrence
-  relabeling.
-- Collection after exactly its closed writer family has succeeded.
-- Immutability of available values.
-- Agreement of successful complete environments across tested priorities.
+The tested executions support a modest structural improvement:
 
-Check counterexamples to the tempting but invalid generalisations:
+- Explicit read ports suffice for the candidate's readiness gate.
+- Explicit writer ports express the collection barrier.
+- Produced values and available values suffice to reconstruct reference
+  accumulators and pending sets for comparison.
+- A separate execution loop reproduces the tested intermediate states,
+  failures, blocking diagnostics, and complete stores.
 
-- Arbitrary nonlinear operations do not distribute over collection.
-- A zero multiplier does not suppress undefinedness.
-- Strict array evaluation does not commute with every coordinate restriction.
-- Having a model does not imply completion of unranked direct execution.
-- Different priorities need not report the same first failing occurrence.
+This is more than checking final tensor numbers. It tests the state
+relationship throughout execution and catches meaningful defects in
+collection and readiness.
 
-These counterexamples are part of the desired evidence: a useful
-formalism must reject false equations, not merely validate convenient ones.
+It is not yet evidence that all composition obligations have become local.
+`close` still obtains the authoritative node and port structure from the
+fixed whole program. Fragment composition is list recomposition, not a
+general open-program calculus.
 
-### 9.3. Controlled defects
+Nor is storing all produced values necessarily cheaper than incremental
+accumulation. The experiment measures semantic fidelity, not execution
+speed, memory reduction, or optimality of the abstraction.
 
-After establishing an unmodified baseline, deliberately introduce one
-candidate defect at a time:
+## 7. Remaining limitations and useful next experiments
 
-- Deduplicate equal-valued writers.
-- Replace collection by the last writer.
-- Omit a writer port or allow premature collection.
-- Treat a missing value as an available zero.
-- Evaluate a partial occurrence before its entire footprint is ready.
-- Omit nonselected strict-array demands.
-- Finish when outputs alone are ready.
-- Accept an omitted zero-coordinate input.
+The implemented scope does not include:
 
-Each defect must violate a named, independently stated expectation.
-Agreement between two legs sharing the same changed evaluator is not
-a sufficient control. For shared expression semantics, the existing
-expression pins or an independently stated definedness expectation
-must expose the error.
+- Exhaustive graph-state or reference-schedule exploration.
+- A rational graph adapter for strict array construction and selection.
+- Full bounded-history execution or a compact symbolic scan adapter.
+- Arbitrary source admission or independently authored open-program
+  composition.
+- A general effect-sensitive indexed category or Turi-Plotkin
+  compositionality theorem.
+- Primitive-level execution, physical memory reuse, floating-point
+  arithmetic, or general cyclic solvers.
 
-These are proposed controls, not mutation results already observed.
+Existing programs and schedules carry proofs for roles, typed reads, and
+complete enumeration. Reusing those objects avoids new proof obligations;
+constructing arbitrary new fixtures without that infrastructure remains
+a separate problem.
 
-## 10. What would count as simplification?
+The most informative follow-ups are:
 
-Correct final numbers are necessary but insufficient. Record whether:
+1. Add a graph-level strict-array case so effect sequencing is tested
+   through the new representation, not only the shared interpreter.
+2. Replace list recomposition with an explicit open-writer interface and
+   test closure under a genuinely compositional operation.
+3. Exercise a bounded history while retaining coordinate-level causality
+   and the whole-history output contract.
+4. Explore small graph schedules with explicit limits, distinguishing
+   graph-only exploration from independently compared reference priorities.
 
-1. The runtime has only available values, produced values, and terminal
-   status, rather than a second mutable pending/accumulator machine.
-2. Readiness follows from explicit value ports, and collection readiness
-   follows from closed writer ports.
-3. Open-fragment combination and writer closure reject meaningful bad
-   compositions before execution.
-4. The comparison view reconstructs reference bookkeeping without calling
-   reference selection.
-5. At least one useful grouping/batching operation has a small executable
-   preservation check and a clear mathematical explanation.
-6. Strictness counterexamples have an explicit place in the interface,
-   rather than a growing list of scheduler exceptions.
-7. Proof-free execution remains real: the prototype has not replaced
-   ordinary construction with an indispensable new proof generator.
+These experiments should precede claims that the candidate is a simpler
+general foundation. No change to the fundamental Tensor Logic semantics
+is justified merely to make the abstraction easier to express.
 
-Do not use runtime speed or memory reduction as the initial success
-criterion. Recording every produced contribution may use more storage
-than an incremental accumulator. The proposed gain is a simpler semantic
-and compositional interface, from which more efficient representations
-could later be derived.
+## 8. Reproducing the checks
 
-An honest no-go result includes:
-
-- A graph completion or readiness rule that changes a supported outcome.
-- A required global condition that cannot be represented by the proposed
-  finite interfaces without reconstructing the original machine.
-- Reuse so extensive that the candidate shares the reference scheduler,
-  collection decisions, and observations, leaving little independent test.
-- Important cases requiring new proof construction before they can be
-  expressed, contrary to the initial constraint.
-- A representation that cannot plausibly retain a compact symbolic form
-  for larger finite domains.
-
-## 11. First implementation and observed evidence
-
-### 11.1. Files and invocation
-
-The non-default `IndexedExecutionExperiment` Lake target builds:
-
-- [`IndexedExecutionPrototype.lean`](../../leanncd/experiments/indexed_execution/IndexedExecutionPrototype.lean):
-  explicit occurrence/read/writer ports, structural closure, graph state,
-  independent priority selection, and data-only reference comparisons.
-- [`IndexedExecutionPrototypeTest.lean`](../../leanncd/experiments/indexed_execution/IndexedExecutionPrototypeTest.lean):
-  executable fixture assertions, malformed graph controls, expression pins,
-  and finite-family checks.
-
-Neither module is imported by production `LeanNCD`. No new theorems,
-axioms, `sorry`, or hand-written proof terms were added.
-
-From the checkout root, build dependencies and then execute the checks
-afresh:
+From the checkout root:
 
 ```bash
 bash leanncd/scripts/lake-build.sh leanncd IndexedExecutionExperiment
 bash leanncd/scripts/lean-file.sh leanncd experiments/indexed_execution/IndexedExecutionPrototypeTest.lean
 ```
 
-The second command elaborates the test file again, so its executable
-assertions run even when Lake has cached the module.
+The first command builds dependencies and the experiment. The second
+elaborates the test file afresh, executing its checks even when Lake has
+cached the module.
 
-### 11.2. Observed coverage
+To repeat both mutation controls:
 
-The first implementation passes **36 executable check rows**, containing
-**18 matched-priority graph/reference comparison invocations**. Those
-numbers count assertions and invocations, not distinct programs or
-exhaustive schedules.
+```bash
+bash leanncd/scripts/mutation-manifest.sh leanncd papers/semantics/categorical_tensor_logic_prototype_mutations.json
+```
 
-| Evidence class | Observed coverage |
-| --- | --- |
-| Matched graph/reference runs | Duplicate writes; colliding tagged valuations; selected reversed priorities; ready undefinedness and failure snapshots; guards; empty fibers; empty input presence/absence; internal nonoutput work; coordinate chains and a blocked cycle; reciprocal and square |
-| Intermediate-state pins | Open writer bundles remain unavailable; produced zero differs from missing; outputs alone do not complete internal work; full footprints wait for required coordinates |
-| Construction controls | Fragment recomposition; missing node, duplicate tag, missing writer and dropped read rejection; malformed graph rejected by reference comparison |
-| Expression-only evidence | Existing strict array selection/tabulation, zero-strictness, empty reduction and demanded empty-array cases |
-| Total-family evidence | Concrete pushforward grouping/composition and reindex composition checks |
-
-The comparison checks terminal kinds, located failures, every intermediate
-available/accumulator/pending snapshot, event identities and values, and
-blocked-read observations. It enumerates all declared coordinate rows,
-including nonoutputs, and separately compares tensor-level input presence.
-
-Two real source mutations were run through the
-[mutation manifest](categorical_tensor_logic_prototype_mutations.json):
-changing the collector's zero seed to one and removing the full-footprint
-readiness gate. Both caused the intended fixture failures; both restored
-byte-identically and rebuilt successfully. These are implementation
-mutations, not changes to expected assertion values.
-
-The full default Lean library and test build also completed successfully.
-Existing repository proof warnings remain outside this prototype; the new
-modules introduced no source warnings.
-
-### 11.3. What remains untested or deliberately limited
-
-- There is no exhaustive graph-state or reference-schedule explorer;
-  only the selected complete priorities and reversals were exercised.
-- Strict array selection has expression-level pins, not a graph adapter
-  over the prototype's rational registry.
-- The ranked chain is not a full bounded-history or symbolic scan adapter.
-- Arbitrary source-program admission, general partial-primitive registries,
-  and independently authored open-program composition are not implemented.
-- The body interpreter and footprint construction are deliberately shared
-  with the reference. Parity does not independently verify them.
-- Structural closure validates a fixed program's canonical port lists.
-  It is not yet a phase-typed open-interface calculus or a general account
-  of port isomorphisms.
-
-The observed structural gain is limited but real: the runner stores
-available values and produced occurrences, while reference pending sets
-and accumulators are derived only for comparison. Runtime eligibility
-uses explicit graph ports rather than reference `attempt` or `select`.
-Whether that scales to a simpler general categorical foundation remains
-the next research question, not a conclusion of these checks.
-
-## 12. What we will and will not learn
-
-If the experiment succeeds, we will have evidence that explicit
-contribution closure and availability can organise execution faithfully,
-that effect-sensitive indexing captures important non-laws, and that
-some reference bookkeeping can be derived from a more compositional
-representation.
-
-We will not yet have established:
-
-- A general Turi-Plotkin compositionality theorem.
-- That the candidate is the best categorical foundation.
-- Full source-language admission or parser correspondence.
-- A proof for all programs or all schedules.
-- An implementation of every guarded, affine, nonlinear, or scan case.
-- Correct floating-point reductions, memory reuse, or production kernels.
-- A solver for general cyclic equations.
-
-The most useful outcome may be a precise counterexample or a narrower
-abstraction. The experiment is successful as research if it tells us
-which part of the proposal deserves further work, even if the answer
-is not to adopt the proposed organisation unchanged.
+The experiment is non-default and not imported by production `LeanNCD`.
+Running the full default build alone does not substitute for explicitly
+building `IndexedExecutionExperiment`.
