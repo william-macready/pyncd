@@ -1036,6 +1036,65 @@ def statePlainReadSched : ScheduledProgram :=
     (fun a => (a.terms.getD 0 default).factors.map (·.readOrDefault.sourceSlot)))
   == some #[2]
 
+/-! #### Plain-statement pinned reads of a scan state's advancing dimension
+
+A plain statement reading a scan state at a literal on an ADVANCING dimension names a history slot;
+outside `[0, extent)` there is no such slot, so it is a compile error (`plainStatePinOutOfRange`),
+not a silent zero. Out-of-range reads that are free, shifted, or on a non-advancing dimension keep
+the zero-pad semantics, and the accepted neighbours below pin exactly that boundary. The one-axis
+state is `sc`'s `S` (extent 3, statement index 2 after the two scans); the multi-axis one is
+`coupledSched`'s `G` (dims `(r, j, c)`, advancing dims 0 and 2, extents `(3, 2, 3)`, statement index 1). -/
+
+def plainReadAfterScans (lhs : List LHSSlot) (f : Factor) : ScheduledProgram :=
+  { scratchThenPlainReadSched with
+      stmts := (scratchThenPlainReadSched.stmts.dropLast ++
+        [ .plain (.assign "Y" lhs
+            { body := { terms := [{ factors := [f] }] }, nonlin := .identity }) ]) }
+
+def plainReadAfterScansCause (lhs : List LHSSlot) (f : Factor) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan (explicitF64Sched (plainReadAfterScans lhs f)) rejSig)
+
+-- REJECT: pinned at the extent; pinned negative; through a unary factor (same `ReadPlan` path).
+#guard plainReadAfterScansCause [] (.read "S" [.const 3])
+  == some (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 3 3))
+#guard plainReadAfterScansCause [] (.read "S" [.const (-1)])
+  == some (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 (-1) 3))
+#guard plainReadAfterScansCause [] (.unaryFn .exp "S" [.const 3])
+  == some (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 3 3))
+
+-- ACCEPT neighbours: pinned at the last slot (extent - 1) reads `S`'s own slot; a shifted read that
+-- is out of range at the boundary (`l - 1` at `l = 0`) still zero-pads; the free read is the
+-- untouched `statePlainReadSched` fixture above.
+#guard plainReadAfterScansCause [] (.read "S" [.const 2]) == none
+#guard plainReadAfterScansCause [.free axL] (.read "S" [.shift axL (-1)]) == none
+#guard plainReadAfterScansCause [.free axL] (.read "S" [.shift axL 1]) == none
+#guard (prepared (plainReadAfterScans [] (.read "S" [.const 2])) rejInputs).bind (fun p =>
+    (assignAt p 2).map (fun a => (a.terms.getD 0 default).factors.map (·.readOrDefault.sourceSlot)))
+  == some #[2]
+
+def plainReadAfterCoupled (lhs : List LHSSlot) (f : Factor) : ScheduledProgram :=
+  { coupledSched with
+      stmts := coupledSched.stmts ++
+        [ .plain (.assign "Y" lhs
+            { body := { terms := [{ factors := [f] }] }, nonlin := .identity }) ] }
+
+def plainReadAfterCoupledCause (lhs : List LHSSlot) (f : Factor) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan (explicitF64Sched (plainReadAfterCoupled lhs f))
+    (InputSignature.ofDenseInputs coupledInputs))
+
+-- REJECT on each advancing dimension separately (dim 0 out of range with dim 2 in range, and the
+-- reverse), reported against that dimension's own extent.
+#guard plainReadAfterCoupledCause [.free axJ] (.read "G" [.const 3, .axis axJ, .const 2])
+  == some (.scan (.plainStatePinOutOfRange "G" 1 0 0 0 3 3))
+#guard plainReadAfterCoupledCause [.free axJ] (.read "G" [.const 0, .axis axJ, .const 3])
+  == some (.scan (.plainStatePinOutOfRange "G" 1 0 0 2 3 3))
+
+-- ACCEPT: in range on both advancing dims, and an out-of-range pin on the NON-advancing dim `j`
+-- (extent 2) keeps the zero-pad.
+#guard plainReadAfterCoupledCause [.free axJ] (.read "G" [.const 2, .axis axJ, .const 2]) == none
+#guard plainReadAfterCoupledCause [.free axR, .free axC]
+    (.read "G" [.axis axR, .const 5, .axis axC]) == none
+
 /-! ### 2.5 `ScanCompileError` — context axes and per-state geometry -/
 
 -- the same axis declared twice as scan context.

@@ -1579,11 +1579,14 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   let privateNames := checked.privateNames
   let mut stepsAcc : Array PlanStep := #[]
   let mut materializedAcc : Array SlotBinding := #[]
+  -- Published scan-state slots, with the state's name and advancing dimensions: a later plain
+  -- statement's pinned read of an advancing dimension is range-checked against these.
+  let mut stateSlotInfo : HashMap TensorSlot (String × Array Nat) := {}
   -- Branches on `ScanStmt`'s constructors directly rather than funnelling through a
   -- `plainStmtOrFail`-style narrowing: `.scan` is no longer "unreachable post-preflight" (F4's
   -- whole point), so the two admitted kinds need genuinely different compilation, and `.scanPre`
   -- keeps the unreachable-post-preflight throw that used to cover all three.
-  for sc in sched.stmts do
+  for (sc, stmtIdx) in sched.stmts.zipIdx do
     match sc with
     | .plain (.scatter nm slots rhs) =>
         -- S-A's scatter emitter. Matched BEFORE the general `.plain s` branch below, which is what
@@ -1677,6 +1680,21 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
           residualizeAssignment sizes warnings nm [] #[] retainedUids ({} : HashMap UID Int)
             resolveSource (fun s => (sigsNow[s]?).any (·.dtype == .bool))
             (dtypeOfDecl (declEnv[nm]?) == .bool) destSlot outputShape rhs.agg rhs.body.terms
+        -- A pinned literal on a scan state's ADVANCING dimension names a history slot, so outside
+        -- `[0, extent)` it is an error rather than a zero-pad (free, shifted and non-advancing-
+        -- dimension reads keep the pad). `statePinOutOfRange` is the pure rule.
+        for ti in [0 : assignPlan.terms.size] do
+          let t := assignPlan.terms.getD ti default
+          for (fi, f) in t.readFactorsIndexed do
+            match stateSlotInfo[f.sourceSlot]? with
+            | none => pure ()
+            | some (stateName, advDims) =>
+                for d in advDims do
+                  let bias := f.map.bias.getD d 0
+                  let extent := f.sourceShape.getD d 0
+                  if statePinOutOfRange (f.map.coeffs.getD d #[]) bias extent then
+                    throw (scanErr warnings
+                      (.plainStatePinOutOfRange stateName stmtIdx ti fi d bias extent))
         match rhs.nonlin with
         | .identity =>
             -- Byte-for-byte unchanged for a REAL destination (Thread 4 regression gate): single
@@ -1752,6 +1770,8 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
             tensorSigsAcc.push (compiled.stateSigs.getD si { shape := #[], dtype := .f32 })
           materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
           slotOf := slotOf.insert nm destSlot
+          stateSlotInfo := stateSlotInfo.insert destSlot
+            (nm, (compiled.raw.states[si]?.map (·.advancingDims)).getD #[])
     | .scanPre nm .. =>
         -- unreachable post-preflight (`checkScanStmt` rejects `.scanPre` as `recurrenceOrCallback`)
         throw { cause := .capability (.recurrenceOrCallback nm), warnings }
