@@ -1431,6 +1431,18 @@ private def pinnedStateReadRejects : Except String Unit := do
   rejectedOnBoth "exp S[3]" r c
     (fun | .plainStatePinOutOfRange "S" "Y" 0 3 3 => true | _ => false)
     (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 3 3))
+  -- the same read through a top-level scatter (`Y[2l] += S[k] * X[l]`): both backends check it.
+  let scat (k : Int) :=
+    (refPlain (Plan.ScanCompileTest.scatterReadAfterScans k) Plan.ScanCompileTest.rejInputs,
+     Plan.ScanCompileTest.scatterReadAfterScansCause k)
+  let (r, c) := scat 3
+  rejectedOnBoth "scatter S[3]" r c
+    (fun | .plainStatePinOutOfRange "S" "Y" 0 3 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 3 3))
+  let (r, c) := scat (-1)
+  rejectedOnBoth "scatter S[-1]" r c
+    (fun | .plainStatePinOutOfRange "S" "Y" 0 (-1) 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 (-1) 3))
   -- two-axis state `G` (dims `(r, j, c)`, advancing 0 and 2), each advancing dim on its own.
   let (r, c) := coupled [.free Plan.ScanCompileTest.axJ]
     (.read "G" [.const 3, .axis Plan.ScanCompileTest.axJ, .const 2])
@@ -1479,6 +1491,17 @@ run_cmd do
   | .ok (S, Y) =>
       unless Y.data == #[S.data[1]!, S.data[2]!, (0 : Float)] do
         fail s!"S[l+1] must zero-pad at l = 2: S {repr S.data}, Y {repr Y.data}"
+
+-- ACCEPT neighbour through a scatter: `Y[2l] += S[2] * X[l]` reads `S`'s own last slot, so
+-- `Y[2l] = S[2] * X[l]` (X = [1, 2, 3]) and the odd destination slots stay zero (extent 6).
+run_cmd do
+  match refPlain (Plan.ScanCompileTest.scatterReadAfterScans 2) Plan.ScanCompileTest.rejInputs with
+  | .error e => throwError s!"scatter S[2]: {e.error}"
+  | .ok rep => match rep.env["S"]?, rep.env["Y"]? with
+      | some S, some Y =>
+          unless Y.data == #[S.data[2]! * 1.0, 0.0, S.data[2]! * 2.0, 0.0, S.data[2]! * 3.0, 0.0] do
+            throwError s!"scatter S[2] must read S's own last slot: S {repr S.data}, Y {repr Y.data}"
+      | _, _ => throwError "scatter S[2]: no S or Y in the report"
 
 -- ACCEPT neighbours, two-axis state `G`: in range on both advancing dims reads the state's slice;
 -- an out-of-range pin on the NON-advancing dimension `j` (extent 2, pinned at 5) zero-pads.

@@ -1072,6 +1072,33 @@ def plainReadAfterScansCause (lhs : List LHSSlot) (f : Factor) : Option PlanComp
     (assignAt p 2).map (fun a => (a.terms.getD 0 default).factors.map (·.readOrDefault.sourceSlot)))
   == some #[2]
 
+-- The same rule through a top-level SCATTER (`Y[2l] += S[k] * X[l]`, source axis `l`): the scatter arm
+-- of `prepareEvalPlan` is matched before the general plain branch and must range-check its compute
+-- half's reads too, else the pinned read zero-pads while the reference rejects. Cloned from
+-- `plainReadAfterScans` with the final statement swapped for a scatter.
+def scatterReadAfterScans (k : Int) : ScheduledProgram :=
+  { scratchThenPlainReadSched with
+      stmts := (scratchThenPlainReadSched.stmts.dropLast ++
+        [ .plain (.scatter "Y" [.affine (.scale 2 axL)]
+            { body := { terms := [{ factors := [.read "S" [.const k], .read "X" [.axis axL]] }] }
+            , nonlin := .identity }) ]) }
+
+def scatterReadAfterScansCause (k : Int) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan (explicitF64Sched (scatterReadAfterScans k)) rejSig)
+
+-- REJECT: pinned at the extent and pinned negative, reported against statement 2's first term/factor.
+#guard scatterReadAfterScansCause 3 == some (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 3 3))
+#guard scatterReadAfterScansCause (-1) == some (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 (-1) 3))
+
+-- ACCEPT neighbour: pinned at the last slot compiles, and the scatter's compute read `S[2]` takes
+-- `S`'s own published slot (3: inputs `S0`, `X` hold 0 and 1, then `pre`'s `P`), not an input slot.
+#guard scatterReadAfterScansCause 2 == none
+#guard (prepared (scatterReadAfterScans 2) rejInputs).bind (fun p =>
+    match p.plan.raw.steps[2]? with
+    | some (PlanStep.scatter sp) => some ((sp.compute.terms.getD 0 default).factors.map (·.readOrDefault.sourceSlot))
+    | _ => none)
+  == some #[3, 1]
+
 def plainReadAfterCoupled (lhs : List LHSSlot) (f : Factor) : ScheduledProgram :=
   { coupledSched with
       stmts := coupledSched.stmts ++
