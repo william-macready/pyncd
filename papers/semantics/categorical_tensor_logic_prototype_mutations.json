@@ -1,0 +1,26 @@
+[
+  {
+    "label": "P1 (collector zero identity)",
+    "task": "prototype-controls",
+    "file": "experiments/indexed_execution/IndexedExecutionPrototype.lean",
+    "old": "let value := values.foldl (· + ·) (0 : ℚ)",
+    "new": "let value := values.foldl (· + ·) (1 : ℚ)",
+    "targets": ["IndexedExecutionExperiment"],
+    "expect": [
+      "indexed-execution duplicate-exact-store: failed",
+      "indexed-execution tagged-final: failed"
+    ]
+  },
+  {
+    "label": "P2 (full-footprint readiness)",
+    "task": "prototype-controls",
+    "file": "experiments/indexed_execution/IndexedExecutionPrototype.lean",
+    "old": "(producedValue P state o).isNone && reads.all (fun a => (state.available a).isSome)",
+    "new": "(producedValue P state o).isNone",
+    "targets": ["IndexedExecutionExperiment"],
+    "expect": [
+      "indexed-execution coordinate-chain: failed",
+      "indexed-execution full-footprint-waiting: failed"
+    ]
+  }
+]

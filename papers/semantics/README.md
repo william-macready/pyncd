@@ -61,3 +61,28 @@ These choices change only the typesetting, not the mathematical meaning.
 
 For complete programs and numerical execution traces, see
 [Tensor Logic semantics: worked examples](tensor_logic_semantics_examples.md).
+
+## Background reading
+
+[Categorical operational semantics: syntax and behaviour](categorical_operational_semantics.md)
+is a separate introductory document for readers familiar with categories,
+functors, and natural transformations. It begins with the motivation and
+benefits of the categorical approach, followed by an appendix on algebras
+and coalgebras, with examples and notation defined as it is introduced.
+
+[Tensor Logic through the categorical lens: a refined assessment](categorical_tensor_logic_assessment.md)
+relates the existing specification and reference machine to that framework.
+It distinguishes the categorical structure already documented from proposed
+work on constructor compatibility, shared-writer interfaces, and refinement.
+
+[Effect-sensitive indexed Tensor Logic: prototype and results](categorical_tensor_logic_lean_prototype.md)
+describes the implemented proof-free Lean experiment, its graph/reference
+comparisons and mutation controls, what the results establish, and the
+remaining limitations.
+
+[Categorical Tensor Logic semantics: a prototype-grounded proposal](categorical_tensor_logic_semantics.md)
+brings together St/Br and Naperian arrays, partial maps, additive collection,
+open diagrams, model witnesses, causal iteration, and Turi-Plotkin-style
+compatibility. It separates mathematical laws from prototype evidence
+and states correspondence and composition targets without assuming
+one formalism is the best foundation.
