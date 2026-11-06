@@ -142,5 +142,10 @@ The repository token-report tool returned no SDK session transcript, so
 cumulative input tokens cannot be measured and numerical budget compliance
 is not asserted. Both reviewers reported staying within their dispatch
 turn/context caps. The full build and adjudicated whole-branch reviews are
-green. Integrate to local main, preserve its existing edits, and remove only
-the execution worktree/branch; do not push.
+green.
+
+Local merge `f113012d` landed the slice on `main`; the merged tree exactly
+matched the verified branch. The clean execution worktree and
+`worktree-component-transport` branch were removed. The original authoring
+worktree was preserved. Both pre-existing primary-checkout edits remained
+byte-identical. No remote push was performed.
