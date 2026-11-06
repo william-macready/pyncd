@@ -1,0 +1,16 @@
+import IndexedCompositionClosure
+import IndexedCompositionCorrespondence
+import IndexedCompositionFixtureProof
+import IndexedCompositionRunner
+import IndexedCompositionSelection
+import IndexedCompositionSteps
+import IndexedCompositionSemanticResults
+import IndexedCompositionValidated
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedOpenComposition
+#audit_axioms IndexedCompositionFixtureProof
+
+#print axioms IndexedOpenComposition.Correspondence.default_run_correspondence
+#print axioms IndexedCompositionFixtureProof.strict_execution
+#print axioms IndexedCompositionFixtureProof.total_execution
