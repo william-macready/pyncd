@@ -297,7 +297,7 @@ binary32 standalone fixture `f32Identity` (`[+0, -0, least subnormal]`) does, an
 `evalplan_affine_smoke32.py` pins that divergence exactly (`KNOWN_DIVERGENT`) instead of
 excluding it. `orderedReference64` and `orderedReference32` carry the same limit. It is not
 fixed: that would mean defeating XLA's flush-to-zero and its algebraic simplifier, and no XLA
-flag that does either was found. Scan lowering remains future work.
+flag that does either was found.
 
 ### Scatter steps (ordered mode, JAX scatter slice)
 
@@ -336,7 +336,7 @@ and ordered: none; fast: one per non-empty scatter node), since results alone ca
 | scatter under `einsumOnly` | `unsupportedStep` (einsum is a gather; no scatter form) |
 | scatter in the evidence path | `lowerCheckPlanToCandidate` / `JaxExecutableWellFormed`: `unsupportedStep` (no `ExecutionEvidence` for a scatter) |
 | tropical, Boolean, contextful or unary-read scatter | the compute-half gate (`checkJaxScatterSupport`): `unsupportedAlgebra` etc. |
-| scan | `unsupportedStep` |
+| scan under `einsumOnly`, the candidate conversions or the evidence path | `unsupportedStep` (`affineReference` itself lowers single-axis real scans; see "Scan (affineReference)") |
 
 Run: `./run-evalplan-scatter.sh` (generates `EvalPlanScatterSmoke.lean`'s binary64 + binary32
 fixtures, then `evalplan_scatter_smoke.py float64|float32`: eager and jit bit comparison, a pinned
@@ -382,7 +382,8 @@ that copy's `+0` seed under `jax.jit` (the pitfall above), so a jit run can flip
 **Domain errors are an unchecked precondition (decision B1, 2026-11-04).** Lean rejects `log` of `v <= 0`, `sqrt` of `v < 0` and reciprocal of `0` with a typed unary-domain error. This backend lowers to plain `jnp` ops, checks nothing, and promises nothing on such inputs (neither NaN nor an error): it agrees with Lean only where Lean returns ok. Do not read "NaN on bad input" into it. Lean's `relu(NaN)` is `+0` and `exp(log 0) = exp(-inf) = 0` is finite, so a violation can come out as an ordinary-looking number. Lean-error inputs are out of contract and are excluded from the differential comparison; the Lean side of the boundary is pinned by `domainPins` in `EvalPlanNonlinSmoke.lean` (`log(0.0)`, `log(-1.0)`, `sqrt(-4.0)` and `recip(0.0)` are typed errors in Dense, binary64 and binary32). The motivating use is a LayerNorm with `eps` (`sqrt(v + eps)`, then division): its `sqrt` argument is at least `eps` and its divisor is non-zero by construction (fixture `unary_ln`). Fixtures: `unary_exp_oob`, `unary_ops`, `unary_mix`, `unary_red`, `unary_ln`, `unary_empty`.
 
 Run: `./run-evalplan-nonlin.sh` (generates `EvalPlanNonlinSmoke.lean`'s binary64 + binary32 fixtures, then
-`evalplan_nonlin_smoke.py float64|float32`: 22 fixtures per precision, eager and jit, including the
+`evalplan_nonlin_smoke.py float64|float32`: 32 binary64 and 24 binary32 fixtures (22 + 22 before the scan
+slice; the added ones are listed under "Scan (affineReference)" below), eager and jit, including the
 single-layer transformer with every materialized output compared (and the same layer with a real RMSNorm,
 `transformer_rms`: 20 plan nodes, 4 unary factors, with a unit-mean-square pin on the norm outputs that Lean/JAX
 agreement alone would not catch), a pinned reduction-order case, rows that
@@ -391,6 +392,44 @@ six unary-read fixtures above). Mutation records:
 `papers/semantics/jax_nonlin_mutations_post.json` (Lean render, `mutation-manifest.sh`) and
 `papers/semantics/jax_nonlin_mutations_python.json` (runtime and verifier, `mutation_python_manifest.py`,
 which takes a per-entry `verifier`).
+
+### Scan (affineReference)
+
+A prepared plan with a `.scan` step runs under `affineReference` (both precisions at the Lean level; the
+fixtures below say which are exercised) through `jax.lax.scan` over the step axis. Scope: ONE scan axis
+(`historyExtents.size == 1`) and real (zero-initialised) states. The shared gate is `checkJaxScanSupport`
+(with `jaxScanSingleAxis`) in `LeanNCD/Eval/Plan/Executable.lean`; its step-block assignments go through the
+assign gate's private `allowContext` opt-in, because the outer gate still refuses contextful assigns. The
+emitter is `renderScanNode` in `EvalPlanCodegen.lean`; the record contract it emits (one scan record per
+`.scan` node) is in that function's doc comment, which is the source of truth. The runtime is
+`_run_scan_node` in `evalplan_affine_runtime.py`: the base block runs once outside the scan, the carry is the
+complete state tensors, and step-major stacked affine tables are closed over and indexed by the traced step
+counter. Stacked tables are as large as an unrolled program's; the gain is one traced body, so trace and
+compile size do not grow with the layer count.
+
+Refused, each with a located error: a multi-axis scan (`scanMultiAxis` at the gate, `unsupportedScanAxes` at
+the emitter), a tropical or otherwise non-real state (`scanNonRealState` / `unsupportedScanState`), a Boolean
+scratch tensor inside a scan (`unsupportedDestDType`), a state write outside the complete state
+(`scanWriteOutOfRange`), a step-block context position other than `#[0]` (`scanContextPos`), and two
+coordinates of one write landing on one offset (`scanWriteCollision`; the runtime scatter `.at[idx].set` is
+unspecified for duplicates). An Iverson (predicate) factor inside a scan block assignment passes the gate and is
+refused by the emitter with `iversonFactor`, located by the outer node index with block-relative term and factor
+indices, exactly as for an outer assignment; no test pins the scan case. `einsumOnly`, both candidate
+conversions and the evidence path still refuse a scan with `unsupportedStep`.
+
+Fixtures (in `run-evalplan-nonlin.sh`'s differential): `transformer_scan` / `transformer_scan32`, a two-layer
+real-RMSNorm transformer as a scan over the layer axis with untied per-layer weights, and
+`transformer_unrolled` / `transformer_unrolled32`, the same model as two flat layers. The unrolled pair is the
+oracle: scan H layers 1 and 2 equal unrolled H1 and H2 bit for bit on CPU, in both precisions, eager and jit
+(`ORACLE_TOL` is exactly 0). Eight donor scans from `Eval.Plan.ScanCompileTest` (list `scanSurvey64`, binary64
+only, flag `linear_ok`) are listed in `papers/semantics/jax_scan_fixture_survey.md`. Slice record:
+`papers/semantics/jax_scan_record.md`.
+
+Run: `./run-evalplan-nonlin.sh` (and `./run-evalplan-scatter.sh`) first. The generated `.cache` modules go
+stale, and a Python mutation manifest runs against whatever is there. Then, from the repository root:
+`leanncd/experiments/jax_bridge/mutation_python_manifest.py papers/semantics/jax_scan_mutations_python.json`
+(runtime, 6 entries) and `leanncd/scripts/mutation-manifest.sh leanncd papers/semantics/jax_scan_mutations_post.json`
+(Lean gate and emitter, 11 entries; add `--check` first to validate the pins without building).
 
 ## Scaling probe
 

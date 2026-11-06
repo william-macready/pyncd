@@ -1,0 +1,102 @@
+[
+ {
+  "label": "JS-P-01 (step block state captures bound to the post-base states, not the carry)",
+  "task": "scan",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "_bind_captures(step, node[\"step_captures\"], store, carry)",
+  "new": "_bind_captures(step, node[\"step_captures\"], store, states)",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: exact-zero pattern differs from Lean: {g.tolist()} vs ",
+   "AssertionError: transformer_scan eager H",
+   "AssertionError: transformer_scan32 eager H"
+  ]
+ },
+ {
+  "label": "JS-P-02 (step tables read step-minor: (local, steps) reshaped then transposed)",
+  "task": "scan",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "jnp.reshape(jnp.asarray(f[\"safe_index\"], dtype=_index_dtype()), (steps, local_size)),",
+  "new": "jnp.reshape(jnp.asarray(f[\"safe_index\"], dtype=_index_dtype()), (local_size, steps)).T,",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: not within rtol {RTOL[_DT]} / atol {ATOL[_DT]}: {g.tol",
+   "AssertionError: transformer_scan eager H",
+   "AssertionError: transformer_scan32 eager H"
+  ]
+ },
+ {
+  "label": "JS-P-03 (step writes committed with the table row of step r-1)",
+  "task": "scan",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "row = jax.lax.dynamic_index_in_dim(tbl, r, 0, keepdims=False)",
+  "new": "row = jax.lax.dynamic_index_in_dim(tbl, jnp.maximum(r - 1, 0), 0, keepdims=False)",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: exact-zero pattern differs from Lean: {g.tolist()} vs ",
+   "AssertionError: transformer_scan eager H",
+   "AssertionError: transformer_scan32 eager H"
+  ]
+ },
+ {
+  "label": "JS-P-04 (base writes placed AFTER the scan, onto the final states)",
+  "task": "scan",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "    final, _ = jax.lax.scan(body, tuple(states), jnp.arange(steps))\n    return list(final)",
+  "new": "    zero = [jnp.zeros(tuple(s), dtype=dtype) for s in node[\"state_shapes\"]]\n    final, _ = jax.lax.scan(body, tuple(zero), jnp.arange(steps))\n    final = list(final)\n    for w in node[\"base_writes\"]:\n        if w[\"index\"]:\n            final[w[\"state\"]] = _place(final[w[\"state\"]], jnp.asarray(w[\"index\"], dtype=_index_dtype()), local[w[\"output_slot\"]])\n    return final",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: exact-zero pattern differs from Lean: {g.tolist()} vs ",
+   "AssertionError: transformer_scan eager H",
+   "AssertionError: transformer_scan32 eager H"
+  ]
+ },
+ {
+  "label": "JS-P-05 (one step too few: the last step is dropped)",
+  "task": "scan",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "    steps = int(node[\"step_count\"])\n    states = ",
+  "new": "    steps = int(node[\"step_count\"]) - 1\n    states = ",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise ValueError(f\"step term iteration_shape {t['iteration_shape']} has step extent !="
+  ]
+ },
+ {
+  "label": "JS-P-06 (step writes land one output row EARLIER than the emitted +1 table says)",
+  "task": "scan",
+  "verifier": "evalplan_nonlin_smoke",
+  "file": "evalplan_affine_runtime.py",
+  "old": "row = jax.lax.dynamic_index_in_dim(tbl, r, 0, keepdims=False)",
+  "new": "row = jax.lax.dynamic_index_in_dim(tbl, r, 0, keepdims=False) - tbl.shape[1]",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError(f\"{label}: not within rtol {RTOL[_DT]} / atol {ATOL[_DT]}: {g.tol",
+   "AssertionError: transformer_scan eager H",
+   "AssertionError: transformer_scan32 eager H"
+  ]
+ }
+]

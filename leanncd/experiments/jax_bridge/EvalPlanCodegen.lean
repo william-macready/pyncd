@@ -103,6 +103,20 @@ inductive JaxCodegenError
   -- assignment (`checkAssign` re-run under it fails): a caller-supplied table is that entry's
   -- semantic authority, so it is rejected outright rather than consulted for its dtype tags alone.
   | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
+  -- The scan support gate (`checkJaxScanSupport`): a scan state whose cells start non-zero (a
+  -- tropical state), and a scan over other than exactly one history axis. Both located at the scan's
+  -- outer step index (the state's index too for the first).
+  | unsupportedScanState   (nodeIndex stateIndex : Nat)
+  | unsupportedScanAxes    (nodeIndex : Nat)
+  -- The emitter's own backstops for a scan (`renderScanNode`). A state write's placement would land
+  -- OUTSIDE the complete state (unreachable for a `CheckedScanPlan`; the table is never emitted with
+  -- such an entry), and a step-block assignment term whose context position is not exactly `#[0]`
+  -- (the runtime reads stacked tables as step-major over a leading step axis).
+  | scanWriteOutOfRange    (nodeIndex stateIndex : Nat) (coord : List Int)
+  -- Two output coordinates of ONE step's write (or of one base write) land on the same flat offset:
+  -- the runtime's `.at[idx].set` is unspecified for duplicates (Lean's `commitWrite` is last-wins).
+  | scanWriteCollision     (nodeIndex stateIndex flatOffset : Nat)
+  | scanContextPos        (nodeIndex termIndex : Nat) (contextPos : Array Nat)
   -- The storage gate (`requireModeStorage`) every einsum entry and every plan-level entry runs
   -- FIRST, before node iteration, prepared-binding validation, and any Python or constants text.
   -- Since F32-JAX it is MODE-aware: `affineReference` renders `.float32` (`orderedReference32`),
@@ -147,6 +161,8 @@ def codegenErrorOfSupport : JaxSupportError → JaxCodegenError
   | .sourceDType n ti fi dt          => .unsupportedSourceDType n ti fi dt
   | .unaryFactor n ti fi             => .unaryFactor n ti fi
   | .invalidSignatureContext n cause => .invalidSignatureContext n cause
+  | .scanNonRealState n si           => .unsupportedScanState n si
+  | .scanMultiAxis n                 => .unsupportedScanAxes n
 
 /-- The one shared support gate every semantic entry point in this module runs first: the supplied
     complete table is the assignment's authority (`checkAssign` is re-run under it), then the JAX
@@ -663,6 +679,137 @@ private def renderAffineNode (sigs : Array TensorSignature) (nodeIndex : Nat)
   requireJaxSupport sigs nodeIndex checked (allowUnary := true)
   return "{" ++ (← renderAffineFields nodeIndex checked.plan) ++ "}"
 
+/-- A scan write's static placement table: for every context coordinate in `ctxs` (in the order given:
+    `[[]]` for a base write, every step context in rank order for a step write), then every
+    coordinate `oc` of the write's block output tensor (`outShape`, `allCoords` order), the flat offset
+    in the complete state (`stateShape`) of `applyAffine w.map (ctx ++ oc)` — the very composition
+    `commitWrite` (`Plan/Scan.lean`) performs, `inBoundsPerDim` BEFORE `flatIndex` (a flat-offset test
+    can alias distinct invalid coordinates, proposal §8.3). An out-of-range placement is unreachable
+    for a `CheckedScanPlan` (`checkWrites`' extent and range checks); here it throws
+    `scanWriteOutOfRange` rather than emit an index the runtime would silently clamp or alias. Takes
+    the raw `StateWriteMap` so the backstop is testable on a hand-built out-of-range write. -/
+def buildScanWriteIndex (nodeIndex stateIndex : Nat) (stateShape outShape : List Nat)
+    (w : StateWriteMap) (ctxs : List (List Int)) : Except JaxCodegenError (Array Nat) := do
+  let mut idxs : Array Nat := #[]
+  for ctx in ctxs do
+    let mut slice : Array Nat := #[]
+    for oc in allCoords outShape do
+      let coord := applyAffine w.map (ctx ++ oc)
+      unless inBoundsPerDim stateShape coord do
+        throw (.scanWriteOutOfRange nodeIndex stateIndex coord)
+      slice := slice.push (flatIndex stateShape (coord.map Int.toNat))
+    -- one step's (or the base write's) slice must be injective: the runtime scatter is unspecified
+    -- for duplicate indices; duplicates ACROSS steps are different carries and are fine.
+    let sorted := slice.qsort (· < ·)
+    for i in [1 : sorted.size] do
+      if sorted[i]! == sorted[i - 1]! then
+        throw (.scanWriteCollision nodeIndex stateIndex sorted[i]!)
+    idxs := idxs ++ slice
+  return idxs
+
+/-- The node records of one scan block, in block-step order. Assignments render through the SAME
+    `renderAffineFields` path as an outer assignment (gate-free: `checkJaxScanSupport` already ran);
+    a STEP block assignment additionally carries `"context_pos": [0]` and must in fact have every
+    term bound to the one step axis at iteration position `0`, else the located `scanContextPos`
+    (the runtime reads a stacked table as step-major, which holds only for that layout).
+    Pointwise/axiswise steps render as at the outer level. -/
+def renderScanBlockNodes (nodeIndex : Nat) (isStep : Bool) (ev : CheckedPlanBlock) :
+    Except JaxCodegenError (Array String) := do
+  let mut nodes : Array String := #[]
+  for e in ev.checkedNodes do
+    match e with
+    | .assign a =>
+        let mut ctxStr := ""
+        if isStep then
+          for h : ti in [0 : a.plan.terms.size] do
+            unless a.plan.terms[ti].contextPos == #[0] do
+              throw (.scanContextPos nodeIndex ti a.plan.terms[ti].contextPos)
+          ctxStr := ", \"context_pos\": [0]"
+        nodes := nodes.push ("{" ++ (← renderAffineFields nodeIndex a.plan) ++ ctxStr ++ "}")
+    | .pointwise p => nodes := nodes.push (renderPointwiseNode p)
+    | .axiswise a => nodes := nodes.push (← renderAxiswiseNode nodeIndex a)
+  return nodes
+
+private def renderScanBlock (nodeIndex : Nat) (isStep : Bool) (block : RawPlanBlock)
+    (ev : CheckedPlanBlock) : Except JaxCodegenError String := do
+  let nodes ← renderScanBlockNodes nodeIndex isStep ev
+  return "{\"num_slots\": " ++ toString block.tensorSigs.size ++
+    ", \"input_slots\": " ++ pyNatListLit block.inputs ++
+    ", \"nodes\": [" ++ String.intercalate ", " nodes.toList ++ "]}"
+
+private def renderScanCapture (c : BlockCapture) : String :=
+  match c.source with
+  | .external o => "{\"input_slot\": " ++ toString c.inputSlot ++ ", \"external\": " ++ toString o ++ "}"
+  | .state i => "{\"input_slot\": " ++ toString c.inputSlot ++ ", \"state\": " ++ toString i ++ "}"
+
+private def renderScanWrites (nodeIndex : Nat) (stateShapes : Array (Array Nat))
+    (block : RawPlanBlock) (ws : Array StateWriteMap) (ctxs : List (List Int)) :
+    Except JaxCodegenError String := do
+  let mut out : Array String := #[]
+  for w in ws do
+    let some outSig := block.tensorSigs[w.outputSlot]?
+      | throw (.invalidSignatureContext nodeIndex (.slotOutOfRange w.outputSlot block.tensorSigs.size))
+    let some stShape := stateShapes[w.stateIndex]?
+      | throw (.invalidSignatureContext nodeIndex (.slotOutOfRange w.stateIndex stateShapes.size))
+    let idxs ← buildScanWriteIndex nodeIndex w.stateIndex stShape.toList outSig.shape.toList w ctxs
+    out := out.push ("{\"output_slot\": " ++ toString w.outputSlot ++ ", \"state\": " ++
+      toString w.stateIndex ++ ", \"index\": " ++ pyNatListLit idxs ++ "}")
+  return "[" ++ String.intercalate ", " out.toList ++ "]"
+
+/-- One scan node's static record (the `affineReference` scan lowering). Gated by
+    `checkJaxScanSupport` first. Record format, a contract with the Python runtime (one record per
+    scan, in the outer `"nodes"` array):
+
+    ```
+    {"kind": "scan",
+     "dests": [outer destination slot of each state, in states order],
+     "state_shapes": [[extent, ...] of each state, from the outer signature table],
+     "step_count": T,                       -- product of `stepExtents` = historyExtents[0] - 1
+     "base": BLOCK, "base_captures": [CAPTURE, ...], "base_writes": [WRITE, ...],
+     "step": BLOCK, "step_captures": [CAPTURE, ...], "step_writes": [WRITE, ...]}
+    BLOCK   = {"num_slots": block-local slot count, "input_slots": [block input slots, sorted],
+               "nodes": [NODE, ...]}           -- block-local slot numbers throughout
+    NODE    = an outer-format node record (assign: "dest"/"output_shape"/"terms"; pointwise;
+              axiswise), plus, for a STEP-block assign only, "context_pos": [0]
+    CAPTURE = {"input_slot": s, "external": outer slot} | {"input_slot": s, "state": state index}
+    WRITE   = {"output_slot": block slot, "state": state index,
+               "index": [flat offsets into the complete state, row-major]}
+    ```
+
+    Semantics the runtime mirrors (`runDenseScanWith`): states start at `0`; the base block runs once
+    (no context) and each base write places its output tensor at `index` (one entry per output
+    coordinate, `allCoords` order); then for `r = 0 .. T-1` the step block runs on the PRE-step
+    states with step coordinate `r`, and every step write places into the NEXT states at
+    `index[r * outSize + j]` (step-major, then output coordinate `j`). A step-block assign term's
+    `iteration_shape` has the step axis at position `0` (extent `T`), so every `safe_index`/`mask`
+    table of a step-block factor is STACKED, step-major: entry `r * local + j` is the lookup at
+    step `r`, local iteration coordinate `j`, `local = prod(iteration_shape[1:])`. Dtype is not
+    emitted (the caller supplies it, as for every other node). -/
+def renderScanNode (nodeIndex : Nat) (checked : CheckedScanPlan) : Except JaxCodegenError String := do
+  match checkJaxScanSupport nodeIndex checked with
+  | .ok _ => pure ()
+  | .error e => throw (codegenErrorOfSupport e)
+  let raw := checked.raw
+  let mut stateShapes : Array (Array Nat) := #[]
+  for st in raw.states do
+    let some sig := checked.sigs[st.destSlot]?
+      | throw (.invalidSignatureContext nodeIndex (.slotOutOfRange st.destSlot checked.sigs.size))
+    stateShapes := stateShapes.push sig.shape
+  let stepCtxs := (List.range (mixedRadixDomainSize checked.stepExtents)).map fun r =>
+    (mixedRadixUnrank checked.stepExtents r).toList.map Int.ofNat
+  let base ← renderScanBlock nodeIndex false raw.baseBlock checked.checkedBase
+  let step ← renderScanBlock nodeIndex true raw.stepBlock checked.checkedStep
+  let baseWrites ← renderScanWrites nodeIndex stateShapes raw.baseBlock raw.baseWrites [[]]
+  let stepWrites ← renderScanWrites nodeIndex stateShapes raw.stepBlock raw.stepWrites stepCtxs
+  let caps (cs : Array BlockCapture) := "[" ++ String.intercalate ", " (cs.toList.map renderScanCapture) ++ "]"
+  return "{\"kind\": \"scan\", \"dests\": " ++ pyNatListLit (raw.states.map (·.destSlot)) ++
+    ", \"state_shapes\": [" ++ String.intercalate ", " (stateShapes.toList.map pyNatListLit) ++ "]" ++
+    ", \"step_count\": " ++ toString (mixedRadixDomainSize checked.stepExtents) ++
+    ", \"base\": " ++ base ++ ", \"base_captures\": " ++ caps raw.baseCaptures ++
+    ", \"base_writes\": " ++ baseWrites ++
+    ", \"step\": " ++ step ++ ", \"step_captures\": " ++ caps raw.stepCaptures ++
+    ", \"step_writes\": " ++ stepWrites ++ "}"
+
 /-- Every checked node in graph order (`checkedNodes` order is exactly raw-graph order, by
     `checkPlan`'s construction). Supported assignments pass `renderAffineNode`'s semantic gate; a
     `.scatter` node passes `requireJaxScatterSupport` (its compute half graded by the same policy)
@@ -671,8 +818,9 @@ private def renderAffineNode (sigs : Array TensorSignature) (nodeIndex : Nat)
     as a gate-free record (`renderPointwiseNode`/`renderAxiswiseNode`: slots, shape, function name,
     and for a masked axiswise step the static `include` table — the checker that produced the
     evidence already ran under this very `tensorSigs`, so a re-run would add nothing); a `.scan` node
-    has no affine-table lowering here, so the array build rejects it with the one located
-    unsupported-step error carrying that node's outer-graph index. -/
+    renders as ONE record (`renderScanNode`, behind `checkJaxScanSupport`): a scan the gate refuses
+    fails with that located error. `einsumOnly`, both candidate conversions and the evidence path
+    keep rejecting a scan with `unsupportedStep`. -/
 private def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenError String := do
   let sigs := c.raw.tensorSigs
   let mut entries : Array String := #[]
@@ -682,7 +830,7 @@ private def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenErro
     | .scatter s => entries := entries.push (← renderScatterNode sigs ni s)
     | .pointwise p => entries := entries.push (renderPointwiseNode p)
     | .axiswise a => entries := entries.push (← renderAxiswiseNode ni a)
-    | .scan _ => throw (.unsupportedStep ni)
+    | .scan sc => entries := entries.push (← renderScanNode ni sc)
   return "[" ++ String.intercalate ", " entries.toList ++ "]"
 
 private def renderBindingList (bs : Array SlotBinding) : String :=
@@ -2374,13 +2522,53 @@ def ntPreparedNamed (raw : RawEvalPlan) (inputs : Array SlotBinding) (published 
 
 def ntScanInputs : Array SlotBinding := #[{ name := "s0", slot := 0 }, { name := "x", slot := 1 }]
 
--- A scan at step 1 is refused under BOTH plan-level doors with the located `unsupportedStep 1`
+-- A scan at step 1 is still refused by `einsumOnly` and the evidence door with the located
+-- `unsupportedStep 1`; `affineReference` now renders it as a `"kind": "scan"` record
 -- (donor `scanRejectRaw`, the one plan whose scan the checker admits).
 #guard match ntPreparedNamed scanRejectRaw ntScanInputs #[3, 2] with
   | some p =>
-    (match renderAffinePlanNamed p with | .error (.unsupportedStep 1) => true | _ => false) &&
-    (match generateNamed .einsumOnly p with | .error (.unsupportedStep 1) => true | _ => false)
+    (match renderAffinePlanNamed p with
+      | .ok s => (s.splitOn "\"kind\": \"scan\"").length == 2
+      | .error _ => false) &&
+    (match generateNamed .einsumOnly p with | .error (.unsupportedStep 1) => true | _ => false) &&
+    (match lowerCheckPlanToCandidate p with | .error (.unsupportedStep 1) => true | _ => false)
   | none => false
+
+-- Scan refusal fixture (d): clone `scanRejectRaw`'s scan, change ONLY the state `initValue` to `.negInf`
+-- and the step algebra to max-plus (the checker ties the two). The plan checks, and the scan renders
+-- NOTHING: the located `unsupportedScanState 1 0` (outer step 1, state 0) comes back instead.
+def scanTropicalRaw : RawEvalPlan :=
+  { scanRejectRaw with
+    steps := #[PlanStep.assign scanAssign
+              , PlanStep.scan
+                  { scanPlanStep with
+                    states := #[{ scanState with initValue := .negInf }]
+                    stepBlock := { scanStepBlock with
+                      steps := #[.assign { scanStepAssign with algebra := admittedAlgebraMax }] } }] }
+#guard match ntPreparedNamed scanTropicalRaw ntScanInputs #[3, 2] with
+  | some p => (match renderAffinePlanNamed p with
+      | .error (.unsupportedScanState 1 0) => true | _ => false)
+  | none => false
+
+-- Write-index backstop on a hand-built out-of-range write (state `[3]`, bias 3): located error, no
+-- table. Accept neighbour: the same write with bias 2 places at 2.
+#guard (match buildScanWriteIndex 4 0 [3] [] { scanStepWrite with map := { coeffs := #[#[]], bias := #[3] } } [[]] with
+    | .error (.scanWriteOutOfRange 4 0 [3]) => true | _ => false) &&
+  (buildScanWriteIndex 4 0 [3] [] { scanStepWrite with map := { coeffs := #[#[]], bias := #[2] } } [[]]).toOption
+    == some #[2]
+
+-- Collision backstop on a hand-built write (state `[3]`, output shape `[2]`): the map `oc ↦ 0·oc + 1`
+-- sends both output coordinates to cell 1 (located error with the offset); the injective map
+-- `oc ↦ oc + 1` renders `#[1, 2]`. The same colliding map over TWO step contexts is still an error
+-- (per-step slice), while a map that collides only ACROSS steps (`ctx ↦ ctx`, output rank 0) renders.
+#guard (match buildScanWriteIndex 4 0 [3] [2] { scanStepWrite with map := { coeffs := #[#[0]], bias := #[1] } } [[]] with
+    | .error (.scanWriteCollision 4 0 1) => true | _ => false) &&
+  (match buildScanWriteIndex 4 0 [3] [2] { scanStepWrite with map := { coeffs := #[#[0, 0]], bias := #[1] } } [[0], [1]] with
+    | .error (.scanWriteCollision 4 0 1) => true | _ => false) &&
+  (buildScanWriteIndex 4 0 [3] [2] { scanStepWrite with map := { coeffs := #[#[1]], bias := #[1] } } [[]]).toOption
+    == some #[1, 2] &&
+  (buildScanWriteIndex 4 0 [3] [] { scanStepWrite with map := { coeffs := #[#[0]], bias := #[1] } } [[0], [1]]).toOption
+    == some #[1, 1]
 
 -- Accept neighbour: clone `scanRejectRaw`, replace ONLY step 1 (the scan) with a pointwise step into
 -- the same slot 2. The plan stays checked and `affineReference` now renders it, so the refusal above

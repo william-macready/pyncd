@@ -376,7 +376,7 @@ reviewer does not mistake silence for omission. Cost lines are the controller's 
 | Not done | Consequence / cost line |
 | --- | --- |
 | ~~**Unary reads on JAX**~~ (`sqrt`, `exp`, `log`, `sin`, `cos`, reciprocal; LayerNorm with `eps`) | **Done 2026-11-04** in the follow-on slice (last section of this record): `affineReference` renders them; `einsumOnly`, the evidence path and scatter's compute half still refuse (`unaryFactor`, about 3 dispatches with the evidence path). |
-| **Scan on JAX** | `.scan` still throws `unsupportedStep` in `renderAffineNodesArray`. About 3 to 5 dispatches. |
+| ~~**Scan on JAX**~~ | **Done 2026-11-05** in the scan slice (`jax_scan_record.md`): `affineReference` lowers single-axis real scans through `lax.scan` (the nonlin differential is now 32 binary64 and 24 binary32 fixtures); `einsumOnly`, the candidate conversions and the evidence path still throw `unsupportedStep`. The remaining scan parked items are in that record. |
 | **The evidence path** for scatter, pointwise and axiswise (`JaxKernelCandidate` arm, `stepTiedToPreparedStep`, `ExecutableTest.lean` rewrite) | A scatter, pointwise or axiswise plan runs through JAX with no `ExecutionEvidence`. About 3 dispatches, do all three together; touches core `Executable.lean`; needs a fast-mode-versus-label style decision (scatter's `scatter_mode`). |
 | Tropical and Boolean pointwise/axiswise steps | Not rendered; the plan-level storage gate of `affineReference` is inherited (section 8 notes it was not measured for these steps). Not estimated. |
 | A raw-plan fixture that feeds a signed zero DIRECTLY into relu | Every surface program emits an assignment copy first (`+0 + -0 = +0`), so the eager bit-exactness of relu is exercised only through that copy. About 1 dispatch. |
@@ -476,7 +476,8 @@ Commits `6ae2ab24` (fixtures) and `54bd32ac` (verifier; mutation results in its 
   `transformer_rms` summary line present in both precisions; nonlin Python manifest 17/17; Lean manifest
   8/8; `Tests`, `JaxExperiment` and the drivers built by the runner. Not re-run: the 3832-case corpus and
   the scatter manifest, because no runtime, gate or production file changed.
-- **Not done (next for the goal):** several layers written as unrolled flat equations; the paper's
+- **Not done at the time (since done: the scan slice, `jax_scan_record.md`, added the unrolled and
+  scan-over-layers forms):** several layers written as unrolled flat equations; the paper's
   scan-over-layers form needs scan on JAX. The unary precondition (README) applies here: `Ve` is at least
   `Eps` by construction, so the `sqrt` and reciprocal inputs are always in domain.
 - **Budget (Rule 6).** The implementer reported about 62 tool calls; the harness counted 71, over the

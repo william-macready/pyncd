@@ -1,7 +1,9 @@
 # Scan on JAX via `lax.scan` — design
 
-Status: approved in conversation 2026-11-05 (finish line, scope, deferrals). Process weight: **Full**
-(new capability; `slice-plan` §0). Not yet planned or prototyped.
+Status: implemented on branch `worktree-jax-scan-proto` (2026-11-05); record, deviations from this note
+(the `allowContext` opt-in, closed-over step tables) and parked items: `papers/semantics/jax_scan_record.md`.
+Originally approved in conversation 2026-11-05 (finish line, scope, deferrals). Process weight: **Full**
+(new capability; `slice-plan` §0). The text below is the pre-implementation design, kept as written.
 
 ## Intent
 

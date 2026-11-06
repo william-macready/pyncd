@@ -2,6 +2,7 @@ import LeanNCD.Eval.Entry
 import LeanNCD.DSL.Compile
 import LeanNCD.Eval.Plan.Adapter32
 import EvalPlanCodegen
+import Eval.Plan.ScanCompileTest
 
 /-!
 # JAX pointwise/axiswise smoke — driver (JAX pointwise slice, tolerance-compared)
@@ -33,20 +34,35 @@ def pyTensorEntry32 (t : DenseTensor32) : String :=
   "{\"shape\": " ++ pyShapeTuple t.shape.toArray ++ ", \"dtype\": \"float32\", \"bits\": [" ++
   String.intercalate ", " (t.data.toList.map fun x => toString x.toBits) ++ "]}"
 
+/-- The prepared plan's steps with every `.scan` step replaced by its base-block then step-block steps
+    (blocks hold ordinary steps), so a scan's nonlinearities and unary reads are counted like any
+    other fixture's. A plan without a scan is returned unchanged. The scan itself is counted by
+    `countScans`. -/
+def flatSteps (p : PreparedPlan) : Array PlanStep :=
+  let asPlan : BlockStep → PlanStep
+    | .assign a => .assign a | .pointwise q => .pointwise q | .axiswise a => .axiswise a
+  p.plan.raw.steps.foldl (fun acc st => match st with
+    | .scan sc => acc ++ sc.baseBlock.steps.map asPlan ++ sc.stepBlock.steps.map asPlan
+    | _ => acc.push st) #[]
+
+/-- Number of `.scan` steps of the prepared plan (top level). -/
+def countScans (p : PreparedPlan) : Nat :=
+  p.plan.raw.steps.foldl (fun n st => match st with | .scan _ => n + 1 | _ => n) 0
+
 def countSteps (p : PreparedPlan) : Nat × Nat :=
-  p.plan.raw.steps.foldl (fun (pw, aw) st => match st with
+  (flatSteps p).foldl (fun (pw, aw) st => match st with
     | .pointwise _ => (pw + 1, aw) | .axiswise _ => (pw, aw + 1) | _ => (pw, aw)) (0, 0)
 
 /-- Exact step-kind counts `(assign, pointwise, axiswise)`; any other step kind is counted nowhere,
     so a plan with a scatter or scan step fails an exact pin. -/
 def countKinds (p : PreparedPlan) : Nat × Nat × Nat :=
-  p.plan.raw.steps.foldl (fun (a, pw, aw) st => match st with
+  (flatSteps p).foldl (fun (a, pw, aw) st => match st with
     | .assign _ => (a + 1, pw, aw) | .pointwise _ => (a, pw + 1, aw)
     | .axiswise _ => (a, pw, aw + 1) | _ => (a, pw, aw)) (0, 0, 0)
 
 /-- Number of inline unary reads in the prepared plan's assignment steps. -/
 def countUnary (p : PreparedPlan) : Nat :=
-  p.plan.raw.steps.foldl (fun n st => match st with
+  (flatSteps p).foldl (fun n st => match st with
     | .assign a => a.terms.foldl (fun n t => t.factors.foldl (fun n f => match f with
         | .read r => if r.unary.isSome then n + 1 else n
         | .iverson _ => n) n) n
@@ -54,16 +70,21 @@ def countUnary (p : PreparedPlan) : Nat :=
 
 /-- The assertions every fixture shares; returns the rendered plan data. `exact`, when given, pins
     the total step count and the `(assign, pointwise, axiswise)` counts exactly, so a silent change
-    to how a program compiles is loud. -/
+    to how a program compiles is loud. For a scan fixture those counts are over the steps INSIDE the
+    scan's base and step blocks (`flatSteps`), and `scans` pins the number of scan steps (default 0:
+    a fixture that unexpectedly compiles to a scan fails). -/
 def checkAndRender (name : String) (p : PreparedPlan) (minPw minAw : Nat)
-    (exact : Option (Nat × Nat × Nat) := none) (unaryOk : Bool := false) : IO String := do
+    (exact : Option (Nat × Nat × Nat) := none) (unaryOk : Bool := false) (scans : Nat := 0) :
+    IO String := do
+  unless countScans p == scans do
+    throw (IO.userError s!"{name}: expected {scans} scan step(s), prepared plan has {countScans p}")
   let (pw, aw) := countSteps p
   unless pw ≥ minPw && aw ≥ minAw do
     throw (IO.userError s!"{name}: expected >= {minPw} pointwise and >= {minAw} axiswise steps, prepared plan has {pw} and {aw}")
   if let some (ea, epw, eaw) := exact then
     let (a, pw', aw') := countKinds p
-    unless (a, pw', aw') == (ea, epw, eaw) && p.plan.raw.steps.size == ea + epw + eaw do
-      throw (IO.userError s!"{name}: expected {ea} assign / {epw} pointwise / {eaw} axiswise ({ea + epw + eaw} steps), prepared plan has {a} / {pw'} / {aw'} ({p.plan.raw.steps.size} steps)")
+    unless (a, pw', aw') == (ea, epw, eaw) && (flatSteps p).size == ea + epw + eaw do
+      throw (IO.userError s!"{name}: expected {ea} assign / {epw} pointwise / {eaw} axiswise ({ea + epw + eaw} steps), prepared plan has {a} / {pw'} / {aw'} ({(flatSteps p).size} steps)")
   match generateNamed .einsumOnly p with
   | .error (.unsupportedStep _) | .error (.unsupportedStorageKind _) => pure ()
   | .error (.unaryFactor _ _ _) => unless unaryOk do throw (IO.userError s!"{name}: einsumOnly refused with unaryFactor on a fixture without a unary read")
@@ -92,13 +113,13 @@ def header (name : String) (p : PreparedPlan) (planData : String) : String :=
     ", \"n_axiswise\": " ++ toString aw ++ ", \"n_unary\": " ++ toString (countUnary p) ++
     ", \"plan\": " ++ planData
 
-/-- One binary64 named fixture. -/
-def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseTensor)
-    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none)
-    (unaryOk : Bool := false) : IO String := do
-  let sched ← scheduled name prog
+/-- The body of one binary64 named fixture, over an already scheduled program (shared by `fixture64` and
+    the scan survey's `surveyFixture64`). -/
+def fixtureOfSched64 (name : String) (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
+    (minPw : Nat) (minAw : Nat) (exact : Option (Nat × Nat × Nat))
+    (unaryOk : Bool) (scans : Nat) : IO String := do
   let p ← prepared name sched (InputSignature.ofDenseInputs inputs)
-  let planData ← checkAndRender name p minPw minAw exact unaryOk
+  let planData ← checkAndRender name p minPw minAw exact unaryOk scans
   let report ← match runPreparedDense p inputs with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e.cause}")
@@ -117,17 +138,23 @@ def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseT
   pure (header name p planData ++ ", \"inputs\": {" ++ String.intercalate ", " ins.toList ++
     "}, \"expected\": {" ++ String.intercalate ", " outs.toList ++ "}}")
 
+/-- One binary64 named fixture. -/
+def fixture64 (name : String) (prog : TLProgram) (inputs : HashMap String DenseTensor)
+    (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none)
+    (unaryOk : Bool := false) (scans : Nat := 0) : IO String := do
+  fixtureOfSched64 name (← scheduled name prog) inputs minPw minAw exact unaryOk scans
+
 /-- The binary32 sibling, over `runPreparedDense32`; also pins that the plan is binary32. -/
 def fixture32 (name : String) (prog : TLProgram) (inputs : NamedDenseEnv32)
     (minPw : Nat := 0) (minAw : Nat := 0) (exact : Option (Nat × Nat × Nat) := none)
-    (unaryOk : Bool := false) : IO String := do
+    (unaryOk : Bool := false) (scans : Nat := 0) : IO String := do
   let sched ← scheduled name prog
   let sig ← match InputSignature.ofDenseInputs32ForDecls sched.decls inputs with
     | .ok s => pure s
     | .error e => throw (IO.userError s!"{name} binary32 signature failed: {repr e}")
   let p ← prepared name sched sig
   unless p.plan.storageKind == .float32 do throw (IO.userError s!"{name} is not a binary32 plan")
-  let planData ← checkAndRender name p minPw minAw exact unaryOk
+  let planData ← checkAndRender name p minPw minAw exact unaryOk scans
   let report ← match runPreparedDense32 p inputs with
     | .ok r => pure r
     | .error e => throw (IO.userError s!"{name} binary32 Dense run failed: {repr e.cause}")
@@ -553,6 +580,236 @@ def trWout : Array Float :=
 def trInv : Array Float := #[0.25, 0.25, 0.25, 0.25]
 def trEps : Array Float := #[1e-5, 1e-5, 1e-5]
 
+/-! ### Two-layer transformer as a scan over the layer axis (`transformer_scan`, `transformer_scan32`)
+
+The one-layer `transformerRmsProg` with `iter l = 3` (history extent 3 = two steps, state `H(q, m, l)`)
+and UNTIED per-layer weights read as `W[l, ...]`. Weight stacks hold layer 0 (the one-layer fixture's
+weights), a derived, genuinely different layer 1 and a NaN layer-2 slice that a correct two-step scan
+never reads (a step reading past layer 1 would make every output NaN). -/
+
+/-- Layer-1 weights: layer 0's entries rotated by 5 positions and scaled by 0.8 (both signs, distinct). -/
+def scanLayer1 (w : Array Float) : Array Float :=
+  (Array.range w.size).map fun i => 0.8 * w[(i + 5) % w.size]!
+def scanNanSlice (w : Array Float) : Array Float := w.map fun _ => (0.0 : Float) / 0.0
+def scanStack (w : Array Float) : Array Float := w ++ scanLayer1 w ++ scanNanSlice w
+
+def scanProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 3
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q)
+  tensor f64 H(q, m, l)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 Z1(q, m), Ss1(q), Ve1(q), Sd1(q), A(q, m), F(q, d), Y(q, m)
+  tensor f64 Z2(q, m), Ss2(q), Ve2(q), Sd2(q)
+  H[q, m, 0]       := X[q, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · H[q, m, l]
+  K[s, h, k]       := W_K[l, h, k, m] · H[s, m, l]
+  V[s, h, k]       := W_V[l, h, k, m] · H[s, m, l]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  Z1[q, m]         := Attn[q, m] + H[q, m, l]
+  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  A[q, m]          := Z1[q, m] / Sd1[q]
+  F[q, d]          := relu(W_in[l, d, m] · A[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  Z2[q, m]         := Y[q, m] + A[q, m]
+  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  H[q, m, l +1]    := Z2[q, m] / Sd2[q]
+}
+/-- The binary32 sibling: only the declarations that pin axis order and the history shape. -/
+def scanProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 3
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  H[q, m, 0]       := X[q, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · H[q, m, l]
+  K[s, h, k]       := W_K[l, h, k, m] · H[s, m, l]
+  V[s, h, k]       := W_V[l, h, k, m] · H[s, m, l]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  Z1[q, m]         := Attn[q, m] + H[q, m, l]
+  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  A[q, m]          := Z1[q, m] / Sd1[q]
+  F[q, d]          := relu(W_in[l, d, m] · A[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  Z2[q, m]         := Y[q, m] + A[q, m]
+  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  H[q, m, l +1]    := Z2[q, m] / Sd2[q]
+}
+
+/-! ### Shared inputs of the scan and the unrolled oracle (`transformer_unrolled`, `transformer_unrolled32`)
+
+One definition: `scanWeights` holds each weight's per-layer shape and its layer-stacked data (layer 0,
+layer 1, NaN layer 2). The scan fixtures take the stacks whole; the unrolled oracle takes layer 0 as
+`W_x1` and layer 1 as `W_x2` (the NaN slice does not exist in the two-layer unrolled model), sliced out of
+the SAME arrays, so scan and unrolled cannot see different values. -/
+
+def scanWeights : List (String × List Nat × Array Float) :=
+  [("W_Q", [2, 2, 4], scanStack trWQ), ("W_K", [2, 2, 4], scanStack trWK),
+   ("W_V", [2, 2, 4], scanStack trWV), ("W_O", [4, 2, 2], scanStack trWO),
+   ("W_in", [4, 4], scanStack trWin), ("W_out", [4, 4], scanStack trWout)]
+
+/-- Layer `i` of a 3-layer stack. -/
+def layerSlice (d : Array Float) (i : Nat) : Array Float :=
+  d.extract (i * (d.size / 3)) ((i + 1) * (d.size / 3))
+
+def scanEnv64 : HashMap String DenseTensor :=
+  env64 ([("X", t64 [3, 4] trX), ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps)] ++
+    scanWeights.map fun (n, sh, d) => (n, t64 (3 :: sh) d))
+def scanEnv32 : NamedDenseEnv32 :=
+  env32 ([("X", t32 [3, 4] trX), ("Inv", t32 [4] trInv), ("Eps", t32 [3] trEps)] ++
+    scanWeights.map fun (n, sh, d) => (n, t32 (3 :: sh) d))
+def unrolledEnv64 : HashMap String DenseTensor :=
+  env64 ([("X", t64 [3, 4] trX), ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps)] ++
+    scanWeights.flatMap fun (n, sh, d) =>
+      [(n ++ "1", t64 sh (layerSlice d 0)), (n ++ "2", t64 sh (layerSlice d 1))])
+def unrolledEnv32 : NamedDenseEnv32 :=
+  env32 ([("X", t32 [3, 4] trX), ("Inv", t32 [4] trInv), ("Eps", t32 [3] trEps)] ++
+    scanWeights.flatMap fun (n, sh, d) =>
+      [(n ++ "1", t32 sh (layerSlice d 0)), (n ++ "2", t32 sh (layerSlice d 1))])
+
+/-- Unrolled oracle: the two layers of `scanProg` as two hand-copied flat layers (no scan); layer `n`
+    writes `Hn(q, m)`. Same model as `scanProg`; the scan fixtures are tied to it by the oracle in
+    `evalplan_nonlin_smoke.py`. -/
+def unrolledProg : TLProgram := tlprog!{
+  tensor f64 X(q, m), W_Q1(h, k, m), W_K1(h, k, m), W_V1(h, k, m), W_O1(m, h, k), W_in1(d, m), W_out1(m, d)
+  tensor f64 W_Q2(h, k, m), W_K2(h, k, m), W_V2(h, k, m), W_O2(m, h, k), W_in2(d, m), W_out2(m, d)
+  tensor f64 Inv(m), Eps(q)
+  tensor f64 Q1(q, h, k), K1(s, h, k), V1(s, h, k), AO1(q, h, k), At1(q, m), F1(q, d), Y1(q, m)
+  tensor f64 Za1(q, m), Ssa1(q), Vea1(q), Sda1(q), Zb1(q, m), Ssb1(q), Veb1(q), Sdb1(q)
+  tensor f64 Q2(q, h, k), K2(s, h, k), V2(s, h, k), AO2(q, h, k), At2(q, m), F2(q, d), Y2(q, m)
+  tensor f64 Za2(q, m), Ssa2(q), Vea2(q), Sda2(q), Zb2(q, m), Ssb2(q), Veb2(q), Sdb2(q)
+  Q1[q, h, k]      := W_Q1[h, k, m] · X[q, m]
+  K1[s, h, k]      := W_K1[h, k, m] · X[s, m]
+  V1[s, h, k]      := W_V1[h, k, m] · X[s, m]
+  tensor f64 S1(h, q, s)
+  S1[h, q, s.]     := softmax(where s ≤ q)(Q1[q, h, k] · K1[s, h, k])
+  AO1[q, h, k]     := S1[h, q, s] · V1[s, h, k]
+  At1[q, m]        := W_O1[m, h, k] · AO1[q, h, k]
+  Za1[q, m]        := At1[q, m] + X[q, m]
+  Ssa1[q]          := Za1[q, m] · Za1[q, m] · Inv[m]
+  Vea1[q]          := Ssa1[q] + Eps[q]
+  Sda1[q]          := sqrt(Vea1[q])
+  tensor f64 A1(q, m)
+  A1[q, m]         := Za1[q, m] / Sda1[q]
+  F1[q, d]         := relu(W_in1[d, m] · A1[q, m])
+  Y1[q, m]         := W_out1[m, d] · F1[q, d]
+  Zb1[q, m]        := Y1[q, m] + A1[q, m]
+  Ssb1[q]          := Zb1[q, m] · Zb1[q, m] · Inv[m]
+  Veb1[q]          := Ssb1[q] + Eps[q]
+  Sdb1[q]          := sqrt(Veb1[q])
+  tensor f64 H1(q, m)
+  H1[q, m]         := Zb1[q, m] / Sdb1[q]
+  Q2[q, h, k]      := W_Q2[h, k, m] · H1[q, m]
+  K2[s, h, k]      := W_K2[h, k, m] · H1[s, m]
+  V2[s, h, k]      := W_V2[h, k, m] · H1[s, m]
+  tensor f64 S2(h, q, s)
+  S2[h, q, s.]     := softmax(where s ≤ q)(Q2[q, h, k] · K2[s, h, k])
+  AO2[q, h, k]     := S2[h, q, s] · V2[s, h, k]
+  At2[q, m]        := W_O2[m, h, k] · AO2[q, h, k]
+  Za2[q, m]        := At2[q, m] + H1[q, m]
+  Ssa2[q]          := Za2[q, m] · Za2[q, m] · Inv[m]
+  Vea2[q]          := Ssa2[q] + Eps[q]
+  Sda2[q]          := sqrt(Vea2[q])
+  tensor f64 A2(q, m)
+  A2[q, m]         := Za2[q, m] / Sda2[q]
+  F2[q, d]         := relu(W_in2[d, m] · A2[q, m])
+  Y2[q, m]         := W_out2[m, d] · F2[q, d]
+  Zb2[q, m]        := Y2[q, m] + A2[q, m]
+  Ssb2[q]          := Zb2[q, m] · Zb2[q, m] · Inv[m]
+  Veb2[q]          := Ssb2[q] + Eps[q]
+  Sdb2[q]          := sqrt(Veb2[q])
+  tensor f64 H2(q, m)
+  H2[q, m]         := Zb2[q, m] / Sdb2[q]
+}
+
+/-- The binary32 sibling (`unrollProg32` of the prototype file): only the declarations that pin axis order. -/
+def unrolledProg32 : TLProgram := tlprog!{
+  Q1[q, h, k]      := W_Q1[h, k, m] · X[q, m]
+  K1[s, h, k]      := W_K1[h, k, m] · X[s, m]
+  V1[s, h, k]      := W_V1[h, k, m] · X[s, m]
+  tensor S1(h, q, s)
+  S1[h, q, s.]     := softmax(where s ≤ q)(Q1[q, h, k] · K1[s, h, k])
+  AO1[q, h, k]     := S1[h, q, s] · V1[s, h, k]
+  At1[q, m]        := W_O1[m, h, k] · AO1[q, h, k]
+  Za1[q, m]        := At1[q, m] + X[q, m]
+  Ssa1[q]          := Za1[q, m] · Za1[q, m] · Inv[m]
+  Vea1[q]          := Ssa1[q] + Eps[q]
+  Sda1[q]          := sqrt(Vea1[q])
+  tensor A1(q, m)
+  A1[q, m]         := Za1[q, m] / Sda1[q]
+  F1[q, d]         := relu(W_in1[d, m] · A1[q, m])
+  Y1[q, m]         := W_out1[m, d] · F1[q, d]
+  Zb1[q, m]        := Y1[q, m] + A1[q, m]
+  Ssb1[q]          := Zb1[q, m] · Zb1[q, m] · Inv[m]
+  Veb1[q]          := Ssb1[q] + Eps[q]
+  Sdb1[q]          := sqrt(Veb1[q])
+  tensor H1(q, m)
+  H1[q, m]         := Zb1[q, m] / Sdb1[q]
+  Q2[q, h, k]      := W_Q2[h, k, m] · H1[q, m]
+  K2[s, h, k]      := W_K2[h, k, m] · H1[s, m]
+  V2[s, h, k]      := W_V2[h, k, m] · H1[s, m]
+  tensor S2(h, q, s)
+  S2[h, q, s.]     := softmax(where s ≤ q)(Q2[q, h, k] · K2[s, h, k])
+  AO2[q, h, k]     := S2[h, q, s] · V2[s, h, k]
+  At2[q, m]        := W_O2[m, h, k] · AO2[q, h, k]
+  Za2[q, m]        := At2[q, m] + H1[q, m]
+  Ssa2[q]          := Za2[q, m] · Za2[q, m] · Inv[m]
+  Vea2[q]          := Ssa2[q] + Eps[q]
+  Sda2[q]          := sqrt(Vea2[q])
+  tensor A2(q, m)
+  A2[q, m]         := Za2[q, m] / Sda2[q]
+  F2[q, d]         := relu(W_in2[d, m] · A2[q, m])
+  Y2[q, m]         := W_out2[m, d] · F2[q, d]
+  Zb2[q, m]        := Y2[q, m] + A2[q, m]
+  Ssb2[q]          := Zb2[q, m] · Zb2[q, m] · Inv[m]
+  Veb2[q]          := Ssb2[q] + Eps[q]
+  Sdb2[q]          := sqrt(Veb2[q])
+  tensor H2(q, m)
+  H2[q, m]         := Zb2[q, m] / Sdb2[q]
+}
+
+/-! ### Scan survey (A3): the existing Lean scan fixtures through the same differential
+
+The donors are IMPORTED from `test/Eval/Plan/ScanCompileTest.lean` (`import Eval.Plan.ScanCompileTest`; the
+runner builds that module first), so a fixture cannot drift from the Lean test it came from. Each is run
+through its donor's own `explicitF64Sched` (undeclared names are binary64). They are LINEAR (no pointwise,
+axiswise or unary step), so the header carries `"linear_ok": true` and the driver skips the "exercises a
+nonlinearity" requirement for them. Registry = `scanSurvey64`'s list: adding a fixture is one line.
+Classification of every candidate (accepted here, refused by the gate/emitter, refused at prepare) is in
+`papers/semantics/jax_scan_fixture_survey.md`. -/
+
+/-- A scan-survey fixture: `fixtureOfSched64` with the scan count pinned, marked `linear_ok`. -/
+def surveyFixture64 (name : String) (sched0 : ScheduledProgram) (inputs : HashMap String DenseTensor)
+    (scans : Nat) : IO String := do
+  let s ← fixtureOfSched64 name (ScanCompileTest.explicitF64Sched sched0) inputs 0 0 none false scans
+  pure (s.replace "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True")
+
+/-- The accepted (class A) donors: (fixture name, donor schedule, donor inputs, number of scan steps). -/
+def scanSurvey64 : IO (Array String) := do
+  let cands : List (String × ScheduledProgram × HashMap String DenseTensor × Nat) :=
+    [ ("scan_selfrecur", ScanCompileTest.selfRecurSched, ScanCompileTest.selfRecurInputs, 1)
+    , ("scan_scratch", ScanCompileTest.scratchSched, ScanCompileTest.scratchInputs, 1)
+    , ("scan_contract", ScanCompileTest.contractSched, ScanCompileTest.contractInputs, 1)
+    , ("scan_deephistory", ScanCompileTest.deepHistorySched, ScanCompileTest.deepHistoryInputs, 1)
+    , ("scan_extentone", ScanCompileTest.extentOneSched, ScanCompileTest.deepHistoryInputs, 1)
+    , ("scan_axispos", ScanCompileTest.axisPosSched, ScanCompileTest.axisPosInputs, 1)
+    , ("scan_twoscan", ScanCompileTest.twoScanSched, ScanCompileTest.twoScanInputs, 2)
+    , ("scan_stateplainread", ScanCompileTest.statePlainReadSched, ScanCompileTest.rejInputs, 2) ]
+  cands.toArray.mapM fun (n, s, i, k) => surveyFixture64 n s i k
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -598,7 +855,10 @@ def corpus64 : IO (Array String) := do
         (env64 [("Xl", t64 [2, 3] unaryXl), ("Inv", t64 [3] unaryInv), ("Eps", t64 [2] unaryEps)])
         0 0 (some (4, 0, 0)) true,
     ← fixture64 "unary_empty" unaryEmptyProg (env64 [("Ae", t64 [0] #[])])
-        0 0 (some (1, 0, 0)) true]
+        0 0 (some (1, 0, 0)) true,
+    ← fixture64 "transformer_scan" scanProg scanEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture64 "transformer_unrolled" unrolledProg unrolledEnv64 2 2 (some (36, 2, 2)) true] ++
+    (← scanSurvey64)
 
 def corpus32 : IO (Array String) := do
   return #[
@@ -645,7 +905,9 @@ def corpus32 : IO (Array String) := do
         (env32 [("Xl", t32 [2, 3] unaryXl), ("Inv", t32 [3] unaryInv), ("Eps", t32 [2] unaryEps)])
         0 0 (some (4, 0, 0)) true,
     ← fixture32 "unary_empty32" unaryEmptyProg32 (env32 [("Ae", t32 [0] #[])])
-        0 0 (some (1, 0, 0)) true]
+        0 0 (some (1, 0, 0)) true,
+    ← fixture32 "transformer_scan32" scanProg32 scanEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture32 "transformer_unrolled32" unrolledProg32 unrolledEnv32 2 2 (some (36, 2, 2)) true]
 
 /-! ## Boundary pins: Lean REJECTS domain-violating unary reads (the JAX runtime does not check)
 

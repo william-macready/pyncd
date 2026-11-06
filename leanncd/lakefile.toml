@@ -58,7 +58,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
          "Eval.Plan.ScatterDense32Test",
          "Eval.Plan.CheckedPrivacyTest",
          "Eval.Plan.BlockTest",
-         "Eval.Plan.ScanTest", "Eval.Plan.ScanCompileTest",
+         "Eval.Plan.ScanTest", "Eval.Plan.ScanCompileTest", "Eval.Plan.ScanJaxGateTest",
          "Eval.Plan.EvalPlanTest", "Eval.Plan.EvalPlan32Test",
          "Eval.Plan.GraphCheckTest", "Eval.Plan.GraphDenseTest", "Eval.Plan.NonlinCheckTest",
          "Eval.Plan.NonlinDenseTest", "Eval.Plan.NonlinDense32Test",
@@ -137,7 +137,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
 [[lean_lib]]
 name = "JaxExperiment"
 srcDir = "experiments/jax_bridge"
-globs = ["EvalPlanCodegen"]
+globs = ["EvalPlanCodegen", "ScanAffineEmitTest"]
 
 # Non-default semantic feasibility experiment; not imported by LeanNCD.
 [[lean_lib]]

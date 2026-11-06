@@ -1,0 +1,146 @@
+[
+ {
+  "label": "JS-L-g1 (scan gate: the initValue check replaced by true)",
+  "task": "scan",
+  "file": "LeanNCD/Eval/Plan/Executable.lean",
+  "old": "    unless raw.states[si].initValue == .zero do",
+  "new": "    unless true do",
+  "targets": [
+   "Eval.Plan.ExecutableTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ExecutableTest.lean:2000:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-L-g2 (scan gate: the jaxScanSingleAxis check replaced by true)",
+  "task": "scan",
+  "file": "LeanNCD/Eval/Plan/Executable.lean",
+  "old": "  unless jaxScanSingleAxis raw do",
+  "new": "  unless true do",
+  "targets": [
+   "Eval.Plan.ScanJaxGateTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ScanJaxGateTest.lean:26:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-L-g3 (scan gate: the assign arm replaced by pure ())",
+  "task": "scan",
+  "file": "LeanNCD/Eval/Plan/Executable.lean",
+  "old": "      | .assign a => checkJaxAssignSupportCtx block.tensorSigs nodeIndex a true true",
+  "new": "      | .assign _ => pure ()",
+  "targets": [
+   "Eval.Plan.ExecutableTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ExecutableTest.lean:2014:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-L-g4 (scan gate: allowUnary true -> false)",
+  "task": "scan",
+  "file": "LeanNCD/Eval/Plan/Executable.lean",
+  "old": "block.tensorSigs nodeIndex a true true",
+  "new": "block.tensorSigs nodeIndex a false true",
+  "targets": [
+   "Eval.Plan.ExecutableTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ExecutableTest.lean:1989:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-L-g5 (scan gate: allowContext true -> false)",
+  "task": "scan",
+  "file": "LeanNCD/Eval/Plan/Executable.lean",
+  "old": "block.tensorSigs nodeIndex a true true",
+  "new": "block.tensorSigs nodeIndex a true false",
+  "targets": [
+   "Eval.Plan.ExecutableTest"
+  ],
+  "expect": [
+   "error: test/Eval/Plan/ExecutableTest.lean:1975:0: Expression",
+   "error: test/Eval/Plan/ExecutableTest.lean:1989:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-L-e1 (step write contexts shifted by -1: the +1 of the write bias is dropped, writes land on row r)",
+  "task": "scan",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "raw.stepBlock raw.stepWrites stepCtxs",
+  "new": "raw.stepBlock raw.stepWrites (stepCtxs.map (·.map (· - 1)))",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/ScanAffineEmitTest.lean:111:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-L-e2 (buildScanWriteIndex returns the table step-minor instead of step-major)",
+  "task": "scan",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "    idxs := idxs ++ slice\n  return idxs",
+  "new": "    idxs := idxs ++ slice\n  let T := ctxs.length\n  let L := idxs.size / T\n  return (Array.range idxs.size).map fun k => idxs[(k % T) * L + k / T]!",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/ScanAffineEmitTest.lean:111:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-L-e3 (step-block context_pos check #[0] -> #[1])",
+  "task": "scan",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "unless a.plan.terms[ti].contextPos == #[0] do",
+  "new": "unless a.plan.terms[ti].contextPos == #[1] do",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2528:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-L-e4 (renderScanNode: the scan gate call dropped)",
+  "task": "scan",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "  match checkJaxScanSupport nodeIndex checked with\n  | .ok _ => pure ()\n  | .error e => throw (codegenErrorOfSupport e)\n",
+  "new": "",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2545:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-L-e5 (buildScanWriteIndex: the out-of-range backstop dropped)",
+  "task": "scan",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "      unless inBoundsPerDim stateShape coord do\n        throw (.scanWriteOutOfRange nodeIndex stateIndex coord)\n",
+  "new": "",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2553:0: Expression"
+  ]
+ },
+ {
+  "label": "JS-L-c1 (buildScanWriteIndex: the scanWriteCollision test replaced by if false)",
+  "task": "scan",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "      if sorted[i]! == sorted[i - 1]! then",
+  "new": "      if false then",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2564:0: Expression"
+  ]
+ }
+]

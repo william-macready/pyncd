@@ -617,6 +617,12 @@ represents snapshot independence and atomic commit. When its refinement gate pas
 stages one loop instead of unrolling one graph copy per recurrence coordinate. Heterogeneous outer
 graph steps remain static traversal outside that loop.
 
+> **Implementation status (2026-11-05):** the experimental `affineReference` mode now lowers single-axis,
+> real-state scans through `jax.lax.scan` (carry = complete state tensors, step-major stacked tables). It
+> is validated empirically (differential against Lean and a scan-versus-unrolled bit-identity oracle), not
+> by a refinement gate or `JaxScanRefines` evidence; multi-axis, tropical and Boolean-scratch scans and the
+> evidence path are still refused. See `semantics/jax_scan_record.md`.
+
 Future stochastic operations should preserve the same discipline by taking and returning explicit
 PRNG keys. Random splitting and reproducibility then remain visible dataflow rather than hidden
 global state.

@@ -142,7 +142,7 @@ This is currently a target architecture rather than a working end-to-end evaluat
 narrower reason than this section used to give. The non-default `JaxExperiment` library DOES build
 (`lake build JaxExperiment`, green): it was migrated to the current multi-variant
 `CheckedPlanStepEvidence`, and it is assignment-only by SCOPE, fail-loud rather than broken. A
-`.scan`/`.pointwise`/`.axiswise` step is rejected with a located `unsupportedStep <stepIndex>`, and
+`.scan`/`.pointwise`/`.axiswise` step is rejected with a located `unsupportedStep <stepIndex>` in `einsumOnly`, the candidate conversions and the evidence path (`affineReference` renders scatter, pointwise, axiswise and, since 2026-11-05, single-axis real scans through `lax.scan`; a scan's contextful step-block assignments pass the assign gate's private `allowContext` opt-in, which the outer gate does not), and
 an assignment the backend cannot render — a Boolean destination or source, a tropical `max`/`min`
 algebra, an inline unary read (`einsumOnly` and the evidence path; `affineReference` renders it since 2026-11-04), an Iverson factor, a CONTEXTFUL assignment (non-empty
 `AssignPlan.contextShape`, which neither lowering has a kernel parameter for), or, in `einsumOnly`
@@ -952,8 +952,9 @@ execution.
 > **Current implementation status:** The table below maps the intended JAX architecture to the code
 > that presently exists; it does not describe a working end-to-end evaluator. The experiment builds
 > (`lake build JaxExperiment`) against the current assignment, scan, pointwise, and axiswise
-> `CheckedPlanStepEvidence` variants; it is assignment-only by scope and fail-loud, rejecting every
-> other step kind with a located `unsupportedStep`, not by failing to compile.
+> `CheckedPlanStepEvidence` variants; the evidence path and `einsumOnly` are assignment-only by scope and
+> fail-loud, rejecting every other step kind with a located `unsupportedStep`, not by failing to compile
+> (`affineReference` also lowers scatter, pointwise, axiswise and single-axis real scans).
 
 | Common stage | Experimental JAX implementation | Current status |
 |---|---|---|

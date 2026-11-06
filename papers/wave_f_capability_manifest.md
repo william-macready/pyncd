@@ -245,7 +245,7 @@ Wave F" table:
 | `.scanPre`, callbacks, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists (nonlinear scan bodies themselves are now admitted — see the first row). |
 | General n-dimensional recurrence geometry and arbitrary state writes | The first checked scan remains the rectangular uniform all-axis `+1` fragment. |
 | Multi-face full-boundary writes (the standard n-D tabulation-DP pattern, e.g. row-0-plus-column-0) and genuinely overlapping writes with no declared precedence | Neither is achievable in this version — both need an offset/restricted-range or conflict-resolving base-write geometry beyond pin-plus-full-free. |
-| PyTorch/JAX execution and optimized `lax.scan`/compact-carry/wavefront/parallel-prefix lowering | Dense remains the only general checked worker delivered by Wave F. |
+| PyTorch/JAX execution and optimized `lax.scan`/compact-carry/wavefront/parallel-prefix lowering | Dense remains the only general checked worker delivered by Wave F. (Later, outside Wave F: the experimental JAX `affineReference` mode lowers single-axis real scans through `lax.scan`, 2026-11-05; see `semantics/jax_scan_record.md`. Optimized compact-carry/wavefront/prefix lowering is still absent.) |
 
 *The first row and the `.scanPre` row above were refreshed 2026-08-30 to track the proposal §1
 table they reproduce: the nonlinearity plan's Task 4 (`nonlinearity_split_pair_direct_lowering.md`
