@@ -126,5 +126,23 @@ staying within their requested turn bounds.
 
 ## Close-out
 
-Pending final single-file/default build and two whole-branch review lenses.
-No remote push is authorized.
+- Both independent whole-branch review lenses completed with no required
+  findings: mathematical statement/soundness and runtime/integration.
+  The mathematical review's optional stale-summary/table-of-contents fixes
+  were applied. That reviewer reported some 98-line reads against the
+  requested 80-line window limit, but no turn/context budget breach.
+- The controller reran the parity fixture through `lean-file.sh`.
+- Concurrent local main `6f9200cf` was merged into the proof branch before
+  final review/validation. The first integrated build reported missing olean
+  output files in unrelated Bridge/Source test targets; the two exact targets
+  passed on targeted retry, and the complete integrated build then passed
+  (8864 jobs). No source workaround or unrelated fix was introduced.
+- The controller's final bare default build also passed on the integrated
+  tree. The final namespace audits cover 517 graph/proof constants and
+  43 fixture-proof constants, all using only the allowed standard axioms.
+- The scoped correspondence theorem is complete; no proof obligation is
+  deferred. The unmeasured usage/budget breach and optional legacy-loop
+  equivalence theorem are documented above rather than silently omitted.
+
+The branch is ready for the authorized local-main merge and task-worktree
+cleanup. No remote push is authorized.

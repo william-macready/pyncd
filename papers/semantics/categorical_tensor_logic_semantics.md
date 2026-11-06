@@ -50,8 +50,9 @@ The strongest defensible conclusion is:
 
 > A finite, typed dependency graph with partial expression interpretation
 > and closed-writer collection is a credible foundation for logical
-> execution. Its general correspondence and compositionality remain
-> theorem targets, not consequences of the prototype alone.
+> execution. Conditional correspondence under explicit local matching is
+> proved separately; general compositionality remains a theorem target,
+> not a consequence of the prototype alone.
 
 The St/Br presentation can organise parts of the syntax and total
 indexing. It is not assumed to be the best presentation of every layer.
@@ -101,7 +102,7 @@ and Section 9 states the remaining proof targets.
   - [7.4. Temporal structure remains distinct](#74-temporal-structure-remains-distinct)
 - [8. Where Turi-Plotkin and implementation refinement fit](#8-where-turi-plotkin-and-implementation-refinement-fit)
 - [9. The most valuable theorem targets](#9-the-most-valuable-theorem-targets)
-  - [9.1. Closed-graph/reference correspondence: unproved](#91-closed-graphreference-correspondence-unproved)
+  - [9.1. Closed-graph/reference correspondence: conditional proof](#91-closed-graphreference-correspondence-conditional-proof)
   - [9.2. Sealed sequential composition: unproved](#92-sealed-sequential-composition-unproved)
   - [9.3. Why unrestricted partial-function composition is unsafe](#93-why-unrestricted-partial-function-composition-is-unsafe)
 - [Conclusion](#conclusion)
