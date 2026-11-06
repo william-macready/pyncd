@@ -1,6 +1,7 @@
 import LeanNCD.Eval.Plan.Compile
 import LeanNCD.Eval.Plan.Adapter
 import LeanNCD.Eval.Eval
+import LeanNCD.DSL.Compile
 import Eval.ExplicitF64
 
 /-!
@@ -2529,5 +2530,35 @@ run_cmd okOrThrow (d2AcceptedOnBoth "D2/sum scratch reads min-plus N"
   (d2Scratch .sum [] [d2NStmt] [] "N" (.axis axJ2b)))
 run_cmd okOrThrow (d2AcceptedOnBoth "D2/min scratch reads min-plus N"
   (d2Scratch .min [] [d2NStmt] [] "N" (.axis axJ2b)))
+
+/-! ## Post-scan consumers through the real pipeline
+
+`Zf[j] := S[j, 2]` reads the finished history of the scan state `S` at a pinned literal. `finalizeScans`
+emits it as a `.plain` node after the scan (a pinned read is non-causal inside a recurrence body, so
+the old classification made `prepareEvalPlan` reject it with `stateReadNotCausal`). The fixture goes
+`tlprog!` → `compileToScheduled` → `prepareEvalPlan`, not a hand-built schedule, and must (a) compile
+and (b) read `S`'s materialized outer slot, the same slot the scan publishes. -/
+
+def postReadProg : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l] · W[j]
+  Zf[j]      := S[j, 2] }
+
+def postReadInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1.0, 2.0]⟩).insert "W" ⟨[2], #[2.0, 3.0]⟩
+
+def postReadSched : Option ScheduledProgram :=
+  match postReadProg.explicitF64.compileToScheduled.run 0 with
+  | .ok s _ => some s | .error _ _ => none
+
+#guard (postReadSched.map fun s =>
+    causeOf (prepareEvalPlan s (InputSignature.ofDenseInputs postReadInputs))) == some none
+
+-- the scan is step 0 and the consumer is the assignment after it; the consumer's only read is the
+-- scan's published state slot.
+#guard (postReadSched.bind fun s => (prepared s postReadInputs).bind fun p =>
+    (scanAt p 0).bind fun sc => (assignAt p 1).map fun a =>
+      (a.terms.getD 0 default).factors.map (·.readOrDefault.sourceSlot)
+        == sc.states.map (·.destSlot)) == some true
 
 end LeanNCD.Eval.Plan.ScanCompileTest
