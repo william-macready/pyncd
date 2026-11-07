@@ -467,10 +467,15 @@ the whitespace gate.
    existing correspondence/transport regressions and documented exclusions.
    Findings must be fixed or explicitly adjudicated; genuine unfixable or
    load-bearing plan defects stop execution, not silent scope substitution.
-5. Verify main still at base, protected primary README/synthesis hashes unchanged,
+5. Verify main is the candidate's integrated base, protected primary
+   README/synthesis hashes unchanged,
    and candidate committed/clean. Stage only explicit intended paths; never
    `.claude/settings.json`, temporary indexes/build logs or others' changes.
    The verified patch package is an explicitly requested deliverable.
+   If local main advances after the frozen `16721af5` replay, integrate its
+   changes into the candidate without rewriting history, prove the scoped task
+   diff is unchanged (or review scoped changes), and rerun the full integrated
+   build before merging. The immutable authoring/replay base remains recorded.
    Once all gates are green, merge the **implementation branch** locally:
 
 ```sh

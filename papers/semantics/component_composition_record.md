@@ -366,6 +366,15 @@ than being reformatted. No source or documentation defect was suppressed.
 
 ## Integration and completion boundary
 
+The first safe integration preflight stopped before merging because local
+main advanced from `16721af5` to `96edc76a` through concurrent JAX post-rule
+pins. Its five files are disjoint from this slice. Current main was merged
+into the candidate without conflicts or history rewriting. A byte-for-byte
+Git-diff comparison proved `16721af5..cc8afb0f` equals
+`96edc76a..integrated-candidate`: the completed scoped reviews remain applicable.
+The controller's full three-target integrated build passed.
+The original `16721af5` patch/replay base remains accurately recorded.
+
 All scoped construction obligations and release gates are complete. The
 authorized local-main integration and task-only cleanup are recorded by the
 controller's [integration receipt](component_composition_artifacts/integration_receipt.json),
