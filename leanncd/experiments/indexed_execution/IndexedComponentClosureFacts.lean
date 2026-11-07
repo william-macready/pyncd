@@ -1,0 +1,214 @@
+import IndexedCompositionClosure
+
+namespace IndexedOpenComposition
+
+open LeanNCD.Semantics
+open LeanNCD.Semantics.Program
+
+variable {σ : Declarations Unit} [Fintype σ.Tensor] [DecidableEq σ.Tensor]
+
+/-- Declarative facts discharged by accepted closure, and sufficient to close
+    transported static data without assuming composite acceptance. -/
+structure ClosureFacts (contract : Contract σ) (fragment : Fragment σ) : Prop where
+  tensors_nodup : contract.tensors.Nodup
+  tensors_count : contract.tensors.length = Fintype.card σ.Tensor
+  collectors_nodup : (contract.collectors.map Prod.fst).Nodup
+  collectors_defined : ∀ row ∈ contract.collectors, contract.input row.1.1 = false
+  collectors_cover : ∀ a ∈ definedAddresses contract, a ∈ contract.collectors.map Prod.fst
+  readable_nodup : contract.readable.Nodup
+  readable_valid : ∀ a ∈ contract.readable,
+    contract.input a.1 = true ∨ a ∈ contract.collectors.map Prod.fst
+  outputs_nodup : contract.outputs.Nodup
+  outputs_covered : ∀ a ∈ contract.outputs, a ∈ contract.collectors.map Prod.fst
+  capabilities_nodup : (contract.collectors.flatMap Prod.snd).Nodup
+  tags_nodup : (fragment.writers.map Writer.tag).Nodup
+  writer_capabilities_nodup : (fragment.writers.map Writer.capability).Nodup
+  capabilities_covered : ∀ cap ∈ contract.collectors.flatMap Prod.snd,
+    ∃ w ∈ fragment.writers, w.capability = cap
+  writers_valid : validateWriters contract fragment.writers = .ok ()
+
+theorem close_success_readable_outputs
+    {contract : Contract σ} {fragment : Fragment σ} {g : Closed σ}
+    (h : close contract fragment = .ok g) :
+    contract.readable.Nodup ∧
+      (∀ a ∈ contract.readable,
+        contract.input a.1 = true ∨ a ∈ contract.collectors.map Prod.fst) ∧
+    contract.outputs.Nodup ∧
+      (∀ a ∈ contract.outputs, a ∈ contract.collectors.map Prod.fst) := by
+  letI : DecidableEq (Address σ) := Program.Executor.addressEq (σ := σ)
+  have ht := close_success_tensors_nodup h
+  have hc := close_success_tensor_count h
+  have hn := close_success_collectors_nodup h
+  have hi := close_success_no_input_collector h
+  simp only [close, Id.run, pure_bind, ht, hc, hn, hi,
+    decide_true, Bool.not_true, Bool.false_eq_true, bne_self_eq_false, if_false] at h
+  repeat (split at h <;> try cases h)
+  simp_all [List.any_eq_true]
+  rintro ⟨t, p⟩ ha
+  cases hin : contract.input t <;> simp_all
+
+theorem ClosureFacts.of_close
+    {contract : Contract σ} {fragment : Fragment σ} {g : Closed σ}
+    (h : close contract fragment = .ok g) : ClosureFacts contract fragment := by
+  obtain ⟨hrn, hrv, hon, hov⟩ := close_success_readable_outputs h
+  exact {
+    tensors_nodup := close_success_tensors_nodup h
+    tensors_count := close_success_tensor_count h
+    collectors_nodup := close_success_collectors_nodup h
+    collectors_defined := by
+      intro row hr
+      exact Bool.eq_false_iff.mpr
+        (List.any_eq_false.mp (close_success_no_input_collector h) row hr)
+    collectors_cover := close_success_defined_covered h
+    readable_nodup := hrn
+    readable_valid := hrv
+    outputs_nodup := hon
+    outputs_covered := hov
+    capabilities_nodup := close_success_capabilities_nodup h
+    tags_nodup := close_success_writer_tags_nodup h
+    writer_capabilities_nodup := close_success_writer_capabilities_nodup h
+    capabilities_covered := close_success_capability_covered h
+    writers_valid := close_success_validated_writers h
+  }
+
+omit [Fintype σ.Tensor] [DecidableEq σ.Tensor] in
+private theorem duplicate_guard_of_nodup_map (writers : List (Writer σ))
+    (f : Writer σ → Nat) (h : (writers.map f).Nodup) :
+    (writers.any fun w => (writers.filter fun v => f v == f w).length > 1) = false := by
+  apply List.any_eq_false.mpr
+  intro w hw
+  have hc := List.nodup_iff_count_eq_one.mp h (f w)
+    (List.mem_map.mpr ⟨w, hw, rfl⟩)
+  have hcount : (writers.map f).count (f w) =
+      (writers.filter fun v => f v == f w).length := by
+    simp only [List.count, List.countP_eq_length_filter]
+    rw [List.filter_map, List.length_map]
+    rfl
+  rw [← hcount, hc]
+  decide
+
+theorem ClosureFacts.close
+    {contract : Contract σ} {fragment : Fragment σ}
+    (h : ClosureFacts contract fragment) :
+    close contract fragment = .ok ⟨contract, canonicalSteps contract fragment⟩ := by
+  letI : DecidableEq (Address σ) := Program.Executor.addressEq (σ := σ)
+  have hi : contract.collectors.any (fun row => contract.input row.1.1) = false :=
+    List.any_eq_false.mpr (by
+      intro row hr
+      simp [h.collectors_defined row hr])
+  have hcovered : (definedAddresses contract).all
+      (fun a => (contract.collectors.map Prod.fst).any (fun target => decide (target = a))) =
+      true := by
+    apply List.all_eq_true.mpr
+    intro a ha
+    exact List.any_eq_true.mpr ⟨a, h.collectors_cover a ha, by simp⟩
+  have hr : contract.readable.all
+      (fun a => contract.input a.1 ||
+        (contract.collectors.map Prod.fst).any (fun target => decide (target = a))) = true := by
+    apply List.all_eq_true.mpr
+    intro a ha
+    rcases h.readable_valid a ha with hin | hmem
+    · simp [hin]
+    · have hm : (contract.collectors.map Prod.fst).any
+          (fun target => decide (target = a)) = true :=
+        List.any_eq_true.mpr ⟨a, hmem, by simp⟩
+      simp [hm]
+  have ho : contract.outputs.all
+      (fun a => (contract.collectors.map Prod.fst).any (fun target => decide (target = a))) =
+      true := by
+    apply List.all_eq_true.mpr
+    intro a ha
+    exact List.any_eq_true.mpr ⟨a, h.outputs_covered a ha, by simp⟩
+  have ht := duplicate_guard_of_nodup_map fragment.writers Writer.tag h.tags_nodup
+  have hw := duplicate_guard_of_nodup_map fragment.writers Writer.capability
+    h.writer_capabilities_nodup
+  have hmissing : (contract.collectors.flatMap Prod.snd).any
+      (fun cap => !(fragment.writers.any fun w => w.capability == cap)) = false := by
+    apply List.any_eq_false.mpr
+    intro cap hc
+    obtain ⟨w, hmem, heq⟩ := h.capabilities_covered cap hc
+    have ha : fragment.writers.any (fun w => w.capability == cap) = true :=
+      List.any_eq_true.mpr ⟨w, hmem, by simp [heq]⟩
+    simp [ha]
+  have hextra : fragment.writers.any
+      (fun w => !((contract.collectors.flatMap Prod.snd).contains w.capability)) = false := by
+    apply List.any_eq_false.mpr
+    intro w hw
+    obtain ⟨row, hfind, _, _⟩ := validated_writer_destination_reads contract w
+      (validated_writers_forall contract fragment.writers h.writers_valid w hw)
+    obtain ⟨hcap, i, hi, hget, _⟩ := List.find?_eq_some_iff_getElem.mp hfind
+    have hrow : row ∈ contract.collectors := by
+      rw [← hget]
+      exact List.getElem_mem hi
+    simp [List.mem_flatMap.mpr ⟨row, hrow, of_decide_eq_true hcap⟩]
+  simp only [IndexedOpenComposition.close, Id.run, pure_bind,
+    h.tensors_nodup, h.tensors_count, h.collectors_nodup, hi,
+    h.readable_nodup, h.outputs_nodup, h.capabilities_nodup,
+    hmissing, hextra, h.writers_valid,
+    decide_true, Bool.not_true, Bool.false_eq_true, bne_self_eq_false, if_false,
+    Bool.false_or, canonicalSteps]
+  split
+  · rename_i bad
+    change (!(definedAddresses contract).all
+      (fun a => (contract.collectors.map Prod.fst).any
+        (fun target => decide (target = a)))) = true at bad
+    simp only [hcovered, Bool.not_true, Bool.false_eq_true] at bad
+  split
+  · rename_i bad
+    change (!contract.readable.all
+      (fun a => contract.input a.1 ||
+        (contract.collectors.map Prod.fst).any
+          (fun target => decide (target = a)))) = true at bad
+    simp only [hr, Bool.not_true, Bool.false_eq_true] at bad
+  split
+  · rename_i bad
+    change (!contract.outputs.all
+      (fun a => (contract.collectors.map Prod.fst).any
+        (fun target => decide (target = a)))) = true at bad
+    simp only [ho, Bool.not_true, Bool.false_eq_true] at bad
+  split
+  · rename_i bad
+    change (fragment.writers.any fun w =>
+      (fragment.writers.filter fun v => v.tag == w.tag).length > 1) = true at bad
+    simp only [ht, Bool.false_eq_true] at bad
+  split
+  · rename_i bad
+    change (fragment.writers.any fun w =>
+      (fragment.writers.filter fun v => v.capability == w.capability).length > 1) =
+      true at bad
+    simp only [hw, Bool.false_eq_true] at bad
+  rfl
+
+omit [Fintype σ.Tensor] [DecidableEq σ.Tensor] in
+theorem mem_definedAddresses_iff (contract : Contract σ) (a : Address σ) :
+    a ∈ definedAddresses contract ↔ a.1 ∈ contract.tensors ∧ contract.input a.1 = false := by
+  rcases a with ⟨t, p⟩
+  constructor
+  · intro ha
+    obtain ⟨u, hu, hm⟩ := List.mem_flatMap.mp ha
+    obtain ⟨i, _, heq⟩ := List.mem_map.mp hm
+    have hut : u = t := congrArg Sigma.fst heq
+    subst u
+    obtain ⟨ht, hi⟩ := List.mem_filter.mp hu
+    exact ⟨ht, by simpa using hi⟩
+  · rintro ⟨ht, hi⟩
+    apply List.mem_flatMap.mpr
+    refine ⟨t, List.mem_filter.mpr ⟨ht, by simp [hi]⟩, ?_⟩
+    apply List.mem_map.mpr
+    exact ⟨(canonicalLayout (σ.signature t).axes).enumerate.symm p,
+      List.mem_finRange _, by simp⟩
+
+theorem ClosureFacts.collector_iff
+    {contract : Contract σ} {fragment : Fragment σ}
+    (h : ClosureFacts contract fragment) (a : Address σ) :
+    a ∈ contract.collectors.map Prod.fst ↔ contract.input a.1 = false := by
+  constructor
+  · intro ha
+    obtain ⟨row, hr, heq⟩ := List.mem_map.mp ha
+    simpa [← heq] using h.collectors_defined row hr
+  · intro hi
+    apply h.collectors_cover
+    exact (mem_definedAddresses_iff contract a).mpr
+      ⟨close_success_tensors_complete h.close a.1, hi⟩
+
+end IndexedOpenComposition
