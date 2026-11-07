@@ -70,5 +70,41 @@
     "new": "fun _ => u",
     "targets": ["IndexedComponentModelCycleFixtures"],
     "expect": ["IndexedComponentModelCycleFixtures.lean", "Not a definitional equality"]
+  },
+  {
+    "label": "M9 boundary values replaced by zero (transport proof-elaboration)",
+    "task": "inputs",
+    "file": "experiments/indexed_execution/IndexedComponentModelInputs.lean",
+    "old": "some (fun p =>\n        ρA ⟨(wire.matched ⟨t, h⟩).val, (wire.domain ⟨t, h⟩).coord p⟩)",
+    "new": "some (fun p =>\n        ρA ⟨(wire.matched ⟨t, h⟩).val, (wire.domain ⟨t, h⟩).coord p⟩ * 0)",
+    "targets": ["IndexedComponentModelInputs"],
+    "expect": ["IndexedComponentModelInputs.lean", "Tactic `rfl` failed"]
+  },
+  {
+    "label": "M10 downstream private values discarded (inverse proof-elaboration)",
+    "task": "inputs",
+    "file": "experiments/indexed_execution/IndexedComponentModelInputs.lean",
+    "old": "| ⟨.inr t, p⟩ => ρB ⟨t.val, p⟩",
+    "new": "| ⟨.inr _, _⟩ => 0",
+    "targets": ["IndexedComponentModelInputs"],
+    "expect": ["IndexedComponentModelInputs.lean", "Tactic `rfl` failed"]
+  },
+  {
+    "label": "M11 hidden private distinction erased (value proof-elaboration)",
+    "task": "cycle-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelCycleTest.lean",
+    "old": "hiddenOneStore ⟨.inl privateTensor, ()⟩ = 1 := by",
+    "new": "hiddenOneStore ⟨.inl privateTensor, ()⟩ = 0 := by",
+    "targets": ["IndexedComponentModelCycleTest"],
+    "expect": ["IndexedComponentModelCycleTest.lean", "Application type mismatch"]
+  },
+  {
+    "label": "M12 zero cyclic witness incorrectly extended (model proof-elaboration)",
+    "task": "cycle-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelCycleTest.lean",
+    "old": "glueStore cycleUpstream cycleDownstream (scalarStore 1 1) (scalarStore 1 1)",
+    "new": "glueStore cycleUpstream cycleDownstream (scalarStore 0 0) (scalarStore 1 1)",
+    "targets": ["IndexedComponentModelCycleTest"],
+    "expect": ["IndexedComponentModelCycleTest.lean", "Type mismatch"]
   }
 ]

@@ -1,0 +1,173 @@
+{
+  "base": "2212263c",
+  "tasks": [
+    {
+      "task": "inputs",
+      "patch": "task_01_inputs.patch",
+      "sha256": "74c9d18a486acd12d06e0d9caaa94a80c7132b101f31335f861c9eff4e4d3e71",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelInputs.lean",
+        "leanncd/lakefile.toml"
+      ],
+      "sources": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelInputs.lean"
+      ],
+      "targets": [
+        "IndexedComponentModelInputs"
+      ],
+      "source_hashes": {
+        "leanncd/experiments/indexed_execution/IndexedComponentModelInputs.lean": "9cb642170a903e05462a0df461003b0d3cc228d9230556348949212b85d075ad",
+        "leanncd/lakefile.toml": "4b3a5e7c24d36e6ecedc5b636f7218944ad6bdb2fba5823934ebbd9c38689957"
+      }
+    },
+    {
+      "task": "transport",
+      "patch": "task_02_transport.patch",
+      "sha256": "c2720b9769f8b76a6aac4671a75f78018ea79a62c1b352115d583b6d13244dc0",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelTransport.lean",
+        "leanncd/lakefile.toml"
+      ],
+      "sources": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelTransport.lean"
+      ],
+      "targets": [
+        "IndexedComponentModelTransport"
+      ],
+      "source_hashes": {
+        "leanncd/experiments/indexed_execution/IndexedComponentModelTransport.lean": "ccdc4037568b4aa1660abfe46dd809cbd09e6af402ca3f32d112e028ac83c74b",
+        "leanncd/lakefile.toml": "29a4f5b1637aec8598d9db66e23a5f79dd74208500450c431fba90435ae97b3f"
+      }
+    },
+    {
+      "task": "witnesses",
+      "patch": "task_03_witnesses.patch",
+      "sha256": "ff3505aae3a92dd68ed441fe0bb4022a4afca437479a2041c766b5ff7f7af450",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelWitnesses.lean",
+        "leanncd/lakefile.toml"
+      ],
+      "sources": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelWitnesses.lean"
+      ],
+      "targets": [
+        "IndexedComponentModelWitnesses"
+      ],
+      "source_hashes": {
+        "leanncd/experiments/indexed_execution/IndexedComponentModelWitnesses.lean": "1f8d8bb4c82773933b08672b67c40ac4e47490e57b0e2f52c92f89b06a8dbb83",
+        "leanncd/lakefile.toml": "0172b9a83460b336d8e0d48001d75d51559bcd11f33725f8af184f4344e412fa"
+      }
+    },
+    {
+      "task": "denotation",
+      "patch": "task_04_denotation.patch",
+      "sha256": "4d149ef78b79444dfdb217cbcac0b134371fd3f14a05756afb82aec6a84b55bb",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelDenotation.lean",
+        "leanncd/lakefile.toml"
+      ],
+      "sources": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelDenotation.lean"
+      ],
+      "targets": [
+        "IndexedComponentModelDenotation"
+      ],
+      "source_hashes": {
+        "leanncd/experiments/indexed_execution/IndexedComponentModelDenotation.lean": "317ce8da0f7c14c3127a2784ab6d58eacd3784222452675b43823955682e16b5",
+        "leanncd/lakefile.toml": "00168c4ca5d2fc2cac87a67a42f4ac013defaf9bcff28ada3b2a34f675424ae1"
+      }
+    },
+    {
+      "task": "local-fixtures",
+      "patch": "task_05_local-fixtures.patch",
+      "sha256": "52b09a1d3af9a94ba6af2e8688154af6ac86fda959ec782d2ec79b47d227133e",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentModelLocalTest.lean",
+        "leanncd/lakefile.toml"
+      ],
+      "sources": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentModelLocalTest.lean"
+      ],
+      "targets": [
+        "IndexedComponentModelLocalFixtures",
+        "IndexedComponentModelLocalTest"
+      ],
+      "source_hashes": {
+        "leanncd/experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean": "a1433e0b4da4a06304bd716409eaa29c7b11a6cdcb19a4c04b7785145511cbe5",
+        "leanncd/experiments/indexed_execution/IndexedComponentModelLocalTest.lean": "956c9ae07417bef0c3419025d69567bba8d31e817a62e35f9dc06b7bba71061e",
+        "leanncd/lakefile.toml": "bd519dfe9f273f7d00d7ad5efc4283277852bcb556379113b677371e74b0a6bd"
+      }
+    },
+    {
+      "task": "geometry-fixtures",
+      "patch": "task_06_geometry-fixtures.patch",
+      "sha256": "6edd5c2550de190510c5174dea36fb5e9c16f7dfe0c6ec2ad1da52a2822f5c9b",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentModelGeometryTest.lean",
+        "leanncd/lakefile.toml"
+      ],
+      "sources": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentModelGeometryTest.lean"
+      ],
+      "targets": [
+        "IndexedComponentModelGeometryFixtures",
+        "IndexedComponentModelGeometryTest"
+      ],
+      "source_hashes": {
+        "leanncd/experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean": "d134f1899532e9fefa0d8eda82784ba9df0e30c4319775672b9b6d5b2c1c2a9e",
+        "leanncd/experiments/indexed_execution/IndexedComponentModelGeometryTest.lean": "167ffb8ba59020160b988b4506f32e63dab19c4f8fdb90930da6eaf6a5cc30fb",
+        "leanncd/lakefile.toml": "ee3f66f8052f9a1951e47f7e77e723005579f2cb765572826bdbf832d2528a39"
+      }
+    },
+    {
+      "task": "cycle-fixtures",
+      "patch": "task_07_cycle-fixtures.patch",
+      "sha256": "e5a679034156a4bcbed37beddfc1a4a1a9a7b60e4bb557cab9981fff4170b6d1",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelCycleFixtures.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentModelCycleTest.lean",
+        "leanncd/lakefile.toml"
+      ],
+      "sources": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelCycleFixtures.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentModelCycleTest.lean"
+      ],
+      "targets": [
+        "IndexedComponentModelCycleFixtures",
+        "IndexedComponentModelCycleTest"
+      ],
+      "source_hashes": {
+        "leanncd/experiments/indexed_execution/IndexedComponentModelCycleFixtures.lean": "30f64d287ddf40ebf8f02d058c0c79a17df4503d6bc943d469a1fd5660f96128",
+        "leanncd/experiments/indexed_execution/IndexedComponentModelCycleTest.lean": "1dc85ba048250072101684e7fa66c274765ac59fac887ba1cf7923dcb4eae141",
+        "leanncd/lakefile.toml": "7fb9d8253d5be2d68772b35acfa9d6723536ca3b797765b2567227fa5a3fd145"
+      }
+    },
+    {
+      "task": "discovery",
+      "patch": "task_08_discovery.patch",
+      "sha256": "fd25005f727b338321e2be56d2ba5e1bfa07025b7f525695b36e0ce8437da4bf",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelTest.lean",
+        "leanncd/AGENTS.md",
+        "papers/semantics/categorical_tensor_logic_component_interfaces.md",
+        "leanncd/lakefile.toml"
+      ],
+      "sources": [
+        "leanncd/experiments/indexed_execution/IndexedComponentModelTest.lean"
+      ],
+      "targets": [
+        "IndexedComponentModelTest"
+      ],
+      "source_hashes": {
+        "leanncd/experiments/indexed_execution/IndexedComponentModelTest.lean": "23a989ef15a3da49c87d1322b0095604b4ffd710807ddf47a3a359a55c0c92f0",
+        "leanncd/AGENTS.md": "b00ce36464c9b95f62800de6d86ad39b7f2015271842985ae90a62ee39441449",
+        "papers/semantics/categorical_tensor_logic_component_interfaces.md": "7a39894ec87c3e3ae7b8e7cd59f7bb8c192c0a2bb3f337c44d49119d598aee58",
+        "leanncd/lakefile.toml": "eb382eeece213b761d26e0ab0b9fa00993b69f548115652fc33e95c5ee3cd099"
+      }
+    }
+  ]
+}

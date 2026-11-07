@@ -48,9 +48,11 @@ Signatures use the same open donor namespaces as the source; `Axis` also opens
 `IndexedComponentTransportTest (srcShape dstShape p q)`. No implicit parameters
 are added to these concrete exports.
 
+The following are API signature transcriptions, not executable Lean snippets.
+
 ### `Empty` definitions
 
-```lean
+```text
 liftedInput : InputBinding (K := RationalReference.Carrier)
   (σ := declarations emptyProducerComponent emptyConsumerComponent)
 producerStore : Store RationalReference.Carrier emptyProducerDeclarations
@@ -61,7 +63,7 @@ consumerStore : Store RationalReference.Carrier emptyConsumerDeclarations
 
 ### `Empty` theorems
 
-```lean
+```text
 producer_input_present :
   emptyValidatedInput.val emptyExternalInput = some (fun p => Fin.elim0 p.1)
 lifted_input_present :
@@ -84,7 +86,7 @@ output_roles_and_identity :
 
 ### `Axis` definitions
 
-```lean
+```text
 producerInput : producer.Input
 producerStore : Store RationalReference.Carrier producerDeclarations
 transportedPre : Coord srcShape → ℚ
@@ -95,7 +97,7 @@ flattenedPre : Coord srcShape → ℚ
 
 ### `Axis` theorems
 
-```lean
+```text
 producer_admitted : producer.AdmEnv RationalReference.ops producerStore
 producer_model :
   axisProducer.program.Models RationalReference.ops producerInput producerStore
@@ -132,7 +134,7 @@ and source-copy checking did not mutate controller modules.
 
 Proposed unique replacement in **`Axis.transportedPre` only**:
 
-```lean
+```text
 -- Original:
 fun c => producerStore
   ⟨(axisBoundary.matched ⟨0, rfl⟩).val, (axisBoundary.domain ⟨0, rfl⟩).coord c⟩

@@ -233,3 +233,50 @@ The visible strict `Out = 0` equation is now explicitly satisfied by a
 candidate composite store (`strict_visible_equation_satisfied`), while
 `strict_no_composite` still excludes every complete model because the
 private strict reciprocal is undefined.
+
+## Controller case/class and call-site audit
+
+| Surface | Mechanism and required invariant | Ignored work |
+| --- | --- | --- |
+| Occurrence/outcome/definedness | `outcome_upstream`, `outcome_downstream`, and `admEnv_components` quantify over each defined summand and every `Program.Occurrence`; `interpret_transport` preserves the whole strict body. | Guard-excluded valuations are not occurrences. No actual private occurrence is omitted. |
+| Contribution/collection/equations | `collect_upstream`, `collect_downstream`, and `equations_components` retain the entire original finite occurrence type and use `Finset.sum_congr` at each coordinate. Distinct equal-valued contributions are never deduplicated. | Empty fibers still sum to zero; empty coordinate types have no coordinate equations. No private defined tensor is pruned. |
+| Input validity | `liftInput`/`restrictInput` preserve tensor-level `ValidInput`; `boundaryInput` explicitly supplies `some` on every downstream input. | Noninputs are absent by their role, not because coordinates are empty. |
+| Boundary/store inverses | `downstream_input_address` and `boundaryInput_restrictions` use the certified tensor/coordinate adapters. `restrictDownstream_glueStore` requires full downstream input agreement, supplied at model call sites. | No name/extent inference or arbitrary-pair inverse is admitted. |
+| Witnesses/output indices | `witnessesEquiv` retains both full model subtypes in a dependent Sigma; store inverse laws and proof irrelevance handle the two inverses. `outputIndexEquiv` retains empty output identity separately from coordinates. | No store is quotiented by its output value. |
+| Denotation | `AtMostOneModels` universally compares model stores without asserting existence. The domain iff and successive values use both component hypotheses before upstream output projection. | No unrestricted unique-model composition or phase/execution claim. |
+
+The generic guard/duplicate obligations are proved, not represented as newly
+observed dedicated guard/duplicate fixtures. The seven requested cases and
+12 mutation cycles are reported separately; no silently ignored required
+cell or extra runtime kill is invented.
+
+## Verified authoring package
+
+The fresh artifact-only writer finalized the one 490-line
+[implementation plan](component_model_gluing_plan.md).
+The controller reviewed its task inventories, actual shared-lakefile patch
+ordering, exact domain/uniqueness premises, audit classes, and release gates.
+Review caught a replay command referring to a manifest not copied by the
+code patches; it now uses the existing manifest in the prototype checkout
+while targeting replay source.
+
+The final unfiltered 12-cycle authoring manifest passed with every observed
+`expect` string and byte-identical restored controls.
+See [final authoring mutations](component_model_gluing_artifacts/authoring_mutations.md).
+M9's initial constant replacement accidentally dropped an inferred parameter;
+the final replacement retains the parameter and multiplies transported values
+by zero, so its observed failures exercise the actual boundary equations.
+The obsolete diagnostic is not final mutation evidence.
+
+`package.py --emit` mechanically exported eight task patches from compiled
+source. After all mutation restoration, `--check` applied them in order to
+an isolated index at `2212263c` and verified exact final tree/source hashes.
+No current index or working source was reset. Its task-owned private temporary
+indices are automatically removed. Real checkout execution remains separate.
+
+Accounting remains unsupported. The controller's long exploration/prototype/
+package conversation exceeded the approximately 60-action-turn guideline;
+this process overrun is surfaced rather than treated as compliance.
+The fresh writer estimates 24 tool rounds against its approximately 20-round
+target, below its hard checkpoint. The earlier cyclic-donor breach also
+remains recorded; cumulative authoring/execution tokens are unmeasured.
