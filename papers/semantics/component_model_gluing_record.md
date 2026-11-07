@@ -151,3 +151,47 @@ though the output total remains `14`.
 
 These donor proofs are not yet the required composite gluing/round-trip
 fixtures; those await the generic witness API.
+
+## Validated input/store checkpoint
+
+`a80099ee` persists the compiled `IndexedComponentModelInputs` API.
+The controller built the registered module and checked its full composition
+namespace: 255 constants, standard axioms only.
+See [input/store report](component_model_gluing_artifacts/inputs_prototype.md).
+
+`liftInput`/`restrictInput` are inverse on validated tensor bindings.
+`boundaryInput` and `boundaryFromOutput` explicitly retain present empty
+inputs. `glueStore` keeps the upstream summand and downstream defined values.
+Its downstream restriction inverse requires exactly downstream
+`InputAgreement`; restrictions of an arbitrary composite store satisfy
+that agreement by `boundaryInput_restrictions`.
+
+The agent estimates 30–40 action turns and 60–100k peak context; accounting
+is unavailable and no measured compliance is asserted. Its 2,413 seconds
+of elapsed time included baseline wait and is not evidence of a turn breach.
+
+## Rank-independent theorem and composite fixture checkpoint
+
+`IndexedComponentModelWitnesses` now proves `models_restrict_iff`,
+`models_restrictInput_iff`, `models_glue_iff`, and the explicit dependent
+whole-witness `witnessesEquiv`, with both inverse laws. It also transports
+output indices and complete output projections, including empty outputs.
+No rank, phase, existence, or uniqueness premise appears in this core.
+The controller build, exact source-copy check, and whole composition
+namespace audit passed: 289 constants with only standard axioms.
+See [witness report](component_model_gluing_artifacts/witnesses_prototype.md).
+
+The controller's `IndexedComponentModelLocalTest` compiles with no model
+or compatible witness for the strict case, a complete total glued store
+and witness round trips, and the composite zero-writer constraint.
+The strict donor's no-model result was generalized to every validated
+consumer input; definedness fails independently of its input agreement.
+Observed total composite values are `(0, 0, 1 / 2)`.
+
+`IndexedComponentModelGeometryTest` compiles with generic lifted/transported
+empty-input presence, the empty output-index identity, complete empty
+gluing, and nonconstant-axis component/composite models and store round trips.
+Actual downstream restrictions are `(5, 2)` with output `14`; the
+restricted family is explicitly unequal to wrong flattening.
+The initial coordinate-test elaboration needed the named composite store
+unfolded before rewriting its restriction; corrected source passed.

@@ -1,0 +1,7 @@
+import IndexedComponentModelWitnesses
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedComponentComposition
+#print axioms IndexedComponentComposition.witnessesEquiv
+#print axioms IndexedComponentComposition.models_restrict_iff
+#print axioms IndexedComponentComposition.outputProjection_transport

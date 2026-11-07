@@ -75,8 +75,9 @@ theorem strict_audit_undefined (ρ : Store RationalReference.Carrier consumerDec
   rw [tab]
   rfl
 
-theorem strict_no_model (ρ : Store RationalReference.Carrier consumerDeclarations) :
-    ¬ (consumer 0).Models RationalReference.ops (consumerInput 0) ρ := by
+theorem strict_no_model (η : (consumer 0).Input)
+    (ρ : Store RationalReference.Carrier consumerDeclarations) :
+    ¬ (consumer 0).Models RationalReference.ops η ρ := by
   rintro ⟨adm, _, _⟩
   have audit := adm ⟨strictAudit, rfl⟩ ⟨0, ⟨0, rfl⟩⟩
   rw [strict_audit_undefined] at audit
