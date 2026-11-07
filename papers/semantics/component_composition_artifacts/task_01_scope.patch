@@ -1,0 +1,195 @@
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentCompositionScope.lean b/leanncd/experiments/indexed_execution/IndexedComponentCompositionScope.lean
+new file mode 100644
+index 00000000..3807d583
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentCompositionScope.lean
+@@ -0,0 +1,169 @@
++import IndexedCompositionMatch
++import IndexedComponentTransportEval
++
++namespace IndexedComponentComposition
++
++open LeanNCD.Semantics
++open LeanNCD.Semantics.Program.Executor
++open IndexedComponentTransport
++open IndexedOpenComposition
++
++abbrev K := RationalReference.Carrier
++abbrev R := RationalReference.registry
++
++/-- Port metadata is retained even when its coordinate domain is empty. -/
++structure Port (σ : Declarations Unit) where
++  tensor : σ.Tensor
++  sort : Unit
++  axes : Shape
++  sort_eq : sort = (σ.signature tensor).sort
++  axes_eq : axes = (σ.signature tensor).axes
++
++structure MatchedComponent (σ : Declarations Unit)
++    [Fintype σ.Tensor] [DecidableEq σ.Tensor] where
++  program : Program K σ R
++  schedule : Schedule program
++  contract : Contract σ
++  fragment : Fragment σ
++  graph : Closed σ
++  matched : SourceContractMatch program schedule contract fragment graph
++  inputs : List (Port σ)
++  outputs : List (Port σ)
++  inputs_nodup : (inputs.map Port.tensor).Nodup
++  outputs_nodup : (outputs.map Port.tensor).Nodup
++  inputs_exact : ∀ t, t ∈ inputs.map Port.tensor ↔ program.input t = true
++  outputs_exact : ∀ t, t ∈ outputs.map Port.tensor ↔ program.output t = true
++
++variable {σA σB : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB)
++
++/-- Every downstream input is explicitly paired with exactly one upstream output. -/
++structure Boundary where
++  matched : {t : σB.Tensor // B.program.input t = true} ≃
++    {t : σA.Tensor // A.program.output t = true}
++  domain : ∀ i, Domain (σB.signature i.val).axes
++    (σA.signature (matched i).val).axes
++
++variable (wire : Boundary A B)
++
++abbrev Tensor (_A : MatchedComponent σA) (B : MatchedComponent σB) :=
++  σA.Tensor ⊕ B.program.Defined
++
++def declarations (A : MatchedComponent σA) (B : MatchedComponent σB) :
++    Declarations Unit where
++  Tensor := Tensor A B
++  uid
++    | .inl t => 2 * σA.uid t
++    | .inr t => 2 * σB.uid t.val + 1
++  unique := by
++    intro x y h
++    cases x with
++    | inl x =>
++      cases y with
++      | inl y =>
++        congr 1
++        apply σA.unique
++        change 2 * σA.uid x = 2 * σA.uid y at h
++        generalize σA.uid x = n at *
++        generalize σA.uid y = m at *
++        change (2 : Nat) * n = (2 : Nat) * m at h
++        exact (mul_left_cancel₀ (by decide : (2 : Nat) ≠ 0)) h
++      | inr y =>
++        change 2 * σA.uid x = 2 * σB.uid y.val + 1 at h
++        generalize σA.uid x = n at *
++        generalize σB.uid y.val = m at *
++        have he := congrArg (fun k : Nat => k % 2) h
++        simp [Nat.add_mod] at he
++    | inr x =>
++      cases y with
++      | inl y =>
++        change 2 * σB.uid x.val + 1 = 2 * σA.uid y at h
++        generalize σB.uid x.val = n at *
++        generalize σA.uid y = m at *
++        have he := congrArg (fun k : Nat => k % 2) h
++        simp [Nat.add_mod] at he
++      | inr y =>
++        congr 1
++        apply Subtype.ext
++        apply σB.unique
++        change 2 * σB.uid x.val + 1 = 2 * σB.uid y.val + 1 at h
++        generalize σB.uid x.val = n at *
++        generalize σB.uid y.val = m at *
++        exact (mul_left_cancel₀ (by decide : (2 : Nat) ≠ 0)) (Nat.add_right_cancel h)
++  signature
++    | .inl t => σA.signature t
++    | .inr t => σB.signature t.val
++
++def upstream : Embedding σA (declarations A B) where
++  tensor := Sum.inl
++  injective := Sum.inl_injective
++  domain := fun t => Domain.id (σA.signature t).axes
++
++def downstreamTensor (t : σB.Tensor) : (declarations A B).Tensor :=
++  if h : B.program.input t = true then
++    .inl (wire.matched ⟨t, h⟩).val
++  else
++    .inr ⟨t, by cases hb : B.program.input t <;> simp_all⟩
++
++theorem downstreamTensor_defined (t : B.program.Defined) :
++    downstreamTensor A B wire t.val = .inr t := by
++  simp [downstreamTensor, t.property]
++
++theorem downstreamTensor_input (i : {t : σB.Tensor // B.program.input t = true}) :
++    downstreamTensor A B wire i.val = .inl (wire.matched i).val := by
++  simp [downstreamTensor, i.property]
++
++def downstream : Embedding σB (declarations A B) where
++  tensor := downstreamTensor A B wire
++  injective := by
++    intro t u h
++    by_cases ht : B.program.input t = true
++    · by_cases hu : B.program.input u = true
++      · rw [show downstreamTensor A B wire t = .inl (wire.matched ⟨t, ht⟩).val
++          from downstreamTensor_input A B wire ⟨t, ht⟩,
++          show downstreamTensor A B wire u = .inl (wire.matched ⟨u, hu⟩).val
++          from downstreamTensor_input A B wire ⟨u, hu⟩] at h
++        exact congrArg Subtype.val (wire.matched.injective (Subtype.ext (Sum.inl.inj h)))
++      · simp [downstreamTensor, ht, hu] at h
++    · by_cases hu : B.program.input u = true
++      · simp [downstreamTensor, ht, hu] at h
++      · simp [downstreamTensor, ht, hu] at h
++        exact congrArg Subtype.val (Sum.inr.inj h)
++  domain := by
++    intro t
++    by_cases ht : B.program.input t = true
++    · simpa [downstreamTensor, ht, declarations] using wire.domain ⟨t, ht⟩
++    · have hf : B.program.input t = false := by cases h : B.program.input t <;> simp_all
++      simpa [downstreamTensor, ht, declarations] using
++        (Domain.id (σB.signature t).axes)
++
++theorem downstream_no_upstream_write (t : B.program.Defined) :
++    ∀ a, (downstream A B wire).tensor t.val ≠ .inl a := by
++  intro a
++  simp [downstream, downstreamTensor_defined A B wire t]
++
++theorem upstream_no_downstream_read (t : σA.Tensor) :
++    ∀ u, (upstream A B).tensor t ≠ .inr u := by
++  intro u
++  simp [upstream]
++
++/-- The same checked parity partition applies to occurrence tags and capabilities. -/
++def upstreamId (n : Nat) : Nat := 2 * n
++def downstreamId (n : Nat) : Nat := 2 * n + 1
++
++theorem upstreamId_injective : Function.Injective upstreamId := by
++  intro x y h
++  exact (mul_left_cancel₀ (by decide : (2 : Nat) ≠ 0)) h
++
++theorem downstreamId_injective : Function.Injective downstreamId := by
++  intro x y h
++  exact (mul_left_cancel₀ (by decide : (2 : Nat) ≠ 0)) (Nat.add_right_cancel h)
++
++theorem ids_disjoint (x y : Nat) : upstreamId x ≠ downstreamId y := by
++  intro h
++  have he := congrArg (fun n : Nat => n % 2) h
++  simp [upstreamId, downstreamId, Nat.add_mod] at he
++
++end IndexedComponentComposition
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index b7c1054e..820cd708 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -160,4 +160,14 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
+          "IndexedCompositionSemanticResults", "IndexedCompositionFibers",
+          "IndexedComponentTransport", "IndexedComponentTransportExpr",
+          "IndexedComponentTransportEval", "IndexedComponentTransportTest",
+-         "IndexedComponentTransportProbe"]
++         "IndexedComponentTransportProbe",
++         "IndexedComponentCompositionScope", "IndexedComponentCompositionProgram",
++         "IndexedComponentCompositionSchedule", "IndexedComponentClosureFacts",
++         "IndexedComponentCompositionClosure", "IndexedComponentCompositionLocalFixtures",
++         "IndexedComponentCompositionAssemble", "IndexedComponentCompositionAssemblyAudit",
++         "IndexedComponentCompositionPortFixtures",
++         "IndexedComponentCompositionMatch", "IndexedComponentCompositionPriority",
++         "IndexedComponentCompositionTest", "IndexedComponentCompositionCollisionFixtures",
++         "IndexedComponentCompositionAxisFixtures", "IndexedComponentCompositionInterfaceTest",
++         "IndexedComponentCompositionCounterexampleTest", "IndexedComponentComposition",
++         "IndexedComponentCompositionCorrespondenceTest"]

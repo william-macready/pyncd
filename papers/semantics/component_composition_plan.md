@@ -114,6 +114,40 @@ donors only. New `producerMatch` and `consumerMatch other` supply genuinely
 local matches; consumer bodies reuse `squareBody`, `auditBody`, `strictArray`.
 Never present shared expression helpers as an independent interpreter oracle.
 
+Symbol routing (paths in `leanncd/experiments/indexed_execution/` unless
+otherwise stated):
+
+- `MatchedComponent`, `Port`, `Boundary`, `declarations`, `upstream`,
+  `downstream`, `downstreamId` @ `IndexedComponentCompositionScope.lean`.
+- `program`, `occurrenceEquiv`, `inputPorts`, `outputPorts` @
+  `IndexedComponentCompositionProgram.lean`; `keyEquiv`, `tensorOrder`,
+  `keyOrder`, `schedule` @ `IndexedComponentCompositionSchedule.lean`.
+- `ClosureFacts.of_close`, `ClosureFacts.close`, `mem_definedAddresses_iff`,
+  `ClosureFacts.collector_iff` @ `IndexedComponentClosureFacts.lean`.
+- `ClosureScope`, `mapWriter`, `close_assembled`, `canonicalSteps_assembled`
+  @ `IndexedComponentCompositionClosure.lean`; `closureScope`, `close_ok`,
+  `outputs_exact`, `graph_steps` @ `IndexedComponentCompositionAssemble.lean`.
+- `sourceToWriter`, `writer_destination`, `writer_reads`, `eval_agrees` @
+  `IndexedComponentCompositionMatch.lean`; `collectorCapabilities_upstream`,
+  `collectorCapabilities_downstream`, `priority` @
+  `IndexedComponentCompositionPriority.lean`; `compose_match`, `compose` @
+  `IndexedComponentComposition.lean`.
+- `producerMatch`, `consumerMatch` @
+  `IndexedComponentCompositionLocalFixtures.lean`; `producerComponent`,
+  `consumerComponent`, `scalarBoundary`, `emptyBoundary` @
+  `IndexedComponentCompositionPortFixtures.lean`; `emptyBothFaultsRaw` @
+  `IndexedComponentCompositionTest.lean`.
+- Guarded occurrence/order checks @
+  `IndexedComponentCompositionCollisionFixtures.lean`; `firstPoint`,
+  `axisMappedReads`, `axisMappedFootprint` @
+  `IndexedComponentCompositionAxisFixtures.lean`.
+- `strict_correspondence`, `total_correspondence`, `empty_correspondence` @
+  `IndexedComponentCompositionCorrespondenceTest.lean`; `shortcut`,
+  `omittedCapability` @ `IndexedComponentCompositionCounterexampleTest.lean`;
+  `input_not_a_downstream_destination`,
+  `equal_cardinality_is_not_an_axis_adapter` @
+  `IndexedComponentCompositionInterfaceTest.lean`.
+
 ## 5. Replay protocol and bounded briefs
 
 Controller instantiates `<AUTHOR>` as
@@ -122,8 +156,11 @@ Controller instantiates `<AUTHOR>` as
 absolute `<REPLAY>` path owned by this task. `<CANDIDATE>` is the existing
 implementation worktree; it may equal `<AUTHOR>`. Angle-bracket paths below
 are substitution instructions, not shell variables or literal shell syntax.
-Resolve every placeholder before execution. Use plain, separate commands:
-no `cd`, shell variables, command chaining, pipelines into git, or root Lake.
+Resolve every placeholder before execution. Subagent briefs use plain,
+separate commands: no `cd`, shell variables, command chaining, pipelines into
+git, or root Lake. The controller-only preparation script must run with its
+shell working directory set to replay, as already observed during preparation;
+this does not change the chat workspace or require a workspace menu.
 
 ```sh
 /usr/bin/git -C <PRIMARY> rev-parse main
@@ -160,10 +197,11 @@ most 60 lines, and `rg -n` for locating identifiers. No whole-patch reads or
 production API rediscovery. Split review if a bounded objective would exceed
 60 actions/250k retained context; target 30 actions. Do not silently overrun.
 
-Dependencies: `1 → 2 → 3 → 4`; `4 → 5 → 6 → 7 → 8`.
-Task 3 uses scope/source/schedule; task 4 requires closure/assembly and priority.
-Task 7 consumes all fixture modules. The strict chain is also the verified
-patch application order, regardless of possible conceptual parallelism.
+Patch application is serialized in the verified order `1 → 2 → … → 8`.
+Semantic prerequisites are `1 → 2 → 3 → 4`, `3 → 5 → 6`,
+`4 + 6 → 7 → 8`. The fixture observations do not depend on task 4's match;
+task 7's correspondence instances do. Do not confuse serialization policy
+with additional source-level premises.
 
 Cycle ownership counts below are **deferred**: L/F/C/T targets include later
 fixtures. Run the actual unfiltered manifest only after task 7. Tasks 1–4
@@ -262,9 +300,14 @@ Files (3):
 - `leanncd/experiments/indexed_execution/IndexedComponentCompositionPortFixtures.lean`
 - `leanncd/experiments/indexed_execution/IndexedComponentCompositionTest.lean`
 
-Donor/change: parity expression helpers → separate producer `Fin 1` (Pre only)
+Donor/change: clone `IndexedCompositionParityTest.reference`/`contract`/
+`fragment`, changing declarations and roles into a producer `Fin 1` (Pre only)
 and consumer input Pre/output Out/private Audit local matches; vary `other`,
 producer capability fiber, empty domains/raw bindings and validation order.
+For zero writers, clone the new local producer and set Pre statements to zero,
+retaining its scalar collector with no capabilities. For empty domains, use
+`ExecutableReferenceFixtures.emptyDeclarations`' zero-extent shape mechanism,
+with two local tensors per component and explicit empty input/output roles.
 Named windows: `producerMatch`, `consumerMatch`, `producerComponent`,
 `consumerComponent`, `scalarBoundary`, empty port/binding definitions and
 `emptyBothFaultsRaw`. Families: 3 (scalar/zero/empty); terminal cases: 8
@@ -286,10 +329,14 @@ Files (2):
 - `leanncd/experiments/indexed_execution/IndexedComponentCompositionCollisionFixtures.lean`
 - `leanncd/experiments/indexed_execution/IndexedComponentCompositionAxisFixtures.lean`
 
-Donor/change: local construction → collision with one statement, three
+Donor/change: clone the local producer, add private Audit literal 7 at old UID
+2, and change Pre to one statement, three
 valuations/guards, distinct equal contributions and nonmatching list orders;
-transport adapter donor → certified 2×3/3×2 axis swap and nonpalindromic
-repeated footprint. Named windows: guarded occurrence/order checks, collector
+pair it with `consumerComponent 4`, whose private Audit also has old UID 2.
+Use the transport adapter donor for a certified 2×3/3×2 axis swap and nonpalindromic
+repeated footprint: clone `IndexedComponentTransportTest.swapDomain`,
+`srcShape`, `dstShape`, `p`, `q`, add the final q read, and supply a six-cell
+literal producer. Named windows: guarded occurrence/order checks, collector
 and capability checks, `firstPoint`, mapped reads and `axis.graph-only`.
 Families/cases: 2/2 (collision, unequal-axis); mirrored source/graph checks
 and structural assertions are not separately mutation-complete fixtures.
@@ -391,7 +438,8 @@ per-assertion-complete coverage. Initial no-expect receipt is historical only.
 ## 7. Controller release and integration gates
 
 1. All eight replay hashes/applications/builds/task reviews pass. Compare the
-   manifest's 27 paths between replay and candidate: exact bytes, no difference.
+   manifest's 27 paths between replay and the frozen reviewed candidate:
+   exact bytes, no difference, before subsequent controller record updates.
    Preserve implementation history; do not overwrite candidate with replay.
 2. On **candidate itself**, rerun the unfiltered exact manifest anchor check,
    all 16 intended-diagnostic/restoration cycles, and exact foundation snippet/
@@ -416,19 +464,24 @@ bash <CANDIDATE>/leanncd/scripts/lake-build.sh <CANDIDATE>/leanncd LeanNCD Tests
    load-bearing plan defects stop execution, not silent scope substitution.
 5. Verify main still at base, protected primary README/synthesis hashes unchanged,
    and candidate committed/clean. Stage only explicit intended paths; never
-   `.claude/settings.json`, patch-package scratch artifacts or others' changes.
+   `.claude/settings.json`, temporary indexes/build logs or others' changes.
+   The verified patch package is an explicitly requested deliverable.
    Once all gates are green, merge the **implementation branch** locally:
 
 ```sh
 /usr/bin/git -C <PRIMARY> merge --no-ff <IMPLEMENTATION_BRANCH>
-/usr/bin/git -C <PRIMARY> worktree remove <REPLAY>
+/usr/bin/git -C <PRIMARY> worktree remove --force <REPLAY>
 /usr/bin/git -C <PRIMARY> worktree remove <CANDIDATE>
 /usr/bin/git -C <PRIMARY> branch -d <IMPLEMENTATION_BRANCH>
 ```
 
 Remove only this task's implementation and detached replay worktrees/branch.
-Preserve other original worktrees and both dirty primary files. Never force
-cleanup, push, or offer permission menus. Report local main ahead of origin.
+Preserve other original worktrees and both dirty primary files. The detached
+replay is intentionally dirty: use its status and exact manifest comparison
+to identify only this task's applied patches and owned build cache before the
+authorized targeted `--force` removal. Do not force unknown changes or the
+candidate; stop on anything outside that scope. Never push or offer permission
+menus. Report local main ahead of origin.
 
 ## 8. Accounting and completion boundary
 
