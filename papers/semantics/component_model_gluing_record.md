@@ -280,3 +280,34 @@ this process overrun is surfaced rather than treated as compliance.
 The fresh writer estimates 24 tool rounds against its approximately 20-round
 target, below its hard checkpoint. The earlier cyclic-donor breach also
 remains recorded; cumulative authoring/execution tokens are unmeasured.
+
+## Actual execution and controller task reviews
+
+After the plan was verified and committed, the controller ran
+`package.py --replay` in the prepared clean-base checkout. All eight
+patches actually applied, built their named targets, passed exact
+source-copy checks and per-task source hashes, and were committed.
+[Execution checkpoints](component_model_gluing_artifacts/execution_replay.json)
+record each real commit; the last is `cbd52ddf`.
+
+Controller task reviews accepted the already reviewed prototype logic only
+after its executed bytes matched exactly. These are controller reviews,
+not eight additional independent agent reviews.
+
+| Task | Controller review invariant | Execution checks |
+| --- | --- | --- |
+| Inputs | Present empty inputs; downstream inverse needs full boundary agreement | Build, snippets, source hashes pass |
+| Transport | Every actual occurrence, private tensor, and finite collected fiber retained | Build, snippets, source hashes pass |
+| Witnesses | Dependent whole-store pair, both inverses, empty output-index transport | Build, snippets, source hashes pass |
+| Denotation | Both at-most-one component premises; domain and value laws, no existence in uniqueness | Build, snippets, source hashes pass |
+| Local fixtures | Strict private failure despite visible equation; complete total neighbour; unwritten zero | Build, snippets, source hashes pass |
+| Geometry fixtures | Empty bindings/metadata and actual nonconstant coordinates, not output-total-only equality | Build, snippets, source hashes pass |
+| Cycle fixtures | Unique compatible extension among all candidates; hidden whole-store distinction retained | Build, snippets, source hashes pass |
+| Discovery | Nondefault imports and full namespace audits; operational/categorical exclusions explicit | Build, snippets, source hashes pass |
+
+The controller's full `LeanNCD Tests IndexedExecutionExperiment` build
+passed (8,898 jobs). No required target was skipped. It retains the recorded
+pre-existing non-semantic warnings; the new proof namespaces pass their
+standard-axiom audits.
+Actual replay release mutations/probes and the two final whole-branch
+review lenses remain pending.

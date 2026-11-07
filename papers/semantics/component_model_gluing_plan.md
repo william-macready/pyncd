@@ -448,12 +448,12 @@ python3 /Users/williammacready/code/python/pyncd.worktrees/follow-directions-com
 
 ## 7B. Execute the verified plan, then release
 
-- [ ] Controller executes `package.py --replay` in the task-owned clean-base
+- [x] Controller executes `package.py --replay` in the task-owned clean-base
   checkout: actual ordered patch application/builds/exact source-copy checks
   and explicit per-task commits. `execution_replay.json` holds checkpoints.
   These execution results are distinct from isolated-index authoring parity.
-- [ ] Per-task reviews/checkpoints completed and findings adjudicated.
-- [ ] Controller runs full `LeanNCD Tests IndexedExecutionExperiment` build.
+- [x] Per-task reviews/checkpoints completed and findings adjudicated.
+- [x] Controller runs full `LeanNCD Tests IndexedExecutionExperiment` build.
 - [ ] Two final whole-branch reviews completed: model soundness; and
   integration/fixtures/claim fidelity. Fix finding groups separately and
   rerun affected gates, then full build, before integration.
