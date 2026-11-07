@@ -1,0 +1,397 @@
+import IndexedComponentCompositionScope
+import IndexedComponentCompositionLocalFixtures
+
+namespace IndexedComponentCompositionPortFixtures
+
+open LeanNCD.Semantics
+open LeanNCD.Semantics.Program
+open LeanNCD.Semantics.Program.Executor
+open IndexedOpenComposition
+open IndexedComponentComposition
+open IndexedComponentTransport
+
+open IndexedComponentCompositionLocalFixtures
+
+def producerPre : producerDeclarations.Tensor := 0
+def consumerPre : consumerDeclarations.Tensor := 0
+def consumerOut : consumerDeclarations.Tensor := 1
+def strictAudit : consumerDeclarations.Tensor := 2
+
+def producerComponent : MatchedComponent producerDeclarations where
+  program := producer
+  schedule := producerSchedule
+  contract := producerContract
+  fragment := producerFragment
+  graph := producerGraph
+  matched := producerMatch
+  inputs := []
+  outputs := [⟨producerPre, (), [], rfl, rfl⟩]
+  inputs_nodup := by simp
+  outputs_nodup := by simp
+  inputs_exact := by intro t; fin_cases t; simp
+  outputs_exact := by intro t; fin_cases t; simp [producerPre]
+
+def consumerComponent (other : ℚ) : MatchedComponent consumerDeclarations where
+  program := consumer other
+  schedule := consumerSchedule other
+  contract := consumerContract
+  fragment := consumerFragment other
+  graph := consumerGraph other
+  matched := consumerMatch other
+  inputs := [⟨consumerPre, (), [], rfl, rfl⟩]
+  outputs := [⟨consumerOut, (), [], rfl, rfl⟩]
+  inputs_nodup := by simp
+  outputs_nodup := by simp
+  inputs_exact := by intro t; fin_cases t <;> simp [consumerPre]
+  outputs_exact := by intro t; fin_cases t <;> simp [consumerOut]
+
+def scalarBoundary (other : ℚ) : Boundary producerComponent (consumerComponent other) where
+  matched :=
+    { toFun := fun _ => ⟨producerPre, rfl⟩
+      invFun := fun _ => ⟨consumerPre, rfl⟩
+      left_inv := by
+        rintro ⟨t, ht⟩
+        change (t == 0) = true at ht
+        fin_cases t <;> first | rfl | exact False.elim (Bool.noConfusion ht)
+      right_inv := by intro t; apply Subtype.ext; exact Subsingleton.elim _ _ }
+  domain := fun _ => Domain.id []
+
+theorem audit_private (other : ℚ) :
+    (consumerComponent other).program.input strictAudit = false ∧
+      (consumerComponent other).program.output strictAudit = false := ⟨rfl, rfl⟩
+
+#eval IndexedCompositionParityTest.check "port-scalar-local-only"
+  (producerRun.outcome.kind, producerRun.events.length,
+    producerRun.states.getLast?.map (fun s => s.available ⟨producerPre, ()⟩),
+    (consumerRun 0).outcome.kind, (consumerRun 0).events.length,
+    (consumerRun 4).outcome.kind, (consumerRun 4).events.length,
+    (consumerRun 4).states.getLast?.map (fun s =>
+      [s.available ⟨consumerPre, ()⟩, s.available ⟨consumerOut, ()⟩,
+        s.available ⟨strictAudit, ()⟩]))
+  ("complete", 3, some (some (0 : ℚ)), "failed", 3,
+    "complete", 4, some [some (0 : ℚ), some 0, some (1 / 2)])
+
+@[reducible] def zeroProducer : Program RationalReference.Carrier
+    producerDeclarations RationalReference.registry where
+  tensors := inferInstance
+  input := fun _ => false
+  output := fun _ => true
+  output_defined := by intro _ _; rfl
+  statements := fun _ => 0
+  valuations := fun _ s => nomatch s
+  guard := fun _ s => nomatch s
+  destination := fun _ s => nomatch s
+  body := fun _ s => nomatch s
+
+def zeroProducerSchedule : Schedule zeroProducer where
+  tensors := [producerPre]
+  tensors_nodup := by simp
+  tensors_complete := by intro t; fin_cases t; simp [producerPre]
+  keys := [.publication ⟨producerPre, rfl⟩ ()]
+  keys_nodup := by simp
+  keys_complete := by
+    intro k
+    cases k with
+    | occurrence t o => exact Fin.elim0 o.1
+    | publication t p =>
+      rcases t with ⟨t, ht⟩
+      fin_cases t
+      cases p
+      simp [producerPre]
+
+def zeroProducerContract : Contract producerDeclarations :=
+  ⟨[producerPre], fun _ => false, [(⟨producerPre, ()⟩, [])], [], [⟨producerPre, ()⟩]⟩
+
+def zeroProducerFragment : Fragment producerDeclarations := ⟨[]⟩
+
+def zeroProducerGraph : Closed producerDeclarations :=
+  ⟨zeroProducerContract, canonicalSteps zeroProducerContract zeroProducerFragment⟩
+
+theorem zeroProducer_close :
+    close zeroProducerContract zeroProducerFragment = .ok zeroProducerGraph := rfl
+
+def zeroProducerMatch : SourceContractMatch zeroProducer zeroProducerSchedule
+    zeroProducerContract zeroProducerFragment zeroProducerGraph where
+  close_ok := zeroProducer_close
+  input_roles := rfl
+  tensor_order := rfl
+  outputs_exact := by
+    rintro ⟨t, p⟩
+    fin_cases t
+    cases p
+    simp [zeroProducerContract, producerPre]
+  sourceToWriter :=
+    { toFun := fun o => Fin.elim0 o.2.1
+      invFun := fun i => Fin.elim0 i
+      left_inv := fun o => Fin.elim0 o.2.1
+      right_inv := fun i => Fin.elim0 i }
+  writer_destination := fun o => Fin.elim0 o.2.1
+  writer_reads := fun o => Fin.elim0 o.2.1
+  eval_agrees := fun o => Fin.elim0 o.2.1
+  priority := rfl
+
+def zeroProducerComponent : MatchedComponent producerDeclarations where
+  program := zeroProducer
+  schedule := zeroProducerSchedule
+  contract := zeroProducerContract
+  fragment := zeroProducerFragment
+  graph := zeroProducerGraph
+  matched := zeroProducerMatch
+  inputs := []
+  outputs := [⟨producerPre, (), [], rfl, rfl⟩]
+  inputs_nodup := by simp
+  outputs_nodup := by simp
+  inputs_exact := by intro t; fin_cases t; simp
+  outputs_exact := by intro t; fin_cases t; simp [producerPre]
+
+def zeroBoundary : Boundary zeroProducerComponent (consumerComponent 4) where
+  matched :=
+    { toFun := fun _ => ⟨producerPre, rfl⟩
+      invFun := fun _ => ⟨consumerPre, rfl⟩
+      left_inv := by
+        rintro ⟨t, ht⟩
+        change (t == 0) = true at ht
+        fin_cases t <;> first | rfl | exact False.elim (Bool.noConfusion ht)
+      right_inv := by intro t; apply Subtype.ext; exact Subsingleton.elim _ _ }
+  domain := fun _ => Domain.id []
+
+def zeroProducerRun : Run producerDeclarations :=
+  runChecked zeroProducerContract zeroProducerFragment (fun _ => none)
+
+theorem zeroProducer_publication :
+    zeroProducerRun.events = [.sealed ⟨producerPre, ()⟩ 0] := rfl
+
+#eval IndexedCompositionParityTest.check "port-zero-producer"
+  (zeroProducerRun.outcome.kind, zeroProducerRun.events.length,
+    zeroProducerRun.states.getLast?.map (fun s => s.available ⟨producerPre, ()⟩))
+  ("complete", 1, some (some (0 : ℚ)))
+
+#eval IndexedCompositionParityTest.check "port-zero-source"
+  (match runValidated zeroProducer RationalReference.ops zeroProducerSchedule
+      (fun _ => none) with
+    | .error _ => ("error", 0)
+    | .ok result => (result.result.outcome.kind, result.result.events.length))
+  ("complete", 1)
+
+@[reducible] def emptyProducerDeclarations : Declarations Unit :=
+  ⟨Fin 2, fun t => 410 + t.val,
+    fun _ _ h => Fin.ext (Nat.add_left_cancel h), fun _ => ⟨(), [⟨41, 0⟩]⟩⟩
+
+@[reducible] def emptyConsumerDeclarations : Declarations Unit :=
+  ⟨Fin 2, fun t => 510 + t.val,
+    fun _ _ h => Fin.ext (Nat.add_left_cancel h), fun _ => ⟨(), [⟨51, 0⟩]⟩⟩
+
+def emptyExternalInput : emptyProducerDeclarations.Tensor := 0
+def emptyProducerPre : emptyProducerDeclarations.Tensor := 1
+def emptyConsumerPre : emptyConsumerDeclarations.Tensor := 0
+def emptyConsumerOut : emptyConsumerDeclarations.Tensor := 1
+
+@[reducible] def emptyProducer : Program RationalReference.Carrier
+    emptyProducerDeclarations RationalReference.registry where
+  tensors := inferInstance
+  input := fun t => t == 0
+  output := fun t => t == 1
+  output_defined := by intro t h; fin_cases t <;> simp_all
+  statements := fun _ => 0
+  valuations := fun _ s => nomatch s
+  guard := fun _ s => nomatch s
+  destination := fun _ s => nomatch s
+  body := fun _ s => nomatch s
+
+@[reducible] def emptyConsumer : Program RationalReference.Carrier
+    emptyConsumerDeclarations RationalReference.registry where
+  tensors := inferInstance
+  input := fun t => t == 0
+  output := fun t => t == 1
+  output_defined := by intro t h; fin_cases t <;> simp_all
+  statements := fun _ => 0
+  valuations := fun _ s => nomatch s
+  guard := fun _ s => nomatch s
+  destination := fun _ s => nomatch s
+  body := fun _ s => nomatch s
+
+def emptyProducerSchedule : Schedule emptyProducer where
+  tensors := [emptyExternalInput, emptyProducerPre]
+  tensors_nodup := by decide
+  tensors_complete := by
+    intro t; fin_cases t <;> simp [emptyExternalInput, emptyProducerPre]
+  keys := []
+  keys_nodup := by simp
+  keys_complete := by
+    intro k
+    cases k with
+    | occurrence t o => exact Fin.elim0 o.1
+    | publication t p => exact Fin.elim0 p.1
+
+def emptyConsumerSchedule : Schedule emptyConsumer where
+  tensors := [emptyConsumerPre, emptyConsumerOut]
+  tensors_nodup := by decide
+  tensors_complete := by
+    intro t; fin_cases t <;> simp [emptyConsumerPre, emptyConsumerOut]
+  keys := []
+  keys_nodup := by simp
+  keys_complete := by
+    intro k
+    cases k with
+    | occurrence t o => exact Fin.elim0 o.1
+    | publication t p => exact Fin.elim0 p.1
+
+def emptyProducerContract : Contract emptyProducerDeclarations :=
+  ⟨[emptyExternalInput, emptyProducerPre], fun t => t == 0, [], [], []⟩
+
+def emptyConsumerContract : Contract emptyConsumerDeclarations :=
+  ⟨[emptyConsumerPre, emptyConsumerOut], fun t => t == 0, [], [], []⟩
+
+def emptyProducerFragment : Fragment emptyProducerDeclarations := ⟨[]⟩
+def emptyConsumerFragment : Fragment emptyConsumerDeclarations := ⟨[]⟩
+
+def emptyProducerGraph : Closed emptyProducerDeclarations :=
+  ⟨emptyProducerContract, canonicalSteps emptyProducerContract emptyProducerFragment⟩
+
+def emptyConsumerGraph : Closed emptyConsumerDeclarations :=
+  ⟨emptyConsumerContract, canonicalSteps emptyConsumerContract emptyConsumerFragment⟩
+
+theorem emptyProducer_close :
+    close emptyProducerContract emptyProducerFragment = .ok emptyProducerGraph := rfl
+
+theorem emptyConsumer_close :
+    close emptyConsumerContract emptyConsumerFragment = .ok emptyConsumerGraph := rfl
+
+def emptyProducerMatch : SourceContractMatch emptyProducer emptyProducerSchedule
+    emptyProducerContract emptyProducerFragment emptyProducerGraph where
+  close_ok := emptyProducer_close
+  input_roles := rfl
+  tensor_order := rfl
+  outputs_exact := by rintro ⟨t, p⟩; exact Fin.elim0 p.1
+  sourceToWriter :=
+    { toFun := fun o => Fin.elim0 o.2.1
+      invFun := fun i => Fin.elim0 i
+      left_inv := fun o => Fin.elim0 o.2.1
+      right_inv := fun i => Fin.elim0 i }
+  writer_destination := fun o => Fin.elim0 o.2.1
+  writer_reads := fun o => Fin.elim0 o.2.1
+  eval_agrees := fun o => Fin.elim0 o.2.1
+  priority := rfl
+
+def emptyConsumerMatch : SourceContractMatch emptyConsumer emptyConsumerSchedule
+    emptyConsumerContract emptyConsumerFragment emptyConsumerGraph where
+  close_ok := emptyConsumer_close
+  input_roles := rfl
+  tensor_order := rfl
+  outputs_exact := by rintro ⟨t, p⟩; exact Fin.elim0 p.1
+  sourceToWriter :=
+    { toFun := fun o => Fin.elim0 o.2.1
+      invFun := fun i => Fin.elim0 i
+      left_inv := fun o => Fin.elim0 o.2.1
+      right_inv := fun i => Fin.elim0 i }
+  writer_destination := fun o => Fin.elim0 o.2.1
+  writer_reads := fun o => Fin.elim0 o.2.1
+  eval_agrees := fun o => Fin.elim0 o.2.1
+  priority := rfl
+
+def emptyProducerComponent : MatchedComponent emptyProducerDeclarations where
+  program := emptyProducer
+  schedule := emptyProducerSchedule
+  contract := emptyProducerContract
+  fragment := emptyProducerFragment
+  graph := emptyProducerGraph
+  matched := emptyProducerMatch
+  inputs := [⟨emptyExternalInput, (), [⟨41, 0⟩], rfl, rfl⟩]
+  outputs := [⟨emptyProducerPre, (), [⟨41, 0⟩], rfl, rfl⟩]
+  inputs_nodup := by simp
+  outputs_nodup := by simp
+  inputs_exact := by intro t; fin_cases t <;> simp [emptyExternalInput]
+  outputs_exact := by intro t; fin_cases t <;> simp [emptyProducerPre]
+
+def emptyConsumerComponent : MatchedComponent emptyConsumerDeclarations where
+  program := emptyConsumer
+  schedule := emptyConsumerSchedule
+  contract := emptyConsumerContract
+  fragment := emptyConsumerFragment
+  graph := emptyConsumerGraph
+  matched := emptyConsumerMatch
+  inputs := [⟨emptyConsumerPre, (), [⟨51, 0⟩], rfl, rfl⟩]
+  outputs := [⟨emptyConsumerOut, (), [⟨51, 0⟩], rfl, rfl⟩]
+  inputs_nodup := by simp
+  outputs_nodup := by simp
+  inputs_exact := by intro t; fin_cases t <;> simp [emptyConsumerPre]
+  outputs_exact := by intro t; fin_cases t <;> simp [emptyConsumerOut]
+
+def emptyDomain : Domain [⟨51, 0⟩] [⟨41, 0⟩] where
+  axes := Equiv.refl _
+  extent := by intro i; fin_cases i; rfl
+  coord := Equiv.refl _
+  raw := Equiv.refl _
+  raw_axis := fun _ _ => rfl
+  coherent := fun _ => rfl
+
+def emptyBoundary : Boundary emptyProducerComponent emptyConsumerComponent where
+  matched :=
+    { toFun := fun _ => ⟨emptyProducerPre, rfl⟩
+      invFun := fun _ => ⟨emptyConsumerPre, rfl⟩
+      left_inv := by
+        rintro ⟨t, ht⟩
+        change (t == 0) = true at ht
+        fin_cases t <;> first | rfl | exact False.elim (Bool.noConfusion ht)
+      right_inv := by
+        rintro ⟨t, ht⟩
+        change (t == 1) = true at ht
+        fin_cases t <;> first | rfl | exact False.elim (Bool.noConfusion ht) }
+  domain := fun _ => emptyDomain
+
+def emptyPresentInput : InputBinding
+    (K := RationalReference.Carrier) (σ := emptyProducerDeclarations) :=
+  fun t => if t == emptyExternalInput then some (fun p => Fin.elim0 p.1) else none
+
+def emptyMissingInput : InputBinding
+    (K := RationalReference.Carrier) (σ := emptyProducerDeclarations) :=
+  fun _ => none
+
+def emptyConsumerPresentInput : InputBinding
+    (K := RationalReference.Carrier) (σ := emptyConsumerDeclarations) :=
+  fun t => if t == emptyConsumerPre then some (fun p => Fin.elim0 p.1) else none
+
+theorem emptyMissing_rejected :
+    validate emptyProducer emptyProducerSchedule emptyMissingInput =
+      .error emptyExternalInput := rfl
+
+def emptyValidatedInput : emptyProducer.Input :=
+  ⟨emptyPresentInput, by intro t; fin_cases t <;> rfl⟩
+
+theorem emptyPresent_validated :
+    validate emptyProducer emptyProducerSchedule emptyPresentInput =
+      .ok emptyValidatedInput := rfl
+
+def emptyProducerRun : Run emptyProducerDeclarations :=
+  runChecked emptyProducerContract emptyProducerFragment emptyPresentInput
+
+def emptyConsumerRun : Run emptyConsumerDeclarations :=
+  runChecked emptyConsumerContract emptyConsumerFragment emptyConsumerPresentInput
+
+#eval IndexedCompositionParityTest.check "port-empty-source"
+  ((match runValidated emptyProducer RationalReference.ops emptyProducerSchedule
+      emptyPresentInput with
+    | .error _ => ("error", 0)
+    | .ok result => (result.result.outcome.kind, result.result.events.length)),
+    (match runValidated emptyConsumer RationalReference.ops emptyConsumerSchedule
+      emptyConsumerPresentInput with
+    | .error _ => ("error", 0)
+    | .ok result => (result.result.outcome.kind, result.result.events.length)))
+  (("complete", 0), ("complete", 0))
+
+#eval IndexedCompositionParityTest.check "port-empty-present-and-missing"
+  (emptyProducerRun.outcome.kind, emptyProducerRun.events.length,
+    emptyConsumerRun.outcome.kind, emptyConsumerRun.events.length,
+    (runChecked emptyProducerContract emptyProducerFragment emptyMissingInput).outcome.kind)
+  ("complete", 0, "complete", 0, "invalidInput")
+
+#eval IndexedCompositionParityTest.check "port-empty-whole-metadata"
+  (emptyProducerComponent.inputs.map (fun p => emptyProducerDeclarations.uid p.tensor),
+    emptyProducerComponent.outputs.map (fun p => emptyProducerDeclarations.uid p.tensor),
+    emptyConsumerComponent.inputs.map (fun p => emptyConsumerDeclarations.uid p.tensor),
+    emptyConsumerComponent.outputs.map (fun p => emptyConsumerDeclarations.uid p.tensor),
+    emptyProducerComponent.outputs.map Port.axes,
+    emptyConsumerComponent.outputs.map Port.axes)
+  ([410], [411], [510], [511], [[⟨41, 0⟩]], [[⟨51, 0⟩]])
+
+end IndexedComponentCompositionPortFixtures
