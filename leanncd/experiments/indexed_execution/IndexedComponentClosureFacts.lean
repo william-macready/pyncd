@@ -43,9 +43,19 @@ theorem close_success_readable_outputs
   simp only [close, Id.run, pure_bind, ht, hc, hn, hi,
     decide_true, Bool.not_true, Bool.false_eq_true, bne_self_eq_false, if_false] at h
   repeat (split at h <;> try cases h)
-  simp_all [List.any_eq_true]
-  rintro ⟨t, p⟩ ha
-  cases hin : contract.input t <;> simp_all
+  rename_i hCovered hReadable hOutputs hCaps hTags hCapDup hMissing hExtra
+    writerValue writerValidation
+  have hr := Bool.eq_false_iff.mpr hReadable
+  have ho := Bool.eq_false_iff.mpr hOutputs
+  simp [List.any_eq_true] at hr ho
+  refine ⟨hr.1, ?_, ho.1, ?_⟩
+  · rintro ⟨t, p⟩ ha
+    rcases hr.2 ⟨t, p⟩ ha with hin | ⟨caps, hcaps⟩
+    · exact Or.inl hin
+    · exact Or.inr (List.mem_map.mpr ⟨(⟨t, p⟩, caps), hcaps, rfl⟩)
+  · rintro ⟨t, p⟩ ha
+    obtain ⟨caps, hcaps⟩ := ho.2 ⟨t, p⟩ ha
+    exact List.mem_map.mpr ⟨(⟨t, p⟩, caps), hcaps, rfl⟩
 
 theorem ClosureFacts.of_close
     {contract : Contract σ} {fragment : Fragment σ} {g : Closed σ}
