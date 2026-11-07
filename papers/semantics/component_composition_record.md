@@ -344,7 +344,9 @@ Later controller close-out edits affect records only, not that code comparison.
 - [Integration/observations](component_composition_artifacts/review_integration.md):
   clean for `16721af5..4c02bac8`, including plan, discovery, observations and
   control classifications. The reviewer reported 50 actions; accounting was
-  uninstrumented. No source was changed by either reviewer.
+  uninstrumented. Its final documentation-only confirmation was also clean for
+  `4c02bac8..6694d694` (four additional actions, 54 lifetime).
+  No source was changed by either reviewer.
 - Subsequent committed changes before those reviews added only plan/evidence
   documentation; the reviewed source remained byte-identical.
 - The controller's full `LeanNCD Tests IndexedExecutionExperiment` build on

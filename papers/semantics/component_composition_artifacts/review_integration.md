@@ -38,3 +38,13 @@ The earlier CLEAN soundness review and controller build/audit evidence were acce
 This lens used **50 direct tool actions**, including two incremental receipt writes and independently batched reads/searches. Source file windows were at most 60 lines; no whole file over 20 KB was read. No action-budget breach occurred. SDK token accounting is unsupported according to the supplied evidence; measured cumulative-token or retained-context compliance is therefore not asserted.
 
 Only this requested receipt was written. No source/doc edits elsewhere, commits, staging, replay operations or cleanup were performed. The review stops at this lens; ongoing controller replay and candidate final release gates remain unclaimed.
+
+## Final documentation-only scope confirmation
+
+**CLEAN — no new required finding for `4c02bac8..6694d694`.** The changed-file inventory contains only documentation and receipts, with no `leanncd` source change. The eight replay checkpoints preserve the previously reviewed hashes/order/targets; both replay and candidate tables record 16/16 intended-diagnostic, restored-green, byte-identical cycles with the same honest control classifications. Closeout documentation records the candidate post-restoration full three-target build and audit as passed; those are controller receipts, not independent reruns by this lens.
+
+The plan's whitespace exception is confined to generated artifact `.patch` files, whose space-only context markers are format-required and whose exact bytes remain hash/application checked. Source and ordinary documentation retain their whitespace gate. No substantive source or documentation check is waived.
+
+The integration JSON is intentionally pending until actual merge, merged-tree/protected-hash checks and task-only cleanup succeed. Forward-looking closeout references do not constitute an integration receipt; this confirmation does not certify that merge or cleanup has happened.
+
+This follow-up used **4 additional direct tool actions, 54 lifetime**; no action-budget breach. No source reread/change, commit, mutation or build was performed. Token/context accounting remains uninstrumented, with no numerical compliance claim. Review stops here.
