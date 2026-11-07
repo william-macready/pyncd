@@ -1122,6 +1122,130 @@ def plainReadAfterCoupledCause (lhs : List LHSSlot) (f : Factor) : Option PlanCo
 #guard plainReadAfterCoupledCause [.free axR, .free axC]
     (.read "G" [.axis axR, .const 5, .axis axC]) == none
 
+/-! #### A LATER scan's block reading an earlier scan's state at a pinned literal
+
+The same rule for a scan whose base block (`inBase`) or step block reads the published state `S` of
+the earlier scan `sc` (extent 3): a literal outside `[0, extent)` on `S`'s advancing dimension is
+`plainStatePinOutOfRange` (the constructor name predates the block case), reported against the
+`.scan`'s statement index (2, after `pre` and `sc`) and the term/factor within the offending block
+assignment. The third scan `T` is `T[0] := <base>`, `T[l+1] := <step>`; `f` is the read under test
+placed in the base block or, as the second factor of `T[l] * f`, in the step block. -/
+
+def laterScanReadsState (inBase : Bool) (f : Factor) : ScheduledProgram :=
+  { scratchThenPlainReadSched with
+      stmts := (scratchThenPlainReadSched.stmts.dropLast ++
+        [ .scan "T" [axL]
+            [ .assign "T" [.iterAt axL 0]
+                { body := { terms := [{ factors := [if inBase then f else .read "S0" []] }] }
+                , nonlin := .identity } ]
+            [ .assign "T" [.iterNext axL]
+                { body := { terms := [{ factors :=
+                    if inBase then [.read "T" [.axis axL]] else [.read "T" [.axis axL], f] }] }
+                , nonlin := .identity } ]
+            false ]) }
+
+def laterScanReadCause (inBase : Bool) (f : Factor) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan (explicitF64Sched (laterScanReadsState inBase f)) rejSig)
+
+-- REJECT: pinned at the extent and pinned negative, base block (term 0, factor 0) and step block
+-- (`T[l] * S[k]`: the pinned read is factor 1).
+#guard laterScanReadCause true (.read "S" [.const 3])
+  == some (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 3 3))
+#guard laterScanReadCause true (.read "S" [.const (-1)])
+  == some (.scan (.plainStatePinOutOfRange "S" 2 0 0 0 (-1) 3))
+#guard laterScanReadCause false (.read "S" [.const 3])
+  == some (.scan (.plainStatePinOutOfRange "S" 2 0 1 0 3 3))
+#guard laterScanReadCause false (.read "S" [.const (-1)])
+  == some (.scan (.plainStatePinOutOfRange "S" 2 0 1 0 (-1) 3))
+
+-- ACCEPT neighbours: pinned in range compiles and the block's capture is `S`'s own outer slot (2:
+-- `S0`, `pre`'s `P`, then `S`); a shifted step read that is out of range at the boundary (`l - 1` at
+-- `l = 0`) still zero-pads, and so does the free read `S[l]`.
+#guard laterScanReadCause true (.read "S" [.const 2]) == none
+#guard laterScanReadCause false (.read "S" [.const 2]) == none
+#guard laterScanReadCause false (.read "S" [.shift axL (-1)]) == none
+#guard laterScanReadCause false (.read "S" [.axis axL]) == none
+#guard (prepared (laterScanReadsState true (.read "S" [.const 2])) rejInputs).bind (fun p =>
+    (scanAt p 2).map (fun s => s.baseCaptures.map (·.source)))
+  == some #[.external 2]
+#guard (prepared (laterScanReadsState false (.read "S" [.const 2])) rejInputs).bind (fun p =>
+    (scanAt p 2).map (fun s => s.stepCaptures.filterMap (fun c => match c.source with
+      | .external g => some g | .state _ => none)))
+  == some #[2]
+
+/-! #### Pinned state reads: the offending read in a later TERM, per-dimension extents, non-states
+
+Three boundaries of the same rule. (1) The offending read sits in the SECOND term of a plain
+statement (`Y[l] := X[l] + S[k]`), so the reported term index is 1, not a default 0. (2) A state whose
+two advancing dimensions have DIFFERENT extents (`coupledSched4`: `G[r, j, c]` with `r` extent 3 and
+`c` extent 4): each dimension is checked against its OWN extent. (3) A pinned out-of-range read of a
+NON-state tensor (an input, an earlier plain statement's destination) keeps the zero-pad: only
+published scan states carry history slots. -/
+
+def twoTermReadAfterScans (k : Int) : ScheduledProgram :=
+  { scratchThenPlainReadSched with
+      stmts := (scratchThenPlainReadSched.stmts.dropLast ++
+        [ .plain (.assign "Y" [.free axL]
+            { body := { terms := [ { factors := [.read "X" [.axis axL]] }
+                                 , { factors := [.read "S" [.const k]] } ] }
+            , nonlin := .identity }) ]) }
+
+def twoTermReadAfterScansCause (k : Int) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan (explicitF64Sched (twoTermReadAfterScans k)) rejSig)
+
+-- REJECT in term 1 (factor 0): pinned at the extent and pinned negative; ACCEPT at the last slot.
+#guard twoTermReadAfterScansCause 3 == some (.scan (.plainStatePinOutOfRange "S" 2 1 0 0 3 3))
+#guard twoTermReadAfterScansCause (-1) == some (.scan (.plainStatePinOutOfRange "S" 2 1 0 0 (-1) 3))
+#guard twoTermReadAfterScansCause 2 == none
+
+/-- `coupledSched` with the `c` iteration extent 4: `G` is `[3, 2, 4]`, advancing dims 0 and 2 with
+    extents 3 and 4. -/
+def coupledSched4 : ScheduledProgram :=
+  { coupledSched with
+      decls := [.iter axR 3, .iter axC 4, .axis axJ (some 2)]
+      explicitSizes :=
+        ((({} : HashMap UID Nat).insert axR.uid 3).insert axC.uid 4).insert axJ.uid 2 }
+
+def plainReadAfterCoupled4 (lhs : List LHSSlot) (f : Factor) : ScheduledProgram :=
+  { coupledSched4 with
+      stmts := coupledSched4.stmts ++
+        [ .plain (.assign "Y" lhs
+            { body := { terms := [{ factors := [f] }] }, nonlin := .identity }) ] }
+
+def plainReadAfterCoupled4Cause (lhs : List LHSSlot) (f : Factor) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan (explicitF64Sched (plainReadAfterCoupled4 lhs f))
+    (InputSignature.ofDenseInputs coupledInputs))
+
+-- the donor itself: `G` really is `[3, 2, 4]` (so the extents below are the geometry, not a guess).
+#guard (prepared coupledSched4 coupledInputs).map (fun p => p.plan.raw.tensorSigs[3]?.map (·.shape))
+  == some (some #[3, 2, 4])
+
+-- REJECT, each dimension against its OWN extent: dim 0 (extent 3) with dim 2 in range; dim 2
+-- (extent 4, payload 4 rather than dim 0's 3) with dim 0 in range.
+#guard plainReadAfterCoupled4Cause [.free axJ] (.read "G" [.const 3, .axis axJ, .const 0])
+  == some (.scan (.plainStatePinOutOfRange "G" 1 0 0 0 3 3))
+#guard plainReadAfterCoupled4Cause [.free axJ] (.read "G" [.const 1, .axis axJ, .const 4])
+  == some (.scan (.plainStatePinOutOfRange "G" 1 0 0 2 4 4))
+-- ACCEPT: 3 is out of range of dim 0 (extent 3) but in range of dim 2 (extent 4), and 2 / 3 are
+-- the last slots of their own dims.
+#guard plainReadAfterCoupled4Cause [.free axJ] (.read "G" [.const 0, .axis axJ, .const 3]) == none
+#guard plainReadAfterCoupled4Cause [.free axJ] (.read "G" [.const 2, .axis axJ, .const 3]) == none
+
+-- NON-STATE tensors: a pinned out-of-range read of an input (`X`, extent 3) and of an earlier plain
+-- statement's destination (`Z`, extent 3) after the scans still compiles (zero-pad).
+def nonStateReadAfterScans (viaPlainDest : Bool) : ScheduledProgram :=
+  { scratchThenPlainReadSched with
+      stmts := (scratchThenPlainReadSched.stmts.dropLast ++
+        [ .plain (.assign "Z" [.free axL]
+            { body := { terms := [{ factors := [.read "X" [.axis axL]] }] }, nonlin := .identity })
+        , .plain (.assign "Y" [.free axL]
+            { body := { terms := [{ factors :=
+                [.read (if viaPlainDest then "Z" else "X") [.const 9], .read "X" [.axis axL]] }] }
+            , nonlin := .identity }) ]) }
+
+#guard causeOf (prepareEvalPlan (explicitF64Sched (nonStateReadAfterScans false)) rejSig) == none
+#guard causeOf (prepareEvalPlan (explicitF64Sched (nonStateReadAfterScans true)) rejSig) == none
+
 /-! ### 2.5 `ScanCompileError` — context axes and per-state geometry -/
 
 -- the same axis declared twice as scan context.

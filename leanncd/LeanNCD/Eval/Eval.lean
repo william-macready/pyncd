@@ -172,7 +172,10 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
               checkPlainStateReads stateAdv env s
               let (nm, t) ← evalPlain sched.decls env sizes s
               env := env.insert nm t
-          | .scan _ _ _ recur _ =>
+          | .scan _ _ base recur _ =>
+              -- a later scan's blocks reading an EARLIER scan's state: `stateAdv` holds only earlier
+              -- scans' states here, so the scan's own states are never checked by this call
+              for s in base ++ recur do checkPlainStateReads stateAdv env s
               let outs ← evalScan sched.decls env sizes sc
               for (nm, t) in outs do env := env.insert nm t
               for (nm, adv) in scanStateAdvancingDims (outs.map (·.1)) recur do
