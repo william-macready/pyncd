@@ -118,8 +118,8 @@ composite match is assumed or hand-authored.
 ## Verification and exact patches
 
 The changed real PortFixtures module build is green. The real new Test
-module and exact-byte snippet checks are green. Test registration is
-requested from the parent (lakefile is not owned by this actor).
+module and exact-byte snippet checks are green. The parent registered Test
+without editing its source; its registered target build is now green.
 `port_composite_test.patch` is a mechanically generated new-file payload;
 `port_fixtures.patch` is refreshed as the complete current PortFixtures
 new-file payload. Both reverse-check against the actual files.
