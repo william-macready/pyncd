@@ -1,0 +1,188 @@
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentCompositionMatch.lean b/leanncd/experiments/indexed_execution/IndexedComponentCompositionMatch.lean
+new file mode 100644
+index 00000000..eb40aa2a
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentCompositionMatch.lean
+@@ -0,0 +1,129 @@
++import IndexedComponentCompositionAssemble
++
++namespace IndexedComponentComposition
++
++open LeanNCD.Semantics
++open LeanNCD.Semantics.Program
++open IndexedComponentTransport
++open IndexedOpenComposition
++
++variable {σA σB : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB)
++variable (wire : Boundary A B)
++
++def sourceToWriter :
++    SourceOccurrence (program A B wire) ≃ Fin (fragment A B wire).writers.length :=
++  ((occurrenceEquiv A B wire).trans
++    ((A.matched.sourceToWriter.sumCongr B.matched.sourceToWriter).trans
++      finSumFinEquiv)).trans
++    (finCongr (assembled_writer_length (upstream A B) (downstream A B wire)
++      upstreamId downstreamId A.fragment B.fragment).symm)
++
++theorem writer_upstream (o : SourceOccurrence A.program) :
++    (fragment A B wire).writers[
++      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inl o))] =
++    mapWriter (upstream A B) upstreamId
++      A.fragment.writers[A.matched.sourceToWriter o] := by
++  exact assembled_writer_upstream (upstream A B) (downstream A B wire)
++    upstreamId downstreamId A.fragment B.fragment
++    (A.matched.sourceToWriter o).val (A.matched.sourceToWriter o).isLt
++
++theorem writer_downstream (o : SourceOccurrence B.program) :
++    (fragment A B wire).writers[
++      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inr o))] =
++    mapWriter (downstream A B wire) downstreamId
++      B.fragment.writers[B.matched.sourceToWriter o] := by
++  exact assembled_writer_downstream (upstream A B) (downstream A B wire)
++    upstreamId downstreamId A.fragment B.fragment
++    (B.matched.sourceToWriter o).val (B.matched.sourceToWriter o).isLt
++
++theorem writer_destination_upstream (o : SourceOccurrence A.program) :
++    (fragment A B wire).writers[
++      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inl o))].destination =
++    ⟨((occurrenceEquiv A B wire).symm (.inl o)).1.val,
++      (program A B wire).destination
++        ((occurrenceEquiv A B wire).symm (.inl o)).1 o.2.1 o.2.2⟩ := by
++  rw [writer_upstream]
++  change (upstream A B).address
++      A.fragment.writers[A.matched.sourceToWriter o].destination = _
++  rw [A.matched.writer_destination o]
++  rfl
++
++theorem writer_reads_upstream (o : SourceOccurrence A.program) :
++    (fragment A B wire).writers[
++      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inl o))].reads =
++    footprint ((program A B wire).body
++      ((occurrenceEquiv A B wire).symm (.inl o)).1 o.2.1) o.2.2 := by
++  rw [writer_upstream]
++  change (A.fragment.writers[A.matched.sourceToWriter o].reads).map
++      (upstream A B).address =
++    footprint ((program A B wire).body (upstreamDefined A B wire o.1) o.2.1) o.2.2
++  exact (congrArg (List.map (upstream A B).address)
++    (A.matched.writer_reads o)).trans
++      (upstream_footprint A B wire o.1 o.2.1 o.2.2).symm
++
++theorem writer_reads_downstream (o : SourceOccurrence B.program) :
++    (fragment A B wire).writers[
++      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inr o))].reads =
++    footprint ((program A B wire).body
++      ((occurrenceEquiv A B wire).symm (.inr o)).1 o.2.1) o.2.2 := by
++  rw [writer_downstream]
++  change (B.fragment.writers[B.matched.sourceToWriter o].reads).map
++      (downstream A B wire).address =
++    footprint ((program A B wire).body (downstreamDefined A B wire o.1) o.2.1) o.2.2
++  exact (congrArg (List.map (downstream A B wire).address)
++    (B.matched.writer_reads o)).trans
++      (downstream_footprint A B wire o.1 o.2.1 o.2.2).symm
++
++theorem eval_agrees_upstream (o : SourceOccurrence A.program)
++    (store : PartialStore K (declarations A B)) :
++    evalReady RationalReference.ops store
++      (fragment A B wire).writers[
++        sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inl o))].body () =
++    evalReady RationalReference.ops store
++      ((program A B wire).body
++        ((occurrenceEquiv A B wire).symm (.inl o)).1 o.2.1) o.2.2 := by
++  rw [writer_upstream]
++  exact (evalReady_transport (upstream A B) store
++      A.fragment.writers[A.matched.sourceToWriter o].body id ()).trans
++    ((A.matched.eval_agrees o ((upstream A B).pull store)).trans
++      (evalReady_transport (upstream A B) store
++        (A.program.body o.1 o.2.1) id o.2.2).symm)
++
++theorem eval_agrees_downstream (o : SourceOccurrence B.program)
++    (store : PartialStore K (declarations A B)) :
++    evalReady RationalReference.ops store
++      (fragment A B wire).writers[
++        sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inr o))].body () =
++    evalReady RationalReference.ops store
++      ((program A B wire).body
++        ((occurrenceEquiv A B wire).symm (.inr o)).1 o.2.1) o.2.2 := by
++  rw [writer_downstream]
++  exact (evalReady_transport (downstream A B wire) store
++      B.fragment.writers[B.matched.sourceToWriter o].body id ()).trans
++    ((B.matched.eval_agrees o ((downstream A B wire).pull store)).trans
++      (evalReady_transport (downstream A B wire) store
++        (B.program.body o.1 o.2.1) id o.2.2).symm)
++
++theorem writer_reads (o : SourceOccurrence (program A B wire)) :
++    (fragment A B wire).writers[sourceToWriter A B wire o].reads =
++      footprint ((program A B wire).body o.1 o.2.1) o.2.2 := by
++  obtain ⟨x, rfl⟩ := (occurrenceEquiv A B wire).symm.surjective o
++  cases x with
++  | inl x => exact writer_reads_upstream A B wire x
++  | inr x => exact writer_reads_downstream A B wire x
++
++theorem eval_agrees (o : SourceOccurrence (program A B wire))
++    (store : PartialStore K (declarations A B)) :
++    evalReady RationalReference.ops store
++      (fragment A B wire).writers[sourceToWriter A B wire o].body () =
++    evalReady RationalReference.ops store
++      ((program A B wire).body o.1 o.2.1) o.2.2 := by
++  obtain ⟨x, rfl⟩ := (occurrenceEquiv A B wire).symm.surjective o
++  cases x with
++  | inl x => exact eval_agrees_upstream A B wire x store
++  | inr x => exact eval_agrees_downstream A B wire x store
++
++end IndexedComponentComposition
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index 9564867b..6a39cd14 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -165,4 +165,5 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
+          "IndexedComponentCompositionSchedule", "IndexedComponentClosureFacts",
+          "IndexedComponentCompositionClosure", "IndexedComponentCompositionLocalFixtures",
+          "IndexedComponentCompositionAssemble", "IndexedComponentCompositionAssemblyAudit",
+-         "IndexedComponentCompositionPortFixtures"]
++         "IndexedComponentCompositionPortFixtures",
++         "IndexedComponentCompositionMatch"]
+diff --git a/papers/semantics/component_composition_artifacts/match_prototype.md b/papers/semantics/component_composition_artifacts/match_prototype.md
+new file mode 100644
+index 00000000..d25af7e4
+--- /dev/null
++++ b/papers/semantics/component_composition_artifacts/match_prototype.md
+@@ -0,0 +1,36 @@
++# Indexed component composition match prototype
++
++Status: compiled coherent partial, **not** a constructed `SourceContractMatch`.
++The non-default `IndexedComponentCompositionMatch` target builds successfully.
++
++- `sourceToWriter A B wire` composes the actual composite occurrence split,
++  both component matches' occurrence-to-writer equivalences, `finSumFinEquiv`,
++  and the assembled writer-list length. `writer_upstream` and
++  `writer_downstream` prove the indexed entries of that assembled list.
++- `writer_destination_upstream` transports the upstream destination.
++  `writer_reads_upstream` and `writer_reads_downstream` use the ordered
++  footprint transport; `writer_reads` covers every composite occurrence.
++  `eval_agrees_upstream` and `eval_agrees_downstream` restrict **any** partial
++  store by the appropriate embedding, then apply the local match and
++  `evalReady_transport`; `eval_agrees` covers every composite occurrence.
++- **Next proof:** establish the defined-downstream address identity
++  `(downstream A B wire).address ⟨t.val, p⟩ = ⟨.inr t, p⟩`
++  for `t : B.program.Defined`, using `t.property`. In the attempted
++  `writer_destination_downstream`, the mapped writer/local destination
++  reduction succeeds, but `simp [downstream, downstreamTensor, t.property,
++  Domain.id]` leaves a dependent `cast` around the identity domain's `coord`.
++  The heterogeneous equality between the downstream domain at `t.val` and
++  `Domain.id (σB.signature t.val).axes` is provable, but eliminating it directly
++  fails because the domain's codomain depends on the embedded tensor. Prove
++  the address identity without assuming destination equality, then derive
++  `writer_destination_downstream` and dispatch the two cases for
++  `writer_destination`.
++- **After that:** prove composite collector-capability lookup from the
++  complete disjoint mapped collector images; prove each mapped `keyStep`
++  equation, then use component `matched.priority`, `keyOrder`, and
++  `graph_steps` for full `priority`. Assemble `compose_match` with
++  `close_ok`, `input_roles`, `tensor_order`, `outputs_exact`, and the proven
++  writer fields. No execution, reached-store, rank, or fiber premise is needed.
++
++The attached patch is generated from committed source bytes, not a proposed
++unverified proof. This receipt does not claim that match construction is done.
