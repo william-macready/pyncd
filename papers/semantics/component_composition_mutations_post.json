@@ -5,7 +5,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionScope.lean",
     "old": "| .inr t => 2 * σB.uid t.val + 1",
     "new": "| .inr t => 2 * σB.uid t.val",
-    "targets": ["IndexedComponentCompositionCollisionFixtures"]
+    "targets": ["IndexedComponentCompositionCollisionFixtures"],
+    "expect": ["IndexedComponentCompositionScope.lean", "'change' tactic failed"]
   },
   {
     "label": "L2 capability/tag namespace collision (live proof)",
@@ -13,7 +14,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionScope.lean",
     "old": "def downstreamId (n : Nat) : Nat := 2 * n + 1",
     "new": "def downstreamId (n : Nat) : Nat := 2 * n",
-    "targets": ["IndexedComponentCompositionCollisionFixtures"]
+    "targets": ["IndexedComponentCompositionCollisionFixtures"],
+    "expect": ["IndexedComponentCompositionScope.lean", "unsolved goals"]
   },
   {
     "label": "L3 reversed writer reads (live proof)",
@@ -21,7 +23,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionClosure.lean",
     "old": "reads := w.reads.map f.address",
     "new": "reads := (w.reads.map f.address).reverse",
-    "targets": ["IndexedComponentCompositionAxisFixtures"]
+    "targets": ["IndexedComponentCompositionAxisFixtures"],
+    "expect": ["IndexedComponentCompositionClosure.lean", "Type mismatch"]
   },
   {
     "label": "L4 discarded zero-writer collectors (live proof)",
@@ -29,7 +32,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionClosure.lean",
     "old": "collectors := a.collectors.map (mapRow f idA) ++ b.collectors.map (mapRow g idB)",
     "new": "collectors := (a.collectors.map (mapRow f idA)).filter (fun row => !row.2.isEmpty) ++ b.collectors.map (mapRow g idB)",
-    "targets": ["IndexedComponentCompositionTest"]
+    "targets": ["IndexedComponentCompositionTest"],
+    "expect": ["IndexedComponentCompositionClosure.lean", "could not unify"]
   },
   {
     "label": "L5 admitted upstream guards erased (live proof)",
@@ -37,7 +41,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionProgram.lean",
     "old": "| ⟨.inl t, h⟩ => A.program.guard ⟨t, h⟩ s v",
     "new": "| ⟨.inl _, _⟩ => true",
-    "targets": ["IndexedComponentCompositionCollisionFixtures"]
+    "targets": ["IndexedComponentCompositionCollisionFixtures"],
+    "expect": ["IndexedComponentCompositionProgram.lean", "Application type mismatch"]
   },
   {
     "label": "L6 whole output metadata discarded (live proof)",
@@ -45,7 +50,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionProgram.lean",
     "old": "def outputPorts : List (Port (declarations A B)) :=\n  B.outputs.attach.map fun p =>\n    outputPort A B p.val\n      ((B.outputs_exact p.val.tensor).mp\n        (List.mem_map.mpr ⟨p.val, p.property, rfl⟩))",
     "new": "def outputPorts : List (Port (declarations A B)) := []",
-    "targets": ["IndexedComponentCompositionTest"]
+    "targets": ["IndexedComponentCompositionTest"],
+    "expect": ["IndexedComponentCompositionProgram.lean", "Invalid field"]
   },
   {
     "label": "L7 tensor enumeration reversed (live proof)",
@@ -53,7 +59,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionSchedule.lean",
     "old": "A.schedule.tensors.map Sum.inl ++\n    (B.schedule.tensors.filterMap (definedTensor? B)).map Sum.inr",
     "new": "(B.schedule.tensors.filterMap (definedTensor? B)).map Sum.inr ++\n    A.schedule.tensors.map Sum.inl",
-    "targets": ["IndexedComponentCompositionTest"]
+    "targets": ["IndexedComponentCompositionTest"],
+    "expect": ["IndexedComponentCompositionSchedule.lean", "Application type mismatch"]
   },
   {
     "label": "C1 strict-shortcut counterexample removed (graph-only control)",
@@ -61,7 +68,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionCounterexampleTest.lean",
     "old": "def shortcut : Body D :=\n  transport (downstream producerComponent (consumerComponent 0) (scalarBoundary 0)) id\n    ((IndexedCompositionParityTest.graphShortcut.writers.get\n      ⟨3, by simp [IndexedCompositionParityTest.graphShortcut]⟩).body)",
     "new": "def shortcut : Body D :=\n  ((fragment producerComponent (consumerComponent 0) (scalarBoundary 0)).writers.get\n    ⟨3, by decide⟩).body",
-    "targets": ["IndexedComponentCompositionCounterexampleTest"]
+    "targets": ["IndexedComponentCompositionCounterexampleTest"],
+    "expect": ["composite-private-shortcut-is-not-equivalent: expected"]
   },
   {
     "label": "C2 equal-contribution omission removed (graph-only control)",
@@ -69,7 +77,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionCounterexampleTest.lean",
     "old": "def omittedCapability : Nat := 204",
     "new": "def omittedCapability : Nat := 999",
-    "targets": ["IndexedComponentCompositionCounterexampleTest"]
+    "targets": ["IndexedComponentCompositionCounterexampleTest"],
+    "expect": ["composite-equal-contribution-omission-changes-result: expected"]
   },
   {
     "label": "F1 unequal-axis point changed (fixture source)",
@@ -77,7 +86,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionAxisFixtures.lean",
     "old": "def firstPoint : Coord srcShape := p",
     "new": "def firstPoint : Coord srcShape := q",
-    "targets": ["IndexedComponentCompositionAxisFixtures"]
+    "targets": ["IndexedComponentCompositionAxisFixtures"],
+    "expect": ["axis.graph-only"]
   },
   {
     "label": "F2 required empty input omitted (fixture binding)",
@@ -85,7 +95,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionTest.lean",
     "old": "| .inl t => emptyPresentInput t",
     "new": "| .inl _ => none",
-    "targets": ["IndexedComponentCompositionTest"]
+    "targets": ["IndexedComponentCompositionTest"],
+    "expect": ["composite-empty-present: expected"]
   },
   {
     "label": "F3 simultaneous fault distinction removed (fixture binding)",
@@ -93,7 +104,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionTest.lean",
     "old": "def emptyBothFaultsRaw : InputBinding (K := RationalReference.Carrier) (σ := emptyDeclarations)\n  | .inl _ => none\n  | .inr _ => some (fun p => Fin.elim0 p.1)",
     "new": "def emptyBothFaultsRaw : InputBinding (K := RationalReference.Carrier) (σ := emptyDeclarations)\n  | .inl _ => none\n  | .inr _ => none",
-    "targets": ["IndexedComponentCompositionTest"]
+    "targets": ["IndexedComponentCompositionTest"],
+    "expect": ["composite-empty-simultaneous-faults: expected", "composite-empty-validation-order: expected"]
   },
   {
     "label": "T1 legal downstream destination forbidden (typed control)",
@@ -101,7 +113,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionInterfaceTest.lean",
     "old": "t.val ≠ (0 : Fin 3)",
     "new": "t.val ≠ (1 : Fin 3)",
-    "targets": ["IndexedComponentCompositionInterfaceTest"]
+    "targets": ["IndexedComponentCompositionInterfaceTest"],
+    "expect": ["IndexedComponentCompositionInterfaceTest.lean", "Type mismatch"]
   },
   {
     "label": "T2 legal axis adapter forbidden (typed control)",
@@ -109,7 +122,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionInterfaceTest.lean",
     "old": "¬ Nonempty (Domain IndexedComponentTransportTest.srcShape [⟨88, 6⟩])",
     "new": "¬ Nonempty (Domain IndexedComponentTransportTest.srcShape IndexedComponentTransportTest.dstShape)",
-    "targets": ["IndexedComponentCompositionInterfaceTest"]
+    "targets": ["IndexedComponentCompositionInterfaceTest"],
+    "expect": ["IndexedComponentCompositionInterfaceTest.lean", "unsolved goals"]
   },
   {
     "label": "C3 zero-collector deletion removed (graph-only control)",
@@ -117,7 +131,8 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionCounterexampleTest.lean",
     "old": "collectors := original.collectors.filter (fun row => !row.2.isEmpty)",
     "new": "collectors := original.collectors.filter (fun _ => true)",
-    "targets": ["IndexedComponentCompositionCounterexampleTest"]
+    "targets": ["IndexedComponentCompositionCounterexampleTest"],
+    "expect": ["composite-zero-collector-drop-is-rejected: expected true"]
   },
   {
     "label": "C4 duplicate boundary deletion removed (graph-only control)",
@@ -125,6 +140,7 @@
     "file": "experiments/indexed_execution/IndexedComponentCompositionCounterexampleTest.lean",
     "old": "collectors := original.collectors ++ original.collectors.take 1",
     "new": "collectors := original.collectors ++ original.collectors.take 0",
-    "targets": ["IndexedComponentCompositionCounterexampleTest"]
+    "targets": ["IndexedComponentCompositionCounterexampleTest"],
+    "expect": ["composite-duplicate-boundary-collector-is-rejected: expected true"]
   }
 ]

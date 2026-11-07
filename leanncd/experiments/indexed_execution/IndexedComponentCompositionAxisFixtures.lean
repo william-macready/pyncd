@@ -144,8 +144,8 @@ def consumerBody : Body consumerDeclarations :=
     subst t
     exact ()
   body := fun _ _ =>
-    .binary .add (readPre p)
-      (.binary .add (readPre q) (.binary .add (readPre p) (readPre q)))
+    .binary .add (readPre firstPoint)
+      (.binary .add (readPre q) (.binary .add (readPre firstPoint) (readPre q)))
 
 def consumerSchedule : Schedule consumer where
   tensors := [0, 1]
