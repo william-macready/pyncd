@@ -176,4 +176,5 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
          "IndexedComponentModelWitnesses",
          "IndexedComponentModelDenotation",
          "IndexedComponentModelLocalFixtures", "IndexedComponentModelLocalTest",
-         "IndexedComponentModelGeometryFixtures", "IndexedComponentModelGeometryTest"]
+         "IndexedComponentModelGeometryFixtures", "IndexedComponentModelGeometryTest",
+         "IndexedComponentModelCycleFixtures", "IndexedComponentModelCycleTest"]
