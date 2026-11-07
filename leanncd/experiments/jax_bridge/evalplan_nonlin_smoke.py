@@ -62,6 +62,9 @@ EAGER: dict[str, dict] = {}
 # leave ~3.7 orders (float64) / ~1.1 orders (float32) of headroom and are far below any wrong-head effect (~1e-1).
 HEAD_ROWSUM_TOL = {"float64": 1e-12, "float32": 1e-6}
 HEAD_LOGITS_TOL = {"float64": 1e-12, "float32": 1e-6}
+# P vs the float64 row-wise softmax of the numpy Logits (pin (a')). MEASURED (Lean, eager, jit): float64
+# 5.6e-17 / 4.2e-17, float32 2.6e-8 for all three; headroom ~4.7 orders (float64) / ~1.6 orders (float32).
+HEAD_SOFTMAX_TOL = {"float64": 1e-12, "float32": 1e-6}
 
 
 def flat_nodes(nodes):
@@ -334,16 +337,30 @@ def main() -> None:
     assert len(h_scans) == 1 and h_scans[0] == 0 and hnodes[0]["step_count"] == 2, [n.get("kind") for n in hnodes]
     assert all(n.get("kind") != "scan" for n in h_after) and len(hnodes) == 1 + len(h_after), hnodes
     assert len(list(flat_nodes([hnodes[0]]))) == len(list(flat_nodes([scans[0]]))), "scan body differs from transformer_scan"
-    # (d, shapes) the vocabulary extent 5 differs from every other extent, and appears only on the v axis
-    assert hin["W_U"].shape == (5, 4) and set(hin) == set(sin) | {"W_U"}, (hin["W_U"].shape, sorted(hin))
-    assert 5 not in {3, 4, 2} and all(5 not in hin[n].shape for n in hin if n != "W_U")
-    for who, outs_hd in {"lean": {n: lean_array(e) for n, e in hd["expected"].items()},
-                         "eager": {n: np.asarray(v) for n, v in EAGER[hd_name]["eager"].items()},
-                         "jit": {n: np.asarray(v) for n, v in EAGER[hd_name]["jit"].items()}}.items():
+    hviews = {"lean": {n: lean_array(e) for n, e in hd["expected"].items()},
+              "eager": {n: np.asarray(v) for n, v in EAGER[hd_name]["eager"].items()},
+              "jit": {n: np.asarray(v) for n, v in EAGER[hd_name]["jit"].items()}}
+    # (d, shapes) the vocabulary extent (derived from W_U, not a literal) differs from every other extent in
+    # the other inputs and in the head's other outputs, and is the extent of Logits[1] and P[1]
+    vocab = hin["W_U"].shape[0]
+    other_extents = {d for n, a in hin.items() if n != "W_U" for d in a.shape}
+    other_extents |= {d for o in hviews.values() for n, a in o.items() if n not in ("Logits", "P") for d in a.shape}
+    assert set(hin) == set(sin) | {"W_U"}, sorted(hin)
+    assert vocab not in other_extents, ("vocabulary extent collides with another extent", vocab, sorted(other_extents))
+    assert all(o["P"].shape[1] == vocab and o["Logits"].shape[1] == vocab for o in hviews.values()), vocab
+    print(f"  head vocabulary extent {vocab} (from W_U[0]) is not among the other extents {sorted(other_extents)}")
+    # (e) the head fixture's scan is the transformer_scan fixture's scan, value for value: every shared input
+    # is bitwise equal (NaN weight slices included), and H is bit-identical per view
+    for n in sin:
+        assert np.array_equal(np.ascontiguousarray(sin[n]).view(UDT), np.ascontiguousarray(hin[n]).view(UDT)), ("pin (e) head scan == transformer_scan, input", n)
+    for who, outs_hd in hviews.items():
+        hd_bits, sc_bits = np.ascontiguousarray(outs_hd["H"]).view(UDT), np.ascontiguousarray(views[who]["H"]).view(UDT)
+        print(f"  head {who}: head H vs transformer_scan H bit-identical {bool(np.array_equal(hd_bits, sc_bits))}, "
+              f"max abs {float(np.max(np.abs(outs_hd['H'].astype(np.float64) - views[who]['H'].astype(np.float64)))):.3e}")
+        assert np.array_equal(hd_bits, sc_bits), ("pin (e) head scan == transformer_scan", who)
+    for who, outs_hd in hviews.items():
         assert {"H", "Logits", "P", "Hf", "Zf"} <= set(outs_hd), (who, sorted(outs_hd))
         assert all(np.all(np.isfinite(v)) for v in outs_hd.values()), who
-        assert outs_hd["Logits"].shape == outs_hd["P"].shape == (3, 5), (who, outs_hd["Logits"].shape)
-        assert all(5 not in v.shape for n, v in outs_hd.items() if n not in ("Logits", "P")), who
         P = outs_hd["P"].astype(np.float64)
         # (a) every row of P is a probability vector over the vocabulary
         rowdev = float(np.max(np.abs(P.sum(axis=1) - 1.0)))
@@ -362,11 +379,16 @@ def main() -> None:
         want = Hf @ WU.T
         ldiff = float(np.max(np.abs(outs_hd["Logits"].astype(np.float64) - want)))
         assert ldiff < HEAD_LOGITS_TOL[_DT], ("pin (b) Logits == numpy from H slice 2", who, ldiff, outs_hd["Logits"].tolist(), want.tolist())
-        print(f"  head {who}: P row-sum dev {rowdev:.3e}, Hf mean-square {[round(float(x), 6) for x in ms_hf_out]}, "
+        # (a') P is the row-wise numerically stable softmax of the numpy Logits (NOT of this view's own outputs)
+        ex = np.exp(want - want.max(axis=1, keepdims=True))
+        sdiff = float(np.max(np.abs(P - ex / ex.sum(axis=1, keepdims=True))))
+        assert sdiff < HEAD_SOFTMAX_TOL[_DT], ("pin (a') P == softmax(numpy Logits)", who, sdiff, P.tolist())
+        print(f"  head {who}: P row-sum dev {rowdev:.3e}, P vs softmax(numpy Logits) max abs {sdiff:.3e}, Hf mean-square {[round(float(x), 6) for x in ms_hf_out]}, "
               f"pre-norm Zf mean-square {[round(float(x), 4) for x in ms_zf]}, Logits vs numpy max abs {ldiff:.3e}")
     print(f"transformer_head: plan = 1 scan + {len(h_after)} plain nodes {[n.get('kind', 'assign') for n in h_after]}; "
-          f"vocabulary extent 5 appears only on W_U[0], Logits[1], P[1]; P rows positive and sum to 1; Logits == numpy "
-          f"recomputation from H slice 2; Hf unit mean square, pre-norm Zf not; per-output measured difference vs Lean:")
+          f"vocabulary extent {vocab} (from W_U) differs from every other extent and is Logits[1], P[1]; head scan == "
+          f"transformer_scan (inputs and H bitwise); P rows positive and sum to 1; Logits == numpy "
+          f"recomputation from H slice 2; P == softmax(numpy Logits); Hf unit mean square, pre-norm Zf not; per-output measured difference vs Lean:")
     for n in sorted(n for fx, n in OUT_STATS if fx == hd_name):
         rel, ab, ex, tot = OUT_STATS[(hd_name, n)]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
