@@ -39,7 +39,8 @@ the committed collector-only base `05438de5`, from the final source bytes.
 No collector proof was reproved or edited. No `sorry`, new axioms,
 `native_decide`, or `unsafe`.
 
-Budget: this bounded field stayed within the 60-action / 250k-context hard
-cap; the token-report script returned `no transcript for session
+Budget: approximately 39 action turns exceeded the 30-action target but
+stayed within the 60-action / 250k-context hard cap. The token-report script
+returned `no transcript for session
 166c28b7-d291-45be-9935-ac49e19535cb`, so cumulative input tokens could
 not be measured. No other agent was launched.
