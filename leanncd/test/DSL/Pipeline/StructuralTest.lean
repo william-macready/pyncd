@@ -361,12 +361,13 @@ run_cmd do
 
 /-! ### Post-scan consumers
 
-A non-iteration statement that reads a scan state ONLY at pinned (`.const`) positions of the
-state's advancing axes consumes the finished, materialized history, so `finalizeScans` emits it as a
-`.plain` node AFTER the scan nodes instead of folding it into the recurrence body (where the checked
-plan rejects every pinned read as non-causal). A free read (`S[j, l]`) is a per-step read and stays a
-body statement; a candidate that a recurrence reads, or one that also reads a per-step intermediate,
-stays in the body too. The pins are `layoutOf` renderings observed from a run. -/
+Classification is by ROLE, not by how a statement reads. A name is FED when a state's base or step
+reads it, when it is a scan state's own name, or when a fed non-iteration statement reads it (closure
+by name). A scan-dependent non-iteration statement whose name is fed is a per-step intermediate and
+stays in the recurrence body; one whose name is not fed is post-scan: `finalizeScans` emits it as a
+`.plain` node AFTER the scan nodes, and it may read states free or pinned (the scan axis is an ordinary
+axis there). A post statement reading a per-step intermediate is `readsPerStepIntermediate`. The pins
+are `layoutOf` renderings observed from a run. -/
 
 private def finalizedOf (p : TLProgram) : FreshM ScanProgram :=
   (assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=>
@@ -428,23 +429,22 @@ private def postReadOut : TLProgram := tlprog!{ iter l = 3
 -- Chains of post statements stay post, in source order; a loop-invariant name (`Inv`, no scan
 -- dependency) is read freely and stays a plain node BEFORE the scan.
 #guard layoutOf postChain == .ok ["plain Inv", "scan base=[S] body=[S]", "plain Zf", "plain Zf2"]
--- Accept-neighbours that stay as they were: a free read of the state is a per-step read (body); so is a
--- statement mixing a pinned and a free read of the state, and one mixing a pinned state read with a
--- per-step intermediate (`T`); a candidate the recurrence itself reads (`Skip`) is demoted back into
--- the body rather than becoming a plain node the scan would depend on.
-#guard layoutOf postFreeRead == .ok ["scan base=[S] body=[S, Zr]"]
-#guard layoutOf postMixedFree == .ok ["scan base=[S] body=[S, Zm]"]
-#guard layoutOf postMixedInter == .ok ["scan base=[H] body=[T, H, M]"]
+-- Nothing feeds the recurrence from these, so they are post whatever the read pattern: a free read of
+-- the state (`Zr`), a pinned and a free read mixed (`Zm`), and a read-out whose own LHS carries the scan
+-- axis (`y`). A statement the recurrence itself reads (`Skip`) is fed and stays in the body.
+#guard layoutOf postFreeRead == .ok ["scan base=[S] body=[S]", "plain Zr"]
+#guard layoutOf postMixedFree == .ok ["scan base=[S] body=[S]", "plain Zm"]
+#guard layoutOf postReadOut == .ok ["scan base=[h] body=[h]", "plain y"]
 #guard layoutOf postDemoted == .ok ["scan base=[H] body=[Skip, H]"]
--- A per-step read-out whose OWN LHS carries the scan axis is still rejected, not reclassified.
-#guard layoutOf postReadOut == .error (.scanProjectionUnsupported "y")
+-- A post statement that reads a per-step intermediate (`T`, fed by the step, never published) is refused.
+#guard layoutOf postMixedInter == .error (.readsPerStepIntermediate "M" "T")
 
-private def postIverRej : TLProgram := tlprog!{ iter l = 3
+private def postIverScanAxis : TLProgram := tlprog!{ iter l = 3
   S[j, 0]    := X[j]
   S[j, l +1] := S[j, l]
   Zi[j]      := S[j, 2] · [l ≤ 1] }
 
-private def postIverOk : TLProgram := tlprog!{ iter l = 3
+private def postIverOtherAxis : TLProgram := tlprog!{ iter l = 3
   S[j, 0]    := X[j]
   S[j, l +1] := S[j, l]
   Zi[j]      := S[j, 2] · [j ≤ 1] }
@@ -479,20 +479,69 @@ private def postTwoOk : TLProgram := tlprog!{ iter l = 3
   H[j, 0]    := X[j]
   H[j, m +1] := H[j, m] }
 
--- Each clause of the post-candidate test is decided ALONE by a reject fixture (every other conjunct and
--- filter holds, only that clause is violated) and its accept neighbour (the clause satisfied).
--- Iverson clause: a predicate over a scan iteration axis (`l`) keeps `Zi` in the body; the same
--- statement with the predicate over an ordinary axis (`j`) is post.
-#guard layoutOf postIverRej == .ok ["scan base=[S] body=[S, Zi]"]
-#guard layoutOf postIverOk == .ok ["scan base=[S] body=[S]", "plain Zi"]
--- Demotion by a BASE case: `H`'s base reads `Pc` (which only reads `G` pinned), so `Pc` is pulled into
--- the body; without that base read, `Pc` is post.
+-- An Iverson predicate over the scan axis (`l`) does not matter: `Zi` feeds nothing, so it is post, as
+-- with the predicate over an ordinary axis (`j`).
+#guard layoutOf postIverScanAxis == .ok ["scan base=[S] body=[S]", "plain Zi"]
+#guard layoutOf postIverOtherAxis == .ok ["scan base=[S] body=[S]", "plain Zi"]
+-- Feeding by a BASE case: `H`'s base reads `Pc` (which only reads `G` pinned), so `Pc` is fed and sits
+-- in the body; without that base read, `Pc` is post.
 #guard layoutOf postBaseRej == .ok ["scan base=[G, H] body=[G, Pc, H]"]
 #guard layoutOf postBaseOk == .ok ["scan base=[G, H] body=[G, H]", "plain Pc"]
--- Demotion across TWO scans: the recurrence of the `m`-scan reads `Pc`, a candidate of the `l`-scan, so
--- `Pc` is pulled into the `l`-scan body; when the `m`-scan does not read it, `Pc` is post.
+-- Feeding across TWO scans: the recurrence of the `m`-scan reads `Pc`, which depends on the `l`-scan only,
+-- so `Pc` is fed and sits in the `l`-scan body (the per-component case is parked); when the `m`-scan
+-- does not read it, `Pc` is post.
 #guard layoutOf postTwoRej == .ok ["scan base=[S] body=[S, Pc]", "scan base=[H] body=[H]"]
 #guard layoutOf postTwoOk == .ok ["scan base=[S] body=[S]", "scan base=[H] body=[H]", "plain Pc"]
+
+-- New fixtures. State-name rule decided ALONE: the step does not read its own state, yet a second
+-- writer of `S` is per-step (so it is refused, not made post and failed later as `multiWriterScan`).
+private def postStateNameNoSelfRead : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := X2[j]
+  S[j, l]    := maxreduce(Y[j, l]) }
+
+private def postStateNameSelfRead : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := maxreduce(S[j, l] · A[j, k])
+  S[j, l]    := maxreduce(Y[j, l]) }
+
+-- Spanning applies to per-step statements only: a not-fed statement reading two scans' states is post.
+private def postTwoStates : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  H[j, 0]    := X[j]
+  H[j, m +1] := H[j, m]
+  Z[j]       := S[j, 2] · H[j, 1] }
+
+private def postTwoStatesFed : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  H[j, 0]    := X[j]
+  H[j, m +1] := Z[j]
+  Z[j]       := S[j, 2] · H[j, 1] }
+
+-- A free state read times an external `W[l]` is post when nothing feeds on it, per-step when the step does.
+private def postFreeSumC : TLProgram := tlprog!{ iter l = 3
+  H[j, 0]    := X[j]
+  H[j, l +1] := H[j, l]
+  Y[j]       := H[j, l] · W[l] }
+
+private def postFreeSumCFed : TLProgram := tlprog!{ iter l = 3
+  H[j, 0]    := X[j]
+  Y[j]       := H[j, l] · W[l]
+  H[j, l +1] := Y[j] }
+
+#guard layoutOf postStateNameNoSelfRead == .error (.scanProjectionUnsupported "S")
+#guard layoutOf postStateNameSelfRead == .error (.scanProjectionUnsupported "S")
+-- Spanning is a per-step error only: the not-fed `Z` is post after both scans; once the `m`-step reads it,
+-- it is per-step and spans two components (the per-component closure is parked).
+#guard layoutOf postTwoStates == .ok ["scan base=[S] body=[S]", "scan base=[H] body=[H]", "plain Z"]
+#guard layoutOf postTwoStatesFed ==
+  .error (.shapeMismatch "Z: per-step intermediate spans multiple scan components" "a single scan component")
+#guard layoutOf postFreeSumC == .ok ["scan base=[H] body=[H]", "plain Y"]
+#guard layoutOf postFreeSumCFed == .ok ["scan base=[H] body=[Y, H]"]
 
 private def lowered (nonIter : String) : LoweredProgram :=
   let l : AxisSpec := { name := "l", uid := 9, kind := .nat }
@@ -509,10 +558,10 @@ private def layoutOfLowered (lp : LoweredProgram) : Except CompileError (List St
   | .ok sp _ => .ok (renderLayout sp)
   | .error e _ => .error e
 
--- State-name clause: a non-iteration statement that WRITES a scan state's own name while reading it
+-- State-name rule: a non-iteration statement that WRITES a scan state's own name while reading it
 -- pinned. This shape cannot come from `tlprog!` (`S[j] := S[j, 2]` is already a `rankMismatch` in an
 -- earlier phase), so the pin is at the `finalizeScans` level on a hand-built `LoweredProgram`. The
--- candidate stays in the body (second `S` below); under another name it is post.
+-- statement stays in the body (second `S` below); under another name it is post.
 #guard layoutOfLowered (lowered "S") == .ok ["scan base=[S] body=[S, S]"]
 #guard layoutOfLowered (lowered "Zf") == .ok ["scan base=[S] body=[S]", "plain Zf"]
 -- checkReadRanks: declared tensor read with matching rank passes through.

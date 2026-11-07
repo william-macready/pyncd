@@ -38,9 +38,16 @@ inductive CompileError
   | cyclicDataflow       : String → CompileError            -- cyclic dataflow (topoSort cycle fallback)
   | inconsistentScanAxes : String → CompileError            -- coupled scan outputs disagree on shared axis order
   | emptyScanOutputs     : String → CompileError            -- scan step with no true outputs (empty base∩recur)
-  | scanProjectionUnsupported : String → CompileError       -- per-step stmt inside a scan references the
-                                                             -- iteration axis on its own LHS with no base case;
-                                                             -- move it after the scan and read the materialized state
+  | scanProjectionUnsupported : String → CompileError       -- per-step stmt inside a scan (one that feeds the
+                                                             -- recurrence, or is written under a state's name)
+                                                             -- references the iteration axis on its own LHS with
+                                                             -- no base case; a statement that does NOT feed the
+                                                             -- recurrence is moved after the scan automatically
+  | readsPerStepIntermediate : String → String → CompileError  -- statement, intermediate: a statement that does not
+                                                             -- feed the recurrence (so it is evaluated after the scan)
+                                                             -- reads the per-step intermediate `T` of a scan; `T` is
+                                                             -- never published, so the statement could be evaluated
+                                                             -- only inside a step, where its other reads are unavailable
   | unsupportedRecurMorphism : String → CompileError        -- Wave-A policy: the §12.2 `recurMorphism`
                                                              -- escape hatch has NO semantics anywhere —
                                                              -- `toBrBaseP` discards the supplied
