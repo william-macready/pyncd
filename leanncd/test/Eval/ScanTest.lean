@@ -1576,5 +1576,74 @@ run_cmd do
           throwError s!"G[r,5,c] must read zeros: {repr Y.data}"
       | none => throwError "G[r,5,c]: no Y in the report"
 
+-- The offending read in a later TERM (`Y[l] := X[l] + S[k]`) is the same error on both backends,
+-- and the checked plan reports term 1. Each REJECT row asserts both backends on the SAME schedule.
+private def laterTermReadRejects : Except String Unit := do
+  let one (k : Int) :=
+    (refPlain (Plan.ScanCompileTest.twoTermReadAfterScans k) Plan.ScanCompileTest.rejInputs,
+     Plan.ScanCompileTest.twoTermReadAfterScansCause k)
+  let (r, c) := one 3
+  rejectedOnBoth "X[l] + S[3]" r c
+    (fun | .plainStatePinOutOfRange "S" "Y" 0 3 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "S" 2 1 0 0 3 3))
+  let (r, c) := one (-1)
+  rejectedOnBoth "X[l] + S[-1]" r c
+    (fun | .plainStatePinOutOfRange "S" "Y" 0 (-1) 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "S" 2 1 0 0 (-1) 3))
+
+-- Two advancing dims of one state with DIFFERENT extents (`coupledSched4`: `G` is `[3, 2, 4]`):
+-- each is checked against its own extent, on both backends.
+private def mixedExtentRejects : Except String Unit := do
+  let coupled (f : Factor) :=
+    (refPlain (Plan.ScanCompileTest.plainReadAfterCoupled4 [.free Plan.ScanCompileTest.axJ] f)
+       Plan.ScanCompileTest.coupledInputs,
+     Plan.ScanCompileTest.plainReadAfterCoupled4Cause [.free Plan.ScanCompileTest.axJ] f)
+  let (r, c) := coupled (.read "G" [.const 3, .axis Plan.ScanCompileTest.axJ, .const 0])
+  rejectedOnBoth "G4[3,j,0]" r c
+    (fun | .plainStatePinOutOfRange "G" "Y" 0 3 3 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "G" 1 0 0 0 3 3))
+  let (r, c) := coupled (.read "G" [.const 1, .axis Plan.ScanCompileTest.axJ, .const 4])
+  rejectedOnBoth "G4[1,j,4]" r c
+    (fun | .plainStatePinOutOfRange "G" "Y" 2 4 4 => true | _ => false)
+    (.scan (.plainStatePinOutOfRange "G" 1 0 0 2 4 4))
+
+run_cmd do
+  match laterTermReadRejects with
+  | .error m => throwError m
+  | .ok () => pure ()
+  match mixedExtentRejects with
+  | .error m => throwError m
+  | .ok () => pure ()
+
+-- ACCEPT neighbours: the later-term read at the last slot is `X[l] + S[2]` slice-wise; `G[0,j,3]`
+-- is out of range of dim 0 (extent 3) but in range of dim 2 (extent 4), so it reads G's slice
+-- (flat index `r*8 + j*4 + c`: 3 and 7; both are 0 here, the observed diagonal state leaves column
+-- `c = 3` of row `r = 0` unwritten, so acceptance, not the value, is the pin); an out-of-range pin on an INPUT (`X[9]`) or on an earlier
+-- plain statement's destination (`Z[9]`) keeps the zero-pad, so `Y[l] = pad * X[l] = 0`.
+run_cmd do
+  match refPlain (Plan.ScanCompileTest.twoTermReadAfterScans 2) Plan.ScanCompileTest.rejInputs with
+  | .error e => throwError s!"X[l] + S[2]: {e.error}"
+  | .ok rep => match rep.env["S"]?, rep.env["Y"]? with
+      | some S, some Y =>
+          unless S.data[2]! != 0 && Y.data == #[1.0 + S.data[2]!, 2.0 + S.data[2]!, 3.0 + S.data[2]!] do
+            throwError s!"X[l] + S[2] must be X + S's last slot: S {repr S.data}, Y {repr Y.data}"
+      | _, _ => throwError "X[l] + S[2]: no S or Y in the report"
+  match refPlain (Plan.ScanCompileTest.plainReadAfterCoupled4 [.free Plan.ScanCompileTest.axJ]
+      (.read "G" [.const 0, .axis Plan.ScanCompileTest.axJ, .const 3])) Plan.ScanCompileTest.coupledInputs with
+  | .error e => throwError s!"G4[0,j,3]: {e.error}"
+  | .ok rep => match rep.env["G"]?, rep.env["Y"]? with
+      | some G, some Y =>
+          unless G.shape == [3, 2, 4] && Y.shape == [2] && Y.data == #[G.data[3]!, G.data[7]!] do
+            throwError s!"G4[0,j,3] must read G's slice: G {repr G.data}, Y {repr Y.data}"
+      | _, _ => throwError "G4[0,j,3]: no G or Y in the report"
+  for viaPlainDest in [false, true] do
+    match refPlain (Plan.ScanCompileTest.nonStateReadAfterScans viaPlainDest)
+        Plan.ScanCompileTest.rejInputs with
+    | .error e => throwError s!"non-state pinned read (plain dest {viaPlainDest}): {e.error}"
+    | .ok rep => match rep.env["Y"]? with
+        | some Y => unless Y.shape == [3] && Y.data == #[0.0, 0.0, 0.0] do
+            throwError s!"non-state pinned read (plain dest {viaPlainDest}) must zero-pad: {repr Y.data}"
+        | none => throwError s!"non-state pinned read (plain dest {viaPlainDest}): no Y"
+
 end LeanNCD.Eval
 
