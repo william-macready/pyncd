@@ -174,12 +174,14 @@ theorem zeroProducer_publication :
   ("complete", 1)
 
 @[reducible] def emptyProducerDeclarations : Declarations Unit :=
-  ⟨Fin 2, fun t => 410 + t.val,
-    fun _ _ h => Fin.ext (Nat.add_left_cancel h), fun _ => ⟨(), [⟨41, 0⟩]⟩⟩
+  ⟨Fin 2, fun t => if t.val == 0 then 10 else 0,
+    fun a b h => by
+      fin_cases a <;> fin_cases b <;>
+        first | rfl | exact False.elim (Nat.noConfusion h),
+    fun _ => ⟨(), [⟨41, 0⟩]⟩⟩
 
 @[reducible] def emptyConsumerDeclarations : Declarations Unit :=
-  ⟨Fin 2, fun t => 510 + t.val,
-    fun _ _ h => Fin.ext (Nat.add_left_cancel h), fun _ => ⟨(), [⟨51, 0⟩]⟩⟩
+  ⟨Fin 2, fun t => t.val, fun _ _ h => Fin.ext h, fun _ => ⟨(), [⟨51, 0⟩]⟩⟩
 
 def emptyExternalInput : emptyProducerDeclarations.Tensor := 0
 def emptyProducerPre : emptyProducerDeclarations.Tensor := 1
@@ -392,6 +394,6 @@ def emptyConsumerRun : Run emptyConsumerDeclarations :=
     emptyConsumerComponent.outputs.map (fun p => emptyConsumerDeclarations.uid p.tensor),
     emptyProducerComponent.outputs.map Port.axes,
     emptyConsumerComponent.outputs.map Port.axes)
-  ([410], [411], [510], [511], [[⟨41, 0⟩]], [[⟨51, 0⟩]])
+  ([10], [0], [0], [1], [[⟨41, 0⟩]], [[⟨51, 0⟩]])
 
 end IndexedComponentCompositionPortFixtures

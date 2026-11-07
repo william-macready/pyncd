@@ -35,8 +35,11 @@ match, execute, or count events of a composite.
    `emptySchedule`, and `presentEmpty` (lines 345–381).
    Changes: each side declares `Fin 2`, input index 0 and defined output index 1,
    rather than the donor's single tensor/non-output role. Upstream UIDs
-   410/411 name external input/Pre, axes `[⟨41, 0⟩]`. Downstream UIDs
-   510/511 independently name input Pre/output Out, axes `[⟨51, 0⟩]`.
+   10/0 name external input/Pre, axes `[⟨41, 0⟩]`. Downstream UIDs
+   0/1 independently name input Pre/output Out, axes `[⟨51, 0⟩]`.
+   The executable follow-up changed only these UID functions and their
+   metadata observation from 410/411 and 510/511: append order now yields
+   composite UIDs `[20, 0, 3]`, distinguishing it from UID sorting.
    Both have statements=0 and no keys, writers, address collectors, readable
    addresses, or address outputs: their domains have no coordinates.
    Exact singleton **whole-tensor** inputs/outputs nevertheless survive in
@@ -80,15 +83,17 @@ match, execute, or count events of a composite.
 | Zero-writer source executor | complete; 1 local event |
 | Present empty upstream/downstream, source and checked local executors | complete; 0 events on each side |
 | Missing empty upstream input | tensor validation rejects external input; checked run is invalidInput |
-| Empty whole metadata | inputs/outputs UIDs [410]/[411], [510]/[511]; output axes retain zero extents and distinct axis identities |
+| Empty whole metadata | inputs/outputs UIDs [10]/[0], [0]/[1]; output axes retain zero extents and distinct axis identities |
 
 The actual registered module build and `check-snippet.sh` on its **exact
 bytes** pass. `port_fixtures.patch` is mechanically generated from the module
 diff, with its reverse applicability checked; it is not a handwritten plan
 patch. No `sorry`, new axiom, `native_decide`, or `unsafe` occurs.
+The follow-up refreshed this patch as a complete new-file payload and
+rechecked the changed fixture's exact bytes.
 
-**Not yet tested:** actual composite 6/7-event evidence, zero-writer composite,
-empty composite, composite source/contract matching or execution, and
-composite input/output preservation. These require the later genuine match
-constructor. No broad checker, ranks, phase theorem, model gluing, category,
-extra fixture shape, or mutation machinery was added.
+**Initial checkpoint:** composites were not tested here. The follow-up
+`port_composite_prototype.md` records actual assembled graph and source
+execution for these same three shapes; correspondence still requires the
+genuine match constructor. No broad checker, ranks, phase theorem, model
+gluing, category, extra fixture shape, or mutation machinery was added.
