@@ -1,0 +1,38 @@
+[
+  {
+    "label": "M1 producer nonzero candidate (model-counterexample proof)",
+    "task": "local-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean",
+    "old": "def producerStore : Store RationalReference.Carrier producerDeclarations := fun _ => 0",
+    "new": "def producerStore : Store RationalReference.Carrier producerDeclarations := fun _ => 1",
+    "targets": ["IndexedComponentModelLocalFixtures"],
+    "expect": ["IndexedComponentModelLocalFixtures.lean", "Tactic `decide` failed for proposition"]
+  },
+  {
+    "label": "M2 private audit value corrupted (model-counterexample proof)",
+    "task": "local-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean",
+    "old": "fun a => if a.1 == strictAudit then 1 / 2 else 0",
+    "new": "fun a => if a.1 == strictAudit then 1 else 0",
+    "targets": ["IndexedComponentModelLocalFixtures"],
+    "expect": ["IndexedComponentModelLocalFixtures.lean", "Tactic `decide` failed for proposition"]
+  },
+  {
+    "label": "M3 total neighbour claimed undefined (proof-elaboration)",
+    "task": "local-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean",
+    "old": "theorem strict_audit_undefined (ρ : Store RationalReference.Carrier consumerDeclarations) :\n    (consumer 0).outcome",
+    "new": "theorem strict_audit_undefined (ρ : Store RationalReference.Carrier consumerDeclarations) :\n    (consumer 4).outcome",
+    "targets": ["IndexedComponentModelLocalFixtures"],
+    "expect": ["IndexedComponentModelLocalFixtures.lean", "'change' tactic failed"]
+  },
+  {
+    "label": "M4 unwritten coordinate claimed arbitrary (equation proof-elaboration)",
+    "task": "local-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean",
+    "old": "ρ ⟨producerPre, ()⟩ = 0 := by",
+    "new": "ρ ⟨producerPre, ()⟩ = 7 := by",
+    "targets": ["IndexedComponentModelLocalFixtures"],
+    "expect": ["IndexedComponentModelLocalFixtures.lean", "Type mismatch: After simplification"]
+  }
+]

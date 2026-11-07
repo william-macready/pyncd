@@ -95,3 +95,17 @@ See [cyclic donor report](component_model_gluing_artifacts/cycles_prototype.md).
 The agent reports likely exceeding the 60-turn ceiling during proof debugging;
 this breach is surfaced, with token usage unmeasured. Future fixture work
 will be restricted to the already compiled donors and generic gluing APIs.
+
+## Local mutation observations
+
+The controller ran the unfiltered four-entry post-code manifest, restored
+every file byte-identically, copied the actual diagnostic strings into
+`expect`, checked the entire manifest without filters, and reran all four
+cycles. See [observations](component_model_gluing_artifacts/prototype_local_mutations.md).
+
+The nonzero producer candidate and corrupted private audit value are concrete
+model-counterexample proof kills (`decide` rejects the witness equations).
+Claiming the total neighbour undefined is a proof-elaboration kill at
+`change`; claiming a nonzero unwritten coordinate is an equation
+proof-elaboration kill at the generic collected equation. Neither latter
+cycle is represented as a runtime observation or a completed-model execution.
