@@ -11,11 +11,15 @@ packages, explicit `Boundary` values, real assembled graphs, and proofs of
 Module: `IndexedComponentCompositionCollisionFixtures`.
 Exports: `collisionProducer`, `collisionConsumer`, `collisionBoundary`,
 `collisionGraph`, `collision_close_ok`, `collisionWriterProvenance`,
-`collisionEvents`, `collisionValues`.
+`collisionEvents`, `collisionValues`, `collisionPreMetadata`,
+`collisionAssembledPreMetadata`, `collisionAdmittedSourceOrder`,
+`collisionAssembledAdmittedSourceOrder`.
 
-Donor: `IndexedComponentCompositionLocalFixtures.producerMatch`; change its
-second Pre contribution from -1 to +1, extend its declarations with one private
-scalar Audit carrying literal 7, and give that tensor old UID 2. The local
+Donor: `IndexedComponentCompositionLocalFixtures.producerMatch`; the refined
+collision pair replaces its two Pre statements with **one statement and three
+valuations**, admitting v=0 and v=2 with equal +1 values and rejecting v=1.
+Extend its declarations with one private scalar Audit carrying literal 7
+and one valuation, and give that tensor old UID 2. The local
 tensor type is `Fin 2` with UIDs 0/2, hence injective. Reuse the unchanged
 `IndexedComponentCompositionPortFixtures.consumerComponent 4`, whose private
 Audit also has old UID 2, tag 30, and capability 301. Only Pre is wired, using
@@ -25,17 +29,50 @@ Producer tensor validation enumeration is `[Pre, privateAudit]`; collector order
 is `[privateAudit, Pre]`. Pre collector capabilities are `[102,101]`; fragment
 positions are `[Pre10/101, Pre11/102, private30/301]`. The local schedule follows
 both collector and capability order changes, with its `priority` proof, rather
-than sorting IDs or concatenating writer positions.
+than sorting IDs or concatenating writer positions. Pre writer 10/101 is
+statement 0, valuation 0; writer 11/102 is statement 0, valuation 2.
+Capability order `[102,101]` therefore executes v2 before v0.
+The main scalar donor remains unchanged and continues to distinguish its two
+statement identities; no extra component pair was added.
 
 Discriminated interpretations:
 
 - Private same-ID tensors/tags/capabilities must remain distinct across sides;
   only the explicit boundary identifies Pre.
 - Two separately identified equal +1 occurrences must both contribute.
+- Valuation count 3 and guards `[true,false,true]` must survive source context
+  transport: dropping the third valuation or admitting the rejected middle
+  valuation is not equivalent. Admitted identity/order must remain v2 then v0,
+  not renumbered or sorted.
 - Tensor enumeration must not replace collector order; writer position must not
   replace capability order. Both disagreements are present in this one pair.
 
 Observed outcome: `"complete"`.
+Observed local **and assembled** Pre metadata `(statements, valuations, guards)`:
+
+```text
+(1,3,[true,false,true])
+```
+
+Observed local admitted source order
+`(tensor index, statement index, valuation index, tag, capability)`:
+
+```text
+[(1,0,0,30,301), (0,0,2,11,102), (0,0,0,10,101)]
+```
+
+Observed assembled upstream admitted source order
+`(local tensor index, statement index, valuation index)`:
+
+```text
+[(1,0,0), (0,0,2), (0,0,0)]
+```
+
+The first row is private Audit; both Pre rows retain statement 0 and their
+actual admitted valuation identities. The rejected v1 has no source occurrence
+or writer. These constructed metadata and ordered identities are checked by
+the same failing-on-difference observation check as the existing events.
+
 Writer provenance `(new tag, new capability, destination UID)`:
 
 ```text
@@ -119,6 +156,10 @@ Final producer cells in canonical layout order and consumer Out:
 
 Both real modules were checked with the checkout's `leanncd/scripts/lean-file.sh`,
 passing the absolute checkout `leanncd/` directory and each experiment path.
+After the guard/valuation refinement, both exact source byte sequences passed
+`check-snippet.sh`; the first collision snippet attempt lacked the
+`IndexedComponentCompositionPortFixtures` dependency during a concurrent
+targeted rebuild, and passed when retried after that successful build.
 The modules contain failing-on-difference `#eval` checks for the observed full
 events, provenance, terminal values, and mapped repeated read list; they are
 not merely printed examples. Local matches and assembled closure are checked
@@ -132,11 +173,16 @@ the full build, and subsequent general correspondence wiring once
 `compose_match` actually exists. No copied-computation or mutation tooling was
 created; mutation testing and correspondence remain explicitly deferred.
 
-The accompanying `advanced_fixtures_prototype.patch` is mechanically generated
-from the committed, checked source modules, excluding this receipt.
+The accompanying `advanced_fixtures_prototype.patch` is mechanically regenerated
+from the committed, checked source modules against the pre-fixture source base
+`d9eedd5d^`, excluding this receipt. Axis source bytes are unchanged by this
+refinement.
 
 Budget: receipt drafted at action turn 33; close-out uses 41 action turns,
 one above the 40-turn target but below the 60-turn hard cap.
+The bounded guard/valuation refinement uses **15 new action turns**, for
+**56 lifetime action turns**, within its 30-new-turn target and lifetime
+60-turn checkpoint.
 The supplied `token-report.py` returned
 `no transcript for session 166c28b7-d291-45be-9935-ac49e19535cb`, so cumulative
 and retained token counts are unavailable rather than fabricated. No known

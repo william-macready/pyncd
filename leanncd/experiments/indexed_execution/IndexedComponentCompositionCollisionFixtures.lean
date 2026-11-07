@@ -22,9 +22,9 @@ open IndexedComponentTransport
   input := fun _ => false
   output := fun t => t == 0
   output_defined := by intro _ _; rfl
-  statements := fun t => if t.val.val == 0 then 2 else 1
-  valuations := fun _ _ => 1
-  guard := fun _ _ _ => true
+  statements := fun _ => 1
+  valuations := fun t _ => if t.val.val == 0 then 3 else 1
+  guard := fun t _ v => if t.val.val == 0 then v.val != 1 else true
   destination := fun _ _ _ => ()
   body := fun t _ => if t.val.val == 0 then .lit 1 else .lit 7
 
@@ -35,13 +35,13 @@ def producerSchedule : Schedule producer where
   keys := [
     .occurrence ⟨1, rfl⟩ ⟨0, ⟨0, rfl⟩⟩,
     .publication ⟨1, rfl⟩ (),
-    .occurrence ⟨0, rfl⟩ ⟨1, ⟨0, rfl⟩⟩,
+    .occurrence ⟨0, rfl⟩ ⟨0, ⟨2, rfl⟩⟩,
     .occurrence ⟨0, rfl⟩ ⟨0, ⟨0, rfl⟩⟩,
     .publication ⟨0, rfl⟩ ()]
   keys_nodup := by
     simp [List.nodup_cons, Key.occurrence.injEq, Key.publication.injEq, producer]
     intro h
-    have he := congrArg (fun o : producer.Occurrence ⟨0, rfl⟩ => o.1.val) h
+    have he := congrArg (fun o : producer.Occurrence ⟨0, rfl⟩ => o.2.val.val) h
     exact Nat.noConfusion he
   keys_complete := by
     intro k
@@ -49,9 +49,8 @@ def producerSchedule : Schedule producer where
     | occurrence t o =>
       rcases t with ⟨t, ht⟩
       rcases o with ⟨s, ⟨v, hv⟩⟩
-      have hv' : v = 0 := Subsingleton.elim _ _
-      subst v
-      fin_cases t <;> fin_cases s <;> simp [producer]
+      fin_cases t <;> fin_cases s <;> fin_cases v <;>
+        first | exact False.elim (Bool.noConfusion hv) | simp [producer]
       all_goals first | exact Or.inl rfl | exact Or.inr rfl | rfl
     | publication t p =>
       rcases t with ⟨t, ht⟩
@@ -71,17 +70,13 @@ def producerGraph : Closed producerDeclarations :=
   ⟨producerContract, canonicalSteps producerContract producerFragment⟩
 
 def producerIndex (o : SourceOccurrence producer) : Fin 3 :=
-  if h : o.1.val.val = 0 then
-    ⟨o.2.1.val, by
-      have hs := o.2.1.isLt
-      change o.2.1.val < (if o.1.val.val == 0 then 2 else 1) at hs
-      simp [h] at hs
-      omega⟩
+  if o.1.val.val == 0 then
+    if o.2.2.val.val == 0 then 0 else 1
   else 2
 
 def producerOccurrence (i : Fin 3) : SourceOccurrence producer :=
   if i.val == 0 then ⟨⟨0, rfl⟩, ⟨0, ⟨0, rfl⟩⟩⟩
-  else if i.val == 1 then ⟨⟨0, rfl⟩, ⟨1, ⟨0, rfl⟩⟩⟩
+  else if i.val == 1 then ⟨⟨0, rfl⟩, ⟨0, ⟨2, rfl⟩⟩⟩
   else ⟨⟨1, rfl⟩, ⟨0, ⟨0, rfl⟩⟩⟩
 
 def producerEquiv : SourceOccurrence producer ≃ Fin producerFragment.writers.length where
@@ -89,9 +84,8 @@ def producerEquiv : SourceOccurrence producer ≃ Fin producerFragment.writers.l
   invFun := producerOccurrence
   left_inv := by
     rintro ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩⟩
-    have hv' : v = 0 := Subsingleton.elim _ _
-    subst v
-    fin_cases t <;> fin_cases s <;> rfl
+    fin_cases t <;> fin_cases s <;> fin_cases v <;>
+      first | exact False.elim (Bool.noConfusion hv) | rfl
   right_inv := by intro i; fin_cases i <;> rfl
 
 def producerMatch : SourceContractMatch producer producerSchedule
@@ -103,19 +97,16 @@ def producerMatch : SourceContractMatch producer producerSchedule
   sourceToWriter := producerEquiv
   writer_destination := by
     rintro ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩⟩
-    have hv' : v = 0 := Subsingleton.elim _ _
-    subst v
-    fin_cases t <;> fin_cases s <;> rfl
+    fin_cases t <;> fin_cases s <;> fin_cases v <;>
+      first | exact False.elim (Bool.noConfusion hv) | rfl
   writer_reads := by
     rintro ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩⟩
-    have hv' : v = 0 := Subsingleton.elim _ _
-    subst v
-    fin_cases t <;> fin_cases s <;> rfl
+    fin_cases t <;> fin_cases s <;> fin_cases v <;>
+      first | exact False.elim (Bool.noConfusion hv) | rfl
   eval_agrees := by
     rintro ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩⟩ store
-    have hv' : v = 0 := Subsingleton.elim _ _
-    subst v
-    fin_cases t <;> fin_cases s <;> rfl
+    fin_cases t <;> fin_cases s <;> fin_cases v <;>
+      first | exact False.elim (Bool.noConfusion hv) | rfl
   priority := rfl
 
 def collisionProducer : MatchedComponent producerDeclarations where
@@ -174,10 +165,42 @@ def collisionValues : Option (List (Option ℚ)) :=
     [s.available ⟨.inl 0, ()⟩, s.available ⟨.inr ⟨1, rfl⟩, ()⟩,
       s.available ⟨.inl 1, ()⟩, s.available ⟨.inr ⟨2, rfl⟩, ()⟩]
 
-#eval (collisionRun.outcome.kind, collisionWriterProvenance, collisionEvents, collisionValues)
+def collisionPreMetadata : Nat × Nat × List Bool :=
+  (producer.statements ⟨0, rfl⟩, producer.valuations ⟨0, rfl⟩ 0,
+    (List.finRange 3).map (producer.guard ⟨0, rfl⟩ 0))
+
+def collisionAssembledPreMetadata : Nat × Nat × List Bool :=
+  let P := program collisionProducer collisionConsumer collisionBoundary
+  let t := upstreamDefined collisionProducer collisionConsumer collisionBoundary ⟨0, rfl⟩
+  let s : Fin (P.statements t) := ⟨0, by decide⟩
+  (P.statements t, P.valuations t s, (List.finRange 3).map (P.guard t s))
+
+def collisionAdmittedSourceOrder : List (Nat × Nat × Nat × Nat × Nat) :=
+  producerSchedule.keys.filterMap fun k => match k with
+    | .occurrence t o => some
+      (t.val.val, o.1.val, o.2.val.val, (producerMatch.writer ⟨t, o⟩).tag,
+        (producerMatch.writer ⟨t, o⟩).capability)
+    | .publication _ _ => none
+
+def collisionAssembledAdmittedSourceOrder : List (Nat × Nat × Nat) :=
+  (schedule collisionProducer collisionConsumer collisionBoundary).keys.filterMap fun k =>
+    match k with
+    | .occurrence t o => match t.val with
+      | .inl a => some (a.val, o.1.val, o.2.val.val)
+      | .inr _ => none
+    | .publication _ _ => none
+
+#eval (collisionPreMetadata, collisionAssembledPreMetadata, collisionAdmittedSourceOrder,
+  collisionAssembledAdmittedSourceOrder,
+  collisionRun.outcome.kind, collisionWriterProvenance, collisionEvents, collisionValues)
 
 #eval IndexedComponentTransportTest.check "collision.graph-only"
   (collisionRun.outcome.kind == "complete" &&
+    collisionPreMetadata == (1, 3, [true, false, true]) &&
+    collisionAssembledPreMetadata == collisionPreMetadata &&
+    collisionAdmittedSourceOrder == [(1, 0, 0, 30, 301), (0, 0, 2, 11, 102),
+      (0, 0, 0, 10, 101)] &&
+    collisionAssembledAdmittedSourceOrder == [(1, 0, 0), (0, 0, 2), (0, 0, 0)] &&
     collisionWriterProvenance == [(20, 202, 0), (22, 204, 0), (60, 602, 4),
       (41, 403, 3), (61, 603, 5)] &&
     collisionEvents == [
