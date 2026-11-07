@@ -7,23 +7,27 @@ wiring. Construct the composite source, contract, fragment and schedule by
 transporting their static data, then construct its `SourceContractMatch`.
 Reuse the landed execution-correspondence theorem only afterward.
 
-The first profile is finite, coordinate-ranked computation over the existing
+The implemented static profile is finite computation over the existing
 exact-rational registry. It preserves all internal work, uses upstream-first
-priority, and introduces no copying computations. Neither St/Br nor a general
-category library is a prerequisite.
+priority, and introduces no copying computations. Coordinate-ranked phase
+execution remains a later theorem. Neither St/Br nor a general category
+library is a prerequisite.
 
-The overall component-composition interface remains a design. Its typed
-transport prerequisite is now implemented and proved in the nondefault
-experiment; see the [execution record](component_transport_execution_record.md).
-No composite match, ranked phase theorem or model-gluing theorem is claimed.
-Its starting points
+Typed transport and static sealed composition are implemented and proved in
+the nondefault experiment. `IndexedComponentComposition.compose` packages
+the composite; `compose_match` derives its genuine `SourceContractMatch`.
+See the [transport record](component_transport_execution_record.md) and
+[composition record](component_composition_record.md) for validation and
+remaining release gates. Ranked phase execution, model gluing and categorical
+laws remain design obligations. The starting points
 are the [categorical synthesis](categorical_tensor_logic_semantics.md),
 especially Section 9 and its explanatory Appendix A, the
 [proof record](categorical_tensor_logic_proof_record.md), and the
 [theorem-design brief](categorical_tensor_logic_theorem_brief.md).
 The authoritative existing match is
-[`SourceContractMatch`](../../leanncd/experiments/indexed_execution/IndexedCompositionMatch.lean);
-proposed names below are not existing Lean declarations.
+[`SourceContractMatch`](../../leanncd/experiments/indexed_execution/IndexedCompositionMatch.lean).
+The static constructor names below are implemented; later theorem names
+remain proposals, not existing Lean declarations.
 
 ## 1. A component owns a declaration universe
 
@@ -33,7 +37,8 @@ A **component** $C$ packages:
 - A reference program $P_C$, a complete ordered schedule $S_C$, a contract
   $K_C$, a writer fragment $F_C$, and its canonically closed graph $G_C$.
 - A supplied match $M_C$ between these five representations.
-- A coordinate-rank certificate $r_C$ for the initial ranked profile.
+- A coordinate-rank certificate $r_C$ for the later ranked profile, not required
+  by the implemented static component constructor.
 - Ordered, duplicate-free whole-tensor input and output interfaces.
 
 Here a **tensor UID** is its explicit identity, not its display name.
@@ -266,11 +271,13 @@ interface premises. Once this match exists, reuse their derivation in
 Likewise do not assume equal selected actions, traces, accumulated sums or
 intermediate states; those are downstream results.
 
-## 5. Proposed theorems and dependency order
+## 5. Static construction and later theorem dependencies
 
-**Static match construction.** The proposed `compose_match` takes two matched
-components, their exact boundary wiring, the restricted typed domain adapters,
-and disjoint fresh identity embeddings. It returns the composite data and
+**Static match construction.** The implemented `compose_match` takes two
+matched components and a `Boundary` supplying their exact bijective wiring
+and certified domain adapters. The constructor chooses and proves disjoint
+even/odd identity embeddings; callers do not allocate a namespace or supply
+composite acceptance. `compose` packages the constructed data, ports and
 
 ```math
 \operatorname{SourceContractMatch}
@@ -278,8 +285,8 @@ and disjoint fresh identity embeddings. It returns the composite data and
 ```
 
 Rank certificates are not needed for this static theorem. Its transport and
-closure lemmas are obligations to prove once, not new per-composite hypotheses
-equivalent to reconstructing a whole match.
+closure lemmas are proved generically, not retained as new per-composite
+hypotheses equivalent to reconstructing a whole match.
 
 **Ranked sealed execution.** With both component rank certificates and valid
 external inputs, the constructed execution runs all upstream work first.
@@ -478,9 +485,12 @@ In the first case, `Out` is published but there is no complete model and no
 successful component result. In the second, the internal audit is retained
 in the complete store. The existing
 [`suppliedMatch`](../../leanncd/experiments/indexed_execution/IndexedCompositionFixtureProof.lean)
-matches the whole fixture directly; the new acceptance target constructs
-this instance from the two local matches, without another hand-authored
-four-occurrence match. No boundary-copy event may appear.
+matches the whole fixture directly. The implemented
+`IndexedComponentCompositionCorrespondenceTest` applies the general
+correspondence theorem to the match constructed from two genuinely local
+components, without another hand-authored four-occurrence match. Its executable
+companion reobserves the six-event failure and seven-event completion,
+without a boundary-copy event or duplicate collector.
 
 ## 9. Discriminating examples and counterexamples
 
@@ -505,14 +515,16 @@ four-occurrence match. No boundary-copy event may appear.
 **Caller-supplied assumptions:** two genuine local component matches;
 finite decidable typed universes; the fixed rational registry and operations;
 exact whole-port coverage; explicit bijective boundary wiring and supported
-domain adapters; injective fresh identity embeddings; and rank certificates
-for the ranked execution/function corollaries. No totality assumption.
+domain adapters. Fresh identities are checked by the static constructor.
+Rank certificates are additional future premises for ranked execution/function
+corollaries, not static assumptions. No totality assumption.
 
-**Derived construction obligations:** local transport correctness, complete
+**Proved static construction facts:** local transport correctness, complete
 composite roles and metadata, closure acceptance, the occurrence bijection,
-ordered priority equality, all nine match fields, capability/fiber facts,
-composite ranking, phase behavior, model restriction/gluing and coherent
-associativity. None may be replaced by assumed execution agreement.
+ordered priority equality and all nine match fields. Existing capability/fiber
+results apply to the constructed match without additional assumptions.
+Composite ranking, phase behavior, model restriction/gluing and coherent
+associativity remain unproved. None is replaced by assumed execution agreement.
 
 **Recommendation over alternatives:**
 
@@ -532,9 +544,9 @@ associativity. None may be replaced by assumed execution agreement.
   substitutes for the explicit transport or match-construction obligations.
 
 There is no known semantic blocker for this restricted target. The substantive
-admitted-read/expression transport prerequisite is now proved. Remaining
-unproved work is component match construction and preservation of canonical
-closure/priority, followed by ranked phase execution and complete-model gluing.
+admitted-read/expression transport prerequisite and static component
+match/closure/priority construction are now proved. Remaining unproved work
+is ranked phase execution, complete-model gluing and categorical laws.
 Wider coordinate adapters, residual inputs, fan-out and open contribution
 ports remain out of scope. Whether to adjoin administrative wire identities
 is a packaging decision after associative core composition; requiring a

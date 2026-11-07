@@ -120,9 +120,11 @@ def readPre (c : Coord srcShape) : Expr RationalReference.Carrier
   .read 0 ⟨pointPolicy, fun _ => Coord.raw c, fun _ => .at c,
     fun _ => pointPolicy.inBounds c⟩
 
+def firstPoint : Coord srcShape := p
+
 def consumerBody : Body consumerDeclarations :=
-  .binary .add (readPre p)
-    (.binary .add (readPre q) (.binary .add (readPre p) (readPre q)))
+  .binary .add (readPre firstPoint)
+    (.binary .add (readPre q) (.binary .add (readPre firstPoint) (readPre q)))
 
 @[reducible] def consumer : Program RationalReference.Carrier
     consumerDeclarations RationalReference.registry where
@@ -175,7 +177,7 @@ def consumerContract : Contract consumerDeclarations :=
     [⟨1, ()⟩]⟩
 
 def consumerFragment : Fragment consumerDeclarations :=
-  ⟨[⟨210, 701, ⟨1, ()⟩, [⟨0, p⟩, ⟨0, q⟩, ⟨0, p⟩, ⟨0, q⟩], consumerBody⟩]⟩
+  ⟨[⟨210, 701, ⟨1, ()⟩, [⟨0, firstPoint⟩, ⟨0, q⟩, ⟨0, firstPoint⟩, ⟨0, q⟩], consumerBody⟩]⟩
 
 def consumerGraph : Closed consumerDeclarations :=
   ⟨consumerContract, canonicalSteps consumerContract consumerFragment⟩

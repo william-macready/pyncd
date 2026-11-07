@@ -12,6 +12,16 @@ consumer used for mutation observations. The explicit experiment entry point
 is `import IndexedComponentTransportEval`; see
 [component transport execution](../papers/semantics/component_transport_execution_record.md).
 
+Static sealed whole-tensor composition is implemented by
+[`IndexedComponentComposition`](experiments/indexed_execution/IndexedComponentComposition.lean).
+`compose` returns a matched component; `compose_match` derives all nine
+`SourceContractMatch` fields from two local matches and an explicit `Boundary`.
+Checked even/odd identities separate retained tensor UIDs, tags and
+capabilities. Import `IndexedComponentComposition` after building the
+nondefault `IndexedExecutionExperiment` target. No rank, runtime phase barrier,
+model gluing or categorical laws are claimed; see the
+[composition record](../papers/semantics/component_composition_record.md).
+
 Implementation slices (Wave C's C0/C1/C2…, and any other plan executed via
 subagent-driven-development) have two mechanized steps. Use them rather than
 redoing the setup by hand:
