@@ -1,0 +1,22 @@
+{
+  "integrated_base": "96edc76af64fe20de7f7a48137b8f7b9e82e68d5",
+  "merge_commit": "67f49129502b5b190f551067a268abebbd7d7a19",
+  "candidate_commit": "64a43b9f8d13e92bcba51600288751ae5571d768",
+  "branch": "agents/follow-directions-component-composition",
+  "merged_tree_matches_candidate": true,
+  "protected_primary_sha256": {
+    "/Users/williammacready/code/python/pyncd/papers/semantics/README.md": "467f94f6890675822e3972fc72d8d79ebdf3f661d48cdb7f5449606f4f568f25",
+    "/Users/williammacready/code/python/pyncd/papers/semantics/categorical_tensor_logic_semantics.md": "791bc8d986818601f319a032fbbba9fc9364fb17b7e916b5e4baafa5b185e54e"
+  },
+  "pushed": false,
+  "cleanup_pending": false,
+  "removed_worktrees": [
+    "/Users/williammacready/code/python/pyncd.worktrees/component-composition-replay",
+    "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-component-composition"
+  ],
+  "branch_removed": true,
+  "main_ahead_origin_at_merge": [
+    "0",
+    "39"
+  ]
+}
