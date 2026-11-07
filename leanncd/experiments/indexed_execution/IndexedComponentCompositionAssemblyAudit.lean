@@ -1,0 +1,10 @@
+import IndexedComponentCompositionAssemble
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedComponentComposition
+
+#print axioms IndexedComponentComposition.closureScope
+#print axioms IndexedComponentComposition.tensorOrder_length
+#print axioms IndexedComponentComposition.close_ok
+#print axioms IndexedComponentComposition.canonical_steps
+#print axioms IndexedComponentComposition.outputs_exact
