@@ -51,6 +51,50 @@ theorem writer_destination_upstream (o : SourceOccurrence A.program) :
   rw [A.matched.writer_destination o]
   rfl
 
+private theorem domain_coord_of_heq_id {x y : Shape} (d : Domain x y)
+    (h : x = y) (hid : d ≍ Domain.id x) (p : Coord x) :
+    d.coord p ≍ p := by
+  subst y
+  exact heq_of_eq (congrArg (fun e : Domain x x => e.coord p) (eq_of_heq hid))
+
+theorem downstream_defined_address (t : B.program.Defined)
+    (p : Coord (σB.signature t.val).axes) :
+    (downstream A B wire).address ⟨t.val, p⟩ =
+      ⟨(downstreamDefined A B wire t).val, p⟩ := by
+  have hdom : (downstream A B wire).domain t.val ≍
+      Domain.id (σB.signature t.val).axes := by
+    simp [downstream, downstreamTensor, t.property, declarations, cast_heq]
+  have haxes : (σB.signature t.val).axes =
+      ((declarations A B).signature ((downstream A B wire).tensor t.val)).axes := by
+    rw [show (downstream A B wire).tensor t.val = .inr t from
+      downstreamTensor_defined A B wire t]
+    rfl
+  apply Sigma.ext
+  · exact downstreamTensor_defined A B wire t
+  · exact domain_coord_of_heq_id ((downstream A B wire).domain t.val)
+      haxes hdom p
+
+theorem writer_destination_downstream (o : SourceOccurrence B.program) :
+    (fragment A B wire).writers[
+      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inr o))].destination =
+    ⟨((occurrenceEquiv A B wire).symm (.inr o)).1.val,
+      (program A B wire).destination
+        ((occurrenceEquiv A B wire).symm (.inr o)).1 o.2.1 o.2.2⟩ := by
+  rw [writer_downstream]
+  change (downstream A B wire).address
+      B.fragment.writers[B.matched.sourceToWriter o].destination = _
+  rw [B.matched.writer_destination o]
+  exact downstream_defined_address A B wire o.1
+    (B.program.destination o.1 o.2.1 o.2.2)
+
+theorem writer_destination (o : SourceOccurrence (program A B wire)) :
+    (fragment A B wire).writers[sourceToWriter A B wire o].destination =
+      ⟨o.1.val, (program A B wire).destination o.1 o.2.1 o.2.2⟩ := by
+  obtain ⟨x, rfl⟩ := (occurrenceEquiv A B wire).symm.surjective o
+  cases x with
+  | inl x => exact writer_destination_upstream A B wire x
+  | inr x => exact writer_destination_downstream A B wire x
+
 theorem writer_reads_upstream (o : SourceOccurrence A.program) :
     (fragment A B wire).writers[
       sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inl o))].reads =
