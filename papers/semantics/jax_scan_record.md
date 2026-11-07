@@ -272,13 +272,22 @@ so it cannot see an orientation error by itself).
     included) and does not name the reading statement, unlike every other `ScanCompileError` locator, which
     counts within one scan block, and the reference names the statement by its possibly private name; cancelling
     affine coefficients (`5 + l - l`) are pinned for the plan and not for the reference; a statement with both a
-    marker error and an out-of-range pin gets a different cause in each backend (same verdict); a LATER scan's
-    base or step body reading an earlier scan's state at an out-of-range pin still zero-pads in both (the rule
-    covers plain statements only); with history extent 0 every pinned read is now an error, and if parked
-    bug R1 makes a state's computed extent smaller than its declared one, a read in range of the declaration
-    errors; remaining test gaps: no fixture with the offending read in a later term or factor, none with
-    different extents on two advancing dimensions, none pinning that an out-of-range pin on a NON-state tensor is
-    still accepted.
+    marker error and an out-of-range pin gets a different cause in each backend (same verdict); with history
+    extent 0 every pinned read is now an error, and if parked bug R1 makes a state's computed extent smaller
+    than its declared one, a read in range of the declaration errors.
+  - CLOSED (2026-11-06, follow-up of that review): (a) a LATER scan's base or step block reading an EARLIER scan's
+    state at an out-of-range pinned literal is the same error in both backends (checked plan:
+    `checkScanBlockStatePins` in `prepareEvalPlan`'s `.scan` arm, which maps each block read through the
+    `.external` capture to the outer state slot and shares one loop with `checkPlainStatePins`, called before the
+    scan's own states are recorded; reference: `checkPlainStateReads` over `base ++ recur` before `evalScan`,
+    with only earlier scans' states in scope; the constructor keeps its `plain` name, and for a block read
+    `stmtIndex` is the `.scan`'s statement index and `termIndex`/`factorIndex` index within the offending block
+    assignment, base first); own-state reads are still governed by `stateReadNotCausal`; (b) the three test gaps:
+    the offending read in term 1, two advancing dimensions with different extents (3 and 4, checking the payload
+    extent, an in-range pin that is out of range of the other dimension, and the reference), and out-of-range pins
+    on an input tensor and on an earlier plain statement's destination staying accepted. Each of the four mutants
+    these were written for (term index fixed at 0; dimension 0's extent for every dimension, in the plan and in
+    the reference; a plain destination recorded as a state) fails a named guard.
   - The predicate exclusion is partial: an axiswise `where=` mask over a scan axis is not inspected, and a post
     statement may mention the iteration axis through an external tensor (`Y[q] := H[q,2] · c[l]`, or a left-hand
     side carrying `l`: `y[j,l] := C·h[k,2]`, previously `scanProjectionUnsupported`); these now get ordinary
