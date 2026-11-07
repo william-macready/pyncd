@@ -1,0 +1,12 @@
+import IndexedComponentModelWitnesses
+import IndexedComponentModelLocalTest
+import IndexedComponentModelGeometryTest
+import IndexedComponentModelCycleFixtures
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedComponentComposition
+#audit_axioms IndexedComponentModelLocalFixtures
+#audit_axioms IndexedComponentModelLocalTest
+#audit_axioms IndexedComponentModelGeometryFixtures
+#audit_axioms IndexedComponentModelGeometryTest
+#audit_axioms IndexedComponentModelCycleFixtures

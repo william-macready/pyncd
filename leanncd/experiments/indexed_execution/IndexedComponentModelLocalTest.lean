@@ -67,6 +67,33 @@ theorem strict_no_compatible :
       (scalarBoundary 0) producerInput) :=
   ⟨fun pair => strict_no_model _ pair.2.val pair.2.property⟩
 
+def strictCandidateStore :=
+  glueStore producerComponent (consumerComponent 0) producerStore totalStore
+
+theorem strict_visible_equation_satisfied :
+    strictCandidateStore ⟨.inr ⟨consumerOut, rfl⟩, ()⟩ = 0 ∧
+    (program producerComponent (consumerComponent 0) (scalarBoundary 0)).outcome
+      RationalReference.ops strictCandidateStore
+      (downstreamDefined producerComponent (consumerComponent 0) (scalarBoundary 0)
+        ⟨consumerOut, rfl⟩) ⟨(0 : Fin 1), ⟨(0 : Fin 1), rfl⟩⟩ =
+      some (strictCandidateStore ⟨.inr ⟨consumerOut, rfl⟩, ()⟩) := by
+  constructor
+  · rfl
+  · rw [outcome_downstream]
+    change (consumerComponent 0).program.outcome RationalReference.ops
+      (restrictDownstream producerComponent (consumerComponent 0) (scalarBoundary 0)
+        strictCandidateStore) ⟨consumerOut, rfl⟩
+          ⟨(0 : Fin 1), ⟨(0 : Fin 1), rfl⟩⟩ = some 0
+    unfold strictCandidateStore
+    have agree : (consumerComponent 0).program.InputAgreement
+        (boundaryInput producerComponent (consumerComponent 0) (scalarBoundary 0)
+          producerStore) totalStore := by
+      rw [boundary_zero_input]
+      exact total_model.choose_spec.1
+    rw [restrictDownstream_glueStore producerComponent (consumerComponent 0)
+      (scalarBoundary 0) producerStore totalStore agree]
+    exact strict_out_equation
+
 theorem strict_no_composite (ρ : Store K
     (declarations producerComponent (consumerComponent 0))) :
     ¬ (program producerComponent (consumerComponent 0) (scalarBoundary 0)).Models

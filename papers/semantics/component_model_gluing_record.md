@@ -29,8 +29,9 @@ before 60 turns / 250k retained context.
 
 ## Current status
 
-Authoring prototype in progress. No generic model theorem, fixture suite,
-verified plan, completed execution, or release is claimed.
+All prototype proofs and seven acceptance cases now compile and pass namespace
+audits. Verified plan/package execution and release gates remain pending;
+no completed release is claimed.
 
 ## Controller occurrence and collection prototype
 
@@ -195,3 +196,40 @@ Actual downstream restrictions are `(5, 2)` with output `14`; the
 restricted family is explicitly unequal to wrong flattening.
 The initial coordinate-test elaboration needed the named composite store
 unfolded before rewriting its restriction; corrected source passed.
+
+## Restricted denotation and cyclic composite checkpoint
+
+`IndexedComponentModelDenotation` proves `admInput_lift_iff`,
+`admInput_restrictions_iff`, and `denotation_successive`.
+Both components must satisfy explicit `AtMostOneModels` on every validated
+input. These hypotheses assert no existence. Domain equivalence covers
+every validated composite input; the value theorem transports the successive
+denotation on precisely that domain. See the
+[denotation report](component_model_gluing_artifacts/denotation_prototype.md).
+
+`IndexedComponentModelCycleTest` proves that only the upstream one-model
+extends in the reciprocal case, and the composite has exactly one complete
+store despite upstream non-admissibility. The uniqueness proof quantifies
+over every composite candidate, not only two listed stores.
+Both hidden upstream models extend to distinct composite stores with equal
+whole final outputs and witness round trips. See the
+[cyclic gluing report](component_model_gluing_artifacts/cycle_gluing_prototype.md).
+
+The controller built `IndexedComponentModelTest` (8,628 jobs), which imports
+the restricted denotation and all seven acceptance cases and audits:
+294 composition constants, 20 local donor constants, 17 local composite-test
+constants, 51 geometry donor constants, 16 geometry composite-test constants,
+127 cycle donor/auxiliary constants, and 24 cycle composite-test constants.
+All use only standard axioms. Exact source-copy checks passed for the final
+denotation, cycle tests, and local tests.
+
+The controller's [actual probes](component_model_gluing_artifacts/probes.lean)
+observed `true`, `true` for lifted/transported empty input presence,
+`(1, 1)` for the unique cyclic composite's private/output values, and
+`(0, 1, 1, 1)` for the two hidden private values and equal outputs.
+These are complete-store/body observations, not execution-completion claims.
+
+The visible strict `Out = 0` equation is now explicitly satisfied by a
+candidate composite store (`strict_visible_equation_satisfied`), while
+`strict_no_composite` still excludes every complete model because the
+private strict reciprocal is undefined.
