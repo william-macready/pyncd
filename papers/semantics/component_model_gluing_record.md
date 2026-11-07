@@ -109,3 +109,45 @@ Claiming the total neighbour undefined is a proof-elaboration kill at
 `change`; claiming a nonzero unwritten coordinate is an equation
 proof-elaboration kill at the generic collected equation. Neither latter
 cycle is represented as a runtime observation or a completed-model execution.
+
+## Patch execution preparation
+
+A second task-owned detached worktree,
+`pyncd.worktrees/component-model-gluing-replay`, is pinned to `2212263c`
+for clean-base execution of the eventual verified patches. The preparation
+helper verified a 100% Mathlib cache. Project build artifacts were then
+synced from the already refreshed task checkout and `LeanNCD` rebuilt
+successfully against the replay source. No pre-existing worktree was changed.
+
+Commit `183071e1` includes the geometry prototype source/report because its
+agent staged those files concurrently with the controller's mutation commit.
+The source was retained; no commit was amended and no history was rewritten.
+Subsequent prototype commits are controller-owned to avoid shared-index races.
+
+## Empty and axis donor checkpoint
+
+Geometry source in `183071e1` proves complete models for both existing
+empty components and both existing unequal-axis components. See
+[geometry report](component_model_gluing_artifacts/geometry_prototype.md).
+
+The actual nonconstant producer values are `[1, 2, 3, 4, 5, 6]`.
+The certified boundary yields selected downstream inputs `5, 2`;
+wrong flattening yields `3, 4`. Both repeated-read output sums equal
+`14`, but the input families are proved distinct. Output totals alone
+would therefore miss this adapter defect.
+
+Both donor modules built through the controller wrapper; namespace audits
+checked 123 cycle constants and 51 geometry constants with only standard
+axioms. The geometry agent estimates 20 interaction rounds, no cap breach;
+the estimate is not token-report measurement.
+
+The extended eight-entry post-code manifest has now run unfiltered with
+observed `expect` strings and restored byte-identical controls. See
+[donor mutation results](component_model_gluing_artifacts/prototype_donor_mutations.md).
+Empty external/downstream binding erasure and private-store collapse
+produce proof-elaboration kills. Wrong axis flattening is a coordinate
+counterexample proof kill: the explicit selected-input values fail even
+though the output total remains `14`.
+
+These donor proofs are not yet the required composite gluing/round-trip
+fixtures; those await the generic witness API.

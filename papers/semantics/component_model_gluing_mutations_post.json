@@ -34,5 +34,41 @@
     "new": "ρ ⟨producerPre, ()⟩ = 7 := by",
     "targets": ["IndexedComponentModelLocalFixtures"],
     "expect": ["IndexedComponentModelLocalFixtures.lean", "Type mismatch: After simplification"]
+  },
+  {
+    "label": "M5 empty external input erased (presence proof-elaboration)",
+    "task": "geometry-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean",
+    "old": "| .inl s => emptyValidatedInput.val s",
+    "new": "| .inl _ => none",
+    "targets": ["IndexedComponentModelGeometryFixtures"],
+    "expect": ["IndexedComponentModelGeometryFixtures.lean", "Not a definitional equality"]
+  },
+  {
+    "label": "M6 empty transported input erased (validity proof-elaboration)",
+    "task": "geometry-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean",
+    "old": "⟨fun t => if t == emptyConsumerPre then some transportedPre else none,",
+    "new": "⟨fun _ => none,",
+    "targets": ["IndexedComponentModelGeometryFixtures"],
+    "expect": ["IndexedComponentModelGeometryFixtures.lean", "Tactic `rfl` failed"]
+  },
+  {
+    "label": "M7 axis adapter replaced by flattening (coordinate counterexample proof)",
+    "task": "geometry-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean",
+    "old": "fun c => producerStore\n    ⟨(axisBoundary.matched ⟨0, rfl⟩).val, (axisBoundary.domain ⟨0, rfl⟩).coord c⟩",
+    "new": "fun c => producerStore\n    ⟨0, (canonicalLayout dstShape).enumerate\n      ((canonicalLayout srcShape).enumerate.symm c)⟩",
+    "targets": ["IndexedComponentModelGeometryFixtures"],
+    "expect": ["IndexedComponentModelGeometryFixtures.lean", "Tactic `decide` failed for proposition"]
+  },
+  {
+    "label": "M8 private whole-store identity collapsed (proof-elaboration)",
+    "task": "cycle-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelCycleFixtures.lean",
+    "old": "fun a => if a.1 == privateTensor then t else u",
+    "new": "fun _ => u",
+    "targets": ["IndexedComponentModelCycleFixtures"],
+    "expect": ["IndexedComponentModelCycleFixtures.lean", "Not a definitional equality"]
   }
 ]
