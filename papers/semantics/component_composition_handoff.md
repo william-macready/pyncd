@@ -1,5 +1,17 @@
 # Next-session brief: static sealed component composition
 
+## Current status
+
+The static constructor and its composed correspondence instances are
+implemented and verified by the completed static slice. The
+[verified execution plan](component_composition_plan.md) and
+[authoring/execution record](component_composition_record.md) supersede the
+original "no verified plan" starting state below. All eight replay tasks,
+controller release gates and both whole-branch review lenses have passed.
+The record's integration receipt reports the authorized local merge and
+task-only cleanup. The original launch brief is retained to document the
+required scope and exclusions.
+
 ## Launch instruction
 
 Read this brief, prepare and verify one implementation plan for the static

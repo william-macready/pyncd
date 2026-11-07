@@ -1,0 +1,57 @@
+{
+  "base": "16721af5",
+  "head": "06d4e470a0c30f00ab5347e13f7c358e55593c17",
+  "replay_tree": "1b39dd1b0c60f07188670e71e3b912c04e011e11",
+  "tasks": [
+    {
+      "id": "scope",
+      "hash": "pass",
+      "check": "pass",
+      "apply": "pass"
+    },
+    {
+      "id": "source-schedule",
+      "hash": "pass",
+      "check": "pass",
+      "apply": "pass"
+    },
+    {
+      "id": "closure",
+      "hash": "pass",
+      "check": "pass",
+      "apply": "pass"
+    },
+    {
+      "id": "match",
+      "hash": "pass",
+      "check": "pass",
+      "apply": "pass"
+    },
+    {
+      "id": "port-fixtures",
+      "hash": "pass",
+      "check": "pass",
+      "apply": "pass"
+    },
+    {
+      "id": "advanced-fixtures",
+      "hash": "pass",
+      "check": "pass",
+      "apply": "pass"
+    },
+    {
+      "id": "correspondence-controls",
+      "hash": "pass",
+      "check": "pass",
+      "apply": "pass"
+    },
+    {
+      "id": "discovery",
+      "hash": "pass",
+      "check": "pass",
+      "apply": "pass"
+    }
+  ],
+  "covered_files": 27,
+  "covered_diff": "empty"
+}

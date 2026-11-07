@@ -1,0 +1,89 @@
+{
+  "base": "16721af5",
+  "head": "06d4e470a0c30f00ab5347e13f7c358e55593c17",
+  "tasks": [
+    {
+      "id": "scope",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionScope.lean",
+        "leanncd/lakefile.toml"
+      ],
+      "patch": "papers/semantics/component_composition_artifacts/task_01_scope.patch",
+      "sha256": "ca7e3b372803ed1ff9c0232c3092fb8fefa684ccbb4c398cad6d354c68a8c74b"
+    },
+    {
+      "id": "source-schedule",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionProgram.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionSchedule.lean"
+      ],
+      "patch": "papers/semantics/component_composition_artifacts/task_02_source-schedule.patch",
+      "sha256": "c411eff37c5a090d0cec31349a93ffa0553017fcefa4efb73b5a63826c2c0716"
+    },
+    {
+      "id": "closure",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentClosureFacts.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionClosure.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionAssemble.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionAssemblyAudit.lean"
+      ],
+      "patch": "papers/semantics/component_composition_artifacts/task_03_closure.patch",
+      "sha256": "32e962c224a480f55f335970631119236c02b0344c5f37b24cf7b31b613aa485"
+    },
+    {
+      "id": "match",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionMatch.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionPriority.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentComposition.lean"
+      ],
+      "patch": "papers/semantics/component_composition_artifacts/task_04_match.patch",
+      "sha256": "f7c77859b11adf757534b595973a2502f7b3c39d349e037e3fab35b3db117410"
+    },
+    {
+      "id": "port-fixtures",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionLocalFixtures.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionPortFixtures.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionTest.lean"
+      ],
+      "patch": "papers/semantics/component_composition_artifacts/task_05_port-fixtures.patch",
+      "sha256": "319969c023e9dd607fcc01141301f236e9fd72a4715453f5e92e4b73a3bdfa60"
+    },
+    {
+      "id": "advanced-fixtures",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionCollisionFixtures.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionAxisFixtures.lean"
+      ],
+      "patch": "papers/semantics/component_composition_artifacts/task_06_advanced-fixtures.patch",
+      "sha256": "80a872a87dc50bec115f37d2dd620ec1904e3a643cb080b9a021584b0cf29611"
+    },
+    {
+      "id": "correspondence-controls",
+      "files": [
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionCorrespondenceTest.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionInterfaceTest.lean",
+        "leanncd/experiments/indexed_execution/IndexedComponentCompositionCounterexampleTest.lean",
+        "papers/semantics/component_composition_mutations_post.json",
+        "papers/semantics/component_composition_artifacts/foundation_audit.lean"
+      ],
+      "patch": "papers/semantics/component_composition_artifacts/task_07_correspondence-controls.patch",
+      "sha256": "962fb591c453426f6b6619be1e08df8583a25e43b75aeec6c4057432c658ca20"
+    },
+    {
+      "id": "discovery",
+      "files": [
+        "leanncd/AGENTS.md",
+        "papers/semantics/categorical_tensor_logic_component_interfaces.md",
+        "papers/semantics/component_composition_record.md",
+        "papers/semantics/component_composition_artifacts/authoring_verified_mutation_results.md",
+        "papers/semantics/component_composition_artifacts/authoring_axis_control_results.md",
+        "papers/semantics/component_composition_artifacts/authoring_mutation_results.md"
+      ],
+      "patch": "papers/semantics/component_composition_artifacts/task_08_discovery.patch",
+      "sha256": "9fc913130f00a619e53d1bbf792c8d4960298ea1049bab9186b185a6a21301e9"
+    }
+  ]
+}

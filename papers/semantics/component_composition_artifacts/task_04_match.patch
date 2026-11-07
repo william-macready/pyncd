@@ -1,0 +1,396 @@
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentComposition.lean b/leanncd/experiments/indexed_execution/IndexedComponentComposition.lean
+new file mode 100644
+index 00000000..751e1f33
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentComposition.lean
+@@ -0,0 +1,39 @@
++import IndexedComponentCompositionPriority
++
++namespace IndexedComponentComposition
++
++open LeanNCD.Semantics
++open IndexedOpenComposition
++
++variable {σA σB : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB) (wire : Boundary A B)
++
++def compose_match : SourceContractMatch (program A B wire) (schedule A B wire)
++    (contract A B wire) (fragment A B wire) (graph A B wire) where
++  close_ok := close_ok A B wire
++  input_roles := input_roles A B wire
++  tensor_order := tensor_order A B wire
++  outputs_exact := outputs_exact A B wire
++  sourceToWriter := sourceToWriter A B wire
++  writer_destination := writer_destination A B wire
++  writer_reads := writer_reads A B wire
++  eval_agrees := eval_agrees A B wire
++  priority := priority A B wire
++
++def compose : MatchedComponent (declarations A B) where
++  program := program A B wire
++  schedule := schedule A B wire
++  contract := contract A B wire
++  fragment := fragment A B wire
++  graph := graph A B wire
++  matched := compose_match A B wire
++  inputs := inputPorts A B
++  outputs := outputPorts A B
++  inputs_nodup := inputPorts_nodup A B
++  outputs_nodup := outputPorts_nodup A B
++  inputs_exact := inputPorts_exact A B wire
++  outputs_exact := outputPorts_exact A B wire
++
++end IndexedComponentComposition
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentCompositionMatch.lean b/leanncd/experiments/indexed_execution/IndexedComponentCompositionMatch.lean
+new file mode 100644
+index 00000000..4c80c967
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentCompositionMatch.lean
+@@ -0,0 +1,173 @@
++import IndexedComponentCompositionAssemble
++
++namespace IndexedComponentComposition
++
++open LeanNCD.Semantics
++open LeanNCD.Semantics.Program
++open IndexedComponentTransport
++open IndexedOpenComposition
++
++variable {σA σB : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB)
++variable (wire : Boundary A B)
++
++def sourceToWriter :
++    SourceOccurrence (program A B wire) ≃ Fin (fragment A B wire).writers.length :=
++  ((occurrenceEquiv A B wire).trans
++    ((A.matched.sourceToWriter.sumCongr B.matched.sourceToWriter).trans
++      finSumFinEquiv)).trans
++    (finCongr (assembled_writer_length (upstream A B) (downstream A B wire)
++      upstreamId downstreamId A.fragment B.fragment).symm)
++
++theorem writer_upstream (o : SourceOccurrence A.program) :
++    (fragment A B wire).writers[
++      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inl o))] =
++    mapWriter (upstream A B) upstreamId
++      A.fragment.writers[A.matched.sourceToWriter o] := by
++  exact assembled_writer_upstream (upstream A B) (downstream A B wire)
++    upstreamId downstreamId A.fragment B.fragment
++    (A.matched.sourceToWriter o).val (A.matched.sourceToWriter o).isLt
++
++theorem writer_downstream (o : SourceOccurrence B.program) :
++    (fragment A B wire).writers[
++      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inr o))] =
++    mapWriter (downstream A B wire) downstreamId
++      B.fragment.writers[B.matched.sourceToWriter o] := by
++  exact assembled_writer_downstream (upstream A B) (downstream A B wire)
++    upstreamId downstreamId A.fragment B.fragment
++    (B.matched.sourceToWriter o).val (B.matched.sourceToWriter o).isLt
++
++theorem writer_destination_upstream (o : SourceOccurrence A.program) :
++    (fragment A B wire).writers[
++      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inl o))].destination =
++    ⟨((occurrenceEquiv A B wire).symm (.inl o)).1.val,
++      (program A B wire).destination
++        ((occurrenceEquiv A B wire).symm (.inl o)).1 o.2.1 o.2.2⟩ := by
++  rw [writer_upstream]
++  change (upstream A B).address
++      A.fragment.writers[A.matched.sourceToWriter o].destination = _
++  rw [A.matched.writer_destination o]
++  rfl
++
++private theorem domain_coord_of_heq_id {x y : Shape} (d : Domain x y)
++    (h : x = y) (hid : d ≍ Domain.id x) (p : Coord x) :
++    d.coord p ≍ p := by
++  subst y
++  exact heq_of_eq (congrArg (fun e : Domain x x => e.coord p) (eq_of_heq hid))
++
++theorem downstream_defined_address (t : B.program.Defined)
++    (p : Coord (σB.signature t.val).axes) :
++    (downstream A B wire).address ⟨t.val, p⟩ =
++      ⟨(downstreamDefined A B wire t).val, p⟩ := by
++  have hdom : (downstream A B wire).domain t.val ≍
++      Domain.id (σB.signature t.val).axes := by
++    simp [downstream, downstreamTensor, t.property, declarations, cast_heq]
++  have haxes : (σB.signature t.val).axes =
++      ((declarations A B).signature ((downstream A B wire).tensor t.val)).axes := by
++    rw [show (downstream A B wire).tensor t.val = .inr t from
++      downstreamTensor_defined A B wire t]
++    rfl
++  apply Sigma.ext
++  · exact downstreamTensor_defined A B wire t
++  · exact domain_coord_of_heq_id ((downstream A B wire).domain t.val)
++      haxes hdom p
++
++theorem writer_destination_downstream (o : SourceOccurrence B.program) :
++    (fragment A B wire).writers[
++      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inr o))].destination =
++    ⟨((occurrenceEquiv A B wire).symm (.inr o)).1.val,
++      (program A B wire).destination
++        ((occurrenceEquiv A B wire).symm (.inr o)).1 o.2.1 o.2.2⟩ := by
++  rw [writer_downstream]
++  change (downstream A B wire).address
++      B.fragment.writers[B.matched.sourceToWriter o].destination = _
++  rw [B.matched.writer_destination o]
++  exact downstream_defined_address A B wire o.1
++    (B.program.destination o.1 o.2.1 o.2.2)
++
++theorem writer_destination (o : SourceOccurrence (program A B wire)) :
++    (fragment A B wire).writers[sourceToWriter A B wire o].destination =
++      ⟨o.1.val, (program A B wire).destination o.1 o.2.1 o.2.2⟩ := by
++  obtain ⟨x, rfl⟩ := (occurrenceEquiv A B wire).symm.surjective o
++  cases x with
++  | inl x => exact writer_destination_upstream A B wire x
++  | inr x => exact writer_destination_downstream A B wire x
++
++theorem writer_reads_upstream (o : SourceOccurrence A.program) :
++    (fragment A B wire).writers[
++      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inl o))].reads =
++    footprint ((program A B wire).body
++      ((occurrenceEquiv A B wire).symm (.inl o)).1 o.2.1) o.2.2 := by
++  rw [writer_upstream]
++  change (A.fragment.writers[A.matched.sourceToWriter o].reads).map
++      (upstream A B).address =
++    footprint ((program A B wire).body (upstreamDefined A B wire o.1) o.2.1) o.2.2
++  exact (congrArg (List.map (upstream A B).address)
++    (A.matched.writer_reads o)).trans
++      (upstream_footprint A B wire o.1 o.2.1 o.2.2).symm
++
++theorem writer_reads_downstream (o : SourceOccurrence B.program) :
++    (fragment A B wire).writers[
++      sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inr o))].reads =
++    footprint ((program A B wire).body
++      ((occurrenceEquiv A B wire).symm (.inr o)).1 o.2.1) o.2.2 := by
++  rw [writer_downstream]
++  change (B.fragment.writers[B.matched.sourceToWriter o].reads).map
++      (downstream A B wire).address =
++    footprint ((program A B wire).body (downstreamDefined A B wire o.1) o.2.1) o.2.2
++  exact (congrArg (List.map (downstream A B wire).address)
++    (B.matched.writer_reads o)).trans
++      (downstream_footprint A B wire o.1 o.2.1 o.2.2).symm
++
++theorem eval_agrees_upstream (o : SourceOccurrence A.program)
++    (store : PartialStore K (declarations A B)) :
++    evalReady RationalReference.ops store
++      (fragment A B wire).writers[
++        sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inl o))].body () =
++    evalReady RationalReference.ops store
++      ((program A B wire).body
++        ((occurrenceEquiv A B wire).symm (.inl o)).1 o.2.1) o.2.2 := by
++  rw [writer_upstream]
++  exact (evalReady_transport (upstream A B) store
++      A.fragment.writers[A.matched.sourceToWriter o].body id ()).trans
++    ((A.matched.eval_agrees o ((upstream A B).pull store)).trans
++      (evalReady_transport (upstream A B) store
++        (A.program.body o.1 o.2.1) id o.2.2).symm)
++
++theorem eval_agrees_downstream (o : SourceOccurrence B.program)
++    (store : PartialStore K (declarations A B)) :
++    evalReady RationalReference.ops store
++      (fragment A B wire).writers[
++        sourceToWriter A B wire ((occurrenceEquiv A B wire).symm (.inr o))].body () =
++    evalReady RationalReference.ops store
++      ((program A B wire).body
++        ((occurrenceEquiv A B wire).symm (.inr o)).1 o.2.1) o.2.2 := by
++  rw [writer_downstream]
++  exact (evalReady_transport (downstream A B wire) store
++      B.fragment.writers[B.matched.sourceToWriter o].body id ()).trans
++    ((B.matched.eval_agrees o ((downstream A B wire).pull store)).trans
++      (evalReady_transport (downstream A B wire) store
++        (B.program.body o.1 o.2.1) id o.2.2).symm)
++
++theorem writer_reads (o : SourceOccurrence (program A B wire)) :
++    (fragment A B wire).writers[sourceToWriter A B wire o].reads =
++      footprint ((program A B wire).body o.1 o.2.1) o.2.2 := by
++  obtain ⟨x, rfl⟩ := (occurrenceEquiv A B wire).symm.surjective o
++  cases x with
++  | inl x => exact writer_reads_upstream A B wire x
++  | inr x => exact writer_reads_downstream A B wire x
++
++theorem eval_agrees (o : SourceOccurrence (program A B wire))
++    (store : PartialStore K (declarations A B)) :
++    evalReady RationalReference.ops store
++      (fragment A B wire).writers[sourceToWriter A B wire o].body () =
++    evalReady RationalReference.ops store
++      ((program A B wire).body o.1 o.2.1) o.2.2 := by
++  obtain ⟨x, rfl⟩ := (occurrenceEquiv A B wire).symm.surjective o
++  cases x with
++  | inl x => exact eval_agrees_upstream A B wire x store
++  | inr x => exact eval_agrees_downstream A B wire x store
++
++end IndexedComponentComposition
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentCompositionPriority.lean b/leanncd/experiments/indexed_execution/IndexedComponentCompositionPriority.lean
+new file mode 100644
+index 00000000..69cbad4b
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentCompositionPriority.lean
+@@ -0,0 +1,166 @@
++import IndexedComponentCompositionMatch
++
++namespace IndexedComponentComposition
++
++open LeanNCD.Semantics
++open LeanNCD.Semantics.Program
++open LeanNCD.Semantics.Program.Executor
++open IndexedComponentTransport
++open IndexedOpenComposition
++
++variable {σA σB : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB)
++variable (wire : Boundary A B)
++
++private theorem find_transported_collector_row {α β : Declarations Unit}
++    [DecidableEq (Address α)] [DecidableEq (Address β)]
++    (f : Embedding α β) (rename : Nat → Nat)
++    (rows : List (Address α × List Nat)) (a : Address α) :
++    (rows.map (mapRow f rename)).find?
++        (fun row => decide (row.1 = f.address a)) =
++      (rows.find? (fun row => decide (row.1 = a))).map
++        (mapRow f rename) := by
++  induction rows with
++  | nil => rfl
++  | cons row rows ih =>
++    by_cases h : row.1 = a
++    · simp [List.find?, mapRow, h]
++    · have h' : f.address row.1 ≠ f.address a :=
++        fun eq => h (f.address_injective eq)
++      simp [List.find?, mapRow, h, h', ih]
++
++private theorem find_outside_collector_row {α β : Declarations Unit}
++    [DecidableEq (Address β)] (f : Embedding α β) (rename : Nat → Nat)
++    (rows : List (Address α × List Nat)) (z : Address β)
++    (h : ∀ row ∈ rows, f.address row.1 ≠ z) :
++    (rows.map (mapRow f rename)).find?
++      (fun row => decide (row.1 = z)) = none := by
++  induction rows with
++  | nil => rfl
++  | cons row rows ih =>
++    simp [mapRow, h row (by simp), ih (by
++      intro r hr
++      exact h r (by simp [hr]))]
++
++theorem collectorCapabilities_upstream
++    (a : Address σA) (ha : A.contract.input a.1 = false) :
++    collectorCapabilities (contract A B wire) ((upstream A B).address a) =
++      (collectorCapabilities A.contract a).map upstreamId := by
++  letI := Program.Executor.addressEq (σ := σA)
++  letI := Program.Executor.addressEq (σ := declarations A B)
++  have hbFacts := ClosureFacts.of_close B.matched.close_ok
++  have hnone :
++      (B.contract.collectors.map
++        (mapRow (downstream A B wire) downstreamId)).find?
++        (fun row => decide (row.1 = (upstream A B).address a)) = none := by
++    apply find_outside_collector_row (downstream A B wire) downstreamId
++    intro row hr heq
++    exact (closureScope A B wire).defined_disjoint a row.1 ha
++      (hbFacts.collectors_defined row hr) heq.symm
++  change (((A.contract.collectors.map (mapRow (upstream A B) upstreamId) ++
++      B.contract.collectors.map (mapRow (downstream A B wire) downstreamId)).find?
++      (fun row => decide (row.1 = (upstream A B).address a))).map Prod.snd).getD [] =
++    (collectorCapabilities A.contract a).map upstreamId
++  rw [List.find?_append, hnone, Option.or_none,
++    find_transported_collector_row]
++  unfold collectorCapabilities
++  cases A.contract.collectors.find? (fun row => decide (row.1 = a)) <;>
++    simp [mapRow]
++
++theorem collectorCapabilities_downstream
++    (b : Address σB) (hb : B.contract.input b.1 = false) :
++    collectorCapabilities (contract A B wire)
++        ((downstream A B wire).address b) =
++      (collectorCapabilities B.contract b).map downstreamId := by
++  letI := Program.Executor.addressEq (σ := σB)
++  letI := Program.Executor.addressEq (σ := declarations A B)
++  have haFacts := ClosureFacts.of_close A.matched.close_ok
++  have hnone :
++      (A.contract.collectors.map (mapRow (upstream A B) upstreamId)).find?
++        (fun row => decide (row.1 = (downstream A B wire).address b)) = none := by
++    apply find_outside_collector_row (upstream A B) upstreamId
++    intro row hr heq
++    exact (closureScope A B wire).defined_disjoint row.1 b
++      (haFacts.collectors_defined row hr) hb heq
++  change (((A.contract.collectors.map (mapRow (upstream A B) upstreamId) ++
++      B.contract.collectors.map (mapRow (downstream A B wire) downstreamId)).find?
++      (fun row => decide (row.1 = (downstream A B wire).address b))).map Prod.snd).getD [] =
++    (collectorCapabilities B.contract b).map downstreamId
++  rw [List.find?_append, hnone, Option.none_or,
++    find_transported_collector_row]
++  unfold collectorCapabilities
++  cases B.contract.collectors.find? (fun row => decide (row.1 = b)) <;>
++    simp [mapRow]
++
++private theorem keyStep_upstream (k : Key A.program) :
++    keyStep (program A B wire) (contract A B wire) (fragment A B wire)
++        (sourceToWriter A B wire) ((keyEquiv A B wire).symm (.inl k)) =
++      mapStep (upstream A B) upstreamId
++        (keyStep A.program A.contract A.fragment A.matched.sourceToWriter k) := by
++  cases k with
++  | occurrence t o =>
++    change Step.write ((fragment A B wire).writers[
++        sourceToWriter A B wire
++          ((occurrenceEquiv A B wire).symm (.inl ⟨t, o⟩))]) =
++      Step.write (mapWriter (upstream A B) upstreamId
++        A.fragment.writers[A.matched.sourceToWriter ⟨t, o⟩])
++    rw [writer_upstream]
++  | publication t p =>
++    have ht : A.contract.input t.val = false := by
++      rw [A.matched.input_roles]
++      exact t.property
++    change Step.collect ((upstream A B).address ⟨t.val, p⟩)
++        (collectorCapabilities (contract A B wire)
++          ((upstream A B).address ⟨t.val, p⟩)) =
++      Step.collect ((upstream A B).address ⟨t.val, p⟩)
++        ((collectorCapabilities A.contract ⟨t.val, p⟩).map upstreamId)
++    rw [collectorCapabilities_upstream A B wire ⟨t.val, p⟩ ht]
++
++private theorem keyStep_downstream (k : Key B.program) :
++    keyStep (program A B wire) (contract A B wire) (fragment A B wire)
++        (sourceToWriter A B wire) ((keyEquiv A B wire).symm (.inr k)) =
++      mapStep (downstream A B wire) downstreamId
++        (keyStep B.program B.contract B.fragment B.matched.sourceToWriter k) := by
++  cases k with
++  | occurrence t o =>
++    change Step.write ((fragment A B wire).writers[
++        sourceToWriter A B wire
++          ((occurrenceEquiv A B wire).symm (.inr ⟨t, o⟩))]) =
++      Step.write (mapWriter (downstream A B wire) downstreamId
++        B.fragment.writers[B.matched.sourceToWriter ⟨t, o⟩])
++    rw [writer_downstream]
++  | publication t p =>
++    have ht : B.contract.input t.val = false := by
++      rw [B.matched.input_roles]
++      exact t.property
++    change Step.collect ⟨(downstreamDefined A B wire t).val, p⟩
++        (collectorCapabilities (contract A B wire)
++          ⟨(downstreamDefined A B wire t).val, p⟩) =
++      Step.collect ((downstream A B wire).address ⟨t.val, p⟩)
++        ((collectorCapabilities B.contract ⟨t.val, p⟩).map downstreamId)
++    rw [← downstream_defined_address A B wire t p,
++      collectorCapabilities_downstream A B wire ⟨t.val, p⟩ ht]
++
++theorem priority :
++    (schedule A B wire).keys.map
++        (keyStep (program A B wire) (contract A B wire) (fragment A B wire)
++          (sourceToWriter A B wire)) =
++      (graph A B wire).steps := by
++  change (keyOrder A B wire).map
++      (keyStep (program A B wire) (contract A B wire) (fragment A B wire)
++        (sourceToWriter A B wire)) = _
++  rw [keyOrder, List.map_append, List.map_map, List.map_map]
++  simp only [Function.comp_def, keyStep_upstream, keyStep_downstream]
++  have hA := A.matched.priority.trans
++    (close_success_canonical A.matched.close_ok).2
++  have hB := B.matched.priority.trans
++    (close_success_canonical B.matched.close_ok).2
++  apply Eq.trans ?_ (graph_steps A B wire).symm
++  simpa only [List.map_map, Function.comp_def] using
++    congrArg₂ List.append
++      (congrArg (List.map (mapStep (upstream A B) upstreamId)) hA)
++      (congrArg (List.map (mapStep (downstream A B wire) downstreamId)) hB)
++
++end IndexedComponentComposition
