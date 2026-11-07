@@ -1272,8 +1272,9 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
   -- the state's advancing axes (`Zf[q, m] := H[q, m, 2]`) consumes the finished, materialized
   -- history, not a per-step value: it is emitted as `.plain` AFTER the scan nodes rather than
   -- folded into the recurrence body (where every pinned read is non-causal). A name `n` is post iff
-  -- (1) each of its statements is non-iter, is not itself a scan state, reads every scan state
-  -- pinned, and has no Iverson predicate over a scan axis; (2) every OTHER scan-dependent name it
+  -- (1) each of its statements is non-iter (so a scan state's own name, whose recurrence statement
+  -- carries an iteration slot, never qualifies), reads every scan state pinned, and has no Iverson
+  -- predicate over a scan axis; (2) every OTHER scan-dependent name it
   -- reads is post too (chains), so it reads no per-step intermediate; and (3) no non-post
   -- scan-dependent statement (a state's base/step, or an intermediate that stays in a body) reads
   -- it — such a candidate is demoted to the ordinary body path, which keeps today's loud
@@ -1284,7 +1285,7 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
   let iterUids : List UID := iterStmts.flatMap (fun s => s.iterInfo.map (·.axis.uid))
   let isScanDep : String → Bool := fun n => !(dep.getD n []).isEmpty
   let postCand : Stmt → Bool := fun s =>
-    s.iterInfo.isEmpty && (advOf s.lhsName).isNone &&
+    s.iterInfo.isEmpty &&
     s.readFactors.all (fun (nm, idxs) => match advOf nm with
       | some adv => readPinsAdvancing adv idxs
       | none     => true) &&

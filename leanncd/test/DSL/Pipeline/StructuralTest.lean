@@ -373,12 +373,15 @@ private def finalizedOf (p : TLProgram) : FreshM ScanProgram :=
     checkScatterNonlin >=> lowerArith >=> finalizeScans) p
 
 /-- One token per outer node, in list order: `plain N`, or `scan base=[..] body=[..]` by LHS name. -/
+private def renderLayout (sp : ScanProgram) : List String :=
+  sp.stmts.map fun
+    | .plain s => s!"plain {s.lhsName}"
+    | .scan _ _ b r _ => s!"scan base={b.map Stmt.lhsName} body={r.map Stmt.lhsName}"
+    | .scanPre nm _ _ => s!"pre {nm}"
+
 private def layoutOf (p : TLProgram) : Except CompileError (List String) :=
   match (finalizedOf p).run 0 with
-  | .ok sp _ => .ok (sp.stmts.map fun
-      | .plain s => s!"plain {s.lhsName}"
-      | .scan _ _ b r _ => s!"scan base={b.map Stmt.lhsName} body={r.map Stmt.lhsName}"
-      | .scanPre nm _ _ => s!"pre {nm}")
+  | .ok sp _ => .ok (renderLayout sp)
   | .error e _ => .error e
 
 private def postPin : TLProgram := tlprog!{ iter l = 3
@@ -435,6 +438,83 @@ private def postReadOut : TLProgram := tlprog!{ iter l = 3
 #guard layoutOf postDemoted == .ok ["scan base=[H] body=[Skip, H]"]
 -- A per-step read-out whose OWN LHS carries the scan axis is still rejected, not reclassified.
 #guard layoutOf postReadOut == .error (.scanProjectionUnsupported "y")
+
+private def postIverRej : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  Zi[j]      := S[j, 2] · [l ≤ 1] }
+
+private def postIverOk : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  Zi[j]      := S[j, 2] · [j ≤ 1] }
+
+private def postBaseRej : TLProgram := tlprog!{ iter l = 3
+  G[j, 0]    := X[j]
+  G[j, l +1] := G[j, l]
+  Pc[j]      := G[j, 2]
+  H[j, 0]    := Pc[j]
+  H[j, l +1] := H[j, l] }
+
+private def postBaseOk : TLProgram := tlprog!{ iter l = 3
+  G[j, 0]    := X[j]
+  G[j, l +1] := G[j, l]
+  Pc[j]      := G[j, 2]
+  H[j, 0]    := X[j]
+  H[j, l +1] := H[j, l] }
+
+private def postTwoRej : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  Pc[j]      := S[j, 2]
+  H[j, 0]    := X[j]
+  H[j, m +1] := Pc[j] }
+
+private def postTwoOk : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  Pc[j]      := S[j, 2]
+  H[j, 0]    := X[j]
+  H[j, m +1] := H[j, m] }
+
+-- Each clause of the post-candidate test is decided ALONE by a reject fixture (every other conjunct and
+-- filter holds, only that clause is violated) and its accept neighbour (the clause satisfied).
+-- Iverson clause: a predicate over a scan iteration axis (`l`) keeps `Zi` in the body; the same
+-- statement with the predicate over an ordinary axis (`j`) is post.
+#guard layoutOf postIverRej == .ok ["scan base=[S] body=[S, Zi]"]
+#guard layoutOf postIverOk == .ok ["scan base=[S] body=[S]", "plain Zi"]
+-- Demotion by a BASE case: `H`'s base reads `Pc` (which only reads `G` pinned), so `Pc` is pulled into
+-- the body; without that base read, `Pc` is post.
+#guard layoutOf postBaseRej == .ok ["scan base=[G, H] body=[G, Pc, H]"]
+#guard layoutOf postBaseOk == .ok ["scan base=[G, H] body=[G, H]", "plain Pc"]
+-- Demotion across TWO scans: the recurrence of the `m`-scan reads `Pc`, a candidate of the `l`-scan, so
+-- `Pc` is pulled into the `l`-scan body; when the `m`-scan does not read it, `Pc` is post.
+#guard layoutOf postTwoRej == .ok ["scan base=[S] body=[S, Pc]", "scan base=[H] body=[H]"]
+#guard layoutOf postTwoOk == .ok ["scan base=[S] body=[S]", "scan base=[H] body=[H]", "plain Pc"]
+
+private def lowered (nonIter : String) : LoweredProgram :=
+  let l : AxisSpec := { name := "l", uid := 9, kind := .nat }
+  let j : AxisSpec := { name := "j", uid := 1, kind := .real }
+  let rd (nm : String) (ix : List IdxExpr) : RHSExpr :=
+    { body := { terms := [ { factors := [ .read nm ix ] } ] }, nonlin := .identity }
+  { decls := [], env := {}, extNames := ∅, stmts := [
+      .assign "S" [ .free j, .iterAt l 0 ] (rd "X" [ .axis j ]),
+      .assign "S" [ .free j, .iterNext l ] (rd "S" [ .axis j, .axis l ]),
+      .assign nonIter [ .free j ] (rd "S" [ .axis j, .const 2 ]) ] }
+
+private def layoutOfLowered (lp : LoweredProgram) : Except CompileError (List String) :=
+  match (finalizeScans lp).run 0 with
+  | .ok sp _ => .ok (renderLayout sp)
+  | .error e _ => .error e
+
+-- State-name clause: a non-iteration statement that WRITES a scan state's own name while reading it
+-- pinned. This shape cannot come from `tlprog!` (`S[j] := S[j, 2]` is already a `rankMismatch` in an
+-- earlier phase), so the pin is at the `finalizeScans` level on a hand-built `LoweredProgram`. The
+-- candidate stays in the body (second `S` below); under another name it is post.
+#guard layoutOfLowered (lowered "S") == .ok ["scan base=[S] body=[S, S]"]
+#guard layoutOfLowered (lowered "Zf") == .ok ["scan base=[S] body=[S]", "plain Zf"]
 -- checkReadRanks: declared tensor read with matching rank passes through.
 run_cmd do
   let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real }
