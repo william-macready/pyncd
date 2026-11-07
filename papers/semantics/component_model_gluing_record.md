@@ -67,3 +67,31 @@ experiment. It proves `outcome_upstream`, `outcome_downstream`,
 Operational phase/projection, rank stitching, runtime traces, categorical
 associativity/identities, wider interfaces, and previous-slice coverage
 repairs are excluded.
+
+## Controller local complete-model donors
+
+`IndexedComponentModelLocalFixtures` reuses `producer`, `consumer`,
+and `zeroProducer` without modifying their source programs.
+
+- Explicit `producer_model` retains the complete `Pre = 0` store.
+- Explicit `total_model` retains `Pre = 0`, `Out = 0`, and private
+  `Audit = 1/2`, including its actual occurrence-definedness proof.
+- `strict_audit_undefined` and `strict_no_model` hold for every candidate
+  consumer store at `other = 0`, independently of the satisfiable
+  `strict_out_equation`.
+- `zero_producer_forces_zero` constrains the unwritten scalar in every
+  model; it is not an arbitrary boundary assignment.
+- Exact observed store tuple: `(0, 0, 0, 1 / 2)`.
+- Source-copy snippet, targeted Lake build (2,986 jobs), and namespace
+  audit passed. All 20 fixture constants use only standard axioms.
+- Concrete rational proofs use kernel `decide +kernel`, not
+  `native_decide`. Initial normalizer/decision elaboration failures were
+  corrected and are not mutation evidence.
+
+## Cyclic donor checkpoint
+
+Prototype `01e0082d` supplies two explicitly matched local component pairs.
+See [cyclic donor report](component_model_gluing_artifacts/cycles_prototype.md).
+The agent reports likely exceeding the 60-turn ceiling during proof debugging;
+this breach is surfaced, with token usage unmeasured. Future fixture work
+will be restricted to the already compiled donors and generic gluing APIs.
