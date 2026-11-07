@@ -333,8 +333,9 @@ Dependency outline:
    [`default_run_correspondence`](../../leanncd/experiments/indexed_execution/IndexedCompositionValidated.lean)
    to obtain outcomes, mapped events and related intermediate states for
    the composite, on every raw composite binding.
-5. Stitch ranks and prove the ranked phase/projection result; separately
-   prove complete-model restriction/gluing below.
+5. Stitch ranks and prove the ranked phase/projection result; this remains
+   separate from the rank-independent complete-model restriction/gluing
+   theorem proved below.
 
 The composite default graph budget is its total writer/publication step count
 plus one, not the sum of the two standalone default budgets. Reuse the landed
@@ -364,7 +365,7 @@ B_b(\rho_A)(i)(p)=\rho_A(b(i))(e_i(p)).
 Here $i$ ranges over downstream input tensors and $p$ over their coordinates.
 At tensor-binding level, each such input is present, even when its coordinate
 domain is empty; noninput bindings are absent.
-The proposed restriction/gluing theorem is the bijection
+The proved restriction/gluing theorem is the bijection
 
 ```math
 \mathcal M_{BA}(\eta)
@@ -381,23 +382,35 @@ consistency on their intersection. Interpretation transport preserves every
 body's definedness; occurrence bijections and finite-sum transport preserve
 all collected equations, including zero-writer fibers.
 Upstream internal witnesses are retained, not existentially hidden before
-testing uniqueness. This model theorem does not itself need ranking.
+testing uniqueness. `IndexedComponentComposition.witnessesEquiv` in
+[`IndexedComponentModelWitnesses`](../../leanncd/experiments/indexed_execution/IndexedComponentModelWitnesses.lean)
+constructs this dependent whole-store bijection and its explicit inverses.
+`models_restrictInput_iff` handles every validated composite input.
+This model theorem needs no ranking, execution completion, model existence,
+or component uniqueness.
 
 Ranking gives **at most one model**, not guaranteed existence: ranked
 complete-or-failed execution and existing whole-store uniqueness/failure
 results establish the distinction. Let $f_C$ be the partial input-output
 function defined exactly when $\mathcal M_C(\eta)$ has one member.
-For this fragment the witness bijection yields
-$f_{BA}=f_B\circ B_b\circ f_A$, where $B_b$ on an output environment is the
-same boundary reindexing. There is no successful output when private work
-is undefined.
+Under explicit at-most-one-complete-model assumptions for both components,
+[`IndexedComponentModelDenotation`](../../leanncd/experiments/indexed_execution/IndexedComponentModelDenotation.lean)
+proves the admissibility-domain correspondence (`admInput_restrictions_iff`)
+and successive values (`denotation_successive`), giving
+$f_{BA}=f_B\circ B_b\circ f_A$. Here $B_b$ on an output environment is the
+same boundary reindexing. At-most-one does not assert existence.
+There is no successful output when private work is undefined.
 
 Without at-most-one-model upstream semantics, this partial-function equation
 is unsafe. An upstream equation $t=t^2$ has rational models $0$ and $1$;
 a downstream reciprocal excludes $0$. The composite can have one model
 although the standalone upstream partial function is undefined.
-Retaining compatible pairs of complete models avoids this loss of information;
-the ranked first profile excludes the example rather than solving its cycle.
+Retaining compatible pairs of complete models avoids this loss of information.
+The logical cyclic and hidden-multiplicity cases are now proved by
+[`IndexedComponentModelCycleTest`](../../leanncd/experiments/indexed_execution/IndexedComponentModelCycleTest.lean);
+they do not claim that execution solves a cycle or that ranks exist.
+See the [model-gluing record](component_model_gluing_record.md) for all seven
+acceptance cases, explicit private-work witnesses, and validation evidence.
 
 ## 7. Identity, associativity and observation levels
 

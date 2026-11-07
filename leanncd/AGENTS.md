@@ -22,6 +22,18 @@ nondefault `IndexedExecutionExperiment` target. No rank, runtime phase barrier,
 model gluing or categorical laws are claimed; see the
 [composition record](../papers/semantics/component_composition_record.md).
 
+Complete-model restriction/gluing is proved by `IndexedComponentModelInputs`,
+`IndexedComponentModelTransport`, and `IndexedComponentModelWitnesses`.
+`witnessesEquiv` is rank-independent and retains whole private stores.
+`IndexedComponentModelDenotation` derives domain equality and successive
+denotation only under explicit `AtMostOneModels` hypotheses for both components;
+these hypotheses do not assert existence. Use `import IndexedComponentModelDenotation`
+for this API or `import IndexedComponentModelTest` for all seven acceptance cases
+and namespace axiom audits. Both belong only to `IndexedExecutionExperiment`,
+not the default `LeanNCD` import. See the
+[model-gluing record](../papers/semantics/component_model_gluing_record.md).
+Rank stitching, execution phases/traces, and categorical laws remain separate.
+
 Implementation slices (Wave C's C0/C1/C2…, and any other plan executed via
 subagent-driven-development) have two mechanized steps. Use them rather than
 redoing the setup by hand:

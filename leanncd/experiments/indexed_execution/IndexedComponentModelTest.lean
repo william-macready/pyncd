@@ -1,0 +1,17 @@
+import IndexedComponentModelDenotation
+import IndexedComponentModelLocalTest
+import IndexedComponentModelGeometryTest
+import IndexedComponentModelCycleTest
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedComponentComposition
+#audit_axioms IndexedComponentModelLocalFixtures
+#audit_axioms IndexedComponentModelLocalTest
+#audit_axioms IndexedComponentModelGeometryFixtures
+#audit_axioms IndexedComponentModelGeometryTest
+#audit_axioms IndexedComponentModelCycleFixtures
+#audit_axioms IndexedComponentModelCycleTest
+
+#print axioms IndexedComponentComposition.witnessesEquiv
+#print axioms IndexedComponentComposition.admInput_restrictions_iff
+#print axioms IndexedComponentComposition.denotation_successive
