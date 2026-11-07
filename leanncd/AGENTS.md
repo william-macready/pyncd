@@ -2,6 +2,16 @@
 
 ## Doing slice work here: two skills
 
+Typed declaration/read/expression transport is implemented and proved by
+`IndexedComponentTransport`, `IndexedComponentTransportExpr`,
+`IndexedComponentTransportEval`, and `IndexedComponentTransportTest` in
+`experiments/indexed_execution/`. They belong only to the non-default
+`IndexedExecutionExperiment` target, not the production `LeanNCD` import.
+`IndexedComponentTransportProbe` is the generated test-only copied-computation
+consumer used for mutation observations. The explicit experiment entry point
+is `import IndexedComponentTransportEval`; see
+[component transport execution](../papers/semantics/component_transport_execution_record.md).
+
 Implementation slices (Wave C's C0/C1/C2…, and any other plan executed via
 subagent-driven-development) have two mechanized steps. Use them rather than
 redoing the setup by hand:

@@ -1,0 +1,23 @@
+{
+  "base": "c26e68bc6caa24a40f794cf8a9de207a1f7d9604",
+  "candidate": "6d7d0f4e9e9177ed8dbe191e369563ed98fe1d6d",
+  "task_order_replay": [
+    {
+      "patch": "01-domain-read.patch",
+      "tree": "707b199bc09179b4be25f0cf3f18b0c0fa436a42",
+      "applies": true
+    },
+    {
+      "patch": "02-expression-laws.patch",
+      "tree": "195ad6b19d246c59e6bab375638bb9fa2ce75501",
+      "applies": true
+    },
+    {
+      "patch": "03-observations-integration.patch",
+      "tree": "05a845b7a4939c4dcb9fa9b22ca0a1d8afe55fc3",
+      "applies": true
+    }
+  ],
+  "tree_matches_compiled_candidate": true,
+  "tree": "05a845b7a4939c4dcb9fa9b22ca0a1d8afe55fc3"
+}

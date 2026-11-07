@@ -1,0 +1,472 @@
+diff --git a/leanncd/AGENTS.md b/leanncd/AGENTS.md
+index 6386d6e5..e55cd5b5 100644
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -2,6 +2,12 @@
+ 
+ ## Doing slice work here: two skills
+ 
++Typed declaration/read/expression transport is prototyped by
++`IndexedComponentTransport`, `IndexedComponentTransportExpr`,
++`IndexedComponentTransportEval`, and `IndexedComponentTransportTest` in
++`experiments/indexed_execution/`. They belong only to the non-default
++`IndexedExecutionExperiment` target, not the production `LeanNCD` import.
++
+ Implementation slices (Wave C's C0/C1/C2…, and any other plan executed via
+ subagent-driven-development) have two mechanized steps. Use them rather than
+ redoing the setup by hand:
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentTransport.lean b/leanncd/experiments/indexed_execution/IndexedComponentTransport.lean
+index 79dea9ad..65362fa0 100644
+--- a/leanncd/experiments/indexed_execution/IndexedComponentTransport.lean
++++ b/leanncd/experiments/indexed_execution/IndexedComponentTransport.lean
+@@ -65,6 +65,18 @@ def Domain.read (d : Domain x y) (h : Δ → Γ) (a : AdmittedRead ℚ x Γ) :
+     intro γ
+     simp only [Domain.policy, Equiv.symm_apply_apply, a.admission, outcome_map]
+ 
++theorem Domain.policy_id (p : ReadPolicy ℚ x) (q : RawCoord x) :
++    ((Domain.id x).policy p).resolve q = p.resolve q := by
++  change mapOutcome (Equiv.refl (Coord x)) (p.resolve q) = p.resolve q
++  cases p.resolve q <;> rfl
++
++theorem Domain.policy_comp (a : Domain x y) (b : Domain y z)
++    (p : ReadPolicy ℚ x) (q : RawCoord z) :
++    ((a.comp b).policy p).resolve q = (b.policy (a.policy p)).resolve q := by
++  change mapOutcome (a.coord.trans b.coord) (p.resolve (a.raw.symm (b.raw.symm q))) =
++    mapOutcome b.coord (mapOutcome a.coord (p.resolve (a.raw.symm (b.raw.symm q))))
++  cases p.resolve (a.raw.symm (b.raw.symm q)) <;> rfl
++
+ structure Embedding (src dst : Declarations Unit) where
+   tensor : src.Tensor → dst.Tensor
+   injective : Function.Injective tensor
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentTransportProbe.lean b/leanncd/experiments/indexed_execution/IndexedComponentTransportProbe.lean
+new file mode 100644
+index 00000000..781737da
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentTransportProbe.lean
+@@ -0,0 +1,220 @@
++import IndexedComponentTransportEval
++import Semantics.AxiomAudit
++
++namespace IndexedComponentTransportProbe
++open LeanNCD.Semantics IndexedComponentTransport
++
++def probeTransport (f : Embedding src dst) :
++    {Γ Δ : Type} → {τ : Ty Unit} → (Δ → Γ) → Expr K src R Γ τ → Expr K dst R Δ τ
++  | _, _, _, _, .lit x => .lit x
++  | _, _, _, h, .read t a => .read (f.tensor t) ((f.domain t).read h a)
++  | _, _, _, h, .iverson q => .iverson (q ∘ h)
++  | _, _, _, h, .binary b l r => .binary b (probeTransport f h l) (probeTransport f h r)
++  | _, _, _, h, .reduce n body =>
++      .reduce n (probeTransport f (fun γ => (h γ.1, γ.2)) body)
++  | _, _, _, h, .tab sh layout body =>
++      .tab sh layout (probeTransport f (fun γ => (h γ.1, γ.2)) body)
++  | _, _, _, h, .at e index => .at (probeTransport f h e) (index ∘ h)
++  | _, _, _, h, .prim op args => .prim op (fun i => probeTransport f h (args i))
++
++
++
++deriving instance DecidableEq for ReadOutcome, ReadyResult
++
++@[reducible] def srcShape : Shape := [⟨11, 2⟩, ⟨12, 3⟩]
++@[reducible] def dstShape : Shape := [⟨91, 3⟩, ⟨92, 2⟩]
++
++def swapDomain : Domain srcShape dstShape where
++  axes := Equiv.swap 0 1
++  extent := by intro i; fin_cases i <;> rfl
++  coord :=
++    { toFun := fun p => (p.2.1, p.1, ())
++      invFun := fun p => (p.2.1, p.1, ())
++      left_inv := by rintro ⟨i, j, ⟨⟩⟩; rfl
++      right_inv := by rintro ⟨i, j, ⟨⟩⟩; rfl }
++  raw :=
++    { toFun := fun q i => q (Equiv.swap 0 1 i)
++      invFun := fun q i => q (Equiv.swap 0 1 i)
++      left_inv := by intro q; funext i; simp
++      right_inv := by intro q; funext i; simp }
++  raw_axis := by intro q i; simp
++  coherent := by
++    rintro ⟨i, j, ⟨⟩⟩
++    funext k
++    fin_cases k <;> rfl
++
++@[reducible] def src : Declarations Unit :=
++  ⟨Fin 2, fun t => t.val, by intro a b h; exact Fin.ext h, fun _ => ⟨(), srcShape⟩⟩
++@[reducible] def dst : Declarations Unit :=
++  ⟨Fin 3, fun t => 100 + t.val, by intro a b h; apply Fin.ext; change 100 + a.val = 100 + b.val at h; omega,
++    fun _ => ⟨(), dstShape⟩⟩
++def embed : Embedding src dst where
++  «tensor» := fun t => ⟨t.val + 1, by have := t.isLt; omega⟩
++  injective := by
++    intro a b h
++    apply Fin.ext
++    have hv := congrArg Fin.val h
++    change a.val + 1 = b.val + 1 at hv
++    omega
++  domain := fun _ => swapDomain
++
++def p : Coord srcShape := (0, 2, ())
++def q : Coord srcShape := (1, 0, ())
++def pointPolicy : ReadPolicy ℚ srcShape where
++  resolve := fun raw =>
++    if h : 0 ≤ raw 0 ∧ raw 0 < 2 ∧ 0 ≤ raw 1 ∧ raw 1 < 3 then
++      .at (⟨(raw 0).toNat, by change (raw 0).toNat < 2; omega⟩,
++        ⟨(raw 1).toNat, by change (raw 1).toNat < 3; omega⟩, ())
++    else if raw 0 == -1 then .const 7 else .reject
++  inBounds := by
++    rintro ⟨i, j, ⟨⟩⟩
++    fin_cases i <;> fin_cases j <;> rfl
++
++def readAt (t : src.Tensor) (index : Γ → Coord srcShape) :
++    Expr K src R Γ (.scalar ()) :=
++  .read t ⟨pointPolicy, fun γ => Coord.raw (index γ), fun γ => .at (index γ),
++    fun γ => pointPolicy.inBounds (index γ)⟩
++
++def repeated : Expr K src R Unit (.scalar ()) :=
++  .binary .add (readAt 0 (fun _ => p))
++    (.binary .add (readAt 1 (fun _ => q)) (readAt 0 (fun _ => p)))
++def store : Store K dst := fun a => (10 * a.1.val + 3 * a.2.1.val + a.2.2.1.val : Nat)
++def available : PartialStore K dst := fun a => some (store a)
++def missing : PartialStore K dst := fun _ => none
++
++def check (label : String) (ok : Bool) : IO Unit :=
++  unless ok do throw (IO.userError label)
++def addresses (as : List (Address dst)) : List (Nat × Nat × Nat) :=
++  as.map (fun a => (a.1.val, a.2.1.val, a.2.2.1.val))
++
++-- Mutation probes are observational consumers, not alternate production probeTransport.
++def observedOrder := addresses (footprint (probeTransport embed id repeated) ())
++#eval check "transport.ordered-repetition" (observedOrder == [(1, 2, 0), (2, 0, 1), (1, 2, 0)])
++#eval (observedOrder, evalWith RationalReference.ops available (probeTransport embed id repeated) ())
++
++def probeOutcome (e : C → D) : ReadOutcome ℚ C → ReadOutcome ℚ D
++  | .at p => .at (e p)
++  | .const c => .const c
++  | .reject => .reject
++
++
++def probeResolve (d : Domain srcShape dstShape) (p : ReadPolicy ℚ srcShape) (q : RawCoord dstShape) := probeOutcome d.coord (p.resolve (d.raw.symm q))
++
++#eval check "transport.axis-raw" (decide
++  (swapDomain.raw (fun i => if i == 0 then -4 else 9) 0 = 9 ∧
++   swapDomain.raw (fun i => if i == 0 then -4 else 9) 1 = -4 ∧
++   swapDomain.coord p = (2, 0, ())))
++#eval check "transport.boundary-constant" (decide
++  (probeResolve swapDomain pointPolicy (fun i => if i == 0 then 99 else -1) = .const 7))
++def constantRead : Expr K src R Unit (.scalar ()) :=
++  .read (σ := src) 0 ⟨pointPolicy, fun _ i => if i == 0 then -1 else 99,
++    fun _ => .const 7, by intro γ; rfl⟩
++#eval check "transport.admitted-constant" (decide
++  (evalReady RationalReference.ops missing (probeTransport embed id constantRead) () = .evaluated (some 7) ∧
++    footprint (probeTransport embed id constantRead) () = []))
++#eval check "transport.boundary-reject" (decide
++  (probeResolve swapDomain pointPolicy (fun _ => -2) = .reject))
++
++theorem rejected_not_admitted (a : AdmittedRead ℚ dstShape Unit)
++    (h : a.policy.resolve (a.raw ()) = .reject) : False := by
++  have ha := a.admission ()
++  rw [h] at ha
++  cases hr : a.resolved () <;> simp [hr, Resolved.outcome] at ha
++
++def contextExpr : Expr K src R (Fin 2) (.scalar ()) :=
++  .binary .add (.iverson (fun i => i == 1))
++    (readAt 0 (fun i => (i, 2, ())))
++def precompose : Unit → Fin 2 := fun _ => 1
++#eval check "transport.context-precompose" (decide
++  (evalWith RationalReference.ops available (probeTransport embed precompose contextExpr) () = some 18))
++
++@[reducible] def arrayShape : ArrayShape := ⟨[⟨33, 2⟩], by decide⟩
++def strictArray (other : ℚ) : Expr K src R Unit (.array () arrayShape) :=
++  .tab arrayShape (canonicalLayout _)
++    (.prim RationalReference.Primitive.reciprocal (fun _ =>
++      .binary .add (.lit other) (.binary .mul (.lit (2 - other))
++        (.iverson (fun γ => γ.2.1.val == 0)))))
++def selected (other : ℚ) : Expr K src R Unit (.scalar ()) :=
++  .at (strictArray other) (fun _ => (0, ()))
++#eval check "transport.strict-selection-failure" (decide
++  (evalReady RationalReference.ops available (probeTransport embed id (selected 0)) () = .evaluated none))
++#eval check "transport.strict-selection-success" (decide
++  (evalReady RationalReference.ops available (probeTransport embed id (selected 4)) () = .evaluated (some (1/2))))
++#eval check "transport.strict-full-array" (match
++    evalReady RationalReference.ops missing (probeTransport embed id (strictArray 4)) () with
++  | .evaluated (some xs) => decide (xs (0, ()) = 1/2 ∧ xs (1, ()) = 1/4)
++  | _ => false)
++#eval check "transport.readiness-missing" (decide
++  (evalReady RationalReference.ops missing (probeTransport embed id repeated) () = .notReady))
++#eval check "transport.readiness-success" (decide
++  (evalReady RationalReference.ops available (probeTransport embed id repeated) () = .evaluated (some 53)))
++
++def binder : Expr K src R Unit (.scalar ()) :=
++  .reduce 2 (readAt 0 (fun γ => (γ.2, 2, ())))
++#eval check "transport.reduce-binder" (decide
++  (evalWith RationalReference.ops available (probeTransport embed id binder) () = some 33))
++def zeroReduction : Expr K src R Unit (.scalar ()) :=
++  .reduce 0 (.lit 99)
++#eval check "transport.zero-reduction" (decide
++  (evalReady RationalReference.ops missing (probeTransport embed id zeroReduction) () = .evaluated (some 0)))
++
++def indexedArray : Expr K src R (Fin 2) (.array () arrayShape) :=
++  .tab arrayShape (canonicalLayout _) (readAt 0 (fun γ => (γ.2.1, 2, ())))
++def dynamicIndex : Expr K src R (Fin 2) (.scalar ()) :=
++  .at indexedArray (fun i => (i, ()))
++#eval check "transport.tab-at-context" (decide
++  (evalWith RationalReference.ops available (probeTransport embed precompose dynamicIndex) () = some 17))
++#eval check "transport.identity" (decide
++  (evalWith RationalReference.ops (embed.pull available)
++    (probeTransport (Embedding.id src) id repeated) () = some 53))
++
++@[reducible] def emptyShape : Shape := [⟨55, 0⟩]
++def emptyTab : Expr K src R Unit (.array () ⟨emptyShape, by decide⟩) :=
++  .tab ⟨emptyShape, by decide⟩ (canonicalLayout _) (readAt 0 (fun _ => p))
++#eval check "transport.empty-tab" (match
++    evalReady RationalReference.ops missing (probeTransport embed id emptyTab) () with
++  | .evaluated (some _) => (footprint (probeTransport embed id emptyTab) ()).isEmpty
++  | _ => false)
++#eval check "transport.empty-scalar-metadata" (decide
++  ((canonicalLayout emptyShape).count = 0 ∧ (canonicalLayout []).count = 1 ∧
++    emptyShape ≠ []))
++#eval check "transport.unused-target" (decide
++  (evalWith RationalReference.ops
++    (fun (a : Address dst) => if a.1.val == 0 then none else available a) (probeTransport embed id repeated) () = some 53))
++
++def back : Embedding dst dst where
++  «tensor» := fun t => ⟨(t.val + 1) % 3, Nat.mod_lt _ (by decide)⟩
++  injective := by
++    intro a b h
++    fin_cases a <;> fin_cases b <;> simp_all [Fin.ext_iff]
++  domain := fun _ => Domain.id _
++#eval check "transport.composition" (decide
++  (addresses (footprint (probeTransport back id (probeTransport embed id repeated)) ()) =
++    addresses (footprint (probeTransport (embed.comp back) id repeated) ())))
++
++def sourceAddresses (as : List (Address src)) : List (Nat × Nat × Nat) :=
++  as.map (fun a => (a.1.val, a.2.1.val, a.2.2.1.val))
++#eval check "transport.identity-context-observations" (decide
++  (sourceAddresses (footprint (probeTransport (Embedding.id src) precompose contextExpr) ()) = [(0, 1, 2)] ∧
++    evalReady RationalReference.ops (embed.pull available)
++      (probeTransport (Embedding.id src) precompose contextExpr) () = .evaluated (some 18)))
++#eval check "transport.composition-context-observations" (decide
++  (addresses (footprint (probeTransport back id (probeTransport embed precompose contextExpr)) ()) =
++      addresses (footprint (probeTransport (embed.comp back) precompose contextExpr) ()) ∧
++    evalReady RationalReference.ops available (probeTransport back id (probeTransport embed precompose contextExpr)) () =
++      .evaluated (some 28) ∧
++    evalReady RationalReference.ops available (probeTransport (embed.comp back) precompose contextExpr) () =
++      .evaluated (some 28)))
++
++#eval check "transport.probe-parity" <| [repeated, selected 0, selected 4, binder,
++    zeroReduction, constantRead].all fun e => decide
++  (addresses (footprint (probeTransport embed id e) ()) =
++    addresses (footprint (IndexedComponentTransport.transport embed id e) ()) ∧
++   evalReady RationalReference.ops available (probeTransport embed id e) () =
++    evalReady RationalReference.ops available (IndexedComponentTransport.transport embed id e) () ∧
++   evalReady RationalReference.ops missing (probeTransport embed id e) () =
++    evalReady RationalReference.ops missing (IndexedComponentTransport.transport embed id e) ())
++
++end IndexedComponentTransportProbe
++
++#audit_axioms IndexedComponentTransportProbe
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentTransportTest.lean b/leanncd/experiments/indexed_execution/IndexedComponentTransportTest.lean
+new file mode 100644
+index 00000000..13fe32fe
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentTransportTest.lean
+@@ -0,0 +1,189 @@
++import IndexedComponentTransportEval
++import Semantics.AxiomAudit
++
++namespace IndexedComponentTransportTest
++open LeanNCD.Semantics IndexedComponentTransport
++
++deriving instance DecidableEq for ReadOutcome, ReadyResult
++
++@[reducible] def srcShape : Shape := [⟨11, 2⟩, ⟨12, 3⟩]
++@[reducible] def dstShape : Shape := [⟨91, 3⟩, ⟨92, 2⟩]
++
++def swapDomain : Domain srcShape dstShape where
++  axes := Equiv.swap 0 1
++  extent := by intro i; fin_cases i <;> rfl
++  coord :=
++    { toFun := fun p => (p.2.1, p.1, ())
++      invFun := fun p => (p.2.1, p.1, ())
++      left_inv := by rintro ⟨i, j, ⟨⟩⟩; rfl
++      right_inv := by rintro ⟨i, j, ⟨⟩⟩; rfl }
++  raw :=
++    { toFun := fun q i => q (Equiv.swap 0 1 i)
++      invFun := fun q i => q (Equiv.swap 0 1 i)
++      left_inv := by intro q; funext i; simp
++      right_inv := by intro q; funext i; simp }
++  raw_axis := by intro q i; simp
++  coherent := by
++    rintro ⟨i, j, ⟨⟩⟩
++    funext k
++    fin_cases k <;> rfl
++
++@[reducible] def src : Declarations Unit :=
++  ⟨Fin 2, fun t => t.val, by intro a b h; exact Fin.ext h, fun _ => ⟨(), srcShape⟩⟩
++@[reducible] def dst : Declarations Unit :=
++  ⟨Fin 3, fun t => 100 + t.val, by intro a b h; apply Fin.ext; change 100 + a.val = 100 + b.val at h; omega,
++    fun _ => ⟨(), dstShape⟩⟩
++def embed : Embedding src dst where
++  «tensor» := fun t => ⟨t.val + 1, by have := t.isLt; omega⟩
++  injective := by
++    intro a b h
++    apply Fin.ext
++    have hv := congrArg Fin.val h
++    change a.val + 1 = b.val + 1 at hv
++    omega
++  domain := fun _ => swapDomain
++
++def p : Coord srcShape := (0, 2, ())
++def q : Coord srcShape := (1, 0, ())
++def pointPolicy : ReadPolicy ℚ srcShape where
++  resolve := fun raw =>
++    if h : 0 ≤ raw 0 ∧ raw 0 < 2 ∧ 0 ≤ raw 1 ∧ raw 1 < 3 then
++      .at (⟨(raw 0).toNat, by change (raw 0).toNat < 2; omega⟩,
++        ⟨(raw 1).toNat, by change (raw 1).toNat < 3; omega⟩, ())
++    else if raw 0 == -1 then .const 7 else .reject
++  inBounds := by
++    rintro ⟨i, j, ⟨⟩⟩
++    fin_cases i <;> fin_cases j <;> rfl
++
++def readAt (t : src.Tensor) (index : Γ → Coord srcShape) :
++    Expr K src R Γ (.scalar ()) :=
++  .read t ⟨pointPolicy, fun γ => Coord.raw (index γ), fun γ => .at (index γ),
++    fun γ => pointPolicy.inBounds (index γ)⟩
++
++def repeated : Expr K src R Unit (.scalar ()) :=
++  .binary .add (readAt 0 (fun _ => p))
++    (.binary .add (readAt 1 (fun _ => q)) (readAt 0 (fun _ => p)))
++def store : Store K dst := fun a => (10 * a.1.val + 3 * a.2.1.val + a.2.2.1.val : Nat)
++def available : PartialStore K dst := fun a => some (store a)
++def missing : PartialStore K dst := fun _ => none
++
++def check (label : String) (ok : Bool) : IO Unit :=
++  unless ok do throw (IO.userError label)
++def addresses (as : List (Address dst)) : List (Nat × Nat × Nat) :=
++  as.map (fun a => (a.1.val, a.2.1.val, a.2.2.1.val))
++
++-- Mutation probes are observational consumers, not alternate production transport.
++def observedOrder := addresses (footprint (transport embed id repeated) ())
++#eval check "transport.ordered-repetition" (observedOrder == [(1, 2, 0), (2, 0, 1), (1, 2, 0)])
++#eval (observedOrder, evalWith RationalReference.ops available (transport embed id repeated) ())
++
++#eval check "transport.axis-raw" (decide
++  (swapDomain.raw (fun i => if i == 0 then -4 else 9) 0 = 9 ∧
++   swapDomain.raw (fun i => if i == 0 then -4 else 9) 1 = -4 ∧
++   swapDomain.coord p = (2, 0, ())))
++#eval check "transport.boundary-constant" (decide
++  ((swapDomain.policy pointPolicy).resolve (fun i => if i == 0 then 99 else -1) = .const 7))
++def constantRead : Expr K src R Unit (.scalar ()) :=
++  .read (σ := src) 0 ⟨pointPolicy, fun _ i => if i == 0 then -1 else 99,
++    fun _ => .const 7, by intro γ; rfl⟩
++#eval check "transport.admitted-constant" (decide
++  (evalReady RationalReference.ops missing (transport embed id constantRead) () = .evaluated (some 7) ∧
++    footprint (transport embed id constantRead) () = []))
++#eval check "transport.boundary-reject" (decide
++  ((swapDomain.policy pointPolicy).resolve (fun _ => -2) = .reject))
++
++theorem rejected_not_admitted (a : AdmittedRead ℚ dstShape Unit)
++    (h : a.policy.resolve (a.raw ()) = .reject) : False := by
++  have ha := a.admission ()
++  rw [h] at ha
++  cases hr : a.resolved () <;> simp [hr, Resolved.outcome] at ha
++
++def contextExpr : Expr K src R (Fin 2) (.scalar ()) :=
++  .binary .add (.iverson (fun i => i == 1))
++    (readAt 0 (fun i => (i, 2, ())))
++def precompose : Unit → Fin 2 := fun _ => 1
++#eval check "transport.context-precompose" (decide
++  (evalWith RationalReference.ops available (transport embed precompose contextExpr) () = some 18))
++
++@[reducible] def arrayShape : ArrayShape := ⟨[⟨33, 2⟩], by decide⟩
++def strictArray (other : ℚ) : Expr K src R Unit (.array () arrayShape) :=
++  .tab arrayShape (canonicalLayout _)
++    (.prim RationalReference.Primitive.reciprocal (fun _ =>
++      .binary .add (.lit other) (.binary .mul (.lit (2 - other))
++        (.iverson (fun γ => γ.2.1.val == 0)))))
++def selected (other : ℚ) : Expr K src R Unit (.scalar ()) :=
++  .at (strictArray other) (fun _ => (0, ()))
++#eval check "transport.strict-selection-failure" (decide
++  (evalReady RationalReference.ops available (transport embed id (selected 0)) () = .evaluated none))
++#eval check "transport.strict-selection-success" (decide
++  (evalReady RationalReference.ops available (transport embed id (selected 4)) () = .evaluated (some (1/2))))
++#eval check "transport.strict-full-array" (match
++    evalReady RationalReference.ops missing (transport embed id (strictArray 4)) () with
++  | .evaluated (some xs) => decide (xs (0, ()) = 1/2 ∧ xs (1, ()) = 1/4)
++  | _ => false)
++#eval check "transport.readiness-missing" (decide
++  (evalReady RationalReference.ops missing (transport embed id repeated) () = .notReady))
++#eval check "transport.readiness-success" (decide
++  (evalReady RationalReference.ops available (transport embed id repeated) () = .evaluated (some 53)))
++
++def binder : Expr K src R Unit (.scalar ()) :=
++  .reduce 2 (readAt 0 (fun γ => (γ.2, 2, ())))
++#eval check "transport.reduce-binder" (decide
++  (evalWith RationalReference.ops available (transport embed id binder) () = some 33))
++def zeroReduction : Expr K src R Unit (.scalar ()) :=
++  .reduce 0 (.lit 99)
++#eval check "transport.zero-reduction" (decide
++  (evalReady RationalReference.ops missing (transport embed id zeroReduction) () = .evaluated (some 0)))
++
++def indexedArray : Expr K src R (Fin 2) (.array () arrayShape) :=
++  .tab arrayShape (canonicalLayout _) (readAt 0 (fun γ => (γ.2.1, 2, ())))
++def dynamicIndex : Expr K src R (Fin 2) (.scalar ()) :=
++  .at indexedArray (fun i => (i, ()))
++#eval check "transport.tab-at-context" (decide
++  (evalWith RationalReference.ops available (transport embed precompose dynamicIndex) () = some 17))
++#eval check "transport.identity" (decide
++  (evalWith RationalReference.ops (embed.pull available)
++    (transport (Embedding.id src) id repeated) () = some 53))
++
++@[reducible] def emptyShape : Shape := [⟨55, 0⟩]
++def emptyTab : Expr K src R Unit (.array () ⟨emptyShape, by decide⟩) :=
++  .tab ⟨emptyShape, by decide⟩ (canonicalLayout _) (readAt 0 (fun _ => p))
++#eval check "transport.empty-tab" (match
++    evalReady RationalReference.ops missing (transport embed id emptyTab) () with
++  | .evaluated (some _) => (footprint (transport embed id emptyTab) ()).isEmpty
++  | _ => false)
++#eval check "transport.empty-scalar-metadata" (decide
++  ((canonicalLayout emptyShape).count = 0 ∧ (canonicalLayout []).count = 1 ∧
++    emptyShape ≠ []))
++#eval check "transport.unused-target" (decide
++  (evalWith RationalReference.ops
++    (fun (a : Address dst) => if a.1.val == 0 then none else available a) (transport embed id repeated) () = some 53))
++
++def back : Embedding dst dst where
++  «tensor» := fun t => ⟨(t.val + 1) % 3, Nat.mod_lt _ (by decide)⟩
++  injective := by
++    intro a b h
++    fin_cases a <;> fin_cases b <;> simp_all [Fin.ext_iff]
++  domain := fun _ => Domain.id _
++#eval check "transport.composition" (decide
++  (addresses (footprint (transport back id (transport embed id repeated)) ()) =
++    addresses (footprint (transport (embed.comp back) id repeated) ())))
++
++def sourceAddresses (as : List (Address src)) : List (Nat × Nat × Nat) :=
++  as.map (fun a => (a.1.val, a.2.1.val, a.2.2.1.val))
++#eval check "transport.identity-context-observations" (decide
++  (sourceAddresses (footprint (transport (Embedding.id src) precompose contextExpr) ()) = [(0, 1, 2)] ∧
++    evalReady RationalReference.ops (embed.pull available)
++      (transport (Embedding.id src) precompose contextExpr) () = .evaluated (some 18)))
++#eval check "transport.composition-context-observations" (decide
++  (addresses (footprint (transport back id (transport embed precompose contextExpr)) ()) =
++      addresses (footprint (transport (embed.comp back) precompose contextExpr) ()) ∧
++    evalReady RationalReference.ops available (transport back id (transport embed precompose contextExpr)) () =
++      .evaluated (some 28) ∧
++    evalReady RationalReference.ops available (transport (embed.comp back) precompose contextExpr) () =
++      .evaluated (some 28)))
++
++end IndexedComponentTransportTest
++
++#audit_axioms IndexedComponentTransport
++#audit_axioms IndexedComponentTransportTest
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index c6967d93..b7c1054e 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -159,4 +159,5 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
+          "IndexedCompositionDiagnostics", "IndexedCompositionValidated",
+          "IndexedCompositionSemanticResults", "IndexedCompositionFibers",
+          "IndexedComponentTransport", "IndexedComponentTransportExpr",
+-         "IndexedComponentTransportEval"]
++         "IndexedComponentTransportEval", "IndexedComponentTransportTest",
++         "IndexedComponentTransportProbe"]

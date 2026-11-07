@@ -1,0 +1,68 @@
+[
+  {
+    "label": "CT1 (ordered footprint rotation observation control)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportTest.lean",
+    "old": "def observedOrder := addresses (footprint (transport embed id repeated) ())",
+    "new": "def observedOrder := let xs := addresses (footprint (transport embed id repeated) ()); xs.drop 1 ++ xs.take 1",
+    "targets": [
+      "IndexedComponentTransportTest"
+    ],
+    "expect": [
+      "transport.ordered-repetition"
+    ]
+  },
+  {
+    "label": "CT2 (repeated footprint loss observation control)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportTest.lean",
+    "old": "def observedOrder := addresses (footprint (transport embed id repeated) ())",
+    "new": "def observedOrder := (addresses (footprint (transport embed id repeated) ())).take 2",
+    "targets": [
+      "IndexedComponentTransportTest"
+    ],
+    "expect": [
+      "transport.ordered-repetition"
+    ]
+  },
+  {
+    "label": "CT3 (ignored context map fixture control)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportTest.lean",
+    "old": "def precompose : Unit \u2192 Fin 2 := fun _ => 1",
+    "new": "def precompose : Unit \u2192 Fin 2 := fun _ => 0",
+    "targets": [
+      "IndexedComponentTransportTest"
+    ],
+    "expect": [
+      "transport.context-precompose",
+      "transport.tab-at-context"
+    ]
+  },
+  {
+    "label": "CT4 (partial store absence fixture control)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportTest.lean",
+    "old": "def available : PartialStore K dst := fun a => some (store a)",
+    "new": "def available : PartialStore K dst := fun _ => none",
+    "targets": [
+      "IndexedComponentTransportTest"
+    ],
+    "expect": [
+      "transport.readiness-success"
+    ]
+  },
+  {
+    "label": "CT5 (strict selection bypass fixture control)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedComponentTransportTest.lean",
+    "old": "  .at (strictArray other) (fun _ => (0, ()))",
+    "new": "  .lit (1/2)",
+    "targets": [
+      "IndexedComponentTransportTest"
+    ],
+    "expect": [
+      "transport.strict-selection-failure"
+    ]
+  }
+]
