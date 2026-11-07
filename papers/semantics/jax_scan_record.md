@@ -206,7 +206,8 @@ advancing axes consumes the finished history, so it is now classified post-scan 
 helpers `readPinsAdvancing` and `Stmt.iversonUids`) and emitted as a `.plain` node AFTER the scan nodes. The rule
 (all must hold, greatest fixpoint): every scan-state read in its statements is pinned on every advancing position
 and no Iverson predicate mentions a scan axis; every other scan-dependent name it reads is itself post (chains
-allowed, no per-step intermediate); its left-hand side is not a state name; no statement that stays in a scan body
+allowed, no per-step intermediate); every statement of the name is non-iteration (so a scan state's own name never
+qualifies: its recurrence statement carries an iteration slot); no statement that stays in a scan body
 reads it (such a candidate is demoted, which keeps today's loud rejection, because `schedule` would otherwise
 report `cyclicDataflow`). A free read-out (`y[j, l] := C · h[k, l]`) is unchanged and still rejected with
 `scanProjectionUnsupported`. A read-only audit before the change found no existing `tlprog!` program with a pinned
@@ -241,9 +242,11 @@ so it cannot see an orientation error by itself).
 - The existing fixtures' per-output tables were not diffed against a pre-change run (no stored baseline). What
   is established: the fixture file change is additions only, every existing fixture passes at unchanged
   tolerances, and the audit found no existing program the new rule reclassifies.
-- The `finalizeScans` left-hand-side-is-not-a-state-name clause has no fixture that it alone decides (mutation
-  of it was not caught; the `nbScan` case is already demoted by the other clauses). About 0.3 dispatch to
-  construct one or delete the clause.
+- CLOSED (2026-11-06): the `finalizeScans` left-hand-side-is-not-a-state-name clause was redundant and is
+  deleted. A hand mutation that removed it failed no guard, including two function-level pins that write a
+  statement under a state's own name, because the name filter requires every statement of a name to pass the
+  candidate test and a state's recurrence statement carries an iteration slot. The two state-name pins stay as
+  behaviour pins.
 - An axiswise `where=` mask that mentions a scan axis is not inspected by the post rule (only Iverson factors
   are); multi-axis scans and a post statement spanning two scan components have no fixture; a name with several
   non-iteration writers where one is post-eligible and one is not is untested. About 1 dispatch.
@@ -292,12 +295,21 @@ so it cannot see an orientation error by itself).
     statement may mention the iteration axis through an external tensor (`Y[q] := H[q,2] · c[l]`, or a left-hand
     side carrying `l`: `y[j,l] := C·h[k,2]`, previously `scanProjectionUnsupported`); these now get ordinary
     plain-statement meaning. The comment at the rule does not say so. About 0.5 dispatch to state it or tighten it.
-  - Verifier pins in the head block: `P` is never compared with a numpy softmax of the expected `Logits` (a
-    softmax applied to the wrong tensor would pass); `assert 5 not in {3, 4, 2}` compares literals (the shape
-    clause after it is the real check); the head's `H` is tied to `transformer_scan` by a node count only. About
-    0.3 dispatch.
-  - Clauses no test decides alone: the Iverson clause of `postCand`, demotion when a scan BASE case reads a
-    candidate, demotion across two scans, and the left-hand-side clause (above). About 0.5 dispatch.
+  - CLOSED (2026-11-06): verifier pins in the head block. `P` is now compared with the float64 row-wise stable
+    softmax of the numpy `Logits` (pin (a'), tolerance 1e-12 float64 / 1e-6 float32 against observed 5.6e-17 and
+    2.6e-8); the vocabulary extent is derived from `W_U` and checked against every other input and output extent
+    instead of a literal set; the head fixture's shared inputs and its `H` are bit-identical to
+    `transformer_scan`'s, Lean, eager and jit, at both precisions (pin (e)). Hand mutants: softmax of
+    `W_U · Zf` fails only pin (a') (0.25); a rescaled head `W_V` fails pin (e); a vocabulary extent equal to
+    another extent fails the derived extent check. The `H` clause of pin (e) was exercised only with the input
+    clause temporarily disabled (the input clause fires first); the mutants ran on the float64 leg and stop at the
+    first failing view (Lean).
+  - CLOSED (2026-11-06): the clauses no test decided alone, now one fixture and an accept neighbour each in
+    `StructuralTest` (observed layouts): the Iverson clause (`postIverRej` and `postIverOk`), demotion when a scan
+    BASE case reads a candidate (`postBaseRej`, `postBaseOk`), demotion across two scans (`postTwoRej`,
+    `postTwoOk`), and the state-name case (function level, because `tlprog!` refuses it earlier with a rank
+    mismatch; the clause itself was deleted, above). Each of the first three was killed by its own hand mutant and
+    only its own guard failed.
 - Mutations ran on the f64 leg only; the Python mutation manifests were not re-run (no runtime or emitter code
   changed).
 - Harness counts: production dispatch about 110 calls (cap 60), head-fixture dispatch about 110 (cap 60), most

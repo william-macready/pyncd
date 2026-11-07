@@ -431,8 +431,9 @@ extent 5 (differs from every other extent), and a softmax over `v`. The head is 
 the scan: a statement that reads a scan state only through PINNED literal indices on the state's advancing axes
 (`H[q, m, 2]`) is a post-scan consumer (`finalizeScans`, `postNames`) and becomes a plain node AFTER the scan
 node; a statement that reads the state with a free iteration axis is still a per-step intermediate. The
-verifier recomputes the head in numpy from the fixture's inputs and Lean's `H` slice 2 (not from the head's own
-outputs). Details and the mutation checks: the "Head fixture" section of `papers/semantics/jax_scan_record.md`.
+verifier recomputes the head (norm, `Logits` and the vocabulary softmax) in numpy from the fixture's inputs and
+Lean's `H` slice 2 (not from the head's own outputs), and checks that the head's inputs and `H` are bit-identical
+to `transformer_scan`'s. Details and the mutation checks: the "Head fixture" section of `papers/semantics/jax_scan_record.md`.
 
 Run: `./run-evalplan-nonlin.sh` (and `./run-evalplan-scatter.sh`) first. The generated `.cache` modules go
 stale, and a Python mutation manifest runs against whatever is there. Then, from the repository root:
