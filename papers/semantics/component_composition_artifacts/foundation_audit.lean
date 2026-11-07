@@ -1,0 +1,16 @@
+import IndexedComponentCompositionScope
+import IndexedComponentCompositionProgram
+import IndexedComponentCompositionSchedule
+import IndexedComponentCompositionClosure
+import IndexedComponentCompositionLocalFixtures
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedComponentComposition
+#audit_axioms IndexedComponentCompositionLocalFixtures
+
+#print axioms IndexedComponentComposition.occurrenceEquiv
+#print axioms IndexedComponentComposition.keyEquiv
+#print axioms IndexedComponentComposition.close_assembled
+#print axioms IndexedComponentComposition.canonicalSteps_assembled
+#print axioms IndexedComponentCompositionLocalFixtures.producerMatch
+#print axioms IndexedComponentCompositionLocalFixtures.consumerMatch
