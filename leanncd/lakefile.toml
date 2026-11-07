@@ -165,4 +165,5 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
          "IndexedComponentCompositionSchedule", "IndexedComponentClosureFacts",
          "IndexedComponentCompositionClosure", "IndexedComponentCompositionLocalFixtures",
          "IndexedComponentCompositionAssemble", "IndexedComponentCompositionAssemblyAudit",
-         "IndexedComponentCompositionPortFixtures"]
+         "IndexedComponentCompositionPortFixtures",
+         "IndexedComponentCompositionMatch"]
