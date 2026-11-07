@@ -5,9 +5,9 @@
 
 ## Status
 
-The static constructor and its composed correspondence instances are now
-implemented and verified in the prototype. Authoring control verification is
-in progress; this is not yet a verified execution plan or release completion.
+The static constructor, composed correspondence instances, verified plan,
+all eight execution tasks and controller release gates are complete.
+The integration receipt records the local merge and task-only cleanup.
 Ranked phase execution, model gluing and categorical laws remain unproved.
 
 ## Scope and preparation
@@ -301,3 +301,78 @@ and four change graph-only counterexample computations. These are not
 claimed as 16 live-production runner kills or per-assertion-complete coverage.
 The controller is rerunning every entry without filters against those exact
 diagnostic requirements before the fresh plan-authoring dispatch.
+
+## Verified plan and actual execution replay
+
+The final authoring manifest run passed 16/16 with every required diagnostic,
+restored target build and byte-identical source check. The controller's full
+prototype build passed 8,887 jobs. All eight mechanically generated patches
+applied to a temporary index in task order, with all 27 covered files exactly
+matching compiled source `06d4e470`.
+
+A fresh authoring dispatch committed the live plan in `b94a7b56`. Controller
+review clarified actual semantic dependencies versus serialized application,
+explicit donor/symbol routing, controller-only preparation working directory,
+and authorized cleanup of the intentionally dirty replay. The verified plan
+is 497 lines, with no transcribed Lean blocks or unstable line citations.
+All eight hashes and 27 file paths match the immutable package.
+`4c02bac8` persists that plan, package and the source soundness receipt.
+
+Execution used the independently prepared detached replay worktree
+`pyncd.worktrees/component-composition-replay` at `16721af5`. Preparation
+verified 8,101 / 8,094 Mathlib oleans and project output; both the `LeanNCD`
+refresh and `LeanNCD Tests` baseline passed. The plan and patch inputs remained
+read-only in the authoring worktree rather than colliding with added files.
+
+Every patch was actually applied in task order. Each checkpoint verified its
+hash, exact reviewed file bytes and targeted builds. Task 7 ran the unfiltered
+16 intended-diagnostic mutation cycles and exact namespace audit; task 8
+applied the documentary snapshot. Final comparison confirmed all 27 files
+equal the frozen reviewed source. The controller retained the implementation
+history instead of fabricating duplicate replay commits.
+
+[Replay checkpoints](component_composition_artifacts/execution_replay.json) and
+[replay mutation results](component_composition_artifacts/execution_replay_mutation_results.md)
+record all eight task passes and 16/16 intended failures/restored passes.
+Later controller close-out edits affect records only, not that code comparison.
+
+## Whole-branch reviews and candidate gates
+
+- [Soundness](component_composition_artifacts/review_soundness.md):
+  clean for `16721af5..06d4e470`, approving all eight frozen task patches.
+  The reviewer reported 23 action turns and no observed breach.
+- [Integration/observations](component_composition_artifacts/review_integration.md):
+  clean for `16721af5..4c02bac8`, including plan, discovery, observations and
+  control classifications. The reviewer reported 50 actions; accounting was
+  uninstrumented. No source was changed by either reviewer.
+- Subsequent committed changes before those reviews added only plan/evidence
+  documentation; the reviewed source remained byte-identical.
+- The controller's full `LeanNCD Tests IndexedExecutionExperiment` build on
+  the implementation candidate passed, independently of replay.
+- The candidate's exact namespace/public constructor/correspondence audit
+  passed. Only the allowed standard axioms occur.
+
+The candidate's final unfiltered 16-cycle mutation rerun passed every intended
+diagnostic, restored build and byte-identical source check:
+[candidate mutation results](component_composition_artifacts/execution_candidate_mutation_results.md).
+The controller reran the full three-target build after restoration; it passed.
+
+Raw `git diff --check` flagged only space-only context markers in two generated
+patch artifacts. Source/documentation whitespace passed with exactly those
+artifact formats excluded; patch bytes remain hash/application checked rather
+than being reformatted. No source or documentation defect was suppressed.
+
+## Integration and completion boundary
+
+All scoped construction obligations and release gates are complete. The
+authorized local-main integration and task-only cleanup are recorded by the
+controller's [integration receipt](component_composition_artifacts/integration_receipt.json),
+which is written only after the merge, exact merged-tree comparison, protected
+hash checks and named worktree/branch cleanup succeed.
+
+The primary semantics contents/synthesis edits and original unrelated
+worktrees remain outside the task. No remote push is authorized or performed.
+Rank stitching, phase/projection, complete-model restriction/gluing and
+categorical associativity/identities are still explicitly unproved. The parked
+previous-slice per-fixture coverage and SDK token-accounting tooling were not
+widened into this slice.

@@ -450,9 +450,14 @@ per-assertion-complete coverage. Initial no-expect receipt is historical only.
 
 ```sh
 bash <CANDIDATE>/leanncd/scripts/lake-build.sh <CANDIDATE>/leanncd LeanNCD Tests IndexedExecutionExperiment
-/usr/bin/git -C <CANDIDATE> diff --check 16721af5
+/usr/bin/git -C <CANDIDATE> diff --check 16721af5 -- . ':(exclude)papers/semantics/component_composition_artifacts/*.patch'
 /usr/bin/git -C <CANDIDATE> diff --stat 16721af5 HEAD
 ```
+
+Generated patch context markers intentionally contain space-only lines.
+Their exact bytes are hash/application checked, not reformatted to satisfy
+source whitespace rules; all non-patch source and documentation still pass
+the whitespace gate.
 
 4. Two final whole-branch review lenses examine `16721af5..HEAD`:
    **soundness** — public premises, nine derivations, dependent casts, full

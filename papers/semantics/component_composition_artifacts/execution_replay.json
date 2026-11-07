@@ -1,0 +1,99 @@
+{
+  "base": "16721af5",
+  "source_head": "06d4e470a0c30f00ab5347e13f7c358e55593c17",
+  "replay": "/Users/williammacready/code/python/pyncd.worktrees/component-composition-replay",
+  "completed_tasks": [
+    {
+      "task": "scope",
+      "patch_sha256": "ca7e3b372803ed1ff9c0232c3092fb8fefa684ccbb4c398cad6d354c68a8c74b",
+      "apply": "pass",
+      "bytes": "match reviewed source",
+      "targets": [
+        "IndexedComponentCompositionScope"
+      ],
+      "build": "pass",
+      "review": "soundness-approved frozen patch"
+    },
+    {
+      "task": "source-schedule",
+      "patch_sha256": "c411eff37c5a090d0cec31349a93ffa0553017fcefa4efb73b5a63826c2c0716",
+      "apply": "pass",
+      "bytes": "match reviewed source",
+      "targets": [
+        "IndexedComponentCompositionProgram",
+        "IndexedComponentCompositionSchedule"
+      ],
+      "build": "pass",
+      "review": "soundness-approved frozen patch"
+    },
+    {
+      "task": "closure",
+      "patch_sha256": "32e962c224a480f55f335970631119236c02b0344c5f37b24cf7b31b613aa485",
+      "apply": "pass",
+      "bytes": "match reviewed source",
+      "targets": [
+        "IndexedComponentCompositionClosure",
+        "IndexedComponentCompositionAssemble",
+        "IndexedComponentCompositionAssemblyAudit"
+      ],
+      "build": "pass",
+      "review": "soundness-approved frozen patch"
+    },
+    {
+      "task": "match",
+      "patch_sha256": "f7c77859b11adf757534b595973a2502f7b3c39d349e037e3fab35b3db117410",
+      "apply": "pass",
+      "bytes": "match reviewed source",
+      "targets": [
+        "IndexedComponentComposition"
+      ],
+      "build": "pass",
+      "review": "soundness-approved frozen patch"
+    },
+    {
+      "task": "port-fixtures",
+      "patch_sha256": "319969c023e9dd607fcc01141301f236e9fd72a4715453f5e92e4b73a3bdfa60",
+      "apply": "pass",
+      "bytes": "match reviewed source",
+      "targets": [
+        "IndexedComponentCompositionTest"
+      ],
+      "build": "pass",
+      "review": "soundness-approved frozen patch"
+    },
+    {
+      "task": "advanced-fixtures",
+      "patch_sha256": "80a872a87dc50bec115f37d2dd620ec1904e3a643cb080b9a021584b0cf29611",
+      "apply": "pass",
+      "bytes": "match reviewed source",
+      "targets": [
+        "IndexedComponentCompositionCollisionFixtures",
+        "IndexedComponentCompositionAxisFixtures"
+      ],
+      "build": "pass",
+      "review": "soundness-approved frozen patch"
+    },
+    {
+      "task": "correspondence-controls",
+      "patch_sha256": "962fb591c453426f6b6619be1e08df8583a25e43b75aeec6c4057432c658ca20",
+      "apply": "pass",
+      "bytes": "match reviewed source",
+      "targets": [
+        "IndexedComponentCompositionCorrespondenceTest",
+        "IndexedComponentCompositionInterfaceTest",
+        "IndexedComponentCompositionCounterexampleTest"
+      ],
+      "build": "pass",
+      "review": "soundness-approved frozen patch"
+    },
+    {
+      "task": "discovery",
+      "patch_sha256": "9fc913130f00a619e53d1bbf792c8d4960298ea1049bab9186b185a6a21301e9",
+      "apply": "pass",
+      "bytes": "match reviewed source",
+      "targets": [],
+      "build": "documentation-only",
+      "review": "soundness-approved frozen patch"
+    }
+  ]
+}
