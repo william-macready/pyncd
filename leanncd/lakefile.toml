@@ -162,4 +162,5 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
          "IndexedComponentTransportEval", "IndexedComponentTransportTest",
          "IndexedComponentTransportProbe",
          "IndexedComponentCompositionScope", "IndexedComponentCompositionProgram",
-         "IndexedComponentCompositionSchedule", "IndexedComponentClosureFacts"]
+         "IndexedComponentCompositionSchedule", "IndexedComponentClosureFacts",
+         "IndexedComponentCompositionClosure", "IndexedComponentCompositionLocalFixtures"]
