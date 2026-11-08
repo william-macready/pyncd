@@ -385,17 +385,31 @@ the compile guards of the value fixtures. Build `Tests` + `JaxExperiment` green 
   built target and still expects the old `case14` error.
 - Whole-branch review of the rewrite (one read-only adversarial reviewer, code reading only): no Critical or
   Major finding; the transformer intermediates stay fed, the head statements are post, and a former pinned post
-  statement never changes class. Parked Minors: (1) the `readsPerStepIntermediate` loop runs before the component
-  loop, so a program with two defects reports it instead of `missingBaseCase`, `causalityViolation`,
-  `inconsistentScanAxes` or the multi-component `shapeMismatch` (`iter l = 3; T[j] := H[j,l]; H[j,l+1] := T[j];
-  M[j] := T[j]` with no base case): still loud, only the reported error changes; moving the loop after the
-  component loop restores the old precedence (about 0.2 dispatch); (2) test gaps: in the throw condition the
-  conjuncts `!stateNames.contains r` and `isScanDep r` can each be deleted with every StructuralTest pin still
-  green, and no layout pin needs the fed closure to pass through two or more statements (only the transformer
-  value fixtures catch a one-pass closure; none of the five hand mutants removed it) (about 0.5 dispatch); (3) a
-  post statement with a shifted free state read (`D[j,l] := S[j,l+1] - S[j,l]`) used to be refused and is now
-  accepted, and no test pins that the checked plan and the reference agree at `l = N-1` (about 0.3 dispatch); (4)
-  a scan whose only non-identity body statement was dead scratch now lowers as `.scanAffine` instead of `.scan`.
+  statement never changes class. Minors, three of them CLOSED (see "Review minors closed" below): (1) the
+  `readsPerStepIntermediate` loop ran before the component loop, so a program with two defects reported it instead
+  of `missingBaseCase`, `causalityViolation`, `inconsistentScanAxes` or the multi-component `shapeMismatch`; (2)
+  test gaps: the conjuncts `!stateNames.contains r` and `isScanDep r` of the throw condition, and a fed closure
+  that passes through two or more statements, had no pin; (3) a post statement with a shifted free state read
+  (`D[j,l] := S[j,l+1] - S[j,l]`) used to be refused and is now accepted, with no cross-backend pin at `l = N-1`.
+  Still open: (4) a scan whose only non-identity body statement was dead scratch now lowers as `.scanAffine`
+  instead of `.scan`.
+- Review minors closed. (1) The `readsPerStepIntermediate` loop now runs after the component loop in
+  `finalizeScans`: `iter l = 3; T[j] := H[j,l]; H[j,l+1] := T[j]; M[j] := T[j]` (no base case) reports
+  `missingBaseCase "H"`, and `postMixedInter` (with its base case) keeps `readsPerStepIntermediate "M" "T"`.
+  (2) `StructuralTest` pins each conjunct alone: `loweredStateReadByPost` (a hand-built program where `Z` reads a
+  name that is both a state and has a non-iteration writer, accepted: `scan base=[S] body=[S, S]`, `plain Z`),
+  `postReadsInvariantFed` (a loop-invariant `W` read by the step and by the post `Z`: `plain W`, `scan base=[S]
+  body=[S]`, `plain Z`) and `postFedChain` (`C := H[l]; B := C; A := B; H[l+1] := A` in forward source order: one
+  scan with body `[C, B, A, H]`). (3) `postRoleShiftProg` (`D[j,l] := S[j,l + 1] · V[l]` next to the recurrence of
+  `postRoleProg3`) compiles, and in `DifferentialTest` the reference equals `postRoleShiftExpected` (plain
+  arithmetic, last row exactly 0) and the checked plan equals the reference. Mutants, each failing only its named
+  guard: check moved back before the component loop fails `postMixedInterNoBase`; `!stateNames.contains r`
+  deleted fails `loweredStateReadByPost`; `isScanDep r` deleted fails `postReadsInvariantFed`; the fed closure
+  capped at one pass fails `postFedChain`; `statePinOutOfRange` made to flag a read that leaves the extent at the
+  last step (bias plus coefficients times extent minus one) fails `postRoleCompiles postRoleShiftProg 3`. The
+  mutation first suggested for (3), dropping only the all-zero-coefficient test, does NOT fail the new guard
+  (`S[j, l + 1]` has the in-range bias 1; only the older `l - 1` guards catch it), so it is not the mutant for
+  this fixture.
 - Not verified: the eager and jit views of the JAX fixture were not mutated individually; mutants ran on the
   float64 leg; the Python mutation manifests were not re-run (no runtime or emitter code changed).
 - Harness counts: rewrite 52 calls (cap 45), flips and Lean value fixtures 60 (cap 45), JAX fixture 53 (cap 40
