@@ -344,7 +344,9 @@ is now an accept test with values (`y = [5,12,26, 11,28,62]` against hand comput
 compiles (5 externals, 2 steps, final fresh-name state 5). `scanProjectionUnsupported` fires only for a per-step
 statement with the scan axis on its own left-hand side. A dead-end statement that reads a state and feeds nothing
 was unobservable scratch and is now a published tensor (no existing fixture has one); a scan whose only
-non-identity statement is such a read-out is no longer made non-affine by it.
+non-identity statement is such a read-out is no longer made non-affine by it. A statement that reads a per-step
+intermediate but feeds nothing and reads no pinned state (`M[j] := T[j]·2` with `T` feeding the step) used to
+compile with its value silently dropped; it is now `readsPerStepIntermediate`.
 
 **Evidence.** `StructuralTest` layout pins: five flips (`postFreeRead`, `postMixedFree`, `postReadOut`, the
 renamed `postIverScanAxis`/`postIverOtherAxis`, and `postMixedInter` which is now
@@ -369,6 +371,7 @@ design, because every pin recomputes from the same inputs. A mutant that makes `
 the compile guards of the value fixtures. Build `Tests` + `JaxExperiment` green (8845 jobs).
 
 **Parked.**
+
 - Per-component closure (the user's preferred reading, deferred): a statement fed by scan 2 but reading only
   scan 1's finished state, such as `Pc[j] := S[j,2]` read by `H[j, m+1] := Pc[j]` (`postTwoRej`), is valid once
   `fed` is computed per component and stays rejected under the global closure. About 2 dispatches: closure per
@@ -380,6 +383,19 @@ the compile guards of the value fixtures. Build `Tests` + `JaxExperiment` green 
   meaning of `plainStatePinOutOfRange`, the order of marker and pin errors, history extent 0 together with R1.
 - `papers/implementation_seeds/nonlinearity_route_fragments/fixtures/RouteFragmentDiagnosticSeed.lean` is not a
   built target and still expects the old `case14` error.
+- Whole-branch review of the rewrite (one read-only adversarial reviewer, code reading only): no Critical or
+  Major finding; the transformer intermediates stay fed, the head statements are post, and a former pinned post
+  statement never changes class. Parked Minors: (1) the `readsPerStepIntermediate` loop runs before the component
+  loop, so a program with two defects reports it instead of `missingBaseCase`, `causalityViolation`,
+  `inconsistentScanAxes` or the multi-component `shapeMismatch` (`iter l = 3; T[j] := H[j,l]; H[j,l+1] := T[j];
+  M[j] := T[j]` with no base case): still loud, only the reported error changes; moving the loop after the
+  component loop restores the old precedence (about 0.2 dispatch); (2) test gaps: in the throw condition the
+  conjuncts `!stateNames.contains r` and `isScanDep r` can each be deleted with every StructuralTest pin still
+  green, and no layout pin needs the fed closure to pass through two or more statements (only the transformer
+  value fixtures catch a one-pass closure; none of the five hand mutants removed it) (about 0.5 dispatch); (3) a
+  post statement with a shifted free state read (`D[j,l] := S[j,l+1] - S[j,l]`) used to be refused and is now
+  accepted, and no test pins that the checked plan and the reference agree at `l = N-1` (about 0.3 dispatch); (4)
+  a scan whose only non-identity body statement was dead scratch now lowers as `.scanAffine` instead of `.scan`.
 - Not verified: the eager and jit views of the JAX fixture were not mutated individually; mutants ran on the
   float64 leg; the Python mutation manifests were not re-run (no runtime or emitter code changed).
 - Harness counts: rewrite 52 calls (cap 45), flips and Lean value fixtures 60 (cap 45), JAX fixture 53 (cap 40
