@@ -128,7 +128,8 @@ run_cmd (assertEvalError "UF4 div-domain-violation"
 --   `y[j,l] := C[j,k]·h[k,l]` is not read by the recurrence, so the role-based post-scan
 --   classification makes it a POST-SCAN statement: it is evaluated once, after the scan, with the scan
 --   axis `l` an ordinary axis, so `y` is the whole read-out table `y[j,l] = Σ_k C[j,k]·h[k,l]`. It
---   is not a per-step scratch and it is not dropped. Hand computation (`iter l = 3`, steps l = 0, 1):
+--   is not a per-step scratch and it is not dropped. (A pinned read such as `Zf[j] := h[j, 2]` is
+--   post-scan too, see `postPin` in `StructuralTest`.) Hand computation (`iter l = 3`, steps l = 0, 1):
 --     h0 = [1,2], A = [[1,1],[0,1]], B = [1,2], u = [1,2,3], C = [[1,2],[3,4]]
 --     h(1) = A·h(0) + B·u0 = [3,2] + [1,2]  = [4,4]
 --     h(2) = A·h(1) + B·u1 = [8,4] + [2,4]  = [10,8]

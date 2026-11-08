@@ -110,7 +110,8 @@ test "SS1 linear-recurrence"
 -- SS2  output map y[j,l] := C[j,k]·h[k,l] off the scan state, authored standalone consuming the
 -- MATERIALIZED scan state h=[1,2,3] (l is then an ordinary free axis). Written inside the SS1
 -- program the statement is also a post-scan consumer now (it does not feed the recurrence; `UF5` in
--- `RejectTest` pins that); only a statement that FEEDS the recurrence is a per-step intermediate
+-- `RejectTest` pins that, and a pinned read `Zf[j] := h[j, 2]` is post-scan too: `postPin` in
+-- `StructuralTest`); only a statement that FEEDS the recurrence is a per-step intermediate
 -- (a scan's outputs are only names written by BOTH base and recur — see Lowering.ScanStmt.outputs).
 -- C=[[1]] ⇒ y = h = [1,2,3].
 test "SS2 output-map"

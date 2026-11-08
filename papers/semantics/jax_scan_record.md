@@ -109,7 +109,7 @@ Costs are the controller's rough estimates in dispatches (one dispatch is the Ru
 | Fixture separating snapshot from updated state | NOT possible for single-axis causal scans (finding 4); revisit only with multi-axis scans |
 | GPU tolerance | Tolerances were measured on CPU only. About 1 dispatch on a GPU host |
 | f32 siblings of the eight donor scans | The donors are binary64 only. About 1 dispatch |
-| Re-run the fixture survey against the gate | Update its refusal column (`scanMultiAxis`) and classify the dozen schedules it leaves out. About 0.5 dispatch |
+| Re-run the fixture survey against the gate | CLOSED 2026-11-08 (gate verdicts only): the refusal column was already current; 13 schedule and argument combinations it left out are now classified in `jax_scan_fixture_survey.md`. Still open: `rejSched`/`rej2Sched` and the other `contractBaseSched`/`neutralScratchSched`/`allNeutralStateSched` argument combinations, and three accepted real-state schedules that are not in `scanSurvey64` (about 0.2 dispatch, changes the 34-fixture count) |
 | Harden the runtime against malformed records (review R1, Minor) | Step writes check only that the index length is a multiple of the step count, not `steps * output size` (a base write checks it); a step assign without `context_pos` dies on an accidental `TypeError`; `zip(dests, result)` would drop states if `dests` were short. All unreachable from `renderScanNode`. About 0.5 dispatch, then re-run the Python manifest and the differential |
 | `scanContextPos` backstop has no test (review R2, Major) | The check is unreachable from a checked plan (`Block.lean` forces the step assign's context shape) and not constructible from checked input (private constructors); manifest entry JS-L-e3 (`#[0]` to `#[1]`) is killed by the happy path only. Decide: delete the check, or build a `CheckedPlanBlock` test hook. About 0.5 dispatch; deleting shifts the `EvalPlanCodegen.lean` pins |
 | Mutation coverage beyond `transformer_scan` (review R2, Minor) | The Python manifest mutates only that fixture; the T = 0 early return, multi-scan, `_check_index`, `_store_result` and step-write collisions have fixtures but are never mutated on purpose. About 1 dispatch |
@@ -252,9 +252,8 @@ so it cannot see an orientation error by itself).
 - An axiswise `where=` mask that mentions a scan axis is not inspected by the post rule (only Iverson factors
   are); multi-axis scans and a post statement spanning two scan components have no fixture; a name with several
   non-iteration writers where one is post-eligible and one is not is untested. About 1 dispatch.
-- The wording in `KnownGapTest`, `RejectTest` (UF5 comment) and `GenerativeTest` (SS2) still describes the
-  "write it standalone after the scan" workaround; it is accurate for free-read read-outs but does not mention the
-  pinned-literal path. About 0.3 dispatch.
+- CLOSED (2026-11-08): the wording in `KnownGapTest`, `RejectTest` (UF5 comment) and `GenerativeTest` (SS2) now
+  also mentions the pinned-literal path (`postPin`, and `plainStatePinOutOfRange` for an out-of-extent pin).
 - Whole-branch review (one read-only adversarial reviewer on the classification rule, code reading only, no
   build): no Critical or Major finding; no previously accepted program changes meaning (a pinned read of a state
   was always rejected by `stateReadNotCausal`, so those statements never produced an observable value), and
@@ -382,7 +381,9 @@ the compile guards of the value fixtures. Build `Tests` + `JaxExperiment` green 
 - Still open from section 9: cancelling affine coefficients (`5 + l − l`), the dimension order and `stmtIndex`
   meaning of `plainStatePinOutOfRange`, the order of marker and pin errors, history extent 0 together with R1.
 - `papers/implementation_seeds/nonlinearity_route_fragments/fixtures/RouteFragmentDiagnosticSeed.lean` is not a
-  built target and still expects the old `case14` error.
+  built target and still expects the old `case14` error. It does not typecheck against the current code at all
+  (`checkScatterNoScan` is gone, the `Decl` match misses the typed constructors), so `case14` could not be
+  re-pinned; it now carries a status note saying so (2026-11-08). Repairing the seed is a separate, unestimated job.
 - Whole-branch review of the rewrite (one read-only adversarial reviewer, code reading only): no Critical or
   Major finding; the transformer intermediates stay fed, the head statements are post, and a former pinned post
   statement never changes class. Minors, three of them CLOSED (see "Review minors closed" below): (1) the
