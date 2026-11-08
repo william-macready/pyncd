@@ -1,0 +1,354 @@
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean b/leanncd/experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..abf74eeaea152a25413875cab52ac2c6010d3ce8
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean
+@@ -0,0 +1,201 @@
++import IndexedComponentCompositionPortFixtures
++import IndexedComponentCompositionAxisFixtures
++import LeanNCD.Semantics.Models
++
++namespace IndexedComponentModelGeometryFixtures
++
++open LeanNCD.Semantics
++open LeanNCD.Semantics.Program
++
++namespace Empty
++
++open IndexedComponentCompositionPortFixtures
++open IndexedComponentComposition
++
++def liftedInput : InputBinding (K := RationalReference.Carrier)
++    (σ := declarations emptyProducerComponent emptyConsumerComponent) :=
++  fun t => match t with
++    | .inl s => emptyValidatedInput.val s
++    | .inr _ => none
++
++def producerStore : Store RationalReference.Carrier emptyProducerDeclarations :=
++  fun a => Fin.elim0 a.2.1
++
++def transportedPre : Coord [⟨51, 0⟩] → ℚ :=
++  fun p => producerStore
++    ⟨(emptyBoundary.matched ⟨emptyConsumerPre, rfl⟩).val,
++      (emptyBoundary.domain ⟨emptyConsumerPre, rfl⟩).coord p⟩
++
++def consumerInput : emptyConsumer.Input :=
++  ⟨fun t => if t == emptyConsumerPre then some transportedPre else none,
++    by intro t; fin_cases t <;> rfl⟩
++
++def consumerStore : Store RationalReference.Carrier emptyConsumerDeclarations :=
++  fun a => Fin.elim0 a.2.1
++
++theorem producer_input_present :
++    emptyValidatedInput.val emptyExternalInput =
++      some (fun p => Fin.elim0 p.1) := rfl
++
++theorem lifted_input_present :
++    liftedInput (.inl emptyExternalInput) =
++      some (fun p => Fin.elim0 p.1) := rfl
++
++theorem transported_input_present :
++    consumerInput.val emptyConsumerPre = some transportedPre := rfl
++
++theorem missing_not_valid : ¬ emptyProducer.ValidInput emptyMissingInput := by
++  intro valid
++  have present := valid emptyExternalInput
++  exact Bool.noConfusion present
++
++theorem producer_model :
++    emptyProducerComponent.program.Models RationalReference.ops
++      emptyValidatedInput producerStore := by
++  refine ⟨?_, ?_, ?_⟩
++  · intro t o
++    exact Fin.elim0 o.1
++  · intro t f present p
++    exact Fin.elim0 p.1
++  · intro t p
++    exact Fin.elim0 p.1
++
++theorem consumer_model :
++    emptyConsumerComponent.program.Models RationalReference.ops
++      consumerInput consumerStore := by
++  refine ⟨?_, ?_, ?_⟩
++  · intro t o
++    exact Fin.elim0 o.1
++  · intro t f present p
++    exact Fin.elim0 p.1
++  · intro t p
++    exact Fin.elim0 p.1
++
++theorem output_roles_and_identity :
++    emptyProducerComponent.program.output emptyProducerPre = true ∧
++      emptyConsumerComponent.program.output emptyConsumerOut = true ∧
++      emptyProducerDeclarations.uid emptyProducerPre = 0 ∧
++      emptyConsumerDeclarations.uid emptyConsumerOut = 1 := by
++  decide +kernel
++
++end Empty
++
++namespace Axis
++
++open IndexedComponentCompositionAxisFixtures
++open IndexedComponentTransportTest (srcShape dstShape p q)
++
++def producerInput : producer.Input :=
++  ⟨fun _ => none, by intro t; rfl⟩
++
++def producerStore : Store RationalReference.Carrier producerDeclarations :=
++  fun a => ((canonicalLayout dstShape).enumerate.symm a.2).val + 1
++
++theorem producer_admitted : producer.AdmEnv RationalReference.ops producerStore := by
++  rintro ⟨t, ht⟩ ⟨s, ⟨v, hv⟩⟩
++  fin_cases t
++  fin_cases s <;> fin_cases v <;> rfl
++
++theorem producer_model :
++    axisProducer.program.Models RationalReference.ops producerInput producerStore := by
++  refine ⟨producer_admitted, ?_, ?_⟩
++  · intro t f present
++    contradiction
++  · rintro ⟨t, ht⟩ ⟨i, j, ⟨⟩⟩
++    fin_cases t
++    fin_cases i <;> fin_cases j <;> decide +kernel +revert
++
++def transportedPre : Coord srcShape → ℚ :=
++  fun c => producerStore
++    ⟨(axisBoundary.matched ⟨0, rfl⟩).val, (axisBoundary.domain ⟨0, rfl⟩).coord c⟩
++
++def consumerInput : consumer.Input :=
++  ⟨fun t => if h : t = 0 then by subst t; exact some transportedPre else none,
++    by intro t; fin_cases t <;> rfl⟩
++
++def consumerStore : Store RationalReference.Carrier consumerDeclarations :=
++  fun ⟨t, c⟩ => if h : t = 0 then transportedPre (by subst t; exact c) else 14
++
++theorem consumer_admitted : consumer.AdmEnv RationalReference.ops consumerStore := by
++  rintro ⟨t, ht⟩ ⟨s, ⟨v, hv⟩⟩
++  fin_cases t
++  · contradiction
++  · fin_cases s
++    fin_cases v
++    decide +kernel +revert
++
++theorem consumer_model :
++    axisConsumer.program.Models RationalReference.ops consumerInput consumerStore := by
++  refine ⟨consumer_admitted, ?_, ?_⟩
++  · intro t f present c
++    fin_cases t
++    · have hf : transportedPre = f := Option.some.inj present
++      subst f
++      rfl
++    · contradiction
++  · rintro ⟨t, ht⟩ c
++    fin_cases t
++    · contradiction
++    · cases c
++      decide +kernel +revert
++
++theorem producer_statement_values :
++    (List.finRange 6).map (fun i => producerStore ⟨0, producerCoord i⟩) =
++      [1, 2, 3, 4, 5, 6] := by
++  decide +kernel
++
++theorem transported_input_present :
++    consumerInput.val 0 = some transportedPre := rfl
++
++theorem transported_distinguishing_values :
++    transportedPre p = 5 ∧ transportedPre q = 2 ∧
++      transportedPre (0, 0, ()) = 1 ∧ transportedPre (1, 2, ()) = 6 := by
++  decide +kernel
++
++theorem consumer_values :
++    consumerStore ⟨0, p⟩ = 5 ∧ consumerStore ⟨0, q⟩ = 2 ∧
++      consumerStore ⟨1, ()⟩ = 14 := by
++  decide +kernel
++
++def flattenedPre : Coord srcShape → ℚ :=
++  fun c => producerStore
++    ⟨0, (canonicalLayout dstShape).enumerate
++      ((canonicalLayout srcShape).enumerate.symm c)⟩
++
++theorem flattened_distinguishing_values :
++    flattenedPre p = 3 ∧ flattenedPre q = 4 := by
++  decide +kernel
++
++theorem coordinate_transport_distinct : flattenedPre ≠ transportedPre := by
++  intro equal
++  have atP := congrFun equal p
++  rw [flattened_distinguishing_values.1, transported_distinguishing_values.1] at atP
++  norm_num at atP
++
++theorem selected_sum_does_not_distinguish :
++    transportedPre p + (transportedPre q + (transportedPre p + transportedPre q)) = 14 ∧
++      flattenedPre p + (flattenedPre q + (flattenedPre p + flattenedPre q)) = 14 := by
++  decide +kernel
++
++end Axis
++
++#eval ((Empty.liftedInput (.inl
++    IndexedComponentCompositionPortFixtures.emptyExternalInput)).isSome,
++  (Empty.consumerInput.val
++    IndexedComponentCompositionPortFixtures.emptyConsumerPre).isSome)
++
++#eval ((List.finRange 6).map
++    (fun i => Axis.producerStore ⟨0, IndexedComponentCompositionAxisFixtures.producerCoord i⟩),
++  (Axis.transportedPre IndexedComponentTransportTest.p,
++    Axis.transportedPre IndexedComponentTransportTest.q),
++  (Axis.flattenedPre IndexedComponentTransportTest.p,
++    Axis.flattenedPre IndexedComponentTransportTest.q),
++  Axis.consumerStore ⟨1, ()⟩)
++
++#print axioms Empty.producer_model
++#print axioms Empty.consumer_model
++#print axioms Axis.producer_model
++#print axioms Axis.consumer_model
++#print axioms Axis.coordinate_transport_distinct
++
++end IndexedComponentModelGeometryFixtures
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentModelGeometryTest.lean b/leanncd/experiments/indexed_execution/IndexedComponentModelGeometryTest.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..7c4b37c7e93c1051349fc09cf3692d68be7a7c0a
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentModelGeometryTest.lean
+@@ -0,0 +1,130 @@
++import IndexedComponentModelWitnesses
++import IndexedComponentModelGeometryFixtures
++
++namespace IndexedComponentModelGeometryTest
++
++open LeanNCD.Semantics
++open IndexedComponentComposition
++
++namespace Empty
++
++open IndexedComponentCompositionPortFixtures
++open IndexedComponentModelGeometryFixtures.Empty
++
++theorem lifted_input_present :
++    (liftInput emptyProducerComponent emptyConsumerComponent emptyBoundary
++      emptyValidatedInput).val (.inl emptyExternalInput) =
++      some (fun p => Fin.elim0 p.1) := rfl
++
++theorem boundary_input_present :
++    (boundaryInput emptyProducerComponent emptyConsumerComponent emptyBoundary
++      producerStore).val emptyConsumerPre = some transportedPre := rfl
++
++theorem boundary_input_eq :
++    boundaryInput emptyProducerComponent emptyConsumerComponent emptyBoundary
++      producerStore = consumerInput := by
++  apply Subtype.ext
++  funext t
++  fin_cases t <;> rfl
++
++def compositeStore := glueStore emptyProducerComponent emptyConsumerComponent
++  producerStore consumerStore
++
++theorem downstream_model :
++    emptyConsumerComponent.program.Models RationalReference.ops
++      (boundaryInput emptyProducerComponent emptyConsumerComponent emptyBoundary producerStore)
++      consumerStore := by
++  rw [boundary_input_eq]
++  exact consumer_model
++
++theorem composite_model :
++    (program emptyProducerComponent emptyConsumerComponent emptyBoundary).Models
++      RationalReference.ops
++      (liftInput emptyProducerComponent emptyConsumerComponent emptyBoundary emptyValidatedInput)
++      compositeStore :=
++  (models_glue_iff emptyProducerComponent emptyConsumerComponent emptyBoundary
++    emptyValidatedInput producerStore consumerStore downstream_model.choose_spec.1).mpr
++      ⟨producer_model, downstream_model⟩
++
++theorem empty_output_identity :
++    (program emptyProducerComponent emptyConsumerComponent emptyBoundary).output
++      (.inr ⟨emptyConsumerOut, rfl⟩) = true ∧
++    (outputIndexEquiv emptyProducerComponent emptyConsumerComponent emptyBoundary)
++      ⟨.inr ⟨emptyConsumerOut, rfl⟩, rfl⟩ = ⟨emptyConsumerOut, rfl⟩ := by
++  constructor
++  · rfl
++  · rfl
++
++theorem input_roundtrip :
++    restrictInput emptyProducerComponent emptyConsumerComponent emptyBoundary
++      (liftInput emptyProducerComponent emptyConsumerComponent emptyBoundary
++        emptyValidatedInput) = emptyValidatedInput :=
++  restrictInput_liftInput _ _ _ _
++
++theorem store_roundtrip :
++    glueStore emptyProducerComponent emptyConsumerComponent
++      (restrictUpstream emptyProducerComponent emptyConsumerComponent compositeStore)
++      (restrictDownstream emptyProducerComponent emptyConsumerComponent emptyBoundary
++        compositeStore) = compositeStore :=
++  glueStore_restrictions _ _ _ _
++
++end Empty
++
++namespace Axis
++
++open IndexedComponentCompositionAxisFixtures
++open IndexedComponentModelGeometryFixtures.Axis
++open IndexedComponentTransportTest (p q)
++
++theorem boundary_input_eq :
++    boundaryInput axisProducer axisConsumer axisBoundary producerStore = consumerInput := by
++  apply Subtype.ext
++  funext t
++  fin_cases t <;> rfl
++
++def compositeStore := glueStore axisProducer axisConsumer producerStore consumerStore
++
++theorem downstream_model :
++    axisConsumer.program.Models RationalReference.ops
++      (boundaryInput axisProducer axisConsumer axisBoundary producerStore) consumerStore := by
++  rw [boundary_input_eq]
++  exact consumer_model
++
++theorem composite_model :
++    (program axisProducer axisConsumer axisBoundary).Models RationalReference.ops
++      (liftInput axisProducer axisConsumer axisBoundary producerInput) compositeStore :=
++  (models_glue_iff axisProducer axisConsumer axisBoundary
++    producerInput producerStore consumerStore downstream_model.choose_spec.1).mpr
++      ⟨producer_model, downstream_model⟩
++
++theorem restricted_values :
++    restrictDownstream axisProducer axisConsumer axisBoundary compositeStore ⟨0, p⟩ = 5 ∧
++    restrictDownstream axisProducer axisConsumer axisBoundary compositeStore ⟨0, q⟩ = 2 ∧
++    compositeStore ⟨.inr ⟨1, rfl⟩, ()⟩ = 14 := by
++  unfold compositeStore
++  rw [restrictDownstream_glueStore axisProducer axisConsumer axisBoundary
++    producerStore consumerStore downstream_model.choose_spec.1]
++  exact consumer_values
++
++theorem restricted_not_flattened :
++    (fun c => restrictDownstream axisProducer axisConsumer axisBoundary compositeStore ⟨0, c⟩)
++      ≠ flattenedPre := by
++  unfold compositeStore
++  rw [restrictDownstream_glueStore axisProducer axisConsumer axisBoundary
++    producerStore consumerStore downstream_model.choose_spec.1]
++  exact Ne.symm coordinate_transport_distinct
++
++theorem store_roundtrip :
++    glueStore axisProducer axisConsumer
++      (restrictUpstream axisProducer axisConsumer compositeStore)
++      (restrictDownstream axisProducer axisConsumer axisBoundary compositeStore) =
++      compositeStore :=
++  glueStore_restrictions _ _ _ _
++
++#eval (restrictDownstream axisProducer axisConsumer axisBoundary compositeStore ⟨0, p⟩,
++  restrictDownstream axisProducer axisConsumer axisBoundary compositeStore ⟨0, q⟩,
++  compositeStore ⟨.inr ⟨1, rfl⟩, ()⟩)
++
++end Axis
++
++end IndexedComponentModelGeometryTest
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index 20994b7db8c76d6e4bbbfa3ce15c14c9894ea8a1..ff2d2c4226a347c43c4938441d1d43e443b29dda 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -175,4 +175,5 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
+          "IndexedComponentModelTransport",
+          "IndexedComponentModelWitnesses",
+          "IndexedComponentModelDenotation",
+-         "IndexedComponentModelLocalFixtures", "IndexedComponentModelLocalTest"]
++         "IndexedComponentModelLocalFixtures", "IndexedComponentModelLocalTest",
++         "IndexedComponentModelGeometryFixtures", "IndexedComponentModelGeometryTest"]

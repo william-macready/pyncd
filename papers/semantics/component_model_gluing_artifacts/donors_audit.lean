@@ -1,0 +1,6 @@
+import IndexedComponentModelCycleFixtures
+import IndexedComponentModelGeometryFixtures
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedComponentModelCycleFixtures
+#audit_axioms IndexedComponentModelGeometryFixtures

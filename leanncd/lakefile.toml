@@ -170,4 +170,12 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
          "IndexedComponentCompositionTest", "IndexedComponentCompositionCollisionFixtures",
          "IndexedComponentCompositionAxisFixtures", "IndexedComponentCompositionInterfaceTest",
          "IndexedComponentCompositionCounterexampleTest", "IndexedComponentComposition",
-         "IndexedComponentCompositionCorrespondenceTest"]
+         "IndexedComponentCompositionCorrespondenceTest",
+         "IndexedComponentModelInputs",
+         "IndexedComponentModelTransport",
+         "IndexedComponentModelWitnesses",
+         "IndexedComponentModelDenotation",
+         "IndexedComponentModelLocalFixtures", "IndexedComponentModelLocalTest",
+         "IndexedComponentModelGeometryFixtures", "IndexedComponentModelGeometryTest",
+         "IndexedComponentModelCycleFixtures", "IndexedComponentModelCycleTest",
+         "IndexedComponentModelTest"]

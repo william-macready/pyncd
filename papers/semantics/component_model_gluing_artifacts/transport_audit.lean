@@ -1,0 +1,6 @@
+import IndexedComponentModelTransport
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedComponentComposition
+#print axioms IndexedComponentComposition.admEnv_components
+#print axioms IndexedComponentComposition.equations_components

@@ -1,0 +1,7 @@
+import IndexedComponentModelInputs
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedComponentComposition
+#print axioms IndexedComponentComposition.restrictDownstream_glueStore
+#print axioms IndexedComponentComposition.glueStore_restrictions
+#print axioms IndexedComponentComposition.boundaryInput_restrictions
