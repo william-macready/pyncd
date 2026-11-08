@@ -459,7 +459,7 @@ python3 /Users/williammacready/code/python/pyncd.worktrees/follow-directions-com
   rerun affected gates, then full build, before integration.
 - [x] Protected primary-file hashes unchanged; staged scope excludes their
   working copies and `.claude/settings.json`; documentation claims swept.
-- [ ] After green release gates and adjudication, merge to local main and
+- [x] After green release gates and adjudication, merge to local main and
   clean up only the task-owned branches/two worktrees; no push.
 
 Controller commands use absolute checkout paths. For replay's manifest gates:

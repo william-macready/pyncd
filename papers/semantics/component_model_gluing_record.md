@@ -29,9 +29,9 @@ before 60 turns / 250k retained context.
 
 ## Current status
 
-The verified plan, all eight execution tasks, seven acceptance cases,
-controller release checks, and both final whole-branch reviews are complete.
-Local integration and task-only cleanup are the remaining step.
+Complete: the verified plan, all eight execution tasks, seven acceptance cases,
+controller release checks, and both final whole-branch reviews have landed
+on local main. Task-only cleanup is recorded in the integration receipt below.
 
 ## Controller occurrence and collection prototype
 
@@ -349,3 +349,25 @@ requires at-most-one complete-model stores for both components on every
 validated input. All private work remains in those complete witnesses.
 Rank stitching, runtime phase/projection/trace theorems, categorical laws,
 wider interfaces, and prior-slice repairs remain explicitly outside this slice.
+
+## Local integration receipt
+
+- Merged to local main as `d8e714fe55e8d701561a7685b3b76a8cb39736a6`.
+- The topic branch is an ancestor of main; immediately after merging,
+  `git diff --stat main agents/follow-directions-component-model` was empty.
+- Refreshed the primary checkout's project-owned cache from the verified
+  task build, then ran the full required build against merged main.
+  `LeanNCD Tests IndexedExecutionExperiment` passed.
+- Both protected working copies retain their original SHA-256 hashes and
+  remain uncommitted. No unrelated edits were staged.
+- Final cleanup removes only the two inspected task-owned worktrees,
+  `follow-directions-component-model` and `component-model-gluing-replay`,
+  and deletes `agents/follow-directions-component-model`. The replay was
+  detached and creates no extra branch. The controller verifies their
+  absence after the receipt commit.
+- No push was performed; main is intentionally local-ahead.
+
+All actual implementation and release gates are complete. Open operational
+and categorical obligations are exclusions, not silently skipped slice tasks.
+Measured token accounting remains unavailable; the recorded process overruns
+are not retroactively asserted compliant.
