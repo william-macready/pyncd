@@ -47,7 +47,7 @@ STATS: dict[str, list] = {}
 OUT_STATS: dict[tuple[str, str], list] = {}  # (fixture, output name) -> stats; one table per transformer fixture
 TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "transformer_rms32",
                         "transformer_scan", "transformer_scan32",
-                        "transformer_head", "transformer_head32",
+                        "transformer_head", "transformer_head32", "scan_postrole", "scan_postrole32",
                         "transformer_unrolled", "transformer_unrolled32"}
 # Scan-vs-unrolled oracle (both JAX results, no Lean): (rtol, atol) per precision. MEASURED: scan and
 # unrolled are bit-identical in float64 and float32, eager and jit (24/24 entries per precision), so
@@ -65,6 +65,11 @@ HEAD_LOGITS_TOL = {"float64": 1e-12, "float32": 1e-6}
 # P vs the float64 row-wise softmax of the numpy Logits (pin (a')). MEASURED (Lean, eager, jit): float64
 # 5.6e-17 / 4.2e-17, float32 2.6e-8 for all three; headroom ~4.7 orders (float64) / ~1.6 orders (float32).
 HEAD_SOFTMAX_TOL = {"float64": 1e-12, "float32": 1e-6}
+# Post-scan role pins (scan_postrole): max over entries of |view - numpy| / max(1, |numpy|) (the outputs reach
+# ~5e4, so a float32 absolute bound would be meaningless), numpy float64 from the inputs only. MEASURED (Lean,
+# eager, jit): float64 0 for every output except Lean's Sm 3.5e-18, float32 0 except Sm 2.8e-8; the tolerances leave
+# ~6 orders (float64) / ~1.5 orders (float32) of headroom and are far below any wrong-reading effect (>= 3e-2 relative).
+POSTROLE_TOL = {"float64": 1e-12, "float32": 1e-6}
 
 
 def flat_nodes(nodes):
@@ -391,6 +396,60 @@ def main() -> None:
           f"recomputation from H slice 2; P == softmax(numpy Logits); Hf unit mean square, pre-norm Zf not; per-output measured difference vs Lean:")
     for n in sorted(n for fx, n in OUT_STATS if fx == hd_name):
         rel, ab, ex, tot = OUT_STATS[(hd_name, n)]
+        print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+    # POST-SCAN ROLE: `S[j, l+1] := S[j, l] . G[j]` (closed form `S = X * G**l`) and six statements nothing in
+    # the recurrence reads, so each is a plain node AFTER the one scan node and `l` is an ordinary axis in it.
+    # Lean and JAX agreeing proves nothing here, so every view (Lean, eager, jit) is recomputed in numpy float64
+    # from the fixture's INPUTS only (X, G, V and the closed form), never from the view's own outputs.
+    pr_name = "scan_postrole" + sfx
+    pr = by[pr_name]
+    pin_ = {n: lean_array(e).astype(np.float64) for n, e in pr["inputs"].items()}
+    pnodes = pr["plan"]["nodes"]
+    p_after = pnodes[1:]
+    assert pnodes[0].get("kind") == "scan" and all(n.get("kind") != "scan" for n in p_after) and len(p_after) > 0, \
+        [n.get("kind") for n in pnodes]
+    assert sorted(pin_) == ["G", "M", "V", "X"], sorted(pin_)
+    pX, pG, pV, pM = pin_["X"], pin_["G"], pin_["V"], pin_["M"]
+    pL = pV.shape[0]
+    assert pL == pnodes[0]["step_count"] + 1, (pL, pnodes[0]["step_count"])
+    assert pM.shape == pV.shape and set(np.unique(pM)) <= {0.0, 1.0}, pM.tolist()
+    assert pL not in set(pX.shape) | set(pG.shape), ("history extent collides with another extent", pL)
+    pS = pX[:, None] * pG[:, None] ** np.arange(pL)[None, :]
+    pSm = np.zeros_like(pS)
+    pe = np.exp(pS[:, :2])
+    pSm[:, :2] = pe / pe.sum(axis=1, keepdims=True)
+    pwant = {"S": pS, "Zc": pS[:, 2] * pM.sum(), "Ysum": pS[:, 2] * pV.sum(), "Yfree": (pS * pV[None, :]).sum(axis=1),
+             "T": pS * pV[None, :], "Bc": np.repeat(pS[:, 2:3], pL, axis=1), "Sm": pSm}
+    pviews = {"lean": {n: lean_array(e) for n, e in pr["expected"].items()},
+              "eager": {n: np.asarray(v) for n, v in EAGER[pr_name]["eager"].items()},
+              "jit": {n: np.asarray(v) for n, v in EAGER[pr_name]["jit"].items()}}
+    for who, po in pviews.items():
+        assert set(pwant) <= set(po), (who, sorted(po))
+        errs = {}
+        for n, w in pwant.items():
+            got = po[n].astype(np.float64)
+            assert got.shape == w.shape, (who, n, got.shape, w.shape)
+            errs[n] = (float(np.max(np.abs(got - w) / np.maximum(1.0, np.abs(w)))), float(np.max(np.abs(got - w))))
+            assert errs[n][0] < POSTROLE_TOL[_DT], ("post-role pin: output vs numpy from the inputs", who, n, errs[n], got.tolist(), w.tolist())
+        # the free read is the sum over every layer, NOT the per-step reading (last layer times last V entry)
+        last = pS[:, -1] * pV[-1]
+        gap = float(np.min(np.abs(po["Yfree"].astype(np.float64) - last) / np.abs(last)))
+        assert gap > 1e-2, ("post-role pin: Yfree is not the per-step reading", who, gap)
+        # Zc sums the mask over the full history extent, NOT over the steps {0..L-2} only
+        zc_steps = pS[:, 2] * pM[:-1].sum()
+        zgap = float(np.min(np.abs(po["Zc"].astype(np.float64) - zc_steps) / np.abs(zc_steps)))
+        assert zgap > 1e-2, ("post-role pin: Zc is not the steps-only count", who, zgap)
+        # the masked-out layers of Sm are exactly 0 and the allowed layers sum to 1
+        assert np.all(po["Sm"][:, 2:] == 0) and np.allclose(po["Sm"].astype(np.float64).sum(axis=1), 1.0, atol=1e-6), (who, po["Sm"].tolist())
+        print(f"  postrole {who}: " + ", ".join(f"{n} {errs[n][1]:.2e}/{errs[n][0]:.2e}" for n in pwant) +
+              f" (max abs / scaled vs numpy), Yfree vs per-step reading min rel gap {gap:.3f}, Zc vs steps-only count min rel gap {zgap:.3f}")
+    print(f"scan_postrole: plan = 1 scan + {len(p_after)} plain nodes {[n.get('kind', 'assign') for n in p_after]}; history "
+          f"extent {pL} (from V[0]) differs from the other extents; S == X*G**l; Zc, Ysum, Yfree, T, Bc, Sm == numpy "
+          f"recomputation from the inputs on Lean, eager and jit; Yfree is not the per-step reading; Sm masked layers are "
+          f"exactly 0; per-output measured difference vs Lean:")
+    for n in sorted(n for fx, n in OUT_STATS if fx == pr_name):
+        rel, ab, ex, tot = OUT_STATS[(pr_name, n)]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
 
     # UNROLLED ORACLE: the same two layers as two hand-copied flat layers (no scan; the old, trusted flat
