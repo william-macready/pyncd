@@ -10,6 +10,9 @@ Programs the DSL should refuse. Three sub-kinds:
   parse error fails the build, and `#guard_msgs` does not validate parse-time errors), so they
   are documented as comments below.
 
+UF5 (a scan read-out `y[j,l]` written after the recurrence) used to be a rejection and is now an
+accept test with values; it stays here, in place, so its history reads in one spot.
+
 Probed against HEAD (2026-07-04); RJ6 re-probed 2026-07-30. Note: the draft's RJ9
 (purely-negative index) does **not** actually reject — it returns output — so it is not authored
 here; see the note at the end.  **RJ6 now REJECTS** (it previously did not; see RJ6 below).
@@ -121,20 +124,33 @@ run_cmd (assertEvalError "UF4 div-domain-violation"
   (HashMap.ofList [("X", tl [2] [1,2]), ("Z", tl [2] [1,0])])
   "div domain error")
 
--- UF5  a per-step scan read-out written INSIDE the scan block ⇒ scanProjectionUnsupported.
---   `y[j,l] := C[j,k]·h[k,l]` has no base case and its own LHS references the scan axis `l` —
---   ambiguous between "track this across every step" (not materialized here) and "same-step
---   scratch" (never references `l` on its own LHS). Rejected rather than silently dropped; the
---   fully general workaround is SS2 (`GenerativeTest.lean`) — write it standalone, after the
---   scan, reading the materialized state.
+-- UF5  (formerly a rejection, `scanProjectionUnsupported "y"`; now an ACCEPT with values.)
+--   `y[j,l] := C[j,k]·h[k,l]` is not read by the recurrence, so the role-based post-scan
+--   classification makes it a POST-SCAN statement: it is evaluated once, after the scan, with the scan
+--   axis `l` an ordinary axis, so `y` is the whole read-out table `y[j,l] = Σ_k C[j,k]·h[k,l]`. It
+--   is not a per-step scratch and it is not dropped. Hand computation (`iter l = 3`, steps l = 0, 1):
+--     h0 = [1,2], A = [[1,1],[0,1]], B = [1,2], u = [1,2,3], C = [[1,2],[3,4]]
+--     h(1) = A·h(0) + B·u0 = [3,2] + [1,2]  = [4,4]
+--     h(2) = A·h(1) + B·u1 = [8,4] + [2,4]  = [10,8]
+--     h[j,l], row-major [2,3]: [1,4,10, 2,4,8]
+--     y[0,l] = h[0,l] + 2·h[1,l] = [5,12,26];  y[1,l] = 3·h[0,l] + 4·h[1,l] = [11,28,62]
+--   Rejecting such a statement for carrying `l` on its own LHS was the old behaviour.
+private def uf5Prog : TLProgram := tlprog!{ iter l = 3
+                                           h[j, 0]    := h0[j]
+                                           h[j, l +1] := A[j, k] · h[k, l] + B[j] · u[l]
+                                           y[j, l]    := C[j, k] · h[k, l] }
+
+private def uf5Env : HashMap String DenseTensor :=
+  HashMap.ofList [("h0", tl [2] [1, 2]), ("A", tl [2, 2] [1, 1, 0, 1]), ("B", tl [2] [1, 2]),
+                  ("u", tl [3] [1, 2, 3]), ("C", tl [2, 2] [1, 2, 3, 4])]
+
 run_cmd do
-  match TLProgram.compile (tlprog!{ iter l = 3
-                                    h[j, 0]    := h0[j]
-                                    h[j, l +1] := A[j, k] · h[k, l] + B[j] · u[l]
-                                    y[j, l]    := C[j, k] · h[k, l] }) |>.run 0 with
-  | .error (.scanProjectionUnsupported "y") _ => pure ()
-  | .error e _ => throwError s!"UF5: wrong CompileError: {repr e}"
-  | .ok _ _    => throwError "UF5: expected scanProjectionUnsupported, compile succeeded"
+  match TLProgram.compile uf5Prog |>.run 0 with
+  | .error e _ => throwError s!"UF5: expected the read-out to compile, got {repr e}"
+  | .ok _ _    => pure ()
+
+run_cmd (assertEval "UF5 h" uf5Prog uf5Env "h" (tl [2, 3] [1, 4, 10, 2, 4, 8]))
+run_cmd (assertEval "UF5 y" uf5Prog uf5Env "y" (tl [2, 3] [5, 12, 26, 11, 28, 62]))
 
 /-
 Parse-level rejects (fail during elaboration of `tlprog!`; not automatable — kept as documentation):

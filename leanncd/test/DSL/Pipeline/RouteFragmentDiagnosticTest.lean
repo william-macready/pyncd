@@ -37,7 +37,7 @@ Column "old" is the pre-flip `splitNonlins → schedule → route` state recorde
 | 11 | `missingBaseCase "Out"`                    | @3 | @3 | 0 | pre-split failure |
 | 12 | `scanAxisNotIter "l"`                      | @4 | @4 | 0 | pre-split failure |
 | 13 | `causalityViolation "S"`                   | @4 | @4 | 0 | pre-split failure |
-| 14 | `scanProjectionUnsupported "y"`            | @5 | @5 | 0 | pre-split failure |
+| 14 | success                                    | @5 | @5 | 0 | was `scanProjectionUnsupported "y"`; the read-out `y` is now a post-scan node |
 | 15 | `cyclicDataflow "schedule: cyclic dataflow"`| @2 | @2 | 0 | identity cycle |
 | 16 | `cyclicDataflow "schedule: cyclic dataflow"`| @4 | @2 | 2 | two nonlinear stmts; see below |
 | 17 | success                                    | @5 | @4 | 1 | one nonlinear stmt |
@@ -215,10 +215,12 @@ D4 is the error-PRECEDENCE observation: swapping `checkReadRanks`/`checkDtypes` 
 
 #guard compileOkIs case05 1 2 [[Wire.external 0], [Wire.internal 0 0]] 2
 
-/-! ### D6–D15: ten exact named errors, every state unchanged by the flip
+/-! ### D6–D15: nine exact named errors (and case 14, now a success), every state unchanged by the flip
 
-All ten fail strictly before the (former) split phase, so a state delta here would mean the flip
-moved a *pre-split* failure — a §4 stop condition, not a fixture to update. -/
+The nine errors fail strictly before the (former) split phase, so a state delta here would mean the
+flip moved a *pre-split* failure — a §4 stop condition, not a fixture to update. Case 14 used to be
+the tenth (`scanProjectionUnsupported "y"`); the role-based post-scan classification made its read-out
+`y` a post-scan node, so it now compiles (5 externals, 2 steps, final state 5, measured). -/
 
 #guard compileErrorIs case06 (.normAxisNotReal "m") 2
 #guard compileErrorIs case07 (.iterAxisNotNat "l") 2
@@ -228,7 +230,9 @@ moved a *pre-split* failure — a §4 stop condition, not a fixture to update. -
 #guard compileErrorIs case11 (.missingBaseCase "Out") 3
 #guard compileErrorIs case12 (.scanAxisNotIter "l") 4
 #guard compileErrorIs case13 (.causalityViolation "S") 4
-#guard compileErrorIs case14 (.scanProjectionUnsupported "y") 5
+#guard compileOkIs case14 5 2
+  [[Wire.external 0, Wire.external 1, Wire.external 2, Wire.external 3],
+   [Wire.external 4, Wire.internal 0 0]] 5
 #guard compileErrorIs case15 (.cyclicDataflow "schedule: cyclic dataflow") 2
 
 /-! ### D16: same constructor, same payload string, two removed split mints (old @4 → new @2)
