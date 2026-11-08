@@ -180,4 +180,6 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
          "IndexedComponentModelCycleFixtures", "IndexedComponentModelCycleTest",
          "IndexedComponentModelTest",
          "IndexedWitnessInterface", "IndexedWitnessSpan", "IndexedWitnessComposition",
+         "IndexedWitnessCoherence", "IndexedWitnessCoherenceTest",
+         "IndexedWitnessPartial", "IndexedWitnessPartialTest",
          "IndexedWitnessCompositionTest", "IndexedWitnessTest"]
