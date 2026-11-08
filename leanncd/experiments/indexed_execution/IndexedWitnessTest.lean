@@ -1,4 +1,4 @@
-import IndexedWitnessSpan
+import IndexedWitnessComposition
 import IndexedComponentCompositionPortFixtures
 import IndexedComponentModelCycleFixtures
 import Semantics.AxiomAudit
@@ -58,5 +58,9 @@ theorem hidden_outputs_equal :
 #print axioms IndexedWitness.homComp
 #print axioms IndexedWitness.SpanIso.leftUnit
 #print axioms IndexedWitness.componentSpan
+#print axioms IndexedWitness.boundaryEnvEquiv
+#print axioms IndexedWitness.allInputWiredEquiv
+#print axioms IndexedWitness.compositeWiredIso
+#print axioms IndexedWitness.composition_hom
 
 end IndexedWitnessTest
