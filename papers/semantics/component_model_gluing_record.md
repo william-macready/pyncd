@@ -29,9 +29,9 @@ before 60 turns / 250k retained context.
 
 ## Current status
 
-All prototype proofs and seven acceptance cases now compile and pass namespace
-audits. Verified plan/package execution and release gates remain pending;
-no completed release is claimed.
+The verified plan, all eight execution tasks, seven acceptance cases,
+controller release checks, and both final whole-branch reviews are complete.
+Local integration and task-only cleanup are the remaining step.
 
 ## Controller occurrence and collection prototype
 
@@ -311,3 +311,41 @@ pre-existing non-semantic warnings; the new proof namespaces pass their
 standard-axiom audits.
 Actual replay release mutations/probes and the two final whole-branch
 review lenses remain pending.
+
+## Controller release gates and final adjudication
+
+The controller ran the complete unfiltered 12-entry manifest on the actually
+executed replay source, not just authoring prototypes or `--check`.
+[Replay mutation results](component_model_gluing_artifacts/execution_mutations.md)
+show every intended diagnostic, byte-identical restoration, and green
+restored target. No cycle was filtered or skipped.
+
+The full replay `LeanNCD Tests IndexedExecutionExperiment` build passed
+(8,898 jobs), followed by the actual store/input probes:
+`true`, `true`, `(1, 1)`, `(0, 1, 1, 1)`.
+The original controller checkout's full build also passed 8,898 jobs.
+
+Both required whole-branch reviews examined `e1553bb7`, whose parent includes
+the actual eight execution commits and whose packaged source matches them:
+
+- [Model-theorem soundness](component_model_gluing_artifacts/review_soundness.md):
+  no load-bearing findings.
+- [Integration/fixtures/claim fidelity](component_model_gluing_artifacts/review_integration.md):
+  no actionable findings; independently reconstructed all patch, intermediate
+  file, and checkpoint hashes and checked all seven fixtures.
+
+Both findings sets are adjudicated clean. No Lean/source/package change
+followed these reviews; close-out edits only record completed gates.
+
+Immediately before integration, both protected primary-working-copy hashes
+still match the initial values. The branch does not stage or commit either
+draft. Cleanup inspection identified only the task-owned `.lake` caches and
+eight generated replay logs as ignored files; no other task-worktree contents
+are to be discarded.
+
+The rank-independent witness bijection is complete without ranks, phases,
+model existence, or component uniqueness. The denotation corollary separately
+requires at-most-one complete-model stores for both components on every
+validated input. All private work remains in those complete witnesses.
+Rank stitching, runtime phase/projection/trace theorems, categorical laws,
+wider interfaces, and prior-slice repairs remain explicitly outside this slice.

@@ -454,10 +454,10 @@ python3 /Users/williammacready/code/python/pyncd.worktrees/follow-directions-com
   These execution results are distinct from isolated-index authoring parity.
 - [x] Per-task reviews/checkpoints completed and findings adjudicated.
 - [x] Controller runs full `LeanNCD Tests IndexedExecutionExperiment` build.
-- [ ] Two final whole-branch reviews completed: model soundness; and
+- [x] Two final whole-branch reviews completed: model soundness; and
   integration/fixtures/claim fidelity. Fix finding groups separately and
   rerun affected gates, then full build, before integration.
-- [ ] Protected primary-file hashes unchanged; staged scope excludes their
+- [x] Protected primary-file hashes unchanged; staged scope excludes their
   working copies and `.claude/settings.json`; documentation claims swept.
 - [ ] After green release gates and adjudication, merge to local main and
   clean up only the task-owned branches/two worktrees; no push.
