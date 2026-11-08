@@ -1742,6 +1742,8 @@ profile. The next obligations depend on the intended claim:
   `bracket_hom` provide denotational comparison ingredients, not a source
   category. Broader interfaces or automatic leaf matches would require
   additional constructions beyond this sealed profile.
+  The [source-category and functor session brief](categorical_source_functor_handoff.md)
+  scopes this next denotational slice; it is not a verified implementation plan.
 - **Sequential process meaning:** stitch rank certificates, prove the
   upstream/downstream phase and state projections, then establish trace
   composition and process units under a specified observation equivalence.
