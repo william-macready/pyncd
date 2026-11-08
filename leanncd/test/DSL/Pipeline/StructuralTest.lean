@@ -536,6 +536,21 @@ private def postStateNameSelfRead : TLProgram := tlprog!{ iter l = 3
   S[j, l +1] := maxreduce(S[j, l] · A[j, k])
   S[j, l]    := maxreduce(Y[j, l]) }
 
+-- Several non-iteration writers of ONE name: fed-ness is by name, so every writer takes the same role.
+-- Not read by the recurrence, both writers are post (the loop-invariant `W` writer included, because
+-- the name `T` is scan-dependent through the other writer); read by the recurrence, both are per-step.
+private def postMultiWriter : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  T[j]       := S[j, l]
+  T[j]       := W[j] }
+
+private def postMultiWriterFed : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  T[j]       := S[j, l]
+  T[j]       := W[j]
+  S[j, l +1] := T[j] }
+
 -- Spanning applies to per-step statements only: a not-fed statement reading two scans' states is post.
 private def postTwoStates : TLProgram := tlprog!{ iter l = 3
   iter m = 2
@@ -568,6 +583,8 @@ private def postFreeSumCFed : TLProgram := tlprog!{ iter l = 3
 #guard layoutOf postStateNameSelfRead == .error (.scanProjectionUnsupported "S")
 -- Spanning is a per-step error only: the not-fed `Z` is post after both scans; once the `m`-step reads it,
 -- it is per-step and spans two components (the per-component closure is parked).
+#guard layoutOf postMultiWriter == .ok ["scan base=[S] body=[S]", "plain T", "plain T"]
+#guard layoutOf postMultiWriterFed == .ok ["scan base=[S] body=[T, T, S]"]
 #guard layoutOf postTwoStates == .ok ["scan base=[S] body=[S]", "scan base=[H] body=[H]", "plain Z"]
 #guard layoutOf postTwoStatesFed ==
   .error (.shapeMismatch "Z: per-step intermediate spans multiple scan components" "a single scan component")
