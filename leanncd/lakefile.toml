@@ -182,4 +182,6 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
          "IndexedWitnessInterface", "IndexedWitnessSpan", "IndexedWitnessComposition",
          "IndexedWitnessCoherence", "IndexedWitnessCoherenceTest",
          "IndexedWitnessPartial", "IndexedWitnessPartialTest",
-         "IndexedWitnessCompositionTest", "IndexedWitnessTest"]
+         "IndexedWitnessCompositionTest", "IndexedWitnessTest",
+         "IndexedWitnessObservationProbe", "IndexedWitnessObservationProbeTest",
+         "IndexedWitnessObservationParity"]
