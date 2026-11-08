@@ -114,7 +114,7 @@ Costs are the controller's rough estimates in dispatches (one dispatch is the Ru
 | `scanContextPos` backstop has no test (review R2, Major) | The check is unreachable from a checked plan (`Block.lean` forces the step assign's context shape) and not constructible from checked input (private constructors); manifest entry JS-L-e3 (`#[0]` to `#[1]`) is killed by the happy path only. Decide: delete the check, or build a `CheckedPlanBlock` test hook. About 0.5 dispatch; deleting shifts the `EvalPlanCodegen.lean` pins |
 | Mutation coverage beyond `transformer_scan` (review R2, Minor) | The Python manifest mutates only that fixture; the T = 0 early return, multi-scan, `_check_index`, `_store_result` and step-write collisions have fixtures but are never mutated on purpose. About 1 dispatch |
 | Independent pins for five of the eight donor scans (review R2, Minor) | Only `scan_extentone`, `scan_deephistory` and `scan_twoscan` have a plain-Python recomputation; the other five are Lean-versus-JAX only, so a bug shared by both would pass. About 1 dispatch |
-| Scan block assignment with an Iverson factor (review R2, Minor) | The gate admits it, the emitter refuses with `iversonFactor`; unpinned. About 0.3 dispatch |
+| Scan block assignment with an Iverson factor (review R2, Minor) | CLOSED 2026-11-08: `ScanIversonRefusalTest` (a `JaxExperiment` module) pins that the gate admits a step or base assignment with `[j ≤ 1]` and `renderScanNode` refuses it with `iversonFactor 0 0 1`, with the predicate-free neighbour rendering |
 | `allowContext` scope (review R2, Minor) | It is applied to the base block too (unreachable: a base block's context shape is empty) and its `false` default is observationally unpinned. Tie it to `isStep`. About 0.3 dispatch |
 
 ## 6. Budget (Rule 6)
@@ -249,9 +249,12 @@ so it cannot see an orientation error by itself).
   statement under a state's own name, because the name filter requires every statement of a name to pass the
   candidate test and a state's recurrence statement carries an iteration slot. The two state-name pins stay as
   behaviour pins.
-- An axiswise `where=` mask that mentions a scan axis is not inspected by the post rule (only Iverson factors
-  are); multi-axis scans and a post statement spanning two scan components have no fixture; a name with several
-  non-iteration writers where one is post-eligible and one is not is untested. About 1 dispatch.
+- CLOSED (2026-11-08) except multi-axis: the role-based rule no longer inspects predicates at all (an
+  axiswise `where=` mask over `l` is ordinary; the masked softmax `Sm` over `l` is on both backends in
+  `postRoleProg3`/`postRoleProg4`, an Iverson over `l` is `postIverScanAxis`), a post statement reading two scans'
+  states is `postTwoStates`, and a name with several non-iteration writers is decided by name:
+  `postMultiWriter` (both writers post, the loop-invariant one too) and `postMultiWriterFed` (both per-step).
+  Multi-axis scans still have no fixture (gated on F3-b stage 2).
 - CLOSED (2026-11-08): the wording in `KnownGapTest`, `RejectTest` (UF5 comment) and `GenerativeTest` (SS2) now
   also mentions the pinned-literal path (`postPin`, and `plainStatePinOutOfRange` for an out-of-extent pin).
 - Whole-branch review (one read-only adversarial reviewer on the classification rule, code reading only, no
@@ -292,7 +295,9 @@ so it cannot see an orientation error by itself).
     on an input tensor and on an earlier plain statement's destination staying accepted. Each of the four mutants
     these were written for (term index fixed at 0; dimension 0's extent for every dimension, in the plan and in
     the reference; a plain destination recorded as a state) fails a named guard.
-  - The predicate exclusion is partial: an axiswise `where=` mask over a scan axis is not inspected, and a post
+  - SUPERSEDED (2026-11-08): the role-based rule of section 10 removed the predicate exclusion, and the comment at
+    the rule now says that the scan axis is an ordinary axis in a post statement. Original note: the predicate
+    exclusion is partial: an axiswise `where=` mask over a scan axis is not inspected, and a post
     statement may mention the iteration axis through an external tensor (`Y[q] := H[q,2] · c[l]`, or a left-hand
     side carrying `l`: `y[j,l] := C·h[k,2]`, previously `scanProjectionUnsupported`); these now get ordinary
     plain-statement meaning. The comment at the rule does not say so. About 0.5 dispatch to state it or tighten it.
@@ -392,8 +397,10 @@ the compile guards of the value fixtures. Build `Tests` + `JaxExperiment` green 
   test gaps: the conjuncts `!stateNames.contains r` and `isScanDep r` of the throw condition, and a fed closure
   that passes through two or more statements, had no pin; (3) a post statement with a shifted free state read
   (`D[j,l] := S[j,l+1] - S[j,l]`) used to be refused and is now accepted, with no cross-backend pin at `l = N-1`.
-  Still open: (4) a scan whose only non-identity body statement was dead scratch now lowers as `.scanAffine`
-  instead of `.scan`.
+  (4) a scan whose only non-identity statement was dead scratch now lowers as `.scanAffine` instead of `.scan`:
+  CLOSED 2026-11-08 as intended behaviour and pinned (`affineScanNonlinPost` in `ScanAffineTest`: a nonlinear
+  scratch and a nonlinear read-out table, both post, keep `.scanAffine`; the neighbour `reluScanFedInter`, the same
+  `relu` read by the recurrence, is `.scan`).
 - Review minors closed. (1) The `readsPerStepIntermediate` loop now runs after the component loop in
   `finalizeScans`: `iter l = 3; T[j] := H[j,l]; H[j,l+1] := T[j]; M[j] := T[j]` (no base case) reports
   `missingBaseCase "H"`, and `postMixedInter` (with its base case) keeps `readsPerStepIntermediate "M" "T"`.
