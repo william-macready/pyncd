@@ -1,0 +1,16 @@
+{
+  "build_targets": [
+    "LeanNCD",
+    "Tests",
+    "IndexedExecutionExperiment"
+  ],
+  "build_jobs": 8911,
+  "build": "pass",
+  "mutations": 10,
+  "expected_diagnostics": "all pass",
+  "byte_identical_restoration": "all pass",
+  "source_change_after_review": "none; R1 is documentation only",
+  "forbidden_source_tokens": "none",
+  "probe_parity_import": "absent",
+  "token_accounting": "unsupported; observed overruns documented"
+}

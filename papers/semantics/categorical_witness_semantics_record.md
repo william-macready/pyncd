@@ -1,10 +1,13 @@
 # Witness-span semantics: historical design audit and current status
 
-**Current status:** all seven verified tasks have actually executed and
-committed in the controller checkout, with builds, post-edit snippets,
-exact source checks and direct task reviews. Final whole-branch reviews,
-release reruns and local integration are still pending. This is not
-a completed release or a source/process-category claim.
+**Current status:** implementation and all release gates are complete.
+All seven tasks actually executed with builds, post-edit snippets, source
+checks and direct task reviews. The full three-target build passed, all ten
+unfiltered expected mutation cycles passed, and both independent whole-branch
+lenses are clean after the documentation finding was repaired.
+The [integration receipt](categorical_witness_semantics_artifacts/integration_receipt.json)
+is written only after actual local-main merge, merged-main rebuild and
+task-only cleanup; it is authoritative for those final operations.
 
 The verified prototype proves the metadata-bearing whole-interface span
 category, its quotient/unit/associativity laws, all-input complete-model
@@ -17,6 +20,51 @@ verification receipts, repaired failures, limitations and accounting.
 Final unfiltered populated `_post` mutations passed 10/10, separately from
 the earlier invalid proposal attempts; the final table is
 `categorical_witness_semantics_artifacts/authoring_verified_mutations.md`.
+
+## Completed semantic deliverable and boundary
+
+- Objects are metadata-bearing `WholeInterface` values: tensor identities,
+  sorts, full coordinate domains and whole-port rosters, including empty
+  tensors. Objects and homs live in `Type 1`; environments and each witness
+  apex live in `Type 0`. No same-universe local-smallness claim is made.
+- Arrows are spans modulo an apex bijection commuting with both environment
+  legs. Composition is the compatible-pair pullback, the unit is the identity
+  span, and quotient congruence, both unit laws and associativity are proved.
+- A component apex includes every validated input paired with every complete
+  `Program.Models` store. Input reconstruction and whole output projection
+  give the legs; private stores and definedness are not hidden.
+- Composition is preserved with explicit `boundaryEnvEquiv`,
+  `compositeInputEquiv` and `compositeOutputEquiv`. The all-input
+  `allInputWiredEquiv` and `compositeWiredIso` commute with both exterior
+  legs. Actual nested source bracketings reindex to the same compatible
+  complete-model triple, not equal raw UIDs or source programs.
+- Injective-left spans give quotient-invariant partial maps. The component
+  restriction is exactly `AtMostOneModels`; domain/value correspondence uses
+  both component hypotheses and does not assert existence or totality.
+- Source-category/functor and event-sensitive process claims remain open.
+  Administrative graph spans supply semantic wires, not event-free core
+  computations. Rank/phase, trace projection and backend refinement remain
+  excluded.
+
+## Release evidence
+
+The controller's final integrated `LeanNCD Tests IndexedExecutionExperiment`
+build passed 8,911 jobs. The actual unfiltered ten-cycle rerun checked both
+expected diagnostics, byte-identical restoration and restored builds.
+Seven exact copied declarations and their separate generic parities passed;
+the baseline namespace audits use only standard axioms, with no forbidden
+source proof shortcuts or ProbeTest import of Parity.
+See [the release receipt](categorical_witness_semantics_artifacts/release_receipt.json),
+[mutation table](categorical_witness_semantics_artifacts/execution_verified_mutations.md),
+[soundness review](categorical_witness_semantics_artifacts/review_soundness.md),
+and [integration review](categorical_witness_semantics_artifacts/review_integration.md).
+The sole review finding was stale interface-document status; it was repaired
+in `8d8a45ab` and the original reviewer confirmed R1 closed. No Lean source
+changed after the reviewed candidate or final green build.
+
+Pre-existing primary semantics-contents edits and other worktrees remain
+protected. No push is authorized. Observed action/turn overruns and unavailable
+token accounting are disclosed in the plan record, not claimed as compliance.
 
 Everything below is the **historical, design-only audit**, preserved as the
 reasoning that preceded implementation. Its future tense and then-open gates

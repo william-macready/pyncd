@@ -1,0 +1,26 @@
+{
+  "main": "e7102517227546d4aa8f1b04d2db14a453641bda",
+  "candidate": "72888777b619779bb6aad35d7cf97cdb51f26df4",
+  "source": "0e49e37020b848d9a88da1daa7b95b5eef8260a7",
+  "expected_merge_tree": "e3c84ce37028c9c11080f1a79f32a9de71c3419b",
+  "checked_paths": [
+    "leanncd/AGENTS.md",
+    "leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessCoherenceTest.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessCompositionTest.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessInterface.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessObservationParity.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessObservationProbe.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessObservationProbeTest.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessPartialTest.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessSemantics.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessSpan.lean",
+    "leanncd/experiments/indexed_execution/IndexedWitnessTest.lean",
+    "leanncd/lakefile.toml",
+    "papers/semantics/categorical_tensor_logic_component_interfaces.md",
+    "papers/semantics/categorical_tensor_logic_semantics.md"
+  ],
+  "result": "exact merged source match"
+}

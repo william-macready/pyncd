@@ -2,7 +2,10 @@
 
 ## Status and provenance
 
-**Seven verified tasks executed; final release/integration pending.**
+**Implementation and release gates complete.**
+The integration receipt is authoritative for the final local merge,
+merged-main rebuild and task-only cleanup, and is written only after those
+operations actually succeed.
 The authoring section below records the earlier artifact-only write-up.
 The fresh artifact-only writer edited only this record, the plan and
 `categorical_witness_semantics_record.md`. No production Lean, prototype,
@@ -167,23 +170,30 @@ Peak/cumulative token measurements are unavailable. Do not claim measured
 250k compliance, attainment of the authoring 50M target, or compliance with
 the execution 175M cap. Report any independently observed breach explicitly.
 
-## Controller close-out fields — pending, fill from actual observations
+## Actual controller release gates and adjudication
 
-- Per-task direct reviews: actual complete-model/boundary/category/restricted
-  invariants, findings and adjudications; not just hashes.
-- `execution_replay.json`: seven actual commit/target/hash/snippet receipts.
-- Controller unfiltered 10-cycle table: both expectation strings, restoration,
-  restored green; copied-source check before and after.
-- Mutation-free Parity, source/probe/import and namespace audit outcomes.
-- Full `LeanNCD Tests IndexedExecutionExperiment` wrapper build result.
-- Independent whole-branch categorical/model soundness review.
-- Independent whole-branch integration/observations review.
-- Final accurate docs sweep; protected-edit hashes before/after.
-- Actual local-main merge, owned branch/worktree cleanup; no push.
-- Budget measurements if available, otherwise explicit unavailable status.
+These are controller outcomes, not upgraded prototype or authoring receipts:
 
-Do not mark this section complete from prototype receipts or this author's
-document checks. Execution and local integration remain the controller's work.
+| Gate | Actual outcome |
+| --- | --- |
+| Seven patch groups | Applied, built, post-edit snippet/hash checked and committed; `execution_replay.json` |
+| Final unfiltered mutations | 10/10 with both expected strings, byte-identical restoration and restored green; `execution_verified_mutations.md` |
+| Exact copies and Parity | Seven complete name-only copies, scaffold and source hashes pass before/after cycles; separate mutation-free Parity build passes |
+| Source/import/axiom audit | No forbidden shortcuts or ProbeTest import of Parity; compiled namespace audits admit only standard axioms |
+| Integrated full build | `LeanNCD Tests IndexedExecutionExperiment` passes 8,911 jobs; `release_receipt.json` |
+| Whole-branch soundness | Clean for `e7102517..72888777`; `review_soundness.md` |
+| Whole-branch integration | R1 stale documentation status repaired in `8d8a45ab`; original reviewer confirms clean, R1 closed |
+
+No Lean code changed after the final reviewed/build-tested candidate. R1
+changed only the interface design's opening/recommendation/remaining-work
+claims. It now distinguishes proved model gluing, target category laws and
+denotational coherence from open source/process/ranked obligations.
+No required task, build target, snippet, manifest entry or final review was
+silently skipped. Accounting remains explicitly unsupported.
+
+The final [integration receipt](categorical_witness_semantics_artifacts/integration_receipt.json)
+records the actual local-main merge, merged-main build, preserved contents
+hash, owned worktree/branch cleanup and no-push outcome after they succeed.
 
 ## Actual seven-task execution
 
@@ -206,3 +216,11 @@ is the lakefile: the added JAX refusal-test glob is in a separate library,
 not the witness experiment. The controller will integrate this current-main
 change before final release checks and whole-branch reviews. The primary
 semantics contents hash is still the original protected value.
+
+The current-main merge completed without conflicts; both libraries' lakefile
+globs were preserved. A controller `merge-tree` comparison checked all 17
+task-owned paths against the exact merge of current main and the frozen
+prototype source, rather than assuming disjoint edits were harmless.
+`integration_source_check.json` records the hashes and checked paths.
+The integrated candidate subsequently passed the release gates and both
+review lenses as recorded above.
