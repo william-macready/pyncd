@@ -439,6 +439,37 @@ private def postReadOut : TLProgram := tlprog!{ iter l = 3
 -- A post statement that reads a per-step intermediate (`T`, fed by the step, never published) is refused.
 #guard layoutOf postMixedInter == .error (.readsPerStepIntermediate "M" "T")
 
+-- Error precedence: the same program with no base case has two defects; the scan defect
+-- (`missingBaseCase`) wins over `readsPerStepIntermediate`, which is checked after the component loop.
+private def postMixedInterNoBase : TLProgram := tlprog!{ iter l = 3
+  T[j]       := H[j, l]
+  H[j, l +1] := T[j]
+  M[j]       := T[j] }
+
+#guard layoutOf postMixedInterNoBase == .error (.missingBaseCase "H")
+
+-- Each conjunct of the `readsPerStepIntermediate` condition decided alone.
+-- (b) `isScanDep r`: `W` is fed (the step reads it) but loop-invariant, so it stays a plain node and
+-- the post statement `Z` reading it is accepted.
+private def postReadsInvariantFed : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  W[j]       := X2[j]
+  S[j, l +1] := S[j, l] · W[j]
+  Z[j]       := S[j, 2] · W[j] }
+
+#guard layoutOf postReadsInvariantFed == .ok ["plain W", "scan base=[S] body=[S]", "plain Z"]
+
+-- (c) multi-hop closure: the chain is written in forward order, so backward discovery of `C`, `B`, `A`
+-- as fed takes one pass per hop; all three land in the body.
+private def postFedChain : TLProgram := tlprog!{ iter l = 3
+  H[j, 0]    := X[j]
+  C[j]       := H[j, l]
+  B[j]       := C[j]
+  A[j]       := B[j]
+  H[j, l +1] := A[j] }
+
+#guard layoutOf postFedChain == .ok ["scan base=[H] body=[C, B, A, H]"]
+
 private def postIverScanAxis : TLProgram := tlprog!{ iter l = 3
   S[j, 0]    := X[j]
   S[j, l +1] := S[j, l]
@@ -564,6 +595,16 @@ private def layoutOfLowered (lp : LoweredProgram) : Except CompileError (List St
 -- statement stays in the body (second `S` below); under another name it is post.
 #guard layoutOfLowered (lowered "S") == .ok ["scan base=[S] body=[S, S]"]
 #guard layoutOfLowered (lowered "Zf") == .ok ["scan base=[S] body=[S]", "plain Zf"]
+-- (a) `!stateNames.contains r`: a post statement `Z` reads `S`, which is both a scan state and has a
+-- non-iteration writer. Reading a state is not reading a per-step intermediate, so it is accepted.
+private def loweredStateReadByPost : LoweredProgram :=
+  let j : AxisSpec := { name := "j", uid := 1, kind := .real }
+  let lp := lowered "S"
+  { lp with stmts := lp.stmts ++ [
+      .assign "Z" [ .free j ]
+        { body := { terms := [ { factors := [ .read "S" [ .axis j, .const 2 ] ] } ] }, nonlin := .identity } ] }
+
+#guard layoutOfLowered loweredStateReadByPost == .ok ["scan base=[S] body=[S, S]", "plain Z"]
 -- checkReadRanks: declared tensor read with matching rank passes through.
 run_cmd do
   let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real }

@@ -536,6 +536,27 @@ run_cmd do
             | .error e => throwError e
             | .ok () => pure ()
 
+-- A post statement reading the state at a positive shift (`D[j,l] = S[j,l+1]·V[l]`): the last row reads
+-- `S[j, 3]`, out of range, and must be exactly 0 on both backends. The expectation is plain `Float`
+-- arithmetic from the inputs (`postRoleShiftExpected`).
+run_cmd do
+  let p := ScanCompileTest.postRoleShiftProg
+  let inputs := ScanCompileTest.postRoleInputs 3
+  match planAgrees p inputs with
+  | .error e => throwError s!"postRoleShift: {e}"
+  | .ok () => pure ()
+  match envOf p inputs with
+  | .error e => throwError s!"postRoleShift: {e}"
+  | .ok env =>
+      match env["D"]? with
+      | some got =>
+          unless DenseTensor.approxEq got ScanCompileTest.postRoleShiftExpected do
+            throwError s!"postRoleShift D: reference {repr got.shape} {repr got.data}, expected {repr ScanCompileTest.postRoleShiftExpected.data}"
+      | none => throwError "postRoleShift: D missing from the reference environment"
+  match checkedPlanOutputEq "postRoleShift D" p inputs "D" ScanCompileTest.postRoleShiftExpected with
+  | .error e => throwError e
+  | .ok () => pure ()
+
 /-- Confirm mutating `original` into `mutated` actually changes `outputName`'s value relative to
     `original`'s OWN `evalScheduled` result — a mutation that doesn't break agreement is worse than
     no mutation test at all. -/
