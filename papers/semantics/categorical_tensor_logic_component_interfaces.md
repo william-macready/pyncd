@@ -414,10 +414,13 @@ acceptance cases, explicit private-work witnesses, and validation evidence.
 
 ## 7. Identity, associativity and observation levels
 
-Distinguish three notions:
+Distinguish four notions:
 
 - **Value equality** means equality of partial input-output functions,
   including their domains, after explicit port reindexing.
+- **Span isomorphism** is a bijection of complete witnesses commuting with
+  both environment legs. It preserves fiber multiplicity, not execution
+  events or the coordinate-level identity of private representations.
 - **Process equivalence** means equal terminal classifications, mapped ordered
   events and related full intermediate snapshots after coherent bijective
   renaming of tensors, coordinates, occurrences, tags and capabilities.
@@ -440,8 +443,18 @@ map them by original component provenance, not by numerical coincidence.
 Generic transport must satisfy identity and composition laws so repeated
 bracketing does not change policy resolution or ordered footprints.
 The prerequisite policy-resolution, footprint and evaluation laws now satisfy
-this local requirement; component associativity and process identities remain
+this local requirement; process associativity and process identities remain
 separate proposed results.
+
+For the denotational observation level, the witness-span implementation now
+proves an ordinary target category, a composition-preserving interpretation
+across all validated inputs, and nested component associativity through the
+same compatible triple of complete models. Explicit boundary and exterior
+environment equivalences commute with both legs; no raw UID coincidence is
+used. See [witness coherence](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean)
+and [the witness semantics record](categorical_witness_semantics_record.md).
+This closes the model-witness associativity obligation, not the proposed
+process associativity or process identities.
 
 There is **no event-exact core identity implemented by copying**.
 A core copy must write and publish a fresh defined output; it adds observable
@@ -536,7 +549,8 @@ corollaries, not static assumptions. No totality assumption.
 composite roles and metadata, closure acceptance, the occurrence bijection,
 ordered priority equality and all nine match fields. Existing capability/fiber
 results apply to the constructed match without additional assumptions.
-Composite ranking, phase behavior, model restriction/gluing and coherent
+Model restriction/gluing, restricted denotation, and denotational witness-span
+coherence are also proved. Composite ranking, phase behavior and process
 associativity remain unproved. None is replaced by assumed execution agreement.
 
 **Recommendation over alternatives:**
