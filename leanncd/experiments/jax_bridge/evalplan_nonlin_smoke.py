@@ -50,26 +50,125 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_head", "transformer_head32", "scan_postrole", "scan_postrole32",
                         "transformer_unrolled", "transformer_unrolled32"}
 # Scan-vs-unrolled oracle (both JAX results, no Lean): (rtol, atol) per precision. MEASURED: scan and
-# unrolled are bit-identical in float64 and float32, eager and jit (24/24 entries per precision), so
+# unrolled are bit-identical in float64 (eager and jit) and in float32 jit (24/24 entries each), so
 # the tolerance is exactly zero (value equality; the observed bit-identical count is printed).
 ORACLE_TOL = {"float64": (0.0, 0.0), "float32": (0.0, 0.0)}
+# EXCEPTION, MEASURED on the standard pre-norm model: binary32 EAGER differs by one ulp in layer 2 (2 of 12 entries,
+# max abs 2.4e-7 at |H| ~ 2-5): the eager scan body is one compiled `lax.scan` while the eager unrolled oracle
+# runs op by op. Every other combination (binary64 eager and jit, binary32 jit) stays bit-identical (tolerance 0).
+# 2.4e-7 relative is two binary32 ulps at most; a swapped layer (gap ~1) or a wrong gain (~0.6) is ~6 orders larger.
+ORACLE_EAGER_TOL32 = (2.4e-7, 0.0)
 # fixture name -> {"eager": outputs, "jit": outputs}, kept for the scan fixtures and the unrolled oracle.
 EAGER: dict[str, dict] = {}
 
 
 # Head pins (transformer_head): row-sum deviation of the vocabulary softmax and Logits-vs-numpy max abs, per
-# precision. MEASURED (Lean, eager, jit): float64 1.1e-16 / 2.2e-16, float32 6.7e-8 / 8.5e-8; the tolerances
-# leave ~3.7 orders (float64) / ~1.1 orders (float32) of headroom and are far below any wrong-head effect (~1e-1).
+# precision. MEASURED (Lean, eager, jit): float64 2.2e-16 / 2.2e-16, float32 3.0e-8 / 1.9e-7; the tolerances
+# leave ~3.7 orders (float64) / ~0.7 order (float32, Logits) of headroom and are far below any wrong-head effect (~1e-1).
 HEAD_ROWSUM_TOL = {"float64": 1e-12, "float32": 1e-6}
 HEAD_LOGITS_TOL = {"float64": 1e-12, "float32": 1e-6}
 # P vs the float64 row-wise softmax of the numpy Logits (pin (a')). MEASURED (Lean, eager, jit): float64
-# 5.6e-17 / 4.2e-17, float32 2.6e-8 for all three; headroom ~4.7 orders (float64) / ~1.6 orders (float32).
+# 2.8e-17 (Lean) / 5.6e-17, float32 3.0e-8 (Lean) / 2.0e-8; headroom ~5 orders (float64) / ~1.5 orders (float32).
 HEAD_SOFTMAX_TOL = {"float64": 1e-12, "float32": 1e-6}
 # Post-scan role pins (scan_postrole): max over entries of |view - numpy| / max(1, |numpy|) (the outputs reach
 # ~5e4, so a float32 absolute bound would be meaningless), numpy float64 from the inputs only. MEASURED (Lean,
 # eager, jit): float64 0 for every output except Lean's Sm 3.5e-18, float32 0 except Sm 2.8e-8; the tolerances leave
 # ~6 orders (float64) / ~1.5 orders (float32) of headroom and are far below any wrong-reading effect (>= 3e-2 relative).
 POSTROLE_TOL = {"float64": 1e-12, "float32": 1e-6}
+# Standard pre-norm transformer pins (scan, head, unrolled oracle): max over entries of |view - numpy| /
+# max(1, |numpy|), numpy float64 from the exported INPUTS only (`np_transformer`); the observed maxima per output
+# and precision are printed under each fixture's summary line.
+# MEASURED worst case (state H layer 2 / unrolled H2, all views): float64 6.7e-16, float32 9.4e-7 (the binary32
+# headroom is thin, <10%: the residual stream reaches |H| ~ 5 after two layers, so binary32 rounding is ~3e-7 per op).
+MODEL_TOL = {"float64": 1e-12, "float32": 1e-6}
+# (fixture, output) -> [max scaled error, max abs error] over the Lean, eager and jit views
+NUM_STATS: dict[tuple[str, str], list] = {}
+
+
+def np_gelu(x):
+    """gelu, tanh approximation, exactly the formula the model states (float64)."""
+    return 0.5 * x * (1.0 + np.tanh(0.7978845608028654 * (x + 0.044715 * x ** 3)))
+
+
+def np_softmax_last(z):
+    e = np.exp(z - z.max(axis=-1, keepdims=True))
+    return e / e.sum(axis=-1, keepdims=True)
+
+
+def np_transformer(inp: dict, n_layers: int = 2, unit_gains: bool = False) -> list:
+    """Independent float64 numpy model of the standard pre-norm transformer, from the inputs only: per layer
+    N1 = H/sqrt(msq(H)+Eps) * G1[l]; Q,K,V from N1; S = causal softmax_s(Q.K * Sc); Attn = W_O . (S.V);
+    R1 = H + Attn; N2 = R1/sqrt(msq(R1)+Eps) * G2[l]; F = gelu(W_in . N2); Y = W_out . F; H' = R1 + Y,
+    msq(x) = sum_m x^2 * Inv[m]. Returns one dict per layer keyed like the unrolled oracle's outputs
+    (Ssa, Vea, Sda, Na, Q, K, V, S, AO, At, Ra, Ssb, Veb, Sdb, Nb, F, Y, H); `H` is the layer's OUTPUT."""
+    f = {k: np.asarray(v, dtype=np.float64) for k, v in inp.items()}
+    h, layers = f["X"], []
+    tril = np.tril(np.ones((h.shape[0], h.shape[0]), dtype=bool))  # [q, s]: s <= q
+    for l in range(n_layers):
+        g1 = np.ones_like(f["G1"][l]) if unit_gains else f["G1"][l]
+        g2 = np.ones_like(f["G2"][l]) if unit_gains else f["G2"][l]
+        o = {}
+        o["Ssa"] = np.einsum("qm,qm,m->q", h, h, f["Inv"])
+        o["Vea"] = o["Ssa"] + f["Eps"]
+        o["Sda"] = np.sqrt(o["Vea"])
+        o["Na"] = h / o["Sda"][:, None] * g1
+        o["Q"] = np.einsum("hkm,qm->qhk", f["W_Q"][l], o["Na"])
+        o["K"] = np.einsum("hkm,sm->shk", f["W_K"][l], o["Na"])
+        o["V"] = np.einsum("hkm,sm->shk", f["W_V"][l], o["Na"])
+        lg = np.einsum("qhk,shk->hqs", o["Q"], o["K"]) * f["Sc"]
+        o["S"] = np_softmax_last(np.where(tril[None], lg, -np.inf))
+        o["AO"] = np.einsum("hqs,shk->qhk", o["S"], o["V"])
+        o["At"] = np.einsum("mhk,qhk->qm", f["W_O"][l], o["AO"])
+        o["Ra"] = h + o["At"]
+        o["Ssb"] = np.einsum("qm,qm,m->q", o["Ra"], o["Ra"], f["Inv"])
+        o["Veb"] = o["Ssb"] + f["Eps"]
+        o["Sdb"] = np.sqrt(o["Veb"])
+        o["Nb"] = o["Ra"] / o["Sdb"][:, None] * g2
+        o["F"] = np_gelu(np.einsum("dm,qm->qd", f["W_in"][l], o["Nb"]))
+        o["Y"] = np.einsum("md,qd->qm", f["W_out"][l], o["F"])
+        o["H"] = o["Ra"] + o["Y"]
+        layers.append(o)
+        h = o["H"]
+    return layers
+
+
+def np_state(inp: dict, layers: list) -> np.ndarray:
+    """The scan state H[q, m, l] from the numpy model: layer 0 is X, layer l+1 the output of layer l."""
+    return np.stack([np.asarray(inp["X"], dtype=np.float64)] + [o["H"] for o in layers], axis=2)
+
+
+def np_head(inp: dict, h_last: np.ndarray) -> dict:
+    """Final RMSNorm with gain Gf, unembedding over the vocabulary and row softmax, from the last residual."""
+    f = {k: np.asarray(v, dtype=np.float64) for k, v in inp.items()}
+    o = {"Ssf": np.einsum("qm,qm,m->q", h_last, h_last, f["Inv"])}
+    o["Vef"] = o["Ssf"] + f["Eps"]
+    o["Sdf"] = np.sqrt(o["Vef"])
+    o["Hf"] = h_last / o["Sdf"][:, None] * f["Gf"]
+    o["Logits"] = np.einsum("vm,qm->qv", f["W_U"], o["Hf"])
+    o["P"] = np_softmax_last(o["Logits"])
+    return o
+
+
+def bits(a: np.ndarray) -> np.ndarray:
+    """The raw bit pattern of a float array (uint64 / uint32 view), for bitwise equality."""
+    return np.ascontiguousarray(a).view(UDT)
+
+
+def check_np(fixture: str, who: str, name: str, got, want) -> None:
+    """Pin one exported output against the numpy model within MODEL_TOL; record the observed maxima."""
+    g, w = np.asarray(got).astype(np.float64), np.asarray(want, dtype=np.float64)
+    assert g.shape == w.shape, (fixture, who, name, g.shape, w.shape)
+    assert np.all(np.isfinite(g)), (fixture, who, name, "non-finite")
+    err = float(np.max(np.abs(g - w) / np.maximum(1.0, np.abs(w))))
+    s = NUM_STATS.setdefault((fixture, name), [0.0, 0.0])
+    s[0], s[1] = max(s[0], err), max(s[1], float(np.max(np.abs(g - w))))
+    assert err < MODEL_TOL[_DT], (f"pin numpy model: {fixture} {who} {name}", err, g.tolist(), w.tolist())
+
+
+def print_np_stats(fixture: str) -> None:
+    for n in sorted(n for fx, n in NUM_STATS if fx == fixture):
+        sc_err, ab = NUM_STATS[(fixture, n)]
+        print(f"  {n:8s} vs numpy: max scaled {sc_err:.3e}  max abs {ab:.3e}  (tol {MODEL_TOL[_DT]:.0e})")
 
 
 def flat_nodes(nodes):
@@ -305,32 +404,51 @@ def main() -> None:
     views = {"lean": {n: lean_array(e) for n, e in sc["expected"].items()},
              "eager": {n: np.asarray(v) for n, v in EAGER[sc_name]["eager"].items()},
              "jit": {n: np.asarray(v) for n, v in EAGER[sc_name]["jit"].items()}}
+    sc_layers = np_transformer(sin)
+    sc_H = np_state(sin, sc_layers)
+    # the learned gains matter: the same numpy model with unit gains gives a clearly different state, so the
+    # numpy pin below cannot hold for a runtime that ignores G1/G2 (or reads them at the wrong layer)
+    unit_gap = float(np.max(np.abs(np_state(sin, np_transformer(sin, unit_gains=True)) - sc_H)))
+    assert unit_gap > 1e-2, ("gains do not matter to H: the pin would not see them", unit_gap)
     for who, outs_sc in views.items():
         assert "H" in outs_sc and all(np.all(np.isfinite(v)) for v in outs_sc.values()), (who, sorted(outs_sc))
         H = outs_sc["H"]
         assert H.shape == (3, 4, 3), (who, H.shape)
         # (c) layer 0 of the state is X, bit for bit (the base block's write)
         assert np.array_equal(np.ascontiguousarray(H[:, :, 0]).view(UDT), np.ascontiguousarray(sin["X"]).view(UDT)), who
-        # (a) layers 1 and 2 are RMS-normalised (unit mean square up to eps); layer 0 (= X) is not
-        ms = [np.mean(H[:, :, l].astype(np.float64) ** 2, axis=1) for l in range(3)]
-        assert np.any(np.abs(ms[0] - 1.0) > 0.05), (who, ms[0].tolist())
-        for l in (1, 2):
-            assert np.all(np.abs(ms[l] - 1.0) < 1e-3), (who, l, ms[l].tolist())
+        # (a) the whole state (layers 0, 1, 2) equals the independent numpy model of the standard pre-norm layer
+        check_np(sc_name, who, "H", H, sc_H)
+        # (a2) each layer's input is RMS-normalised BEFORE the learned gain: H_l / sqrt(msq(H_l) + Eps) has
+        # Inv-weighted mean square msq/(msq+Eps) = 1 - O(Eps/msq) (computed in numpy from this view's H); the
+        # raw layer input is not itself unit mean square (X is not), so the check is not vacuous
+        Inv, Eps = sin["Inv"].astype(np.float64), sin["Eps"].astype(np.float64)
+        raw_gap = []
+        for l in range(3):
+            hl = H[:, :, l].astype(np.float64)
+            msq = np.sum(hl * hl * Inv, axis=1)
+            nrm = hl / np.sqrt(msq + Eps)[:, None]
+            ms = np.sum(nrm * nrm * Inv, axis=1)
+            assert np.all(np.abs(ms - 1.0) <= Eps / msq + 1e-12), (who, l, ms.tolist())
+            raw_gap.append(float(np.max(np.abs(msq - 1.0))))
+        assert max(raw_gap) > 0.05, (who, raw_gap)
         # (d) the two layers differ: a step that ignored its context coordinate would repeat layer 1
         gap = float(np.max(np.abs(H[:, :, 1].astype(np.float64) - H[:, :, 2].astype(np.float64))))
         assert gap > 1e-2, (who, gap)
     print(f"transformer_scan: one scan record, 2 steps, layer-2 weights NaN in the inputs and every output finite; "
-          f"H layer 0 == X bitwise, layers 1 and 2 have unit mean square (eps-close) and differ (max abs gap "
-          f"{gap:.3f}); pins hold on Lean, eager and jit; per-output measured difference vs Lean:")
+          f"H layer 0 == X bitwise, H layers 0, 1, 2 == independent numpy pre-norm model (unit-gain model differs by "
+          f"{unit_gap:.3f}), RMS-normalised layer inputs have mean square 1 - O(Eps/msq), layers 1 and 2 differ (max abs "
+          f"gap {gap:.3f}); pins hold on Lean, eager and jit; per-output measured difference vs numpy and vs Lean:")
+    print_np_stats(sc_name)
     for n in sorted(n for fx, n in OUT_STATS if fx == sc_name):
         rel, ab, ex, tot = OUT_STATS[(sc_name, n)]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
 
-    # Scan transformer WITH A HEAD: after the scan, a final RMSNorm of the pre-norm residual
-    # `Zf = H[:, :, 2] + X`, an unembedding `Logits = Hf @ W_U.T` over a vocabulary axis of extent 5, and a
-    # softmax over the vocabulary. Lean and JAX agreeing proves nothing about the head, so every pin
-    # recomputes the head in plain numpy (float64) from the fixture's INPUTS and the state `H` slice 2 of the
-    # SAME view (Lean, eager, jit), never from that view's own Zf / Hf / Logits / P outputs.
+    # Scan transformer WITH A HEAD: after the scan, a final RMSNorm with learned gain Gf of the residual stream
+    # `H[:, :, 2]` (standard pre-norm: nothing is added back), an unembedding `Logits = Hf @ W_U.T` over a
+    # vocabulary axis of extent 5, and a softmax over the vocabulary. Lean and JAX agreeing proves nothing
+    # about the head, so the pins recompute the model in plain numpy (float64) from the fixture's INPUTS
+    # only (`np_transformer` + `np_head`), and the head chain again from the state `H` slice 2 of the SAME
+    # view (Lean, eager, jit), never from that view's own Hf / Logits / P outputs.
     hd_name = "transformer_head" + sfx
     hd = by[hd_name]
     hin = {n: lean_array(e) for n, e in hd["inputs"].items()}
@@ -350,7 +468,7 @@ def main() -> None:
     vocab = hin["W_U"].shape[0]
     other_extents = {d for n, a in hin.items() if n != "W_U" for d in a.shape}
     other_extents |= {d for o in hviews.values() for n, a in o.items() if n not in ("Logits", "P") for d in a.shape}
-    assert set(hin) == set(sin) | {"W_U"}, sorted(hin)
+    assert set(hin) == set(sin) | {"W_U", "Gf"}, sorted(hin)
     assert vocab not in other_extents, ("vocabulary extent collides with another extent", vocab, sorted(other_extents))
     assert all(o["P"].shape[1] == vocab and o["Logits"].shape[1] == vocab for o in hviews.values()), vocab
     print(f"  head vocabulary extent {vocab} (from W_U[0]) is not among the other extents {sorted(other_extents)}")
@@ -363,24 +481,37 @@ def main() -> None:
         print(f"  head {who}: head H vs transformer_scan H bit-identical {bool(np.array_equal(hd_bits, sc_bits))}, "
               f"max abs {float(np.max(np.abs(outs_hd['H'].astype(np.float64) - views[who]['H'].astype(np.float64)))):.3e}")
         assert np.array_equal(hd_bits, sc_bits), ("pin (e) head scan == transformer_scan", who)
+    hd_layers = np_transformer(hin)
+    hd_H = np_state(hin, hd_layers)
+    hd_np = np_head(hin, hd_H[:, :, 2])
+    # the numpy head is not degenerate: the gain Gf matters, and the normalised stream is not already unit
+    # mean square (so the norm is not the identity)
+    Inv, Eps, WU, Gf = (hin[n].astype(np.float64) for n in ("Inv", "Eps", "W_U", "Gf"))
+    msq_raw = np.sum(hd_H[:, :, 2] ** 2 * Inv, axis=1)
+    assert np.any(np.abs(msq_raw - 1.0) > 0.05), ("final-norm input is already unit mean square", msq_raw.tolist())
+    assert float(np.max(np.abs(hd_np["Hf"] - hd_np["Hf"] / Gf))) > 1e-2, "Gf is not distinguishable from 1"
     for who, outs_hd in hviews.items():
-        assert {"H", "Logits", "P", "Hf", "Zf"} <= set(outs_hd), (who, sorted(outs_hd))
+        assert {"H", "Logits", "P", "Hf"} <= set(outs_hd), (who, sorted(outs_hd))
+        assert "Zf" not in outs_hd, (who, "stale post-norm output Zf is still exported")
         assert all(np.all(np.isfinite(v)) for v in outs_hd.values()), who
         P = outs_hd["P"].astype(np.float64)
         # (a) every row of P is a probability vector over the vocabulary
         rowdev = float(np.max(np.abs(P.sum(axis=1) - 1.0)))
         assert np.all(P > 0) and rowdev < HEAD_ROWSUM_TOL[_DT], ("pin (a) P rows positive and sum to 1", who, rowdev, P.tolist())
-        # (c) the final norm output has unit mean square (Inv-weighted, eps-close); the pre-norm Zf does not
-        X, Inv, Eps, WU = (hin[n].astype(np.float64) for n in ("X", "Inv", "Eps", "W_U"))
-        Zf = outs_hd["H"][:, :, 2].astype(np.float64) + X
-        Hf = Zf / np.sqrt(np.sum(Zf * Zf * Inv, axis=1) + Eps)[:, None]
-        ms_hf = np.sum(Hf * Hf * Inv, axis=1)
-        ms_hf_out = np.sum(outs_hd["Hf"].astype(np.float64) ** 2 * Inv, axis=1)
-        ms_zf = np.sum(Zf * Zf * Inv, axis=1)
-        assert np.all(np.abs(ms_hf - 1.0) < 1e-3) and np.all(np.abs(ms_hf_out - 1.0) < 1e-3), \
-            ("pin (c) Hf unit mean square", who, ms_hf_out.tolist())
-        assert np.any(np.abs(ms_zf - 1.0) > 0.05), ("pin (c) pre-norm Zf is not unit mean square", who, ms_zf.tolist())
-        # (b) Logits recomputed in numpy from the inputs and THIS view's H slice 2
+        # (n) every exported output equals the independent numpy model from the INPUTS only
+        check_np(hd_name, who, "H", outs_hd["H"], hd_H)
+        for n in ("Ssf", "Vef", "Sdf", "Hf", "Logits", "P"):
+            if n in outs_hd:
+                check_np(hd_name, who, n, outs_hd[n], hd_np[n])
+        # (c) the final-norm output divided by its gain is RMS-normalised: Inv-weighted mean square
+        # msq/(msq+Eps) = 1 - O(Eps/msq) (msq from THIS view's H slice 2)
+        h2 = outs_hd["H"][:, :, 2].astype(np.float64)
+        msq = np.sum(h2 * h2 * Inv, axis=1)
+        ms_hf_out = np.sum((outs_hd["Hf"].astype(np.float64) / Gf) ** 2 * Inv, axis=1)
+        assert np.all(np.abs(ms_hf_out - 1.0) <= Eps / msq + HEAD_LOGITS_TOL[_DT]), \
+            ("pin (c) Hf / Gf is RMS-normalised", who, ms_hf_out.tolist())
+        # (b) Logits == Hf @ W_U.T, with Hf recomputed in numpy from THIS view's H slice 2
+        Hf = h2 / np.sqrt(msq + Eps)[:, None] * Gf
         want = Hf @ WU.T
         ldiff = float(np.max(np.abs(outs_hd["Logits"].astype(np.float64) - want)))
         assert ldiff < HEAD_LOGITS_TOL[_DT], ("pin (b) Logits == numpy from H slice 2", who, ldiff, outs_hd["Logits"].tolist(), want.tolist())
@@ -388,12 +519,39 @@ def main() -> None:
         ex = np.exp(want - want.max(axis=1, keepdims=True))
         sdiff = float(np.max(np.abs(P - ex / ex.sum(axis=1, keepdims=True))))
         assert sdiff < HEAD_SOFTMAX_TOL[_DT], ("pin (a') P == softmax(numpy Logits)", who, sdiff, P.tolist())
-        print(f"  head {who}: P row-sum dev {rowdev:.3e}, P vs softmax(numpy Logits) max abs {sdiff:.3e}, Hf mean-square {[round(float(x), 6) for x in ms_hf_out]}, "
-              f"pre-norm Zf mean-square {[round(float(x), 4) for x in ms_zf]}, Logits vs numpy max abs {ldiff:.3e}")
+        print(f"  head {who}: P row-sum dev {rowdev:.3e}, P vs softmax(numpy Logits) max abs {sdiff:.3e}, "
+              f"(Hf/Gf) mean-square {[round(float(x), 6) for x in ms_hf_out]}, Logits vs numpy max abs {ldiff:.3e}")
+    # (k) CAUSALITY on the JAX runtime (eager): the standard model is causal, so changing the input X ONLY in
+    # position row q = 2 must leave rows q = 0, 1 of H, Logits and P BITWISE unchanged and change row 2. A
+    # non-causal runtime (a dropped or wrong mask, a future read) fails this without any reference to Lean.
+    X_base = hin["X"]
+    X_pert = X_base.copy()
+    X_pert[2, :] += NDT(0.5)
+    assert not np.array_equal(X_pert[2], X_base[2]) and np.array_equal(X_pert[:2], X_base[:2])
+    hd_in = {n: jnp.asarray(a) for n, a in hin.items()}
+    hd_in_pert = dict(hd_in, X=jnp.asarray(X_pert))
+    run_pert = rt.run_named(hd["plan"], hd_in_pert, JDT)
+    run_base = EAGER[hd_name]["eager"]
+    for n in ("H", "Logits", "P"):
+        b, p = np.asarray(run_base[n]), np.asarray(run_pert[n])
+        assert b.dtype == p.dtype == NDT and b.shape == p.shape, (n, b.dtype, p.dtype)
+        assert np.array_equal(bits(b[:2]), bits(p[:2])), ("causality: rows 0, 1 changed under a row-2 perturbation", n)
+        row2 = float(np.max(np.abs(b[2].astype(np.float64) - p[2].astype(np.float64))))
+        assert row2 > 1e-3, ("causality: row 2 did not respond to its own perturbation", n, row2)
+        print(f"  causality {n}: rows 0, 1 bitwise identical under X[2, :] += 0.5, row 2 changes by max abs {row2:.3e}")
+    # the same property of the numpy model (a sanity check of the pin's own reference)
+    pert_layers = np_transformer(dict(hin, X=X_pert))
+    pert_H = np_state(dict(hin, X=X_pert), pert_layers)
+    pert_head = np_head(hin, pert_H[:, :, 2])
+    for n, a, b in (("H", hd_H, pert_H), ("Logits", hd_np["Logits"], pert_head["Logits"]), ("P", hd_np["P"], pert_head["P"])):
+        assert np.array_equal(a[:2], b[:2]) and not np.array_equal(a[2], b[2]), ("numpy causality", n)
     print(f"transformer_head: plan = 1 scan + {len(h_after)} plain nodes {[n.get('kind', 'assign') for n in h_after]}; "
           f"vocabulary extent {vocab} (from W_U) differs from every other extent and is Logits[1], P[1]; head scan == "
-          f"transformer_scan (inputs and H bitwise); P rows positive and sum to 1; Logits == numpy "
-          f"recomputation from H slice 2; P == softmax(numpy Logits); Hf unit mean square, pre-norm Zf not; per-output measured difference vs Lean:")
+          f"transformer_scan (inputs and H bitwise); H, Ssf, Vef, Sdf, Hf, Logits, P == independent numpy model on Lean, "
+          f"eager and jit; P rows positive and sum to 1; Logits == numpy Hf @ W_U.T from H slice 2; P == softmax(numpy "
+          f"Logits); Hf / Gf RMS-normalised; causal (row-2 perturbation leaves rows 0, 1 bitwise unchanged); "
+          f"per-output measured difference vs numpy and vs Lean:")
+    print_np_stats(hd_name)
     for n in sorted(n for fx, n in OUT_STATS if fx == hd_name):
         rel, ab, ex, tot = OUT_STATS[(hd_name, n)]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
@@ -460,15 +618,53 @@ def main() -> None:
     un = by[un_name]
     assert not any(n.get("kind") == "scan" for n in un["plan"]["nodes"]), "the oracle must not contain a scan"
     uin = {n: lean_array(e) for n, e in un["inputs"].items()}
-    bits = lambda a: np.ascontiguousarray(a).view(UDT)  # noqa: E731
-    for n in ("X", "Inv", "Eps"):
+    for n in ("X", "Inv", "Eps", "Sc"):
         assert np.array_equal(bits(sin[n]), bits(uin[n])), n
-    for w in ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out"):
+    # per-layer weights and gains: `<name><layer>` (G11 = G1 of layer 1, G12 = G1 of layer 2, G21 = G2 of
+    # layer 1, G22 = G2 of layer 2) are layers 0 and 1 of the scan's stacks, bit for bit
+    stacked = ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out", "G1", "G2")
+    for w in stacked:
         for l in (0, 1):
             assert np.array_equal(bits(sin[w][l]), bits(uin[f"{w}{l + 1}"])), (w, l)
-    assert len(uin) == 15 and not any(np.any(np.isnan(v)) for v in uin.values()), sorted(uin)
-    o_rtol, o_atol = ORACLE_TOL[_DT]
+    assert len(uin) == 4 + 2 * len(stacked) and not any(np.any(np.isnan(v)) for v in uin.values()), sorted(uin)
+    # the two layers' gains differ, so a swapped G1/G2 or a layer-swapped gain changes the oracle
+    assert not np.array_equal(uin["G11"], uin["G12"]) and not np.array_equal(uin["G21"], uin["G22"]) \
+        and not np.array_equal(uin["G11"], uin["G21"])
+    # EVERY exported output of the unrolled oracle (36 per view) equals the independent numpy model assembled
+    # from the oracle's OWN per-layer inputs, on Lean, eager and jit
+    un_stacks = dict(uin, **{w: np.stack([uin[f"{w}1"], uin[f"{w}2"]]) for w in stacked})
+    un_layers = np_transformer(un_stacks)
+    un_names = sorted(un["expected"])
+    assert len(un_names) == 36, un_names
+    un_views = {"lean": {n: lean_array(e) for n, e in un["expected"].items()},
+                "eager": {n: np.asarray(v) for n, v in EAGER[un_name]["eager"].items()},
+                "jit": {n: np.asarray(v) for n, v in EAGER[un_name]["jit"].items()}}
+    for who, uo in un_views.items():
+        assert sorted(uo) == un_names, (who, sorted(uo))
+        for l, layer in enumerate(un_layers, start=1):
+            for key, want in layer.items():
+                check_np(un_name, who, f"{key}{l}", uo[f"{key}{l}"], want)
+        # the unrolled normalised outputs, divided by their gain, are RMS-normalised: msq/(msq+Eps) = 1 - O(Eps/msq)
+        for pre, post, gname in (("X", "Na1", "G11"), ("Ra1", "Nb1", "G21"), ("H1", "Na2", "G12"), ("Ra2", "Nb2", "G22")):
+            hp = (uin["X"] if pre == "X" else uo[pre]).astype(np.float64)
+            msq = np.sum(hp * hp * uin["Inv"].astype(np.float64), axis=1)
+            nrm = uo[post].astype(np.float64) / uin[gname].astype(np.float64)
+            ms = np.sum(nrm * nrm * uin["Inv"].astype(np.float64), axis=1)
+            assert np.all(np.abs(ms - 1.0) <= uin["Eps"].astype(np.float64) / msq + HEAD_LOGITS_TOL[_DT]), (who, post, ms.tolist())
+        # causal structure of the oracle's own attention probabilities (heads x rows x keys): row q keeps q+1 entries
+        for sname in ("S1", "S2"):
+            Sx = uo[sname]
+            assert [int(np.sum(Sx[0, q] != 0)) for q in range(3)] == [1, 2, 3], (who, sname, Sx.tolist())
+            assert np.all(Sx[:, 0, 1:] == 0) and np.all(Sx[:, 1, 2] == 0) and np.allclose(Sx.sum(axis=2), 1.0, atol=1e-6), (who, sname)
+    print(f"transformer_unrolled: all {len(un_names)} exported outputs == independent numpy model (from the oracle's own "
+          f"per-layer inputs) on Lean, eager and jit; G11, G12, G21, G22 are the scan stacks' layer slices bitwise; "
+          f"normalised outputs / gain are RMS-normalised; S1, S2 causal; measured difference vs numpy (max over the 36 "
+          f"outputs and the views):")
+    worst = max(((NUM_STATS[(un_name, n)][0], n) for n in un_names), key=lambda t: t[0])
+    print(f"  max scaled {worst[0]:.3e} at {worst[1]}; max abs {max(NUM_STATS[(un_name, n)][1] for n in un_names):.3e}; "
+          f"H1 {NUM_STATS[(un_name, 'H1')][0]:.3e}, H2 {NUM_STATS[(un_name, 'H2')][0]:.3e}")
     for mode in ("eager", "jit"):
+        o_rtol, o_atol = ORACLE_EAGER_TOL32 if (_DT == "float32" and mode == "eager") else ORACLE_TOL[_DT]
         h_scan = np.asarray(EAGER[sc_name][mode]["H"])
         for l in (1, 2):
             g, u = h_scan[:, :, l], np.asarray(EAGER[un_name][mode][f"H{l}"])
@@ -480,8 +676,9 @@ def main() -> None:
         # non-vacuous: the layers differ, so swapping them is rejected by the same comparison
         assert float(np.max(np.abs(h_scan[:, :, 1].astype(np.float64)
                                    - np.asarray(EAGER[un_name][mode]["H2"]).astype(np.float64)))) > 1e-2
-    print(f"scan-vs-unrolled oracle: JAX scan H layers 1, 2 == JAX unrolled H1, H2 within rtol {o_rtol} / atol "
-          f"{o_atol} (eager + jit), identical inputs checked bitwise, layers swapped would be rejected")
+    print(f"scan-vs-unrolled oracle: JAX scan H layers 1, 2 == JAX unrolled H1, H2 within rtol/atol "
+          f"{ORACLE_TOL[_DT]} (eager + jit)" + (f", except binary32 eager within {ORACLE_EAGER_TOL32}" if _DT == "float32" else "")
+          + ", identical inputs and gains checked bitwise, layers swapped would be rejected")
 
     # Scan survey (binary64 only: the donors are f64). Value-independent pins: each recomputes the expected
     # state in plain Python/numpy from the fixture's own inputs, then checks Lean, eager and jit against it.
