@@ -6,6 +6,12 @@ import LeanNCD.DSL.Compile
 Exactly 19 compile cases, two direct route-domain cases, and the plan's 3×3 nonzero-state
 composition observations. `old` is today's split pipeline. `proposed` schedules logical statements
 and applies a local terminal physicalizer. This seed intentionally does not alter production imports.
+
+Status (2026-11-08): historical, NOT a built target, and it no longer typechecks against the current
+code (`checkScatterNoScan` is gone and the `Decl` match is missing the typed tensor and linear
+constructors), so its pins are not maintained. In particular `case14` (a scan read-out `y[j, l]`) no
+longer errors: the role-based post-scan classification compiles it, the same program as `UF5` in
+`RejectTest`, so its `scanProjectionUnsupported "y"` expectation is out of date.
 -/
 
 namespace RouteFragmentDiagnosticSeed

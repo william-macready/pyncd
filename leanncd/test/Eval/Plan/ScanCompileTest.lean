@@ -2845,4 +2845,19 @@ private def postRoleCompiles (p : TLProgram) (n : Nat) : Bool :=
 #guard postRoleCompiles postRoleProg3 3
 #guard postRoleCompiles postRoleProg4 4
 
+/-- A not-fed post statement reading the state at a POSITIVE SHIFT: `D[j,l] = S[j,l+1]·V[l]`. At the
+    last step `l = 2` the read `S[j, 3]` is out of range and zero-pads (a free shifted read is not a
+    pinned literal, so `plainStatePinOutOfRange` does not apply). -/
+def postRoleShiftProg : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l] · G[j]
+  D[j, l]    := S[j, l + 1] · V[l] }
+
+/-- Independent expectation of `D` at extent 3: `S[j,l+1]·V[l]`, and exactly 0 at `l = 2`. -/
+def postRoleShiftExpected : DenseTensor :=
+  ⟨[2, 3], ([0, 1].flatMap fun j => [0, 1, 2].map fun l =>
+    if l + 1 < 3 then postRoleS j (l + 1) * postRoleV.getD l 0.0 else 0.0).toArray⟩
+
+#guard postRoleCompiles postRoleShiftProg 3
+
 end LeanNCD.Eval.Plan.ScanCompileTest
