@@ -2,7 +2,8 @@
 
 [Semantics contents](README.md) |
 [Specification](tensor_logic_semantics.md) |
-[Prototype and results](categorical_tensor_logic_lean_prototype.md)
+[Prototype and results](categorical_tensor_logic_lean_prototype.md) |
+[Witness-category proof and release evidence](categorical_witness_semantics_record.md)
 
 ## Summary
 
@@ -39,7 +40,7 @@ The approach developed so far separates five layers:
 The Lean development now provides executable evidence, proved typed
 expression transport, conditional execution correspondence, and static
 composition of source-contract matches, together with complete-model
-restriction and gluing. Given an explicit local
+restriction/gluing and a proved witness-span category. Given an explicit local
 match between a source program and a closed writer contract, the
 contract-based runner and reference executor have corresponding outcomes,
 mapped event traces, and intermediate states. The graph still stores
@@ -64,6 +65,19 @@ when both components have at most one complete model on every validated
 input. Neither result asserts that the producer finishes before the consumer
 starts. See the [model-gluing record](component_model_gluing_record.md).
 
+**Categorical witness semantics** packages every validated input and every
+complete model into a span between metadata-bearing whole-interface
+environments. Arrows are spans up to an apex bijection commuting with both
+environment maps; composition pairs compatible witnesses, and the identity
+is the identity span. Quotient congruence, both unit laws and associativity
+are proved. The component constructor preserves this composition through
+explicit boundary and exterior interface transports, and both actual nested
+component bracketings correspond to the same compatible model triple.
+Injective-left spans have a quotient-invariant partial-map interpretation;
+for components, this restriction is exactly `AtMostOneModels`.
+These are denotational results, not a source functor or event-sensitive
+process laws. See the [witness semantics record](categorical_witness_semantics_record.md).
+
 The independently authored validation fixture supplies actual
 proof instances of the execution-correspondence theorem. Its six-event failure and
 seven-event completion remain concrete executable observations;
@@ -79,14 +93,18 @@ The strongest defensible conclusion is:
 > execution. Its correspondence with the reference semantics is proved
 > under explicit local matching conditions, and compatible matched
 > components construct both a correct composite match and a bijection of
-> compatible complete-model witnesses. Partial-function composition is
-> proved under explicit at-most-one-model hypotheses. Ranked phase execution
-> and categorical laws remain separate obligations.
+> compatible complete-model witnesses. These witnesses give a proved
+> denotational category, a composition-preserving component interpretation,
+> and coherent nested composition after explicit interface transport.
+> Partial-map composition is proved under explicit at-most-one-model
+> hypotheses. Source-category laws, ranked phase execution and event-sensitive
+> process laws remain separate obligations.
 
 The St/Br presentation can organise parts of the syntax and total
 indexing. It is not assumed to be the best presentation of every layer.
-The correspondence proof does not require a general categorical framework
-first; it provides a concrete result that a later presentation must respect.
+The correspondence proof did not require a general categorical framework
+first. The witness category now packages complete-model meaning; connecting
+St/Br syntax to that target still requires a separate interpretation.
 
 This document distinguishes **mathematical constructions**, **observed
 prototype evidence**, **proved conditional results**, and **unproved
@@ -99,8 +117,8 @@ Sections 7-8 relate them to the categorical perspectives considered,
 and Section 9 separates established results from remaining targets.
 Section 10 gives the categorization roadmap and a ledger of current progress.
 Appendix A explains correspondence and how the static constructor supplies
-its match, then the complete-model gluing argument, in mathematical rather
-than Lean notation.
+its match, then the complete-model gluing and categorical witness arguments,
+in mathematical rather than Lean notation.
 
 ## Table of contents
 
@@ -132,6 +150,7 @@ than Lean notation.
   - [6.7. Kernel-checked conditional correspondence](#67-kernel-checked-conditional-correspondence)
   - [6.8. Kernel-checked static component composition](#68-kernel-checked-static-component-composition)
   - [6.9. Kernel-checked model gluing and restricted denotation](#69-kernel-checked-model-gluing-and-restricted-denotation)
+  - [6.10. Kernel-checked categorical witness semantics](#610-kernel-checked-categorical-witness-semantics)
 - [7. St/Br, indexed arrays, and open diagrams](#7-stbr-indexed-arrays-and-open-diagrams)
   - [7.1. St/Br remains a serious syntax candidate](#71-stbr-remains-a-serious-syntax-candidate)
   - [7.2. Naperian representation connects compact syntax to values](#72-naperian-representation-connects-compact-syntax-to-values)
@@ -145,6 +164,7 @@ than Lean notation.
 - [10. Categorization roadmap and progress](#10-categorization-roadmap-and-progress)
   - [10.1. What each step buys us](#101-what-each-step-buys-us)
   - [10.2. Progress ledger](#102-progress-ledger)
+  - [10.3. Remaining branches of the roadmap](#103-remaining-branches-of-the-roadmap)
 - [Conclusion](#conclusion)
 - [Appendix A. How the correspondence proof works](#appendix-a-how-the-correspondence-proof-works)
   - [A.1. Start with a local match, not matching executions](#a1-start-with-a-local-match-not-matching-executions)
@@ -155,6 +175,7 @@ than Lean notation.
   - [A.6. Establish genuine instances and audit the proof](#a6-establish-genuine-instances-and-audit-the-proof)
   - [A.7. Construct a match from component matches](#a7-construct-a-match-from-component-matches)
   - [A.8. Restrict and glue complete-model witnesses](#a8-restrict-and-glue-complete-model-witnesses)
+  - [A.9. Turn model witnesses into categorical semantics](#a9-turn-model-witnesses-into-categorical-semantics)
 - [Notation reference](#notation-reference)
 
 ## 1. Begin with the meaning that execution must preserve
@@ -436,8 +457,11 @@ Some copying equations hold for deterministic partial functions, but
 they do not identify execution traces or justify duplicating work
 without considering diagnostics and cost.
 
-This category is a useful target for interpretation. It is not claimed
-to be an implemented categorical instance in the prototype.
+This category is a useful target for interpretation. The prototype now
+implements quotient-invariant partial maps for injective-left witness spans
+and connects them to component denotation (Section 6.10). It does not install
+a general $\mathbf{Pfn}$ category or prove a symmetric monoidal
+interpretation of Tensor Logic in it.
 
 ### 3.3. Value indexing and strict effect sequencing are separate
 
@@ -722,6 +746,9 @@ subsequent constructions and their own validation.
 The [model-gluing record](component_model_gluing_record.md) records the
 rank-independent witness theorem, restricted denotation and logical-model
 counterexamples.
+The [witness semantics record](categorical_witness_semantics_record.md)
+records the subsequent target category, all-input composition comparison,
+nested coherence, restricted partial maps and completed release gates.
 
 | Evidence | Supported conclusion | Boundary |
 | --- | --- | --- |
@@ -741,6 +768,11 @@ counterexamples.
 | Rank-independent complete-model gluing | Composite model witnesses are in bijection with dependent compatible component-model pairs, retaining all private work | Validated inputs, explicit typed boundary and fixed rational profile; no existence, uniqueness or execution premise |
 | Restricted denotation composition | Both at-most-one-model hypotheses give the exact admissibility domain and transported successive output denotation | At most one model on every input does not imply existence; no unrestricted unique-model composition law |
 | Kernel-checked cyclic and hidden-model cases | Downstream filtering and distinct internal witnesses with equal outputs are realized by matched model fixtures | Complete-store/model proofs, not claims that the executor solves cyclic equations |
+| Metadata-bearing witness-span category | Span-isomorphism quotient, well-defined pullback composition, identity spans, both unit laws and associativity | Objects and homs in `Type 1`, environments and individual apexes in `Type 0`; no same-universe local-smallness or source-category claim |
+| All-input categorical component comparison | Composite witnesses and wired component witnesses are bijective, with both exterior legs commuting | Explicit boundary/input/output equivalences; whole private stores survive, not only outputs or successful executions |
+| Actual nested component coherence | Both source bracketings rebase to one compatible complete-model triple and hence the same quotient arrow | Fresh UIDs and nested programs need not be equal; no trace or process associativity follows |
+| Injective-left partial-map connection | Quotient-invariant domains/values compose and agree with authoritative component admissibility and denotation | Component restriction is exactly `AtMostOneModels`; extraction is noncomputable and neither existence nor totality is asserted |
+| Witness observation checks and ten release mutation controls | Checked private values, strict absence, empty metadata, nonconstant transport and unequal nested UIDs discriminate the specified faults | Copied-map controls are separate from donor substitutions; generic proofs and a shared interpreter are not independent arithmetic oracles |
 
 The correspondence record reports successful full builds and branch review.
 The executable modules
@@ -750,7 +782,7 @@ theorem and its strict/total instances depend only on `propext`,
 `Classical.choice`, and `Quot.sound`, the allowed standard Lean axioms.
 No new axiom, `sorry`, or unsafe proof shortcut was introduced.
 This is not an axiom audit of every unrelated repository component.
-The transport, static-composition and model-gluing records report their full
+The transport, static-composition, model-gluing and witness-category records report their full
 builds, final reviews, namespace audits and particular mutation controls.
 The original seven controls below are not the total across those later slices.
 
@@ -921,12 +953,14 @@ For compatible composition, Section 6.8 derives the composite obligation
 from the supplied local matches instead of requiring a new whole-match proof.
 
 The important distinction is now **proved correspondence, static match
-construction and complete-model composition versus open operational phase
-and categorical laws**. The proved results are general within their stated
+construction and categorical complete-model semantics versus open source
+and process laws**. The proved results are general within their stated
 premises, not limited to the tested examples. The witness bijection needs no
 uniqueness; the denotation law explicitly needs at-most-one complete models
-for both components. Automatic leaf-contract inference, ranked
-phase/projection results and categorical laws remain unestablished.
+for both components. The target category laws and nested witness coherence
+are proved separately in Section 6.10. Automatic leaf-contract inference,
+source identities/functor laws and ranked phase/projection results remain
+unestablished.
 
 Any priority pair satisfying the theorem's ordered matching condition is
 covered. Equivalence across different priorities, arbitrary program
@@ -1081,6 +1115,87 @@ whole-branch reviews. The result remains in the non-default
 `IndexedExecutionExperiment`; it is not a general categorical library,
 production-backend verification or an unrestricted partial-function law.
 
+### 6.10. Kernel-checked categorical witness semantics
+
+The public entry point is
+[`IndexedWitnessSemantics.lean`](../../leanncd/experiments/indexed_execution/IndexedWitnessSemantics.lean),
+with acceptance checks in
+[`IndexedWitnessTest.lean`](../../leanncd/experiments/indexed_execution/IndexedWitnessTest.lean).
+It belongs only to the non-default `IndexedExecutionExperiment`.
+Component interpretation retains the finite decidable `Declarations Unit`,
+fixed rational registry and explicit `MatchedComponent`/`Boundary` profile.
+
+**Target category.**
+[`IndexedWitnessInterface.lean`](../../leanncd/experiments/indexed_execution/IndexedWitnessInterface.lean)
+defines `WholeInterface`: port tensor identities, injective UIDs, complete
+sort/domain signatures and an exhaustive duplicate-free port roster.
+`inputEquiv` reconstructs validated inputs, preserving tensor-level presence
+even when a coordinate domain is empty; `outputEquiv` identifies whole output
+families. Equal environment carriers do not identify interface metadata.
+
+[`IndexedWitnessSpan.lean`](../../leanncd/experiments/indexed_execution/IndexedWitnessSpan.lean)
+defines spans, `SpanIso` and quotient arrows. An isomorphism is a bijection
+of apexes commuting with both environment legs, not an output-only relation.
+Pullback congruence makes composition well-defined on the quotient;
+`leftUnit`, `rightUnit` and `assoc` supply the ordinary Mathlib
+`Category.{1} WholeInterface` instance. Objects and quotient homs live in
+`Type 1`; each environment and apex lives in `Type 0`. Finite coordinates
+do not imply a finite set of rational model stores or same-universe local
+smallness.
+
+**Composition-preserving interpretation.** `componentSpan` retains every
+validated input paired with every complete `Program.Models` store. Its
+left leg returns the input and its right leg projects the whole output.
+No rank, execution success, existence or uniqueness hypothesis filters
+this apex.
+[`IndexedWitnessComposition.lean`](../../leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean)
+defines `boundaryEnvEquiv`, `compositeInputEquiv` and
+`compositeOutputEquiv`. Graph spans express these administrative transports
+without identifying distinct interface objects.
+`allInputWiredEquiv` lifts model gluing over all validated inputs;
+`compositeWiredIso` proves both exterior legs commute, and `composition_hom`
+gives equality of the transported composite arrow and the wired component
+arrows. Appendix A.9 spells out that equality.
+
+**Actual nested coherence.**
+[`IndexedWitnessCoherence.lean`](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean)
+constructs the boundaries needed by both nested source bracketings and proves
+their environment-transport squares. `leftTripleIso` and `rightTripleIso`
+take both rebased spans to the same `CompatibleTriple`, retaining all three
+complete stores and both original boundary equations. `bracket_hom` follows.
+This is stronger than target-span associativity alone: it compares the
+actual component constructor's two bracketings. It does not equate their
+fresh raw UIDs, nested declarations or source programs.
+
+**Restricted partial maps.**
+[`IndexedWitnessPartial.lean`](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean)
+proves `component_injective_iff`: a component span's left leg is injective
+exactly when it satisfies `AtMostOneModels`. Identity/graph spans and
+pullback preserve injective left legs. Existence of a witness defines the
+partial domain; its unique witness determines the output. Domain and value
+are invariant under span isomorphism and obey successive-composition laws.
+`component_composite_domain` and `component_composite_value` connect this
+view to the existing admissibility and denotation theorems under both
+component hypotheses. `RestrictedHom.partialOption` is noncomputable:
+it uses classical witness choice, not an executable cyclic-model solver.
+Absence of a witness yields `none`, never a fabricated zero value.
+
+The checks retain hidden private-model multiplicity, strict `Audit` absence
+versus its total neighbour, empty-port presence and UID metadata,
+nonconstant boundary/exterior transport, and distinct nested UIDs with
+preserved private values. The [release record](categorical_witness_semantics_record.md)
+reports the full three-target build, namespace axiom audits, seven exact
+copied-declaration parities, ten unfiltered expected mutation cycles with
+byte-identical restoration, and adjudicated whole-branch reviews.
+Copied-map observations and donor substitutions have different evidential
+roles; neither replaces the generic proofs or independently verifies the
+shared expression interpreter.
+
+The completed result is a denotational target category and a
+composition-preserving interpretation, **not a source functor**.
+Source units/laws, event-sensitive process composition, rank stitching,
+phase/trace projection and backend refinement remain separate work.
+
 ## 7. St/Br, indexed arrays, and open diagrams
 
 The categorical perspectives address different layers and different
@@ -1095,7 +1210,7 @@ notions of equivalence:
 | Partial maps and effect sequencing | Primitive domains, strict assembly, and domain-sensitive transformation laws | A solver for cyclic equations or automatic trace equivalence |
 | Closed-writer dataflow and coalgebras | Ready contribution steps, completion barriers, and next-step behaviour | General open-program composition or bialgebraic compatibility |
 | Open graphs, ACSet interfaces, and network semantics | Explicit boundary matching and structural composition of presentations | Choosing the correct boundary or certifying a complete writer family |
-| Complete-model relations and witness spans | General equation semantics, including multiple or absent models | An execution policy or unconditional composition of unique-model partial functions |
+| Complete-model relations and witness spans | Proved witness category and coherent component composition, including multiple or absent models | A source functor, an execution policy or unconditional composition of unique-model partial functions |
 | Temporal iteration and scans | Finite causal dependencies and independent batching outside the time axis | Independent execution along time or unrestricted feedback solving |
 | Turi-Plotkin and extensions | A route to constructor/behaviour compatibility and observation-sensitive compositionality | The required syntax, rule law, and hypotheses without further work |
 | PROP interpretations, parameters, and refinement | Model interpretation, parameter handling, and implementation correctness targets | Concrete kernel progress, memory safety, or numerical guarantees from value equality alone |
@@ -1502,24 +1617,25 @@ structure to Tensor Logic's actual meaning. Calling a computation an arrow
 or drawing a string diagram does not discharge those obligations.
 
 The roadmap below is a logical dependency guide, not a claim that every
-stage requires the previous stage's full implementation. In particular,
-model-level categorical laws and ranked operational phase proofs are
-different branches of the work.
+stage requires the previous stage's full implementation. The witness proof
+completes the denotational target-category branch, including actual nested
+component coherence and the restricted partial-map view. Source-category
+packaging and ranked operational phase proofs remain different branches.
 
 ### 10.1. What each step buys us
 
-| Step | Construction or obligation | What it buys us |
-| --- | --- | --- |
-| 1. Fix interfaces and observations | Typed whole-tensor interfaces, explicit coordinate/identity transport, and a choice of value, witness or process equivalence | States exactly what may be connected and what information an equivalence may forget; empty tensors and private effects cannot disappear by accident |
-| 2. Give computations strict meaning | Partial expression interpretation, complete-model conditions and proved declaration/context transport | Separates undefinedness from unavailable data and numerical zero; preserves demanded internal work and nonselected array entries |
-| 3. Connect graphs to meaning | Local source-contract matches and graph/reference execution correspondence | Makes executable graphs accountable for occurrences, publication, failure and full intermediate data rather than only final outputs |
-| 4. Compose representations safely | Locally scoped components, typed boundaries, checked private identities, canonical closure and composite-match construction | Provides modular assembly without rebuilding a whole match, padding declaration universes or reopening an upstream writer family |
-| 5. Compose complete meanings | Model restriction/gluing and the restricted denotation law | Identifies composite models with compatible component witnesses, preserves internal multiplicity, and permits partial-function composition only with the stated uniqueness hypotheses |
-| 6. Package a semantic category | Witness spans over interface environments, a chosen span equivalence, and composition interpreted as a pullback | Turns the existing model-gluing result into a composition-preserving categorical interpretation, instead of merely a collection of compatible definitions |
-| 7. Prove category laws and units | Associativity through compatible model triples; identity spans and, where needed, administrative wire syntax | Makes repeated composition coherent and gives a genuine unit without silently treating extra computation events as no work |
-| 8. Connect process and implementation views | Ranked phase/projection and trace proofs, followed by observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest |
+| Step | Construction or obligation | What it buys us | Current boundary |
+| --- | --- | --- | --- |
+| 1. Fix interfaces and observations | Typed whole-tensor interfaces, explicit coordinate/identity transport, and a choice of value, witness or process equivalence | States exactly what may be connected and what information an equivalence may forget; empty tensors and private effects cannot disappear by accident | Whole interfaces and span-isomorphism equivalence implemented; event-sensitive equivalence remains open |
+| 2. Give computations strict meaning | Partial expression interpretation, complete-model conditions and proved declaration/context transport | Separates undefinedness from unavailable data and numerical zero; preserves demanded internal work and nonselected array entries | Implemented substrate and proved transport |
+| 3. Connect graphs to meaning | Local source-contract matches and graph/reference execution correspondence | Makes executable graphs accountable for occurrences, publication, failure and full intermediate data rather than only final outputs | Proved under supplied leaf matches and matched priorities |
+| 4. Compose representations safely | Locally scoped components, typed boundaries, checked private identities, canonical closure and composite-match construction | Provides modular assembly without rebuilding a whole match, padding declaration universes or reopening an upstream writer family | Proved for the explicit sealed whole-tensor constructor |
+| 5. Compose complete meanings | Model restriction/gluing and the restricted denotation law | Identifies composite models with compatible component witnesses, preserves internal multiplicity, and permits partial-function composition only with the stated uniqueness hypotheses | Proved; core gluing needs no uniqueness, restricted denotation needs both component hypotheses |
+| 6. Package a semantic category | Witness spans over interface environments, span-isomorphism quotient, and composition interpreted as a pullback | Turns model gluing into a composition-preserving categorical interpretation with both exterior legs checked | Proved across all validated inputs with explicit boundary/exterior transports |
+| 7. Prove category laws and units | Target identity spans and associativity; actual nested component comparison through compatible model triples | Makes repeated denotational composition coherent without treating extra computation events as no work | Target laws, graph-transport laws and nested coherence proved; source administrative syntax/units not supplied |
+| 8. Connect process and implementation views | Ranked phase/projection and trace proofs, plus observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest | Open; the denotational proofs do not discharge these obligations |
 
-A concrete realization of Step 6 is the **witness-span interpretation**.
+The completed realization of Steps 6-7 is the **witness-span interpretation**.
 For a whole-tensor interface $X$, write $\mathsf{Env}(X)$ for its space of
 valid environments, retaining the declared tensor/domain information.
 For a component $P:X\to Y$, let $W_P$ contain pairs $(\eta,\rho)$ of
@@ -1553,10 +1669,20 @@ representations. If those stronger observations matter, choose and justify
 a stronger equivalence rather than silently assuming ordinary spans retain
 them.
 
-In the at-most-one-model fragment, the left map is injective and the span
-describes a partial input-output map. The existing restricted denotation law
-is the compositional ingredient for this view, not an unconditional
-unique-model law for arbitrary cyclic programs.
+Both actual nested source bracketings are now compared, not just arbitrary
+target spans: after rebasing their exterior interfaces, `leftTripleIso` and
+`rightTripleIso` identify their complete witnesses with the same compatible
+triple. The resulting `bracket_hom` is an equality of quotient arrows.
+It retains model multiplicity and both original boundary equations without
+equating fresh UIDs or claiming source-program equality.
+
+In the at-most-one-model fragment, the left map is injective **if and only
+if** `AtMostOneModels` holds. The proved restricted view makes witness
+existence the partial domain and the unique witness's output the value;
+both descend through span isomorphism and compose correctly. The component
+domain/value theorems agree with authoritative admissibility and denotation
+under both component hypotheses. This is noncomputable semantic extraction,
+not model search or an unconditional unique-model law for cyclic programs.
 
 The semantic identity is an identity span. If the source presentation itself
 needs units, an administrative wire can represent the interface isomorphism
@@ -1577,6 +1703,7 @@ categorical construction elsewhere in the repository.
 | Milestone | Current status | Evidence or remaining boundary |
 | --- | --- | --- |
 | Typed values, strict expressions and whole-model conditions | Implemented semantic substrate | [Core models](../../leanncd/LeanNCD/Semantics/Models.lean) and [strict interpretation](../../leanncd/LeanNCD/Semantics/Interpret.lean); internal occurrence definedness is required |
+| Metadata-bearing whole-interface environments | Implemented with proved input/output equivalences | [Witness interfaces](../../leanncd/experiments/indexed_execution/IndexedWitnessInterface.lean); UID/sort/domain/port metadata and empty-input presence are retained, not quotiented by carrier equivalence |
 | Declaration/context/coordinate transport | Proved | [Transport record](component_transport_execution_record.md); supplied certified adapters, not name-based or automatic domain matching |
 | Graph/reference execution correspondence | Proved, conditional on a supplied local match | [Correspondence record](categorical_tensor_logic_proof_record.md); matched priorities and rational registry, no general backend claim |
 | Static sealed composite and its match | Proved | [Composition record](component_composition_record.md); two local matched components plus an explicit whole-tensor boundary |
@@ -1585,16 +1712,17 @@ categorical construction elsewhere in the repository.
 | Witness-span interpretation across all inputs | Proved, composition-preserving with explicit boundary and exterior transports | [Witness composition](../../leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean); `allInputWiredEquiv`, `compositeWiredIso` and `composition_hom` retain whole private model stores and commute with both legs |
 | Semantic target category laws and units | Proved | [Span category](../../leanncd/experiments/indexed_execution/IndexedWitnessSpan.lean); span-isomorphism quotient, pullback associativity and identity-span unit laws; graph spans supply administrative interface transports |
 | Nested component denotational associativity | Proved after explicit interface reindexing | [Witness coherence](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean); both actual bracketings correspond to the same compatible model triple, not equal raw IDs or programs |
-| Injective-left partial-map interpretation | Proved, restricted to at-most-one complete model per input | [Restricted spans](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean); quotient invariance and domain/value laws, connected to the authoritative admissibility and denotation theorems; uniqueness does not imply existence |
+| Injective-left partial-map interpretation | Proved; component restriction is exactly `AtMostOneModels` | [Restricted spans](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean); quotient invariance, closure under pullback and domain/value laws connect to authoritative admissibility and denotation; noncomputable extraction, not totality |
 | Source category, source functor and process units | Open | Target identities do not construct a core identity or a source category; copies add events and aliases violate `output_defined` |
 | Rank stitching and sequential phase/projection | Open | Individual ranked progress does not compose certificates or prove the whole upstream-before-downstream phase law |
 | Event-sensitive process category | Open | For the proposed sealed-sequential interpretation, needs operational composition and a justified event/state observation equivalence, not merely span isomorphism |
-| Categorical frontend/backend interpretation and refinement | Not established for this proposed category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
+| Categorical frontend/backend interpretation and refinement | Not established for this witness category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
 
 The current position is therefore **a proved denotational witness-span
 category and composition-preserving interpretation**, not an event-sensitive
 source/process category. See the [witness semantics record](categorical_witness_semantics_record.md)
-for its release evidence and limits. Rank/phase and trace-projection form the
+for the completed full-build, audit, ten-control and review gates and their
+limits. Rank/phase and trace-projection form the
 independent operational task. General St/Br
 packaging, numerical interpretation and implementation refinement must be
 connected to the chosen semantics by their own arguments.
@@ -1602,6 +1730,33 @@ connected to the chosen semantics by their own arguments.
 The ledger does not assign a percentage: a proof of model gluing and a proof
 of process identity solve different problems, and their observations must
 not be averaged into a single completion claim.
+
+### 10.3. Remaining branches of the roadmap
+
+There is no remaining target-span identity or associativity gap in this
+profile. The next obligations depend on the intended claim:
+
+- **A source category and functor:** supply administrative wire syntax,
+  source identity/associativity laws with explicit transport, and an
+  interpretation preserving them. The current `composition_hom` and
+  `bracket_hom` provide denotational comparison ingredients, not a source
+  category. Broader interfaces or automatic leaf matches would require
+  additional constructions beyond this sealed profile.
+- **Sequential process meaning:** stitch rank certificates, prove the
+  upstream/downstream phase and state projections, then establish trace
+  composition and process units under a specified observation equivalence.
+  Compatible model triples alone cannot prove that upstream work finishes
+  first, and semantic graph spans are not event-free core computations.
+- **Frontend/backend connection and refinement:** relate St/Br or another
+  source presentation to this witness target and prove the required
+  implementation/observation laws. Value-level indexing, numerical
+  approximation and physical storage correctness remain distinct claims;
+  no general monoidal, graded or backend interpretation follows merely
+  from the ordinary span-category laws.
+
+These are open directions, not new implementation commitments. None requires
+reproving the completed target-category laws or weakening strict definedness
+and complete-witness retention to obtain a simpler output-only relation.
 
 ## Conclusion
 
@@ -1620,6 +1775,10 @@ matches from locally matched components and explicit whole-tensor boundaries.
 Complete-model restriction/gluing additionally proves the compatible-witness
 bijection, and explicit at-most-one-model hypotheses give the exact
 successive denotation domain and values.
+The witness proof now packages those meanings into an ordinary span category,
+proves composition preservation with both exterior legs, compares actual
+nested component bracketings through compatible model triples, and derives
+the quotient-invariant injective-left partial-map view.
 Their fixtures, audits, controls and reviews add evidence without
 replacing the generic proofs or changing the language's strict partiality.
 
@@ -1869,9 +2028,9 @@ zero-writer fibers, collisions and unequal-axis adapters provide further
 discriminating cases. The interpreter remains shared.
 
 This constructs a static matched component, not a runtime phase theorem,
-or a categorical identity/associativity law. Complete-model gluing is the
-separate proved result below; remaining operational and categorical
-obligations are stated in Section 9.2.
+or by itself a categorical identity/associativity law. Complete-model gluing
+and categorical witness semantics are the separate proved results below;
+source and operational obligations remain as stated in Sections 9.2 and 10.3.
 
 ### A.8. Restrict and glue complete-model witnesses
 
@@ -1920,8 +2079,78 @@ model filtering and hidden internal multiplicity. These are logical
 complete-model conclusions, not execution-completion claims.
 
 No rank, phase, model existence or uniqueness premise appears in the core
-witness theorem. Runtime phase/projection, trace splicing and categorical
-laws remain distinct unproved obligations.
+witness theorem. The categorical packaging and its laws are proved separately
+below; runtime phase/projection, trace splicing and source/process laws
+remain unproved.
+
+### A.9. Turn model witnesses into categorical semantics
+
+Write $X_P,Y_P$ for component $P$'s whole input/output interfaces, and
+$W_P=\{(\eta,\rho)\mid\rho\in\operatorname{Models}(P,\eta)\}$ for its
+all-input complete-model witnesses. Its span is
+$F_P=(\mathsf{Env}(X_P)\xleftarrow{\ell_P}W_P
+\xrightarrow{r_P}\mathsf{Env}(Y_P))$, with input reconstruction and output
+projection as its legs.
+
+1. **Choose the exact arrow equivalence.** A span isomorphism is an apex
+   bijection $h:W\cong W'$ satisfying
+   $\ell'\circ h=\ell$ and $r'\circ h=r$. Quotient by these isomorphisms,
+   not by equality of visible outputs. Different complete private stores
+   remain different witnesses; proof terms for the same store do not.
+2. **Prove well-defined composition and units.** For spans
+   $F:X\to Y$ and $G:Y\to Z$, composition has apex
+   $\{(w,v)\mid r_F(w)=\ell_G(v)\}$ and exterior legs
+   $\ell_F(w),r_G(v)$. Apex isomorphisms induce isomorphisms of these
+   compatible pairs, so composition descends to the quotient.
+   The identity span has apex $\mathsf{Env}(X)$ and both legs identity.
+   Removing its determined witness proves both unit laws. Reassociating
+   $((w,v),u)$ to $(w,(v,u))$ preserves both compatibility equalities and
+   exterior legs, proving target associativity.
+3. **Compare the actual component constructor.** Let
+   $e_b:\mathsf{Env}(Y_P)\cong\mathsf{Env}(X_Q)$ be boundary transport,
+   $i_b:\mathsf{Env}(X_P)\cong\mathsf{Env}(X_{Q\circ_b P})$ the exterior
+   input transport, and
+   $o_b:\mathsf{Env}(Y_{Q\circ_b P})\cong\mathsf{Env}(Y_Q)$ the exterior
+   output transport. For an equivalence $e$, its graph span has apex its
+   source environment, left leg identity and right leg $e$.
+   If $[F]$ denotes a quotient arrow, `composition_hom` proves, with
+   ordinary right-to-left composition,
+
+   $$
+   [\operatorname{graph}(o_b)]\circ[F_{Q\circ_b P}]
+   \circ[\operatorname{graph}(i_b)]
+   =
+   [F_Q]\circ[\operatorname{graph}(e_b)]\circ[F_P].
+   $$
+
+   This is the all-input witness-gluing bijection together with **both**
+   commuting exterior legs. The transports are essential: tagged composite
+   interfaces are not literally the original interfaces.
+4. **Compare actual source bracketings.** Construct the inherited boundaries
+   for $(P,Q),R$ and $P,(Q,R)$, then prove their transport squares.
+   After rebasing, both nested spans are isomorphic to the span of triples
+   $(w_P,w_Q,w_R)$ satisfying the two original boundary equalities.
+   Its legs are $\ell_P(w_P)$ and $r_R(w_R)$.
+   `leftTripleIso`, `rightTripleIso` and `bracket_hom` establish the comparison
+   without equating nested UIDs, declarations or source programs.
+5. **Restrict to partial maps only with injective left legs.** The partial
+   domain is $\{x\mid\exists w,\ell(w)=x\}$; injectivity makes the witness
+   unique and its output $r(w)$ well-defined. Span isomorphisms preserve
+   this domain and value, and pullback preserves injectivity and successive
+   domain/value composition. For $F_P$, injectivity is equivalent to
+   `AtMostOneModels P`. Under this restriction, witness existence agrees
+   with authoritative unique-model admissibility; the output agrees with
+   denotation. Both component hypotheses connect the composite view to
+   successive denotation, without asserting existence or giving a solver.
+
+These steps are implemented in the
+[span](../../leanncd/experiments/indexed_execution/IndexedWitnessSpan.lean),
+[composition](../../leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean),
+[coherence](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean),
+and [restricted partial-map](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean)
+modules. They prove denotational category laws and constructor compatibility.
+The identity graph/span is a semantic wire, not a core identity computation;
+span isomorphism gives no schedule, event or phase equality.
 
 ## Notation reference
 
@@ -1937,6 +2166,9 @@ ones; it does not add assumptions beyond their definitions.
 | $\beta$ | Raw input binding awaiting validation |
 | $\rho(T)[p]$ | Entry at coordinate $p$ of tensor $T$ in environment $\rho$ |
 | $\mathsf{Env}(X),W_P$ | Valid environments for a whole-tensor interface and complete-model witnesses of a component across its inputs |
+| $X_P,Y_P,F_P,\ell_P,r_P$ | Component input/output interfaces, its complete-model span, and that span's input/output legs |
+| $[F],\operatorname{graph}(e)$ | Span-isomorphism quotient arrow and graph span of an explicit environment equivalence |
+| $e_b,i_b,o_b$ | Boundary environment transport and composite exterior input/output equivalences |
 | $\operatorname{Models}(P,\eta)$ | Complete models of program $P$ on supplied inputs $\eta$ |
 | $K$ | Scalar value carrier; collection additionally assumes its commutative-monoid structure |
 | $I,J,H$ | Finite coordinate sets |
