@@ -1184,21 +1184,6 @@ def readsIterAhead (s : Stmt) (u : UID) : Bool :=
     | .shift a n => a.uid == u && n > 0
     | _          => false)
 
-/-- Is a read of a scan state PINNED: its index list carries a literal (`.const`) at every advancing
-    position `adv` of the state? A pinned read takes a fixed slice of the finished history; any
-    `axis`/`shift`/`scale`/`affine` there (or a rank too short to have the position) is a per-step read. -/
-def readPinsAdvancing (adv : List Nat) (idxs : List IdxExpr) : Bool :=
-  adv.all (fun p => match idxs[p]? with | some (.const _) => true | _ => false)
-
-/-- Every axis uid mentioned by an Iverson-bracket predicate on the RHS of a stmt (invisible to
-    `Stmt.readFactors`, which only sees tensor reads). -/
-def Stmt.iversonUids : Stmt → List UID
-  | .assign _ _ r | .scatter _ _ r =>
-      r.body.terms.flatMap (fun t => t.factors.flatMap (fun
-        | .iverson b => (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
-        | _          => []))
-  | .recurMorphism _ _ _ => []
-
 /-- Map slot-position → iteration axis, read from a step (`iterNext`) stmt. -/
 def Stmt.stepAxisAt (step : Stmt) : Nat → Option AxisSpec := fun p =>
   step.iterInfo.findSome? (fun it => if it.isRecur && it.pos == p then some it.axis else none)
@@ -1268,39 +1253,30 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
         dep := dep.insert s.lhsName merged
         changed := true
     unless changed do break
-  -- POST-SCAN CONSUMERS. A non-iter statement that reads a scan state only at PINNED positions of
-  -- the state's advancing axes (`Zf[q, m] := H[q, m, 2]`) consumes the finished, materialized
-  -- history, not a per-step value: it is emitted as `.plain` AFTER the scan nodes rather than
-  -- folded into the recurrence body (where every pinned read is non-causal). A name `n` is post iff
-  -- (1) each of its statements is non-iter (so a scan state's own name, whose recurrence statement
-  -- carries an iteration slot, never qualifies), reads every scan state pinned, and has no Iverson
-  -- predicate over a scan axis; (2) every OTHER scan-dependent name it
-  -- reads is post too (chains), so it reads no per-step intermediate; and (3) no non-post
-  -- scan-dependent statement (a state's base/step, or an intermediate that stays in a body) reads
-  -- it — such a candidate is demoted to the ordinary body path, which keeps today's loud
-  -- rejection (otherwise `schedule` would report a cycle). Greatest fixpoint, capped by #stmts.
-  let advOf (nm : String) : Option (List Nat) :=
-    (nonPre.find? (fun s => s.lhsName == nm && s.iterInfo.any (·.isRecur))).map
-      (fun st => (st.iterInfo.filter (·.isRecur)).map (·.pos))
-  let iterUids : List UID := iterStmts.flatMap (fun s => s.iterInfo.map (·.axis.uid))
+  -- POST-SCAN CONSUMERS (role-based). Which names FEED the recurrence? `fed` is the least set of
+  -- names containing (1) every scan state name (`stateNames`: a non-iter statement written under a
+  -- state's name is per-step), (2) every name read by a statement with an iteration slot (a state's
+  -- base or step), and (3) closed backward through scan-dependent non-iter statements: a fed name's
+  -- statements read fed names. The closure is by NAME (all writers of a fed name are fed). A
+  -- scan-dependent non-iter statement whose LHS is fed is a per-step intermediate (folded into the
+  -- recurrence body, never published); one whose LHS is not fed is POST-SCAN: emitted as `.plain` after
+  -- the scan nodes, free to read states pinned or free, with the scan axis an ordinary axis. It may not
+  -- read a per-step intermediate (`readsPerStepIntermediate`). Bounded fixpoint, capped by #stmts.
   let isScanDep : String → Bool := fun n => !(dep.getD n []).isEmpty
-  let postCand : Stmt → Bool := fun s =>
-    s.iterInfo.isEmpty &&
-    s.readFactors.all (fun (nm, idxs) => match advOf nm with
-      | some adv => readPinsAdvancing adv idxs
-      | none     => true) &&
-    s.iversonUids.all (fun u => !iterUids.contains u)
-  let mut postNames : List String :=
-    ((nonPre.filter (fun s => s.iterInfo.isEmpty && isScanDep s.lhsName)).map (·.lhsName)).eraseDups.filter
-      (fun n => nonPre.all (fun s => s.lhsName != n || postCand s))
+  let stateNames : List String := (nonPre.filter (fun s => s.iterInfo.any (·.isRecur))).map (·.lhsName)
+  let mut fed : List String := (stateNames ++ iterStmts.flatMap (·.readNames)).eraseDups
   for _ in List.range (nonPre.length + 1) do
-    let kept := postNames.filter (fun n =>
-      nonPre.all (fun s => s.lhsName != n ||
-        s.readNames.all (fun r => (advOf r).isSome || !isScanDep r || postNames.contains r)) &&
-      nonPre.all (fun s => postNames.contains s.lhsName || !isScanDep s.lhsName || !s.readNames.contains n))
-    if kept.length == postNames.length then break
-    postNames := kept
-  let isPost : Stmt → Bool := fun s => s.iterInfo.isEmpty && postNames.contains s.lhsName
+    let grown := (fed ++ nonPre.flatMap (fun s =>
+      if s.iterInfo.isEmpty && isScanDep s.lhsName && fed.contains s.lhsName then s.readNames else [])).eraseDups
+    if grown.length == fed.length then break
+    fed := grown
+  let isPost : Stmt → Bool := fun s => s.iterInfo.isEmpty && isScanDep s.lhsName && !fed.contains s.lhsName
+  for s in nonPre do
+    if isPost s then
+      for r in s.readNames do
+        if fed.contains r && !stateNames.contains r &&
+            nonPre.any (fun t => t.iterInfo.isEmpty && isScanDep r && t.lhsName == r) then
+          throw (CompileError.readsPerStepIntermediate s.lhsName r)
   -- CONNECTED COMPONENTS over iteration-axis UIDs: two iter-stmts are coupled iff their axis-sets
   -- share a UID (the §12.1 `G`/`H` coupled scan, and each axis of a genuine multi-axis scan). One
   -- `ScanStmt.scan` per component. Bounded union-find: repeated merge, capped by #stmts passes.
@@ -1311,7 +1287,7 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
       match acc.find? (fun d => d.any (fun u => c.contains u)) with
       | some d => (acc.erase d) ++ [(d ++ c).eraseDups]
       | none   => acc ++ [c]) []
-  -- A non-iter intermediate whose scan-axis deps span more than ONE component is an unsupported
+  -- A per-step (fed) non-iter intermediate whose scan-axis deps span more than ONE component is an unsupported
   -- cross-scan coupling (no §12.1 example needs it); fail loud. Within a single (possibly
   -- multi-axis) component it is a normal per-step intermediate.
   for s in nonPre do
@@ -1352,13 +1328,12 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
       for u in comp do
         if readsIterAhead r u then throw (CompileError.causalityViolation r.lhsName)
     -- FAIL LOUD (KG-scanprojection): an `isInter` statement (a per-step intermediate with no
-    -- base case) whose OWN LHS references the component's iteration axis is ambiguous — it
-    -- looks like the user wants a per-step read-out tracked across every `l`, but that's not
-    -- materialized (only same-step scratch intermediates, which never reference `l` on their own
-    -- LHS, are supported here). Reject rather than silently discard. A consumer that reads the
-    -- fully materialized state at PINNED literal positions is a post-scan statement (classified
-    -- above, `.plain` after the scan) and never reaches this loop; a free-read read-out
-    -- (`y[j, l] := C · h[k, l]`) is still rejected (see SS2 in the portfolio doc).
+    -- base case, or one written under a state's name) whose OWN LHS references the component's
+    -- iteration axis is ambiguous — it looks like the user wants a per-step read-out tracked across
+    -- every `l`, but that's not materialized (only same-step scratch intermediates, which never
+    -- reference `l` on their own LHS, are supported here). Reject rather than silently discard. A
+    -- statement that does not feed the recurrence is post-scan (classified above, `.plain` after the
+    -- scan) and never reaches this loop, so this fires only for a fed statement.
     for s in nonPre do
       if isInter s then
         if (s.slots.filterMap (·.axisUID?)).any (fun u => comp.contains u) then
@@ -1372,7 +1347,7 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
     nodes := nodes ++ [ ScanStmt.scan repName axes baseStmts recurStmts isAffine ]
   -- plain = non-iter stmts with NO scan dependency (loop-invariant; evaluated once).
   let plainStmts := nonPre.filter (fun s => s.iterInfo.isEmpty && (dep.getD s.lhsName []).isEmpty)
-  -- post = pinned consumers of the materialized history, after every scan node (source order).
+  -- post = statements that do not feed the recurrence, after every scan node (source order).
   let postStmts := nonPre.filter isPost
   return { decls := lp.decls,
            stmts := plainStmts.map ScanStmt.plain ++ preNodes ++ nodes ++ postStmts.map ScanStmt.plain,

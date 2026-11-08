@@ -898,6 +898,48 @@ def headProg32 : TLProgram := tlprog!{
 def headEnv64 : HashMap String DenseTensor := scanEnv64.insert "W_U" (t64 [5, 4] trWU)
 def headEnv32 : NamedDenseEnv32 := scanEnv32.insert "W_U" (t32 [5, 4] trWU)
 
+/-! ### Post-scan statements with the scan axis as an ordinary axis (`scan_postrole`, `scan_postrole32`)
+
+A scaling recurrence `S[j, l] = X[j] · G[j]^l` over `iter l = 4` and six statements that nothing in the
+recurrence reads, so each runs once after the scan with `l` an ordinary axis: an Iverson factor `[l ≥ 1]`
+over a pinned read, a pinned read times an external `V[l]` (summed over `l`), a free read times `V[l]`
+(summed over `l`), the same product kept (`T[j, l]`), a pinned read broadcast over `l`, and a masked
+softmax over `l`. The history extent 4 differs from the other extent in the inputs (`j` = 2).
+
+The bridge has no lowering for predicate factors (`JaxCodegenError.iversonFactor`), so `Zc` uses the
+external 0/1 mask input `M = [0, 1, 1, 1]` where the Lean-level fixtures (`postRoleProg3`/`4` in
+`ScanCompileTest`) use the Iverson `[l ≥ 1]`; the Iverson itself stays covered there. -/
+
+def postRoleX : Array Float := #[1.0, 2.0]
+def postRoleG : Array Float := #[2.0, 3.0]
+def postRoleV : Array Float := #[1.0, 10.0, 100.0, 1000.0]
+def postRoleM : Array Float := #[0.0, 1.0, 1.0, 1.0]
+
+def postRoleProg : TLProgram := tlprog!{
+  iter l = 4
+  tensor f64 X(j), G(j), V(l), M(l), S(j, l), Zc(j), Ysum(j), Yfree(j), T (j, l), Bc(j, l), Sm(j, l)
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l] · G[j]
+  Zc[j]      := S[j, 2] · M[l]
+  Ysum[j]    := S[j, 2] · V[l]
+  Yfree[j]   := S[j, l] · V[l]
+  T[j, l]    := S[j, l] · V[l]
+  Bc[j, l]   := S[j, 2]
+  Sm[j, l.]  := softmax(where l ≤ 1)(S[j, l])
+}
+/-- The binary32 sibling: no declarations (the surface syntax pins the axis order). -/
+def postRoleProg32 : TLProgram := tlprog!{
+  iter l = 4
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l] · G[j]
+  Zc[j]      := S[j, 2] · M[l]
+  Ysum[j]    := S[j, 2] · V[l]
+  Yfree[j]   := S[j, l] · V[l]
+  T[j, l]    := S[j, l] · V[l]
+  Bc[j, l]   := S[j, 2]
+  Sm[j, l.]  := softmax(where l ≤ 1)(S[j, l])
+}
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -946,6 +988,9 @@ def corpus64 : IO (Array String) := do
         0 0 (some (1, 0, 0)) true,
     ← fixture64 "transformer_scan" scanProg scanEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "transformer_head" headProg headEnv64 1 2 none true (scans := 1),
+    ← fixture64 "scan_postrole" postRoleProg
+        (env64 [("X", t64 [2] postRoleX), ("G", t64 [2] postRoleG), ("V", t64 [4] postRoleV), ("M", t64 [4] postRoleM)])
+        0 0 none true (scans := 1),
     ← fixture64 "transformer_unrolled" unrolledProg unrolledEnv64 2 2 (some (36, 2, 2)) true] ++
     (← scanSurvey64)
 
@@ -997,6 +1042,9 @@ def corpus32 : IO (Array String) := do
         0 0 (some (1, 0, 0)) true,
     ← fixture32 "transformer_scan32" scanProg32 scanEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "transformer_head32" headProg32 headEnv32 1 2 none true (scans := 1),
+    ← fixture32 "scan_postrole32" postRoleProg32
+        (env32 [("X", t32 [2] postRoleX), ("G", t32 [2] postRoleG), ("V", t32 [4] postRoleV), ("M", t32 [4] postRoleM)])
+        0 0 none true (scans := 1),
     ← fixture32 "transformer_unrolled32" unrolledProg32 unrolledEnv32 2 2 (some (36, 2, 2)) true]
 
 /-! ## Boundary pins: Lean REJECTS domain-violating unary reads (the JAX runtime does not check)

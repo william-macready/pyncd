@@ -2771,4 +2771,78 @@ def postReadSched : Option ScheduledProgram :=
       (a.terms.getD 0 default).factors.map (·.readOrDefault.sourceSlot)
         == sc.states.map (·.destSlot)) == some true
 
+/-! ## Post-scan statements whose scan axis is an ordinary axis
+
+A scan-dependent statement that nothing in the recurrence reads is POST-SCAN: it runs once after the
+scan, and the scan axis `l` is an ordinary axis in it (summed if only on the right, ranging if on the
+left, usable in a predicate or a mask). One program per extent, `iter l = 3` and `iter l = 4`, with a
+scaling recurrence `S[j,l] = X[j]·G[j]^l` whose layers differ, so a wrong slice or a wrong extent is a
+different number. The expectations are computed from the inputs by `postRoleExpected`, never read off
+an evaluator; `DifferentialTest` compares both backends against them. -/
+
+def postRoleProg3 : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l] · G[j]
+  Zc[j]      := S[j, 2] · [l ≥ 1]
+  Ysum[j]    := S[j, 2] · V[l]
+  Yfree[j]   := S[j, l] · V[l]
+  T[j, l]    := S[j, l] · V[l]
+  Bc[j, l]   := S[j, 2]
+  Sm[j, l.]  := softmax(where l ≤ 1)(S[j, l]) }
+
+def postRoleProg4 : TLProgram := tlprog!{ iter l = 4
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l] · G[j]
+  Zc[j]      := S[j, 2] · [l ≥ 1]
+  Ysum[j]    := S[j, 2] · V[l]
+  Yfree[j]   := S[j, l] · V[l]
+  T[j, l]    := S[j, l] · V[l]
+  Bc[j, l]   := S[j, 2]
+  Sm[j, l.]  := softmax(where l ≤ 1)(S[j, l]) }
+
+/-- The outputs checked by name. -/
+def postRoleNames : List String := ["Zc", "Ysum", "Yfree", "T", "Bc", "Sm"]
+
+private def postRoleX : List Float := [1.0, 2.0]
+private def postRoleG : List Float := [2.0, 3.0]
+private def postRoleV : List Float := [1.0, 10.0, 100.0, 1000.0]
+
+/-- Inputs for extent `n`: `X = [1,2]`, `G = [2,3]`, `V = [1,10,100,1000]` truncated to `n`. -/
+def postRoleInputs (n : Nat) : HashMap String DenseTensor :=
+  (((({} : HashMap String DenseTensor).insert "X" ⟨[2], postRoleX.toArray⟩).insert "G"
+    ⟨[2], postRoleG.toArray⟩).insert "V" ⟨[n], (postRoleV.take n).toArray⟩)
+
+/-- Independent expectation, plain `Float` arithmetic from the inputs: layer `l` of the recurrence is
+    `x · g^l`. -/
+private def postRoleS (j l : Nat) : Float :=
+  postRoleX.getD j 0.0 * (List.replicate l (postRoleG.getD j 0.0)).foldl (· * ·) 1.0
+
+def postRoleExpected (n : Nat) (name : String) : Option DenseTensor :=
+  let ls := List.range n
+  let js := [0, 1]
+  let v (l : Nat) : Float := postRoleV.getD l 0.0
+  -- softmax over the allowed layers `l ≤ 1` only; a disallowed layer is exactly 0.
+  let sm (j l : Nat) : Float :=
+    if l ≤ 1 then Float.exp (postRoleS j l) / (Float.exp (postRoleS j 0) + Float.exp (postRoleS j 1))
+    else 0.0
+  match name with
+  | "Zc"    => some ⟨[2], (js.map fun j =>
+      postRoleS j 2 * ((ls.filter (· ≥ 1)).length).toFloat).toArray⟩
+  | "Ysum"  => some ⟨[2], (js.map fun j =>
+      postRoleS j 2 * (ls.foldl (fun a l => a + v l) 0.0)).toArray⟩
+  | "Yfree" => some ⟨[2], (js.map fun j =>
+      ls.foldl (fun a l => a + postRoleS j l * v l) 0.0).toArray⟩
+  | "T"     => some ⟨[2, n], (js.flatMap fun j => ls.map fun l => postRoleS j l * v l).toArray⟩
+  | "Bc"    => some ⟨[2, n], (js.flatMap fun j => ls.map fun _ => postRoleS j 2).toArray⟩
+  | "Sm"    => some ⟨[2, n], (js.flatMap fun j => ls.map fun l => sm j l).toArray⟩
+  | _       => none
+
+private def postRoleCompiles (p : TLProgram) (n : Nat) : Bool :=
+  match p.explicitF64.compileToScheduled.run 0 with
+  | .ok s _ => causeOf (prepareEvalPlan s (InputSignature.ofDenseInputs (postRoleInputs n))) == none
+  | .error _ _ => false
+
+#guard postRoleCompiles postRoleProg3 3
+#guard postRoleCompiles postRoleProg4 4
+
 end LeanNCD.Eval.Plan.ScanCompileTest

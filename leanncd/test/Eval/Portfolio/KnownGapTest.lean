@@ -8,16 +8,15 @@ regression test (linked below) that will flip when the gap closes.
 
 ## Rejecting gaps — live in RejectTest
 * **KG (predicate agg)** — `RJ3` (`predicateAgg`).
-* **KG-scanprojection** — a per-step scan read-out written INSIDE the scan block (e.g.
-  `y[j,l] := C[j,k]·h[k,l]` alongside a `h` base/recur pair, in the same `tlprog!`) is rejected
-  at compile time (`scanProjectionUnsupported`) rather than silently discarded. `finalizeScans`
-  classifies it `isInter` (a per-step intermediate, same bucket as genuine same-step scratch)
-  because it reads scan state `h`; the new check additionally looks at whether the statement's
-  OWN LHS references the component's iteration axis — the signal that distinguishes "track this
-  across every step" (not materialized) from "recomputed and discarded every step" (scratch).
-  Not a missing primitive: the fully general workaround is to write the same statement standalone
-  *after* the scan, reading the fully materialized state — already supported and tested (SS2,
-  `GenerativeTest`). Live: `UF5` (`RejectTest`).
+* **KG-scanprojection** (CLOSED for read-outs; historical text) — a scan read-out written next to
+  the scan (e.g. `y[j,l] := C[j,k]·h[k,l]` alongside a `h` base/recur pair, in the same
+  `tlprog!`) used to be rejected at compile time (`scanProjectionUnsupported`). `finalizeScans`
+  now classifies by ROLE: a statement that does not feed the recurrence is a POST-SCAN plain
+  statement in which `l` is an ordinary axis, so this read-out compiles and gives the whole table
+  (`UF5`, now an accept test with values in `RejectTest`; also SS2 in `GenerativeTest`).
+  `scanProjectionUnsupported` still fires for a PER-STEP statement (one that feeds the recurrence, or
+  is written under a scan state's name) whose own LHS carries the iteration axis: live `nbScan`
+  (`Eval.Plan.CollectPlanTest`).
 
 ## Parse-level gaps (cannot be automated — hard parse errors fail the build)
 * **KG-reshape** (historical; the parse error is CLOSED by scatter-geometry slice B, see

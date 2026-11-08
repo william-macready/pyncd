@@ -508,6 +508,34 @@ run_cmd do
             throwError s!"Zf {repr z.data} is not S's l = 2 slice of {repr s.data}"
       | _, _ => throwError "S or Zf missing from the reference environment"
 
+-- Post-scan statements with the scan axis `l` as an ORDINARY axis (Iverson count, external sum, free read
+-- sum, read-out table, broadcast of a pinned read, masked softmax), at extents 3 and 4. Both backends
+-- must equal `postRoleExpected`, which is computed from the inputs by plain `Float` arithmetic: the
+-- reference environment is compared with `approxEq` for every output, the checked plan byte-for-byte for
+-- every output but `Sm` (`checkedPlanOutputEq`; its `planAgrees` also proves plan == reference), and for
+-- `Sm` plan == reference byte-for-byte via `planAgrees` alone.
+run_cmd do
+  for (n, p) in [(3, ScanCompileTest.postRoleProg3), (4, ScanCompileTest.postRoleProg4)] do
+    let inputs := ScanCompileTest.postRoleInputs n
+    match planAgrees p inputs with
+    | .error e => throwError s!"postRole L={n}: {e}"
+    | .ok () => pure ()
+    match envOf p inputs with
+    | .error e => throwError s!"postRole L={n}: {e}"
+    | .ok env =>
+        for nm in ScanCompileTest.postRoleNames do
+          let some want := ScanCompileTest.postRoleExpected n nm
+            | throwError s!"postRole L={n}: no expectation for {nm}"
+          match env[nm]? with
+          | some got =>
+              unless DenseTensor.approxEq got want do
+                throwError s!"postRole L={n} {nm}: reference {repr got.shape} {repr got.data}, expected {repr want.shape} {repr want.data}"
+          | none => throwError s!"postRole L={n}: {nm} missing from the reference environment"
+          if nm != "Sm" then
+            match checkedPlanOutputEq s!"postRole L={n} {nm}" p inputs nm want with
+            | .error e => throwError e
+            | .ok () => pure ()
+
 /-- Confirm mutating `original` into `mutated` actually changes `outputName`'s value relative to
     `original`'s OWN `evalScheduled` result — a mutation that doesn't break agreement is worse than
     no mutation test at all. -/
