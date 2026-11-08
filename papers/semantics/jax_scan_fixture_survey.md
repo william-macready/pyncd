@@ -1,6 +1,8 @@
 # JAX scan fixture survey
 
-Status: classification recorded by prototype dispatch A3 and NOT re-run since ("from A3 run"). Scope: which of
+Status: classification recorded by prototype dispatch A3; the gate verdicts of the 14 donors and of the zero-argument
+and sampled parameterised schedules were RE-RUN on 2026-11-08 against the current gate (see "Re-run" below; the
+JAX differential itself was not re-run on the additional schedules). Scope: which of
 the existing Lean scan test schedules (`Eval.Plan.ScanCompileTest`) the JAX `affineReference` scan lowering
 (`checkJaxScanSupport` gate + `renderScanNode` emitter + `_run_scan_node` runtime) accepts, and what the
 refusals say about the next increments.
@@ -11,7 +13,7 @@ The 14 donor schedules of `ScanCompileTest` in the table below were pushed throu
 differential's pipeline (prepare, JAX gate, Lean dense run, JAX eager and jit, compare). About a dozen other
 schedules in that file (for example `scratchUnusedF32Sched`, `scratchThenPlainReadSched`, `lateNopeSched`,
 `scratchMaxSched`, `contractBaseSched`, `neutralScratchSched`, `allNeutralStateSched`, `rejSched`) were NOT
-classified: they are mostly negative guards or tropical/f32 variants, but that is not checked here. No MISMATCH
+classified by the first survey; most are now classified by gate verdict in the "Re-run" section below. No MISMATCH
 was found among the classified donors: every one the gate accepts agrees with Lean within the differential's
 tolerance.
 
@@ -34,6 +36,35 @@ tolerance.
 
 The three class-B refusals are the JAX gate's own limits (the Lean side runs them), so they are the work list;
 the three refused-at-prepare donors are negative guards in Lean and have no JAX counterpart to write.
+
+## Re-run (2026-11-08): gate verdicts of the current code
+
+Each schedule went through `explicitF64Sched`, `prepareEvalPlan` and `renderAffinePlanNamed` (the
+`affineReference` gate and emitter) with the inputs named below, from a throwaway probe that is not committed.
+This is the GATE verdict only; no JAX run was made for the schedules that are new to this table.
+
+- The 14 donors above: the eight class-A donors are accepted, and the three class-B refusals are unchanged
+  (`coupledSched` and `multiBaseSched` give `unsupportedScanAxes 0`, `scratchPredicateSched` gives
+  `unsupportedDestDType 0 2 bool`, so the refusal column of the table is current). The three refused-at-prepare
+  donors keep their causes through the existing guards in `ScanCompileTest`.
+- Schedules the first survey left out, now classified (inputs: `scratchInputs`, `rejInputs`, `s3bfInputs`,
+  `scratchX0` as the donor's own tests use them):
+
+| Schedule | Verdict |
+|---|---|
+| `scratchUnusedF32Sched` (control, unused f32 declaration) | accepted, same as `scratchSched` |
+| `neutralScratchSched .sum`, `allNeutralStateSched .sum .sum` | accepted (real states) |
+| `scratchMaxSched` | gate refuses `unsupportedAlgebra 0` (max scratch, tropical) |
+| `neutralScratchSched .max` | gate refuses `unsupportedAlgebra 0` |
+| `contractBaseSched true .max`, `contractBaseSched false .sum`, `allNeutralStateSched .max .max`, `allNeutralStateSched .sum .max` | gate refuses `unsupportedScanState 0 0` (non-real state) |
+| `contractBaseSched true .sum` | prepare refuses `scanStateAlgebraMismatch "S"` |
+| `lateNopeSched`, `scratchThenPlainReadSched` | prepare refuses `cyclicDataflow` (negative Lean guards) |
+| `shapeBeforePairingSched` | prepare refuses with the unsized-iteration-axis shape error (negative Lean guard) |
+
+Not classified: `rejSched` and `rej2Sched` (builders that only make negative guards from supplied statements) and
+the remaining `allNeutralStateSched`, `contractBaseSched` and `neutralScratchSched` argument combinations. Three
+real-state schedules are accepted but are not in `scanSurvey64`; adding them (one line each, about 0.2 dispatch)
+would change the fixture counts the differential reports (34 binary64), so it was not done here.
 
 ## Registry design
 

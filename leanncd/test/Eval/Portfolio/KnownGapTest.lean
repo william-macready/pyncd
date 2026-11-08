@@ -13,7 +13,9 @@ regression test (linked below) that will flip when the gap closes.
   `tlprog!`) used to be rejected at compile time (`scanProjectionUnsupported`). `finalizeScans`
   now classifies by ROLE: a statement that does not feed the recurrence is a POST-SCAN plain
   statement in which `l` is an ordinary axis, so this read-out compiles and gives the whole table
-  (`UF5`, now an accept test with values in `RejectTest`; also SS2 in `GenerativeTest`).
+  (`UF5`, now an accept test with values in `RejectTest`; also SS2 in `GenerativeTest`). The same
+  holds for a PINNED read of the state (`Zf[j] := S[j, 2]`, `postPin` in `StructuralTest`); a pin
+  outside the extent of an advancing dimension is `plainStatePinOutOfRange`.
   `scanProjectionUnsupported` still fires for a PER-STEP statement (one that feeds the recurrence, or
   is written under a scan state's name) whose own LHS carries the iteration axis: live `nbScan`
   (`Eval.Plan.CollectPlanTest`).
