@@ -198,7 +198,9 @@ Goal: run a head after the last layer through both backends: final RMSNorm, unem
 softmax over the vocabulary. Fixtures `transformer_head` / `transformer_head32` (the two-layer scan plus the
 head, one program); the differential is now 33 binary64 and 25 binary32 fixtures (was 32 + 24).
 
-**A production gap, closed.** The first attempt (`Zf[q, m] := H[q, m, 2]` after the scan) failed with
+**A production gap, closed.** (The syntactic post-scan rule described in this paragraph and the next was
+replaced on 2026-11-08 by a role-based rule: see section 10. The range errors and the fixtures below still
+apply.) The first attempt (`Zf[q, m] := H[q, m, 2]` after the scan) failed with
 `ScanCompileError.stateReadNotCausal`: `finalizeScans` classified every non-iteration statement that reads a scan
 state, however it reads it, as a per-step intermediate and folded it into the scan body, where every pinned
 literal read is non-causal. A statement that reads a state only through pinned literal indices on the state's
@@ -314,3 +316,71 @@ so it cannot see an orientation error by itself).
   changed).
 - Harness counts: production dispatch about 110 calls (cap 60), head-fixture dispatch about 110 (cap 60), most
   of it waiting on builds and five mutation builds; the first, stopped attempt about 40.
+
+## 10. Role-based post-scan classification (2026-11-08)
+
+**Why.** The syntactic rule of section 9 (post-scan iff every state read is pinned) made the scan axis `l` mean
+"the current step" next to a free state read and "an ordinary axis" next to a pinned one: `Y[j] := S[j, 2] · c[l]`
+summed over `l`, while `Y[j] := S[j, l] · c[l]` was a per-step intermediate. The rule now follows the role of the
+statement.
+
+**The rule** (`finalizeScans`). `fed` is the least set of names containing every scan state name, every name read
+by a statement with an iteration slot (a state's base or step), and, closed backward through scan-dependent
+non-iteration statements, the reads of a fed name's statements. The closure is by name and is global over all
+scans. A scan-dependent non-iteration statement is PER-STEP (folded into the recurrence body, `l` is the current
+step, never published, a pinned state read there is still `stateReadNotCausal`) iff its name is fed; every other
+one is POST-SCAN: a plain statement emitted after the scan nodes in which `l` is an ordinary axis of its declared
+extent (summed if only on the right, ranging if on the left; masks, Iverson predicates, external `W[l]`, free or
+pinned state reads all ordinary). A post statement that reads a per-step intermediate is the new
+`CompileError.readsPerStepIntermediate` (it can be evaluated only inside a step; the intermediate is never
+published); a name that is both a state and has a non-iteration writer is exempt. The "spans multiple scan
+components" `shapeMismatch` applies to per-step statements only. A statement written under a state's name is
+per-step (so `nbScan` keeps `scanProjectionUnsupported "S"` even when the step does not read its own state).
+Removed: `readPinsAdvancing`, `Stmt.iversonUids`, `postCand`, `advOf`, `iterUids` and the greatest-fixpoint loop.
+The pinned-state-read range errors of section 9 are unchanged.
+
+**Behaviour changes.** Free-read read-outs (`y[j, l] := C · h[k, l]`) are legal and give the whole table: `UF5`
+is now an accept test with values (`y = [5,12,26, 11,28,62]` against hand computation) and route case 14 now
+compiles (5 externals, 2 steps, final fresh-name state 5). `scanProjectionUnsupported` fires only for a per-step
+statement with the scan axis on its own left-hand side. A dead-end statement that reads a state and feeds nothing
+was unobservable scratch and is now a published tensor (no existing fixture has one); a scan whose only
+non-identity statement is such a read-out is no longer made non-affine by it.
+
+**Evidence.** `StructuralTest` layout pins: five flips (`postFreeRead`, `postMixedFree`, `postReadOut`, the
+renamed `postIverScanAxis`/`postIverOtherAxis`, and `postMixedInter` which is now
+`readsPerStepIntermediate "M" "T"`), unchanged pins (`postPin`, `postChain`, `postDemoted`, `postBaseRej`,
+`postTwoRej`, the state-name pins) and new fixtures (`postStateNameNoSelfRead`, `postTwoStates` with its fed
+neighbour, `postFreeSumC` with its fed twin); five hand mutants (state names not seeding `fed`, base statements
+not seeding it, `isPost` ignoring `fed`, the new error removed, the multi-component error kept for post
+statements), each failing only its named guards. Lean value fixtures (`postRoleProg3`/`postRoleProg4`, history
+extents 3 and 4) run six post statements on the reference evaluator and the checked plan against expectations
+computed independently in plain arithmetic: `Zc = S[j,2]·(L−1)` (`[8,36]` at L=3, `[12,54]` at L=4), `Ysum`
+(`[444,1998]`, `[4444,19998]`), the free-read sum `Yfree` (`[421,1862]`, `[8421,55862]`), the read-out table, the
+broadcast and a masked softmax over `l`. JAX: `scan_postrole` / `scan_postrole32` (`iter l = 4`) put the same
+program through the bridge; 34 binary64 and 26 binary32 fixtures pass; the 90 existing per-output table rows are
+identical to the baseline (compared as sorted multisets) and only the 14 rows of the new fixtures are added.
+Observed differences against an independent numpy recomputation from the inputs: exactly 0 for every output except
+the masked softmax (3.5e-18 in float64, 2.8e-8 in float32); tolerance 1e-12 and 1e-6. The bridge has no
+lowering for predicate (Iverson) factors (`iversonFactor`), so the JAX count `Zc` uses an input mask `M`; the
+Iverson form is covered only on the two Lean backends. Hand mutants on the JAX fixture: `Zc` reading `S[j,1]`
+fails the post-role pin (relative 0.667, Lean view `[6,18]` against `[12,54]`); `Yfree` reading `S[j,2]` fails it
+(relative 0.642, `[4444,19998]` against `[8421,55862]`). A mutation of the DATA (the mask `M`) survives by
+design, because every pin recomputes from the same inputs. A mutant that makes `isPost` constantly false fails
+the compile guards of the value fixtures. Build `Tests` + `JaxExperiment` green (8845 jobs).
+
+**Parked.**
+- Per-component closure (the user's preferred reading, deferred): a statement fed by scan 2 but reading only
+  scan 1's finished state, such as `Pc[j] := S[j,2]` read by `H[j, m+1] := Pc[j]` (`postTwoRej`), is valid once
+  `fed` is computed per component and stays rejected under the global closure. About 2 dispatches: closure per
+  component, a scan capturing an outer slot produced between the scans, value fixtures and a JAX fixture.
+- Multi-writer scan states (an additive contribution into a state, `multiWriterScan` today): candidate semantics
+  are contributions written WITH an iteration slot at the same index (`S[j, l +1] := maxreduce(Y[j, l +1])`), so
+  the existing collection rules apply; written as `S[j, l]` the cell is also written by the previous step.
+- Still open from section 9: cancelling affine coefficients (`5 + l − l`), the dimension order and `stmtIndex`
+  meaning of `plainStatePinOutOfRange`, the order of marker and pin errors, history extent 0 together with R1.
+- `papers/implementation_seeds/nonlinearity_route_fragments/fixtures/RouteFragmentDiagnosticSeed.lean` is not a
+  built target and still expects the old `case14` error.
+- Not verified: the eager and jit views of the JAX fixture were not mutated individually; mutants ran on the
+  float64 leg; the Python mutation manifests were not re-run (no runtime or emitter code changed).
+- Harness counts: rewrite 52 calls (cap 45), flips and Lean value fixtures 60 (cap 45), JAX fixture 53 (cap 40
+  plus 8 after a resume); the agents' own tallies were 42, 37 and 47.

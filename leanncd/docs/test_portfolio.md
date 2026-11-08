@@ -370,14 +370,17 @@ input tensor, not computed from the loop index `i` inside the DSL.
 | SS2 | output map `y[j,l] := C[j,k]·h[k,l]` (chained on SS1) | — | per-step output projection off the scan state | `[N]` |
 | SS3 | diagonal SSM `h[j,l +1] := a[j]·h[j,l] + B[j]·u[l]` | diagonal `A` (Mamba-ish) | elementwise (diagonal) state transition | `[N]` `[E]` |
 | SS4 | input at advancing index `… + B[j]·u[l + 1]` | — | **rejected** — `causalityViolation` (cf. RC4); convention matters | `[R]` |
-| UF5 | same `y[j,l] := C[j,k]·h[k,l]` written INSIDE the SS1 scan block instead | — | **rejected** — `scanProjectionUnsupported` (§14 KG-scanprojection); write it standalone (SS2) instead | `[R]` |
+| UF5 | same `y[j,l] := C[j,k]·h[k,l]` written INSIDE the SS1 scan program instead | — | **accepted** (was `scanProjectionUnsupported`): the statement does not feed the recurrence, so it is a post-scan plain statement and `y` is the whole table, `[5,12,26, 11,28,62]` for the fixture's inputs (§14 KG-scanprojection) | `[N]` |
 
-SS2 must be written standalone, *after* the scan — writing the identical statement inside the
-scan block is a compile-time error (`scanProjectionUnsupported`, `UF5`), not a silent no-op. The
-scan classifies any statement that reads scan state as a per-step intermediate; if that
-statement's own LHS also references the iteration axis, whether the user wants it tracked across
-every step (unsupported — not materialized) or recomputed as same-step scratch is ambiguous, so
-it's rejected rather than guessed at. See §14 KG-scanprojection.
+`finalizeScans` classifies a scan-dependent statement by ROLE. A statement that feeds the
+recurrence (directly or through other non-iteration statements), or is written under a scan
+state's name, is a per-step intermediate: `l` is the current step and nothing is published. Any
+other statement that reads scan state is a post-scan consumer, a plain statement after the scan in
+which `l` is an ordinary axis, so SS2 gives the same result inside the scan program or standalone.
+If a per-step statement's own LHS also references the iteration axis, whether it is meant to be
+tracked across every step (not materialized) or recomputed as scratch is ambiguous, so it is
+rejected (`scanProjectionUnsupported`, `nbScan` in `Eval.Plan.CollectPlanTest`). See §14
+KG-scanprojection.
 
 ### Positional encodings
 
@@ -482,7 +485,7 @@ gap is closed — a built-in regression alarm. Cross-referenced above by `KG-*`.
 | KG-gather | data-dependent gather/scatter with an **index tensor** (indices must be affine) — see [§19.1](#191-kg-gather--data-dependent-gatherscatter) for a fix design & proof-burden analysis | embedding lookup by ids, edge-list scatter-add, top-k | `[F]` |
 | KG-scale | free scalar literal on the RHS (e.g. `· 0.5`) | 1/√d attention scaling (workaround: rank-0 tensor, see AT6) | `[F]`? |
 | KG-recur | `recurMorphism` / `scanPre` escape hatch (AST-only) | programmatic recurrences | `[F]` |
-| KG-scanprojection | a per-step scan read-out (e.g. `y[j,l] := C[j,k]·h[k,l]`) written **inside** the same scan block as its state `h` — rejected at compile time (`scanProjectionUnsupported`), not silently dropped. Not a missing capability: the identical statement written standalone *after* the scan (reading the materialized state) already works — see SS2 (§12b) | any attempt to read out per-step scan state inline instead of as a separate post-scan statement | `[R]` |
+| KG-scanprojection (CLOSED for read-outs) | a scan read-out (e.g. `y[j,l] := C[j,k]·h[k,l]`) written next to its state `h` used to be rejected (`scanProjectionUnsupported`); a statement that does not feed the recurrence is now a post-scan plain statement and gives the whole table (UF5, SS2). The error still fires for a PER-STEP statement (it feeds the recurrence, or is written under a state's name) with the scan axis on its own LHS (`nbScan`) | a per-step statement that tracks scan state across every step | `[R]` |
 
 > **Design direction — general semiring notation (planned, not yet implemented).** The remaining
 > tropical/semiring gaps (KG-min's min-*plus* half is CLOSED since S3b-i; future log-sum-exp remains) should be
@@ -551,10 +554,10 @@ gap is closed — a built-in regression alarm. Cross-referenced above by `KG-*`.
 | L2-normalize (`l2normalize`) | normalize (L1) | CL3 (cosine similarity), CL3b (all-zero row → silent zero) — new `Nonlin` variant, same `perRow` mechanism as `normalize`/`softmax` |
 | Diffusion / MoE / SSM / PE / contrastive | — | §12b (DF*, ME*, SS*, PE*, CL*) |
 | Classical ML / probabilistic / RL | — | §12c (CM1–CM9b, CM1b) |
-| **Reject** paths | (a few) | RJ1–RJ10, SS4, UF1–UF5 |
+| **Reject** paths | (a few) | RJ1–RJ10, SS4, UF1–UF4 (UF5 is now an accept test) |
 | **Known gaps** | — | KG-* (§14): sub(soft), min, gather, recur, functor, reshape, datamask, solve, idxvalue |
 | Multi-output programs (schedule bug fix) | — | `EvalExamplesTest` (Total/Peak, KG-multiout) — `schedule` no longer eliminates produced-but-unread top-level statements |
-| In-scan per-step projection (KG-scanprojection) | — | UF5 — rejected at compile time (`scanProjectionUnsupported`); not a missing primitive, see SS2 for the standalone workaround |
+| In-scan per-step projection (KG-scanprojection) | — | UF5 — now accepted as a post-scan table (values pinned); `scanProjectionUnsupported` remains for a per-step statement with the scan axis on its own LHS (`nbScan`) |
 
 ## 17. Follow-ups
 
