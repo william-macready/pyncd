@@ -1271,12 +1271,6 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
     if grown.length == fed.length then break
     fed := grown
   let isPost : Stmt → Bool := fun s => s.iterInfo.isEmpty && isScanDep s.lhsName && !fed.contains s.lhsName
-  for s in nonPre do
-    if isPost s then
-      for r in s.readNames do
-        if fed.contains r && !stateNames.contains r &&
-            nonPre.any (fun t => t.iterInfo.isEmpty && isScanDep r && t.lhsName == r) then
-          throw (CompileError.readsPerStepIntermediate s.lhsName r)
   -- CONNECTED COMPONENTS over iteration-axis UIDs: two iter-stmts are coupled iff their axis-sets
   -- share a UID (the §12.1 `G`/`H` coupled scan, and each axis of a genuine multi-axis scan). One
   -- `ScanStmt.scan` per component. Bounded union-find: repeated merge, capped by #stmts passes.
@@ -1345,6 +1339,14 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
     -- whose every recurrence stmt (intermediates included) is identity-nonlin.
     let isAffine : Bool := axes.length ≤ 1 && recurStmts.all (fun s => Stmt.nonlinOf s == Nonlin.identity)
     nodes := nodes ++ [ ScanStmt.scan repName axes baseStmts recurStmts isAffine ]
+  -- A post statement may not read a per-step intermediate. Checked after the component loop so a
+  -- program with a scan defect (`missingBaseCase`, `causalityViolation`, ...) reports that first.
+  for s in nonPre do
+    if isPost s then
+      for r in s.readNames do
+        if fed.contains r && !stateNames.contains r &&
+            nonPre.any (fun t => t.iterInfo.isEmpty && isScanDep r && t.lhsName == r) then
+          throw (CompileError.readsPerStepIntermediate s.lhsName r)
   -- plain = non-iter stmts with NO scan dependency (loop-invariant; evaluated once).
   let plainStmts := nonPre.filter (fun s => s.iterInfo.isEmpty && (dep.getD s.lhsName []).isEmpty)
   -- post = statements that do not feed the recurrence, after every scan node (source order).
