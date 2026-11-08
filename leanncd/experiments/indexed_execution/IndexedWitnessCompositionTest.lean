@@ -1,0 +1,686 @@
+import IndexedWitnessCoherence
+import IndexedComponentModelLocalTest
+import IndexedComponentModelCycleTest
+import IndexedComponentModelGeometryTest
+import Semantics.AxiomAudit
+
+namespace IndexedWitnessCompositionTest
+
+open LeanNCD.Semantics IndexedComponentComposition IndexedWitness
+
+namespace Audit
+
+open IndexedComponentCompositionPortFixtures IndexedComponentModelLocalFixtures
+open IndexedComponentModelLocalTest
+
+abbrev total := compose producerComponent (consumerComponent 4) (scalarBoundary 4)
+abbrev strict := compose producerComponent (consumerComponent 0) (scalarBoundary 0)
+
+def totalSpanWitness : (componentSpan total).W :=
+  ⟨_, ⟨totalCompositeStore, total_composite_model⟩⟩
+
+theorem strict_span_empty : IsEmpty (componentSpan strict).W := by
+  refine ⟨fun w => ?_⟩
+  have hm := (models_restrict_iff producerComponent (consumerComponent 0)
+    (scalarBoundary 0) (restrictInput producerComponent (consumerComponent 0)
+      (scalarBoundary 0) w.1) w.2.val).mp ?_
+  · exact strict_no_model _ _ hm.2
+  · simpa only [liftInput_restrictInput] using w.2.property
+
+theorem strict_wired_empty :
+    IsEmpty (wiredSpan producerComponent (consumerComponent 0) (scalarBoundary 0)).W :=
+  ⟨fun w => strict_span_empty.false
+    ((allInputWiredEquiv producerComponent (consumerComponent 0) (scalarBoundary 0)).symm w)⟩
+
+def totalWired :=
+  allInputWiredEquiv producerComponent (consumerComponent 4) (scalarBoundary 4)
+    totalSpanWitness
+
+theorem total_wired_observation :
+    totalWired.val.2.2.val ⟨strictAudit, ()⟩ = 1 / 2 ∧
+      (wiredSpan producerComponent (consumerComponent 4) (scalarBoundary 4)).right
+        totalWired ⟨consumerOut, rfl⟩ () = 0 := by
+  decide +kernel
+
+end Audit
+
+namespace Hidden
+
+open IndexedComponentModelCycleFixtures IndexedComponentModelCycleTest
+
+abbrev composite := compose hiddenUpstream totalDownstream hiddenBoundary
+
+def zero : (componentSpan composite).W :=
+  ⟨_, ⟨hiddenZeroStore, hidden_zero_model⟩⟩
+
+def one : (componentSpan composite).W :=
+  ⟨_, ⟨hiddenOneStore, hidden_one_model⟩⟩
+
+def zeroWired := allInputWiredEquiv hiddenUpstream totalDownstream hiddenBoundary zero
+def oneWired := allInputWiredEquiv hiddenUpstream totalDownstream hiddenBoundary one
+
+theorem private_observations :
+    zeroWired.val.1.val.1.2.val ⟨privateTensor, ()⟩ = 0 ∧
+      oneWired.val.1.val.1.2.val ⟨privateTensor, ()⟩ = 1 ∧
+      (wiredSpan hiddenUpstream totalDownstream hiddenBoundary).right
+        zeroWired ⟨boundaryTensor, rfl⟩ () = 1 ∧
+      (wiredSpan hiddenUpstream totalDownstream hiddenBoundary).right
+        oneWired ⟨boundaryTensor, rfl⟩ () = 1 := by
+  decide +kernel
+
+theorem distinct_wired : zeroWired ≠ oneWired := by
+  intro h
+  have cells := congrArg
+    (fun w : (wiredSpan hiddenUpstream totalDownstream hiddenBoundary).W =>
+      w.val.1.val.1.2.val ⟨privateTensor, ()⟩) h
+  change zeroWired.val.1.val.1.2.val ⟨privateTensor, ()⟩ =
+    oneWired.val.1.val.1.2.val ⟨privateTensor, ()⟩ at cells
+  rw [private_observations.1, private_observations.2.1] at cells
+  norm_num at cells
+
+theorem equal_final_env :
+    (wiredSpan hiddenUpstream totalDownstream hiddenBoundary).right zeroWired =
+      (wiredSpan hiddenUpstream totalDownstream hiddenBoundary).right oneWired := by
+  funext t c
+  rcases t with ⟨t, ht⟩
+  fin_cases t
+  · contradiction
+  · cases c
+    exact private_observations.2.2.1.trans private_observations.2.2.2.symm
+
+end Hidden
+
+namespace Empty
+
+open IndexedComponentCompositionPortFixtures
+
+abbrev composite := compose emptyProducerComponent emptyConsumerComponent emptyBoundary
+
+def outputPort : (outputInterface composite).Tensor :=
+  ⟨.inr ⟨emptyConsumerOut, rfl⟩, rfl⟩
+
+theorem output_port_present :
+    outputPort ∈ (outputInterface composite).ports :=
+  (outputInterface composite).ports_complete _
+
+theorem output_port_identity :
+    (outputIndexEquiv emptyProducerComponent emptyConsumerComponent emptyBoundary)
+      outputPort = ⟨emptyConsumerOut, rfl⟩ ∧
+      (outputInterface composite).uid outputPort = 3 ∧
+      ((outputInterface composite).signature outputPort).axes = [⟨51, 0⟩] := by
+  decide +kernel
+
+theorem env_singleton :
+    Subsingleton (outputInterface composite).Env := by
+  refine ⟨fun x y => ?_⟩
+  funext t c
+  rcases t with ⟨t, ht⟩
+  cases t with
+  | inl t => cases ht
+  | inr t =>
+    rcases t with ⟨t, hd⟩
+    fin_cases t
+    · contradiction
+    · exact Fin.elim0 c.1
+
+theorem producer_env_singleton :
+    Subsingleton (outputInterface emptyProducerComponent).Env := by
+  refine ⟨fun x y => ?_⟩
+  funext t c
+  rcases t with ⟨t, ht⟩
+  fin_cases t
+  · contradiction
+  · exact Fin.elim0 c.1
+
+theorem metadata_not_equal :
+    outputInterface emptyProducerComponent ≠ outputInterface composite := by
+  intro h
+  have leftUid : ∀ t : (outputInterface emptyProducerComponent).Tensor,
+      (outputInterface emptyProducerComponent).uid t = 0 := by
+    rintro ⟨t, ht⟩
+    fin_cases t
+    · contradiction
+    · rfl
+  rw [h] at leftUid
+  have bad := leftUid outputPort
+  change (3 : Nat) = 0 at bad
+  omega
+
+end Empty
+
+namespace Axis
+
+open IndexedComponentCompositionAxisFixtures
+open IndexedComponentModelGeometryFixtures.Axis
+open IndexedComponentTransportTest (srcShape dstShape swapDomain p q)
+
+abbrev composite := compose axisProducer axisConsumer axisBoundary
+
+def witness : (componentSpan composite).W :=
+  ⟨_, ⟨IndexedComponentModelGeometryTest.Axis.compositeStore,
+    IndexedComponentModelGeometryTest.Axis.composite_model⟩⟩
+
+def wired := allInputWiredEquiv axisProducer axisConsumer axisBoundary witness
+
+def sourceEnv : (outputInterface axisProducer).Env :=
+  (componentSpan axisProducer).right ⟨producerInput, ⟨producerStore, producer_model⟩⟩
+
+theorem directional_cells :
+    boundaryEnvEquiv axisProducer axisConsumer axisBoundary sourceEnv ⟨0, rfl⟩ p = 5 ∧
+      boundaryEnvEquiv axisProducer axisConsumer axisBoundary sourceEnv ⟨0, rfl⟩ q = 2 ∧
+      flattenedPre p = 3 ∧ flattenedPre q = 4 := by
+  decide +kernel
+
+def wrongReversed : (inputInterface axisConsumer).Env := by
+  rintro ⟨t, ht⟩ c
+  have h : t = 0 := by fin_cases t <;> first | rfl | contradiction
+  subst t
+  exact (inputEnv axisConsumer consumerInput) ⟨0, rfl⟩
+    ((canonicalLayout srcShape).enumerate
+      ((canonicalLayout dstShape).enumerate.symm (swapDomain.coord c)))
+
+def wrongFlattened : (inputInterface axisConsumer).Env := by
+  rintro ⟨t, ht⟩ c
+  have h : t = 0 := by fin_cases t <;> first | rfl | contradiction
+  subst t
+  exact flattenedPre c
+
+theorem reversed_cells :
+    wrongReversed ⟨0, rfl⟩ p = 4 ∧ wrongReversed ⟨0, rfl⟩ q = 3 := by
+  decide +kernel
+
+theorem boundary_leg_cells :
+    (boundaryEnvEquiv axisProducer axisConsumer axisBoundary
+      wired.val.1.val.2) ⟨0, rfl⟩ p = 5 ∧
+      (componentSpan axisConsumer).left wired.val.2 ⟨0, rfl⟩ q = 2 := by
+  decide +kernel
+
+theorem both_legs :
+    (wiredSpan axisProducer axisConsumer axisBoundary).left
+        ((compositeWiredIso axisProducer axisConsumer axisBoundary).witness witness) =
+      (compositeRebasedSpan axisProducer axisConsumer axisBoundary).left witness ∧
+    (wiredSpan axisProducer axisConsumer axisBoundary).right
+        ((compositeWiredIso axisProducer axisConsumer axisBoundary).witness witness)
+        ⟨1, rfl⟩ () = 14 ∧
+      (compositeRebasedSpan axisProducer axisConsumer axisBoundary).right witness
+        ⟨1, rfl⟩ () = 14 := by
+  refine ⟨(compositeWiredIso axisProducer axisConsumer axisBoundary).left witness, ?_⟩
+  decide +kernel
+
+theorem flattened_fails_boundary_leg :
+    wrongFlattened ≠
+      boundaryEnvEquiv axisProducer axisConsumer axisBoundary wired.val.1.val.2 := by
+  intro h
+  have bad := congrFun (congrFun h ⟨0, rfl⟩) p
+  change flattenedPre p = _ at bad
+  rw [directional_cells.2.2.1, boundary_leg_cells.1] at bad
+  norm_num at bad
+
+theorem reversed_fails_boundary_leg :
+    wrongReversed ≠ (componentSpan axisConsumer).left wired.val.2 := by
+  intro h
+  have bad := congrFun (congrFun h ⟨0, rfl⟩) q
+  rw [reversed_cells.2, boundary_leg_cells.2] at bad
+  norm_num at bad
+
+end Axis
+
+namespace Triple
+
+open IndexedComponentTransport
+open IndexedOpenComposition
+open LeanNCD.Semantics.Program.Executor
+open IndexedComponentTransportTest (srcShape dstShape swapDomain p q)
+open IndexedComponentCompositionAxisFixtures (axisConsumer)
+
+@[reducible] def shape (flipped : Bool) : Shape := if flipped then dstShape else srcShape
+
+@[reducible] def copyDeclarations (flipped : Bool) : Declarations Unit :=
+  ⟨Fin 2, fun t => (if flipped then 70 else 40) + t.val,
+    by
+      intro a b h
+      apply Fin.ext
+      change (if flipped then 70 else 40) + a.val =
+        (if flipped then 70 else 40) + b.val at h
+      omega,
+    fun _ => ⟨(), shape flipped⟩⟩
+
+def point (flipped : Bool) (i : Fin 6) : Coord (shape flipped) := by
+  cases flipped
+  · exact (canonicalLayout srcShape).enumerate i
+  · exact (canonicalLayout dstShape).enumerate i
+
+def policy (flipped : Bool) : ReadPolicy ℚ (shape flipped) := by
+  cases flipped
+  · exact IndexedComponentTransportTest.pointPolicy
+  · exact swapDomain.policy IndexedComponentTransportTest.pointPolicy
+
+def copyBody (flipped : Bool) (i : Fin 6) :
+    Expr RationalReference.Carrier (copyDeclarations flipped)
+      RationalReference.registry Γ (.scalar ()) :=
+  .binary .add
+    (.read 0 ⟨policy flipped, fun _ => Coord.raw (point flipped i),
+      fun _ => .at (point flipped i), fun _ => (policy flipped).inBounds _⟩)
+    (.lit (if flipped then 20 else 10))
+
+@[reducible] def copyProgram (flipped : Bool) :
+    Program RationalReference.Carrier (copyDeclarations flipped)
+      RationalReference.registry where
+  tensors := inferInstance
+  input := fun t => t == 0
+  output := fun t => t == 1
+  output_defined := by intro t h; fin_cases t <;> simp_all
+  statements := fun _ => 6
+  valuations := fun _ _ => 1
+  guard := fun _ _ _ => true
+  destination := fun _ s _ => point flipped s
+  body := fun _ s => copyBody flipped s
+
+def copyKeys (flipped : Bool) : List (Key (copyProgram flipped)) :=
+  (List.finRange 6).flatMap fun i =>
+    [.occurrence ⟨1, rfl⟩ ⟨i, ⟨0, rfl⟩⟩, .publication ⟨1, rfl⟩ (point flipped i)]
+
+def copySchedule (flipped : Bool) : Schedule (copyProgram flipped) where
+  tensors := [0, 1]
+  tensors_nodup := by decide +kernel +revert
+  tensors_complete := by intro t; fin_cases t <;> simp
+  keys := copyKeys flipped
+  keys_nodup := by
+    letI : DecidableEq (Coord (shape flipped)) := coordDecidableEq _
+    cases flipped <;>
+      simp [copyKeys, List.finRange, List.nodup_cons, Key.occurrence.injEq,
+        Key.publication.injEq, point, canonicalLayout]
+    all_goals exact of_decide_eq_true rfl
+  keys_complete := by
+    letI : DecidableEq (Coord (shape flipped)) := coordDecidableEq _
+    intro k
+    cases k with
+    | occurrence t o =>
+      rcases t with ⟨t, ht⟩
+      rcases o with ⟨s, ⟨v, hv⟩⟩
+      have he : v = 0 := Subsingleton.elim _ _
+      subst v
+      fin_cases t
+      · contradiction
+      · fin_cases s <;> cases flipped <;> simp [copyKeys, List.finRange]
+    | publication t c =>
+      rcases t with ⟨t, ht⟩
+      fin_cases t
+      · contradiction
+      · cases flipped <;> rcases c with ⟨i, j, ⟨⟩⟩
+        all_goals
+          fin_cases i <;> fin_cases j <;>
+            simp [copyKeys, List.finRange, point, canonicalLayout]
+        all_goals exact of_decide_eq_true rfl
+
+def copyContract (flipped : Bool) : Contract (copyDeclarations flipped) :=
+  ⟨[0, 1], fun t => t == 0,
+    (List.finRange 6).map (fun i => (⟨1, point flipped i⟩, [510 + i.val])),
+    (List.finRange 6).map (fun i => ⟨0, point flipped i⟩),
+    (List.finRange 6).map (fun i => ⟨1, point flipped i⟩)⟩
+
+def copyFragment (flipped : Bool) : Fragment (copyDeclarations flipped) :=
+  ⟨(List.finRange 6).map fun i =>
+    ⟨110 + i.val, 510 + i.val, ⟨1, point flipped i⟩,
+      [⟨0, point flipped i⟩], copyBody flipped i⟩⟩
+
+def copyGraph (flipped : Bool) : Closed (copyDeclarations flipped) :=
+  ⟨copyContract flipped, canonicalSteps (copyContract flipped) (copyFragment flipped)⟩
+
+def copyOccurrenceEquiv (flipped : Bool) :
+    SourceOccurrence (copyProgram flipped) ≃ Fin (copyFragment flipped).writers.length where
+  toFun := fun o => ⟨o.2.1.val, by simp [copyFragment]⟩
+  invFun := fun i => ⟨⟨1, rfl⟩,
+    ⟨⟨i.val, by simpa [copyFragment] using i.isLt⟩, ⟨0, rfl⟩⟩⟩
+  left_inv := by
+    rintro ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩⟩
+    have he : v = 0 := Subsingleton.elim _ _
+    subst v
+    fin_cases t
+    · contradiction
+    · rfl
+  right_inv := fun _ => rfl
+
+def copyMatch (flipped : Bool) :
+    SourceContractMatch (copyProgram flipped) (copySchedule flipped)
+      (copyContract flipped) (copyFragment flipped) (copyGraph flipped) where
+  close_ok := by cases flipped <;> rfl
+  input_roles := rfl
+  tensor_order := rfl
+  outputs_exact := by
+    rintro ⟨t, c⟩
+    fin_cases t <;> cases flipped <;> rcases c with ⟨i, j, ⟨⟩⟩
+    all_goals fin_cases i <;> fin_cases j <;> decide +kernel
+  sourceToWriter := copyOccurrenceEquiv flipped
+  writer_destination := by
+    rintro ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩⟩
+    have he : v = 0 := Subsingleton.elim _ _
+    subst v
+    fin_cases t
+    · contradiction
+    · fin_cases s <;> rfl
+  writer_reads := by
+    rintro ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩⟩
+    have he : v = 0 := Subsingleton.elim _ _
+    subst v
+    fin_cases t
+    · contradiction
+    · fin_cases s <;> rfl
+  eval_agrees := by
+    rintro ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩⟩ store
+    have he : v = 0 := Subsingleton.elim _ _
+    subst v
+    fin_cases t
+    · contradiction
+    · fin_cases s <;> rfl
+  priority := by cases flipped <;> rfl
+
+def copyComponent (flipped : Bool) : MatchedComponent (copyDeclarations flipped) where
+  program := copyProgram flipped
+  schedule := copySchedule flipped
+  contract := copyContract flipped
+  fragment := copyFragment flipped
+  graph := copyGraph flipped
+  matched := copyMatch flipped
+  inputs := [⟨0, (), shape flipped, rfl, rfl⟩]
+  outputs := [⟨1, (), shape flipped, rfl, rfl⟩]
+  inputs_nodup := by simp
+  outputs_nodup := by simp
+  inputs_exact := by intro t; fin_cases t <;> simp
+  outputs_exact := by intro t; fin_cases t <;> simp
+
+abbrev A := copyComponent false
+abbrev B := copyComponent true
+abbrev C := axisConsumer
+
+def reverseDomain : Domain dstShape srcShape where
+  axes := swapDomain.axes.symm
+  extent := by intro i; fin_cases i <;> rfl
+  coord := swapDomain.coord.symm
+  raw := swapDomain.raw.symm
+  raw_axis := by intro raw i; simp [swapDomain]
+  coherent := by
+    rintro ⟨i, j, ⟨⟩⟩
+    funext k
+    fin_cases k <;> rfl
+
+def ab : Boundary A B where
+  matched :=
+    { toFun := fun _ => ⟨1, rfl⟩
+      invFun := fun _ => ⟨0, rfl⟩
+      left_inv := by
+        rintro ⟨t, ht⟩
+        apply Subtype.ext
+        fin_cases t <;> first | rfl | contradiction
+      right_inv := by
+        rintro ⟨t, ht⟩
+        apply Subtype.ext
+        fin_cases t <;> first | rfl | contradiction }
+  domain := fun _ => reverseDomain
+
+def bc : Boundary B C where
+  matched :=
+    { toFun := fun _ => ⟨1, rfl⟩
+      invFun := fun _ => ⟨0, rfl⟩
+      left_inv := by
+        rintro ⟨t, ht⟩
+        apply Subtype.ext
+        fin_cases t <;> first | rfl | contradiction
+      right_inv := by
+        rintro ⟨t, ht⟩
+        apply Subtype.ext
+        fin_cases t <;> first | rfl | contradiction }
+  domain := by
+    rintro ⟨t, ht⟩
+    have h : t = 0 := by fin_cases t <;> first | rfl | contradiction
+    subst t
+    exact swapDomain
+
+def aInput : A.program.Input :=
+  ⟨fun t => if t == 0 then some IndexedComponentModelGeometryFixtures.Axis.transportedPre
+    else none, by intro t; fin_cases t <;> rfl⟩
+
+def aStore : Store RationalReference.Carrier (copyDeclarations false) :=
+  fun ⟨t, c⟩ => IndexedComponentModelGeometryFixtures.Axis.transportedPre c +
+    (if t == 0 then 0 else 10)
+
+def bInput : B.program.Input :=
+  ⟨fun t => if t == 0 then
+    some (fun c => IndexedComponentModelGeometryFixtures.Axis.producerStore ⟨0, c⟩ + 10)
+    else none, by intro t; fin_cases t <;> rfl⟩
+
+def bStore : Store RationalReference.Carrier (copyDeclarations true) :=
+  fun ⟨t, c⟩ => IndexedComponentModelGeometryFixtures.Axis.producerStore ⟨0, c⟩ +
+    (if t == 0 then 10 else 30)
+
+def cPre (c : Coord srcShape) : ℚ :=
+  IndexedComponentModelGeometryFixtures.Axis.transportedPre c + 30
+
+def cInput : C.program.Input :=
+  ⟨fun t => if h : t = 0 then by subst t; exact some cPre else none,
+    by intro t; fin_cases t <;> rfl⟩
+
+def cStore : Store RationalReference.Carrier
+    IndexedComponentCompositionAxisFixtures.consumerDeclarations :=
+  fun ⟨t, c⟩ => if h : t = 0 then cPre (by subst t; exact c) else 134
+
+theorem a_model : A.program.Models RationalReference.ops aInput aStore := by
+  refine ⟨?_, ?_, ?_⟩
+  · rintro ⟨t, ht⟩ ⟨s, ⟨v, hv⟩⟩
+    fin_cases t
+    · contradiction
+    · fin_cases s <;> fin_cases v <;> decide +kernel +revert
+  · intro t f hf c
+    fin_cases t
+    · have h := Option.some.inj hf
+      subst f
+      simp [aStore]
+    · contradiction
+  · rintro ⟨t, ht⟩ ⟨i, j, ⟨⟩⟩
+    fin_cases t
+    · contradiction
+    · fin_cases i <;> fin_cases j <;> decide +kernel +revert
+
+theorem b_model : B.program.Models RationalReference.ops bInput bStore := by
+  refine ⟨?_, ?_, ?_⟩
+  · rintro ⟨t, ht⟩ ⟨s, ⟨v, hv⟩⟩
+    fin_cases t
+    · contradiction
+    · fin_cases s <;> fin_cases v <;> decide +kernel +revert
+  · intro t f hf c
+    fin_cases t
+    · have h := Option.some.inj hf
+      subst f
+      rfl
+    · contradiction
+  · rintro ⟨t, ht⟩ ⟨i, j, ⟨⟩⟩
+    fin_cases t
+    · contradiction
+    · fin_cases i <;> fin_cases j <;> decide +kernel +revert
+
+theorem c_model : C.program.Models RationalReference.ops cInput cStore := by
+  refine ⟨?_, ?_, ?_⟩
+  · rintro ⟨t, ht⟩ ⟨s, ⟨v, hv⟩⟩
+    fin_cases t
+    · contradiction
+    · fin_cases s
+      fin_cases v
+      decide +kernel +revert
+  · intro t f hf c
+    fin_cases t
+    · have h := Option.some.inj hf
+      subst f
+      rfl
+    · contradiction
+  · rintro ⟨t, ht⟩ c
+    fin_cases t
+    · contradiction
+    · cases c
+      decide +kernel +revert
+
+def aWitness : (componentSpan A).W := ⟨aInput, ⟨aStore, a_model⟩⟩
+def bWitness : (componentSpan B).W := ⟨bInput, ⟨bStore, b_model⟩⟩
+def cWitness : (componentSpan C).W := ⟨cInput, ⟨cStore, c_model⟩⟩
+
+theorem ab_compatible :
+    boundaryEnvEquiv A B ab ((componentSpan A).right aWitness) =
+      (componentSpan B).left bWitness := by
+  funext t c
+  rcases t with ⟨t, ht⟩
+  fin_cases t
+  · rcases c with ⟨i, j, ⟨⟩⟩
+    fin_cases i <;> fin_cases j <;> decide +kernel +revert
+  · contradiction
+
+theorem bc_compatible :
+    boundaryEnvEquiv B C bc ((componentSpan B).right bWitness) =
+      (componentSpan C).left cWitness := by
+  funext t c
+  rcases t with ⟨t, ht⟩
+  fin_cases t
+  · rcases c with ⟨i, j, ⟨⟩⟩
+    fin_cases i <;> fin_cases j <;> decide +kernel +revert
+  · contradiction
+
+def triple : CompatibleTriple A B C ab bc :=
+  ⟨(⟨(aWitness, bWitness), ab_compatible⟩, cWitness), bc_compatible⟩
+
+def leftWitness := (leftTripleEquiv A B C ab bc).symm triple
+def rightWitness := (rightTripleEquiv A B C ab bc).symm triple
+
+theorem boundary_observations :
+    boundaryEnvEquiv A B ab ((componentSpan A).right aWitness)
+        ⟨0, rfl⟩ (swapDomain.coord p) = 15 ∧
+      boundaryEnvEquiv A B ab ((componentSpan A).right aWitness)
+        ⟨0, rfl⟩ (swapDomain.coord q) = 12 ∧
+      boundaryEnvEquiv B C bc ((componentSpan B).right bWitness) ⟨0, rfl⟩ p = 35 ∧
+      boundaryEnvEquiv B C bc ((componentSpan B).right bWitness) ⟨0, rfl⟩ q = 32 := by
+  decide +kernel
+
+theorem triple_leg_observations :
+    (tripleSpan A B C ab bc).left triple ⟨0, rfl⟩ p = 5 ∧
+      (tripleSpan A B C ab bc).left triple ⟨0, rfl⟩ q = 2 ∧
+      (tripleSpan A B C ab bc).right triple ⟨1, rfl⟩ () = 134 := by
+  decide +kernel
+
+theorem bracket_applied :
+    (bracketSpanIso A B C ab bc).witness leftWitness = rightWitness := by
+  change (rightTripleEquiv A B C ab bc).symm
+    ((leftTripleEquiv A B C ab bc)
+      ((leftTripleEquiv A B C ab bc).symm triple)) = _
+  rw [Equiv.apply_symm_apply]
+  rfl
+
+theorem left_leg_cells :
+    (leftBracketSpan A B C ab bc).left leftWitness ⟨0, rfl⟩ p = 5 ∧
+      (leftBracketSpan A B C ab bc).right leftWitness ⟨1, rfl⟩ () = 134 := by
+  have hl := (leftTripleIso A B C ab bc).left leftWitness
+  have hr := (leftTripleIso A B C ab bc).right leftWitness
+  change (tripleSpan A B C ab bc).left
+    ((leftTripleEquiv A B C ab bc) leftWitness) = _ at hl
+  change (tripleSpan A B C ab bc).right
+    ((leftTripleEquiv A B C ab bc) leftWitness) = _ at hr
+  have returned : (leftTripleEquiv A B C ab bc) leftWitness = triple :=
+    Equiv.apply_symm_apply _ _
+  rw [returned] at hl hr
+  rw [← hl, ← hr]
+  exact ⟨triple_leg_observations.1, triple_leg_observations.2.2⟩
+
+theorem right_leg_cells :
+    (rightBracketSpan A B C ab bc).left
+        ((bracketSpanIso A B C ab bc).witness leftWitness) ⟨0, rfl⟩ p = 5 ∧
+      (rightBracketSpan A B C ab bc).right
+        ((bracketSpanIso A B C ab bc).witness leftWitness) ⟨1, rfl⟩ () = 134 := by
+  rw [(bracketSpanIso A B C ab bc).left, (bracketSpanIso A B C ab bc).right]
+  exact left_leg_cells
+
+theorem returned_private_stores :
+    ((rightTripleEquiv A B C ab bc)
+      ((bracketSpanIso A B C ab bc).witness leftWitness)) = triple := by
+  rw [bracket_applied]
+  exact Equiv.apply_symm_apply _ _
+
+theorem source_private_cells :
+    triple.val.1.val.1.2.val ⟨1, p⟩ = 15 ∧
+      triple.val.1.val.2.2.val ⟨1, swapDomain.coord p⟩ = 35 ∧
+      triple.val.2.2.val ⟨1, ()⟩ = 134 ∧
+      (copyDeclarations false).uid 1 = 41 ∧
+      (copyDeclarations true).uid 1 = 71 := by
+  decide +kernel
+
+theorem left_transport_cells :
+    boundaryEnvEquiv (compose A B ab) C (leftNestedBoundary A B C ab bc)
+      ((componentSpan (compose A B ab)).right
+        ((compositePairEquiv A B ab).symm triple.val.1)) ⟨0, rfl⟩ p = 35 := by
+  rw [left_boundary_square]
+  rw [← compositePair_output]
+  simp only [Equiv.apply_symm_apply]
+  exact boundary_observations.2.2.1
+
+theorem right_transport_cells :
+    boundaryEnvEquiv A (compose B C bc) (rightNestedBoundary A B C ab bc)
+      ((componentSpan A).right aWitness) ⟨.inl 0, rfl⟩ (swapDomain.coord p) = 15 := by
+  rw [right_boundary_square]
+  decide +kernel
+
+theorem flattened_boundary_controls :
+    aStore ⟨1, (canonicalLayout srcShape).enumerate
+      ((canonicalLayout dstShape).enumerate.symm (swapDomain.coord p))⟩ = 14 ∧
+      aStore ⟨1, (canonicalLayout srcShape).enumerate
+        ((canonicalLayout dstShape).enumerate.symm (swapDomain.coord q))⟩ = 13 ∧
+      bStore ⟨1, (canonicalLayout dstShape).enumerate
+        ((canonicalLayout srcShape).enumerate.symm p)⟩ = 33 ∧
+      bStore ⟨1, (canonicalLayout dstShape).enumerate
+        ((canonicalLayout srcShape).enumerate.symm q)⟩ = 34 := by
+  decide +kernel
+
+theorem bracket_private_observations :
+    leftWitness.2.val ⟨.inl (.inl 1), p⟩ = 15 ∧
+      leftWitness.2.val ⟨.inl (.inr ⟨1, rfl⟩), swapDomain.coord p⟩ = 35 ∧
+      leftWitness.2.val ⟨.inr ⟨1, rfl⟩, ()⟩ = 134 ∧
+      rightWitness.2.val ⟨.inl 1, p⟩ = 15 ∧
+      rightWitness.2.val ⟨.inr ⟨.inl 1, rfl⟩, swapDomain.coord p⟩ = 35 ∧
+      rightWitness.2.val ⟨.inr ⟨.inr ⟨1, rfl⟩, rfl⟩, ()⟩ = 134 := by
+  decide +kernel
+
+theorem bracket_private_identities :
+    (declarations (compose A B ab) C).uid (.inl (.inl 1)) = 164 ∧
+      (declarations (compose A B ab) C).uid (.inl (.inr ⟨1, rfl⟩)) = 286 ∧
+      (declarations (compose A B ab) C).uid (.inr ⟨1, rfl⟩) = 3 ∧
+      (declarations A (compose B C bc)).uid (.inl 1) = 82 ∧
+      (declarations A (compose B C bc)).uid (.inr ⟨.inl 1, rfl⟩) = 285 ∧
+      (declarations A (compose B C bc)).uid (.inr ⟨.inr ⟨1, rfl⟩, rfl⟩) = 7 := by
+  decide +kernel
+
+theorem returned_bracket_private_cells :
+    ((bracketSpanIso A B C ab bc).witness leftWitness).2.val ⟨.inl 1, p⟩ = 15 ∧
+      ((bracketSpanIso A B C ab bc).witness leftWitness).2.val
+        ⟨.inr ⟨.inl 1, rfl⟩, swapDomain.coord p⟩ = 35 ∧
+      ((bracketSpanIso A B C ab bc).witness leftWitness).2.val
+        ⟨.inr ⟨.inr ⟨1, rfl⟩, rfl⟩, ()⟩ = 134 := by
+  rw [bracket_applied]
+  exact ⟨bracket_private_observations.2.2.2.1,
+    bracket_private_observations.2.2.2.2⟩
+
+theorem bracket_original_input_cells :
+    (leftBracketSpan A B C ab bc).left leftWitness ⟨0, rfl⟩ p = 5 ∧
+      (leftBracketSpan A B C ab bc).left leftWitness ⟨0, rfl⟩ q = 2 ∧
+      (rightBracketSpan A B C ab bc).left
+        ((bracketSpanIso A B C ab bc).witness leftWitness) ⟨0, rfl⟩ p = 5 ∧
+      (rightBracketSpan A B C ab bc).left
+        ((bracketSpanIso A B C ab bc).witness leftWitness) ⟨0, rfl⟩ q = 2 := by
+  have hl := (leftTripleIso A B C ab bc).left leftWitness
+  change (tripleSpan A B C ab bc).left
+    ((leftTripleEquiv A B C ab bc) leftWitness) = _ at hl
+  have returned : (leftTripleEquiv A B C ab bc) leftWitness = triple :=
+    Equiv.apply_symm_apply _ _
+  rw [returned] at hl
+  rw [(bracketSpanIso A B C ab bc).left, ← hl]
+  exact ⟨triple_leg_observations.1, triple_leg_observations.2.1,
+    triple_leg_observations.1, triple_leg_observations.2.1⟩
+
+end Triple
+
+end IndexedWitnessCompositionTest
+
+#audit_axioms IndexedWitnessCompositionTest
