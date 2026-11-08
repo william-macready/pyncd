@@ -1,0 +1,58 @@
+[
+  {
+    "task": "inputs",
+    "build": "pass",
+    "snippets": "pass",
+    "source_hashes": "match",
+    "commit": "c1059b97fc06ab86ad6205bc4aac45d2608d7893"
+  },
+  {
+    "task": "transport",
+    "build": "pass",
+    "snippets": "pass",
+    "source_hashes": "match",
+    "commit": "9b4c3e170451634c413f52ee8f0a04f8e51efd38"
+  },
+  {
+    "task": "witnesses",
+    "build": "pass",
+    "snippets": "pass",
+    "source_hashes": "match",
+    "commit": "7fb248548f3a8542ffa01ab67bc527780e8daeb7"
+  },
+  {
+    "task": "denotation",
+    "build": "pass",
+    "snippets": "pass",
+    "source_hashes": "match",
+    "commit": "792c1986da72e2d30d78501cc832a6d34924a998"
+  },
+  {
+    "task": "local-fixtures",
+    "build": "pass",
+    "snippets": "pass",
+    "source_hashes": "match",
+    "commit": "fb790e33c204117b440bcfcb9b206725b0425ff4"
+  },
+  {
+    "task": "geometry-fixtures",
+    "build": "pass",
+    "snippets": "pass",
+    "source_hashes": "match",
+    "commit": "c8b6eab875cfe3311dc8146d70b529f256a00322"
+  },
+  {
+    "task": "cycle-fixtures",
+    "build": "pass",
+    "snippets": "pass",
+    "source_hashes": "match",
+    "commit": "3fe62ba4d169592b5f0874949e346adb2f2e69a5"
+  },
+  {
+    "task": "discovery",
+    "build": "pass",
+    "snippets": "pass",
+    "source_hashes": "match",
+    "commit": "cbd52ddf2eea02c433bf1083bb6f840a1d41e87f"
+  }
+]

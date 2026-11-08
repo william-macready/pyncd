@@ -1,0 +1,7 @@
+import IndexedComponentModelLocalFixtures
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedComponentModelLocalFixtures
+#print axioms IndexedComponentModelLocalFixtures.strict_no_model
+#print axioms IndexedComponentModelLocalFixtures.total_model
+#print axioms IndexedComponentModelLocalFixtures.zero_producer_forces_zero

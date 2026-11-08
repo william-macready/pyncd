@@ -1,0 +1,139 @@
+import IndexedComponentModelInputs
+import IndexedComponentModelTransport
+
+namespace IndexedComponentComposition
+
+open LeanNCD.Semantics
+
+variable {σA σB : Declarations Unit}
+variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+variable (A : MatchedComponent σA) (B : MatchedComponent σB)
+variable (wire : Boundary A B)
+
+theorem models_restrict_iff (η : A.program.Input)
+    (ρ : Store K (declarations A B)) :
+    (program A B wire).Models RationalReference.ops (liftInput A B wire η) ρ ↔
+      A.program.Models RationalReference.ops η (restrictUpstream A B ρ) ∧
+      B.program.Models RationalReference.ops
+        (boundaryInput A B wire (restrictUpstream A B ρ))
+        (restrictDownstream A B wire ρ) := by
+  constructor
+  · rintro ⟨h, agree, equations⟩
+    obtain ⟨ha, hb⟩ := (admEnv_components A B wire ρ).mp h
+    obtain ⟨ea, eb⟩ := (equations_components A B wire ρ h ha hb).mp equations
+    exact ⟨⟨ha, (inputAgreement_lift_iff A B wire η ρ).mp agree, ea⟩,
+      ⟨hb, boundaryInput_restrictions A B wire ρ, eb⟩⟩
+  · rintro ⟨⟨ha, agreeA, ea⟩, ⟨hb, _, eb⟩⟩
+    have h := (admEnv_components A B wire ρ).mpr ⟨ha, hb⟩
+    exact ⟨h, (inputAgreement_lift_iff A B wire η ρ).mpr agreeA,
+      (equations_components A B wire ρ h ha hb).mpr ⟨ea, eb⟩⟩
+
+theorem models_restrictInput_iff (η : (program A B wire).Input)
+    (ρ : Store K (declarations A B)) :
+    (program A B wire).Models RationalReference.ops η ρ ↔
+      A.program.Models RationalReference.ops (restrictInput A B wire η)
+        (restrictUpstream A B ρ) ∧
+      B.program.Models RationalReference.ops
+        (boundaryInput A B wire (restrictUpstream A B ρ))
+        (restrictDownstream A B wire ρ) := by
+  simpa only [liftInput_restrictInput] using
+    (models_restrict_iff A B wire (restrictInput A B wire η) ρ)
+
+theorem models_glue_iff (η : A.program.Input)
+    (ρA : Store K σA) (ρB : Store K σB)
+    (agree : B.program.InputAgreement (boundaryInput A B wire ρA) ρB) :
+    (program A B wire).Models RationalReference.ops (liftInput A B wire η)
+        (glueStore A B ρA ρB) ↔
+      A.program.Models RationalReference.ops η ρA ∧
+      B.program.Models RationalReference.ops (boundaryInput A B wire ρA) ρB := by
+  simpa only [restrictUpstream_glueStore,
+    restrictDownstream_glueStore A B wire ρA ρB agree] using
+    (models_restrict_iff A B wire η (glueStore A B ρA ρB))
+
+abbrev CompositeWitness (η : A.program.Input) :=
+  {ρ : Store K (declarations A B) //
+    (program A B wire).Models RationalReference.ops (liftInput A B wire η) ρ}
+
+abbrev CompatibleWitnesses (η : A.program.Input) :=
+  Σ ρA : {ρ : Store K σA // A.program.Models RationalReference.ops η ρ},
+    {ρB : Store K σB //
+      B.program.Models RationalReference.ops (boundaryInput A B wire ρA.val) ρB}
+
+def witnessesEquiv (η : A.program.Input) :
+    CompositeWitness A B wire η ≃ CompatibleWitnesses A B wire η where
+  toFun ρ :=
+    let models := (models_restrict_iff A B wire η ρ.val).mp ρ.property
+    ⟨⟨restrictUpstream A B ρ.val, models.1⟩,
+      ⟨restrictDownstream A B wire ρ.val, models.2⟩⟩
+  invFun pair :=
+    ⟨glueStore A B pair.1.val pair.2.val,
+      (models_glue_iff A B wire η pair.1.val pair.2.val
+        (by obtain ⟨_, agree, _⟩ := pair.2.property; exact agree)).mpr
+          ⟨pair.1.property, pair.2.property⟩⟩
+  left_inv := by
+    intro ρ
+    apply Subtype.ext
+    exact glueStore_restrictions A B wire ρ.val
+  right_inv := by
+    rintro ⟨⟨ρA, modelA⟩, ⟨ρB, modelB⟩⟩
+    have agree : B.program.InputAgreement (boundaryInput A B wire ρA) ρB := by
+      obtain ⟨_, agree, _⟩ := modelB
+      exact agree
+    apply Sigma.ext
+    · apply Subtype.ext
+      exact restrictUpstream_glueStore A B ρA ρB
+    · simp only [restrictDownstream_glueStore A B wire ρA ρB agree]
+      rfl
+
+def downstreamOutputIndex
+    (t : {t : σB.Tensor // B.program.output t = true}) :
+    {t : (declarations A B).Tensor // (program A B wire).output t = true} :=
+  ⟨.inr ⟨t.val, B.program.output_defined t.val t.property⟩, t.property⟩
+
+def outputIndexEquiv :
+    {t : (declarations A B).Tensor // (program A B wire).output t = true} ≃
+      {t : σB.Tensor // B.program.output t = true} where
+  toFun := fun
+    | ⟨.inl _, h⟩ => by cases h
+    | ⟨.inr t, h⟩ => ⟨t.val, h⟩
+  invFun := downstreamOutputIndex A B wire
+  left_inv := by
+    rintro ⟨t, h⟩
+    cases t with
+    | inl _ => cases h
+    | inr t => apply Subtype.ext; rfl
+  right_inv := by
+    intro t
+    apply Subtype.ext
+    rfl
+
+theorem outputProjection_downstream (ρ : Store K (declarations A B))
+    (t : {t : σB.Tensor // B.program.output t = true})
+    (p : Coord (σB.signature t.val).axes) :
+    (program A B wire).outputProjection ρ (downstreamOutputIndex A B wire t) p =
+      B.program.outputProjection (restrictDownstream A B wire ρ) t p := by
+  change ρ ⟨.inr ⟨t.val, B.program.output_defined t.val t.property⟩, p⟩ =
+    ρ ((downstream A B wire).address ⟨t.val, p⟩)
+  rw [downstream_defined_address A B wire
+    ⟨t.val, B.program.output_defined t.val t.property⟩ p]
+  rfl
+
+def liftOutput (out : B.program.Output) : (program A B wire).Output :=
+  fun t p =>
+    match t with
+    | ⟨.inl _, h⟩ => by cases h
+    | ⟨.inr t, h⟩ => out ⟨t.val, h⟩ p
+
+theorem outputProjection_transport (ρ : Store K (declarations A B)) :
+    (program A B wire).outputProjection ρ =
+      liftOutput A B wire
+        (B.program.outputProjection (restrictDownstream A B wire ρ)) := by
+  funext t p
+  rcases t with ⟨t, h⟩
+  cases t with
+  | inl _ => cases h
+  | inr t =>
+    exact outputProjection_downstream A B wire ρ ⟨t.val, h⟩ p
+
+end IndexedComponentComposition

@@ -1,0 +1,232 @@
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentModelInputs.lean b/leanncd/experiments/indexed_execution/IndexedComponentModelInputs.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..961066403d0eec6c51233091d13b6623cdeb516a
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentModelInputs.lean
+@@ -0,0 +1,215 @@
++import IndexedComponentCompositionProgram
++import IndexedComponentCompositionMatch
++import LeanNCD.Semantics.Models
++
++namespace IndexedComponentComposition
++
++open LeanNCD.Semantics
++open IndexedComponentTransport
++
++variable {σA σB : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB)
++variable (wire : Boundary A B)
++
++def liftInput (η : A.program.Input) : (program A B wire).Input :=
++  ⟨fun
++    | .inl t => η.val t
++    | .inr _ => none,
++    by
++      intro t
++      cases t with
++      | inl t => exact η.property t
++      | inr _ => rfl⟩
++
++def restrictInput (η : (program A B wire).Input) : A.program.Input :=
++  ⟨fun t => η.val (.inl t), fun t => η.property (.inl t)⟩
++
++theorem restrictInput_liftInput (η : A.program.Input) :
++    restrictInput A B wire (liftInput A B wire η) = η := by
++  apply Subtype.ext
++  funext t
++  rfl
++
++theorem liftInput_restrictInput (η : (program A B wire).Input) :
++    liftInput A B wire (restrictInput A B wire η) = η := by
++  apply Subtype.ext
++  funext t
++  cases t with
++  | inl t => rfl
++  | inr t =>
++    have h := η.property (.inr t)
++    change (η.val (.inr t)).isSome = false at h
++    cases hv : η.val (.inr t) with
++    | none => rfl
++    | some f => simp [hv] at h
++
++def boundaryInput (ρA : Store K σA) : B.program.Input :=
++  ⟨fun t =>
++    if h : B.program.input t = true then
++      some (fun p =>
++        ρA ⟨(wire.matched ⟨t, h⟩).val, (wire.domain ⟨t, h⟩).coord p⟩)
++    else none,
++    by
++      intro t
++      by_cases h : B.program.input t = true
++      · simp [h]
++      · simp [h]⟩
++
++def boundaryFromOutput (out : A.program.Output) : B.program.Input :=
++  ⟨fun t =>
++    if h : B.program.input t = true then
++      some (fun p =>
++        out (wire.matched ⟨t, h⟩) ((wire.domain ⟨t, h⟩).coord p))
++    else none,
++    by
++      intro t
++      by_cases h : B.program.input t = true
++      · simp [h]
++      · simp [h]⟩
++
++theorem boundaryInput_outputProjection (ρA : Store K σA) :
++    boundaryInput A B wire ρA =
++      boundaryFromOutput A B wire (A.program.outputProjection ρA) := by
++  apply Subtype.ext
++  funext t
++  rfl
++
++def restrictUpstream (ρ : Store K (declarations A B)) : Store K σA :=
++  (upstream A B).pullComplete ρ
++
++def restrictDownstream (ρ : Store K (declarations A B)) : Store K σB :=
++  (downstream A B wire).pullComplete ρ
++
++def glueStore (ρA : Store K σA) (ρB : Store K σB) :
++    Store K (declarations A B) :=
++  fun
++    | ⟨.inl t, p⟩ => ρA ⟨t, p⟩
++    | ⟨.inr t, p⟩ => ρB ⟨t.val, p⟩
++
++theorem restrictUpstream_glueStore (ρA : Store K σA) (ρB : Store K σB) :
++    restrictUpstream A B (glueStore A B ρA ρB) = ρA := by
++  funext a
++  cases a with
++  | mk t p => rfl
++
++private theorem domain_coord_heq {x y z : Shape} (d : Domain x y)
++    (e : Domain x z) (h : y = z) (hd : d ≍ e) (p : Coord x) :
++    d.coord p ≍ e.coord p := by
++  subst z
++  exact heq_of_eq (congrArg (fun f : Domain x y => f.coord p) (eq_of_heq hd))
++
++theorem downstream_input_address
++    (i : {t : σB.Tensor // B.program.input t = true})
++    (p : Coord (σB.signature i.val).axes) :
++    (downstream A B wire).address ⟨i.val, p⟩ =
++      (upstream A B).address
++        ⟨(wire.matched i).val, (wire.domain i).coord p⟩ := by
++  have hdom : (downstream A B wire).domain i.val ≍ wire.domain i := by
++    simp [downstream, downstreamTensor, i.property, declarations, cast_heq]
++  have haxes : ((declarations A B).signature
++      ((downstream A B wire).tensor i.val)).axes =
++      (σA.signature (wire.matched i).val).axes := by
++    change ((declarations A B).signature (downstreamTensor A B wire i.val)).axes = _
++    rw [downstreamTensor_input A B wire i]
++    rfl
++  apply Sigma.ext
++  · exact downstreamTensor_input A B wire i
++  · exact domain_coord_heq ((downstream A B wire).domain i.val)
++      (wire.domain i) haxes hdom p
++
++theorem restrictDownstream_glueStore (ρA : Store K σA) (ρB : Store K σB)
++    (h : B.program.InputAgreement (boundaryInput A B wire ρA) ρB) :
++    restrictDownstream A B wire (glueStore A B ρA ρB) = ρB := by
++  funext a
++  rcases a with ⟨t, p⟩
++  by_cases ht : B.program.input t = true
++  · have hb : (boundaryInput A B wire ρA).val t =
++        some (fun p =>
++          ρA ⟨(wire.matched ⟨t, ht⟩).val, (wire.domain ⟨t, ht⟩).coord p⟩) := by
++      simp [boundaryInput, ht]
++    have ha := h t _ hb p
++    change (glueStore A B ρA ρB) ((downstream A B wire).address ⟨t, p⟩) =
++      ρB ⟨t, p⟩
++    rw [downstream_input_address A B wire ⟨t, ht⟩ p]
++    simpa [Embedding.address, upstream, Domain.id, glueStore] using ha.symm
++  · have hf : B.program.input t = false := by
++      cases he : B.program.input t <;> simp_all
++    change (glueStore A B ρA ρB) ((downstream A B wire).address ⟨t, p⟩) =
++      ρB ⟨t, p⟩
++    rw [show (downstream A B wire).address ⟨t, p⟩ =
++      ⟨(downstreamDefined A B wire ⟨t, hf⟩).val, p⟩ from
++      downstream_defined_address A B wire ⟨t, hf⟩ p]
++    rfl
++
++theorem glueStore_restrictions (ρ : Store K (declarations A B)) :
++    glueStore A B (restrictUpstream A B ρ) (restrictDownstream A B wire ρ) = ρ := by
++  funext a
++  rcases a with ⟨t, p⟩
++  cases t with
++  | inl t => rfl
++  | inr t =>
++    change ρ ((downstream A B wire).address ⟨t.val, p⟩) = ρ ⟨.inr t, p⟩
++    rw [downstream_defined_address A B wire t p]
++    rfl
++
++theorem inputAgreement_lift_iff (η : A.program.Input)
++    (ρ : Store K (declarations A B)) :
++    (program A B wire).InputAgreement (liftInput A B wire η) ρ ↔
++      A.program.InputAgreement η (restrictUpstream A B ρ) := by
++  constructor
++  · intro h t f hf p
++    exact h (.inl t) f hf p
++  · intro h t f hf p
++    cases t with
++    | inl t => exact h t f hf p
++    | inr t => simp [liftInput] at hf
++
++theorem inputAgreement_restrictions_iff (η : (program A B wire).Input)
++    (ρ : Store K (declarations A B)) :
++    (program A B wire).InputAgreement η ρ ↔
++      A.program.InputAgreement (restrictInput A B wire η) (restrictUpstream A B ρ) := by
++  simpa only [liftInput_restrictInput] using
++    (inputAgreement_lift_iff A B wire (restrictInput A B wire η) ρ)
++
++theorem inputAgreement_glue_iff (η : A.program.Input)
++    (ρA : Store K σA) (ρB : Store K σB) :
++    (program A B wire).InputAgreement (liftInput A B wire η)
++        (glueStore A B ρA ρB) ↔ A.program.InputAgreement η ρA := by
++  simpa only [restrictUpstream_glueStore] using
++    (inputAgreement_lift_iff A B wire η (glueStore A B ρA ρB))
++
++theorem inputAgreement_boundary_iff (ρA : Store K σA) (ρB : Store K σB) :
++    B.program.InputAgreement (boundaryInput A B wire ρA) ρB ↔
++      ∀ i : {t : σB.Tensor // B.program.input t = true}, ∀ p,
++        ρB ⟨i.val, p⟩ =
++          ρA ⟨(wire.matched i).val, (wire.domain i).coord p⟩ := by
++  constructor
++  · intro h i p
++    have hb : (boundaryInput A B wire ρA).val i.val =
++        some (fun p =>
++          ρA ⟨(wire.matched i).val, (wire.domain i).coord p⟩) := by
++      simp [boundaryInput, i.property]
++    exact h i.val _ hb p
++  · intro h t f hf p
++    by_cases ht : B.program.input t = true
++    · have he : f = fun p =>
++          ρA ⟨(wire.matched ⟨t, ht⟩).val, (wire.domain ⟨t, ht⟩).coord p⟩ := by
++        simpa [boundaryInput, ht] using hf.symm
++      rw [he]
++      exact h ⟨t, ht⟩ p
++    · simp [boundaryInput, ht] at hf
++
++theorem boundaryInput_restrictions (ρ : Store K (declarations A B)) :
++    B.program.InputAgreement
++      (boundaryInput A B wire (restrictUpstream A B ρ))
++      (restrictDownstream A B wire ρ) := by
++  apply (inputAgreement_boundary_iff A B wire _ _).2
++  intro i p
++  change ρ ((downstream A B wire).address ⟨i.val, p⟩) =
++    ρ ((upstream A B).address
++      ⟨(wire.matched i).val, (wire.domain i).coord p⟩)
++  rw [downstream_input_address A B wire i p]
++
++end IndexedComponentComposition
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index 820cd708c9fb5011a9c25f2e406f9e1a92a6d74f..987391ee8b33703fa5e60ddabd7a617648234fbd 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -170,4 +170,5 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
+          "IndexedComponentCompositionTest", "IndexedComponentCompositionCollisionFixtures",
+          "IndexedComponentCompositionAxisFixtures", "IndexedComponentCompositionInterfaceTest",
+          "IndexedComponentCompositionCounterexampleTest", "IndexedComponentComposition",
+-         "IndexedComponentCompositionCorrespondenceTest"]
++         "IndexedComponentCompositionCorrespondenceTest",
++         "IndexedComponentModelInputs"]

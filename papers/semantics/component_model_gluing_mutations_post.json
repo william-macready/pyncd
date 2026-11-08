@@ -1,0 +1,110 @@
+[
+  {
+    "label": "M1 producer nonzero candidate (model-counterexample proof)",
+    "task": "local-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean",
+    "old": "def producerStore : Store RationalReference.Carrier producerDeclarations := fun _ => 0",
+    "new": "def producerStore : Store RationalReference.Carrier producerDeclarations := fun _ => 1",
+    "targets": ["IndexedComponentModelLocalFixtures"],
+    "expect": ["IndexedComponentModelLocalFixtures.lean", "Tactic `decide` failed for proposition"]
+  },
+  {
+    "label": "M2 private audit value corrupted (model-counterexample proof)",
+    "task": "local-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean",
+    "old": "fun a => if a.1 == strictAudit then 1 / 2 else 0",
+    "new": "fun a => if a.1 == strictAudit then 1 else 0",
+    "targets": ["IndexedComponentModelLocalFixtures"],
+    "expect": ["IndexedComponentModelLocalFixtures.lean", "Tactic `decide` failed for proposition"]
+  },
+  {
+    "label": "M3 total neighbour claimed undefined (proof-elaboration)",
+    "task": "local-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean",
+    "old": "theorem strict_audit_undefined (ρ : Store RationalReference.Carrier consumerDeclarations) :\n    (consumer 0).outcome",
+    "new": "theorem strict_audit_undefined (ρ : Store RationalReference.Carrier consumerDeclarations) :\n    (consumer 4).outcome",
+    "targets": ["IndexedComponentModelLocalFixtures"],
+    "expect": ["IndexedComponentModelLocalFixtures.lean", "'change' tactic failed"]
+  },
+  {
+    "label": "M4 unwritten coordinate claimed arbitrary (equation proof-elaboration)",
+    "task": "local-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean",
+    "old": "ρ ⟨producerPre, ()⟩ = 0 := by",
+    "new": "ρ ⟨producerPre, ()⟩ = 7 := by",
+    "targets": ["IndexedComponentModelLocalFixtures"],
+    "expect": ["IndexedComponentModelLocalFixtures.lean", "Type mismatch: After simplification"]
+  },
+  {
+    "label": "M5 empty external input erased (presence proof-elaboration)",
+    "task": "geometry-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean",
+    "old": "| .inl s => emptyValidatedInput.val s",
+    "new": "| .inl _ => none",
+    "targets": ["IndexedComponentModelGeometryFixtures"],
+    "expect": ["IndexedComponentModelGeometryFixtures.lean", "Not a definitional equality"]
+  },
+  {
+    "label": "M6 empty transported input erased (validity proof-elaboration)",
+    "task": "geometry-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean",
+    "old": "⟨fun t => if t == emptyConsumerPre then some transportedPre else none,",
+    "new": "⟨fun _ => none,",
+    "targets": ["IndexedComponentModelGeometryFixtures"],
+    "expect": ["IndexedComponentModelGeometryFixtures.lean", "Tactic `rfl` failed"]
+  },
+  {
+    "label": "M7 axis adapter replaced by flattening (coordinate counterexample proof)",
+    "task": "geometry-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean",
+    "old": "fun c => producerStore\n    ⟨(axisBoundary.matched ⟨0, rfl⟩).val, (axisBoundary.domain ⟨0, rfl⟩).coord c⟩",
+    "new": "fun c => producerStore\n    ⟨0, (canonicalLayout dstShape).enumerate\n      ((canonicalLayout srcShape).enumerate.symm c)⟩",
+    "targets": ["IndexedComponentModelGeometryFixtures"],
+    "expect": ["IndexedComponentModelGeometryFixtures.lean", "Tactic `decide` failed for proposition"]
+  },
+  {
+    "label": "M8 private whole-store identity collapsed (proof-elaboration)",
+    "task": "cycle-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelCycleFixtures.lean",
+    "old": "fun a => if a.1 == privateTensor then t else u",
+    "new": "fun _ => u",
+    "targets": ["IndexedComponentModelCycleFixtures"],
+    "expect": ["IndexedComponentModelCycleFixtures.lean", "Not a definitional equality"]
+  },
+  {
+    "label": "M9 boundary values replaced by zero (transport proof-elaboration)",
+    "task": "inputs",
+    "file": "experiments/indexed_execution/IndexedComponentModelInputs.lean",
+    "old": "some (fun p =>\n        ρA ⟨(wire.matched ⟨t, h⟩).val, (wire.domain ⟨t, h⟩).coord p⟩)",
+    "new": "some (fun p =>\n        ρA ⟨(wire.matched ⟨t, h⟩).val, (wire.domain ⟨t, h⟩).coord p⟩ * 0)",
+    "targets": ["IndexedComponentModelInputs"],
+    "expect": ["IndexedComponentModelInputs.lean", "Tactic `rfl` failed"]
+  },
+  {
+    "label": "M10 downstream private values discarded (inverse proof-elaboration)",
+    "task": "inputs",
+    "file": "experiments/indexed_execution/IndexedComponentModelInputs.lean",
+    "old": "| ⟨.inr t, p⟩ => ρB ⟨t.val, p⟩",
+    "new": "| ⟨.inr _, _⟩ => 0",
+    "targets": ["IndexedComponentModelInputs"],
+    "expect": ["IndexedComponentModelInputs.lean", "Tactic `rfl` failed"]
+  },
+  {
+    "label": "M11 hidden private distinction erased (value proof-elaboration)",
+    "task": "cycle-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelCycleTest.lean",
+    "old": "hiddenOneStore ⟨.inl privateTensor, ()⟩ = 1 := by",
+    "new": "hiddenOneStore ⟨.inl privateTensor, ()⟩ = 0 := by",
+    "targets": ["IndexedComponentModelCycleTest"],
+    "expect": ["IndexedComponentModelCycleTest.lean", "Application type mismatch"]
+  },
+  {
+    "label": "M12 zero cyclic witness incorrectly extended (model proof-elaboration)",
+    "task": "cycle-fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentModelCycleTest.lean",
+    "old": "glueStore cycleUpstream cycleDownstream (scalarStore 1 1) (scalarStore 1 1)",
+    "new": "glueStore cycleUpstream cycleDownstream (scalarStore 0 0) (scalarStore 1 1)",
+    "targets": ["IndexedComponentModelCycleTest"],
+    "expect": ["IndexedComponentModelCycleTest.lean", "Type mismatch"]
+  }
+]
