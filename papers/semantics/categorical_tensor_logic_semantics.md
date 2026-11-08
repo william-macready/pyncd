@@ -36,37 +36,70 @@ The approach developed so far separates five layers:
 5. **Implementation refinement:** schedules, kernels, and memory realise
    logical execution without changing its meaning.
 
-The Lean prototype supports this separation. Its graph runner reproduces
-the tested reference executions while storing produced contributions and
-available values, rather than separately updating reference accumulators
-and pending sets.
+The Lean development now provides executable evidence, proved typed
+expression transport, conditional execution correspondence, and static
+composition of source-contract matches, together with complete-model
+restriction and gluing. Given an explicit local
+match between a source program and a closed writer contract, the
+contract-based runner and reference executor have corresponding outcomes,
+mapped event traces, and intermediate states. The graph still stores
+produced contributions and available values rather than separately
+updating reference accumulators and pending sets.
 
-The independent reference validation strengthens this evidence: the
-contract-based runner agrees with a separately declared source program
-on both a successful computation and a demanded internal failure.
-Agreement includes intermediate states and event order, not just outputs.
+**Static composition** assembles a new component and its match certificate;
+it is not a theorem that one component finishes before another starts.
+The implemented constructor takes two independently matched, locally scoped
+components and an explicit bijection between whole output and input tensors,
+with certified coordinate-domain adapters. It constructs the composite
+program, contract, fragment, schedule and match without asking the caller
+to supply a whole-composite match or execution agreement.
+See the [composition record](component_composition_record.md).
+
+**Model composition** now proves that the composite's complete-model
+witnesses correspond exactly to compatible complete witnesses of its two
+components. It retains private values, internal definedness and empty tensor
+metadata, and requires no rank, model-existence or uniqueness premise.
+A separate theorem establishes successive partial-function denotation only
+when both components have at most one complete model on every validated
+input. Neither result asserts that the producer finishes before the consumer
+starts. See the [model-gluing record](component_model_gluing_record.md).
+
+The independently authored validation fixture supplies actual
+proof instances of the execution-correspondence theorem. Its six-event failure and
+seven-event completion remain concrete executable observations;
+the general correspondence is not inferred from those observations.
+The same behaviours are now obtained from genuinely local producer and
+consumer matches through the static constructor, retaining private `Audit`
+work and introducing no forwarding-copy events.
 
 The strongest defensible conclusion is:
 
 > A finite, typed dependency graph with partial expression interpretation
 > and closed-writer collection is a credible foundation for logical
-> execution. Conditional correspondence under explicit local matching is
-> proved separately; general compositionality remains a theorem target,
-> not a consequence of the prototype alone.
+> execution. Its correspondence with the reference semantics is proved
+> under explicit local matching conditions, and compatible matched
+> components construct both a correct composite match and a bijection of
+> compatible complete-model witnesses. Partial-function composition is
+> proved under explicit at-most-one-model hypotheses. Ranked phase execution
+> and categorical laws remain separate obligations.
 
 The St/Br presentation can organise parts of the syntax and total
 indexing. It is not assumed to be the best presentation of every layer.
-Nor does this proposal require constructing a general categorical
-framework before establishing the concrete correspondence.
+The correspondence proof does not require a general categorical framework
+first; it provides a concrete result that a later presentation must respect.
 
 This document distinguishes **mathematical constructions**, **observed
-prototype evidence**, and **unproved proposal targets**. It does not
-change the authoritative Tensor Logic specification.
+prototype evidence**, **proved conditional results**, and **unproved
+proposal targets**. It does not change the authoritative Tensor Logic
+specification.
 
 The reading order follows the argument: Sections 1-5 establish meaning
-and the proposed layers, Section 6 checks them against the prototype,
+and the proposed layers, Section 6 records experiments and the proofs,
 Sections 7-8 relate them to the categorical perspectives considered,
-and Section 9 states the remaining proof targets.
+and Section 9 separates established results from remaining targets.
+Appendix A explains correspondence and how the static constructor supplies
+its match, then the complete-model gluing argument, in mathematical rather
+than Lean notation.
 
 ## Table of contents
 
@@ -95,17 +128,29 @@ and Section 9 states the remaining proof targets.
   - [6.4. The combined test](#64-the-combined-test)
   - [6.5. Independent reference validation](#65-independent-reference-validation)
   - [6.6. What these results establish](#66-what-these-results-establish)
+  - [6.7. Kernel-checked conditional correspondence](#67-kernel-checked-conditional-correspondence)
+  - [6.8. Kernel-checked static component composition](#68-kernel-checked-static-component-composition)
+  - [6.9. Kernel-checked model gluing and restricted denotation](#69-kernel-checked-model-gluing-and-restricted-denotation)
 - [7. St/Br, indexed arrays, and open diagrams](#7-stbr-indexed-arrays-and-open-diagrams)
   - [7.1. St/Br remains a serious syntax candidate](#71-stbr-remains-a-serious-syntax-candidate)
   - [7.2. Naperian representation connects compact syntax to values](#72-naperian-representation-connects-compact-syntax-to-values)
   - [7.3. Open-diagram composition needs semantic interfaces](#73-open-diagram-composition-needs-semantic-interfaces)
   - [7.4. Temporal structure remains distinct](#74-temporal-structure-remains-distinct)
 - [8. Where Turi-Plotkin and implementation refinement fit](#8-where-turi-plotkin-and-implementation-refinement-fit)
-- [9. The most valuable theorem targets](#9-the-most-valuable-theorem-targets)
+- [9. Proof status and remaining targets](#9-proof-status-and-remaining-targets)
   - [9.1. Closed-graph/reference correspondence: conditional proof](#91-closed-graphreference-correspondence-conditional-proof)
-  - [9.2. Sealed sequential composition: unproved](#92-sealed-sequential-composition-unproved)
+  - [9.2. Sealed composition: model gluing proved, operational targets open](#92-sealed-composition-model-gluing-proved-operational-targets-open)
   - [9.3. Why unrestricted partial-function composition is unsafe](#93-why-unrestricted-partial-function-composition-is-unsafe)
 - [Conclusion](#conclusion)
+- [Appendix A. How the correspondence proof works](#appendix-a-how-the-correspondence-proof-works)
+  - [A.1. Start with a local match, not matching executions](#a1-start-with-a-local-match-not-matching-executions)
+  - [A.2. Relate the two representations of unfinished work](#a2-relate-the-two-representations-of-unfinished-work)
+  - [A.3. Show that each action preserves the relation](#a3-show-that-each-action-preserves-the-relation)
+  - [A.4. Lift local agreement to complete executions](#a4-lift-local-agreement-to-complete-executions)
+  - [A.5. Transfer the meaning of successful and failed runs](#a5-transfer-the-meaning-of-successful-and-failed-runs)
+  - [A.6. Establish genuine instances and audit the proof](#a6-establish-genuine-instances-and-audit-the-proof)
+  - [A.7. Construct a match from component matches](#a7-construct-a-match-from-component-matches)
+  - [A.8. Restrict and glue complete-model witnesses](#a8-restrict-and-glue-complete-model-witnesses)
 - [Notation reference](#notation-reference)
 
 ## 1. Begin with the meaning that execution must preserve
@@ -611,7 +656,7 @@ These are three different states of the interface. Combining
 contribution fragments is not the same operation as connecting a
 completed value to a consumer.
 
-The prototype implements validation of closed writer lists for one
+The original baseline prototype implements validation of closed writer lists for one
 fixed program, then runtime completion. Its `Fragment.append` merely
 concatenates node lists; it does not yet implement general open
 interfaces, writer ownership, or independent source-program gluing.
@@ -625,8 +670,11 @@ as its closure oracle.
 
 The completeness assumption has moved to the declared contract, not
 disappeared. Numeric capability IDs are checked identities rather than
-unforgeable tokens. General source-program gluing and derivation of
-correct writer contracts remain open.
+unforgeable tokens. The later static constructor in Section 6.8 now proves
+scoped source-program assembly from already matched components and explicit
+whole-tensor boundaries. It does not infer leaf contracts or discover
+unknown writers. Structural sealing fixes the writer family; it does not
+guarantee runtime completion or definedness.
 
 ### 5.3. Causal execution is not arbitrary equation solving
 
@@ -661,10 +709,19 @@ The independent reference fixture is
 [`IndexedCompositionParityTest.lean`](../../leanncd/experiments/indexed_execution/IndexedCompositionParityTest.lean).
 The [results note](categorical_tensor_logic_lean_prototype.md#5-observed-results)
 records the executable observations and reproduction commands.
+The [proof record](categorical_tensor_logic_proof_record.md) and
+[implemented theorem](../../leanncd/experiments/indexed_execution/IndexedCompositionValidated.lean)
+record the separate semantic result.
+The [transport record](component_transport_execution_record.md) and
+[static-composition record](component_composition_record.md) record the
+subsequent constructions and their own validation.
+The [model-gluing record](component_model_gluing_record.md) records the
+rank-independent witness theorem, restricted denotation and logical-model
+counterexamples.
 
 | Evidence | Supported conclusion | Boundary |
 | --- | --- | --- |
-| 93 passing checks: 36 baseline, 12 effect, 29 composition, 16 independent parity | Baseline/effect comparisons and two independently authored composed/reference cases match; other composition cases meet explicit expectations | The earlier suites' 23 comparison invocations include repeated controls; the new fixture is not a generic reference-parity adapter |
+| Original 93 prototype checks: 36 baseline, 12 effect, 29 composition, 16 independent parity | Baseline/effect comparisons and two independently authored composed/reference cases match; other composition cases meet explicit expectations | These are the original suites, not a total count including later transport/composition fixtures; their 23 comparison invocations include repeated controls |
 | Independent readiness and collector rules | Explicit ports can control tested executions without mutable pending and accumulator state | Expression interpretation is shared; the baseline also shares the reference program, while the composition runner uses a separate declared contract |
 | Full-coordinate snapshots and input-presence checks | The comparison retains internal nonoutputs, unavailable values, zero values, occurrence identities, and empty-input validation | Reference snapshots are replayed from its witnessed events |
 | Nonlinear, failure, chain, cycle, and malformed-port cases | Tests distinguish premature publication, nonlinear placement, waiting, undefinedness, and blocking | No general source admission or bounded-history adapter |
@@ -672,13 +729,26 @@ records the executable observations and reproduction commands.
 | Declared-contract open fragments | Missing and extra writers, identity collisions, incorrect destinations, early closure and forged closed payloads are detected or safely regenerated | Closure is relative to the supplied contract, not discovery of unknown writers |
 | Finite-family grouping/reindex checks | Concrete total-family laws have executable witnesses | No generic partial-lift or graph-batching theorem |
 | Two baseline, four extension, and one reference-only mutation control | Tests detect incorrect collection, dropped readiness, bypassed strictness, incomplete closure, forged collectors, and one-sided reference disagreement | Not evidence that every possible defect is covered |
+| Kernel-checked default execution correspondence | Every supplied local source-contract match yields corresponding validated executions, traces and state observations | Exact-rational profile and matched priorities; source alignment is a premise, not inferred |
+| Proved match for the independently authored fixture | The general theorem has actual strict and total instances; the match is established for every rational fixture parameter | Shared expression helpers do not independently verify expression interpretation |
+| Proved declaration/context transport | Certified adapters preserve ordered repeated footprints, readiness, strict partial evaluation and complete interpretation for every partial store | Supplied axis/domain adapters and the fixed rational registry, not automatic name/domain matching |
+| Kernel-checked static match constructor | Two local matched components and an explicit whole-tensor boundary yield a composite match, including closure and canonical priority | The constructor alone produces no rank or phase theorem; the separate result in Section 6.9 supplies model gluing |
+| Constructed composite correspondence instances | Strict/total, zero-writer, empty-port, collision and unequal-axis cases apply the existing general correspondence theorem to constructed matches | These instances do not establish categorical laws, general trace concatenation or an independent expression interpreter |
+| Rank-independent complete-model gluing | Composite model witnesses are in bijection with dependent compatible component-model pairs, retaining all private work | Validated inputs, explicit typed boundary and fixed rational profile; no existence, uniqueness or execution premise |
+| Restricted denotation composition | Both at-most-one-model hypotheses give the exact admissibility domain and transported successive output denotation | At most one model on every input does not imply existence; no unrestricted unique-model composition law |
+| Kernel-checked cyclic and hidden-model cases | Downstream filtering and distinct internal witnesses with equal outputs are realized by matched model fixtures | Complete-store/model proofs, not claims that the executor solves cyclic equations |
 
-The whole Lean build and branch review passed. The execution modules
-remain proof-free; the independent fixture adds approved finite
-structural certificates for roles, reads and schedule completeness.
-It adds no semantic correctness theorem, new axiom or `sorry`.
-This supports the implementation hypothesis without establishing
-universal categorical laws.
+The correspondence record reports successful full builds and branch review.
+The executable modules
+have a separate semantic proof layer, in addition to the fixture's
+structural certificates. The recorded axiom audit verifies that the main
+theorem and its strict/total instances depend only on `propext`,
+`Classical.choice`, and `Quot.sound`, the allowed standard Lean axioms.
+No new axiom, `sorry`, or unsafe proof shortcut was introduced.
+This is not an axiom audit of every unrelated repository component.
+The transport, static-composition and model-gluing records report their full
+builds, final reviews, namespace audits and particular mutation controls.
+The original seven controls below are not the total across those later slices.
 
 The seven mutation controls deliberately introduced faults in collection,
 readiness, strict assembly, writer coverage, validated execution and
@@ -710,8 +780,11 @@ The tests also confirm that:
 between assembling contributions and consuming completed values.
 These tests do not establish arbitrary source-program composition.
 The contract declares the complete permitted writer family; the
-prototype neither discovers unknown writers nor proves that a contract
-faithfully describes an independently supplied source program.
+prototype does not discover unknown writers or automatically establish
+source correspondence. The original proof supplies the fixture's match;
+Section 6.8 adds a general static construction from component matches.
+It still requires those leaf matches rather than inferring them from
+arbitrary source programs.
 
 ### 6.3. Effect-sequencing results
 
@@ -789,9 +862,11 @@ the reference's failing case into success and broke the expected
 parity checks. Restoration returned the source byte-identically and
 the checks passed again.
 
-This closes the concrete independent-reference gap for the two tested
-cases. It does not prove a general correspondence or establish complete
-coverage of contracts, source programs, or schedules.
+These checks close the concrete independent-reference gap for the two
+tested cases. They do not themselves prove general correspondence.
+The separate proof now establishes a conditional general result and
+supplies proved matches for these fixtures; neither claim establishes
+complete coverage of contracts, source programs, or schedules.
 
 ### 6.6. What these results establish
 
@@ -826,30 +901,180 @@ proposal:
    The graph's obligation to finish internal work therefore agrees
    with the source's complete-model semantics in this test.
 5. **A precise conditional operational correspondence is now proved.**
-   The two state representations agree throughout the matched executions,
-   including derived accumulator and pending data. This gives a tested
-   candidate relation that the separate semantic proof layer generalises,
-   without requiring a new evaluator or an assumed global graded-action law.
+   The proof generalises the state relation to every finite source/contract
+   pair satisfying its local match. It establishes related states,
+   mapped traces, and matching outcomes without assuming those execution
+   conclusions as premises. No global graded-action law is needed.
 
-The retained caller obligation is consequently sharper: establish that
+For leaf components, the retained caller obligation is consequently sharper: establish that
 a source program and an independently supplied writer contract describe
 the same typed occurrences, reads, destinations and completion
 obligations and ordered priorities. The conditional theorem then proves
 that their executions correspond; see the
 [proof record](categorical_tensor_logic_proof_record.md).
 Contract acceptance alone cannot establish this source-to-contract match.
+For compatible composition, Section 6.8 derives the composite obligation
+from the supplied local matches instead of requiring a new whole-match proof.
 
-An important restraint follows: **the prototype validates a different
-state representation more strongly than it validates a general composition
-theory**. Independent-fragment composition has contract-based checks and
-two direct reference comparisons. Contract inference, a composition
-theorem, and coverage beyond the tested finite interfaces remain
-unestablished.
+The important distinction is now **proved correspondence, static match
+construction and complete-model composition versus open operational phase
+and categorical laws**. The proved results are general within their stated
+premises, not limited to the tested examples. The witness bijection needs no
+uniqueness; the denotation law explicitly needs at-most-one complete models
+for both components. Automatic leaf-contract inference, ranked
+phase/projection results and categorical laws remain unestablished.
 
-Neither the matched event traces nor the mutation control proves that
-all schedules, all program contexts, or all St/Br constructions preserve
-the same behaviour. Expression interpretation is still shared, and no
-memory-efficiency or floating-point conclusion follows.
+Any priority pair satisfying the theorem's ordered matching condition is
+covered. Equivalence across different priorities, arbitrary program
+contexts, or all St/Br constructions is not established by this result.
+Expression interpretation is still shared, and no memory-efficiency or
+floating-point conclusion follows.
+
+### 6.7. Kernel-checked conditional correspondence
+
+The main declaration is
+`IndexedOpenComposition.Correspondence.default_run_correspondence` in
+[`IndexedCompositionValidated.lean`](../../leanncd/experiments/indexed_execution/IndexedCompositionValidated.lean).
+It compares the actual default entry points `runChecked` and
+`Program.Executor.runValidated`, including raw input validation.
+
+Given a `SourceContractMatch`, the proved result supplies:
+
+- The same first invalid-input rejection, or corresponding accepted runs.
+- Matching complete, failed, or blocked outcomes.
+- Equal ordered events after mapping source identities to graph identities.
+- Related intermediate stores, pending occurrences, and accumulated values.
+- Matching blocked-read diagnostics.
+
+Separate proved corollaries exclude default-budget exhaustion and graph
+readiness/collector mismatches. Successful completion yields the unique
+complete reference model and its output denotation; reached undefinedness
+excludes every model on those inputs. A supplied coordinate-rank
+certificate additionally excludes blocking. Blocking alone still says
+nothing about whether the equations have a model.
+
+The theorem retains local source alignment as an assumption: roles,
+occurrence identities, destinations, reads, body interpretation on every
+partial store, and ordered priorities. Capability injectivity and exact
+collector-fiber membership are derived from accepted closure and matching,
+not extra assumptions about completed executions.
+
+The proof is registered only with the non-default
+`IndexedExecutionExperiment` target. It is not a production-backend
+verification or a general categorical compositionality theorem.
+Appendix A explains the argument and its observation conventions.
+
+### 6.8. Kernel-checked static component composition
+
+The public declarations `IndexedComponentComposition.compose_match` and
+`compose` are in
+[`IndexedComponentComposition.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentComposition.lean).
+The former constructs a `SourceContractMatch`; the latter packages the
+composite as another matched component.
+
+Their inputs are two `MatchedComponent` values over finite decidable,
+independently scoped `Declarations Unit` and a `Boundary`, using the fixed
+rational registry and operations. A matched component
+includes its existing source/contract match and exact whole-tensor ports.
+The boundary supplies a bijection of every downstream input to every
+upstream output, with a certified domain adapter for each pair; it does
+not match by names or equal extents. These interfaces are defined in
+[`IndexedComponentCompositionScope.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentCompositionScope.lean).
+
+The composite retains all upstream tensors and a disjoint summand of
+downstream defined tensors. Downstream inputs refer to the corresponding
+upstream defined outputs, without additional external bindings, collectors
+or copy computations. Checked even/odd identities separate private tensors,
+tags and capabilities. All internal defined work, occurrence multiplicity,
+zero-writer collectors and empty-port metadata survive.
+
+The existing
+[typed transport](../../leanncd/experiments/indexed_execution/IndexedComponentTransportEval.lean)
+supplies body/read agreement on every partial store.
+[Closure and assembly proofs](../../leanncd/experiments/indexed_execution/IndexedComponentCompositionAssemble.lean)
+derive canonical closure and full tensor coverage.
+[Match construction](../../leanncd/experiments/indexed_execution/IndexedComponentCompositionMatch.lean)
+and [priority preservation](../../leanncd/experiments/indexed_execution/IndexedComponentCompositionPriority.lean)
+establish all nine fields. The caller supplies neither composite closure
+nor a composite match, collector-fiber agreement, selected actions,
+reached-store equality or execution agreement.
+
+The
+[constructed correspondence instances](../../leanncd/experiments/indexed_execution/IndexedComponentCompositionCorrespondenceTest.lean)
+then reuse `default_run_correspondence`, including an empty-interface
+instance quantified over every raw binding. In the local producer/consumer
+case, undefined nonselected reciprocal work still causes the six-event
+private-`Audit` failure after publication of `Out`; its total neighbour
+completes with seven events. Checked identity renaming changes numeric IDs,
+not the required contribution/publication/failure sequence.
+Expression helpers remain shared; this is not an independent numerical oracle.
+
+No rank is required for static construction or correspondence. Appending
+upstream priorities does not by itself prove that all upstream work finishes
+before any downstream action. Rank stitching, that phase/projection theorem,
+and component associativity/identities are still open. Complete-model gluing
+and restricted denotation are the separate proved results in Section 6.9.
+The result belongs only to the non-default `IndexedExecutionExperiment`,
+not a production backend or general category library.
+See the [composition record](component_composition_record.md) for the exact
+premises, fixture/control classifications, audits and completed gates.
+
+### 6.9. Kernel-checked model gluing and restricted denotation
+
+`IndexedComponentComposition.witnessesEquiv` in
+[`IndexedComponentModelWitnesses.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentModelWitnesses.lean)
+constructs an explicit bijection between complete composite models and
+compatible component-model pairs. The downstream input depends on the
+chosen upstream witness; this is not a product of two fixed model sets.
+The witnesses are whole stores satisfying `Program.Models`, not output
+assignments or distinct proof objects for the same store.
+
+The scope remains finite decidable `Declarations Unit`, the fixed rational
+registry and operations, and the existing `MatchedComponent`/`Boundary`
+construction. The core theorem requires no rank, phase, execution success,
+model existence or component uniqueness.
+
+[`IndexedComponentModelInputs.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentModelInputs.lean)
+defines inverse validated-input lifting/restriction, explicit `boundaryInput`,
+whole-store restriction and `glueStore`. Every downstream input receives a
+present whole value, including an empty one; noninput bindings remain absent.
+The downstream store inverse needs boundary input agreement, supplied by a
+compatible model, rather than holding for arbitrary unrelated store pairs.
+
+[`IndexedComponentModelTransport.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentModelTransport.lean)
+preserves and reflects every actual body's definedness and every collected
+coordinate equation. Private tensors, repeated contributions, admitted
+guards and zero-writer fibers remain in the model. Output-index/projection
+transport separately retains empty-output identity.
+
+The restricted corollaries `admInput_lift_iff`,
+`admInput_restrictions_iff` and `denotation_successive` are in
+[`IndexedComponentModelDenotation.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentModelDenotation.lean).
+They require `AtMostOneModels` for both components on every validated input.
+This compares whole model stores and asserts no existence. The domain
+equivalence covers every validated composite input; the value theorem
+transports successive denotation on exactly that admitted domain.
+Neither theorem requires or constructs a composite rank certificate.
+
+The
+[local model tests](../../leanncd/experiments/indexed_execution/IndexedComponentModelLocalTest.lean)
+exclude all strict-case composite models despite a satisfied visible
+`Out = 0` equation, and retain total private `Audit = 1/2` in witness
+round trips. The
+[geometry tests](../../leanncd/experiments/indexed_execution/IndexedComponentModelGeometryTest.lean)
+cover present empty inputs, empty output identity, nonconstant coordinate
+transport and complete-store inverses.
+The
+[cycle tests](../../leanncd/experiments/indexed_execution/IndexedComponentModelCycleTest.lean)
+prove the downstream-selection counterexample and preserve distinct internal
+models with equal final outputs. These are logical model proofs, not
+execution-completion assertions.
+
+The [record](component_model_gluing_record.md) reports actual full builds,
+namespace audits, all acceptance cases, unfiltered controls and adjudicated
+whole-branch reviews. The result remains in the non-default
+`IndexedExecutionExperiment`; it is not a general categorical library,
+production-backend verification or an unrestricted partial-function law.
 
 ## 7. St/Br, indexed arrays, and open diagrams
 
@@ -872,7 +1097,7 @@ notions of equivalence:
 
 This section relates indexed and diagrammatic presentations to the
 layers established above. Section 8 addresses behavioural compatibility
-and implementation; Section 9 states the remaining theorem targets.
+and implementation; Section 9 records proof status and remaining targets.
 
 ### 7.1. St/Br remains a serious syntax candidate
 
@@ -955,6 +1180,12 @@ Two obligations remain separate from the gluing operation:
 A structural pushout does not decide either obligation. Gluing an
 additional writer to an already completed-value interface must not be
 accepted merely because the underlying diagrams can be joined.
+
+The scoped constructor in Section 6.8 now discharges the static closure
+and matching obligations from local component matches and an explicit
+boundary. It neither chooses that boundary nor allows downstream writers
+to reopen the upstream family. This is a concrete semantic constraint on
+gluing, not a general ACSet pushout or open-network interpretation theorem.
 
 Open-network semantics, including
 [open Petri nets](https://arxiv.org/abs/1808.05415), gives a useful
@@ -1058,120 +1289,158 @@ reallocation is not automatically just a weight reparameterisation.
 Such transformations still need the appropriate execution and
 representation arguments.
 
-## 9. The most valuable theorem targets
+## 9. Proof status and remaining targets
 
 ### 9.1. Closed-graph/reference correspondence: conditional proof
 
-The scoped design for the contract-based runner is developed in the
-[theorem-design brief](categorical_tensor_logic_theorem_brief.md).
-The baseline outline below introduces the state relationship; the brief
-separates the supplied source-contract match from the proof obligations.
-The contract-based `runChecked`/`runValidated` result is now implemented;
-its exact scope is recorded in the
-[proof record](categorical_tensor_logic_proof_record.md).
-The older fixed-program baseline outline below is explanatory, not a
-formal theorem about `IndexedExecution.run`.
+Fix a finite well-formed reference program $P$ over the exact rational
+numbers, denoted $\mathbb{Q}$, and the fixed `RationalReference` registry.
+Let $S$ be its complete ordered priority schedule, $G$ a successfully closed
+contract-based graph, and $\beta$ a raw input binding.
 
-For the baseline runner, fix a well-formed finite program $P$ over
-the prototype's exact-rational
-registry and a complete priority schedule $S$.
-Let $\beta$ be a raw input binding, which may omit required inputs,
-and $G$ a fragment accepted by `close` for $P$ and $S$.
-Unlike the validated input environment $\eta$ of Section 1,
-$\beta$ is input data awaiting validation.
+The implemented `SourceContractMatch` supplies these local conditions:
 
-Relate graph and reference states by agreement of:
+1. Common typed declarations, equal input roles and ordered tensor
+   enumeration, and exact reference-output address coverage.
+2. A bijection between actual source occurrences and writer-list positions.
+3. Matching destinations and full ordered read lists.
+4. Equal local `evalReady` results for every partial store, including
+   readiness and undefinedness at the respective contexts.
+5. Equality of the entire mapped reference priority list and canonical
+   graph step list.
 
-- Tensor-level input presence.
-- Available and published coordinate values.
-- Pending identities and occurrences without produced values.
-- Accumulators and sums of produced contributions.
-- Terminal failure identities and the associated data snapshots.
+Successful closure is included in this match. The proof derives the
+remaining capability-uniqueness and collector-fiber properties from it.
+It does not assume equality of selected actions, traces, or final results.
 
-The target is:
+**Proved statement:** with this match, the two default validated
+executions correspond as described in Section 6.7. The result applies
+generally to pairs satisfying those conditions, not just to the fixture.
+No rank certificate is needed for correspondence or finite termination.
+Ranking is used only for the additional no-blocking conclusion.
 
-> With matched priority and the default sufficient budget, graph execution
-> and reference execution reject the same invalid input or select the same
-> next action, producing matching values, failure, or blocking. Neither
-> graph budget exhaustion nor an internal mismatch occurs.
+The independently authored fixture has `suppliedMatch other` for every
+rational parameter `other`. Its strict and total execution instances are
+applications of the general theorem, not Boolean parity results used
+as assumptions.
 
-An inductive step correspondence would then give equal witnessed
-events and snapshots across all coordinates, not only outputs.
-Reference soundness would transfer successful graph execution to the
-unique complete model, and reached undefinedness to absence of a model.
-Blocking would still make no such claim.
+The scope is the contract-based `IndexedOpenComposition.runChecked`
+implementation. It does not assert a theorem about the older
+`IndexedExecution.run`, arbitrary forged `Closed` records, source parsing,
+or arbitrary unequal debugging budgets.
 
-No rank certificate is needed to compare the two fixed executions.
-Rank hypotheses are needed for the separate no-blocking conclusion.
-Failure identities are compared under matched priorities, not across
-arbitrary different schedules.
+See the [proof record](categorical_tensor_logic_proof_record.md) for the
+implementation inventory and audit. The
+[design brief](categorical_tensor_logic_theorem_brief.md) explains the
+original proof obligations; Appendix A gives the completed argument.
 
-This theorem is deliberately concrete. It should precede a general
-categorical packaging of the operational rules.
+### 9.2. Sealed composition: model gluing proved, operational targets open
 
-For the separate contract-based runner, the independent validation
-suggests the following source-to-contract correspondence requirements:
+Let $P$ and $Q$ be upstream and downstream matched components, respectively,
+in this finite exact-rational profile.
+Let $X$ be $P$'s whole input interface and $Y$ its whole output interface.
+Whole interfaces retain tensor identities, sorts and full coordinate domains,
+including empty tensors; they are not merely lists of available addresses.
 
-1. Input/output roles and coordinate domains agree, including empty
-   tensors and internal nonoutputs.
-2. Every actual source occurrence corresponds to exactly one writer,
-   preserving distinct duplicate contributions and guard-admitted
-   assignments.
-3. Matched writers have the same destination, full read requirements,
-   and body interpretation, including definedness.
-4. Collectors cover every defined coordinate and exactly its complete
-   writer family, including zero-writer fibers.
-5. The chosen priorities and observation identities are matched
-   explicitly; invalid or missing mappings are rejected.
+Write $I_Q$ for the downstream input tensors and $O_P$ for the upstream
+output tensors. Supply a specified bijection $b:I_Q\cong O_P$.
+For each input $i$, supply a certified adapter
+$e_i:J_Q(i)\cong J_P(b(i))$, where $J_P(t)$ and $J_Q(t)$ denote the
+respective declared coordinate domains of tensor $t$.
+The adapters include extent-preserving axis correspondence and raw-policy
+coherence, not merely equal cardinality.
 
-Given these requirements, the proposed proof would establish a step
-correspondence using the state relation above. Rank conditions would
-add progress, not substitute for the source-to-contract correspondence.
-The independent fixture checks one instance experimentally; none of
-these general requirements is proved merely by accepting a contract.
+**Static construction: proved.** Write $Q\circ_b P$ for the constructed
+sealed composite along $b$. If $T_P$ is the upstream tensor type and $D_Q$
+the downstream defined-tensor type, its declarations use $T_P\sqcup D_Q$,
+where $\sqcup$ means disjoint union. The public constructor derives:
 
-### 9.2. Sealed sequential composition: unproved
+- Checked separation of private tensor, tag and capability identities.
+- Upstream-only external inputs and downstream-only exterior outputs;
+  every output remains a defined tensor rather than an input alias.
+- All actual occurrences, full ordered reads and local body agreement.
+- Complete collector coverage, including zero-writer fibers, without
+  downstream writes to upstream results or upstream reads from downstream
+  private values.
+- All internal work and empty tensor metadata.
+- Full ordered tensor validation and exact canonical priority matching.
+- The composite `SourceContractMatch`, including successful closure.
 
-A tractable composition target has two components, named $P$ and $Q$.
-Let $X$ be $P$'s input interface and $Y$ its complete output interface,
-which supplies every input of $Q$. An interface lists typed tensors
-and their full coordinate domains.
+No rank, composite match or execution-agreement premise is added.
+The existing execution theorem now applies to this constructed match
+rather than requiring a separate whole-composite reconstruction.
+This does not infer leaf matches or provide residual inputs, fan-out,
+open contribution ports or arbitrary domain adapters.
 
-Require:
+**Complete-model composition: proved.** Let $\eta_X$ be validated inputs on $X$,
+and let $\rho_P,\rho_Q$ denote complete component-model witnesses.
+Write $\eta_{\mathrm{comp}}$ for the corresponding validated composite input
+constructed by `liftInput`: retain upstream bindings and leave downstream
+defined tensors absent. `restrictInput` is its inverse, including
+tensor-level presence for empty inputs.
+Define $B_b(\rho_P)$ to be the downstream input environment transported
+through the boundary by `boundaryInput`:
 
-- Distinct private tensor and occurrence identities.
-- Explicit one-to-one matching of the typed boundary $Y$.
-- Closed writers for $P$'s boundary values.
-- No writes by $Q$ to $P$'s defined addresses.
-- No reads by $P$ from values defined inside $Q$.
-- Completion and definedness obligations for all internal work in both
-  components, whether or not its value reaches the final output.
+```math
+B_b(\rho_P)(i)[p]=\rho_P(b(i))[e_i(p)],
+\qquad p\in J_Q(i).
+```
 
-Write $Q\circ P$ for this proposed sequential composite and $\eta_X$
-for validated inputs on $X$. Let $\rho_P$ and $\rho_Q$ denote complete
-upstream and downstream models, respectively.
-Write $\rho_P|_Y$ for restriction to the boundary tensors.
+Every downstream input is present at tensor level, also for an empty domain;
+noninput bindings are absent.
+The implemented `witnessesEquiv` establishes the rank-independent bijection
 
-The safe semantic target is a bijection of complete-model witnesses:
-
-$$
-\operatorname{Models}(Q\circ P,\eta_X)
+```math
+\operatorname{Models}(Q\circ_b P,\eta_{\mathrm{comp}})
 \cong
 \left\{
 (\rho_P,\rho_Q)\ \middle|\
 \begin{array}{l}
 \rho_P\in\operatorname{Models}(P,\eta_X),\\
-\rho_Q\in\operatorname{Models}(Q,\rho_P|_Y)
+\rho_Q\in\operatorname{Models}(Q,B_b(\rho_P))
 \end{array}
 \right\}.
-$$
+```
 
-The pair retains both components' internal values rather than
-hiding them before uniqueness is checked.
+Both directions retain all private definedness and collected equations.
+The pair retains both components' internal values rather than hiding them
+before uniqueness is checked. No rank, existence or uniqueness premise is
+needed, and the theorem is not restricted to reachable or successful stores.
 
-If the upstream model is unique and the downstream model on that
-boundary is unique, the composite model is unique and its output
-is obtained by the successive interpretations.
+**Partial-function composition: proved with extra hypotheses.**
+`AtMostOneModels` means any two complete model stores are equal on every
+validated input, without asserting that a model exists. With this property
+for both $P$ and $Q$, `admInput_restrictions_iff` proves that the composite
+has a unique model exactly when the upstream input is admissible and the
+downstream input obtained from its output is admissible.
+
+Let $f_P,f_Q,f_{Q\circ_b P}$ denote the respective unique-model partial
+input-output meanings. `boundaryFromOutput` supplies downstream input from
+an upstream output; `liftOutput` transports a downstream output into the
+composite's output family. On exactly that admitted domain,
+`denotation_successive` proves
+
+```math
+f_{Q\circ_b P}(\eta_{\mathrm{comp}})
+=\operatorname{liftOutput}_b\!\left(
+ f_Q\!\left(\operatorname{boundaryFromOutput}_b(f_P(\eta_X))\right)
+\right).
+```
+
+The subscript $b$ fixes the same components and boundary as above.
+This is a domain-and-value law under the two explicit component hypotheses,
+not an unrestricted unique-model composition theorem or a totality result.
+
+**Operational sequencing: still unproved.** A generic theorem that ranked
+upstream execution completes before downstream execution, with projected
+states and spliced traces, still needs rank stitching and a phase proof.
+The first-enabled scheduler can skip blocked upstream work without those
+additional hypotheses. Static sealing and model gluing are not runtime
+completion.
+
+Component associativity and identities likewise need their own observation
+equivalence: inserting a core copy adds events, while input-as-output
+aliases violate the core's defined-output rule.
 
 ### 9.3. Why unrestricted partial-function composition is unsafe
 
@@ -1187,8 +1456,17 @@ Only the model with $t=1$ extends, giving $u=1$.
 
 The composite has a unique complete model although the upstream
 standalone partial function is undefined by the unique-model criterion.
-This is a semantic example, not an executed prototype fixture or a
-claim that the direct executor solves it.
+This pattern is now realized by explicitly matched local components and
+kernel-checked complete-model proofs in
+[`IndexedComponentModelCycleTest.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentModelCycleTest.lean).
+The composite uniqueness proof quantifies over every candidate store, not
+just two listed witnesses. It is still not a claim that the direct executor
+solves the cycle.
+
+A companion hidden-model case preserves two distinct upstream stores
+agreeing on their output boundary. Both extend to distinct complete
+composite stores with equal whole final outputs. An output-only relation
+would erase this distinction and cannot stand in for model uniqueness.
 
 Consequently, the general composition structure should retain
 **compatible complete-model witnesses**. One categorical representation
@@ -1196,15 +1474,17 @@ is a span: a set of complete models equipped with maps to its input
 and output environments. Composing such spans pairs models that
 agree at the shared boundary and retains the witnesses.
 
-This is a proposed semantic construction, not an implemented open-program
-composition. Unlike an output-only relation, it need not identify
-different internal models prematurely.
+The witness-level composition is now proved for the specified scoped profile.
+Packaging it as a span-based categorical interpretation, proving its laws
+and relating it to process observations remain separate work.
+Unlike an output-only relation, it does not identify different internal
+models prematurely.
 
 For components with at most one model on every input, such as the
 ranked fragment under the specified assumptions, this particular
-obstacle disappears. Extracting partial functions is then a more
-reasonable compositional target, still subject to the explicit
-interface conditions.
+obstacle disappears. The implemented domain and denotation corollaries now
+make partial-function composition precise under explicit at-most-one-model
+hypotheses for both components and the specified boundary conditions.
 
 ## Conclusion
 
@@ -1213,29 +1493,317 @@ The approach now has a plausible concrete centre:
 > **Identity-aware index geometry, strict partial expression interpretation,
 > multiplicity-preserving collection, and closed-writer dependency graphs.**
 
-The 93 checks and seven mutation controls support the tested state
-relationship, contract-based composition, and preservation of strict
-effects. In particular, the combined test confirms that available
-outputs do not erase internal completion obligations.
-This does not yet decide the best categorical presentation of general
-Tensor Logic or establish a universal composition theorem.
+The original 93 executable checks and seven mutation controls provide
+concrete validation. The subsequent Lean proofs establish conditional
+execution correspondence and transfer the reference model, uniqueness,
+denotation, and failure guarantees to matched graphs.
 
-The independently constructed three-scalar reference now agrees with
-the composition runner in the strict-failure and total-neighbour cases,
-without supplying its writer contract. This strengthens the case for
-explicit completion boundaries and effect-sensitive interpretation,
-while leaving the choice of a general categorical presentation open.
+Typed transport and static sealed composition now construct composite
+matches from locally matched components and explicit whole-tensor boundaries.
+Complete-model restriction/gluing additionally proves the compatible-witness
+bijection, and explicit at-most-one-model hypotheses give the exact
+successive denotation domain and values.
+Their fixtures, audits, controls and reviews add evidence without
+replacing the generic proofs or changing the language's strict partiality.
 
-The tested state relation has now been generalised into a conditional
-graph/reference theorem with explicit source-to-contract correspondence.
-More interfaces and schedules can exercise its supplied-match obligations
-before a general composition theorem is attempted.
-Composition that retains complete-model witnesses remains a further
-theorem target.
+This is a sound operational bridge for the specified rational profile,
+not yet a complete categorical semantics. The next mathematical gaps are
+rank stitching and ranked phase/projection, followed by component
+associativity and identities under a stated process equivalence.
+Reproving execution correspondence or reconstructing an entire match for
+each compatible composite is no longer necessary.
 
-This ordering keeps elegance accountable to the actual semantics:
-make the concrete structure sound and compositional, then choose the
-categorical packaging that expresses those results most simply.
+The choice of a general categorical presentation remains open.
+Automatic construction of leaf source-contract matches, broader interfaces,
+categorical laws and physical implementation refinement remain separate
+obligations. The proved model-level composition law does not substitute for
+an execution-phase or implementation-refinement theorem.
+
+## Appendix A. How the correspondence proof works
+
+### A.1. Start with a local match, not matching executions
+
+The proof compares two representations of one computation. The reference
+keeps published values, accumulators, and pending occurrences. The graph
+keeps available values and individually produced contributions.
+
+The supplied `SourceContractMatch` connects their static data:
+roles, occurrence identities, destinations, footprints, body meanings,
+and priority lists. In particular, it requires the matched bodies to
+have the same `evalReady` result for every partial store.
+
+That last condition is local expression agreement, not an assumption
+that executions agree. Source and writer bodies may have different
+index-context types. The proof does not need a generic syntactic
+substitution compiler, but a future translator must justify the
+body-agreement condition.
+
+Accepted closure checks account for the complete capability family,
+unique writer identities and destinations. Together with the source
+occurrence bijection, these facts prove that each collector contains
+exactly the writers for its source coordinate.
+Thus no missing or duplicated contribution can be hidden behind a
+separately assumed equality of aggregate results.
+
+The relevant definitions are in
+[`IndexedCompositionMatch.lean`](../../leanncd/experiments/indexed_execution/IndexedCompositionMatch.lean);
+the derived capability and fiber facts are in
+[`IndexedCompositionFibers.lean`](../../leanncd/experiments/indexed_execution/IndexedCompositionFibers.lean).
+
+### A.2. Relate the two representations of unfinished work
+
+Let $g$ denote a graph state and $c$ a reference running state.
+Write $\mathcal{R}(g,c)$ for their state relation.
+Using the occurrence set $O$, destination map $d$, and defined-address
+set $C$ of Section 4, define:
+
+- $\operatorname{Avail}_g$: the graph's partial available-value store.
+- $\operatorname{Pub}_c$: the reference partial published-value store.
+- $\mathsf{Done}_g\subseteq O$: source occurrences whose matched graph
+  capability has produced a value.
+- $\operatorname{Pending}_c\subseteq O$: pending reference occurrences.
+- $v_o$: the recorded rational value of a produced occurrence
+  $o\in\mathsf{Done}_g$.
+- $\operatorname{Acc}_c(a)$: the reference accumulator at a defined
+  address $a\in C$.
+
+Use $\setminus$ for set difference and $\sum$ for finite rational
+addition, with empty sum zero. The relation states:
+
+$$
+\operatorname{Avail}_g=\operatorname{Pub}_c,
+$$
+
+$$
+\operatorname{Pending}_c=O\setminus\mathsf{Done}_g,
+$$
+
+$$
+\operatorname{Acc}_c(a)=
+\sum_{\substack{o\in\mathsf{Done}_g\\d(o)=a}}v_o.
+$$
+
+Equality of partial stores includes both availability and values.
+
+These are not three copied runtime fields: the last two pieces of
+reference bookkeeping are reconstructed from graph production.
+
+The induction also carries a ledger invariant: produced capabilities
+are valid and duplicate-free. Otherwise a lookup could hide extra
+or repeated ledger entries. Available input coordinates are tracked
+as present separately; the state relation alone should not be used
+to justify a claim about arbitrary states missing their inputs.
+
+Initially both stores contain the validated inputs, no writer has
+produced anything, every source occurrence is pending, and accumulators
+are zero. The relation and required invariants therefore hold initially.
+
+### A.3. Show that each action preserves the relation
+
+**A successful contribution.** Matching pending data and footprints make
+the same writer/source occurrence ready. Local body agreement supplies
+the same value. The graph records one fresh produced capability; the
+reference removes its occurrence and adds that value to its accumulator.
+The finite-sum equation is preserved.
+
+**Publication.** A graph collector is enabled exactly when all its
+capabilities are produced and the coordinate is unavailable. The derived
+fiber correspondence makes this equivalent to the reference's completed
+fiber and unpublished-coordinate conditions. The graph sum equals the
+reference accumulator, so both publish the same value.
+An empty fiber is the same argument with sum zero.
+
+**Undefinedness.** If the ready body is undefined, both report the
+corresponding occurrence as a terminal failure. Neither records a
+successful contribution or returns a partial output as success.
+
+Produced values remain recorded and published values remain unchanged
+through subsequent successful steps. The proof concerns runs starting
+from validated initial states, not invented states that merely resemble
+some of the equations above.
+
+The contribution and publication arguments are developed in
+[`IndexedCompositionSteps.lean`](../../leanncd/experiments/indexed_execution/IndexedCompositionSteps.lean)
+and
+[`IndexedCompositionPublication.lean`](../../leanncd/experiments/indexed_execution/IndexedCompositionPublication.lean).
+
+### A.4. Lift local agreement to complete executions
+
+Equal eligibility is not enough to equate chosen events: two schedulers
+could select different enabled actions. The match therefore relates the
+entire ordered priority lists. Searching them for the first eligible
+action selects corresponding steps. This is proved, not assumed.
+
+Induction over the bounded runners then preserves the state relation,
+ledger invariants, mapped events and terminal classification.
+The complete key lists also yield equal default budgets. Successful
+actions finish previously unfinished work, and failure is terminal,
+so those default runs do not exhaust.
+
+Full completion means all occurrences are consumed and all required
+coordinates are published, not merely that outputs are available.
+If unfinished work remains with no enabled action, both runners block,
+with corresponding ordered missing-read diagnostics.
+
+The raw state lists are not literally identical. The reference records
+a final failed-state wrapper, whereas the graph returns a failed outcome
+without appending a second snapshot of its unchanged data.
+`referenceSnapshots` normalises this representation difference.
+The undefined event and located failure are retained.
+
+The trace/result relation is `ExecutionCorrespondence` in
+[`IndexedCompositionCorrespondence.lean`](../../leanncd/experiments/indexed_execution/IndexedCompositionCorrespondence.lean).
+The public default-entry-point theorem is then obtained in
+[`IndexedCompositionValidated.lean`](../../leanncd/experiments/indexed_execution/IndexedCompositionValidated.lean).
+
+### A.5. Transfer the meaning of successful and failed runs
+
+Once executions correspond, the existing reference correctness theorems
+can be reused rather than reproved.
+
+- Graph completion supplies a corresponding reference completion and the
+  same whole store. `completed_model` yields its model, uniqueness and
+  output-denotation properties.
+- Graph failure supplies the corresponding reference undefined occurrence.
+  `failed_has_no_model` excludes every reference model on those inputs.
+- `ranked_not_blocked` adds a rank certificate to exclude blocking.
+  Without that extra premise, blocking carries no model-existence claim.
+
+Output denotation uses the reference program's tensor roles and signatures.
+This includes empty output tensors, whose identities cannot be recovered
+from the graph contract's address-only output list.
+
+These are semantic corollaries, not premises that the program already
+has a model or that execution already succeeds.
+
+### A.6. Establish genuine instances and audit the proof
+
+[`IndexedCompositionFixtureProof.lean`](../../leanncd/experiments/indexed_execution/IndexedCompositionFixtureProof.lean)
+constructs `suppliedMatch other` for every rational fixture parameter
+`other`. It proves the actual source/writer bijection, body-context
+agreement, closure, roles and priority match.
+The strict and total execution instances apply the general theorem.
+They are not proofs that a stored Boolean parity check equals true.
+
+The six-event failure and seven-event completion are also retained as
+executable regression observations. The tests and mutation controls
+remain useful for protecting behaviour even though they are not the
+proof's logical foundation.
+
+[`IndexedCompositionProofAudit.lean`](../../leanncd/experiments/indexed_execution/IndexedCompositionProofAudit.lean)
+audits the graph/proof and fixture-proof namespaces and reports the main
+theorem's dependencies. The recorded result uses only the allowed standard
+axioms named in Section 6.1.
+
+The generality is conditional: finite typed declarations, exact rationals,
+the fixed primitive registry, local body agreement and matched priorities.
+The proof does not construct matches for arbitrary source programs or
+establish a PROP interpretation, St/Br action, general component
+composition law, numerical approximation theorem or physical-memory
+refinement.
+
+### A.7. Construct a match from component matches
+
+The new static constructor supplies the correspondence proof's premise
+compositionally, rather than proving another pair of runners equivalent.
+It starts with two local `SourceContractMatch` values and an explicit
+whole-tensor boundary.
+
+1. **Keep ownership local.** Retain the upstream declaration universe and
+   only downstream defined tensors in a disjoint summand. A downstream
+   input maps to its specified upstream output. No ambient tensors create
+   extra input or collector obligations.
+2. **Transport identities and expressions.** Checked even/odd maps separate
+   tensor UIDs, tags and capabilities. The occurrence bijections combine
+   without dropping duplicate contributions or guard-admitted valuations.
+   Typed expression transport preserves ordered full footprints and
+   `evalReady` on every partial store, including ready undefinedness.
+3. **Derive closure.** `ClosureFacts.of_close` extracts the component
+   invariants. The concrete assembly proves the structural premises needed
+   for `close_assembled`, including coverage of all noninput coordinates,
+   valid reads and disjoint capability families. The public constructor's
+   caller does not supply those premises as a disguised composite-closure
+   assumption.
+4. **Preserve the complete priority equation.** Collector lookup and step
+   transport commute with the checked identity maps. Appended component
+   keys map to the canonical composite steps in their original order.
+   Equal eligibility or equal final values are not used as substitutes.
+5. **Assemble the certificate and reuse execution correspondence.**
+   `compose_match` constructs all nine match fields; `compose` retains
+   exact whole ports, including empty outputs. Applying
+   `default_run_correspondence` then supplies mapped events, related
+   intermediate states and terminal outcomes for the composite.
+
+The declarations are in
+[`IndexedComponentComposition.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentComposition.lean).
+The closure infrastructure is in
+[`IndexedComponentClosureFacts.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentClosureFacts.lean)
+and the assembly/priority derivations are in
+[`IndexedComponentCompositionAssemble.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentCompositionAssemble.lean)
+and
+[`IndexedComponentCompositionPriority.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentCompositionPriority.lean).
+
+The
+[composed instances](../../leanncd/experiments/indexed_execution/IndexedComponentCompositionCorrespondenceTest.lean)
+include the six-event strict failure and seven-event total completion from
+local producer/consumer matches, retaining private `Audit`. Empty interfaces,
+zero-writer fibers, collisions and unequal-axis adapters provide further
+discriminating cases. The interpreter remains shared.
+
+This constructs a static matched component, not a runtime phase theorem,
+or a categorical identity/associativity law. Complete-model gluing is the
+separate proved result below; remaining operational and categorical
+obligations are stated in Section 9.2.
+
+### A.8. Restrict and glue complete-model witnesses
+
+Model gluing works directly with complete stores and equations, rather than
+assuming the runners reach those stores.
+
+1. **Transport validated inputs separately from stores.** `liftInput` and
+   `restrictInput` are inverse on validated inputs. `boundaryInput` uses the
+   specified output/input coordinate adapters and supplies a present value
+   for every downstream input, including an empty one.
+2. **Split whole-store model obligations.** `outcome_upstream` and
+   `outcome_downstream` reuse complete interpretation transport.
+   `admEnv_components` preserves and reflects all actual bodies' definedness.
+   `collect_upstream`, `collect_downstream` and `equations_components`
+   preserve every finite contribution sum and coordinate equation,
+   including private tensors and zero-writer fibers.
+3. **Restrict and glue compatible stores.** Restriction uses the existing
+   address embeddings. `glueStore` keeps upstream values and downstream
+   defined values; downstream input agreement makes their boundary
+   consistent. The inverse is not asserted for arbitrary incompatible pairs.
+4. **Build the witness bijection.** `models_restrict_iff` and
+   `models_glue_iff` establish both model directions.
+   `witnessesEquiv` uses the store inverse laws to retain the full dependent
+   pair of model subtypes. Proof irrelevance identifies proof terms for the
+   same store, not different stores with the same output.
+5. **Project outputs only after preserving complete witnesses.**
+   `outputIndexEquiv` and output-projection transport retain whole output
+   tensors, including empty ones. The two `AtMostOneModels` hypotheses
+   separately give the exact admissibility-domain and successive-denotation
+   corollaries; they do not add existence to the core gluing theorem.
+
+The input/store operations are in
+[`IndexedComponentModelInputs.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentModelInputs.lean),
+the semantic transport in
+[`IndexedComponentModelTransport.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentModelTransport.lean),
+the witness inverses in
+[`IndexedComponentModelWitnesses.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentModelWitnesses.lean),
+and the restricted functional law in
+[`IndexedComponentModelDenotation.lean`](../../leanncd/experiments/indexed_execution/IndexedComponentModelDenotation.lean).
+
+The strict `Audit` case has no complete composite model even when its visible
+`Out` equation is satisfied. Its total neighbour retains the private audit
+value in complete-store round trips. Empty and nonconstant-axis cases test
+presence and coordinate transport; cyclic cases demonstrate both downstream
+model filtering and hidden internal multiplicity. These are logical
+complete-model conclusions, not execution-completion claims.
+
+No rank, phase, model existence or uniqueness premise appears in the core
+witness theorem. Runtime phase/projection, trace splicing and categorical
+laws remain distinct unproved obligations.
 
 ## Notation reference
 
@@ -1247,6 +1815,7 @@ ones; it does not add assumptions beyond their definitions.
 | $P,Q$ | Core programs or components |
 | $\rho$ | Complete candidate tensor environment |
 | $\eta,\eta_X$ | Validated complete input environment, optionally restricted to interface $X$ |
+| $\eta_{\mathrm{comp}}$ | Validated composite input obtained by lifting the upstream input |
 | $\beta$ | Raw input binding awaiting validation |
 | $\rho(T)[p]$ | Entry at coordinate $p$ of tensor $T$ in environment $\rho$ |
 | $\operatorname{Models}(P,\eta)$ | Complete models of program $P$ on supplied inputs $\eta$ |
@@ -1269,6 +1838,17 @@ ones; it does not add assumptions beyond their definitions.
 | $D,L,1_D$ | Index category, shape object, and its unit scalar shape |
 | $\operatorname{El}(L)$ | Points of shape $L$, represented by morphisms $1_D\to L$ |
 | $[X,L],\mathsf{V}(X)$ | Lifted interface and interpreted value space |
-| $S,G$ | Complete priority schedule and accepted graph fragment |
-| $\rho_P,\rho_Q,\rho_P\vert_Y$ | Complete component models and upstream restriction to boundary $Y$ |
+| $S,G$ | Complete priority schedule and canonical closed graph |
+| $g,c,\mathcal{R}(g,c)$ | Graph state, reference running state, and their proved state relation |
+| $\operatorname{Avail}_g,\operatorname{Pub}_c$ | Partial available and published stores |
+| $\mathsf{Done}_g,\operatorname{Pending}_c$ | Produced mapped source occurrences and pending source occurrences |
+| $\operatorname{Acc}_c(a),v_o$ | Reference accumulator at defined address $a$ and recorded value of produced occurrence $o$ |
+| $T_P,D_Q,\sqcup$ | Upstream tensor identities, downstream defined tensor identities, and disjoint union |
+| $I_Q,O_P,b,e_i$ | Downstream inputs, upstream outputs, explicit boundary bijection, and certified coordinate adapters |
+| $J_P(t),J_Q(t)$ | Declared coordinate domains of tensor $t$ in the respective component |
+| $\rho_P,\rho_Q$ | Complete component-model witnesses |
+| $B_b(\rho_P)$ | Downstream input environment obtained by explicit boundary transport |
+| $f_P,f_Q,f_{Q\circ_b P}$ | Unique-model partial input-output meanings for the respective programs |
+| $\operatorname{boundaryFromOutput}_b,\operatorname{liftOutput}_b$ | Boundary input and composite output transport for the fixed components and boundary |
+| $Q\circ_b P$ | Statically constructed sealed composite along boundary $b$ |
 | $\circ,\operatorname{id},\cong$ | Composition, identity, and bijective correspondence, as typed in each use |
