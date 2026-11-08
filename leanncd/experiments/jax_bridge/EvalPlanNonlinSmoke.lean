@@ -582,10 +582,11 @@ def trEps : Array Float := #[1e-5, 1e-5, 1e-5]
 
 /-! ### Two-layer transformer as a scan over the layer axis (`transformer_scan`, `transformer_scan32`)
 
-The one-layer `transformerRmsProg` with `iter l = 3` (history extent 3 = two steps, state `H(q, m, l)`)
-and UNTIED per-layer weights read as `W[l, ...]`. Weight stacks hold layer 0 (the one-layer fixture's
-weights), a derived, genuinely different layer 1 and a NaN layer-2 slice that a correct two-step scan
-never reads (a step reading past layer 1 would make every output NaN). -/
+A STANDARD pre-norm transformer layer (RMSNorm with a learned gain before attention and before the MLP,
+residual adds around both, scaled causal attention, gelu MLP) with `iter l = 3` (history extent 3 = two
+steps, state `H(q, m, l)`) and UNTIED per-layer weights and gains read as `W[l, ...]`. Weight stacks hold
+layer 0 (the one-layer fixture's weights), a derived, genuinely different layer 1 and a NaN layer-2 slice
+that a correct two-step scan never reads (a step reading past layer 1 would make every output NaN). -/
 
 /-- Layer-1 weights: layer 0's entries rotated by 5 positions and scaled by 0.8 (both signs, distinct). -/
 def scanLayer1 (w : Array Float) : Array Float :=
@@ -597,30 +598,30 @@ def scanProg : TLProgram := tlprog!{
   iter l = 3
   axis s : ℕ = 3
   tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
-  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
   tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
   tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
-  tensor f64 Z1(q, m), Ss1(q), Ve1(q), Sd1(q), A(q, m), F(q, d), Y(q, m)
-  tensor f64 Z2(q, m), Ss2(q), Ve2(q), Sd2(q)
+  tensor f64 R1(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
   H[q, m, 0]       := X[q, m]
-  Q[q, h, k]       := W_Q[l, h, k, m] · H[q, m, l]
-  K[s, h, k]       := W_K[l, h, k, m] · H[s, m, l]
-  V[s, h, k]       := W_V[l, h, k, m] · H[s, m, l]
-  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
-  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
-  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
-  Z1[q, m]         := Attn[q, m] + H[q, m, l]
-  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
   Ve1[q]           := Ss1[q] + Eps[q]
   Sd1[q]           := sqrt(Ve1[q])
-  A[q, m]          := Z1[q, m] / Sd1[q]
-  F[q, d]          := relu(W_in[l, d, m] · A[q, m])
-  Y[q, m]          := W_out[l, m, d] · F[q, d]
-  Z2[q, m]         := Y[q, m] + A[q, m]
-  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
   Ve2[q]           := Ss2[q] + Eps[q]
   Sd2[q]           := sqrt(Ve2[q])
-  H[q, m, l +1]    := Z2[q, m] / Sd2[q]
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
 }
 /-- The binary32 sibling: only the declarations that pin axis order and the history shape. -/
 def scanProg32 : TLProgram := tlprog!{
@@ -629,24 +630,24 @@ def scanProg32 : TLProgram := tlprog!{
   tensor H(q, m, l)
   tensor S(h, q, s)
   H[q, m, 0]       := X[q, m]
-  Q[q, h, k]       := W_Q[l, h, k, m] · H[q, m, l]
-  K[s, h, k]       := W_K[l, h, k, m] · H[s, m, l]
-  V[s, h, k]       := W_V[l, h, k, m] · H[s, m, l]
-  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
-  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
-  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
-  Z1[q, m]         := Attn[q, m] + H[q, m, l]
-  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
   Ve1[q]           := Ss1[q] + Eps[q]
   Sd1[q]           := sqrt(Ve1[q])
-  A[q, m]          := Z1[q, m] / Sd1[q]
-  F[q, d]          := relu(W_in[l, d, m] · A[q, m])
-  Y[q, m]          := W_out[l, m, d] · F[q, d]
-  Z2[q, m]         := Y[q, m] + A[q, m]
-  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
   Ve2[q]           := Ss2[q] + Eps[q]
   Sd2[q]           := sqrt(Ve2[q])
-  H[q, m, l +1]    := Z2[q, m] / Sd2[q]
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
 }
 
 /-! ### Shared inputs of the scan and the unrolled oracle (`transformer_unrolled`, `transformer_unrolled32`)
@@ -656,129 +657,141 @@ layer 1, NaN layer 2). The scan fixtures take the stacks whole; the unrolled ora
 `W_x1` and layer 1 as `W_x2` (the NaN slice does not exist in the two-layer unrolled model), sliced out of
 the SAME arrays, so scan and unrolled cannot see different values. -/
 
+/-- Scale `Sc[]` (rank 0) = 1/sqrt(k) for the head width k = 2. -/
+def trSc : Array Float := #[0.7071067811865476]
+/-- Per-layer RMSNorm gains (layer 0, layer 1; all distinct, positive, in [0.8, 1.3], so a swapped gain,
+    wrong layer or wrong slice changes the result). The layer-2 slice is NaN like every weight stack. -/
+def trG1L0 : Array Float := #[1.10, 0.90, 1.25, 0.85]
+def trG1L1 : Array Float := #[0.82, 1.18, 1.02, 1.28]
+def trG2L0 : Array Float := #[0.95, 1.20, 0.80, 1.05]
+def trG2L1 : Array Float := #[1.12, 0.88, 1.22, 0.98]
+def gainStack (l0 l1 : Array Float) : Array Float := l0 ++ l1 ++ scanNanSlice l0
+
 def scanWeights : List (String × List Nat × Array Float) :=
   [("W_Q", [2, 2, 4], scanStack trWQ), ("W_K", [2, 2, 4], scanStack trWK),
    ("W_V", [2, 2, 4], scanStack trWV), ("W_O", [4, 2, 2], scanStack trWO),
-   ("W_in", [4, 4], scanStack trWin), ("W_out", [4, 4], scanStack trWout)]
+   ("W_in", [4, 4], scanStack trWin), ("W_out", [4, 4], scanStack trWout),
+   ("G1", [4], gainStack trG1L0 trG1L1), ("G2", [4], gainStack trG2L0 trG2L1)]
 
 /-- Layer `i` of a 3-layer stack. -/
 def layerSlice (d : Array Float) (i : Nat) : Array Float :=
   d.extract (i * (d.size / 3)) ((i + 1) * (d.size / 3))
 
 def scanEnv64 : HashMap String DenseTensor :=
-  env64 ([("X", t64 [3, 4] trX), ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps)] ++
+  env64 ([("X", t64 [3, 4] trX), ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps), ("Sc", t64 [] trSc)] ++
     scanWeights.map fun (n, sh, d) => (n, t64 (3 :: sh) d))
 def scanEnv32 : NamedDenseEnv32 :=
-  env32 ([("X", t32 [3, 4] trX), ("Inv", t32 [4] trInv), ("Eps", t32 [3] trEps)] ++
+  env32 ([("X", t32 [3, 4] trX), ("Inv", t32 [4] trInv), ("Eps", t32 [3] trEps), ("Sc", t32 [] trSc)] ++
     scanWeights.map fun (n, sh, d) => (n, t32 (3 :: sh) d))
 def unrolledEnv64 : HashMap String DenseTensor :=
-  env64 ([("X", t64 [3, 4] trX), ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps)] ++
+  env64 ([("X", t64 [3, 4] trX), ("Inv", t64 [4] trInv), ("Eps", t64 [3] trEps), ("Sc", t64 [] trSc)] ++
     scanWeights.flatMap fun (n, sh, d) =>
       [(n ++ "1", t64 sh (layerSlice d 0)), (n ++ "2", t64 sh (layerSlice d 1))])
 def unrolledEnv32 : NamedDenseEnv32 :=
-  env32 ([("X", t32 [3, 4] trX), ("Inv", t32 [4] trInv), ("Eps", t32 [3] trEps)] ++
+  env32 ([("X", t32 [3, 4] trX), ("Inv", t32 [4] trInv), ("Eps", t32 [3] trEps), ("Sc", t32 [] trSc)] ++
     scanWeights.flatMap fun (n, sh, d) =>
       [(n ++ "1", t32 sh (layerSlice d 0)), (n ++ "2", t32 sh (layerSlice d 1))])
 
-/-- Unrolled oracle: the two layers of `scanProg` as two hand-copied flat layers (no scan); layer `n`
-    writes `Hn(q, m)`. Same model as `scanProg`; the scan fixtures are tied to it by the oracle in
-    `evalplan_nonlin_smoke.py`. -/
+/-- Unrolled oracle: the two pre-norm layers of `scanProg` as two hand-copied flat layers (no scan); layer
+    `n` writes `Hn(q, m)`. Per-layer weights are `<name>n`, so the gains `G1`/`G2` of layer `n` are `G1n`/`G2n`
+    (`G11` = `G1` of layer 1, `G12` = `G1` of layer 2, `G21` = `G2` of layer 1, `G22` = `G2` of layer 2).
+    Same model as `scanProg`; the scan fixtures are tied to it by the oracle in `evalplan_nonlin_smoke.py`. -/
 def unrolledProg : TLProgram := tlprog!{
+  axis s : ℕ = 3
   tensor f64 X(q, m), W_Q1(h, k, m), W_K1(h, k, m), W_V1(h, k, m), W_O1(m, h, k), W_in1(d, m), W_out1(m, d)
   tensor f64 W_Q2(h, k, m), W_K2(h, k, m), W_V2(h, k, m), W_O2(m, h, k), W_in2(d, m), W_out2(m, d)
-  tensor f64 Inv(m), Eps(q)
-  tensor f64 Q1(q, h, k), K1(s, h, k), V1(s, h, k), AO1(q, h, k), At1(q, m), F1(q, d), Y1(q, m)
-  tensor f64 Za1(q, m), Ssa1(q), Vea1(q), Sda1(q), Zb1(q, m), Ssb1(q), Veb1(q), Sdb1(q)
-  tensor f64 Q2(q, h, k), K2(s, h, k), V2(s, h, k), AO2(q, h, k), At2(q, m), F2(q, d), Y2(q, m)
-  tensor f64 Za2(q, m), Ssa2(q), Vea2(q), Sda2(q), Zb2(q, m), Ssb2(q), Veb2(q), Sdb2(q)
-  Q1[q, h, k]      := W_Q1[h, k, m] · X[q, m]
-  K1[s, h, k]      := W_K1[h, k, m] · X[s, m]
-  V1[s, h, k]      := W_V1[h, k, m] · X[s, m]
-  tensor f64 S1(h, q, s)
-  S1[h, q, s.]     := softmax(where s ≤ q)(Q1[q, h, k] · K1[s, h, k])
-  AO1[q, h, k]     := S1[h, q, s] · V1[s, h, k]
-  At1[q, m]        := W_O1[m, h, k] · AO1[q, h, k]
-  Za1[q, m]        := At1[q, m] + X[q, m]
-  Ssa1[q]          := Za1[q, m] · Za1[q, m] · Inv[m]
+  tensor f64 Inv(m), Eps(q), G11(m), G21(m), G12(m), G22(m), Sc()
+  tensor f64 Ssa1(q), Vea1(q), Sda1(q), Na1(q, m)
+  tensor f64 Q1(q, h, k), K1(s, h, k), V1(s, h, k), AO1(q, h, k), At1(q, m)
+  tensor f64 Ra1(q, m), Ssb1(q), Veb1(q), Sdb1(q), Nb1(q, m), F1(q, d), Y1(q, m)
+  tensor f64 Ssa2(q), Vea2(q), Sda2(q), Na2(q, m)
+  tensor f64 Q2(q, h, k), K2(s, h, k), V2(s, h, k), AO2(q, h, k), At2(q, m)
+  tensor f64 Ra2(q, m), Ssb2(q), Veb2(q), Sdb2(q), Nb2(q, m), F2(q, d), Y2(q, m)
+  Ssa1[q]          := X[q, m] · X[q, m] · Inv[m]
   Vea1[q]          := Ssa1[q] + Eps[q]
   Sda1[q]          := sqrt(Vea1[q])
-  tensor f64 A1(q, m)
-  A1[q, m]         := Za1[q, m] / Sda1[q]
-  F1[q, d]         := relu(W_in1[d, m] · A1[q, m])
-  Y1[q, m]         := W_out1[m, d] · F1[q, d]
-  Zb1[q, m]        := Y1[q, m] + A1[q, m]
-  Ssb1[q]          := Zb1[q, m] · Zb1[q, m] · Inv[m]
+  Na1[q, m]        := X[q, m] / Sda1[q] · G11[m]
+  Q1[q, h, k]      := W_Q1[h, k, m] · Na1[q, m]
+  K1[s, h, k]      := W_K1[h, k, m] · Na1[s, m]
+  V1[s, h, k]      := W_V1[h, k, m] · Na1[s, m]
+  tensor f64 S1(h, q, s)
+  S1[h, q, s.]     := softmax(where s ≤ q)(Q1[q, h, k] · K1[s, h, k] · Sc[])
+  AO1[q, h, k]     := S1[h, q, s] · V1[s, h, k]
+  At1[q, m]        := W_O1[m, h, k] · AO1[q, h, k]
+  Ra1[q, m]        := X[q, m] + At1[q, m]
+  Ssb1[q]          := Ra1[q, m] · Ra1[q, m] · Inv[m]
   Veb1[q]          := Ssb1[q] + Eps[q]
   Sdb1[q]          := sqrt(Veb1[q])
+  Nb1[q, m]        := Ra1[q, m] / Sdb1[q] · G21[m]
+  F1[q, d]         := gelu(W_in1[d, m] · Nb1[q, m])
+  Y1[q, m]         := W_out1[m, d] · F1[q, d]
   tensor f64 H1(q, m)
-  H1[q, m]         := Zb1[q, m] / Sdb1[q]
-  Q2[q, h, k]      := W_Q2[h, k, m] · H1[q, m]
-  K2[s, h, k]      := W_K2[h, k, m] · H1[s, m]
-  V2[s, h, k]      := W_V2[h, k, m] · H1[s, m]
-  tensor f64 S2(h, q, s)
-  S2[h, q, s.]     := softmax(where s ≤ q)(Q2[q, h, k] · K2[s, h, k])
-  AO2[q, h, k]     := S2[h, q, s] · V2[s, h, k]
-  At2[q, m]        := W_O2[m, h, k] · AO2[q, h, k]
-  Za2[q, m]        := At2[q, m] + H1[q, m]
-  Ssa2[q]          := Za2[q, m] · Za2[q, m] · Inv[m]
+  H1[q, m]         := Ra1[q, m] + Y1[q, m]
+  Ssa2[q]          := H1[q, m] · H1[q, m] · Inv[m]
   Vea2[q]          := Ssa2[q] + Eps[q]
   Sda2[q]          := sqrt(Vea2[q])
-  tensor f64 A2(q, m)
-  A2[q, m]         := Za2[q, m] / Sda2[q]
-  F2[q, d]         := relu(W_in2[d, m] · A2[q, m])
-  Y2[q, m]         := W_out2[m, d] · F2[q, d]
-  Zb2[q, m]        := Y2[q, m] + A2[q, m]
-  Ssb2[q]          := Zb2[q, m] · Zb2[q, m] · Inv[m]
+  Na2[q, m]        := H1[q, m] / Sda2[q] · G12[m]
+  Q2[q, h, k]      := W_Q2[h, k, m] · Na2[q, m]
+  K2[s, h, k]      := W_K2[h, k, m] · Na2[s, m]
+  V2[s, h, k]      := W_V2[h, k, m] · Na2[s, m]
+  tensor f64 S2(h, q, s)
+  S2[h, q, s.]     := softmax(where s ≤ q)(Q2[q, h, k] · K2[s, h, k] · Sc[])
+  AO2[q, h, k]     := S2[h, q, s] · V2[s, h, k]
+  At2[q, m]        := W_O2[m, h, k] · AO2[q, h, k]
+  Ra2[q, m]        := H1[q, m] + At2[q, m]
+  Ssb2[q]          := Ra2[q, m] · Ra2[q, m] · Inv[m]
   Veb2[q]          := Ssb2[q] + Eps[q]
   Sdb2[q]          := sqrt(Veb2[q])
+  Nb2[q, m]        := Ra2[q, m] / Sdb2[q] · G22[m]
+  F2[q, d]         := gelu(W_in2[d, m] · Nb2[q, m])
+  Y2[q, m]         := W_out2[m, d] · F2[q, d]
   tensor f64 H2(q, m)
-  H2[q, m]         := Zb2[q, m] / Sdb2[q]
+  H2[q, m]         := Ra2[q, m] + Y2[q, m]
 }
 
 /-- The binary32 sibling (`unrollProg32` of the prototype file): only the declarations that pin axis order. -/
 def unrolledProg32 : TLProgram := tlprog!{
-  Q1[q, h, k]      := W_Q1[h, k, m] · X[q, m]
-  K1[s, h, k]      := W_K1[h, k, m] · X[s, m]
-  V1[s, h, k]      := W_V1[h, k, m] · X[s, m]
-  tensor S1(h, q, s)
-  S1[h, q, s.]     := softmax(where s ≤ q)(Q1[q, h, k] · K1[s, h, k])
-  AO1[q, h, k]     := S1[h, q, s] · V1[s, h, k]
-  At1[q, m]        := W_O1[m, h, k] · AO1[q, h, k]
-  Za1[q, m]        := At1[q, m] + X[q, m]
-  Ssa1[q]          := Za1[q, m] · Za1[q, m] · Inv[m]
+  axis s : ℕ = 3
+  Ssa1[q]          := X[q, m] · X[q, m] · Inv[m]
   Vea1[q]          := Ssa1[q] + Eps[q]
   Sda1[q]          := sqrt(Vea1[q])
-  tensor A1(q, m)
-  A1[q, m]         := Za1[q, m] / Sda1[q]
-  F1[q, d]         := relu(W_in1[d, m] · A1[q, m])
-  Y1[q, m]         := W_out1[m, d] · F1[q, d]
-  Zb1[q, m]        := Y1[q, m] + A1[q, m]
-  Ssb1[q]          := Zb1[q, m] · Zb1[q, m] · Inv[m]
+  Na1[q, m]        := X[q, m] / Sda1[q] · G11[m]
+  Q1[q, h, k]      := W_Q1[h, k, m] · Na1[q, m]
+  K1[s, h, k]      := W_K1[h, k, m] · Na1[s, m]
+  V1[s, h, k]      := W_V1[h, k, m] · Na1[s, m]
+  tensor S1(h, q, s)
+  S1[h, q, s.]     := softmax(where s ≤ q)(Q1[q, h, k] · K1[s, h, k] · Sc[])
+  AO1[q, h, k]     := S1[h, q, s] · V1[s, h, k]
+  At1[q, m]        := W_O1[m, h, k] · AO1[q, h, k]
+  Ra1[q, m]        := X[q, m] + At1[q, m]
+  Ssb1[q]          := Ra1[q, m] · Ra1[q, m] · Inv[m]
   Veb1[q]          := Ssb1[q] + Eps[q]
   Sdb1[q]          := sqrt(Veb1[q])
+  Nb1[q, m]        := Ra1[q, m] / Sdb1[q] · G21[m]
+  F1[q, d]         := gelu(W_in1[d, m] · Nb1[q, m])
+  Y1[q, m]         := W_out1[m, d] · F1[q, d]
   tensor H1(q, m)
-  H1[q, m]         := Zb1[q, m] / Sdb1[q]
-  Q2[q, h, k]      := W_Q2[h, k, m] · H1[q, m]
-  K2[s, h, k]      := W_K2[h, k, m] · H1[s, m]
-  V2[s, h, k]      := W_V2[h, k, m] · H1[s, m]
-  tensor S2(h, q, s)
-  S2[h, q, s.]     := softmax(where s ≤ q)(Q2[q, h, k] · K2[s, h, k])
-  AO2[q, h, k]     := S2[h, q, s] · V2[s, h, k]
-  At2[q, m]        := W_O2[m, h, k] · AO2[q, h, k]
-  Za2[q, m]        := At2[q, m] + H1[q, m]
-  Ssa2[q]          := Za2[q, m] · Za2[q, m] · Inv[m]
+  H1[q, m]         := Ra1[q, m] + Y1[q, m]
+  Ssa2[q]          := H1[q, m] · H1[q, m] · Inv[m]
   Vea2[q]          := Ssa2[q] + Eps[q]
   Sda2[q]          := sqrt(Vea2[q])
-  tensor A2(q, m)
-  A2[q, m]         := Za2[q, m] / Sda2[q]
-  F2[q, d]         := relu(W_in2[d, m] · A2[q, m])
-  Y2[q, m]         := W_out2[m, d] · F2[q, d]
-  Zb2[q, m]        := Y2[q, m] + A2[q, m]
-  Ssb2[q]          := Zb2[q, m] · Zb2[q, m] · Inv[m]
+  Na2[q, m]        := H1[q, m] / Sda2[q] · G12[m]
+  Q2[q, h, k]      := W_Q2[h, k, m] · Na2[q, m]
+  K2[s, h, k]      := W_K2[h, k, m] · Na2[s, m]
+  V2[s, h, k]      := W_V2[h, k, m] · Na2[s, m]
+  tensor S2(h, q, s)
+  S2[h, q, s.]     := softmax(where s ≤ q)(Q2[q, h, k] · K2[s, h, k] · Sc[])
+  AO2[q, h, k]     := S2[h, q, s] · V2[s, h, k]
+  At2[q, m]        := W_O2[m, h, k] · AO2[q, h, k]
+  Ra2[q, m]        := H1[q, m] + At2[q, m]
+  Ssb2[q]          := Ra2[q, m] · Ra2[q, m] · Inv[m]
   Veb2[q]          := Ssb2[q] + Eps[q]
   Sdb2[q]          := sqrt(Veb2[q])
+  Nb2[q, m]        := Ra2[q, m] / Sdb2[q] · G22[m]
+  F2[q, d]         := gelu(W_in2[d, m] · Nb2[q, m])
+  Y2[q, m]         := W_out2[m, d] · F2[q, d]
   tensor H2(q, m)
-  H2[q, m]         := Zb2[q, m] / Sdb2[q]
+  H2[q, m]         := Ra2[q, m] + Y2[q, m]
 }
 
 /-! ### Scan survey (A3): the existing Lean scan fixtures through the same differential
@@ -812,9 +825,9 @@ def scanSurvey64 : IO (Array String) := do
 
 /-! ### Two-layer scan transformer with a head (`transformer_head`, `transformer_head32`)
 
-`scanProg` plus, AFTER the scan: a final RMSNorm of the pre-norm residual `Zf = H[q, m, 2] + X[q, m]` (the last
-layer's slice read pinned, plus the embedding, so `Zf` is not already unit-RMS; statements as the
-per-layer norm), an unembedding `Logits[q, v] = W_U[v, m] · Hf[q, m]` over a new
+`scanProg` plus, AFTER the scan: a final RMSNorm with learned gain `Gf[m]` of the residual stream
+`H[q, m, 2]` (the last layer's slice, pinned read; the embedding is NOT added back: standard pre-norm), an
+unembedding `Logits[q, v] = W_U[v, m] · Hf[q, m]` over a new
 vocabulary axis `v` of extent 5 (differs from every other extent: q=3, m=4, h=2, k=2, d=4, s=3, l=3), and
 a softmax over the vocabulary. `W_U` is a separate input (no weight tying); the scan weights are the SAME
 arrays as `scanEnv64`/`scanEnv32`. -/
@@ -822,42 +835,43 @@ arrays as `scanEnv64`/`scanEnv32`. -/
 def trWU : Array Float :=
   #[0.5, -0.3, 0.8, 0.1,  -0.6, 0.4, 0.2, 0.7,  0.3, 0.9, -0.5, -0.2,  0.15, -0.45, 0.65, 0.35,
     -0.25, 0.55, -0.7, 0.05]
+/-- Final-norm gain `Gf[m]`: distinct, positive, different from every per-layer gain. -/
+def trGf : Array Float := #[1.15, 0.85, 1.30, 0.92]
 
 def headProg : TLProgram := tlprog!{
   iter l = 3
   axis s : ℕ = 3
   axis v : ℕ = 5
   tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
-  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), W_U(v, m)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc(), Gf(m), W_U(v, m)
   tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
   tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
-  tensor f64 Z1(q, m), Ss1(q), Ve1(q), Sd1(q), A(q, m), F(q, d), Y(q, m)
-  tensor f64 Z2(q, m), Ss2(q), Ve2(q), Sd2(q)
-  tensor f64 Zf(q, m), Ssf(q), Vef(q), Sdf(q), Hf(q, m), Logits(q, v), P(q, v)
+  tensor f64 R1(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  tensor f64 Ssf(q), Vef(q), Sdf(q), Hf(q, m), Logits(q, v), P(q, v)
   H[q, m, 0]       := X[q, m]
-  Q[q, h, k]       := W_Q[l, h, k, m] · H[q, m, l]
-  K[s, h, k]       := W_K[l, h, k, m] · H[s, m, l]
-  V[s, h, k]       := W_V[l, h, k, m] · H[s, m, l]
-  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
-  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
-  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
-  Z1[q, m]         := Attn[q, m] + H[q, m, l]
-  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
   Ve1[q]           := Ss1[q] + Eps[q]
   Sd1[q]           := sqrt(Ve1[q])
-  A[q, m]          := Z1[q, m] / Sd1[q]
-  F[q, d]          := relu(W_in[l, d, m] · A[q, m])
-  Y[q, m]          := W_out[l, m, d] · F[q, d]
-  Z2[q, m]         := Y[q, m] + A[q, m]
-  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
   Ve2[q]           := Ss2[q] + Eps[q]
   Sd2[q]           := sqrt(Ve2[q])
-  H[q, m, l +1]    := Z2[q, m] / Sd2[q]
-  Zf[q, m]         := H[q, m, 2] + X[q, m]
-  Ssf[q]           := Zf[q, m] · Zf[q, m] · Inv[m]
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+  Ssf[q]           := H[q, m, 2] · H[q, m, 2] · Inv[m]
   Vef[q]           := Ssf[q] + Eps[q]
   Sdf[q]           := sqrt(Vef[q])
-  Hf[q, m]         := Zf[q, m] / Sdf[q]
+  Hf[q, m]         := H[q, m, 2] / Sdf[q] · Gf[m]
   Logits[q, v]     := W_U[v, m] · Hf[q, m]
   P[q, v.]         := softmax(Logits[q, v])
 }
@@ -869,34 +883,35 @@ def headProg32 : TLProgram := tlprog!{
   tensor H(q, m, l)
   tensor S(h, q, s)
   H[q, m, 0]       := X[q, m]
-  Q[q, h, k]       := W_Q[l, h, k, m] · H[q, m, l]
-  K[s, h, k]       := W_K[l, h, k, m] · H[s, m, l]
-  V[s, h, k]       := W_V[l, h, k, m] · H[s, m, l]
-  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
-  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
-  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
-  Z1[q, m]         := Attn[q, m] + H[q, m, l]
-  Ss1[q]           := Z1[q, m] · Z1[q, m] · Inv[m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
   Ve1[q]           := Ss1[q] + Eps[q]
   Sd1[q]           := sqrt(Ve1[q])
-  A[q, m]          := Z1[q, m] / Sd1[q]
-  F[q, d]          := relu(W_in[l, d, m] · A[q, m])
-  Y[q, m]          := W_out[l, m, d] · F[q, d]
-  Z2[q, m]         := Y[q, m] + A[q, m]
-  Ss2[q]           := Z2[q, m] · Z2[q, m] · Inv[m]
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
   Ve2[q]           := Ss2[q] + Eps[q]
   Sd2[q]           := sqrt(Ve2[q])
-  H[q, m, l +1]    := Z2[q, m] / Sd2[q]
-  Zf[q, m]         := H[q, m, 2] + X[q, m]
-  Ssf[q]           := Zf[q, m] · Zf[q, m] · Inv[m]
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+  Ssf[q]           := H[q, m, 2] · H[q, m, 2] · Inv[m]
   Vef[q]           := Ssf[q] + Eps[q]
   Sdf[q]           := sqrt(Vef[q])
-  Hf[q, m]         := Zf[q, m] / Sdf[q]
+  Hf[q, m]         := H[q, m, 2] / Sdf[q] · Gf[m]
   Logits[q, v]     := W_U[v, m] · Hf[q, m]
   P[q, v.]         := softmax(Logits[q, v])
 }
-def headEnv64 : HashMap String DenseTensor := scanEnv64.insert "W_U" (t64 [5, 4] trWU)
-def headEnv32 : NamedDenseEnv32 := scanEnv32.insert "W_U" (t32 [5, 4] trWU)
+def headEnv64 : HashMap String DenseTensor :=
+  (scanEnv64.insert "W_U" (t64 [5, 4] trWU)).insert "Gf" (t64 [4] trGf)
+def headEnv32 : NamedDenseEnv32 :=
+  (scanEnv32.insert "W_U" (t32 [5, 4] trWU)).insert "Gf" (t32 [4] trGf)
 
 /-! ### Post-scan statements with the scan axis as an ordinary axis (`scan_postrole`, `scan_postrole32`)
 
