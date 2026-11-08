@@ -1,0 +1,112 @@
+[
+  {
+    "label": "T6 boundary coordinate reversal (copied numeric)",
+    "expect": ["Tactic `decide`", "IndexedWitnessObservationProbeTest.Axis.boundary_cells uses #[sorryAx]"],
+    "task": "6",
+    "file": "experiments/indexed_execution/IndexedWitnessObservationProbe.lean",
+    "old": "def boundaryEnvEquivCopy :\n    (outputInterface A).Env \u2243 (inputInterface B).Env :=\n  (Equiv.piCongrLeft'\n    (fun o : {t : \u03c3A.Tensor // A.program.output t = true} =>\n      Coord (\u03c3A.signature o.val).axes \u2192 \u211a) wire.matched.symm).trans\n    (Equiv.piCongrRight (fun i =>\n      Equiv.arrowCongr (wire.domain i).coord.symm (Equiv.refl \u211a)))\n",
+    "new": "noncomputable def boundaryEnvEquivCopy :\n    (outputInterface A).Env \u2243 (inputInterface B).Env :=\n  (boundaryEnvEquiv A B wire).trans (reverseEnvironment (inputInterface B))\n",
+    "targets": [
+      "IndexedWitnessObservationProbeTest"
+    ]
+  },
+  {
+    "label": "T6 zero projected output (copied numeric; witnesses intact)",
+    "expect": ["Tactic `decide`", "IndexedWitnessObservationProbeTest.Hidden.good_option_cell uses #[sorryAx]"],
+    "task": "6",
+    "file": "experiments/indexed_execution/IndexedWitnessObservationProbe.lean",
+    "old": "def componentSpanCopy {\u03c3 : LeanNCD.Semantics.Declarations Unit}\n    [Fintype \u03c3.Tensor] [DecidableEq \u03c3.Tensor]\n    (A : IndexedComponentComposition.MatchedComponent \u03c3) :\n    Span (inputInterface A) (outputInterface A) where\n  W := \u03a3 \u03b7 : A.program.Input,\n    {\u03c1 : LeanNCD.Semantics.Store RationalReference.Carrier \u03c3 //\n      A.program.Models RationalReference.ops \u03b7 \u03c1}\n  left := fun w => inputEnv A w.1\n  right := fun w => (outputEquiv A).symm (A.program.outputProjection w.2.val)\n",
+    "new": "def componentSpanCopy {\u03c3 : LeanNCD.Semantics.Declarations Unit}\n    [Fintype \u03c3.Tensor] [DecidableEq \u03c3.Tensor]\n    (A : IndexedComponentComposition.MatchedComponent \u03c3) :\n    Span (inputInterface A) (outputInterface A) where\n  W := \u03a3 \u03b7 : A.program.Input,\n    {\u03c1 : LeanNCD.Semantics.Store RationalReference.Carrier \u03c3 //\n      A.program.Models RationalReference.ops \u03b7 \u03c1}\n  left := fun w => inputEnv A w.1\n  right := fun _ _ _ => 0\n",
+    "targets": [
+      "IndexedWitnessObservationProbeTest"
+    ]
+  },
+  {
+    "label": "T6 shifted UID (copied metadata; injection retained)",
+    "expect": ["Tactic `decide`", "IndexedWitnessObservationProbeTest.Empty.metadata uses #[sorryAx]"],
+    "task": "6",
+    "file": "experiments/indexed_execution/IndexedWitnessObservationProbe.lean",
+    "old": "noncomputable def roleInterfaceCopy (role : \u03c3.Tensor \u2192 Bool) : WholeInterface where\n  Tensor := {t : \u03c3.Tensor // role t = true}\n  uid := fun t => \u03c3.uid t.val\n  unique := by\n    intro a b h\n    exact Subtype.ext (\u03c3.unique h)\n  signature := fun t => \u03c3.signature t.val\n  ports := Finset.univ.toList\n  ports_nodup := Finset.nodup_toList _\n  ports_complete := by intro t; simp\n",
+    "new": "noncomputable def roleInterfaceCopy (role : \u03c3.Tensor \u2192 Bool) : WholeInterface where\n  Tensor := {t : \u03c3.Tensor // role t = true}\n  uid := fun t => \u03c3.uid t.val + 1\n  unique := by\n    intro a b h\n    exact Subtype.ext (\u03c3.unique (Nat.add_right_cancel h))\n  signature := fun t => \u03c3.signature t.val\n  ports := Finset.univ.toList\n  ports_nodup := Finset.nodup_toList _\n  ports_complete := by intro t; simp\n",
+    "targets": [
+      "IndexedWitnessObservationProbeTest"
+    ]
+  },
+  {
+    "label": "T6 zero present inputs (copied numeric; binding remains Some)",
+    "expect": ["Tactic `decide`", "IndexedWitnessObservationProbeTest.Triple.input_copy_cells uses #[sorryAx]"],
+    "task": "6",
+    "file": "experiments/indexed_execution/IndexedWitnessObservationProbe.lean",
+    "old": "def envInputCopy (A : MatchedComponent \u03c3) (x : (inputInterface A).Env) :\n    A.program.Input :=\n  \u27e8fun t => if h : A.program.input t = true then some (x \u27e8t, h\u27e9) else none,\n    by intro t; by_cases h : A.program.input t = true <;> simp [h]\u27e9\n",
+    "new": "def envInputCopy (A : MatchedComponent \u03c3) (x : (inputInterface A).Env) :\n    A.program.Input :=\n  \u27e8fun t => if h : A.program.input t = true then some (fun _ => 0) else none,\n    by intro t; by_cases h : A.program.input t = true <;> simp [h]\u27e9\n",
+    "targets": [
+      "IndexedWitnessObservationProbeTest"
+    ]
+  },
+  {
+    "label": "T6 reversed external input (copied numeric)",
+    "expect": ["Tactic `decide`", "IndexedWitnessObservationProbeTest.Triple.input_copy_cells uses #[sorryAx]"],
+    "task": "6",
+    "file": "experiments/indexed_execution/IndexedWitnessObservationProbe.lean",
+    "old": "def compositeInputEquivCopy :\n    (inputInterface A).Env \u2243 (inputInterface (compose A B wire)).Env :=\n  ((inputEquiv A).trans\n    { toFun := liftInput A B wire\n      invFun := restrictInput A B wire\n      left_inv := restrictInput_liftInput A B wire\n      right_inv := liftInput_restrictInput A B wire }).trans\n    (inputEquiv (compose A B wire)).symm\n",
+    "new": "noncomputable def compositeInputEquivCopy :\n    (inputInterface A).Env \u2243 (inputInterface (compose A B wire)).Env :=\n  (compositeInputEquiv A B wire).trans\n    (reverseEnvironment (inputInterface (compose A B wire)))\n",
+    "targets": [
+      "IndexedWitnessObservationProbeTest"
+    ]
+  },
+  {
+    "label": "T6 negated external output (copied numeric)",
+    "expect": ["Tactic `decide`", "IndexedWitnessObservationProbeTest.Axis.external_copy_cells uses #[sorryAx]"],
+    "task": "6",
+    "file": "experiments/indexed_execution/IndexedWitnessObservationProbe.lean",
+    "old": "def compositeOutputEquivCopy :\n    (outputInterface (compose A B wire)).Env \u2243 (outputInterface B).Env :=\n  (Equiv.piCongrLeft'\n    (fun t : {t : (declarations A B).Tensor //\n        (program A B wire).output t = true} =>\n      Coord ((declarations A B).signature t.val).axes \u2192 \u211a)\n    (outputIndexEquiv A B wire))\n",
+    "new": "def compositeOutputEquivCopy :\n    (outputInterface (compose A B wire)).Env \u2243 (outputInterface B).Env :=\n  (Equiv.piCongrLeft'\n    (fun t : {t : (declarations A B).Tensor //\n        (program A B wire).output t = true} =>\n      Coord ((declarations A B).signature t.val).axes \u2192 \u211a)\n    (outputIndexEquiv A B wire)).trans\n    (Equiv.piCongrRight (fun _ => Equiv.arrowCongr (Equiv.refl _)\n      { toFun := fun q : \u211a => -q, invFun := fun q : \u211a => -q,\n        left_inv := neg_neg, right_inv := neg_neg }))\n",
+    "targets": [
+      "IndexedWitnessObservationProbeTest"
+    ]
+  },
+  {
+    "label": "T6 hidden witness collapse (donor substitution; numeric)",
+    "expect": ["Tactic `decide`", "IndexedWitnessObservationProbeTest.Hidden.cells uses #[sorryAx]"],
+    "task": "6",
+    "file": "experiments/indexed_execution/IndexedWitnessObservationProbeTest.lean",
+    "old": "IndexedWitnessCompositionTest.Hidden.one\n",
+    "new": "IndexedWitnessCompositionTest.Hidden.zero\n",
+    "targets": [
+      "IndexedWitnessObservationProbeTest"
+    ]
+  },
+  {
+    "label": "T6 audit reads output not private cell (donor locator; numeric)",
+    "expect": ["Tactic `decide`", "IndexedWitnessObservationProbeTest.Audit.total_cells uses #[sorryAx]"],
+    "task": "6",
+    "file": "experiments/indexed_execution/IndexedWitnessObservationProbeTest.lean",
+    "old": "IndexedWitnessCompositionTest.Audit.totalWired.val.2.2.val \u27e8strictAudit, ()\u27e9",
+    "new": "IndexedWitnessCompositionTest.Audit.totalWired.val.2.2.val \u27e8consumerOut, ()\u27e9",
+    "targets": [
+      "IndexedWitnessObservationProbeTest"
+    ]
+  },
+  {
+    "label": "T6 lost right-bracket private store (donor store substitution; numeric)",
+    "expect": ["Tactic `decide`", "IndexedWitnessObservationProbeTest.Triple.private_stores uses #[sorryAx]"],
+    "task": "6",
+    "file": "experiments/indexed_execution/IndexedWitnessObservationProbeTest.lean",
+    "old": "def rightStore := rightWitness.2.val",
+    "new": "def rightStore : Store RationalReference.Carrier\n    (declarations A (compose B C bc)) := fun _ => 0",
+    "targets": [
+      "IndexedWitnessObservationProbeTest"
+    ]
+  },
+  {
+    "label": "T6 total substituted for strict absence (donor theorem; NOT numeric)",
+    "expect": ["Type mismatch", "IndexedWitnessObservationProbeTest.Audit.strict_empty uses #[sorryAx]"],
+    "task": "6",
+    "file": "experiments/indexed_execution/IndexedWitnessObservationProbeTest.lean",
+    "old": "theorem strict_empty : IsEmpty (componentSpanCopy IndexedWitnessCompositionTest.Audit.strict).W :=",
+    "new": "theorem strict_empty : IsEmpty (componentSpanCopy IndexedWitnessCompositionTest.Audit.total).W :=",
+    "targets": [
+      "IndexedWitnessObservationProbeTest"
+    ]
+  }
+]
