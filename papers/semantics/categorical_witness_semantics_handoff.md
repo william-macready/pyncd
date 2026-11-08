@@ -184,3 +184,5 @@ registry, interfaces or production imports. No broader St/Br/PROP, monoidal
 or numerical/backend claims follow from the ordinary category laws.
 
 Any follow-on implementation or repair requires a separately agreed scope.
+The [source-category and functor brief](categorical_source_functor_handoff.md)
+is the separate handoff for the next denotational implementation slice.
