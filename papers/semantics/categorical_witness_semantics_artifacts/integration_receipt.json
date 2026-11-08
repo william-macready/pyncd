@@ -1,0 +1,20 @@
+{
+  "merge_commit": "f2abbe8a8aaf910a952b5bac49519f5d80734445",
+  "executed_topic_tip": "2e573e676ab29d5bc0d9c12e76ade936c0005f08",
+  "merged_main_build": "pass",
+  "build_targets": [
+    "LeanNCD",
+    "Tests",
+    "IndexedExecutionExperiment"
+  ],
+  "build_jobs": 8911,
+  "protected_semantics_contents_sha256": "467f94f6890675822e3972fc72d8d79ebdf3f661d48cdb7f5449606f4f568f25",
+  "protected_edit_preserved": true,
+  "topic_branch_deleted": "agents/categorical-witness-semantics-setup",
+  "task_worktrees_removed": [
+    "/Users/williammacready/code/python/pyncd.worktrees/categorical-witness-semantics-setup",
+    "/Users/williammacready/code/python/pyncd.worktrees/categorical-witness-semantics-prototype"
+  ],
+  "other_worktrees_preserved": true,
+  "pushed": false
+}
