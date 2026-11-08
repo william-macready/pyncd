@@ -1016,8 +1016,9 @@ Expression helpers remain shared; this is not an independent numerical oracle.
 No rank is required for static construction or correspondence. Appending
 upstream priorities does not by itself prove that all upstream work finishes
 before any downstream action. Rank stitching, that phase/projection theorem,
-and component associativity/identities are still open. Complete-model gluing
-and restricted denotation are the separate proved results in Section 6.9.
+and process associativity/identities are still open. Complete-model gluing
+and restricted denotation are the separate proved results in Section 6.9;
+Section 10 records the proved witness-span category and denotational coherence.
 The result belongs only to the non-default `IndexedExecutionExperiment`,
 not a production backend or general category library.
 See the [composition record](component_composition_record.md) for the exact
@@ -1442,9 +1443,11 @@ The first-enabled scheduler can skip blocked upstream work without those
 additional hypotheses. Static sealing and model gluing are not runtime
 completion.
 
-Component associativity and identities likewise need their own observation
-equivalence: inserting a core copy adds events, while input-as-output
-aliases violate the core's defined-output rule.
+Denotational associativity is now proved through compatible complete-model
+triples and explicit interface reindexing. The semantic target has identity
+spans; this does not supply source identities or process laws. Inserting a
+core copy adds events, while input-as-output aliases violate the core's
+defined-output rule.
 
 ### 9.3. Why unrestricted partial-function composition is unsafe
 
@@ -1478,9 +1481,10 @@ is a span: a set of complete models equipped with maps to its input
 and output environments. Composing such spans pairs models that
 agree at the shared boundary and retains the witnesses.
 
-The witness-level composition is now proved for the specified scoped profile.
-Packaging it as a span-based categorical interpretation, proving its laws
-and relating it to process observations remain separate work.
+The witness-level composition is now packaged as a span-based categorical
+interpretation for the specified scoped profile. Its target category laws
+and nested denotational coherence are proved; relating it to process
+observations remains separate work.
 Unlike an output-only relation, it does not identify different internal
 models prematurely.
 
@@ -1515,12 +1519,12 @@ different branches of the work.
 | 7. Prove category laws and units | Associativity through compatible model triples; identity spans and, where needed, administrative wire syntax | Makes repeated composition coherent and gives a genuine unit without silently treating extra computation events as no work |
 | 8. Connect process and implementation views | Ranked phase/projection and trace proofs, followed by observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest |
 
-A concrete candidate for Step 6 is the **witness-span interpretation**.
+A concrete realization of Step 6 is the **witness-span interpretation**.
 For a whole-tensor interface $X$, write $\mathsf{Env}(X)$ for its space of
 valid environments, retaining the declared tensor/domain information.
 For a component $P:X\to Y$, let $W_P$ contain pairs $(\eta,\rho)$ of
 validated input $\eta$ and complete model store $\rho$ on that input.
-Its proposed denotation is
+Its denotation is
 
 $$
 \mathsf{Env}(X)
@@ -1533,9 +1537,13 @@ $$
 The left map returns the input environment; the right map projects the
 whole model to the output interface. Composition forms the set of compatible
 witness pairs over the explicitly transported boundary, a **pullback** in
-sets. The proved witness-gluing bijection supplies the comparison between
-that construction and the composite's model witnesses. The interpretation
-still needs its own formal packaging and coherence laws.
+sets. The all-input lift of the proved witness-gluing bijection supplies a span
+isomorphism with the composite's model witnesses, commuting with both
+exterior legs. Explicit graph spans carry boundary and exterior interface
+transports. `IndexedWitnessSemantics` packages an ordinary category of
+small-apex spans up to span isomorphism: objects and homs live in `Type 1`,
+while each environment and complete-model witness apex lives in `Type 0`.
+It does not claim same-universe local smallness.
 
 Using spans up to **span isomorphism** means using a bijection of witness
 sets that commutes with both boundary maps. This cannot collapse two distinct
@@ -1574,16 +1582,20 @@ categorical construction elsewhere in the repository.
 | Static sealed composite and its match | Proved | [Composition record](component_composition_record.md); two local matched components plus an explicit whole-tensor boundary |
 | Complete-model restriction/gluing | Proved, rank-independent | [Model-gluing record](component_model_gluing_record.md); full compatible witnesses, with no rank, existence or uniqueness premise |
 | Successive partial-function domain and denotation | Proved, conditional on both components' `AtMostOneModels` hypotheses | [Denotation theorem](../../leanncd/experiments/indexed_execution/IndexedComponentModelDenotation.lean); uniqueness is not totality |
-| Witness-span interpretation across all inputs | Proposed packaging; principal composition ingredient proved | `witnessesEquiv` supplies the model comparison, but the categorical interpretation and chosen quotient/coherence structure are not yet implemented |
-| Component categorical associativity and identities | Open | Need coherent boundary transport, associators and units under the declared equivalence; no event-exact core copy identity |
+| Witness-span interpretation across all inputs | Proved, composition-preserving with explicit boundary and exterior transports | [Witness composition](../../leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean); `allInputWiredEquiv`, `compositeWiredIso` and `composition_hom` retain whole private model stores and commute with both legs |
+| Semantic target category laws and units | Proved | [Span category](../../leanncd/experiments/indexed_execution/IndexedWitnessSpan.lean); span-isomorphism quotient, pullback associativity and identity-span unit laws; graph spans supply administrative interface transports |
+| Nested component denotational associativity | Proved after explicit interface reindexing | [Witness coherence](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean); both actual bracketings correspond to the same compatible model triple, not equal raw IDs or programs |
+| Injective-left partial-map interpretation | Proved, restricted to at-most-one complete model per input | [Restricted spans](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean); quotient invariance and domain/value laws, connected to the authoritative admissibility and denotation theorems; uniqueness does not imply existence |
+| Source category, source functor and process units | Open | Target identities do not construct a core identity or a source category; copies add events and aliases violate `output_defined` |
 | Rank stitching and sequential phase/projection | Open | Individual ranked progress does not compose certificates or prove the whole upstream-before-downstream phase law |
 | Event-sensitive process category | Open | For the proposed sealed-sequential interpretation, needs operational composition and a justified event/state observation equivalence, not merely span isomorphism |
 | Categorical frontend/backend interpretation and refinement | Not established for this proposed category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
 
-The current position is therefore **proved compositional semantic ingredients,
-not yet a complete categorical semantics**. The next denotational task is to
-package the witness interpretation and prove its laws. Rank/phase and
-trace-projection form the independent operational task. General St/Br
+The current position is therefore **a proved denotational witness-span
+category and composition-preserving interpretation**, not an event-sensitive
+source/process category. See the [witness semantics record](categorical_witness_semantics_record.md)
+for its release evidence and limits. Rank/phase and trace-projection form the
+independent operational task. General St/Br
 packaging, numerical interpretation and implementation refinement must be
 connected to the chosen semantics by their own arguments.
 
@@ -1611,18 +1623,17 @@ successive denotation domain and values.
 Their fixtures, audits, controls and reviews add evidence without
 replacing the generic proofs or changing the language's strict partiality.
 
-This is a sound operational bridge for the specified rational profile,
-not yet a complete categorical semantics. The remaining work has two
-branches: witness-span packaging and denotational category laws, and rank
-stitching/phase-projection followed by event-sensitive process laws.
-Each needs its stated observation equivalence; Section 10 records their
-different goals and current status.
+This is a sound operational bridge and a proved denotational witness-span
+interpretation for the specified rational profile, not an event-sensitive
+source/process category. Rank stitching/phase-projection followed by process
+laws remains open with its own observation equivalence; Section 10 records
+the different goals and current status.
 Reproving execution correspondence or reconstructing an entire match for
 each compatible composite is no longer necessary.
 
 The choice of a general categorical presentation remains open.
 Automatic construction of leaf source-contract matches, broader interfaces,
-categorical laws and physical implementation refinement remain separate
+source/process categorical laws and physical implementation refinement remain separate
 obligations. The proved model-level composition law does not substitute for
 an execution-phase or implementation-refinement theorem.
 

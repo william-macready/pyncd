@@ -1,0 +1,336 @@
+diff --git a/leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean b/leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean
+new file mode 100644
+index 00000000..2f7a1591
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean
+@@ -0,0 +1,299 @@
++import IndexedWitnessSpan
++import IndexedComponentComposition
++import IndexedComponentModelWitnesses
++
++namespace IndexedWitness
++
++open LeanNCD.Semantics
++open IndexedComponentComposition
++open CategoryTheory
++
++variable {σA σB : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB)
++variable (wire : Boundary A B)
++
++/-- The boundary points from downstream input ports to upstream output ports.
++    Its forward action on environments necessarily goes in the opposite direction. -/
++def boundaryEnvEquiv :
++    (outputInterface A).Env ≃ (inputInterface B).Env :=
++  (Equiv.piCongrLeft'
++    (fun o : {t : σA.Tensor // A.program.output t = true} =>
++      Coord (σA.signature o.val).axes → ℚ) wire.matched.symm).trans
++    (Equiv.piCongrRight (fun i =>
++      Equiv.arrowCongr (wire.domain i).coord.symm (Equiv.refl ℚ)))
++
++theorem boundaryEnv_apply (x : (outputInterface A).Env)
++    (i : (inputInterface B).Tensor)
++    (p : Coord ((inputInterface B).signature i).axes) :
++    boundaryEnvEquiv A B wire x i p =
++      x (wire.matched i) ((wire.domain i).coord p) := by
++  change ((Equiv.piCongrRight (fun j =>
++      Equiv.arrowCongr (wire.domain j).coord.symm (Equiv.refl ℚ)))
++    ((Equiv.piCongrLeft'
++      (fun o : {t : σA.Tensor // A.program.output t = true} =>
++        Coord (σA.signature o.val).axes → ℚ) wire.matched.symm) x)) i p = _
++  rfl
++
++def Span.graph {X Y : WholeInterface} (e : X.Env ≃ Y.Env) : Span X Y where
++  W := X.Env
++  left := id
++  right := e
++
++def graphHom {X Y : WholeInterface} (e : X.Env ≃ Y.Env) : X ⟶ Y :=
++  Quotient.mk _ (Span.graph e)
++
++def SpanIso.graphIdentity (X : WholeInterface) :
++    SpanIso (Span.graph (Equiv.refl X.Env)) (Span.identity X) :=
++  SpanIso.refl _
++
++def SpanIso.graphComp {X Y Z : WholeInterface}
++    (e : X.Env ≃ Y.Env) (f : Y.Env ≃ Z.Env) :
++    SpanIso ((Span.graph e).pullback (Span.graph f)) (Span.graph (e.trans f)) where
++  witness :=
++    { toFun := fun p => p.val.1
++      invFun := fun x => ⟨(x, e x), rfl⟩
++      left_inv := by
++        rintro ⟨⟨x, y⟩, h⟩
++        apply Subtype.ext
++        exact Prod.ext rfl h
++      right_inv := fun _ => rfl }
++  left := fun _ => rfl
++  right := by
++    rintro ⟨⟨x, y⟩, h⟩
++    exact congrArg f h
++
++theorem graphHom_identity (X : WholeInterface) :
++    graphHom (Equiv.refl X.Env) = 𝟙 X :=
++  Quotient.sound ⟨SpanIso.graphIdentity X⟩
++
++theorem graphHom_comp {X Y Z : WholeInterface}
++    (e : X.Env ≃ Y.Env) (f : Y.Env ≃ Z.Env) :
++    graphHom e ≫ graphHom f = graphHom (e.trans f) :=
++  Quotient.sound ⟨SpanIso.graphComp e f⟩
++
++/-- Rebase both external legs without identifying the interface objects. -/
++def Span.rebase {X X' Y Y' : WholeInterface}
++    (F : Span X Y) (e : X'.Env ≃ X.Env) (f : Y.Env ≃ Y'.Env) :
++    Span X' Y' where
++  W := F.W
++  left := fun w => e.symm (F.left w)
++  right := fun w => f (F.right w)
++
++def SpanIso.rebaseGraphs {X X' Y Y' : WholeInterface}
++    (F : Span X Y) (e : X'.Env ≃ X.Env) (f : Y.Env ≃ Y'.Env) :
++    SpanIso (((Span.graph e).pullback F).pullback (Span.graph f))
++      (F.rebase e f) where
++  witness :=
++    { toFun := fun p => p.val.1.val.2
++      invFun := fun w =>
++        ⟨(⟨(e.symm (F.left w), w), Equiv.apply_symm_apply e _⟩,
++          F.right w), rfl⟩
++      left_inv := by
++        rintro ⟨⟨⟨⟨x, w⟩, hx⟩, y⟩, hy⟩
++        apply Subtype.ext
++        apply Prod.ext
++        · apply Subtype.ext
++          apply Prod.ext
++          · exact (Equiv.symm_apply_eq e).mpr hx.symm
++          · rfl
++        · exact hy
++      right_inv := fun _ => rfl }
++  left := by
++    rintro ⟨⟨⟨⟨x, w⟩, hx⟩, y⟩, hy⟩
++    exact (Equiv.symm_apply_eq e).mpr hx.symm
++  right := by
++    rintro ⟨⟨⟨⟨x, w⟩, hx⟩, y⟩, hy⟩
++    exact congrArg f hy
++
++def compositeInputEquiv :
++    (inputInterface A).Env ≃ (inputInterface (compose A B wire)).Env :=
++  ((inputEquiv A).trans
++    { toFun := liftInput A B wire
++      invFun := restrictInput A B wire
++      left_inv := restrictInput_liftInput A B wire
++      right_inv := liftInput_restrictInput A B wire }).trans
++    (inputEquiv (compose A B wire)).symm
++
++def compositeOutputEquiv :
++    (outputInterface (compose A B wire)).Env ≃ (outputInterface B).Env :=
++  (Equiv.piCongrLeft'
++    (fun t : {t : (declarations A B).Tensor //
++        (program A B wire).output t = true} =>
++      Coord ((declarations A B).signature t.val).axes → ℚ)
++    (outputIndexEquiv A B wire))
++
++theorem compositeInput_restrict (η : (compose A B wire).program.Input) :
++    (compositeInputEquiv A B wire).symm (inputEnv (compose A B wire) η) =
++      inputEnv A (restrictInput A B wire η) := by
++  apply (compositeInputEquiv A B wire).injective
++  rw [Equiv.apply_symm_apply]
++  change inputEnv (compose A B wire) η =
++    inputEnv (compose A B wire)
++      (liftInput A B wire
++        ((inputEquiv A) (inputEnv A (restrictInput A B wire η))))
++  have he : (inputEquiv A) (inputEnv A (restrictInput A B wire η)) =
++      restrictInput A B wire η := envInput_inputEnv A _
++  rw [he, liftInput_restrictInput]
++
++theorem compositeOutput_lift (out : B.program.Output) :
++    compositeOutputEquiv A B wire (liftOutput A B wire out) = out := by
++  funext t p
++  rfl
++
++theorem boundaryEnv_projection (w : (componentSpan A).W) :
++    boundaryEnvEquiv A B wire ((componentSpan A).right w) =
++      inputEnv B (boundaryInput A B wire w.2.val) := by
++  funext i p
++  rw [boundaryEnv_apply]
++  have h : (outputEquiv A).symm (A.program.outputProjection w.2.val) =
++      A.program.outputProjection w.2.val := rfl
++  change ((outputEquiv A).symm (A.program.outputProjection w.2.val))
++    (wire.matched i) ((wire.domain i).coord p) =
++      inputEnv B (boundaryInput A B wire w.2.val) i p
++  rw [h]
++  simp [inputEnv, boundaryInput, LeanNCD.Semantics.Program.outputProjection]
++  congr 1
++
++noncomputable def wiredSpan :
++    Span (inputInterface A) (outputInterface B) :=
++  ((componentSpan A).pullback (Span.graph (boundaryEnvEquiv A B wire))).pullback
++    (componentSpan B)
++
++def toWired (w : (componentSpan (compose A B wire)).W) :
++    (wiredSpan A B wire).W := by
++  let η := restrictInput A B wire w.1
++  let ρ : CompositeWitness A B wire η :=
++    ⟨w.2.val, by
++      rw [liftInput_restrictInput]
++      exact w.2.property⟩
++  let pair := (witnessesEquiv A B wire η) ρ
++  let wA : (componentSpan A).W := ⟨η, pair.1⟩
++  let wB : (componentSpan B).W :=
++    ⟨boundaryInput A B wire pair.1.val, pair.2⟩
++  exact ⟨(⟨(wA, (componentSpan A).right wA), rfl⟩, wB),
++    boundaryEnv_projection A B wire wA⟩
++
++def fromWired (p : (wiredSpan A B wire).W) :
++    (componentSpan (compose A B wire)).W := by
++  let wA := p.val.1.val.1
++  let wB := p.val.2
++  have henv :
++      inputEnv B (boundaryInput A B wire wA.2.val) =
++        inputEnv B wB.1 :=
++    (boundaryEnv_projection A B wire wA).symm.trans
++      ((congrArg (boundaryEnvEquiv A B wire) p.val.1.property).trans p.property)
++  have hinput : boundaryInput A B wire wA.2.val = wB.1 :=
++    (inputEquiv B).symm.injective henv
++  let pair : CompatibleWitnesses A B wire wA.1 :=
++    ⟨wA.2, ⟨wB.2.val, hinput.symm ▸ wB.2.property⟩⟩
++  exact ⟨liftInput A B wire wA.1, (witnessesEquiv A B wire wA.1).symm pair⟩
++
++theorem fromWired_toWired (w : (componentSpan (compose A B wire)).W) :
++    fromWired A B wire (toWired A B wire w) = w := by
++  cases w with
++  | mk η ρ =>
++    apply Sigma.ext
++    · exact liftInput_restrictInput A B wire η
++    · apply (Subtype.heq_iff_coe_eq (fun store => by
++        change (program A B wire).Models RationalReference.ops
++          (liftInput A B wire (restrictInput A B wire η)) store ↔
++          (program A B wire).Models RationalReference.ops η store
++        rw [liftInput_restrictInput])).2
++      change ((witnessesEquiv A B wire (restrictInput A B wire η)).symm
++        ((witnessesEquiv A B wire (restrictInput A B wire η))
++          ⟨ρ.val, by
++            rw [liftInput_restrictInput]
++            exact ρ.property⟩)).val = ρ.val
++      rw [Equiv.symm_apply_apply]
++
++theorem toWired_fromWired (p : (wiredSpan A B wire).W) :
++    toWired A B wire (fromWired A B wire p) = p := by
++  rcases p with ⟨⟨⟨⟨wA, x⟩, hx⟩, ⟨ηB, ρB⟩⟩, hy⟩
++  change (componentSpan A).right wA = x at hx
++  subst x
++  have hinput : boundaryInput A B wire wA.2.val = ηB :=
++    (inputEquiv B).symm.injective
++      ((boundaryEnv_projection A B wire wA).symm.trans hy)
++  subst ηB
++  apply Subtype.ext
++  apply Prod.ext
++  · apply Subtype.ext
++    apply Prod.ext
++    · apply Sigma.ext
++      · exact restrictInput_liftInput A B wire wA.1
++      · apply (Subtype.heq_iff_coe_eq (fun store => by
++          change A.program.Models RationalReference.ops
++            (restrictInput A B wire (liftInput A B wire wA.1)) store ↔
++              A.program.Models RationalReference.ops wA.1 store
++          rw [restrictInput_liftInput])).2
++        exact restrictUpstream_glueStore A B wA.2.val ρB.val
++    · change A.program.outputProjection
++        (restrictUpstream A B (glueStore A B wA.2.val ρB.val)) =
++          A.program.outputProjection wA.2.val
++      rw [restrictUpstream_glueStore]
++  · have agree : B.program.InputAgreement
++        (boundaryInput A B wire wA.2.val) ρB.val := by
++      obtain ⟨_, h, _⟩ := ρB.property
++      exact h
++    apply Sigma.ext
++    · change boundaryInput A B wire
++        (restrictUpstream A B (glueStore A B wA.2.val ρB.val)) =
++          boundaryInput A B wire wA.2.val
++      rw [restrictUpstream_glueStore]
++    · apply (Subtype.heq_iff_coe_eq (fun store => by
++        change B.program.Models RationalReference.ops
++          (boundaryInput A B wire
++            (restrictUpstream A B (glueStore A B wA.2.val ρB.val))) store ↔
++          B.program.Models RationalReference.ops
++            (boundaryInput A B wire wA.2.val) store
++        rw [restrictUpstream_glueStore])).2
++      exact restrictDownstream_glueStore A B wire wA.2.val ρB.val agree
++
++/-- Every composite input and complete model is matched, bijectively, with
++    a compatible pair of complete component models. -/
++def allInputWiredEquiv :
++    (componentSpan (compose A B wire)).W ≃ (wiredSpan A B wire).W where
++  toFun := toWired A B wire
++  invFun := fromWired A B wire
++  left_inv := fromWired_toWired A B wire
++  right_inv := toWired_fromWired A B wire
++
++noncomputable def compositeRebasedSpan :
++    Span (inputInterface A) (outputInterface B) :=
++  (componentSpan (compose A B wire)).rebase
++    (compositeInputEquiv A B wire) (compositeOutputEquiv A B wire)
++
++def compositeWiredIso :
++    SpanIso (compositeRebasedSpan A B wire) (wiredSpan A B wire) where
++  witness := allInputWiredEquiv A B wire
++  left := by
++    intro w
++    exact (compositeInput_restrict A B wire w.1).symm
++  right := by
++    intro w
++    change (outputEquiv B).symm
++      (B.program.outputProjection (restrictDownstream A B wire w.2.val)) =
++      compositeOutputEquiv A B wire
++        ((outputEquiv (compose A B wire)).symm
++          ((compose A B wire).program.outputProjection w.2.val))
++    have h := congrArg (compositeOutputEquiv A B wire)
++      (outputProjection_transport A B wire w.2.val)
++    exact (h.trans (compositeOutput_lift A B wire _)).symm
++
++theorem composition_hom :
++    graphHom (compositeInputEquiv A B wire) ≫
++        Quotient.mk _ (componentSpan (compose A B wire)) ≫
++        graphHom (compositeOutputEquiv A B wire) =
++      (Quotient.mk _ (componentSpan A) ≫ graphHom (boundaryEnvEquiv A B wire)) ≫
++        Quotient.mk _ (componentSpan B) :=
++  Quotient.sound ⟨((SpanIso.assoc
++    (Span.graph (compositeInputEquiv A B wire))
++    (componentSpan (compose A B wire))
++    (Span.graph (compositeOutputEquiv A B wire))).symm.trans
++      (SpanIso.rebaseGraphs (componentSpan (compose A B wire))
++        (compositeInputEquiv A B wire) (compositeOutputEquiv A B wire))).trans
++          (compositeWiredIso A B wire)⟩
++
++end IndexedWitness
+diff --git a/leanncd/experiments/indexed_execution/IndexedWitnessTest.lean b/leanncd/experiments/indexed_execution/IndexedWitnessTest.lean
+index 6ad983e3..9820a60b 100644
+--- a/leanncd/experiments/indexed_execution/IndexedWitnessTest.lean
++++ b/leanncd/experiments/indexed_execution/IndexedWitnessTest.lean
+@@ -1,4 +1,4 @@
+-import IndexedWitnessSpan
++import IndexedWitnessComposition
+ import IndexedComponentCompositionPortFixtures
+ import IndexedComponentModelCycleFixtures
+ import Semantics.AxiomAudit
+@@ -58,5 +58,9 @@ theorem hidden_outputs_equal :
+ #print axioms IndexedWitness.homComp
+ #print axioms IndexedWitness.SpanIso.leftUnit
+ #print axioms IndexedWitness.componentSpan
++#print axioms IndexedWitness.boundaryEnvEquiv
++#print axioms IndexedWitness.allInputWiredEquiv
++#print axioms IndexedWitness.compositeWiredIso
++#print axioms IndexedWitness.composition_hom
+ 
+ end IndexedWitnessTest
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index d3de2121..95586695 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -179,4 +179,5 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
+          "IndexedComponentModelGeometryFixtures", "IndexedComponentModelGeometryTest",
+          "IndexedComponentModelCycleFixtures", "IndexedComponentModelCycleTest",
+          "IndexedComponentModelTest",
+-         "IndexedWitnessInterface", "IndexedWitnessSpan", "IndexedWitnessTest"]
++         "IndexedWitnessInterface", "IndexedWitnessSpan", "IndexedWitnessComposition",
++         "IndexedWitnessCompositionTest", "IndexedWitnessTest"]

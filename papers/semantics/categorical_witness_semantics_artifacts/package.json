@@ -1,0 +1,119 @@
+{
+  "base": "a9c9a647a04e260e21c8e5c624a0bac3fa13ef20",
+  "source_head": "0e49e37020b848d9a88da1daa7b95b5eef8260a7",
+  "source_tree": "ac03d2b330b355cc4632a2f3371e11f2081d81fd",
+  "tasks": [
+    {
+      "id": "1",
+      "title": "feat(semantics): add whole-interface witness-span category",
+      "source_commit": "3fc437a28834d614ca730caaa78c1026c658efd0",
+      "patch": "patches/task-1.patch",
+      "patch_sha256": "ebf3557ec886709a10c72f787a421511093dd2a85fa18785557690d55a0768af",
+      "files": {
+        "leanncd/experiments/indexed_execution/IndexedWitnessInterface.lean": "8520a8877f2b7aa53b562daec14fee520d157a814af3dfc1b923190df91c1378",
+        "leanncd/experiments/indexed_execution/IndexedWitnessSpan.lean": "45349cd540640f5196d39c990277bca57d53b4297d7ed2b78952642ae0048d15",
+        "leanncd/experiments/indexed_execution/IndexedWitnessTest.lean": "a164fc5093cfe7e649b4599937e6611a76a54d4486f4f5155d9de7fe2be50d9e",
+        "leanncd/lakefile.toml": "7d46189209f65f0db39ecf98970f83923a98a8f70c7793df538a6acc5be2ddc1"
+      },
+      "targets": [
+        "IndexedWitnessInterface",
+        "IndexedWitnessSpan",
+        "IndexedWitnessTest"
+      ]
+    },
+    {
+      "id": "2",
+      "title": "feat(semantics): interpret component composition as witness pullback",
+      "source_commit": "c71ee3d31cd44a139c8541cd1f2e710634e21fea",
+      "patch": "patches/task-2.patch",
+      "patch_sha256": "8e33de0bfa6ebfd147cffd0c7289c48c08db088d4455e77947c0ede2baf60c54",
+      "files": {
+        "leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean": "319da639aaad412c088396426f176172a49691cd1ee743c4ed9891486bf5b18b",
+        "leanncd/experiments/indexed_execution/IndexedWitnessTest.lean": "fc2555134f3d29d97bd6abd8e3ce26cfc8594b495e9efd4a4c3bfb09f6e2d8bb",
+        "leanncd/lakefile.toml": "2532439d0941cdac387a8354e15747c6c69a48670d1ace7807c1d777d8dd285d"
+      },
+      "targets": [
+        "IndexedWitnessComposition",
+        "IndexedWitnessTest"
+      ]
+    },
+    {
+      "id": "3",
+      "title": "feat(semantics): prove nested composition witness coherence",
+      "source_commit": "451a5bb56c5eb0d158fcdd33def74f48478bea58",
+      "patch": "patches/task-3.patch",
+      "patch_sha256": "e86242ac06396cd76ae6b3e84f6d4ba8864df10a01b6845cef1e8406dd490d0b",
+      "files": {
+        "leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean": "22ed2fffd2a7a40eea8299e585f67c50c45dec6bfc5bccca6d308536fb36a190",
+        "leanncd/experiments/indexed_execution/IndexedWitnessCoherenceTest.lean": "94aa8954bd76da4ee3bf7f8086a7ad19d953fe45f3e335146038d1b1b2a9f6e4",
+        "leanncd/lakefile.toml": "ed5315e9c63cc971e4f302728ab4a5e872df296d9ea2c95720977ae6f9d64ab8"
+      },
+      "targets": [
+        "IndexedWitnessCoherence",
+        "IndexedWitnessCoherenceTest"
+      ]
+    },
+    {
+      "id": "4",
+      "title": "feat(semantics): restrict witness spans to partial maps",
+      "source_commit": "0a3b8e97854dbf7c46daa9b08378eb1d2cbf635b",
+      "patch": "patches/task-4.patch",
+      "patch_sha256": "262c998848a039f1c2c0b9cd2b7badf1d38fa9b80e8751668e898dd3210c28e2",
+      "files": {
+        "leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean": "e4c4ab27f69aac065abba0041d2effda503d521ff1575f0c65799d636ddefe70",
+        "leanncd/experiments/indexed_execution/IndexedWitnessPartialTest.lean": "e38725deefbf44e388c4212944b23bf305f5c92b1cdbe18d3c9699a1f6f905c2"
+      },
+      "targets": [
+        "IndexedWitnessPartial",
+        "IndexedWitnessPartialTest"
+      ]
+    },
+    {
+      "id": "5",
+      "title": "test(semantics): discriminate witness composition observations",
+      "source_commit": "2cbf39e97386e3c57d627e869ae922c46e7edb00",
+      "patch": "patches/task-5.patch",
+      "patch_sha256": "65e74107940e851c4290d83d5ff2b464b40cd34f0fa2585b298254cd3c77efd4",
+      "files": {
+        "leanncd/experiments/indexed_execution/IndexedWitnessCompositionTest.lean": "971f59c8cf46e605d073a53793dfb576125c4e8941b099b9186ddb4f66b511b9"
+      },
+      "targets": [
+        "IndexedWitnessCompositionTest"
+      ]
+    },
+    {
+      "id": "6",
+      "title": "test(semantics): isolate copied witness observation probes",
+      "source_commit": "1348a295bc833a9083b85cecaf8479f20649415c",
+      "patch": "patches/task-6.patch",
+      "patch_sha256": "2ae59750825dc7f98ec71d483070102c88660ddb16f9946877eed09bb3d766b3",
+      "files": {
+        "leanncd/experiments/indexed_execution/IndexedWitnessObservationParity.lean": "a013ab71aed05e08b43a5771259e76518d1f169a62b13d0b68f597d747dad06d",
+        "leanncd/experiments/indexed_execution/IndexedWitnessObservationProbe.lean": "37b8a42f5af12ff3eb54675d1e7207880dbb449fccd0679bb4220dc51cec9f84",
+        "leanncd/experiments/indexed_execution/IndexedWitnessObservationProbeTest.lean": "4d07f34067476b196d544560a9cc7db05d0f346f62ceffad3805f83db19f339c",
+        "leanncd/lakefile.toml": "62c7d853defef7e5f8a7a3b6dce921a4cc480c2ec6c068f47e5a312a0f298d5e"
+      },
+      "targets": [
+        "IndexedWitnessObservationProbeTest",
+        "IndexedWitnessObservationParity"
+      ]
+    },
+    {
+      "id": "7",
+      "title": "docs(semantics): expose proved witness semantics and scope",
+      "source_commit": "0e49e37020b848d9a88da1daa7b95b5eef8260a7",
+      "patch": "patches/task-7.patch",
+      "patch_sha256": "17ca25f2b692d56112a01a07d3a3f5d3f3e272dcdeaf16f037148b0f6af3fffa",
+      "files": {
+        "leanncd/AGENTS.md": "0fed091943319a5fcf08b5b01b6dacc2cfc5dbd553e1e6f430661ac44731df6e",
+        "leanncd/experiments/indexed_execution/IndexedWitnessSemantics.lean": "34af863171cbec2b74f070ffda1c4862e1d5656be8e4e435777e8fe1c11eaa4b",
+        "leanncd/lakefile.toml": "cb04f8da19ccda8a216cc95d5beff05881b1eb1003eafba6ef4607769d069e87",
+        "papers/semantics/categorical_tensor_logic_component_interfaces.md": "dc0905e8cf93ed1c8059860cd8b6988eb9071b83c5d152d97d5391fc85d47479",
+        "papers/semantics/categorical_tensor_logic_semantics.md": "b65d2feef7de028122f55a0444c70f9092a2198f5ea09f2afbc0c546dbb7791e"
+      },
+      "targets": [
+        "IndexedWitnessSemantics"
+      ]
+    }
+  ]
+}

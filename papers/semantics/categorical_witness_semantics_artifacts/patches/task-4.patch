@@ -1,0 +1,534 @@
+diff --git a/leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean b/leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean
+new file mode 100644
+index 00000000..4b5ccd07
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean
+@@ -0,0 +1,395 @@
++import IndexedWitnessComposition
++import IndexedComponentModelDenotation
++
++namespace IndexedWitness
++
++open LeanNCD.Semantics
++open IndexedComponentComposition
++
++variable {X Y Z : WholeInterface}
++
++def Span.Domain (F : Span X Y) (x : X.Env) : Prop :=
++  ∃ w : F.W, F.left w = x
++
++noncomputable def Span.value (F : Span X Y) (_h : Function.Injective F.left)
++    (x : X.Env) (hx : F.Domain x) : Y.Env :=
++  F.right (Classical.choose hx)
++
++theorem Span.value_at (F : Span X Y) (h : Function.Injective F.left)
++    (w : F.W) :
++    F.value h (F.left w) ⟨w, rfl⟩ = F.right w := by
++  unfold Span.value
++  exact congrArg F.right (h (Classical.choose_spec (⟨w, rfl⟩ : F.Domain (F.left w))))
++
++theorem Span.value_eq (F : Span X Y) (h : Function.Injective F.left)
++    {x : X.Env} (hx : F.Domain x) (w : F.W) (hw : F.left w = x) :
++    F.value h x hx = F.right w := by
++  unfold Span.value
++  exact congrArg F.right (h ((Classical.choose_spec hx).trans hw.symm))
++
++theorem SpanIso.injective_left_iff {F G : Span X Y} (e : SpanIso F G) :
++    Function.Injective F.left ↔ Function.Injective G.left := by
++  constructor
++  · intro h u v he
++    apply e.witness.symm.injective
++    apply h
++    have hu := e.left (e.witness.symm u)
++    have hv := e.left (e.witness.symm v)
++    simp only [Equiv.apply_symm_apply] at hu hv
++    exact hu.symm.trans (he.trans hv)
++  · intro h u v he
++    apply e.witness.injective
++    apply h
++    rw [e.left, e.left]
++    exact he
++
++theorem SpanIso.domain_iff {F G : Span X Y} (e : SpanIso F G) (x : X.Env) :
++    F.Domain x ↔ G.Domain x := by
++  constructor
++  · rintro ⟨w, hw⟩
++    exact ⟨e.witness w, (e.left w).trans hw⟩
++  · rintro ⟨v, hv⟩
++    exact ⟨e.witness.symm v,
++      (e.left (e.witness.symm v)).symm.trans (by simpa using hv)⟩
++
++theorem SpanIso.value_eq {F G : Span X Y} (e : SpanIso F G)
++    (hF : Function.Injective F.left) (hG : Function.Injective G.left)
++    {x : X.Env} (hx : F.Domain x) (hy : G.Domain x) :
++    F.value hF x hx = G.value hG x hy := by
++  obtain ⟨w, hw⟩ := hx
++  rw [F.value_eq hF ⟨w, hw⟩ w hw]
++  rw [G.value_eq hG hy (e.witness w) ((e.left w).trans hw)]
++  exact (e.right w).symm
++
++theorem Span.identity_injective (X : WholeInterface) :
++    Function.Injective (Span.identity X).left := fun _ _ h => h
++
++theorem Span.graph_injective (e : X.Env ≃ Y.Env) :
++    Function.Injective (Span.graph e).left := fun _ _ h => h
++
++theorem Span.pullback_injective (F : Span X Y) (G : Span Y Z)
++    (hF : Function.Injective F.left) (hG : Function.Injective G.left) :
++    Function.Injective (F.pullback G).left := by
++  intro p q hp
++  apply Subtype.ext
++  apply Prod.ext
++  · exact hF hp
++  · apply hG
++    calc
++      G.left p.val.2 = F.right p.val.1 := p.property.symm
++      _ = F.right q.val.1 := by rw [hF hp]
++      _ = G.left q.val.2 := q.property
++
++theorem Span.pullback_domain_iff (F : Span X Y) (G : Span Y Z)
++    (hF : Function.Injective F.left) (x : X.Env) :
++    (F.pullback G).Domain x ↔
++      ∃ hx : F.Domain x, G.Domain (F.value hF x hx) := by
++  constructor
++  · rintro ⟨p, hp⟩
++    let hx : F.Domain x := ⟨p.val.1, hp⟩
++    refine ⟨hx, p.val.2, ?_⟩
++    rw [F.value_eq hF hx p.val.1 hp]
++    exact p.property.symm
++  · rintro ⟨⟨w, hw⟩, ⟨v, hv⟩⟩
++    refine ⟨⟨(w, v), ?_⟩, hw⟩
++    rw [F.value_eq hF ⟨w, hw⟩ w hw] at hv
++    exact hv.symm
++
++theorem Span.pullback_value (F : Span X Y) (G : Span Y Z)
++    (hF : Function.Injective F.left) (hG : Function.Injective G.left)
++    (x : X.Env) (hp : (F.pullback G).Domain x) :
++    (F.pullback G).value (F.pullback_injective G hF hG) x hp =
++      G.value hG (F.value hF x
++        ((F.pullback_domain_iff G hF x).mp hp).1)
++        ((F.pullback_domain_iff G hF x).mp hp).2 := by
++  obtain ⟨p, hp'⟩ := hp
++  rw [(F.pullback G).value_eq (F.pullback_injective G hF hG)
++    ⟨p, hp'⟩ p hp']
++  rw [G.value_eq hG _ p.val.2]
++  · rfl
++  · rw [F.value_eq hF _ p.val.1 hp']
++    exact p.property.symm
++
++/-- Quotient-level restricted domain; arbitrary spans are never assigned a value. -/
++def InjectiveLeftHom (f : WitnessHom X Y) : Prop :=
++  Quotient.liftOn f (fun F : Span X Y => Function.Injective F.left)
++    (by
++      intro F G ⟨e⟩
++      exact propext e.injective_left_iff)
++
++def partialDomain (f : WitnessHom X Y) (x : X.Env) : Prop :=
++  Quotient.liftOn f (fun F : Span X Y => F.Domain x)
++    (by
++      intro F G ⟨e⟩
++      exact propext (e.domain_iff x))
++
++noncomputable def Span.partialOption (F : Span X Y)
++    (h : Function.Injective F.left) (x : X.Env) : Option Y.Env := by
++  classical
++  exact if hx : F.Domain x then some (F.value h x hx) else none
++
++theorem Span.partialOption_isSome_iff (F : Span X Y)
++    (h : Function.Injective F.left) (x : X.Env) :
++    (F.partialOption h x).isSome = true ↔ F.Domain x := by
++  classical
++  by_cases hx : F.Domain x <;> simp [Span.partialOption, hx]
++
++theorem SpanIso.partialOption_eq {F G : Span X Y} (e : SpanIso F G)
++    (hF : Function.Injective F.left) (hG : Function.Injective G.left) :
++    F.partialOption hF = G.partialOption hG := by
++  funext x
++  by_cases hx : F.Domain x
++  · have hy := (e.domain_iff x).mp hx
++    simpa only [Span.partialOption, dif_pos hx, dif_pos hy] using
++      congrArg some (e.value_eq hF hG hx hy)
++  · have hy := fun h => hx ((e.domain_iff x).mpr h)
++    simp only [Span.partialOption, dif_neg hx, dif_neg hy]
++
++structure RestrictedSpan (X Y : WholeInterface) where
++  span : Span X Y
++  injective_left : Function.Injective span.left
++
++instance restrictedSetoid (X Y : WholeInterface) : Setoid (RestrictedSpan X Y) where
++  r F G := Nonempty (SpanIso F.span G.span)
++  iseqv := ⟨fun F => ⟨SpanIso.refl F.span⟩,
++    fun ⟨e⟩ => ⟨e.symm⟩, fun ⟨e⟩ ⟨f⟩ => ⟨e.trans f⟩⟩
++
++abbrev RestrictedHom (X Y : WholeInterface) :=
++  Quotient (restrictedSetoid X Y)
++
++noncomputable def RestrictedHom.partialOption (f : RestrictedHom X Y) :
++    X.Env → Option Y.Env :=
++  Quotient.liftOn f (fun F => F.span.partialOption F.injective_left)
++    (by
++      intro F G ⟨e⟩
++      exact e.partialOption_eq F.injective_left G.injective_left)
++
++variable {σA : Declarations Unit} [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++
++theorem component_injective_iff (A : MatchedComponent σA) :
++    Function.Injective (componentSpan A).left ↔ AtMostOneModels A := by
++  constructor
++  · intro h η ρ ρ' hm hm'
++    have he := h (a₁ := (⟨η, ⟨ρ, hm⟩⟩ : (componentSpan A).W))
++      (a₂ := (⟨η, ⟨ρ', hm'⟩⟩ : (componentSpan A).W)) rfl
++    exact congrArg (fun w : (componentSpan A).W => w.2.val) he
++  · intro h w w' he
++    have hi : w.1 = w'.1 := (inputEquiv A).symm.injective he
++    cases w with
++    | mk η ρ =>
++      cases w' with
++      | mk η' ρ' =>
++        dsimp at hi
++        subst η'
++        have hs : ρ.val = ρ'.val := h η ρ.val ρ'.val ρ.property ρ'.property
++        cases ρ with
++        | mk store hm =>
++          cases ρ' with
++          | mk store' hm' =>
++            dsimp at hs
++            subst store'
++            rfl
++
++theorem component_domain_iff (A : MatchedComponent σA)
++    (h : AtMostOneModels A) (η : A.program.Input) :
++    (componentSpan A).Domain (inputEnv A η) ↔
++      A.program.AdmInput RationalReference.ops η := by
++  constructor
++  · rintro ⟨⟨η', ρ⟩, he⟩
++    have hi : η' = η := (inputEquiv A).symm.injective he
++    subst η'
++    exact ⟨ρ.val, ρ.property,
++      fun store model => (h η ρ.val store ρ.property model).symm⟩
++  · rintro ⟨ρ, hm, _⟩
++    exact ⟨⟨η, ⟨ρ, hm⟩⟩, rfl⟩
++
++theorem component_value (A : MatchedComponent σA)
++    (h : AtMostOneModels A) (η : A.program.Input)
++    (hx : (componentSpan A).Domain (inputEnv A η)) :
++    (componentSpan A).value ((component_injective_iff A).2 h)
++      (inputEnv A η) hx =
++        (outputEquiv A).symm
++          (A.program.denotation RationalReference.ops η
++            ((component_domain_iff A h η).mp hx)) := by
++  obtain ⟨⟨η', ρ⟩, he⟩ := hx
++  have hi : η' = η := (inputEquiv A).symm.injective he
++  subst η'
++  rw [(componentSpan A).value_eq ((component_injective_iff A).2 h)
++    ⟨⟨η, ρ⟩, he⟩ ⟨η, ρ⟩ he]
++  exact congrArg (outputEquiv A).symm
++    (A.program.denotation_of_model RationalReference.ops η
++      ((component_domain_iff A h η).mp ⟨⟨η, ρ⟩, he⟩)
++      ρ.val ρ.property).symm
++
++variable {σB : Declarations Unit} [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++
++theorem composite_atMostOne (A : MatchedComponent σA)
++    (B : MatchedComponent σB) (wire : Boundary A B)
++    (hA : AtMostOneModels A) (hB : AtMostOneModels B) :
++    AtMostOneModels (compose A B wire) := by
++  intro η ρ ρ' hm hm'
++  have h := (models_restrictInput_iff A B wire η ρ).mp hm
++  have h' := (models_restrictInput_iff A B wire η ρ').mp hm'
++  have ha := hA _ _ _ h.1 h'.1
++  have hb : restrictDownstream A B wire ρ =
++      restrictDownstream A B wire ρ' := by
++    apply hB (boundaryInput A B wire (restrictUpstream A B ρ))
++    · exact h.2
++    · rw [ha]
++      exact h'.2
++  calc
++    ρ = glueStore A B (restrictUpstream A B ρ)
++        (restrictDownstream A B wire ρ) :=
++      (glueStore_restrictions A B wire ρ).symm
++    _ = glueStore A B (restrictUpstream A B ρ')
++        (restrictDownstream A B wire ρ') := by rw [ha, hb]
++    _ = ρ' := glueStore_restrictions A B wire ρ'
++
++theorem wired_injective (A : MatchedComponent σA)
++    (B : MatchedComponent σB) (wire : Boundary A B)
++    (hA : AtMostOneModels A) (hB : AtMostOneModels B) :
++    Function.Injective (wiredSpan A B wire).left :=
++  Span.pullback_injective _ _ (Span.pullback_injective _ _
++    ((component_injective_iff A).2 hA)
++    (Span.graph_injective (boundaryEnvEquiv A B wire)))
++    ((component_injective_iff B).2 hB)
++
++theorem wired_domain_iff (A : MatchedComponent σA)
++    (B : MatchedComponent σB) (wire : Boundary A B)
++    (hA : AtMostOneModels A) (x : (inputInterface A).Env) :
++    (wiredSpan A B wire).Domain x ↔
++      ∃ hx : (componentSpan A).Domain x,
++        (componentSpan B).Domain
++          (boundaryEnvEquiv A B wire
++            ((componentSpan A).value ((component_injective_iff A).2 hA) x hx)) := by
++  constructor
++  · rintro ⟨⟨⟨⟨⟨wA, y⟩, hy⟩, wB⟩, hb⟩, hw⟩
++    let hx : (componentSpan A).Domain x := ⟨wA, hw⟩
++    refine ⟨hx, wB, ?_⟩
++    rw [(componentSpan A).value_eq ((component_injective_iff A).2 hA)
++      hx wA hw]
++    exact hb.symm.trans (congrArg (boundaryEnvEquiv A B wire) hy.symm)
++  · rintro ⟨⟨wA, hw⟩, ⟨wB, hb⟩⟩
++    refine ⟨⟨(⟨(wA, (componentSpan A).right wA), rfl⟩, wB), ?_⟩, hw⟩
++    rw [(componentSpan A).value_eq ((component_injective_iff A).2 hA)
++      ⟨wA, hw⟩ wA hw] at hb
++    exact hb.symm
++
++theorem wired_value (A : MatchedComponent σA)
++    (B : MatchedComponent σB) (wire : Boundary A B)
++    (hA : AtMostOneModels A) (hB : AtMostOneModels B)
++    (x : (inputInterface A).Env)
++    (hp : (wiredSpan A B wire).Domain x) :
++    (wiredSpan A B wire).value (wired_injective A B wire hA hB) x hp =
++      (componentSpan B).value ((component_injective_iff B).2 hB)
++        (boundaryEnvEquiv A B wire
++          ((componentSpan A).value ((component_injective_iff A).2 hA) x
++            ((wired_domain_iff A B wire hA x).mp hp).1))
++        ((wired_domain_iff A B wire hA x).mp hp).2 := by
++  obtain ⟨p, hp'⟩ := hp
++  rw [(wiredSpan A B wire).value_eq (wired_injective A B wire hA hB)
++    ⟨p, hp'⟩ p hp']
++  rw [(componentSpan B).value_eq ((component_injective_iff B).2 hB)
++    _ p.val.2]
++  · rfl
++  · rw [(componentSpan A).value_eq ((component_injective_iff A).2 hA)
++      _ p.val.1.val.1 hp']
++    exact ((congrArg (boundaryEnvEquiv A B wire) p.val.1.property).trans
++      p.property).symm
++
++theorem composite_rebased_injective (A : MatchedComponent σA)
++    (B : MatchedComponent σB) (wire : Boundary A B)
++    (hA : AtMostOneModels A) (hB : AtMostOneModels B) :
++    Function.Injective (compositeRebasedSpan A B wire).left :=
++  ((compositeWiredIso A B wire).injective_left_iff).mpr
++    (wired_injective A B wire hA hB)
++
++theorem composite_rebased_domain_iff (A : MatchedComponent σA)
++    (B : MatchedComponent σB) (wire : Boundary A B)
++    (hA : AtMostOneModels A) (x : (inputInterface A).Env) :
++    (compositeRebasedSpan A B wire).Domain x ↔
++      ∃ hx : (componentSpan A).Domain x,
++        (componentSpan B).Domain
++          (boundaryEnvEquiv A B wire
++            ((componentSpan A).value ((component_injective_iff A).2 hA) x hx)) :=
++  ((compositeWiredIso A B wire).domain_iff x).trans
++    (wired_domain_iff A B wire hA x)
++
++theorem composite_rebased_value (A : MatchedComponent σA)
++    (B : MatchedComponent σB) (wire : Boundary A B)
++    (hA : AtMostOneModels A) (hB : AtMostOneModels B)
++    (x : (inputInterface A).Env)
++    (hx : (compositeRebasedSpan A B wire).Domain x) :
++    (compositeRebasedSpan A B wire).value
++        (composite_rebased_injective A B wire hA hB) x hx =
++      (componentSpan B).value ((component_injective_iff B).2 hB)
++        (boundaryEnvEquiv A B wire
++          ((componentSpan A).value ((component_injective_iff A).2 hA) x
++            ((composite_rebased_domain_iff A B wire hA x).mp hx).1))
++        ((composite_rebased_domain_iff A B wire hA x).mp hx).2 := by
++  have hw := ((compositeWiredIso A B wire).domain_iff x).mp hx
++  calc
++    _ = (wiredSpan A B wire).value (wired_injective A B wire hA hB) x hw :=
++      (compositeWiredIso A B wire).value_eq
++        (composite_rebased_injective A B wire hA hB)
++        (wired_injective A B wire hA hB) hx hw
++    _ = _ := wired_value A B wire hA hB x hw
++
++theorem component_composite_domain (A : MatchedComponent σA)
++    (B : MatchedComponent σB) (wire : Boundary A B)
++    (hA : AtMostOneModels A) (hB : AtMostOneModels B)
++    (η : (program A B wire).Input) :
++    (componentSpan (compose A B wire)).Domain
++        (inputEnv (compose A B wire) η) ↔
++      ∃ hAdmA : A.program.AdmInput RationalReference.ops
++          (restrictInput A B wire η),
++        B.program.AdmInput RationalReference.ops
++          (boundaryFromOutput A B wire
++            (A.program.denotation RationalReference.ops
++              (restrictInput A B wire η) hAdmA)) := by
++  rw [component_domain_iff (compose A B wire)
++    (composite_atMostOne A B wire hA hB) η]
++  exact admInput_restrictions_iff A B wire hA hB η
++
++theorem component_composite_value (A : MatchedComponent σA)
++    (B : MatchedComponent σB) (wire : Boundary A B)
++    (hA : AtMostOneModels A) (hB : AtMostOneModels B)
++    (η : (program A B wire).Input)
++    (hx : (componentSpan (compose A B wire)).Domain
++      (inputEnv (compose A B wire) η)) :
++    ∃ hAdmA : A.program.AdmInput RationalReference.ops
++        (restrictInput A B wire η),
++      ∃ hAdmB : B.program.AdmInput RationalReference.ops
++        (boundaryFromOutput A B wire
++          (A.program.denotation RationalReference.ops
++            (restrictInput A B wire η) hAdmA)),
++        compositeOutputEquiv A B wire
++          ((componentSpan (compose A B wire)).value
++            ((component_injective_iff (compose A B wire)).2
++              (composite_atMostOne A B wire hA hB))
++            (inputEnv (compose A B wire) η) hx) =
++          B.program.denotation RationalReference.ops
++            (boundaryFromOutput A B wire
++              (A.program.denotation RationalReference.ops
++                (restrictInput A B wire η) hAdmA)) hAdmB := by
++  let hC := composite_atMostOne A B wire hA hB
++  let hAdmC := (component_domain_iff (compose A B wire) hC η).mp hx
++  obtain ⟨hAdmA, hAdmB, he⟩ :=
++    denotation_successive A B wire hA hB η hAdmC
++  refine ⟨hAdmA, hAdmB, ?_⟩
++  rw [component_value (compose A B wire) hC η hx]
++  change compositeOutputEquiv A B wire
++    ((program A B wire).denotation RationalReference.ops η hAdmC) = _
++  calc
++    compositeOutputEquiv A B wire
++        ((program A B wire).denotation RationalReference.ops η hAdmC) =
++      compositeOutputEquiv A B wire
++        (liftOutput A B wire
++          (B.program.denotation RationalReference.ops
++            (boundaryFromOutput A B wire
++              (A.program.denotation RationalReference.ops
++                (restrictInput A B wire η) hAdmA)) hAdmB)) :=
++      congrArg (compositeOutputEquiv A B wire) he
++    _ = _ := compositeOutput_lift A B wire _
++
++end IndexedWitness
+diff --git a/leanncd/experiments/indexed_execution/IndexedWitnessPartialTest.lean b/leanncd/experiments/indexed_execution/IndexedWitnessPartialTest.lean
+new file mode 100644
+index 00000000..6c7cc314
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedWitnessPartialTest.lean
+@@ -0,0 +1,127 @@
++import IndexedWitnessPartial
++import IndexedComponentModelCycleTest
++import IndexedComponentModelLocalTest
++import Semantics.AxiomAudit
++
++namespace IndexedWitnessPartialTest
++
++open LeanNCD.Semantics
++open IndexedWitness
++open IndexedComponentComposition
++open IndexedComponentModelCycleFixtures
++open IndexedComponentModelCycleTest
++open IndexedComponentCompositionPortFixtures
++open IndexedComponentModelLocalFixtures
++open IndexedComponentModelLocalTest
++
++theorem strict_no_domain :
++    ¬ (componentSpan (compose producerComponent (consumerComponent 0)
++      (scalarBoundary 0))).Domain
++        (inputEnv (compose producerComponent (consumerComponent 0)
++          (scalarBoundary 0))
++          (liftInput producerComponent (consumerComponent 0)
++            (scalarBoundary 0) producerInput)) := by
++  rintro ⟨⟨η, ρ⟩, he⟩
++  have hi := (inputEquiv (compose producerComponent (consumerComponent 0)
++    (scalarBoundary 0))).symm.injective he
++  change η = _ at hi
++  exact strict_no_composite ρ.val (hi ▸ ρ.property)
++
++theorem total_domain :
++    (componentSpan (compose producerComponent (consumerComponent 4)
++      (scalarBoundary 4))).Domain
++        (inputEnv (compose producerComponent (consumerComponent 4)
++          (scalarBoundary 4))
++          (liftInput producerComponent (consumerComponent 4)
++            (scalarBoundary 4) producerInput)) :=
++  ⟨⟨_, ⟨totalCompositeStore, total_composite_model⟩⟩, rfl⟩
++
++theorem strict_consumer_atMostOne :
++    AtMostOneModels (consumerComponent 0) := by
++  intro η ρ ρ' hm _
++  exact (strict_no_model η ρ hm).elim
++
++theorem strict_consumer_undefined (x : (inputInterface (consumerComponent 0)).Env) :
++    (componentSpan (consumerComponent 0)).partialOption
++        ((component_injective_iff (consumerComponent 0)).2
++          strict_consumer_atMostOne) x = none := by
++  have hn : ¬ (componentSpan (consumerComponent 0)).Domain x := by
++    rintro ⟨⟨η, ρ⟩, _⟩
++    exact strict_no_model η ρ.val ρ.property
++  simp [Span.partialOption, hn]
++
++theorem cycle_upstream_not_injective :
++    ¬ Function.Injective (componentSpan cycleUpstream).left := by
++  intro h
++  have hUnique := (component_injective_iff cycleUpstream).mp h
++  apply IndexedComponentModelCycleTest.cycle_upstream_not_admissible
++  exact ⟨scalarStore 0 0, cycle_upstream_zero_model,
++    fun ρ hm => (hUnique (upstreamInput false) ρ
++      (scalarStore 0 0) hm cycle_upstream_zero_model)⟩
++
++theorem cycle_composite_domain :
++    (componentSpan (compose cycleUpstream cycleDownstream cycleBoundary)).Domain
++      (inputEnv (compose cycleUpstream cycleDownstream cycleBoundary)
++        (liftInput cycleUpstream cycleDownstream cycleBoundary
++          (upstreamInput false))) :=
++  ⟨⟨_, ⟨cycleOneStore, cycle_one_model⟩⟩, rfl⟩
++
++theorem cycle_composite_unique_at_input
++    (w w' : (componentSpan (compose cycleUpstream cycleDownstream cycleBoundary)).W)
++    (hw : (componentSpan (compose cycleUpstream cycleDownstream cycleBoundary)).left w =
++      inputEnv (compose cycleUpstream cycleDownstream cycleBoundary)
++        (liftInput cycleUpstream cycleDownstream cycleBoundary (upstreamInput false)))
++    (hw' : (componentSpan (compose cycleUpstream cycleDownstream cycleBoundary)).left w' =
++      inputEnv (compose cycleUpstream cycleDownstream cycleBoundary)
++        (liftInput cycleUpstream cycleDownstream cycleBoundary (upstreamInput false))) :
++    w = w' := by
++  have hi := (inputEquiv (compose cycleUpstream cycleDownstream cycleBoundary)).symm.injective hw
++  have hi' := (inputEquiv (compose cycleUpstream cycleDownstream cycleBoundary)).symm.injective hw'
++  cases w with
++  | mk η ρ =>
++    cases w' with
++    | mk η' ρ' =>
++      dsimp at hi hi'
++      subst η
++      subst η'
++      have hs : ρ.val = ρ'.val :=
++        (cycle_composite_unique ρ.val ρ.property).trans
++          (cycle_composite_unique ρ'.val ρ'.property).symm
++      cases ρ with
++      | mk store hm =>
++        cases ρ' with
++        | mk store' hm' =>
++          dsimp at hs
++          subst store'
++          rfl
++
++theorem downstream_selection_not_unrestricted :
++    (∃ w : (componentSpan (compose cycleUpstream cycleDownstream cycleBoundary)).W,
++      (componentSpan (compose cycleUpstream cycleDownstream cycleBoundary)).left w =
++        inputEnv (compose cycleUpstream cycleDownstream cycleBoundary)
++          (liftInput cycleUpstream cycleDownstream cycleBoundary
++            (upstreamInput false)) ∧
++      ∀ w' : (componentSpan (compose cycleUpstream cycleDownstream cycleBoundary)).W,
++        (componentSpan (compose cycleUpstream cycleDownstream cycleBoundary)).left w' =
++          inputEnv (compose cycleUpstream cycleDownstream cycleBoundary)
++            (liftInput cycleUpstream cycleDownstream cycleBoundary
++              (upstreamInput false)) → w' = w) ∧
++    ¬ Function.Injective (componentSpan cycleUpstream).left := by
++  constructor
++  · obtain ⟨w, hw⟩ := cycle_composite_domain
++    exact ⟨w, hw, fun w' hw' =>
++      cycle_composite_unique_at_input w' w hw' hw⟩
++  · exact cycle_upstream_not_injective
++
++#print axioms IndexedWitness.Span.pullback_domain_iff
++#print axioms IndexedWitness.Span.pullback_value
++#print axioms IndexedWitness.RestrictedHom.partialOption
++#print axioms IndexedWitness.component_injective_iff
++#print axioms IndexedWitness.composite_rebased_value
++#print axioms IndexedWitness.component_composite_domain
++#print axioms IndexedWitness.component_composite_value
++#print axioms downstream_selection_not_unrestricted
++#audit_axioms IndexedWitness
++#audit_axioms IndexedWitnessPartialTest
++
++end IndexedWitnessPartialTest

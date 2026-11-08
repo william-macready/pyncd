@@ -18,16 +18,19 @@ the nondefault experiment. `IndexedComponentComposition.compose` packages
 the composite; `compose_match` derives its genuine `SourceContractMatch`.
 See the [transport record](component_transport_execution_record.md) and
 [composition record](component_composition_record.md) for validation and
-remaining release gates. Ranked phase execution, model gluing and categorical
-laws remain design obligations. The starting points
+recorded boundaries. Complete-model gluing, restricted denotation, the
+witness-span target category and nested denotational coherence are also proved;
+see the [witness semantics record](categorical_witness_semantics_record.md).
+Ranked phase execution and source/process categorical laws remain design
+obligations. The starting points
 are the [categorical synthesis](categorical_tensor_logic_semantics.md),
 especially Section 9 and its explanatory Appendix A, the
 [proof record](categorical_tensor_logic_proof_record.md), and the
 [theorem-design brief](categorical_tensor_logic_theorem_brief.md).
 The authoritative existing match is
 [`SourceContractMatch`](../../leanncd/experiments/indexed_execution/IndexedCompositionMatch.lean).
-The static constructor names below are implemented; later theorem names
-remain proposals, not existing Lean declarations.
+The static and denotational constructor names below are implemented; the
+remaining ranked process theorems are proposals, not existing declarations.
 
 ## 1. A component owns a declaration universe
 
@@ -414,10 +417,13 @@ acceptance cases, explicit private-work witnesses, and validation evidence.
 
 ## 7. Identity, associativity and observation levels
 
-Distinguish three notions:
+Distinguish four notions:
 
 - **Value equality** means equality of partial input-output functions,
   including their domains, after explicit port reindexing.
+- **Span isomorphism** is a bijection of complete witnesses commuting with
+  both environment legs. It preserves fiber multiplicity, not execution
+  events or the coordinate-level identity of private representations.
 - **Process equivalence** means equal terminal classifications, mapped ordered
   events and related full intermediate snapshots after coherent bijective
   renaming of tensors, coordinates, occurrences, tags and capabilities.
@@ -440,8 +446,18 @@ map them by original component provenance, not by numerical coincidence.
 Generic transport must satisfy identity and composition laws so repeated
 bracketing does not change policy resolution or ordered footprints.
 The prerequisite policy-resolution, footprint and evaluation laws now satisfy
-this local requirement; component associativity and process identities remain
+this local requirement; process associativity and process identities remain
 separate proposed results.
+
+For the denotational observation level, the witness-span implementation now
+proves an ordinary target category, a composition-preserving interpretation
+across all validated inputs, and nested component associativity through the
+same compatible triple of complete models. Explicit boundary and exterior
+environment equivalences commute with both legs; no raw UID coincidence is
+used. See [witness coherence](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean)
+and [the witness semantics record](categorical_witness_semantics_record.md).
+This closes the model-witness associativity obligation, not the proposed
+process associativity or process identities.
 
 There is **no event-exact core identity implemented by copying**.
 A core copy must write and publish a fresh defined output; it adds observable
@@ -536,7 +552,8 @@ corollaries, not static assumptions. No totality assumption.
 composite roles and metadata, closure acceptance, the occurrence bijection,
 ordered priority equality and all nine match fields. Existing capability/fiber
 results apply to the constructed match without additional assumptions.
-Composite ranking, phase behavior, model restriction/gluing and coherent
+Model restriction/gluing, restricted denotation, and denotational witness-span
+coherence are also proved. Composite ranking, phase behavior and process
 associativity remain unproved. None is replaced by assumed execution agreement.
 
 **Recommendation over alternatives:**
@@ -552,16 +569,19 @@ associativity remain unproved. None is replaced by assumed execution agreement.
   copy adapter is unnecessary for the ranked, upstream-first case and would
   introduce another execution semantics or extra events.
 - Indexed programs, explicit witnesses and ports are the smallest foundation
-  matching the available theorem. St/Br, open-diagram libraries or a
-  witness-span categorical presentation can be interpretations later; none
-  substitutes for the explicit transport or match-construction obligations.
+  matching the available theorem. The implemented witness-span interpretation
+  packages their denotational meaning. St/Br and open-diagram interpretations
+  remain future work; none substitutes for the explicit transport or
+  match-construction obligations.
 
 There is no known semantic blocker for this restricted target. The substantive
 admitted-read/expression transport prerequisite and static component
-match/closure/priority construction are now proved. Remaining unproved work
-is ranked phase execution, complete-model gluing and categorical laws.
+match/closure/priority construction, complete-model gluing and denotational
+category laws are now proved. Remaining unproved work is ranked phase execution
+and source/process categorical laws.
 Wider coordinate adapters, residual inputs, fan-out and open contribution
-ports remain out of scope. Whether to adjoin administrative wire identities
-is a packaging decision after associative core composition; requiring a
+ports remain out of scope. Administrative graph spans provide semantic wires
+and target units. Adjoining units to a source presentation remains a separate
+packaging decision; requiring a
 core `Program` identity under the unchanged event observation would instead
 be a genuine obstruction, not a proof-engineering task.

@@ -1,0 +1,377 @@
+diff --git a/leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean b/leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean
+new file mode 100644
+index 00000000..1b4c2f85
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean
+@@ -0,0 +1,294 @@
++import IndexedWitnessComposition
++
++namespace IndexedWitness
++
++open LeanNCD.Semantics
++open IndexedComponentComposition
++open CategoryTheory
++
++variable {σA σB σC : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable [Fintype σC.Tensor] [DecidableEq σC.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB)
++variable (C : MatchedComponent σC)
++variable (ab : Boundary A B) (bc : Boundary B C)
++
++/-- Inputs of the right-hand composite are precisely the tagged inputs of B. -/
++def rightInputIndexEquiv :
++    {t : (declarations B C).Tensor // (program B C bc).input t = true} ≃
++      {t : σB.Tensor // B.program.input t = true} where
++  toFun
++    | ⟨.inl t, h⟩ => ⟨t, h⟩
++    | ⟨.inr _, h⟩ => by cases h
++  invFun := fun t => ⟨.inl t.val, t.property⟩
++  left_inv := by
++    rintro ⟨t, h⟩
++    cases t with
++    | inl t => apply Subtype.ext; rfl
++    | inr t => cases h
++  right_inv := by intro t; apply Subtype.ext; rfl
++
++/-- The left composite's outputs inherit B's output port and its full domain. -/
++def leftNestedBoundary :
++    Boundary (compose A B ab) C where
++  matched := bc.matched.trans (outputIndexEquiv A B ab).symm
++  domain := fun i => bc.domain i
++
++/-- The right composite's inputs inherit B's input port and its full domain. -/
++def rightNestedBoundary :
++    Boundary A (compose B C bc) where
++  matched := (rightInputIndexEquiv B C bc).trans ab.matched
++  domain := fun i => by
++    rcases i with ⟨t, h⟩
++    cases t with
++    | inl t => exact ab.domain ⟨t, h⟩
++    | inr t => cases h
++
++/-- Compatibility of complete witnesses, retaining both private stores. -/
++abbrev CompatiblePair :=
++  {p : (componentSpan A).W × (componentSpan B).W //
++    boundaryEnvEquiv A B ab ((componentSpan A).right p.1) =
++      (componentSpan B).left p.2}
++
++def wiredPairEquiv :
++    (wiredSpan A B ab).W ≃ CompatiblePair A B ab where
++  toFun := fun p =>
++    ⟨(p.val.1.val.1, p.val.2),
++      (congrArg (boundaryEnvEquiv A B ab) p.val.1.property).trans p.property⟩
++  invFun := fun p =>
++    ⟨(⟨(p.val.1, (componentSpan A).right p.val.1), rfl⟩, p.val.2),
++      p.property⟩
++  left_inv := by
++    rintro ⟨⟨⟨⟨a, x⟩, hx⟩, b⟩, hab⟩
++    apply Subtype.ext
++    apply Prod.ext
++    · apply Subtype.ext
++      exact Prod.ext rfl hx
++    · rfl
++  right_inv := by intro p; apply Subtype.ext; rfl
++
++/-- Every nested composite model corresponds to exactly a compatible pair
++    of complete models, not merely to matching outputs. -/
++def compositePairEquiv :
++    (componentSpan (compose A B ab)).W ≃ CompatiblePair A B ab :=
++  (allInputWiredEquiv A B ab).trans (wiredPairEquiv A B ab)
++
++theorem compositePair_input (w : (componentSpan (compose A B ab)).W) :
++    (componentSpan A).left ((compositePairEquiv A B ab w).val.1) =
++      (compositeInputEquiv A B ab).symm
++        ((componentSpan (compose A B ab)).left w) :=
++  (compositeWiredIso A B ab).left w
++
++theorem compositePair_output (w : (componentSpan (compose A B ab)).W) :
++    (componentSpan B).right ((compositePairEquiv A B ab w).val.2) =
++      compositeOutputEquiv A B ab
++        ((componentSpan (compose A B ab)).right w) :=
++  (compositeWiredIso A B ab).right w
++
++/-- The boundary at the left bracketing is the original BC boundary
++    after explicitly reindexing the output of AB. -/
++theorem left_boundary_square (x : (outputInterface (compose A B ab)).Env) :
++    boundaryEnvEquiv (compose A B ab) C (leftNestedBoundary A B C ab bc) x =
++      boundaryEnvEquiv B C bc (compositeOutputEquiv A B ab x) := by
++  funext i p
++  rw [boundaryEnv_apply, boundaryEnv_apply]
++  rfl
++
++/-- The boundary at the right bracketing is the original AB boundary
++    followed by the explicit B-to-BC input reindexing. -/
++theorem right_boundary_square (x : (outputInterface A).Env) :
++    boundaryEnvEquiv A (compose B C bc) (rightNestedBoundary A B C ab bc) x =
++      compositeInputEquiv B C bc (boundaryEnvEquiv A B ab x) := by
++  funext i p
++  rcases i with ⟨t, h⟩
++  cases t with
++  | inl t =>
++    change B.program.input t = true at h
++    rw [boundaryEnv_apply]
++    change x (ab.matched ⟨t, h⟩) ((ab.domain ⟨t, h⟩).coord p) =
++      (compositeInputEquiv B C bc (boundaryEnvEquiv A B ab x)) ⟨.inl t, h⟩ p
++    change x (ab.matched ⟨t, h⟩) ((ab.domain ⟨t, h⟩).coord p) =
++      inputEnv (compose B C bc)
++        (liftInput B C bc (envInput B (boundaryEnvEquiv A B ab x)))
++        ⟨.inl t, h⟩ p
++    change x (ab.matched ⟨t, h⟩) ((ab.domain ⟨t, h⟩).coord p) =
++      inputEnv B (envInput B (boundaryEnvEquiv A B ab x)) ⟨t, h⟩ p
++    rw [inputEnv_envInput]
++    exact (boundaryEnv_apply A B ab x ⟨t, h⟩ p).symm
++  | inr t => cases h
++
++abbrev leftBracket :=
++  compose (compose A B ab) C (leftNestedBoundary A B C ab bc)
++
++abbrev rightBracket :=
++  compose A (compose B C bc) (rightNestedBoundary A B C ab bc)
++
++/-- The two ways of carrying the original input to the nested input agree
++    as environment transports, without equating their fresh tensor IDs. -/
++def leftBracketInputEquiv :
++    (inputInterface A).Env ≃ (inputInterface (leftBracket A B C ab bc)).Env :=
++  (compositeInputEquiv A B ab).trans
++    (compositeInputEquiv (compose A B ab) C (leftNestedBoundary A B C ab bc))
++
++def rightBracketInputEquiv :
++    (inputInterface A).Env ≃ (inputInterface (rightBracket A B C ab bc)).Env :=
++  compositeInputEquiv A (compose B C bc) (rightNestedBoundary A B C ab bc)
++
++/-- Output transport is contravariant to the nested output-port tagging. -/
++def leftBracketOutputEquiv :
++    (outputInterface (leftBracket A B C ab bc)).Env ≃ (outputInterface C).Env :=
++  compositeOutputEquiv (compose A B ab) C (leftNestedBoundary A B C ab bc)
++
++def rightBracketOutputEquiv :
++    (outputInterface (rightBracket A B C ab bc)).Env ≃ (outputInterface C).Env :=
++  (compositeOutputEquiv A (compose B C bc) (rightNestedBoundary A B C ab bc)).trans
++    (compositeOutputEquiv B C bc)
++
++noncomputable def leftBracketSpan :
++    Span (inputInterface A) (outputInterface C) :=
++  (componentSpan (leftBracket A B C ab bc)).rebase
++    (leftBracketInputEquiv A B C ab bc)
++    (leftBracketOutputEquiv A B C ab bc)
++
++noncomputable def rightBracketSpan :
++    Span (inputInterface A) (outputInterface C) :=
++  (componentSpan (rightBracket A B C ab bc)).rebase
++    (rightBracketInputEquiv A B C ab bc)
++    (rightBracketOutputEquiv A B C ab bc)
++
++/-- The common apex is a triple of complete model witnesses with both
++    *original* boundary equations, rather than a nested program identity. -/
++abbrev CompatibleTriple :=
++  {p : CompatiblePair A B ab × (componentSpan C).W //
++    boundaryEnvEquiv B C bc
++      ((componentSpan B).right p.1.val.2) = (componentSpan C).left p.2}
++
++def tripleSpan : Span (inputInterface A) (outputInterface C) where
++  W := CompatibleTriple A B C ab bc
++  left := fun p => (componentSpan A).left p.val.1.val.1
++  right := fun p => (componentSpan C).right p.val.2
++
++def leftTripleEquiv :
++    (componentSpan (leftBracket A B C ab bc)).W ≃
++      CompatibleTriple A B C ab bc where
++  toFun := fun w => by
++    let p := compositePairEquiv (compose A B ab) C
++      (leftNestedBoundary A B C ab bc) w
++    let q := compositePairEquiv A B ab p.val.1
++    refine ⟨(q, p.val.2), ?_⟩
++    exact (congrArg (boundaryEnvEquiv B C bc)
++      (compositePair_output A B ab p.val.1)).trans
++        ((left_boundary_square A B C ab bc
++          ((componentSpan (compose A B ab)).right p.val.1)).symm.trans
++            p.property)
++  invFun := fun p => by
++    let w := (compositePairEquiv A B ab).symm p.val.1
++    have hw : (componentSpan B).right p.val.1.val.2 =
++        compositeOutputEquiv A B ab
++          ((componentSpan (compose A B ab)).right w) := by
++      simpa [w] using compositePair_output A B ab w
++    refine (compositePairEquiv (compose A B ab) C
++      (leftNestedBoundary A B C ab bc)).symm ?_
++    exact ⟨(w, p.val.2),
++      (left_boundary_square A B C ab bc
++        ((componentSpan (compose A B ab)).right w)).trans
++        ((congrArg (boundaryEnvEquiv B C bc) hw).symm.trans p.property)⟩
++  left_inv := by
++    intro w
++    apply (compositePairEquiv (compose A B ab) C
++      (leftNestedBoundary A B C ab bc)).injective
++    simp only [Equiv.apply_symm_apply, Equiv.symm_apply_apply]
++  right_inv := by
++    intro p
++    simp only [Equiv.symm_apply_apply, Equiv.apply_symm_apply]
++
++def leftTripleIso :
++    SpanIso (leftBracketSpan A B C ab bc) (tripleSpan A B C ab bc) where
++  witness := leftTripleEquiv A B C ab bc
++  left := by
++    intro w
++    change (componentSpan A).left
++      ((compositePairEquiv A B ab
++        (compositePairEquiv (compose A B ab) C
++          (leftNestedBoundary A B C ab bc) w).val.1).val.1) =
++        (leftBracketInputEquiv A B C ab bc).symm
++          ((componentSpan (leftBracket A B C ab bc)).left w)
++    rw [compositePair_input, compositePair_input]
++    rfl
++  right := by
++    intro w
++    exact compositePair_output (compose A B ab) C
++      (leftNestedBoundary A B C ab bc) w
++
++def rightTripleEquiv :
++    (componentSpan (rightBracket A B C ab bc)).W ≃
++      CompatibleTriple A B C ab bc where
++  toFun := fun w => by
++    let p := compositePairEquiv A (compose B C bc)
++      (rightNestedBoundary A B C ab bc) w
++    let q := compositePairEquiv B C bc p.val.2
++    refine ⟨(⟨(p.val.1, q.val.1), ?_⟩, q.val.2), q.property⟩
++    simpa only [Equiv.symm_apply_apply] using
++      (congrArg (compositeInputEquiv B C bc).symm
++        ((right_boundary_square A B C ab bc
++          ((componentSpan A).right p.val.1)).symm.trans p.property)).trans
++            (compositePair_input B C bc p.val.2).symm
++  invFun := fun p => by
++    let w := (compositePairEquiv B C bc).symm
++      ⟨(p.val.1.val.2, p.val.2), p.property⟩
++    have hw : (componentSpan B).left p.val.1.val.2 =
++        (compositeInputEquiv B C bc).symm
++          ((componentSpan (compose B C bc)).left w) := by
++      simpa [w] using compositePair_input B C bc w
++    refine (compositePairEquiv A (compose B C bc)
++      (rightNestedBoundary A B C ab bc)).symm ?_
++    exact ⟨(p.val.1.val.1, w),
++      (right_boundary_square A B C ab bc
++        ((componentSpan A).right p.val.1.val.1)).trans
++          ((congrArg (compositeInputEquiv B C bc) p.val.1.property).trans
++            ((congrArg (compositeInputEquiv B C bc) hw).trans
++              (Equiv.apply_symm_apply _ _)))⟩
++  left_inv := by
++    intro w
++    apply (compositePairEquiv A (compose B C bc)
++      (rightNestedBoundary A B C ab bc)).injective
++    simp only [Equiv.apply_symm_apply]
++    apply Subtype.ext
++    apply Prod.ext
++    · rfl
++    · exact Equiv.symm_apply_apply _ _
++  right_inv := by
++    intro p
++    simp only [Equiv.apply_symm_apply, Equiv.symm_apply_apply]
++
++def rightTripleIso :
++    SpanIso (rightBracketSpan A B C ab bc) (tripleSpan A B C ab bc) where
++  witness := rightTripleEquiv A B C ab bc
++  left := by
++    intro w
++    exact compositePair_input A (compose B C bc)
++      (rightNestedBoundary A B C ab bc) w
++  right := by
++    intro w
++    change (componentSpan C).right
++      ((compositePairEquiv B C bc
++        (compositePairEquiv A (compose B C bc)
++          (rightNestedBoundary A B C ab bc) w).val.2).val.2) =
++        rightBracketOutputEquiv A B C ab bc
++          ((componentSpan (rightBracket A B C ab bc)).right w)
++    rw [compositePair_output, compositePair_output]
++    rfl
++
++noncomputable def bracketSpanIso :
++    SpanIso (leftBracketSpan A B C ab bc) (rightBracketSpan A B C ab bc) :=
++  (leftTripleIso A B C ab bc).trans (rightTripleIso A B C ab bc).symm
++
++theorem bracket_hom :
++    (Quotient.mk _ (leftBracketSpan A B C ab bc) :
++      inputInterface A ⟶ outputInterface C) =
++      (Quotient.mk _ (rightBracketSpan A B C ab bc) :
++        inputInterface A ⟶ outputInterface C) :=
++  Quotient.sound ⟨bracketSpanIso A B C ab bc⟩
++
++end IndexedWitness
+diff --git a/leanncd/experiments/indexed_execution/IndexedWitnessCoherenceTest.lean b/leanncd/experiments/indexed_execution/IndexedWitnessCoherenceTest.lean
+new file mode 100644
+index 00000000..980303c7
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedWitnessCoherenceTest.lean
+@@ -0,0 +1,60 @@
++import IndexedWitnessCoherence
++import IndexedWitnessTest
++import Semantics.AxiomAudit
++
++namespace IndexedWitnessCoherenceTest
++
++open LeanNCD.Semantics
++open IndexedWitness
++open IndexedComponentComposition
++open CategoryTheory
++
++variable {σA σB σC : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable [Fintype σC.Tensor] [DecidableEq σC.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB)
++variable (C : MatchedComponent σC)
++variable (ab : Boundary A B) (bc : Boundary B C)
++
++example : Boundary (compose A B ab) C :=
++  leftNestedBoundary A B C ab bc
++
++example : Boundary A (compose B C bc) :=
++  rightNestedBoundary A B C ab bc
++
++example (w : (componentSpan (leftBracket A B C ab bc)).W) :
++    (tripleSpan A B C ab bc).left
++      ((leftTripleEquiv A B C ab bc) w) =
++        (leftBracketSpan A B C ab bc).left w :=
++  (leftTripleIso A B C ab bc).left w
++
++example (w : (componentSpan (rightBracket A B C ab bc)).W) :
++    (tripleSpan A B C ab bc).right
++      ((rightTripleEquiv A B C ab bc) w) =
++        (rightBracketSpan A B C ab bc).right w :=
++  (rightTripleIso A B C ab bc).right w
++
++noncomputable example : SpanIso (leftBracketSpan A B C ab bc)
++    (rightBracketSpan A B C ab bc) :=
++  bracketSpanIso A B C ab bc
++
++example : (Quotient.mk _ (leftBracketSpan A B C ab bc) :
++      inputInterface A ⟶ outputInterface C) =
++    (Quotient.mk _ (rightBracketSpan A B C ab bc) :
++      inputInterface A ⟶ outputInterface C) :=
++  bracket_hom A B C ab bc
++
++#audit_axioms IndexedWitness
++#audit_axioms IndexedWitnessCoherenceTest
++
++#print axioms IndexedWitness.leftNestedBoundary
++#print axioms IndexedWitness.rightNestedBoundary
++#print axioms IndexedWitness.left_boundary_square
++#print axioms IndexedWitness.right_boundary_square
++#print axioms IndexedWitness.leftTripleEquiv
++#print axioms IndexedWitness.rightTripleEquiv
++#print axioms IndexedWitness.bracketSpanIso
++#print axioms IndexedWitness.bracket_hom
++
++end IndexedWitnessCoherenceTest
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index 95586695..cd9d1537 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -180,4 +180,6 @@ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
+          "IndexedComponentModelCycleFixtures", "IndexedComponentModelCycleTest",
+          "IndexedComponentModelTest",
+          "IndexedWitnessInterface", "IndexedWitnessSpan", "IndexedWitnessComposition",
++         "IndexedWitnessCoherence", "IndexedWitnessCoherenceTest",
++         "IndexedWitnessPartial", "IndexedWitnessPartialTest",
+          "IndexedWitnessCompositionTest", "IndexedWitnessTest"]

@@ -2,6 +2,17 @@
 
 ## Doing slice work here: two skills
 
+The nondefault `IndexedExecutionExperiment` has a denotational entry point
+`import IndexedWitnessSemantics`. `IndexedWitness` supplies whole interfaces,
+complete-model spans up to span isomorphism, pullback composition and ordinary
+category laws, explicit boundary/exterior transports, nested component
+coherence through compatible model triples, and injective-left partial maps.
+See [the witness semantics plan](../papers/semantics/categorical_witness_semantics_plan.md)
+and [record](../papers/semantics/categorical_witness_semantics_record.md).
+This is not a source functor or an event-sensitive process category; no core
+identity computation or runtime phase theorem is claimed. Observation probes
+and their separate parity module are test-only.
+
 Typed declaration/read/expression transport is implemented and proved by
 `IndexedComponentTransport`, `IndexedComponentTransportExpr`,
 `IndexedComponentTransportEval`, and `IndexedComponentTransportTest` in
