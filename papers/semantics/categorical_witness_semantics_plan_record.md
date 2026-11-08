@@ -2,9 +2,8 @@
 
 ## Status and provenance
 
-**Verified plan authored; controller execution/review/integration pending.**
-This record does not claim that patches were applied to the controller,
-release gates rerun there, or anything merged/pushed.
+**Seven verified tasks executed; final release/integration pending.**
+The authoring section below records the earlier artifact-only write-up.
 The fresh artifact-only writer edited only this record, the plan and
 `categorical_witness_semantics_record.md`. No production Lean, prototype,
 scripts, manifest, package or git state was modified; no nested agents ran.
@@ -185,3 +184,25 @@ the execution 175M cap. Report any independently observed breach explicitly.
 
 Do not mark this section complete from prototype receipts or this author's
 document checks. Execution and local integration remain the controller's work.
+
+## Actual seven-task execution
+
+The controller ran the packaged `--replay` on the clean plan-package branch.
+All seven patches actually applied, built their exact named targets, passed
+every changed Lean file through `check-snippet.sh` in its post-edit form,
+matched the intermediate source hashes, and were committed. The copied-source
+checks passed at tasks 6 and 7. `execution_replay.json` contains the actual
+seven receipts; the last execution commit is `fc45891c`.
+
+The controller's scoped Git comparison with the frozen prototype HEAD
+`0e49e370` was empty for the complete experiment source, lakefile, AGENTS and
+two edited design documents. The substantive pre-execution task reviews
+therefore apply to the executed bytes without a new source modification.
+The script's checkpoint labels are not independent review verdicts.
+No task, named build, post-edit snippet, or source-copy check was skipped.
+
+Local main advanced concurrently to `e7102517`. Its only overlapping file
+is the lakefile: the added JAX refusal-test glob is in a separate library,
+not the witness experiment. The controller will integrate this current-main
+change before final release checks and whole-branch reviews. The primary
+semantics contents hash is still the original protected value.

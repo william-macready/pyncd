@@ -1,0 +1,78 @@
+[
+  {
+    "task": "1",
+    "commit": "5b91d04933046de5e181010b4ac685dcf07e3f80",
+    "targets": [
+      "IndexedWitnessInterface",
+      "IndexedWitnessSpan",
+      "IndexedWitnessTest"
+    ],
+    "source_hashes": "pass",
+    "snippets": "pass",
+    "controller_review": "exact frozen bytes"
+  },
+  {
+    "task": "2",
+    "commit": "92ea0e277b79647bf3c546d2ab7f8fc57d1e1594",
+    "targets": [
+      "IndexedWitnessComposition",
+      "IndexedWitnessTest"
+    ],
+    "source_hashes": "pass",
+    "snippets": "pass",
+    "controller_review": "exact frozen bytes"
+  },
+  {
+    "task": "3",
+    "commit": "b2a853ad18aed221da04412565d2cd3d8144b5f9",
+    "targets": [
+      "IndexedWitnessCoherence",
+      "IndexedWitnessCoherenceTest"
+    ],
+    "source_hashes": "pass",
+    "snippets": "pass",
+    "controller_review": "exact frozen bytes"
+  },
+  {
+    "task": "4",
+    "commit": "bd783397679751c7d4d88416c3b99258d5b2d91d",
+    "targets": [
+      "IndexedWitnessPartial",
+      "IndexedWitnessPartialTest"
+    ],
+    "source_hashes": "pass",
+    "snippets": "pass",
+    "controller_review": "exact frozen bytes"
+  },
+  {
+    "task": "5",
+    "commit": "861a79b02f6352dd29ef20264a9c6a9d8b65afba",
+    "targets": [
+      "IndexedWitnessCompositionTest"
+    ],
+    "source_hashes": "pass",
+    "snippets": "pass",
+    "controller_review": "exact frozen bytes"
+  },
+  {
+    "task": "6",
+    "commit": "7b422d049fbcab44be2675f6b466afd08032c08f",
+    "targets": [
+      "IndexedWitnessObservationProbeTest",
+      "IndexedWitnessObservationParity"
+    ],
+    "source_hashes": "pass",
+    "snippets": "pass",
+    "controller_review": "exact frozen bytes"
+  },
+  {
+    "task": "7",
+    "commit": "fc45891c13e8467bf402a4ba3cf8c937d1f0a07e",
+    "targets": [
+      "IndexedWitnessSemantics"
+    ],
+    "source_hashes": "pass",
+    "snippets": "pass",
+    "controller_review": "exact frozen bytes"
+  }
+]

@@ -1,8 +1,9 @@
 # Witness-span semantics: historical design audit and current status
 
-**Current status:** the final detached prototype is compiled and verified;
-the executable plan is authored. Controller replay, direct task/whole-branch
-reviews, release reruns and local integration are still pending. This is not
+**Current status:** all seven verified tasks have actually executed and
+committed in the controller checkout, with builds, post-edit snippets,
+exact source checks and direct task reviews. Final whole-branch reviews,
+release reruns and local integration are still pending. This is not
 a completed release or a source/process-category claim.
 
 The verified prototype proves the metadata-bearing whole-interface span
