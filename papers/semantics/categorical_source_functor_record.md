@@ -190,8 +190,8 @@ and primary dirty-state preservation.
 |---|---|---|
 | Independent plan findings/adjudication | PASS | Controller reviewed the full live plan independently of both authors; frozen scope, exact commands, donor/control limits, reconstruction footprint and advanced-main integration agree with verified artifacts. No unresolved findings. |
 | Reconstruction gate | PASS | Frozen eight-file/three-patch audit and replay passed; apply_patch deleted only the eight new prototype modules and reversed the exact lakefile addition. Status and empty lakefile diff confirmed the baseline; artifacts remained intact. |
-| Task 1 | PASS, committing | Exact task1 patch applied after --check; reconstructed wire snippet compiled. Controller geometry review clean; source SHA256 is the frozen package identity. |
-| Task 2 | Pending | Patch/file hashes, targeted build/universe, soundness review, commit, usage |
+| Task 1 | PASS | Commit 86aed9d1; exact task1 patch applied after --check; wire snippet compiled and hash matched. Controller geometry review clean. |
+| Task 2 | PASS, committing | Exact task2 patch applied after --check; all three source hashes matched. Targeted build exited 0 (2,985 jobs); universe/API snippet compiled. Controller presentation/soundness review clean. |
 | Task 3 | Pending | Patch/file hashes, tests/audits/parities, actual 10-cycle table, observation review, commit, usage |
 | Direct documentation sweep | Pending | Current-value/prose/path checks, split source/process ledger, entry point, commit |
 | Controller release | Pending | Fresh unfiltered manifest execution, byte restores, source/copy/namespace audits, eight snippets, universe, full three-target build, exit/job observations |
@@ -215,6 +215,17 @@ coherence. Inversion eliminates dependent port equality explicitly and proves
 the inverse environment equivalence; the three constructor transport proofs
 identify the actual input, boundary and output maps. No target or original
 transport declarations were edited. No findings. Task 2 remains next.
+
+Task 2 review: the inductive relation supplies source equivalence and typed
+congruence independently of denotation. The quotient category uses those
+source generators, not target equality; the actual Mathlib functor descends
+only through the proof covering every generator. Leaves use the unchanged
+complete-witness componentSpan. Binary assembly invokes composition_hom
+with the exact three wire maps. Both nested-to-triple derivations use assembly,
+boundary-square schemas, wire composition and source associativity, without
+the redundant bracket generator; its separate soundness proof uses
+rebaseGraphs and bracket_hom. No fresh UID/program equality is asserted.
+Type 1 objects/homs and the actual functor API compiled; no findings.
 
 ### Final soundness review findings
 
