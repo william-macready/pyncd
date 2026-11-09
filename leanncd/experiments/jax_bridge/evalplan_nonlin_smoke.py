@@ -50,7 +50,7 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_head", "transformer_head32", "scan_postrole", "scan_postrole32",
                         "transformer_unrolled", "transformer_unrolled32",
                         "transformer_window", "transformer_window32", "transformer_strict", "transformer_strict32",
-                        "transformer_sink", "transformer_sink32"}
+                        "transformer_sink", "transformer_sink32", "transformer_mqa", "transformer_mqa32"}
 # Predicate-mask scan fixtures (`transformer_<kind>`, q = s = 5): kind -> the perturbed position of the
 # receptive-field pin (chosen so the reachable and the unreachable row sets are both non-empty).
 MASK_FIXTURES = {"window": 0, "strict": 4, "sink": 3}
@@ -132,11 +132,12 @@ def mask_allow(kind: str, n: int) -> np.ndarray:
     return allow
 
 
-def np_transformer(inp: dict, n_layers: int = 2, unit_gains: bool = False, allow=None) -> list:
+def np_transformer(inp: dict, n_layers: int = 2, unit_gains: bool = False, allow=None, mqa: bool = False) -> list:
     """Independent float64 numpy model of the standard pre-norm transformer, from the inputs only: per layer
     N1 = H/sqrt(msq(H)+Eps) * G1[l]; Q,K,V from N1; S = causal softmax_s(Q.K * Sc) (or over `allow[q][s]` when given: an all-masked query row is zero); Attn = W_O . (S.V);
     R1 = H + Attn; N2 = R1/sqrt(msq(R1)+Eps) * G2[l]; F = gelu(W_in . N2); Y = W_out . F; H' = R1 + Y,
-    msq(x) = sum_m x^2 * Inv[m]. Returns one dict per layer keyed like the unrolled oracle's outputs
+    msq(x) = sum_m x^2 * Inv[m]. With `mqa` the key and value projections have no head axis (`W_K[l, k, m]`,
+    `W_V[l, k, m]`, `K[s, k]`, `V[s, k]`, shared by every query head). Returns one dict per layer keyed like the unrolled oracle's outputs
     (Ssa, Vea, Sda, Na, Q, K, V, S, AO, At, Ra, Ssb, Veb, Sdb, Nb, F, Y, H); `H` is the layer's OUTPUT."""
     f = {k: np.asarray(v, dtype=np.float64) for k, v in inp.items()}
     h, layers = f["X"], []
@@ -150,12 +151,18 @@ def np_transformer(inp: dict, n_layers: int = 2, unit_gains: bool = False, allow
         o["Sda"] = np.sqrt(o["Vea"])
         o["Na"] = h / o["Sda"][:, None] * g1
         o["Q"] = np.einsum("hkm,qm->qhk", f["W_Q"][l], o["Na"])
-        o["K"] = np.einsum("hkm,sm->shk", f["W_K"][l], o["Na"])
-        o["V"] = np.einsum("hkm,sm->shk", f["W_V"][l], o["Na"])
-        lg = np.einsum("qhk,shk->hqs", o["Q"], o["K"]) * f["Sc"]
+        if mqa:
+            o["K"] = np.einsum("km,sm->sk", f["W_K"][l], o["Na"])
+            o["V"] = np.einsum("km,sm->sk", f["W_V"][l], o["Na"])
+            lg = np.einsum("qhk,sk->hqs", o["Q"], o["K"]) * f["Sc"]
+        else:
+            o["K"] = np.einsum("hkm,sm->shk", f["W_K"][l], o["Na"])
+            o["V"] = np.einsum("hkm,sm->shk", f["W_V"][l], o["Na"])
+            lg = np.einsum("qhk,shk->hqs", o["Q"], o["K"]) * f["Sc"]
         o["S"] = (np_softmax_last(np.where(tril[None], lg, -np.inf)) if allow is None
                   else np_masked_softmax(lg, allow))
-        o["AO"] = np.einsum("hqs,shk->qhk", o["S"], o["V"])
+        o["AO"] = (np.einsum("hqs,sk->qhk", o["S"], o["V"]) if mqa
+                   else np.einsum("hqs,shk->qhk", o["S"], o["V"]))
         o["At"] = np.einsum("mhk,qhk->qm", f["W_O"][l], o["AO"])
         o["Ra"] = h + o["At"]
         o["Ssb"] = np.einsum("qm,qm,m->q", o["Ra"], o["Ra"], f["Inv"])
@@ -390,6 +397,82 @@ def mask_fixture_pins(by: dict, kind: str, sfx: str) -> None:
           f"causal model by {causal_gap:.3f} and from {', '.join(f'{k} by {v:.3f}' for k, v in other_gaps.items())}; "
           f"receptive field of X[{p}]: rows {sorted(reach)} respond (max abs {moved:.3e}), rows {unreach} bitwise "
           f"unchanged on the eager runtime{extra}; per-output measured difference vs numpy and vs Lean:")
+    print_np_stats(name)
+    sc_err = NUM_STATS[(name, "H")][0]
+    print(f"  H headroom to MODEL_TOL: {MODEL_TOL[_DT] / max(sc_err, 1e-300):.1f}x (observed {sc_err:.3e} of {MODEL_TOL[_DT]:.0e})")
+    for n in sorted(n for fx_, n in OUT_STATS if fx_ == name):
+        rel, ab, ex, tot = OUT_STATS[(name, n)]
+        print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+
+def mqa_fixture_pins(by: dict, sfx: str) -> None:
+    """Pins of the multi-query scan fixture (`transformer_mqa`): `K[s, k]` and `V[s, k]` carry no head axis (weights
+    `W_K[l, k, m]`, `W_V[l, k, m]`), `Q[q, h, k]` does. Value pin against the numpy model with head-free K and V,
+    non-vacuity against the multi-head model and between the two query heads, equivalence to the STANDARD multi-head
+    plan run on head-replicated weights (eager runtime, no Lean value involved), NaN layer-2 slices."""
+    name = f"transformer_mqa{sfx}"
+    std_name = f"transformer_scan{sfx}"
+    fx, std = by[name], by[std_name]
+    scans = [n for n in fx["plan"]["nodes"] if n.get("kind") == "scan"]
+    assert len(fx["plan"]["nodes"]) == 1 and len(scans) == 1 and scans[0]["step_count"] == 2, fx["plan"]["nodes"]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    sin = {n: lean_array(e) for n, e in std["inputs"].items()}
+    assert sorted(fin) == sorted(sin), (sorted(fin), sorted(sin))
+    n_heads, n_k = sin["W_Q"].shape[1], sin["W_Q"].shape[2]
+    # the head axis is gone from the key and value weights (and only from those), the query weights keep it
+    assert fin["W_Q"].shape == sin["W_Q"].shape and fin["W_O"].shape == sin["W_O"].shape, name
+    assert fin["W_K"].shape == fin["W_V"].shape == (3, n_k, 4) and sin["W_K"].shape == (3, n_heads, n_k, 4), (name, fin["W_K"].shape)
+    # every other input is the standard fixture's, bit for bit; layer 0 of the head-free stacks is head 0's slice of
+    # the standard weights (head 1: head 0's slices are binary32 ill-conditioned, see `mqaWK` in the Lean file; no new
+    # magic numbers), layer 1 differs from layer 0 and layer 2 is NaN
+    for n in sin:
+        if n not in ("W_K", "W_V"):
+            assert np.array_equal(bits(fin[n]), bits(sin[n])), (name, "input differs from the standard fixture", n)
+    for w in ("W_K", "W_V"):
+        assert np.array_equal(bits(fin[w][0]), bits(sin[w][0, 1])), (name, w)
+        assert np.all(np.isnan(fin[w][2])) and np.all(np.isfinite(fin[w][:2])), (name, w)
+        assert not np.array_equal(fin[w][0], fin[w][1]), (name, w)
+    for w in ("W_Q", "W_O", "W_in", "W_out", "G1", "G2"):
+        assert fin[w].shape[0] == 3 and np.all(np.isnan(fin[w][2])) and np.all(np.isfinite(fin[w][:2])), (name, w)
+    layers = np_transformer(fin, mqa=True)
+    want = np_state(fin, layers)
+    # non-vacuity (a): the pin tells MQA apart from the multi-head model on the standard head-carrying weights
+    mh_gap = float(np.max(np.abs(want - np_state(sin, np_transformer(sin)))))
+    assert mh_gap > 1e-2, (name, "MQA is indistinguishable from the multi-head model", mh_gap)
+    # non-vacuity (b): the two query heads attend differently (a model where every head had the same attention would
+    # pass a broadcast test vacuously), in every layer
+    head_gaps = [float(np.max(np.abs(o["S"][0] - o["S"][1]))) for o in layers]
+    assert all(g > 1e-2 for g in head_gaps), (name, "heads attend alike", head_gaps)
+    views = {"lean": {n: lean_array(e) for n, e in fx["expected"].items()},
+             "eager": {n: np.asarray(v) for n, v in EAGER[name]["eager"].items()},
+             "jit": {n: np.asarray(v) for n, v in EAGER[name]["jit"].items()}}
+    for who, outs in views.items():
+        # exactly the state is exported, and it is finite (a step reading layer 2 would turn it NaN)
+        assert sorted(outs) == ["H"] and np.all(np.isfinite(outs["H"])), (name, who, sorted(outs))
+        assert outs["H"].shape == (3, 4, 3), (name, who, outs["H"].shape)
+        check_np(name, who, "H", outs["H"], want)
+    # equivalence: the STANDARD multi-head plan on weights with the head-free K and V replicated over h computes the
+    # same state as the MQA plan (eager runtime on both sides; a wrong K or V slice, or a broadcast over the wrong axis
+    # in the MQA plan, breaks it). The standard plan on its own, head-distinct weights does NOT (non-vacuity).
+    mh_in = dict(fin)
+    for w in ("W_K", "W_V"):
+        mh_in[w] = np.repeat(fin[w][:, None], n_heads, axis=1)
+    assert mh_in["W_K"].shape == sin["W_K"].shape, (name, mh_in["W_K"].shape)
+    run_mh = rt.run_named(std["plan"], {n: jnp.asarray(a) for n, a in mh_in.items()}, JDT)
+    h_mqa, h_mh = np.asarray(EAGER[name]["eager"]["H"]), np.asarray(run_mh["H"])
+    assert h_mqa.dtype == h_mh.dtype == NDT and h_mqa.shape == h_mh.shape, (name, h_mqa.dtype, h_mh.dtype)
+    equal_bits = int(np.sum(bits(h_mqa) == bits(h_mh)))
+    equiv_gap = float(np.max(np.abs(h_mqa.astype(np.float64) - h_mh.astype(np.float64))))
+    assert equal_bits == h_mqa.size, (name, "MQA H is not bitwise the multi-head plan's H on head-replicated weights",
+                                      equal_bits, h_mqa.size, equiv_gap)
+    std_gap = float(np.max(np.abs(np.asarray(EAGER[std_name]["eager"]["H"]).astype(np.float64) - h_mqa.astype(np.float64))))
+    assert std_gap > 1e-2, (name, "the equivalence pin cannot tell head-distinct weights apart", std_gap)
+    print(f"{name}: one scan record, 2 steps; K[s, k], V[s, k] head-free (W_K, W_V {fin['W_K'].shape} = [l, k, m]), every other "
+          f"input bitwise the standard fixture's, layer-2 slices NaN and H finite; H layers 0, 1, 2 == numpy MQA model on "
+          f"Lean, eager and jit; differs from the numpy multi-head model by {mh_gap:.3f}; the two query heads' attention "
+          f"differs by {', '.join(f'{g:.3f}' for g in head_gaps)} (layers 0, 1); eager H == the STANDARD plan on "
+          f"head-replicated weights bitwise ({equal_bits}/{h_mqa.size} entries, max abs {equiv_gap:.1e}), and the standard "
+          f"plan on its head-distinct weights differs by {std_gap:.3f}; per-output measured difference vs numpy and vs Lean:")
     print_np_stats(name)
     sc_err = NUM_STATS[(name, "H")][0]
     print(f"  H headroom to MODEL_TOL: {MODEL_TOL[_DT] / max(sc_err, 1e-300):.1f}x (observed {sc_err:.3e} of {MODEL_TOL[_DT]:.0e})")
@@ -690,6 +773,9 @@ def main() -> None:
     # PREDICATE MASKS inside the layer scan (window, strict, sink; q = s = 5): see `mask_fixture_pins`.
     for mk in MASK_FIXTURES:
         mask_fixture_pins(by, mk, sfx)
+
+    # MULTI-QUERY ATTENTION inside the layer scan (head-free K and V): see `mqa_fixture_pins`.
+    mqa_fixture_pins(by, sfx)
 
     # POST-SCAN ROLE: `S[j, l+1] := S[j, l] . G[j]` (closed form `S = X * G**l`) and six statements nothing in
     # the recurrence reads, so each is a plain node AFTER the one scan node and `l` is an ordinary axis in it.

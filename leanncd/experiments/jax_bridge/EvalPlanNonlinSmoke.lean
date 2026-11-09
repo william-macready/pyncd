@@ -1096,6 +1096,81 @@ def maskEnv64 : HashMap String DenseTensor :=
 def maskEnv32 : NamedDenseEnv32 :=
   (scanEnv32.insert "X" (t32 [5, 4] maskX)).insert "Eps" (t32 [5] maskEps)
 
+/-! ### Multi-query attention inside the layer scan (`transformer_mqa`, `transformer_mqa32`)
+
+The standard `scanProg` with the head axis dropped from the key and value projections: `K[s, k]` and `V[s, k]`
+read head-free weights `W_K[l, k, m]` and `W_V[l, k, m]`; only `Q[q, h, k]` keeps `h`. The score line
+broadcasts the head-free `K` into the masked softmax and the output line broadcasts the head-free `V` back,
+both inside the scan. Everything else is the standard fixture's (same extents, same mask, same inputs). -/
+
+def mqaProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 3
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, k, m), W_V(l, k, m), W_O(l, m, h, k)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
+  tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
+  tensor f64 Q(q, h, k), K(s, k), V(s, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 R1(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, k]          := W_K[l, k, m] · N1[s, m]
+  V[s, k]          := W_V[l, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+/-- The binary32 sibling: only the declarations that pin axis order and the history shape. -/
+def mqaProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 3
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, k]          := W_K[l, k, m] · N1[s, m]
+  V[s, k]          := W_V[l, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+
+/-- Head-free key and value weights: head 1's slice of the multi-head layer-0 data (`[k=2, m=4]`, entries 8 to
+    15), stacked like every weight (layer 0, derived layer 1, NaN layer 2). Both heads then share one effective
+    K and V, which the equivalence pin in `evalplan_nonlin_smoke.py` replicates over `h`. Head 1 and not head 0
+    because the head-0 slices (K and V) make the binary32 state ill-conditioned (observed 3.6e-6 against the
+    float64 numpy model at `MODEL_TOL` 1e-6, Lean and JAX eager agreeing to one ulp); head 1 gives 1.6e-7. -/
+def mqaWK : Array Float := scanStack (trWK.extract 8 16)
+def mqaWV : Array Float := scanStack (trWV.extract 8 16)
+def mqaEnv64 : HashMap String DenseTensor :=
+  (scanEnv64.insert "W_K" (t64 [3, 2, 4] mqaWK)).insert "W_V" (t64 [3, 2, 4] mqaWV)
+def mqaEnv32 : NamedDenseEnv32 :=
+  (scanEnv32.insert "W_K" (t32 [3, 2, 4] mqaWK)).insert "W_V" (t32 [3, 2, 4] mqaWV)
+
 /-! ### Post-scan statements with the scan axis as an ordinary axis (`scan_postrole`, `scan_postrole32`)
 
 A scaling recurrence `S[j, l] = X[j] · G[j]^l` over `iter l = 4` and six statements that nothing in the
@@ -1189,6 +1264,7 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "transformer_window" windowProg maskEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "transformer_strict" strictProg maskEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "transformer_sink" sinkProg maskEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture64 "transformer_mqa" mqaProg mqaEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "scan_postrole" postRoleProg
         (env64 [("X", t64 [2] postRoleX), ("G", t64 [2] postRoleG), ("V", t64 [4] postRoleV), ("M", t64 [4] postRoleM)])
         0 0 none true (scans := 1),
@@ -1246,6 +1322,7 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "transformer_window32" windowProg32 maskEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "transformer_strict32" strictProg32 maskEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "transformer_sink32" sinkProg32 maskEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture32 "transformer_mqa32" mqaProg32 mqaEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "scan_postrole32" postRoleProg32
         (env32 [("X", t32 [2] postRoleX), ("G", t32 [2] postRoleG), ("V", t32 [4] postRoleV), ("M", t32 [4] postRoleM)])
         0 0 none true (scans := 1),
