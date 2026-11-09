@@ -913,6 +913,189 @@ def headEnv64 : HashMap String DenseTensor :=
 def headEnv32 : NamedDenseEnv32 :=
   (scanEnv32.insert "W_U" (t32 [5, 4] trWU)).insert "Gf" (t32 [4] trGf)
 
+/-! ### Predicate masks inside the layer scan (`transformer_window`, `transformer_strict`, `transformer_sink`, each with a `32` sibling)
+
+The standard `scanProg` with ONLY the mask of `S` changed and q = s = 5 (so a window or a sink is non-trivial):
+sliding window `s ≤ q ∧ q - s < 2` (subtraction in a predicate term, conjunction), strict `s < q` (query row 0
+attends nothing: a fully masked row inside the scan) and attention sink `s ≤ q ∧ (s = 0 ∨ q - s < 2)`
+(disjunction, equality with a constant, parentheses). Same weights, gains and `Sc` as `scanEnv64`; `X[5, 4]` and
+`Eps[5]` are new. -/
+
+def windowProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
+  tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 R1(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q ∧ q - s < 2)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+/-- The binary32 sibling of `windowProg`. -/
+def windowProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q ∧ q - s < 2)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+def strictProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
+  tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 R1(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s < q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+/-- The binary32 sibling of `strictProg`. -/
+def strictProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s < q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+def sinkProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
+  tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 R1(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q ∧ (s = 0 ∨ q - s < 2))(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+/-- The binary32 sibling of `sinkProg`. -/
+def sinkProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q ∧ (s = 0 ∨ q - s < 2))(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+
+/-- Five distinct residual rows (the first three are `trX`'s) and five distinct epsilons. -/
+def maskX : Array Float :=
+  #[0.5, -1.0, 0.75, 0.25,  1.25, 0.5, -0.5, 1.0,  -0.75, 1.5, 0.25, -1.25,  0.9, -0.3, -1.1, 0.6,  -0.2, 0.8, 1.4, -0.65]
+def maskEps : Array Float := #[1e-5, 2e-5, 3e-5, 1.5e-5, 2.5e-5]
+def maskEnv64 : HashMap String DenseTensor :=
+  (scanEnv64.insert "X" (t64 [5, 4] maskX)).insert "Eps" (t64 [5] maskEps)
+def maskEnv32 : NamedDenseEnv32 :=
+  (scanEnv32.insert "X" (t32 [5, 4] maskX)).insert "Eps" (t32 [5] maskEps)
+
 /-! ### Post-scan statements with the scan axis as an ordinary axis (`scan_postrole`, `scan_postrole32`)
 
 A scaling recurrence `S[j, l] = X[j] · G[j]^l` over `iter l = 4` and six statements that nothing in the
@@ -1003,6 +1186,9 @@ def corpus64 : IO (Array String) := do
         0 0 (some (1, 0, 0)) true,
     ← fixture64 "transformer_scan" scanProg scanEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "transformer_head" headProg headEnv64 1 2 none true (scans := 1),
+    ← fixture64 "transformer_window" windowProg maskEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture64 "transformer_strict" strictProg maskEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture64 "transformer_sink" sinkProg maskEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "scan_postrole" postRoleProg
         (env64 [("X", t64 [2] postRoleX), ("G", t64 [2] postRoleG), ("V", t64 [4] postRoleV), ("M", t64 [4] postRoleM)])
         0 0 none true (scans := 1),
@@ -1057,6 +1243,9 @@ def corpus32 : IO (Array String) := do
         0 0 (some (1, 0, 0)) true,
     ← fixture32 "transformer_scan32" scanProg32 scanEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "transformer_head32" headProg32 headEnv32 1 2 none true (scans := 1),
+    ← fixture32 "transformer_window32" windowProg32 maskEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture32 "transformer_strict32" strictProg32 maskEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture32 "transformer_sink32" sinkProg32 maskEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "scan_postrole32" postRoleProg32
         (env32 [("X", t32 [2] postRoleX), ("G", t32 [2] postRoleG), ("V", t32 [4] postRoleV), ("M", t32 [4] postRoleM)])
         0 0 none true (scans := 1),
