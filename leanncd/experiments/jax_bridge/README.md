@@ -446,6 +446,13 @@ attends nothing: a fully masked row inside the scan, expected all zero), `transf
 pin (rows unreachable from a perturbed position stay bitwise identical on the eager runtime). Observed numbers and the mutation table: section 12 of
 `papers/semantics/jax_scan_record.md`.
 
+`transformer_mqa` / `transformer_mqa32` are the standard two-layer scan with multi-query attention: the key and value projections drop the head axis
+(`K[s, k] := W_K[l, k, m] · N1[s, m]`, `V[s, k] := W_V[l, k, m] · N1[s, m]`, weights `[l, k, m]`), only `Q[q, h, k]` keeps `h`, so the head-free `K` is
+broadcast into the masked softmax and the head-free `V` back into the attention output, inside the scan (the standard fixtures carry `h` on Q, K and V; this is the
+one that does not). Same mask, extents and every other input as `transformer_scan`. Checked against a numpy model with head-free K and V, and against the
+STANDARD multi-head plan run on the same weights replicated over `h` (bitwise equal on the eager runtime). Observed numbers, the binary32 headroom, why the
+head-free weights are head 1's slices, and the mutation table: section 13 of `papers/semantics/jax_scan_record.md`.
+
 `scan_postrole` / `scan_postrole32` run six post-scan statements with the scan axis as an ordinary axis through
 both backends (`iter l = 4`, `S[j,l] = X[j]·G[j]^l`): a sum over `l` against an external tensor
 (`Ysum := S[j,2]·V[l]`), a free read of the state summed over `l` (`Yfree := S[j,l]·V[l]`, NOT the per-step
