@@ -11,8 +11,9 @@
   "primary_dirty_readme_sha256_before_and_after": "467f94f6890675822e3972fc72d8d79ebdf3f661d48cdb7f5449606f4f568f25",
   "concurrent_jax_changes": "preserved",
   "topic_worktree_status": "clean",
-  "worktree_cleanup": "pending workspace exit",
-  "branch_cleanup": "pending worktree removal",
+  "worktree_cleanup": "completed; clean task worktree removed after user-confirmed chat move to primary",
+  "branch_cleanup": "completed; fully merged agents/categorical-source-functor-update deleted",
+  "other_worktrees": "untouched",
   "pushed": false,
   "token_accounting": "unavailable for Copilot transcripts; prototype turn-aim overrun disclosed"
 }

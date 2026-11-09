@@ -197,7 +197,7 @@ and primary dirty-state preservation.
 | Controller release | PASS | Fresh unfiltered release controls 10/10, expected diagnostics, exact restores and restored builds; mutations_release.md/log. Eight module snippets, universe/API, exact-copy/source/namespace audits and ordered replay passed. Full LeanNCD Tests IndexedExecutionExperiment build exited 0 (8,919 jobs); full_build_release.log. No proof-shortcut tokens; namespace audits only standard axioms. |
 | Final soundness lens | CLEAN, documentation finding repaired | review_soundness.md traces every source schema and both actual nested comparisons. No load-bearing defect; its P3 stale-summary finding is accepted and repaired with DOC-1. |
 | Final integration/observation lens | DOC-1 accepted and repaired | review_integration.md independently checks whole-branch observation/import/artifact boundaries; no additional implementation/integration defect. P2 DOC-1 is the same stale summary, now repaired without Lean changes. |
-| Local integration/task-only cleanup | Merge PASS; cleanup pending | Merge a67bee5693a13cdd112d2ce573141f3c3405248a into local main completed without conflicts. Topic ancestry and frozen source/copy/wiring hashes passed; merged-main full build passed 8,919 jobs. Primary README remained byte-identical; only unrelated JAX deltas distinguish main from topic. Topic worktree is clean; removal remains pending leaving its attached chat workspace. No push. |
+| Local integration/task-only cleanup | PASS | Merge a67bee5693a13cdd112d2ce573141f3c3405248a into local main completed without conflicts. Topic ancestry and frozen source/copy/wiring hashes passed; merged-main full build passed 8,919 jobs. Primary README remained byte-identical; unrelated JAX changes preserved. After the user confirmed moving this chat to primary, the clean completed worktree was removed and its fully merged branch deleted. Other worktrees were untouched. No push. |
 | Budget close-out | Measurement unavailable | Controller token-report again returned no transcript for the actual Copilot session. Authoring/execution cumulative input and peak cannot be measured by this repository's Claude-transcript tool; no numerical compliance claimed. Prototype 55-turn aim overrun remains disclosed; fresh author stayed within its 40-turn aim. Final-review accounting remains to record. |
 
 ### Per-task review findings
@@ -286,5 +286,9 @@ No output-only collapse, event-free core identity, process/phase/trace law,
 broader source structure, faithfulness or backend refinement is claimed.
 The ten controls have the observational/theorem-donor limits stated above.
 Final whole-branch reviews are complete and their sole documentation finding
-is repaired and verified. Local integration and merged-main verification
-passed; task-only branch/worktree cleanup remains pending.
+is repaired and verified. Local integration, merged-main verification and
+task-only branch/worktree cleanup passed. The verified plan, frozen patches,
+reviews and separate execution/release/integration evidence remain on local
+main. No task was skipped or parked; process/backend extensions remain
+explicitly excluded. Token totals and context peaks remain unavailable rather
+than declared compliant, and the prototype turn-aim overrun remains recorded.
