@@ -48,7 +48,12 @@ OUT_STATS: dict[tuple[str, str], list] = {}  # (fixture, output name) -> stats; 
 TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "transformer_rms32",
                         "transformer_scan", "transformer_scan32",
                         "transformer_head", "transformer_head32", "scan_postrole", "scan_postrole32",
-                        "transformer_unrolled", "transformer_unrolled32"}
+                        "transformer_unrolled", "transformer_unrolled32",
+                        "transformer_window", "transformer_window32", "transformer_strict", "transformer_strict32",
+                        "transformer_sink", "transformer_sink32"}
+# Predicate-mask scan fixtures (`transformer_<kind>`, q = s = 5): kind -> the perturbed position of the
+# receptive-field pin (chosen so the reachable and the unreachable row sets are both non-empty).
+MASK_FIXTURES = {"window": 0, "strict": 4, "sink": 3}
 # Scan-vs-unrolled oracle (both JAX results, no Lean): (rtol, atol) per precision. MEASURED: scan and
 # unrolled are bit-identical in float64 (eager and jit) and in float32 jit (24/24 entries each), so
 # the tolerance is exactly zero (value equality; the observed bit-identical count is printed).
@@ -97,9 +102,39 @@ def np_softmax_last(z):
     return e / e.sum(axis=-1, keepdims=True)
 
 
-def np_transformer(inp: dict, n_layers: int = 2, unit_gains: bool = False) -> list:
+def np_masked_softmax(lg, allow):
+    """Softmax over the last axis of `lg[h, q, s]` restricted to the entries `allow[q][s]`; a query row that
+    allows nothing is all ZERO (not uniform, not NaN), as the standalone all-masked fixtures pin."""
+    out = np.zeros_like(lg)
+    for h in range(lg.shape[0]):
+        for q in range(lg.shape[1]):
+            cols = [s for s in range(lg.shape[2]) if allow[q][s]]
+            if cols:
+                z = lg[h, q, cols]
+                e = np.exp(z - z.max())
+                out[h, q, cols] = e / e.sum()
+    return out
+
+
+def mask_allow(kind: str, n: int) -> np.ndarray:
+    """`allow[q][s]` of each predicate mask, written from its English definition with plain loops:
+    window = attend to the current and the previous position; strict = attend to strictly earlier positions only;
+    sink = the causal window of width 2 plus position 0 (the attention sink)."""
+    allow = np.zeros((n, n), dtype=bool)
+    for q in range(n):
+        for s in range(n):
+            if kind == "window":
+                allow[q][s] = (s <= q and q - s < 2)
+            elif kind == "strict":
+                allow[q][s] = (s < q)
+            else:
+                allow[q][s] = (s <= q and (s == 0 or q - s < 2))
+    return allow
+
+
+def np_transformer(inp: dict, n_layers: int = 2, unit_gains: bool = False, allow=None) -> list:
     """Independent float64 numpy model of the standard pre-norm transformer, from the inputs only: per layer
-    N1 = H/sqrt(msq(H)+Eps) * G1[l]; Q,K,V from N1; S = causal softmax_s(Q.K * Sc); Attn = W_O . (S.V);
+    N1 = H/sqrt(msq(H)+Eps) * G1[l]; Q,K,V from N1; S = causal softmax_s(Q.K * Sc) (or over `allow[q][s]` when given: an all-masked query row is zero); Attn = W_O . (S.V);
     R1 = H + Attn; N2 = R1/sqrt(msq(R1)+Eps) * G2[l]; F = gelu(W_in . N2); Y = W_out . F; H' = R1 + Y,
     msq(x) = sum_m x^2 * Inv[m]. Returns one dict per layer keyed like the unrolled oracle's outputs
     (Ssa, Vea, Sda, Na, Q, K, V, S, AO, At, Ra, Ssb, Veb, Sdb, Nb, F, Y, H); `H` is the layer's OUTPUT."""
@@ -118,7 +153,8 @@ def np_transformer(inp: dict, n_layers: int = 2, unit_gains: bool = False) -> li
         o["K"] = np.einsum("hkm,sm->shk", f["W_K"][l], o["Na"])
         o["V"] = np.einsum("hkm,sm->shk", f["W_V"][l], o["Na"])
         lg = np.einsum("qhk,shk->hqs", o["Q"], o["K"]) * f["Sc"]
-        o["S"] = np_softmax_last(np.where(tril[None], lg, -np.inf))
+        o["S"] = (np_softmax_last(np.where(tril[None], lg, -np.inf)) if allow is None
+                  else np_masked_softmax(lg, allow))
         o["AO"] = np.einsum("hqs,shk->qhk", o["S"], o["V"])
         o["At"] = np.einsum("mhk,qhk->qm", f["W_O"][l], o["AO"])
         o["Ra"] = h + o["At"]
@@ -270,6 +306,96 @@ def run_fixture(f: dict) -> None:
         if is_transformer(f["name"]):
             record_output(f["name"], name, eager[name], exp)
             record_output(f["name"], name, jitted[name], exp)
+
+
+def reachable_rows(allow, p: int, steps: int) -> set:
+    """Rows that depend on position p after `steps` layers: a row keeps itself (residual) and gains every row
+    that attends to a row already reached (`allow[q][s]`: query q attends to position s)."""
+    rows = {p}
+    for _ in range(steps):
+        rows = rows | {q for q in range(len(allow)) if any(allow[q][s] for s in rows)}
+    return rows
+
+
+def mask_fixture_pins(by: dict, kind: str, sfx: str) -> None:
+    """Pins of one predicate-mask scan fixture (`transformer_<kind>`): value pin against the numpy model whose mask
+    is written from the English definition, non-vacuity against the causal model and the other masks, and the
+    receptive-field pin on the eager runtime (rows unreachable from the perturbed position stay BITWISE equal)."""
+    name = f"transformer_{kind}{sfx}"
+    fx = by[name]
+    scans = [n for n in fx["plan"]["nodes"] if n.get("kind") == "scan"]
+    assert len(fx["plan"]["nodes"]) == 1 and len(scans) == 1 and scans[0]["step_count"] == 2, fx["plan"]["nodes"]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    n_pos = fin["X"].shape[0]
+    assert fin["X"].shape == (5, 4) and fin["Eps"].shape == (5,) and n_pos == 5, (fin["X"].shape, fin["Eps"].shape)
+    # the model's own layer-2 slice is NaN in the weight stacks, as in the standard scan fixture
+    for w in ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out", "G1", "G2"):
+        assert fin[w].shape[0] == 3 and np.all(np.isnan(fin[w][2])) and np.all(np.isfinite(fin[w][:2])), w
+    allow = mask_allow(kind, n_pos)
+    layers = np_transformer(fin, allow=allow)
+    want = np_state(fin, layers)
+    # non-vacuity: the pin tells this mask apart from the causal one and from the other two masks
+    causal_gap = float(np.max(np.abs(want - np_state(fin, np_transformer(fin)))))
+    assert causal_gap > 1e-2, (name, "mask is indistinguishable from the causal mask", causal_gap)
+    other_gaps = {}
+    for other in MASK_FIXTURES:
+        if other != kind:
+            other_gaps[other] = float(np.max(np.abs(
+                want - np_state(fin, np_transformer(fin, allow=mask_allow(other, n_pos))))))
+            assert other_gaps[other] > 1e-2, (name, "mask is indistinguishable from", other, other_gaps[other])
+    views = {"lean": {n: lean_array(e) for n, e in fx["expected"].items()},
+             "eager": {n: np.asarray(v) for n, v in EAGER[name]["eager"].items()},
+             "jit": {n: np.asarray(v) for n, v in EAGER[name]["jit"].items()}}
+    for who, outs in views.items():
+        assert "H" in outs and all(np.all(np.isfinite(v)) for v in outs.values()), (name, who, sorted(outs))
+        assert outs["H"].shape == (n_pos, 4, 3), (name, who, outs["H"].shape)
+        check_np(name, who, "H", outs["H"], want)
+    extra = ""
+    if kind == "strict":
+        # query row 0 attends nothing: the numpy attention row is exactly zero (not uniform, not NaN) and so is the
+        # attention-weighted value, in every layer; a uniform row 0 would give a clearly different state
+        for l, o in enumerate(layers):
+            assert not allow[0].any() and np.all(o["S"][:, 0, :] == 0.0) and np.all(o["AO"][0] == 0.0), (name, l)
+            assert np.all(o["At"][0] == 0.0) and np.all(o["Ra"][0] == (want[0, :, l])), (name, l)
+        uniform = allow.copy()
+        uniform[0, :] = True
+        uni_gap = float(np.max(np.abs(want[0] - np_state(fin, np_transformer(fin, allow=uniform))[0])))
+        assert uni_gap > 1e-3, (name, "a uniform row 0 is indistinguishable from the zero row", uni_gap)
+        extra = f"; row 0 attends nothing (zero attention row in numpy, uniform row 0 would move H row 0 by {uni_gap:.3f})"
+    # receptive field: perturb X at position p, rerun on the eager runtime. Rows that the mask's two-step reachability
+    # (from `allow`, two layers) cannot reach from p are bitwise unchanged in every layer of H; some reachable row moves.
+    p = MASK_FIXTURES[kind]
+    reach = reachable_rows(allow, p, 2)
+    unreach = sorted(set(range(n_pos)) - reach)
+    assert reach and unreach and p in reach, (name, p, sorted(reach), unreach)
+    X_pert = fin["X"].copy()
+    X_pert[p, :] += NDT(0.5)
+    run_pert = rt.run_named(fx["plan"], {n: jnp.asarray(a) for n, a in dict(fin, X=X_pert).items()}, JDT)
+    b, pt = np.asarray(EAGER[name]["eager"]["H"]), np.asarray(run_pert["H"])
+    assert b.dtype == pt.dtype == NDT and b.shape == pt.shape, (name, b.dtype, pt.dtype)
+    assert np.array_equal(bits(b[unreach]), bits(pt[unreach])), (name, "rows", unreach, "changed under a perturbation of position", p)
+    moved = float(np.max(np.abs(b[sorted(reach)].astype(np.float64) - pt[sorted(reach)].astype(np.float64))))
+    assert moved > 1e-3, (name, "reachable rows did not respond to the perturbation", sorted(reach), moved)
+    # the perturbed row moves trivially (H[p, :, 0] is X[p]); the perturbation must also PROPAGATE through attention
+    # to every other reachable row's final state (none exists for strict: nothing attends to the last position)
+    for r in sorted(reach - {p}):
+        prop = float(np.max(np.abs(b[r, :, 2].astype(np.float64) - pt[r, :, 2].astype(np.float64))))
+        assert prop > 1e-3, (name, "perturbation did not propagate to reachable row", r, prop)
+    # the numpy model has the same receptive field (sanity of the pin's own reference)
+    want_pert = np_state(dict(fin, X=X_pert), np_transformer(dict(fin, X=X_pert), allow=allow))
+    assert np.array_equal(want[unreach], want_pert[unreach]), (name, "numpy receptive field")
+    assert float(np.max(np.abs(want[sorted(reach)] - want_pert[sorted(reach)]))) > 1e-3, name
+    print(f"{name}: allow rows {[''.join('1' if a else '0' for a in r) for r in allow]}; one scan record, 2 steps; "
+          f"H layers 0, 1, 2 == numpy model with the English-definition mask on Lean, eager and jit; differs from the "
+          f"causal model by {causal_gap:.3f} and from {', '.join(f'{k} by {v:.3f}' for k, v in other_gaps.items())}; "
+          f"receptive field of X[{p}]: rows {sorted(reach)} respond (max abs {moved:.3e}), rows {unreach} bitwise "
+          f"unchanged on the eager runtime{extra}; per-output measured difference vs numpy and vs Lean:")
+    print_np_stats(name)
+    sc_err = NUM_STATS[(name, "H")][0]
+    print(f"  H headroom to MODEL_TOL: {MODEL_TOL[_DT] / max(sc_err, 1e-300):.1f}x (observed {sc_err:.3e} of {MODEL_TOL[_DT]:.0e})")
+    for n in sorted(n for fx_, n in OUT_STATS if fx_ == name):
+        rel, ab, ex, tot = OUT_STATS[(name, n)]
+        print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
 
 
 def main() -> None:
@@ -560,6 +686,10 @@ def main() -> None:
     for n in sorted(n for fx, n in OUT_STATS if fx == hd_name):
         rel, ab, ex, tot = OUT_STATS[(hd_name, n)]
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+    # PREDICATE MASKS inside the layer scan (window, strict, sink; q = s = 5): see `mask_fixture_pins`.
+    for mk in MASK_FIXTURES:
+        mask_fixture_pins(by, mk, sfx)
 
     # POST-SCAN ROLE: `S[j, l+1] := S[j, l] . G[j]` (closed form `S = X * G**l`) and six statements nothing in
     # the recurrence reads, so each is a plain node AFTER the one scan node and `l` is an ordinary axis in it.
