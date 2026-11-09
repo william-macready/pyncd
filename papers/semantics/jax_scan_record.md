@@ -544,3 +544,69 @@ read only there), so it was replaced by the last row, which keeps every input us
 **Parked** (cost in dispatches): a predicate over the iteration axis `l` inside the scan body (~2); data-driven masks
 (`where edge[i,j] > 0` does not parse; ~2 plus a design decision); Iverson factors on JAX (the bridge has no lowering,
 `iversonFactor`; ~3); depth and gradient work (the next two slices of the brief).
+
+## 13. Multi-query attention inside the layer scan (2026-11-09)
+
+Every earlier attention fixture carries the head axis `h` on Q, K and V. Two NEW scan-only fixtures, `transformer_mqa` and
+`transformer_mqa32`, drop `h` from the key and value projections. Tests and fixtures only: no production, emitter, runtime
+or manifest change; `transformer_scan*`, `transformer_head*` and the mask fixtures are untouched. The differential is now
+38 binary64 and 30 binary32 fixtures; `Tests` + `JaxExperiment` unchanged at 8846 jobs, 0 errors.
+
+The four changed statements (declarations `K(s, k)`, `V(s, k)`, `W_K(l, k, m)`, `W_V(l, k, m)` in the binary64 program; the
+binary32 program repeats the statement text and infers the shapes), everything else the standard `scanProg`'s (q = s = 3,
+same mask `s ≤ q`, same inputs):
+
+```
+K[s, k]          := W_K[l, k, m] · N1[s, m]
+V[s, k]          := W_V[l, k, m] · N1[s, m]
+S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, k] · Sc[])
+AttnOut[q, h, k] := S[h, q, s] · V[s, k]
+```
+
+**Pre-flight answers.** (i) The head-free `K`/`V` statements and the head-free score line parse and typecheck
+(`lean-file.sh`, exit 0). (ii) The bridge emits and runs `Q[q, h, k] · K[s, k]` (head-free operand in a masked axiswise
+softmax) and `S[h, q, s] · V[s, k]` inside the scan with no refusal: one scan record, 2 steps, counts (19, 1, 1) as for the
+standard fixture. (iii) The fixture exports `H` only (asserted: `sorted(outs) == ["H"]` on Lean, eager and jit), so `H` is
+the only output to pin.
+
+**Inputs.** `mqaEnv64`/`mqaEnv32` = `scanEnv64`/`scanEnv32` with `W_K`, `W_V` replaced by `[3, 2, 4]` stacks (layer, k, m): layer 0
+is head 1's slice of the multi-head layer-0 data (`trWK.extract 8 16`, no new magic numbers), layer 1 is `scanLayer1` of it, layer 2
+is NaN (`scanStack`). Head 1 and not head 0 because of conditioning, measured before choosing: with head 0's slices for both K and V
+the binary32 `H` was 3.6e-6 from the float64 numpy model (`MODEL_TOL` 1e-6; Lean and JAX eager agree to one ulp, so it is not a
+bridge defect; layer 1 already 1.9e-6). JAX eager binary32 against the float64 numpy MQA model by (K head, V head): (0, 0) 3.9e-6,
+(0, 1) 4.8e-7, (1, 0) 2.7e-7, (1, 1) 1.6e-7 — a property of the data, not of the structure. A float32 numpy emulation of the same
+(0, 0) model sits at 7.3e-7, so the plan's binary32 arithmetic is noisier than a naive float32 evaluation on that input; the cause is
+unconfirmed (the standard scan shows the same direction, 9.4e-7 vs 3.2e-7), parked. The tolerance was NOT touched; the fixture data was.
+
+**Pins** (`mqa_fixture_pins` in `evalplan_nonlin_smoke.py`, called once per precision). `np_transformer` gained an `mqa` flag
+(default unchanged, so every existing pin is untouched) whose K, V, score and output einsums have no head axis, written from the English definition.
+1. Value pin: `H` (layers 0, 1, 2) equals the numpy MQA model on Lean, eager and jit at `MODEL_TOL`.
+2. Non-vacuity: numpy MQA `H` differs from the numpy multi-head `H` on the standard head-carrying weights by 2.821; the two
+   query heads' attention differs by 0.428 (layer 0) and 0.180 (layer 1).
+3. Equivalence (Lean-independent): the STANDARD plan (`transformer_scan`) run on the eager runtime on `W_K[l, h, k, m] = W_K_mqa[l, k, m]`
+   for both `h` (same for `W_V`) gives `H` BITWISE equal to the MQA fixture's eager `H` (36/36 entries, max abs 0, both precisions);
+   the standard plan on its own head-distinct weights differs by 2.821, so the pin can fail.
+4. Inputs: every input other than `W_K`, `W_V` is bitwise the standard fixture's; layer-0 slices of `W_K`, `W_V` are bitwise head 1 of the standard
+   weights; layer-2 slices are NaN and layers 0, 1 finite in every weight stack; `H` finite on every view (a step reading layer 2 would turn it NaN).
+
+**Observed against numpy** (max over Lean, eager and jit; scaled error; `MODEL_TOL` 1e-12 / 1e-6, NOT loosened): binary64 3.3e-16
+(headroom 3002x), binary32 1.68e-7 (headroom 6.0x).
+
+**Mutation evidence** (one edit of ONE binary64 program, whole differential run, first failing assertion; each file restored with
+`git checkout`, `git diff --stat` empty):
+
+| Mutant | Result |
+|---|---|
+| `AttnOut` reads `K[s, k]` instead of `V[s, k]` | NOT a kill: refused at Lean compile, `CompileError.readsPerStepIntermediate "V" "N1"` (a dead `V` is rejected); replaced by the next row |
+| `K` reads `W_V` and `V` reads `W_K` (all inputs still used) | `pin numpy model: transformer_mqa lean H` |
+| score line `· Sc[] · Sc[]` (scale applied twice; dropping `Sc` would lose the only reader of an input) | `pin numpy model: transformer_mqa lean H` |
+| mask `s ≤ q` to `s < q` | `pin numpy model: transformer_mqa lean H` |
+| `K[s, k]` reads `N1[q, m]` instead of `N1[s, m]` (compiled and ran) | `pin numpy model: transformer_mqa lean H` |
+
+Every killed mutant dies on the value pin, the first assertion of the helper, so the non-vacuity and equivalence pins were never the
+first to fire: they are checked for ability to fail by construction (the head-distinct standard run differs by 2.821, the numpy
+multi-head model by 2.821), not by a dedicated mutant. No survivor.
+
+**Parked** (cost in dispatches): grouped-query attention (several query heads per KV head needs head-axis index arithmetic; check first
+whether the surface syntax can express it; ~2 plus a design check); the binary32 noise of the plan relative to a float32 numpy
+emulation (~1, diagnosis only); depth and gradient work (the next two slices of the brief).
