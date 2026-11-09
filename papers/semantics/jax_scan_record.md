@@ -510,7 +510,8 @@ loops (`mask_allow`), and an all-masked row is zero (`np_masked_softmax`).
 3. Receptive field on the eager runtime: add 0.5 to `X[p, :]`, with the reachable rows computed in Python from `allow`
    over two layers. Window `p = 0`: rows 0, 1, 2 respond (max abs 0.915), rows 3, 4 bitwise identical. Strict `p = 4`: only row 4
    responds (0.862), rows 0 to 3 bitwise identical. Sink `p = 3`: rows 3, 4 respond (1.292), rows 0, 1, 2 bitwise identical.
-   The numpy model has the same receptive field.
+   The numpy model has the same receptive field. Every reachable row other than the perturbed one must also change at the
+   final layer by more than 1e-3 (the perturbed row moves trivially, `H[p, :, 0] = X[p]`); strict has no such row.
 4. Strict: numpy attention row 0 and the attention-weighted value of row 0 are exactly zero in both layers and the
    residual stream row 0 passes through bitwise; all outputs are finite on every view.
 

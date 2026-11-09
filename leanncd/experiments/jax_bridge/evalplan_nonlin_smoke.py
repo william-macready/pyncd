@@ -376,6 +376,11 @@ def mask_fixture_pins(by: dict, kind: str, sfx: str) -> None:
     assert np.array_equal(bits(b[unreach]), bits(pt[unreach])), (name, "rows", unreach, "changed under a perturbation of position", p)
     moved = float(np.max(np.abs(b[sorted(reach)].astype(np.float64) - pt[sorted(reach)].astype(np.float64))))
     assert moved > 1e-3, (name, "reachable rows did not respond to the perturbation", sorted(reach), moved)
+    # the perturbed row moves trivially (H[p, :, 0] is X[p]); the perturbation must also PROPAGATE through attention
+    # to every other reachable row's final state (none exists for strict: nothing attends to the last position)
+    for r in sorted(reach - {p}):
+        prop = float(np.max(np.abs(b[r, :, 2].astype(np.float64) - pt[r, :, 2].astype(np.float64))))
+        assert prop > 1e-3, (name, "perturbation did not propagate to reachable row", r, prop)
     # the numpy model has the same receptive field (sanity of the pin's own reference)
     want_pert = np_state(dict(fin, X=X_pert), np_transformer(dict(fin, X=X_pert), allow=allow))
     assert np.array_equal(want[unreach], want_pert[unreach]), (name, "numpy receptive field")
@@ -394,7 +399,7 @@ def mask_fixture_pins(by: dict, kind: str, sfx: str) -> None:
 
 
 def main() -> None:
-    spec =importlib.util.spec_from_file_location("gen_nonlin", Path(sys.argv[2]).resolve())
+    spec = importlib.util.spec_from_file_location("gen_nonlin", Path(sys.argv[2]).resolve())
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     by = {f["name"]: f for f in mod.FIXTURES}
