@@ -9,9 +9,20 @@ category laws, explicit boundary/exterior transports, nested component
 coherence through compatible model triples, and injective-left partial maps.
 See [the witness semantics plan](../papers/semantics/categorical_witness_semantics_plan.md)
 and [record](../papers/semantics/categorical_witness_semantics_record.md).
-This is not a source functor or an event-sensitive process category; no core
-identity computation or runtime phase theorem is claimed. Observation probes
-and their separate parity module are test-only.
+The source entry point is `import IndexedSourceSemantics`.
+`IndexedSource` wraps whole interfaces in distinct source objects, presents
+matched leaves and certified port/coordinate wires with a generated
+syntactic congruence, and supplies a quotient category and actual Mathlib
+`semantics` functor into `IndexedWitness`. `source_assembly` relates actual
+`compose` to wired leaves; `left_eq_triple` and `right_eq_triple` compare both
+actual bracketings after explicit inherited transports. See the
+[source plan](../papers/semantics/categorical_source_functor_plan.md) and
+[record](../papers/semantics/categorical_source_functor_record.md).
+These modules belong only to `IndexedExecutionExperiment`, not production
+`LeanNCD`. `IndexedSourceTest` retains strict undefinedness, hidden complete
+stores and empty metadata. Observation probes and separate parity modules
+are test-only. No core identity computation, runtime phase theorem or
+event-sensitive process category is claimed.
 
 Typed declaration/read/expression transport is implemented and proved by
 `IndexedComponentTransport`, `IndexedComponentTransportExpr`,

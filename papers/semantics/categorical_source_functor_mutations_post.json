@@ -1,0 +1,142 @@
+[
+  {
+    "label": "M1 (boundaryCopy changes values)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedSourceObservationProbe.lean",
+    "old": "def boundaryCopy {X Y : Object} (a : Wire X Y) : X.interface.Env \u2243 Y.interface.Env :=\n  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>\n    Coord (X.interface.signature t).axes \u2192 \u211a) a.ports.symm).trans\n    (Equiv.piCongrRight (fun t =>\n      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.refl \u211a)))",
+    "new": "def boundaryCopy {X Y : Object} (a : Wire X Y) : X.interface.Env \u2243 Y.interface.Env :=\n  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>\n    Coord (X.interface.signature t).axes \u2192 \u211a) a.ports.symm).trans\n    (Equiv.piCongrRight (fun t =>\n      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.addRight (1 : \u211a))))",
+    "targets": [
+      "IndexedSourceObservationProbeTest"
+    ],
+    "expect": [
+      "Tactic `decide` failed for proposition",
+      "IndexedSourceObservationProbeTest.Axis.boundary_cells"
+    ]
+  },
+  {
+    "label": "M2 (inputCopy changes values)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedSourceObservationProbe.lean",
+    "old": "def inputCopy {X Y : Object} (a : Wire X Y) : X.interface.Env \u2243 Y.interface.Env :=\n  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>\n    Coord (X.interface.signature t).axes \u2192 \u211a) a.ports.symm).trans\n    (Equiv.piCongrRight (fun t =>\n      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.refl \u211a)))",
+    "new": "def inputCopy {X Y : Object} (a : Wire X Y) : X.interface.Env \u2243 Y.interface.Env :=\n  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>\n    Coord (X.interface.signature t).axes \u2192 \u211a) a.ports.symm).trans\n    (Equiv.piCongrRight (fun t =>\n      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.addRight (1 : \u211a))))",
+    "targets": [
+      "IndexedSourceObservationProbeTest"
+    ],
+    "expect": [
+      "Tactic `decide` failed for proposition",
+      "IndexedSourceObservationProbeTest.Triple.input_cells"
+    ]
+  },
+  {
+    "label": "M3 (outputCopy changes values)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedSourceObservationProbe.lean",
+    "old": "def outputCopy {X Y : Object} (a : Wire X Y) : X.interface.Env \u2243 Y.interface.Env :=\n  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>\n    Coord (X.interface.signature t).axes \u2192 \u211a) a.ports.symm).trans\n    (Equiv.piCongrRight (fun t =>\n      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.refl \u211a)))",
+    "new": "def outputCopy {X Y : Object} (a : Wire X Y) : X.interface.Env \u2243 Y.interface.Env :=\n  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>\n    Coord (X.interface.signature t).axes \u2192 \u211a) a.ports.symm).trans\n    (Equiv.piCongrRight (fun t =>\n      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.addRight (1 : \u211a))))",
+    "targets": [
+      "IndexedSourceObservationProbeTest"
+    ],
+    "expect": [
+      "Tactic `decide` failed for proposition",
+      "IndexedSourceObservationProbeTest.Triple.output_cells"
+    ]
+  },
+  {
+    "label": "M4 (inverse coordinate reversal)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedSourceObservationProbe.lean",
+    "old": "  (boundaryCopy a).symm",
+    "new": "  (boundaryCopy a).symm.trans\n    (IndexedWitnessObservationProbe.reverseEnvironment X.interface)",
+    "targets": [
+      "IndexedSourceObservationProbeTest"
+    ],
+    "expect": [
+      "Tactic `decide` failed for proposition",
+      "IndexedSourceObservationProbeTest.Axis.inverse_cells"
+    ]
+  },
+  {
+    "label": "M5 (hidden private donor collapse)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedSourceObservationProbeTest.lean",
+    "old": "def second := IndexedWitnessTest.hiddenOne",
+    "new": "def second := IndexedWitnessTest.hiddenZero",
+    "targets": [
+      "IndexedSourceObservationProbeTest"
+    ],
+    "expect": [
+      "Tactic `decide` proved that the proposition",
+      "IndexedSourceObservationProbeTest.Hidden.hidden_cell"
+    ]
+  },
+  {
+    "label": "M6 (nested private identity donor)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedSourceObservationProbeTest.lean",
+    "old": "def privateId : Nat := (declarations (compose A B ab) C).uid (.inl (.inl 1))",
+    "new": "def privateId : Nat := (declarations A (compose B C bc)).uid (.inl 1)",
+    "targets": [
+      "IndexedSourceObservationProbeTest"
+    ],
+    "expect": [
+      "Tactic `decide` proved that the proposition",
+      "IndexedSourceObservationProbeTest.Triple.private_identity"
+    ]
+  },
+  {
+    "label": "M7 (empty input absence donor)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedSourceObservationProbeTest.lean",
+    "old": "  (((inputEquiv emptyProducerComponent) IndexedWitnessTest.emptyInputEnv).val\n    external.val).isSome",
+    "new": "  (none : Option (Coord [] \u2192 \u211a)).isSome",
+    "targets": [
+      "IndexedSourceObservationProbeTest"
+    ],
+    "expect": [
+      "Tactic `decide` proved that the proposition",
+      "IndexedSourceObservationProbeTest.Empty.presence_cell"
+    ]
+  },
+  {
+    "label": "M8 (strict-to-total theorem donor)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedSourceObservationProbeTest.lean",
+    "old": "def profile : Nat := 0",
+    "new": "def profile : Nat := 4",
+    "targets": [
+      "IndexedSourceObservationProbeTest"
+    ],
+    "expect": [
+      "Type mismatch",
+      "IndexedSourceObservationProbeTest.Strict.undefined"
+    ]
+  },
+  {
+    "label": "M9 (total-to-strict theorem donor)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedSourceObservationProbeTest.lean",
+    "old": "def totalProfile : Nat := 4",
+    "new": "def totalProfile : Nat := 0",
+    "targets": [
+      "IndexedSourceObservationProbeTest"
+    ],
+    "expect": [
+      "Type mismatch",
+      "IndexedSourceObservationProbeTest.Strict.defined"
+    ]
+  },
+  {
+    "label": "M10 (empty metadata object donor)",
+    "task": "3",
+    "file": "experiments/indexed_execution/IndexedSourceObservationProbeTest.lean",
+    "old": "def original := output emptyProducerComponent",
+    "new": "def original := output IndexedWitnessCompositionTest.Empty.composite",
+    "targets": [
+      "IndexedSourceObservationProbeTest"
+    ],
+    "expect": [
+      "Application type mismatch: The argument",
+      "IndexedSourceObservationProbeTest.Metadata.distinct"
+    ]
+  }
+]

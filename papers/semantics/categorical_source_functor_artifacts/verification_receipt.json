@@ -1,0 +1,34 @@
+{
+  "scope": "authoring (a), compiled prototype; not an integration/release receipt",
+  "base": "19c9d6446552c4f4c507c89be94c3561a94ec5ea",
+  "full_build_jobs": 8919,
+  "full_build_exit": 0,
+  "populated_unfiltered_mutations": "10/10; expected diagnostics and identical restores",
+  "post_edit_real_module_snippets": 8,
+  "universe_snippet": "pass",
+  "ordered_replay": "pass; exact bytes",
+  "source_and_copy_audit": "pass",
+  "only_tracked_edit": [
+    "leanncd/lakefile.toml"
+  ],
+  "committed": false,
+  "merged": false,
+  "turn_aim_55_exceeded": true,
+  "context_and_token_measurement": "no transcript; unavailable",
+  "identities": {
+    "papers/semantics/categorical_source_functor_artifacts/task1.patch": "a089ffe7b6753cce0be4b7c812e792650d4b8a01f5e92a62a3e6554c3fba6c03",
+    "papers/semantics/categorical_source_functor_artifacts/task2.patch": "cd9bdc1196bacab0d21bfd901389b4069e4239be3c77fa1271bc3a43d2377fad",
+    "papers/semantics/categorical_source_functor_artifacts/task3.patch": "a81bdf2b10ac7fb4a784bd8face150a8b9518e7fe223c64f058e23063861d671",
+    "papers/semantics/categorical_source_functor_artifacts/package.py": "07854051010e08c59ea59b6a78cb9b457483bf237555fbcb6f42fc9612ad3adb",
+    "papers/semantics/categorical_source_functor_artifacts/package.json": "f31075967efdcf68d491d6ef3c4bf1dccf33871b4cd46b23982bd232e010df31",
+    "papers/semantics/categorical_source_functor_artifacts/snippets.json": "d748e82a5993b555bb993d75766e273b5bda90d60e8882be1c9486b179ba2942",
+    "papers/semantics/categorical_source_functor_artifacts/replay.json": "64eaf5beebd6857f63fc5ad4c2c23e6f5dc33eae9e91bb18f5a2993013fc2c78",
+    "papers/semantics/categorical_source_functor_artifacts/observed_controls.json": "e3586c50ff39375a7cbff1d0cf0d9b4ae1559a5f804b82bc78d5d6eb6bf8b7b4",
+    "papers/semantics/categorical_source_functor_artifacts/mutations_verified.log": "568871e970cfbb8e5874230688c508ac90782d2ca7cb2160ff984b8e0c2cd317",
+    "papers/semantics/categorical_source_functor_artifacts/mutations_verified.md": "036a8e1df3ee78d304211e538a403a5043dc94a455a1170a85079056ab5f6c11",
+    "papers/semantics/categorical_source_functor_artifacts/universe_check.lean": "3ed9f5fd29b419b993ab6b2ef5902e885024ff750066e4a886eb693574234b77",
+    "papers/semantics/categorical_source_functor_artifacts/universe_check.log": "a7737ce2f32da5e975480c7d80617208d4ec4179c318c6ed2055376f62e72eaf",
+    "papers/semantics/categorical_source_functor_mutations_post.json": "010b29014c7e0013037795f504c36af6745be887092c121c1317bc1de6c3417e",
+    "papers/semantics/categorical_source_functor_full_build.log": "a993b13bbcf43466d9a7ea418f5b0af524abdcbd897949fcf4514dc991f60218"
+  }
+}

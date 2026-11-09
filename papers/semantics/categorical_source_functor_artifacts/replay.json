@@ -1,0 +1,9 @@
+{
+  "base": "19c9d6446552c4f4c507c89be94c3561a94ec5ea",
+  "patches_applied_in_order": [
+    "task1.patch",
+    "task2.patch",
+    "task3.patch"
+  ],
+  "all_replayed_bytes_equal_compiled_sources": true
+}

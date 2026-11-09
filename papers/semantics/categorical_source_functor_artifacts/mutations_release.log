@@ -1,0 +1,212 @@
+=== M1 (boundaryCopy changes values) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedSourceObservationProbe.lean: 'def boundaryCopy {X Y : Object} (a : Wire X Y) : X.interface.Env ≃ Y.interface.Env :=
+  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>
+    Coord (X.interface.signature t).axes → ℚ) a.ports.symm).trans
+    (Equiv.piCongrRight (fun t =>
+      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.refl ℚ)))' -> 'def boundaryCopy {X Y : Object} (a : Wire X Y) : X.interface.Env ≃ Y.interface.Env :=
+  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>
+    Coord (X.interface.signature t).axes → ℚ) a.ports.symm).trans
+    (Equiv.piCongrRight (fun t =>
+      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.addRight (1 : ℚ))))' ---
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:20:41: Tactic `decide` failed for proposition
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:24:2: Tactic `decide` failed for proposition
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:14: axiom audit failed under IndexedSourceObservationProbeTest: IndexedSourceObservationProbeTest.Axis.boundary_cells uses #[sorryAx]; IndexedSourceObservationProbeTest.Axis.inverse_cells uses #[sorryAx]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedSourceObservationProbe.lean now) ---
+=== M1 (boundaryCopy changes values) MUTATE exit=1 ===
+=== M1 (boundaryCopy changes values) RESTORED BUILD ===
+✔ [8640/8641] Built IndexedSourceObservationProbe (2.8s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.3s)
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
+Build completed successfully (8641 jobs).
+=== M1 (boundaryCopy changes values) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M1 (boundaryCopy changes values): PASS
+=== M1 (boundaryCopy changes values) MANIFEST VERDICT: PASS ===
+=== M2 (inputCopy changes values) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedSourceObservationProbe.lean: 'def inputCopy {X Y : Object} (a : Wire X Y) : X.interface.Env ≃ Y.interface.Env :=
+  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>
+    Coord (X.interface.signature t).axes → ℚ) a.ports.symm).trans
+    (Equiv.piCongrRight (fun t =>
+      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.refl ℚ)))' -> 'def inputCopy {X Y : Object} (a : Wire X Y) : X.interface.Env ≃ Y.interface.Env :=
+  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>
+    Coord (X.interface.signature t).axes → ℚ) a.ports.symm).trans
+    (Equiv.piCongrRight (fun t =>
+      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.addRight (1 : ℚ))))' ---
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:33:32: Tactic `decide` failed for proposition
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:14: axiom audit failed under IndexedSourceObservationProbeTest: IndexedSourceObservationProbeTest.Triple.input_cells uses #[sorryAx]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedSourceObservationProbe.lean now) ---
+=== M2 (inputCopy changes values) MUTATE exit=1 ===
+=== M2 (inputCopy changes values) RESTORED BUILD ===
+✔ [8640/8641] Built IndexedSourceObservationProbe (2.8s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.4s)
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
+Build completed successfully (8641 jobs).
+=== M2 (inputCopy changes values) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M2 (inputCopy changes values): PASS
+=== M2 (inputCopy changes values) MANIFEST VERDICT: PASS ===
+=== M3 (outputCopy changes values) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedSourceObservationProbe.lean: 'def outputCopy {X Y : Object} (a : Wire X Y) : X.interface.Env ≃ Y.interface.Env :=
+  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>
+    Coord (X.interface.signature t).axes → ℚ) a.ports.symm).trans
+    (Equiv.piCongrRight (fun t =>
+      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.refl ℚ)))' -> 'def outputCopy {X Y : Object} (a : Wire X Y) : X.interface.Env ≃ Y.interface.Env :=
+  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>
+    Coord (X.interface.signature t).axes → ℚ) a.ports.symm).trans
+    (Equiv.piCongrRight (fun t =>
+      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.addRight (1 : ℚ))))' ---
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:37:30: Tactic `decide` failed for proposition
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:14: axiom audit failed under IndexedSourceObservationProbeTest: IndexedSourceObservationProbeTest.Triple.output_cells uses #[sorryAx]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedSourceObservationProbe.lean now) ---
+=== M3 (outputCopy changes values) MUTATE exit=1 ===
+=== M3 (outputCopy changes values) RESTORED BUILD ===
+✔ [8640/8641] Built IndexedSourceObservationProbe (2.8s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
+Build completed successfully (8641 jobs).
+=== M3 (outputCopy changes values) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M3 (outputCopy changes values): PASS
+=== M3 (outputCopy changes values) MANIFEST VERDICT: PASS ===
+=== M4 (inverse coordinate reversal) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedSourceObservationProbe.lean: '  (boundaryCopy a).symm' -> '  (boundaryCopy a).symm.trans
+    (IndexedWitnessObservationProbe.reverseEnvironment X.interface)' ---
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:24:2: Tactic `decide` failed for proposition
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:14: axiom audit failed under IndexedSourceObservationProbeTest: IndexedSourceObservationProbeTest.Axis.inverse_cells uses #[sorryAx]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedSourceObservationProbe.lean now) ---
+=== M4 (inverse coordinate reversal) MUTATE exit=1 ===
+=== M4 (inverse coordinate reversal) RESTORED BUILD ===
+✔ [8640/8641] Built IndexedSourceObservationProbe (2.8s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
+Build completed successfully (8641 jobs).
+=== M4 (inverse coordinate reversal) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M4 (inverse coordinate reversal): PASS
+=== M4 (inverse coordinate reversal) MANIFEST VERDICT: PASS ===
+=== M5 (hidden private donor collapse) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedSourceObservationProbeTest.lean: 'def second := IndexedWitnessTest.hiddenOne' -> 'def second := IndexedWitnessTest.hiddenZero' ---
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:45:53: Tactic `decide` proved that the proposition
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:14: axiom audit failed under IndexedSourceObservationProbeTest: IndexedSourceObservationProbeTest.Hidden.hidden_cell uses #[sorryAx]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedSourceObservationProbeTest.lean now) ---
+=== M5 (hidden private donor collapse) MUTATE exit=1 ===
+=== M5 (hidden private donor collapse) RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedWitnessPartialTest.lean:125:0: axiom audit: 8 constants under IndexedWitnessPartialTest use only standard axioms
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
+Build completed successfully (8641 jobs).
+=== M5 (hidden private donor collapse) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M5 (hidden private donor collapse): PASS
+=== M5 (hidden private donor collapse) MANIFEST VERDICT: PASS ===
+=== M6 (nested private identity donor) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedSourceObservationProbeTest.lean: 'def privateId : Nat := (declarations (compose A B ab) C).uid (.inl (.inl 1))' -> 'def privateId : Nat := (declarations A (compose B C bc)).uid (.inl 1)' ---
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:39:49: Tactic `decide` proved that the proposition
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:14: axiom audit failed under IndexedSourceObservationProbeTest: IndexedSourceObservationProbeTest.Triple.private_identity uses #[sorryAx]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedSourceObservationProbeTest.lean now) ---
+=== M6 (nested private identity donor) MUTATE exit=1 ===
+=== M6 (nested private identity donor) RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedWitnessPartialTest.lean:125:0: axiom audit: 8 constants under IndexedWitnessPartialTest use only standard axioms
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
+Build completed successfully (8641 jobs).
+=== M6 (nested private identity donor) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M6 (nested private identity donor): PASS
+=== M6 (nested private identity donor) MANIFEST VERDICT: PASS ===
+=== M7 (empty input absence donor) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedSourceObservationProbeTest.lean: '  (((inputEquiv emptyProducerComponent) IndexedWitnessTest.emptyInputEnv).val
+    external.val).isSome' -> '  (none : Option (Coord [] → ℚ)).isSome' ---
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:61:50: Tactic `decide` proved that the proposition
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:14: axiom audit failed under IndexedSourceObservationProbeTest: IndexedSourceObservationProbeTest.Empty.presence_cell uses #[sorryAx]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedSourceObservationProbeTest.lean now) ---
+=== M7 (empty input absence donor) MUTATE exit=1 ===
+=== M7 (empty input absence donor) RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedWitnessPartialTest.lean:125:0: axiom audit: 8 constants under IndexedWitnessPartialTest use only standard axioms
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
+Build completed successfully (8641 jobs).
+=== M7 (empty input absence donor) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M7 (empty input absence donor): PASS
+=== M7 (empty input absence donor) MANIFEST VERDICT: PASS ===
+=== M8 (strict-to-total theorem donor) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedSourceObservationProbeTest.lean: 'def profile : Nat := 0' -> 'def profile : Nat := 4' ---
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:73:29: Type mismatch
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:14: axiom audit failed under IndexedSourceObservationProbeTest: IndexedSourceObservationProbeTest.Strict.undefined uses #[sorryAx]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedSourceObservationProbeTest.lean now) ---
+=== M8 (strict-to-total theorem donor) MUTATE exit=1 ===
+=== M8 (strict-to-total theorem donor) RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedWitnessPartialTest.lean:125:0: axiom audit: 8 constants under IndexedWitnessPartialTest use only standard axioms
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
+Build completed successfully (8641 jobs).
+=== M8 (strict-to-total theorem donor) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M8 (strict-to-total theorem donor): PASS
+=== M8 (strict-to-total theorem donor) MANIFEST VERDICT: PASS ===
+=== M9 (total-to-strict theorem donor) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedSourceObservationProbeTest.lean: 'def totalProfile : Nat := 4' -> 'def totalProfile : Nat := 0' ---
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:80:59: Type mismatch
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:14: axiom audit failed under IndexedSourceObservationProbeTest: IndexedSourceObservationProbeTest.Strict.defined uses #[sorryAx]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedSourceObservationProbeTest.lean now) ---
+=== M9 (total-to-strict theorem donor) MUTATE exit=1 ===
+=== M9 (total-to-strict theorem donor) RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedWitnessPartialTest.lean:125:0: axiom audit: 8 constants under IndexedWitnessPartialTest use only standard axioms
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
+Build completed successfully (8641 jobs).
+=== M9 (total-to-strict theorem donor) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M9 (total-to-strict theorem donor): PASS
+=== M9 (total-to-strict theorem donor) MANIFEST VERDICT: PASS ===
+=== M10 (empty metadata object donor) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedSourceObservationProbeTest.lean: 'def original := output emptyProducerComponent' -> 'def original := output IndexedWitnessCompositionTest.Empty.composite' ---
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:88:90: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:14: axiom audit failed under IndexedSourceObservationProbeTest: IndexedSourceObservationProbeTest.Metadata.distinct uses #[sorryAx]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedSourceObservationProbeTest.lean now) ---
+=== M10 (empty metadata object donor) MUTATE exit=1 ===
+=== M10 (empty metadata object donor) RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedWitnessPartialTest.lean:125:0: axiom audit: 8 constants under IndexedWitnessPartialTest use only standard axioms
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
+info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
+Build completed successfully (8641 jobs).
+=== M10 (empty metadata object donor) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M10 (empty metadata object donor): PASS
+=== M10 (empty metadata object donor) MANIFEST VERDICT: PASS ===
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| M1 (boundaryCopy changes values) | yes | yes | yes | PASS |
+| M2 (inputCopy changes values) | yes | yes | yes | PASS |
+| M3 (outputCopy changes values) | yes | yes | yes | PASS |
+| M4 (inverse coordinate reversal) | yes | yes | yes | PASS |
+| M5 (hidden private donor collapse) | yes | yes | yes | PASS |
+| M6 (nested private identity donor) | yes | yes | yes | PASS |
+| M7 (empty input absence donor) | yes | yes | yes | PASS |
+| M8 (strict-to-total theorem donor) | yes | yes | yes | PASS |
+| M9 (total-to-strict theorem donor) | yes | yes | yes | PASS |
+| M10 (empty metadata object donor) | yes | yes | yes | PASS |
+
+10/10 cycles passed.

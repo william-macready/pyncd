@@ -1,0 +1,62 @@
+[
+  {
+    "label": "M1 (boundaryCopy changes values)",
+    "diagnostic": "Tactic `decide` failed for proposition",
+    "failed_fixture": "IndexedSourceObservationProbeTest.Axis.boundary_cells",
+    "initial_restore_byte_identical": true
+  },
+  {
+    "label": "M2 (inputCopy changes values)",
+    "diagnostic": "Tactic `decide` failed for proposition",
+    "failed_fixture": "IndexedSourceObservationProbeTest.Triple.input_cells",
+    "initial_restore_byte_identical": true
+  },
+  {
+    "label": "M3 (outputCopy changes values)",
+    "diagnostic": "Tactic `decide` failed for proposition",
+    "failed_fixture": "IndexedSourceObservationProbeTest.Triple.output_cells",
+    "initial_restore_byte_identical": true
+  },
+  {
+    "label": "M4 (inverse coordinate reversal)",
+    "diagnostic": "Tactic `decide` failed for proposition",
+    "failed_fixture": "IndexedSourceObservationProbeTest.Axis.inverse_cells",
+    "initial_restore_byte_identical": true
+  },
+  {
+    "label": "M5 (hidden private donor collapse)",
+    "diagnostic": "Tactic `decide` proved that the proposition",
+    "failed_fixture": "IndexedSourceObservationProbeTest.Hidden.hidden_cell",
+    "initial_restore_byte_identical": true
+  },
+  {
+    "label": "M6 (nested private identity donor)",
+    "diagnostic": "Tactic `decide` proved that the proposition",
+    "failed_fixture": "IndexedSourceObservationProbeTest.Triple.private_identity",
+    "initial_restore_byte_identical": true
+  },
+  {
+    "label": "M7 (empty input absence donor)",
+    "diagnostic": "Tactic `decide` proved that the proposition",
+    "failed_fixture": "IndexedSourceObservationProbeTest.Empty.presence_cell",
+    "initial_restore_byte_identical": true
+  },
+  {
+    "label": "M8 (strict-to-total theorem donor)",
+    "diagnostic": "Type mismatch",
+    "failed_fixture": "IndexedSourceObservationProbeTest.Strict.undefined",
+    "initial_restore_byte_identical": true
+  },
+  {
+    "label": "M9 (total-to-strict theorem donor)",
+    "diagnostic": "Type mismatch",
+    "failed_fixture": "IndexedSourceObservationProbeTest.Strict.defined",
+    "initial_restore_byte_identical": true
+  },
+  {
+    "label": "M10 (empty metadata object donor)",
+    "diagnostic": "Application type mismatch: The argument",
+    "failed_fixture": "IndexedSourceObservationProbeTest.Metadata.distinct",
+    "initial_restore_byte_identical": true
+  }
+]

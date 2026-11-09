@@ -1,0 +1,9 @@
+Compiling snippet as leanncd/spikes/SnippetCheck_36301_11129.lean ...
+
+IndexedSource.Object : Type 1
+IndexedWitness.WholeInterface : Type 1
+IndexedSource.Term : Object → Object → Type 1
+IndexedSource.Hom (X Y : Object) : Type 1
+IndexedSource.semantics : Object ⥤ WholeInterface
+
+COMPILES. Safe to write into the plan.

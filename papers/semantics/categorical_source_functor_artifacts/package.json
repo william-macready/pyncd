@@ -1,0 +1,80 @@
+{
+  "base": "19c9d6446552c4f4c507c89be94c3561a94ec5ea",
+  "files": [
+    {
+      "task": "1",
+      "path": "leanncd/experiments/indexed_execution/IndexedSourceWire.lean",
+      "sha256": "1ec03d1313a38ed876c76f7482c82bb7659eef5f83ddf98c9796d7a51a0f4cca"
+    },
+    {
+      "task": "2",
+      "path": "leanncd/experiments/indexed_execution/IndexedSourceSyntax.lean",
+      "sha256": "cacec85083497742901727380a78984d5afae753e379f0a9f2794fe1c084f27e"
+    },
+    {
+      "task": "2",
+      "path": "leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean",
+      "sha256": "2c6190548fab2e28e9383310b8ab44ee70f2a3e41da3ac26e92358ade8f7ab55"
+    },
+    {
+      "task": "2",
+      "path": "leanncd/experiments/indexed_execution/IndexedSourceSemantics.lean",
+      "sha256": "70356c77132467ca70e21efcf5d0410cebf04ce4b7fe19ae1278a6664ac45b75"
+    },
+    {
+      "task": "3",
+      "path": "leanncd/experiments/indexed_execution/IndexedSourceTest.lean",
+      "sha256": "d2c0b867b30ff4680f77e8137bc35640cb68fa721adf57fa4096267e9dbf01a3"
+    },
+    {
+      "task": "3",
+      "path": "leanncd/experiments/indexed_execution/IndexedSourceObservationProbe.lean",
+      "sha256": "6a2f2d2ed34b99f6c9c85c367029bdbbe898153dffcaee63307462d3a12cefd3"
+    },
+    {
+      "task": "3",
+      "path": "leanncd/experiments/indexed_execution/IndexedSourceObservationProbeTest.lean",
+      "sha256": "9bf9bf8e08aeb89b60b570c1a87b9f05e278304363f2c2a01c79bc2bad5e5101"
+    },
+    {
+      "task": "3",
+      "path": "leanncd/experiments/indexed_execution/IndexedSourceObservationParity.lean",
+      "sha256": "f9a6e56e5d4784f75a459d9d02cdc8fe26941681f2f73f22c52716be581b7cdd"
+    }
+  ],
+  "patches": [
+    {
+      "task": "1",
+      "path": "task1.patch",
+      "sha256": "a089ffe7b6753cce0be4b7c812e792650d4b8a01f5e92a62a3e6554c3fba6c03"
+    },
+    {
+      "task": "2",
+      "path": "task2.patch",
+      "sha256": "cd9bdc1196bacab0d21bfd901389b4069e4239be3c77fa1271bc3a43d2377fad"
+    },
+    {
+      "task": "3",
+      "path": "task3.patch",
+      "sha256": "a81bdf2b10ac7fb4a784bd8face150a8b9518e7fe223c64f058e23063861d671"
+    }
+  ],
+  "exact_computational_copies": [
+    {
+      "copy": "boundaryCopy",
+      "donor": "IndexedSource.Wire.env",
+      "body_sha256": "ad19c92ff0d4c892f162fabebde0cdec9e7ebf80229a80af14eb379c79067df0"
+    },
+    {
+      "copy": "inputCopy",
+      "donor": "IndexedSource.Wire.env",
+      "body_sha256": "ad19c92ff0d4c892f162fabebde0cdec9e7ebf80229a80af14eb379c79067df0"
+    },
+    {
+      "copy": "outputCopy",
+      "donor": "IndexedSource.Wire.env",
+      "body_sha256": "ad19c92ff0d4c892f162fabebde0cdec9e7ebf80229a80af14eb379c79067df0"
+    }
+  ],
+  "final_lakefile_sha256": "0a93a9b1e923f005691739d6a29b99821e9d6ae0b1a026ccdc0752afbcafa855"
+}

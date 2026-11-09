@@ -1,0 +1,5 @@
+Compiling snippet as leanncd/spikes/SnippetCheck_51232_26889.lean ...
+
+axiom audit: 4 constants under IndexedSourceObservationParity use only standard axioms
+
+COMPILES. Safe to write into the plan.
