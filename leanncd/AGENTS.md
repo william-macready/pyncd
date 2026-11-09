@@ -21,8 +21,21 @@ actual bracketings after explicit inherited transports. See the
 These modules belong only to `IndexedExecutionExperiment`, not production
 `LeanNCD`. `IndexedSourceTest` retains strict undefinedness, hidden complete
 stores and empty metadata. Observation probes and separate parity modules
-are test-only. No core identity computation, runtime phase theorem or
-event-sensitive process category is claimed.
+are test-only. No core identity computation or event-sensitive process category is claimed.
+
+The operational entry point is `import IndexedRankedExecutionSemantics`.
+`compositeRankCertificate` constructs a full-footprint composite rank from
+both component certificates. `compose_default_phases` proves actual default
+`runChecked` upstream-first execution, strict failure and full state/ledger
+projections; `reference_default_phases` transfers the shared phase cut to
+`Program.Executor.run` and normalized `referenceSnapshots`, including pending
+occurrences and accumulators. Inputs are validated and lifted with `liftInput`;
+downstream input is obtained from the completed whole upstream boundary.
+Empty tensor presence and the composite's own default budget are retained.
+No runtime gate, synthetic boundary event, general trace algebra or process
+category law is added. These APIs and their acceptance/audit modules remain
+nondefault under `IndexedExecutionExperiment`; see the
+[ranked execution record](../papers/semantics/categorical_ranked_execution_record.md).
 
 Typed declaration/read/expression transport is implemented and proved by
 `IndexedComponentTransport`, `IndexedComponentTransportExpr`,

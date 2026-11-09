@@ -1,0 +1,65 @@
+[
+  {
+    "label": "F1 (nonzero external input and private state projections)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
+    "old": "some (fun _ => 3) else none",
+    "new": "some (fun _ => 2) else none",
+    "targets": ["IndexedComponentRankedExecutionFixtures"],
+    "expect": ["indexed-reference ranked-private-success: expected"]
+  },
+  {
+    "label": "F2 (private upstream strict failure is not bypassed)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
+    "old": "let A := consumerComponent upstreamOther\n  let B := consumerComponent downstreamOther\n  let wire := privateBoundary upstreamOther downstreamOther\n  let C := privateComposite upstreamOther downstreamOther\n  runChecked C.contract C.fragment (liftInput A B wire (privateInput upstreamOther)).val",
+    "new": "let A := consumerComponent 4\n  let B := consumerComponent downstreamOther\n  let wire := privateBoundary 4 downstreamOther\n  let C := privateComposite 4 downstreamOther\n  runChecked C.contract C.fragment (liftInput A B wire (privateInput 4)).val",
+    "targets": ["IndexedComponentRankedExecutionFixtures"],
+    "expect": ["indexed-reference ranked-private-upstream-failure: expected"]
+  },
+  {
+    "label": "F3 (downstream strict failure is not bypassed)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
+    "old": "let A := consumerComponent upstreamOther\n  let B := consumerComponent downstreamOther\n  let wire := privateBoundary upstreamOther downstreamOther\n  let C := privateComposite upstreamOther downstreamOther\n  runChecked C.contract C.fragment (liftInput A B wire (privateInput upstreamOther)).val",
+    "new": "let A := consumerComponent upstreamOther\n  let B := consumerComponent 4\n  let wire := privateBoundary upstreamOther 4\n  let C := privateComposite upstreamOther 4\n  runChecked C.contract C.fragment (liftInput A B wire (privateInput upstreamOther)).val",
+    "targets": ["IndexedComponentRankedExecutionFixtures"],
+    "expect": ["indexed-reference ranked-private-downstream-failure: expected"]
+  },
+  {
+    "label": "F4 (private-work priority control is discriminating)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
+    "old": "collectors := rows.take 1 ++ rows.drop 2 ++ (rows.drop 1).take 1",
+    "new": "collectors := rows",
+    "targets": ["IndexedComponentRankedExecutionFixtures"],
+    "expect": ["indexed-reference ranked-private-order-control: expected"]
+  },
+  {
+    "label": "F5 (two-invalid-binding validation order)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
+    "old": "runChecked emptyComposite.contract emptyComposite.fragment emptyDoubleInvalid",
+    "new": "runChecked { emptyComposite.contract with tensors := emptyComposite.contract.tensors.reverse }\n        emptyComposite.fragment emptyDoubleInvalid",
+    "targets": ["IndexedComponentRankedExecutionFixtures"],
+    "expect": ["indexed-reference ranked-empty-metadata-and-validation: expected"]
+  },
+  {
+    "label": "F6 (coherent contribution omission changes the boundary)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
+    "old": "let C := compose producerComponent (consumerComponent other) (scalarBoundary other)\n  runChecked C.contract C.fragment (fun _ => none)",
+    "new": "let C := compose producerComponent (consumerComponent other) (scalarBoundary other)\n  let altered := { C.contract with\n    collectors := C.contract.collectors.map fun row =>\n      (row.1, row.2.filter (fun cap => cap != 204)) }\n  let writers := C.fragment.writers.filter (fun w => w.capability != 204)\n  runChecked altered ⟨writers⟩ (fun _ => none)",
+    "targets": ["IndexedComponentRankedExecutionFixtures"],
+    "expect": ["indexed-reference ranked-complete-contribution-boundary: expected"]
+  },
+  {
+    "label": "F7 (zero-writer collector remains mandatory)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
+    "old": "let C := compose zeroProducerComponent (consumerComponent 4) zeroBoundary\n  runChecked C.contract C.fragment (fun _ => none)",
+    "new": "let C := compose zeroProducerComponent (consumerComponent 4) zeroBoundary\n  let altered := { C.contract with\n    collectors := C.contract.collectors.filter (fun row => !row.2.isEmpty) }\n  runChecked altered C.fragment (fun _ => none)",
+    "targets": ["IndexedComponentRankedExecutionFixtures"],
+    "expect": ["indexed-reference ranked-zero-writer-publication: expected"]
+  }
+]

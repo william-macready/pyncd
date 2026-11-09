@@ -10,7 +10,7 @@ Reuse the landed execution-correspondence theorem only afterward.
 The implemented static profile is finite computation over the existing
 exact-rational registry. It preserves all internal work, uses upstream-first
 priority, and introduces no copying computations. Coordinate-ranked phase
-execution remains a later theorem. Neither St/Br nor a general category
+execution is now proved separately for actual default runs. Neither St/Br nor a general category
 library is a prerequisite.
 
 Typed transport and static sealed composition are implemented and proved in
@@ -21,16 +21,18 @@ See the [transport record](component_transport_execution_record.md) and
 recorded boundaries. Complete-model gluing, restricted denotation, the
 witness-span target category and nested denotational coherence are also proved;
 see the [witness semantics record](categorical_witness_semantics_record.md).
-Ranked phase execution and source/process categorical laws remain design
-obligations. The starting points
+The [ranked execution record](categorical_ranked_execution_record.md) gives
+the constructed certificate and graph/reference phase projections.
+General trace algebra and event-sensitive process-category laws remain
+design obligations. The starting points
 are the [categorical synthesis](categorical_tensor_logic_semantics.md),
 especially Section 9 and its explanatory Appendix A, the
 [proof record](categorical_tensor_logic_proof_record.md), and the
 [theorem-design brief](categorical_tensor_logic_theorem_brief.md).
 The authoritative existing match is
 [`SourceContractMatch`](../../leanncd/experiments/indexed_execution/IndexedCompositionMatch.lean).
-The static and denotational constructor names below are implemented; the
-remaining ranked process theorems are proposals, not existing declarations.
+The static, denotational and ranked operational declarations named below are
+implemented. A process category remains a separate target.
 
 ## 1. A component owns a declaration universe
 
@@ -291,7 +293,7 @@ Rank certificates are not needed for this static theorem. Its transport and
 closure lemmas are proved generically, not retained as new per-composite
 hypotheses equivalent to reconstructing a whole match.
 
-**Ranked sealed execution.** With both component rank certificates and valid
+**Ranked sealed execution: proved.** With both component rank certificates and valid
 external inputs, the constructed execution runs all upstream work first.
 If the upstream component fails, no downstream action occurs. If it completes,
 the remaining execution is the transported downstream run on its whole
@@ -322,10 +324,16 @@ fresh, and the composite retains the upstream ledger and private values.
 Splice the traces without an extra boundary event; join state observations
 with one shared phase-boundary snapshot, not two. Use the existing failed-state
 normalisation, not literal equality of raw reference machine-state lists.
-This is a proposed additional proof, not already furnished by correspondence.
+`compose_default_phases` proves the actual graph execution statement;
+`reference_default_phases` derives the normalized reference projections
+through correspondence, including pending occurrences and accumulators.
+`compositeRankCertificate` constructs the required full-footprint rank.
+Import `IndexedRankedExecutionSemantics`; no staged runner was added.
 
 The [ranked execution session brief](categorical_ranked_execution_handoff.md)
-scopes the next rank/phase/projection slice; it is not a verified execution plan.
+is the historical goal brief, not its verified execution plan. The
+[execution record](categorical_ranked_execution_record.md) tracks the
+implemented APIs and release evidence.
 
 Dependency outline:
 
@@ -339,9 +347,10 @@ Dependency outline:
    [`default_run_correspondence`](../../leanncd/experiments/indexed_execution/IndexedCompositionValidated.lean)
    to obtain outcomes, mapped events and related intermediate states for
    the composite, on every raw composite binding.
-5. Stitch ranks and prove the ranked phase/projection result; this remains
-   separate from the rank-independent complete-model restriction/gluing
-   theorem proved below.
+5. Apply the constructed rank and ranked phase/projection theorems, separately
+   from the rank-independent complete-model restriction/gluing theorem proved
+   below. The operational theorem uses validated input, the actual default
+   budgets and one shared boundary snapshot.
 
 The composite default graph budget is its total writer/publication step count
 plus one, not the sum of the two standalone default budgets. Reuse the landed
@@ -548,7 +557,7 @@ without a boundary-copy event or duplicate collector.
 finite decidable typed universes; the fixed rational registry and operations;
 exact whole-port coverage; explicit bijective boundary wiring and supported
 domain adapters. Fresh identities are checked by the static constructor.
-Rank certificates are additional future premises for ranked execution/function
+Rank certificates are additional premises for ranked execution/function
 corollaries, not static assumptions. No totality assumption.
 
 **Proved static construction facts:** local transport correctness, complete
@@ -556,8 +565,9 @@ composite roles and metadata, closure acceptance, the occurrence bijection,
 ordered priority equality and all nine match fields. Existing capability/fiber
 results apply to the constructed match without additional assumptions.
 Model restriction/gluing, restricted denotation, and denotational witness-span
-coherence are also proved. Composite ranking, phase behavior and process
-associativity remain unproved. None is replaced by assumed execution agreement.
+coherence are also proved. Composite ranking and ranked graph/reference
+phase/state projections are proved separately. General trace algebra and
+process associativity remain unproved. No result assumes execution agreement.
 
 **Recommendation over alternatives:**
 
@@ -580,8 +590,9 @@ associativity remain unproved. None is replaced by assumed execution agreement.
 There is no known semantic blocker for this restricted target. The substantive
 admitted-read/expression transport prerequisite and static component
 match/closure/priority construction, complete-model gluing and denotational
-category laws are now proved. Remaining unproved work is ranked phase execution
-and source/process categorical laws.
+category laws and ranked operational phase/state projections are now proved.
+General trace algebra, broader source interpretations and event-sensitive
+process-category laws remain separate.
 Wider coordinate adapters, residual inputs, fan-out and open contribution
 ports remain out of scope. Administrative graph spans provide semantic wires
 and target units. Adjoining units to a source presentation remains a separate
