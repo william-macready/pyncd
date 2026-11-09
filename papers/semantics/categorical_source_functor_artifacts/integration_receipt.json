@@ -1,0 +1,18 @@
+{
+  "merge_commit": "a67bee5693a13cdd112d2ce573141f3c3405248a",
+  "topic_head": "31f82825",
+  "target": "local main",
+  "merge_conflicts": false,
+  "topic_ancestry": "pass",
+  "integrated_package_copy_wiring_audit": "pass",
+  "integrated_build_targets": ["LeanNCD", "Tests", "IndexedExecutionExperiment"],
+  "integrated_build_exit": 0,
+  "integrated_build_jobs": 8919,
+  "primary_dirty_readme_sha256_before_and_after": "467f94f6890675822e3972fc72d8d79ebdf3f661d48cdb7f5449606f4f568f25",
+  "concurrent_jax_changes": "preserved",
+  "topic_worktree_status": "clean",
+  "worktree_cleanup": "pending workspace exit",
+  "branch_cleanup": "pending worktree removal",
+  "pushed": false,
+  "token_accounting": "unavailable for Copilot transcripts; prototype turn-aim overrun disclosed"
+}
