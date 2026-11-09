@@ -193,10 +193,10 @@ and primary dirty-state preservation.
 | Task 1 | PASS | Commit 86aed9d1; exact task1 patch applied after --check; wire snippet compiled and hash matched. Controller geometry review clean. |
 | Task 2 | PASS | Commit 3c4bb32a; exact task2 patch applied after --check; all three source hashes matched. Targeted build exited 0 (2,985 jobs); universe/API snippet compiled. Controller presentation/soundness review clean. |
 | Task 3 | PASS | Commit cc612d4a; exact task3 patch applied after --check; test/parity build exited 0 (8,646 jobs); namespace audits use only standard axioms. All ten actual unfiltered expected controls passed with byte-identical restores and green restored builds; mutations_execution.md/log preserve the run. Post-cycle package audit passed; controller observation review clean. |
-| Direct documentation sweep | PASS, committing | Current synthesis/entry claims distinguish the proved specified source functor from open process/broader-source/backend work; current-claim and repository value sweeps found no remaining obsolete current source-functor denial. Both edited docs' relative-link paths and diff whitespace passed. Historical witness records/handoffs and primary README unchanged. |
+| Direct documentation sweep | Repaired after final review | Initial sweep missed the introductory strongest-conclusion quotation's unqualified source-law gap; both reviewers found it. The quotation now explicitly acknowledges the specified source category/functor and limits remaining obligations to broader source interpretations and rank/process work. Relative paths and whitespace passed; historical records/handoffs and primary README unchanged. |
 | Controller release | PASS | Fresh unfiltered release controls 10/10, expected diagnostics, exact restores and restored builds; mutations_release.md/log. Eight module snippets, universe/API, exact-copy/source/namespace audits and ordered replay passed. Full LeanNCD Tests IndexedExecutionExperiment build exited 0 (8,919 jobs); full_build_release.log. No proof-shortcut tokens; namespace audits only standard axioms. |
-| Final soundness lens | Pending | Whole-branch findings and disposition |
-| Final integration/observation lens | Pending | Whole-branch findings and disposition |
+| Final soundness lens | CLEAN, documentation finding repaired | review_soundness.md traces every source schema and both actual nested comparisons. No load-bearing defect; its P3 stale-summary finding is accepted and repaired with DOC-1. |
+| Final integration/observation lens | DOC-1 accepted and repaired | review_integration.md independently checks whole-branch observation/import/artifact boundaries; no additional implementation/integration defect. P2 DOC-1 is the same stale summary, now repaired without Lean changes. |
 | Local integration/task-only cleanup | Pending | Primary dirty preservation, ancestry/deliverables, merge and cleanup results; no push |
 | Budget close-out | Measurement unavailable | Controller token-report again returned no transcript for the actual Copilot session. Authoring/execution cumulative input and peak cannot be measured by this repository's Claude-transcript tool; no numerical compliance claimed. Prototype 55-turn aim overrun remains disclosed; fresh author stayed within its 40-turn aim. Final-review accounting remains to record. |
 
@@ -241,11 +241,32 @@ No findings. Controller release rerun and both final lenses remain mandatory.
 
 ### Final soundness review findings
 
-Pending.
+Candidate 94f7bc8f: reviewer found no load-bearing source/functor issue and
+reported P3 stale unqualified source-law status in the introductory quotation.
+Accepted, grouped with DOC-1 and repaired by explicitly acknowledging the
+specified proved presentation before listing broader source/rank/process work.
+Report preserves the original finding. Reviewer used 21 tool-bearing rounds;
+exact tokens/peak unavailable, no measured budget-compliance claim.
 
 ### Final integration/observation review findings
 
-Pending.
+Candidate 94f7bc8f: P2 DOC-1 identifies the same stale quotation and the initial
+sweep's false no-current-gap conclusion. Accepted; quotation and this record
+are corrected. No other implementation/integration issue. Review remains
+historical evidence, not overwritten as an originally clean candidate.
+Reviewer stayed below its 35-turn aim; exact tokens/peak unavailable.
+After the documentation-only correction, controller repeats all release
+gates and checks current remaining-obligation claims before integration.
+
+Post-repair controller gates actually passed again: exact DOC-1 quotation
+assertion; eight real-module snippets; universe/API; standard-axiom namespaces;
+package/copy audit and ordered replay; unfiltered manifest check and actual
+10/10 expected cycles with byte-identical restores and restored builds; full
+LeanNCD Tests IndexedExecutionExperiment build (8,919 jobs, exit 0); whitespace.
+No Lean source or frozen compiled patch changed. The review finding is fully
+adjudicated, not waived. Current main is c1e91e06 with only unrelated JAX deltas
+since the frozen base; the primary README SHA256 before merge is
+467f94f6890675822e3972fc72d8d79ebdf3f661d48cdb7f5449606f4f568f25.
 
 ### Final proved boundary and remaining obligations
 
@@ -264,4 +285,5 @@ neither model existence nor uniqueness, rank or successful execution.
 No output-only collapse, event-free core identity, process/phase/trace law,
 broader source structure, faithfulness or backend refinement is claimed.
 The ten controls have the observational/theorem-donor limits stated above.
-Final whole-branch reviews and local integration/cleanup remain pending.
+Final whole-branch reviews are complete and their sole documentation finding
+is repaired and verified. Local integration/cleanup remain pending.

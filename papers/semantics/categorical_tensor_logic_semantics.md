@@ -103,8 +103,10 @@ The strongest defensible conclusion is:
 > denotational category, a composition-preserving component interpretation,
 > and coherent nested composition after explicit interface transport.
 > Partial-map composition is proved under explicit at-most-one-model
-> hypotheses. Source-category laws, ranked phase execution and event-sensitive
-> process laws remain separate obligations.
+> hypotheses. The specified matched-component/coordinate-wire source category
+> and its witness functor are also proved. Broader source interpretations,
+> ranked phase execution and event-sensitive process laws remain separate
+> obligations.
 
 The St/Br presentation can organise parts of the syntax and total
 indexing. It is not assumed to be the best presentation of every layer.

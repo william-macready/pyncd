@@ -17,7 +17,7 @@ error: build failed
 === M1 (boundaryCopy changes values) MUTATE exit=1 ===
 === M1 (boundaryCopy changes values) RESTORED BUILD ===
 ✔ [8640/8641] Built IndexedSourceObservationProbe (2.8s)
-ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.2s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.3s)
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
 Build completed successfully (8641 jobs).
@@ -42,7 +42,7 @@ error: build failed
 === M2 (inputCopy changes values) MUTATE exit=1 ===
 === M2 (inputCopy changes values) RESTORED BUILD ===
 ✔ [8640/8641] Built IndexedSourceObservationProbe (2.8s)
-ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.2s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.4s)
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
 Build completed successfully (8641 jobs).
@@ -67,7 +67,7 @@ error: build failed
 === M3 (outputCopy changes values) MUTATE exit=1 ===
 === M3 (outputCopy changes values) RESTORED BUILD ===
 ✔ [8640/8641] Built IndexedSourceObservationProbe (2.8s)
-ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.3s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
 Build completed successfully (8641 jobs).
@@ -85,7 +85,7 @@ error: build failed
 === M4 (inverse coordinate reversal) MUTATE exit=1 ===
 === M4 (inverse coordinate reversal) RESTORED BUILD ===
 ✔ [8640/8641] Built IndexedSourceObservationProbe (2.8s)
-ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.3s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
 Build completed successfully (8641 jobs).
@@ -102,7 +102,7 @@ error: build failed
 === M5 (hidden private donor collapse) MUTATE exit=1 ===
 === M5 (hidden private donor collapse) RESTORED BUILD ===
 info: experiments/indexed_execution/IndexedWitnessPartialTest.lean:125:0: axiom audit: 8 constants under IndexedWitnessPartialTest use only standard axioms
-ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.5s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
 Build completed successfully (8641 jobs).
@@ -119,7 +119,7 @@ error: build failed
 === M6 (nested private identity donor) MUTATE exit=1 ===
 === M6 (nested private identity donor) RESTORED BUILD ===
 info: experiments/indexed_execution/IndexedWitnessPartialTest.lean:125:0: axiom audit: 8 constants under IndexedWitnessPartialTest use only standard axioms
-ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.5s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
 Build completed successfully (8641 jobs).
@@ -171,7 +171,7 @@ error: build failed
 === M9 (total-to-strict theorem donor) MUTATE exit=1 ===
 === M9 (total-to-strict theorem donor) RESTORED BUILD ===
 info: experiments/indexed_execution/IndexedWitnessPartialTest.lean:125:0: axiom audit: 8 constants under IndexedWitnessPartialTest use only standard axioms
-ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.7s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
 Build completed successfully (8641 jobs).
@@ -188,7 +188,7 @@ error: build failed
 === M10 (empty metadata object donor) MUTATE exit=1 ===
 === M10 (empty metadata object donor) RESTORED BUILD ===
 info: experiments/indexed_execution/IndexedWitnessPartialTest.lean:125:0: axiom audit: 8 constants under IndexedWitnessPartialTest use only standard axioms
-ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.7s)
+ℹ [8641/8641] Built IndexedSourceObservationProbeTest (5.6s)
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:91:0: axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
 info: experiments/indexed_execution/IndexedSourceObservationProbeTest.lean:92:0: axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
 Build completed successfully (8641 jobs).
