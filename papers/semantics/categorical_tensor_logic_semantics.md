@@ -4,7 +4,8 @@
 [Specification](tensor_logic_semantics.md) |
 [Prototype and results](categorical_tensor_logic_lean_prototype.md) |
 [Witness-category proof and release evidence](categorical_witness_semantics_record.md) |
-[Source-functor completion and release evidence](categorical_source_functor_record.md)
+[Source-functor completion and release evidence](categorical_source_functor_record.md) |
+[Ranked execution proof and release evidence](categorical_ranked_execution_record.md)
 
 ## Summary
 
@@ -85,6 +86,20 @@ event-sensitive process laws. See the
 [witness semantics record](categorical_witness_semantics_record.md) and
 [source-functor record](categorical_source_functor_record.md).
 
+**Ranked operational composition** now supplies the separate execution result.
+From the two component rank certificates, the constructor's full-footprint
+composite certificate is proved rather than assumed. The actual first-enabled
+runner completes all upstream writers and collectors, including private work,
+before any downstream action, or fails upstream without starting downstream.
+After upstream success, the whole completed boundary initializes the downstream
+execution. Every graph and normalized reference snapshot has a proved phase
+projection, retaining private values, ordered produced ledgers, pending work
+and accumulators. The phases share one boundary snapshot and add no copy event.
+This holds for validated inputs and the actual default budgets, without a new
+runtime phase gate or an assumed execution agreement. It is an operational
+bridge toward a process interpretation, not a proof of process-category laws.
+See Section 6.11 and the [ranked execution record](categorical_ranked_execution_record.md).
+
 The independently authored validation fixture supplies actual
 proof instances of the execution-correspondence theorem. Its six-event failure and
 seven-event completion remain concrete executable observations;
@@ -128,7 +143,8 @@ and Section 9 separates established results from remaining targets.
 Section 10 gives the categorization roadmap and a ledger of current progress.
 Appendix A explains correspondence and how the static constructor supplies
 its match, then the complete-model gluing and categorical witness arguments,
-in mathematical rather than Lean notation.
+and finally the ranked operational phase proof, in mathematical rather than
+Lean notation.
 
 ## Table of contents
 
@@ -187,6 +203,7 @@ in mathematical rather than Lean notation.
   - [A.7. Construct a match from component matches](#a7-construct-a-match-from-component-matches)
   - [A.8. Restrict and glue complete-model witnesses](#a8-restrict-and-glue-complete-model-witnesses)
   - [A.9. Turn model witnesses into categorical semantics](#a9-turn-model-witnesses-into-categorical-semantics)
+  - [A.10. Derive ranked operational composition](#a10-derive-ranked-operational-composition)
 - [Notation reference](#notation-reference)
 
 ## 1. Begin with the meaning that execution must preserve
@@ -1331,6 +1348,15 @@ for exact APIs, discriminating private/collection/empty/axis/guarded/cyclic
 cases, controls and release evidence. General trace algebra and
 event-sensitive process-category laws are not established by this result.
 
+The result has passed both whole-branch review lenses, clean replay of all
+six verified implementation tasks, namespace axiom audits and the full
+`LeanNCD Tests IndexedExecutionExperiment` build on merged local main.
+All 25 intended-diagnostic mutation controls passed with restored builds and
+byte-identical source restoration: seven new fixture/graph controls, two
+live snapshot-proof controls and sixteen inherited composition controls.
+These classifications matter; they are not 25 independent runtime runner kills.
+Appendix A.10 explains the proof's construction and operational invariants.
+
 ## 7. St/Br, indexed arrays, and open diagrams
 
 The categorical perspectives address different layers and different
@@ -1766,8 +1792,9 @@ stage requires the previous stage's full implementation. The witness proof
 completes the denotational target-category branch, including actual nested
 component coherence and the restricted partial-map view. The source completion
 adds a certified matched-component/coordinate-wire presentation and a genuine
-functor to that target. Ranked operational phase proofs, broader source
-interpretations and backend refinement remain separate branches.
+functor to that target. The ranked binary operational phase branch is now
+proved separately. General trace/process laws, broader source interpretations
+and backend refinement remain open branches.
 
 ### 10.1. What each step buys us
 
@@ -1781,7 +1808,7 @@ interpretations and backend refinement remain separate branches.
 | 6. Package a semantic category | Witness spans over interface environments, span-isomorphism quotient, and composition interpreted as a pullback | Turns model gluing into a composition-preserving categorical interpretation with both exterior legs checked | Proved across all validated inputs with explicit boundary/exterior transports |
 | 7. Prove category laws and units | Target identity spans and associativity; actual nested component comparison through compatible model triples | Makes repeated denotational composition coherent without treating extra computation events as no work | Target laws, graph-transport laws and nested coherence proved; source administrative laws are supplied separately in Step 8, not inferred from target laws |
 | 8. Present sources and connect their meaning | Distinct whole-interface source objects, certified coordinate wires, matched leaves and a generated congruence; genuine witness functor | Connects source units/composition and actual component assembly to complete-witness meaning with explicit transports | Proved for the specified sealed presentation, including both actual nested-to-triple comparisons; no automatic matching, faithfulness or general St/Br/monoidal claim |
-| 9. Connect process and implementation views | Ranked phase/projection and trace proofs, plus observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest | Open; the denotational proofs do not discharge these obligations |
+| 9. Connect process and implementation views | Ranked phase/projection and trace proofs, plus observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest | Ranked binary phases and full graph/reference state projections proved; general trace algebra, process laws and frontend/backend refinement remain open |
 
 The completed realization of Steps 6-7 is the **witness-span interpretation**.
 For a whole-tensor interface $X$, write $\mathsf{Env}(X)$ for its space of
@@ -2333,6 +2360,110 @@ span isomorphism gives no schedule, event or phase equality.
    certified wire maps and both actual nested-to-triple derivations retain
    explicit interface transports. This denotational source completion does not
    supply rank, phase, trace, event-sensitive units or backend refinement.
+
+### A.10. Derive ranked operational composition
+
+The preceding categorical laws describe complete-model witnesses. To show
+that the actual sealed constructor executes sequentially requires a different
+argument. Fix matched components $P,Q$, an explicit supported boundary $b$,
+validated input $\eta$ for $P$, and local rank certificates $r_P,r_Q$.
+Use the existing constructor, first-enabled graph runner and reference
+executor; do not assume completion, model existence or agreement of executions.
+
+1. **Construct a rank, including private dependencies.** Let
+   $\operatorname{Addr}(P)$ contain every declared upstream address, including
+   inputs. Its finite coordinate domains permit the strict bound
+
+   $$
+   L=1+\sum_{a\in\operatorname{Addr}(P)}r_P(a).
+   $$
+
+   If there are no addresses, $L=1$; no inhabited maximum is needed.
+   Keep upstream ranks unchanged and give an embedded downstream defined
+   address $a$ rank $L+r_Q(a)$. Upstream dependencies still decrease.
+   Internal downstream dependencies decrease under the common offset.
+   A downstream boundary read maps to an upstream address of rank below $L$,
+   hence below the downstream destination. Apply this argument to the full
+   expression footprint of every actual guard-admitted occurrence, not only
+   reads contributing to designated outputs.
+
+2. **Turn priority into a proved phase property.** The actual composite graph
+   has the transported upstream steps followed by the transported downstream
+   steps. That list order is not enough: first-enabled selection can skip a
+   disabled upstream step. Relate the composite prefix to the standalone
+   upstream execution instead. Its available values pull back to exactly the
+   upstream values, its ordered ledger is exactly the renamed upstream ledger,
+   and all downstream defined values remain absent.
+   Readiness, evaluation and updates transport through this relation.
+   Ranked progress rules out an incomplete blocked upstream endpoint;
+   the run induction therefore follows actual upstream selection until
+   completion or undefined failure, without falling through to downstream.
+   Completion includes private writers, private collectors and zero-writer
+   publication. A ready undefined body fails; ranking does not make it total.
+
+3. **Make the boundary an existing state, not an action.** Upstream success
+   supplies its complete store $\rho_P$, from which `boundaryInput` constructs
+   the downstream input. This equals `boundaryFromOutput` applied to the
+   whole output projection of $\rho_P$. Tensor-role metadata retains the
+   presence of empty input tensors even when there are no coordinates to
+   enumerate. At the same composite state, the downstream projection has
+   exactly these inputs, no downstream defined values and an empty downstream
+   produced ledger. There is no copy, wire or boundary transition.
+
+4. **Preserve the complete upstream state throughout the suffix.** Relate each
+   suffix state to the standalone downstream execution. Its downstream
+   availability is the transported local availability; its produced ledger is
+   the renamed completed upstream ledger followed by the renamed downstream
+   ledger, in order. All upstream availability, including private values, is
+   unchanged. Completed upstream steps cannot become enabled again.
+   This proves both downstream success and transported downstream undefined
+   failure, rather than only agreement of final outputs.
+   If upstream failed instead, every event and snapshot is upstream-owned;
+   visible boundary availability before a private failure cannot start $Q$.
+
+5. **Transfer one shared cut to normalized reference snapshots.** Existing
+   graph/reference correspondence relates available values to published
+   values and the produced ledger to pending occurrences and accumulators.
+   Combining it with both phase relations gives a composite reference list
+
+   $$
+   \mathrm{pre}\mathbin{+\!\!+}[c]\mathbin{+\!\!+}\mathrm{suffix}.
+   $$
+
+   The upstream snapshots project to $\mathrm{pre}\mathbin{+\!\!+}[c]$;
+   the downstream snapshots project to $[c]\mathbin{+\!\!+}\mathrm{suffix}$.
+   The composite contains $c$ once, although both relations use it.
+   Events are the transported upstream prefix followed by the transported
+   downstream events, with the supplied tag/capability/address renamings.
+   Undefinedness contributes its event but no additional failed-state
+   snapshot, exactly as `referenceSnapshots` specifies.
+
+6. **Use the constructor's real default budget.** If the standalone step
+   counts are $n_P,n_Q$, the composite budget is $n_P+n_Q+1$, not the sum
+   of the two standalone defaults. If $k$ successful upstream actions reach
+   the cut and $f$ fuel remains, the proof gives
+
+   $$
+   f+k=n_P+n_Q+1,\qquad k\leq n_P,\qquad f\geq n_Q+1.
+   $$
+
+   The decreasing remaining-action measure supplies the bound on $k$.
+   Thus the suffix has at least its own default budget. Existing matched
+   execution results exclude mismatch, blocking and default exhaustion
+   under the stated premises. Invalid raw inputs retain the composite's
+   full-tensor validation order; this is not two standalone validations or
+   an equivalence for arbitrary explicit debug fuel.
+
+The constructed certificate is
+[`compositeRankCertificate`](../../leanncd/experiments/indexed_execution/IndexedComponentCompositionRanks.lean).
+The actual graph theorem is
+[`compose_default_phases`](../../leanncd/experiments/indexed_execution/IndexedComponentExecutionRuns.lean);
+[`reference_default_phases`](../../leanncd/experiments/indexed_execution/IndexedComponentExecutionReference.lean)
+derives the normalized reference projections. Together they establish ranked
+binary operational composition. General trace algebra, process units and
+associativity under an event-sensitive observation equivalence still require
+their own theorems; they do not follow from the witness-span quotient or from
+this binary phase result alone.
 
 ## Notation reference
 
