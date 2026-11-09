@@ -1,0 +1,513 @@
+diff --git a/leanncd/AGENTS.md b/leanncd/AGENTS.md
+index 7be32d42..69460f91 100644
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -21,8 +21,21 @@ actual bracketings after explicit inherited transports. See the
+ These modules belong only to `IndexedExecutionExperiment`, not production
+ `LeanNCD`. `IndexedSourceTest` retains strict undefinedness, hidden complete
+ stores and empty metadata. Observation probes and separate parity modules
+-are test-only. No core identity computation, runtime phase theorem or
+-event-sensitive process category is claimed.
++are test-only. No core identity computation or event-sensitive process category is claimed.
++
++The operational entry point is `import IndexedRankedExecutionSemantics`.
++`compositeRankCertificate` constructs a full-footprint composite rank from
++both component certificates. `compose_default_phases` proves actual default
++`runChecked` upstream-first execution, strict failure and full state/ledger
++projections; `reference_default_phases` transfers the shared phase cut to
++`Program.Executor.run` and normalized `referenceSnapshots`, including pending
++occurrences and accumulators. Inputs are validated and lifted with `liftInput`;
++downstream input is obtained from the completed whole upstream boundary.
++Empty tensor presence and the composite's own default budget are retained.
++No runtime gate, synthetic boundary event, general trace algebra or process
++category law is added. These APIs and their acceptance/audit modules remain
++nondefault under `IndexedExecutionExperiment`; see the
++[ranked execution record](../papers/semantics/categorical_ranked_execution_record.md).
+ 
+ Typed declaration/read/expression transport is implemented and proved by
+ `IndexedComponentTransport`, `IndexedComponentTransportExpr`,
+diff --git a/papers/semantics/categorical_tensor_logic_semantics.md b/papers/semantics/categorical_tensor_logic_semantics.md
+index a5264c4a..04bead03 100644
+--- a/papers/semantics/categorical_tensor_logic_semantics.md
++++ b/papers/semantics/categorical_tensor_logic_semantics.md
+@@ -105,9 +105,10 @@ The strongest defensible conclusion is:
+ > and coherent nested composition after explicit interface transport.
+ > Partial-map composition is proved under explicit at-most-one-model
+ > hypotheses. The specified matched-component/coordinate-wire source category
+-> and its witness functor are also proved. Broader source interpretations,
+-> ranked phase execution and event-sensitive process laws remain separate
+-> obligations.
++> and its witness functor are also proved. Composite rank construction and
++> upstream/downstream execution phases are proved for the ranked profile.
++> Broader source interpretations and event-sensitive process laws remain
++> separate obligations.
+ 
+ The St/Br presentation can organise parts of the syntax and total
+ indexing. It is not assumed to be the best presentation of every layer.
+@@ -160,6 +161,7 @@ in mathematical rather than Lean notation.
+   - [6.8. Kernel-checked static component composition](#68-kernel-checked-static-component-composition)
+   - [6.9. Kernel-checked model gluing and restricted denotation](#69-kernel-checked-model-gluing-and-restricted-denotation)
+   - [6.10. Kernel-checked categorical witness semantics](#610-kernel-checked-categorical-witness-semantics)
++  - [6.11. Kernel-checked ranked operational phases](#611-kernel-checked-ranked-operational-phases)
+ - [7. St/Br, indexed arrays, and open diagrams](#7-stbr-indexed-arrays-and-open-diagrams)
+   - [7.1. St/Br remains a serious syntax candidate](#71-stbr-remains-a-serious-syntax-candidate)
+   - [7.2. Naperian representation connects compact syntax to values](#72-naperian-representation-connects-compact-syntax-to-values)
+@@ -168,7 +170,7 @@ in mathematical rather than Lean notation.
+ - [8. Where Turi-Plotkin and implementation refinement fit](#8-where-turi-plotkin-and-implementation-refinement-fit)
+ - [9. Proof status and remaining targets](#9-proof-status-and-remaining-targets)
+   - [9.1. Closed-graph/reference correspondence: conditional proof](#91-closed-graphreference-correspondence-conditional-proof)
+-  - [9.2. Sealed composition: model gluing proved, operational targets open](#92-sealed-composition-model-gluing-proved-operational-targets-open)
++  - [9.2. Sealed composition: models and ranked execution](#92-sealed-composition-models-and-ranked-execution)
+   - [9.3. Why unrestricted partial-function composition is unsafe](#93-why-unrestricted-partial-function-composition-is-unsafe)
+ - [10. Categorization roadmap and progress](#10-categorization-roadmap-and-progress)
+   - [10.1. What each step buys us](#101-what-each-step-buys-us)
+@@ -1061,8 +1063,9 @@ Expression helpers remain shared; this is not an independent numerical oracle.
+ 
+ No rank is required for static construction or correspondence. Appending
+ upstream priorities does not by itself prove that all upstream work finishes
+-before any downstream action. Rank stitching, that phase/projection theorem,
+-and process associativity/identities are still open. Complete-model gluing
++before any downstream action. The separate ranked phase/projection theorem
++is now proved in Section 6.11; process associativity/identities remain open.
++Complete-model gluing
+ and restricted denotation are the separate proved results in Section 6.9;
+ Section 10 records the proved witness-span category and denotational coherence.
+ The result belongs only to the non-default `IndexedExecutionExperiment`,
+@@ -1281,8 +1284,52 @@ decidable, exact-rational, explicitly wired sealed matched-component
+ presentation. Source objects/homs remain `Type 1`, environments `Type 0`;
+ no finite rational-model-set, same-universe local-smallness or faithfulness
+ claim follows. Administrative source units are not event-free core programs.
+-Event-sensitive process composition, rank stitching, phase/trace projection,
+-broader source interpretations and backend refinement remain separate work.
++Ranked binary operational phases are the separate result below.
++Event-sensitive process-category laws, general trace algebra, broader source
++interpretations and backend refinement remain separate work.
++
++### 6.11. Kernel-checked ranked operational phases
++
++The operational entry point is
++[`IndexedRankedExecutionSemantics`](../../leanncd/experiments/indexed_execution/IndexedRankedExecutionSemantics.lean).
++For the same sealed profile, `compositeRankCertificate` constructs a rank
++certificate from both local certificates and the explicit boundary.
++Its offset exceeds every upstream address rank, including inputs; the
++empty-address bound is one. Full actual occurrence footprints, not merely
++designated-output dependencies, decrease through the real embeddings.
++
++`compose_default_phases` proves phase separation for actual default
++`IndexedOpenComposition.runChecked` executions on `liftInput` of validated
++upstream input. First-enabled selection is transported, and ranked upstream
++progress prevents disabled private work from being skipped in favour of
++downstream work. Ready undefined bodies still fail. Upstream failure has
++only transported upstream events and states, even if visible outputs were
++published before private failure.
++
++After upstream success, the theorem derives its complete store and obtains
++the whole downstream input through `boundaryInput`/`boundaryFromOutput`.
++All prefix and suffix snapshots satisfy explicit state projections.
++The suffix retains the entire upstream availability function and ordered
++private ledger, and projects to the actual standalone downstream execution,
++including success or undefined failure. Empty tensor presence comes from
++interface metadata, not address enumeration.
++
++`reference_default_phases` transfers the cut to `Program.Executor.run`
++and normalized `referenceSnapshots`. The composite reference snapshots are
++`pre ++ cut :: suffix`: upstream projects to `pre ++ [cut]`, downstream to
++`cut :: suffix`. Both full graph/reference relations retain pending
++occurrences and accumulators. The cut is shared once, without an extra
++wire/copy/boundary event; undefinedness does not add a failed-state snapshot.
++
++The composite budget is its own `nA+nB+1`, not the sum of leaf defaults.
++The proved successful prefix bound leaves at least `nB+1` fuel.
++Raw composite validation order and arbitrary explicit debug-fuel behaviour
++are unchanged; the phase theorem starts on validated input.
++No execution agreement, model existence or completion premise is assumed.
++See the [ranked execution record](categorical_ranked_execution_record.md)
++for exact APIs, discriminating private/collection/empty/axis/guarded/cyclic
++cases, controls and release evidence. General trace algebra and
++event-sensitive process-category laws are not established by this result.
+ 
+ ## 7. St/Br, indexed arrays, and open diagrams
+ 
+@@ -1543,7 +1590,7 @@ implementation inventory and audit. The
+ [design brief](categorical_tensor_logic_theorem_brief.md) explains the
+ original proof obligations; Appendix A gives the completed argument.
+ 
+-### 9.2. Sealed composition: model gluing proved, operational targets open
++### 9.2. Sealed composition: models and ranked execution
+ 
+ Let $P$ and $Q$ be upstream and downstream matched components, respectively,
+ in this finite exact-rational profile.
+@@ -1640,11 +1687,16 @@ The subscript $b$ fixes the same components and boundary as above.
+ This is a domain-and-value law under the two explicit component hypotheses,
+ not an unrestricted unique-model composition theorem or a totality result.
+ 
+-**Operational sequencing: still unproved.** A generic theorem that ranked
+-upstream execution completes before downstream execution, with projected
+-states and spliced traces, still needs rank stitching and a phase proof.
+-The first-enabled scheduler can skip blocked upstream work without those
+-additional hypotheses. Static sealing and model gluing are not runtime
++**Ranked operational sequencing: proved.** With both local rank certificates
++and validated upstream input, the actual constructed default execution
++finishes all upstream writers and collectors before downstream work, or
++fails at a transported upstream occurrence without downstream work.
++After success, the whole completed boundary initializes the downstream run.
++Graph and normalized reference snapshots carry the explicit phase cut and
++full state/ledger projections of Section 6.11, with the composite's own
++default budget. No runtime gate or synthetic boundary event is introduced.
++Without ranking, first-enabled selection can still skip blocked private
++upstream work; static sealing and model gluing alone are not runtime
+ completion.
+ 
+ Denotational associativity is now proved through compatible complete-model
+@@ -1824,7 +1876,7 @@ categorical construction elsewhere in the repository.
+ | Injective-left partial-map interpretation | Proved; component restriction is exactly `AtMostOneModels` | [Restricted spans](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean); quotient invariance, closure under pullback and domain/value laws connect to authoritative admissibility and denotation; noncomputable extraction, not totality |
+ | Certified matched-component source category and functor | Proved for the specified generated presentation | [Source functor](../../leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean); certified coordinate wires, source quotient laws, actual assembly/nesting and complete-witness interpretation with explicit transports |
+ | Core/process units | Open | Administrative source identities are not core computations; copies add events and aliases violate `output_defined` |
+-| Rank stitching and sequential phase/projection | Open | Individual ranked progress does not compose certificates or prove the whole upstream-before-downstream phase law |
++| Rank stitching and sequential phase/projection | Proved for actual default graph/reference executions | [Ranked execution](categorical_ranked_execution_record.md); constructed full-footprint certificate, shared cut, whole private state/ledger projections, strict failures, explicit boundary and default-budget proof |
+ | Event-sensitive process category | Open | For the proposed sealed-sequential interpretation, needs operational composition and a justified event/state observation equivalence, not merely span isomorphism |
+ | Categorical frontend/backend interpretation and refinement | Not established for this witness category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
+ 
+@@ -1832,8 +1884,9 @@ The current position is therefore **a proved denotational witness-span
+ category and a certified source-category functor**, not an event-sensitive
+ process category. See the [witness semantics record](categorical_witness_semantics_record.md)
+ and [source record](categorical_source_functor_record.md) for their separate
+-build, audit, control and review gates and limits. Rank/phase and trace-projection form the
+-independent operational task. General St/Br
++build, audit, control and review gates and limits. Ranked binary operational
++phases and normalized state/event projections are also proved in Section 6.11;
++general trace algebra and process laws remain separate. General St/Br
+ packaging, numerical interpretation and implementation refinement must be
+ connected to the chosen semantics by their own arguments.
+ 
+@@ -1852,11 +1905,12 @@ profile. The next obligations depend on the intended claim:
+   structure requires additional constructions and soundness arguments.
+   The [source record](categorical_source_functor_record.md) gives the proved
+   presentation and its limits; the handoff remains its historical goal brief.
+-- **Sequential process meaning:** stitch rank certificates, prove the
+-  upstream/downstream phase and state projections, then establish trace
+-  composition and process units under a specified observation equivalence.
+-  Compatible model triples alone cannot prove that upstream work finishes
+-  first, and semantic graph spans are not event-free core computations.
++- **Sequential process meaning:** the ranked certificate and binary phase/state
++  projections are now proved for actual default graph/reference executions.
++  General trace composition and process units still require a specified
++  observation equivalence. Compatible model triples alone do not prove
++  operational sequencing, and semantic graph spans are not event-free core
++  computations.
+ - **Frontend/backend connection and refinement:** relate St/Br or another
+   source presentation to this witness target and prove the required
+   implementation/observation laws. Value-level indexing, numerical
+@@ -1896,8 +1950,9 @@ replacing the generic proofs or changing the language's strict partiality.
+ 
+ This is a sound operational bridge and a proved denotational source-to-witness
+ functor for the specified rational profile, not an event-sensitive
+-process category. Rank stitching/phase-projection followed by process
+-laws remains open with its own observation equivalence; Section 10 records
++process category. Ranked binary phase-projection is proved; general trace
++algebra and process laws remain open with their own observation equivalence.
++Section 10 records
+ the different goals and current status.
+ Reproving execution correspondence or reconstructing an entire match for
+ each compatible composite is no longer necessary.
+@@ -2193,8 +2248,8 @@ complete-model conclusions, not execution-completion claims.
+ 
+ No rank, phase, model existence or uniqueness premise appears in the core
+ witness theorem. The categorical packaging and its laws are proved separately
+-below; runtime phase/projection, trace splicing and source/process laws
+-remain unproved.
++below. Ranked runtime phase/projection is the separate result in Section 6.11;
++general trace algebra and event-sensitive process laws remain unproved.
+ 
+ ### A.9. Turn model witnesses into categorical semantics
+ 
+diff --git a/papers/semantics/categorical_tensor_logic_component_interfaces.md b/papers/semantics/categorical_tensor_logic_component_interfaces.md
+index 261574c7..46ce05c2 100644
+--- a/papers/semantics/categorical_tensor_logic_component_interfaces.md
++++ b/papers/semantics/categorical_tensor_logic_component_interfaces.md
+@@ -10,7 +10,7 @@ Reuse the landed execution-correspondence theorem only afterward.
+ The implemented static profile is finite computation over the existing
+ exact-rational registry. It preserves all internal work, uses upstream-first
+ priority, and introduces no copying computations. Coordinate-ranked phase
+-execution remains a later theorem. Neither St/Br nor a general category
++execution is now proved separately for actual default runs. Neither St/Br nor a general category
+ library is a prerequisite.
+ 
+ Typed transport and static sealed composition are implemented and proved in
+@@ -21,16 +21,18 @@ See the [transport record](component_transport_execution_record.md) and
+ recorded boundaries. Complete-model gluing, restricted denotation, the
+ witness-span target category and nested denotational coherence are also proved;
+ see the [witness semantics record](categorical_witness_semantics_record.md).
+-Ranked phase execution and source/process categorical laws remain design
+-obligations. The starting points
++The [ranked execution record](categorical_ranked_execution_record.md) gives
++the constructed certificate and graph/reference phase projections.
++General trace algebra and event-sensitive process-category laws remain
++design obligations. The starting points
+ are the [categorical synthesis](categorical_tensor_logic_semantics.md),
+ especially Section 9 and its explanatory Appendix A, the
+ [proof record](categorical_tensor_logic_proof_record.md), and the
+ [theorem-design brief](categorical_tensor_logic_theorem_brief.md).
+ The authoritative existing match is
+ [`SourceContractMatch`](../../leanncd/experiments/indexed_execution/IndexedCompositionMatch.lean).
+-The static and denotational constructor names below are implemented; the
+-remaining ranked process theorems are proposals, not existing declarations.
++The static, denotational and ranked operational declarations named below are
++implemented. A process category remains a separate target.
+ 
+ ## 1. A component owns a declaration universe
+ 
+@@ -291,7 +293,7 @@ Rank certificates are not needed for this static theorem. Its transport and
+ closure lemmas are proved generically, not retained as new per-composite
+ hypotheses equivalent to reconstructing a whole match.
+ 
+-**Ranked sealed execution.** With both component rank certificates and valid
++**Ranked sealed execution: proved.** With both component rank certificates and valid
+ external inputs, the constructed execution runs all upstream work first.
+ If the upstream component fails, no downstream action occurs. If it completes,
+ the remaining execution is the transported downstream run on its whole
+@@ -322,10 +324,16 @@ fresh, and the composite retains the upstream ledger and private values.
+ Splice the traces without an extra boundary event; join state observations
+ with one shared phase-boundary snapshot, not two. Use the existing failed-state
+ normalisation, not literal equality of raw reference machine-state lists.
+-This is a proposed additional proof, not already furnished by correspondence.
++`compose_default_phases` proves the actual graph execution statement;
++`reference_default_phases` derives the normalized reference projections
++through correspondence, including pending occurrences and accumulators.
++`compositeRankCertificate` constructs the required full-footprint rank.
++Import `IndexedRankedExecutionSemantics`; no staged runner was added.
+ 
+ The [ranked execution session brief](categorical_ranked_execution_handoff.md)
+-scopes the next rank/phase/projection slice; it is not a verified execution plan.
++is the historical goal brief, not its verified execution plan. The
++[execution record](categorical_ranked_execution_record.md) tracks the
++implemented APIs and release evidence.
+ 
+ Dependency outline:
+ 
+@@ -339,9 +347,10 @@ Dependency outline:
+    [`default_run_correspondence`](../../leanncd/experiments/indexed_execution/IndexedCompositionValidated.lean)
+    to obtain outcomes, mapped events and related intermediate states for
+    the composite, on every raw composite binding.
+-5. Stitch ranks and prove the ranked phase/projection result; this remains
+-   separate from the rank-independent complete-model restriction/gluing
+-   theorem proved below.
++5. Apply the constructed rank and ranked phase/projection theorems, separately
++   from the rank-independent complete-model restriction/gluing theorem proved
++   below. The operational theorem uses validated input, the actual default
++   budgets and one shared boundary snapshot.
+ 
+ The composite default graph budget is its total writer/publication step count
+ plus one, not the sum of the two standalone default budgets. Reuse the landed
+@@ -580,8 +589,9 @@ associativity remain unproved. None is replaced by assumed execution agreement.
+ There is no known semantic blocker for this restricted target. The substantive
+ admitted-read/expression transport prerequisite and static component
+ match/closure/priority construction, complete-model gluing and denotational
+-category laws are now proved. Remaining unproved work is ranked phase execution
+-and source/process categorical laws.
++category laws and ranked operational phase/state projections are now proved.
++General trace algebra, broader source interpretations and event-sensitive
++process-category laws remain separate.
+ Wider coordinate adapters, residual inputs, fan-out and open contribution
+ ports remain out of scope. Administrative graph spans provide semantic wires
+ and target units. Adjoining units to a source presentation remains a separate
+diff --git a/papers/semantics/categorical_ranked_execution_record.md b/papers/semantics/categorical_ranked_execution_record.md
+new file mode 100644
+index 00000000..a969d045
+--- /dev/null
++++ b/papers/semantics/categorical_ranked_execution_record.md
+@@ -0,0 +1,194 @@
++# Ranked operational execution and phase projections
++
++## Result and scope
++
++The proof implementation is complete. Release review, verified-plan replay
++and final integration receipts are recorded below as they run; this opening
++does not claim those gates have already passed.
++
++The nondefault entry point is `import IndexedRankedExecutionSemantics`.
++It exports the rank construction, actual graph execution phase theorem and
++normalized reference phase theorem for the existing finite decidable,
++exact-rational, explicitly wired sealed matched-component profile.
++No core language, registry, scheduler, runner, denotational category or
++certified source functor was changed.
++
++## Constructed certificate
++
++`IndexedComponentComposition.compositeRankCertificate A B wire rankA rankB`
++is a certificate for the actual `(compose A B wire).program`, not an
++additional premise. `rankOffset A rankA` sums ranks over every upstream
++address and adds one. This includes input addresses and equals one when
++there are no addresses; it requires no inhabited maximum.
++
++Upstream ranks remain unchanged. Downstream defined addresses have rank
++`rankOffset A rankA + rankB.rank address`. `compositeRank_decreases`
++destructs actual guard-admitted occurrence dependencies and transports their
++full footprints. Upstream dependencies, downstream internal dependencies and
++boundary reads are separate cases. Certified coordinate adapters remain
++explicit; neither names nor equal cardinality identify axes.
++
++Ranks establish progress, not totality of registered primitives. A ready
++undefined private body still fails.
++
++## Actual graph phase theorem
++
++`IndexedComponentExecution.compose_default_phases` takes exactly the two
++matched components, their supplied `Boundary`, validated upstream input and
++both component certificates. The composite input is `liftInput`.
++The executions are actual default `IndexedOpenComposition.runChecked` runs,
++not the older `IndexedExecution.run` or public graph `run` wrapper.
++
++`graph_steps_standalone` derives the constructed transported step append.
++`selected_projection` and the run induction transport actual first-enabled
++selection. Standalone ranked terminality rules out skipping incomplete
++upstream work; list order alone is never treated as a phase barrier.
++
++If upstream fails, the composite fails at `upstreamId tag`. Its events are
++exactly the transported upstream events, and every snapshot satisfies
++`UpstreamState`: no downstream defined values or produced capabilities.
++This includes failures after visible outputs but before private completion.
++
++If upstream succeeds, the theorem derives a complete upstream store and
++constructs the downstream input with `boundaryInput`. The theorem supplies
++an actual cut state, a prefix snapshot list and residual fuel. All upstream
++snapshots project to the prefix plus the cut. `RunProjection` relates the
++entire downstream default run to the actual composite suffix, including
++success or transported undefined failure, ordered events and every snapshot.
++`DownstreamState` retains the entire upstream availability function and
++ordered completed ledger, including private values, while projecting
++downstream availability and its fresh ordered ledger.
++
++The cut state already is the downstream initial state under the relation.
++No wire/copy/boundary action is inserted. Composite snapshots are the prefix
++without its last cut copy followed by the suffix snapshots; the cut occurs
++once, not twice.
++
++## Reference snapshots and boundary metadata
++
++`reference_default_phases` derives the same explicit cut for
++`Program.Executor.run` through existing accepted graph/reference
++correspondence. Its composite normalized snapshots have shape
++`pre ++ cutRef :: suffix`. Standalone upstream snapshots project to
++`pre ++ [cutRef]`, and downstream snapshots project to `cutRef :: suffix`.
++
++`ReferenceStateProjection` witnesses both graph states, the phase relation,
++both `LedgerInvariant`s and both full graph/reference `Relation`s.
++Consequently published/available values, produced ledgers, pending
++occurrences and accumulators are related, not just final outputs.
++Events compare through the existing matched event maps and explicit
++upstream/downstream renamings; raw dependent event types are not identified.
++Undefinedness records its event but no additional failed-state snapshot,
++using the existing `referenceSnapshots`.
++
++The input is the whole completed upstream boundary, not a partial
++contribution or merely the visible coordinates currently available.
++`boundaryInput_outputProjection` exposes its equality with
++`boundaryFromOutput` applied to the completed output interface.
++`boundary_input_presence` retains empty input tensors using metadata even
++when their address type is empty.
++
++## Budgets and validation
++
++The composite default budget is `nA + nB + 1`, not `(nA + 1) + (nB + 1)`.
++The phase theorem proves
++`remaining + prefix.length = composite.graph.steps.length + 1`,
++`prefix.length ≤ nA` and `nB + 1 ≤ remaining`.
++The decreasing remaining-action measure bounds the prefix.
++Fuel-stability helpers preserve entire actual runs, including snapshots.
++No equivalence for arbitrary unequal explicit debug fuel is claimed.
++
++The theorem starts on validated upstream input and does not assume models,
++uniqueness, execution completion or execution agreement. The existing
++`default_run_correspondence` remains the raw-input/`runValidated` theorem.
++Composite full-tensor validation order is unchanged; it is not two
++standalone validations, and internal boundary bindings are not new external
++input requirements.
++
++## Acceptance evidence
++
++`IndexedComponentRankedExecutionFixtures` adds nine executable checks:
++
++- Private upstream success, private upstream failure after visible `Out`,
++  and downstream strict failure, pinning every available vector and ordered
++  produced ledger. External input 3 yields upstream `Out = 9`,
++  private `Audit = 7/2`, downstream `Out = 81`, private `Audit = 19/2`.
++  The successful cut is at zero-based snapshot index 4.
++- Reference snapshot normalization and default budgets: success 8 events /
++  9 snapshots; upstream failure 3 / 3; downstream failure 7 / 7.
++  Composite budget 9 versus leaf budgets 5 and 5.
++- A graph-only private-priority control that still closes but permits
++  downstream work before upstream private failure; it has no composite match.
++- Complete contribution collection (+1 and -1) before boundary publication,
++  zero-writer publication, and empty metadata/validation with a valid
++  neighbour. The two-invalid-binding case distinguishes validation order
++  from UID order.
++- A cyclic private-upstream counterexample: downstream produces/publishes 1
++  before the composite blocks. `hidden_no_rank` proves its self-dependency
++  excludes a certificate; blocking does not imply absence of models.
++
++`IndexedComponentRankedExecutionRankTest` supplies coordinate-sensitive axis
++and guarded/colliding-name certificates and actual composite instances.
++The nonpalindromic repeated footprint has ranks `[2,3,2,3]`; an unread input
++rank 100 is included in the offset bound. Private downstream dependencies
++are tested separately from designated outputs.
++
++`IndexedComponentRankedExecutionTest` instantiates both actual graph and
++normalized reference phase theorems for private, collection, zero, empty,
++axis and guarded-collision donor families. These proof-valued definitions
++retain the general theorem's full proposition without transcribing it.
++`IndexedComponentRankedExecutionAudit` audits all new proof/test namespaces.
++
++## Authoring controls and verification
++
++- Latest local main base: `a8568ddb`. Existing isolated task worktree was
++  prepared with `prepare-worktree.sh`: 8,101 / 8,094 Mathlib oleans, 443
++  project oleans; project refresh passed.
++- All new Lean modules passed real named-module builds and final-content
++  `check-snippet.sh` checks.
++- Controller full `LeanNCD Tests IndexedExecutionExperiment` prototype build
++  passed. Namespace and main theorem/instance audits use only standard Lean
++  axioms.
++- The seven-entry post-code manifest passed unfiltered intended-diagnostic,
++  restored-build and byte-identical-source checks:
++  [fixture results](categorical_ranked_execution_fixture_mutation_results.md).
++  These are fixture-source/binding and graph-only counterexample controls,
++  not seven live production runner mutations.
++- Initial failure-bypass substitutions were type-inconsistent and are not
++  credited as runtime kills. Coherent component/boundary/input substitutions
++  were then observed at the intended strict-failure assertions and rerun in
++  the complete certified manifest.
++- Both snapshot controls passed the final unfiltered intended-diagnostic,
++  restored-build and byte-identical checks:
++  [snapshot results](categorical_ranked_execution_snapshot_mutation_results.md).
++  They break live proof consumers; the graph duplicate also breaks independent
++  strict/total parity checks.
++- All 16 inherited composition controls were rerun unfiltered:
++  [inherited results](categorical_ranked_execution_inherited_mutation_results.md).
++  Namespace separation, ordered reads, guards, empty metadata, nonconstant
++  transport, typed legal neighbours and graph-only counterexamples all passed
++  intended-diagnostic/restoration checks. These retain their original control
++  classifications, not 16 new live runner mutations.
++- The controller reran the full three-target build after all 25 final
++  failure/restoration cycles; it passed.
++
++## Process accounting
++
++The helper-layer dispatch reached its 55-turn checkpoint; a validation-only
++registration follow-up conservatively exceeded it. This was reported rather
++than counted as compliant. The rank, actual run induction and normalized
++reference dispatches reported no known turn/context breach.
++
++`token-report.py a285d1df-05fb-4a49-9f7e-23b13dcfa082` reported no transcript.
++Cumulative input totals and peak context therefore remain unmeasured with
++that tool; neither the 50M authoring target nor 175M slice cap is declared
++verified from unavailable accounting.
++
++## Remaining boundary
++
++General trace algebra, process identities/associativity, event-exact
++source-category interpretation, broader interfaces, automatic matches and
++frontend/backend or numerical refinement remain separate work.
++Administrative semantic/source identities are still not event-free core
++programs. This slice proves ranked binary operational sequencing and its
++state/event projections, not a process category.

@@ -105,9 +105,10 @@ The strongest defensible conclusion is:
 > and coherent nested composition after explicit interface transport.
 > Partial-map composition is proved under explicit at-most-one-model
 > hypotheses. The specified matched-component/coordinate-wire source category
-> and its witness functor are also proved. Broader source interpretations,
-> ranked phase execution and event-sensitive process laws remain separate
-> obligations.
+> and its witness functor are also proved. Composite rank construction and
+> upstream/downstream execution phases are proved for the ranked profile.
+> Broader source interpretations and event-sensitive process laws remain
+> separate obligations.
 
 The St/Br presentation can organise parts of the syntax and total
 indexing. It is not assumed to be the best presentation of every layer.
@@ -160,6 +161,7 @@ in mathematical rather than Lean notation.
   - [6.8. Kernel-checked static component composition](#68-kernel-checked-static-component-composition)
   - [6.9. Kernel-checked model gluing and restricted denotation](#69-kernel-checked-model-gluing-and-restricted-denotation)
   - [6.10. Kernel-checked categorical witness semantics](#610-kernel-checked-categorical-witness-semantics)
+  - [6.11. Kernel-checked ranked operational phases](#611-kernel-checked-ranked-operational-phases)
 - [7. St/Br, indexed arrays, and open diagrams](#7-stbr-indexed-arrays-and-open-diagrams)
   - [7.1. St/Br remains a serious syntax candidate](#71-stbr-remains-a-serious-syntax-candidate)
   - [7.2. Naperian representation connects compact syntax to values](#72-naperian-representation-connects-compact-syntax-to-values)
@@ -168,7 +170,7 @@ in mathematical rather than Lean notation.
 - [8. Where Turi-Plotkin and implementation refinement fit](#8-where-turi-plotkin-and-implementation-refinement-fit)
 - [9. Proof status and remaining targets](#9-proof-status-and-remaining-targets)
   - [9.1. Closed-graph/reference correspondence: conditional proof](#91-closed-graphreference-correspondence-conditional-proof)
-  - [9.2. Sealed composition: model gluing proved, operational targets open](#92-sealed-composition-model-gluing-proved-operational-targets-open)
+  - [9.2. Sealed composition: models and ranked execution](#92-sealed-composition-models-and-ranked-execution)
   - [9.3. Why unrestricted partial-function composition is unsafe](#93-why-unrestricted-partial-function-composition-is-unsafe)
 - [10. Categorization roadmap and progress](#10-categorization-roadmap-and-progress)
   - [10.1. What each step buys us](#101-what-each-step-buys-us)
@@ -1061,8 +1063,9 @@ Expression helpers remain shared; this is not an independent numerical oracle.
 
 No rank is required for static construction or correspondence. Appending
 upstream priorities does not by itself prove that all upstream work finishes
-before any downstream action. Rank stitching, that phase/projection theorem,
-and process associativity/identities are still open. Complete-model gluing
+before any downstream action. The separate ranked phase/projection theorem
+is now proved in Section 6.11; process associativity/identities remain open.
+Complete-model gluing
 and restricted denotation are the separate proved results in Section 6.9;
 Section 10 records the proved witness-span category and denotational coherence.
 The result belongs only to the non-default `IndexedExecutionExperiment`,
@@ -1281,8 +1284,52 @@ decidable, exact-rational, explicitly wired sealed matched-component
 presentation. Source objects/homs remain `Type 1`, environments `Type 0`;
 no finite rational-model-set, same-universe local-smallness or faithfulness
 claim follows. Administrative source units are not event-free core programs.
-Event-sensitive process composition, rank stitching, phase/trace projection,
-broader source interpretations and backend refinement remain separate work.
+Ranked binary operational phases are the separate result below.
+Event-sensitive process-category laws, general trace algebra, broader source
+interpretations and backend refinement remain separate work.
+
+### 6.11. Kernel-checked ranked operational phases
+
+The operational entry point is
+[`IndexedRankedExecutionSemantics`](../../leanncd/experiments/indexed_execution/IndexedRankedExecutionSemantics.lean).
+For the same sealed profile, `compositeRankCertificate` constructs a rank
+certificate from both local certificates and the explicit boundary.
+Its offset exceeds every upstream address rank, including inputs; the
+empty-address bound is one. Full actual occurrence footprints, not merely
+designated-output dependencies, decrease through the real embeddings.
+
+`compose_default_phases` proves phase separation for actual default
+`IndexedOpenComposition.runChecked` executions on `liftInput` of validated
+upstream input. First-enabled selection is transported, and ranked upstream
+progress prevents disabled private work from being skipped in favour of
+downstream work. Ready undefined bodies still fail. Upstream failure has
+only transported upstream events and states, even if visible outputs were
+published before private failure.
+
+After upstream success, the theorem derives its complete store and obtains
+the whole downstream input through `boundaryInput`/`boundaryFromOutput`.
+All prefix and suffix snapshots satisfy explicit state projections.
+The suffix retains the entire upstream availability function and ordered
+private ledger, and projects to the actual standalone downstream execution,
+including success or undefined failure. Empty tensor presence comes from
+interface metadata, not address enumeration.
+
+`reference_default_phases` transfers the cut to `Program.Executor.run`
+and normalized `referenceSnapshots`. The composite reference snapshots are
+`pre ++ cut :: suffix`: upstream projects to `pre ++ [cut]`, downstream to
+`cut :: suffix`. Both full graph/reference relations retain pending
+occurrences and accumulators. The cut is shared once, without an extra
+wire/copy/boundary event; undefinedness does not add a failed-state snapshot.
+
+The composite budget is its own `nA+nB+1`, not the sum of leaf defaults.
+The proved successful prefix bound leaves at least `nB+1` fuel.
+Raw composite validation order and arbitrary explicit debug-fuel behaviour
+are unchanged; the phase theorem starts on validated input.
+No execution agreement, model existence or completion premise is assumed.
+See the [ranked execution record](categorical_ranked_execution_record.md)
+for exact APIs, discriminating private/collection/empty/axis/guarded/cyclic
+cases, controls and release evidence. General trace algebra and
+event-sensitive process-category laws are not established by this result.
 
 ## 7. St/Br, indexed arrays, and open diagrams
 
@@ -1543,7 +1590,7 @@ implementation inventory and audit. The
 [design brief](categorical_tensor_logic_theorem_brief.md) explains the
 original proof obligations; Appendix A gives the completed argument.
 
-### 9.2. Sealed composition: model gluing proved, operational targets open
+### 9.2. Sealed composition: models and ranked execution
 
 Let $P$ and $Q$ be upstream and downstream matched components, respectively,
 in this finite exact-rational profile.
@@ -1640,11 +1687,16 @@ The subscript $b$ fixes the same components and boundary as above.
 This is a domain-and-value law under the two explicit component hypotheses,
 not an unrestricted unique-model composition theorem or a totality result.
 
-**Operational sequencing: still unproved.** A generic theorem that ranked
-upstream execution completes before downstream execution, with projected
-states and spliced traces, still needs rank stitching and a phase proof.
-The first-enabled scheduler can skip blocked upstream work without those
-additional hypotheses. Static sealing and model gluing are not runtime
+**Ranked operational sequencing: proved.** With both local rank certificates
+and validated upstream input, the actual constructed default execution
+finishes all upstream writers and collectors before downstream work, or
+fails at a transported upstream occurrence without downstream work.
+After success, the whole completed boundary initializes the downstream run.
+Graph and normalized reference snapshots carry the explicit phase cut and
+full state/ledger projections of Section 6.11, with the composite's own
+default budget. No runtime gate or synthetic boundary event is introduced.
+Without ranking, first-enabled selection can still skip blocked private
+upstream work; static sealing and model gluing alone are not runtime
 completion.
 
 Denotational associativity is now proved through compatible complete-model
@@ -1824,7 +1876,7 @@ categorical construction elsewhere in the repository.
 | Injective-left partial-map interpretation | Proved; component restriction is exactly `AtMostOneModels` | [Restricted spans](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean); quotient invariance, closure under pullback and domain/value laws connect to authoritative admissibility and denotation; noncomputable extraction, not totality |
 | Certified matched-component source category and functor | Proved for the specified generated presentation | [Source functor](../../leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean); certified coordinate wires, source quotient laws, actual assembly/nesting and complete-witness interpretation with explicit transports |
 | Core/process units | Open | Administrative source identities are not core computations; copies add events and aliases violate `output_defined` |
-| Rank stitching and sequential phase/projection | Open | Individual ranked progress does not compose certificates or prove the whole upstream-before-downstream phase law |
+| Rank stitching and sequential phase/projection | Proved for actual default graph/reference executions | [Ranked execution](categorical_ranked_execution_record.md); constructed full-footprint certificate, shared cut, whole private state/ledger projections, strict failures, explicit boundary and default-budget proof |
 | Event-sensitive process category | Open | For the proposed sealed-sequential interpretation, needs operational composition and a justified event/state observation equivalence, not merely span isomorphism |
 | Categorical frontend/backend interpretation and refinement | Not established for this witness category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
 
@@ -1832,8 +1884,9 @@ The current position is therefore **a proved denotational witness-span
 category and a certified source-category functor**, not an event-sensitive
 process category. See the [witness semantics record](categorical_witness_semantics_record.md)
 and [source record](categorical_source_functor_record.md) for their separate
-build, audit, control and review gates and limits. Rank/phase and trace-projection form the
-independent operational task. General St/Br
+build, audit, control and review gates and limits. Ranked binary operational
+phases and normalized state/event projections are also proved in Section 6.11;
+general trace algebra and process laws remain separate. General St/Br
 packaging, numerical interpretation and implementation refinement must be
 connected to the chosen semantics by their own arguments.
 
@@ -1852,11 +1905,12 @@ profile. The next obligations depend on the intended claim:
   structure requires additional constructions and soundness arguments.
   The [source record](categorical_source_functor_record.md) gives the proved
   presentation and its limits; the handoff remains its historical goal brief.
-- **Sequential process meaning:** stitch rank certificates, prove the
-  upstream/downstream phase and state projections, then establish trace
-  composition and process units under a specified observation equivalence.
-  Compatible model triples alone cannot prove that upstream work finishes
-  first, and semantic graph spans are not event-free core computations.
+- **Sequential process meaning:** the ranked certificate and binary phase/state
+  projections are now proved for actual default graph/reference executions.
+  General trace composition and process units still require a specified
+  observation equivalence. Compatible model triples alone do not prove
+  operational sequencing, and semantic graph spans are not event-free core
+  computations.
 - **Frontend/backend connection and refinement:** relate St/Br or another
   source presentation to this witness target and prove the required
   implementation/observation laws. Value-level indexing, numerical
@@ -1896,8 +1950,9 @@ replacing the generic proofs or changing the language's strict partiality.
 
 This is a sound operational bridge and a proved denotational source-to-witness
 functor for the specified rational profile, not an event-sensitive
-process category. Rank stitching/phase-projection followed by process
-laws remains open with its own observation equivalence; Section 10 records
+process category. Ranked binary phase-projection is proved; general trace
+algebra and process laws remain open with their own observation equivalence.
+Section 10 records
 the different goals and current status.
 Reproving execution correspondence or reconstructing an entire match for
 each compatible composite is no longer necessary.
@@ -2193,8 +2248,8 @@ complete-model conclusions, not execution-completion claims.
 
 No rank, phase, model existence or uniqueness premise appears in the core
 witness theorem. The categorical packaging and its laws are proved separately
-below; runtime phase/projection, trace splicing and source/process laws
-remain unproved.
+below. Ranked runtime phase/projection is the separate result in Section 6.11;
+general trace algebra and event-sensitive process laws remain unproved.
 
 ### A.9. Turn model witnesses into categorical semantics
 

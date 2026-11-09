@@ -1,0 +1,25 @@
+[
+  {
+    "label": "S1 (a successful writer contributes exactly one snapshot)",
+    "task": "snapshot-controls",
+    "file": "experiments/indexed_execution/IndexedOpenComposition.lean",
+    "old": "⟨tail.outcome, .produced w.tag w.capability value :: tail.events,\n                  state :: tail.states⟩",
+    "new": "⟨tail.outcome, .produced w.tag w.capability value :: tail.events,\n                  state :: state :: tail.states⟩",
+    "targets": ["IndexedComponentRankedExecutionAudit"],
+    "expect": [
+      "IndexedCompositionRunner.lean",
+      "Application type mismatch",
+      "indexed-reference strict-failure-parity: expected",
+      "indexed-reference total-neighbour-parity: expected"
+    ]
+  },
+  {
+    "label": "S2 (undefinedness adds an event but not a failed-state snapshot)",
+    "task": "snapshot-controls",
+    "file": "experiments/indexed_execution/IndexedCompositionCorrespondence.lean",
+    "old": "| .undefined _ _ :: _ => [c]",
+    "new": "| .undefined _ _ :: _ => [c, c]",
+    "targets": ["IndexedComponentRankedExecutionAudit"],
+    "expect": ["IndexedCompositionCorrespondence.lean", "Application type mismatch"]
+  }
+]

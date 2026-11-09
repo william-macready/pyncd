@@ -1,0 +1,150 @@
+{
+  "base": "a8568ddb9df27867bfd40d8c5a3fb590cfbab6d8",
+  "tasks": [
+    {
+      "id": "01-ranks",
+      "patch": "01-ranks.patch",
+      "sha256": "2c96758814dc0a5fabf36c4edfc7c78d7e39ecfdfa770db41f704700f26d7137",
+      "targets": [
+        "IndexedComponentCompositionRanks"
+      ],
+      "files": [
+        {
+          "path": "leanncd/lakefile.toml",
+          "sha256": "6cff2f6220a720d3e17b45714fce51c52dbe0d197baa071c1533ee63005cebc0"
+        },
+        {
+          "path": "leanncd/experiments/indexed_execution/IndexedComponentCompositionRanks.lean",
+          "sha256": "f99d2a8a4708f4bfdafdd20f4a938a9c5f9958aedff42bec24655321b42246fb"
+        }
+      ]
+    },
+    {
+      "id": "02-state-transport",
+      "patch": "02-state-transport.patch",
+      "sha256": "f10096806a66bd79043e0756ae061f911fa7d0e52ac243d742bfec85acae4909",
+      "targets": [
+        "IndexedComponentExecutionFuel",
+        "IndexedComponentExecutionTransport",
+        "IndexedComponentExecutionPhase"
+      ],
+      "files": [
+        {
+          "path": "leanncd/experiments/indexed_execution/IndexedComponentExecutionFuel.lean",
+          "sha256": "d7a9ff9290585e19e7c625dda715aa9f2861876ddeee3f768f8999cedbf396df"
+        },
+        {
+          "path": "leanncd/experiments/indexed_execution/IndexedComponentExecutionTransport.lean",
+          "sha256": "2724793731e69c82176d96e4a021c9a0df650c1cc7a8857f5e3bce64791878aa"
+        },
+        {
+          "path": "leanncd/experiments/indexed_execution/IndexedComponentExecutionPhase.lean",
+          "sha256": "46d05bcfb1867d7fc80a99152b3f4e59f501b97d36c74971adfde7f22219d9fe"
+        }
+      ]
+    },
+    {
+      "id": "03-graph-runs",
+      "patch": "03-graph-runs.patch",
+      "sha256": "125679349db974fe81a8c1dceffceacfb89ff95b8a0ae04187f8cc7c2b6e482a",
+      "targets": [
+        "IndexedComponentExecutionRuns"
+      ],
+      "files": [
+        {
+          "path": "leanncd/experiments/indexed_execution/IndexedComponentExecutionRuns.lean",
+          "sha256": "445dd903f921380201d75f08fa75a402b66ad80406f0fd7f7eb8371a580c16c5"
+        }
+      ]
+    },
+    {
+      "id": "04-reference-runs",
+      "patch": "04-reference-runs.patch",
+      "sha256": "3f842995bbb55478d4bdf0d0a6da7abf92345845ea05c8eb0d018fc0607385c5",
+      "targets": [
+        "IndexedComponentExecutionReference",
+        "IndexedRankedExecutionSemantics"
+      ],
+      "files": [
+        {
+          "path": "leanncd/experiments/indexed_execution/IndexedComponentExecutionReference.lean",
+          "sha256": "9417ca24c542cda57e76a9c7973bf2a1e58fb89ff8e7d35ce8e341bb45671741"
+        },
+        {
+          "path": "leanncd/experiments/indexed_execution/IndexedRankedExecutionSemantics.lean",
+          "sha256": "faae63b1c5cc747b2d1f06069bcc5743ef5a697ff24375e29ddfb65caf0eebae"
+        }
+      ]
+    },
+    {
+      "id": "05-acceptance",
+      "patch": "05-acceptance.patch",
+      "sha256": "4c219d322d1ea32b8cf6f0cb24932278a5bb135a86c4ceaddfaf8ba4bb89830a",
+      "targets": [
+        "IndexedComponentRankedExecutionAudit"
+      ],
+      "files": [
+        {
+          "path": "leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
+          "sha256": "dcb82e20a248fdb662603ac3dca0a9d71e5235f5af6e401e1476867da58ef51b"
+        },
+        {
+          "path": "leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionRankTest.lean",
+          "sha256": "a2f01518c885fb4d9bff179a9bdd107707d2ed8b36e7d59c70cc26ac770fa7e7"
+        },
+        {
+          "path": "leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionTest.lean",
+          "sha256": "86d4e10fba7af66d2030f9fcdbe98c6600824be0d5960128bf19c54a04ab251b"
+        },
+        {
+          "path": "leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionAudit.lean",
+          "sha256": "3e116066aecebf655350a8af928e8836fa6a48194c9f57d97fa7d71500e4a2e4"
+        },
+        {
+          "path": "papers/semantics/categorical_ranked_execution_mutations.json",
+          "sha256": "f57361edf100c9bc63ebdd3c387a6fb8b5404c2f0dec021d1618682750fb4b4a"
+        },
+        {
+          "path": "papers/semantics/categorical_ranked_execution_mutations_post.json",
+          "sha256": "73d4264ce5e3c4fb65ec6f5d434b4ab0bb81b1361ff02f7726b9a0a1d23437fc"
+        },
+        {
+          "path": "papers/semantics/categorical_ranked_execution_fixture_mutation_results.md",
+          "sha256": "05df6ba89c52934c707d3c26fe3d7a545175711c843d61f11f934609c9dbd022"
+        },
+        {
+          "path": "papers/semantics/categorical_ranked_execution_snapshot_mutation_results.md",
+          "sha256": "153722adfea10e9c77f228cb750ad971460b2a2545a463cd7236009c96793043"
+        },
+        {
+          "path": "papers/semantics/categorical_ranked_execution_inherited_mutation_results.md",
+          "sha256": "0ed183e972c7314281e481b5c0a62f9798251327e4286615b36347509f97d49f"
+        }
+      ]
+    },
+    {
+      "id": "06-documentation",
+      "patch": "06-documentation.patch",
+      "sha256": "ed6f345167b03346c28f549facf9f7f132684d25570cffcd7f2566da3bc7d6a2",
+      "targets": [],
+      "files": [
+        {
+          "path": "leanncd/AGENTS.md",
+          "sha256": "44b699ad8b440c8f6e5e11cb3f6061875c9532263d7a70acff10b4a091471414"
+        },
+        {
+          "path": "papers/semantics/categorical_tensor_logic_semantics.md",
+          "sha256": "3352569d0d1a28b94210deec54285e70954c9e6e6916c036892578cd2f9d66c1"
+        },
+        {
+          "path": "papers/semantics/categorical_tensor_logic_component_interfaces.md",
+          "sha256": "1fb5a137f447083bc50c23faabafc9f99fd703c70a01991945ad9d0b7555d028"
+        },
+        {
+          "path": "papers/semantics/categorical_ranked_execution_record.md",
+          "sha256": "20ad1dd50aa13351507817ce7577cfd24aa21f03214eb4e2f49f27ef2c637eda"
+        }
+      ]
+    }
+  ]
+}

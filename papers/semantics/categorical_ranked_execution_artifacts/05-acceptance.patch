@@ -1,0 +1,814 @@
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean b/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean
+new file mode 100644
+index 00000000..cc51fa65
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean
+@@ -0,0 +1,303 @@
++import IndexedComponentComposition
++import IndexedComponentCompositionTest
++import IndexedComponentModelInputs
++import IndexedComponentModelCycleFixtures
++import IndexedCompositionValidated
++import IndexedComponentCompositionRanks
++
++namespace IndexedComponentRankedExecutionFixtures
++
++open LeanNCD.Semantics
++open LeanNCD.Semantics.Program
++open IndexedOpenComposition
++open IndexedComponentComposition
++open IndexedComponentTransport
++open IndexedComponentCompositionPortFixtures
++open IndexedComponentCompositionLocalFixtures
++open IndexedComponentCompositionTest (graphEventRow)
++
++def producerRank : producer.RankCertificate where
++  rank := fun _ => 0
++  decreases := by
++    rintro a b ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩, ha, hb⟩
++    fin_cases t
++    fin_cases s <;> simp [producer, footprint] at hb
++
++def consumerRank (other : ℚ) : (consumer other).RankCertificate where
++  rank := fun a => if a.1 == consumerPre then 0 else 1
++  decreases := by
++    rintro a b ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩, rfl, hb⟩
++    rw [← (consumerMatch other).writer_reads ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩⟩] at hb
++    change (t == 0) = false at ht
++    fin_cases t <;> fin_cases s <;> fin_cases v
++    all_goals first | exact False.elim (Bool.noConfusion ht) | skip
++    all_goals
++      change b ∈ [⟨0, ()⟩] at hb
++      have hb' := List.mem_singleton.mp hb
++      subst b
++      change (0 : Nat) < 1
++      decide
++
++def emptyProducerRank : emptyProducer.RankCertificate where
++  rank := fun _ => 0
++  decreases := by
++    rintro ⟨t, p⟩
++    exact Fin.elim0 p.1
++
++def emptyConsumerRank : emptyConsumer.RankCertificate where
++  rank := fun _ => 0
++  decreases := by
++    rintro ⟨t, p⟩
++    exact Fin.elim0 p.1
++
++def privateBoundary (upstreamOther downstreamOther : ℚ) :
++    Boundary (consumerComponent upstreamOther) (consumerComponent downstreamOther) where
++  matched :=
++    { toFun := fun _ => ⟨consumerOut, rfl⟩
++      invFun := fun _ => ⟨consumerPre, rfl⟩
++      left_inv := by
++        rintro ⟨t, ht⟩
++        change (t == 0) = true at ht
++        fin_cases t <;> first | rfl | exact False.elim (Bool.noConfusion ht)
++      right_inv := by
++        rintro ⟨t, ht⟩
++        change (t == 1) = true at ht
++        fin_cases t <;> first | rfl | exact False.elim (Bool.noConfusion ht) }
++  domain := fun _ => Domain.id []
++
++def privateInput (other : ℚ) : (consumerComponent other).program.Input :=
++  ⟨fun t => if t == consumerPre then some (fun _ => 3) else none,
++    by intro t; fin_cases t <;> rfl⟩
++
++def privateComposite (upstreamOther downstreamOther : ℚ) :=
++  compose (consumerComponent upstreamOther) (consumerComponent downstreamOther)
++    (privateBoundary upstreamOther downstreamOther)
++
++noncomputable def privateRank (upstreamOther downstreamOther : ℚ) :
++    (privateComposite upstreamOther downstreamOther).program.RankCertificate :=
++  compositeRankCertificate (consumerComponent upstreamOther) (consumerComponent downstreamOther)
++    (privateBoundary upstreamOther downstreamOther)
++    (consumerRank upstreamOther) (consumerRank downstreamOther)
++
++def privateRun (upstreamOther downstreamOther : ℚ) :=
++  let A := consumerComponent upstreamOther
++  let B := consumerComponent downstreamOther
++  let wire := privateBoundary upstreamOther downstreamOther
++  let C := privateComposite upstreamOther downstreamOther
++  runChecked C.contract C.fragment (liftInput A B wire (privateInput upstreamOther)).val
++
++theorem private_not_blocked (upstreamOther downstreamOther : ℚ)
++    (state : State (declarations (consumerComponent upstreamOther)
++      (consumerComponent downstreamOther))) (missing : List (Nat ×
++      List (Address (declarations (consumerComponent upstreamOther)
++        (consumerComponent downstreamOther))))) :
++    let C := privateComposite upstreamOther downstreamOther
++    (runChecked C.contract C.fragment
++      (liftInput (consumerComponent upstreamOther) (consumerComponent downstreamOther)
++        (privateBoundary upstreamOther downstreamOther) (privateInput upstreamOther)).val).outcome ≠
++      .blocked state missing :=
++  Correspondence.ranked_not_blocked (privateComposite upstreamOther downstreamOther).matched
++    (liftInput (consumerComponent upstreamOther) (consumerComponent downstreamOther)
++      (privateBoundary upstreamOther downstreamOther) (privateInput upstreamOther))
++    (privateRank upstreamOther downstreamOther) state missing
++
++def privateSnapshots (upstreamOther downstreamOther : ℚ) :=
++  (privateRun upstreamOther downstreamOther).states.map fun s =>
++    ([s.available ⟨.inl consumerPre, ()⟩,
++      s.available ⟨.inl consumerOut, ()⟩,
++      s.available ⟨.inl strictAudit, ()⟩,
++      s.available ⟨.inr ⟨consumerOut, rfl⟩, ()⟩,
++      s.available ⟨.inr ⟨strictAudit, rfl⟩, ()⟩],
++      s.produced)
++
++def privateObservation (upstreamOther downstreamOther : ℚ) :=
++  ((privateRun upstreamOther downstreamOther).outcome.kind,
++    (privateRun upstreamOther downstreamOther).events.map graphEventRow,
++    privateSnapshots upstreamOther downstreamOther)
++
++open IndexedComponentModelCycleFixtures in
++def unrankedRun :=
++  let C := compose hiddenUpstream totalDownstream hiddenBoundary
++  runChecked C.contract C.fragment
++    (liftInput hiddenUpstream totalDownstream hiddenBoundary (upstreamInput true)).val
++
++def unrankedObservation :=
++  (unrankedRun.outcome.kind, unrankedRun.events.map graphEventRow,
++    unrankedRun.states.map fun s =>
++      ([s.available ⟨.inl IndexedComponentModelCycleFixtures.privateTensor, ()⟩,
++        s.available ⟨.inl IndexedComponentModelCycleFixtures.boundaryTensor, ()⟩,
++        s.available ⟨.inr ⟨IndexedComponentModelCycleFixtures.boundaryTensor, rfl⟩, ()⟩],
++        s.produced))
++
++open IndexedComponentModelCycleFixtures in
++theorem hidden_no_rank : ¬ Nonempty hiddenUpstream.program.RankCertificate := by
++  rintro ⟨certificate⟩
++  let a : Address IndexedComponentModelCycleFixtures.declarations := ⟨privateTensor, ()⟩
++  have selfDependency : a ∈ hiddenUpstream.program.dependencies a := by
++    exact ⟨⟨privateTensor, rfl⟩,
++      ⟨⟨0, by decide⟩, ⟨⟨0, by decide⟩, rfl⟩⟩, rfl, by decide⟩
++  exact Nat.lt_irrefl (certificate.rank a) (certificate.decreases a a selfDependency)
++
++def reorderedPrivateRun :=
++  let C := privateComposite 0 4
++  let rows := C.contract.collectors
++  let reordered := { C.contract with
++    collectors := rows.take 1 ++ rows.drop 2 ++ (rows.drop 1).take 1 }
++  runChecked reordered C.fragment
++    (liftInput (consumerComponent 0) (consumerComponent 4) (privateBoundary 0 4)
++      (privateInput 0)).val
++
++def reorderedPrivateObservation :=
++  (reorderedPrivateRun.outcome.kind, reorderedPrivateRun.events.map graphEventRow,
++    reorderedPrivateRun.states.getLast?.map fun s =>
++      [s.available ⟨.inl consumerOut, ()⟩, s.available ⟨.inl strictAudit, ()⟩,
++        s.available ⟨.inr ⟨consumerOut, rfl⟩, ()⟩,
++        s.available ⟨.inr ⟨strictAudit, rfl⟩, ()⟩])
++
++def privateReferenceCounts (upstreamOther downstreamOther : ℚ) :=
++  let C := privateComposite upstreamOther downstreamOther
++  let η := liftInput (consumerComponent upstreamOther) (consumerComponent downstreamOther)
++    (privateBoundary upstreamOther downstreamOther) (privateInput upstreamOther)
++  let result := Program.Executor.run C.program RationalReference.ops C.schedule η
++  (result.events.length,
++    (Correspondence.referenceSnapshots (C.program.initial η) result.events).length,
++    C.graph.steps.length + 1,
++    (consumerComponent upstreamOther).graph.steps.length + 1,
++    (consumerComponent downstreamOther).graph.steps.length + 1)
++
++def emptyBoundaryOutput : emptyProducer.Output :=
++  fun _ p => Fin.elim0 p.1
++
++theorem emptyBoundary_present :
++    ((boundaryFromOutput emptyProducerComponent emptyConsumerComponent emptyBoundary
++      emptyBoundaryOutput).val emptyConsumerPre).isSome = true := rfl
++
++def emptyComposite := compose emptyProducerComponent emptyConsumerComponent emptyBoundary
++
++def emptyCompositeInput :=
++  liftInput emptyProducerComponent emptyConsumerComponent emptyBoundary emptyValidatedInput
++
++noncomputable def emptyRank : emptyComposite.program.RankCertificate :=
++  compositeRankCertificate emptyProducerComponent emptyConsumerComponent emptyBoundary
++    emptyProducerRank emptyConsumerRank
++
++theorem empty_rank_offset :
++    rankOffset emptyProducerComponent emptyProducerRank = 1 := by
++  letI : IsEmpty (Address emptyProducerDeclarations) := ⟨fun a => Fin.elim0 a.2.1⟩
++  exact rankOffset_eq_one_of_isEmpty emptyProducerComponent emptyProducerRank
++
++def emptyCompositeRun :=
++  runChecked emptyComposite.contract emptyComposite.fragment emptyCompositeInput.val
++
++def emptyDoubleInvalid : InputBinding (K := RationalReference.Carrier)
++    (σ := declarations emptyProducerComponent emptyConsumerComponent)
++  | .inl t => if t == emptyProducerPre then some (fun p => Fin.elim0 p.1) else none
++  | .inr _ => none
++
++def emptyObservation :=
++  (emptyCompositeRun.outcome.kind, emptyCompositeRun.events.length,
++    emptyCompositeRun.states.length, emptyComposite.graph.steps.length + 1,
++    ((boundaryFromOutput emptyProducerComponent emptyConsumerComponent emptyBoundary
++      emptyBoundaryOutput).val emptyConsumerPre).isSome,
++    match (runChecked emptyComposite.contract emptyComposite.fragment emptyDoubleInvalid).outcome with
++    | .invalidInput t => some ((declarations emptyProducerComponent emptyConsumerComponent).uid t)
++    | _ => none)
++
++def collectedRun (other : ℚ) :=
++  let C := compose producerComponent (consumerComponent other) (scalarBoundary other)
++  runChecked C.contract C.fragment (fun _ => none)
++
++def collectionPrefix (other : ℚ) :=
++  (collectedRun other).states.take 4 |>.map fun s =>
++    (s.available ⟨.inl producerPre, ()⟩, s.produced)
++
++def zeroCheckedRun :=
++  let C := compose zeroProducerComponent (consumerComponent 4) zeroBoundary
++  runChecked C.contract C.fragment (fun _ => none)
++
++#eval IndexedCompositionParityTest.check "ranked-complete-contribution-boundary"
++  (collectionPrefix 4, collectionPrefix 0,
++    (collectedRun 4).events.length, (collectedRun 0).events.length)
++  ([(none, []), (none, [(202, 1)]), (none, [(202, 1), (204, -1)]),
++      (some 0, [(202, 1), (204, -1)])],
++    [(none, []), (none, [(202, 1)]), (none, [(202, 1), (204, -1)]),
++      (some 0, [(202, 1), (204, -1)])], 7, 6)
++
++#eval IndexedCompositionParityTest.check "ranked-zero-writer-publication"
++  (zeroCheckedRun.outcome.kind, zeroCheckedRun.events.map graphEventRow,
++    zeroCheckedRun.states.length)
++  ("complete",
++    [("publish", 0, 0, some 0), ("write", 41, 403, some 0),
++      ("publish", 3, 0, some 0), ("write", 61, 603, some (1 / 2)),
++      ("publish", 5, 0, some (1 / 2))], 6)
++
++#eval IndexedCompositionParityTest.check "ranked-reference-snapshots-and-budgets"
++  (privateReferenceCounts 4 4, privateReferenceCounts 0 4, privateReferenceCounts 4 0)
++  ((8, 9, 9, 5, 5), (3, 3, 9, 5, 5), (7, 7, 9, 5, 5))
++
++#eval IndexedCompositionParityTest.check "ranked-empty-metadata-and-validation"
++  emptyObservation ("complete", 0, 1, 1, true, some 20)
++
++#eval IndexedCompositionParityTest.check "ranked-private-order-control"
++  reorderedPrivateObservation
++  ("failed",
++    [("write", 40, 402, some 9), ("publish", 2, 0, some 9),
++      ("write", 41, 403, some 81), ("publish", 3, 0, some 81),
++      ("write", 61, 603, some (19 / 2)), ("publish", 5, 0, some (19 / 2)),
++      ("undefined", 60, 0, none)],
++    some [some 9, none, some 81, some (19 / 2)])
++
++#eval IndexedCompositionParityTest.check "ranked-private-success"
++  (privateObservation 4 4)
++  ("complete",
++    [("write", 40, 402, some 9), ("publish", 2, 0, some 9),
++      ("write", 60, 602, some (7 / 2)), ("publish", 4, 0, some (7 / 2)),
++      ("write", 41, 403, some 81), ("publish", 3, 0, some 81),
++      ("write", 61, 603, some (19 / 2)), ("publish", 5, 0, some (19 / 2))],
++    [([some 3, none, none, none, none], []),
++      ([some 3, none, none, none, none], [(402, 9)]),
++      ([some 3, some 9, none, none, none], [(402, 9)]),
++      ([some 3, some 9, none, none, none], [(402, 9), (602, 7 / 2)]),
++      ([some 3, some 9, some (7 / 2), none, none], [(402, 9), (602, 7 / 2)]),
++      ([some 3, some 9, some (7 / 2), none, none], [(402, 9), (602, 7 / 2), (403, 81)]),
++      ([some 3, some 9, some (7 / 2), some 81, none],
++        [(402, 9), (602, 7 / 2), (403, 81)]),
++      ([some 3, some 9, some (7 / 2), some 81, none],
++        [(402, 9), (602, 7 / 2), (403, 81), (603, 19 / 2)]),
++      ([some 3, some 9, some (7 / 2), some 81, some (19 / 2)],
++        [(402, 9), (602, 7 / 2), (403, 81), (603, 19 / 2)])])
++
++#eval IndexedCompositionParityTest.check "ranked-private-upstream-failure"
++  (privateObservation 0 4)
++  ("failed",
++    [("write", 40, 402, some 9), ("publish", 2, 0, some 9), ("undefined", 60, 0, none)],
++    [([some 3, none, none, none, none], []),
++      ([some 3, none, none, none, none], [(402, 9)]),
++      ([some 3, some 9, none, none, none], [(402, 9)])])
++
++#eval IndexedCompositionParityTest.check "ranked-private-downstream-failure"
++  (privateObservation 4 0)
++  ("failed",
++    [("write", 40, 402, some 9), ("publish", 2, 0, some 9),
++      ("write", 60, 602, some (7 / 2)), ("publish", 4, 0, some (7 / 2)),
++      ("write", 41, 403, some 81), ("publish", 3, 0, some 81), ("undefined", 61, 0, none)],
++    [([some 3, none, none, none, none], []),
++      ([some 3, none, none, none, none], [(402, 9)]),
++      ([some 3, some 9, none, none, none], [(402, 9)]),
++      ([some 3, some 9, none, none, none], [(402, 9), (602, 7 / 2)]),
++      ([some 3, some 9, some (7 / 2), none, none], [(402, 9), (602, 7 / 2)]),
++      ([some 3, some 9, some (7 / 2), none, none], [(402, 9), (602, 7 / 2), (403, 81)]),
++      ([some 3, some 9, some (7 / 2), some 81, none],
++        [(402, 9), (602, 7 / 2), (403, 81)])])
++
++#eval IndexedCompositionParityTest.check "ranked-unranked-counterexample"
++  unrankedObservation
++  ("blocked",
++    [("write", 40, 402, some 0), ("publish", 2, 0, some 0),
++      ("write", 61, 603, some 1), ("publish", 3, 0, some 1)],
++    [([none, none, none], []), ([none, none, none], [(402, 0)]),
++      ([none, some 0, none], [(402, 0)]),
++      ([none, some 0, none], [(402, 0), (603, 1)]),
++      ([none, some 0, some 1], [(402, 0), (603, 1)])])
++
++end IndexedComponentRankedExecutionFixtures
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionRankTest.lean b/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionRankTest.lean
+new file mode 100644
+index 00000000..4fc64ba9
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionRankTest.lean
+@@ -0,0 +1,211 @@
++import IndexedComponentRankedExecutionFixtures
++import IndexedComponentCompositionAxisFixtures
++import IndexedComponentCompositionCollisionFixtures
++import Semantics.AxiomAudit
++
++noncomputable section
++
++namespace IndexedComponentRankedExecutionRankTest
++
++open LeanNCD.Semantics
++open LeanNCD.Semantics.Program
++open IndexedComponentComposition
++open IndexedComponentTransport
++open IndexedComponentTransportTest (p q)
++
++namespace Axis
++
++open IndexedComponentCompositionAxisFixtures
++
++def producerRank : RankCertificate axisProducer.program where
++  rank := fun a => a.2.1.val + 3 * a.2.2.1.val
++  decreases := by
++    rintro a b ⟨t, ⟨s, v⟩, ha, hb⟩
++    simp [axisProducer, producer, footprint] at hb
++
++def consumerRank : RankCertificate axisConsumer.program := by
++  letI : DecidableEq (Address consumerDeclarations) := Program.Executor.addressEq
++  exact {
++    rank := fun a =>
++      if a = ⟨0, p⟩ then 0 else if a = ⟨0, q⟩ then 1
++      else if a.1 == 1 then 2 else 100
++    decreases := by
++      rintro a b ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩, rfl, hb⟩
++      change b ∈ footprint (consumer.body ⟨t, ht⟩ s) ⟨v, hv⟩ at hb
++      rw [← consumerMatch.writer_reads ⟨⟨t, ht⟩, ⟨s, ⟨v, hv⟩⟩⟩] at hb
++      change (t == 0) = false at ht
++      fin_cases t <;> fin_cases s <;> fin_cases v
++      all_goals first | exact False.elim (Bool.noConfusion ht) | skip
++      all_goals
++        change b ∈ [⟨0, p⟩, ⟨0, q⟩, ⟨0, p⟩, ⟨0, q⟩] at hb
++        simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
++        rcases hb with rfl | rfl | rfl | rfl
++        all_goals first | change (0 : Nat) < 2 | change (1 : Nat) < 2
++        all_goals decide }
++
++def composite := compose axisProducer axisConsumer axisBoundary
++
++def certificate : RankCertificate composite.program :=
++  compositeRankCertificate axisProducer axisConsumer axisBoundary producerRank consumerRank
++
++def boundaryP : Address (declarations axisProducer axisConsumer) :=
++  (downstream axisProducer axisConsumer axisBoundary).address ⟨0, p⟩
++
++def boundaryQ : Address (declarations axisProducer axisConsumer) :=
++  (downstream axisProducer axisConsumer axisBoundary).address ⟨0, q⟩
++
++theorem boundary_p_rank : certificate.rank boundaryP = 2 := by
++  change compositeRank _ _ producerRank consumerRank
++    ((downstream axisProducer axisConsumer axisBoundary).address ⟨0, p⟩) = 2
++  rw [downstream_input_address axisProducer axisConsumer axisBoundary ⟨0, rfl⟩ p,
++    compositeRank_upstream]
++  rfl
++
++theorem boundary_q_rank : certificate.rank boundaryQ = 3 := by
++  change compositeRank _ _ producerRank consumerRank
++    ((downstream axisProducer axisConsumer axisBoundary).address ⟨0, q⟩) = 3
++  rw [downstream_input_address axisProducer axisConsumer axisBoundary ⟨0, rfl⟩ q,
++    compositeRank_upstream]
++  rfl
++
++theorem boundary_ranks_nonconstant : certificate.rank boundaryP ≠ certificate.rank boundaryQ := by
++  rw [boundary_p_rank, boundary_q_rank]
++  decide
++
++def resultTensor : composite.program.Defined :=
++  downstreamDefined axisProducer axisConsumer axisBoundary ⟨1, rfl⟩
++
++theorem full_footprint :
++    footprint (composite.program.body resultTensor (0 : Fin 1)) ⟨(0 : Fin 1), rfl⟩ =
++      [boundaryP, boundaryQ, boundaryP, boundaryQ] := by
++  change footprint ((program axisProducer axisConsumer axisBoundary).body
++    (downstreamDefined axisProducer axisConsumer axisBoundary ⟨1, rfl⟩)
++    (0 : Fin 1)) ⟨(0 : Fin 1), rfl⟩ = _
++  rw [downstream_footprint]
++  rfl
++
++theorem full_footprint_ranks :
++    (footprint (composite.program.body resultTensor (0 : Fin 1))
++      ⟨(0 : Fin 1), rfl⟩).map certificate.rank =
++      [2, 3, 2, 3] := by
++  rw [full_footprint]
++  simp [boundary_p_rank, boundary_q_rank]
++
++theorem full_footprint_decreases (b : Address (declarations axisProducer axisConsumer))
++    (hb : b ∈ footprint (composite.program.body resultTensor (0 : Fin 1))
++      ⟨(0 : Fin 1), rfl⟩) :
++    certificate.rank b < certificate.rank
++      ⟨resultTensor.val, composite.program.destination resultTensor (0 : Fin 1)
++        ⟨(0 : Fin 1), rfl⟩⟩ :=
++  certificate.decreases _ _ ⟨resultTensor, ⟨(0 : Fin 1), ⟨(0 : Fin 1), rfl⟩⟩, rfl, hb⟩
++
++/-- Unread input coordinates may outrank the defined boundary output. -/
++theorem unused_input_high_rank :
++    axisConsumer.program.input 0 = true ∧
++      consumerRank.rank ⟨0, (0, 0, ())⟩ = 100 ∧
++      consumerRank.rank ⟨1, ()⟩ = 2 := by
++  decide
++
++theorem offset_includes_unused_input : 100 < rankOffset axisConsumer consumerRank := by
++  have h := rank_lt_offset axisConsumer consumerRank ⟨0, (0, 0, ())⟩
++  exact h
++
++end Axis
++
++namespace Collision
++
++open IndexedComponentCompositionCollisionFixtures
++
++def producerRank : RankCertificate collisionProducer.program where
++  rank := fun a => a.1.val
++  decreases := by
++    rintro a b ⟨⟨t, ht⟩, ⟨s, v⟩, ha, hb⟩
++    fin_cases t <;> simp [collisionProducer, producer, footprint] at hb
++
++def consumerRank : RankCertificate collisionConsumer.program :=
++  IndexedComponentRankedExecutionFixtures.consumerRank 4
++
++def composite := compose collisionProducer collisionConsumer collisionBoundary
++
++def certificate : RankCertificate composite.program :=
++  compositeRankCertificate collisionProducer collisionConsumer collisionBoundary
++    producerRank consumerRank
++
++theorem guard_admission :
++    collisionProducer.program.guard ⟨0, rfl⟩ (0 : Fin 1) (0 : Fin 3) = true ∧
++      collisionProducer.program.guard ⟨0, rfl⟩ (0 : Fin 1) (1 : Fin 3) = false ∧
++      collisionProducer.program.guard ⟨0, rfl⟩ (0 : Fin 1) (2 : Fin 3) = true := by
++  decide
++
++def guardedTensor : composite.program.Defined :=
++  upstreamDefined collisionProducer collisionConsumer collisionBoundary ⟨0, rfl⟩
++
++theorem guarded_full_footprint
++    (v : {v : Fin 3 // collisionProducer.program.guard ⟨0, rfl⟩ (0 : Fin 1) v = true}) :
++    footprint (composite.program.body guardedTensor (0 : Fin 1)) v = [] := by
++  change footprint ((program collisionProducer collisionConsumer collisionBoundary).body
++    (upstreamDefined collisionProducer collisionConsumer collisionBoundary ⟨0, rfl⟩)
++    (0 : Fin 1)) v = []
++  rw [upstream_footprint]
++  rfl
++
++theorem guarded_full_footprint_decreases
++    (v : {v : Fin 3 // collisionProducer.program.guard ⟨0, rfl⟩ (0 : Fin 1) v = true})
++    (b : Address (declarations collisionProducer collisionConsumer))
++    (hb : b ∈ footprint (composite.program.body guardedTensor (0 : Fin 1)) v) :
++    certificate.rank b < certificate.rank
++      ⟨guardedTensor.val, composite.program.destination guardedTensor (0 : Fin 1) v⟩ :=
++  certificate.decreases _ _ ⟨guardedTensor, ⟨(0 : Fin 1), v⟩, rfl, hb⟩
++
++def boundaryRead : Address (declarations collisionProducer collisionConsumer) :=
++  (downstream collisionProducer collisionConsumer collisionBoundary).address ⟨0, ()⟩
++
++def outputTensor : composite.program.Defined :=
++  downstreamDefined collisionProducer collisionConsumer collisionBoundary ⟨1, rfl⟩
++
++def privateTensor : composite.program.Defined :=
++  downstreamDefined collisionProducer collisionConsumer collisionBoundary ⟨2, rfl⟩
++
++theorem downstream_full_footprints :
++    footprint (composite.program.body outputTensor (0 : Fin 1))
++        ⟨(0 : Fin 1), rfl⟩ = [boundaryRead] ∧
++      footprint (composite.program.body privateTensor (0 : Fin 1))
++        ⟨(0 : Fin 1), rfl⟩ = [boundaryRead] := by
++  constructor
++  · change footprint ((program collisionProducer collisionConsumer collisionBoundary).body
++      (downstreamDefined collisionProducer collisionConsumer collisionBoundary ⟨1, rfl⟩)
++      (0 : Fin 1)) ⟨(0 : Fin 1), rfl⟩ = _
++    rw [downstream_footprint]
++    rfl
++  · change footprint ((program collisionProducer collisionConsumer collisionBoundary).body
++      (downstreamDefined collisionProducer collisionConsumer collisionBoundary ⟨2, rfl⟩)
++      (0 : Fin 1)) ⟨(0 : Fin 1), rfl⟩ = _
++    rw [downstream_footprint]
++    rfl
++
++theorem private_not_output : composite.program.output privateTensor.val = false := rfl
++
++theorem private_dependency :
++    boundaryRead ∈ composite.program.dependencies ⟨privateTensor.val, ()⟩ := by
++  refine ⟨privateTensor, ⟨(0 : Fin 1), ⟨(0 : Fin 1), rfl⟩⟩, rfl, ?_⟩
++  rw [downstream_full_footprints.2]
++  exact List.mem_singleton_self _
++
++theorem private_full_footprint_decreases :
++    certificate.rank boundaryRead < certificate.rank ⟨privateTensor.val, ()⟩ :=
++  certificate.decreases _ _ private_dependency
++
++theorem boundary_read_rank : certificate.rank boundaryRead = 0 := by
++  change compositeRank _ _ producerRank consumerRank
++    ((downstream collisionProducer collisionConsumer collisionBoundary).address ⟨0, ()⟩) = 0
++  rw [downstream_input_address collisionProducer collisionConsumer collisionBoundary
++    ⟨0, rfl⟩ (), compositeRank_upstream]
++  rfl
++
++end Collision
++
++#audit_axioms IndexedComponentComposition
++#audit_axioms IndexedComponentRankedExecutionFixtures
++#audit_axioms IndexedComponentRankedExecutionRankTest
++
++end IndexedComponentRankedExecutionRankTest
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionTest.lean b/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionTest.lean
+new file mode 100644
+index 00000000..ba6f2faf
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionTest.lean
+@@ -0,0 +1,95 @@
++import IndexedRankedExecutionSemantics
++import IndexedComponentRankedExecutionRankTest
++
++namespace IndexedComponentRankedExecutionTest
++
++open LeanNCD.Semantics
++open IndexedOpenComposition
++open IndexedComponentComposition
++open IndexedComponentExecution
++open IndexedComponentRankedExecutionFixtures
++open IndexedComponentCompositionPortFixtures
++open IndexedComponentCompositionLocalFixtures
++
++def producerInput : producer.Input :=
++  ⟨fun _ => none, by intro t; rfl⟩
++
++def zeroProducerInput : zeroProducer.Input :=
++  ⟨fun _ => none, by intro t; rfl⟩
++
++def zeroProducerRank : zeroProducer.RankCertificate where
++  rank := fun _ => 0
++  decreases := by
++    rintro a b ⟨t, o, _, _⟩
++    exact Fin.elim0 o.1
++
++def private_phases (upstreamOther downstreamOther : ℚ) :=
++  compose_default_phases (consumerComponent upstreamOther) (consumerComponent downstreamOther)
++    (privateBoundary upstreamOther downstreamOther) (privateInput upstreamOther)
++    (consumerRank upstreamOther) (consumerRank downstreamOther)
++
++def collection_phases (other : ℚ) :=
++  compose_default_phases producerComponent (consumerComponent other) (scalarBoundary other)
++    producerInput producerRank (consumerRank other)
++
++def zero_phases :=
++  compose_default_phases zeroProducerComponent (consumerComponent 4) zeroBoundary
++    zeroProducerInput zeroProducerRank (consumerRank 4)
++
++def empty_phases :=
++  compose_default_phases emptyProducerComponent emptyConsumerComponent emptyBoundary
++    emptyValidatedInput emptyProducerRank emptyConsumerRank
++
++def axisInput : IndexedComponentCompositionAxisFixtures.axisProducer.program.Input :=
++  ⟨fun _ => none, by intro t; rfl⟩
++
++def axis_phases :=
++  compose_default_phases IndexedComponentCompositionAxisFixtures.axisProducer
++    IndexedComponentCompositionAxisFixtures.axisConsumer
++    IndexedComponentCompositionAxisFixtures.axisBoundary axisInput
++    IndexedComponentRankedExecutionRankTest.Axis.producerRank
++    IndexedComponentRankedExecutionRankTest.Axis.consumerRank
++
++def collisionInput :
++    IndexedComponentCompositionCollisionFixtures.collisionProducer.program.Input :=
++  ⟨fun _ => none, by intro t; rfl⟩
++
++def collision_phases :=
++  compose_default_phases IndexedComponentCompositionCollisionFixtures.collisionProducer
++    IndexedComponentCompositionCollisionFixtures.collisionConsumer
++    IndexedComponentCompositionCollisionFixtures.collisionBoundary collisionInput
++    IndexedComponentRankedExecutionRankTest.Collision.producerRank
++    IndexedComponentRankedExecutionRankTest.Collision.consumerRank
++
++def private_reference_phases (upstreamOther downstreamOther : ℚ) :=
++  reference_default_phases (consumerComponent upstreamOther) (consumerComponent downstreamOther)
++    (privateBoundary upstreamOther downstreamOther) (privateInput upstreamOther)
++    (consumerRank upstreamOther) (consumerRank downstreamOther)
++
++def collection_reference_phases (other : ℚ) :=
++  reference_default_phases producerComponent (consumerComponent other) (scalarBoundary other)
++    producerInput producerRank (consumerRank other)
++
++def zero_reference_phases :=
++  reference_default_phases zeroProducerComponent (consumerComponent 4) zeroBoundary
++    zeroProducerInput zeroProducerRank (consumerRank 4)
++
++def empty_reference_phases :=
++  reference_default_phases emptyProducerComponent emptyConsumerComponent emptyBoundary
++    emptyValidatedInput emptyProducerRank emptyConsumerRank
++
++def axis_reference_phases :=
++  reference_default_phases IndexedComponentCompositionAxisFixtures.axisProducer
++    IndexedComponentCompositionAxisFixtures.axisConsumer
++    IndexedComponentCompositionAxisFixtures.axisBoundary axisInput
++    IndexedComponentRankedExecutionRankTest.Axis.producerRank
++    IndexedComponentRankedExecutionRankTest.Axis.consumerRank
++
++def collision_reference_phases :=
++  reference_default_phases IndexedComponentCompositionCollisionFixtures.collisionProducer
++    IndexedComponentCompositionCollisionFixtures.collisionConsumer
++    IndexedComponentCompositionCollisionFixtures.collisionBoundary collisionInput
++    IndexedComponentRankedExecutionRankTest.Collision.producerRank
++    IndexedComponentRankedExecutionRankTest.Collision.consumerRank
++
++end IndexedComponentRankedExecutionTest
+diff --git a/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionAudit.lean b/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionAudit.lean
+new file mode 100644
+index 00000000..de87310e
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionAudit.lean
+@@ -0,0 +1,24 @@
++import IndexedComponentExecutionFuel
++import IndexedComponentExecutionTransport
++import IndexedComponentExecutionPhase
++import IndexedComponentRankedExecutionRankTest
++import IndexedComponentRankedExecutionTest
++
++#audit_axioms IndexedComponentComposition
++#audit_axioms IndexedComponentExecution
++#audit_axioms IndexedComponentRankedExecutionFixtures
++#audit_axioms IndexedComponentRankedExecutionRankTest
++#audit_axioms IndexedComponentRankedExecutionTest
++
++#print axioms IndexedComponentComposition.compositeRankCertificate
++#print axioms IndexedComponentExecution.stepFuel_add_of_not_exhausted
++#print axioms IndexedComponentExecution.selected_projection
++#print axioms IndexedComponentExecution.downstream_at_cut
++#print axioms IndexedComponentRankedExecutionFixtures.private_not_blocked
++#print axioms IndexedComponentRankedExecutionFixtures.hidden_no_rank
++#print axioms IndexedComponentExecution.compose_default_phases
++#print axioms IndexedComponentRankedExecutionTest.private_phases
++#print axioms IndexedComponentRankedExecutionTest.empty_phases
++#print axioms IndexedComponentExecution.reference_default_phases
++#print axioms IndexedComponentRankedExecutionTest.private_reference_phases
++#print axioms IndexedComponentRankedExecutionTest.empty_reference_phases
+diff --git a/papers/semantics/categorical_ranked_execution_mutations.json b/papers/semantics/categorical_ranked_execution_mutations.json
+new file mode 100644
+index 00000000..f85188dc
+--- /dev/null
++++ b/papers/semantics/categorical_ranked_execution_mutations.json
+@@ -0,0 +1,25 @@
++[
++  {
++    "label": "S1 (a successful writer contributes exactly one snapshot)",
++    "task": "snapshot-controls",
++    "file": "experiments/indexed_execution/IndexedOpenComposition.lean",
++    "old": "⟨tail.outcome, .produced w.tag w.capability value :: tail.events,\n                  state :: tail.states⟩",
++    "new": "⟨tail.outcome, .produced w.tag w.capability value :: tail.events,\n                  state :: state :: tail.states⟩",
++    "targets": ["IndexedComponentRankedExecutionAudit"],
++    "expect": [
++      "IndexedCompositionRunner.lean",
++      "Application type mismatch",
++      "indexed-reference strict-failure-parity: expected",
++      "indexed-reference total-neighbour-parity: expected"
++    ]
++  },
++  {
++    "label": "S2 (undefinedness adds an event but not a failed-state snapshot)",
++    "task": "snapshot-controls",
++    "file": "experiments/indexed_execution/IndexedCompositionCorrespondence.lean",
++    "old": "| .undefined _ _ :: _ => [c]",
++    "new": "| .undefined _ _ :: _ => [c, c]",
++    "targets": ["IndexedComponentRankedExecutionAudit"],
++    "expect": ["IndexedCompositionCorrespondence.lean", "Application type mismatch"]
++  }
++]
+diff --git a/papers/semantics/categorical_ranked_execution_mutations_post.json b/papers/semantics/categorical_ranked_execution_mutations_post.json
+new file mode 100644
+index 00000000..a7d45f85
+--- /dev/null
++++ b/papers/semantics/categorical_ranked_execution_mutations_post.json
+@@ -0,0 +1,65 @@
++[
++  {
++    "label": "F1 (nonzero external input and private state projections)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
++    "old": "some (fun _ => 3) else none",
++    "new": "some (fun _ => 2) else none",
++    "targets": ["IndexedComponentRankedExecutionFixtures"],
++    "expect": ["indexed-reference ranked-private-success: expected"]
++  },
++  {
++    "label": "F2 (private upstream strict failure is not bypassed)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
++    "old": "let A := consumerComponent upstreamOther\n  let B := consumerComponent downstreamOther\n  let wire := privateBoundary upstreamOther downstreamOther\n  let C := privateComposite upstreamOther downstreamOther\n  runChecked C.contract C.fragment (liftInput A B wire (privateInput upstreamOther)).val",
++    "new": "let A := consumerComponent 4\n  let B := consumerComponent downstreamOther\n  let wire := privateBoundary 4 downstreamOther\n  let C := privateComposite 4 downstreamOther\n  runChecked C.contract C.fragment (liftInput A B wire (privateInput 4)).val",
++    "targets": ["IndexedComponentRankedExecutionFixtures"],
++    "expect": ["indexed-reference ranked-private-upstream-failure: expected"]
++  },
++  {
++    "label": "F3 (downstream strict failure is not bypassed)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
++    "old": "let A := consumerComponent upstreamOther\n  let B := consumerComponent downstreamOther\n  let wire := privateBoundary upstreamOther downstreamOther\n  let C := privateComposite upstreamOther downstreamOther\n  runChecked C.contract C.fragment (liftInput A B wire (privateInput upstreamOther)).val",
++    "new": "let A := consumerComponent upstreamOther\n  let B := consumerComponent 4\n  let wire := privateBoundary upstreamOther 4\n  let C := privateComposite upstreamOther 4\n  runChecked C.contract C.fragment (liftInput A B wire (privateInput upstreamOther)).val",
++    "targets": ["IndexedComponentRankedExecutionFixtures"],
++    "expect": ["indexed-reference ranked-private-downstream-failure: expected"]
++  },
++  {
++    "label": "F4 (private-work priority control is discriminating)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
++    "old": "collectors := rows.take 1 ++ rows.drop 2 ++ (rows.drop 1).take 1",
++    "new": "collectors := rows",
++    "targets": ["IndexedComponentRankedExecutionFixtures"],
++    "expect": ["indexed-reference ranked-private-order-control: expected"]
++  },
++  {
++    "label": "F5 (two-invalid-binding validation order)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
++    "old": "runChecked emptyComposite.contract emptyComposite.fragment emptyDoubleInvalid",
++    "new": "runChecked { emptyComposite.contract with tensors := emptyComposite.contract.tensors.reverse }\n        emptyComposite.fragment emptyDoubleInvalid",
++    "targets": ["IndexedComponentRankedExecutionFixtures"],
++    "expect": ["indexed-reference ranked-empty-metadata-and-validation: expected"]
++  },
++  {
++    "label": "F6 (coherent contribution omission changes the boundary)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
++    "old": "let C := compose producerComponent (consumerComponent other) (scalarBoundary other)\n  runChecked C.contract C.fragment (fun _ => none)",
++    "new": "let C := compose producerComponent (consumerComponent other) (scalarBoundary other)\n  let altered := { C.contract with\n    collectors := C.contract.collectors.map fun row =>\n      (row.1, row.2.filter (fun cap => cap != 204)) }\n  let writers := C.fragment.writers.filter (fun w => w.capability != 204)\n  runChecked altered ⟨writers⟩ (fun _ => none)",
++    "targets": ["IndexedComponentRankedExecutionFixtures"],
++    "expect": ["indexed-reference ranked-complete-contribution-boundary: expected"]
++  },
++  {
++    "label": "F7 (zero-writer collector remains mandatory)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
++    "old": "let C := compose zeroProducerComponent (consumerComponent 4) zeroBoundary\n  runChecked C.contract C.fragment (fun _ => none)",
++    "new": "let C := compose zeroProducerComponent (consumerComponent 4) zeroBoundary\n  let altered := { C.contract with\n    collectors := C.contract.collectors.filter (fun row => !row.2.isEmpty) }\n  runChecked altered C.fragment (fun _ => none)",
++    "targets": ["IndexedComponentRankedExecutionFixtures"],
++    "expect": ["indexed-reference ranked-zero-writer-publication: expected"]
++  }
++]
+diff --git a/papers/semantics/categorical_ranked_execution_fixture_mutation_results.md b/papers/semantics/categorical_ranked_execution_fixture_mutation_results.md
+new file mode 100644
+index 00000000..62b9273b
+--- /dev/null
++++ b/papers/semantics/categorical_ranked_execution_fixture_mutation_results.md
+@@ -0,0 +1,11 @@
++| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
++|---|---|---|---|---|
++| F1 (nonzero external input and private state projections) | yes | yes | yes | PASS |
++| F2 (private upstream strict failure is not bypassed) | yes | yes | yes | PASS |
++| F3 (downstream strict failure is not bypassed) | yes | yes | yes | PASS |
++| F4 (private-work priority control is discriminating) | yes | yes | yes | PASS |
++| F5 (two-invalid-binding validation order) | yes | yes | yes | PASS |
++| F6 (coherent contribution omission changes the boundary) | yes | yes | yes | PASS |
++| F7 (zero-writer collector remains mandatory) | yes | yes | yes | PASS |
++
++7/7 cycles passed.
+diff --git a/papers/semantics/categorical_ranked_execution_snapshot_mutation_results.md b/papers/semantics/categorical_ranked_execution_snapshot_mutation_results.md
+new file mode 100644
+index 00000000..d31935a2
+--- /dev/null
++++ b/papers/semantics/categorical_ranked_execution_snapshot_mutation_results.md
+@@ -0,0 +1,6 @@
++| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
++|---|---|---|---|---|
++| S1 (a successful writer contributes exactly one snapshot) | yes | yes | yes | PASS |
++| S2 (undefinedness adds an event but not a failed-state snapshot) | yes | yes | yes | PASS |
++
++2/2 cycles passed.
+diff --git a/papers/semantics/categorical_ranked_execution_inherited_mutation_results.md b/papers/semantics/categorical_ranked_execution_inherited_mutation_results.md
+new file mode 100644
+index 00000000..7a92a212
+--- /dev/null
++++ b/papers/semantics/categorical_ranked_execution_inherited_mutation_results.md
+@@ -0,0 +1,20 @@
++| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
++|---|---|---|---|---|
++| L1 tensor namespace collision (live proof) | yes | yes | yes | PASS |
++| L2 capability/tag namespace collision (live proof) | yes | yes | yes | PASS |
++| L3 reversed writer reads (live proof) | yes | yes | yes | PASS |
++| L4 discarded zero-writer collectors (live proof) | yes | yes | yes | PASS |
++| L5 admitted upstream guards erased (live proof) | yes | yes | yes | PASS |
++| L6 whole output metadata discarded (live proof) | yes | yes | yes | PASS |
++| L7 tensor enumeration reversed (live proof) | yes | yes | yes | PASS |
++| C1 strict-shortcut counterexample removed (graph-only control) | yes | yes | yes | PASS |
++| C2 equal-contribution omission removed (graph-only control) | yes | yes | yes | PASS |
++| F1 unequal-axis point changed (fixture source) | yes | yes | yes | PASS |
++| F2 required empty input omitted (fixture binding) | yes | yes | yes | PASS |
++| F3 simultaneous fault distinction removed (fixture binding) | yes | yes | yes | PASS |
++| T1 legal downstream destination forbidden (typed control) | yes | yes | yes | PASS |
++| T2 legal axis adapter forbidden (typed control) | yes | yes | yes | PASS |
++| C3 zero-collector deletion removed (graph-only control) | yes | yes | yes | PASS |
++| C4 duplicate boundary deletion removed (graph-only control) | yes | yes | yes | PASS |
++
++16/16 cycles passed.
