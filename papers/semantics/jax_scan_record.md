@@ -478,3 +478,68 @@ cause or tighten the tolerance back to 0.
 
 **Mutation evidence.** The hand mutants of the standard programs and the re-run of the Python manifest are in
 the body of the commit `test(jax): mutation evidence for the standard transformer fixtures (no file changes)`.
+
+## 12. Predicate masks inside the layer scan (2026-11-09)
+
+Section 11's fixtures use ONE predicate, the causal mask `softmax(where s ≤ q)`. Three NEW scan-only fixtures (each
+with a binary32 sibling) exercise the predicate machinery inside the scan, each the standard `scanProg` with ONLY
+the mask changed and q = s = 5 (`axis s : ℕ = 5` is declared in the binary32 programs too). Tests and fixtures only:
+no production, emitter, runtime or manifest change, and `transformer_scan*` / `transformer_head*` are untouched.
+The differential is now 37 binary64 and 29 binary32 fixtures; `Tests` + `JaxExperiment` unchanged at 8846 jobs.
+
+| Fixture | Mask | Exercises |
+|---|---|---|
+| `transformer_window` | `s ≤ q ∧ q - s < 2` | subtraction in a predicate term, `∧`, a window narrower than the history |
+| `transformer_strict` | `s < q` | strict comparison; query row 0 attends nothing (fully masked row inside the scan) |
+| `transformer_sink` | `s ≤ q ∧ (s = 0 ∨ q - s < 2)` | `∨`, `=` against a constant, parentheses |
+
+Answers to the pre-flight questions: `q - s < 2` and `(s = 0 ∨ q - s < 2)` parse inside `where`; with q = s = 5 the plan
+counts stay (19, 1, 1) (pinned by `some (19, 1, 1)`, one scan); a fully masked row inside a scan is exactly zero on
+Lean, eager and jit (not uniform, not NaN: every output is finite and `H` equals the numpy model whose all-masked row is zero).
+
+**Inputs.** Same weights, gains and `Sc[]` as `scanEnv64`/`scanEnv32`; `X[5, 4]` (the first three rows are `trX`'s, two
+new distinct rows) and `Eps[5]` = 1e-5, 2e-5, 3e-5, 1.5e-5, 2.5e-5 (`maskX`, `maskEps`, `maskEnv64`, `maskEnv32`).
+
+**Pins** (`mask_fixture_pins` in `evalplan_nonlin_smoke.py`, one helper for all three). `np_transformer` gained an
+`allow` matrix argument (default unchanged: `np.tril`); each `allow[q][s]` is written from the English definition with plain
+loops (`mask_allow`), and an all-masked row is zero (`np_masked_softmax`).
+1. Value pin: `H` (layers 0, 1, 2) equals the numpy model on Lean, eager and jit at `MODEL_TOL`.
+2. Non-vacuity: numpy `H` differs from the causal model by 2.493 (window), 4.178 (strict), 0.833 (sink); the masks differ
+   pairwise by 6.608 (window/strict), 2.493 (window/sink), 4.178 (strict/sink). A uniform row 0 would move the strict
+   fixture's `H` row 0 by 1.388 (so the zero row is distinguishable from a uniform one).
+3. Receptive field on the eager runtime: add 0.5 to `X[p, :]`, with the reachable rows computed in Python from `allow`
+   over two layers. Window `p = 0`: rows 0, 1, 2 respond (max abs 0.915), rows 3, 4 bitwise identical. Strict `p = 4`: only row 4
+   responds (0.862), rows 0 to 3 bitwise identical. Sink `p = 3`: rows 3, 4 respond (1.292), rows 0, 1, 2 bitwise identical.
+   The numpy model has the same receptive field.
+4. Strict: numpy attention row 0 and the attention-weighted value of row 0 are exactly zero in both layers and the
+   residual stream row 0 passes through bitwise; all outputs are finite on every view.
+
+**Observed maxima against numpy** (max over Lean, eager and jit, scaled error `|view - numpy| / max(1, |numpy|)`;
+`MODEL_TOL` 1e-12 / 1e-6, NOT loosened):
+
+| Fixture | binary64 | binary32 | binary32 headroom |
+|---|---|---|---|
+| `transformer_window` | 4.4e-16 | 2.6e-7 | 3.9x |
+| `transformer_strict` | 6.7e-16 | 4.6e-7 | 2.2x |
+| `transformer_sink` | 6.7e-16 | 8.5e-7 | 1.2x |
+
+The binary32 sink headroom is thin (under 20%), like the standard scan's `H` (section 11): it is rounding in a 2-layer residual
+stream, not a mask effect, and the tolerance was not touched.
+
+**Mutation evidence** (one edit of ONE binary64 program, whole differential run, first failing assertion; each file restored
+with `git checkout`, `git diff --stat` empty). All five killed:
+
+| Mutant | First failing assertion |
+|---|---|
+| window `q - s < 2` to `q - s < 3` | `pin numpy model: transformer_window lean H` (scaled error 1.1) |
+| window `∧` to `∨` | `pin numpy model: transformer_window lean H` (2.4) |
+| strict `s < q` to `s ≤ q` | `pin numpy model: transformer_strict lean H` (1.7) |
+| sink without its `s = 0` clause | `pin numpy model: transformer_sink lean H` (2.4) |
+| sink `Ss2` reads `H` instead of `R1` (all inputs still used) | `pin numpy model: transformer_sink lean H` (1.7) |
+
+A first value-level candidate (sink `N1` reading `G2` instead of `G1`) died on the input-set assertion (`KeyError: 'G1'`, since `G1` is
+read only there), so it was replaced by the last row, which keeps every input used.
+
+**Parked** (cost in dispatches): a predicate over the iteration axis `l` inside the scan body (~2); data-driven masks
+(`where edge[i,j] > 0` does not parse; ~2 plus a design decision); Iverson factors on JAX (the bridge has no lowering,
+`iversonFactor`; ~3); depth and gradient work (the next two slices of the brief).

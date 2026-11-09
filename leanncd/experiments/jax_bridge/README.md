@@ -438,6 +438,14 @@ verifier recomputes the head (norm, `Logits` and the vocabulary softmax) in nump
 Lean's `H` slice 2 (not from the head's own outputs), and checks that the head's inputs and `H` are bit-identical
 to `transformer_scan`'s. Details and the mutation checks: the "Head fixture" section of `papers/semantics/jax_scan_record.md`.
 
+`transformer_window`, `transformer_strict` and `transformer_sink` (each with a `32` sibling) are the standard scan with only the
+mask changed and q = s = 5, so the causal mask above is the mask of `transformer_scan` / `transformer_head`, not of every transformer fixture:
+`transformer_window` masks with `s ≤ q ∧ q - s < 2` (subtraction in a predicate term, conjunction), `transformer_strict` with `s < q` (query row 0
+attends nothing: a fully masked row inside the scan, expected all zero), `transformer_sink` with `s ≤ q ∧ (s = 0 ∨ q - s < 2)`
+(disjunction, equality with a constant). Each is checked against a numpy model whose mask is written from the English definition, and by a receptive-field
+pin (rows unreachable from a perturbed position stay bitwise identical on the eager runtime). Observed numbers and the mutation table: section 12 of
+`papers/semantics/jax_scan_record.md`.
+
 `scan_postrole` / `scan_postrole32` run six post-scan statements with the scan axis as an ordinary axis through
 both backends (`iter l = 4`, `S[j,l] = X[j]·G[j]^l`): a sum over `l` against an external tensor
 (`Ysum := S[j,2]·V[l]`), a free read of the state summed over `l` (`Yfree := S[j,l]·V[l]`, NOT the per-step
