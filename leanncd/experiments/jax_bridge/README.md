@@ -418,18 +418,20 @@ indices, exactly as for an outer assignment; no test pins the scan case. `einsum
 conversions and the evidence path still refuse a scan with `unsupportedStep`.
 
 Fixtures (in `run-evalplan-nonlin.sh`'s differential): `transformer_scan` / `transformer_scan32`, a two-layer
-real-RMSNorm transformer as a scan over the layer axis with untied per-layer weights, and
+STANDARD pre-norm transformer as a scan over the layer axis with untied per-layer weights and gains
+(per layer: RMSNorm with gain `G1[l, m]`, attention scaled by `Sc[]` with a causal mask, residual add, RMSNorm
+with gain `G2[l, m]`, gelu MLP, residual add), and
 `transformer_unrolled` / `transformer_unrolled32`, the same model as two flat layers. The unrolled pair is the
-oracle: scan H layers 1 and 2 equal unrolled H1 and H2 bit for bit on CPU, in both precisions, eager and jit
-(`ORACLE_TOL` is exactly 0). Eight donor scans from `Eval.Plan.ScanCompileTest` (list `scanSurvey64`, binary64
+oracle: scan H layers 1 and 2 equal unrolled H1 and H2 bit for bit on CPU in binary64 (eager and jit) and in
+binary32 jit; the binary32 EAGER comparison allows rtol 2.4e-7, atol 0 (observed maximum absolute difference 2.4e-7; see the deviation in section 11 of the record). Eight donor scans from `Eval.Plan.ScanCompileTest` (list `scanSurvey64`, binary64
 only, flag `linear_ok`) are listed in `papers/semantics/jax_scan_fixture_survey.md`. Slice record:
 `papers/semantics/jax_scan_record.md`.
 
-`transformer_head` / `transformer_head32` append a head to the two-layer scan: a final RMSNorm of
-`Zf = H[q, m, 2] + X[q, m]`, an unembedding `Logits[q, v] := W_U[v, m] · Hf[q, m]` over a vocabulary axis of
+`transformer_head` / `transformer_head32` append a head to the two-layer scan: a final RMSNorm with gain `Gf[m]` of the residual stream
+`H[q, m, 2]` (`Ssf`, `Vef`, `Sdf`, `Hf[q, m] := H[q, m, 2] / Sdf[q] · Gf[m]`; nothing is added back), an unembedding `Logits[q, v] := W_U[v, m] · Hf[q, m]` over a vocabulary axis of
 extent 5 (differs from every other extent), and a softmax over `v`. The head is written in the same program as
 the scan: `finalizeScans` classifies a scan-dependent statement by role. A statement that does not feed the
-recurrence (here `Zf := H[q, m, 2] + X[q, m]` and everything after it) is a post-scan consumer and becomes a
+recurrence (here `Ssf[q] := H[q, m, 2] · H[q, m, 2] · Inv[m]` and everything after it) is a post-scan consumer and becomes a
 plain node AFTER the scan node, where the iteration axis is an ordinary axis; a statement that feeds the
 recurrence (every statement of the layer body) is a per-step intermediate. The
 verifier recomputes the head (norm, `Logits` and the vocabulary softmax) in numpy from the fixture's inputs and
