@@ -191,8 +191,8 @@ and primary dirty-state preservation.
 | Independent plan findings/adjudication | PASS | Controller reviewed the full live plan independently of both authors; frozen scope, exact commands, donor/control limits, reconstruction footprint and advanced-main integration agree with verified artifacts. No unresolved findings. |
 | Reconstruction gate | PASS | Frozen eight-file/three-patch audit and replay passed; apply_patch deleted only the eight new prototype modules and reversed the exact lakefile addition. Status and empty lakefile diff confirmed the baseline; artifacts remained intact. |
 | Task 1 | PASS | Commit 86aed9d1; exact task1 patch applied after --check; wire snippet compiled and hash matched. Controller geometry review clean. |
-| Task 2 | PASS, committing | Exact task2 patch applied after --check; all three source hashes matched. Targeted build exited 0 (2,985 jobs); universe/API snippet compiled. Controller presentation/soundness review clean. |
-| Task 3 | Pending | Patch/file hashes, tests/audits/parities, actual 10-cycle table, observation review, commit, usage |
+| Task 2 | PASS | Commit 3c4bb32a; exact task2 patch applied after --check; all three source hashes matched. Targeted build exited 0 (2,985 jobs); universe/API snippet compiled. Controller presentation/soundness review clean. |
+| Task 3 | PASS, committing | Exact task3 patch applied after --check; test/parity build exited 0 (8,646 jobs); namespace audits use only standard axioms. All ten actual unfiltered expected controls passed with byte-identical restores and green restored builds; mutations_execution.md/log preserve the run. Post-cycle package audit passed; controller observation review clean. |
 | Direct documentation sweep | Pending | Current-value/prose/path checks, split source/process ledger, entry point, commit |
 | Controller release | Pending | Fresh unfiltered manifest execution, byte restores, source/copy/namespace audits, eight snippets, universe, full three-target build, exit/job observations |
 | Final soundness lens | Pending | Whole-branch findings and disposition |
@@ -226,6 +226,18 @@ boundary-square schemas, wire composition and source associativity, without
 the redundant bracket generator; its separate soundness proof uses
 rebaseGraphs and bracket_hom. No fresh UID/program equality is asserted.
 Type 1 objects/homs and the actual functor API compiled; no findings.
+
+Task 3 review: Axis values distinguish the reversed adapter; Triple's
+nonconstant input independently checks exterior tagging. Source binary
+assembly and both actual nested-to-triple comparisons are instantiated;
+private stores and distinct nested UIDs remain checked. Hidden equal-output
+witnesses remain distinct and the leaf is explicitly the complete component
+span; strict/total neighbours and empty metadata/input presence are retained.
+The three exact copied maps have separate universal parity and ProbeTest
+does not import it. M1-M7 detect specified test-copy/donor observation defects;
+M8-M10 are theorem-level donor controls, not independent model semantics
+or production-proof mutations. Every expected diagnostic was observed.
+No findings. Controller release rerun and both final lenses remain mandatory.
 
 ### Final soundness review findings
 
