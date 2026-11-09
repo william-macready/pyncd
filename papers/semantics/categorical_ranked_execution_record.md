@@ -2,9 +2,8 @@
 
 ## Result and scope
 
-The proof implementation is complete. Release review, verified-plan replay
-and final integration receipts are recorded below as they run; this opening
-does not claim those gates have already passed.
+The proof implementation, release reviews, verified-plan replay and local
+integration are complete. Their separate receipts are recorded below.
 
 The nondefault entry point is `import IndexedRankedExecutionSemantics`.
 It exports the rank construction, actual graph execution phase theorem and
@@ -239,8 +238,31 @@ calls/wrappers against its 35-invocation aim (13 tool-call rounds).
 The final token-report attempt still found no transcript; cumulative accounting
 remains unavailable, not silently declared compliant.
 
-Local integration is the next operation. The user explicitly authorized
-temporarily stashing only the primary checkout's pre-existing semantics README
-and synthesis edits, merging locally, then restoring those edits. No push is
-authorized. Integration and owned-worktree cleanup are reported separately
-after they actually complete.
+## Local integration and cleanup
+
+The candidate was merged into local main as `40cd7ffb`.
+The controller's full `LeanNCD Tests IndexedExecutionExperiment` build on
+merged main passed (8,930 jobs). All 12 reviewed Lean/configuration file
+hashes matched the frozen package; its six ordered patches remained valid.
+Before cleanup, the implementation branch and main had identical committed
+trees and the branch was confirmed merged.
+
+With explicit user permission, only the primary checkout's two pre-existing
+document edits were temporarily stashed and restored. Restoration conflicted
+only in the synthesis progress ledger. Resolution preserved the user's
+step-column mapping and explanatory prose while retaining the newly proved
+rank/phase status. The README was restored byte-for-byte; the synthesis's
+original edit payload was independently compared and preserved apart from
+that explicit status reconciliation. Both edits remain unstaged. The pinned
+temporary stash was dropped only after restoration verification.
+
+The owned replay worktree was removed after verifying that all 21 dirty
+paths were exactly the byte-checked replay package. The clean implementation
+worktree and its merged branch were removed. All unrelated worktrees and
+branches were left untouched.
+
+The user's workspace transition created a separate current chat worktree.
+It was fast-forwarded to merged main without creating another worktree and
+is retained as requested. This final documentation close-out changes no
+proofs or acceptance evidence. Nothing was pushed; local main remains ahead
+of `origin/main`.
