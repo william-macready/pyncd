@@ -324,6 +324,9 @@ with one shared phase-boundary snapshot, not two. Use the existing failed-state
 normalisation, not literal equality of raw reference machine-state lists.
 This is a proposed additional proof, not already furnished by correspondence.
 
+The [ranked execution session brief](categorical_ranked_execution_handoff.md)
+scopes the next rank/phase/projection slice; it is not a verified execution plan.
+
 Dependency outline:
 
 1. Declaration/address/store transport; admitted-read and context transport;
