@@ -423,7 +423,7 @@ STANDARD pre-norm transformer as a scan over the layer axis with untied per-laye
 with gain `G2[l, m]`, gelu MLP, residual add), and
 `transformer_unrolled` / `transformer_unrolled32`, the same model as two flat layers. The unrolled pair is the
 oracle: scan H layers 1 and 2 equal unrolled H1 and H2 bit for bit on CPU in binary64 (eager and jit) and in
-binary32 jit; the binary32 EAGER comparison allows rtol 2.4e-7, atol 0 (observed maximum absolute difference 2.4e-7; see the deviation in section 11 of the record). Eight donor scans from `Eval.Plan.ScanCompileTest` (list `scanSurvey64`, binary64
+binary32 jit; the binary32 EAGER layer 2 comparison allows rtol 2.4e-7, atol 0 (between 2 and 4 ulps; observed maximum absolute difference 2.4e-7; see the deviation in section 11 of the record). Eight donor scans from `Eval.Plan.ScanCompileTest` (list `scanSurvey64`, binary64
 only, flag `linear_ok`) are listed in `papers/semantics/jax_scan_fixture_survey.md`. Slice record:
 `papers/semantics/jax_scan_record.md`.
 

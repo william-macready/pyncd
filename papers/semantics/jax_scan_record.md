@@ -19,7 +19,7 @@ through `jax.lax.scan`. Evidence, all observed on the branch tip:
 | --- | --- |
 | Build: `Tests` + `JaxExperiment` | green, 8844 jobs |
 | Nonlinearity differential (`run-evalplan-nonlin.sh`) | 32 binary64 and 24 binary32 fixtures pass (was 22 + 22); rtol/atol `1e-12`/`1e-14` (f64), `1e-5`/`1e-6` (f32) |
-| Unrolled oracle | JAX scan H layers 1,2 equal JAX unrolled H1,H2 bit for bit on CPU, f64 and f32, eager and jit; `ORACLE_TOL` is exactly 0 |
+| Unrolled oracle | JAX scan H layers 1,2 equal JAX unrolled H1,H2 bit for bit on CPU, f64 and f32, eager and jit; `ORACLE_TOL` is exactly 0 (written for the post-norm model; for the standard model the binary32 eager layer 2 comparison allows `ORACLE_EAGER_TOL32`, see section 11) |
 | Python mutation manifest `jax_scan_mutations_python.json` | 6/6 killed (JS-P-01..06) |
 | Lean mutation manifest `jax_scan_mutations_post.json` | 11 entries, all killed (g1..g5 gate, e1..e5 emitter, c1) |
 | Re-pinned `jax_nonlin_mutations_post.json` | 8/8; five line pins moved +148 and entry JN-T1-06 was rewritten for the new `.scan` arm |
@@ -465,9 +465,10 @@ binary32 headroom on `H` is under 10%); head `Logits` 6.7e-16 and 8.5e-7; `P` 1.
 changes row 2 by 2.68, 1.10 and 0.117 respectively.
 
 **Deviation (binary32 eager oracle).** The binary32 EAGER scan-versus-unrolled comparison now allows rtol 2.4e-7
-with atol 0 (`ORACLE_EAGER_TOL32`; about 2 ulp; observed maximum absolute difference 2.4e-7 at |H| of 2 to 5):
-two of the 12 entries of `H` differ by 1 ulp at layer 2. The binary64 eager and jit
-comparisons and the binary32 jit comparison remain bit-identical. The cause is unconfirmed; a likely one is that
+with atol 0, for LAYER 2 only (`ORACLE_EAGER_TOL32`; between 2 and 4 binary32 ulps depending on the position in the
+binade, against an observed 1 ulp; observed maximum absolute difference 2.4e-7 at |H| of 2 to 5): two of the 12
+entries of `H` differ by 1 ulp at layer 2. Layer 1 stays exact in the binary32 eager comparison, and the binary64
+eager and jit comparisons and the binary32 jit comparison remain bit-identical. The cause is unconfirmed; a likely one is that
 the eager scan body is one compiled `lax.scan` while the unrolled oracle runs op by op. PARKED: confirm the
 cause or tighten the tolerance back to 0.
 

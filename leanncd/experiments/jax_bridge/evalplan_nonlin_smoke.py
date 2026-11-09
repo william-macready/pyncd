@@ -56,7 +56,9 @@ ORACLE_TOL = {"float64": (0.0, 0.0), "float32": (0.0, 0.0)}
 # EXCEPTION, MEASURED on the standard pre-norm model: binary32 EAGER differs by one ulp in layer 2 (2 of 12 entries,
 # max abs 2.4e-7 at |H| ~ 2-5): the eager scan body is one compiled `lax.scan` while the eager unrolled oracle
 # runs op by op. Every other combination (binary64 eager and jit, binary32 jit) stays bit-identical (tolerance 0).
-# 2.4e-7 relative is two binary32 ulps at most; a swapped layer (gap ~1) or a wrong gain (~0.6) is ~6 orders larger.
+# 2.4e-7 relative is between 2 and 4 binary32 ulps (2 at the bottom of a binade, 4 at the top), against the observed
+# 1 ulp; it is applied to layer 2 only (layer 1 stays exact). A swapped layer (gap ~1) or a wrong gain (~0.6) is
+# ~6 orders larger.
 ORACLE_EAGER_TOL32 = (2.4e-7, 0.0)
 # fixture name -> {"eager": outputs, "jit": outputs}, kept for the scan fixtures and the unrolled oracle.
 EAGER: dict[str, dict] = {}
@@ -399,8 +401,11 @@ def main() -> None:
     sin = {n: lean_array(e) for n, e in sc["inputs"].items()}
     # (b) the layer-2 weight slice is NaN in the INPUTS, layers 0 and 1 are finite, and every output is
     # finite: a step that read past layer 1 would turn the whole state NaN.
-    for w in ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out"):
+    for w in ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out", "G1", "G2"):
         assert sin[w].shape[0] == 3 and np.all(np.isnan(sin[w][2])) and np.all(np.isfinite(sin[w][:2])), w
+    # the attention scale is 1/sqrt(d_k), d_k the key extent (W_Q is [l, h, k, m]): pinned against the input's own
+    # shape, not against the numpy model that reads the exported value, so a wrong scale in the fixture is seen
+    assert abs(float(np.asarray(sin["Sc"]).reshape(-1)[0]) - sin["W_Q"].shape[2] ** -0.5) < 1e-7, ("Sc != 1/sqrt(d_k)", sin["Sc"])
     views = {"lean": {n: lean_array(e) for n, e in sc["expected"].items()},
              "eager": {n: np.asarray(v) for n, v in EAGER[sc_name]["eager"].items()},
              "jit": {n: np.asarray(v) for n, v in EAGER[sc_name]["jit"].items()}}
@@ -664,9 +669,9 @@ def main() -> None:
     print(f"  max scaled {worst[0]:.3e} at {worst[1]}; max abs {max(NUM_STATS[(un_name, n)][1] for n in un_names):.3e}; "
           f"H1 {NUM_STATS[(un_name, 'H1')][0]:.3e}, H2 {NUM_STATS[(un_name, 'H2')][0]:.3e}")
     for mode in ("eager", "jit"):
-        o_rtol, o_atol = ORACLE_EAGER_TOL32 if (_DT == "float32" and mode == "eager") else ORACLE_TOL[_DT]
         h_scan = np.asarray(EAGER[sc_name][mode]["H"])
         for l in (1, 2):
+            o_rtol, o_atol = ORACLE_EAGER_TOL32 if (_DT == "float32" and mode == "eager" and l == 2) else ORACLE_TOL[_DT]
             g, u = h_scan[:, :, l], np.asarray(EAGER[un_name][mode][f"H{l}"])
             assert g.shape == u.shape == (3, 4) and g.dtype == u.dtype == NDT, (mode, l, g.shape, u.shape)
             d = np.abs(g.astype(np.float64) - u.astype(np.float64))
