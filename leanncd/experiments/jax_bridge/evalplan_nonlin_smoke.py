@@ -422,8 +422,8 @@ def mqa_fixture_pins(by: dict, sfx: str) -> None:
     # the head axis is gone from the key and value weights (and only from those), the query weights keep it
     assert fin["W_Q"].shape == sin["W_Q"].shape and fin["W_O"].shape == sin["W_O"].shape, name
     assert fin["W_K"].shape == fin["W_V"].shape == (3, n_k, 4) and sin["W_K"].shape == (3, n_heads, n_k, 4), (name, fin["W_K"].shape)
-    # every other input is the standard fixture's, bit for bit; layer 0 of the head-free stacks is head 0's slice of
-    # the standard weights (head 1: head 0's slices are binary32 ill-conditioned, see `mqaWK` in the Lean file; no new
+    # every other input is the standard fixture's, bit for bit; layer 0 of the head-free stacks is head 1's slice of
+    # the standard weights (not head 0: head 0's slices are binary32 ill-conditioned, see `mqaWK` in the Lean file; no new
     # magic numbers), layer 1 differs from layer 0 and layer 2 is NaN
     for n in sin:
         if n not in ("W_K", "W_V"):
