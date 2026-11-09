@@ -88,6 +88,12 @@ POSTROLE_TOL = {"float64": 1e-12, "float32": 1e-6}
 # MEASURED worst case (state H layer 2 / unrolled H2, all views): float64 6.7e-16, float32 9.4e-7 (the binary32
 # headroom is thin, <10%: the residual stream reaches |H| ~ 5 after two layers, so binary32 rounding is ~3e-7 per op).
 MODEL_TOL = {"float64": 1e-12, "float32": 1e-6}
+# Gradient pins (`grad_fixture_pins`): max over entries of |grad - reference| / max(1, |reference|) for the scan plan's `jax.grad`
+# against the unrolled plan's and a pure-JAX model's (carrier dtype), MEASURED (eager and jit, max over inputs): float64 1.2e-15 (pure-JAX
+# model) / 2.1e-15 (unrolled), float32 1.3e-6 / 1.5e-6; a wrong gradient entry is O(1e-1) or more. `GRAD_FD_TOL` bounds the directional
+# derivative against float64 central differences of the numpy model (float64: the finite-difference error ~1e-9).
+GRAD_TOL = {"float64": 1e-12, "float32": 1e-4}
+GRAD_FD_TOL = {"float64": 1e-7, "float32": 1e-4}
 # (fixture, output) -> [max scaled error, max abs error] over the Lean, eager and jit views
 NUM_STATS: dict[tuple[str, str], list] = {}
 
@@ -481,6 +487,98 @@ def mqa_fixture_pins(by: dict, sfx: str) -> None:
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
 
 
+def grad_fixture_pins(by: dict, sfx: str) -> None:
+    """Gradient pins of the standard two-layer scan (`transformer_scan`): `jax.grad` of the scalar loss
+    `L = sum(C * H[:, :, 2])` (a fixed, distinct-entried cotangent `C`) through the emitted `lax.scan` plan, over EVERY float input,
+    against (a) the same loss through the hand-copied unrolled plan (`transformer_unrolled`, stacked per layer), (b) the autodiff of a
+    pure-JAX transformer written from the definition (no plan, no scan, carrier dtype) and (c) central finite differences of the
+    float64 numpy model (`np_transformer`) along random directions (no autodiff on the reference side at all). The layer-2 weight
+    slices are NaN in the inputs and never read, so their gradient must be exactly zero and finite."""
+    scan, unr = by["transformer_scan" + sfx], by["transformer_unrolled" + sfx]
+    sin = {n: lean_array(e) for n, e in scan["inputs"].items()}
+    uin = {n: lean_array(e) for n, e in unr["inputs"].items()}
+    stacked = ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out", "G1", "G2")
+    C = np.sin(1.0 + np.arange(12)).reshape(3, 4).astype(NDT)
+
+    def loss_scan(inp):
+        return jnp.sum(C * rt.run_named(scan["plan"], inp, JDT)["H"][:, :, 2])
+
+    def loss_unrolled(inp):
+        return jnp.sum(C * rt.run_named(unr["plan"], inp, JDT)["H2"])
+
+    def loss_hand(inp):
+        h, tril = inp["X"], jnp.tril(jnp.ones((3, 3), dtype=bool))
+        for l in range(2):
+            n1 = h / jnp.sqrt(jnp.einsum("qm,qm,m->q", h, h, inp["Inv"]) + inp["Eps"])[:, None] * inp["G1"][l]
+            q = jnp.einsum("hkm,qm->qhk", inp["W_Q"][l], n1)
+            k = jnp.einsum("hkm,sm->shk", inp["W_K"][l], n1)
+            v = jnp.einsum("hkm,sm->shk", inp["W_V"][l], n1)
+            lg = jnp.einsum("qhk,shk->hqs", q, k) * inp["Sc"]
+            s = jax.nn.softmax(jnp.where(tril[None], lg, -jnp.inf), axis=-1)
+            r1 = h + jnp.einsum("mhk,qhk->qm", inp["W_O"][l], jnp.einsum("hqs,shk->qhk", s, v))
+            n2 = r1 / jnp.sqrt(jnp.einsum("qm,qm,m->q", r1, r1, inp["Inv"]) + inp["Eps"])[:, None] * inp["G2"][l]
+            x = jnp.einsum("dm,qm->qd", inp["W_in"][l], n2)
+            f = 0.5 * x * (1.0 + jnp.tanh(0.7978845608028654 * (x + 0.044715 * x ** 3)))
+            h = r1 + jnp.einsum("md,qd->qm", inp["W_out"][l], f)
+        return jnp.sum(C * h)
+
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    jin = {n: jnp.asarray(a) for n, a in sin.items()}
+    grads = {"eager": jax.grad(loss_scan)(jin), "jit": jax.jit(jax.grad(loss_scan))(jin)}
+    g_hand = jax.grad(loss_hand)(jin)
+    g_unr = jax.grad(loss_unrolled)({n: jnp.asarray(a) for n, a in uin.items()})
+    ref_err, unr_err = {}, {}
+    for who, g in grads.items():
+        assert sorted(g) == sorted(sin), (who, sorted(g))
+        assert all(np.all(np.isfinite(np.asarray(v))) and np.asarray(v).dtype == NDT for v in g.values()), (who, "gradient not finite")
+        for w in stacked:
+            gw = np.asarray(g[w])
+            # the NaN layer-2 slice is never read, so it gets exactly zero gradient; layers 0 and 1 carry real gradient
+            assert np.all(gw[2] == 0), ("layer-2 weight slice received gradient", who, w)
+            assert all(float(np.max(np.abs(gw[l]))) > 1e-3 for l in (0, 1)), ("trivial gradient", who, w)
+            # the two layers' gradients differ: a gradient that mixed layers up would not be seen otherwise
+            assert float(np.max(np.abs(gw[0] - gw[1]))) > 1e-2, ("layers 0 and 1 have alike gradients", who, w)
+        for n in sin:
+            e_ref = scaled(g[n], g_hand[n])
+            assert e_ref < GRAD_TOL[_DT], ("gradient pin: scan vs pure-JAX model", who, n, e_ref)
+            ref_err[n] = max(ref_err.get(n, 0.0), e_ref)
+            if n in stacked:
+                e_unr = scaled(np.asarray(g[n])[:2], np.stack([np.asarray(g_unr[f"{n}1"]), np.asarray(g_unr[f"{n}2"])]))
+            else:
+                e_unr = scaled(g[n], g_unr[n])
+            assert e_unr < GRAD_TOL[_DT], ("gradient pin: scan vs unrolled plan", who, n, e_unr)
+            unr_err[n] = max(unr_err.get(n, 0.0), e_unr)
+    # (c) directional derivatives against central differences of the independent numpy model; 3 fixed random directions
+    # over all inputs (zero on the NaN layer-2 slices, which the model never reads), `|dot| > 1e-2` so none is trivial
+    base = {n: a.astype(np.float64) for n, a in sin.items()}
+    rng = np.random.default_rng(7)
+    fd_err, dots = 0.0, []
+    for _ in range(3):
+        d = {n: rng.standard_normal(a.shape) for n, a in base.items()}
+        for w in stacked:
+            d[w][2] = 0.0
+        eps = 1e-6
+        loss = lambda inp: float(np.sum(C.astype(np.float64) * np_state(inp, np_transformer(inp))[:, :, 2]))
+        fd = (loss({n: base[n] + eps * d[n] for n in base}) - loss({n: base[n] - eps * d[n] for n in base})) / (2 * eps)
+        for who, g in grads.items():
+            dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * d[n]) for n in base))
+            assert abs(dot) > 1e-2, ("finite-difference direction is trivial", dot)
+            fd_err = max(fd_err, abs(fd - dot) / max(1.0, abs(dot)))
+        dots.append(dot)
+    assert fd_err < GRAD_FD_TOL[_DT], ("gradient pin: directional derivative vs finite differences of the numpy model", fd_err)
+    print(f"gradients: jax.grad of sum(C * H[:, :, 2]) through the transformer_scan plan (eager and jit), all {len(sin)} inputs "
+          f"finite, layer-2 weight slices exactly zero, layers 0 and 1 non-trivial and distinct; scan == hand-copied unrolled plan "
+          f"(max scaled {max(unr_err.values()):.3e}), == pure-JAX model autodiff (max scaled {max(ref_err.values()):.3e}, tol "
+          f"{GRAD_TOL[_DT]:.0e}), directional derivatives == central differences of the float64 numpy model (3 directions, "
+          f"|dot| {min(abs(x) for x in dots):.2f} to {max(abs(x) for x in dots):.2f}, max scaled {fd_err:.3e}, tol {GRAD_FD_TOL[_DT]:.0e}); "
+          f"per-input scaled error vs the pure-JAX model: " + ", ".join(f"{n} {ref_err[n]:.1e}" for n in sorted(ref_err)))
+    print(f"  headroom to GRAD_TOL: {GRAD_TOL[_DT] / max(max(ref_err.values()), 1e-300):.1f}x (vs pure-JAX model), "
+          f"{GRAD_TOL[_DT] / max(max(unr_err.values()), 1e-300):.1f}x (vs unrolled); to GRAD_FD_TOL: {GRAD_FD_TOL[_DT] / max(fd_err, 1e-300):.1f}x")
+
+
 def main() -> None:
     spec = importlib.util.spec_from_file_location("gen_nonlin", Path(sys.argv[2]).resolve())
     mod = importlib.util.module_from_spec(spec)
@@ -776,6 +874,9 @@ def main() -> None:
 
     # MULTI-QUERY ATTENTION inside the layer scan (head-free K and V): see `mqa_fixture_pins`.
     mqa_fixture_pins(by, sfx)
+
+    # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
+    grad_fixture_pins(by, sfx)
 
     # POST-SCAN ROLE: `S[j, l+1] := S[j, l] . G[j]` (closed form `S = X * G**l`) and six statements nothing in
     # the recurrence reads, so each is a plain node AFTER the one scan node and `l` is an ordinary axis in it.
