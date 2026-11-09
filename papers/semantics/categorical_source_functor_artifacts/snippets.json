@@ -1,0 +1,74 @@
+[
+  {
+    "module": "IndexedSourceWire",
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/.claude/skills/slice-plan/check-snippet.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/leanncd/experiments/indexed_execution/IndexedSourceWire.lean"
+    ],
+    "exit": 0
+  },
+  {
+    "module": "IndexedSourceSyntax",
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/.claude/skills/slice-plan/check-snippet.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/leanncd/experiments/indexed_execution/IndexedSourceSyntax.lean"
+    ],
+    "exit": 0
+  },
+  {
+    "module": "IndexedSourceFunctor",
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/.claude/skills/slice-plan/check-snippet.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean"
+    ],
+    "exit": 0
+  },
+  {
+    "module": "IndexedSourceSemantics",
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/.claude/skills/slice-plan/check-snippet.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/leanncd/experiments/indexed_execution/IndexedSourceSemantics.lean"
+    ],
+    "exit": 0
+  },
+  {
+    "module": "IndexedSourceTest",
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/.claude/skills/slice-plan/check-snippet.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/leanncd/experiments/indexed_execution/IndexedSourceTest.lean"
+    ],
+    "exit": 0
+  },
+  {
+    "module": "IndexedSourceObservationProbe",
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/.claude/skills/slice-plan/check-snippet.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/leanncd/experiments/indexed_execution/IndexedSourceObservationProbe.lean"
+    ],
+    "exit": 0
+  },
+  {
+    "module": "IndexedSourceObservationProbeTest",
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/.claude/skills/slice-plan/check-snippet.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/leanncd/experiments/indexed_execution/IndexedSourceObservationProbeTest.lean"
+    ],
+    "exit": 0
+  },
+  {
+    "module": "IndexedSourceObservationParity",
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/.claude/skills/slice-plan/check-snippet.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/categorical-source-functor-update/leanncd/experiments/indexed_execution/IndexedSourceObservationParity.lean"
+    ],
+    "exit": 0
+  }
+]

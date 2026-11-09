@@ -75,8 +75,14 @@ explicit boundary and exterior interface transports, and both actual nested
 component bracketings correspond to the same compatible model triple.
 Injective-left spans have a quotient-invariant partial-map interpretation;
 for components, this restriction is exactly `AtMostOneModels`.
-These are denotational results, not a source functor or event-sensitive
-process laws. See the [witness semantics record](categorical_witness_semantics_record.md).
+The certified source presentation now adds a distinct whole-interface object
+wrapper, matched leaves and explicit coordinate wires, a generated syntactic
+congruence and an actual Mathlib functor into this witness category. Actual
+component assembly and both nested constructor bracketings compare in the
+source after their inherited transports. These are denotational results, not
+event-sensitive process laws. See the
+[witness semantics record](categorical_witness_semantics_record.md) and
+[source-functor record](categorical_source_functor_record.md).
 
 The independently authored validation fixture supplies actual
 proof instances of the execution-correspondence theorem. Its six-event failure and
@@ -768,11 +774,13 @@ nested coherence, restricted partial maps and completed release gates.
 | Rank-independent complete-model gluing | Composite model witnesses are in bijection with dependent compatible component-model pairs, retaining all private work | Validated inputs, explicit typed boundary and fixed rational profile; no existence, uniqueness or execution premise |
 | Restricted denotation composition | Both at-most-one-model hypotheses give the exact admissibility domain and transported successive output denotation | At most one model on every input does not imply existence; no unrestricted unique-model composition law |
 | Kernel-checked cyclic and hidden-model cases | Downstream filtering and distinct internal witnesses with equal outputs are realized by matched model fixtures | Complete-store/model proofs, not claims that the executor solves cyclic equations |
-| Metadata-bearing witness-span category | Span-isomorphism quotient, well-defined pullback composition, identity spans, both unit laws and associativity | Objects and homs in `Type 1`, environments and individual apexes in `Type 0`; no same-universe local-smallness or source-category claim |
+| Metadata-bearing witness-span category | Span-isomorphism quotient, well-defined pullback composition, identity spans, both unit laws and associativity | Objects and homs in `Type 1`, environments and individual apexes in `Type 0`; no same-universe local-smallness claim |
 | All-input categorical component comparison | Composite witnesses and wired component witnesses are bijective, with both exterior legs commuting | Explicit boundary/input/output equivalences; whole private stores survive, not only outputs or successful executions |
 | Actual nested component coherence | Both source bracketings rebase to one compatible complete-model triple and hence the same quotient arrow | Fresh UIDs and nested programs need not be equal; no trace or process associativity follows |
 | Injective-left partial-map connection | Quotient-invariant domains/values compose and agree with authoritative component admissibility and denotation | Component restriction is exactly `AtMostOneModels`; extraction is noncomputable and neither existence nor totality is asserted |
 | Witness observation checks and ten release mutation controls | Checked private values, strict absence, empty metadata, nonconstant transport and unequal nested UIDs discriminate the specified faults | Copied-map controls are separate from donor substitutions; generic proofs and a shared interpreter are not independent arithmetic oracles |
+| Certified source category and witness functor | Generated syntactic congruence, quotient category, genuine Mathlib functor, actual binary assembly and both nested-to-triple comparisons | Specified sealed matched-component/coordinate-wire presentation, not all Tensor Logic syntax, process laws or a faithfulness claim |
+| Source observation checks and ten controls | Five donor families retain nonconstant wires, empty presence/metadata, complete hidden stores, strict/total neighbours and distinct nested private identities; four generic parities | Seven test-copy/donor observation controls and three theorem-level donor substitutions, not independent model semantics or mutations of generic soundness proofs |
 
 The correspondence record reports successful full builds and branch review.
 The executable modules
@@ -953,14 +961,15 @@ For compatible composition, Section 6.8 derives the composite obligation
 from the supplied local matches instead of requiring a new whole-match proof.
 
 The important distinction is now **proved correspondence, static match
-construction and categorical complete-model semantics versus open source
-and process laws**. The proved results are general within their stated
+construction and categorical complete-model semantics versus open process
+laws and broader source interpretations**. The proved results are general within their stated
 premises, not limited to the tested examples. The witness bijection needs no
 uniqueness; the denotation law explicitly needs at-most-one complete models
 for both components. The target category laws and nested witness coherence
-are proved separately in Section 6.10. Automatic leaf-contract inference,
-source identities/functor laws and ranked phase/projection results remain
-unestablished.
+are proved separately in Section 6.10, together with source laws and an actual
+functor for the specified sealed matched-component/wire presentation.
+Automatic leaf-contract inference, broader source interpretations and ranked
+phase/projection results remain unestablished.
 
 Any priority pair satisfying the theorem's ordered matching condition is
 covered. Equivalence across different priorities, arbitrary program
@@ -1191,10 +1200,71 @@ Copied-map observations and donor substitutions have different evidential
 roles; neither replaces the generic proofs or independently verifies the
 shared expression interpreter.
 
-The completed result is a denotational target category and a
-composition-preserving interpretation, **not a source functor**.
-Source units/laws, event-sensitive process composition, rank stitching,
-phase/trace projection and backend refinement remain separate work.
+**Certified source presentation and functor.**
+The public source entry is
+[`IndexedSourceSemantics.lean`](../../leanncd/experiments/indexed_execution/IndexedSourceSemantics.lean).
+[`IndexedSourceWire.lean`](../../leanncd/experiments/indexed_execution/IndexedSourceWire.lean)
+defines a distinct `Object` wrapping the entire `WholeInterface`, avoiding a
+competing category instance on target objects. A `Wire X Y` carries an explicit
+bijection from Y's ports to X's ports and certified `Domain` coordinate/raw-axis
+transport in that direction. Its environment equivalence reindexes coordinates
+without changing rational values. Port pairing is explicit UID renaming, not
+name or extent inference; an arbitrary value-changing environment bijection
+is not administrative wire evidence. Identity, composition and inverse maps
+are proved, including empty-coordinate ports. The actual input, boundary and
+output wires induce precisely `compositeInputEquiv`, `boundaryEnvEquiv` and
+`compositeOutputEquiv`.
+
+[`IndexedSourceSyntax.lean`](../../leanncd/experiments/indexed_execution/IndexedSourceSyntax.lean)
+defines typed `Term` identities, certified wires, actual `MatchedComponent`
+leaves with supplied local matches, and sequential composition. The inductive
+`Rel` is the generated equivalence/congruence for both units, associativity,
+wire identity/composition/both inverses, actual binary assembly, both inherited
+boundary squares and actual nested bracket comparison. It is not equality of
+target denotations. The redundant bracket schema is sound independently;
+both nested-to-triple source comparisons are derived without that schema.
+
+[`IndexedSourceFunctor.lean`](../../leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean)
+proves every generator sound, descends composition to quotient `Hom`, installs
+`Category.{1} Object`, and defines the actual Mathlib `semantics` functor.
+Objects map to their underlying whole interfaces, leaves to the existing
+complete-witness `componentSpan`, wires to `graphHom` of the certified induced
+equivalence, and composition to target composition. No witness is filtered by
+existence, uniqueness, rank or execution success.
+`source_assembly` gives, in ordinary right-to-left notation,
+
+$$
+\operatorname{wire}(o)\circ L(\operatorname{compose}(A,B,b))
+\circ\operatorname{wire}(i)
+=L(B)\circ\operatorname{wire}(b)\circ L(A).
+$$
+
+Its interpretation invokes `composition_hom`, retaining both exterior legs.
+`left_eq_triple` and `right_eq_triple` compare both actual constructor
+bracketings to the same source composite using assembly, inherited boundary
+squares, wire composition and source associativity. The separate bracket-schema
+soundness invokes `bracket_hom` through explicit rebasing, not literal equality
+of fresh UIDs, nested declarations or programs.
+
+[`IndexedSourceTest.lean`](../../leanncd/experiments/indexed_execution/IndexedSourceTest.lean)
+instantiates the category/functor laws and five donor families: nonconstant
+wire/exterior transports, empty metadata/input presence, hidden complete-store
+multiplicity, actual nested/private identities, and strict undefinedness versus
+its total neighbour. Three exact copied coordinate maps and an inverse
+observation have four separate universal parities. Ten observed controls
+comprise seven test-copy/donor observations and three theorem-level donor
+substitutions, not independent verification of shared model semantics or generic
+proof mutations. Namespace audits use only standard axioms. The
+[source record](categorical_source_functor_record.md) distinguishes prototype,
+execution and release gates, findings and accounting.
+
+The result is a denotational source category and functor for this finite
+decidable, exact-rational, explicitly wired sealed matched-component
+presentation. Source objects/homs remain `Type 1`, environments `Type 0`;
+no finite rational-model-set, same-universe local-smallness or faithfulness
+claim follows. Administrative source units are not event-free core programs.
+Event-sensitive process composition, rank stitching, phase/trace projection,
+broader source interpretations and backend refinement remain separate work.
 
 ## 7. St/Br, indexed arrays, and open diagrams
 
@@ -1210,7 +1280,8 @@ notions of equivalence:
 | Partial maps and effect sequencing | Primitive domains, strict assembly, and domain-sensitive transformation laws | A solver for cyclic equations or automatic trace equivalence |
 | Closed-writer dataflow and coalgebras | Ready contribution steps, completion barriers, and next-step behaviour | General open-program composition or bialgebraic compatibility |
 | Open graphs, ACSet interfaces, and network semantics | Explicit boundary matching and structural composition of presentations | Choosing the correct boundary or certifying a complete writer family |
-| Complete-model relations and witness spans | Proved witness category and coherent component composition, including multiple or absent models | A source functor, an execution policy or unconditional composition of unique-model partial functions |
+| Complete-model relations and witness spans | Proved witness category and coherent component composition, including multiple or absent models | An execution policy or unconditional composition of unique-model partial functions |
+| Certified matched-component source presentation | A quotient source category and genuine functor to complete-witness spans, including actual constructor assembly and nested transports | General St/Br or monoidal interpretation, event-sensitive process units, faithfulness or backend refinement |
 | Temporal iteration and scans | Finite causal dependencies and independent batching outside the time axis | Independent execution along time or unrestricted feedback solving |
 | Turi-Plotkin and extensions | A route to constructor/behaviour compatibility and observation-sensitive compositionality | The required syntax, rule law, and hypotheses without further work |
 | PROP interpretations, parameters, and refinement | Model interpretation, parameter handling, and implementation correctness targets | Concrete kernel progress, memory safety, or numerical guarantees from value equality alone |
@@ -1713,16 +1784,17 @@ categorical construction elsewhere in the repository.
 | Semantic target category laws and units | Proved | [Span category](../../leanncd/experiments/indexed_execution/IndexedWitnessSpan.lean); span-isomorphism quotient, pullback associativity and identity-span unit laws; graph spans supply administrative interface transports |
 | Nested component denotational associativity | Proved after explicit interface reindexing | [Witness coherence](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean); both actual bracketings correspond to the same compatible model triple, not equal raw IDs or programs |
 | Injective-left partial-map interpretation | Proved; component restriction is exactly `AtMostOneModels` | [Restricted spans](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean); quotient invariance, closure under pullback and domain/value laws connect to authoritative admissibility and denotation; noncomputable extraction, not totality |
-| Source category, source functor and process units | Open | Target identities do not construct a core identity or a source category; copies add events and aliases violate `output_defined` |
+| Certified matched-component source category and functor | Proved for the specified generated presentation | [Source functor](../../leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean); certified coordinate wires, source quotient laws, actual assembly/nesting and complete-witness interpretation with explicit transports |
+| Core/process units | Open | Administrative source identities are not core computations; copies add events and aliases violate `output_defined` |
 | Rank stitching and sequential phase/projection | Open | Individual ranked progress does not compose certificates or prove the whole upstream-before-downstream phase law |
 | Event-sensitive process category | Open | For the proposed sealed-sequential interpretation, needs operational composition and a justified event/state observation equivalence, not merely span isomorphism |
 | Categorical frontend/backend interpretation and refinement | Not established for this witness category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
 
 The current position is therefore **a proved denotational witness-span
-category and composition-preserving interpretation**, not an event-sensitive
-source/process category. See the [witness semantics record](categorical_witness_semantics_record.md)
-for the completed full-build, audit, ten-control and review gates and their
-limits. Rank/phase and trace-projection form the
+category and a certified source-category functor**, not an event-sensitive
+process category. See the [witness semantics record](categorical_witness_semantics_record.md)
+and [source record](categorical_source_functor_record.md) for their separate
+build, audit, control and review gates and limits. Rank/phase and trace-projection form the
 independent operational task. General St/Br
 packaging, numerical interpretation and implementation refinement must be
 connected to the chosen semantics by their own arguments.
@@ -1736,14 +1808,12 @@ not be averaged into a single completion claim.
 There is no remaining target-span identity or associativity gap in this
 profile. The next obligations depend on the intended claim:
 
-- **A source category and functor:** supply administrative wire syntax,
-  source identity/associativity laws with explicit transport, and an
-  interpretation preserving them. The current `composition_hom` and
-  `bracket_hom` provide denotational comparison ingredients, not a source
-  category. Broader interfaces or automatic leaf matches would require
-  additional constructions beyond this sealed profile.
-  The [source-category and functor session brief](categorical_source_functor_handoff.md)
-  scopes this next denotational slice; it is not a verified implementation plan.
+- **Broader source interpretations:** the sealed matched-component source
+  category and its witness functor are implemented in Section 6.10. Extending
+  to broader interfaces, automatic leaf matches, St/Br, PROP or monoidal
+  structure requires additional constructions and soundness arguments.
+  The [source record](categorical_source_functor_record.md) gives the proved
+  presentation and its limits; the handoff remains its historical goal brief.
 - **Sequential process meaning:** stitch rank certificates, prove the
   upstream/downstream phase and state projections, then establish trace
   composition and process units under a specified observation equivalence.
@@ -1780,21 +1850,23 @@ successive denotation domain and values.
 The witness proof now packages those meanings into an ordinary span category,
 proves composition preservation with both exterior legs, compares actual
 nested component bracketings through compatible model triples, and derives
-the quotient-invariant injective-left partial-map view.
+the quotient-invariant injective-left partial-map view. The certified source
+presentation adds quotient source laws and an actual functor, connecting
+actual binary assembly and both nested bracketings after explicit transports.
 Their fixtures, audits, controls and reviews add evidence without
 replacing the generic proofs or changing the language's strict partiality.
 
-This is a sound operational bridge and a proved denotational witness-span
-interpretation for the specified rational profile, not an event-sensitive
-source/process category. Rank stitching/phase-projection followed by process
+This is a sound operational bridge and a proved denotational source-to-witness
+functor for the specified rational profile, not an event-sensitive
+process category. Rank stitching/phase-projection followed by process
 laws remains open with its own observation equivalence; Section 10 records
 the different goals and current status.
 Reproving execution correspondence or reconstructing an entire match for
 each compatible composite is no longer necessary.
 
-The choice of a general categorical presentation remains open.
+The choice of a broader categorical presentation remains open.
 Automatic construction of leaf source-contract matches, broader interfaces,
-source/process categorical laws and physical implementation refinement remain separate
+broader source laws, process categorical laws and physical implementation refinement remain separate
 obligations. The proved model-level composition law does not substitute for
 an execution-phase or implementation-refinement theorem.
 
@@ -2153,6 +2225,20 @@ and [restricted partial-map](../../leanncd/experiments/indexed_execution/Indexed
 modules. They prove denotational category laws and constructor compatibility.
 The identity graph/span is a semantic wire, not a core identity computation;
 span isomorphism gives no schedule, event or phase equality.
+
+6. **Present the source and descend a genuine functor.**
+   [`IndexedSourceSyntax`](../../leanncd/experiments/indexed_execution/IndexedSourceSyntax.lean)
+   generates typed identities, certified coordinate wires, matched leaves and
+   sequential terms over distinct whole-interface source objects. Its inductive
+   congruence states units, associativity, wire laws, actual assembly and
+   inherited boundary/nesting schemas rather than denotation equality.
+   [`IndexedSourceFunctor`](../../leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean)
+   proves each schema sound using the target results above, descends the quotient
+   category and supplies `semantics`, an actual Mathlib functor from `Object`
+   to `WholeInterface`. The leaf arrow retains the same all-input complete store;
+   certified wire maps and both actual nested-to-triple derivations retain
+   explicit interface transports. This denotational source completion does not
+   supply rank, phase, trace, event-sensitive units or backend refinement.
 
 ## Notation reference
 

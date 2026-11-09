@@ -1,0 +1,11 @@
+Compiling snippet as leanncd/spikes/SnippetCheck_46108_5120.lean ...
+
+axiom audit: 130 constants under IndexedSource use only standard axioms
+axiom audit: 14 constants under IndexedSourceTest use only standard axioms
+'IndexedComponentTransport.Domain.inverse' depends on axioms: [propext, Quot.sound]
+'IndexedSource.sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedSource.semantics' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedSource.left_eq_triple' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedSource.right_eq_triple' depends on axioms: [propext, Classical.choice, Quot.sound]
+
+COMPILES. Safe to write into the plan.

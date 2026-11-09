@@ -192,13 +192,13 @@ and primary dirty-state preservation.
 | Reconstruction gate | PASS | Frozen eight-file/three-patch audit and replay passed; apply_patch deleted only the eight new prototype modules and reversed the exact lakefile addition. Status and empty lakefile diff confirmed the baseline; artifacts remained intact. |
 | Task 1 | PASS | Commit 86aed9d1; exact task1 patch applied after --check; wire snippet compiled and hash matched. Controller geometry review clean. |
 | Task 2 | PASS | Commit 3c4bb32a; exact task2 patch applied after --check; all three source hashes matched. Targeted build exited 0 (2,985 jobs); universe/API snippet compiled. Controller presentation/soundness review clean. |
-| Task 3 | PASS, committing | Exact task3 patch applied after --check; test/parity build exited 0 (8,646 jobs); namespace audits use only standard axioms. All ten actual unfiltered expected controls passed with byte-identical restores and green restored builds; mutations_execution.md/log preserve the run. Post-cycle package audit passed; controller observation review clean. |
-| Direct documentation sweep | Pending | Current-value/prose/path checks, split source/process ledger, entry point, commit |
-| Controller release | Pending | Fresh unfiltered manifest execution, byte restores, source/copy/namespace audits, eight snippets, universe, full three-target build, exit/job observations |
+| Task 3 | PASS | Commit cc612d4a; exact task3 patch applied after --check; test/parity build exited 0 (8,646 jobs); namespace audits use only standard axioms. All ten actual unfiltered expected controls passed with byte-identical restores and green restored builds; mutations_execution.md/log preserve the run. Post-cycle package audit passed; controller observation review clean. |
+| Direct documentation sweep | PASS, committing | Current synthesis/entry claims distinguish the proved specified source functor from open process/broader-source/backend work; current-claim and repository value sweeps found no remaining obsolete current source-functor denial. Both edited docs' relative-link paths and diff whitespace passed. Historical witness records/handoffs and primary README unchanged. |
+| Controller release | PASS | Fresh unfiltered release controls 10/10, expected diagnostics, exact restores and restored builds; mutations_release.md/log. Eight module snippets, universe/API, exact-copy/source/namespace audits and ordered replay passed. Full LeanNCD Tests IndexedExecutionExperiment build exited 0 (8,919 jobs); full_build_release.log. No proof-shortcut tokens; namespace audits only standard axioms. |
 | Final soundness lens | Pending | Whole-branch findings and disposition |
 | Final integration/observation lens | Pending | Whole-branch findings and disposition |
 | Local integration/task-only cleanup | Pending | Primary dirty preservation, ancestry/deliverables, merge and cleanup results; no push |
-| Budget close-out | Pending | Controller/all-dispatch measured totals or unavailable-data disclosure, breaches |
+| Budget close-out | Measurement unavailable | Controller token-report again returned no transcript for the actual Copilot session. Authoring/execution cumulative input and peak cannot be measured by this repository's Claude-transcript tool; no numerical compliance claimed. Prototype 55-turn aim overrun remains disclosed; fresh author stayed within its 40-turn aim. Final-review accounting remains to record. |
 
 ### Per-task review findings
 
@@ -249,6 +249,19 @@ Pending.
 
 ### Final proved boundary and remaining obligations
 
-Pending execution. Do not convert compiled-prototype/authoring evidence into
-a release receipt. Close-out must retain the denotational scope and the open
-rank/process/backend boundaries, plus every skipped/blocked item.
+Controller execution and its separate release gates now pass, independently
+of historical prototype evidence. Object retains the whole interface; typed
+identity, wire, matched leaf and composition syntax is quotiented by the
+generated equivalence/congruence described above. The genuine semantics
+functor preserves identities/composition, maps certified wires to graph
+arrows and matched leaves to all-input complete-model spans. Actual binary
+assembly and both nested constructor bracketings compare after the exact
+inherited interface transports, not raw UID/program equality.
+
+Assumptions remain finite decidable Declarations Unit, exact rationals,
+supplied local matches and explicit certified boundaries; leaves require
+neither model existence nor uniqueness, rank or successful execution.
+No output-only collapse, event-free core identity, process/phase/trace law,
+broader source structure, faithfulness or backend refinement is claimed.
+The ten controls have the observational/theorem-donor limits stated above.
+Final whole-branch reviews and local integration/cleanup remain pending.

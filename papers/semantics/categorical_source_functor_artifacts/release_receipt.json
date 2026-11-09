@@ -1,0 +1,23 @@
+{
+  "scope": "controller execution and release before final reviews/integration",
+  "base": "19c9d6446552c4f4c507c89be94c3561a94ec5ea",
+  "task_commits": ["86aed9d1", "3c4bb32a", "cc612d4a"],
+  "execution_mutations": "10/10; expected diagnostics, byte-identical restores, restored builds green",
+  "release_mutations": "10/10; expected diagnostics, byte-identical restores, restored builds green",
+  "module_snippets": 8,
+  "universe_api_snippet": "pass",
+  "package_copy_audit": "pass",
+  "ordered_exact_byte_replay": "pass",
+  "source_shortcut_audit": "no matches",
+  "namespace_axiom_audits": "only propext, Classical.choice, Quot.sound",
+  "full_build_targets": ["LeanNCD", "Tests", "IndexedExecutionExperiment"],
+  "full_build_exit": 0,
+  "full_build_jobs": 8919,
+  "documentation_relative_paths": "pass",
+  "whitespace": "pass",
+  "final_reviews": "pending",
+  "integrated": false,
+  "pushed": false,
+  "token_accounting": "no transcript for actual Copilot session; unavailable",
+  "prototype_turn_aim_55_exceeded": true
+}

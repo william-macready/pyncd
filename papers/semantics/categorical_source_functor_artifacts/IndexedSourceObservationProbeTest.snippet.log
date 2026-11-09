@@ -1,0 +1,6 @@
+Compiling snippet as leanncd/spikes/SnippetCheck_46256_29320.lean ...
+
+axiom audit: 4 constants under IndexedSourceObservationProbe use only standard axioms
+axiom audit: 27 constants under IndexedSourceObservationProbeTest use only standard axioms
+
+COMPILES. Safe to write into the plan.
