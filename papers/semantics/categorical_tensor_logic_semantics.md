@@ -3,7 +3,8 @@
 [Semantics contents](README.md) |
 [Specification](tensor_logic_semantics.md) |
 [Prototype and results](categorical_tensor_logic_lean_prototype.md) |
-[Witness-category proof and release evidence](categorical_witness_semantics_record.md)
+[Witness-category proof and release evidence](categorical_witness_semantics_record.md) |
+[Source-functor completion and release evidence](categorical_source_functor_record.md)
 
 ## Summary
 
@@ -1256,9 +1257,24 @@ its total neighbour. Three exact copied coordinate maps and an inverse
 observation have four separate universal parities. Ten observed controls
 comprise seven test-copy/donor observations and three theorem-level donor
 substitutions, not independent verification of shared model semantics or generic
-proof mutations. Namespace audits use only standard axioms. The
-[source record](categorical_source_functor_record.md) distinguishes prototype,
-execution and release gates, findings and accounting.
+proof mutations. Namespace audits use only standard axioms.
+
+**Release and integration complete.** The controller's unfiltered ten-control
+release run observed every expected diagnostic, byte-identical restoration
+and green restored builds. Eight real-module snippets, the universe/functor
+API check, source and namespace axiom audits, exact-copy checks and ordered
+compiled-patch replay passed. Both final whole-branch review lenses found no
+implementation or soundness defect; their shared stale-summary finding was
+repaired, and all release gates were rerun. The full
+`LeanNCD Tests IndexedExecutionExperiment` build passed 8,919 jobs both before
+integration and on merged local main. The completed topic branch/worktree
+was removed, unrelated edits were preserved and nothing was pushed.
+The [source record](categorical_source_functor_record.md),
+[release receipt](categorical_source_functor_artifacts/release_receipt.json)
+and [integration receipt](categorical_source_functor_artifacts/integration_receipt.json)
+separate historical prototype, controller release and actual integration
+evidence. The prototype exceeded its turn aim; token totals and context peaks
+were unavailable for the Copilot transcripts, not declared within budget.
 
 The result is a denotational source category and functor for this finite
 decidable, exact-rational, explicitly wired sealed matched-component
@@ -1633,9 +1649,12 @@ completion.
 
 Denotational associativity is now proved through compatible complete-model
 triples and explicit interface reindexing. The semantic target has identity
-spans; this does not supply source identities or process laws. Inserting a
-core copy adds events, while input-as-output aliases violate the core's
-defined-output rule.
+spans; the specified source presentation separately supplies administrative
+identities, generated quotient laws and a genuine functor to that target.
+Actual binary assembly and both nested constructor bracketings compare after
+explicit interface transports (Section 6.10). These source laws are
+denotational, not process laws. Inserting a core copy adds events, while
+input-as-output aliases violate the core's defined-output rule.
 
 ### 9.3. Why unrestricted partial-function composition is unsafe
 
@@ -1670,9 +1689,10 @@ and output environments. Composing such spans pairs models that
 agree at the shared boundary and retains the witnesses.
 
 The witness-level composition is now packaged as a span-based categorical
-interpretation for the specified scoped profile. Its target category laws
-and nested denotational coherence are proved; relating it to process
-observations remains separate work.
+interpretation for the specified scoped profile, with a genuine functor from
+the certified matched-component/coordinate-wire source category. Target and
+source category laws and actual nested denotational coherence are proved;
+relating them to process observations remains separate work.
 Unlike an output-only relation, it does not identify different internal
 models prematurely.
 
@@ -1692,8 +1712,10 @@ or drawing a string diagram does not discharge those obligations.
 The roadmap below is a logical dependency guide, not a claim that every
 stage requires the previous stage's full implementation. The witness proof
 completes the denotational target-category branch, including actual nested
-component coherence and the restricted partial-map view. Source-category
-packaging and ranked operational phase proofs remain different branches.
+component coherence and the restricted partial-map view. The source completion
+adds a certified matched-component/coordinate-wire presentation and a genuine
+functor to that target. Ranked operational phase proofs, broader source
+interpretations and backend refinement remain separate branches.
 
 ### 10.1. What each step buys us
 
@@ -1705,8 +1727,9 @@ packaging and ranked operational phase proofs remain different branches.
 | 4. Compose representations safely | Locally scoped components, typed boundaries, checked private identities, canonical closure and composite-match construction | Provides modular assembly without rebuilding a whole match, padding declaration universes or reopening an upstream writer family | Proved for the explicit sealed whole-tensor constructor |
 | 5. Compose complete meanings | Model restriction/gluing and the restricted denotation law | Identifies composite models with compatible component witnesses, preserves internal multiplicity, and permits partial-function composition only with the stated uniqueness hypotheses | Proved; core gluing needs no uniqueness, restricted denotation needs both component hypotheses |
 | 6. Package a semantic category | Witness spans over interface environments, span-isomorphism quotient, and composition interpreted as a pullback | Turns model gluing into a composition-preserving categorical interpretation with both exterior legs checked | Proved across all validated inputs with explicit boundary/exterior transports |
-| 7. Prove category laws and units | Target identity spans and associativity; actual nested component comparison through compatible model triples | Makes repeated denotational composition coherent without treating extra computation events as no work | Target laws, graph-transport laws and nested coherence proved; source administrative syntax/units not supplied |
-| 8. Connect process and implementation views | Ranked phase/projection and trace proofs, plus observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest | Open; the denotational proofs do not discharge these obligations |
+| 7. Prove category laws and units | Target identity spans and associativity; actual nested component comparison through compatible model triples | Makes repeated denotational composition coherent without treating extra computation events as no work | Target laws, graph-transport laws and nested coherence proved; source administrative laws are supplied separately in Step 8, not inferred from target laws |
+| 8. Present sources and connect their meaning | Distinct whole-interface source objects, certified coordinate wires, matched leaves and a generated congruence; genuine witness functor | Connects source units/composition and actual component assembly to complete-witness meaning with explicit transports | Proved for the specified sealed presentation, including both actual nested-to-triple comparisons; no automatic matching, faithfulness or general St/Br/monoidal claim |
+| 9. Connect process and implementation views | Ranked phase/projection and trace proofs, plus observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest | Open; the denotational proofs do not discharge these obligations |
 
 The completed realization of Steps 6-7 is the **witness-span interpretation**.
 For a whole-tensor interface $X$, write $\mathsf{Env}(X)$ for its space of
@@ -1749,6 +1772,17 @@ triple. The resulting `bracket_hom` is an equality of quotient arrows.
 It retains model multiplicity and both original boundary equations without
 equating fresh UIDs or claiming source-program equality.
 
+Step 8 connects these target results to the **certified source presentation**.
+`IndexedSourceSemantics` supplies a distinct whole-interface object wrapper,
+typed matched leaves and port/coordinate wires. Source arrows are terms
+quotiented by an inductively generated equivalence/congruence, not by equality
+of their target denotations. Every generating equation is proved sound before
+the Mathlib functor `semantics` descends to that quotient. Actual binary
+assembly compares the constructed composite leaf with wired component leaves;
+both actual nested source terms derive equality to a common source triple.
+The functor retains the same all-input complete-model spans and explicit
+interface transports described above, rather than collapsing hidden witnesses.
+
 In the at-most-one-model fragment, the left map is injective **if and only
 if** `AtMostOneModels` holds. The proved restricted view makes witness
 existence the partial domain and the unique witness's output the value;
@@ -1757,12 +1791,14 @@ domain/value theorems agree with authoritative admissibility and denotation
 under both component hypotheses. This is noncomputable semantic extraction,
 not model search or an unconditional unique-model law for cyclic programs.
 
-The semantic identity is an identity span. If the source presentation itself
-needs units, an administrative wire can represent the interface isomorphism
-outside the core `Program` computation. A core copy may have identity
-denotation but still adds writer/publication events; making its input a core
-output violates `output_defined`. Denotational category laws therefore must
-not be advertised as event-exact process laws.
+The semantic identity is an identity span. The specified source presentation
+now has typed identity terms and certified administrative identity wires,
+identified by its generated congruence and mapped to target identities by the
+functor. These units live outside the core `Program` computation. A core copy
+may have identity denotation but still adds writer/publication events; making
+its input a core output violates `output_defined`. Denotational source and
+target category laws therefore must not be advertised as event-exact process
+laws.
 
 ### 10.2. Progress ledger
 
@@ -2105,8 +2141,9 @@ discriminating cases. The interpreter remains shared.
 
 This constructs a static matched component, not a runtime phase theorem,
 or by itself a categorical identity/associativity law. Complete-model gluing
-and categorical witness semantics are the separate proved results below;
-source and operational obligations remain as stated in Sections 9.2 and 10.3.
+and categorical witness/source-functor semantics are the separate proved
+results below; broader source interpretations and operational obligations
+remain as stated in Sections 9.2 and 10.3.
 
 ### A.8. Restrict and glue complete-model witnesses
 
