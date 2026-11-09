@@ -19,12 +19,13 @@ through `jax.lax.scan`. Evidence, all observed on the branch tip:
 | --- | --- |
 | Build: `Tests` + `JaxExperiment` | green, 8844 jobs |
 | Nonlinearity differential (`run-evalplan-nonlin.sh`) | 32 binary64 and 24 binary32 fixtures pass (was 22 + 22); rtol/atol `1e-12`/`1e-14` (f64), `1e-5`/`1e-6` (f32) |
-| Unrolled oracle | JAX scan H layers 1,2 equal JAX unrolled H1,H2 bit for bit on CPU, f64 and f32, eager and jit; `ORACLE_TOL` is exactly 0 |
+| Unrolled oracle | JAX scan H layers 1,2 equal JAX unrolled H1,H2 bit for bit on CPU, f64 and f32, eager and jit; `ORACLE_TOL` is exactly 0 (written for the post-norm model; for the standard model the binary32 eager layer 2 comparison allows `ORACLE_EAGER_TOL32`, see section 11) |
 | Python mutation manifest `jax_scan_mutations_python.json` | 6/6 killed (JS-P-01..06) |
 | Lean mutation manifest `jax_scan_mutations_post.json` | 11 entries, all killed (g1..g5 gate, e1..e5 emitter, c1) |
 | Re-pinned `jax_nonlin_mutations_post.json` | 8/8; five line pins moved +148 and entry JN-T1-06 was rewritten for the new `.scan` arm |
 
-New fixtures: `transformer_scan` / `transformer_scan32` (two-layer real-RMSNorm transformer as a scan over the
+New fixtures (the transformer programs below were the post-norm variant; on 2026-11-08 they were replaced by a
+standard pre-norm variant, described in section 11): `transformer_scan` / `transformer_scan32` (two-layer real-RMSNorm transformer as a scan over the
 layer axis, untied per-layer weights, weight layer-extent 3 = the history extent, the unused layer-2 slice
 NaN and never read), `transformer_unrolled` / `transformer_unrolled32` (the oracle), and eight binary64 donor
 scans imported from `Eval.Plan.ScanCompileTest` (`scanSurvey64`, flag `linear_ok`).
@@ -220,7 +221,10 @@ hand-built `statePlainReadSched`) already handle a plain statement after a scan.
 pipeline through `prepareEvalPlan`; the assign reads the state's materialized slot) and `DifferentialTest`
 (checked plan equals `evalScheduled` for the post read).
 
-**Pins** (all in `evalplan_nonlin_smoke.py`, value-independent, recomputed in numpy from the fixture's inputs and
+(The pins, observed values and hand mutations that mention `Zf`, a residual with `X`, or the final norm
+without a gain describe the REPLACED post-norm head model. The standard pre-norm head is in section 11.)
+
+**Pins** (post-norm model; all in `evalplan_nonlin_smoke.py`, value-independent, recomputed in numpy from the fixture's inputs and
 the same view's `H` slice 2, for Lean, eager and jit): every row of `P` positive and summing to 1; `Logits`
 equals `Hf @ W_U.T`; `Hf` has unit (Inv-weighted) mean square while the pre-norm `Zf = H[:, :, 2] + X` does not
 (the residual with `X` is deliberate: `H`'s last slice is already normalised, so a bare copy would make the
@@ -233,7 +237,7 @@ float32: P row-sum deviation 4.5e-8 (Lean) and 6.7e-8 (eager, jit), Logits versu
 1e-12 (f64) and 1e-6 (f32) for both the row sum and the Logits pin. All 33 / 25 fixtures pass within the
 existing rtol/atol, eager and jit. Build `Tests` + `JaxExperiment`: green, 8845 jobs.
 
-**Hand mutations** (f64 leg; commit body of the fixture slice): softmax over `q` instead of `v` fails the row-sum
+**Hand mutations of the replaced post-norm model** (f64 leg; commit body of the fixture slice): softmax over `q` instead of `v` fails the row-sum
 pin (deviation 0.82); head reads layer slice 1 fails the Logits pin (0.49); the final norm without `Inv` fails
 the unit-mean-square pin (0.25 per row); `Logits := W_U · Zf` fails the Logits pin (1.14); `W_U` declared
 transposed fails only the `W_U.shape == (5, 4)` assertion (the Logits pin recomputes from the exported `W_U`,
@@ -301,7 +305,8 @@ so it cannot see an orientation error by itself).
     statement may mention the iteration axis through an external tensor (`Y[q] := H[q,2] · c[l]`, or a left-hand
     side carrying `l`: `y[j,l] := C·h[k,2]`, previously `scanProjectionUnsupported`); these now get ordinary
     plain-statement meaning. The comment at the rule does not say so. About 0.5 dispatch to state it or tighten it.
-  - CLOSED (2026-11-06): verifier pins in the head block. `P` is now compared with the float64 row-wise stable
+  - CLOSED (2026-11-06; post-norm model, pins and mutants since reworked for the standard model, section 11):
+    verifier pins in the head block. `P` is now compared with the float64 row-wise stable
     softmax of the numpy `Logits` (pin (a'), tolerance 1e-12 float64 / 1e-6 float32 against observed 5.6e-17 and
     2.6e-8); the vocabulary extent is derived from `W_U` and checked against every other input and output extent
     instead of a literal set; the head fixture's shared inputs and its `H` are bit-identical to
@@ -422,3 +427,54 @@ the compile guards of the value fixtures. Build `Tests` + `JaxExperiment` green 
   float64 leg; the Python mutation manifests were not re-run (no runtime or emitter code changed).
 - Harness counts: rewrite 52 calls (cap 45), flips and Lean value fixtures 60 (cap 45), JAX fixture 53 (cap 40
   plus 8 after a resume); the agents' own tallies were 42, 37 and 47.
+
+## 11. The standard pre-norm transformer fixtures (2026-11-08)
+
+The post-norm `transformer_scan` / `transformer_scan32` / `transformer_head` / `transformer_head32` programs
+(sections 1 and 9) were replaced on branch `worktree-transformer-standard` by a STANDARD pre-norm variant. The
+differential is now 34 binary64 and 26 binary32 fixtures. The `transformer_unrolled` / `transformer_unrolled32`
+oracle was rewritten to the same model. Nothing in production or the JAX runtime changed.
+
+**Scan statements** (`scanProg` in `EvalPlanNonlinSmoke.lean`; `iter l = 3`, `axis s = 3`, state `H(q, m, l)`,
+history extent 3 = two steps):
+
+- `H[q, m, 0] := X[q, m]` (base), then per step: `Ss1[q] := H[q, m, l] · H[q, m, l] · Inv[m]`,
+  `Ve1 := Ss1 + Eps`, `Sd1 := sqrt(Ve1)`, `N1[q, m] := H[q, m, l] / Sd1[q] · G1[l, m]`;
+- `Q[q, h, k] := W_Q[l, h, k, m] · N1[q, m]`, `K[s, h, k]` and `V[s, h, k]` read `N1[s, m]`;
+- `S[h, q, s.] := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])`, `AttnOut := S · V`,
+  `Attn[q, m] := W_O[l, m, h, k] · AttnOut[q, h, k]`, `R1[q, m] := H[q, m, l] + Attn[q, m]`;
+- `Ss2`, `Ve2`, `Sd2` as for the first norm over `R1`, `N2[q, m] := R1[q, m] / Sd2[q] · G2[l, m]`,
+  `F[q, d] := gelu(W_in[l, d, m] · N2[q, m])`, `Y[q, m] := W_out[l, m, d] · F[q, d]`,
+  `H[q, m, l +1] := R1[q, m] + Y[q, m]`.
+
+New inputs: `Sc[]` (rank 0, 1/sqrt 2 for head dimension 2), `G1[l, m]` and `G2[l, m]` (per-layer gains, layer
+extent 3 like every weight stack; layer 0 and layer 1 distinct positive vectors, the layer-2 slice NaN and never
+read). The extents are q = 3, m = 4, h = 2, k = 2, d = 4, s = 3, l = 3.
+
+**Head statements** (`headProg`, after the scan, a post-scan consumer by the section 10 rule):
+`Ssf[q] := H[q, m, 2] · H[q, m, 2] · Inv[m]`, `Vef := Ssf + Eps`, `Sdf := sqrt(Vef)`,
+`Hf[q, m] := H[q, m, 2] / Sdf[q] · Gf[m]` (nothing is added back), `Logits[q, v] := W_U[v, m] · Hf[q, m]`,
+`P := softmax over v of Logits`; vocabulary extent 5, new input `Gf[m]` = [1.15, 0.85, 1.30, 0.92].
+
+**Observed differences against the independent numpy pins** (this machine, CPU; eager and jit and Lean agree
+within the stated tolerances): scan `H` 6.7e-16 (binary64) and 9.4e-7 (binary32, tolerance 1e-6, so the
+binary32 headroom on `H` is under 10%); head `Logits` 6.7e-16 and 8.5e-7; `P` 1.1e-16 and 1.8e-7; `Hf` with
+`Gf` removed has mean square in [0.999991, 1.0].
+
+**Causality pin.** Adding 0.5 to `X[2, :]` leaves rows 0 and 1 of `H`, `Logits` and `P` bitwise identical and
+changes row 2 by 2.68, 1.10 and 0.117 respectively.
+
+**Deviation (binary32 eager oracle).** The binary32 EAGER scan-versus-unrolled comparison now allows rtol 2.4e-7
+with atol 0, for LAYER 2 only (`ORACLE_EAGER_TOL32`; between 2 and 4 binary32 ulps depending on the position in the
+binade, against an observed 1 ulp; observed maximum absolute difference 2.4e-7 at |H| of 2 to 5): two of the 12
+entries of `H` differ by 1 ulp at layer 2. Layer 1 stays exact in the binary32 eager comparison, and the binary64
+eager and jit comparisons and the binary32 jit comparison remain bit-identical. The cause is unconfirmed; a likely one is that
+the eager scan body is one compiled `lax.scan` while the unrolled oracle runs op by op. PARKED: confirm the
+cause or tighten the tolerance back to 0.
+
+**Test copies.** `ScanAffineEmitTest.lean` deliberately keeps its OWN copy of the OLD post-norm program
+(`scanProg64`; its Lean mutation manifests pin file and line), so its comment "as `scanProg` in
+`EvalPlanNonlinSmoke.lean`" is no longer literally true: it describes the replaced post-norm program.
+
+**Mutation evidence.** The hand mutants of the standard programs and the re-run of the Python manifest are in
+the body of the commit `test(jax): mutation evidence for the standard transformer fixtures (no file changes)`.
