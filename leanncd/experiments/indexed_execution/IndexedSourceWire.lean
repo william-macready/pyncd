@@ -1,0 +1,135 @@
+import IndexedWitnessCoherence
+
+namespace IndexedComponentTransport
+
+def Domain.inverse (d : Domain x y) : Domain y x where
+  axes := d.axes.symm
+  extent := fun i => by simpa using (d.extent (d.axes.symm i)).symm
+  coord := d.coord.symm
+  raw := d.raw.symm
+  raw_axis := by
+    intro q i
+    have h := d.raw_axis (d.raw.symm q) (d.axes.symm i)
+    simpa using h.symm
+  coherent := by
+    intro p
+    apply d.raw.injective
+    simp only [Equiv.apply_symm_apply, d.coherent]
+
+end IndexedComponentTransport
+
+namespace IndexedSource
+
+open LeanNCD.Semantics IndexedComponentComposition IndexedComponentTransport IndexedWitness
+
+structure Object where
+  interface : WholeInterface
+
+/-- Ports and coordinate domains run contravariantly to environment transport.
+    Pairing ports is the explicit UID renaming; UID names or extents never infer it. -/
+structure Wire (X Y : Object) where
+  ports : Y.interface.Tensor ≃ X.interface.Tensor
+  domain : ∀ t, Domain (Y.interface.signature t).axes
+    (X.interface.signature (ports t)).axes
+
+def Wire.identity (X : Object) : Wire X X where
+  ports := Equiv.refl _
+  domain := fun t => Domain.id (X.interface.signature t).axes
+
+def Wire.comp {X Y Z : Object} (a : Wire X Y) (b : Wire Y Z) : Wire X Z where
+  ports := b.ports.trans a.ports
+  domain := fun t => (b.domain t).comp (a.domain (b.ports t))
+
+def Wire.inverseAt {X Y : Object} (a : Wire X Y)
+    (s : Y.interface.Tensor) (t : X.interface.Tensor) (h : a.ports s = t) :
+    Domain (X.interface.signature t).axes (Y.interface.signature s).axes :=
+  h ▸ (a.domain s).inverse
+
+theorem Wire.inverseAt_cancel {X Y : Object} (a : Wire X Y)
+    (x : X.interface.Env) (s : Y.interface.Tensor) (t : X.interface.Tensor)
+    (h : a.ports s = t) (p : Coord (X.interface.signature t).axes) :
+    x t p = x (a.ports s) ((a.domain s).coord ((a.inverseAt s t h).coord p)) := by
+  subst t
+  exact (congrArg (x (a.ports s)) ((a.domain s).coord.apply_symm_apply p)).symm
+
+def Wire.inverse {X Y : Object} (a : Wire X Y) : Wire Y X where
+  ports := a.ports.symm
+  domain := fun t => a.inverseAt (a.ports.symm t) t (a.ports.apply_symm_apply t)
+
+def Wire.env {X Y : Object} (a : Wire X Y) :
+    X.interface.Env ≃ Y.interface.Env :=
+  (Equiv.piCongrLeft' (fun t : X.interface.Tensor =>
+    Coord (X.interface.signature t).axes → ℚ) a.ports.symm).trans
+    (Equiv.piCongrRight (fun t =>
+      Equiv.arrowCongr (a.domain t).coord.symm (Equiv.refl ℚ)))
+
+theorem Wire.env_apply {X Y : Object} (a : Wire X Y) (x : X.interface.Env)
+    (t : Y.interface.Tensor) (p : Coord (Y.interface.signature t).axes) :
+    a.env x t p = x (a.ports t) ((a.domain t).coord p) := rfl
+
+theorem Wire.env_identity (X : Object) :
+    (Wire.identity X).env = Equiv.refl X.interface.Env := by
+  ext x t p
+  rfl
+
+theorem Wire.env_comp {X Y Z : Object} (a : Wire X Y) (b : Wire Y Z) :
+    (a.comp b).env = a.env.trans b.env := by
+  ext x t p
+  rfl
+
+theorem Wire.env_inverse {X Y : Object} (a : Wire X Y) :
+    a.inverse.env = a.env.symm := by
+  apply Equiv.symm_bijective.injective
+  apply Equiv.ext
+  intro x
+  apply a.inverse.env.injective
+  rw [Equiv.apply_symm_apply]
+  funext t p
+  simp only [Equiv.symm_symm, Wire.env_apply, Wire.inverse]
+  exact a.inverseAt_cancel x _ _ _ p
+
+variable {σA σB : Declarations Unit}
+variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+variable (A : MatchedComponent σA) (B : MatchedComponent σB) (b : Boundary A B)
+
+noncomputable def input (A : MatchedComponent σA) : Object := ⟨inputInterface A⟩
+noncomputable def output (A : MatchedComponent σA) : Object := ⟨outputInterface A⟩
+
+def boundaryWire : Wire (output A) (input B) where
+  ports := b.matched
+  domain := b.domain
+
+noncomputable def inputWire : Wire (input A) (input (compose A B b)) where
+  ports := rightInputIndexEquiv A B b
+  domain := by
+    rintro ⟨t, h⟩
+    cases t with
+    | inl t => exact Domain.id _
+    | inr t => cases h
+
+noncomputable def outputWire : Wire (output (compose A B b)) (output B) where
+  ports := (outputIndexEquiv A B b).symm
+  domain := fun _ => Domain.id _
+
+theorem boundaryWire_env :
+    (boundaryWire A B b).env = boundaryEnvEquiv A B b := rfl
+
+theorem inputWire_env :
+    (inputWire A B b).env = compositeInputEquiv A B b := by
+  ext x t p
+  rcases t with ⟨t, h⟩
+  cases t with
+  | inl t =>
+    change x ⟨t, h⟩ p =
+      inputEnv (compose A B b) (liftInput A B b (envInput A x)) ⟨.inl t, h⟩ p
+    change x ⟨t, h⟩ p = inputEnv A (envInput A x) ⟨t, h⟩ p
+    rw [inputEnv_envInput]
+  | inr t => cases h
+
+theorem outputWire_env :
+    (outputWire A B b).env = compositeOutputEquiv A B b := by
+  ext x t p
+  rfl
+
+end IndexedSource
