@@ -453,6 +453,12 @@ one that does not). Same mask, extents and every other input as `transformer_sca
 STANDARD multi-head plan run on the same weights replicated over `h` (bitwise equal on the eager runtime). Observed numbers, the binary32 headroom, why the
 head-free weights are head 1's slices, and the mutation table: section 13 of `papers/semantics/jax_scan_record.md`.
 
+Gradients: `jax.grad` works through the emitted `lax.scan` as is (no runtime change). The driver pins the gradient of `sum(C * H[:, :, 2])` of `transformer_scan` over every
+float input, in both precisions, eager and jit: finite, exactly zero on the never-read NaN layer-2 weight slices, equal to the same loss through the unrolled plan
+and to the autodiff of a pure-JAX model, and its directional derivatives equal central differences of the float64 numpy model. The pins are checked by `stop_gradient`
+mutants of the runtime (forward values unchanged, so only the gradient pins can see them). Numbers, tolerances and the mutation table: section 14 of
+`papers/semantics/jax_scan_record.md`.
+
 `scan_postrole` / `scan_postrole32` run six post-scan statements with the scan axis as an ordinary axis through
 both backends (`iter l = 4`, `S[j,l] = X[j]·G[j]^l`): a sum over `l` against an external tensor
 (`Ysum := S[j,2]·V[l]`), a free read of the state summed over `l` (`Yfree := S[j,l]·V[l]`, NOT the per-step

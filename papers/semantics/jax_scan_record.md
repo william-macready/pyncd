@@ -609,4 +609,58 @@ multi-head model by 2.821), not by a dedicated mutant. No survivor.
 
 **Parked** (cost in dispatches): grouped-query attention (several query heads per KV head needs head-axis index arithmetic; check first
 whether the surface syntax can express it; ~2 plus a design check); the binary32 noise of the plan relative to a float32 numpy
-emulation (~1, diagnosis only); depth and gradient work (the next two slices of the brief).
+emulation (~1, diagnosis only); depth work (the next slice of the brief); gradient work: section 14.
+
+## 14. Gradients through the emitted layer scan (2026-11-09)
+
+The forward fixtures say nothing about `jax.grad`. Item 6b of the brief asked whether the gradient through the emitted `lax.scan` is
+right, flagged exploratory because the runtime was only ever verified on forward values and a failure would have meant a runtime change
+(stop and ask). **Finding: no runtime change was needed.** `jax.grad` works through the emitted scan as is (eager and under `jit`, binary64 and
+binary32), is finite everywhere, and matches three independent references (below). The runtime docstring already claimed it is
+"differentiable with respect to the floating input tensors" (integer gather, `where`, static-bound loops, `lax.scan`); this slice
+pins that claim for the scan. Tests and pins only: `evalplan_nonlin_smoke.py` (new `grad_fixture_pins`, `GRAD_TOL`, `GRAD_FD_TOL`);
+no Lean, emitter, runtime or manifest change, so the Lean build (8846 jobs for `Tests` + `JaxExperiment`) is unchanged.
+The differential count is unchanged (38 binary64 and 30 binary32 fixtures).
+
+**What is differentiated.** `L = sum(C * H[:, :, 2])` for the standard `transformer_scan` plan, `C[q, m] = sin(1 + 4q + m)` (distinct entries of both
+signs), gradient over all 12 float inputs (`X`, `Inv`, `Eps`, `Sc` and the eight weight/gain stacks).
+
+**Pins** (`grad_fixture_pins`, once per precision, eager and jit gradients of the scan plan):
+1. Shape of the gradient: every gradient is finite and in the carrier dtype; the layer-2 slice of every stack is EXACTLY zero (the NaN slice is
+   never read, so a backward pass that touched it would give NaN or a nonzero value); layers 0 and 1 each have `max |g| > 1e-3` and differ from
+   each other by more than 1e-2.
+2. Against the SAME loss through the hand-copied unrolled plan (`transformer_unrolled`, per-layer gradients stacked): every input within `GRAD_TOL`.
+3. Against the autodiff of a pure-JAX transformer written from the definition (no plan, no scan, carrier dtype): every input within `GRAD_TOL`.
+4. Directional derivatives along three fixed random directions (zero on the NaN slices) against central differences (eps 1e-6) of the float64
+   numpy model `np_transformer`, within `GRAD_FD_TOL`, each `|dot| > 1e-2` (nothing autodiffs on that side).
+Pin 2 shares the runtime with the scan, so a defect that hurts both equally would pass it; pins 3 and 4 do not share it.
+
+**Observed** (scaled error `|g - ref| / max(1, |ref|)`, max over inputs, eager and jit; tolerances NOT loosened or fitted beyond a stated margin):
+
+| Reference | binary64 | binary32 | `GRAD_TOL` / `GRAD_FD_TOL` (f64 / f32) | headroom (f64 / f32) |
+|---|---|---|---|---|
+| unrolled plan | 2.1e-15 | 1.5e-6 | 1e-12 / 1e-4 | 474x / 67x |
+| pure-JAX model | 1.2e-15 | 1.3e-6 | 1e-12 / 1e-4 | 819x / 79x |
+| finite differences (numpy f64) | 1.9e-9 | 9.7e-7 | 1e-7 / 1e-4 | 53x / 104x |
+
+The directional derivatives span `|dot|` 6.03 to 34.14. A wrong gradient entry is O(1e-1) or more, so both tolerances sit orders of magnitude below any
+real defect; the binary32 gradient error is 1e-6 scale, like the binary32 forward state (section 11).
+
+**Mutation evidence.** Gradient-only defects are invisible to every forward pin, so the mutants edit the RUNTIME (`evalplan_affine_runtime.py`, one edit per
+run, restored with `git checkout`, `git diff --stat` empty) with `jax.lax.stop_gradient`, which leaves every forward value bit-identical: the whole
+forward differential passed before the gradient helper fired. Binary64 pass only. All four killed:
+
+| Mutant (runtime edit) | First failing assertion |
+|---|---|
+| `stop_gradient` on the scan's initial carry (`tuple(states)`; cuts the base-write path to `X`) | `gradient pin: scan vs pure-JAX model`, input `X` (scaled error 1.0) |
+| `stop_gradient` on the external captures of the step block (the weights) | `trivial gradient`, `W_Q` |
+| `stop_gradient` on the step block's read of the carry (the layer-to-layer recurrence) | `trivial gradient`, `W_Q` |
+| `stop_gradient` on the softmax denominator (forward identical, gradient wrong but nonzero) | `gradient pin: scan vs pure-JAX model`, input `X` (scaled error 1.13) |
+
+Two of the four die on the non-triviality guard (a gradient cut to exactly zero), not on a value comparison; the other two die on a value comparison with a
+large margin. The binary32 gradient pins have no mutation evidence of their own (same code, looser tolerance, observed passing). The gradient mutants are
+not manifest entries (`mutation_python_manifest.py` is forward-only); promoting them is parked.
+
+**Parked** (cost in dispatches): gradients through the other scan fixtures (`transformer_mqa`, the mask fixtures, `transformer_head`) and through scatter
+nodes and `scatter_mode="fast"` (~1 each, the pure-JAX model needs a head-free and a masked variant); second-order derivatives and `jax.value_and_grad` inside
+a `jit`ted training step (~1); promoting the four stop-gradient mutants to the Python manifest (~1); depth (item 6a) remains the next brief item.
