@@ -65,7 +65,7 @@ Do not regenerate patches, retype proofs, or substitute an unverified source cop
 | `03-graph-runs.patch` | `125679349db974fe81a8c1dceffceacfb89ff95b8a0ae04187f8cc7c2b6e482a` |
 | `04-reference-runs.patch` | `3f842995bbb55478d4bdf0d0a6da7abf92345845ea05c8eb0d018fc0607385c5` |
 | `05-acceptance.patch` | `4c219d322d1ea32b8cf6f0cb24932278a5bb135a86c4ceaddfaf8ba4bb89830a` |
-| `06-documentation.patch` | `ed6f345167b03346c28f549facf9f7f132684d25570cffcd7f2566da3bc7d6a2` |
+| `06-documentation.patch` | `bc2e8455df486d4bc79e12ea80b42cbe92f8ff89bcc3ed367ad6dba8dc8115a3` |
 
 Task06 freezes three status/instruction documents plus the current companion
 record. Compare their exact packaged bytes before controller close-out addenda.
@@ -86,6 +86,7 @@ In command blocks replace these literal placeholders manually with absolute path
 `<P>` is `<S>/papers/semantics/categorical_ranked_execution_artifacts`;
 `<W>` is a NEW, controller-owned replay worktree path;
 `<L>` is `<W>/leanncd`; `<N>` is the completed task number, 1 through 6.
+`<T>` is `<W>/.cache/categorical-ranked-execution-tmp`, ignored project-local scratch.
 Do not use shell variables. Each displayed line is a separate command.
 Scratch index storage stays inside the worktree and is automatically removed;
 never use system temporary directories.
@@ -342,12 +343,13 @@ prototype evidence. Controller replay receipts belong in later record addenda.
 
 ```sh
 bash <L>/scripts/lake-build.sh <L> IndexedComponentRankedExecutionAudit
+mkdir -p <T>
 bash <L>/scripts/mutation-manifest.sh --cd <W> --check <L> <W>/papers/semantics/categorical_ranked_execution_mutations_post.json
 bash <L>/scripts/mutation-manifest.sh --cd <W> --check <L> <W>/papers/semantics/categorical_ranked_execution_mutations.json
 bash <L>/scripts/mutation-manifest.sh --cd <W> --check <L> <W>/papers/semantics/component_composition_mutations_post.json
-bash <L>/scripts/mutation-manifest.sh --cd <W> <L> <W>/papers/semantics/categorical_ranked_execution_mutations_post.json
-bash <L>/scripts/mutation-manifest.sh --cd <W> <L> <W>/papers/semantics/categorical_ranked_execution_mutations.json
-bash <L>/scripts/mutation-manifest.sh --cd <W> <L> <W>/papers/semantics/component_composition_mutations_post.json
+env TMPDIR=<T> bash <L>/scripts/mutation-manifest.sh --cd <W> <L> <W>/papers/semantics/categorical_ranked_execution_mutations_post.json
+env TMPDIR=<T> bash <L>/scripts/mutation-manifest.sh --cd <W> <L> <W>/papers/semantics/categorical_ranked_execution_mutations.json
+env TMPDIR=<T> bash <L>/scripts/mutation-manifest.sh --cd <W> <L> <W>/papers/semantics/component_composition_mutations_post.json
 rg -n --glob 'IndexedComponentCompositionRanks.lean' --glob 'IndexedComponentExecution*.lean' --glob 'IndexedComponentRankedExecution*.lean' --glob 'IndexedRankedExecutionSemantics.lean' '\b(sorry|admit|axiom|unsafe|native_decide)\b' <L>/experiments/indexed_execution
 bash <L>/scripts/lake-build.sh <L> LeanNCD Tests IndexedExecutionExperiment
 ```

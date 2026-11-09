@@ -222,7 +222,7 @@ index a5264c4a..04bead03 100644
  ### A.9. Turn model witnesses into categorical semantics
  
 diff --git a/papers/semantics/categorical_tensor_logic_component_interfaces.md b/papers/semantics/categorical_tensor_logic_component_interfaces.md
-index 261574c7..46ce05c2 100644
+index 261574c7..e5fe353b 100644
 --- a/papers/semantics/categorical_tensor_logic_component_interfaces.md
 +++ b/papers/semantics/categorical_tensor_logic_component_interfaces.md
 @@ -10,7 +10,7 @@ Reuse the landed execution-correspondence theorem only afterward.
@@ -299,7 +299,28 @@ index 261574c7..46ce05c2 100644
  
  The composite default graph budget is its total writer/publication step count
  plus one, not the sum of the two standalone default budgets. Reuse the landed
-@@ -580,8 +589,9 @@ associativity remain unproved. None is replaced by assumed execution agreement.
+@@ -548,7 +557,7 @@ without a boundary-copy event or duplicate collector.
+ finite decidable typed universes; the fixed rational registry and operations;
+ exact whole-port coverage; explicit bijective boundary wiring and supported
+ domain adapters. Fresh identities are checked by the static constructor.
+-Rank certificates are additional future premises for ranked execution/function
++Rank certificates are additional premises for ranked execution/function
+ corollaries, not static assumptions. No totality assumption.
+ 
+ **Proved static construction facts:** local transport correctness, complete
+@@ -556,8 +565,9 @@ composite roles and metadata, closure acceptance, the occurrence bijection,
+ ordered priority equality and all nine match fields. Existing capability/fiber
+ results apply to the constructed match without additional assumptions.
+ Model restriction/gluing, restricted denotation, and denotational witness-span
+-coherence are also proved. Composite ranking, phase behavior and process
+-associativity remain unproved. None is replaced by assumed execution agreement.
++coherence are also proved. Composite ranking and ranked graph/reference
++phase/state projections are proved separately. General trace algebra and
++process associativity remain unproved. No result assumes execution agreement.
+ 
+ **Recommendation over alternatives:**
+ 
+@@ -580,8 +590,9 @@ associativity remain unproved. None is replaced by assumed execution agreement.
  There is no known semantic blocker for this restricted target. The substantive
  admitted-read/expression transport prerequisite and static component
  match/closure/priority construction, complete-model gluing and denotational

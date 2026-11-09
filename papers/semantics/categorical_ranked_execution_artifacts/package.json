@@ -125,7 +125,7 @@
     {
       "id": "06-documentation",
       "patch": "06-documentation.patch",
-      "sha256": "ed6f345167b03346c28f549facf9f7f132684d25570cffcd7f2566da3bc7d6a2",
+      "sha256": "bc2e8455df486d4bc79e12ea80b42cbe92f8ff89bcc3ed367ad6dba8dc8115a3",
       "targets": [],
       "files": [
         {
@@ -138,7 +138,7 @@
         },
         {
           "path": "papers/semantics/categorical_tensor_logic_component_interfaces.md",
-          "sha256": "1fb5a137f447083bc50c23faabafc9f99fd703c70a01991945ad9d0b7555d028"
+          "sha256": "6ea7f004df44d164b798d2ce98215e35eb8b880b9d66c5386e64eefec897f6bb"
         },
         {
           "path": "papers/semantics/categorical_ranked_execution_record.md",

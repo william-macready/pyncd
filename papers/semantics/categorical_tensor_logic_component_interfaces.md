@@ -557,7 +557,7 @@ without a boundary-copy event or duplicate collector.
 finite decidable typed universes; the fixed rational registry and operations;
 exact whole-port coverage; explicit bijective boundary wiring and supported
 domain adapters. Fresh identities are checked by the static constructor.
-Rank certificates are additional future premises for ranked execution/function
+Rank certificates are additional premises for ranked execution/function
 corollaries, not static assumptions. No totality assumption.
 
 **Proved static construction facts:** local transport correctness, complete
@@ -565,8 +565,9 @@ composite roles and metadata, closure acceptance, the occurrence bijection,
 ordered priority equality and all nine match fields. Existing capability/fiber
 results apply to the constructed match without additional assumptions.
 Model restriction/gluing, restricted denotation, and denotational witness-span
-coherence are also proved. Composite ranking, phase behavior and process
-associativity remain unproved. None is replaced by assumed execution agreement.
+coherence are also proved. Composite ranking and ranked graph/reference
+phase/state projections are proved separately. General trace algebra and
+process associativity remain unproved. No result assumes execution agreement.
 
 **Recommendation over alternatives:**
 
