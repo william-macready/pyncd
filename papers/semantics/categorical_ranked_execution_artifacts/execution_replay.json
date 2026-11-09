@@ -1,0 +1,414 @@
+{
+  "base": "a8568ddb9df27867bfd40d8c5a3fb590cfbab6d8",
+  "worktree": "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+  "tasks": [
+    {
+      "id": "01-ranks",
+      "patch_sha256": "2c96758814dc0a5fabf36c4edfc7c78d7e39ecfdfa770db41f704700f26d7137",
+      "cumulative_files_identical": true,
+      "status": "passed"
+    },
+    {
+      "id": "02-state-transport",
+      "patch_sha256": "f10096806a66bd79043e0756ae061f911fa7d0e52ac243d742bfec85acae4909",
+      "cumulative_files_identical": true,
+      "status": "passed"
+    },
+    {
+      "id": "03-graph-runs",
+      "patch_sha256": "125679349db974fe81a8c1dceffceacfb89ff95b8a0ae04187f8cc7c2b6e482a",
+      "cumulative_files_identical": true,
+      "status": "passed"
+    },
+    {
+      "id": "04-reference-runs",
+      "patch_sha256": "3f842995bbb55478d4bdf0d0a6da7abf92345845ea05c8eb0d018fc0607385c5",
+      "cumulative_files_identical": true,
+      "status": "passed"
+    },
+    {
+      "id": "05-acceptance",
+      "patch_sha256": "4c219d322d1ea32b8cf6f0cb24932278a5bb135a86c4ceaddfaf8ba4bb89830a",
+      "cumulative_files_identical": true,
+      "status": "passed"
+    },
+    {
+      "id": "06-documentation",
+      "patch_sha256": "bc2e8455df486d4bc79e12ea80b42cbe92f8ff89bcc3ed367ad6dba8dc8115a3",
+      "cumulative_files_identical": true,
+      "status": "passed"
+    }
+  ],
+  "commands": [
+    {
+      "label": "01-ranks-apply-check",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/01-ranks.patch"
+      ],
+      "started": "2026-11-09T19:29:41.774345+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/01-ranks-apply-check.log"
+    },
+    {
+      "label": "01-ranks-apply",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/01-ranks.patch"
+      ],
+      "started": "2026-11-09T19:29:41.800465+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/01-ranks-apply.log"
+    },
+    {
+      "label": "01-ranks-build",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/lake-build.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "IndexedComponentCompositionRanks"
+      ],
+      "started": "2026-11-09T19:29:41.824770+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/01-ranks-build.log"
+    },
+    {
+      "label": "02-state-transport-apply-check",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/02-state-transport.patch"
+      ],
+      "started": "2026-11-09T19:29:58.586633+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/02-state-transport-apply-check.log"
+    },
+    {
+      "label": "02-state-transport-apply",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/02-state-transport.patch"
+      ],
+      "started": "2026-11-09T19:29:58.628019+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/02-state-transport-apply.log"
+    },
+    {
+      "label": "02-state-transport-build",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/lake-build.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "IndexedComponentExecutionFuel",
+        "IndexedComponentExecutionTransport",
+        "IndexedComponentExecutionPhase"
+      ],
+      "started": "2026-11-09T19:29:58.662191+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/02-state-transport-build.log"
+    },
+    {
+      "label": "03-graph-runs-apply-check",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/03-graph-runs.patch"
+      ],
+      "started": "2026-11-09T19:30:03.109146+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/03-graph-runs-apply-check.log"
+    },
+    {
+      "label": "03-graph-runs-apply",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/03-graph-runs.patch"
+      ],
+      "started": "2026-11-09T19:30:03.145344+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/03-graph-runs-apply.log"
+    },
+    {
+      "label": "03-graph-runs-build",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/lake-build.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "IndexedComponentExecutionRuns"
+      ],
+      "started": "2026-11-09T19:30:03.179031+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/03-graph-runs-build.log"
+    },
+    {
+      "label": "04-reference-runs-apply-check",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/04-reference-runs.patch"
+      ],
+      "started": "2026-11-09T19:30:07.952456+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/04-reference-runs-apply-check.log"
+    },
+    {
+      "label": "04-reference-runs-apply",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/04-reference-runs.patch"
+      ],
+      "started": "2026-11-09T19:30:07.993573+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/04-reference-runs-apply.log"
+    },
+    {
+      "label": "04-reference-runs-build",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/lake-build.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "IndexedComponentExecutionReference",
+        "IndexedRankedExecutionSemantics"
+      ],
+      "started": "2026-11-09T19:30:08.031069+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/04-reference-runs-build.log"
+    },
+    {
+      "label": "05-acceptance-apply-check",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/05-acceptance.patch"
+      ],
+      "started": "2026-11-09T19:30:14.477061+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/05-acceptance-apply-check.log"
+    },
+    {
+      "label": "05-acceptance-apply",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/05-acceptance.patch"
+      ],
+      "started": "2026-11-09T19:30:14.516907+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/05-acceptance-apply.log"
+    },
+    {
+      "label": "05-acceptance-build",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/lake-build.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "IndexedComponentRankedExecutionAudit"
+      ],
+      "started": "2026-11-09T19:30:14.555051+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/05-acceptance-build.log"
+    },
+    {
+      "label": "replay-check-categorical_ranked_execution_mutations_post.json",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/mutation-manifest.sh",
+        "--cd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/papers/semantics/categorical_ranked_execution_mutations_post.json"
+      ],
+      "started": "2026-11-09T19:30:47.134451+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/replay-check-categorical_ranked_execution_mutations_post.json.log"
+    },
+    {
+      "label": "replay-cycles-categorical_ranked_execution_mutations_post.json",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/mutation-manifest.sh",
+        "--cd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "--out",
+        "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/replay-categorical_ranked_execution_mutations_post.json.md",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/papers/semantics/categorical_ranked_execution_mutations_post.json"
+      ],
+      "started": "2026-11-09T19:30:47.203498+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/replay-cycles-categorical_ranked_execution_mutations_post.json.log"
+    },
+    {
+      "label": "replay-check-categorical_ranked_execution_mutations.json",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/mutation-manifest.sh",
+        "--cd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/papers/semantics/categorical_ranked_execution_mutations.json"
+      ],
+      "started": "2026-11-09T19:31:53.747761+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/replay-check-categorical_ranked_execution_mutations.json.log"
+    },
+    {
+      "label": "replay-cycles-categorical_ranked_execution_mutations.json",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/mutation-manifest.sh",
+        "--cd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "--out",
+        "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/replay-categorical_ranked_execution_mutations.json.md",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/papers/semantics/categorical_ranked_execution_mutations.json"
+      ],
+      "started": "2026-11-09T19:31:53.800183+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/replay-cycles-categorical_ranked_execution_mutations.json.log"
+    },
+    {
+      "label": "replay-check-component_composition_mutations_post.json",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/mutation-manifest.sh",
+        "--cd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/papers/semantics/component_composition_mutations_post.json"
+      ],
+      "started": "2026-11-09T19:33:38.878739+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/replay-check-component_composition_mutations_post.json.log"
+    },
+    {
+      "label": "replay-cycles-component_composition_mutations_post.json",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/mutation-manifest.sh",
+        "--cd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "--out",
+        "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/replay-component_composition_mutations_post.json.md",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/papers/semantics/component_composition_mutations_post.json"
+      ],
+      "started": "2026-11-09T19:33:38.939607+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/replay-cycles-component_composition_mutations_post.json.log"
+    },
+    {
+      "label": "replay-full-build",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd/scripts/lake-build.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/leanncd",
+        "LeanNCD",
+        "Tests",
+        "IndexedExecutionExperiment"
+      ],
+      "started": "2026-11-09T19:37:06.397217+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/replay-full-build.log"
+    },
+    {
+      "label": "06-documentation-apply-check",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/06-documentation.patch"
+      ],
+      "started": "2026-11-09T19:37:09.754133+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/06-documentation-apply-check.log"
+    },
+    {
+      "label": "06-documentation-apply",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "apply",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-representation-semantics/papers/semantics/categorical_ranked_execution_artifacts/06-documentation.patch"
+      ],
+      "started": "2026-11-09T19:37:09.796581+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/06-documentation-apply.log"
+    },
+    {
+      "label": "replay-whitespace",
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay",
+        "diff",
+        "--check"
+      ],
+      "started": "2026-11-09T19:37:09.836396+00:00",
+      "returncode": 0,
+      "log": "/Users/williammacready/.copilot/session-state/a285d1df-05fb-4a49-9f7e-23b13dcfa082/files/replay-whitespace.log"
+    }
+  ],
+  "scratch_directory": "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-execution-replay/.cache/categorical-ranked-execution-tmp",
+  "owned_dirty_paths": [
+    "leanncd/AGENTS.md",
+    "leanncd/experiments/indexed_execution/IndexedComponentCompositionRanks.lean",
+    "leanncd/experiments/indexed_execution/IndexedComponentExecutionFuel.lean",
+    "leanncd/experiments/indexed_execution/IndexedComponentExecutionPhase.lean",
+    "leanncd/experiments/indexed_execution/IndexedComponentExecutionReference.lean",
+    "leanncd/experiments/indexed_execution/IndexedComponentExecutionRuns.lean",
+    "leanncd/experiments/indexed_execution/IndexedComponentExecutionTransport.lean",
+    "leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionAudit.lean",
+    "leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean",
+    "leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionRankTest.lean",
+    "leanncd/experiments/indexed_execution/IndexedComponentRankedExecutionTest.lean",
+    "leanncd/experiments/indexed_execution/IndexedRankedExecutionSemantics.lean",
+    "leanncd/lakefile.toml",
+    "papers/semantics/categorical_ranked_execution_fixture_mutation_results.md",
+    "papers/semantics/categorical_ranked_execution_inherited_mutation_results.md",
+    "papers/semantics/categorical_ranked_execution_mutations.json",
+    "papers/semantics/categorical_ranked_execution_mutations_post.json",
+    "papers/semantics/categorical_ranked_execution_record.md",
+    "papers/semantics/categorical_ranked_execution_snapshot_mutation_results.md",
+    "papers/semantics/categorical_tensor_logic_component_interfaces.md",
+    "papers/semantics/categorical_tensor_logic_semantics.md"
+  ],
+  "status": "passed"
+}

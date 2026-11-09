@@ -192,3 +192,55 @@ frontend/backend or numerical refinement remain separate work.
 Administrative semantic/source identities are still not event-free core
 programs. This slice proves ranked binary operational sequencing and its
 state/event projections, not a process category.
+
+## Controller release and actual plan execution
+
+The [verified plan](categorical_ranked_execution_plan.md) was authored in a
+fresh context from compiled receipts and mechanically generated patches.
+Its six task patches cover 21 exact files. `package.py --check` verified
+their SHA256 values and ordered application to a temporary index.
+
+Both whole-branch review lenses completed:
+
+- [Rank/progress/phase soundness](categorical_ranked_execution_artifacts/review_soundness.md):
+  clean, no required findings.
+- [Runner/state/validation/budget integration](categorical_ranked_execution_artifacts/review_integration.md):
+  two P2 findings were fixed and confirmed resolved. The interface's remaining-work
+  section still described ranking/phases as open, and replay mutation commands
+  needed inherited project-local `TMPDIR`. Only the documentation patch changed;
+  all five proof/acceptance patches remained byte-identical.
+
+The controller prepared a new detached replay worktree at the exact
+`a8568ddb` base, verified warm Mathlib and refreshed `LeanNCD`.
+Only after review adjudication, every task patch was actually applied in
+order. Each checkpoint checked patch SHA256 and all cumulative source bytes,
+then ran its named build. Task05 reran all three mutation manifests without
+filters, sequentially, with local scratch storage: all 25 intended failures,
+restored builds and source hashes passed. Namespace/source probes and the full
+`LeanNCD Tests IndexedExecutionExperiment` replay build passed.
+Task06's exact documentation snapshot and the final 21-file inventory matched.
+
+[Execution checkpoints](categorical_ranked_execution_artifacts/execution_replay.json)
+record six passed tasks and 25 successful controller commands;
+[actual replay mutation results](categorical_ranked_execution_artifacts/execution_replay_mutations.md)
+record 7/7, 2/2 and 16/16 cycles. These are actual replay results, not a
+second label on the prototype run. The controller retained the original
+implementation history rather than fabricating duplicate replay commits.
+
+Concurrent local main `c48293db` contained five unrelated JAX MQA changes.
+It was merged into the candidate without overlap. Every one of the 21 frozen
+source hashes remained unchanged afterward, and the controller reran the full
+three-target candidate build successfully.
+
+This close-out addendum is intentionally outside task06's frozen record
+snapshot; it changes no proof, configuration or acceptance bytes.
+The plan author additionally disclosed 37 invocations including batched
+calls/wrappers against its 35-invocation aim (13 tool-call rounds).
+The final token-report attempt still found no transcript; cumulative accounting
+remains unavailable, not silently declared compliant.
+
+Local integration is the next operation. The user explicitly authorized
+temporarily stashing only the primary checkout's pre-existing semantics README
+and synthesis edits, merging locally, then restoring those edits. No push is
+authorized. Integration and owned-worktree cleanup are reported separately
+after they actually complete.
