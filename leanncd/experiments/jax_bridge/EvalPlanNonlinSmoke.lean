@@ -1389,6 +1389,218 @@ def gqaSplitEnv32 := gqaEnv32 [3, 2, 7, 4] [3, 7, 4] [4, 3, 2, 7] id
 def gqaMhaEnv64 := gqaEnv64 [6, 7, 4] [6, 7, 4] [4, 6, 7] gqaRep
 def gqaMhaEnv32 := gqaEnv32 [6, 7, 4] [6, 7, 4] [4, 6, 7] gqaRep
 
+/-! ### Cross-attention to an external memory inside the layer scan (`transformer_cross`, `transformer_cross_hoisted`)
+
+One decoder layer = the standard causal self-attention sub-block, then a cross-attention sub-block whose keys and
+values come from an EXTERNAL memory `Mem[t, m]` (not the scan state) with its own extent t = 7 and no mask, then the
+MLP; scanned over layers with untied per-layer weights. Extents q = s = 5, t = 7, h = 3, k = 2, j = 6, m = d = 4 are
+pairwise distinct where it matters (the cross head width j = 6 differs from the self-attention head width k = 2).
+* `crossProg`: the cross keys and values carry an explicit layer axis (`Kc[t, h, j, l]`), so they are pre-scan
+  statements producing STACKED tables, read as `Kc[t, h, j, l]` in the step (like the weight stacks);
+* `crossHoistedProg`: the NAIVE form `Kc[t, h, j] := W_Kc[l, h, j, m] · Mem[t, m]`. A statement that reads no scan
+  state is not a per-step intermediate, so it runs once BEFORE the scan with `l` an ordinary axis and is summed over
+  every layer; the step reads that one table. Pinned as the semantics it is (it silently differs from per-layer
+  cross-attention). -/
+
+/-- Cross-attention weights by formula, stacked like every weight (layer 0, derived layer 1, NaN layer 2). Self-attention
+    `W_Q`, `W_K`, `W_V` are `[h = 3, k = 2, m = 4]`, `W_O` `[m = 4, h = 3, k = 2]`; cross `W_Qc`, `W_Kc`, `W_Vc` are
+    `[h = 3, j = 6, m = 4]`, `W_Oc` `[m = 4, h = 3, j = 6]`; the memory `[t = 7, m = 4]` is not stacked. -/
+def crWQ : Array Float := scanStack (gqaGen 1.0 24)
+def crWK : Array Float := scanStack (gqaGen 2.0 24)
+def crWV : Array Float := scanStack (gqaGen 3.0 24)
+def crWO : Array Float := scanStack (gqaGen 4.0 24)
+def crWQc : Array Float := scanStack (gqaGen 5.0 72)
+def crWKc : Array Float := scanStack (gqaGen 6.0 72)
+def crWVc : Array Float := scanStack (gqaGen 7.0 72)
+def crWOc : Array Float := scanStack (gqaGen 8.0 72)
+def crMem : Array Float := gqaGen 9.0 28
+/-- Key and value cross weights of the hoisted fixture only: layer 2 is FINITE (layer 0 rotated by 10 and scaled by
+    0.64), so the pre-scan table that sums over all three layers is finite and silently wrong, not NaN. -/
+def crFiniteStack (w : Array Float) : Array Float := w ++ scanLayer1 w ++ scanLayer1 (scanLayer1 w)
+def crWKcFin : Array Float := crFiniteStack (gqaGen 6.0 72)
+def crWVcFin : Array Float := crFiniteStack (gqaGen 7.0 72)
+def crGcL0 : Array Float := #[1.05, 0.92, 1.15, 0.88]
+def crGcL1 : Array Float := #[0.90, 1.10, 0.85, 1.20]
+/-- `Scx[]` = 1 / sqrt j for the cross head width j = 6. -/
+def crScx : Array Float := #[1.0 / Float.sqrt 6.0]
+
+def crossEnv64 (kc vc : Array Float) : HashMap String DenseTensor :=
+  [("W_Q", t64 [3, 3, 2, 4] crWQ), ("W_K", t64 [3, 3, 2, 4] crWK), ("W_V", t64 [3, 3, 2, 4] crWV),
+   ("W_O", t64 [3, 4, 3, 2] crWO), ("W_Qc", t64 [3, 3, 6, 4] crWQc), ("W_Kc", t64 [3, 3, 6, 4] kc),
+   ("W_Vc", t64 [3, 3, 6, 4] vc), ("W_Oc", t64 [3, 4, 3, 6] crWOc), ("Mem", t64 [7, 4] crMem),
+   ("Gc", t64 [3, 4] (gainStack crGcL0 crGcL1)), ("Scx", t64 [] crScx)].foldl
+    (fun e (n, t) => e.insert n t) maskEnv64
+def crossEnv32 (kc vc : Array Float) : NamedDenseEnv32 :=
+  [("W_Q", t32 [3, 3, 2, 4] crWQ), ("W_K", t32 [3, 3, 2, 4] crWK), ("W_V", t32 [3, 3, 2, 4] crWV),
+   ("W_O", t32 [3, 4, 3, 2] crWO), ("W_Qc", t32 [3, 3, 6, 4] crWQc), ("W_Kc", t32 [3, 3, 6, 4] kc),
+   ("W_Vc", t32 [3, 3, 6, 4] vc), ("W_Oc", t32 [3, 4, 3, 6] crWOc), ("Mem", t32 [7, 4] crMem),
+   ("Gc", t32 [3, 4] (gainStack crGcL0 crGcL1)), ("Scx", t32 [] crScx)].foldl
+    (fun e (n, t) => e.insert n t) maskEnv32
+
+def crossProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
+  tensor f64 W_Qc(l, h, j, m), W_Kc(l, h, j, m), W_Vc(l, h, j, m), W_Oc(l, m, h, j), Mem(t, m), Gc(l, m), Scx()
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
+  tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 R1(q, m), Ssc(q), Vq(q), Sdc(q), Nc(q, m)
+  tensor f64 Qc(q, h, j), Kc(t, h, j, l), Vc(t, h, j, l), Sx(h, q, t), Ac(q, h, j), Ax(q, m)
+  tensor f64 R2(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ssc[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Vq[q]            := Ssc[q] + Eps[q]
+  Sdc[q]           := sqrt(Vq[q])
+  Nc[q, m]         := R1[q, m] / Sdc[q] · Gc[l, m]
+  Qc[q, h, j]      := W_Qc[l, h, j, m] · Nc[q, m]
+  Kc[t, h, j, l]   := W_Kc[l, h, j, m] · Mem[t, m]
+  Vc[t, h, j, l]   := W_Vc[l, h, j, m] · Mem[t, m]
+  Sx[h, q, t.]     := softmax(Qc[q, h, j] · Kc[t, h, j, l] · Scx[])
+  Ac[q, h, j]      := Sx[h, q, t] · Vc[t, h, j, l]
+  Ax[q, m]         := W_Oc[l, m, h, j] · Ac[q, h, j]
+  R2[q, m]         := R1[q, m] + Ax[q, m]
+  Ss2[q]           := R2[q, m] · R2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R2[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R2[q, m] + Y[q, m]
+}
+/-- The binary32 sibling: only the declarations that pin axis order, the history shape and the extent of `s`. -/
+def crossProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  tensor Sx(h, q, t)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ssc[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Vq[q]            := Ssc[q] + Eps[q]
+  Sdc[q]           := sqrt(Vq[q])
+  Nc[q, m]         := R1[q, m] / Sdc[q] · Gc[l, m]
+  Qc[q, h, j]      := W_Qc[l, h, j, m] · Nc[q, m]
+  Kc[t, h, j, l]   := W_Kc[l, h, j, m] · Mem[t, m]
+  Vc[t, h, j, l]   := W_Vc[l, h, j, m] · Mem[t, m]
+  Sx[h, q, t.]     := softmax(Qc[q, h, j] · Kc[t, h, j, l] · Scx[])
+  Ac[q, h, j]      := Sx[h, q, t] · Vc[t, h, j, l]
+  Ax[q, m]         := W_Oc[l, m, h, j] · Ac[q, h, j]
+  R2[q, m]         := R1[q, m] + Ax[q, m]
+  Ss2[q]           := R2[q, m] · R2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R2[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R2[q, m] + Y[q, m]
+}
+
+def crossHoistedProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
+  tensor f64 W_Qc(l, h, j, m), W_Kc(l, h, j, m), W_Vc(l, h, j, m), W_Oc(l, m, h, j), Mem(t, m), Gc(l, m), Scx()
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
+  tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 R1(q, m), Ssc(q), Vq(q), Sdc(q), Nc(q, m)
+  tensor f64 Qc(q, h, j), Kc(t, h, j), Vc(t, h, j), Sx(h, q, t), Ac(q, h, j), Ax(q, m)
+  tensor f64 R2(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ssc[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Vq[q]            := Ssc[q] + Eps[q]
+  Sdc[q]           := sqrt(Vq[q])
+  Nc[q, m]         := R1[q, m] / Sdc[q] · Gc[l, m]
+  Qc[q, h, j]      := W_Qc[l, h, j, m] · Nc[q, m]
+  Kc[t, h, j]      := W_Kc[l, h, j, m] · Mem[t, m]
+  Vc[t, h, j]      := W_Vc[l, h, j, m] · Mem[t, m]
+  Sx[h, q, t.]     := softmax(Qc[q, h, j] · Kc[t, h, j] · Scx[])
+  Ac[q, h, j]      := Sx[h, q, t] · Vc[t, h, j]
+  Ax[q, m]         := W_Oc[l, m, h, j] · Ac[q, h, j]
+  R2[q, m]         := R1[q, m] + Ax[q, m]
+  Ss2[q]           := R2[q, m] · R2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R2[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R2[q, m] + Y[q, m]
+}
+/-- The binary32 sibling: only the declarations that pin axis order, the history shape and the extent of `s`. -/
+def crossHoistedProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  tensor Sx(h, q, t)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ssc[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Vq[q]            := Ssc[q] + Eps[q]
+  Sdc[q]           := sqrt(Vq[q])
+  Nc[q, m]         := R1[q, m] / Sdc[q] · Gc[l, m]
+  Qc[q, h, j]      := W_Qc[l, h, j, m] · Nc[q, m]
+  Kc[t, h, j]      := W_Kc[l, h, j, m] · Mem[t, m]
+  Vc[t, h, j]      := W_Vc[l, h, j, m] · Mem[t, m]
+  Sx[h, q, t.]     := softmax(Qc[q, h, j] · Kc[t, h, j] · Scx[])
+  Ac[q, h, j]      := Sx[h, q, t] · Vc[t, h, j]
+  Ax[q, m]         := W_Oc[l, m, h, j] · Ac[q, h, j]
+  R2[q, m]         := R1[q, m] + Ax[q, m]
+  Ss2[q]           := R2[q, m] · R2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R2[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R2[q, m] + Y[q, m]
+}
+
 /-! ### Post-scan statements with the scan axis as an ordinary axis (`scan_postrole`, `scan_postrole32`)
 
 A scaling recurrence `S[j, l] = X[j] · G[j]^l` over `iter l = 4` and six statements that nothing in the
@@ -1486,6 +1698,8 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "transformer_gqa" gqaProg gqaFlatEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "transformer_gqa_split" gqaSplitProg gqaSplitEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "transformer_gqa_mha" gqaMhaProg gqaMhaEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture64 "transformer_cross" crossProg (crossEnv64 crWKc crWVc) 1 2 (some (30, 1, 2)) true (scans := 1),
+    ← fixture64 "transformer_cross_hoisted" crossHoistedProg (crossEnv64 crWKcFin crWVcFin) 1 2 (some (30, 1, 2)) true (scans := 1),
     ← fixture64 "scan_postrole" postRoleProg
         (env64 [("X", t64 [2] postRoleX), ("G", t64 [2] postRoleG), ("V", t64 [4] postRoleV), ("M", t64 [4] postRoleM)])
         0 0 none true (scans := 1),
@@ -1547,6 +1761,8 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "transformer_gqa32" gqaProg32 gqaFlatEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "transformer_gqa_split32" gqaSplitProg32 gqaSplitEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "transformer_gqa_mha32" gqaMhaProg32 gqaMhaEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture32 "transformer_cross32" crossProg32 (crossEnv32 crWKc crWVc) 1 2 (some (30, 1, 2)) true (scans := 1),
+    ← fixture32 "transformer_cross_hoisted32" crossHoistedProg32 (crossEnv32 crWKcFin crWVcFin) 1 2 (some (30, 1, 2)) true (scans := 1),
     ← fixture32 "scan_postrole32" postRoleProg32
         (env32 [("X", t32 [2] postRoleX), ("G", t32 [2] postRoleG), ("V", t32 [4] postRoleV), ("M", t32 [4] postRoleM)])
         0 0 none true (scans := 1),
