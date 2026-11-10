@@ -805,6 +805,103 @@ def cross_fixture_pins(by: dict, sfx: str) -> None:
             print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
 
 
+def cross_grad_pins(by: dict, sfx: str) -> None:
+    """Gradient pins of `transformer_cross` (the cross-attention scan): `jax.grad` of `L = sum(C * H[:, :, 2])` through the emitted plan
+    (two pre-scan tables, then the `lax.scan`), over EVERY float input INCLUDING the external memory `Mem`, eager and jit, against (b) the
+    autodiff of a pure-JAX decoder layer written from the definition (no plan, no scan, carrier dtype) and (c) central finite differences of
+    `np_cross_transformer` along random directions. Layer-2 weight slices (never read) get exactly zero gradient; the `Mem` gradient is finite,
+    non-trivial and nonzero in every memory row. The inputs are the cross fixture's with the layer-2 key/value cross weights taken FINITE
+    from the hoisted fixture (layers 0, 1 bitwise the same): on the NaN-stack inputs the `Mem` gradient is NaN in every entry, because
+    `dMem = sum_l dKc[..., l] . W_Kc[l]` multiplies the exactly-zero layer-2 cotangent by the NaN layer-2 weights (0 * NaN); that is pinned
+    below as what it is (a property of the NaN-sentinel stacks, not of the plan) and the finite-layer-2 inputs are what the pins differentiate."""
+    name = f"transformer_cross{sfx}"
+    fx, hx = by[name], by[f"transformer_cross_hoisted{sfx}"]
+    nan_in = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    hin = {n: lean_array(e) for n, e in hx["inputs"].items()}
+    sin = dict(nan_in, W_Kc=hin["W_Kc"], W_Vc=hin["W_Vc"])
+    n_q = sin["X"].shape[0]
+    C = np.sin(1.0 + np.arange(n_q * 4)).reshape(n_q, 4).astype(NDT)
+
+    def loss_plan(inp):
+        return jnp.sum(C * rt.run_named(fx["plan"], inp, JDT)["H"][:, :, 2])
+
+    def loss_hand(inp):
+        h, tril = inp["X"], jnp.tril(jnp.ones((n_q, n_q), dtype=bool))
+        rms = lambda x: x / jnp.sqrt(jnp.einsum("qm,qm,m->q", x, x, inp["Inv"]) + inp["Eps"])[:, None]
+        for l in range(2):
+            n1 = rms(h) * inp["G1"][l]
+            q = jnp.einsum("hkm,qm->qhk", inp["W_Q"][l], n1)
+            k = jnp.einsum("hkm,sm->shk", inp["W_K"][l], n1)
+            v = jnp.einsum("hkm,sm->shk", inp["W_V"][l], n1)
+            s = jax.nn.softmax(jnp.where(tril[None], jnp.einsum("qhk,shk->hqs", q, k) * inp["Sc"], -jnp.inf), axis=-1)
+            r1 = h + jnp.einsum("mhk,qhk->qm", inp["W_O"][l], jnp.einsum("hqs,shk->qhk", s, v))
+            qc = jnp.einsum("hjm,qm->qhj", inp["W_Qc"][l], rms(r1) * inp["Gc"][l])
+            kc = jnp.einsum("hjm,tm->thj", inp["W_Kc"][l], inp["Mem"])
+            vc = jnp.einsum("hjm,tm->thj", inp["W_Vc"][l], inp["Mem"])
+            sx = jax.nn.softmax(jnp.einsum("qhj,thj->hqt", qc, kc) * inp["Scx"], axis=-1)  # UNMASKED: every memory row is attended
+            r2 = r1 + jnp.einsum("mhj,qhj->qm", inp["W_Oc"][l], jnp.einsum("hqt,thj->qhj", sx, vc))
+            x = jnp.einsum("dm,qm->qd", inp["W_in"][l], rms(r2) * inp["G2"][l])
+            f = 0.5 * x * (1.0 + jnp.tanh(0.7978845608028654 * (x + 0.044715 * x ** 3)))
+            h = r2 + jnp.einsum("md,qd->qm", inp["W_out"][l], f)
+        return jnp.sum(C * h)
+
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    jin = {n: jnp.asarray(a) for n, a in sin.items()}
+    grads = {"eager": jax.grad(loss_plan)(jin), "jit": jax.jit(jax.grad(loss_plan))(jin)}
+    g_hand = jax.grad(loss_hand)(jin)
+    err = {}
+    for who, g in grads.items():
+        assert sorted(g) == sorted(sin) and "Mem" in g, (name, who, sorted(g))
+        assert all(np.all(np.isfinite(np.asarray(v))) and np.asarray(v).dtype == NDT for v in g.values()), (name, who, "gradient not finite")
+        for w in CROSS_STACKS:
+            gw = np.asarray(g[w])
+            if w in ("W_Kc", "W_Vc"):  # layer 2 is finite in these inputs, but never read: still exactly zero
+                assert sin[w].shape[0] == 3 and np.all(np.isfinite(sin[w]))
+            assert np.all(gw[2] == 0), (name, "layer-2 weight slice received gradient", who, w)
+            assert all(float(np.max(np.abs(gw[l]))) > 1e-3 for l in (0, 1)), (name, "trivial gradient", who, w)
+            assert float(np.max(np.abs(gw[0] - gw[1]))) > 1e-2, (name, "layers 0 and 1 have alike gradients", who, w)
+        gm = np.asarray(g["Mem"])  # the external memory: a real gradient in EVERY row (no memory position is ignored)
+        assert float(np.max(np.abs(gm))) > 1e-3 and np.all(np.max(np.abs(gm), axis=1) > 0), (name, "memory gradient is trivial", who, gm.tolist())
+        for n in sin:
+            e_ref = scaled(g[n], g_hand[n])
+            assert e_ref < GRAD_TOL[_DT], (f"gradient pin: {name} vs pure-JAX model", who, n, e_ref)
+            err[n] = max(err.get(n, 0.0), e_ref)
+    gq = np.asarray(grads["eager"]["W_Qc"])
+    assert scaled(gq * NDT(1.001), gq) >= GRAD_TOL[_DT], (name, "gradient tolerance accepts a 1e-3 perturbation: vacuous")
+    # the NaN-sentinel stacks: with the fixture's own NaN layer-2 key/value weights the Mem gradient is NaN everywhere (0 * NaN) while
+    # every WEIGHT gradient stays finite with an exactly-zero layer-2 slice; finite layer-2 weights (above) remove it
+    nan_g = jax.grad(loss_plan)({n: jnp.asarray(a) for n, a in nan_in.items()})
+    assert np.all(np.isnan(np.asarray(nan_g["Mem"]))), (name, "Mem gradient on the NaN-stack inputs is expected NaN everywhere")
+    assert all(np.all(np.isfinite(np.asarray(v))) for n, v in nan_g.items() if n != "Mem"), (name, "a non-Mem gradient is non-finite")
+    # (c) directional derivatives against central differences of the numpy model (3 fixed directions over all inputs incl. Mem; zero on layer 2)
+    base = {n: a.astype(np.float64) for n, a in sin.items()}
+    rng = np.random.default_rng(7)
+    fd_err, dots = 0.0, []
+    loss_np = lambda inp: float(np.sum(C.astype(np.float64) * np_state(inp, np_cross_transformer(inp))[:, :, 2]))
+    for _ in range(3):
+        d = {n: rng.standard_normal(a.shape) for n, a in base.items()}
+        for w in CROSS_STACKS:
+            d[w][2] = 0.0
+        eps = 1e-6
+        fd = (loss_np({n: base[n] + eps * d[n] for n in base}) - loss_np({n: base[n] - eps * d[n] for n in base})) / (2 * eps)
+        for who, g in grads.items():
+            dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * d[n]) for n in base))
+            assert abs(dot) > 1e-2, (name, "finite-difference direction is trivial", dot)
+            fd_err = max(fd_err, abs(fd - dot) / max(1.0, abs(dot)))
+        dots.append(dot)
+    assert fd_err < GRAD_FD_TOL[_DT], (f"gradient pin: {name} directional derivative vs finite differences of the numpy model", fd_err)
+    gm = np.asarray(grads["eager"]["Mem"])
+    print(f"gradients of {name} (eager and jit, all {len(sin)} float inputs incl. Mem, layer-2 K/V cross weights finite): finite, layer-2 weight "
+          f"slices exactly zero, layers 0 and 1 non-trivial and distinct; Mem gradient nonzero in every row (max abs {float(np.max(np.abs(gm))):.3f}, "
+          f"min row max {float(np.min(np.max(np.abs(gm), axis=1))):.3f}); == autodiff of a pure-JAX decoder layer (max scaled {max(err.values()):.3e}, "
+          f"headroom {GRAD_TOL[_DT] / max(max(err.values()), 1e-300):.1f}x) and directional derivatives == central differences of the float64 numpy "
+          f"model (|dot| {min(abs(x) for x in dots):.2f} to {max(abs(x) for x in dots):.2f}, max scaled {fd_err:.3e}, headroom "
+          f"{GRAD_FD_TOL[_DT] / max(fd_err, 1e-300):.1f}x); on the NaN-stack inputs the Mem gradient is NaN in every entry (0 * NaN), the weight gradients finite")
+
+
 def grad_fixture_pins(by: dict, sfx: str) -> None:
     """Gradient pins of the standard two-layer scan (`transformer_scan`): `jax.grad` of the scalar loss
     `L = sum(C * H[:, :, 2])` (a fixed, distinct-entried cotangent `C`) through the emitted `lax.scan` plan, over EVERY float input,
@@ -1367,6 +1464,9 @@ def main() -> None:
 
     # GRADIENTS through the other scan fixtures (MQA, masks, GQA): see `fixture_grad_pins`.
     fixture_grad_pins(by, sfx)
+
+    # GRADIENTS through the cross-attention scan, incl. the external memory: see `cross_grad_pins`.
+    cross_grad_pins(by, sfx)
 
     # POST-SCAN ROLE: `S[j, l+1] := S[j, l] . G[j]` (closed form `S = X * G**l`) and six statements nothing in
     # the recurrence reads, so each is a plain node AFTER the one scan node and `l` is an ordinary axis in it.
