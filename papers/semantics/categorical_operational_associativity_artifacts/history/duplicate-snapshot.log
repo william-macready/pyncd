@@ -1,0 +1,203 @@
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:133:46: error: Application type mismatch: The argument
+  hp
+has type
+  tail.states = pre ++ [s]
+but is expected to have type
+  x :: tail.states = pre.append [s]
+in the application
+  congrArg (List.cons x) hp
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:134:31: error: Application type mismatch: The argument
+  hs
+has type
+  (tail.splice k).states = pre ++ (k.run s a).states
+but is expected to have type
+  x :: (tail.bind k.run).states = pre.append (k.run s a).states
+in the application
+  congrArg (List.cons x) hs
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:148:36: error: Application type mismatch: The argument
+  hs
+has type
+  (tail.splice k).states = tail.states
+but is expected to have type
+  x :: (tail.bind k.run).states = x :: tail.states
+in the application
+  congrArg (List.cons x) hs
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:399:44: error: Application type mismatch: The argument
+  ih.right.right
+has type
+  (History.map (⇑t.stateEquiv) (⇑t.eventEquiv) (⇑t.identity) (⇑(Equiv.refl Unit)) tail).states =
+    List.map t.mapState tail.states
+but is expected to have type
+  t.stateEquiv s :: (History.map (⇑t.stateEquiv) (⇑t.eventEquiv) (⇑t.identity) (⇑(Equiv.refl Unit)) tail).states =
+    t.mapState s :: List.map t.mapState tail.states
+in the application
+  congrArg (List.cons (t.mapState s)) ih.right.right
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:431:27: error: Application type mismatch: The argument
+  hs
+has type
+  s = s ∧ tail.states = rest.states
+but is expected to have type
+  tail.states = rest.states
+in the application
+  ⟨he, hs⟩
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:481:16: error: Tactic `rfl` failed: The left-hand side
+  toRun (History.step state (Event.produced w.tag w.capability value) h)
+is not definitionally equal to the right-hand side
+  { outcome := h.toRun.outcome, events := Event.produced w.tag w.capability value :: h.toRun.events,
+    states := state :: h.toRun.states }
+
+case h.false.some.succ.write.evaluated.some
+σ : Declarations Unit
+inst✝ : DecidableEq σ.Tensor
+steps : List (IndexedOpenComposition.Step σ)
+state : State σ
+hc : complete steps state = false
+n : ℕ
+ih :
+  ∀ m < n + 1,
+    ∀ (state : State σ),
+      IndexedComponentExecution.SuccessfulOrFailed (stepFuel steps m state) →
+        ∃ h, h.Admissible ∧ h.toRun = stepFuel steps m state ∧ History.start h = state
+terminal :
+  IndexedComponentExecution.SuccessfulOrFailed
+    (if complete steps state = true then { outcome := Outcome.complete state, events := [], states := [state] }
+    else
+      match List.find? (enabled state) steps with
+      | none => { outcome := Outcome.blocked state (missingReads steps state), events := [], states := [state] }
+      | some step =>
+        match n + 1 with
+        | 0 => { outcome := Outcome.exhausted state, events := [], states := [state] }
+        | fuel.succ =>
+          match step with
+          | Step.write w =>
+            match evalReady RationalReference.ops state.available w.body () with
+            | ReadyResult.notReady =>
+              { outcome := Outcome.contractMismatch w.tag state, events := [], states := [state] }
+            | ReadyResult.evaluated none =>
+              { outcome := Outcome.failed w.tag state, events := [Event.undefined w.tag], states := [state] }
+            | ReadyResult.evaluated (some value) =>
+              have next := { available := state.available, produced := state.produced ++ [(w.capability, value)] };
+              have tail := stepFuel steps fuel next;
+              { outcome := tail.outcome, events := Event.produced w.tag w.capability value :: tail.events,
+                states := state :: tail.states }
+          | Step.collect a caps =>
+            match List.mapM (producedValue state) caps with
+            | none => { outcome := Outcome.collectorMismatch a state, events := [], states := [state] }
+            | some values =>
+              have value := List.foldl (fun x1 x2 => x1 + x2) 0 values;
+              have next := { available := Function.update state.available a (some value), produced := state.produced };
+              have tail := stepFuel steps fuel next;
+              { outcome := tail.outcome, events := Event.sealed a value :: tail.events,
+                states := state :: tail.states })
+w : Writer σ
+hs : List.find? (enabled state) steps = some (Step.write w)
+value : Value RationalReference.Carrier (Ty.scalar ())
+hv : evalReady RationalReference.ops state.available w.body () = ReadyResult.evaluated (some value)
+next : State σ := { available := state.available, produced := state.produced ++ [(w.capability, value)] }
+ht : IndexedComponentExecution.SuccessfulOrFailed (stepFuel steps n next)
+h : GraphHistory σ
+ha : h.Admissible
+hr : h.toRun = stepFuel steps n next
+right✝ : History.start h = next
+⊢ toRun (History.step state (Event.produced w.tag w.capability value) h) =
+    { outcome := h.toRun.outcome, events := Event.produced w.tag w.capability value :: h.toRun.events,
+      states := state :: h.toRun.states }
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:504:14: error: Tactic `rfl` failed: The left-hand side
+  toRun (History.step state (Event.sealed a value) h)
+is not definitionally equal to the right-hand side
+  { outcome := h.toRun.outcome, events := Event.sealed a value :: h.toRun.events, states := state :: h.toRun.states }
+
+case h.false.some.succ.collect.some
+σ : Declarations Unit
+inst✝ : DecidableEq σ.Tensor
+steps : List (IndexedOpenComposition.Step σ)
+state : State σ
+hc : complete steps state = false
+n : ℕ
+ih :
+  ∀ m < n + 1,
+    ∀ (state : State σ),
+      IndexedComponentExecution.SuccessfulOrFailed (stepFuel steps m state) →
+        ∃ h, h.Admissible ∧ h.toRun = stepFuel steps m state ∧ History.start h = state
+terminal :
+  IndexedComponentExecution.SuccessfulOrFailed
+    (if complete steps state = true then { outcome := Outcome.complete state, events := [], states := [state] }
+    else
+      match List.find? (enabled state) steps with
+      | none => { outcome := Outcome.blocked state (missingReads steps state), events := [], states := [state] }
+      | some step =>
+        match n + 1 with
+        | 0 => { outcome := Outcome.exhausted state, events := [], states := [state] }
+        | fuel.succ =>
+          match step with
+          | Step.write w =>
+            match evalReady RationalReference.ops state.available w.body () with
+            | ReadyResult.notReady =>
+              { outcome := Outcome.contractMismatch w.tag state, events := [], states := [state] }
+            | ReadyResult.evaluated none =>
+              { outcome := Outcome.failed w.tag state, events := [Event.undefined w.tag], states := [state] }
+            | ReadyResult.evaluated (some value) =>
+              have next := { available := state.available, produced := state.produced ++ [(w.capability, value)] };
+              have tail := stepFuel steps fuel next;
+              { outcome := tail.outcome, events := Event.produced w.tag w.capability value :: tail.events,
+                states := state :: tail.states }
+          | Step.collect a caps =>
+            match List.mapM (producedValue state) caps with
+            | none => { outcome := Outcome.collectorMismatch a state, events := [], states := [state] }
+            | some values =>
+              have value := List.foldl (fun x1 x2 => x1 + x2) 0 values;
+              have next := { available := Function.update state.available a (some value), produced := state.produced };
+              have tail := stepFuel steps fuel next;
+              { outcome := tail.outcome, events := Event.sealed a value :: tail.events,
+                states := state :: tail.states })
+a : Address σ
+caps : List ℕ
+hs : List.find? (enabled state) steps = some (Step.collect a caps)
+values : List ℚ
+hv : List.mapM (producedValue state) caps = some values
+value : ℚ := List.foldl (fun x1 x2 => x1 + x2) 0 values
+this : DecidableEq (Address σ) := Executor.addressEq
+next : State σ := { available := Function.update state.available a (some value), produced := state.produced }
+ht : IndexedComponentExecution.SuccessfulOrFailed (stepFuel steps n next)
+h : GraphHistory σ
+ha : h.Admissible
+hr : h.toRun = stepFuel steps n next
+right✝ : History.start h = next
+⊢ toRun (History.step state (Event.sealed a value) h) =
+    { outcome := h.toRun.outcome, events := Event.sealed a value :: h.toRun.events, states := state :: h.toRun.states }
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:582:72: error: Type mismatch
+  rfl
+has type
+  ?m.30 = ?m.30
+but is expected to have type
+  ((first.splice second).splice third).states = [0, 1, 2, 3]
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:585:85: error: Type mismatch
+  rfl
+has type
+  ?m.25 = ?m.25
+but is expected to have type
+  ((done 1 ()).splice second).states = [1, 2]
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:587:62: error: Type mismatch
+  rfl
+has type
+  ?m.22 = ?m.22
+but is expected to have type
+  (privateFailure.splice third).states = [0, 1, 2]
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:602:67: error: Tactic `decide` proved that the proposition
+  (swapping.apply privateFailure).states = [2, 1, 0]
+is false
+'IndexedOperationalHistory.History.splice_assoc' depends on axioms: [propext]
+'IndexedOperationalHistory.History.success_cut' depends on axioms: [propext, sorryAx]
+'IndexedOperationalHistory.Transport.apply_splice' depends on axioms: [propext, Quot.sound]
+'IndexedOperationalHistory.GraphHistory.stepFuel_exists' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistory.GraphHistory.ranked_default_exists' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext, sorryAx]
+'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]

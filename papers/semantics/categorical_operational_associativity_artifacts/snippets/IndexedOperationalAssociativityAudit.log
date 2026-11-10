@@ -1,0 +1,26 @@
+Compiling snippet as leanncd/spikes/SnippetCheck_39240_15066.lean ...
+
+axiom audit: 352 constants under IndexedOperationalHistory use only standard axioms
+axiom audit: 47 constants under IndexedOperationalHistoryComposition use only standard axioms
+axiom audit: 29 constants under IndexedOperationalHistoryAssociativity use only standard axioms
+axiom audit: 59 constants under IndexedOperationalReassociation use only standard axioms
+axiom audit: 34 constants under IndexedOperationalRuns use only standard axioms
+axiom audit: 130 constants under IndexedOperationalRunsPhases use only standard axioms
+axiom audit: 16 constants under IndexedOperationalAssociativity use only standard axioms
+axiom audit: 44 constants under IndexedOperationalAssociativityFixtures use only standard axioms
+axiom audit: 15 constants under IndexedOperationalAssociativityTest use only standard axioms
+'IndexedComponentTransport.Domain.symm' depends on axioms: [propext, Quot.sound]
+'IndexedOperationalHistory.CompleteObservation.agrees_refl' depends on axioms: [propext, Quot.sound]
+'IndexedOperationalHistory.CompleteObservation.agrees_symm' depends on axioms: [propext, Quot.sound]
+'IndexedOperationalHistory.CompleteObservation.agrees_trans' depends on axioms: [propext, Quot.sound]
+'IndexedOperationalHistoryComposition.compose_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryComposition.SharedSplice.associative_eq' does not depend on any axioms
+'IndexedOperationalAssociativity.nested_observations' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.nested_reference_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.ranked_nested_reference_outcomes' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.triple_phases' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.two_reached_empty_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.reference_cuts' depends on axioms: [propext, Classical.choice, Quot.sound]
+
+COMPILES. Safe to write into the plan.

@@ -1,0 +1,15 @@
+./experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:328:18: error: Type mismatch
+  moved
+has type
+  downstreamState A (compose B C bc) a (downstreamState B C b (History.start hC)) =
+    downstreamState A (compose B C bc) a (upstreamState B C b)
+but is expected to have type
+  History.start cc = downstreamState A (compose B C bc) a (upstreamState B C b)
+'IndexedOperationalHistoryAssociativity.binary_associativity' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryAssociativity.actual_nested_histories' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]

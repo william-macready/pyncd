@@ -1,0 +1,1613 @@
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -200,7 +200,12 @@
+          "IndexedOperationalReassociation",
+          "IndexedOperationalHistory",
+          "IndexedOperationalObservationLaws",
++         "IndexedOperationalHistoryComposition",
++         "IndexedOperationalHistoryAssociativity",
+          "IndexedOperationalRuns",
++         "IndexedOperationalRunsPhases",
++         "IndexedOperationalAssociativity",
++         "IndexedOperationalSemantics",
+          "IndexedComponentRankedExecutionFixtures",
+          "IndexedComponentRankedExecutionRankTest",
+          "IndexedComponentRankedExecutionTest",
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedOperationalHistoryComposition.lean
+@@ -0,0 +1,519 @@
++import IndexedOperationalHistory
++import IndexedWitnessCoherence
++import IndexedComponentCompositionRanks
++
++namespace IndexedOperationalHistoryComposition
++
++open IndexedOperationalHistory
++
++namespace SharedSplice
++
++variable {S E F : Type*}
++abbrev H (S E F : Type*) := History S E F Unit
++
++/-- `none` is usable on failure without constructing any continuation or output. -/
++inductive Splice : H S E F → Option (H S E F) → H S E F → Prop
++  | done (s : S) (suffix : H S E F) (shared : suffix.start = s) :
++      Splice (.done s ()) (some suffix) suffix
++  | failed (s : S) (event : E) (failure : F) (suffix : Option (H S E F)) :
++      Splice (.failed s event failure) suffix (.failed s event failure)
++  | step (s : S) (event : E) {h suffix result} (tail : Splice h suffix result) :
++      Splice (.step s event h) suffix (.step s event result)
++
++def append (h k : H S E F) : H S E F := h.bind (fun _ _ => k)
++
++theorem start {h result : H S E F} {suffix} (joined : Splice h suffix result) :
++    result.start = h.start := by
++  cases joined with
++  | done _ _ shared => exact shared
++  | failed | step => rfl
++
++theorem success (h k : H S E F) {s}
++    (finished : h.finish = .ok (s, ())) (shared : k.start = s) :
++    Splice h (some k) (append h k) := by
++  induction h with
++  | done x a =>
++      cases a
++      simp only [History.finish, Except.ok.injEq, Prod.mk.injEq] at finished
++      rcases finished with ⟨rfl, _⟩
++      exact .done _ _ shared
++  | failed => cases finished
++  | step x e tail ih => exact .step x e (ih finished)
++
++theorem failure (h : H S E F) {s f} (finished : h.finish = .error (s, f)) :
++    Splice h none h := by
++  induction h with
++  | done => cases finished
++  | failed => exact .failed _ _ _ _
++  | step x e tail ih => exact .step x e (ih finished)
++
++theorem canonical {h k result : H S E F} (joined : Splice h (some k) result) :
++    result = append h k := by
++  induction h generalizing result with
++  | done s a => cases a; cases joined; rfl
++  | failed => cases joined; rfl
++  | step s e tail ih =>
++      cases joined
++      congr 1
++      apply ih
++      assumption
++
++theorem unique {h result other : H S E F} {suffix}
++    (left : Splice h suffix result) (right : Splice h suffix other) : result = other := by
++  induction left generalizing other with
++  | done => cases right; rfl
++  | failed => cases right; rfl
++  | step _ _ _ ih =>
++      cases right
++      congr 1
++      apply ih
++      assumption
++
++theorem associative {a b c ab bc : H S E F}
++    (first : Splice a (some b) ab) (second : Splice b (some c) bc) :
++    ∃ result, Splice ab (some c) result ∧ Splice a (some bc) result := by
++  induction a generalizing ab with
++  | done s a =>
++      cases a
++      cases first with
++      | done _ _ shared =>
++          exact ⟨bc, second, .done s bc ((start second).trans shared)⟩
++  | failed s e f =>
++      cases first
++      exact ⟨.failed s e f, .failed _ _ _ _, .failed _ _ _ _⟩
++  | step s e tail ih =>
++      cases first
++      obtain ⟨result, left, right⟩ := ih (by assumption)
++      exact ⟨.step s e result, .step _ _ left, .step _ _ right⟩
++
++theorem associative_eq {a b c ab bc left right : H S E F}
++    (first : Splice a (some b) ab) (second : Splice b (some c) bc)
++    (leftJoin : Splice ab (some c) left) (rightJoin : Splice a (some bc) right) :
++    left = right := by
++  obtain ⟨result, hl, hr⟩ := associative first second
++  exact (unique leftJoin hl).trans (unique rightJoin hr).symm
++
++theorem transport {T D G : Type*} (s : S → T) (e : E → D) (f : F → G)
++    {h result : H S E F} {suffix} (joined : Splice h suffix result) :
++    Splice (h.map s e f id) (suffix.map (History.map s e f id))
++      (result.map s e f id) := by
++  induction joined with
++  | done x k shared =>
++      exact .done _ _ (by simpa using congrArg s shared)
++  | failed => exact .failed _ _ _ _
++  | step _ _ _ ih => exact .step _ _ ih
++
++theorem cut (h k : H S E F) {s} (finished : h.finish = .ok (s, ())) :
++    ∃ pre, h.states = pre ++ [s] ∧
++      (append h k).states = pre ++ k.states ∧
++      (append h k).events = h.events ++ k.events ∧
++      (append h k).finish = k.finish := by
++  induction h with
++  | done x a =>
++      cases a
++      simp only [History.finish, Except.ok.injEq, Prod.mk.injEq] at finished
++      rcases finished with ⟨rfl, _⟩
++      exact ⟨[], rfl, rfl, rfl, rfl⟩
++  | failed => cases finished
++  | step x e tail ih =>
++      obtain ⟨pre, hp, hs, he, hf⟩ := ih finished
++      exact ⟨x :: pre, congrArg (List.cons x) hp,
++        congrArg (List.cons x) hs, congrArg (List.cons e) he, hf⟩
++
++end SharedSplice
++
++open LeanNCD.Semantics LeanNCD.Semantics.Program
++open IndexedOpenComposition IndexedComponentComposition IndexedComponentTransport
++open IndexedComponentExecution
++
++variable {σA σB : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB) (wire : Boundary A B)
++
++def upstreamState (s : State σA) : State (declarations A B) where
++  available := fun a => match a with
++    | ⟨.inl t, p⟩ => s.available ⟨t, p⟩
++    | ⟨.inr _, _⟩ => none
++  produced := mapLedger upstreamId s.produced
++
++def downstreamState (completed : State σA) (s : State σB) :
++    State (declarations A B) where
++  available := fun a => match a with
++    | ⟨.inl t, p⟩ => completed.available ⟨t, p⟩
++    | ⟨.inr t, p⟩ => s.available ⟨t.val, p⟩
++  produced := mapLedger upstreamId completed.produced ++ mapLedger downstreamId s.produced
++
++theorem upstream_reconstruction {s : State σA} {t : State (declarations A B)}
++    (related : UpstreamState A B wire s t) : t = upstreamState A B s := by
++  have available : t.available = (upstreamState A B s).available := by
++    funext a
++    rcases a with ⟨tensor, p⟩
++    cases tensor with
++    | inl x => exact related.available ⟨x, p⟩
++    | inr x =>
++        have h := related.downstream ⟨x.val, p⟩ x.property
++        rw [downstream_defined_address A B wire x p] at h
++        exact h
++  cases t
++  exact congrArg₂ State.mk available related.produced
++
++theorem downstream_reconstruction {completed : State σA} {s : State σB}
++    {t : State (declarations A B)}
++    (related : DownstreamState A B wire completed s t) :
++    t = downstreamState A B completed s := by
++  have available : t.available = (downstreamState A B completed s).available := by
++    funext a
++    rcases a with ⟨tensor, p⟩
++    cases tensor with
++    | inl x => exact related.upstream ⟨x, p⟩
++    | inr x =>
++        have h := related.available ⟨x.val, p⟩
++        rw [downstream_defined_address A B wire x p] at h
++        exact h
++  cases t
++  exact congrArg₂ State.mk available related.produced
++
++def liftUpstream (h : GraphHistory σA) : GraphHistory (declarations A B) :=
++  h.map (upstreamState A B) (mapEvent (upstream A B) upstreamId) upstreamId id
++
++def liftDownstream (completed : State σA) (h : GraphHistory σB) :
++    GraphHistory (declarations A B) :=
++  h.map (downstreamState A B completed)
++    (mapEvent (downstream A B wire) downstreamId) downstreamId id
++
++theorem forall₂_reconstruct {X Y : Type*} {R : X → Y → Prop}
++    (reconstruct : X → Y) (determined : ∀ x y, R x y → y = reconstruct x)
++    {xs ys} (related : List.Forall₂ R xs ys) : ys = xs.map reconstruct := by
++  induction related with
++  | nil => rfl
++  | cons h _ ih => exact congrArg₂ List.cons (determined _ _ h) ih
++
++theorem finish_map {S E F T D G : Type*} (h : History S E F Unit)
++    (s : S → T) (e : E → D) (f : F → G) :
++    (h.map s e f id).finish =
++      match h.finish with
++      | .ok (x, a) => .ok (s x, a)
++      | .error (x, failure) => .error (s x, f failure) := by
++  induction h <;> simp_all [History.map, History.finish]
++
++theorem complete_finish {σ : Declarations Unit} (h : GraphHistory σ) {s}
++    (complete : h.toRun.outcome = .complete s) : h.finish = .ok (s, ()) := by
++  cases hf : h.finish with
++  | error failure => simp [GraphHistory.toRun, hf] at complete
++  | ok pair =>
++      rcases pair with ⟨x, a⟩
++      cases a
++      simp [GraphHistory.toRun, hf] at complete
++      simp [complete]
++
++theorem failed_finish {σ : Declarations Unit} (h : GraphHistory σ) {s tag}
++    (failed : h.toRun.outcome = .failed tag s) : h.finish = .error (s, tag) := by
++  cases hf : h.finish with
++  | ok pair => simp [GraphHistory.toRun, hf] at failed
++  | error pair =>
++      rcases pair with ⟨x, f⟩
++      simp [GraphHistory.toRun, hf] at failed
++      rcases failed with ⟨rfl, rfl⟩
++      rfl
++
++theorem run_ext {σ : Declarations Unit} {r q : Run σ}
++    (outcome : r.outcome = q.outcome) (events : r.events = q.events)
++    (states : r.states = q.states) : r = q := by
++  cases r
++  cases q
++  simp_all
++
++theorem projected_history {σ τ : Declarations Unit}
++    (f : Embedding σ τ) (rename : Nat → Nat) (R : State σ → State τ → Prop)
++    (reconstruct : State σ → State τ)
++    (determined : ∀ s t, R s t → t = reconstruct s)
++    (h : GraphHistory σ) (target : Run τ)
++    (projection : RunProjection f rename R h.toRun target) :
++    GraphHistory.toRun (h.map reconstruct (mapEvent f rename) rename id) = target := by
++  apply run_ext
++  · rcases projection.2.2 with done | failed
++    · obtain ⟨s, t, hs, ht, related⟩ := done
++      have hf := complete_finish h hs
++      simp [GraphHistory.toRun, finish_map, hf, ht, determined s t related]
++    · obtain ⟨tag, s, t, hs, ht, related⟩ := failed
++      have hf := failed_finish h hs
++      simp [GraphHistory.toRun, finish_map, hf, ht, determined s t related]
++  · exact (History.events_map _ _ _ _ _).trans projection.1.symm
++  · exact (History.states_map _ _ _ _ _).trans
++      (forall₂_reconstruct reconstruct determined projection.2.1).symm
++
++/-- Structural binary composition. No composite run agreement is a premise. -/
++inductive BinaryHistory (source : GraphHistory σA) :
++    GraphHistory (declarations A B) → Prop
++  | failed (tag : Nat) (endpoint : State σA)
++      (finished : source.finish = .error (endpoint, tag)) :
++      BinaryHistory source (liftUpstream A B source)
++  | complete (completed : State σA) (store : Store RationalReference.Carrier σA)
++      (suffix : GraphHistory σB)
++      (finished : source.finish = .ok (completed, ()))
++      (full : ∀ a, completed.available a = some (store a))
++      (suffix_admissible : suffix.Admissible)
++      (suffix_run : suffix.toRun =
++        runChecked B.contract B.fragment (boundaryInput A B wire store).val)
++      (shared : (liftDownstream A B wire completed suffix).start =
++        (upstreamState A B completed)) :
++      BinaryHistory source
++        (SharedSplice.append (liftUpstream A B source)
++          (liftDownstream A B wire completed suffix))
++
++theorem BinaryHistory.splices {source : GraphHistory σA}
++    {result : GraphHistory (declarations A B)}
++    (binary : BinaryHistory A B wire source result) :
++    ∃ suffix, SharedSplice.Splice (liftUpstream A B source) suffix result := by
++  cases binary with
++  | failed tag endpoint finished =>
++      exact ⟨none, SharedSplice.failure _ (s := upstreamState A B endpoint)
++        (f := upstreamId tag)
++        (by simp [liftUpstream, finish_map, finished])⟩
++  | complete completed store suffix finished full admitted run shared =>
++      exact ⟨some (liftDownstream A B wire completed suffix),
++        SharedSplice.success _ _ (by simp [liftUpstream, finish_map, finished]) shared⟩
++
++theorem BinaryHistory.unique {source : GraphHistory σA}
++    {left right : GraphHistory (declarations A B)}
++    (first : BinaryHistory A B wire source left)
++    (second : BinaryHistory A B wire source right) : left = right := by
++  cases first with
++  | failed tag endpoint finished =>
++      cases second with
++      | failed => rfl
++      | complete c store suffix complete =>
++          rw [finished] at complete
++          cases complete
++  | complete completed store suffix finished full admitted run shared =>
++      cases second with
++      | failed tag endpoint failed =>
++          rw [finished] at failed
++          cases failed
++      | complete completed' store' suffix' finished' full' admitted' run' shared' =>
++          have hc : completed = completed' :=
++            (Prod.mk.inj (Except.ok.inj (finished.symm.trans finished'))).1
++          subst completed'
++          have stores : store = store' := by
++            funext a
++            exact Option.some.inj ((full a).symm.trans (full' a))
++          subst store'
++          have suffixes : suffix = suffix' :=
++            GraphHistory.toRun_injective (run.trans run'.symm)
++          subst suffix'
++          rfl
++
++theorem map_admissible {σ τ : Declarations Unit} (state : State σ → State τ)
++    (embedding : Embedding σ τ) (rename : Nat → Nat) {h : GraphHistory σ}
++    (admitted : h.Admissible) :
++    GraphHistory.Admissible (h.map state (mapEvent embedding rename) rename id) := by
++  induction admitted with
++  | done => exact .done _
++  | produced _ _ _ _ _ _ ih => exact .produced _ _ _ _ _ ih
++  | sealed _ _ _ _ _ ih => exact .sealed _ _ _ _ ih
++  | failed => exact .failed _ _
++
++theorem append_admissible {σ : Declarations Unit} {h k : GraphHistory σ}
++    (left : h.Admissible) (right : k.Admissible) :
++    GraphHistory.Admissible (SharedSplice.append h k) := by
++  induction left with
++  | done => exact right
++  | produced _ _ _ _ _ _ ih => exact .produced _ _ _ _ _ ih
++  | sealed _ _ _ _ _ ih => exact .sealed _ _ _ _ ih
++  | failed => exact .failed _ _
++
++theorem BinaryHistory.admissible {source : GraphHistory σA}
++    {result : GraphHistory (declarations A B)}
++    (binary : BinaryHistory A B wire source result) (admitted : source.Admissible) :
++    result.Admissible := by
++  cases binary with
++  | failed => exact map_admissible _ _ _ admitted
++  | complete _ _ _ _ _ suffixAdmitted =>
++      exact append_admissible (map_admissible _ _ _ admitted)
++        (map_admissible _ _ _ suffixAdmitted)
++
++theorem BinaryHistory.phase_cut {source : GraphHistory σA}
++    {result : GraphHistory (declarations A B)}
++    (binary : BinaryHistory A B wire source result) :
++    (∃ tag endpoint, source.finish = .error (endpoint, tag) ∧
++      result = liftUpstream A B source) ∨
++    (∃ completed store suffix pre,
++      source.finish = .ok (completed, ()) ∧
++      (∀ a, completed.available a = some (store a)) ∧
++      suffix.toRun = runChecked B.contract B.fragment (boundaryInput A B wire store).val ∧
++      (liftUpstream A B source).states = pre ++ [upstreamState A B completed] ∧
++      (liftDownstream A B wire completed suffix).start = upstreamState A B completed ∧
++      result.states = pre ++ (liftDownstream A B wire completed suffix).states ∧
++      result.events = (liftUpstream A B source).events ++
++        (liftDownstream A B wire completed suffix).events ∧
++      result.finish = (liftDownstream A B wire completed suffix).finish) := by
++  cases binary with
++  | failed tag endpoint finished => exact .inl ⟨tag, endpoint, finished, rfl⟩
++  | complete completed store suffix finished full admitted run shared =>
++      obtain ⟨pre, hs, resultStates, resultEvents, resultFinish⟩ :=
++        SharedSplice.cut (liftUpstream A B source)
++          (liftDownstream A B wire completed suffix)
++          (s := upstreamState A B completed)
++          (by simp [liftUpstream, finish_map, finished])
++      exact .inr ⟨completed, store, suffix, pre, finished, full, run, hs, shared,
++        resultStates, resultEvents, resultFinish⟩
++
++theorem compose_history (η : A.program.Input)
++    (rankA : A.program.RankCertificate) (rankB : B.program.RankCertificate)
++    (source : GraphHistory σA)
++    (source_run : source.toRun = runChecked A.contract A.fragment η.val) :
++    ∃ result, BinaryHistory A B wire source result ∧
++      result.toRun = runChecked (compose A B wire).contract (compose A B wire).fragment
++        (liftInput A B wire η).val := by
++  have phases := compose_default_phases A B wire η rankA rankB
++  rcases phases with failed | success
++  · obtain ⟨tag, endpoint, target, hs, ht, related, events, states⟩ := failed
++    have hs' : source.toRun.outcome = .failed tag endpoint := by rw [source_run]; exact hs
++    refine ⟨liftUpstream A B source, .failed tag endpoint (failed_finish source hs'), ?_⟩
++    apply projected_history (upstream A B) upstreamId (UpstreamState A B wire)
++      (upstreamState A B) (fun _ _ h => upstream_reconstruction A B wire h)
++    rw [source_run]
++    exact ⟨events, states, .inr ⟨tag, endpoint, target, hs, ht, related⟩⟩
++  · obtain ⟨completed, store, cut, remaining, snapshots, hs, full, upstreamCut,
++      downstreamCut, states, budget, bound, enough, suffixProjection,
++      events, snapshotsEq, outcome⟩ := success
++    obtain ⟨suffix, admitted, suffix_run, suffix_start⟩ :=
++      GraphHistory.ranked_default_exists B (boundaryInput A B wire store) rankB
++    have finished : source.finish = .ok (completed, ()) := by
++      apply complete_finish
++      rw [source_run]
++      exact hs
++    have cut_eq : cut = upstreamState A B completed :=
++      upstream_reconstruction A B wire upstreamCut
++    have suffix_lift :
++        GraphHistory.toRun (liftDownstream A B wire completed suffix) =
++          stepFuel (compose A B wire).graph.steps remaining cut := by
++      apply projected_history (downstream A B wire) downstreamId
++        (DownstreamState A B wire completed) (downstreamState A B completed)
++        (fun _ _ h => downstream_reconstruction A B wire h)
++      rw [suffix_run]
++      exact suffixProjection
++    have shared : (liftDownstream A B wire completed suffix).start =
++        upstreamState A B completed := by
++      rw [liftDownstream, History.start_map, suffix_start]
++      exact (downstream_reconstruction A B wire downstreamCut).symm.trans cut_eq
++    let up := liftUpstream A B source
++    let down := liftDownstream A B wire completed suffix
++    have up_finished : up.finish = .ok (upstreamState A B completed, ()) := by
++      simp [up, liftUpstream, finish_map, finished]
++    obtain ⟨pre, pre_states, result_states, result_events, result_finish⟩ :=
++      SharedSplice.cut up down up_finished
++    have mapped_states : up.states = snapshots ++ [upstreamState A B completed] := by
++      have reconstructed := forall₂_reconstruct (upstreamState A B)
++        (fun _ _ h => upstream_reconstruction A B wire h) states
++      rw [← source_run] at reconstructed
++      exact (History.states_map _ _ _ _ _).trans (reconstructed.symm.trans (by rw [cut_eq]))
++    have pre_eq : pre = snapshots := by
++      have eq := pre_states.symm.trans mapped_states
++      exact List.append_cancel_right eq
++    refine ⟨SharedSplice.append up down,
++      .complete completed store suffix finished full admitted suffix_run shared, ?_⟩
++    apply run_ext
++    · simpa only [GraphHistory.toRun, result_finish] using
++        (congrArg Run.outcome suffix_lift).trans outcome.symm
++    · change (SharedSplice.append up down).events = _
++      rw [result_events, events]
++      have up_events : up.events =
++          (runChecked A.contract A.fragment η.val).events.map
++            (mapEvent (upstream A B) upstreamId) := by
++        rw [← source_run]
++        exact History.events_map _ _ _ _ _
++      rw [up_events]
++      exact congrArg (List.append _) (congrArg Run.events suffix_lift)
++    · change (SharedSplice.append up down).states = _
++      rw [result_states, pre_eq, snapshotsEq]
++      exact congrArg (List.append _) (congrArg Run.states suffix_lift)
++
++theorem BinaryHistory.sound (η : A.program.Input)
++    (rankA : A.program.RankCertificate) (rankB : B.program.RankCertificate)
++    {source : GraphHistory σA} {result : GraphHistory (declarations A B)}
++    (source_run : source.toRun = runChecked A.contract A.fragment η.val)
++    (binary : BinaryHistory A B wire source result) :
++    result.toRun = runChecked (compose A B wire).contract (compose A B wire).fragment
++      (liftInput A B wire η).val := by
++  obtain ⟨other, otherBinary, run⟩ := compose_history A B wire η rankA rankB source source_run
++  rw [BinaryHistory.unique A B wire binary otherBinary]
++  exact run
++
++theorem BinaryHistory.transport_splices {τ : Declarations Unit}
++    (transport : GraphTransport (declarations A B) τ)
++    {source : GraphHistory σA} {result : GraphHistory (declarations A B)}
++    (binary : BinaryHistory A B wire source result) :
++    ∃ suffix, SharedSplice.Splice
++      (transport.history.apply (liftUpstream A B source)) suffix
++      (transport.history.apply result) := by
++  obtain ⟨suffix, joined⟩ := binary.splices A B wire
++  exact ⟨suffix.map transport.history.apply,
++    SharedSplice.transport transport.stateEquiv transport.eventEquiv transport.identity joined⟩
++
++theorem boundaryInput_from_whole_output (store : Store RationalReference.Carrier σA) :
++    boundaryInput A B wire store =
++      boundaryFromOutput A B wire (fun t p => store ⟨t.val, p⟩) := rfl
++
++section Nested
++
++variable {σC : Declarations Unit} [Fintype σC.Tensor] [DecidableEq σC.Tensor]
++variable (C : MatchedComponent σC) (bc : Boundary B C)
++
++/-- Two applications of the actual binary decomposition, retaining both reached cuts
++as `BinaryHistory` witnesses rather than assuming an event-level agreement. -/
++theorem left_nested_history (η : A.program.Input)
++    (rankA : A.program.RankCertificate) (rankB : B.program.RankCertificate)
++    (rankC : C.program.RankCertificate) (source : GraphHistory σA)
++    (source_run : source.toRun = runChecked A.contract A.fragment η.val) :
++    ∃ middle result,
++      BinaryHistory A B wire source middle ∧
++      BinaryHistory (compose A B wire) C
++        (IndexedWitness.leftNestedBoundary A B C wire bc) middle result ∧
++      result.toRun = runChecked
++        (IndexedWitness.leftBracket A B C wire bc).contract
++        (IndexedWitness.leftBracket A B C wire bc).fragment
++        (liftInput (compose A B wire) C (IndexedWitness.leftNestedBoundary A B C wire bc)
++          (liftInput A B wire η)).val := by
++  obtain ⟨middle, first, middleRun⟩ := compose_history A B wire η rankA rankB source source_run
++  obtain ⟨result, second, resultRun⟩ :=
++    compose_history (compose A B wire) C (IndexedWitness.leftNestedBoundary A B C wire bc)
++      (liftInput A B wire η) (compositeRankCertificate A B wire rankA rankB) rankC
++      middle middleRun
++  exact ⟨middle, result, first, second, resultRun⟩
++
++end Nested
++
++namespace Fixtures
++
++open IndexedOperationalHistory.Fixtures SharedSplice
++
++example : Splice first (some (second.run 1 ())) (append first (second.run 1 ())) :=
++  success _ _ rfl rfl
++
++example : Splice privateFailure none privateFailure :=
++  failure _ rfl
++
++example : Splice (.done 1 () : H Nat Nat Nat)
++    (some (.done 1 ())) (.done 1 ()) := .done _ _ rfl
++
++example : (append first (second.run 1 ())).states = [0, 1, 2] := rfl
++
++example : ¬Splice (.done 1 () : H Nat Nat Nat)
++    (some (.done 2 ())) (.done 2 ()) := by
++  intro joined
++  have wrong := start joined
++  contradiction
++
++#print axioms compose_history
++#print axioms BinaryHistory.sound
++#print axioms BinaryHistory.unique
++#print axioms BinaryHistory.phase_cut
++#print axioms BinaryHistory.transport_splices
++#print axioms left_nested_history
++#print axioms SharedSplice.associative_eq
++
++end Fixtures
++
++end IndexedOperationalHistoryComposition
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean
+@@ -0,0 +1,394 @@
++import IndexedOperationalHistoryComposition
++import IndexedOperationalAssociativity
++import IndexedOperationalRunsPhases
++
++namespace IndexedOperationalHistoryAssociativity
++
++open LeanNCD.Semantics LeanNCD.Semantics.Program
++open IndexedOpenComposition IndexedComponentComposition IndexedComponentExecution
++open IndexedComponentTransport IndexedWitness IndexedOperationalReassociation
++open IndexedOperationalHistory IndexedOperationalHistoryComposition
++open IndexedOperationalAssociativity
++
++variable {σA σB σC : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable [Fintype σC.Tensor] [DecidableEq σC.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB) (C : MatchedComponent σC)
++variable (ab : Boundary A B) (bc : Boundary B C)
++
++abbrev L := declarations (compose A B ab) C
++abbrev R := declarations A (compose B C bc)
++
++theorem state_A (a : State σA) :
++    (graphTransport A B C ab bc).mapState
++      (upstreamState (compose A B ab) C (upstreamState A B a)) =
++      upstreamState A (compose B C bc) a := by
++  have available : ((graphTransport A B C ab bc).mapState
++      (upstreamState (compose A B ab) C (upstreamState A B a))).available =
++      (upstreamState A (compose B C bc) a).available := by
++    funext x
++    rcases x with ⟨t | ⟨t | t, h⟩, p⟩ <;> rfl
++  apply congrArg₂ State.mk available
++  simp [graphTransport, upstreamState, mapLedger,
++    List.map_map, Function.comp_def, identity_A]
++
++theorem state_B (a : State σA) (b : State σB) :
++    (graphTransport A B C ab bc).mapState
++      (upstreamState (compose A B ab) C (downstreamState A B a b)) =
++      downstreamState A (compose B C bc) a (upstreamState B C b) := by
++  have available : ((graphTransport A B C ab bc).mapState
++      (upstreamState (compose A B ab) C (downstreamState A B a b))).available =
++      (downstreamState A (compose B C bc) a (upstreamState B C b)).available := by
++    funext x
++    rcases x with ⟨t | ⟨t | t, h⟩, p⟩ <;> rfl
++  apply congrArg₂ State.mk available
++  simp [graphTransport, upstreamState, downstreamState,
++    mapLedger, List.map_append, List.map_map, Function.comp_def, identity_A, identity_B]
++
++theorem state_C (a : State σA) (b : State σB) (c : State σC) :
++    (graphTransport A B C ab bc).mapState
++      (downstreamState (compose A B ab) C (downstreamState A B a b) c) =
++      downstreamState A (compose B C bc) a (downstreamState B C b c) := by
++  have available : ((graphTransport A B C ab bc).mapState
++      (downstreamState (compose A B ab) C (downstreamState A B a b) c)).available =
++      (downstreamState A (compose B C bc) a (downstreamState B C b c)).available := by
++    funext x
++    rcases x with ⟨t | ⟨t | t, h⟩, p⟩ <;> rfl
++  apply congrArg₂ State.mk available
++  simp [graphTransport, downstreamState, mapLedger,
++    List.map_append, List.map_map, Function.comp_def, identity_A, identity_B,
++    identity_C, List.append_assoc]
++
++theorem event_A (e : Event σA) :
++    (graphTransport A B C ab bc).mapEvent
++      (mapEvent (upstream (compose A B ab) C) upstreamId
++        (mapEvent (upstream A B) upstreamId e)) =
++      mapEvent (upstream A (compose B C bc)) upstreamId e := by
++  cases e <;> simp [GraphTransport.mapEvent, graphTransport, mapEvent, identity_A, address_A]
++
++theorem event_B (e : Event σB) :
++    (graphTransport A B C ab bc).mapEvent
++      (mapEvent (upstream (compose A B ab) C) upstreamId
++        (mapEvent (downstream A B ab) downstreamId e)) =
++      mapEvent (downstream A (compose B C bc) (rightNestedBoundary A B C ab bc)) downstreamId
++        (mapEvent (upstream B C) upstreamId e) := by
++  cases e <;> simp [GraphTransport.mapEvent, graphTransport, mapEvent, identity_B, address_B]
++
++theorem event_C (e : Event σC) :
++    (graphTransport A B C ab bc).mapEvent
++      (mapEvent (downstream (compose A B ab) C (leftNestedBoundary A B C ab bc)) downstreamId e) =
++      mapEvent (downstream A (compose B C bc) (rightNestedBoundary A B C ab bc)) downstreamId
++        (mapEvent (downstream B C bc) downstreamId e) := by
++  cases e <;> simp [GraphTransport.mapEvent, graphTransport, mapEvent, identity_C, address_C]
++
++theorem map_append {S E F T D G : Type*} (h k : History S E F Unit)
++    (s : S → T) (e : E → D) (f : F → G) :
++    (SharedSplice.append h k).map s e f id =
++      SharedSplice.append (h.map s e f id) (k.map s e f id) := by
++  induction h <;> simp_all [SharedSplice.append, History.bind, History.map]
++
++theorem map_ext {S E F T D G : Type*} (h : History S E F Unit)
++    (s t : S → T) (e d : E → D) (f g : F → G)
++    (hs : ∀ x, s x = t x) (he : ∀ x, e x = d x) (hf : ∀ x, f x = g x) :
++    h.map s e f id = h.map t d g id := by
++  induction h <;> simp_all [History.map]
++
++def leafA (h : GraphHistory σA) : GraphHistory (R A B C bc) :=
++  liftUpstream A (compose B C bc) h
++
++def leafB (a : State σA) (h : GraphHistory σB) : GraphHistory (R A B C bc) :=
++  liftDownstream A (compose B C bc) (rightNestedBoundary A B C ab bc) a
++    (liftUpstream B C h)
++
++def leafC (a : State σA) (b : State σB) (h : GraphHistory σC) :
++    GraphHistory (R A B C bc) :=
++  liftDownstream A (compose B C bc) (rightNestedBoundary A B C ab bc) a
++    (liftDownstream B C bc b h)
++
++theorem lift_A (h : GraphHistory σA) :
++    (graphTransport A B C ab bc).history.apply
++      (liftUpstream (compose A B ab) C (liftUpstream A B h)) =
++      leafA A B C bc h := by
++  simp only [Transport.apply, GraphTransport.history, liftUpstream, History.map_comp, leafA]
++  apply map_ext
++  · exact state_A A B C ab bc
++  · exact event_A A B C ab bc
++  · exact identity_A
++
++theorem lift_B (a : State σA) (h : GraphHistory σB) :
++    (graphTransport A B C ab bc).history.apply
++      (liftUpstream (compose A B ab) C (liftDownstream A B ab a h)) =
++      leafB A B C ab bc a h := by
++  simp only [Transport.apply, GraphTransport.history, liftUpstream, liftDownstream,
++    History.map_comp, leafB]
++  apply map_ext
++  · exact state_B A B C ab bc a
++  · exact event_B A B C ab bc
++  · exact identity_B
++
++theorem lift_C (a : State σA) (b : State σB) (h : GraphHistory σC) :
++    (graphTransport A B C ab bc).history.apply
++      (liftDownstream (compose A B ab) C (leftNestedBoundary A B C ab bc)
++        (downstreamState A B a b) h) =
++      leafC A B C ab bc a b h := by
++  simp only [Transport.apply, GraphTransport.history, liftDownstream, History.map_comp, leafC]
++  apply map_ext
++  · exact state_C A B C ab bc a b
++  · exact event_C A B C ab bc
++  · exact identity_C
++
++theorem right_input (a : Store RationalReference.Carrier σA) :
++    boundaryInput A (compose B C bc) (rightNestedBoundary A B C ab bc) a =
++      liftInput B C bc (boundaryInput A B ab a) := by
++  apply Subtype.ext
++  funext t
++  cases t with
++  | inl t =>
++      by_cases h : B.program.input t = true
++      · simp [boundaryInput, liftInput, rightNestedBoundary, rightInputIndexEquiv,
++          compose, program, h]; rfl
++      · simp [boundaryInput, liftInput, rightNestedBoundary, rightInputIndexEquiv,
++          compose, program, h]; rfl
++  | inr t => rfl
++
++theorem shared_right (a : State σA) (hB : GraphHistory σB)
++    {hBC : GraphHistory (declarations B C)}
++    (shared : (liftDownstream A B ab a hB).start = upstreamState A B a)
++    (binary : BinaryHistory B C bc hB hBC) :
++    (liftDownstream A (compose B C bc) (rightNestedBoundary A B C ab bc) a hBC).start =
++      upstreamState A (compose B C bc) a := by
++  obtain ⟨suffix, joined⟩ := binary.splices B C bc
++  have starts := SharedSplice.start joined
++  have coherent := congrArg
++    (fun s => (graphTransport A B C ab bc).mapState (upstreamState (compose A B ab) C s))
++    shared
++  simp only [liftDownstream, History.start_map] at coherent
++  rw [state_B, state_A] at coherent
++  simpa only [liftDownstream, History.start_map, starts, liftUpstream] using coherent
++
++theorem append_finish {S E F : Type*} (h k : History S E F Unit) {s}
++    (finished : h.finish = .ok (s, ())) :
++    (SharedSplice.append h k).finish = k.finish := by
++  obtain ⟨_, _, _, _, hf⟩ := SharedSplice.cut h k finished
++  exact hf
++
++theorem boundary_C (a : State σA) (b : State σB)
++    (storeAB : Store RationalReference.Carrier (declarations A B))
++    (storeB : Store RationalReference.Carrier σB)
++    (fullAB : ∀ x, (downstreamState A B a b).available x = some (storeAB x))
++    (fullB : ∀ x, b.available x = some (storeB x)) :
++    boundaryInput (compose A B ab) C (leftNestedBoundary A B C ab bc) storeAB =
++      boundaryInput B C bc storeB := by
++  rw [IndexedOperationalRunsPhases.original_bc_input]
++  apply Subtype.ext
++  funext t
++  by_cases h : C.program.input t = true
++  · simp only [boundaryInput, h, ↓reduceDIte]
++    congr 1
++    funext p
++    let output := bc.matched ⟨t, h⟩
++    let q := (bc.domain ⟨t, h⟩).coord p
++    have defined := B.program.output_defined output.val output.property
++    have eq := fullAB ⟨.inr ⟨output.val, defined⟩, q⟩
++    change b.available ⟨output.val, q⟩ = some (storeAB _) at eq
++    rw [fullB] at eq
++    have values := Option.some.inj eq
++    change restrictDownstream A B ab storeAB ⟨output.val, q⟩ = storeB ⟨output.val, q⟩
++    unfold restrictDownstream Embedding.pullComplete
++    rw [downstream_defined_address A B ab ⟨output.val, defined⟩ q]
++    exact values.symm
++  · simp [boundaryInput, h]
++
++theorem transport_append {σ τ : Declarations Unit} (t : GraphTransport σ τ)
++    (h k : GraphHistory σ) :
++    t.history.apply (SharedSplice.append h k) =
++      SharedSplice.append (t.history.apply h) (t.history.apply k) :=
++  map_append _ _ _ _ _
++
++theorem up_append {σ τ : Declarations Unit}
++    [Fintype σ.Tensor] [DecidableEq σ.Tensor] [Fintype τ.Tensor] [DecidableEq τ.Tensor]
++    (X : MatchedComponent σ) (Y : MatchedComponent τ) (h k : GraphHistory σ) :
++    liftUpstream X Y (SharedSplice.append h k) =
++      SharedSplice.append (liftUpstream X Y h) (liftUpstream X Y k) :=
++  map_append _ _ _ _ _
++
++theorem down_append {σ τ : Declarations Unit}
++    [Fintype σ.Tensor] [DecidableEq σ.Tensor] [Fintype τ.Tensor] [DecidableEq τ.Tensor]
++    (X : MatchedComponent σ) (Y : MatchedComponent τ) (wire : Boundary X Y)
++    (completed : State σ) (h k : GraphHistory τ) :
++    liftDownstream X Y wire completed (SharedSplice.append h k) =
++      SharedSplice.append (liftDownstream X Y wire completed h)
++        (liftDownstream X Y wire completed k) := map_append _ _ _ _ _
++
++theorem binary_associativity
++    (rankB : B.program.RankCertificate) (rankC : C.program.RankCertificate)
++    {hA : GraphHistory σA} {hAB : GraphHistory (declarations A B)}
++    {hL : GraphHistory (L A B C ab)}
++    (inner : BinaryHistory A B ab hA hAB)
++    (outer : BinaryHistory (compose A B ab) C (leftNestedBoundary A B C ab bc) hAB hL) :
++    ∃ hR, BinaryHistory A (compose B C bc) (rightNestedBoundary A B C ab bc) hA hR ∧
++      (graphTransport A B C ab bc).history.apply hL = hR := by
++  cases inner with
++  | failed tag a failedA =>
++      cases outer with
++      | failed =>
++          exact ⟨_, .failed tag a failedA, lift_A A B C ab bc hA⟩
++      | complete a' store hC finished =>
++          simp [liftUpstream, finish_map, failedA] at finished
++  | complete a storeA hB finishedA fullA admittedB runB sharedAB =>
++      obtain ⟨hBC, bcTree, bcRun⟩ := compose_history B C bc
++        (boundaryInput A B ab storeA) rankB rankC hB runB
++      have tree := bcTree
++      have rightShared := shared_right A B C ab bc a hB sharedAB tree
++      have rightRun : hBC.toRun = runChecked (compose B C bc).contract
++          (compose B C bc).fragment
++          (boundaryInput A (compose B C bc) (rightNestedBoundary A B C ab bc) storeA).val := by
++        rw [right_input]
++        exact bcRun
++      have rightAdmitted := tree.admissible B C bc admittedB
++      have sourceFinish :
++          (SharedSplice.append (liftUpstream A B hA)
++            (liftDownstream A B ab a hB)).finish =
++            (liftDownstream A B ab a hB).finish :=
++        append_finish _ _ (s := upstreamState A B a)
++          (by simp [liftUpstream, finish_map, finishedA])
++      cases bcTree with
++      | failed tag b failedB =>
++          cases outer with
++          | complete a' store hC finished =>
++              rw [sourceFinish] at finished
++              simp [liftDownstream, finish_map, failedB] at finished
++          | failed =>
++              refine ⟨_, .complete a storeA _ finishedA fullA rightAdmitted rightRun
++                rightShared, ?_⟩
++              rw [up_append, transport_append, lift_A, lift_B]
++              rfl
++      | complete b storeB hC finishedB fullB admittedC runC sharedBC =>
++          cases outer with
++          | failed tag endpoint failed =>
++              rw [sourceFinish] at failed
++              simp [liftDownstream, finish_map, finishedB] at failed
++          | complete completedAB storeAB hC' finishedAB fullAB admittedC' runC' sharedLeft =>
++              rw [sourceFinish] at finishedAB
++              have endeq : downstreamState A B a b = completedAB := by
++                simpa [liftDownstream, finish_map, finishedB] using finishedAB
++              subst completedAB
++              have inputs := boundary_C A B C ab bc a b storeAB storeB fullAB fullB
++              rw [inputs] at runC'
++              have sameC : hC' = hC := GraphHistory.toRun_injective (runC'.trans runC.symm)
++              subst hC'
++              refine ⟨_, .complete a storeA _ finishedA fullA rightAdmitted rightRun
++                rightShared, ?_⟩
++              rw [up_append, transport_append, transport_append, lift_A, lift_B]
++              rw [lift_C, down_append]
++              let aa := leafA A B C bc hA
++              let bb := leafB A B C ab bc a hB
++              let cc := leafC A B C ab bc a b hC
++              have first : SharedSplice.Splice aa (some bb) (SharedSplice.append aa bb) := by
++                have joined := SharedSplice.success (liftUpstream A B hA)
++                  (liftDownstream A B ab a hB)
++                  (by simp [liftUpstream, finish_map, finishedA]) sharedAB
++                have mapped := SharedSplice.transport (upstreamState (compose A B ab) C)
++                  (mapEvent (upstream (compose A B ab) C) upstreamId) upstreamId joined
++                have moved := SharedSplice.transport
++                  (graphTransport A B C ab bc).stateEquiv
++                  (graphTransport A B C ab bc).eventEquiv identityEquiv mapped
++                change SharedSplice.Splice
++                  ((graphTransport A B C ab bc).history.apply
++                    (liftUpstream (compose A B ab) C (liftUpstream A B hA)))
++                  (some ((graphTransport A B C ab bc).history.apply
++                    (liftUpstream (compose A B ab) C (liftDownstream A B ab a hB))))
++                  ((graphTransport A B C ab bc).history.apply
++                    (liftUpstream (compose A B ab) C
++                      (SharedSplice.append (liftUpstream A B hA)
++                        (liftDownstream A B ab a hB)))) at moved
++                rw [up_append, transport_append, lift_A, lift_B] at moved
++                exact moved
++              have second : SharedSplice.Splice bb (some cc) (SharedSplice.append bb cc) := by
++                have joined := SharedSplice.success (liftUpstream B C hB)
++                  (liftDownstream B C bc b hC)
++                  (by simp [liftUpstream, finish_map, finishedB]) sharedBC
++                have moved := SharedSplice.transport
++                  (downstreamState A (compose B C bc) a)
++                  (mapEvent (downstream A (compose B C bc)
++                    (rightNestedBoundary A B C ab bc)) downstreamId) downstreamId joined
++                simpa only [Option.map_some, map_append] using moved
++              have leftJoin : SharedSplice.Splice (SharedSplice.append aa bb) (some cc)
++                  (SharedSplice.append (SharedSplice.append aa bb) cc) := by
++                apply SharedSplice.success (s := downstreamState A (compose B C bc) a
++                  (upstreamState B C b))
++                · rw [append_finish aa bb (s := upstreamState A (compose B C bc) a)
++                    (by simp [aa, leafA, liftUpstream,
++                    finish_map, finishedA])]
++                  simp [bb, leafB, liftUpstream, liftDownstream, finish_map, finishedB]
++                · have moved := congrArg (graphTransport A B C ab bc).mapState sharedLeft
++                  simp only [liftDownstream, History.start_map] at moved
++                  rw [state_C, state_B] at moved
++                  simpa only [cc, leafC, liftDownstream, History.start_map] using moved
++              have rightJoin : SharedSplice.Splice aa (some (SharedSplice.append bb cc))
++                  (SharedSplice.append aa (SharedSplice.append bb cc)) := by
++                apply SharedSplice.success (s := upstreamState A (compose B C bc) a)
++                · simp [aa, leafA, liftUpstream, finish_map, finishedA]
++                · simpa only [down_append] using rightShared
++              exact SharedSplice.associative_eq first second leftJoin rightJoin
++
++theorem right_nested_tree
++    (rankB : B.program.RankCertificate) (rankC : C.program.RankCertificate)
++    {hA : GraphHistory σA} {hR : GraphHistory (R A B C bc)}
++    (right : BinaryHistory A (compose B C bc) (rightNestedBoundary A B C ab bc) hA hR) :
++    (∃ tag a, hA.finish = .error (a, tag) ∧
++      hR = liftUpstream A (compose B C bc) hA) ∨
++    (∃ (a : State σA) (storeA : Store RationalReference.Carrier σA)
++      (hB : GraphHistory σB) (hBC : GraphHistory (declarations B C)),
++      hA.finish = .ok (a, ()) ∧
++      (∀ x, a.available x = some (storeA x)) ∧ hB.Admissible ∧
++      hB.toRun = runChecked B.contract B.fragment (boundaryInput A B ab storeA).val ∧
++      BinaryHistory B C bc hB hBC ∧
++      hR = SharedSplice.append (liftUpstream A (compose B C bc) hA)
++        (liftDownstream A (compose B C bc) (rightNestedBoundary A B C ab bc) a hBC)) := by
++  cases right with
++  | failed tag a finished => exact .inl ⟨tag, a, finished, rfl⟩
++  | complete a storeA hBC finished full admitted run shared =>
++      obtain ⟨hB, admittedB, runB, _⟩ :=
++        GraphHistory.ranked_default_exists B (boundaryInput A B ab storeA) rankB
++      obtain ⟨otherBC, inner, otherRun⟩ :=
++        compose_history B C bc (boundaryInput A B ab storeA) rankB rankC hB runB
++      rw [right_input] at run
++      have same : otherBC = hBC := GraphHistory.toRun_injective (otherRun.trans run.symm)
++      subst otherBC
++      exact .inr ⟨a, storeA, hB, hBC, finished, full, admittedB, runB, inner, rfl⟩
++
++theorem actual_nested_histories (η : A.program.Input)
++    (rankA : A.program.RankCertificate) (rankB : B.program.RankCertificate)
++    (rankC : C.program.RankCertificate) :
++    ∃ (hA : GraphHistory σA) (hAB : GraphHistory (declarations A B))
++      (hL : GraphHistory (L A B C ab)) (hR : GraphHistory (R A B C bc)),
++      hA.Admissible ∧ hL.Admissible ∧ hR.Admissible ∧
++      hA.toRun = runChecked A.contract A.fragment η.val ∧
++      BinaryHistory A B ab hA hAB ∧
++      BinaryHistory (compose A B ab) C (leftNestedBoundary A B C ab bc) hAB hL ∧
++      BinaryHistory A (compose B C bc) (rightNestedBoundary A B C ab bc) hA hR ∧
++      hL.toRun = runChecked (leftBracket A B C ab bc).contract
++        (leftBracket A B C ab bc).fragment
++        (liftInput (compose A B ab) C (leftNestedBoundary A B C ab bc)
++          (liftInput A B ab η)).val ∧
++      hR.toRun = runChecked (rightBracket A B C ab bc).contract
++        (rightBracket A B C ab bc).fragment
++        (liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η).val ∧
++      (graphTransport A B C ab bc).history.apply hL = hR := by
++  obtain ⟨hA, admitted, hArun, _⟩ := GraphHistory.ranked_default_exists A η rankA
++  obtain ⟨hAB, hL, first, second, hLrun⟩ :=
++    left_nested_history A B ab C bc η rankA rankB rankC hA hArun
++  obtain ⟨hR, right, associative⟩ := binary_associativity A B C ab bc rankB rankC first second
++  have hRrun := right.sound A (compose B C bc) (rightNestedBoundary A B C ab bc) η rankA
++    (compositeRankCertificate B C bc rankB rankC) hArun
++  exact ⟨hA, hAB, hL, hR, admitted,
++    second.admissible _ _ _ (first.admissible _ _ _ admitted),
++    right.admissible _ _ _ admitted, hArun, first, second, right, hLrun, hRrun, associative⟩
++
++#print axioms binary_associativity
++#print axioms right_nested_tree
++#print axioms actual_nested_histories
++
++end IndexedOperationalHistoryAssociativity
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedOperationalRunsPhases.lean
+@@ -0,0 +1,475 @@
++import IndexedOperationalRuns
++
++namespace IndexedOperationalRunsPhases
++
++open LeanNCD.Semantics LeanNCD.Semantics.Program
++open IndexedComponentTransport IndexedComponentComposition IndexedComponentExecution
++open IndexedOpenComposition IndexedWitness IndexedOperationalReassociation
++open IndexedOperationalRuns
++
++abbrev checked {σ : Declarations Unit} [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++    (A : MatchedComponent σ) (η : A.program.Input) : Run σ :=
++  runChecked A.contract A.fragment η.val
++
++structure Cut {S : Type*} (states : List S) where
++  before : List S
++  current : S
++  after : List S
++  exact_states : states = before ++ current :: after
++
++structure CutRelated {S T : Type*} (R : S → T → Prop)
++    {xs : List S} {ys : List T} (a : Cut xs) (b : Cut ys) : Prop where
++  before : List.Forall₂ R a.before b.before
++  current : R a.current b.current
++  after : List.Forall₂ R a.after b.after
++
++theorem cut_transport {S T : Type*} {R : S → T → Prop}
++    {xs : List S} {ys : List T} (related : List.Forall₂ R xs ys) (a : Cut xs) :
++    ∃ b : Cut ys, CutRelated R a b := by
++  rcases a with ⟨before, current, after, eq⟩
++  subst xs
++  induction before generalizing ys with
++  | nil =>
++      cases related with
++      | cons h ht => exact ⟨⟨[], _, _, rfl⟩, ⟨.nil, h, ht⟩⟩
++  | cons x xs ih =>
++      cases related with
++      | @cons _ head _ _ h ht =>
++          obtain ⟨b, hb⟩ := ih ht
++          refine ⟨⟨head :: b.before, b.current, b.after, ?_⟩, ?_⟩
++          · simp only [List.cons_append, List.cons.injEq, true_and]
++            exact b.exact_states
++          · exact ⟨.cons h hb.before, hb.current, hb.after⟩
++
++def Cut.extend {S : Type*} {xs : List S} (a : Cut xs) (more : List S) :
++    Cut (xs ++ more) :=
++  ⟨a.before, a.current, a.after ++ more,
++    by simpa only [List.append_assoc, List.cons_append] using
++      congrArg (fun xs => xs ++ more) a.exact_states⟩
++
++theorem cut_coincide {S : Type*} {xs : List S} (a b : Cut xs)
++    (same : a.before.length = b.before.length) : a.current = b.current := by
++  have eq := congrArg (fun states => states[a.before.length]?) a.exact_states
++  have eq' := congrArg (fun states => states[b.before.length]?) b.exact_states
++  simp only [List.getElem?_append, lt_self_iff_false, ↓reduceIte,
++    Nat.sub_self, List.getElem?_cons_zero] at eq eq'
++  rw [same] at eq
++  exact Option.some.inj (eq.symm.trans eq')
++
++section Binary
++
++variable {σ τ : Declarations Unit}
++variable [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++variable [Fintype τ.Tensor] [DecidableEq τ.Tensor]
++variable (A : MatchedComponent σ) (B : MatchedComponent τ) (wire : Boundary A B)
++variable (η : A.program.Input)
++
++structure FailedPhase where
++  tag : Nat
++  endpoint : State σ
++  targetEndpoint : State (declarations A B)
++  source_failed : (checked A η).outcome = .failed tag endpoint
++  composite_failed : (checked (compose A B wire) (liftInput A B wire η)).outcome =
++    .failed (upstreamId tag) targetEndpoint
++  related : UpstreamState A B wire endpoint targetEndpoint
++  events : (checked (compose A B wire) (liftInput A B wire η)).events =
++    (checked A η).events.map (mapEvent (upstream A B) upstreamId)
++  states : List.Forall₂ (UpstreamState A B wire)
++    (checked A η).states (checked (compose A B wire) (liftInput A B wire η)).states
++
++structure ReachedPhase where
++  completed : State σ
++  store : Store RationalReference.Carrier σ
++  cut : State (declarations A B)
++  remaining : Nat
++  snapshots : List (State (declarations A B))
++  source_complete : (checked A η).outcome = .complete completed
++  full : ∀ a, completed.available a = some (store a)
++  upstream_state : UpstreamState A B wire completed cut
++  downstream_state : DownstreamState A B wire completed
++    (initial (boundaryInput A B wire store).val) cut
++  prefix_states : List.Forall₂ (UpstreamState A B wire)
++    (checked A η).states (snapshots ++ [cut])
++  budget : remaining + snapshots.length = (compose A B wire).graph.steps.length + 1
++  upstream_bound : snapshots.length ≤ A.graph.steps.length
++  downstream_budget : B.graph.steps.length + 1 ≤ remaining
++  suffix : RunProjection (downstream A B wire) downstreamId
++    (DownstreamState A B wire completed)
++    (checked B (boundaryInput A B wire store))
++    (stepFuel (compose A B wire).graph.steps remaining cut)
++  events : (checked (compose A B wire) (liftInput A B wire η)).events =
++    (checked A η).events.map (mapEvent (upstream A B) upstreamId) ++
++      (stepFuel (compose A B wire).graph.steps remaining cut).events
++  states : (checked (compose A B wire) (liftInput A B wire η)).states =
++    snapshots ++ (stepFuel (compose A B wire).graph.steps remaining cut).states
++  outcome : (checked (compose A B wire) (liftInput A B wire η)).outcome =
++    (stepFuel (compose A B wire).graph.steps remaining cut).outcome
++
++theorem binary_phases (rankA : A.program.RankCertificate)
++    (rankB : B.program.RankCertificate) :
++    Nonempty (FailedPhase A B wire η) ∨ Nonempty (ReachedPhase A B wire η) := by
++  rcases compose_default_phases A B wire η rankA rankB with failed | reached
++  · rcases failed with ⟨tag, endpoint, target, hs, ht, hr, he, hstates⟩
++    exact .inl ⟨⟨tag, endpoint, target, hs, ht, hr, he, hstates⟩⟩
++  · rcases reached with ⟨completed, store, cut, remaining, snapshots,
++      hs, full, up, down, pre, budget, bound, residual, suffix, events, states, outcome⟩
++    exact .inr ⟨⟨completed, store, cut, remaining, snapshots,
++      hs, full, up, down, pre, budget, bound, residual, suffix, events, states, outcome⟩⟩
++
++theorem stepFuel_states_head {σ : Declarations Unit} [DecidableEq σ.Tensor]
++    (steps : List (Step σ)) (fuel : Nat) (state : State σ) :
++    ∃ rest, (stepFuel steps fuel state).states = state :: rest := by
++  rw [stepFuel]
++  split
++  · exact ⟨[], rfl⟩
++  · split
++    · exact ⟨[], rfl⟩
++    · split
++      · exact ⟨[], rfl⟩
++      · split
++        · split <;> first | exact ⟨[], rfl⟩ | exact ⟨_, rfl⟩
++        · split <;> first | exact ⟨[], rfl⟩ | exact ⟨_, rfl⟩
++
++theorem ReachedPhase.cut_exists (p : ReachedPhase A B wire η) :
++    ∃ c : Cut (checked (compose A B wire) (liftInput A B wire η)).states,
++      c.before = p.snapshots ∧ c.current = p.cut := by
++  obtain ⟨rest, eq⟩ := stepFuel_states_head
++    (compose A B wire).graph.steps p.remaining p.cut
++  exact ⟨⟨p.snapshots, p.cut, rest, by rw [p.states, eq]⟩, rfl, rfl⟩
++
++theorem ReachedPhase.boundary (p : ReachedPhase A B wire η) :
++    boundaryInput A B wire p.store =
++      boundaryFromOutput A B wire (A.program.outputProjection p.store) :=
++  boundaryInput_outputProjection A B wire p.store
++
++theorem ReachedPhase.failed_leaf (p : ReachedPhase A B wire η)
++    {tag : Nat} {endpoint : State (declarations A B)}
++    (failed : (checked (compose A B wire) (liftInput A B wire η)).outcome =
++      .failed tag endpoint) :
++    ∃ leafTag leafEnd, (checked B (boundaryInput A B wire p.store)).outcome =
++      .failed leafTag leafEnd ∧ tag = downstreamId leafTag ∧
++      DownstreamState A B wire p.completed leafEnd endpoint := by
++  have tail := p.outcome.symm.trans failed
++  rcases p.suffix.2.2 with done | failedLeaf
++  · rcases done with ⟨s, t, hs, ht, related⟩
++    rw [ht] at tail
++    contradiction
++  · rcases failedLeaf with ⟨leafTag, leafEnd, target, hs, ht, related⟩
++    have eq := ht.symm.trans tail
++    cases eq
++    exact ⟨leafTag, leafEnd, hs, rfl, related⟩
++
++theorem ReachedPhase.complete_leaf (p : ReachedPhase A B wire η)
++    {endpoint : State (declarations A B)}
++    (completed : (checked (compose A B wire) (liftInput A B wire η)).outcome =
++      .complete endpoint) :
++    ∃ leafEnd, (checked B (boundaryInput A B wire p.store)).outcome =
++      .complete leafEnd ∧ DownstreamState A B wire p.completed leafEnd endpoint := by
++  have tail := p.outcome.symm.trans completed
++  rcases p.suffix.2.2 with done | failed
++  · rcases done with ⟨s, t, hs, ht, related⟩
++    have eq := ht.symm.trans tail
++    cases eq
++    exact ⟨s, hs, related⟩
++  · rcases failed with ⟨tag, s, t, hs, ht, related⟩
++    rw [ht] at tail
++    contradiction
++
++theorem ReachedPhase.lift_cut (p : ReachedPhase A B wire η)
++    (c : Cut (checked A η).states) :
++    ∃ d : Cut (checked (compose A B wire) (liftInput A B wire η)).states,
++      d.before.length = c.before.length ∧
++      d.before.length ≤ p.snapshots.length ∧
++      UpstreamState A B wire c.current d.current := by
++  obtain ⟨target, related⟩ := cut_transport p.prefix_states c
++  obtain ⟨rest, eq⟩ := stepFuel_states_head
++    (compose A B wire).graph.steps p.remaining p.cut
++  have allStates : (checked (compose A B wire) (liftInput A B wire η)).states =
++      (p.snapshots ++ [p.cut]) ++ rest := by
++    rw [p.states, eq]
++    simp
++  let d : Cut (checked (compose A B wire) (liftInput A B wire η)).states :=
++    ⟨target.before, target.current, target.after ++ rest, by
++      simpa only [List.append_assoc, List.cons_append] using
++        allStates.trans (congrArg (fun xs => xs ++ rest) target.exact_states)⟩
++  refine ⟨d, related.before.length_eq.symm, ?_, related.current⟩
++  have len := congrArg List.length target.exact_states
++  simp only [List.length_append, List.length_cons, List.length_nil] at len
++  change target.before.length ≤ p.snapshots.length
++  omega
++
++end Binary
++
++section Triple
++
++variable {σA σB σC : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable [Fintype σC.Tensor] [DecidableEq σC.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB) (C : MatchedComponent σC)
++variable (ab : Boundary A B) (bc : Boundary B C) (η : A.program.Input)
++
++abbrev leftInput := liftInput (compose A B ab) C (leftNestedBoundary A B C ab bc)
++  (liftInput A B ab η)
++
++theorem original_bc_input (store : Store RationalReference.Carrier (declarations A B)) :
++    boundaryInput (compose A B ab) C (leftNestedBoundary A B C ab bc) store =
++      boundaryInput B C bc (restrictDownstream A B ab store) := by
++  apply Subtype.ext
++  funext t
++  by_cases h : C.program.input t = true
++  · simp only [boundaryInput, h, ↓reduceDIte]
++    congr 1
++    funext p
++    exact outputProjection_downstream A B ab store (bc.matched ⟨t, h⟩)
++      ((bc.domain ⟨t, h⟩).coord p)
++  · simp [boundaryInput, h]
++
++structure TwoReached where
++  inner : ReachedPhase A B ab η
++  outer : ReachedPhase (compose A B ab) C (leftNestedBoundary A B C ab bc)
++    (liftInput A B ab η)
++  endB : State σB
++  b_complete : (checked B (boundaryInput A B ab inner.store)).outcome = .complete endB
++  b_projection : DownstreamState A B ab inner.completed endB outer.completed
++  b_full : ∀ a, endB.available a = some (restrictDownstream A B ab outer.store a)
++  first : Cut (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).states
++  second : Cut (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).states
++  first_index : first.before.length = inner.snapshots.length
++  second_index : second.before.length = outer.snapshots.length
++  first_relation : UpstreamState (compose A B ab) C (leftNestedBoundary A B C ab bc)
++    inner.cut first.current
++  second_current : second.current = outer.cut
++  ordered : first.before.length ≤ second.before.length
++  ab_boundary : boundaryInput A B ab inner.store =
++    boundaryFromOutput A B ab (A.program.outputProjection inner.store)
++  bc_boundary : boundaryInput B C bc (restrictDownstream A B ab outer.store) =
++    boundaryFromOutput B C bc (B.program.outputProjection
++      (restrictDownstream A B ab outer.store))
++  c_input : boundaryInput (compose A B ab) C (leftNestedBoundary A B C ab bc) outer.store =
++    boundaryInput B C bc (restrictDownstream A B ab outer.store)
++
++theorem two_reached
++    (inner : ReachedPhase A B ab η)
++    (outer : ReachedPhase (compose A B ab) C (leftNestedBoundary A B C ab bc)
++      (liftInput A B ab η)) : Nonempty (TwoReached A B C ab bc η) := by
++  obtain ⟨endB, bdone, related⟩ := inner.complete_leaf A B ab η outer.source_complete
++  obtain ⟨a, aBefore, aCurrent⟩ := inner.cut_exists A B ab η
++  obtain ⟨first, index, bound, relation⟩ := outer.lift_cut
++    (compose A B ab) C (leftNestedBoundary A B C ab bc) (liftInput A B ab η) a
++  obtain ⟨second, secondBefore, secondCurrent⟩ := outer.cut_exists
++    (compose A B ab) C (leftNestedBoundary A B C ab bc) (liftInput A B ab η)
++  refine ⟨⟨inner, outer, endB, bdone, related, ?_, first, second, ?_, ?_, ?_,
++    secondCurrent, ?_, inner.boundary A B ab η, ?_, original_bc_input A B C ab bc outer.store⟩⟩
++  · intro a
++    exact (related.available a).symm.trans (outer.full ((downstream A B ab).address a))
++  · simpa only [aBefore] using index
++  · rw [secondBefore]
++  · simpa only [aCurrent] using relation
++  · simpa only [secondBefore] using bound
++  · exact boundaryInput_outputProjection B C bc _
++
++inductive TriplePhases : Prop
++  | failA (inner : FailedPhase A B ab η)
++      (outer : FailedPhase (compose A B ab) C (leftNestedBoundary A B C ab bc)
++        (liftInput A B ab η))
++      (failure : (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).outcome =
++        .failed (upstreamId (upstreamId inner.tag)) outer.targetEndpoint) :
++      TriplePhases
++  | failB (inner : ReachedPhase A B ab η)
++      (outer : FailedPhase (compose A B ab) C (leftNestedBoundary A B C ab bc)
++        (liftInput A B ab η))
++      (tag : Nat) (endB : State σB)
++      (b_failed : (checked B (boundaryInput A B ab inner.store)).outcome = .failed tag endB)
++      (b_projection : DownstreamState A B ab inner.completed endB outer.endpoint)
++      (first : Cut (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).states)
++      (first_index : first.before.length = inner.snapshots.length)
++      (first_relation : UpstreamState (compose A B ab) C (leftNestedBoundary A B C ab bc)
++        inner.cut first.current)
++      (ab_boundary : boundaryInput A B ab inner.store =
++        boundaryFromOutput A B ab (A.program.outputProjection inner.store))
++      (failure : (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).outcome =
++        .failed (upstreamId (downstreamId tag)) outer.targetEndpoint) :
++      TriplePhases
++  | failC (phases : TwoReached A B C ab bc η)
++      (tag : Nat) (endC : State σC) (endpoint : State (declarations (compose A B ab) C))
++      (c_failed : (checked C (boundaryInput B C bc
++        (restrictDownstream A B ab phases.outer.store))).outcome = .failed tag endC)
++      (c_projection : DownstreamState (compose A B ab) C (leftNestedBoundary A B C ab bc)
++        phases.outer.completed endC endpoint)
++      (failure : (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).outcome =
++        .failed (downstreamId tag) endpoint) : TriplePhases
++  | allSuccess (phases : TwoReached A B C ab bc η)
++      (endC : State σC) (endpoint : State (declarations (compose A B ab) C))
++      (c_complete : (checked C (boundaryInput B C bc
++        (restrictDownstream A B ab phases.outer.store))).outcome = .complete endC)
++      (c_projection : DownstreamState (compose A B ab) C (leftNestedBoundary A B C ab bc)
++        phases.outer.completed endC endpoint)
++      (complete : (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).outcome =
++        .complete endpoint) : TriplePhases
++
++theorem triple_phases (rankA : A.program.RankCertificate)
++    (rankB : B.program.RankCertificate) (rankC : C.program.RankCertificate) :
++    TriplePhases A B C ab bc η := by
++  have outerPhases := binary_phases (compose A B ab) C (leftNestedBoundary A B C ab bc)
++    (liftInput A B ab η) (compositeRankCertificate A B ab rankA rankB) rankC
++  rcases binary_phases A B ab η rankA rankB with inner | inner
++  · rcases inner with ⟨inner⟩
++    rcases outerPhases with outer | outer
++    · rcases outer with ⟨outer⟩
++      have eq := inner.composite_failed.symm.trans outer.source_failed
++      injection eq with tags endpoints
++      apply TriplePhases.failA inner outer
++      simpa only [← tags] using outer.composite_failed
++    · rcases outer with ⟨outer⟩
++      have eq := inner.composite_failed.symm.trans outer.source_complete
++      contradiction
++  · rcases inner with ⟨inner⟩
++    rcases outerPhases with outer | outer
++    · rcases outer with ⟨outer⟩
++      obtain ⟨tag, endB, failed, tagEq, bRelated⟩ :=
++        inner.failed_leaf A B ab η outer.source_failed
++      obtain ⟨a, aBefore, aCurrent⟩ := inner.cut_exists A B ab η
++      obtain ⟨first, related⟩ := cut_transport outer.states a
++      refine TriplePhases.failB inner outer tag endB failed bRelated first ?_ ?_
++        (inner.boundary A B ab η) ?_
++      · simpa only [aBefore] using related.before.length_eq.symm
++      · simpa only [aCurrent] using related.current
++      · simpa only [tagEq] using outer.composite_failed
++    · rcases outer with ⟨outer⟩
++      obtain ⟨phases⟩ := two_reached A B C ab bc η inner outer
++      rcases phases.outer.suffix.2.2 with done | failed
++      · rcases done with ⟨endC, endpoint, hs, ht, related⟩
++        apply TriplePhases.allSuccess phases endC endpoint
++        · simpa only [phases.c_input] using hs
++        · exact related
++        · exact phases.outer.outcome.trans ht
++      · rcases failed with ⟨tag, endC, endpoint, hs, ht, related⟩
++        apply TriplePhases.failC phases tag endC endpoint
++        · simpa only [phases.c_input] using hs
++        · exact related
++        · exact phases.outer.outcome.trans ht
++
++abbrev rightInput := liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η
++
++theorem right_cut
++    (c : Cut (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).states) :
++    ∃ d : Cut (checked (rightBracket A B C ab bc) (rightInput A B C ab bc η)).states,
++      CutRelated (StateRelated (embedding A B C ab bc) identityEquiv) c d ∧
++      d.before.length = c.before.length ∧
++      (∀ a, d.current.available a =
++        c.current.available ((addressEquiv A B C ab bc).symm a)) ∧
++      d.current.produced = mapLedger identityEquiv c.current.produced := by
++  obtain ⟨d, related⟩ := cut_transport (nested_default_runs A B C ab bc η).states c
++  exact ⟨d, related, related.before.length_eq.symm,
++    stateRelated_full _ _ (addressEquiv A B C ab bc)
++      (embedding_address A B C ab bc) related.current⟩
++
++theorem two_reached_right (p : TwoReached A B C ab bc η) :
++    ∃ first second :
++      Cut (checked (rightBracket A B C ab bc) (rightInput A B C ab bc η)).states,
++      CutRelated (StateRelated (embedding A B C ab bc) identityEquiv) p.first first ∧
++      CutRelated (StateRelated (embedding A B C ab bc) identityEquiv) p.second second ∧
++      first.before.length = p.first.before.length ∧
++      second.before.length = p.second.before.length ∧
++      first.before.length ≤ second.before.length ∧
++      (first.before.length = second.before.length → first.current = second.current) := by
++  obtain ⟨first, hfirst, ifirst, _⟩ := right_cut A B C ab bc η p.first
++  obtain ⟨second, hsecond, isecond, _⟩ := right_cut A B C ab bc η p.second
++  exact ⟨first, second, hfirst, hsecond, ifirst, isecond,
++    by simpa only [ifirst, isecond] using p.ordered,
++    cut_coincide first second⟩
++
++theorem two_reached_empty_B (p : TwoReached A B C ab bc η)
++    (empty : B.graph.steps = []) : p.first.current = p.second.current := by
++  have hb : (checked B (boundaryInput A B ab p.inner.store)).states.length = 1 := by
++    rw [checked, checked_eq_stepFuel B.matched]
++    simp [empty, stepFuel, complete]
++  have tailLen := p.inner.suffix.2.1.length_eq
++  have sourceLen := congrArg List.length p.inner.states
++  have prefixLen := p.outer.prefix_states.length_eq
++  simp only [List.length_append, List.length_singleton] at sourceLen prefixLen
++  rw [hb] at tailLen
++  apply cut_coincide
++  rw [p.first_index, p.second_index]
++  omega
++
++theorem right_failed {tag : Nat}
++    {endpoint : State (declarations (compose A B ab) C)}
++    (failed : (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).outcome =
++      .failed tag endpoint) :
++    ∃ target,
++      (checked (rightBracket A B C ab bc) (rightInput A B C ab bc η)).outcome =
++        .failed (identityEquiv tag) target ∧
++      StateRelated (embedding A B C ab bc) identityEquiv endpoint target := by
++  have related := (nested_default_runs A B C ab bc η).outcome
++  rw [failed] at related
++  generalize eq : (checked (rightBracket A B C ab bc)
++    (rightInput A B C ab bc η)).outcome = outcome at related
++  cases related with
++  | failed tag states => exact ⟨_, rfl, states⟩
++
++theorem right_complete {endpoint : State (declarations (compose A B ab) C)}
++    (done : (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).outcome =
++      .complete endpoint) :
++    ∃ target,
++      (checked (rightBracket A B C ab bc) (rightInput A B C ab bc η)).outcome =
++        .complete target ∧
++      StateRelated (embedding A B C ab bc) identityEquiv endpoint target := by
++  have related := (nested_default_runs A B C ab bc η).outcome
++  rw [done] at related
++  generalize eq : (checked (rightBracket A B C ab bc)
++    (rightInput A B C ab bc η)).outcome = outcome at related
++  cases related with
++  | complete states => exact ⟨_, rfl, states⟩
++
++theorem reference_cuts
++    (c : Cut (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).states) :
++    let L := leftBracket A B C ab bc
++    let R := rightBracket A B C ab bc
++    let leftRef := Executor.run L.program RationalReference.ops L.schedule (leftInput A B C ab bc η)
++    let rightRef := Executor.run R.program RationalReference.ops R.schedule (rightInput A B C ab bc η)
++    ∃ (d : Cut (checked R (rightInput A B C ab bc η)).states)
++      (lc : Cut (Correspondence.referenceSnapshots
++        (L.program.initial (leftInput A B C ab bc η)) leftRef.events))
++      (rc : Cut (Correspondence.referenceSnapshots
++        (R.program.initial (rightInput A B C ab bc η)) rightRef.events)),
++      CutRelated (StateRelated (embedding A B C ab bc) identityEquiv) c d ∧
++      CutRelated (fun g s => LedgerInvariant L.matched g ∧ Relation L.matched g s) c lc ∧
++      CutRelated (fun g s => LedgerInvariant R.matched g ∧ Relation R.matched g s) d rc ∧
++      lc.before.length = c.before.length ∧ rc.before.length = c.before.length ∧
++      ReferenceStateProjection L.matched R.matched
++        (StateRelated (embedding A B C ab bc) identityEquiv) lc.current rc.current := by
++  dsimp only
++  obtain ⟨d, hd, index, _⟩ := right_cut A B C ab bc η c
++  have left := Correspondence.accepted_run_correspondence
++    (leftBracket A B C ab bc).matched (leftInput A B C ab bc η)
++  have right := Correspondence.accepted_run_correspondence
++    (rightBracket A B C ab bc).matched (rightInput A B C ab bc η)
++  obtain ⟨lc, hlc⟩ := cut_transport left.states c
++  obtain ⟨rc, hrc⟩ := cut_transport right.states d
++  exact ⟨d, lc, rc, hd, hlc, hrc, hlc.before.length_eq.symm,
++    hrc.before.length_eq.symm.trans index, _, _, hd.current, hlc.current, hrc.current⟩
++
++theorem triple_phases_with_transport (rankA : A.program.RankCertificate)
++    (rankB : B.program.RankCertificate) (rankC : C.program.RankCertificate) :
++    TriplePhases A B C ab bc η ∧
++      RunRelated (embedding A B C ab bc) identityEquiv
++        (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η))
++        (checked (rightBracket A B C ab bc) (rightInput A B C ab bc η)) := by
++  exact ⟨triple_phases A B C ab bc η rankA rankB rankC,
++    nested_default_runs A B C ab bc η⟩
++
++theorem TwoReached.default_budget (p : TwoReached A B C ab bc η) :
++    p.outer.remaining + p.outer.snapshots.length =
++      A.graph.steps.length + B.graph.steps.length + C.graph.steps.length + 1 := by
++  exact p.outer.budget.trans (default_budgets A B C ab bc).1
++
++end Triple
++
++#print axioms triple_phases
++#print axioms two_reached_right
++#print axioms two_reached_empty_B
++#print axioms reference_cuts
++
++end IndexedOperationalRunsPhases
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedOperationalAssociativity.lean
+@@ -0,0 +1,190 @@
++import IndexedOperationalObservationLaws
++import IndexedOperationalRuns
++
++namespace IndexedOperationalAssociativity
++
++open LeanNCD.Semantics
++open IndexedComponentTransport IndexedComponentComposition IndexedComponentExecution
++open IndexedOpenComposition IndexedWitness IndexedOperationalHistory
++open IndexedOperationalReassociation
++
++variable {σA σB σC : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable [Fintype σC.Tensor] [DecidableEq σC.Tensor]
++variable (A : MatchedComponent σA) (B : MatchedComponent σB)
++variable (C : MatchedComponent σC) (ab : Boundary A B) (bc : Boundary B C)
++
++def graphTransport :
++    GraphTransport (declarations (compose A B ab) C) (declarations A (compose B C bc)) :=
++  ⟨addressEquiv A B C ab bc, identityEquiv⟩
++
++def metadataTransport :
++    MetadataTransport (declarations (compose A B ab) C)
++      (declarations A (compose B C bc)) where
++  toGraphTransport := graphTransport A B C ab bc
++  tensor := tensorEquiv A B C ab bc
++  domain := (embedding A B C ab bc).domain
++  address_eq := fun a => (embedding_address A B C ab bc a).symm
++
++theorem port_ext {σ : Declarations Unit} (p q : Port σ) (h : p.tensor = q.tensor) :
++    p = q := by
++  rcases p with ⟨t, s, ax, hs, ha⟩
++  rcases q with ⟨u, v, bx, hv, hb⟩
++  dsimp only at h
++  subst u
++  cases hs
++  cases hv
++  cases ha
++  cases hb
++  rfl
++
++theorem metadata_inputs :
++    (rightBracket A B C ab bc).inputs =
++      (leftBracket A B C ab bc).inputs.map (metadataTransport A B C ab bc).port := by
++  change A.inputs.map _ = ((A.inputs.map _).map _).map _
++  simp only [List.map_map]
++  apply List.map_congr_left
++  intro p _
++  apply port_ext
++  rfl
++
++theorem metadata_outputs :
++    (rightBracket A B C ab bc).outputs =
++      (leftBracket A B C ab bc).outputs.map (metadataTransport A B C ab bc).port := by
++  apply List.ext_getElem
++  · simp [leftBracket, rightBracket, compose, outputPorts]
++  · intro i hi hj
++    apply port_ext
++    simp [leftBracket, rightBracket, compose, outputPorts, outputPort,
++      MetadataTransport.port, metadataTransport, tensorEquiv]
++    rfl
++
++def leftMetadata (η : A.program.Input) :=
++  GraphMetadata.ofComponent (leftBracket A B C ab bc)
++    (liftInput (compose A B ab) C (leftNestedBoundary A B C ab bc) (liftInput A B ab η))
++    (ab, bc)
++
++def rightMetadata (η : A.program.Input) :=
++  GraphMetadata.ofComponent (rightBracket A B C ab bc)
++    (liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η)
++    (ab, bc)
++
++theorem nested_metadata (η : A.program.Input) :
++    (metadataTransport A B C ab bc).Agrees (Equiv.refl (Boundary A B × Boundary B C))
++      (leftMetadata A B C ab bc η) (rightMetadata A B C ab bc η) := by
++  refine ⟨metadata_inputs A B C ab bc, metadata_outputs A B C ab bc,
++    input_roles A B C ab bc, ?_, rfl⟩
++  rintro ((t | t) | t)
++  · change η.val t = (η.val t).map (fun values p => values p)
++    cases η.val t <;> rfl
++  · rfl
++  · rfl
++
++theorem state_transport
++    {s : State (declarations (compose A B ab) C)}
++    {t : State (declarations A (compose B C bc))}
++    (related : IndexedOperationalRuns.StateRelated (embedding A B C ab bc) identityEquiv s t) :
++    t = (graphTransport A B C ab bc).mapState s := by
++  obtain ⟨available, produced⟩ := IndexedOperationalRuns.stateRelated_full
++    (embedding A B C ab bc) identityEquiv (addressEquiv A B C ab bc)
++    (embedding_address A B C ab bc) related
++  cases s
++  cases t
++  simp only [GraphTransport.mapState, graphTransport, State.mk.injEq]
++  exact ⟨funext available, produced⟩
++
++theorem event_transport (e : Event (declarations (compose A B ab) C)) :
++    mapEvent (embedding A B C ab bc) identityEquiv e =
++      (graphTransport A B C ab bc).mapEvent e := by
++  cases e <;> simp only [mapEvent, GraphTransport.mapEvent, graphTransport,
++    embedding_address]
++
++theorem run_transport
++    {s : Run (declarations (compose A B ab) C)}
++    {t : Run (declarations A (compose B C bc))}
++    (related : IndexedOperationalRuns.RunRelated (embedding A B C ab bc) identityEquiv s t) :
++    t = (graphTransport A B C ab bc).mapRun (tensorEquiv A B C ab bc) s := by
++  rcases s with ⟨so, se, ss⟩
++  rcases t with ⟨targetOutcome, te, ts⟩
++  rcases related with ⟨eventRelation, stateRelation, outcomeRelation⟩
++  dsimp only at eventRelation stateRelation outcomeRelation
++  have states : ts = ss.map (graphTransport A B C ab bc).mapState := by
++    induction stateRelation with
++    | nil => rfl
++    | cons h hs ih => exact congrArg₂ List.cons (state_transport A B C ab bc h) ih
++  have events : te = se.map (graphTransport A B C ab bc).mapEvent := by
++    rw [eventRelation]
++    exact List.map_congr_left fun e _ => event_transport A B C ab bc e
++  have outcome : targetOutcome = (graphTransport A B C ab bc).mapOutcome
++      (tensorEquiv A B C ab bc) so := by
++    cases outcomeRelation with
++    | complete h => exact congrArg Outcome.complete (state_transport A B C ab bc h)
++    | failed tag h => exact congrArg (Outcome.failed _) (state_transport A B C ab bc h)
++    | blocked missing h =>
++        simp only [GraphTransport.mapOutcome]
++        congr 1
++        · exact state_transport A B C ab bc h
++        · apply List.map_congr_left
++          intro row _
++          congr 1
++          exact List.map_congr_left fun a _ => embedding_address A B C ab bc a
++    | exhausted h => exact congrArg Outcome.exhausted (state_transport A B C ab bc h)
++    | contractMismatch tag h =>
++        exact congrArg (Outcome.contractMismatch _) (state_transport A B C ab bc h)
++    | collectorMismatch a h =>
++        simp only [GraphTransport.mapOutcome]
++        congr 1
++        · exact embedding_address A B C ab bc a
++        · exact state_transport A B C ab bc h
++  simp only [GraphTransport.mapRun, Run.mk.injEq]
++  exact ⟨outcome, events, states⟩
++
++theorem nested_histories (η : A.program.Input)
++    (rankA : A.program.RankCertificate) (rankB : B.program.RankCertificate)
++    (rankC : C.program.RankCertificate) :
++    ∃ (l : GraphHistory (declarations (compose A B ab) C))
++      (r : GraphHistory (declarations A (compose B C bc))),
++      l.Admissible ∧ r.Admissible ∧
++      l.toRun = runChecked (leftBracket A B C ab bc).contract
++        (leftBracket A B C ab bc).fragment
++        (liftInput (compose A B ab) C (leftNestedBoundary A B C ab bc)
++          (liftInput A B ab η)).val ∧
++      r.toRun = runChecked (rightBracket A B C ab bc).contract
++        (rightBracket A B C ab bc).fragment
++        (liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η).val ∧
++      r = (graphTransport A B C ab bc).history.apply l := by
++  obtain ⟨l, hl, lr, _⟩ := GraphHistory.ranked_default_exists (leftBracket A B C ab bc)
++    (liftInput (compose A B ab) C (leftNestedBoundary A B C ab bc) (liftInput A B ab η))
++    (leftRank A B C ab bc rankA rankB rankC)
++  obtain ⟨r, hr, rr, _⟩ := GraphHistory.ranked_default_exists (rightBracket A B C ab bc)
++    (liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η)
++    (rightRank A B C ab bc rankA rankB rankC)
++  refine ⟨l, r, hl, hr, lr, rr, GraphHistory.toRun_injective ?_⟩
++  rw [GraphHistory.toRun_transport (graphTransport A B C ab bc) (tensorEquiv A B C ab bc),
++    lr, rr]
++  exact run_transport A B C ab bc (IndexedOperationalRuns.nested_default_runs A B C ab bc η)
++
++theorem nested_observations (η : A.program.Input)
++    (rankA : A.program.RankCertificate) (rankB : B.program.RankCertificate)
++    (rankC : C.program.RankCertificate) :
++    ∃ (l : CompleteObservation (declarations (compose A B ab) C)
++        (Boundary A B × Boundary B C))
++      (r : CompleteObservation (declarations A (compose B C bc))
++        (Boundary A B × Boundary B C)),
++      l.metadata = leftMetadata A B C ab bc η ∧
++      r.metadata = rightMetadata A B C ab bc η ∧
++      l.history.toRun = runChecked (leftBracket A B C ab bc).contract
++        (leftBracket A B C ab bc).fragment
++        (liftInput (compose A B ab) C (leftNestedBoundary A B C ab bc)
++          (liftInput A B ab η)).val ∧
++      r.history.toRun = runChecked (rightBracket A B C ab bc).contract
++        (rightBracket A B C ab bc).fragment
++        (liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η).val ∧
++      CompleteObservation.Agrees (metadataTransport A B C ab bc) (Equiv.refl _) l r := by
++  obtain ⟨l, r, hl, hr, lr, rr, eq⟩ := nested_histories A B C ab bc η rankA rankB rankC
++  exact ⟨⟨leftMetadata A B C ab bc η, l, hl⟩,
++    ⟨rightMetadata A B C ab bc η, r, hr⟩,
++    rfl, rfl, lr, rr, nested_metadata A B C ab bc η, eq⟩
++
++end IndexedOperationalAssociativity
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedOperationalSemantics.lean
+@@ -0,0 +1,5 @@
++import IndexedOperationalObservationLaws
++import IndexedOperationalHistoryComposition
++import IndexedOperationalHistoryAssociativity
++import IndexedOperationalAssociativity
++import IndexedOperationalRunsPhases

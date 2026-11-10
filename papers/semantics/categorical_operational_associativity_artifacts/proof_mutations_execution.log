@@ -1,0 +1,412 @@
+=== P/history/drop-failure-event MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistory.lean: '| .failed _ e _ => [e]' -> '| .failed _ e _ => []' ---
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:411:15: unsolved goals
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:466:86: unsolved goals
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:586:65: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:601:70: Tactic `decide` proved that the proposition
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistory.lean now) ---
+=== P/history/drop-failure-event MUTATE exit=1 ===
+=== P/history/drop-failure-event RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:663:0: 'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:664:0: 'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+Build completed successfully (3001 jobs).
+=== P/history/drop-failure-event SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/history/drop-failure-event: PASS
+=== P/history/drop-failure-event MANIFEST VERDICT: PASS ===
+=== P/history/duplicate-snapshot MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistory.lean: '| .step s _ h => s :: h.states' -> '| .step s _ h => s :: s :: h.states' ---
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:133:46: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:134:31: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:148:36: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:399:44: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:431:27: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:481:16: Tactic `rfl` failed: The left-hand side
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:504:14: Tactic `rfl` failed: The left-hand side
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:582:72: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:585:85: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:587:62: Type mismatch
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistory.lean now) ---
+=== P/history/duplicate-snapshot MUTATE exit=1 ===
+=== P/history/duplicate-snapshot RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:663:0: 'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:664:0: 'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+Build completed successfully (3001 jobs).
+=== P/history/duplicate-snapshot SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/history/duplicate-snapshot: PASS
+=== P/history/duplicate-snapshot MANIFEST VERDICT: PASS ===
+=== P/history/drop-private-prefix MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistory.lean: '| .step s e tail => .step s e (tail.bind k)' -> '| .step _ _ tail => tail.bind k' ---
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:84:33: Tactic `rfl` failed: The left-hand side
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:134:8: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:148:13: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:148:40: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:361:31: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:362:27: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:581:72: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:582:72: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:586:65: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:587:62: Type mismatch
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistory.lean now) ---
+=== P/history/drop-private-prefix MUTATE exit=1 ===
+=== P/history/drop-private-prefix RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:663:0: 'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:664:0: 'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+Build completed successfully (3001 jobs).
+=== P/history/drop-private-prefix SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/history/drop-private-prefix: PASS
+=== P/history/drop-private-prefix MANIFEST VERDICT: PASS ===
+=== P/history/reverse-ledger MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistory.lean: 'mapLedger t.identity s.produced' -> 'mapLedger t.identity s.produced.reverse' ---
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:631:82: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistory.lean now) ---
+=== P/history/reverse-ledger MUTATE exit=1 ===
+=== P/history/reverse-ledger RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:663:0: 'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:664:0: 'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+Build completed successfully (3001 jobs).
+=== P/history/reverse-ledger SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/history/reverse-ledger: PASS
+=== P/history/reverse-ledger MANIFEST VERDICT: PASS ===
+=== P/history/erase-private-availability MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistory.lean: 'fun a => s.available (t.address.symm a)' -> 'fun _ => none' ---
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:268:42: unsolved goals
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:632:83: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistory.lean now) ---
+=== P/history/erase-private-availability MUTATE exit=1 ===
+=== P/history/erase-private-availability RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:663:0: 'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:664:0: 'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+Build completed successfully (3001 jobs).
+=== P/history/erase-private-availability SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/history/erase-private-availability: PASS
+=== P/history/erase-private-availability MANIFEST VERDICT: PASS ===
+=== P/history/erase-empty-input-port MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistory.lean: '⟨A.inputs, A.outputs, A.program.input' -> '⟨[], A.outputs, A.program.input' ---
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:309:4: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistory.lean:647:45: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistory.lean now) ---
+=== P/history/erase-empty-input-port MUTATE exit=1 ===
+=== P/history/erase-empty-input-port RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:663:0: 'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:664:0: 'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+Build completed successfully (3001 jobs).
+=== P/history/erase-empty-input-port SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/history/erase-empty-input-port: PASS
+=== P/history/erase-empty-input-port MANIFEST VERDICT: PASS ===
+=== history-composition/drop-prefix MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistoryComposition.lean: 'h.bind (fun _ _ => k)' -> 'k' ---
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:41:24: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:54:28: Tactic `rfl` failed: The left-hand side
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:59:6: Tactic `assumption` failed
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:121:8: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:121:35: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:322:31: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:323:27: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:324:14: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:501:65: Type mismatch
+error: Lean exited with code 1
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistoryComposition.lean now) ---
+=== history-composition/drop-prefix MUTATE exit=1 ===
+=== history-composition/drop-prefix RESTORED BUILD ===
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:514:0: 'IndexedOperationalHistoryComposition.left_nested_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:515:0: 'IndexedOperationalHistoryComposition.SharedSplice.associative_eq' does not depend on any axioms
+Build completed successfully (3008 jobs).
+=== history-composition/drop-prefix SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+history-composition/drop-prefix: PASS
+=== history-composition/drop-prefix MANIFEST VERDICT: PASS ===
+=== history-composition/forget-private-ledger MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistoryComposition.lean: 'mapLedger upstreamId completed.produced ++ mapLedger downstreamId s.produced' -> 'mapLedger downstreamId s.produced' ---
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:175:37: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistoryComposition.lean now) ---
+=== history-composition/forget-private-ledger MUTATE exit=1 ===
+=== history-composition/forget-private-ledger RESTORED BUILD ===
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:514:0: 'IndexedOperationalHistoryComposition.left_nested_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:515:0: 'IndexedOperationalHistoryComposition.SharedSplice.associative_eq' does not depend on any axioms
+Build completed successfully (3008 jobs).
+=== history-composition/forget-private-ledger SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+history-composition/forget-private-ledger: PASS
+=== history-composition/forget-private-ledger MANIFEST VERDICT: PASS ===
+=== history-composition/forget-private-store MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistoryComposition.lean: '| ⟨.inl t, p⟩ => completed.available ⟨t, p⟩' -> '| ⟨.inl _, _⟩ => none' ---
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:169:15: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistoryComposition.lean now) ---
+=== history-composition/forget-private-store MUTATE exit=1 ===
+=== history-composition/forget-private-store RESTORED BUILD ===
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:514:0: 'IndexedOperationalHistoryComposition.left_nested_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:515:0: 'IndexedOperationalHistoryComposition.SharedSplice.associative_eq' does not depend on any axioms
+Build completed successfully (3008 jobs).
+=== history-composition/forget-private-store SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+history-composition/forget-private-store: PASS
+=== history-composition/forget-private-store MANIFEST VERDICT: PASS ===
+=== history-composition/accept-incompatible-cut MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistoryComposition.lean: '(shared : suffix.start = s)' -> '(shared : True)' ---
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:28:23: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:39:22: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:80:62: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:499:50: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistoryComposition.lean now) ---
+=== history-composition/accept-incompatible-cut MUTATE exit=1 ===
+=== history-composition/accept-incompatible-cut RESTORED BUILD ===
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:514:0: 'IndexedOperationalHistoryComposition.left_nested_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:515:0: 'IndexedOperationalHistoryComposition.SharedSplice.associative_eq' does not depend on any axioms
+Build completed successfully (3008 jobs).
+=== history-composition/accept-incompatible-cut SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+history-composition/accept-incompatible-cut: PASS
+=== history-composition/accept-incompatible-cut MANIFEST VERDICT: PASS ===
+=== P/runs/ordered-events MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalRuns.lean: 'target.events = source.events.map (mapEvent f rename)' -> 'target.events = (source.events.map (mapEvent f rename)).reverse' ---
+error: experiments/indexed_execution/IndexedOperationalRuns.lean:167:26: Type mismatch: After simplification, term
+error: experiments/indexed_execution/IndexedOperationalRuns.lean:184:20: Type mismatch: After simplification, term
+error: experiments/indexed_execution/IndexedOperationalRuns.lean:485:2: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalRuns.lean now) ---
+=== P/runs/ordered-events MUTATE exit=1 ===
+=== P/runs/ordered-events RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:505:0: 'IndexedOperationalRuns.stepFuel_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:506:0: 'IndexedOperationalRuns.nested_default_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:507:0: 'IndexedOperationalRuns.nested_reference_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:508:0: 'IndexedOperationalRuns.ranked_nested_reference_outcomes' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (3000 jobs).
+=== P/runs/ordered-events SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/runs/ordered-events: PASS
+=== P/runs/ordered-events MANIFEST VERDICT: PASS ===
+=== P/runs/ordered-states MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalRuns.lean: 'states : List.Forall₂ (StateRelated f rename) source.states target.states' -> 'states : List.Forall₂ (StateRelated f rename) source.states target.states.reverse' ---
+error: experiments/indexed_execution/IndexedOperationalRuns.lean:169:26: Type mismatch: After simplification, term
+error: experiments/indexed_execution/IndexedOperationalRuns.lean:183:32: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalRuns.lean:482:56: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalRuns.lean now) ---
+=== P/runs/ordered-states MUTATE exit=1 ===
+=== P/runs/ordered-states RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:505:0: 'IndexedOperationalRuns.stepFuel_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:506:0: 'IndexedOperationalRuns.nested_default_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:507:0: 'IndexedOperationalRuns.nested_reference_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:508:0: 'IndexedOperationalRuns.ranked_nested_reference_outcomes' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (3000 jobs).
+=== P/runs/ordered-states SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/runs/ordered-states: PASS
+=== P/runs/ordered-states MANIFEST VERDICT: PASS ===
+=== P/runs/leaf-B-identity MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalRuns.lean: 'exact (identity_B n).symm' -> 'exact (identity_A n).symm' ---
+error: experiments/indexed_execution/IndexedOperationalRuns.lean:394:8: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalRuns.lean now) ---
+=== P/runs/leaf-B-identity MUTATE exit=1 ===
+=== P/runs/leaf-B-identity RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:505:0: 'IndexedOperationalRuns.stepFuel_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:506:0: 'IndexedOperationalRuns.nested_default_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:507:0: 'IndexedOperationalRuns.nested_reference_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:508:0: 'IndexedOperationalRuns.ranked_nested_reference_outcomes' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (3000 jobs).
+=== P/runs/leaf-B-identity SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/runs/leaf-B-identity: PASS
+=== P/runs/leaf-B-identity MANIFEST VERDICT: PASS ===
+=== P/phases/DuplicateCut MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalRunsPhases.lean: 'exact_states : states = before ++ current :: after' -> 'exact_states : states = before ++ current :: current :: after' ---
+error: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:34:55: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:34:39: Application type mismatch: The argument
+error: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:138:36: unsolved goals
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalRunsPhases.lean now) ---
+=== P/phases/DuplicateCut MUTATE exit=1 ===
+=== P/phases/DuplicateCut RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:470:0: 'IndexedOperationalRunsPhases.triple_phases' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:471:0: 'IndexedOperationalRunsPhases.two_reached_right' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:472:0: 'IndexedOperationalRunsPhases.two_reached_empty_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:473:0: 'IndexedOperationalRunsPhases.reference_cuts' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (3001 jobs).
+=== P/phases/DuplicateCut SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/phases/DuplicateCut: PASS
+=== P/phases/DuplicateCut MANIFEST VERDICT: PASS ===
+=== P/phases/StrictOrder MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalRunsPhases.lean: 'ordered : first.before.length ≤ second.before.length' -> 'ordered : first.before.length < second.before.length' ---
+error: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:269:4: Type mismatch: After simplification, term
+error: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:380:7: Type mismatch: After simplification, term
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalRunsPhases.lean now) ---
+=== P/phases/StrictOrder MUTATE exit=1 ===
+=== P/phases/StrictOrder RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:470:0: 'IndexedOperationalRunsPhases.triple_phases' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:471:0: 'IndexedOperationalRunsPhases.two_reached_right' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:472:0: 'IndexedOperationalRunsPhases.two_reached_empty_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:473:0: 'IndexedOperationalRunsPhases.reference_cuts' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (3001 jobs).
+=== P/phases/StrictOrder SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/phases/StrictOrder: PASS
+=== P/phases/StrictOrder MANIFEST VERDICT: PASS ===
+=== P/phases/FailBTag MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalRunsPhases.lean: '.failed (upstreamId (downstreamId tag)) outer.targetEndpoint' -> '.failed (upstreamId (upstreamId tag)) outer.targetEndpoint' ---
+error: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:338:8: Type mismatch: After simplification, term
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalRunsPhases.lean now) ---
+=== P/phases/FailBTag MUTATE exit=1 ===
+=== P/phases/FailBTag RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:470:0: 'IndexedOperationalRunsPhases.triple_phases' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:471:0: 'IndexedOperationalRunsPhases.two_reached_right' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:472:0: 'IndexedOperationalRunsPhases.two_reached_empty_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:473:0: 'IndexedOperationalRunsPhases.reference_cuts' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (3001 jobs).
+=== P/phases/FailBTag SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/phases/FailBTag: PASS
+=== P/phases/FailBTag MANIFEST VERDICT: PASS ===
+=== P/phases/BoundaryValue MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalRunsPhases.lean: 'boundaryInput B C bc (restrictDownstream A B ab store) := by' -> 'boundaryInput B C bc (fun a => restrictDownstream A B ab store a + 1) := by' ---
+error: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:224:4: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:263:52: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalRunsPhases.lean now) ---
+=== P/phases/BoundaryValue MUTATE exit=1 ===
+=== P/phases/BoundaryValue RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:470:0: 'IndexedOperationalRunsPhases.triple_phases' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:471:0: 'IndexedOperationalRunsPhases.two_reached_right' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:472:0: 'IndexedOperationalRunsPhases.two_reached_empty_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:473:0: 'IndexedOperationalRunsPhases.reference_cuts' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (3001 jobs).
+=== P/phases/BoundaryValue SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/phases/BoundaryValue: PASS
+=== P/phases/BoundaryValue MANIFEST VERDICT: PASS ===
+=== history-associativity/wrong-B-identity MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean: '  · exact identity_B' -> '  · exact identity_A' ---
+error: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:128:4: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean now) ---
+=== history-associativity/wrong-B-identity MUTATE exit=1 ===
+=== history-associativity/wrong-B-identity RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:391:0: 'IndexedOperationalHistoryAssociativity.right_nested_tree' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:392:0: 'IndexedOperationalHistoryAssociativity.actual_nested_histories' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+Build completed successfully (3015 jobs).
+=== history-associativity/wrong-B-identity SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+history-associativity/wrong-B-identity: PASS
+=== history-associativity/wrong-B-identity MANIFEST VERDICT: PASS ===
+=== history-associativity/wrong-C-identity MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean: '  · exact identity_C' -> '  · exact identity_B' ---
+error: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:139:4: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean now) ---
+=== history-associativity/wrong-C-identity MUTATE exit=1 ===
+=== history-associativity/wrong-C-identity RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:391:0: 'IndexedOperationalHistoryAssociativity.right_nested_tree' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:392:0: 'IndexedOperationalHistoryAssociativity.actual_nested_histories' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+Build completed successfully (3015 jobs).
+=== history-associativity/wrong-C-identity SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+history-associativity/wrong-C-identity: PASS
+=== history-associativity/wrong-C-identity MANIFEST VERDICT: PASS ===
+=== history-associativity/forget-completed-private-state MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean: 'downstreamState A (compose B C bc) a (downstreamState B C b c) := by' -> 'downstreamState A (compose B C bc) a (upstreamState B C b) := by' ---
+error: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:58:2: Tactic `apply` failed: could not unify the conclusion of `congrArg₂ State.mk available`
+error: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:137:4: Type mismatch
+error: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:328:18: Type mismatch: After simplification, term
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean now) ---
+=== history-associativity/forget-completed-private-state MUTATE exit=1 ===
+=== history-associativity/forget-completed-private-state RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:391:0: 'IndexedOperationalHistoryAssociativity.right_nested_tree' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:392:0: 'IndexedOperationalHistoryAssociativity.actual_nested_histories' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+Build completed successfully (3015 jobs).
+=== history-associativity/forget-completed-private-state SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+history-associativity/forget-completed-private-state: PASS
+=== history-associativity/forget-completed-private-state MANIFEST VERDICT: PASS ===
+=== P/metadata/absent-versus-present-empty-neighbor MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalObservationLaws.lean: 'def absentEmptyMetadata : GraphMetadata emptyProducerDeclarations Unit where
+  inputs := []
+  outputs := Fixtures.emptyMetadata.outputs
+  inputRole := fun _ => false
+  input := fun _ => none
+  valid := fun _ => rfl
+  adapters := ()
+  inputs_nodup := by simp
+  outputs_nodup := Fixtures.emptyMetadata.outputs_nodup
+  inputs_exact := by intro a; simp' -> 'def absentEmptyMetadata : GraphMetadata emptyProducerDeclarations Unit :=
+  Fixtures.emptyMetadata' ---
+error: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:262:4: Type mismatch: After simplification, term
+error: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:272:68: unsolved goals
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalObservationLaws.lean now) ---
+=== P/metadata/absent-versus-present-empty-neighbor MUTATE exit=1 ===
+=== P/metadata/absent-versus-present-empty-neighbor RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:293:0: 'IndexedOperationalHistory.CompleteObservation.agrees_refl' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:294:0: 'IndexedOperationalHistory.CompleteObservation.agrees_symm' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:295:0: 'IndexedOperationalHistory.CompleteObservation.agrees_trans' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:296:0: 'IndexedOperationalHistory.CompleteObservation.agrees_congr' depends on axioms: [propext, Quot.sound]
+Build completed successfully (3002 jobs).
+=== P/metadata/absent-versus-present-empty-neighbor SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P/metadata/absent-versus-present-empty-neighbor: PASS
+=== P/metadata/absent-versus-present-empty-neighbor MANIFEST VERDICT: PASS ===
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| P/history/drop-failure-event | yes | yes | yes | PASS |
+| P/history/duplicate-snapshot | yes | yes | yes | PASS |
+| P/history/drop-private-prefix | yes | yes | yes | PASS |
+| P/history/reverse-ledger | yes | yes | yes | PASS |
+| P/history/erase-private-availability | yes | yes | yes | PASS |
+| P/history/erase-empty-input-port | yes | yes | yes | PASS |
+| history-composition/drop-prefix | yes | yes | yes | PASS |
+| history-composition/forget-private-ledger | yes | yes | yes | PASS |
+| history-composition/forget-private-store | yes | yes | yes | PASS |
+| history-composition/accept-incompatible-cut | yes | yes | yes | PASS |
+| P/runs/ordered-events | yes | yes | yes | PASS |
+| P/runs/ordered-states | yes | yes | yes | PASS |
+| P/runs/leaf-B-identity | yes | yes | yes | PASS |
+| P/phases/DuplicateCut | yes | yes | yes | PASS |
+| P/phases/StrictOrder | yes | yes | yes | PASS |
+| P/phases/FailBTag | yes | yes | yes | PASS |
+| P/phases/BoundaryValue | yes | yes | yes | PASS |
+| history-associativity/wrong-B-identity | yes | yes | yes | PASS |
+| history-associativity/wrong-C-identity | yes | yes | yes | PASS |
+| history-associativity/forget-completed-private-state | yes | yes | yes | PASS |
+| P/metadata/absent-versus-present-empty-neighbor | yes | yes | yes | PASS |
+
+21/21 cycles passed.

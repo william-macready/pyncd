@@ -1,0 +1,30 @@
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:175:37: error: Application type mismatch: The argument
+  related.produced
+has type
+  { available := available✝, produced := produced✝ }.produced =
+    List.map (fun row => (upstreamId row.1, row.2)) completed.produced ++
+      List.map (fun row => (downstreamId row.1, row.2)) s.produced
+but is expected to have type
+  produced✝ = mapLedger downstreamId s.produced
+in the application
+  congrArg₂ State.mk available related.produced
+'IndexedOperationalHistoryComposition.compose_history' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.sound' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.unique' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.phase_cut' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.transport_splices' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.left_nested_history' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.SharedSplice.associative_eq' does not depend on any axioms

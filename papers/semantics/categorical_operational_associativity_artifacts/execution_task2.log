@@ -1,0 +1,238 @@
+ℹ [2949/3000] Replayed LeanNCD.Semantics.Readiness
+info: LeanNCD/Semantics/Readiness.lean:93:0: 'LeanNCD.Semantics.evalWith_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:94:0: 'LeanNCD.Semantics.interpret_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:95:0: 'LeanNCD.Semantics.ready_consistent' depends on axioms: [propext, Quot.sound]
+⚠ [2950/3000] Replayed LeanNCD.Semantics.Machine
+warning: LeanNCD/Semantics/Machine.lean:85:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.finalStore_published`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+ℹ [2952/3000] Replayed LeanNCD.Semantics.Measure
+info: LeanNCD/Semantics/Measure.lean:144:0: 'LeanNCD.Semantics.Program.initial_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:145:0: 'LeanNCD.Semantics.Program.consume_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:146:0: 'LeanNCD.Semantics.Program.publish_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:147:0: 'LeanNCD.Semantics.Program.step_wellFounded' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:148:0: 'LeanNCD.Semantics.Program.trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:149:0: 'LeanNCD.Semantics.Program.running_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:150:0: 'LeanNCD.Semantics.Program.failed_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:151:0: 'LeanNCD.Semantics.Program.no_infinite_chain' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2953/3000] Replayed LeanNCD.Semantics.Invariants
+warning: LeanNCD/Semantics/Invariants.lean:99:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.publish_extends`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+ℹ [2954/3000] Replayed LeanNCD.Semantics.Soundness
+info: LeanNCD/Semantics/Soundness.lean:112:0: 'LeanNCD.Semantics.Program.reachable_invariant' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:113:0: 'LeanNCD.Semantics.Program.successful_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:114:0: 'LeanNCD.Semantics.Program.candidate_preserved' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:115:0: 'LeanNCD.Semantics.Program.successful_unique' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:116:0: 'LeanNCD.Semantics.Program.successful_admInput' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:117:0: 'LeanNCD.Semantics.Program.successful_denotation' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:118:0: 'LeanNCD.Semantics.Program.failed_no_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [2955/3000] Replayed LeanNCD.Semantics.Progress
+info: LeanNCD/Semantics/Progress.lean:182:0: 'LeanNCD.Semantics.Program.ranked_progress' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:183:0: 'LeanNCD.Semantics.Program.ranked_not_blocked' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:184:0: 'LeanNCD.Semantics.Program.terminal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:185:0: 'LeanNCD.Semantics.Program.maximal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:186:0: 'LeanNCD.Semantics.Program.maximal_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:187:0: 'LeanNCD.Semantics.Program.model_maximal_success' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:188:0: 'LeanNCD.Semantics.Program.no_model_maximal_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:189:0: 'LeanNCD.Semantics.Program.initialization_iff_singleton' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:190:0: 'LeanNCD.Semantics.Program.successful_schedules_agree' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2956/3000] Replayed LeanNCD.Semantics.ExecutableState
+warning: LeanNCD/Semantics/ExecutableState.lean:51:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_error`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:83:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.publish_agrees`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:87:8: Used `tac1 <;> tac2` where `(tac1; tac2)` would suffice
+
+Note: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`
+warning: LeanNCD/Semantics/ExecutableState.lean:94:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.initialBudget_agrees`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [2957/3000] Replayed LeanNCD.Semantics.ExecutableSelection
+warning: LeanNCD/Semantics/ExecutableSelection.lean:69:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.scan_none`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ExecutableSelection.lean:120:0: 'LeanNCD.Semantics.Program.Executor.select_none_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2958/3000] Replayed LeanNCD.Semantics.ReferenceExecutor
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:10:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_accepts`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:19:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_preserves`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ReferenceExecutor.lean:187:0: 'LeanNCD.Semantics.Program.Executor.run_not_exhausted' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:188:0: 'LeanNCD.Semantics.Program.Executor.run_ranked_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:189:0: 'LeanNCD.Semantics.Program.Executor.result_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:190:0: 'LeanNCD.Semantics.Program.Executor.result_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2961/3000] Replayed IndexedCompositionClosure
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:122:0: automatically included section variable(s) unused in theorem `IndexedOpenComposition.validated_writers_forall`:
+  [Fintype σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:141:0: automatically included section variable(s) unused in theorem `IndexedOpenComposition.validated_writer_destination_reads`:
+  [Fintype σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:244:8: automatically included section variable(s) unused in theorem `_private.IndexedCompositionClosure.0.IndexedOpenComposition.nodup_map_of_duplicate_guard`:
+  [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:257:27: This simp argument is unused:
+  List.countP_map
+
+Hint: Omit it from the simp argument list.
+  simp only [List.count, List.countP_m̵a̵p̵,̵ ̵L̵i̵s̵t̵.̵c̵o̵u̵n̵t̵P̵_̵eq_length_filter]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:249:2: Try this: intro cap hm
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:278:8: automatically included section variable(s) unused in theorem `_private.IndexedCompositionClosure.0.IndexedOpenComposition.collector_row_unique`:
+  [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [2967/3000] Replayed IndexedComponentTransportEval
+warning: experiments/indexed_execution/IndexedComponentTransportEval.lean:78:48: This simp argument is unused:
+  Embedding.address_comp
+
+Hint: Omit it from the simp argument list.
+  simp only [footprint_transport, List.map_map, E̵m̵b̵e̵d̵d̵i̵n̵g̵.̵a̵d̵d̵r̵e̵s̵s̵_̵c̵o̵m̵p̵,̵ ̵Function.comp_apply]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+info: experiments/indexed_execution/IndexedComponentTransportEval.lean:81:0: 'IndexedComponentTransport.evalWith_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentTransportEval.lean:82:0: 'IndexedComponentTransport.footprint_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentTransportEval.lean:83:0: 'IndexedComponentTransport.evalReady_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2977/3000] Replayed IndexedCompositionSelection
+warning: experiments/indexed_execution/IndexedCompositionSelection.lean:58:0: automatically included section variable(s) unused in theorem `IndexedOpenComposition.schedule_default_budget`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [2979/3000] Replayed IndexedCompositionSteps
+warning: experiments/indexed_execution/IndexedCompositionSteps.lean:72:2: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+⚠ [2987/3000] Replayed IndexedComponentExecutionFuel
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:11:0: automatically included section variable(s) unused in theorem `IndexedComponentExecution.stepFuel_add_of_not_exhausted`:
+  [Fintype σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:22:23: This simp argument is unused:
+  ↓reduceIte
+
+Hint: Omit it from the simp argument list.
+  simp only [hc,̵ ̵↓̵r̵e̵d̵u̵c̵e̵I̵t̵e̵] at terminal ⊢
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:24:24: This simp argument is unused:
+  hs
+
+Hint: Omit it from the simp argument list.
+  simp ̵[̵h̵s̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:32:23: This simp argument is unused:
+  ↓reduceIte
+
+Hint: Omit it from the simp argument list.
+  simp only [hc, ↓̵r̵e̵d̵u̵c̵e̵I̵t̵e̵,̵ ̵Nat.succ_add] at terminal ⊢
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:34:24: This simp argument is unused:
+  hs
+
+Hint: Omit it from the simp argument list.
+  simp ̵[̵h̵s̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:38:27: This simp argument is unused:
+  hs
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵h̵s̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:48:27: This simp argument is unused:
+  hs
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵h̵s̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+⚠ [2988/3000] Replayed IndexedComponentExecutionTransport
+warning: experiments/indexed_execution/IndexedComponentExecutionTransport.lean:86:43: This simp argument is unused:
+  Function.comp_def
+
+Hint: Omit it from the simp argument list.
+  simp [mapStep, mapWriter, F̵u̵n̵c̵t̵i̵o̵n̵.̵c̵o̵m̵p̵_̵d̵e̵f̵,̵ ̵hp, related.available]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionTransport.lean:149:10: This simp argument is unused:
+  Function.update_apply
+
+Hint: Omit it from the simp argument list.
+  simp [F̵u̵n̵c̵t̵i̵o̵n̵.̵u̵p̵d̵a̵t̵e̵_̵a̵p̵p̵l̵y̵,̵ ̵h, hn, related.available]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+⚠ [2998/3000] Replayed IndexedWitnessCoherence
+warning: experiments/indexed_execution/IndexedWitnessCoherence.lean:204:15: This simp argument is unused:
+  Equiv.symm_apply_apply
+
+Hint: Omit it from the simp argument list.
+  simp only [̵E̵q̵u̵i̵v̵.̵s̵y̵m̵m̵_̵a̵p̵p̵l̵y̵_̵a̵p̵p̵l̵y̵,̵ ̵E̵q̵u̵i̵v̵.̵a̵p̵p̵l̵y̵_̵s̵y̵m̵m̵_̵a̵p̵p̵l̵y̵]̵[̲E̲q̲u̲i̲v̲.̲a̲p̲p̲l̲y̲_̲s̲y̲m̲m̲_̲a̲p̲p̲l̲y̲]̲
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedWitnessCoherence.lean:263:39: This simp argument is unused:
+  Equiv.symm_apply_apply
+
+Hint: Omit it from the simp argument list.
+  simp only [Equiv.apply_symm_apply,̵ ̵E̵q̵u̵i̵v̵.̵s̵y̵m̵m̵_̵a̵p̵p̵l̵y̵_̵a̵p̵p̵l̵y̵]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+✔ [2999/3000] Built IndexedOperationalReassociation (3.6s)
+ℹ [3000/3000] Built IndexedOperationalRuns (3.1s)
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:505:0: 'IndexedOperationalRuns.stepFuel_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:506:0: 'IndexedOperationalRuns.nested_default_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:507:0: 'IndexedOperationalRuns.nested_reference_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:508:0: 'IndexedOperationalRuns.ranked_nested_reference_outcomes' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (3000 jobs).

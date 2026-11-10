@@ -1,0 +1,609 @@
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -23,7 +23,23 @@
+ stores and empty metadata. Observation probes and separate parity modules
+ are test-only. No core identity computation or event-sensitive process category is claimed.
+ 
+-The operational entry point is `import IndexedRankedExecutionSemantics`.
++The associative operational entry point is `import IndexedOperationalSemantics`.
++`CompleteObservation.Agrees` retains whole ports, validated Option-valued input,
++explicit domain/boundary adapters, ordered events, all private availability and
++ordered ledgers; its concrete identity/inverse/composition laws are proved.
++`BinaryHistory` connects compatible shared-cut splicing to actual binary default
++execution. `binary_associativity` reassociates its full-state leaf lifts, and
++`actual_nested_histories` instantiates both actual nested constructors without
++assuming execution agreement. `nested_observations` additionally retains native
++whole-interface metadata. `triple_phases` exposes failure in each leaf or success,
++ordered/coincident cuts and both original boundary inputs. Actual reference runs
++retain the full `Relation`, including pending occurrences and accumulators.
++Budgets are `nA+nB+nC+1`; malformed raw-input validation is not reassociated.
++All these modules remain nondefault under `IndexedExecutionExperiment`.
++No event-free core identity or full process category is claimed; see the
++[operational associativity record](../papers/semantics/categorical_operational_associativity_record.md).
++
++The binary operational entry point remains `import IndexedRankedExecutionSemantics`.
+ `compositeRankCertificate` constructs a full-footprint composite rank from
+ both component certificates. `compose_default_phases` proves actual default
+ `runChecked` upstream-first execution, strict failure and full state/ledger
+--- a/papers/semantics/categorical_tensor_logic_semantics.md
++++ b/papers/semantics/categorical_tensor_logic_semantics.md
+@@ -100,6 +100,15 @@
+ bridge toward a process interpretation, not a proof of process-category laws.
+ See Section 6.11 and the [ranked execution record](categorical_ranked_execution_record.md).
+ 
++**Associative operational composition** additionally compares the two actual
++nested constructors through explicit leaf-owned address, occurrence and identity
++transports. Compatible histories preserve every ordered event, all private
++snapshot values and ordered produced ledgers, failure data and whole-interface
++metadata. Shared-cut splicing is associative and agrees with actual graph and
++normalized reference execution. Units remain separate: no core copy is declared
++event-free. See Section 6.12 and the
++[operational associativity record](categorical_operational_associativity_record.md).
++
+ The independently authored validation fixture supplies actual
+ proof instances of the execution-correspondence theorem. Its six-event failure and
+ seven-event completion remain concrete executable observations;
+@@ -122,8 +131,9 @@
+ > hypotheses. The specified matched-component/coordinate-wire source category
+ > and its witness functor are also proved. Composite rank construction and
+ > upstream/downstream execution phases are proved for the ranked profile.
+-> Broader source interpretations and event-sensitive process laws remain
+-> separate obligations.
++> Transport-aware history composition and operational associativity are also
++> proved. Process units, broader source interpretations and backend refinement
++> remain separate obligations.
+ 
+ The St/Br presentation can organise parts of the syntax and total
+ indexing. It is not assumed to be the best presentation of every layer.
+@@ -1301,8 +1311,8 @@
+ presentation. Source objects/homs remain `Type 1`, environments `Type 0`;
+ no finite rational-model-set, same-universe local-smallness or faithfulness
+ claim follows. Administrative source units are not event-free core programs.
+-Ranked binary operational phases are the separate result below.
+-Event-sensitive process-category laws, general trace algebra, broader source
++Ranked binary phases and transport-aware associative history composition are
++the separate operational results below. Process units, broader source
+ interpretations and backend refinement remain separate work.
+ 
+ ### 6.11. Kernel-checked ranked operational phases
+@@ -1345,8 +1355,9 @@
+ No execution agreement, model existence or completion premise is assumed.
+ See the [ranked execution record](categorical_ranked_execution_record.md)
+ for exact APIs, discriminating private/collection/empty/axis/guarded/cyclic
+-cases, controls and release evidence. General trace algebra and
+-event-sensitive process-category laws are not established by this result.
++cases, controls and release evidence. This binary result alone establishes
++neither a general trace algebra nor event-sensitive process-category laws;
++Section 6.12 supplies the separate associative history layer.
+ 
+ The result has passed both whole-branch review lenses, clean replay of all
+ six verified implementation tasks, namespace axiom audits and the full
+@@ -1356,6 +1367,47 @@
+ live snapshot-proof controls and sixteen inherited composition controls.
+ These classifications matter; they are not 25 independent runtime runner kills.
+ Appendix A.10 explains the proof's construction and operational invariants.
++
++### 6.12. Transport-aware histories and operational associativity
++
++The nondefault entry point is
++[`IndexedOperationalSemantics`](../../leanncd/experiments/indexed_execution/IndexedOperationalSemantics.lean).
++`CompleteObservation.Agrees` compares histories only through explicit coherent
++tensor/domain, full-address and tag/capability transports. It retains ordered
++whole input/output ports, validated Option-valued external input (including
++empty tensor presence), original boundary adapters, every ordered event, every
++complete availability function and ordered produced ledger, and the terminal
++success or failing occurrence/state. No event permutation, stuttering,
++private-state erasure or output-only quotient is introduced. Concrete metadata
++and complete-observation identity/inverse/composition laws are proved.
++
++`BinaryHistory` is a structural compatible-composition relation, not a definition
++that two chosen runs agree. Successful composition gets the downstream input
++from the completed whole upstream boundary, retains all completed private work
++throughout the suffix, and shares one cut snapshot without a boundary event.
++Failure absorbs continuation without requiring a downstream input or history.
++`compose_history` and `BinaryHistory.sound` connect this algebra to the existing
++`compose_default_phases`. `binary_associativity` transports both nested lifts
++into one leaf-owned state/event space and applies shared-splice associativity;
++`actual_nested_histories` instantiates both existing nested constructors.
++`nested_observations` additionally proves agreement of their native metadata.
++
++`triple_phases` derives all four actual outcome branches: failure in A, B or C,
++or success. Reached joins retain both original boundary equations and ordered
++cuts. Empty phases may have coincident cuts; undefinedness still adds no extra
++failed-state snapshot. Actual `Program.Executor.run` and `referenceSnapshots`
++retain the full graph/reference `Relation`, including pending occurrences and
++accumulators. Both nested ranks are constructed, and each actual default budget
++is `nA+nB+nC+1`, not the sum of three standalone defaults.
++
++The theorem starts on validated A input and three local rank certificates, not
++completion, model existence or assumed execution agreement. Raw malformed-input
++validation order and arbitrary debug budgets are unchanged. Units, a full
++process category, broader source interpretation and backend refinement remain
++outside this result. See the
++[record](categorical_operational_associativity_record.md) for precise APIs,
++acceptance observations and separately classified runtime/observation versus
++live-proof controls.
+ 
+ ## 7. St/Br, indexed arrays, and open diagrams
+ 
+@@ -1793,14 +1845,15 @@
+ component coherence and the restricted partial-map view. The source completion
+ adds a certified matched-component/coordinate-wire presentation and a genuine
+ functor to that target. The ranked binary operational phase branch is now
+-proved separately. General trace/process laws, broader source interpretations
++proved separately. Transport-aware history composition and operational
++associativity are now proved too; process units, broader source interpretations
+ and backend refinement remain open branches.
+ 
+ ### 10.1. What each step buys us
+ 
+ | Step | Construction or obligation | What it buys us | Current boundary |
+ | --- | --- | --- | --- |
+-| 1. Fix interfaces and observations | Typed whole-tensor interfaces, explicit coordinate/identity transport, and a choice of value, witness or process equivalence | States exactly what may be connected and what information an equivalence may forget; empty tensors and private effects cannot disappear by accident | Whole interfaces and span-isomorphism equivalence implemented; event-sensitive equivalence remains open |
++| 1. Fix interfaces and observations | Typed whole-tensor interfaces, explicit coordinate/identity transport, and a choice of value, witness or process equivalence | States exactly what may be connected and what information an equivalence may forget; empty tensors and private effects cannot disappear by accident | Whole interfaces, span-isomorphism equivalence and transport-only full-history observation agreement implemented |
+ | 2. Give computations strict meaning | Partial expression interpretation, complete-model conditions and proved declaration/context transport | Separates undefinedness from unavailable data and numerical zero; preserves demanded internal work and nonselected array entries | Implemented substrate and proved transport |
+ | 3. Connect graphs to meaning | Local source-contract matches and graph/reference execution correspondence | Makes executable graphs accountable for occurrences, publication, failure and full intermediate data rather than only final outputs | Proved under supplied leaf matches and matched priorities |
+ | 4. Compose representations safely | Locally scoped components, typed boundaries, checked private identities, canonical closure and composite-match construction | Provides modular assembly without rebuilding a whole match, padding declaration universes or reopening an upstream writer family | Proved for the explicit sealed whole-tensor constructor |
+@@ -1808,7 +1861,7 @@
+ | 6. Package a semantic category | Witness spans over interface environments, span-isomorphism quotient, and composition interpreted as a pullback | Turns model gluing into a composition-preserving categorical interpretation with both exterior legs checked | Proved across all validated inputs with explicit boundary/exterior transports |
+ | 7. Prove category laws and units | Target identity spans and associativity; actual nested component comparison through compatible model triples | Makes repeated denotational composition coherent without treating extra computation events as no work | Target laws, graph-transport laws and nested coherence proved; source administrative laws are supplied separately in Step 8, not inferred from target laws |
+ | 8. Present sources and connect their meaning | Distinct whole-interface source objects, certified coordinate wires, matched leaves and a generated congruence; genuine witness functor | Connects source units/composition and actual component assembly to complete-witness meaning with explicit transports | Proved for the specified sealed presentation, including both actual nested-to-triple comparisons; no automatic matching, faithfulness or general St/Br/monoidal claim |
+-| 9. Connect process and implementation views | Ranked phase/projection and trace proofs, plus observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest | Ranked binary phases and full graph/reference state projections proved; general trace algebra, process laws and frontend/backend refinement remain open |
++| 9. Connect process and implementation views | Ranked phase/projection and trace proofs, plus observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest | Ranked phases, full graph/reference observations and associative compatible-history composition proved; process units and frontend/backend refinement remain open |
+ 
+ The completed realization of Steps 6-7 is the **witness-span interpretation**.
+ For a whole-tensor interface $X$, write $\mathsf{Env}(X)$ for its space of
+@@ -1904,7 +1957,8 @@
+ | Certified matched-component source category and functor | Proved for the specified generated presentation | [Source functor](../../leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean); certified coordinate wires, source quotient laws, actual assembly/nesting and complete-witness interpretation with explicit transports |
+ | Core/process units | Open | Administrative source identities are not core computations; copies add events and aliases violate `output_defined` |
+ | Rank stitching and sequential phase/projection | Proved for actual default graph/reference executions | [Ranked execution](categorical_ranked_execution_record.md); constructed full-footprint certificate, shared cut, whole private state/ledger projections, strict failures, explicit boundary and default-budget proof |
+-| Event-sensitive process category | Open | For the proposed sealed-sequential interpretation, needs operational composition and a justified event/state observation equivalence, not merely span isomorphism |
++| Associative operational composition | Proved for ranked matched components on validated input | [Operational histories](categorical_operational_associativity_record.md); transport-only full observations, shared-cut algebra, both actual constructors, four leaf outcomes and actual reference relations |
++| Event-sensitive process category | Open: units remain | Operational associativity does not supply an event-free core identity; the observation relation does not discard copy events |
+ | Categorical frontend/backend interpretation and refinement | Not established for this witness category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
+ 
+ The current position is therefore **a proved denotational witness-span
+@@ -1913,7 +1967,8 @@
+ and [source record](categorical_source_functor_record.md) for their separate
+ build, audit, control and review gates and limits. Ranked binary operational
+ phases and normalized state/event projections are also proved in Section 6.11;
+-general trace algebra and process laws remain separate. General St/Br
++Section 6.12 adds compatible history algebra and actual operational associativity.
++Process units remain separate. General St/Br
+ packaging, numerical interpretation and implementation refinement must be
+ connected to the chosen semantics by their own arguments.
+ 
+@@ -1932,10 +1987,10 @@
+   structure requires additional constructions and soundness arguments.
+   The [source record](categorical_source_functor_record.md) gives the proved
+   presentation and its limits; the handoff remains its historical goal brief.
+-- **Sequential process meaning:** the ranked certificate and binary phase/state
+-  projections are now proved for actual default graph/reference executions.
+-  General trace composition and process units still require a specified
+-  observation equivalence. Compatible model triples alone do not prove
++- **Sequential process units:** ranked phases, transport-aware compatible
++  history composition and actual operational associativity are proved.
++  An event-free unit still needs a separate construction and justification
++  under these observations. Compatible model triples alone do not prove
+   operational sequencing, and semantic graph spans are not event-free core
+   computations.
+ - **Frontend/backend connection and refinement:** relate St/Br or another
+@@ -1977,8 +2032,9 @@
+ 
+ This is a sound operational bridge and a proved denotational source-to-witness
+ functor for the specified rational profile, not an event-sensitive
+-process category. Ranked binary phase-projection is proved; general trace
+-algebra and process laws remain open with their own observation equivalence.
++process category. Ranked phase-projection, full-history observation transport
++and associative compatible history composition are proved; process units
++remain open under that observation equivalence.
+ Section 10 records
+ the different goals and current status.
+ Reproving execution correspondence or reconstructing an entire match for
+@@ -2276,7 +2332,8 @@
+ No rank, phase, model existence or uniqueness premise appears in the core
+ witness theorem. The categorical packaging and its laws are proved separately
+ below. Ranked runtime phase/projection is the separate result in Section 6.11;
+-general trace algebra and event-sensitive process laws remain unproved.
++Section 6.12 adds compatible history algebra and operational associativity.
++Event-sensitive process units remain unproved.
+ 
+ ### A.9. Turn model witnesses into categorical semantics
+ 
+@@ -2460,10 +2517,10 @@
+ [`compose_default_phases`](../../leanncd/experiments/indexed_execution/IndexedComponentExecutionRuns.lean);
+ [`reference_default_phases`](../../leanncd/experiments/indexed_execution/IndexedComponentExecutionReference.lean)
+ derives the normalized reference projections. Together they establish ranked
+-binary operational composition. General trace algebra, process units and
+-associativity under an event-sensitive observation equivalence still require
+-their own theorems; they do not follow from the witness-span quotient or from
+-this binary phase result alone.
++binary operational composition. The separate history and operational
++associativity theorems in Section 6.12 reuse this result; they do not follow
++from the witness-span quotient or from this binary phase result alone.
++Process units remain open.
+ 
+ ## Notation reference
+ 
+--- /dev/null
++++ b/papers/semantics/categorical_operational_associativity_mutations_post.json
+@@ -0,0 +1,101 @@
++[
++  {
++    "label": "O1 (wrong reassociation occurrence identity)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
++    "old": "let events := l.events.map\n    (mapEvent (IndexedOperationalReassociation.embedding A B C ab bc)\n      IndexedOperationalReassociation.identityEquiv)",
++    "new": "let events := l.events.map\n    (mapEvent (IndexedOperationalReassociation.embedding A B C ab bc) id)",
++    "targets": ["IndexedOperationalAssociativityFixtures"],
++    "expect": ["indexed-reference operational-private-full-observations: expected"]
++  },
++  {
++    "label": "O2 (private availability cannot be erased)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
++    "old": "(roster.map s.available, mapLedger rename s.produced)",
++    "new": "(roster.map (fun a => if σ.uid a.1 == 8 then none else s.available a), mapLedger rename s.produced)",
++    "targets": ["IndexedOperationalAssociativityFixtures"],
++    "expect": ["indexed-reference operational-private-snapshots: expected"]
++  },
++  {
++    "label": "O3 (produced ledger order cannot be reversed)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
++    "old": "mapLedger rename s.produced)",
++    "new": "mapLedger rename s.produced.reverse)",
++    "targets": ["IndexedOperationalAssociativityFixtures"],
++    "expect": ["indexed-reference operational-private-snapshots: expected"]
++  },
++  {
++    "label": "O4 (contribution order cannot be reversed)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
++    "old": "(collected.events.take 3).map eventRow",
++    "new": "(collected.events.reverse.take 3).map eventRow",
++    "targets": ["IndexedOperationalAssociativityFixtures"],
++    "expect": ["indexed-reference operational-donor-event-order: expected"]
++  },
++  {
++    "label": "O5 (publication cannot be dropped)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
++    "old": "(zero.events.take 2).map eventRow",
++    "new": "((zero.events.filter fun event => match event with | .sealed _ _ => false | _ => true).take 2).map eventRow",
++    "targets": ["IndexedOperationalAssociativityFixtures"],
++    "expect": ["indexed-reference operational-donor-event-order: expected"]
++  },
++  {
++    "label": "O6 (a duplicate snapshot is observable)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
++    "old": "l.states.map (stateRow roster IndexedOperationalReassociation.identityEquiv)",
++    "new": "(l.states ++ l.states.take 1).map (stateRow roster IndexedOperationalReassociation.identityEquiv)",
++    "targets": ["IndexedOperationalAssociativityFixtures"],
++    "expect": ["indexed-reference operational-private-full-observations: expected"]
++  },
++  {
++    "label": "O7 (reference pending occurrences cannot be erased)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
++    "old": "decide (o ∈ s.pending t)",
++    "new": "false",
++    "targets": ["IndexedOperationalAssociativityFixtures"],
++    "expect": ["indexed-reference operational-reference-shared-cuts: expected"]
++  },
++  {
++    "label": "O8 (reference accumulators cannot be erased)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
++    "old": "(s.accumulators t p : ℚ)",
++    "new": "(0 : ℚ)",
++    "targets": ["IndexedOperationalAssociativityFixtures"],
++    "expect": ["indexed-reference operational-reference-shared-cuts: expected"]
++  },
++  {
++    "label": "O9 (strict failure donor cannot fall through as total)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
++    "old": "let l := leftRun (consumerComponent a) (consumerComponent b) (consumerComponent c)\n    (privateBoundary a b) (privateBoundary b c) (privateInput a)",
++    "new": "let l := leftRun (consumerComponent 4) (consumerComponent b) (consumerComponent c)\n    (privateBoundary 4 b) (privateBoundary b c) (privateInput 4)",
++    "targets": ["IndexedOperationalAssociativityFixtures"],
++    "expect": ["indexed-reference operational-private-outcomes: expected"]
++  },
++  {
++    "label": "O10 (missing empty input is not a vacuous valid input)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
++    "old": "let result := leftRun emptyProducerComponent emptyConsumerComponent emptyConsumerComponent\n    emptyBoundary emptyTailBoundary emptyValidatedInput",
++    "new": "let result := runChecked l.contract l.fragment (fun _ => none)",
++    "targets": ["IndexedOperationalAssociativityFixtures"],
++    "expect": ["indexed-reference operational-empty-presence-coincident-cuts: expected"]
++  },
++  {
++    "label": "O11 (equal-output history control is discriminating)",
++    "task": "fixtures",
++    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
++    "old": "collectors := rows.take 1 ++ rows.drop 2 ++ (rows.drop 1).take 1",
++    "new": "collectors := rows",
++    "targets": ["IndexedOperationalAssociativityFixtures"],
++    "expect": ["indexed-reference operational-observation-stronger-than-final-values: expected"]
++  }
++]
+--- /dev/null
++++ b/papers/semantics/categorical_operational_associativity_proof_mutations_post.json
+@@ -0,0 +1,275 @@
++[
++  {
++    "label": "P/history/drop-failure-event",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
++    "old": "| .failed _ e _ => [e]",
++    "new": "| .failed _ e _ => []",
++    "targets": [
++      "IndexedOperationalHistory"
++    ],
++    "expect": [
++      "unsolved goals"
++    ]
++  },
++  {
++    "label": "P/history/duplicate-snapshot",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
++    "old": "| .step s _ h => s :: h.states",
++    "new": "| .step s _ h => s :: s :: h.states",
++    "targets": [
++      "IndexedOperationalHistory"
++    ],
++    "expect": [
++      "Application type mismatch: The argument"
++    ]
++  },
++  {
++    "label": "P/history/drop-private-prefix",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
++    "old": "| .step s e tail => .step s e (tail.bind k)",
++    "new": "| .step _ _ tail => tail.bind k",
++    "targets": [
++      "IndexedOperationalHistory"
++    ],
++    "expect": [
++      "Tactic `rfl` failed: The left-hand side"
++    ]
++  },
++  {
++    "label": "P/history/reverse-ledger",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
++    "old": "mapLedger t.identity s.produced",
++    "new": "mapLedger t.identity s.produced.reverse",
++    "targets": [
++      "IndexedOperationalHistory"
++    ],
++    "expect": [
++      "Type mismatch"
++    ]
++  },
++  {
++    "label": "P/history/erase-private-availability",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
++    "old": "fun a => s.available (t.address.symm a)",
++    "new": "fun _ => none",
++    "targets": [
++      "IndexedOperationalHistory"
++    ],
++    "expect": [
++      "unsolved goals"
++    ]
++  },
++  {
++    "label": "P/history/erase-empty-input-port",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
++    "old": "\u27e8A.inputs, A.outputs, A.program.input",
++    "new": "\u27e8[], A.outputs, A.program.input",
++    "targets": [
++      "IndexedOperationalHistory"
++    ],
++    "expect": [
++      "Application type mismatch: The argument"
++    ]
++  },
++  {
++    "task": "live-proof",
++    "label": "history-composition/drop-prefix",
++    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
++    "old": "h.bind (fun _ _ => k)",
++    "new": "k",
++    "targets": [
++      "IndexedOperationalHistoryComposition"
++    ],
++    "expect": [
++      "Type mismatch"
++    ]
++  },
++  {
++    "task": "live-proof",
++    "label": "history-composition/forget-private-ledger",
++    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
++    "old": "mapLedger upstreamId completed.produced ++ mapLedger downstreamId s.produced",
++    "new": "mapLedger downstreamId s.produced",
++    "targets": [
++      "IndexedOperationalHistoryComposition"
++    ],
++    "expect": [
++      "Application type mismatch: The argument"
++    ]
++  },
++  {
++    "task": "live-proof",
++    "label": "history-composition/forget-private-store",
++    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
++    "old": "| \u27e8.inl t, p\u27e9 => completed.available \u27e8t, p\u27e9",
++    "new": "| \u27e8.inl _, _\u27e9 => none",
++    "targets": [
++      "IndexedOperationalHistoryComposition"
++    ],
++    "expect": [
++      "Type mismatch"
++    ]
++  },
++  {
++    "task": "live-proof",
++    "label": "history-composition/accept-incompatible-cut",
++    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
++    "old": "(shared : suffix.start = s)",
++    "new": "(shared : True)",
++    "targets": [
++      "IndexedOperationalHistoryComposition"
++    ],
++    "expect": [
++      "Type mismatch"
++    ]
++  },
++  {
++    "label": "P/runs/ordered-events",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalRuns.lean",
++    "old": "target.events = source.events.map (mapEvent f rename)",
++    "new": "target.events = (source.events.map (mapEvent f rename)).reverse",
++    "targets": [
++      "IndexedOperationalRuns"
++    ],
++    "expect": [
++      "Type mismatch"
++    ]
++  },
++  {
++    "label": "P/runs/ordered-states",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalRuns.lean",
++    "old": "states : List.Forall\u2082 (StateRelated f rename) source.states target.states",
++    "new": "states : List.Forall\u2082 (StateRelated f rename) source.states target.states.reverse",
++    "targets": [
++      "IndexedOperationalRuns"
++    ],
++    "expect": [
++      "Type mismatch"
++    ]
++  },
++  {
++    "label": "P/runs/leaf-B-identity",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalRuns.lean",
++    "old": "exact (identity_B n).symm",
++    "new": "exact (identity_A n).symm",
++    "targets": [
++      "IndexedOperationalRuns"
++    ],
++    "expect": [
++      "Type mismatch"
++    ]
++  },
++  {
++    "label": "P/phases/DuplicateCut",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalRunsPhases.lean",
++    "old": "exact_states : states = before ++ current :: after",
++    "new": "exact_states : states = before ++ current :: current :: after",
++    "targets": [
++      "IndexedOperationalRunsPhases"
++    ],
++    "expect": [
++      "mismatch"
++    ]
++  },
++  {
++    "label": "P/phases/StrictOrder",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalRunsPhases.lean",
++    "old": "ordered : first.before.length \u2264 second.before.length",
++    "new": "ordered : first.before.length < second.before.length",
++    "targets": [
++      "IndexedOperationalRunsPhases"
++    ],
++    "expect": [
++      "mismatch"
++    ]
++  },
++  {
++    "label": "P/phases/FailBTag",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalRunsPhases.lean",
++    "old": ".failed (upstreamId (downstreamId tag)) outer.targetEndpoint",
++    "new": ".failed (upstreamId (upstreamId tag)) outer.targetEndpoint",
++    "targets": [
++      "IndexedOperationalRunsPhases"
++    ],
++    "expect": [
++      "mismatch"
++    ]
++  },
++  {
++    "label": "P/phases/BoundaryValue",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalRunsPhases.lean",
++    "old": "boundaryInput B C bc (restrictDownstream A B ab store) := by",
++    "new": "boundaryInput B C bc (fun a => restrictDownstream A B ab store a + 1) := by",
++    "targets": [
++      "IndexedOperationalRunsPhases"
++    ],
++    "expect": [
++      "mismatch"
++    ]
++  },
++  {
++    "task": "live-proof",
++    "label": "history-associativity/wrong-B-identity",
++    "file": "experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean",
++    "old": "  \u00b7 exact identity_B",
++    "new": "  \u00b7 exact identity_A",
++    "targets": [
++      "IndexedOperationalHistoryAssociativity"
++    ],
++    "expect": [
++      "Type mismatch"
++    ]
++  },
++  {
++    "task": "live-proof",
++    "label": "history-associativity/wrong-C-identity",
++    "file": "experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean",
++    "old": "  \u00b7 exact identity_C",
++    "new": "  \u00b7 exact identity_B",
++    "targets": [
++      "IndexedOperationalHistoryAssociativity"
++    ],
++    "expect": [
++      "Type mismatch"
++    ]
++  },
++  {
++    "task": "live-proof",
++    "label": "history-associativity/forget-completed-private-state",
++    "file": "experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean",
++    "old": "downstreamState A (compose B C bc) a (downstreamState B C b c) := by",
++    "new": "downstreamState A (compose B C bc) a (upstreamState B C b) := by",
++    "targets": [
++      "IndexedOperationalHistoryAssociativity"
++    ],
++    "expect": [
++      "Tactic `apply` failed: could not unify the conclusion of `congrArg\u2082 State.mk available`"
++    ]
++  },
++  {
++    "label": "P/metadata/absent-versus-present-empty-neighbor",
++    "task": "live-proof",
++    "file": "experiments/indexed_execution/IndexedOperationalObservationLaws.lean",
++    "old": "def absentEmptyMetadata : GraphMetadata emptyProducerDeclarations Unit where\n  inputs := []\n  outputs := Fixtures.emptyMetadata.outputs\n  inputRole := fun _ => false\n  input := fun _ => none\n  valid := fun _ => rfl\n  adapters := ()\n  inputs_nodup := by simp\n  outputs_nodup := Fixtures.emptyMetadata.outputs_nodup\n  inputs_exact := by intro a; simp",
++    "new": "def absentEmptyMetadata : GraphMetadata emptyProducerDeclarations Unit :=\n  Fixtures.emptyMetadata",
++    "targets": [
++      "IndexedOperationalObservationLaws"
++    ],
++    "expect": [
++      "Type mismatch"
++    ]
++  }
++]

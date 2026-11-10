@@ -1,0 +1,99 @@
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:23:12: warning: unused variable `h`
+
+Note: This linter can be disabled with `set_option linter.unusedVariables false`
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:41:24: error: Type mismatch
+  Splice.step x e (ih finished)
+has type
+  Splice (History.step x e tail) (some k) (History.step x e (append tail k))
+but is expected to have type
+  Splice (History.step x e tail) (some k) (append (History.step x e tail) k)
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:54:28: error: Tactic `rfl` failed: The left-hand side
+  History.failed state✝ event✝ failure✝
+is not definitionally equal to the right-hand side
+  append (History.failed state✝ event✝ failure✝) k
+
+case failed.failed
+S : Type u_1
+E : Type u_2
+F : Type u_3
+k : H S E F
+state✝ : S
+event✝ : E
+failure✝ : F
+⊢ History.failed state✝ event✝ failure✝ = append (History.failed state✝ event✝ failure✝) k
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:59:6: error: Tactic `assumption` failed
+
+case step.step.joined
+S : Type u_1
+E : Type u_2
+F : Type u_3
+k : H S E F
+s : S
+e : E
+tail : History S E F Unit
+ih : ∀ {result : H S E F}, Splice tail (some k) result → result = append tail k
+result✝ : H S E F
+tail✝ : Splice tail (some k) result✝
+⊢ Splice tail (some k) (History.step s e result✝)
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:121:8: error: Application type mismatch: The argument
+  congrArg (List.cons x) hs
+has type
+  x :: History.states (append tail k) = x :: (pre ++ History.states k)
+but is expected to have type
+  History.states (append (History.step x e tail) k) = x :: pre ++ History.states k
+in the application
+  And.intro (congrArg (List.cons x) hs)
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:121:35: error: Application type mismatch: The argument
+  congrArg (List.cons e) he
+has type
+  e :: History.events (append tail k) = e :: (tail.events ++ History.events k)
+but is expected to have type
+  History.events (append (History.step x e tail) k) = (History.step x e tail).events ++ History.events k
+in the application
+  And.intro (congrArg (List.cons e) he)
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:322:31: error: Type mismatch
+  GraphHistory.Admissible.produced ?m.42 ?m.43 ?m.44 ?m.45 (SharedSplice.append h✝ k) ih
+has type
+  GraphHistory.Admissible (History.step ?m.42 (Event.produced ?m.43 ?m.44 ?m.45) (SharedSplice.append h✝ k))
+but is expected to have type
+  GraphHistory.Admissible (SharedSplice.append (History.step s✝ (Event.produced tag✝ cap✝ value✝) h✝) k)
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:323:27: error: Type mismatch
+  GraphHistory.Admissible.sealed ?m.51 ?m.52 ?m.53 (SharedSplice.append h✝ k) ih
+has type
+  GraphHistory.Admissible (History.step ?m.51 (Event.sealed ?m.52 ?m.53) (SharedSplice.append h✝ k))
+but is expected to have type
+  GraphHistory.Admissible (SharedSplice.append (History.step s✝ (Event.sealed a✝¹ value✝) h✝) k)
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:324:14: error: Type mismatch
+  GraphHistory.Admissible.failed ?m.59 ?m.60
+has type
+  GraphHistory.Admissible (History.failed ?m.59 (Event.undefined ?m.60) ?m.60)
+but is expected to have type
+  GraphHistory.Admissible (SharedSplice.append (History.failed s✝ (Event.undefined tag✝) tag✝) k)
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:501:65: error: Type mismatch
+  rfl
+has type
+  ?m.41 = ?m.41
+but is expected to have type
+  History.states (append first (second.run 1 ())) = [0, 1, 2]
+'IndexedOperationalHistoryComposition.compose_history' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.sound' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.unique' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.phase_cut' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.transport_splices' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.left_nested_history' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.SharedSplice.associative_eq' does not depend on any axioms

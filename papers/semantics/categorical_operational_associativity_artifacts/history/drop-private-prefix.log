@@ -1,0 +1,87 @@
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:84:33: error: Tactic `rfl` failed: The left-hand side
+  start.{u_1, u_2, u_3, u_8} ((step state✝ event✝ tail✝).bind k.run)
+is not definitionally equal to the right-hand side
+  start.{u_1, u_2, u_3, u_4} (step state✝ event✝ tail✝)
+
+case step
+S : Type u_1
+E : Type u_2
+F : Type u_3
+A : Type u_4
+B : Type u_8
+k : Continuation S E F A B
+state✝ : S
+event✝ : E
+tail✝ : History S E F A
+⊢ ((step state✝ event✝ tail✝).bind k.run).start = (step state✝ event✝ tail✝).start
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:134:8: error: Application type mismatch: The argument
+  congrArg (List.cons x) hs
+has type
+  x :: (tail.splice k).states = x :: (pre ++ (k.run s a).states)
+but is expected to have type
+  ((step x e tail).splice k).states = x :: pre ++ (k.run s a).states
+in the application
+  And.intro (congrArg (List.cons x) hs)
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:148:13: error: Application type mismatch: The argument
+  congrArg (List.cons x) hs
+has type
+  x :: (tail.splice k).states = x :: tail.states
+but is expected to have type
+  ((step x e tail).splice k).states = (step x e tail).states
+in the application
+  And.intro (congrArg (List.cons x) hs)
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:148:40: error: Application type mismatch: The argument
+  congrArg (List.cons e) he
+has type
+  e :: (tail.splice k).events = e :: tail.events
+but is expected to have type
+  ((step x e tail).splice k).events = (step x e tail).events
+in the application
+  And.intro (congrArg (List.cons e) he)
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:361:31: error: Type mismatch
+  Admissible.produced ?m.39 ?m.40 ?m.41 ?m.42 (History.splice h✝ k) ih
+has type
+  Admissible (History.step ?m.39 (Event.produced ?m.40 ?m.41 ?m.42) (History.splice h✝ k))
+but is expected to have type
+  Admissible ((History.step s✝ (Event.produced tag✝ cap✝ value✝) h✝).splice k)
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:362:27: error: Type mismatch
+  Admissible.sealed ?m.48 ?m.49 ?m.50 (History.splice h✝ k) ih
+has type
+  Admissible (History.step ?m.48 (Event.sealed ?m.49 ?m.50) (History.splice h✝ k))
+but is expected to have type
+  Admissible ((History.step s✝ (Event.sealed a✝¹ value✝) h✝).splice k)
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:581:72: error: Type mismatch
+  rfl
+has type
+  ?m.27 = ?m.27
+but is expected to have type
+  ((first.splice second).splice third).events = [10, 20, 30]
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:582:72: error: Type mismatch
+  rfl
+has type
+  ?m.30 = ?m.30
+but is expected to have type
+  ((first.splice second).splice third).states = [0, 1, 2, 3]
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:586:65: error: Type mismatch
+  rfl
+has type
+  ?m.22 = ?m.22
+but is expected to have type
+  (privateFailure.splice third).events = [10, 11, 99]
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:587:62: error: Type mismatch
+  rfl
+has type
+  ?m.22 = ?m.22
+but is expected to have type
+  (privateFailure.splice third).states = [0, 1, 2]
+'IndexedOperationalHistory.History.splice_assoc' depends on axioms: [propext, sorryAx]
+'IndexedOperationalHistory.History.success_cut' depends on axioms: [propext, sorryAx]
+'IndexedOperationalHistory.Transport.apply_splice' depends on axioms: [propext, Quot.sound]
+'IndexedOperationalHistory.GraphHistory.stepFuel_exists' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistory.GraphHistory.ranked_default_exists' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext]
+'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]

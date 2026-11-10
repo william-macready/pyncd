@@ -1,0 +1,44 @@
+[
+  {
+    "name": "drop-failure-event",
+    "old": "| .failed _ e _ => [e]",
+    "new": "| .failed _ e _ => []",
+    "exit": 1,
+    "expect": "./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:411:15: error: unsolved goals"
+  },
+  {
+    "name": "duplicate-snapshot",
+    "old": "| .step s _ h => s :: h.states",
+    "new": "| .step s _ h => s :: s :: h.states",
+    "exit": 1,
+    "expect": "./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:133:46: error: Application type mismatch: The argument"
+  },
+  {
+    "name": "drop-private-prefix",
+    "old": "| .step s e tail => .step s e (tail.bind k)",
+    "new": "| .step _ _ tail => tail.bind k",
+    "exit": 1,
+    "expect": "./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:84:33: error: Tactic `rfl` failed: The left-hand side"
+  },
+  {
+    "name": "reverse-ledger",
+    "old": "mapLedger t.identity s.produced",
+    "new": "mapLedger t.identity s.produced.reverse",
+    "exit": 1,
+    "expect": "./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:631:82: error: Type mismatch"
+  },
+  {
+    "name": "erase-private-availability",
+    "old": "fun a => s.available (t.address.symm a)",
+    "new": "fun _ => none",
+    "exit": 1,
+    "expect": "./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:268:42: error: unsolved goals"
+  },
+  {
+    "name": "erase-empty-input-port",
+    "old": "\u27e8A.inputs, A.outputs, A.program.input",
+    "new": "\u27e8[], A.outputs, A.program.input",
+    "exit": 1,
+    "expect": "./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:309:4: error: Application type mismatch: The argument"
+  }
+]

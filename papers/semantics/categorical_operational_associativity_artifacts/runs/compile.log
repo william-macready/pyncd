@@ -1,0 +1,4 @@
+'IndexedOperationalRuns.stepFuel_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.nested_default_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.nested_reference_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.ranked_nested_reference_outcomes' depends on axioms: [propext, Classical.choice, Quot.sound]
