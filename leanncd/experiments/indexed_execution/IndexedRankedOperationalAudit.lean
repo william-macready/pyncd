@@ -1,0 +1,24 @@
+import IndexedRankedOperationalSemantics
+import IndexedRankedOperationalTest
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedOperationalUnits
+#audit_axioms IndexedOperationalWireFrame
+#audit_axioms IndexedRankedOperationalCore
+#audit_axioms IndexedOperationalScopeNaturality
+#audit_axioms IndexedRankedOperationalCategory
+#audit_axioms IndexedRankedOperationalSource
+#audit_axioms IndexedRankedOperationalReference
+#audit_axioms IndexedRankedOperationalInterpretation
+#audit_axioms IndexedRankedOperationalTest
+
+#print axioms IndexedRankedOperationalCategory.composition_congruence
+#print axioms IndexedRankedOperationalCategory.targetCategory
+#print axioms IndexedRankedOperationalSource.sound
+#print axioms IndexedRankedOperationalSource.semantics
+#print axioms IndexedRankedOperationalSource.bracket_sound
+#print axioms IndexedRankedOperationalReference.actual_reference_states
+#print axioms IndexedRankedOperationalInterpretation.actual_join_identity
+#print axioms IndexedRankedOperationalInterpretation.agrees_history
+#print axioms IndexedRankedOperationalInterpretation.semantics_history
+#print axioms IndexedRankedOperationalInterpretation.compute_history_exact
