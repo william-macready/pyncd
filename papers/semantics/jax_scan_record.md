@@ -890,5 +890,29 @@ vs the pure-JAX model 1.8e-15 (563x), vs finite differences 3.1e-10 (318x); bina
 
 All seven effective mutants killed; none survived. Not run: mutants of the hoisted programs, of the gradient pins' inputs, runtime gradient mutants (no runtime code changed), the `Scx`-dropped and `Sc`-swapped variants (leave an input unused).
 
-**Not probed / parked** (cost in dispatches): a memory with a model width different from `m`, or a memory extent equal to another extent (~0.5, a fixture variant); a causal or padding mask on the cross-attention, grouped or multi-query cross-attention, positional information on the memory,
+**Not probed / parked** (cost in dispatches): a memory extent equal to another extent (a fixture variant; the memory WIDTH different from `m` is done in 18.1); a causal or padding mask on the cross-attention, grouped or multi-query cross-attention, positional information on the memory,
 an encoder, depth beyond two steps (items of the brief's scope list, unchanged); gradient pins for the hoisted programs (~0.3); the binary32 headroom of both new fixtures is 2.4x and 1.7x (no tuning was needed). The progression continues with the brief's section 9 list.
+
+### 18.1 Addendum: a memory whose width differs from the model width (2026-11-10)
+
+Parked item of section 18: in `transformer_cross` the memory `Mem[t, m]` shares the axis `m` with the layer state, so an axis mix-up between the state's width and the memory's width could not show. Added
+`transformer_cross_wide` / `transformer_cross_wide32`: `Mem[t, e]`, `W_Kc[l, h, j, e]`, `W_Vc[l, h, j, e]` with **e = 8** (m = 4; q = 5, t = 7, h = 3, k = 2, j = 6: seven pairwise distinct extents, asserted). Tests and fixtures only,
+same files as section 18 (`crossWideProg`, `crossWideProg32`, `crWKcWide`, `crWVcWide`, `crMemWide`, `cross_wide_pins`); every other input is `transformer_cross`'s bit for bit (asserted). Differential: **44 binary64 and 36 binary32**
+fixtures. The numpy model `np_cross_transformer` is unchanged (its einsums contract the memory's width axis under whatever extent it has); the plan has the same shape (`[assign, assign, scan]`, 30 / 1 / 2) and exports
+(`H`, `Kc`, `Vc`; `Kc`, `Vc` NaN in layer 2 only). Seeds 6.0, 7.0, 9.0 (untuned: the first candidate passed, no others tried).
+
+**Pins** (beyond those of section 18, same value pins on Lean, eager and jit): numpy `H` differs from no cross block by 4.164, from every memory entry perturbed by 0.941 and from the memory truncated to its first m = 4
+width units by 2.840 (the extra width is real); a single memory row moves `H` by 0.066 to 0.173 and a single memory WIDTH UNIT by 0.134 to 0.371 (none is ignored: an axis mix-up with `m` would ignore some).
+
+**Observed.** Binary64 `H` vs numpy 1.1e-15 (headroom 901x); binary32 `H` 6.2e-7 (headroom **1.6x**, thin like the GQA and sink fixtures; `Kc`, `Vc` 1.8e-7); no tolerance loosened. Every pin passed on its first run.
+
+**Mutants** (same method as section 18):
+
+| Mutant | Result |
+|---|---|
+| W1. `Kc` reads `W_Vc`, `Vc` reads `W_Kc` | `pin numpy model: transformer_cross_wide lean H` (6.765) |
+| W2. data: width unit 7 of `W_Kc`, `W_Vc` zeroed in layers 0, 1 (one memory width unit ignored; every value pin passes, the plan and the numpy model follow the same inputs) | `('transformer_cross_wide', 'a memory row or width unit is ignored', ...)`: the width-unit pin, first time it fires |
+| W3. `Kc` contracts `W_Kc[l, h, j, m]` with `Mem[t, e]` (state width for memory width) | REFUSED at prepare: `shape: affine size system inconsistent (reduced witness: 0 = 4)`; the shape solver itself rejects an `m` / `e` mix-up, so no value pin is needed for it; not a kill |
+
+**Not done** (cost): gradient pins for the wide fixture (~0.2; the backward path through `Kc[t, h, j, l]` is the same code as in `transformer_cross`, whose gradient pins pass, and the width axis is a plain contraction); a binary32 mutant on the wide sibling
+(~0.2, same code as W1 on the f64 leg).

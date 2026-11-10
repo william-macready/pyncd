@@ -1601,6 +1601,107 @@ def crossHoistedProg32 : TLProgram := tlprog!{
   H[q, m, l +1]    := R2[q, m] + Y[q, m]
 }
 
+/-! #### Cross-attention to a memory of its OWN width (`transformer_cross_wide`, `transformer_cross_wide32`)
+
+`crossProg` with `Mem[t, e]` and `W_Kc[l, h, j, e]`, `W_Vc[l, h, j, e]`, where the memory width e = 8 differs from the
+model width m = 4 (and from q = s = 5, t = 7, h = 3, k = 2, j = 6), as an encoder-decoder memory generally has its own
+width. In `crossProg` the memory shares the axis `m` with the layer state, so an axis mix-up between "the state's
+width" and "the memory's width" could not show; here the memory's contraction axis is a different axis with a
+different extent, and every cross statement that touches it is `Kc` / `Vc`. Everything else is `crossProg`'s. -/
+
+def crWKcWide : Array Float := scanStack (gqaGen 6.0 144)   -- [h = 3, j = 6, e = 8]
+def crWVcWide : Array Float := scanStack (gqaGen 7.0 144)
+def crMemWide : Array Float := gqaGen 9.0 56                -- [t = 7, e = 8]
+
+def crossWideEnv64 : HashMap String DenseTensor :=
+  [("W_Kc", t64 [3, 3, 6, 8] crWKcWide), ("W_Vc", t64 [3, 3, 6, 8] crWVcWide), ("Mem", t64 [7, 8] crMemWide)].foldl
+    (fun e (n, t) => e.insert n t) (crossEnv64 crWKc crWVc)
+def crossWideEnv32 : NamedDenseEnv32 :=
+  [("W_Kc", t32 [3, 3, 6, 8] crWKcWide), ("W_Vc", t32 [3, 3, 6, 8] crWVcWide), ("Mem", t32 [7, 8] crMemWide)].foldl
+    (fun e (n, t) => e.insert n t) (crossEnv32 crWKc crWVc)
+
+def crossWideProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
+  tensor f64 W_Qc(l, h, j, m), W_Kc(l, h, j, e), W_Vc(l, h, j, e), W_Oc(l, m, h, j), Mem(t, e), Gc(l, m), Scx()
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
+  tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 R1(q, m), Ssc(q), Vq(q), Sdc(q), Nc(q, m)
+  tensor f64 Qc(q, h, j), Kc(t, h, j, l), Vc(t, h, j, l), Sx(h, q, t), Ac(q, h, j), Ax(q, m)
+  tensor f64 R2(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ssc[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Vq[q]            := Ssc[q] + Eps[q]
+  Sdc[q]           := sqrt(Vq[q])
+  Nc[q, m]         := R1[q, m] / Sdc[q] · Gc[l, m]
+  Qc[q, h, j]      := W_Qc[l, h, j, m] · Nc[q, m]
+  Kc[t, h, j, l]   := W_Kc[l, h, j, e] · Mem[t, e]
+  Vc[t, h, j, l]   := W_Vc[l, h, j, e] · Mem[t, e]
+  Sx[h, q, t.]     := softmax(Qc[q, h, j] · Kc[t, h, j, l] · Scx[])
+  Ac[q, h, j]      := Sx[h, q, t] · Vc[t, h, j, l]
+  Ax[q, m]         := W_Oc[l, m, h, j] · Ac[q, h, j]
+  R2[q, m]         := R1[q, m] + Ax[q, m]
+  Ss2[q]           := R2[q, m] · R2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R2[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R2[q, m] + Y[q, m]
+}
+/-- The binary32 sibling: only the declarations that pin axis order, the history shape and the extent of `s`. -/
+def crossWideProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  tensor Sx(h, q, t)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ssc[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Vq[q]            := Ssc[q] + Eps[q]
+  Sdc[q]           := sqrt(Vq[q])
+  Nc[q, m]         := R1[q, m] / Sdc[q] · Gc[l, m]
+  Qc[q, h, j]      := W_Qc[l, h, j, m] · Nc[q, m]
+  Kc[t, h, j, l]   := W_Kc[l, h, j, e] · Mem[t, e]
+  Vc[t, h, j, l]   := W_Vc[l, h, j, e] · Mem[t, e]
+  Sx[h, q, t.]     := softmax(Qc[q, h, j] · Kc[t, h, j, l] · Scx[])
+  Ac[q, h, j]      := Sx[h, q, t] · Vc[t, h, j, l]
+  Ax[q, m]         := W_Oc[l, m, h, j] · Ac[q, h, j]
+  R2[q, m]         := R1[q, m] + Ax[q, m]
+  Ss2[q]           := R2[q, m] · R2[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R2[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R2[q, m] + Y[q, m]
+}
+
 /-! ### Post-scan statements with the scan axis as an ordinary axis (`scan_postrole`, `scan_postrole32`)
 
 A scaling recurrence `S[j, l] = X[j] · G[j]^l` over `iter l = 4` and six statements that nothing in the
@@ -1700,6 +1801,7 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "transformer_gqa_mha" gqaMhaProg gqaMhaEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "transformer_cross" crossProg (crossEnv64 crWKc crWVc) 1 2 (some (30, 1, 2)) true (scans := 1),
     ← fixture64 "transformer_cross_hoisted" crossHoistedProg (crossEnv64 crWKcFin crWVcFin) 1 2 (some (30, 1, 2)) true (scans := 1),
+    ← fixture64 "transformer_cross_wide" crossWideProg crossWideEnv64 1 2 (some (30, 1, 2)) true (scans := 1),
     ← fixture64 "scan_postrole" postRoleProg
         (env64 [("X", t64 [2] postRoleX), ("G", t64 [2] postRoleG), ("V", t64 [4] postRoleV), ("M", t64 [4] postRoleM)])
         0 0 none true (scans := 1),
@@ -1763,6 +1865,7 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "transformer_gqa_mha32" gqaMhaProg32 gqaMhaEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "transformer_cross32" crossProg32 (crossEnv32 crWKc crWVc) 1 2 (some (30, 1, 2)) true (scans := 1),
     ← fixture32 "transformer_cross_hoisted32" crossHoistedProg32 (crossEnv32 crWKcFin crWVcFin) 1 2 (some (30, 1, 2)) true (scans := 1),
+    ← fixture32 "transformer_cross_wide32" crossWideProg32 crossWideEnv32 1 2 (some (30, 1, 2)) true (scans := 1),
     ← fixture32 "scan_postrole32" postRoleProg32
         (env32 [("X", t32 [2] postRoleX), ("G", t32 [2] postRoleG), ("V", t32 [4] postRoleV), ("M", t32 [4] postRoleM)])
         0 0 none true (scans := 1),
