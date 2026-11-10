@@ -1,0 +1,107 @@
+./experiments/indexed_execution/IndexedOperationalRunsMutationStates.lean:169:26: error: Type mismatch: After simplification, term
+  List.Forall₂.cons states tail.states
+ has type
+  StateRelated f rename s t ∧
+    List.Forall₂ (StateRelated f rename)
+      (stepFuel as fuel { available := s.available, produced := s.produced ++ [(w.capability, value)] }).states
+      (stepFuel bs fuel
+            { available := t.available, produced := t.produced ++ [(rename w.capability, value)] }).states.reverse
+but is expected to have type
+  List.Forall₂ (StateRelated f rename)
+    (s :: (stepFuel as fuel { available := s.available, produced := s.produced ++ [(w.capability, value)] }).states)
+    ((stepFuel bs fuel
+            { available := t.available, produced := t.produced ++ [(rename w.capability, value)] }).states.reverse ++
+      [t])
+./experiments/indexed_execution/IndexedOperationalRunsMutationStates.lean:183:32: error: Application type mismatch: The argument
+  List.Forall₂.cons states tail.states
+has type
+  List.Forall₂ (StateRelated f rename)
+    (s ::
+      (stepFuel as fuel
+          { available := Function.update s.available a (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+            produced := s.produced }).states)
+    (t ::
+      (stepFuel bs fuel
+            {
+              available :=
+                Function.update t.available (f.address a) (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+              produced := t.produced }).states.reverse)
+but is expected to have type
+  List.Forall₂ (StateRelated f rename)
+    (if false = true then { outcome := Outcome.complete s, events := [], states := [s] }
+      else
+        match some values with
+        | none => { outcome := Outcome.collectorMismatch a s, events := [], states := [s] }
+        | some values =>
+          {
+            outcome :=
+              (stepFuel as fuel
+                  { available := Function.update s.available a (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+                    produced := s.produced }).outcome,
+            events :=
+              Event.sealed a (List.foldl (fun x1 x2 => x1 + x2) 0 values) ::
+                (stepFuel as fuel
+                    { available := Function.update s.available a (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+                      produced := s.produced }).events,
+            states :=
+              s ::
+                (stepFuel as fuel
+                    { available := Function.update s.available a (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+                      produced := s.produced }).states }).states
+    (if false = true then { outcome := Outcome.complete t, events := [], states := [t] }
+        else
+          match some values with
+          | none => { outcome := Outcome.collectorMismatch (f.address a) t, events := [], states := [t] }
+          | some values =>
+            {
+              outcome :=
+                (stepFuel bs fuel
+                    {
+                      available :=
+                        Function.update t.available (f.address a) (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+                      produced := t.produced }).outcome,
+              events :=
+                Event.sealed (f.address a) (List.foldl (fun x1 x2 => x1 + x2) 0 values) ::
+                  (stepFuel bs fuel
+                      {
+                        available :=
+                          Function.update t.available (f.address a) (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+                        produced := t.produced }).events,
+              states :=
+                t ::
+                  (stepFuel bs fuel
+                      {
+                        available :=
+                          Function.update t.available (f.address a) (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+                        produced := t.produced }).states }).states.reverse
+in the application
+  RunRelated.mk ?m.870 (List.Forall₂.cons states tail.states)
+./experiments/indexed_execution/IndexedOperationalRunsMutationStates.lean:482:56: error: Application type mismatch: The argument
+  right.states
+has type
+  List.Forall₂
+    (fun g c => LedgerInvariant (rightBracket A B C ab bc).matched g ∧ Relation (rightBracket A B C ab bc).matched g c)
+    (runChecked (rightBracket A B C ab bc).contract (rightBracket A B C ab bc).fragment
+        ↑(liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η)).states
+    (Correspondence.referenceSnapshots
+      ((rightBracket A B C ab bc).program.initial (liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η))
+      (Executor.run (rightBracket A B C ab bc).program RationalReference.ops (rightBracket A B C ab bc).schedule
+          (liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η)).events)
+but is expected to have type
+  List.Forall₂
+    (fun y d => LedgerInvariant (rightBracket A B C ab bc).matched y ∧ Relation (rightBracket A B C ab bc).matched y d)
+    (runChecked (rightBracket A B C ab bc).contract (rightBracket A B C ab bc).fragment
+          ↑(liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η)).states.reverse
+    (Correspondence.referenceSnapshots
+      ((rightBracket A B C ab bc).program.initial (liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η))
+      (Executor.run (rightBracket A B C ab bc).program RationalReference.ops (rightBracket A B C ab bc).schedule
+          (liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η)).events)
+in the application
+  bridge_snapshots graph.states left.states right.states
+'IndexedOperationalRuns.stepFuel_transport' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.nested_default_runs' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.nested_reference_runs' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.ranked_nested_reference_outcomes' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]

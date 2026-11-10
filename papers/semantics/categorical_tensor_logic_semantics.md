@@ -100,6 +100,15 @@ runtime phase gate or an assumed execution agreement. It is an operational
 bridge toward a process interpretation, not a proof of process-category laws.
 See Section 6.11 and the [ranked execution record](categorical_ranked_execution_record.md).
 
+**Associative operational composition** additionally compares the two actual
+nested constructors through explicit leaf-owned address, occurrence and identity
+transports. Compatible histories preserve every ordered event, all private
+snapshot values and ordered produced ledgers, failure data and whole-interface
+metadata. Shared-cut splicing is associative and agrees with actual graph and
+normalized reference execution. Units remain separate: no core copy is declared
+event-free. See Section 6.12 and the
+[operational associativity record](categorical_operational_associativity_record.md).
+
 The independently authored validation fixture supplies actual
 proof instances of the execution-correspondence theorem. Its six-event failure and
 seven-event completion remain concrete executable observations;
@@ -122,8 +131,9 @@ The strongest defensible conclusion is:
 > hypotheses. The specified matched-component/coordinate-wire source category
 > and its witness functor are also proved. Composite rank construction and
 > upstream/downstream execution phases are proved for the ranked profile.
-> Broader source interpretations and event-sensitive process laws remain
-> separate obligations.
+> Transport-aware history composition and operational associativity are also
+> proved. Process units, broader source interpretations and backend refinement
+> remain separate obligations.
 
 The St/Br presentation can organise parts of the syntax and total
 indexing. It is not assumed to be the best presentation of every layer.
@@ -1301,8 +1311,8 @@ decidable, exact-rational, explicitly wired sealed matched-component
 presentation. Source objects/homs remain `Type 1`, environments `Type 0`;
 no finite rational-model-set, same-universe local-smallness or faithfulness
 claim follows. Administrative source units are not event-free core programs.
-Ranked binary operational phases are the separate result below.
-Event-sensitive process-category laws, general trace algebra, broader source
+Ranked binary phases and transport-aware associative history composition are
+the separate operational results below. Process units, broader source
 interpretations and backend refinement remain separate work.
 
 ### 6.11. Kernel-checked ranked operational phases
@@ -1345,8 +1355,9 @@ are unchanged; the phase theorem starts on validated input.
 No execution agreement, model existence or completion premise is assumed.
 See the [ranked execution record](categorical_ranked_execution_record.md)
 for exact APIs, discriminating private/collection/empty/axis/guarded/cyclic
-cases, controls and release evidence. General trace algebra and
-event-sensitive process-category laws are not established by this result.
+cases, controls and release evidence. This binary result alone establishes
+neither a general trace algebra nor event-sensitive process-category laws;
+Section 6.12 supplies the separate associative history layer.
 
 The result has passed both whole-branch review lenses, clean replay of all
 six verified implementation tasks, namespace axiom audits and the full
@@ -1356,6 +1367,47 @@ byte-identical source restoration: seven new fixture/graph controls, two
 live snapshot-proof controls and sixteen inherited composition controls.
 These classifications matter; they are not 25 independent runtime runner kills.
 Appendix A.10 explains the proof's construction and operational invariants.
+
+### 6.12. Transport-aware histories and operational associativity
+
+The nondefault entry point is
+[`IndexedOperationalSemantics`](../../leanncd/experiments/indexed_execution/IndexedOperationalSemantics.lean).
+`CompleteObservation.Agrees` compares histories only through explicit coherent
+tensor/domain, full-address and tag/capability transports. It retains ordered
+whole input/output ports, validated Option-valued external input (including
+empty tensor presence), original boundary adapters, every ordered event, every
+complete availability function and ordered produced ledger, and the terminal
+success or failing occurrence/state. No event permutation, stuttering,
+private-state erasure or output-only quotient is introduced. Concrete metadata
+and complete-observation identity/inverse/composition laws are proved.
+
+`BinaryHistory` is a structural compatible-composition relation, not a definition
+that two chosen runs agree. Successful composition gets the downstream input
+from the completed whole upstream boundary, retains all completed private work
+throughout the suffix, and shares one cut snapshot without a boundary event.
+Failure absorbs continuation without requiring a downstream input or history.
+`compose_history` and `BinaryHistory.sound` connect this algebra to the existing
+`compose_default_phases`. `binary_associativity` transports both nested lifts
+into one leaf-owned state/event space and applies shared-splice associativity;
+`actual_nested_histories` instantiates both existing nested constructors.
+`nested_observations` additionally proves agreement of their native metadata.
+
+`triple_phases` derives all four actual outcome branches: failure in A, B or C,
+or success. Reached joins retain both original boundary equations and ordered
+cuts. Empty phases may have coincident cuts; undefinedness still adds no extra
+failed-state snapshot. Actual `Program.Executor.run` and `referenceSnapshots`
+retain the full graph/reference `Relation`, including pending occurrences and
+accumulators. Both nested ranks are constructed, and each actual default budget
+is `nA+nB+nC+1`, not the sum of three standalone defaults.
+
+The theorem starts on validated A input and three local rank certificates, not
+completion, model existence or assumed execution agreement. Raw malformed-input
+validation order and arbitrary debug budgets are unchanged. Units, a full
+process category, broader source interpretation and backend refinement remain
+outside this result. See the
+[record](categorical_operational_associativity_record.md) for precise APIs,
+acceptance observations and separately classified runtime/observation versus
+live-proof controls.
 
 ## 7. St/Br, indexed arrays, and open diagrams
 
@@ -1663,16 +1715,16 @@ tensor-level presence for empty inputs.
 Define $B_b(\rho_P)$ to be the downstream input environment transported
 through the boundary by `boundaryInput`:
 
-```math
+$$
 B_b(\rho_P)(i)[p]=\rho_P(b(i))[e_i(p)],
 \qquad p\in J_Q(i).
-```
+$$
 
 Every downstream input is present at tensor level, also for an empty domain;
 noninput bindings are absent.
 The implemented `witnessesEquiv` establishes the rank-independent bijection
 
-```math
+$$
 \operatorname{Models}(Q\circ_b P,\eta_{\mathrm{comp}})
 \cong
 \left\{
@@ -1682,7 +1734,7 @@ The implemented `witnessesEquiv` establishes the rank-independent bijection
 \rho_Q\in\operatorname{Models}(Q,B_b(\rho_P))
 \end{array}
 \right\}.
-```
+$$
 
 Both directions retain all private definedness and collected equations.
 The pair retains both components' internal values rather than hiding them
@@ -1702,12 +1754,12 @@ an upstream output; `liftOutput` transports a downstream output into the
 composite's output family. On exactly that admitted domain,
 `denotation_successive` proves
 
-```math
+$$
 f_{Q\circ_b P}(\eta_{\mathrm{comp}})
 =\operatorname{liftOutput}_b\!\left(
  f_Q\!\left(\operatorname{boundaryFromOutput}_b(f_P(\eta_X))\right)
 \right).
-```
+$$
 
 The subscript $b$ fixes the same components and boundary as above.
 This is a domain-and-value law under the two explicit component hypotheses,
@@ -1793,14 +1845,15 @@ completes the denotational target-category branch, including actual nested
 component coherence and the restricted partial-map view. The source completion
 adds a certified matched-component/coordinate-wire presentation and a genuine
 functor to that target. The ranked binary operational phase branch is now
-proved separately. General trace/process laws, broader source interpretations
+proved separately. Transport-aware history composition and operational
+associativity are now proved too; process units, broader source interpretations
 and backend refinement remain open branches.
 
 ### 10.1. What each step buys us
 
 | Step | Construction or obligation | What it buys us | Current boundary |
 | --- | --- | --- | --- |
-| 1. Fix interfaces and observations | Typed whole-tensor interfaces, explicit coordinate/identity transport, and a choice of value, witness or process equivalence | States exactly what may be connected and what information an equivalence may forget; empty tensors and private effects cannot disappear by accident | Whole interfaces and span-isomorphism equivalence implemented; event-sensitive equivalence remains open |
+| 1. Fix interfaces and observations | Typed whole-tensor interfaces, explicit coordinate/identity transport, and a choice of value, witness or process equivalence | States exactly what may be connected and what information an equivalence may forget; empty tensors and private effects cannot disappear by accident | Whole interfaces, span-isomorphism equivalence and transport-only full-history observation agreement implemented |
 | 2. Give computations strict meaning | Partial expression interpretation, complete-model conditions and proved declaration/context transport | Separates undefinedness from unavailable data and numerical zero; preserves demanded internal work and nonselected array entries | Implemented substrate and proved transport |
 | 3. Connect graphs to meaning | Local source-contract matches and graph/reference execution correspondence | Makes executable graphs accountable for occurrences, publication, failure and full intermediate data rather than only final outputs | Proved under supplied leaf matches and matched priorities |
 | 4. Compose representations safely | Locally scoped components, typed boundaries, checked private identities, canonical closure and composite-match construction | Provides modular assembly without rebuilding a whole match, padding declaration universes or reopening an upstream writer family | Proved for the explicit sealed whole-tensor constructor |
@@ -1808,7 +1861,7 @@ and backend refinement remain open branches.
 | 6. Package a semantic category | Witness spans over interface environments, span-isomorphism quotient, and composition interpreted as a pullback | Turns model gluing into a composition-preserving categorical interpretation with both exterior legs checked | Proved across all validated inputs with explicit boundary/exterior transports |
 | 7. Prove category laws and units | Target identity spans and associativity; actual nested component comparison through compatible model triples | Makes repeated denotational composition coherent without treating extra computation events as no work | Target laws, graph-transport laws and nested coherence proved; source administrative laws are supplied separately in Step 8, not inferred from target laws |
 | 8. Present sources and connect their meaning | Distinct whole-interface source objects, certified coordinate wires, matched leaves and a generated congruence; genuine witness functor | Connects source units/composition and actual component assembly to complete-witness meaning with explicit transports | Proved for the specified sealed presentation, including both actual nested-to-triple comparisons; no automatic matching, faithfulness or general St/Br/monoidal claim |
-| 9. Connect process and implementation views | Ranked phase/projection and trace proofs, plus observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest | Ranked binary phases and full graph/reference state projections proved; general trace algebra, process laws and frontend/backend refinement remain open |
+| 9. Connect process and implementation views | Ranked phase/projection and trace proofs, plus observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest | Ranked phases, full graph/reference observations and associative compatible-history composition proved; process units and frontend/backend refinement remain open |
 
 The completed realization of Steps 6-7 is the **witness-span interpretation**.
 For a whole-tensor interface $X$, write $\mathsf{Env}(X)$ for its space of
@@ -1888,24 +1941,42 @@ categorical construction elsewhere in the repository.
 **Conditional** names retained hypotheses, not an unfinished proof.
 **Proposed/open** means no result for this interpretation is claimed.
 
-| Milestone | Current status | Evidence or remaining boundary |
-| --- | --- | --- |
-| Typed values, strict expressions and whole-model conditions | Implemented semantic substrate | [Core models](../../leanncd/LeanNCD/Semantics/Models.lean) and [strict interpretation](../../leanncd/LeanNCD/Semantics/Interpret.lean); internal occurrence definedness is required |
-| Metadata-bearing whole-interface environments | Implemented with proved input/output equivalences | [Witness interfaces](../../leanncd/experiments/indexed_execution/IndexedWitnessInterface.lean); UID/sort/domain/port metadata and empty-input presence are retained, not quotiented by carrier equivalence |
-| Declaration/context/coordinate transport | Proved | [Transport record](component_transport_execution_record.md); supplied certified adapters, not name-based or automatic domain matching |
-| Graph/reference execution correspondence | Proved, conditional on a supplied local match | [Correspondence record](categorical_tensor_logic_proof_record.md); matched priorities and rational registry, no general backend claim |
-| Static sealed composite and its match | Proved | [Composition record](component_composition_record.md); two local matched components plus an explicit whole-tensor boundary |
-| Complete-model restriction/gluing | Proved, rank-independent | [Model-gluing record](component_model_gluing_record.md); full compatible witnesses, with no rank, existence or uniqueness premise |
-| Successive partial-function domain and denotation | Proved, conditional on both components' `AtMostOneModels` hypotheses | [Denotation theorem](../../leanncd/experiments/indexed_execution/IndexedComponentModelDenotation.lean); uniqueness is not totality |
-| Witness-span interpretation across all inputs | Proved, composition-preserving with explicit boundary and exterior transports | [Witness composition](../../leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean); `allInputWiredEquiv`, `compositeWiredIso` and `composition_hom` retain whole private model stores and commute with both legs |
-| Semantic target category laws and units | Proved | [Span category](../../leanncd/experiments/indexed_execution/IndexedWitnessSpan.lean); span-isomorphism quotient, pullback associativity and identity-span unit laws; graph spans supply administrative interface transports |
-| Nested component denotational associativity | Proved after explicit interface reindexing | [Witness coherence](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean); both actual bracketings correspond to the same compatible model triple, not equal raw IDs or programs |
-| Injective-left partial-map interpretation | Proved; component restriction is exactly `AtMostOneModels` | [Restricted spans](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean); quotient invariance, closure under pullback and domain/value laws connect to authoritative admissibility and denotation; noncomputable extraction, not totality |
-| Certified matched-component source category and functor | Proved for the specified generated presentation | [Source functor](../../leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean); certified coordinate wires, source quotient laws, actual assembly/nesting and complete-witness interpretation with explicit transports |
-| Core/process units | Open | Administrative source identities are not core computations; copies add events and aliases violate `output_defined` |
-| Rank stitching and sequential phase/projection | Proved for actual default graph/reference executions | [Ranked execution](categorical_ranked_execution_record.md); constructed full-footprint certificate, shared cut, whole private state/ledger projections, strict failures, explicit boundary and default-budget proof |
-| Event-sensitive process category | Open | For the proposed sealed-sequential interpretation, needs operational composition and a justified event/state observation equivalence, not merely span isomorphism |
-| Categorical frontend/backend interpretation and refinement | Not established for this witness category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
+Section 10.1 organizes **conceptual obligations**; this ledger lists the
+**specific results that discharge them**. The step column refers to
+[Section 10.1](#101-what-each-step-buys-us). The mapping is many-to-many:
+one step can need several results, and one result can serve several steps.
+Transport serves Steps 1 and 2 by specifying legitimate connections and
+proving that they preserve meaning. The restricted partial-map view spans
+Steps 5-7: uniqueness hypotheses enable it, categorical packaging makes it
+quotient-invariant, and its laws establish composition of domains and values.
+
+| Milestone | 10.1 steps | Current status | Evidence or remaining boundary |
+| --- | --- | --- | --- |
+| Typed values, strict expressions and whole-model conditions | 2 | Implemented semantic substrate | [Core models](../../leanncd/LeanNCD/Semantics/Models.lean) and [strict interpretation](../../leanncd/LeanNCD/Semantics/Interpret.lean); internal occurrence definedness is required |
+| Metadata-bearing whole-interface environments | 1 | Implemented with proved input/output equivalences | [Witness interfaces](../../leanncd/experiments/indexed_execution/IndexedWitnessInterface.lean); UID/sort/domain/port metadata and empty-input presence are retained, not quotiented by carrier equivalence |
+| Declaration/context/coordinate transport | 1, 2 | Proved | [Transport record](component_transport_execution_record.md); supplied certified adapters, not name-based or automatic domain matching |
+| Graph/reference execution correspondence | 3 | Proved, conditional on a supplied local match | [Correspondence record](categorical_tensor_logic_proof_record.md); matched priorities and rational registry, no general backend claim |
+| Static sealed composite and its match | 4 | Proved | [Composition record](component_composition_record.md); two local matched components plus an explicit whole-tensor boundary |
+| Complete-model restriction/gluing | 5 | Proved, rank-independent | [Model-gluing record](component_model_gluing_record.md); full compatible witnesses, with no rank, existence or uniqueness premise |
+| Successive partial-function domain and denotation | 5 | Proved, conditional on both components' `AtMostOneModels` hypotheses | [Denotation theorem](../../leanncd/experiments/indexed_execution/IndexedComponentModelDenotation.lean); uniqueness is not totality |
+| Witness-span interpretation across all inputs | 6 | Proved, composition-preserving with explicit boundary and exterior transports | [Witness composition](../../leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean); `allInputWiredEquiv`, `compositeWiredIso` and `composition_hom` retain whole private model stores and commute with both legs |
+| Semantic target category laws and units | 1, 6, 7 | Proved | [Span category](../../leanncd/experiments/indexed_execution/IndexedWitnessSpan.lean); span-isomorphism quotient, pullback associativity and identity-span unit laws; graph spans supply administrative interface transports |
+| Nested component denotational associativity | 7 | Proved after explicit interface reindexing | [Witness coherence](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean); both actual bracketings correspond to the same compatible model triple, not equal raw IDs or programs |
+| Injective-left partial-map interpretation | 5-7 | Proved; component restriction is exactly `AtMostOneModels` | [Restricted spans](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean); quotient invariance, closure under pullback and domain/value laws connect to authoritative admissibility and denotation; noncomputable extraction, not totality |
+| Certified matched-component source category and functor | 8 | Proved for the specified generated presentation | [Source functor](../../leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean); certified coordinate wires, source quotient laws, actual assembly/nesting and complete-witness interpretation with explicit transports |
+| Core/process units | 9 | Open | Administrative source identities are not core computations; copies add events and aliases violate `output_defined` |
+| Rank stitching and sequential phase/projection | 9 | Proved for actual default graph/reference executions | [Ranked execution](categorical_ranked_execution_record.md); constructed full-footprint certificate, shared cut, whole private state/ledger projections, strict failures, explicit boundary and default-budget proof |
+| Associative operational composition | 1, 9 | Proved for ranked matched components on validated input | [Operational histories](categorical_operational_associativity_record.md); transport-only full observations, shared-cut algebra, both actual constructors, four leaf outcomes and actual reference relations |
+| Event-sensitive process category | 1, 9 | Open: units remain | Operational associativity does not supply an event-free core identity; the observation relation does not discard copy events |
+| Categorical frontend/backend interpretation and refinement | 9 | Not established for this witness category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
+
+Thus the scoped **denotational obligations of Steps 1-8 are established**,
+while **Step 9 is partially established** by ranked phases and associative
+operational composition under full transport-aware observations. Process units
+and frontend/backend refinement remain open. The observation result is
+restricted to the sealed ranked profile and does not complete every
+interpretation in Step 1. Nor does Step 8 establish a broader source
+presentation, automatic matching or a general St/Br/monoidal interpretation.
 
 The current position is therefore **a proved denotational witness-span
 category and a certified source-category functor**, not an event-sensitive
@@ -1913,7 +1984,8 @@ process category. See the [witness semantics record](categorical_witness_semanti
 and [source record](categorical_source_functor_record.md) for their separate
 build, audit, control and review gates and limits. Ranked binary operational
 phases and normalized state/event projections are also proved in Section 6.11;
-general trace algebra and process laws remain separate. General St/Br
+Section 6.12 adds compatible history algebra and actual operational associativity.
+Process units remain separate. General St/Br
 packaging, numerical interpretation and implementation refinement must be
 connected to the chosen semantics by their own arguments.
 
@@ -1932,10 +2004,10 @@ profile. The next obligations depend on the intended claim:
   structure requires additional constructions and soundness arguments.
   The [source record](categorical_source_functor_record.md) gives the proved
   presentation and its limits; the handoff remains its historical goal brief.
-- **Sequential process meaning:** the ranked certificate and binary phase/state
-  projections are now proved for actual default graph/reference executions.
-  General trace composition and process units still require a specified
-  observation equivalence. Compatible model triples alone do not prove
+- **Sequential process units:** ranked phases, transport-aware compatible
+  history composition and actual operational associativity are proved.
+  An event-free unit still needs a separate construction and justification
+  under these observations. Compatible model triples alone do not prove
   operational sequencing, and semantic graph spans are not event-free core
   computations.
 - **Frontend/backend connection and refinement:** relate St/Br or another
@@ -1977,8 +2049,9 @@ replacing the generic proofs or changing the language's strict partiality.
 
 This is a sound operational bridge and a proved denotational source-to-witness
 functor for the specified rational profile, not an event-sensitive
-process category. Ranked binary phase-projection is proved; general trace
-algebra and process laws remain open with their own observation equivalence.
+process category. Ranked phase-projection, full-history observation transport
+and associative compatible history composition are proved; process units
+remain open under that observation equivalence.
 Section 10 records
 the different goals and current status.
 Reproving execution correspondence or reconstructing an entire match for
@@ -2276,7 +2349,8 @@ complete-model conclusions, not execution-completion claims.
 No rank, phase, model existence or uniqueness premise appears in the core
 witness theorem. The categorical packaging and its laws are proved separately
 below. Ranked runtime phase/projection is the separate result in Section 6.11;
-general trace algebra and event-sensitive process laws remain unproved.
+Section 6.12 adds compatible history algebra and operational associativity.
+Event-sensitive process units remain unproved.
 
 ### A.9. Turn model witnesses into categorical semantics
 
@@ -2460,10 +2534,10 @@ The actual graph theorem is
 [`compose_default_phases`](../../leanncd/experiments/indexed_execution/IndexedComponentExecutionRuns.lean);
 [`reference_default_phases`](../../leanncd/experiments/indexed_execution/IndexedComponentExecutionReference.lean)
 derives the normalized reference projections. Together they establish ranked
-binary operational composition. General trace algebra, process units and
-associativity under an event-sensitive observation equivalence still require
-their own theorems; they do not follow from the witness-span quotient or from
-this binary phase result alone.
+binary operational composition. The separate history and operational
+associativity theorems in Section 6.12 reuse this result; they do not follow
+from the witness-span quotient or from this binary phase result alone.
+Process units remain open.
 
 ## Notation reference
 

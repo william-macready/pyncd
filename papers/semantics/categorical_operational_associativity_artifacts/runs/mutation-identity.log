@@ -1,0 +1,13 @@
+./experiments/indexed_execution/IndexedOperationalRunsMutationIdentity.lean:394:8: error: Type mismatch
+  Eq.symm (identity_A n)
+has type
+  upstreamId n = identityEquiv (upstreamId (upstreamId n))
+but is expected to have type
+  (downstreamId ∘ upstreamId ∘ id) n = identityEquiv ((upstreamId ∘ downstreamId ∘ id) n)
+'IndexedOperationalRuns.stepFuel_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.nested_default_runs' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.nested_reference_runs' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.ranked_nested_reference_outcomes' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]

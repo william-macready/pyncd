@@ -1,0 +1,50 @@
+[
+  {
+    "label": "history-composition/drop-prefix",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
+    "old": "h.bind (fun _ _ => k)",
+    "new": "k",
+    "targets": [
+      "IndexedOperationalHistoryComposition"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "label": "history-composition/forget-private-ledger",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
+    "old": "mapLedger upstreamId completed.produced ++ mapLedger downstreamId s.produced",
+    "new": "mapLedger downstreamId s.produced",
+    "targets": [
+      "IndexedOperationalHistoryComposition"
+    ],
+    "expect": [
+      "Application type mismatch: The argument"
+    ]
+  },
+  {
+    "label": "history-composition/forget-private-store",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
+    "old": "| \u27e8.inl t, p\u27e9 => completed.available \u27e8t, p\u27e9",
+    "new": "| \u27e8.inl _, _\u27e9 => none",
+    "targets": [
+      "IndexedOperationalHistoryComposition"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "label": "history-composition/accept-incompatible-cut",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
+    "old": "(shared : suffix.start = s)",
+    "new": "(shared : True)",
+    "targets": [
+      "IndexedOperationalHistoryComposition"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  }
+]

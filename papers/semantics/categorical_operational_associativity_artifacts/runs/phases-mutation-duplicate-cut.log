@@ -1,0 +1,35 @@
+./experiments/indexed_execution/IndexedOperationalRunsPhasesMutationDuplicateCut.lean:34:55: error: Application type mismatch: The argument
+  ht
+has type
+  List.Forall₂ R (current :: after) l₂✝
+but is expected to have type
+  List.Forall₂ R { before := [], current := current, after := after, exact_states := ⋯ }.after
+    { before := [], current := b✝, after := ?m.121, exact_states := ?m.124 }.after
+in the application
+  { before := List.Forall₂.nil, current := h, after := ht }
+./experiments/indexed_execution/IndexedOperationalRunsPhasesMutationDuplicateCut.lean:34:39: error: Application type mismatch: The argument
+  rfl
+has type
+  ?m.123 = ?m.123
+but is expected to have type
+  b✝ :: l₂✝ = [] ++ b✝ :: b✝ :: ?m.121
+in the application
+  { before := [], current := b✝, after := ?m.121, exact_states := ⋯ }
+./experiments/indexed_execution/IndexedOperationalRunsPhasesMutationDuplicateCut.lean:138:36: error: unsolved goals
+σ τ : Declarations Unit
+inst✝³ : Fintype σ.Tensor
+inst✝² : DecidableEq σ.Tensor
+inst✝¹ : Fintype τ.Tensor
+inst✝ : DecidableEq τ.Tensor
+A : MatchedComponent σ
+B : MatchedComponent τ
+wire : Boundary A B
+η : A.program.Input
+p : ReachedPhase A B wire η
+rest : List (State (declarations A B))
+eq : (stepFuel (compose A B wire).graph.steps p.remaining p.cut).states = p.cut :: rest
+⊢ p.snapshots ++ p.cut :: rest = p.snapshots ++ p.cut :: p.cut :: rest
+'IndexedOperationalRunsPhases.triple_phases' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.two_reached_right' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.two_reached_empty_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.reference_cuts' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]

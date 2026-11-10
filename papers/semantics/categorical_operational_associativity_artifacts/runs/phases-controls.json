@@ -1,0 +1,26 @@
+[
+  {
+    "name": "DuplicateCut",
+    "old": "exact_states : states = before ++ current :: after",
+    "new": "exact_states : states = before ++ current :: current :: after",
+    "expected_exit": 1
+  },
+  {
+    "name": "StrictOrder",
+    "old": "ordered : first.before.length \u2264 second.before.length",
+    "new": "ordered : first.before.length < second.before.length",
+    "expected_exit": 1
+  },
+  {
+    "name": "FailBTag",
+    "old": ".failed (upstreamId (downstreamId tag)) outer.targetEndpoint",
+    "new": ".failed (upstreamId (upstreamId tag)) outer.targetEndpoint",
+    "expected_exit": 1
+  },
+  {
+    "name": "BoundaryValue",
+    "old": "boundaryInput B C bc (restrictDownstream A B ab store) := by",
+    "new": "boundaryInput B C bc (fun a => restrictDownstream A B ab store a + 1) := by",
+    "expected_exit": 1
+  }
+]

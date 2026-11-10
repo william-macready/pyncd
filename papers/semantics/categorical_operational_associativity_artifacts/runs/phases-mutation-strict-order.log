@@ -1,0 +1,16 @@
+./experiments/indexed_execution/IndexedOperationalRunsPhasesMutationStrictOrder.lean:269:4: error: Type mismatch: After simplification, term
+  bound
+ has type
+  first.before.length ≤ outer.snapshots.length
+but is expected to have type
+  first.before.length < outer.snapshots.length
+./experiments/indexed_execution/IndexedOperationalRunsPhasesMutationStrictOrder.lean:380:7: error: Type mismatch: After simplification, term
+  p.ordered
+ has type
+  p.first.before.length < p.second.before.length
+but is expected to have type
+  p.first.before.length ≤ p.second.before.length
+'IndexedOperationalRunsPhases.triple_phases' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.two_reached_right' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.two_reached_empty_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.reference_cuts' depends on axioms: [propext, Classical.choice, Quot.sound]

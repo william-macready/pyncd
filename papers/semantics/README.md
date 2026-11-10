@@ -22,8 +22,11 @@ contents, and next links at both the top and bottom.
 
 ## GitHub math rendering
 
-Display equations use fenced `math` blocks so Markdown does not interpret
-standalone equality signs as heading underlines. Interpretation brackets use
+The specification and Lean-guide series use fenced `math` blocks so Markdown
+does not interpret standalone equality signs as heading underlines.
+The [categorical synthesis](categorical_tensor_logic_semantics.md) instead
+uses `$$` display blocks consistently for VS Code preview compatibility.
+Interpretation brackets use
 standard TeX square brackets with tight spacing instead of package-specific
 bracket commands. Both opening and closing interpretation brackets are teal;
 enclosed expressions and subscripts keep their own role-specific colors.
@@ -86,8 +89,9 @@ actual matches for both independently authored validation cases.
 brings together St/Br and Naperian arrays, partial maps, additive collection,
 open diagrams, model witnesses, causal iteration, and Turi-Plotkin-style
 compatibility. It separates mathematical laws from prototype evidence
-and states correspondence and composition targets without assuming
-one formalism is the best foundation.
+and the proved conditional execution theorem, while retaining general
+composition as a further target. A mathematical appendix explains the
+proof without assuming one formalism is the best foundation.
 
 [Source-contract execution correspondence: theorem-design brief](categorical_tensor_logic_theorem_brief.md)
 fixes the first semantic theorem's scope, supplied match, state relation,

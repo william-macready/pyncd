@@ -1,0 +1,9 @@
+Compiling snippet as leanncd/spikes/SnippetCheck_38790_22851.lean ...
+
+'IndexedOperationalHistoryAssociativity.binary_associativity' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryAssociativity.right_nested_tree' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryAssociativity.actual_nested_histories' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+
+COMPILES. Safe to write into the plan.

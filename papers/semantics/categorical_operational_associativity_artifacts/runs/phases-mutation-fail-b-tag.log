@@ -1,0 +1,13 @@
+./experiments/indexed_execution/IndexedOperationalRunsPhasesMutationFailBTag.lean:338:8: error: Type mismatch: After simplification, term
+  outer.composite_failed
+ has type
+  (checked (compose (compose A B ab) C (leftNestedBoundary A B C ab bc))
+        (liftInput (compose A B ab) C (leftNestedBoundary A B C ab bc) (liftInput A B ab η))).outcome =
+    Outcome.failed (upstreamId (downstreamId tag)) outer.targetEndpoint
+but is expected to have type
+  (checked (leftBracket A B C ab bc) (leftInput A B C ab bc η)).outcome =
+    Outcome.failed (upstreamId (upstreamId tag)) outer.targetEndpoint
+'IndexedOperationalRunsPhases.triple_phases' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.two_reached_right' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.two_reached_empty_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.reference_cuts' depends on axioms: [propext, Classical.choice, Quot.sound]

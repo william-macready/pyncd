@@ -1,0 +1,15 @@
+./experiments/indexed_execution/IndexedOperationalHistoryAssociativityMutation.lean:139:4: error: Type mismatch
+  identity_B
+has type
+  ∀ (n : ℕ), identityEquiv (upstreamId (downstreamId n)) = downstreamId (upstreamId n)
+but is expected to have type
+  ∀ (x : ℕ), (⇑(graphTransport A B C ab bc).identity ∘ downstreamId) x = (downstreamId ∘ downstreamId) x
+'IndexedOperationalHistoryAssociativity.binary_associativity' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryAssociativity.right_nested_tree' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryAssociativity.actual_nested_histories' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]

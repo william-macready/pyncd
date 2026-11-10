@@ -1,0 +1,275 @@
+[
+  {
+    "label": "P/history/drop-failure-event",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
+    "old": "| .failed _ e _ => [e]",
+    "new": "| .failed _ e _ => []",
+    "targets": [
+      "IndexedOperationalHistory"
+    ],
+    "expect": [
+      "unsolved goals"
+    ]
+  },
+  {
+    "label": "P/history/duplicate-snapshot",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
+    "old": "| .step s _ h => s :: h.states",
+    "new": "| .step s _ h => s :: s :: h.states",
+    "targets": [
+      "IndexedOperationalHistory"
+    ],
+    "expect": [
+      "Application type mismatch: The argument"
+    ]
+  },
+  {
+    "label": "P/history/drop-private-prefix",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
+    "old": "| .step s e tail => .step s e (tail.bind k)",
+    "new": "| .step _ _ tail => tail.bind k",
+    "targets": [
+      "IndexedOperationalHistory"
+    ],
+    "expect": [
+      "Tactic `rfl` failed: The left-hand side"
+    ]
+  },
+  {
+    "label": "P/history/reverse-ledger",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
+    "old": "mapLedger t.identity s.produced",
+    "new": "mapLedger t.identity s.produced.reverse",
+    "targets": [
+      "IndexedOperationalHistory"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "label": "P/history/erase-private-availability",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
+    "old": "fun a => s.available (t.address.symm a)",
+    "new": "fun _ => none",
+    "targets": [
+      "IndexedOperationalHistory"
+    ],
+    "expect": [
+      "unsolved goals"
+    ]
+  },
+  {
+    "label": "P/history/erase-empty-input-port",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalHistory.lean",
+    "old": "\u27e8A.inputs, A.outputs, A.program.input",
+    "new": "\u27e8[], A.outputs, A.program.input",
+    "targets": [
+      "IndexedOperationalHistory"
+    ],
+    "expect": [
+      "Application type mismatch: The argument"
+    ]
+  },
+  {
+    "task": "live-proof",
+    "label": "history-composition/drop-prefix",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
+    "old": "h.bind (fun _ _ => k)",
+    "new": "k",
+    "targets": [
+      "IndexedOperationalHistoryComposition"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "task": "live-proof",
+    "label": "history-composition/forget-private-ledger",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
+    "old": "mapLedger upstreamId completed.produced ++ mapLedger downstreamId s.produced",
+    "new": "mapLedger downstreamId s.produced",
+    "targets": [
+      "IndexedOperationalHistoryComposition"
+    ],
+    "expect": [
+      "Application type mismatch: The argument"
+    ]
+  },
+  {
+    "task": "live-proof",
+    "label": "history-composition/forget-private-store",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
+    "old": "| \u27e8.inl t, p\u27e9 => completed.available \u27e8t, p\u27e9",
+    "new": "| \u27e8.inl _, _\u27e9 => none",
+    "targets": [
+      "IndexedOperationalHistoryComposition"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "task": "live-proof",
+    "label": "history-composition/accept-incompatible-cut",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryComposition.lean",
+    "old": "(shared : suffix.start = s)",
+    "new": "(shared : True)",
+    "targets": [
+      "IndexedOperationalHistoryComposition"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "label": "P/runs/ordered-events",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalRuns.lean",
+    "old": "target.events = source.events.map (mapEvent f rename)",
+    "new": "target.events = (source.events.map (mapEvent f rename)).reverse",
+    "targets": [
+      "IndexedOperationalRuns"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "label": "P/runs/ordered-states",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalRuns.lean",
+    "old": "states : List.Forall\u2082 (StateRelated f rename) source.states target.states",
+    "new": "states : List.Forall\u2082 (StateRelated f rename) source.states target.states.reverse",
+    "targets": [
+      "IndexedOperationalRuns"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "label": "P/runs/leaf-B-identity",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalRuns.lean",
+    "old": "exact (identity_B n).symm",
+    "new": "exact (identity_A n).symm",
+    "targets": [
+      "IndexedOperationalRuns"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "label": "P/phases/DuplicateCut",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalRunsPhases.lean",
+    "old": "exact_states : states = before ++ current :: after",
+    "new": "exact_states : states = before ++ current :: current :: after",
+    "targets": [
+      "IndexedOperationalRunsPhases"
+    ],
+    "expect": [
+      "mismatch"
+    ]
+  },
+  {
+    "label": "P/phases/StrictOrder",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalRunsPhases.lean",
+    "old": "ordered : first.before.length \u2264 second.before.length",
+    "new": "ordered : first.before.length < second.before.length",
+    "targets": [
+      "IndexedOperationalRunsPhases"
+    ],
+    "expect": [
+      "mismatch"
+    ]
+  },
+  {
+    "label": "P/phases/FailBTag",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalRunsPhases.lean",
+    "old": ".failed (upstreamId (downstreamId tag)) outer.targetEndpoint",
+    "new": ".failed (upstreamId (upstreamId tag)) outer.targetEndpoint",
+    "targets": [
+      "IndexedOperationalRunsPhases"
+    ],
+    "expect": [
+      "mismatch"
+    ]
+  },
+  {
+    "label": "P/phases/BoundaryValue",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalRunsPhases.lean",
+    "old": "boundaryInput B C bc (restrictDownstream A B ab store) := by",
+    "new": "boundaryInput B C bc (fun a => restrictDownstream A B ab store a + 1) := by",
+    "targets": [
+      "IndexedOperationalRunsPhases"
+    ],
+    "expect": [
+      "mismatch"
+    ]
+  },
+  {
+    "task": "live-proof",
+    "label": "history-associativity/wrong-B-identity",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean",
+    "old": "  \u00b7 exact identity_B",
+    "new": "  \u00b7 exact identity_A",
+    "targets": [
+      "IndexedOperationalHistoryAssociativity"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "task": "live-proof",
+    "label": "history-associativity/wrong-C-identity",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean",
+    "old": "  \u00b7 exact identity_C",
+    "new": "  \u00b7 exact identity_B",
+    "targets": [
+      "IndexedOperationalHistoryAssociativity"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "task": "live-proof",
+    "label": "history-associativity/forget-completed-private-state",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean",
+    "old": "downstreamState A (compose B C bc) a (downstreamState B C b c) := by",
+    "new": "downstreamState A (compose B C bc) a (upstreamState B C b) := by",
+    "targets": [
+      "IndexedOperationalHistoryAssociativity"
+    ],
+    "expect": [
+      "Tactic `apply` failed: could not unify the conclusion of `congrArg\u2082 State.mk available`"
+    ]
+  },
+  {
+    "label": "P/metadata/absent-versus-present-empty-neighbor",
+    "task": "live-proof",
+    "file": "experiments/indexed_execution/IndexedOperationalObservationLaws.lean",
+    "old": "def absentEmptyMetadata : GraphMetadata emptyProducerDeclarations Unit where\n  inputs := []\n  outputs := Fixtures.emptyMetadata.outputs\n  inputRole := fun _ => false\n  input := fun _ => none\n  valid := fun _ => rfl\n  adapters := ()\n  inputs_nodup := by simp\n  outputs_nodup := Fixtures.emptyMetadata.outputs_nodup\n  inputs_exact := by intro a; simp",
+    "new": "def absentEmptyMetadata : GraphMetadata emptyProducerDeclarations Unit :=\n  Fixtures.emptyMetadata",
+    "targets": [
+      "IndexedOperationalObservationLaws"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  }
+]

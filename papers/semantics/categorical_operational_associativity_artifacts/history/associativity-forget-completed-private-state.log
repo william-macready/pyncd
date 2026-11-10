@@ -1,0 +1,66 @@
+./experiments/indexed_execution/IndexedOperationalHistoryAssociativityMutation.lean:58:2: error: Tactic `apply` failed: could not unify the conclusion of `congrArg₂ State.mk available`
+  {
+      available :=
+        ((graphTransport A B C ab bc).mapState
+            (downstreamState (compose A B ab) C (downstreamState A B a b) c)).available,
+      produced := ?m.187 } =
+    { available := (downstreamState A (compose B C bc) a (downstreamState B C b c)).available, produced := ?m.188 }
+with the goal
+  (graphTransport A B C ab bc).mapState (downstreamState (compose A B ab) C (downstreamState A B a b) c) =
+    downstreamState A (compose B C bc) a (upstreamState B C b)
+
+Note: The full type of `congrArg₂ State.mk available` is
+  ?m.187 = ?m.188 →
+    {
+        available :=
+          ((graphTransport A B C ab bc).mapState
+              (downstreamState (compose A B ab) C (downstreamState A B a b) c)).available,
+        produced := ?m.187 } =
+      { available := (downstreamState A (compose B C bc) a (downstreamState B C b c)).available, produced := ?m.188 }
+
+σA σB σC : Declarations Unit
+inst✝⁵ : Fintype σA.Tensor
+inst✝⁴ : DecidableEq σA.Tensor
+inst✝³ : Fintype σB.Tensor
+inst✝² : DecidableEq σB.Tensor
+inst✝¹ : Fintype σC.Tensor
+inst✝ : DecidableEq σC.Tensor
+A : MatchedComponent σA
+B : MatchedComponent σB
+C : MatchedComponent σC
+ab : Boundary A B
+bc : Boundary B C
+a : State σA
+b : State σB
+c : State σC
+available :
+  ((graphTransport A B C ab bc).mapState (downstreamState (compose A B ab) C (downstreamState A B a b) c)).available =
+    (downstreamState A (compose B C bc) a (downstreamState B C b c)).available
+⊢ (graphTransport A B C ab bc).mapState (downstreamState (compose A B ab) C (downstreamState A B a b) c) =
+    downstreamState A (compose B C bc) a (upstreamState B C b)
+./experiments/indexed_execution/IndexedOperationalHistoryAssociativityMutation.lean:137:4: error: Type mismatch
+  state_C A B C ab bc a b
+has type
+  ∀ (c : State σC),
+    (graphTransport A B C ab bc).mapState (downstreamState (compose A B ab) C (downstreamState A B a b) c) =
+      downstreamState A (compose B C bc) a (upstreamState B C b)
+but is expected to have type
+  ∀ (x : State σC),
+    (⇑(graphTransport A B C ab bc).stateEquiv ∘ downstreamState (compose A B ab) C (downstreamState A B a b)) x =
+      (downstreamState A (compose B C bc) a ∘ downstreamState B C b) x
+./experiments/indexed_execution/IndexedOperationalHistoryAssociativityMutation.lean:328:18: error: Type mismatch: After simplification, term
+  moved
+ has type
+  True
+but is expected to have type
+  downstreamState A (compose B C bc) a (downstreamState B C b (History.start hC)) =
+    downstreamState A (compose B C bc) a (upstreamState B C b)
+'IndexedOperationalHistoryAssociativity.binary_associativity' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryAssociativity.right_nested_tree' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryAssociativity.actual_nested_histories' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]

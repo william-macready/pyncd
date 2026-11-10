@@ -1,0 +1,26 @@
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:169:15: error: Type mismatch
+  related.upstream ⟨x, p⟩
+has type
+  t.available ((upstream A B).address ⟨x, p⟩) = completed.available ⟨x, p⟩
+but is expected to have type
+  t.available ⟨Sum.inl x, p⟩ = (downstreamState A B completed s).available ⟨Sum.inl x, p⟩
+'IndexedOperationalHistoryComposition.compose_history' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.sound' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.unique' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.phase_cut' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.transport_splices' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.left_nested_history' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.SharedSplice.associative_eq' does not depend on any axioms
