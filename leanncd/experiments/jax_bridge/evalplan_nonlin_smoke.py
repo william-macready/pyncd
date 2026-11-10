@@ -53,11 +53,12 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_sink", "transformer_sink32", "transformer_mqa", "transformer_mqa32",
                         "transformer_gqa", "transformer_gqa32", "transformer_gqa_split", "transformer_gqa_split32",
                         "transformer_gqa_mha", "transformer_gqa_mha32",
-                        "transformer_cross", "transformer_cross32", "transformer_cross_hoisted", "transformer_cross_hoisted32"}
+                        "transformer_cross", "transformer_cross32", "transformer_cross_hoisted", "transformer_cross_hoisted32",
+                        "transformer_cross_wide", "transformer_cross_wide32"}
 # Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
 # layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
 # require that EXACTLY layer 2 is NaN (in Lean, eager and jit alike); every other output must be finite.
-NAN_LAYER_OUTPUTS = {(f"transformer_cross{sfx}", n) for sfx in ("", "32") for n in ("Kc", "Vc")}
+NAN_LAYER_OUTPUTS = {(f"transformer_cross{kind}{sfx}", n) for kind in ("", "_wide") for sfx in ("", "32") for n in ("Kc", "Vc")}
 # Predicate-mask scan fixtures (`transformer_<kind>`, q = s = 5): kind -> the perturbed position of the
 # receptive-field pin (chosen so the reachable and the unreachable row sets are both non-empty).
 MASK_FIXTURES = {"window": 0, "strict": 4, "sink": 3}
@@ -805,6 +806,85 @@ def cross_fixture_pins(by: dict, sfx: str) -> None:
             print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
 
 
+def cross_wide_pins(by: dict, sfx: str) -> None:
+    """Pins of `transformer_cross_wide`: `transformer_cross` with the memory `Mem[t, e]` and the cross key/value weights `W_Kc[l, h, j, e]`,
+    `W_Vc[l, h, j, e]` over a memory width e that is NOT the model width m (and differs from q, t, h, k, j). In `transformer_cross` the memory
+    shares the axis `m` with the layer state, so an axis mix-up between the state's width and the memory's width could not show. Same
+    reference model (`np_cross_transformer`, whose einsums contract the memory's width axis under whatever extent it has), same plan shape and
+    exports, and the inputs are the cross fixture's bit for bit except `W_Kc`, `W_Vc`, `Mem`."""
+    name, base = f"transformer_cross_wide{sfx}", f"transformer_cross{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    bin_ = {n: lean_array(e) for n, e in by[base]["inputs"].items()}
+    assert sorted(fin) == sorted(bin_), (sorted(fin), sorted(bin_))
+    kinds = [n.get("kind", "assign") for n in fx["plan"]["nodes"]]
+    scans = [n for n in fx["plan"]["nodes"] if n.get("kind") == "scan"]
+    assert kinds == ["assign", "assign", "scan"] and scans[0]["step_count"] == 2, (name, kinds)
+    assert sorted(m for m, _ in fx["plan"]["materialized"]) == ["H", "Kc", "Vc"], (name, fx["plan"]["materialized"])
+    for n in bin_:
+        if n not in ("W_Kc", "W_Vc", "Mem"):
+            assert np.array_equal(bits(fin[n]), bits(bin_[n])), (name, "input differs from the cross fixture's", n)
+    n_q, n_m = fin["X"].shape
+    n_t, n_e = fin["Mem"].shape
+    n_h, n_k, n_j = fin["W_Q"].shape[1], fin["W_Q"].shape[2], fin["W_Qc"].shape[2]
+    # the memory width e is a seventh extent, distinct from every other one (the model width m in particular)
+    assert len({n_q, n_t, n_h, n_k, n_j, n_m, n_e}) == 7, (n_q, n_t, n_h, n_k, n_j, n_m, n_e)
+    assert fin["W_Kc"].shape == fin["W_Vc"].shape == (3, n_h, n_j, n_e) and bin_["Mem"].shape == (n_t, n_m), (name, fin["W_Kc"].shape)
+    for w in ("W_Kc", "W_Vc"):
+        a = fin[w]
+        assert np.all(np.isnan(a[2])) and np.all(np.isfinite(a[:2])) and not np.array_equal(a[0], a[1]), (name, w)
+    layers = np_cross_transformer(fin)
+    want = np_state(fin, layers)
+    kc_want = np.einsum("lhje,te->thjl", fin["W_Kc"], fin["Mem"])
+    vc_want = np.einsum("lhje,te->thjl", fin["W_Vc"], fin["Mem"])
+    assert kc_want.shape == (n_t, n_h, n_j, 3) and np.all(np.isnan(kc_want[..., 2])) and np.all(np.isfinite(kc_want[..., :2]))
+    unif = [float(np.max(np.abs(o["Sx"] - 1.0 / n_t))) for o in layers]
+    assert all(u > 0.05 for u in unif), (name, "cross attention is near uniform", unif)
+
+    def gap(inp=fin, **kw):
+        return float(np.max(np.abs(want - np_state(inp, np_cross_transformer(inp, **kw)))))
+
+    rng = np.random.default_rng(13)
+    gaps = {"no cross block": gap(cross=False),
+            "every memory entry perturbed": gap(dict(fin, Mem=fin["Mem"] + 0.5 * rng.standard_normal(fin["Mem"].shape))),
+            # only the first m of the e width units (key/value weights and memory truncated): the extra width is real
+            f"the memory truncated to its first {n_m} width units": gap(dict(
+                fin, Mem=fin["Mem"][:, :n_m], W_Kc=fin["W_Kc"][..., :n_m], W_Vc=fin["W_Vc"][..., :n_m]))}
+    for what, g in gaps.items():
+        assert g > 1e-2, (name, "the wide-memory pin is indistinguishable from", what, g)
+    row_gaps, col_gaps = [], []
+    for t in range(n_t):
+        m_ = fin["Mem"].copy()
+        m_[t] += 0.5
+        row_gaps.append(gap(dict(fin, Mem=m_)))
+    for e in range(n_e):  # each memory WIDTH unit matters: none is ignored (an axis mix-up with m would ignore some)
+        m_ = fin["Mem"].copy()
+        m_[:, e] += 0.5
+        col_gaps.append(gap(dict(fin, Mem=m_)))
+    assert min(row_gaps) > 1e-3 and min(col_gaps) > 1e-3, (name, "a memory row or width unit is ignored", row_gaps, col_gaps)
+    views = {"lean": {n: lean_array(e) for n, e in fx["expected"].items()},
+             "eager": {n: np.asarray(v) for n, v in EAGER[name]["eager"].items()},
+             "jit": {n: np.asarray(v) for n, v in EAGER[name]["jit"].items()}}
+    for who, outs in views.items():
+        assert sorted(outs) == ["H", "Kc", "Vc"] and np.all(np.isfinite(outs["H"])), (name, who, sorted(outs))
+        assert outs["H"].shape == (n_q, n_m, 3) and outs["Kc"].shape == outs["Vc"].shape == (n_t, n_h, n_j, 3), (name, who)
+        check_np(name, who, "H", outs["H"], want)
+        check_np(name, who, "Kc", trim_nan_layer(outs["Kc"], name), kc_want[..., :2])
+        check_np(name, who, "Vc", trim_nan_layer(outs["Vc"], name), vc_want[..., :2])
+    print(f"cross_wide{sfx}: memory width e={n_e} != model width m={n_m}; q={n_q}, t={n_t}, h={n_h}, k={n_k}, j={n_j}, m={n_m}, e={n_e} pairwise distinct; "
+          f"one scan record with 2 steps after 2 plain pre-scan tables, exactly H, Kc, Vc exported; inputs bitwise the cross fixture's except W_Kc, "
+          f"W_Vc, Mem; H layers 0, 1, 2 and Kc, Vc layers 0, 1 == numpy decoder-layer model on Lean, eager and jit (Kc, Vc NaN in layer 2 only); numpy H "
+          f"differs from {', '.join(f'{w} by {g:.3f}' for w, g in gaps.items())}; a single memory row moves H by {min(row_gaps):.3f} to "
+          f"{max(row_gaps):.3f}, a single width unit by {min(col_gaps):.3f} to {max(col_gaps):.3f}")
+    print(f"{name}: per-output measured difference vs numpy and vs Lean:")
+    print_np_stats(name)
+    sc_err = NUM_STATS[(name, "H")][0]
+    print(f"  H headroom to MODEL_TOL: {MODEL_TOL[_DT] / max(sc_err, 1e-300):.1f}x (observed {sc_err:.3e} of {MODEL_TOL[_DT]:.0e})")
+    for n in sorted(n for fx_, n in OUT_STATS if fx_ == name):
+        rel, ab, ex, tot = OUT_STATS[(name, n)]
+        print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+
 def cross_grad_pins(by: dict, sfx: str) -> None:
     """Gradient pins of `transformer_cross` (the cross-attention scan): `jax.grad` of `L = sum(C * H[:, :, 2])` through the emitted plan
     (two pre-scan tables, then the `lax.scan`), over EVERY float input INCLUDING the external memory `Mem`, eager and jit, against (b) the
@@ -1458,6 +1538,9 @@ def main() -> None:
     # CROSS-ATTENTION to an external memory (unequal extents, unmasked) inside the layer scan, and the hoisting trap of the naive
     # program: see `cross_fixture_pins`.
     cross_fixture_pins(by, sfx)
+
+    # CROSS-ATTENTION to a memory of its own width (e != m): see `cross_wide_pins`.
+    cross_wide_pins(by, sfx)
 
     # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
     grad_fixture_pins(by, sfx)
