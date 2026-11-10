@@ -465,7 +465,9 @@ Gradients: `jax.grad` works through the emitted `lax.scan` as is (no runtime cha
 float input, in both precisions, eager and jit: finite, exactly zero on the never-read NaN layer-2 weight slices, equal to the same loss through the unrolled plan
 and to the autodiff of a pure-JAX model, and its directional derivatives equal central differences of the float64 numpy model. The pins are checked by `stop_gradient`
 mutants of the runtime (forward values unchanged, so only the gradient pins can see them). Numbers, tolerances and the mutation table: section 14 of
-`papers/semantics/jax_scan_record.md`.
+`papers/semantics/jax_scan_record.md`. The same gradient pins also cover `transformer_mqa`, the three mask fixtures and the three GQA programs (against a pure-JAX model and finite differences; each
+mask has a one-row loss whose gradient is exactly zero outside its backward receptive field; the GQA programs' gradients agree, the multi-head replicas' summed per group): section 16 of the record, with
+the runtime mutants that only these pins catch (all-masked-row NaN gradient, a 1e-14 mask leak) and the program and data mutants for the GQA split, multi-head and binary32 programs.
 
 `scan_postrole` / `scan_postrole32` run six post-scan statements with the scan axis as an ordinary axis through
 both backends (`iter l = 4`, `S[j,l] = X[j]·G[j]^l`): a sum over `l` against an external tensor
