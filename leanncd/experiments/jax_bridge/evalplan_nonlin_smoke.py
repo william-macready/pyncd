@@ -52,7 +52,12 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_window", "transformer_window32", "transformer_strict", "transformer_strict32",
                         "transformer_sink", "transformer_sink32", "transformer_mqa", "transformer_mqa32",
                         "transformer_gqa", "transformer_gqa32", "transformer_gqa_split", "transformer_gqa_split32",
-                        "transformer_gqa_mha", "transformer_gqa_mha32"}
+                        "transformer_gqa_mha", "transformer_gqa_mha32",
+                        "transformer_cross", "transformer_cross32", "transformer_cross_hoisted", "transformer_cross_hoisted32"}
+# Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
+# layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
+# require that EXACTLY layer 2 is NaN (in Lean, eager and jit alike); every other output must be finite.
+NAN_LAYER_OUTPUTS = {(f"transformer_cross{sfx}", n) for sfx in ("", "32") for n in ("Kc", "Vc")}
 # Predicate-mask scan fixtures (`transformer_<kind>`, q = s = 5): kind -> the perturbed position of the
 # receptive-field pin (chosen so the reachable and the unreachable row sets are both non-empty).
 MASK_FIXTURES = {"window": 0, "strict": 4, "sink": 3}
@@ -185,6 +190,53 @@ def np_transformer(inp: dict, n_layers: int = 2, unit_gains: bool = False, allow
     return layers
 
 
+def np_cross_transformer(inp: dict, n_layers: int = 2, cross: bool = True, memory=None, hoisted: bool = False) -> list:
+    """Independent float64 numpy model of one decoder layer, from the inputs only, per layer: causal self-attention exactly as
+    `np_transformer` (N1 = RMSNorm(H) * G1[l], Q, K, V from N1, softmax_s(Q.K * Sc) over s <= q, R1 = H + W_O . (S.V)), then the
+    CROSS-ATTENTION block (when `cross`): Nc = RMSNorm(R1) * Gc[l], Qc = W_Qc[l] . Nc, keys and values from an EXTERNAL memory
+    `Mem[t, m]` (Kc = W_Kc[l] . Mem, Vc = W_Vc[l] . Mem; t != q), Sx = UNMASKED softmax_t(Qc.Kc * Scx), R2 = R1 + W_Oc[l] . (Sx.Vc);
+    then the MLP on R2 (N2 = RMSNorm(R2) * G2[l], H' = R2 + W_out . gelu(W_in . N2)), msq(x) = sum_m x^2 * Inv[m].
+    `memory` replaces `Mem` as the source of the cross keys and values (a wrong-source model; the string "state" takes the layer's own
+    normalised state `Na` instead, per layer); `hoisted` takes the cross keys and values
+    from the weights SUMMED over every layer, `einsum("lhjm,tm->thj", W_Kc, Mem)` (the pre-scan table of the naive program).
+    Returns one dict per layer (the self-attention and MLP entries of `np_transformer`, plus Nc, Qc, Kc, Vc, Sx, Ac, Ax, R2)."""
+    f = {k: np.asarray(v, dtype=np.float64) for k, v in inp.items()}
+    h, layers = f["X"], []
+    tril = np.tril(np.ones((h.shape[0], h.shape[0]), dtype=bool))
+    mem = f["Mem"] if memory is None or isinstance(memory, str) else np.asarray(memory, dtype=np.float64)
+    for l in range(n_layers):
+        o = {}
+        o["Ssa"] = np.einsum("qm,qm,m->q", h, h, f["Inv"])
+        o["Na"] = h / np.sqrt(o["Ssa"] + f["Eps"])[:, None] * f["G1"][l]
+        o["Q"] = np.einsum("hkm,qm->qhk", f["W_Q"][l], o["Na"])
+        o["K"] = np.einsum("hkm,sm->shk", f["W_K"][l], o["Na"])
+        o["V"] = np.einsum("hkm,sm->shk", f["W_V"][l], o["Na"])
+        lg = np.einsum("qhk,shk->hqs", o["Q"], o["K"]) * f["Sc"]
+        o["S"] = np_softmax_last(np.where(tril[None], lg, -np.inf))
+        o["Ra"] = h + np.einsum("mhk,qhk->qm", f["W_O"][l], np.einsum("hqs,shk->qhk", o["S"], o["V"]))
+        r2 = o["Ra"]
+        if cross:
+            o["Nc"] = o["Ra"] / np.sqrt(np.einsum("qm,qm,m->q", o["Ra"], o["Ra"], f["Inv"]) + f["Eps"])[:, None] * f["Gc"][l]
+            o["Qc"] = np.einsum("hjm,qm->qhj", f["W_Qc"][l], o["Nc"])
+            src = o["Na"] if memory == "state" else mem
+            if hoisted:
+                o["Kc"] = np.einsum("lhjm,tm->thj", f["W_Kc"], src)
+                o["Vc"] = np.einsum("lhjm,tm->thj", f["W_Vc"], src)
+            else:
+                o["Kc"] = np.einsum("hjm,tm->thj", f["W_Kc"][l], src)
+                o["Vc"] = np.einsum("hjm,tm->thj", f["W_Vc"][l], src)
+            o["Sx"] = np_softmax_last(np.einsum("qhj,thj->hqt", o["Qc"], o["Kc"]) * f["Scx"])
+            o["Ac"] = np.einsum("hqt,thj->qhj", o["Sx"], o["Vc"])
+            o["Ax"] = np.einsum("mhj,qhj->qm", f["W_Oc"][l], o["Ac"])
+            o["R2"] = r2 = o["Ra"] + o["Ax"]
+        o["Nb"] = r2 / np.sqrt(np.einsum("qm,qm,m->q", r2, r2, f["Inv"]) + f["Eps"])[:, None] * f["G2"][l]
+        o["F"] = np_gelu(np.einsum("dm,qm->qd", f["W_in"][l], o["Nb"]))
+        o["H"] = r2 + np.einsum("md,qd->qm", f["W_out"][l], o["F"])
+        layers.append(o)
+        h = o["H"]
+    return layers
+
+
 def np_state(inp: dict, layers: list) -> np.ndarray:
     """The scan state H[q, m, l] from the numpy model: layer 0 is X, layer l+1 the output of layer l."""
     return np.stack([np.asarray(inp["X"], dtype=np.float64)] + [o["H"] for o in layers], axis=2)
@@ -259,12 +311,21 @@ def within(g: np.ndarray, w: np.ndarray) -> bool:
     return bool(np.all(np.abs(gg - ww) <= ATOL[_DT] + RTOL[_DT] * np.abs(ww)))
 
 
-def require_close(got, entry: dict, label: str, fn: str | None) -> None:
+def trim_nan_layer(a: np.ndarray, label: str) -> np.ndarray:
+    """Drop the layer-2 slice (last axis, index 2) of a pre-scan table stacked over the layer axis: it is built from the
+    NaN layer-2 weight slice, so it is NaN by construction, and EXACTLY that slice must be NaN (the rest finite)."""
+    assert a.shape[-1] == 3 and np.all(np.isnan(a[..., 2])) and np.all(np.isfinite(a[..., :2])), (label, "layer-2 slice is not the only NaN slice")
+    return np.ascontiguousarray(a[..., :2])
+
+
+def require_close(got, entry: dict, label: str, fn: str | None, nan_layer: bool = False) -> None:
     g, w = np.asarray(got), lean_array(entry)
     if g.dtype != NDT:
         raise AssertionError(f"{label}: expected {NDT.__name__}, got {g.dtype}")
     if g.shape != w.shape:
         raise AssertionError(f"{label}: shape {g.shape} != {w.shape}")
+    if nan_layer:
+        g, w = trim_nan_layer(g, label), trim_nan_layer(w, label)
     if not np.all(np.isfinite(g)) or not np.all(np.isfinite(w)):
         raise AssertionError(f"{label}: non-finite value: {g.tolist()} vs {w.tolist()}")
     if not np.array_equal(g == 0, w == 0):
@@ -288,6 +349,8 @@ def require_close(got, entry: dict, label: str, fn: str | None) -> None:
 def record_output(fixture: str, key: str, got, entry: dict) -> None:
     """Per-output measurement for a transformer fixture (every materialized output, incl. assignments)."""
     g, w = np.asarray(got), lean_array(entry)
+    if (fixture, key) in NAN_LAYER_OUTPUTS:
+        g, w = trim_nan_layer(g, f"{fixture} {key}"), trim_nan_layer(w, f"{fixture} {key}")
     diff = np.abs(g.astype(np.float64) - w.astype(np.float64))
     nz = w != 0
     rel = float(np.max(diff[nz] / np.abs(w.astype(np.float64))[nz])) if nz.any() else 0.0
@@ -316,8 +379,9 @@ def run_fixture(f: dict) -> None:
     if any(n.get("kind") == "scan" for n in plan["nodes"]) or f["name"].startswith("transformer_unrolled"):
         EAGER[f["name"]] = {"eager": eager, "jit": jitted}
     for name, exp in f["expected"].items():
-        require_close(eager[name], exp, f"{f['name']} eager {name}", fns.get(name))
-        require_close(jitted[name], exp, f"{f['name']} jit {name}", fns.get(name))
+        nan_layer = (f["name"], name) in NAN_LAYER_OUTPUTS
+        require_close(eager[name], exp, f"{f['name']} eager {name}", fns.get(name), nan_layer)
+        require_close(jitted[name], exp, f"{f['name']} jit {name}", fns.get(name), nan_layer)
         if is_transformer(f["name"]):
             record_output(f["name"], name, eager[name], exp)
             record_output(f["name"], name, jitted[name], exp)
@@ -614,6 +678,228 @@ def gqa_fixture_pins(by: dict, sfx: str) -> None:
         for n in sorted(n for fx_, n in OUT_STATS if fx_ == name):
             rel, ab, ex, tot = OUT_STATS[(name, n)]
             print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+
+CROSS_STACKS = ("W_Q", "W_K", "W_V", "W_O", "W_Qc", "W_Kc", "W_Vc", "W_Oc", "W_in", "W_out", "G1", "G2", "Gc")
+
+
+def cross_fixture_pins(by: dict, sfx: str) -> None:
+    """Pins of the cross-attention scan fixtures: `transformer_cross` (decoder layer = causal self-attention, then UNMASKED
+    cross-attention to an external memory `Mem[t, m]` with t != q, then the MLP; the cross keys and values carry an explicit layer
+    axis, `Kc[t, h, j, l]`) and `transformer_cross_hoisted` (the naive `Kc[t, h, j]`: a statement reading no scan state runs ONCE before
+    the scan with `l` an ordinary axis and is SUMMED over every layer). The reference is `np_cross_transformer`, written from the English
+    definition from the exported inputs only. Value pins on Lean, eager and jit; non-vacuity against wrong models (no cross block, every
+    or any single memory row perturbed, memory taken from the layer state); the exported stacked tables against numpy; the hoisting trap
+    pinned as the semantics it is."""
+    name, hname = f"transformer_cross{sfx}", f"transformer_cross_hoisted{sfx}"
+    ref = {n: lean_array(e) for n, e in by[f"transformer_window{sfx}"]["inputs"].items()}  # the mask fixtures' inputs
+    fx, hx = by[name], by[hname]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    hin = {n: lean_array(e) for n, e in hx["inputs"].items()}
+    new_inputs = {"W_Qc", "W_Kc", "W_Vc", "W_Oc", "Mem", "Gc", "Scx"}
+    assert sorted(fin) == sorted(set(ref) | new_inputs) and sorted(hin) == sorted(fin), (sorted(fin), sorted(hin), sorted(ref))
+    # plan: the cross keys and values are two plain pre-scan tables, then ONE scan record with 2 steps; exactly H, Kc, Vc are exported
+    for n_, f_ in ((name, fx), (hname, hx)):
+        kinds = [n.get("kind", "assign") for n in f_["plan"]["nodes"]]
+        scans = [n for n in f_["plan"]["nodes"] if n.get("kind") == "scan"]
+        assert kinds == ["assign", "assign", "scan"] and scans[0]["step_count"] == 2, (n_, kinds)
+        assert sorted(m for m, _ in f_["plan"]["materialized"]) == ["H", "Kc", "Vc"], (n_, f_["plan"]["materialized"])
+    # every input other than the head weights, the memory, the cross gains and the scales is bitwise the mask fixtures'
+    for n in ref:
+        if n not in ("W_Q", "W_K", "W_V", "W_O", "Sc"):
+            assert np.array_equal(bits(fin[n]), bits(ref[n])) and np.array_equal(bits(hin[n]), bits(ref[n])), (name, "input differs from the mask fixtures'", n)
+    n_q, n_t, n_m = fin["X"].shape[0], fin["Mem"].shape[0], fin["X"].shape[1]
+    n_h, n_k, n_j = fin["W_Q"].shape[1], fin["W_Q"].shape[2], fin["W_Qc"].shape[2]
+    # q (= s), t, h, k, j, m are pairwise distinct, so no axis-order bug can hide behind equal extents on S, Sx, K, Kc, W_O, W_Oc, Ac
+    assert len({n_q, n_t, n_h, n_k, n_j, n_m}) == 6 and fin["Mem"].shape == (n_t, n_m), (n_q, n_t, n_h, n_k, n_j, n_m)
+    shapes = {"W_Q": (3, n_h, n_k, n_m), "W_K": (3, n_h, n_k, n_m), "W_V": (3, n_h, n_k, n_m), "W_O": (3, n_m, n_h, n_k),
+              "W_Qc": (3, n_h, n_j, n_m), "W_Kc": (3, n_h, n_j, n_m), "W_Vc": (3, n_h, n_j, n_m), "W_Oc": (3, n_m, n_h, n_j), "Gc": (3, n_m)}
+    for w, shp in shapes.items():
+        assert fin[w].shape == hin[w].shape == shp, (w, fin[w].shape, shp)
+    # the scales are 1 / sqrt(head width), from the input shapes (not from the numpy model that reads the exported value)
+    tol = 1e-6 if _DT == "float32" else 1e-14
+    assert fin["Sc"].shape == () and np.isclose(float(fin["Sc"]), n_k ** -0.5, rtol=tol), fin["Sc"]
+    assert fin["Scx"].shape == () and np.isclose(float(fin["Scx"]), n_j ** -0.5, rtol=tol), fin["Scx"]
+    assert np.array_equal(bits(fin["Sc"]), bits(hin["Sc"])) and np.array_equal(bits(fin["Scx"]), bits(hin["Scx"]))
+    # layer-2 slices are NaN in every stack of the cross fixture (a step reading past layer 1 would turn every output NaN), layers 0, 1
+    # finite and distinct; the hoisted fixture has the same stacks except FINITE layer-2 key and value cross weights (layers 0, 1 bitwise equal)
+    for w in CROSS_STACKS:
+        a = fin[w]
+        assert a.shape[0] == 3 and np.all(np.isnan(a[2])) and np.all(np.isfinite(a[:2])) and not np.array_equal(a[0], a[1]), (name, w)
+        if w in ("W_Kc", "W_Vc"):
+            b = hin[w]
+            assert np.all(np.isfinite(b)) and np.array_equal(bits(b[:2]), bits(a[:2])), (hname, w)
+            assert not np.array_equal(b[2], b[0]) and not np.array_equal(b[2], b[1]), (hname, w, "layer 2 repeats a layer")
+        else:
+            assert np.array_equal(bits(hin[w]), bits(a)), (hname, w, "differs from the cross fixture's")
+    # ---- transformer_cross: value pin on Lean, eager and jit
+    layers = np_cross_transformer(fin)
+    want = np_state(fin, layers)
+    kc_want = np.einsum("lhjm,tm->thjl", fin["W_Kc"], fin["Mem"])  # NaN in layer 2 (from the NaN weight slice)
+    vc_want = np.einsum("lhjm,tm->thjl", fin["W_Vc"], fin["Mem"])
+    assert kc_want.shape == (n_t, n_h, n_j, 3) and np.all(np.isnan(kc_want[..., 2])) and np.all(np.isfinite(kc_want[..., :2]))
+    # the cross block is real: the two layers' cross attention is not uniform (a uniform Sx would make the memory's keys irrelevant)
+    unif = [float(np.max(np.abs(o["Sx"] - 1.0 / n_t))) for o in layers]
+    assert all(u > 0.05 for u in unif), (name, "cross attention is near uniform", unif)
+
+    def gap(**kw):  # max |H - H of the model with the given change| over the state
+        inp = kw.pop("inp", fin)
+        return float(np.max(np.abs(want - np_state(inp, np_cross_transformer(inp, **kw)))))
+
+    # non-vacuity: the pin tells the cross block, EVERY memory row and each SINGLE memory row apart (permutation-invariance in t makes a
+    # reversal useless), and the external memory from the layer state
+    rng = np.random.default_rng(11)
+    gaps = {"no cross block": gap(cross=False),
+            "every memory row perturbed": gap(inp=dict(fin, Mem=fin["Mem"] + 0.5 * rng.standard_normal(fin["Mem"].shape))),
+            "cross K and V from the layer state": gap(memory="state")}
+    for what, g in gaps.items():
+        assert g > 1e-2, (name, "the cross-attention pin is indistinguishable from", what, g)
+    row_gaps = []
+    for t in range(n_t):
+        m_t = fin["Mem"].copy()
+        m_t[t] += 0.5
+        row_gaps.append(gap(inp=dict(fin, Mem=m_t)))
+    assert min(row_gaps) > 1e-3, (name, "a memory row is ignored", row_gaps)
+    views = {"lean": {n: lean_array(e) for n, e in fx["expected"].items()},
+             "eager": {n: np.asarray(v) for n, v in EAGER[name]["eager"].items()},
+             "jit": {n: np.asarray(v) for n, v in EAGER[name]["jit"].items()}}
+    for who, outs in views.items():
+        # exactly H, Kc, Vc are exported; H is finite (a step reading layer 2 would turn it NaN); the tables are NaN in layer 2 only
+        assert sorted(outs) == ["H", "Kc", "Vc"] and np.all(np.isfinite(outs["H"])), (name, who, sorted(outs))
+        assert outs["H"].shape == (n_q, n_m, 3) and outs["Kc"].shape == outs["Vc"].shape == (n_t, n_h, n_j, 3), (name, who)
+        check_np(name, who, "H", outs["H"], want)
+        check_np(name, who, "Kc", trim_nan_layer(outs["Kc"], name), kc_want[..., :2])
+        check_np(name, who, "Vc", trim_nan_layer(outs["Vc"], name), vc_want[..., :2])
+    # ---- transformer_cross_hoisted: the trap, pinned as the semantics it is
+    hviews = {"lean": {n: lean_array(e) for n, e in hx["expected"].items()},
+              "eager": {n: np.asarray(v) for n, v in EAGER[hname]["eager"].items()},
+              "jit": {n: np.asarray(v) for n, v in EAGER[hname]["jit"].items()}}
+    h_want = np_state(hin, np_cross_transformer(hin, hoisted=True))
+    per_layer_gap = float(np.max(np.abs(h_want - np_state(hin, np_cross_transformer(hin)))))
+    assert per_layer_gap > 1e-2, (hname, "hoisted cross-attention is indistinguishable from per-layer cross-attention", per_layer_gap)
+    kc_sum = np.einsum("lhjm,tm->thj", hin["W_Kc"], hin["Mem"])  # summed over ALL THREE layers, layer 2 included
+    vc_sum = np.einsum("lhjm,tm->thj", hin["W_Vc"], hin["Mem"])
+    kc_l01 = np.einsum("lhjm,tm->thj", hin["W_Kc"][:2], hin["Mem"])  # the per-layer reading's sum over layers 0, 1 only
+    assert float(np.max(np.abs(kc_sum - kc_l01))) > 1e-2, (hname, "layer 2 does not contribute to the summed table")
+    for who, outs in hviews.items():
+        assert sorted(outs) == ["H", "Kc", "Vc"] and all(np.all(np.isfinite(v)) for v in outs.values()), (hname, who, sorted(outs))
+        assert outs["H"].shape == (n_q, n_m, 3) and outs["Kc"].shape == outs["Vc"].shape == (n_t, n_h, n_j), (hname, who, outs["Kc"].shape)
+        check_np(hname, who, "H", outs["H"], h_want)
+        check_np(hname, who, "Kc", outs["Kc"], kc_sum)
+        check_np(hname, who, "Vc", outs["Vc"], vc_sum)
+    print(f"cross{sfx}: q=s={n_q}, t={n_t}, h={n_h}, k={n_k}, j={n_j}, m={n_m} pairwise distinct; each plan = 2 plain pre-scan tables then ONE scan "
+          f"record with 2 steps, exactly H, Kc, Vc exported; inputs bitwise the mask fixtures' except the head weights, Mem, Gc, Scx and the "
+          f"scale; layer-2 slices NaN in all 13 stacks; H layers 0, 1, 2 and Kc, Vc layers 0, 1 == numpy decoder-layer model (English "
+          f"definition) on Lean, eager and jit, Kc and Vc NaN in layer 2 only; numpy H differs from "
+          f"{', '.join(f'{w} by {g:.3f}' for w, g in gaps.items())}; a single memory row moves H by {min(row_gaps):.3f} to {max(row_gaps):.3f}; "
+          f"cross attention is not uniform (max deviation per layer {', '.join(f'{u:.3f}' for u in unif)}); HOISTED form (Kc[t, h, j], no "
+          f"layer axis): Kc, Vc have no layer axis and equal the weights SUMMED over all three layers, H == numpy model with those tables and "
+          f"differs from per-layer cross-attention by {per_layer_gap:.3f}")
+    for n_ in (name, hname):
+        print(f"{n_}: per-output measured difference vs numpy and vs Lean:")
+        print_np_stats(n_)
+        sc_err = NUM_STATS[(n_, "H")][0]
+        print(f"  H headroom to MODEL_TOL: {MODEL_TOL[_DT] / max(sc_err, 1e-300):.1f}x (observed {sc_err:.3e} of {MODEL_TOL[_DT]:.0e})")
+        for n in sorted(n for fx_, n in OUT_STATS if fx_ == n_):
+            rel, ab, ex, tot = OUT_STATS[(n_, n)]
+            print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+
+def cross_grad_pins(by: dict, sfx: str) -> None:
+    """Gradient pins of `transformer_cross` (the cross-attention scan): `jax.grad` of `L = sum(C * H[:, :, 2])` through the emitted plan
+    (two pre-scan tables, then the `lax.scan`), over EVERY float input INCLUDING the external memory `Mem`, eager and jit, against (b) the
+    autodiff of a pure-JAX decoder layer written from the definition (no plan, no scan, carrier dtype) and (c) central finite differences of
+    `np_cross_transformer` along random directions. Layer-2 weight slices (never read) get exactly zero gradient; the `Mem` gradient is finite,
+    non-trivial and nonzero in every memory row. The inputs are the cross fixture's with the layer-2 key/value cross weights taken FINITE
+    from the hoisted fixture (layers 0, 1 bitwise the same): on the NaN-stack inputs the `Mem` gradient is NaN in every entry, because
+    `dMem = sum_l dKc[..., l] . W_Kc[l]` multiplies the exactly-zero layer-2 cotangent by the NaN layer-2 weights (0 * NaN); that is pinned
+    below as what it is (a property of the NaN-sentinel stacks, not of the plan) and the finite-layer-2 inputs are what the pins differentiate."""
+    name = f"transformer_cross{sfx}"
+    fx, hx = by[name], by[f"transformer_cross_hoisted{sfx}"]
+    nan_in = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    hin = {n: lean_array(e) for n, e in hx["inputs"].items()}
+    sin = dict(nan_in, W_Kc=hin["W_Kc"], W_Vc=hin["W_Vc"])
+    n_q = sin["X"].shape[0]
+    C = np.sin(1.0 + np.arange(n_q * 4)).reshape(n_q, 4).astype(NDT)
+
+    def loss_plan(inp):
+        return jnp.sum(C * rt.run_named(fx["plan"], inp, JDT)["H"][:, :, 2])
+
+    def loss_hand(inp):
+        h, tril = inp["X"], jnp.tril(jnp.ones((n_q, n_q), dtype=bool))
+        rms = lambda x: x / jnp.sqrt(jnp.einsum("qm,qm,m->q", x, x, inp["Inv"]) + inp["Eps"])[:, None]
+        for l in range(2):
+            n1 = rms(h) * inp["G1"][l]
+            q = jnp.einsum("hkm,qm->qhk", inp["W_Q"][l], n1)
+            k = jnp.einsum("hkm,sm->shk", inp["W_K"][l], n1)
+            v = jnp.einsum("hkm,sm->shk", inp["W_V"][l], n1)
+            s = jax.nn.softmax(jnp.where(tril[None], jnp.einsum("qhk,shk->hqs", q, k) * inp["Sc"], -jnp.inf), axis=-1)
+            r1 = h + jnp.einsum("mhk,qhk->qm", inp["W_O"][l], jnp.einsum("hqs,shk->qhk", s, v))
+            qc = jnp.einsum("hjm,qm->qhj", inp["W_Qc"][l], rms(r1) * inp["Gc"][l])
+            kc = jnp.einsum("hjm,tm->thj", inp["W_Kc"][l], inp["Mem"])
+            vc = jnp.einsum("hjm,tm->thj", inp["W_Vc"][l], inp["Mem"])
+            sx = jax.nn.softmax(jnp.einsum("qhj,thj->hqt", qc, kc) * inp["Scx"], axis=-1)  # UNMASKED: every memory row is attended
+            r2 = r1 + jnp.einsum("mhj,qhj->qm", inp["W_Oc"][l], jnp.einsum("hqt,thj->qhj", sx, vc))
+            x = jnp.einsum("dm,qm->qd", inp["W_in"][l], rms(r2) * inp["G2"][l])
+            f = 0.5 * x * (1.0 + jnp.tanh(0.7978845608028654 * (x + 0.044715 * x ** 3)))
+            h = r2 + jnp.einsum("md,qd->qm", inp["W_out"][l], f)
+        return jnp.sum(C * h)
+
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    jin = {n: jnp.asarray(a) for n, a in sin.items()}
+    grads = {"eager": jax.grad(loss_plan)(jin), "jit": jax.jit(jax.grad(loss_plan))(jin)}
+    g_hand = jax.grad(loss_hand)(jin)
+    err = {}
+    for who, g in grads.items():
+        assert sorted(g) == sorted(sin) and "Mem" in g, (name, who, sorted(g))
+        assert all(np.all(np.isfinite(np.asarray(v))) and np.asarray(v).dtype == NDT for v in g.values()), (name, who, "gradient not finite")
+        for w in CROSS_STACKS:
+            gw = np.asarray(g[w])
+            if w in ("W_Kc", "W_Vc"):  # layer 2 is finite in these inputs, but never read: still exactly zero
+                assert sin[w].shape[0] == 3 and np.all(np.isfinite(sin[w]))
+            assert np.all(gw[2] == 0), (name, "layer-2 weight slice received gradient", who, w)
+            assert all(float(np.max(np.abs(gw[l]))) > 1e-3 for l in (0, 1)), (name, "trivial gradient", who, w)
+            assert float(np.max(np.abs(gw[0] - gw[1]))) > 1e-2, (name, "layers 0 and 1 have alike gradients", who, w)
+        gm = np.asarray(g["Mem"])  # the external memory: a real gradient in EVERY row (no memory position is ignored)
+        assert float(np.max(np.abs(gm))) > 1e-3 and np.all(np.max(np.abs(gm), axis=1) > 0), (name, "memory gradient is trivial", who, gm.tolist())
+        for n in sin:
+            e_ref = scaled(g[n], g_hand[n])
+            assert e_ref < GRAD_TOL[_DT], (f"gradient pin: {name} vs pure-JAX model", who, n, e_ref)
+            err[n] = max(err.get(n, 0.0), e_ref)
+    gq = np.asarray(grads["eager"]["W_Qc"])
+    assert scaled(gq * NDT(1.001), gq) >= GRAD_TOL[_DT], (name, "gradient tolerance accepts a 1e-3 perturbation: vacuous")
+    # the NaN-sentinel stacks: with the fixture's own NaN layer-2 key/value weights the Mem gradient is NaN everywhere (0 * NaN) while
+    # every WEIGHT gradient stays finite with an exactly-zero layer-2 slice; finite layer-2 weights (above) remove it
+    nan_g = jax.grad(loss_plan)({n: jnp.asarray(a) for n, a in nan_in.items()})
+    assert np.all(np.isnan(np.asarray(nan_g["Mem"]))), (name, "Mem gradient on the NaN-stack inputs is expected NaN everywhere")
+    assert all(np.all(np.isfinite(np.asarray(v))) for n, v in nan_g.items() if n != "Mem"), (name, "a non-Mem gradient is non-finite")
+    # (c) directional derivatives against central differences of the numpy model (3 fixed directions over all inputs incl. Mem; zero on layer 2)
+    base = {n: a.astype(np.float64) for n, a in sin.items()}
+    rng = np.random.default_rng(7)
+    fd_err, dots = 0.0, []
+    loss_np = lambda inp: float(np.sum(C.astype(np.float64) * np_state(inp, np_cross_transformer(inp))[:, :, 2]))
+    for _ in range(3):
+        d = {n: rng.standard_normal(a.shape) for n, a in base.items()}
+        for w in CROSS_STACKS:
+            d[w][2] = 0.0
+        eps = 1e-6
+        fd = (loss_np({n: base[n] + eps * d[n] for n in base}) - loss_np({n: base[n] - eps * d[n] for n in base})) / (2 * eps)
+        for who, g in grads.items():
+            dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * d[n]) for n in base))
+            assert abs(dot) > 1e-2, (name, "finite-difference direction is trivial", dot)
+            fd_err = max(fd_err, abs(fd - dot) / max(1.0, abs(dot)))
+        dots.append(dot)
+    assert fd_err < GRAD_FD_TOL[_DT], (f"gradient pin: {name} directional derivative vs finite differences of the numpy model", fd_err)
+    gm = np.asarray(grads["eager"]["Mem"])
+    print(f"gradients of {name} (eager and jit, all {len(sin)} float inputs incl. Mem, layer-2 K/V cross weights finite): finite, layer-2 weight "
+          f"slices exactly zero, layers 0 and 1 non-trivial and distinct; Mem gradient nonzero in every row (max abs {float(np.max(np.abs(gm))):.3f}, "
+          f"min row max {float(np.min(np.max(np.abs(gm), axis=1))):.3f}); == autodiff of a pure-JAX decoder layer (max scaled {max(err.values()):.3e}, "
+          f"headroom {GRAD_TOL[_DT] / max(max(err.values()), 1e-300):.1f}x) and directional derivatives == central differences of the float64 numpy "
+          f"model (|dot| {min(abs(x) for x in dots):.2f} to {max(abs(x) for x in dots):.2f}, max scaled {fd_err:.3e}, headroom "
+          f"{GRAD_FD_TOL[_DT] / max(fd_err, 1e-300):.1f}x); on the NaN-stack inputs the Mem gradient is NaN in every entry (0 * NaN), the weight gradients finite")
 
 
 def grad_fixture_pins(by: dict, sfx: str) -> None:
@@ -1169,11 +1455,18 @@ def main() -> None:
     # see `gqa_fixture_pins`.
     gqa_fixture_pins(by, sfx)
 
+    # CROSS-ATTENTION to an external memory (unequal extents, unmasked) inside the layer scan, and the hoisting trap of the naive
+    # program: see `cross_fixture_pins`.
+    cross_fixture_pins(by, sfx)
+
     # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
     grad_fixture_pins(by, sfx)
 
     # GRADIENTS through the other scan fixtures (MQA, masks, GQA): see `fixture_grad_pins`.
     fixture_grad_pins(by, sfx)
+
+    # GRADIENTS through the cross-attention scan, incl. the external memory: see `cross_grad_pins`.
+    cross_grad_pins(by, sfx)
 
     # POST-SCAN ROLE: `S[j, l+1] := S[j, l] . G[j]` (closed form `S = X * G**l`) and six statements nothing in
     # the recurrence reads, so each is a plain node AFTER the one scan node and `l` is an ordinary axis in it.
