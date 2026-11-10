@@ -691,8 +691,8 @@ input shapes), so no axis-order bug can hide behind equal extents on `S`, `K`, `
 pinned (flat == split on Lean, eager and jit, in both precisions). The numpy model with K/V repeated per query head (`h // R` written in Python) agrees with
 Lean to ~1e-15: pinned (value pin). A wrong group map or a shared group moves the numpy state by O(1): pinned (non-vacuity). Division does not parse: not pinned
 (no refusal fixture; the parse error is a grammar fact). The multi-axis affine read is solved as an EXACT span, so `Q[q, R * g + r, k]` is accepted only with stride
-R; a span-changing variant is refused at prepare ("affine size system inconsistent"), which is not a mutant kill. NOT attempted (parked): the flat-OUTPUT form
-`AttnOut[q, 2 * g + r, k] := ...` inside a scan (a scatter node in a scan, a known gap), and gradients through these plans.
+R; a span-changing variant is refused at prepare ("affine size system inconsistent"), which is not a mutant kill. Probed afterwards (2026-11-10, section 17): the flat-OUTPUT form
+`AttnOut[q, 2 * g + r, k] := ...` inside a scan is REFUSED at prepare (`multiAxisScatterLhs`); gradients through these plans were pinned in section 16.
 
 **Weights.** `gqaGen seed n = 0.6 * sin (seed + 1.7 i)`, stacked by `scanStack` (layer 0, derived layer 1, NaN layer 2); ONE definition of each stack shared by
 all three programs (`[g, r, k, m]` and `[h, k, m]` are one storage order for `h = 2 * g + r`, so the flat and split programs read the same bytes; the multi-head
@@ -739,7 +739,7 @@ exercised by a dedicated mutant (the split and mha programs and the binary32 sib
 **Note.** `AT11 gqa` in `test/Eval/Portfolio/AttentionTest.lean` is actually the head-free (MQA) case; it was not edited.
 
 **Parked** (cost in dispatches): `/` in index expressions as an elaboration-time desugaring that splits the axis (decided 2026-11-09: not now; ~1 design pass plus a probe; it
-covers literal divisors of a single axis with divisible extents only); the flat-OUTPUT form `AttnOut[q, 2 * g + r, k] := ...` inside a scan (probably refused; record the error; ~1 probe);
+covers literal divisors of a single axis with divisible extents only); the flat-OUTPUT form `AttnOut[q, 2 * g + r, k] := ...` inside a scan (PROBED, refused at prepare: section 17);
 depth (item 6a). (Gradient pins for the MQA, mask and GQA fixtures and the split/mha/binary32 mutants: DONE, section 16.)
 
 ## 16. Gradient pins for the MQA, mask and GQA fixtures; mutants for the GQA split, mha and binary32 programs (2026-11-10)
@@ -800,3 +800,25 @@ two runtime rows above were not run either: the same softmax and gather code ser
 **Parked** (cost in dispatches): gradients through `transformer_head`, scatter nodes and `scatter_mode="fast"` (section 14, unchanged); a GQA-specific gradient mutant would need a runtime path that does not exist
 (nothing to do); assert flat == split bitwise on the Lean view too (observed 60/60, not asserted; ~0.1); binary32 gradient pins have no mutation evidence of their own (same code, looser tolerance, observed passing); promoting the runtime
 gradient mutants to the Python manifest (~1, section 14).
+
+## 17. Probe: the flat-output form of grouped-query attention inside a scan (2026-11-10)
+
+Question parked in section 15: does `AttnOut[q, 2 * g + r, k] := S[g, r, q, s] · V[s, g, k]` (an affine WRITE onto a flat head axis) work INSIDE the layer scan? **Answer: no, it is refused at prepare.**
+Scratch probe, nothing committed or changed: a copy of `EvalPlanNonlinSmoke.lean` with `gqaProg`'s `AttnOut` line replaced by the flat-output form (and `Attn` reading `AttnOut[q, h, k]` plainly), run
+stage by stage on the binary64 inputs `gqaFlatEnv64`.
+
+| Stage | Result |
+|---|---|
+| source elaboration and `compileToScheduled` | ok |
+| `prepareEvalPlan` | **REFUSED**: `LeanNCD.Eval.Plan.CapabilityError.multiAxisScatterLhs "AttnOut: affine LHS slot"` |
+| Dense run, JAX render | not reached |
+
+**Cause.** `checkScatterAffineExpr` in `LeanNCD/Eval/Plan/Compile.lean` classifies a left-hand affine slot with `scatterAffineClass`; the scan-block preflight calls it with `multiAxisAdmitted := false`,
+and a slot that names more than one source axis (`2 * g + r` names `g` and `r`) is refused. The top level admits it (the earlier probes of `Oo[q, 2 * g + r, k] := ...` outside a scan ran). The source gives the
+reason (F3-b): a multi-axis row can collide inside one statement, the checked scan path cannot place a colliding scan-local write yet, while the reference already sums it (F3-a). The check is a SYNTACTIC
+class test, not an injectivity test: with stride R = 2 over r < 2 the map is injective, so this refusal is conservative for this program.
+
+**Consequences.** GQA needs no workaround: the flat-INPUT read (`transformer_gqa`) and the split form (`transformer_gqa_split`) are both admitted and pinned. For the progression, a scatter-ADD over
+edges (graph network) is available at the top level (outside a scan) and only scan-local multi-axis or colliding writes are refused. NOT done: any workaround, and any change to the checker. What lifting
+the refusal would take is unestimated and a different process weight (a Lean checker change, then whether the JAX scan step can run a scatter node, which was not probed because prepare refuses first;
+one natural design is an injectivity check at prepare, where the extents are known). It is the user's call.
