@@ -5,7 +5,8 @@
 [Prototype and results](categorical_tensor_logic_lean_prototype.md) |
 [Witness-category proof and release evidence](categorical_witness_semantics_record.md) |
 [Source-functor completion and release evidence](categorical_source_functor_record.md) |
-[Ranked execution proof and release evidence](categorical_ranked_execution_record.md)
+[Ranked execution proof and release evidence](categorical_ranked_execution_record.md) |
+[Operational associativity and release evidence](categorical_operational_associativity_record.md)
 
 ## Summary
 
@@ -188,6 +189,7 @@ Lean notation.
   - [6.9. Kernel-checked model gluing and restricted denotation](#69-kernel-checked-model-gluing-and-restricted-denotation)
   - [6.10. Kernel-checked categorical witness semantics](#610-kernel-checked-categorical-witness-semantics)
   - [6.11. Kernel-checked ranked operational phases](#611-kernel-checked-ranked-operational-phases)
+  - [6.12. Transport-aware histories and operational associativity](#612-transport-aware-histories-and-operational-associativity)
 - [7. St/Br, indexed arrays, and open diagrams](#7-stbr-indexed-arrays-and-open-diagrams)
   - [7.1. St/Br remains a serious syntax candidate](#71-stbr-remains-a-serious-syntax-candidate)
   - [7.2. Naperian representation connects compact syntax to values](#72-naperian-representation-connects-compact-syntax-to-values)
@@ -196,7 +198,7 @@ Lean notation.
 - [8. Where Turi-Plotkin and implementation refinement fit](#8-where-turi-plotkin-and-implementation-refinement-fit)
 - [9. Proof status and remaining targets](#9-proof-status-and-remaining-targets)
   - [9.1. Closed-graph/reference correspondence: conditional proof](#91-closed-graphreference-correspondence-conditional-proof)
-  - [9.2. Sealed composition: models and ranked execution](#92-sealed-composition-models-and-ranked-execution)
+  - [9.2. Sealed composition: models, ranked execution and histories](#92-sealed-composition-models-ranked-execution-and-histories)
   - [9.3. Why unrestricted partial-function composition is unsafe](#93-why-unrestricted-partial-function-composition-is-unsafe)
 - [10. Categorization roadmap and progress](#10-categorization-roadmap-and-progress)
   - [10.1. What each step buys us](#101-what-each-step-buys-us)
@@ -214,6 +216,7 @@ Lean notation.
   - [A.8. Restrict and glue complete-model witnesses](#a8-restrict-and-glue-complete-model-witnesses)
   - [A.9. Turn model witnesses into categorical semantics](#a9-turn-model-witnesses-into-categorical-semantics)
   - [A.10. Derive ranked operational composition](#a10-derive-ranked-operational-composition)
+  - [A.11. Compose full histories and prove operational associativity](#a11-compose-full-histories-and-prove-operational-associativity)
 - [Notation reference](#notation-reference)
 
 ## 1. Begin with the meaning that execution must preserve
@@ -813,6 +816,8 @@ nested coherence, restricted partial maps and completed release gates.
 | Witness observation checks and ten release mutation controls | Checked private values, strict absence, empty metadata, nonconstant transport and unequal nested UIDs discriminate the specified faults | Copied-map controls are separate from donor substitutions; generic proofs and a shared interpreter are not independent arithmetic oracles |
 | Certified source category and witness functor | Generated syntactic congruence, quotient category, genuine Mathlib functor, actual binary assembly and both nested-to-triple comparisons | Specified sealed matched-component/coordinate-wire presentation, not all Tensor Logic syntax, process laws or a faithfulness claim |
 | Source observation checks and ten controls | Five donor families retain nonconstant wires, empty presence/metadata, complete hidden stores, strict/total neighbours and distinct nested private identities; four generic parities | Seven test-copy/donor observation controls and three theorem-level donor substitutions, not independent model semantics or mutations of generic soundness proofs |
+| Ranked phases and structural operational associativity | Constructed ranks, shared-cut history composition and both actual nested default executions preserve whole metadata, ordered events, private states and full reference relations | Validated inputs and supplied local matches/ranks/boundaries; no process units, arbitrary scheduler equivalence or backend refinement |
+| Operational history acceptance and 32 release controls | All four leaf outcomes, collection order, nonconstant coordinates, guarded identities, empty presence and equal-final-value history distinctions are checked | Eleven observation/donor/graph controls and twenty-one live-proof controls, not 32 independent production-runner mutant kills or an independent arithmetic oracle |
 
 The correspondence record reports successful full builds and branch review.
 The executable modules
@@ -822,8 +827,9 @@ theorem and its strict/total instances depend only on `propext`,
 `Classical.choice`, and `Quot.sound`, the allowed standard Lean axioms.
 No new axiom, `sorry`, or unsafe proof shortcut was introduced.
 This is not an axiom audit of every unrelated repository component.
-The transport, static-composition, model-gluing and witness-category records report their full
-builds, final reviews, namespace audits and particular mutation controls.
+The transport, static-composition, model-gluing, witness-category, ranked-execution
+and [operational-associativity records](categorical_operational_associativity_record.md)
+report their full builds, final reviews, namespace audits and particular mutation controls.
 The original seven controls below are not the total across those later slices.
 
 The seven mutation controls deliberately introduced faults in collection,
@@ -992,16 +998,18 @@ Contract acceptance alone cannot establish this source-to-contract match.
 For compatible composition, Section 6.8 derives the composite obligation
 from the supplied local matches instead of requiring a new whole-match proof.
 
-The important distinction is now **proved correspondence, static match
-construction and categorical complete-model semantics versus open process
-laws and broader source interpretations**. The proved results are general within their stated
+The important distinction is now **proved correspondence, categorical
+complete-model semantics and associative ranked execution versus remaining
+process units, broader source interpretations and backend refinement**.
+The proved results are general within their stated
 premises, not limited to the tested examples. The witness bijection needs no
 uniqueness; the denotation law explicitly needs at-most-one complete models
 for both components. The target category laws and nested witness coherence
 are proved separately in Section 6.10, together with source laws and an actual
 functor for the specified sealed matched-component/wire presentation.
-Automatic leaf-contract inference, broader source interpretations and ranked
-phase/projection results remain unestablished.
+Ranked phase/projection results and transport-aware history composition are
+proved separately in Sections 6.11-6.12. Automatic leaf-contract inference,
+broader source interpretations and process units remain unestablished.
 
 Any priority pair satisfying the theorem's ordered matching condition is
 covered. Equivalence across different priorities, arbitrary program
@@ -1091,7 +1099,8 @@ Expression helpers remain shared; this is not an independent numerical oracle.
 No rank is required for static construction or correspondence. Appending
 upstream priorities does not by itself prove that all upstream work finishes
 before any downstream action. The separate ranked phase/projection theorem
-is now proved in Section 6.11; process associativity/identities remain open.
+is now proved in Section 6.11; Section 6.12 adds operational associativity
+under full-history observations. Process identities remain open.
 Complete-model gluing
 and restricted denotation are the separate proved results in Section 6.9;
 Section 10 records the proved witness-span category and denotational coherence.
@@ -1409,6 +1418,16 @@ outside this result. See the
 acceptance observations and separately classified runtime/observation versus
 live-proof controls.
 
+The completed release retains 35 kernel examples, ten executable check groups
+over nine matched triples and one graph-only control, and fifteen full-proposition
+theorem instances. Its eleven observation/donor/graph controls and twenty-one
+live-proof controls all passed with intended failures, restored builds and
+byte-identical source restoration. Both whole-branch review lenses were clean;
+the integrated `LeanNCD Tests IndexedExecutionExperiment` build passed 8,942 jobs.
+These are delivery and discrimination evidence, not premises of the generic
+theorems or 32 independent production-runner defect kills. Appendix A.11 explains
+the proof's observation relation, shared-cut algebra and actual-run connection.
+
 ## 7. St/Br, indexed arrays, and open diagrams
 
 The categorical perspectives address different layers and different
@@ -1425,6 +1444,7 @@ notions of equivalence:
 | Open graphs, ACSet interfaces, and network semantics | Explicit boundary matching and structural composition of presentations | Choosing the correct boundary or certifying a complete writer family |
 | Complete-model relations and witness spans | Proved witness category and coherent component composition, including multiple or absent models | An execution policy or unconditional composition of unique-model partial functions |
 | Certified matched-component source presentation | A quotient source category and genuine functor to complete-witness spans, including actual constructor assembly and nested transports | General St/Br or monoidal interpretation, event-sensitive process units, faithfulness or backend refinement |
+| Transport-aware execution histories | Associative sealed ranked composition preserving ordered events, all private snapshots, failure data and whole interfaces | An event-free core identity, arbitrary event reordering, a process category or physical implementation refinement |
 | Temporal iteration and scans | Finite causal dependencies and independent batching outside the time axis | Independent execution along time or unrestricted feedback solving |
 | Turi-Plotkin and extensions | A route to constructor/behaviour compatibility and observation-sensitive compositionality | The required syntax, rule law, and hypotheses without further work |
 | PROP interpretations, parameters, and refinement | Model interpretation, parameter handling, and implementation correctness targets | Concrete kernel progress, memory safety, or numerical guarantees from value equality alone |
@@ -1558,8 +1578,8 @@ Concretely, choose an endofunctor describing terminal observations or
 finite sets of labelled successor states. A coalgebra structure map
 assigns each execution state that next-step information. This packages
 the transition rules, including scheduling alternatives, without
-changing their meaning. No generic coalgebra instance or
-constructor-compatibility theorem is implemented by the prototype.
+changing their meaning. No generic coalgebra instance or Turi-Plotkin
+distributive law is supplied by the prototype.
 
 An **endofunctor algebra** is one structure arrow
 $\alpha:FA\longrightarrow A$, for a chosen endofunctor $F$ and carrier
@@ -1578,6 +1598,14 @@ A process interpretation cannot automatically descend through every
 equation valid only for final values. Such transformations may instead
 require a coarser observation policy or a refinement witness.
 
+The ranked sealed interpretation now makes this observation choice explicit.
+Section 6.12 proves compatible composition and actual reassociation under
+transport-only equality of full histories, rather than a quotient that hides
+private work or reorders events. This discharges a concrete constructor-behaviour
+compatibility obligation directly from the runner and shared-cut algebra.
+It does not supply a general Turi-Plotkin rule law or show that arbitrary
+value-preserving schedules and rewrites preserve these stronger observations.
+
 For physical implementations, the existing
 [simulation with stuttering](tensor_logic_semantics_part_v.md#312-initial-states-and-successful-step-simulation)
 is still the right direction. A batched command can match many logical
@@ -1586,9 +1614,9 @@ failure matching, and output representation remain separate obligations.
 Neither a value-preserving functor nor a reparameterisation equation
 alone proves safe memory reuse or concrete progress.
 
-Thus Turi-Plotkin is a possible way to organise a subsequent
-compositionality theorem. A finite-graph interpretation followed by
-simulation may be the simpler route for the current static fragment.
+Thus Turi-Plotkin is a possible way to organise broader constructor compatibility
+beyond the proved sealed sequencing law. A finite-graph/history interpretation
+followed by simulation may be the simpler route for the current static fragment.
 
 Extensions for weak or trace observations can help compare executions
 that hide different amounts of internal work. They must be applied to
@@ -1668,7 +1696,7 @@ implementation inventory and audit. The
 [design brief](categorical_tensor_logic_theorem_brief.md) explains the
 original proof obligations; Appendix A gives the completed argument.
 
-### 9.2. Sealed composition: models and ranked execution
+### 9.2. Sealed composition: models, ranked execution and histories
 
 Let $P$ and $Q$ be upstream and downstream matched components, respectively,
 in this finite exact-rational profile.
@@ -1777,6 +1805,17 @@ Without ranking, first-enabled selection can still skip blocked private
 upstream work; static sealing and model gluing alone are not runtime
 completion.
 
+**Transport-aware operational associativity: proved.** For three matched
+ranked components and both original boundaries, the two actual nested default
+executions agree after explicit coherent leaf-owned transport. The comparison
+retains ordered events, every private snapshot and ledger prefix, terminal
+failure identity and whole-interface metadata. Its reusable history algebra
+is connected to actual binary phases before structural reassociation is proved;
+execution agreement and successful completion are not assumptions.
+The actual reference executions retain pending occurrences and accumulators
+through the full existing relation. Both defaults use `nA+nB+nC+1`.
+See Section 6.12 and Appendix A.11; this is not a process-unit theorem.
+
 Denotational associativity is now proved through compatible complete-model
 triples and explicit interface reindexing. The semantic target has identity
 spans; the specified source presentation separately supplies administrative
@@ -1821,8 +1860,10 @@ agree at the shared boundary and retains the witnesses.
 The witness-level composition is now packaged as a span-based categorical
 interpretation for the specified scoped profile, with a genuine functor from
 the certified matched-component/coordinate-wire source category. Target and
-source category laws and actual nested denotational coherence are proved;
-relating them to process observations remains separate work.
+source category laws and actual nested denotational coherence are proved.
+Section 6.12 separately supplies full-history operational associativity for
+ranked executions of the same components. It does not turn span isomorphism
+or the witness functor into an event-sensitive process equivalence.
 Unlike an output-only relation, it does not identify different internal
 models prematurely.
 
@@ -2539,6 +2580,124 @@ associativity theorems in Section 6.12 reuse this result; they do not follow
 from the witness-span quotient or from this binary phase result alone.
 Process units remain open.
 
+### A.11. Compose full histories and prove operational associativity
+
+The binary phase theorem does not by itself give a compositional observation
+theory. The additional proof first fixes what a history retains, then proves
+its algebra, and finally connects that algebra to both actual constructors.
+
+1. **Retain the complete observation, not just the output.**
+   [`History`](../../leanncd/experiments/indexed_execution/IndexedOperationalHistory.lean)
+   records a successful terminal state, an ordinary event with its
+   pre-state and remaining history, or a terminal failure with its event,
+   failing tag and state. For graph histories, each state contains the entire
+   available store and ordered produced ledger. An undefined event has its
+   existing terminal pre-state, not an additional failed-state snapshot.
+   `GraphHistory.toRun_injective` proves that this representation loses none
+   of the actual run's events, snapshots or terminal information.
+
+   Write $\mathcal O_P=(m_P,h_P)$ for the metadata and history. Metadata retains
+   the whole input/output ports, roles, validated Option-valued external input
+   and supplied boundary/domain adapters. Empty tensor presence therefore
+   survives even when no address can witness it. For an explicit coherent
+   transport $\theta$, the implemented comparison has the form
+
+   $$
+   \mathcal O_L\sim_\theta\mathcal O_R
+   \quad\Longleftrightarrow\quad
+   \operatorname{MetadataAgrees}_\theta(m_L,m_R)
+   \ \land\ h_R=\theta\cdot h_L.
+   $$
+
+   `CompleteObservation.Agrees` supplies this relation, with
+   [concrete identity, inverse, composition and congruence laws](../../leanncd/experiments/indexed_execution/IndexedOperationalObservationLaws.lean).
+   The actual reassociation transport
+   is fixed by leaf ownership, tensor/domain maps and admitted occurrences;
+   it is not chosen by searching for a numeric renaming that makes runs agree.
+   Tags, capabilities and publication addresses transport explicitly, while
+   values, event order and distinct contributions are retained.
+
+2. **Splice only at a compatible full boundary state.**
+   After upstream success, downstream input comes from `boundaryInput` of the
+   completed whole store, equivalently `boundaryFromOutput` of its whole output.
+   Completed private values and the ordered ledger remain throughout the suffix.
+   If the prefix ends at state $s$ and the suffix begins at that same full state,
+   shared-cut splicing $\star$ satisfies
+
+   $$
+   \begin{aligned}
+   \operatorname{states}(h)&=\mathrm{pre}\mathbin{+\!\!+}[s],\\
+   \operatorname{states}(h\star k)&=\mathrm{pre}\mathbin{+\!\!+}
+     \operatorname{states}(k),\\
+   \operatorname{events}(h\star k)&=\operatorname{events}(h)
+     \mathbin{+\!\!+}\operatorname{events}(k).
+   \end{aligned}
+   $$
+
+   The suffix owns the single shared snapshot; no wire event or duplicated
+   cut is inserted. Failure instead absorbs continuation without constructing
+   a completed boundary or a downstream history.
+   [`SharedSplice`](../../leanncd/experiments/indexed_execution/IndexedOperationalHistoryComposition.lean)
+   proves these
+   reusable laws. `BinaryHistory` supplies the component-specific structural
+   relation, full-state reconstruction and compatibility certificates.
+   `compose_history` derives a witness from `compose_default_phases`, and
+   `BinaryHistory.sound` validates every such witness, not just one chosen pair
+   of executions.
+
+3. **Prove the structural law in one common state/event space.**
+   Nested constructors allocate different identities. `state_A/B/C`,
+   `event_A/B/C` and `lift_A/B/C` transport their leaf histories into the right
+   constructor's full space. The state equations retain completed A/B private
+   stores and both ordered ledger prefixes during C; the input and boundary
+   squares preserve both original certified coordinate adapters.
+   When both joins are reached, the compatible histories satisfy
+
+   $$
+   (h_A\star h_B)\star h_C=h_A\star(h_B\star h_C).
+   $$
+
+   [`binary_associativity`](../../leanncd/experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean)
+   derives the shared-cut premises and applies
+   `SharedSplice.associative_eq` directly. Its A-failure case constructs no B/C
+   history or input; its B-failure case constructs no C history or input.
+   After both predecessors succeed, C may either fail or succeed. The proof
+   does not use a pre-assumed nested-run isomorphism or final-store agreement
+   as a substitute for this structural argument.
+
+4. **Instantiate the law on actual default executions.**
+   `actual_nested_histories` connects both structural trees to the existing
+   `leftBracket` and `rightBracket` `runChecked` executions. The supplied
+   premises are the three matched components, two original boundaries,
+   validated A input and three local rank certificates. Both nested ranks
+   are constructed. No model-existence, uniqueness, completion or execution-
+   agreement premise is added.
+   `nested_observations` additionally compares native whole-interface metadata.
+   The independent step-transport proof and accepted graph/reference
+   correspondence transfer the result to actual `Program.Executor.run`
+   and `referenceSnapshots`, retaining published values, pending occurrences,
+   accumulators and the graph's ordered ledger.
+
+   [`triple_phases`](../../leanncd/experiments/indexed_execution/IndexedOperationalRunsPhases.lean)
+   exposes failure in A, B or C, or all-success, with ordered
+   reached cuts and both original boundary inputs. Vacuous phases may share a
+   cut index; no positive-length phase is assumed. The actual graph step counts
+   give both default budgets as $n_A+n_B+n_C+1$. Malformed raw-input validation
+   order and arbitrary explicit debug fuel are not reassociated.
+
+The acceptance cases make the stronger observation visible: three successful
+private phases have twelve events and thirteen snapshots, whereas private
+failure in A/B/C has respectively three/seven/eleven events and the same number
+of snapshots. A graph-only reordered total case has identical final available
+values but different ledgers, event order and intermediate states. Output
+equality would identify those runs; the chosen history relation does not.
+
+These are associative operational composition laws, not a full process category
+or a backend refinement theorem. An event-free segment in the abstract history
+algebra does not construct an identity component of the core language. A core
+copy still adds events, and input-as-output aliases still violate
+`output_defined`; process units need a separate construction and justification.
+
 ## Notation reference
 
 Symbols are defined on introduction. This table collects the recurring
@@ -2586,6 +2745,10 @@ ones; it does not add assumptions beyond their definitions.
 | $J_P(t),J_Q(t)$ | Declared coordinate domains of tensor $t$ in the respective component |
 | $\rho_P,\rho_Q$ | Complete component-model witnesses |
 | $B_b(\rho_P)$ | Downstream input environment obtained by explicit boundary transport |
+| $m_P,h_P,\mathcal O_P$ | Whole metadata/adapters, operational history and complete observation of component $P$ |
+| $\theta,\mathcal O_L\sim_\theta\mathcal O_R$ | Explicit coherent metadata/address/identity transport and full observation agreement |
+| $h\star k$ | Compatible history splicing with one shared full-state boundary, or absorbing prefix failure |
+| $n_A,n_B,n_C$ | Standalone graph step counts used in the actual nested default budget |
 | $f_P,f_Q,f_{Q\circ_b P}$ | Unique-model partial input-output meanings for the respective programs |
 | $\operatorname{boundaryFromOutput}_b,\operatorname{liftOutput}_b$ | Boundary input and composite output transport for the fixed components and boundary |
 | $Q\circ_b P$ | Statically constructed sealed composite along boundary $b$ |
