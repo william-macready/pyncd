@@ -1,0 +1,263 @@
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -201,6 +201,8 @@
+          "IndexedOperationalHistory",
+          "IndexedOperationalObservationLaws",
+          "IndexedOperationalHistoryComposition",
++         "IndexedOperationalUnits",
++         "IndexedOperationalWireFrame",
+          "IndexedOperationalHistoryAssociativity",
+          "IndexedOperationalRuns",
+          "IndexedOperationalRunsPhases",
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedOperationalUnits.lean
+@@ -0,0 +1,157 @@
++import IndexedOperationalHistoryComposition
++import IndexedOperationalObservationLaws
++
++namespace IndexedOperationalUnits
++
++open IndexedOperationalHistory
++
++namespace History
++
++variable {S E F A B : Type*}
++
++def returning : IndexedOperationalHistory.History.Continuation S E F A A :=
++  ⟨fun s a => .done s a, fun _ _ => rfl⟩
++
++theorem done_bind (s : S) (a : A)
++    (k : S → A → IndexedOperationalHistory.History S E F B) :
++    (IndexedOperationalHistory.History.done s a).bind k = k s a := rfl
++
++theorem bind_done (h : IndexedOperationalHistory.History S E F A) :
++    h.bind (fun s a => .done s a) = h := by
++  induction h <;> simp_all [IndexedOperationalHistory.History.bind]
++
++theorem done_splice (s : S) (a : A)
++    (k : IndexedOperationalHistory.History.Continuation S E F A B) :
++    (IndexedOperationalHistory.History.done s a).splice k = k.run s a := rfl
++
++theorem splice_returning (h : IndexedOperationalHistory.History S E F A) :
++    h.splice returning = h := bind_done h
++
++theorem returning_shared (s : S) (a : A) :
++    ((returning (E := E) (F := F)).run s a).start = s := rfl
++
++theorem returning_states (s : S) (a : A) :
++    ((returning (E := E) (F := F)).run s a).states = [s] := rfl
++
++theorem returning_events (s : S) (a : A) :
++    ((returning (E := E) (F := F)).run s a).events = [] := rfl
++
++theorem returning_map {T D G C : Type*}
++    (s : S → T) (e : E → D) (f : F → G) (a : A → C) (x : S) (y : A) :
++    ((returning (E := E) (F := F)).run x y).map s e f a =
++      (returning (E := D) (F := G)).run (s x) (a y) := rfl
++
++theorem failure_bind (h : IndexedOperationalHistory.History S E F A)
++    (k : S → A → IndexedOperationalHistory.History S E F A)
++    {s : S} {f : F} (failed : h.finish = .error (s, f)) :
++    h.bind k = h := by
++  induction h with
++  | done => cases failed
++  | failed => rfl
++  | step s e tail ih =>
++      exact congrArg (IndexedOperationalHistory.History.step s e) (ih failed)
++
++theorem splice_normalization (h : IndexedOperationalHistory.History S E F A)
++    (k : IndexedOperationalHistory.History.Continuation S E F A B) :
++    (h.splice returning).splice k = h.splice k := by
++  rw [splice_returning]
++
++end History
++
++open IndexedOperationalHistory.History
++open IndexedOperationalHistory.Fixtures
++
++example : (first.splice History.returning).splice second = first.splice second := by
++  exact History.splice_normalization first second
++
++example : ((.done 0 () : IndexedOperationalHistory.History Nat Nat Nat Unit).splice
++    ⟨fun s _ => (first.map (fun x => s + x) id id id), fun _ _ => rfl⟩).events =
++      [10] := rfl
++
++example : (first.splice History.returning).states = [0, 1] := rfl
++example : (first.splice History.returning).states ≠ [0, 1, 1] := by decide
++
++example : (privateFailure.splice History.returning).events = [10, 11, 99] := rfl
++example : (privateFailure.splice History.returning).states = [0, 1, 2] := rfl
++example : (privateFailure.splice History.returning).finish = .error (2, 7) := rfl
++example : (privateFailure.splice second) = privateFailure :=
++  History.failure_bind privateFailure second.run rfl
++
++example : ((History.returning (E := Nat) (F := Nat)).run ledgerLeft ()).start.produced =
++    [(101, 1), (102, -1)] := rfl
++example : ((History.returning (E := Nat) (F := Nat)).run ledgerRight ()).start.produced =
++    [(102, -1), (101, 1)] := rfl
++example : ((History.returning (E := Nat) (F := Nat)).run privateAvailable ()).start.available
++    ⟨0, ()⟩ = some 42 := rfl
++example : ((History.returning (E := Nat) (F := Nat)).run privateAvailable ()).states =
++    [privateAvailable] := rfl
++
++example : ((History.returning (E := Nat) (F := Nat)).run privateAvailable ()).start.produced ≠
++    [] := by decide
++example : ((History.returning (E := Nat) (F := Nat)).run privateAvailable ()).start.produced ≠
++    [(102, -1), (101, 1)] := by decide
++example : ((History.returning (E := Nat) (F := Nat)).run privateAvailable ()).start.available
++    ⟨0, ()⟩ ≠ none := by decide
++
++example : swapping.apply (privateFailure.splice History.returning) =
++    (swapping.apply privateFailure).splice History.returning := by
++  rw [History.splice_returning, History.splice_returning]
++
++open LeanNCD.Semantics IndexedOpenComposition
++open IndexedComponentCompositionPortFixtures
++
++def presentEmpty : CompleteObservation emptyProducerDeclarations Unit :=
++  ⟨emptyMetadata, .done (initial emptyMetadata.input) (), .done _⟩
++
++def absentEmpty : CompleteObservation emptyProducerDeclarations Unit :=
++  ⟨MetadataLawFixtures.absentEmptyMetadata,
++    .done (initial MetadataLawFixtures.absentEmptyMetadata.input) (), .done _⟩
++
++example : presentEmpty.history.events = absentEmpty.history.events := rfl
++
++example : presentEmpty.history = absentEmpty.history := by
++  have available : (initial emptyMetadata.input).available =
++      (initial MetadataLawFixtures.absentEmptyMetadata.input).available := by
++    funext a
++    exact Fin.elim0 a.2.1
++  exact congrArg (fun values => IndexedOperationalHistory.History.done
++    (State.mk values []) ()) available
++
++example : ¬presentEmpty.Agrees (MetadataTransport.refl emptyProducerDeclarations)
++    (Equiv.refl Unit) absentEmpty := by
++  intro h
++  have lengths := congrArg List.length h.1.1
++  have impossible : (0 : Nat) = 1 := by
++    simpa only [List.length_map] using lengths
++  contradiction
++
++theorem actual_leaf_right_unit {σ : Declarations Unit}
++    [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++    (A : IndexedComponentComposition.MatchedComponent σ) (η : A.program.Input)
++    (rank : A.program.RankCertificate) :
++    ∃ h : GraphHistory σ, h.Admissible ∧
++      h.start = initial η.val ∧
++      h.toRun = runChecked A.contract A.fragment η.val ∧
++      GraphHistory.toRun (h.splice History.returning) =
++        runChecked A.contract A.fragment η.val := by
++  obtain ⟨h, admitted, actual, start⟩ := GraphHistory.ranked_default_exists A η rank
++  refine ⟨h, admitted, start, actual, ?_⟩
++  rw [History.splice_returning, actual]
++
++#eval ((first.splice History.returning).events,
++  (first.splice History.returning).states)
++#eval ((privateFailure.splice History.returning).events,
++  (privateFailure.splice History.returning).states,
++  (privateFailure.splice History.returning).finish)
++#eval (((History.returning (E := Nat) (F := Nat)).run privateAvailable ()).start.produced,
++  ((History.returning (E := Nat) (F := Nat)).run privateAvailable ()).start.available ⟨0, ()⟩)
++#eval (presentEmpty.history.events.length, absentEmpty.history.events.length,
++  presentEmpty.metadata.inputs.length, absentEmpty.metadata.inputs.length)
++
++#print axioms History.bind_done
++#print axioms History.failure_bind
++#print axioms History.returning_map
++#print axioms History.splice_normalization
++#print axioms actual_leaf_right_unit
++
++end IndexedOperationalUnits
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedOperationalWireFrame.lean
+@@ -0,0 +1,89 @@
++import IndexedOperationalHistory
++import IndexedSourceWire
++
++namespace IndexedOperationalWireFrame
++
++open LeanNCD.Semantics IndexedOpenComposition
++open IndexedComponentTransport IndexedOperationalHistory IndexedSource
++
++structure Scope (X : Object) (σ : Declarations Unit) where
++  tensor : X.interface.Tensor → σ.Tensor
++  injective : Function.Injective tensor
++  domain : ∀ t, Domain (X.interface.signature t).axes (σ.signature (tensor t)).axes
++
++def Scope.reindex {X Y : Object} {σ : Declarations Unit}
++    (scope : Scope X σ) (wire : Wire X Y) : Scope Y σ where
++  tensor t := scope.tensor (wire.ports t)
++  injective := scope.injective.comp wire.ports.injective
++  domain t := (wire.domain t).comp (scope.domain (wire.ports t))
++
++structure AvailableView {X : Object} {σ : Declarations Unit}
++    (scope : Scope X σ) (state : State σ) where
++  env : X.interface.Env
++  available : ∀ t p,
++    state.available ⟨scope.tensor t, (scope.domain t).coord p⟩ = some (env t p)
++
++def AvailableView.reindex {X Y : Object} {σ : Declarations Unit}
++    {scope : Scope X σ} {state : State σ} (view : AvailableView scope state)
++    (wire : Wire X Y) : AvailableView (scope.reindex wire) state where
++  env := wire.env view.env
++  available t p := by
++    change state.available
++      ⟨scope.tensor (wire.ports t),
++        (scope.domain (wire.ports t)).coord ((wire.domain t).coord p)⟩ =
++      some ((wire.env view.env) t p)
++    simpa only [Wire.env_apply] using view.available (wire.ports t) ((wire.domain t).coord p)
++
++def runWire {X Y : Object} {σ : Declarations Unit}
++    {scope : Scope X σ} {state : State σ} (view : AvailableView scope state)
++    (wire : Wire X Y) : History (State σ) (Event σ) Nat Y.interface.Env :=
++  .done state (view.reindex wire).env
++
++theorem runWire_start {X Y : Object} {σ : Declarations Unit}
++    {scope : Scope X σ} {state : State σ} (view : AvailableView scope state)
++    (wire : Wire X Y) : (runWire view wire).start = state := rfl
++
++theorem runWire_states {X Y : Object} {σ : Declarations Unit}
++    {scope : Scope X σ} {state : State σ} (view : AvailableView scope state)
++    (wire : Wire X Y) : (runWire view wire).states = [state] := rfl
++
++theorem runWire_events {X Y : Object} {σ : Declarations Unit}
++    {scope : Scope X σ} {state : State σ} (view : AvailableView scope state)
++    (wire : Wire X Y) : (runWire view wire).events = [] := rfl
++
++theorem scope_identity {X : Object} {σ : Declarations Unit}
++    (scope : Scope X σ) : scope.reindex (Wire.identity X) = scope := by
++  cases scope
++  rfl
++
++theorem scope_composition {X Y Z : Object} {σ : Declarations Unit}
++    (scope : Scope X σ) (a : Wire X Y) (b : Wire Y Z) :
++    (scope.reindex a).reindex b = scope.reindex (a.comp b) := rfl
++
++theorem runWire_identity {X : Object} {σ : Declarations Unit}
++    {scope : Scope X σ} {state : State σ} (view : AvailableView scope state) :
++    runWire view (Wire.identity X) = .done state view.env := by
++  simp [runWire, AvailableView.reindex, Wire.env_identity]
++
++theorem runWire_composition {X Y Z : Object} {σ : Declarations Unit}
++    {scope : Scope X σ} {state : State σ} (view : AvailableView scope state)
++    (a : Wire X Y) (b : Wire Y Z) :
++    (runWire view a).bind (fun s env => .done s (b.env env)) =
++      runWire view (a.comp b) := by
++  simp [runWire, AvailableView.reindex, History.bind, Wire.env_comp]
++
++theorem runWire_inverse {X Y : Object} {σ : Declarations Unit}
++    {scope : Scope X σ} {state : State σ} (view : AvailableView scope state)
++    (wire : Wire X Y) :
++    (runWire view wire).bind (fun s env => .done s (wire.inverse.env env)) =
++      .done state view.env := by
++  simp [runWire, AvailableView.reindex, History.bind, Wire.env_inverse]
++
++#print axioms AvailableView.reindex
++#print axioms scope_identity
++#print axioms scope_composition
++#print axioms runWire_identity
++#print axioms runWire_composition
++#print axioms runWire_inverse
++
++end IndexedOperationalWireFrame

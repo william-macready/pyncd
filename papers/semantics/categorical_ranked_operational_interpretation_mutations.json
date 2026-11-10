@@ -1,0 +1,145 @@
+[
+  {
+    "label": "W1 (valid wrong wire direction changes donor observation)",
+    "file": "experiments/indexed_execution/IndexedRankedOperationalTest.lean",
+    "old": "let history := runWire view rotate\n",
+    "new": "let history := runWire view rotate.inverse\n",
+    "targets": [
+      "IndexedRankedOperationalTest"
+    ],
+    "expect": [
+      "wireObservation = (0, 1, [(101, 1), (102, -1)], some 1011, some 101)",
+      "(0, 1, [(101, 1), (102, -1)], some 1011, some 110)"
+    ]
+  },
+  {
+    "label": "W2 (valid wrong composition drops second wire)",
+    "file": "experiments/indexed_execution/IndexedRankedOperationalTest.lean",
+    "old": "outputAt (runWire view (rotate.comp rotate)),\n",
+    "new": "outputAt (runWire view rotate),\n",
+    "targets": [
+      "IndexedRankedOperationalTest"
+    ],
+    "expect": [
+      "wireControls = (some 11, some 110, some 110, some 11)",
+      "(some 11, some 110, some 101, some 11)"
+    ]
+  },
+  {
+    "label": "U1 (administrative computation adds produced event)",
+    "file": "experiments/indexed_execution/IndexedOperationalWireFrame.lean",
+    "old": "  .done state (view.reindex wire).env",
+    "new": "  .step state (.produced 0 0 0) (.done state (view.reindex wire).env)",
+    "targets": [
+      "IndexedOperationalWireFrame"
+    ],
+    "expect": [
+      "error: experiments/indexed_execution/IndexedOperationalWireFrame.lean",
+      "Not a definitional equality"
+    ]
+  },
+  {
+    "label": "U2 (administrative unit resets inherited ledger)",
+    "file": "experiments/indexed_execution/IndexedOperationalWireFrame.lean",
+    "old": "  .done state (view.reindex wire).env",
+    "new": "  .done { state with produced := [] } (view.reindex wire).env",
+    "targets": [
+      "IndexedOperationalWireFrame"
+    ],
+    "expect": [
+      "error: experiments/indexed_execution/IndexedOperationalWireFrame.lean",
+      "Not a definitional equality"
+    ]
+  },
+  {
+    "label": "U3 (administrative unit reverses inherited ledger)",
+    "file": "experiments/indexed_execution/IndexedOperationalWireFrame.lean",
+    "old": "  .done state (view.reindex wire).env",
+    "new": "  .done { state with produced := state.produced.reverse } (view.reindex wire).env",
+    "targets": [
+      "IndexedOperationalWireFrame"
+    ],
+    "expect": [
+      "error: experiments/indexed_execution/IndexedOperationalWireFrame.lean",
+      "Not a definitional equality"
+    ]
+  },
+  {
+    "label": "U4 (administrative unit erases private availability)",
+    "file": "experiments/indexed_execution/IndexedOperationalWireFrame.lean",
+    "old": "  .done state (view.reindex wire).env",
+    "new": "  .done { state with available := fun _ => none } (view.reindex wire).env",
+    "targets": [
+      "IndexedOperationalWireFrame"
+    ],
+    "expect": [
+      "error: experiments/indexed_execution/IndexedOperationalWireFrame.lean",
+      "Not a definitional equality"
+    ]
+  },
+  {
+    "label": "S1 (assembly erases original joined provenance)",
+    "file": "experiments/indexed_execution/IndexedRankedOperationalSource.lean",
+    "old": "(.joined A B b oa ob)) (.wire (IndexedSource.outputWire A B b)))",
+    "new": "(.opaque _ \u27e8compositeRankCertificate A B b rA rB\u27e9)) (.wire (IndexedSource.outputWire A B b)))",
+    "targets": [
+      "IndexedRankedOperationalSource"
+    ],
+    "expect": [
+      "error: experiments/indexed_execution/IndexedRankedOperationalSource.lean",
+      "invalid 'calc' step"
+    ]
+  },
+  {
+    "label": "S2 (event-free computations collapse to administrative arrows)",
+    "file": "experiments/indexed_execution/IndexedRankedOperationalCategory.lean",
+    "old": "  | _, _, _, _ => False",
+    "new": "  | _, _, _, _ => True",
+    "targets": [
+      "IndexedRankedOperationalCategory"
+    ],
+    "expect": [
+      "error: experiments/indexed_execution/IndexedRankedOperationalCategory.lean",
+      "Constructor `True.intro` does not have explicit fields"
+    ]
+  },
+  {
+    "label": "S3 (scope extension swaps upstream and downstream identities)",
+    "file": "experiments/indexed_execution/IndexedOperationalScopeNaturality.lean",
+    "old": "parity.symm.trans ((Equiv.sumCongr a b).trans parity)",
+    "new": "parity.symm.trans ((Equiv.sumCongr b a).trans parity)",
+    "targets": [
+      "IndexedOperationalScopeNaturality"
+    ],
+    "expect": [
+      "error: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean",
+      "'change' tactic failed"
+    ]
+  },
+  {
+    "label": "M1 (framed computation drops inherited ordered prefix)",
+    "file": "experiments/indexed_execution/IndexedRankedOperationalInterpretation.lean",
+    "old": "produced := f.inherited.produced ++ mapLedger f.identity s.produced }",
+    "new": "produced := mapLedger f.identity s.produced }",
+    "targets": [
+      "IndexedRankedOperationalInterpretation"
+    ],
+    "expect": [
+      "error: experiments/indexed_execution/IndexedRankedOperationalInterpretation.lean",
+      "Not a definitional equality"
+    ]
+  },
+  {
+    "label": "M2 (framed computation erases outside private values)",
+    "file": "experiments/indexed_execution/IndexedRankedOperationalInterpretation.lean",
+    "old": "s.available (Classical.choose h) else f.inherited.available b",
+    "new": "s.available (Classical.choose h) else none",
+    "targets": [
+      "IndexedRankedOperationalInterpretation"
+    ],
+    "expect": [
+      "error: experiments/indexed_execution/IndexedRankedOperationalInterpretation.lean",
+      "Type mismatch"
+    ]
+  }
+]
