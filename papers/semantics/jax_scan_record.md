@@ -608,7 +608,7 @@ first to fire: they are checked for ability to fail by construction (the head-di
 multi-head model by 2.821), not by a dedicated mutant. No survivor.
 
 **Parked** (cost in dispatches): grouped-query attention (several query heads per KV head needs head-axis index arithmetic; check first
-whether the surface syntax can express it; ~2 plus a design check); the binary32 noise of the plan relative to a float32 numpy
+whether the surface syntax can express it; ~2 plus a design check; DONE, section 15); the binary32 noise of the plan relative to a float32 numpy
 emulation (~1, diagnosis only); depth work (the next slice of the brief); gradient work: section 14.
 
 ## 14. Gradients through the emitted layer scan (2026-11-09)
@@ -664,3 +664,80 @@ not manifest entries (`mutation_python_manifest.py` is forward-only); promoting 
 **Parked** (cost in dispatches): gradients through the other scan fixtures (`transformer_mqa`, the mask fixtures, `transformer_head`) and through scatter
 nodes and `scatter_mode="fast"` (~1 each, the pure-JAX model needs a head-free and a masked variant); second-order derivatives and `jax.value_and_grad` inside
 a `jit`ted training step (~1); promoting the four stop-gradient mutants to the Python manifest (~1); depth (item 6a) remains the next brief item.
+
+## 15. Grouped-query attention inside the layer scan (2026-11-09)
+
+Multi-query attention (section 13) shares ONE key/value head across all query heads; grouped-query attention shares one key/value head across each
+GROUP of query heads: G groups, R query heads per group, query head `h = R * g + r` reads group `g`. The language has no division in index
+expressions (`Bb[h / 2, k]` gives `unexpected token '/'`; `tl_idx_expr` allows numerals, identifiers, `n * ident`, `+`, `-`, parentheses), so the
+head-to-group map is written either by SPLITTING the query-head axis into `(g, r)` or by an AFFINE read `Q[q, R * g + r, k]` of a flat head axis.
+Six NEW scan-only fixtures pin both forms plus the standard multi-head plan on replicated weights. Tests and fixtures only (Direct path): no production,
+emitter, runtime, grammar or manifest change; no existing fixture, program, environment or assertion text changed. The differential is now
+41 binary64 and 33 binary32 fixtures.
+
+**Programs** (`EvalPlanNonlinSmoke.lean`; each ONE scan record, 2 steps, counts `some (19, 1, 1)`, export `H` only; the `32` siblings repeat the statements
+and re-declare `axis s`, `S` and `H`, the flat one also `axis r : ℕ = 2`, which MUST be declared because no tensor has an `r` axis):
+
+| Fixture | Changed statements (everything else the standard `scanProg`'s) |
+|---|---|
+| `transformer_gqa` (flat head axis, affine read) | `K[s, g, k]`, `V[s, g, k]` from `W_K(l, g, k, m)`, `W_V(l, g, k, m)`; `S[g, r, q, s.] := softmax(where s ≤ q)(Q[q, 2 * g + r, k] · K[s, g, k] · Sc[])`; `AttnOut[q, g, r, k] := S[g, r, q, s] · V[s, g, k]`; `Attn[q, m] := W_O[l, m, 2 * g + r, k] · AttnOut[q, g, r, k]`; `Q[q, h, k]` and `W_Q(l, h, k, m)`, `W_O(l, m, h, k)` keep the flat axis |
+| `transformer_gqa_split` (heads split, no arithmetic) | the same with `Q[q, g, r, k]`, `W_Q(l, g, r, k, m)`, `W_O(l, m, g, r, k)` and plain reads `Q[q, g, r, k]`, `W_O[l, m, g, r, k]` |
+| `transformer_gqa_mha` (standard multi-head) | the standard `scanProg` statements (`S[h, q, s.]`) with `W_K`, `W_V` of shape `[l, h, k, m]` replicated per head |
+
+**Extents.** G = 3, R = 2, k = 7 (so h = 6), q = s = 5 (the mask fixtures' `maskX`, `maskEps`), m = d = 4: g, r, k and q are pairwise distinct (asserted from the
+input shapes), so no axis-order bug can hide behind equal extents on `S`, `K`, `Q`, `AttnOut` or `W_O`.
+
+**Probe findings (scratch, before the slice) and what became a pin.** Both forms parse, typecheck, prepare and run in Dense and agree bitwise (probe, binary64):
+pinned (flat == split on Lean, eager and jit, in both precisions). The numpy model with K/V repeated per query head (`h // R` written in Python) agrees with
+Lean to ~1e-15: pinned (value pin). A wrong group map or a shared group moves the numpy state by O(1): pinned (non-vacuity). Division does not parse: not pinned
+(no refusal fixture; the parse error is a grammar fact). The multi-axis affine read is solved as an EXACT span, so `Q[q, R * g + r, k]` is accepted only with stride
+R; a span-changing variant is refused at prepare ("affine size system inconsistent"), which is not a mutant kill. NOT attempted (parked): the flat-OUTPUT form
+`AttnOut[q, 2 * g + r, k] := ...` inside a scan (a scatter node in a scan, a known gap), and gradients through these plans.
+
+**Weights.** `gqaGen seed n = 0.6 * sin (seed + 1.7 i)`, stacked by `scanStack` (layer 0, derived layer 1, NaN layer 2); ONE definition of each stack shared by
+all three programs (`[g, r, k, m]` and `[h, k, m]` are one storage order for `h = 2 * g + r`, so the flat and split programs read the same bytes; the multi-head
+program's `W_K`, `W_V` are `gqaRep` of the same arrays, `W_K[l, h] = W_K[l, h / 2]` by `Nat` division in the Lean env builder, where division exists). Seeds (Q, K, V, O)
+= (4, 3, 2, 4). The binary32 state is data-sensitive, so the seeds were chosen by measurement: JAX eager binary32 `H` against the float64 numpy model, 42 candidates.
+The baseline (1, 2, 3, 4) gave 3.6e-6 (and failed the Lean-view pin at that value); 12 of the 42 candidates exceeded `MODEL_TOL` 1e-6; the others ranged 4.1e-7 to 9.9e-7.
+Tried (seeds: scaled error), first batch: (1,2,3,4): 3.62e-6; (0.5,1.5,2.5,3.5): 2.33e-6; (1,2,3,5): 5.99e-7; (2,3,4,5): 1.56e-6; (0.3,0.9,1.4,2.1): 9.4e-7;
+(1.5,0.7,2.2,3.3): 1.43e-6; (2.5,1.1,0.4,3.9): 7.3e-7; (3,4,5,6): 2.47e-6; (0.1,0.2,0.3,0.4): 2.98e-6; (1,1.5,2,2.5): 1.33e-6; (4,3,2,1): 5.4e-7; (5,1,3,2): 7.7e-7.
+Second batch: (4,3,2,5): 4.2e-7; (4,3,2,2): 9.6e-7; (4,3,3,1): 7.3e-7; (4,1,2,1): 7.5e-7; (4,2,2,1): 8.5e-7; (3,3,2,1): 7.4e-7; (5,3,2,1): 8.0e-7; (4,3,1,1): 1.78e-6;
+(4,3,2,0): 4.9e-7; (4,3,2,3): 7.6e-7; (4,4,2,1): 8.7e-7; **(4,3,2,4): 4.1e-7 (chosen: the smallest)**; (6,3,2,1): 1.26e-6; (4,5,2,1): 4.9e-7; (4,3,5,1): 6.8e-7; (7,2,5,3): 9.9e-7;
+(1,4,2,6): 8.2e-7; (2,1,6,3): 1.03e-6; (3,5,1,4): 1.04e-6; (6,6,1,2): 6.9e-7; (0.5,3,2,1): 8.5e-7; (4,3.5,2,1): 4.9e-7; (4,3,2.5,1): 7.5e-7; (4,3,2,1.5): 7.5e-7;
+(2.5,1.1,0.4,4.9): 5.1e-7; (2.5,2.1,0.4,3.9): 9.4e-7; (3.5,1.1,0.4,3.9): 6.2e-7; (2.5,1.1,1.4,3.9): 1.47e-6; (2.5,1.1,0.4,2.9): 6.4e-7. No tolerance was touched. Note the choice
+is the minimum of a noisy measurement (a selection effect): the observed Lean-inclusive maximum below, 5.9e-7, is above the 4.1e-7 the selection saw.
+
+**Pins** (`gqa_fixture_pins` in `evalplan_nonlin_smoke.py`, once per precision; `np_transformer` unchanged, fed multi-head inputs with `W_K = W_K[:, [h // R ...]]`):
+1. Value pin: `H` (layers 0, 1, 2) of ALL THREE fixtures equals that numpy model on the Lean, eager and jit views at `MODEL_TOL`.
+2. Non-vacuity (numpy GQA `H` differs by more than 1e-2 from): multi-head with distinct K/V per head 3.735, one shared group 6.419, the wrong group map `h % G` 4.212
+   (this is the transposed map of mutant A). The R heads of one group attend differently (min gap 0.939 layer 0, 0.652 layer 1) and the groups differ (0.773, 0.530).
+3. Flat == split: `H` BITWISE equal on eager and jit (asserted) and on Lean (observed, not asserted): 60/60 on all three views in both precisions.
+4. Equivalence: `transformer_gqa_mha`'s plan run on key/value weights replicated HERE in Python (`np.repeat`, no Lean value) gives `H` bitwise equal to `transformer_gqa`'s eager `H`
+   (60/60, max abs 0, both precisions); the same plan on head-distinct weights differs by 3.735. The mha fixture's own `W_K`, `W_V` are asserted bitwise `np.repeat(W, R)`.
+5. Inputs: every input other than `Sc` and the four head weights is bitwise the mask fixtures'; `Sc` = 1/sqrt(k of `W_Q`); layer-2 slices NaN, layers 0, 1 finite and distinct in every weight
+   stack (including `W_K`, `W_V` of shape `[3, 3, 7, 4]`); exactly `H` exported, finite on every view.
+6. Distinct extents g, r, k, q (above).
+
+**Observed against numpy** (max over Lean, eager and jit; scaled error; `MODEL_TOL` 1e-12 / 1e-6, NOT loosened; the same figure for all three fixtures): binary64 1.75e-15 (headroom 572x),
+binary32 5.94e-7 (headroom 1.7x; the standard scan is under 10%, sink 1.2x, MQA 6.0x).
+
+**Mutation evidence** (one edit of the binary64 `gqaProg` text, whole differential run through `run-evalplan-nonlin.sh`, first failing assertion; each file restored with
+`git checkout`, `git diff --stat` empty). All five were accepted by the Lean compiler and the shape solver and ran; all killed:
+
+| Mutant | First failing assertion |
+|---|---|
+| A. score-line read `Q[q, 2 * g + r, k]` to `Q[q, 3 * r + g, k]` (transposed head map, span preserved) | `pin numpy model: transformer_gqa lean H` |
+| B. `W_O[l, m, 2 * g + r, k]` to `3 * r + g` only | `pin numpy model: transformer_gqa lean H` |
+| C. mask `s ≤ q` to `s < q` | `pin numpy model: transformer_gqa lean H` |
+| D. `K` reads `W_V` and `V` reads `W_K` | `pin numpy model: transformer_gqa lean H` |
+| E. `K[s, g, k] := W_K[l, g, k, m] · N1[q, m]` (accepted by the solver) | `pin numpy model: transformer_gqa lean H` |
+
+Every killed mutant dies on the value pin, the first assertion of the helper: the non-vacuity, flat == split and equivalence pins were never the first to fire and were not
+exercised by a dedicated mutant (only the split and mha programs and the binary32 siblings were not mutated at all). `AttnOut` reading `K` instead of `V` is refused at compile
+(`readsPerStepIntermediate`), so it is not a kill and was not run. No survivor.
+
+**Note.** `AT11 gqa` in `test/Eval/Portfolio/AttentionTest.lean` is actually the head-free (MQA) case; it was not edited.
+
+**Parked** (cost in dispatches): `/` in index expressions as an elaboration-time desugaring that splits the axis (decided 2026-11-09: not now; ~1 design pass plus a probe; it
+covers literal divisors of a single axis with divisible extents only); the flat-OUTPUT form `AttnOut[q, 2 * g + r, k] := ...` inside a scan (probably refused; record the error; ~1 probe);
+gradient pins for the MQA, mask and GQA fixtures (~1 each); mutants on the split and mha programs (~1); depth (item 6a).
