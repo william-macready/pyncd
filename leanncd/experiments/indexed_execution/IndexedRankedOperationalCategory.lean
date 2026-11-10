@@ -1,0 +1,988 @@
+import IndexedRankedOperationalCore
+import IndexedOperationalScopeNaturality
+import IndexedOperationalHistoryAssociativity
+
+namespace IndexedRankedOperationalCategory
+
+open LeanNCD.Semantics IndexedOpenComposition IndexedComponentTransport
+open IndexedComponentComposition IndexedComponentExecution IndexedWitness IndexedSource
+open IndexedOperationalHistory IndexedRankedOperationalCore
+open IndexedOperationalScopeNaturality
+
+variable {σ τ υ : Declarations Unit}
+
+/-- A full domain, including raw coordinates, located in a declaration scope. -/
+abbrev LocatedDomain (shape : Shape) (σ : Declarations Unit) :=
+  Σ t : σ.Tensor, Domain shape (σ.signature t).axes
+
+def reindexDomain (t : MetadataTransport σ τ) {shape : Shape}
+    (x : LocatedDomain shape σ) : LocatedDomain shape τ :=
+  ⟨t.tensor x.1, x.2.comp (t.domain x.1)⟩
+
+theorem reindexDomain_refl {shape : Shape} (x : LocatedDomain shape σ) :
+    reindexDomain (MetadataTransport.refl σ) x = x := by
+  rcases x with ⟨a, d⟩
+  change (⟨a, d.comp (Domain.id _)⟩ : LocatedDomain shape σ) = ⟨a, d⟩
+  rw [domain_comp_id]
+
+theorem reindexDomain_trans (t : MetadataTransport σ τ) (u : MetadataTransport τ υ)
+    {shape : Shape} (x : LocatedDomain shape σ) :
+    reindexDomain (t.trans u) x = reindexDomain u (reindexDomain t x) := rfl
+
+private theorem dependent_congr {α : Sort*} {β : α → Sort*} (f : ∀ a, β a)
+    {a b : α} (h : a = b) : HEq (f a) (f b) := by cases h; rfl
+
+private theorem compose_heq {x y z z' : Shape} (d : Domain x y)
+    (e : Domain y z) (f : Domain y z') (h : z = z') (he : HEq e f) :
+    HEq (d.comp e) (d.comp f) := by
+  cases h
+  cases he
+  rfl
+
+private theorem inverse_located (t : MetadataTransport σ τ)
+    (a : σ.Tensor) {shape : Shape} (d : Domain shape (σ.signature a).axes) :
+    (⟨t.tensor.symm (t.tensor a),
+      (d.comp (t.domain a)).comp (t.inverseDomain (t.tensor a))⟩ :
+      LocatedDomain shape σ) = ⟨a, d⟩ := by
+  have h := t.tensor.symm_apply_apply a
+  have hd : HEq (t.inverseDomain (t.tensor a)) (t.domain a).symm := by
+    unfold MetadataTransport.inverseDomain
+    exact (cast_heq _ _).trans
+      (dependent_congr (fun a => (t.domain a).symm) h)
+  apply Sigma.ext h
+  refine (compose_heq (d.comp (t.domain a)) _ _
+    (congrArg (fun a => (σ.signature a).axes) h) hd).trans ?_
+  apply heq_of_eq
+  change d.comp ((t.domain a).comp (t.domain a).inverse) = d
+  rw [domain_comp_inverse, domain_comp_id]
+
+theorem reindexDomain_symm (t : MetadataTransport σ τ) {shape : Shape}
+    (x : LocatedDomain shape σ) :
+    reindexDomain t.symm (reindexDomain t x) = x := by
+  rcases x with ⟨a, d⟩
+  exact inverse_located t a d
+
+abbrev Exterior (X : Object) (σ : Declarations Unit) :=
+  (x : X.interface.Tensor) → LocatedDomain (X.interface.signature x).axes σ
+
+def reindexExterior (t : MetadataTransport σ τ) {X : Object}
+    (e : Exterior X σ) : Exterior X τ :=
+  fun x => reindexDomain t (e x)
+
+theorem reindexExterior_refl {X : Object} (e : Exterior X σ) :
+    reindexExterior (MetadataTransport.refl σ) e = e := by
+  funext x
+  exact reindexDomain_refl _
+
+theorem reindexExterior_trans (t : MetadataTransport σ τ) (u : MetadataTransport τ υ)
+    {X : Object} (e : Exterior X σ) :
+    reindexExterior (t.trans u) e = reindexExterior u (reindexExterior t e) := rfl
+
+theorem reindexExterior_symm (t : MetadataTransport σ τ)
+    {X : Object} (e : Exterior X σ) :
+    reindexExterior t.symm (reindexExterior t e) = e := by
+  funext x
+  exact reindexDomain_symm _ _
+
+variable [Fintype σ.Tensor] [DecidableEq σ.Tensor]
+variable [Fintype τ.Tensor] [DecidableEq τ.Tensor]
+variable [Fintype υ.Tensor] [DecidableEq υ.Tensor]
+
+noncomputable def inputExterior (A : MatchedComponent σ) {X : Object}
+    (before : Wire X (input A)) : Exterior X σ :=
+  fun x => ⟨(before.inverse.ports x).val, before.inverse.domain x⟩
+
+def outputExterior (A : MatchedComponent σ) {Y : Object}
+    (after : Wire (output A) Y) : Exterior Y σ :=
+  fun y => ⟨(after.ports y).val, after.domain y⟩
+
+def locatedAddress {shape : Shape} (p : Coord shape)
+    (x : LocatedDomain shape σ) : Address σ :=
+  ⟨x.1, x.2.coord p⟩
+
+def RawBoundarySquare
+    {σB τB : Declarations Unit}
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype τB.Tensor] [DecidableEq τB.Tensor]
+    {A : MatchedComponent σ} {A' : MatchedComponent τ}
+    {B : MatchedComponent σB} {B' : MatchedComponent τB}
+    (a : ScopeChange A A') (b : ScopeChange B B')
+    (wire : Boundary A B) (wire' : Boundary A' B') : Prop :=
+  ∀ i, reindexDomain a.transport ⟨(wire.matched i).val, wire.domain i⟩ =
+    ⟨(wire'.matched (b.input i)).val,
+      (b.transport.domain i.val).comp (wire'.domain (b.input i))⟩
+
+theorem rawBoundarySquare_coordinates
+    {σB τB : Declarations Unit}
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype τB.Tensor] [DecidableEq τB.Tensor]
+    {A : MatchedComponent σ} {A' : MatchedComponent τ}
+    {B : MatchedComponent σB} {B' : MatchedComponent τB}
+    (a : ScopeChange A A') (b : ScopeChange B B')
+    (wire : Boundary A B) (wire' : Boundary A' B')
+    (square : RawBoundarySquare a b wire wire') :
+    BoundaryCoordinates a b wire wire' := by
+  intro i p
+  rw [a.transport.address_eq]
+  exact congrArg (locatedAddress p) (square i)
+
+/-- Structural provenance certificates do not contain execution-agreement premises. -/
+inductive ProvenanceIso :
+    {σ τ : Declarations Unit} →
+    [Fintype σ.Tensor] → [DecidableEq σ.Tensor] →
+    [Fintype τ.Tensor] → [DecidableEq τ.Tensor] →
+    {A : MatchedComponent σ} → {B : MatchedComponent τ} →
+    (oa : Origin A) → (ob : Origin B) →
+    MetadataTransport σ τ → (oa.Adapters ≃ ob.Adapters) → Prop
+  | refl {σ : Declarations Unit} [Fintype σ.Tensor] [DecidableEq σ.Tensor]
+      {A : MatchedComponent σ} (o : Origin A) :
+      ProvenanceIso o o (MetadataTransport.refl _) (Equiv.refl _)
+  | symm
+      {σ τ : Declarations Unit}
+      [Fintype σ.Tensor] [DecidableEq σ.Tensor]
+      [Fintype τ.Tensor] [DecidableEq τ.Tensor]
+      {A : MatchedComponent σ} {B : MatchedComponent τ}
+      {oa : Origin A} {ob : Origin B} {t : MetadataTransport σ τ}
+      {e : oa.Adapters ≃ ob.Adapters} (h : ProvenanceIso oa ob t e) :
+      ProvenanceIso ob oa t.symm e.symm
+  | trans
+      {σ τ υ : Declarations Unit}
+      [Fintype σ.Tensor] [DecidableEq σ.Tensor]
+      [Fintype τ.Tensor] [DecidableEq τ.Tensor]
+      [Fintype υ.Tensor] [DecidableEq υ.Tensor]
+      {A : MatchedComponent σ} {B : MatchedComponent τ} {C : MatchedComponent υ}
+      {oa : Origin A} {ob : Origin B} {oc : Origin C}
+      {t : MetadataTransport σ τ} {u : MetadataTransport τ υ}
+      {e : oa.Adapters ≃ ob.Adapters} {f : ob.Adapters ≃ oc.Adapters}
+      (h : ProvenanceIso oa ob t e) (k : ProvenanceIso ob oc u f) :
+      ProvenanceIso oa oc (t.trans u) (e.trans f)
+  | reassociate
+      {σA σB σC : Declarations Unit}
+      [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+      [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+      [Fintype σC.Tensor] [DecidableEq σC.Tensor]
+      (A : MatchedComponent σA) (B : MatchedComponent σB)
+      (C : MatchedComponent σC) (ab : Boundary A B) (bc : Boundary B C)
+      (oa : Origin A) (ob : Origin B) (oc : Origin C) :
+      ProvenanceIso (leftOrigin A B C ab bc oa ob oc)
+        (rightOrigin A B C ab bc oa ob oc)
+        (IndexedOperationalAssociativity.metadataTransport A B C ab bc)
+        (nestedAdapterEquiv A B C ab bc oa ob oc)
+  | joined
+      {σA σB τA τB : Declarations Unit}
+      [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+      [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+      [Fintype τA.Tensor] [DecidableEq τA.Tensor]
+      [Fintype τB.Tensor] [DecidableEq τB.Tensor]
+      {A : MatchedComponent σA} {B : MatchedComponent σB}
+      {A' : MatchedComponent τA} {B' : MatchedComponent τB}
+      {oa : Origin A} {ob : Origin B} {oa' : Origin A'} {ob' : Origin B'}
+      {ea : oa.Adapters ≃ oa'.Adapters} {eb : ob.Adapters ≃ ob'.Adapters}
+      (a : ScopeChange A A') (b : ScopeChange B B')
+      (pa : ProvenanceIso oa oa' a.transport ea)
+      (pb : ProvenanceIso ob ob' b.transport eb)
+      (wire : Boundary A B) (wire' : Boundary A' B')
+      (left : Wire (output A') (output A)) (right : Wire (input B) (input B'))
+      (left_square : reindexExterior a.transport
+        (outputExterior A (Wire.identity _)) = outputExterior A' left)
+      (right_square : reindexExterior b.transport
+        (inputExterior B (Wire.identity _)) = inputExterior B' right)
+      (square : RawBoundarySquare a b wire wire')
+      (image : boundaryReindex A B A' B' left right wire = wire') :
+      ProvenanceIso (.joined A B wire oa ob) (.joined A' B' wire' oa' ob')
+        (combinedTransport a b)
+        (Equiv.prodCongr ea (Equiv.prodCongr
+          (boundaryReindex A B A' B' left right) eb))
+
+theorem ProvenanceIso.adapters
+    {A : MatchedComponent σ} {B : MatchedComponent τ}
+    {oa : Origin A} {ob : Origin B} {t : MetadataTransport σ τ}
+    {e : oa.Adapters ≃ ob.Adapters} (h : ProvenanceIso oa ob t e) :
+    e oa.adapters = ob.adapters := by
+  induction h with
+  | refl => rfl
+  | symm _ ih => rw [← ih, Equiv.symm_apply_apply]
+  | trans _ _ ih ih' => exact (congrArg _ ih).trans ih'
+  | reassociate A B C ab bc oa ob oc =>
+      exact nestedAdapterEquiv_actual A B C ab bc oa ob oc
+  | joined a b pa pb wire wire' left right left_square right_square square image ih ih' =>
+      change (_, _, _) = (_, _, _)
+      exact congrArg₂ Prod.mk ih (congrArg₂ Prod.mk image ih')
+
+def originLeaves : {σ : Declarations Unit} →
+    [Fintype σ.Tensor] → [DecidableEq σ.Tensor] →
+    {A : MatchedComponent σ} → Origin A → Nat
+  | _, _, _, _, @Origin.opaque _ _ _ _ _ => 1
+  | _, _, _, _, @Origin.joined _ _ _ _ _ _ _ _ _ a b =>
+      originLeaves a + originLeaves b
+
+theorem originLeaves_positive {A : MatchedComponent σ} (o : Origin A) :
+    0 < originLeaves o := by
+  induction o with
+  | «opaque» => exact Nat.zero_lt_one
+  | joined _ _ _ _ _ ih ih' => exact Nat.add_pos_left ih _
+
+theorem ProvenanceIso.leaves
+    {A : MatchedComponent σ} {B : MatchedComponent τ}
+    {oa : Origin A} {ob : Origin B} {t : MetadataTransport σ τ}
+    {e : oa.Adapters ≃ ob.Adapters} (h : ProvenanceIso oa ob t e) :
+    originLeaves oa = originLeaves ob := by
+  induction h with
+  | refl => rfl
+  | symm _ ih => exact ih.symm
+  | trans _ _ ih ih' => exact ih.trans ih'
+  | reassociate => exact Nat.add_assoc _ _ _
+  | joined _ _ _ _ _ _ _ _ _ _ _ _ ih ih' => exact congrArg₂ Nat.add ih ih'
+
+theorem opaque_not_joined
+    (A : MatchedComponent σ) (B : MatchedComponent τ) (wire : Boundary A B)
+    (ranked : Nonempty (compose A B wire).program.RankCertificate)
+    (oa : Origin A) (ob : Origin B)
+    (t : MetadataTransport (declarations A B) (declarations A B))
+    (e : (Origin.opaque (compose A B wire) ranked).Adapters ≃
+      (Origin.joined A B wire oa ob).Adapters) :
+    ¬ ProvenanceIso (.opaque (compose A B wire) ranked)
+      (.joined A B wire oa ob) t e := by
+  intro h
+  have count := h.leaves
+  have left := originLeaves_positive oa
+  have right := originLeaves_positive ob
+  change 1 = originLeaves oa + originLeaves ob at count
+  omega
+
+noncomputable def externalInput (A : MatchedComponent σ) {X : Object}
+    (before : Wire X (input A)) (x : X.interface.Env) : A.program.Input :=
+  envInput A (before.env x)
+
+/-- Each comparison uses one structural transport for every validated input.
+    Both exterior squares retain entire raw domains, not only coordinate actions. -/
+def ComputeAgrees {X Y : Object}
+    (A : MatchedComponent σ) (B : MatchedComponent τ)
+    (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
+    (oa : Origin A) (ob : Origin B)
+    (beforeA : Wire X (input A)) (afterA : Wire (output A) Y)
+    (beforeB : Wire X (input B)) (afterB : Wire (output B) Y) : Prop :=
+  ∃ (t : MetadataTransport σ τ) (e : oa.Adapters ≃ ob.Adapters),
+    ProvenanceIso oa ob t e ∧
+    reindexExterior t (inputExterior A beforeA) = inputExterior B beforeB ∧
+    reindexExterior t (outputExterior A afterA) = outputExterior B afterB ∧
+    ∀ x : X.interface.Env,
+      (actualObservation A oa (externalInput A beforeA x) rA).Agrees t e
+        (actualObservation B ob (externalInput B beforeB x) rB)
+
+theorem comparison_runner
+    {X Y : Object} {A : MatchedComponent σ} {B : MatchedComponent τ}
+    {rA : A.program.RankCertificate} {rB : B.program.RankCertificate}
+    {oa : Origin A} {ob : Origin B}
+    {beforeA : Wire X (input A)} {afterA : Wire (output A) Y}
+    {beforeB : Wire X (input B)} {afterB : Wire (output B) Y}
+    (h : ComputeAgrees A B rA rB oa ob beforeA afterA beforeB afterB) :
+    ∃ (a : ScopeChange A B) (e : oa.Adapters ≃ ob.Adapters),
+      ProvenanceIso oa ob a.transport e ∧
+      reindexExterior a.transport (inputExterior A beforeA) = inputExterior B beforeB ∧
+      reindexExterior a.transport (outputExterior A afterA) = outputExterior B afterB ∧
+      (∀ x : X.interface.Env,
+        (actualObservation A oa (externalInput A beforeA x) rA).Agrees a.transport e
+          (actualObservation B ob (externalInput B beforeB x) rB)) ∧
+      RunnerAgreement a := by
+  obtain ⟨t, e, provenance, before, after, actual⟩ := h
+  let zero : X.interface.Env := fun _ _ => 0
+  have metadata := (actual zero).1
+  let a : ScopeChange A B :=
+    ⟨t, metadata.2.2.1, metadata.1, metadata.2.1⟩
+  refine ⟨a, e, provenance, before, after, actual, ?_⟩
+  intro η η' inputs history run
+  let x := beforeA.env.symm (inputEnv A η)
+  have inputA : externalInput A beforeA x = η := by
+    dsimp [externalInput, x]
+    rw [Equiv.apply_symm_apply, envInput_inputEnv]
+  have mapped : InputAgreement a η (externalInput B beforeB x) := by
+    have m := (actual x).1.2.2.2.1
+    rw [inputA] at m
+    exact m
+  have inputB : η' = externalInput B beforeB x := by
+    apply Subtype.ext
+    funext y
+    obtain ⟨z, rfl⟩ := t.tensor.surjective y
+    exact (inputs z).trans (mapped z).symm
+  have same : history = actualHistory A (externalInput A beforeA x) rA := by
+    apply GraphHistory.toRun_injective
+    rw [run, (actualHistory_spec A _ rA).2.1, inputA]
+  rw [same]
+  change GraphHistory.toRun
+    (t.toGraphTransport.history.apply (actualHistory A (externalInput A beforeA x) rA)) = _
+  have historyEq : actualHistory B (externalInput B beforeB x) rB =
+      t.toGraphTransport.history.apply (actualHistory A (externalInput A beforeA x) rA) :=
+    (actual x).2
+  rw [← historyEq]
+  rw [(actualHistory_spec B _ rB).2.1, inputB]
+
+theorem actual_nested_observations
+    {σA σB σC : Declarations Unit}
+    [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype σC.Tensor] [DecidableEq σC.Tensor]
+    (A : MatchedComponent σA) (B : MatchedComponent σB) (C : MatchedComponent σC)
+    (ab : Boundary A B) (bc : Boundary B C)
+    (oa : Origin A) (ob : Origin B) (oc : Origin C)
+    (η : A.program.Input)
+    (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
+    (rC : C.program.RankCertificate)
+    (rL : (leftBracket A B C ab bc).program.RankCertificate)
+    (rR : (rightBracket A B C ab bc).program.RankCertificate) :
+    (actualObservation (leftBracket A B C ab bc)
+      (leftOrigin A B C ab bc oa ob oc)
+      (liftInput (compose A B ab) C (leftNestedBoundary A B C ab bc)
+        (liftInput A B ab η)) rL).Agrees
+      (IndexedOperationalAssociativity.metadataTransport A B C ab bc)
+      (nestedAdapterEquiv A B C ab bc oa ob oc)
+      (actualObservation (rightBracket A B C ab bc)
+        (rightOrigin A B C ab bc oa ob oc)
+        (liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η) rR) := by
+  refine ⟨nestedOrigin_metadata A B C ab bc oa ob oc η, ?_⟩
+  obtain ⟨_, _, hL, hR, _, _, _, _, _, _, _, runL, runR, transported⟩ :=
+    IndexedOperationalHistoryAssociativity.actual_nested_histories A B C ab bc η rA rB rC
+  have left : hL = actualHistory (leftBracket A B C ab bc) _ rL :=
+    GraphHistory.toRun_injective (runL.trans (actualHistory_spec _ _ rL).2.1.symm)
+  have right : hR = actualHistory (rightBracket A B C ab bc) _ rR :=
+    GraphHistory.toRun_injective (runR.trans (actualHistory_spec _ _ rR).2.1.symm)
+  exact right.symm.trans (transported.symm.trans (congrArg _ left))
+
+theorem externalInput_join (A : MatchedComponent σ) (B : MatchedComponent τ)
+    (wire : Boundary A B) {X : Object} (before : Wire X (input A))
+    (x : X.interface.Env) :
+    externalInput (compose A B wire) (before.comp (inputWire A B wire)) x =
+      liftInput A B wire (externalInput A before x) := by
+  simp only [externalInput, Wire.env_comp, Equiv.trans_apply, inputWire_env]
+  exact envInput_inputEnv _ _
+
+theorem reassociation_input_exterior
+    {σA σB σC : Declarations Unit}
+    [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype σC.Tensor] [DecidableEq σC.Tensor]
+    (A : MatchedComponent σA) (B : MatchedComponent σB) (C : MatchedComponent σC)
+    (ab : Boundary A B) (bc : Boundary B C) :
+    reindexExterior (IndexedOperationalAssociativity.metadataTransport A B C ab bc)
+      (inputExterior (leftBracket A B C ab bc)
+        ((inputWire A B ab).comp
+          (inputWire (compose A B ab) C (leftNestedBoundary A B C ab bc)))) =
+    inputExterior (rightBracket A B C ab bc)
+      (inputWire A (compose B C bc) (rightNestedBoundary A B C ab bc)) := by
+  rfl
+
+theorem reassociation_output_exterior
+    {σA σB σC : Declarations Unit}
+    [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype σC.Tensor] [DecidableEq σC.Tensor]
+    (A : MatchedComponent σA) (B : MatchedComponent σB) (C : MatchedComponent σC)
+    (ab : Boundary A B) (bc : Boundary B C) :
+    reindexExterior (IndexedOperationalAssociativity.metadataTransport A B C ab bc)
+      (outputExterior (leftBracket A B C ab bc)
+        (outputWire (compose A B ab) C (leftNestedBoundary A B C ab bc))) =
+    outputExterior (rightBracket A B C ab bc)
+      ((outputWire A (compose B C bc) (rightNestedBoundary A B C ab bc)).comp
+        (outputWire B C bc)) := by
+  rfl
+
+theorem compute_reassociation
+    {σA σB σC : Declarations Unit}
+    [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype σC.Tensor] [DecidableEq σC.Tensor]
+    (A : MatchedComponent σA) (B : MatchedComponent σB) (C : MatchedComponent σC)
+    (ab : Boundary A B) (bc : Boundary B C)
+    (oa : Origin A) (ob : Origin B) (oc : Origin C)
+    (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
+    (rC : C.program.RankCertificate)
+    (rL : (leftBracket A B C ab bc).program.RankCertificate)
+    (rR : (rightBracket A B C ab bc).program.RankCertificate)
+    {X Y : Object} (before : Wire X (input A)) (after : Wire (output C) Y) :
+    ComputeAgrees (leftBracket A B C ab bc) (rightBracket A B C ab bc)
+      rL rR (leftOrigin A B C ab bc oa ob oc) (rightOrigin A B C ab bc oa ob oc)
+      ((before.comp (inputWire A B ab)).comp
+        (inputWire (compose A B ab) C (leftNestedBoundary A B C ab bc)))
+      ((outputWire (compose A B ab) C (leftNestedBoundary A B C ab bc)).comp after)
+      (before.comp (inputWire A (compose B C bc) (rightNestedBoundary A B C ab bc)))
+      (((outputWire A (compose B C bc) (rightNestedBoundary A B C ab bc)).comp
+        (outputWire B C bc)).comp after) := by
+  refine ⟨IndexedOperationalAssociativity.metadataTransport A B C ab bc,
+    nestedAdapterEquiv A B C ab bc oa ob oc, .reassociate A B C ab bc oa ob oc,
+    ?_, ?_, ?_⟩
+  · rfl
+  · rfl
+  · intro x
+    rw [externalInput_join, externalInput_join, externalInput_join]
+    exact actual_nested_observations A B C ab bc oa ob oc
+      (externalInput A before x) rA rB rC rL rR
+
+theorem connecting_left
+    {σA σB σC : Declarations Unit}
+    [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype σC.Tensor] [DecidableEq σC.Tensor]
+    (A : MatchedComponent σA) (B : MatchedComponent σB) (C : MatchedComponent σC)
+    (ab : Boundary A B) (bc : Boundary B C) :
+    connectingBoundary (compose A B ab) C
+      ((outputWire A B ab).comp (boundaryWire B C bc)) =
+        leftNestedBoundary A B C ab bc := by
+  apply (boundaryEquiv _ _).injective
+  exact (connectingBoundary_wire _ _ _).trans (left_square_full A B C ab bc).symm
+
+theorem connecting_right
+    {σA σB σC : Declarations Unit}
+    [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype σC.Tensor] [DecidableEq σC.Tensor]
+    (A : MatchedComponent σA) (B : MatchedComponent σB) (C : MatchedComponent σC)
+    (ab : Boundary A B) (bc : Boundary B C) :
+    connectingBoundary A (compose B C bc)
+      ((boundaryWire A B ab).comp (inputWire B C bc)) =
+        rightNestedBoundary A B C ab bc := by
+  apply (boundaryEquiv _ _).injective
+  exact (connectingBoundary_wire _ _ _).trans (right_square_full A B C ab bc).symm
+
+theorem joined_observation_congruence
+    {σA σB τA τB : Declarations Unit}
+    [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype τA.Tensor] [DecidableEq τA.Tensor]
+    [Fintype τB.Tensor] [DecidableEq τB.Tensor]
+    {A : MatchedComponent σA} {B : MatchedComponent σB}
+    {A' : MatchedComponent τA} {B' : MatchedComponent τB}
+    (a : ScopeChange A A') (b : ScopeChange B B')
+    (wire : Boundary A B) (wire' : Boundary A' B')
+    (oa : Origin A) (ob : Origin B) (oa' : Origin A') (ob' : Origin B')
+    (e : (Origin.joined A B wire oa ob).Adapters ≃
+      (Origin.joined A' B' wire' oa' ob').Adapters)
+    (provenance : ProvenanceIso (.joined A B wire oa ob)
+      (.joined A' B' wire' oa' ob') (combinedTransport a b) e)
+    (square : RawBoundarySquare a b wire wire')
+    (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
+    (rA' : A'.program.RankCertificate) (rB' : B'.program.RankCertificate)
+    (agreeA : RunnerAgreement a) (agreeB : RunnerAgreement b)
+    (η : A.program.Input) (η' : A'.program.Input) (inputs : InputAgreement a η η') :
+    (actualObservation (compose A B wire) (.joined A B wire oa ob)
+      (liftInput A B wire η) (compositeRankCertificate A B wire rA rB)).Agrees
+      (combinedTransport a b) e
+      (actualObservation (compose A' B' wire') (.joined A' B' wire' oa' ob')
+        (liftInput A' B' wire' η')
+        (compositeRankCertificate A' B' wire' rA' rB')) := by
+  have metadata := combined_metadata a b wire wire' η η' inputs e
+    (Origin.joined A B wire oa ob).adapters
+    (Origin.joined A' B' wire' oa' ob').adapters
+    provenance.adapters.symm
+  refine ⟨metadata, ?_⟩
+  have compositeInputs : InputAgreement (combinedChange a b wire wire')
+      (liftInput A B wire η) (liftInput A' B' wire' η') :=
+    metadata.2.2.2.1
+  have run := runner_congruence a b wire wire'
+    (rawBoundarySquare_coordinates a b wire wire' square)
+    rA rB rA' rB' agreeA agreeB _ _ compositeInputs
+    (actualHistory _ _ (compositeRankCertificate A B wire rA rB))
+    (actualHistory_spec (compose A B wire) (liftInput A B wire η)
+      (compositeRankCertificate A B wire rA rB)).2.1
+  change actualHistory (compose A' B' wire') (liftInput A' B' wire' η')
+      (compositeRankCertificate A' B' wire' rA' rB') =
+    (combinedTransport a b).toGraphTransport.history.apply
+      (actualHistory (compose A B wire) (liftInput A B wire η)
+        (compositeRankCertificate A B wire rA rB))
+  exact GraphHistory.toRun_injective
+    ((actualHistory_spec (compose A' B' wire') (liftInput A' B' wire' η')
+      (compositeRankCertificate A' B' wire' rA' rB')).2.1.trans run.symm)
+
+def Agrees : {X Y : Object} → Normal X Y → Normal X Y → Prop
+  | _, _, .admin a, .admin b => a = b
+  | _, _, @Normal.compute _ _ _ _ _ A rA oa beforeA afterA,
+      @Normal.compute _ _ _ _ _ B rB ob beforeB afterB =>
+      ComputeAgrees A B rA rB oa ob beforeA afterA beforeB afterB
+  | _, _, _, _ => False
+
+theorem agrees_refl {X Y : Object} (f : Normal X Y) : Agrees f f := by
+  cases f with
+  | admin w => rfl
+  | compute A rank origin before after =>
+      exact ⟨MetadataTransport.refl _, Equiv.refl _, .refl _,
+        reindexExterior_refl _, reindexExterior_refl _,
+        fun _ => CompleteObservation.agrees_refl _⟩
+
+theorem agrees_symm {X Y : Object} {f g : Normal X Y}
+    (h : Agrees f g) : Agrees g f := by
+  cases f <;> cases g
+  · exact h.symm
+  · exact False.elim h
+  · exact False.elim h
+  · obtain ⟨t, e, origin, before, after, actual⟩ := h
+    refine ⟨t.symm, e.symm, .symm origin, ?_, ?_, ?_⟩
+    · rw [← before, reindexExterior_symm]
+    · rw [← after, reindexExterior_symm]
+    · intro x
+      exact CompleteObservation.agrees_symm t e (actual x)
+
+theorem agrees_trans {X Y : Object} {f g h : Normal X Y}
+    (fg : Agrees f g) (gh : Agrees g h) : Agrees f h := by
+  cases f <;> cases g <;> cases h
+  · exact fg.trans gh
+  all_goals first
+    | exact False.elim fg
+    | exact False.elim gh
+    | obtain ⟨t, e, p, bi, bo, actual⟩ := fg
+      obtain ⟨u, d, q, ci, co, next⟩ := gh
+      refine ⟨t.trans u, e.trans d, .trans p q, ?_, ?_, ?_⟩
+      · rw [reindexExterior_trans, bi, ci]
+      · rw [reindexExterior_trans, bo, co]
+      · intro x
+        exact CompleteObservation.agrees_trans t u e d (actual x) (next x)
+
+def normalSetoid (X Y : Object) : Setoid (Normal X Y) where
+  r := Agrees
+  iseqv := ⟨agrees_refl, agrees_symm, agrees_trans⟩
+
+def Arrow (X Y : Object) := Quotient (normalSetoid X Y)
+
+theorem admin_compute_ne {X Y : Object} (w : Wire X Y)
+    (A : MatchedComponent σ) (rank : A.program.RankCertificate) (origin : Origin A)
+    (before : Wire X (input A)) (after : Wire (output A) Y) :
+    ¬ Agrees (.admin w) (.compute A rank origin before after) := id
+
+theorem rank_independent {X Y : Object} (A : MatchedComponent σ)
+    (r s : A.program.RankCertificate) (origin : Origin A)
+    (before : Wire X (input A)) (after : Wire (output A) Y) :
+    Agrees (.compute A r origin before after) (.compute A s origin before after) := by
+  refine ⟨MetadataTransport.refl _, Equiv.refl _, .refl _,
+    reindexExterior_refl _, reindexExterior_refl _, ?_⟩
+  intro x
+  rw [actualObservation_rank_independent A origin _ r s]
+  exact CompleteObservation.agrees_refl _
+
+theorem identity_comp {X Y : Object} (f : Normal X Y) :
+    Agrees ((Normal.identity X).comp f) f := by
+  rw [Normal.identity_comp]
+  exact agrees_refl _
+
+theorem comp_identity {X Y : Object} (f : Normal X Y) :
+    Agrees (f.comp (Normal.identity Y)) f := by
+  rw [Normal.comp_identity]
+  exact agrees_refl _
+
+/-- Named laws, discharged below before descending composition. -/
+def CompositionCongruence : Prop :=
+  ∀ {X Y Z : Object} {f f' : Normal X Y} {g g' : Normal Y Z},
+    Agrees f f' → Agrees g g' → Agrees (f.comp g) (f'.comp g')
+
+def CompositionAssociativity : Prop :=
+  ∀ {W X Y Z : Object} (f : Normal W X) (g : Normal X Y) (h : Normal Y Z),
+    Agrees ((f.comp g).comp h) (f.comp (g.comp h))
+
+/-- The structural gluing interface discharged by `exterior_gluing`.
+    No execution agreement occurs among its hypotheses or conclusions. -/
+def ExteriorGluing : Prop :=
+  ∀ {σA σB τA τB : Declarations Unit}
+    [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype τA.Tensor] [DecidableEq τA.Tensor]
+    [Fintype τB.Tensor] [DecidableEq τB.Tensor]
+    {A : MatchedComponent σA} {B : MatchedComponent σB}
+    {A' : MatchedComponent τA} {B' : MatchedComponent τB}
+    (a : ScopeChange A A') (b : ScopeChange B B') {Y : Object}
+    (afterA : Wire (output A) Y) (afterA' : Wire (output A') Y)
+    (beforeB : Wire Y (input B)) (beforeB' : Wire Y (input B')),
+    reindexExterior a.transport (outputExterior A afterA) = outputExterior A' afterA' →
+    reindexExterior b.transport (inputExterior B beforeB) = inputExterior B' beforeB' →
+    let wire := connectingBoundary A B (afterA.comp beforeB)
+    let wire' := connectingBoundary A' B' (afterA'.comp beforeB')
+    ∃ (left : Wire (output A') (output A))
+      (right : Wire (input B) (input B')),
+      reindexExterior a.transport (outputExterior A (Wire.identity _)) =
+        outputExterior A' left ∧
+      reindexExterior b.transport (inputExterior B (Wire.identity _)) =
+        inputExterior B' right ∧
+      RawBoundarySquare a b wire wire' ∧
+      boundaryReindex A B A' B' left right wire = wire'
+
+theorem composition_associativity : CompositionAssociativity := by
+  intro W X Y Z f g h
+  cases f with
+  | admin a =>
+      cases g <;> cases h <;> exact agrees_refl _
+  | compute A rA oa beforeA afterA =>
+      cases g with
+      | admin b =>
+          cases h <;> exact agrees_refl _
+      | compute B rB ob beforeB afterB =>
+          cases h with
+          | admin c => exact agrees_refl _
+          | compute C rC oc beforeC afterC =>
+              let ab := connectingBoundary A B (afterA.comp beforeB)
+              let bc := connectingBoundary B C (afterB.comp beforeC)
+              have left :
+                  connectingBoundary (compose A B ab) C
+                    (((outputWire A B ab).comp afterB).comp beforeC) =
+                    leftNestedBoundary A B C ab bc := by
+                change connectingBoundary _ _ ((outputWire A B ab).comp
+                  (boundaryWire B C bc)) = _
+                exact connecting_left A B C ab bc
+              have right :
+                  connectingBoundary A (compose B C bc)
+                    (afterA.comp (beforeB.comp (inputWire B C bc))) =
+                    rightNestedBoundary A B C ab bc := by
+                change connectingBoundary _ _ ((boundaryWire A B ab).comp
+                  (inputWire B C bc)) = _
+                exact connecting_right A B C ab bc
+              dsimp only [Normal.comp]
+              change ComputeAgrees _ _ _ _ _ _ _ _ _ _
+              dsimp only [ab, bc] at left right
+              rw [left, right]
+              exact compute_reassociation A B C ab bc oa ob oc rA rB rC _ _
+                beforeA afterC
+
+theorem output_roles {A : MatchedComponent σ} {B : MatchedComponent τ}
+    (a : ScopeChange A B) (t : σ.Tensor) :
+    B.program.output (a.transport.tensor t) = A.program.output t := by
+  have members : a.transport.tensor t ∈ B.outputs.map Port.tensor ↔
+      t ∈ A.outputs.map Port.tensor := by
+    rw [a.outputs, List.map_map]
+    simp only [List.mem_map]
+    constructor
+    · rintro ⟨p, hp, eq⟩
+      exact ⟨p, hp, a.transport.tensor.injective eq⟩
+    · rintro ⟨p, hp, eq⟩
+      exact ⟨p, hp, congrArg a.transport.tensor eq⟩
+  have h := (B.outputs_exact _).symm.trans (members.trans (A.outputs_exact _))
+  cases h₁ : A.program.output t <;>
+    cases h₂ : B.program.output (a.transport.tensor t) <;> simp_all
+
+def outputEquiv {A : MatchedComponent σ} {B : MatchedComponent τ}
+    (a : ScopeChange A B) :
+    {t // A.program.output t = true} ≃ {t // B.program.output t = true} where
+  toFun t := ⟨a.transport.tensor t.val, (output_roles a t.val).trans t.property⟩
+  invFun t := ⟨a.transport.tensor.symm t.val, by
+    have h := output_roles a (a.transport.tensor.symm t.val)
+    simp only [Equiv.apply_symm_apply] at h
+    exact h.symm.trans t.property⟩
+  left_inv t := Subtype.ext (a.transport.tensor.symm_apply_apply t.val)
+  right_inv t := Subtype.ext (a.transport.tensor.apply_symm_apply t.val)
+
+def inputBackward {A : MatchedComponent σ} {B : MatchedComponent τ}
+    (a : ScopeChange A B) : Wire (input B) (input A) where
+  ports := a.input
+  domain := fun i => a.transport.domain i.val
+
+def outputBackward {A : MatchedComponent σ} {B : MatchedComponent τ}
+    (a : ScopeChange A B) : Wire (output B) (output A) where
+  ports := outputEquiv a
+  domain := fun i => a.transport.domain i.val
+
+omit [Fintype σ.Tensor] [DecidableEq σ.Tensor] in
+private theorem located_snd {shape : Shape} {a b : σ.Tensor}
+    {d : Domain shape (σ.signature a).axes} {e : Domain shape (σ.signature b).axes}
+    (h : (⟨a, d⟩ : LocatedDomain shape σ) = ⟨b, e⟩) : HEq d e := by
+  cases h
+  rfl
+
+theorem output_wire_square {A : MatchedComponent σ} {B : MatchedComponent τ}
+    (a : ScopeChange A B) {Y : Object}
+    (after : Wire (output A) Y) (after' : Wire (output B) Y)
+    (h : reindexExterior a.transport (outputExterior A after) = outputExterior B after') :
+    (outputBackward a).comp after = after' := by
+  apply wire_ext_pointwise
+  · apply Equiv.ext
+    intro y
+    exact Subtype.ext (congrArg Sigma.fst (congrFun h y))
+  · intro y
+    exact located_snd (congrFun h y)
+
+theorem input_wire_square {A : MatchedComponent σ} {B : MatchedComponent τ}
+    (a : ScopeChange A B) {X : Object}
+    (before : Wire X (input A)) (before' : Wire X (input B))
+    (h : reindexExterior a.transport (inputExterior A before) = inputExterior B before') :
+    (inputBackward a).comp before.inverse = before'.inverse := by
+  apply wire_ext_pointwise
+  · apply Equiv.ext
+    intro x
+    exact Subtype.ext (congrArg Sigma.fst (congrFun h x))
+  · intro x
+    exact located_snd (congrFun h x)
+
+theorem exterior_gluing : ExteriorGluing := by
+  intro σA σB τA τB _ _ _ _ _ _ _ _ A B A' B' a b Y afterA afterA' beforeB beforeB' ha hb
+  let wire := connectingBoundary A B (afterA.comp beforeB)
+  let wire' := connectingBoundary A' B' (afterA'.comp beforeB')
+  have out := output_wire_square a afterA afterA' ha
+  have inp := input_wire_square b beforeB beforeB' hb
+  have before : beforeB'.comp (inputBackward b) = beforeB := by
+    have h := congrArg (fun w => (beforeB'.comp w).comp beforeB) inp
+    simpa only [wire_assoc, wire_inverse_comp, wire_comp_inverse,
+      wire_comp_id, wire_id_comp] using h
+  have square : (outputBackward a).comp (boundaryWire A B wire) =
+      (boundaryWire A' B' wire').comp (inputBackward b) := by
+    change (outputBackward a).comp (afterA.comp beforeB) =
+      (afterA'.comp beforeB').comp (inputBackward b)
+    rw [← wire_assoc, out, wire_assoc, before]
+  refine ⟨outputBackward a, (inputBackward b).inverse, ?_, ?_, ?_, ?_⟩
+  · rfl
+  · change reindexExterior b.transport (inputExterior B (Wire.identity _)) =
+      inputExterior B' (inputBackward b).inverse
+    unfold inputExterior
+    rw [wire_inverse_inverse]
+    rfl
+  · intro i
+    exact congrArg (fun w : Wire (output A') (input B) =>
+      (⟨(w.ports i).val, w.domain i⟩ : LocatedDomain (σB.signature i.val).axes τA)) square
+  · apply (boundaryEquiv A' B').injective
+    change ((outputBackward a).comp (boundaryWire A B wire)).comp
+      (inputBackward b).inverse = boundaryWire A' B' wire'
+    rw [square, wire_assoc, wire_comp_inverse, wire_comp_id]
+
+theorem output_exterior_of_square {A : MatchedComponent σ} {B : MatchedComponent τ}
+    (a : ScopeChange A B) {Y : Object}
+    (after : Wire (output A) Y) (after' : Wire (output B) Y)
+    (h : (outputBackward a).comp after = after') :
+    reindexExterior a.transport (outputExterior A after) = outputExterior B after' := by
+  funext y
+  exact congrArg (fun w : Wire (output B) Y =>
+    (⟨(w.ports y).val, w.domain y⟩ :
+      LocatedDomain (Y.interface.signature y).axes τ)) h
+
+theorem input_exterior_of_square {A : MatchedComponent σ} {B : MatchedComponent τ}
+    (a : ScopeChange A B) {X : Object}
+    (before : Wire X (input A)) (before' : Wire X (input B))
+    (h : (inputBackward a).comp before.inverse = before'.inverse) :
+    reindexExterior a.transport (inputExterior A before) = inputExterior B before' := by
+  funext x
+  exact congrArg (fun w : Wire (input B) X =>
+    (⟨(w.ports x).val, w.domain x⟩ :
+      LocatedDomain (X.interface.signature x).axes τ)) h
+
+theorem composite_input_exterior
+    {σA σB τA τB : Declarations Unit}
+    [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype τA.Tensor] [DecidableEq τA.Tensor]
+    [Fintype τB.Tensor] [DecidableEq τB.Tensor]
+    {A : MatchedComponent σA} {B : MatchedComponent σB}
+    {A' : MatchedComponent τA} {B' : MatchedComponent τB}
+    (a : ScopeChange A A') (b : ScopeChange B B')
+    (wire : Boundary A B) (wire' : Boundary A' B') {X : Object}
+    (before : Wire X (input A)) (before' : Wire X (input A'))
+    (h : reindexExterior a.transport (inputExterior A before) = inputExterior A' before') :
+    reindexExterior (combinedTransport a b)
+      (inputExterior (compose A B wire) (before.comp (inputWire A B wire))) =
+    inputExterior (compose A' B' wire') (before'.comp (inputWire A' B' wire')) := by
+  apply input_exterior_of_square (combinedChange a b wire wire')
+  have natural :
+      (inputBackward (combinedChange a b wire wire')).comp (inputWire A B wire).inverse =
+      (inputWire A' B' wire').inverse.comp (inputBackward a) := by
+    apply wire_ext_pointwise
+    · apply Equiv.ext
+      intro i
+      apply Subtype.ext
+      rfl
+    · intro i
+      change HEq ((Domain.id _).comp (a.transport.domain i.val))
+        ((a.transport.domain i.val).comp (Domain.id _))
+      rw [domain_id_comp, domain_comp_id]
+  rw [wire_inverse_composite, wire_inverse_composite, ← wire_assoc, natural,
+    wire_assoc, input_wire_square a before before' h]
+
+theorem composite_output_exterior
+    {σA σB τA τB : Declarations Unit}
+    [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype τA.Tensor] [DecidableEq τA.Tensor]
+    [Fintype τB.Tensor] [DecidableEq τB.Tensor]
+    {A : MatchedComponent σA} {B : MatchedComponent σB}
+    {A' : MatchedComponent τA} {B' : MatchedComponent τB}
+    (a : ScopeChange A A') (b : ScopeChange B B')
+    (wire : Boundary A B) (wire' : Boundary A' B') {Y : Object}
+    (after : Wire (output B) Y) (after' : Wire (output B') Y)
+    (h : reindexExterior b.transport (outputExterior B after) = outputExterior B' after') :
+    reindexExterior (combinedTransport a b)
+      (outputExterior (compose A B wire) ((outputWire A B wire).comp after)) =
+    outputExterior (compose A' B' wire') ((outputWire A' B' wire').comp after') := by
+  apply output_exterior_of_square (combinedChange a b wire wire')
+  have natural :
+      (outputBackward (combinedChange a b wire wire')).comp (outputWire A B wire) =
+      (outputWire A' B' wire').comp (outputBackward b) := by
+    apply wire_ext_pointwise
+    · apply Equiv.ext
+      intro i
+      apply Subtype.ext
+      rfl
+    · intro i
+      change HEq ((Domain.id _).comp (b.transport.domain i.val))
+        ((b.transport.domain i.val).comp (Domain.id _))
+      rw [domain_id_comp, domain_comp_id]
+  rw [← wire_assoc, natural, wire_assoc, output_wire_square b after after' h]
+
+theorem compute_comp_congruence
+    {σA σB τA τB : Declarations Unit}
+    [Fintype σA.Tensor] [DecidableEq σA.Tensor]
+    [Fintype σB.Tensor] [DecidableEq σB.Tensor]
+    [Fintype τA.Tensor] [DecidableEq τA.Tensor]
+    [Fintype τB.Tensor] [DecidableEq τB.Tensor]
+    {A : MatchedComponent σA} {B : MatchedComponent σB}
+    {A' : MatchedComponent τA} {B' : MatchedComponent τB}
+    {rA : A.program.RankCertificate} {rB : B.program.RankCertificate}
+    {rA' : A'.program.RankCertificate} {rB' : B'.program.RankCertificate}
+    {oa : Origin A} {ob : Origin B} {oa' : Origin A'} {ob' : Origin B'}
+    {X Y Z : Object}
+    {beforeA : Wire X (input A)} {afterA : Wire (output A) Y}
+    {beforeA' : Wire X (input A')} {afterA' : Wire (output A') Y}
+    {beforeB : Wire Y (input B)} {afterB : Wire (output B) Z}
+    {beforeB' : Wire Y (input B')} {afterB' : Wire (output B') Z}
+    (h : ComputeAgrees A A' rA rA' oa oa' beforeA afterA beforeA' afterA')
+    (k : ComputeAgrees B B' rB rB' ob ob' beforeB afterB beforeB' afterB') :
+    Agrees ((Normal.compute A rA oa beforeA afterA).comp
+        (.compute B rB ob beforeB afterB))
+      ((Normal.compute A' rA' oa' beforeA' afterA').comp
+        (.compute B' rB' ob' beforeB' afterB')) := by
+  obtain ⟨a, ea, pa, ai, ao, actualA, runA⟩ := comparison_runner h
+  obtain ⟨b, eb, pb, bi, bo, actualB, runB⟩ := comparison_runner k
+  obtain ⟨left, right, ls, rs, square, image⟩ :=
+    exterior_gluing a b afterA afterA' beforeB beforeB' ao bi
+  let wire := connectingBoundary A B (afterA.comp beforeB)
+  let wire' := connectingBoundary A' B' (afterA'.comp beforeB')
+  have provenance := ProvenanceIso.joined a b pa pb wire wire' left right ls rs square image
+  refine ⟨combinedTransport a b, _, provenance,
+    composite_input_exterior a b wire wire' beforeA beforeA' ai,
+    composite_output_exterior a b wire wire' afterB afterB' bo, ?_⟩
+  intro x
+  change (actualObservation _ _ (externalInput _ (beforeA.comp (inputWire A B wire)) x) _).Agrees
+    _ _ (actualObservation _ _ (externalInput _ (beforeA'.comp (inputWire A' B' wire')) x) _)
+  rw [externalInput_join, externalInput_join]
+  exact joined_observation_congruence a b wire wire' oa ob oa' ob' _ provenance
+    square rA rB rA' rB' runA runB _ _ (actualA x).1.2.2.2.1
+
+theorem compute_precompose
+    {W X Y : Object} {A : MatchedComponent σ} {B : MatchedComponent τ}
+    {rA : A.program.RankCertificate} {rB : B.program.RankCertificate}
+    {oa : Origin A} {ob : Origin B}
+    {beforeA : Wire X (input A)} {afterA : Wire (output A) Y}
+    {beforeB : Wire X (input B)} {afterB : Wire (output B) Y}
+    (w : Wire W X)
+    (h : ComputeAgrees A B rA rB oa ob beforeA afterA beforeB afterB) :
+    ComputeAgrees A B rA rB oa ob (w.comp beforeA) afterA (w.comp beforeB) afterB := by
+  obtain ⟨a, e, p, bi, bo, actual, _⟩ := comparison_runner h
+  refine ⟨a.transport, e, p, ?_, bo, ?_⟩
+  · apply input_exterior_of_square a
+    rw [wire_inverse_composite, wire_inverse_composite, ← wire_assoc,
+      input_wire_square a beforeA beforeB bi]
+  · intro x
+    exact actual (w.env x)
+
+theorem compute_postcompose
+    {X Y Z : Object} {A : MatchedComponent σ} {B : MatchedComponent τ}
+    {rA : A.program.RankCertificate} {rB : B.program.RankCertificate}
+    {oa : Origin A} {ob : Origin B}
+    {beforeA : Wire X (input A)} {afterA : Wire (output A) Y}
+    {beforeB : Wire X (input B)} {afterB : Wire (output B) Y}
+    (w : Wire Y Z)
+    (h : ComputeAgrees A B rA rB oa ob beforeA afterA beforeB afterB) :
+    ComputeAgrees A B rA rB oa ob beforeA (afterA.comp w) beforeB (afterB.comp w) := by
+  obtain ⟨a, e, p, bi, bo, actual, _⟩ := comparison_runner h
+  refine ⟨a.transport, e, p, bi, ?_, actual⟩
+  apply output_exterior_of_square a
+  rw [← wire_assoc, output_wire_square a afterA afterB bo]
+
+theorem composition_congruence : CompositionCongruence := by
+  intro X Y Z f f' g g' hf hg
+  cases f with
+  | admin w =>
+      cases f' with
+      | compute => exact False.elim hf
+      | admin w' =>
+          have eq : w = w' := hf
+          subst w'
+          cases g with
+          | admin v =>
+              cases g' with
+              | compute => exact False.elim hg
+              | admin v' =>
+                  have eq : v = v' := hg
+                  subst v'
+                  exact agrees_refl _
+          | compute B rB ob beforeB afterB =>
+              cases g' with
+              | admin => exact False.elim hg
+              | compute B' rB' ob' beforeB' afterB' =>
+                  exact compute_precompose w hg
+  | compute A rA oa beforeA afterA =>
+      cases f' with
+      | admin => exact False.elim hf
+      | compute A' rA' oa' beforeA' afterA' =>
+          cases g with
+          | admin w =>
+              cases g' with
+              | compute => exact False.elim hg
+              | admin w' =>
+                  have eq : w = w' := hg
+                  subst w'
+                  exact compute_postcompose w hf
+          | compute B rB ob beforeB afterB =>
+              cases g' with
+              | admin => exact False.elim hg
+              | compute B' rB' ob' beforeB' afterB' =>
+                  exact compute_comp_congruence hf hg
+
+noncomputable def Arrow.identity (X : Object) : Arrow X X :=
+  Quotient.mk _ (Normal.identity X)
+
+noncomputable def Arrow.comp {X Y Z : Object}
+    (f : Arrow X Y) (g : Arrow Y Z) : Arrow X Z :=
+  Quotient.liftOn₂ f g (fun a b => Quotient.mk _ (a.comp b)) (by
+    intro a b a' b' ha hb
+    exact Quotient.sound (composition_congruence ha hb))
+
+theorem Arrow.identity_comp {X Y : Object} (f : Arrow X Y) :
+    (Arrow.identity X).comp f = f := by
+  refine Quotient.inductionOn f ?_
+  intro a
+  exact Quotient.sound (IndexedRankedOperationalCategory.identity_comp a)
+
+theorem Arrow.comp_identity {X Y : Object} (f : Arrow X Y) :
+    f.comp (Arrow.identity Y) = f := by
+  refine Quotient.inductionOn f ?_
+  intro a
+  exact Quotient.sound (IndexedRankedOperationalCategory.comp_identity a)
+
+theorem Arrow.associativity {W X Y Z : Object}
+    (f : Arrow W X) (g : Arrow X Y) (h : Arrow Y Z) :
+    (f.comp g).comp h = f.comp (g.comp h) := by
+  refine Quotient.inductionOn₃ f g h ?_
+  intro a b c
+  exact Quotient.sound (composition_associativity a b c)
+
+/-- A distinct object wrapper avoids changing the existing witness-source category. -/
+structure Target where
+  interface : Object
+
+noncomputable instance targetCategory : CategoryTheory.Category Target where
+  Hom X Y := Arrow X.interface Y.interface
+  id X := Arrow.identity X.interface
+  comp f g := Arrow.comp f g
+  id_comp f := Arrow.identity_comp f
+  comp_id f := Arrow.comp_identity f
+  assoc f g h := Arrow.associativity f g h
+
+#print axioms agrees_refl
+#print axioms agrees_symm
+#print axioms agrees_trans
+#print axioms rank_independent
+#print axioms comparison_runner
+#print axioms rawBoundarySquare_coordinates
+#print axioms ProvenanceIso.adapters
+#print axioms actual_nested_observations
+#print axioms compute_reassociation
+#print axioms composition_associativity
+#print axioms joined_observation_congruence
+#print axioms opaque_not_joined
+#print axioms exterior_gluing
+#print axioms composite_input_exterior
+#print axioms composite_output_exterior
+#print axioms compute_comp_congruence
+#print axioms composition_congruence
+#print axioms targetCategory
+
+end IndexedRankedOperationalCategory

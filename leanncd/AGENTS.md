@@ -21,7 +21,30 @@ actual bracketings after explicit inherited transports. See the
 These modules belong only to `IndexedExecutionExperiment`, not production
 `LeanNCD`. `IndexedSourceTest` retains strict undefinedness, hidden complete
 stores and empty metadata. Observation probes and separate parity modules
-are test-only. No core identity computation or event-sensitive process category is claimed.
+are test-only. This witness interpretation does not claim a core identity
+computation or event-sensitive process category.
+
+The ranked operational entry point is `import IndexedRankedOperationalSemantics`.
+`IndexedRankedOperationalCategory.Target` has an actual Mathlib category of
+typed normal arrows modulo fixed-transport, all-input full observation agreement.
+Administrative wires preserve inherited state without a core program.
+Computations retain ranks, explicit exterior wires and opaque/joined `Origin`
+provenance; original certified boundaries are not reconstructed from addresses.
+`composition_congruence` derives actual binary execution agreement through
+full-state scope lifts and raw exterior gluing. The distinct ranked source
+category has a generated congruence, decorated assembly, derived bracket
+agreement and a genuine `IndexedRankedOperationalSource.semantics` functor.
+Opaque compiled leaves are not silently identified with joined origins.
+`Realizes` connects these normal/source arrows to inherited-state histories:
+administrative branches execute `runWire`, while computations lift actual local
+histories through explicit fresh frames with preserved outside values and ordered
+prefixes. `source_history`/`semantics_history` preserve these realizations under
+structural frame coherence; successful boundary views are derived, not assumed.
+`actualReferenceObservation` retains actual reference execution and every full
+`Relation`, including pending occurrences and accumulators. No runner, scheduler,
+default budget, witness-source equation or core operator changes.
+The test/audit modules remain nondefault; see the
+[ranked operational record](../papers/semantics/categorical_ranked_operational_interpretation_record.md).
 
 The associative operational entry point is `import IndexedOperationalSemantics`.
 `CompleteObservation.Agrees` retains whole ports, validated Option-valued input,
@@ -36,7 +59,8 @@ ordered/coincident cuts and both original boundary inputs. Actual reference runs
 retain the full `Relation`, including pending occurrences and accumulators.
 Budgets are `nA+nB+nC+1`; malformed raw-input validation is not reassociated.
 All these modules remain nondefault under `IndexedExecutionExperiment`.
-No event-free core identity or full process category is claimed; see the
+This associativity layer alone claims no event-free core identity or full
+process category; see the
 [operational associativity record](../papers/semantics/categorical_operational_associativity_record.md).
 
 The binary operational entry point remains `import IndexedRankedExecutionSemantics`.

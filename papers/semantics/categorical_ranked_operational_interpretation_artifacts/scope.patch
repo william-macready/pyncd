@@ -1,0 +1,435 @@
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -204,6 +204,7 @@
+          "IndexedOperationalUnits",
+          "IndexedOperationalWireFrame",
+          "IndexedRankedOperationalCore",
++         "IndexedOperationalScopeNaturality",
+          "IndexedOperationalHistoryAssociativity",
+          "IndexedOperationalRuns",
+          "IndexedOperationalRunsPhases",
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedOperationalScopeNaturality.lean
+@@ -0,0 +1,422 @@
++import IndexedOperationalAssociativity
++import IndexedOperationalHistoryComposition
++import IndexedRankedOperationalCore
++
++namespace IndexedOperationalScopeNaturality
++
++open LeanNCD.Semantics IndexedOpenComposition IndexedComponentTransport
++open IndexedComponentComposition IndexedComponentExecution IndexedOperationalHistory
++open IndexedOperationalHistoryComposition
++
++variable {σA σB τA τB : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable [Fintype τA.Tensor] [DecidableEq τA.Tensor]
++variable [Fintype τB.Tensor] [DecidableEq τB.Tensor]
++
++structure ScopeChange (A : MatchedComponent σA) (A' : MatchedComponent τA) where
++  transport : MetadataTransport σA τA
++  roles : ∀ t, A'.program.input (transport.tensor t) = A.program.input t
++  inputs : A'.inputs = A.inputs.map transport.port
++  outputs : A'.outputs = A.outputs.map transport.port
++
++def ScopeChange.roleEquiv {A : MatchedComponent σA} {A' : MatchedComponent τA}
++    (change : ScopeChange A A') (value : Bool) :
++    {t // A.program.input t = value} ≃ {t // A'.program.input t = value} where
++  toFun t := ⟨change.transport.tensor t.val, (change.roles t.val).trans t.property⟩
++  invFun t := ⟨change.transport.tensor.symm t.val, by
++    have h := change.roles (change.transport.tensor.symm t.val)
++    simp only [Equiv.apply_symm_apply] at h
++    exact h.symm.trans t.property⟩
++  left_inv t := Subtype.ext (change.transport.tensor.symm_apply_apply t.val)
++  right_inv t := Subtype.ext (change.transport.tensor.apply_symm_apply t.val)
++
++def ScopeChange.defined {A : MatchedComponent σA} {A' : MatchedComponent τA}
++    (change : ScopeChange A A') : A.program.Defined ≃ A'.program.Defined :=
++  change.roleEquiv false
++
++def ScopeChange.input {A : MatchedComponent σA} {A' : MatchedComponent τA}
++    (change : ScopeChange A A') :
++    {t // A.program.input t = true} ≃ {t // A'.program.input t = true} :=
++  change.roleEquiv true
++
++private def mergeIdentity : Nat ⊕ Nat → Nat
++  | .inl n => upstreamId n
++  | .inr n => downstreamId n
++
++noncomputable def parity : Nat ⊕ Nat ≃ Nat :=
++  Equiv.ofBijective mergeIdentity ⟨by
++    rintro (a | a) (b | b) h
++    · apply congrArg Sum.inl
++      exact upstreamId_injective h
++    · exact False.elim (ids_disjoint a b h)
++    · exact False.elim (ids_disjoint b a h.symm)
++    · apply congrArg Sum.inr
++      exact downstreamId_injective h,
++    by
++      intro n
++      by_cases even : n % 2 = 0
++      · refine ⟨.inl (n / 2), ?_⟩
++        dsimp [mergeIdentity, upstreamId]
++        omega
++      · refine ⟨.inr (n / 2), ?_⟩
++        dsimp [mergeIdentity, downstreamId]
++        omega⟩
++
++@[simp] theorem parity_up (n : Nat) : parity (.inl n) = upstreamId n := rfl
++@[simp] theorem parity_down (n : Nat) : parity (.inr n) = downstreamId n := rfl
++
++noncomputable def combinedIdentity (a b : Nat ≃ Nat) : Nat ≃ Nat :=
++  parity.symm.trans ((Equiv.sumCongr a b).trans parity)
++
++@[simp] theorem combinedIdentity_up (a b : Nat ≃ Nat) (n : Nat) :
++    combinedIdentity a b (upstreamId n) = upstreamId (a n) := by
++  change parity ((Equiv.sumCongr a b) (parity.symm (parity (.inl n)))) = _
++  rw [Equiv.symm_apply_apply]
++  rfl
++
++@[simp] theorem combinedIdentity_down (a b : Nat ≃ Nat) (n : Nat) :
++    combinedIdentity a b (downstreamId n) = downstreamId (b n) := by
++  change parity ((Equiv.sumCongr a b) (parity.symm (parity (.inr n)))) = _
++  rw [Equiv.symm_apply_apply]
++  rfl
++
++variable {A : MatchedComponent σA} {B : MatchedComponent σB}
++variable {A' : MatchedComponent τA} {B' : MatchedComponent τB}
++
++def tensorEquiv (a : ScopeChange A A') (b : ScopeChange B B') :
++    (declarations A B).Tensor ≃ (declarations A' B').Tensor :=
++  Equiv.sumCongr a.transport.tensor b.defined
++
++def combinedDomain (a : ScopeChange A A') (b : ScopeChange B B') :
++    ∀ t, Domain ((declarations A B).signature t).axes
++      ((declarations A' B').signature (tensorEquiv a b t)).axes
++  | .inl t => a.transport.domain t
++  | .inr t => b.transport.domain t.val
++
++noncomputable def combinedTransport (a : ScopeChange A A') (b : ScopeChange B B') :
++    MetadataTransport (declarations A B) (declarations A' B') where
++  address := Equiv.sigmaCongr (tensorEquiv a b) (fun t => (combinedDomain a b t).coord)
++  identity := combinedIdentity a.transport.identity b.transport.identity
++  tensor := tensorEquiv a b
++  domain := combinedDomain a b
++  address_eq := fun _ => rfl
++
++theorem upstream_address (a : ScopeChange A A') (b : ScopeChange B B')
++    (x : Address σA) :
++    (combinedTransport a b).address ((upstream A B).address x) =
++      (upstream A' B').address (a.transport.address x) := by
++  rw [a.transport.address_eq]
++  rfl
++
++theorem upstream_state (a : ScopeChange A A') (b : ScopeChange B B') (s : State σA) :
++    (combinedTransport a b).toGraphTransport.mapState (upstreamState A B s) =
++      upstreamState A' B' (a.transport.toGraphTransport.mapState s) := by
++  apply congrArg₂ State.mk
++  · funext target
++    obtain ⟨⟨t, p⟩, rfl⟩ := (combinedTransport a b).address.surjective target
++    simp only [GraphTransport.mapState, Equiv.symm_apply_apply]
++    cases t with
++    | inl t =>
++        change s.available ⟨t, p⟩ =
++          s.available (a.transport.address.symm
++            ⟨a.transport.tensor t, (a.transport.domain t).coord p⟩)
++        rw [← a.transport.address_eq ⟨t, p⟩, Equiv.symm_apply_apply]
++    | inr t => rfl
++  · simp [GraphTransport.mapState, upstreamState, mapLedger, List.map_map,
++      Function.comp_def, combinedTransport]
++
++theorem downstream_state (a : ScopeChange A A') (b : ScopeChange B B')
++    (completed : State σA) (s : State σB) :
++    (combinedTransport a b).toGraphTransport.mapState
++        (downstreamState A B completed s) =
++      downstreamState A' B' (a.transport.toGraphTransport.mapState completed)
++        (b.transport.toGraphTransport.mapState s) := by
++  apply congrArg₂ State.mk
++  · funext target
++    obtain ⟨⟨t, p⟩, rfl⟩ := (combinedTransport a b).address.surjective target
++    simp only [GraphTransport.mapState, Equiv.symm_apply_apply]
++    cases t with
++    | inl t =>
++        change completed.available ⟨t, p⟩ =
++          completed.available (a.transport.address.symm
++            ⟨a.transport.tensor t, (a.transport.domain t).coord p⟩)
++        rw [← a.transport.address_eq ⟨t, p⟩, Equiv.symm_apply_apply]
++    | inr t =>
++        change s.available ⟨t.val, p⟩ =
++          s.available (b.transport.address.symm
++            ⟨b.transport.tensor t.val, (b.transport.domain t.val).coord p⟩)
++        rw [← b.transport.address_eq ⟨t.val, p⟩, Equiv.symm_apply_apply]
++  · simp [GraphTransport.mapState, downstreamState, mapLedger, List.map_map,
++      List.map_append, Function.comp_def, combinedTransport]
++
++theorem upstream_event (a : ScopeChange A A') (b : ScopeChange B B') (e : Event σA) :
++    (combinedTransport a b).toGraphTransport.mapEvent
++        (mapEvent (upstream A B) upstreamId e) =
++      mapEvent (upstream A' B') upstreamId (a.transport.toGraphTransport.mapEvent e) := by
++  cases e with
++  | produced tag cap value =>
++      simp [mapEvent, GraphTransport.mapEvent, combinedTransport]
++  | sealed address value =>
++      exact congrArg (fun x => Event.sealed x value) (upstream_address a b address)
++  | undefined tag =>
++      simp [mapEvent, GraphTransport.mapEvent, combinedTransport]
++
++theorem downstream_event (a : ScopeChange A A') (b : ScopeChange B B')
++    (wire : Boundary A B) (wire' : Boundary A' B')
++    (square : ∀ x,
++      (combinedTransport a b).address ((downstream A B wire).address x) =
++        (downstream A' B' wire').address (b.transport.address x))
++    (e : Event σB) :
++    (combinedTransport a b).toGraphTransport.mapEvent
++        (mapEvent (downstream A B wire) downstreamId e) =
++      mapEvent (downstream A' B' wire') downstreamId
++        (b.transport.toGraphTransport.mapEvent e) := by
++  cases e with
++  | produced tag cap value =>
++      simp [mapEvent, GraphTransport.mapEvent, combinedTransport]
++  | sealed address value =>
++      exact congrArg (fun x => Event.sealed x value) (square address)
++  | undefined tag =>
++      simp [mapEvent, GraphTransport.mapEvent, combinedTransport]
++
++def BoundaryCoordinates (a : ScopeChange A A') (b : ScopeChange B B')
++    (wire : Boundary A B) (wire' : Boundary A' B') : Prop :=
++  ∀ i p,
++    a.transport.address ⟨(wire.matched i).val, (wire.domain i).coord p⟩ =
++      ⟨(wire'.matched (b.input i)).val,
++        (wire'.domain (b.input i)).coord ((b.transport.domain i.val).coord p)⟩
++
++theorem downstream_address (a : ScopeChange A A') (b : ScopeChange B B')
++    (wire : Boundary A B) (wire' : Boundary A' B')
++    (square : BoundaryCoordinates a b wire wire') (x : Address σB) :
++    (combinedTransport a b).address ((downstream A B wire).address x) =
++      (downstream A' B' wire').address (b.transport.address x) := by
++  rcases x with ⟨t, p⟩
++  by_cases role : B.program.input t = true
++  · rw [downstream_input_address A B wire ⟨t, role⟩ p, upstream_address]
++    rw [b.transport.address_eq]
++    change (upstream A' B').address
++        (a.transport.address ⟨(wire.matched ⟨t, role⟩).val,
++          (wire.domain ⟨t, role⟩).coord p⟩) =
++      (downstream A' B' wire').address
++        ⟨(b.input ⟨t, role⟩).val, (b.transport.domain t).coord p⟩
++    rw [downstream_input_address A' B' wire' (b.input ⟨t, role⟩)]
++    exact congrArg (upstream A' B').address (square ⟨t, role⟩ p)
++  · have defined : B.program.input t = false := Bool.eq_false_iff.mpr role
++    rw [downstream_defined_address A B wire ⟨t, defined⟩ p, b.transport.address_eq]
++    change (combinedTransport a b).address ⟨.inr ⟨t, defined⟩, p⟩ =
++      (downstream A' B' wire').address
++        ⟨(b.defined ⟨t, defined⟩).val, (b.transport.domain t).coord p⟩
++    rw [downstream_defined_address A' B' wire' (b.defined ⟨t, defined⟩)]
++    rfl
++
++def storeTransport (a : ScopeChange A A') (store : Store RationalReference.Carrier σA) :
++    Store RationalReference.Carrier τA :=
++  fun x => store (a.transport.address.symm x)
++
++def InputAgreement (a : ScopeChange A A') (η : A.program.Input)
++    (η' : A'.program.Input) : Prop :=
++  ∀ t, η'.val (a.transport.tensor t) =
++    (η.val t).map (fun values p => values ((a.transport.domain t).coord.symm p))
++
++theorem full_store (a : ScopeChange A A') (state : State σA)
++    (store : Store RationalReference.Carrier σA)
++    (full : ∀ x, state.available x = some (store x)) (x : Address τA) :
++    (a.transport.toGraphTransport.mapState state).available x =
++      some (storeTransport a store x) :=
++  full (a.transport.address.symm x)
++
++theorem boundary_inputs (a : ScopeChange A A') (b : ScopeChange B B')
++    (wire : Boundary A B) (wire' : Boundary A' B')
++    (square : BoundaryCoordinates a b wire wire')
++    (store : Store RationalReference.Carrier σA) :
++    InputAgreement b (boundaryInput A B wire store)
++      (boundaryInput A' B' wire' (storeTransport a store)) := by
++  intro t
++  by_cases role : B.program.input t = true
++  · have targetRole : B'.program.input (b.transport.tensor t) = true :=
++      (b.roles t).trans role
++    simp only [boundaryInput, role, targetRole, dif_pos, Option.map_some, Option.some.injEq]
++    funext target
++    obtain ⟨p, rfl⟩ := (b.transport.domain t).coord.surjective target
++    change store (a.transport.address.symm
++      ⟨(wire'.matched (b.input ⟨t, role⟩)).val,
++        (wire'.domain (b.input ⟨t, role⟩)).coord ((b.transport.domain t).coord p)⟩) =
++      store ⟨(wire.matched ⟨t, role⟩).val, (wire.domain ⟨t, role⟩).coord
++        ((b.transport.domain t).coord.symm ((b.transport.domain t).coord p))⟩
++    rw [Equiv.symm_apply_apply, ← square ⟨t, role⟩ p, Equiv.symm_apply_apply]
++  · have targetRole : ¬B'.program.input (b.transport.tensor t) = true := by
++      rw [b.roles]
++      exact role
++    simp [boundaryInput, role, targetRole]
++
++theorem upstream_history (a : ScopeChange A A') (b : ScopeChange B B')
++    (h : GraphHistory σA) :
++    (combinedTransport a b).toGraphTransport.history.apply (liftUpstream A B h) =
++      liftUpstream A' B' (a.transport.toGraphTransport.history.apply h) := by
++  simp only [liftUpstream, Transport.apply]
++  rw [History.map_comp, History.map_comp]
++  congr 1
++  · funext s
++    exact upstream_state a b s
++  · funext e
++    exact upstream_event a b e
++  · funext n
++    exact combinedIdentity_up _ _ _
++
++theorem downstream_history (a : ScopeChange A A') (b : ScopeChange B B')
++    (wire : Boundary A B) (wire' : Boundary A' B')
++    (square : ∀ x,
++      (combinedTransport a b).address ((downstream A B wire).address x) =
++        (downstream A' B' wire').address (b.transport.address x))
++    (completed : State σA) (h : GraphHistory σB) :
++    (combinedTransport a b).toGraphTransport.history.apply
++        (liftDownstream A B wire completed h) =
++      liftDownstream A' B' wire' (a.transport.toGraphTransport.mapState completed)
++        (b.transport.toGraphTransport.history.apply h) := by
++  simp only [liftDownstream, Transport.apply]
++  rw [History.map_comp, History.map_comp]
++  congr 1
++  · funext s
++    exact downstream_state a b completed s
++  · funext e
++    exact downstream_event a b wire wire' square e
++  · funext n
++    exact combinedIdentity_down _ _ _
++
++theorem combined_inputs (a : ScopeChange A A') (b : ScopeChange B B')
++    (wire : Boundary A B) (wire' : Boundary A' B') :
++    (compose A' B' wire').inputs =
++      (compose A B wire).inputs.map (combinedTransport a b).port := by
++  change A'.inputs.map (inputPort A' B') =
++    (A.inputs.map (inputPort A B)).map (combinedTransport a b).port
++  rw [a.inputs]
++  simp only [List.map_map]
++  apply List.map_congr_left
++  intro p _
++  apply IndexedOperationalAssociativity.port_ext
++  rfl
++
++theorem combined_outputs (a : ScopeChange A A') (b : ScopeChange B B')
++    (wire : Boundary A B) (wire' : Boundary A' B') :
++    (compose A' B' wire').outputs =
++      (compose A B wire).outputs.map (combinedTransport a b).port := by
++  apply List.ext_getElem
++  · simp [compose, outputPorts, b.outputs]
++  · intro i hi hj
++    apply IndexedOperationalAssociativity.port_ext
++    simp [compose, outputPorts, outputPort, MetadataTransport.port, b.outputs,
++      combinedTransport, tensorEquiv, ScopeChange.defined]
++    rfl
++
++theorem combined_metadata {D E : Type*}
++    (a : ScopeChange A A') (b : ScopeChange B B')
++    (wire : Boundary A B) (wire' : Boundary A' B')
++    (η : A.program.Input) (η' : A'.program.Input)
++    (inputs : ∀ t, η'.val (a.transport.tensor t) =
++      (η.val t).map (fun values p => values ((a.transport.domain t).coord.symm p)))
++    (adapters : D ≃ E) (original : D) (target : E)
++    (adapter_square : target = adapters original) :
++    (combinedTransport a b).Agrees adapters
++      (GraphMetadata.ofComponent (compose A B wire) (liftInput A B wire η) original)
++      (GraphMetadata.ofComponent (compose A' B' wire') (liftInput A' B' wire' η') target) := by
++  refine ⟨combined_inputs a b wire wire', combined_outputs a b wire wire', ?_, ?_,
++    adapter_square⟩
++  · rintro (t | t)
++    · exact a.roles t
++    · rfl
++  · rintro (t | t)
++    · exact inputs t
++    · rfl
++
++def RunnerAgreement (a : ScopeChange A A') : Prop :=
++  ∀ (η : A.program.Input) (η' : A'.program.Input), InputAgreement a η η' →
++    ∀ h : GraphHistory σA, h.toRun = runChecked A.contract A.fragment η.val →
++      GraphHistory.toRun (a.transport.toGraphTransport.history.apply h) =
++        runChecked A'.contract A'.fragment η'.val
++
++theorem binary_transport (a : ScopeChange A A') (b : ScopeChange B B')
++    (wire : Boundary A B) (wire' : Boundary A' B')
++    (square : BoundaryCoordinates a b wire wire') (agreement : RunnerAgreement b)
++    {source : GraphHistory σA} {result : GraphHistory (declarations A B)}
++    (binary : BinaryHistory A B wire source result) :
++    BinaryHistory A' B' wire'
++      (a.transport.toGraphTransport.history.apply source)
++      ((combinedTransport a b).toGraphTransport.history.apply result) := by
++  have addresses := downstream_address a b wire wire' square
++  cases binary with
++  | failed tag endpoint finished =>
++      rw [upstream_history]
++      apply BinaryHistory.failed (a.transport.identity tag)
++        (a.transport.toGraphTransport.mapState endpoint)
++      change (source.map _ _ _ id).finish = _
++      rw [finish_map, finished]
++      rfl
++  | complete completed store suffix finished full admitted run shared =>
++      rw [IndexedRankedOperationalCore.append_transport,
++        upstream_history, downstream_history a b wire wire' addresses]
++      refine BinaryHistory.complete
++        (a.transport.toGraphTransport.mapState completed) (storeTransport a store)
++        (b.transport.toGraphTransport.history.apply suffix) ?_
++        (full_store a completed store full)
++        (GraphHistory.transport_admissible _ admitted)
++        (agreement _ _ (boundary_inputs a b wire wire' square store) suffix run) ?_
++      · change (source.map _ _ _ id).finish = _
++        rw [finish_map, finished]
++        rfl
++      · rw [← downstream_history a b wire wire' addresses]
++        change ((liftDownstream A B wire completed suffix).map _ _ _ id).start = _
++        rw [History.start_map, shared]
++        exact upstream_state a b completed
++
++noncomputable def combinedChange (a : ScopeChange A A') (b : ScopeChange B B')
++    (wire : Boundary A B) (wire' : Boundary A' B') :
++    ScopeChange (compose A B wire) (compose A' B' wire') where
++  transport := combinedTransport a b
++  roles := by rintro (t | t); exact a.roles t; rfl
++  inputs := combined_inputs a b wire wire'
++  outputs := combined_outputs a b wire wire'
++
++theorem runner_congruence (a : ScopeChange A A') (b : ScopeChange B B')
++    (wire : Boundary A B) (wire' : Boundary A' B')
++    (square : BoundaryCoordinates a b wire wire')
++    (rankA : A.program.RankCertificate) (rankB : B.program.RankCertificate)
++    (rankA' : A'.program.RankCertificate) (rankB' : B'.program.RankCertificate)
++    (agreeA : RunnerAgreement a) (agreeB : RunnerAgreement b) :
++    RunnerAgreement (combinedChange a b wire wire') := by
++  intro input input' input_agreement history actual
++  let η := restrictInput A B wire input
++  let η' := restrictInput A' B' wire' input'
++  have inputs : InputAgreement a η η' := fun t => input_agreement (.inl t)
++  have sourceLift : (liftInput A B wire η).val = input.val :=
++    congrArg Subtype.val (liftInput_restrictInput A B wire input)
++  have targetLift : (liftInput A' B' wire' η').val = input'.val :=
++    congrArg Subtype.val (liftInput_restrictInput A' B' wire' input')
++  obtain ⟨source, _, source_run, _⟩ := GraphHistory.ranked_default_exists A η rankA
++  obtain ⟨result, binary, result_run⟩ :=
++    compose_history A B wire η rankA rankB source source_run
++  have same : history = result := GraphHistory.toRun_injective (by
++    rw [actual, result_run, sourceLift])
++  subst history
++  have targetSource := agreeA η η' inputs source source_run
++  have targetBinary := binary_transport a b wire wire' square agreeB binary
++  have targetRun := BinaryHistory.sound A' B' wire' η' rankA' rankB'
++    targetSource targetBinary
++  rw [targetLift] at targetRun
++  exact targetRun
++
++#print axioms combinedTransport
++#print axioms upstream_state
++#print axioms downstream_state
++#print axioms upstream_event
++#print axioms downstream_event
++#print axioms upstream_history
++#print axioms downstream_history
++#print axioms combined_metadata
++#print axioms downstream_address
++#print axioms boundary_inputs
++#print axioms binary_transport
++#print axioms runner_congruence
++
++end IndexedOperationalScopeNaturality
