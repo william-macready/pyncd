@@ -1,0 +1,101 @@
+[
+  {
+    "label": "O1 (wrong reassociation occurrence identity)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
+    "old": "let events := l.events.map\n    (mapEvent (IndexedOperationalReassociation.embedding A B C ab bc)\n      IndexedOperationalReassociation.identityEquiv)",
+    "new": "let events := l.events.map\n    (mapEvent (IndexedOperationalReassociation.embedding A B C ab bc) id)",
+    "targets": ["IndexedOperationalAssociativityFixtures"],
+    "expect": ["indexed-reference operational-private-full-observations: expected"]
+  },
+  {
+    "label": "O2 (private availability cannot be erased)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
+    "old": "(roster.map s.available, mapLedger rename s.produced)",
+    "new": "(roster.map (fun a => if σ.uid a.1 == 8 then none else s.available a), mapLedger rename s.produced)",
+    "targets": ["IndexedOperationalAssociativityFixtures"],
+    "expect": ["indexed-reference operational-private-snapshots: expected"]
+  },
+  {
+    "label": "O3 (produced ledger order cannot be reversed)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
+    "old": "mapLedger rename s.produced)",
+    "new": "mapLedger rename s.produced.reverse)",
+    "targets": ["IndexedOperationalAssociativityFixtures"],
+    "expect": ["indexed-reference operational-private-snapshots: expected"]
+  },
+  {
+    "label": "O4 (contribution order cannot be reversed)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
+    "old": "(collected.events.take 3).map eventRow",
+    "new": "(collected.events.reverse.take 3).map eventRow",
+    "targets": ["IndexedOperationalAssociativityFixtures"],
+    "expect": ["indexed-reference operational-donor-event-order: expected"]
+  },
+  {
+    "label": "O5 (publication cannot be dropped)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
+    "old": "(zero.events.take 2).map eventRow",
+    "new": "((zero.events.filter fun event => match event with | .sealed _ _ => false | _ => true).take 2).map eventRow",
+    "targets": ["IndexedOperationalAssociativityFixtures"],
+    "expect": ["indexed-reference operational-donor-event-order: expected"]
+  },
+  {
+    "label": "O6 (a duplicate snapshot is observable)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
+    "old": "l.states.map (stateRow roster IndexedOperationalReassociation.identityEquiv)",
+    "new": "(l.states ++ l.states.take 1).map (stateRow roster IndexedOperationalReassociation.identityEquiv)",
+    "targets": ["IndexedOperationalAssociativityFixtures"],
+    "expect": ["indexed-reference operational-private-full-observations: expected"]
+  },
+  {
+    "label": "O7 (reference pending occurrences cannot be erased)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
+    "old": "decide (o ∈ s.pending t)",
+    "new": "false",
+    "targets": ["IndexedOperationalAssociativityFixtures"],
+    "expect": ["indexed-reference operational-reference-shared-cuts: expected"]
+  },
+  {
+    "label": "O8 (reference accumulators cannot be erased)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
+    "old": "(s.accumulators t p : ℚ)",
+    "new": "(0 : ℚ)",
+    "targets": ["IndexedOperationalAssociativityFixtures"],
+    "expect": ["indexed-reference operational-reference-shared-cuts: expected"]
+  },
+  {
+    "label": "O9 (strict failure donor cannot fall through as total)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
+    "old": "let l := leftRun (consumerComponent a) (consumerComponent b) (consumerComponent c)\n    (privateBoundary a b) (privateBoundary b c) (privateInput a)",
+    "new": "let l := leftRun (consumerComponent 4) (consumerComponent b) (consumerComponent c)\n    (privateBoundary 4 b) (privateBoundary b c) (privateInput 4)",
+    "targets": ["IndexedOperationalAssociativityFixtures"],
+    "expect": ["indexed-reference operational-private-outcomes: expected"]
+  },
+  {
+    "label": "O10 (missing empty input is not a vacuous valid input)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
+    "old": "let result := leftRun emptyProducerComponent emptyConsumerComponent emptyConsumerComponent\n    emptyBoundary emptyTailBoundary emptyValidatedInput",
+    "new": "let result := runChecked l.contract l.fragment (fun _ => none)",
+    "targets": ["IndexedOperationalAssociativityFixtures"],
+    "expect": ["indexed-reference operational-empty-presence-coincident-cuts: expected"]
+  },
+  {
+    "label": "O11 (equal-output history control is discriminating)",
+    "task": "fixtures",
+    "file": "experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean",
+    "old": "collectors := rows.take 1 ++ rows.drop 2 ++ (rows.drop 1).take 1",
+    "new": "collectors := rows",
+    "targets": ["IndexedOperationalAssociativityFixtures"],
+    "expect": ["indexed-reference operational-observation-stronger-than-final-values: expected"]
+  }
+]

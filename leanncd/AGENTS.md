@@ -23,7 +23,23 @@ These modules belong only to `IndexedExecutionExperiment`, not production
 stores and empty metadata. Observation probes and separate parity modules
 are test-only. No core identity computation or event-sensitive process category is claimed.
 
-The operational entry point is `import IndexedRankedExecutionSemantics`.
+The associative operational entry point is `import IndexedOperationalSemantics`.
+`CompleteObservation.Agrees` retains whole ports, validated Option-valued input,
+explicit domain/boundary adapters, ordered events, all private availability and
+ordered ledgers; its concrete identity/inverse/composition laws are proved.
+`BinaryHistory` connects compatible shared-cut splicing to actual binary default
+execution. `binary_associativity` reassociates its full-state leaf lifts, and
+`actual_nested_histories` instantiates both actual nested constructors without
+assuming execution agreement. `nested_observations` additionally retains native
+whole-interface metadata. `triple_phases` exposes failure in each leaf or success,
+ordered/coincident cuts and both original boundary inputs. Actual reference runs
+retain the full `Relation`, including pending occurrences and accumulators.
+Budgets are `nA+nB+nC+1`; malformed raw-input validation is not reassociated.
+All these modules remain nondefault under `IndexedExecutionExperiment`.
+No event-free core identity or full process category is claimed; see the
+[operational associativity record](../papers/semantics/categorical_operational_associativity_record.md).
+
+The binary operational entry point remains `import IndexedRankedExecutionSemantics`.
 `compositeRankCertificate` constructs a full-footprint composite rank from
 both component certificates. `compose_default_phases` proves actual default
 `runChecked` upstream-first execution, strict failure and full state/ledger
