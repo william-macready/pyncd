@@ -87,6 +87,7 @@ def checkAndRender (name : String) (p : PreparedPlan) (minPw minAw : Nat)
       throw (IO.userError s!"{name}: expected {ea} assign / {epw} pointwise / {eaw} axiswise ({ea + epw + eaw} steps), prepared plan has {a} / {pw'} / {aw'} ({(flatSteps p).size} steps)")
   match generateNamed .einsumOnly p with
   | .error (.unsupportedStep _) | .error (.unsupportedStorageKind _) => pure ()
+  | .error (.nonProjectionRow ..) | .error (.nonzeroAffineBias ..) => pure ()
   | .error (.unaryFactor _ _ _) => unless unaryOk do throw (IO.userError s!"{name}: einsumOnly refused with unaryFactor on a fixture without a unary read")
   | other => throw (IO.userError s!"{name}: einsumOnly did not refuse: {repr other.toOption}")
   match lowerCheckPlanToCandidate p with
