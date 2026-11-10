@@ -2,9 +2,12 @@
 
 ## Status
 
-**Ready for clean execution only — P1 `SEM-ADMIN-INTERPRETATION` CLOSED.** The [single implementation plan](categorical_ranked_operational_interpretation_plan.md) is updated from regenerated artifacts and focused review evidence; replay and release are not complete.
-Implementation replay, task commits, final execution mutations/builds/reviews, integration and cleanup are **pending**.
-The current final-named sources/docs/config are the verified authoring prototype, not proof that plan execution happened.
+**Clean execution and controller release complete — P1 `SEM-ADMIN-INTERPRETATION` CLOSED.**
+All eight tasks were replayed from the clean frozen base, built, checked against
+reviewed hashes and committed. All eleven final controller mutation cycles,
+nine namespace audits and the integrated-candidate full build passed.
+Local main merge and owned branch/worktree cleanup remain pending; Section 8
+is the authoritative execution receipt.
 The original seven-patch/thirteen-file receipt remains **historical authoring evidence**. The authoritative refreeze is now eight patches/fourteen files, including the connected Interpretation bridge; use only that package for clean execution.
 This authoring dispatch edits only the plan and this record; no source/doc implementation changes, cleanup, staging, commits or subagents. The refreeze update did not inspect working-tree source code; only artifact patches, receipts and supplied reports were read, with deterministic file-hash comparison.
 
@@ -187,9 +190,9 @@ No unrelated side issue was taken into scope.
 - Consequently no measured 250k peak-context, 50M authoring-target or 175M slice-execution budget pass is asserted. Historical visible-round disclosures are not token measurements.
 - No subagent, commit, implementation execution or release action was performed in authoring (b).
 
-## 6. Execution ledger — not yet started
+## 6. Historical pre-execution ledger — superseded by Section 8
 
-**Current package ready for clean execution; no execution receipt yet.** The controller must reverse only the regenerated eight hash-verified patches, in reverse order with a check before each apply, restoring implementation-owned files to the frozen base while retaining the authoring package/manifest.
+**Historical authoring handoff, before execution.** The controller was to reverse only the regenerated eight hash-verified patches, in reverse order with a check before each apply, restoring implementation-owned files to the frozen base while retaining the authoring package/manifest.
 Then commit authoring inputs first and replay exact patches forward, one targeted build/review/explicit-path commit per task.
 No reset/checkout/clean or replacement of unrelated edits is authorized.
 Latest controller update: primary checkout is **clean**; local main advanced four unrelated JAX docs/test commits from frozen base to `aa343773`, without touching Lean/semantics scope.
@@ -246,3 +249,70 @@ When all required gates pass or findings are adjudicated, merge locally without 
 - Both documents pass link/whitespace/stable-citation/no-Lean-block checks and tracked `git diff --check`; all implementation/artifact bytes are preserved.
 - Refreeze update uses **9 additional grouped tool rounds, 25/25 cumulative**, including final verification. Historical breaches and unavailable token telemetry remain disclosed.
 - Ready for clean execution only: reverse/forward replay, task commits, integrated-main controller cycles/audits/full build, final delta review, local merge and owned cleanup remain pending; no release completion.
+
+## 8. Controller clean execution and release
+
+The controller checked every current source and patch hash, then reverse-checked
+and reverse-applied only the eight owned patches. The three existing owned files
+matched `921cca7e` exactly, all eleven added module paths were absent, and the
+authoring package remained. No reset, checkout, clean, broad deletion or
+discarding of unrelated edits was used.
+
+Authoring package commit: `643e66f3`. Each forward task had its own successful
+`git apply --check`, unchanged patch application, targeted wrapper build
+(documentation required no build), reviewed/adjudicated source-hash checkpoint,
+explicit-path staging and commit:
+
+| Task | Commit | Result |
+|---|---|---|
+| 1 — history units and certified wires | `1dce8e9c` | PASS |
+| 2 — ranked core, raw wires and original provenance | `3e269490` | PASS |
+| 3 — full-state computational scope congruence | `abd7e428` | PASS |
+| 4 — actual full-observation target category | `5b425624` | PASS |
+| 5 — ranked source, genuine functor and full native reference bridge | `55005e94` | PASS |
+| 6 — connected inherited-state realization and mixed history adequacy | `b1093ef3` | PASS |
+| 7 — acceptance and namespace audits | `96cbe8c4` | PASS |
+| 8 — discoverability and synthesis status | `cd48c21f` | PASS |
+
+After all tasks, all eight patch hashes and all fourteen implementation,
+wiring and documentation hashes were byte-identical to the frozen package.
+The semantic and conservative integration verdicts therefore carry through
+clean replay. P1 was fixed and independently closed, not waived. The parent
+additionally replaced the vacuous two-tensor composite-frame donor with an
+inhabited composite frame, explicit fresh-input/coherence witnesses and a
+concrete history-congruence instantiation; its audit passed.
+
+Latest local main's four unrelated JAX commits through `aa343773` were merged
+without conflict as `8ffc97c5`, before controller release validation.
+The existing production Lean tree, default tests, runners and witness-source
+files have no task changes; indexed execution changes are eleven added modules.
+
+Controller release commands used the prescribed wrappers:
+
+- The canonical manifest ran **unfiltered**, with all **11/11 PASS**, every
+  intended diagnostic observed, every restored build green and every mutated
+  source byte-identical afterward. See the committed
+  [execution mutation receipt](categorical_ranked_operational_interpretation_artifacts/execution-mutations.md).
+  There are two runtime donor-observation controls and nine live-proof controls,
+  not eleven runtime-core defect kills.
+- A fresh `LeanNCD Tests IndexedExecutionExperiment` wrapper build after all
+  restorations and latest-main integration passed **8,953 jobs**.
+- All **nine namespaces** use only `propext`, `Classical.choice`, `Quot.sound`.
+  The connected Interpretation namespace and every new source/test namespace
+  are audited; source scanning found no `sorry`, `admit`, new axiom, `unsafe`
+  or `native_decide`.
+- A final comparison confirmed **14/14 reviewed source hashes unchanged**.
+  Final execution/integration delta review found only exact replay, receipt
+  updates and preserved unrelated JAX integration, not unreviewed implementation.
+
+Persistent session logs are `execution-*.log`, `controller-release-mutations.log`
+and `controller-release-full-build.log` in the session evidence directory above.
+All eight tasks and required controller release checks ran; none was silently
+skipped. Generic arbitrary-program reference-running-state transport and the
+other stated exclusions remain outside the claim, not deferred task work.
+
+Final `token-report.py` invocation again reported no transcript. Measured
+cumulative input, peak context and token-budget totals remain unavailable;
+the historical controller authoring-round breach remains disclosed, with no
+invented budget-compliance claim. Local integration/cleanup is recorded next
+only after it actually occurs. No remote push has been performed.
