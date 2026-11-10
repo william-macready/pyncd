@@ -1171,6 +1171,224 @@ def mqaEnv64 : HashMap String DenseTensor :=
 def mqaEnv32 : NamedDenseEnv32 :=
   (scanEnv32.insert "W_K" (t32 [3, 2, 4] mqaWK)).insert "W_V" (t32 [3, 2, 4] mqaWV)
 
+/-! ### Grouped-query attention inside the layer scan (`transformer_gqa`, `transformer_gqa_split`, `transformer_gqa_mha`)
+
+G = 3 key/value groups of R = 2 query heads each (6 query heads, head `h = 2 * g + r` reads group `g`), head width
+k = 7, five positions (q = s = 5), so g, r, k and q are pairwise distinct. The three programs are the same model:
+* `gqaProg`: a FLAT query-head axis `h` read through the affine map `Q[q, 2 * g + r, k]` (the language has no
+  division, so the head-to-group map is written as an affine read of the flat axis);
+* `gqaSplitProg`: the query-head axis SPLIT into `(g, r)`, no index arithmetic;
+* `gqaMhaProg`: the standard multi-head statements on key/value weights replicated per head
+  (`W_K[l, h] = W_K[l, h / 2]`, built here with `Nat` division where division exists).
+All three read the same bytes: `[g, r, k, m]` and `[h, k, m]` are one storage order for `h = 2 * g + r`. -/
+
+def gqaProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  axis r : ℕ = 2
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, g, k, m), W_V(l, g, k, m), W_O(l, m, h, k)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
+  tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
+  tensor f64 Q(q, h, k), K(s, g, k), V(s, g, k), S(g, r, q, s), AttnOut(q, g, r, k), Attn(q, m)
+  tensor f64 R1(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  H[q, m, 0]          := X[q, m]
+  Ss1[q]              := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]              := Ss1[q] + Eps[q]
+  Sd1[q]              := sqrt(Ve1[q])
+  N1[q, m]            := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]          := W_Q[l, h, k, m] · N1[q, m]
+  K[s, g, k]          := W_K[l, g, k, m] · N1[s, m]
+  V[s, g, k]          := W_V[l, g, k, m] · N1[s, m]
+  S[g, r, q, s.]      := softmax(where s ≤ q)(Q[q, 2 * g + r, k] · K[s, g, k] · Sc[])
+  AttnOut[q, g, r, k] := S[g, r, q, s] · V[s, g, k]
+  Attn[q, m]          := W_O[l, m, 2 * g + r, k] · AttnOut[q, g, r, k]
+  R1[q, m]            := H[q, m, l] + Attn[q, m]
+  Ss2[q]              := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]              := Ss2[q] + Eps[q]
+  Sd2[q]              := sqrt(Ve2[q])
+  N2[q, m]            := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]             := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]             := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]       := R1[q, m] + Y[q, m]
+}
+/-- The binary32 sibling: only the declarations that pin axis order, the history shape and the extent of `r`. -/
+def gqaProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  axis r : ℕ = 2
+  tensor H(q, m, l)
+  tensor S(g, r, q, s)
+  H[q, m, 0]          := X[q, m]
+  Ss1[q]              := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]              := Ss1[q] + Eps[q]
+  Sd1[q]              := sqrt(Ve1[q])
+  N1[q, m]            := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]          := W_Q[l, h, k, m] · N1[q, m]
+  K[s, g, k]          := W_K[l, g, k, m] · N1[s, m]
+  V[s, g, k]          := W_V[l, g, k, m] · N1[s, m]
+  S[g, r, q, s.]      := softmax(where s ≤ q)(Q[q, 2 * g + r, k] · K[s, g, k] · Sc[])
+  AttnOut[q, g, r, k] := S[g, r, q, s] · V[s, g, k]
+  Attn[q, m]          := W_O[l, m, 2 * g + r, k] · AttnOut[q, g, r, k]
+  R1[q, m]            := H[q, m, l] + Attn[q, m]
+  Ss2[q]              := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]              := Ss2[q] + Eps[q]
+  Sd2[q]              := sqrt(Ve2[q])
+  N2[q, m]            := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]             := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]             := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]       := R1[q, m] + Y[q, m]
+}
+
+def gqaSplitProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor f64 X(q, m), W_Q(l, g, r, k, m), W_K(l, g, k, m), W_V(l, g, k, m), W_O(l, m, g, r, k)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
+  tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
+  tensor f64 Q(q, g, r, k), K(s, g, k), V(s, g, k), S(g, r, q, s), AttnOut(q, g, r, k), Attn(q, m)
+  tensor f64 R1(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  H[q, m, 0]          := X[q, m]
+  Ss1[q]              := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]              := Ss1[q] + Eps[q]
+  Sd1[q]              := sqrt(Ve1[q])
+  N1[q, m]            := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, g, r, k]       := W_Q[l, g, r, k, m] · N1[q, m]
+  K[s, g, k]          := W_K[l, g, k, m] · N1[s, m]
+  V[s, g, k]          := W_V[l, g, k, m] · N1[s, m]
+  S[g, r, q, s.]      := softmax(where s ≤ q)(Q[q, g, r, k] · K[s, g, k] · Sc[])
+  AttnOut[q, g, r, k] := S[g, r, q, s] · V[s, g, k]
+  Attn[q, m]          := W_O[l, m, g, r, k] · AttnOut[q, g, r, k]
+  R1[q, m]            := H[q, m, l] + Attn[q, m]
+  Ss2[q]              := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]              := Ss2[q] + Eps[q]
+  Sd2[q]              := sqrt(Ve2[q])
+  N2[q, m]            := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]             := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]             := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]       := R1[q, m] + Y[q, m]
+}
+/-- The binary32 sibling: only the declarations that pin axis order and the history shape. -/
+def gqaSplitProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor H(q, m, l)
+  tensor S(g, r, q, s)
+  H[q, m, 0]          := X[q, m]
+  Ss1[q]              := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]              := Ss1[q] + Eps[q]
+  Sd1[q]              := sqrt(Ve1[q])
+  N1[q, m]            := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, g, r, k]       := W_Q[l, g, r, k, m] · N1[q, m]
+  K[s, g, k]          := W_K[l, g, k, m] · N1[s, m]
+  V[s, g, k]          := W_V[l, g, k, m] · N1[s, m]
+  S[g, r, q, s.]      := softmax(where s ≤ q)(Q[q, g, r, k] · K[s, g, k] · Sc[])
+  AttnOut[q, g, r, k] := S[g, r, q, s] · V[s, g, k]
+  Attn[q, m]          := W_O[l, m, g, r, k] · AttnOut[q, g, r, k]
+  R1[q, m]            := H[q, m, l] + Attn[q, m]
+  Ss2[q]              := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]              := Ss2[q] + Eps[q]
+  Sd2[q]              := sqrt(Ve2[q])
+  N2[q, m]            := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]             := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]             := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]       := R1[q, m] + Y[q, m]
+}
+
+def gqaMhaProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor f64 X(q, m), W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
+  tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 R1(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+/-- The binary32 sibling: only the declarations that pin axis order and the history shape. -/
+def gqaMhaProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  H[q, m, 0]       := X[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+
+/-- Head-specific weights by formula (no hand-typed constants): `0.6 * sin (seed + 1.7 i)`, stacked like every
+    weight (layer 0, derived layer 1, NaN layer 2). Query and output weights have `h = 6` heads, key and value
+    weights `g = 3` groups, head width k = 7, model width m = 4. -/
+def gqaGen (seed : Float) (n : Nat) : Array Float :=
+  (Array.range n).map fun i => 0.6 * Float.sin (seed + 1.7 * i.toFloat)
+def gqaWQ : Array Float := scanStack (gqaGen 4.0 168)   -- [h = 6, k = 7, m = 4]
+def gqaWK : Array Float := scanStack (gqaGen 3.0 84)    -- [g = 3, k = 7, m = 4]
+def gqaWV : Array Float := scanStack (gqaGen 2.0 84)    -- [g = 3, k = 7, m = 4]
+def gqaWO : Array Float := scanStack (gqaGen 4.0 168)   -- [m = 4, h = 6, k = 7]
+/-- `Sc[]` = 1 / sqrt k for the head width k = 7. -/
+def gqaSc : Array Float := #[1.0 / Float.sqrt 7.0]
+/-- The multi-head key/value weights of `gqaMhaProg`: head `h` of each layer is group `h / 2` of the grouped weights. -/
+def gqaRep (w : Array Float) : Array Float := Id.run do
+  let mut out : Array Float := #[]
+  for l in [0:3] do
+    for h in [0:6] do
+      for j in [0:28] do
+        out := out.push w[(l * 3 + h / 2) * 28 + j]!
+  return out
+
+/-- The mask fixtures' environment (`X`, `Eps`, MLP weights, gains) with `Sc` and the four head-specific weights
+    replaced; `wq`, `wk`, `wo` are the per-layer shapes of `W_Q`, `W_K` (= `W_V`) and `W_O`, `kv` the key/value data map. -/
+def gqaEnv64 (wq wk wo : List Nat) (kv : Array Float → Array Float) : HashMap String DenseTensor :=
+  [("W_Q", t64 (3 :: wq) gqaWQ), ("W_K", t64 (3 :: wk) (kv gqaWK)), ("W_V", t64 (3 :: wk) (kv gqaWV)),
+   ("W_O", t64 (3 :: wo) gqaWO)].foldl (fun e (n, t) => e.insert n t) (maskEnv64.insert "Sc" (t64 [] gqaSc))
+def gqaEnv32 (wq wk wo : List Nat) (kv : Array Float → Array Float) : NamedDenseEnv32 :=
+  [("W_Q", t32 (3 :: wq) gqaWQ), ("W_K", t32 (3 :: wk) (kv gqaWK)), ("W_V", t32 (3 :: wk) (kv gqaWV)),
+   ("W_O", t32 (3 :: wo) gqaWO)].foldl (fun e (n, t) => e.insert n t) (maskEnv32.insert "Sc" (t32 [] gqaSc))
+
+/-- Flat query-head axis (`gqaProg`), split heads (`gqaSplitProg`), replicated multi-head weights (`gqaMhaProg`). -/
+def gqaFlatEnv64 := gqaEnv64 [6, 7, 4] [3, 7, 4] [4, 6, 7] id
+def gqaFlatEnv32 := gqaEnv32 [6, 7, 4] [3, 7, 4] [4, 6, 7] id
+def gqaSplitEnv64 := gqaEnv64 [3, 2, 7, 4] [3, 7, 4] [4, 3, 2, 7] id
+def gqaSplitEnv32 := gqaEnv32 [3, 2, 7, 4] [3, 7, 4] [4, 3, 2, 7] id
+def gqaMhaEnv64 := gqaEnv64 [6, 7, 4] [6, 7, 4] [4, 6, 7] gqaRep
+def gqaMhaEnv32 := gqaEnv32 [6, 7, 4] [6, 7, 4] [4, 6, 7] gqaRep
+
 /-! ### Post-scan statements with the scan axis as an ordinary axis (`scan_postrole`, `scan_postrole32`)
 
 A scaling recurrence `S[j, l] = X[j] · G[j]^l` over `iter l = 4` and six statements that nothing in the
@@ -1265,6 +1483,9 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "transformer_strict" strictProg maskEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "transformer_sink" sinkProg maskEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "transformer_mqa" mqaProg mqaEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture64 "transformer_gqa" gqaProg gqaFlatEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture64 "transformer_gqa_split" gqaSplitProg gqaSplitEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture64 "transformer_gqa_mha" gqaMhaProg gqaMhaEnv64 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture64 "scan_postrole" postRoleProg
         (env64 [("X", t64 [2] postRoleX), ("G", t64 [2] postRoleG), ("V", t64 [4] postRoleV), ("M", t64 [4] postRoleM)])
         0 0 none true (scans := 1),
@@ -1323,6 +1544,9 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "transformer_strict32" strictProg32 maskEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "transformer_sink32" sinkProg32 maskEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "transformer_mqa32" mqaProg32 mqaEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture32 "transformer_gqa32" gqaProg32 gqaFlatEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture32 "transformer_gqa_split32" gqaSplitProg32 gqaSplitEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
+    ← fixture32 "transformer_gqa_mha32" gqaMhaProg32 gqaMhaEnv32 1 1 (some (19, 1, 1)) true (scans := 1),
     ← fixture32 "scan_postrole32" postRoleProg32
         (env32 [("X", t32 [2] postRoleX), ("G", t32 [2] postRoleG), ("V", t32 [4] postRoleV), ("M", t32 [4] postRoleM)])
         0 0 none true (scans := 1),
