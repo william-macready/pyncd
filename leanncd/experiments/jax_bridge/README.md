@@ -382,7 +382,7 @@ that copy's `+0` seed under `jax.jit` (the pitfall above), so a jit run can flip
 **Domain errors are an unchecked precondition (decision B1, 2026-11-04).** Lean rejects `log` of `v <= 0`, `sqrt` of `v < 0` and reciprocal of `0` with a typed unary-domain error. This backend lowers to plain `jnp` ops, checks nothing, and promises nothing on such inputs (neither NaN nor an error): it agrees with Lean only where Lean returns ok. Do not read "NaN on bad input" into it. Lean's `relu(NaN)` is `+0` and `exp(log 0) = exp(-inf) = 0` is finite, so a violation can come out as an ordinary-looking number. Lean-error inputs are out of contract and are excluded from the differential comparison; the Lean side of the boundary is pinned by `domainPins` in `EvalPlanNonlinSmoke.lean` (`log(0.0)`, `log(-1.0)`, `sqrt(-4.0)` and `recip(0.0)` are typed errors in Dense, binary64 and binary32). The motivating use is a LayerNorm with `eps` (`sqrt(v + eps)`, then division): its `sqrt` argument is at least `eps` and its divisor is non-zero by construction (fixture `unary_ln`). Fixtures: `unary_exp_oob`, `unary_ops`, `unary_mix`, `unary_red`, `unary_ln`, `unary_empty`.
 
 Run: `./run-evalplan-nonlin.sh` (generates `EvalPlanNonlinSmoke.lean`'s binary64 + binary32 fixtures, then
-`evalplan_nonlin_smoke.py float64|float32`: 34 binary64 and 26 binary32 fixtures (22 + 22 before the scan
+`evalplan_nonlin_smoke.py float64|float32`: 43 binary64 and 35 binary32 fixtures (22 + 22 before the scan
 slice; the added ones are listed under "Scan (affineReference)" below), eager and jit, including the
 single-layer transformer with every materialized output compared (and the same layer with a real RMSNorm,
 `transformer_rms`: 20 plan nodes, 4 unary factors, with a unit-mean-square pin on the norm outputs that Lean/JAX
@@ -460,6 +460,13 @@ two compute bitwise the same `H` on Lean, eager and jit. `transformer_gqa_mha` i
 with `Nat` division in the Lean env builder). All three are checked against a numpy model whose key/value weights are `W[:, h // R]`, and the flat plan against the multi-head plan on weights
 replicated in Python (bitwise). The binary32 headroom is thin (1.7x); the weight seeds were chosen by measurement. Observed numbers, the seeds tried, the probe findings and the mutation table:
 section 15 of `papers/semantics/jax_scan_record.md`.
+
+`transformer_cross` and `transformer_cross_hoisted` (each with a `32` sibling) are a decoder layer with CROSS-ATTENTION to an external memory `Mem[t, m]` inside the same scan: causal self-attention, then
+UNMASKED attention whose keys and values come from the memory (t = 7 against q = s = 5; h = 3, k = 2, cross head width j = 6, all pairwise distinct), then the MLP. Unlike the other scan fixtures the
+plan also exports the stacked cross tables `Kc[t, h, j, l]`, `Vc[t, h, j, l]` (exactly `H`, `Kc`, `Vc`; NaN in layer 2 only, compared on layers 0 and 1). `transformer_cross_hoisted` is the naive
+`Kc[t, h, j]` without the layer axis: a statement that reads no scan state runs once BEFORE the scan with `l` an ordinary axis and is summed over every layer, pinned as that semantics. Checked against a numpy
+decoder-layer model, with non-vacuity gaps (no cross block, every and each single memory row, memory from the layer state) and gradient pins through the plan that include `Mem` (on the NaN-sentinel stacks the
+`Mem` gradient is NaN, 0 * NaN, so the gradient pins use finite layer-2 K/V cross weights). Observed numbers, the binary32 headroom (2.4x and 1.7x) and the mutation table: section 18 of `papers/semantics/jax_scan_record.md`.
 
 Gradients: `jax.grad` works through the emitted `lax.scan` as is (no runtime change). The driver pins the gradient of `sum(C * H[:, :, 2])` of `transformer_scan` over every
 float input, in both precisions, eager and jit: finite, exactly zero on the never-read NaN layer-2 weight slices, equal to the same loss through the unrolled plan

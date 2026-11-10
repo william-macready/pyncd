@@ -427,6 +427,10 @@ the compile guards of the value fixtures. Build `Tests` + `JaxExperiment` green 
   float64 leg; the Python mutation manifests were not re-run (no runtime or emitter code changed).
 - Harness counts: rewrite 52 calls (cap 45), flips and Lean value fixtures 60 (cap 45), JAX fixture 53 (cap 40
   plus 8 after a resume); the agents' own tallies were 42, 37 and 47.
+- Pre-scan placement of a statement that reads no scan state (added 2026-11-10, section 18): such a statement is
+  a plain node BEFORE the scan with `l` an ORDINARY axis, so `K[t, h, j] := W[l, h, j, m] · Mem[t, m]` is summed
+  over every stacked layer (layer 2 included) and the step reads that one table; give the table an explicit layer
+  axis (`K[t, h, j, l]`) to get per-layer tables. Pinned by `transformer_cross_hoisted`.
 
 ## 11. The standard pre-norm transformer fixtures (2026-11-08)
 
@@ -822,3 +826,69 @@ class test, not an injectivity test: with stride R = 2 over r < 2 the map is inj
 edges (graph network) is available at the top level (outside a scan) and only scan-local multi-axis or colliding writes are refused. NOT done: any workaround, and any change to the checker. What lifting
 the refusal would take is unestimated and a different process weight (a Lean checker change, then whether the JAX scan step can run a scatter node, which was not probed because prepare refuses first;
 one natural design is an injectivity check at prepare, where the extents are known). It is the user's call.
+
+## 18. Cross-attention to an external memory inside the layer scan; the hoisting trap (2026-11-10)
+
+Brief: `papers/semantics/jax_cross_attention_session_brief.md`. Tests and fixtures only (Direct path): `EvalPlanNonlinSmoke.lean` (programs, weights, registrations) and `evalplan_nonlin_smoke.py` (new
+`np_cross_transformer`, `cross_fixture_pins`, `cross_grad_pins`, `trim_nan_layer`, `NAN_LAYER_OUTPUTS`); no emitter, runtime, grammar, checker or manifest change. Differential: **43 binary64 and 35 binary32 fixtures**
+(41 + 2, 33 + 2), all within tolerance; the gradient pins and the earlier pins are untouched and green.
+
+**Model.** One decoder layer = the standard causal self-attention sub-block, then a cross-attention sub-block, then the MLP, scanned over layers with untied weights (`iter l = 3`, two steps, NaN layer-2 slices):
+`Nc = RMSNorm(R1) * Gc[l]`, `Qc = W_Qc[l] . Nc`, `Kc = W_Kc[l] . Mem`, `Vc = W_Vc[l] . Mem` with an EXTERNAL memory `Mem[t, m]` (an input, not the state), `Sx = softmax_t(Qc . Kc * Scx)` with NO mask,
+`R2 = R1 + W_Oc[l] . (Sx . Vc)`, then the MLP on `R2`. New ideas relative to every earlier fixture: unequal query and memory extents, a read of an external tensor from inside the scan, an unmasked softmax over a non-scan axis
+inside the scan.
+
+**Extents.** q = s = 5 (the mask fixtures' `maskX`, `maskEps`), t = 7, h = 3, k = 2, j = 6, m = d = 4: q, t, h, k, j, m are pairwise distinct (asserted from the input shapes). Weights by `gqaGen` with seeds 1.0 to 9.0
+(`crWQ` ... `crMem`), stacked by `scanStack`; `Gc` by `gainStack`; `Sc` = 1 / sqrt 2, `Scx` = 1 / sqrt 6 (asserted against the shapes). **Seeds: NOT tuned.** The first candidate (seeds 1 to 9) was measured on the
+generated fixtures and passed with headroom, so no other candidate was tried (the GQA slice's 3.6e-6 failure did not recur).
+
+**Programs.**
+* `crossProg` / `crossProg32` (`transformer_cross`, `..32`): `Kc[t, h, j, l]`, `Vc[t, h, j, l]` carry an explicit layer axis. They read no scan state, so each is ONE pre-scan statement producing a stacked table (like the weight
+  stacks); the plan is `[assign, assign, scan]` (2 steps), exact kinds (30 assign, 1 pointwise, 2 axiswise), and exactly `H`, `Kc`, `Vc` are exported (the earlier fixtures export `H` only). `Kc`, `Vc` have a NaN layer-2 slice
+  by construction.
+* `crossHoistedProg` / `crossHoistedProg32` (`transformer_cross_hoisted`, `..32`): the NAIVE form `Kc[t, h, j] := W_Kc[l, h, j, m] · Mem[t, m]`.
+
+**The trap, now pinned.** A statement that reads no scan state is not a per-step intermediate: it runs ONCE BEFORE the scan with `l` an ORDINARY axis and is SUMMED over all three stacked layers, and the step reads that single
+table. Lean, eager and jit agree; it is consistent semantics, not a crash. With the NaN layer-2 stacks the result is entirely NaN (the sum reaches the NaN slice); with a finite layer 2 it is silently wrong, not an error.
+Documentation check: the structural placement ("a loop-invariant statement is a plain node before the scan") was already pinned (`StructuralTest` `postReadsInvariantFed`, section 10), but the consequence that `l` is an ordinary
+axis in it (summed over every layer, layer 2 included) was stated nowhere; this section is that statement, and section 10 points here. The hoisted fixtures use a SEPARATE `W_Kc`, `W_Vc` stack whose layer 2 is finite (`crFiniteStack`:
+layer 0 rotated by 10 and scaled by 0.64; layers 0 and 1 bitwise the cross fixture's) so `H` is finite. Pins: plan `[assign, assign, scan]`; `Kc`, `Vc` have shape `[t, h, j]` (no layer axis) and equal `einsum("lhjm,tm->thj", W_Kc, Mem)` summed over ALL
+THREE layers; `H` equals the numpy model fed those tables (`np_cross_transformer(hoisted=True)`) on Lean, eager and jit, and differs from per-layer cross-attention by 1.098; layer 2 contributes to the sum (asserted).
+
+**Pins of `transformer_cross`** (`cross_fixture_pins`, per precision; every reference is numpy float64 from the exported inputs only, written from the English definition; `np_transformer` untouched):
+1. Value: `H` layers 0, 1, 2 and the exported `Kc`, `Vc` (layers 0, 1) equal `np_cross_transformer` on Lean, eager and jit at `MODEL_TOL`; `Kc`, `Vc` are NaN in layer 2 and ONLY there, in every view (`trim_nan_layer`).
+2. Non-vacuity (binary64 numpy gaps): no cross block 0.668; EVERY memory row perturbed (`+ 0.5 * N(0, 1)`) 0.511; cross K and V taken from the layer state 1.464; each SINGLE memory row perturbed by 0.5 moves `H` by 0.032 to 0.119
+   (all above 1e-3: no memory position is ignored); the cross attention is not uniform (max deviation from 1 / t per layer 0.250, 0.115). A memory REVERSAL is invariant (attention over memory is permutation-invariant in `t`), so it is not used.
+3. Exports exactly `H`, `Kc`, `Vc` on every view; `H` finite.
+4. Inputs: every input other than the four self-attention head weights, `Sc`, and the new `W_Qc`, `W_Kc`, `W_Vc`, `W_Oc`, `Mem`, `Gc`, `Scx` is bitwise the mask fixtures'; layer-2 slices NaN and layers 0, 1 finite and distinct in all 13 stacks.
+5. Distinct extents (above) and the scales against the shapes.
+
+**Driver change to a shared helper.** `require_close` rejects any non-finite value, but `Kc`, `Vc` are NaN in layer 2 by construction. `require_close` and `record_output` take a narrow opt-in (`NAN_LAYER_OUTPUTS`, four (fixture, output) pairs): for those only, layers 0 and 1 are compared and EXACTLY layer 2 must be NaN
+(in Lean and JAX alike). Every other output keeps the finite-only gate.
+
+**Gradients** (`cross_grad_pins`, a separate function rather than an entry of `fixture_grad_pins`, whose model is self-attention only): `jax.grad` of `sum(C * H[:, :, 2])` through the emitted plan over all 19 float inputs INCLUDING `Mem`, eager and jit,
+against a pure-JAX decoder layer (no plan, no scan) and against central differences of `np_cross_transformer`; layer-2 weight slices exactly zero; the `Mem` gradient finite and nonzero in every row. **Finding (NOT probed in the brief):
+on the fixture's own NaN-sentinel stacks the `Mem` gradient is NaN in EVERY entry**: `dMem = sum_l dKc[..., l] . W_Kc[l]` multiplies the exactly-zero layer-2 cotangent by the NaN layer-2 weights (0 * NaN), while every weight gradient stays finite.
+That is a property of the NaN-sentinel convention, not of the plan; the pins therefore differentiate with the hoisted fixture's FINITE layer-2 `W_Kc`, `W_Vc` (layers 0, 1 bitwise the same) and pin the NaN as what it is (asserted: all-NaN `Mem` gradient, all other gradients finite).
+Any future fixture whose external input reaches the scan through a stack-sentinel table has this property.
+
+**Observed** (`MODEL_TOL` 1e-12 and 1e-6; no tolerance loosened). Binary64 `H` vs numpy: cross 6.7e-16 (headroom 1484x), hoisted 1.1e-15 (948x). **Binary32**: cross 4.1e-7 (headroom **2.4x**), hoisted 5.7e-7 (**1.7x**); `Kc`, `Vc` vs numpy 6e-8 (cross), 1.3e-7 (hoisted). Gradients, binary64:
+vs the pure-JAX model 1.8e-15 (563x), vs finite differences 3.1e-10 (318x); binary32: 3.0e-6 (**33.6x**), 9.5e-7 (105x); `Mem` gradient max abs 0.425, smallest per-row maximum 0.048; `|dot|` 7.0 to 21.4. Every pin passed on its first run.
+
+**Mutation evidence** (one edit of the f64 `crossProg` text or its data, whole differential via `run-evalplan-nonlin.sh`, first failing assertion; each restored by the inverse `sed` edit because the lean4 guardrail hook blocks `git checkout --`, `git diff --stat` empty after each):
+
+| Mutant | First failing assertion |
+|---|---|
+| A. `Kc` reads `W_Vc`, `Vc` reads `W_Kc` | `pin numpy model: transformer_cross lean H` (0.838) |
+| B. cross softmax gains a mask `where t ≤ q` | `pin numpy model: transformer_cross lean H` (1.408) |
+| C. cross score scaled twice (`· Scx[] · Scx[]`) | `pin numpy model: transformer_cross lean H` (0.218) |
+| D. `R2 := H[q, m, l] + Ax` (skip the self-attention residual) | `pin numpy model: transformer_cross lean H` (1.920) |
+| E. layer axis dropped from `Kc` (the naive form, NaN stack) | `('transformer_cross eager Kc', 'layer-2 slice is not the only NaN slice')`: the hoisted table sums over the NaN layer |
+| F. data: `Mem` all zeros (every value pin passes: numpy follows the same inputs) | `('transformer_cross', 'cross attention is near uniform', [0.0, 0.0])`: the non-vacuity pin, first time it fires |
+| G. B on `crossProg32` (f64 leg green first, 43 fixtures) | `pin numpy model: transformer_cross32 lean H` (1.408) |
+| H. `Kc` reads the layer state `N1[t, m]` instead of `Mem` | REFUSED at compile: `scanProjectionUnsupported "Kc"` (a per-step statement with the scan axis on its own left-hand side); not a kill, not run further |
+
+All seven effective mutants killed; none survived. Not run: mutants of the hoisted programs, of the gradient pins' inputs, runtime gradient mutants (no runtime code changed), the `Scx`-dropped and `Sc`-swapped variants (leave an input unused).
+
+**Not probed / parked** (cost in dispatches): a memory with a model width different from `m`, or a memory extent equal to another extent (~0.5, a fixture variant); a causal or padding mask on the cross-attention, grouped or multi-query cross-attention, positional information on the memory,
+an encoder, depth beyond two steps (items of the brief's scope list, unchanged); gradient pins for the hoisted programs (~0.3); the binary32 headroom of both new fixtures is 2.4x and 1.7x (no tuning was needed). The progression continues with the brief's section 9 list.
