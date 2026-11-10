@@ -453,6 +453,14 @@ one that does not). Same mask, extents and every other input as `transformer_sca
 STANDARD multi-head plan run on the same weights replicated over `h` (bitwise equal on the eager runtime). Observed numbers, the binary32 headroom, why the
 head-free weights are head 1's slices, and the mutation table: section 13 of `papers/semantics/jax_scan_record.md`.
 
+`transformer_gqa`, `transformer_gqa_split` and `transformer_gqa_mha` (each with a `32` sibling) are grouped-query attention in the same scan: G = 3 key/value groups of R = 2 query heads
+(h = 6, k = 7, q = s = 5; query head `h = 2 * g + r` reads group `g`). Index expressions have no division, so the head-to-group map is written either as an AFFINE read of a flat head
+axis (`transformer_gqa`: `Q[q, 2 * g + r, k]`, `W_O[l, m, 2 * g + r, k]`, with `axis r` declared) or by SPLITTING the head axis into `(g, r)` (`transformer_gqa_split`, no index arithmetic); the
+two compute bitwise the same `H` on Lean, eager and jit. `transformer_gqa_mha` is the standard multi-head program on key/value weights replicated per head (`W_K[l, h] = W_K[l, h / 2]`, built
+with `Nat` division in the Lean env builder). All three are checked against a numpy model whose key/value weights are `W[:, h // R]`, and the flat plan against the multi-head plan on weights
+replicated in Python (bitwise). The binary32 headroom is thin (1.7x); the weight seeds were chosen by measurement. Observed numbers, the seeds tried, the probe findings and the mutation table:
+section 15 of `papers/semantics/jax_scan_record.md`.
+
 Gradients: `jax.grad` works through the emitted `lax.scan` as is (no runtime change). The driver pins the gradient of `sum(C * H[:, :, 2])` of `transformer_scan` over every
 float input, in both precisions, eager and jit: finite, exactly zero on the never-read NaN layer-2 weight slices, equal to the same loss through the unrolled plan
 and to the autodiff of a pure-JAX model, and its directional derivatives equal central differences of the float64 numpy model. The pins are checked by `stop_gradient`

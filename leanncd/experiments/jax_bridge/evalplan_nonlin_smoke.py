@@ -50,7 +50,9 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_head", "transformer_head32", "scan_postrole", "scan_postrole32",
                         "transformer_unrolled", "transformer_unrolled32",
                         "transformer_window", "transformer_window32", "transformer_strict", "transformer_strict32",
-                        "transformer_sink", "transformer_sink32", "transformer_mqa", "transformer_mqa32"}
+                        "transformer_sink", "transformer_sink32", "transformer_mqa", "transformer_mqa32",
+                        "transformer_gqa", "transformer_gqa32", "transformer_gqa_split", "transformer_gqa_split32",
+                        "transformer_gqa_mha", "transformer_gqa_mha32"}
 # Predicate-mask scan fixtures (`transformer_<kind>`, q = s = 5): kind -> the perturbed position of the
 # receptive-field pin (chosen so the reachable and the unreachable row sets are both non-empty).
 MASK_FIXTURES = {"window": 0, "strict": 4, "sink": 3}
@@ -487,6 +489,133 @@ def mqa_fixture_pins(by: dict, sfx: str) -> None:
         print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
 
 
+def gqa_fixture_pins(by: dict, sfx: str) -> None:
+    """Pins of the three grouped-query scan fixtures (G key/value groups, R query heads per group, query head
+    `h = R * g + r` reads group `g`): `transformer_gqa` (flat head axis, affine read `Q[q, R * g + r, k]`),
+    `transformer_gqa_split` (head axis split into `(g, r)`, no index arithmetic) and `transformer_gqa_mha` (the standard
+    multi-head statements on key/value weights replicated per head). The reference is `np_transformer` on multi-head inputs
+    whose key/value weights are `W_K[:, h // R]`: the division is the English definition of the map, exactly what the
+    language lacks. Value pin on Lean, eager and jit; non-vacuity against three wrong models; flat == split on the eager
+    and jit runtimes; flat == multi-head plan on weights replicated HERE in Python (no Lean value involved)."""
+    names = {"flat": f"transformer_gqa{sfx}", "split": f"transformer_gqa_split{sfx}", "mha": f"transformer_gqa_mha{sfx}"}
+    fxs = {k: by[n] for k, n in names.items()}
+    ref = {n: lean_array(e) for n, e in by[f"transformer_window{sfx}"]["inputs"].items()}  # the mask fixtures' inputs
+    fins = {k: {n: lean_array(e) for n, e in fx["inputs"].items()} for k, fx in fxs.items()}
+    for k, fx in fxs.items():
+        scans = [n for n in fx["plan"]["nodes"] if n.get("kind") == "scan"]
+        assert len(fx["plan"]["nodes"]) == 1 and len(scans) == 1 and scans[0]["step_count"] == 2, (names[k], fx["plan"]["nodes"])
+        assert sorted(fins[k]) == sorted(ref), (names[k], sorted(fins[k]), sorted(ref))
+    fin = fins["flat"]
+    n_g, n_k, n_m = fin["W_K"].shape[1], fin["W_K"].shape[2], fin["W_K"].shape[3]
+    n_h, n_pos = fin["W_Q"].shape[1], fin["X"].shape[0]
+    assert n_h % n_g == 0, (n_h, n_g)
+    R = n_h // n_g
+    # g, r, k and q (= s) are pairwise distinct, so no axis-order bug can hide behind equal extents on S, K, Q, AttnOut or W_O
+    assert len({n_g, R, n_k, n_pos}) == 4 and n_pos == 5 and n_m == 4, (n_g, R, n_k, n_pos, n_m)
+    # shapes: the same bytes in three layouts (flat head, split head, replicated K and V)
+    assert fin["W_Q"].shape == (3, n_h, n_k, n_m) and fin["W_O"].shape == (3, n_m, n_h, n_k), (fin["W_Q"].shape, fin["W_O"].shape)
+    assert fin["W_K"].shape == fin["W_V"].shape == (3, n_g, n_k, n_m)
+    sp = fins["split"]
+    assert sp["W_Q"].shape == (3, n_g, R, n_k, n_m) and sp["W_O"].shape == (3, n_m, n_g, R, n_k), (sp["W_Q"].shape, sp["W_O"].shape)
+    assert sp["W_K"].shape == sp["W_V"].shape == (3, n_g, n_k, n_m)
+    mh = fins["mha"]
+    assert mh["W_Q"].shape == fin["W_Q"].shape and mh["W_K"].shape == mh["W_V"].shape == (3, n_h, n_k, n_m), mh["W_K"].shape
+    # every input is the mask fixtures' bit for bit, except Sc and the four head-specific weights; the two grouped programs
+    # read the very same arrays (`h = R * g + r` makes [g, r, k, m] and [h, k, m] one storage order); the multi-head
+    # program's key/value weights are the grouped ones replicated per head (`np.repeat`, i.e. `W_K[:, h // R]`, built here)
+    head_weights = ("W_Q", "W_K", "W_V", "W_O", "Sc")
+    for k in fins:
+        for n in ref:
+            if n not in head_weights:
+                assert np.array_equal(bits(fins[k][n]), bits(ref[n])), (names[k], "input differs from the mask fixtures'", n)
+    for n in ("W_Q", "W_K", "W_V", "W_O", "Sc"):
+        assert np.array_equal(bits(fin[n]).ravel(), bits(sp[n]).ravel()), (n, "flat and split programs read different data")
+    for n in ("W_Q", "W_O", "Sc"):
+        assert np.array_equal(bits(fin[n]), bits(mh[n])), (n, "multi-head program reads different data")
+    for n in ("W_K", "W_V"):
+        assert np.array_equal(bits(mh[n]), bits(np.repeat(fin[n], R, axis=1))), (n, "replication is not W[:, h // R]")
+    # layer-2 slices are NaN in every weight stack (a step reading past layer 1 would turn every output NaN); layers 0, 1 differ
+    for k in fins:
+        for w in ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out", "G1", "G2"):
+            a = fins[k][w]
+            assert a.shape[0] == 3 and np.all(np.isnan(a[2])) and np.all(np.isfinite(a[:2])), (names[k], w)
+            assert not np.array_equal(a[0], a[1]), (names[k], w)
+    # Sc is 1 / sqrt(k) for the head width of W_Q itself
+    assert fin["Sc"].shape == () and np.isclose(float(fin["Sc"]), 1.0 / np.sqrt(fin["W_Q"].shape[2]),
+                                                 rtol=1e-6 if _DT == "float32" else 1e-14), fin["Sc"]
+    group = [h // R for h in range(n_h)]  # the English definition of the head-to-group map
+    gh = dict(fin, W_K=fin["W_K"][:, group], W_V=fin["W_V"][:, group])
+    layers = np_transformer(gh)
+    want = np_state(gh, layers)
+
+    def gap(other):  # max |H_gqa - H_other| over the state
+        return float(np.max(np.abs(want - np_state(other, np_transformer(other)))))
+
+    # non-vacuity: GQA is none of (a) multi-head with distinct K/V per head (generated here from a different formula),
+    # (b) one shared group (multi-query), (c) the wrong group map h % G (= the transposed head map `G * r + g` of mutant A)
+    distinct = np.array([0.6 * np.sin(5.0 + 1.7 * i) for i in range(3 * n_h * n_k * n_m)]).reshape(3, n_h, n_k, n_m)
+    gaps = {"distinct K/V per head": gap(dict(fin, W_K=distinct, W_V=distinct[::-1])),
+            "one shared group": gap(dict(fin, W_K=fin["W_K"][:, [0] * n_h], W_V=fin["W_V"][:, [0] * n_h])),
+            "wrong map h % G": gap(dict(fin, W_K=fin["W_K"][:, [h % n_g for h in range(n_h)]],
+                                        W_V=fin["W_V"][:, [h % n_g for h in range(n_h)]]))}
+    for what, g in gaps.items():
+        assert g > 1e-2, (names["flat"], "GQA is indistinguishable from", what, g)
+    # the R heads of one group attend differently from each other, and the groups differ, in layers 0 and 1
+    r_gaps, g_gaps = [], []
+    for o in layers:
+        r_gaps.append(min(float(np.max(np.abs(o["S"][R * g + r] - o["S"][R * g + r2])))
+                          for g in range(n_g) for r in range(R) for r2 in range(r + 1, R)))
+        g_gaps.append(min(float(np.max(np.abs(o["S"][R * g] - o["S"][R * g2]))) for g in range(n_g) for g2 in range(g + 1, n_g)))
+    assert all(x > 1e-2 for x in r_gaps + g_gaps), (names["flat"], "heads or groups attend alike", r_gaps, g_gaps)
+    # value pin: exactly the state is exported, finite, on Lean, eager and jit, for all three programs
+    for k, name in names.items():
+        views = {"lean": {n: lean_array(e) for n, e in fxs[k]["expected"].items()},
+                 "eager": {n: np.asarray(v) for n, v in EAGER[name]["eager"].items()},
+                 "jit": {n: np.asarray(v) for n, v in EAGER[name]["jit"].items()}}
+        for who, outs in views.items():
+            assert sorted(outs) == ["H"] and np.all(np.isfinite(outs["H"])), (name, who, sorted(outs))
+            assert outs["H"].shape == (n_pos, n_m, 3), (name, who, outs["H"].shape)
+            check_np(name, who, "H", outs["H"], want)
+    # flat read == split heads: the affine read `Q[q, R * g + r, k]` and the axis split are the same computation
+    h_of = {k: {"lean": lean_array(fxs[k]["expected"]["H"]), "eager": np.asarray(EAGER[n]["eager"]["H"]),
+                "jit": np.asarray(EAGER[n]["jit"]["H"])} for k, n in names.items()}
+    flat_split = {v: int(np.sum(bits(h_of["flat"][v]) == bits(h_of["split"][v]))) for v in ("lean", "eager", "jit")}
+    total = h_of["flat"]["eager"].size
+    for v in ("eager", "jit"):
+        assert flat_split[v] == total, (names["flat"], names["split"], "flat and split heads differ on", v, flat_split[v], total)
+    # equivalence: the flat plan == the standard multi-head plan run on key/value weights replicated HERE (eager runtime
+    # both sides); the multi-head plan on the head-DISTINCT weights does not agree (non-vacuity)
+    run_mh = rt.run_named(fxs["mha"]["plan"], {n: jnp.asarray(a) for n, a in dict(mh, W_K=np.repeat(fin["W_K"], R, axis=1),
+                                                                                   W_V=np.repeat(fin["W_V"], R, axis=1)).items()}, JDT)
+    h_flat, h_mh = h_of["flat"]["eager"], np.asarray(run_mh["H"])
+    assert h_flat.dtype == h_mh.dtype == NDT and h_flat.shape == h_mh.shape, (h_flat.dtype, h_mh.dtype)
+    equal_bits = int(np.sum(bits(h_flat) == bits(h_mh)))
+    equiv_gap = float(np.max(np.abs(h_flat.astype(np.float64) - h_mh.astype(np.float64))))
+    assert equal_bits == h_flat.size, (names["flat"], "GQA H is not bitwise the multi-head plan's H on replicated weights",
+                                       equal_bits, h_flat.size, equiv_gap)
+    run_dist = rt.run_named(fxs["mha"]["plan"], {n: jnp.asarray(a) for n, a in dict(
+        mh, W_K=distinct.astype(NDT), W_V=distinct[::-1].astype(NDT)).items()}, JDT)
+    dist_gap = float(np.max(np.abs(np.asarray(run_dist["H"]).astype(np.float64) - h_flat.astype(np.float64))))
+    assert dist_gap > 1e-2, (names["flat"], "the equivalence pin cannot tell head-distinct weights apart", dist_gap)
+    print(f"gqa{sfx}: G={n_g} groups x R={R} heads (h={n_h}), k={n_k}, q=s={n_pos}: distinct extents; three programs, each ONE scan "
+          f"record with 2 steps; inputs bitwise the mask fixtures' except Sc and the head weights; flat and split read the same "
+          f"bytes, mha K/V = W[:, h // R]; layer-2 slices NaN, H finite; H layers 0, 1, 2 == numpy model (K/V = W[:, h // R]) on "
+          f"Lean, eager and jit for all three; the numpy GQA H differs from "
+          f"{', '.join(f'{w} by {g:.3f}' for w, g in gaps.items())}; heads of one group attend differently (min gap per layer "
+          f"{', '.join(f'{x:.3f}' for x in r_gaps)}), groups differ (min gap {', '.join(f'{x:.3f}' for x in g_gaps)}); "
+          f"flat == split H bitwise on eager {flat_split['eager']}/{total}, jit {flat_split['jit']}/{total}, "
+          f"Lean {flat_split['lean']}/{total}; eager flat H == multi-head plan on replicated weights bitwise "
+          f"({equal_bits}/{h_flat.size}, max abs {equiv_gap:.1e}); multi-head plan on distinct weights differs by {dist_gap:.3f}")
+    for k, name in names.items():
+        print(f"{name}: per-output measured difference vs numpy and vs Lean:")
+        print_np_stats(name)
+        sc_err = NUM_STATS[(name, "H")][0]
+        print(f"  H headroom to MODEL_TOL: {MODEL_TOL[_DT] / max(sc_err, 1e-300):.1f}x (observed {sc_err:.3e} of {MODEL_TOL[_DT]:.0e})")
+        for n in sorted(n for fx_, n in OUT_STATS if fx_ == name):
+            rel, ab, ex, tot = OUT_STATS[(name, n)]
+            print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+
 def grad_fixture_pins(by: dict, sfx: str) -> None:
     """Gradient pins of the standard two-layer scan (`transformer_scan`): `jax.grad` of the scalar loss
     `L = sum(C * H[:, :, 2])` (a fixed, distinct-entried cotangent `C`) through the emitted `lax.scan` plan, over EVERY float input,
@@ -874,6 +1003,10 @@ def main() -> None:
 
     # MULTI-QUERY ATTENTION inside the layer scan (head-free K and V): see `mqa_fixture_pins`.
     mqa_fixture_pins(by, sfx)
+
+    # GROUPED-QUERY ATTENTION inside the layer scan (flat head axis, split heads, multi-head on replicated weights):
+    # see `gqa_fixture_pins`.
+    gqa_fixture_pins(by, sfx)
 
     # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
     grad_fixture_pins(by, sfx)
