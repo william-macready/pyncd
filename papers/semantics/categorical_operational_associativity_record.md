@@ -2,9 +2,9 @@
 
 ## Status
 
-Authoring phase (a) is complete: the operational associativity implementation,
-acceptance observations and controls have been compiled and verified.
-This record is not an implementation plan or an integration receipt.
+Implementation, clean execution, release validation and local integration are
+complete. This record separates authoring, review, release and integration
+evidence from the implementation plan.
 The controlling brief is
 [the handoff](categorical_operational_associativity_handoff.md).
 The Full process applies because the requested result adds an operational
@@ -349,6 +349,51 @@ edit and has not attempted a conflicting merge. The fully verified slice and
 its explicit evidence deliverables are committed on the owned execution branch.
 Local integration/cleanup waits for user guidance or the concurrent edits'
 completion; no push is authorized or performed.
+
+## Local integration and cleanup - complete
+
+On 2026-11-09 the user explicitly authorized committing the existing primary
+documentation edits separately and then integrating both sets of changes.
+Those edits were preserved in `74a4bd7d`. The reviewed release through
+`1fb057f7` was merged into local main by merge commit `7c25457a`.
+
+The only conflict was the synthesis progress ledger. Resolution retains the
+existing four-column roadmap-stage mapping, all prior milestone-to-stage
+associations, the new associative operational composition result, and the
+remaining process-unit/backend boundaries. A deterministic check verified
+seventeen milestone rows in four columns and all prior stage mappings.
+The existing README is byte-identical to `74a4bd7d`; the math-rendering edits
+are preserved.
+
+All sixteen other frozen delivery files, including all twelve Lean modules,
+remain byte-identical to the reviewed release. The synthesis is the explicit
+documentation-only integration exception to the historical seventeen-file
+package receipt; that frozen authoring receipt was not rewritten to hide the
+merge reconciliation.
+
+The controller built the fully integrated primary checkout with
+`LeanNCD Tests IndexedExecutionExperiment`: **8,942 jobs passed**.
+The [integration build log](categorical_operational_associativity_artifacts/integration_full_build.log)
+is retained separately from prototype and clean-execution receipts.
+No Lean source changed after either clean whole-branch review or the 32/32
+clean-execution controls.
+
+A cached whitespace check reported seventeen required blank context lines
+inside the literal `documentation.patch` data. Their exact content was
+verified; frozen patch bytes were preserved. The check of actual source and
+documentation, excluding only literal patch-format data, passed.
+
+The release branch was verified as an ancestor of main. Its only tree
+differences from the merged main at that checkpoint were the deliberately
+preserved/reconciled README and synthesis. The execution checkout was clean
+before normal removal; its owned execution worktree and merged branch were
+removed without force. The original authoring/handoff worktree is retained
+as required by the plan. No unrelated worktree or edit was discarded.
+
+All requested local integration gates are complete. No remote push was made.
+Close-out token reporting again returned no Copilot transcript; telemetry
+remains unavailable, with the earlier possible prototype turn overrun disclosed
+above rather than silently treated as a measured budget pass.
 
 ## Fresh authoring (b): frozen-package implementation plan
 
