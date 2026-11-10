@@ -1663,16 +1663,16 @@ tensor-level presence for empty inputs.
 Define $B_b(\rho_P)$ to be the downstream input environment transported
 through the boundary by `boundaryInput`:
 
-```math
+$$
 B_b(\rho_P)(i)[p]=\rho_P(b(i))[e_i(p)],
 \qquad p\in J_Q(i).
-```
+$$
 
 Every downstream input is present at tensor level, also for an empty domain;
 noninput bindings are absent.
 The implemented `witnessesEquiv` establishes the rank-independent bijection
 
-```math
+$$
 \operatorname{Models}(Q\circ_b P,\eta_{\mathrm{comp}})
 \cong
 \left\{
@@ -1682,7 +1682,7 @@ The implemented `witnessesEquiv` establishes the rank-independent bijection
 \rho_Q\in\operatorname{Models}(Q,B_b(\rho_P))
 \end{array}
 \right\}.
-```
+$$
 
 Both directions retain all private definedness and collected equations.
 The pair retains both components' internal values rather than hiding them
@@ -1702,12 +1702,12 @@ an upstream output; `liftOutput` transports a downstream output into the
 composite's output family. On exactly that admitted domain,
 `denotation_successive` proves
 
-```math
+$$
 f_{Q\circ_b P}(\eta_{\mathrm{comp}})
 =\operatorname{liftOutput}_b\!\left(
  f_Q\!\left(\operatorname{boundaryFromOutput}_b(f_P(\eta_X))\right)
 \right).
-```
+$$
 
 The subscript $b$ fixes the same components and boundary as above.
 This is a domain-and-value law under the two explicit component hypotheses,
@@ -1888,24 +1888,39 @@ categorical construction elsewhere in the repository.
 **Conditional** names retained hypotheses, not an unfinished proof.
 **Proposed/open** means no result for this interpretation is claimed.
 
-| Milestone | Current status | Evidence or remaining boundary |
-| --- | --- | --- |
-| Typed values, strict expressions and whole-model conditions | Implemented semantic substrate | [Core models](../../leanncd/LeanNCD/Semantics/Models.lean) and [strict interpretation](../../leanncd/LeanNCD/Semantics/Interpret.lean); internal occurrence definedness is required |
-| Metadata-bearing whole-interface environments | Implemented with proved input/output equivalences | [Witness interfaces](../../leanncd/experiments/indexed_execution/IndexedWitnessInterface.lean); UID/sort/domain/port metadata and empty-input presence are retained, not quotiented by carrier equivalence |
-| Declaration/context/coordinate transport | Proved | [Transport record](component_transport_execution_record.md); supplied certified adapters, not name-based or automatic domain matching |
-| Graph/reference execution correspondence | Proved, conditional on a supplied local match | [Correspondence record](categorical_tensor_logic_proof_record.md); matched priorities and rational registry, no general backend claim |
-| Static sealed composite and its match | Proved | [Composition record](component_composition_record.md); two local matched components plus an explicit whole-tensor boundary |
-| Complete-model restriction/gluing | Proved, rank-independent | [Model-gluing record](component_model_gluing_record.md); full compatible witnesses, with no rank, existence or uniqueness premise |
-| Successive partial-function domain and denotation | Proved, conditional on both components' `AtMostOneModels` hypotheses | [Denotation theorem](../../leanncd/experiments/indexed_execution/IndexedComponentModelDenotation.lean); uniqueness is not totality |
-| Witness-span interpretation across all inputs | Proved, composition-preserving with explicit boundary and exterior transports | [Witness composition](../../leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean); `allInputWiredEquiv`, `compositeWiredIso` and `composition_hom` retain whole private model stores and commute with both legs |
-| Semantic target category laws and units | Proved | [Span category](../../leanncd/experiments/indexed_execution/IndexedWitnessSpan.lean); span-isomorphism quotient, pullback associativity and identity-span unit laws; graph spans supply administrative interface transports |
-| Nested component denotational associativity | Proved after explicit interface reindexing | [Witness coherence](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean); both actual bracketings correspond to the same compatible model triple, not equal raw IDs or programs |
-| Injective-left partial-map interpretation | Proved; component restriction is exactly `AtMostOneModels` | [Restricted spans](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean); quotient invariance, closure under pullback and domain/value laws connect to authoritative admissibility and denotation; noncomputable extraction, not totality |
-| Certified matched-component source category and functor | Proved for the specified generated presentation | [Source functor](../../leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean); certified coordinate wires, source quotient laws, actual assembly/nesting and complete-witness interpretation with explicit transports |
-| Core/process units | Open | Administrative source identities are not core computations; copies add events and aliases violate `output_defined` |
-| Rank stitching and sequential phase/projection | Proved for actual default graph/reference executions | [Ranked execution](categorical_ranked_execution_record.md); constructed full-footprint certificate, shared cut, whole private state/ledger projections, strict failures, explicit boundary and default-budget proof |
-| Event-sensitive process category | Open | For the proposed sealed-sequential interpretation, needs operational composition and a justified event/state observation equivalence, not merely span isomorphism |
-| Categorical frontend/backend interpretation and refinement | Not established for this witness category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
+Section 10.1 organizes **conceptual obligations**; this ledger lists the
+**specific results that discharge them**. The step column refers to
+[Section 10.1](#101-what-each-step-buys-us). The mapping is many-to-many:
+one step can need several results, and one result can serve several steps.
+Transport serves Steps 1 and 2 by specifying legitimate connections and
+proving that they preserve meaning. The restricted partial-map view spans
+Steps 5-7: uniqueness hypotheses enable it, categorical packaging makes it
+quotient-invariant, and its laws establish composition of domains and values.
+
+| Milestone | 10.1 steps | Current status | Evidence or remaining boundary |
+| --- | --- | --- | --- |
+| Typed values, strict expressions and whole-model conditions | 2 | Implemented semantic substrate | [Core models](../../leanncd/LeanNCD/Semantics/Models.lean) and [strict interpretation](../../leanncd/LeanNCD/Semantics/Interpret.lean); internal occurrence definedness is required |
+| Metadata-bearing whole-interface environments | 1 | Implemented with proved input/output equivalences | [Witness interfaces](../../leanncd/experiments/indexed_execution/IndexedWitnessInterface.lean); UID/sort/domain/port metadata and empty-input presence are retained, not quotiented by carrier equivalence |
+| Declaration/context/coordinate transport | 1, 2 | Proved | [Transport record](component_transport_execution_record.md); supplied certified adapters, not name-based or automatic domain matching |
+| Graph/reference execution correspondence | 3 | Proved, conditional on a supplied local match | [Correspondence record](categorical_tensor_logic_proof_record.md); matched priorities and rational registry, no general backend claim |
+| Static sealed composite and its match | 4 | Proved | [Composition record](component_composition_record.md); two local matched components plus an explicit whole-tensor boundary |
+| Complete-model restriction/gluing | 5 | Proved, rank-independent | [Model-gluing record](component_model_gluing_record.md); full compatible witnesses, with no rank, existence or uniqueness premise |
+| Successive partial-function domain and denotation | 5 | Proved, conditional on both components' `AtMostOneModels` hypotheses | [Denotation theorem](../../leanncd/experiments/indexed_execution/IndexedComponentModelDenotation.lean); uniqueness is not totality |
+| Witness-span interpretation across all inputs | 6 | Proved, composition-preserving with explicit boundary and exterior transports | [Witness composition](../../leanncd/experiments/indexed_execution/IndexedWitnessComposition.lean); `allInputWiredEquiv`, `compositeWiredIso` and `composition_hom` retain whole private model stores and commute with both legs |
+| Semantic target category laws and units | 1, 6, 7 | Proved | [Span category](../../leanncd/experiments/indexed_execution/IndexedWitnessSpan.lean); span-isomorphism quotient, pullback associativity and identity-span unit laws; graph spans supply administrative interface transports |
+| Nested component denotational associativity | 7 | Proved after explicit interface reindexing | [Witness coherence](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean); both actual bracketings correspond to the same compatible model triple, not equal raw IDs or programs |
+| Injective-left partial-map interpretation | 5-7 | Proved; component restriction is exactly `AtMostOneModels` | [Restricted spans](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean); quotient invariance, closure under pullback and domain/value laws connect to authoritative admissibility and denotation; noncomputable extraction, not totality |
+| Certified matched-component source category and functor | 8 | Proved for the specified generated presentation | [Source functor](../../leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean); certified coordinate wires, source quotient laws, actual assembly/nesting and complete-witness interpretation with explicit transports |
+| Core/process units | 9 | Open | Administrative source identities are not core computations; copies add events and aliases violate `output_defined` |
+| Rank stitching and sequential phase/projection | 9 | Proved for actual default graph/reference executions | [Ranked execution](categorical_ranked_execution_record.md); constructed full-footprint certificate, shared cut, whole private state/ledger projections, strict failures, explicit boundary and default-budget proof |
+| Event-sensitive process category | 1, 9 | Open | For the proposed sealed-sequential interpretation, needs operational composition and a justified event/state observation equivalence, not merely span isomorphism |
+| Categorical frontend/backend interpretation and refinement | 9 | Not established for this witness category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
+
+Thus the scoped **denotational obligations of Steps 1-8 are established**,
+while **Step 9 remains open**. This does not mark every aspect of Step 1
+complete: its event-sensitive observation equivalence belongs to the open
+process branch. Nor does Step 8 establish a broader source presentation,
+automatic matching or a general St/Br/monoidal interpretation.
 
 The current position is therefore **a proved denotational witness-span
 category and a certified source-category functor**, not an event-sensitive
