@@ -93,6 +93,12 @@ and the proved conditional execution theorem, while retaining general
 composition as a further target. A mathematical appendix explains the
 proof without assuming one formalism is the best foundation.
 
+[Ranked operational interpretation and units: new-session brief](categorical_ranked_operational_interpretation_handoff.md)
+sets the next goal: interpret the existing administrative identity/wire syntax
+in full histories, retain private frames and metadata, and justify the ranked
+source equations before categorical packaging. It requires a verified plan
+and prototype before implementation; it is not itself an execution plan.
+
 [Source-contract execution correspondence: theorem-design brief](categorical_tensor_logic_theorem_brief.md)
 fixes the first semantic theorem's scope, supplied match, state relation,
 proof dependencies, and output-metadata boundary. It distinguishes existing
