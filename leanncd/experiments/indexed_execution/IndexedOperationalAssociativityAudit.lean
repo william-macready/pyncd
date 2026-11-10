@@ -1,0 +1,27 @@
+import IndexedOperationalSemantics
+import IndexedOperationalAssociativityTest
+import Semantics.AxiomAudit
+
+#audit_axioms IndexedOperationalHistory
+#audit_axioms IndexedOperationalHistoryComposition
+#audit_axioms IndexedOperationalHistoryAssociativity
+#audit_axioms IndexedOperationalReassociation
+#audit_axioms IndexedOperationalRuns
+#audit_axioms IndexedOperationalRunsPhases
+#audit_axioms IndexedOperationalAssociativity
+#audit_axioms IndexedOperationalAssociativityFixtures
+#audit_axioms IndexedOperationalAssociativityTest
+
+#print axioms IndexedComponentTransport.Domain.symm
+#print axioms IndexedOperationalHistory.CompleteObservation.agrees_refl
+#print axioms IndexedOperationalHistory.CompleteObservation.agrees_symm
+#print axioms IndexedOperationalHistory.CompleteObservation.agrees_trans
+#print axioms IndexedOperationalHistoryComposition.compose_history
+#print axioms IndexedOperationalHistoryComposition.BinaryHistory.sound
+#print axioms IndexedOperationalHistoryComposition.SharedSplice.associative_eq
+#print axioms IndexedOperationalAssociativity.nested_observations
+#print axioms IndexedOperationalRuns.nested_reference_runs
+#print axioms IndexedOperationalRuns.ranked_nested_reference_outcomes
+#print axioms IndexedOperationalRunsPhases.triple_phases
+#print axioms IndexedOperationalRunsPhases.two_reached_empty_B
+#print axioms IndexedOperationalRunsPhases.reference_cuts

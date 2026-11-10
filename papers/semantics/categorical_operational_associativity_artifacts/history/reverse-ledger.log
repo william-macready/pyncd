@@ -1,0 +1,17 @@
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:631:82: error: Type mismatch
+  rfl
+has type
+  ?m.23 = ?m.23
+but is expected to have type
+  (graphIdentity.mapState ledgerLeft).produced = [(101, 1), (102, -1)]
+'IndexedOperationalHistory.History.splice_assoc' depends on axioms: [propext]
+'IndexedOperationalHistory.History.success_cut' depends on axioms: [propext]
+'IndexedOperationalHistory.Transport.apply_splice' depends on axioms: [propext, Quot.sound]
+'IndexedOperationalHistory.GraphHistory.stepFuel_exists' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistory.GraphHistory.ranked_default_exists' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext]
+'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]

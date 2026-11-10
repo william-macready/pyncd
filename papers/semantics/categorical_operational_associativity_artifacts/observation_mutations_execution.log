@@ -1,0 +1,202 @@
+=== O1 (wrong reassociation occurrence identity) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean: 'let events := l.events.map
+    (mapEvent (IndexedOperationalReassociation.embedding A B C ab bc)
+      IndexedOperationalReassociation.identityEquiv)' -> 'let events := l.events.map
+    (mapEvent (IndexedOperationalReassociation.embedding A B C ab bc) id)' ---
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:289:0: indexed-reference operational-private-full-observations: expected [(true, true, true), (true, true, true), (true, true, true), (true, true, true)]
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:294:0: indexed-reference operational-donor-full-observations: expected [(true, true, true), (true, true, true), (true, true, true), (true, true, true), (true, true, true)]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean now) ---
+=== O1 (wrong reassociation occurrence identity) MUTATE exit=1 ===
+=== O1 (wrong reassociation occurrence identity) RESTORED BUILD ===
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+Build completed successfully (8641 jobs).
+=== O1 (wrong reassociation occurrence identity) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+O1 (wrong reassociation occurrence identity): PASS
+=== O1 (wrong reassociation occurrence identity) MANIFEST VERDICT: PASS ===
+=== O2 (private availability cannot be erased) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean: '(roster.map s.available, mapLedger rename s.produced)' -> '(roster.map (fun a => if σ.uid a.1 == 8 then none else s.available a), mapLedger rename s.produced)' ---
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:290:0: indexed-reference operational-private-full-observations: expected [(true, true, true), (true, true, true), (true, true, true), (true, true, true)]
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:295:0: indexed-reference operational-donor-full-observations: expected [(true, true, true), (true, true, true), (true, true, true), (true, true, true), (true, true, true)]
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:316:0: indexed-reference operational-private-snapshots: expected [([some 3, none, none, none, none, none, none], []),
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean now) ---
+=== O2 (private availability cannot be erased) MUTATE exit=1 ===
+=== O2 (private availability cannot be erased) RESTORED BUILD ===
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+Build completed successfully (8641 jobs).
+=== O2 (private availability cannot be erased) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+O2 (private availability cannot be erased): PASS
+=== O2 (private availability cannot be erased) MANIFEST VERDICT: PASS ===
+=== O3 (produced ledger order cannot be reversed) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean: 'mapLedger rename s.produced)' -> 'mapLedger rename s.produced.reverse)' ---
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:316:0: indexed-reference operational-private-snapshots: expected [([some 3, none, none, none, none, none, none], []),
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean now) ---
+=== O3 (produced ledger order cannot be reversed) MUTATE exit=1 ===
+=== O3 (produced ledger order cannot be reversed) RESTORED BUILD ===
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+Build completed successfully (8641 jobs).
+=== O3 (produced ledger order cannot be reversed) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+O3 (produced ledger order cannot be reversed): PASS
+=== O3 (produced ledger order cannot be reversed) MANIFEST VERDICT: PASS ===
+=== O4 (contribution order cannot be reversed) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean: '(collected.events.take 3).map eventRow' -> '(collected.events.reverse.take 3).map eventRow' ---
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:350:0: indexed-reference operational-donor-event-order: expected ([("produce", 40, 404, some 1), ("produce", 44, 408, some -1), ("publish", 0, 0, some 0)],
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean now) ---
+=== O4 (contribution order cannot be reversed) MUTATE exit=1 ===
+=== O4 (contribution order cannot be reversed) RESTORED BUILD ===
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+Build completed successfully (8641 jobs).
+=== O4 (contribution order cannot be reversed) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+O4 (contribution order cannot be reversed): PASS
+=== O4 (contribution order cannot be reversed) MANIFEST VERDICT: PASS ===
+=== O5 (publication cannot be dropped) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean: '(zero.events.take 2).map eventRow' -> '((zero.events.filter fun event => match event with | .sealed _ _ => false | _ => true).take 2).map eventRow' ---
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:350:0: indexed-reference operational-donor-event-order: expected ([("produce", 40, 404, some 1), ("produce", 44, 408, some -1), ("publish", 0, 0, some 0)],
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean now) ---
+=== O5 (publication cannot be dropped) MUTATE exit=1 ===
+=== O5 (publication cannot be dropped) RESTORED BUILD ===
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+Build completed successfully (8641 jobs).
+=== O5 (publication cannot be dropped) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+O5 (publication cannot be dropped): PASS
+=== O5 (publication cannot be dropped) MANIFEST VERDICT: PASS ===
+=== O6 (a duplicate snapshot is observable) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean: 'l.states.map (stateRow roster IndexedOperationalReassociation.identityEquiv)' -> '(l.states ++ l.states.take 1).map (stateRow roster IndexedOperationalReassociation.identityEquiv)' ---
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:290:0: indexed-reference operational-private-full-observations: expected [(true, true, true), (true, true, true), (true, true, true), (true, true, true)]
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:295:0: indexed-reference operational-donor-full-observations: expected [(true, true, true), (true, true, true), (true, true, true), (true, true, true), (true, true, true)]
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean now) ---
+=== O6 (a duplicate snapshot is observable) MUTATE exit=1 ===
+=== O6 (a duplicate snapshot is observable) RESTORED BUILD ===
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+Build completed successfully (8641 jobs).
+=== O6 (a duplicate snapshot is observable) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+O6 (a duplicate snapshot is observable): PASS
+=== O6 (a duplicate snapshot is observable) MANIFEST VERDICT: PASS ===
+=== O7 (reference pending occurrences cannot be erased) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean: 'decide (o ∈ s.pending t)' -> 'false' ---
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:340:0: indexed-reference operational-reference-shared-cuts: expected (some ([some 3, some 9, some (7 : Rat)/2, none, none, none, none],
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean now) ---
+=== O7 (reference pending occurrences cannot be erased) MUTATE exit=1 ===
+=== O7 (reference pending occurrences cannot be erased) RESTORED BUILD ===
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+Build completed successfully (8641 jobs).
+=== O7 (reference pending occurrences cannot be erased) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+O7 (reference pending occurrences cannot be erased): PASS
+=== O7 (reference pending occurrences cannot be erased) MANIFEST VERDICT: PASS ===
+=== O8 (reference accumulators cannot be erased) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean: '(s.accumulators t p : ℚ)' -> '(0 : ℚ)' ---
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:340:0: indexed-reference operational-reference-shared-cuts: expected (some ([some 3, some 9, some (7 : Rat)/2, none, none, none, none],
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean now) ---
+=== O8 (reference accumulators cannot be erased) MUTATE exit=1 ===
+=== O8 (reference accumulators cannot be erased) RESTORED BUILD ===
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+Build completed successfully (8641 jobs).
+=== O8 (reference accumulators cannot be erased) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+O8 (reference accumulators cannot be erased): PASS
+=== O8 (reference accumulators cannot be erased) MANIFEST VERDICT: PASS ===
+=== O9 (strict failure donor cannot fall through as total) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean: 'let l := leftRun (consumerComponent a) (consumerComponent b) (consumerComponent c)
+    (privateBoundary a b) (privateBoundary b c) (privateInput a)' -> 'let l := leftRun (consumerComponent 4) (consumerComponent b) (consumerComponent c)
+    (privateBoundary 4 b) (privateBoundary b c) (privateInput 4)' ---
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:283:0: indexed-reference operational-private-outcomes: expected [("complete", 12, 13, "complete", 12, 13),
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean now) ---
+=== O9 (strict failure donor cannot fall through as total) MUTATE exit=1 ===
+=== O9 (strict failure donor cannot fall through as total) RESTORED BUILD ===
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+Build completed successfully (8641 jobs).
+=== O9 (strict failure donor cannot fall through as total) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+O9 (strict failure donor cannot fall through as total): PASS
+=== O9 (strict failure donor cannot fall through as total) MANIFEST VERDICT: PASS ===
+=== O10 (missing empty input is not a vacuous valid input) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean: 'let result := leftRun emptyProducerComponent emptyConsumerComponent emptyConsumerComponent
+    emptyBoundary emptyTailBoundary emptyValidatedInput' -> 'let result := runChecked l.contract l.fragment (fun _ => none)' ---
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:299:0: indexed-reference operational-empty-presence-coincident-cuts: expected ("complete", 0, 1, 1, [(true, true), (false, false), (false, false), (false, false)])
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean now) ---
+=== O10 (missing empty input is not a vacuous valid input) MUTATE exit=1 ===
+=== O10 (missing empty input is not a vacuous valid input) RESTORED BUILD ===
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+Build completed successfully (8641 jobs).
+=== O10 (missing empty input is not a vacuous valid input) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+O10 (missing empty input is not a vacuous valid input): PASS
+=== O10 (missing empty input is not a vacuous valid input) MANIFEST VERDICT: PASS ===
+=== O11 (equal-output history control is discriminating) MUTATE ===
+--- mutated experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean: 'collectors := rows.take 1 ++ rows.drop 2 ++ (rows.drop 1).take 1' -> 'collectors := rows' ---
+error: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: expected ("complete", "complete", true, false, false, false)
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean now) ---
+=== O11 (equal-output history control is discriminating) MUTATE exit=1 ===
+=== O11 (equal-output history control is discriminating) RESTORED BUILD ===
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+Build completed successfully (8641 jobs).
+=== O11 (equal-output history control is discriminating) SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+O11 (equal-output history control is discriminating): PASS
+=== O11 (equal-output history control is discriminating) MANIFEST VERDICT: PASS ===
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| O1 (wrong reassociation occurrence identity) | yes | yes | yes | PASS |
+| O2 (private availability cannot be erased) | yes | yes | yes | PASS |
+| O3 (produced ledger order cannot be reversed) | yes | yes | yes | PASS |
+| O4 (contribution order cannot be reversed) | yes | yes | yes | PASS |
+| O5 (publication cannot be dropped) | yes | yes | yes | PASS |
+| O6 (a duplicate snapshot is observable) | yes | yes | yes | PASS |
+| O7 (reference pending occurrences cannot be erased) | yes | yes | yes | PASS |
+| O8 (reference accumulators cannot be erased) | yes | yes | yes | PASS |
+| O9 (strict failure donor cannot fall through as total) | yes | yes | yes | PASS |
+| O10 (missing empty input is not a vacuous valid input) | yes | yes | yes | PASS |
+| O11 (equal-output history control is discriminating) | yes | yes | yes | PASS |
+
+11/11 cycles passed.

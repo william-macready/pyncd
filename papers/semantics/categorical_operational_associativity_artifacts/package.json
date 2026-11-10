@@ -1,0 +1,45 @@
+{
+  "base": "8268da1f5761b839f1b16a03a6b3a799ef4a583f",
+  "patches": [
+    {
+      "path": "history.patch",
+      "sha256": "e6abeb38881fa972b24e3b59659f2a8b2e67f3c3831e5907f88637e82e387293"
+    },
+    {
+      "path": "transport.patch",
+      "sha256": "60a33c5e6478cb2dfe3056eac836e02f1dbd9ba4af894e8b7484f1e8c029d7ef"
+    },
+    {
+      "path": "composition.patch",
+      "sha256": "70bff9b4114f50ae9d905b95853ac775fc428012adcea7f7229fcdc3b88cd1a9"
+    },
+    {
+      "path": "acceptance.patch",
+      "sha256": "8fc2040712658fc20fe28c71118832815eb11f22efa718e70f1856a70cbc6de3"
+    },
+    {
+      "path": "documentation.patch",
+      "sha256": "7cc8fdba4bad02b16f4b2df0b228009cdfaae38ee9158ae5cec46cb56370837f"
+    }
+  ],
+  "sources": {
+    "leanncd/experiments/indexed_execution/IndexedOperationalHistory.lean": "ca844898120a638ff996134b564d5526383c7ba7f38eac315497ae658a842c6f",
+    "leanncd/experiments/indexed_execution/IndexedOperationalObservationLaws.lean": "9b99fe102c012800e500f11d0453cf99d9d71310d4edd5f9e7a36e913bfcadc9",
+    "leanncd/experiments/indexed_execution/IndexedOperationalReassociation.lean": "9fe937f71712602a307272d82ce54ae236912f5bbcf329461bec37d7f3855655",
+    "leanncd/experiments/indexed_execution/IndexedOperationalRuns.lean": "ea1e104a309eba911fc48192b43fd272d1455541b29cd656304912c0519f9e7d",
+    "leanncd/experiments/indexed_execution/IndexedOperationalHistoryComposition.lean": "674431331996cf0cd2992ae207361cc41b1a41ec3331c24582c8a0b12bcd644d",
+    "leanncd/experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean": "0907504ea00aeb5b2e063c8b40a5dc2fd6d73a98308fe387489ef23901bf1109",
+    "leanncd/experiments/indexed_execution/IndexedOperationalRunsPhases.lean": "99a674cc15139084e41923cbaaaf98eaf7336211cad88dd0650ad0da59c7e01b",
+    "leanncd/experiments/indexed_execution/IndexedOperationalAssociativity.lean": "ce18ec79bc4d5ae85fee995c9fce0feeb0cdb97b0f60118ee3ecf7a7f5bd451e",
+    "leanncd/experiments/indexed_execution/IndexedOperationalSemantics.lean": "d46e7dd1cd41827e014015eea58ed4f9eef2b4c5d4c2b4d54c6cdf038ab08cac",
+    "leanncd/experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean": "0608097030457f5d4bf915b9d19587710c38ba5d7e596837f3c115e3574c4daa",
+    "leanncd/experiments/indexed_execution/IndexedOperationalAssociativityTest.lean": "2fe7bc1b475bae126f03468b54fa273efe865ef366a51044319869fb8de9ddae",
+    "leanncd/experiments/indexed_execution/IndexedOperationalAssociativityAudit.lean": "9b5872ea6da2f0068ed189525c54bc37eb7bd6359b309eb1b9edfe6dd50a9cd9",
+    "leanncd/AGENTS.md": "04abcf33be126f3797618236da9246a3c47e3e7f0dc42bd2aacdef70b25a4da4",
+    "papers/semantics/categorical_tensor_logic_semantics.md": "2c6e6afe68391c6e3e5ca02e7d84fcb4cce510091835fd82c9886a9e51768dfc",
+    "papers/semantics/categorical_operational_associativity_mutations_post.json": "d74a5407989c28bf8ac2e1cc40ff7d83b0331c9fccb5d7e2165a9013907b7c1b",
+    "papers/semantics/categorical_operational_associativity_proof_mutations_post.json": "0bacc344fa37e5bb1d4c8ea68913dc2d3dbbde7cb38247d217aff1a341b027a1",
+    "leanncd/lakefile.toml": "ced5f54dfe8dde5ccd3df64936a7d7c4370d4e818f83d2621bad60e91a0a0158"
+  },
+  "ordered_private_index_replay": "PASS"
+}

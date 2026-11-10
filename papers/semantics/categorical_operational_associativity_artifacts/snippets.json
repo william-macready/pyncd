@@ -1,0 +1,62 @@
+[
+  {
+    "module": "IndexedOperationalHistory",
+    "source_sha256": "ca844898120a638ff996134b564d5526383c7ba7f38eac315497ae658a842c6f",
+    "exit": 0
+  },
+  {
+    "module": "IndexedOperationalObservationLaws",
+    "source_sha256": "9b99fe102c012800e500f11d0453cf99d9d71310d4edd5f9e7a36e913bfcadc9",
+    "exit": 0
+  },
+  {
+    "module": "IndexedOperationalReassociation",
+    "source_sha256": "9fe937f71712602a307272d82ce54ae236912f5bbcf329461bec37d7f3855655",
+    "exit": 0
+  },
+  {
+    "module": "IndexedOperationalRuns",
+    "source_sha256": "ea1e104a309eba911fc48192b43fd272d1455541b29cd656304912c0519f9e7d",
+    "exit": 0
+  },
+  {
+    "module": "IndexedOperationalHistoryComposition",
+    "source_sha256": "674431331996cf0cd2992ae207361cc41b1a41ec3331c24582c8a0b12bcd644d",
+    "exit": 0
+  },
+  {
+    "module": "IndexedOperationalHistoryAssociativity",
+    "source_sha256": "0907504ea00aeb5b2e063c8b40a5dc2fd6d73a98308fe387489ef23901bf1109",
+    "exit": 0
+  },
+  {
+    "module": "IndexedOperationalRunsPhases",
+    "source_sha256": "99a674cc15139084e41923cbaaaf98eaf7336211cad88dd0650ad0da59c7e01b",
+    "exit": 0
+  },
+  {
+    "module": "IndexedOperationalAssociativity",
+    "source_sha256": "ce18ec79bc4d5ae85fee995c9fce0feeb0cdb97b0f60118ee3ecf7a7f5bd451e",
+    "exit": 0
+  },
+  {
+    "module": "IndexedOperationalSemantics",
+    "source_sha256": "d46e7dd1cd41827e014015eea58ed4f9eef2b4c5d4c2b4d54c6cdf038ab08cac",
+    "exit": 0
+  },
+  {
+    "module": "IndexedOperationalAssociativityFixtures",
+    "source_sha256": "0608097030457f5d4bf915b9d19587710c38ba5d7e596837f3c115e3574c4daa",
+    "exit": 0
+  },
+  {
+    "module": "IndexedOperationalAssociativityTest",
+    "source_sha256": "2fe7bc1b475bae126f03468b54fa273efe865ef366a51044319869fb8de9ddae",
+    "exit": 0
+  },
+  {
+    "module": "IndexedOperationalAssociativityAudit",
+    "source_sha256": "9b5872ea6da2f0068ed189525c54bc37eb7bd6359b309eb1b9edfe6dd50a9cd9",
+    "exit": 0
+  }
+]

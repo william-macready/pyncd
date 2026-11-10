@@ -1,0 +1,45 @@
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:28:23: error: Type mismatch
+  shared
+has type
+  True
+but is expected to have type
+  History.start result = (History.done s✝ ()).start
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:39:22: error: Application type mismatch: The argument
+  shared
+has type
+  History.start k = x
+but is expected to have type
+  True
+in the application
+  Splice.done x k shared
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:80:62: error: Application type mismatch: The argument
+  shared
+has type
+  True
+but is expected to have type
+  History.start b = ?m.157
+in the application
+  Eq.trans (start second) shared
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:102:26: warning: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+./experiments/indexed_execution/IndexedOperationalHistoryCompositionMutation.lean:499:50: error: Application type mismatch: The argument
+  rfl
+has type
+  ?m.43 = ?m.43
+but is expected to have type
+  True
+in the application
+  Splice.done 1 (History.done 1 ()) rfl
+'IndexedOperationalHistoryComposition.compose_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.unique' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.phase_cut' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.BinaryHistory.transport_splices' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistoryComposition.left_nested_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistoryComposition.SharedSplice.associative_eq' depends on axioms: [sorryAx]

@@ -1,0 +1,25 @@
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:309:4: error: Application type mismatch: The argument
+  A.inputs_nodup
+has type
+  (List.map Port.tensor A.inputs).Nodup
+but is expected to have type
+  (List.map Port.tensor []).Nodup
+in the application
+  mk [] A.outputs A.program.input ↑η ⋯ adapters ⋯
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:647:45: error: Type mismatch
+  rfl
+has type
+  ?m.8 = ?m.8
+but is expected to have type
+  emptyMetadata.inputs.length = 1
+'IndexedOperationalHistory.History.splice_assoc' depends on axioms: [propext]
+'IndexedOperationalHistory.History.success_cut' depends on axioms: [propext]
+'IndexedOperationalHistory.Transport.apply_splice' depends on axioms: [propext, Quot.sound]
+'IndexedOperationalHistory.GraphHistory.stepFuel_exists' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistory.GraphHistory.ranked_default_exists' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext]
+'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]

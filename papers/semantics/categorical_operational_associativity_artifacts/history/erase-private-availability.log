@@ -1,0 +1,24 @@
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:268:42: error: unsolved goals
+case mk
+σ τ : Declarations Unit
+t : GraphTransport σ τ
+available✝ : Address σ → Option ℚ
+produced✝ : List (ℕ × ℚ)
+⊢ (fun x => none) = available✝
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:632:83: error: Type mismatch
+  rfl
+has type
+  ?m.13 = ?m.13
+but is expected to have type
+  (graphIdentity.mapState privateAvailable).available ⟨0, ()⟩ = some 42
+'IndexedOperationalHistory.History.splice_assoc' depends on axioms: [propext]
+'IndexedOperationalHistory.History.success_cut' depends on axioms: [propext]
+'IndexedOperationalHistory.Transport.apply_splice' depends on axioms: [propext, Quot.sound]
+'IndexedOperationalHistory.GraphHistory.stepFuel_exists' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalHistory.GraphHistory.ranked_default_exists' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext]
+'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]

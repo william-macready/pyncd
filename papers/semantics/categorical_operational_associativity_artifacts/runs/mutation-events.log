@@ -1,0 +1,55 @@
+./experiments/indexed_execution/IndexedOperationalRunsMutationEvents.lean:167:26: error: Type mismatch: After simplification, term
+  congrArg (List.cons (Event.produced v.tag v.capability value)) tail.events
+ has type
+  (stepFuel bs fuel { available := t.available, produced := t.produced ++ [(rename w.capability, value)] }).events =
+    (List.map (mapEvent f rename)
+        (stepFuel as fuel
+            { available := s.available, produced := s.produced ++ [(w.capability, value)] }).events).reverse
+but is expected to have type
+  Event.produced (rename w.tag) (rename w.capability) value ::
+      (stepFuel bs fuel { available := t.available, produced := t.produced ++ [(rename w.capability, value)] }).events =
+    (List.map (mapEvent f rename)
+          (stepFuel as fuel
+              { available := s.available, produced := s.produced ++ [(w.capability, value)] }).events).reverse ++
+      [Event.produced (rename w.tag) (rename w.capability) value]
+./experiments/indexed_execution/IndexedOperationalRunsMutationEvents.lean:184:20: error: Type mismatch: After simplification, term
+  congrArg (List.cons (Event.sealed (f.address a) (List.foldl (fun x1 x2 => x1 + x2) 0 values))) tail.events
+ has type
+  (stepFuel bs fuel
+        { available := Function.update t.available (f.address a) (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+          produced := t.produced }).events =
+    (List.map (mapEvent f rename)
+        (stepFuel as fuel
+            { available := Function.update s.available a (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+              produced := s.produced }).events).reverse
+but is expected to have type
+  Event.sealed (f.address a) (List.foldl (fun x1 x2 => x1 + x2) 0 values) ::
+      (stepFuel bs fuel
+          { available := Function.update t.available (f.address a) (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+            produced := t.produced }).events =
+    (List.map (mapEvent f rename)
+          (stepFuel as fuel
+              { available := Function.update s.available a (some (List.foldl (fun x1 x2 => x1 + x2) 0 values)),
+                produced := s.produced }).events).reverse ++
+      [Event.sealed (f.address a) (List.foldl (fun x1 x2 => x1 + x2) 0 values)]
+./experiments/indexed_execution/IndexedOperationalRunsMutationEvents.lean:485:2: error: Type mismatch
+  graph.events
+has type
+  (runChecked (rightBracket A B C ab bc).contract (rightBracket A B C ab bc).fragment
+        ↑(liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η)).events =
+    (List.map (mapEvent (embedding A B C ab bc) ⇑identityEquiv)
+        (runChecked (leftBracket A B C ab bc).contract (leftBracket A B C ab bc).fragment
+            ↑(liftInput (compose A B ab) C (leftNestedBoundary A B C ab bc) (liftInput A B ab η))).events).reverse
+but is expected to have type
+  (runChecked (rightBracket A B C ab bc).contract (rightBracket A B C ab bc).fragment
+        ↑(liftInput A (compose B C bc) (rightNestedBoundary A B C ab bc) η)).events =
+    List.map (mapEvent (embedding A B C ab bc) ⇑identityEquiv)
+      (runChecked (leftBracket A B C ab bc).contract (leftBracket A B C ab bc).fragment
+          ↑(liftInput (compose A B ab) C (leftNestedBoundary A B C ab bc) (liftInput A B ab η))).events
+'IndexedOperationalRuns.stepFuel_transport' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.nested_default_runs' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.nested_reference_runs' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRuns.ranked_nested_reference_outcomes' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]

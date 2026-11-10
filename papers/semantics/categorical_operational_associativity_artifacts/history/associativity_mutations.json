@@ -1,0 +1,38 @@
+[
+  {
+    "label": "history-associativity/wrong-B-identity",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean",
+    "old": "  \u00b7 exact identity_B",
+    "new": "  \u00b7 exact identity_A",
+    "targets": [
+      "IndexedOperationalHistoryAssociativity"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "label": "history-associativity/wrong-C-identity",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean",
+    "old": "  \u00b7 exact identity_C",
+    "new": "  \u00b7 exact identity_B",
+    "targets": [
+      "IndexedOperationalHistoryAssociativity"
+    ],
+    "expect": [
+      "Type mismatch"
+    ]
+  },
+  {
+    "label": "history-associativity/forget-completed-private-state",
+    "file": "experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean",
+    "old": "downstreamState A (compose B C bc) a (downstreamState B C b c) := by",
+    "new": "downstreamState A (compose B C bc) a (upstreamState B C b) := by",
+    "targets": [
+      "IndexedOperationalHistoryAssociativity"
+    ],
+    "expect": [
+      "Tactic `apply` failed: could not unify the conclusion of `congrArg\u2082 State.mk available`"
+    ]
+  }
+]

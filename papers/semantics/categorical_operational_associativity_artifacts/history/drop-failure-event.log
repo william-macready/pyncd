@@ -1,0 +1,85 @@
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:27:14: warning: unused variable `e`
+
+Note: This linter can be disabled with `set_option linter.unusedVariables false`
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:411:15: error: unsolved goals
+case failed.failed
+σ : Declarations Unit
+s : State σ
+e : Event σ
+f : ℕ
+state✝ : State σ
+event✝ : Event σ
+failure✝ : ℕ
+equal : f = failure✝ ∧ s = state✝
+⊢ e = event✝
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:466:86: error: unsolved goals
+σ : Declarations Unit
+inst✝ : DecidableEq σ.Tensor
+steps : List (IndexedOpenComposition.Step σ)
+state : State σ
+hc : complete steps state = false
+n : ℕ
+ih :
+  ∀ m < n + 1,
+    ∀ (state : State σ),
+      IndexedComponentExecution.SuccessfulOrFailed (stepFuel steps m state) →
+        ∃ h, h.Admissible ∧ h.toRun = stepFuel steps m state ∧ History.start h = state
+terminal :
+  IndexedComponentExecution.SuccessfulOrFailed
+    (if complete steps state = true then { outcome := Outcome.complete state, events := [], states := [state] }
+    else
+      match List.find? (enabled state) steps with
+      | none => { outcome := Outcome.blocked state (missingReads steps state), events := [], states := [state] }
+      | some step =>
+        match n + 1 with
+        | 0 => { outcome := Outcome.exhausted state, events := [], states := [state] }
+        | fuel.succ =>
+          match step with
+          | Step.write w =>
+            match evalReady RationalReference.ops state.available w.body () with
+            | ReadyResult.notReady =>
+              { outcome := Outcome.contractMismatch w.tag state, events := [], states := [state] }
+            | ReadyResult.evaluated none =>
+              { outcome := Outcome.failed w.tag state, events := [Event.undefined w.tag], states := [state] }
+            | ReadyResult.evaluated (some value) =>
+              have next := { available := state.available, produced := state.produced ++ [(w.capability, value)] };
+              have tail := stepFuel steps fuel next;
+              { outcome := tail.outcome, events := Event.produced w.tag w.capability value :: tail.events,
+                states := state :: tail.states }
+          | Step.collect a caps =>
+            match List.mapM (producedValue state) caps with
+            | none => { outcome := Outcome.collectorMismatch a state, events := [], states := [state] }
+            | some values =>
+              have value := List.foldl (fun x1 x2 => x1 + x2) 0 values;
+              have next := { available := Function.update state.available a (some value), produced := state.produced };
+              have tail := stepFuel steps fuel next;
+              { outcome := tail.outcome, events := Event.sealed a value :: tail.events,
+                states := state :: tail.states })
+w : Writer σ
+hs : List.find? (enabled state) steps = some (Step.write w)
+hv : evalReady RationalReference.ops state.available w.body () = ReadyResult.evaluated none
+⊢ False
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:586:65: error: Type mismatch
+  rfl
+has type
+  ?m.22 = ?m.22
+but is expected to have type
+  (privateFailure.splice third).events = [10, 11, 99]
+./experiments/indexed_execution/IndexedOperationalHistoryMutation.lean:601:70: error: Tactic `decide` proved that the proposition
+  (swapping.apply privateFailure).events = [99, 11, 10]
+is false
+'IndexedOperationalHistory.History.splice_assoc' depends on axioms: [propext]
+'IndexedOperationalHistory.History.success_cut' depends on axioms: [propext]
+'IndexedOperationalHistory.Transport.apply_splice' depends on axioms: [propext, Quot.sound]
+'IndexedOperationalHistory.GraphHistory.stepFuel_exists' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistory.GraphHistory.ranked_default_exists' depends on axioms: [propext,
+ sorryAx,
+ Classical.choice,
+ Quot.sound]
+'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext, sorryAx]
+'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]

@@ -1,0 +1,25 @@
+./experiments/indexed_execution/IndexedOperationalRunsPhasesMutationBoundaryValue.lean:224:4: error: Type mismatch
+  outputProjection_downstream A B ab store (bc.matched ⟨t, h⟩) ((bc.domain ⟨t, h⟩).coord p)
+has type
+  (program A B ab).outputProjection store (downstreamOutputIndex A B ab (bc.matched ⟨t, h⟩))
+      ((bc.domain ⟨t, h⟩).coord p) =
+    B.program.outputProjection (restrictDownstream A B ab store) (bc.matched ⟨t, h⟩) ((bc.domain ⟨t, h⟩).coord p)
+but is expected to have type
+  store ⟨↑((leftNestedBoundary A B C ab bc).matched ⟨t, ⋯⟩), ((leftNestedBoundary A B C ab bc).domain ⟨t, ⋯⟩).coord p⟩ =
+    restrictDownstream A B ab store ⟨↑(bc.matched ⟨t, ⋯⟩), (bc.domain ⟨t, ⋯⟩).coord p⟩ + 1
+./experiments/indexed_execution/IndexedOperationalRunsPhasesMutationBoundaryValue.lean:263:52: error: Application type mismatch: The argument
+  original_bc_input A B C ab bc outer.store
+has type
+  boundaryInput (compose A B ab) C (leftNestedBoundary A B C ab bc) outer.store =
+    boundaryInput B C bc fun a => restrictDownstream A B ab outer.store a + 1
+but is expected to have type
+  boundaryInput (compose A B ab) C (leftNestedBoundary A B C ab bc) outer.store =
+    boundaryInput B C bc (restrictDownstream A B ab outer.store)
+in the application
+  { inner := inner, outer := outer, endB := endB, b_complete := bdone, b_projection := related, b_full := ?m.243,
+    first := first, second := second, first_index := ?m.244, second_index := ?m.245, first_relation := ?m.246,
+    second_current := secondCurrent, ordered := ?m.247, ab_boundary := ⋯, bc_boundary := ?m.254, c_input := ⋯ }
+'IndexedOperationalRunsPhases.triple_phases' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.two_reached_right' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.two_reached_empty_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedOperationalRunsPhases.reference_cuts' depends on axioms: [propext, Classical.choice, Quot.sound]
