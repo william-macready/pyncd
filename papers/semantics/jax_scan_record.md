@@ -661,7 +661,7 @@ Two of the four die on the non-triviality guard (a gradient cut to exactly zero)
 large margin. The binary32 gradient pins have no mutation evidence of their own (same code, looser tolerance, observed passing). The gradient mutants are
 not manifest entries (`mutation_python_manifest.py` is forward-only); promoting them is parked.
 
-**Parked** (cost in dispatches): gradients through the other scan fixtures (`transformer_mqa`, the mask fixtures, `transformer_head`) and through scatter
+**Parked** (cost in dispatches): gradients through the other scan fixtures (MQA, masks, GQA: DONE, section 16; `transformer_head` still open) and through scatter
 nodes and `scatter_mode="fast"` (~1 each, the pure-JAX model needs a head-free and a masked variant); second-order derivatives and `jax.value_and_grad` inside
 a `jit`ted training step (~1); promoting the four stop-gradient mutants to the Python manifest (~1); depth (item 6a) remains the next brief item.
 
@@ -733,11 +733,70 @@ binary32 5.94e-7 (headroom 1.7x; the standard scan is under 10%, sink 1.2x, MQA 
 | E. `K[s, g, k] := W_K[l, g, k, m] · N1[q, m]` (accepted by the solver) | `pin numpy model: transformer_gqa lean H` |
 
 Every killed mutant dies on the value pin, the first assertion of the helper: the non-vacuity, flat == split and equivalence pins were never the first to fire and were not
-exercised by a dedicated mutant (only the split and mha programs and the binary32 siblings were not mutated at all). `AttnOut` reading `K` instead of `V` is refused at compile
+exercised by a dedicated mutant (the split and mha programs and the binary32 siblings were mutated afterwards: section 16). `AttnOut` reading `K` instead of `V` is refused at compile
 (`readsPerStepIntermediate`), so it is not a kill and was not run. No survivor.
 
 **Note.** `AT11 gqa` in `test/Eval/Portfolio/AttentionTest.lean` is actually the head-free (MQA) case; it was not edited.
 
 **Parked** (cost in dispatches): `/` in index expressions as an elaboration-time desugaring that splits the axis (decided 2026-11-09: not now; ~1 design pass plus a probe; it
 covers literal divisors of a single axis with divisible extents only); the flat-OUTPUT form `AttnOut[q, 2 * g + r, k] := ...` inside a scan (probably refused; record the error; ~1 probe);
-gradient pins for the MQA, mask and GQA fixtures (~1 each); mutants on the split and mha programs (~1); depth (item 6a).
+depth (item 6a). (Gradient pins for the MQA, mask and GQA fixtures and the split/mha/binary32 mutants: DONE, section 16.)
+
+## 16. Gradient pins for the MQA, mask and GQA fixtures; mutants for the GQA split, mha and binary32 programs (2026-11-10)
+
+Two parked items of section 15, done together. Tests and pins only: `evalplan_nonlin_smoke.py` (new `fixture_grad_pins`, `canon_heads`, `GRAD_FIXTURES`, `GRAD_ROW`); no Lean, emitter, runtime or manifest
+change (the runtime was edited only by the scratch mutants below, each restored). The differential count is unchanged (41 binary64 and 33 binary32 fixtures); the Lean build is untouched.
+
+**What is differentiated.** For each of the seven scan fixtures `transformer_mqa`, `_window`, `_strict`, `_sink`, `_gqa`, `_gqa_split`, `_gqa_mha` (both precisions): `L = sum(C * H[:, :, 2])`, `C[q, m] = sin(1 + 4q + m)`,
+`jax.grad` through the emitted plan over EVERY float input, eager and jit.
+
+**Pins** (per fixture unless stated):
+1. Shape of the gradient (as section 14): finite, carrier dtype, layer-2 weight slices EXACTLY zero, layers 0 and 1 each with `max |g| > 1e-3` and different from each other by more than 1e-2.
+2. Against the autodiff of a pure-JAX transformer written from the definition (`canon_heads` turns split, head-free and grouped weights into one multi-head view, the key/value expansion `h // R` written in
+   Python; the mask is `allow[q][s]` from its English definition; no plan, no scan), within `GRAD_TOL`.
+3. Directional derivatives along three random directions against central differences of the float64 numpy model (`np_transformer` on the same canonical view), within `GRAD_FD_TOL`.
+4. Masks only: a loss on ONE query row (window row 4, strict row 1, sink row 4; `GRAD_ROW`) has EXACTLY zero gradient at every input position outside that row's two-layer backward reach (window: X rows 0, 1; strict:
+   rows 2, 3, 4; sink: row 1) and a real one (`> 1e-3`) inside, and still equals the pure-JAX model's gradient. This is the mask in the backward pass; the strict fixture also has an all-masked query row (row 0), whose
+   gradient must stay finite.
+5. GQA: the three programs differentiate to the same thing. Flat vs split heads (same bytes): every input's gradient within `GRAD_TOL` (observed BITWISE equal on 12 of 12 inputs, both precisions). Flat vs multi-head: the
+   multi-head plan's replicated `W_K`, `W_V` gradients summed over the R replicas of a group equal the flat plan's group gradient (chain rule through the replication), every other input equal. Non-vacuity of the fold:
+   the replicas of one group receive different gradients (min gap 0.582) and the groups differ (min gap 1.532).
+6. Tolerance self-test: a 1e-3 relative perturbation of a real gradient is rejected.
+
+**Observed** (scaled error `|g - ref| / max(1, |ref|)`, max over inputs, eager and jit; tolerances NOT loosened). Binary64: against the pure-JAX model 1.5e-15 (window) to 5.8e-15 (gqa), worst headroom to `GRAD_TOL` 173x;
+against finite differences 1.2e-10 to 2.5e-9 (worst headroom 40x, `gqa_mha`). Binary32: against the pure-JAX model 8.3e-7 (mqa) to 5.2e-6 (`gqa_mha`), worst headroom 19x; against finite differences 1.8e-7 to 7.4e-6, worst
+headroom 13.6x (`gqa_mha`). Directional derivatives span `|dot|` 1.8 to 91. Every pin passed on its first run.
+
+**Runtime mutation evidence** (binary64, python-only run on the cached fixtures, one edit of `evalplan_affine_runtime.py` at a time, restored with `git checkout`, `git diff --stat` empty). The forward differential
+passed in full in every row, so only gradients can see these:
+
+| Mutant (softmax in `_axiswise`) | Result |
+|---|---|
+| remove ONLY the safe denominator (`e / s` instead of `e / where(s != 0, s, 1)`) | SURVIVED, an equivalent mutant: the all-masked row's NaN is already blocked by the `where(inc, e, 0)` and the inner `where(inc, ..., 0)` around the exponent |
+| remove all three guards (`exp(min(xm - m, 0))`, `e * inc`, `e / s`) | `('transformer_strict', 'eager', 'gradient not finite')`; the standard-scan gradient pins PASSED, so only the new strict pin sees an all-masked row |
+| gradient leak from masked entries, scaled by 1e-14 (forward bit-identical: `where(inc, e, 0) + 1e-14 * (L - stop_gradient(L))`, `L = exp(min(xm - m, 0))`) | `('transformer_window', 'gradient reaches a position outside the backward receptive field', 'eager', 4, [0, 1])`; the standard pins passed at 2.0e-14 against 1e-12 and so did the new value pins for the window fixture: only the exact-zero receptive-field pin sees it |
+
+A first attempt at the all-guards mutant without the clamp (`exp(xm - m)`) changed the FORWARD (a huge masked logit gives `inf * 0 = NaN`, `causal_big` failed) and was not counted. There is NO runtime mutant specific to GQA: an
+affine read and a broadcast read are the same `src_flat[safe]` gather, so the GQA gradient pins have no dedicated mutant; their evidence is the independent references, the three-program agreement and the tolerance self-test.
+
+**Program and data mutants for the GQA programs** (one edit of the stated program or data, whole differential via `run-evalplan-nonlin.sh`, first failing assertion; each restored with `git checkout`, `git diff --stat` empty).
+All accepted by Lean and the shape solver; all killed:
+
+| Mutant | First failing assertion |
+|---|---|
+| S1. `gqaSplitProg` mask `s ≤ q` to `s < q` | `pin numpy model: transformer_gqa_split lean H` |
+| M2. `gqaMhaProg` `K` reads `W_V`, `V` reads `W_K` | `pin numpy model: transformer_gqa_mha lean H` |
+| F1. `gqaProg32` mask `s < q` (f64 leg green first) | `pin numpy model: transformer_gqa32 lean H` |
+| F2. `gqaSplitProg32` mask `s < q` | `pin numpy model: transformer_gqa_split32 lean H` |
+| F3. `gqaMhaProg32` mask `s < q` | `pin numpy model: transformer_gqa_mha32 lean H` |
+| R-split. `gqaSplitProg` score product reordered (`Sc[] · K · Q`, a rounding-level change, inside the value tolerance) | `('transformer_gqa', 'transformer_gqa_split', 'flat and split heads differ on', 'eager', 40, 60)`: the flat == split pin, first time it fires |
+| R-mha. `gqaMhaProg` score product reordered the same way | `('transformer_gqa', "GQA H is not bitwise the multi-head plan's H on replicated weights", 40, 60, 1.1e-15)`: the equivalence pin, first time it fires |
+| D1. data: `W_K`, `W_V` identical across the three groups (GQA collapses to MQA) | `('transformer_gqa', 'GQA is indistinguishable from', 'one shared group', 0.0)`: the non-vacuity pin, first time it fires |
+| D2. data: `gqaRep` replicates by `h % 3` instead of `h / 2` | `('W_K', 'replication is not W[:, h // R]')`: also pins the Lean-side `Nat` division |
+
+Not run: the mask mutant on `gqaMhaProg` (binary64), the `K`/`V` swap on `gqaSplitProg`, and mutants of the pins' numpy side (none of those is a program). Mutants of the gradient pins' inputs for MQA and the masks beyond the
+two runtime rows above were not run either: the same softmax and gather code serves all seven fixtures.
+
+**Parked** (cost in dispatches): gradients through `transformer_head`, scatter nodes and `scatter_mode="fast"` (section 14, unchanged); a GQA-specific gradient mutant would need a runtime path that does not exist
+(nothing to do); assert flat == split bitwise on the Lean view too (observed 60/60, not asserted; ~0.1); binary32 gradient pins have no mutation evidence of their own (same code, looser tolerance, observed passing); promoting the runtime
+gradient mutants to the Python manifest (~1, section 14).

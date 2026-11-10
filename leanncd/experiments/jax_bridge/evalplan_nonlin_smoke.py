@@ -708,6 +708,167 @@ def grad_fixture_pins(by: dict, sfx: str) -> None:
           f"{GRAD_TOL[_DT] / max(max(unr_err.values()), 1e-300):.1f}x (vs unrolled); to GRAD_FD_TOL: {GRAD_FD_TOL[_DT] / max(fd_err, 1e-300):.1f}x")
 
 
+# Scan fixtures that get gradient pins beyond the standard `transformer_scan`: name stem -> predicate-mask kind (None = causal).
+GRAD_FIXTURES = {"mqa": None, "window": "window", "strict": "strict", "sink": "sink",
+                 "gqa": None, "gqa_split": None, "gqa_mha": None}
+# Query row of the receptive-field gradient pin per mask: its two-layer backward reach leaves some position outside it.
+GRAD_ROW = {"window": 4, "strict": 1, "sink": 4}
+
+
+def canon_heads(inp: dict, xp) -> dict:
+    """Multi-head view of any scan fixture's inputs (`xp` is `np` or `jnp`, so the same view feeds the numpy and the autodiff model):
+    split heads `W_Q[l, g, r, k, m]`, `W_O[l, m, g, r, k]` are flattened to `h = R * g + r`; head-free (`W_K[l, k, m]`) or grouped
+    (`W_K[l, g, k, m]`) key and value weights are expanded to one slice per query head (`h // R`, written in Python)."""
+    f = dict(inp)
+    if f["W_Q"].ndim == 5:
+        _, n_g, n_r, n_k, n_m = f["W_Q"].shape
+        f["W_Q"] = xp.reshape(f["W_Q"], (3, n_g * n_r, n_k, n_m))
+        f["W_O"] = xp.reshape(f["W_O"], (3, n_m, n_g * n_r, n_k))
+    n_h = f["W_Q"].shape[1]
+    for w in ("W_K", "W_V"):
+        if f[w].ndim == 3:
+            f[w] = xp.broadcast_to(f[w][:, None], (3, n_h) + tuple(f[w].shape[1:]))
+        elif f[w].shape[1] != n_h:
+            f[w] = f[w][:, [h // (n_h // f[w].shape[1]) for h in range(n_h)]]
+    return f
+
+
+def fixture_grad_pins(by: dict, sfx: str) -> None:
+    """Gradient pins of the other scan fixtures (`transformer_mqa`, the three mask fixtures, the three GQA programs): `jax.grad` of
+    `L = sum(C * H[:, :, 2])` through the emitted plan, over EVERY float input, eager and jit, against (b) the autodiff of a pure-JAX
+    transformer written from the definition (heads canonicalised by `canon_heads`, mask `allow[q][s]` from its English definition;
+    no plan, no scan) and (c) central finite differences of the float64 numpy model along random directions. Layer-2 weight slices
+    (NaN, never read) get exactly zero gradient. Mask fixtures: a loss on ONE query row has exactly zero gradient at every position
+    outside that row's two-layer backward reach and a real one inside (the mask in the backward pass). GQA: the three programs'
+    gradients agree (flat == split on the same bytes; flat == multi-head with the replicated key/value gradients summed per group)."""
+    stacked = ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out", "G1", "G2")
+
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    def hand_loss(inp, C, allow):
+        c = canon_heads(inp, jnp)
+        am = jnp.asarray(allow)[None]
+        h = c["X"]
+        for l in range(2):
+            n1 = h / jnp.sqrt(jnp.einsum("qm,qm,m->q", h, h, c["Inv"]) + c["Eps"])[:, None] * c["G1"][l]
+            q = jnp.einsum("hkm,qm->qhk", c["W_Q"][l], n1)
+            k = jnp.einsum("hkm,sm->shk", c["W_K"][l], n1)
+            v = jnp.einsum("hkm,sm->shk", c["W_V"][l], n1)
+            lg = jnp.einsum("qhk,shk->hqs", q, k) * c["Sc"]
+            mx = jnp.max(jnp.where(am, lg, -1e30), axis=-1, keepdims=True)
+            e = jnp.where(am, jnp.exp(jnp.where(am, lg - mx, 0.0)), 0.0)  # an all-masked row is exactly zero
+            den = jnp.sum(e, axis=-1, keepdims=True)
+            s = e / jnp.where(den == 0, 1.0, den)
+            r1 = h + jnp.einsum("mhk,qhk->qm", c["W_O"][l], jnp.einsum("hqs,shk->qhk", s, v))
+            n2 = r1 / jnp.sqrt(jnp.einsum("qm,qm,m->q", r1, r1, c["Inv"]) + c["Eps"])[:, None] * c["G2"][l]
+            x = jnp.einsum("dm,qm->qd", c["W_in"][l], n2)
+            f = 0.5 * x * (1.0 + jnp.tanh(0.7978845608028654 * (x + 0.044715 * x ** 3)))
+            h = r1 + jnp.einsum("md,qd->qm", c["W_out"][l], f)
+        return jnp.sum(C * h)
+
+    all_grads: dict[str, dict] = {}
+    lines = []
+    for stem, kind in GRAD_FIXTURES.items():
+        name = f"transformer_{stem}{sfx}"
+        fx = by[name]
+        sin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+        n_pos = sin["X"].shape[0]
+        allow = mask_allow(kind, n_pos) if kind else np.tril(np.ones((n_pos, n_pos), dtype=bool))
+        C = np.sin(1.0 + np.arange(n_pos * 4)).reshape(n_pos, 4).astype(NDT)
+        jin = {n: jnp.asarray(a) for n, a in sin.items()}
+
+        def loss_plan(inp, C=C, fx=fx):
+            return jnp.sum(C * rt.run_named(fx["plan"], inp, JDT)["H"][:, :, 2])
+
+        grads = {"eager": jax.grad(loss_plan)(jin), "jit": jax.jit(jax.grad(loss_plan))(jin)}
+        g_hand = jax.grad(lambda inp: hand_loss(inp, C, allow))(jin)
+        all_grads[stem] = grads["eager"]
+        err = {}
+        for who, g in grads.items():
+            assert sorted(g) == sorted(sin), (name, who, sorted(g))
+            assert all(np.all(np.isfinite(np.asarray(v))) and np.asarray(v).dtype == NDT for v in g.values()), (name, who, "gradient not finite")
+            for w in stacked:
+                gw = np.asarray(g[w])
+                assert np.all(gw[2] == 0), (name, "layer-2 weight slice received gradient", who, w)
+                assert all(float(np.max(np.abs(gw[l]))) > 1e-3 for l in (0, 1)), (name, "trivial gradient", who, w)
+                assert float(np.max(np.abs(gw[0] - gw[1]))) > 1e-2, (name, "layers 0 and 1 have alike gradients", who, w)
+            for n in sin:
+                e_ref = scaled(g[n], g_hand[n])
+                assert e_ref < GRAD_TOL[_DT], (f"gradient pin: {name} vs pure-JAX model", who, n, e_ref)
+                err[n] = max(err.get(n, 0.0), e_ref)
+        # tolerance self-test: a 1e-3 relative perturbation of a real gradient is rejected
+        gq = np.asarray(grads["eager"]["W_Q"])
+        assert scaled(gq * NDT(1.001), gq) >= GRAD_TOL[_DT], (name, "gradient tolerance accepts a 1e-3 perturbation: vacuous")
+        # (c) directional derivatives against central differences of the numpy model (3 fixed directions, zero on the NaN slices)
+        base = {n: a.astype(np.float64) for n, a in sin.items()}
+        rng = np.random.default_rng(7)
+        fd_err, dots = 0.0, []
+        loss_np = lambda inp: float(np.sum(C.astype(np.float64) * np_state(
+            canon_heads(inp, np), np_transformer(canon_heads(inp, np), allow=allow))[:, :, 2]))
+        for _ in range(3):
+            d = {n: rng.standard_normal(a.shape) for n, a in base.items()}
+            for w in stacked:
+                d[w][2] = 0.0
+            eps = 1e-6
+            fd = (loss_np({n: base[n] + eps * d[n] for n in base}) - loss_np({n: base[n] - eps * d[n] for n in base})) / (2 * eps)
+            for who, g in grads.items():
+                dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * d[n]) for n in base))
+                assert abs(dot) > 1e-2, (name, "finite-difference direction is trivial", dot)
+                fd_err = max(fd_err, abs(fd - dot) / max(1.0, abs(dot)))
+            dots.append(dot)
+        assert fd_err < GRAD_FD_TOL[_DT], (f"gradient pin: {name} directional derivative vs finite differences of the numpy model", fd_err)
+        extra = ""
+        if kind:
+            # receptive field in the backward pass: a loss on ONE query row; positions outside that row's two-layer reach get
+            # EXACTLY zero gradient (the masked entries contribute nothing), positions inside get a real one
+            r = GRAD_ROW[kind]
+            reach = {p for p in range(n_pos) if r in reachable_rows(allow, p, 2)}
+            unreach = sorted(set(range(n_pos)) - reach)
+            assert r in reach and unreach and len(reach) > 1, (name, r, sorted(reach), unreach)
+            Cr = np.zeros((n_pos, 4), dtype=NDT)
+            Cr[r] = np.sin(1.0 + np.arange(4)).astype(NDT)
+            row_plan = lambda inp: jnp.sum(Cr * rt.run_named(fx["plan"], inp, JDT)["H"][:, :, 2])
+            row_hand = jax.grad(lambda inp: hand_loss(inp, Cr, allow))(jin)
+            for who, gr in (("eager", jax.grad(row_plan)(jin)), ("jit", jax.jit(jax.grad(row_plan))(jin))):
+                gx = np.asarray(gr["X"])
+                assert np.all(gx[unreach] == 0), (name, "gradient reaches a position outside the backward receptive field", who, r, unreach)
+                assert all(float(np.max(np.abs(gx[p]))) > 1e-3 for p in sorted(reach)), (name, "no gradient inside the receptive field", who, r, sorted(reach))
+                for n in sin:
+                    assert scaled(gr[n], row_hand[n]) < GRAD_TOL[_DT], (f"gradient pin: {name} row loss vs pure-JAX model", who, n)
+            extra = f"; row-{r} loss: X rows {unreach} exactly zero gradient, rows {sorted(reach)} real"
+        lines.append(f"  {name}: vs pure-JAX model max scaled {max(err.values()):.3e} (headroom {GRAD_TOL[_DT] / max(max(err.values()), 1e-300):.1f}x), "
+                     f"finite differences {fd_err:.3e} (|dot| {min(abs(x) for x in dots):.2f} to {max(abs(x) for x in dots):.2f}, "
+                     f"headroom {GRAD_FD_TOL[_DT] / max(fd_err, 1e-300):.1f}x){extra}")
+    # GQA: the three programs differentiate to the same thing
+    gf, gs, gm = all_grads["gqa"], all_grads["gqa_split"], all_grads["gqa_mha"]
+    n_g = gf["W_K"].shape[1]
+    n_h = gm["W_K"].shape[1]
+    R = n_h // n_g
+    assert gf["W_Q"].shape == (3, n_h) + gf["W_Q"].shape[2:] and gs["W_Q"].shape == (3, n_g, R) + gf["W_Q"].shape[2:], (gf["W_Q"].shape, gs["W_Q"].shape)
+    same_bits = {}
+    for n in gf:
+        assert scaled(np.asarray(gf[n]).reshape(-1), np.asarray(gs[n]).reshape(-1)) < GRAD_TOL[_DT], ("gradient pin: flat vs split heads", n)
+        same_bits[n] = bool(np.array_equal(bits(np.asarray(gf[n]).reshape(-1)), bits(np.asarray(gs[n]).reshape(-1))))
+        want = gf[n]
+        got = gm[n]
+        if n in ("W_K", "W_V"):  # chain rule through the replication: the replicas' gradients sum per group
+            got = np.asarray(gm[n]).reshape((3, n_g, R) + tuple(gm[n].shape[2:])).sum(axis=2)
+        assert scaled(got, want) < GRAD_TOL[_DT], ("gradient pin: flat vs multi-head (replicated K/V summed per group)", n)
+    # non-vacuity of the group fold: replicas of one group receive DIFFERENT gradients (so a sum is not a copy) and groups differ
+    rep_gap = min(float(np.max(np.abs(np.asarray(gm[w])[:, R * g] - np.asarray(gm[w])[:, R * g + 1]))) for w in ("W_K", "W_V") for g in range(n_g))
+    grp_gap = min(float(np.max(np.abs(np.asarray(gf[w])[:, 0] - np.asarray(gf[w])[:, g]))) for w in ("W_K", "W_V") for g in range(1, n_g))
+    assert rep_gap > 1e-2 and grp_gap > 1e-2, ("GQA gradient fold is vacuous", rep_gap, grp_gap)
+    print(f"gradients of the other scan fixtures ({', '.join(f'transformer_{s}' for s in GRAD_FIXTURES)}; eager and jit, every float input): "
+          f"finite, layer-2 weight slices exactly zero, layers 0 and 1 non-trivial and distinct; == autodiff of a pure-JAX model "
+          f"(tol {GRAD_TOL[_DT]:.0e}) and directional derivatives == central differences of the float64 numpy model (tol {GRAD_FD_TOL[_DT]:.0e}); "
+          f"GQA flat == split heads (bitwise inputs: {sum(same_bits.values())}/{len(same_bits)}) and == multi-head with replicated K/V "
+          f"gradients summed per group (replicas of a group differ by {rep_gap:.3f}, groups by {grp_gap:.3f}):")
+    for line in lines:
+        print(line)
+
+
 def main() -> None:
     spec = importlib.util.spec_from_file_location("gen_nonlin", Path(sys.argv[2]).resolve())
     mod = importlib.util.module_from_spec(spec)
@@ -1010,6 +1171,9 @@ def main() -> None:
 
     # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
     grad_fixture_pins(by, sfx)
+
+    # GRADIENTS through the other scan fixtures (MQA, masks, GQA): see `fixture_grad_pins`.
+    fixture_grad_pins(by, sfx)
 
     # POST-SCAN ROLE: `S[j, l+1] := S[j, l] . G[j]` (closed form `S = X * G**l`) and six statements nothing in
     # the recurrence reads, so each is a plain node AFTER the one scan node and `l` is an ordinary axis in it.
