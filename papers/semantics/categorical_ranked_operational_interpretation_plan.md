@@ -2,7 +2,7 @@
 
 **Process: Full** — new operational categories/functor and a soundness surface; explicitly approved provenance-aware source refinement, required for this goal.
 One slice, eight mechanical task patches. Authoring (b) used frozen artifacts only.
-**Execution and controller release complete; local integration pending.** All eight tasks were cleanly replayed and committed, all eleven controller cycles passed, and the full build passed 8,953 jobs. P1 `SEM-ADMIN-INTERPRETATION` is CLOSED by focused semantic source review; the integration lens is clean. The plan below preserves the verified execution contract; actual receipts are in the record.
+**Execution, controller release and local main integration complete.** All eight tasks were cleanly replayed and committed, all eleven controller cycles passed, and both candidate and merged-main full builds passed 8,953 jobs. P1 `SEM-ADMIN-INTERPRETATION` is CLOSED by focused semantic source review; the integration lens is clean. The plan below preserves the verified execution contract; actual receipts and owned cleanup are in the record.
 Evidence, historical limitations and release receipts belong in the [separate record](categorical_ranked_operational_interpretation_record.md).
 
 ## 1. Frozen contract and shell discipline

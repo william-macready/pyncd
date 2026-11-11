@@ -2,12 +2,12 @@
 
 ## Status
 
-**Clean execution and controller release complete — P1 `SEM-ADMIN-INTERPRETATION` CLOSED.**
+**Clean execution, controller release and local main integration complete — P1 `SEM-ADMIN-INTERPRETATION` CLOSED.**
 All eight tasks were replayed from the clean frozen base, built, checked against
 reviewed hashes and committed. All eleven final controller mutation cycles,
 nine namespace audits and the integrated-candidate full build passed.
-Local main merge and owned branch/worktree cleanup remain pending; Section 8
-is the authoritative execution receipt.
+Section 8 is the authoritative execution receipt; Section 9 records the actual
+main integration. The generated integration receipt records owned cleanup.
 The original seven-patch/thirteen-file receipt remains **historical authoring evidence**. The authoritative refreeze is now eight patches/fourteen files, including the connected Interpretation bridge; use only that package for clean execution.
 This authoring dispatch edits only the plan and this record; no source/doc implementation changes, cleanup, staging, commits or subagents. The refreeze update did not inspect working-tree source code; only artifact patches, receipts and supplied reports were read, with deterministic file-hash comparison.
 
@@ -316,3 +316,19 @@ cumulative input, peak context and token-budget totals remain unavailable;
 the historical controller authoring-round breach remains disclosed, with no
 invented budget-compliance claim. Local integration/cleanup is recorded next
 only after it actually occurs. No remote push has been performed.
+
+## 9. Local main integration
+
+The validated topic was merged into clean local main without conflict as
+`837c3d79`, retaining all concurrent JAX work. The topic was verified to be an
+ancestor of main and both trees were identical immediately after the merge.
+The controller then ran the full prescribed wrapper build in the **primary
+main checkout**: **8,953 jobs passed**. All fourteen reviewed implementation
+hashes also matched in that checkout.
+
+Only this record and the plan's status header were updated after that
+merged-main verification; no implementation changed. The generated
+[integration receipt](categorical_ranked_operational_interpretation_artifacts/integration.json)
+records the subsequent exact owned branch/worktree cleanup and final
+repository checks. No remote push is authorized or performed; main is left
+ahead of its remote-tracking branch.
