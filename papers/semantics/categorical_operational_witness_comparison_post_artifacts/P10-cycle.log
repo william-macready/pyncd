@@ -1,0 +1,18 @@
+=== P10 identify metadata by singleton carriers MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean: '    outputInterface emptyProducerComponent ≠
+      outputInterface IndexedWitnessCompositionTest.Empty.composite :=' -> '    outputInterface emptyProducerComponent =
+      outputInterface IndexedWitnessCompositionTest.Empty.composite :=' ---
+error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:15:2: Type mismatch
+error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:27:8: Function expected at
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean now) ---
+=== P10 identify metadata by singleton carriers MUTATE exit=1 ===
+=== P10 identify metadata by singleton carriers RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:74:0: 'IndexedRankedWitnessBoundaryTest.empty_input_present' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8677 jobs).
+=== P10 identify metadata by singleton carriers SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P10 identify metadata by singleton carriers: PASS

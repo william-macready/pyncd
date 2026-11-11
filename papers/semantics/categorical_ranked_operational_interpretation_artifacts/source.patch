@@ -1,0 +1,454 @@
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -206,6 +206,8 @@
+          "IndexedRankedOperationalCore",
+          "IndexedOperationalScopeNaturality",
+          "IndexedRankedOperationalCategory",
++         "IndexedRankedOperationalSource",
++         "IndexedRankedOperationalReference",
+          "IndexedOperationalHistoryAssociativity",
+          "IndexedOperationalRuns",
+          "IndexedOperationalRunsPhases",
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedRankedOperationalSource.lean
+@@ -0,0 +1,381 @@
++import IndexedRankedOperationalCategory
++import Mathlib.CategoryTheory.Functor.Basic
++
++namespace IndexedRankedOperationalSource
++
++open LeanNCD.Semantics IndexedComponentComposition IndexedWitness
++open IndexedRankedOperationalCore CategoryTheory
++
++/-- Distinct from the existing witness-source objects and their category instance. -/
++structure Object where
++  base : IndexedSource.Object
++
++noncomputable def input {σ : Declarations Unit} [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++    (A : MatchedComponent σ) : Object := ⟨IndexedSource.input A⟩
++
++noncomputable def output {σ : Declarations Unit} [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++    (A : MatchedComponent σ) : Object := ⟨IndexedSource.output A⟩
++
++inductive Term : Object → Object → Type 1
++  | identity (X : Object) : Term X X
++  | wire {X Y : Object} (w : IndexedSource.Wire X.base Y.base) : Term X Y
++  | leaf {σ : Declarations Unit} [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++      (A : MatchedComponent σ) (rank : A.program.RankCertificate)
++      (origin : Origin A) : Term (input A) (output A)
++  | seq {X Y Z : Object} (f : Term X Y) (g : Term Y Z) : Term X Z
++
++variable {σA σB σC : Declarations Unit}
++variable [Fintype σA.Tensor] [DecidableEq σA.Tensor]
++variable [Fintype σB.Tensor] [DecidableEq σB.Tensor]
++variable [Fintype σC.Tensor] [DecidableEq σC.Tensor]
++
++noncomputable def assembled (A : MatchedComponent σA) (B : MatchedComponent σB)
++    (b : Boundary A B) (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
++    (oa : Origin A) (ob : Origin B) : Term (input A) (output B) :=
++  .seq (.wire (IndexedSource.inputWire A B b))
++    (.seq (.leaf (compose A B b) (compositeRankCertificate A B b rA rB)
++      (.joined A B b oa ob)) (.wire (IndexedSource.outputWire A B b)))
++
++noncomputable def pair (A : MatchedComponent σA) (B : MatchedComponent σB)
++    (b : Boundary A B) (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
++    (oa : Origin A) (ob : Origin B) : Term (input A) (output B) :=
++  .seq (.seq (.leaf A rA oa) (.wire (IndexedSource.boundaryWire A B b))) (.leaf B rB ob)
++
++/-- Generated syntax equations, not equality of operational observations. -/
++inductive Rel : {X Y : Object} → Term X Y → Term X Y → Prop
++  | refl (f : Term X Y) : Rel f f
++  | symm : Rel f g → Rel g f
++  | trans : Rel f g → Rel g h → Rel f h
++  | seq : Rel f f' → Rel g g' → Rel (.seq f g) (.seq f' g')
++  | id_left (f : Term X Y) : Rel (.seq (.identity X) f) f
++  | id_right (f : Term X Y) : Rel (.seq f (.identity Y)) f
++  | assoc (f : Term W X) (g : Term X Y) (h : Term Y Z) :
++      Rel (.seq (.seq f g) h) (.seq f (.seq g h))
++  | wire_id (X : Object) :
++      Rel (.wire (IndexedSource.Wire.identity X.base)) (.identity X)
++  | wire_comp {X Y Z : Object}
++      (a : IndexedSource.Wire X.base Y.base) (b : IndexedSource.Wire Y.base Z.base) :
++      Rel (.seq (.wire a) (.wire b)) (.wire (a.comp b))
++  | wire_left_inv {X Y : Object} (a : IndexedSource.Wire X.base Y.base) :
++      Rel (.seq (.wire a) (.wire a.inverse)) (.identity X)
++  | wire_right_inv {X Y : Object} (a : IndexedSource.Wire X.base Y.base) :
++      Rel (.seq (.wire a.inverse) (.wire a)) (.identity Y)
++  | assembly {σ τ : Declarations Unit}
++      [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++      [Fintype τ.Tensor] [DecidableEq τ.Tensor]
++      (A : MatchedComponent σ) (B : MatchedComponent τ) (b : Boundary A B)
++      (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
++      (oa : Origin A) (ob : Origin B) :
++      Rel (assembled A B b rA rB oa ob) (pair A B b rA rB oa ob)
++  | left_square {σ τ υ : Declarations Unit}
++      [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++      [Fintype τ.Tensor] [DecidableEq τ.Tensor]
++      [Fintype υ.Tensor] [DecidableEq υ.Tensor]
++      (A : MatchedComponent σ) (B : MatchedComponent τ) (C : MatchedComponent υ)
++      (ab : Boundary A B) (bc : Boundary B C) :
++      Rel
++        (.wire (X := output (compose A B ab)) (Y := input C)
++          (IndexedSource.boundaryWire (compose A B ab) C
++            (leftNestedBoundary A B C ab bc)))
++        (.seq (.wire (X := output (compose A B ab)) (Y := output B)
++          (IndexedSource.outputWire A B ab))
++          (.wire (IndexedSource.boundaryWire B C bc)))
++  | right_square {σ τ υ : Declarations Unit}
++      [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++      [Fintype τ.Tensor] [DecidableEq τ.Tensor]
++      [Fintype υ.Tensor] [DecidableEq υ.Tensor]
++      (A : MatchedComponent σ) (B : MatchedComponent τ) (C : MatchedComponent υ)
++      (ab : Boundary A B) (bc : Boundary B C) :
++      Rel
++        (.wire (X := output A) (Y := input (compose B C bc))
++          (IndexedSource.boundaryWire A (compose B C bc)
++            (rightNestedBoundary A B C ab bc)))
++        (.seq (.wire (X := output A) (Y := input B)
++          (IndexedSource.boundaryWire A B ab))
++          (.wire (IndexedSource.inputWire B C bc)))
++
++def termSetoid (X Y : Object) : Setoid (Term X Y) where
++  r := Rel
++  iseqv := ⟨Rel.refl, Rel.symm, Rel.trans⟩
++
++abbrev Hom (X Y : Object) := Quotient (termSetoid X Y)
++
++def homId (X : Object) : Hom X X := Quotient.mk _ (.identity X)
++
++def homComp {X Y Z : Object} (f : Hom X Y) (g : Hom Y Z) : Hom X Z :=
++  Quotient.liftOn₂ f g (fun a b => Quotient.mk _ (.seq a b))
++    (by intro a a' b b' h h'; exact Quotient.sound (Rel.seq h h'))
++
++instance : Category.{1} Object where
++  Hom := Hom
++  id := homId
++  comp := homComp
++  id_comp := by
++    intro X Y f
++    induction f using Quotient.inductionOn with
++    | _ f => exact Quotient.sound (Rel.id_left f)
++  comp_id := by
++    intro X Y f
++    induction f using Quotient.inductionOn with
++    | _ f => exact Quotient.sound (Rel.id_right f)
++  assoc := by
++    intro W X Y Z f g h
++    induction f using Quotient.inductionOn with
++    | _ f =>
++      induction g using Quotient.inductionOn with
++      | _ g =>
++        induction h using Quotient.inductionOn with
++        | _ h => exact Quotient.sound (Rel.assoc f g h)
++
++def arrow {X Y : Object} (f : Term X Y) : X ⟶ Y := Quotient.mk _ f
++
++theorem arrow_seq {X Y Z : Object} (f : Term X Y) (g : Term Y Z) :
++    arrow (.seq f g) = arrow f ≫ arrow g := rfl
++
++noncomputable def Term.normalize : {X Y : Object} →
++    Term X Y → Normal X.base Y.base
++  | _, _, .identity X => Normal.identity X.base
++  | _, _, .wire w => .admin w
++  | _, _, @Term.leaf σ _ _ A r o =>
++      .compute (σ := σ) A r o (IndexedSource.Wire.identity _) (IndexedSource.Wire.identity _)
++  | _, _, .seq f g => f.normalize.comp g.normalize
++
++theorem normalize_id_left {X Y : Object} (f : Term X Y) :
++    (Term.seq (.identity X) f).normalize = f.normalize :=
++  Normal.identity_comp _
++
++theorem normalize_id_right {X Y : Object} (f : Term X Y) :
++    (Term.seq f (.identity Y)).normalize = f.normalize :=
++  Normal.comp_identity _
++
++theorem normalize_wire_id (X : Object) :
++    (Term.wire (X := X) (Y := X) (IndexedSource.Wire.identity X.base)).normalize =
++      (Term.identity X).normalize := rfl
++
++theorem normalize_wire_comp {X Y Z : Object}
++    (a : IndexedSource.Wire X.base Y.base) (b : IndexedSource.Wire Y.base Z.base) :
++    (Term.seq (.wire a) (.wire b)).normalize =
++      (Term.wire (X := X) (Y := Z) (a.comp b)).normalize := rfl
++
++theorem normalize_wire_left_inv {X Y : Object}
++    (a : IndexedSource.Wire X.base Y.base) :
++    (Term.seq (.wire a) (.wire a.inverse)).normalize =
++      (Term.identity X).normalize := congrArg Normal.admin (wire_comp_inverse a)
++
++theorem normalize_wire_right_inv {X Y : Object}
++    (a : IndexedSource.Wire X.base Y.base) :
++    (Term.seq (.wire a.inverse) (.wire a)).normalize =
++      (Term.identity Y).normalize := congrArg Normal.admin (wire_inverse_comp a)
++
++theorem normalize_assembly (A : MatchedComponent σA) (B : MatchedComponent σB)
++    (b : Boundary A B) (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
++    (oa : Origin A) (ob : Origin B) :
++    (assembled A B b rA rB oa ob).normalize = (pair A B b rA rB oa ob).normalize := by
++  let F : Boundary A B → Normal (IndexedSource.input A) (IndexedSource.output B) :=
++    fun c => .compute (compose A B c) (compositeRankCertificate A B c rA rB)
++      (.joined A B c oa ob) (IndexedSource.inputWire A B c) (IndexedSource.outputWire A B c)
++  have conn : connectingBoundary A B
++      (((IndexedSource.Wire.identity _).comp (IndexedSource.boundaryWire A B b)).comp
++        (IndexedSource.Wire.identity _)) = b := by
++    rw [wire_id_comp, wire_comp_id, connectingBoundary_boundary]
++  calc
++    _ = F b := congrArg₂
++      (Normal.compute (compose A B b) (compositeRankCertificate A B b rA rB)
++        (.joined A B b oa ob))
++      (wire_comp_id _) (wire_id_comp _)
++    _ = F _ := congrArg F conn.symm
++    _ = _ := congrArg₂
++      (Normal.compute _ _ _) (wire_id_comp _).symm (wire_comp_id _).symm
++
++theorem normalize_left_square (A : MatchedComponent σA) (B : MatchedComponent σB)
++    (C : MatchedComponent σC) (ab : Boundary A B) (bc : Boundary B C) :
++    (Term.wire (X := output (compose A B ab)) (Y := input C)
++      (IndexedSource.boundaryWire (compose A B ab) C
++        (leftNestedBoundary A B C ab bc))).normalize =
++    (Term.seq (.wire (X := output (compose A B ab)) (Y := output B)
++      (IndexedSource.outputWire A B ab))
++      (.wire (IndexedSource.boundaryWire B C bc))).normalize :=
++  congrArg Normal.admin (left_square_full A B C ab bc)
++
++theorem normalize_right_square (A : MatchedComponent σA) (B : MatchedComponent σB)
++    (C : MatchedComponent σC) (ab : Boundary A B) (bc : Boundary B C) :
++    (Term.wire (X := output A) (Y := input (compose B C bc))
++      (IndexedSource.boundaryWire A (compose B C bc)
++        (rightNestedBoundary A B C ab bc))).normalize =
++    (Term.seq (.wire (X := output A) (Y := input B)
++      (IndexedSource.boundaryWire A B ab)) (.wire (IndexedSource.inputWire B C bc))).normalize :=
++  congrArg Normal.admin (right_square_full A B C ab bc)
++
++open IndexedRankedOperationalCategory
++
++theorem sound {X Y : Object} {f g : Term X Y} (h : Rel f g) :
++    Agrees f.normalize g.normalize := by
++  induction h with
++  | refl f => exact agrees_refl _
++  | symm _ ih => exact agrees_symm ih
++  | trans _ _ ih ih' => exact agrees_trans ih ih'
++  | seq _ _ ih ih' => exact composition_congruence ih ih'
++  | id_left f => exact identity_comp _
++  | id_right f => exact comp_identity _
++  | assoc f g h => exact composition_associativity _ _ _
++  | wire_id X => exact agrees_refl _
++  | wire_comp a b => exact agrees_refl _
++  | wire_left_inv a =>
++      rw [normalize_wire_left_inv]
++      exact agrees_refl _
++  | wire_right_inv a =>
++      rw [normalize_wire_right_inv]
++      exact agrees_refl _
++  | assembly A B b rA rB oa ob =>
++      rw [normalize_assembly]
++      exact agrees_refl _
++  | left_square A B C ab bc =>
++      rw [normalize_left_square]
++      exact agrees_refl _
++  | right_square A B C ab bc =>
++      rw [normalize_right_square]
++      exact agrees_refl _
++
++noncomputable def semantics : Object ⥤ Target where
++  obj X := ⟨X.base⟩
++  map f := Quotient.liftOn f
++    (fun t => Quotient.mk (normalSetoid _ _) t.normalize)
++    (fun _ _ h => Quotient.sound (sound h))
++  map_id X := rfl
++  map_comp := by
++    intro X Y Z f g
++    refine Quotient.inductionOn₂ f g ?_
++    intro a b
++    rfl
++
++theorem semantics_arrow {X Y : Object} (f : Term X Y) :
++    semantics.map (arrow f) = Quotient.mk (normalSetoid _ _) f.normalize := rfl
++
++theorem leaf_rank_sound (A : MatchedComponent σA)
++    (r s : A.program.RankCertificate) (origin : Origin A) :
++    Agrees (Term.leaf A r origin).normalize (Term.leaf A s origin).normalize :=
++  rank_independent A r s origin _ _
++
++theorem semantics_leaf_rank_independent (A : MatchedComponent σA)
++    (r s : A.program.RankCertificate) (origin : Origin A) :
++    semantics.map (arrow (.leaf A r origin)) =
++      semantics.map (arrow (.leaf A s origin)) :=
++  Quotient.sound (leaf_rank_sound A r s origin)
++
++theorem assembly_eq (A : MatchedComponent σA) (B : MatchedComponent σB)
++    (b : Boundary A B) (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
++    (oa : Origin A) (ob : Origin B) :
++    arrow (assembled A B b rA rB oa ob) = arrow (pair A B b rA rB oa ob) :=
++  Quotient.sound (Rel.assembly A B b rA rB oa ob)
++
++theorem source_assembly (A : MatchedComponent σA) (B : MatchedComponent σB)
++    (b : Boundary A B) (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
++    (oa : Origin A) (ob : Origin B) :
++    arrow (.wire (IndexedSource.inputWire A B b)) ≫
++        arrow (.leaf (compose A B b) (compositeRankCertificate A B b rA rB)
++          (.joined A B b oa ob)) ≫ arrow (.wire (IndexedSource.outputWire A B b)) =
++      arrow (.leaf A rA oa) ≫ arrow (.wire (IndexedSource.boundaryWire A B b)) ≫
++        arrow (.leaf B rB ob) := by
++  simpa only [assembled, pair, arrow_seq, Category.assoc] using
++    assembly_eq A B b rA rB oa ob
++
++section Bracket
++
++theorem reassoc_five {U V W X Y Z : Object}
++    (a : U ⟶ V) (b : V ⟶ W) (c : W ⟶ X) (d : X ⟶ Y) (e : Y ⟶ Z) :
++    (a ≫ b ≫ c) ≫ d ≫ e = a ≫ b ≫ c ≫ d ≫ e :=
++  (Category.assoc a (b ≫ c) (d ≫ e)).trans
++    (congrArg (fun t => a ≫ t) (Category.assoc b c (d ≫ e)))
++
++variable (A : MatchedComponent σA) (B : MatchedComponent σB) (C : MatchedComponent σC)
++variable (ab : Boundary A B) (bc : Boundary B C)
++variable (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
++variable (rC : C.program.RankCertificate) (oa : Origin A) (ob : Origin B) (oc : Origin C)
++
++noncomputable def triple : Term (input A) (output C) :=
++  .seq (pair A B ab rA rB oa ob)
++    (.seq (.wire (IndexedSource.boundaryWire B C bc)) (.leaf C rC oc))
++
++noncomputable def leftNested : Term (input A) (output C) :=
++  .seq (.wire (IndexedSource.inputWire A B ab))
++    (assembled (compose A B ab) C (leftNestedBoundary A B C ab bc)
++      (compositeRankCertificate A B ab rA rB) rC (.joined A B ab oa ob) oc)
++
++noncomputable def rightNested : Term (input A) (output C) :=
++  .seq (assembled A (compose B C bc) (rightNestedBoundary A B C ab bc)
++      rA (compositeRankCertificate B C bc rB rC) oa (.joined B C bc ob oc))
++    (.wire (IndexedSource.outputWire B C bc))
++
++theorem left_eq_triple :
++    arrow (leftNested A B C ab bc rA rB rC oa ob oc) =
++      arrow (triple A B C ab bc rA rB rC oa ob oc) := by
++  have sq := Quotient.sound (s := termSetoid _ _) (Rel.left_square A B C ab bc)
++  change arrow _ = arrow _ at sq
++  simp only [arrow_seq] at sq
++  have h1 := congrArg
++    (fun t : input (compose A B ab) ⟶ output C =>
++      arrow (.wire (IndexedSource.inputWire A B ab)) ≫ t)
++    (assembly_eq (compose A B ab) C (leftNestedBoundary A B C ab bc)
++      (compositeRankCertificate A B ab rA rB) rC (.joined A B ab oa ob) oc)
++  have h2 := congrArg
++    (fun t : output (compose A B ab) ⟶ input C =>
++      arrow (.wire (IndexedSource.inputWire A B ab)) ≫
++        arrow (.leaf (compose A B ab) (compositeRankCertificate A B ab rA rB)
++          (.joined A B ab oa ob)) ≫ t ≫ arrow (.leaf C rC oc)) sq
++  have h3 := congrArg
++    (fun t : input A ⟶ output B =>
++      t ≫ arrow (.wire (IndexedSource.boundaryWire B C bc)) ≫ arrow (.leaf C rC oc))
++    (source_assembly A B ab rA rB oa ob)
++  dsimp only at h1 h2 h3
++  simp only [pair, arrow_seq, Category.assoc] at h1 h2 h3
++  have hfix := reassoc_five (arrow (.wire (IndexedSource.inputWire A B ab)))
++    (arrow (.leaf (compose A B ab) (compositeRankCertificate A B ab rA rB)
++      (.joined A B ab oa ob))) (arrow (.wire (IndexedSource.outputWire A B ab)))
++    (arrow (.wire (IndexedSource.boundaryWire B C bc))) (arrow (.leaf C rC oc))
++  have done := h1.trans (h2.trans (hfix.symm.trans h3))
++  simpa only [leftNested, triple, pair, arrow_seq, Category.assoc] using done
++
++theorem right_eq_triple :
++    arrow (rightNested A B C ab bc rA rB rC oa ob oc) =
++      arrow (triple A B C ab bc rA rB rC oa ob oc) := by
++  have sq := Quotient.sound (s := termSetoid _ _) (Rel.right_square A B C ab bc)
++  change arrow _ = arrow _ at sq
++  simp only [arrow_seq] at sq
++  have h1 := congrArg
++    (fun t : input A ⟶ output (compose B C bc) =>
++      t ≫ arrow (.wire (IndexedSource.outputWire B C bc)))
++    (assembly_eq A (compose B C bc) (rightNestedBoundary A B C ab bc)
++      rA (compositeRankCertificate B C bc rB rC) oa (.joined B C bc ob oc))
++  have h2 := congrArg
++    (fun t : output A ⟶ input (compose B C bc) =>
++      arrow (.leaf A rA oa) ≫ t ≫
++        arrow (.leaf (compose B C bc) (compositeRankCertificate B C bc rB rC)
++          (.joined B C bc ob oc)) ≫ arrow (.wire (IndexedSource.outputWire B C bc))) sq
++  have h3 := congrArg
++    (fun t : input B ⟶ output C =>
++      arrow (.leaf A rA oa) ≫ arrow (.wire (IndexedSource.boundaryWire A B ab)) ≫ t)
++    (source_assembly B C bc rB rC ob oc)
++  dsimp only at h1 h2 h3
++  simp only [pair, arrow_seq, Category.assoc] at h1 h2 h3
++  have done := h1.trans (h2.trans h3)
++  simpa only [rightNested, triple, pair, arrow_seq, Category.assoc] using done
++
++theorem bracket_rel :
++    Rel (leftNested A B C ab bc rA rB rC oa ob oc)
++      (rightNested A B C ab bc rA rB rC oa ob oc) :=
++  Quotient.exact ((left_eq_triple A B C ab bc rA rB rC oa ob oc).trans
++    (right_eq_triple A B C ab bc rA rB rC oa ob oc).symm)
++
++theorem bracket_sound :
++    Agrees (leftNested A B C ab bc rA rB rC oa ob oc).normalize
++      (rightNested A B C ab bc rA rB rC oa ob oc).normalize :=
++  sound (bracket_rel A B C ab bc rA rB rC oa ob oc)
++
++end Bracket
++
++#print axioms sound
++#print axioms semantics
++#print axioms bracket_sound
++#print axioms semantics_leaf_rank_independent
++
++end IndexedRankedOperationalSource
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedRankedOperationalReference.lean
+@@ -0,0 +1,56 @@
++import IndexedRankedOperationalCore
++import IndexedOperationalUnits
++
++namespace IndexedRankedOperationalReference
++
++open LeanNCD.Semantics IndexedOpenComposition IndexedComponentComposition
++open IndexedOperationalHistory IndexedRankedOperationalCore
++
++variable {σ : Declarations Unit} [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++
++noncomputable def actualReferenceObservation (A : MatchedComponent σ)
++    (origin : Origin A) (η : A.program.Input) (rank : A.program.RankCertificate) :
++    ReferenceObservation A.matched origin.Adapters where
++  observation := actualObservation A origin η rank
++  start := A.program.initial η
++  result := Program.Executor.run A.program RationalReference.ops A.schedule η
++  correspondence := by
++    change Correspondence.ExecutionCorrespondence A.matched
++      (actualHistory A η rank).toRun _ _
++    rw [(actualHistory_spec A η rank).2.1]
++    exact Correspondence.accepted_run_correspondence A.matched η
++
++theorem actual_reference_states (A : MatchedComponent σ)
++    (origin : Origin A) (η : A.program.Input) (rank : A.program.RankCertificate) :
++    List.Forall₂
++      (fun state running => LedgerInvariant A.matched state ∧
++        Relation A.matched state running)
++      (actualReferenceObservation A origin η rank).observation.history.states
++      (Correspondence.referenceSnapshots (A.program.initial η)
++        (Program.Executor.run A.program RationalReference.ops A.schedule η).events) :=
++  ReferenceObservation.full_relations _
++
++noncomputable def rightUnitReference {D : Type*}
++    {P : Program RationalReference.Carrier σ RationalReference.registry}
++    {schedule : Program.Executor.Schedule P} {contract : Contract σ}
++    {fragment : Fragment σ} {graph : Closed σ}
++    {matched : SourceContractMatch P schedule contract fragment graph}
++    (reference : ReferenceObservation matched D) : ReferenceObservation matched D where
++  observation :=
++    { metadata := reference.observation.metadata
++      history := reference.observation.history.splice
++        IndexedOperationalUnits.History.returning
++      admissible := by
++        rw [IndexedOperationalUnits.History.splice_returning]
++        exact reference.observation.admissible }
++  start := reference.start
++  result := reference.result
++  correspondence := by
++    simpa only [IndexedOperationalUnits.History.splice_returning]
++      using reference.correspondence
++
++#print axioms actualReferenceObservation
++#print axioms actual_reference_states
++#print axioms rightUnitReference
++
++end IndexedRankedOperationalReference

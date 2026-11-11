@@ -1,0 +1,54 @@
+{
+  "base": "37500cab85a2989a1422da2ef21256cb5648e8da",
+  "build_command": [
+    "bash",
+    "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/lake-build.sh",
+    "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+    "IndexedRankedWitnessComparison",
+    "IndexedRankedWitnessSource",
+    "IndexedRankedWitnessOutcomes"
+  ],
+  "build_exit": 0,
+  "audit_command": [
+    "bash",
+    "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/lean-file.sh",
+    "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+    "experiments/indexed_execution/IndexedRankedWitnessStage2Audit.lean"
+  ],
+  "audit_exit": 0,
+  "axiom_audits": [
+    "'IndexedRankedWitnessComparison.comparison' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessComparison.source_comp' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessComparison.comparison_rank_origin_independent' depends on axioms: [propext,",
+    "'IndexedRankedWitnessSource.erase' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessSource.erase_rel' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessSource.diagram' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessOutcomes.actual_correspondence' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessOutcomes.model_iff_actual_full' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessOutcomes.domain_iff_checked' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessOutcomes.domain_iff_reference' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessOutcomes.checked_failed_iff_no_domain' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessOutcomes.reference_failed_iff_no_domain' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessOutcomes.checked_success_value' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessOutcomes.reference_success_value' depends on axioms: [propext, Classical.choice, Quot.sound]"
+  ],
+  "patches": [
+    "papers/semantics/categorical_operational_witness_comparison_artifacts/01-IndexedRankedWitnessBridge.patch",
+    "papers/semantics/categorical_operational_witness_comparison_artifacts/02-IndexedRankedWitnessDescent.patch",
+    "papers/semantics/categorical_operational_witness_comparison_artifacts/03-IndexedRankedWitnessAudit.patch",
+    "papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/04-IndexedRankedWitnessComparison.patch",
+    "papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/05-IndexedRankedWitnessSource.patch",
+    "papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/06-IndexedRankedWitnessOutcomes.patch"
+  ],
+  "patch_replay": "git apply --check and apply in order; all eight files byte-equal",
+  "source_sha256": {
+    "leanncd/lakefile.toml": "ee586beb33c6f734e1bea0bbddbb38ee7a00048d1ef7de33509e6c537953eabe",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBridge.lean": "05c6d468eaec496f05e7f4dd9cab07d1f7947006a0af36955556cad4d58cb547",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessDescent.lean": "5934f28b04d6f2dc6879ec98e9e3a5da351fc008b8441b7b74863cee730ddbc5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessAudit.lean": "fc4746304c8ab6ad335ceb386eaf87ee82953fc65316af5f89ec6654f2b86a9a",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessComparison.lean": "ee2de25db997f08fd5681e6c7bda380926a4a0c6adf8abe41ca1ab96de0a94db",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSource.lean": "5cf32dd0d65b0e81f123f7c2557e5a6e2f5f4f84240a30a263568b417653165b",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean": "381d4212a8a2395856088932e27cfca3cad41e52ac6ac9fcf2fb2297fa9f4f88",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessStage2Audit.lean": "f17666b2aa2378eb0fc386f606eaea8768e272267f7ae00ea06bbf6e9a37b7ac"
+  }
+}

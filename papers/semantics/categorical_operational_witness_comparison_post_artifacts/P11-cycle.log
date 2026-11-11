@@ -1,0 +1,15 @@
+=== P11 collapse hidden full witnesses MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean: '    hiddenZero ≠ hiddenOne ∧' -> '    hiddenZero = hiddenOne ∧' ---
+error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:60:3: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean now) ---
+=== P11 collapse hidden full witnesses MUTATE exit=1 ===
+=== P11 collapse hidden full witnesses RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:74:0: 'IndexedRankedWitnessBoundaryTest.empty_input_present' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8677 jobs).
+=== P11 collapse hidden full witnesses SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P11 collapse hidden full witnesses: PASS

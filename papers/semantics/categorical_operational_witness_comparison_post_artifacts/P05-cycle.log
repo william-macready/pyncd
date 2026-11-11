@@ -1,0 +1,17 @@
+=== P05 input exterior orientation reversed MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessControlTest.lean: '    (F.rebase before after).left w = before.symm (F.left w) ∧
+      (F.rebase before after).right w = after (F.right w) := ⟨rfl, rfl⟩' -> '    (F.rebase before after).left w = before (F.left w) ∧
+      (F.rebase before after).right w = after (F.right w) := ⟨rfl, rfl⟩' ---
+error: experiments/indexed_execution/IndexedRankedWitnessControlTest.lean:16:62: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessControlTest.lean now) ---
+=== P05 input exterior orientation reversed MUTATE exit=1 ===
+=== P05 input exterior orientation reversed RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+✔ [8678/8678] Built IndexedRankedWitnessControlTest (4.4s)
+Build completed successfully (8678 jobs).
+=== P05 input exterior orientation reversed SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P05 input exterior orientation reversed: PASS

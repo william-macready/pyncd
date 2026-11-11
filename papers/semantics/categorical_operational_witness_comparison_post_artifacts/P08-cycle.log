@@ -1,0 +1,17 @@
+=== P08 conflate opaque and joined operational arrows MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean: 'Arrow (IndexedSource.input (consumerComponent 4)) (IndexedSource.output (consumerComponent 4))) ≠
+        Quotient.mk _ joinedNormal := by' -> 'Arrow (IndexedSource.input (consumerComponent 4)) (IndexedSource.output (consumerComponent 4))) =
+        Quotient.mk _ joinedNormal := by' ---
+error: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:173:8: Tactic `introN` failed: There are no additional binders or `let` bindings in the goal to introduce
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean now) ---
+=== P08 conflate opaque and joined operational arrows MUTATE exit=1 ===
+=== P08 conflate opaque and joined operational arrows RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:190:0: 'IndexedRankedWitnessCategoryTest.operational_origins_distinct' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:191:0: 'IndexedRankedWitnessCategoryTest.origins_same_full_image' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8669 jobs).
+=== P08 conflate opaque and joined operational arrows SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P08 conflate opaque and joined operational arrows: PASS

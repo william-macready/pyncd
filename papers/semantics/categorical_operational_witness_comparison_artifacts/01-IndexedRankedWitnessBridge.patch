@@ -1,0 +1,105 @@
+diff --git a/leanncd/experiments/indexed_execution/IndexedRankedWitnessBridge.lean b/leanncd/experiments/indexed_execution/IndexedRankedWitnessBridge.lean
+new file mode 100644
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedRankedWitnessBridge.lean
+@@ -0,0 +1,89 @@
++import IndexedComponentExecutionRuns
++import IndexedComponentModelDenotation
++import IndexedWitnessSpan
++
++namespace IndexedRankedWitnessBridge
++
++open LeanNCD.Semantics IndexedOpenComposition IndexedComponentComposition
++open IndexedComponentExecution IndexedWitness
++
++variable {σ : Declarations Unit} [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++variable (A : MatchedComponent σ)
++
++theorem complete_iff_model (rank : A.program.RankCertificate) (η : A.program.Input) :
++    (∃ g, (runChecked A.contract A.fragment η.val).outcome = .complete g) ↔
++      ∃ ρ, A.program.Models RationalReference.ops η ρ := by
++  constructor
++  · rintro ⟨g, done⟩
++    obtain ⟨c, hc, _, model, _⟩ := Correspondence.completed_model A.matched η g done
++    exact ⟨_, model⟩
++  · intro model
++    rcases ranked_default_terminal A η rank with done | failed
++    · exact done
++    · obtain ⟨tag, g, failed⟩ := failed
++      exact False.elim (Correspondence.failed_has_no_model A.matched η tag g failed model)
++
++theorem failed_iff_no_model (rank : A.program.RankCertificate) (η : A.program.Input) :
++    (∃ tag g, (runChecked A.contract A.fragment η.val).outcome = .failed tag g) ↔
++      ¬ ∃ ρ, A.program.Models RationalReference.ops η ρ := by
++  constructor
++  · rintro ⟨tag, g, failed⟩
++    exact Correspondence.failed_has_no_model A.matched η tag g failed
++  · intro noModel
++    rcases ranked_default_terminal A η rank with done | failed
++    · exact False.elim (noModel ((complete_iff_model A rank η).mp done))
++    · exact failed
++
++theorem ranked_atMostOne (rank : A.program.RankCertificate) : AtMostOneModels A := by
++  intro η ρ ρ' model model'
++  obtain ⟨g, done⟩ := (complete_iff_model A rank η).mpr ⟨ρ, model⟩
++  obtain ⟨c, hc, _, _, unique, _⟩ := Correspondence.completed_model A.matched η g done
++  exact (unique ρ model).trans (unique ρ' model').symm
++
++theorem admInput_iff_model (rank : A.program.RankCertificate) (η : A.program.Input) :
++    A.program.AdmInput RationalReference.ops η ↔
++      ∃ ρ, A.program.Models RationalReference.ops η ρ := by
++  constructor
++  · rintro ⟨ρ, model, _⟩
++    exact ⟨ρ, model⟩
++  · rintro ⟨ρ, model⟩
++    exact ⟨ρ, model, fun ρ' model' => ranked_atMostOne A rank η ρ' ρ model' model⟩
++
++theorem complete_iff_admInput (rank : A.program.RankCertificate) (η : A.program.Input) :
++    (∃ g, (runChecked A.contract A.fragment η.val).outcome = .complete g) ↔
++      A.program.AdmInput RationalReference.ops η :=
++  (complete_iff_model A rank η).trans (admInput_iff_model A rank η).symm
++
++theorem model_available (rank : A.program.RankCertificate) (η : A.program.Input)
++    (ρ : Store RationalReference.Carrier σ)
++    (model : A.program.Models RationalReference.ops η ρ) :
++    ∃ g, (runChecked A.contract A.fragment η.val).outcome = .complete g ∧
++      ∀ a, g.available a = some (ρ a) := by
++  obtain ⟨g, done⟩ := (complete_iff_model A rank η).mpr ⟨ρ, model⟩
++  obtain ⟨c, hc, available, _, unique, _⟩ :=
++    Correspondence.completed_model A.matched η g done
++  refine ⟨g, done, ?_⟩
++  rw [unique ρ model]
++  exact available
++
++theorem model_of_available (η : A.program.Input) (g : State σ)
++    (done : (runChecked A.contract A.fragment η.val).outcome = .complete g)
++    (ρ : Store RationalReference.Carrier σ) (full : ∀ a, g.available a = some (ρ a)) :
++    A.program.Models RationalReference.ops η ρ := by
++  obtain ⟨c, hc, available, model, _⟩ := Correspondence.completed_model A.matched η g done
++  have eq : ρ = A.program.finalStore c hc := by
++    funext a
++    exact Option.some.inj ((full a).symm.trans (available a))
++  rw [eq]
++  exact model
++
++theorem component_left_injective (rank : A.program.RankCertificate) :
++    Function.Injective (componentSpan A).left := by
++  rintro ⟨η, ρ, model⟩ ⟨η', ρ', model'⟩ inputs
++  have eq : η = η' := (inputEquiv A).symm.injective inputs
++  subst η'
++  have stores := ranked_atMostOne A rank η ρ ρ' model model'
++  cases stores
++  rfl
++
++end IndexedRankedWitnessBridge
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -204,6 +204,7 @@
+          "IndexedOperationalUnits",
+          "IndexedOperationalWireFrame",
+          "IndexedRankedOperationalCore",
++         "IndexedRankedWitnessBridge",
+          "IndexedOperationalScopeNaturality",
+          "IndexedRankedOperationalCategory",
+          "IndexedRankedOperationalSource",

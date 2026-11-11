@@ -1,0 +1,17 @@
+=== P02 failed domain polarity MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean: '    (∃ tag g, (runChecked A.contract A.fragment η.val).outcome = .failed tag g) ↔
+      ¬ (componentSpan A).Domain (inputEnv A η) := by' -> '    (∃ tag g, (runChecked A.contract A.fragment η.val).outcome = .failed tag g) ↔
+      (componentSpan A).Domain (inputEnv A η) := by' ---
+error: experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean:62:49: unsolved goals
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean now) ---
+=== P02 failed domain polarity MUTATE exit=1 ===
+=== P02 failed domain polarity RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:212:0: 'IndexedRankedWitnessOutcomeTest.pair_success_full' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:213:0: 'IndexedRankedWitnessOutcomeTest.failure_A' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:214:0: 'IndexedRankedWitnessOutcomeTest.failure_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:215:0: 'IndexedRankedWitnessOutcomeTest.failure_C' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8668 jobs).
+=== P02 failed domain polarity SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P02 failed domain polarity: PASS

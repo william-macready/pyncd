@@ -1,0 +1,54 @@
+{
+  "base": "921cca7e4c28066ae1912c398b27c351930fc18c",
+  "patches": [
+    {
+      "path": "units.patch",
+      "sha256": "d100110c7df07686649eb1a6248dffda73a9993d1093cde0075ec9a61d3d7b7a"
+    },
+    {
+      "path": "core.patch",
+      "sha256": "055961cde11b7bcdf81cce314cfb7848044a90dea0ea8dc2e630ac45380fce30"
+    },
+    {
+      "path": "scope.patch",
+      "sha256": "134fc010112048aadea3ecee417b451cc64e4a3fbbb2be2ad2981de04c5adb01"
+    },
+    {
+      "path": "category.patch",
+      "sha256": "c2cc12b0ad1fb728be16432593e60c1c386a9a580abbc8394ab86f8d410456ea"
+    },
+    {
+      "path": "source.patch",
+      "sha256": "715f18184a731c5cb82e8e9ba0f45c540692d7b4cbf8fe212fe249e7decd2448"
+    },
+    {
+      "path": "interpretation.patch",
+      "sha256": "0c63ed28489c8ad67e72c39e7c3d4ed9a39fdad1a23bb82e0491de2eee5e7a23"
+    },
+    {
+      "path": "acceptance.patch",
+      "sha256": "450c6fce0cc791a3ff173a1ab5de74be76d1f1452111ac538b882c399df08cbf"
+    },
+    {
+      "path": "documentation.patch",
+      "sha256": "f46f7a12054294268d06c9653117ab19703aa3e83fb3a6ffc0ffb2b4b0fe16ca"
+    }
+  ],
+  "sources": {
+    "leanncd/experiments/indexed_execution/IndexedOperationalUnits.lean": "3a6d2b5d99c71e441e830cae9e619c9103c4586b328451f5d35aef5dc5875991",
+    "leanncd/experiments/indexed_execution/IndexedOperationalWireFrame.lean": "f08f40089c310cc18fd0657e05363dfea34019eb3d694aa3d743d136ad4aecfc",
+    "leanncd/experiments/indexed_execution/IndexedRankedOperationalCore.lean": "30bea2b25bc514ac2917435f74ab6cad78a3b00222e347f3f0ab8520ecd4827e",
+    "leanncd/experiments/indexed_execution/IndexedOperationalScopeNaturality.lean": "e683ff1c00fdc96861af4a538fbd7155bc8b1e98f3107845786800d623a068ba",
+    "leanncd/experiments/indexed_execution/IndexedRankedOperationalCategory.lean": "d963aafab4bd4f9c9efcc95650aeabc0e5ab8bca6d1d90c803bce53fd9e1770b",
+    "leanncd/experiments/indexed_execution/IndexedRankedOperationalSource.lean": "b7a3c197d25f1fc123dec6d4eafb6efad73ba9a4d6036e85bde7bab35dedf6db",
+    "leanncd/experiments/indexed_execution/IndexedRankedOperationalReference.lean": "f9c9e374776f83ed90a84f35383fad07f34b81c6dba78654bec04c605ec05335",
+    "leanncd/experiments/indexed_execution/IndexedRankedOperationalInterpretation.lean": "e3b48273c8a80ab5f47f06ae093e948555e5b6d0b74df51972883470fe996d0a",
+    "leanncd/experiments/indexed_execution/IndexedRankedOperationalSemantics.lean": "76e503499a1bd8b1175f1da819d540d2688024132a7e0e672467e6fb1cb80c7c",
+    "leanncd/experiments/indexed_execution/IndexedRankedOperationalTest.lean": "4db5b64c3e3bbc92443c0f69f04806afdb1d034efcd9fc03f95d340092c09499",
+    "leanncd/experiments/indexed_execution/IndexedRankedOperationalAudit.lean": "fd5a66a433afb54434f9afc7efd13c36973e1e03fe1e140260f8e4dcce0cf423",
+    "leanncd/AGENTS.md": "a5a549f87f439fc90d925403f100a2d2e0562c7dd2f816af5ec77cd79830905e",
+    "papers/semantics/categorical_tensor_logic_semantics.md": "5e5685688a0a9c8a630c16e5d6e3ee0ba3462985d4c62682acdd2b867be32508",
+    "leanncd/lakefile.toml": "c47429eaf61ea7d61eb13261d9868b00275309deb7a78279c4bc0ad713a5d6c8"
+  },
+  "ordered_private_index_replay": "PASS"
+}

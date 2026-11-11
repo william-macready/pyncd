@@ -1,0 +1,1601 @@
+ℹ [2948/3086] Replayed LeanNCD.Semantics.Readiness
+info: LeanNCD/Semantics/Readiness.lean:93:0: 'LeanNCD.Semantics.evalWith_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:94:0: 'LeanNCD.Semantics.interpret_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:95:0: 'LeanNCD.Semantics.ready_consistent' depends on axioms: [propext, Quot.sound]
+⚠ [2949/3086] Replayed LeanNCD.Semantics.Machine
+warning: LeanNCD/Semantics/Machine.lean:85:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.finalStore_published`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+ℹ [2951/3086] Replayed LeanNCD.Semantics.Measure
+info: LeanNCD/Semantics/Measure.lean:144:0: 'LeanNCD.Semantics.Program.initial_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:145:0: 'LeanNCD.Semantics.Program.consume_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:146:0: 'LeanNCD.Semantics.Program.publish_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:147:0: 'LeanNCD.Semantics.Program.step_wellFounded' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:148:0: 'LeanNCD.Semantics.Program.trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:149:0: 'LeanNCD.Semantics.Program.running_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:150:0: 'LeanNCD.Semantics.Program.failed_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:151:0: 'LeanNCD.Semantics.Program.no_infinite_chain' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2952/3086] Replayed LeanNCD.Semantics.Invariants
+warning: LeanNCD/Semantics/Invariants.lean:99:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.publish_extends`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+ℹ [2953/3086] Replayed LeanNCD.Semantics.Soundness
+info: LeanNCD/Semantics/Soundness.lean:112:0: 'LeanNCD.Semantics.Program.reachable_invariant' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:113:0: 'LeanNCD.Semantics.Program.successful_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:114:0: 'LeanNCD.Semantics.Program.candidate_preserved' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:115:0: 'LeanNCD.Semantics.Program.successful_unique' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:116:0: 'LeanNCD.Semantics.Program.successful_admInput' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:117:0: 'LeanNCD.Semantics.Program.successful_denotation' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:118:0: 'LeanNCD.Semantics.Program.failed_no_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [2954/3086] Replayed LeanNCD.Semantics.Progress
+info: LeanNCD/Semantics/Progress.lean:182:0: 'LeanNCD.Semantics.Program.ranked_progress' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:183:0: 'LeanNCD.Semantics.Program.ranked_not_blocked' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:184:0: 'LeanNCD.Semantics.Program.terminal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:185:0: 'LeanNCD.Semantics.Program.maximal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:186:0: 'LeanNCD.Semantics.Program.maximal_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:187:0: 'LeanNCD.Semantics.Program.model_maximal_success' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:188:0: 'LeanNCD.Semantics.Program.no_model_maximal_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:189:0: 'LeanNCD.Semantics.Program.initialization_iff_singleton' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:190:0: 'LeanNCD.Semantics.Program.successful_schedules_agree' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2955/3086] Replayed LeanNCD.Semantics.ExecutableState
+warning: LeanNCD/Semantics/ExecutableState.lean:51:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_error`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:83:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.publish_agrees`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:87:8: Used `tac1 <;> tac2` where `(tac1; tac2)` would suffice
+
+Note: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`
+warning: LeanNCD/Semantics/ExecutableState.lean:94:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.initialBudget_agrees`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [2956/3086] Replayed LeanNCD.Semantics.ExecutableSelection
+warning: LeanNCD/Semantics/ExecutableSelection.lean:69:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.scan_none`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ExecutableSelection.lean:120:0: 'LeanNCD.Semantics.Program.Executor.select_none_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2957/3086] Replayed LeanNCD.Semantics.ReferenceExecutor
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:10:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_accepts`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:19:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_preserves`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ReferenceExecutor.lean:187:0: 'LeanNCD.Semantics.Program.Executor.run_not_exhausted' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:188:0: 'LeanNCD.Semantics.Program.Executor.run_ranked_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:189:0: 'LeanNCD.Semantics.Program.Executor.result_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:190:0: 'LeanNCD.Semantics.Program.Executor.result_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2961/3086] Replayed IndexedCompositionSelection
+warning: experiments/indexed_execution/IndexedCompositionSelection.lean:58:0: automatically included section variable(s) unused in theorem `IndexedOpenComposition.schedule_default_budget`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [2963/3086] Replayed IndexedCompositionSteps
+warning: experiments/indexed_execution/IndexedCompositionSteps.lean:72:2: try 'simp' instead of 'simpa'
+
+Note: This linter can be disabled with `set_option linter.unnecessarySimpa false`
+⚠ [2968/3086] Replayed IndexedCompositionClosure
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:122:0: automatically included section variable(s) unused in theorem `IndexedOpenComposition.validated_writers_forall`:
+  [Fintype σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:141:0: automatically included section variable(s) unused in theorem `IndexedOpenComposition.validated_writer_destination_reads`:
+  [Fintype σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:244:8: automatically included section variable(s) unused in theorem `_private.IndexedCompositionClosure.0.IndexedOpenComposition.nodup_map_of_duplicate_guard`:
+  [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:257:27: This simp argument is unused:
+  List.countP_map
+
+Hint: Omit it from the simp argument list.
+  simp only [List.count, List.countP_m̵a̵p̵,̵ ̵L̵i̵s̵t̵.̵c̵o̵u̵n̵t̵P̵_̵eq_length_filter]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:249:2: Try this: intro cap hm
+warning: experiments/indexed_execution/IndexedCompositionClosure.lean:278:8: automatically included section variable(s) unused in theorem `_private.IndexedCompositionClosure.0.IndexedOpenComposition.collector_row_unique`:
+  [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [2972/3086] Replayed IndexedComponentExecutionFuel
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:11:0: automatically included section variable(s) unused in theorem `IndexedComponentExecution.stepFuel_add_of_not_exhausted`:
+  [Fintype σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:22:23: This simp argument is unused:
+  ↓reduceIte
+
+Hint: Omit it from the simp argument list.
+  simp only [hc,̵ ̵↓̵r̵e̵d̵u̵c̵e̵I̵t̵e̵] at terminal ⊢
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:24:24: This simp argument is unused:
+  hs
+
+Hint: Omit it from the simp argument list.
+  simp ̵[̵h̵s̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:32:23: This simp argument is unused:
+  ↓reduceIte
+
+Hint: Omit it from the simp argument list.
+  simp only [hc, ↓̵r̵e̵d̵u̵c̵e̵I̵t̵e̵,̵ ̵Nat.succ_add] at terminal ⊢
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:34:24: This simp argument is unused:
+  hs
+
+Hint: Omit it from the simp argument list.
+  simp ̵[̵h̵s̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:38:27: This simp argument is unused:
+  hs
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵h̵s̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionFuel.lean:48:27: This simp argument is unused:
+  hs
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵h̵s̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+⚠ [2977/3086] Replayed IndexedComponentTransportEval
+warning: experiments/indexed_execution/IndexedComponentTransportEval.lean:78:48: This simp argument is unused:
+  Embedding.address_comp
+
+Hint: Omit it from the simp argument list.
+  simp only [footprint_transport, List.map_map, E̵m̵b̵e̵d̵d̵i̵n̵g̵.̵a̵d̵d̵r̵e̵s̵s̵_̵c̵o̵m̵p̵,̵ ̵Function.comp_apply]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+info: experiments/indexed_execution/IndexedComponentTransportEval.lean:81:0: 'IndexedComponentTransport.evalWith_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentTransportEval.lean:82:0: 'IndexedComponentTransport.footprint_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentTransportEval.lean:83:0: 'IndexedComponentTransport.evalReady_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2985/3086] Replayed IndexedComponentExecutionTransport
+warning: experiments/indexed_execution/IndexedComponentExecutionTransport.lean:86:43: This simp argument is unused:
+  Function.comp_def
+
+Hint: Omit it from the simp argument list.
+  simp [mapStep, mapWriter, F̵u̵n̵c̵t̵i̵o̵n̵.̵c̵o̵m̵p̵_̵d̵e̵f̵,̵ ̵hp, related.available]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedComponentExecutionTransport.lean:149:10: This simp argument is unused:
+  Function.update_apply
+
+Hint: Omit it from the simp argument list.
+  simp [F̵u̵n̵c̵t̵i̵o̵n̵.̵u̵p̵d̵a̵t̵e̵_̵a̵p̵p̵l̵y̵,̵ ̵h, hn, related.available]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+ℹ [2991/3086] Replayed IndexedComponentModelDenotation
+info: experiments/indexed_execution/IndexedComponentModelDenotation.lean:166:0: 'IndexedComponentComposition.admInput_lift_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelDenotation.lean:167:0: 'IndexedComponentComposition.admInput_restrictions_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelDenotation.lean:168:0: 'IndexedComponentComposition.denotation_successive' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2995/3086] Replayed IndexedWitnessCoherence
+warning: experiments/indexed_execution/IndexedWitnessCoherence.lean:204:15: This simp argument is unused:
+  Equiv.symm_apply_apply
+
+Hint: Omit it from the simp argument list.
+  simp only [̵E̵q̵u̵i̵v̵.̵s̵y̵m̵m̵_̵a̵p̵p̵l̵y̵_̵a̵p̵p̵l̵y̵,̵ ̵E̵q̵u̵i̵v̵.̵a̵p̵p̵l̵y̵_̵s̵y̵m̵m̵_̵a̵p̵p̵l̵y̵]̵[̲E̲q̲u̲i̲v̲.̲a̲p̲p̲l̲y̲_̲s̲y̲m̲m̲_̲a̲p̲p̲l̲y̲]̲
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedWitnessCoherence.lean:263:39: This simp argument is unused:
+  Equiv.symm_apply_apply
+
+Hint: Omit it from the simp argument list.
+  simp only [Equiv.apply_symm_apply,̵ ̵E̵q̵u̵i̵v̵.̵s̵y̵m̵m̵_̵a̵p̵p̵l̵y̵_̵a̵p̵p̵l̵y̵]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+ℹ [2998/3086] Replayed Semantics.ExecutableReferenceTest
+info: test/Semantics/ExecutableReferenceTest.lean:114:0: duplicate: ("complete", 5, [some 4, some 0, some 0], 0)
+info: test/Semantics/ExecutableReferenceTest.lean:116:0: ready-failure: ("failed", 1, [none, none, none], 1)
+info: test/Semantics/ExecutableReferenceTest.lean:118:0: blocked: ("blocked", 2, [none, some 0, some 0], 1)
+info: test/Semantics/ExecutableReferenceTest.lean:190:0: tagged-trace: [("contribution", 7, 0, 0, 1, some 2),
+ ("contribution", 7, 0, 1, 1, some 2),
+ ("contribution", 7, 1, 0, 1, some 5),
+ ("contribution", 7, 1, 1, 1, some 5),
+ ("publication", 7, 0, 0, 1, some 14),
+ ("publication", 7, 0, 0, 0, some 0),
+ ("publication", 7, 0, 0, 2, some 0)]
+info: test/Semantics/ExecutableReferenceTest.lean:195:0: tagged-whole-store: ("complete", [some 0, some 14, some 0], "complete", [some 0, some 14, some 0])
+info: test/Semantics/ExecutableReferenceTest.lean:206:0: tagged-equations: ([0, 14, 0], [0, 14, 0])
+info: test/Semantics/ExecutableReferenceTest.lean:216:0: zero-contribution: ("complete", 4, [some 0, some 0, some 0], 0)
+info: test/Semantics/ExecutableReferenceTest.lean:218:0: empty-fiber: ("complete", 3, [some 0, some 0, some 0], 0)
+info: test/Semantics/ExecutableReferenceTest.lean:243:0: guard-excluded-undefined: ("complete", 3, [some 0, some 0, some 0])
+info: test/Semantics/ExecutableReferenceTest.lean:260:0: nonlinear-boundary: (("complete", 5, [some (3 : Rat)/4, some 0, some 0], 0), (3 : Rat)/4, some (1 : Rat)/6)
+info: test/Semantics/ExecutableReferenceTest.lean:267:0: primitive-square: ("complete", 4, [some 9, some 0, some 0], 0)
+info: test/Semantics/ExecutableReferenceTest.lean:324:0: scalar-input-nonoutput: ("complete", 4, [some 7, some 2, some 3])
+info: test/Semantics/ExecutableReferenceTest.lean:326:0: internal-nonoutput-failure: ("failed", 3, [some 7, some 2, none])
+info: test/Semantics/ExecutableReferenceTest.lean:338:0: input-validation-order: [("error", 0), ("error", 1), ("error", 0), ("error", 2)]
+info: test/Semantics/ExecutableReferenceTest.lean:374:0: empty-input-and-defined: [("complete", 0), ("error", 0), ("complete", 0)]
+info: test/Semantics/ExecutableReferenceTest.lean:380:0: fuel-boundaries: (8, "exhausted", "complete", "complete", "complete", "exhausted")
+info: test/Semantics/ExecutableReferenceTest.lean:388:0: zero-fuel-terminal: ("complete", "failed")
+info: test/Semantics/ExecutableReferenceTest.lean:440:0: coordinate-ranked-chain: ("complete",
+ [some 0, some 3, some 4],
+ [("contribution", 7, 0, 0, 1, some 3),
+  ("publication", 7, 0, 0, 1, some 3),
+  ("contribution", 7, 1, 0, 2, some 4),
+  ("publication", 7, 0, 0, 2, some 4),
+  ("publication", 7, 0, 0, 0, some 0)])
+info: test/Semantics/ExecutableReferenceTest.lean:468:0: strict-zero-cycle-locators: ("blocked",
+ [some 0, none, none],
+ [("unavailable", 7, 1, 0, 2, [(7, 1)], none), ("unavailable", 7, 0, 0, 1, [(7, 2)], none)])
+info: test/Semantics/ExecutableReferenceTest.lean:502:0: failure-retained-snapshot: ("failed",
+ [("publication", 7, 0, 0, 2, some 0), ("contribution", 7, 0, 0, 0, some 2), ("undefined", 7, 1, 0, 0, none)],
+ [none, none, some 0],
+ 2,
+ 1)
+info: test/Semantics/ExecutableReferenceTest.lean:511:0: ready-observations: [("ready", 7, 0, 0, 0, [], some 2), ("ready", 7, 1, 0, 0, [], none)]
+info: test/Semantics/ExecutableReferenceTest.lean:516:0: 'LeanNCD.Semantics.ExecutableReferenceFixtures.chainCertificate' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/ExecutableReferenceTest.lean:529:0: trace-effect-replay: ("running", [some 0, some 14, some 0], 0)
+ℹ [2999/3086] Replayed LeanNCD.Semantics.Plan.ScanHistory.Recurrence
+info: LeanNCD/Semantics/Plan/ScanHistory/Recurrence.lean:35:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_zero' does not depend on any axioms
+info: LeanNCD/Semantics/Plan/ScanHistory/Recurrence.lean:36:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_succ' does not depend on any axioms
+info: LeanNCD/Semantics/Plan/ScanHistory/Recurrence.lean:37:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_unique' depends on axioms: [Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Recurrence.lean:38:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.state_zero_unique' depends on axioms: [Quot.sound]
+ℹ [3000/3086] Replayed LeanNCD.Semantics.Plan.Syntax
+info: LeanNCD/Semantics/Plan/Syntax.lean:322:0: 'LeanNCD.Semantics.Program.Plan.DefAddr.addr_injective' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Syntax.lean:323:0: 'LeanNCD.Semantics.Program.Plan.coverage_iff_schedule' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Syntax.lean:324:0: 'LeanNCD.Semantics.Program.Plan.ret_zero' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Syntax.lean:325:0: 'LeanNCD.Semantics.Program.Plan.live_input' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Syntax.lean:326:0: 'LeanNCD.Semantics.Program.Plan.expand_allocation' depends on axioms: [propext, Quot.sound]
+ℹ [3002/3086] Replayed LeanNCD.Semantics.Plan.ScanHistory.Core
+info: LeanNCD/Semantics/Plan/ScanHistory/Core.lean:195:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.valuationPair_index' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Core.lean:196:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.recurrence_lt' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Core.lean:197:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.defined_tensor' depends on axioms: [propext]
+info: LeanNCD/Semantics/Plan/ScanHistory/Core.lean:198:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.priorSlice_footprint' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+ℹ [3003/3086] Replayed IndexedCompositionParityTest
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:250:0: indexed-reference source-writer-identity-bijection: true
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:257:0: indexed-reference independent-roles: ([false, false, false], [false, true, false], [false, false, false], [⟨1, ()⟩])
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:263:0: indexed-reference strict-failure-pairs: Except.ok (("failed", some 30, [some 0, some 0, none], [0, 0, 0], [30]),
+ "failed",
+ some 30,
+ [some 0, some 0, none],
+ [0, 0, 0],
+ [30])
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:267:0: indexed-reference strict-failure-parity: (true, true, true)
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:268:0: indexed-reference strict-ordered-events: Except.ok [("write", some 10, some 101, 0, [], some 1),
+ ("write", some 11, some 102, 0, [], some -1),
+ ("publish", none, none, 0, [], some 0),
+ ("write", some 20, some 201, 1, [], some 0),
+ ("publish", none, none, 1, [], some 0),
+ ("undefined", some 30, none, 2, [], none)]
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:275:0: indexed-reference total-neighbour-pairs: Except.ok (("complete", none, [some 0, some 0, some (1 : Rat)/2], [0, 0, (1 : Rat)/2], []),
+ "complete",
+ none,
+ [some 0, some 0, some (1 : Rat)/2],
+ [0, 0, (1 : Rat)/2],
+ [])
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:279:0: indexed-reference total-neighbour-parity: (true, true, true)
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:280:0: indexed-reference total-ordered-events: Except.ok [("write", some 10, some 101, 0, [], some 1),
+ ("write", some 11, some 102, 0, [], some -1),
+ ("publish", none, none, 0, [], some 0),
+ ("write", some 20, some 201, 1, [], some 0),
+ ("publish", none, none, 1, [], some 0),
+ ("write", some 30, some 301, 2, [], some (1 : Rat)/2),
+ ("publish", none, none, 2, [], some (1 : Rat)/2)]
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:288:0: indexed-reference exact-event-counts: (6, 7, some 6, some 7)
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:293:0: indexed-reference total-reference-model-store: some [0, 0, (1 : Rat)/2]
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:303:0: indexed-reference failed-reference-has-no-total-store: true
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:320:0: indexed-reference graph-only-strict-bypass-disagrees-with-reference: true
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:333:0: indexed-reference reject-unmapped-source-occurrence: Except.error "unmapped source occurrence tensor=2 statement=1"
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:335:0: indexed-reference reject-unmapped-graph-tag: Except.error "unmapped graph writer tag=999"
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:338:0: indexed-reference reject-wrong-graph-capability: Except.error "graph writer tag=10 has unexpected capability=999"
+info: experiments/indexed_execution/IndexedCompositionParityTest.lean:341:0: indexed-reference rejected-omitted-writer: "invalidGraph"
+⚠ [3004/3086] Replayed IndexedCompositionFixtureProof
+warning: experiments/indexed_execution/IndexedCompositionFixtureProof.lean:75:36: This simp argument is unused:
+  reference
+
+Hint: Omit it from the simp argument list.
+  simp [contract, r̵e̵f̵e̵r̵e̵n̵c̵e̵,̵ ̵out]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+ℹ [3005/3086] Replayed IndexedComponentCompositionLocalFixtures
+info: experiments/indexed_execution/IndexedComponentCompositionLocalFixtures.lean:216:0: indexed-reference local-producer: ("complete", 3, some (some 0))
+info: experiments/indexed_execution/IndexedComponentCompositionLocalFixtures.lean:221:0: indexed-reference local-consumer-strict: ("failed", 3, some [some 0, some 0, none])
+info: experiments/indexed_execution/IndexedComponentCompositionLocalFixtures.lean:227:0: indexed-reference local-consumer-total: ("complete", 4, some [some 0, some 0, some (1 : Rat)/2])
+ℹ [3006/3086] Replayed IndexedComponentCompositionPortFixtures
+info: experiments/indexed_execution/IndexedComponentCompositionPortFixtures.lean:63:0: indexed-reference port-scalar-local-only: ("complete", 3, some (some 0), "failed", 3, "complete", 4, some [some 0, some 0, some (1 : Rat)/2])
+info: experiments/indexed_execution/IndexedComponentCompositionPortFixtures.lean:164:0: indexed-reference port-zero-producer: ("complete", 1, some (some 0))
+info: experiments/indexed_execution/IndexedComponentCompositionPortFixtures.lean:169:0: indexed-reference port-zero-source: ("complete", 1)
+info: experiments/indexed_execution/IndexedComponentCompositionPortFixtures.lean:373:0: indexed-reference port-empty-source: (("complete", 0), "complete", 0)
+info: experiments/indexed_execution/IndexedComponentCompositionPortFixtures.lean:384:0: indexed-reference port-empty-present-and-missing: ("complete", 0, "complete", 0, "invalidInput")
+info: experiments/indexed_execution/IndexedComponentCompositionPortFixtures.lean:390:0: indexed-reference port-empty-whole-metadata: ([10], [0], [0], [1], [[{ uid := 41, extent := 0 }]], [[{ uid := 51, extent := 0 }]])
+ℹ [3009/3086] Replayed IndexedComponentCompositionTest
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:74:0: indexed-reference composite-scalar-structure: ([(20, 202, 0), (22, 204, 0), (41, 403, 3), (61, 603, 5)], [(0, [202, 204]), (3, [403]), (5, [603])], 7, 7, [3], false)
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:85:0: indexed-reference composite-scalar-graph-steps: [("write", 20, [202]),
+ ("write", 22, [204]),
+ ("publish", 0, [202, 204]),
+ ("write", 41, [403]),
+ ("publish", 3, [403]),
+ ("write", 61, [603]),
+ ("publish", 5, [603])]
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:91:0: indexed-reference composite-scalar-strict-graph: ("failed",
+ [("write", 20, 202, some 1),
+  ("write", 22, 204, some -1),
+  ("publish", 0, 0, some 0),
+  ("write", 41, 403, some 0),
+  ("publish", 3, 0, some 0),
+  ("undefined", 61, 0, none)],
+ some [some 0, some 0, none])
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:98:0: indexed-reference composite-scalar-total-graph: ("complete",
+ [("write", 20, 202, some 1),
+  ("write", 22, 204, some -1),
+  ("publish", 0, 0, some 0),
+  ("write", 41, 403, some 0),
+  ("publish", 3, 0, some 0),
+  ("write", 61, 603, some (1 : Rat)/2),
+  ("publish", 5, 0, some (1 : Rat)/2)],
+ some [some 0, some 0, some (1 : Rat)/2])
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:106:0: indexed-reference composite-scalar-strict-source: ("failed",
+ [("write", 0, 0, some 1),
+  ("write", 0, 1, some -1),
+  ("publish", 0, 0, some 0),
+  ("write", 3, 0, some 0),
+  ("publish", 3, 0, some 0),
+  ("undefined", 5, 0, none)],
+ [some 0, some 0, none],
+ none)
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:111:0: indexed-reference composite-scalar-total-source: ("complete",
+ [("write", 0, 0, some 1),
+  ("write", 0, 1, some -1),
+  ("publish", 0, 0, some 0),
+  ("write", 3, 0, some 0),
+  ("publish", 3, 0, some 0),
+  ("write", 5, 0, some (1 : Rat)/2),
+  ("publish", 5, 0, some (1 : Rat)/2)],
+ [some 0, some 0, some (1 : Rat)/2],
+ none)
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:144:0: indexed-reference composite-zero-structure: ([(41, 403, 3), (61, 603, 5)], [(0, []), (3, [403]), (5, [603])], 5, 5)
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:150:0: indexed-reference composite-zero-graph: ("complete",
+ [("publish", 0, 0, some 0),
+  ("write", 41, 403, some 0),
+  ("publish", 3, 0, some 0),
+  ("write", 61, 603, some (1 : Rat)/2),
+  ("publish", 5, 0, some (1 : Rat)/2)],
+ some [some 0, some 0, some (1 : Rat)/2])
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:158:0: indexed-reference composite-zero-source: ("complete",
+ [("publish", 0, 0, some 0),
+  ("write", 3, 0, some 0),
+  ("publish", 3, 0, some 0),
+  ("write", 5, 0, some (1 : Rat)/2),
+  ("publish", 5, 0, some (1 : Rat)/2)],
+ [some 0, some 0, some (1 : Rat)/2],
+ none)
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:227:0: indexed-reference composite-empty-whole-output: ([20], [(3, (), [{ uid := 51, extent := 0 }])], 0, true, false, [20, 0, 3], [0, 3, 20], 0, 0, 0)
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:237:0: indexed-reference composite-empty-present: ("complete", 0, "complete", 0)
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:244:0: indexed-reference composite-empty-missing: some 20
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:250:0: indexed-reference composite-empty-simultaneous-faults: (false, true, true, false, some 20)
+info: experiments/indexed_execution/IndexedComponentCompositionTest.lean:258:0: indexed-reference composite-empty-validation-order: (some 20, some 3, some 3)
+ℹ [3010/3086] Replayed LeanNCD.Semantics.Completeness
+info: LeanNCD/Semantics/Completeness.lean:184:0: 'LeanNCD.Semantics.sequence_some_iff' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:185:0: 'LeanNCD.Semantics.tab_complete' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:186:0: 'LeanNCD.Semantics.foldValues_defined_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:187:0: 'LeanNCD.Semantics.reduce_defined_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:188:0: 'LeanNCD.Semantics.reduce_empty' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:189:0: 'LeanNCD.Semantics.foldValues_some_map_sum' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:190:0: 'LeanNCD.Semantics.reduce_sum' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:191:0: 'LeanNCD.Semantics.interpret_reduce_sum' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:192:0: 'LeanNCD.Semantics.at_some_iff' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:193:0: 'LeanNCD.Semantics.registry_apply_some_iff' depends on axioms: [propext]
+info: LeanNCD/Semantics/Completeness.lean:194:0: 'LeanNCD.Semantics.prim_some_iff' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:195:0: 'LeanNCD.Semantics.ready_complete_extension' depends on axioms: [propext, Quot.sound]
+ℹ [3011/3086] Replayed IndexedComponentModelCycleFixtures
+info: experiments/indexed_execution/IndexedComponentModelCycleFixtures.lean:443:0: (some 0, some 1)
+info: experiments/indexed_execution/IndexedComponentModelCycleFixtures.lean:448:0: (none, some 1)
+info: experiments/indexed_execution/IndexedComponentModelCycleFixtures.lean:453:0: (0, 0, some 1)
+ℹ [3012/3086] Replayed IndexedComponentRankedExecutionFixtures
+info: experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean:218:0: indexed-reference ranked-complete-contribution-boundary: ([(none, []), (none, [(202, 1)]), (none, [(202, 1), (204, -1)]), (some 0, [(202, 1), (204, -1)])],
+ [(none, []), (none, [(202, 1)]), (none, [(202, 1), (204, -1)]), (some 0, [(202, 1), (204, -1)])],
+ 7,
+ 6)
+info: experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean:226:0: indexed-reference ranked-zero-writer-publication: ("complete",
+ [("publish", 0, 0, some 0),
+  ("write", 41, 403, some 0),
+  ("publish", 3, 0, some 0),
+  ("write", 61, 603, some (1 : Rat)/2),
+  ("publish", 5, 0, some (1 : Rat)/2)],
+ 6)
+info: experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean:234:0: indexed-reference ranked-reference-snapshots-and-budgets: ((8, 9, 9, 5, 5), (3, 3, 9, 5, 5), 7, 7, 9, 5, 5)
+info: experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean:238:0: indexed-reference ranked-empty-metadata-and-validation: ("complete", 0, 1, 1, true, some 20)
+info: experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean:241:0: indexed-reference ranked-private-order-control: ("failed",
+ [("write", 40, 402, some 9),
+  ("publish", 2, 0, some 9),
+  ("write", 41, 403, some 81),
+  ("publish", 3, 0, some 81),
+  ("write", 61, 603, some (19 : Rat)/2),
+  ("publish", 5, 0, some (19 : Rat)/2),
+  ("undefined", 60, 0, none)],
+ some [some 9, none, some 81, some (19 : Rat)/2])
+info: experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean:250:0: indexed-reference ranked-private-success: ("complete",
+ [("write", 40, 402, some 9),
+  ("publish", 2, 0, some 9),
+  ("write", 60, 602, some (7 : Rat)/2),
+  ("publish", 4, 0, some (7 : Rat)/2),
+  ("write", 41, 403, some 81),
+  ("publish", 3, 0, some 81),
+  ("write", 61, 603, some (19 : Rat)/2),
+  ("publish", 5, 0, some (19 : Rat)/2)],
+ [([some 3, none, none, none, none], []),
+  ([some 3, none, none, none, none], [(402, 9)]),
+  ([some 3, some 9, none, none, none], [(402, 9)]),
+  ([some 3, some 9, none, none, none], [(402, 9), (602, (7 : Rat)/2)]),
+  ([some 3, some 9, some (7 : Rat)/2, none, none], [(402, 9), (602, (7 : Rat)/2)]),
+  ([some 3, some 9, some (7 : Rat)/2, none, none], [(402, 9), (602, (7 : Rat)/2), (403, 81)]),
+  ([some 3, some 9, some (7 : Rat)/2, some 81, none], [(402, 9), (602, (7 : Rat)/2), (403, 81)]),
+  ([some 3, some 9, some (7 : Rat)/2, some 81, none], [(402, 9), (602, (7 : Rat)/2), (403, 81), (603, (19 : Rat)/2)]),
+  ([some 3, some 9, some (7 : Rat)/2, some 81, some (19 : Rat)/2],
+   [(402, 9), (602, (7 : Rat)/2), (403, 81), (603, (19 : Rat)/2)])])
+info: experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean:270:0: indexed-reference ranked-private-upstream-failure: ("failed",
+ [("write", 40, 402, some 9), ("publish", 2, 0, some 9), ("undefined", 60, 0, none)],
+ [([some 3, none, none, none, none], []),
+  ([some 3, none, none, none, none], [(402, 9)]),
+  ([some 3, some 9, none, none, none], [(402, 9)])])
+info: experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean:278:0: indexed-reference ranked-private-downstream-failure: ("failed",
+ [("write", 40, 402, some 9),
+  ("publish", 2, 0, some 9),
+  ("write", 60, 602, some (7 : Rat)/2),
+  ("publish", 4, 0, some (7 : Rat)/2),
+  ("write", 41, 403, some 81),
+  ("publish", 3, 0, some 81),
+  ("undefined", 61, 0, none)],
+ [([some 3, none, none, none, none], []),
+  ([some 3, none, none, none, none], [(402, 9)]),
+  ([some 3, some 9, none, none, none], [(402, 9)]),
+  ([some 3, some 9, none, none, none], [(402, 9), (602, (7 : Rat)/2)]),
+  ([some 3, some 9, some (7 : Rat)/2, none, none], [(402, 9), (602, (7 : Rat)/2)]),
+  ([some 3, some 9, some (7 : Rat)/2, none, none], [(402, 9), (602, (7 : Rat)/2), (403, 81)]),
+  ([some 3, some 9, some (7 : Rat)/2, some 81, none], [(402, 9), (602, (7 : Rat)/2), (403, 81)])])
+info: experiments/indexed_execution/IndexedComponentRankedExecutionFixtures.lean:293:0: indexed-reference ranked-unranked-counterexample: ("blocked",
+ [("write", 40, 402, some 0), ("publish", 2, 0, some 0), ("write", 61, 603, some 1), ("publish", 3, 0, some 1)],
+ [([none, none, none], []),
+  ([none, none, none], [(402, 0)]),
+  ([none, some 0, none], [(402, 0)]),
+  ([none, some 0, none], [(402, 0), (603, 1)]),
+  ([none, some 0, some 1], [(402, 0), (603, 1)])])
+ℹ [3057/3166] Replayed IndexedOperationalHistory
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:658:0: 'IndexedOperationalHistory.History.splice_assoc' depends on axioms: [propext]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:659:0: 'IndexedOperationalHistory.History.success_cut' depends on axioms: [propext]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:660:0: 'IndexedOperationalHistory.Transport.apply_splice' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:661:0: 'IndexedOperationalHistory.GraphHistory.stepFuel_exists' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:662:0: 'IndexedOperationalHistory.GraphHistory.ranked_default_exists' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:663:0: 'IndexedOperationalHistory.GraphHistory.toRun_injective' depends on axioms: [propext]
+info: experiments/indexed_execution/IndexedOperationalHistory.lean:664:0: 'IndexedOperationalHistory.ReferenceObservation.full_relations' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+ℹ [3058/3166] Replayed IndexedOperationalHistoryComposition
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:509:0: 'IndexedOperationalHistoryComposition.compose_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:510:0: 'IndexedOperationalHistoryComposition.BinaryHistory.sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:511:0: 'IndexedOperationalHistoryComposition.BinaryHistory.unique' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:512:0: 'IndexedOperationalHistoryComposition.BinaryHistory.phase_cut' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:513:0: 'IndexedOperationalHistoryComposition.BinaryHistory.transport_splices' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:514:0: 'IndexedOperationalHistoryComposition.left_nested_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryComposition.lean:515:0: 'IndexedOperationalHistoryComposition.SharedSplice.associative_eq' does not depend on any axioms
+ℹ [3059/3166] Replayed IndexedOperationalObservationLaws
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:288:0: 'IndexedComponentTransport.Domain.symm' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:289:0: 'IndexedOperationalHistory.MetadataTransport.symm' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:290:0: 'IndexedOperationalHistory.MetadataTransport.agrees_refl' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:291:0: 'IndexedOperationalHistory.MetadataTransport.agrees_symm' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:292:0: 'IndexedOperationalHistory.MetadataTransport.agrees_trans' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:293:0: 'IndexedOperationalHistory.CompleteObservation.agrees_refl' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:294:0: 'IndexedOperationalHistory.CompleteObservation.agrees_symm' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:295:0: 'IndexedOperationalHistory.CompleteObservation.agrees_trans' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalObservationLaws.lean:296:0: 'IndexedOperationalHistory.CompleteObservation.agrees_congr' depends on axioms: [propext, Quot.sound]
+ℹ [3062/3166] Replayed IndexedOperationalRuns
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:505:0: 'IndexedOperationalRuns.stepFuel_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:506:0: 'IndexedOperationalRuns.nested_default_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:507:0: 'IndexedOperationalRuns.nested_reference_runs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRuns.lean:508:0: 'IndexedOperationalRuns.ranked_nested_reference_outcomes' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [3064/3166] Replayed IndexedRankedOperationalCore
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:591:0: 'IndexedRankedOperationalCore.connectingBoundary_wire' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:592:0: 'IndexedRankedOperationalCore.left_square_full' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:593:0: 'IndexedRankedOperationalCore.right_square_full' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:594:0: 'IndexedRankedOperationalCore.Normal.comp' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:595:0: 'IndexedRankedOperationalCore.Origin.ranked' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:596:0: 'IndexedRankedOperationalCore.actualHistory_rank_independent' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:597:0: 'IndexedRankedOperationalCore.actual_binary' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:598:0: 'IndexedRankedOperationalCore.actualObservation_rank_independent' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:599:0: 'IndexedRankedOperationalCore.no_unit_boundary_equiv' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:600:0: 'IndexedRankedOperationalCore.observation_lift_congr' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:601:0: 'IndexedRankedOperationalCore.append_transport' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:602:0: 'IndexedRankedOperationalCore.observation_shape_does_not_assert_start' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:603:0: 'IndexedRankedOperationalCore.wire_comp_id' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:604:0: 'IndexedRankedOperationalCore.wire_id_comp' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:605:0: 'IndexedRankedOperationalCore.wire_assoc' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:606:0: 'IndexedRankedOperationalCore.wire_inverse_comp' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:607:0: 'IndexedRankedOperationalCore.wire_comp_inverse' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:608:0: 'IndexedRankedOperationalCore.wire_inverse_inverse' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:609:0: 'IndexedRankedOperationalCore.wire_inverse_identity' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:610:0: 'IndexedRankedOperationalCore.wire_inverse_composite' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:611:0: 'IndexedRankedOperationalCore.wireReindex' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:612:0: 'IndexedRankedOperationalCore.wireReindex_comp' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:613:0: 'IndexedRankedOperationalCore.boundaryReindex' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:614:0: 'IndexedRankedOperationalCore.leftBoundaryEquiv_recover' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:615:0: 'IndexedRankedOperationalCore.rightBoundaryEquiv_recover' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:616:0: 'IndexedRankedOperationalCore.nestedAdapterEquiv' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:617:0: 'IndexedRankedOperationalCore.nestedAdapterEquiv_actual' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:618:0: 'IndexedRankedOperationalCore.nestedAdapterEquiv_originals' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:619:0: 'IndexedRankedOperationalCore.nestedOrigin_metadata' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:620:0: 'IndexedRankedOperationalCore.Normal.admin_slide' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:621:0: 'IndexedRankedOperationalCore.Normal.admin_cancel_left' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCore.lean:622:0: 'IndexedRankedOperationalCore.Normal.admin_cancel_right' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [3065/3166] Replayed IndexedOperationalScopeNaturality
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:409:0: 'IndexedOperationalScopeNaturality.combinedTransport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:410:0: 'IndexedOperationalScopeNaturality.upstream_state' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:411:0: 'IndexedOperationalScopeNaturality.downstream_state' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:412:0: 'IndexedOperationalScopeNaturality.upstream_event' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:413:0: 'IndexedOperationalScopeNaturality.downstream_event' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:414:0: 'IndexedOperationalScopeNaturality.upstream_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:415:0: 'IndexedOperationalScopeNaturality.downstream_history' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:416:0: 'IndexedOperationalScopeNaturality.combined_metadata' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:417:0: 'IndexedOperationalScopeNaturality.downstream_address' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:418:0: 'IndexedOperationalScopeNaturality.boundary_inputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:419:0: 'IndexedOperationalScopeNaturality.binary_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalScopeNaturality.lean:420:0: 'IndexedOperationalScopeNaturality.runner_congruence' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [3066/3166] Replayed IndexedOperationalRunsPhases
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:470:0: 'IndexedOperationalRunsPhases.triple_phases' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:471:0: 'IndexedOperationalRunsPhases.two_reached_right' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:472:0: 'IndexedOperationalRunsPhases.two_reached_empty_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalRunsPhases.lean:473:0: 'IndexedOperationalRunsPhases.reference_cuts' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [3067/3166] Replayed IndexedOperationalHistoryAssociativity
+info: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:390:0: 'IndexedOperationalHistoryAssociativity.binary_associativity' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:391:0: 'IndexedOperationalHistoryAssociativity.right_nested_tree' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalHistoryAssociativity.lean:392:0: 'IndexedOperationalHistoryAssociativity.actual_nested_histories' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+ℹ [3068/3166] Replayed IndexedRankedOperationalCategory
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:969:0: 'IndexedRankedOperationalCategory.agrees_refl' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:970:0: 'IndexedRankedOperationalCategory.agrees_symm' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:971:0: 'IndexedRankedOperationalCategory.agrees_trans' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:972:0: 'IndexedRankedOperationalCategory.rank_independent' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:973:0: 'IndexedRankedOperationalCategory.comparison_runner' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:974:0: 'IndexedRankedOperationalCategory.rawBoundarySquare_coordinates' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:975:0: 'IndexedRankedOperationalCategory.ProvenanceIso.adapters' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:976:0: 'IndexedRankedOperationalCategory.actual_nested_observations' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:977:0: 'IndexedRankedOperationalCategory.compute_reassociation' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:978:0: 'IndexedRankedOperationalCategory.composition_associativity' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:979:0: 'IndexedRankedOperationalCategory.joined_observation_congruence' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:980:0: 'IndexedRankedOperationalCategory.opaque_not_joined' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:981:0: 'IndexedRankedOperationalCategory.exterior_gluing' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:982:0: 'IndexedRankedOperationalCategory.composite_input_exterior' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:983:0: 'IndexedRankedOperationalCategory.composite_output_exterior' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:984:0: 'IndexedRankedOperationalCategory.compute_comp_congruence' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:985:0: 'IndexedRankedOperationalCategory.composition_congruence' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalCategory.lean:986:0: 'IndexedRankedOperationalCategory.targetCategory' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [3071/3166] Replayed IndexedRankedOperationalSource
+info: experiments/indexed_execution/IndexedRankedOperationalSource.lean:376:0: 'IndexedRankedOperationalSource.sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalSource.lean:377:0: 'IndexedRankedOperationalSource.semantics' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalSource.lean:378:0: 'IndexedRankedOperationalSource.bracket_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalSource.lean:379:0: 'IndexedRankedOperationalSource.semantics_leaf_rank_independent' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+ℹ [3075/3166] Replayed IndexedOperationalWireFrame
+info: experiments/indexed_execution/IndexedOperationalWireFrame.lean:82:0: 'IndexedOperationalWireFrame.AvailableView.reindex' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalWireFrame.lean:83:0: 'IndexedOperationalWireFrame.scope_identity' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalWireFrame.lean:84:0: 'IndexedOperationalWireFrame.scope_composition' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalWireFrame.lean:85:0: 'IndexedOperationalWireFrame.runWire_identity' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalWireFrame.lean:86:0: 'IndexedOperationalWireFrame.runWire_composition' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedOperationalWireFrame.lean:87:0: 'IndexedOperationalWireFrame.runWire_inverse' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [3076/3166] Replayed IndexedOperationalUnits
+info: experiments/indexed_execution/IndexedOperationalUnits.lean:141:0: ([10], [0, 1])
+info: experiments/indexed_execution/IndexedOperationalUnits.lean:143:0: ([10, 11, 99], [0, 1, 2], Except.error (2, 7))
+info: experiments/indexed_execution/IndexedOperationalUnits.lean:146:0: ([(101, 1), (102, -1)], some 42)
+info: experiments/indexed_execution/IndexedOperationalUnits.lean:148:0: (0, 0, 1, 0)
+info: experiments/indexed_execution/IndexedOperationalUnits.lean:151:0: 'IndexedOperationalUnits.History.bind_done' depends on axioms: [propext]
+info: experiments/indexed_execution/IndexedOperationalUnits.lean:152:0: 'IndexedOperationalUnits.History.failure_bind' does not depend on any axioms
+info: experiments/indexed_execution/IndexedOperationalUnits.lean:153:0: 'IndexedOperationalUnits.History.returning_map' does not depend on any axioms
+info: experiments/indexed_execution/IndexedOperationalUnits.lean:154:0: 'IndexedOperationalUnits.History.splice_normalization' depends on axioms: [propext]
+info: experiments/indexed_execution/IndexedOperationalUnits.lean:155:0: 'IndexedOperationalUnits.actual_leaf_right_unit' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [3077/3166] Replayed IndexedRankedOperationalReference
+info: experiments/indexed_execution/IndexedRankedOperationalReference.lean:52:0: 'IndexedRankedOperationalReference.actualReferenceObservation' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalReference.lean:53:0: 'IndexedRankedOperationalReference.actual_reference_states' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalReference.lean:54:0: 'IndexedRankedOperationalReference.rightUnitReference' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [3078/3166] Replayed IndexedRankedOperationalInterpretation
+warning: experiments/indexed_execution/IndexedRankedOperationalInterpretation.lean:237:0: automatically included section variable(s) unused in theorem `IndexedRankedOperationalInterpretation.Coherent.state`:
+  [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: experiments/indexed_execution/IndexedRankedOperationalInterpretation.lean:256:10: This simp argument is unused:
+  Function.comp_def
+
+Hint: Omit it from the simp argument list.
+  simp [F̵u̵n̵c̵t̵i̵o̵n̵.̵c̵o̵m̵p̵_̵d̵e̵f̵,̵ ̵h.identity]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: experiments/indexed_execution/IndexedRankedOperationalInterpretation.lean:258:0: automatically included section variable(s) unused in theorem `IndexedRankedOperationalInterpretation.Coherent.event`:
+  [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [Fintype σ.Tensor] [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [8574/8677] Replayed LeanNCD.Semantics.Plan.Batch
+warning: LeanNCD/Semantics/Plan/Batch.lean:51:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Plan.running_ext`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/Plan/Batch.lean:157:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Plan.publishBlock_accumulators`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/Plan/Batch.lean:163:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Plan.publishBlock_pending`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/Plan/Batch.lean:192:0: 'LeanNCD.Semantics.Program.Executor.Execution.append' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Batch.lean:193:0: 'LeanNCD.Semantics.Program.Plan.consume_accumulators' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Batch.lean:194:0: 'LeanNCD.Semantics.Program.Plan.accumulateBatch_accumulators' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Batch.lean:195:0: 'LeanNCD.Semantics.Program.Plan.accumulateBatch_pending' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Batch.lean:196:0: 'LeanNCD.Semantics.Program.Plan.accumulateBatch_perm' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Batch.lean:197:0: 'LeanNCD.Semantics.Program.Plan.batch_execution' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Batch.lean:198:0: 'LeanNCD.Semantics.Program.Plan.batch_execution_perm' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Batch.lean:199:0: 'LeanNCD.Semantics.Program.Plan.block_execution' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [8575/8677] Replayed LeanNCD.Semantics.Plan.Memory
+warning: LeanNCD/Semantics/Plan/Memory.lean:190:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Plan.start_read`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/Plan/Memory.lean:237:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Plan.evalValue_ready`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/Plan/Memory.lean:409:0: 'LeanNCD.Semantics.Program.Plan.layoutOK_of_canonical' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:410:0: 'LeanNCD.Semantics.Program.Plan.place_sort' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:411:0: 'LeanNCD.Semantics.Program.Plan.cast_option_none' does not depend on any axioms
+info: LeanNCD/Semantics/Plan/Memory.lean:412:0: 'LeanNCD.Semantics.Program.Plan.start_read' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:413:0: 'LeanNCD.Semantics.Program.Plan.place_injective' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:414:0: 'LeanNCD.Semantics.Program.Plan.readSlot_eq_cast' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:415:0: 'LeanNCD.Semantics.Program.Plan.readSlot_heq' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:416:0: 'LeanNCD.Semantics.Program.Plan.readSlot_congr' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:417:0: 'LeanNCD.Semantics.Program.Plan.LayoutOK.ne' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:418:0: 'LeanNCD.Semantics.Program.Plan.layoutOK_of_place_injective' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:419:0: 'LeanNCD.Semantics.Program.Plan.slotView_injective' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:420:0: 'LeanNCD.Semantics.Program.Plan.start_noninput' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:421:0: 'LeanNCD.Semantics.Program.Plan.decode_some' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:422:0: 'LeanNCD.Semantics.Program.Plan.postAnn_execution' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:423:0: 'LeanNCD.Semantics.Program.Plan.refState_execution' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:424:0: 'LeanNCD.Semantics.Program.Plan.refState_reaches' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:425:0: 'LeanNCD.Semantics.Program.Plan.R_start' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:426:0: 'LeanNCD.Semantics.Program.Plan.readPub_eq' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Memory.lean:427:0: 'LeanNCD.Semantics.Program.Plan.decode_of_R' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8576/8677] Replayed LeanNCD.Semantics.Plan.Step
+info: LeanNCD/Semantics/Plan/Step.lean:226:0: 'LeanNCD.Semantics.Program.Plan.validateInput_accepts' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Step.lean:227:0: 'LeanNCD.Semantics.Program.Plan.validateInput_error' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Step.lean:228:0: 'LeanNCD.Semantics.Program.Plan.execAnn_prefix' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Step.lean:229:0: 'LeanNCD.Semantics.Program.Plan.stepCommand_single' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8577/8677] Replayed LeanNCD.Semantics.Plan.Simulation
+info: LeanNCD/Semantics/Plan/Simulation.lean:884:0: 'LeanNCD.Semantics.Program.Plan.refState_succ_single' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:885:0: 'LeanNCD.Semantics.Program.Plan.refState_R2' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:886:0: 'LeanNCD.Semantics.Program.Plan.accFlat_complete' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:887:0: 'LeanNCD.Semantics.Program.Plan.acc_zero_of_unconsumed' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:888:0: 'LeanNCD.Semantics.Program.Plan.writeDef_ne' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:889:0: 'LeanNCD.Semantics.Program.Plan.writeDef_self' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:890:0: 'LeanNCD.Semantics.Program.Plan.execInit_not_mem' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:891:0: 'LeanNCD.Semantics.Program.Plan.execInit_mem' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:892:0: 'LeanNCD.Semantics.Program.Plan.execRet_none' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:893:0: 'LeanNCD.Semantics.Program.Plan.commit_other' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:894:0: 'LeanNCD.Semantics.Program.Plan.commit_def' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:895:0: 'LeanNCD.Semantics.Program.Plan.live_succ_of' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:896:0: 'LeanNCD.Semantics.Program.Plan.ret_succ' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:897:0: 'LeanNCD.Semantics.Program.Plan.readPub_le' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:898:0: 'LeanNCD.Semantics.Program.Plan.execRet_not_mem' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:899:0: 'LeanNCD.Semantics.Program.Plan.execRet_mem' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:900:0: 'LeanNCD.Semantics.Program.Plan.evalReady_of_le' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:901:0: 'LeanNCD.Semantics.Program.Plan.delta_congr' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:902:0: 'LeanNCD.Semantics.Program.Plan.step_init' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:903:0: 'LeanNCD.Semantics.Program.Plan.step_acc' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:904:0: 'LeanNCD.Semantics.Program.Plan.step_pub' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:905:0: 'LeanNCD.Semantics.Program.Plan.step_retire' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:906:0: 'LeanNCD.Semantics.Program.Plan.step_R' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:907:0: 'LeanNCD.Semantics.Program.Plan.step_failed' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Simulation.lean:908:0: 'LeanNCD.Semantics.Program.Plan.step_failed_no_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8578/8677] Replayed LeanNCD.Semantics.Plan.Validity
+info: LeanNCD/Semantics/Plan/Validity.lean:538:0: 'LeanNCD.Semantics.Program.Plan.Valid.stepOK' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:539:0: 'LeanNCD.Semantics.Program.Plan.Valid.layout_boundary' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:540:0: 'LeanNCD.Semantics.Program.Plan.mem_allAddrList' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:541:0: 'LeanNCD.Semantics.Program.Plan.mem_resourceList' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:542:0: 'LeanNCD.Semantics.Program.Plan.checkLayoutAt_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:543:0: 'LeanNCD.Semantics.Program.Plan.checkLayouts_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:544:0: 'LeanNCD.Semantics.Program.Plan.mem_occList' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:545:0: 'LeanNCD.Semantics.Program.Plan.mem_addrList' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:546:0: 'LeanNCD.Semantics.Program.Plan.checkPlan_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:547:0: 'LeanNCD.Semantics.Program.Plan.nodup_prefixAnn_flatMap' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:548:0: 'LeanNCD.Semantics.Program.Plan.checkPlan_nodup_redundant' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:549:0: 'LeanNCD.Semantics.Program.Plan.checkPlan_eq_core' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:550:0: 'LeanNCD.Semantics.Program.Plan.fresh_of_nodup_flatMap' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:551:0: 'LeanNCD.Semantics.Program.Plan.checkAccFresh_of_cov1Nodup' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:552:0: 'LeanNCD.Semantics.Program.Plan.checkPubFresh_of_cov2Nodup' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:553:0: 'LeanNCD.Semantics.Program.Plan.checkInit_complete' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:554:0: 'LeanNCD.Semantics.Program.Plan.checkRet_sound' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:555:0: 'LeanNCD.Semantics.Program.Plan.checkRet_complete' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:556:0: 'LeanNCD.Semantics.Program.Plan.checkAnn_acc_complete' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:557:0: 'LeanNCD.Semantics.Program.Plan.checkAnn_pub_complete' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:558:0: 'LeanNCD.Semantics.Program.Plan.checkPlan_complete' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:559:0: 'LeanNCD.Semantics.Program.Plan.checkPlan_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:560:0: 'LeanNCD.Semantics.Program.Plan.mem_prefixAnn' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:561:0: 'LeanNCD.Semantics.Program.Plan.checkAccMat_of_rest' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:600:0: 'LeanNCD.Semantics.Program.Plan.accFlat_nodup_of_accOK' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:601:0: 'LeanNCD.Semantics.Program.Plan.pubFlat_nodup_of_pubOK' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:602:0: 'LeanNCD.Semantics.Program.Plan.Valid.coverage_nodup_of_steps' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/Validity.lean:613:0: 'LeanNCD.Semantics.Program.Plan.checkPlan_of_canonical' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8579/8677] Replayed LeanNCD.Semantics.Plan.Run
+info: LeanNCD/Semantics/Plan/Run.lean:219:0: 'LeanNCD.Semantics.Program.Plan.step_not_stuck' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Run.lean:220:0: 'LeanNCD.Semantics.Program.Plan.scanGroup_ne_stuck' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Run.lean:221:0: 'LeanNCD.Semantics.Program.Plan.cast_option_isSome' does not depend on any axioms
+info: LeanNCD/Semantics/Plan/Run.lean:222:0: 'LeanNCD.Semantics.Program.Plan.readSlot_isSome' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Run.lean:223:0: 'LeanNCD.Semantics.Program.Plan.foldlM_addAt_some' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Run.lean:224:0: 'LeanNCD.Semantics.Program.Plan.readPub_isSome' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Run.lean:225:0: 'LeanNCD.Semantics.Program.Plan.acc_slot_isSome' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Run.lean:226:0: 'LeanNCD.Semantics.Program.Plan.execAnns_not_stuck' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Run.lean:227:0: 'LeanNCD.Semantics.Program.Plan.run_R' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Run.lean:228:0: 'LeanNCD.Semantics.Program.Plan.runPlan_R' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Run.lean:229:0: 'LeanNCD.Semantics.Program.Plan.runPlan_not_stuck' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8580/8677] Replayed LeanNCD.Semantics.Plan.Correctness
+info: LeanNCD/Semantics/Plan/Correctness.lean:170:0: 'LeanNCD.Semantics.Program.Plan.Valid.order4' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Correctness.lean:171:0: 'LeanNCD.Semantics.Program.Plan.cov1_of_cov2_pubOrder' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Correctness.lean:172:0: 'LeanNCD.Semantics.Program.Plan.live_output_of_valid' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Correctness.lean:173:0: 'LeanNCD.Semantics.Program.Plan.complete_of_refState' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Correctness.lean:174:0: 'LeanNCD.Semantics.Program.Plan.terminal_adequacy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Correctness.lean:175:0: 'LeanNCD.Semantics.Program.Plan.done_correct' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Correctness.lean:176:0: 'LeanNCD.Semantics.Program.Plan.failed_correct' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Correctness.lean:177:0: 'LeanNCD.Semantics.Program.Plan.done_or_failed' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Correctness.lean:178:0: 'LeanNCD.Semantics.Program.Plan.done_of_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Correctness.lean:179:0: 'LeanNCD.Semantics.Program.Plan.done_iff_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8581/8677] Replayed LeanNCD.Semantics.Plan.Fusion
+info: LeanNCD/Semantics/Plan/Fusion.lean:290:0: 'LeanNCD.Semantics.Program.Plan.execAnns_R' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Fusion.lean:291:0: 'LeanNCD.Semantics.Program.Plan.execAnns_failed' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Fusion.lean:292:0: 'LeanNCD.Semantics.Program.Plan.R_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Fusion.lean:293:0: 'LeanNCD.Semantics.Program.Plan.step_R_command' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Fusion.lean:294:0: 'LeanNCD.Semantics.Program.Plan.step_failed_command' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Fusion.lean:295:0: 'LeanNCD.Semantics.Program.Plan.stepCommand_not_stuck' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Fusion.lean:296:0: 'LeanNCD.Semantics.Program.Plan.runFrom_agree' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8582/8677] Replayed LeanNCD.Semantics.Plan.FusionCorrectness
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:233:0: 'LeanNCD.Semantics.Program.Plan.checkPlanF_sound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:234:0: 'LeanNCD.Semantics.Program.Plan.checkPlanF_complete' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:235:0: 'LeanNCD.Semantics.Program.Plan.checkPlanF_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:236:0: 'LeanNCD.Semantics.Program.Plan.decode_prefix_congr' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:237:0: 'LeanNCD.Semantics.Program.Plan.runPlan_agree' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:238:0: 'LeanNCD.Semantics.Program.Plan.runFrom_R_F' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:239:0: 'LeanNCD.Semantics.Program.Plan.runPlan_R_F' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:240:0: 'LeanNCD.Semantics.Program.Plan.runPlan_not_stuck_F' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:241:0: 'LeanNCD.Semantics.Program.Plan.terminal_adequacy_F' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:242:0: 'LeanNCD.Semantics.Program.Plan.done_correct_F' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:243:0: 'LeanNCD.Semantics.Program.Plan.failed_correct_F' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:244:0: 'LeanNCD.Semantics.Program.Plan.done_or_failed_F' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:245:0: 'LeanNCD.Semantics.Program.Plan.done_of_model_F' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/FusionCorrectness.lean:246:0: 'LeanNCD.Semantics.Program.Plan.done_iff_model_F' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8583/8677] Replayed LeanNCD.Semantics.Plan.Faults
+info: LeanNCD/Semantics/Plan/Faults.lean:328:0: 'LeanNCD.Semantics.Program.Plan.runFromE_noFault' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:329:0: 'LeanNCD.Semantics.Program.Plan.runFromE_run' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:330:0: 'LeanNCD.Semantics.Program.Plan.runFromE_error' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:331:0: 'LeanNCD.Semantics.Program.Plan.done_correct_E' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:332:0: 'LeanNCD.Semantics.Program.Plan.failed_correct_E' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:333:0: 'LeanNCD.Semantics.Program.Plan.runPlanE_not_stuck' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:334:0: 'LeanNCD.Semantics.Program.Plan.errorFreeRun_of_noFaultsInPlan' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:335:0: 'LeanNCD.Semantics.Program.Plan.done_correct_FE' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:336:0: 'LeanNCD.Semantics.Program.Plan.failed_correct_FE' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:337:0: 'LeanNCD.Semantics.Program.Plan.runPlanE_not_stuck_FE' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:338:0: 'LeanNCD.Semantics.Program.Plan.done_or_failed_FE' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:339:0: 'LeanNCD.Semantics.Program.Plan.done_of_model_FE' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:340:0: 'LeanNCD.Semantics.Program.Plan.done_iff_model_FE' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:341:0: 'LeanNCD.Semantics.Program.Plan.error_despite_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:342:0: 'LeanNCD.Semantics.Program.Plan.runFromE_error_R' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/Faults.lean:343:0: 'LeanNCD.Semantics.Program.Plan.runPlanE_error_R' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8584/8677] Replayed LeanNCD.Semantics.Plan.ScanHistory.Allocation
+info: LeanNCD/Semantics/Plan/ScanHistory/Allocation.lean:67:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_locate' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Allocation.lean:68:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_place' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Allocation.lean:69:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.place_injective' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8585/8677] Replayed LeanNCD.Semantics.Plan.ScanHistory.Operator
+info: LeanNCD/Semantics/Plan/ScanHistory/Operator.lean:37:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.footprint_cast' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Operator.lean:38:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.arrayExpr_footprint' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Operator.lean:39:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.recurrenceBody_footprint' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+ℹ [8586/8677] Replayed LeanNCD.Semantics.Plan.ScanHistory.Schedule
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:140:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.scheduleCommands_length' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:141:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.take_flatMap_three' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:142:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.scheduleCommands_take' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:143:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.getElem?_flatMap_three' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:144:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.scheduleCommands_pubs' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:145:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.pubList_at_slice_boundary' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:146:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.scheduleCommands_groups' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:147:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.consList_at_slice_boundary' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:148:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.scheduleCommands_inits' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:149:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.matList_at_slice_boundary' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:150:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.scheduleCommands_rets' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:151:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.retList_at_any_boundary' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Schedule.lean:152:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.singleton_of_scheduleCommands' depends on axioms: [propext, Quot.sound]
+ℹ [8587/8677] Replayed LeanNCD.Semantics.Plan.ScanHistory.Plan
+info: LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:87:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.block_length' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:88:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.group_length' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:89:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.zero_dim_group' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:90:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_length' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:91:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_singleton' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:92:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_layout' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:93:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_retList' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:94:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_pubList_boundary' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Plan.lean:95:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_live_at_slice_boundary' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+ℹ [8588/8677] Replayed LeanNCD.Semantics.Plan.ScanHistory.Coverage
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:281:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.valuationIndex_pair' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:282:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.persistent_guard' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:283:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.initial_guard_iff' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:284:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.recurrence_guard_iff' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:285:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.source_ids_distinct' depends on axioms: [propext]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:286:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.raw_valuation_count' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:287:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.defined_eq_history' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:288:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.historyDefAddr_inj' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:289:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.persistent_target' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:290:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.initial_target' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:291:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.recurrence_target' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:292:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.occurrence_cases' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:293:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.occurrenceRef_injective' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:294:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.occurrenceRef_bijective' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:295:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.no_recurrence_zero' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:296:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.no_occurrence_zero_dim' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:297:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.mem_block_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:298:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.block_nodup' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:299:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.blocks_disjoint' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:300:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.persistentGroup_nodup' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:301:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.initialGroup_nodup' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:302:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.recurrenceGroup_nodup' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:303:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.persistent_initial_disjoint' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:304:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.persistent_recurrence_disjoint' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:305:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.group_nodup' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:306:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.group_target' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:307:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.groups_disjoint' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:308:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.persistent_mem_group' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:309:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.initial_mem_group' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:310:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.recurrence_mem_group' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:311:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_accFlat' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:312:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_pubFlat' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:313:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_coverage1' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Coverage.lean:314:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_coverage2' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8589/8677] Replayed LeanNCD.Semantics.Plan.ScanHistory.Evaluation
+info: LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean:118:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.input_reconstruct' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean:119:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.evalWith_cast_some' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean:120:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.arrayExpr_output' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean:121:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.arrayExpr_eval' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean:122:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.priorSlice_eval' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean:123:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.recurrenceBody_eval' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean:124:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.priorSlice_interpret' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Evaluation.lean:125:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.recurrenceBody_interpret' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+ℹ [8590/8677] Replayed LeanNCD.Semantics.Plan.ScanHistory.Model
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:282:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.historyStore_models' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:283:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.models_iff_historyStore' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:284:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_output_coord' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:285:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.persistent_outcome' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:286:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.initial_outcome' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:287:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.recurrence_outcome' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:288:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.program_admEnv' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:289:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_destination_iff' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:290:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.zero_fibre_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:291:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.succ_fibre_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:292:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.collect_zero' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Model.lean:293:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.collect_succ' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8591/8677] Replayed LeanNCD.Semantics.Plan.ScanHistory.Prefix
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:341:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.group_targets_slice' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:342:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.beforeB_mem' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:343:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.beforeG_mem' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:344:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.beforeB_history_mem' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:345:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.beforeG_target_mem' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:346:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.beforeB_append_history_mem' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:347:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.beforeG_append_target_mem' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:348:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.cons_phase_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:349:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.mat_phase_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:350:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_pubList_mem' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:351:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.pub_phase_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:352:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.prefix_membership' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:353:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_live_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:354:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.input_pub_live' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:355:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.command_init' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:356:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.command_acc' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:357:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.command_pub' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:358:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.command_end' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:359:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.consList_phase_zero' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:360:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.matList_phase_zero' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:361:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.pubList_phase_zero' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:362:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.consList_phase_one' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:363:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.matList_phase_one' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:364:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.pubList_phase_one' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:365:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.consList_phase_two' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:366:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.matList_phase_two' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:367:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.pubList_phase_two' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:368:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.prefix_phase_lists' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:369:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.prefix_retList' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:370:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.boundary_decomposition' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Prefix.lean:371:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.command_index_decomposition' depends on axioms: [propext, Quot.sound]
+ℹ [8592/8677] Replayed LeanNCD.Semantics.Plan.ScanHistory.Validity
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:210:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_initOK_slice' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:211:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_accOK_slice' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:212:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_pubOK_slice' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:213:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_initOK' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:214:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_accOK' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:215:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_pubOK' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:216:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.persistentOccurrence_footprint' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:217:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.initialOccurrence_footprint' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:218:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.recurrenceOccurrence_footprint' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:219:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_readyOK_slice' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:220:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_readyOK' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:221:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_valid' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Validity.lean:222:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.plan_checkPlan' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8593/8677] Replayed LeanNCD.Semantics.Plan.ScanHistory.Correctness
+info: LeanNCD/Semantics/Plan/ScanHistory/Correctness.lean:168:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.scan_done' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Correctness.lean:169:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.scan_decode_history' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Correctness.lean:170:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.scan_admInput' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Correctness.lean:171:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.scan_denotation_history' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Correctness.lean:172:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.prefix_done_R' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Correctness.lean:173:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_retained' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Plan/ScanHistory/Correctness.lean:174:0: 'LeanNCD.Semantics.Program.Plan.ScanHistory.history_retained_later' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+ℹ [8596/8677] Replayed IndexedComponentModelLocalFixtures
+info: experiments/indexed_execution/IndexedComponentModelLocalFixtures.lean:115:0: (0, 0, 0, 1 / 2)
+ℹ [8597/8677] Replayed IndexedComponentModelLocalTest
+info: experiments/indexed_execution/IndexedComponentModelLocalTest.lean:138:0: (0, 0, 1 / 2)
+ℹ [8598/8677] Replayed IndexedComponentModelCycleTest
+info: experiments/indexed_execution/IndexedComponentModelCycleTest.lean:283:0: 'IndexedComponentModelCycleTest.cycle_composite_admissible' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelCycleTest.lean:284:0: 'IndexedComponentModelCycleTest.cycle_zero_no_composite_extension' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelCycleTest.lean:285:0: 'IndexedComponentModelCycleTest.hidden_zero_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelCycleTest.lean:286:0: 'IndexedComponentModelCycleTest.hidden_one_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelCycleTest.lean:287:0: 'IndexedComponentModelCycleTest.hidden_final_outputs_equal' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelCycleTest.lean:288:0: 'IndexedComponentModelCycleTest.hidden_witnesses_roundtrip' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelCycleTest.lean:289:0: 'IndexedComponentModelCycleTest.hidden_witnesses_distinct' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [8611/8677] Replayed LeanNCD.Semantics.Source.Adapter
+warning: LeanNCD/Semantics/Source/Adapter.lean:131:58: This simp argument is unused:
+  pure
+
+Hint: Omit it from the simp argument list.
+  simp [resolveSource, EStateM.bind, EStateM.run, bind, p̵u̵r̵e̵,̵ ̵ha] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:268:2: 'all_goals
+  try { contradiction
+  }' tactic does nothing
+
+Note: This linter can be disabled with `set_option linter.unusedTactic false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:302:59: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, Except.bind, Except.pure, t̵h̵r̵o̵w̵,̵
+  ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵ ̵MonadExceptOf.throw, throwThe] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:303:12: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, Except.bind, Except.pure, throw, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵throwThe] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:303:33: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, Except.bind, Except.pure, throw, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵]̵M̲o̲n̲a̲d̲E̲x̲c̲e̲p̲t̲O̲f̲.̲t̲h̲r̲o̲w̲]̲ at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:561:11: Local variable 'unit' resembles constructor 'PUnit.unit' - write '.unit' (with a dot) or 'PUnit.unit' to use the constructor.
+
+Note: This linter can be disabled with `set_option linter.constructorNameAsVariable false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:496:23: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [b̵i̵n̵d̵,̵ ̵Except.bind] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:496:29: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:502:21: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [b̵i̵n̵d̵,̵ ̵pure, Except.bind, Except.pure] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:502:33: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [bind, pure, E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵,̵ ̵Except.pure] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:516:22: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw,̵ ̵t̵h̵r̵o̵w̵The, MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:516:29: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [throw, t̵h̵r̵o̵w̵T̵h̵e̵,̵ ̵MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:516:39: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:516:60: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:516:66: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:30: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw,̵ ̵t̵h̵r̵o̵w̵The, MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:37: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, t̵h̵r̵o̵w̵T̵h̵e̵,̵ ̵MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:47: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, throwThe, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:68: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, throwThe, MonadExceptOf.throw, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:544:74: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [hf, throw, throwThe, MonadExceptOf.throw, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:546:35: This simp argument is unused:
+  pure
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, p̵u̵r̵e̵,̵ ̵Except.pure, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:546:41: This simp argument is unused:
+  Except.pure
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, pure, E̵x̵c̵e̵p̵t̵.̵p̵u̵r̵e̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:546:54: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, pure, Except.pure, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:546:60: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [hf, pure, Except.pure, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:548:28: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw,̵ ̵t̵h̵r̵o̵w̵The, MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:548:35: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [throw, t̵h̵r̵o̵w̵T̵h̵e̵,̵ ̵MonadExceptOf.throw, bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:548:45: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵bind, Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:548:66: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, b̵i̵n̵d̵,̵ ̵Except.bind] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:548:72: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp [throw, throwThe, MonadExceptOf.throw, bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:550:33: This simp argument is unused:
+  pure
+
+Hint: Omit it from the simp argument list.
+  simp only [p̵u̵r̵e̵,̵ ̵Except.pure, bind, Except.bind, Except.ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:550:39: This simp argument is unused:
+  Except.pure
+
+Hint: Omit it from the simp argument list.
+  simp only [pure, E̵x̵c̵e̵p̵t̵.̵p̵u̵r̵e̵,̵ ̵bind, Except.bind, Except.ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:550:52: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [pure, Except.pure, b̵i̵n̵d̵,̵ ̵Except.bind, Except.ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:550:58: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [pure, Except.pure, bind, Except.b̵i̵n̵d̵,̵ ̵E̵x̵c̵e̵p̵t̵.̵ok.injEq] at hs
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:556:17: This simp argument is unused:
+  bind
+
+Hint: Omit it from the simp argument list.
+  simp only [b̵i̵n̵d̵,̵ ̵Except.bind] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Adapter.lean:556:23: This simp argument is unused:
+  Except.bind
+
+Hint: Omit it from the simp argument list.
+  simp only [bind,̵ ̵E̵x̵c̵e̵p̵t̵.̵b̵i̵n̵d̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+⚠ [8612/8677] Replayed LeanNCD.Semantics.Source.Admission
+warning: LeanNCD/Semantics/Source/Admission.lean:554:24: This simp argument is unused:
+  throw
+
+Hint: Omit it from the simp argument list.
+  simp [ht, t̵h̵r̵o̵w̵,̵ ̵MonadExceptOf.throw, throwThe] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Admission.lean:554:31: This simp argument is unused:
+  MonadExceptOf.throw
+
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, M̵o̵n̵a̵d̵E̵x̵c̵e̵p̵t̵O̵f̵.̵t̵h̵r̵o̵w̵,̵ ̵throwThe] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Semantics/Source/Admission.lean:554:52: This simp argument is unused:
+  throwThe
+
+Hint: Omit it from the simp argument list.
+  simp [ht, throw, MonadExceptOf.throw,̵ ̵t̵h̵r̵o̵w̵T̵h̵e̵] at h
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+ℹ [8622/8677] Replayed LeanNCD.Semantics.Source.RawCorrespondence
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:700:0: 'LeanNCD.assignUIDs_mapUID' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:701:0: 'LeanNCD.Semantics.Source.resolveSource_mapUID' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:702:0: 'LeanNCD.Semantics.Source.mapM_success_forall2' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:703:0: 'LeanNCD.Semantics.Source.admitRead_fields' depends on axioms: [propext]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:704:0: 'LeanNCD.Semantics.Source.admitTerm_reads' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:705:0: 'LeanNCD.Semantics.Source.TensorTable.find_name' depends on axioms: [propext]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:706:0: 'LeanNCD.Semantics.Source.astRead_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:707:0: 'LeanNCD.Semantics.Source.admitOutput_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:708:0: 'LeanNCD.Semantics.Source.admitStatement_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:709:0: 'LeanNCD.Semantics.Source.adaptSource_statements' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:710:0: 'LeanNCD.Semantics.Source.admitSource_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:711:0: 'LeanNCD.Semantics.Source.mapUID_axis_metadata' does not depend on any axioms
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:712:0: 'LeanNCD.Semantics.Source.admitRawSource_fields' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:713:0: 'LeanNCD.Semantics.Source.TermFields.factor_count' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/RawCorrespondence.lean:714:0: 'LeanNCD.Semantics.Source.StatementFields.term_count' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8663/8677] Replayed Semantics.AxiomAudit
+info: test/Semantics/AxiomAudit.lean:68:0: axiom audit: 7003 constants under LeanNCD.Semantics use only standard axioms
+ℹ [8664/8677] Replayed IndexedComponentTransportTest
+info: experiments/indexed_execution/IndexedComponentTransportTest.lean:78:0: ([(1, 2, 0), (2, 0, 1), (1, 2, 0)], some 53)
+info: experiments/indexed_execution/IndexedComponentTransportTest.lean:188:0: axiom audit: 97 constants under IndexedComponentTransport use only standard axioms
+info: experiments/indexed_execution/IndexedComponentTransportTest.lean:189:0: axiom audit: 82 constants under IndexedComponentTransportTest use only standard axioms
+ℹ [8665/8677] Replayed IndexedComponentCompositionAxisFixtures
+info: experiments/indexed_execution/IndexedComponentCompositionAxisFixtures.lean:314:0: ("complete", [(0, 2, 0), (0, 0, 1), (0, 2, 0), (0, 0, 1)], [(0, 2, 0), (0, 0, 1), (0, 2, 0), (0, 0, 1)],
+  [(220, 1020, 0, [0, 0]), (222, 1022, 0, [0, 1]), (224, 1024, 0, [1, 0]), (226, 1026, 0, [1, 1]),
+    (228, 1028, 0, [2, 0]), (230, 1030, 0, [2, 1]), (421, 1403, 3, [])],
+  [("write", 220, 1020, 1), ("publish", 0, 0, 1), ("write", 222, 1022, 2), ("publish", 0, 0, 2),
+    ("write", 224, 1024, 3), ("publish", 0, 0, 3), ("write", 226, 1026, 4), ("publish", 0, 0, 4),
+    ("write", 228, 1028, 5), ("publish", 0, 0, 5), ("write", 230, 1030, 6), ("publish", 0, 0, 6),
+    ("write", 421, 1403, 14), ("publish", 3, 0, 14)],
+  some ([some 1, some 2, some 3, some 4, some 5, some 6], some 14))
+ℹ [8666/8677] Replayed IndexedComponentCompositionCollisionFixtures
+info: experiments/indexed_execution/IndexedComponentCompositionCollisionFixtures.lean:193:0: ((1, 3, [true, false, true]), (1, 3, [true, false, true]), [(1, 0, 0, 30, 301), (0, 0, 2, 11, 102), (0, 0, 0, 10, 101)],
+  [(1, 0, 0), (0, 0, 2), (0, 0, 0)], "complete", [(20, 202, 0), (22, 204, 0), (60, 602, 4), (41, 403, 3), (61, 603, 5)],
+  [("write", 60, 602, 7), ("publish", 4, 0, 7), ("write", 22, 204, 1), ("write", 20, 202, 1), ("publish", 0, 0, 2),
+    ("write", 41, 403, 4), ("publish", 3, 0, 4), ("write", 61, 603, 5 / 2), ("publish", 5, 0, 5 / 2)],
+  some [some 2, some 4, some 7, some (5 / 2)])
+ℹ [8667/8677] Replayed IndexedComponentRankedExecutionRankTest
+info: experiments/indexed_execution/IndexedComponentRankedExecutionRankTest.lean:207:0: axiom audit: 274 constants under IndexedComponentComposition use only standard axioms
+info: experiments/indexed_execution/IndexedComponentRankedExecutionRankTest.lean:208:0: axiom audit: 47 constants under IndexedComponentRankedExecutionFixtures use only standard axioms
+info: experiments/indexed_execution/IndexedComponentRankedExecutionRankTest.lean:209:0: axiom audit: 40 constants under IndexedComponentRankedExecutionRankTest use only standard axioms
+ℹ [8669/8677] Replayed IndexedOperationalAssociativityFixtures
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:283:0: indexed-reference operational-private-outcomes: [("complete", 12, 13, "complete", 12, 13),
+ ("failed", 3, 3, "failed", 3, 3),
+ ("failed", 7, 7, "failed", 7, 7),
+ ("failed", 11, 11, "failed", 11, 11)]
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:290:0: indexed-reference operational-private-full-observations: [(true, true, true), (true, true, true), (true, true, true), (true, true, true)]
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:295:0: indexed-reference operational-donor-full-observations: [(true, true, true), (true, true, true), (true, true, true), (true, true, true), (true, true, true)]
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:300:0: indexed-reference operational-empty-presence-coincident-cuts: ("complete", 0, 1, 1, [(true, true), (false, false), (false, false), (false, false)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:304:0: indexed-reference operational-private-reference: [(true, true, 12, 13, 12, 13), (true, true, 3, 3, 3, 3), (true, true, 7, 7, 7, 7), (true, true, 11, 11, 11, 11)]
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:310:0: indexed-reference operational-donor-reference: [(true, true, 11, 12, 11, 12),
+ (true, true, 9, 10, 9, 10),
+ (true, true, 18, 19, 18, 19),
+ (true, true, 13, 14, 13, 14),
+ (true, true, 0, 1, 0, 1)]
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:316:0: indexed-reference operational-private-snapshots: [([some 3, none, none, none, none, none, none], []),
+ ([some 3, none, none, none, none, none, none], [(804, 9)]),
+ ([some 3, some 9, none, none, none, none, none], [(804, 9)]),
+ ([some 3, some 9, none, none, none, none, none], [(804, 9), (1204, (7 : Rat)/2)]),
+ ([some 3, some 9, some (7 : Rat)/2, none, none, none, none], [(804, 9), (1204, (7 : Rat)/2)]),
+ ([some 3, some 9, some (7 : Rat)/2, none, none, none, none], [(804, 9), (1204, (7 : Rat)/2), (806, 81)]),
+ ([some 3, some 9, some (7 : Rat)/2, some 81, none, none, none], [(804, 9), (1204, (7 : Rat)/2), (806, 81)]),
+ ([some 3, some 9, some (7 : Rat)/2, some 81, none, none, none],
+  [(804, 9), (1204, (7 : Rat)/2), (806, 81), (1206, (19 : Rat)/2)]),
+ ([some 3, some 9, some (7 : Rat)/2, some 81, some (19 : Rat)/2, none, none],
+  [(804, 9), (1204, (7 : Rat)/2), (806, 81), (1206, (19 : Rat)/2)]),
+ ([some 3, some 9, some (7 : Rat)/2, some 81, some (19 : Rat)/2, none, none],
+  [(804, 9), (1204, (7 : Rat)/2), (806, 81), (1206, (19 : Rat)/2), (403, 6561)]),
+ ([some 3, some 9, some (7 : Rat)/2, some 81, some (19 : Rat)/2, some 6561, none],
+  [(804, 9), (1204, (7 : Rat)/2), (806, 81), (1206, (19 : Rat)/2), (403, 6561)]),
+ ([some 3, some 9, some (7 : Rat)/2, some 81, some (19 : Rat)/2, some 6561, none],
+  [(804, 9), (1204, (7 : Rat)/2), (806, 81), (1206, (19 : Rat)/2), (403, 6561), (603, (163 : Rat)/2)]),
+ ([some 3, some 9, some (7 : Rat)/2, some 81, some (19 : Rat)/2, some 6561, some (163 : Rat)/2],
+  [(804, 9), (1204, (7 : Rat)/2), (806, 81), (1206, (19 : Rat)/2), (403, 6561), (603, (163 : Rat)/2)])]
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:340:0: indexed-reference operational-reference-shared-cuts: (some ([some 3, some 9, some (7 : Rat)/2, none, none, none, none],
+  [(804, false), (1204, false), (806, true), (1206, true), (403, true), (603, true)],
+  [(4, 0, 9), (8, 0, (7 : Rat)/2), (6, 0, 0), (10, 0, 0), (3, 0, 0), (5, 0, 0)]),
+ some ([some 3, some 9, some (7 : Rat)/2, some 81, some (19 : Rat)/2, none, none],
+  [(804, false), (1204, false), (806, false), (1206, false), (403, true), (603, true)],
+  [(4, 0, 9), (8, 0, (7 : Rat)/2), (6, 0, 81), (10, 0, (19 : Rat)/2), (3, 0, 0), (5, 0, 0)]))
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:350:0: indexed-reference operational-donor-event-order: ([("produce", 40, 404, some 1), ("produce", 44, 408, some -1), ("publish", 0, 0, some 0)],
+ [("publish", 0, 0, some 0), ("produce", 82, 806, some 0)],
+ [("produce", 440, 2040, some 1),
+  ("publish", 0, 0, some 1),
+  ("produce", 444, 2044, some 2),
+  ("publish", 0, 1, some 2),
+  ("produce", 448, 2048, some 3),
+  ("publish", 0, 2, some 3),
+  ("produce", 452, 2052, some 4),
+  ("publish", 0, 3, some 4),
+  ("produce", 456, 2056, some 5),
+  ("publish", 0, 4, some 5),
+  ("produce", 460, 2060, some 6),
+  ("publish", 0, 5, some 6),
+  ("produce", 842, 2806, some 14),
+  ("publish", 6, 0, some 14),
+  ("produce", 41, 403, some 196),
+  ("publish", 3, 0, some 196),
+  ("produce", 61, 603, some (29 : Rat)/2),
+  ("publish", 5, 0, some (29 : Rat)/2)],
+ [("produce", 120, 1204, some 7),
+  ("publish", 8, 0, some 7),
+  ("produce", 44, 408, some 1),
+  ("produce", 40, 404, some 1),
+  ("publish", 0, 0, some 2)])
+info: experiments/indexed_execution/IndexedOperationalAssociativityFixtures.lean:366:0: indexed-reference operational-observation-stronger-than-final-values: ("complete", "complete", true, false, false, false)
+ℹ [8670/8677] Replayed IndexedRankedOperationalTest
+info: experiments/indexed_execution/IndexedRankedOperationalTest.lean:108:0: (0, 1, [(101, 1), (102, -1)], some 1011, some 101)
+info: experiments/indexed_execution/IndexedRankedOperationalTest.lean:109:0: (some 11, some 110, some 110, some 11)
+info: experiments/indexed_execution/IndexedRankedOperationalTest.lean:396:0: [("complete", 12, 13, "complete", 12, 13), ("failed", 3, 3, "failed", 3, 3), ("failed", 7, 7, "failed", 7, 7),
+  ("failed", 11, 11, "failed", 11, 11)]
+info: experiments/indexed_execution/IndexedRankedOperationalTest.lean:397:0: 'IndexedRankedOperationalTest.privateInteriorUnit' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalTest.lean:398:0: 'IndexedRankedOperationalTest.privateReassociation' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalTest.lean:399:0: 'IndexedRankedOperationalTest.emptyReassociation' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedOperationalTest.lean:400:0: 'IndexedRankedOperationalTest.axisReassociation' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8671/8677] Replayed IndexedRankedWitnessOutcomeTest
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:16:0: ("failed", some 30, some ([some 3, some 9, none], [(201, 9)]))
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:17:0: ("complete", none, some ([some 3, some 9, some (7 / 2)], [(201, 9), (301, 7 / 2)]))
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:18:0: some
+  ([some 3, some 9, some (7 / 2), some 81, some (19 / 2), some 6561, some (163 / 2)],
+    [(804, 9), (1204, 7 / 2), (806, 81), (1206, 19 / 2), (403, 6561), (603, 163 / 2)])
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:19:0: (some
+    ([some 3, some 9, some (7 / 2), none, none, none, none],
+      [(804, false), (1204, false), (806, true), (1206, true), (403, true), (603, true)],
+      [(4, 0, 9), (8, 0, 7 / 2), (6, 0, 0), (10, 0, 0), (3, 0, 0), (5, 0, 0)]),
+  some
+    ([some 3, some 9, some (7 / 2), some 81, some (19 / 2), none, none],
+      [(804, false), (1204, false), (806, false), (1206, false), (403, true), (603, true)],
+      [(4, 0, 9), (8, 0, 7 / 2), (6, 0, 81), (10, 0, 19 / 2), (3, 0, 0), (5, 0, 0)]))
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:141:0: [some 3, some 9, some (7 / 2), some 81, some (19 / 2)]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:202:0: [(true, true, true), (true, true, true), (true, true, true)]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:203:0: [(true, true, 3, 3, 3, 3), (true, true, 7, 7, 7, 7), (true, true, 11, 11, 11, 11)]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:209:0: 'IndexedRankedWitnessOutcomeTest.strict_private_no_witness' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:210:0: 'IndexedRankedWitnessOutcomeTest.private_success_full' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:211:0: 'IndexedRankedWitnessOutcomeTest.private_reference_value' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:212:0: 'IndexedRankedWitnessOutcomeTest.pair_success_full' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:213:0: 'IndexedRankedWitnessOutcomeTest.failure_A' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:214:0: 'IndexedRankedWitnessOutcomeTest.failure_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:215:0: 'IndexedRankedWitnessOutcomeTest.failure_C' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8672/8677] Replayed IndexedRankedWitnessCategoryTest
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:52:0: (11, 101, 110, 110)
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:185:0: 'IndexedRankedWitnessCategoryTest.binary_exterior' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:186:0: 'IndexedRankedWitnessCategoryTest.binary_composition' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:187:0: 'IndexedRankedWitnessCategoryTest.nested_images' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:188:0: 'IndexedRankedWitnessCategoryTest.left_nested_exterior' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:189:0: 'IndexedRankedWitnessCategoryTest.right_nested_exterior' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:190:0: 'IndexedRankedWitnessCategoryTest.operational_origins_distinct' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:191:0: 'IndexedRankedWitnessCategoryTest.origins_same_full_image' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8673/8677] Replayed IndexedWitnessTest
+info: experiments/indexed_execution/IndexedWitnessTest.lean:52:0: axiom audit: 171 constants under IndexedWitness use only standard axioms
+info: experiments/indexed_execution/IndexedWitnessTest.lean:53:0: axiom audit: 7 constants under IndexedWitnessTest use only standard axioms
+info: experiments/indexed_execution/IndexedWitnessTest.lean:55:0: 'IndexedWitness.inputEquiv' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedWitnessTest.lean:56:0: 'IndexedWitness.SpanIso.pullback' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedWitnessTest.lean:57:0: 'IndexedWitness.SpanIso.assoc' depends on axioms: [Quot.sound]
+info: experiments/indexed_execution/IndexedWitnessTest.lean:58:0: 'IndexedWitness.homComp' depends on axioms: [propext, Quot.sound]
+info: experiments/indexed_execution/IndexedWitnessTest.lean:59:0: 'IndexedWitness.SpanIso.leftUnit' depends on axioms: [Quot.sound]
+info: experiments/indexed_execution/IndexedWitnessTest.lean:60:0: 'IndexedWitness.componentSpan' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedWitnessTest.lean:61:0: 'IndexedWitness.boundaryEnvEquiv' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedWitnessTest.lean:62:0: 'IndexedWitness.allInputWiredEquiv' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedWitnessTest.lean:63:0: 'IndexedWitness.compositeWiredIso' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedWitnessTest.lean:64:0: 'IndexedWitness.composition_hom' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8674/8677] Replayed IndexedComponentModelGeometryFixtures
+info: experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean:182:0: (true, true)
+info: experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean:187:0: ([1, 2, 3, 4, 5, 6], (5, 2), (3, 4), 14)
+info: experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean:195:0: 'IndexedComponentModelGeometryFixtures.Empty.producer_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean:196:0: 'IndexedComponentModelGeometryFixtures.Empty.consumer_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean:197:0: 'IndexedComponentModelGeometryFixtures.Axis.producer_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean:198:0: 'IndexedComponentModelGeometryFixtures.Axis.consumer_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedComponentModelGeometryFixtures.lean:199:0: 'IndexedComponentModelGeometryFixtures.Axis.coordinate_transport_distinct' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+ℹ [8675/8677] Replayed IndexedComponentModelGeometryTest
+info: experiments/indexed_execution/IndexedComponentModelGeometryTest.lean:124:0: (5, 2, 14)
+ℹ [8676/8677] Replayed IndexedWitnessCompositionTest
+info: experiments/indexed_execution/IndexedWitnessCompositionTest.lean:686:0: axiom audit: 223 constants under IndexedWitnessCompositionTest use only standard axioms
+✖ [8677/8677] Building IndexedRankedWitnessBoundaryTest (20s)
+trace: .> LEAN_PATH=/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/packages/Cli/.lake/build/lib/lean:/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/packages/batteries/.lake/build/lib/lean:/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/packages/Qq/.lake/build/lib/lean:/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/packages/aesop/.lake/build/lib/lean:/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/packages/proofwidgets/.lake/build/lib/lean:/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/packages/importGraph/.lake/build/lib/lean:/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/packages/LeanSearchClient/.lake/build/lib/lean:/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/packages/plausible/.lake/build/lib/lean:/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/packages/mathlib/.lake/build/lib/lean:/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/packages/LSpec/.lake/build/lib/lean:/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/build/lib/lean /Users/williammacready/.elan/toolchains/leanprover--lean4---v4.30.0/bin/lean /Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean -o /Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/build/lib/lean/IndexedRankedWitnessBoundaryTest.olean -i /Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/build/lib/lean/IndexedRankedWitnessBoundaryTest.ilean -c /Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/build/ir/IndexedRankedWitnessBoundaryTest.c --setup /Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/.lake/build/ir/IndexedRankedWitnessBoundaryTest.setup.json --json
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:40:0: (true, false, "complete", "complete")
+error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:41:77: Tactic `decide` proved that the proposition
+  emptyPresenceRow = (true, false, "complete", "invalidInput")
+is false
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:70:0: (0, 1, 0, 0)
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:73:0: 'IndexedRankedWitnessBoundaryTest.empty_metadata_distinct' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:74:0: 'IndexedRankedWitnessBoundaryTest.empty_input_present' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+error: Lean exited with code 1
+Some required targets logged failures:
+- IndexedRankedWitnessBoundaryTest
+error: build failed

@@ -1,0 +1,106 @@
+IndexedRankedWitnessBridge.complete_iff_model {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) :
+  (∃ g,
+      (IndexedOpenComposition.runChecked A.contract A.fragment ↑η).outcome =
+        IndexedOpenComposition.Outcome.complete g) ↔
+    ∃ ρ, A.program.Models LeanNCD.Semantics.RationalReference.ops η ρ
+IndexedRankedWitnessBridge.failed_iff_no_model {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) :
+  (∃ tag g,
+      (IndexedOpenComposition.runChecked A.contract A.fragment ↑η).outcome =
+        IndexedOpenComposition.Outcome.failed tag g) ↔
+    ¬∃ ρ, A.program.Models LeanNCD.Semantics.RationalReference.ops η ρ
+IndexedRankedWitnessBridge.ranked_atMostOne {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate) :
+  IndexedComponentComposition.AtMostOneModels A
+IndexedRankedWitnessBridge.admInput_iff_model {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) :
+  A.program.AdmInput LeanNCD.Semantics.RationalReference.ops η ↔
+    ∃ ρ, A.program.Models LeanNCD.Semantics.RationalReference.ops η ρ
+IndexedRankedWitnessBridge.complete_iff_admInput {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) :
+  (∃ g,
+      (IndexedOpenComposition.runChecked A.contract A.fragment ↑η).outcome =
+        IndexedOpenComposition.Outcome.complete g) ↔
+    A.program.AdmInput LeanNCD.Semantics.RationalReference.ops η
+IndexedRankedWitnessBridge.model_available {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) (ρ : LeanNCD.Semantics.Store LeanNCD.Semantics.RationalReference.Carrier σ)
+  (model : A.program.Models LeanNCD.Semantics.RationalReference.ops η ρ) :
+  ∃ g,
+    (IndexedOpenComposition.runChecked A.contract A.fragment ↑η).outcome = IndexedOpenComposition.Outcome.complete g ∧
+      ∀ (a : LeanNCD.Semantics.Address σ), g.available a = some (ρ a)
+IndexedRankedWitnessBridge.model_of_available {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (η : A.program.Input)
+  (g : IndexedOpenComposition.State σ)
+  (done :
+    (IndexedOpenComposition.runChecked A.contract A.fragment ↑η).outcome = IndexedOpenComposition.Outcome.complete g)
+  (ρ : LeanNCD.Semantics.Store LeanNCD.Semantics.RationalReference.Carrier σ)
+  (full : ∀ (a : LeanNCD.Semantics.Address σ), g.available a = some (ρ a)) :
+  A.program.Models LeanNCD.Semantics.RationalReference.ops η ρ
+IndexedRankedWitnessBridge.component_left_injective {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate) :
+  Function.Injective (IndexedWitness.componentSpan A).left
+IndexedRankedWitnessDescent.observation_model_transport {σ τ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] [Fintype τ.Tensor] [DecidableEq τ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ)
+  (B : IndexedComponentComposition.MatchedComponent τ) (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
+  (oa : IndexedRankedOperationalCore.Origin A) (ob : IndexedRankedOperationalCore.Origin B) (η : A.program.Input)
+  (η' : B.program.Input) (t : IndexedOperationalHistory.MetadataTransport σ τ) (e : oa.Adapters ≃ ob.Adapters)
+  (actual :
+    IndexedOperationalHistory.CompleteObservation.Agrees t e (IndexedRankedOperationalCore.actualObservation A oa η rA)
+      (IndexedRankedOperationalCore.actualObservation B ob η' rB))
+  (ρ : LeanNCD.Semantics.Store LeanNCD.Semantics.RationalReference.Carrier σ)
+  (model : A.program.Models LeanNCD.Semantics.RationalReference.ops η ρ) :
+  B.program.Models LeanNCD.Semantics.RationalReference.ops η' fun a => ρ (t.address.symm a)
+IndexedRankedWitnessDescent.witnessMap_store {σ τ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] [Fintype τ.Tensor] [DecidableEq τ.Tensor] {X : IndexedSource.Object}
+  (A : IndexedComponentComposition.MatchedComponent σ) (B : IndexedComponentComposition.MatchedComponent τ)
+  (rA : A.program.RankCertificate) (rB : B.program.RankCertificate) (oa : IndexedRankedOperationalCore.Origin A)
+  (ob : IndexedRankedOperationalCore.Origin B) (beforeA : IndexedSource.Wire X (IndexedSource.input A))
+  (beforeB : IndexedSource.Wire X (IndexedSource.input B)) (t : IndexedOperationalHistory.MetadataTransport σ τ)
+  (e : oa.Adapters ≃ ob.Adapters)
+  (actual :
+    ∀ (x : X.interface.Env),
+      IndexedOperationalHistory.CompleteObservation.Agrees t e
+        (IndexedRankedOperationalCore.actualObservation A oa
+          (IndexedRankedOperationalCategory.externalInput A beforeA x) rA)
+        (IndexedRankedOperationalCore.actualObservation B ob
+          (IndexedRankedOperationalCategory.externalInput B beforeB x) rB))
+  (w : (IndexedWitness.componentSpan A).W) (a : LeanNCD.Semantics.Address σ) :
+  ↑(IndexedRankedWitnessDescent.witnessMap A B rA rB oa ob beforeA beforeB t e actual w).snd (t.address a) = ↑w.snd a
+IndexedRankedWitnessDescent.compute_iso {σ τ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] [Fintype τ.Tensor] [DecidableEq τ.Tensor] {X Y : IndexedSource.Object}
+  (A : IndexedComponentComposition.MatchedComponent σ) (B : IndexedComponentComposition.MatchedComponent τ)
+  (rA : A.program.RankCertificate) (rB : B.program.RankCertificate) (oa : IndexedRankedOperationalCore.Origin A)
+  (ob : IndexedRankedOperationalCore.Origin B) (beforeA : IndexedSource.Wire X (IndexedSource.input A))
+  (afterA : IndexedSource.Wire (IndexedSource.output A) Y) (beforeB : IndexedSource.Wire X (IndexedSource.input B))
+  (afterB : IndexedSource.Wire (IndexedSource.output B) Y)
+  (h : IndexedRankedOperationalCategory.ComputeAgrees A B rA rB oa ob beforeA afterA beforeB afterB) :
+  Nonempty
+    (IndexedWitness.SpanIso (IndexedRankedWitnessDescent.rebasedComponent A beforeA afterA)
+      (IndexedRankedWitnessDescent.rebasedComponent B beforeB afterB))
+IndexedRankedWitnessDescent.agrees_iso {X Y : IndexedSource.Object} {f g : IndexedRankedOperationalCore.Normal X Y}
+  (h : IndexedRankedOperationalCategory.Agrees f g) :
+  Nonempty
+    (IndexedWitness.SpanIso (IndexedRankedWitnessDescent.normalSpan f) (IndexedRankedWitnessDescent.normalSpan g))
+IndexedRankedWitnessDescent.source_denote {X Y : IndexedSource.Object} (f : IndexedRankedOperationalCore.Normal X Y) :
+  f.source.denote = IndexedRankedWitnessDescent.normalHom f
+IndexedRankedWitnessDescent.agrees_denote {X Y : IndexedSource.Object} {f g : IndexedRankedOperationalCore.Normal X Y}
+  (h : IndexedRankedOperationalCategory.Agrees f g) : f.source.denote = g.source.denote
+IndexedRankedWitnessDescent.arrowHom_mk {X Y : IndexedSource.Object} (f : IndexedRankedOperationalCore.Normal X Y) :
+  IndexedRankedWitnessDescent.arrowHom ⟦f⟧ = f.source.denote
+'IndexedRankedWitnessBridge.complete_iff_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessBridge.failed_iff_no_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessBridge.ranked_atMostOne' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessBridge.component_left_injective' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessDescent.observation_model_transport' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessDescent.witnessMap_store' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessDescent.compute_iso' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessDescent.agrees_iso' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessDescent.source_denote' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessDescent.agrees_denote' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessDescent.arrowHom_mk' depends on axioms: [propext, Classical.choice, Quot.sound]

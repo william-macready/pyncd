@@ -93,11 +93,19 @@ and the proved conditional execution theorem, while retaining general
 composition as a further target. A mathematical appendix explains the
 proof without assuming one formalism is the best foundation.
 
-[Ranked operational interpretation and units: new-session brief](categorical_ranked_operational_interpretation_handoff.md)
-sets the next goal: interpret the existing administrative identity/wire syntax
+[Operational-to-witness comparison: new-session brief](categorical_operational_witness_comparison_handoff.md)
+sets the next goal: construct a compositional comparison between the ranked
+operational and complete-model witness interpretations, prove quotient descent
+and source-functor compatibility, and state the information intentionally
+forgotten. It includes a primary-checkout bootstrap for stale session worktrees.
+
+[Ranked operational interpretation and units: original new-session brief](categorical_ranked_operational_interpretation_handoff.md)
+records the preceding goal: interpret the existing administrative identity/wire syntax
 in full histories, retain private frames and metadata, and justify the ranked
-source equations before categorical packaging. It requires a verified plan
-and prototype before implementation; it is not itself an execution plan.
+source equations before categorical packaging. The
+[execution record](categorical_ranked_operational_interpretation_record.md)
+documents its completed implementation and integration; the brief itself is
+not an execution plan.
 
 [Source-contract execution correspondence: theorem-design brief](categorical_tensor_logic_theorem_brief.md)
 fixes the first semantic theorem's scope, supplied match, state relation,

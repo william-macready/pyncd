@@ -1,0 +1,19 @@
+{
+  "merge": "7b940b66",
+  "merged_topic": "2103273b1c0d1f359c7c61cce7343f55cc81324a",
+  "topic_ancestor_verified": true,
+  "immediate_merge_trees_equal": true,
+  "merged_main_build_jobs": 8964,
+  "all_reviewed_owned_hashes_match": true,
+  "controller_mutation_cycles_passed": 12,
+  "cleanup": {
+    "removed_worktree": "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+    "deleted_branch": "agents/follow-directions-categorical-witness",
+    "only_ignored_content": "leanncd/.lake/",
+    "all_other_registered_worktrees_preserved": true
+  },
+  "main_clean_before_receipt": true,
+  "origin_main_behind_ahead": "0\t46",
+  "remote_push_performed": false,
+  "token_telemetry": "Unavailable: token-report.py found no transcript"
+}
