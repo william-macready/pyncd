@@ -93,11 +93,18 @@ and the proved conditional execution theorem, while retaining general
 composition as a further target. A mathematical appendix explains the
 proof without assuming one formalism is the best foundation.
 
-[Operational-to-witness comparison: new-session brief](categorical_operational_witness_comparison_handoff.md)
-sets the next goal: construct a compositional comparison between the ranked
+[Certified affine reads in single-clock Lean scans: new-session brief](categorical_affine_scan_alignment_handoff.md)
+sets the next alignment goal: connect actual checked scan access/write tables
+to admitted reads and a constructed ranked semantic component, preserving
+causality, finite bounds, padding and the whole history. It is Lean-only and
+does not claim floating-point executor correctness or general scan naturality.
+
+[Operational-to-witness comparison: original new-session brief](categorical_operational_witness_comparison_handoff.md)
+records the completed comparison goal: construct a compositional map between the ranked
 operational and complete-model witness interpretations, prove quotient descent
 and source-functor compatibility, and state the information intentionally
-forgotten. It includes a primary-checkout bootstrap for stale session worktrees.
+forgotten. The [comparison record](categorical_operational_witness_comparison_record.md)
+documents the implementation and local integration.
 
 [Ranked operational interpretation and units: original new-session brief](categorical_ranked_operational_interpretation_handoff.md)
 records the preceding goal: interpret the existing administrative identity/wire syntax
