@@ -112,6 +112,21 @@ Section 6.13 supplies separate administrative units and the ranked operational
 source/target categories. See Section 6.12 and the
 [operational associativity record](categorical_operational_associativity_record.md).
 
+**Ranked operational interpretation** now supplies an actual source category,
+full-observation target category and Mathlib functor, not just associative
+component examples. Its normal arrows are certified administrative wires or
+ranked computations with exterior wires and explicit assembly provenance.
+The connected `Realizes` relation interprets both cases in inherited-state
+histories: wires preserve the state without core work; computations lift
+actual local runs while retaining outside private values and ordered ledger
+prefixes. Structural frame coherence carries source equations and target
+agreement to these histories. Administrative units are therefore connected
+to the operational interpretation, not merely normalized away in syntax.
+This result is separate from the unrestricted denotational witness functor:
+the operational source is rank/provenance-aware, and opaque compiled leaves
+are not silently given a joined assembly history. See Section 6.13 and the
+[completed release record](categorical_ranked_operational_interpretation_record.md).
+
 The independently authored validation fixture supplies actual
 proof instances of the execution-correspondence theorem. Its six-event failure and
 seven-event completion remain concrete executable observations;
@@ -136,7 +151,8 @@ The strongest defensible conclusion is:
 > upstream/downstream execution phases are proved for the ranked profile.
 > Transport-aware history composition and operational associativity are also
 > proved. A separate provenance-aware ranked operational source and full-observation
-> target category now have administrative units and a genuine functor.
+> target category now have administrative units, a genuine functor and a
+> connected inherited-state history interpretation with explicit fresh frames.
 > Broader source interpretations and backend refinement remain separate obligations.
 
 The St/Br presentation can organise parts of the syntax and total
@@ -157,7 +173,8 @@ and Section 9 separates established results from remaining targets.
 Section 10 gives the categorization roadmap and a ledger of current progress.
 Appendix A explains correspondence and how the static constructor supplies
 its match, then the complete-model gluing and categorical witness arguments,
-and finally the ranked operational phase proof, in mathematical rather than
+then ranked phases, full-history associativity, and the provenance-aware
+operational category with inherited-state units, in mathematical rather than
 Lean notation.
 
 ## Table of contents
@@ -221,6 +238,7 @@ Lean notation.
   - [A.9. Turn model witnesses into categorical semantics](#a9-turn-model-witnesses-into-categorical-semantics)
   - [A.10. Derive ranked operational composition](#a10-derive-ranked-operational-composition)
   - [A.11. Compose full histories and prove operational associativity](#a11-compose-full-histories-and-prove-operational-associativity)
+  - [A.12. Interpret ranked sources with inherited-state units](#a12-interpret-ranked-sources-with-inherited-state-units)
 - [Notation reference](#notation-reference)
 
 ## 1. Begin with the meaning that execution must preserve
@@ -820,8 +838,11 @@ nested coherence, restricted partial maps and completed release gates.
 | Witness observation checks and ten release mutation controls | Checked private values, strict absence, empty metadata, nonconstant transport and unequal nested UIDs discriminate the specified faults | Copied-map controls are separate from donor substitutions; generic proofs and a shared interpreter are not independent arithmetic oracles |
 | Certified source category and witness functor | Generated syntactic congruence, quotient category, genuine Mathlib functor, actual binary assembly and both nested-to-triple comparisons | Specified sealed matched-component/coordinate-wire presentation, not all Tensor Logic syntax, process laws or a faithfulness claim |
 | Source observation checks and ten controls | Five donor families retain nonconstant wires, empty presence/metadata, complete hidden stores, strict/total neighbours and distinct nested private identities; four generic parities | Seven test-copy/donor observation controls and three theorem-level donor substitutions, not independent model semantics or mutations of generic soundness proofs |
-| Ranked phases and structural operational associativity | Constructed ranks, shared-cut history composition and both actual nested default executions preserve whole metadata, ordered events, private states and full reference relations | Validated inputs and supplied local matches/ranks/boundaries; no process units, arbitrary scheduler equivalence or backend refinement |
+| Ranked phases and structural operational associativity | Constructed ranks, shared-cut history composition and both actual nested default executions preserve whole metadata, ordered events, private states and full reference relations | These phase/associativity results alone do not supply units; Section 6.13 provides the separate administrative construction, not arbitrary scheduler equivalence or backend refinement |
 | Operational history acceptance and 32 release controls | All four leaf outcomes, collection order, nonconstant coordinates, guarded identities, empty presence and equal-final-value history distinctions are checked | Eleven observation/donor/graph controls and twenty-one live-proof controls, not 32 independent production-runner mutant kills or an independent arithmetic oracle |
+| Ranked operational source/target categories and functor | Composition congruence precedes the full-observation quotient; generated ranked source equations, decorated assembly, units and derived brackets have a genuine operational interpretation | Fixed all-input transports, raw exterior squares and original-boundary provenance; no inference from the unrestricted witness-source quotient and no automatic opaque-to-joined identification |
+| Connected inherited-state realization | Administrative and computational arrows realize actual full histories; source/target agreement preserves framed histories and actual interior unit insertion | Owned cells satisfy `FreshInput`, identity lanes are fresh, and comparison frames satisfy structural `Coherent` squares; the checked runner is not restarted on arbitrary inherited storage |
+| Operational interpretation acceptance and eleven release controls | Populated frames, strict failures, empty presence, nonconstant wires, provenance and concrete composite-frame coherence are pinned | Forty-three anonymous kernel checks, two type-valid donor-observation controls and nine live-proof controls; not eleven runtime-core defect kills |
 
 The correspondence record reports successful full builds and branch review.
 The executable modules
@@ -832,7 +853,8 @@ theorem and its strict/total instances depend only on `propext`,
 No new axiom, `sorry`, or unsafe proof shortcut was introduced.
 This is not an axiom audit of every unrelated repository component.
 The transport, static-composition, model-gluing, witness-category, ranked-execution
-and [operational-associativity records](categorical_operational_associativity_record.md)
+and [operational-associativity records](categorical_operational_associativity_record.md),
+together with the [ranked interpretation record](categorical_ranked_operational_interpretation_record.md),
 report their full builds, final reviews, namespace audits and particular mutation controls.
 The original seven controls below are not the total across those later slices.
 
@@ -1451,6 +1473,10 @@ ordered whole ports, Option-valued input, raw/admitted exterior maps, every
 ordered event, complete private availability and ordered ledgers, and terminal
 failure data. A nonidentity wire is not an identity merely because it has no
 events; an opaque vacuous computation is not an administrative arrow.
+Thus this target is deliberately provenance-aware, not a quotient identifying
+every pair of programs with the same final values or even the same event list.
+One structural comparison is fixed before ranging over inputs; a different
+renaming cannot be chosen opportunistically for each input.
 
 `runner_congruence` transports actual binary histories through disjoint
 declaration sums and even/odd identity embeddings. `exterior_gluing` derives
@@ -1478,6 +1504,16 @@ output-view premise. `source_history` and `semantics_history` transport these
 full ambient histories through structural frame coherence. Interior identities
 share the actual binary cut and add no snapshot.
 
+The realization bridge is stronger than equality of normalized syntax.
+`compute_history_exact` projects each framed computational history back to
+the explicitly lifted actual native history, and `compute_states_events`
+retains every snapshot and event. `source_identity`, `source_wire` and
+`actual_join_identity` connect administrative syntax to these same histories.
+`Coherent` equates the two address/identity embeddings and inherited states;
+equality of executions is a conclusion, not a frame premise. Fresh local
+input and structurally coherent frames are explicit restrictions, not a claim
+that a checked program can run on arbitrary prepopulated private storage.
+
 `actualReferenceObservation` attaches the unchanged actual default
 `Program.Executor.run`, normalized snapshots and full existing `Relation`,
 including pending occurrences and accumulators. The existing actual binary
@@ -1488,6 +1524,19 @@ unchanged. Unranked operational equations, malformed inputs, arbitrary debug
 fuel, event reordering, broader monoidal/PROP structure and backend refinement
 are excluded. See the [record](categorical_ranked_operational_interpretation_record.md)
 for the separate verification and release receipts.
+
+The completed slice has eleven new Lean modules, 43 anonymous kernel checks,
+and nine standard-only namespace audits. Its final eleven unfiltered mutation
+cycles passed with intended diagnostics, restored-green builds and byte-identical
+restoration: two type-valid wire-donor observations and nine live-proof controls.
+The controls distinguish wire direction/composition, unit state preservation,
+original provenance, scope lanes and retained inherited storage/ledger prefixes;
+they are not eleven runtime-core defect kills.
+Both review lenses and the final source-byte checks are recorded, including
+closure of the connected-realization finding and adjudication of the inhabited
+composite-frame acceptance repair. The full primary-main integration build
+passed 8,953 jobs. Appendix A.12 explains why the category, source functor and
+inherited-state interpretation are separate obligations and how they connect.
 
 ## 7. St/Br, indexed arrays, and open diagrams
 
@@ -1666,6 +1715,14 @@ private work or reorders events. This discharges a concrete constructor-behaviou
 compatibility obligation directly from the runner and shared-cut algebra.
 It does not supply a general Turi-Plotkin rule law or show that arbitrary
 value-preserving schedules and rewrites preserve these stronger observations.
+
+Section 6.13 goes further for the chosen ranked source presentation: full
+observation congruence supports a target category, every generated source
+equation is sound, and its genuine functor preserves connected inherited-state
+realizations under structural frame coherence. This is a concrete categorical
+operational interpretation, not merely a proposal to organize one later.
+Its explicit provenance and fresh-local-input restrictions remain part of the
+result; they do not establish a generic distributive law or backend simulation.
 
 For physical implementations, the existing
 [simulation with stuttering](tensor_logic_semantics_part_v.md#312-initial-states-and-successful-step-simulation)
@@ -1875,7 +1932,9 @@ is connected to actual binary phases before structural reassociation is proved;
 execution agreement and successful completion are not assumptions.
 The actual reference executions retain pending occurrences and accumulators
 through the full existing relation. Both defaults use `nA+nB+nC+1`.
-See Section 6.12 and Appendix A.11; this is not a process-unit theorem.
+See Section 6.12 and Appendix A.11. That associativity theorem alone supplies
+no process unit; Section 6.13 separately proves administrative units, the ranked
+operational categories/functor and their inherited-state realization.
 
 Denotational associativity is now proved through compatible complete-model
 triples and explicit interface reindexing. The semantic target has identity
@@ -1923,8 +1982,10 @@ interpretation for the specified scoped profile, with a genuine functor from
 the certified matched-component/coordinate-wire source category. Target and
 source category laws and actual nested denotational coherence are proved.
 Section 6.12 separately supplies full-history operational associativity for
-ranked executions of the same components. It does not turn span isomorphism
-or the witness functor into an event-sensitive process equivalence.
+ranked executions of the same components; Section 6.13 supplies a distinct
+provenance-aware operational category, functor and inherited-state realization.
+Neither result turns span isomorphism or the witness functor into an
+event-sensitive process equivalence.
 Unlike an output-only relation, it does not identify different internal
 models prematurely.
 
@@ -1964,7 +2025,7 @@ backend refinement remain open branches.
 | 6. Package a semantic category | Witness spans over interface environments, span-isomorphism quotient, and composition interpreted as a pullback | Turns model gluing into a composition-preserving categorical interpretation with both exterior legs checked | Proved across all validated inputs with explicit boundary/exterior transports |
 | 7. Prove category laws and units | Target identity spans and associativity; actual nested component comparison through compatible model triples | Makes repeated denotational composition coherent without treating extra computation events as no work | Target laws, graph-transport laws and nested coherence proved; source administrative laws are supplied separately in Step 8, not inferred from target laws |
 | 8. Present sources and connect their meaning | Distinct whole-interface source objects, certified coordinate wires, matched leaves and a generated congruence; genuine witness functor | Connects source units/composition and actual component assembly to complete-witness meaning with explicit transports | Proved for the specified sealed presentation, including both actual nested-to-triple comparisons; no automatic matching, faithfulness or general St/Br/monoidal claim |
-| 9. Connect process and implementation views | Ranked phase/projection and trace proofs, plus observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest | Ranked phases, full graph/reference observations, administrative process units and a provenance-aware operational functor proved; frontend/backend refinement remains open |
+| 9. Connect process and implementation views | Ranked phase/projection and trace proofs, plus observation-sensitive frontend/backend interpretations or refinements | Explains when composition means sequential execution and which scheduling, representation or numerical transformations preserve the observations of interest | Ranked phases, full graph/reference observations, administrative process units and a provenance-aware operational functor with connected inherited-state realization proved; frontend/backend refinement remains open |
 
 The completed realization of Steps 6-7 is the **witness-span interpretation**.
 For a whole-tensor interface $X$, write $\mathsf{Env}(X)$ for its space of
@@ -2067,10 +2128,11 @@ quotient-invariant, and its laws establish composition of domains and values.
 | Nested component denotational associativity | 7 | Proved after explicit interface reindexing | [Witness coherence](../../leanncd/experiments/indexed_execution/IndexedWitnessCoherence.lean); both actual bracketings correspond to the same compatible model triple, not equal raw IDs or programs |
 | Injective-left partial-map interpretation | 5-7 | Proved; component restriction is exactly `AtMostOneModels` | [Restricted spans](../../leanncd/experiments/indexed_execution/IndexedWitnessPartial.lean); quotient invariance, closure under pullback and domain/value laws connect to authoritative admissibility and denotation; noncomputable extraction, not totality |
 | Certified matched-component source category and functor | 8 | Proved for the specified generated presentation | [Source functor](../../leanncd/experiments/indexed_execution/IndexedSourceFunctor.lean); certified coordinate wires, source quotient laws, actual assembly/nesting and complete-witness interpretation with explicit transports |
-| Administrative process units | 9 | Proved for the ranked operational interpretation | `History.done` preserves inherited full state; certified administrative wires add no core work. No core identity computation is introduced. |
+| Administrative process units | 9 | Proved for the ranked operational interpretation | `source_identity`, `runWire` and `actual_join_identity` connect units to inherited full state and actual binary cuts without core work or duplicate snapshots. No core identity computation is introduced. |
 | Rank stitching and sequential phase/projection | 9 | Proved for actual default graph/reference executions | [Ranked execution](categorical_ranked_execution_record.md); constructed full-footprint certificate, shared cut, whole private state/ledger projections, strict failures, explicit boundary and default-budget proof |
 | Associative operational composition | 1, 9 | Proved for ranked matched components on validated input | [Operational histories](categorical_operational_associativity_record.md); transport-only full observations, shared-cut algebra, both actual constructors, four leaf outcomes and actual reference relations |
 | Ranked event-sensitive process category and source functor | 1, 8, 9 | Proved for provenance-aware ranked sources | [Ranked operational interpretation](categorical_ranked_operational_interpretation_record.md); full observation congruence, raw exterior gluing, original-boundary provenance and administrative units precede quotient/category/functor construction |
+| Connected inherited-state operational realization | 1, 3, 9 | Proved under fresh-local-input and structural frame-coherence conditions | [Interpretation bridge](../../leanncd/experiments/indexed_execution/IndexedRankedOperationalInterpretation.lean); actual native computational histories, administrative wires, full outside storage/ledger retention and source/target/functor history agreement, not only normalization equality |
 | Categorical frontend/backend interpretation and refinement | 9 | Not established for this witness category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
 
 Thus the scoped **denotational obligations of Steps 1-8 are established**,
@@ -2101,7 +2163,10 @@ not be averaged into a single completion claim.
 ### 10.3. Remaining branches of the roadmap
 
 There is no remaining target-span identity or associativity gap in this
-profile. The next obligations depend on the intended claim:
+profile. The ranked provenance-aware interpretation also has administrative
+units, associative categorical composition and connected inherited-state
+realizations; these are no longer pending tasks. The next obligations depend
+on the intended claim:
 
 - **Broader source interpretations:** the sealed matched-component source
   category and its witness functor are implemented in Section 6.10. Extending
@@ -2110,10 +2175,19 @@ profile. The next obligations depend on the intended claim:
   The [source record](categorical_source_functor_record.md) gives the proved
   presentation and its limits; the handoff remains its historical goal brief.
 - **Broader process interpretations:** Section 6.13 proves administrative
-  units and a provenance-aware ranked operational source/target interpretation.
-  Extending it to unranked sources, other observations or broader interfaces
-  requires separate soundness arguments. Compatible model triples and semantic
-  graph spans alone are still not event-free core computations.
+  units and a provenance-aware ranked operational source/target interpretation
+  connected to actual inherited-state histories. Extending it to unranked
+  sources, arbitrary prepopulated local private stores, other observations or
+  broader interfaces requires separate soundness arguments. Erasing assembly
+  provenance or identifying an opaque compiled origin with joined children is
+  not justified merely by matching final values or event lists. A generic
+  cross-program reference-running-state transport is not supplied by the
+  existing native reference bridge.
+- **Comparing the two categorical interpretations:** complete-model witness
+  spans and ranked full operational observations retain different information.
+  A further comparison must specify its source restriction and the maps or
+  refinement being claimed; neither the witness functor nor the operational
+  functor automatically identifies their two quotients.
 - **Frontend/backend connection and refinement:** relate St/Br or another
   source presentation to this witness target and prove the required
   implementation/observation laws. Value-level indexing, numerical
@@ -2154,7 +2228,10 @@ replacing the generic proofs or changing the language's strict partiality.
 This is a sound operational bridge and a proved denotational source-to-witness
 functor for the specified rational profile. Section 6.13 separately proves a
 provenance-aware ranked operational source/target category and functor, using
-administrative units rather than a core identity computation.
+administrative units rather than a core identity computation. Its `Realizes`
+bridge connects those arrows to inherited-state histories, including exact
+actual local computational histories and all outside private state/ledger
+prefixes under explicit frame conditions.
 Section 10 records
 the different goals and current status.
 Reproving execution correspondence or reconstructing an entire match for
@@ -2162,7 +2239,8 @@ each compatible composite is no longer necessary.
 
 The choice of a broader categorical presentation remains open.
 Automatic construction of leaf source-contract matches, broader interfaces,
-broader source laws, process categorical laws and physical implementation refinement remain separate
+broader source laws, operational equivalences beyond the ranked provenance-aware
+presentation and physical implementation refinement remain separate
 obligations. The proved model-level composition law does not substitute for
 an execution-phase or implementation-refinement theorem.
 
@@ -2761,6 +2839,143 @@ copy still adds events, and input-as-output aliases still violate
 `output_defined`; the separate construction and justification of administrative
 ranked process units is in Section 6.13.
 
+### A.12. Interpret ranked sources with inherited-state units
+
+The previous appendix proves structural associativity for actual components.
+The next layer must additionally specify typed arrows, justify a quotient
+composition, interpret source equations, and connect administrative units to
+the same operational histories as computation. Merely simplifying an identity
+term in syntax does not prove that connection.
+
+1. **Keep administrative wires separate from ranked computations.**
+   [`Normal`](../../leanncd/experiments/indexed_execution/IndexedRankedOperationalCore.lean)
+   has an administrative case carrying a certified wire and a computational
+   case carrying a matched component, rank certificate, exterior input/output
+   wires and `Origin`. The latter records either an opaque component or a
+   joined assembly with both children and the original certified boundary.
+   Administrative composition changes exterior wires without constructing a
+   core identity program. Two computations compose with the existing sealed
+   constructor and a constructed composite rank.
+
+   This is a conservative, provenance-aware presentation. It does not infer a
+   compiled component's construction history from its output values, address
+   enumeration or observed event list. Changing a rank certificate preserves
+   interpretation for a fixed origin; changing opaque provenance into a joined
+   origin is not an allowed consequence.
+
+2. **Prove full observation congruence before quotienting.**
+   [`ComputeAgrees`](../../leanncd/experiments/indexed_execution/IndexedRankedOperationalCategory.lean)
+   fixes a certified metadata transport, an adapter equivalence and provenance
+   compatibility, together with full raw exterior squares. The same comparison
+   must then preserve complete actual observations for every external input:
+
+   $$
+   \exists\,\theta,e\quad
+   \operatorname{ProvenanceCompatible}(\theta,e)
+   \ \land\ \operatorname{ExteriorSquares}(\theta)
+   \ \land\ \forall x,\;
+   \mathcal O_P(x)\sim_{\theta,e}\mathcal O_Q(x).
+   $$
+
+   Here the whole interface determines each validated local input. The order
+   of quantifiers matters: no input-specific renaming may be selected to hide
+   a wrong occurrence, boundary or private identity. Raw-domain coherence is
+   retained in addition to admitted-coordinate behavior and empty metadata.
+
+   Full-state scope lifts and exterior gluing establish
+   `composition_congruence`. Only afterward does the quotient support
+   `targetCategory`. Existing actual-history reassociation proves its
+   computational associativity; administrative unit cases add no computation.
+   The administrative/computational distinction itself is retained, even for
+   a vacuous computation with no events.
+
+3. **Use a distinct ranked source and prove every generating equation.**
+   [`IndexedRankedOperationalSource`](../../leanncd/experiments/indexed_execution/IndexedRankedOperationalSource.lean)
+   supplies its own typed source objects, ranked/provenance-bearing leaves,
+   wires, sequences and generated congruence. It does not select ranked
+   representatives of the old unrestricted witness-source quotient.
+   Its `sound` proof checks units, wire laws, associativity, decorated assembly
+   and inherited boundary squares against target agreement. Actual bracket
+   agreement is derived from these equations, not asserted from witness
+   denotation equality. Normalization then descends to the genuine functor
+
+   $$
+   \mathsf{RankedSource}
+   \xrightarrow{\;\mathsf{semantics}\;}
+   \mathsf{OperationalTarget}.
+   $$
+
+   Assembly uses an explicitly joined compiled origin. An arbitrary opaque
+   leaf of the same compiled program does not acquire the equation for free.
+   The completed witness-source category and its functor remain unchanged.
+
+4. **Realize both kinds of arrows in the inherited full state.**
+   [`Scope` and `AvailableView`](../../leanncd/experiments/indexed_execution/IndexedOperationalWireFrame.lean)
+   expose a certified whole-interface view of an ambient state. For a wire $w$
+   and available view $v$ of state $s$, administrative execution is
+
+   $$
+   \operatorname{runWire}(v,w)
+   =\operatorname{done}\bigl(s,w_{\mathrm{env}}(v_{\mathrm{env}})\bigr).
+   $$
+
+   The returned interface view can change, but the complete state is unchanged:
+   one snapshot, no event and no ledger reset. Wire composition and inverse
+   laws hold for these histories, not just for abstract interface maps.
+
+   [`Frame` and `Realizes`](../../leanncd/experiments/indexed_execution/IndexedRankedOperationalInterpretation.lean)
+   connect computation to the same ambient-history interpretation. A frame
+   contains a certified local embedding, an injective fresh identity map,
+   and inherited state. If $s$ is a local snapshot, its lift keeps local
+   availability on owned addresses and inherited availability everywhere else.
+   Its ledger is exactly
+
+   $$
+   \operatorname{Ledger}(\operatorname{lift}_f(s))
+   =L_f\mathbin{+\!\!+}
+     \operatorname{map}_{\iota_f}\bigl(\operatorname{Ledger}(s)\bigr),
+   $$
+
+   where $L_f$ is the inherited ordered prefix and $\iota_f$ is the fresh
+   capability/identity embedding. Neither the prefix nor local rows are sorted,
+   merged or discarded.
+
+   A computational realization lifts the existing actual default local
+   history and obtains its output view from actual successful completion.
+   `FreshInput` requires all owned ambient cells to match that local initial
+   input; consequently the lifted history really starts at the stated inherited
+   state. Outside storage and the fresh ordered ledger prefix remain available.
+   No checked runner is restarted on arbitrary prepopulated private stores.
+   Failure never requires a successful output view.
+
+5. **Connect category/source agreement to realized histories and reference data.**
+   `Coherent` requires two frames to use the same inherited state and commute
+   with the fixed address and identity transport. These are structural frame
+   equations, not assumed execution agreement. `agrees_history`, `target_history`,
+   `source_history` and `semantics_history` derive equality of the lifted full
+   histories through those squares. `compute_history_exact` additionally
+   identifies the framed computational states/events with the explicit lift of
+   the unchanged actual local history.
+
+   `actual_join_identity` obtains the interior view from the actual binary
+   success cut; inserting the administrative identity shares that snapshot
+   without an extra event or duplicate state. Its failure alternative needs
+   neither a view nor a suffix.
+   The [native reference bridge](../../leanncd/experiments/indexed_execution/IndexedRankedOperationalReference.lean)
+   attaches actual `Program.Executor.run` and `referenceSnapshots`, retaining
+   every published value, pending occurrence and accumulator through the existing
+   full `Relation`. It does not claim an arbitrary-program reference-state
+   transport theorem or alter default fuel.
+
+This closes the ranked administrative-unit and categorical operational
+interpretation obligations for the stated presentation. The acceptance cases
+include populated private frames and ordered prefixes, actual strict failures,
+nonconstant wire direction/composition, empty metadata, provenance distinctions,
+and an inhabited composite-frame coherence instance. Their release receipts
+support the proof delivery without replacing its hypotheses or soundness laws.
+Broader sources, provenance-erasing equivalences, physical storage refinement
+and numerical/backend guarantees remain separate constructions.
+
 ## Notation reference
 
 Symbols are defined on introduction. This table collects the recurring
@@ -2812,6 +3027,9 @@ ones; it does not add assumptions beyond their definitions.
 | $\theta,\mathcal O_L\sim_\theta\mathcal O_R$ | Explicit coherent metadata/address/identity transport and full observation agreement |
 | $h\star k$ | Compatible history splicing with one shared full-state boundary, or absorbing prefix failure |
 | $n_A,n_B,n_C$ | Standalone graph step counts used in the actual nested default budget |
+| $\mathsf{RankedSource},\mathsf{OperationalTarget}$ | Distinct ranked/provenance-aware source category and full-observation target category |
+| $\operatorname{runWire}(v,w)$ | Administrative history reindexing an available interface view without changing its ambient state |
+| $\operatorname{lift}_f,\iota_f,L_f$ | Full-state frame lift, fresh identity embedding and inherited ordered ledger prefix |
 | $f_P,f_Q,f_{Q\circ_b P}$ | Unique-model partial input-output meanings for the respective programs |
 | $\operatorname{boundaryFromOutput}_b,\operatorname{liftOutput}_b$ | Boundary input and composite output transport for the fixed components and boundary |
 | $Q\circ_b P$ | Statically constructed sealed composite along boundary $b$ |
