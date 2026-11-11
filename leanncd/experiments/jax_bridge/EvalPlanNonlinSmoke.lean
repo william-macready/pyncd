@@ -18,7 +18,8 @@ Like the other drivers it lives outside every Lake target; run via `lake env lea
 Every fixture asserts, before any Python is written, that its prepared plan really has at least the
 expected number of pointwise/axiswise steps (a program that silently compiled to plain assignments
 would test nothing), that `einsumOnly` and the evidence door (`lowerCheckPlanToCandidate`) still
-refuse it, and that `affineReference` renders it. A fixture with an inline unary read (`unaryOk`)
+refuse it (a convolution's strided or dilated read is refused by `einsumOnly` with `nonProjectionRow`, a biased
+one with `nonzeroAffineBias`), and that `affineReference` renders it. A fixture with an inline unary read (`unaryOk`)
 is the one place those two doors refuse with `unaryFactor` (binary64) instead of `unsupportedStep`:
 they keep refusing unary reads; only `affineReference` admits one.
 -/

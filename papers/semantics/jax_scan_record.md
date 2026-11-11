@@ -916,3 +916,75 @@ width units by 2.840 (the extra width is real); a single memory row moves `H` by
 
 **Not done** (cost): gradient pins for the wide fixture (~0.2; the backward path through `Kc[t, h, j, l]` is the same code as in `transformer_cross`, whose gradient pins pass, and the width axis is a plain contraction); a binary32 mutant on the wide sibling
 (~0.2, same code as W1 on the f64 leg).
+
+## 19. 1-D convolution: a CNN, a causal TCN block and a patch embedding feeding the layer scan (2026-11-11)
+
+Brief: `papers/semantics/jax_conv_session_brief.md`. Tests and fixtures only (Direct path): `EvalPlanNonlinSmoke.lean` (programs, data, registrations, ONE additive edit to the shared `checkAndRender`) and `evalplan_nonlin_smoke.py`
+(`np_conv`, `np_cnn`, `np_tcn`, `np_vit`, `conv_cnn_pins`, `conv_causal_pins`, `vit_patch_pins`, `conv_grad_pins`); no emitter, runtime, grammar, checker or manifest change. Differential: **47 binary64 and 39 binary32 fixtures**
+(44 + 3, 36 + 3), all within tolerance; every earlier pin is untouched and green. The 2-D patch embedding stretch (brief section 3, item 4) was NOT done (probed in the brief, ~0.5 dispatch).
+
+**Why these models.** The earlier fixtures read their tensors through plain axes, apart from the GQA head map (`Q[q, 2 * g + r, k]`) and the unary-read domain pins; a convolution is the first model whose COMPUTATION is an affine read: output position `o` reads the input at `stride * o + dilation * i + bias`.
+
+**Programs and extents.**
+* `conv1d_cnn` / `conv1d_cnn32` (`cnnProg`): `Y1[o, d] := W1[d, i, c] · X[o + i, c] + B1[d]`, `A1 := relu(Y1)`, `Y2[p, e] := W2[e, j, d] · A1[2 * p + 2 * j, d] + B2[e]` (stride 2, dilation 2, reading an INTERMEDIATE through an affine
+  slot), `A2 := relu(Y2)`, `Gp[e] := Ip[] · A2[p, e]` (global mean pool: a sum times the scalar input `Ip = 1 / p`), `Zc[n] := Wc[n, e] · Gp[e] + Bc[n]`, `Pr[n.] := softmax(Zc[n])`. l = 23, c = 3, i = 2, d = 5, o = 22, j = 4, e = 6,
+  p = 8, n = 7: nine pairwise distinct extents (asserted from the input shapes). Exports every top-level tensor.
+* `conv1d_causal` / `conv1d_causal32` (`tcnProg`): a TCN residual block. `Y1 := W1 · X[o + 2 * i - 4, c] + B1`, `A1 := relu`, `Y2 := W2 · A1[o + 4 * j - 8, d] + B2`, `A2 := relu`, `Rs := Wr · X[o, c]` (1x1 skip), `Out := A2 + Rs`. l = o = 17,
+  **c = 2 (the brief's 3 collided with k = 3)**, k = 3 (both layers: separate axes of separate tensors, the only equal pair), d = 5, e = 6. Receptive field of output `o`: `X[o - 12 .. o]`.
+* `vit_patch` / `vit_patch32` (`vitProg`): `Pe[q, m] := Wp[m, i, c] · Img[6 * q + i, c] + Pos[q, m]` (window 6 = stride, q = 5, m = 4, c = 3, `Img[30, 3]`), `H[q, m, 0] := Pe[q, m]`, then the standard `scanProg` statements and mask `s ≤ q`. One pre-scan statement
+  then ONE scan record with 2 steps; exports exactly `Pe` and `H`. Every other input is the mask fixtures' bit for bit (asserted; `X` replaced by `Img`, `Wp`, `Pos`). l, c, window, q, m pairwise distinct (the standard model's h = k = 2 and m = d = 4 are pre-existing).
+Weights by `gqaGen` (seeds 1 to 6 and 9, `cnn*`/`tcn*`/`vit*` definitions), biases by `convBias` (`0.2 * sin (seed + 1.3 i)`), one definition per weight shared by the 64 and 32 environments. **Seeds: NOT tuned** (first candidate passed in both
+precisions; no other tried).
+
+**Plans.** Each bias add compiles to its OWN assign node, so the CNN plan is 10 nodes (7 assign, 2 pointwise, 1 axiswise: conv, bias, relu, conv, bias, relu, pool, head conv, head bias, softmax), the TCN 8 nodes (6, 2, 0), the ViT
+`[assign, scan]` with (20, 1, 1) over the scan's blocks (the `+ Pos[q, m]` term of `Pe` adds no node, unlike a broadcast bias `B[d]`). Exact kinds are pinned in Lean (`exact`) and the node order in Python.
+
+**Harness change (step 0, own commit).** `checkAndRender` requires `einsumOnly` to refuse; a strided or dilated read is refused with `nonProjectionRow`, a biased one (any nonzero bias) with `nonzeroAffineBias`. Both arms were added (`.error (.nonProjectionRow ..)`,
+`.error (.nonzeroAffineBias ..)`), nothing else; the differential stayed at 44 / 36. The evidence door ACCEPTS a purely linear convolution, so every fixture contains a relu or softmax (the door refuses with `unsupportedStep` on a pointwise or
+axiswise step); the linear intermediates `Y1`, `Y2` are pinned through the exports. Driver: the six new names join `TRANSFORMER_FIXTURES` (tolerance gate plus per-output records, no "relu is bit-exact" check) and `EAGER` also stores the `conv1d_*` fixtures.
+
+**Pins** (per precision; the references are numpy float64 from the exported inputs only; `np_conv` is explicit loops over output position, kernel tap and channel with a zero for an index outside `[0, L)`, written from the English definition; `np_transformer` untouched):
+1. Value: every export, the linear intermediates included, equals the numpy model on the Lean, eager and jit views at `MODEL_TOL`.
+2. Non-vacuity (computed BEFORE the view loop; binary64 numpy gaps over every export): CNN: second-layer dilation 1 by 2.245, stride 1 by 1.527, flipped kernel 0.877, no bias 0.416, no relu 1.697, pool divisor 7 by 0.094 (relu clamps 54/110 of `A1` and 21/48 of `A2`);
+   TCN: circular padding 0.399, centred window 0.603, no skip 0.402, first-layer dilation 1 by 1.030; `Wr`, `B1`, `B2` each +0.05 move `Out` by 0.040 to 0.082; ViT: no positional embedding by 1.189 (`Pe` 0.599), overlapping patches (stride 3) 7.430 (6.186), permuted window 7.847 (3.588).
+3. Structural: CNN `Y1`, `Y2` shapes `[22, 5]`, `[8, 6]`, `Pr` positive and sums to 1, `Ip` = 1 / p from the shapes. TCN: the first output row is the zero-padded value (only tap 2 reads `X[0]`); **CAUSALITY on the eager runtime for all 17 positions**: perturbing `X[t]` leaves every export row
+   `o < t`, `o` beyond the export's own receptive field, and `(o - t)` odd BITWISE unchanged; `Out` responds at every even offset 0..12 (smallest max response 0.183). ViT: **PATCH LOCALITY for all 30 positions**: perturbing `Img[u]` changes only `Pe` row `u // 6` (by 0.205 to 0.223), every other row bitwise unchanged;
+   plan shape, exports, inputs bitwise the mask fixtures', layer-2 stack slices NaN and `H` finite.
+4. Gradients (`conv_grad_pins`): `jax.grad` of `sum(C * out)` (CNN: the logits `Zc`; TCN: `Out`; ViT: `H[:, :, 2]`) over every float input, eager and jit, vs a pure-JAX model written with `jax.lax.conv_general_dilated` (no plan, no scan, nothing shared with the plan's gather; causal padding as `(left, 0)`) and vs central differences
+   of the numpy models; TCN: a loss on outputs 0..8 gives EXACTLY zero gradient on `X` rows 9..16 (eager, jit and the pure-JAX model) and a real one on every row 0..8; ViT: layer-2 weight slices exactly zero, `Img` gradient nonzero at all 30 positions.
+
+**Findings.**
+1. **The brief's causality claim was too coarse.** "Outputs `t <= o <= t + 12` move" is false for dilations 2 and 4: `Out[o]` depends on `X[o - 12 + 2k]` only (offsets {0, 2, ..., 12}); odd offsets are independent. The pin states the exact dependence (odd offsets bitwise unchanged, every even offset moves for some `t`), which also tells dilations 2 and 4 from dilation 1.
+2. **The shape solver treats some affine windows as exact equations, so two brief mutants are REFUSED, not killed.** TCN bias `-4 -> -6` (`affine size system inconsistent (reduced witness: 0 = 1)`): `X(o, c)` and `A1(o, d)` share the axis name `o` with the iterating `o`, and only `b = -4` satisfies the extent equation. ViT stride 6 -> 5
+   (`Img[5 * q + i, c]`) is refused too: the `Img` extent (30) is tied to the window `6 * (q - 1) + 6` exactly, so an OVERLAPPING-patch variant cannot be written for these shapes without changing data. By contrast the CNN's `A1[2 * p + j, d]` (window 17 of 22) is accepted. The mechanism is not investigated here (cost ~0.3: probe which declared-axis forms are
+   equalities and which inequalities); it matters for any future convolution program that shares an axis name between a tensor's declaration and its own affine read.
+3. Reads past the HIGH end and negative reads are as in the brief's probe (refused at prepare / zero); the pinned programs only use forms inside those limits.
+4. The numpy CNN pools by the shape-derived `1 / p`, not by the input `Ip`, so the finite-difference directions freeze `Ip` (its gradient is pinned against the pure-JAX model, which reads it); the CNN value pin separately asserts `Ip == 1 / p` from the shapes (mutant D fires there).
+
+**Observed** (`MODEL_TOL` 1e-12 / 1e-6; no tolerance loosened). Binary64 vs numpy: CNN and TCN exports are bit-identical to numpy (0 difference), ViT `H` 3.7e-16 (headroom 2672x). **Binary32**: CNN worst `Y2` 2.7e-7 (headroom **3.7x**), TCN worst `Y2` 7.4e-8 (**13.6x**), ViT `H` 3.6e-7 (**2.8x**).
+Gradients vs the pure-JAX `lax.conv` model / vs finite differences: binary64 CNN 2.5e-16 (4069x) / 4.6e-11 (2162x), TCN 6.7e-16 (1501x) / 1.1e-10 (916x), ViT 2.0e-15 (500x) / 1.3e-9 (75x); binary32 CNN 1.3e-7 (758x) / 2.7e-7 (366x), TCN 2.4e-7 (419x) / 7.3e-7 (136x),
+ViT 8.3e-7 (120x) / 3.8e-6 (26.5x). The gradient pins' vacuity self-test is an ABSOLUTE 1e-3 perturbation of the largest entry (these gradients are O(0.1), so a 1e-3 RELATIVE one is below the binary32 tolerance).
+
+**Mutation evidence** (edit of the f64 program text or its data, whole differential via `run-evalplan-nonlin.sh`, first failing assertion; each restored by the inverse `sed` edit AFTER committing, `git diff --stat` empty after each; the table is also in the body of the empty commit after the fixtures):
+
+| Mutant | First failing assertion |
+|---|---|
+| A. CNN layer 2 loses its dilation (`A1[2 * p + j, d]`) | `pin numpy model: conv1d_cnn lean A2` (1.56) |
+| B. CNN layer 1 flipped kernel (`X[o - i + 1, c]`) | `pin numpy model: conv1d_cnn lean A1` (0.859) |
+| C. CNN bias twice (`+ B1[d] + B1[d]`) | `pin numpy model: conv1d_cnn lean A1` (0.196) |
+| D. data: `Ip` = 1 / 7 | the `Ip == 1 / p` from-the-shapes assertion |
+| E. TCN bias `-4 -> -6` | REFUSED at prepare (finding 2); not a kill |
+| E'. TCN layer 2 dilation 4 -> 2 (`A1[o + 2 * j - 4, d]`) | `pin numpy model: conv1d_causal lean A2` (0.321) |
+| F. TCN layer 1 dilation 2 -> 1 (`X[o + i - 2, c]`) | `pin numpy model: conv1d_causal lean A1` (0.862) |
+| G. TCN skip dropped (`Out := A2 + A2`) | `pin numpy model: conv1d_causal lean Out` (0.900) |
+| H. ViT stride 6 -> 5 | REFUSED at prepare (finding 2); not a kill |
+| H'. ViT permuted window (`Img[6 * q - i + 5, c]`) | `pin numpy model: vit_patch lean Pe` (1.45) |
+| I. data: `Pos` all zeros (value pins pass) | non-vacuity pin: `'the ViT pin is indistinguishable from', 'no positional embedding'` (gap 0.0) |
+| J. A on `cnnProg32` (f64 leg green first: 47 fixtures) | `pin numpy model: conv1d_cnn32 lean A2` (1.56) |
+
+All nine effective mutants killed; none survived; two refused and replaced by accepted siblings (E', H'). Not run: runtime gradient mutants (no runtime code changed), mutants of the gradient pins' inputs, mutants of the ViT and TCN binary32 siblings.
+
+**Budget (Rule 6).** Inline session, no delegation: 25.1M cumulative input tokens (measured with `token-report.py` before this section was written), context peak 303k (over the ~250k per-dispatch guideline), 115 turns (over ~60); the 12 mutant runs and the fixture/pin iteration dominate.
+
+**Parked** (cost in dispatches): the 2-D patch embedding stretch (~0.5); a probe of which declared-axis forms the solver treats as equalities (finding 2, ~0.3); overlapping patches (needs a different `Img` extent, ~0.2 once finding 2 is understood); two-sided padding (needs the
+declared-versus-materialised extent mismatch of the brief's trap 3 first); max pooling (max reduction on JAX); a convolution inside a scan step; transposed convolution. The progression continues with the brief's section 9 list.
