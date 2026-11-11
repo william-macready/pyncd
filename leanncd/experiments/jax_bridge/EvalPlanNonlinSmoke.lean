@@ -1912,6 +1912,162 @@ def vitProg32 : TLProgram := tlprog!{
   H[q, m, l +1]    := R1[q, m] + Y[q, m]
 }
 
+/-! ### Recurrent networks over a TIME axis: a GRU, an LSTM and a bidirectional RNN
+
+Every earlier scan fixture scans over the LAYER axis of a transformer (weights stacked over the scan axis, one
+matrix-valued state). Here the scan axis indexes the INPUT SEQUENCE: `X[t, i]` is read at the scan axis, the weights
+are shared across steps, the state is a vector and the update is a gated nonlinear cell. Extents (pairwise distinct):
+`t` = 7 (a history of six steps; row 6 of `X` is the NaN-sentinel spare slot, never read), `i` = 3, `d` = 4, `v` = 5.
+* `rnnGruProg`: a GRU, then a sequence-to-one head `Lg[v] := Wy[v, d] · H[d, 6]` (a PINNED read of the final state) and a softmax.
+  There is no subtraction in a term: `1 - z` goes through the scalar input `Neg[] = -1`.
+* `rnnLstmProg`: an LSTM with TWO states (`H`, `Cc`) and a readout at EVERY step after the scan (`Yt[t, v]`). The new cell
+  state is an intermediate `Cn` read by both updates (a state read at `t +1` on a right-hand side is a parse error).
+* `rnnBiProg`: a bidirectional tanh-RNN in ONE scan: the forward layer reads `X[t, i]`, the backward layer the REVERSED
+  read `X[5 - t, i]`; the two final states feed one softmax head. -/
+
+/-- ONE definition per input, shared by the 64 and 32 environments. -/
+def rnnX : Array Float := gqaGen 1.0 18 ++ scanNanSlice (gqaGen 0.0 3)   -- [t = 7, i = 3], row 6 NaN
+
+def rnnGruInputs : List (String × List Nat × Array Float) :=
+  [("X", [7, 3], rnnX), ("H0", [4], gqaGen 2.0 4),
+   ("Wz", [4, 3], gqaGen 3.0 12), ("Uz", [4, 4], gqaGen 4.0 16), ("Bz", [4], convBias 1.0 4),
+   ("Wr", [4, 3], gqaGen 5.0 12), ("Ur", [4, 4], gqaGen 6.0 16), ("Br", [4], convBias 2.0 4),
+   ("Wn", [4, 3], gqaGen 7.0 12), ("Un", [4, 4], gqaGen 8.0 16), ("Bn", [4], convBias 3.0 4),
+   ("Neg", [], #[-1.0]), ("Wy", [5, 4], gqaGen 9.0 20)]
+def rnnGruEnv64 : HashMap String DenseTensor := env64 (rnnGruInputs.map fun (n, s, d) => (n, t64 s d))
+def rnnGruEnv32 : NamedDenseEnv32 := env32 (rnnGruInputs.map fun (n, s, d) => (n, t32 s d))
+
+def rnnGruProg : TLProgram := tlprog!{
+  iter t = 7
+  tensor f64 X(t, i), H0(d), Wz(d, i), Uz(d, e), Bz(d), Wr(d, i), Ur(d, e), Br(d), Wn(d, i), Un(d, e), Bn(d), Neg(), Wy(v, d)
+  tensor f64 H(d, t), Lg(v), Pr(v)
+  tensor f64 Az(d), Z(d), Ar(d), R(d), Uh(d), Rh(d), An(d), Nn(d), Zn(d)
+  H[d, 0]    := H0[d]
+  Az[d]      := Wz[d, i] · X[t, i] + Uz[d, e] · H[e, t] + Bz[d]
+  Z[d]       := sigmoid(Az[d])
+  Ar[d]      := Wr[d, i] · X[t, i] + Ur[d, e] · H[e, t] + Br[d]
+  R[d]       := sigmoid(Ar[d])
+  Uh[d]      := Un[d, e] · H[e, t]
+  Rh[d]      := R[d] · Uh[d]
+  An[d]      := Wn[d, i] · X[t, i] + Rh[d] + Bn[d]
+  Nn[d]      := tanh(An[d])
+  Zn[d]      := Neg[] · Z[d] · Nn[d]
+  H[d, t +1] := Nn[d] + Zn[d] + Z[d] · H[d, t]
+  Lg[v]      := Wy[v, d] · H[d, 6]
+  Pr[v.]     := softmax(Lg[v])
+}
+def rnnGruProg32 : TLProgram := tlprog!{
+  iter t = 7
+  tensor H(d, t)
+  H[d, 0]    := H0[d]
+  Az[d]      := Wz[d, i] · X[t, i] + Uz[d, e] · H[e, t] + Bz[d]
+  Z[d]       := sigmoid(Az[d])
+  Ar[d]      := Wr[d, i] · X[t, i] + Ur[d, e] · H[e, t] + Br[d]
+  R[d]       := sigmoid(Ar[d])
+  Uh[d]      := Un[d, e] · H[e, t]
+  Rh[d]      := R[d] · Uh[d]
+  An[d]      := Wn[d, i] · X[t, i] + Rh[d] + Bn[d]
+  Nn[d]      := tanh(An[d])
+  Zn[d]      := Neg[] · Z[d] · Nn[d]
+  H[d, t +1] := Nn[d] + Zn[d] + Z[d] · H[d, t]
+  Lg[v]      := Wy[v, d] · H[d, 6]
+  Pr[v.]     := softmax(Lg[v])
+}
+
+def rnnLstmInputs : List (String × List Nat × Array Float) :=
+  [("X", [7, 3], gqaGen 11.0 18 ++ scanNanSlice (gqaGen 0.0 3)), ("H0", [4], gqaGen 12.0 4), ("C0", [4], gqaGen 13.0 4),
+   ("Wi", [4, 3], gqaGen 14.0 12), ("Ui", [4, 4], gqaGen 15.0 16), ("Bi", [4], convBias 4.0 4),
+   ("Wf", [4, 3], gqaGen 16.0 12), ("Uf", [4, 4], gqaGen 17.0 16), ("Bf", [4], convBias 5.0 4),
+   ("Wo", [4, 3], gqaGen 18.0 12), ("Uo", [4, 4], gqaGen 19.0 16), ("Bo", [4], convBias 6.0 4),
+   ("Wg", [4, 3], gqaGen 20.0 12), ("Ug", [4, 4], gqaGen 21.0 16), ("Bg", [4], convBias 7.0 4),
+   ("Wy", [5, 4], gqaGen 22.0 20)]
+def rnnLstmEnv64 : HashMap String DenseTensor := env64 (rnnLstmInputs.map fun (n, s, d) => (n, t64 s d))
+def rnnLstmEnv32 : NamedDenseEnv32 := env32 (rnnLstmInputs.map fun (n, s, d) => (n, t32 s d))
+
+def rnnLstmProg : TLProgram := tlprog!{
+  iter t = 7
+  tensor f64 X(t, i), H0(d), C0(d)
+  tensor f64 Wi(d, i), Ui(d, e), Bi(d), Wf(d, i), Uf(d, e), Bf(d), Wo(d, i), Uo(d, e), Bo(d), Wg(d, i), Ug(d, e), Bg(d), Wy(v, d)
+  tensor f64 H(d, t), Cc(d, t), Yt(t, v)
+  tensor f64 Ai(d), Ig(d), Af(d), Fg(d), Ao(d), Og(d), Ag(d), Gg(d), Fc(d), Ic(d), Cn(d), Tc(d)
+  H[d, 0]     := H0[d]
+  Cc[d, 0]    := C0[d]
+  Ai[d]       := Wi[d, i] · X[t, i] + Ui[d, e] · H[e, t] + Bi[d]
+  Ig[d]       := sigmoid(Ai[d])
+  Af[d]       := Wf[d, i] · X[t, i] + Uf[d, e] · H[e, t] + Bf[d]
+  Fg[d]       := sigmoid(Af[d])
+  Ao[d]       := Wo[d, i] · X[t, i] + Uo[d, e] · H[e, t] + Bo[d]
+  Og[d]       := sigmoid(Ao[d])
+  Ag[d]       := Wg[d, i] · X[t, i] + Ug[d, e] · H[e, t] + Bg[d]
+  Gg[d]       := tanh(Ag[d])
+  Fc[d]       := Fg[d] · Cc[d, t]
+  Ic[d]       := Ig[d] · Gg[d]
+  Cn[d]       := Fc[d] + Ic[d]
+  Tc[d]       := tanh(Cn[d])
+  Cc[d, t +1] := Cn[d]
+  H[d, t +1]  := Og[d] · Tc[d]
+  Yt[t, v]    := Wy[v, d] · H[d, t]
+}
+def rnnLstmProg32 : TLProgram := tlprog!{
+  iter t = 7
+  tensor H(d, t), Cc(d, t), Yt(t, v)
+  H[d, 0]     := H0[d]
+  Cc[d, 0]    := C0[d]
+  Ai[d]       := Wi[d, i] · X[t, i] + Ui[d, e] · H[e, t] + Bi[d]
+  Ig[d]       := sigmoid(Ai[d])
+  Af[d]       := Wf[d, i] · X[t, i] + Uf[d, e] · H[e, t] + Bf[d]
+  Fg[d]       := sigmoid(Af[d])
+  Ao[d]       := Wo[d, i] · X[t, i] + Uo[d, e] · H[e, t] + Bo[d]
+  Og[d]       := sigmoid(Ao[d])
+  Ag[d]       := Wg[d, i] · X[t, i] + Ug[d, e] · H[e, t] + Bg[d]
+  Gg[d]       := tanh(Ag[d])
+  Fc[d]       := Fg[d] · Cc[d, t]
+  Ic[d]       := Ig[d] · Gg[d]
+  Cn[d]       := Fc[d] + Ic[d]
+  Tc[d]       := tanh(Cn[d])
+  Cc[d, t +1] := Cn[d]
+  H[d, t +1]  := Og[d] · Tc[d]
+  Yt[t, v]    := Wy[v, d] · H[d, t]
+}
+
+def rnnBiInputs : List (String × List Nat × Array Float) :=
+  [("X", [7, 3], gqaGen 31.0 18 ++ scanNanSlice (gqaGen 0.0 3)), ("Hf0", [4], gqaGen 32.0 4), ("Hb0", [4], gqaGen 33.0 4),
+   ("Wf", [4, 3], gqaGen 34.0 12), ("Uf", [4, 4], gqaGen 35.0 16),
+   ("Wb", [4, 3], gqaGen 36.0 12), ("Ub", [4, 4], gqaGen 37.0 16),
+   ("Wo", [5, 4], gqaGen 38.0 20), ("Wp", [5, 4], gqaGen 39.0 20)]
+def rnnBiEnv64 : HashMap String DenseTensor := env64 (rnnBiInputs.map fun (n, s, d) => (n, t64 s d))
+def rnnBiEnv32 : NamedDenseEnv32 := env32 (rnnBiInputs.map fun (n, s, d) => (n, t32 s d))
+
+def rnnBiProg : TLProgram := tlprog!{
+  iter t = 7
+  tensor f64 X(t, i), Hf0(d), Hb0(d), Wf(d, i), Uf(d, e), Wb(d, i), Ub(d, e), Wo(v, d), Wp(v, d)
+  tensor f64 Hf(d, t), Hb(d, t), Af(d), Nf(d), Ab(d), Nb(d), Lg(v), Pr(v)
+  Hf[d, 0]     := Hf0[d]
+  Hb[d, 0]     := Hb0[d]
+  Af[d]        := Wf[d, i] · X[t, i] + Uf[d, e] · Hf[e, t]
+  Nf[d]        := tanh(Af[d])
+  Ab[d]        := Wb[d, i] · X[5 - t, i] + Ub[d, e] · Hb[e, t]
+  Nb[d]        := tanh(Ab[d])
+  Hf[d, t +1]  := Nf[d]
+  Hb[d, t +1]  := Nb[d]
+  Lg[v]        := Wo[v, d] · Hf[d, 6] + Wp[v, d] · Hb[d, 6]
+  Pr[v.]       := softmax(Lg[v])
+}
+def rnnBiProg32 : TLProgram := tlprog!{
+  iter t = 7
+  tensor Hf(d, t), Hb(d, t)
+  Hf[d, 0]     := Hf0[d]
+  Hb[d, 0]     := Hb0[d]
+  Af[d]        := Wf[d, i] · X[t, i] + Uf[d, e] · Hf[e, t]
+  Nf[d]        := tanh(Af[d])
+  Ab[d]        := Wb[d, i] · X[5 - t, i] + Ub[d, e] · Hb[e, t]
+  Nb[d]        := tanh(Ab[d])
+  Hf[d, t +1]  := Nf[d]
+  Hb[d, t +1]  := Nb[d]
+  Lg[v]        := Wo[v, d] · Hf[d, 6] + Wp[v, d] · Hb[d, 6]
+  Pr[v.]       := softmax(Lg[v])
+}
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -1973,6 +2129,9 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "conv1d_cnn" cnnProg cnnEnv64 2 1 (some (7, 2, 1)),
     ← fixture64 "conv1d_causal" tcnProg tcnEnv64 2 0 (some (6, 2, 0)),
     ← fixture64 "vit_patch" vitProg vitEnv64 1 1 (some (20, 1, 1)) true (scans := 1),
+    ← fixture64 "rnn_gru" rnnGruProg rnnGruEnv64 3 1 (some (13, 3, 1)) true (scans := 1),
+    ← fixture64 "rnn_lstm" rnnLstmProg rnnLstmEnv64 5 0 (some (17, 5, 0)) true (scans := 1),
+    ← fixture64 "rnn_bi" rnnBiProg rnnBiEnv64 2 1 (some (10, 2, 1)) true (scans := 1),
     ← fixture64 "scan_postrole" postRoleProg
         (env64 [("X", t64 [2] postRoleX), ("G", t64 [2] postRoleG), ("V", t64 [4] postRoleV), ("M", t64 [4] postRoleM)])
         0 0 none true (scans := 1),
@@ -2040,6 +2199,9 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "conv1d_cnn32" cnnProg32 cnnEnv32 2 1 (some (7, 2, 1)),
     ← fixture32 "conv1d_causal32" tcnProg32 tcnEnv32 2 0 (some (6, 2, 0)),
     ← fixture32 "vit_patch32" vitProg32 vitEnv32 1 1 (some (20, 1, 1)) true (scans := 1),
+    ← fixture32 "rnn_gru32" rnnGruProg32 rnnGruEnv32 3 1 (some (13, 3, 1)) true (scans := 1),
+    ← fixture32 "rnn_lstm32" rnnLstmProg32 rnnLstmEnv32 5 0 (some (17, 5, 0)) true (scans := 1),
+    ← fixture32 "rnn_bi32" rnnBiProg32 rnnBiEnv32 2 1 (some (10, 2, 1)) true (scans := 1),
     ← fixture32 "scan_postrole32" postRoleProg32
         (env32 [("X", t32 [2] postRoleX), ("G", t32 [2] postRoleG), ("V", t32 [4] postRoleV), ("M", t32 [4] postRoleM)])
         0 0 none true (scans := 1),
