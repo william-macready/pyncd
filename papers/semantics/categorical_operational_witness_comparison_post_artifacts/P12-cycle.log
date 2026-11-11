@@ -1,0 +1,15 @@
+=== P12 admit hidden donor to ranked profile MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean: '    ¬ Nonempty hiddenUpstream.program.RankCertificate := hidden_no_rank' -> '    Nonempty hiddenUpstream.program.RankCertificate := hidden_no_rank' ---
+error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:63:55: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean now) ---
+=== P12 admit hidden donor to ranked profile MUTATE exit=1 ===
+=== P12 admit hidden donor to ranked profile RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:74:0: 'IndexedRankedWitnessBoundaryTest.empty_input_present' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8677 jobs).
+=== P12 admit hidden donor to ranked profile SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P12 admit hidden donor to ranked profile: PASS

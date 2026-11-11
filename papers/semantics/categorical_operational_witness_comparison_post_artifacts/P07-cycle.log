@@ -1,0 +1,18 @@
+=== P07 retain rank or origin in witness image MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessComparison.lean: '    comparison.map (Quotient.mk _ (Normal.compute A r o before after)) =
+      comparison.map (Quotient.mk _ (Normal.compute A s p before after)) := rfl' -> '    comparison.map (Quotient.mk _ (Normal.compute A r o before after)) ≠
+      comparison.map (Quotient.mk _ (Normal.compute A s p before after)) := rfl' ---
+error: experiments/indexed_execution/IndexedRankedWitnessComparison.lean:88:0: Not a definitional equality: the conclusion should be an equality, but is `False`
+error: experiments/indexed_execution/IndexedRankedWitnessComparison.lean:94:76: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessComparison.lean now) ---
+=== P07 retain rank or origin in witness image MUTATE exit=1 ===
+=== P07 retain rank or origin in witness image RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:190:0: 'IndexedRankedWitnessCategoryTest.operational_origins_distinct' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:191:0: 'IndexedRankedWitnessCategoryTest.origins_same_full_image' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8669 jobs).
+=== P07 retain rank or origin in witness image SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P07 retain rank or origin in witness image: PASS

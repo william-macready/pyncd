@@ -1,0 +1,15 @@
+=== P04 nonconstant wire inverse as forward MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean: '    (Span.graph rotate.env).right view.env 0 point,' -> '    (Span.graph rotate.inverse.env).right view.env 0 point,' ---
+error: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:53:51: Tactic `decide` proved that the proposition
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean now) ---
+=== P04 nonconstant wire inverse as forward MUTATE exit=1 ===
+=== P04 nonconstant wire inverse as forward RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:190:0: 'IndexedRankedWitnessCategoryTest.operational_origins_distinct' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:191:0: 'IndexedRankedWitnessCategoryTest.origins_same_full_image' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8669 jobs).
+=== P04 nonconstant wire inverse as forward SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P04 nonconstant wire inverse as forward: PASS

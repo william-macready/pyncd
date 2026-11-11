@@ -1,0 +1,45 @@
+{
+  "base": "37500cab85a2989a1422da2ef21256cb5648e8da",
+  "build_command": [
+    "bash",
+    "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/lake-build.sh",
+    "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+    "IndexedRankedWitnessBridge",
+    "IndexedRankedWitnessDescent"
+  ],
+  "build_exit": 0,
+  "audit_command": [
+    "bash",
+    "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/lean-file.sh",
+    "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+    "experiments/indexed_execution/IndexedRankedWitnessAudit.lean"
+  ],
+  "audit_exit": 0,
+  "axiom_audits": [
+    "'IndexedRankedWitnessBridge.complete_iff_model' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessBridge.failed_iff_no_model' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessBridge.ranked_atMostOne' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessBridge.component_left_injective' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessDescent.observation_model_transport' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessDescent.witnessMap_store' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessDescent.compute_iso' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessDescent.agrees_iso' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessDescent.source_denote' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessDescent.agrees_denote' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "'IndexedRankedWitnessDescent.arrowHom_mk' depends on axioms: [propext, Classical.choice, Quot.sound]"
+  ],
+  "patches": [
+    "01-IndexedRankedWitnessBridge.patch",
+    "02-IndexedRankedWitnessDescent.patch",
+    "03-IndexedRankedWitnessAudit.patch"
+  ],
+  "patch_application": "git apply --check then apply, in order; byte-equal to compiled sources",
+  "source_sha256": {
+    "leanncd/lakefile.toml": "01a27158d24d6ae13db24b093b8f7b356d82e9bb745b548a3d1c15423baa0590",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBridge.lean": "05c6d468eaec496f05e7f4dd9cab07d1f7947006a0af36955556cad4d58cb547",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessDescent.lean": "5934f28b04d6f2dc6879ec98e9e3a5da351fc008b8441b7b74863cee730ddbc5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessAudit.lean": "fc4746304c8ab6ad335ceb386eaf87ee82953fc65316af5f89ec6654f2b86a9a"
+  },
+  "fixtures": "none added in this bounded proof prototype",
+  "mutation_cycles": "not run; no new runtime/regression fixtures"
+}

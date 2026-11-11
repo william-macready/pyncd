@@ -1,0 +1,112 @@
+diff --git a/leanncd/experiments/indexed_execution/IndexedRankedWitnessComparison.lean b/leanncd/experiments/indexed_execution/IndexedRankedWitnessComparison.lean
+new file mode 100644
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedRankedWitnessComparison.lean
+@@ -0,0 +1,96 @@
++import IndexedRankedWitnessDescent
++import IndexedRankedOperationalSource
++
++namespace IndexedRankedWitnessComparison
++
++open LeanNCD.Semantics IndexedComponentComposition IndexedWitness IndexedSource
++open IndexedRankedOperationalCore IndexedRankedOperationalCategory CategoryTheory
++open IndexedRankedWitnessDescent
++
++theorem source_comp {X Y Z : IndexedSource.Object} (f : Normal X Y) (g : Normal Y Z) :
++    (f.comp g).source.denote = f.source.denote ≫ g.source.denote := by
++  cases f with
++  | admin a =>
++      cases g with
++      | admin b =>
++          simp only [Normal.comp, Normal.source, Term.denote, Wire.env_comp, graphHom_comp]
++      | compute B rB ob before after =>
++          simp only [Normal.comp, Normal.source, Term.denote, Wire.env_comp,
++            ← graphHom_comp, Category.assoc]
++  | compute A rA oa beforeA afterA =>
++      cases g with
++      | admin b =>
++          simp only [Normal.comp, Normal.source, Term.denote, Wire.env_comp,
++            ← graphHom_comp, Category.assoc]
++      | compute B rB ob beforeB afterB =>
++          let b := connectingBoundary A B (afterA.comp beforeB)
++          have assembly := composition_hom A B b
++          have middle : (graphHom (boundaryEnvEquiv A B b) :
++              outputInterface A ⟶ inputInterface B) =
++              (graphHom afterA.env : outputInterface A ⟶ Y.interface) ≫
++                (graphHom beforeB.env : Y.interface ⟶ inputInterface B) := by
++            rw [graphHom_comp]
++            exact congrArg (fun e => @graphHom (outputInterface A) (inputInterface B) e)
++              ((connectingBoundary_env A B (afterA.comp beforeB)).trans
++                (Wire.env_comp afterA beforeB))
++          have whisker := congrArg
++            (fun (h : (inputInterface A) ⟶ (outputInterface B)) =>
++              (graphHom beforeA.env : X.interface ⟶ inputInterface A) ≫ h ≫
++                (graphHom afterB.env : outputInterface B ⟶ Z.interface)) assembly
++          simp only [Normal.comp, Normal.source, Term.denote, Wire.env_comp]
++          rw [← graphHom_comp, ← graphHom_comp]
++          rw [inputWire_env, outputWire_env]
++          rw [middle] at whisker
++          dsimp only at whisker
++          simp only [Category.assoc (obj := WholeInterface)] at whisker ⊢
++          exact whisker
++
++noncomputable def comparison : Target ⥤ WholeInterface where
++  obj X := X.interface.interface
++  map := arrowHom
++  map_id X := by
++    rw [show (𝟙 X : X ⟶ X) = Quotient.mk _ (Normal.identity X.interface) from rfl,
++      arrowHom_mk]
++    exact (congrArg graphHom (Wire.env_identity X.interface)).trans (graphHom_identity _)
++  map_comp := by
++    intro X Y Z f g
++    refine Quotient.inductionOn₂ f g ?_
++    intro a b
++    exact (source_denote (a.comp b)).symm.trans
++      ((source_comp a b).trans (congrArg₂
++        (fun (u : X.interface.interface ⟶ Y.interface.interface)
++          (v : Y.interface.interface ⟶ Z.interface.interface) => u ≫ v)
++        (source_denote a) (source_denote b)))
++
++theorem comparison_admin {X Y : Target} (w : Wire X.interface Y.interface) :
++    comparison.map (Quotient.mk _ (Normal.admin w)) = graphHom w.env := rfl
++
++theorem comparison_wire_comp {X Y Z : Target}
++    (a : Wire X.interface Y.interface) (b : Wire Y.interface Z.interface) :
++    comparison.map (Quotient.mk _ (Normal.admin (a.comp b))) =
++      graphHom a.env ≫ graphHom b.env := by
++  exact (congrArg graphHom (Wire.env_comp a b)).trans (graphHom_comp a.env b.env).symm
++
++theorem comparison_wire_inverse {X Y : Target} (w : Wire X.interface Y.interface) :
++    comparison.map (Quotient.mk _ (Normal.admin w.inverse)) = graphHom w.env.symm := by
++  exact congrArg graphHom (Wire.env_inverse w)
++
++theorem comparison_compute {σ : Declarations Unit} [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++    {X Y : Target} (A : MatchedComponent σ) (r : A.program.RankCertificate)
++    (o : Origin A) (before : Wire X.interface (input A))
++    (after : Wire (output A) Y.interface) :
++    comparison.map (Quotient.mk _ (Normal.compute A r o before after)) =
++      graphHom before.env ≫ Quotient.mk _ (componentSpan A) ≫ graphHom after.env := by
++  change arrowHom (Quotient.mk _ (Normal.compute A r o before after)) = _
++  rw [arrowHom_mk]
++  rfl
++
++theorem comparison_rank_origin_independent
++    {σ : Declarations Unit} [Fintype σ.Tensor] [DecidableEq σ.Tensor]
++    {X Y : Target} (A : MatchedComponent σ) (r s : A.program.RankCertificate)
++    (o p : Origin A) (before : Wire X.interface (input A))
++    (after : Wire (output A) Y.interface) :
++    comparison.map (Quotient.mk _ (Normal.compute A r o before after)) =
++      comparison.map (Quotient.mk _ (Normal.compute A s p before after)) := rfl
++
++end IndexedRankedWitnessComparison
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -206,6 +206,7 @@
+          "IndexedRankedOperationalCore",
+          "IndexedRankedWitnessBridge",
+          "IndexedRankedWitnessDescent",
++         "IndexedRankedWitnessComparison",
+          "IndexedOperationalScopeNaturality",
+          "IndexedRankedOperationalCategory",
+          "IndexedRankedOperationalSource",

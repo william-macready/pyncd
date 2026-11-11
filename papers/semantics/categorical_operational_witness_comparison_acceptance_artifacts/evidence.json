@@ -1,0 +1,109 @@
+{
+  "base": "37500cab85a2989a1422da2ef21256cb5648e8da",
+  "build_commands": [
+    [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/lake-build.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+      "IndexedRankedWitnessOutcomeTest",
+      "IndexedRankedWitnessCategoryTest",
+      "IndexedRankedWitnessBoundaryTest",
+      "IndexedRankedWitnessSemantics"
+    ],
+    [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/lake-build.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+      "LeanNCD",
+      "Tests",
+      "IndexedExecutionExperiment"
+    ]
+  ],
+  "build_exits": [
+    0,
+    0
+  ],
+  "patch_baseline": "Existing Bridge/Descent/Comparison/Source/Outcomes stage2, not bare main",
+  "patch_checks": [
+    [
+      "/usr/bin/git",
+      "-C",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+      "apply",
+      "--check",
+      "--directory=papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/patch-validation",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/07-IndexedRankedWitnessOutcomeTest.patch"
+    ],
+    [
+      "/usr/bin/git",
+      "-C",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+      "apply",
+      "--check",
+      "--directory=papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/patch-validation",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/08-IndexedRankedWitnessCategoryTest.patch"
+    ],
+    [
+      "/usr/bin/git",
+      "-C",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+      "apply",
+      "--check",
+      "--directory=papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/patch-validation",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/09-IndexedRankedWitnessBoundaryTest.patch"
+    ]
+  ],
+  "source_sha256": {
+    "leanncd/lakefile.toml": "0391069f34dc29486b88a0e2f4bab385359e5a755828c466ee74f3ad8953f40e",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessAudit.lean": "fc4746304c8ab6ad335ceb386eaf87ee82953fc65316af5f89ec6654f2b86a9a",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean": "234def84a3791ae4fa855d4f2a5a254f9ac624948b97aa55ce57a5b753ebe29f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBridge.lean": "05c6d468eaec496f05e7f4dd9cab07d1f7947006a0af36955556cad4d58cb547",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean": "8dad8d738165fdd143cc1be4308f2acbc98a6ea6852c9ae8b3f25f06220bcff5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessComparison.lean": "ee2de25db997f08fd5681e6c7bda380926a4a0c6adf8abe41ca1ab96de0a94db",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessDescent.lean": "5934f28b04d6f2dc6879ec98e9e3a5da351fc008b8441b7b74863cee730ddbc5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean": "ab2b854188b14d3774c9d6d8d514e55767eed4a61a7d51e43310a80d8eb0081f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean": "381d4212a8a2395856088932e27cfca3cad41e52ac6ac9fcf2fb2297fa9f4f88",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSemantics.lean": "878b279da59d97bf4f9719ad18fe35af038c4cca2c100584fe8ba77955964584",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSource.lean": "5cf32dd0d65b0e81f123f7c2557e5a6e2f5f4f84240a30a263568b417653165b",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessStage2Audit.lean": "f17666b2aa2378eb0fc386f606eaea8768e272267f7ae00ea06bbf6e9a37b7ac"
+  },
+  "patch_sha256": {
+    "07-IndexedRankedWitnessOutcomeTest.patch": "46ea685a439bece973c0382838ae6bee51f5e747a14bf0e8fac5b3916f93e990",
+    "08-IndexedRankedWitnessCategoryTest.patch": "cc18a2eb5782f14ec5f85bcb1d6fc86ec851d8a4aa304d24a80c8e336914dedc",
+    "09-IndexedRankedWitnessBoundaryTest.patch": "17213d9a4a9293a6c4ac48fb653d18eb4a994afe73598af298e5bf43bc7be738"
+  },
+  "audits": [
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:209:0: 'IndexedRankedWitnessOutcomeTest.strict_private_no_witness' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:210:0: 'IndexedRankedWitnessOutcomeTest.private_success_full' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:211:0: 'IndexedRankedWitnessOutcomeTest.private_reference_value' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:212:0: 'IndexedRankedWitnessOutcomeTest.pair_success_full' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:213:0: 'IndexedRankedWitnessOutcomeTest.failure_A' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:214:0: 'IndexedRankedWitnessOutcomeTest.failure_B' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:215:0: 'IndexedRankedWitnessOutcomeTest.failure_C' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:185:0: 'IndexedRankedWitnessCategoryTest.binary_exterior' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:186:0: 'IndexedRankedWitnessCategoryTest.binary_composition' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:187:0: 'IndexedRankedWitnessCategoryTest.nested_images' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:188:0: 'IndexedRankedWitnessCategoryTest.left_nested_exterior' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:189:0: 'IndexedRankedWitnessCategoryTest.right_nested_exterior' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:190:0: 'IndexedRankedWitnessCategoryTest.operational_origins_distinct' depends on axioms: [propext,",
+    "info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:191:0: 'IndexedRankedWitnessCategoryTest.origins_same_full_image' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:73:0: 'IndexedRankedWitnessBoundaryTest.empty_metadata_distinct' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:74:0: 'IndexedRankedWitnessBoundaryTest.empty_input_present' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]"
+  ],
+  "observations": [
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:16:0: (\"failed\", some 30, some ([some 3, some 9, none], [(201, 9)]))",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:17:0: (\"complete\", none, some ([some 3, some 9, some (7 / 2)], [(201, 9), (301, 7 / 2)]))",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:18:0: some",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:19:0: (some",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:141:0: [some 3, some 9, some (7 / 2), some 81, some (19 / 2)]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:202:0: [(true, true, true), (true, true, true), (true, true, true)]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:203:0: [(true, true, 3, 3, 3, 3), (true, true, 7, 7, 7, 7), (true, true, 11, 11, 11, 11)]",
+    "info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:52:0: (11, 101, 110, 110)",
+    "info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:40:0: (true, false, \"complete\", \"invalidInput\")",
+    "info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:70:0: (0, 1, 0, 0)"
+  ],
+  "mutations_run": false
+}
