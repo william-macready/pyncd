@@ -1905,6 +1905,119 @@ def rnn_bi_pins(by: dict, sfx: str) -> None:
     print_conv_stats(name)
 
 
+def rnn_grad_pins(by: dict, sfx: str) -> None:
+    """Gradient pins (backpropagation THROUGH TIME) of the three recurrent fixtures: `jax.grad` of `L = sum(C * out)` through the emitted scan over EVERY float
+    input (eager and jit), with `out` = the logits `Lg` for the GRU and the bidirectional RNN (not the softmax: a softmax loss is nearly degenerate) and
+    `H[:, 6]` together with the per-step readout `Yt` for the LSTM, against (a) the autodiff of a pure-JAX model written from the definition as an unrolled
+    Python loop (no plan, no scan, `Neg` read as a plain input) and (b) central finite differences of the float64 numpy models (explicit loops) along
+    random directions with `Neg` FROZEN (the numpy models hard-code the minus). X row 6 (never read) has EXACTLY zero gradient, X rows 0 .. 5 a real one
+    (information flows back through all six steps), the gradients with respect to the initial states and every weight are non-trivial."""
+
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    sig = jax.nn.sigmoid
+
+    def gru_hand(i):
+        h = i["H0"]
+        for t in range(6):
+            x = i["X"][t]
+            z = sig(i["Wz"] @ x + i["Uz"] @ h + i["Bz"])
+            r = sig(i["Wr"] @ x + i["Ur"] @ h + i["Br"])
+            n = jnp.tanh(i["Wn"] @ x + r * (i["Un"] @ h) + i["Bn"])
+            h = n + i["Neg"] * z * n + z * h  # (1 - z) * n + z * h with the minus through the scalar input Neg
+        return [i["Wy"] @ h]
+
+    def lstm_hand(i):
+        h, c = i["H0"], i["C0"]
+        hs = [h]
+        for t in range(6):
+            x = i["X"][t]
+            ig = sig(i["Wi"] @ x + i["Ui"] @ h + i["Bi"])
+            fg = sig(i["Wf"] @ x + i["Uf"] @ h + i["Bf"])
+            og = sig(i["Wo"] @ x + i["Uo"] @ h + i["Bo"])
+            gg = jnp.tanh(i["Wg"] @ x + i["Ug"] @ h + i["Bg"])
+            c = fg * c + ig * gg
+            h = og * jnp.tanh(c)
+            hs.append(h)
+        return [h, jnp.stack([i["Wy"] @ hh for hh in hs])]
+
+    def bi_hand(i):
+        hf, hb = i["Hf0"], i["Hb0"]
+        for t in range(6):
+            hf = jnp.tanh(i["Wf"] @ i["X"][t] + i["Uf"] @ hf)
+            hb = jnp.tanh(i["Wb"] @ i["X"][5 - t] + i["Ub"] @ hb)
+        return [i["Wo"] @ hf + i["Wp"] @ hb]
+
+    # name -> (the plan's outputs entering the loss, the pure-JAX model, the numpy model of the SAME outputs)
+    specs = {
+        f"rnn_gru{sfx}": (lambda r: [r["Lg"]], gru_hand, lambda i: [np_gru(i)[0]["Lg"]]),
+        f"rnn_lstm{sfx}": (lambda r: [r["H"][:, 6], r["Yt"]], lstm_hand, lambda i: [np_lstm(i)[0]["H"][:, 6], np_lstm(i)[0]["Yt"]]),
+        f"rnn_bi{sfx}": (lambda r: [r["Lg"]], bi_hand, lambda i: [np_birnn(i)["Lg"]]),
+    }
+    lines = []
+    for name, (take, hand, np_model) in specs.items():
+        fx = by[name]
+        sin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+        jin = {n: jnp.asarray(a) for n, a in sin.items()}
+        cs = [np.sin(1.0 + np.arange(o.size)).reshape(o.shape).astype(NDT) for o in np_model({n: a.astype(np.float64) for n, a in sin.items()})]
+
+        def loss_plan(inp, cs=cs, fx=fx, take=take):
+            return sum(jnp.sum(c * o) for c, o in zip(cs, take(rt.run_named(fx["plan"], inp, JDT))))
+
+        def loss_hand(inp, cs=cs, hand=hand):
+            return sum(jnp.sum(c * o) for c, o in zip(cs, hand(inp)))
+
+        grads = {"eager": jax.grad(loss_plan)(jin), "jit": jax.jit(jax.grad(loss_plan))(jin)}
+        g_hand = jax.grad(loss_hand)(jin)
+        assert np.all(np.asarray(g_hand["X"])[6] == 0), (name, "the pure-JAX model reads X[6]")
+        err, smallest = {}, {}
+        for who, g in grads.items():
+            assert sorted(g) == sorted(sin), (name, who, sorted(g))
+            assert all(np.all(np.isfinite(np.asarray(v))) and np.asarray(v).dtype == NDT for v in g.values()), (name, who, "gradient not finite")
+            assert np.all(np.asarray(g["X"])[6] == 0), (name, who, "the never-read X row 6 received gradient")
+            rows = np.max(np.abs(np.asarray(g["X"])[:6]), axis=1)
+            assert np.all(rows > 1e-3), (name, who, "an X row 0 .. 5 has no real gradient: information does not flow back through all six steps", rows.tolist())
+            for n, v in g.items():
+                smallest[n] = min(smallest.get(n, np.inf), float(np.max(np.abs(np.asarray(v)))))
+                assert smallest[n] > 1e-3, (name, "trivial gradient", who, n, smallest[n])
+                e_ref = scaled(v, g_hand[n])
+                assert e_ref < GRAD_TOL[_DT], (f"gradient pin: {name} vs the pure-JAX unrolled model", who, n, e_ref)
+                err[n] = max(err.get(n, 0.0), e_ref)
+        gx = np.array(grads["eager"]["X"])
+        gp = gx.copy()
+        gp.flat[int(np.argmax(np.abs(gx)))] += NDT(1e-3)  # these gradients are O(0.1), so the test is an ABSOLUTE 1e-3 perturbation
+        assert scaled(gp, gx) >= GRAD_TOL[_DT], (name, "gradient tolerance accepts a 1e-3 perturbation: vacuous")
+        # (b) directional derivatives against central differences of the float64 numpy model (3 fixed directions over every input, Neg frozen)
+        base = {n: a.astype(np.float64) for n, a in sin.items()}
+        rng = np.random.default_rng(7)
+        loss_np = lambda inp, cs=cs, np_model=np_model: float(sum(np.sum(c.astype(np.float64) * o) for c, o in zip(cs, np_model(inp))))
+        fd_err, dots = 0.0, []
+        for _ in range(3):
+            d = {n: rng.standard_normal(a.shape) for n, a in base.items()}
+            if "Neg" in d:  # the numpy model hard-codes the minus: the gradient of `Neg` is pinned against the pure-JAX model only
+                d["Neg"] = np.zeros_like(d["Neg"])
+            d["X"][6] = 0.0
+            eps = 1e-6
+            fd = (loss_np({n: base[n] + eps * d[n] for n in base}) - loss_np({n: base[n] - eps * d[n] for n in base})) / (2 * eps)
+            for who, g in grads.items():
+                dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * d[n]) for n in base))
+                assert abs(dot) > 1e-3, (name, "finite-difference direction is trivial", dot)
+                fd_err = max(fd_err, abs(fd - dot) / max(1.0, abs(dot)))
+            dots.append(dot)
+        assert fd_err < GRAD_FD_TOL[_DT], (f"gradient pin: {name} directional derivative vs finite differences of the numpy model", fd_err)
+        lines.append(f"  {name}: all {len(sin)} float inputs, eager and jit, finite; X row 6 EXACTLY zero gradient (eager, jit and the pure-JAX model), X rows 0..5 and "
+                     f"every input non-trivial (smallest per-input max {min(smallest.values()):.3f}); vs pure-JAX unrolled model max scaled {max(err.values()):.3e} "
+                     f"(headroom {GRAD_TOL[_DT] / max(max(err.values()), 1e-300):.1f}x); directional derivatives vs central differences of the numpy model "
+                     f"(|dot| {min(abs(x) for x in dots):.2f} to {max(abs(x) for x in dots):.2f}, Neg frozen) max scaled {fd_err:.3e} "
+                     f"(headroom {GRAD_FD_TOL[_DT] / max(fd_err, 1e-300):.1f}x)")
+    print(f"gradients of the recurrent fixtures (GRU logits Lg, LSTM H[:, 6] + Yt, bidirectional logits Lg; every float input, tol {GRAD_TOL[_DT]:.0e} vs pure-JAX "
+          f"unrolled models, {GRAD_FD_TOL[_DT]:.0e} vs finite differences):")
+    for line in lines:
+        print(line)
+
+
 def main() -> None:
     spec = importlib.util.spec_from_file_location("gen_nonlin", Path(sys.argv[2]).resolve())
     mod = importlib.util.module_from_spec(spec)
@@ -2235,6 +2348,10 @@ def main() -> None:
 
     # GRADIENTS through the convolution fixtures (plan vs pure-JAX lax.conv models and finite differences): see `conv_grad_pins`.
     conv_grad_pins(by, sfx)
+
+    # GRADIENTS through the recurrent fixtures (backpropagation through time; plan vs unrolled pure-JAX models and finite differences): see
+    # `rnn_grad_pins`.
+    rnn_grad_pins(by, sfx)
 
     # POST-SCAN ROLE: `S[j, l+1] := S[j, l] . G[j]` (closed form `S = X * G**l`) and six statements nothing in
     # the recurrence reads, so each is a plain node AFTER the one scan node and `l` is an ordinary axis in it.
