@@ -197,7 +197,8 @@ dispatch's ≤~250k/~60-turn caps still apply and must be recorded honestly.
 - [x] Whole-branch review lens 1: quotient/comparison/domain/diagram soundness.
 - [x] Whole-branch review lens 2: operational/reference/acceptance/information loss.
 - [x] Findings adjudicated/fixed with refreshed gates; budget close-out.
-- [ ] Local main integration green; only owned branch/worktree removed; no push.
+- [x] Local main integration green; no push. Exact owned-branch/worktree cleanup
+  is recorded in the generated integration receipt below.
 
 Append execution results/findings here; do not rewrite historical receipts or
 promote authoring measurements into controller completion.
@@ -261,3 +262,18 @@ input, peak context and token-budget totals remain unavailable rather than
 claimed compliant; the possible stage2 turn-cap breach remains disclosed.
 No new mathematical boundary, faithfulness or unranked claim is inferred from
 the release checks. No remote push has been performed.
+
+## Local main integration
+
+The clean topic was merged into local main as `7b940b66`. Topic ancestry and
+immediate main/topic tree equality both passed. The controller then ran the
+full prescribed build in the primary main checkout: **8964 jobs passed**.
+The source/hash/default-boundary audit also passed on that checkout.
+Only this evidence record and the generated cleanup receipt changed afterward,
+not the reviewed implementation.
+
+The generated [integration receipt](categorical_operational_witness_comparison_post_artifacts/integration.json)
+records actual cleanup of this task's exact worktree and branch, preservation
+of all other registered worktrees, final repository cleanliness and local
+ahead/behind counts. The only ignored task-worktree content before cleanup was
+the prepared `leanncd/.lake/` build cache. No push is authorized or performed.
