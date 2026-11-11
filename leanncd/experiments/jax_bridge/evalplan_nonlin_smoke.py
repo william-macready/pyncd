@@ -54,7 +54,8 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_gqa", "transformer_gqa32", "transformer_gqa_split", "transformer_gqa_split32",
                         "transformer_gqa_mha", "transformer_gqa_mha32",
                         "transformer_cross", "transformer_cross32", "transformer_cross_hoisted", "transformer_cross_hoisted32",
-                        "transformer_cross_wide", "transformer_cross_wide32"}
+                        "transformer_cross_wide", "transformer_cross_wide32",
+                        "conv1d_cnn", "conv1d_cnn32", "conv1d_causal", "conv1d_causal32", "vit_patch", "vit_patch32"}
 # Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
 # layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
 # require that EXACTLY layer 2 is NaN (in Lean, eager and jit alike); every other output must be finite.
@@ -377,7 +378,7 @@ def run_fixture(f: dict) -> None:
     inputs = {n: reconstruct(e) for n, e in f["inputs"].items()}
     eager = rt.run_named(plan, inputs, JDT)
     jitted = jax.jit(lambda i: rt.run_named(plan, i, JDT))(inputs)
-    if any(n.get("kind") == "scan" for n in plan["nodes"]) or f["name"].startswith("transformer_unrolled"):
+    if any(n.get("kind") == "scan" for n in plan["nodes"]) or f["name"].startswith(("transformer_unrolled", "conv1d_")):
         EAGER[f["name"]] = {"eager": eager, "jit": jitted}
     for name, exp in f["expected"].items():
         nan_layer = (f["name"], name) in NAN_LAYER_OUTPUTS
@@ -1235,6 +1236,428 @@ def fixture_grad_pins(by: dict, sfx: str) -> None:
         print(line)
 
 
+def np_conv(X, W, n_out, stride=1, dilation=1, bias=0, wrap=False):
+    """1-D convolution written from the ENGLISH definition (no `np.convolve`, no windowing helpers, nothing shared with the plan):
+    `Y[o, d] = sum over taps i and channels c of W[d, i, c] * X[stride * o + dilation * i + bias, c]`, with a zero for an index outside
+    `[0, L)` (or, with `wrap`, the index taken modulo L: a circular model, used only as a wrong-model alternative)."""
+    f_x, f_w = np.asarray(X, dtype=np.float64), np.asarray(W, dtype=np.float64)
+    length, chans = f_x.shape
+    n_d, n_k, n_c = f_w.shape
+    assert n_c == chans, (f_w.shape, f_x.shape)
+    y = np.zeros((n_out, n_d))
+    for o in range(n_out):
+        for d in range(n_d):
+            acc = 0.0
+            for i in range(n_k):
+                t = stride * o + dilation * i + bias
+                if wrap:
+                    t %= length
+                elif t < 0 or t >= length:
+                    continue
+                for c in range(chans):
+                    acc += f_w[d, i, c] * f_x[t, c]
+            y[o, d] = acc
+    return y
+
+
+def np_cnn(inp: dict, dilation2: int = 2, stride2: int = 2, flip: bool = False, bias: bool = True, relu: bool = True,
+           pool: float | None = None) -> dict:
+    """Float64 model of `conv1d_cnn` from the inputs only: Y1 = valid stride-1 convolution of X with W1 plus B1; A1 = relu; Y2 = convolution of A1
+    with W2 (stride 2, dilation 2) plus B2; A2 = relu; Gp = mean over positions (divisor = the extent of Y2's position axis); Zc = Wc . Gp + Bc;
+    Pr = softmax(Zc). The keyword arguments build the wrong models the non-vacuity pins compare against (the second layer keeps its output extent)."""
+    f = {k: np.asarray(v, dtype=np.float64) for k, v in inp.items()}
+    n_o = f["X"].shape[0] - f["W1"].shape[1] + 1
+    n_p = (n_o - 1 - 2 * (f["W2"].shape[1] - 1)) // 2 + 1  # the canonical extent of Y2's position axis (stride 2, dilation 2)
+    y1 = np_conv(f["X"], f["W1"][:, ::-1, :] if flip else f["W1"], n_o) + (f["B1"] if bias else 0.0)
+    a1 = np.maximum(y1, 0.0) if relu else y1
+    y2 = np_conv(a1, f["W2"], n_p, stride2, dilation2) + (f["B2"] if bias else 0.0)
+    a2 = np.maximum(y2, 0.0) if relu else y2
+    gp = a2.sum(axis=0) / (pool if pool is not None else n_p)
+    zc = np.einsum("ne,e->n", f["Wc"], gp) + (f["Bc"] if bias else 0.0)
+    return {"Y1": y1, "A1": a1, "Y2": y2, "A2": a2, "Gp": gp, "Zc": zc, "Pr": np_softmax_last(zc)}
+
+
+def np_tcn(inp: dict, wrap: bool = False, centred: bool = False, skip: bool = True, dil1: int = 2, dil2: int = 4) -> dict:
+    """Float64 model of `conv1d_causal` (a TCN residual block) from the inputs only: Y1 = causal dilated (dilation `dil1`) convolution of X with
+    W1 plus B1 (left zero padding: tap i reads `X[o + dil1 * i - dil1 * (K - 1)]`, a negative index is zero); A1 = relu; Y2 = the same with W2,
+    dilation `dil2`, plus B2; A2 = relu; Rs = 1x1 convolution of X with Wr; Out = A2 + Rs. `wrap` pads circularly, `centred` centres the window
+    instead of making it causal, `skip=False` drops the residual path (the wrong models of the non-vacuity pins)."""
+    f = {k: np.asarray(v, dtype=np.float64) for k, v in inp.items()}
+    length, k = f["X"].shape[0], f["W1"].shape[1]
+    shift = (lambda d: -(d * (k - 1)) // 2) if centred else (lambda d: -(d * (k - 1)))
+    y1 = np_conv(f["X"], f["W1"], length, 1, dil1, shift(dil1), wrap) + f["B1"]
+    a1 = np.maximum(y1, 0.0)
+    y2 = np_conv(a1, f["W2"], length, 1, dil2, shift(dil2), wrap) + f["B2"]
+    a2 = np.maximum(y2, 0.0)
+    rs = np_conv(f["X"], f["Wr"][:, None, :], length)
+    return {"Y1": y1, "A1": a1, "Y2": y2, "A2": a2, "Rs": rs, "Out": a2 + rs if skip else a2}
+
+
+def np_vit(inp: dict, no_pos: bool = False, stride: int = 6, permute: bool = False):
+    """Float64 model of `vit_patch` from the inputs only: the patch embedding Pe[q, m] = sum over window taps i and channels c of
+    Wp[m, i, c] * Img[stride * q + i, c], plus Pos[q, m], is the scan's base state, then the two-layer standard pre-norm model `np_transformer`
+    (unchanged) on `X = Pe`. Returns `(Pe, H[q, m, 3])`. `no_pos`, `stride` and `permute` (the window taps reversed) build the wrong models."""
+    f = {k: np.asarray(v, dtype=np.float64) for k, v in inp.items()}
+    n_q = f["Pos"].shape[0]
+    pe = np_conv(f["Img"], f["Wp"][:, ::-1, :] if permute else f["Wp"], n_q, stride) + (0.0 if no_pos else f["Pos"])
+    full = dict(f, X=pe)
+    return pe, np_state(full, np_transformer(full))
+
+
+def dict_gap(a: dict, b: dict) -> float:
+    """Largest absolute difference over the entries (tensors) the two models share, which must all have equal shapes."""
+    assert sorted(a) == sorted(b) and all(a[n].shape == b[n].shape for n in a), (sorted(a), sorted(b))
+    return max(float(np.max(np.abs(a[n] - b[n]))) for n in a)
+
+
+def conv_views(by: dict, name: str) -> dict:
+    """The three views of a fixture's exported tensors: Lean's own result, the eager runtime and `jax.jit`."""
+    return {"lean": {n: lean_array(e) for n, e in by[name]["expected"].items()},
+            "eager": {n: np.asarray(v) for n, v in EAGER[name]["eager"].items()},
+            "jit": {n: np.asarray(v) for n, v in EAGER[name]["jit"].items()}}
+
+
+def print_conv_stats(name: str) -> None:
+    print(f"{name}: per-output measured difference vs numpy and vs Lean:")
+    print_np_stats(name)
+    worst = max(NUM_STATS[(name, n)][0] for fx_, n in NUM_STATS if fx_ == name)
+    room = "unbounded (bit-identical to numpy)" if worst == 0.0 else f"{MODEL_TOL[_DT] / worst:.1f}x"
+    print(f"  worst scaled difference vs numpy {worst:.3e}: headroom to MODEL_TOL {room} (tol {MODEL_TOL[_DT]:.0e})")
+    for n in sorted(n for fx_, n in OUT_STATS if fx_ == name):
+        rel, ab, ex, tot = OUT_STATS[(name, n)]
+        print(f"  {n:8s} max rel {rel:.3e}  max abs {ab:.3e}  bit-identical {ex}/{tot}")
+
+
+def conv_cnn_pins(by: dict, sfx: str) -> None:
+    """Pins of `conv1d_cnn` (a 1-D CNN classifier): a valid stride-1 convolution with bias and relu, then a stride-2 dilation-2 convolution that
+    READS AN INTERMEDIATE through an affine slot (`A1[2 * p + 2 * j, d]`), bias, relu, a global mean pool (a sum times the scalar input
+    `Ip = 1 / p`), a linear head and a softmax over the classes. The reference is `np_cnn` (explicit loops, from the exported inputs only).
+    Value pins on Lean, eager and jit for EVERY exported tensor (the linear intermediates `Y1`, `Y2` included); non-vacuity against wrong
+    models (dilation 1, stride 1, flipped kernel, no bias, no relu, a wrong pool divisor); relu clamps some entries and passes others;
+    structure (shapes from the inputs, probabilities positive and summing to 1, nine pairwise distinct extents)."""
+    name = f"conv1d_cnn{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    assert sorted(fin) == ["B1", "B2", "Bc", "Ip", "W1", "W2", "Wc", "X"], sorted(fin)
+    kinds = [n.get("kind", "assign") for n in fx["plan"]["nodes"]]
+    assert kinds == ["assign", "assign", "pointwise", "assign", "assign", "pointwise", "assign", "assign", "assign", "axiswise"], kinds  # conv, bias, relu, conv, bias, relu, pool, head conv, head bias, softmax
+    assert sorted(m for m, _ in fx["plan"]["materialized"]) == ["A1", "A2", "Gp", "Pr", "Y1", "Y2", "Zc"], fx["plan"]["materialized"]
+    n_l, n_c = fin["X"].shape
+    (n_d, n_k1, c1), (n_e, n_k2, d2), (n_cls, e3) = fin["W1"].shape, fin["W2"].shape, fin["Wc"].shape
+    n_o = n_l - n_k1 + 1
+    n_p = (n_o - 1 - 2 * (n_k2 - 1)) // 2 + 1
+    ext = {"l": n_l, "c": n_c, "i": n_k1, "d": n_d, "o": n_o, "j": n_k2, "e": n_e, "p": n_p, "n": n_cls}
+    # nine pairwise distinct extents: no axis-order bug can hide behind equal extents on any weight, intermediate or output
+    assert len(set(ext.values())) == len(ext) and (c1, d2, e3) == (n_c, n_d, n_e), ext
+    assert fin["B1"].shape == (n_d,) and fin["B2"].shape == (n_e,) and fin["Bc"].shape == (n_cls,), (fin["B1"].shape, fin["B2"].shape, fin["Bc"].shape)
+    tol = 1e-6 if _DT == "float32" else 1e-14
+    assert fin["Ip"].shape == () and np.isclose(float(fin["Ip"]), 1.0 / n_p, rtol=tol), fin["Ip"]  # the pool scale from the shapes
+    want = np_cnn(fin)
+    for n, shp in {"Y1": (n_o, n_d), "A1": (n_o, n_d), "Y2": (n_p, n_e), "A2": (n_p, n_e), "Gp": (n_e,), "Zc": (n_cls,), "Pr": (n_cls,)}.items():
+        assert want[n].shape == shp, (n, want[n].shape, shp)
+    # relu is real: it clamps some entries and passes others (a pass-through or an all-zero relu would be caught here)
+    for y, a in (("Y1", "A1"), ("Y2", "A2")):
+        assert np.array_equal(want[a], np.maximum(want[y], 0.0)) and np.any(want[y] < 0) and np.any(want[a] > 0) and np.any(want[a] == 0), (name, a)
+    wrong = {"second-layer dilation 1": np_cnn(fin, dilation2=1), "second-layer stride 1": np_cnn(fin, stride2=1),
+             "kernel flipped": np_cnn(fin, flip=True), "no bias": np_cnn(fin, bias=False), "no relu": np_cnn(fin, relu=False),
+             "pool divisor 7": np_cnn(fin, pool=float(n_p - 1))}
+    gaps = {what: dict_gap(want, m) for what, m in wrong.items()}
+    for what, g in gaps.items():
+        assert g > 1e-2, (name, "the CNN pin is indistinguishable from", what, g)
+    for who, outs in conv_views(by, name).items():
+        assert sorted(outs) == sorted(want), (name, who, sorted(outs))
+        assert outs["Y1"].shape == (n_o, n_d) and outs["Y2"].shape == (n_p, n_e), (name, who)
+        for n in sorted(want):
+            check_np(name, who, n, outs[n], want[n])
+        pr = outs["Pr"].astype(np.float64)
+        assert np.all(pr > 0) and abs(float(pr.sum()) - 1.0) < HEAD_ROWSUM_TOL[_DT], (name, who, "Pr is not a probability vector", pr.tolist())
+    print(f"conv1d_cnn{sfx}: extents l={n_l}, c={n_c}, i={n_k1}, d={n_d}, o={n_o}, j={n_k2}, e={n_e}, p={n_p}, n={n_cls} pairwise distinct; plan = 7 assign, "
+          f"2 relu, 1 softmax, exactly Y1, A1, Y2, A2, Gp, Zc, Pr exported; Ip = 1/p from the shapes; every export == numpy explicit-loop model "
+          f"(English definition) on Lean, eager and jit; relu clamps {int(np.sum(want['A1'] == 0))}/{want['A1'].size} of A1 and "
+          f"{int(np.sum(want['A2'] == 0))}/{want['A2'].size} of A2; Pr positive, sums to 1; numpy differs from "
+          f"{', '.join(f'{w} by {g:.3f}' for w, g in gaps.items())}")
+    print_conv_stats(name)
+
+
+def conv_causal_pins(by: dict, sfx: str) -> None:
+    """Pins of `conv1d_causal` (a TCN residual block): two dilated CAUSAL convolutions (dilations 2 and 4; left zero padding by a negative index
+    bias, output extent = input extent) with a relu after each, a 1x1 convolution on the skip path and the residual add. Reference `np_tcn`
+    (explicit loops, zero outside `[0, L)`). Value pins on Lean, eager and jit for every export; non-vacuity (circular padding, a centred window,
+    no skip, dilation 1; the skip weights and each bias must matter); CAUSALITY on the eager runtime: perturbing `X[t]` leaves every output
+    `o < t` and every output beyond the receptive field `t + 12` BITWISE unchanged (a non-causal model of the same extent fails it), and the
+    outputs that move are exactly at the offsets the two dilations reach (`o - t` even, `0 <= o - t <= 12`); the first output row is the
+    zero-padded value (a wrapping runtime would read the end of the sequence)."""
+    name = f"conv1d_causal{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    assert sorted(fin) == ["B1", "B2", "W1", "W2", "Wr", "X"], sorted(fin)
+    kinds = [n.get("kind", "assign") for n in fx["plan"]["nodes"]]
+    assert kinds == ["assign", "assign", "pointwise", "assign", "assign", "pointwise", "assign", "assign"], kinds  # conv, bias, relu, conv, bias, relu, skip, add
+    assert sorted(m for m, _ in fx["plan"]["materialized"]) == ["A1", "A2", "Out", "Rs", "Y1", "Y2"], fx["plan"]["materialized"]
+    n_l, n_c = fin["X"].shape
+    (n_d, n_k1, c1), (n_e, n_k2, d2), (e3, c3) = fin["W1"].shape, fin["W2"].shape, fin["Wr"].shape
+    # l, c, k, d, e pairwise distinct (the two kernel widths are both k = 3: separate axes of separate tensors, the only equal pair)
+    assert n_k1 == n_k2 and len({n_l, n_c, n_k1, n_d, n_e}) == 5 and (c1, d2, e3, c3) == (n_c, n_d, n_e, n_c), (n_l, n_c, n_k1, n_d, n_e)
+    assert n_l == 17 and n_k1 == 3, (n_l, n_k1)
+    reach = 2 * (n_k1 - 1) + 4 * (n_k1 - 1)  # receptive field: dilation 2 then dilation 4, K = 3 each, X[o - 12 .. o]
+    assert reach == 12 and n_l > reach + 1, reach
+    want = np_tcn(fin)
+    wrong = {"circular padding": np_tcn(fin, wrap=True), "centred (non-causal) window": np_tcn(fin, centred=True),
+             "no skip path": np_tcn(fin, skip=False), "first-layer dilation 1": np_tcn(fin, dil1=1)}
+    gaps = {what: dict_gap(want, m) for what, m in wrong.items()}
+    for what, g in gaps.items():
+        assert g > 1e-2, (name, "the TCN pin is indistinguishable from", what, g)
+    # the 1x1 skip and each bias are not ignorable
+    moved = {"Wr": dict_gap(want, np_tcn(dict(fin, Wr=fin["Wr"] + 0.05))), "B1": dict_gap(want, np_tcn(dict(fin, B1=fin["B1"] + 0.05))),
+             "B2": dict_gap(want, np_tcn(dict(fin, B2=fin["B2"] + 0.05)))}
+    assert min(moved.values()) > 1e-3, (name, "the skip weights or a bias are ignorable", moved)
+    # the first row is the zero-padded value: the layer-1 taps at X[-4], X[-2] are zero, only tap 2 reads X[0]
+    f64 = {n: a.astype(np.float64) for n, a in fin.items()}
+    y1_row0 = f64["B1"] + np.einsum("dc,c->d", f64["W1"][:, 2, :], f64["X"][0])
+    assert np.allclose(want["Y1"][0], y1_row0, rtol=1e-12), (want["Y1"][0], y1_row0)
+    views = conv_views(by, name)
+    for who, outs in views.items():
+        assert sorted(outs) == sorted(want), (name, who, sorted(outs))
+        for n in sorted(want):
+            assert outs[n].shape == (n_l, n_d if n in ("Y1", "A1") else n_e), (name, who, n, outs[n].shape)
+            check_np(name, who, n, outs[n], want[n])
+        row0 = float(np.max(np.abs(outs["Y1"][0].astype(np.float64) - y1_row0)))
+        assert row0 < MODEL_TOL[_DT], (name, who, "the first output row is not the zero-padded value", row0)
+    # CAUSALITY on the eager runtime (the pin does not read Lean): perturb X[t]; compare every export bitwise
+    plan = fx["plan"]
+    inputs = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+    base = EAGER[name]["eager"]
+    hit, sizes = set(), {}
+    # each export's own receptive field: layer 1 reaches back 2 * (K - 1) = 4, the 1x1 skip 0, everything after layer 2 the full 12
+    reach_of = {"Y1": 2 * (n_k1 - 1), "A1": 2 * (n_k1 - 1), "Rs": 0, "Y2": reach, "A2": reach, "Out": reach}
+    for t in range(n_l):
+        x_p = np.array(fin["X"], dtype=NDT)
+        x_p[t] += NDT(0.5)
+        pert = rt.run_named(plan, dict(inputs, X=jnp.asarray(x_p)), JDT)
+        for n in sorted(want):
+            b, p = np.asarray(base[n]), np.asarray(pert[n])
+            assert b.dtype == p.dtype == NDT and b.shape == p.shape, (name, n)
+            for o in range(n_l):
+                same = np.array_equal(bits(b[o]), bits(p[o]))
+                if o < t or o > t + reach_of[n] or (o - t) % 2 == 1:
+                    assert same, (f"causality: {n}[{o}] changed under a perturbation of X[{t}]", o - t)
+                elif not same:
+                    hit.add((n, o - t))
+                    sizes[(n, o - t)] = max(sizes.get((n, o - t), 0.0), float(np.max(np.abs(b[o].astype(np.float64) - p[o].astype(np.float64)))))
+        assert (("Out", 0)) in hit and ("Rs", 0) in hit, (name, "the skip path does not respond to its own position", t)
+    # every even offset 0, 2, ..., 12 of the receptive field is reached by SOME perturbation in the output (a smaller or a dilation-1 field would not)
+    for off in range(0, reach + 1, 2):
+        assert ("Out", off) in hit and sizes[("Out", off)] > 1e-3, (name, "output offset never moves", off)
+    print(f"conv1d_causal{sfx}: extents l={n_l}, c={n_c}, k={n_k1} (both layers), d={n_d}, e={n_e}; plan = 6 assign, 2 relu, exactly Y1, A1, Y2, A2, Rs, Out "
+          f"exported; every export == numpy zero-padded explicit-loop model (English definition) on Lean, eager and jit; first row == zero-padded "
+          f"value; numpy differs from {', '.join(f'{w} by {g:.3f}' for w, g in gaps.items())}; Wr/B1/B2 perturbed by 0.05 move Out by "
+          f"{min(moved.values()):.3f} to {max(moved.values()):.3f}; CAUSALITY on the eager runtime for all {n_l} positions: perturbing X[t] leaves "
+          f"every export row o < t, o > t + {reach} and (o - t) odd BITWISE unchanged, Out responds at every even offset 0..{reach} "
+          f"(smallest max response {min(sizes[('Out', o)] for o in range(0, reach + 1, 2)):.3e})")
+    print_conv_stats(name)
+
+
+def vit_patch_pins(by: dict, sfx: str) -> None:
+    """Pins of `vit_patch`: a patch embedding (windows of width 6, stride 6, plus a positional embedding) computed BEFORE the layer scan and used as
+    its base state. Reference `np_vit`: the explicit-loop patch embedding feeding the unchanged `np_transformer`. Value pins on Lean, eager and jit
+    (`Pe`, `H`); non-vacuity (no positional embedding, overlapping patches, a permuted window); PATCH LOCALITY on the eager runtime (perturbing
+    `Img[u]` changes only patch `u // 6` of `Pe`, every other row BITWISE unchanged); plan shape (one pre-scan statement, ONE scan record with 2
+    steps, exactly `Pe` and `H` exported); every other input bitwise the mask fixtures'."""
+    name = f"vit_patch{sfx}"
+    fx = by[name]
+    ref = {n: lean_array(e) for n, e in by[f"transformer_window{sfx}"]["inputs"].items()}  # the mask fixtures' inputs
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    new_inputs = {"Img", "Wp", "Pos"}
+    assert sorted(fin) == sorted((set(ref) - {"X"}) | new_inputs), (sorted(fin), sorted(ref))
+    for n in ref:
+        if n != "X":
+            assert np.array_equal(bits(fin[n]), bits(ref[n])), (name, "input differs from the mask fixtures'", n)
+    nodes = fx["plan"]["nodes"]
+    scans = [n for n in nodes if n.get("kind") == "scan"]
+    assert [n.get("kind", "assign") for n in nodes] == ["assign", "scan"] and scans[0]["step_count"] == 2, [n.get("kind", "assign") for n in nodes]
+    assert sorted(m for m, _ in fx["plan"]["materialized"]) == ["H", "Pe"], fx["plan"]["materialized"]
+    n_l, n_c = fin["Img"].shape
+    n_m, n_w, c1 = fin["Wp"].shape
+    n_q = fin["Pos"].shape[0]
+    assert fin["Pos"].shape == (n_q, n_m) and c1 == n_c and n_w == 6 and n_l == n_w * n_q and n_q == fin["Eps"].shape[0], (fin["Pos"].shape, fin["Wp"].shape, n_l, n_q)
+    assert len({n_l, n_c, n_w, n_q, n_m}) == 5, (n_l, n_c, n_w, n_q, n_m)  # l, c, window, q, m pairwise distinct
+    for w in ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out", "G1", "G2"):  # the standard NaN layer-2 stacks
+        a = fin[w]
+        assert a.shape[0] == 3 and np.all(np.isnan(a[2])) and np.all(np.isfinite(a[:2])) and not np.array_equal(a[0], a[1]), (name, w)
+    pe_want, h_want = np_vit(fin)
+    assert pe_want.shape == (n_q, n_m) and h_want.shape == (n_q, n_m, 3), (pe_want.shape, h_want.shape)
+    gaps = {"no positional embedding": float(np.max(np.abs(h_want - np_vit(fin, no_pos=True)[1]))),
+            "overlapping patches (stride 3)": float(np.max(np.abs(h_want - np_vit(fin, stride=3)[1]))),
+            "permuted window": float(np.max(np.abs(h_want - np_vit(fin, permute=True)[1])))}
+    pe_gaps = {"no positional embedding": float(np.max(np.abs(pe_want - np_vit(fin, no_pos=True)[0]))),
+               "overlapping patches (stride 3)": float(np.max(np.abs(pe_want - np_vit(fin, stride=3)[0]))),
+               "permuted window": float(np.max(np.abs(pe_want - np_vit(fin, permute=True)[0])))}
+    for what in gaps:
+        assert gaps[what] > 1e-2 and pe_gaps[what] > 1e-2, (name, "the ViT pin is indistinguishable from", what, gaps[what], pe_gaps[what])
+    for who, outs in conv_views(by, name).items():
+        assert sorted(outs) == ["H", "Pe"] and np.all(np.isfinite(outs["H"])), (name, who, sorted(outs))
+        assert outs["Pe"].shape == (n_q, n_m) and outs["H"].shape == (n_q, n_m, 3), (name, who)
+        check_np(name, who, "Pe", outs["Pe"], pe_want)
+        check_np(name, who, "H", outs["H"], h_want)
+    # PATCH LOCALITY on the eager runtime: perturb Img[u]; only patch u // window of Pe changes, the other rows are bitwise unchanged
+    inputs = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+    base = np.asarray(EAGER[name]["eager"]["Pe"])
+    moves = []
+    for u in range(n_l):
+        img = np.array(fin["Img"], dtype=NDT)
+        img[u] += NDT(0.5)
+        p = np.asarray(rt.run_named(fx["plan"], dict(inputs, Img=jnp.asarray(img)), JDT)["Pe"])
+        assert p.dtype == NDT and p.shape == base.shape
+        for q in range(n_q):
+            same = np.array_equal(bits(base[q]), bits(p[q]))
+            if q != u // n_w:
+                assert same, (f"patch locality: Pe[{q}] changed under a perturbation of Img[{u}]", u // n_w)
+            else:
+                assert not same, (name, "the patch does not respond to its own position", u, q)
+                moves.append(float(np.max(np.abs(base[q].astype(np.float64) - p[q].astype(np.float64)))))
+    assert min(moves) > 1e-3, (name, "a patch responds only weakly to a position", min(moves))
+    print(f"vit_patch{sfx}: extents l={n_l}, c={n_c}, window={n_w}, q={n_q}, m={n_m} pairwise distinct; plan = 1 pre-scan statement then ONE scan record "
+          f"with 2 steps, exactly Pe and H exported; inputs bitwise the mask fixtures' except Img, Wp, Pos (X replaced); layer-2 slices NaN in all 8 stacks; "
+          f"Pe and H layers 0, 1, 2 == numpy explicit-loop patch embedding feeding np_transformer on Lean, eager and jit; numpy H differs from "
+          f"{', '.join(f'{w} by {g:.3f}' for w, g in gaps.items())} (Pe by {', '.join(f'{g:.3f}' for g in pe_gaps.values())}); PATCH LOCALITY for all "
+          f"{n_l} positions: perturbing Img[u] changes only Pe row u // {n_w} (by {min(moves):.3f} to {max(moves):.3f}), every other row bitwise unchanged")
+    print_conv_stats(name)
+
+
+def conv_grad_pins(by: dict, sfx: str) -> None:
+    """Gradient pins of the three convolution fixtures: `jax.grad` of `L = sum(C * out)` through the emitted plan over EVERY float input (eager and
+    jit) for the CNN (`out` = the logits `Zc`, not the softmax: a softmax loss is nearly degenerate), the TCN (`Out`) and the ViT (`H[:, :, 2]`),
+    against (b) the autodiff of a pure-JAX model written from the definition WITHOUT the plan or the scan (`jax.lax.conv_general_dilated` for every
+    strided, dilated or causally padded layer: nothing shared with the plan's gather) and (c) central finite differences of the float64 numpy models
+    (explicit loops) along random directions. TCN: a loss on outputs `0 .. t` has EXACTLY zero gradient on `X` rows `> t` and a real one on every
+    row `<= t`. ViT: layer-2 weight slices exactly zero, `Img` gradient real at every position, `Wp` and `Pos` real."""
+
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    def lax_conv(x, w, stride=1, dilation=1, pad=(0, 0)):
+        """x[L, C], w[D, K, C] -> y[n_out, D]: cross-correlation (no flip) with explicit (left, right) zero padding."""
+        y = jax.lax.conv_general_dilated(x.T[None], jnp.transpose(w, (0, 2, 1)), (stride,), [pad], rhs_dilation=(dilation,),
+                                         dimension_numbers=("NCH", "OIH", "NCH"))
+        return y[0].T
+
+    def cnn_hand(i):
+        a1 = jnp.maximum(lax_conv(i["X"], i["W1"]) + i["B1"], 0.0)
+        a2 = jnp.maximum(lax_conv(a1, i["W2"], 2, 2) + i["B2"], 0.0)
+        return i["Wc"] @ (i["Ip"] * jnp.sum(a2, axis=0)) + i["Bc"]
+
+    def tcn_hand(i):
+        k = i["W1"].shape[1]
+        a1 = jnp.maximum(lax_conv(i["X"], i["W1"], 1, 2, (2 * (k - 1), 0)) + i["B1"], 0.0)
+        a2 = jnp.maximum(lax_conv(a1, i["W2"], 1, 4, (4 * (k - 1), 0)) + i["B2"], 0.0)
+        return a2 + i["X"] @ i["Wr"].T
+
+    def vit_hand(i):
+        h = lax_conv(i["Img"], i["Wp"], 6) + i["Pos"]
+        tril = jnp.tril(jnp.ones((h.shape[0], h.shape[0]), dtype=bool))
+        rms = lambda x: x / jnp.sqrt(jnp.einsum("qm,qm,m->q", x, x, i["Inv"]) + i["Eps"])[:, None]
+        for l in range(2):
+            n1 = rms(h) * i["G1"][l]
+            q = jnp.einsum("hkm,qm->qhk", i["W_Q"][l], n1)
+            k = jnp.einsum("hkm,sm->shk", i["W_K"][l], n1)
+            v = jnp.einsum("hkm,sm->shk", i["W_V"][l], n1)
+            s = jax.nn.softmax(jnp.where(tril[None], jnp.einsum("qhk,shk->hqs", q, k) * i["Sc"], -jnp.inf), axis=-1)
+            r1 = h + jnp.einsum("mhk,qhk->qm", i["W_O"][l], jnp.einsum("hqs,shk->qhk", s, v))
+            x = jnp.einsum("dm,qm->qd", i["W_in"][l], rms(r1) * i["G2"][l])
+            f = 0.5 * x * (1.0 + jnp.tanh(0.7978845608028654 * (x + 0.044715 * x ** 3)))
+            h = r1 + jnp.einsum("md,qd->qm", i["W_out"][l], f)
+        return h
+
+    stacks = ("W_Q", "W_K", "W_V", "W_O", "W_in", "W_out", "G1", "G2")
+    # name -> (plan output, hand model, loss cotangent shape, numpy model of the SAME scalar output, stacked weights)
+    specs = {
+        f"conv1d_cnn{sfx}": ("Zc", cnn_hand, (7,), lambda i: np_cnn(i)["Zc"], ()),  # np_cnn pools by the shape-derived 1 / p, not by `Ip`
+        f"conv1d_causal{sfx}": ("Out", tcn_hand, (17, 6), lambda i: np_tcn(i)["Out"], ()),
+        f"vit_patch{sfx}": ("H", lambda i: vit_hand(i), (5, 4), lambda i: np_vit(i)[1][:, :, 2], stacks),
+    }
+    lines = []
+    for name, (out, hand, c_shape, np_model, stacked) in specs.items():
+        fx = by[name]
+        sin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+        C = np.sin(1.0 + np.arange(int(np.prod(c_shape)))).reshape(c_shape).astype(NDT)
+        jin = {n: jnp.asarray(a) for n, a in sin.items()}
+        take = (lambda o: o[:, :, 2]) if out == "H" else (lambda o: o)
+
+        def loss_plan(inp, C=C, fx=fx, out=out, take=take):
+            return jnp.sum(C * take(rt.run_named(fx["plan"], inp, JDT)[out]))
+
+        def loss_hand(inp, C=C, hand=hand):
+            return jnp.sum(C * hand(inp))
+
+        grads = {"eager": jax.grad(loss_plan)(jin), "jit": jax.jit(jax.grad(loss_plan))(jin)}
+        g_hand = jax.grad(loss_hand)(jin)
+        err = {}
+        for who, g in grads.items():
+            assert sorted(g) == sorted(sin), (name, who, sorted(g))
+            assert all(np.all(np.isfinite(np.asarray(v))) and np.asarray(v).dtype == NDT for v in g.values()), (name, who, "gradient not finite")
+            for n, v in g.items():
+                if n in stacked:
+                    gw = np.asarray(v)
+                    assert np.all(gw[2] == 0), (name, "layer-2 weight slice received gradient", who, n)
+                    assert all(float(np.max(np.abs(gw[l]))) > 1e-3 for l in (0, 1)), (name, "trivial gradient", who, n)
+                else:
+                    assert float(np.max(np.abs(np.asarray(v)))) > 1e-3, (name, "trivial gradient", who, n)
+                e_ref = scaled(v, g_hand[n])
+                assert e_ref < GRAD_TOL[_DT], (f"gradient pin: {name} vs pure-JAX lax.conv model", who, n, e_ref)
+                err[n] = max(err.get(n, 0.0), e_ref)
+        gx = np.array(grads["eager"]["X" if "Img" not in sin else "Img"])
+        gp = gx.copy()
+        gp.flat[int(np.argmax(np.abs(gx)))] += NDT(1e-3)  # these gradients are O(0.1), so the test is an ABSOLUTE 1e-3 perturbation
+        assert scaled(gp, gx) >= GRAD_TOL[_DT], (name, "gradient tolerance accepts a 1e-3 perturbation: vacuous")
+        extra = ""
+        if name.startswith("vit_patch"):  # every image position reaches the loss through its patch
+            for who, g in grads.items():
+                assert np.all(np.max(np.abs(np.asarray(g["Img"])), axis=1) > 0), (name, who, "an Img position has no gradient")
+            extra = f"; Img gradient nonzero at all {sin['Img'].shape[0]} positions"
+        if name.startswith("conv1d_causal"):  # a loss on outputs 0 .. t: X rows > t get EXACTLY zero gradient, every row <= t a real one
+            t, n_l = 8, sin["X"].shape[0]
+            c_t = jnp.asarray(C * (np.arange(n_l)[:, None] <= t).astype(NDT))
+            rows = {}
+            for who, fn in (("eager", lambda i: jnp.sum(c_t * rt.run_named(fx["plan"], i, JDT)["Out"])),
+                            ("jit", jax.jit(lambda i: jnp.sum(c_t * rt.run_named(fx["plan"], i, JDT)["Out"])))):
+                gxt = np.asarray(jax.grad(fn)(jin)["X"])
+                assert np.all(gxt[t + 1:] == 0), (name, who, "X rows after the last loss row received gradient")
+                assert np.all(np.max(np.abs(gxt[:t + 1]), axis=1) > 1e-3), (name, who, "an X row up to t has no real gradient", gxt.tolist())
+                rows[who] = float(np.min(np.max(np.abs(gxt[:t + 1]), axis=1)))
+            g_h = np.asarray(jax.grad(lambda i: jnp.sum(c_t * hand(i)))(jin)["X"])
+            assert scaled(gxt, g_h) < GRAD_TOL[_DT] and np.all(g_h[t + 1:] == 0), (name, "causal-prefix gradient differs from the pure-JAX model")
+            extra = (f"; loss on outputs 0..{t}: X rows {t + 1}..{n_l - 1} EXACTLY zero gradient (eager and jit and the pure-JAX model), "
+                     f"every row 0..{t} real (smallest row max {min(rows.values()):.3f})")
+        # (c) directional derivatives against central differences of the float64 numpy model (3 fixed directions over every input)
+        base = {n: a.astype(np.float64) for n, a in sin.items()}
+        rng = np.random.default_rng(7)
+        loss_np = lambda inp, C=C, np_model=np_model: float(np.sum(C.astype(np.float64) * np_model(inp)))
+        fd_err, dots = 0.0, []
+        for _ in range(3):
+            d = {n: rng.standard_normal(a.shape) for n, a in base.items()}
+            for w in stacked:
+                d[w][2] = 0.0
+            if "Ip" in d:  # the numpy model reads no `Ip` (it divides by the shape-derived p): its gradient is pinned against the pure-JAX model only
+                d["Ip"] = np.zeros_like(d["Ip"])
+            eps = 1e-6
+            fd = (loss_np({n: base[n] + eps * d[n] for n in base}) - loss_np({n: base[n] - eps * d[n] for n in base})) / (2 * eps)
+            for who, g in grads.items():
+                dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * d[n]) for n in base))
+                assert abs(dot) > 1e-3, (name, "finite-difference direction is trivial", dot)
+                fd_err = max(fd_err, abs(fd - dot) / max(1.0, abs(dot)))
+            dots.append(dot)
+        assert fd_err < GRAD_FD_TOL[_DT], (f"gradient pin: {name} directional derivative vs finite differences of the numpy model", fd_err)
+        lines.append(f"  {name}: all {len(sin)} float inputs, eager and jit, finite and non-trivial; vs pure-JAX lax.conv model max scaled "
+                     f"{max(err.values()):.3e} (headroom {GRAD_TOL[_DT] / max(max(err.values()), 1e-300):.1f}x); directional derivatives vs central "
+                     f"differences of the numpy model (|dot| {min(abs(x) for x in dots):.2f} to {max(abs(x) for x in dots):.2f}) max scaled {fd_err:.3e} "
+                     f"(headroom {GRAD_FD_TOL[_DT] / max(fd_err, 1e-300):.1f}x){extra}")
+    print(f"gradients of the convolution fixtures (CNN logits, TCN output, ViT H[:, :, 2]; every float input, tol {GRAD_TOL[_DT]:.0e} vs pure-JAX "
+          f"lax.conv models, {GRAD_FD_TOL[_DT]:.0e} vs finite differences):")
+    for line in lines:
+        print(line)
+
+
 def main() -> None:
     spec = importlib.util.spec_from_file_location("gen_nonlin", Path(sys.argv[2]).resolve())
     mod = importlib.util.module_from_spec(spec)
@@ -1542,6 +1965,12 @@ def main() -> None:
     # CROSS-ATTENTION to a memory of its own width (e != m): see `cross_wide_pins`.
     cross_wide_pins(by, sfx)
 
+    # 1-D CONVOLUTION (a CNN, a causal TCN block, a patch embedding feeding the layer scan): see `conv_cnn_pins`, `conv_causal_pins`,
+    # `vit_patch_pins`.
+    conv_cnn_pins(by, sfx)
+    conv_causal_pins(by, sfx)
+    vit_patch_pins(by, sfx)
+
     # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
     grad_fixture_pins(by, sfx)
 
@@ -1550,6 +1979,9 @@ def main() -> None:
 
     # GRADIENTS through the cross-attention scan, incl. the external memory: see `cross_grad_pins`.
     cross_grad_pins(by, sfx)
+
+    # GRADIENTS through the convolution fixtures (plan vs pure-JAX lax.conv models and finite differences): see `conv_grad_pins`.
+    conv_grad_pins(by, sfx)
 
     # POST-SCAN ROLE: `S[j, l+1] := S[j, l] . G[j]` (closed form `S = X * G**l`) and six statements nothing in
     # the recurrence reads, so each is a plain node AFTER the one scan node and `l` is an ordinary axis in it.

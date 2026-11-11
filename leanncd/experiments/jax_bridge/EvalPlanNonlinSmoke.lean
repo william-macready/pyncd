@@ -1745,6 +1745,172 @@ def postRoleProg32 : TLProgram := tlprog!{
   Sm[j, l.]  := softmax(where l ≤ 1)(S[j, l])
 }
 
+/-! ### 1-D convolution: a CNN, a causal TCN block and a patch embedding feeding the layer scan
+
+A convolution is the first model whose COMPUTATION is an affine read: output position `o` reads the input
+at `stride * o + dilation * i + bias` for kernel tap `i`. Valid convolution (no bias in the index), strided and
+dilated reads of inputs AND of intermediates, a negative bias (causal left zero padding: a negative index is
+read as zero, an index past the high end is refused at prepare, so zero padding exists on the low side only),
+and a non-overlapping window (stride = window: a patch embedding). Every program's input `X(u, c)` (and `Img`) names
+its position axis `u`, distinct from every output position axis (a shared name would name two extents).
+* `cnnProg`: L = 23, C = 3, K1 = 2, D = 5, o = 22, K2 = 4, E = 6, p = 8, N = 7 (all nine extents distinct).
+* `tcnProg`: L = o = 17, C = 2, K = 3 (both layers), D = 5, E = 6.
+* `vitProg`: Img[30, 3], patch width 6 = stride, q = 5 patches, m = 4; then the standard pre-norm scan. -/
+
+/-- Small biases by formula (`0.2 * sin (seed + 1.3 i)`), distinct per seed and of both signs. -/
+def convBias (seed : Float) (n : Nat) : Array Float :=
+  (Array.range n).map fun i => 0.2 * Float.sin (seed + 1.3 * i.toFloat)
+
+def cnnX : Array Float := gqaGen 1.0 69      -- [l = 23, c = 3]
+def cnnW1 : Array Float := gqaGen 2.0 30     -- [d = 5, i = 2, c = 3]
+def cnnB1 : Array Float := convBias 1.0 5
+def cnnW2 : Array Float := gqaGen 3.0 120    -- [e = 6, j = 4, d = 5]
+def cnnB2 : Array Float := convBias 2.0 6
+def cnnWc : Array Float := gqaGen 4.0 42     -- [n = 7, e = 6]
+def cnnBc : Array Float := convBias 3.0 7
+/-- `Ip[]` = 1 / p for the pooled extent p = 8. -/
+def cnnIp : Array Float := #[1.0 / 8.0]
+def cnnEnv64 : HashMap String DenseTensor :=
+  env64 [("X", t64 [23, 3] cnnX), ("W1", t64 [5, 2, 3] cnnW1), ("B1", t64 [5] cnnB1),
+         ("W2", t64 [6, 4, 5] cnnW2), ("B2", t64 [6] cnnB2), ("Ip", t64 [] cnnIp),
+         ("Wc", t64 [7, 6] cnnWc), ("Bc", t64 [7] cnnBc)]
+def cnnEnv32 : NamedDenseEnv32 :=
+  env32 [("X", t32 [23, 3] cnnX), ("W1", t32 [5, 2, 3] cnnW1), ("B1", t32 [5] cnnB1),
+         ("W2", t32 [6, 4, 5] cnnW2), ("B2", t32 [6] cnnB2), ("Ip", t32 [] cnnIp),
+         ("Wc", t32 [7, 6] cnnWc), ("Bc", t32 [7] cnnBc)]
+
+def cnnProg : TLProgram := tlprog!{
+  axis o : ℕ = 22
+  axis p : ℕ = 8
+  tensor f64 X(u, c), W1(d, i, c), B1(d), W2(e, j, d), B2(e), Ip(), Wc(n, e), Bc(n)
+  tensor f64 Y1(o, d), A1(o, d), Y2(p, e), A2(p, e), Gp(e), Zc(n), Pr(n)
+  Y1[o, d] := W1[d, i, c] · X[o + i, c] + B1[d]
+  A1[o, d] := relu(Y1[o, d])
+  Y2[p, e] := W2[e, j, d] · A1[2 * p + 2 * j, d] + B2[e]
+  A2[p, e] := relu(Y2[p, e])
+  Gp[e]    := Ip[] · A2[p, e]
+  Zc[n]    := Wc[n, e] · Gp[e] + Bc[n]
+  Pr[n.]   := softmax(Zc[n])
+}
+/-- The binary32 sibling: only the declarations that pin the extents of the output position axes. -/
+def cnnProg32 : TLProgram := tlprog!{
+  axis o : ℕ = 22
+  axis p : ℕ = 8
+  Y1[o, d] := W1[d, i, c] · X[o + i, c] + B1[d]
+  A1[o, d] := relu(Y1[o, d])
+  Y2[p, e] := W2[e, j, d] · A1[2 * p + 2 * j, d] + B2[e]
+  A2[p, e] := relu(Y2[p, e])
+  Gp[e]    := Ip[] · A2[p, e]
+  Zc[n]    := Wc[n, e] · Gp[e] + Bc[n]
+  Pr[n.]   := softmax(Zc[n])
+}
+
+def tcnX : Array Float := gqaGen 1.0 34      -- [l = 17, c = 2]
+def tcnW1 : Array Float := gqaGen 2.0 30     -- [d = 5, i = 3, c = 2]
+def tcnB1 : Array Float := convBias 1.0 5
+def tcnW2 : Array Float := gqaGen 3.0 90     -- [e = 6, j = 3, d = 5]
+def tcnB2 : Array Float := convBias 2.0 6
+def tcnWr : Array Float := gqaGen 4.0 12     -- [e = 6, c = 2]
+def tcnEnv64 : HashMap String DenseTensor :=
+  env64 [("X", t64 [17, 2] tcnX), ("W1", t64 [5, 3, 2] tcnW1), ("B1", t64 [5] tcnB1),
+         ("W2", t64 [6, 3, 5] tcnW2), ("B2", t64 [6] tcnB2), ("Wr", t64 [6, 2] tcnWr)]
+def tcnEnv32 : NamedDenseEnv32 :=
+  env32 [("X", t32 [17, 2] tcnX), ("W1", t32 [5, 3, 2] tcnW1), ("B1", t32 [5] tcnB1),
+         ("W2", t32 [6, 3, 5] tcnW2), ("B2", t32 [6] tcnB2), ("Wr", t32 [6, 2] tcnWr)]
+
+/-- A TCN residual block: two dilated CAUSAL convolutions (dilations 2 and 4, left zero padding by the negative
+    bias, output extent = input extent 17) with a relu after each, a 1x1 convolution on the skip path, residual add. -/
+def tcnProg : TLProgram := tlprog!{
+  axis o : ℕ = 17
+  tensor f64 X(o, c), W1(d, i, c), B1(d), W2(e, j, d), B2(e), Wr(e, c)
+  tensor f64 Y1(o, d), A1(o, d), Y2(o, e), A2(o, e), Rs(o, e), Out(o, e)
+  Y1[o, d]  := W1[d, i, c] · X[o + 2 * i - 4, c] + B1[d]
+  A1[o, d]  := relu(Y1[o, d])
+  Y2[o, e]  := W2[e, j, d] · A1[o + 4 * j - 8, d] + B2[e]
+  A2[o, e]  := relu(Y2[o, e])
+  Rs[o, e]  := Wr[e, c] · X[o, c]
+  Out[o, e] := A2[o, e] + Rs[o, e]
+}
+def tcnProg32 : TLProgram := tlprog!{
+  axis o : ℕ = 17
+  Y1[o, d]  := W1[d, i, c] · X[o + 2 * i - 4, c] + B1[d]
+  A1[o, d]  := relu(Y1[o, d])
+  Y2[o, e]  := W2[e, j, d] · A1[o + 4 * j - 8, d] + B2[e]
+  A2[o, e]  := relu(Y2[o, e])
+  Rs[o, e]  := Wr[e, c] · X[o, c]
+  Out[o, e] := A2[o, e] + Rs[o, e]
+}
+
+def vitImg : Array Float := gqaGen 9.0 90    -- [l = 30, c = 3]
+def vitWp : Array Float := gqaGen 5.0 72     -- [m = 4, i = 6, c = 3]
+def vitPos : Array Float := gqaGen 6.0 20    -- [q = 5, m = 4]
+def vitEnv64 : HashMap String DenseTensor :=
+  (((maskEnv64.erase "X").insert "Img" (t64 [30, 3] vitImg)).insert "Wp" (t64 [4, 6, 3] vitWp)).insert
+    "Pos" (t64 [5, 4] vitPos)
+def vitEnv32 : NamedDenseEnv32 :=
+  (((maskEnv32.erase "X").insert "Img" (t32 [30, 3] vitImg)).insert "Wp" (t32 [4, 6, 3] vitWp)).insert
+    "Pos" (t32 [5, 4] vitPos)
+
+/-- A patch embedding (non-overlapping windows of width 6, stride 6, plus a positional embedding) computed BEFORE the
+    scan: it reads no scan state, so it is a plain pre-scan statement and its result is the scan's base state. -/
+def vitProg : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor f64 Img(u, c), Wp(m, i, c), Pos(q, m), Pe(q, m)
+  tensor f64 W_Q(l, h, k, m), W_K(l, h, k, m), W_V(l, h, k, m), W_O(l, m, h, k)
+  tensor f64 W_in(l, d, m), W_out(l, m, d), Inv(m), Eps(q), G1(l, m), G2(l, m), Sc()
+  tensor f64 H(q, m, l)
+  tensor f64 Ss1(q), Ve1(q), Sd1(q), N1(q, m)
+  tensor f64 Q(q, h, k), K(s, h, k), V(s, h, k), S(h, q, s), AttnOut(q, h, k), Attn(q, m)
+  tensor f64 R1(q, m), Ss2(q), Ve2(q), Sd2(q), N2(q, m), F(q, d), Y(q, m)
+  Pe[q, m]         := Wp[m, i, c] · Img[6 * q + i, c] + Pos[q, m]
+  H[q, m, 0]       := Pe[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+def vitProg32 : TLProgram := tlprog!{
+  iter l = 3
+  axis s : ℕ = 5
+  tensor H(q, m, l)
+  tensor S(h, q, s)
+  Pe[q, m]         := Wp[m, i, c] · Img[6 * q + i, c] + Pos[q, m]
+  H[q, m, 0]       := Pe[q, m]
+  Ss1[q]           := H[q, m, l] · H[q, m, l] · Inv[m]
+  Ve1[q]           := Ss1[q] + Eps[q]
+  Sd1[q]           := sqrt(Ve1[q])
+  N1[q, m]         := H[q, m, l] / Sd1[q] · G1[l, m]
+  Q[q, h, k]       := W_Q[l, h, k, m] · N1[q, m]
+  K[s, h, k]       := W_K[l, h, k, m] · N1[s, m]
+  V[s, h, k]       := W_V[l, h, k, m] · N1[s, m]
+  S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k] · Sc[])
+  AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
+  Attn[q, m]       := W_O[l, m, h, k] · AttnOut[q, h, k]
+  R1[q, m]         := H[q, m, l] + Attn[q, m]
+  Ss2[q]           := R1[q, m] · R1[q, m] · Inv[m]
+  Ve2[q]           := Ss2[q] + Eps[q]
+  Sd2[q]           := sqrt(Ve2[q])
+  N2[q, m]         := R1[q, m] / Sd2[q] · G2[l, m]
+  F[q, d]          := gelu(W_in[l, d, m] · N2[q, m])
+  Y[q, m]          := W_out[l, m, d] · F[q, d]
+  H[q, m, l +1]    := R1[q, m] + Y[q, m]
+}
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -1803,6 +1969,9 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "transformer_cross" crossProg (crossEnv64 crWKc crWVc) 1 2 (some (30, 1, 2)) true (scans := 1),
     ← fixture64 "transformer_cross_hoisted" crossHoistedProg (crossEnv64 crWKcFin crWVcFin) 1 2 (some (30, 1, 2)) true (scans := 1),
     ← fixture64 "transformer_cross_wide" crossWideProg crossWideEnv64 1 2 (some (30, 1, 2)) true (scans := 1),
+    ← fixture64 "conv1d_cnn" cnnProg cnnEnv64 2 1 (some (7, 2, 1)),
+    ← fixture64 "conv1d_causal" tcnProg tcnEnv64 2 0 (some (6, 2, 0)),
+    ← fixture64 "vit_patch" vitProg vitEnv64 1 1 (some (20, 1, 1)) true (scans := 1),
     ← fixture64 "scan_postrole" postRoleProg
         (env64 [("X", t64 [2] postRoleX), ("G", t64 [2] postRoleG), ("V", t64 [4] postRoleV), ("M", t64 [4] postRoleM)])
         0 0 none true (scans := 1),
@@ -1867,6 +2036,9 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "transformer_cross32" crossProg32 (crossEnv32 crWKc crWVc) 1 2 (some (30, 1, 2)) true (scans := 1),
     ← fixture32 "transformer_cross_hoisted32" crossHoistedProg32 (crossEnv32 crWKcFin crWVcFin) 1 2 (some (30, 1, 2)) true (scans := 1),
     ← fixture32 "transformer_cross_wide32" crossWideProg32 crossWideEnv32 1 2 (some (30, 1, 2)) true (scans := 1),
+    ← fixture32 "conv1d_cnn32" cnnProg32 cnnEnv32 2 1 (some (7, 2, 1)),
+    ← fixture32 "conv1d_causal32" tcnProg32 tcnEnv32 2 0 (some (6, 2, 0)),
+    ← fixture32 "vit_patch32" vitProg32 vitEnv32 1 1 (some (20, 1, 1)) true (scans := 1),
     ← fixture32 "scan_postrole32" postRoleProg32
         (env32 [("X", t32 [2] postRoleX), ("G", t32 [2] postRoleG), ("V", t32 [4] postRoleV), ("M", t32 [4] postRoleM)])
         0 0 none true (scans := 1),
