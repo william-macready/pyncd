@@ -1,0 +1,222 @@
+=== P01 strict private failure totalized MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessControlTest.lean: 'def strictFailureRow := IndexedRankedWitnessOutcomeTest.leafRow 0' -> 'def strictFailureRow := IndexedRankedWitnessOutcomeTest.leafRow 4' ---
+error: experiments/indexed_execution/IndexedRankedWitnessControlTest.lean:9:0: P01 strict private failure: observed non-failed endpoint
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessControlTest.lean now) ---
+=== P01 strict private failure totalized MUTATE exit=1 ===
+=== P01 strict private failure totalized RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+✔ [8678/8678] Built IndexedRankedWitnessControlTest (4.3s)
+Build completed successfully (8678 jobs).
+=== P01 strict private failure totalized SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P01 strict private failure totalized: PASS
+=== P01 strict private failure totalized MANIFEST VERDICT: PASS ===
+=== P02 failed domain polarity MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean: '    (∃ tag g, (runChecked A.contract A.fragment η.val).outcome = .failed tag g) ↔
+      ¬ (componentSpan A).Domain (inputEnv A η) := by' -> '    (∃ tag g, (runChecked A.contract A.fragment η.val).outcome = .failed tag g) ↔
+      (componentSpan A).Domain (inputEnv A η) := by' ---
+error: experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean:62:49: unsolved goals
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean now) ---
+=== P02 failed domain polarity MUTATE exit=1 ===
+=== P02 failed domain polarity RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:212:0: 'IndexedRankedWitnessOutcomeTest.pair_success_full' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:213:0: 'IndexedRankedWitnessOutcomeTest.failure_A' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:214:0: 'IndexedRankedWitnessOutcomeTest.failure_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:215:0: 'IndexedRankedWitnessOutcomeTest.failure_C' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8668 jobs).
+=== P02 failed domain polarity SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P02 failed domain polarity: PASS
+=== P02 failed domain polarity MANIFEST VERDICT: PASS ===
+=== P03 private store erased with boundaries retained MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean: '        A.program.finalStore c finished = ρ := by' -> '        A.program.finalStore c finished =
+          (fun a => if A.program.input a.1 || A.program.output a.1 then ρ a else 0) := by' ---
+error: experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean:34:59: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean now) ---
+=== P03 private store erased with boundaries retained MUTATE exit=1 ===
+=== P03 private store erased with boundaries retained RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:212:0: 'IndexedRankedWitnessOutcomeTest.pair_success_full' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:213:0: 'IndexedRankedWitnessOutcomeTest.failure_A' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:214:0: 'IndexedRankedWitnessOutcomeTest.failure_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:215:0: 'IndexedRankedWitnessOutcomeTest.failure_C' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8668 jobs).
+=== P03 private store erased with boundaries retained SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P03 private store erased with boundaries retained: PASS
+=== P03 private store erased with boundaries retained MANIFEST VERDICT: PASS ===
+=== P04 nonconstant wire inverse as forward MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean: '    (Span.graph rotate.env).right view.env 0 point,' -> '    (Span.graph rotate.inverse.env).right view.env 0 point,' ---
+error: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:53:51: Tactic `decide` proved that the proposition
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean now) ---
+=== P04 nonconstant wire inverse as forward MUTATE exit=1 ===
+=== P04 nonconstant wire inverse as forward RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:190:0: 'IndexedRankedWitnessCategoryTest.operational_origins_distinct' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:191:0: 'IndexedRankedWitnessCategoryTest.origins_same_full_image' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8669 jobs).
+=== P04 nonconstant wire inverse as forward SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P04 nonconstant wire inverse as forward: PASS
+=== P04 nonconstant wire inverse as forward MANIFEST VERDICT: PASS ===
+=== P05 input exterior orientation reversed MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessControlTest.lean: '    (F.rebase before after).left w = before.symm (F.left w) ∧
+      (F.rebase before after).right w = after (F.right w) := ⟨rfl, rfl⟩' -> '    (F.rebase before after).left w = before (F.left w) ∧
+      (F.rebase before after).right w = after (F.right w) := ⟨rfl, rfl⟩' ---
+error: experiments/indexed_execution/IndexedRankedWitnessControlTest.lean:16:62: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessControlTest.lean now) ---
+=== P05 input exterior orientation reversed MUTATE exit=1 ===
+=== P05 input exterior orientation reversed RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+✔ [8678/8678] Built IndexedRankedWitnessControlTest (4.3s)
+Build completed successfully (8678 jobs).
+=== P05 input exterior orientation reversed SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P05 input exterior orientation reversed: PASS
+=== P05 input exterior orientation reversed MANIFEST VERDICT: PASS ===
+=== P06 source composition repeats first factor MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessControlTest.lean: '        (IndexedRankedOperationalSource.arrow g) := by' -> '        (IndexedRankedOperationalSource.arrow f) := by' ---
+error: experiments/indexed_execution/IndexedRankedWitnessControlTest.lean:26:2: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessControlTest.lean now) ---
+=== P06 source composition repeats first factor MUTATE exit=1 ===
+=== P06 source composition repeats first factor RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+✔ [8678/8678] Built IndexedRankedWitnessControlTest (4.3s)
+Build completed successfully (8678 jobs).
+=== P06 source composition repeats first factor SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P06 source composition repeats first factor: PASS
+=== P06 source composition repeats first factor MANIFEST VERDICT: PASS ===
+=== P07 retain rank or origin in witness image MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessComparison.lean: '    comparison.map (Quotient.mk _ (Normal.compute A r o before after)) =
+      comparison.map (Quotient.mk _ (Normal.compute A s p before after)) := rfl' -> '    comparison.map (Quotient.mk _ (Normal.compute A r o before after)) ≠
+      comparison.map (Quotient.mk _ (Normal.compute A s p before after)) := rfl' ---
+error: experiments/indexed_execution/IndexedRankedWitnessComparison.lean:88:0: Not a definitional equality: the conclusion should be an equality, but is `False`
+error: experiments/indexed_execution/IndexedRankedWitnessComparison.lean:94:76: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessComparison.lean now) ---
+=== P07 retain rank or origin in witness image MUTATE exit=1 ===
+=== P07 retain rank or origin in witness image RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:190:0: 'IndexedRankedWitnessCategoryTest.operational_origins_distinct' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:191:0: 'IndexedRankedWitnessCategoryTest.origins_same_full_image' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8669 jobs).
+=== P07 retain rank or origin in witness image SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P07 retain rank or origin in witness image: PASS
+=== P07 retain rank or origin in witness image MANIFEST VERDICT: PASS ===
+=== P08 conflate opaque and joined operational arrows MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean: 'Arrow (IndexedSource.input (consumerComponent 4)) (IndexedSource.output (consumerComponent 4))) ≠
+        Quotient.mk _ joinedNormal := by' -> 'Arrow (IndexedSource.input (consumerComponent 4)) (IndexedSource.output (consumerComponent 4))) =
+        Quotient.mk _ joinedNormal := by' ---
+error: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:173:8: Tactic `introN` failed: There are no additional binders or `let` bindings in the goal to introduce
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean now) ---
+=== P08 conflate opaque and joined operational arrows MUTATE exit=1 ===
+=== P08 conflate opaque and joined operational arrows RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:190:0: 'IndexedRankedWitnessCategoryTest.operational_origins_distinct' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:191:0: 'IndexedRankedWitnessCategoryTest.origins_same_full_image' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8669 jobs).
+=== P08 conflate opaque and joined operational arrows SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P08 conflate opaque and joined operational arrows: PASS
+=== P08 conflate opaque and joined operational arrows MANIFEST VERDICT: PASS ===
+=== P09 drop empty input presence MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean: '    (runChecked emptyProducerContract emptyProducerFragment emptyMissingInput).outcome.kind)' -> '    (runChecked emptyProducerContract emptyProducerFragment emptyPresentInput).outcome.kind)' ---
+error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:41:77: Tactic `decide` proved that the proposition
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean now) ---
+=== P09 drop empty input presence MUTATE exit=1 ===
+=== P09 drop empty input presence RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:74:0: 'IndexedRankedWitnessBoundaryTest.empty_input_present' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8677 jobs).
+=== P09 drop empty input presence SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P09 drop empty input presence: PASS
+=== P09 drop empty input presence MANIFEST VERDICT: PASS ===
+=== P10 identify metadata by singleton carriers MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean: '    outputInterface emptyProducerComponent ≠
+      outputInterface IndexedWitnessCompositionTest.Empty.composite :=' -> '    outputInterface emptyProducerComponent =
+      outputInterface IndexedWitnessCompositionTest.Empty.composite :=' ---
+error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:15:2: Type mismatch
+error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:27:8: Function expected at
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean now) ---
+=== P10 identify metadata by singleton carriers MUTATE exit=1 ===
+=== P10 identify metadata by singleton carriers RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:74:0: 'IndexedRankedWitnessBoundaryTest.empty_input_present' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8677 jobs).
+=== P10 identify metadata by singleton carriers SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P10 identify metadata by singleton carriers: PASS
+=== P10 identify metadata by singleton carriers MANIFEST VERDICT: PASS ===
+=== P11 collapse hidden full witnesses MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean: '    hiddenZero ≠ hiddenOne ∧' -> '    hiddenZero = hiddenOne ∧' ---
+error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:60:3: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean now) ---
+=== P11 collapse hidden full witnesses MUTATE exit=1 ===
+=== P11 collapse hidden full witnesses RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:74:0: 'IndexedRankedWitnessBoundaryTest.empty_input_present' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8677 jobs).
+=== P11 collapse hidden full witnesses SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P11 collapse hidden full witnesses: PASS
+=== P11 collapse hidden full witnesses MANIFEST VERDICT: PASS ===
+=== P12 admit hidden donor to ranked profile MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean: '    ¬ Nonempty hiddenUpstream.program.RankCertificate := hidden_no_rank' -> '    Nonempty hiddenUpstream.program.RankCertificate := hidden_no_rank' ---
+error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:63:55: Type mismatch
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean now) ---
+=== P12 admit hidden donor to ranked profile MUTATE exit=1 ===
+=== P12 admit hidden donor to ranked profile RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:74:0: 'IndexedRankedWitnessBoundaryTest.empty_input_present' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:75:0: 'IndexedRankedWitnessBoundaryTest.empty_diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:76:0: 'IndexedRankedWitnessBoundaryTest.hidden_full_not_outputs' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:77:0: 'IndexedRankedWitnessBoundaryTest.no_hidden_ranked_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8677 jobs).
+=== P12 admit hidden donor to ranked profile SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P12 admit hidden donor to ranked profile: PASS
+=== P12 admit hidden donor to ranked profile MANIFEST VERDICT: PASS ===
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| P01 strict private failure totalized | yes | yes | yes | PASS |
+| P02 failed domain polarity | yes | yes | yes | PASS |
+| P03 private store erased with boundaries retained | yes | yes | yes | PASS |
+| P04 nonconstant wire inverse as forward | yes | yes | yes | PASS |
+| P05 input exterior orientation reversed | yes | yes | yes | PASS |
+| P06 source composition repeats first factor | yes | yes | yes | PASS |
+| P07 retain rank or origin in witness image | yes | yes | yes | PASS |
+| P08 conflate opaque and joined operational arrows | yes | yes | yes | PASS |
+| P09 drop empty input presence | yes | yes | yes | PASS |
+| P10 identify metadata by singleton carriers | yes | yes | yes | PASS |
+| P11 collapse hidden full witnesses | yes | yes | yes | PASS |
+| P12 admit hidden donor to ranked profile | yes | yes | yes | PASS |
+
+12/12 cycles passed.

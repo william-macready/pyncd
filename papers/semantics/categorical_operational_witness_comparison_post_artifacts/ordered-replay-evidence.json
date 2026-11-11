@@ -1,0 +1,790 @@
+{
+  "phase": "AUTHORING only; not controller execution",
+  "base": "37500cab85a2989a1422da2ef21256cb5648e8da",
+  "ordered_check_apply_reverse_forward": [
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/01-IndexedRankedWitnessBridge.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/01-IndexedRankedWitnessBridge.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/02-IndexedRankedWitnessDescent.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/02-IndexedRankedWitnessDescent.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/03-IndexedRankedWitnessAudit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/03-IndexedRankedWitnessAudit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/04-IndexedRankedWitnessComparison.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/04-IndexedRankedWitnessComparison.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/05-IndexedRankedWitnessSource.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/05-IndexedRankedWitnessSource.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/06-IndexedRankedWitnessOutcomes.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/06-IndexedRankedWitnessOutcomes.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/07-IndexedRankedWitnessOutcomeTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/07-IndexedRankedWitnessOutcomeTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/08-IndexedRankedWitnessCategoryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/08-IndexedRankedWitnessCategoryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/09-IndexedRankedWitnessBoundaryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/09-IndexedRankedWitnessBoundaryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/10-controls-and-namespace-audit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/10-controls-and-namespace-audit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/11-synthesis.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/11-synthesis.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/11-synthesis.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/11-synthesis.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/10-controls-and-namespace-audit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/10-controls-and-namespace-audit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/09-IndexedRankedWitnessBoundaryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/09-IndexedRankedWitnessBoundaryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/08-IndexedRankedWitnessCategoryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/08-IndexedRankedWitnessCategoryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/07-IndexedRankedWitnessOutcomeTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/07-IndexedRankedWitnessOutcomeTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/06-IndexedRankedWitnessOutcomes.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/06-IndexedRankedWitnessOutcomes.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/05-IndexedRankedWitnessSource.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/05-IndexedRankedWitnessSource.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/04-IndexedRankedWitnessComparison.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/04-IndexedRankedWitnessComparison.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/03-IndexedRankedWitnessAudit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/03-IndexedRankedWitnessAudit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/02-IndexedRankedWitnessDescent.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/02-IndexedRankedWitnessDescent.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/01-IndexedRankedWitnessBridge.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--reverse",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/01-IndexedRankedWitnessBridge.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/01-IndexedRankedWitnessBridge.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/01-IndexedRankedWitnessBridge.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/02-IndexedRankedWitnessDescent.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/02-IndexedRankedWitnessDescent.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/03-IndexedRankedWitnessAudit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_artifacts/03-IndexedRankedWitnessAudit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/04-IndexedRankedWitnessComparison.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/04-IndexedRankedWitnessComparison.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/05-IndexedRankedWitnessSource.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/05-IndexedRankedWitnessSource.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/06-IndexedRankedWitnessOutcomes.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_stage2_artifacts/06-IndexedRankedWitnessOutcomes.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/07-IndexedRankedWitnessOutcomeTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/07-IndexedRankedWitnessOutcomeTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/08-IndexedRankedWitnessCategoryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/08-IndexedRankedWitnessCategoryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/09-IndexedRankedWitnessBoundaryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_acceptance_artifacts/09-IndexedRankedWitnessBoundaryTest.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/10-controls-and-namespace-audit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/10-controls-and-namespace-audit.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/11-synthesis.patch"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+        "apply",
+        "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/ordered-replay-tree",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/11-synthesis.patch"
+      ],
+      "exit": 0
+    }
+  ],
+  "final_byte_equal": true,
+  "base_restored_in_disposable_tree": true,
+  "owned_replay_tree_removed": true
+}

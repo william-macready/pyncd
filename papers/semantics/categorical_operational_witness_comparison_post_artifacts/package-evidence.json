@@ -1,0 +1,159 @@
+{
+  "phase": "post-09 additive packaging, not controller release gate",
+  "baseline": "compiled acceptance patches 01-09; previous sources byte-identical",
+  "audit": {
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/lake-build.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+      "IndexedRankedWitnessControlTest",
+      "IndexedRankedWitnessNamespaceAudit"
+    ],
+    "exit": 0,
+    "log": "namespace-audit.log"
+  },
+  "full_build": {
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/lake-build.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+      "LeanNCD",
+      "Tests",
+      "IndexedExecutionExperiment"
+    ],
+    "exit": 0,
+    "log": "full-build-post.log"
+  },
+  "namespaces": [
+    "IndexedRankedWitnessBoundaryTest",
+    "IndexedRankedWitnessBridge",
+    "IndexedRankedWitnessCategoryTest",
+    "IndexedRankedWitnessComparison",
+    "IndexedRankedWitnessControlTest",
+    "IndexedRankedWitnessDescent",
+    "IndexedRankedWitnessOutcomeTest",
+    "IndexedRankedWitnessOutcomes",
+    "IndexedRankedWitnessSource"
+  ],
+  "source_sha256": {
+    "leanncd/lakefile.toml": "4e4a404d7678026549107136ae5363a6619d53f732156b99c1e6f3bdd8ca4828",
+    "leanncd/AGENTS.md": "3e8291f88f9555bbb3459cdd07f873a6dbd93358893b9dda4f279164d3a60b65",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessAudit.lean": "fc4746304c8ab6ad335ceb386eaf87ee82953fc65316af5f89ec6654f2b86a9a",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean": "234def84a3791ae4fa855d4f2a5a254f9ac624948b97aa55ce57a5b753ebe29f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBridge.lean": "05c6d468eaec496f05e7f4dd9cab07d1f7947006a0af36955556cad4d58cb547",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean": "8dad8d738165fdd143cc1be4308f2acbc98a6ea6852c9ae8b3f25f06220bcff5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessComparison.lean": "ee2de25db997f08fd5681e6c7bda380926a4a0c6adf8abe41ca1ab96de0a94db",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessControlTest.lean": "d49a312a26b918726b6fe0bb0f1e34042a5e96c32ca092da24bee1d574dfffb8",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessDescent.lean": "5934f28b04d6f2dc6879ec98e9e3a5da351fc008b8441b7b74863cee730ddbc5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessNamespaceAudit.lean": "3ffa6ee5098d4e95f35338264d954dc57b175dca72b630c566a25c9e52c6c909",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean": "ab2b854188b14d3774c9d6d8d514e55767eed4a61a7d51e43310a80d8eb0081f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean": "381d4212a8a2395856088932e27cfca3cad41e52ac6ac9fcf2fb2297fa9f4f88",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSemantics.lean": "878b279da59d97bf4f9719ad18fe35af038c4cca2c100584fe8ba77955964584",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSource.lean": "5cf32dd0d65b0e81f123f7c2557e5a6e2f5f4f84240a30a263568b417653165b",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessStage2Audit.lean": "f17666b2aa2378eb0fc386f606eaea8768e272267f7ae00ea06bbf6e9a37b7ac"
+  },
+  "source_audit": "all IndexedRankedWitness*.lean: no sorry, admit, or axiom declarations",
+  "manifest_check": {
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-manifest.sh",
+      "--check",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_mutations_post.json"
+    ],
+    "exit": 0,
+    "log": "manifest-check.log"
+  },
+  "patch_check": {
+    "command": [
+      "/usr/bin/git",
+      "-C",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness",
+      "apply",
+      "--check",
+      "--directory=papers/semantics/categorical_operational_witness_comparison_post_artifacts/patch-validation",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_post_artifacts/10-controls-and-namespace-audit.patch"
+    ],
+    "exit": 0,
+    "log": "patch-check.log"
+  },
+  "patch_replay_byte_equal": true,
+  "patch_sha256": "590215b8a42f768ea284ba141067fe686db9dc0be2fecdb698a6147255492ddf",
+  "manifest_sha256": "292e1137a0de4dfc74f6a8b7c355210a6e35cfe388293e8da04e17a2c0a28350",
+  "log_sha256": {
+    "P01-cycle.log": "cde48b835e3f7ca5cf6837256de8baea5ea70a4a179f55f33c4b59f7e87fcfd5",
+    "P01-mutated.log": "9cd86eb02eb5eb490064c6fd190d2210a82ef372065f44bf460d4fe4fbd28297",
+    "P02-cycle.log": "b5a6faa97007a876b316bf78eb2bd3d9a6ced61cdd35c9e48593d52d8673938f",
+    "P02-mutated.log": "ce6abb5e0ba82dccc1c0722944805bc860226c012bf9948403169c00af458b5e",
+    "P03-cycle.log": "54e7336f2a6b7df7bcf84b4356d83622701de849c47a3a734cb5ede7518618f4",
+    "P03-mutated.log": "7854e4915f4145b8b6fdd7566df9310e255f9c3d3473d8c7591fa4f2efc14ce5",
+    "P04-cycle.log": "a7ce07b94b1920e0ebb14b21d438d911ad06305ae5b1b302d7888109819699dc",
+    "P04-mutated.log": "59941869803c08baf10f1ca843c8e1b68aa4408d715939d6abd941778db7a80d",
+    "P05-cycle.log": "4c6b59971d09fee034fe7e6b8c046def6eede9f838ef69bd16ed7cea682de12f",
+    "P05-mutated.log": "8b421c33e3edbcfb5ce2a444fa040108623bc518588c4386fca9c443f4914eb6",
+    "P06-cycle.log": "c7432145938a2645c24d6610b39f5ae0f71fee53fce50f2d69596e6ca405fb71",
+    "P06-mutated.log": "11cc6007db109f101194186cad8cc84871ffef081745dcddaecc89bb21fe66b0",
+    "P07-cycle.log": "f796c7d8a6a296f8fb80596abbeb053c6fd3a0ffd6036d1f10b034084a6b6ee7",
+    "P07-mutated.log": "cea859d8475f7edc64bc3f658ae710a2fc4cb8c4df8b9c1af1c2837bba47ccdf",
+    "P08-cycle.log": "901eb9d72f3023a60ad8d526f9ec4f769dfe7b5b53bdb3238f82cfa57549dbfc",
+    "P08-mutated.log": "06c86b59680eb1740b557536d5b8b63e46cb8c6e46488d9402531e6155cb8880",
+    "P09-cycle.log": "8d6cfc9fdb65a9aae231fa2a9865191fe6c42f01d209cc3ed77b12211dfd366f",
+    "P09-mutated.log": "441cd790b6d10b4e651f7be509fbc3f480d5d0262d59e36d29adbfbb6feed79a",
+    "P10-cycle.log": "a202990fcd64d207e4946d140d50154b7f83e70b68b367e78dffbf341564ad0f",
+    "P10-mutated.log": "872ab8a76e83a89996475cce78238fde54be8b3006ef3bceff41ac1229ec89ec",
+    "P11-cycle.log": "67f7d12684416f33a1d36c0cbbf48c0804d3d4dadd891170fc53786813958a7b",
+    "P11-mutated.log": "d7da9f99092f42a0c0870fc0b8ec265f1cf7c2626fabcaca63f62e64a3001b6c",
+    "P12-cycle.log": "79fcb740e2657b08394add680ea66956afcae9c34f9ac3d3decdcc1c5f6e21ef",
+    "P12-mutated.log": "eed5a5724230d8c7b0fd1829df306b7c3f3830af6235bc187e6c5ae38c7c7f72",
+    "all-restored.log": "cb0dfe61209d3ef2953bde2c43e642a50d7db968765891b961908e85c074cfb2",
+    "authoring-unfiltered-manifest.log": "baca4321bbeaa21aa37a3e282acdfa035a06ac967563025d3f3d371a9a23f32e",
+    "baseline.log": "cb0dfe61209d3ef2953bde2c43e642a50d7db968765891b961908e85c074cfb2",
+    "full-build-post.log": "984ab37eaaca47cb887faabf36a9eafb8182ccf6ccc95b7ad3564bc9565a15c0",
+    "initial-P01-reduction-stuck.log": "adad76ba40a09daa31dc90df64437fa6b81a062f86d7ffcc4d8e0c226345158f",
+    "initial-P03-zero-store.log": "b7cebc4e9f44421ea2834aa9bba420cccd1eda18c1ee2603b18c7d8e18eda045",
+    "manifest-check.log": "4794797cb0e0725b4084ba9a72e96fe305016899134dacb8d8816ed4fa3648ad",
+    "namespace-audit.log": "cb0dfe61209d3ef2953bde2c43e642a50d7db968765891b961908e85c074cfb2",
+    "patch-apply.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "patch-check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "whitespace.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "acceptance_goal_controls": {
+    "Strict failure versus model domain": [
+      "P01 strict private failure totalized",
+      "P02 failed domain polarity"
+    ],
+    "Success retains private complete stores": [
+      "P03 private store erased with boundaries retained",
+      "P05 input exterior orientation reversed"
+    ],
+    "Administrative identity and nonconstant wires": [
+      "P04 nonconstant wire inverse as forward",
+      "P05 input exterior orientation reversed"
+    ],
+    "Binary and nested composition": [
+      "P05 input exterior orientation reversed",
+      "P06 source composition repeats first factor"
+    ],
+    "Empty metadata and input presence": [
+      "P06 source composition repeats first factor",
+      "P09 drop empty input presence",
+      "P10 identify metadata by singleton carriers"
+    ],
+    "Intentional loss of provenance": [
+      "P07 retain rank or origin in witness image",
+      "P08 conflate opaque and joined operational arrows"
+    ],
+    "No extension to hidden multiplicity": [
+      "P11 collapse hidden full witnesses",
+      "P12 admit hidden donor to ranked profile"
+    ]
+  },
+  "counts": {
+    "controls": 12,
+    "runtime_fixture_observations": 3,
+    "live_proof_controls": 9,
+    "new_generic_laws": 2,
+    "new_executable_assertions": 1,
+    "new_concrete_fixture_instances": 0
+  }
+}

@@ -1,0 +1,130 @@
+IndexedRankedWitnessComparison.comparison :
+  CategoryTheory.Functor IndexedRankedOperationalCategory.Target IndexedWitness.WholeInterface
+IndexedRankedWitnessComparison.source_comp {X Y Z : IndexedSource.Object} (f : IndexedRankedOperationalCore.Normal X Y)
+  (g : IndexedRankedOperationalCore.Normal Y Z) :
+  (f.comp g).source.denote = CategoryTheory.CategoryStruct.comp f.source.denote g.source.denote
+IndexedRankedWitnessComparison.comparison_admin {X Y : IndexedRankedOperationalCategory.Target}
+  (w : IndexedSource.Wire X.interface Y.interface) :
+  IndexedRankedWitnessComparison.comparison.map ⟦IndexedRankedOperationalCore.Normal.admin w⟧ =
+    IndexedWitness.graphHom w.env
+IndexedRankedWitnessComparison.comparison_wire_comp {X Y Z : IndexedRankedOperationalCategory.Target}
+  (a : IndexedSource.Wire X.interface Y.interface) (b : IndexedSource.Wire Y.interface Z.interface) :
+  IndexedRankedWitnessComparison.comparison.map ⟦IndexedRankedOperationalCore.Normal.admin (a.comp b)⟧ =
+    CategoryTheory.CategoryStruct.comp (IndexedWitness.graphHom a.env) (IndexedWitness.graphHom b.env)
+IndexedRankedWitnessComparison.comparison_wire_inverse {X Y : IndexedRankedOperationalCategory.Target}
+  (w : IndexedSource.Wire X.interface Y.interface) :
+  IndexedRankedWitnessComparison.comparison.map ⟦IndexedRankedOperationalCore.Normal.admin w.inverse⟧ =
+    IndexedWitness.graphHom w.env.symm
+IndexedRankedWitnessComparison.comparison_compute {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] {X Y : IndexedRankedOperationalCategory.Target}
+  (A : IndexedComponentComposition.MatchedComponent σ) (r : A.program.RankCertificate)
+  (o : IndexedRankedOperationalCore.Origin A) (before : IndexedSource.Wire X.interface (IndexedSource.input A))
+  (after : IndexedSource.Wire (IndexedSource.output A) Y.interface) :
+  IndexedRankedWitnessComparison.comparison.map ⟦IndexedRankedOperationalCore.Normal.compute A r o before after⟧ =
+    CategoryTheory.CategoryStruct.comp (IndexedWitness.graphHom before.env)
+      (CategoryTheory.CategoryStruct.comp ⟦IndexedWitness.componentSpan A⟧ (IndexedWitness.graphHom after.env))
+IndexedRankedWitnessComparison.comparison_rank_origin_independent {σ : LeanNCD.Semantics.Declarations Unit}
+  [Fintype σ.Tensor] [DecidableEq σ.Tensor] {X Y : IndexedRankedOperationalCategory.Target}
+  (A : IndexedComponentComposition.MatchedComponent σ) (r s : A.program.RankCertificate)
+  (o p : IndexedRankedOperationalCore.Origin A) (before : IndexedSource.Wire X.interface (IndexedSource.input A))
+  (after : IndexedSource.Wire (IndexedSource.output A) Y.interface) :
+  IndexedRankedWitnessComparison.comparison.map ⟦IndexedRankedOperationalCore.Normal.compute A r o before after⟧ =
+    IndexedRankedWitnessComparison.comparison.map ⟦IndexedRankedOperationalCore.Normal.compute A s p before after⟧
+IndexedRankedWitnessSource.erase : CategoryTheory.Functor IndexedRankedOperationalSource.Object IndexedSource.Object
+IndexedRankedWitnessSource.erase_rel {X Y : IndexedRankedOperationalSource.Object}
+  {f g : IndexedRankedOperationalSource.Term X Y} (h : IndexedRankedOperationalSource.Rel f g) :
+  IndexedSource.Rel (IndexedRankedWitnessSource.eraseTerm f) (IndexedRankedWitnessSource.eraseTerm g)
+IndexedRankedWitnessSource.diagram :
+  IndexedRankedOperationalSource.semantics.comp IndexedRankedWitnessComparison.comparison =
+    IndexedRankedWitnessSource.erase.comp IndexedSource.semantics
+IndexedRankedWitnessOutcomes.actual_correspondence {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (η : A.program.Input) :
+  IndexedOpenComposition.Correspondence.ExecutionCorrespondence A.matched
+    (IndexedOpenComposition.runChecked A.contract A.fragment ↑η) (A.program.initial η)
+    (LeanNCD.Semantics.Program.Executor.run A.program LeanNCD.Semantics.RationalReference.ops A.schedule η)
+IndexedRankedWitnessOutcomes.model_iff_actual_full {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) (ρ : LeanNCD.Semantics.Store LeanNCD.Semantics.RationalReference.Carrier σ) :
+  A.program.Models LeanNCD.Semantics.RationalReference.ops η ρ ↔
+    ∃ g c,
+      ∃ (finished : A.program.Complete c),
+        (IndexedOpenComposition.runChecked A.contract A.fragment ↑η).outcome =
+            IndexedOpenComposition.Outcome.complete g ∧
+          (LeanNCD.Semantics.Program.Executor.run A.program LeanNCD.Semantics.RationalReference.ops A.schedule
+                  η).outcome =
+              LeanNCD.Semantics.Program.Executor.Outcome.complete c finished ∧
+            IndexedOpenComposition.Relation A.matched g c ∧
+              (∀ (a : LeanNCD.Semantics.Address σ), g.available a = some (ρ a)) ∧ A.program.finalStore c finished = ρ
+IndexedRankedWitnessOutcomes.domain_iff_checked {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) :
+  (IndexedWitness.componentSpan A).Domain (IndexedWitness.inputEnv A η) ↔
+    ∃ g,
+      (IndexedOpenComposition.runChecked A.contract A.fragment ↑η).outcome = IndexedOpenComposition.Outcome.complete g
+IndexedRankedWitnessOutcomes.domain_iff_reference {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) :
+  (IndexedWitness.componentSpan A).Domain (IndexedWitness.inputEnv A η) ↔
+    ∃ c,
+      ∃ (finished : A.program.Complete c),
+        (LeanNCD.Semantics.Program.Executor.run A.program LeanNCD.Semantics.RationalReference.ops A.schedule
+              η).outcome =
+          LeanNCD.Semantics.Program.Executor.Outcome.complete c finished
+IndexedRankedWitnessOutcomes.checked_failed_iff_no_domain {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) :
+  (∃ tag g,
+      (IndexedOpenComposition.runChecked A.contract A.fragment ↑η).outcome =
+        IndexedOpenComposition.Outcome.failed tag g) ↔
+    ¬(IndexedWitness.componentSpan A).Domain (IndexedWitness.inputEnv A η)
+IndexedRankedWitnessOutcomes.reference_failed_iff_no_domain {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) :
+  (∃ t o c,
+      (LeanNCD.Semantics.Program.Executor.run A.program LeanNCD.Semantics.RationalReference.ops A.schedule η).outcome =
+        LeanNCD.Semantics.Program.Executor.Outcome.failed t o c) ↔
+    ¬(IndexedWitness.componentSpan A).Domain (IndexedWitness.inputEnv A η)
+IndexedRankedWitnessOutcomes.checked_success_value {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) (g : IndexedOpenComposition.State σ)
+  (done :
+    (IndexedOpenComposition.runChecked A.contract A.fragment ↑η).outcome = IndexedOpenComposition.Outcome.complete g) :
+  ∃ c,
+    ∃ (finished : A.program.Complete c) (domain :
+      (IndexedWitness.componentSpan A).Domain (IndexedWitness.inputEnv A η)),
+      (LeanNCD.Semantics.Program.Executor.run A.program LeanNCD.Semantics.RationalReference.ops A.schedule η).outcome =
+          LeanNCD.Semantics.Program.Executor.Outcome.complete c finished ∧
+        IndexedOpenComposition.Relation A.matched g c ∧
+          (∀ (a : LeanNCD.Semantics.Address σ), g.available a = some (A.program.finalStore c finished a)) ∧
+            A.program.Models LeanNCD.Semantics.RationalReference.ops η (A.program.finalStore c finished) ∧
+              (IndexedWitness.componentSpan A).value ⋯ (IndexedWitness.inputEnv A η) domain =
+                (IndexedWitness.outputEquiv A).symm (A.program.outputProjection (A.program.finalStore c finished))
+IndexedRankedWitnessOutcomes.reference_success_value {σ : LeanNCD.Semantics.Declarations Unit} [Fintype σ.Tensor]
+  [DecidableEq σ.Tensor] (A : IndexedComponentComposition.MatchedComponent σ) (rank : A.program.RankCertificate)
+  (η : A.program.Input) (c : A.program.Running) (finished : A.program.Complete c)
+  (done :
+    (LeanNCD.Semantics.Program.Executor.run A.program LeanNCD.Semantics.RationalReference.ops A.schedule η).outcome =
+      LeanNCD.Semantics.Program.Executor.Outcome.complete c finished) :
+  ∃ g,
+    ∃ (domain : (IndexedWitness.componentSpan A).Domain (IndexedWitness.inputEnv A η)),
+      (IndexedOpenComposition.runChecked A.contract A.fragment ↑η).outcome = IndexedOpenComposition.Outcome.complete g ∧
+        IndexedOpenComposition.Relation A.matched g c ∧
+          (∀ (a : LeanNCD.Semantics.Address σ), g.available a = some (A.program.finalStore c finished a)) ∧
+            (IndexedWitness.componentSpan A).value ⋯ (IndexedWitness.inputEnv A η) domain =
+              (IndexedWitness.outputEquiv A).symm (A.program.outputProjection (A.program.finalStore c finished))
+'IndexedRankedWitnessComparison.comparison' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessComparison.source_comp' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessComparison.comparison_rank_origin_independent' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+'IndexedRankedWitnessSource.erase' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessSource.erase_rel' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessSource.diagram' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessOutcomes.actual_correspondence' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessOutcomes.model_iff_actual_full' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessOutcomes.domain_iff_checked' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessOutcomes.domain_iff_reference' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessOutcomes.checked_failed_iff_no_domain' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessOutcomes.reference_failed_iff_no_domain' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessOutcomes.checked_success_value' depends on axioms: [propext, Classical.choice, Quot.sound]
+'IndexedRankedWitnessOutcomes.reference_success_value' depends on axioms: [propext, Classical.choice, Quot.sound]

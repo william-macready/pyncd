@@ -1,0 +1,48 @@
+{
+  "phase": "AUTHORING canonical wrapper replay, not later controller release gate",
+  "command": {
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-manifest.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/papers/semantics/categorical_operational_witness_comparison_mutations_post.json"
+    ],
+    "exit": 0,
+    "log": "authoring-unfiltered-manifest.log"
+  },
+  "source_sha256_before": {
+    "leanncd/lakefile.toml": "4e4a404d7678026549107136ae5363a6619d53f732156b99c1e6f3bdd8ca4828",
+    "leanncd/AGENTS.md": "3e8291f88f9555bbb3459cdd07f873a6dbd93358893b9dda4f279164d3a60b65",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessAudit.lean": "fc4746304c8ab6ad335ceb386eaf87ee82953fc65316af5f89ec6654f2b86a9a",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean": "234def84a3791ae4fa855d4f2a5a254f9ac624948b97aa55ce57a5b753ebe29f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBridge.lean": "05c6d468eaec496f05e7f4dd9cab07d1f7947006a0af36955556cad4d58cb547",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean": "8dad8d738165fdd143cc1be4308f2acbc98a6ea6852c9ae8b3f25f06220bcff5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessComparison.lean": "ee2de25db997f08fd5681e6c7bda380926a4a0c6adf8abe41ca1ab96de0a94db",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessControlTest.lean": "d49a312a26b918726b6fe0bb0f1e34042a5e96c32ca092da24bee1d574dfffb8",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessDescent.lean": "5934f28b04d6f2dc6879ec98e9e3a5da351fc008b8441b7b74863cee730ddbc5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessNamespaceAudit.lean": "3ffa6ee5098d4e95f35338264d954dc57b175dca72b630c566a25c9e52c6c909",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean": "ab2b854188b14d3774c9d6d8d514e55767eed4a61a7d51e43310a80d8eb0081f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean": "381d4212a8a2395856088932e27cfca3cad41e52ac6ac9fcf2fb2297fa9f4f88",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSemantics.lean": "878b279da59d97bf4f9719ad18fe35af038c4cca2c100584fe8ba77955964584",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSource.lean": "5cf32dd0d65b0e81f123f7c2557e5a6e2f5f4f84240a30a263568b417653165b",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessStage2Audit.lean": "f17666b2aa2378eb0fc386f606eaea8768e272267f7ae00ea06bbf6e9a37b7ac"
+  },
+  "source_sha256_after": {
+    "leanncd/lakefile.toml": "4e4a404d7678026549107136ae5363a6619d53f732156b99c1e6f3bdd8ca4828",
+    "leanncd/AGENTS.md": "3e8291f88f9555bbb3459cdd07f873a6dbd93358893b9dda4f279164d3a60b65",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessAudit.lean": "fc4746304c8ab6ad335ceb386eaf87ee82953fc65316af5f89ec6654f2b86a9a",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean": "234def84a3791ae4fa855d4f2a5a254f9ac624948b97aa55ce57a5b753ebe29f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBridge.lean": "05c6d468eaec496f05e7f4dd9cab07d1f7947006a0af36955556cad4d58cb547",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean": "8dad8d738165fdd143cc1be4308f2acbc98a6ea6852c9ae8b3f25f06220bcff5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessComparison.lean": "ee2de25db997f08fd5681e6c7bda380926a4a0c6adf8abe41ca1ab96de0a94db",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessControlTest.lean": "d49a312a26b918726b6fe0bb0f1e34042a5e96c32ca092da24bee1d574dfffb8",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessDescent.lean": "5934f28b04d6f2dc6879ec98e9e3a5da351fc008b8441b7b74863cee730ddbc5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessNamespaceAudit.lean": "3ffa6ee5098d4e95f35338264d954dc57b175dca72b630c566a25c9e52c6c909",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean": "ab2b854188b14d3774c9d6d8d514e55767eed4a61a7d51e43310a80d8eb0081f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean": "381d4212a8a2395856088932e27cfca3cad41e52ac6ac9fcf2fb2297fa9f4f88",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSemantics.lean": "878b279da59d97bf4f9719ad18fe35af038c4cca2c100584fe8ba77955964584",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSource.lean": "5cf32dd0d65b0e81f123f7c2557e5a6e2f5f4f84240a30a263568b417653165b",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessStage2Audit.lean": "f17666b2aa2378eb0fc386f606eaea8768e272267f7ae00ea06bbf6e9a37b7ac"
+  },
+  "byte_identical": true
+}

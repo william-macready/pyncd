@@ -2,6 +2,17 @@
 
 ## Doing slice work here: two skills
 
+The additive, nondefault comparison entry point is
+`import IndexedRankedWitnessSemantics`. It supplies the ranked operational
+target-to-complete-witness functor, rank/provenance-forgetting source functor,
+commuting functor diagram, and actual checked/reference domain and full-store
+outcome theorems. Rank excludes blocking, not strict failure; private model
+stores and both exterior legs are retained. The witness image forgets histories,
+failure diagnostics and provenance, and is not claimed faithful or equivalent.
+`IndexedRankedWitnessNamespaceAudit` audits all new API/test namespaces using
+the standard-only axiom helper. Acceptance and control modules remain solely
+under `IndexedExecutionExperiment`; no unranked or arbitrary-frame extension.
+
 The nondefault `IndexedExecutionExperiment` has a denotational entry point
 `import IndexedWitnessSemantics`. `IndexedWitness` supplies whole interfaces,
 complete-model spans up to span isomorphism, pullback composition and ordinary

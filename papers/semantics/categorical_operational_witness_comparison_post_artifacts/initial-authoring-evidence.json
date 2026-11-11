@@ -1,0 +1,339 @@
+{
+  "phase": "AUTHORING measurements, not controller replay",
+  "source_sha256_before": {
+    "leanncd/lakefile.toml": "4e4a404d7678026549107136ae5363a6619d53f732156b99c1e6f3bdd8ca4828",
+    "leanncd/AGENTS.md": "3e8291f88f9555bbb3459cdd07f873a6dbd93358893b9dda4f279164d3a60b65",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessAudit.lean": "fc4746304c8ab6ad335ceb386eaf87ee82953fc65316af5f89ec6654f2b86a9a",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean": "234def84a3791ae4fa855d4f2a5a254f9ac624948b97aa55ce57a5b753ebe29f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBridge.lean": "05c6d468eaec496f05e7f4dd9cab07d1f7947006a0af36955556cad4d58cb547",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean": "8dad8d738165fdd143cc1be4308f2acbc98a6ea6852c9ae8b3f25f06220bcff5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessComparison.lean": "ee2de25db997f08fd5681e6c7bda380926a4a0c6adf8abe41ca1ab96de0a94db",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessControlTest.lean": "2361152a47842f6d1cc29fd1b47ccd2911e893abcf06dbad4c2cdff830464bf8",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessDescent.lean": "5934f28b04d6f2dc6879ec98e9e3a5da351fc008b8441b7b74863cee730ddbc5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessNamespaceAudit.lean": "3ffa6ee5098d4e95f35338264d954dc57b175dca72b630c566a25c9e52c6c909",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean": "ab2b854188b14d3774c9d6d8d514e55767eed4a61a7d51e43310a80d8eb0081f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean": "381d4212a8a2395856088932e27cfca3cad41e52ac6ac9fcf2fb2297fa9f4f88",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSemantics.lean": "878b279da59d97bf4f9719ad18fe35af038c4cca2c100584fe8ba77955964584",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSource.lean": "5cf32dd0d65b0e81f123f7c2557e5a6e2f5f4f84240a30a263568b417653165b",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessStage2Audit.lean": "f17666b2aa2378eb0fc386f606eaea8768e272267f7ae00ea06bbf6e9a37b7ac"
+  },
+  "baseline": {
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/lake-build.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+      "IndexedRankedWitnessControlTest",
+      "IndexedRankedWitnessNamespaceAudit"
+    ],
+    "exit": 0,
+    "log": "baseline.log"
+  },
+  "cycles": [
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P01 strict private failure totalized",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean",
+        "  let A := consumerComponent a\n",
+        "  let A := consumerComponent 4\n",
+        "IndexedRankedWitnessOutcomeTest"
+      ],
+      "exit": 0,
+      "log": "P01-cycle.log",
+      "label": "P01 strict private failure totalized",
+      "classification": "type-valid runtime fixture observation",
+      "mutated_log": "P01-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:34:73: Tactic `decide` failed for proposition",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    },
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P02 failed domain polarity",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean",
+        "    (\u2203 tag g, (runChecked A.contract A.fragment \u03b7.val).outcome = .failed tag g) \u2194\n      \u00ac (componentSpan A).Domain (inputEnv A \u03b7) := by",
+        "    (\u2203 tag g, (runChecked A.contract A.fragment \u03b7.val).outcome = .failed tag g) \u2194\n      (componentSpan A).Domain (inputEnv A \u03b7) := by",
+        "IndexedRankedWitnessOutcomeTest"
+      ],
+      "exit": 0,
+      "log": "P02-cycle.log",
+      "label": "P02 failed domain polarity",
+      "classification": "live-proof policy control; not a runtime kill",
+      "mutated_log": "P02-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean:62:49: unsolved goals",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    },
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P03 complete store replaced by zero store",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean",
+        "        A.program.finalStore c finished = \u03c1 := by",
+        "        A.program.finalStore c finished = (fun _ => 0) := by",
+        "IndexedRankedWitnessOutcomeTest"
+      ],
+      "exit": 0,
+      "log": "P03-cycle.log",
+      "label": "P03 complete store replaced by zero store",
+      "classification": "live-proof full-store policy control; not a runtime kill",
+      "mutated_log": "P03-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean:33:59: Application type mismatch: The argument",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    },
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P04 nonconstant wire inverse as forward",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean",
+        "    (Span.graph rotate.env).right view.env 0 point,",
+        "    (Span.graph rotate.inverse.env).right view.env 0 point,",
+        "IndexedRankedWitnessCategoryTest"
+      ],
+      "exit": 0,
+      "log": "P04-cycle.log",
+      "label": "P04 nonconstant wire inverse as forward",
+      "classification": "type-valid runtime fixture observation",
+      "mutated_log": "P04-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:53:51: Tactic `decide` proved that the proposition",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    },
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P05 both exterior orientations reversed",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessControlTest.lean",
+        "    (F.rebase before after).left w = before.symm (F.left w) \u2227\n      (F.rebase before after).right w = after (F.right w) := \u27e8rfl, rfl\u27e9",
+        "    (F.rebase before after).left w = before (F.left w) \u2227\n      (F.rebase before after).right w = after.symm (F.right w) := \u27e8rfl, rfl\u27e9",
+        "IndexedRankedWitnessControlTest"
+      ],
+      "exit": 0,
+      "log": "P05-cycle.log",
+      "label": "P05 both exterior orientations reversed",
+      "classification": "live-proof exterior policy control; not a runtime kill",
+      "mutated_log": "P05-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessControlTest.lean:10:72: Application type mismatch: The argument",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    },
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P06 source composition repeats first factor",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessControlTest.lean",
+        "        (IndexedRankedOperationalSource.arrow g) := by",
+        "        (IndexedRankedOperationalSource.arrow f) := by",
+        "IndexedRankedWitnessControlTest"
+      ],
+      "exit": 0,
+      "log": "P06-cycle.log",
+      "label": "P06 source composition repeats first factor",
+      "classification": "live-proof composition/source-diagram policy control; not a runtime kill",
+      "mutated_log": "P06-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessControlTest.lean:20:2: Type mismatch",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    },
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P07 retain rank or origin in witness image",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessComparison.lean",
+        "    comparison.map (Quotient.mk _ (Normal.compute A r o before after)) =\n      comparison.map (Quotient.mk _ (Normal.compute A s p before after)) := rfl",
+        "    comparison.map (Quotient.mk _ (Normal.compute A r o before after)) \u2260\n      comparison.map (Quotient.mk _ (Normal.compute A s p before after)) := rfl",
+        "IndexedRankedWitnessCategoryTest"
+      ],
+      "exit": 0,
+      "log": "P07-cycle.log",
+      "label": "P07 retain rank or origin in witness image",
+      "classification": "live-proof information-loss policy control; not a runtime kill",
+      "mutated_log": "P07-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessComparison.lean:88:0: Not a definitional equality: the conclusion should be an equality, but is `False`",
+        "error: experiments/indexed_execution/IndexedRankedWitnessComparison.lean:94:76: Type mismatch",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    },
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P08 conflate opaque and joined operational arrows",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean",
+        "Arrow (IndexedSource.input (consumerComponent 4)) (IndexedSource.output (consumerComponent 4))) \u2260\n        Quotient.mk _ joinedNormal := by",
+        "Arrow (IndexedSource.input (consumerComponent 4)) (IndexedSource.output (consumerComponent 4))) =\n        Quotient.mk _ joinedNormal := by",
+        "IndexedRankedWitnessCategoryTest"
+      ],
+      "exit": 0,
+      "log": "P08-cycle.log",
+      "label": "P08 conflate opaque and joined operational arrows",
+      "classification": "live-proof provenance/false-faithfulness policy control; not a runtime kill",
+      "mutated_log": "P08-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean:173:8: Tactic `introN` failed: There are no additional binders or `let` bindings in the goal to introduce",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    },
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P09 drop empty input presence",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean",
+        "    (runChecked emptyProducerContract emptyProducerFragment emptyMissingInput).outcome.kind)",
+        "    (runChecked emptyProducerContract emptyProducerFragment emptyPresentInput).outcome.kind)",
+        "IndexedRankedWitnessBoundaryTest"
+      ],
+      "exit": 0,
+      "log": "P09-cycle.log",
+      "label": "P09 drop empty input presence",
+      "classification": "type-valid runtime fixture observation",
+      "mutated_log": "P09-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:41:77: Tactic `decide` proved that the proposition",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    },
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P10 identify metadata by singleton carriers",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean",
+        "    outputInterface emptyProducerComponent \u2260\n      outputInterface IndexedWitnessCompositionTest.Empty.composite :=",
+        "    outputInterface emptyProducerComponent =\n      outputInterface IndexedWitnessCompositionTest.Empty.composite :=",
+        "IndexedRankedWitnessBoundaryTest"
+      ],
+      "exit": 0,
+      "log": "P10-cycle.log",
+      "label": "P10 identify metadata by singleton carriers",
+      "classification": "live-proof metadata policy control; not a runtime kill",
+      "mutated_log": "P10-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:15:2: Type mismatch",
+        "error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:27:8: Function expected at",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    },
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P11 collapse hidden full witnesses",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean",
+        "    hiddenZero \u2260 hiddenOne \u2227",
+        "    hiddenZero = hiddenOne \u2227",
+        "IndexedRankedWitnessBoundaryTest"
+      ],
+      "exit": 0,
+      "log": "P11-cycle.log",
+      "label": "P11 collapse hidden full witnesses",
+      "classification": "live-proof unranked multiplicity policy control; not a runtime kill",
+      "mutated_log": "P11-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:60:3: Application type mismatch: The argument",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    },
+    {
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/mutation-cycle.sh",
+        "P12 admit hidden donor to ranked profile",
+        "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+        "experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean",
+        "    \u00ac Nonempty hiddenUpstream.program.RankCertificate := hidden_no_rank",
+        "    Nonempty hiddenUpstream.program.RankCertificate := hidden_no_rank",
+        "IndexedRankedWitnessBoundaryTest"
+      ],
+      "exit": 0,
+      "log": "P12-cycle.log",
+      "label": "P12 admit hidden donor to ranked profile",
+      "classification": "live-proof rank-domain policy control; not a runtime kill",
+      "mutated_log": "P12-mutated.log",
+      "source_byte_identical": true,
+      "diagnostics": [
+        "error: experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean:63:55: Type mismatch",
+        "error: Lean exited with code 1",
+        "error: build failed"
+      ]
+    }
+  ],
+  "restored_build": {
+    "command": [
+      "bash",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd/scripts/lake-build.sh",
+      "/Users/williammacready/code/python/pyncd.worktrees/follow-directions-categorical-witness/leanncd",
+      "IndexedRankedWitnessControlTest",
+      "IndexedRankedWitnessNamespaceAudit"
+    ],
+    "exit": 0,
+    "log": "all-restored.log"
+  },
+  "source_sha256_after": {
+    "leanncd/lakefile.toml": "4e4a404d7678026549107136ae5363a6619d53f732156b99c1e6f3bdd8ca4828",
+    "leanncd/AGENTS.md": "3e8291f88f9555bbb3459cdd07f873a6dbd93358893b9dda4f279164d3a60b65",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessAudit.lean": "fc4746304c8ab6ad335ceb386eaf87ee82953fc65316af5f89ec6654f2b86a9a",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean": "234def84a3791ae4fa855d4f2a5a254f9ac624948b97aa55ce57a5b753ebe29f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessBridge.lean": "05c6d468eaec496f05e7f4dd9cab07d1f7947006a0af36955556cad4d58cb547",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean": "8dad8d738165fdd143cc1be4308f2acbc98a6ea6852c9ae8b3f25f06220bcff5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessComparison.lean": "ee2de25db997f08fd5681e6c7bda380926a4a0c6adf8abe41ca1ab96de0a94db",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessControlTest.lean": "2361152a47842f6d1cc29fd1b47ccd2911e893abcf06dbad4c2cdff830464bf8",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessDescent.lean": "5934f28b04d6f2dc6879ec98e9e3a5da351fc008b8441b7b74863cee730ddbc5",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessNamespaceAudit.lean": "3ffa6ee5098d4e95f35338264d954dc57b175dca72b630c566a25c9e52c6c909",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean": "ab2b854188b14d3774c9d6d8d514e55767eed4a61a7d51e43310a80d8eb0081f",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean": "381d4212a8a2395856088932e27cfca3cad41e52ac6ac9fcf2fb2297fa9f4f88",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSemantics.lean": "878b279da59d97bf4f9719ad18fe35af038c4cca2c100584fe8ba77955964584",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessSource.lean": "5cf32dd0d65b0e81f123f7c2557e5a6e2f5f4f84240a30a263568b417653165b",
+    "leanncd/experiments/indexed_execution/IndexedRankedWitnessStage2Audit.lean": "f17666b2aa2378eb0fc386f606eaea8768e272267f7ae00ea06bbf6e9a37b7ac"
+  }
+}

@@ -127,6 +127,19 @@ the operational source is rank/provenance-aware, and opaque compiled leaves
 are not silently given a joined assembly history. See Section 6.13 and the
 [completed release record](categorical_ranked_operational_interpretation_record.md).
 
+**Operational-to-witness comparison** is now compiled in the additive,
+nondefault prototype. An actual functor descends from the existing operational
+target quotient to complete-model witness spans, preserving identities,
+binary composition and both exterior legs. An explicit rank/origin-erasing
+source functor makes the two existing source interpretations commute by
+functor equality. For matched ranked components on validated inputs, model
+existence is equivalent to actual checked/reference completion; uniqueness
+is derived, not assumed. Whole private stores survive, while event order,
+intermediate histories, failure diagnostics and assembly provenance are
+forgotten. Section 6.14 states the hypotheses and limits. Its
+[authoring record](categorical_operational_witness_comparison_record.md)
+records compiled evidence, not completed execution or final review.
+
 The independently authored validation fixture supplies actual
 proof instances of the execution-correspondence theorem. Its six-event failure and
 seven-event completion remain concrete executable observations;
@@ -153,27 +166,30 @@ The strongest defensible conclusion is:
 > proved. A separate provenance-aware ranked operational source and full-observation
 > target category now have administrative units, a genuine functor and a
 > connected inherited-state history interpretation with explicit fresh frames.
+> A compiled comparison functor connects that target to full witness meaning,
+> with an explicit source-erasure diagram and derived ranked domain/uniqueness.
 > Broader source interpretations and backend refinement remain separate obligations.
 
 ### Proposed next steps
 
 **The sequential categorical foundation is now established for the scoped
-ranked profile. The next priority is connecting meanings and implementations,
+ranked profile, including a compiled operational-to-witness comparison.
+Its controller execution and final review remain pending. The next semantic
+priority is concrete implementation refinement,
 not re-proving units or adding categorical machinery for its own sake.**
 The following is a possible roadmap, not a verified implementation plan or
 a commitment to execute every direction:
 
 | Default priority | Direction | Intended gain |
 | --- | --- | --- |
-| 1 | Connect the denotational and operational interpretations | A compositional comparison between complete-model meaning and full operational observations, with explicit information loss and retained hypotheses |
-| 2 | Establish one concrete frontend/backend refinement | An end-to-end guarantee for a narrowly chosen supported fragment and backend, with an explicit observation/refinement relation |
-| 3 | Run a bounded scope-aware bialgebraic pilot | Determine whether Turi-Plotkin-style rules reuse the existing proofs and simplify adding constructors, rather than merely restating current compositionality |
-| 4 | Broaden categorical structure where needed | Add monoidal/PROP structure, broader interfaces or effects only for a concrete modeling or proof requirement |
+| 1 | Establish one concrete frontend/backend refinement | An end-to-end guarantee for a narrowly chosen supported fragment and backend, with an explicit observation/refinement relation |
+| 2 | Run a bounded scope-aware bialgebraic pilot | Determine whether Turi-Plotkin-style rules reuse the existing proofs and simplify adding constructors, rather than merely restating current compositionality |
+| 3 | Broaden categorical structure where needed | Add monoidal/PROP structure, broader interfaces or effects only for a concrete modeling or proof requirement |
 
-If mathematical generality is the immediate goal, swap priorities 2 and 3.
-A small bialgebraic pilot may also run earlier alongside the comparison work;
-a wholesale reformulation should not become a prerequisite for either the
-comparison or concrete refinement. These are value-based priorities, not a
+If mathematical generality is the immediate goal, swap priorities 1 and 2.
+A small bialgebraic pilot may run alongside concrete refinement;
+a wholesale reformulation should not become a prerequisite for it.
+These are value-based priorities, not a
 claim that every item logically depends on completion of its predecessor.
 [Section 10.3](#103-remaining-branches-of-the-roadmap) gives the objectives,
 scope boundaries and decision gate for the pilot.
@@ -235,6 +251,7 @@ Lean notation.
   - [6.11. Kernel-checked ranked operational phases](#611-kernel-checked-ranked-operational-phases)
   - [6.12. Transport-aware histories and operational associativity](#612-transport-aware-histories-and-operational-associativity)
   - [6.13. Ranked operational interpretation and administrative units](#613-ranked-operational-interpretation-and-administrative-units)
+  - [6.14. Comparing operational and complete-witness meaning](#614-comparing-operational-and-complete-witness-meaning)
 - [7. St/Br, indexed arrays, and open diagrams](#7-stbr-indexed-arrays-and-open-diagrams)
   - [7.1. St/Br remains a serious syntax candidate](#71-stbr-remains-a-serious-syntax-candidate)
   - [7.2. Naperian representation connects compact syntax to values](#72-naperian-representation-connects-compact-syntax-to-values)
@@ -867,6 +884,8 @@ nested coherence, restricted partial maps and completed release gates.
 | Ranked operational source/target categories and functor | Composition congruence precedes the full-observation quotient; generated ranked source equations, decorated assembly, units and derived brackets have a genuine operational interpretation | Fixed all-input transports, raw exterior squares and original-boundary provenance; no inference from the unrestricted witness-source quotient and no automatic opaque-to-joined identification |
 | Connected inherited-state realization | Administrative and computational arrows realize actual full histories; source/target agreement preserves framed histories and actual interior unit insertion | Owned cells satisfy `FreshInput`, identity lanes are fresh, and comparison frames satisfy structural `Coherent` squares; the checked runner is not restarted on arbitrary inherited storage |
 | Operational interpretation acceptance and eleven release controls | Populated frames, strict failures, empty presence, nonconstant wires, provenance and concrete composite-frame coherence are pinned | Forty-three anonymous kernel checks, two type-valid donor-observation controls and nine live-proof controls; not eleven runtime-core defect kills |
+| Compiled operational-to-witness comparison and source-erasure diagram | Existing operational quotient maps functorially to full witness spans; ranked uniqueness/domain and actual checked/reference outcomes are connected | Matched ranked components, validated inputs and owned complete stores; no history reconstruction, unranked extension or faithfulness |
+| Comparison authoring acceptance and twelve measured controls | Seven acceptance goal families; nine namespaces / 124 constants audited; full authoring build passed | Three executable/decidable observations and nine live-proof controls, not twelve runtime-core defect kills; controller replay and final reviews pending |
 
 The correspondence record reports successful full builds and branch review.
 The executable modules
@@ -1562,6 +1581,71 @@ composite-frame acceptance repair. The full primary-main integration build
 passed 8,953 jobs. Appendix A.12 explains why the category, source functor and
 inherited-state interpretation are separate obligations and how they connect.
 
+### 6.14. Comparing operational and complete-witness meaning
+
+The compiled nondefault entry point is `IndexedRankedWitnessSemantics`.
+`IndexedRankedWitnessComparison.comparison` is a genuine functor from the
+existing `IndexedRankedOperationalCategory.Target` to
+`IndexedWitness.WholeInterface`. Administrative arrows map to graph spans.
+Computations map to the existing full `componentSpan`, rebased by the inverse
+input exterior and forward output exterior. `compute_iso` transports complete
+witnesses at every address under the fixed all-input `ComputeAgrees`
+transport, with both legs commuting; `agrees_iso` covers all existing
+agreement cases. Operational equality is unchanged.
+
+The domain argument is not an extra success or uniqueness assumption.
+For `σ : Declarations Unit` with finite decidable tensor identities, a matched
+component `A`, its program rank certificate and a validated `A.program.Input`,
+`complete_iff_model` and `failed_iff_no_model` combine actual default
+success/failure terminality with the existing completed-model and failed-model
+exclusion results. `ranked_atMostOne` derives `AtMostOneModels A`, and
+`component_left_injective` derives injectivity of the witness span's left leg.
+Ranking does not imply success: strict primitive failure gives an empty
+complete-witness fiber, not a zero-valued successful witness.
+
+`source_comp` uses the existing `composition_hom`/`compositeWiredIso`
+comparison, original boundary environment and both actual exterior wires.
+The functor's identity and composition laws are proved, not additional
+agreement premises. `comparison_rank_origin_independent` forgets arbitrary
+rank certificates and origins on the same component/exteriors only in its
+witness image; opaque and joined operational arrows remain distinct.
+Interfaces retain metadata, including empty tensor presence, rather than
+being identified by environment cardinality.
+
+The two source categories remain distinct. `IndexedRankedWitnessSource.erase`
+drops rank/origin annotations while retaining components and wires.
+`erase_rel` checks every ranked generating relation, including assembly and
+both nested exterior squares; no converse for the old source's extra bracket
+relation is claimed. `diagram` proves actual functor equality:
+
+$$
+\mathsf{RankedSource.semantics}\mathbin{\ggg}\mathsf{comparison}
+=\mathsf{erase}\mathbin{\ggg}\mathsf{WitnessSource.semantics}.
+$$
+
+`IndexedRankedWitnessOutcomes.actual_correspondence` specializes the existing
+correspondence to actual default `runChecked` and `Program.Executor.run`.
+`model_iff_actual_full` characterizes each complete model by both actual
+completions, their full `Relation`, availability at every address and exact
+reference `finalStore`. `domain_iff_checked`/`domain_iff_reference` and both
+failure complements give the exact domain; the two success-value theorems
+give the span's exact value conditional on actual success. No supplied
+execution-agreement, model-existence or uniqueness premise is introduced.
+
+The target retains complete component-owned private stores and both exterior
+maps. It forgets event order, intermediate histories and ledger prefixes,
+failure tags/diagnostics and assembly provenance. It does not retain an
+inherited outside frame, restart checked execution on arbitrary prepopulated
+private stores, or prove generic cross-program reference-state transport.
+Administrative arrows require no fictional core program. Existing `Realizes`
+and frame theorems are unchanged. Hidden unranked model multiplicity remains
+outside the ranked comparison; no inverse, faithfulness, equivalence,
+totality or reconstruction of operational histories is claimed.
+
+The [plan](categorical_operational_witness_comparison_plan.md) separates
+compiled authoring evidence from pending controller execution and two final
+review lenses. No release completion is inferred from this prototype.
+
 ## 7. St/Br, indexed arrays, and open diagrams
 
 The categorical perspectives address different layers and different
@@ -2013,8 +2097,8 @@ event-sensitive process equivalence.
 Unlike an output-only relation, it does not identify different internal
 models prematurely.
 
-For components with at most one model on every input, such as the
-ranked fragment under the specified assumptions, this particular
+For components with at most one model on every input, including matched
+ranked components by the compiled `ranked_atMostOne` proof (Section 6.14), this particular
 obstacle disappears. The implemented domain and denotation corollaries now
 make partial-function composition precise under explicit at-most-one-model
 hypotheses for both components and the specified boundary conditions.
@@ -2035,7 +2119,9 @@ functor to that target. The ranked binary operational phase branch is now
 proved separately. Transport-aware history composition and operational
 associativity are now proved too. Section 6.13 adds administrative ranked process
 units and their source/target interpretation; broader source interpretations and
-backend refinement remain open branches.
+backend refinement remain open branches. Section 6.14 now connects the two
+targets by a compiled comparison functor and explicit source-erasure diagram;
+its release gates remain pending.
 
 ### 10.1. What each step buys us
 
@@ -2157,6 +2243,7 @@ quotient-invariant, and its laws establish composition of domains and values.
 | Associative operational composition | 1, 9 | Proved for ranked matched components on validated input | [Operational histories](categorical_operational_associativity_record.md); transport-only full observations, shared-cut algebra, both actual constructors, four leaf outcomes and actual reference relations |
 | Ranked event-sensitive process category and source functor | 1, 8, 9 | Proved for provenance-aware ranked sources | [Ranked operational interpretation](categorical_ranked_operational_interpretation_record.md); full observation congruence, raw exterior gluing, original-boundary provenance and administrative units precede quotient/category/functor construction |
 | Connected inherited-state operational realization | 1, 3, 9 | Proved under fresh-local-input and structural frame-coherence conditions | [Interpretation bridge](../../leanncd/experiments/indexed_execution/IndexedRankedOperationalInterpretation.lean); actual native computational histories, administrative wires, full outside storage/ledger retention and source/target/functor history agreement, not only normalization equality |
+| Operational-to-witness comparison and source erasure | 1, 5-9 | Compiled proof; controller execution/review pending | Section 6.14; genuine target functor and functor-equality diagram; derived ranked uniqueness, exact actual checked/reference domain and complete owned stores, not full history equality |
 | Categorical frontend/backend interpretation and refinement | 9 | Not established for this witness category | Existing syntax or plan/backend results are not automatically functors or refinements of this witness/process interpretation |
 
 Thus the scoped **denotational obligations of Steps 1-8 are established**,
@@ -2171,6 +2258,8 @@ presentation, automatic matching or a general St/Br/monoidal interpretation.
 The current position is therefore **a proved denotational witness-span
 category and a certified source-category functor**, together with a separate
 provenance-aware ranked operational category and functor (Section 6.13).
+The compiled comparison in Section 6.14 connects them without identifying
+their observations or quotients; its release is not yet complete.
 See the [witness semantics record](categorical_witness_semantics_record.md)
 and [source record](categorical_source_functor_record.md) for their separate
 build, audit, control and review gates and limits. Ranked binary operational
@@ -2191,24 +2280,13 @@ profile. The ranked provenance-aware interpretation also has administrative
 units, associative categorical composition and connected inherited-state
 realizations; these are no longer pending tasks. The following proposed order
 prioritizes semantic coherence and useful new guarantees. It is not a verified
-slice plan or an assertion that all four directions must be implemented.
+slice plan or an assertion that all three directions must be implemented.
+The comparison previously prioritized here is now compiled (Section 6.14),
+including source erasure, functor equality and derived ranked domain/uniqueness.
+Controller execution and independent final reviews remain pending; this is
+not a completed release claim.
 
-1. **Connect the two semantic interpretations.** Complete-model witness spans
-   and ranked full operational observations retain different information.
-   Construct the appropriate compositional comparison on an explicitly stated
-   common source restriction, respecting interfaces, wires, identities and
-   composition. Relate successful execution to complete-model meaning and
-   strict failure to the applicable model-absence guarantees, retaining any
-   required existence/uniqueness hypotheses.
-
-   This is more than restating the existing successful-run correspondence:
-   specify which operational information the comparison intentionally forgets.
-   Do not identify the two quotients, assume faithfulness or treat witness
-   equality as full history equality. This is the recommended next main
-   milestone because it connects the already proved layers and clarifies the
-   meaning that an implementation refinement must preserve.
-
-2. **Establish one concrete frontend/backend refinement.** Choose a narrowly
+1. **Establish one concrete frontend/backend refinement.** Choose a narrowly
    supported source fragment and one backend, then connect source construction,
    certified components, operational histories and actual backend execution.
    State the preserved observations and prove the corresponding simulation or
@@ -2222,7 +2300,7 @@ slice plan or an assertion that all four directions must be implemented.
    to verify every backend, infer every leaf match or establish a general
    St/Br interpretation first.
 
-3. **Run a bounded bialgebraic architecture pilot.** Investigate a typed,
+2. **Run a bounded bialgebraic architecture pilot.** Investigate a typed,
    scope-aware Turi-Plotkin-style specification for administrative identity and
    wires, a ranked computational leaf, and sequential composition. Explicitly
    identify the syntax construction, one-step behaviour construction, rule
@@ -2242,7 +2320,7 @@ slice plan or an assertion that all four directions must be implemented.
    backend observation policy, not shortcuts that silently weaken the current
    full-history relation.
 
-4. **Broaden categorical structure only where needed.** Extend to broader
+3. **Broaden categorical structure only where needed.** Extend to broader
    interfaces, automatic certification, St/Br or PROP interpretations,
    monoidal/parallel composition or additional effects when a concrete model
    or proof obligation requires them. Each extension must justify its new
@@ -2252,17 +2330,18 @@ slice plan or an assertion that all four directions must be implemented.
    denotational presentation and its limits.
 
 **Alternative ordering:** if mathematical generality is the immediate priority,
-swap concrete refinement and the bialgebraic pilot: comparison, pilot,
-refinement, then demand-driven broadening. A small pilot can run earlier in
-parallel with comparison work; a wholesale bialgebraic refactoring should not
-block the comparison or a useful concrete refinement. The default order is a
+swap concrete refinement and the bialgebraic pilot: pilot, refinement, then
+demand-driven broadening. A small pilot can run in parallel with refinement;
+a wholesale bialgebraic refactoring should not block useful concrete
+refinement. The default order is a
 judgment about payoff, not a strict dependency chain.
 
 All directions retain the current boundaries. Unranked sources, arbitrary
 prepopulated local private stores and generic cross-program reference-state
-transport require separate arguments. Erasing assembly provenance or equating
-opaque and joined origins is not justified by matching final values or event
-lists. None of the proposed steps requires re-proving completed category laws
+transport require separate arguments. The comparison intentionally forgets
+assembly provenance in witness meaning, but does not equate opaque and joined
+operational arrows. Matching final values or event lists does not justify
+that operational equality. None of the proposed steps requires re-proving completed category laws
 or weakening strict definedness and complete-witness retention.
 
 ## Conclusion
@@ -2298,6 +2377,11 @@ administrative units rather than a core identity computation. Its `Realizes`
 bridge connects those arrows to inherited-state histories, including exact
 actual local computational histories and all outside private state/ledger
 prefixes under explicit frame conditions.
+Section 6.14 adds a compiled target comparison and explicit source-erasure
+diagram, retaining complete private models and deriving ranked uniqueness and
+the exact actual execution domain. It intentionally forgets histories,
+failure diagnostics and provenance only in witness meaning; controller
+execution and final review remain pending.
 Section 10 records
 the different goals and current status.
 Reproving execution correspondence or reconstructing an entire match for

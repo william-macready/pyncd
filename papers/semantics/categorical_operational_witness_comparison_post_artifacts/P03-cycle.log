@@ -1,0 +1,16 @@
+=== P03 private store erased with boundaries retained MUTATE ===
+--- mutated experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean: '        A.program.finalStore c finished = ρ := by' -> '        A.program.finalStore c finished =
+          (fun a => if A.program.input a.1 || A.program.output a.1 then ρ a else 0) := by' ---
+error: experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean:34:59: Application type mismatch: The argument
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean now) ---
+=== P03 private store erased with boundaries retained MUTATE exit=1 ===
+=== P03 private store erased with boundaries retained RESTORED BUILD ===
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:212:0: 'IndexedRankedWitnessOutcomeTest.pair_success_full' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:213:0: 'IndexedRankedWitnessOutcomeTest.failure_A' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:214:0: 'IndexedRankedWitnessOutcomeTest.failure_B' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: experiments/indexed_execution/IndexedRankedWitnessOutcomeTest.lean:215:0: 'IndexedRankedWitnessOutcomeTest.failure_C' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8668 jobs).
+=== P03 private store erased with boundaries retained SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+P03 private store erased with boundaries retained: PASS

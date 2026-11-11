@@ -1,0 +1,29 @@
+import IndexedRankedWitnessDescent
+
+#check IndexedRankedWitnessBridge.complete_iff_model
+#check IndexedRankedWitnessBridge.failed_iff_no_model
+#check IndexedRankedWitnessBridge.ranked_atMostOne
+#check IndexedRankedWitnessBridge.admInput_iff_model
+#check IndexedRankedWitnessBridge.complete_iff_admInput
+#check IndexedRankedWitnessBridge.model_available
+#check IndexedRankedWitnessBridge.model_of_available
+#check IndexedRankedWitnessBridge.component_left_injective
+#check IndexedRankedWitnessDescent.observation_model_transport
+#check IndexedRankedWitnessDescent.witnessMap_store
+#check IndexedRankedWitnessDescent.compute_iso
+#check IndexedRankedWitnessDescent.agrees_iso
+#check IndexedRankedWitnessDescent.source_denote
+#check IndexedRankedWitnessDescent.agrees_denote
+#check IndexedRankedWitnessDescent.arrowHom_mk
+
+#print axioms IndexedRankedWitnessBridge.complete_iff_model
+#print axioms IndexedRankedWitnessBridge.failed_iff_no_model
+#print axioms IndexedRankedWitnessBridge.ranked_atMostOne
+#print axioms IndexedRankedWitnessBridge.component_left_injective
+#print axioms IndexedRankedWitnessDescent.observation_model_transport
+#print axioms IndexedRankedWitnessDescent.witnessMap_store
+#print axioms IndexedRankedWitnessDescent.compute_iso
+#print axioms IndexedRankedWitnessDescent.agrees_iso
+#print axioms IndexedRankedWitnessDescent.source_denote
+#print axioms IndexedRankedWitnessDescent.agrees_denote
+#print axioms IndexedRankedWitnessDescent.arrowHom_mk

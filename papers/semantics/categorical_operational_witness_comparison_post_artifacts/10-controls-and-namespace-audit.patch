@@ -1,0 +1,262 @@
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -213,6 +213,8 @@
+          "IndexedRankedWitnessCategoryTest",
+          "IndexedRankedWitnessBoundaryTest",
+          "IndexedRankedWitnessSemantics",
++         "IndexedRankedWitnessControlTest",
++         "IndexedRankedWitnessNamespaceAudit",
+          "IndexedOperationalScopeNaturality",
+          "IndexedRankedOperationalCategory",
+          "IndexedRankedOperationalSource",
+diff --git a/leanncd/AGENTS.md b/leanncd/AGENTS.md
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -1,6 +1,17 @@
+ # AGENTS.md — leanncd
+ 
+ ## Doing slice work here: two skills
++
++The additive, nondefault comparison entry point is
++`import IndexedRankedWitnessSemantics`. It supplies the ranked operational
++target-to-complete-witness functor, rank/provenance-forgetting source functor,
++commuting functor diagram, and actual checked/reference domain and full-store
++outcome theorems. Rank excludes blocking, not strict failure; private model
++stores and both exterior legs are retained. The witness image forgets histories,
++failure diagnostics and provenance, and is not claimed faithful or equivalent.
++`IndexedRankedWitnessNamespaceAudit` audits all new API/test namespaces using
++the standard-only axiom helper. Acceptance and control modules remain solely
++under `IndexedExecutionExperiment`; no unranked or arbitrary-frame extension.
+ 
+ The nondefault `IndexedExecutionExperiment` has a denotational entry point
+ `import IndexedWitnessSemantics`. `IndexedWitness` supplies whole interfaces,
+diff --git a/leanncd/experiments/indexed_execution/IndexedRankedWitnessControlTest.lean b/leanncd/experiments/indexed_execution/IndexedRankedWitnessControlTest.lean
+new file mode 100644
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedRankedWitnessControlTest.lean
+@@ -0,0 +1,29 @@
++import IndexedRankedWitnessBoundaryTest
++
++namespace IndexedRankedWitnessControlTest
++
++open IndexedWitness CategoryTheory IndexedRankedWitnessCategoryTest
++
++def strictFailureRow := IndexedRankedWitnessOutcomeTest.leafRow 0
++
++#eval show IO Unit from do
++  unless strictFailureRow.1 == "failed" do
++    throw (IO.userError "P01 strict private failure: observed non-failed endpoint")
++
++theorem exterior_legs {X : WholeInterface} (F : Span X X)
++    (before after : X.Env ≃ X.Env) (w : F.W) :
++    (F.rebase before after).left w = before.symm (F.left w) ∧
++      (F.rebase before after).right w = after (F.right w) := ⟨rfl, rfl⟩
++
++theorem source_composition_diagram (X : IndexedRankedOperationalSource.Object)
++    (f g : IndexedRankedOperationalSource.Term X X) :
++    route (.seq f g) =
++      (IndexedRankedWitnessSource.erase ⋙ IndexedSource.semantics).map
++        (IndexedRankedOperationalSource.arrow f) ≫
++      (IndexedRankedWitnessSource.erase ⋙ IndexedSource.semantics).map
++        (IndexedRankedOperationalSource.arrow g) := by
++  rw [route_diagram]
++  exact (IndexedRankedWitnessSource.erase ⋙ IndexedSource.semantics).map_comp
++    (IndexedRankedOperationalSource.arrow f) (IndexedRankedOperationalSource.arrow g)
++
++end IndexedRankedWitnessControlTest
+diff --git a/leanncd/experiments/indexed_execution/IndexedRankedWitnessNamespaceAudit.lean b/leanncd/experiments/indexed_execution/IndexedRankedWitnessNamespaceAudit.lean
+new file mode 100644
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedRankedWitnessNamespaceAudit.lean
+@@ -0,0 +1,13 @@
++import IndexedRankedWitnessSemantics
++import IndexedRankedWitnessControlTest
++import Semantics.AxiomAudit
++
++#audit_axioms IndexedRankedWitnessBridge
++#audit_axioms IndexedRankedWitnessDescent
++#audit_axioms IndexedRankedWitnessComparison
++#audit_axioms IndexedRankedWitnessSource
++#audit_axioms IndexedRankedWitnessOutcomes
++#audit_axioms IndexedRankedWitnessOutcomeTest
++#audit_axioms IndexedRankedWitnessCategoryTest
++#audit_axioms IndexedRankedWitnessBoundaryTest
++#audit_axioms IndexedRankedWitnessControlTest
+diff --git a/papers/semantics/categorical_operational_witness_comparison_mutations_post.json b/papers/semantics/categorical_operational_witness_comparison_mutations_post.json
+new file mode 100644
+--- /dev/null
++++ b/papers/semantics/categorical_operational_witness_comparison_mutations_post.json
+@@ -0,0 +1,172 @@
++[
++  {
++    "label": "P01 strict private failure totalized",
++    "task": "1",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessControlTest.lean",
++    "old": "def strictFailureRow := IndexedRankedWitnessOutcomeTest.leafRow 0",
++    "new": "def strictFailureRow := IndexedRankedWitnessOutcomeTest.leafRow 4",
++    "targets": ["IndexedRankedWitnessControlTest"],
++    "expect": ["IndexedRankedWitnessControlTest.lean", "P01 strict private failure: observed non-failed endpoint"],
++    "acceptance_goals": ["Strict failure versus model domain"],
++    "classification": "type-valid runtime fixture observation",
++    "policy": "Replacing the strict primitive by its nearest total donor must not turn private failure into complete success.",
++    "donors": ["leafRow 0", "leafRow 4", "strict_private_no_witness"],
++    "nearest_neighbor": "consumerComponent 4 with the same validated private input; full successful row stays pinned."
++  },
++  {
++    "label": "P02 failed domain polarity",
++    "task": "1",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean",
++    "old": "    (∃ tag g, (runChecked A.contract A.fragment η.val).outcome = .failed tag g) ↔\n      ¬ (componentSpan A).Domain (inputEnv A η) := by",
++    "new": "    (∃ tag g, (runChecked A.contract A.fragment η.val).outcome = .failed tag g) ↔\n      (componentSpan A).Domain (inputEnv A η) := by",
++    "targets": ["IndexedRankedWitnessOutcomeTest"],
++    "expect": ["IndexedRankedWitnessOutcomes.lean", "unsolved goals", "(¬∃ ρ, A.program.Models RationalReference.ops η ρ) ↔ ∃ ρ, A.program.Models RationalReference.ops η ρ"],
++    "acceptance_goals": ["Strict failure versus model domain"],
++    "classification": "live-proof policy control; not a runtime kill",
++    "policy": "Actual strict failure has an empty witness fiber, not a successful zero-valued/domain-present fiber.",
++    "donors": ["checked_failed_iff_no_domain", "strict_private_no_witness", "failure_A", "failure_B", "failure_C"],
++    "nearest_neighbor": "domain_iff_checked/reference and private_domain_apis 4; total triple (4,4,4)."
++  },
++  {
++    "label": "P03 private store erased with boundaries retained",
++    "task": "1",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessOutcomes.lean",
++    "old": "        A.program.finalStore c finished = ρ := by",
++    "new": "        A.program.finalStore c finished =\n          (fun a => if A.program.input a.1 || A.program.output a.1 then ρ a else 0) := by",
++    "targets": ["IndexedRankedWitnessOutcomeTest"],
++    "expect": ["IndexedRankedWitnessOutcomes.lean", "Application type mismatch", "A.program.finalStore c finished = ρ", "if (A.program.input a.fst || A.program.output a.fst) = true then ρ a else 0"],
++    "acceptance_goals": ["Success retains private complete stores"],
++    "classification": "live-proof full-store policy control; not a runtime kill",
++    "policy": "The actual reference store must equal the supplied entire model, not a reconstruction that retains input/output boundaries but zeroes every private address.",
++    "donors": ["model_iff_actual_full", "private_success_full", "private_reference_value", "pair_success_full"],
++    "nearest_neighbor": "The same total leaf/pair with all private addresses retained; visible output alone is insufficient."
++  },
++  {
++    "label": "P04 nonconstant wire inverse as forward",
++    "task": "2",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean",
++    "old": "    (Span.graph rotate.env).right view.env 0 point,",
++    "new": "    (Span.graph rotate.inverse.env).right view.env 0 point,",
++    "targets": ["IndexedRankedWitnessCategoryTest"],
++    "expect": ["IndexedRankedWitnessCategoryTest.lean", "Tactic `decide` proved that the proposition", "wireImageRow = (11, 101, 110, 110)", "is false"],
++    "acceptance_goals": ["Administrative identity and nonconstant wires"],
++    "classification": "type-valid runtime fixture observation",
++    "policy": "Inverse-as-forward changes the observed coordinate from 101 to 110 on the certified nonconstant wire.",
++    "donors": ["wireImageRow", "identity_image", "rotate_image", "rotate_composed", "rotate_inverse"],
++    "nearest_neighbor": "Identity gives 11; forward 101; inverse and twice 110. Constant environments would not discriminate."
++  },
++  {
++    "label": "P05 input exterior orientation reversed",
++    "task": "2",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessControlTest.lean",
++    "old": "    (F.rebase before after).left w = before.symm (F.left w) ∧\n      (F.rebase before after).right w = after (F.right w) := ⟨rfl, rfl⟩",
++    "new": "    (F.rebase before after).left w = before (F.left w) ∧\n      (F.rebase before after).right w = after (F.right w) := ⟨rfl, rfl⟩",
++    "targets": ["IndexedRankedWitnessControlTest"],
++    "expect": ["IndexedRankedWitnessControlTest.lean", "Application type mismatch", "(F.rebase before after).left w = before (F.left w)"],
++    "acceptance_goals": ["Success retains private complete stores", "Administrative identity and nonconstant wires", "Binary and nested composition"],
++    "classification": "live-proof exterior policy control; not a runtime kill",
++    "policy": "Rebasing pulls back the input by before.symm, not before. The correct output leg is held fixed; P04 independently discriminates forward versus inverse output direction.",
++    "donors": ["rebasedComponent", "pair_success_full", "binary_exterior", "left_nested_exterior", "right_nested_exterior"],
++    "nearest_neighbor": "Identity exterior maps agree in either direction; arbitrary endomorphism exteriors and P04 distinguish orientation.",
++    "parity": "No computation is copied: exterior_legs is universally proved directly for shared Span.rebase."
++  },
++  {
++    "label": "P06 source composition repeats first factor",
++    "task": "2",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessControlTest.lean",
++    "old": "        (IndexedRankedOperationalSource.arrow g) := by",
++    "new": "        (IndexedRankedOperationalSource.arrow f) := by",
++    "targets": ["IndexedRankedWitnessControlTest"],
++    "expect": ["IndexedRankedWitnessControlTest.lean", "Type mismatch", "IndexedRankedOperationalSource.arrow (f.seq g)", "IndexedRankedOperationalSource.arrow g"],
++    "acceptance_goals": ["Binary and nested composition", "Empty metadata and input presence"],
++    "classification": "live-proof composition/source-diagram policy control; not a runtime kill",
++    "policy": "The actual comparison/erasure diagram must map the second factor, not duplicate the first.",
++    "donors": ["source_comp", "route_diagram", "binary_assembly", "binary_composition", "interior_unit", "nested_images", "left_nested_diagram", "right_nested_diagram", "empty_diagram"],
++    "nearest_neighbor": "Equal factors would conceal this error; arbitrary same-object f and g allow distinct certified wires, including rotate and identity.",
++    "parity": "No source interpreter is copied: the law uses the actual diagram and actual functor map_comp universally."
++  },
++  {
++    "label": "P07 retain rank or origin in witness image",
++    "task": "2",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessComparison.lean",
++    "old": "    comparison.map (Quotient.mk _ (Normal.compute A r o before after)) =\n      comparison.map (Quotient.mk _ (Normal.compute A s p before after)) := rfl",
++    "new": "    comparison.map (Quotient.mk _ (Normal.compute A r o before after)) ≠\n      comparison.map (Quotient.mk _ (Normal.compute A s p before after)) := rfl",
++    "targets": ["IndexedRankedWitnessCategoryTest"],
++    "expect": ["IndexedRankedWitnessComparison.lean", "comparison.map ⟦Normal.compute A r o before after⟧ ≠ comparison.map ⟦Normal.compute A s p before after⟧"],
++    "acceptance_goals": ["Intentional loss of provenance"],
++    "classification": "live-proof information-loss policy control; not a runtime kill",
++    "policy": "Rank/provenance distinctions belong to operational representatives, not the full-model witness image.",
++    "donors": ["comparison_rank_origin_independent", "rank_image", "origins_same_full_image"],
++    "nearest_neighbor": "Pointwise shiftedRank is legal and differs at consumerPre; opaque/joined origins on the same legal pair are operationally distinct."
++  },
++  {
++    "label": "P08 conflate opaque and joined operational arrows",
++    "task": "2",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessCategoryTest.lean",
++    "old": "Arrow (IndexedSource.input (consumerComponent 4)) (IndexedSource.output (consumerComponent 4))) ≠\n        Quotient.mk _ joinedNormal := by",
++    "new": "Arrow (IndexedSource.input (consumerComponent 4)) (IndexedSource.output (consumerComponent 4))) =\n        Quotient.mk _ joinedNormal := by",
++    "targets": ["IndexedRankedWitnessCategoryTest"],
++    "expect": ["IndexedRankedWitnessCategoryTest.lean", "Tactic `introN` failed", "⊢ ⟦opaqueNormal⟧ = ⟦joinedNormal⟧"],
++    "acceptance_goals": ["Intentional loss of provenance"],
++    "classification": "live-proof provenance/false-faithfulness policy control; not a runtime kill",
++    "policy": "Equality of full witness images must not be reflected back to the provenance-sensitive operational quotient.",
++    "donors": ["operational_origins_distinct", "opaque_not_joined", "origins_same_full_image"],
++    "nearest_neighbor": "The identical opaque/joined pair does have equal comparison images; no operational equality is changed."
++  },
++  {
++    "label": "P09 drop empty input presence",
++    "task": "3",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean",
++    "old": "    (runChecked emptyProducerContract emptyProducerFragment emptyMissingInput).outcome.kind)",
++    "new": "    (runChecked emptyProducerContract emptyProducerFragment emptyPresentInput).outcome.kind)",
++    "targets": ["IndexedRankedWitnessBoundaryTest"],
++    "expect": ["IndexedRankedWitnessBoundaryTest.lean", "Tactic `decide` proved that the proposition", "emptyPresenceRow = (true, false, \"complete\", \"invalidInput\")", "is false"],
++    "acceptance_goals": ["Empty metadata and input presence"],
++    "classification": "type-valid runtime fixture observation",
++    "policy": "A singleton/empty coordinate carrier does not authorize synthesizing a missing whole tensor input.",
++    "donors": ["emptyPresenceRow", "empty_input_present", "emptyMissing_rejected", "emptyPresent_validated"],
++    "nearest_neighbor": "Same empty interface with some empty tensor is accepted; none is invalidInput."
++  },
++  {
++    "label": "P10 identify metadata by singleton carriers",
++    "task": "3",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean",
++    "old": "    outputInterface emptyProducerComponent ≠\n      outputInterface IndexedWitnessCompositionTest.Empty.composite :=",
++    "new": "    outputInterface emptyProducerComponent =\n      outputInterface IndexedWitnessCompositionTest.Empty.composite :=",
++    "targets": ["IndexedRankedWitnessBoundaryTest"],
++    "expect": ["IndexedRankedWitnessBoundaryTest.lean", "Type mismatch", "IndexedWitnessCompositionTest.Empty.metadata_not_equal", "outputInterface emptyProducerComponent = outputInterface IndexedWitnessCompositionTest.Empty.composite"],
++    "acceptance_goals": ["Empty metadata and input presence"],
++    "classification": "live-proof metadata policy control; not a runtime kill",
++    "policy": "Equal carrier cardinality must not identify different metadata-bearing witness/source objects.",
++    "donors": ["empty_metadata_distinct", "empty_source_objects_distinct", "empty_carriers_singleton"],
++    "nearest_neighbor": "Both environment carriers are singleton while interfaces and ranked-source objects remain distinct."
++  },
++  {
++    "label": "P11 collapse hidden full witnesses",
++    "task": "3",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean",
++    "old": "    hiddenZero ≠ hiddenOne ∧",
++    "new": "    hiddenZero = hiddenOne ∧",
++    "targets": ["IndexedRankedWitnessBoundaryTest"],
++    "expect": ["IndexedRankedWitnessBoundaryTest.lean", "Application type mismatch", "hidden_witnesses_distinct", "hiddenZero = hiddenOne"],
++    "acceptance_goals": ["No extension to hidden multiplicity"],
++    "classification": "live-proof unranked multiplicity policy control; not a runtime kill",
++    "policy": "Equal outputs must not collapse distinct complete private stores in the existing witness apex.",
++    "donors": ["hidden_full_not_outputs", "hiddenStoreRow"],
++    "nearest_neighbor": "hiddenZero/hiddenOne agree on visible output 0 but differ at the private address 0 versus 1."
++  },
++  {
++    "label": "P12 admit hidden donor to ranked profile",
++    "task": "3",
++    "file": "experiments/indexed_execution/IndexedRankedWitnessBoundaryTest.lean",
++    "old": "    ¬ Nonempty hiddenUpstream.program.RankCertificate := hidden_no_rank",
++    "new": "    Nonempty hiddenUpstream.program.RankCertificate := hidden_no_rank",
++    "targets": ["IndexedRankedWitnessBoundaryTest"],
++    "expect": ["IndexedRankedWitnessBoundaryTest.lean", "Type mismatch", "hidden_no_rank", "¬Nonempty hiddenUpstream.program.RankCertificate", "but is expected to have type\n  Nonempty hiddenUpstream.program.RankCertificate"],
++    "acceptance_goals": ["No extension to hidden multiplicity"],
++    "classification": "live-proof rank-domain policy control; not a runtime kill",
++    "policy": "The unranked multiple-model donor cannot be silently promoted to the comparison functor's ranked profile.",
++    "donors": ["no_hidden_ranked_extension", "hidden_no_rank", "hidden_full_not_outputs"],
++    "nearest_neighbor": "consumerRank 4 and shiftedRank are actual legal certificates; no hidden operational arrow is manufactured."
++  }
++]
