@@ -1,6 +1,6 @@
 # Session brief: 1-D convolution (stride, dilation, causal padding) and a patch embedding feeding the layer scan (JAX bridge)
 
-Status: not started. Written 2026-11-10 at local `main` `2c461f82` (ahead of `origin/main`; nothing here depends on the unpushed commits). Process weight: Direct path (`.claude/skills/slice-plan/` section 0): tests and fixtures only, plus ONE
+Status: EXECUTED 2026-11-11 (record section 19 of `papers/semantics/jax_scan_record.md`; deviations there: TCN c = 2, the causality offsets are the even ones only, mutants E and H refused by the shape solver and replaced, the 2-D stretch parked). Written 2026-11-10 at local `main` `2c461f82` (ahead of `origin/main`; nothing here depends on the unpushed commits). Process weight: Direct path (`.claude/skills/slice-plan/` section 0): tests and fixtures only, plus ONE
 small additive edit to the fixture driver's shared `checkAndRender` (section 3, step 0), no production change. Scratch probes on 2026-11-10 answer the "is it expressible" question for every form this brief uses (section 2) and found
 the traps listed there. If any NEW pre-flight answer needs an emitter, runtime, grammar or checker change, STOP and report (do not edit `EvalPlanCodegen.lean`, `evalplan_affine_runtime.py`, `LeanNCD/DSL/*` or `LeanNCD/Eval/Plan/*`; that is a
 different process weight and the user's call). CLAUDE.md applies, in particular Rule 13 (worktree, merge to LOCAL main, do not push unless asked), Rule 14 (scope gate) and Rule 6 (budgets). Siblings: `jax_cross_attention_session_brief.md`
