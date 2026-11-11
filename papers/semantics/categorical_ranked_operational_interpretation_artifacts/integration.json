@@ -1,0 +1,14 @@
+{
+  "implementation_merge": "837c3d799103d0bf2a4b394e158ffad0393c3531",
+  "released_topic_commit": "460f14b01b04d8bae5986c183027375b55dedf31",
+  "main_before_cleanup_receipt": "5f8cd5c5c04da4298b33c2f69e38ecdcba386f82",
+  "merged_main_full_build_jobs": 8953,
+  "reviewed_source_hashes_verified": 14,
+  "final_controller_mutations_passed": 11,
+  "owned_worktree": "/Users/williammacready/code/python/pyncd.worktrees/categorical-ranked-interpretation-handoff",
+  "owned_worktree_removed": true,
+  "owned_branch": "agents/categorical-ranked-interpretation-handoff",
+  "owned_branch_deleted": true,
+  "unrelated_worktrees_preserved": true,
+  "remote_push_performed": false
+}
