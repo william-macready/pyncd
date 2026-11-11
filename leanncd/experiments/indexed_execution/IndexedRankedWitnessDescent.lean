@@ -1,0 +1,173 @@
+import IndexedRankedWitnessBridge
+import IndexedRankedOperationalCategory
+import IndexedSourceFunctor
+
+namespace IndexedRankedWitnessDescent
+
+open LeanNCD.Semantics IndexedOpenComposition IndexedComponentComposition
+open IndexedComponentExecution IndexedWitness IndexedSource
+open IndexedOperationalHistory IndexedRankedOperationalCore
+open IndexedRankedOperationalCategory
+
+variable {σ τ : Declarations Unit}
+variable [Fintype σ.Tensor] [DecidableEq σ.Tensor]
+variable [Fintype τ.Tensor] [DecidableEq τ.Tensor]
+
+theorem observation_model_transport
+    (A : MatchedComponent σ) (B : MatchedComponent τ)
+    (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
+    (oa : Origin A) (ob : Origin B) (η : A.program.Input) (η' : B.program.Input)
+    (t : MetadataTransport σ τ) (e : oa.Adapters ≃ ob.Adapters)
+    (actual : (actualObservation A oa η rA).Agrees t e
+      (actualObservation B ob η' rB))
+    (ρ : Store RationalReference.Carrier σ)
+    (model : A.program.Models RationalReference.ops η ρ) :
+    B.program.Models RationalReference.ops η' (fun a => ρ (t.address.symm a)) := by
+  obtain ⟨g, done, full⟩ := IndexedRankedWitnessBridge.model_available A rA η ρ model
+  have historyEq : actualHistory B η' rB =
+      t.toGraphTransport.history.apply (actualHistory A η rA) := actual.2
+  have runs := congrArg GraphHistory.toRun historyEq
+  rw [(actualHistory_spec B η' rB).2.1,
+    GraphHistory.toRun_transport t.toGraphTransport t.tensor,
+    (actualHistory_spec A η rA).2.1] at runs
+  have doneB : (runChecked B.contract B.fragment η'.val).outcome =
+      .complete (t.toGraphTransport.mapState g) := by
+    have outcomes := congrArg Run.outcome runs
+    simpa only [GraphTransport.mapRun, GraphTransport.mapOutcome, done] using outcomes
+  exact IndexedRankedWitnessBridge.model_of_available B η' _ doneB _
+    (fun a => full (t.address.symm a))
+
+noncomputable def rebasedComponent {X Y : Object} (A : MatchedComponent σ)
+    (before : Wire X (input A)) (after : Wire (output A) Y) :
+    Span X.interface Y.interface :=
+  (componentSpan A).rebase before.env after.env
+
+noncomputable def witnessMap {X : Object}
+    (A : MatchedComponent σ) (B : MatchedComponent τ)
+    (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
+    (oa : Origin A) (ob : Origin B)
+    (beforeA : Wire X (input A)) (beforeB : Wire X (input B))
+    (t : MetadataTransport σ τ) (e : oa.Adapters ≃ ob.Adapters)
+    (actual : ∀ x : X.interface.Env,
+      (actualObservation A oa (externalInput A beforeA x) rA).Agrees t e
+        (actualObservation B ob (externalInput B beforeB x) rB)) :
+    (componentSpan A).W → (componentSpan B).W := fun w =>
+  let x := beforeA.env.symm (inputEnv A w.1)
+  have inputA : externalInput A beforeA x = w.1 := by
+    simp only [externalInput, x, Equiv.apply_symm_apply, envInput_inputEnv]
+  ⟨externalInput B beforeB x, fun a => w.2.val (t.address.symm a),
+    observation_model_transport A B rA rB oa ob _ _ t e (actual x) _
+      (inputA.symm ▸ w.2.property)⟩
+
+theorem witnessMap_left {X : Object}
+    (A : MatchedComponent σ) (B : MatchedComponent τ)
+    (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
+    (oa : Origin A) (ob : Origin B)
+    (beforeA : Wire X (input A)) (beforeB : Wire X (input B))
+    (t : MetadataTransport σ τ) (e : oa.Adapters ≃ ob.Adapters)
+    (actual : ∀ x : X.interface.Env,
+      (actualObservation A oa (externalInput A beforeA x) rA).Agrees t e
+        (actualObservation B ob (externalInput B beforeB x) rB))
+    (w : (componentSpan A).W) :
+    beforeB.env.symm (inputEnv B
+      (witnessMap A B rA rB oa ob beforeA beforeB t e actual w).1) =
+        beforeA.env.symm (inputEnv A w.1) := by
+  simp only [witnessMap, externalInput, inputEnv_envInput, Equiv.symm_apply_apply]
+
+theorem witnessMap_store {X : Object}
+    (A : MatchedComponent σ) (B : MatchedComponent τ)
+    (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
+    (oa : Origin A) (ob : Origin B)
+    (beforeA : Wire X (input A)) (beforeB : Wire X (input B))
+    (t : MetadataTransport σ τ) (e : oa.Adapters ≃ ob.Adapters)
+    (actual : ∀ x : X.interface.Env,
+      (actualObservation A oa (externalInput A beforeA x) rA).Agrees t e
+        (actualObservation B ob (externalInput B beforeB x) rB))
+    (w : (componentSpan A).W) (a : Address σ) :
+    (witnessMap A B rA rB oa ob beforeA beforeB t e actual w).2.val (t.address a) =
+      w.2.val a := by
+  change w.2.val (t.address.symm (t.address a)) = w.2.val a
+  rw [Equiv.symm_apply_apply]
+
+theorem compute_iso {X Y : Object}
+    (A : MatchedComponent σ) (B : MatchedComponent τ)
+    (rA : A.program.RankCertificate) (rB : B.program.RankCertificate)
+    (oa : Origin A) (ob : Origin B)
+    (beforeA : Wire X (input A)) (afterA : Wire (output A) Y)
+    (beforeB : Wire X (input B)) (afterB : Wire (output B) Y)
+    (h : ComputeAgrees A B rA rB oa ob beforeA afterA beforeB afterB) :
+    Nonempty (SpanIso (rebasedComponent A beforeA afterA)
+      (rebasedComponent B beforeB afterB)) := by
+  obtain ⟨t, e, _provenance, _before, after, actual⟩ := h
+  let forward := witnessMap A B rA rB oa ob beforeA beforeB t e actual
+  let backward := witnessMap B A rB rA ob oa beforeB beforeA t.symm e.symm
+    (fun x => CompleteObservation.agrees_symm t e (actual x))
+  have leftForward := witnessMap_left A B rA rB oa ob beforeA beforeB t e actual
+  have leftBackward := witnessMap_left B A rB rA ob oa beforeB beforeA t.symm e.symm
+    (fun x => CompleteObservation.agrees_symm t e (actual x))
+  refine ⟨⟨⟨forward, backward, ?_, ?_⟩, leftForward, ?_⟩⟩
+  · intro w
+    apply IndexedRankedWitnessBridge.component_left_injective A rA
+    apply beforeA.env.symm.injective
+    exact (leftBackward (forward w)).trans (leftForward w)
+  · intro w
+    apply IndexedRankedWitnessBridge.component_left_injective B rB
+    apply beforeB.env.symm.injective
+    exact (leftForward (backward w)).trans (leftBackward w)
+  · intro w
+    funext y p
+    have square := congrArg (locatedAddress p) (congrFun after y)
+    have addresses : t.address
+        ⟨(afterA.ports y).val, (afterA.domain y).coord p⟩ =
+        ⟨(afterB.ports y).val, (afterB.domain y).coord p⟩ :=
+      (t.address_eq _).trans square
+    change w.2.val (t.address.symm
+        ⟨(afterB.ports y).val, (afterB.domain y).coord p⟩) =
+      w.2.val ⟨(afterA.ports y).val, (afterA.domain y).coord p⟩
+    rw [← addresses, Equiv.symm_apply_apply]
+
+noncomputable def normalSpan : {X Y : Object} → Normal X Y →
+    Span X.interface Y.interface
+  | _, _, .admin w => Span.graph w.env
+  | _, _, @Normal.compute _ _ _ _ _ A _ _ before after =>
+      rebasedComponent A before after
+
+theorem agrees_iso {X Y : Object} {f g : Normal X Y} (h : Agrees f g) :
+    Nonempty (SpanIso (normalSpan f) (normalSpan g)) := by
+  cases f with
+  | admin a =>
+      cases g with
+      | admin b => cases h; exact ⟨SpanIso.refl _⟩
+      | compute => exact False.elim h
+  | compute A rA oa beforeA afterA =>
+      cases g with
+      | admin => exact False.elim h
+      | compute B rB ob beforeB afterB =>
+          exact compute_iso A B rA rB oa ob beforeA afterA beforeB afterB h
+
+noncomputable def normalHom {X Y : Object} (f : Normal X Y) :
+    WitnessHom X.interface Y.interface :=
+  Quotient.mk _ (normalSpan f)
+
+theorem source_denote {X Y : Object} (f : Normal X Y) :
+    f.source.denote = normalHom f := by
+  cases f with
+  | admin w => rfl
+  | compute A rank origin before after =>
+      have rebase := Quotient.sound (s := spanSetoid X.interface Y.interface)
+        ⟨SpanIso.rebaseGraphs (componentSpan A) before.env after.env⟩
+      simpa only [Normal.source, Term.denote, ← CategoryTheory.Category.assoc] using rebase
+
+theorem agrees_denote {X Y : Object} {f g : Normal X Y} (h : Agrees f g) :
+    f.source.denote = g.source.denote :=
+  (source_denote f).trans ((Quotient.sound (agrees_iso h)).trans (source_denote g).symm)
+
+noncomputable def arrowHom {X Y : Object} (f : Arrow X Y) :
+    WitnessHom X.interface Y.interface :=
+  Quotient.lift normalHom (fun _ _ h => Quotient.sound (agrees_iso h)) f
+
+theorem arrowHom_mk {X Y : Object} (f : Normal X Y) :
+    arrowHom (Quotient.mk _ f) = f.source.denote :=
+  (source_denote f).symm
+
+end IndexedRankedWitnessDescent
