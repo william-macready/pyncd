@@ -1,8 +1,10 @@
 # Ranked operational → complete-witness comparison: implementation plan
 
 **Process: Full** — new categorical capability and quotient soundness surface.
-**Execution: PENDING.** Compiled authoring prototypes are present, not executed
-task commits or completed final review. Controller owns those gates next.
+**Execution and release: COMPLETE.** All eleven frozen tasks were replayed,
+built and committed; both independent source reviews are clean, all twelve
+controller mutation cycles pass, and the full build is green. Local integration
+is recorded separately in the evidence record.
 Base: `37500cab85a2989a1422da2ef21256cb5648e8da`.
 
 ## 1. Contract and frozen package

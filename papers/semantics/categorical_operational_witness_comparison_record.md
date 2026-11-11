@@ -2,8 +2,9 @@
 
 Base: `37500cab85a2989a1422da2ef21256cb5648e8da`.
 Live instructions: [implementation plan](categorical_operational_witness_comparison_plan.md).
-**Controller execution, task commits, final whole-branch reviews and integration:
-PENDING.** Compiled authoring prototypes are not a completed release.
+**Controller execution and release: COMPLETE.** Task commits, both independent
+whole-source review lenses, direct mutation replay and full build pass.
+Local main integration is recorded separately below.
 
 ## Authoring inputs and provenance
 
@@ -185,18 +186,78 @@ be certified. This fresh context remains visibly below 250k and below 55
 turns; no fresh-context breach observed. Execution's ≤~175M total and each
 dispatch's ≤~250k/~60-turn caps still apply and must be recorded honestly.
 
-## Controller completion ledger — all PENDING
+## Controller completion ledger
 
-- [ ] Own-only reverse and actual per-task forward/build/review/commits 01–11.
-- [ ] Direct unfiltered 12/12 intended-diagnostic cycles, restored-green builds
+- [x] Own-only reverse and actual per-task forward/build/review/commits 01–11.
+- [x] Direct unfiltered 12/12 intended-diagnostic cycles, restored-green builds
   and final source/hash audit (authoring replay is not this controller gate).
-- [ ] All-nine namespace/descendant audit, placeholder/new-axiom source scan,
+- [x] All-nine namespace/descendant audit, placeholder/new-axiom source scan,
   unchanged default imports and nondefault-only configuration.
-- [ ] Direct full `LeanNCD Tests IndexedExecutionExperiment` wrapper build.
-- [ ] Whole-branch review lens 1: quotient/comparison/domain/diagram soundness.
-- [ ] Whole-branch review lens 2: operational/reference/acceptance/information loss.
-- [ ] Findings adjudicated/fixed with refreshed gates; budget close-out.
+- [x] Direct full `LeanNCD Tests IndexedExecutionExperiment` wrapper build.
+- [x] Whole-branch review lens 1: quotient/comparison/domain/diagram soundness.
+- [x] Whole-branch review lens 2: operational/reference/acceptance/information loss.
+- [x] Findings adjudicated/fixed with refreshed gates; budget close-out.
 - [ ] Local main integration green; only owned branch/worktree removed; no push.
 
 Append execution results/findings here; do not rewrite historical receipts or
 promote authoring measurements into controller completion.
+
+## Controller execution and release
+
+The controller reversed only the eleven hash-verified owned patches, confirmed
+base source state, then applied them individually in order. Each task had a
+successful targeted wrapper build (documentation needs no build), exact
+reviewed-source hash checkpoint, explicit-path staging and separate commit.
+The two unregistered signature audits ran after tasks 03 and 06.
+
+| Task | Commit | Result |
+| --- | --- | --- |
+| 01 bridge | `07a022a8` | PASS |
+| 02 descent | `208740e4` | PASS |
+| 03 signatures | `35b1085f` | PASS |
+| 04 comparison | `9b10c637` | PASS |
+| 05 source diagram | `694d18e5` | PASS |
+| 06 actual outcomes | `4ec224cb` | PASS |
+| 07 private outcomes | `1784372b` | PASS |
+| 08 categorical acceptance | `07a2d1d2` | PASS |
+| 09 metadata/multiplicity | `18800b64` | PASS |
+| 10 controls/audits | `5491f4c6` | PASS |
+| 11 synthesis | `e5b03424` | PASS |
+
+Two independent whole-package reviewers examined the frozen proof/test/doc
+source before replay, with distinct mathematical and operational/adversarial
+lenses. Both returned no significant findings. The operational reviewer also
+reported all eleven task checkpoints clean and independently built all 8964
+jobs. The controller's final committed-delta check confirms all seventeen
+owned files exactly match those reviewed bytes; no implementation changed
+during replay or release. Review conclusions therefore apply to the final
+whole branch, not merely an earlier draft. No finding was waived.
+
+The controller directly ran the canonical mutation manifest **unfiltered**:
+**12/12 PASS**, every intended diagnostic observed, every restored build
+green, and every mutated file byte-identical afterward. The committed
+[controller mutation receipt](categorical_operational_witness_comparison_post_artifacts/controller-mutations.md)
+retains each result. Classification remains three executable/decidable donor
+observations and nine live-proof controls, not twelve runtime-core defect kills.
+
+After restoration, the controller's full wrapper build of
+`LeanNCD Tests IndexedExecutionExperiment` passed **8964 jobs**. Its namespace
+audit reported all nine namespaces and **124 constants**, using only standard
+axioms. The frozen source audit passed for thirteen new Lean files, no proof
+placeholders/new axioms, exact source hashes and unchanged default imports
+and configuration. Existing runners, operational equality and witness source
+were not modified. The comparison remains additive and nondefault.
+
+Execution logs and the per-task JSON ledger are in the session receipt
+directory above (`comparison-execution-*.log`, `comparison-execution.json`,
+`comparison-controller-mutations.log`, `comparison-controller-full-build.log`).
+The initial staged whitespace check rejected legitimate blank context lines
+inside patch artifacts. The controller excluded patch-file contents from that
+check rather than altering frozen patches; source/document whitespace checks
+passed. No validation or task was skipped.
+
+The close-out token-report invocation again returned no transcript. Cumulative
+input, peak context and token-budget totals remain unavailable rather than
+claimed compliant; the possible stage2 turn-cap breach remains disclosed.
+No new mathematical boundary, faithfulness or unranked claim is inferred from
+the release checks. No remote push has been performed.
