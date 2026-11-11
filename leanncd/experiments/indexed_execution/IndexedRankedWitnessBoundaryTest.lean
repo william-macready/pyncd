@@ -1,0 +1,79 @@
+import IndexedRankedWitnessCategoryTest
+import IndexedWitnessTest
+import IndexedWitnessCompositionTest
+
+namespace IndexedRankedWitnessBoundaryTest
+
+open LeanNCD.Semantics IndexedOpenComposition IndexedComponentComposition IndexedWitness
+open LeanNCD.Semantics.Program.Executor CategoryTheory
+open IndexedComponentCompositionPortFixtures IndexedComponentRankedExecutionFixtures
+open IndexedRankedWitnessCategoryTest
+
+theorem empty_metadata_distinct :
+    outputInterface emptyProducerComponent ≠
+      outputInterface IndexedWitnessCompositionTest.Empty.composite :=
+  IndexedWitnessCompositionTest.Empty.metadata_not_equal
+
+theorem empty_carriers_singleton :
+    Subsingleton (outputInterface emptyProducerComponent).Env ∧
+      Subsingleton (outputInterface IndexedWitnessCompositionTest.Empty.composite).Env :=
+  ⟨IndexedWitnessCompositionTest.Empty.producer_env_singleton,
+    IndexedWitnessCompositionTest.Empty.env_singleton⟩
+
+theorem empty_source_objects_distinct :
+    IndexedRankedOperationalSource.output emptyProducerComponent ≠
+      IndexedRankedOperationalSource.output IndexedWitnessCompositionTest.Empty.composite := by
+  intro h
+  exact empty_metadata_distinct (congrArg (fun o => o.base.interface) h)
+
+theorem empty_input_present :
+    (((inputEquiv emptyProducerComponent) IndexedWitnessTest.emptyInputEnv).val
+      emptyExternalInput).isSome = true :=
+  ((inputEquiv emptyProducerComponent) IndexedWitnessTest.emptyInputEnv).property _
+
+def emptyPresenceRow :=
+  ((emptyPresentInput emptyExternalInput).isSome,
+    (emptyMissingInput emptyExternalInput).isSome,
+    emptyProducerRun.outcome.kind,
+    (runChecked emptyProducerContract emptyProducerFragment emptyMissingInput).outcome.kind)
+
+#eval emptyPresenceRow
+example : emptyPresenceRow = (true, false, "complete", "invalidInput") := by decide +kernel
+example : validate emptyProducer emptyProducerSchedule emptyMissingInput =
+    .error emptyExternalInput := emptyMissing_rejected
+example : validate emptyProducer emptyProducerSchedule emptyPresentInput =
+    .ok emptyValidatedInput := emptyPresent_validated
+
+theorem empty_diagram :
+    route (.leaf emptyProducerComponent emptyProducerRank (.opaque _ ⟨emptyProducerRank⟩)) =
+      (IndexedRankedWitnessSource.erase ⋙ IndexedSource.semantics).map
+        (IndexedRankedOperationalSource.arrow
+          (.leaf emptyProducerComponent emptyProducerRank (.opaque _ ⟨emptyProducerRank⟩))) :=
+  route_diagram _
+
+open IndexedComponentModelCycleFixtures IndexedWitnessTest
+
+theorem hidden_full_not_outputs :
+    hiddenZero ≠ hiddenOne ∧
+      (componentSpan hiddenUpstream).right hiddenZero =
+        (componentSpan hiddenUpstream).right hiddenOne :=
+  ⟨hidden_witnesses_distinct, hidden_outputs_equal⟩
+
+theorem no_hidden_ranked_extension :
+    ¬ Nonempty hiddenUpstream.program.RankCertificate := hidden_no_rank
+
+def hiddenStoreRow :=
+  (hiddenZero.2.val ⟨privateTensor, ()⟩, hiddenOne.2.val ⟨privateTensor, ()⟩,
+    (componentSpan hiddenUpstream).right hiddenZero ⟨boundaryTensor, rfl⟩ (),
+    (componentSpan hiddenUpstream).right hiddenOne ⟨boundaryTensor, rfl⟩ ())
+
+#eval hiddenStoreRow
+example : hiddenStoreRow = (0, 1, 0, 0) := by decide +kernel
+
+#print axioms empty_metadata_distinct
+#print axioms empty_input_present
+#print axioms empty_diagram
+#print axioms hidden_full_not_outputs
+#print axioms no_hidden_ranked_extension
+
+end IndexedRankedWitnessBoundaryTest
