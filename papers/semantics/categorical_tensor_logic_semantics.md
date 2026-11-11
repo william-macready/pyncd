@@ -155,6 +155,29 @@ The strongest defensible conclusion is:
 > connected inherited-state history interpretation with explicit fresh frames.
 > Broader source interpretations and backend refinement remain separate obligations.
 
+### Proposed next steps
+
+**The sequential categorical foundation is now established for the scoped
+ranked profile. The next priority is connecting meanings and implementations,
+not re-proving units or adding categorical machinery for its own sake.**
+The following is a possible roadmap, not a verified implementation plan or
+a commitment to execute every direction:
+
+| Default priority | Direction | Intended gain |
+| --- | --- | --- |
+| 1 | Connect the denotational and operational interpretations | A compositional comparison between complete-model meaning and full operational observations, with explicit information loss and retained hypotheses |
+| 2 | Establish one concrete frontend/backend refinement | An end-to-end guarantee for a narrowly chosen supported fragment and backend, with an explicit observation/refinement relation |
+| 3 | Run a bounded scope-aware bialgebraic pilot | Determine whether Turi-Plotkin-style rules reuse the existing proofs and simplify adding constructors, rather than merely restating current compositionality |
+| 4 | Broaden categorical structure where needed | Add monoidal/PROP structure, broader interfaces or effects only for a concrete modeling or proof requirement |
+
+If mathematical generality is the immediate goal, swap priorities 2 and 3.
+A small bialgebraic pilot may also run earlier alongside the comparison work;
+a wholesale reformulation should not become a prerequisite for either the
+comparison or concrete refinement. These are value-based priorities, not a
+claim that every item logically depends on completion of its predecessor.
+[Section 10.3](#103-remaining-branches-of-the-roadmap) gives the objectives,
+scope boundaries and decision gate for the pilot.
+
 The St/Br presentation can organise parts of the syntax and total
 indexing. It is not assumed to be the best presentation of every layer.
 The correspondence proof did not require a general categorical framework
@@ -179,6 +202,7 @@ Lean notation.
 
 ## Table of contents
 
+- [Proposed next steps](#proposed-next-steps)
 - [1. Begin with the meaning that execution must preserve](#1-begin-with-the-meaning-that-execution-must-preserve)
   - [1.1. What is an environment?](#11-what-is-an-environment)
   - [1.2. What makes an environment a model?](#12-what-makes-an-environment-a-model)
@@ -2165,39 +2189,81 @@ not be averaged into a single completion claim.
 There is no remaining target-span identity or associativity gap in this
 profile. The ranked provenance-aware interpretation also has administrative
 units, associative categorical composition and connected inherited-state
-realizations; these are no longer pending tasks. The next obligations depend
-on the intended claim:
+realizations; these are no longer pending tasks. The following proposed order
+prioritizes semantic coherence and useful new guarantees. It is not a verified
+slice plan or an assertion that all four directions must be implemented.
 
-- **Broader source interpretations:** the sealed matched-component source
-  category and its witness functor are implemented in Section 6.10. Extending
-  to broader interfaces, automatic leaf matches, St/Br, PROP or monoidal
-  structure requires additional constructions and soundness arguments.
-  The [source record](categorical_source_functor_record.md) gives the proved
-  presentation and its limits; the handoff remains its historical goal brief.
-- **Broader process interpretations:** Section 6.13 proves administrative
-  units and a provenance-aware ranked operational source/target interpretation
-  connected to actual inherited-state histories. Extending it to unranked
-  sources, arbitrary prepopulated local private stores, other observations or
-  broader interfaces requires separate soundness arguments. Erasing assembly
-  provenance or identifying an opaque compiled origin with joined children is
-  not justified merely by matching final values or event lists. A generic
-  cross-program reference-running-state transport is not supplied by the
-  existing native reference bridge.
-- **Comparing the two categorical interpretations:** complete-model witness
-  spans and ranked full operational observations retain different information.
-  A further comparison must specify its source restriction and the maps or
-  refinement being claimed; neither the witness functor nor the operational
-  functor automatically identifies their two quotients.
-- **Frontend/backend connection and refinement:** relate St/Br or another
-  source presentation to this witness target and prove the required
-  implementation/observation laws. Value-level indexing, numerical
-  approximation and physical storage correctness remain distinct claims;
-  no general monoidal, graded or backend interpretation follows merely
-  from the ordinary span-category laws.
+1. **Connect the two semantic interpretations.** Complete-model witness spans
+   and ranked full operational observations retain different information.
+   Construct the appropriate compositional comparison on an explicitly stated
+   common source restriction, respecting interfaces, wires, identities and
+   composition. Relate successful execution to complete-model meaning and
+   strict failure to the applicable model-absence guarantees, retaining any
+   required existence/uniqueness hypotheses.
 
-These are open directions, not new implementation commitments. None requires
-reproving the completed target-category laws or weakening strict definedness
-and complete-witness retention to obtain a simpler output-only relation.
+   This is more than restating the existing successful-run correspondence:
+   specify which operational information the comparison intentionally forgets.
+   Do not identify the two quotients, assume faithfulness or treat witness
+   equality as full history equality. This is the recommended next main
+   milestone because it connects the already proved layers and clarifies the
+   meaning that an implementation refinement must preserve.
+
+2. **Establish one concrete frontend/backend refinement.** Choose a narrowly
+   supported source fragment and one backend, then connect source construction,
+   certified components, operational histories and actual backend execution.
+   State the preserved observations and prove the corresponding simulation or
+   refinement. Batching may combine logical actions, storage-only commands may
+   have no logical event, and numerical approximation needs its own relation;
+   exact equality of the current logical histories is not automatically the
+   correct backend contract.
+
+   This offers a genuinely new end-to-end implementation guarantee and can
+   expose which semantic distinctions matter in practice. It is not a request
+   to verify every backend, infer every leaf match or establish a general
+   St/Br interpretation first.
+
+3. **Run a bounded bialgebraic architecture pilot.** Investigate a typed,
+   scope-aware Turi-Plotkin-style specification for administrative identity and
+   wires, a ranked computational leaf, and sequential composition. Explicitly
+   identify the syntax construction, one-step behaviour construction, rule
+   transformation and required compatibility laws. Prove agreement of the
+   induced semantics with the existing actual histories, failures, metadata
+   and frame conditions. [Section 8](#8-where-turi-plotkin-and-implementation-refinement-fit)
+   distinguishes this from the operational functor already proved.
+
+   **Decision gate:** promote the formalism only if it expresses scope,
+   provenance and failure naturally, reuses the realization proofs, and
+   materially simplifies adding constructors without relocating the same
+   coherence obligations. Compositionality for the current sequential fragment
+   is already proved, so another presentation of it is not by itself a stronger
+   correctness result. A typed/indexed base may be sufficient; do not assume
+   that higher-order, probabilistic or nondeterministic extensions are needed.
+   Weak/stuttering or trace-oriented variants are candidates for an explicit
+   backend observation policy, not shortcuts that silently weaken the current
+   full-history relation.
+
+4. **Broaden categorical structure only where needed.** Extend to broader
+   interfaces, automatic certification, St/Br or PROP interpretations,
+   monoidal/parallel composition or additional effects when a concrete model
+   or proof obligation requires them. Each extension must justify its new
+   equations operationally; additional categorical structure is not an
+   implementation guarantee on its own. The
+   [source record](categorical_source_functor_record.md) describes the existing
+   denotational presentation and its limits.
+
+**Alternative ordering:** if mathematical generality is the immediate priority,
+swap concrete refinement and the bialgebraic pilot: comparison, pilot,
+refinement, then demand-driven broadening. A small pilot can run earlier in
+parallel with comparison work; a wholesale bialgebraic refactoring should not
+block the comparison or a useful concrete refinement. The default order is a
+judgment about payoff, not a strict dependency chain.
+
+All directions retain the current boundaries. Unranked sources, arbitrary
+prepopulated local private stores and generic cross-program reference-state
+transport require separate arguments. Erasing assembly provenance or equating
+opaque and joined origins is not justified by matching final values or event
+lists. None of the proposed steps requires re-proving completed category laws
+or weakening strict definedness and complete-witness retention.
 
 ## Conclusion
 
