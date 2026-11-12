@@ -1939,15 +1939,15 @@ def rnn_stack_pins(by: dict, sfx: str) -> None:
     ext = {"t": n_t, "i": n_i, "d": n_d}
     assert len(set(ext.values())) == len(ext) and n_t == fx["plan"]["nodes"][0]["step_count"] + 1, ext
     assert fin["W1"].shape == (n_d, n_i) and fin["U1"].shape == fin["W2"].shape == fin["U2"].shape == (n_d, n_d) and fin["H20"].shape == (n_d,)
-    for w in ("W1", "U1", "W2", "U2"):  # generic weights: no zero entry, so a dropped term or a zeroed matrix is visible
-        assert np.all(fin[w] != 0), (name, w, "a weight entry is zero")
     want = np_stack(fin)
     assert want["H1"].shape == want["H2"].shape == (n_d, n_t)
     assert not np.allclose(want["H1"], want["H2"])
     wrong = {"layer 2 reads the OLD h1": np_stack(fin, old_state=True), "no recurrence in layer 2 (U2 = 0)": np_stack(fin, no_recur2=True),
              "no input to layer 2 (W2 = 0)": np_stack(fin, no_input2=True), "no recurrence in layer 1 (U1 = 0)": np_stack(fin, no_recur1=True),
              "layers' outputs swapped": np_stack(fin, swap_out=True)}
-    gaps = rnn_value_pins(by, name, want, wrong)
+    gaps = rnn_value_pins(by, name, want, wrong)  # the non-vacuity gaps fire first on a zeroed-matrix data mutant
+    for w in ("W1", "U1", "W2", "U2"):  # generic weights: no zero entry, so a dropped term or a zeroed matrix is visible
+        assert np.all(fin[w] != 0), (name, w, "a weight entry is zero")
     rnn_spare_slot(name, fx)
     cz = rnn_causality(name, fx, {"H1": (1, False), "H2": (1, False)})
     print(f"rnn_stack{sfx}: extents t={n_t}, i={n_i}, d={n_d} pairwise distinct; plan = ONE scan (step_count 6), no post-scan node, exactly H1, H2 exported; "
