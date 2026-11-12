@@ -988,3 +988,55 @@ All nine effective mutants killed; none survived; two refused and replaced by ac
 
 **Parked** (cost in dispatches): the 2-D patch embedding stretch (~0.5); a probe of which declared-axis forms the solver treats as equalities (finding 2, ~0.3); overlapping patches (needs a different `Img` extent, ~0.2 once finding 2 is understood); two-sided padding (needs the
 declared-versus-materialised extent mismatch of the brief's trap 3 first); max pooling (max reduction on JAX); a convolution inside a scan step; transposed convolution. The progression continues with the brief's section 9 list.
+
+## 20. Recurrent networks over a time axis: a GRU, an LSTM and a bidirectional RNN (2026-11-11)
+
+Brief: `papers/semantics/jax_rnn_session_brief.md`. Tests and fixtures only (Direct path): `EvalPlanNonlinSmoke.lean` (programs, data, registrations; NO change to `checkAndRender`) and `evalplan_nonlin_smoke.py` (`np_sigmoid`, `np_gru`, `np_lstm`, `np_birnn`, `rnn_value_pins`, `rnn_gate_ranges`,
+`rnn_plan_pins`, `rnn_spare_slot`, `rnn_causality`, `rnn_gru_pins`, `rnn_lstm_pins`, `rnn_bi_pins`, `rnn_grad_pins`); no emitter, runtime, grammar, checker or manifest change. Differential: **50 binary64 and 42 binary32 fixtures** (47 + 3, 39 + 3), all within tolerance; every earlier pin untouched and green.
+Not done: the stretch (`rnn_stack`, `rnn_gru_long`, brief section 3 item 4; both probed in the brief, about 1 dispatch for the four fixtures plus pins).
+
+**Why these models.** Every earlier transformer scan fixture scans over the LAYER axis (stacked weights `W[l, ...]`, one matrix-valued state). Here the scan axis indexes the INPUT SEQUENCE: `X[t, i]` is read at the scan axis, the weights are shared across steps, the state is a vector read through a renamed axis, and the update is a gated nonlinear cell.
+
+**Programs and extents** (`t` = 7: a history of six steps, `i` = 3, `d` = 4, `v` = 5, pairwise distinct, asserted from the input shapes; every `X` is `gqaGen s 18` plus a NaN seventh row):
+* `rnn_gru` (`rnnGruProg`): reset and update gates, tanh candidate, `Zn[d] := Neg[] · Z[d] · Nn[d]`, `H[d, t +1] := Nn + Zn + Z · H[d, t]`, then `Lg[v] := Wy[v, d] · H[d, 6]` (a PINNED read of the final state) and `Pr[v.] := softmax(Lg[v])`. Plan: ONE scan (step_count 6), then assign (`Lg`), assign (the softmax operand), axiswise; exports `H`, `Lg`, `Pr`; kinds over the scan blocks and the post-scan nodes (13, 3, 1).
+* `rnn_lstm` (`rnnLstmProg`): TWO states `H`, `Cc` in one scan, the new cell state through the intermediate `Cn` read by both updates, and `Yt[t, v] := Wy[v, d] · H[d, t]` after the scan (shape `[7, 5]`, t = 0 included). Plan `[scan, assign]`, exports `H`, `Cc`, `Yt`; kinds (17, 5, 0). The LSTM-with-readout combination was NOT probed before; it is accepted.
+* `rnn_bi` (`rnnBiProg`): forward `Af := Wf · X[t, i] + Uf · Hf[e, t]` and backward `Ab := Wb · X[5 - t, i] + Ub · Hb[e, t]` (a decreasing affine read of the scan axis) in ONE scan; `Lg[v] := Wo[v, d] · Hf[d, 6] + Wp[v, d] · Hb[d, 6]` (two pinned reads in one statement, ONE assign node with two terms), softmax. Plan `[scan, assign, assign, axiswise]`, exports `Hf`, `Hb`, `Lg`, `Pr`; kinds (10, 2, 1). The two-term head and the two states in one scan were NOT probed before; both accepted, no fallback used.
+Weights by `gqaGen` (distinct seeds 1 to 9, 11 to 22, 31 to 39), biases by `convBias`, ONE definition per input (a `(name, shape, data)` list per model, mapped to both the 64 and the 32 environment), `Neg` = `[-1.0]` as a rank-0 input. **Seeds: NOT tuned** (the first candidate passed in both precisions; no other tried). The binary32 siblings keep `iter t = 7` and the state declarations only.
+
+**Pins** (per precision; numpy float64 from the exported inputs only, explicit loops over the six time steps, written from the English definitions; no `lax.scan`, no shared implementation):
+1. Value: every export on the Lean, eager and jit views at `MODEL_TOL` (states over all seven slots, `Lg`, `Pr`, `Yt`); slot 0 of each state is the initial-state input, bitwise.
+2. Non-vacuity (computed BEFORE the view loop; binary64 numpy gaps over every export): GRU: update gate removed 0.508, reset gate removed 0.241, `1 - z` and `z` swapped 0.300, no recurrence 0.264, head reads step 5 0.288. LSTM: forget gate ignored 1.017, output gate ignored 0.374, hidden update from the OLD cell 0.250, no cell state 0.390, readout at step t + 1 0.706, readout at a fixed step 0.778.
+   Bidirectional: forward only 0.296, backward only 0.578, backward NOT reversed 1.225, final states swapped 0.677, no backward recurrence 0.622. Gates are non-trivial (asserted inside (0.05, 0.95)): GRU z in [0.26, 0.69], r in [0.29, 0.76]; LSTM i in [0.16, 0.68], f in [0.31, 0.71], o in [0.21, 0.73].
+3. Structural: shapes from the inputs; `Pr` positive and sums to 1; `Neg == -1`; plan shape and exact exports; the LSTM readout equals `H^T Wy^T` on every view; **spare slot**: `X[6]` is NaN, every export finite, and setting `X[6]` to 0.5 leaves EVERY export bitwise unchanged; **TIME CAUSALITY** on the eager runtime (perturb `X[t]` by +0.5, t = 0 .. 5): a forward state (`H`, `Cc`, `Hf`, the rows of `Yt`) is bitwise unchanged at every
+   `s <= t` and moves at `s = t + 1` (smallest first response 0.104 GRU, 0.023 LSTM, 0.141 bidirectional); the BACKWARD state `Hb` is bitwise unchanged for `s <= 5 - t` and moves at `s = 6 - t`; `Lg` and `Pr` respond to every `X[t]`.
+4. Gradients (`rnn_grad_pins`): `jax.grad` of `sum(C * out)` (GRU and bidirectional: the logits `Lg`; LSTM: `H[:, 6]` plus `Yt`) over every float input (13, 16, 9), eager and jit, vs an unrolled pure-JAX model written from the definition (a Python loop, no plan, no scan; `Neg` read as a plain input) and vs central differences of the numpy models (`Neg` FROZEN: the numpy models hard-code the minus).
+   `X` row 6 has EXACTLY zero gradient (eager, jit and the pure-JAX model); every `X` row 0..5 and every input has a real gradient (smallest per-input max 0.019 GRU, 0.030 LSTM, 0.010 bidirectional); the vacuity self-test is an ABSOLUTE 1e-3 perturbation.
+
+**Findings.**
+1. The brief's one-line LSTM mutant E (`Fc[d] := Ig[d] · Cc[d, t]`) leaves `Wf`, `Uf`, `Bf` unused, which breaks its own "every mutant keeps every input used" rule; it was replaced by a gate SWAP (`Fc := Ig · Cc`, `Ic := Fg · Gg`).
+2. A two-term head statement (`Lg := Wo · Hf[d, 6] + Wp · Hb[d, 6]`) is one assign node with two terms; the extra assign node of every softmax head is the softmax operand copy (so the GRU and bidirectional plans have two post-scan assigns).
+3. The three traps of the brief (no subtraction in a term; no `t +1` state read on a right-hand side; the stacked input must have the iteration extent) are respected by the programs and pinned or avoided as stated; none was re-probed. Solver equality: the pinned-read mutants D and J (`H[d, 6]` to `H[d, 5]`) and the reversed-read mutant G (`X[5 - t, i]` to `X[t, i]`) were all ACCEPTED (this says nothing about the original forms, only that those mutated forms are not refused); no mutant moved the constant of the reversed read itself (`5 - t` to `4 - t`), which stays unprobed.
+
+**Observed** (`MODEL_TOL` 1e-12 / 1e-6; no tolerance loosened). Binary64 vs numpy worst scaled: GRU 2.2e-16 (headroom 4504x), LSTM 1.1e-16 (9007x), bidirectional 3.3e-16 (3002x). **Binary32**: GRU 4.6e-8 (headroom **21.7x**), LSTM 5.2e-8 (**19.2x**), bidirectional 1.2e-7 (**8.2x**).
+Gradients vs the unrolled pure-JAX model / vs finite differences: binary64 GRU 3.3e-16 (3002x) / 5.7e-11 (1760x), LSTM 3.3e-16 (3002x) / 8.3e-10 (120x), bidirectional 4.2e-16 (2402x) / 8.3e-11 (1210x); binary32 GRU 1.2e-7 (839x) / 4.8e-7 (210x), LSTM 1.8e-7 (559x) / 2.9e-7 (343x), bidirectional 1.8e-7 (559x) / 2.8e-7 (358x).
+
+**Mutation evidence** (edit of the f64 program text or its data, whole differential via `run-evalplan-nonlin.sh`, first failing assertion; each restored by the inverse `sed` edit AFTER committing, `git diff --stat` empty afterwards; the table is also in the body of the empty commit after the gradient pins). 10 run, 10 killed, 0 refused, 0 survived:
+
+| Mutant | First failing assertion |
+|---|---|
+| A. GRU reset gate by a sum (`Rh := R + Uh`) | `pin numpy model: rnn_gru lean H` (0.63) |
+| B. GRU carries the reset gate (`... + R · H[d, t]`) | `pin numpy model: rnn_gru lean H` (0.25) |
+| C. data: `Neg` = +1 | the `Neg == -1` input assertion in `rnn_gru_pins`, before any value pin |
+| D. GRU head reads step 5 | `pin numpy model: rnn_gru lean Lg` (0.29) |
+| E. LSTM gates swapped (see finding 1) | `pin numpy model: rnn_lstm lean Cc` (0.46) |
+| F. LSTM hidden update from the OLD cell (`tanh(Cc[d, t])`) | `pin numpy model: rnn_lstm lean Cc` (0.14) |
+| G. bidirectional backward layer not reversed (`X[t, i]`) | `pin numpy model: rnn_bi lean Hb` (1.22) |
+| H. LSTM readout at a fixed step (`H[d, 3]`; the solver accepts it) | `pin numpy model: rnn_lstm lean Yt` (0.78) |
+| I. data: `Ub` all zeros | non-vacuity gap `no backward recurrence (Ub = 0)` = 0.0 in `rnn_value_pins`, before the view loop |
+| J. binary32 GRU head reads step 5 (the binary64 leg ran green first) | `pin numpy model: rnn_gru32 lean Lg` (0.29) |
+
+No gradient or runtime mutant was run (not in the brief's list); the gradient pins have the absolute-perturbation self-test only.
+
+**Budget (Rule 6).** Done INLINE in one controller context, not split into the brief's dispatches A to D: measured with `token-report.py` at the end of the mutation runs: 17.4M cumulative input tokens, context peak 245k, 96 turns (above the ~60-turn per-dispatch budget; far below the 175M execution budget). The ten mutant runs (one turn pair each) dominated the turn count.
+
+**Parked.** The stretch (`rnn_stack`, `rnn_gru_long`: about 1 dispatch); the solver-equality probe for pinned reads (`H[d, 6]`) and the reversed read (about 0.3); gradient runtime mutants; the progression of brief section 9.

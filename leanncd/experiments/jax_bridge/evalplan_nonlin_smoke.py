@@ -55,7 +55,8 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_gqa_mha", "transformer_gqa_mha32",
                         "transformer_cross", "transformer_cross32", "transformer_cross_hoisted", "transformer_cross_hoisted32",
                         "transformer_cross_wide", "transformer_cross_wide32",
-                        "conv1d_cnn", "conv1d_cnn32", "conv1d_causal", "conv1d_causal32", "vit_patch", "vit_patch32"}
+                        "conv1d_cnn", "conv1d_cnn32", "conv1d_causal", "conv1d_causal32", "vit_patch", "vit_patch32",
+                        "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32"}
 # Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
 # layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
 # require that EXACTLY layer 2 is NaN (in Lean, eager and jit alike); every other output must be finite.
@@ -1658,6 +1659,365 @@ def conv_grad_pins(by: dict, sfx: str) -> None:
         print(line)
 
 
+def np_sigmoid(x):
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def np_gru(inp: dict, no_update=False, no_reset=False, swap_gate=False, no_recur=False, head_step=6) -> tuple:
+    """Float64 model of `rnn_gru` from the exported inputs only, explicit loop over the six time steps (English definition):
+    z = sigmoid(Wz x + Uz h + bz), r = sigmoid(Wr x + Ur h + br), n = tanh(Wn x + r * (Un h) + bn), h' = (1 - z) * n + z * h (the minus is
+    hard-coded here: the program writes it through the scalar input `Neg`); the head reads the state after `head_step` steps. Returns
+    (the exports H [d, 7], Lg [v], Pr [v], the gate values z and r per step)."""
+    f = {k: np.asarray(v, dtype=np.float64) for k, v in inp.items()}
+    h = f["H0"].copy()
+    hist, zs, rs = [h], [], []
+    for t in range(6):
+        x = f["X"][t]
+        zero = np.zeros_like(h)
+        z = np_sigmoid(f["Wz"] @ x + (zero if no_recur else f["Uz"] @ h) + f["Bz"])
+        r = np_sigmoid(f["Wr"] @ x + (zero if no_recur else f["Ur"] @ h) + f["Br"])
+        n = np.tanh(f["Wn"] @ x + (1.0 if no_reset else r) * (zero if no_recur else f["Un"] @ h) + f["Bn"])
+        h = n if no_update else (z * n + (1.0 - z) * h if swap_gate else (1.0 - z) * n + z * h)
+        hist.append(h)
+        zs.append(z)
+        rs.append(r)
+    lg = f["Wy"] @ hist[head_step]
+    return {"H": np.stack(hist, axis=1), "Lg": lg, "Pr": np_softmax_last(lg)}, {"z": np.array(zs), "r": np.array(rs)}
+
+
+def np_lstm(inp: dict, no_forget=False, no_out=False, old_cell=False, no_cell=False, readout="same") -> tuple:
+    """Float64 model of `rnn_lstm` from the exported inputs only, explicit loop over the six steps (English definition): i, f, o = sigmoid(W x + U h + b),
+    g = tanh(Wg x + Ug h + bg), c' = f * c + i * g, h' = o * tanh(c'), and the readout Yt[t] = Wy h_t at EVERY t = 0 .. 6. Returns (the exports
+    H [d, 7], Cc [d, 7], Yt [7, v], the gate values i, f, o per step)."""
+    f = {k: np.asarray(v, dtype=np.float64) for k, v in inp.items()}
+    h, c = f["H0"].copy(), f["C0"].copy()
+    hs, cs, gates = [h], [c], {"i": [], "f": [], "o": []}
+    for t in range(6):
+        x = f["X"][t]
+        ig = np_sigmoid(f["Wi"] @ x + f["Ui"] @ h + f["Bi"])
+        fg = np_sigmoid(f["Wf"] @ x + f["Uf"] @ h + f["Bf"])
+        og = np_sigmoid(f["Wo"] @ x + f["Uo"] @ h + f["Bo"])
+        gg = np.tanh(f["Wg"] @ x + f["Ug"] @ h + f["Bg"])
+        c_new = ig * gg if no_cell else (1.0 if no_forget else fg) * c + ig * gg
+        h = (1.0 if no_out else og) * np.tanh(c if old_cell else c_new)
+        c = c_new
+        hs.append(h)
+        cs.append(c)
+        gates["i"].append(ig)
+        gates["f"].append(fg)
+        gates["o"].append(og)
+    step = {"same": lambda t: t, "fixed": lambda t: 3, "next": lambda t: min(t + 1, 6)}[readout]
+    yt = np.stack([f["Wy"] @ hs[step(t)] for t in range(7)])
+    return {"H": np.stack(hs, axis=1), "Cc": np.stack(cs, axis=1), "Yt": yt}, {k: np.array(v) for k, v in gates.items()}
+
+
+def np_birnn(inp: dict, forward_only=False, backward_only=False, no_reverse=False, swap_final=False, no_back_recur=False) -> dict:
+    """Float64 model of `rnn_bi` from the exported inputs only, explicit loop over the six steps (English definition): forward hf' = tanh(Wf x_t + Uf hf)
+    over x_0 .. x_5, backward hb' = tanh(Wb x_{5 - t} + Ub hb) (the sequence read from its end), Lg = Wo hf_6 + Wp hb_6. Returns the exports
+    Hf [d, 7], Hb [d, 7], Lg [v], Pr [v]."""
+    f = {k: np.asarray(v, dtype=np.float64) for k, v in inp.items()}
+    hf, hb = f["Hf0"].copy(), f["Hb0"].copy()
+    hfs, hbs = [hf], [hb]
+    for t in range(6):
+        hf = np.tanh(f["Wf"] @ f["X"][t] + f["Uf"] @ hf)
+        hb = np.tanh(f["Wb"] @ f["X"][t if no_reverse else 5 - t] + (0.0 if no_back_recur else f["Ub"] @ hb))
+        hfs.append(hf)
+        hbs.append(hb)
+    a, b = (hbs[6], hfs[6]) if swap_final else (hfs[6], hbs[6])
+    lg = (0.0 if backward_only else f["Wo"] @ a) + (0.0 if forward_only else f["Wp"] @ b)
+    return {"Hf": np.stack(hfs, axis=1), "Hb": np.stack(hbs, axis=1), "Lg": lg, "Pr": np_softmax_last(lg)}
+
+
+def rnn_value_pins(by: dict, name: str, want: dict, wrong: dict) -> dict:
+    """Non-vacuity of the numpy reference against each wrong model (> 1e-2, computed BEFORE the view loop so a data mutant fails here and not on a
+    value pin), then every export on the Lean, eager and jit views against `want` at MODEL_TOL (check_np records the observed maxima). Returns the gaps."""
+    gaps = {what: dict_gap(want, m) for what, m in wrong.items()}
+    for what, g in gaps.items():
+        assert g > 1e-2, (name, "the recurrent pin is indistinguishable from", what, g)
+    for who, outs in conv_views(by, name).items():
+        assert sorted(outs) == sorted(want), (name, who, sorted(outs))
+        for n in sorted(want):
+            check_np(name, who, n, outs[n], want[n])
+        if "Pr" in want:
+            pr = outs["Pr"].astype(np.float64)
+            assert np.all(pr > 0) and abs(float(pr.sum()) - 1.0) < HEAD_ROWSUM_TOL[_DT], (name, who, "Pr is not a probability vector", pr.tolist())
+        for n in sorted(want):  # the first state row is the initial state input, bitwise
+            init = {"H": "H0", "Cc": "C0", "Hf": "Hf0", "Hb": "Hb0"}.get(n)
+            if init is not None:
+                assert np.array_equal(bits(outs[n][:, 0]), bits(lean_array(by[name]["inputs"][init]))), (name, who, n, "slot 0 is not the initial state")
+    return gaps
+
+
+def rnn_gate_ranges(name: str, gates: dict) -> str:
+    """Every gate must be non-trivial: its min and max over the six steps and the four units are inside (0.05, 0.95)."""
+    for g, v in gates.items():
+        assert 0.05 < float(v.min()) and float(v.max()) < 0.95, (name, f"gate {g} is saturated for the chosen data", float(v.min()), float(v.max()))
+    return ", ".join(f"{g} in [{float(v.min()):.2f}, {float(v.max()):.2f}]" for g, v in gates.items())
+
+
+def rnn_plan_pins(fx: dict, kinds_after: list, exports: list) -> None:
+    """ONE scan record with six steps, then exactly the stated post-scan nodes, and exactly the stated exports."""
+    nodes = fx["plan"]["nodes"]
+    assert nodes[0].get("kind") == "scan" and nodes[0]["step_count"] == 6, [n.get("kind") for n in nodes]
+    assert [n.get("kind", "assign") for n in nodes[1:]] == kinds_after, [n.get("kind", "assign") for n in nodes]
+    assert sorted(m for m, _ in fx["plan"]["materialized"]) == sorted(exports), fx["plan"]["materialized"]
+
+
+def rnn_spare_slot(name: str, fx: dict) -> None:
+    """The NEVER-READ slot: X row 6 is NaN and every export is finite (a step that read it would make the states NaN); setting it to 0.5 leaves
+    EVERY export bitwise unchanged on the eager runtime (a step that read it would change the values)."""
+    x = lean_array(fx["inputs"]["X"])
+    assert np.all(np.isnan(x[6])) and np.all(np.isfinite(x[:6])), (name, "X is not six finite rows and a NaN spare row")
+    xs = x.copy()
+    xs[6, :] = NDT(0.5)
+    base = {n: np.asarray(v) for n, v in EAGER[name]["eager"].items()}
+    jin = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+    run = rt.run_named(fx["plan"], dict(jin, X=jnp.asarray(xs)), JDT)
+    for n, b in base.items():
+        assert np.all(np.isfinite(b)) and np.array_equal(bits(b), bits(np.asarray(run[n]))), (name, "export changed when the spare slot X[6] changed", n)
+
+
+def rnn_causality(name: str, fx: dict, states: dict, heads: tuple = ()) -> str:
+    """TIME CAUSALITY on the eager runtime: perturb `X[t]` (t = 0 .. 5). `states` maps an export to (time axis, backward?). A forward state is bitwise
+    unchanged at every s <= t and moves at s = t + 1; a BACKWARD state (it has read X[5], .., X[6 - s] after s steps) is bitwise unchanged at every
+    s <= 5 - t and moves at s = 6 - t. Every export in `heads` (reads the final state only) moves under every perturbation."""
+    base = {n: np.asarray(v) for n, v in EAGER[name]["eager"].items()}
+    x = lean_array(fx["inputs"]["X"])
+    jin = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+    moved = []
+    for t in range(6):
+        xp = x.copy()
+        xp[t, :] += NDT(0.5)
+        run = rt.run_named(fx["plan"], dict(jin, X=jnp.asarray(xp)), JDT)
+        for n, (axis, backward) in states.items():
+            b, p = base[n], np.asarray(run[n])
+            first = 6 - t if backward else t + 1
+            for s in range(7):
+                bs, ps = np.take(b, s, axis=axis), np.take(p, s, axis=axis)
+                if s < first:
+                    assert np.array_equal(bits(bs), bits(ps)), (name, n, f"slot {s} changed under a perturbation of X[{t}]", first)
+                elif s == first:
+                    d = float(np.max(np.abs(bs.astype(np.float64) - ps.astype(np.float64))))
+                    assert d > 1e-4, (name, n, f"slot {s} did not respond to X[{t}]", d)
+                    moved.append(d)
+        for n in heads:
+            d = float(np.max(np.abs(base[n].astype(np.float64) - np.asarray(run[n]).astype(np.float64))))
+            assert d > 1e-4, (name, n, f"did not respond to X[{t}]", d)
+    return f"smallest first response {min(moved):.2e}"
+
+
+def rnn_gru_pins(by: dict, sfx: str) -> None:
+    """Pins of `rnn_gru`: a GRU over six time steps (a per-step INPUT read `X[t, i]`, the state read through a renamed axis `Uz[d, e] · H[e, t]`,
+    sigmoid and tanh gates, products of per-step intermediates, `1 - z` through the scalar input `Neg = -1`) and a sequence-to-one head `Lg[v] :=
+    Wy[v, d] · H[d, 6]` (a PINNED read of the final state) with a softmax. Reference `np_gru`. Value pins on Lean, eager and jit for every export (H over
+    all seven slots); non-vacuity against wrong models; gates non-trivial; structure; time causality; the never-read slot."""
+    name = f"rnn_gru{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    assert sorted(fin) == sorted(["X", "H0", "Wz", "Uz", "Bz", "Wr", "Ur", "Br", "Wn", "Un", "Bn", "Neg", "Wy"]), sorted(fin)
+    rnn_plan_pins(fx, ["assign", "assign", "axiswise"], ["H", "Lg", "Pr"])
+    assert fin["Neg"].shape == () and float(fin["Neg"]) == -1.0, fin["Neg"]
+    n_t, n_i = fin["X"].shape
+    n_d, n_v = fin["H0"].shape[0], fin["Wy"].shape[0]
+    ext = {"t": n_t, "i": n_i, "d": n_d, "v": n_v}
+    assert len(set(ext.values())) == len(ext) and n_t == fx["plan"]["nodes"][0]["step_count"] + 1, ext
+    assert fin["Wz"].shape == (n_d, n_i) and fin["Uz"].shape == (n_d, n_d) and fin["Bz"].shape == (n_d,) and fin["Wy"].shape == (n_v, n_d)
+    want, gates = np_gru(fin)
+    assert want["H"].shape == (n_d, n_t) and want["Lg"].shape == (n_v,) and want["Pr"].shape == (n_v,)
+    gate_txt = rnn_gate_ranges(name, gates)
+    wrong = {"update gate removed (h' = n)": np_gru(fin, no_update=True)[0], "reset gate removed": np_gru(fin, no_reset=True)[0],
+             "1 - z and z swapped": np_gru(fin, swap_gate=True)[0], "no recurrence (U = 0)": np_gru(fin, no_recur=True)[0],
+             "head reads step 5": np_gru(fin, head_step=5)[0]}
+    gaps = rnn_value_pins(by, name, want, wrong)
+    rnn_spare_slot(name, fx)
+    cz = rnn_causality(name, fx, {"H": (1, False)}, heads=("Lg", "Pr"))
+    print(f"rnn_gru{sfx}: extents t={n_t}, i={n_i}, d={n_d}, v={n_v} pairwise distinct; plan = ONE scan (step_count 6) then 2 assign + 1 softmax, exactly H, Lg, Pr "
+          f"exported; Neg == -1; every export == numpy explicit-loop GRU (English definition) on Lean, eager and jit (H over all {n_t} slots, slot 0 = H0); "
+          f"gates {gate_txt}; Pr positive, sums to 1; numpy differs from {', '.join(f'{w} by {g:.3f}' for w, g in gaps.items())}; X[6] NaN spare slot: "
+          f"setting it to 0.5 leaves every export bitwise unchanged; causal: X[t] leaves H[:, s] bitwise unchanged for s <= t and moves it at s = t + 1 ({cz}), "
+          f"Lg and Pr respond to every X[t]")
+    print_conv_stats(name)
+
+
+def rnn_lstm_pins(by: dict, sfx: str) -> None:
+    """Pins of `rnn_lstm`: an LSTM with TWO states (`H`, `Cc`) in one scan, the new cell state routed through the per-step intermediate `Cn` read by both
+    updates, and a readout `Yt[t, v] := Wy[v, d] · H[d, t]` at EVERY step after the scan (it keeps the time axis, t = 0 included). Reference
+    `np_lstm`. Value pins on Lean, eager and jit; non-vacuity (forget gate ignored, output gate ignored, old cell in the hidden update, no cell state,
+    readout at a wrong step); gates non-trivial; structure; time causality of H, Cc and the rows of Yt; the never-read slot."""
+    name = f"rnn_lstm{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    assert sorted(fin) == sorted(["X", "H0", "C0"] + [f"{k}{g}" for g in "ifog" for k in "WUB"] + ["Wy"]), sorted(fin)
+    rnn_plan_pins(fx, ["assign"], ["H", "Cc", "Yt"])
+    n_t, n_i = fin["X"].shape
+    n_d, n_v = fin["H0"].shape[0], fin["Wy"].shape[0]
+    ext = {"t": n_t, "i": n_i, "d": n_d, "v": n_v}
+    assert len(set(ext.values())) == len(ext) and n_t == fx["plan"]["nodes"][0]["step_count"] + 1, ext
+    assert fin["C0"].shape == (n_d,) and fin["Ui"].shape == (n_d, n_d) and fin["Wy"].shape == (n_v, n_d)
+    want, gates = np_lstm(fin)
+    assert want["H"].shape == want["Cc"].shape == (n_d, n_t) and want["Yt"].shape == (n_t, n_v)
+    gate_txt = rnn_gate_ranges(name, gates)
+    wrong = {"forget gate ignored": np_lstm(fin, no_forget=True)[0], "output gate ignored": np_lstm(fin, no_out=True)[0],
+             "hidden update from the OLD cell": np_lstm(fin, old_cell=True)[0], "no cell state (c' = i * g)": np_lstm(fin, no_cell=True)[0],
+             "readout at step t + 1": np_lstm(fin, readout="next")[0], "readout at a fixed step": np_lstm(fin, readout="fixed")[0]}
+    gaps = rnn_value_pins(by, name, want, wrong)
+    for who, outs in conv_views(by, name).items():  # the readout is the product of the exported state with Wy, row by row, on every view
+        assert np.max(np.abs(outs["Yt"].astype(np.float64) - outs["H"].astype(np.float64).T @ fin["Wy"].astype(np.float64).T)) < MODEL_TOL[_DT], (name, who)
+    rnn_spare_slot(name, fx)
+    cz = rnn_causality(name, fx, {"H": (1, False), "Cc": (1, False), "Yt": (0, False)})
+    print(f"rnn_lstm{sfx}: extents t={n_t}, i={n_i}, d={n_d}, v={n_v} pairwise distinct; plan = ONE scan (step_count 6) then 1 assign, exactly H, Cc, Yt exported; "
+          f"every export == numpy explicit-loop LSTM (English definition) on Lean, eager and jit (slot 0 = H0, C0; Yt has shape [{n_t}, {n_v}] and includes t = 0); "
+          f"gates {gate_txt}; numpy differs from {', '.join(f'{w} by {g:.3f}' for w, g in gaps.items())}; X[6] spare slot: setting it to 0.5 leaves "
+          f"every export bitwise unchanged; causal: X[t] leaves H, Cc, Yt row s bitwise unchanged for s <= t and moves it at s = t + 1 ({cz})")
+    print_conv_stats(name)
+
+
+def rnn_bi_pins(by: dict, sfx: str) -> None:
+    """Pins of `rnn_bi`: a bidirectional tanh-RNN in ONE scan: the forward layer reads `X[t, i]`, the backward layer the REVERSED read `X[5 - t, i]`, and
+    the two final states are read by pinned reads in ONE two-term head statement feeding a softmax. Reference `np_birnn`. Value pins on Lean,
+    eager and jit; non-vacuity (forward only, backward only, backward NOT reversed, final states swapped, no backward recurrence); structure; time
+    causality: the forward state is bitwise unchanged for s <= t and moves at s = t + 1, the BACKWARD state is unchanged for s <= 5 - t and moves at
+    s = 6 - t; the never-read slot (the reversed read never touches row 6 either)."""
+    name = f"rnn_bi{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    assert sorted(fin) == sorted(["X", "Hf0", "Hb0", "Wf", "Uf", "Wb", "Ub", "Wo", "Wp"]), sorted(fin)
+    rnn_plan_pins(fx, ["assign", "assign", "axiswise"], ["Hf", "Hb", "Lg", "Pr"])  # node 1 = Lg (ONE assign node with two terms), node 2 = the softmax operand, then the softmax
+    n_t, n_i = fin["X"].shape
+    n_d, n_v = fin["Hf0"].shape[0], fin["Wo"].shape[0]
+    ext = {"t": n_t, "i": n_i, "d": n_d, "v": n_v}
+    assert len(set(ext.values())) == len(ext) and n_t == fx["plan"]["nodes"][0]["step_count"] + 1, ext
+    assert fin["Wo"].shape == fin["Wp"].shape == (n_v, n_d) and fin["Ub"].shape == (n_d, n_d)
+    want = np_birnn(fin)
+    assert want["Hf"].shape == want["Hb"].shape == (n_d, n_t) and want["Lg"].shape == (n_v,)
+    assert not np.allclose(want["Hf"], want["Hb"]) and not np.array_equal(fin["Wo"], fin["Wp"])
+    wrong = {"forward only": np_birnn(fin, forward_only=True), "backward only": np_birnn(fin, backward_only=True),
+             "backward layer NOT reversed": np_birnn(fin, no_reverse=True), "final states swapped": np_birnn(fin, swap_final=True),
+             "no backward recurrence (Ub = 0)": np_birnn(fin, no_back_recur=True)}
+    gaps = rnn_value_pins(by, name, want, wrong)
+    rnn_spare_slot(name, fx)
+    cz = rnn_causality(name, fx, {"Hf": (1, False), "Hb": (1, True)}, heads=("Lg", "Pr"))
+    print(f"rnn_bi{sfx}: extents t={n_t}, i={n_i}, d={n_d}, v={n_v} pairwise distinct; plan = ONE scan (step_count 6) then 2 assign (Lg with its two terms in one node, the softmax operand) + 1 softmax, "
+          f"exactly Hf, Hb, Lg, Pr exported; every export == numpy explicit-loop bidirectional RNN (English definition) on Lean, eager and jit; "
+          f"numpy differs from {', '.join(f'{w} by {g:.3f}' for w, g in gaps.items())}; X[6] spare slot: setting it to 0.5 leaves every export bitwise "
+          f"unchanged; causal: X[t] leaves Hf[:, s] bitwise unchanged for s <= t and moves it at s = t + 1, leaves Hb[:, s] unchanged for s <= 5 - t and "
+          f"moves it at s = 6 - t ({cz})")
+    print_conv_stats(name)
+
+
+def rnn_grad_pins(by: dict, sfx: str) -> None:
+    """Gradient pins (backpropagation THROUGH TIME) of the three recurrent fixtures: `jax.grad` of `L = sum(C * out)` through the emitted scan over EVERY float
+    input (eager and jit), with `out` = the logits `Lg` for the GRU and the bidirectional RNN (not the softmax: a softmax loss is nearly degenerate) and
+    `H[:, 6]` together with the per-step readout `Yt` for the LSTM, against (a) the autodiff of a pure-JAX model written from the definition as an unrolled
+    Python loop (no plan, no scan, `Neg` read as a plain input) and (b) central finite differences of the float64 numpy models (explicit loops) along
+    random directions with `Neg` FROZEN (the numpy models hard-code the minus). X row 6 (never read) has EXACTLY zero gradient, X rows 0 .. 5 a real one
+    (information flows back through all six steps), the gradients with respect to the initial states and every weight are non-trivial."""
+
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    sig = jax.nn.sigmoid
+
+    def gru_hand(i):
+        h = i["H0"]
+        for t in range(6):
+            x = i["X"][t]
+            z = sig(i["Wz"] @ x + i["Uz"] @ h + i["Bz"])
+            r = sig(i["Wr"] @ x + i["Ur"] @ h + i["Br"])
+            n = jnp.tanh(i["Wn"] @ x + r * (i["Un"] @ h) + i["Bn"])
+            h = n + i["Neg"] * z * n + z * h  # (1 - z) * n + z * h with the minus through the scalar input Neg
+        return [i["Wy"] @ h]
+
+    def lstm_hand(i):
+        h, c = i["H0"], i["C0"]
+        hs = [h]
+        for t in range(6):
+            x = i["X"][t]
+            ig = sig(i["Wi"] @ x + i["Ui"] @ h + i["Bi"])
+            fg = sig(i["Wf"] @ x + i["Uf"] @ h + i["Bf"])
+            og = sig(i["Wo"] @ x + i["Uo"] @ h + i["Bo"])
+            gg = jnp.tanh(i["Wg"] @ x + i["Ug"] @ h + i["Bg"])
+            c = fg * c + ig * gg
+            h = og * jnp.tanh(c)
+            hs.append(h)
+        return [h, jnp.stack([i["Wy"] @ hh for hh in hs])]
+
+    def bi_hand(i):
+        hf, hb = i["Hf0"], i["Hb0"]
+        for t in range(6):
+            hf = jnp.tanh(i["Wf"] @ i["X"][t] + i["Uf"] @ hf)
+            hb = jnp.tanh(i["Wb"] @ i["X"][5 - t] + i["Ub"] @ hb)
+        return [i["Wo"] @ hf + i["Wp"] @ hb]
+
+    # name -> (the plan's outputs entering the loss, the pure-JAX model, the numpy model of the SAME outputs)
+    specs = {
+        f"rnn_gru{sfx}": (lambda r: [r["Lg"]], gru_hand, lambda i: [np_gru(i)[0]["Lg"]]),
+        f"rnn_lstm{sfx}": (lambda r: [r["H"][:, 6], r["Yt"]], lstm_hand, lambda i: [np_lstm(i)[0]["H"][:, 6], np_lstm(i)[0]["Yt"]]),
+        f"rnn_bi{sfx}": (lambda r: [r["Lg"]], bi_hand, lambda i: [np_birnn(i)["Lg"]]),
+    }
+    lines = []
+    for name, (take, hand, np_model) in specs.items():
+        fx = by[name]
+        sin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+        jin = {n: jnp.asarray(a) for n, a in sin.items()}
+        cs = [np.sin(1.0 + np.arange(o.size)).reshape(o.shape).astype(NDT) for o in np_model({n: a.astype(np.float64) for n, a in sin.items()})]
+
+        def loss_plan(inp, cs=cs, fx=fx, take=take):
+            return sum(jnp.sum(c * o) for c, o in zip(cs, take(rt.run_named(fx["plan"], inp, JDT))))
+
+        def loss_hand(inp, cs=cs, hand=hand):
+            return sum(jnp.sum(c * o) for c, o in zip(cs, hand(inp)))
+
+        grads = {"eager": jax.grad(loss_plan)(jin), "jit": jax.jit(jax.grad(loss_plan))(jin)}
+        g_hand = jax.grad(loss_hand)(jin)
+        assert np.all(np.asarray(g_hand["X"])[6] == 0), (name, "the pure-JAX model reads X[6]")
+        err, smallest = {}, {}
+        for who, g in grads.items():
+            assert sorted(g) == sorted(sin), (name, who, sorted(g))
+            assert all(np.all(np.isfinite(np.asarray(v))) and np.asarray(v).dtype == NDT for v in g.values()), (name, who, "gradient not finite")
+            assert np.all(np.asarray(g["X"])[6] == 0), (name, who, "the never-read X row 6 received gradient")
+            rows = np.max(np.abs(np.asarray(g["X"])[:6]), axis=1)
+            assert np.all(rows > 1e-3), (name, who, "an X row 0 .. 5 has no real gradient: information does not flow back through all six steps", rows.tolist())
+            for n, v in g.items():
+                smallest[n] = min(smallest.get(n, np.inf), float(np.max(np.abs(np.asarray(v)))))
+                assert smallest[n] > 1e-3, (name, "trivial gradient", who, n, smallest[n])
+                e_ref = scaled(v, g_hand[n])
+                assert e_ref < GRAD_TOL[_DT], (f"gradient pin: {name} vs the pure-JAX unrolled model", who, n, e_ref)
+                err[n] = max(err.get(n, 0.0), e_ref)
+        gx = np.array(grads["eager"]["X"])
+        gp = gx.copy()
+        gp.flat[int(np.argmax(np.abs(gx)))] += NDT(1e-3)  # these gradients are O(0.1), so the test is an ABSOLUTE 1e-3 perturbation
+        assert scaled(gp, gx) >= GRAD_TOL[_DT], (name, "gradient tolerance accepts a 1e-3 perturbation: vacuous")
+        # (b) directional derivatives against central differences of the float64 numpy model (3 fixed directions over every input, Neg frozen)
+        base = {n: a.astype(np.float64) for n, a in sin.items()}
+        rng = np.random.default_rng(7)
+        loss_np = lambda inp, cs=cs, np_model=np_model: float(sum(np.sum(c.astype(np.float64) * o) for c, o in zip(cs, np_model(inp))))
+        fd_err, dots = 0.0, []
+        for _ in range(3):
+            d = {n: rng.standard_normal(a.shape) for n, a in base.items()}
+            if "Neg" in d:  # the numpy model hard-codes the minus: the gradient of `Neg` is pinned against the pure-JAX model only
+                d["Neg"] = np.zeros_like(d["Neg"])
+            d["X"][6] = 0.0
+            eps = 1e-6
+            fd = (loss_np({n: base[n] + eps * d[n] for n in base}) - loss_np({n: base[n] - eps * d[n] for n in base})) / (2 * eps)
+            for who, g in grads.items():
+                dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * d[n]) for n in base))
+                assert abs(dot) > 1e-3, (name, "finite-difference direction is trivial", dot)
+                fd_err = max(fd_err, abs(fd - dot) / max(1.0, abs(dot)))
+                dots.append(dot)
+        assert fd_err < GRAD_FD_TOL[_DT], (f"gradient pin: {name} directional derivative vs finite differences of the numpy model", fd_err)
+        lines.append(f"  {name}: all {len(sin)} float inputs, eager and jit, finite; X row 6 EXACTLY zero gradient (eager, jit and the pure-JAX model), X rows 0..5 and "
+                     f"every input non-trivial (smallest per-input max {min(smallest.values()):.3f}); vs pure-JAX unrolled model max scaled {max(err.values()):.3e} "
+                     f"(headroom {GRAD_TOL[_DT] / max(max(err.values()), 1e-300):.1f}x); directional derivatives vs central differences of the numpy model "
+                     f"(|dot| {min(abs(x) for x in dots):.2f} to {max(abs(x) for x in dots):.2f}, Neg frozen) max scaled {fd_err:.3e} "
+                     f"(headroom {GRAD_FD_TOL[_DT] / max(fd_err, 1e-300):.1f}x)")
+    print(f"gradients of the recurrent fixtures (GRU logits Lg, LSTM H[:, 6] + Yt, bidirectional logits Lg; every float input, tol {GRAD_TOL[_DT]:.0e} vs pure-JAX "
+          f"unrolled models, {GRAD_FD_TOL[_DT]:.0e} vs finite differences):")
+    for line in lines:
+        print(line)
+
+
 def main() -> None:
     spec = importlib.util.spec_from_file_location("gen_nonlin", Path(sys.argv[2]).resolve())
     mod = importlib.util.module_from_spec(spec)
@@ -1971,6 +2331,12 @@ def main() -> None:
     conv_causal_pins(by, sfx)
     vit_patch_pins(by, sfx)
 
+    # RECURRENT NETWORKS over a TIME axis (a GRU with a sequence-to-one head, an LSTM with a per-step readout, a bidirectional RNN): see
+    # `rnn_gru_pins`, `rnn_lstm_pins`, `rnn_bi_pins`.
+    rnn_gru_pins(by, sfx)
+    rnn_lstm_pins(by, sfx)
+    rnn_bi_pins(by, sfx)
+
     # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
     grad_fixture_pins(by, sfx)
 
@@ -1982,6 +2348,10 @@ def main() -> None:
 
     # GRADIENTS through the convolution fixtures (plan vs pure-JAX lax.conv models and finite differences): see `conv_grad_pins`.
     conv_grad_pins(by, sfx)
+
+    # GRADIENTS through the recurrent fixtures (backpropagation through time; plan vs unrolled pure-JAX models and finite differences): see
+    # `rnn_grad_pins`.
+    rnn_grad_pins(by, sfx)
 
     # POST-SCAN ROLE: `S[j, l+1] := S[j, l] . G[j]` (closed form `S = X * G**l`) and six statements nothing in
     # the recurrence reads, so each is a plain node AFTER the one scan node and `l` is an ordinary axis in it.
