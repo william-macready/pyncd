@@ -1914,7 +1914,7 @@ def vitProg32 : TLProgram := tlprog!{
 
 /-! ### Recurrent networks over a TIME axis: a GRU, an LSTM and a bidirectional RNN
 
-Every earlier scan fixture scans over the LAYER axis of a transformer (weights stacked over the scan axis, one
+Every earlier transformer scan fixture scans over the LAYER axis (weights stacked over the scan axis, one
 matrix-valued state). Here the scan axis indexes the INPUT SEQUENCE: `X[t, i]` is read at the scan axis, the weights
 are shared across steps, the state is a vector and the update is a gated nonlinear cell. Extents (pairwise distinct):
 `t` = 7 (a history of six steps; row 6 of `X` is the NaN-sentinel spare slot, never read), `i` = 3, `d` = 4, `v` = 5.

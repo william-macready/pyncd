@@ -2005,7 +2005,7 @@ def rnn_grad_pins(by: dict, sfx: str) -> None:
                 dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * d[n]) for n in base))
                 assert abs(dot) > 1e-3, (name, "finite-difference direction is trivial", dot)
                 fd_err = max(fd_err, abs(fd - dot) / max(1.0, abs(dot)))
-            dots.append(dot)
+                dots.append(dot)
         assert fd_err < GRAD_FD_TOL[_DT], (f"gradient pin: {name} directional derivative vs finite differences of the numpy model", fd_err)
         lines.append(f"  {name}: all {len(sin)} float inputs, eager and jit, finite; X row 6 EXACTLY zero gradient (eager, jit and the pure-JAX model), X rows 0..5 and "
                      f"every input non-trivial (smallest per-input max {min(smallest.values()):.3f}); vs pure-JAX unrolled model max scaled {max(err.values()):.3e} "
