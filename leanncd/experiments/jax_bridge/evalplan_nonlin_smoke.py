@@ -56,7 +56,7 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_cross", "transformer_cross32", "transformer_cross_hoisted", "transformer_cross_hoisted32",
                         "transformer_cross_wide", "transformer_cross_wide32",
                         "conv1d_cnn", "conv1d_cnn32", "conv1d_causal", "conv1d_causal32", "vit_patch", "vit_patch32",
-                        "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32"}
+                        "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32", "rnn_stack", "rnn_stack32"}
 # Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
 # layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
 # require that EXACTLY layer 2 is NaN (in Lean, eager and jit alike); every other output must be finite.
@@ -1728,6 +1728,23 @@ def np_birnn(inp: dict, forward_only=False, backward_only=False, no_reverse=Fals
     return {"Hf": np.stack(hfs, axis=1), "Hb": np.stack(hbs, axis=1), "Lg": lg, "Pr": np_softmax_last(lg)}
 
 
+def np_stack(inp: dict, old_state=False, no_recur2=False, no_input2=False, no_recur1=False, swap_out=False) -> dict:
+    """Float64 model of `rnn_stack` from the exported inputs only, explicit loop over the six steps (English definition): n1 = tanh(W1 x_t + U1 h1),
+    n2 = tanh(W2 n1 + U2 h2), h1' = n1, h2' = n2: layer 2 reads layer 1's NEW state n1 of the SAME step. Returns the exports H1, H2 [d, 7]
+    (slot 0 = the initial state). The flags are the wrong models of the non-vacuity gaps."""
+    f = {k: np.asarray(v, dtype=np.float64) for k, v in inp.items()}
+    h1, h2 = f["H10"].copy(), f["H20"].copy()
+    h1s, h2s = [h1], [h2]
+    for t in range(6):
+        n1 = np.tanh(f["W1"] @ f["X"][t] + (0.0 if no_recur1 else f["U1"] @ h1))
+        n2 = np.tanh((0.0 if no_input2 else f["W2"] @ (h1 if old_state else n1)) + (0.0 if no_recur2 else f["U2"] @ h2))
+        h1, h2 = n1, n2
+        h1s.append(h1)
+        h2s.append(h2)
+    out = {"H1": np.stack(h1s, axis=1), "H2": np.stack(h2s, axis=1)}
+    return {"H1": out["H2"], "H2": out["H1"]} if swap_out else out
+
+
 def rnn_value_pins(by: dict, name: str, want: dict, wrong: dict) -> dict:
     """Non-vacuity of the numpy reference against each wrong model (> 1e-2, computed BEFORE the view loop so a data mutant fails here and not on a
     value pin), then every export on the Lean, eager and jit views against `want` at MODEL_TOL (check_np records the observed maxima). Returns the gaps."""
@@ -1742,7 +1759,7 @@ def rnn_value_pins(by: dict, name: str, want: dict, wrong: dict) -> dict:
             pr = outs["Pr"].astype(np.float64)
             assert np.all(pr > 0) and abs(float(pr.sum()) - 1.0) < HEAD_ROWSUM_TOL[_DT], (name, who, "Pr is not a probability vector", pr.tolist())
         for n in sorted(want):  # the first state row is the initial state input, bitwise
-            init = {"H": "H0", "Cc": "C0", "Hf": "Hf0", "Hb": "Hb0"}.get(n)
+            init = {"H": "H0", "Cc": "C0", "Hf": "Hf0", "Hb": "Hb0", "H1": "H10", "H2": "H20"}.get(n)
             if init is not None:
                 assert np.array_equal(bits(outs[n][:, 0]), bits(lean_array(by[name]["inputs"][init]))), (name, who, n, "slot 0 is not the initial state")
     return gaps
@@ -1905,6 +1922,42 @@ def rnn_bi_pins(by: dict, sfx: str) -> None:
     print_conv_stats(name)
 
 
+def rnn_stack_pins(by: dict, sfx: str) -> None:
+    """Pins of `rnn_stack`: a two-layer Elman RNN in ONE scan. Layer 2 reads layer 1's NEW state of the SAME step through the per-step intermediate `N1`
+    (`A2[d] := W2[d, e] · N1[e] + U2[d, f] · H2[f, t]`): a within-step dependency between two states. Reference `np_stack`. Value pins on Lean,
+    eager and jit for H1 and H2 over all seven slots; non-vacuity (layer 2 reads the OLD h1 [the key one], no recurrence in layer 2, no input to layer 2,
+    no recurrence in layer 1, outputs swapped); structure (ONE scan, no post-scan node); the never-read slot. THE WITHIN-STEP DEPENDENCY PIN is the time
+    causality: perturbing X[t] leaves H1 and H2 bitwise unchanged for s <= t and BOTH move at s = t + 1 (H2 moves in the SAME step because it reads
+    N1); a model whose layer 2 read the old H1 would first move H2 at s = t + 2, so the `moves at s == first` assertion rejects it."""
+    name = f"rnn_stack{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    assert sorted(fin) == sorted(["X", "H10", "H20", "W1", "U1", "W2", "U2"]), sorted(fin)
+    rnn_plan_pins(fx, [], ["H1", "H2"])
+    n_t, n_i = fin["X"].shape
+    n_d = fin["H10"].shape[0]
+    ext = {"t": n_t, "i": n_i, "d": n_d}
+    assert len(set(ext.values())) == len(ext) and n_t == fx["plan"]["nodes"][0]["step_count"] + 1, ext
+    assert fin["W1"].shape == (n_d, n_i) and fin["U1"].shape == fin["W2"].shape == fin["U2"].shape == (n_d, n_d) and fin["H20"].shape == (n_d,)
+    want = np_stack(fin)
+    assert want["H1"].shape == want["H2"].shape == (n_d, n_t)
+    assert not np.allclose(want["H1"], want["H2"])
+    wrong = {"layer 2 reads the OLD h1": np_stack(fin, old_state=True), "no recurrence in layer 2 (U2 = 0)": np_stack(fin, no_recur2=True),
+             "no input to layer 2 (W2 = 0)": np_stack(fin, no_input2=True), "no recurrence in layer 1 (U1 = 0)": np_stack(fin, no_recur1=True),
+             "layers' outputs swapped": np_stack(fin, swap_out=True)}
+    gaps = rnn_value_pins(by, name, want, wrong)  # the non-vacuity gaps fire first on a zeroed-matrix data mutant
+    for w in ("W1", "U1", "W2", "U2"):  # generic weights: no zero entry, so a dropped term or a zeroed matrix is visible
+        assert np.all(fin[w] != 0), (name, w, "a weight entry is zero")
+    rnn_spare_slot(name, fx)
+    cz = rnn_causality(name, fx, {"H1": (1, False), "H2": (1, False)})
+    print(f"rnn_stack{sfx}: extents t={n_t}, i={n_i}, d={n_d} pairwise distinct; plan = ONE scan (step_count 6), no post-scan node, exactly H1, H2 exported; "
+          f"every export == numpy explicit-loop two-layer RNN (English definition) on Lean, eager and jit (all {n_t} slots, slot 0 = the initial states); "
+          f"numpy differs from {', '.join(f'{w} by {g:.3f}' for w, g in gaps.items())}; X[6] spare slot: setting it to 0.5 leaves every export bitwise "
+          f"unchanged; WITHIN-STEP dependency: X[t] leaves H1 and H2 bitwise unchanged for s <= t and BOTH move at s = t + 1, H2 in the SAME step "
+          f"({cz})")
+    print_conv_stats(name)
+
+
 def rnn_grad_pins(by: dict, sfx: str) -> None:
     """Gradient pins (backpropagation THROUGH TIME) of the three recurrent fixtures: `jax.grad` of `L = sum(C * out)` through the emitted scan over EVERY float
     input (eager and jit), with `out` = the logits `Lg` for the GRU and the bidirectional RNN (not the softmax: a softmax loss is nearly degenerate) and
@@ -1950,11 +2003,20 @@ def rnn_grad_pins(by: dict, sfx: str) -> None:
             hb = jnp.tanh(i["Wb"] @ i["X"][5 - t] + i["Ub"] @ hb)
         return [i["Wo"] @ hf + i["Wp"] @ hb]
 
+    def stack_hand(i):
+        h1, h2 = i["H10"], i["H20"]
+        for t in range(6):
+            n1 = jnp.tanh(i["W1"] @ i["X"][t] + i["U1"] @ h1)
+            h2 = jnp.tanh(i["W2"] @ n1 + i["U2"] @ h2)  # layer 2 reads the NEW layer-1 state of the same step
+            h1 = n1
+        return [h2]
+
     # name -> (the plan's outputs entering the loss, the pure-JAX model, the numpy model of the SAME outputs)
     specs = {
         f"rnn_gru{sfx}": (lambda r: [r["Lg"]], gru_hand, lambda i: [np_gru(i)[0]["Lg"]]),
         f"rnn_lstm{sfx}": (lambda r: [r["H"][:, 6], r["Yt"]], lstm_hand, lambda i: [np_lstm(i)[0]["H"][:, 6], np_lstm(i)[0]["Yt"]]),
         f"rnn_bi{sfx}": (lambda r: [r["Lg"]], bi_hand, lambda i: [np_birnn(i)["Lg"]]),
+        f"rnn_stack{sfx}": (lambda r: [r["H2"][:, 6]], stack_hand, lambda i: [np_stack(i)["H2"][:, 6]]),  # H2 only: W1, U1, H10 reach the loss THROUGH layer 2
     }
     lines = []
     for name, (take, hand, np_model) in specs.items():
@@ -2336,6 +2398,7 @@ def main() -> None:
     rnn_gru_pins(by, sfx)
     rnn_lstm_pins(by, sfx)
     rnn_bi_pins(by, sfx)
+    rnn_stack_pins(by, sfx)
 
     # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
     grad_fixture_pins(by, sfx)

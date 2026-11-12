@@ -993,7 +993,7 @@ declared-versus-materialised extent mismatch of the brief's trap 3 first); max p
 
 Brief: `papers/semantics/jax_rnn_session_brief.md`. Tests and fixtures only (Direct path): `EvalPlanNonlinSmoke.lean` (programs, data, registrations; NO change to `checkAndRender`) and `evalplan_nonlin_smoke.py` (`np_sigmoid`, `np_gru`, `np_lstm`, `np_birnn`, `rnn_value_pins`, `rnn_gate_ranges`,
 `rnn_plan_pins`, `rnn_spare_slot`, `rnn_causality`, `rnn_gru_pins`, `rnn_lstm_pins`, `rnn_bi_pins`, `rnn_grad_pins`); no emitter, runtime, grammar, checker or manifest change. Differential: **50 binary64 and 42 binary32 fixtures** (47 + 3, 39 + 3), all within tolerance; every earlier pin untouched and green.
-Not done: the stretch (`rnn_stack`, `rnn_gru_long`, brief section 3 item 4; both probed in the brief, about 1 dispatch for the four fixtures plus pins).
+The stretch: `rnn_stack` IS done (section 20.1, 51 binary64 and 43 binary32 fixtures after it); only `rnn_gru_long` (the 16-step GRU, a binary32 headroom measurement, about 0.5 dispatch) remains.
 
 **Why these models.** Every earlier transformer scan fixture scans over the LAYER axis (stacked weights `W[l, ...]`, one matrix-valued state). Here the scan axis indexes the INPUT SEQUENCE: `X[t, i]` is read at the scan axis, the weights are shared across steps, the state is a vector read through a renamed axis, and the update is a gated nonlinear cell.
 
@@ -1039,4 +1039,31 @@ No gradient or runtime mutant was run (not in the brief's list); the gradient pi
 
 **Budget (Rule 6).** Done INLINE in one controller context, not split into the brief's dispatches A to D: measured with `token-report.py` at the end of the mutation runs: 17.4M cumulative input tokens, context peak 245k, 96 turns (above the ~60-turn per-dispatch budget; far below the 175M execution budget). The ten mutant runs (one turn pair each) dominated the turn count.
 
-**Parked.** The stretch (`rnn_stack`, `rnn_gru_long`: about 1 dispatch); the solver-equality probe for pinned reads (`H[d, 6]`) and the reversed read (about 0.3); gradient runtime mutants; the progression of brief section 9.
+**Parked.** The stretch's `rnn_gru_long` (about 0.5 dispatch; `rnn_stack` landed, section 20.1); the solver-equality probe for pinned reads (`H[d, 6]`) and the reversed read (about 0.3); gradient runtime mutants; the progression of brief section 9.
+
+### 20.1 rnn_stack: a two-layer Elman RNN in ONE scan (2026-11-12)
+
+The optional stretch of the brief (section 3 item 4). Tests and fixtures only (Direct path): `rnnStackInputs`/`Env64`/`Env32`/`Prog`/`Prog32` and two registrations in `EvalPlanNonlinSmoke.lean` (plus a paragraph in the section's doc comment), `np_stack`, `rnn_stack_pins` and a `stack_hand` entry of `rnn_grad_pins` in `evalplan_nonlin_smoke.py` (the one touched existing line: the initial-state map of `rnn_value_pins` gained `H1 -> H10`, `H2 -> H20`). No emitter, runtime, grammar, checker or manifest change. Differential: **51 binary64 and 43 binary32 fixtures**, all within tolerance, exit 0.
+
+**Program** (extents `t` = 7, `i` = 3, `d` = 4 pairwise distinct; `X` = `gqaGen 41 18` plus the NaN spare row; seeds 41 to 46 and 51; no biases; the binary32 sibling keeps `iter t = 7` and `tensor H1(d, t), H2(d, t)` only): `A1 := W1 · X[t, i] + U1[d, e] · H1[e, t]`, `N1 := tanh(A1)`, `A2 := W2[d, e] · N1[e] + U2[d, f] · H2[f, t]`, `N2 := tanh(A2)`, `H1[d, t +1] := N1`, `H2[d, t +1] := N2`, plus the two initial-state rows. Plan: ONE scan (step_count 6), no post-scan node, exports `H1`, `H2`; kinds (8, 2, 0). Layer 2 reads layer 1's NEW state `N1` of the SAME step through the per-step intermediate.
+
+**Pins.** `np_stack` (explicit loop over six steps from the exported inputs, English definition: `n1 = tanh(W1 x + U1 h1)`, `n2 = tanh(W2 n1 + U2 h2)`, `h1' = n1`, `h2' = n2`). (1) Value: H1 and H2 over all seven slots on Lean, eager and jit at `MODEL_TOL`, slot 0 = the initial states bitwise. (2) Non-vacuity (binary64 numpy gaps, before the view loop): layer 2 reads the OLD h1 0.570 (the key one), no recurrence in layer 2 0.758, no input to layer 2 0.506, no recurrence in layer 1 0.579, outputs swapped 1.264; W1, U1, W2, U2 have no zero entry. (3) Structure: ONE scan, no post-scan node, exact exports, extents pairwise distinct, spare slot (X[6] = 0.5 leaves both exports bitwise unchanged). (4) **Within-step dependency** (the point of the fixture): `rnn_causality` with `{'H1': (1, False), 'H2': (1, False)}`: perturbing `X[t]` leaves H1 and H2 bitwise unchanged for `s <= t` and BOTH move at `s = t + 1`; H2 moves in the SAME step because it reads `N1`, a model whose layer 2 read the old H1 would first move H2 at `s = t + 2`, so the `moves at s == first` assertion rejects it. Smallest first response 0.150 (both precisions). (5) Gradients: `jax.grad` of `sum(C * H2[:, 6])` over all 7 float inputs, eager and jit, vs an unrolled pure-JAX model (`stack_hand`) and central differences of `np_stack`; X row 6 exactly zero, every X row and every input non-trivial (smallest per-input max 0.029). H2 only, not H1, so `W1`, `U1`, `H10` reach the loss THROUGH layer 2.
+
+**Observed.** Binary64 vs numpy worst scaled 2.2e-16 (headroom 4504x). **Binary32** 1.10e-7 (headroom **9.1x**; H1 1.096e-7, H2 1.084e-7). Gradients vs the pure-JAX model / finite differences: binary64 2.2e-16 (4504x) / 8.2e-11 (1216x); binary32 1.5e-7 (671x) / 3.7e-7 (273x).
+
+**Seed candidates (gradient gate).** The first draw (`U2` seed 47) failed the existing `> 1e-3` non-trivial-gradient assertion for `H20` (max |dgrad| 3.8e-4: through six contractive tanh steps the initial state of layer 2 barely reaches the loss). The threshold was NOT lowered. A numpy finite-difference probe over `U2` seeds 47 to 54 (smallest per-input gradient max): 47: 0.0004, 48: 0.0058, 49: 0.0026, 50: 0.0006, **51: 0.0287**, 52: 0.0158, 53: 0.0008, 54: 0.0041; seed 51 was chosen and passed both precisions on the first run (seeds 48 to 50 and 52 to 54 were probed only, never run through the differential).
+
+**Mutation evidence** (f64 program text or data, whole differential, first failing assertion, restored by the inverse `sed` after the commit; also in the body of the empty commit). 4 run, 4 killed, 0 refused, 0 survived:
+
+| Mutant | First failing assertion |
+|---|---|
+| a. layer 2 reads the OLD layer-1 state (`A2 := W2 · H1[e, t] + ...`; `N1` stays used by the H1 update) | `pin numpy model: rnn_stack lean H2` (0.5695) |
+| b. layer 1 recurs on layer 2 (`U1[d, e] · H2[e, t]`) | `pin numpy model: rnn_stack lean H1` (0.6764) |
+| c. data: `U2` all zeros | non-vacuity gap `no recurrence in layer 2 (U2 = 0)` = 0.0 in `rnn_value_pins`, before the view loop |
+| e. binary32 program, as (a) (the binary64 leg ran green first) | `pin numpy model: rnn_stack32 lean H2` (0.5695) |
+
+**Deviations from the brief.** (i) The brief's mutant (d) (`U2[d, e] · H2[e, t]`, alias `e` for `f`) was skipped as an equivalent mutant (an alias of `d` changes no extent); not run. (ii) Mutant (c) first failed on my genericity assertion (a zero entry of `U2`) before the gap, so the assertion was moved after `rnn_value_pins` and (c) re-run; only the second run is in the table. (iii) The gradient loss is `H2[:, 6]` alone rather than `H2[:, 6]` and `H1[:, 6]`, so the layer-1 gradients exist only through layer 2. (iv) The `U2` seed is 51, not 47 (above). (v) The initial-state map of `rnn_value_pins` gained two entries.
+
+**Budget (Rule 6).** One dispatch, about 60 tool calls by the agent's own count (`token-report.py` not run; no token figure measured); the seed re-pick and the (c) re-run cost two extra differential runs.
+
+**Parked.** `rnn_gru_long` (about 0.5 dispatch).

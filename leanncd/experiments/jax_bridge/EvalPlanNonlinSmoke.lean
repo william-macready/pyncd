@@ -1923,7 +1923,9 @@ are shared across steps, the state is a vector and the update is a gated nonline
 * `rnnLstmProg`: an LSTM with TWO states (`H`, `Cc`) and a readout at EVERY step after the scan (`Yt[t, v]`). The new cell
   state is an intermediate `Cn` read by both updates (a state read at `t +1` on a right-hand side is a parse error).
 * `rnnBiProg`: a bidirectional tanh-RNN in ONE scan: the forward layer reads `X[t, i]`, the backward layer the REVERSED
-  read `X[5 - t, i]`; the two final states feed one softmax head. -/
+  read `X[5 - t, i]`; the two final states feed one softmax head.
+* `rnnStackProg`: a two-layer Elman RNN in ONE scan; layer 2 reads layer 1's NEW state of the SAME step through the
+  per-step intermediate `N1` (`A2[d] := W2[d, e] · N1[e] + U2[d, f] · H2[f, t]`), a within-step dependency between two states. -/
 
 /-- ONE definition per input, shared by the 64 and 32 environments. -/
 def rnnX : Array Float := gqaGen 1.0 18 ++ scanNanSlice (gqaGen 0.0 3)   -- [t = 7, i = 3], row 6 NaN
@@ -2068,6 +2070,39 @@ def rnnBiProg32 : TLProgram := tlprog!{
   Pr[v.]       := softmax(Lg[v])
 }
 
+def rnnStackInputs : List (String × List Nat × Array Float) :=
+  [("X", [7, 3], gqaGen 41.0 18 ++ scanNanSlice (gqaGen 0.0 3)), ("H10", [4], gqaGen 42.0 4), ("H20", [4], gqaGen 43.0 4),
+   ("W1", [4, 3], gqaGen 44.0 12), ("U1", [4, 4], gqaGen 45.0 16),
+   ("W2", [4, 4], gqaGen 46.0 16), ("U2", [4, 4], gqaGen 51.0 16)]
+def rnnStackEnv64 : HashMap String DenseTensor := env64 (rnnStackInputs.map fun (n, s, d) => (n, t64 s d))
+def rnnStackEnv32 : NamedDenseEnv32 := env32 (rnnStackInputs.map fun (n, s, d) => (n, t32 s d))
+
+def rnnStackProg : TLProgram := tlprog!{
+  iter t = 7
+  tensor f64 X(t, i), H10(d), H20(d), W1(d, i), U1(d, e), W2(d, e), U2(d, f)
+  tensor f64 H1(d, t), H2(d, t), A1(d), N1(d), A2(d), N2(d)
+  H1[d, 0]     := H10[d]
+  H2[d, 0]     := H20[d]
+  A1[d]        := W1[d, i] · X[t, i] + U1[d, e] · H1[e, t]
+  N1[d]        := tanh(A1[d])
+  A2[d]        := W2[d, e] · N1[e] + U2[d, f] · H2[f, t]
+  N2[d]        := tanh(A2[d])
+  H1[d, t +1]  := N1[d]
+  H2[d, t +1]  := N2[d]
+}
+def rnnStackProg32 : TLProgram := tlprog!{
+  iter t = 7
+  tensor H1(d, t), H2(d, t)
+  H1[d, 0]     := H10[d]
+  H2[d, 0]     := H20[d]
+  A1[d]        := W1[d, i] · X[t, i] + U1[d, e] · H1[e, t]
+  N1[d]        := tanh(A1[d])
+  A2[d]        := W2[d, e] · N1[e] + U2[d, f] · H2[f, t]
+  N2[d]        := tanh(A2[d])
+  H1[d, t +1]  := N1[d]
+  H2[d, t +1]  := N2[d]
+}
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -2132,6 +2167,7 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "rnn_gru" rnnGruProg rnnGruEnv64 3 1 (some (13, 3, 1)) true (scans := 1),
     ← fixture64 "rnn_lstm" rnnLstmProg rnnLstmEnv64 5 0 (some (17, 5, 0)) true (scans := 1),
     ← fixture64 "rnn_bi" rnnBiProg rnnBiEnv64 2 1 (some (10, 2, 1)) true (scans := 1),
+    ← fixture64 "rnn_stack" rnnStackProg rnnStackEnv64 2 0 (some (8, 2, 0)) true (scans := 1),
     ← fixture64 "scan_postrole" postRoleProg
         (env64 [("X", t64 [2] postRoleX), ("G", t64 [2] postRoleG), ("V", t64 [4] postRoleV), ("M", t64 [4] postRoleM)])
         0 0 none true (scans := 1),
@@ -2202,6 +2238,7 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "rnn_gru32" rnnGruProg32 rnnGruEnv32 3 1 (some (13, 3, 1)) true (scans := 1),
     ← fixture32 "rnn_lstm32" rnnLstmProg32 rnnLstmEnv32 5 0 (some (17, 5, 0)) true (scans := 1),
     ← fixture32 "rnn_bi32" rnnBiProg32 rnnBiEnv32 2 1 (some (10, 2, 1)) true (scans := 1),
+    ← fixture32 "rnn_stack32" rnnStackProg32 rnnStackEnv32 2 0 (some (8, 2, 0)) true (scans := 1),
     ← fixture32 "scan_postrole32" postRoleProg32
         (env32 [("X", t32 [2] postRoleX), ("G", t32 [2] postRoleG), ("V", t32 [4] postRoleV), ("M", t32 [4] postRoleM)])
         0 0 none true (scans := 1),
