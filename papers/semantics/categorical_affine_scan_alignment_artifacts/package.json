@@ -1,0 +1,63 @@
+{
+  "base": "13ee25a38366b2069c970754fa371f06d3f15ff9",
+  "patches": [
+    {
+      "path": "admission.patch",
+      "sha256": "e461cc28aaee476ed25f1d16e25547bb864c81752b1c3392f8c253ef33fbc9ee"
+    },
+    {
+      "path": "component.patch",
+      "sha256": "9c17b727f67d2623d0c116e00257d64fe6173b3c187f5b86cffd349c57ef153f"
+    },
+    {
+      "path": "access.patch",
+      "sha256": "7fc5913d6a6ca699cca51c8e76231acb0e7f1974a6caaeaf39c87626c14d872f"
+    },
+    {
+      "path": "history.patch",
+      "sha256": "95e480c42be537feccbdace1b75f9b4927f1394e5ed64c2de10bb942a284f8f4"
+    },
+    {
+      "path": "interpretation.patch",
+      "sha256": "6dd78ab17b263fbb6c7d3de2de746a9af99c5517905f7d89b6057b2fce89ab42"
+    },
+    {
+      "path": "compiler.patch",
+      "sha256": "d0fce867fe3031a189939f952a3d2169897ba6d9bd3cf5e8f6a69dcb366f87e7"
+    },
+    {
+      "path": "mixed.patch",
+      "sha256": "118dbdc65364e021ba2dda5dc12f814801e48f25eab3b1bfc3875597262c7aed"
+    },
+    {
+      "path": "acceptance.patch",
+      "sha256": "f8714af796b6e5183391767abc7ce373f4473b522f917713a8efab2c010c02d6"
+    },
+    {
+      "path": "documentation.patch",
+      "sha256": "b196d2aa36e339aaffb09950c40b9a4a052a8dcf390a6d3ee207d81b107acfd0"
+    }
+  ],
+  "sources": {
+    "leanncd/experiments/indexed_execution/IndexedAffineScanRead.lean": "86378922ba439b1c8e9bd1f9682e42153eecb1c27f3f17447f23850712c326d4",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanProfile.lean": "d6aa3e51762696eb9bf034bf64314966998ff424d78abcea799678ca182566f8",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanPrototypeTest.lean": "c810e045d0841783bcb5aeae3ee9d474730d6e3d38559d4ed19fc410967c37ac",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanConstruction.lean": "a8d2a7ae3387ce71b690c568cf72da2d3ba2d193f0e33171f4c7411ef83cdf9e",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanMatch.lean": "dcf0153e71a545f680d5d65bbdd94ebc49d6a66fac643c65fda2b9ad0cb2370a",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanRank.lean": "2d7bbc9d7e12eb6b307528bc064d5d14ab6037cffb89a58218a76b03ccdf5376",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanAccessAgreement.lean": "ffbd4017f5afbe24058231dddabd8c0bca2ece5750519ad4cd997bd724a86a84",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanHistory.lean": "aca29f68c728042c4beee374143087457c1ffc35d71a84a48a37660ea7e56e84",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanInterpretation.lean": "7490efd49a2410e5161fd1ccbfc62fac71c03aa7217846365994b563725f2340",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanHistoryTest.lean": "e86d4f8e98d8beb48af6e150a835f36e434313bf283f4fdee5d285f271091f1e",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanSemantics.lean": "ed3e04d222b89161ee216ad8af589588dbbf68aa4471938a22af0f0a0bababc6",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanCompilerExamples.lean": "058192e1fd5db181a9ca24a13b3504e3ed74973dff62ebf8613ddf1fc02f01f3",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanCompilerCertificates.lean": "ea193421ef71eb0cd26c250a264a2c4f8fa51202dfa58d5a8ab07cc62b3bd646",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanMixedCompilerCertificate.lean": "006819561d1dd2993a383dbb739c5aedba548f270c8d35f8b9d7b9e53cfdcaaa",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanHistoryCompilerTest.lean": "516970304162f9609436f43dd5046c5ee3579afb5d36599ca417e9dd66591b55",
+    "leanncd/experiments/indexed_execution/IndexedAffineScanNamespaceAudit.lean": "77bce036353935b529265166cb58bf614befa1d7d348060426ea8d547cb62cde",
+    "leanncd/AGENTS.md": "eaea77f87997be96c93109c3dfb84e25de2560161fd6d49da9cb713a404057cf",
+    "papers/semantics/categorical_tensor_logic_semantics.md": "8ebf6d13c07cb05d1c2a711c4e8d61baae3caa1353bce2d9bfedc5c1b0718c03",
+    "leanncd/lakefile.toml": "f6ff4103f8225c644f3e138c5e8539ce1f3f9a0751e0f8fca86e96e752230a8f"
+  },
+  "ordered_private_index_replay": "PASS"
+}
