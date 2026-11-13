@@ -13,7 +13,9 @@ open History
 
 variable (p : Profile d n)
 
-/-- Actual default checked and reference runs complete with the entire rational table solution. -/
+/-- Actual default checked and reference runs complete with the entire rational table solution.
+These are the exact-rational semantic executors, not the Float scan backend: no `runDenseScan`
+correctness is claimed. -/
 theorem default_full_history (η : (program p).Input) :
     ∃ (g : State (declarations p)) (c : (program p).Running)
         (finished : (program p).Complete c),
@@ -105,6 +107,8 @@ theorem witness_source_comparison :
   (IndexedRankedWitnessDescent.source_denote (normal p)).symm.trans
     (IndexedRankedWitnessSource.normalize_denote (sourceTerm p))
 
+/-- The complete-witness comparison arrow is the quotient of the constructed component's span, so it
+retains the whole history. Exact-rational meaning only; no Float `runDenseScan` claim. -/
 theorem categorical_whole_history :
     witnessArrow p = (Quotient.mk _ (componentSpan (component p)) :
       inputInterface (component p) ⟶ outputInterface (component p)) :=

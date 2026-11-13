@@ -433,6 +433,9 @@ theorem recurrence_unique (η : (program p).Input) (ρ : FullStore p)
   IndexedRankedWitnessBridge.ranked_atMostOne (component p) (rankCertificate p)
     η ρ (wholeStore p η) ((models_iff_recurrence p η ρ).mpr h) (wholeStore_model p η)
 
+/-- Every validated rational input has exactly one complete history satisfying the actual-table
+recurrence at every materialized coordinate. This is an exact-rational semantic statement over the
+plan tables; it makes no claim about Float `runDenseScan`. -/
 theorem exists_unique_whole_history (η : (program p).Input) :
     ∃! ρ : FullStore p, Recurrence p η ρ :=
   ⟨wholeStore p η, wholeStore_recurrence p η, fun ρ h => recurrence_unique p η ρ h⟩

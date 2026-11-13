@@ -81,6 +81,9 @@ def certifiedExamples : List (Σ d : Nat, Σ n : Nat, CompiledExample d n) :=
 
 theorem certified_examples_count : certifiedExamples.length = 9 := rfl
 
+/-- For each of the nine closed compiler donors: a unique whole-history model, the categorical
+comparison arrow, and both default executions with their full stores. Exact-rational semantic
+interpretation of the returned plan tables only; no Float `runDenseScan` claim. -/
 theorem certified_examples_full_meaning (e : CompiledExample d n)
     (_certified : ⟨d, n, e⟩ ∈ certifiedExamples) (η : (program e.profile).Input) :
     (∃! ρ : FullStore e.profile, Recurrence e.profile η ρ) ∧
@@ -174,7 +177,25 @@ def checkNegativeControls : IO Unit := do
     throw (IO.userError "zero-valued state factors erased an unavailable external demand")
   unless missingStepValue e.profile 3 2 == some 0 do
     throw (IO.userError "all-padded actual factors were confused with unavailable reads")
-  IO.println "rational whole-history wrong-table, order/multiplicity and strict-padding controls passed"
+  -- The unchanged checker admits a plan whose step state capture is retargeted to the history's
+  -- own outer slot as an external capture; the profile must refuse it explicitly rather than model
+  -- the scan's own output as a free external input.
+  let shiftE ← match shiftExample with
+    | .ok e => pure e
+    | .error message => throw (IO.userError message)
+  let dest := (shiftE.raw.states.getD 0 default).destSlot
+  let aliased := { shiftE.raw with stepCaptures := shiftE.raw.stepCaptures.map fun c =>
+    match c.source with
+    | .state _ => { c with source := .external dest }
+    | _ => c }
+  let sigs := shiftE.prepared.plan.raw.tensorSigs
+  unless (checkScanPlan sigs aliased).isOk do
+    throw (IO.userError "alias control setup: the checker no longer admits the aliasing plan")
+  match certifyProfile sigs aliased 4 3 with
+  | .error .unsupported => pure ()
+  | .error other => throw (IO.userError s!"alias control: expected unsupported, got {repr other}")
+  | .ok _ => throw (IO.userError "alias control: step capture of the history's own slot was admitted")
+  IO.println "rational whole-history wrong-table, order/multiplicity, strict-padding and history-slot alias controls passed"
 
 end IndexedExecutionExperiment.AffineScan.CompilerHistoryTest
 

@@ -19,9 +19,12 @@ def allCaptures (c : CheckedScanPlan) : List BlockCapture :=
 def externalCapture (c : CheckedScanPlan) (slot : Nat) : Bool :=
   (allCaptures c).any (fun cap => decide (cap.source = .external slot))
 
+/-- Every external capture, base or step, names an existing outer slot other than the history's
+    own: reading the scan's own output is a state capture, never a free external input. -/
 def capturesBounded (c : CheckedScanPlan) : Bool :=
   (allCaptures c).all (fun cap => match cap.source with
-    | .external slot => decide (slot < c.sigs.size)
+    | .external slot => decide (slot < c.sigs.size) &&
+        slot != (c.raw.states.getD 0 default).destSlot
     | .state _ => true)
 
 def stateRowsOk (t : TermPlan) (r : ReadPlan) : Bool :=

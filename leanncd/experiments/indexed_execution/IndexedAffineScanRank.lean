@@ -8,13 +8,25 @@ open LeanNCD.Semantics LeanNCD.Eval.Plan
 
 variable (p : Profile d n)
 
-theorem Profile.external_bound (cap : BlockCapture) (hcap : cap ∈ allCaptures p.checked)
-    (slot : Nat) (hs : cap.source = .external slot) : slot < p.checked.sigs.size := by
+theorem Profile.external_capture_checks (cap : BlockCapture) (hcap : cap ∈ allCaptures p.checked)
+    (slot : Nat) (hs : cap.source = .external slot) :
+    slot < p.checked.sigs.size ∧ slot ≠ (p.checked.raw.states.getD 0 default).destSlot := by
   have h := p.fields
   simp only [profileOk, Bool.and_eq_true] at h
   have bounded : capturesBounded p.checked = true := by tauto
   have hb := List.all_eq_true.mp bounded cap hcap
-  simpa only [hs, decide_eq_true_eq] using hb
+  simpa only [hs, Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq] using hb
+
+theorem Profile.external_bound (cap : BlockCapture) (hcap : cap ∈ allCaptures p.checked)
+    (slot : Nat) (hs : cap.source = .external slot) : slot < p.checked.sigs.size :=
+  (p.external_capture_checks cap hcap slot hs).1
+
+/-- No external input port aliases the history's own outer slot, so every external tensor of the
+    constructed program is a supplied input distinct from the scan's output. -/
+theorem Profile.external_not_history (cap : BlockCapture) (hcap : cap ∈ allCaptures p.checked)
+    (slot : Nat) (hs : cap.source = .external slot) :
+    slot ≠ (p.checked.raw.states.getD 0 default).destSlot :=
+  (p.external_capture_checks cap hcap slot hs).2
 
 theorem outerSlot_selected (i : Fin (externalSlots p).length) :
     externalCapture p.checked (outerSlot p i).val = true :=

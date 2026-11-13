@@ -9,7 +9,7 @@ history, an identity-assignment base, complete successor writes, and real
 sum/product reads with f64 storage metadata. It constructs affine admission,
 ordered padded footprints, the matched ranked component, and exact rational
 whole-history/model/default-execution/categorical interpretations. Actual
-external-capture slots and empty-port metadata are retained. The scan checker,
+external-capture slots (never the history's own slot) and zero-extent history-port metadata are retained. The scan checker,
 default source admission and administrative wires are unchanged. This is not
 Float `runDenseScan` correctness, arbitrary scan reindexing or padded-gather
 fusion. Compiler-example certificates remain separate from this public import.

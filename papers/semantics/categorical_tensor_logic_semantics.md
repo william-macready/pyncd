@@ -1688,7 +1688,11 @@ constant zero with no nonexistent dependency. Actual factor and term order,
 repeated addresses and multiplicity are retained. An in-bounds state read at
 $t-k$, for $k\geq0$, precedes the destination at $t+1$ regardless of its spatial
 transformation. Actual external-capture slots have a separate, explicit
-signature interpretation; fresh semantic identities do not recover source UIDs.
+signature interpretation, and the profile refuses a capture that aliases the
+history's own outer slot (`Profile.external_not_history`); fresh semantic
+identities do not recover source UIDs. The compiler donors all use the
+context-first term ordering; the profile also admits the output-first ordering,
+which no compiler fixture witnesses.
 
 `close_ok`, `sourceMatch` and `rankCertificate` construct the graph, priority
 match and full dependency rank for arbitrary certified extents, including zero
@@ -1698,7 +1702,7 @@ the same actual-table rational recurrence. Existence uses total sum/product
 evaluation as well as causality, not rank alone. `default_full_history` connects
 both actual default semantic runners and their full stores; the constructed
 operational/source arrows and complete-witness comparison retain that whole
-history and empty output-port metadata.
+history and its zero-extent output-port metadata.
 
 This bridge does not change general source admission, the scan checker or
 administrative `Domain` wires. It proves neither Float `runDenseScan`
