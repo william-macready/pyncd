@@ -1,0 +1,396 @@
+import IndexedAffineScanRead
+import IndexedAffineScanConstruction
+import LeanNCD.Semantics.RationalReference
+import Semantics.AxiomAudit
+
+namespace IndexedExecutionExperiment.AffineScan.AccessAgreement
+
+open LeanNCD.Semantics LeanNCD.Eval.Plan
+
+theorem decodeRaw_bounds (sh : Shape) (coords : List Int)
+    (rank : coords.length = sh.length) :
+    (∃ q, decodeRaw sh (fun i => coords.getD i.val 0) = some q) ↔
+      inBoundsPerDim (sh.map Axis.extent) coords = true := by
+  induction sh generalizing coords with
+  | nil =>
+      have : coords = [] := List.length_eq_zero_iff.mp rank
+      subst coords
+      simp [decodeRaw, inBoundsPerDim]
+  | cons a sh ih =>
+      cases coords with
+      | nil => simp at rank
+      | cons z zs =>
+          have tail : zs.length = sh.length := by simpa using rank
+          simp only [List.map_cons, inBoundsPerDim, List.zip_cons_cons, List.all_cons,
+            Bool.and_eq_true, decide_eq_true_eq]
+          simp only [decodeRaw, Fin.val_zero, Fin.val_succ, List.getD_cons_zero,
+            List.getD_cons_succ]
+          by_cases bound : 0 ≤ z ∧ z < (a.extent : Int)
+          · simp only [dif_pos bound, Option.map_eq_some_iff]
+            constructor
+            · rintro ⟨q, p, hp, hq⟩
+              exact ⟨bound, (ih zs tail).mp ⟨p, hp⟩⟩
+            · rintro ⟨_, hp⟩
+              rcases (ih zs tail).mpr hp with ⟨p, hp⟩
+              exact ⟨_, p, hp, rfl⟩
+          · simp [bound]
+
+theorem table_bounds (table : ReadTable sh width) (basisValues : List Int) :
+    (∃ q, decodeRaw sh (table.raw basisValues) = some q) ↔
+      inBoundsPerDim table.read.sourceShape.toList (applyAffine table.read.map basisValues) = true := by
+  rw [table.shape_eq]
+  exact decodeRaw_bounds sh _ (table.rank basisValues)
+
+theorem table_padded_iff (table : ReadTable sh width) (basisValues : List Int) :
+    decodeRaw sh (table.raw basisValues) = none ↔
+      inBoundsPerDim table.read.sourceShape.toList (applyAffine table.read.map basisValues) = false := by
+  have h := table_bounds table basisValues
+  cases hd : decodeRaw sh (table.raw basisValues) <;>
+    cases hb : inBoundsPerDim table.read.sourceShape.toList (applyAffine table.read.map basisValues) <;>
+    simp_all
+
+theorem table_width (table : ReadTable sh width) (basisValues : List Int)
+    (basis : basisValues.length = width) (row : Array Int) (mem : row ∈ table.read.map.coeffs) :
+    row.toList.length = basisValues.length ∧ (row.toList.zip basisValues).length = width := by
+  have size := table.widths row mem
+  simp [size, basis]
+
+theorem table_coordinate (table : ReadTable sh width) (basisValues : List Int)
+    (i : Fin sh.length) :
+    table.raw basisValues i =
+      ((table.read.map.coeffs[i.val]'(by rw [table.coeff_rank]; exact i.isLt)).toList.zip
+        basisValues).foldl (fun acc (c, x) => acc + c * x)
+        (table.read.map.bias[i.val]'(by rw [table.bias_rank]; exact i.isLt)) := by
+  have rank : i.val < (applyAffine table.read.map basisValues).length := by
+    rw [table.rank]
+    exact i.isLt
+  unfold ReadTable.raw
+  rw [List.getD_eq_getElem _ _ rank]
+  simp only [applyAffine, List.getElem_map, List.getElem_zip, Array.getElem_toList]
+
+theorem table_raw_list (table : ReadTable sh width) (basisValues : List Int) :
+    List.ofFn (table.raw basisValues) = applyAffine table.read.map basisValues := by
+  apply List.ext_getElem
+  · simp [table.rank]
+  · intro i hi hj
+    simp only [List.getElem_ofFn, ReadTable.raw]
+    exact List.getD_eq_getElem _ _ hj
+
+theorem table_source_coordinate (table : ReadTable sh width) (basisValues : List Int)
+    (q : Coord sh) (inside : decodeRaw sh (table.raw basisValues) = some q)
+    (i : Fin sh.length) :
+    Coord.raw q i = (applyAffine table.read.map basisValues).getD i.val 0 := by
+  exact congrFun (decodeRaw_sound sh _ q inside) i
+
+theorem table_source_inBounds (table : ReadTable sh width) (basisValues : List Int)
+    (q : Coord sh) (inside : decodeRaw sh (table.raw basisValues) = some q) :
+    inBoundsPerDim table.read.sourceShape.toList
+      (applyAffine table.read.map basisValues) = true :=
+  (table_bounds table basisValues).mp ⟨q, inside⟩
+
+theorem table_source_coordinates (table : ReadTable sh width) (basisValues : List Int)
+    (q : Coord sh) (inside : decodeRaw sh (table.raw basisValues) = some q) :
+    List.ofFn (Coord.raw q) = applyAffine table.read.map basisValues := by
+  rw [decodeRaw_sound sh _ q inside]
+  exact table_raw_list table basisValues
+
+theorem table_source_flatIndex (table : ReadTable sh width) (basisValues : List Int)
+    (q : Coord sh) (inside : decodeRaw sh (table.raw basisValues) = some q) :
+    flatIndex table.read.sourceShape.toList ((List.ofFn (Coord.raw q)).map Int.toNat) =
+      flatIndex table.read.sourceShape.toList
+        ((applyAffine table.read.map basisValues).map Int.toNat) := by
+  rw [table_source_coordinates table basisValues q inside]
+
+variable {V Γ : Type} {σ : Declarations Unit} {r : Registry (fun _ : Unit => V)}
+
+theorem read_inBounds (t : σ.Tensor)
+    (table : ReadTable (σ.signature t).axes width) (zero : V)
+    (basis : Γ → List Int) (γ : Γ)
+    (q : Coord (σ.signature t).axes)
+    (inside : decodeRaw _ (table.raw (basis γ)) = some q) :
+    footprint (Expr.read (r := r) t (table.admitted zero basis)) γ = [⟨t, q⟩] := by
+  simp [footprint, table.inBounds zero basis γ q inside]
+
+theorem eval_inBounds (t : σ.Tensor)
+    (table : ReadTable (σ.signature t).axes width) (zero : V)
+    (basis : Γ → List Int) (γ : Γ)
+    (q : Coord (σ.signature t).axes)
+    (inside : decodeRaw _ (table.raw (basis γ)) = some q)
+    (ops : (s : Unit) → ScalarOps V) (store : PartialStore (fun _ : Unit => V) σ) :
+    evalWith ops store (Expr.read (r := r) t (table.admitted zero basis)) γ = store ⟨t, q⟩ := by
+  simp [evalWith, table.inBounds zero basis γ q inside]
+
+theorem read_padded (t : σ.Tensor)
+    (table : ReadTable (σ.signature t).axes width) (zero : V)
+    (basis : Γ → List Int) (γ : Γ)
+    (outside : inBoundsPerDim table.read.sourceShape.toList
+      (applyAffine table.read.map (basis γ)) = false) :
+    footprint (Expr.read (r := r) t (table.admitted zero basis)) γ = [] := by
+  have padded := (table_padded_iff table (basis γ)).mpr outside
+  simp [footprint, table.padded zero basis γ padded]
+
+theorem eval_padded (t : σ.Tensor)
+    (table : ReadTable (σ.signature t).axes width) (zero : V)
+    (basis : Γ → List Int) (γ : Γ)
+    (outside : inBoundsPerDim table.read.sourceShape.toList
+      (applyAffine table.read.map (basis γ)) = false)
+    (ops : (s : Unit) → ScalarOps V) (store : PartialStore (fun _ : Unit => V) σ) :
+    evalWith ops store (Expr.read (r := r) t (table.admitted zero basis)) γ = some zero := by
+  have padded := (table_padded_iff table (basis γ)).mpr outside
+  simp [evalWith, table.padded zero basis γ padded]
+
+def readProduct (zero one : V) (basis : Γ → List Int) :
+    List ((t : σ.Tensor) × ReadTable (σ.signature t).axes width) →
+      Expr (fun _ : Unit => V) σ r Γ (.scalar ())
+  | [] => .lit one
+  | ⟨t, table⟩ :: tables =>
+      .binary .mul (.read t (table.admitted zero basis)) (readProduct zero one basis tables)
+
+def tableFootprint (basisValues : List Int)
+    (entry : (t : σ.Tensor) × ReadTable (σ.signature t).axes width) : List (Address σ) :=
+  match decodeRaw _ (entry.2.raw basisValues) with
+  | some q => [⟨entry.1, q⟩]
+  | none => []
+
+theorem read_footprint (t : σ.Tensor)
+    (table : ReadTable (σ.signature t).axes width) (zero : V)
+    (basis : Γ → List Int) (γ : Γ) :
+    footprint (Expr.read (r := r) t (table.admitted zero basis)) γ =
+      tableFootprint (basis γ) ⟨t, table⟩ := by
+  cases hd : decodeRaw _ (table.raw (basis γ)) <;>
+    simp [footprint, ReadTable.admitted, paddedResolve, tableFootprint, hd]
+
+theorem readProduct_footprint (zero one : V) (basis : Γ → List Int) (γ : Γ)
+    (tables : List ((t : σ.Tensor) × ReadTable (σ.signature t).axes width)) :
+    footprint (readProduct (r := r) zero one basis tables) γ =
+      tables.flatMap (tableFootprint (basis γ)) := by
+  induction tables with
+  | nil => rfl
+  | cons entry tables ih =>
+      rcases entry with ⟨t, table⟩
+      change footprint (Expr.read (r := r) t (table.admitted zero basis)) γ ++
+        footprint (readProduct zero one basis tables) γ =
+        tableFootprint (basis γ) ⟨t, table⟩ ++ tables.flatMap (tableFootprint (basis γ))
+      rw [ih]
+      rw [read_footprint]
+
+theorem readProduct_footprint_append (zero one : V) (basis : Γ → List Int) (γ : Γ)
+    (left right : List ((t : σ.Tensor) × ReadTable (σ.signature t).axes width)) :
+    footprint (readProduct (r := r) zero one basis (left ++ right)) γ =
+      footprint (readProduct (r := r) zero one basis left) γ ++
+        footprint (readProduct (r := r) zero one basis right) γ := by
+  simp only [readProduct_footprint, List.flatMap_append]
+
+theorem actualAccess_eq_admitted (p : Profile d n) (captures : Array BlockCapture)
+    (read : ReadPlan) (basis : Γ → List Int)
+    (table : ReadTable ((declarations p).signature (readTensor p captures read)).axes width)
+    (same : table.read = read) :
+    actualAccess p captures read basis = table.admitted (0 : ℚ) basis := by
+  have raw : ∀ values, table.raw values =
+      fun pos => (applyAffine read.map values).getD pos.val 0 := by
+    intro values
+    funext pos
+    change (applyAffine table.read.map values).getD pos.val 0 = _
+    rw [same]
+  simp only [ReadTable.admitted, raw]
+  rfl
+
+theorem factorBody_read_footprint (p : Profile d n) (captures : Array BlockCapture)
+    (read : ReadPlan) (basis : Γ → List Int) (γ : Γ)
+    (table : ReadTable ((declarations p).signature (readTensor p captures read)).axes width)
+    (same : table.read = read) :
+    footprint (factorBody p captures basis (.read read)) γ =
+      tableFootprint (basis γ) ⟨readTensor p captures read, table⟩ := by
+  change footprint (Expr.read (σ := declarations p) (r := RationalReference.registry)
+    (readTensor p captures read) (actualAccess p captures read basis)) γ = _
+  rw [actualAccess_eq_admitted p captures read basis table same]
+  exact read_footprint _ table 0 basis γ
+
+theorem factorBody_read_inBounds (p : Profile d n) (captures : Array BlockCapture)
+    (read : ReadPlan) (basis : Γ → List Int) (γ : Γ)
+    (table : ReadTable ((declarations p).signature (readTensor p captures read)).axes width)
+    (same : table.read = read)
+    (q : Coord ((declarations p).signature (readTensor p captures read)).axes)
+    (inside : decodeRaw _ (table.raw (basis γ)) = some q) :
+    footprint (factorBody p captures basis (.read read)) γ =
+      [⟨readTensor p captures read, q⟩] ∧
+    List.ofFn (Coord.raw q) = applyAffine read.map (basis γ) := by
+  constructor
+  · change footprint (Expr.read (σ := declarations p) (r := RationalReference.registry)
+      (readTensor p captures read) (actualAccess p captures read basis)) γ = _
+    rw [actualAccess_eq_admitted p captures read basis table same]
+    exact read_inBounds _ table 0 basis γ q inside
+  · simpa only [same] using table_source_coordinates table (basis γ) q inside
+
+theorem factorBody_read_padded (p : Profile d n) (captures : Array BlockCapture)
+    (read : ReadPlan) (basis : Γ → List Int) (γ : Γ)
+    (table : ReadTable ((declarations p).signature (readTensor p captures read)).axes width)
+    (same : table.read = read)
+    (outside : inBoundsPerDim read.sourceShape.toList (applyAffine read.map (basis γ)) = false)
+    (store : PartialStore RationalReference.Carrier (declarations p)) :
+    footprint (factorBody p captures basis (.read read)) γ = [] ∧
+    evalWith RationalReference.ops store (factorBody p captures basis (.read read)) γ =
+      some 0 := by
+  have outside' : inBoundsPerDim table.read.sourceShape.toList
+      (applyAffine table.read.map (basis γ)) = false := by simpa [same] using outside
+  constructor
+  · change footprint (Expr.read (σ := declarations p) (r := RationalReference.registry)
+      (readTensor p captures read) (actualAccess p captures read basis)) γ = _
+    rw [actualAccess_eq_admitted p captures read basis table same]
+    exact read_padded _ table 0 basis γ outside'
+  · change evalWith RationalReference.ops store
+      (Expr.read (σ := declarations p) (r := RationalReference.registry)
+        (readTensor p captures read) (actualAccess p captures read basis)) γ = _
+    rw [actualAccess_eq_admitted p captures read basis table same]
+    exact eval_padded _ table 0 basis γ outside' RationalReference.ops store
+
+theorem actual_orderedProduct_footprint (p : Profile d n) (captures : Array BlockCapture)
+    (reads : List ReadPlan) (basis : Γ → List Int) (γ : Γ) :
+    footprint (orderedProduct p captures basis (reads.map FactorPlan.read)) γ =
+      reads.flatMap (fun read =>
+        match decodeRaw ((declarations p).signature (readTensor p captures read)).axes
+            (fun pos => (applyAffine read.map (basis γ)).getD pos.val 0) with
+        | some q => [⟨readTensor p captures read, q⟩]
+        | none => []) := by
+  induction reads with
+  | nil => rfl
+  | cons read reads ih =>
+      change footprint (factorBody p captures basis (.read read)) γ ++
+        footprint (orderedProduct p captures basis (reads.map FactorPlan.read)) γ = _
+      rw [ih]
+      simp only [List.flatMap_cons, factorBody, footprint, actualAccess, tensorAccess, paddedResolve]
+      cases decodeRaw ((declarations p).signature (readTensor p captures read)).axes
+        (fun pos => (applyAffine read.map (basis γ)).getD pos.val 0) <;> rfl
+
+namespace FiniteControls
+
+def plane : Shape := [⟨10, 2⟩, ⟨11, 3⟩]
+
+def aliasTable : ReadTable plane 2 where
+  read := { sourceSlot := 0, sourceShape := #[2, 3], oobPolicy := .zeroPad, map := { coeffs := #[#[1, 0], #[0, 1]], «bias» := #[0, 3] } }
+  shape_eq := rfl
+  coeff_rank := rfl
+  bias_rank := rfl
+  widths := by
+    intro row mem
+    simp [Array.mem_def] at mem
+    rcases mem with rfl | rfl <;> rfl
+  unary_none := rfl
+  no_bool_cast := rfl
+  no_real_cast := rfl
+
+def aliasRaw : List Int := applyAffine aliasTable.read.map [0, 0]
+
+/-- Live-proof control: flattening first loses the second dimension's upper bound. -/
+theorem alias_flat_valid_but_coordinate_invalid :
+    aliasRaw = [0, 3] ∧
+    flatIndex [2, 3] (aliasRaw.map Int.toNat) = flatIndex [2, 3] [1, 0] ∧
+    flatIndex [2, 3] (aliasRaw.map Int.toNat) < 6 ∧
+    inBoundsPerDim [2, 3] aliasRaw = false := by decide +kernel
+
+theorem alias_is_padded : decodeRaw plane (aliasTable.raw [0, 0]) = none := by
+  apply (table_padded_iff aliasTable [0, 0]).mpr
+  exact alias_flat_valid_but_coordinate_invalid.2.2.2
+
+/-- Live-proof control: the zip-based bounds predicate alone accepts a rank-short list. -/
+theorem rank_hypothesis_is_essential :
+    inBoundsPerDim [2, 0] [0] = true ∧
+      decodeRaw [⟨10, 2⟩, ⟨11, 0⟩]
+        (fun i => ([0] : List Int).getD i.val 0) = none := by decide +kernel
+
+def vector : Shape := [⟨20, 3⟩]
+
+def vectorDecls : Declarations Unit where
+  Tensor := Unit
+  uid := fun _ => 30
+  unique := by intro a b _; exact Subsingleton.elim a b
+  signature := fun _ => ⟨(), vector⟩
+
+def shiftTable (offset : Int) : ReadTable vector 1 where
+  read := { sourceSlot := 0, sourceShape := #[3], oobPolicy := .zeroPad, map := { coeffs := #[#[1]], «bias» := #[offset] } }
+  shape_eq := rfl
+  coeff_rank := rfl
+  bias_rank := rfl
+  widths := by
+    intro row mem
+    simp only [Array.mem_def, List.mem_singleton] at mem
+    subst row
+    rfl
+  unary_none := rfl
+  no_bool_cast := rfl
+  no_real_cast := rfl
+
+def shiftExpr (offset : Int) :
+    Expr RationalReference.Carrier vectorDecls RationalReference.registry
+      (Coord vector) (.scalar ()) :=
+  .read () ((shiftTable offset).admitted 0 (fun q => List.ofFn (Coord.raw q)))
+
+def initial : PartialStore RationalReference.Carrier vectorDecls :=
+  fun a => some ((a.2.1.val : ℚ) + 5)
+
+def shifted : PartialStore RationalReference.Carrier vectorDecls :=
+  fun a => evalWith RationalReference.ops initial (shiftExpr 1) a.2
+
+def first : Coord vector := (⟨0, by decide⟩, ())
+def middle : Coord vector := (⟨1, by decide⟩, ())
+def last : Coord vector := (⟨2, by decide⟩, ())
+
+def sequential (q : Coord vector) : Option ℚ :=
+  evalWith RationalReference.ops shifted (shiftExpr (-1)) q
+
+def composite (q : Coord vector) : Option ℚ :=
+  evalWith RationalReference.ops initial (shiftExpr 0) q
+
+theorem raw_shift_inverse_is_identity (z : Int) :
+    applyAffine (shiftTable 1).read.map
+      (applyAffine (shiftTable (-1)).read.map [z]) =
+        applyAffine (shiftTable 0).read.map [z] := by
+  simp [shiftTable, applyAffine]
+
+/-- Live-proof control: finite padding is not raw integer-affine composition. -/
+theorem finite_shift_inverse_not_identity :
+    sequential first = some 0 ∧ composite first = some 5 ∧
+      sequential first ≠ composite first := by decide +kernel
+
+theorem finite_shift_inverse_interior :
+    sequential middle = composite middle ∧ sequential last = composite last := by decide +kernel
+
+def readOrder : List ((t : vectorDecls.Tensor) × ReadTable (vectorDecls.signature t).axes 1) :=
+  [⟨(), shiftTable 0⟩, ⟨(), shiftTable (-1)⟩, ⟨(), shiftTable 0⟩, ⟨(), shiftTable 1⟩]
+
+def orderedReads :
+    Expr RationalReference.Carrier vectorDecls RationalReference.registry Unit (.scalar ()) :=
+  readProduct 0 1 (fun _ => [0]) readOrder
+
+def orderedCoordinates : List (List Int) :=
+  (footprint orderedReads ()).map (fun a => List.ofFn (Coord.raw a.2))
+
+/-- Live-proof control: the padded occurrence vanishes, but repeated actual reads do not. -/
+theorem ordered_multiplicity : orderedCoordinates = [[0], [0], [1]] := by decide +kernel
+
+theorem padding_is_not_unavailable :
+    evalWith RationalReference.ops (fun _ => none) (shiftExpr (-1)) first = some 0 ∧
+      evalWith RationalReference.ops (fun _ => none) (shiftExpr 0) first = none := by decide +kernel
+
+-- Executable assertions are separate from the kernel-checked live-proof controls above.
+run_cmd
+  let raw := aliasRaw
+  let offset := flatIndex [2, 3] (raw.map Int.toNat)
+  unless raw == [0, 3] && offset == 3 && inBoundsPerDim [2, 3] raw == false do
+    throwError "invalid-coordinate alias fixture changed"
+  Lean.logInfo m!"alias: raw={raw}, flat={offset}, perDim=false"
+  let sequentialValues := [first, middle, last].map sequential
+  let compositeValues := [first, middle, last].map composite
+  unless sequentialValues == [some 0, some 6, some 7] &&
+      compositeValues == [some 5, some 6, some 7] do
+    throwError "finite zero-padded shift/inverse fixture changed"
+  Lean.logInfo m!"finite shift/inverse={sequentialValues}, raw identity={compositeValues}"
+  unless orderedCoordinates == [[0], [0], [1]] do
+    throwError "ordered read multiplicity fixture changed"
+  Lean.logInfo m!"ordered footprint coordinates={orderedCoordinates}"
+
+end FiniteControls
+
+end IndexedExecutionExperiment.AffineScan.AccessAgreement
+
+#audit_axioms IndexedExecutionExperiment.AffineScan.AccessAgreement
