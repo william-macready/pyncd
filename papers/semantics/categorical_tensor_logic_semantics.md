@@ -1669,6 +1669,43 @@ hidden-witness case discriminate the acceptance goals. Some triple/cut rows
 are observations rather than separately pinned assertions; the generic theorems
 are not inferred from those rows. Appendix A.13 explains the proof.
 
+### 6.15. Certified single-clock affine reads and whole histories
+
+The nondefault entry point
+[`IndexedAffineScanSemantics`](../../leanncd/experiments/indexed_execution/IndexedAffineScanSemantics.lean)
+connects actual checked scan tables to the ranked semantic component.
+`AffineScan.Profile` retains checker-origin evidence and direct structural
+certificates rather than assuming a source match or execution agreement.
+Its bounded profile has one history $H[i,t]$, an identity-assignment base
+$H[i,0]=Z[i]$, canonical complete successor writes, and real sum/product
+expressions without contractions, masks, casts or partial primitives.
+Storage metadata is f64; the mathematical values supplied to this interpretation
+are exact rationals, not conversions of arbitrary Float inputs.
+
+Existing affine rows determine every raw read coordinate. Typed admission
+checks rank and each dimension before flattening; an out-of-bounds read yields
+constant zero with no nonexistent dependency. Actual factor and term order,
+repeated addresses and multiplicity are retained. An in-bounds state read at
+$t-k$, for $k\geq0$, precedes the destination at $t+1$ regardless of its spatial
+transformation. Actual external-capture slots have a separate, explicit
+signature interpretation; fresh semantic identities do not recover source UIDs.
+
+`close_ok`, `sourceMatch` and `rankCertificate` construct the graph, priority
+match and full dependency rank for arbitrary certified extents, including zero
+spatial extent and zero recurrence steps. `History.models_iff_recurrence` and
+`exists_unique_whole_history` characterize every materialized coordinate by
+the same actual-table rational recurrence. Existence uses total sum/product
+evaluation as well as causality, not rank alone. `default_full_history` connects
+both actual default semantic runners and their full stores; the constructed
+operational/source arrows and complete-witness comparison retain that whole
+history and empty output-port metadata.
+
+This bridge does not change general source admission, the scan checker or
+administrative `Domain` wires. It proves neither Float `runDenseScan`
+correctness nor arbitrary temporal reindexing, prefix laws or padded-gather
+fusion. Raw inverse shifts can still lose boundary values when staged through
+a finite zero-padded intermediate.
+
 ## 7. St/Br, indexed arrays, and open diagrams
 
 The categorical perspectives address different layers and different
