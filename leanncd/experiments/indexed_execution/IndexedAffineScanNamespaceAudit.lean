@@ -1,0 +1,16 @@
+import IndexedAffineScanSemantics
+import IndexedAffineScanPrototypeTest
+import IndexedAffineScanHistoryCompilerTest
+
+#print axioms IndexedExecutionExperiment.AffineScan.AccessAgreement.decodeRaw_bounds
+#print axioms IndexedExecutionExperiment.AffineScan.close_ok
+#print axioms IndexedExecutionExperiment.AffineScan.sourceMatch
+#print axioms IndexedExecutionExperiment.AffineScan.rankCertificate
+#print axioms IndexedExecutionExperiment.AffineScan.History.models_iff_recurrence
+#print axioms IndexedExecutionExperiment.AffineScan.History.exists_unique_whole_history
+#print axioms IndexedExecutionExperiment.AffineScan.Interpretation.default_full_history
+#print axioms IndexedExecutionExperiment.AffineScan.Interpretation.categorical_whole_history
+#print axioms IndexedExecutionExperiment.AffineScan.CompilerExamples.mixed_success
+#print axioms IndexedExecutionExperiment.AffineScan.CompilerHistoryTest.certified_examples_full_meaning
+
+#audit_axioms IndexedExecutionExperiment.AffineScan
