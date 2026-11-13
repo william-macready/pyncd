@@ -1,0 +1,544 @@
+import IndexedAffineScanRank
+import IndexedAffineScanAccessAgreement
+import IndexedRankedWitnessBridge
+
+/-! Exact rational interpretation of certified actual scan tables.
+This does not identify rational values with Float execution or prove `runDenseScan` correctness. -/
+
+namespace IndexedExecutionExperiment.AffineScan.History
+
+open LeanNCD.Semantics LeanNCD.Eval.Plan
+
+variable (p : Profile d n)
+
+abbrev FullStore := Store RationalReference.Carrier (declarations p)
+
+abbrev ExternalData := (slot : Fin (externalSlots p).length) →
+  Coord ((declarations p).signature (.inl slot)).axes → ℚ
+
+def input (z : ExternalData p) : (program p).Input :=
+  ⟨(fun tx => match tx with | .inl slot => some (z slot) | .inr _ => none),
+    by intro tx; cases tx <;> rfl⟩
+
+theorem slotShape_extents (slot : Nat) (extents : List Nat) :
+    (slotShape slot extents).map Axis.extent = extents := by
+  simp [slotShape, List.map_map, Function.comp_def]
+
+theorem step_read_shape (t : TermPlan) (ht : t ∈ (stepAssign p.checked).terms)
+    (r : ReadPlan) (hr : FactorPlan.read r ∈ t.factors) :
+    r.sourceShape.toList =
+      ((declarations p).signature (readTensor p p.checked.raw.stepCaptures r)).axes.map
+        Axis.extent := by
+  have supported := p.step_terms t ht
+  simp only [termSupported, Bool.and_eq_true, beq_iff_eq] at supported
+  rcases Array.mem_iff_getElem.mp hr with ⟨i, hi, he⟩
+  have hf := Array.all_eq_true.mp supported.2 i hi
+  rw [he] at hf
+  simp only [Bool.and_eq_true, beq_iff_eq] at hf
+  cases hsig : p.checked.raw.stepBlock.tensorSigs[r.sourceSlot]? with
+  | none => simp only [hsig, Bool.false_eq_true] at hf; exact hf.2.elim
+  | some sig =>
+      rw [hsig] at hf
+      simp only [Bool.and_eq_true, beq_iff_eq] at hf
+      have shape : sig.shape = r.sourceShape := hf.2.1.2
+      cases hcap : p.checked.raw.stepCaptures.find?
+          (fun cap => cap.inputSlot == r.sourceSlot) with
+      | none =>
+          simp [hcap] at hf
+      | some cap =>
+          rw [hcap] at hf
+          cases hs : cap.source with
+          | external slot =>
+              simp only [hs, Bool.and_eq_true, decide_eq_true_eq] at hf
+              have outer : p.checked.sigs[slot]? = some sig := hf.2.2.1
+              have selected : externalCapture p.checked slot = true := hf.2.2.2
+              have bound := slot_bound outer
+              let ix := externalIndex p ⟨slot, bound⟩ selected
+              have tx : readTensor p p.checked.raw.stepCaptures r = .inl ix := by
+                cases cap with
+                | mk input source =>
+                    change source = .external slot at hs
+                    subst source
+                    simp [readTensor, hcap, bound, selected, ix]
+              rw [tx]
+              change r.sourceShape.toList =
+                (slotShape ((outerSlot p ix).val + 1)
+                  p.checked.sigs[outerSlot p ix].shape.toList).map Axis.extent
+              rw [slotShape_extents]
+              have actual : p.checked.sigs[slot]'bound = sig := by
+                simpa only [Array.getElem?_eq_getElem bound, Option.some.injEq] using outer
+              calc
+                r.sourceShape.toList =
+                    p.checked.sigs[(⟨slot, bound⟩ : Fin p.checked.sigs.size)].shape.toList := by
+                  change r.sourceShape.toList = (p.checked.sigs[slot]'bound).shape.toList
+                  rw [actual, shape]
+                _ = p.checked.sigs[outerSlot p ix].shape.toList :=
+                  congrArg (fun s : Fin p.checked.sigs.size => p.checked.sigs[s].shape.toList)
+                    (outerSlot_externalIndex p ⟨slot, bound⟩ selected).symm
+          | state si =>
+              simp only [hs, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hf
+              have outer : p.checked.sigs[(p.checked.raw.states.getD 0 default).destSlot]? =
+                  some sig := hf.2.2.2
+              have canonical := p.canonical_fields.2.2.1
+              have sig_eq : sig = { shape := #[d, n + 1], dtype := .f64 } :=
+                Option.some.inj (outer.symm.trans canonical)
+              have tx : readTensor p p.checked.raw.stepCaptures r = .inr () := by
+                cases cap with
+                | mk input source =>
+                    change source = .state si at hs
+                    subst source
+                    simp [readTensor, hcap]
+              rw [tx, ← shape, sig_eq]
+              rfl
+
+def stepReadTable (t : TermPlan) (ht : t ∈ (stepAssign p.checked).terms)
+    (r : ReadPlan) (hr : FactorPlan.read r ∈ t.factors) :
+    ReadTable ((declarations p).signature
+      (readTensor p p.checked.raw.stepCaptures r)).axes t.iterationShape.size where
+  read := r
+  shape_eq := step_read_shape p t ht r hr
+  coeff_rank := by
+    have h := (supported_factor p.checked t (p.step_terms t ht) r hr).2.1
+    rw [h]
+    have shape := step_read_shape p t ht r hr
+    have len := congrArg List.length shape
+    simpa using len
+  bias_rank := by
+    have h := (supported_factor p.checked t (p.step_terms t ht) r hr).2.2.1
+    rw [h]
+    have len := congrArg List.length (step_read_shape p t ht r hr)
+    simpa using len
+  widths := (supported_factor p.checked t (p.step_terms t ht) r hr).2.2.2
+  unary_none := by
+    have h := (supported_factor p.checked t (p.step_terms t ht) r hr).1
+    simp only [plainRead, Bool.and_eq_true, Option.isNone_iff_eq_none] at h
+    exact h.1.1
+  no_bool_cast := by
+    have h := (supported_factor p.checked t (p.step_terms t ht) r hr).1
+    simp only [plainRead, Bool.and_eq_true] at h
+    simpa using h.1.2
+  no_real_cast := by
+    have h := (supported_factor p.checked t (p.step_terms t ht) r hr).1
+    simp only [plainRead, Bool.and_eq_true] at h
+    simpa using h.2
+
+/-- Mathematical interpretation of an actual captured affine read table. -/
+def tableRead (ρ : FullStore p) (caps : Array BlockCapture) (r : ReadPlan)
+    (basis : List Int) : ℚ :=
+  match decodeRaw ((declarations p).signature (readTensor p caps r)).axes
+      (fun pos => (applyAffine r.map basis).getD pos.val 0) with
+  | some q => ρ ⟨readTensor p caps r, q⟩
+  | none => 0
+
+theorem step_read_bounds (t : TermPlan) (ht : t ∈ (stepAssign p.checked).terms)
+    (r : ReadPlan) (hr : FactorPlan.read r ∈ t.factors) (i clock : Int) :
+    (∃ q, decodeRaw ((declarations p).signature
+      (readTensor p p.checked.raw.stepCaptures r)).axes
+      (fun pos => (applyAffine r.map (termBasis t i clock)).getD pos.val 0) = some q) ↔
+    inBoundsPerDim r.sourceShape.toList (applyAffine r.map (termBasis t i clock)) = true :=
+  AccessAgreement.table_bounds (stepReadTable p t ht r hr) (termBasis t i clock)
+
+theorem step_read_exact (ρ : FullStore p) (t : TermPlan)
+    (ht : t ∈ (stepAssign p.checked).terms)
+    (r : ReadPlan) (hr : FactorPlan.read r ∈ t.factors) (i clock : Int)
+    (q : Coord ((declarations p).signature (readTensor p p.checked.raw.stepCaptures r)).axes)
+    (inside : decodeRaw _ (fun pos =>
+      (applyAffine r.map (termBasis t i clock)).getD pos.val 0) = some q) :
+    List.ofFn (Coord.raw q) = applyAffine r.map (termBasis t i clock) ∧
+    tableRead p ρ p.checked.raw.stepCaptures r (termBasis t i clock) =
+      ρ ⟨readTensor p p.checked.raw.stepCaptures r, q⟩ := by
+  refine ⟨AccessAgreement.table_source_coordinates
+    (stepReadTable p t ht r hr) (termBasis t i clock) q inside, ?_⟩
+  simp only [tableRead, inside]
+
+theorem step_read_padded (ρ : FullStore p) (t : TermPlan)
+    (ht : t ∈ (stepAssign p.checked).terms)
+    (r : ReadPlan) (hr : FactorPlan.read r ∈ t.factors) (i clock : Int)
+    (outside : inBoundsPerDim r.sourceShape.toList
+      (applyAffine r.map (termBasis t i clock)) = false) :
+    tableRead p ρ p.checked.raw.stepCaptures r (termBasis t i clock) = 0 := by
+  have h := (AccessAgreement.table_padded_iff
+    (stepReadTable p t ht r hr) (termBasis t i clock)).mpr outside
+  change decodeRaw _ (fun pos =>
+    (applyAffine r.map (termBasis t i clock)).getD pos.val 0) = none at h
+  simp only [tableRead, h]
+
+theorem step_basis_width (t : TermPlan) (ht : t ∈ (stepAssign p.checked).terms)
+    (r : ReadPlan) (hr : FactorPlan.read r ∈ t.factors) (i clock : Int)
+    (row : Array Int) (mem : row ∈ r.map.coeffs) :
+    (termBasis t i clock).length = 2 ∧
+    (row.toList.zip (termBasis t i clock)).length = 2 := by
+  have size := (supported_basis p.checked t (p.step_terms t ht)).1
+  have basis : (termBasis t i clock).length = t.iterationShape.size := by simp [termBasis]
+  exact ⟨basis.trans size,
+    (AccessAgreement.table_width (stepReadTable p t ht r hr) _ basis row mem).2.trans size⟩
+
+def ReadOnly (fs : List FactorPlan) : Prop := ∀ f ∈ fs, ∃ r, f = .read r
+
+def TermsReadOnly (ts : List TermPlan) : Prop :=
+  ∀ t ∈ ts, ReadOnly t.factors.toList
+
+theorem base_read_only : TermsReadOnly (baseAssign p.checked).terms.toList := by
+  rw [p.base_identity]
+  intro t ht f hf
+  simp only [identityBase, List.mem_singleton] at ht
+  subst t
+  simp only [List.mem_singleton] at hf
+  exact ⟨_, hf⟩
+
+theorem step_read_only : TermsReadOnly (stepAssign p.checked).terms.toList := by
+  intro t ht f hf
+  have supported := p.step_terms t (by simpa using ht)
+  cases f with
+  | read r => exact ⟨r, rfl⟩
+  | iverson pred =>
+      exact False.elim (supported_no_iverson p.checked t supported pred (by simpa using hf))
+
+def tableProduct (ρ : FullStore p) (caps : Array BlockCapture) (basis : List Int) :
+    (fs : List FactorPlan) → ReadOnly fs → ℚ
+  | [], _ => 1
+  | .read r :: fs, h => tableRead p ρ caps r basis *
+      tableProduct ρ caps basis fs (fun f hf => h f (List.mem_cons_of_mem _ hf))
+  | .iverson pred :: _, h => False.elim (by
+      obtain ⟨r, impossible⟩ := h (.iverson pred) (List.mem_cons_self ..)
+      contradiction)
+
+def tableSum (ρ : FullStore p) (caps : Array BlockCapture) (i clock : Int) :
+    (ts : List TermPlan) → TermsReadOnly ts → ℚ
+  | [], _ => 0
+  | t :: ts, h => tableProduct p ρ caps (termBasis t i clock) t.factors.toList
+      (h t (List.mem_cons_self ..)) +
+      tableSum ρ caps i clock ts (fun t ht => h t (List.mem_cons_of_mem _ ht))
+
+/-- Uses the actual base assignment/captures and actual successor assignment/captures. -/
+def tableCell (ρ : FullStore p) (q : Coord (historyShape d n)) : ℚ :=
+  if q.2.1.val = 0 then
+    tableSum p ρ p.checked.raw.baseCaptures q.1.val 0
+      (baseAssign p.checked).terms.toList (base_read_only p)
+  else
+    tableSum p ρ p.checked.raw.stepCaptures q.1.val ((q.2.1.val : Int) - 1)
+      (stepAssign p.checked).terms.toList (step_read_only p)
+
+theorem factor_interpret (ρ : FullStore p) (caps : Array BlockCapture)
+    (basis : Γ → List Int) (r : ReadPlan) (γ : Γ) :
+    interpret RationalReference.ops ρ (factorBody p caps basis (.read r)) γ =
+      some (tableRead p ρ caps r (basis γ)) := by
+  simp only [interpret, factorBody, evalWith, actualAccess, tensorAccess,
+    paddedResolve, tableRead]
+  cases decodeRaw ((declarations p).signature (readTensor p caps r)).axes
+      (fun pos => (applyAffine r.map (basis γ)).getD pos.val 0) <;> rfl
+
+theorem product_interpret (ρ : FullStore p) (caps : Array BlockCapture)
+    (basis : Γ → List Int) (fs : List FactorPlan) (h : ReadOnly fs) (γ : Γ) :
+    interpret RationalReference.ops ρ (orderedProduct p caps basis fs) γ =
+      some (tableProduct p ρ caps (basis γ) fs h) := by
+  induction fs with
+  | nil => rfl
+  | cons f fs ih =>
+      obtain ⟨r, rfl⟩ := h f (List.mem_cons_self ..)
+      change (do
+        let x ← interpret RationalReference.ops ρ (factorBody p caps basis (.read r)) γ
+        let y ← interpret RationalReference.ops ρ (orderedProduct p caps basis fs) γ
+        pure (x * y)) = _
+      rw [factor_interpret, ih (fun f hf => h f (List.mem_cons_of_mem _ hf))]
+      rfl
+
+theorem sum_interpret (ρ : FullStore p) (caps : Array BlockCapture)
+    (i clock : Γ → Int) (ts : List TermPlan) (h : TermsReadOnly ts) (γ : Γ) :
+    interpret RationalReference.ops ρ (orderedSum p caps i clock ts) γ =
+      some (tableSum p ρ caps (i γ) (clock γ) ts h) := by
+  induction ts with
+  | nil => rfl
+  | cons t ts ih =>
+      change (do
+        let x ← interpret RationalReference.ops ρ
+          (orderedProduct p caps (fun γ => termBasis t (i γ) (clock γ))
+            t.factors.toList) γ
+        let y ← interpret RationalReference.ops ρ (orderedSum p caps i clock ts) γ
+        pure (x + y)) = _
+      rw [product_interpret p ρ _ _ _ (h t (List.mem_cons_self ..)),
+        ih (fun t ht => h t (List.mem_cons_of_mem _ ht))]
+      rfl
+
+theorem cell_interpret (ρ : FullStore p) (q : Coord (historyShape d n)) (γ : Γ) :
+    interpret RationalReference.ops ρ (addressBody p q) γ = some (tableCell p ρ q) := by
+  unfold addressBody tableCell
+  split <;> exact sum_interpret p ρ _ _ _ _ _ γ
+
+/-- Padding may supply zero, but strict multiplication still demands subsequent reads. -/
+theorem padding_does_not_cancel_missing (store : PartialStore RationalReference.Carrier
+    (declarations p)) (t : TermPlan) (ht : t ∈ (stepAssign p.checked).terms)
+    (r₀ r₁ : ReadPlan) (hr₀ : FactorPlan.read r₀ ∈ t.factors)
+    (_hr₁ : FactorPlan.read r₁ ∈ t.factors) (i clock : Int) (rest : List FactorPlan)
+    (outside : inBoundsPerDim r₀.sourceShape.toList
+      (applyAffine r₀.map (termBasis t i clock)) = false)
+    (q : Coord ((declarations p).signature
+      (readTensor p p.checked.raw.stepCaptures r₁)).axes)
+    (inside : decodeRaw _ (fun pos =>
+      (applyAffine r₁.map (termBasis t i clock)).getD pos.val 0) = some q)
+    (missing : store ⟨readTensor p p.checked.raw.stepCaptures r₁, q⟩ = none) :
+    evalWith RationalReference.ops store
+      (orderedProduct p p.checked.raw.stepCaptures
+        (fun _ : Unit => termBasis t i clock) (.read r₀ :: .read r₁ :: rest)) () = none := by
+  have zero := (AccessAgreement.factorBody_read_padded p p.checked.raw.stepCaptures
+    r₀ (fun _ : Unit => termBasis t i clock) () (stepReadTable p t ht r₀ hr₀)
+    rfl outside store).2
+  have absent : evalWith RationalReference.ops store
+      (factorBody p p.checked.raw.stepCaptures
+        (fun _ : Unit => termBasis t i clock) (.read r₁)) () = none := by
+    simp only [factorBody, evalWith, actualAccess, tensorAccess, paddedResolve,
+      inside, missing]
+  simp only [orderedProduct, evalWith, zero, absent]
+  rfl
+
+theorem admissible (ρ : FullStore p) : (program p).AdmEnv RationalReference.ops ρ := by
+  rintro ⟨tx, ht⟩ ⟨s, v⟩
+  cases tx with
+  | inl slot => contradiction
+  | inr u =>
+      cases u
+      exact congrArg Option.isSome
+        (cell_interpret p ρ ((canonicalLayout (historyShape d n)).enumerate s) v)
+
+def historyDefined : (program p).Defined := ⟨.inr (), rfl⟩
+
+def cellOccurrence (q : Coord (historyShape d n)) :
+    (program p).Occurrence (historyDefined p) :=
+  ⟨(canonicalLayout (historyShape d n)).enumerate.symm q,
+    ⟨⟨0, by change 0 < 1; omega⟩, rfl⟩⟩
+
+theorem destination_injective :
+    Function.Injective (fun o : (program p).Occurrence (historyDefined p) =>
+      (program p).destination (historyDefined p) o.1 o.2) := by
+  rintro ⟨s, v⟩ ⟨s', v'⟩ h
+  have hs := (canonicalLayout (historyShape d n)).enumerate.injective h
+  change s = s' at hs
+  subst s'
+  congr 1
+  apply Subtype.ext
+  change (v.val : Fin 1) = (v'.val : Fin 1)
+  exact @Subsingleton.elim (Fin 1) inferInstance v.val v'.val
+
+theorem collect_cell (ρ : FullStore p) (h : (program p).AdmEnv RationalReference.ops ρ)
+    (q : Coord (historyShape d n)) :
+    (program p).collect RationalReference.ops ρ h (historyDefined p) q =
+      tableCell p ρ q := by
+  classical
+  unfold Program.collect pushforward
+  have dest : ∀ o : (program p).Occurrence (historyDefined p),
+      (program p).destination (historyDefined p) o.1 o.2 = q ↔ o = cellOccurrence p q := by
+    intro o
+    have hd : (program p).destination (historyDefined p)
+        (cellOccurrence p q).1 (cellOccurrence p q).2 = q :=
+      (canonicalLayout (historyShape d n)).enumerate.apply_symm_apply q
+    constructor
+    · intro ho; exact destination_injective p (ho.trans hd.symm)
+    · rintro rfl; exact hd
+  simp_rw [dest]
+  rw [Finset.sum_ite_eq']
+  simp only [Finset.mem_univ, ↓reduceIte]
+  apply Option.some.inj
+  calc
+    some ((program p).contribution RationalReference.ops ρ h
+        (historyDefined p) (cellOccurrence p q)) =
+        (program p).outcome RationalReference.ops ρ
+          (historyDefined p) (cellOccurrence p q) := Option.some_get _
+    _ = some (tableCell p ρ q) := by
+      change interpret RationalReference.ops ρ
+        (addressBody p ((canonicalLayout (historyShape d n)).enumerate
+          ((canonicalLayout (historyShape d n)).enumerate.symm q))) _ = _
+      rw [Equiv.apply_symm_apply]
+      exact cell_interpret p ρ q _
+
+/-- Exact whole-history equations, at every materialized coordinate, plus the full external store. -/
+def Recurrence (η : (program p).Input) (ρ : FullStore p) : Prop :=
+  (program p).InputAgreement η ρ ∧
+    ∀ q : Coord (historyShape d n), ρ ⟨.inr (), q⟩ = tableCell p ρ q
+
+theorem models_iff_recurrence (η : (program p).Input) (ρ : FullStore p) :
+    (program p).Models RationalReference.ops η ρ ↔ Recurrence p η ρ := by
+  constructor
+  · rintro ⟨h, agree, equations⟩
+    exact ⟨agree, fun q => (equations (historyDefined p) q).trans (collect_cell p ρ h q)⟩
+  · rintro ⟨agree, equations⟩
+    refine ⟨admissible p ρ, agree, ?_⟩
+    rintro ⟨tx, ht⟩ q
+    cases tx with
+    | inl slot => contradiction
+    | inr u =>
+        cases u
+        exact (equations q).trans (collect_cell p ρ (admissible p ρ) q).symm
+
+theorem cell_stable (ρ ρ' : FullStore p) (q : Coord (historyShape d n))
+    (agree : ∀ a ∈ footprint (addressBody p q (Γ := Unit)) (),
+      ρ a = ρ' a) : tableCell p ρ q = tableCell p ρ' q := by
+  apply Option.some.inj
+  rw [← cell_interpret p ρ q (), ← cell_interpret p ρ' q ()]
+  exact evalWith_stable RationalReference.ops _ _ _ _
+    (fun a ha => congrArg some (agree a ha))
+
+def externalValue (η : (program p).Input) (slot : Fin (externalSlots p).length)
+    (q : Coord ((declarations p).signature (.inl slot)).axes) : ℚ :=
+  (η.val (.inl slot)).get (by simpa [program] using η.property (.inl slot)) q
+
+/-- Well-founded mathematical solution of the actual table equations.
+The zero extension is outside every demanded address, by `body_rank`. -/
+noncomputable def wholeStore (η : (program p).Input) : FullStore p :=
+  (measure (addressRank p)).wf.fix fun a lower =>
+    match a with
+    | ⟨.inl slot, q⟩ => externalValue p η slot q
+    | ⟨.inr _, q⟩ =>
+        tableCell p (fun b => if h : addressRank p b < addressRank p ⟨.inr (), q⟩
+          then lower b h else 0) q
+
+theorem wholeStore_external (η : (program p).Input)
+    (slot : Fin (externalSlots p).length)
+    (q : Coord ((declarations p).signature (.inl slot)).axes) :
+    wholeStore p η ⟨.inl slot, q⟩ = externalValue p η slot q := by
+  unfold wholeStore
+  rw [WellFounded.fix_eq]
+
+theorem wholeStore_cell (η : (program p).Input) (q : Coord (historyShape d n)) :
+    wholeStore p η ⟨.inr (), q⟩ = tableCell p (wholeStore p η) q := by
+  unfold wholeStore
+  rw [WellFounded.fix_eq]
+  apply cell_stable
+  intro a ha
+  have lower := body_rank p q () a ha
+  change (if h : addressRank p a < q.2.1.val + 1 then _ else 0) = _
+  rw [dif_pos lower]
+
+theorem wholeStore_recurrence (η : (program p).Input) :
+    Recurrence p η (wholeStore p η) := by
+  refine ⟨?_, wholeStore_cell p η⟩
+  intro tx f hf q
+  cases tx with
+  | inl slot =>
+      rw [wholeStore_external]
+      unfold externalValue
+      exact congrFun (Option.some.inj ((Option.some_get _).trans hf)) q
+  | inr u =>
+      have absent : η.val (.inr u) = none := by
+        have h := η.property (.inr u)
+        simpa [program] using h
+      rw [absent] at hf
+      contradiction
+
+theorem wholeStore_model (η : (program p).Input) :
+    (program p).Models RationalReference.ops η (wholeStore p η) :=
+  (models_iff_recurrence p η _).mpr (wholeStore_recurrence p η)
+
+theorem recurrence_unique (η : (program p).Input) (ρ : FullStore p)
+    (h : Recurrence p η ρ) : ρ = wholeStore p η :=
+  IndexedRankedWitnessBridge.ranked_atMostOne (component p) (rankCertificate p)
+    η ρ (wholeStore p η) ((models_iff_recurrence p η ρ).mpr h) (wholeStore_model p η)
+
+theorem exists_unique_whole_history (η : (program p).Input) :
+    ∃! ρ : FullStore p, Recurrence p η ρ :=
+  ⟨wholeStore p η, wholeStore_recurrence p η, fun ρ h => recurrence_unique p η ρ h⟩
+
+theorem admissible_input (η : (program p).Input) :
+    (program p).AdmInput RationalReference.ops η :=
+  ⟨wholeStore p η, wholeStore_model p η, fun ρ h =>
+    recurrence_unique p η ρ ((models_iff_recurrence p η ρ).mp h)⟩
+
+theorem denotation_whole_history (η : (program p).Input) :
+    (program p).denotation RationalReference.ops η (admissible_input p η) =
+      (program p).outputProjection (wholeStore p η) :=
+  (program p).denotation_of_model RationalReference.ops η (admissible_input p η)
+    (wholeStore p η) (wholeStore_model p η)
+
+theorem actual_write_coordinates (i clock : Int) :
+    applyAffine (p.checked.raw.baseWrites.getD 0 default).map [i] = [i, 0] ∧
+    applyAffine (p.checked.raw.stepWrites.getD 0 default).map [clock, i] =
+      [i, clock + 1] := by
+  have base := p.canonical_fields.2.2.2.1
+  have step := p.canonical_fields.2.2.2.2.1
+  simp [base, step, applyAffine, Int.add_comm]
+
+/-- The base is the actual captured external vector, not a postulated initial slice. -/
+theorem actual_base_value (ρ : FullStore p) (i : Fin d) :
+    ∃ (ix : Fin (externalSlots p).length) (a : Address (declarations p)),
+      p.checked.sigs[outerSlot p ix].shape = #[d] ∧
+      a.1 = .inl ix ∧ List.ofFn (Coord.raw a.2) = [(i.val : Int)] ∧
+      tableCell p ρ (i, ⟨0, Nat.zero_lt_succ n⟩, ()) = ρ a := by
+  obtain ⟨slot, caps, sig⟩ := p.base_capture
+  have bound := slot_bound sig
+  have selected : externalCapture p.checked slot = true := by
+    simp [externalCapture, allCaptures, caps]
+  let ix := externalIndex p ⟨slot, bound⟩ selected
+  let r : ReadPlan :=
+    { sourceSlot := 0
+      map := { coeffs := #[#[1]], «bias» := #[0] }
+      sourceShape := #[d]
+      oobPolicy := .zeroPad }
+  have tx : readTensor p p.checked.raw.baseCaptures r = .inl ix := by
+    simp [readTensor, caps, bound, selected, ix, r]
+  have actual : p.checked.sigs[outerSlot p ix] = { shape := #[d], dtype := .f64 } := by
+    have get : p.checked.sigs[slot]'bound = { shape := #[d], dtype := .f64 } := by
+      simpa only [Array.getElem?_eq_getElem bound, Option.some.injEq] using sig
+    have index := congrArg (fun s : Fin p.checked.sigs.size => p.checked.sigs[s])
+      (outerSlot_externalIndex p ⟨slot, bound⟩ selected)
+    exact index.trans get
+  have shape : r.sourceShape.toList =
+      ((declarations p).signature (readTensor p p.checked.raw.baseCaptures r)).axes.map
+        Axis.extent := by
+    rw [tx]
+    change [d] = (slotShape ((outerSlot p ix).val + 1)
+      p.checked.sigs[outerSlot p ix].shape.toList).map Axis.extent
+    rw [slotShape_extents, actual]
+  have rank : ((declarations p).signature
+      (readTensor p p.checked.raw.baseCaptures r)).axes.length = 1 := by
+    have len := congrArg List.length shape
+    simpa [r] using len.symm
+  let table : ReadTable ((declarations p).signature
+      (readTensor p p.checked.raw.baseCaptures r)).axes 1 :=
+    { read := r
+      shape_eq := shape
+      coeff_rank := by simpa [r] using rank.symm
+      bias_rank := by simpa [r] using rank.symm
+      widths := by intro row hr; simp only [r, Array.mem_singleton] at hr; subst row; rfl
+      unary_none := rfl
+      no_bool_cast := rfl
+      no_real_cast := rfl }
+  obtain ⟨q, inside⟩ := (AccessAgreement.table_bounds table [(i.val : Int)]).mpr
+    (by simp [table, r, applyAffine, inBoundsPerDim, i.isLt])
+  refine ⟨ix, ⟨readTensor p p.checked.raw.baseCaptures r, q⟩,
+    congrArg TensorSignature.shape actual, tx, ?_, ?_⟩
+  · simpa [table, r, applyAffine] using
+      AccessAgreement.table_source_coordinates table [(i.val : Int)] q inside
+  · have value : tableRead p ρ p.checked.raw.baseCaptures r [(i.val : Int)] =
+        ρ ⟨readTensor p p.checked.raw.baseCaptures r, q⟩ := by
+      unfold tableRead
+      change decodeRaw _ (fun pos => (applyAffine r.map [(i.val : Int)]).getD pos.val 0) =
+        some q at inside
+      rw [inside]
+    simpa [tableCell, p.base_identity, identityBase, tableSum, tableProduct,
+      termBasis, List.range_succ, r] using value
+
+theorem wholeStore_base (η : (program p).Input) (i : Fin d) :
+    ∃ (ix : Fin (externalSlots p).length)
+        (q : Coord ((declarations p).signature (.inl ix)).axes),
+      p.checked.sigs[outerSlot p ix].shape = #[d] ∧
+      List.ofFn (Coord.raw q) = [(i.val : Int)] ∧
+      wholeStore p η ⟨.inr (), (i, ⟨0, Nat.zero_lt_succ n⟩, ())⟩ =
+        externalValue p η ix q := by
+  obtain ⟨ix, ⟨tx, q⟩, shape, tx_eq, raw, value⟩ := actual_base_value p (wholeStore p η) i
+  dsimp only at tx_eq raw value
+  cases tx_eq
+  refine ⟨ix, q, shape, raw, ?_⟩
+  rw [wholeStore_cell, value, wholeStore_external]
+
+theorem wholeStore_successor (η : (program p).Input) (i : Fin d) (clock : Fin n) :
+    wholeStore p η ⟨.inr (), (i, ⟨clock.val + 1, by change clock.val + 1 < n + 1; omega⟩, ())⟩ =
+      tableSum p (wholeStore p η) p.checked.raw.stepCaptures i.val clock.val
+        (stepAssign p.checked).terms.toList (step_read_only p) := by
+  rw [wholeStore_cell]
+  simp [tableCell]
+
+end IndexedExecutionExperiment.AffineScan.History
+
+#print axioms IndexedExecutionExperiment.AffineScan.History.models_iff_recurrence
+#print axioms IndexedExecutionExperiment.AffineScan.History.exists_unique_whole_history
+#print axioms IndexedExecutionExperiment.AffineScan.History.actual_base_value
+#audit_axioms IndexedExecutionExperiment.AffineScan.History
