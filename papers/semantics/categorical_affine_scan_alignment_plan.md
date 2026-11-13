@@ -2,8 +2,7 @@
 
 **Process: Full — new affine admission, constructed-component and whole-history soundness capabilities.**
 
-**State:** controller-verified frozen execution plan; authoring-package commit is the next operation.
-Prototype verification is complete, but clean execution, final controller gates and local integration are not.
+**State:** executed. All nine tasks were replayed and the final controller gates passed; see the execution section of the [record](categorical_affine_scan_alignment_record.md) for results, deviations and the post-review fix.
 Execute this one slice continuously, reporting milestones rather than presenting approval menus.
 
 ## 1. Frozen inputs and command discipline

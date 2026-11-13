@@ -6,12 +6,12 @@
 |---|---|
 | AUTHORING(a): prototype and observations | Verified in current authoritative evidence |
 | AUTHORING(b): fresh-context plan/record | Complete; controller verified the plan and bound the clean replay path |
-| Clean ordered task execution | PENDING |
-| Final controller unfiltered replay/audits/full build | PENDING |
-| Two final whole-branch review lenses | PENDING |
-| Local main integration and owned cleanup | PENDING; no push authorized |
+| Clean ordered task execution | DONE: nine patches replayed, hash-verified and committed on `agents/categorical-affine-scan-alignment-execution` |
+| Final controller unfiltered replay/audits/full build | DONE: 34/34 controls, namespace audit (868 constants), full build green (see "Execution record") |
+| Two final whole-branch review lenses | DONE: no Critical findings; one Important finding fixed after replay; minors adjudicated |
+| Local main integration and owned cleanup | See the last section of this record; no push |
 
-This record is not a completion claim. The [plan](categorical_affine_scan_alignment_plan.md)
+The sections up to "Pending execution ledger" are the authoring record, kept as written; the "Execution record" section at the end is the controller's account of execution. The [plan](categorical_affine_scan_alignment_plan.md)
 is the single live slice plan. Root/controller owns execution and release gates.
 No implementation source, live documentation/configuration, builds, mutations, commits or agents
 were changed/run by AUTHORING(b); only the explicitly requested plan and this record were written.
@@ -193,3 +193,142 @@ Controller must append actual execution telemetry and disclose missing data/over
 Append execution commits, hashes, generated mutation results, review findings/adjudications, controller
 build receipt, execution-only usage and local merge/cleanup status here as they actually occur.
 Never replace this record with a generated `--out` table or mark prototype evidence as controller execution.
+
+## Execution record (controller)
+
+Executed by Claude Code as controller after the authoring Copilot session stopped itself
+(2026-11-12). Execution worktree: `/Users/williammacready/code/python/pyncd.worktrees/categorical-affine-scan-alignment-execution`,
+branch `agents/categorical-affine-scan-alignment-execution`, created from the pinned authoring commit
+`92822f3a` (local tag `affine-scan-alignment-authoring-package`, base `13ee25a3`, unchanged `main`).
+No push.
+
+### Replay (tasks 1 to 9)
+
+Each patch's SHA-256 matched `package.json`, `git apply --check` and `git apply` succeeded in order, and every
+newly introduced module matched its package hash. The implementation tree was byte-identical to the preserved
+prototype. After task 9 the plan's check passed: 9 patch hashes, 19 final source hashes, canonical manifest hash.
+
+| Task | Commit | Target built | Build time |
+|---|---|---|---|
+| 1 admission | `2506d59d` | `IndexedAffineScanPrototypeTest` (four boundary rows accepted) | 61 s |
+| 2 component | `37daef1e` | `IndexedAffineScanRank` | 59 s |
+| 3 access | `87a00d34` | `IndexedAffineScanAccessAgreement` | 32 s |
+| 4 history | `4306d6d9` | `IndexedAffineScanHistory` | 32 s |
+| 5 interpretation | `d8fba011` | `IndexedAffineScanSemantics`, `IndexedAffineScanHistoryTest` | 47 s |
+| 6 compiler | `7fdcb719` | `IndexedAffineScanCompilerCertificates` | 814 s (genuine compile; no prototype artifacts were synced in) |
+| 7 mixed | `877c01a2` | `IndexedAffineScanMixedCompilerCertificate` | 207 s |
+| 8 acceptance | `9b560e33` | `IndexedAffineScanNamespaceAudit` (861 constants, standard axioms only) | 46 s |
+| 9 documentation | `0b3bce82` | none (documentation sweeps run and adjudicated) | n/a |
+
+Documentation sweeps: matches were the new documentation plus unrelated historical job counts and hex constants;
+no stale "only shift closed" claim. The source sweep found no `axiom`, `constant`, `sorry`, `admit`, `native_decide`,
+`ofReduceBool`, absolute user path or diagnostic file write in the sixteen `IndexedAffineScan*.lean` modules.
+
+### Deviations from the plan, and why
+
+- **Per-task filtered mutation checkpoints were not run.** Their coverage is a strict subset of the final unfiltered
+  replay, which was run in full, and each module was built at its own task. This saved roughly three hours of builds.
+- **Per-task spec reviews were replaced by the two final whole-branch reviews**, run before the mutation gate so a
+  fix could not invalidate its evidence.
+- **Concurrent controller.** On entry, a Copilot session was still live in the prototype worktree and running
+  mutation cycles that edit sources in place. My reviewers read a clean snapshot while it ran; after it reported
+  itself stopped, nothing else touched the tree. The earlier stuck `lake build` (PID 22665, over two hours) was
+  stopped at the user's request, and the mixed certificate was unblocked by a general lemma
+  (`inferAxisSizesCore_of_sized`), because `cbv` cannot evaluate diagnostic text (`Std.Format.be` is partial).
+- **Post-replay adaptation.** Commit `fa961ae3` changes six frozen files after review (below). Their hashes therefore no
+  longer equal `package.json`, which remains the original receipt and was not regenerated.
+- The prototype's debug `IO.FS.writeFile` probes in `IndexedAffineScanCompilerCertificates.lean` had already been
+  removed before the package was frozen, so the replayed files contain none.
+
+### Final reviews (Fable)
+
+Both reviewers read the committed tree read-only and ran nothing.
+
+| Lens | Result |
+|---|---|
+| 1. Soundness: admission, bounds, padding, footprints, rank, match, whole model, full stores, category | No Critical or Important. Minors: profile admits a step capture of the history's own slot (see fix); Float boundary only in module docstrings; wording "empty-port"; one redundant conjunct (`Profile.lean`, `stateReadCausal #[1]` implied by `stateRowsOk`) |
+| 2. Applicability: checked/compiler tables, policies, order, zero cases, Float boundary, mixed lemma | No Critical. One Important (same history-slot aliasing finding). Minors: `(2,2)` boundary donor has no pinned history; Float boundary not on the main theorems; 25 bare `#eval` lines and duplicate `#print axioms`; `contextPos = #[1]` arm unwitnessed by compiler donors |
+
+Both reviewers confirmed the mixed-certificate lemma matches `inferAxisSizesCore`, that `mixed_inference_fst` is the
+unweakened statement for both signature orderings, and that `mixed_inferred` keeps the real warning component.
+
+**Fixed (`fa961ae3`).** The unchanged scan checker admits a step block whose state capture is retargeted to the
+history's own outer slot as an external capture; the profile would then model the scan's own output as a free external
+input. Demonstrated on the real shift donor: checker accepts, fixed profile returns `unsupported`. `capturesBounded`
+now requires every external capture to avoid the history's own slot, `Profile.external_not_history` states it, a runtime
+control in `IndexedAffineScanHistoryCompilerTest` checks the real-donor case, and the Float/`runDenseScan` boundary
+is stated on `exists_unique_whole_history`, `default_full_history`, `categorical_whole_history` and
+`certified_examples_full_meaning`. Documentation now says zero-extent history-port metadata and that all nine compiler
+donors use the context-first term ordering (verified by printing every donor's term positions).
+Changed files: `Profile`, `Rank`, `History`, `Interpretation`, `HistoryCompilerTest`, `AGENTS.md`, the synthesis document.
+
+**Parked (not required by the goal).** Redundant `stateReadCausal` conjunct (harmless, ~0.5 dispatch); bare `#eval`
+noise in `CompilerExamples` (editing it forces a 14-minute `CompilerCertificates` rebuild); `(2,2)` boundary history
+row (the plan deliberately keeps it as the ninth certified donor, not a rational-history row); a hand-built fixture
+for the output-first term ordering (~1 dispatch, needs a checker-admitted plan); two `simpa` lint warnings at
+`IndexedAffineScanCompilerCertificates.lean:194`.
+
+### Controller gates
+
+| Gate | Result |
+|---|---|
+| Full `LeanNCD Tests IndexedExecutionExperiment` build (after the fixes) | Exit 0, 8980 jobs, 1016 s. New control prints "history-slot alias controls passed" |
+| Namespace audit `IndexedAffineScanNamespaceAudit` | 868 constants under `IndexedExecutionExperiment.AffineScan`, standard axioms only (861 at freeze, plus the 7 declarations added by `fa961ae3`) |
+| Source hygiene sweep | No matches |
+| Unfiltered manifest `--check` | 34 entries, 34 unique labels, 53 anchors, every old string unique, before and after the fixes |
+| Unfiltered mutation replay (`mutation-manifest.sh`, no filters) | 34/34 PASS, 10,662 s; every expected anchor seen, byte-identical restores, restored builds green |
+| Alias-guard cycle (added after the manifest was frozen, not in it) | Guard neutralised: build fails at `external_capture_checks` (`Rank.lean:18`) with `sorryAx` audit failure; restored byte-identically; restored build green. A live-proof control; the runtime control was demonstrated on the unmutated tree but not separately mutation-tested |
+
+Classification is as authored: of the 34, 23 protect runtime observations, 8 protect live implementations through
+proofs and 3 reverse logical oracles. They are not 34 runtime-core defect kills. Some live-proof diagnostics include
+type/proof failures plus the namespace `sorryAx` rejection.
+
+#### Mutation results table (generated by the wrapper)
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| AA-M1 rank-length omission live-proof control | yes | yes | yes | PASS |
+| AA-M2 finite shift bias sign fixture delta | yes | yes | yes | PASS |
+| AA-M3 nonzero padded read fixture delta | yes | yes | yes | PASS |
+| AA-M4 ordered repeated read fixture delta | yes | yes | yes | PASS |
+| AA-M5 flattened alias upper-bound neighbor fixture delta | yes | yes | yes | PASS |
+| AA-M6 invalid finite padded inverse fusion fixture rewrite | yes | yes | yes | PASS |
+| construction-writer-all-ordered-dependencies | yes | yes | yes | PASS |
+| construction-actual-spatial-basis-not-zero | yes | yes | yes | PASS |
+| construction-state-own-clock-not-spatial-column | yes | yes | yes | PASS |
+| construction-canonical-base-time-zero | yes | yes | yes | PASS |
+| construction-history-extent-includes-base-and-zero-boundaries | yes | yes | yes | PASS |
+| construction-input-ports-include-actual-step-externals | yes | yes | yes | PASS |
+| AH-M1 actual base spatial-coordinate shift | yes | yes | yes | PASS |
+| AH-M2 actual successor clock off by one | yes | yes | yes | PASS |
+| AH-M3 checked observation drops all nonfinal history slices | yes | yes | yes | PASS |
+| AH-M4 strict zero-times-missing live-proof oracle reversal | yes | yes | yes | PASS |
+| AH-M5 categorical witness image replaced by empty domain | yes | yes | yes | PASS |
+| AH-M6 empty-spatial port erasure live-proof oracle reversal | yes | yes | yes | PASS |
+| compiler-spatial-stride-coordinate | yes | yes | yes | PASS |
+| compiler-mixed-context-basis-column | yes | yes | yes | PASS |
+| compiler-deep-temporal-causality | yes | yes | yes | PASS |
+| compiler-canonical-external-base-boundary | yes | yes | yes | PASS |
+| compiler-ordered-product-footprint | yes | yes | yes | PASS |
+| compiler-repeated-factor-multiplicity | yes | yes | yes | PASS |
+| RH-M1 shift rational-history oracle | yes | yes | yes | PASS |
+| RH-M2 stride rational-history oracle | yes | yes | yes | PASS |
+| RH-M3 reversal rational-history oracle | yes | yes | yes | PASS |
+| RH-M4 mixed rational-history oracle | yes | yes | yes | PASS |
+| RH-M5 deep rational-history oracle | yes | yes | yes | PASS |
+| RH-M6 zero-recurrence rational-history oracle | yes | yes | yes | PASS |
+| RH-M7 empty-spatial metadata oracle | yes | yes | yes | PASS |
+| RH-M8 empty-base metadata presence oracle | yes | yes | yes | PASS |
+| CB-M7 semantic captured-clock look-ahead | yes | yes | yes | PASS |
+| CB-M8 semantic nonzero padding | yes | yes | yes | PASS |
+
+34/34 cycles passed.
+
+### Execution accounting
+
+`token-report.py` for the controller session (partial: it covers this Claude Code session, not the Copilot authoring
+session, and counts cache-inclusive input) reported 36.0M cumulative input at the time of the gates: controller 31.9M,
+review 1 1.8M, review 2 2.2M. Against the 175M execution budget this is within budget. Both review dispatches stayed
+within 250k peak context (190k and 168k) and 60 turns (16 and 24). The controller session's peak was 419k, which
+exceeds the roughly 250k guideline; it spanned the earlier proof work and the whole replay. The authoring overruns
+disclosed above are unchanged.
