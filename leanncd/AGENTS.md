@@ -2,6 +2,21 @@
 
 ## Doing slice work here: two skills
 
+The nondefault checked affine-scan bridge starts at
+[`IndexedAffineScanSemantics`](experiments/indexed_execution/IndexedAffineScanSemantics.lean).
+Its `AffineScan.Profile` certifies actual checked tables for one spatial/time
+history, an identity-assignment base, complete successor writes, and real
+sum/product reads with f64 storage metadata. It constructs affine admission,
+ordered padded footprints, the matched ranked component, and exact rational
+whole-history/model/default-execution/categorical interpretations. Actual
+external-capture slots (never the history's own slot) and zero-extent history-port metadata are retained. The scan checker,
+default source admission and administrative wires are unchanged. This is not
+Float `runDenseScan` correctness, arbitrary scan reindexing or padded-gather
+fusion. Compiler-example certificates remain separate from this public import.
+`IndexedAffineScanNamespaceAudit` checks the complete new API/compiler/test
+namespace; its live donor consumers retain model, full-store execution and
+categorical meaning rather than just numeric fixture parity.
+
 The additive, nondefault comparison entry point is
 `import IndexedRankedWitnessSemantics`. It supplies the ranked operational
 target-to-complete-witness functor, rank/provenance-forgetting source functor,

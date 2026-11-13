@@ -1,0 +1,1084 @@
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -152,6 +152,9 @@
+          "IndexedAffineScanRead",
+          "IndexedAffineScanProfile",
+          "IndexedAffineScanPrototypeTest",
++         "IndexedAffineScanConstruction",
++         "IndexedAffineScanMatch",
++         "IndexedAffineScanRank",
+          "IndexedEffectSequencingTest", "IndexedOpenComposition",
+          "IndexedOpenCompositionTest", "IndexedCompositionParityTest",
+          "IndexedCompositionClosure", "IndexedCompositionMatch",
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedAffineScanConstruction.lean
+@@ -0,0 +1,325 @@
++import IndexedAffineScanRead
++import IndexedAffineScanProfile
++import IndexedCompositionClosure
++import IndexedCompositionMatch
++import Semantics.AxiomAudit
++import Mathlib.Data.List.FinRange
++import Mathlib.Data.List.Nodup
++
++namespace IndexedExecutionExperiment.AffineScan
++
++open LeanNCD.Semantics LeanNCD.Eval.Plan
++
++theorem Profile.step_terms (p : Profile d n) :
++    ∀ t ∈ (stepAssign p.checked).terms, termSupported p.checked d n t = true := by
++  have h := p.fields
++  simp only [profileOk, Bool.and_eq_true, beq_iff_eq] at h
++  intro t ht
++  rcases Array.mem_iff_getElem.mp ht with ⟨i, hi, rfl⟩
++  exact Array.all_eq_true.mp h.1.2 i hi
++
++theorem supported_factor (c : CheckedScanPlan) (t : TermPlan)
++    (h : termSupported c d n t = true) (r : ReadPlan)
++    (hr : FactorPlan.read r ∈ t.factors) :
++    plainRead r = true ∧
++    r.map.coeffs.size = r.sourceShape.size ∧
++    r.map.bias.size = r.sourceShape.size ∧
++    (∀ row ∈ r.map.coeffs, row.size = t.iterationShape.size) := by
++  simp only [termSupported, Bool.and_eq_true, beq_iff_eq] at h
++  rcases Array.mem_iff_getElem.mp hr with ⟨i, hi, he⟩
++  have hf := Array.all_eq_true.mp h.2 i hi
++  rw [he] at hf
++  simp only [Bool.and_eq_true, beq_iff_eq] at hf
++  refine ⟨hf.1.1.1.1, hf.1.1.1.2, hf.1.1.2, ?_⟩
++  intro row hr
++  rcases Array.mem_iff_getElem.mp hr with ⟨j, hj, rfl⟩
++  simpa only [beq_iff_eq] using Array.all_eq_true.mp hf.1.2 j hj
++
++def slotShape (slot : Nat) (extents : List Nat) : Shape :=
++  extents.zipIdx.map fun (extent, pos) => ⟨Nat.pair slot pos + 2, extent⟩
++
++def historyShape (d n : Nat) : Shape :=
++  [⟨0, d⟩, ⟨1, n + 1⟩]
++
++def externalSlots (p : Profile d n) : List (Fin p.checked.sigs.size) :=
++  (List.finRange p.checked.sigs.size).filter
++    (fun slot => externalCapture p.checked slot.val)
++
++theorem externalSlots_nodup (p : Profile d n) : (externalSlots p).Nodup :=
++  (List.nodup_finRange _).filter _
++
++def outerSlot (p : Profile d n) (slot : Fin (externalSlots p).length) :
++    Fin p.checked.sigs.size :=
++  (externalSlots p).get slot
++
++def externalIndex (p : Profile d n) (slot : Fin p.checked.sigs.size)
++    (h : externalCapture p.checked slot.val = true) : Fin (externalSlots p).length :=
++  ⟨(externalSlots p).idxOf slot,
++    List.idxOf_lt_length_iff.mpr (List.mem_filter.mpr ⟨by simp, h⟩)⟩
++
++theorem outerSlot_externalIndex (p : Profile d n) (slot : Fin p.checked.sigs.size)
++    (h : externalCapture p.checked slot.val = true) :
++    outerSlot p (externalIndex p slot h) = slot :=
++  List.idxOf_get _
++
++/-- The right summand is captured history, not an external snapshot at the same outer slot. -/
++def declarations (p : Profile d n) : Declarations Unit where
++  Tensor := Fin (externalSlots p).length ⊕ Unit
++  uid
++    | .inl slot => 2 * slot.val + 2
++    | .inr _ => 1
++  unique := by
++    intro a b h
++    cases a with
++    | inl a =>
++        cases b with
++        | inl b =>
++            change 2 * a.val + 2 = 2 * b.val + 2 at h
++            congr 1
++            apply Fin.ext
++            omega
++        | inr b => change 2 * a.val + 2 = 1 at h; omega
++    | inr a =>
++        cases b with
++        | inl b => change 1 = 2 * b.val + 2 at h; omega
++        | inr b => congr 1
++  signature := fun tx => ⟨(), match tx with
++    | .inl slot => slotShape ((outerSlot p slot).val + 1)
++        p.checked.sigs[outerSlot p slot].shape.toList
++    | .inr _ => historyShape d n⟩
++
++def termBasis (t : TermPlan) (i clock : Int) : List Int :=
++  (List.range t.iterationShape.size).map fun pos =>
++    if t.contextPos.contains pos then clock
++    else if t.outputPos.contains pos then i else 0
++
++def readTensor (p : Profile d n) (captures : Array BlockCapture)
++    (r : ReadPlan) : (declarations p).Tensor :=
++  match captures.find? (fun cap => cap.inputSlot == r.sourceSlot) with
++  | some { source := .external slot, .. } =>
++      if h : slot < p.checked.sigs.size then
++        if selected : externalCapture p.checked slot = true then
++          .inl (externalIndex p ⟨slot, h⟩ selected)
++        else .inr ()
++      else .inr ()
++  | _ => .inr ()
++
++def tensorAccess (p : Profile d n) (tx : (declarations p).Tensor)
++    (r : ReadPlan) (basis : Γ → List Int) :
++    AdmittedRead ℚ ((declarations p).signature tx).axes Γ where
++  policy := zeroPolicy 0 _
++  raw := fun γ pos => (applyAffine r.map (basis γ)).getD pos.val 0
++  resolved := fun γ => paddedResolve 0 _
++    (fun pos => (applyAffine r.map (basis γ)).getD pos.val 0)
++  admission := fun _ => rfl
++
++def actualAccess (p : Profile d n) (captures : Array BlockCapture)
++    (r : ReadPlan) (basis : Γ → List Int) :
++    AdmittedRead ℚ ((declarations p).signature (readTensor p captures r)).axes Γ :=
++  tensorAccess p (readTensor p captures r) r basis
++
++def factorBody (p : Profile d n) (captures : Array BlockCapture) (basis : Γ → List Int) :
++    FactorPlan → Expr RationalReference.Carrier (declarations p)
++      RationalReference.registry Γ (.scalar ())
++  | .read r => .read (readTensor p captures r) (actualAccess p captures r basis)
++  | .iverson _ => .lit 0
++
++def orderedProduct (p : Profile d n) (captures : Array BlockCapture) (basis : Γ → List Int) :
++    List FactorPlan → Expr RationalReference.Carrier (declarations p)
++      RationalReference.registry Γ (.scalar ())
++  | [] => .lit 1
++  | f :: fs => .binary .mul (factorBody p captures basis f)
++      (orderedProduct p captures basis fs)
++
++def orderedSum (p : Profile d n) (captures : Array BlockCapture) (i clock : Γ → Int) :
++    List TermPlan → Expr RationalReference.Carrier (declarations p)
++      RationalReference.registry Γ (.scalar ())
++  | [] => .lit 0
++  | t :: ts => .binary .add
++      (orderedProduct p captures (fun γ => termBasis t (i γ) (clock γ)) t.factors.toList)
++      (orderedSum p captures i clock ts)
++
++theorem supported_no_iverson (c : CheckedScanPlan) (t : TermPlan)
++    (h : termSupported c d n t = true) (pred : PosBoolExpr) :
++    FactorPlan.iverson pred ∉ t.factors := by
++  intro hm
++  simp only [termSupported, Bool.and_eq_true, beq_iff_eq] at h
++  rcases Array.mem_iff_getElem.mp hm with ⟨i, hi, he⟩
++  have hf := Array.all_eq_true.mp h.2 i hi
++  rw [he] at hf
++  contradiction
++
++theorem supported_basis (c : CheckedScanPlan) (t : TermPlan)
++    (h : termSupported c d n t = true) :
++    t.iterationShape.size = 2 ∧
++      ((t.contextPos = #[0] ∧ t.outputPos = #[1]) ∨
++        (t.contextPos = #[1] ∧ t.outputPos = #[0])) := by
++  simp only [termSupported, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
++  exact ⟨h.1.1.1.1.1.1.1.1, h.1.1.1.1.1.1.1.2⟩
++
++theorem supported_capture (c : CheckedScanPlan) (t : TermPlan)
++    (h : termSupported c d n t = true) (r : ReadPlan)
++    (hr : FactorPlan.read r ∈ t.factors) :
++    match c.raw.stepCaptures.find? (fun cap => cap.inputSlot == r.sourceSlot) with
++    | none => False
++    | some cap => match cap.source with
++      | .external slot => ∃ sig, c.sigs[slot]? = some sig ∧ externalCapture c slot = true
++      | .state _ => stateRowsOk t r = true := by
++  simp only [termSupported, Bool.and_eq_true, beq_iff_eq] at h
++  rcases Array.mem_iff_getElem.mp hr with ⟨i, hi, he⟩
++  have hf := Array.all_eq_true.mp h.2 i hi
++  rw [he] at hf
++  simp only [Bool.and_eq_true, beq_iff_eq] at hf
++  cases hs : c.raw.stepBlock.tensorSigs[r.sourceSlot]? with
++  | none =>
++      simp only [hs, Bool.false_eq_true] at hf
++      exact hf.2.elim
++  | some sig =>
++      rw [hs] at hf
++      cases hc : c.raw.stepCaptures.find? (fun cap => cap.inputSlot == r.sourceSlot) with
++      | none => simpa only [hc, Bool.and_false, Bool.false_eq_true] using hf.2
++      | some cap =>
++          rw [hc] at hf
++          cases hsource : cap.source with
++          | external slot =>
++              simp only [hsource]
++              simp only [hsource, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hf
++              exact ⟨sig, hf.2.2⟩
++          | state si =>
++              simp only [hsource]
++              simp only [hsource, Bool.and_eq_true, beq_iff_eq] at hf
++              exact hf.2.2.1.2
++
++theorem state_time (t : TermPlan) (r : ReadPlan)
++    (basis : t.iterationShape.size = 2 ∧
++      ((t.contextPos = #[0] ∧ t.outputPos = #[1]) ∨
++        (t.contextPos = #[1] ∧ t.outputPos = #[0])))
++    (rows : stateRowsOk t r = true) (i clock : Int) :
++    (applyAffine r.map (termBasis t i clock)).getD 1 0 =
++      clock + r.map.bias.getD 1 0 := by
++  simp only [stateRowsOk, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at rows
++  rcases basis with ⟨size, (⟨ctx, out⟩ | ⟨ctx, out⟩)⟩ <;>
++    simp [applyAffine, rows.1.1, rows.1.2, termBasis, size, ctx, out,
++      List.range_succ, Int.add_comm]
++
++theorem Profile.base_identity (p : Profile d n) :
++    baseAssign p.checked = identityBase d := by
++  have h := p.fields
++  simp only [profileOk, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
++  exact h.1.1.1.1.1.1.1.2
++
++theorem Profile.canonical_fields (p : Profile d n) :
++    p.checked.storageKind = .float64 ∧
++    p.checked.raw.states = #[{ destSlot := (p.checked.raw.states.getD 0 default).destSlot, advancingDims := #[1], materialization := .completeHistory, initValue := .zero }] ∧
++    p.checked.sigs[(p.checked.raw.states.getD 0 default).destSlot]? =
++      some { shape := #[d, n + 1], dtype := .f64 } ∧
++    p.checked.raw.baseWrites = #[{ outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[1], #[0]], «bias» := #[0, 0] } }] ∧
++    p.checked.raw.stepWrites = #[{ outputSlot := (stepAssign p.checked).destinationSlot, stateIndex := 0, map := { coeffs := #[#[0, 1], #[1, 0]], «bias» := #[0, 1] } }] ∧
++    (stepAssign p.checked).algebra = admittedAlgebra := by
++  have h := p.fields
++  simp only [profileOk, Bool.and_eq_true, decide_eq_true_eq] at h
++  tauto
++
++def addressBody (p : Profile d n) (dest : Coord (historyShape d n)) :
++    Expr RationalReference.Carrier (declarations p) RationalReference.registry Γ (.scalar ()) :=
++  if dest.2.1.val = 0 then
++    orderedSum p p.checked.raw.baseCaptures (fun _ => dest.1.val) (fun _ => 0)
++      (baseAssign p.checked).terms.toList
++  else
++    orderedSum p p.checked.raw.stepCaptures (fun _ => dest.1.val)
++      (fun _ => (dest.2.1.val : Int) - 1) (stepAssign p.checked).terms.toList
++
++def program (p : Profile d n) :
++    Program RationalReference.Carrier (declarations p) RationalReference.registry where
++  tensors := inferInstanceAs (Fintype (Fin (externalSlots p).length ⊕ Unit))
++  input := fun t => match t with | .inl _ => true | .inr _ => false
++  output := fun t => match t with | .inl _ => false | .inr _ => true
++  output_defined := by intro t; cases t <;> simp
++  statements := fun _ => (canonicalLayout (historyShape d n)).count
++  valuations := fun _ _ => 1
++  guard := fun _ _ _ => true
++  destination := fun ⟨t, ht⟩ s _ =>
++    match t, ht with
++    | .inl _, ht => False.elim (Bool.noConfusion ht)
++    | .inr _, _ => (canonicalLayout (historyShape d n)).enumerate s
++  body := fun ⟨t, ht⟩ s =>
++    match t, ht with
++    | .inl _, ht => False.elim (Bool.noConfusion ht)
++    | .inr _, _ => addressBody p ((canonicalLayout (historyShape d n)).enumerate s)
++
++def addressRank (p : Profile d n) : Address (declarations p) → Nat
++  | ⟨.inl _, _⟩ => 0
++  | ⟨.inr _, q⟩ => q.2.1.val + 1
++
++def occurrenceEquiv (p : Profile d n) :
++    IndexedOpenComposition.SourceOccurrence (program p) ≃
++      Fin (canonicalLayout (historyShape d n)).count where
++  toFun := fun o => o.2.1
++  invFun := fun s => ⟨⟨.inr (), rfl⟩, s, ⟨⟨0, by change 0 < 1; omega⟩, rfl⟩⟩
++  left_inv := by
++    rintro ⟨⟨tx, ht⟩, s, v, hv⟩
++    cases tx with
++    | inl slot => contradiction
++    | inr u =>
++        cases u
++        change Fin 1 at v
++        have he : v = ⟨0, by omega⟩ := Subsingleton.elim _ _
++        subst v
++        rfl
++  right_inv := fun _ => rfl
++
++def writer (p : Profile d n) (s : Fin (canonicalLayout (historyShape d n)).count) :
++    IndexedOpenComposition.Writer (declarations p) :=
++  let dest := (canonicalLayout (historyShape d n)).enumerate s
++  { tag := s.val
++    capability := s.val
++    destination := ⟨.inr (), dest⟩
++    reads := footprint (addressBody p dest) ()
++    body := addressBody p dest }
++
++def fragment (p : Profile d n) : IndexedOpenComposition.Fragment (declarations p) :=
++  ⟨(List.finRange (canonicalLayout (historyShape d n)).count).map (writer p)⟩
++
++def tensorOrder (p : Profile d n) : List (declarations p).Tensor :=
++  (List.finRange (externalSlots p).length).map Sum.inl ++ [.inr ()]
++
++def contract (p : Profile d n) : IndexedOpenComposition.Contract (declarations p) where
++  tensors := tensorOrder p
++  input := (program p).input
++  collectors := (List.finRange (canonicalLayout (historyShape d n)).count).map
++    (fun s => ((writer p s).destination, [s.val]))
++  readable := (tensorOrder p).flatMap fun t =>
++    (List.finRange (canonicalLayout ((declarations p).signature t).axes).count).map
++      (fun s => ⟨t, (canonicalLayout ((declarations p).signature t).axes).enumerate s⟩)
++  outputs := (List.finRange (canonicalLayout (historyShape d n)).count).map
++    (fun s => (writer p s).destination)
++
++def graphCandidate (p : Profile d n) : IndexedOpenComposition.Closed (declarations p) :=
++  ⟨contract p, IndexedOpenComposition.canonicalSteps (contract p) (fragment p)⟩
++
++theorem captured_state_earlier (t : TermPlan) (r : ReadPlan)
++    (basis : t.iterationShape.size = 2 ∧
++      ((t.contextPos = #[0] ∧ t.outputPos = #[1]) ∨
++        (t.contextPos = #[1] ∧ t.outputPos = #[0])))
++    (rows : stateRowsOk t r = true) (i : Int) (clock : Nat)
++    (q : Coord (historyShape d n))
++    (inside : decodeRaw (historyShape d n)
++      (fun j => (applyAffine r.map (termBasis t i clock)).getD j.val 0) = some q) :
++    q.2.1.val ≤ clock := by
++  have coordinates := decodeRaw_sound _ _ q inside
++  have time := congrFun coordinates ⟨1, by simp [historyShape]⟩
++  have affine := state_time t r basis rows i clock
++  have offsets := rows
++  simp only [stateRowsOk, Bool.and_eq_true, decide_eq_true_eq] at offsets
++  have nonpositive : r.map.bias.getD 1 0 ≤ 0 := offsets.2
++  change (q.2.1.val : Int) =
++    (applyAffine r.map (termBasis t i clock)).getD 1 0 at time
++  omega
++
++#print axioms program
++#print axioms occurrenceEquiv
++#print axioms captured_state_earlier
++
++end IndexedExecutionExperiment.AffineScan
++
++#audit_axioms IndexedExecutionExperiment.AffineScan
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedAffineScanMatch.lean
+@@ -0,0 +1,446 @@
++import IndexedAffineScanConstruction
++import IndexedComponentClosureFacts
++import Mathlib.Data.List.FinRange
++import Mathlib.Data.List.Nodup
++import Mathlib.Data.Fintype.Sum
++
++namespace IndexedExecutionExperiment.AffineScan
++
++open LeanNCD.Semantics LeanNCD.Eval.Plan IndexedOpenComposition
++
++variable (p : Profile d n)
++
++instance : Fintype (declarations p).Tensor :=
++  inferInstanceAs (Fintype (Fin (externalSlots p).length ⊕ Unit))
++
++instance : DecidableEq (declarations p).Tensor :=
++  inferInstanceAs (DecidableEq (Fin (externalSlots p).length ⊕ Unit))
++
++theorem tensorOrder_nodup : (tensorOrder p).Nodup := by
++  simp only [tensorOrder, declarations, List.nodup_append]
++  refine ⟨(List.nodup_finRange _).map Sum.inl_injective, by simp, ?_⟩
++  simp
++
++theorem tensorOrder_complete (tx : (declarations p).Tensor) : tx ∈ tensorOrder p := by
++  cases tx with
++  | inl slot =>
++      apply List.mem_append.mpr
++      exact Or.inl (List.mem_map.mpr ⟨slot, by simp, rfl⟩)
++  | inr u =>
++      cases u
++      apply List.mem_append.mpr
++      exact Or.inr (List.Mem.head _)
++
++def historyIndex : Address (declarations p) →
++    Option (Fin (canonicalLayout (historyShape d n)).count)
++  | ⟨.inl _, _⟩ => none
++  | ⟨.inr _, q⟩ => some ((canonicalLayout (historyShape d n)).enumerate.symm q)
++
++theorem writer_destination_injective :
++    Function.Injective (fun s => (writer p s).destination) := by
++  intro s t h
++  have he := congrArg (historyIndex p) h
++  simpa [historyIndex, writer] using he
++
++theorem collectors_targets :
++    (contract p).collectors.map Prod.fst =
++      (List.finRange (canonicalLayout (historyShape d n)).count).map
++        (fun s => (writer p s).destination) := by
++  simp [contract, List.map_map]
++
++theorem history_collected (q : Coord (historyShape d n)) :
++    (⟨Sum.inr (), q⟩ : Address (declarations p)) ∈
++      (contract p).collectors.map Prod.fst := by
++  rw [collectors_targets]
++  exact List.mem_map.mpr
++    ⟨(canonicalLayout (historyShape d n)).enumerate.symm q, by simp, by simp [writer]⟩
++
++theorem readable_complete (a : Address (declarations p)) :
++    a ∈ (contract p).readable := by
++  rcases a with ⟨tx, q⟩
++  apply List.mem_flatMap.mpr
++  refine ⟨tx, tensorOrder_complete p tx, ?_⟩
++  exact List.mem_map.mpr
++    ⟨(canonicalLayout ((declarations p).signature tx).axes).enumerate.symm q,
++      by simp, by simp⟩
++
++theorem readable_nodup : (contract p).readable.Nodup := by
++  apply List.nodup_flatMap.mpr
++  constructor
++  · intro tx _
++    apply (List.nodup_finRange _).map
++    intro i j he
++    have hq : (canonicalLayout ((declarations p).signature tx).axes).enumerate i =
++        (canonicalLayout ((declarations p).signature tx).axes).enumerate j := by
++      simpa only [Sigma.mk.inj_iff, heq_eq_eq, true_and] using he
++    exact (canonicalLayout _).enumerate.injective hq
++  · apply (tensorOrder_nodup p).imp
++    intro tx ty hne a hx hy
++    rcases List.mem_map.mp hx with ⟨i, _, hi⟩
++    rcases List.mem_map.mp hy with ⟨j, _, hj⟩
++    exact hne (by simpa using congrArg Sigma.fst (hi.trans hj.symm))
++
++theorem find_unique {α : Type u} (xs : List α) (pred : α → Bool)
++    (a : α) (ha : a ∈ xs) (hp : pred a = true)
++    (unique : ∀ b ∈ xs, pred b = true → b = a) : xs.find? pred = some a := by
++  cases hf : xs.find? pred with
++  | none =>
++      have hn := List.find?_eq_none.mp hf a ha
++      simp [hp] at hn
++  | some b =>
++      have hb := unique b (List.mem_of_find?_eq_some hf) (List.find?_some hf)
++      simp [hb]
++
++theorem find_collector (s : Fin (canonicalLayout (historyShape d n)).count) :
++    (contract p).collectors.find? (fun row => row.2.contains s.val) =
++      some ((writer p s).destination, [s.val]) := by
++  apply find_unique
++  · exact List.mem_map.mpr ⟨s, by simp, rfl⟩
++  · simp
++  · intro row hr hp
++    rcases List.mem_map.mp hr with ⟨t, _, rfl⟩
++    have ht : t = s := Fin.ext (by simpa [eq_comm] using hp)
++    subst t
++    rfl
++
++theorem find_writer (s : Fin (canonicalLayout (historyShape d n)).count) :
++    (fragment p).writers.find? (fun w => w.capability == s.val) =
++      some (writer p s) := by
++  apply find_unique
++  · exact List.mem_map.mpr ⟨s, by simp, rfl⟩
++  · simp [writer]
++  · intro w hw hp
++    rcases List.mem_map.mp hw with ⟨t, _, rfl⟩
++    have ht : t = s := Fin.ext (by simpa [writer] using hp)
++    subst t
++    rfl
++
++theorem writer_valid (s : Fin (canonicalLayout (historyShape d n)).count) :
++    validateWriter (contract p) (writer p s) = .ok () := by
++  letI := Program.Executor.addressEq (σ := declarations p)
++  have hr : ((writer p s).reads.all fun a =>
++      (contract p).readable.any fun port => decide (port = a)) = true := by
++    apply List.all_eq_true.mpr
++    intro a _
++    exact List.any_eq_true.mpr ⟨a, readable_complete p a, by simp⟩
++  unfold validateWriter
++  rw [show (writer p s).capability = s.val from rfl, find_collector]
++  simp only [writer, decide_true, Bool.not_true]
++  change (if !((writer p s).reads.all fun a =>
++      (contract p).readable.any fun port => decide (port = a)) then
++        Except.error Error.unreadableRead else Except.ok ()) = Except.ok ()
++  simp [hr]
++
++theorem writers_valid :
++    validateWriters (contract p) (fragment p).writers = .ok () := by
++  have all : ∀ ws : List (Fin (canonicalLayout (historyShape d n)).count),
++      validateWriters (contract p) (ws.map (writer p)) = .ok () := by
++    intro ws
++    induction ws with
++    | nil => rfl
++    | cons s ss ih =>
++        simp only [List.map_cons, validateWriters, writer_valid, ih]
++        rfl
++  exact all _
++
++theorem closureFacts : ClosureFacts (contract p) (fragment p) where
++  tensors_nodup := tensorOrder_nodup p
++  tensors_count := by
++    calc
++      (tensorOrder p).length =
++          ((List.finRange (externalSlots p).length).map
++            (Sum.inl : Fin (externalSlots p).length → (declarations p).Tensor)).length +
++              ([Sum.inr ()] : List (declarations p).Tensor).length :=
++        @List.length_append (declarations p).Tensor _ _
++      _ = (externalSlots p).length + 1 := by rw [List.length_map]; simp
++      _ = Fintype.card (declarations p).Tensor := by
++        change (externalSlots p).length + 1 = Fintype.card (Fin (externalSlots p).length ⊕ Unit)
++        simp [Fintype.card_sum]
++  collectors_nodup := by
++    rw [collectors_targets]
++    exact (List.nodup_finRange _).map (writer_destination_injective p)
++  collectors_defined := by
++    intro row hr
++    rcases List.mem_map.mp hr with ⟨s, _, rfl⟩
++    rfl
++  collectors_cover := by
++    intro a ha
++    rcases List.mem_flatMap.mp ha with ⟨tx, ht, hp⟩
++    have hin := (List.mem_filter.mp ht).2
++    rcases List.mem_map.mp hp with ⟨i, _, rfl⟩
++    cases tx with
++    | inl slot => simp [contract, program] at hin
++    | inr u => cases u; exact history_collected p _
++  readable_nodup := readable_nodup p
++  readable_valid := by
++    rintro ⟨tx, q⟩ _
++    cases tx with
++    | inl slot => exact Or.inl rfl
++    | inr u => cases u; exact Or.inr (history_collected p q)
++  outputs_nodup := (List.nodup_finRange _).map (writer_destination_injective p)
++  outputs_covered := by intro a ha; simpa [contract, List.map_map] using ha
++  capabilities_nodup := by
++    simpa [contract, List.flatMap_map, ← List.map_eq_flatMap] using
++      (List.nodup_finRange _).map (Fin.val_injective :
++        Function.Injective (fun s : Fin (canonicalLayout (historyShape d n)).count => s.val))
++  tags_nodup := by
++    simpa [fragment, List.map_map, Function.comp_def, writer] using
++      (List.nodup_finRange _).map (Fin.val_injective :
++        Function.Injective (fun s : Fin (canonicalLayout (historyShape d n)).count => s.val))
++  writer_capabilities_nodup := by
++    simpa [fragment, List.map_map, Function.comp_def, writer] using
++      (List.nodup_finRange _).map (Fin.val_injective :
++        Function.Injective (fun s : Fin (canonicalLayout (historyShape d n)).count => s.val))
++  capabilities_covered := by
++    intro cap hc
++    simp only [contract, List.flatMap_map,
++      ← List.map_eq_flatMap, List.mem_map] at hc
++    rcases hc with ⟨s, hs, rfl⟩
++    exact ⟨writer p s, List.mem_map.mpr ⟨s, hs, rfl⟩, rfl⟩
++  writers_valid := writers_valid p
++
++theorem close_ok :
++    close (contract p) (fragment p) = .ok (graphCandidate p) :=
++  (closureFacts p).close
++
++open Program.Executor
++
++def occurrenceKey (s : Fin (canonicalLayout (historyShape d n)).count) :
++    Key (program p) :=
++  .occurrence ((occurrenceEquiv p).symm s).1 ((occurrenceEquiv p).symm s).2
++
++def publicationKey (s : Fin (canonicalLayout (historyShape d n)).count) :
++    Key (program p) :=
++  .publication ⟨.inr (), rfl⟩ ((canonicalLayout (historyShape d n)).enumerate s)
++
++def keyIndex : Key (program p) → Fin (canonicalLayout (historyShape d n)).count
++  | .occurrence tx o => occurrenceEquiv p ⟨tx, o⟩
++  | .publication ⟨tx, ht⟩ q =>
++      match tx, ht with
++      | .inl _, ht => False.elim (Bool.noConfusion ht)
++      | .inr _, _ => (canonicalLayout (historyShape d n)).enumerate.symm q
++
++@[simp] theorem keyIndex_occurrence (s : Fin (canonicalLayout (historyShape d n)).count) :
++    keyIndex p (occurrenceKey p s) = s := by
++  simp [keyIndex, occurrenceKey]
++
++@[simp] theorem keyIndex_publication (s : Fin (canonicalLayout (historyShape d n)).count) :
++    keyIndex p (publicationKey p s) = s := by
++  simp [keyIndex, publicationKey]
++
++def keyOrder : List (Key (program p)) :=
++  (List.finRange (canonicalLayout (historyShape d n)).count).flatMap
++    (fun s => [occurrenceKey p s, publicationKey p s])
++
++theorem keyOrder_nodup : (keyOrder p).Nodup := by
++  apply List.nodup_flatMap.mpr
++  constructor
++  · intro s _
++    simp [occurrenceKey, publicationKey]
++  · apply (List.nodup_finRange _).imp
++    intro s t hne k hs ht
++    have hi : keyIndex p k = s := by
++      simp only [List.mem_cons, List.not_mem_nil, or_false] at hs
++      rcases hs with rfl | rfl <;> simp
++    have hj : keyIndex p k = t := by
++      simp only [List.mem_cons, List.not_mem_nil, or_false] at ht
++      rcases ht with rfl | rfl <;> simp
++    exact hne (hi.symm.trans hj)
++
++theorem keyOrder_complete (k : Key (program p)) : k ∈ keyOrder p := by
++  apply List.mem_flatMap.mpr
++  refine ⟨keyIndex p k, by simp, ?_⟩
++  cases k with
++  | occurrence tx o =>
++      have he : (occurrenceEquiv p).symm (occurrenceEquiv p ⟨tx, o⟩) = ⟨tx, o⟩ :=
++        (occurrenceEquiv p).symm_apply_apply _
++      have hk : occurrenceKey p (keyIndex p (.occurrence tx o)) = .occurrence tx o := by
++        exact congrArg (fun z : SourceOccurrence (program p) => Key.occurrence z.1 z.2) he
++      exact List.mem_cons.mpr (Or.inl hk.symm)
++  | publication tx q =>
++      rcases tx with ⟨tx, ht⟩
++      cases tx with
++      | inl slot => contradiction
++      | inr u =>
++          cases u
++          have hk : publicationKey p (keyIndex p (.publication ⟨.inr (), ht⟩ q)) =
++              .publication ⟨.inr (), ht⟩ q := by
++            simp [publicationKey, keyIndex]
++          exact List.mem_cons.mpr (Or.inr (List.mem_cons.mpr (Or.inl hk.symm)))
++
++def schedule : Schedule (program p) where
++  tensors := tensorOrder p
++  tensors_nodup := tensorOrder_nodup p
++  tensors_complete := tensorOrder_complete p
++  keys := keyOrder p
++  keys_nodup := keyOrder_nodup p
++  keys_complete := keyOrder_complete p
++
++def sourceToWriter :
++    SourceOccurrence (program p) ≃ Fin (fragment p).writers.length :=
++  (occurrenceEquiv p).trans (finCongr (by simp [fragment]))
++
++theorem writer_at (o : SourceOccurrence (program p)) :
++    (fragment p).writers[sourceToWriter p o] = writer p (occurrenceEquiv p o) := by
++  change (fragment p).writers.get (sourceToWriter p o) = _
++  simp only [fragment, List.get_eq_getElem, List.getElem_map, List.getElem_finRange]
++  exact congrArg (writer p) (Fin.ext rfl)
++
++theorem find_collector_destination (s : Fin (canonicalLayout (historyShape d n)).count) :
++    (contract p).collectors.find? (fun row => decide (row.1 = (writer p s).destination)) =
++      some ((writer p s).destination, [s.val]) := by
++  letI := Program.Executor.addressEq (σ := declarations p)
++  apply find_unique
++  · exact List.mem_map.mpr ⟨s, by simp, rfl⟩
++  · simp
++  · intro row hr hp
++    rcases List.mem_map.mp hr with ⟨t, _, rfl⟩
++    have ht := writer_destination_injective p (of_decide_eq_true hp)
++    subst t
++    rfl
++
++theorem collector_capabilities (s : Fin (canonicalLayout (historyShape d n)).count) :
++    collectorCapabilities (contract p) (writer p s).destination = [s.val] := by
++  exact congrArg (fun row : Option (Address (declarations p) × List Nat) =>
++    (row.map Prod.snd).getD []) (find_collector_destination p s)
++
++theorem graph_steps :
++    (graphCandidate p).steps =
++      (List.finRange (canonicalLayout (historyShape d n)).count).flatMap
++        (fun s => [.write (writer p s), .collect (writer p s).destination [s.val]]) := by
++  simp [graphCandidate, canonicalSteps, contract, List.flatMap_map, find_writer]
++
++theorem schedule_priority :
++    (schedule p).keys.map (keyStep (program p) (contract p) (fragment p)
++      (sourceToWriter p)) = (graphCandidate p).steps := by
++  rw [graph_steps]
++  simp only [schedule, keyOrder, List.map_flatMap, List.map_cons, List.map_nil]
++  apply List.flatMap_congr
++  intro s _
++  congr 1
++  · simp only [occurrenceKey, keyStep, writer_at]
++    change Step.write (writer p (occurrenceEquiv p ((occurrenceEquiv p).symm s))) =
++      Step.write (writer p s)
++    rw [Equiv.apply_symm_apply]
++  · congr 1
++    change Step.collect (writer p s).destination
++      (collectorCapabilities (contract p) (writer p s).destination) =
++        Step.collect (writer p s).destination [s.val]
++    rw [collector_capabilities]
++
++theorem factor_context (caps : Array BlockCapture) (basis : List Int)
++    (f : FactorPlan) (γ : Γ)
++    (store : PartialStore RationalReference.Carrier (declarations p)) :
++    footprint (factorBody p caps (fun _ : Γ => basis) f) γ =
++        footprint (factorBody p caps (fun _ : Unit => basis) f) () ∧
++    evalWith RationalReference.ops store (factorBody p caps (fun _ : Γ => basis) f) γ =
++        evalWith RationalReference.ops store (factorBody p caps (fun _ : Unit => basis) f) () := by
++  cases f <;> exact ⟨rfl, rfl⟩
++
++theorem product_context (caps : Array BlockCapture) (basis : List Int)
++    (fs : List FactorPlan) (γ : Γ)
++    (store : PartialStore RationalReference.Carrier (declarations p)) :
++    footprint (orderedProduct p caps (fun _ : Γ => basis) fs) γ =
++        footprint (orderedProduct p caps (fun _ : Unit => basis) fs) () ∧
++    evalWith RationalReference.ops store (orderedProduct p caps (fun _ : Γ => basis) fs) γ =
++        evalWith RationalReference.ops store (orderedProduct p caps (fun _ : Unit => basis) fs) () := by
++  induction fs with
++  | nil => exact ⟨rfl, rfl⟩
++  | cons f fs ih =>
++      have hf := factor_context p caps basis f γ store
++      constructor
++      · simp only [orderedProduct, footprint, hf.1, ih.1]
++      · simp only [orderedProduct, evalWith, hf.2, ih.2]
++
++theorem sum_context (caps : Array BlockCapture) (i clock : Int)
++    (ts : List TermPlan) (γ : Γ)
++    (store : PartialStore RationalReference.Carrier (declarations p)) :
++    footprint (orderedSum p caps (fun _ : Γ => i) (fun _ => clock) ts) γ =
++        footprint (orderedSum p caps (fun _ : Unit => i) (fun _ => clock) ts) () ∧
++    evalWith RationalReference.ops store
++        (orderedSum p caps (fun _ : Γ => i) (fun _ => clock) ts) γ =
++      evalWith RationalReference.ops store
++        (orderedSum p caps (fun _ : Unit => i) (fun _ => clock) ts) () := by
++  induction ts with
++  | nil => exact ⟨rfl, rfl⟩
++  | cons t ts ih =>
++      have hp := product_context p caps (termBasis t i clock) t.factors.toList γ store
++      constructor
++      · simp only [orderedSum, footprint, hp.1, ih.1]
++      · simp only [orderedSum, evalWith, hp.2, ih.2]
++
++theorem addressBody_context (q : Coord (historyShape d n)) (γ : Γ)
++    (store : PartialStore RationalReference.Carrier (declarations p)) :
++    footprint (addressBody p q) γ = footprint (addressBody p q) () ∧
++    evalWith RationalReference.ops store (addressBody p q) γ =
++      evalWith RationalReference.ops store (addressBody p q) () := by
++  unfold addressBody
++  split <;> apply sum_context
++
++theorem source_outputs_exact (a : Address (declarations p)) :
++    a ∈ (contract p).outputs ↔ (program p).output a.1 = true := by
++  rcases a with ⟨tx, q⟩
++  cases tx with
++  | inl slot =>
++      constructor
++      · intro h
++        rcases List.mem_map.mp h with ⟨s, _, hs⟩
++        have ht := congrArg Sigma.fst hs
++        cases ht
++      · intro h
++        contradiction
++  | inr u =>
++      cases u
++      constructor
++      · intro _; rfl
++      · intro _
++        have h := history_collected p q
++        simpa only [contract, List.map_map, Function.comp_def] using h
++
++def sourceMatch : SourceContractMatch (program p) (schedule p)
++    (contract p) (fragment p) (graphCandidate p) where
++  close_ok := close_ok p
++  input_roles := rfl
++  tensor_order := rfl
++  outputs_exact := source_outputs_exact p
++  sourceToWriter := sourceToWriter p
++  writer_destination := by
++    intro o
++    rw [writer_at]
++    rcases o with ⟨⟨tx, ht⟩, s, v, hv⟩
++    cases tx with
++    | inl slot => contradiction
++    | inr u => cases u; rfl
++  writer_reads := by
++    intro o
++    rw [writer_at]
++    rcases o with ⟨⟨tx, ht⟩, s, v, hv⟩
++    cases tx with
++    | inl slot => contradiction
++    | inr u =>
++        cases u
++        exact (addressBody_context p ((canonicalLayout (historyShape d n)).enumerate s)
++          (⟨v, hv⟩ : {v : Fin 1 // true = true}) (fun _ => none)).1.symm
++  eval_agrees := by
++    intro o store
++    rw [writer_at]
++    rcases o with ⟨⟨tx, ht⟩, s, v, hv⟩
++    cases tx with
++    | inl slot => contradiction
++    | inr u =>
++        cases u
++        have h := addressBody_context p ((canonicalLayout (historyShape d n)).enumerate s)
++          (⟨v, hv⟩ : {v : Fin 1 // true = true}) store
++        change evalReady RationalReference.ops store
++          (addressBody p ((canonicalLayout (historyShape d n)).enumerate s)) () =
++            evalReady RationalReference.ops store
++              (addressBody p ((canonicalLayout (historyShape d n)).enumerate s))
++                (⟨v, hv⟩ : {v : Fin 1 // true = true})
++        simp only [evalReady, h.1, h.2]
++  priority := schedule_priority p
++
++end IndexedExecutionExperiment.AffineScan
++
++#print axioms IndexedExecutionExperiment.AffineScan.close_ok
++#print axioms IndexedExecutionExperiment.AffineScan.sourceMatch
++#audit_axioms IndexedExecutionExperiment.AffineScan
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedAffineScanRank.lean
+@@ -0,0 +1,292 @@
++import IndexedAffineScanMatch
++import LeanNCD.Semantics.Ranks
++import IndexedComponentCompositionScope
++
++namespace IndexedExecutionExperiment.AffineScan
++
++open LeanNCD.Semantics LeanNCD.Eval.Plan
++
++variable (p : Profile d n)
++
++theorem Profile.external_bound (cap : BlockCapture) (hcap : cap ∈ allCaptures p.checked)
++    (slot : Nat) (hs : cap.source = .external slot) : slot < p.checked.sigs.size := by
++  have h := p.fields
++  simp only [profileOk, Bool.and_eq_true] at h
++  have bounded : capturesBounded p.checked = true := by tauto
++  have hb := List.all_eq_true.mp bounded cap hcap
++  simpa only [hs, decide_eq_true_eq] using hb
++
++theorem outerSlot_selected (i : Fin (externalSlots p).length) :
++    externalCapture p.checked (outerSlot p i).val = true :=
++  (List.mem_filter.mp (List.get_mem (externalSlots p) i)).2
++
++theorem input_outer_iff (slot : Nat) :
++    (∃ i : Fin (externalSlots p).length, (outerSlot p i).val = slot) ↔
++      ∃ cap ∈ allCaptures p.checked, cap.source = .external slot := by
++  constructor
++  · rintro ⟨i, hi⟩
++    have selected := outerSlot_selected p i
++    rw [hi] at selected
++    exact List.any_eq_true.mp selected |>.imp (fun cap h => ⟨h.1, of_decide_eq_true h.2⟩)
++  · rintro ⟨cap, hcap, hs⟩
++    have bound := p.external_bound cap hcap slot hs
++    have selected : externalCapture p.checked slot = true :=
++      List.any_eq_true.mpr ⟨cap, hcap, by simp [hs]⟩
++    exact ⟨externalIndex p ⟨slot, bound⟩ selected,
++      congrArg Fin.val (outerSlot_externalIndex p ⟨slot, bound⟩ selected)⟩
++
++theorem input_signature (i : Fin (externalSlots p).length) :
++    (declarations p).signature (.inl i) =
++      ⟨(), slotShape ((outerSlot p i).val + 1)
++        p.checked.sigs[outerSlot p i].shape.toList⟩ := rfl
++
++theorem Profile.base_capture :
++    ∃ slot, p.checked.raw.baseCaptures = #[{ inputSlot := 0, source := .external slot }] ∧
++      p.checked.sigs[slot]? = some { shape := #[d], dtype := .f64 } := by
++  let z := p.checked.raw.baseCaptures.getD 0 default
++  let outer := match z.source with | .external slot => some slot | .state _ => none
++  have h := p.fields
++  simp only [profileOk, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
++  have single : p.checked.raw.baseCaptures = #[z] := by tauto
++  have input : z.inputSlot = 0 := by tauto
++  have external : outer.isSome = true := by tauto
++  have sig : outer.bind (fun slot => p.checked.sigs[slot]?) =
++      some { shape := #[d], dtype := .f64 } := by tauto
++  cases hs : z.source with
++  | state si => simp only [outer, hs, Option.isSome_none, Bool.false_eq_true] at external
++  | external slot =>
++      refine ⟨slot, ?_, ?_⟩
++      · have hz : z = { inputSlot := 0, source := .external slot } := by
++          have eta : z = { inputSlot := z.inputSlot, source := z.source } := by
++            cases z
++            rfl
++          exact eta.trans (congrArg₂ BlockCapture.mk input hs)
++        exact single.trans (congrArg (fun cap => #[cap]) hz)
++      · simpa only [outer, hs, Option.bind_some] using sig
++
++theorem slot_bound {sigs : Array TensorSignature} {slot : Nat} {sig : TensorSignature}
++    (hs : sigs[slot]? = some sig) : slot < sigs.size := by
++  rcases Array.getElem?_eq_some_iff.mp hs with ⟨bound, _⟩
++  exact bound
++
++theorem read_footprint {tx : (declarations p).Tensor}
++    (access : AdmittedRead ℚ ((declarations p).signature tx).axes Γ)
++    (γ : Γ) (a : Address (declarations p))
++    (ha : a ∈ footprint
++      (Expr.read tx access : Expr RationalReference.Carrier (declarations p)
++        RationalReference.registry Γ (.scalar ())) γ) :
++    ∃ q, access.resolved γ = .at q ∧ a = ⟨tx, q⟩ := by
++  cases hq : access.resolved γ with
++  | const value => simp only [footprint, hq, List.not_mem_nil] at ha
++  | «at» q =>
++      refine ⟨q, rfl, ?_⟩
++      simpa only [footprint, hq, List.mem_cons, List.not_mem_nil, or_false] using ha
++
++theorem paddedResolve_at {zero : K} {sh : Shape} {raw : RawCoord sh} {q : Coord sh}
++    (h : paddedResolve zero sh raw = .at q) : decodeRaw sh raw = some q := by
++  cases hd : decodeRaw sh raw with
++  | none =>
++      simp only [paddedResolve, hd] at h
++      cases h
++  | some v =>
++      have he : v = q := by simpa only [paddedResolve, hd, Resolved.at.injEq] using h
++      simp [he]
++
++private def stateAccess (r : ReadPlan) (basis : Γ → List Int) :
++    AdmittedRead ℚ (historyShape d n) Γ where
++  policy := zeroPolicy 0 _
++  raw := fun γ j => (applyAffine r.map (basis γ)).getD j.val 0
++  resolved := fun γ => paddedResolve 0 _
++    (fun j => (applyAffine r.map (basis γ)).getD j.val 0)
++  admission := fun _ => rfl
++
++theorem factor_rank (t : TermPlan) (supported : termSupported p.checked d n t = true)
++    (f : FactorPlan) (hf : f ∈ t.factors) (i : Int) (clock : Nat) (γ : Γ)
++    (a : Address (declarations p))
++    (ha : a ∈ footprint (factorBody p p.checked.raw.stepCaptures
++      (fun _ : Γ => termBasis t i clock) f) γ) :
++    addressRank p a ≤ clock + 1 := by
++  cases f with
++  | iverson pred => simp only [factorBody, footprint, List.not_mem_nil] at ha
++  | read r =>
++      have captured := supported_capture p.checked t supported r hf
++      cases hc : p.checked.raw.stepCaptures.find? (fun cap => cap.inputSlot == r.sourceSlot) with
++      | none => simp only [hc] at captured
++      | some cap =>
++          cases hs : cap.source with
++          | external slot =>
++              simp only [hc, hs] at captured
++              obtain ⟨sig, sig_eq, selected⟩ := captured
++              have bound := slot_bound sig_eq
++              let inputSlot := externalIndex p ⟨slot, bound⟩ selected
++              have tensor_eq : readTensor p p.checked.raw.stepCaptures r = .inl inputSlot := by
++                cases cap with
++                | mk input source =>
++                    change source = .external slot at hs
++                    subst source
++                    simp [readTensor, hc, bound, selected, inputSlot]
++              obtain ⟨q, _, he⟩ := read_footprint p
++                (actualAccess p p.checked.raw.stepCaptures r (fun _ : Γ => termBasis t i clock))
++                γ a ha
++              have ht : a.1 = .inl inputSlot :=
++                (congrArg Sigma.fst he).trans tensor_eq
++              rcases a with ⟨tx, aq⟩
++              cases ht
++              exact Nat.zero_le _
++          | state si =>
++              simp only [hc, hs] at captured
++              have tensor_eq : readTensor p p.checked.raw.stepCaptures r = .inr () := by
++                cases cap with
++                | mk input source =>
++                    change source = .state si at hs
++                    subst source
++                    simp [readTensor, hc]
++              have ha' : a ∈ footprint
++                  (@Expr.read Unit RationalReference.Carrier (declarations p)
++                    RationalReference.registry Γ (Sum.inr ())
++                    (stateAccess (d := d) (n := n) r (fun _ : Γ => termBasis t i clock)) :
++                    Expr RationalReference.Carrier (declarations p)
++                      RationalReference.registry Γ (.scalar ())) γ := by
++                have he := congrArg (fun tx : (declarations p).Tensor =>
++                  footprint (@Expr.read Unit RationalReference.Carrier (declarations p)
++                    RationalReference.registry Γ tx
++                    (tensorAccess p tx r (fun _ : Γ => termBasis t i clock))) γ) tensor_eq
++                exact Eq.mp (congrArg (fun fp => a ∈ fp) he) ha
++              obtain ⟨q, resolved, he⟩ := read_footprint p _ γ a ha'
++              subst a
++              have inside := paddedResolve_at resolved
++              have earlier := captured_state_earlier t r
++                (supported_basis p.checked t supported) captured i clock q inside
++              exact Nat.succ_le_succ earlier
++
++theorem orderedProduct_footprint (caps : Array BlockCapture) (basis : Γ → List Int)
++    (fs : List FactorPlan) (γ : Γ) :
++    footprint (orderedProduct p caps basis fs) γ =
++      fs.flatMap (fun f => footprint (factorBody p caps basis f) γ) := by
++  induction fs with
++  | nil => rfl
++  | cons f fs ih => simp only [orderedProduct, footprint, List.flatMap_cons, ih]
++
++theorem orderedSum_footprint (caps : Array BlockCapture) (i clock : Γ → Int)
++    (ts : List TermPlan) (γ : Γ) :
++    footprint (orderedSum p caps i clock ts) γ =
++      ts.flatMap (fun t => t.factors.toList.flatMap
++        (fun f => footprint (factorBody p caps
++          (fun γ => termBasis t (i γ) (clock γ)) f) γ)) := by
++  induction ts with
++  | nil => rfl
++  | cons t ts ih =>
++      simp only [orderedSum, footprint, orderedProduct_footprint, List.flatMap_cons, ih]
++
++theorem step_rank (i : Int) (clock : Nat) (γ : Γ) (a : Address (declarations p))
++    (ha : a ∈ footprint (orderedSum p p.checked.raw.stepCaptures
++      (fun _ : Γ => i) (fun _ => clock) (stepAssign p.checked).terms.toList) γ) :
++    addressRank p a ≤ clock + 1 := by
++  rw [orderedSum_footprint] at ha
++  rcases List.mem_flatMap.mp ha with ⟨t, ht, ha⟩
++  rcases List.mem_flatMap.mp ha with ⟨f, hf, ha⟩
++  exact factor_rank p t (p.step_terms t (by simpa using ht)) f (by simpa using hf)
++    i clock γ a ha
++
++theorem base_rank (i : Int) (γ : Γ) (a : Address (declarations p))
++    (ha : a ∈ footprint (orderedSum p p.checked.raw.baseCaptures
++      (fun _ : Γ => i) (fun _ => 0) (baseAssign p.checked).terms.toList) γ) :
++    addressRank p a = 0 := by
++  obtain ⟨slot, caps, sig⟩ := p.base_capture
++  have bound := slot_bound sig
++  have selected : externalCapture p.checked slot = true := by
++    simp [externalCapture, allCaptures, caps]
++  let inputSlot := externalIndex p ⟨slot, bound⟩ selected
++  rw [p.base_identity] at ha
++  simp only [identityBase, orderedSum, orderedProduct, footprint,
++    List.append_nil] at ha
++  obtain ⟨q, _, he⟩ := read_footprint p _ γ a ha
++  have tensor_eq : readTensor p p.checked.raw.baseCaptures
++      { sourceSlot := 0, map := { coeffs := #[#[1]], «bias» := #[0] },
++        sourceShape := #[d], oobPolicy := .zeroPad } = .inl inputSlot := by
++    simp [readTensor, caps, bound, selected, inputSlot]
++  have ht : a.1 = .inl inputSlot := (congrArg Sigma.fst he).trans tensor_eq
++  rcases a with ⟨tx, aq⟩
++  cases ht
++  rfl
++
++theorem body_rank (q : Coord (historyShape d n)) (γ : Γ) (a : Address (declarations p))
++    (ha : a ∈ footprint (addressBody p q) γ) :
++    addressRank p a < q.2.1.val + 1 := by
++  unfold addressBody at ha
++  split at ha
++  · have hz := base_rank p q.1.val γ a ha
++    omega
++  · rename_i nonzero
++    have clock_eq : (q.2.1.val : Int) - 1 = ((q.2.1.val - 1 : Nat) : Int) := by omega
++    rw [clock_eq] at ha
++    have hr := step_rank p q.1.val (q.2.1.val - 1) γ a ha
++    omega
++
++def rankCertificate : (program p).RankCertificate where
++  rank := addressRank p
++  decreases := by
++    rintro a b ⟨tx, ⟨s, v⟩, rfl, hb⟩
++    rcases tx with ⟨tx, ht⟩
++    cases tx with
++    | inl slot => contradiction
++    | inr u =>
++        cases u
++        exact body_rank p ((canonicalLayout (historyShape d n)).enumerate s) v b hb
++
++def inputPorts : List (IndexedComponentComposition.Port (declarations p)) :=
++  (List.finRange (externalSlots p).length).map fun i =>
++    { «tensor» := .inl i
++      sort := ()
++      axes := ((declarations p).signature (.inl i)).axes
++      sort_eq := rfl
++      axes_eq := rfl }
++
++def outputPorts : List (IndexedComponentComposition.Port (declarations p)) :=
++  [{ «tensor» := .inr ()
++     sort := ()
++     axes := historyShape d n
++     sort_eq := rfl
++     axes_eq := rfl }]
++
++def component : IndexedComponentComposition.MatchedComponent (declarations p) where
++  program := program p
++  schedule := schedule p
++  contract := contract p
++  fragment := fragment p
++  graph := graphCandidate p
++  matched := sourceMatch p
++  inputs := inputPorts p
++  outputs := outputPorts p
++  inputs_nodup := by
++    simpa [inputPorts, List.map_map, Function.comp_def] using
++      (List.nodup_finRange (externalSlots p).length).map
++        (Sum.inl_injective : Function.Injective
++          (Sum.inl : Fin (externalSlots p).length → (declarations p).Tensor))
++  outputs_nodup := by simp [outputPorts]
++  inputs_exact := by
++    intro tx
++    simp only [inputPorts, List.map_map, Function.comp_def]
++    cases tx with
++    | inl i =>
++        constructor
++        · intro _; rfl
++        · intro _; exact List.mem_map.mpr ⟨i, by simp, rfl⟩
++    | inr u =>
++        constructor
++        · intro hm
++          rcases List.mem_map.mp hm with ⟨i, _, hi⟩
++          cases hi
++        · intro hf; contradiction
++  outputs_exact := by
++    intro tx
++    cases tx with
++    | inl i => simp [outputPorts, program]
++    | inr u => cases u; simp [outputPorts, program]
++
++end IndexedExecutionExperiment.AffineScan
++
++#print axioms IndexedExecutionExperiment.AffineScan.rankCertificate
++#print axioms IndexedExecutionExperiment.AffineScan.component
++#print axioms IndexedExecutionExperiment.AffineScan.input_outer_iff
++#audit_axioms IndexedExecutionExperiment.AffineScan

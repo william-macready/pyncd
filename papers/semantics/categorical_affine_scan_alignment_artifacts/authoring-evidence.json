@@ -1,0 +1,122 @@
+{
+  "status": "compiled prototype and observed controls verified; plan/execution/release pending",
+  "base": "13ee25a38366b2069c970754fa371f06d3f15ff9",
+  "package": {
+    "patches": 9,
+    "source_files": 19,
+    "lean_modules": 16,
+    "ordered_private_index_replay": "PASS"
+  },
+  "checks": [
+    {
+      "targets": [
+        "LeanNCD",
+        "Tests",
+        "IndexedExecutionExperiment"
+      ],
+      "exit": 0,
+      "jobs": 8980,
+      "log": "/Users/williammacready/.copilot/session-state/e2dbdb15-50e4-4dbf-8586-f7192af11182/files/affine-prototype-full-build.log"
+    },
+    {
+      "targets": [
+        "IndexedAffineScanNamespaceAudit"
+      ],
+      "exit": 0,
+      "jobs": 8673,
+      "namespace_constants": 861,
+      "axioms": [
+        "propext",
+        "Classical.choice",
+        "Quot.sound"
+      ],
+      "log": "/Users/williammacready/.copilot/session-state/e2dbdb15-50e4-4dbf-8586-f7192af11182/files/affine-full-namespace-audit.log"
+    },
+    {
+      "targets": [
+        "IndexedAffineScanMixedCompilerCertificate",
+        "IndexedAffineScanHistoryCompilerTest"
+      ],
+      "exit": 0,
+      "jobs": 8671,
+      "log": "/Users/williammacready/.copilot/session-state/e2dbdb15-50e4-4dbf-8586-f7192af11182/files/affine-compiler-history-validation.log"
+    }
+  ],
+  "compiler_applicability": {
+    "closed_donors": 9,
+    "exact_rational_history_rows": 8,
+    "full_model_execution_category_consumer": "IndexedExecutionExperiment.AffineScan.CompilerHistoryTest.certified_examples_full_meaning",
+    "runtime_controls": [
+      "wrong basis columns",
+      "wrong spatial map",
+      "wrong multiplicity",
+      "factor order with unchanged rational values",
+      "zero-times-missing strictness",
+      "all-padded success",
+      "empty metadata presence"
+    ]
+  },
+  "scope": {
+    "history": "one spatial axis and one advancing time axis; H[i,t]",
+    "extents": "spatial d; recurrence n; full history [d,n+1]; step context [n]",
+    "base": "actual external Z vector via one identity assignment and canonical complete base write",
+    "step": "one real sum/product assignment; no reductions/masks/casts/unary/partial operations; canonical complete successor write",
+    "storage": "f64 metadata; supplied rational semantic inputs, not Float conversion",
+    "reads": "actual affine tables and actual context/output positions; own-clock t-k with k>=0; per-dimension zero padding; order/multiplicity retained",
+    "identities": "fresh semantic identities via actual external capture slot/signature interpretation; not reconstructed source UIDs",
+    "boundaries": "kernel-closed compiler examples support n=0,d=0,both0 with retained port metadata"
+  },
+  "mutations": {
+    "final_controls": 34,
+    "expected_anchors": 53,
+    "classes": {
+      "runtime-observation": 23,
+      "live-proof-implementation": 8,
+      "live-proof-oracle": 3
+    },
+    "manifest": "papers/semantics/categorical_affine_scan_alignment_mutations.json",
+    "manifest_sha256": "8bb0ab94b611e39eb444690ddddce4e516ea28d42e28a215ec47361af99d9f25",
+    "exploratory_cycles": 35,
+    "retired_control": "Original source-factor-order mutation changed capture numbering and was replaced by semantic orderedProduct reversal.",
+    "restoration": "Every final candidate observed a failing mutated build, byte-identical source restoration and a green restored build.",
+    "unfiltered_schema_check": "PASS:34 entries, every old-string unique",
+    "controller_unfiltered_intended_diagnostic_replay": "pending after execution",
+    "logs": [
+      "/Users/williammacready/.copilot/session-state/e2dbdb15-50e4-4dbf-8586-f7192af11182/files/affine-authoring-access-mutations.log",
+      "/Users/williammacready/.copilot/session-state/e2dbdb15-50e4-4dbf-8586-f7192af11182/files/affine-authoring-remaining-mutations.log",
+      "/Users/williammacready/.copilot/session-state/e2dbdb15-50e4-4dbf-8586-f7192af11182/files/affine-authoring-order-mutation.log"
+    ]
+  },
+  "source_audit": {
+    "forbidden_patterns": "axiom/constant declarations, sorry, admit, native_decide, ofReduceBool, hardcoded user paths, diagnostic IO file writes",
+    "result": "no matches across IndexedAffineScan*.lean"
+  },
+  "telemetry": {
+    "source": "deduplicated Copilot SDK session.usage_record inputTokens, including caches already",
+    "as_of": "2026-11-12T21:10:54.247Z",
+    "recorded_full_input_tokens": 174907950,
+    "recorded_peak_prompt_tokens": 425440,
+    "authoring_target": 50000000,
+    "target_exceeded": true,
+    "dispatch_round_limits": "waived explicitly by user during continuation",
+    "context_peak_overrun": true,
+    "external_claude_contribution": "mixed proof completed by separately user-assigned Claude Code session; its usage is NOT measured here",
+    "prescribed_token_report": "no transcript available; SDK totals are partial alternative telemetry"
+  },
+  "nonclaims": [
+    "Float runDenseScan correctness",
+    "general source/parser/compiler correctness",
+    "general St/Br functor",
+    "new administrative Domain wires",
+    "arbitrary temporal reindexing/prefix laws",
+    "finite padded-gather fusion"
+  ],
+  "release_gates_pending": [
+    "fresh-context verified plan/record",
+    "clean task-patch execution and reviewed hashes",
+    "controller unfiltered34-control replay with53 expected anchors",
+    "two final whole-branch review lenses",
+    "controller full build",
+    "local main integration and owned cleanup; no push"
+  ]
+}

@@ -1,0 +1,943 @@
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -156,6 +156,8 @@
+          "IndexedAffineScanMatch",
+          "IndexedAffineScanRank",
+          "IndexedAffineScanAccessAgreement",
++         "IndexedAffineScanCompilerExamples",
++         "IndexedAffineScanCompilerCertificates",
+          "IndexedAffineScanHistory",
+          "IndexedAffineScanInterpretation",
+          "IndexedAffineScanSemantics",
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedAffineScanCompilerExamples.lean
+@@ -0,0 +1,470 @@
++import IndexedAffineScanConstruction
++import IndexedAffineScanPrototypeTest
++import Semantics.AxiomAudit
++import Std.Data.HashMap.Lemmas
++
++namespace IndexedExecutionExperiment.AffineScan.CompilerExamples
++
++open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan LeanNCD.Semantics
++open LeanNCD.Eval.Plan.ScanCompileTest Std
++
++/-- Clone `axisPosSched`, changing the recurrence expression and concrete extents only. -/
++def recurrenceSched (d n : Nat) (terms : List ProdTerm) (external : Bool := false) :
++    ScheduledProgram :=
++  { Prototype.spatialSched d n with
++    stmts := [.scan "S" [axL]
++      [.assign "S" [.free axJ, .iterAt axL 0]
++        { body := { terms := [{ factors := [.read "S0" [.axis axJ]] }] },
++          nonlin := .identity }]
++      [.assign "S" [.free axJ, .iterNext axL]
++        { body := { terms }, nonlin := .identity }]
++      false]
++    extNames := if external then insert "X" (insert "S0" (∅ : Finset String))
++      else insert "S0" (∅ : Finset String) }
++
++def vectorInputs : HashMap String DenseTensor :=
++  ({} : HashMap String DenseTensor).insert "S0" ⟨[4], #[2.0, 3.0, 5.0, 7.0]⟩
++
++def externalInputs : HashMap String DenseTensor :=
++  vectorInputs.insert "X" ⟨[9], #[11.0, 13.0, 17.0, 19.0, 23.0, 29.0, 31.0, 37.0, 41.0]⟩
++
++def stateFactor (spatial : IdxExpr) (time : IdxExpr := .axis axL) : Factor :=
++  .read "S" [spatial, time]
++
++def shiftSched := recurrenceSched 4 3 [{ factors := [stateFactor (.shift axJ (-1))] }]
++def strideSched := recurrenceSched 4 3 [{ factors := [stateFactor (.scale 2 axJ)] }]
++def reversalSched := recurrenceSched 4 3
++  [{ factors := [stateFactor (.affine 3 [(-1, axJ)])] }]
++
++def mixedState : Factor := stateFactor (.affine 0 [(1, axJ), (1, axL)])
++def mixedExternal : Factor := .read "X" [.affine 1 [(2, axJ), (1, axL)]]
++def mixedSched := recurrenceSched 4 3
++  [{ factors := [mixedState, mixedExternal, mixedState] },
++   { factors := [mixedExternal, mixedState] }] true
++
++/-- Spatial lift of `deepHistorySched`; the actual temporal source delta is still `l - 2`. -/
++def deepSched := recurrenceSched 4 3
++  [{ factors := [stateFactor (.axis axJ)] },
++   { factors := [stateFactor (.axis axJ) (.shift axL (-2))] }]
++
++/-- The certificate is obtained from the returned tables, not a normalized surrogate. -/
++structure CompiledExample (d n : Nat) where
++  scheduled : ScheduledProgram
++  signature : InputSignature
++  prepared : PreparedPlan
++  preparationOrigin : prepareEvalPlan scheduled signature = .ok prepared
++  raw : RawScanPlan
++  scanOrigin : scanAt prepared 0 = some raw
++  profile : Profile d n
++  certificationOrigin : certifyProfile prepared.plan.raw.tensorSigs raw d n = .ok profile
++
++def compileExample (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
++    (d n : Nat) : Except String (CompiledExample d n) := do
++  let scheduled := explicitF64Sched sched
++  let signature := InputSignature.ofDenseInputs inputs
++  match hp : prepareEvalPlan scheduled signature with
++  | .error e => .error (render e.cause)
++  | .ok prepared =>
++      match hs : scanAt prepared 0 with
++      | none => .error "step zero is not a scan"
++      | some raw =>
++          match hc : certifyProfile prepared.plan.raw.tensorSigs raw d n with
++          | .error e => .error s!"profile: {repr e}"
++          | .ok profile => .ok ⟨scheduled, signature, prepared, hp, raw, hs, profile, hc⟩
++
++def shiftExample := compileExample shiftSched vectorInputs 4 3
++def strideExample := compileExample strideSched vectorInputs 4 3
++def reversalExample := compileExample reversalSched vectorInputs 4 3
++def mixedExample := compileExample mixedSched externalInputs 4 3
++def deepExample := compileExample deepSched vectorInputs 4 3
++
++def shiftRaw := shiftExample.map (·.raw)
++def strideRaw := strideExample.map (·.raw)
++def reversalRaw := reversalExample.map (·.raw)
++def mixedRaw := mixedExample.map (·.raw)
++def deepRaw := deepExample.map (·.raw)
++def shiftProfile := shiftExample.map (·.profile)
++def strideProfile := strideExample.map (·.profile)
++def reversalProfile := reversalExample.map (·.profile)
++def mixedProfile := mixedExample.map (·.profile)
++def deepProfile := deepExample.map (·.profile)
++
++/-- Successful compilation carries an inhabited proof type, not a Boolean profile flag. -/
++theorem CompiledExample.profile_inhabited (e : CompiledExample d n) :
++    Nonempty (Profile d n) := ⟨e.profile⟩
++
++theorem CompiledExample.certified (e : CompiledExample d n) :
++    ∃ p : Profile d n,
++      certifyProfile e.prepared.plan.raw.tensorSigs e.raw d n = .ok p :=
++  ⟨e.profile, e.certificationOrigin⟩
++
++def actualTerms (p : Profile d n) : List TermPlan := (stepAssign p.checked).terms.toList
++
++def actualRead (p : Profile d n) (term factor : Nat) : ReadPlan :=
++  (((stepAssign p.checked).terms.getD term default).factors.getD factor default).readOrDefault
++
++def rawObservation (p : Profile d n) (term factor : Nat) (i clock : Int) : List Int :=
++  let t := (stepAssign p.checked).terms.getD term default
++  applyAffine (actualRead p term factor).map (termBasis t i clock)
++
++def coordValues {sh : Shape} (q : Coord sh) : List Nat :=
++  match sh with
++  | [] => []
++  | _ :: _ => q.1.val :: coordValues q.2
++
++def addressObservation (p : Profile d n) (a : Address (declarations p)) :
++    Bool × Nat × List Nat :=
++  match a with
++  | ⟨.inl slot, q⟩ => (false, slot.val, coordValues q)
++  | ⟨.inr _, q⟩ => (true, 0, coordValues q)
++
++/-- Nonconstant diagnostic store, not an executor or a claimed history model. -/
++def diagnosticStore (p : Profile d n) : Store RationalReference.Carrier (declarations p) :=
++  fun a =>
++    let (state, slot, coords) := addressObservation p a
++    let tag := if state then 100 else 1000 + 100 * slot
++    (tag + coords.foldl (fun acc x => 10 * acc + x) 0 : Nat)
++
++def stepBody (p : Profile d n) (i clock : Int) :=
++  orderedSum p p.checked.raw.stepCaptures (fun (_ : Unit) => i)
++    (fun _ => clock) (actualTerms p)
++
++def observedFootprint (p : Profile d n) (i clock : Int) :=
++  (footprint (stepBody p i clock) ()).map (addressObservation p)
++
++def observedValue (p : Profile d n) (i clock : Int) : Option ℚ :=
++  interpret RationalReference.ops (diagnosticStore p) (stepBody p i clock) ()
++
++def missingStepValue (p : Profile d n) (i clock : Int) : Option ℚ :=
++  evalWith RationalReference.ops (fun _ => none) (stepBody p i clock) ()
++
++def missingFactorValue (p : Profile d n) (term factor : Nat) (i clock : Int) : Option ℚ :=
++  let t := (stepAssign p.checked).terms.getD term default
++  evalWith RationalReference.ops (fun _ => none)
++    (factorBody p p.checked.raw.stepCaptures (fun (_ : Unit) => termBasis t i clock)
++      (t.factors.getD factor default)) ()
++
++def mapStepReads (raw : RawScanPlan) (f : ReadPlan → ReadPlan) : RawScanPlan :=
++  { raw with stepBlock := { raw.stepBlock with
++    steps := raw.stepBlock.steps.map fun
++      | .assign a => .assign { a with terms := a.terms.map fun t =>
++          { t with factors := t.factors.map fun
++            | .read r => .read (f r)
++            | x => x } }
++      | x => x } }
++
++/-- Swap the unequal external-row columns, retaining the actual slot, shape and bias. -/
++def wrongBasisRaw (e : CompiledExample 4 3) : RawScanPlan :=
++  mapStepReads e.raw fun r =>
++    if r.sourceShape.size == 1 then
++      { r with map := { r.map with coeffs := r.map.coeffs.map fun row =>
++          #[row.getD 1 0, row.getD 0 0] } }
++    else r
++
++/-- Drop the spatial column in the mixed state row; the temporal row remains causal. -/
++def wrongMapRaw (e : CompiledExample 4 3) : RawScanPlan :=
++  mapStepReads e.raw fun r =>
++    if r.sourceShape.size == 2 then
++      { r with map := { r.map with coeffs := r.map.coeffs.modify 0 fun row => row.set! 1 0 } }
++    else r
++
++def certifyMutation (e : CompiledExample d n) (raw : RawScanPlan) :
++    Except String (Profile d n) :=
++  (certifyProfile e.prepared.plan.raw.tensorSigs raw d n).mapError (fun e => s!"{repr e}")
++
++def wrongBasisExample : Except String (Profile 4 3) := do
++  let e ← mixedExample
++  certifyMutation e (wrongBasisRaw e)
++
++def wrongMapExample : Except String (Profile 4 3) := do
++  let e ← mixedExample
++  certifyMutation e (wrongMapRaw e)
++
++def wrongOrderRaw (e : CompiledExample 4 3) : RawScanPlan :=
++  { e.raw with stepBlock := { e.raw.stepBlock with steps := e.raw.stepBlock.steps.map fun
++    | .assign a => .assign { a with terms := a.terms.map fun t =>
++        { t with factors := t.factors.set! 0 (t.factors.getD 1 default)
++            |>.set! 1 (t.factors.getD 0 default) } }
++    | x => x } }
++
++def wrongMultiplicityRaw (e : CompiledExample 4 3) : RawScanPlan :=
++  { e.raw with stepBlock := { e.raw.stepBlock with steps := e.raw.stepBlock.steps.map fun
++    | .assign a => .assign { a with terms := a.terms.modify 0 fun t =>
++        { t with factors := t.factors.pop } }
++    | x => x } }
++
++def wrongOrderExample : Except String (Profile 4 3) := do
++  let e ← mixedExample
++  certifyMutation e (wrongOrderRaw e)
++
++def wrongMultiplicityExample : Except String (Profile 4 3) := do
++  let e ← mixedExample
++  certifyMutation e (wrongMultiplicityRaw e)
++
++def controlObservations (p : Profile 4 3) :=
++  (rawObservation p 0 0 1 2, rawObservation p 0 1 1 2,
++    observedFootprint p 1 2, observedValue p 1 2)
++
++def controlFailureReports : Except String (List String) := do
++  let e ← mixedExample
++  let basis ← wrongBasisExample
++  let map ← wrongMapExample
++  let order ← wrongOrderExample
++  let multiplicity ← wrongMultiplicityExample
++  let mut failures := []
++  for (name, p) in [("wrong basis columns", basis), ("wrong spatial map", map),
++      ("wrong factor order", order), ("wrong multiplicity", multiplicity)] do
++    match expectEq name (observedFootprint p 1 2) (observedFootprint e.profile 1 2) with
++    | .ok _ => .error s!"{name}: negative control failed to distinguish the access error"
++    | .error message => failures := failures ++ [message]
++  pure failures
++
++def temporalSched (time : IdxExpr) :=
++  recurrenceSched 4 3 [{ factors := [stateFactor (.axis axJ) time] }]
++
++def sourceRejection (time : IdxExpr) : Option String :=
++  (causeOf (prepareEvalPlan (explicitF64Sched (temporalSched time))
++    (InputSignature.ofDenseInputs vectorInputs))).map render
++
++/-- ScanTest's checker deltas, applied to actual compiler-produced deep-history tables. -/
++def badTemporalRaw (e : CompiledExample 4 3) (row : Array Int) (offset : Int) : RawScanPlan :=
++  mapStepReads e.raw fun r =>
++    { r with map :=
++      { r.map with
++        coeffs := r.map.coeffs.set! 1 row
++        «bias» := r.map.bias.set! 1 offset } }
++
++def checkerRejection (row : Array Int) (offset : Int) : Except String String := do
++  let e ← deepExample
++  match certifyProfile e.prepared.plan.raw.tensorSigs (badTemporalRaw e row offset) 4 3 with
++  | .error (.checker err) => .ok s!"{repr err}"
++  | .error .unsupported => .error "profile refusal bypassed the unchanged checker"
++  | .ok _ => .error "noncausal control was accepted"
++
++def spatialObservations (e : CompiledExample 4 3) :=
++  (List.range 4).map fun i =>
++    (rawObservation e.profile 0 0 i 0, observedFootprint e.profile i 0,
++      observedValue e.profile i 0)
++
++def historyObservation (e : CompiledExample d n) (inputs : HashMap String DenseTensor) :
++    Except String (List Nat × Array Float) := do
++  let report ← (runPreparedDense e.prepared inputs).mapError (fun err => s!"{repr err.cause}")
++  let some history := report.env["S"]? | .error "missing materialized S"
++  pure (history.shape, history.data)
++
++#eval shiftExample.map spatialObservations
++#eval strideExample.map spatialObservations
++#eval reversalExample.map spatialObservations
++#eval mixedExample.map fun e =>
++  (e.prepared.plan.raw.tensorSigs, e.raw.stepCaptures,
++    (stepAssign e.profile.checked).terms.map fun t =>
++      (t.iterationShape, t.contextPos, t.outputPos, t.factors.map (·.readOrDefault)))
++#eval mixedExample.map fun e =>
++  (rawObservation e.profile 0 0 1 2, rawObservation e.profile 0 1 1 2,
++    observedFootprint e.profile 1 2, observedValue e.profile 1 2)
++#eval deepExample.map fun e => (List.range 3).map fun t =>
++  (rawObservation e.profile 1 0 1 t, observedFootprint e.profile 1 t,
++    observedValue e.profile 1 t)
++#eval wrongBasisExample.map controlObservations
++#eval wrongMapExample.map controlObservations
++#eval wrongOrderExample.map controlObservations
++#eval wrongMultiplicityExample.map controlObservations
++#eval [sourceRejection (.shift axL 1), sourceRejection (.scale 2 axL),
++  sourceRejection (.axis axJ)]
++#eval [checkerRejection #[1, 0] 1, checkerRejection #[2, 0] 0,
++  checkerRejection #[0, 1] 0]
++#eval (compileExample (temporalSched (.shift axL (-1))) vectorInputs 4 3).map
++  fun e => (rawObservation e.profile 0 0 1 2, observedFootprint e.profile 1 2,
++    observedValue e.profile 1 2)
++#eval shiftExample.bind (fun e => historyObservation e vectorInputs)
++#eval strideExample.bind (fun e => historyObservation e vectorInputs)
++#eval reversalExample.bind (fun e => historyObservation e vectorInputs)
++#eval mixedExample.bind (fun e => historyObservation e externalInputs)
++#eval deepExample.bind (fun e => historyObservation e vectorInputs)
++#eval shiftExample.map fun e =>
++  ((actualRead e.profile 0 0).map, e.raw.stepCaptures, e.raw.stepWrites)
++#eval strideExample.map fun e => (actualRead e.profile 0 0).map
++#eval reversalExample.map fun e => (actualRead e.profile 0 0).map
++#eval deepExample.map fun e => (actualRead e.profile 1 0).map
++#eval mixedExample.map fun e =>
++  (controlObservations e.profile,
++    observedFootprint e.profile 2 2, observedValue e.profile 2 2, missingStepValue e.profile 2 2,
++    observedFootprint e.profile 3 2, observedValue e.profile 3 2, missingStepValue e.profile 3 2)
++#eval deepExample.map fun e =>
++  (missingFactorValue e.profile 1 0 1 0, missingFactorValue e.profile 1 0 1 1,
++    missingFactorValue e.profile 1 0 1 2)
++#eval controlFailureReports
++
++def checkLinks (e : CompiledExample 4 3) : Except String Unit := do
++  expectEq "actual compiler raw retained" e.profile.checked.raw e.raw
++  expectEq "actual outer signatures retained" e.profile.checked.sigs e.prepared.plan.raw.tensorSigs
++  expectEq "history extents" e.raw.historyExtents #[4]
++  expectEq "checked recurrence extents" e.profile.checked.stepExtents #[3]
++  expectEq "history signature"
++    e.prepared.plan.raw.tensorSigs[(e.raw.states.getD 0 default).destSlot]?
++    (some { shape := #[4, 4], dtype := .f64 })
++  expectEq "base capture" e.raw.baseCaptures #[{ inputSlot := 0, source := .external 0 }]
++  expectEq "base signature" e.prepared.plan.raw.tensorSigs[0]?
++    (some { shape := #[4], dtype := .f64 })
++  expectEq "canonical base write" e.raw.baseWrites
++    #[{ outputSlot := 1, stateIndex := 0,
++        map := { coeffs := #[#[1], #[0]], «bias» := #[0, 0] } }]
++  expectEq "canonical successor write" (e.raw.stepWrites.getD 0 default).map
++    { coeffs := #[#[0, 1], #[1, 0]], «bias» := #[0, 1] }
++
++def checkSpatialFamily : Except String Unit := do
++  let shift ← shiftExample
++  let stride ← strideExample
++  let reversal ← reversalExample
++  for e in [shift, stride, reversal] do
++    checkLinks e
++    expectEq "single immutable state capture" e.raw.stepCaptures
++      #[{ inputSlot := 0, source := .state 0 }]
++  expectEq "compiled shift map" (actualRead shift.profile 0 0).map
++    { coeffs := #[#[0, 1], #[1, 0]], «bias» := #[-1, 0] }
++  expectEq "compiled stride map" (actualRead stride.profile 0 0).map
++    { coeffs := #[#[0, 2], #[1, 0]], «bias» := #[0, 0] }
++  expectEq "compiled reversal map" (actualRead reversal.profile 0 0).map
++    { coeffs := #[#[0, -1], #[1, 0]], «bias» := #[3, 0] }
++  expectEq "shift address/padding/value observations" (spatialObservations shift)
++    [([-1, 0], [], some 0),
++     ([0, 0], [(true, 0, [0, 0])], some 100),
++     ([1, 0], [(true, 0, [1, 0])], some 110),
++     ([2, 0], [(true, 0, [2, 0])], some 120)]
++  expectEq "stride address/padding/value observations" (spatialObservations stride)
++    [([0, 0], [(true, 0, [0, 0])], some 100),
++     ([2, 0], [(true, 0, [2, 0])], some 120),
++     ([4, 0], [], some 0), ([6, 0], [], some 0)]
++  expectEq "reversal address/value observations" (spatialObservations reversal)
++    [([3, 0], [(true, 0, [3, 0])], some 130),
++     ([2, 0], [(true, 0, [2, 0])], some 120),
++     ([1, 0], [(true, 0, [1, 0])], some 110),
++     ([0, 0], [(true, 0, [0, 0])], some 100)]
++  expectEq "shift dense history" (← historyObservation shift vectorInputs)
++    ([4, 4], #[2.0, 0.0, 0.0, 0.0, 3.0, 2.0, 0.0, 0.0,
++      5.0, 3.0, 2.0, 0.0, 7.0, 5.0, 3.0, 2.0])
++  expectEq "stride dense history" (← historyObservation stride vectorInputs)
++    ([4, 4], #[2.0, 2.0, 2.0, 2.0, 3.0, 5.0, 0.0, 0.0,
++      5.0, 0.0, 0.0, 0.0, 7.0, 0.0, 0.0, 0.0])
++  expectEq "reversal dense history" (← historyObservation reversal vectorInputs)
++    ([4, 4], #[2.0, 7.0, 2.0, 7.0, 3.0, 5.0, 3.0, 5.0,
++      5.0, 3.0, 5.0, 3.0, 7.0, 2.0, 7.0, 2.0])
++
++def checkMixedFamily : Except String Unit := do
++  let e ← mixedExample
++  let basis ← wrongBasisExample
++  let map ← wrongMapExample
++  let order ← wrongOrderExample
++  let multiplicity ← wrongMultiplicityExample
++  let _ ← controlFailureReports
++  checkLinks e
++  expectEq "mixed actual captures" e.raw.stepCaptures
++    #[{ inputSlot := 0, source := .state 0 }, { inputSlot := 1, source := .external 1 }]
++  expectEq "distinct external source shape" e.prepared.plan.raw.tensorSigs[1]?
++    (some { shape := #[9], dtype := .f64 })
++  expectEq "actual mixed state map" (actualRead e.profile 0 0).map
++    { coeffs := #[#[1, 1], #[1, 0]], «bias» := #[0, 0] }
++  expectEq "actual unequal external coefficients" (actualRead e.profile 0 1).map
++    { coeffs := #[#[1, 2]], «bias» := #[1] }
++  expectEq "actual basis positions"
++    ((stepAssign e.profile.checked).terms.map fun t =>
++      (t.iterationShape, t.contextPos, t.outputPos))
++    #[(#[3, 4], #[0], #[1]), (#[3, 4], #[0], #[1])]
++  expectEq "actual factor order/multiplicity"
++    ((stepAssign e.profile.checked).terms.map fun t => t.factors.map (·.readOrDefault.sourceSlot))
++    #[#[0, 1, 0], #[1, 0]]
++  expectEq "mixed actual observations" (controlObservations e.profile)
++    ([3, 2], [5],
++      [(true, 0, [3, 2]), (false, 1, [5]), (true, 0, [3, 2]),
++       (false, 1, [5]), (true, 0, [3, 2])], some 19399380)
++  expectEq "wrong basis columns distinguished" (controlObservations basis)
++    ([3, 2], [6],
++      [(true, 0, [3, 2]), (false, 1, [6]), (true, 0, [3, 2]),
++       (false, 1, [6]), (true, 0, [3, 2])], some 19416936)
++  expectEq "wrong spatial map distinguished" (controlObservations map)
++    ([2, 2], [5],
++      [(true, 0, [2, 2]), (false, 1, [5]), (true, 0, [2, 2]),
++       (false, 1, [5]), (true, 0, [2, 2])], some 16581630)
++  expectEq "wrong factor order distinguished by footprint" (controlObservations order)
++    ([5], [3, 2],
++      [(false, 1, [5]), (true, 0, [3, 2]), (true, 0, [3, 2]),
++       (true, 0, [3, 2]), (false, 1, [5])], some 19399380)
++  expectEq "wrong multiplicity distinguished" (controlObservations multiplicity)
++    ([3, 2], [5],
++      [(true, 0, [3, 2]), (false, 1, [5]), (false, 1, [5]),
++       (true, 0, [3, 2])], some 291720)
++  expectEq "padded state reads remove only their own dependencies"
++    (observedFootprint e.profile 2 2, observedValue e.profile 2 2,
++      missingStepValue e.profile 2 2)
++    ([(false, 1, [7]), (false, 1, [7])], some 0, none)
++  expectEq "all padded reads are constants, not unavailable reads"
++    (observedFootprint e.profile 3 2, observedValue e.profile 3 2,
++      missingStepValue e.profile 3 2)
++    ([], some 0, some 0)
++  expectEq "mixed dense history (runtime Float observation only)"
++    (← historyObservation e externalInputs)
++    ([4, 4], #[2.0, 78.0, 887604.0, 336864385472887616.0,
++      3.0, 228.0, 17428710.0, 0.0, 5.0, 870.0, 133152936.0, 0.0,
++      7.0, 2072.0, 0.0, 0.0])
++
++def checkDeepFamily : Except String Unit := do
++  let e ← deepExample
++  let neighbor ← compileExample (temporalSched (.shift axL (-1))) vectorInputs 4 3
++  let immediate ← compileExample (temporalSched (.axis axL)) vectorInputs 4 3
++  checkLinks e
++  checkLinks neighbor
++  checkLinks immediate
++  expectEq "deep actual history map" (actualRead e.profile 1 0).map
++    { coeffs := #[#[0, 1], #[1, 0]], «bias» := #[0, -2] }
++  expectEq "deep negative-time padding and legal history access"
++    ((List.range 3).map fun t =>
++      (rawObservation e.profile 1 0 1 t, observedFootprint e.profile 1 t,
++        observedValue e.profile 1 t))
++    [([1, -2], [(true, 0, [1, 0])], some 110),
++     ([1, -1], [(true, 0, [1, 1])], some 111),
++     ([1, 0], [(true, 0, [1, 2]), (true, 0, [1, 0])], some 222)]
++  expectEq "legal lookback neighbor"
++    (rawObservation neighbor.profile 0 0 1 2, observedFootprint neighbor.profile 1 2,
++      observedValue neighbor.profile 1 2)
++    ([1, 1], [(true, 0, [1, 1])], some 111)
++  expectEq "padded deep factors succeed without a store, in-bounds factors do not"
++    (missingFactorValue e.profile 1 0 1 0, missingFactorValue e.profile 1 0 1 1,
++      missingFactorValue e.profile 1 0 1 2)
++    (some 0, some 0, none)
++  for time in [.shift axL 1, .scale 2 axL, .axis axJ] do
++    expectEq "source causality boundary" (sourceRejection time)
++      (some "scan: LeanNCD.Eval.Plan.ScanCompileError.stateReadNotCausal \"S\" \"S\" 0 0 0")
++  for (row, offset) in [(#[1, 0], 1), (#[2, 0], 0), (#[0, 1], 0)] do
++    expectEq "profile refusal must be the unchanged checker failure"
++      (← checkerRejection row offset) "LeanNCD.Eval.Plan.ScanPlanError.causalityFailure 0 0 0 0"
++  expectEq "deep dense history" (← historyObservation e vectorInputs)
++    ([4, 4], #[2.0, 2.0, 2.0, 4.0, 3.0, 3.0, 3.0, 6.0,
++      5.0, 5.0, 5.0, 10.0, 7.0, 7.0, 7.0, 14.0])
++
++/-- Live proof controls for the exact unchanged own-clock predicate. -/
++theorem causality_controls :
++    causalAdvancingRow #[1, 0] (-2) 0 = true ∧
++    causalAdvancingRow #[1, 0] (-1) 0 = true ∧
++    causalAdvancingRow #[1, 0] 0 0 = true ∧
++    causalAdvancingRow #[1, 0] 1 0 = false ∧
++    causalAdvancingRow #[2, 0] 0 0 = false ∧
++    causalAdvancingRow #[0, 1] 0 0 = false := by decide +kernel
++
++theorem repeated_factor_footprint (p : Profile d n) (captures : Array BlockCapture)
++    (basis : Γ → List Int) (r : ReadPlan) (γ : Γ) :
++    footprint (orderedProduct p captures basis [.read r, .read r]) γ =
++      footprint (factorBody p captures basis (.read r)) γ ++
++      footprint (factorBody p captures basis (.read r)) γ := by
++  simp [orderedProduct, footprint]
++
++run_cmd
++  for (name, result) in [("spatial shift/stride/reversal", checkSpatialFamily),
++      ("mixed spatial/own-clock and controls", checkMixedFamily),
++      ("deep history and causality neighbors", checkDeepFamily)] do
++    match result with
++    | .ok _ => Lean.logInfo m!"certified compiler example assertions passed: {name}"
++    | .error err => throwError s!"{name}: {err}"
++
++end IndexedExecutionExperiment.AffineScan.CompilerExamples
++
++#audit_axioms IndexedExecutionExperiment.AffineScan.CompilerExamples
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedAffineScanCompilerCertificates.lean
+@@ -0,0 +1,456 @@
++import IndexedAffineScanCompilerExamples
++
++namespace IndexedExecutionExperiment.AffineScan.CompilerExamples
++
++open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan LeanNCD.Semantics
++open LeanNCD.Eval.Plan.ScanCompileTest Std
++
++attribute [local cbv_opaque] Std.HashMap.toList
++attribute [local cbv_opaque] Std.HashMap.contains Std.HashMap.get? Std.HashMap.getD
++
++@[local cbv_eval]
++theorem string_beq_self (s : String) : (s == s) = true := by simp
++
++@[local cbv_eval]
++theorem word_beq_self (x : UInt64) : (x == x) = true := by simp
++
++@[local cbv_eval]
++theorem decide_eq_self {α : Type} [DecidableEq α] (x : α) : decide (x = x) = true := by simp
++
++theorem perm_pair_cases {α : Type} {l : List α} {a b : α} (h : l.Perm [a, b]) :
++    l = [a, b] ∨ l = [b, a] := by
++  have hlen := h.length_eq
++  cases l with
++  | nil => simp at hlen
++  | cons x xs =>
++      cases xs with
++      | nil => simp at hlen
++      | cons y ys =>
++          have hz : ys.length = 0 := by simpa using hlen
++          have he : ys = [] := by simpa using hz
++          subst ys
++          have hx : x = a ∨ x = b := by
++            simpa using h.mem_iff.mp (List.mem_cons_self)
++          rcases hx with hx | hx
++          · subst x
++            have hy : y = b := by simpa using h.cons_inv.eq_singleton
++            subst y
++            exact Or.inl rfl
++          · subst x
++            have hs : [a, b].Perm [b, a] := .swap _ _ _
++            have hy : y = a := by simpa using (h.trans hs).cons_inv.eq_singleton
++            subst y
++            exact Or.inr rfl
++
++@[local cbv_eval]
++theorem hashMap_toList_singleton {α β : Type} [BEq α] [Hashable α]
++    [EquivBEq α] [LawfulHashable α] (k : α) (v : β) :
++    ((∅ : Std.HashMap α β).insert k v).toList = [(k, v)] := by
++  have h := Std.HashMap.toList_insert_perm (m := (∅ : Std.HashMap α β)) (k := k) (v := v)
++  simp only [Std.HashMap.toList_empty, List.filter_nil] at h
++  exact h.eq_singleton
++
++@[local cbv_eval]
++theorem hashMap_toList_singleton_capacity {α β : Type} [BEq α] [Hashable α]
++    [EquivBEq α] [LawfulHashable α] (capacity : Nat) (k : α) (v : β) :
++    ((Std.HashMap.emptyWithCapacity capacity : Std.HashMap α β).insert k v).toList = [(k, v)] := by
++  have h := Std.HashMap.toList_insert_perm
++    (m := (Std.HashMap.emptyWithCapacity capacity : Std.HashMap α β)) (k := k) (v := v)
++  simp only [Std.HashMap.toList_emptyWithCapacity, List.filter_nil] at h
++  exact h.eq_singleton
++
++attribute [local cbv_eval] Std.HashMap.toList_emptyWithCapacity
++
++theorem hashMap_toList_two {α β : Type} [BEq α] [Hashable α]
++    [EquivBEq α] [LawfulHashable α] (k k' : α) (v v' : β)
++    (hne : (k' == k) = false) :
++    ((∅ : Std.HashMap α β).insert k v |>.insert k' v').toList = [(k', v'), (k, v)] ∨
++    ((∅ : Std.HashMap α β).insert k v |>.insert k' v').toList = [(k, v), (k', v')] := by
++  have h := Std.HashMap.toList_insert_perm
++    (m := (∅ : Std.HashMap α β).insert k v) (k := k') (v := v')
++  simp [hashMap_toList_singleton, hne] at h
++  exact perm_pair_cases h
++
++theorem compileExample_isOk (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
++    (d n : Nat) :
++    (compileExample sched inputs d n).isOk =
++      match prepareEvalPlan (explicitF64Sched sched) (InputSignature.ofDenseInputs inputs) with
++      | .error _ => false
++      | .ok p =>
++          match scanAt p 0 with
++          | none => false
++          | some raw => (certifyProfile p.plan.raw.tensorSigs raw d n).isOk := by
++  dsimp only [compileExample]
++  split <;> rename_i hp
++  · simp only [hp, Except.isOk, Except.toBool]
++  · simp only [hp]
++    split <;> rename_i hs
++    · simp only [hs, Except.isOk, Except.toBool]
++    · simp only [hs]
++      split <;> rename_i hc <;> simp only [hc, Except.isOk, Except.toBool]
++
++theorem certifyProfile_isOk (sigs : Array TensorSignature) (raw : RawScanPlan) (d n : Nat) :
++    (certifyProfile sigs raw d n).isOk =
++      match checkScanPlan sigs raw with
++      | .error _ => false
++      | .ok c => profileOk c d n := by
++  unfold certifyProfile
++  split <;> rename_i hc
++  · simp only [hc, Except.isOk, Except.toBool]
++  · simp only [hc]
++    split <;> simp_all [Except.isOk, Except.toBool]
++
++theorem shift_algebras :
++    scheduleAlgebras
++      ((({} : DeclEnv).insert "S" (.typedTensor .f64 "S" [axJ, axL])).insert
++        "S0" (.typedTensor .f64 "S0" [axJ])) shiftSched.stmts =
++      .ok (({} : HashMap String SortAlgebra).insert "S" .real) := by
++  unfold scheduleAlgebras
++  have h := hashMap_toList_two "S" "S0"
++    (Decl.typedTensor .f64 "S" [axJ, axL]) (Decl.typedTensor .f64 "S0" [axJ]) (by decide)
++  rcases h with h | h <;> rw [h] <;> cbv
++
++attribute [local cbv_opaque] LeanNCD.scheduleAlgebras
++
++theorem shift_casts :
++    checkSortCasts
++      ((({} : DeclEnv).insert "S" (.typedTensor .f64 "S" [axJ, axL])).insert
++        "S0" (.typedTensor .f64 "S0" [axJ]))
++      (({} : HashMap String SortAlgebra).insert "S" .real) shiftSched.stmts = .ok () := by
++  cbv
++
++def spatialDeclEnv : DeclEnv :=
++  (({} : DeclEnv).insert "S" (.typedTensor .f64 "S" [axJ, axL])).insert
++    "S0" (.typedTensor .f64 "S0" [axJ])
++
++def shiftSource : ScheduledProgram := { explicitF64Sched shiftSched with env := spatialDeclEnv }
++def shiftSizes : HashMap UID Nat := declaredAxisSizes shiftSource.decls
++
++theorem shift_collection :
++    collectDefinitions shiftSource shiftSizes = .ok (shiftSource, []) := by
++  cbv
++
++theorem shift_obligations :
++    collectorShapeObligations shiftSource shiftSizes = .ok [] := by
++  cbv
++
++theorem vector_signature :
++    InputSignature.ofDenseInputs vectorInputs =
++      { tensors := ({} : HashMap String TensorSignature).insert "S0" { shape := #[4], dtype := .f64 } } := by
++  simp only [InputSignature.ofDenseInputs, vectorInputs, hashMap_toList_singleton,
++    List.foldl_cons, List.foldl_nil]
++  rfl
++
++theorem shift_inferred :
++    inferAxisSizesFromSignature shiftSizes (InputSignature.ofDenseInputs vectorInputs)
++      (shiftSource.stmts.flatMap ScanStmt.sourceStmts) = .ok (shiftSizes, []) := by
++  rw [vector_signature]
++  cbv
++
++attribute [local cbv_opaque] LeanNCD.checkSortCasts
++attribute [local cbv_opaque] LeanNCD.Eval.Plan.inferAxisSizesFromSignature
++attribute [local cbv_opaque] LeanNCD.collectDefinitions LeanNCD.collectorShapeObligations
++attribute [local cbv_opaque] LeanNCD.Eval.Plan.InputSignature.ofDenseInputs
++attribute [local cbv_opaque] certifyProfile
++
++set_option cbv.maxSteps 500000 in
++set_option maxHeartbeats 0 in
++set_option maxRecDepth 10000 in
++theorem shift_success : shiftExample.isOk = true := by
++  rw [show shiftExample = compileExample shiftSched vectorInputs 4 3 from rfl, compileExample_isOk]
++  cbv
++  have ha := shift_algebras
++  dsimp only [shiftSched, recurrenceSched, stateFactor, Prototype.spatialSched, axisPosSched, axJ, axL,
++    Std.HashMap.instEmptyCollection, EmptyCollection.emptyCollection] at ha
++  rw [ha]
++  cbv
++  have hc := shift_casts
++  dsimp only [shiftSched, recurrenceSched, stateFactor, Prototype.spatialSched, axisPosSched, axJ, axL,
++    Std.HashMap.instEmptyCollection, EmptyCollection.emptyCollection] at hc
++  rw [hc]
++  cbv
++  have hcollect := shift_collection
++  cbv at hcollect
++  rw [hcollect]
++  cbv
++  have ho := shift_obligations
++  cbv at ho
++  rw [ho]
++  cbv
++  have hs := vector_signature
++  cbv at hs
++  rw [hs]
++  cbv
++  have hi := shift_inferred
++  rw [vector_signature] at hi
++  cbv at hi
++  rw [hi]
++  cbv
++  change (certifyProfile _ _ 4 3).isOk = true
++  rw [certifyProfile_isOk]
++  cbv
++
++def successfulValue {ε α : Type} (result : Except ε α) (h : result.isOk = true) : α :=
++  result.toOption.get (by cases result <;> simpa [Except.isOk, Except.toBool, Except.toOption] using h)
++
++theorem successfulValue_origin {ε α : Type} (result : Except ε α) (h : result.isOk = true) :
++    result = .ok (successfulValue result h) := by
++  cases result with
++  | error err => simp [Except.isOk, Except.toBool] at h
++  | ok value => rfl
++
++def shiftCompiled : CompiledExample 4 3 := successfulValue shiftExample shift_success
++def shiftCertifiedProfile : Profile 4 3 := shiftCompiled.profile
++
++theorem shiftCompiled_origin : shiftExample = .ok shiftCompiled :=
++  successfulValue_origin shiftExample shift_success
++
++theorem shift_profile_inhabited : Nonempty (Profile 4 3) := ⟨shiftCertifiedProfile⟩
++
++inductive SpatialDonor
++  | shift | stride | reversal | deep | boundary22 | boundary20 | boundary02 | boundary00
++  deriving Repr
++
++def spatialDonorSched : SpatialDonor → ScheduledProgram
++  | .shift => shiftSched
++  | .stride => strideSched
++  | .reversal => reversalSched
++  | .deep => deepSched
++  | .boundary22 => Prototype.spatialSched 2 2
++  | .boundary20 => Prototype.spatialSched 2 0
++  | .boundary02 => Prototype.spatialSched 0 2
++  | .boundary00 => Prototype.spatialSched 0 0
++
++def spatialDonorD : SpatialDonor → Nat
++  | .boundary22 | .boundary20 => 2
++  | .boundary02 | .boundary00 => 0
++  | _ => 4
++
++def spatialDonorN : SpatialDonor → Nat
++  | .boundary22 | .boundary02 => 2
++  | .boundary20 | .boundary00 => 0
++  | _ => 3
++
++def spatialDonorInputs (donor : SpatialDonor) : HashMap String DenseTensor :=
++  match donor with
++  | .boundary22 | .boundary20 => Prototype.spatialInputs 2
++  | .boundary02 | .boundary00 => Prototype.spatialInputs 0
++  | _ => vectorInputs
++
++def spatialDonorSource (donor : SpatialDonor) : ScheduledProgram :=
++  { explicitF64Sched (spatialDonorSched donor) with env := spatialDeclEnv }
++
++def spatialDonorSizes (donor : SpatialDonor) : HashMap UID Nat :=
++  declaredAxisSizes (spatialDonorSource donor).decls
++
++def spatialDonorExample (donor : SpatialDonor) :=
++  compileExample (spatialDonorSched donor) (spatialDonorInputs donor)
++    (spatialDonorD donor) (spatialDonorN donor)
++
++set_option maxHeartbeats 0 in
++theorem spatialDonor_algebras (donor : SpatialDonor) :
++    scheduleAlgebras spatialDeclEnv (spatialDonorSched donor).stmts =
++      .ok (({} : HashMap String SortAlgebra).insert "S" .real) := by
++  unfold scheduleAlgebras spatialDeclEnv
++  have h := hashMap_toList_two "S" "S0"
++    (Decl.typedTensor .f64 "S" [axJ, axL]) (Decl.typedTensor .f64 "S0" [axJ]) (by decide)
++  rcases h with h | h <;> rw [h] <;> cases donor <;> cbv
++
++set_option maxHeartbeats 0 in
++theorem spatialDonor_casts (donor : SpatialDonor) :
++    checkSortCasts spatialDeclEnv (({} : HashMap String SortAlgebra).insert "S" .real)
++      (spatialDonorSched donor).stmts = .ok () := by
++  unfold checkSortCasts
++  cases donor <;> cbv
++
++set_option maxHeartbeats 0 in
++theorem spatialDonor_collection (donor : SpatialDonor) :
++    collectDefinitions (spatialDonorSource donor) (spatialDonorSizes donor) =
++      .ok (spatialDonorSource donor, []) := by
++  unfold collectDefinitions
++  cases donor <;> cbv
++
++set_option maxHeartbeats 0 in
++theorem spatialDonor_obligations (donor : SpatialDonor) :
++    collectorShapeObligations (spatialDonorSource donor) (spatialDonorSizes donor) = .ok [] := by
++  unfold collectorShapeObligations
++  cases donor <;> cbv
++
++set_option maxHeartbeats 0 in
++theorem spatialDonor_signature (donor : SpatialDonor) :
++    InputSignature.ofDenseInputs (spatialDonorInputs donor) =
++      { tensors := ({} : HashMap String TensorSignature).insert "S0"
++          { shape := #[spatialDonorD donor], dtype := .f64 } } := by
++  cases donor <;> first
++  | exact vector_signature
++  | unfold InputSignature.ofDenseInputs; cbv
++
++set_option maxHeartbeats 0 in
++theorem spatialDonor_inferred (donor : SpatialDonor) :
++    inferAxisSizesFromSignature (spatialDonorSizes donor)
++      (InputSignature.ofDenseInputs (spatialDonorInputs donor))
++      ((spatialDonorSource donor).stmts.flatMap ScanStmt.sourceStmts) =
++      .ok (spatialDonorSizes donor, []) := by
++  rw [spatialDonor_signature]
++  unfold inferAxisSizesFromSignature
++  cases donor <;> cbv
++
++attribute [local cbv_opaque] LeanNCD.validateScheduled
++
++local cbv_simproc cbv_eval foldLiteralList (@List.foldl _ _ _ _ _) := fun e => do
++  let args := e.getAppArgs
++  let xs := args[4]!.consumeMData
++  let result :=
++    if xs.isAppOf ``List.nil then
++      args[3]!
++    else if xs.isAppOf ``List.cons then
++      let parts := xs.getAppArgs
++      Lean.mkAppN e.getAppFn
++        #[args[0]!, args[1]!, args[2]!, Lean.mkApp2 args[2]! args[3]! parts[1]!, parts[2]!]
++    else
++      e
++  if result == e then return .rfl
++  let result ← Lean.Meta.Sym.share result
++  return .step result (← Lean.Meta.Sym.mkEqRefl result)
++
++attribute [local cbv_opaque] List.foldl
++
++private def actualTableCbvLoop : Lean.Elab.Tactic.TacticM Unit := do
++  for _ in [:4] do
++    if (← Lean.Elab.Tactic.getGoals).isEmpty then return
++    Lean.Elab.Tactic.evalTactic (← `(tactic| cbv))
++    if (← Lean.Elab.Tactic.getGoals).isEmpty then return
++    Lean.Elab.Tactic.evalTactic (← `(tactic| try simp only [List.foldl_cons, List.foldl_nil]))
++
++elab "actual_table_cbv" : tactic => actualTableCbvLoop
++
++macro "close_spatial_donor " donor:term : tactic =>
++  `(tactic|
++    (change (spatialDonorExample $donor).isOk = true
++     unfold spatialDonorExample
++     rw [compileExample_isOk]
++     actual_table_cbv
++     unfold validateScheduled
++     actual_table_cbv
++     have ha := spatialDonor_algebras $donor
++     cbv at ha
++     rw [ha]
++     actual_table_cbv
++     have hc := spatialDonor_casts $donor
++     cbv at hc
++     rw [hc]
++     actual_table_cbv
++     have hcollect := spatialDonor_collection $donor
++     cbv at hcollect
++     rw [hcollect]
++     actual_table_cbv
++     have ho := spatialDonor_obligations $donor
++     cbv at ho
++     rw [ho]
++     actual_table_cbv
++     have hs := spatialDonor_signature $donor
++     cbv at hs
++     rw [hs]
++     try simp only [List.foldl_cons, List.foldl_nil]
++     actual_table_cbv
++     have hi := spatialDonor_inferred $donor
++     rw [spatialDonor_signature] at hi
++     cbv at hi
++     rw [hi]
++     actual_table_cbv
++     change (certifyProfile _ _ _ _).isOk = true
++     rw [certifyProfile_isOk]
++     actual_table_cbv))
++
++set_option cbv.maxSteps 500000 in
++set_option maxHeartbeats 0 in
++set_option maxRecDepth 10000 in
++theorem stride_success : strideExample.isOk = true := by close_spatial_donor SpatialDonor.stride
++
++set_option cbv.maxSteps 500000 in
++set_option maxHeartbeats 0 in
++set_option maxRecDepth 10000 in
++theorem reversal_success : reversalExample.isOk = true := by close_spatial_donor SpatialDonor.reversal
++
++set_option cbv.maxSteps 500000 in
++set_option maxHeartbeats 0 in
++set_option maxRecDepth 10000 in
++theorem deep_success : deepExample.isOk = true := by close_spatial_donor SpatialDonor.deep
++
++set_option cbv.maxSteps 500000 in
++set_option maxHeartbeats 0 in
++set_option maxRecDepth 10000 in
++theorem boundary22_success : (spatialDonorExample .boundary22).isOk = true := by
++  close_spatial_donor SpatialDonor.boundary22
++
++set_option cbv.maxSteps 500000 in
++set_option maxHeartbeats 0 in
++set_option maxRecDepth 10000 in
++theorem boundary20_success : (spatialDonorExample .boundary20).isOk = true := by
++  close_spatial_donor SpatialDonor.boundary20
++
++set_option cbv.maxSteps 500000 in
++set_option maxHeartbeats 0 in
++set_option maxRecDepth 10000 in
++theorem boundary02_success : (spatialDonorExample .boundary02).isOk = true := by
++  close_spatial_donor SpatialDonor.boundary02
++
++set_option cbv.maxSteps 500000 in
++set_option maxHeartbeats 0 in
++set_option maxRecDepth 10000 in
++theorem boundary00_success : (spatialDonorExample .boundary00).isOk = true := by
++  close_spatial_donor SpatialDonor.boundary00
++
++theorem spatialDonor_success (donor : SpatialDonor) :
++    (spatialDonorExample donor).isOk = true := by
++  cases donor
++  · exact shift_success
++  · exact stride_success
++  · exact reversal_success
++  · exact deep_success
++  · exact boundary22_success
++  · exact boundary20_success
++  · exact boundary02_success
++  · exact boundary00_success
++
++def spatialDonorCompiled (donor : SpatialDonor) :
++    CompiledExample (spatialDonorD donor) (spatialDonorN donor) :=
++  successfulValue (spatialDonorExample donor) (spatialDonor_success donor)
++
++theorem spatialDonorCompiled_origin (donor : SpatialDonor) :
++    spatialDonorExample donor = .ok (spatialDonorCompiled donor) :=
++  successfulValue_origin _ (spatialDonor_success donor)
++
++def strideCompiled : CompiledExample 4 3 := spatialDonorCompiled .stride
++def reversalCompiled : CompiledExample 4 3 := spatialDonorCompiled .reversal
++def deepCompiled : CompiledExample 4 3 := spatialDonorCompiled .deep
++def boundaryCompiled : CompiledExample 2 2 := spatialDonorCompiled .boundary22
++def zeroRecurrenceCompiled : CompiledExample 2 0 := spatialDonorCompiled .boundary20
++def emptySpatialCompiled : CompiledExample 0 2 := spatialDonorCompiled .boundary02
++def emptyBothCompiled : CompiledExample 0 0 := spatialDonorCompiled .boundary00
++
++def strideCertifiedProfile : Profile 4 3 := strideCompiled.profile
++def reversalCertifiedProfile : Profile 4 3 := reversalCompiled.profile
++def deepCertifiedProfile : Profile 4 3 := deepCompiled.profile
++def zeroRecurrenceCertifiedProfile : Profile 2 0 := zeroRecurrenceCompiled.profile
++def emptySpatialCertifiedProfile : Profile 0 2 := emptySpatialCompiled.profile
++def emptyBothCertifiedProfile : Profile 0 0 := emptyBothCompiled.profile
++
++theorem strideCompiled_origin : strideExample = .ok strideCompiled :=
++  spatialDonorCompiled_origin .stride
++theorem reversalCompiled_origin : reversalExample = .ok reversalCompiled :=
++  spatialDonorCompiled_origin .reversal
++theorem deepCompiled_origin : deepExample = .ok deepCompiled :=
++  spatialDonorCompiled_origin .deep
++
++theorem zeroRecurrence_profile_inhabited : Nonempty (Profile 2 0) :=
++  ⟨zeroRecurrenceCertifiedProfile⟩
++theorem emptySpatial_profile_inhabited : Nonempty (Profile 0 2) :=
++  ⟨emptySpatialCertifiedProfile⟩
++theorem emptyBoth_profile_inhabited : Nonempty (Profile 0 0) :=
++  ⟨emptyBothCertifiedProfile⟩
++
++
++end IndexedExecutionExperiment.AffineScan.CompilerExamples
++
++#audit_axioms IndexedExecutionExperiment.AffineScan.CompilerExamples

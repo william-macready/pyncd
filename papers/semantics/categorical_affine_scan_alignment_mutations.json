@@ -1,0 +1,611 @@
+[
+  {
+    "label": "AA-M1 rank-length omission live-proof control",
+    "file": "experiments/indexed_execution/IndexedAffineScanAccessAgreement.lean",
+    "old": "theorem rank_hypothesis_is_essential :\n    inBoundsPerDim [2, 0] [0] = true \u2227\n      decodeRaw [\u27e810, 2\u27e9, \u27e811, 0\u27e9]\n        (fun i => ([0] : List Int).getD i.val 0) = none := by decide +kernel",
+    "new": "theorem rank_hypothesis_is_essential :\n    inBoundsPerDim [2, 0] [0] = true \u2227\n      decodeRaw [\u27e810, 2\u27e9, \u27e811, 0\u27e9]\n        (fun i => ([0] : List Int).getD i.val 0) \u2260 none := by decide +kernel",
+    "targets": [
+      "IndexedAffineScanAccessAgreement"
+    ],
+    "classification": "generic-live-proof-control-only",
+    "protected_intent": "The rank-short zero-extent counterexample cannot be treated as admitted merely because zip-based bounds returns true. This reverses that false-admission proposition, not the runtime core or generic theorem premise.",
+    "task": "access",
+    "control_class": "live-proof-oracle",
+    "expect": [
+      "Tactic `decide` proved that the proposition",
+      "IndexedExecutionExperiment.AffineScan.AccessAgreement.FiniteControls.rank_hypothesis_is_essential uses #[sorryAx]"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.AccessAgreement.FiniteControls.rank_hypothesis_is_essential"
+    ]
+  },
+  {
+    "label": "AA-M2 finite shift bias sign fixture delta",
+    "file": "experiments/indexed_execution/IndexedAffineScanAccessAgreement.lean",
+    "old": "def shifted : PartialStore RationalReference.Carrier vectorDecls :=\n  fun a => evalWith RationalReference.ops initial (shiftExpr 1) a.2",
+    "new": "def shifted : PartialStore RationalReference.Carrier vectorDecls :=\n  fun a => evalWith RationalReference.ops initial (shiftExpr (-1)) a.2",
+    "targets": [
+      "IndexedAffineScanAccessAgreement"
+    ],
+    "classification": "observable-fixture-delta",
+    "protected_intent": "Changes the actual fixture's first affine shift from bias +1 to -1, so the second -1 shift is no longer its raw inverse and interior coordinate values distinguish the signs.",
+    "task": "access",
+    "control_class": "runtime-observation",
+    "expect": [
+      "finite zero-padded shift/inverse fixture changed"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.AccessAgreement.FiniteControls.finite_shift_inverse_interior"
+    ]
+  },
+  {
+    "label": "AA-M3 nonzero padded read fixture delta",
+    "file": "experiments/indexed_execution/IndexedAffineScanAccessAgreement.lean",
+    "old": "  .read () ((shiftTable offset).admitted 0 (fun q => List.ofFn (Coord.raw q)))",
+    "new": "  .read () ((shiftTable offset).admitted 1 (fun q => List.ofFn (Coord.raw q)))",
+    "targets": [
+      "IndexedAffineScanAccessAgreement"
+    ],
+    "classification": "observable-fixture-delta",
+    "protected_intent": "Changes only the finite fixture's admitted padding scalar from exact rational zero to one. Boundary values and padding-versus-unavailable-store controls distinguish this without changing existing helper defaults.",
+    "task": "access",
+    "control_class": "runtime-observation",
+    "expect": [
+      "finite zero-padded shift/inverse fixture changed"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.AccessAgreement.FiniteControls.finite_shift_inverse_not_identity",
+      "IndexedExecutionExperiment.AffineScan.AccessAgreement.FiniteControls.padding_is_not_unavailable"
+    ]
+  },
+  {
+    "label": "AA-M4 ordered repeated read fixture delta",
+    "file": "experiments/indexed_execution/IndexedAffineScanAccessAgreement.lean",
+    "old": "def readOrder : List ((t : vectorDecls.Tensor) \u00d7 ReadTable (vectorDecls.signature t).axes 1) :=\n  [\u27e8(), shiftTable 0\u27e9, \u27e8(), shiftTable (-1)\u27e9, \u27e8(), shiftTable 0\u27e9, \u27e8(), shiftTable 1\u27e9]",
+    "new": "def readOrder : List ((t : vectorDecls.Tensor) \u00d7 ReadTable (vectorDecls.signature t).axes 1) :=\n  [\u27e8(), shiftTable 1\u27e9, \u27e8(), shiftTable (-1)\u27e9, \u27e8(), shiftTable 0\u27e9]",
+    "targets": [
+      "IndexedAffineScanAccessAgreement"
+    ],
+    "classification": "observable-fixture-delta",
+    "protected_intent": "Both removes one repeated admitted zero-address read and places the distinct one-address read first. The full ordered footprint, not a set of dependencies, distinguishes both multiplicity and order.",
+    "task": "access",
+    "control_class": "runtime-observation",
+    "expect": [
+      "ordered read multiplicity fixture changed"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.AccessAgreement.FiniteControls.ordered_multiplicity"
+    ]
+  },
+  {
+    "label": "AA-M5 flattened alias upper-bound neighbor fixture delta",
+    "file": "experiments/indexed_execution/IndexedAffineScanAccessAgreement.lean",
+    "old": "  read := { sourceSlot := 0, sourceShape := #[2, 3], oobPolicy := .zeroPad, map := { coeffs := #[#[1, 0], #[0, 1]], \u00abbias\u00bb := #[0, 3] } }",
+    "new": "  read := { sourceSlot := 0, sourceShape := #[2, 3], oobPolicy := .zeroPad, map := { coeffs := #[#[1, 0], #[0, 1]], \u00abbias\u00bb := #[0, 2] } }",
+    "targets": [
+      "IndexedAffineScanAccessAgreement"
+    ],
+    "classification": "observable-fixture-delta",
+    "protected_intent": "Moves the invalid second-dimension upper-bound coordinate [0,3] to its nearest valid neighbor [0,2]. Both have in-range flat offsets; the protected fixture pins actual per-dimension invalidity and the specific alias to [1,0], rather than relying only on flattened range.",
+    "task": "access",
+    "control_class": "runtime-observation",
+    "expect": [
+      "invalid-coordinate alias fixture changed"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.AccessAgreement.FiniteControls.alias_flat_valid_but_coordinate_invalid",
+      "IndexedExecutionExperiment.AffineScan.AccessAgreement.FiniteControls.alias_is_padded"
+    ]
+  },
+  {
+    "label": "AA-M6 invalid finite padded inverse fusion fixture rewrite",
+    "file": "experiments/indexed_execution/IndexedAffineScanAccessAgreement.lean",
+    "old": "def sequential (q : Coord vector) : Option \u211a :=\n  evalWith RationalReference.ops shifted (shiftExpr (-1)) q",
+    "new": "def sequential (q : Coord vector) : Option \u211a :=\n  evalWith RationalReference.ops initial (shiftExpr 0) q",
+    "targets": [
+      "IndexedAffineScanAccessAgreement"
+    ],
+    "classification": "observable-fixture-semantic-rewrite",
+    "protected_intent": "Replaces sequential finite zero-padded shift/inverse reads by their raw identity composite. The boundary nonidentity control must distinguish this illegal fusion while the interior remains equal.",
+    "task": "access",
+    "control_class": "runtime-observation",
+    "expect": [
+      "finite zero-padded shift/inverse fixture changed"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.AccessAgreement.FiniteControls.finite_shift_inverse_not_identity"
+    ]
+  },
+  {
+    "label": "construction-writer-all-ordered-dependencies",
+    "file": "experiments/indexed_execution/IndexedAffineScanConstruction.lean",
+    "old": "    reads := footprint (addressBody p dest) ()",
+    "new": "    reads := (footprint (addressBody p dest) ()).take 1",
+    "targets": [
+      "IndexedAffineScanMatch"
+    ],
+    "classification": "Live-proof closure/source-match control; the Writer definition remains an intended type-valid List.take operation. Not an observed mutation kill.",
+    "protected_intent": "Every writer must retain the full ordered footprint of its unchanged actual body, not its first representative dependency. Actual mixed [S,X,S]+[X,S] rows retain five dependency occurrences, including all spatially transformed state reads and repeats.",
+    "task": "component",
+    "control_class": "live-proof-implementation",
+    "expect": [
+      "'change' tactic failed, pattern",
+      "IndexedExecutionExperiment.AffineScan.close_ok uses #[sorryAx]",
+      "IndexedExecutionExperiment.AffineScan.closureFacts uses #[sorryAx]"
+    ]
+  },
+  {
+    "label": "construction-actual-spatial-basis-not-zero",
+    "file": "experiments/indexed_execution/IndexedAffineScanConstruction.lean",
+    "old": "    else if t.outputPos.contains pos then i else 0",
+    "new": "    else if t.outputPos.contains pos then 0 else 0",
+    "targets": [
+      "IndexedAffineScanCompilerExamples"
+    ],
+    "classification": "Intended type-valid observable actual-table raw-coordinate/value/ordered-footprint control. Matching the same mutated Program and generic temporal rank alone may remain green.",
+    "protected_intent": "Actual outputPos coordinates must carry the spatial index, distinct from the clock at contextPos. Omitting the spatial coordinate must not silently redirect every transformed or repeated dependency to the output-zero representative.",
+    "task": "compiler",
+    "control_class": "runtime-observation",
+    "expect": [
+      "spatial shift/stride/reversal: shift address/padding/value observations"
+    ]
+  },
+  {
+    "label": "construction-state-own-clock-not-spatial-column",
+    "file": "experiments/indexed_execution/IndexedAffineScanProfile.lean",
+    "old": "      if t.contextPos == #[0] then #[1, 0] else #[0, 1]] &&",
+    "new": "      if t.contextPos == #[0] then #[0, 1] else #[1, 0]] &&",
+    "targets": [
+      "IndexedAffineScanConstruction"
+    ],
+    "classification": "Live-proof quantified temporal-row control; swaps two same-width integer rows without changing declaration types.",
+    "protected_intent": "An actual state temporal row must select the term's own contextPos, not outputPos. Nonpositive bias alone does not exclude future state: a spatial index larger than the clock would become a future-time dependency.",
+    "task": "component",
+    "control_class": "live-proof-implementation",
+    "expect": [
+      "unsolved goals",
+      "IndexedExecutionExperiment.AffineScan.captured_state_earlier uses #[sorryAx]",
+      "IndexedExecutionExperiment.AffineScan.state_time uses #[sorryAx]"
+    ]
+  },
+  {
+    "label": "construction-canonical-base-time-zero",
+    "file": "experiments/indexed_execution/IndexedAffineScanProfile.lean",
+    "old": "  decide (c.raw.baseWrites = #[{ outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[1], #[0]], bias := #[0, 0] } }]) &&",
+    "new": "  decide (c.raw.baseWrites = #[{ outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[1], #[0]], bias := #[0, 1] } }]) &&",
+    "targets": [
+      "IndexedAffineScanPrototypeTest"
+    ],
+    "classification": "Intended type-valid observable profile admission regression: the unchanged canonical compiler donor is wrongly refused, not a malformed source program.",
+    "protected_intent": "The complete supplied identity base belongs at H[i,0], not the successor slice. Even N=0 must have its legal canonical base accepted.",
+    "task": "admission",
+    "control_class": "runtime-observation",
+    "expect": [
+      "profile: IndexedExecutionExperiment.AffineScan.ProfileError.unsupported"
+    ]
+  },
+  {
+    "label": "construction-history-extent-includes-base-and-zero-boundaries",
+    "file": "experiments/indexed_execution/IndexedAffineScanProfile.lean",
+    "old": "  c.raw.historyExtents == #[n + 1] && c.stepExtents == #[n] &&",
+    "new": "  c.raw.historyExtents == #[n] && c.stepExtents == #[n] &&",
+    "targets": [
+      "IndexedAffineScanPrototypeTest"
+    ],
+    "classification": "Intended type-valid observable extent/admission off-by-one control, including nonvacuous zero/empty acceptance.",
+    "protected_intent": "N recurrences require history extent N+1, containing the base and every successor through H[i,N]. Zero recurrence means history extent one, not zero; zero spatial extent must also remain an admitted metadata case.",
+    "task": "admission",
+    "control_class": "runtime-observation",
+    "expect": [
+      "profile: IndexedExecutionExperiment.AffineScan.ProfileError.unsupported"
+    ]
+  },
+  {
+    "label": "construction-input-ports-include-actual-step-externals",
+    "file": "experiments/indexed_execution/IndexedAffineScanProfile.lean",
+    "old": "  c.raw.baseCaptures.toList ++ c.raw.stepCaptures.toList",
+    "new": "  c.raw.baseCaptures.toList ++ c.raw.baseCaptures.toList",
+    "targets": [
+      "IndexedAffineScanCompilerExamples"
+    ],
+    "classification": "Intended type-valid observable actual external-role selection/admission regression. Replaces one List with another of exactly the same type.",
+    "protected_intent": "Semantic input metadata must reflect actual .external captures from both base and step blocks, not only Z/base captures. A genuine step external input remains a distinct external role; state captures and mere storage signatures do not create phantom input ports.",
+    "task": "compiler",
+    "control_class": "runtime-observation",
+    "expect": [
+      "mixed spatial/own-clock and controls: profile: IndexedExecutionExperiment.AffineScan.ProfileError.unsupported"
+    ]
+  },
+  {
+    "label": "AH-M1 actual base spatial-coordinate shift",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistory.lean",
+    "old": "    tableSum p \u03c1 p.checked.raw.baseCaptures q.1.val 0\n      (baseAssign p.checked).terms.toList (base_read_only p)",
+    "new": "    tableSum p \u03c1 p.checked.raw.baseCaptures (q.1.val + 1) 0\n      (baseAssign p.checked).terms.toList (base_read_only p)",
+    "targets": [
+      "IndexedAffineScanHistory"
+    ],
+    "classification": "mathematical-table-fold-defect-with-generic-proof-control",
+    "protected_intent": "Changes the actual base-table interpretation from the captured Z coordinate i to i+1, including wrong padding at the spatial boundary. The unchanged constructed expression and actual_base_value/wholeStore_base protect the actual H[i,0]=Z[i] consequence. This is a type-meaningful table-interpretation defect, not a claimed runtime-fixture kill.",
+    "task": "history",
+    "control_class": "live-proof-implementation",
+    "expect": [
+      "Type mismatch",
+      "IndexedExecutionExperiment.AffineScan.History.actual_base_value uses #[sorryAx]",
+      "IndexedExecutionExperiment.AffineScan.History.admissible uses #[sorryAx]"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.History.cell_interpret",
+      "IndexedExecutionExperiment.AffineScan.History.actual_base_value",
+      "IndexedExecutionExperiment.AffineScan.History.wholeStore_base"
+    ]
+  },
+  {
+    "label": "AH-M2 actual successor clock off by one",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistory.lean",
+    "old": "    tableSum p \u03c1 p.checked.raw.stepCaptures q.1.val ((q.2.1.val : Int) - 1)\n      (stepAssign p.checked).terms.toList (step_read_only p)",
+    "new": "    tableSum p \u03c1 p.checked.raw.stepCaptures q.1.val ((q.2.1.val : Int) - 2)\n      (stepAssign p.checked).terms.toList (step_read_only p)",
+    "targets": [
+      "IndexedAffineScanHistory"
+    ],
+    "classification": "mathematical-table-fold-defect-with-generic-proof-control",
+    "protected_intent": "Evaluates the actual successor assignment at destination clock minus two instead of minus one. This changes genuine own-clock reads and negative-time padding, while preserving all source tables and canonical write destinations. The generic body/table alignment and explicit successor equation must reject the wrong clock.",
+    "task": "history",
+    "control_class": "live-proof-implementation",
+    "expect": [
+      "Type mismatch",
+      "IndexedExecutionExperiment.AffineScan.History.admissible uses #[sorryAx]",
+      "IndexedExecutionExperiment.AffineScan.History.admissible_input uses #[sorryAx]"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.History.cell_interpret",
+      "IndexedExecutionExperiment.AffineScan.History.wholeStore_successor"
+    ]
+  },
+  {
+    "label": "AH-M3 checked observation drops all nonfinal history slices",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistoryTest.lean",
+    "old": "def rationalHistory (p : Profile d n) : Except String (List \u211a) :=\n  match (runChecked (contract p) (fragment p) (rationalInput p).val).outcome with\n  | .complete g =>\n      (List.finRange (canonicalLayout (historyShape d n)).count).mapM fun s =>",
+    "new": "def rationalHistory (p : Profile d n) : Except String (List \u211a) :=\n  match (runChecked (contract p) (fragment p) (rationalInput p).val).outcome with\n  | .complete g =>\n      ((List.finRange (canonicalLayout (historyShape d n)).count).filter\n        (fun s => ((canonicalLayout (historyShape d n)).enumerate s).2.1.val == n)).mapM fun s =>",
+    "targets": [
+      "IndexedAffineScanHistoryTest"
+    ],
+    "classification": "actual-observation-payload-defect-with-generic-full-list-proof-control",
+    "protected_intent": "The underlying default checked executor still computes the component, but its observation now retains only t=n instead of every materialized coordinate. rationalHistory_solution and the independently full referenceHistory prevent final-slice parity from replacing whole-history semantics. No compiler-dependent target or observed numeric assertion is needed for this candidate.",
+    "task": "interpretation",
+    "control_class": "live-proof-implementation",
+    "expect": [
+      "Type mismatch",
+      "IndexedExecutionExperiment.AffineScan.HistoryTest.actual_executor_agreement uses #[sorryAx]",
+      "IndexedExecutionExperiment.AffineScan.HistoryTest.rationalHistory_solution uses #[sorryAx]"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.HistoryTest.rationalHistory_solution",
+      "IndexedExecutionExperiment.AffineScan.HistoryTest.actual_executor_agreement"
+    ]
+  },
+  {
+    "label": "AH-M4 strict zero-times-missing live-proof oracle reversal",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistory.lean",
+    "old": "        (fun _ : Unit => termBasis t i clock) (.read r\u2080 :: .read r\u2081 :: rest)) () = none := by",
+    "new": "        (fun _ : Unit => termBasis t i clock) (.read r\u2080 :: .read r\u2081 :: rest)) () = some 0 := by",
+    "targets": [
+      "IndexedAffineScanHistory"
+    ],
+    "classification": "generic-live-proof-control-only",
+    "protected_intent": "Reverses the strict-read theorem's mathematically false outcome to successful zero despite a later unavailable admitted read and an earlier padded zero. Every hypothesis and proof binder remains present. This is an explicit live-proof oracle control, NOT a mutation of the runtime multiplication implementation and NOT a claimed runtime-core defect kill.",
+    "task": "history",
+    "control_class": "live-proof-oracle",
+    "expect": [
+      "Tactic `rfl` failed: The left-hand side",
+      "IndexedExecutionExperiment.AffineScan.History.padding_does_not_cancel_missing uses #[sorryAx]"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.History.padding_does_not_cancel_missing"
+    ]
+  },
+  {
+    "label": "AH-M5 categorical witness image replaced by empty domain",
+    "file": "experiments/indexed_execution/IndexedAffineScanInterpretation.lean",
+    "old": "noncomputable def witnessArrow :=\n  IndexedRankedWitnessComparison.comparison.map (operationalArrow p)",
+    "new": "noncomputable def witnessArrow :=\n  (Quotient.mk _\n    ({ W := Empty, left := Empty.elim, right := Empty.elim } :\n      Span (inputInterface (component p)) (outputInterface (component p))) :\n    inputInterface (component p) \u27f6 outputInterface (component p))",
+    "targets": [
+      "IndexedAffineScanInterpretation"
+    ],
+    "classification": "actual-categorical-wiring-defect-with-generic-comparison-proof-control",
+    "protected_intent": "Replaces the actual operational-to-witness comparison functor image by a well-typed empty-witness span with the same exterior whole interfaces. This wrongly discards every complete rational model even though the constructed component has total witness domain. The Normal/source comparison and component-span identification must reject it; this does not broaden Domain wires or rely on compiler examples.",
+    "task": "interpretation",
+    "control_class": "live-proof-implementation",
+    "expect": [
+      "Not a definitional equality: the left-hand side",
+      "IndexedExecutionExperiment.AffineScan.Interpretation.categorical_comparison uses #[sorryAx]",
+      "IndexedExecutionExperiment.AffineScan.Interpretation.categorical_whole_history uses #[sorryAx]"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.Interpretation.categorical_comparison",
+      "IndexedExecutionExperiment.AffineScan.Interpretation.witness_source_comparison",
+      "IndexedExecutionExperiment.AffineScan.Interpretation.categorical_whole_history",
+      "IndexedExecutionExperiment.AffineScan.Interpretation.witness_total"
+    ]
+  },
+  {
+    "label": "AH-M6 empty-spatial port erasure live-proof oracle reversal",
+    "file": "experiments/indexed_execution/IndexedAffineScanInterpretation.lean",
+    "old": "theorem history_port_metadata :\n    (component p).outputs.map (fun port => port.axes) = [historyShape d n] := rfl",
+    "new": "theorem history_port_metadata :\n    (component p).outputs.map (fun port => port.axes) =\n      (if d = 0 then [] else [historyShape d n]) := rfl",
+    "targets": [
+      "IndexedAffineScanInterpretation"
+    ],
+    "classification": "generic-live-proof-control-only",
+    "protected_intent": "Makes the false claim that a zero-spatial tensor has no output port, confusing empty coordinates with absent metadata. The unchanged actual component retains the full [0,n+1] signature and one history port, including zero recurrence. This alters a logical metadata oracle only, not the core component constructor, and is not reported as a runtime metadata-erasure kill.",
+    "task": "interpretation",
+    "control_class": "live-proof-oracle",
+    "expect": [
+      "Not a definitional equality: the left-hand side",
+      "IndexedExecutionExperiment.AffineScan.Interpretation.history_port_metadata uses #[sorryAx]"
+    ],
+    "control_symbols": [
+      "IndexedExecutionExperiment.AffineScan.Interpretation.history_port_metadata",
+      "IndexedExecutionExperiment.AffineScan.Interpretation.history_port_count"
+    ]
+  },
+  {
+    "label": "compiler-spatial-stride-coordinate",
+    "file": "experiments/indexed_execution/IndexedAffineScanCompilerExamples.lean",
+    "old": "def strideSched := recurrenceSched 4 3 [{ factors := [stateFactor (.scale 2 axJ)] }]",
+    "new": "def strideSched := recurrenceSched 4 3 [{ factors := [stateFactor (.scale 1 axJ)] }]",
+    "targets": [
+      "IndexedAffineScanCompilerExamples"
+    ],
+    "classification": "Runtime actual-table, per-address and native-history regression assertion; admission may remain valid.",
+    "protected_intent": "The actual compiled spatial coefficient must remain 2, with upper-bound zero padding at spatial addresses 2 and 3.",
+    "task": "compiler",
+    "control_class": "runtime-observation",
+    "expect": [
+      "spatial shift/stride/reversal: compiled stride map"
+    ]
+  },
+  {
+    "label": "compiler-mixed-context-basis-column",
+    "file": "experiments/indexed_execution/IndexedAffineScanCompilerExamples.lean",
+    "old": "def mixedExternal : Factor := .read \"X\" [.affine 1 [(2, axJ), (1, axL)]]",
+    "new": "def mixedExternal : Factor := .read \"X\" [.affine 1 [(1, axJ), (2, axL)]]",
+    "targets": [
+      "IndexedAffineScanCompilerExamples"
+    ],
+    "classification": "Runtime actual-table access/ordered-footprint regression assertion; the alternate source remains type/profile valid.",
+    "protected_intent": "Unequal spatial/clock coefficients distinguish actual basis order: i=1,t=2 must read external address 5, not 6.",
+    "task": "compiler",
+    "control_class": "runtime-observation",
+    "expect": [
+      "mixed spatial/own-clock and controls: actual unequal external coefficients"
+    ]
+  },
+  {
+    "label": "compiler-deep-temporal-causality",
+    "file": "experiments/indexed_execution/IndexedAffineScanCompilerExamples.lean",
+    "old": "def deepSched := recurrenceSched 4 3\n  [{ factors := [stateFactor (.axis axJ)] },\n   { factors := [stateFactor (.axis axJ) (.shift axL (-2))] }]",
+    "new": "def deepSched := recurrenceSched 4 3\n  [{ factors := [stateFactor (.axis axJ)] },\n   { factors := [stateFactor (.axis axJ) (.shift axL 1)] }]",
+    "targets": [
+      "IndexedAffineScanCompilerExamples"
+    ],
+    "classification": "Runtime compiler admission assertion; also a named closed-success regression once closed certificates are implemented.",
+    "protected_intent": "Deep own-clock lookback l-2 is accepted and negatively padded; positive-time lookahead l+1 must be rejected by the unchanged source/checker causality contract.",
+    "task": "compiler",
+    "control_class": "runtime-observation",
+    "expect": [
+      "deep history and causality neighbors: scan: LeanNCD.Eval.Plan.ScanCompileError.stateReadNotCausal \"S\" \"S\" 0 1 0"
+    ]
+  },
+  {
+    "label": "compiler-canonical-external-base-boundary",
+    "file": "experiments/indexed_execution/IndexedAffineScanCompilerExamples.lean",
+    "old": "        { body := { terms := [{ factors := [.read \"S0\" [.axis axJ]] }] },",
+    "new": "        { body := { terms := [{ factors := [.read \"S0\" [.shift axJ 1]] }] },",
+    "targets": [
+      "IndexedAffineScanCompilerExamples"
+    ],
+    "classification": "Runtime profile admission assertion; also a named closed-success regression once closed certificates are implemented.",
+    "protected_intent": "The compiler-produced complete base must be the identity assignment from the linked external Z vector, not a shifted/padded neighboring base.",
+    "task": "compiler",
+    "control_class": "runtime-observation",
+    "expect": [
+      "spatial shift/stride/reversal: profile: IndexedExecutionExperiment.AffineScan.ProfileError.unsupported"
+    ]
+  },
+  {
+    "label": "compiler-ordered-product-footprint",
+    "file": "experiments/indexed_execution/IndexedAffineScanConstruction.lean",
+    "old": "  | f :: fs => .binary .mul (factorBody p captures basis f)\n      (orderedProduct p captures basis fs)",
+    "new": "  | f :: fs => .binary .mul (orderedProduct p captures basis fs)\n      (factorBody p captures basis f)",
+    "targets": [
+      "IndexedAffineScanCompilerExamples"
+    ],
+    "classification": "Runtime ordered-product implementation defect with unchanged captures and commutative numerical values.",
+    "protected_intent": "Reverse semantic product traversal without changing any compiler tables, capture metadata, source-slot associations or factor multiplicity. The non-palindromic second mixed term must change the ordered footprint even though exact rational values stay equal.",
+    "task": "compiler",
+    "control_class": "runtime-observation",
+    "expect": [
+      "mixed spatial/own-clock and controls: mixed actual observations"
+    ]
+  },
+  {
+    "label": "compiler-repeated-factor-multiplicity",
+    "file": "experiments/indexed_execution/IndexedAffineScanCompilerExamples.lean",
+    "old": "  [{ factors := [mixedState, mixedExternal, mixedState] },",
+    "new": "  [{ factors := [mixedState, mixedExternal] },",
+    "targets": [
+      "IndexedAffineScanCompilerExamples"
+    ],
+    "classification": "Runtime actual-factor-multiplicity, ordered-footprint and exact-rational diagnostic-value regression assertion; admission may remain valid.",
+    "protected_intent": "Repeated captured-state factors must not be deduplicated: five actual occurrences and value 19399380 distinguish the original from four occurrences and 291720.",
+    "task": "compiler",
+    "control_class": "runtime-observation",
+    "expect": [
+      "mixed spatial/own-clock and controls: actual factor order/multiplicity"
+    ]
+  },
+  {
+    "label": "RH-M1 shift rational-history oracle",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistoryCompilerTest.lean",
+    "old": "  observeExample \"shift\" shiftExample\n    [1 / 2, 0, 0, 0, 1,",
+    "new": "  observeExample \"shift\" shiftExample\n    [3 / 2, 0, 0, 0, 1,",
+    "targets": [
+      "IndexedAffineScanHistoryCompilerTest"
+    ],
+    "classification": "runtime-fixture-oracle-control",
+    "protected_intent": "The independently measured complete shift history must reject a wrong rational base value.",
+    "task": "acceptance",
+    "control_class": "runtime-observation",
+    "expect": [
+      "shift: exact rational full history changed"
+    ]
+  },
+  {
+    "label": "RH-M2 stride rational-history oracle",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistoryCompilerTest.lean",
+    "old": "  observeExample \"stride\" strideExample\n    [1 / 2, 1 / 2,",
+    "new": "  observeExample \"stride\" strideExample\n    [3 / 2, 1 / 2,",
+    "targets": [
+      "IndexedAffineScanHistoryCompilerTest"
+    ],
+    "classification": "runtime-fixture-oracle-control",
+    "protected_intent": "The complete strided history has its own live exact-rational assertion, not only dimensions or final-slice parity.",
+    "task": "acceptance",
+    "control_class": "runtime-observation",
+    "expect": [
+      "stride: exact rational full history changed"
+    ]
+  },
+  {
+    "label": "RH-M3 reversal rational-history oracle",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistoryCompilerTest.lean",
+    "old": "  observeExample \"reversal\" reversalExample\n    [1 / 2, 2,",
+    "new": "  observeExample \"reversal\" reversalExample\n    [3 / 2, 2,",
+    "targets": [
+      "IndexedAffineScanHistoryCompilerTest"
+    ],
+    "classification": "runtime-fixture-oracle-control",
+    "protected_intent": "The complete reversed history must independently reject an incorrect expected coordinate.",
+    "task": "acceptance",
+    "control_class": "runtime-observation",
+    "expect": [
+      "reversal: exact rational full history changed"
+    ]
+  },
+  {
+    "label": "RH-M4 mixed rational-history oracle",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistoryCompilerTest.lean",
+    "old": "  observeExample \"mixed\" mixedExample\n    [1 / 2, 1 / 2,",
+    "new": "  observeExample \"mixed\" mixedExample\n    [3 / 2, 1 / 2,",
+    "targets": [
+      "IndexedAffineScanHistoryCompilerTest"
+    ],
+    "classification": "runtime-fixture-oracle-control",
+    "protected_intent": "The actual mixed spatial/clock and external-source history has an independently live exact-rational oracle.",
+    "task": "acceptance",
+    "control_class": "runtime-observation",
+    "expect": [
+      "mixed: exact rational full history changed"
+    ]
+  },
+  {
+    "label": "RH-M5 deep rational-history oracle",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistoryCompilerTest.lean",
+    "old": "  observeExample \"deep\" deepExample\n    [1 / 2, 1 / 2,",
+    "new": "  observeExample \"deep\" deepExample\n    [3 / 2, 1 / 2,",
+    "targets": [
+      "IndexedAffineScanHistoryCompilerTest"
+    ],
+    "classification": "runtime-fixture-oracle-control",
+    "protected_intent": "Deep-history whole-array expectations must be checked independently of the compiler admission and padded factor observations.",
+    "task": "acceptance",
+    "control_class": "runtime-observation",
+    "expect": [
+      "deep: exact rational full history changed"
+    ]
+  },
+  {
+    "label": "RH-M6 zero-recurrence rational-history oracle",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistoryCompilerTest.lean",
+    "old": "    (compileExample (Prototype.spatialSched 2 0) (Prototype.spatialInputs 2) 2 0) [1 / 2, 1] [[2]]",
+    "new": "    (compileExample (Prototype.spatialSched 2 0) (Prototype.spatialInputs 2) 2 0) [3 / 2, 1] [[2]]",
+    "targets": [
+      "IndexedAffineScanHistoryCompilerTest"
+    ],
+    "classification": "runtime-fixture-oracle-control",
+    "protected_intent": "Zero recurrence still executes the complete canonical base and must reject a wrong expected base value.",
+    "task": "acceptance",
+    "control_class": "runtime-observation",
+    "expect": [
+      "zero recurrence: exact rational full history changed"
+    ]
+  },
+  {
+    "label": "RH-M7 empty-spatial metadata oracle",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistoryCompilerTest.lean",
+    "old": "    (compileExample (Prototype.spatialSched 0 2) (Prototype.spatialInputs 0) 0 2) [] [[0]]",
+    "new": "    (compileExample (Prototype.spatialSched 0 2) (Prototype.spatialInputs 0) 0 2) [] [[1]]",
+    "targets": [
+      "IndexedAffineScanHistoryCompilerTest"
+    ],
+    "classification": "runtime-fixture-metadata-oracle-control",
+    "protected_intent": "An empty coordinate domain does not make the actual external tensor's zero extent unobservable.",
+    "task": "acceptance",
+    "control_class": "runtime-observation",
+    "expect": [
+      "empty spatial: actual external capture metadata changed"
+    ]
+  },
+  {
+    "label": "RH-M8 empty-base metadata presence oracle",
+    "file": "experiments/indexed_execution/IndexedAffineScanHistoryCompilerTest.lean",
+    "old": "    (compileExample (Prototype.spatialSched 0 0) (Prototype.spatialInputs 0) 0 0) [] [[0]]",
+    "new": "    (compileExample (Prototype.spatialSched 0 0) (Prototype.spatialInputs 0) 0 0) [] []",
+    "targets": [
+      "IndexedAffineScanHistoryCompilerTest"
+    ],
+    "classification": "runtime-fixture-metadata-oracle-control",
+    "protected_intent": "The both-empty case retains actual external tensor presence rather than erasing its port because there are no coordinates.",
+    "task": "acceptance",
+    "control_class": "runtime-observation",
+    "expect": [
+      "empty spatial and zero recurrence: actual external capture metadata changed"
+    ]
+  },
+  {
+    "label": "CB-M7 semantic captured-clock look-ahead",
+    "file": "experiments/indexed_execution/IndexedAffineScanConstruction.lean",
+    "old": "    if t.contextPos.contains pos then clock\n    else if t.outputPos.contains pos then i else 0",
+    "new": "    if t.contextPos.contains pos then clock + 1\n    else if t.outputPos.contains pos then i else 0",
+    "targets": [
+      "IndexedAffineScanRank"
+    ],
+    "classification": "actual-table-basis-defect-with-generic-rank-proof-control",
+    "protected_intent": "Introducing a future captured-state dependency in the semantic basis must break actual temporal-coordinate agreement or full dependency ranking, without changing the checked input plan.",
+    "task": "component",
+    "control_class": "live-proof-implementation",
+    "expect": [
+      "unsolved goals",
+      "IndexedExecutionExperiment.AffineScan.captured_state_earlier uses #[sorryAx]",
+      "IndexedExecutionExperiment.AffineScan.state_time uses #[sorryAx]"
+    ]
+  },
+  {
+    "label": "CB-M8 semantic nonzero padding",
+    "file": "experiments/indexed_execution/IndexedAffineScanConstruction.lean",
+    "old": "  policy := zeroPolicy 0 _\n  raw := fun \u03b3 pos => (applyAffine r.map (basis \u03b3)).getD pos.val 0\n  resolved := fun \u03b3 => paddedResolve 0 _",
+    "new": "  policy := zeroPolicy 1 _\n  raw := fun \u03b3 pos => (applyAffine r.map (basis \u03b3)).getD pos.val 0\n  resolved := fun \u03b3 => paddedResolve 1 _",
+    "targets": [
+      "IndexedAffineScanHistory"
+    ],
+    "classification": "admitted-read-padding-defect-with-generic-table-agreement-control",
+    "protected_intent": "A type-consistent nonzero admitted padding policy must disagree with the actual checked ReadPlan zero-padding contract and its mathematical table interpretation.",
+    "task": "history",
+    "control_class": "live-proof-implementation",
+    "expect": [
+      "Tactic `rfl` failed: The left-hand side",
+      "IndexedExecutionExperiment.AffineScan.AccessAgreement.actualAccess_eq_admitted uses #[sorryAx]",
+      "IndexedExecutionExperiment.AffineScan.AccessAgreement.factorBody_read_footprint uses #[sorryAx]"
+    ]
+  }
+]

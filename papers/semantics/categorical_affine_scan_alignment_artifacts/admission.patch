@@ -1,0 +1,261 @@
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -149,6 +149,9 @@
+ name = "IndexedExecutionExperiment"
+ srcDir = "experiments/indexed_execution"
+ globs = ["IndexedExecutionPrototype", "IndexedExecutionPrototypeTest",
++         "IndexedAffineScanRead",
++         "IndexedAffineScanProfile",
++         "IndexedAffineScanPrototypeTest",
+          "IndexedEffectSequencingTest", "IndexedOpenComposition",
+          "IndexedOpenCompositionTest", "IndexedCompositionParityTest",
+          "IndexedCompositionClosure", "IndexedCompositionMatch",
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedAffineScanRead.lean
+@@ -0,0 +1,94 @@
++import LeanNCD.Eval.Plan.Coordinates
++import LeanNCD.Semantics.Source.Context
++import LeanNCD.Semantics.Interpret
++
++namespace IndexedExecutionExperiment.AffineScan
++
++open LeanNCD.Semantics
++open LeanNCD.Eval.Plan
++
++/-- Structural evidence about the existing table, not a second affine representation. -/
++structure ReadTable (sh : Shape) (width : Nat) where
++  read : ReadPlan
++  shape_eq : read.sourceShape.toList = sh.map Axis.extent
++  coeff_rank : read.map.coeffs.size = sh.length
++  bias_rank : read.map.bias.size = sh.length
++  widths : ∀ row ∈ read.map.coeffs, row.size = width
++  unary_none : read.unary = none
++  no_bool_cast : read.boolToTropical = false
++  no_real_cast : read.realToBool = false
++
++def decodeRaw : (sh : Shape) → RawCoord sh → Option (Coord sh)
++  | [], _ => some ()
++  | a :: sh, raw =>
++      if h : 0 ≤ raw 0 ∧ raw 0 < (a.extent : Int) then
++        (decodeRaw sh (fun i => raw i.succ)).map
++          (fun p => (⟨(raw 0).toNat, by omega⟩, p))
++      else none
++
++theorem decodeRaw_raw (sh : Shape) (p : Coord sh) :
++    decodeRaw sh (Coord.raw p) = some p := by
++  induction sh with
++  | nil => cases p; rfl
++  | cons a sh ih =>
++      rcases p with ⟨i, p⟩
++      simp [decodeRaw, Coord.raw, ih p]
++
++theorem decodeRaw_sound (sh : Shape) (raw : RawCoord sh) (q : Coord sh)
++    (inside : decodeRaw sh raw = some q) : Coord.raw q = raw := by
++  induction sh with
++  | nil => funext j; exact Fin.elim0 j
++  | cons a sh ih =>
++      simp only [decodeRaw] at inside
++      split at inside
++      · rename_i bound
++        rcases Option.map_eq_some_iff.mp inside with ⟨tail, hd, he⟩
++        cases he
++        funext j
++        refine Fin.cases ?_ (fun k => ?_) j
++        · dsimp [Coord.raw]
++          omega
++        · exact congrFun (ih _ tail hd) k
++      · contradiction
++
++def paddedResolve {K : Type} (zero : K) (sh : Shape) (raw : RawCoord sh) :
++    Resolved K (Coord sh) :=
++  match decodeRaw sh raw with
++  | some p => .at p
++  | none => .const zero
++
++def zeroPolicy {K : Type} (zero : K) (sh : Shape) : ReadPolicy K sh where
++  resolve := fun raw => (paddedResolve zero sh raw).outcome
++  inBounds := by intro p; simp [paddedResolve, decodeRaw_raw, Resolved.outcome]
++
++def ReadTable.raw (table : ReadTable sh width) (iter : List Int) : RawCoord sh :=
++  fun i => (applyAffine table.read.map iter).getD i.val 0
++
++theorem ReadTable.coordinate (table : ReadTable sh width) (iter : List Int)
++    (i : Fin sh.length) :
++    table.raw iter i = (applyAffine table.read.map iter).getD i.val 0 := rfl
++
++theorem ReadTable.rank (table : ReadTable sh width) (iter : List Int) :
++    (applyAffine table.read.map iter).length = sh.length := by
++  simp [applyAffine, table.coeff_rank, table.bias_rank]
++
++def ReadTable.admitted {K Γ : Type} (table : ReadTable sh width)
++    (zero : K) (iter : Γ → List Int) : AdmittedRead K sh Γ where
++  policy := zeroPolicy zero sh
++  raw := fun γ => table.raw (iter γ)
++  resolved := fun γ => paddedResolve zero sh (table.raw (iter γ))
++  admission := fun _ => rfl
++
++theorem ReadTable.padded {K Γ : Type} (table : ReadTable sh width)
++    (zero : K) (iter : Γ → List Int) (γ : Γ)
++    (out : decodeRaw sh (table.raw (iter γ)) = none) :
++    (table.admitted zero iter).resolved γ = .const zero := by
++  simp [admitted, paddedResolve, out]
++
++theorem ReadTable.inBounds {K Γ : Type} (table : ReadTable sh width)
++    (zero : K) (iter : Γ → List Int) (γ : Γ) (p : Coord sh)
++    (inside : decodeRaw sh (table.raw (iter γ)) = some p) :
++    (table.admitted zero iter).resolved γ = .at p := by
++  simp [admitted, paddedResolve, inside]
++
++end IndexedExecutionExperiment.AffineScan
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedAffineScanProfile.lean
+@@ -0,0 +1,110 @@
++import LeanNCD.Eval.Plan.Scan
++
++namespace IndexedExecutionExperiment.AffineScan
++
++open LeanNCD.Eval.Plan
++
++def baseAssign (c : CheckedScanPlan) : AssignPlan :=
++  ((c.raw.baseBlock.steps.getD 0 default).assign?).getD default
++
++def stepAssign (c : CheckedScanPlan) : AssignPlan :=
++  ((c.raw.stepBlock.steps.getD 0 default).assign?).getD default
++
++def plainRead (r : ReadPlan) : Bool :=
++  r.unary.isNone && !r.boolToTropical && !r.realToBool
++
++def allCaptures (c : CheckedScanPlan) : List BlockCapture :=
++  c.raw.baseCaptures.toList ++ c.raw.stepCaptures.toList
++
++def externalCapture (c : CheckedScanPlan) (slot : Nat) : Bool :=
++  (allCaptures c).any (fun cap => decide (cap.source = .external slot))
++
++def capturesBounded (c : CheckedScanPlan) : Bool :=
++  (allCaptures c).all (fun cap => match cap.source with
++    | .external slot => decide (slot < c.sigs.size)
++    | .state _ => true)
++
++def stateRowsOk (t : TermPlan) (r : ReadPlan) : Bool :=
++  r.map.coeffs.toList ==
++    [r.map.coeffs.getD 0 #[],
++      if t.contextPos == #[0] then #[1, 0] else #[0, 1]] &&
++  r.map.bias.toList == [r.map.bias.getD 0 0, r.map.bias.getD 1 0] &&
++  decide (r.map.bias.getD 1 0 ≤ 0)
++
++def termSupported (c : CheckedScanPlan) (d n : Nat) (t : TermPlan) : Bool :=
++  t.iterationShape.size == 2 &&
++  ((t.contextPos == #[0] && t.outputPos == #[1]) ||
++    (t.contextPos == #[1] && t.outputPos == #[0])) &&
++  t.positionsPartition && t.contextProjection == #[n] &&
++  t.outputProjection == #[d] && t.reductionPos.isEmpty &&
++  t.contextPos.size == 1 && t.outputPos.size == 1 &&
++  t.factors.all (fun
++    | .iverson _ => false
++    | .read r =>
++        plainRead r &&
++        r.map.coeffs.size == r.sourceShape.size &&
++        r.map.bias.size == r.sourceShape.size &&
++        r.map.coeffs.all (fun row => row.size == t.iterationShape.size) &&
++        match c.raw.stepBlock.tensorSigs[r.sourceSlot]? with
++        | none => false
++        | some sig =>
++            decide (sig.dtype = .f64) && sig.shape == r.sourceShape &&
++            match c.raw.stepCaptures.find? (fun cap => cap.inputSlot == r.sourceSlot) with
++            | none => false
++            | some cap => match cap.source with
++                | .external outer => decide (c.sigs[outer]? = some sig) &&
++                    externalCapture c outer
++                | .state si => si == 0 &&
++                    stateReadCausal #[1] t.contextPos r &&
++                    stateRowsOk t r &&
++                    decide (c.sigs[(c.raw.states.getD 0 default).destSlot]? = some sig))
++
++def identityBase (d : Nat) : AssignPlan :=
++  { contextShape := #[], destinationSlot := 1, outputShape := #[d], algebra := admittedAlgebra, terms := #[{ iterationShape := #[d], contextPos := #[], outputPos := #[0], reductionPos := #[], factors := #[.read { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[d], oobPolicy := .zeroPad }] }] }
++
++/-- First profile door: binary64 metadata, exact rational sum/product interpretation. -/
++def profileOk (c : CheckedScanPlan) (d n : Nat) : Bool :=
++  let state := c.raw.states.getD 0 default
++  let base := baseAssign c
++  let step := stepAssign c
++  let z := (c.raw.baseCaptures.getD 0 default)
++  let zOuter := match z.source with | .external slot => some slot | .state _ => none
++  capturesBounded c && decide (c.storageKind = .float64) &&
++  decide (c.raw.states = #[{ destSlot := state.destSlot, advancingDims := #[1], materialization := .completeHistory, initValue := .zero }]) &&
++  decide (c.sigs[state.destSlot]? = some { shape := #[d, n + 1], dtype := .f64 }) &&
++  c.raw.historyExtents == #[n + 1] && c.stepExtents == #[n] &&
++  c.raw.baseBlock.contextShape == #[] && c.raw.stepBlock.contextShape == #[n] &&
++  decide (c.raw.baseBlock.steps = #[.assign base]) && decide (c.raw.stepBlock.steps = #[.assign step]) &&
++  decide (c.raw.baseCaptures = #[z]) && z.inputSlot == 0 && zOuter.isSome &&
++  zOuter != some state.destSlot &&
++  decide ((zOuter.bind (fun slot => c.sigs[slot]?)) = some { shape := #[d], dtype := .f64 }) &&
++  c.raw.baseBlock.inputs == #[0] && c.raw.baseBlock.outputs == #[1] &&
++  decide (c.raw.baseBlock.tensorSigs =
++    #[{ shape := #[d], dtype := .f64 }, { shape := #[d], dtype := .f64 }]) &&
++  decide (base = identityBase d) &&
++  decide (c.raw.baseWrites = #[{ outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[1], #[0]], bias := #[0, 0] } }]) &&
++  c.raw.stepBlock.outputs == #[step.destinationSlot] &&
++  step.contextShape == #[n] && step.outputShape == #[d] && decide (step.algebra = admittedAlgebra) &&
++  step.terms.all (termSupported c d n) &&
++  decide (c.raw.stepWrites = #[{ outputSlot := step.destinationSlot, stateIndex := 0, map := { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] } }])
++
++structure Profile (d n : Nat) where
++  checked : CheckedScanPlan
++  origin : ∃ sigs raw, checkScanPlan sigs raw = .ok checked
++  fields : profileOk checked d n = true
++
++inductive ProfileError
++  | checker (error : ScanPlanError)
++  | unsupported
++  deriving Repr
++
++def certifyProfile (sigs : Array TensorSignature) (raw : RawScanPlan) (d n : Nat) :
++    Except ProfileError (Profile d n) :=
++  match h : checkScanPlan sigs raw with
++  | .error e => .error (.checker e)
++  | .ok c =>
++      if fields : profileOk c d n = true then
++        .ok ⟨c, ⟨sigs, raw, h⟩, fields⟩
++      else .error .unsupported
++
++end IndexedExecutionExperiment.AffineScan
+--- /dev/null
++++ b/leanncd/experiments/indexed_execution/IndexedAffineScanPrototypeTest.lean
+@@ -0,0 +1,36 @@
++import Eval.Plan.ScanCompileTest
++import IndexedAffineScanRead
++import IndexedAffineScanProfile
++
++namespace IndexedExecutionExperiment.AffineScan.Prototype
++
++open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan LeanNCD.Eval.Plan.ScanCompileTest Std
++
++/-- `axisPosSched` donor: spatial dimension `d`, history time extent `n + 1`. -/
++def spatialSched (d n : Nat) : ScheduledProgram :=
++  { axisPosSched with
++    decls := [.iter axL (n + 1), .axis axJ (some d)]
++    explicitSizes := (({} : HashMap UID Nat).insert axL.uid (n + 1)).insert axJ.uid d }
++
++def spatialInputs (d : Nat) : HashMap String DenseTensor :=
++  ({} : HashMap String DenseTensor).insert "S0" ⟨[d], Array.replicate d 1.0⟩
++
++def boundaryCheck (d n : Nat) : Except String Unit :=
++  withPrepared "affine prototype boundary" (spatialSched d n) (spatialInputs d) fun p => do
++    let some raw := scanAt p 0 | .error "not a scan"
++    expectEq "historyExtents" raw.historyExtents #[n + 1]
++    expectEq "step context" raw.stepBlock.contextShape #[n]
++    expectEq "state signature" p.plan.raw.tensorSigs[1]?
++      (some { shape := #[d, n + 1], dtype := .f64 })
++    checkerAgrees "boundary" p 0
++    match certifyProfile p.plan.raw.tensorSigs raw d n with
++    | .ok _ => pure ()
++    | .error e => .error s!"profile: {repr e}"
++
++run_cmd
++  for (d, n) in [(2, 2), (2, 0), (0, 2), (0, 0)] do
++    match boundaryCheck d n with
++    | .ok _ => Lean.logInfo m!"accepted spatial={d}, recurrence={n}"
++    | .error e => throwError e
++
++end IndexedExecutionExperiment.AffineScan.Prototype

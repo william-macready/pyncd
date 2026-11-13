@@ -93,11 +93,13 @@ and the proved conditional execution theorem, while retaining general
 composition as a further target. A mathematical appendix explains the
 proof without assuming one formalism is the best foundation.
 
-[Certified affine reads in single-clock Lean scans: new-session brief](categorical_affine_scan_alignment_handoff.md)
-sets the next alignment goal: connect actual checked scan access/write tables
-to admitted reads and a constructed ranked semantic component, preserving
-causality, finite bounds, padding and the whole history. It is Lean-only and
-does not claim floating-point executor correctness or general scan naturality.
+[Certified affine reads in single-clock Lean scans: original brief](categorical_affine_scan_alignment_handoff.md)
+set the goal that the [implementation plan](categorical_affine_scan_alignment_plan.md) and
+[record](categorical_affine_scan_alignment_record.md) carry out: actual checked scan access/write tables are
+connected to admitted reads and a constructed ranked semantic component, preserving causality, finite bounds,
+padding and the whole history, with exact-rational whole-history, execution and categorical meaning and nine
+compiler-produced certified donors. It is Lean-only and does not claim floating-point executor correctness or
+general scan naturality. Entry point: `IndexedAffineScanSemantics` (see `leanncd/AGENTS.md`).
 
 [Operational-to-witness comparison: original new-session brief](categorical_operational_witness_comparison_handoff.md)
 records the completed comparison goal: construct a compositional map between the ranked
