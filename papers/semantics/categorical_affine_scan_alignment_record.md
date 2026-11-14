@@ -264,8 +264,7 @@ Changed files: `Profile`, `Rank`, `History`, `Interpretation`, `HistoryCompilerT
 
 **Parked (not required by the goal).** Redundant `stateReadCausal` conjunct (harmless, ~0.5 dispatch); bare `#eval`
 noise in `CompilerExamples` (editing it forces a 14-minute `CompilerCertificates` rebuild); `(2,2)` boundary history
-row (the plan deliberately keeps it as the ninth certified donor, not a rational-history row); a hand-built fixture
-for the output-first term ordering (~1 dispatch, needs a checker-admitted plan); two `simpa` lint warnings at
+row (the plan deliberately keeps it as the ninth certified donor, not a rational-history row); two `simpa` lint warnings at
 `IndexedAffineScanCompilerCertificates.lean:194`.
 
 ### Controller gates
@@ -332,3 +331,33 @@ review 1 1.8M, review 2 2.2M. Against the 175M execution budget this is within b
 within 250k peak context (190k and 168k) and 60 turns (16 and 24). The controller session's peak was 419k, which
 exceeds the roughly 250k guideline; it spanned the earlier proof work and the whole replay. The authoring overruns
 disclosed above are unchanged.
+
+### Addendum: output-first term-ordering control (post-merge)
+
+Review lens 2 noted that no compiler donor exercises the output-first term ordering (`contextPos = #[1]`).
+The compiler cannot produce it (`Compile.lean:800-801` fixes context positions first), so a probe built
+output-first variants of the real compiled shift, mixed and deep donors (iteration shape `[d,n]`, coefficient
+columns swapped, meaning unchanged). The unchanged checker accepts them, the profile accepts them, and the
+exact-rational whole history is identical to the original on every coordinate. No defect was found.
+
+This is now a build-time control, `IndexedAffineScanOutputFirstTest` (new module, registered in `lakefile.toml`
+and imported by `IndexedAffineScanNamespaceAudit`). It checks that the flipped terms really are output-first
+(non-vacuity), checker and profile acceptance, history equality with full coordinate count, and that a flip that
+reorders positions but not coefficient columns is distinguished from the original. Evidence: audit target 882
+constants under `IndexedExecutionExperiment.AffineScan` (868 plus the module's 14), standard axioms only;
+`IndexedExecutionExperiment` library build green (8729 jobs).
+
+Three manual `mutation-cycle.sh` cycles (not in the frozen manifest), each broke the build, restored
+byte-identically and rebuilt green:
+
+| Cycle | Mutation | Killed by |
+|---|---|---|
+| OF-M1 | `termSupported` drops the output-first allowance | Existing proof: `supported_basis` (`Construction.lean:158`) and the `sorryAx` audit |
+| OF-M2 | `stateRowsOk` demands the context-first time row for output-first terms | Existing proof: `captured_state_earlier` (`Construction.lean:199`) and the `sorryAx` audit |
+| OF-M3 | The control's flip leaves the coefficient columns alone (test-side) | The control itself: "the unchanged checker refused the output-first plan" |
+
+The implementation mutations are caught by proofs before the runtime control runs, so the control adds an
+end-to-end witness over real compiled plans rather than a new kill of those mutants. The sample is three donors,
+not a proof for the arm in general (the proofs cover that). The control sits in its own module so these
+cycles stayed in the minutes range rather than rebuilding `CompilerCertificates`.
+

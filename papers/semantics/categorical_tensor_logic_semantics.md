@@ -1690,9 +1690,11 @@ $t-k$, for $k\geq0$, precedes the destination at $t+1$ regardless of its spatial
 transformation. Actual external-capture slots have a separate, explicit
 signature interpretation, and the profile refuses a capture that aliases the
 history's own outer slot (`Profile.external_not_history`); fresh semantic
-identities do not recover source UIDs. The compiler donors all use the
+identities do not recover source UIDs. The compiler always emits the
 context-first term ordering; the profile also admits the output-first ordering,
-which no compiler fixture witnesses.
+which arises only from hand-built plans. Output-first variants of three real
+compiled donors are admitted by the unchanged checker and the profile and have
+identical exact-rational whole histories (`IndexedAffineScanOutputFirstTest`).
 
 `close_ok`, `sourceMatch` and `rankCertificate` construct the graph, priority
 match and full dependency rank for arbitrary certified extents, including zero

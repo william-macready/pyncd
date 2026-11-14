@@ -1,6 +1,7 @@
 import IndexedAffineScanSemantics
 import IndexedAffineScanPrototypeTest
 import IndexedAffineScanHistoryCompilerTest
+import IndexedAffineScanOutputFirstTest
 
 #print axioms IndexedExecutionExperiment.AffineScan.AccessAgreement.decodeRaw_bounds
 #print axioms IndexedExecutionExperiment.AffineScan.close_ok
