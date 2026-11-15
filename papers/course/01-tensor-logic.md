@@ -125,7 +125,7 @@ Now $i=1$ is an actual occurrence whose body is $0\cdot\log(-1)$. The primitive 
 
 An index variable that occurs in a term of the right-hand side but not in the statement's output indices is *contracted* in that term, and its sum is scoped over that term only. Formally, the surface body is a list of product terms $t_1,\dots,t_h$ and the contracted set of term $t_b$ is
 $$C_b=\mathrm{FV}(t_b)\setminus\mathrm{vars}(\Gamma_s),$$
-where $\Gamma_s$ is the statement's context, built from the variables in its output indices (spec Section 15.2). Each variable in $C_b$ gets a reduction $\bigoplus_{k\in I_k}$ around its own term. Then:
+where $\Gamma_s$ is the statement's context (spec Section 15.2). In an unannotated surface statement it consists of the variables in the output indices; an explicit binder `for i in [n]` adds $i$ to $\Gamma_s$ even when $i$ does not appear in the output (Section 2.5), and then $i$ is not contracted. Each variable in $C_b$ gets a reduction $\bigoplus_{k\in I_k}$ around its own term. Then:
 $$W[i,k]X[k]+B[i]\;\mapsto\;\Big(\bigoplus_{k\in I_k}W[i,k]\otimes X[k]\Big)\oplus B[i].$$
 It does not elaborate to $\bigoplus_k(W[i,k]\otimes X[k]\oplus B[i])$, which would add the bias $|I_k|$ times. The difference is visible at an empty range: if $I_k=[0]$ the first form gives $0\oplus B[i]=B[i]$ and the second gives $0$. A registered unary primitive $f$ enclosing the right side puts the whole elaborated body inside its argument, $E_s=f(B_s)$, which is why $\mathrm{relu}$ in Example 1.3 sees the sum and the bias together.
 

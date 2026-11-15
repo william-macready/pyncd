@@ -58,7 +58,7 @@ Each table below is one layer. Read a row as: the categorical notion and where t
 | Signature $\Sigma$ | `Decl` | `Declarations`, `Signature`, `Ty`, `Value`, `ScalarOps` | Mini: tensors with a flattened size, one sort. Production: sorts `S`, carriers `K : S → Type`, and `unique : Function.Injective uid`. |
 | Addresses $\mathrm{Addr}_\Sigma$ | `Addr` | `Address` | Both are sigma types: a tensor with one of its coordinates. |
 | Environments, Definition 4.2 | `Env` | `Store`, `Cell`, and the partial `PartialStore` | Mini has no partial-store type: it uses `Addr d → Option K` directly. |
-| Core expressions | `Expr` (`lit`, `read`, `add`, `mul`, `reduce`, `prim`) | `Expr` (`lit`, `read`, `iverson`, `binary`, `reduce`, `tab`, `at`, `prim`) and `Bin` | Mini has no guards, Iverson factors, tabulations or arrays. |
+| Core expressions | `Expr` (`lit`, `read`, `add`, `mul`, `reduce`, `prim`) | `Expr` (`lit`, `read`, `iverson`, `binary`, `reduce`, `tab`, `at`, `prim`) and `Bin` | Mini has no guard construct, Iverson factors, tabulations or arrays. A guard is expressed by a statement's valuation count `n` and enumeration (see `Stmt`), not by an expression. |
 | Interpretation | `interpret` | `interpret` | Both are `evalWith` at the total store `some ∘ ρ`. |
 | Statement and program | `Stmt`, `Program` | `Program` (fields `statements`, `valuations`, `guard`, `destination`, `body`) | Mini keeps one list of statements. Production groups statements per defined tensor and has an `output` flag. |
 | Occurrences $\mathcal{O}_P$, Definition 2.14 | `Program.Occ` | `Program.Occurrence`, `Program.Defined` | Mini: one sigma over statement positions. Production: one sigma per defined tensor, over a guard subtype. |

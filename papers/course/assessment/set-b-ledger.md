@@ -29,3 +29,20 @@ Budget intent: minimize tokens; no separate key reviewer.
 - Student access rules are the same as set A (see the set A dispatch in
   `results.md`): notes and Lean companion only; no reviews, no keys, no
   DESIGN/CONVENTIONS, no `papers/semantics/`, no `leanncd/`.
+
+## Phase 2: discrimination runs (requested 2026-11-15)
+
+Goal: tell "the notes teach transfer" from "the student already knew it".
+Both runs grade against `answer-key-B.md`; theorem-number citations are
+graded on substance only for the control (it cannot know the numbering).
+
+| Step | Status | Output |
+| --- | --- | --- |
+| 8. Ledger phase 2 | DONE | this section |
+| 9a. Control: Sonnet, NO notes; may read only `questions-B.md`; `Scorer` and its inputs given in the prompt | DONE, graded 19/20 (Q8c: could not relate to Theorem 2.4); 76k tokens | `answers-B-control-sonnet.md` |
+| 9b. Haiku student with notes (same access rules as student C) | DONE, graded 20/20; 388k tokens | `answers-B-student-D-haiku.md` |
+| 10. Grade both; append comparison to `results-B.md` | DONE | control 19/20, Haiku 20/20; four notes fixes from student D |
+| 11. Commit; update memory | DONE | see commit after aeba5f4e |
+
+Resume: if 9a or 9b was interrupted, resume the agent (SendMessage) or
+re-dispatch with the same brief; check whether its answers file exists first.

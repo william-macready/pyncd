@@ -64,4 +64,56 @@ signal, if wanted:
    conventions sheet. A large gap between the control and student C is
    the evidence that the notes, not prior knowledge, did the work.
 
-Neither was run, to keep token use down.
+Both were run afterwards; see Phase 2 below.
+
+## Phase 2: control and second tier (2026-11-15)
+
+Two further runs on the same questions and key.
+
+| Run | Model | Notes? | Score | Tokens |
+| --- | --- | --- | --- | --- |
+| Control | Sonnet 5.5 | no (questions file only, plus a short rule summary and `Scorer` in the prompt) | 19 / 20 | 76k |
+| Student C (above) | Sonnet 5.5 | yes | 20 / 20 | 285k |
+| Student D | Haiku 5.5 | yes | 20 / 20 | 388k |
+
+The control lost one point, on Q8(c). It derived the idempotent Galois
+connection and the image-preimage case correctly, but guessed that
+Theorem 2.4 was the transpose identity, so it could not connect the result
+to the adjoint triple. Every other answer, including the projection-formula
+argument (Q2), lax naturality (Q3), the witness span over a hyperbola (Q5)
+and the broken proof step (Q9), came from prior knowledge plus the rule
+summary. The Haiku student matched the Sonnet student; its only slip was
+taking `recip` from the Lean file as $L$'s body in Q9(a).
+
+### Interpretation
+
+Set B does not measure the notes. With a one-paragraph rule summary, a
+Sonnet-tier model answers transfer questions about this semantics almost
+perfectly without the notes, and both tiers score full marks with them.
+The notes' measurable contribution on this set is one point: knowing the
+course's own framing (Theorem 2.4 as $\Sigma_f\dashv f^\ast$).
+
+Two caveats keep this from meaning "the notes are useless":
+
+- The control's prompt carried the semantics' non-obvious rules (strict
+  bodies, additive contributions, models as complete environments, the
+  machine vocabulary). Those rules are what the notes spend most of their
+  length establishing, so the control was not starting from zero.
+- For agent readers the notes' value is a shared, fixed vocabulary and a
+  map from each structure to its Lean definition, not mathematical content
+  a strong model lacks. A score on derivations cannot see that.
+
+A test that could see it would ask for things only the course fixes: the
+specific choice of equivalence and why, the Lean name that realizes a law,
+the conventions that rule out a tempting implementation. Those are recall
+questions by design, which is what set A already measured.
+
+### Notes defects found by student D, and what was done
+
+| Report | Action |
+| --- | --- |
+| Chapter 1 §2.3 says $\Gamma_s$ is built from the output variables, but §2.5 keeps explicit binders | Fixed: §2.3 now says explicit binders add to $\Gamma_s$ |
+| Chapter 6 says the mini development "has no guards", but `Stmt` encodes guards by `n` | Fixed: the dictionary row now explains the encoding |
+| The exact step count of a successful run is never stated | Fixed: one paragraph after Corollary 5.22 |
+| The claim "a cyclic program never succeeds" rests on an unsolved exercise | Fixed: the three-sentence argument is now in the text |
+| No example of a product containing a sum; nothing on dead statements; no general guard-versus-Iverson comparison | Parked: these are the transfer content of Q4(e), Q3 and Q2 |

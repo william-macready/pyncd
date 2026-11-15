@@ -323,7 +323,7 @@ Its `publication` case uses `finished_accumulator`, the finished-fibre clause of
 
 **Remark 5.19 (no rank certificate is needed).** Two separate points. First, the *proof* of Theorem 5.18 uses no rank certificate, and the theorem holds for every well-formed program, cyclic ones included, and under any schedule. Second, it does *not* say a run will succeed when a model exists, or fail when none does: a run can block, and blocking says nothing about models. Those converse directions are the job of the certificate (Section 8). This split is CONVENTIONS fact 8.
 
-A caution about what the theorem's parts say about cyclic programs. By Exercise 8, a successful run itself witnesses acyclicity of the dependency graph, so a program with a dependency cycle never succeeds on any input. Part (i), which concerns successful runs, therefore has content only for programs that could have been ranked; its point is that the scheduler need not know or check the certificate. Part (ii), which concerns failed runs, applies to every program, including cyclic ones.
+A caution about what the theorem's parts say about cyclic programs. A successful run itself witnesses acyclicity of the dependency graph. Order the addresses by the step at which each is published (inputs at step 0). If $b\in\mathrm{Dep}(a)$, some occurrence in the fibre of $a$ reads $b$; that occurrence was consumed before $a$ was published (the barrier), and it was consumed only once $b$ was published (readiness). So $b$ is published strictly before $a$, and publication time is a rank certificate. A program with a dependency cycle therefore never succeeds on any input (Exercise 8 asks for the details). Part (i), which concerns successful runs, therefore has content only for programs that could have been ranked; its point is that the scheduler need not know or check the certificate. Part (ii), which concerns failed runs, applies to every program, including cyclic ones.
 
 **Lean.** The theorems in `Soundness.lean` take no certificate:
 
@@ -358,6 +358,8 @@ CONTRIBUTE decreases the first term by one, PUBLISH the second by one, and UNDEF
 *Proof.* (a) Send running configurations to $\mu+1$ and failed ones to $0$; call this function $\bar\mu$. Every step strictly decreases it, so Chapter 0, Proposition 0.26(a) applies. (b) Step while possible. (c) The tree of runs is finitely branching (Proposition 5.8) with no infinite branch, so it is finite by König's lemma. $\square$
 
 No fairness assumption is needed: fairness matters only when an infinite run could starve an enabled action, and there are none.
+
+A successful run is exact, not just bounded: a complete configuration has $U=\varnothing$ and every defined address published, so $\mu=0$, and every step decreased $\mu$ by exactly one. Hence every successful run has exactly $\lvert\mathcal{O}_P\rvert$ CONTRIBUTE steps and $\lvert\mathrm{Addr}_{\mathrm{Def}}\rvert$ PUBLISH steps, whatever the schedule.
 
 The modified measure is Lean's `stateMeasure` (`Measure.lean`): `.running c` maps to `P.measure c + 1` and `.failed _ _ _` to `0`. The main results:
 
