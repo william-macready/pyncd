@@ -629,7 +629,7 @@ The table classifies outcomes by the model set. The middle column is this course
 | exactly $\{\rho\}$ | succeeds with $\rho$ or blocks; never fails (Lemma 5.16(c)) | succeeds with $\rho$ (Theorem 5.28(2)) |
 | two or more | blocks: success would force uniqueness, failure would force emptiness | impossible (Corollary 5.29) |
 
-By Exercise 8, a program without a certificate never succeeds, so the "succeeds" options in the middle column occur only for programs that have one. The three cyclic programs of Example 5.36 fill the middle column's three rows with blocked runs.
+The middle column does not assume a certificate is supplied, but by Exercise 8 a program for which no certificate exists (one whose dependency graph has a cycle) never succeeds. So the "succeeds" options in the middle column occur only for programs that admit a certificate, whether or not one was handed to the machine. The three cyclic programs of Example 5.36 fill the middle column's three rows with blocked runs.
 
 For ranked programs, what depends on the schedule and what does not:
 

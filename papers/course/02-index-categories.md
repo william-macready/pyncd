@@ -146,7 +146,12 @@ Two remarks on the table. The `Y[i+j]` row depends on the declared extent.
 With $Y$ of extent 3, as in the specification's colliding-write example
 ([Part I, Section 11.2](../semantics/tensor_logic_semantics_part_i.md#112-colliding-affine-writes)),
 the map is surjective: epi, but still not mono. With extent 4 the
-coordinate $3$ is never written and the map is neither. And a guard does not
+coordinate $3$ is never written and the map is neither. In such a write,
+both $i$ and $j$ parameterize occurrences and no index is contracted: the
+sums at colliding coordinates come from collection (pushforward along the
+write map, Section 5), whereas a contraction's sum is a reduction inside one
+occurrence's body (Proposition 2.13). The values can coincide; the
+occurrence counts and machine steps do not. And a guard does not
 move coordinates: it is the inclusion of a subobject
 $D\hookrightarrow\mathrm{Val}(\Gamma)$, and a guarded write map is a
 function with domain $D$.

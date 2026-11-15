@@ -11,10 +11,10 @@ Budget intent: minimize tokens; no separate key reviewer.
 | 1. Ledger created | DONE | this file |
 | 2. Write `questions-B.md` (10 transfer questions, 20 points) | DONE | `questions-B.md` |
 | 3. Write `answer-key-B.md` (instructor check of non-mechanical answers against the spec) | DONE | `answer-key-B.md`; Q2/Q5/Q8/Q9 derivations checked by hand |
-| 4. Dispatch one Sonnet student, notes-only access, answers to `answers-B-student-C.md` | pending | |
-| 5. Grade against key; write `results-B.md` | pending | |
-| 6. Fix notes defects the student reports (small edits only; larger ones parked in results-B.md) | pending | |
-| 7. Mechanical check (scratchpad `check_course.py`), commit on local main, update memory | pending | |
+| 4. Dispatch one Sonnet student, notes-only access, answers to `answers-B-student-C.md` | DONE | `answers-B-student-C.md` (285k subagent tokens) |
+| 5. Grade against key; write `results-B.md` | DONE | `results-B.md`, 20/20 |
+| 6. Fix notes defects the student reports (small edits only; larger ones parked in results-B.md) | DONE | ch02 collision/contraction paragraph; ch05 certificate wording; two items parked deliberately |
+| 7. Mechanical check (scratchpad `check_course.py`), commit on local main, update memory | DONE | only known false positives remain; see commit after bb1ac664 |
 
 ## Notes for a resumer
 
