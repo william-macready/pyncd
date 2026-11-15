@@ -321,9 +321,9 @@ Its `publication` case uses `finished_accumulator`, the finished-fibre clause of
 
 *Proof.* (i) Let $(\sigma,\alpha,\varnothing)$ be the complete final configuration and $\rho=\rho_\sigma$, so $\sigma\sqsubseteq\rho$. *Admissibility:* every occurrence is consumed, so by item 5 with this $\rho$ every body is defined, with value $v_o$. *Inputs:* unchanged by item 3. *Equations:* for defined $a=(T,p)$, item 4 gives $\rho(T)[p]=\sigma(a)=\alpha(a)$, and the accumulator formula with $U=\varnothing$ gives $\alpha(a)=\bigoplus_{o\in\mathcal{C}_P(a)}v_o=\mathrm{Collect}_P(\rho)(T)[p]$. So $\rho$ is a model. *Uniqueness:* for any model $\rho'$, Lemma 5.16(b) gives $\sigma\sqsubseteq\rho'$; $\sigma$ is total, hence maximal in $\mathbf{St}_\Sigma$ (Proposition 5.2(b)), so $\rho'=\rho_\sigma$. (ii) Lemma 5.16(c). $\square$
 
-**Remark 5.19 (no rank certificate is needed).** Neither statement nor proof mentions a rank certificate. Theorem 5.18 holds for every well-formed program, cyclic ones included, and under any schedule. It does *not* say a run will succeed when a model exists, or fail when none does: a run can block, and blocking says nothing about models. Those converse directions are the job of the certificate (Section 8). This split is CONVENTIONS fact 8.
+**Remark 5.19 (no rank certificate is needed).** Two separate points. First, the *proof* of Theorem 5.18 uses no rank certificate, and the theorem holds for every well-formed program, cyclic ones included, and under any schedule. Second, it does *not* say a run will succeed when a model exists, or fail when none does: a run can block, and blocking says nothing about models. Those converse directions are the job of the certificate (Section 8). This split is CONVENTIONS fact 8.
 
-One caution against over-reading "cyclic ones included". By Exercise 8, a successful run itself witnesses acyclicity of the dependency graph, so a program with a dependency cycle never succeeds on any input. Part (i) is therefore vacuous for cyclic programs and has content only for programs that do have a certificate; its point is that the scheduler need not know or check the certificate. Part (ii) applies to every program.
+A caution about what the theorem's parts say about cyclic programs. By Exercise 8, a successful run itself witnesses acyclicity of the dependency graph, so a program with a dependency cycle never succeeds on any input. Part (i), which concerns successful runs, therefore has content only for programs that could have been ranked; its point is that the scheduler need not know or check the certificate. Part (ii), which concerns failed runs, applies to every program, including cyclic ones.
 
 **Lean.** The theorems in `Soundness.lean` take no certificate:
 
@@ -526,7 +526,16 @@ Seven CONTRIBUTE steps, one per occurrence; five PUBLISH steps, one per defined 
 
 At step 11 the footprint $\{(Y,1)\}$ is published, so $(s_4,())$ is ready, and its evaluation is $\bot$. The machine moves to $\mathsf{Failed}\big((s_4,()),\sigma,\alpha,\{(s_4,())\}\big)$, with $\sigma$ holding the inputs, $Z$ and $Y$, and $\alpha(L,())=0$. The published $Y$ is *not* returned, and $L$ is not reported as $0$. By Theorem 5.18(ii), $\mathrm{Models}(P,\eta_0)=\varnothing$.
 
-This is one maximal run: it publishes all of $Z$ and $Y$ and then fails, as Chapter 1, Section 4.5 describes. Other maximal runs fail earlier, at the same occurrence: $(s_1,1)$, $(s_2,1)$, PUBLISH $(Z,1)$, $(s_3,1)$, PUBLISH $(Y,1)$, UNDEFINED is a six-step maximal run that never publishes $Z[0]$ or $Y[0]$. Every maximal run on $\eta_0$ fails at $(s_4,())$, since $\log$ is the only partial primitive in `Scorer`; the rest of the failure record depends on the schedule.
+This is one maximal run: it publishes all of $Z$ and $Y$ and then fails, as Chapter 1, Section 4.5 describes. Other maximal runs reach UNDEFINED at the same occurrence after fewer steps. The shortest is the six-step run
+
+1. CONTRIBUTE $(s_1,1)$, then
+2. CONTRIBUTE $(s_2,1)$, then
+3. PUBLISH $(Z,1)$ with value $0$, then
+4. CONTRIBUTE $(s_3,1)$, then
+5. PUBLISH $(Y,1)$ with value $0$, then
+6. UNDEFINED at $(s_4,())$,
+
+which never publishes $Z[0]$ or $Y[0]$ and leaves the four occurrences at $j=0$ pending. Every maximal run on $\eta_0$ fails at $(s_4,())$, since $\log$ is the only partial primitive in `Scorer`; the rest of the failure record (which addresses are published, which occurrences remain pending) depends on the schedule.
 
 ### 9.3 An accumulator is not a readable intermediate
 
@@ -547,7 +556,7 @@ T[]   = relu(Pre[])
 | 4 | CONTRIBUTE | `T = relu(Pre)` | 0 | 0 | | |
 | 5 | PUBLISH | $(T,())$ | 0 | 0 | $T=0$ | |
 
-After step 1 the accumulator holds $1$, but $(\mathrm{Pre},())\notin\mathrm{dom}\,\sigma$, so the $T$ occurrence is not ready, and PUBLISH at $\mathrm{Pre}$ waits for `Pre = B`. Applying ReLU to the partial value $1$ would give $T=1$ and change the meaning. Swapping steps 1 and 2 gives the same result. Separate contributions `relu(A[])` and `relu(B[])` do give $1$, but that is a different program (Section 21.2 of the specification). In Lean the mistake cannot be written: `evalReady` receives `c.published` only.
+After step 1 the accumulator holds $1$, but $(\mathrm{Pre},())\notin\mathrm{dom}\,\sigma$, so the $T$ occurrence is not ready, and PUBLISH at $\mathrm{Pre}$ waits for `Pre = B`. Applying ReLU to the partial value $1$ would give $T=1$ and change the meaning. Swapping steps 1 and 2 gives the same result: consuming `Pre = B` first makes the intermediate accumulator $-1$ instead of $1$, but the final value $0$ is the same. Readiness of the contribution to $T$ is the same in both orders, because it depends only on $\mathrm{dom}\,\sigma$, never on $\alpha$. Separate contributions `relu(A[])` and `relu(B[])` do give $1$, but that is a different program (Section 21.2 of the specification). In Lean the mistake cannot be written: `evalReady` receives `c.published` only.
 
 ### 9.4 A bounded scan and its rank
 
@@ -561,7 +570,7 @@ H[i,l+1] = F(H[:,l])[i]     # i in [d], l in [N]
 
 The recurrence body at $(i,l)$ is $\mathrm{at}\big(F(\mathrm{tab}_{j\in[d]}(H[j,l])),(i)\big)$, whose footprint is the *whole* slice $\{(H,(j,l))\mid j\in[d]\}$, because `at` reads its whole array argument. No update reads a partially accumulated slice. So
 $$\mathrm{Dep}(H,(i,0))=\{(X,i),(Z,i)\},\qquad \mathrm{Dep}(H,(i,l+1))=\{(X,i)\}\cup\{(H,(j,l))\mid j\in[d]\},$$
-and although $H$ appears on both sides, a certificate exists: $r(X,i)=r(Z,i)=0$ and $r(H,(i,l))=l+1$, since $r(H,(j,l))=l+1<l+2$.
+and although $H$ appears on both sides, a certificate exists: $r(X,i)=r(Z,i)=0$ and $r(H,(i,l))=l+1$, since $r(H,(j,l))=l+1<l+2$. For $d=1$, $N=2$ the certificate is concrete: $r(H,(0,0))=1$, $r(H,(0,1))=2$, $r(H,(0,2))=3$, and $r=0$ on the $X$ and $Z$ addresses.
 
 With $d=1$, $N=2$, $X[0]=2$, $Z[0]=3$, $F(h)[0]=2h[0]$, there are $3+1+2=6$ occurrences and $3$ defined addresses, so $\mu$ starts at $9$. One legal schedule, copied from the specification:
 
@@ -575,7 +584,7 @@ With $d=1$, $N=2$, $X[0]=2$, $Z[0]=3$, $F(h)[0]=2h[0]$, there are $3+1+2=6$ occu
 | Consume the recurrence occurrence for $l=1$ | Time-two accumulator becomes $2+24=26$ |
 | Publish time two | $H[0,2]=26$ becomes readable |
 
-The first row is three machine steps: six CONTRIBUTE and three PUBLISH steps in all. A future slice may accumulate its persistent input early but cannot publish before its recurrence contribution arrives. The rank adds no ordering beyond the barrier; it guarantees the barrier is always eventually met. With $N=0$ there are no recurrence occurrences; with $d=0$ there are no history coordinates and no recurrence body is evaluated.
+The first row of the table stands for three machine steps, one per persistent-input occurrence, so the whole schedule has six CONTRIBUTE and three PUBLISH steps, and $\mu$ runs from $9$ to $0$. A future slice may accumulate its persistent input early but cannot publish before its recurrence contribution arrives. The rank adds no ordering beyond the barrier; it guarantees the barrier is always eventually met. With $N=0$ there are no recurrence occurrences; with $d=0$ there are no history coordinates and no recurrence body is evaluated.
 
 ### 9.5 Cycles block, with or without a model
 

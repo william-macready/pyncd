@@ -323,6 +323,8 @@ theorem denotation_of_model (η : P.Input) (h : P.AdmInput ops η)
 | `T[] = T[]` | $T\mapsto T$ | all of $\mathbb{R}$ | nowhere defined | stays at $0$, picks one model |
 | `T[] = T[] + 1` | $T\mapsto T+1$ | $\varnothing$ | nowhere defined | $T_n=n$, runs forever |
 
+Here $\mathrm{Fix}(P)$ is a set of complete environments $\rho$, each assigning a value to every tensor ($X$ and $T$ in the first row). With the input fixed to $X$ the only free coordinate is $T$, so the table abbreviates each environment by its $T$ value: $\{-X\}$ stands for the single environment $\{X\mapsto X,\ T\mapsto-X\}$, and "all of $\mathbb{R}$" for the environments $T\mapsto t$ with $t\in\mathbb{R}$.
+
 For the first row, $T=X+2T$ iff $T=-X$, so $\mathrm{Fix}$ is a singleton for every $X$ and $\mathrm{AdmInput}=\mathrm{Env}(\mathrm{In})$. The program has a functional denotation *despite its cycle*. The second has a continuum of models, the third none. Iteration from zero is wrong in every row: it diverges where the answer is unique, returns an arbitrary answer where there are many, and fails to terminate where there are none. A bounded-scan compiler may reject all three as unsupported cycles without contradicting their denotations.
 
 **Example 4.17 (a bounded history, spec Section 21.5).** For the finite-history program of spec Section 11.4, with inputs $X,Z$ of shape $(d)$, defined $H$ of shape $(d,N+1)$ and a total $F:\mathbb{R}^{[d]}\to\mathbb{R}^{[d]}$:
@@ -443,19 +445,21 @@ By Proposition 0.30, a span with injective left leg is the same as a partial fun
 
 Without $\mathrm{AtMostOneModels}(P)$ the span is not a partial function, and $[\![P]\!]$ is *not* its shadow under any functor: $[\![P]\!]$ keeps only the fibres of size exactly one. If a functor $F:\mathbf{Span}(\mathbf{Set})\to\mathbf{Pfn}$ sent each program's span to $[\![P]\!]$, Theorem 4.22 would give $[\![P;Q]\!]=[\![Q]\!]\circ[\![P]\!]$ for all composable pairs, which Example 4.30 refutes. The next two results show that this restriction composes well under the hypothesis and badly without it.
 
-**Proposition 4.28 (composition in $\mathbf{Pfn}$).** Let $P,Q$ be composable with $\mathrm{AtMostOneModels}(P)$ and $\mathrm{AtMostOneModels}(Q)$. Then $\mathrm{AtMostOneModels}(P;Q)$, and
+**Proposition 4.28 (composition in $\mathbf{Pfn}$).** Let $P,Q$ be composable.
 
-$$[\![P;Q]\!]=[\![Q]\!]\circ[\![P]\!]$$
+(a) Under $\mathrm{AtMostOneModels}(P)$ alone, the domain of $[\![P;Q]\!]$ is
 
-as a Kleisli composite in $\mathbf{Pfn}=\mathrm{Kl}(\mathrm{Option})$ (Proposition 0.16). Its domain is
+$$\mathrm{AdmInput}(P;Q)=\{\eta\in\mathrm{AdmInput}(P)\mid[\![P]\!](\eta)\in\mathrm{AdmInput}(Q)\},$$
 
-$$\mathrm{AdmInput}(P;Q)=\{\eta\in\mathrm{AdmInput}(P)\mid[\![P]\!](\eta)\in\mathrm{AdmInput}(Q)\}.$$
+and on that domain $[\![P;Q]\!]=[\![Q]\!]\circ[\![P]\!]$, as a Kleisli composite in $\mathbf{Pfn}=\mathrm{Kl}(\mathrm{Option})$ (Proposition 0.16).
 
-*Proof.* By Corollary 4.23, $\mathrm{Models}(P;Q,\eta)\cong\coprod_{\rho_P\in\mathrm{Models}(P,\eta)}\mathrm{Models}(Q,\rho_P\vert_{\mathrm{Out}_P})$. Since $\mathrm{AtMostOneModels}(P)$, the index set is empty or a singleton $\{\rho_P\}$. If it is empty, $\mathrm{Models}(P;Q,\eta)$ is empty. Otherwise $\eta\in\mathrm{AdmInput}(P)$ and $\mathrm{Models}(P;Q,\eta)\cong\mathrm{Models}(Q,\rho_P\vert_{\mathrm{Out}_P})$, which has exactly one element iff $[\![P]\!](\eta)=\rho_P\vert_{\mathrm{Out}_P}\in\mathrm{AdmInput}(Q)$. This is the domain formula. On this domain the unique model of $P;Q$ glues $\rho_P$ and the unique $\rho_Q$ (Theorem 4.22), and its output is $\rho_Q\vert_{\mathrm{Out}_Q}=[\![Q]\!]([\![P]\!](\eta))$. Finally $\mathrm{AtMostOneModels}(Q)$ bounds every $\mathrm{Models}(Q,\cdot)$ by one element, so $\mathrm{Models}(P;Q,\eta)$ has at most one element for every $\eta$, which is $\mathrm{AtMostOneModels}(P;Q)$.
+(b) Under $\mathrm{AtMostOneModels}(P)$ and $\mathrm{AtMostOneModels}(Q)$, additionally $\mathrm{AtMostOneModels}(P;Q)$.
+
+*Proof.* By Corollary 4.23, $\mathrm{Models}(P;Q,\eta)\cong\coprod_{\rho_P\in\mathrm{Models}(P,\eta)}\mathrm{Models}(Q,\rho_P\vert_{\mathrm{Out}_P})$. Since $\mathrm{AtMostOneModels}(P)$, the index set is empty or a singleton $\{\rho_P\}$. If it is empty, $\mathrm{Models}(P;Q,\eta)$ is empty. Otherwise $\eta\in\mathrm{AdmInput}(P)$ and $\mathrm{Models}(P;Q,\eta)\cong\mathrm{Models}(Q,\rho_P\vert_{\mathrm{Out}_P})$, which has exactly one element iff $[\![P]\!](\eta)=\rho_P\vert_{\mathrm{Out}_P}\in\mathrm{AdmInput}(Q)$. This is the domain formula. On this domain the unique model of $P;Q$ glues $\rho_P$ and the unique $\rho_Q$ (Theorem 4.22), and its output is $\rho_Q\vert_{\mathrm{Out}_Q}=[\![Q]\!]([\![P]\!](\eta))$. For (b), $\mathrm{AtMostOneModels}(Q)$ bounds every $\mathrm{Models}(Q,\cdot)$ by one element, so $\mathrm{Models}(P;Q,\eta)$ has at most one element for every $\eta$, which is $\mathrm{AtMostOneModels}(P;Q)$.
 
 Alternatively, with both hypotheses: both spans have monic left legs (Proposition 4.27), so their composite is the graph of the composite partial function (Proposition 0.30). By Theorem 4.22 the span of $P;Q$ is isomorphic to this graph, so its left leg is monic, and by Proposition 4.27 and the bijection of Proposition 0.30 between isomorphism classes of monic spans and partial functions, $[\![P;Q]\!]=[\![Q]\!]\circ[\![P]\!]$. $\square$
 
-The first proof uses $\mathrm{AtMostOneModels}(Q)$ only in its last step: the domain and value formulas need only $\mathrm{AtMostOneModels}(P)$ (Exercise 7). This one-sided form is proved here on paper only; the experimental Lean assumes both hypotheses. Example 4.30 shows that the hypothesis on $P$ cannot be dropped.
+The first proof uses $\mathrm{AtMostOneModels}(Q)$ only in its last step, for part (b): part (a) needs only $\mathrm{AtMostOneModels}(P)$ (Exercise 7). This one-sided form is proved here on paper only; the experimental Lean assumes both hypotheses. Example 4.30 shows that the hypothesis on $P$ cannot be dropped.
 
 **Example 4.29 (`Scorer` is a composite).** Split `Scorer` at $Z$. Let $P$ have statements $s1,s2$, with $\mathrm{In}_P=\{X,W,B\}$ and $\mathrm{Def}_P=\mathrm{Out}_P=\{Z\}$. Let $Q$ have statements $s3,s4$, with $\mathrm{In}_Q=\{Z\}$ and $\mathrm{Def}_Q=\mathrm{Out}_Q=\{Y,L\}$. They are composable and $P;Q$ is `Scorer`: its outputs are $\{Y,L\}$, and $Z$ becomes internal.
 

@@ -27,7 +27,7 @@ the apex and the three projections, and state the pushforward/pullback
 formula for $Y$. In which category is "composition of two contractions is
 matrix multiplication" a statement about composition of morphisms?
 
-**Q4.** The program has two statements `T[0i] = 1` for $i\in[3]$ and
+**Q4.** The program has two statements `T[0·i] = 1` for $i\in[3]$ and
 `T[0] = 1` (one statement, no binders), both writing the scalar-indexed
 coordinate $T[0]$ of a tensor of extent 1. How many occurrences target
 $(T,0)$, what is the collected value over $\mathbb{R}$, and which
@@ -78,8 +78,8 @@ functions, and why does model existence still not compose?
 ## Part IV. Operational semantics (Chapter 5)
 
 **Q11.** Give the three machine rules in words, and for each say what it
-requires of the configuration. Then take the program of Section 27.1 of
-the notes' worked examples (`Pre[] = A[]; Pre[] = B[]; T[] = relu(Pre[])`
+requires of the configuration. Then take the accumulator-is-not-readable example of Chapter 5's worked
+runs (`Pre[] = A[]; Pre[] = B[]; T[] = relu(Pre[])`
 with $A=1$, $B=-1$): after consuming only the first contribution, what are
 $\alpha(\mathrm{Pre})$ and $\mathrm{dom}\,\sigma$, is the contribution to
 $T$ ready, and why does the answer not depend on which contribution was

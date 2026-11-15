@@ -455,6 +455,10 @@ $$
 
 $f^\ast$ needs no structure on $K$. $f_!$ needs the commutative monoid
 $(K,\oplus,0_K)$; the empty fibre gives $0_K$.
+Which structure is needed for which operation: the commutative monoid
+$(K,\oplus,0_K)$ for $f_!$ (contraction as a sum); the commutative semiring
+$(K,\oplus,\otimes,0_K,1_K)$ for the pointwise product, for the einsum formula
+of Proposition 2.13 and for the transpose identity (Proposition 2.8).
 
 The third operation of a tensor program, the pointwise product
 $(u\otimes v)(m)=u(m)\otimes v(m)$ of two families on one index set $M$, does
@@ -1064,6 +1068,14 @@ weights $A$ and $B$. The pullback apex is
 $\{((i,j),(j',k))\mid j=j'\}\cong[n_i]\times[n_j]\times[n_k]$ with weight
 $A[i,j]\otimes B[j,k]$, so the matrix is $\bigoplus_jA[i,j]\otimes B[j,k]=Y[i,k]$.
 The contracted index $j$ is the variable the pullback glues on.
+
+The slogan "composition of two contractions is matrix multiplication" is a
+statement about composition of morphisms in $\mathbf{Mat}(K)$. It is
+transported from composition by pullback in $\mathbf{Span}(\mathbf{FinSet})$
+by the functor $\mathrm{Lin}$ of Corollary 2.12d. A single statement with
+several operands is the one-span presentation of the same composite: the
+global valuation set $M$ of Proposition 2.13 plays the role of the pullback
+apex, with one projection per operand and one for the output.
 
 *Running example.* The statement s1 is such a composite. Encode $X$ as the
 weighted span $1\xleftarrow{!}[2]\xrightarrow{\mathrm{id}}[2]$ with weight
