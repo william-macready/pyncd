@@ -1067,3 +1067,100 @@ The optional stretch of the brief (section 3 item 4). Tests and fixtures only (D
 **Budget (Rule 6).** One dispatch, about 60 tool calls by the agent's own count (`token-report.py` not run; no token figure measured); the seed re-pick and the (c) re-run cost two extra differential runs.
 
 **Parked.** `rnn_gru_long` (about 0.5 dispatch).
+
+## 21. Diagonal state-space model: recurrence versus causal convolution (2026-11-16)
+
+Direct path, tests and fixtures only. Donor: `rnnStackProg` and its shared input/environment pattern;
+replace the two nonlinear recurrent layers with one diagonal linear recurrence and a same-step readout.
+`ssmInputs`, `ssmEnv64`, `ssmEnv32`, `ssmProg`, `ssmProg32` and two registrations live in
+`EvalPlanNonlinSmoke.lean`; `np_ssm`, `np_ssm_convolution`, `ssm_pins` and an SSM entry in the existing
+`rnn_grad_pins` live in `evalplan_nonlin_smoke.py`. No compiler, checker, emitter, runtime, Lake target
+or mutation-manifest changes. The existing scan survey's `linear_ok` marking is reused, rather than
+adding an artificial nonlinearity or weakening the driver's nonlinearity requirement.
+
+**Program and pre-flight.** `N[d] := A[d] · H[d, t] + B[d, i] · X[t, i]`,
+`H[d, t +1] := N[d]`, `Y[v, t +1] := Wy[v, d] · N[d] + Wd[v, i] · X[t, i]`.
+Initial slots are `H0` and `Wy H0`; the initial readout has no input/skip contribution.
+The readout history is written inside the scan, consuming the NEW state through `N`, not a forbidden
+right-hand-side `t +1` read. Both precisions prepare, execute on Lean and render through the existing
+harness; the two other codegen doors refuse the scan. ONE scan, six steps, exactly five assignments
+across the base/step blocks, no pointwise/axiswise nodes and no post-scan nodes; exports exactly `H`, `Y`.
+An initial scratch spelling `C(v, d)` was a parser error (`unexpected token 'C('`); the final program
+uses the existing naming style `Wy`/`Wd`, without changing the grammar.
+
+Extents are pairwise distinct: history `t = 7`, input `i = 3`, state `d = 4`, output `v = 5`.
+`X` has six finite rows and a seventh NaN row that is never read. Data: `gqaGen` seeds 61 (X),
+62 (nonzero H0), 63 (B), 64 (Wy), 65 (Wd); `A = [0.85, -0.75, 0.65, -0.55]`.
+The decays are distinct, nonzero, stable and mixed-sign, so an impulse includes both ordinary and
+alternating geometric decay. One input list supplies both precisions. No seeds or tolerances tuned:
+the first numerical candidate passed all gates.
+
+**Independent pins.**
+
+1. Every history entry, including initialization, on Lean, eager and jit equals BOTH NumPy oracles:
+   explicit time stepping (`np_ssm`) and powers of A plus `np.convolve` of the input drive
+   (`np_ssm_convolution`). The convolution oracle never reads a previously computed state.
+2. Wrong-model gaps, computed before value comparisons, must exceed 1e-2: no recurrence 0.846,
+   one shared decay 0.829, zero initialization 0.804, no input drive 0.860, no direct skip 0.681,
+   readout from the OLD state 0.743.
+3. Eager causality: changing any `X[t]` leaves both histories bitwise unchanged through slot t and
+   changes BOTH at slot t + 1 (smallest first response 0.221). The NaN spare row can be replaced by
+   0.5 without changing any export bitwise. H's initial slot is H0 bitwise on all three views.
+4. Eager AND jit response probes, in both precisions: zero initial state plus one pulse
+   `[0.4, -0.3, 0.2]` at X row 0 yields `H[:, s] = A**(s-1) * (B pulse)` for s >= 1;
+   the direct skip occurs only in output slot 1. Zero input plus the original H0 yields
+   `H[:, s] = A**s * H0`. Zero input and initial state yield exactly zero histories.
+   Perturbing each H0 coordinate separately leaves every OTHER H coordinate bitwise unchanged;
+   the changed coordinate follows its own geometric response.
+5. Gradients of a weighted final readout `Y[:, 6]` over all SIX float inputs, eager and jit:
+   finite and nontrivial, against an unrolled pure-JAX model and three fixed-direction central
+   differences of the CONVOLUTION oracle. The loss has no direct H0 output term: the H0 gradient
+   traverses all six recurrence steps. Every used X row has a real gradient; row 6 is exactly zero
+   in both runtime views and the independent JAX model. Smallest per-input max gradient 0.317.
+   The shared gradient tolerance self-test rejects an absolute 1e-3 perturbation.
+
+**Observed** (all response probes included in value maxima; unchanged `MODEL_TOL` 1e-12 / 1e-6).
+Binary64 worst scaled value error 2.220e-16, headroom 4503.6x. Binary32 1.451e-7, **6.9x**.
+Baseline eager/jit histories are bit-identical to Lean in both precisions (H: 56/56 combined entries;
+Y: 70/70). Gradient worst scaled errors versus pure JAX / finite differences: binary64
+5.551e-17 / 8.319e-11 (headroom 18014x / 1202x), binary32 1.192e-7 / 1.921e-7
+(839x / 521x). Finite-difference directional derivatives have magnitude 2.39 to 4.50.
+
+**Mutation evidence.** Eight run, eight killed, zero refusals, zero survivors. Six source/data
+mutants are generated from exact copies of the live Lean definitions, passed through the SAME
+`fixture64`/`fixture32` checks, then run through the targeted SSM verifier. Each copied source
+compiles and generates before its named Python assertion fails. Live-source hashes are verified
+unchanged during those cycles; no restoration edits or library rebuilds are needed. Two additional
+Python-only controls mutate isolated subprocesses, leaving committed files untouched.
+
+| Mutation | First failing assertion |
+|---|---|
+| Replace `A[d] · H[d, t]` by `A[d] + H[d, t]` | `pin numpy model: ssm_diag lean H` (4.624) |
+| Readout consumes OLD `H[d, t]` instead of `N[d]` | `pin numpy model: ssm_diag lean Y` (0.743) |
+| Skip reads reversed/future `X[5 - t, i]` | `pin numpy model: ssm_diag lean Y` (0.721) |
+| Initialize H with `A[d] · H0[d]` | `pin numpy model: ssm_diag lean H` (0.840) |
+| Addition-instead-of-product on the binary32 sibling | `pin numpy model: ssm_diag32 lean H` (4.624) |
+| Wd data all zero | non-vacuity: `no direct skip` gap is 0 |
+| Convolution kernel starts at `A**1` instead of `A**0` | `pin numpy model: ssm_diag lean convolution H` (0.897) |
+| Stop gradients through A in the runtime call, preserving forward values | `ssm_diag`, `trivial gradient`, `eager`, `A`, 0.0 |
+
+**Verification and process.** The controller reused the synced Mathlib/project cache, performed one
+targeted dependency refresh (8622 jobs) and one full `LeanNCD Tests JaxExperiment` build
+(**8847 jobs**, green). No Lake targets/modules changed; the prior brief's 8846 count predates this
+base. Source probes and mutation cycles used `lean --run` against those cached libraries, not
+repeated full builds. Actual corpus generation reports **52 binary64 and 44 binary32 fixtures**.
+The complete binary64 and binary32 differential runs both exited 0, including ALL existing value,
+structure, causality and gradient pins and the new SSM pins; no checks skipped or tolerances loosened.
+The controller's direct whole-branch review covered all five changed files, the independent oracles,
+initial/readout indexing, non-vacuity, gradient reachability, and unchanged shared-harness behavior:
+clean, no findings. `git diff --check` is clean; production sources and Lake configuration are unchanged.
+Reproduce with the existing `run-evalplan-nonlin.sh`; this execution split its cached fixture-generation
+and Python-driver stages so mutation and final checks did not repeat library builds.
+
+Budget measurement was attempted with `token-report.py` for this Copilot session; it reported
+`no transcript for session`, so cumulative input tokens/context peak are unavailable, not inferred.
+No subagents or new plan document were used.
+
+**Next.** The diagonal-SSM alternative in the progression is complete; GNNs follow
+(dense first, then a separately probed edge/scatter form). This does not implement
+linear attention or lift any data-dependent indexing or scan-scatter limitation.

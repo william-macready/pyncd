@@ -22,6 +22,8 @@ refuse it (a convolution's strided or dilated read is refused by `einsumOnly` wi
 one with `nonzeroAffineBias`), and that `affineReference` renders it. A fixture with an inline unary read (`unaryOk`)
 is the one place those two doors refuse with `unaryFactor` (binary64) instead of `unsupportedStep`:
 they keep refusing unary reads; only `affineReference` admits one.
+The diagonal-SSM fixtures, like the scan survey, are explicitly marked `linear_ok`: they test a linear
+scan and its convolution interpretation without adding an artificial nonlinearity.
 -/
 
 namespace JaxBridge.NonlinSmoke
@@ -2103,6 +2105,39 @@ def rnnStackProg32 : TLProgram := tlprog!{
   H2[d, t +1]  := N2[d]
 }
 
+/-! ### Diagonal SSM: linear recurrence and its causal-convolution interpretation
+
+`N = A * H[t] + B X[t]`, `H[t+1] = N`, `Y[t+1] = Wy N + Wd X[t]`.
+Both histories include slot 0 (`H0`, `Wy H0`); X's seventh row is never read.
+The output history is written in the scan so the readout consumes the NEW state without a `t+1` read.
+-/
+def ssmInputs : List (String × List Nat × Array Float) :=
+  [("X", [7, 3], gqaGen 61.0 18 ++ scanNanSlice (gqaGen 0.0 3)), ("H0", [4], gqaGen 62.0 4),
+   ("A", [4], #[0.85, -0.75, 0.65, -0.55]), ("B", [4, 3], gqaGen 63.0 12),
+   ("Wy", [5, 4], gqaGen 64.0 20), ("Wd", [5, 3], gqaGen 65.0 15)]
+def ssmEnv64 : HashMap String DenseTensor := env64 (ssmInputs.map fun (n, s, d) => (n, t64 s d))
+def ssmEnv32 : NamedDenseEnv32 := env32 (ssmInputs.map fun (n, s, d) => (n, t32 s d))
+
+def ssmProg : TLProgram := tlprog!{
+  iter t = 7
+  tensor f64 X(t, i), H0(d), A(d), B(d, i), Wy(v, d), Wd(v, i)
+  tensor f64 H(d, t), Y(v, t), N(d)
+  H[d, 0]     := H0[d]
+  Y[v, 0]     := Wy[v, d] · H0[d]
+  N[d]        := A[d] · H[d, t] + B[d, i] · X[t, i]
+  H[d, t +1]  := N[d]
+  Y[v, t +1]  := Wy[v, d] · N[d] + Wd[v, i] · X[t, i]
+}
+def ssmProg32 : TLProgram := tlprog!{
+  iter t = 7
+  tensor H(d, t), Y(v, t)
+  H[d, 0]     := H0[d]
+  Y[v, 0]     := Wy[v, d] · H0[d]
+  N[d]        := A[d] · H[d, t] + B[d, i] · X[t, i]
+  H[d, t +1]  := N[d]
+  Y[v, t +1]  := Wy[v, d] · N[d] + Wd[v, i] · X[t, i]
+}
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -2168,6 +2203,8 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "rnn_lstm" rnnLstmProg rnnLstmEnv64 5 0 (some (17, 5, 0)) true (scans := 1),
     ← fixture64 "rnn_bi" rnnBiProg rnnBiEnv64 2 1 (some (10, 2, 1)) true (scans := 1),
     ← fixture64 "rnn_stack" rnnStackProg rnnStackEnv64 2 0 (some (8, 2, 0)) true (scans := 1),
+    ← (fixture64 "ssm_diag" ssmProg ssmEnv64 0 0 (some (5, 0, 0)) true (scans := 1)).map
+        (·.replace "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True"),
     ← fixture64 "scan_postrole" postRoleProg
         (env64 [("X", t64 [2] postRoleX), ("G", t64 [2] postRoleG), ("V", t64 [4] postRoleV), ("M", t64 [4] postRoleM)])
         0 0 none true (scans := 1),
@@ -2239,6 +2276,8 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "rnn_lstm32" rnnLstmProg32 rnnLstmEnv32 5 0 (some (17, 5, 0)) true (scans := 1),
     ← fixture32 "rnn_bi32" rnnBiProg32 rnnBiEnv32 2 1 (some (10, 2, 1)) true (scans := 1),
     ← fixture32 "rnn_stack32" rnnStackProg32 rnnStackEnv32 2 0 (some (8, 2, 0)) true (scans := 1),
+    ← (fixture32 "ssm_diag32" ssmProg32 ssmEnv32 0 0 (some (5, 0, 0)) true (scans := 1)).map
+        (·.replace "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True"),
     ← fixture32 "scan_postrole32" postRoleProg32
         (env32 [("X", t32 [2] postRoleX), ("G", t32 [2] postRoleG), ("V", t32 [4] postRoleV), ("M", t32 [4] postRoleM)])
         0 0 none true (scans := 1),
