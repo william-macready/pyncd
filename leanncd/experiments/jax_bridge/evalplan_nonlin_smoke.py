@@ -56,7 +56,8 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_cross", "transformer_cross32", "transformer_cross_hoisted", "transformer_cross_hoisted32",
                         "transformer_cross_wide", "transformer_cross_wide32",
                         "conv1d_cnn", "conv1d_cnn32", "conv1d_causal", "conv1d_causal32", "vit_patch", "vit_patch32",
-                        "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32", "rnn_stack", "rnn_stack32"}
+                        "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32", "rnn_stack", "rnn_stack32",
+                        "ssm_diag", "ssm_diag32"}
 # Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
 # layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
 # require that EXACTLY layer 2 is NaN (in Lean, eager and jit alike); every other output must be finite.
@@ -1958,12 +1959,120 @@ def rnn_stack_pins(by: dict, sfx: str) -> None:
     print_conv_stats(name)
 
 
+def np_ssm(inp: dict) -> dict:
+    """Diagonal SSM by explicit time stepping, including the initial state and its readout."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    h = f["H0"].copy()
+    hs, ys = [h], [f["Wy"] @ h]
+    for x in f["X"][:-1]:
+        h = f["A"] * h + f["B"] @ x
+        hs.append(h)
+        ys.append(f["Wy"] @ h + f["Wd"] @ x)
+    return {"H": np.stack(hs, axis=1), "Y": np.stack(ys, axis=1)}
+
+
+def np_ssm_convolution(inp: dict) -> dict:
+    """Closed-form initial response plus causal convolution; never reads a previous computed state."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    steps = f["X"].shape[0] - 1
+    powers = f["A"][:, None] ** np.arange(steps + 1)
+    h = f["H0"][:, None] * powers
+    drive = f["B"] @ f["X"][:steps].T
+    for d in range(len(f["A"])):
+        h[d, 1:] += np.convolve(powers[d, :steps], drive[d], mode="full")[:steps]
+    y = f["Wy"] @ h
+    y[:, 1:] += f["Wd"] @ f["X"][:steps].T
+    return {"H": h, "Y": y}
+
+
+def ssm_pins(by: dict, sfx: str) -> None:
+    """Recurrence/convolution equivalence, geometric impulse response, diagonal independence and causality."""
+    name = f"ssm_diag{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    assert sorted(fin) == sorted(["X", "H0", "A", "B", "Wy", "Wd"]), sorted(fin)
+    rnn_plan_pins(fx, [], ["H", "Y"])
+    n_t, n_i = fin["X"].shape
+    n_d, n_v = fin["H0"].size, fin["Wy"].shape[0]
+    assert n_t == 7 and len({n_t, n_i, n_d, n_v}) == 4, (name, n_t, n_i, n_d, n_v)
+    assert fin["A"].shape == (n_d,) and fin["B"].shape == (n_d, n_i), name
+    assert fin["Wy"].shape == (n_v, n_d) and fin["Wd"].shape == (n_v, n_i), name
+    want, convolution = np_ssm(fin), np_ssm_convolution(fin)
+    old_y = np.column_stack((want["Y"][:, 0], fin["Wy"].astype(np.float64) @ want["H"][:, :-1]
+                             + fin["Wd"].astype(np.float64) @ fin["X"][:-1].astype(np.float64).T))
+    wrong = {
+        "no recurrence": np_ssm(dict(fin, A=np.zeros_like(fin["A"]))),
+        "shared decay": np_ssm(dict(fin, A=np.full_like(fin["A"], np.mean(fin["A"])))),
+        "no initial state": np_ssm(dict(fin, H0=np.zeros_like(fin["H0"]))),
+        "no input drive": np_ssm(dict(fin, B=np.zeros_like(fin["B"]))),
+        "no direct skip": np_ssm(dict(fin, Wd=np.zeros_like(fin["Wd"]))),
+        "readout uses OLD state": {"H": want["H"], "Y": old_y},
+    }
+    gaps = rnn_value_pins(by, name, want, wrong)
+    assert np.all((np.abs(fin["A"]) > 0.5) & (np.abs(fin["A"]) < 1.0)), (name, "nontrivial stable decays")
+    assert np.any(fin["A"] < 0) and np.any(fin["A"] > 0) and len(np.unique(fin["A"])) == n_d, name
+    assert np.all(fin["H0"] != 0), (name, "nonzero initial state")
+    for who, outs in conv_views(by, name).items():
+        for n in ("H", "Y"):
+            check_np(name, f"{who} convolution", n, outs[n], convolution[n])
+    rnn_spare_slot(name, fx)
+    causality = rnn_causality(name, fx, {"H": (1, False), "Y": (1, False)})
+
+    f = {n: v.astype(np.float64) for n, v in fin.items()}
+    powers = f["A"][:, None] ** np.arange(n_t)
+    jin = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+    run = lambda inp: rt.run_named(fx["plan"], inp, JDT)
+    run_jit = jax.jit(run)
+    pulse = np.asarray([0.4, -0.3, 0.2], dtype=NDT)
+    assert pulse.size == n_i and np.all(np.abs(f["B"] @ pulse) > 1e-3), name
+    h_impulse = np.zeros_like(want["H"])
+    h_impulse[:, 1:] = (f["B"] @ pulse)[:, None] * powers[:, :-1]
+    y_impulse = f["Wy"] @ h_impulse
+    y_impulse[:, 1] += f["Wd"] @ pulse
+    cases = {
+        "impulse": (np.zeros_like(fin["H0"]), {"H": h_impulse, "Y": y_impulse}),
+        "initial only": (fin["H0"], {"H": f["H0"][:, None] * powers, "Y": f["Wy"] @ (f["H0"][:, None] * powers)}),
+        "zero response": (np.zeros_like(fin["H0"]), {"H": np.zeros_like(want["H"]), "Y": np.zeros_like(want["Y"])}),
+    }
+    for case, (h0, expected) in cases.items():
+        x = np.zeros_like(fin["X"])
+        x[-1] = np.nan
+        if case == "impulse":
+            x[0] = pulse
+        inp = dict(jin, X=jnp.asarray(x), H0=jnp.asarray(h0))
+        for who, runner in (("eager", run), ("jit", run_jit)):
+            outs = runner(inp)
+            for n in ("H", "Y"):
+                check_np(name, f"{who} {case}", n, outs[n], expected[n])
+                if case == "zero response":
+                    assert np.all(np.asarray(outs[n]) == 0), (name, who, "zero response", n)
+
+    for d in range(n_d):
+        h0 = fin["H0"].copy()
+        h0[d] += NDT(0.5)
+        for who, runner in (("eager", run), ("jit", run_jit)):
+            h = np.asarray(runner(dict(jin, H0=jnp.asarray(h0)))["H"])
+            base = np.asarray(EAGER[name][who]["H"])
+            others = np.arange(n_d) != d
+            assert np.array_equal(bits(h[others]), bits(base[others])), (name, who, "state coordinates mixed", d)
+            delta = np.zeros_like(want["H"])
+            delta[d] = float(h0[d] - fin["H0"][d]) * powers[d]
+            check_np(name, f"{who} initial-coordinate perturbation", "H", h, want["H"] + delta)
+    print(f"{name}: extents t={n_t}, i={n_i}, d={n_d}, v={n_v} pairwise distinct; ONE six-step scan, exactly H and Y histories; "
+          f"Lean/eager/jit == numpy recurrence AND causal convolution; "
+          f"non-vacuity gaps {', '.join(f'{w}={g:.3f}' for w, g in gaps.items())}; "
+          f"causality ({causality}), NaN spare slot never read; eager/jit geometric impulse, initial-only and exact-zero responses; "
+          f"each initial-state coordinate affects only itself in H")
+    print_conv_stats(name)
+
+
 def rnn_grad_pins(by: dict, sfx: str) -> None:
-    """Gradient pins (backpropagation THROUGH TIME) of the three recurrent fixtures: `jax.grad` of `L = sum(C * out)` through the emitted scan over EVERY float
+    """Gradient pins (backpropagation THROUGH TIME) of the recurrent and diagonal-SSM fixtures: `jax.grad` of `L = sum(C * out)` through the emitted scan over EVERY float
     input (eager and jit), with `out` = the logits `Lg` for the GRU and the bidirectional RNN (not the softmax: a softmax loss is nearly degenerate) and
-    `H[:, 6]` together with the per-step readout `Yt` for the LSTM, against (a) the autodiff of a pure-JAX model written from the definition as an unrolled
+    `H[:, 6]` together with the per-step readout `Yt` for the LSTM, or the final readout `Y[:, 6]` for the SSM, against (a) the autodiff of a pure-JAX model written from the definition as an unrolled
     Python loop (no plan, no scan, `Neg` read as a plain input) and (b) central finite differences of the float64 numpy models (explicit loops) along
-    random directions with `Neg` FROZEN (the numpy models hard-code the minus). X row 6 (never read) has EXACTLY zero gradient, X rows 0 .. 5 a real one
+    random directions with `Neg` FROZEN where present (the GRU numpy model hard-codes the minus); the SSM finite differences use the convolution oracle.
+    X row 6 (never read) has EXACTLY zero gradient, X rows 0 .. 5 a real one
     (information flows back through all six steps), the gradients with respect to the initial states and every weight are non-trivial."""
 
     def scaled(a, b):
@@ -2011,12 +2120,19 @@ def rnn_grad_pins(by: dict, sfx: str) -> None:
             h1 = n1
         return [h2]
 
+    def ssm_hand(i):
+        h = i["H0"]
+        for t in range(6):
+            h = i["A"] * h + i["B"] @ i["X"][t]
+        return [i["Wy"] @ h + i["Wd"] @ i["X"][5]]
+
     # name -> (the plan's outputs entering the loss, the pure-JAX model, the numpy model of the SAME outputs)
     specs = {
         f"rnn_gru{sfx}": (lambda r: [r["Lg"]], gru_hand, lambda i: [np_gru(i)[0]["Lg"]]),
         f"rnn_lstm{sfx}": (lambda r: [r["H"][:, 6], r["Yt"]], lstm_hand, lambda i: [np_lstm(i)[0]["H"][:, 6], np_lstm(i)[0]["Yt"]]),
         f"rnn_bi{sfx}": (lambda r: [r["Lg"]], bi_hand, lambda i: [np_birnn(i)["Lg"]]),
         f"rnn_stack{sfx}": (lambda r: [r["H2"][:, 6]], stack_hand, lambda i: [np_stack(i)["H2"][:, 6]]),  # H2 only: W1, U1, H10 reach the loss THROUGH layer 2
+        f"ssm_diag{sfx}": (lambda r: [r["Y"][:, 6]], ssm_hand, lambda i: [np_ssm_convolution(i)["Y"][:, 6]]),
     }
     lines = []
     for name, (take, hand, np_model) in specs.items():
@@ -2072,9 +2188,9 @@ def rnn_grad_pins(by: dict, sfx: str) -> None:
         lines.append(f"  {name}: all {len(sin)} float inputs, eager and jit, finite; X row 6 EXACTLY zero gradient (eager, jit and the pure-JAX model), X rows 0..5 and "
                      f"every input non-trivial (smallest per-input max {min(smallest.values()):.3f}); vs pure-JAX unrolled model max scaled {max(err.values()):.3e} "
                      f"(headroom {GRAD_TOL[_DT] / max(max(err.values()), 1e-300):.1f}x); directional derivatives vs central differences of the numpy model "
-                     f"(|dot| {min(abs(x) for x in dots):.2f} to {max(abs(x) for x in dots):.2f}, Neg frozen) max scaled {fd_err:.3e} "
+                     f"(|dot| {min(abs(x) for x in dots):.2f} to {max(abs(x) for x in dots):.2f}{', Neg frozen' if 'Neg' in sin else ''}) max scaled {fd_err:.3e} "
                      f"(headroom {GRAD_FD_TOL[_DT] / max(fd_err, 1e-300):.1f}x)")
-    print(f"gradients of the recurrent fixtures (GRU logits Lg, LSTM H[:, 6] + Yt, bidirectional logits Lg; every float input, tol {GRAD_TOL[_DT]:.0e} vs pure-JAX "
+    print(f"gradients of the recurrent/SSM fixtures (GRU logits Lg, LSTM H[:, 6] + Yt, bidirectional logits Lg, stacked H2[:, 6], SSM Y[:, 6]; every float input, tol {GRAD_TOL[_DT]:.0e} vs pure-JAX "
           f"unrolled models, {GRAD_FD_TOL[_DT]:.0e} vs finite differences):")
     for line in lines:
         print(line)
@@ -2399,6 +2515,7 @@ def main() -> None:
     rnn_lstm_pins(by, sfx)
     rnn_bi_pins(by, sfx)
     rnn_stack_pins(by, sfx)
+    ssm_pins(by, sfx)
 
     # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
     grad_fixture_pins(by, sfx)
