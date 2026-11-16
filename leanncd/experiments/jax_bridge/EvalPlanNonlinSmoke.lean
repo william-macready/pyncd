@@ -2241,6 +2241,38 @@ def gnnEdgeProg32 : TLProgram := tlprog!{
   Out[n,h]  := Tm[e,n] · Msg[e,h]
 }
 
+/-! ### Dense MoE: input-dependent softmax over experts, two-layer GELU experts, weighted sum.
+
+OnN is a ones vector making bias broadcasting explicit. Every expert runs for every input row;
+there is no top-k selection, sparse routing or scan.
+-/
+def moeInputs : List (String × List Nat × Array Float) :=
+  [("X", [4, 3], gqaGen 81 12), ("Wg", [5, 3], gqaGen 82 15), ("Bg", [5], convBias 83 5),
+   ("W1", [5, 6, 3], gqaGen 84 90), ("B1", [5, 6], convBias 85 30),
+   ("W2", [5, 2, 6], gqaGen 86 60), ("B2", [5, 2], convBias 87 10),
+   ("OnN", [4], Array.replicate 4 1)]
+def moeEnv64 : HashMap String DenseTensor := env64 (moeInputs.map fun (n, s, d) => (n, t64 s d))
+def moeEnv32 : NamedDenseEnv32 := env32 (moeInputs.map fun (n, s, d) => (n, t32 s d))
+
+def moeProg : TLProgram := tlprog!{
+  tensor f64 X(n, i), Wg(e, i), Bg(e), W1(e, h, i), B1(e, h), W2(e, o, h), B2(e, o), OnN(n)
+  tensor f64 GateLog(n, e), Gate(n, e), Z(n, e, h), H(n, e, h), Expert(n, e, o), Out(n, o)
+  GateLog[n,e] := X[n,i] · Wg[e,i] + OnN[n] · Bg[e]
+  Gate[n,e.]   := softmax(GateLog[n,e])
+  Z[n,e,h]     := X[n,i] · W1[e,h,i] + OnN[n] · B1[e,h]
+  H[n,e,h]     := gelu(Z[n,e,h])
+  Expert[n,e,o] := H[n,e,h] · W2[e,o,h] + OnN[n] · B2[e,o]
+  Out[n,o]     := Gate[n,e] · Expert[n,e,o]
+}
+def moeProg32 : TLProgram := tlprog!{
+  GateLog[n,e] := X[n,i] · Wg[e,i] + OnN[n] · Bg[e]
+  Gate[n,e.]   := softmax(GateLog[n,e])
+  Z[n,e,h]     := X[n,i] · W1[e,h,i] + OnN[n] · B1[e,h]
+  H[n,e,h]     := gelu(Z[n,e,h])
+  Expert[n,e,o] := H[n,e,h] · W2[e,o,h] + OnN[n] · B2[e,o]
+  Out[n,o]     := Gate[n,e] · Expert[n,e,o]
+}
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -2308,6 +2340,7 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "rnn_stack" rnnStackProg rnnStackEnv64 2 0 (some (8, 2, 0)) true (scans := 1),
     ← fixture64 "gnn_dense" gnnProg gnnEnv64 2 1 (some (12, 2, 1)) true,
     ← fixture64 "gnn_edges" gnnEdgeProg gnnEdgeEnv64 7 0 (some (17, 7, 0)),
+    ← fixture64 "moe_dense" moeProg moeEnv64 1 1 (some (6, 1, 1)),
     ← (fixture64 "ssm_diag" ssmProg ssmEnv64 0 0 (some (5, 0, 0)) true (scans := 1)).map
         (·.replace "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True"),
     ← fixture64 "scan_postrole" postRoleProg
@@ -2383,6 +2416,7 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "rnn_stack32" rnnStackProg32 rnnStackEnv32 2 0 (some (8, 2, 0)) true (scans := 1),
     ← fixture32 "gnn_dense32" gnnProg32 gnnEnv32 2 1 (some (12, 2, 1)) true,
     ← fixture32 "gnn_edges32" gnnEdgeProg32 gnnEdgeEnv32 7 0 (some (17, 7, 0)),
+    ← fixture32 "moe_dense32" moeProg32 moeEnv32 1 1 (some (6, 1, 1)),
     ← (fixture32 "ssm_diag32" ssmProg32 ssmEnv32 0 0 (some (5, 0, 0)) true (scans := 1)).map
         (·.replace "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True"),
     ← fixture32 "scan_postrole32" postRoleProg32
