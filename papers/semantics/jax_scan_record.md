@@ -1253,7 +1253,8 @@ BOTH fail at parsing: `unexpected token '['; expected ']'`, at the nested index.
 The index grammar admits affine expressions, not tensor reads. Existing affine scatter and its
 collision handling therefore do NOT imply general edge-list gather/scatter.
 No sparse/edge-list fixture, production indexing capability or dense-incidence substitute is claimed
-as implemented. This is the existing portfolio GN6/KG-gather gap, re-probed rather than inferred.
+as implemented IN THIS SLICE. Section 23 subsequently supplies a dense selector encoding of edge-ID
+GNNs without native indexed syntax. This is the existing portfolio GN6/KG-gather gap, re-probed rather than inferred.
 Cost: a separate design/probe dispatch is needed before estimating the actual cross-layer change.
 Dense GNN completion is independent of that capability work.
 
@@ -1269,6 +1270,111 @@ this execution split its fixture-generation/Python stages to avoid repeated libr
 No subagents used. The SSM-stage token-report attempt in this same Copilot session reported
 no transcript; cumulative input tokens/context peak remain unavailable, not estimated.
 
-**Next.** Dense GNNs are covered. General edge-list gather/scatter is
+**Next (at this slice boundary).** Dense GNNs are covered. Native edge-list gather/scatter is
 parked for a separate capability decision; the next unblocked agreed progression item is dense
 mixture of experts. No such follow-on is included here.
+
+## 23. Edge-ID GNN by exact dense ReLU selectors (2026-11-16)
+
+Direct path, tests/fixtures only. The user requested an alternative encoding rather than a parser
+extension. `gnnEdgeInputs`, the two precision environments/programs and two registrations in
+`EvalPlanNonlinSmoke.lean`; `np_gnn_edges`, `gnn_edge_pins`, `gnn_edge_grad_pins` and model-fixture
+registration in `evalplan_nonlin_smoke.py`. Donor: the scratch edge-selector probe from the preceding
+discussion, using the existing fixture/input/environment helpers. No production, harness, parser,
+emitter, runtime, Lake target or mutation-manifest changes. No plan document or subagents.
+
+**Encoding and scope.** For integral id and node coordinates, `relu(1 - abs(id - node))` is exactly
+one-hot. The DSL spells absolute value as `relu(diff) + relu(-diff)` and minus through the scalar
+input `Neg = -1`. OnE/OnN are explicit ones vectors: each term covers both its edge/node axes,
+avoiding the existing fixture harness's uncovered-position refusal for implicit broadcasts seen
+in the initial scratch probe. This is not a harness change.
+Src and Dst remain COMPACT runtime ID vectors; Sm/Tm are the internally constructed dense selectors.
+Contractions gather both sender and receiver features. A nonlinear message is
+`tanh(Ws sender + Wt receiver + Edge[e] We)`; another contraction sums each edge message at its
+destination. Parallel edges remain distinct through the nonlinearity. No normalization is used,
+so a node with no incoming edge has exactly zero aggregate.
+
+The programs have exactly **17 assign / 7 pointwise / 0 axiswise** steps, no scan or scatter node;
+exports are the twelve selector intermediates plus Send, Recv, Z, Msg and Out.
+Extents are distinct: 5 nodes, 7 edges, 3 features, 2 message channels.
+Src = `[0,1,1,2,3,3,0]`, Dst = `[1,2,2,0,2,3,3]`: edges 1 and 2 are parallel 1 -> 2 edges with
+different features, edge 5 is 3 -> 3, node 4 is unused/isolated.
+Data are shared between precisions: `gqaGen` seeds 1 (X), 2 (Ws), 3 (Wt), 4 (Edge), 5 (We);
+Id = `[0,1,2,3,4]`, OnE/OnN = ones, Neg = -1. The first candidate passed; no seed/tolerance tuning.
+
+**Input contract.** All input arrays are finite. IDs are integral, in `[0, nodes)`, and exactly
+representable; the fixture uses `nodes < 2**24` to stay in the shared binary32/binary64 integer range.
+The NumPy reference explicitly validates IDs, Id coordinates and helper constants before comparisons.
+These are fixture/model preconditions, NOT new runtime validation: fractional IDs would interpolate
+selector weights, and invalid IDs must not be interpreted as a supported lookup policy.
+IDs, coordinates and helper constants are frozen metadata, not differentiable model parameters.
+This expresses gather/scatter semantics at dense O(edges * nodes) selector cost; it does NOT add
+native indirect indexing, sparse complexity or a scatter-plan execution path.
+
+**Independent pins.**
+
+1. NumPy uses ordinary integer indexing for sender/receiver gathers and an explicit edge loop for
+   additive aggregation, never selector contractions. Selector intermediates use differences and
+   `abs`; final masks use identity-matrix indexing, not the DSL's ReLU recipe. ALL seventeen exports
+   match on Lean/eager/jit; both selectors are EXACT one-hot arrays, not approximate numeric matches.
+2. Wrong-model FINAL OUTPUT gaps > 1e-2, before value comparisons: receiver replaced by sender 1.030,
+   no edge features 0.258, no tanh 0.544, overwrite rather than add 0.845,
+   deduplicate parallel edges 0.585, aggregate at source 1.832.
+3. Eager AND jit, same plan, four additional valid graph cases: rewired Src/Dst =
+   `[4,2,1,0,3,4,0]` / `[0,1,1,4,4,0,2]`; node permutation `[4,2,0,3,1]`
+   with inverse-remapped endpoint IDs; edge permutation `[6,2,0,5,3,1,4]` applied to both IDs
+   and Edge features; a self-edge-only graph with `Src = Dst = arange(7) % 5`.
+   Every export matches a fresh indexed reference, selectors stay exactly binary, and rewiring has
+   a nontrivial output gap. Node relabeling permutes selector COLUMNS and Out rows while preserving
+   Send/Recv/Z/Msg; raw numeric ID-distance intermediates are checked against the new reference,
+   NOT falsely claimed equivariant. Edge relabeling permutes every edge-indexed output and leaves
+   Out invariant within the existing tolerance.
+4. Perturb ONLY Edge[1] by 0.5: every other edge's Msg is BITWISE unchanged, including parallel
+   edge 2; only destination 2's Out row can move, and does (minimum response 0.2599).
+   Changing unused X[4] leaves EVERY export bitwise unchanged; baseline node 4's Out is exactly zero.
+5. Five parameter gradients (X, Ws, Wt, Edge, We), eager/jit, versus independent native JAX
+   integer gathers plus `.at[dst].add`, and three fixed-direction NumPy finite differences.
+   The metadata does not enter the differentiated parameter dictionary. All five gradients are
+   finite/nontrivial; X row 4 is EXACTLY zero, every used X row has a real gradient. Smallest
+   per-input max 0.5349. An absolute 1e-3 Edge-gradient perturbation fails the tolerance canary.
+
+**Observed** (all graph variants/property comparisons included). Unchanged `MODEL_TOL` 1e-12 / 1e-6.
+Worst scaled value error: binary64 2.220e-16 (**4503.6x** headroom); binary32 1.542e-7 (**6.5x**).
+All selector intermediates and gathered Send/Recv arrays are exact versus NumPy on the tested inputs.
+Gradient worst scaled error versus indexed JAX / NumPy finite differences: binary64
+3.331e-16 / 5.654e-11; binary32 2.284e-7 / 4.724e-7. Gradient tolerances are unchanged.
+
+**Mutation evidence.** Eight accepted controls, eight killed, zero refusals/survivors. Six exact
+copied-source mutants compile/prepare/render/run on Lean through the existing fixture helpers before
+the targeted verifier fails. Source hashes are checked unchanged; Python controls run in isolated
+subprocesses. No live-file restoration or library rebuild is needed during cycles.
+
+| Mutation | First failing assertion |
+|---|---|
+| Flip the positive-difference contribution in the source hat | `pin numpy model: gnn_edges lean Ts` (4.0) |
+| Flip the negative-difference contribution in the destination hat | `pin numpy model: gnn_edges lean Tt` (4.0) |
+| Sender gather uses destination selector | `pin numpy model: gnn_edges lean Send` (1.108) |
+| Square Edge[e] in the message preactivation | `pin numpy model: gnn_edges lean Z` (0.538) |
+| Aggregate messages at source instead of destination | `pin numpy model: gnn_edges lean Out` (1.417) |
+| Destination-hat sign mutant on binary32 sibling | `pin numpy model: gnn_edges32 lean Tt` (4.0) |
+| Node permutation does not remap Src IDs | `selector node permutation`, `Sm`, eager |
+| Stop gradients through Ws, forward values unchanged | `trivial edge GNN gradient`, `Ws`, eager, 0.0 |
+
+**Verification/process.** Synced cache, one dependency refresh (8622 jobs), one final full
+`LeanNCD Tests JaxExperiment` build (**8847 jobs**, green). The actual complete fixture file generates
+**54 binary64 and 46 binary32 fixtures**. Both complete differential runs exited 0, including ALL
+existing and new pins; no checks skipped or tolerances loosened. Direct whole-branch review of all
+six changed files was clean: exact selector domains, independent indexed oracles, dynamic rewiring,
+node/edge permutation transports, parallel-edge independence, frozen metadata and gradient reachability
+were checked. `git diff --check` is clean; production sources and Lake configuration are unchanged.
+Reproduce with the existing `run-evalplan-nonlin.sh`; this execution split its cached generation and
+Python stages to avoid repeated library builds.
+Reused the existing bridge Python environment without installing/changing shared dependencies.
+On this host, invoking its symlinked Python directly with a script resolved the base interpreter and
+lost venv site-packages; running that same existing interpreter with `-c`/`runpy` retained the venv.
+No environment configuration was changed. The earlier token-report attempt in this Copilot session
+reported no transcript; cumulative input tokens/context peak remain unavailable, not estimated.
+
+**Next.** This closes the edge-ID GNN EXPRESSIBILITY step without closing native KG-gather.
+Sparse indexing remains optional capability work, not a prerequisite for the next agreed example,
+dense mixture of experts. No follow-on capability or model is included in this slice.

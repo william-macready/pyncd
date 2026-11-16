@@ -382,7 +382,7 @@ that copy's `+0` seed under `jax.jit` (the pitfall above), so a jit run can flip
 **Domain errors are an unchecked precondition (decision B1, 2026-11-04).** Lean rejects `log` of `v <= 0`, `sqrt` of `v < 0` and reciprocal of `0` with a typed unary-domain error. This backend lowers to plain `jnp` ops, checks nothing, and promises nothing on such inputs (neither NaN nor an error): it agrees with Lean only where Lean returns ok. Do not read "NaN on bad input" into it. Lean's `relu(NaN)` is `+0` and `exp(log 0) = exp(-inf) = 0` is finite, so a violation can come out as an ordinary-looking number. Lean-error inputs are out of contract and are excluded from the differential comparison; the Lean side of the boundary is pinned by `domainPins` in `EvalPlanNonlinSmoke.lean` (`log(0.0)`, `log(-1.0)`, `sqrt(-4.0)` and `recip(0.0)` are typed errors in Dense, binary64 and binary32). The motivating use is a LayerNorm with `eps` (`sqrt(v + eps)`, then division): its `sqrt` argument is at least `eps` and its divisor is non-zero by construction (fixture `unary_ln`). Fixtures: `unary_exp_oob`, `unary_ops`, `unary_mix`, `unary_red`, `unary_ln`, `unary_empty`.
 
 Run: `./run-evalplan-nonlin.sh` (generates `EvalPlanNonlinSmoke.lean`'s binary64 + binary32 fixtures, then
-`evalplan_nonlin_smoke.py float64|float32`: 53 binary64 and 45 binary32 fixtures (22 + 22 before the scan
+`evalplan_nonlin_smoke.py float64|float32`: 54 binary64 and 46 binary32 fixtures (22 + 22 before the scan
 slice; the added ones are listed under "Scan (affineReference)" below), eager and jit, including the
 single-layer transformer with every materialized output compared (and the same layer with a real RMSNorm,
 `transformer_rms`: 20 plan nodes, 4 unary factors, with a unit-mean-square pin on the norm outputs that Lean/JAX
@@ -503,6 +503,18 @@ against an independent dense JAX model and NumPy finite differences. Binary32 va
 This fixture has no scan or scatter node: indexed `Src[e]`/`Dst[e]` gather/scatter is refused by the current
 DSL parser, not unlocked by affine scatter support. Values, mutations and the probe are in section 22
 of `papers/semantics/jax_scan_record.md`.
+
+`gnn_edges` (and `gnn_edges32`) works around that indexed-syntax limitation WITHOUT changing the DSL:
+compact integral Src/Dst inputs produce exact one-hot selectors via `relu(1 - abs(id - node))`
+(absolute value is two relus; minus uses `Neg = -1`). Ordinary contractions gather sender/receiver
+features and sum nonlinear, edge-conditioned messages at destinations. The graph includes parallel
+edges with different attributes, a self edge and an isolated node. Pins cover all seventeen exports,
+exact masks, same-plan runtime rewiring, node/edge permutations and edge-local perturbations.
+Five feature/weight gradients are checked against native JAX indexed gather/scatter and NumPy finite
+differences; routing IDs and helper constants are frozen, not differentiated. Inputs must be finite,
+IDs integral/in-range and coordinates exactly representable. This is a DENSE O(edges * nodes) encoding,
+not native sparse indexing or a scatter plan node. Binary32 value headroom is 6.5x; section 23 of
+`papers/semantics/jax_scan_record.md` records observed values, constraints and eight mutation controls.
 
 Gradients: `jax.grad` works through the emitted `lax.scan` as is (no runtime change). The driver pins the gradient of `sum(C * H[:, :, 2])` of `transformer_scan` over every
 float input, in both precisions, eager and jit: finite, exactly zero on the never-read NaN layer-2 weight slices, equal to the same loss through the unrolled plan

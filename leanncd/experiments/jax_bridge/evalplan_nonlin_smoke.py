@@ -57,7 +57,7 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_cross_wide", "transformer_cross_wide32",
                         "conv1d_cnn", "conv1d_cnn32", "conv1d_causal", "conv1d_causal32", "vit_patch", "vit_patch32",
                         "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32", "rnn_stack", "rnn_stack32",
-                        "ssm_diag", "ssm_diag32", "gnn_dense", "gnn_dense32"}
+                        "ssm_diag", "ssm_diag32", "gnn_dense", "gnn_dense32", "gnn_edges", "gnn_edges32"}
 # Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
 # layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
 # require that EXACTLY layer 2 is NaN (in Lean, eager and jit alike); every other output must be finite.
@@ -2338,6 +2338,181 @@ def gnn_grad_pins(by: dict, sfx: str) -> None:
           f"smallest input gradient max {min(smallest):.3e}; max scaled vs pure JAX {max(errors):.3e}, vs numpy finite differences {max(fd_errors):.3e}")
 
 
+def np_gnn_edges(inp: dict, receiver=True, edge_features=True, nonlinear=True, overwrite=False, deduplicate=False, source_aggregate=False) -> dict:
+    """Integer-index reference: direct gathers and an explicit edge scatter loop, not selector contractions."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    nodes, features = f["X"].shape
+    edges = f["Src"].size
+    assert all(np.all(np.isfinite(v)) for v in f.values()), "edge GNN requires finite inputs"
+    assert np.array_equal(f["Id"], np.arange(nodes)) and nodes < 2 ** 24, "edge GNN coordinate metadata"
+    assert f["Neg"].shape == () and f["Neg"] == -1, "edge GNN Neg must be -1"
+    assert np.array_equal(f["OnE"], np.ones(edges)) and np.array_equal(f["OnN"], np.ones(nodes)), "edge GNN ones metadata"
+    for n in ("Src", "Dst"):
+        ids = f[n]
+        assert ids.shape == (edges,) and np.all(ids == np.floor(ids)) and np.all((0 <= ids) & (ids < nodes)), ("edge GNN invalid IDs", n)
+    src, dst = f["Src"].astype(int), f["Dst"].astype(int)
+    out = {}
+    for suffix, ids, mask in (("s", src, "Sm"), ("t", dst, "Tm")):
+        diff = ids[:, None] - np.arange(nodes)[None, :]
+        out.update({f"D{suffix}": diff, f"P{suffix}": np.maximum(diff, 0), f"N{suffix}": -diff,
+                    f"Q{suffix}": np.maximum(-diff, 0), f"T{suffix}": 1 - np.abs(diff), mask: np.eye(nodes)[ids]})
+    out["Send"], out["Recv"] = f["X"][src], f["X"][dst]
+    recv = out["Recv"] if receiver else out["Send"]
+    out["Z"] = out["Send"] @ f["Ws"].T + recv @ f["Wt"].T + (f["Edge"][:, None] * f["We"] if edge_features else 0)
+    out["Msg"] = np.tanh(out["Z"]) if nonlinear else out["Z"].copy()
+    result = np.zeros((nodes, f["Ws"].shape[0]))
+    seen = set()
+    for e, (s, t) in enumerate(zip(src, dst)):
+        if deduplicate and (s, t) in seen:
+            continue
+        seen.add((s, t))
+        target = s if source_aggregate else t
+        if overwrite:
+            result[target] = out["Msg"][e]
+        else:
+            result[target] += out["Msg"][e]
+    out["Out"] = result
+    assert out["Send"].shape == (edges, features)
+    return out
+
+
+def gnn_edge_pins(by: dict, sfx: str) -> None:
+    """Exact selectors, runtime rewiring, node/edge permutations and multigraph edge independence."""
+    name = f"gnn_edges{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(entry) for n, entry in fx["inputs"].items()}
+    assert sorted(fin) == sorted(["Src", "Dst", "Id", "Neg", "OnE", "OnN", "X", "Ws", "Wt", "Edge", "We"]), sorted(fin)
+    nodes, features = fin["X"].shape
+    edges, hidden = fin["Src"].size, fin["Ws"].shape[0]
+    assert len({nodes, features, edges, hidden}) == 4, (name, nodes, features, edges, hidden)
+    assert fin["Wt"].shape == fin["Ws"].shape == (hidden, features), name
+    assert fin["Edge"].shape == (edges,) and fin["We"].shape == (hidden,), name
+    assert all(n.get("kind") not in ("scan", "scatter") for n in fx["plan"]["nodes"]), name
+    want = np_gnn_edges(fin)
+    assert sorted(n for n, _ in fx["plan"]["materialized"]) == sorted(want), fx["plan"]["materialized"]
+    wrong = {"receiver replaced by sender": np_gnn_edges(fin, receiver=False), "no edge features": np_gnn_edges(fin, edge_features=False),
+             "no tanh": np_gnn_edges(fin, nonlinear=False), "overwrite instead of sum": np_gnn_edges(fin, overwrite=True),
+             "deduplicate parallel edges": np_gnn_edges(fin, deduplicate=True), "aggregate at source": np_gnn_edges(fin, source_aggregate=True)}
+    gaps = {what: float(np.max(np.abs(want["Out"] - model["Out"]))) for what, model in wrong.items()}
+    for what, gap in gaps.items():
+        assert gap > 1e-2, (name, "edge GNN pin is indistinguishable from", what, gap)
+    for who, outs in conv_views(by, name).items():
+        assert sorted(outs) == sorted(want), (name, who, sorted(outs))
+        for n in want:
+            check_np(name, who, n, outs[n], want[n])
+        for n in ("Sm", "Tm"):
+            assert np.array_equal(outs[n], want[n]), (name, who, "selector not exactly one-hot", n)
+        assert np.all(outs["Out"][4] == 0), (name, who, "isolated node is not zero")
+    assert fin["Src"][1] == fin["Src"][2] and fin["Dst"][1] == fin["Dst"][2], name
+    assert np.max(np.abs(want["Msg"][1] - want["Msg"][2])) > 1e-2, (name, "parallel edges are indistinguishable")
+
+    p = np.array([4, 2, 0, 3, 1])
+    inverse = np.argsort(p)
+    ep = np.array([6, 2, 0, 5, 3, 1, 4])
+    cases = {
+        "rewired": dict(fin, Src=np.array([4, 2, 1, 0, 3, 4, 0], dtype=NDT), Dst=np.array([0, 1, 1, 4, 4, 0, 2], dtype=NDT)),
+        "node permutation": dict(fin, X=fin["X"][p], Src=inverse[fin["Src"].astype(int)].astype(NDT), Dst=inverse[fin["Dst"].astype(int)].astype(NDT)),
+        "edge permutation": dict(fin, Src=fin["Src"][ep], Dst=fin["Dst"][ep], Edge=fin["Edge"][ep]),
+        "self edges only": dict(fin, Src=(np.arange(edges) % nodes).astype(NDT), Dst=(np.arange(edges) % nodes).astype(NDT)),
+    }
+    refs = {case: np_gnn_edges(inp) for case, inp in cases.items()}
+    assert np.max(np.abs(refs["rewired"]["Out"] - want["Out"])) > 1e-2, (name, "rewiring is vacuous")
+    run = lambda inp: rt.run_named(fx["plan"], inp, JDT)
+    minimum_response = np.inf
+    for who, runner in (("eager", run), ("jit", jax.jit(run))):
+        baseline = {n: np.asarray(v) for n, v in EAGER[name][who].items()}
+        for case, inp in cases.items():
+            got = runner({n: jnp.asarray(v) for n, v in inp.items()})
+            for n in want:
+                check_np(name, f"{who} {case}", n, got[n], refs[case][n])
+            for n in ("Sm", "Tm"):
+                assert np.array_equal(np.asarray(got[n]), refs[case][n]), (name, who, case, "nonbinary selector", n)
+            if case == "node permutation":
+                for n in ("Sm", "Tm"):
+                    assert np.array_equal(np.asarray(got[n]), baseline[n][:, p]), (name, who, "selector node permutation", n)
+                for n in ("Send", "Recv", "Z", "Msg"):
+                    check_np(name, f"{who} node invariance", n, got[n], baseline[n])
+                check_np(name, f"{who} node equivariance", "Out", got["Out"], baseline["Out"][p])
+            elif case == "edge permutation":
+                for n in set(want) - {"Out"}:
+                    check_np(name, f"{who} edge equivariance", n, got[n], baseline[n][ep])
+                check_np(name, f"{who} edge invariance", "Out", got["Out"], baseline["Out"])
+        edge = fin["Edge"].copy()
+        edge[1] += NDT(0.5)
+        got = runner({n: jnp.asarray(v) for n, v in dict(fin, Edge=edge).items()})
+        others = np.arange(edges) != 1
+        assert np.array_equal(bits(np.asarray(got["Msg"])[others]), bits(baseline["Msg"][others])), (name, who, "one edge changed another message")
+        others = np.arange(nodes) != int(fin["Dst"][1])
+        assert np.array_equal(bits(np.asarray(got["Out"])[others]), bits(baseline["Out"][others])), (name, who, "edge leaked to another destination")
+        response = float(np.max(np.abs(np.asarray(got["Out"]) - baseline["Out"])))
+        assert response > 1e-4, (name, who, "edge feature had no effect")
+        minimum_response = min(minimum_response, response)
+        x = fin["X"].copy()
+        x[4] += NDT(0.5)
+        got = runner({n: jnp.asarray(v) for n, v in dict(fin, X=x).items()})
+        for n in want:
+            assert np.array_equal(bits(np.asarray(got[n])), bits(baseline[n])), (name, who, "unused node leaked", n)
+    print(f"{name}: distinct extents nodes={nodes}, edges={edges}, features={features}, messages={hidden}; every export == independent indexed numpy; "
+          f"exact one-hot selectors, same-plan rewiring/self-edge graph, node/edge permutations, parallel-edge independence (response {minimum_response:.3e}), "
+          f"isolated node ignored; gaps {', '.join(f'{what}={gap:.3f}' for what, gap in gaps.items())}")
+    print_conv_stats(name)
+
+
+def gnn_edge_grad_pins(by: dict, sfx: str) -> None:
+    """Freeze integral routing metadata; compare model-parameter derivatives to native indexed JAX."""
+    name = f"gnn_edges{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(entry) for n, entry in fx["inputs"].items()}
+    params = {n: jnp.asarray(fin[n]) for n in ("X", "Ws", "Wt", "Edge", "We")}
+    fixed = {n: jnp.asarray(v) for n, v in fin.items() if n not in params}
+    nodes, hidden = fin["X"].shape[0], fin["We"].size
+    src, dst = fin["Src"].astype(int), fin["Dst"].astype(int)
+    weights = np.sin(1 + np.arange(nodes * hidden)).reshape(nodes, hidden).astype(NDT)
+
+    def indexed(p):
+        z = p["X"][src] @ p["Ws"].T + p["X"][dst] @ p["Wt"].T + p["Edge"][:, None] * p["We"]
+        return jnp.zeros((nodes, hidden), dtype=JDT).at[dst].add(jnp.tanh(z))
+
+    loss = lambda p: jnp.sum(weights * rt.run_named(fx["plan"], dict(fixed, **p), JDT)["Out"])
+    reference = jax.grad(lambda p: jnp.sum(weights * indexed(p)))(params)
+    grads = {"eager": jax.grad(loss)(params), "jit": jax.jit(jax.grad(loss))(params)}
+    errors, smallest = [], []
+    for who, grad in grads.items():
+        assert sorted(grad) == sorted(params), (name, who, "routing metadata was differentiated")
+        for n, value in grad.items():
+            g, ref = np.asarray(value), np.asarray(reference[n])
+            assert g.shape == fin[n].shape and g.dtype == NDT and np.all(np.isfinite(g)), (name, who, n)
+            size = float(np.max(np.abs(g)))
+            assert size > 1e-3, (name, "trivial edge GNN gradient", who, n, size)
+            smallest.append(size)
+            err = float(np.max(np.abs(g.astype(np.float64) - ref.astype(np.float64)) / np.maximum(1, np.abs(ref.astype(np.float64)))))
+            assert err < GRAD_TOL[_DT], (name, "edge GNN gradient vs indexed JAX", who, n, err)
+            errors.append(err)
+        assert np.all(np.asarray(grad["X"])[4] == 0), (name, who, "isolated node has gradient")
+        assert np.all(np.max(np.abs(np.asarray(grad["X"])[:4]), axis=1) > 1e-3), (name, who, "used node has no gradient")
+    canary = np.array(grads["eager"]["Edge"])
+    canary[1] += NDT(1e-3)
+    g = np.asarray(grads["eager"]["Edge"])
+    assert np.max(np.abs(canary - g) / np.maximum(1, np.abs(g))) >= GRAD_TOL[_DT], (name, "vacuous edge GNN gradient tolerance")
+    base = {n: np.asarray(v, dtype=np.float64) for n, v in params.items()}
+    loss_np = lambda p: float(np.sum(weights.astype(np.float64) * np_gnn_edges(dict(fin, **p))["Out"]))
+    rng = np.random.default_rng(7)
+    fd_errors = []
+    for _ in range(3):
+        direction = {n: rng.standard_normal(v.shape) for n, v in base.items()}
+        eps = 1e-6
+        fd = (loss_np({n: base[n] + eps * direction[n] for n in base})
+              - loss_np({n: base[n] - eps * direction[n] for n in base})) / (2 * eps)
+        for who, grad in grads.items():
+            dot = float(sum(np.sum(np.asarray(grad[n], dtype=np.float64) * direction[n]) for n in base))
+            assert abs(dot) > 1e-3, (name, "trivial edge GNN finite-difference direction")
+            err = abs(dot - fd) / max(1, abs(dot))
+            assert err < GRAD_FD_TOL[_DT], (name, "edge GNN gradient vs finite differences", who, err)
+            fd_errors.append(err)
+    print(f"{name} gradients: five feature/weight inputs, routing metadata frozen; eager/jit vs native indexed gather/scatter max scaled {max(errors):.3e}, "
+          f"vs numpy finite differences {max(fd_errors):.3e}; smallest per-input gradient max {min(smallest):.3e}, isolated node gradient exactly zero")
+
+
 def main() -> None:
     spec = importlib.util.spec_from_file_location("gen_nonlin", Path(sys.argv[2]).resolve())
     mod = importlib.util.module_from_spec(spec)
@@ -2660,6 +2835,8 @@ def main() -> None:
     ssm_pins(by, sfx)
     gnn_pins(by, sfx)
     gnn_grad_pins(by, sfx)
+    gnn_edge_pins(by, sfx)
+    gnn_edge_grad_pins(by, sfx)
 
     # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
     grad_fixture_pins(by, sfx)
