@@ -823,7 +823,9 @@ reason (F3-b): a multi-axis row can collide inside one statement, the checked sc
 class test, not an injectivity test: with stride R = 2 over r < 2 the map is injective, so this refusal is conservative for this program.
 
 **Consequences.** GQA needs no workaround: the flat-INPUT read (`transformer_gqa`) and the split form (`transformer_gqa_split`) are both admitted and pinned. For the progression, a scatter-ADD over
-edges (graph network) is available at the top level (outside a scan) and only scan-local multi-axis or colliding writes are refused. NOT done: any workaround, and any change to the checker. What lifting
+an affine edge mapping is available at the top level (outside a scan); this does NOT admit arbitrary
+index-tensor `Src[e]`/`Dst[e]` gather/scatter (the actual syntax probes are in section 22).
+Scan-local multi-axis or colliding writes remain refused. NOT done: any workaround, and any change to the checker. What lifting
 the refusal would take is unestimated and a different process weight (a Lean checker change, then whether the JAX scan step can run a scatter node, which was not probed because prepare refuses first;
 one natural design is an injectivity check at prepare, where the extents are known). It is the user's call.
 
@@ -1164,3 +1166,109 @@ No subagents or new plan document were used.
 **Next.** The diagonal-SSM alternative in the progression is complete; GNNs follow
 (dense first, then a separately probed edge/scatter form). This does not implement
 linear attention or lift any data-dependent indexing or scan-scatter limitation.
+
+## 22. Dense directed GNN: mean messages, equivariance and graph readout (2026-11-16)
+
+Direct path, tests/fixtures only, no plan document. `gnnInputs`, `gnnEnv64`, `gnnEnv32`, `gnnProg`,
+`gnnProg32` and two registrations in `EvalPlanNonlinSmoke.lean`; `np_gnn`, `gnn_pins`,
+`gnn_grad_pins` and the existing model-fixture/value-retention registrations in
+`evalplan_nonlin_smoke.py`. Donors: portfolio GN1/GN5 (directed dense messages and degree-normalized
+propagation), the existing nonlinear fixture registrations and their shared input/environment pattern.
+No compiler, parser, checker, emitter, runtime, Lake target or mutation-manifest changes.
+
+**Model.** A numeric, NOT predicate, adjacency `A[n,j]` means j sends to n. Compute the weighted degree
+and incoming mean, then `H1 = tanh(mean(A, X) W1^T + X S1^T + B1)` and
+`H2 = tanh(mean(A, H1) W2^T + H1 S2^T + B2)`. Sum H2 over nodes, project by Wg, and softmax.
+Exactly twelve assignments, two pointwise tanh steps and one axiswise softmax; NO scan/scatter.
+Exports exactly `Deg`, `Agg1`, `Mean1`, `Z1`, `H1`, `Agg2`, `Mean2`, `Z2`, `H2`, `Pool`, `Lg`, `Pr`.
+Both precisions prepare, execute on Lean and render through the existing harness.
+An initial f64 probe omitted the intermediate declarations and was refused for mixed f32/f64
+storage at Deg; the final binary64 program explicitly declares every input/output f64.
+
+**Graph/data.** Five nodes, input width 3, hidden width 4, output width 2, six classes; all five
+extents pairwise distinct. Incoming neighbor sets, including self loops:
+`0 <- {0,1,2}`, `1 <- {1,2}`, `2 <- {0,2,3}`, `3 <- {1,3}`, `4 <- {4}`.
+The adjacency is asymmetric, degrees are `[3,2,3,2,1]`, and node 4 is disconnected from the others.
+Strictly positive degrees are a model precondition (self loops supply them); no empty-neighborhood
+division fallback is added or claimed. Inputs share one definition across precisions: `gqaGen` seeds
+71 (X), 72 (W1), 73 (S1), 75 (W2), 76 (S2), 78 (Wg); `convBias` seeds 74/77 for B1/B2.
+The first data candidate passed, with no seed tuning or tolerance changes.
+
+**Pins.**
+
+1. Independent NumPy reference with explicit TARGET/SOURCE loops for each aggregation, NumPy dense
+   feature projections, tanh and stable softmax, using exported INPUTS only. Every export on Lean,
+   eager and jit is checked; the softmax is positive and sums to 1.
+2. Wrong-model gaps > 1e-2, measured before value comparisons: sum instead of mean 1.467,
+   reversed edges 1.375, no self projection 1.240, no second-hop messages 1.591,
+   no tanh 1.259, pool only node 0 rather than all nodes 0.481.
+3. Eager AND jit graph relabeling `[4,2,0,3,1]`: permute BOTH adjacency axes and the node-feature axis.
+   All node-indexed exports follow that permutation; Pool, Lg and Pr are invariant (within the
+   existing model tolerance, since summation order can change).
+4. Eager AND jit one-/two-hop locality: perturb X at node 0, then node 4 separately. Derive
+   reachable sets from the adjacency, including the self path. After each layer, unreachable H
+   rows are BITWISE unchanged and EVERY reachable row moves by > 1e-4. Node 0 reaches `{0,2}`
+   after one layer and `{0,1,2}` after two; node 4 reaches only itself. Both reachable and
+   unreachable sets must be nonempty; the smallest response is 5.595e-3. Both perturbed nodes
+   affect the final graph logits, including the disconnected node.
+5. Gradients of a weighted final Lg over ALL NINE real inputs, eager and jit, versus an independent
+   dense JAX model and three fixed-direction central differences of the loop-based NumPy model.
+   Numeric adjacency gradients include differentiation THROUGH degree normalization, even at
+   currently absent edges (the NumPy loops evaluate every pair, not just nonzero entries).
+   This is a continuous weighted-adjacency derivative, not differentiation of discrete topology.
+   Every input has a finite, nontrivial gradient and every node's X row has a real gradient.
+   Smallest per-input max 0.03273; the gradient tolerance rejects an absolute 1e-3 perturbation.
+
+**Observed** (all value/permutation checks included; unchanged `MODEL_TOL` 1e-12 / 1e-6).
+Binary64 worst scaled value error 5.551e-16, headroom 1801x. Binary32 1.229e-7, **8.1x**.
+Gradient worst scaled error versus pure JAX / NumPy finite differences: binary64
+3.331e-16 / 6.715e-11; binary32 1.192e-7 / 1.987e-7.
+
+**Mutations.** Eight accepted controls killed, zero survivors. Six source mutants are exact copied
+definitions run through the same fixture harness, with live-source hashes checked unchanged;
+two Python-only controls run in isolated subprocesses. No live source restoration or library rebuild
+is needed during a cycle.
+
+| Mutation | First failing assertion |
+|---|---|
+| Reverse A indices in first-layer aggregation | `pin numpy model: gnn_dense lean Agg1` (1.083) |
+| Every target divides by `Deg[0]` | `pin numpy model: gnn_dense lean Mean1` (0.365) |
+| Self projection reads Mean1 instead of the node's X | `pin numpy model: gnn_dense lean Z1` (0.604) |
+| Second layer reads H1[n] instead of neighbor H1[j] | `pin numpy model: gnn_dense lean Agg2` (1.591) |
+| Pool reads H2[0] instead of reducing over nodes | `pin numpy model: gnn_dense lean Pool` (0.382) |
+| Reverse A indices on the binary32 sibling | `pin numpy model: gnn_dense32 lean Agg1` (1.083) |
+| Permute X but leave adjacency unchanged in the relabeling probe | `pin numpy model: gnn_dense eager permutation Deg` (2.0) |
+| Stop gradients through numeric A, preserving all forward values | `gnn_dense`, `trivial GNN gradient`, `eager`, `A`, 0.0 |
+
+One additional attempt was NOT a kill: replacing the first division by multiplication was
+rejected by the shared harness (`einsumOnly did not refuse: none`), before Python comparison.
+It was replaced by the accepted `Deg[0]` mutation. The refusal was not diagnosed or worked around:
+that codegen-gate investigation is not required for this example and is parked (about one diagnostic
+dispatch if desired). Counts above exclude this attempt from the eight accepted controls.
+
+**Edge-list probe and scope boundary.** Two actual scratch source programs were compiled against
+the current DSL:
+`Msg[e,f] := X[Src[e],f]` and `Out[Dst[e],f] := Msg[e,f]`.
+BOTH fail at parsing: `unexpected token '['; expected ']'`, at the nested index.
+The index grammar admits affine expressions, not tensor reads. Existing affine scatter and its
+collision handling therefore do NOT imply general edge-list gather/scatter.
+No sparse/edge-list fixture, production indexing capability or dense-incidence substitute is claimed
+as implemented. This is the existing portfolio GN6/KG-gather gap, re-probed rather than inferred.
+Cost: a separate design/probe dispatch is needed before estimating the actual cross-layer change.
+Dense GNN completion is independent of that capability work.
+
+**Verification/process.** Synced cache, one dependency refresh (8622 jobs), one final full
+`LeanNCD Tests JaxExperiment` build (**8847 jobs**, green). No new Lake module or target.
+Copied probes/mutations use cached `lean --run`; the actual complete fixture file generates
+**53 binary64 and 45 binary32 fixtures**. Both complete differential runs exited 0, including ALL
+existing pins and the new GNN value/structural/gradient checks; no checks skipped or tolerances loosened.
+Direct whole-branch review of all five changed files was clean: independent source/target orientation,
+normalization, permutation transports, locality, gradient reachability and production-scope preservation
+were checked. `git diff --check` is clean. Reproduce with the existing `run-evalplan-nonlin.sh`;
+this execution split its fixture-generation/Python stages to avoid repeated library builds.
+No subagents used. The SSM-stage token-report attempt in this same Copilot session reported
+no transcript; cumulative input tokens/context peak remain unavailable, not estimated.
+
+**Next.** Dense GNNs are covered. General edge-list gather/scatter is
+parked for a separate capability decision; the next unblocked agreed progression item is dense
+mixture of experts. No such follow-on is included here.

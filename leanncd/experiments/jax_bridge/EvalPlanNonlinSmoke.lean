@@ -2138,6 +2138,52 @@ def ssmProg32 : TLProgram := tlprog!{
   Y[v, t +1]  := Wy[v, d] · N[d] + Wd[v, i] · X[t, i]
 }
 
+/-! ### Dense GNN: two directed mean-message layers, self projections and invariant graph readout.
+
+The numeric adjacency has self loops (strictly positive degrees), asymmetric edges and one node
+disconnected from every other node. `A[n,j]` means j sends to n; it is not a predicate declaration.
+-/
+def gnnInputs : List (String × List Nat × Array Float) :=
+  [("A", [5, 5], #[1,1,1,0,0, 0,1,1,0,0, 1,0,1,1,0, 0,1,0,1,0, 0,0,0,0,1]),
+   ("X", [5, 3], gqaGen 71.0 15),
+   ("W1", [4, 3], gqaGen 72.0 12), ("S1", [4, 3], gqaGen 73.0 12), ("B1", [4], convBias 74.0 4),
+   ("W2", [2, 4], gqaGen 75.0 8), ("S2", [2, 4], gqaGen 76.0 8), ("B2", [2], convBias 77.0 2),
+   ("Wg", [6, 2], gqaGen 78.0 12)]
+def gnnEnv64 : HashMap String DenseTensor := env64 (gnnInputs.map fun (n, s, d) => (n, t64 s d))
+def gnnEnv32 : NamedDenseEnv32 := env32 (gnnInputs.map fun (n, s, d) => (n, t32 s d))
+
+def gnnProg : TLProgram := tlprog!{
+  tensor f64 A(n, j), X(n, i), W1(d, i), S1(d, i), B1(d), W2(e, d), S2(e, d), B2(e), Wg(v, e)
+  tensor f64 Deg(n), Agg1(n, i), Mean1(n, i), Z1(n, d), H1(n, d), Agg2(n, d), Mean2(n, d)
+  tensor f64 Z2(n, e), H2(n, e), Pool(e), Lg(v), Pr(v)
+  Deg[n]      := A[n, j]
+  Agg1[n, i]  := A[n, j] · X[j, i]
+  Mean1[n, i] := Agg1[n, i] / Deg[n]
+  Z1[n, d]    := Mean1[n, i] · W1[d, i] + X[n, i] · S1[d, i] + B1[d]
+  H1[n, d]    := tanh(Z1[n, d])
+  Agg2[n, d]  := A[n, j] · H1[j, d]
+  Mean2[n, d] := Agg2[n, d] / Deg[n]
+  Z2[n, e]    := Mean2[n, d] · W2[e, d] + H1[n, d] · S2[e, d] + B2[e]
+  H2[n, e]    := tanh(Z2[n, e])
+  Pool[e]     := H2[n, e]
+  Lg[v]       := Wg[v, e] · Pool[e]
+  Pr[v.]      := softmax(Lg[v])
+}
+def gnnProg32 : TLProgram := tlprog!{
+  Deg[n]      := A[n, j]
+  Agg1[n, i]  := A[n, j] · X[j, i]
+  Mean1[n, i] := Agg1[n, i] / Deg[n]
+  Z1[n, d]    := Mean1[n, i] · W1[d, i] + X[n, i] · S1[d, i] + B1[d]
+  H1[n, d]    := tanh(Z1[n, d])
+  Agg2[n, d]  := A[n, j] · H1[j, d]
+  Mean2[n, d] := Agg2[n, d] / Deg[n]
+  Z2[n, e]    := Mean2[n, d] · W2[e, d] + H1[n, d] · S2[e, d] + B2[e]
+  H2[n, e]    := tanh(Z2[n, e])
+  Pool[e]     := H2[n, e]
+  Lg[v]       := Wg[v, e] · Pool[e]
+  Pr[v.]      := softmax(Lg[v])
+}
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -2203,6 +2249,7 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "rnn_lstm" rnnLstmProg rnnLstmEnv64 5 0 (some (17, 5, 0)) true (scans := 1),
     ← fixture64 "rnn_bi" rnnBiProg rnnBiEnv64 2 1 (some (10, 2, 1)) true (scans := 1),
     ← fixture64 "rnn_stack" rnnStackProg rnnStackEnv64 2 0 (some (8, 2, 0)) true (scans := 1),
+    ← fixture64 "gnn_dense" gnnProg gnnEnv64 2 1 (some (12, 2, 1)) true,
     ← (fixture64 "ssm_diag" ssmProg ssmEnv64 0 0 (some (5, 0, 0)) true (scans := 1)).map
         (·.replace "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True"),
     ← fixture64 "scan_postrole" postRoleProg
@@ -2276,6 +2323,7 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "rnn_lstm32" rnnLstmProg32 rnnLstmEnv32 5 0 (some (17, 5, 0)) true (scans := 1),
     ← fixture32 "rnn_bi32" rnnBiProg32 rnnBiEnv32 2 1 (some (10, 2, 1)) true (scans := 1),
     ← fixture32 "rnn_stack32" rnnStackProg32 rnnStackEnv32 2 0 (some (8, 2, 0)) true (scans := 1),
+    ← fixture32 "gnn_dense32" gnnProg32 gnnEnv32 2 1 (some (12, 2, 1)) true,
     ← (fixture32 "ssm_diag32" ssmProg32 ssmEnv32 0 0 (some (5, 0, 0)) true (scans := 1)).map
         (·.replace "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True"),
     ← fixture32 "scan_postrole32" postRoleProg32
