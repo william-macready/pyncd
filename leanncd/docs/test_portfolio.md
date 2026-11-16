@@ -260,7 +260,12 @@ too) or target one file, e.g. `lake build Eval.Portfolio.AttentionTest`. LSpec g
 | GN3 | `deg[i] := edge[i,j]` | edge=`[[0,1,1],[1,0,0]]` → `[2,1]` | node degree = contract over neighbors | `[N]` |
 | GN4 | `H[i,f] := maxreduce(edge[i,j] · X[j,f])` | max-aggregation GNN (GraphSAGE-max) | `maxreduce` neighbor aggregation | `[N]` `[E]` |
 | GN5 | degree-normalized `Ĥ[i,f] := H[i,f] / deg[i]` (chained on `H[i,f] := A[i,j]·X[j,f]`, `deg[i] := A[i,j]`) | A=`[[0,1,1],[1,0,0]]`, X=`[[1,2],[3,4],[5,6]]` → H=`[[8,10],[1,2]]`, deg=`[2,1]` → Ĥ=`[[4,5],[1,2]]` | friendly infix `/` operator (KG-div), per-node division by degree | `[N]` |
-| GN6 | edge-list scatter-add `Msg[dst[e]] += X[src[e]]` | index tensors `src/dst` | data-dependent gather/scatter | `[F]` (KG-gather) |
+| GN6 | edge-list scatter-add `Msg[dst[e]] += X[src[e]]` | index tensors `src/dst` | native data-dependent gather/scatter; dense semantic encoding below | `[F]` (KG-gather) |
+
+The JAX bridge's `gnn_edges` / `gnn_edges32` examples encode edge-ID routing with exact dense ReLU
+selectors and ordinary contractions, including parallel edges and runtime rewiring. This expresses
+edge-list GNN semantics without adding the native indexed syntax above; storage/work is dense in
+edges x nodes. See section 23 of [the example record](../../papers/semantics/jax_scan_record.md).
 
 ## 8b. Consuming scatter outputs (upsampling decoders / GNN readback)
 
@@ -621,12 +626,19 @@ Analysis only for both subsections below — **holding off on implementation for
 
 ### 19.1 KG-gather — data-dependent gather/scatter
 
-Data-dependent gather/scatter (`Msg[dst[e]] += X[src[e]]`, embedding lookup by id, top-k
+Native indexed gather/scatter (`Msg[dst[e]] += X[src[e]]`, embedding lookup by id, top-k
 routing) is blocked because `IdxExpr` (`DSL/Ast.lean:25-31`) only admits integer-affine index
 expressions (`.axis`, `.const`, `.scale`, `.shift`, `.affine`) — there's no case for "use
 another tensor's value as an index." Below is what a fix would touch, stage by stage, and why
 the cost differs sharply depending which of two independent Lean tracks in this repo you land
 it in.
+
+This is a native-indexing/efficiency gap, not an absolute expressibility barrier for finite integral
+IDs. The bridge's `gnn_edges` example constructs one-hot selectors as `relu(1 - abs(id - coordinate))`,
+then uses contractions for gathers and additive aggregation. It retains compact ID inputs and
+runtime rewiring, at dense O(edges * nodes) intermediate cost. Its finite/integral/in-range input
+contract and feature/weight gradient checks are recorded in section 23 of
+[the example record](../../papers/semantics/jax_scan_record.md). It does not close KG-gather.
 
 #### What it would take, pipeline stage by stage
 

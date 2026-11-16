@@ -2184,6 +2184,63 @@ def gnnProg32 : TLProgram := tlprog!{
   Pr[v.]      := softmax(Lg[v])
 }
 
+/-! ### Edge-ID GNN: exact integer selectors instead of nested tensor indices.
+
+`relu(1 - |id - node|)` is one-hot for valid integral IDs. The two relus in the absolute value
+and explicit ones factors keep routing inside ordinary covered assignments and pointwise steps.
+IDs/coordinates are routing metadata, not differentiable model parameters; intermediates are dense.
+-/
+def gnnEdgeInputs : List (String × List Nat × Array Float) :=
+  [("Src", [7], #[0,1,1,2,3,3,0]), ("Dst", [7], #[1,2,2,0,2,3,3]), ("Id", [5], #[0,1,2,3,4]),
+   ("Neg", [], #[-1]), ("OnE", [7], Array.replicate 7 1), ("OnN", [5], Array.replicate 5 1),
+   ("X", [5,3], gqaGen 1 15), ("Ws", [2,3], gqaGen 2 6), ("Wt", [2,3], gqaGen 3 6),
+   ("Edge", [7], gqaGen 4 7), ("We", [2], gqaGen 5 2)]
+def gnnEdgeEnv64 : HashMap String DenseTensor := env64 (gnnEdgeInputs.map fun (n,s,d) => (n,t64 s d))
+def gnnEdgeEnv32 : NamedDenseEnv32 := env32 (gnnEdgeInputs.map fun (n,s,d) => (n,t32 s d))
+
+def gnnEdgeProg : TLProgram := tlprog!{
+  tensor f64 Src(e), Dst(e), Id(n), Neg(), OnE(e), OnN(n), X(n,f), Ws(h,f), Wt(h,f), Edge(e), We(h)
+  tensor f64 Ds(e,n), Ps(e,n), Ns(e,n), Qs(e,n), Ts(e,n), Sm(e,n)
+  tensor f64 Dt(e,n), Pt(e,n), Nt(e,n), Qt(e,n), Tt(e,n), Tm(e,n)
+  tensor f64 Send(e,f), Recv(e,f), Z(e,h), Msg(e,h), Out(n,h)
+  Ds[e,n]   := Src[e] · OnN[n] + Neg[] · Id[n] · OnE[e]
+  Ps[e,n]   := relu(Ds[e,n])
+  Ns[e,n]   := Neg[] · Ds[e,n]
+  Qs[e,n]   := relu(Ns[e,n])
+  Ts[e,n]   := OnE[e] · OnN[n] + Neg[] · Ps[e,n] + Neg[] · Qs[e,n]
+  Sm[e,n]   := relu(Ts[e,n])
+  Dt[e,n]   := Dst[e] · OnN[n] + Neg[] · Id[n] · OnE[e]
+  Pt[e,n]   := relu(Dt[e,n])
+  Nt[e,n]   := Neg[] · Dt[e,n]
+  Qt[e,n]   := relu(Nt[e,n])
+  Tt[e,n]   := OnE[e] · OnN[n] + Neg[] · Pt[e,n] + Neg[] · Qt[e,n]
+  Tm[e,n]   := relu(Tt[e,n])
+  Send[e,f] := Sm[e,n] · X[n,f]
+  Recv[e,f] := Tm[e,n] · X[n,f]
+  Z[e,h]    := Send[e,f] · Ws[h,f] + Recv[e,f] · Wt[h,f] + Edge[e] · We[h]
+  Msg[e,h]  := tanh(Z[e,h])
+  Out[n,h]  := Tm[e,n] · Msg[e,h]
+}
+def gnnEdgeProg32 : TLProgram := tlprog!{
+  Ds[e,n]   := Src[e] · OnN[n] + Neg[] · Id[n] · OnE[e]
+  Ps[e,n]   := relu(Ds[e,n])
+  Ns[e,n]   := Neg[] · Ds[e,n]
+  Qs[e,n]   := relu(Ns[e,n])
+  Ts[e,n]   := OnE[e] · OnN[n] + Neg[] · Ps[e,n] + Neg[] · Qs[e,n]
+  Sm[e,n]   := relu(Ts[e,n])
+  Dt[e,n]   := Dst[e] · OnN[n] + Neg[] · Id[n] · OnE[e]
+  Pt[e,n]   := relu(Dt[e,n])
+  Nt[e,n]   := Neg[] · Dt[e,n]
+  Qt[e,n]   := relu(Nt[e,n])
+  Tt[e,n]   := OnE[e] · OnN[n] + Neg[] · Pt[e,n] + Neg[] · Qt[e,n]
+  Tm[e,n]   := relu(Tt[e,n])
+  Send[e,f] := Sm[e,n] · X[n,f]
+  Recv[e,f] := Tm[e,n] · X[n,f]
+  Z[e,h]    := Send[e,f] · Ws[h,f] + Recv[e,f] · Wt[h,f] + Edge[e] · We[h]
+  Msg[e,h]  := tanh(Z[e,h])
+  Out[n,h]  := Tm[e,n] · Msg[e,h]
+}
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -2250,6 +2307,7 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "rnn_bi" rnnBiProg rnnBiEnv64 2 1 (some (10, 2, 1)) true (scans := 1),
     ← fixture64 "rnn_stack" rnnStackProg rnnStackEnv64 2 0 (some (8, 2, 0)) true (scans := 1),
     ← fixture64 "gnn_dense" gnnProg gnnEnv64 2 1 (some (12, 2, 1)) true,
+    ← fixture64 "gnn_edges" gnnEdgeProg gnnEdgeEnv64 7 0 (some (17, 7, 0)),
     ← (fixture64 "ssm_diag" ssmProg ssmEnv64 0 0 (some (5, 0, 0)) true (scans := 1)).map
         (·.replace "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True"),
     ← fixture64 "scan_postrole" postRoleProg
@@ -2324,6 +2382,7 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "rnn_bi32" rnnBiProg32 rnnBiEnv32 2 1 (some (10, 2, 1)) true (scans := 1),
     ← fixture32 "rnn_stack32" rnnStackProg32 rnnStackEnv32 2 0 (some (8, 2, 0)) true (scans := 1),
     ← fixture32 "gnn_dense32" gnnProg32 gnnEnv32 2 1 (some (12, 2, 1)) true,
+    ← fixture32 "gnn_edges32" gnnEdgeProg32 gnnEdgeEnv32 7 0 (some (17, 7, 0)),
     ← (fixture32 "ssm_diag32" ssmProg32 ssmEnv32 0 0 (some (5, 0, 0)) true (scans := 1)).map
         (·.replace "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True"),
     ← fixture32 "scan_postrole32" postRoleProg32
