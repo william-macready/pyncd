@@ -367,6 +367,11 @@ input tensor, not computed from the loop index `i` inside the DSL.
 | ME3 | combine `Out[t,f] := g[t,e]·Y[t,e,f]` (chained on ME1/ME2) | evals end-to-end (shape `[1,1]`) | gated weighted sum over experts | `[N]` |
 | ME4 | top-k routing (keep k highest-gated experts) | — | **no argmax / top-k gather** | `[F]` (KG-gather) |
 
+The bridge's `moe_dense` / `moe_dense32` fixtures extend ME1–ME3 to distinct row/input/expert/hidden/output
+extents, two-layer GELU experts, input-dependent gating, expert permutation, batch locality and
+input/router/expert gradients. Every expert's contribution is tested separately; this does not add
+sparse top-k selection. See section 24 of [the example record](../../papers/semantics/jax_scan_record.md).
+
 ### State-space / sequence models (SSM, S4/Mamba-style)
 
 | ID | Prog | Data → Expected | Probes | Tag |

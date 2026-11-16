@@ -1378,3 +1378,93 @@ reported no transcript; cumulative input tokens/context peak remain unavailable,
 **Next.** This closes the edge-ID GNN EXPRESSIBILITY step without closing native KG-gather.
 Sparse indexing remains optional capability work, not a prerequisite for the next agreed example,
 dense mixture of experts. No follow-on capability or model is included in this slice.
+
+## 24. Dense mixture of experts: input-dependent routing and all-expert gradients (2026-11-16)
+
+Direct path, tests/fixtures only. `moeInputs`, two precision environments/programs and two registrations
+in `EvalPlanNonlinSmoke.lean`; `np_moe`, `moe_pins`, `moe_grad_pins` and the existing model-fixture/value
+retention registrations in `evalplan_nonlin_smoke.py`. Donors: portfolio ME1–ME3 (gating, batched experts,
+weighted combination), existing shared precision input/environment helpers, and the nonlinear fixture
+pin style. No production, harness, parser, emitter, runtime, Lake target or mutation-manifest changes.
+No plan document or subagents.
+
+**Model and data.** `GateLog = X Wg^T + Bg`, `Gate = softmax_expert(GateLog)`.
+Each expert e computes `Expert[n,e] = W2[e] gelu(W1[e] X[n] + B1[e]) + B2[e]`;
+`Out[n,o] = sum_e Gate[n,e] Expert[n,e,o]`. GELU is the existing tanh approximation.
+The expert axis is explicit in the two weight stacks and the hidden/output tensors. ALL experts
+run on ALL input rows; no sparse/top-k routing, residual branch, capacity limit or scan is added.
+OnN is a ones vector making bias broadcasting explicit, as in the preceding selector fixture.
+
+Extents are pairwise distinct: 4 rows, input width 3, 5 experts, hidden width 6, output width 2.
+Exactly **6 assign / 1 pointwise / 1 axiswise** steps, no scan/scatter; exports exactly
+GateLog, Gate, Z, H, Expert, Out. Both precisions prepare, execute on Lean and render.
+One shared input definition: `gqaGen` seeds 81 (X), 82 (Wg), 84 (W1), 86 (W2);
+`convBias` seeds 83 (Bg), 85 (B1), 87 (B2); OnN = ones.
+The first candidate passed every numeric/non-vacuity gate: no seed or tolerance tuning.
+All inputs must be finite; the reference asserts that and the OnN helper invariant.
+
+**Independent pins.**
+
+1. NumPy uses explicit row/expert loops, dense projections, the existing independent `np_gelu`
+   formula and stable row softmax; outputs are accumulated one expert at a time.
+   Every export on Lean/eager/jit agrees. Gate rows are positive probability vectors, not hard routes.
+2. Wrong-model FINAL OUTPUT gaps > 1e-2, measured before value comparisons: uniform gate 0.066,
+   one fixed input-independent gate 0.125, first expert only 0.387, softmax over the BATCH axis 0.113,
+   raw logits as mixture weights 0.347, no GELU 0.300, shared expert parameters 0.387, no biases 0.144.
+   The gate range is [0.099, 0.358], asserted inside (0.02, 0.8), and gates vary across inputs
+   by > 0.02. Expert preactivations include both signs.
+3. Eager AND jit expert permutation `[3,0,4,1,2]`, applied to BOTH router and expert parameters:
+   GateLog/Gate/Z/H/Expert permute along their expert axis; Out is invariant within the unchanged
+   model tolerance (expert summation order can change).
+4. Eager AND jit batch locality: perturb ONLY X row 1 by 0.5. Every export on the other rows is
+   BITWISE unchanged; the perturbed row moves in EVERY export, including routing and mixture output
+   (smallest response 0.04495).
+5. Perturb each expert's W1 slice separately by 0.25, eager AND jit. GateLog/Gate stay bitwise
+   unchanged, as do all OTHER experts' Z/H/Expert slices. Out changes and its delta equals
+   that expert's value delta times its gate within the model tolerance. EVERY expert must contribute (smallest output response
+   0.007024), not just an arbitrarily selected expert.
+6. Weighted final-Out gradients over all SEVEN real input/router/expert arrays: X, Wg, Bg,
+   W1, B1, W2, B2. OnN is frozen helper metadata. Eager/jit versus independent pure JAX using
+   `jax.nn.softmax`, `vmap` over expert MLPs and `jax.nn.gelu(approximate=True)`, plus three
+   fixed-direction NumPy finite differences. Every input array, every expert's W1/W2 slice and
+   every X row has a real, finite gradient; smallest per-input max 0.04152. Router gradients reach
+   the FINAL mixture loss, not an auxiliary gate loss. An absolute 1e-3 router-gradient canary
+   is rejected by the existing tolerance.
+
+**Observed** (all property comparisons included; unchanged `MODEL_TOL` 1e-12 / 1e-6).
+Worst scaled value error binary64 2.220e-16 (**4503.6x** headroom); binary32 1.169e-7 (**8.6x**).
+Gradient worst scaled error versus pure JAX / NumPy finite differences: binary64
+6.939e-17 / 7.300e-11; binary32 3.725e-8 / 2.070e-7. Gradient tolerances are unchanged.
+
+**Mutation evidence.** Eight accepted controls, eight killed, zero refusals/survivors. Six exact
+copied-source mutants compile/prepare/render/run on Lean through the existing fixture helpers before
+the targeted verifier fails. Source hashes are checked unchanged; Python controls are isolated
+subprocesses. No live-file restoration or library rebuild during cycles.
+
+| Mutation | First failing assertion |
+|---|---|
+| Gate softmax normalizes batch axis instead of expert axis | `pin numpy model: moe_dense lean Gate` (0.102) |
+| Every expert reads W1[0] | `pin numpy model: moe_dense lean Z` (1.345) |
+| Square first-layer expert biases | `pin numpy model: moe_dense lean Z` (0.239) |
+| Replace GELU by tanh | `pin numpy model: moe_dense lean H` (0.546) |
+| Mix using GateLog instead of Gate | `pin numpy model: moe_dense lean Out` (0.347) |
+| Shared W1[0] mutant on binary32 sibling | `pin numpy model: moe_dense32 lean Z` (1.345) |
+| Expert permutation leaves Wg unpermuted | `pin numpy model: moe_dense eager expert permutation GateLog` (1.288) |
+| Stop gradients through router Wg, forward values unchanged | `trivial MoE gradient`, `Wg`, eager, 0.0 |
+
+**Verification/process.** Synced cache, one dependency refresh (8622 jobs), one final full
+`LeanNCD Tests JaxExperiment` build (**8847 jobs**, green). The actual complete fixture file generates
+**55 binary64 and 47 binary32 fixtures**. Both complete differential runs exited 0, including ALL
+existing and new pins; no checks skipped or tolerances loosened. Direct whole-branch review of all
+six changed files was clean: expert-axis contractions, gate normalization, independent references,
+permutation transports, row/expert locality and final-loss router/expert gradients were checked.
+`git diff --check` is clean; production sources and Lake configuration are unchanged.
+Reproduce with the existing `run-evalplan-nonlin.sh`.
+Reused the bridge Python environment and cached `lean --run`; no shared dependencies were installed
+or changed. Final Python drivers are invoked separately from fixture generation to avoid redundant
+library builds. The earlier token-report attempt in this Copilot session reported no transcript;
+cumulative input tokens/context peak remain unavailable, not estimated.
+
+**Next.** Dense MoE completes the next model-family step. The agreed progression continues with
+logic examples (Viterbi/max-plus and Boolean reachability), then layers x time / nested scans and a
+KV cache; each still needs its own pre-flight. None is included here.

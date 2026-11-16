@@ -57,7 +57,7 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_cross_wide", "transformer_cross_wide32",
                         "conv1d_cnn", "conv1d_cnn32", "conv1d_causal", "conv1d_causal32", "vit_patch", "vit_patch32",
                         "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32", "rnn_stack", "rnn_stack32",
-                        "ssm_diag", "ssm_diag32", "gnn_dense", "gnn_dense32", "gnn_edges", "gnn_edges32"}
+                        "ssm_diag", "ssm_diag32", "gnn_dense", "gnn_dense32", "gnn_edges", "gnn_edges32", "moe_dense", "moe_dense32"}
 # Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
 # layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
 # require that EXACTLY layer 2 is NaN (in Lean, eager and jit alike); every other output must be finite.
@@ -380,7 +380,7 @@ def run_fixture(f: dict) -> None:
     inputs = {n: reconstruct(e) for n, e in f["inputs"].items()}
     eager = rt.run_named(plan, inputs, JDT)
     jitted = jax.jit(lambda i: rt.run_named(plan, i, JDT))(inputs)
-    if any(n.get("kind") == "scan" for n in plan["nodes"]) or f["name"].startswith(("transformer_unrolled", "conv1d_", "gnn_")):
+    if any(n.get("kind") == "scan" for n in plan["nodes"]) or f["name"].startswith(("transformer_unrolled", "conv1d_", "gnn_", "moe_")):
         EAGER[f["name"]] = {"eager": eager, "jit": jitted}
     for name, exp in f["expected"].items():
         nan_layer = (f["name"], name) in NAN_LAYER_OUTPUTS
@@ -2513,6 +2513,175 @@ def gnn_edge_grad_pins(by: dict, sfx: str) -> None:
           f"vs numpy finite differences {max(fd_errors):.3e}; smallest per-input gradient max {min(smallest):.3e}, isolated node gradient exactly zero")
 
 
+def np_moe(inp: dict, gate="softmax", activation=True, shared=False, bias=True) -> dict:
+    """Explicit row/expert loops; independent feature projections and weighted expert accumulation."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    rows, experts, hidden, outputs = f["X"].shape[0], f["W1"].shape[0], f["W1"].shape[1], f["W2"].shape[1]
+    assert all(np.all(np.isfinite(v)) for v in f.values()), "dense MoE requires finite inputs"
+    assert np.array_equal(f["OnN"], np.ones(rows)), "dense MoE OnN must be ones"
+    assert gate in {"softmax", "uniform", "first_row", "first_expert", "batch", "raw"}, gate
+    logits = np.stack([f["Wg"] @ x + (f["Bg"] if bias else 0) for x in f["X"]])
+    gates = np_softmax_last(logits)
+    if gate == "uniform":
+        gates = np.full_like(gates, 1.0 / experts)
+    elif gate == "first_row":
+        gates = np.repeat(gates[:1], rows, axis=0)
+    elif gate == "first_expert":
+        gates = np.zeros_like(gates)
+        gates[:, 0] = 1
+    elif gate == "batch":
+        gates = np_softmax_last(logits.T).T
+    elif gate == "raw":
+        gates = logits.copy()
+    z = np.empty((rows, experts, hidden))
+    h = np.empty_like(z)
+    values = np.empty((rows, experts, outputs))
+    result = np.zeros((rows, outputs))
+    for row, x in enumerate(f["X"]):
+        for expert in range(experts):
+            e = 0 if shared else expert
+            z[row, expert] = f["W1"][e] @ x + (f["B1"][e] if bias else 0)
+            h[row, expert] = np_gelu(z[row, expert]) if activation else z[row, expert]
+            values[row, expert] = f["W2"][e] @ h[row, expert] + (f["B2"][e] if bias else 0)
+            result[row] += gates[row, expert] * values[row, expert]
+    return {"GateLog": logits, "Gate": gates, "Z": z, "H": h, "Expert": values, "Out": result}
+
+
+def moe_pins(by: dict, sfx: str) -> None:
+    """Nonuniform input-dependent gates, expert relabeling, row locality and every expert's contribution."""
+    name = f"moe_dense{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(entry) for n, entry in fx["inputs"].items()}
+    assert sorted(fin) == sorted(["X", "Wg", "Bg", "W1", "B1", "W2", "B2", "OnN"]), sorted(fin)
+    rows, features = fin["X"].shape
+    experts, hidden, width = fin["W1"].shape
+    e2, outputs, h2 = fin["W2"].shape
+    assert width == features and e2 == experts and h2 == hidden, name
+    assert len({rows, features, experts, hidden, outputs}) == 5, (name, rows, features, experts, hidden, outputs)
+    assert fin["Wg"].shape == (experts, features) and fin["Bg"].shape == (experts,), name
+    assert fin["B1"].shape == (experts, hidden) and fin["B2"].shape == (experts, outputs), name
+    assert all(n.get("kind") not in ("scan", "scatter") for n in fx["plan"]["nodes"]), name
+    want = np_moe(fin)
+    assert sorted(n for n, _ in fx["plan"]["materialized"]) == sorted(want), fx["plan"]["materialized"]
+    wrong = {"uniform gate": np_moe(fin, gate="uniform"), "input-independent gate": np_moe(fin, gate="first_row"),
+             "one expert only": np_moe(fin, gate="first_expert"), "softmax over batch": np_moe(fin, gate="batch"),
+             "raw logits as weights": np_moe(fin, gate="raw"), "no GELU": np_moe(fin, activation=False),
+             "shared expert parameters": np_moe(fin, shared=True), "no biases": np_moe(fin, bias=False)}
+    gaps = {what: float(np.max(np.abs(want["Out"] - model["Out"]))) for what, model in wrong.items()}
+    for what, gap in gaps.items():
+        assert gap > 1e-2, (name, "MoE pin is indistinguishable from", what, gap)
+    assert 0.02 < want["Gate"].min() and want["Gate"].max() < 0.8, (name, "gate is saturated or nearly sparse")
+    assert np.max(np.ptp(want["Gate"], axis=0)) > 0.02, (name, "gate ignores its input")
+    assert np.any(want["Z"] < 0) and np.any(want["Z"] > 0), (name, "GELU has no sign diversity")
+    for who, outs in conv_views(by, name).items():
+        assert sorted(outs) == sorted(want), (name, who, sorted(outs))
+        for n in want:
+            check_np(name, who, n, outs[n], want[n])
+        gate = outs["Gate"].astype(np.float64)
+        assert np.all(gate > 0) and np.max(np.abs(gate.sum(axis=1) - 1)) < HEAD_ROWSUM_TOL[_DT], (name, who, "gate rows not probabilities")
+
+    permutation = np.array([3, 0, 4, 1, 2])
+    permuted = dict(fin)
+    for n in ("Wg", "Bg", "W1", "B1", "W2", "B2"):
+        permuted[n] = fin[n][permutation]
+    run = lambda inp: rt.run_named(fx["plan"], inp, JDT)
+    row_response, expert_response = np.inf, np.inf
+    for who, runner in (("eager", run), ("jit", jax.jit(run))):
+        baseline = {n: np.asarray(v) for n, v in EAGER[name][who].items()}
+        changed = runner({n: jnp.asarray(v) for n, v in permuted.items()})
+        for n in want:
+            expected = baseline[n] if n == "Out" else baseline[n][:, permutation]
+            check_np(name, f"{who} expert permutation", n, changed[n], expected)
+        x = fin["X"].copy()
+        x[1] += NDT(0.5)
+        changed = runner({n: jnp.asarray(v) for n, v in dict(fin, X=x).items()})
+        other_rows = np.arange(rows) != 1
+        for n in want:
+            got = np.asarray(changed[n])
+            assert np.array_equal(bits(got[other_rows]), bits(baseline[n][other_rows])), (name, who, "batch row leaked", n)
+            response = float(np.max(np.abs(got[1] - baseline[n][1])))
+            assert response > 1e-4, (name, who, "perturbed row had no effect", n)
+            row_response = min(row_response, response)
+        for expert in range(experts):
+            w1 = fin["W1"].copy()
+            w1[expert] += NDT(0.25)
+            changed = runner({n: jnp.asarray(v) for n, v in dict(fin, W1=w1).items()})
+            for n in ("GateLog", "Gate"):
+                assert np.array_equal(bits(np.asarray(changed[n])), bits(baseline[n])), (name, who, "expert weights changed routing", n)
+            others = np.arange(experts) != expert
+            for n in ("Z", "H", "Expert"):
+                assert np.array_equal(bits(np.asarray(changed[n])[:, others]), bits(baseline[n][:, others])), (name, who, "expert parameters leaked", expert, n)
+            value_delta = np.asarray(changed["Expert"], dtype=np.float64)[:, expert] - baseline["Expert"][:, expert].astype(np.float64)
+            expected = baseline["Out"].astype(np.float64) + baseline["Gate"][:, expert, None] * value_delta
+            check_np(name, f"{who} expert contribution", "Out", changed["Out"], expected)
+            response = float(np.max(np.abs(np.asarray(changed["Out"]) - baseline["Out"])))
+            assert response > 1e-4, (name, who, "an expert contributes nothing", expert)
+            expert_response = min(expert_response, response)
+    print(f"{name}: distinct extents rows={rows}, input={features}, experts={experts}, hidden={hidden}, output={outputs}; all exports == numpy row/expert loops; "
+          f"gate range [{want['Gate'].min():.3f}, {want['Gate'].max():.3f}], input-dependent; "
+          f"gaps {', '.join(f'{what}={gap:.3f}' for what, gap in gaps.items())}; eager/jit expert permutation, batch locality "
+          f"(response {row_response:.3e}), every expert contributes with its gate (response {expert_response:.3e})")
+    print_conv_stats(name)
+
+
+def moe_grad_pins(by: dict, sfx: str) -> None:
+    """Seven model/input gradients, including both router and experts; OnN is frozen helper metadata."""
+    name = f"moe_dense{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(entry) for n, entry in fx["inputs"].items()}
+    params = {n: jnp.asarray(v) for n, v in fin.items() if n != "OnN"}
+    weights = np.sin(1 + np.arange(fin["X"].shape[0] * fin["W2"].shape[1])).reshape(fin["X"].shape[0], -1).astype(NDT)
+
+    def hand(p):
+        gate = jax.nn.softmax(p["X"] @ p["Wg"].T + p["Bg"], axis=1)
+
+        def expert(w1, b1, w2, b2):
+            return jax.nn.gelu(p["X"] @ w1.T + b1, approximate=True) @ w2.T + b2
+
+        values = jax.vmap(expert)(p["W1"], p["B1"], p["W2"], p["B2"]).transpose(1, 0, 2)
+        return jnp.sum(gate[:, :, None] * values, axis=1)
+
+    loss = lambda p: jnp.sum(weights * rt.run_named(fx["plan"], dict(p, OnN=jnp.asarray(fin["OnN"])), JDT)["Out"])
+    reference = jax.grad(lambda p: jnp.sum(weights * hand(p)))(params)
+    grads = {"eager": jax.grad(loss)(params), "jit": jax.jit(jax.grad(loss))(params)}
+    errors, smallest = [], []
+    for who, grad in grads.items():
+        assert sorted(grad) == sorted(params), (name, who, "helper metadata differentiated")
+        for n, value in grad.items():
+            g, ref = np.asarray(value), np.asarray(reference[n])
+            assert g.shape == fin[n].shape and g.dtype == NDT and np.all(np.isfinite(g)), (name, who, n)
+            size = float(np.max(np.abs(g)))
+            assert size > 1e-3, (name, "trivial MoE gradient", who, n, size)
+            smallest.append(size)
+            err = float(np.max(np.abs(g.astype(np.float64) - ref.astype(np.float64)) / np.maximum(1, np.abs(ref.astype(np.float64)))))
+            assert err < GRAD_TOL[_DT], (name, "MoE gradient vs pure JAX", who, n, err)
+            errors.append(err)
+        assert np.all(np.max(np.abs(np.asarray(grad["X"])), axis=1) > 1e-3), (name, who, "an input row has no gradient")
+        for n in ("W1", "W2"):
+            assert np.all(np.max(np.abs(np.asarray(grad[n])), axis=(1, 2)) > 1e-3), (name, who, "an expert has no gradient", n)
+    g = np.asarray(grads["eager"]["Wg"])
+    canary = g.copy()
+    canary.flat[int(np.argmax(np.abs(g)))] += NDT(1e-3)
+    assert np.max(np.abs(canary - g) / np.maximum(1, np.abs(g))) >= GRAD_TOL[_DT], (name, "vacuous MoE gradient tolerance")
+    base = {n: np.asarray(v, dtype=np.float64) for n, v in params.items()}
+    loss_np = lambda p: float(np.sum(weights.astype(np.float64) * np_moe(dict(p, OnN=fin["OnN"]))["Out"]))
+    rng = np.random.default_rng(7)
+    fd_errors = []
+    for _ in range(3):
+        direction = {n: rng.standard_normal(v.shape) for n, v in base.items()}
+        eps = 1e-6
+        fd = (loss_np({n: base[n] + eps * direction[n] for n in base})
+              - loss_np({n: base[n] - eps * direction[n] for n in base})) / (2 * eps)
+        for who, grad in grads.items():
+            dot = float(sum(np.sum(np.asarray(grad[n], dtype=np.float64) * direction[n]) for n in base))
+            assert abs(dot) > 1e-3, (name, "trivial MoE finite-difference direction")
+            err = abs(dot - fd) / max(1, abs(dot))
+            assert err < GRAD_FD_TOL[_DT], (name, "MoE gradient vs finite differences", who, err)
+            fd_errors.append(err)
+    print(f"{name} gradients: all seven input/router/expert arrays, OnN frozen; eager/jit vs pure-JAX softmax/vmap max scaled {max(errors):.3e}, "
+          f"vs numpy finite differences {max(fd_errors):.3e}; smallest per-input gradient max {min(smallest):.3e}; every expert and input row nontrivial")
+
+
 def main() -> None:
     spec = importlib.util.spec_from_file_location("gen_nonlin", Path(sys.argv[2]).resolve())
     mod = importlib.util.module_from_spec(spec)
@@ -2837,6 +3006,8 @@ def main() -> None:
     gnn_grad_pins(by, sfx)
     gnn_edge_pins(by, sfx)
     gnn_edge_grad_pins(by, sfx)
+    moe_pins(by, sfx)
+    moe_grad_pins(by, sfx)
 
     # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
     grad_fixture_pins(by, sfx)
