@@ -57,7 +57,7 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_cross_wide", "transformer_cross_wide32",
                         "conv1d_cnn", "conv1d_cnn32", "conv1d_causal", "conv1d_causal32", "vit_patch", "vit_patch32",
                         "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32", "rnn_stack", "rnn_stack32",
-                        "ssm_diag", "ssm_diag32"}
+                        "ssm_diag", "ssm_diag32", "gnn_dense", "gnn_dense32"}
 # Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
 # layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
 # require that EXACTLY layer 2 is NaN (in Lean, eager and jit alike); every other output must be finite.
@@ -380,7 +380,7 @@ def run_fixture(f: dict) -> None:
     inputs = {n: reconstruct(e) for n, e in f["inputs"].items()}
     eager = rt.run_named(plan, inputs, JDT)
     jitted = jax.jit(lambda i: rt.run_named(plan, i, JDT))(inputs)
-    if any(n.get("kind") == "scan" for n in plan["nodes"]) or f["name"].startswith(("transformer_unrolled", "conv1d_")):
+    if any(n.get("kind") == "scan" for n in plan["nodes"]) or f["name"].startswith(("transformer_unrolled", "conv1d_", "gnn_")):
         EAGER[f["name"]] = {"eager": eager, "jit": jitted}
     for name, exp in f["expected"].items():
         nan_layer = (f["name"], name) in NAN_LAYER_OUTPUTS
@@ -2196,6 +2196,148 @@ def rnn_grad_pins(by: dict, sfx: str) -> None:
         print(line)
 
 
+def np_gnn(inp: dict, mean=True, reverse=False, self_term=True, second_neighbors=True, activate=True, pool=True) -> dict:
+    """Two directed mean-message layers, from input weights only; explicit target/source loops."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    a = f["A"].T if reverse else f["A"]
+    degree = np.array([sum(row) for row in a])
+    out = {"Deg": degree}
+    h = f["X"]
+    for layer in (1, 2):
+        agg = np.zeros_like(h)
+        for target in range(len(a)):
+            for source in range(len(a)):
+                msg = h[target] if layer == 2 and not second_neighbors else h[source]
+                agg[target] += a[target, source] * msg
+        avg = agg / degree[:, None] if mean else agg.copy()
+        z = avg @ f[f"W{layer}"].T + (h @ f[f"S{layer}"].T if self_term else 0.0) + f[f"B{layer}"]
+        h = np.tanh(z) if activate else z.copy()
+        out.update({f"Agg{layer}": agg, f"Mean{layer}": avg, f"Z{layer}": z, f"H{layer}": h})
+    out["Pool"] = h.sum(axis=0) if pool else h[0].copy()
+    out["Lg"] = f["Wg"] @ out["Pool"]
+    out["Pr"] = np_softmax_last(out["Lg"])
+    return out
+
+
+def gnn_pins(by: dict, sfx: str) -> None:
+    """Every export, graph relabeling, two-hop locality and disconnected-node isolation."""
+    name = f"gnn_dense{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    assert sorted(fin) == sorted(["A", "X", "W1", "S1", "B1", "W2", "S2", "B2", "Wg"]), sorted(fin)
+    n, i = fin["X"].shape
+    d, e, v = fin["W1"].shape[0], fin["W2"].shape[0], fin["Wg"].shape[0]
+    assert len({n, i, d, e, v}) == 5, (name, n, i, d, e, v)
+    assert fin["A"].shape == (n, n) and fin["W1"].shape == fin["S1"].shape == (d, i), name
+    assert fin["W2"].shape == fin["S2"].shape == (e, d) and fin["Wg"].shape == (v, e), name
+    assert fin["B1"].shape == (d,) and fin["B2"].shape == (e,), name
+    a = fin["A"]
+    assert set(np.unique(a)) == {0.0, 1.0} and np.all(np.diag(a) == 1) and not np.array_equal(a, a.T), name
+    assert np.all(a[4, :4] == 0) and np.all(a[:4, 4] == 0), (name, "node 4 is not disconnected")
+    assert len(np.unique(a.sum(axis=1))) >= 3, (name, "degrees are not varied")
+    want = np_gnn(fin)
+    wrong = {"sum instead of mean": np_gnn(fin, mean=False), "reversed edges": np_gnn(fin, reverse=True),
+             "no self projection": np_gnn(fin, self_term=False), "no second-hop messages": np_gnn(fin, second_neighbors=False),
+             "no tanh": np_gnn(fin, activate=False), "pool only node 0": np_gnn(fin, pool=False)}
+    gaps = {w: dict_gap(want, model) for w, model in wrong.items()}
+    for w, gap in gaps.items():
+        assert gap > 1e-2, (name, "GNN pin is indistinguishable from", w, gap)
+    assert all(n.get("kind") != "scan" for n in fx["plan"]["nodes"]), name
+    assert sorted(n for n, _ in fx["plan"]["materialized"]) == sorted(want), fx["plan"]["materialized"]
+    for who, outs in conv_views(by, name).items():
+        assert sorted(outs) == sorted(want), (name, who, sorted(outs))
+        for output in want:
+            check_np(name, who, output, outs[output], want[output])
+        assert np.all(outs["Pr"] > 0) and abs(float(outs["Pr"].astype(np.float64).sum()) - 1) < HEAD_ROWSUM_TOL[_DT], (name, who)
+
+    jin = {n: reconstruct(entry) for n, entry in fx["inputs"].items()}
+    run = lambda inputs: rt.run_named(fx["plan"], inputs, JDT)
+    permutation = np.array([4, 2, 0, 3, 1])
+    permuted = dict(jin, X=jin["X"][permutation], A=jin["A"][permutation][:, permutation])
+    node_outputs = set(want) - {"Pool", "Lg", "Pr"}
+    minimum_response = np.inf
+    for who, runner in (("eager", run), ("jit", jax.jit(run))):
+        base = {n: np.asarray(o) for n, o in EAGER[name][who].items()}
+        changed = runner(permuted)
+        for output in want:
+            expected = base[output][permutation] if output in node_outputs else base[output]
+            check_np(name, f"{who} permutation", output, changed[output], expected)
+        for vertex in (0, 4):
+            x = fin["X"].copy()
+            x[vertex] += NDT(0.5)
+            changed = runner(dict(jin, X=jnp.asarray(x)))
+            allowed = np.eye(n, dtype=bool)[:, vertex]
+            for layer in (1, 2):
+                allowed = (a.astype(bool) @ allowed) | allowed
+                assert np.any(allowed) and np.any(~allowed), (name, "vacuous locality", vertex, layer)
+                h = np.asarray(changed[f"H{layer}"])
+                baseline = base[f"H{layer}"]
+                assert np.array_equal(bits(h[~allowed]), bits(baseline[~allowed])), (name, who, "outside receptive field", vertex, layer)
+                response = np.max(np.abs(h[allowed].astype(np.float64) - baseline[allowed].astype(np.float64)), axis=1)
+                assert np.all(response > 1e-4), (name, who, "reachable node did not respond", vertex, layer, response)
+                minimum_response = min(minimum_response, float(response.min()))
+            assert np.max(np.abs(np.asarray(changed["Lg"]) - base["Lg"])) > 1e-4, (name, who, "graph readout ignores node", vertex)
+    print(f"{name}: distinct extents nodes={n}, input={i}, hidden={d}, output={e}, classes={v}; every export == numpy target/source loops on Lean/eager/jit; "
+          f"gaps {', '.join(f'{w}={gap:.3f}' for w, gap in gaps.items())}; eager/jit node-permutation equivariance and graph-readout invariance; "
+          f"one-/two-hop locality and disconnected node 4 (minimum reachable response {minimum_response:.3e})")
+    print_conv_stats(name)
+
+
+def gnn_grad_pins(by: dict, sfx: str) -> None:
+    """Final graph logits: differentiate all real inputs, including numeric adjacency and its degrees."""
+    name = f"gnn_dense{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(entry) for n, entry in fx["inputs"].items()}
+    jin = {n: jnp.asarray(value) for n, value in fin.items()}
+    weights = np.sin(1.0 + np.arange(fin["Wg"].shape[0])).astype(NDT)
+
+    def hand(inputs):
+        h = inputs["X"]
+        degree = inputs["A"].sum(axis=1, keepdims=True)
+        for layer in (1, 2):
+            mean = (inputs["A"] @ h) / degree
+            h = jnp.tanh(mean @ inputs[f"W{layer}"].T + h @ inputs[f"S{layer}"].T + inputs[f"B{layer}"])
+        return inputs["Wg"] @ h.sum(axis=0)
+
+    loss = lambda inp: jnp.sum(weights * rt.run_named(fx["plan"], inp, JDT)["Lg"])
+    g_hand = jax.grad(lambda inp: jnp.sum(weights * hand(inp)))(jin)
+    grads = {"eager": jax.grad(loss)(jin), "jit": jax.jit(jax.grad(loss))(jin)}
+    errors, smallest = [], []
+    for who, grad in grads.items():
+        assert sorted(grad) == sorted(fin), (name, who, sorted(grad))
+        for n, value in grad.items():
+            g, ref = np.asarray(value), np.asarray(g_hand[n])
+            assert g.shape == fin[n].shape and g.dtype == NDT and np.all(np.isfinite(g)), (name, who, n)
+            largest = float(np.max(np.abs(g)))
+            assert largest > 1e-3, (name, "trivial GNN gradient", who, n, largest)
+            smallest.append(largest)
+            err = float(np.max(np.abs(g.astype(np.float64) - ref.astype(np.float64)) / np.maximum(1, np.abs(ref.astype(np.float64)))))
+            assert err < GRAD_TOL[_DT], (name, "GNN gradient vs pure JAX", who, n, err)
+            errors.append(err)
+        assert np.all(np.max(np.abs(np.asarray(grad["X"])), axis=1) > 1e-3), (name, who, "a node has no input gradient")
+    gx = np.array(grads["eager"]["X"])
+    canary = gx.copy()
+    canary.flat[int(np.argmax(np.abs(gx)))] += NDT(1e-3)
+    assert np.max(np.abs(canary - gx) / np.maximum(1, np.abs(gx))) >= GRAD_TOL[_DT], (name, "vacuous GNN gradient tolerance")
+    base = {n: v.astype(np.float64) for n, v in fin.items()}
+    loss_np = lambda inp: float(weights.astype(np.float64) @ np_gnn(inp)["Lg"])
+    rng = np.random.default_rng(7)
+    fd_errors = []
+    for _ in range(3):
+        direction = {n: rng.standard_normal(v.shape) for n, v in base.items()}
+        eps = 1e-6
+        fd = (loss_np({n: base[n] + eps * direction[n] for n in base})
+              - loss_np({n: base[n] - eps * direction[n] for n in base})) / (2 * eps)
+        for who, grad in grads.items():
+            dot = float(sum(np.sum(np.asarray(grad[n], dtype=np.float64) * direction[n]) for n in base))
+            assert abs(dot) > 1e-3, (name, "trivial GNN finite-difference direction")
+            err = abs(dot - fd) / max(1, abs(dot))
+            assert err < GRAD_FD_TOL[_DT], (name, "GNN gradient vs finite differences", who, err)
+            fd_errors.append(err)
+    print(f"{name} gradients: all {len(fin)} float inputs incl. numeric A and its degree normalization, eager/jit; all node-feature rows nontrivial; "
+          f"smallest input gradient max {min(smallest):.3e}; max scaled vs pure JAX {max(errors):.3e}, vs numpy finite differences {max(fd_errors):.3e}")
+
+
 def main() -> None:
     spec = importlib.util.spec_from_file_location("gen_nonlin", Path(sys.argv[2]).resolve())
     mod = importlib.util.module_from_spec(spec)
@@ -2516,6 +2658,8 @@ def main() -> None:
     rnn_bi_pins(by, sfx)
     rnn_stack_pins(by, sfx)
     ssm_pins(by, sfx)
+    gnn_pins(by, sfx)
+    gnn_grad_pins(by, sfx)
 
     # GRADIENTS through the emitted scan (`jax.grad`): see `grad_fixture_pins`.
     grad_fixture_pins(by, sfx)
