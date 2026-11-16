@@ -1468,3 +1468,113 @@ cumulative input tokens/context peak remain unavailable, not estimated.
 **Next.** Dense MoE completes the next model-family step. The agreed progression continues with
 logic examples (Viterbi/max-plus and Boolean reachability), then layers x time / nested scans and a
 KV cache; each still needs its own pre-flight. None is included here.
+
+## 25. Logic algorithms: Viterbi/max-plus scores and Boolean reachability (2026-11-16)
+
+Direct path: examples and correctness pins for existing algebras, not a new capability.
+`EvalPlanLogicSmoke.lean`, `evalplan_logic_smoke.py`, and `run-evalplan-logic.sh` live beside the
+preceding examples. Donors: portfolio RC5/TR10 (max-plus scans and masks), RL1/RL2 (identity and
+relational composition), and the bridge drivers' declaration-aware signatures and raw-bit payloads.
+No production, existing shared harness, parser, checker, emitter, runtime, Lake target or
+mutation-manifest changes. No plan document or subagents.
+
+**Boundary and reproducibility.** These examples were already agreed as Lean-side only.
+The existing nonlinear runner assumes real-algebra JAX execution; it is not widened or given a
+success-shaped fallback. The separate runner compiles source TL, executes the scheduled reference,
+prepares and executes checked binary64/binary32 plans, then runs independent Python-standard-library
+oracles. It requires no JAX installation. From the repository root:
+`bash leanncd/experiments/jax_bridge/run-evalplan-logic.sh`.
+Like the earlier experiment drivers, it is outside Lake targets: a full build alone does not run it.
+The driver explicitly checks JAX's refusal in BOTH precisions: Viterbi is
+`unsupportedScanState 0 0`; reachability is `unsupportedDestDType` at node 0, dtype bool.
+No JAX eager/JIT execution or gradients are claimed for the new examples.
+Native argmax, backpointers and traceback remain unsupported; Viterbi here computes scores.
+
+**Models and input contracts.**
+
+- Viterbi has four states and five emissions. `D[s,0] = Init[s]`;
+  `D[s,t+1] = max_p(D[p,t] + Trans[p,s] + Emit[t,s])`, restricted to true `Allow[p,s]`.
+  The surface product in `maxreduce` supplies addition; the Boolean mask reads false as negative
+  infinity and true as zero. Inputs are unnormalized log-potentials, not asserted normalized
+  probabilities. Init permits negative infinity; transitions and the five used emission rows
+  are finite. The sixth emission row is a never-read NaN sentinel.
+  Exports are exactly D `[4,6]` and scalar Score, the maximum at history slot five.
+  Seven cases: baseline, state permutation `[2,0,3,1]`, one changed emission, finite spare row,
+  all used emissions shifted by 0.5, all transitions blocked, and all paths tied.
+- Reachability has six nodes and seven history slots. Reach at hop zero is identity;
+  the Boolean OR/AND recurrence retains the preceding relation or extends it by one directed edge.
+  Exports are exactly Reach `[6,6,7]` and Closed `[6,6]`, the final reflexive closure.
+  Closed is a real-carrier copy, explicitly selecting each precision while Reach and Edge remain
+  predicate tensors. Edge values are exactly zero/one.
+  Baseline edges are `0->1, 0->2, 1->3, 2->3, 3->4, 4->1`: a diamond, a cycle and isolated node 5.
+  Six cases: baseline, node permutation `[4,2,0,5,1,3]`, edge `4->5` added, empty graph,
+  the five-edge chain `0->1->2->3->4->5`, and self-edges only.
+
+Both plans have exactly ONE scan followed by ONE terminal assignment, one persistent state,
+one base assignment/write and one step assignment/write. Pins check history extent, exact exports,
+storage kind, both blocks' actual algebras, and neutral state initialization (negative infinity
+for Viterbi, zero for Boolean). Shapes and every output cell are checked independently in Python.
+Both carriers share input data and statements; only f64 declarations are retagged f32.
+
+**Independent pins and observations.** Viterbi enumerates COMPLETE state paths at every length,
+not a second dynamic-programming recurrence. Reachability uses per-source queue-based BFS distances,
+not matrix multiplication or the tested recurrence. All thirteen fixtures agree EXACTLY on the
+reference, checked64 and checked32 views: **1,903 output cells per view, 5,709 comparisons**.
+The data are dyadic/Boolean; there is no tolerance, rounding headroom or tolerance adjustment.
+
+Viterbi's final state scores are `[-6.25,-5.25,-5.75,-inf]`, best score `-5.25`.
+Wrong-model terminal scores differ: transposed transitions `-6.25`, no mask `37.5`,
+no emissions `-2.25`, max-times `0`, greedy single-path decoding `-5.75`.
+Pins also require state-relabeling equivariance and terminal-score invariance, bitwise spare-row
+independence, unchanged history through the changed emission's time, immediate AND final-score
+sensitivity, additive score shift `0.5*t`, persistent unreachable-state negative infinity,
+blocked-sequence negative infinity (not zero), and exact ties. No seed or tolerance tuning.
+
+Baseline reachability has **19** true closure pairs. The diamond has TWO arithmetic paths but
+Boolean truth remains exactly ONE. Pins check directedness, at-most-hop rather than exact-length
+semantics, reflexivity, monotonicity in hops and added edges, transitivity, fixed-point agreement
+at hops five/six, node-relabeling equivariance, isolated-node behavior, empty/self-only identity
+histories, and that the chain's `0->5` entry first becomes true at hop five.
+
+**Mutation evidence.** Eleven final accepted copied-source controls, eleven numerical kills,
+zero compiler refusals or survivors. Every mutated source compiles, prepares and executes all
+thirteen fixtures on all three Lean views BEFORE the independent verifier fails.
+The last two controls affect ONLY the binary32 source, so binary64/reference agreement cannot
+hide missing binary32 checks. Original source SHA256 hashes remain unchanged; mutation copies
+and generated mutation payloads are removed.
+
+| Mutation | First failing value pin (got versus expected) |
+|---|---|
+| Transpose transition matrix read | Viterbi reference D flat cell 7: -1.75 versus -0.5 |
+| Read mask under exp, bypassing Boolean-to-tropical cast | Viterbi reference D cell 1: 2.5 versus -1.5 |
+| Include the emission factor twice | Viterbi reference D cell 1: -2.5 versus -1.5 |
+| Read Init instead of the previous score history | Viterbi reference D cell 2: -1 versus -2.5 |
+| Terminal score reads slot four instead of five | Viterbi reference Score: -4.75 versus -5.25 |
+| Transpose directed edge read | Reachability reference Reach cell 8: 0 versus 1 |
+| Drop the old-reachability carry (exact-length paths) | Reachability reference Reach cell 1: 0 versus 1 |
+| AND the carry instead of OR | Reachability reference Reach cell 1: 0 versus 1 |
+| Closure reads hop four | Chain reference Closed cell 5: 0 versus 1 |
+| Binary32-only terminal score reads slot four | Viterbi plan32 Score: -4.75 versus -5.25 |
+| Binary32-only closure reads hop four | Chain plan32 Closed cell 5: 0 versus 1 |
+
+A preliminary mask-removal control also removed Allow from the required-input payload, producing
+a missing-input diagnostic rather than a numerical comparison. It is not counted above:
+the verifier now explicitly pins required-input inventories, and the retained-input unary-mask
+control replaces it. The restored complete runner passes after the cycles.
+
+**Verification/process.** Cache prepared and project dependencies refreshed. Full
+`LeanNCD Tests JaxExperiment` build green (**8,847 jobs**); complete new runner green, including
+all structure/refusal/value/property pins. All existing nonlinear fixtures regenerated from
+this checkout: **55 binary64 and 47 binary32**, both complete eager/JIT differential and all
+model/property/gradient-pin processes exited zero with unchanged tolerances.
+Used an existing JAX 0.10.0 / NumPy 2.5.2 environment from another worktree, without modifying
+it or installing dependencies. Python script syntax, shell syntax and `git diff --check` pass.
+Direct whole-branch review checked both algorithm meanings, independent oracles, full-history and
+precision coverage, permutation transports, mutation distinctions, documentation and scope;
+no outstanding findings. No checks were silently skipped.
+The token-report helper again reports no transcript for this Copilot session: cumulative input
+tokens/context peak are unavailable, not estimated.
+
+**Next.** The agreed progression advances to layers x time / nested scans and a KV cache,
+which require their own expressibility pre-flight. JAX support for non-real algebras and native
+argmax/traceback are separate capability work, not added by this example slice.

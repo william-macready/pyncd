@@ -146,8 +146,11 @@ including runtime rewiring and multigraph edge messages. No parser/indexing capa
 the remaining limitation is native sparse gather/scatter, not expressibility of those GNNs.
 
 Dense MoE is implemented in record section 24: input-dependent softmax routing over two-layer GELU
-experts, with every expert evaluated. The next agreed step is the logic side (Viterbi/max-plus and
-Boolean reachability), then layers x time. Sparse top-k MoE is not included.
+experts, with every expert evaluated. The logic side is implemented in record section 25:
+Viterbi/max-plus scores and Boolean reflexive reachability, checked against exhaustive paths and
+BFS on the reference evaluator and checked binary64/binary32 plans. These remain Lean-side only;
+native argmax/traceback and JAX support are not added. The next agreed step is layers x time.
+Sparse top-k MoE is not included.
 
 The progression agreed 2026-11-09 continues (each step adds one structural idea; every one needs its own pre-flight probe): linear attention or a diagonal state-space model (matrix or elementwise state: a diagonal SSM is `H[d, t +1] := A[d] · H[d, t] + B[d, i] · X[t, i]`, the linear RNN of this probe with an elementwise recurrence, so its probe should be short; note a causal convolution is its
 state-free kernel form); a GNN (dense, then scatter-add over edges at the top level, which is admitted); dense mixture of experts; the logic side (Viterbi max-plus, Boolean reachability; Lean-side only today); layers x time (nested scans, a KV cache; `multiAxisScatterLhs` of record section 17). Parked from this thread: variable-length sequences with masks, a convolution inside a scan step, max pooling, two-sided padding, the solver-equality probe of record

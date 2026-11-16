@@ -22,6 +22,11 @@ or toolchain:
   affine reference, measured against native `jnp.einsum` computing the same contraction — not a
   permanent test, a one-off measurement for `papers/jax_evalplan_architecture.md` §7.6 row 2.
 
+Alongside the JAX runners, **`run-evalplan-logic.sh`** checks Lean-side Viterbi/max-plus scores and
+Boolean reachability. It needs only Python's standard library, not the JAX environment. Run from
+the repository root with `bash leanncd/experiments/jax_bridge/run-evalplan-logic.sh`.
+The driver explicitly pins that JAX still refuses these scan algebras; this is not backend support.
+
 Plus one Lean-only check, not a runner:
 
 - **`check-lean-drivers.sh [STRIDE]`**: builds `LeanNCD JaxExperiment Tests`, then runs the four Lean
@@ -524,6 +529,21 @@ EACH expert affects the mixture only through its own gate weight without changin
 Seven input/router/expert gradients are compared with independent JAX softmax/vmap and NumPy finite
 differences; the OnN bias-broadcast ones vector is frozen. Binary32 value headroom is 8.6x.
 Section 24 of `papers/semantics/jax_scan_record.md` records data, observations and eight mutation controls.
+
+The separate [`EvalPlanLogicSmoke.lean`](./EvalPlanLogicSmoke.lean) and
+[`evalplan_logic_smoke.py`](./evalplan_logic_smoke.py) extend the progression to the logic side.
+Viterbi uses a four-state, five-emission max-plus recurrence with a runtime Boolean transition mask,
+exporting the complete score history and final best score. An independent exhaustive path enumeration
+checks every cell, not a second implementation of the recurrence. Native argmax/backpointers and
+traceback are not supplied. Boolean reachability computes all-pairs reflexive closure with an
+OR/AND scan; queue-based BFS distances independently determine every bounded-hop history cell.
+Thirteen cases cover state/node permutations, input sensitivity, time causality, an unused NaN
+emission row, additive score shifts, impossible/tied sequences, diamonds, cycles, isolated nodes,
+empty/self-only graphs, and a chain requiring five hops.
+The reference evaluator and checked binary64/binary32 plans agree exactly (dyadic inputs, no
+tolerance); scan structure, algebras, exports and located JAX refusals are pinned before emission.
+No JAX eager/JIT execution or gradients are claimed for these non-real algebras.
+See section 25 of [the example record](../../../papers/semantics/jax_scan_record.md).
 
 Gradients: `jax.grad` works through the emitted `lax.scan` as is (no runtime change). The driver pins the gradient of `sum(C * H[:, :, 2])` of `transformer_scan` over every
 float input, in both precisions, eager and jit: finite, exactly zero on the never-read NaN layer-2 weight slices, equal to the same loss through the unrolled plan
