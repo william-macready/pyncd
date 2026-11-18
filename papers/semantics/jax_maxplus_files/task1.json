@@ -1,0 +1,26 @@
+{
+  "leanncd/LeanNCD/Eval/Plan/Executable.lean": {
+    "sha256": "4855441bfe38acc88f45ef41d30bafd0f29523d43cb1643e8a31f65a16e67433",
+    "blob": "223f4b4173d6c8c1ba05522e268b37e0249c3026",
+    "baseline_sha256": "9ad79d693538ec17c78bc2d63cc3bd0f90da76ffddea4b84f3c4a3fb19c86ea9",
+    "baseline_blob": "b45ac1cd81e97a6312edd0aac04ff618699c21b8"
+  },
+  "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": {
+    "sha256": "f218df23446fa7f612f194c17daefcf7c555aefd1cfaaf64d89942757519e172",
+    "blob": "853bd2b4c5ea54e803244e25c25f2e1d232b4d57",
+    "baseline_sha256": "8bbdeb7ab2c4c6a4055594581f39cdee787628bd4f11f0124c0c682e1a0e0160",
+    "baseline_blob": "bfc780e4258bed11dcb3b0346a4ba4a28f37f0ed"
+  },
+  "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": {
+    "sha256": "1d198af3619064e18725f22c03cb5fdb13d766b49216a440f6eee4f479db0bf2",
+    "blob": "0b2088383527ffe17673304f9a95a37836b407d9",
+    "baseline_sha256": "3872b2dc4b7afee45d9f97fd9075024bbf54fc3d69988cb0afae302a7b03d1f8",
+    "baseline_blob": "08e950e5118366fe8829c11a56649e36c10a8954"
+  },
+  "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": {
+    "sha256": "80c1bb02a09c7d6e7fe3f4484734bb9e87f8524600a5b6b29046e80cd59c2039",
+    "blob": "51bc7de7b9b40532d56e64af2de792e0816a9960",
+    "baseline_sha256": "80c1bb02a09c7d6e7fe3f4484734bb9e87f8524600a5b6b29046e80cd59c2039",
+    "baseline_blob": "51bc7de7b9b40532d56e64af2de792e0816a9960"
+  }
+}

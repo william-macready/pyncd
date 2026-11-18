@@ -1,0 +1,182 @@
+[
+ {
+  "label": "MAX-P-omit_cast-64",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "if f.get(\"bool_to_tropical\", False):",
+  "new": "if False:",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('bool_to_tropical_true', False), array([ 0.  ,  0.  , -2.  ,  0.25,   na",
+   "AssertionError: (('bool_to_tropical_true', False), array([ 0.  ,  0.  , -2.  ,  0.25,   nan,   inf,  -inf]), array([-inf, -inf,   0.,   0.,   0.,   0.,   0.]))"
+  ]
+ },
+ {
+  "label": "MAX-P-omit_cast-32",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "if f.get(\"bool_to_tropical\", False):",
+  "new": "if False:",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('bool_to_tropical_true', False), array([ 0.  ,  0.  , -2.  ,  0.25,   na",
+   "AssertionError: (('bool_to_tropical_true', False), array([ 0.  ,  0.  , -2.  ,  0.25,   nan,   inf,  -inf], dtype=float32), array([-inf, -inf,   0.,   0.,   0.,   0.,   0.], dtype=float32))"
+  ]
+ },
+ {
+  "label": "MAX-P-zero_init-64",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "dtype(0 if i == \"zero\" else -math.inf)",
+  "new": "dtype(0)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('scan_context_holes', False, 2), array([[ 3.,  7., 13., 19.],",
+   "AssertionError: (('scan_context_holes', False, 2), array([[ 3.,  7., 13., 19.],"
+  ]
+ },
+ {
+  "label": "MAX-P-zero_init-32",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "dtype(0 if i == \"zero\" else -math.inf)",
+  "new": "dtype(0)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('scan_context_holes', False, 2), array([[ 3.,  7., 13., 19.],",
+   "AssertionError: (('scan_context_holes', False, 2), array([[ 3.,  7., 13., 19.],"
+  ]
+ },
+ {
+  "label": "MAX-P-freeze_time-64",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "dynamic_index_in_dim(safe, r, 0",
+  "new": "dynamic_index_in_dim(safe, 0, 0",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('scan_context_holes', False, 2), array([[  3.,   7.,   7.,   7.],",
+   "AssertionError: (('scan_context_holes', False, 2), array([[  3.,   7.,   7.,   7.],"
+  ]
+ },
+ {
+  "label": "MAX-P-freeze_time-32",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "dynamic_index_in_dim(safe, r, 0",
+  "new": "dynamic_index_in_dim(safe, 0, 0",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('scan_context_holes', False, 2), array([[  3.,   7.,   7.,   7.],",
+   "AssertionError: (('scan_context_holes', False, 2), array([[  3.,   7.,   7.,   7.],"
+  ]
+ },
+ {
+  "label": "MAX-P-zero_pad-64",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "zeros = jnp.full(iter_shape, reduce_id, dtype=dtype)",
+  "new": "zeros = jnp.zeros(iter_shape, dtype=dtype)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('max_log_oob_bypass', False), array([0., 0., 0.]), array([-inf, -inf, -i",
+   "AssertionError: (('max_log_oob_bypass', False), array([0., 0., 0.]), array([-inf, -inf, -inf]))"
+  ]
+ },
+ {
+  "label": "MAX-P-zero_pad-32",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "zeros = jnp.full(iter_shape, reduce_id, dtype=dtype)",
+  "new": "zeros = jnp.zeros(iter_shape, dtype=dtype)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('max_log_oob_bypass', False), array([0., 0., 0.], dtype=float32), array(",
+   "AssertionError: (('max_log_oob_bypass', False), array([0., 0., 0.], dtype=float32), array([-inf, -inf, -inf], dtype=float32))"
+  ]
+ },
+ {
+  "label": "MAX-P-native_max_zero_tie-64",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, b, a)))",
+  "new": "return jnp.maximum(a, b)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: native_max_zero_tie: ordered max must choose the right signed zero",
+   "AssertionError: native_max_zero_tie"
+  ]
+ },
+ {
+  "label": "MAX-P-native_max_zero_tie-32",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, b, a)))",
+  "new": "return jnp.maximum(a, b)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: native_max_zero_tie: ordered max must choose the right signed zero",
+   "AssertionError: native_max_zero_tie"
+  ]
+ },
+ {
+  "label": "MAX-P-remove_custom_jvp-64",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "@jax.custom_jvp\ndef _ordered_add(a, b):\n    # XLA may erase a literal +0 seed. Preserve IEEE zeros without erasing its derivative.\n    zero = jnp.zeros_like(a + b)\n    zeros = jnp.where(jnp.signbit(a) & jnp.signbit(b), -zero, zero)\n    return jnp.where((a == 0) & (b == 0), zeros, a + b)\n\n\n@_ordered_add.defjvp\ndef _ordered_add_jvp(primals, tangents):\n    a, b = primals\n    da, db = tangents\n    return _ordered_add(a, b), da + db\n",
+  "new": "def _ordered_add(a, b):\n    # XLA may erase a literal +0 seed. Preserve IEEE zeros without erasing its derivative.\n    zero = jnp.zeros_like(a + b)\n    zeros = jnp.where(jnp.signbit(a) & jnp.signbit(b), -zero, zero)\n    return jnp.where((a == 0) & (b == 0), zeros, a + b)\n\n\ndef _ordered_add_jvp(primals, tangents):\n    a, b = primals\n    da, db = tangents\n    return _ordered_add(a, b), da + db\n",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: ordered_add_jvp_init: a winning zero Init must retain derivative one",
+   "AssertionError: ordered_add_jvp_init"
+  ]
+ },
+ {
+  "label": "MAX-P-remove_custom_jvp-32",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "@jax.custom_jvp\ndef _ordered_add(a, b):\n    # XLA may erase a literal +0 seed. Preserve IEEE zeros without erasing its derivative.\n    zero = jnp.zeros_like(a + b)\n    zeros = jnp.where(jnp.signbit(a) & jnp.signbit(b), -zero, zero)\n    return jnp.where((a == 0) & (b == 0), zeros, a + b)\n\n\n@_ordered_add.defjvp\ndef _ordered_add_jvp(primals, tangents):\n    a, b = primals\n    da, db = tangents\n    return _ordered_add(a, b), da + db\n",
+  "new": "def _ordered_add(a, b):\n    # XLA may erase a literal +0 seed. Preserve IEEE zeros without erasing its derivative.\n    zero = jnp.zeros_like(a + b)\n    zeros = jnp.where(jnp.signbit(a) & jnp.signbit(b), -zero, zero)\n    return jnp.where((a == 0) & (b == 0), zeros, a + b)\n\n\ndef _ordered_add_jvp(primals, tangents):\n    a, b = primals\n    da, db = tangents\n    return _ordered_add(a, b), da + db\n",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: ordered_add_jvp_init: a winning zero Init must retain derivative one",
+   "AssertionError: ordered_add_jvp_init"
+  ]
+ }
+]

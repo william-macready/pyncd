@@ -1,0 +1,556 @@
+diff --git a/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean b/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean
+new file mode 100644
+index 00000000..fe4c0642
+--- /dev/null
++++ b/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean
+@@ -0,0 +1,144 @@
++import LeanNCD.Eval.Entry
++import LeanNCD.Eval.Plan.Adapter32
++import EvalPlanCodegen
++
++namespace JaxBridge.MaxPlusSmoke
++open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan Std JaxBridge
++def dense (s : List Nat) (d : Array Float) : DenseTensor := ⟨s, d⟩
++def retag32 (p : TLProgram) : TLProgram :=
++  { p with decls := p.decls.map fun d => match d with
++      | .typedTensor .f64 n ax => .typedTensor .f32 n ax
++      | d => d }
++def compile (name : String) (p : TLProgram) : IO ScheduledProgram :=
++  match p.compileToScheduled.run 0 with
++  | .ok s _ => pure s | .error e _ => throw (IO.userError s!"{name}: {repr e}")
++def prepare (name : String) (s : ScheduledProgram) (sig : InputSignature) : IO PreparedPlan :=
++  match prepareEvalPlan s sig with
++  | .ok p => pure p | .error e => throw (IO.userError s!"{name}: {renderCompileCause e.cause}")
++
++def pyTensor32 (t : DenseTensor32) : String :=
++  "{\"shape\": " ++ pyShapeTuple t.shape.toArray ++ ", \"bits\": [" ++
++  String.intercalate ", " (t.data.toList.map fun x => toString x.toBits) ++ "]}"
++
++def rawFixture (name : String) (sigs : Array TensorSignature) (a : AssignPlan)
++    (store : Array DenseTensor) : IO String := do
++  let a32 := { a with algebra := if a.algebra == admittedAlgebraMax then admittedAlgebraF32Max
++    else if a.algebra == admittedAlgebra then admittedAlgebraF32 else a.algebra }
++  let sigs32 := sigs.map fun s => { s with dtype := if s.dtype == .f64 then .f32 else s.dtype }
++  let c ← match checkAssign sigs a with
++    | .ok x => pure x | .error e => throw (IO.userError s!"{name}: check64 {repr e}")
++  let c32 ← match checkAssignF32 sigs32 a32 with
++    | .ok x => pure x | .error e => throw (IO.userError s!"{name}: check32 {repr e}")
++  let expected ← match runDenseAssign c store with
++    | .ok x => pure x | .error e => throw (IO.userError s!"{name}: run64 {repr e}")
++  let store32 : Array DenseTensor32 := store.map fun t => ⟨t.shape, t.data.map Float.toFloat32⟩
++  let expected32 ← match runDenseAssign32 c32 store32 with
++    | .ok x => pure x | .error e => throw (IO.userError s!"{name}: run32 {repr e}")
++  let node ← match renderAffineAssign sigs c with
++    | .ok x => pure x | .error e => throw (IO.userError s!"{name}: render64 {repr e}")
++  let node32 ← match renderAffineAssign sigs32 c32 with
++    | .ok x => pure x | .error e => throw (IO.userError s!"{name}: render32 {repr e}")
++  pure ("{\"name\": " ++ pyStrLit name ++ ", \"assign64\": " ++ node ++
++    ", \"assign32\": " ++ node32 ++ ", \"store64\": [" ++
++    String.intercalate ", " (store.toList.map pyTensorEntry) ++ "], \"store32\": [" ++
++    String.intercalate ", " (store32.toList.map pyTensor32) ++ "], \"expected64\": " ++
++    pyTensorEntry expected ++ ", \"expected32\": " ++ pyTensor32 expected32 ++ "}")
++
++def vectorRaw (alg : ContractionAlgebra) (r : ReadPlan) (n : Nat) : AssignPlan :=
++  { contextShape := #[], destinationSlot := 1, outputShape := #[n], algebra := alg
++    terms := #[{ contextPos := #[], iterationShape := #[n], outputPos := #[0], reductionPos := #[], factors := #[.read r] }] }
++
++def adversarial : IO (List String) := do
++  let nan : Float := 0.0 / 0.0
++  let inf : Float := 1.0 / 0.0
++  let nz : Float := Float.ofBits 9223372036854775808
++  let values := #[0, nz, -2, 0.25, nan, inf, -inf]
++  let r : ReadPlan := { sourceSlot := 0, sourceShape := #[7], map := LeanNCD.Eval.Plan.AffineMap.mk #[#[1]] #[0], oobPolicy := .zeroPad }
++  let mut out := []
++  for flag in [true, false] do
++    out := out ++ [← rawFixture s!"bool_to_tropical_{flag}" #[⟨#[7], .bool⟩, ⟨#[7], .f64⟩]
++      (vectorRaw admittedAlgebraMax { r with boolToTropical := flag } 7) #[dense [7] values]]
++  let empty : AssignPlan := { contextShape := #[], destinationSlot := 0, outputShape := #[], algebra := admittedAlgebraMax, terms := #[] }
++  out := out ++ [← rawFixture "max_empty_terms" #[⟨#[], .f64⟩] empty #[]]
++  out := out ++ [← rawFixture "max_empty_factors" #[⟨#[], .f64⟩]
++    { empty with terms := #[{ contextPos := #[], iterationShape := #[], outputPos := #[], reductionPos := #[], factors := #[] }] } #[]]
++  out := out ++ [← rawFixture "max_zero_reduction" #[⟨#[], .f64⟩]
++    { empty with terms := #[{ contextPos := #[], iterationShape := #[0], outputPos := #[], reductionPos := #[0], factors := #[] }] } #[]]
++  let oob : ReadPlan := { r with sourceShape := #[1] }
++  out := out ++ [← rawFixture "max_bare_oob" #[⟨#[1], .f64⟩, ⟨#[3], .f64⟩]
++    (vectorRaw admittedAlgebraMax oob 3) #[dense [1] #[2]]]
++  out := out ++ [← rawFixture "max_log_oob_bypass" #[⟨#[0], .f64⟩, ⟨#[3], .f64⟩]
++    (vectorRaw admittedAlgebraMax { oob with sourceShape := #[0], unary := some .log } 3) #[dense [0] #[]]]
++  let poison := vectorRaw admittedAlgebraMax { r with sourceShape := #[1] } 1
++  let term := poison.terms[0]!
++  out := out ++ [← rawFixture "false_source_opposing_infinity"
++    #[⟨#[1], .bool⟩, ⟨#[1], .f64⟩, ⟨#[1], .f64⟩]
++    { poison with destinationSlot := 2, terms := #[{ term with factors :=
++      #[.read { r with sourceShape := #[1], boolToTropical := true },
++        .read { r with sourceSlot := 1, sourceShape := #[1] }] }] }
++    #[dense [1] #[0], dense [1] #[inf]]]
++  out := out ++ [← rawFixture "max_empty_output" #[⟨#[0], .f64⟩]
++    { empty with outputShape := #[0], terms := #[{ contextPos := #[], iterationShape := #[0], outputPos := #[0], reductionPos := #[], factors := #[] }] } #[]]
++  return out
++
++def contextProg : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  iter t = 4
++  tensor f64 X(i), Y(t, i), S(i, t)
++  S[i, 0] := X[i]
++  S[i, t +1] := maxreduce(Y[t, i])
++}
++
++def contextFixture : IO String := do
++  let inputs : NamedDenseEnv := HashMap.ofList [("X", dense [2] #[3, 5]), ("Y", dense [4, 2] #[7, 11, 13, 17, 19, 23, 29, 31])]
++  let mut fields := []
++  for is32 in [false, true] do
++    let s ← compile "context_holes" (if is32 then retag32 contextProg else contextProg)
++    let inputs32 : NamedDenseEnv32 := inputs.map fun _ t => ⟨t.shape, t.data.map Float.toFloat32⟩
++    let sig ← if is32 then match InputSignature.ofDenseInputs32ForDecls s.decls inputs32 with
++      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
++      else match InputSignature.ofDenseInputsForDecls s.decls inputs with
++      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
++    let p ← prepare "context_holes" s sig
++    let #[.scan sc] := p.plan.raw.steps | throw (IO.userError "expected scan")
++    let sigs := p.plan.raw.tensorSigs
++    let #[.assign base] := sc.baseBlock.steps | throw (IO.userError "expected base assign")
++    let terms := base.terms.map fun t => { t with iterationShape := #[], outputPos := #[], factors := t.factors.map fun f =>
++      match f with
++      | .read r => .read { r with map := LeanNCD.Eval.Plan.AffineMap.mk (r.map.coeffs.map fun _ => #[]) r.map.bias }
++      | .iverson b => .iverson b }
++    let base := { base with outputShape := #[], terms := terms }
++    let block := { sc.baseBlock with tensorSigs := sc.baseBlock.tensorSigs.modify base.destinationSlot (fun s => { s with shape := #[] }), steps := #[.assign base] }
++    let writes := sc.baseWrites.map fun w => { w with map := LeanNCD.Eval.Plan.AffineMap.mk (w.map.coeffs.map fun _ => #[]) w.map.bias }
++    let sc := { sc with baseBlock := block, baseWrites := writes }
++    let c ← match (if is32 then checkScanPlanF32 else checkScanPlan) sigs sc with
++      | .ok x => pure x | .error e => throw (IO.userError s!"holes check: {repr e}")
++    let rendered ← match renderScanNode 0 c with
++      | .ok x => pure x | .error e => throw (IO.userError s!"holes render: {repr e}")
++    let mut store := sigs.map fun sig =>
++      dense sig.shape.toList (Array.replicate (sig.shape.foldl (· * ·) 1) 0)
++    for b in p.bindings.requiredInputs.bindings do
++      let some t := inputs[b.name]? | throw (IO.userError "missing input")
++      store := store.set! b.slot t
++    let result ← if is32 then
++      match runDenseScan32 c.sigs c (store.map fun t => ⟨t.shape, t.data.map Float.toFloat32⟩) with
++      | .ok x => pure ("[" ++ String.intercalate ", " (x.toList.map pyTensor32) ++ "]")
++      | .error e => throw (IO.userError s!"holes run32: {repr e}")
++      else match runDenseScan c.sigs c store with
++      | .ok x => pure ("[" ++ String.intercalate ", " (x.toList.map pyTensorEntry) ++ "]")
++      | .error e => throw (IO.userError s!"holes run64: {repr e}")
++    let suffix := if is32 then "32" else "64"
++    fields := fields ++ [pyStrLit ("scan" ++ suffix) ++ ": " ++ rendered,
++      pyStrLit ("store" ++ suffix) ++ ": [" ++ String.intercalate ", "
++        (store.toList.map fun t => if is32 then pyTensor32 ⟨t.shape, t.data.map Float.toFloat32⟩ else pyTensorEntry t) ++ "]",
++      pyStrLit ("expected" ++ suffix) ++ ": " ++ result]
++  pure ("{\"name\": \"scan_context_holes\", " ++ String.intercalate ", " fields ++ "}")
++
++
++end JaxBridge.MaxPlusSmoke
++def main (args : List String) : IO Unit := do
++  let [out] := args | throw (IO.userError "usage: MaxPlus OUTPUT.py")
++  let adv ← JaxBridge.MaxPlusSmoke.adversarial
++  let ctx ← JaxBridge.MaxPlusSmoke.contextFixture
++  IO.FS.writeFile out ("ADVERSARIAL = [\n" ++ String.intercalate ",\n" (adv ++ [ctx]) ++ "\n]\n")
++  IO.println s!"max-plus: generated {adv.length + 1} checked edge cases"
+diff --git a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+index 51bc7de7..a1642c67 100644
+--- a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
++++ b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+@@ -120,8 +120,55 @@ def _apply_unary(op: str, x: jax.Array, dtype: Any) -> jax.Array:
+     raise ValueError(f"unknown unary op {op!r}")
+ 
+ 
++def _ordered_max(a, b):
++    return jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, b, a)))
++
++
++@jax.custom_jvp
++def _ordered_add(a, b):
++    # XLA may erase a literal +0 seed. Preserve IEEE zeros without erasing its derivative.
++    zero = jnp.zeros_like(a + b)
++    zeros = jnp.where(jnp.signbit(a) & jnp.signbit(b), -zero, zero)
++    return jnp.where((a == 0) & (b == 0), zeros, a + b)
++
++
++@_ordered_add.defjvp
++def _ordered_add_jvp(primals, tangents):
++    a, b = primals
++    da, db = tangents
++    return _ordered_add(a, b), da + db
++
++
++def _algebra(node, dtype):
++    tag = node.get("algebra", "real")
++    if tag == "real":
++        if "semantics" in node:
++            raise ValueError("real nodes use the legacy metadata-free format")
++        return jnp.multiply, dtype(1), jnp.add, dtype(0)
++    if tag == "max_plus":
++        if node.get("semantics") != "ordered_max_plus_v1":
++            raise ValueError("max-plus requires ordered_max_plus_v1 semantics")
++        return _ordered_add, dtype(0), _ordered_max, dtype(-math.inf)
++    raise ValueError(f"unknown algebra {tag!r}")
++
++
++def _check_factors(terms, max_plus):
++    for term in terms:
++        for f in term["factors"]:
++            if f.get("tag", "read") != "read":
++                raise ValueError(f"unknown factor tag {f['tag']!r}")
++            if max_plus:
++                if f.get("tag") != "read" or type(f.get("bool_to_tropical")) is not bool:
++                    raise ValueError("max-plus read requires explicit cast metadata")
++                if f.get("real_to_bool") is not False:
++                    raise ValueError("real_to_bool is not supported")
++            elif any(k in f for k in ("bool_to_tropical", "real_to_bool")):
++                raise ValueError("real read cast metadata is not supported")
++
++
+ def _run_term(
+-    term: dict[str, Any], store: list[jax.Array], dtype: Any, slicer: Any = None, shift: int = 0
++    term: dict[str, Any], store: list[jax.Array], dtype: Any, slicer: Any = None, shift: int = 0,
++    algebra: Any = None,
+ ) -> jax.Array:
+     """One term over its iteration box. `slicer`/`shift` serve a scan step block only: `shift = 1` drops
+     the leading step axis (never an output or reduction axis) from the shape and the position lists, and
+@@ -133,6 +180,8 @@ def _run_term(
+     if min(output_pos + reduction_pos, default=0) < 0:
+         raise ValueError(f"term uses position {shift - 1} (the step axis) as an output or reduction axis")
+     factors = term["factors"]
++    factor_op, factor_id, reduce_op, reduce_id = algebra or _algebra({}, dtype)
++    max_plus = factor_op is _ordered_add
+ 
+     out_extents = [iter_shape[p] for p in output_pos]
+     red_extents = [iter_shape[p] for p in reduction_pos]
+@@ -143,7 +192,7 @@ def _run_term(
+     # output coordinate (the reduction fold never runs). Both short-circuit to zeros of the output
+     # shape and avoid any size-0 gather/index — matching Dense's `runDenseAssign`.
+     if output_size == 0 or reduction_size == 0:
+-        return jnp.zeros(tuple(out_extents), dtype=dtype)
++        return jnp.full(tuple(out_extents), reduce_id, dtype=dtype)
+ 
+     # --- gather one full iteration-space tensor per factor -------------------------------------
+     factor_tensors: list[jax.Array] = []
+@@ -153,8 +202,8 @@ def _run_term(
+         if int(src_flat.shape[0]) == 0:
+             # Empty source storage: emit an all-zero factor tensor without any index access. A unary
+             # read still applies its function to those zero-padded zeros (Dense: pad, THEN apply).
+-            zeros = jnp.zeros(iter_shape, dtype=dtype)
+-            if "unary" in f:
++            zeros = jnp.full(iter_shape, reduce_id, dtype=dtype)
++            if "unary" in f and not max_plus:
+                 zeros = _apply_unary(f["unary"], zeros, dtype)
+             factor_tensors.append(zeros)
+             continue
+@@ -164,20 +213,27 @@ def _run_term(
+         else:
+             safe, mask = slicer(f)
+         gathered = src_flat[safe]
+-        padded = jnp.where(mask, gathered, dtype(0.0))
+         if "unary" in f:
+-            padded = _apply_unary(f["unary"], padded, dtype)  # AFTER the pad: OOB exp read is exp(0)
++            if max_plus:
++                value = _apply_unary(f["unary"], jnp.where(mask, gathered, dtype(1)), dtype)
++                padded = jnp.where(mask, value, reduce_id)
++            else:
++                padded = _apply_unary(f["unary"], jnp.where(mask, gathered, dtype(0)), dtype)
++        else:
++            if f.get("bool_to_tropical", False):
++                gathered = jnp.where(gathered != dtype(0), factor_id, reduce_id)
++            padded = jnp.where(mask, gathered, reduce_id)
+         factor_tensors.append(jnp.reshape(padded, iter_shape))
+ 
+     # --- fold the factor product from 1.0 in factor-array order (empty ⇒ ones) ------------------
+-    ones = jnp.ones(iter_shape, dtype=dtype)
++    ones = jnp.full(iter_shape, factor_id, dtype=dtype)
+     if not factor_tensors:
+         product = ones
+     else:
+         stacked = jnp.stack(factor_tensors, axis=0)
+ 
+         def factor_body(k, acc):
+-            return acc * stacked[k]
++            return factor_op(acc, stacked[k])
+ 
+         product = jax.lax.fori_loop(0, len(factor_tensors), factor_body, ones)
+ 
+@@ -189,9 +245,9 @@ def _run_term(
+     # --- per-row sequential reduction fold from 0.0 in reduction-coordinate order ---------------
+     def reduce_row(row):
+         def red_body(k, acc):
+-            return acc + row[k]
++            return reduce_op(acc, row[k])
+ 
+-        return jax.lax.fori_loop(0, reduction_size, red_body, dtype(0.0))
++        return jax.lax.fori_loop(0, reduction_size, red_body, reduce_id)
+ 
+     reduced = jax.vmap(reduce_row)(mat)
+     return jnp.reshape(reduced, tuple(out_extents))
+@@ -202,17 +258,20 @@ def _run_node(
+ ) -> jax.Array:
+     output_shape = tuple(node["output_shape"])
+     terms = node["terms"]
++    algebra = _algebra(node, dtype)
++    _, _, reduce_op, reduce_id = algebra
++    _check_factors(terms, algebra[0] is _ordered_add)
+     if not terms:
+         # Empty term array yields an all-zero output.
+-        return jnp.zeros(output_shape, dtype=dtype)
++        return jnp.full(output_shape, reduce_id, dtype=dtype)
+ 
+-    term_results = [_run_term(t, store, dtype, slicer, shift) for t in terms]
++    term_results = [_run_term(t, store, dtype, slicer, shift, algebra) for t in terms]
+     stacked = jnp.stack(term_results, axis=0)
+ 
+     def term_body(k, acc):
+-        return acc + stacked[k]
++        return reduce_op(acc, stacked[k])
+ 
+-    zero = jnp.zeros(output_shape, dtype=dtype)
++    zero = jnp.full(output_shape, reduce_id, dtype=dtype)
+     return jax.lax.fori_loop(0, len(terms), term_body, zero)
+ 
+ 
+@@ -220,6 +279,8 @@ def _run_scatter_node(
+     node: dict[str, Any], store: list[jax.Array], dtype: Any, scatter_mode: str = "ordered"
+ ) -> jax.Array:
+     """One scatter node: source-shaped compute half, then the ordered (default) or fast placement fold."""
++    if node.get("algebra", "real") != "real":
++        raise ValueError("scatter requires real algebra")
+     source = jnp.reshape(_run_node(node, store, dtype), (-1,))
+     dest_shape = tuple(node["dest_shape"])
+     idx = node["dest_flat_index"]
+@@ -414,7 +475,18 @@ def _run_block(block: dict[str, Any], local: list[Any], dtype: Any, slicer: Any
+ 
+ def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> list[jax.Array]:
+     steps = int(node["step_count"])
+-    states = [jnp.zeros(tuple(s), dtype=dtype) for s in node["state_shapes"]]
++    if "state_init" in node:
++        if node.get("semantics") != "ordered_scan_v1":
++            raise ValueError("state_init requires ordered_scan_v1 semantics")
++        inits = node["state_init"]
++        if len(inits) != len(node["state_shapes"]) or any(i not in ("zero", "neg_inf") for i in inits):
++            raise ValueError("invalid state_init metadata")
++    else:
++        if "semantics" in node:
++            raise ValueError("unknown scan semantics")
++        inits = ["zero"] * len(node["state_shapes"])
++    states = [jnp.full(tuple(s), dtype(0 if i == "zero" else -math.inf), dtype=dtype)
++              for s, i in zip(node["state_shapes"], inits)]
+ 
+     # Base block: once, no context.
+     local = _run_block(node["base"], _bind_captures(node["base"], node["base_captures"], store, None), dtype)
+diff --git a/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py b/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
+new file mode 100644
+index 00000000..88077ea6
+--- /dev/null
++++ b/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
+@@ -0,0 +1,151 @@
++"""Checked max-plus parity, metadata refusals and independent source/gradient pins."""
++import argparse
++import copy
++import importlib.util
++import json
++from pathlib import Path
++
++import jax
++import numpy as np
++
++
++def load(path):
++    spec = importlib.util.spec_from_file_location(Path(path).stem, path)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def verify(precision, checked_path, logic_path=None):
++    jax.config.update("jax_enable_x64", precision == 64)
++    import jax.numpy as jnp
++    import evalplan_affine_runtime as rt
++    dt = jnp.float64 if precision == 64 else jnp.float32
++    nd = np.float64 if precision == 64 else np.float32
++    ud = np.uint64 if precision == 64 else np.uint32
++    suffix = str(precision)
++    report = {"precision": precision, "x64": bool(jax.config.x64_enabled),
++              "checked": [], "refusals": []}
++
++    def array(t):
++        return jnp.asarray(np.asarray(t["bits"], dtype=ud).view(nd).reshape(t["shape"]))
++
++    def entry(a):
++        a = np.asarray(a)
++        return {"shape": a.shape, "bits": a.reshape(-1).view(ud).tolist()}
++
++    def check(a, expected, label):
++        a, b = np.asarray(a), np.asarray(array(expected))
++        assert a.dtype == b.dtype and a.shape == b.shape, label
++        mask = np.isnan(b)
++        assert np.array_equal(np.isnan(a), mask), (label, a, b)
++        assert np.array_equal(a.view(ud)[~mask], b.view(ud)[~mask]), (label, a, b)
++
++    def run(f, jit=False, runtime=rt):
++        inputs = [array(t) for t in f["store" + suffix]]
++        if "scan" + suffix in f:
++            fn = lambda xs: runtime._run_scan_node(f["scan" + suffix], xs, dt)
++        else:
++            fn = lambda xs: runtime.run_assign(f["assign" + suffix], xs, dtype=dt)
++        return (jax.jit(fn) if jit else fn)(inputs)
++
++    fixtures = load(checked_path).ADVERSARIAL
++    assert len(fixtures) == 10
++    for f in fixtures:
++        for jit in (False, True):
++            output = run(f, jit)
++            if "scan" + suffix in f:
++                for a, slot in zip(output, f["scan" + suffix]["dests"]):
++                    check(a, f["expected" + suffix][slot], (f["name"], jit, slot))
++            else:
++                check(output, f["expected" + suffix], (f["name"], jit))
++            report["checked"].append({"name": f["name"], "jit": jit,
++                                      "observed": [entry(a) for a in output] if isinstance(output, list)
++                                      else entry(output)})
++
++    by = {f["name"]: f for f in fixtures}
++    holes = np.asarray(run(by["scan_context_holes"])[0])
++    assert np.isneginf(holes[1, 0]) and np.array_equal(
++        holes[:, 1:], np.asarray([[7, 13, 19], [11, 17, 23]], dtype=nd)), holes
++    assert np.isnan(np.asarray(run(by["false_source_opposing_infinity"]))[0])
++
++    # Validate metadata even for empty domains: no silently ignored invalid tags.
++    template = by["bool_to_tropical_true"]
++    cases = []
++    for name, changes in [
++        ("unknown_algebra", {"algebra": "min_plus"}),
++        ("unknown_semantics", {"semantics": "future"}),
++        ("missing_semantics", {"semantics": None}),
++        ("boolean_output", {"algebra": "boolean"}),
++    ]:
++        f = copy.deepcopy(template)
++        f["assign" + suffix].update(changes)
++        cases.append((name, f))
++    for name, changes in [
++        ("iverson", {"tag": "iverson"}),
++        ("missing_cast", {"bool_to_tropical": None}),
++        ("non_bool_cast", {"bool_to_tropical": 1}),
++        ("real_to_bool", {"real_to_bool": True}),
++    ]:
++        f = copy.deepcopy(template)
++        f["assign" + suffix]["terms"][0]["factors"][0].update(changes)
++        cases.append((name, f))
++    for name, changes in [
++        ("unknown_init", {"state_init": ["pos_inf"]}),
++        ("init_count", {"state_init": []}),
++        ("unknown_scan_semantics", {"semantics": "future"}),
++    ]:
++        f = copy.deepcopy(by["scan_context_holes"])
++        f["scan" + suffix].update(changes)
++        cases.append((name, f))
++    for name, f in cases:
++        for jit in (False, True):
++            try:
++                run(f, jit)
++            except ValueError as error:
++                report["refusals"].append({"name": name, "jit": jit, "error": str(error)})
++            else:
++                raise AssertionError(("metadata silently admitted", name, jit))
++
++    # Ordered scalar contracts, including the zero-seed JVP regression.
++    a = jnp.asarray([0., -0., np.nan, 2., np.nan], dtype=dt)
++    b = jnp.asarray([-0., 0., 3., np.nan, np.nan], dtype=dt)
++    for jit in (False, True):
++        maximum = (jax.jit(rt._ordered_max) if jit else rt._ordered_max)(a, b)
++        assert np.signbit(np.asarray(maximum)[0]) and not np.signbit(np.asarray(maximum)[1]), \
++            "native_max_zero_tie: ordered max must choose the right signed zero"
++        assert np.all(np.isnan(np.asarray(maximum)[2:]))
++        for x, y, negative in [(0., -0., False), (-0., 0., False), (-0., -0., True)]:
++            fn = jax.jit(rt._ordered_add) if jit else rt._ordered_add
++            assert bool(np.signbit(np.asarray(fn(dt(x), dt(y))))) == negative
++        grad = jax.grad(lambda x: rt._ordered_add(dt(0), x))
++        assert float((jax.jit(grad) if jit else grad)(dt(0))) == 1, \
++            "ordered_add_jvp_init: a winning zero Init must retain derivative one"
++
++    return report
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser()
++    parser.add_argument("precision_name", nargs="?", choices=("float64", "float32"))
++    parser.add_argument("bundle", nargs="?")
++    parser.add_argument("--precision", type=int, choices=(32, 64))
++    parser.add_argument("--checked")
++    parser.add_argument("--logic")
++    parser.add_argument("--out")
++    args = parser.parse_args()
++    if args.precision_name:
++        if not args.bundle or args.precision or args.checked or args.logic:
++            parser.error("use precision bundle OR --precision --checked [--logic]")
++        bundle = load(args.bundle)
++        args.precision = int(args.precision_name[-2:])
++        args.checked = bundle.CHECKED_PATH
++        args.logic = bundle.LOGIC_PATH
++    elif args.bundle or not args.precision or not args.checked:
++        parser.error("use precision bundle OR --precision --checked [--logic]")
++    result = verify(args.precision, args.checked, args.logic)
++    if args.out:
++        Path(args.out).write_text(json.dumps(result, indent=2) + "\n")
++    print(f"PASS max-plus{args.precision}: {len(result['checked'])} checked views, "
++          f"{len(result['refusals'])} refusals, {len(result.get('logic', []))} source views, "
++          f"{len(result.get('gradients', []))} gradient views")
+diff --git a/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py b/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py
+new file mode 100644
+index 00000000..cb1589ab
+--- /dev/null
++++ b/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py
+@@ -0,0 +1,55 @@
++#!/usr/bin/env python3
++"""Generate checked/source fixtures and verify JAX max-plus in both precisions. No installs."""
++import argparse
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++HERE = Path(__file__).resolve().parent
++ROOT = HERE.parents[1]
++parser = argparse.ArgumentParser()
++parser.add_argument("--python", default=sys.executable, help="existing JAX Python environment")
++parser.add_argument("--out-dir", type=Path, default=HERE / ".cache/maxplus")
++parser.add_argument("--checked-only", action="store_true", help="T2 checked fixtures before source integration")
++args = parser.parse_args()
++out = args.out_dir.resolve()
++out.mkdir(parents=True, exist_ok=True)
++commands = []
++
++
++def run(command, name):
++    p = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
++    (out / (name + ".log")).write_text(p.stdout + p.stderr)
++    commands.append({"command": command, "cwd": str(ROOT), "exit_code": p.returncode,
++                     "log": name + ".log"})
++    (out / "commands.json").write_text(json.dumps(commands, indent=2) + "\n")
++    if p.returncode:
++        print(p.stdout, p.stderr)
++        raise SystemExit(p.returncode)
++    print(p.stdout.strip())
++
++
++run(["bash", str(ROOT / "scripts/lake-build.sh"), str(ROOT), "JaxExperiment",
++     "Eval.Plan.ScanJaxGateTest"], "build")
++lake = str(Path.home() / ".elan/bin/lake")
++drivers = [("EvalPlanMaxPlusSmoke.lean", "checked.py")]
++if not args.checked_only:
++    drivers.insert(0, ("EvalPlanLogicSmoke.lean", "logic.py"))
++for driver, target in drivers:
++    run([lake, "env", "lean", "--run", str(HERE / driver), str(out / target)], driver)
++for precision in (64, 32):
++    bundle = HERE / ".cache" / f"generated_evalplan_maxplus_smoke{precision}.py"
++    logic = ("None" if args.checked_only else
++             f"Path(__file__).parent / {os.path.relpath(out / 'logic.py', bundle.parent)!r}")
++    bundle.write_text(
++        "from pathlib import Path\n"
++        f"CHECKED_PATH = Path(__file__).parent / {os.path.relpath(out / 'checked.py', bundle.parent)!r}\n"
++        f"LOGIC_PATH = {logic}\n")
++    argv = ["evalplan_maxplus_smoke.py", f"float{precision}", str(bundle),
++            "--out", str(out / f"result{precision}.json")]
++    code = ("import runpy,sys; sys.path.insert(0," + repr(str(HERE)) +
++            "); sys.argv=" + repr(argv) +
++            "; runpy.run_module('evalplan_maxplus_smoke',run_name='__main__')")
++    run([args.python, "-c", code], f"runtime{precision}")

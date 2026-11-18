@@ -1,0 +1,70 @@
+{
+  "source_baseline": "c5000dd462d72ed0ffcd5806937aa37fa477e9b0",
+  "scope": "Max-plus-only plan package; production code remains at baseline until implementation.",
+  "provided_assets": {
+    "papers/semantics/jax_maxplus_mutations_post.json": "1c7ea7b09d242d31a75bcc780b3451020cc5978c2f9de40ad01d33b35ae194ed",
+    "papers/semantics/jax_maxplus_mutations_python.json": "9cc851fe7e9175e8ae7eb3bdd5f1b61f18dce587aea90e5bedd1a2f511106b05"
+  },
+  "provided_assets_are_not_patch_outputs": true,
+  "tasks": [
+    {
+      "id": "T1",
+      "patch": "papers/semantics/jax_maxplus_patches/01.patch",
+      "patch_sha256": "a5f8ac2cb1dd5a54c74f826c4e903a2de984a7cfced3bf3aa041359bc23ce6df",
+      "snapshot": "papers/semantics/jax_maxplus_files/task1.json",
+      "snapshot_sha256": "9a1a82e08f32c7a2f20f9703cdce3daab5e3b234f4df498ab81ad443fe22a766",
+      "touched_files": [
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean",
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean",
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean"
+      ],
+      "snapshot_file_count": 4
+    },
+    {
+      "id": "T2",
+      "patch": "papers/semantics/jax_maxplus_patches/02.patch",
+      "patch_sha256": "d85138cb707ef90bb6e1b86f48ca3688be5a5536aa4110a82c9d11e4b318d340",
+      "snapshot": "papers/semantics/jax_maxplus_files/task2.json",
+      "snapshot_sha256": "dafadfd839324a142e4e411d2c4c5667878fdc1a37d125bf5bed71d3f7030c64",
+      "touched_files": [
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean",
+        "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py",
+        "leanncd/experiments/jax_bridge/run-evalplan-maxplus.py"
+      ],
+      "snapshot_file_count": 7
+    },
+    {
+      "id": "T3",
+      "patch": "papers/semantics/jax_maxplus_patches/03.patch",
+      "patch_sha256": "5d66b543755dcbecf0bacbb10e92cfe6d2c1e97465564280c7acb95d3dfe57f7",
+      "snapshot": "papers/semantics/jax_maxplus_files/task3.json",
+      "snapshot_sha256": "db28d29e134d97c39e64bf1ff35d2cf267166854683d95f8799ba0f14c773cfc",
+      "touched_files": [
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean",
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py"
+      ],
+      "snapshot_file_count": 7
+    },
+    {
+      "id": "T4",
+      "patch": "papers/semantics/jax_maxplus_patches/04.patch",
+      "patch_sha256": "a788fbe33b2a518982f7551846fb66220c45d9a05ef5e32a856e6fdd757b8242",
+      "snapshot": "papers/semantics/jax_maxplus_files/task4.json",
+      "snapshot_sha256": "b2acc099eac989bae51ffd6aa73d584ce76ab18705827067d99e1cc744a53400",
+      "touched_files": [
+        "leanncd/AGENTS.md",
+        "leanncd/LeanNCD/Eval/Plan/AGENTS.md",
+        "leanncd/docs/test_portfolio.md",
+        "leanncd/experiments/jax_bridge/README.md",
+        "papers/semantics/jax_nonlin_mutations_post.json",
+        "papers/semantics/jax_rnn_session_brief.md",
+        "papers/semantics/jax_scan_mutations_post.json",
+        "papers/semantics/jax_scan_mutations_python.json"
+      ],
+      "snapshot_file_count": 15
+    }
+  ],
+  "execution_baseline": "A descendant of source_baseline with the planning assets already present and the affected source files unchanged."
+}
