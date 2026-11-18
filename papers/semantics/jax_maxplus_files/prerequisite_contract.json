@@ -1,0 +1,685 @@
+{
+  "scope": "Audited scalar/source/checked obligations; Boolean/min-plus details are out-of-slice siblings, not new support.",
+  "scalar_algebras": {
+    "real": {
+      "factor_op": "Native carrier multiplication",
+      "factor_identity": "+1",
+      "reduction_and_term_op": "Native carrier addition",
+      "reduction_identity": "+0",
+      "f64_identity_bits": {
+        "factor": "0x3ff0000000000000",
+        "reduction": "0x0000000000000000"
+      },
+      "f32_identity_bits": {
+        "factor": "0x3f800000",
+        "reduction": "0x00000000"
+      }
+    },
+    "max_plus": {
+      "factor_op": "Native carrier addition, not multiplication",
+      "factor_identity": "+0",
+      "reduction_and_term_op": "maxNaN / maxNaN32",
+      "reduction_identity": "-infinity",
+      "f64_identity_bits": {
+        "factor": "0x0000000000000000",
+        "reduction": "0xfff0000000000000"
+      },
+      "f32_identity_bits": {
+        "factor": "0x00000000",
+        "reduction": "0xff800000"
+      }
+    },
+    "min_plus": {
+      "factor_op": "Native carrier addition",
+      "factor_identity": "+0",
+      "reduction_and_term_op": "minNaN / minNaN32",
+      "reduction_identity": "+infinity",
+      "f64_identity_bits": {
+        "factor": "0x0000000000000000",
+        "reduction": "0x7ff0000000000000"
+      },
+      "f32_identity_bits": {
+        "factor": "0x00000000",
+        "reduction": "0x7f800000"
+      }
+    },
+    "boolean": {
+      "factor_op": "minNaN / minNaN32 over real-carrier values",
+      "factor_identity": "+1, decoded from ScalarConst.bool true",
+      "reduction_and_term_op": "maxNaN / maxNaN32 over real-carrier values",
+      "reduction_identity": "+0, decoded from ScalarConst.bool false",
+      "not_a_logical_carrier": "Stored predicate values are not validated as binary or coerced on bool-to-bool reads. Bool is a semantic signature/algebra tag over the graph's Float or Float32 storage."
+    },
+    "citations": [
+      "leanncd/LeanNCD/Eval/Contract.lean::Combine.real, Combine.bool, Combine.tropical, Combine.max, Combine.min",
+      "leanncd/LeanNCD/Eval/Plan/Check.lean::admittedAlgebra, admittedAlgebraMax, admittedAlgebraMin, admittedAlgebraBool, admittedAlgebraF32, admittedAlgebraF32Max, admittedAlgebraF32Min",
+      "leanncd/LeanNCD/Eval/Plan/Dense.lean::ScalarKernelOps, floatOps, float32Ops"
+    ]
+  },
+  "observations": [
+    {
+      "id": "01-ordered-seeded-three-fold-contract",
+      "confidence": "high: executable source and existing order pins",
+      "required_behavior": [
+        "For each output coordinate, each term enumerates its own reduction coordinates in row-major order, with the last reduction dimension varying fastest.",
+        "At each reduction coordinate, factors fold left in stored/source order starting at factorId.",
+        "The resulting products fold left starting at reduceId; the completed term values then fold left in term order starting at reduceId again.",
+        "Do not flatten the per-term reduction and outer term fold: a term independent of a contracted axis contributes once, not once per coordinate of another term.",
+        "Do not remove seeds, reassociate, reorder operands, or use a parallel-prefix interpretation merely because the operations have mathematical semiring names.",
+        "The checked implementation gathers factors before folding them, but arithmetic is non-failing and every factor is still gathered; neither implementation short-circuits on a zero/false factor."
+      ],
+      "cases": [
+        {
+          "input": "real term factors [a,b,c]",
+          "expected": "((1*a)*b)*c"
+        },
+        {
+          "input": "max-plus term factors [a,b,c]",
+          "expected": "((+0+a)+b)+c"
+        },
+        {
+          "input": "Boolean reduction products [+0,-0]",
+          "expected": "-0, because max ties select the right operand"
+        }
+      ],
+      "citations": [
+        "leanncd/LeanNCD/Eval/Contract.lean::evalAssignSeeded",
+        "leanncd/LeanNCD/Eval/Plan/Dense.lean::foldScalars, denseValueAtWith",
+        "leanncd/LeanNCD/Eval/Plan/Coordinates.lean::allCoords",
+        "leanncd/test/Eval/Plan/KernelDense32Test.lean::f32FactorOrder, factorOrderStore32"
+      ]
+    },
+    {
+      "id": "02-min-max-comparison-and-tie-selection",
+      "confidence": "high: source plus executed f64/f32 probes",
+      "required_behavior": {
+        "max": "if a.isNaN then a else if b.isNaN then b else if a <= b then b else a",
+        "min": "if a.isNaN then a else if b.isNaN then b else if a <= b then a else b",
+        "comparison": "Carrier IEEE comparison: either signed zero compares equal to the other; NaN comparisons are unordered and must be guarded explicitly.",
+        "equal_non_nan": "max selects RHS; min selects LHS. This includes equal infinities and numerically equal finite values. For ordinary equal nonzero values the branch choice is not distinguishable in output bits.",
+        "two_nans": "Both helpers select the first NaN operand at the Lean expression level."
+      },
+      "observed_bits": {
+        "case_order": [
+          "min(+0,-0)",
+          "min(-0,+0)",
+          "max(+0,-0)",
+          "max(-0,+0)"
+        ],
+        "f64": [
+          "0x0000000000000000",
+          "0x8000000000000000",
+          "0x8000000000000000",
+          "0x0000000000000000"
+        ],
+        "f32": [
+          "0x00000000",
+          "0x80000000",
+          "0x80000000",
+          "0x00000000"
+        ]
+      },
+      "citations": [
+        "leanncd/LeanNCD/Eval/Error.lean::maxNaN, minNaN, maxNaN32, minNaN32",
+        "leanncd/LeanNCD/Eval/Plan/Dense.lean::floatOps.binOp, float32Ops.binOp"
+      ]
+    },
+    {
+      "id": "03-nan-propagation-versus-payload-contract",
+      "confidence": "high for branch order and NaN propagation; limited for arbitrary native NaN payload preservation",
+      "required_behavior": [
+        "min/max propagate a NaN from either operand position, including Boolean factor min and Boolean reduction max.",
+        "The helpers return the first NaN operand without performing min/max arithmetic on it; if only the second is NaN, they return the second.",
+        "This expression-level operand selection is not evidence that arbitrary IEEE NaN signs/payloads survive Lean runtime input construction or boxing.",
+        "ScalarConst stores raw UInt64/UInt32 bits structurally, but the only admitted algebra constants are the fixed identities listed above; arbitrary NaN identity bits are not admitted.",
+        "Do not turn the observed canonical outputs below into a cross-platform promise or assert arbitrary-payload bit-exact parity without a separate input-boundary/native-runtime experiment."
+      ],
+      "probe_inputs_and_roundtrip": {
+        "requested_f64": [
+          "0x7ff8000000000011",
+          "0xfff8000000000022"
+        ],
+        "observed_f64_after_ofBits_toBits": [
+          "0x7ff8000000000000",
+          "0x7ff8000000000000"
+        ],
+        "requested_f32": [
+          "0x7fc00011",
+          "0xffc00022"
+        ],
+        "observed_f32_after_ofBits_toBits": [
+          "0x7fc00000",
+          "0x7fc00000"
+        ],
+        "min_and_max_in_both_orders": "All produced that carrier's observed canonical quiet NaN, but the inputs had already canonicalized.",
+        "signaling_nan": "Not probed."
+      },
+      "existing_pin_limit": "ContractTest uses isNaN; KernelDense32Test.nanOut32 deliberately replaces NaN bits by a sentinel, explicitly noting noncanonical NaN representation. These are propagation pins, not payload-preservation pins.",
+      "citations": [
+        "leanncd/LeanNCD/Eval/Error.lean::maxNaN, minNaN, maxNaN32, minNaN32",
+        "leanncd/LeanNCD/Eval/Plan/Types.lean::ScalarConst",
+        "leanncd/LeanNCD/Eval/Plan/Check.lean::checkAssignCore",
+        "leanncd/test/Eval/ContractTest.lean::nanF",
+        "leanncd/test/Eval/Plan/KernelDense32Test.lean::nanOut32"
+      ]
+    },
+    {
+      "id": "04-nonfinite-values-do-not-obey-absorbing-zero-laws",
+      "confidence": "high: primitive definitions, with representative f64 execution",
+      "required_cases": [
+        {
+          "input": "real factor product [0,+infinity]",
+          "expected": "NaN, not zero"
+        },
+        {
+          "input": "real reduction [+infinity,-infinity]",
+          "expected": "NaN"
+        },
+        {
+          "input": "max-plus factor sum [-infinity,+infinity]",
+          "expected": "NaN, not -infinity"
+        },
+        {
+          "input": "min-plus factor sum [+infinity,-infinity]",
+          "expected": "NaN, not +infinity"
+        },
+        {
+          "input": "Boolean min(0,NaN)",
+          "expected": "NaN, not false"
+        },
+        {
+          "input": "max(-infinity,finite)",
+          "expected": "finite"
+        },
+        {
+          "input": "min(+infinity,finite)",
+          "expected": "finite"
+        },
+        {
+          "input": "max(+infinity,finite) or min(-infinity,finite)",
+          "expected": "+infinity or -infinity, respectively"
+        }
+      ],
+      "consequence": "A false Iverson/predicate or OOB pad is still a scalar factor. It does not authorize skipping the other factors: an opposing infinity or NaN can poison the term. In particular, an all-false tropical adjacency row returns 0_K for finite companion data, but not unconditionally for arbitrary nonfinite companions.",
+      "observed_f64": {
+        "case_order": [
+          "0*(+infinity)",
+          "(-infinity)+(+infinity)",
+          "Boolean min(0,NaN)"
+        ],
+        "bits": [
+          "0x7ff8000000000000",
+          "0x7ff8000000000000",
+          "0x7ff8000000000000"
+        ]
+      },
+      "citations": [
+        "leanncd/LeanNCD/Eval/Contract.lean::Combine.real, Combine.bool, Combine.tropical",
+        "leanncd/LeanNCD/Eval/Plan/Dense.lean::floatOps, float32Ops, denseValueAtWith",
+        "leanncd/test/Eval/Plan/BoolCastTest.lean::bareMax, bareMin"
+      ]
+    },
+    {
+      "id": "05-seeds-change-signed-zero-even-for-one-read",
+      "confidence": "high: checked f64/f32 execution and one reference comparison",
+      "required_cases": [
+        {
+          "input": "single stored -0, real one-factor reduction",
+          "expected": "+0: factor 1*(-0) is -0, but reduction +0+(-0) is +0"
+        },
+        {
+          "input": "single stored -0, max-plus or min-plus",
+          "expected": "+0: factor seed +0 plus -0 is +0 before min/max sees it"
+        },
+        {
+          "input": "Boolean stored values [+0,-0], no read cast",
+          "expected": "-0"
+        },
+        {
+          "input": "Boolean stored values [-0,+0], no read cast",
+          "expected": "+0"
+        }
+      ],
+      "observed_bits": {
+        "boolean_reduction_forward_reverse_f64": [
+          "0x8000000000000000",
+          "0x0000000000000000"
+        ],
+        "boolean_reduction_forward_reverse_f32": [
+          "0x80000000",
+          "0x00000000"
+        ],
+        "reference_boolean_forward_f64": "0x8000000000000000",
+        "single_negative_zero_real_max_min_f64": [
+          "0x0000000000000000",
+          "0x0000000000000000",
+          "0x0000000000000000"
+        ],
+        "single_negative_zero_real_max_min_f32": [
+          "0x00000000",
+          "0x00000000",
+          "0x00000000"
+        ]
+      },
+      "citations": [
+        "leanncd/LeanNCD/Eval/Contract.lean::evalAssignSeeded",
+        "leanncd/LeanNCD/Eval/Plan/Dense.lean::denseValueAtWith, foldScalars"
+      ]
+    },
+    {
+      "id": "06-empty-factors-terms-dimensions",
+      "confidence": "high: source equations, existing identity pins and executed empty reductions",
+      "checked_admission_adjudication": {
+        "scope": "Rechecked checkAssignCore directly for both checkAssign (.float64) and checkAssignF32 (.float32); no bridge/codegen inspection or build was needed.",
+        "empty_terms": {
+          "status": "checked-admitted in both carriers, not merely a worker-equation-only case",
+          "exact_control_flow": "After destination slot/dtype/shape, admitted-algebra membership and identity-dtype guards, checkAssignCore runs `for h : ti in [0 : a.terms.size] do ...` and returns CheckedAssignPlan.mk a kind. There is no terms.isEmpty or positive-term-count predicate. With a.terms = #[], every term/factor obligation is vacuous.",
+          "witness_shape": "An otherwise valid scalar AssignPlan with contextShape := #[], outputShape := #[], terms := #[], and the carrier's admitted algebra is accepted. Its output scalar is reduceId."
+        },
+        "empty_factors": {
+          "status": "checked-admitted in both carriers, not merely a worker-equation-only case",
+          "exact_predicates": [
+            "t.positionsPartition",
+            "t.outputProjection == a.outputShape",
+            "t.contextProjection == a.contextShape"
+          ],
+          "exact_control_flow": "Those three per-term guards precede `for h2 : fi in [0 : t.factors.size] do ...`. There is no factors.isEmpty or positive-factor-count predicate; #[] makes only the factor loop vacuous.",
+          "partition_definition": "Let all := (t.contextPos ++ t.outputPos ++ t.reductionPos).toList. positionsPartition is `all.length == t.iterationShape.size && all.mergeSort (\u00b7 \u2264 \u00b7) == List.range t.iterationShape.size`.",
+          "witness_shape": "A scalar term with iterationShape/contextPos/outputPos/reductionPos/factors all #[] satisfies the predicates. With no reduction axes it contributes factorId."
+        },
+        "zero_extent_reduction": {
+          "status": "checked-admitted in both carriers when all other structural/read guards hold",
+          "exact_predicates": "The same partition and output/context projection guards apply; checkAssignCore imposes no positivity predicate on t.iterationShape extents.",
+          "witness_shape": "For scalar output/context, iterationShape := #[0], reductionPos := #[0], contextPos := #[], outputPos := #[], factors := #[] is structurally admitted. The reduction has zero coordinates, so it contributes reduceId, not factorId.",
+          "distinction": "iterationShape := #[] gives one coordinate []; iterationShape := #[0] with that dimension reduced gives none. Empty factors and an empty reduction domain are independent properties."
+        },
+        "worker_equation_only_cases_among_these_three": [],
+        "prose_adjudication": "The parent-reported loweringToEinsumCandidate prose claiming that checkAssign never admits an empty term array is contradicted by actual checkAssignCore control flow. This audit does not infer a separate bridge admission rule and does not change or inspect the excluded bridge file.",
+        "validation_limit": "Admission was adjudicated from executable checker source, not a new compiled witness. The earlier native empty-reduction probes remain the only new executed empty-domain checks."
+      },
+      "required_cases": [
+        {
+          "input": "no terms and a materialized output cell",
+          "expected": "real/bool +0; max-plus -infinity; min-plus +infinity"
+        },
+        {
+          "input": "one empty-factor term, no reduction axes",
+          "expected": "real/bool +1; max-plus/min-plus +0"
+        },
+        {
+          "input": "a term whose reduction shape contains any zero extent",
+          "expected": "that term contributes reduceId; no factor read, cast or unary application occurs for that term"
+        },
+        {
+          "input": "no reduction axes, shape []",
+          "expected": "one reduction coordinate [], not zero coordinates"
+        },
+        {
+          "input": "output shape contains a zero extent",
+          "expected": "empty data buffer with that exact shape; no scalar cell is evaluated"
+        },
+        {
+          "input": "scalar output shape []",
+          "expected": "one scalar cell"
+        },
+        {
+          "input": "zero-sized source read through a nonempty explicit iteration domain",
+          "expected": "OOB padding, not an empty reduction; source extent and iteration extent are distinct"
+        },
+        {
+          "input": "empty output with malformed inputs",
+          "expected": "not a blanket success: checked context/store validation and reference read-name/axis validation run before output enumeration"
+        }
+      ],
+      "observed_empty_reduction_bits": {
+        "algebra_order": [
+          "real",
+          "max-plus",
+          "min-plus",
+          "Boolean"
+        ],
+        "f64": [
+          "0x0000000000000000",
+          "0xfff0000000000000",
+          "0x7ff0000000000000",
+          "0x0000000000000000"
+        ],
+        "f32": [
+          "0x00000000",
+          "0xff800000",
+          "0x7f800000",
+          "0x00000000"
+        ]
+      },
+      "citations": [
+        "leanncd/LeanNCD/Eval/Tensor.lean::DenseTensor.allCoords, DenseTensor.sizeOf",
+        "leanncd/LeanNCD/Eval/Plan/Coordinates.lean::allCoords",
+        "leanncd/LeanNCD/Eval/Contract.lean::evalAssignSeeded",
+        "leanncd/LeanNCD/Eval/Plan/Check.lean::checkAssignCore, checkAssign, checkAssignF32, TermPlan.positionsPartition, TermPlan.outputProjection, TermPlan.contextProjection",
+        "leanncd/LeanNCD/Eval/Plan/Dense.lean::denseValueAtWith, runDenseAssignAt, runDenseAssignAt32, validateStore",
+        "leanncd/test/Eval/ContractTest.lean::emptyProdRhs, emptySumRhs, zeroExtRhs, refRows",
+        "leanncd/test/Eval/Plan/KernelDense32Test.lean::f32Efp, f32Zerd"
+      ]
+    },
+    {
+      "id": "07-bare-read-oob-pad-is-statement-zero",
+      "confidence": "high: both source implementations and reference OOB probe",
+      "required_behavior": [
+        "Test bounds per source dimension, before flattening; either a negative coordinate or coordinate >= its own extent is OOB.",
+        "Bare OOB reads return the destination statement algebra's reduceId: +0 for real/Boolean, -infinity for max-plus, +infinity for min-plus.",
+        "The historical policy name zeroPad does not mean always numeric zero.",
+        "No read cast is applied to an OOB pad. An in-bounds stored value equal to zero is a different case and can be cast."
+      ],
+      "observed": "Reference gatherCast with max-plus, a zero-length source, and a deliberately NaN-valued cast returns 0xfff0000000000000, proving that the pad bypasses that cast.",
+      "citations": [
+        "leanncd/LeanNCD/Eval/Gather.lean::gatherCell, gatherRead, gatherCast",
+        "leanncd/LeanNCD/Eval/Plan/Coordinates.lean::inBoundsPerDim, flatIndex",
+        "leanncd/LeanNCD/Eval/Plan/Dense.lean::gatherFactorWith",
+        "leanncd/LeanNCD/Eval/Plan/Types.lean::OutOfBoundsPolicy"
+      ]
+    },
+    {
+      "id": "08-unary-reads-bypass-casts-and-have-sort-sensitive-oob",
+      "confidence": "high: shared unary helpers, both gather implementations, reference OOB execution and existing f32 pins",
+      "required_behavior": [
+        "An in-bounds unary read applies its primitive to the raw stored real-carrier value, including a predicate source. Neither boolToTropical nor realToBool applies under unary.",
+        "A tropical OOB unary read returns reduceId directly, without invoking the primitive; OOB log or reciprocal therefore does not raise a domain error there.",
+        "A real/Boolean OOB unary read invokes the primitive on native +0: exp/cos give 1, sin/sqrt give +0, and log/reciprocal fail.",
+        "Domain checks are log v<=0, sqrt v<0, reciprocal v==0. Both signed zeros fail log and reciprocal; sqrt(-0) is admitted.",
+        "NaN makes all three rejection predicates false, so it is admitted to the native primitive and yields NaN rather than a unary-domain error.",
+        "log(+infinity) and sqrt(+infinity) succeed; log/sqrt(-infinity) fail; reciprocal of either infinity succeeds with signed zero. exp/sin/cos are unchecked native operations, including their nonfinite outcomes.",
+        "The generic checked gather would apply a flag before unary if a malformed raw read combined them, but checkAssignCore rejects every flagged unary read; this is not an admitted checked/reference discrepancy."
+      ],
+      "observed_f64_oob": {
+        "max_plus_log_bits": "0xfff0000000000000",
+        "min_plus_recip_bits": "0x7ff0000000000000",
+        "real_exp_bits": "0x3ff0000000000000",
+        "boolean_exp_factor_bits": "0x3ff0000000000000",
+        "real_log": "log domain error: log(0.000000) undefined for non-positive input"
+      },
+      "citations": [
+        "leanncd/LeanNCD/Eval/Gather.lean::gatherCast, applyUnaryFn",
+        "leanncd/LeanNCD/Eval/Error.lean::UnaryOp.applyChecked, UnaryOp.applyChecked32",
+        "leanncd/LeanNCD/Eval/Plan/Dense.lean::gatherFactorWith, floatOps, float32Ops",
+        "leanncd/LeanNCD/Eval/Plan/Check.lean::checkAssignCore",
+        "leanncd/test/Eval/Plan/KernelDense32Test.lean::f32UnaryPlan"
+      ]
+    },
+    {
+      "id": "09-bool-to-tropical-truth-includes-nan-and-nonbinary",
+      "confidence": "high: reference/checked source, f64/f32 cast probes, existing three-way parity pins",
+      "required_behavior": {
+        "scope": "Bare in-bounds predicate-source read into max-plus/min-plus.",
+        "false": "+0 and -0 only, via stored v != native +0",
+        "true": "Every nonzero value, including negative numbers, fractions, +/-infinity and NaN",
+        "mapping": "false -> reduceId (-infinity/+infinity), true -> factorId (+0)",
+        "no_cast_cases": "Predicate -> real and real -> tropical remain raw values; unary and OOB reads follow observations 07 and 08."
+      },
+      "observed": {
+        "truth_input_order": [
+          "+0",
+          "-0",
+          "+infinity",
+          "-infinity",
+          "NaN",
+          "-2",
+          "0.25"
+        ],
+        "truth_both_carriers": [
+          false,
+          false,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "max_nan_then_false_f64": [
+          "0x0000000000000000",
+          "0xfff0000000000000"
+        ],
+        "min_nan_then_false_f64": [
+          "0x0000000000000000",
+          "0x7ff0000000000000"
+        ],
+        "max_nan_then_false_f32": [
+          "0x00000000",
+          "0xff800000"
+        ]
+      },
+      "citations": [
+        "leanncd/LeanNCD/Eval/Contract.lean::boolReadCast",
+        "leanncd/LeanNCD/Eval/Plan/Dense.lean::floatOps.isTrue, float32Ops.isTrue, gatherFactorWith",
+        "leanncd/test/Eval/Plan/BoolCastTest.lean::bareMax, bareMin, nan, unaryMax, unaryMin"
+      ]
+    },
+    {
+      "id": "10-real-to-bool-is-not-bool-to-bool",
+      "confidence": "high: source, checked probes and reference/checked regression pins",
+      "required_cases": [
+        {
+          "input": "bare non-predicate source [0.25,0.75,0,NaN,-2] into predicate",
+          "expected": "[1,1,+0,1,1]"
+        },
+        {
+          "input": "same values declared predicate, read into predicate",
+          "expected": "[0.25,0.75,+0,NaN,+0] for separate one-factor output cells"
+        },
+        {
+          "input": "bare predicate source value +infinity into predicate",
+          "expected": "1 after min seed, not because of a read cast"
+        },
+        {
+          "input": "bare predicate source value -infinity into predicate",
+          "expected": "+0 after max reduction seed, not because of a read cast"
+        },
+        {
+          "input": "unary sqrt of real [0.25,4] into predicate",
+          "expected": "[0.5,1], not [1,1]"
+        },
+        {
+          "input": "stored -0 under realToBool",
+          "expected": "native +0; stored -0 under bool-to-bool can remain -0"
+        }
+      ],
+      "observed_bits": {
+        "bool_source_quarter_f64": "0x3fd0000000000000",
+        "bool_source_quarter_f32": "0x3e800000",
+        "bool_source_nan_f64": "0x7ff8000000000000",
+        "bool_source_nan_f32": "0x7fc00000",
+        "real_nan_cast_f64": "0x3ff0000000000000",
+        "real_nan_cast_f32": "0x3f800000"
+      },
+      "consequence": "Replacing Boolean storage/ops with logical bool loses fractions, NaN propagation and signed-zero behavior. Even bool-only source data is not guaranteed binary by runtime validation.",
+      "citations": [
+        "leanncd/LeanNCD/Eval/Contract.lean::boolReadCast, Combine.bool",
+        "leanncd/LeanNCD/Eval/Plan/Check.lean::admittedAlgebraBool",
+        "leanncd/LeanNCD/Eval/Plan/Dense.lean::validateStore, gatherFactorWith",
+        "leanncd/test/Eval/ContractTest.lean::d1Real, d1Run",
+        "leanncd/test/Eval/Plan/BoolCastTest.lean::rtbReal, rtbUnary"
+      ]
+    },
+    {
+      "id": "11-checked-flags-algebra-admission-and-law-nonclaims",
+      "confidence": "high: read actual checker and compiler, not mathematical assumptions",
+      "required_behavior": [
+        "f64 destinations admit exactly real, max-plus and min-plus f64 algebras. f32 destinations admit their three native-f32 counterparts. Bool destinations admit only admittedAlgebraBool in either carrier.",
+        "Identity matching is structural over ScalarConst bit patterns; substituting -0 for a required +0 algebra identity is not admitted.",
+        "boolToTropical=true is admitted only for a bare bool-source read under add-factor/max-or-min-reduction algebra.",
+        "realToBool=true is admitted only for a bare non-bool-source read under the exact Boolean algebra.",
+        "Both flags cannot be simultaneously admitted, because their source/algebra requirements conflict.",
+        "False flags are not rejected merely because source/destination tags would lead the source compiler to set one. Thus an arbitrary checked raw plan can intentionally omit a cast, and its serialized flag must be obeyed rather than re-inferred.",
+        "The source compiler sets the appropriate flags on bare reads, and leaves both false on unary reads.",
+        "Within one carrier a source dtype need not equal destination dtype; a bool source feeding real storage is permitted.",
+        "ContractionAlgebra contains only factorOp/factorId/reduceOp/reduceId. ScalarBinOp contains add/mul/min/max. Neither contains associative, commutative, distributive, absorbing-zero or parallel-scan law flags/certificates. No optimization permission follows from these records."
+      ],
+      "executed_omitted_flag_witness": "A real-source NaN feeding a Boolean checked assignment with realToBool=false was accepted and produced 0x7ff8000000000000; with the flag true it produced 0x3ff0000000000000.",
+      "citations": [
+        "leanncd/LeanNCD/Eval/Plan/Types.lean::ScalarConst, ScalarBinOp, ContractionAlgebra",
+        "leanncd/LeanNCD/Eval/Plan/Kernel.lean::ReadPlan",
+        "leanncd/LeanNCD/Eval/Plan/Check.lean::admittedAlgebrasFor, admittedAlgebrasForF32, checkAssignCore",
+        "leanncd/LeanNCD/Eval/Plan/Compile.lean::residualizeAssignment",
+        "leanncd/test/Eval/Plan/BoolCastTest.lean::accepted, rejectedCast, rtbRead"
+      ],
+      "boundary": "Any separate bridge-specific metadata or gates in excluded files were intentionally not audited."
+    },
+    {
+      "id": "12-scan-state-initialization-and-actual-admission",
+      "confidence": "high: checked construction and worker source plus existing parity fixtures; no new scan execution",
+      "required_behavior": [
+        "StateInit.zero fills every complete-history cell with native +0. negInf fills -infinity; posInf fills +infinity. Base writes then overlay; untouched cells retain that initial value.",
+        "Source max-plus states select negInf, min-plus states posInf, and real/Boolean states zero. A sort-neutral base adopts its state's sort for gathering, casts and algebra, rather than evaluating as ordinary real sum-product.",
+        "checkScanCore admits both carrier kinds via checkScanPlan/checkScanPlanF32, and permits bool states alongside that carrier's real states.",
+        "A bool state with negInf/posInf is stateInitNotAdmitted. A real-carrier state may structurally name any StateInit, but direct assignment writers must agree with it via checkStateInitTie.",
+        "For every directly producing .assign in base and step writes, add/max requires negInf, add/min requires posInf, and real/Boolean requires zero. A mismatch is stateInitAlgebraMismatch.",
+        "The init tie does not trace through pointwise/axiswise output steps or a pass-through block input; those impose no assignment-algebra tie at that check. Do not claim a stronger global semantic-sort proof for arbitrary raw scans.",
+        "No states or no advancing axes are refused. Each advancing history extent must be >0; extent 0 is zeroExtent, not an empty accepted scan. Extent 1 yields zero successor steps along that axis.",
+        "Non-advancing zero extents are not banned by the scan's history-extent check; the dense shape equations can yield an empty state buffer.",
+        "The checker also enforces completeHistory, axisZeroFastest, zeroThenBaseOverlay, immutablePreStep, writer geometry/disjointness and captured-state causality. It does not establish associativity or authorize parallel scan."
+      ],
+      "existing_exact_cases": [
+        {
+          "fixture": "BoolCastTest.stateMax",
+          "expected_G_row_major": [
+            "2",
+            "-infinity",
+            "5",
+            "5"
+          ]
+        },
+        {
+          "fixture": "BoolCastTest.stateMin",
+          "expected_G_row_major": [
+            "-2",
+            "+infinity",
+            "-5",
+            "-5"
+          ]
+        },
+        {
+          "fixture": "BoolCastTest.stateSum",
+          "expected_G_row_major": [
+            "2",
+            "0",
+            "5",
+            "8"
+          ]
+        }
+      ],
+      "citations": [
+        "leanncd/LeanNCD/Eval/Plan/RawStep.lean::StateInit, StateSlot",
+        "leanncd/LeanNCD/Eval/Plan/Scan.lean::algebraStateInit, checkStateInitTie, checkScanCore, runDenseScanWith, runDenseScan, runDenseScan32",
+        "leanncd/LeanNCD/Eval/Plan/Compile.lean::compileScan",
+        "leanncd/LeanNCD/DSL/Ast.lean::writerVotes, scanStateAlgebra, scanStateStmts",
+        "leanncd/LeanNCD/Eval/Scan.lean::evalScan",
+        "leanncd/test/Eval/Plan/BoolCastTest.lean::stateMax, stateMin, stateSum, neutralOobMax, neutralOobMin, neutralPredMax, neutralPredMin",
+        "leanncd/test/Eval/Plan/ScanDense32Test.lean::c32, c64, predProg, oracle32"
+      ]
+    },
+    {
+      "id": "13-scan-write-placement-is-copy-not-an-extra-scalar-fold",
+      "confidence": "high: direct reference and checked write implementations",
+      "required_behavior": [
+        "The checked commitWrite copies the computed output scalar into the state; it does not reapply reduceOp against the initialized cell.",
+        "The reference writeScanStmtSlice also copies if the previous cell's bits equal the state's unit0 bits. Otherwise it combines previous and incoming values.",
+        "The reference therefore preserves a single computed -0 write rather than evaluating real +0+(-0) and changing it to +0.",
+        "Reference collision handling exists for shapes the checked geometry refuses; do not extend checked-path matching to arbitrary colliding writes."
+      ],
+      "citations": [
+        "leanncd/LeanNCD/Eval/Scan.lean::writeScanStmtSlice",
+        "leanncd/LeanNCD/Eval/Plan/Scan.lean::commitWrite, checkWrites, runDenseScanWith"
+      ]
+    },
+    {
+      "id": "14-reference-checked-differences-and-common-domain",
+      "confidence": "high for the explicit boundaries; scalar matching is source/probe evidence, not a general formal theorem",
+      "differences": [
+        {
+          "topic": "precision",
+          "reference": "Computes Float only and rejects explicitly declared f32 before its scalar algebra/gather work.",
+          "checked": "Native f64 or native f32, including Boolean storage in either. Wrong-carrier evidence is rejected, not widened/narrowed.",
+          "matching_implication": "Use checked f32 as the precision-specific scalar oracle; running the Float reference and narrowing is not a valid general f32 oracle."
+        },
+        {
+          "topic": "predicate destination with explicit tropical agg at low-level entry",
+          "reference": "combineFor prioritizes .max/.min before predicate declaration, so the direct dtype-aware scalar entry can evaluate a tropical statement into a predicate-named destination.",
+          "checked": "algebraForDest prioritizes .bool; checkAssignCore admits only Boolean algebra at a bool destination.",
+          "matching_implication": "This disagreement is outside the validated common source domain: checkPredicateOutput/prepareEvalPlan's source validation forces predicate statements to .sum."
+        },
+        {
+          "topic": "casts",
+          "reference": "Infers bare-read cast from declarations and aggregation.",
+          "checked": "Executes explicit ReadPlan flags; checker restricts true flags but permits omission.",
+          "matching_implication": "Source-compiled parity and arbitrary checked-plan parity are different claims. Honor checked flags exactly."
+        },
+        {
+          "topic": "errors and malformed data",
+          "reference": "Unary errors carry tensor/coordinate context; DenseTensor.get! has a numeric-zero fallback for malformed storage.",
+          "checked": "Unary errors carry slot and carrier-specific bits; validateStore rejects missing referenced slots, wrong shapes and wrong storage lengths before evaluating cells.",
+          "matching_implication": "Compare scalar values on well-formed stores; do not claim identical malformed-store or diagnostic behavior."
+        }
+      ],
+      "common_scalar_domain": "For validated source f64 programs with well-formed inputs, the reference and checked workers share the exact min/max and unary helpers, identities, casts and fold order. No contradictory scalar rule was found. New direct execution confirmed Boolean signed-zero parity.",
+      "citations": [
+        "leanncd/LeanNCD/Eval/Contract.lean::rejectUnsupportedStorage, evalAssignDtypedSeeded, combineFor, boolReadCast",
+        "leanncd/LeanNCD/Eval/Tensor.lean::DenseTensor.get!",
+        "leanncd/LeanNCD/Eval/Plan/Compile.lean::algebraForDest, prepareEvalPlan, residualizeAssignment",
+        "leanncd/LeanNCD/Eval/Plan/Check.lean::checkAssignCore",
+        "leanncd/LeanNCD/Eval/Plan/Dense.lean::validateStore, runDenseAssignAt, runDenseAssignAt32",
+        "leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean::scheduleAlgebras, checkSortCasts",
+        "leanncd/test/Eval/ContractTest.lean::d1Run"
+      ]
+    },
+    {
+      "id": "15-jax-matching-obligations-not-a-runtime-design",
+      "confidence": "high for Lean obligations; JAX observations below were independently measured by the parent audit, not re-tested by this scalar-audit agent",
+      "actionable_traps": [
+        "Ordinary jnp min/max are not bitwise interchangeable with Lean helpers on signed-zero ties under the independent measurements supplied to this audit.",
+        "A non-NaN max select must use a<=b with RHS on equality; a non-NaN min select must use a<=b with LHS on equality. Add ordered explicit NaN guards selecting first NaN, then second NaN.",
+        "A Boolean one-factor reduction over [+0,-0] is a concrete end-to-end witness: Lean returns -0, whereas a max operation choosing +0 on both tie orders loses semantics.",
+        "Do not substitute logical bool, logical_and, logical_or or an unconditional nonzero cast for Boolean min/max.",
+        "Preserve native precision, seed applications, factor/reduction/term nesting and ordering, explicit checked cast flags, OOB unary bypass and StateInit.",
+        "Do not prune false/OOB factors under a presumed annihilator law for unrestricted nonfinite input.",
+        "A claim of NaN propagation is supported; a claim of arbitrary payload-preserving cross-runtime bit identity remains unestablished."
+      ],
+      "independent_observations_supplied_by_parent_audit": {
+        "both_precisions_eager_and_jit": {
+          "jnp_maximum_both_zero_orders": "+0",
+          "jnp_minimum_both_zero_orders": "-0",
+          "where_a_le_b_then_b_else_a": "RHS zero on max equality",
+          "where_a_le_b_then_a_else_b": "LHS zero on min equality",
+          "nan_note": "Both bare where expressions require explicit NaN handling."
+        },
+        "gradient_note": "The parent audit measured maximum tie gradient (0.5,0.5), explicit-select max gradient (0,1). Lean's audited scalar evaluator defines forward values only and provides no autodiff contract. Forward-faithful selection therefore must not silently be advertised as preserving jnp.maximum's gradient convention."
+      },
+      "citations": [
+        "leanncd/LeanNCD/Eval/Error.lean::maxNaN, minNaN, maxNaN32, minNaN32",
+        "leanncd/LeanNCD/Eval/Plan/Dense.lean::denseValueAtWith, gatherFactorWith",
+        "Parent-audit artifacts semiring_jax_scalar64.json and semiring_jax_scalar32.json: independent eager/JIT f64/f32 signed-zero and gradient probes"
+      ]
+    }
+  ],
+  "gaps_and_confidence": [
+    {
+      "gap": "NaN payload/sign and signaling-NaN parity",
+      "status": "Unresolved beyond the explicit first-NaN branch rule. The #eval ofBits inputs already canonicalized; no arbitrary-payload native input boundary was established.",
+      "needed_before_claim": "Independent native input/output evidence or an explicitly weaker NaN-equivalence policy, coordinated with the bridge owner."
+    },
+    {
+      "gap": "No new whole-scan run or exhaustive empty-shape suite",
+      "status": "StateInit/checker and empty-domain conclusions come from actual executable definitions and read existing pins. New probes were intentionally bounded."
+    },
+    {
+      "gap": "General theorem of checked/reference equivalence",
+      "status": "Not established by this audit. Findings distinguish common validated source programs, arbitrary checked raw plans, and unchecked direct reference entries."
+    },
+    {
+      "gap": "Bridge algebra metadata/support gates/format and JAX implementation",
+      "status": "Deliberately excluded; owned by the independent bridge audit. No claims inferred from the prohibited files."
+    },
+    {
+      "gap": "Native transcendental bit-for-bit portability",
+      "status": "Only shared Lean domain rules and native-carrier dispatch were audited. Cross-library transcendental rounding equivalence is not claimed."
+    }
+  ]
+}

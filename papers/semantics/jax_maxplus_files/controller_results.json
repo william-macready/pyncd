@@ -1,0 +1,514 @@
+{
+  "status": "passed",
+  "source_baseline": "c5000dd462d72ed0ffcd5806937aa37fa477e9b0",
+  "checks": [
+    {
+      "name": "package-task4",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_files/verify_package.py",
+        "--task",
+        "4"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/package-task4.log",
+      "summary_lines": [
+        "Package OK: 4 ordered patches, 2 provided manifests, task 4 boundary; index unchanged."
+      ]
+    },
+    {
+      "name": "maxplus-complete",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py",
+        "--python",
+        "/Users/williammacready/code/python/pyncd.worktrees/task4-boolean-output/leanncd/experiments/jax_bridge/.cache/python/bin/python",
+        "--out-dir",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/controller-maxplus"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/maxplus-complete.log",
+      "summary_lines": [
+        "Build completed successfully (8529 jobs)."
+      ]
+    },
+    {
+      "name": "new-lean-mutations",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/scripts/mutation-manifest.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_mutations_post.json"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/new-lean-mutations.log",
+      "summary_lines": [
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "2/2 cycles passed."
+      ],
+      "source_hashes_before": {
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean": "4855441bfe38acc88f45ef41d30bafd0f29523d43cb1643e8a31f65a16e67433",
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": "f218df23446fa7f612f194c17daefcf7c555aefd1cfaaf64d89942757519e172",
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": "19b8f550f3a24505d7d3ef1cbe6dbea4329a92f3bbd24fd9344a3add023b66cd",
+        "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": "eaa38772583e5c1fedf55983400c68ffa7df3dfa4f30fa0cbc4b4591794d487d",
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": "6ad3e4075c256066a6f9ac0be8f3de2e1e4caad233b73b7a1cba884c84415dc4",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": "77d7d838a48b59a967d793cd76641532cd449955b158e01191d9e18be514ef05",
+        "leanncd/experiments/jax_bridge/run-evalplan-maxplus.py": "2f93f091fd0f1cf6b324103b24ea425ee6e22d4349d343115c519f7b0b0cb61b",
+        "papers/semantics/jax_nonlin_mutations_post.json": "5c3f9ecee7b69f491e15ce3b5743201ad4bacae0b1a14a40bc7f0c33e54060ea",
+        "papers/semantics/jax_scan_mutations_post.json": "da6be9d4e1cd9ad96c3a948ab4a15e2bde96b103f0d9a774825e4cbf599bf696",
+        "leanncd/experiments/jax_bridge/README.md": "8da39d551beb15b403a3db318eab2ce022ab5bd925ba857b70e9ab518b78b658",
+        "leanncd/docs/test_portfolio.md": "8ac53844365be75787a549bb09c89537c817e054472e5ca627d36a02244f1d27",
+        "papers/semantics/jax_rnn_session_brief.md": "baf5610d26cef92aac653a65442595638044aa909795c04cde8ed386a46f9543",
+        "leanncd/LeanNCD/Eval/Plan/AGENTS.md": "2d21cb790c41a88afe9f2ba2cd32035fa40c200ed1756035163d4cd488bcaabe",
+        "leanncd/AGENTS.md": "69bfb6f8231871f30a1242e38bf3832424b3627d4657c5426cd07f532e2bfe6e"
+      },
+      "source_hashes_after": {
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean": "4855441bfe38acc88f45ef41d30bafd0f29523d43cb1643e8a31f65a16e67433",
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": "f218df23446fa7f612f194c17daefcf7c555aefd1cfaaf64d89942757519e172",
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": "19b8f550f3a24505d7d3ef1cbe6dbea4329a92f3bbd24fd9344a3add023b66cd",
+        "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": "eaa38772583e5c1fedf55983400c68ffa7df3dfa4f30fa0cbc4b4591794d487d",
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": "6ad3e4075c256066a6f9ac0be8f3de2e1e4caad233b73b7a1cba884c84415dc4",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": "77d7d838a48b59a967d793cd76641532cd449955b158e01191d9e18be514ef05",
+        "leanncd/experiments/jax_bridge/run-evalplan-maxplus.py": "2f93f091fd0f1cf6b324103b24ea425ee6e22d4349d343115c519f7b0b0cb61b",
+        "papers/semantics/jax_nonlin_mutations_post.json": "5c3f9ecee7b69f491e15ce3b5743201ad4bacae0b1a14a40bc7f0c33e54060ea",
+        "papers/semantics/jax_scan_mutations_post.json": "da6be9d4e1cd9ad96c3a948ab4a15e2bde96b103f0d9a774825e4cbf599bf696",
+        "leanncd/experiments/jax_bridge/README.md": "8da39d551beb15b403a3db318eab2ce022ab5bd925ba857b70e9ab518b78b658",
+        "leanncd/docs/test_portfolio.md": "8ac53844365be75787a549bb09c89537c817e054472e5ca627d36a02244f1d27",
+        "papers/semantics/jax_rnn_session_brief.md": "baf5610d26cef92aac653a65442595638044aa909795c04cde8ed386a46f9543",
+        "leanncd/LeanNCD/Eval/Plan/AGENTS.md": "2d21cb790c41a88afe9f2ba2cd32035fa40c200ed1756035163d4cd488bcaabe",
+        "leanncd/AGENTS.md": "69bfb6f8231871f30a1242e38bf3832424b3627d4657c5426cd07f532e2bfe6e"
+      },
+      "restored_byte_identical": true
+    },
+    {
+      "name": "new-python-mutations",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_mutations_python.json"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/new-python-mutations.log",
+      "summary_lines": [
+        "PASS MAX-P-omit_cast | killed | restored",
+        "PASS MAX-P-zero_init | killed | restored",
+        "PASS MAX-P-freeze_time | killed | restored",
+        "PASS MAX-P-zero_pad | killed | restored",
+        "PASS MAX-P-native_max_zero_tie | killed | restored",
+        "PASS MAX-P-remove_custom_jvp | killed | restored"
+      ],
+      "source_hashes_before": {
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean": "4855441bfe38acc88f45ef41d30bafd0f29523d43cb1643e8a31f65a16e67433",
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": "f218df23446fa7f612f194c17daefcf7c555aefd1cfaaf64d89942757519e172",
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": "19b8f550f3a24505d7d3ef1cbe6dbea4329a92f3bbd24fd9344a3add023b66cd",
+        "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": "eaa38772583e5c1fedf55983400c68ffa7df3dfa4f30fa0cbc4b4591794d487d",
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": "6ad3e4075c256066a6f9ac0be8f3de2e1e4caad233b73b7a1cba884c84415dc4",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": "77d7d838a48b59a967d793cd76641532cd449955b158e01191d9e18be514ef05",
+        "leanncd/experiments/jax_bridge/run-evalplan-maxplus.py": "2f93f091fd0f1cf6b324103b24ea425ee6e22d4349d343115c519f7b0b0cb61b",
+        "papers/semantics/jax_nonlin_mutations_post.json": "5c3f9ecee7b69f491e15ce3b5743201ad4bacae0b1a14a40bc7f0c33e54060ea",
+        "papers/semantics/jax_scan_mutations_post.json": "da6be9d4e1cd9ad96c3a948ab4a15e2bde96b103f0d9a774825e4cbf599bf696",
+        "leanncd/experiments/jax_bridge/README.md": "8da39d551beb15b403a3db318eab2ce022ab5bd925ba857b70e9ab518b78b658",
+        "leanncd/docs/test_portfolio.md": "8ac53844365be75787a549bb09c89537c817e054472e5ca627d36a02244f1d27",
+        "papers/semantics/jax_rnn_session_brief.md": "baf5610d26cef92aac653a65442595638044aa909795c04cde8ed386a46f9543",
+        "leanncd/LeanNCD/Eval/Plan/AGENTS.md": "2d21cb790c41a88afe9f2ba2cd32035fa40c200ed1756035163d4cd488bcaabe",
+        "leanncd/AGENTS.md": "69bfb6f8231871f30a1242e38bf3832424b3627d4657c5426cd07f532e2bfe6e"
+      },
+      "source_hashes_after": {
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean": "4855441bfe38acc88f45ef41d30bafd0f29523d43cb1643e8a31f65a16e67433",
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": "f218df23446fa7f612f194c17daefcf7c555aefd1cfaaf64d89942757519e172",
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": "19b8f550f3a24505d7d3ef1cbe6dbea4329a92f3bbd24fd9344a3add023b66cd",
+        "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": "eaa38772583e5c1fedf55983400c68ffa7df3dfa4f30fa0cbc4b4591794d487d",
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": "6ad3e4075c256066a6f9ac0be8f3de2e1e4caad233b73b7a1cba884c84415dc4",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": "77d7d838a48b59a967d793cd76641532cd449955b158e01191d9e18be514ef05",
+        "leanncd/experiments/jax_bridge/run-evalplan-maxplus.py": "2f93f091fd0f1cf6b324103b24ea425ee6e22d4349d343115c519f7b0b0cb61b",
+        "papers/semantics/jax_nonlin_mutations_post.json": "5c3f9ecee7b69f491e15ce3b5743201ad4bacae0b1a14a40bc7f0c33e54060ea",
+        "papers/semantics/jax_scan_mutations_post.json": "da6be9d4e1cd9ad96c3a948ab4a15e2bde96b103f0d9a774825e4cbf599bf696",
+        "leanncd/experiments/jax_bridge/README.md": "8da39d551beb15b403a3db318eab2ce022ab5bd925ba857b70e9ab518b78b658",
+        "leanncd/docs/test_portfolio.md": "8ac53844365be75787a549bb09c89537c817e054472e5ca627d36a02244f1d27",
+        "papers/semantics/jax_rnn_session_brief.md": "baf5610d26cef92aac653a65442595638044aa909795c04cde8ed386a46f9543",
+        "leanncd/LeanNCD/Eval/Plan/AGENTS.md": "2d21cb790c41a88afe9f2ba2cd32035fa40c200ed1756035163d4cd488bcaabe",
+        "leanncd/AGENTS.md": "69bfb6f8231871f30a1242e38bf3832424b3627d4657c5426cd07f532e2bfe6e"
+      },
+      "restored_byte_identical": true
+    },
+    {
+      "name": "coupled-nonlin-mutations",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/scripts/mutation-manifest.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_nonlin_mutations_post.json"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/coupled-nonlin-mutations.log",
+      "summary_lines": [
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "8/8 cycles passed."
+      ],
+      "source_hashes_before": {
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean": "4855441bfe38acc88f45ef41d30bafd0f29523d43cb1643e8a31f65a16e67433",
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": "f218df23446fa7f612f194c17daefcf7c555aefd1cfaaf64d89942757519e172",
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": "19b8f550f3a24505d7d3ef1cbe6dbea4329a92f3bbd24fd9344a3add023b66cd",
+        "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": "eaa38772583e5c1fedf55983400c68ffa7df3dfa4f30fa0cbc4b4591794d487d",
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": "6ad3e4075c256066a6f9ac0be8f3de2e1e4caad233b73b7a1cba884c84415dc4",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": "77d7d838a48b59a967d793cd76641532cd449955b158e01191d9e18be514ef05",
+        "leanncd/experiments/jax_bridge/run-evalplan-maxplus.py": "2f93f091fd0f1cf6b324103b24ea425ee6e22d4349d343115c519f7b0b0cb61b",
+        "papers/semantics/jax_nonlin_mutations_post.json": "5c3f9ecee7b69f491e15ce3b5743201ad4bacae0b1a14a40bc7f0c33e54060ea",
+        "papers/semantics/jax_scan_mutations_post.json": "da6be9d4e1cd9ad96c3a948ab4a15e2bde96b103f0d9a774825e4cbf599bf696",
+        "leanncd/experiments/jax_bridge/README.md": "8da39d551beb15b403a3db318eab2ce022ab5bd925ba857b70e9ab518b78b658",
+        "leanncd/docs/test_portfolio.md": "8ac53844365be75787a549bb09c89537c817e054472e5ca627d36a02244f1d27",
+        "papers/semantics/jax_rnn_session_brief.md": "baf5610d26cef92aac653a65442595638044aa909795c04cde8ed386a46f9543",
+        "leanncd/LeanNCD/Eval/Plan/AGENTS.md": "2d21cb790c41a88afe9f2ba2cd32035fa40c200ed1756035163d4cd488bcaabe",
+        "leanncd/AGENTS.md": "69bfb6f8231871f30a1242e38bf3832424b3627d4657c5426cd07f532e2bfe6e"
+      },
+      "source_hashes_after": {
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean": "4855441bfe38acc88f45ef41d30bafd0f29523d43cb1643e8a31f65a16e67433",
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": "f218df23446fa7f612f194c17daefcf7c555aefd1cfaaf64d89942757519e172",
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": "19b8f550f3a24505d7d3ef1cbe6dbea4329a92f3bbd24fd9344a3add023b66cd",
+        "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": "eaa38772583e5c1fedf55983400c68ffa7df3dfa4f30fa0cbc4b4591794d487d",
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": "6ad3e4075c256066a6f9ac0be8f3de2e1e4caad233b73b7a1cba884c84415dc4",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": "77d7d838a48b59a967d793cd76641532cd449955b158e01191d9e18be514ef05",
+        "leanncd/experiments/jax_bridge/run-evalplan-maxplus.py": "2f93f091fd0f1cf6b324103b24ea425ee6e22d4349d343115c519f7b0b0cb61b",
+        "papers/semantics/jax_nonlin_mutations_post.json": "5c3f9ecee7b69f491e15ce3b5743201ad4bacae0b1a14a40bc7f0c33e54060ea",
+        "papers/semantics/jax_scan_mutations_post.json": "da6be9d4e1cd9ad96c3a948ab4a15e2bde96b103f0d9a774825e4cbf599bf696",
+        "leanncd/experiments/jax_bridge/README.md": "8da39d551beb15b403a3db318eab2ce022ab5bd925ba857b70e9ab518b78b658",
+        "leanncd/docs/test_portfolio.md": "8ac53844365be75787a549bb09c89537c817e054472e5ca627d36a02244f1d27",
+        "papers/semantics/jax_rnn_session_brief.md": "baf5610d26cef92aac653a65442595638044aa909795c04cde8ed386a46f9543",
+        "leanncd/LeanNCD/Eval/Plan/AGENTS.md": "2d21cb790c41a88afe9f2ba2cd32035fa40c200ed1756035163d4cd488bcaabe",
+        "leanncd/AGENTS.md": "69bfb6f8231871f30a1242e38bf3832424b3627d4657c5426cd07f532e2bfe6e"
+      },
+      "restored_byte_identical": true
+    },
+    {
+      "name": "coupled-scan-mutations",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/scripts/mutation-manifest.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_scan_mutations_post.json"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/coupled-scan-mutations.log",
+      "summary_lines": [
+        "Build completed successfully (8499 jobs).",
+        "Build completed successfully (8523 jobs).",
+        "Build completed successfully (8499 jobs).",
+        "Build completed successfully (8499 jobs).",
+        "Build completed successfully (8499 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs).",
+        "11/11 cycles passed."
+      ],
+      "source_hashes_before": {
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean": "4855441bfe38acc88f45ef41d30bafd0f29523d43cb1643e8a31f65a16e67433",
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": "f218df23446fa7f612f194c17daefcf7c555aefd1cfaaf64d89942757519e172",
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": "19b8f550f3a24505d7d3ef1cbe6dbea4329a92f3bbd24fd9344a3add023b66cd",
+        "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": "eaa38772583e5c1fedf55983400c68ffa7df3dfa4f30fa0cbc4b4591794d487d",
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": "6ad3e4075c256066a6f9ac0be8f3de2e1e4caad233b73b7a1cba884c84415dc4",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": "77d7d838a48b59a967d793cd76641532cd449955b158e01191d9e18be514ef05",
+        "leanncd/experiments/jax_bridge/run-evalplan-maxplus.py": "2f93f091fd0f1cf6b324103b24ea425ee6e22d4349d343115c519f7b0b0cb61b",
+        "papers/semantics/jax_nonlin_mutations_post.json": "5c3f9ecee7b69f491e15ce3b5743201ad4bacae0b1a14a40bc7f0c33e54060ea",
+        "papers/semantics/jax_scan_mutations_post.json": "da6be9d4e1cd9ad96c3a948ab4a15e2bde96b103f0d9a774825e4cbf599bf696",
+        "leanncd/experiments/jax_bridge/README.md": "8da39d551beb15b403a3db318eab2ce022ab5bd925ba857b70e9ab518b78b658",
+        "leanncd/docs/test_portfolio.md": "8ac53844365be75787a549bb09c89537c817e054472e5ca627d36a02244f1d27",
+        "papers/semantics/jax_rnn_session_brief.md": "baf5610d26cef92aac653a65442595638044aa909795c04cde8ed386a46f9543",
+        "leanncd/LeanNCD/Eval/Plan/AGENTS.md": "2d21cb790c41a88afe9f2ba2cd32035fa40c200ed1756035163d4cd488bcaabe",
+        "leanncd/AGENTS.md": "69bfb6f8231871f30a1242e38bf3832424b3627d4657c5426cd07f532e2bfe6e"
+      },
+      "source_hashes_after": {
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean": "4855441bfe38acc88f45ef41d30bafd0f29523d43cb1643e8a31f65a16e67433",
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": "f218df23446fa7f612f194c17daefcf7c555aefd1cfaaf64d89942757519e172",
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": "19b8f550f3a24505d7d3ef1cbe6dbea4329a92f3bbd24fd9344a3add023b66cd",
+        "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": "eaa38772583e5c1fedf55983400c68ffa7df3dfa4f30fa0cbc4b4591794d487d",
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": "6ad3e4075c256066a6f9ac0be8f3de2e1e4caad233b73b7a1cba884c84415dc4",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": "77d7d838a48b59a967d793cd76641532cd449955b158e01191d9e18be514ef05",
+        "leanncd/experiments/jax_bridge/run-evalplan-maxplus.py": "2f93f091fd0f1cf6b324103b24ea425ee6e22d4349d343115c519f7b0b0cb61b",
+        "papers/semantics/jax_nonlin_mutations_post.json": "5c3f9ecee7b69f491e15ce3b5743201ad4bacae0b1a14a40bc7f0c33e54060ea",
+        "papers/semantics/jax_scan_mutations_post.json": "da6be9d4e1cd9ad96c3a948ab4a15e2bde96b103f0d9a774825e4cbf599bf696",
+        "leanncd/experiments/jax_bridge/README.md": "8da39d551beb15b403a3db318eab2ce022ab5bd925ba857b70e9ab518b78b658",
+        "leanncd/docs/test_portfolio.md": "8ac53844365be75787a549bb09c89537c817e054472e5ca627d36a02244f1d27",
+        "papers/semantics/jax_rnn_session_brief.md": "baf5610d26cef92aac653a65442595638044aa909795c04cde8ed386a46f9543",
+        "leanncd/LeanNCD/Eval/Plan/AGENTS.md": "2d21cb790c41a88afe9f2ba2cd32035fa40c200ed1756035163d4cd488bcaabe",
+        "leanncd/AGENTS.md": "69bfb6f8231871f30a1242e38bf3832424b3627d4657c5426cd07f532e2bfe6e"
+      },
+      "restored_byte_identical": true
+    },
+    {
+      "name": "prototype-full-build",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/scripts/lake-build.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd",
+        "LeanNCD",
+        "Tests",
+        "JaxExperiment"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/prototype-full-build.log",
+      "summary_lines": [
+        "Build completed successfully (8847 jobs)."
+      ]
+    },
+    {
+      "name": "generate-EvalPlanNonlinSmoke",
+      "command": [
+        "/Users/williammacready/.elan/bin/lake",
+        "env",
+        "lean",
+        "--run",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/EvalPlanNonlinSmoke.lean",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/generated_evalplan_nonlin_smoke64.py",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/generated_evalplan_nonlin_smoke32.py"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/generate-EvalPlanNonlinSmoke.log",
+      "summary_lines": []
+    },
+    {
+      "name": "legacy-nonlinear-64",
+      "command": [
+        "/Users/williammacready/code/python/pyncd.worktrees/task4-boolean-output/leanncd/experiments/jax_bridge/.cache/python/bin/python",
+        "-c",
+        "import runpy,sys; sys.argv=['/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/evalplan_nonlin_smoke.py', 'float64', '/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/generated_evalplan_nonlin_smoke64.py']; runpy.run_path(sys.argv[0],run_name='__main__')"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/legacy-nonlinear-64.log",
+      "summary_lines": [
+        "55 float64 nonlinearity fixtures within rtol 1e-12 / atol 1e-14 of Lean (eager + jit)"
+      ]
+    },
+    {
+      "name": "legacy-nonlinear-32",
+      "command": [
+        "/Users/williammacready/code/python/pyncd.worktrees/task4-boolean-output/leanncd/experiments/jax_bridge/.cache/python/bin/python",
+        "-c",
+        "import runpy,sys; sys.argv=['/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/evalplan_nonlin_smoke.py', 'float32', '/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/generated_evalplan_nonlin_smoke32.py']; runpy.run_path(sys.argv[0],run_name='__main__')"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/legacy-nonlinear-32.log",
+      "summary_lines": [
+        "47 float32 nonlinearity fixtures within rtol 1e-05 / atol 1e-06 of Lean (eager + jit)"
+      ]
+    },
+    {
+      "name": "generate-EvalPlanAffineSmoke",
+      "command": [
+        "/Users/williammacready/.elan/bin/lake",
+        "env",
+        "lean",
+        "--run",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/EvalPlanAffineSmoke.lean",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/generated_evalplan_affine_smoke.py"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/generate-EvalPlanAffineSmoke.log",
+      "summary_lines": []
+    },
+    {
+      "name": "curated-affine",
+      "command": [
+        "/Users/williammacready/code/python/pyncd.worktrees/task4-boolean-output/leanncd/experiments/jax_bridge/.cache/python/bin/python",
+        "-c",
+        "import runpy,sys; sys.argv=['/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/evalplan_affine_smoke.py', '/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/generated_evalplan_affine_smoke.py']; runpy.run_path(sys.argv[0],run_name='__main__')"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/curated-affine.log",
+      "summary_lines": []
+    },
+    {
+      "name": "generate-EvalPlanScatterSmoke",
+      "command": [
+        "/Users/williammacready/.elan/bin/lake",
+        "env",
+        "lean",
+        "--run",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/EvalPlanScatterSmoke.lean",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/generated_evalplan_scatter_smoke64.py",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/generated_evalplan_scatter_smoke32.py"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/generate-EvalPlanScatterSmoke.log",
+      "summary_lines": []
+    },
+    {
+      "name": "legacy-scatter-64",
+      "command": [
+        "/Users/williammacready/code/python/pyncd.worktrees/task4-boolean-output/leanncd/experiments/jax_bridge/.cache/python/bin/python",
+        "-c",
+        "import runpy,sys; sys.argv=['/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/evalplan_scatter_smoke.py', 'float64', '/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/generated_evalplan_scatter_smoke64.py']; runpy.run_path(sys.argv[0],run_name='__main__')"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/legacy-scatter-64.log",
+      "summary_lines": [
+        "10 float64 scatter fixtures bit-identical to Lean (eager + jit)"
+      ]
+    },
+    {
+      "name": "legacy-scatter-32",
+      "command": [
+        "/Users/williammacready/code/python/pyncd.worktrees/task4-boolean-output/leanncd/experiments/jax_bridge/.cache/python/bin/python",
+        "-c",
+        "import runpy,sys; sys.argv=['/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/evalplan_scatter_smoke.py', 'float32', '/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/generated_evalplan_scatter_smoke32.py']; runpy.run_path(sys.argv[0],run_name='__main__')"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/legacy-scatter-32.log",
+      "summary_lines": [
+        "5 float32 scatter fixtures bit-identical to Lean (eager + jit)"
+      ]
+    },
+    {
+      "name": "package-unimplemented-baseline",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_files/verify_package.py"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/package-unimplemented-baseline.log",
+      "summary_lines": [
+        "Package OK: 4 ordered patches, 2 provided manifests, task 0 boundary; index unchanged."
+      ]
+    },
+    {
+      "name": "coupled-scan-python-mutations",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_scan_mutations_python.json"
+      ],
+      "cwd": "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/coupled-scan-python-mutations.log",
+      "summary_lines": [
+        "PASS JS-P-01 (step block state captures bound to the post-base states, not the carry) | killed | restored",
+        "PASS JS-P-02 (step tables read step-minor: (local, steps) reshaped then transposed) | killed | restored",
+        "PASS JS-P-03 (step writes committed with the table row of step r-1) | killed | restored",
+        "PASS JS-P-04 (base writes placed AFTER the scan, onto the final states) | killed | restored",
+        "PASS JS-P-05 (one step too few: the last step is dropped) | killed | restored",
+        "PASS JS-P-06 (step writes land one output row EARLIER than the emitted +1 table says) | killed | restored"
+      ],
+      "runtime_sha256_before_and_restored": "eaa38772583e5c1fedf55983400c68ffa7df3dfa4f30fa0cbc4b4591794d487d",
+      "restored_byte_identical": true,
+      "scope": "Only JS-P-05 anchor changed; all six inherited controls rerun against the approved prototype runtime."
+    }
+  ],
+  "scope": "Authoring verification only; temporary implementation will be restored.",
+  "provided_assets_are_not_patch_outputs": true,
+  "prototype_checks_complete": true,
+  "restored_source_baseline": true,
+  "main_unchanged": true,
+  "scan_python_followup_status": "passed",
+  "additional_sibling_audit": {
+    "finding": "Only JS-P-05 among existing Python manifests lost its anchor; initialization metadata separated adjacent steps/states lines.",
+    "fix": "Anchor the unique step-count assignment alone; preserve decrement and original expected failure.",
+    "legacy_scan_python_controls": 6,
+    "total_distinct_strict_mutation_controls": 33,
+    "all_other_existing_python_anchors": "Baseline count retained; no unrelated mutation-manifest repairs."
+  },
+  "precision_gate_review_fix": {
+    "finding": "SCOPE-01: an aggregate OR exit status could hide a surviving precision.",
+    "resolution": "Six new mutation intents are now twelve singleton-precision manifest entries; no shared harness semantics changed.",
+    "checks": [
+      {
+        "name": "precision-gates-observe",
+        "command": [
+          "python3",
+          "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+          "--observe",
+          "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_mutations_python.json"
+        ],
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/precision-gates-observe.log",
+        "summary_lines": [
+          "PASS MAX-P-omit_cast-64 | killed | restored",
+          "PASS MAX-P-omit_cast-32 | killed | restored",
+          "PASS MAX-P-zero_init-64 | killed | restored",
+          "PASS MAX-P-zero_init-32 | killed | restored",
+          "PASS MAX-P-freeze_time-64 | killed | restored",
+          "PASS MAX-P-freeze_time-32 | killed | restored",
+          "PASS MAX-P-zero_pad-64 | killed | restored",
+          "PASS MAX-P-zero_pad-32 | killed | restored",
+          "PASS MAX-P-native_max_zero_tie-64 | killed | restored",
+          "PASS MAX-P-native_max_zero_tie-32 | killed | restored",
+          "PASS MAX-P-remove_custom_jvp-64 | killed | restored",
+          "PASS MAX-P-remove_custom_jvp-32 | killed | restored"
+        ]
+      },
+      {
+        "name": "precision-gates-strict",
+        "command": [
+          "python3",
+          "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+          "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_mutations_python.json"
+        ],
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/precision-gates-strict.log",
+        "summary_lines": [
+          "PASS MAX-P-omit_cast-64 | killed | restored",
+          "PASS MAX-P-omit_cast-32 | killed | restored",
+          "PASS MAX-P-zero_init-64 | killed | restored",
+          "PASS MAX-P-zero_init-32 | killed | restored",
+          "PASS MAX-P-freeze_time-64 | killed | restored",
+          "PASS MAX-P-freeze_time-32 | killed | restored",
+          "PASS MAX-P-zero_pad-64 | killed | restored",
+          "PASS MAX-P-zero_pad-32 | killed | restored",
+          "PASS MAX-P-native_max_zero_tie-64 | killed | restored",
+          "PASS MAX-P-native_max_zero_tie-32 | killed | restored",
+          "PASS MAX-P-remove_custom_jvp-64 | killed | restored",
+          "PASS MAX-P-remove_custom_jvp-32 | killed | restored"
+        ]
+      },
+      {
+        "name": "precision-survival-negative-control",
+        "command": [
+          "python3",
+          "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+          "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_precision_survival_control.json"
+        ],
+        "exit_code": 1,
+        "expected_exit_code": 1,
+        "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/precision-survival-negative-control.log",
+        "summary_lines": [
+          "PASS CHECK-P-PRECISION-64 | killed | restored",
+          "FAIL CHECK-P-PRECISION-32 | SURVIVED | restored"
+        ]
+      }
+    ],
+    "independent_precision_cycles": 12,
+    "clean_restored_cycles": 12,
+    "restored_precisions_per_cycle": 2,
+    "negative_control": "A float64-only broken cast gives PASS64, SURVIVED/FAIL32 and runner exit1.",
+    "source_code_changed": false
+  },
+  "total_unique_mutation_intents": 33,
+  "total_gated_mutation_cycles": 39
+}

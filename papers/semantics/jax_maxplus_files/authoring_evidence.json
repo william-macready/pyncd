@@ -1,0 +1,352 @@
+{
+  "source_baseline": "c5000dd462d72ed0ffcd5806937aa37fa477e9b0",
+  "authoritative_package": "package.json; task1.json through task4.json",
+  "scope": [
+    [
+      "real named/positional/standalone/unary/nonlinear",
+      "required; default arithmetic and real record format retained; existing codegen guards green"
+    ],
+    [
+      "max named/positional",
+      "required; 7 original source cases x both precisions x eager/JIT"
+    ],
+    [
+      "max standalone/scalar",
+      "required; checked focused fixtures both precisions"
+    ],
+    [
+      "max scan zero/negInf init",
+      "required; original Viterbi + checked holes, real scan neighbours"
+    ],
+    [
+      "bool source under max explicit true and false/omitted checker cast",
+      "required; same checked vector source; emitted false is authoritative"
+    ],
+    [
+      "bool source into real algebra",
+      "forbidden; unchanged boolSource standalone/plan/evidence guards compiled"
+    ],
+    [
+      "Boolean destination/realToBool",
+      "forbidden; gateMatrix + original six reachability refusals + runtime rejection"
+    ],
+    [
+      "min-plus",
+      "forbidden; gateMatrix + runtime invalid algebra"
+    ],
+    [
+      "Iverson",
+      "forbidden; gateMatrix and ScanIversonRefusalTest + runtime tag rejection"
+    ],
+    [
+      "einsum/candidate/evidence",
+      "strict default required; gateMatrix exact candidates refuse non-real, original real controls accepted"
+    ],
+    [
+      "scatter ordered/fast",
+      "real only; unchanged renderer guards and runtime non-real backstop shared across modes"
+    ],
+    [
+      "contextual outer assignment/multi-axis/nested scan",
+      "forbidden; unchanged admission/layout restrictions; ScanJaxGateTest compiled"
+    ],
+    [
+      "supplied signature",
+      "revalidation before policy; incompatible shape refusal pinned in gateMatrix, original authority guards compiled"
+    ],
+    [
+      "Iverson in support policy",
+      "silently ignored as baseline; emitter remains explicit refusal; not executable support"
+    ]
+  ],
+  "symbols": {
+    "leanncd/LeanNCD/Eval/Plan/Executable.lean": [
+      "JaxRenderProfile",
+      "jaxMaxAlgebra",
+      "jaxAssignSupported",
+      "checkJaxAssignSupportCtx",
+      "checkJaxAssignSupport",
+      "checkJaxScanSupport"
+    ],
+    "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": [
+      "requireJaxSupport",
+      "renderAffineFactor",
+      "renderAffineTerm",
+      "renderAffineFields",
+      "renderAffineNode",
+      "renderScanNode",
+      "scanTropicalRaw guard"
+    ],
+    "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": [
+      "module documentation",
+      "checkStructure",
+      "emit"
+    ],
+    "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": [
+      "_ordered_max",
+      "_ordered_add",
+      "_ordered_add_jvp",
+      "_algebra",
+      "_check_factors",
+      "_run_term",
+      "_run_node",
+      "_run_scatter_node",
+      "_run_scan_node"
+    ],
+    "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": [
+      "dense",
+      "retag32",
+      "compile",
+      "prepare",
+      "gateMatrix",
+      "pyTensor32",
+      "rawFixture",
+      "vectorRaw",
+      "adversarial",
+      "contextProg",
+      "contextFixture",
+      "main"
+    ],
+    "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": [
+      "load",
+      "verify",
+      "__main__"
+    ],
+    "leanncd/experiments/jax_bridge/run-evalplan-maxplus.py": [
+      "module runner",
+      "run"
+    ]
+  },
+  "fixture_donors": {
+    "7 Viterbi and 6 reachability": "existing EvalPlanLogicSmoke.fixtures unchanged; emit/checkStructure extended, no duplicated programs",
+    "9 scalar fixtures": "PrototypeExtra.lean::rawFixture/adversarial; removed Boolean destination and realToBool cases; false Iverson replaced by explicit bool-source read followed by +inf read; added checked empty output",
+    "holes": "PrototypeExtra.lean::contextFixture; replace predicate step with ordinary Y[t,i]; Y values time-varying; retain scalar base write leaving a negInf hole",
+    "runtime": "selective semantics from prototype_evalplan_affine_runtime.py; no Boolean/Iverson lowering; custom JVP integrated from verified prototype_semiring_add_jvp.py (not wrapper)",
+    "gradient": "winning path enumerated independently from original inputs; never copied from runtime results",
+    "gate_matrix": "clone EvalPlanCodegen.idAssign/idSigs/idIversonAssign; checked max/min/Boolean plus exact affine/einsum candidate tables"
+  },
+  "observations": {
+    "winning_path": [
+      0,
+      1,
+      2,
+      1,
+      0,
+      1
+    ],
+    "score": -5.25,
+    "gap": 0.25,
+    "winning_init_partial": 1,
+    "never_read_emit_row": "gradient zero in every gradient view; Allow frozen outside differentiation inputs",
+    "false_source_plus_inf": "NaN in checked Float and Float32, eager and JIT; no pruning",
+    "hole_history": [
+      [
+        3,
+        7,
+        13,
+        19
+      ],
+      [
+        "-inf",
+        11,
+        17,
+        23
+      ]
+    ],
+    "cast_true": "zero and -zero -> -inf; nonzero incl NaN -> +0",
+    "cast_false": "no dtype-inferred cast; NaN retained; factor addition normalizes -zero to +zero",
+    "empty_terms_and_reduction": "-inf",
+    "empty_factors": "+0",
+    "empty_output": [],
+    "bare_oob": [
+      2,
+      "-inf",
+      "-inf"
+    ],
+    "zero_source_unary_log": [
+      "-inf",
+      "-inf",
+      "-inf"
+    ]
+  },
+  "counts": {
+    "new_python_manifest_entries": 12,
+    "new_python_precision_specific_kills": 12,
+    "new_python_precision_specific_clean_restored_runs": 24,
+    "new_lean_manifest_entries": 2,
+    "new_lean_killed_restored_green": 2,
+    "legacy_nonlin_killed_restored_green": 8,
+    "legacy_scan_killed_restored_green": 11,
+    "final_viterbi_precision_view_runs": 56,
+    "final_checked_precision_view_runs": 40,
+    "final_gradient_precision_view_runs": 8,
+    "final_metadata_refusals": 44,
+    "normal_verifier_nested_self_mutations": 0,
+    "legacy_scan_python_killed_restored_green": 6,
+    "new_python_clean_restored_cycles": 12,
+    "unique_mutation_intents": 33,
+    "gated_mutation_cycles": 39
+  },
+  "tasks": [
+    {
+      "task": "T1",
+      "work_items": 3,
+      "scope": "Scoped typed rendering admission, max metadata, original logic acceptance and tagged preservation guards.",
+      "checks": [
+        "JaxExperiment and ScanJaxGateTest",
+        "original 13-case Lean/stdlib logic runner",
+        "new Lean manifest 2/2"
+      ],
+      "fixtures": "Two new tagged guard controls plus existing preserved-refusal guards; no guessed guard count."
+    },
+    {
+      "task": "T2",
+      "work_items": 3,
+      "scope": "Runtime scalar/folds and state init; ten checked witnesses and scalar/JVP pins; standard manifest-compatible CLI/checked-only runner.",
+      "checks": [
+        "40 focused checked views",
+        "44 metadata refusals",
+        "new Python manifest 12/12 singleton-precision cycles at this boundary"
+      ],
+      "fixtures": "9 raw checked assignments + 1 checked scan witness; both precisions eager/JIT."
+    },
+    {
+      "task": "T3",
+      "work_items": 3,
+      "scope": "Actual source Viterbi plans, gate matrix, named/positional value and exact winning-path gradient pins.",
+      "checks": [
+        "56 Viterbi precision/view runs",
+        "8 gradient precision/view runs",
+        "six reachability cases still Lean-only"
+      ]
+    },
+    {
+      "task": "T4",
+      "work_items": 2,
+      "scope": "Directly coupled legacy mutation repins and documentation/discovery update; no new backend capability.",
+      "checks": [
+        "nonlin mutation manifest 8/8",
+        "scan mutation manifest 11/11",
+        "full build and legacy runtime regression",
+        "documentation value sweep",
+        "scan Python manifest 6/6 after the single affected anchor repin"
+      ]
+    }
+  ],
+  "package_correction": {
+    "finding": "Stage B put the provided new mutation manifests in implementation patches. That private-index replay passed against c5000dd4 but would collide after the planning-assets commit.",
+    "correction": "The two manifests are provided immutable plan inputs, not patch outputs. Only their add-file diffs and source-snapshot entries were removed; all implementation bytes are unchanged.",
+    "removed_add_file_diffs": [
+      "papers/semantics/jax_maxplus_mutations_post.json",
+      "papers/semantics/jax_maxplus_mutations_python.json"
+    ],
+    "original_b_package_retained": "Author session archive; not an execution dependency.",
+    "required_check": "verify_package.py seeds an index from the source baseline plus provided plan inputs, then replays every patch without asset collisions, independently of implementation commits already in HEAD."
+  },
+  "mutation_evidence": {
+    "new_python": "12/12 single-precision cycles for six intents; both precisions restored green after every cycle.",
+    "new_lean": "2/2 killed, expected tagged diagnostics, restored green",
+    "coupled_nonlin": "8/8 killed/restored green with observed line repins",
+    "coupled_scan": "11/11 killed/restored green with observed anchor/line repins",
+    "normal_verifier_nested_self_mutations": 0,
+    "parked_scatter": "JS-T1-04 has no baseline anchor; left unchanged, not counted as a pass.",
+    "coupled_scan_python": "6/6 inherited controls passed; only JS-P-05 anchor repinned.",
+    "precision_survival_negative_control": "Deliberately fail only64: PASS64 and SURVIVED/FAIL32 produce exit1, as required.",
+    "legacy_grouped_scope": "Inherited manifests retain their existing grouped semantics; no independent per-precision kill count is inferred from their PASS lines."
+  },
+  "authoring_budget": {
+    "stage_a": "Agent explicitly reported exceeding its 45-turn cap. Exact turn/token/context totals unavailable; do not describe it as within budget.",
+    "stage_b": "Agent reports within its 35-turn/120k-context limits; exact token telemetry unavailable."
+  },
+  "controller_verification": "Passed; see controller_results.json. Full temporary source/docs/legacy edits restored.",
+  "raw_provenance": {
+    "location": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_authoring_archive/raw_assets",
+    "purpose": "Complete original evidence, logs, generated payloads and intermediate snapshots; not an execution dependency.",
+    "repository_bundle": "Only immutable patches/manifests, compact verified facts, task hashes and a read-only package verifier are required."
+  },
+  "execution_tooling": {
+    "package_check": "python3 papers/semantics/jax_maxplus_files/verify_package.py [--task N]",
+    "maxplus_runner": "python3 leanncd/experiments/jax_bridge/run-evalplan-maxplus.py --python <existing-jax-python> [--checked-only]",
+    "mutation_python_protocol": "evalplan_maxplus_smoke.py float64|float32 .cache/generated_evalplan_maxplus_smoke64|32.py",
+    "normal_verifier_nested_self_mutations": 0,
+    "per_task_hash_maps": "task1.json through task4.json",
+    "plan_inputs_are_not_added_by_implementation_patches": true
+  },
+  "review_fix": {
+    "finding": "SCOPE-01: an aggregate OR exit status could hide a surviving precision.",
+    "resolution": "Six new mutation intents are now twelve singleton-precision manifest entries; no shared harness semantics changed.",
+    "checks": [
+      {
+        "name": "precision-gates-observe",
+        "command": [
+          "python3",
+          "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+          "--observe",
+          "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_mutations_python.json"
+        ],
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/precision-gates-observe.log",
+        "summary_lines": [
+          "PASS MAX-P-omit_cast-64 | killed | restored",
+          "PASS MAX-P-omit_cast-32 | killed | restored",
+          "PASS MAX-P-zero_init-64 | killed | restored",
+          "PASS MAX-P-zero_init-32 | killed | restored",
+          "PASS MAX-P-freeze_time-64 | killed | restored",
+          "PASS MAX-P-freeze_time-32 | killed | restored",
+          "PASS MAX-P-zero_pad-64 | killed | restored",
+          "PASS MAX-P-zero_pad-32 | killed | restored",
+          "PASS MAX-P-native_max_zero_tie-64 | killed | restored",
+          "PASS MAX-P-native_max_zero_tie-32 | killed | restored",
+          "PASS MAX-P-remove_custom_jvp-64 | killed | restored",
+          "PASS MAX-P-remove_custom_jvp-32 | killed | restored"
+        ]
+      },
+      {
+        "name": "precision-gates-strict",
+        "command": [
+          "python3",
+          "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+          "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_mutations_python.json"
+        ],
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/precision-gates-strict.log",
+        "summary_lines": [
+          "PASS MAX-P-omit_cast-64 | killed | restored",
+          "PASS MAX-P-omit_cast-32 | killed | restored",
+          "PASS MAX-P-zero_init-64 | killed | restored",
+          "PASS MAX-P-zero_init-32 | killed | restored",
+          "PASS MAX-P-freeze_time-64 | killed | restored",
+          "PASS MAX-P-freeze_time-32 | killed | restored",
+          "PASS MAX-P-zero_pad-64 | killed | restored",
+          "PASS MAX-P-zero_pad-32 | killed | restored",
+          "PASS MAX-P-native_max_zero_tie-64 | killed | restored",
+          "PASS MAX-P-native_max_zero_tie-32 | killed | restored",
+          "PASS MAX-P-remove_custom_jvp-64 | killed | restored",
+          "PASS MAX-P-remove_custom_jvp-32 | killed | restored"
+        ]
+      },
+      {
+        "name": "precision-survival-negative-control",
+        "command": [
+          "python3",
+          "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+          "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_precision_survival_control.json"
+        ],
+        "exit_code": 1,
+        "expected_exit_code": 1,
+        "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_controller_logs/precision-survival-negative-control.log",
+        "summary_lines": [
+          "PASS CHECK-P-PRECISION-64 | killed | restored",
+          "FAIL CHECK-P-PRECISION-32 | SURVIVED | restored"
+        ]
+      }
+    ],
+    "independent_precision_cycles": 12,
+    "clean_restored_cycles": 12,
+    "restored_precisions_per_cycle": 2,
+    "negative_control": "A float64-only broken cast gives PASS64, SURVIVED/FAIL32 and runner exit1.",
+    "source_code_changed": false
+  }
+}

@@ -1,0 +1,187 @@
+diff --git a/leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean b/leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean
+index 0b208838..a27be616 100644
+--- a/leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean
++++ b/leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean
+@@ -7,7 +7,7 @@ import EvalPlanCodegen
+ 
+ Source Tensor Logic -> scheduled reference and checked plans in both precisions.
+ The Python verifier independently enumerates HMM paths and computes graph distances by BFS.
+-These are Lean-side examples: the JAX bridge must still refuse both non-real scan algebras.
++Max-plus additionally renders to JAX; Boolean reachability remains checked/reference-only.
+ Viterbi exports scores, not argmax indices or a traceback (neither has a native TL operator).
+ -/
+ namespace JaxBridge.LogicSmoke
+@@ -138,6 +138,11 @@ def checkStructure (f : Fixture) (p : PreparedPlan) (kind : StorageKind) : IO Un
+   | .error e => throw (IO.userError s!"{f.name}: unexpected JAX refusal: {repr e}")
+   | .ok _ => unless f.tropical do
+       throw (IO.userError s!"{f.name}: JAX unexpectedly admitted a Boolean scan")
++  match renderAffinePlanPositional p.plan with
++  | .ok _ => unless f.tropical do throw (IO.userError s!"{f.name}: positional Boolean admitted")
++  | .error (.unsupportedDestDType 0 _ .bool) =>
++      unless !f.tropical do throw (IO.userError s!"{f.name}: positional max-plus refused")
++  | .error e => throw (IO.userError s!"{f.name}: positional: {repr e}")
+ 
+ def pyEnv (env : NamedDenseEnv) (names : List String) : IO String := do
+   let xs ← names.mapM fun n => do
+@@ -176,11 +181,22 @@ def emit (f : Fixture) : IO String := do
+     | .ok r => pure r.env
+     | .error e => throw (IO.userError s!"{f.name}: plan32: {repr e.cause}")
+   let names := (p.bindings.requiredInputs.bindings.map (·.name)).toList
++  let jaxFields ← if !f.tropical then pure "" else do
++    let named ← match renderAffinePlanNamed p with
++      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
++    let positional ← match renderAffinePlanPositional p.plan with
++      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
++    let named32 ← match renderAffinePlanNamed p32 with
++      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
++    let positional32 ← match renderAffinePlanPositional p32.plan with
++      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
++    pure (", \"jax64\": " ++ named ++ ", \"jaxpos64\": " ++ positional ++
++      ", \"jax32\": " ++ named32 ++ ", \"jaxpos32\": " ++ positional32)
+   pure ("{\"name\": " ++ pyStrLit f.name ++ ", \"inputs64\": " ++ (← pyEnv f.inputs names) ++
+     ", \"inputs32\": " ++ (← pyEnv32 inputs32 names) ++
+     ", \"reference\": " ++ (← pyEnv reference f.outputs) ++
+     ", \"plan64\": " ++ (← pyEnv out64 f.outputs) ++
+-    ", \"plan32\": " ++ (← pyEnv32 out32 f.outputs) ++ "}")
++    ", \"plan32\": " ++ (← pyEnv32 out32 f.outputs) ++ jaxFields ++ "}")
+ 
+ end JaxBridge.LogicSmoke
+ 
+diff --git a/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean b/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean
+index fe4c0642..858ded97 100644
+--- a/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean
++++ b/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean
+@@ -16,6 +16,35 @@ def prepare (name : String) (s : ScheduledProgram) (sig : InputSignature) : IO P
+   match prepareEvalPlan s sig with
+   | .ok p => pure p | .error e => throw (IO.userError s!"{name}: {renderCompileCause e.cause}")
+ 
++def gateMatrix : Bool := Id.run do
++  for alg in [admittedAlgebraMax, admittedAlgebraMin, admittedAlgebraBool] do
++    let sigs := if alg == admittedAlgebraBool then
++      idSigs.modify 1 (fun s => { s with dtype := .bool }) else idSigs
++    let .ok c := checkAssign sigs { idAssign with algebra := alg } | return false
++    if alg == admittedAlgebraMax then
++      unless (renderAffineAssign sigs c).isOk do return false
++    else
++      unless (renderAffineAssign sigs c).toOption.isNone do return false
++    unless (checkJaxAssignSupport sigs 7 c).toOption.isNone &&
++      (loweringToAffineTableCandidate sigs 7 c).toOption.isNone &&
++      (loweringToEinsumCandidate sigs 7 c).toOption.isNone do return false
++    let tables := c.plan.terms.map fun t => t.factors.filterMap fun f => match f with
++      | .iverson _ => none
++      | .read r =>
++          let (safeIndex, validMask) := buildFactorTable t.iterationShape r
++          some ({ source := r.sourceSlot, safeIndex, validMask } : AffineTableReadCandidate)
++    unless (validateAndConstructKernel sigs (.affineTable { semanticAssignment := c, tables })).toOption.isNone &&
++      (validateAndConstructKernel sigs (.einsum { semanticAssignment := c, destination := 1, operands := #[#[0, 0]], outputAxes := #[0] })).toOption.isNone do return false
++  let .ok c := checkAssign idSigs { idAssign with algebra := admittedAlgebraMax } | return false
++  unless (match renderAffineAssign (idSigs.modify 0 (fun s => { s with shape := #[4] })) c with
++    | .error (.invalidSignatureContext 0 _) => true | _ => false) do return false
++  let .ok iv := checkAssign idSigs { idIversonAssign with algebra := admittedAlgebraMax } | return false
++  unless (match renderAffineAssign idSigs iv with
++    | .error (.iversonFactor 0 0 _) => true | _ => false) do return false
++  return true
++
++run_cmd unless gateMatrix do throwError "MAX-T3-GATE-MATRIX: render-only admission leaked"
++
+ def pyTensor32 (t : DenseTensor32) : String :=
+   "{\"shape\": " ++ pyShapeTuple t.shape.toArray ++ ", \"bits\": [" ++
+   String.intercalate ", " (t.data.toList.map fun x => toString x.toBits) ++ "]}"
+diff --git a/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py b/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
+index 88077ea6..681b844f 100644
+--- a/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
++++ b/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
+@@ -122,6 +122,93 @@ def verify(precision, checked_path, logic_path=None):
+         assert float((jax.jit(grad) if jit else grad)(dt(0))) == 1, \
+             "ordered_add_jvp_init: a winning zero Init must retain derivative one"
+ 
++    if logic_path:
++        import itertools
++        import math
++        import evalplan_logic_smoke as oracle
++        logic = load(logic_path).FIXTURES
++        assert len(logic) == 13
++        assert sum("jax" + suffix in f for f in logic) == 7
++        assert all(not any(k.startswith("jax") for k in f)
++                   for f in logic if f["name"].startswith("reachability"))
++        report["logic"] = []
++
++        def result(f, jit, positional):
++            named = f["jax" + suffix]
++            inputs = {n: array(t) for n, t in f["inputs" + suffix].items()}
++            if positional:
++                p = f["jaxpos" + suffix]
++                args = [inputs[n] for n, _ in named["required_inputs"]]
++                fn = lambda xs: rt.run_plan_positional(p, xs, dtype=dt)
++                store = (jax.jit(fn) if jit else fn)(args)
++                return {n: store[s] for n, s in named["materialized"]}
++            fn = lambda xs: rt.run_named(named, xs, dtype=dt)
++            return (jax.jit(fn) if jit else fn)(inputs)
++
++        for positional in (False, True):
++            for jit in (False, True):
++                replaced = copy.deepcopy(logic)
++                for f in replaced:
++                    if not f["name"].startswith("viterbi"):
++                        continue
++                    got = result(f, jit, positional)
++                    for n, a in got.items():
++                        check(a, f["plan" + suffix][n], (f["name"], n, jit, positional))
++                    f["plan" + suffix] = {n: entry(a) for n, a in got.items()}
++                    report["logic"].append({"name": f["name"], "jit": jit,
++                                             "positional": positional, "all_exports_exact": True})
++                # The unmodified independent exhaustive-path and metamorphic oracle sees JAX values.
++                oracle.verify(replaced)
++
++        base = next(f for f in logic if f["name"] == "viterbi")
++        parsed = oracle.decode(base["inputs64"], 64)
++        init, trans, emit, allow = (parsed[n] for n in ("Init", "Trans", "Emit", "Allow"))
++        scored = []
++        for path in itertools.product(range(4), repeat=6):
++            if any(not allow[a, b] for a, b in zip(path, path[1:])):
++                continue
++            value = init[path[0]]
++            for t, (a, b) in enumerate(zip(path, path[1:])):
++                value = value + trans[a, b] + emit[t, b]
++            if math.isfinite(value):
++                scored.append((value, path))
++        scored.sort(reverse=True)
++        score, winner = scored[0]
++        assert winner == (0, 1, 2, 1, 0, 1) and score == -5.25
++        assert score - scored[1][0] == .25
++        inputs = {n: array(t) for n, t in base["inputs" + suffix].items()}
++        parameters = {n: inputs[n] for n in ("Init", "Trans", "Emit")}
++        expected = {n: np.zeros_like(np.asarray(a)) for n, a in parameters.items()}
++        expected["Init"][winner[0]] = 1
++        for t, (a, b) in enumerate(zip(winner, winner[1:])):
++            expected["Trans"][a, b] += 1
++            expected["Emit"][t, b] += 1
++        report["gradients"] = []
++        for positional in (False, True):
++            def loss(params):
++                xs = dict(inputs, **params)  # Allow is closed metadata, not a differentiation argument.
++                named = base["jax" + suffix]
++                if positional:
++                    p = base["jaxpos" + suffix]
++                    store = rt.run_plan_positional(
++                        p, [xs[n] for n, _ in named["required_inputs"]], dtype=dt)
++                    return store[dict(named["materialized"])["Score"]]
++                return rt.run_named(named, xs, dtype=dt)["Score"]
++
++            for jit in (False, True):
++                fn = jax.grad(loss)
++                got = (jax.jit(fn) if jit else fn)(parameters)
++                for n, wanted in expected.items():
++                    assert np.array_equal(np.asarray(got[n]), wanted), (n, got[n], wanted)
++                assert float(got["Init"][0]) == 1
++                assert np.all(np.asarray(got["Emit"])[-1] == 0)
++                report["gradients"].append({
++                    "jit": jit, "positional": positional, "winning_init_partial": float(got["Init"][0]),
++                    "path": winner, "score": score, "gap": score - scored[1][0],
++                    "all_parameter_counts_exact": True, "never_read_emit_row_zero": True,
++                    "mask_frozen": True})
++        report["reachability"] = "6 fixtures checked/reference-only; no JAX plan emitted"
++
+     return report
+ 
+ 

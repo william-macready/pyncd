@@ -1,0 +1,44 @@
+{
+  "leanncd/LeanNCD/Eval/Plan/Executable.lean": {
+    "sha256": "4855441bfe38acc88f45ef41d30bafd0f29523d43cb1643e8a31f65a16e67433",
+    "blob": "223f4b4173d6c8c1ba05522e268b37e0249c3026",
+    "baseline_sha256": "9ad79d693538ec17c78bc2d63cc3bd0f90da76ffddea4b84f3c4a3fb19c86ea9",
+    "baseline_blob": "b45ac1cd81e97a6312edd0aac04ff618699c21b8"
+  },
+  "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": {
+    "sha256": "f218df23446fa7f612f194c17daefcf7c555aefd1cfaaf64d89942757519e172",
+    "blob": "853bd2b4c5ea54e803244e25c25f2e1d232b4d57",
+    "baseline_sha256": "8bbdeb7ab2c4c6a4055594581f39cdee787628bd4f11f0124c0c682e1a0e0160",
+    "baseline_blob": "bfc780e4258bed11dcb3b0346a4ba4a28f37f0ed"
+  },
+  "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": {
+    "sha256": "19b8f550f3a24505d7d3ef1cbe6dbea4329a92f3bbd24fd9344a3add023b66cd",
+    "blob": "a27be6166e8eedd36713a66a2adb13ba6cae2c3c",
+    "baseline_sha256": "3872b2dc4b7afee45d9f97fd9075024bbf54fc3d69988cb0afae302a7b03d1f8",
+    "baseline_blob": "08e950e5118366fe8829c11a56649e36c10a8954"
+  },
+  "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": {
+    "sha256": "eaa38772583e5c1fedf55983400c68ffa7df3dfa4f30fa0cbc4b4591794d487d",
+    "blob": "a1642c67c8f7041c8061d0f99b25bbe4e4b0e881",
+    "baseline_sha256": "80c1bb02a09c7d6e7fe3f4484734bb9e87f8524600a5b6b29046e80cd59c2039",
+    "baseline_blob": "51bc7de7b9b40532d56e64af2de792e0816a9960"
+  },
+  "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": {
+    "sha256": "6ad3e4075c256066a6f9ac0be8f3de2e1e4caad233b73b7a1cba884c84415dc4",
+    "blob": "858ded97b3e2d7051891084d6b840b0c9b18aca5",
+    "baseline_sha256": null,
+    "baseline_blob": null
+  },
+  "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": {
+    "sha256": "77d7d838a48b59a967d793cd76641532cd449955b158e01191d9e18be514ef05",
+    "blob": "681b844f90a1f8adb1cdba7c7eed5feba052cfdb",
+    "baseline_sha256": null,
+    "baseline_blob": null
+  },
+  "leanncd/experiments/jax_bridge/run-evalplan-maxplus.py": {
+    "sha256": "2f93f091fd0f1cf6b324103b24ea425ee6e22d4349d343115c519f7b0b0cb61b",
+    "blob": "cb1589abb76d742f1c445eb121c5f3986bdd9226",
+    "baseline_sha256": null,
+    "baseline_blob": null
+  }
+}
