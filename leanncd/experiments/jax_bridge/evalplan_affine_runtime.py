@@ -484,8 +484,10 @@ def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> 
     else:
         if "semantics" in node:
             raise ValueError("unknown scan semantics")
+        if any(n.get("algebra") == "max_plus" for blk in (node["base"], node["step"]) for n in blk["nodes"]):
+            raise ValueError("max-plus scan requires state_init")
         inits = ["zero"] * len(node["state_shapes"])
-    states = [jnp.full(tuple(s), dtype(0 if i == "zero" else -math.inf), dtype=dtype)
+    states =[jnp.full(tuple(s), dtype(0 if i == "zero" else -math.inf), dtype=dtype)
               for s, i in zip(node["state_shapes"], inits)]
 
     # Base block: once, no context.
@@ -498,6 +500,9 @@ def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> 
         _check_index(w["index"], int(states[i].size), "base write")
         if w["index"]:
             states[i] = _place(states[i], jnp.asarray(w["index"], dtype=_index_dtype()), out)
+    for n in node["step"]["nodes"]:  # validate the step block even when it never runs (steps == 0)
+        if n.get("kind", "assign") == "assign":
+            _check_factors(n["terms"], _algebra(n, dtype)[0] is _ordered_add)
     if steps == 0:
         return states
 

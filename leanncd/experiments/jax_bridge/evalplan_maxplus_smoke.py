@@ -260,6 +260,20 @@ def verify(precision, checked_path, logic_path=None):
         f = copy.deepcopy(by["scan_context_holes"])
         f["scan" + suffix].update(changes)
         cases.append((name, f))
+    # Holes in the scan-level checks: an empty step range must still validate the step block, and a
+    # max-plus scan must declare its state_init (no silent zero initialisation).
+    f = copy.deepcopy(by["scan_context_holes"])
+    f["scan" + suffix].update(step_count=0)
+    f["scan" + suffix]["step"]["nodes"][0]["algebra"] = "min_plus"
+    cases.append(("empty_step_unknown_algebra", f))
+    f = copy.deepcopy(by["scan_context_holes"])
+    del f["scan" + suffix]["state_init"], f["scan" + suffix]["semantics"]
+    cases.append(("max_scan_missing_state_init", f))
+    # Accept-neighbour: the same empty-range record with an unmodified step block is admitted.
+    f = copy.deepcopy(by["scan_context_holes"])
+    f["scan" + suffix].update(step_count=0)
+    for jit in (False, True):
+        assert len(run(f, jit)) == 1, ("empty step range with a valid step block must run", jit)
     for name, f in cases:
         for jit in (False, True):
             try:
