@@ -230,6 +230,16 @@ private def jaxRealCarrier : LeanNCD.StorageKind → ScalarDType × ContractionA
   | .float64 => (.f64, admittedAlgebra)
   | .float32 => (.f32, admittedAlgebraF32)
 
+/-- Additive render-only policy. Evidence, candidates, einsum and scatter use `realOnly`. -/
+inductive JaxRenderProfile
+  | realOnly
+  | maxPlus
+  deriving BEq
+
+private def jaxMaxAlgebra : LeanNCD.StorageKind → ContractionAlgebra
+  | .float64 => admittedAlgebraMax
+  | .float32 => admittedAlgebraF32Max
+
 /-- The support policy itself, over a raw assignment already known to check against `sigs`.
     PRIVATE: the context-free half is never a gate on its own — `checkJaxAssignSupport` below is the
     only way in, precisely so a caller cannot skip the `checkAssign` re-run and hand this function a
@@ -270,15 +280,16 @@ private def jaxRealCarrier : LeanNCD.StorageKind → ScalarDType × ContractionA
     other caller keeps the located `contextualAssignment` refusal. -/
 private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
     (kind : LeanNCD.StorageKind) (a : AssignPlan) (allowUnary : Bool := false)
-    (allowContext : Bool := false) :
+    (allowContext : Bool := false) (profile : JaxRenderProfile := .realOnly) :
     Except JaxSupportError Unit := do
   let (realDType, realAlgebra) := jaxRealCarrier kind
+  let maxPlus := profile == .maxPlus && a.algebra == jaxMaxAlgebra kind
   match sigs[a.destinationSlot]? with
   | none => throw (.invalidSignatureContext nodeIndex (.slotOutOfRange a.destinationSlot sigs.size))
   | some destSig =>
       unless destSig.dtype == realDType do
         throw (.destinationDType nodeIndex a.destinationSlot destSig.dtype)
-  unless a.algebra == realAlgebra do
+  unless a.algebra == realAlgebra || maxPlus do
     throw (.unsupportedAlgebra nodeIndex a.algebra)
   unless allowContext || a.contextShape.isEmpty do
     throw (.contextualAssignment nodeIndex a.contextShape)
@@ -291,7 +302,7 @@ private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
         match sigs[f.sourceSlot]? with
         | none => throw (.invalidSignatureContext nodeIndex (.slotOutOfRange f.sourceSlot sigs.size))
         | some srcSig =>
-            unless srcSig.dtype == realDType do
+            unless srcSig.dtype == realDType || (maxPlus && srcSig.dtype == .bool) do
               throw (.sourceDType nodeIndex ti fi srcSig.dtype)
         unless allowUnary || f.unary.isNone do
           throw (.unaryFactor nodeIndex ti fi)
@@ -300,7 +311,8 @@ private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
     (`allowContext := true`): re-run the mode-appropriate assignment checker under `sigs`, then the
     private support policy. PRIVATE so the context opt-in is reachable only from the scan gate. -/
 private def checkJaxAssignSupportCtx (sigs : Array TensorSignature) (nodeIndex : Nat)
-    (checked : CheckedAssignPlan) (allowUnary allowContext : Bool) : Except JaxSupportError Unit := do
+    (checked : CheckedAssignPlan) (allowUnary allowContext : Bool)
+    (profile : JaxRenderProfile := .realOnly) : Except JaxSupportError Unit := do
   let recheck :=
     match checked.storageKind with
     | .float64 => checkAssign sigs checked.plan
@@ -308,7 +320,7 @@ private def checkJaxAssignSupportCtx (sigs : Array TensorSignature) (nodeIndex :
   match recheck with
   | .error e => throw (.invalidSignatureContext nodeIndex e)
   | .ok _ => pure ()
-  jaxAssignSupported sigs nodeIndex checked.storageKind checked.plan allowUnary allowContext
+  jaxAssignSupported sigs nodeIndex checked.storageKind checked.plan allowUnary allowContext profile
 
 /-- The typed, context-bearing cross-module support gate: the supplied complete signature table is
     the assignment's semantic authority, so the assignment checker is RE-RUN under it before the JAX
@@ -335,8 +347,9 @@ private def checkJaxAssignSupportCtx (sigs : Array TensorSignature) (nodeIndex :
     candidate conversions in `experiments/jax_bridge/EvalPlanCodegen.lean` call; the latter maps its
     result into that module's own `JaxCodegenError` vocabulary. -/
 def checkJaxAssignSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
-    (checked : CheckedAssignPlan) (allowUnary : Bool := false) : Except JaxSupportError Unit :=
-  checkJaxAssignSupportCtx sigs nodeIndex checked allowUnary false
+    (checked : CheckedAssignPlan) (allowUnary : Bool := false)
+    (profile : JaxRenderProfile := .realOnly) : Except JaxSupportError Unit :=
+  checkJaxAssignSupportCtx sigs nodeIndex checked allowUnary false profile
 
 /-- The scatter counterpart of `checkJaxAssignSupport`: a scatter's COMPUTE half is graded by the very
     same private policy (`jaxAssignSupported` — one rule, no second copy), after the scatter checker
@@ -374,18 +387,20 @@ def jaxScanSingleAxis (raw : RawScanPlan) : Bool := raw.historyExtents.size == 1
     policies (`iterationOrder`/`boundaryPolicy`/`snapshotPolicy`) are single-valued, so no check.
     Every error is located at the scan's OUTER step index `nodeIndex`; an assignment refusal's
     term/factor indices are relative to its own block, which this verdict does not name. -/
-def checkJaxScanSupport (nodeIndex : Nat) (checked : CheckedScanPlan) :
+def checkJaxScanSupport (nodeIndex : Nat) (checked : CheckedScanPlan)
+    (profile : JaxRenderProfile := .realOnly) :
     Except JaxSupportError Unit := do
   let raw := checked.raw
   unless jaxScanSingleAxis raw do
     throw (.scanMultiAxis nodeIndex)
   for h : si in [0 : raw.states.size] do
-    unless raw.states[si].initValue == .zero do
+    unless raw.states[si].initValue == .zero ||
+        (profile == .maxPlus && raw.states[si].initValue == .negInf) do
       throw (.scanNonRealState nodeIndex si)
   for (block, evidence) in [(raw.baseBlock, checked.checkedBase), (raw.stepBlock, checked.checkedStep)] do
     for e in evidence.checkedNodes do
       match e with
-      | .assign a => checkJaxAssignSupportCtx block.tensorSigs nodeIndex a true true
+      | .assign a => checkJaxAssignSupportCtx block.tensorSigs nodeIndex a true true profile
       | .pointwise _ | .axiswise _ => pure ()
 
 /-- `Bool` view of the support gate, for the `Bool`-valued validators below. -/

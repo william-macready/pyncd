@@ -169,8 +169,9 @@ def codegenErrorOfSupport : JaxSupportError → JaxCodegenError
     support policy decides. Located at `nodeIndex` — the real outer step index at a plan-level
     caller, `0` at a standalone one. -/
 def requireJaxSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
-    (checked : CheckedAssignPlan) (allowUnary : Bool := false) : Except JaxCodegenError Unit :=
-  match checkJaxAssignSupport sigs nodeIndex checked allowUnary with
+    (checked : CheckedAssignPlan) (allowUnary : Bool := false)
+    (profile : JaxRenderProfile := .realOnly) : Except JaxCodegenError Unit :=
+  match checkJaxAssignSupport sigs nodeIndex checked allowUnary profile with
   | .ok _ => .ok ()
   | .error e => .error (codegenErrorOfSupport e)
 
@@ -535,23 +536,27 @@ def unaryOpName : UnaryOp → String
 /-- PRIVATE (Task 4.5): emits one factor's gather semantics; reachable only behind
     `renderAffineNode`'s contextual support gate. A unary read adds a trailing `"unary"` key (the
     runtime applies it AFTER the zero-pad mask, as Dense does); a plain read's record is unchanged. -/
-private def renderAffineFactor (iterationShape : Array Nat) (f : ReadPlan) : String :=
+private def renderAffineFactor (iterationShape : Array Nat) (f : ReadPlan)
+    (maxPlus : Bool := false) : String :=
   let (idxs, masks) := buildFactorTable iterationShape f
   let unaryStr := match f.unary with
     | none => ""
     | some op => ", \"unary\": " ++ pyStrLit (unaryOpName op)
   "{\"source_slot\": " ++ toString f.sourceSlot ++
   ", \"safe_index\": " ++ pyNatListLit idxs ++
-  ", \"mask\": " ++ pyBoolListLit masks ++ unaryStr ++ "}"
+  ", \"mask\": " ++ pyBoolListLit masks ++ unaryStr ++
+  (if maxPlus then ", \"tag\": \"read\", \"bool_to_tropical\": " ++
+    (if f.boolToTropical then "True" else "False") ++
+    ", \"real_to_bool\": False" else "") ++ "}"
 
 /-- PRIVATE (Task 4.5): emits one term's semantics; same gate. -/
-private def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
+private def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) (maxPlus : Bool := false) :
     Except JaxCodegenError String := do
   let mut facStrs : Array String := #[]
   for h : fi in [0 : t.factors.size] do
     match t.factors[fi] with
     | .iverson _ => throw (.iversonFactor nodeIndex termIndex fi)
-    | .read f => facStrs := facStrs.push (renderAffineFactor t.iterationShape f)
+    | .read f => facStrs := facStrs.push (renderAffineFactor t.iterationShape f maxPlus)
   let facs := String.intercalate ", " facStrs.toList
   return "{\"iteration_shape\": " ++ pyNatListLit t.iterationShape ++
     ", \"output_pos\": " ++ pyNatListLit t.outputPos ++
@@ -563,13 +568,15 @@ private def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
     rendered by exactly the same tables. PRIVATE and gate-free: every caller has already applied its
     own support gate (`requireJaxSupport` / `requireJaxScatterSupport`). -/
 private def renderAffineFields (nodeIndex : Nat) (a : AssignPlan) : Except JaxCodegenError String := do
+  let maxPlus := a.algebra == admittedAlgebraMax || a.algebra == admittedAlgebraF32Max
   let mut termStrs : Array String := #[]
   for h : ti in [0 : a.terms.size] do
-    termStrs := termStrs.push (← renderAffineTerm nodeIndex ti a.terms[ti])
+    termStrs := termStrs.push (← renderAffineTerm nodeIndex ti a.terms[ti] maxPlus)
   let terms := String.intercalate ", " termStrs.toList
   return "\"dest\": " ++ toString a.destinationSlot ++
     ", \"output_shape\": " ++ pyNatListLit a.outputShape ++
-    ", \"terms\": [" ++ terms ++ "]"
+    ", \"terms\": [" ++ terms ++ "]" ++
+    (if maxPlus then ", \"algebra\": \"max_plus\", \"semantics\": \"ordered_max_plus_v1\"" else "")
 
 /-- The scatter counterpart of `requireJaxSupport` (`checkJaxScatterSupport` in `Executable.lean`):
     the scatter checker is re-run under `sigs`, then the one JAX support policy grades the compute
@@ -676,7 +683,7 @@ private def renderAxiswiseNode (nodeIndex : Nat) (a : CheckedAxiswisePlan) :
     also the only caller that opts in to an inline unary read (`allowUnary := true`). -/
 private def renderAffineNode (sigs : Array TensorSignature) (nodeIndex : Nat)
     (checked : CheckedAssignPlan) : Except JaxCodegenError String := do
-  requireJaxSupport sigs nodeIndex checked (allowUnary := true)
+  requireJaxSupport sigs nodeIndex checked (allowUnary := true) (profile := .maxPlus)
   return "{" ++ (← renderAffineFields nodeIndex checked.plan) ++ "}"
 
 /-- A scan write's static placement table: for every context coordinate in `ctxs` (in the order given:
@@ -786,7 +793,7 @@ private def renderScanWrites (nodeIndex : Nat) (stateShapes : Array (Array Nat))
     step `r`, local iteration coordinate `j`, `local = prod(iteration_shape[1:])`. Dtype is not
     emitted (the caller supplies it, as for every other node). -/
 def renderScanNode (nodeIndex : Nat) (checked : CheckedScanPlan) : Except JaxCodegenError String := do
-  match checkJaxScanSupport nodeIndex checked with
+  match checkJaxScanSupport nodeIndex checked (profile := .maxPlus) with
   | .ok _ => pure ()
   | .error e => throw (codegenErrorOfSupport e)
   let raw := checked.raw
@@ -802,8 +809,12 @@ def renderScanNode (nodeIndex : Nat) (checked : CheckedScanPlan) : Except JaxCod
   let baseWrites ← renderScanWrites nodeIndex stateShapes raw.baseBlock raw.baseWrites [[]]
   let stepWrites ← renderScanWrites nodeIndex stateShapes raw.stepBlock raw.stepWrites stepCtxs
   let caps (cs : Array BlockCapture) := "[" ++ String.intercalate ", " (cs.toList.map renderScanCapture) ++ "]"
+  let maxPlus := raw.states.any (fun st => st.initValue == .negInf)
   return "{\"kind\": \"scan\", \"dests\": " ++ pyNatListLit (raw.states.map (·.destSlot)) ++
     ", \"state_shapes\": [" ++ String.intercalate ", " (stateShapes.toList.map pyNatListLit) ++ "]" ++
+    (if maxPlus then ", \"state_init\": [" ++ String.intercalate ", " (raw.states.toList.map fun st =>
+      pyStrLit (if st.initValue == .negInf then "neg_inf" else "zero")) ++
+      "], \"semantics\": \"ordered_scan_v1\"" else "") ++
     ", \"step_count\": " ++ toString (mixedRadixDomainSize checked.stepExtents) ++
     ", \"base\": " ++ base ++ ", \"base_captures\": " ++ caps raw.baseCaptures ++
     ", \"base_writes\": " ++ baseWrites ++
@@ -2535,8 +2546,7 @@ def ntScanInputs : Array SlotBinding := #[{ name := "s0", slot := 0 }, { name :=
   | none => false
 
 -- Scan refusal fixture (d): clone `scanRejectRaw`'s scan, change ONLY the state `initValue` to `.negInf`
--- and the step algebra to max-plus (the checker ties the two). The plan checks, and the scan renders
--- NOTHING: the located `unsupportedScanState 1 0` (outer step 1, state 0) comes back instead.
+-- and the step algebra to max-plus (the checker ties the two). Only rendering opts in.
 def scanTropicalRaw : RawEvalPlan :=
   { scanRejectRaw with
     steps := #[PlanStep.assign scanAssign
@@ -2545,10 +2555,29 @@ def scanTropicalRaw : RawEvalPlan :=
                     states := #[{ scanState with initValue := .negInf }]
                     stepBlock := { scanStepBlock with
                       steps := #[.assign { scanStepAssign with algebra := admittedAlgebraMax }] } }] }
-#guard match ntPreparedNamed scanTropicalRaw ntScanInputs #[3, 2] with
+run_cmd unless (match ntPreparedNamed scanTropicalRaw ntScanInputs #[3, 2] with
+  | some p => (match renderAffinePlanNamed p with
+      | .ok s => (s.splitOn "\"state_init\": [\"neg_inf\"]").length == 2
+      | _ => false)
+  | none => false) do throwError "MAX-T1-SCAN: rendering must accept checked max-plus"
+
+run_cmd unless (match checkAssign idSigs { idAssign with algebra := admittedAlgebraMax } with
+  | .ok c => (match checkJaxAssignSupport idSigs 7 c with
+      | .error (.unsupportedAlgebra 7 _) => true | _ => false)
+  | _ => false) do throwError "MAX-T1-DEFAULT: shared support must remain real-only"
+
+def scanMinRefusalRaw : RawEvalPlan :=
+  { scanRejectRaw with
+    steps := #[PlanStep.assign scanAssign
+              , PlanStep.scan
+                  { scanPlanStep with
+                    states := #[{ scanState with initValue := .posInf }]
+                    stepBlock := { scanStepBlock with
+                      steps := #[.assign { scanStepAssign with algebra := admittedAlgebraMin }] } }] }
+run_cmd unless (match ntPreparedNamed scanMinRefusalRaw ntScanInputs #[3, 2] with
   | some p => (match renderAffinePlanNamed p with
       | .error (.unsupportedScanState 1 0) => true | _ => false)
-  | none => false
+  | none => false) do throwError "MAX-T1-SCAN-MIN: checked min-plus scan must remain refused"
 
 -- Write-index backstop on a hand-built out-of-range write (state `[3]`, bias 3): located error, no
 -- table. Accept neighbour: the same write with bias 2 places at 2.
