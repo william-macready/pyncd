@@ -72,8 +72,8 @@
   "task": "scan",
   "verifier": "evalplan_nonlin_smoke",
   "file": "evalplan_affine_runtime.py",
-  "old": "    steps = int(node[\"step_count\"])\n    states = ",
-  "new": "    steps = int(node[\"step_count\"]) - 1\n    states = ",
+  "old": "    steps = int(node[\"step_count\"])\n",
+  "new": "    steps = int(node[\"step_count\"]) - 1\n",
   "runs": [
    "float64",
    "float32"
