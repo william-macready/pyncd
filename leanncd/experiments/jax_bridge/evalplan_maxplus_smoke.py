@@ -260,20 +260,26 @@ def verify(precision, checked_path, logic_path=None):
         f = copy.deepcopy(by["scan_context_holes"])
         f["scan" + suffix].update(changes)
         cases.append((name, f))
-    # Holes in the scan-level checks: an empty step range must still validate the step block, and a
-    # max-plus scan must declare its state_init (no silent zero initialisation).
+    # Hole in the scan-level checks: an empty step range must still validate the step block.
     f = copy.deepcopy(by["scan_context_holes"])
     f["scan" + suffix].update(step_count=0)
     f["scan" + suffix]["step"]["nodes"][0]["algebra"] = "min_plus"
     cases.append(("empty_step_unknown_algebra", f))
-    f = copy.deepcopy(by["scan_context_holes"])
-    del f["scan" + suffix]["state_init"], f["scan" + suffix]["semantics"]
-    cases.append(("max_scan_missing_state_init", f))
     # Accept-neighbour: the same empty-range record with an unmodified step block is admitted.
     f = copy.deepcopy(by["scan_context_holes"])
     f["scan" + suffix].update(step_count=0)
     for jit in (False, True):
         assert len(run(f, jit)) == 1, ("empty step range with a valid step block must run", jit)
+    # A max-plus scan whose states all start at 0 is legal (the Lean emitter writes `state_init` only
+    # when some state is `.negInf`): omitting it must equal declaring every state "zero", never refuse.
+    explicit = copy.deepcopy(by["scan_context_holes"])
+    explicit["scan" + suffix]["state_init"] = ["zero"] * len(explicit["scan" + suffix]["state_shapes"])
+    omitted = copy.deepcopy(explicit)
+    del omitted["scan" + suffix]["state_init"], omitted["scan" + suffix]["semantics"]
+    for jit in (False, True):
+        a, b = run(explicit, jit), run(omitted, jit)
+        assert len(a) == len(b) and all(np.array_equal(np.asarray(x), np.asarray(y), equal_nan=True)
+                                        for x, y in zip(a, b)), ("omitted state_init must mean zero", jit)
     for name, f in cases:
         for jit in (False, True):
             try:

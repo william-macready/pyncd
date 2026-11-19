@@ -806,8 +806,8 @@ private def renderScanWrites (nodeIndex : Nat) (stateShapes : Array (Array Nat))
     runtime (`_run_scan_node`, `_algebra`, `_check_factors` in `evalplan_affine_runtime.py`) validates
     all of it and fails loud: `state_init` requires the `ordered_scan_v1` marker, one entry per state,
     each `"zero"` or `"neg_inf"`; a scan record WITHOUT `state_init` must carry no `semantics` key and
-    must hold no `max_plus` block node (a `max_plus` node in either block needs `state_init`), so a
-    scan whose block nodes are max-plus but whose states all start at `0` is refused at run time.
+    starts every state at `0`, including when its block nodes are `max_plus` (the gate admits `.zero`
+    states under every profile, so such a scan is legal and must run, not be refused).
 
     Semantics the runtime mirrors (`runDenseScanWith`): states start at `0`, except a `"neg_inf"`
     state, which starts at `-inf` (the identity of the ordered max, as `0` is of the real sum); the base block runs once

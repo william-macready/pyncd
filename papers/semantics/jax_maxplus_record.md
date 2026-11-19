@@ -328,9 +328,13 @@ changes the immutable four-patch package or its recorded results above, which st
   above. Fixed in the docs commits of this batch (comments and docstring only, no
   behavior change; `JaxExperiment` rebuilt green).
 - **M1-M5, minor items.** Fixed in `60d1d7c0` (`_run_scan_node` validated step-block nodes
-  only when `step_count > 0`, and silently zero-initialised a max-plus scan with no
-  `state_init`; now both are refused, with pinning fixtures `empty_step_unknown_algebra`
-  and `max_scan_missing_state_init`), in `66da8b1e` (`EvalPlanMaxPlusSmoke` was not run
+  only when `step_count > 0`; now it always does, pinned by `empty_step_unknown_algebra`.
+  The review's second hole, a max-plus scan with no `state_init` "silently zero-initialising",
+  was NOT a hole: the Lean emitter writes `state_init` only when some state is `.negInf`, so
+  a max-plus scan whose states all start at `0` legitimately has none. The first fix refused
+  it; that was reverted (it would have rejected valid programs) and the check is now an
+  accept-neighbour pinning that omitting `state_init` equals declaring every state `"zero"`),
+  in `66da8b1e` (`EvalPlanMaxPlusSmoke` was not run
   by `check-lean-drivers.sh`; now registered, script says "seven drivers"), and in this
   docs batch: the README row count ("eight rows" became ten; the f32 coverage of the
   max-plus rows is stated), the `leanncd/AGENTS.md` wording on max-plus mask reads
@@ -338,8 +342,8 @@ changes the immutable four-patch package or its recorded results above, which st
   `check-lean-drivers.sh` header count, a README note on max-plus gradients at ties and at
   NaN outputs (behavior probed, explicitly outside the winning-path gradient promise), and
   the NaN/operand-order pin wording below.
-- **Per-precision runner line** moved from 26 checked views / 22 refusals to 28 / 26
-  (both precisions together: 56 / 52); source, point-forward and gradient columns are
+- **Per-precision runner line** moved from 26 checked views / 22 refusals to 28 / 24
+  (both precisions together: 56 / 48); source, point-forward and gradient columns are
   unchanged. The 52 / 44 figures quoted in the sections above are the as-run
   counts at the original landing.
 

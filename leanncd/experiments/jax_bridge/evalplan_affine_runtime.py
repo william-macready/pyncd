@@ -35,7 +35,8 @@ Load-bearing properties (whole-branch review gate):
   max-plus); an empty term array yields an output filled with the reduction identity (zeros; `-inf`
   under max-plus); a zero reduction extent yields that same identity; a zero output extent yields
   empty storage. A scan state starts at `0`, or at `-inf` where the record's `state_init` says
-  `"neg_inf"` (a max-plus scan block without `state_init` is refused).
+  `"neg_inf"`; a record without `state_init` starts every state at `0`, which is what the Lean emitter
+  produces for a scan with no `-inf` state, max-plus statements or not).
 * **Graph order.** Positional nodes execute in checked order, each writing its destination slot
   before any later node reads it.
 * **Scatter nodes (`"kind": "scatter"`).** The compute half runs through the unchanged assignment
@@ -498,8 +499,6 @@ def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> 
     else:
         if "semantics" in node:
             raise ValueError("unknown scan semantics")
-        if any(n.get("algebra") == "max_plus" for blk in (node["base"], node["step"]) for n in blk["nodes"]):
-            raise ValueError("max-plus scan requires state_init")
         inits = ["zero"] * len(node["state_shapes"])
     states = [jnp.full(tuple(s), dtype(0 if i == "zero" else -math.inf), dtype=dtype)
               for s, i in zip(node["state_shapes"], inits)]
