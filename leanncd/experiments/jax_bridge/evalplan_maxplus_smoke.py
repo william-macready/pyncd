@@ -204,7 +204,7 @@ def verify(precision, checked_path, logic_path=None):
         return (jax.jit(fn) if jit else fn)(inputs)
 
     fixtures = load(checked_path).ADVERSARIAL
-    assert len(fixtures) == 13
+    assert len(fixtures) == 14
     for f in fixtures:
         for jit in (False, True):
             output = run(f, jit)
@@ -222,6 +222,14 @@ def verify(precision, checked_path, logic_path=None):
     assert np.isneginf(holes[1, 0]) and np.array_equal(
         holes[:, 1:], np.asarray([[7, 13, 19], [11, 17, 23]], dtype=nd)), holes
     assert np.isnan(np.asarray(run(by["false_source_opposing_infinity"]))[0])
+
+    # Every max-plus term must reach the fold: B wins at 0, A at 2 and 4, C at 3, NaN in a non-last term at 5.
+    multi = by["max_multi_term_winners"]
+    assert len(multi["assign" + suffix]["terms"]) == 3, "max_multi_term_winners must render three terms"
+    for jit in (False, True):
+        got = np.asarray(run(multi, jit))
+        wanted = np.asarray([2, -np.inf, 5, 7, 9, np.nan], dtype=nd)
+        assert np.array_equal(got, wanted, equal_nan=True), ("max_multi_term_winners", jit, got)
 
     # Validate metadata even for empty domains: no silently ignored invalid tags.
     template = by["bool_to_tropical_true"]
@@ -252,6 +260,30 @@ def verify(precision, checked_path, logic_path=None):
         f = copy.deepcopy(by["scan_context_holes"])
         f["scan" + suffix].update(changes)
         cases.append((name, f))
+    # Hole in the scan-level checks: an empty step range must still validate the step block.
+    f = copy.deepcopy(by["scan_context_holes"])
+    f["scan" + suffix].update(step_count=0)
+    f["scan" + suffix]["step"]["nodes"][0]["algebra"] = "min_plus"
+    cases.append(("empty_step_unknown_algebra", f))
+    f = copy.deepcopy(by["scan_context_holes"])
+    f["scan" + suffix].update(step_count=0)
+    f["scan" + suffix]["step"]["nodes"][0]["terms"][0]["factors"][0]["bool_to_tropical"] = None
+    cases.append(("empty_step_bad_factor_metadata", f))
+    # Accept-neighbour: the same empty-range record with an unmodified step block is admitted.
+    f = copy.deepcopy(by["scan_context_holes"])
+    f["scan" + suffix].update(step_count=0)
+    for jit in (False, True):
+        assert len(run(f, jit)) == 1, ("empty step range with a valid step block must run", jit)
+    # A max-plus scan whose states all start at 0 is legal (the Lean emitter writes `state_init` only
+    # when some state is `.negInf`): omitting it must equal declaring every state "zero", never refuse.
+    explicit = copy.deepcopy(by["scan_context_holes"])
+    explicit["scan" + suffix]["state_init"] = ["zero"] * len(explicit["scan" + suffix]["state_shapes"])
+    omitted = copy.deepcopy(explicit)
+    del omitted["scan" + suffix]["state_init"], omitted["scan" + suffix]["semantics"]
+    for jit in (False, True):
+        a, b = run(explicit, jit), run(omitted, jit)
+        assert len(a) == len(b) and all(np.array_equal(np.asarray(x), np.asarray(y), equal_nan=True)
+                                        for x, y in zip(a, b)), ("omitted state_init must mean zero", jit)
     for name, f in cases:
         for jit in (False, True):
             try:

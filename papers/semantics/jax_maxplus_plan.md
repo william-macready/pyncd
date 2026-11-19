@@ -338,8 +338,14 @@ Both assignment checkers and `checkScanPlan`/`checkScanPlanF32` accept these exa
 
 Eleven checked assignments + two checked scans × both precisions × eager/JIT = 52 checked views.
 The 11 invalid-metadata variants × both precisions
-× eager/JIT = 44 refusals. Scalar pins additionally distinguish RHS signed-zero max ties,
-first/second NaN patterns, zero-pair sum signs and the zero-Init derivative.
+× eager/JIT = 44 refusals. (As planned and landed; post-landing fixes raised the per-precision
+runner line to 28 checked / 26 refusals, see the record's "Post-landing review fixes".) Scalar pins additionally check, directly on `_ordered_max` and
+`_ordered_add` (function level, not through a statement): the right-hand-wins signed-zero max tie
+(`0` vs `-0` returns `-0`, `-0` vs `0` returns `+0`; this kills `MAX-P-native_max_zero_tie`), that
+NaN inputs give a NaN output (`isnan` only: neither NaN priority, first versus second, nor NaN
+payload is distinguished), the signs of zero-pair sums and the zero-Init derivative. NaN priority
+and fold operand order INSIDE statements are not distinguished by the current pins (the factor
+`+0` seed turns a stored `-0` into `+0`, and NaN payloads are not compared).
 False cast is not inferred even when the source tag could tempt such an inference; the factor
 +0 seed normalizes stored -0 to +0 before max.
 The empty-source log pin bypasses evaluation before gathering; it cannot certify the nonempty

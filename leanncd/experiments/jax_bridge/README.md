@@ -34,9 +34,9 @@ dependencies; the selected interpreter must already provide the experiment's JAX
 
 Plus one Lean-only check, not a runner:
 
-- **`check-lean-drivers.sh [STRIDE]`**: builds `LeanNCD JaxExperiment Tests`, then runs the four Lean
-  generators (`EvalPlanSmoke`, `EvalPlanAffineSmoke`, `EvalPlanAffineCorpus`, `EvalPlanAffineSmoke32`)
-  into a temp directory and fails if any exits non-zero. No Python, no JAX. The drivers are outside every
+- **`check-lean-drivers.sh [STRIDE]`**: builds `LeanNCD JaxExperiment Tests`, then runs the seven Lean
+  generators (`EvalPlanSmoke`, `EvalPlanAffineSmoke`, `EvalPlanAffineCorpus`, `EvalPlanAffineSmoke32`,
+  `EvalPlanScatterSmoke`, `EvalPlanNonlinSmoke`, `EvalPlanMaxPlusSmoke`) into a temp directory and fails if any exits non-zero. No Python, no JAX. The drivers are outside every
   Lake target, and a change to a precision default or to an `InputSignature` constructor breaks them at
   RUN time (a typed `prepareEvalPlan` rejection), so only running them catches it. Run it after such a
   change; the F32 default flip broke all four silently.
@@ -234,11 +234,12 @@ real-only defaults, while `affineReference` explicitly opts into max-plus render
 | contextful assignment (`AssignPlan.contextShape` non-empty) | required | forbidden (`unsupportedContext`) | forbidden |
 | zero-padded read shorter than its iteration basis | required | `einsumOnly` forbidden (`labelExtentMismatch`); `affineReference` required | einsum forbidden, affine required |
 
-Every row holds unchanged under a `.float32` plan for `affineReference` (same located errors), and
+Every row holds unchanged under a `.float32` plan for `affineReference` (same located errors; the
+max-plus rows use `admittedAlgebraF32Max`, the table's `f64` naming the binary64 case), and
 under `einsumOnly` every binary32 plan is refused first with `unsupportedStorageKind .float32`.
 
 **There is no JAX Boolean execution and none is planned here** — this is a fail-loud support
-boundary, not a semantic gap in the checked backend, which executes all eight rows correctly. The
+boundary, not a semantic gap in the checked backend, which executes all ten rows correctly. The
 last row is the only mode-SPLIT one (whole-branch review): see the label-extent paragraph below.
 
 The contextful row is the Task 4.5 CLOSURE finding, and it is about a runtime parameter rather than
@@ -571,6 +572,13 @@ positive-margin near tie, including initial-state and spare-row pins. Checked wi
 distinguish cancellation-sensitive factor order, mixed zero/negative-infinity state initialization
 and nonempty-source unary padding.
 No derivative at a genuinely nondifferentiable tie or a nonfinite active path is promised.
+What the runtime actually returns there (probed on a single max-plus reduction, binary64; behavior,
+not a promise): at an exact tie the LAST maximal element in reduction fold order receives the whole
+gradient (`[2, 2, 1]` gives `[0, 1, 0]` and `[2, 2, 2]` gives `[0, 0, 1]`, where `jnp.max` would
+split `[.5, .5, 0]` and `[1/3, 1/3, 1/3]`), because the ordered max keeps the right operand when
+`a <= b`. When the output is NaN (for example `+inf` plus `-inf` in one factor product) the gradient
+is finite and one-hot onto the first NaN-producing entry (the ordered max keeps the first NaN it
+meets). Neither is part of the winning-path gradient the pins above check.
 Min-plus, Boolean destination algebra, Iverson lowering, non-real scatter and executable evidence
 remain outside this capability. See [the max-plus plan](../../../papers/semantics/jax_maxplus_plan.md).
 

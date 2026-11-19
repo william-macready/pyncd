@@ -178,6 +178,13 @@ def adversarial : IO (List String) := do
     #[dense [] #[18014398509481984], dense [] #[-18014398509481984], dense [] #[1]]]
   out := out ++ [← rawFixture "max_reciprocal_partial_oob" #[⟨#[1], .f64⟩, ⟨#[3], .f64⟩]
     (vectorRaw admittedAlgebraMax { oob with unary := some .recip } 3) #[dense [1] #[2]]]
+  -- Three max-plus terms; a different term wins at coordinates 0 (B), 2 (A), 3 (C), 4 (A, -inf in a non-last term), 5 (NaN in a non-last term propagates).
+  let multiBase := vectorRaw admittedAlgebraMax { r with sourceShape := #[6] } 6
+  let multiTerm := multiBase.terms[0]!
+  let multi : AssignPlan := { multiBase with destinationSlot := 3, terms := #[0, 1, 2].map fun s =>
+    { multiTerm with factors := #[.read { r with sourceSlot := s, sourceShape := #[6] }] } }
+  out := out ++ [← rawFixture "max_multi_term_winners" #[⟨#[6], .f64⟩, ⟨#[6], .f64⟩, ⟨#[6], .f64⟩, ⟨#[6], .f64⟩] multi
+    #[dense [6] #[1, -inf, 5, -inf, 9, 1], dense [6] #[2, -inf, 4, 3, -inf, nan], dense [6] #[0, -inf, 3, 7, 2, 2]]]
   out := out ++ [← mixedContextFixture]
   return out
 
