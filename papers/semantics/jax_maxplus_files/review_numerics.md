@@ -94,3 +94,133 @@ Only this report was appended. No build, test, mutation, source edit, package
 replay, or delegation occurred. One read-only hash command initially failed to
 parse and was corrected successfully. Follow-up used three tool-call rounds;
 exact token/context telemetry remains unavailable, with no known context breach.
+
+## Independent coverage-amendment numerical review — 2026-11-18
+
+Scope: revised `02.patch`/`03.patch`, the numerical and gradient mutation
+manifests, live coverage/contract prose, and the three amendment evidence records.
+Historical review above is preserved. Production prototypes are restored;
+this is acceptance-plan review, not production implementation or landing approval.
+Only this report is edited; no patches, sources, manifests, builds, installations,
+expensive pools, or nested agents are used.
+
+Checkpoint: read the actual three added fixture constructions and their scalar/
+complete-history assertions, plus the native exhaustive prefix/path oracle.
+The cancellation pin uses exactly representable `2^54`, mixed scans require both
+zero and negative-infinity initializers, and partial-OOB reciprocal checks the
+valid value and both padded positions. Continuing with independent bounded
+arithmetic/oracle checks, AD transport/tolerances, manifests, and evidence.
+
+### Independent bounded-check checkpoint
+
+Executed only in-memory NumPy/Python checks using the existing cached interpreter
+(`-B`, no installation or generated output). Extracted the actual
+`native_path_oracle` from `03.patch` without applying it. Decoded retained
+checked/source bundles as literals and verified baseline inputs against the
+restored `EvalPlanLogicSmoke.lean` declarations, not against runtime outputs.
+
+For all ten precision-specific points, independently enumerated exact-rational
+prefix/full-path scores and occurrence counts. Every full `D` history bit matched
+the native oracle; final scores, winners, margins and all Init/Trans/Emit counts
+matched, including 96 finite allowed final paths per point. Counts/scores/winners
+also matched the retained gradient evidence. Both near cases have exactly eight
+output ULPs of positive margin: `2^-47` (f64), `2^-18` (f32), on opposite winners.
+Full input/gradient permutation transport passed, including both Trans axes,
+Emit's state axis and frozen Allow. The unused NaN Emit row had zero counts.
+
+Independently confirmed native cancellation ordered=1/reversed=0 in both carriers
+and checked both cached mixed histories and reciprocal output by bits.
+Interpreting the actual manifest comparator expressions with NumPy produced
+numerical prefix disagreements on right-biased `near_tie_below` and complementary
+left-biased `near_tie_above`; both preserved the tested RHS signed-zero tie.
+These are not JAX eager/JIT executions or independently rerun backend mutants.
+
+One initial probe stopped on a reviewer-script `KeyError`: the historical
+gradient evidence does not contain `expected_forward_bits`. After inspecting its
+actual schema, the corrected complete probe passed, comparing histories directly
+to independent rational enumeration instead. This was not a candidate failure.
+
+### Findings and verdict
+
+**CLEAN — no load-bearing numerical/coverage finding or required fix.**
+The revised acceptance closes skeptical points 1–3 within its stated finite,
+unique-winner/native-carrier scope:
+
+1. **Previously surviving reversed max factors:** `02.patch:151–155` constructs
+   the checked three-scalar `[2^54,-2^54,1]` fixture; `02.patch:526–527`
+   independently pins one. Both carriers represent the inputs exactly, but the
+   reversed fold returns zero. The first paired entries of
+   `jax_maxplus_mutations_python.json:3–30` reverse only max-plus factors, with
+   numerical mismatch diagnostics. Native arithmetic was independently checked;
+   the evidence's targeted eager/JIT kills were read, not rerun.
+
+2. **Mixed-state holes and partial-OOB unary:** `02.patch:58–115` constructs
+   two states with distinct initializers, restricts both base writes to leave
+   holes, and rechecks the resulting scan separately in both carriers. Dense32
+   execution is native, not narrowed Dense64 output. `02.patch:531–541` checks
+   both complete histories, including positive-zero versus negative-infinity
+   holes. `02.patch:156–157,528–530` adds the nonempty reciprocal case
+   `[2] -> [.5,-inf,-inf]`. Full fixture expectations and raw bits were checked
+   independently; the new controls genuinely discriminate first-state init
+   reuse and omission of the final OOB mask.
+
+3. **AD deployment versus mathematical coverage:** `03.patch:106–145`
+   independently enumerates every prefix/full path from native inputs, deriving
+   Init one-hot, repeated Trans counts and time/state Emit counts. It neither
+   calls runtime arithmetic nor consumes runtime results. Skipping blocked paths
+   is valid under its finite Trans/active Emit and binary Allow preconditions;
+   no active positive infinities can turn a blocked product into NaN.
+   `03.patch:164–203` constructs five parameter points and verifies full
+   permutation transport; `03.patch:209–256` actually passes each point and its
+   transformed Allow to named/positional eager/JIT calls, checking full `D`/
+   `Score` bits and every gradient count. Only Init/Trans/Emit are differentiated
+   (`argnums=0`); Allow remains frozen, and the never-read NaN Emit row must have
+   zero gradient. Baseline/changed winners and both near-side margins were
+   independently reproduced, not inferred from deployment counts.
+
+The five points do not imply five unrelated gradient supports: near-below
+shares baseline counts, near-above shares changed-winner counts, and permutation
+is a coordinate transport. Those deliberate relationships test numerical
+discrimination and transport rather than inflate mathematical independence.
+
+**Counts and control interpretation.** Actual cached fixtures contain eleven
+assignments and two scans: **13 fixtures / 52 checked views / 44 metadata
+refusals**. The unchanged seven source cases retain **56 source views**.
+Five parameter points give **40 gradient deployments and 40 point-forward
+executions**; baseline/permutation account for 16 point-forward deployments
+overlapping the original source scenarios, not 16 new mathematical cases.
+The manifests independently check as **18 T2 singleton entries / nine intents**
+and **eight T3-only singleton entries / four intents**, with each intent paired
+across separate precision gates.
+
+The stale-baseline pair is an orchestration control; wrong permutation transport
+is an oracle control, not a backend defect. Only the two tolerance-comparator
+intents in the T3-only manifest mutate backend numerical comparison.
+`jax_maxplus_grad_mutations_python.json:67–137` requires right-biased
+`near_tie_below` and complementary, tie-preserving left-biased `near_tie_above`
+numerical assertion failures in both carriers. The actual comparator expressions
+were independently discriminating in-memory; controller eager/JIT observations
+remain controller evidence, not reviewer-reexecuted results.
+
+**Evidence precedence and limits.** `revision_numeric_evidence.json:23` records
+the strengthened numerical counts; its later targeted observations distinguish
+numeric returned-value failures from setup exceptions. The original gradient
+snapshot's six-entry counts (`revision_gradient_evidence.json:5–56`) describe an
+earlier stage, explicitly superseded by `controller_supplement` at line 990 and
+the eight-entry observe/strict results in
+`coverage_amendment_controller.json:100`. This is not six being counted as eight.
+The controller also records renewed T2/T3 kernel cycles, full prototype build,
+and restoration. I read these records but did not rerun those cycles/builds.
+Its `legacy_proof_reuse` at line 225 explicitly retains, rather than reruns, the
+old legacy proof. Read-only Git comparison independently found no `leanncd`
+production differences from `c5000dd462d72ed0ffcd5806937aa37fa477e9b0`
+(planning base `d7ac2640`).
+
+No universal correctness, derivative-at-real-ties, nonfinite-active-path,
+process/performance point 4, or production-landing claim follows. Unchanged
+runtime/core/renderer and admission/legacy proofs were intentionally not
+re-reviewed; package/protocol review belongs to the other reviewer.
+Only this report was edited. Completed within the 18-turn cap; exact
+token/peak-context telemetry is unavailable, with no known breach of 100k peak
+context. No source/manifest edit, patch application, pool/build rerun, commit,
+installation, or delegation was performed.

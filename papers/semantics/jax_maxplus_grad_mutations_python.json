@@ -1,0 +1,130 @@
+[
+ {
+  "label": "MAX-AD-stale_baseline_parameters-64",
+  "task": "T3",
+  "control_class": "verifier parameter-point control",
+  "file": "evalplan_maxplus_smoke.py",
+  "old": "got_grad = grad_fn(parameters, allow)",
+  "new": "got_grad = grad_fn({n: jnp.asarray(baseline[n]) for n in parameters}, allow)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: point_gradient changed_winner float64 named eager Init: array([1., 0., 0.,",
+   "AssertionError: point_gradient changed_winner float64 named eager Init"
+  ]
+ },
+ {
+  "label": "MAX-AD-stale_baseline_parameters-32",
+  "task": "T3",
+  "control_class": "verifier parameter-point control",
+  "file": "evalplan_maxplus_smoke.py",
+  "old": "got_grad = grad_fn(parameters, allow)",
+  "new": "got_grad = grad_fn({n: jnp.asarray(baseline[n]) for n in parameters}, allow)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: point_gradient changed_winner float32 named eager Init: array([1., 0., 0.,",
+   "AssertionError: point_gradient changed_winner float32 named eager Init"
+  ]
+ },
+ {
+  "label": "MAX-AD-permutation_transport-64",
+  "task": "T3",
+  "control_class": "independent oracle gradient-transport control",
+  "file": "evalplan_maxplus_smoke.py",
+  "old": "transported = transport(base_grad)",
+  "new": "transported = base_grad",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: gradient_transport state_permuted float64 oracle Init",
+   "AssertionError: gradient_transport state_permuted float64 oracle Init"
+  ]
+ },
+ {
+  "label": "MAX-AD-permutation_transport-32",
+  "task": "T3",
+  "control_class": "independent oracle gradient-transport control",
+  "file": "evalplan_maxplus_smoke.py",
+  "old": "transported = transport(base_grad)",
+  "new": "transported = base_grad",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: gradient_transport state_permuted float32 oracle Init",
+   "AssertionError: gradient_transport state_permuted float32 oracle Init"
+  ]
+ },
+ {
+  "label": "MAX-AD-approximate_max-64",
+  "task": "T3",
+  "control_class": "runtime numerical comparison control",
+  "file": "evalplan_affine_runtime.py",
+  "old": "jnp.where(a <= b, b, a)",
+  "new": "jnp.where(a <= b + .001, b, a)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: point_forward near_tie_below float64 named eager D: array([[ 0.  , -1.5 , ",
+   "AssertionError: point_forward near_tie_below float64 named eager D"
+  ]
+ },
+ {
+  "label": "MAX-AD-approximate_max-32",
+  "task": "T3",
+  "control_class": "runtime numerical comparison control",
+  "file": "evalplan_affine_runtime.py",
+  "old": "jnp.where(a <= b, b, a)",
+  "new": "jnp.where(a <= b + .001, b, a)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: point_forward near_tie_below float32 named eager D: array([[ 0.       , -1",
+   "AssertionError: point_forward near_tie_below float32 named eager D"
+  ]
+ },
+ {
+  "label": "MAX-AD-approximate_max_left-64",
+  "task": "T3",
+  "control_class": "runtime numerical comparison control; exact ties preserved",
+  "file": "evalplan_affine_runtime.py",
+  "old": "jnp.where(a <= b, b, a)",
+  "new": "jnp.where((a <= b) & ((a == b) | (a + .001 <= b)), b, a)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: point_forward near_tie_above float64 named eager D: array([[ 0.  , -1.5 , ",
+   "AssertionError: point_forward near_tie_above float64 named eager D"
+  ]
+ },
+ {
+  "label": "MAX-AD-approximate_max_left-32",
+  "task": "T3",
+  "control_class": "runtime numerical comparison control; exact ties preserved",
+  "file": "evalplan_affine_runtime.py",
+  "old": "jnp.where(a <= b, b, a)",
+  "new": "jnp.where((a <= b) & ((a == b) | (a + .001 <= b)), b, a)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: point_forward near_tie_above float32 named eager D: array([[ 0.       , -1",
+   "AssertionError: point_forward near_tie_above float32 named eager D"
+  ]
+ }
+]

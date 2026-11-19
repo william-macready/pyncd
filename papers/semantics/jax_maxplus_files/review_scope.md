@@ -75,3 +75,88 @@ does not reopen the sibling numerical review.
 
 Follow-up limits honored: bounded read-only artifact inspection and this report-only append;
 no builds, mutation execution, feature-source reads/edits or agents. No known budget breach.
+
+## Coverage amendment — independent final package/execution/scope review
+
+Review in progress. This amendment review preserves the original review above; its historical
+clean verdict is not renewed signoff. Numerical/oracle discrimination belongs to the independent
+numerical reviewer. Pending review readiness is intentional, not a finding.
+
+Initial checkpoint: inspected package metadata, T2/T3/T4 cumulative maps, verifier implementation
+and opening live-plan contract. They declare three provided manifests, sequential T1–T4,
+4/7/7/15 cumulative entries and 3/4/3/8 touched paths; T3 alone introduces the gradient manifest
+execution. Validation below will distinguish these declarations from mechanically checked facts.
+Only this report is edited; no production replay, builds, pools, installation or nested agents.
+
+Mechanical checkpoint: task-0 verifier exited 0: “Package OK: 4 ordered patches, 3 provided
+manifests, task 0 boundary; index unchanged.” Scratch was explicitly kept inside this worktree.
+An independent stdlib-only asset check also passed strict ordered private-index replay with
+`git apply --cached --check --whitespace=error-all` followed by cached application. All three
+provided manifests were seeded before T1 and absent from every patch's changed paths. Header,
+actual changed-path and task-list sets agree exactly; snapshots are 4/7/7/15, touched paths
+3/4/3/8. All approved SHA256/blob pairs and baseline provenance agree, including unchanged
+affected source on planning-descendant HEAD/main. Main remains
+`d7ac2640cdb37fbb64403337c9ee87bfa51b6726`; T1/core/renderer/runtime/runner bytes match the
+original reviewed package.
+
+Kernel 18 and gradient 8 entries have valid singleton precision pairs, nonempty diagnostics and
+unique anchors at their intended boundaries; replacement Python parses without executing it.
+Kernel anchors also remain valid after T3. The complete six-manifest pool has 53 entries / 40
+intents, not 53 total physical executions. Both documents have clean whitespace, balanced
+fences, no Lean snippets/source-line citations and resolving relative links (23/20); live plan
+630 lines, record 291. Unified-diff context-space markers were preserved, not stripped.
+
+### Amendment verdict: CLEAN — no load-bearing package/execution/scope finding
+
+- T2 explicitly generates checked-only standard bundles and runs only kernel 18. T3 first
+  regenerates full bundles, repeats kernel 18, then runs the separate gradient 8. The shared
+  mutation runner has no task selector and still aggregates grouped statuses with OR; singleton
+  `runs` entries isolate every new precision gate without claiming inherited grouped precision
+  certification. Original SCOPE-01 negative-survival evidence is retained, not newly executed.
+- Controller summaries match every current singleton label: T2 kernel 18, T3 kernel 18,
+  gradient observe 8 and strict 8. Runner summaries support 52 checked / 44 refusals /
+  56 source views and five AD points with 40 gradient / 40 point-forward views; point counts
+  are not deployment counts, and baseline/permutation overlap is explicit. Numerical correctness
+  and witness discrimination remain the numerical reviewer's responsibility.
+- Comparing all final approved hashes with the original package leaves exactly three changed
+  outputs: the max-plus Lean fixture, its Python verifier and bridge README. Original logic
+  integration, runtime/core/renderer, runner and every legacy repin remain byte-identical.
+  `controller_results.json` is unchanged. Its operator/legacy proof is explicitly retained;
+  no amendment rerun of the inherited 25 controls is claimed. Original clean reviews are
+  historical, not renewed signoff.
+- Entire tracked `leanncd` content agrees with the source baseline at HEAD and in the working
+  tree; no untracked nonignored implementation files are present there. Task-0 independently
+  confirms the three future production files absent and affected sources/docs/legacy manifests
+  restored. Main's planning-descendant identity is unchanged. No Boolean support or current
+  implementation authorization was added.
+- Portable manifests, patches, snapshots and compact reports suffice for execution. Archived
+  host-specific commands/log paths are historical provenance, not required inputs; none were
+  opened or run here. Live instructions provide worktree-relative assets and interpreter setup,
+  prohibit patch/manifests improvisation and block execution until renewed signoff.
+
+Non-blocking wording nit: `authoring_evidence.json` → `tasks[T2].scope` still says “ten checked
+witnesses”; its adjacent `fixtures`, authoritative counts and live plan correctly specify 13
+(11 assignments + 2 scans). This stale summary does not alter task acceptance or readiness.
+
+### Commands, limitations and budget
+
+Observed exit 0 for:
+
+1. `env TMPDIR=<absolute-review-worktree> python3 <absolute-review-worktree>/papers/semantics/jax_maxplus_files/verify_package.py --task 0`.
+2. Independent inline stdlib asset validation: baseline/approved Git blobs, ancestry/main identity,
+   strict whitespace private-index replay, seeded assets, exact changed paths, singleton schemas
+   and anchors, replacement syntax, JSON, counts, document links/fences/whitespace.
+3. Independent metadata/proof-reuse check: original controller byte identity, all amendment
+   singleton summary labels, approved-output differences and complete restored `leanncd` boundary.
+4. Explicit-path `git diff --check` over the changed tracked non-patch package/doc/report assets.
+
+No source execution, builds, pools, dependency installation, fixture/manifest mutation, staging,
+commits or agents were performed. Private-index replay never touched the real index or applied
+implementation to the working tree; review scratch was removed automatically. Recorded controller
+runtime/build results were inspected as supplied evidence, not freshly reproduced.
+
+Original Stage A's known 45-turn-cap breach and the corrective prose writer's >12-turn breach
+remain disclosed. Exact telemetry remains unavailable; skeptical point 4 is not claimed solved.
+This review stayed below 18 turns, with no known 100k peak-context breach; exact token/context
+telemetry is unavailable. Only this report was edited. Pending controller readiness close-out
+after both renewed reviews is expected, not a defect or authorization to implement.

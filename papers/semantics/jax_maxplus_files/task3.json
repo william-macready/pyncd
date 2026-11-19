@@ -24,14 +24,14 @@
     "baseline_blob": "51bc7de7b9b40532d56e64af2de792e0816a9960"
   },
   "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": {
-    "sha256": "6ad3e4075c256066a6f9ac0be8f3de2e1e4caad233b73b7a1cba884c84415dc4",
-    "blob": "858ded97b3e2d7051891084d6b840b0c9b18aca5",
+    "sha256": "61f311b80c8eff434f990afbb0ed4373dd3e3e345dcf00b7a8f6e4ab2be56123",
+    "blob": "66495c5774cb39d75b694046b878c070752d524a",
     "baseline_sha256": null,
     "baseline_blob": null
   },
   "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": {
-    "sha256": "77d7d838a48b59a967d793cd76641532cd449955b158e01191d9e18be514ef05",
-    "blob": "681b844f90a1f8adb1cdba7c7eed5feba052cfdb",
+    "sha256": "75739583682f0b69a1bd7461eaede2404ff7679f1e71ca04972fab90e72a396a",
+    "blob": "ad9047cd32d0ca6bbb3527a26bdd7d7b68a2b53c",
     "baseline_sha256": null,
     "baseline_blob": null
   },

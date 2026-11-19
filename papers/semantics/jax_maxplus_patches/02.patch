@@ -1,9 +1,9 @@
 diff --git a/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean b/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean
 new file mode 100644
-index 00000000..fe4c0642
+index 0000000000000000000000000000000000000000..f75f76396fdfbb846fe962e71539bc0845227ec7
 --- /dev/null
 +++ b/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,215 @@
 +import LeanNCD.Eval.Entry
 +import LeanNCD.Eval.Plan.Adapter32
 +import EvalPlanCodegen
@@ -54,6 +54,68 @@ index 00000000..fe4c0642
 +  { contextShape := #[], destinationSlot := 1, outputShape := #[n], algebra := alg
 +    terms := #[{ contextPos := #[], iterationShape := #[n], outputPos := #[0], reductionPos := #[], factors := #[.read r] }] }
 +
++def mixedContextProg : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  iter t = 4
++  tensor f64 X(i), Y(t, i), S(i, t), R(i, t)
++  S[i, 0] := X[i]
++  R[i, 0] := maxreduce(X[i])
++  S[i, t +1] := Y[t, i]
++  R[i, t +1] := maxreduce(Y[t, i])
++}
++
++def mixedContextFixture : IO String := do
++  let name := "scan_mixed_init_holes"
++  let inputs : NamedDenseEnv := HashMap.ofList [("X", dense [2] #[3, 5]), ("Y", dense [4, 2] #[7, 11, 13, 17, 19, 23, 29, 31])]
++  let mut fields := []
++  for is32 in [false, true] do
++    let s ← compile name (if is32 then retag32 mixedContextProg else mixedContextProg)
++    let inputs32 : NamedDenseEnv32 := inputs.map fun _ t => ⟨t.shape, t.data.map Float.toFloat32⟩
++    let sig ← if is32 then match InputSignature.ofDenseInputs32ForDecls s.decls inputs32 with
++      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
++      else match InputSignature.ofDenseInputsForDecls s.decls inputs with
++      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
++    let p ← prepare name s sig
++    let #[.scan sc] := p.plan.raw.steps | throw (IO.userError "mixed: expected one scan")
++    unless sc.states.size == 2 && sc.states.any (·.initValue == .zero) &&
++        sc.states.any (·.initValue == .negInf) do
++      throw (IO.userError "mixed: expected two states with distinct zero/negInf init")
++    let sigs := p.plan.raw.tensorSigs
++    let steps := sc.baseBlock.steps.map fun step => match step with
++      | .assign base => .assign { base with outputShape := #[], terms := base.terms.map fun t =>
++          { t with iterationShape := #[], outputPos := #[], factors := t.factors.map fun f => match f with
++            | .read r => .read { r with map := LeanNCD.Eval.Plan.AffineMap.mk (r.map.coeffs.map fun _ => #[]) r.map.bias }
++            | .iverson b => .iverson b } }
++      | x => x
++    let mut block := { sc.baseBlock with steps := steps }
++    for step in steps do
++      let .assign base := step | throw (IO.userError "mixed: expected base assign")
++      block := { block with tensorSigs := block.tensorSigs.modify base.destinationSlot (fun s => { s with shape := #[] }) }
++    let writes := sc.baseWrites.map fun w => { w with map := LeanNCD.Eval.Plan.AffineMap.mk (w.map.coeffs.map fun _ => #[]) w.map.bias }
++    let sc := { sc with baseBlock := block, baseWrites := writes }
++    let c ← match (if is32 then checkScanPlanF32 else checkScanPlan) sigs sc with
++      | .ok x => pure x | .error e => throw (IO.userError s!"mixed check: {repr e}")
++    let rendered ← match renderScanNode 0 c with
++      | .ok x => pure x | .error e => throw (IO.userError s!"mixed render: {repr e}")
++    let mut store := sigs.map fun sig =>
++      dense sig.shape.toList (Array.replicate (sig.shape.foldl (· * ·) 1) 0)
++    for b in p.bindings.requiredInputs.bindings do
++      let some t := inputs[b.name]? | throw (IO.userError "missing mixed input")
++      store := store.set! b.slot t
++    let result ← if is32 then
++      match runDenseScan32 c.sigs c (store.map fun t => ⟨t.shape, t.data.map Float.toFloat32⟩) with
++      | .ok x => pure ("[" ++ String.intercalate ", " (x.toList.map pyTensor32) ++ "]")
++      | .error e => throw (IO.userError s!"mixed run32: {repr e}")
++      else match runDenseScan c.sigs c store with
++      | .ok x => pure ("[" ++ String.intercalate ", " (x.toList.map pyTensorEntry) ++ "]")
++      | .error e => throw (IO.userError s!"mixed run64: {repr e}")
++    let suffix := if is32 then "32" else "64"
++    fields := fields ++ [pyStrLit ("scan" ++ suffix) ++ ": " ++ rendered,
++      pyStrLit ("store" ++ suffix) ++ ": [" ++ String.intercalate ", "
++        (store.toList.map fun t => if is32 then pyTensor32 ⟨t.shape, t.data.map Float.toFloat32⟩ else pyTensorEntry t) ++ "]",
++      pyStrLit ("expected" ++ suffix) ++ ": " ++ result]
++  pure ("{\"name\": " ++ pyStrLit name ++ ", " ++ String.intercalate ", " fields ++ "}")
++
 +def adversarial : IO (List String) := do
 +  let nan : Float := 0.0 / 0.0
 +  let inf : Float := 1.0 / 0.0
@@ -85,6 +147,15 @@ index 00000000..fe4c0642
 +    #[dense [1] #[0], dense [1] #[inf]]]
 +  out := out ++ [← rawFixture "max_empty_output" #[⟨#[0], .f64⟩]
 +    { empty with outputShape := #[0], terms := #[{ contextPos := #[], iterationShape := #[0], outputPos := #[0], reductionPos := #[], factors := #[] }] } #[]]
++  let scalarRead : ReadPlan := { sourceSlot := 0, sourceShape := #[], map := LeanNCD.Eval.Plan.AffineMap.mk #[] #[], oobPolicy := .zeroPad }
++  out := out ++ [← rawFixture "max_factor_order_cancellation"
++    #[⟨#[], .f64⟩, ⟨#[], .f64⟩, ⟨#[], .f64⟩, ⟨#[], .f64⟩]
++    { empty with destinationSlot := 3, terms := #[{ contextPos := #[], iterationShape := #[], outputPos := #[], reductionPos := #[], factors := #[.read scalarRead,
++        .read { scalarRead with sourceSlot := 1 }, .read { scalarRead with sourceSlot := 2 }] }] }
++    #[dense [] #[18014398509481984], dense [] #[-18014398509481984], dense [] #[1]]]
++  out := out ++ [← rawFixture "max_reciprocal_partial_oob" #[⟨#[1], .f64⟩, ⟨#[3], .f64⟩]
++    (vectorRaw admittedAlgebraMax { oob with unary := some .recip } 3) #[dense [1] #[2]]]
++  out := out ++ [← mixedContextFixture]
 +  return out
 +
 +def contextProg : TLProgram := tlprog!{
@@ -149,7 +220,7 @@ index 00000000..fe4c0642
 +  IO.FS.writeFile out ("ADVERSARIAL = [\n" ++ String.intercalate ",\n" (adv ++ [ctx]) ++ "\n]\n")
 +  IO.println s!"max-plus: generated {adv.length + 1} checked edge cases"
 diff --git a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
-index 51bc7de7..a1642c67 100644
+index 51bc7de7b9b40532d56e64af2de792e0816a9960..a1642c67c8f7041c8061d0f99b25bbe4e4b0e881 100644
 --- a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
 +++ b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
 @@ -120,8 +120,55 @@ def _apply_unary(op: str, x: jax.Array, dtype: Any) -> jax.Array:
@@ -338,10 +409,10 @@ index 51bc7de7..a1642c67 100644
      local = _run_block(node["base"], _bind_captures(node["base"], node["base_captures"], store, None), dtype)
 diff --git a/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py b/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
 new file mode 100644
-index 00000000..88077ea6
+index 0000000000000000000000000000000000000000..a20be88c84f53e103aca84ef1bcd7e7211496fd3
 --- /dev/null
 +++ b/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
-@@ -0,0 +1,151 @@
+@@ -0,0 +1,169 @@
 +"""Checked max-plus parity, metadata refusals and independent source/gradient pins."""
 +import argparse
 +import copy
@@ -394,7 +465,7 @@ index 00000000..88077ea6
 +        return (jax.jit(fn) if jit else fn)(inputs)
 +
 +    fixtures = load(checked_path).ADVERSARIAL
-+    assert len(fixtures) == 10
++    assert len(fixtures) == 13
 +    for f in fixtures:
 +        for jit in (False, True):
 +            output = run(f, jit)
@@ -451,6 +522,24 @@ index 00000000..88077ea6
 +            else:
 +                raise AssertionError(("metadata silently admitted", name, jit))
 +
++    for jit in (False, True):
++        assert float(run(by["max_factor_order_cancellation"], jit)) == 1, \
++            "max_factor_order_cancellation: ordered [+2^54,-2^54,1] must retain one"
++        reciprocal = np.asarray(run(by["max_reciprocal_partial_oob"], jit))
++        assert reciprocal[0] == nd(.5) and np.all(np.isneginf(reciprocal[1:])), \
++            ("max_reciprocal_partial_oob", jit, reciprocal)
++        mixed = by["scan_mixed_init_holes"]
++        node = mixed["scan" + suffix]
++        assert len(node["dests"]) == 2 and sorted(node["state_init"]) == ["neg_inf", "zero"]
++        for history, init in zip(run(mixed, jit), node["state_init"]):
++            history = np.asarray(history)
++            assert history[0, 0] == nd(3) and np.array_equal(
++                history[:, 1:], np.asarray([[7, 13, 19], [11, 17, 23]], dtype=nd)), \
++                ("scan_mixed_init_holes_history", jit, init, history)
++            assert (np.isneginf(history[1, 0]) if init == "neg_inf" else
++                    history[1, 0].view(ud) == ud(0)), \
++                ("scan_mixed_init_holes_base", jit, init, history)
++
 +    # Ordered scalar contracts, including the zero-seed JVP regression.
 +    a = jnp.asarray([0., -0., np.nan, 2., np.nan], dtype=dt)
 +    b = jnp.asarray([-0., 0., 3., np.nan, np.nan], dtype=dt)
@@ -495,7 +584,7 @@ index 00000000..88077ea6
 +          f"{len(result.get('gradients', []))} gradient views")
 diff --git a/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py b/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py
 new file mode 100644
-index 00000000..cb1589ab
+index 0000000000000000000000000000000000000000..cb1589abb76d742f1c445eb121c5f3986bdd9226
 --- /dev/null
 +++ b/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py
 @@ -0,0 +1,55 @@

@@ -1,0 +1,442 @@
+{
+  "scope": "T2 numerical amendment only; T1/runtime/core unchanged from OLD T2; T3/T4 not applied",
+  "status": "T2_three_items_verified_complete_ready_for_sequential_gradient_worker",
+  "source_baseline": "c5000dd462d72ed0ffcd5806937aa37fa477e9b0",
+  "candidate_donors": {
+    "factor_order": "rawFixture + max_empty_factors: replace empty factors with three checked scalar reads",
+    "mixed_initializers": "contextFixture/contextProg: coupled real/max source S/R, shrink both base writes to points, revalidate checkScanPlan/checkScanPlanF32",
+    "partial_unary_oob": "max_bare_oob: nonempty source [2], add UnaryOp.recip; retains separate empty-source max_log_oob_bypass"
+  },
+  "checker_acceptance": {
+    "binary64": [
+      "checkAssign: max_factor_order_cancellation",
+      "checkAssign: max_reciprocal_partial_oob",
+      "checkScanPlan: scan_mixed_init_holes"
+    ],
+    "binary32": [
+      "checkAssignF32: max_factor_order_cancellation",
+      "checkAssignF32: max_reciprocal_partial_oob",
+      "checkScanPlanF32: scan_mixed_init_holes"
+    ],
+    "observation": "Lean --run returned zero and generated all 13 fixtures, after every checked constructor and Dense execution succeeded; no checker relaxed"
+  },
+  "counts": {
+    "checked_cases": 13,
+    "checked_dtype_mode_views": 52,
+    "metadata_refusals_dtype_mode_total": 44,
+    "mutation_singletons": 18,
+    "new_mutation_singletons": 6,
+    "targeted_eager_jit_numerical_kills": 12,
+    "old_fixture_survival_views_under_new_mutations": 120
+  },
+  "scope_limits": {
+    "T3_T4": "not applied",
+    "package_json_task3_task4": "intentionally stale pending sequential gradient amendment and controller refresh; not globally ready",
+    "source_state": "strengthened T2 remains applied; no restore, commit, merge or push",
+    "validation": "Targeted JaxExperiment + Eval.Plan.ScanJaxGateTest only; no full legacy or full LeanTests, as requested",
+    "production_edits": "none beyond controller-applied OLD01/OLD02; five donor source files byte-identical",
+    "prose_plan_edits": "none; controller revision-in-progress headers left untouched"
+  },
+  "budget": {
+    "limit_turns": 30,
+    "limit_context_tokens": 90000,
+    "completion_turn_upper_bound": 27,
+    "breach_observed": false,
+    "token_report_command": [
+      "python3",
+      "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/.claude/skills/slice-plan/token-report.py",
+      "52db5098-2182-4564-b6ed-20aa26621e47"
+    ],
+    "measurement": "unavailable: no transcript for session; do not infer measured token total from zero exit status"
+  },
+  "commands": [
+    {
+      "argv": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py",
+        "--python",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/python/bin/python",
+        "--checked-only"
+      ],
+      "exit_code": 0,
+      "observed": "13 cases; 26 checked views + 22 refusals per precision"
+    },
+    {
+      "argv": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+        "--observe",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_mutations_python.json"
+      ],
+      "exit_code": 0,
+      "observed": "18 singleton entries killed/restored"
+    },
+    {
+      "argv": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_mutations_python.json"
+      ],
+      "exit_code": 0,
+      "observed": "18 singleton entries killed/restored"
+    },
+    {
+      "argv": [
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/python/bin/python",
+        "-B",
+        "-c",
+        "<targeted_probe_python>",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge",
+        "64"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/python/bin/python",
+        "-B",
+        "-c",
+        "<targeted_probe_python>",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge",
+        "32"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+        "apply",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_patches/03.patch"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+        "apply",
+        "--cached",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_patches/02.patch"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+        "apply",
+        "--cached",
+        "--check",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_patches/03.patch"
+      ],
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "/usr/bin/git",
+        "-C",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "precision": 64,
+      "x64": true,
+      "case_values": [
+        {
+          "name": "max_factor_order_cancellation",
+          "jit": false,
+          "complete_outputs": [
+            {
+              "shape": [],
+              "bits": [
+                4607182418800017408
+              ],
+              "values": [
+                "1.0"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "scan_mixed_init_holes",
+          "jit": false,
+          "complete_outputs": [
+            {
+              "shape": [
+                2,
+                4
+              ],
+              "bits": [
+                4613937818241073152,
+                4619567317775286272,
+                4623507967449235456,
+                4626041242239631360,
+                0,
+                4622382067542392832,
+                4625478292286210048,
+                4627167142146473984
+              ],
+              "values": [
+                "3.0",
+                "7.0",
+                "13.0",
+                "19.0",
+                "0.0",
+                "11.0",
+                "17.0",
+                "23.0"
+              ]
+            },
+            {
+              "shape": [
+                2,
+                4
+              ],
+              "bits": [
+                4613937818241073152,
+                4619567317775286272,
+                4623507967449235456,
+                4626041242239631360,
+                18442240474082181120,
+                4622382067542392832,
+                4625478292286210048,
+                4627167142146473984
+              ],
+              "values": [
+                "3.0",
+                "7.0",
+                "13.0",
+                "19.0",
+                "-inf",
+                "11.0",
+                "17.0",
+                "23.0"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "max_reciprocal_partial_oob",
+          "jit": false,
+          "complete_outputs": [
+            {
+              "shape": [
+                3
+              ],
+              "bits": [
+                4602678819172646912,
+                18442240474082181120,
+                18442240474082181120
+              ],
+              "values": [
+                "0.5",
+                "-inf",
+                "-inf"
+              ]
+            }
+          ]
+        }
+      ],
+      "targeted_numerical_kills": [
+        {
+          "label": "MAX-P-factor_order_cancellation-64",
+          "name": "max_factor_order_cancellation",
+          "jit": false,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        },
+        {
+          "label": "MAX-P-factor_order_cancellation-64",
+          "name": "max_factor_order_cancellation",
+          "jit": true,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        },
+        {
+          "label": "MAX-P-first_state_init-64",
+          "name": "scan_mixed_init_holes",
+          "jit": false,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        },
+        {
+          "label": "MAX-P-first_state_init-64",
+          "name": "scan_mixed_init_holes",
+          "jit": true,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        },
+        {
+          "label": "MAX-P-unary_final_oob_mask-64",
+          "name": "max_reciprocal_partial_oob",
+          "jit": false,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        },
+        {
+          "label": "MAX-P-unary_final_oob_mask-64",
+          "name": "max_reciprocal_partial_oob",
+          "jit": true,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        }
+      ]
+    },
+    {
+      "precision": 32,
+      "x64": false,
+      "case_values": [
+        {
+          "name": "max_factor_order_cancellation",
+          "jit": false,
+          "complete_outputs": [
+            {
+              "shape": [],
+              "bits": [
+                1065353216
+              ],
+              "values": [
+                "1.0"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "scan_mixed_init_holes",
+          "jit": false,
+          "complete_outputs": [
+            {
+              "shape": [
+                2,
+                4
+              ],
+              "bits": [
+                1077936128,
+                1088421888,
+                1095761920,
+                1100480512,
+                0,
+                1093664768,
+                1099431936,
+                1102577664
+              ],
+              "values": [
+                "3.0",
+                "7.0",
+                "13.0",
+                "19.0",
+                "0.0",
+                "11.0",
+                "17.0",
+                "23.0"
+              ]
+            },
+            {
+              "shape": [
+                2,
+                4
+              ],
+              "bits": [
+                1077936128,
+                1088421888,
+                1095761920,
+                1100480512,
+                4286578688,
+                1093664768,
+                1099431936,
+                1102577664
+              ],
+              "values": [
+                "3.0",
+                "7.0",
+                "13.0",
+                "19.0",
+                "-inf",
+                "11.0",
+                "17.0",
+                "23.0"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "max_reciprocal_partial_oob",
+          "jit": false,
+          "complete_outputs": [
+            {
+              "shape": [
+                3
+              ],
+              "bits": [
+                1056964608,
+                4286578688,
+                4286578688
+              ],
+              "values": [
+                "0.5",
+                "-inf",
+                "-inf"
+              ]
+            }
+          ]
+        }
+      ],
+      "targeted_numerical_kills": [
+        {
+          "label": "MAX-P-factor_order_cancellation-32",
+          "name": "max_factor_order_cancellation",
+          "jit": false,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        },
+        {
+          "label": "MAX-P-factor_order_cancellation-32",
+          "name": "max_factor_order_cancellation",
+          "jit": true,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        },
+        {
+          "label": "MAX-P-first_state_init-32",
+          "name": "scan_mixed_init_holes",
+          "jit": false,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        },
+        {
+          "label": "MAX-P-first_state_init-32",
+          "name": "scan_mixed_init_holes",
+          "jit": true,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        },
+        {
+          "label": "MAX-P-unary_final_oob_mask-32",
+          "name": "max_reciprocal_partial_oob",
+          "jit": false,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        },
+        {
+          "label": "MAX-P-unary_final_oob_mask-32",
+          "name": "max_reciprocal_partial_oob",
+          "jit": true,
+          "numeric_return_not_exception": true,
+          "old_checked_fixtures_surviving_same_mutation": 10
+        }
+      ]
+    }
+  ],
+  "raw_provenance": "Complete original evidence retained in the author session; not an execution dependency."
+}

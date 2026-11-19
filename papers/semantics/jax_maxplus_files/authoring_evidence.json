@@ -170,22 +170,28 @@
     ]
   },
   "counts": {
-    "new_python_manifest_entries": 12,
-    "new_python_precision_specific_kills": 12,
-    "new_python_precision_specific_clean_restored_runs": 24,
-    "new_lean_manifest_entries": 2,
-    "new_lean_killed_restored_green": 2,
-    "legacy_nonlin_killed_restored_green": 8,
-    "legacy_scan_killed_restored_green": 11,
-    "final_viterbi_precision_view_runs": 56,
-    "final_checked_precision_view_runs": 40,
-    "final_gradient_precision_view_runs": 8,
-    "final_metadata_refusals": 44,
-    "normal_verifier_nested_self_mutations": 0,
-    "legacy_scan_python_killed_restored_green": 6,
-    "new_python_clean_restored_cycles": 12,
-    "unique_mutation_intents": 33,
-    "gated_mutation_cycles": 39
+    "semantics": "Revised case counts and new cycles independently controller-verified; unchanged legacy operator proofs are retained, not falsely reported as rerun.",
+    "original_viterbi_fixtures": 7,
+    "lean_only_reachability_fixtures": 6,
+    "checked_fixtures": 13,
+    "checked_assignment_fixtures": 11,
+    "checked_scan_fixtures": 2,
+    "focused_checked_views": 52,
+    "metadata_refusals": 44,
+    "mathematical_gradient_points": 5,
+    "gradient_views": 40,
+    "point_forward_views": 40,
+    "original_source_views": 56,
+    "new_lean_control_entries": 2,
+    "kernel_singleton_entries": 18,
+    "gradient_singleton_entries": 8,
+    "provided_manifest_inputs": 3,
+    "inherited_nonlin_lean_entries": 8,
+    "inherited_scan_lean_entries": 11,
+    "inherited_scan_python_entries": 6,
+    "unique_mutation_intents": 40,
+    "listed_cycles_per_complete_pool_pass": 53,
+    "normal_verifier_nested_self_mutations": 0
   },
   "tasks": [
     {
@@ -202,21 +208,23 @@
     {
       "task": "T2",
       "work_items": 3,
-      "scope": "Runtime scalar/folds and state init; ten checked witnesses and scalar/JVP pins; standard manifest-compatible CLI/checked-only runner.",
+      "scope": "Runtime scalar/folds and state init; thirteen checked witnesses and scalar/JVP pins; standard manifest-compatible CLI/checked-only runner.",
       "checks": [
-        "40 focused checked views",
+        "52 focused checked views",
         "44 metadata refusals",
-        "new Python manifest 12/12 singleton-precision cycles at this boundary"
+        "18 singleton kernel cycles (9 intents)"
       ],
-      "fixtures": "9 raw checked assignments + 1 checked scan witness; both precisions eager/JIT."
+      "fixtures": "11 checked assignments +2 checked scans;13 cases in both precisions/eager/JIT."
     },
     {
       "task": "T3",
       "work_items": 3,
       "scope": "Actual source Viterbi plans, gate matrix, named/positional value and exact winning-path gradient pins.",
       "checks": [
-        "56 Viterbi precision/view runs",
-        "8 gradient precision/view runs",
+        "56 original Viterbi source views",
+        "5 mathematical gradient points/40 gradient views",
+        "40 point-forward views",
+        "8 singleton T3-only cycles (4 intents)",
         "six reachability cases still Lean-only"
       ]
     },
@@ -244,7 +252,7 @@
     "required_check": "verify_package.py seeds an index from the source baseline plus provided plan inputs, then replays every patch without asset collisions, independently of implementation commits already in HEAD."
   },
   "mutation_evidence": {
-    "new_python": "12/12 single-precision cycles for six intents; both precisions restored green after every cycle.",
+    "new_python": "18/18 T2 kernel singleton cycles for nine intents, plus 8/8 T3 gradient/source singleton cycles for four intents; both precisions restored green after every cycle.",
     "new_lean": "2/2 killed, expected tagged diagnostics, restored green",
     "coupled_nonlin": "8/8 killed/restored green with observed line repins",
     "coupled_scan": "11/11 killed/restored green with observed anchor/line repins",
@@ -258,7 +266,7 @@
     "stage_a": "Agent explicitly reported exceeding its 45-turn cap. Exact turn/token/context totals unavailable; do not describe it as within budget.",
     "stage_b": "Agent reports within its 35-turn/120k-context limits; exact token telemetry unavailable."
   },
-  "controller_verification": "Passed; see controller_results.json. Full temporary source/docs/legacy edits restored.",
+  "controller_verification": "Amendment PASSED; see coverage_amendment_controller.json. Both task boundaries, 18 kernel and 8 gradient singleton cycles, two Lean controls and full build passed; temporary source restored. Prior unchanged operator/legacy proofs remain in controller_results.json.",
   "raw_provenance": {
     "location": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_authoring_archive/raw_assets",
     "purpose": "Complete original evidence, logs, generated payloads and intermediate snapshots; not an execution dependency.",
@@ -270,7 +278,9 @@
     "mutation_python_protocol": "evalplan_maxplus_smoke.py float64|float32 .cache/generated_evalplan_maxplus_smoke64|32.py",
     "normal_verifier_nested_self_mutations": 0,
     "per_task_hash_maps": "task1.json through task4.json",
-    "plan_inputs_are_not_added_by_implementation_patches": true
+    "plan_inputs_are_not_added_by_implementation_patches": true,
+    "provided_manifest_count": 3,
+    "gradient_manifest_valid_from": "T3 with full regenerated standard bundles"
   },
   "review_fix": {
     "finding": "SCOPE-01: an aggregate OR exit status could hide a surviving precision.",
@@ -348,5 +358,20 @@
     "restored_precisions_per_cycle": 2,
     "negative_control": "A float64-only broken cast gives PASS64, SURVIVED/FAIL32 and runner exit1.",
     "source_code_changed": false
+  },
+  "coverage_amendment": {
+    "status": "bounded fixture-author proofs, independent controller verification and both clean renewed reviews complete; execution-ready plan only",
+    "requested_points": [
+      1,
+      2,
+      3
+    ],
+    "numeric_evidence": "revision_numeric_evidence.json",
+    "gradient_evidence": "revision_gradient_evidence.json",
+    "old_factor_reversal": "Original packaged positive verifier accepted max-only reversed factors in both precisions. New checked cancellation witness returns1 while mutant returns0.",
+    "backend_behavior": "Core, renderer and runtime source bytes unchanged; this amendment strengthens tests/proofs, not admitted capabilities.",
+    "mathematical_gradient_points": 5,
+    "view_count_warning": "40 point-forward executions and40 gradient executions cover5 mathematical points; baseline/permutation overlap existing56 original source views.",
+    "new_provided_input": "jax_maxplus_grad_mutations_python.json is T3-only; never run it at T2 or include it as a patch output."
   }
 }

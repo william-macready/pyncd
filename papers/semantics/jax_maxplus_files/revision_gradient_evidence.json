@@ -1,0 +1,992 @@
+{
+  "scope": "Focused T3 AD authoring amendment; no production integration or final plan packaging",
+  "status": "verified_T3_amendment_complete; repackaged and independently controller-verified; renewed numerical and package reviews clean",
+  "source_baseline": "c5000dd462d72ed0ffcd5806937aa37fa477e9b0",
+  "count_semantics": {
+    "mathematical_gradient_input_points": 5,
+    "precision_specific_gradient_inputs": 10,
+    "gradient_deployment_views": 40,
+    "point_forward_deployment_views": 40,
+    "original_source_fixtures": 7,
+    "original_source_deployment_views": 56,
+    "checked_fixtures": 13,
+    "checked_dtype_mode_views": 52,
+    "metadata_refusals": 44,
+    "reachability_lean_only_fixtures": 6,
+    "original_T2_single_precision_cycles": 18,
+    "new_T3_single_precision_cycles": 6
+  },
+  "oracle": {
+    "method": "independent exhaustive prefix/full-path enumeration in np.float64 or np.float32; explicit zero seed + prior state + Trans + Emit + true-mask tropical zero per step; no runtime operations or outputs in expected values",
+    "preconditions": [
+      "finite binary Allow; nondifferentiated explicit runtime argument",
+      "Init finite or negative infinity",
+      "Trans and all active Emit factors finite",
+      "unique finite active final winner; positive native-carrier margin",
+      "unused Emit row remains NaN and has exactly zero gradient"
+    ],
+    "no_AD_promise": [
+      "exact ties",
+      "nonfinite active winning paths"
+    ],
+    "candidate_sanity_comparison": "all 10 independently enumerated paths/scores/margins/path counts/gradient arrays match controller native measurements; candidate constants not used by verifier"
+  },
+  "discrimination": {
+    "changed_winner": "Init and Trans gradient arrays differ from baseline; stale-baseline control survives baseline and fails changed_winner",
+    "state_permuted": "all Init/Trans/Emit gradient arrays differ without remap; Init axis, both Trans axes, Emit state axis independently transported and compared to fresh path oracle; Allow transported but not differentiated",
+    "near_tie_pair": "below shares baseline winner/counts; above shares changed winner/counts; native positive margin on both sides is exactly 8 output ULPs, not an AD tie; 64-bit delta is not reused for 32-bit",
+    "runtime_control_limit": "The provided right-biased tolerance control kills near_tie_below only; complementary targeted left-biased tolerance kills near_tie_above. Both sides independently killed eagerly and under JIT in both precisions (8 numeric kills); 16 target views explicitly non-discriminating, not counted as kills."
+  },
+  "reuse": "one actual compiled baseline source plan, reused named/positional eager/JIT functions with five parameter/Allow inputs; original seven source/metamorphic and six Lean-only fixtures retained",
+  "control_summary": {
+    "T2_strict_singleton_entries": 18,
+    "T3_observe_singleton_entries": 6,
+    "T3_strict_singleton_entries": 6,
+    "strict_unique_singleton_entries": 24,
+    "every_entry_len_runs": 1,
+    "targeted_numeric_runtime_kills": 8,
+    "targeted_non_discriminating_controls": 16,
+    "targeted_restored_full_positive_precisions": 2,
+    "syntax_or_import_kills_counted": 0,
+    "new_control_classes": [
+      "verifier parameter-point",
+      "independent oracle gradient-transport",
+      "runtime numerical comparison"
+    ],
+    "restoration": "existing unchanged mutation runner restored source SHA and full verifier in both precisions after every entry; complementary targeted runtime controls restored exact source bytes then full positives in both precisions"
+  },
+  "budget": {
+    "turn_cap": 30,
+    "context_cap": 100000,
+    "breach": false,
+    "note": "Completed below the 30-turn and 100k context caps; no nested agents. Tool wait ceiling required blocking continuation reads for the single serial validation command."
+  },
+  "case_observations": {
+    "64": [
+      {
+        "name": "baseline",
+        "delta": null,
+        "path": [
+          0,
+          1,
+          2,
+          1,
+          0,
+          1
+        ],
+        "score": -5.25,
+        "runner_up_score": -5.5,
+        "gap": 0.25,
+        "gap_in_output_ulps": 281474976710656.0,
+        "finite_allowed_paths": 96,
+        "unique_finite_active_winner": true,
+        "expected_gradients": {
+          "Init": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Trans": [
+            [
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "Emit": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "mask_binary_finite": true,
+        "unused_emit_row_nan": true
+      },
+      {
+        "name": "changed_winner",
+        "delta": null,
+        "path": [
+          2,
+          1,
+          2,
+          1,
+          0,
+          1
+        ],
+        "score": -4.75,
+        "runner_up_score": -5.0,
+        "gap": 0.25,
+        "gap_in_output_ulps": 281474976710656.0,
+        "finite_allowed_paths": 96,
+        "unique_finite_active_winner": true,
+        "expected_gradients": {
+          "Init": [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          "Trans": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "Emit": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "mask_binary_finite": true,
+        "unused_emit_row_nan": true
+      },
+      {
+        "name": "state_permuted",
+        "delta": null,
+        "path": [
+          1,
+          3,
+          0,
+          3,
+          1,
+          3
+        ],
+        "score": -5.25,
+        "runner_up_score": -5.5,
+        "gap": 0.25,
+        "gap_in_output_ulps": 281474976710656.0,
+        "finite_allowed_paths": 96,
+        "unique_finite_active_winner": true,
+        "expected_gradients": {
+          "Init": [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Trans": [
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              2.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              1.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "Emit": [
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "mask_binary_finite": true,
+        "unused_emit_row_nan": true
+      },
+      {
+        "name": "near_tie_below",
+        "delta": 7.105427357601002e-15,
+        "path": [
+          0,
+          1,
+          2,
+          1,
+          0,
+          1
+        ],
+        "score": -5.25,
+        "runner_up_score": -5.250000000000007,
+        "gap": 7.105427357601002e-15,
+        "gap_in_output_ulps": 8.0,
+        "finite_allowed_paths": 96,
+        "unique_finite_active_winner": true,
+        "expected_gradients": {
+          "Init": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Trans": [
+            [
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "Emit": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "mask_binary_finite": true,
+        "unused_emit_row_nan": true
+      },
+      {
+        "name": "near_tie_above",
+        "delta": 7.105427357601002e-15,
+        "path": [
+          2,
+          1,
+          2,
+          1,
+          0,
+          1
+        ],
+        "score": -5.249999999999993,
+        "runner_up_score": -5.25,
+        "gap": 7.105427357601002e-15,
+        "gap_in_output_ulps": 8.0,
+        "finite_allowed_paths": 96,
+        "unique_finite_active_winner": true,
+        "expected_gradients": {
+          "Init": [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          "Trans": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "Emit": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "mask_binary_finite": true,
+        "unused_emit_row_nan": true
+      }
+    ],
+    "32": [
+      {
+        "name": "baseline",
+        "delta": null,
+        "path": [
+          0,
+          1,
+          2,
+          1,
+          0,
+          1
+        ],
+        "score": -5.25,
+        "runner_up_score": -5.5,
+        "gap": 0.25,
+        "gap_in_output_ulps": 524288.0,
+        "finite_allowed_paths": 96,
+        "unique_finite_active_winner": true,
+        "expected_gradients": {
+          "Init": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Trans": [
+            [
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "Emit": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "mask_binary_finite": true,
+        "unused_emit_row_nan": true
+      },
+      {
+        "name": "changed_winner",
+        "delta": null,
+        "path": [
+          2,
+          1,
+          2,
+          1,
+          0,
+          1
+        ],
+        "score": -4.75,
+        "runner_up_score": -5.0,
+        "gap": 0.25,
+        "gap_in_output_ulps": 524288.0,
+        "finite_allowed_paths": 96,
+        "unique_finite_active_winner": true,
+        "expected_gradients": {
+          "Init": [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          "Trans": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "Emit": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "mask_binary_finite": true,
+        "unused_emit_row_nan": true
+      },
+      {
+        "name": "state_permuted",
+        "delta": null,
+        "path": [
+          1,
+          3,
+          0,
+          3,
+          1,
+          3
+        ],
+        "score": -5.25,
+        "runner_up_score": -5.5,
+        "gap": 0.25,
+        "gap_in_output_ulps": 524288.0,
+        "finite_allowed_paths": 96,
+        "unique_finite_active_winner": true,
+        "expected_gradients": {
+          "Init": [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          "Trans": [
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              2.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              1.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "Emit": [
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "mask_binary_finite": true,
+        "unused_emit_row_nan": true
+      },
+      {
+        "name": "near_tie_below",
+        "delta": 3.814697265625e-06,
+        "path": [
+          0,
+          1,
+          2,
+          1,
+          0,
+          1
+        ],
+        "score": -5.25,
+        "runner_up_score": -5.250003814697266,
+        "gap": 3.814697265625e-06,
+        "gap_in_output_ulps": 8.0,
+        "finite_allowed_paths": 96,
+        "unique_finite_active_winner": true,
+        "expected_gradients": {
+          "Init": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "Trans": [
+            [
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "Emit": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "mask_binary_finite": true,
+        "unused_emit_row_nan": true
+      },
+      {
+        "name": "near_tie_above",
+        "delta": 3.814697265625e-06,
+        "path": [
+          2,
+          1,
+          2,
+          1,
+          0,
+          1
+        ],
+        "score": -5.249996185302734,
+        "runner_up_score": -5.25,
+        "gap": 3.814697265625e-06,
+        "gap_in_output_ulps": 8.0,
+        "finite_allowed_paths": 96,
+        "unique_finite_active_winner": true,
+        "expected_gradients": {
+          "Init": [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          "Trans": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              2.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "Emit": [
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          ]
+        },
+        "mask_binary_finite": true,
+        "unused_emit_row_nan": true
+      }
+    ]
+  },
+  "controller_supplement": "A tie-preserving left-tolerance comparator is a persistent singleton control alongside the right-biased comparator; controller observe/strict runs passed all eight entries, with the left control's intended near_tie_above diagnostic in each precision.",
+  "raw_provenance": "Complete original per-view arrays and targeted probes retained in the author session; not an execution dependency."
+}
