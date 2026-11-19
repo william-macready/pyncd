@@ -7,7 +7,7 @@ import EvalPlanCodegen
 
 Source Tensor Logic -> scheduled reference and checked plans in both precisions.
 The Python verifier independently enumerates HMM paths and computes graph distances by BFS.
-These are Lean-side examples: the JAX bridge must still refuse both non-real scan algebras.
+Max-plus additionally renders to JAX; Boolean reachability remains checked/reference-only.
 Viterbi exports scores, not argmax indices or a traceback (neither has a native TL operator).
 -/
 namespace JaxBridge.LogicSmoke
@@ -133,12 +133,16 @@ def checkStructure (f : Fixture) (p : PreparedPlan) (kind : StorageKind) : IO Un
       sc.states[0]!.initValue == (if f.tropical then .negInf else .zero) do
     throw (IO.userError s!"{f.name}: wrong scan algebra or neutral initialization")
   match renderAffinePlanNamed p with
-  | .error (.unsupportedScanState 0 0) => unless f.tropical do
-      throw (IO.userError s!"{f.name}: unexpected tropical JAX refusal")
   | .error (.unsupportedDestDType 0 _ .bool) => unless !f.tropical do
       throw (IO.userError s!"{f.name}: unexpected Boolean JAX refusal")
   | .error e => throw (IO.userError s!"{f.name}: unexpected JAX refusal: {repr e}")
-  | .ok _ => throw (IO.userError s!"{f.name}: JAX unexpectedly admitted a logic scan")
+  | .ok _ => unless f.tropical do
+      throw (IO.userError s!"{f.name}: JAX unexpectedly admitted a Boolean scan")
+  match renderAffinePlanPositional p.plan with
+  | .ok _ => unless f.tropical do throw (IO.userError s!"{f.name}: positional Boolean admitted")
+  | .error (.unsupportedDestDType 0 _ .bool) =>
+      unless !f.tropical do throw (IO.userError s!"{f.name}: positional max-plus refused")
+  | .error e => throw (IO.userError s!"{f.name}: positional: {repr e}")
 
 def pyEnv (env : NamedDenseEnv) (names : List String) : IO String := do
   let xs ← names.mapM fun n => do
@@ -177,11 +181,22 @@ def emit (f : Fixture) : IO String := do
     | .ok r => pure r.env
     | .error e => throw (IO.userError s!"{f.name}: plan32: {repr e.cause}")
   let names := (p.bindings.requiredInputs.bindings.map (·.name)).toList
+  let jaxFields ← if !f.tropical then pure "" else do
+    let named ← match renderAffinePlanNamed p with
+      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
+    let positional ← match renderAffinePlanPositional p.plan with
+      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
+    let named32 ← match renderAffinePlanNamed p32 with
+      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
+    let positional32 ← match renderAffinePlanPositional p32.plan with
+      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
+    pure (", \"jax64\": " ++ named ++ ", \"jaxpos64\": " ++ positional ++
+      ", \"jax32\": " ++ named32 ++ ", \"jaxpos32\": " ++ positional32)
   pure ("{\"name\": " ++ pyStrLit f.name ++ ", \"inputs64\": " ++ (← pyEnv f.inputs names) ++
     ", \"inputs32\": " ++ (← pyEnv32 inputs32 names) ++
     ", \"reference\": " ++ (← pyEnv reference f.outputs) ++
     ", \"plan64\": " ++ (← pyEnv out64 f.outputs) ++
-    ", \"plan32\": " ++ (← pyEnv32 out32 f.outputs) ++ "}")
+    ", \"plan32\": " ++ (← pyEnv32 out32 f.outputs) ++ jaxFields ++ "}")
 
 end JaxBridge.LogicSmoke
 

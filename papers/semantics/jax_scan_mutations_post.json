@@ -3,7 +3,7 @@
   "label": "JS-L-g1 (scan gate: the initValue check replaced by true)",
   "task": "scan",
   "file": "LeanNCD/Eval/Plan/Executable.lean",
-  "old": "    unless raw.states[si].initValue == .zero do",
+  "old": "    unless raw.states[si].initValue == .zero ||\n        (profile == .maxPlus && raw.states[si].initValue == .negInf) do",
   "new": "    unless true do",
   "targets": [
    "Eval.Plan.ExecutableTest"
@@ -29,7 +29,7 @@
   "label": "JS-L-g3 (scan gate: the assign arm replaced by pure ())",
   "task": "scan",
   "file": "LeanNCD/Eval/Plan/Executable.lean",
-  "old": "      | .assign a => checkJaxAssignSupportCtx block.tensorSigs nodeIndex a true true",
+  "old": "      | .assign a => checkJaxAssignSupportCtx block.tensorSigs nodeIndex a true true profile",
   "new": "      | .assign _ => pure ()",
   "targets": [
    "Eval.Plan.ExecutableTest"
@@ -101,20 +101,20 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2528:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2539:0: Expression"
   ]
  },
  {
   "label": "JS-L-e4 (renderScanNode: the scan gate call dropped)",
   "task": "scan",
   "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
-  "old": "  match checkJaxScanSupport nodeIndex checked with\n  | .ok _ => pure ()\n  | .error e => throw (codegenErrorOfSupport e)\n",
+  "old": "  match checkJaxScanSupport nodeIndex checked (profile := .maxPlus) with\n  | .ok _ => pure ()\n  | .error e => throw (codegenErrorOfSupport e)\n",
   "new": "",
   "targets": [
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2545:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2574:0: MAX-T1-SCAN-MIN: checked min-plus scan must remain refused"
   ]
  },
  {
@@ -127,7 +127,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2553:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2582:0: Expression"
   ]
  },
  {
@@ -140,7 +140,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2564:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2593:0: Expression"
   ]
  }
 ]

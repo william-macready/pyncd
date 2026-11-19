@@ -148,8 +148,10 @@ the remaining limitation is native sparse gather/scatter, not expressibility of 
 Dense MoE is implemented in record section 24: input-dependent softmax routing over two-layer GELU
 experts, with every expert evaluated. The logic side is implemented in record section 25:
 Viterbi/max-plus scores and Boolean reflexive reachability, checked against exhaustive paths and
-BFS on the reference evaluator and checked binary64/binary32 plans. These remain Lean-side only;
-native argmax/traceback and JAX support are not added. The next agreed step is layers x time.
+BFS on the reference evaluator and checked binary64/binary32 plans. Max-plus now also has an
+ordered JAX rendering path with exact value and unique-winner gradient pins; see
+[`jax_maxplus_plan.md`](jax_maxplus_plan.md). Boolean/Iverson JAX support is a separate next slice;
+native argmax/traceback is not added. The next model-family step remains layers x time.
 Sparse top-k MoE is not included.
 
 The progression agreed 2026-11-09 continues (each step adds one structural idea; every one needs its own pre-flight probe): linear attention or a diagonal state-space model (matrix or elementwise state: a diagonal SSM is `H[d, t +1] := A[d] · H[d, t] + B[d, i] · X[t, i]`, the linear RNN of this probe with an elementwise recurrence, so its probe should be short; note a causal convolution is its
