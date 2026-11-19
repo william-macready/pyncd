@@ -3,7 +3,8 @@
   "scope": "Max-plus-only plan package; production code remains at baseline until implementation.",
   "provided_assets": {
     "papers/semantics/jax_maxplus_mutations_post.json": "1c7ea7b09d242d31a75bcc780b3451020cc5978c2f9de40ad01d33b35ae194ed",
-    "papers/semantics/jax_maxplus_mutations_python.json": "9cc851fe7e9175e8ae7eb3bdd5f1b61f18dce587aea90e5bedd1a2f511106b05"
+    "papers/semantics/jax_maxplus_mutations_python.json": "3757d85d07466478690dd289bbb4b34053da7331e9ab8e6326c779ce66aacf2b",
+    "papers/semantics/jax_maxplus_grad_mutations_python.json": "a2112013a29aff45dd4ffb86144d7efdcaf6c39682b2a542a8733d61ac47da3a"
   },
   "provided_assets_are_not_patch_outputs": true,
   "tasks": [
@@ -23,9 +24,9 @@
     {
       "id": "T2",
       "patch": "papers/semantics/jax_maxplus_patches/02.patch",
-      "patch_sha256": "d85138cb707ef90bb6e1b86f48ca3688be5a5536aa4110a82c9d11e4b318d340",
+      "patch_sha256": "6851f78d39b11aedf4d34bfd931329150362a7693aa10d8a61fd54c36b5db1f2",
       "snapshot": "papers/semantics/jax_maxplus_files/task2.json",
-      "snapshot_sha256": "dafadfd839324a142e4e411d2c4c5667878fdc1a37d125bf5bed71d3f7030c64",
+      "snapshot_sha256": "a8f6f8ca68d99a527cec1cd294a6ded47f48d32da91f65c5d4dd0b54c8150fbf",
       "touched_files": [
         "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean",
         "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py",
@@ -37,9 +38,9 @@
     {
       "id": "T3",
       "patch": "papers/semantics/jax_maxplus_patches/03.patch",
-      "patch_sha256": "5d66b543755dcbecf0bacbb10e92cfe6d2c1e97465564280c7acb95d3dfe57f7",
+      "patch_sha256": "6a9dd5bd4ee0e5521e11a656e3822e54c3183e96308de6709be88d186324f51e",
       "snapshot": "papers/semantics/jax_maxplus_files/task3.json",
-      "snapshot_sha256": "db28d29e134d97c39e64bf1ff35d2cf267166854683d95f8799ba0f14c773cfc",
+      "snapshot_sha256": "ccb5a918e637e93b62d9ad165c247e9e1ebc68e1753c4e57a286df187a995c6f",
       "touched_files": [
         "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean",
         "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean",
@@ -50,9 +51,9 @@
     {
       "id": "T4",
       "patch": "papers/semantics/jax_maxplus_patches/04.patch",
-      "patch_sha256": "a788fbe33b2a518982f7551846fb66220c45d9a05ef5e32a856e6fdd757b8242",
+      "patch_sha256": "7df40cdebeb4bcddbac3e72a96485c1a8fb9edcc8aacb8c72bd25b3e978d260d",
       "snapshot": "papers/semantics/jax_maxplus_files/task4.json",
-      "snapshot_sha256": "b2acc099eac989bae51ffd6aa73d584ce76ab18705827067d99e1cc744a53400",
+      "snapshot_sha256": "1807092121729ddf2ad195b769c10d69e5217fc0f3b9f5c66e1c6570bc83be52",
       "touched_files": [
         "leanncd/AGENTS.md",
         "leanncd/LeanNCD/Eval/Plan/AGENTS.md",

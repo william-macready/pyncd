@@ -1,5 +1,95 @@
 [
  {
+  "label": "MAX-P-factor_order_cancellation-64",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return factor_op(acc, stacked[k])",
+  "new": "return factor_op(acc, stacked[len(factor_tensors)-1-k] if max_plus else stacked[k])",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('max_factor_order_cancellation', False), array(0.), array(1.))",
+   "AssertionError: (('max_factor_order_cancellation', False), array(0.), array(1.))"
+  ]
+ },
+ {
+  "label": "MAX-P-factor_order_cancellation-32",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return factor_op(acc, stacked[k])",
+  "new": "return factor_op(acc, stacked[len(factor_tensors)-1-k] if max_plus else stacked[k])",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('max_factor_order_cancellation', False), array(0., dtype=float32), array",
+   "AssertionError: (('max_factor_order_cancellation', False), array(0., dtype=float32), array(1., dtype=float32))"
+  ]
+ },
+ {
+  "label": "MAX-P-first_state_init-64",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "dtype(0 if i == \"zero\" else -math.inf)",
+  "new": "dtype(0 if inits[0] == \"zero\" else -math.inf)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('scan_mixed_init_holes', False, 3), array([[ 3.,  7., 13., 19.],",
+   "AssertionError: (('scan_mixed_init_holes', False, 3), array([[ 3.,  7., 13., 19.],"
+  ]
+ },
+ {
+  "label": "MAX-P-first_state_init-32",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "dtype(0 if i == \"zero\" else -math.inf)",
+  "new": "dtype(0 if inits[0] == \"zero\" else -math.inf)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('scan_mixed_init_holes', False, 3), array([[ 3.,  7., 13., 19.],",
+   "AssertionError: (('scan_mixed_init_holes', False, 3), array([[ 3.,  7., 13., 19.],"
+  ]
+ },
+ {
+  "label": "MAX-P-unary_final_oob_mask-64",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "padded = jnp.where(mask, value, reduce_id)",
+  "new": "padded = value",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('max_reciprocal_partial_oob', False), array([0.5, 1. , 1. ]), array([ 0.",
+   "AssertionError: (('max_reciprocal_partial_oob', False), array([0.5, 1. , 1. ]), array([ 0.5, -inf, -inf]))"
+  ]
+ },
+ {
+  "label": "MAX-P-unary_final_oob_mask-32",
+  "task": "T2",
+  "file": "evalplan_affine_runtime.py",
+  "old": "padded = jnp.where(mask, value, reduce_id)",
+  "new": "padded = value",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('max_reciprocal_partial_oob', False), array([0.5, 1. , 1. ], dtype=float",
+   "AssertionError: (('max_reciprocal_partial_oob', False), array([0.5, 1. , 1. ], dtype=float32), array([ 0.5, -inf, -inf], dtype=float32))"
+  ]
+ },
+ {
   "label": "MAX-P-omit_cast-64",
   "task": "T2",
   "file": "evalplan_affine_runtime.py",
@@ -40,8 +130,8 @@
    "float64"
   ],
   "expect": [
-   "AssertionError: (('scan_context_holes', False, 2), array([[ 3.,  7., 13., 19.],",
-   "AssertionError: (('scan_context_holes', False, 2), array([[ 3.,  7., 13., 19.],"
+   "AssertionError: (('scan_mixed_init_holes', False, 3), array([[ 3.,  7., 13., 19.],",
+   "AssertionError: (('scan_mixed_init_holes', False, 3), array([[ 3.,  7., 13., 19.],"
   ]
  },
  {
@@ -55,8 +145,8 @@
    "float32"
   ],
   "expect": [
-   "AssertionError: (('scan_context_holes', False, 2), array([[ 3.,  7., 13., 19.],",
-   "AssertionError: (('scan_context_holes', False, 2), array([[ 3.,  7., 13., 19.],"
+   "AssertionError: (('scan_mixed_init_holes', False, 3), array([[ 3.,  7., 13., 19.],",
+   "AssertionError: (('scan_mixed_init_holes', False, 3), array([[ 3.,  7., 13., 19.],"
   ]
  },
  {
@@ -70,8 +160,8 @@
    "float64"
   ],
   "expect": [
-   "AssertionError: (('scan_context_holes', False, 2), array([[  3.,   7.,   7.,   7.],",
-   "AssertionError: (('scan_context_holes', False, 2), array([[  3.,   7.,   7.,   7.],"
+   "AssertionError: (('scan_mixed_init_holes', False, 2), array([[ 3.,  7.,  7.,  7.],",
+   "AssertionError: (('scan_mixed_init_holes', False, 2), array([[ 3.,  7.,  7.,  7.],"
   ]
  },
  {
@@ -85,8 +175,8 @@
    "float32"
   ],
   "expect": [
-   "AssertionError: (('scan_context_holes', False, 2), array([[  3.,   7.,   7.,   7.],",
-   "AssertionError: (('scan_context_holes', False, 2), array([[  3.,   7.,   7.,   7.],"
+   "AssertionError: (('scan_mixed_init_holes', False, 2), array([[ 3.,  7.,  7.,  7.],",
+   "AssertionError: (('scan_mixed_init_holes', False, 2), array([[ 3.,  7.,  7.,  7.],"
   ]
  },
  {

@@ -97,7 +97,7 @@ index f6d1deba..aadc420c 100644
  S3b-ii (tropical multi-writer collection; landed, merged to local main as 349b6127; `papers/semantics/additive_s3bii_plan.md`) adds production-only fixtures outside the TR table: `Eval.Plan.CollectPlanTest` (Bellman programs: all-max value iteration `[5,3]` and `[22,100]`, all-min shortest paths `[2,1]`, each on the reference, checked plan f64 and f32, the bare-copy terminal form, shifted copies pinning the group's `0_K` pad, the one-statement equivalents, max+min / sum+max / scatter / scan-node refusals, bool and min-plus readers of a collected max-plus tensor refused with `sortCastUnsupported`), `Eval.ContractTest`/`Eval.ScanTest`/`Eval.ScatterTest` and `Eval.Plan.BoolCastTest` (j) (the D1 real -> bool coerce on the reference and the checked plan: a real source `{0.25, 0.75, 0, NaN, -2}` reads as `{1, 1, 0, 1, 1}`; unary reads are not coerced and the out-of-range pad stays `0`, which j5 cannot distinguish from a coerced pad) and (k) (c0867dd9: an out-of-range read under a `unaryFn` in a tropical statement is `0_K`, unapplied, three-way: k1-k4 bare-vs-unary twins and the pooling window where `f(0)` would win, k5/k6 real and bool neighbours keeping `exp(0) = 1`, k7-k9 scan step, scan base and scatter compute half; k10-k13 pin out-of-range `log`/`recip` as absent under max/min, k14/k15 that a real statement still fails with a domain error), `Eval.Plan.DualityTest` and `Eval.Plan.ScanCompileTest` (D2 all-neutral scan state fixtures: max pads `-inf`, min `+inf`, sum stays real, a `sum` neutral writer abstains beside a `max` one). The typed oracle covers the all-max and all-min Bellman programs as `fourLegParity` (`SourceSortedDifferentialTest`); mixed groups are `mixedSorts` there. Mixed-sort and copy-form Source programs are covered by the per-tensor-sort oracle (`OracleSortRulesTest`, `OracleMixedRefusalTest`, `OracleMixedEvalTest`, `OracleMixedValueTest`; `compareMixedSource`): value parity on four legs (reference oracle, legacy, checked plan, stratified Core) where every intermediate read is finite, three legs where the Core leg could not run (a non-finite earlier cell), `unsupportedNumericalProfile` where a non-finite cell is read by a real statement, or predicted-refusal parity, with a test-side rule predictor kept independent of production's vote/cast helpers. Not covered: bool, Iverson, pad, unary, nonlinearity, affine-read and scan values (language-widening slice), a real heterogeneous Core leg, and the production-only rows (NaN and signed zero, `route`, the raw scan init tie, neutral scan scratch, the predicate abstain rewrite, the unary exemption in the cast check, real -> bool rejection); see `papers/semantics/oracle_sorts_record.md`.
  
 diff --git a/leanncd/experiments/jax_bridge/README.md b/leanncd/experiments/jax_bridge/README.md
-index a4472acc..99984a5e 100644
+index a4472acc..d509bb42 100644
 --- a/leanncd/experiments/jax_bridge/README.md
 +++ b/leanncd/experiments/jax_bridge/README.md
 @@ -25,7 +25,12 @@ or toolchain:
@@ -188,7 +188,7 @@ index a4472acc..99984a5e 100644
  conversions and the evidence path still refuse a scan with `unsupportedStep`.
  
  Fixtures (in `run-evalplan-nonlin.sh`'s differential): `transformer_scan` / `transformer_scan32`, a two-layer
-@@ -541,10 +553,24 @@ Thirteen cases cover state/node permutations, input sensitivity, time causality,
+@@ -541,10 +553,27 @@ Thirteen cases cover state/node permutations, input sensitivity, time causality,
  emission row, additive score shifts, impossible/tied sequences, diamonds, cycles, isolated nodes,
  empty/self-only graphs, and a chain requiring five hops.
  The reference evaluator and checked binary64/binary32 plans agree exactly (dyadic inputs, no
@@ -207,7 +207,10 @@ index a4472acc..99984a5e 100644
 +Finite/zero/infinity fixture results compare raw bits; NaNs compare patterns, not payloads.
 +The ordered addition uses a custom JVP so its IEEE signed-zero primal correction does not erase
 +the ordinary finite-input addition derivative. Viterbi gradients match independently enumerated
-+winning-path counts for the unique-winner baseline, including initial-state and spare-row pins.
++winning-path counts for the baseline, a changed winner, state relabeling and both sides of a
++positive-margin near tie, including initial-state and spare-row pins. Checked witnesses also
++distinguish cancellation-sensitive factor order, mixed zero/negative-infinity state initialization
++and nonempty-source unary padding.
 +No derivative at a genuinely nondifferentiable tie or a nonfinite active path is promised.
 +Min-plus, Boolean destination algebra, Iverson lowering, non-real scatter and executable evidence
 +remain outside this capability. See [the max-plus plan](../../../papers/semantics/jax_maxplus_plan.md).

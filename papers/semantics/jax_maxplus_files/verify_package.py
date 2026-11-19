@@ -60,4 +60,4 @@ with tempfile.TemporaryDirectory(prefix="maxplus-plan-index-") as temp:
             assert sha(git("show", ":" + path, env=env)) == hashes["sha256"], (number, path)
             assert git("rev-parse", ":" + path, env=env).decode().strip() == hashes["blob"], (number, path)
 assert git("diff", "--cached", "--binary") == before, "real Git index changed"
-print(f"Package OK: 4 ordered patches, 2 provided manifests, task {args.task} boundary; index unchanged.")
+print(f"Package OK: {len(package['tasks'])} ordered patches, {len(package['provided_assets'])} provided manifests, task {args.task} boundary; index unchanged.")

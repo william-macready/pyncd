@@ -1,0 +1,228 @@
+{
+  "status": "passed",
+  "source_baseline": "c5000dd462d72ed0ffcd5806937aa37fa477e9b0",
+  "planning_main_start": "d7ac2640",
+  "checks": [
+    {
+      "name": "T2-strengthened-runner",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py",
+        "--python",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/python/bin/python",
+        "--checked-only",
+        "--out-dir",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/amended-T2"
+      ],
+      "exit_code": 0,
+      "seconds": 16.308758500032127,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_strengthening_controller/T2-strengthened-runner.log",
+      "summary": [
+        "Build completed successfully (8529 jobs).",
+        "PASS max-plus64: 26 checked views, 22 refusals, 0 source views, 0 gradient views",
+        "PASS max-plus32: 26 checked views, 22 refusals, 0 source views, 0 gradient views"
+      ]
+    },
+    {
+      "name": "T2-eighteen-singleton-controls",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_mutations_python.json"
+      ],
+      "exit_code": 0,
+      "seconds": 176.61536799999885,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_strengthening_controller/T2-eighteen-singleton-controls.log",
+      "summary": [
+        "PASS MAX-P-factor_order_cancellation-64 | killed | restored",
+        "PASS MAX-P-factor_order_cancellation-32 | killed | restored",
+        "PASS MAX-P-first_state_init-64 | killed | restored",
+        "PASS MAX-P-first_state_init-32 | killed | restored",
+        "PASS MAX-P-unary_final_oob_mask-64 | killed | restored",
+        "PASS MAX-P-unary_final_oob_mask-32 | killed | restored",
+        "PASS MAX-P-omit_cast-64 | killed | restored",
+        "PASS MAX-P-omit_cast-32 | killed | restored",
+        "PASS MAX-P-zero_init-64 | killed | restored",
+        "PASS MAX-P-zero_init-32 | killed | restored",
+        "PASS MAX-P-freeze_time-64 | killed | restored",
+        "PASS MAX-P-freeze_time-32 | killed | restored",
+        "PASS MAX-P-zero_pad-64 | killed | restored",
+        "PASS MAX-P-zero_pad-32 | killed | restored",
+        "PASS MAX-P-native_max_zero_tie-64 | killed | restored",
+        "PASS MAX-P-native_max_zero_tie-32 | killed | restored",
+        "PASS MAX-P-remove_custom_jvp-64 | killed | restored",
+        "PASS MAX-P-remove_custom_jvp-32 | killed | restored"
+      ]
+    },
+    {
+      "name": "T3-strengthened-runner",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py",
+        "--python",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/python/bin/python",
+        "--out-dir",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/.cache/amended-T3"
+      ],
+      "exit_code": 0,
+      "seconds": 60.10157858300954,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_strengthening_controller/T3-strengthened-runner.log",
+      "summary": [
+        "Build completed successfully (8529 jobs).",
+        "PASS max-plus64: 26 checked views, 22 refusals, 28 source views, 5 gradient input points, 20 point-forward views, 20 gradient views",
+        "PASS max-plus32: 26 checked views, 22 refusals, 28 source views, 5 gradient input points, 20 point-forward views, 20 gradient views"
+      ]
+    },
+    {
+      "name": "T3-gradient-controls-observe",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+        "--observe",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_grad_mutations_python.json"
+      ],
+      "exit_code": 0,
+      "seconds": 511.6390307920519,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_strengthening_controller/T3-gradient-controls-observe.log",
+      "summary": [
+        "PASS MAX-AD-stale_baseline_parameters-64 | killed | restored",
+        "PASS MAX-AD-stale_baseline_parameters-32 | killed | restored",
+        "PASS MAX-AD-permutation_transport-64 | killed | restored",
+        "PASS MAX-AD-permutation_transport-32 | killed | restored",
+        "PASS MAX-AD-approximate_max-64 | killed | restored",
+        "PASS MAX-AD-approximate_max-32 | killed | restored",
+        "PASS MAX-AD-approximate_max_left-64 | killed | restored",
+        "PASS MAX-AD-approximate_max_left-32 | killed | restored"
+      ],
+      "restored_byte_identical": true
+    },
+    {
+      "name": "T3-gradient-eight-singleton-controls",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_grad_mutations_python.json"
+      ],
+      "exit_code": 0,
+      "seconds": 503.6714249581564,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_strengthening_controller/T3-gradient-eight-singleton-controls.log",
+      "summary": [
+        "PASS MAX-AD-stale_baseline_parameters-64 | killed | restored",
+        "PASS MAX-AD-stale_baseline_parameters-32 | killed | restored",
+        "PASS MAX-AD-permutation_transport-64 | killed | restored",
+        "PASS MAX-AD-permutation_transport-32 | killed | restored",
+        "PASS MAX-AD-approximate_max-64 | killed | restored",
+        "PASS MAX-AD-approximate_max-32 | killed | restored",
+        "PASS MAX-AD-approximate_max_left-64 | killed | restored",
+        "PASS MAX-AD-approximate_max_left-32 | killed | restored"
+      ],
+      "restored_byte_identical": true
+    },
+    {
+      "name": "T3-kernel-eighteen-singleton-controls",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/experiments/jax_bridge/mutation_python_manifest.py",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_mutations_python.json"
+      ],
+      "exit_code": 0,
+      "seconds": 870.478840332944,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_strengthening_controller/T3-kernel-eighteen-singleton-controls.log",
+      "summary": [
+        "PASS MAX-P-factor_order_cancellation-64 | killed | restored",
+        "PASS MAX-P-factor_order_cancellation-32 | killed | restored",
+        "PASS MAX-P-first_state_init-64 | killed | restored",
+        "PASS MAX-P-first_state_init-32 | killed | restored",
+        "PASS MAX-P-unary_final_oob_mask-64 | killed | restored",
+        "PASS MAX-P-unary_final_oob_mask-32 | killed | restored",
+        "PASS MAX-P-omit_cast-64 | killed | restored",
+        "PASS MAX-P-omit_cast-32 | killed | restored",
+        "PASS MAX-P-zero_init-64 | killed | restored",
+        "PASS MAX-P-zero_init-32 | killed | restored",
+        "PASS MAX-P-freeze_time-64 | killed | restored",
+        "PASS MAX-P-freeze_time-32 | killed | restored",
+        "PASS MAX-P-zero_pad-64 | killed | restored",
+        "PASS MAX-P-zero_pad-32 | killed | restored",
+        "PASS MAX-P-native_max_zero_tie-64 | killed | restored",
+        "PASS MAX-P-native_max_zero_tie-32 | killed | restored",
+        "PASS MAX-P-remove_custom_jvp-64 | killed | restored",
+        "PASS MAX-P-remove_custom_jvp-32 | killed | restored"
+      ],
+      "restored_byte_identical": true
+    },
+    {
+      "name": "unchanged-new-Lean-two-controls",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/scripts/mutation-manifest.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_mutations_post.json"
+      ],
+      "exit_code": 0,
+      "seconds": 54.6329937921837,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_strengthening_controller/unchanged-new-Lean-two-controls.log",
+      "summary": [
+        "Build completed successfully (8526 jobs).",
+        "Build completed successfully (8526 jobs)."
+      ],
+      "restored_byte_identical": true
+    },
+    {
+      "name": "full-prototype-build",
+      "command": [
+        "bash",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd/scripts/lake-build.sh",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/leanncd",
+        "LeanNCD",
+        "Tests",
+        "JaxExperiment"
+      ],
+      "exit_code": 0,
+      "seconds": 9.9513607500121,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_strengthening_controller/full-prototype-build.log",
+      "summary": [
+        "Build completed successfully (8847 jobs)."
+      ]
+    },
+    {
+      "name": "package-T4",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_files/verify_package.py",
+        "--task",
+        "4"
+      ],
+      "exit_code": 0,
+      "seconds": 0.9369036660064012,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_strengthening_controller/package-T4.log",
+      "summary": [
+        "Package OK: 4 ordered patches, 3 provided manifests, task 4 boundary; index unchanged."
+      ]
+    },
+    {
+      "name": "package-unimplemented-baseline",
+      "command": [
+        "python3",
+        "/Users/williammacready/code/python/pyncd.worktrees/viterbi-maxplus-boolean-reachability/papers/semantics/jax_maxplus_files/verify_package.py"
+      ],
+      "exit_code": 0,
+      "seconds": 0.9262490409892052,
+      "log": "/Users/williammacready/.copilot/session-state/52db5098-2182-4564-b6ed-20aa26621e47/files/maxplus_strengthening_controller/package-unimplemented-baseline.log",
+      "summary": [
+        "Package OK: 4 ordered patches, 3 provided manifests, task 0 boundary; index unchanged."
+      ]
+    }
+  ],
+  "production_capability_expanded": false,
+  "all_amendment_checks_complete": true,
+  "updated_pool": {
+    "unique_intents": 40,
+    "listed_cycles_per_complete_pass": 53,
+    "provided_manifests": 3,
+    "T2_singletons": 18,
+    "T3_singletons": 8
+  },
+  "legacy_proof_reuse": "Runtime/core/renderer and old verifiers/inputs are unchanged. Existing controller_results.json operator/legacy proof is retained explicitly; no claim that its old 25 controls reran here.",
+  "source_restored_to_baseline": true,
+  "main_unchanged": true
+}

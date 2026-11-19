@@ -1,11 +1,16 @@
 # JAX max-plus plan: authoring record
 
-**Status: execution-ready package; controller verification and both final reviews are clean.**
+**Status: execution-ready plan; corrective controller verification and both renewed reviews complete. Implementation not started.**
 This is the planning/authoring record, not the future implementation record
 `papers/semantics/jax_maxplus_record.md`. No production changes have landed as part of this
 write-up, and no implementation, commit, merge or push was performed by the prose author.
-The controller independently tested the prototype and restored every temporary source,
-documentation and legacy-manifest edit. Only the plan package is delivered.
+During original authoring the controller independently tested the prototype and restored every
+temporary source, documentation and legacy-manifest edit. The separate corrective controller
+pass is now recorded passed below. Only the plan package is delivered.
+
+The original chronology below, including its clean reviews, counts, hashes and completed-readiness
+wording, is retained as historical evidence. The corrective amendment appended at the end supersedes
+those live-status claims; old clean reviews are not renewed coverage signoff.
 
 ## Scope and process
 
@@ -186,3 +191,124 @@ All applied source additions and non-patch assets are whitespace-clean. Generic 
 checking reports the required blank-context markers (and terminal context) inside unified-diff
 containers; those format markers were preserved, not stripped or hand-edited. No implementation
 patch hash changed during this classification.
+
+## Corrective coverage amendment — skeptical points 1–3 only
+
+**Status: prose amended; controller proof/restoration passed; both renewed reviews clean.**
+The fresh prose author read immutable package/snapshot maps, selected amendment JSON evidence and
+bounded fixture/oracle patch hunks only. No transient feature source, builds/tests, source/JSON/patch
+edits, commits, merge, agents or backend implementation were undertaken by this dispatch.
+This pass does not address performance/process point 4 or solve missing budget telemetry.
+
+### Why the original acceptance and reviews were insufficient
+
+The max-only reversed-factor mutant actually survived the old packaged positive acceptance in
+both precisions; its ten checked fixtures also survived. This was a real test blind spot, not a
+demonstrated defect in the current runtime. Prior clean numerical/scope reviews did not establish
+that invariant. The unchanged runtime already passes the new witnesses; no new capability is claimed.
+
+- **Point 1:** `max_factor_order_cancellation`, accepted by both assignment checkers, reads
+  `[L,-L,1]`, `L=2^54`, exact/finite in both carriers. Correct left-fold yields 1, reversal 0.
+- **Point 2:** `scan_mixed_init_holes`, accepted by both scan checkers, retains two persistent
+  tensors with distinct zero/neg_inf inits and scalar base overlays. Both full histories are checked:
+  `[[3,7,13,19],[h,11,17,23]]`, respectively `h=+0` and `h=-inf`. Reusing the first init fails.
+  Separately, nonempty-source reciprocal `[2]` over three positions yields `[.5,-inf,-inf]` and
+  kills removal of the final max-unary OOB mask. The preserved empty-source log case exercises a
+  different early-return path and cannot stand in for it.
+- The [numeric evidence](jax_maxplus_files/revision_numeric_evidence.json) records 13 checked
+  fixtures (11 assignments, 2 scans), 52 dtype/eager/JIT views, unchanged 44 metadata refusals,
+  18 kernel singleton observe/strict passes, and 12 targeted numerical-return kills across the
+  three new intents × both precisions × eager/JIT. No syntax/import failure is counted as a kill.
+- **Point 3:** [gradient evidence](jax_maxplus_files/revision_gradient_evidence.json) checks five
+  mathematical points on the same actual compiled source plan and reused named/positional functions.
+  Baseline winner `(0,1,2,1,0,1)` scores -5.25, gap .25; `Init[2]+=4` changes it to
+  `(2,1,2,1,0,1)`, score -4.75, gap .25. Existing permuted inputs give `(1,3,0,3,1,3)`,
+  score -5.25, gap .25. Full Init/Trans/Emit transport covers Init's axis, both Trans axes and
+  Emit's state axis; frozen Allow is transformed too.
+- `Init[2]=1±delta`, native `delta=2^-47` for f64 / `2^-18` for f32, produces opposite unique
+  finite winners with positive margins `7.105427357601002e-15` / `3.814697265625e-6`,
+  exactly eight output ULPs on both sides. These are not genuine ties.
+- Expectations independently enumerate prefixes/full paths in native NumPy carriers with source
+  seed/factor order, not runtime operations/results or a narrowed f64 oracle. Full forward histories,
+  Score and all parameter gradients are checked; never-read NaN Emit row gradient is zero and
+  Allow is excluded from differentiation. Forty gradient and forty point-forward executions cover
+  five mathematical points; baseline/permutation overlap the preserved 56 original source views.
+  All seven original source/metamorphic and six Lean-only reachability cases remain.
+
+### Revised package, controls and evidence boundaries
+
+Package.json is authoritative for three provided manifests, task file lists and current hashes.
+The source baseline remains `c5000dd462d72ed0ffcd5806937aa37fa477e9b0`; execution may use a
+descendant only with unchanged affected source. 01/core/renderer/runtime bytes are unchanged.
+02/03 are mechanically regenerated compiled fixture/verifier patches; 04 retains its docs/legacy
+repins with README coverage prose updated. Touched-file counts remain 3/4/3/8, snapshots 4/7/7/15.
+The current 04 SHA was read from package.json, not inherited from the historical hash above.
+All three provided manifests are private-index seeds, never implementation patch add-files.
+
+The added `jax_maxplus_grad_mutations_python.json` is **T3-only**; the unchanged runner has no task
+selector. T1 uses Lean 2; T2 kernel 18; T3 regenerates full bundles then kernel 18 and gradient 8;
+final controller runs all three provided manifests. Never put gradient-only anchors into T2.
+Revised full pool: **40 unique intents / 53 entries per complete pool pass**:
+2 + 18 + 8 + 8 nonlinear Lean + 11 scan Lean + 6 scan Python. Repeated phases add physical runs.
+Inherited grouped semantics are not retrospectively precision-certified; SCOPE-01's independent
+precision gating and deliberate one-leg-survival rejection remain required.
+
+Gradient controls distinguish stale-baseline parameters (verifier orchestration), wrong gradient
+transport (oracle control), right-biased approximate max (`near_tie_below`) and complementary
+tie-preserving left-biased approximate max (`near_tie_above`). Each has one entry per precision.
+The bounded gradient author observed/strict-verified six entries and separately both-sided targeted
+numeric probes. The parent added the persistent tie-preserving left-biased pair; the completed
+controller observe and strict runs now kill all eight entries, with the left pair specifically
+failing `near_tie_above` in both precisions. A near-below-only kill is not both-sided evidence.
+
+`controller_results.json` remains original operator/legacy proof for unchanged runtime/core/renderer
+and old verifiers/inputs. The final prose-author read of `coverage_amendment_controller.json`
+observed `status="passed"`, all amendment checks complete, source restored and main unchanged:
+T2 checked runner/kernel 18; T3 full runner, gradient observe/strict 8 and kernel 18; unchanged
+Lean 2; full prototype build (8847 jobs); task-4 and restored task-0 package proofs, index unchanged.
+The controller reports baseline restore/rebuild complete and all temporary production/docs/legacy
+edits restored, with runtime/core/renderer bytes preserved. Package.json's three provided hashes
+are final, including the observed eight-entry gradient manifest. The portable report, not its
+archived raw-log/session paths, is execution evidence.
+Hash-based reuse of legacy proof does not mean all 25 inherited controls reran.
+Renewed numerical/scope reviews are complete; the parent/controller closeout below records final readiness.
+
+### Corrective authoring budgets and document checks
+
+Both amendment fixture authors self-report within their 30-turn limits; the numeric author reports
+an upper bound of 27 and unavailable transcript-based token metrics, and the gradient author reports
+within 30 turns/100k context. Exact cumulative token telemetry is unavailable, not zero or solved.
+The known original Stage A 45-turn breach above remains disclosed. This fresh prose dispatch is
+bounded at 12 turns/70k context, with final file/line/check results in its handoff; no nested agents.
+No Lean blocks were introduced, so no snippet compilation is needed. Amendment readiness is not
+inferred from prose validation.
+Document-only checks found all relative links resolving, balanced fences, no trailing whitespace
+or Lean file:line citations, and a live plan below 650 lines. All three provided-asset hashes and
+four patch/snapshot hash pairs matched package.json; task counts matched 3/4/3/8 and 4/7/7/15.
+The explicit two-document `git diff --check` passed. The initial prose write-up stayed within the
+12-turn bound; incorporating the late controller-completion proof exceeded that dispatch cap.
+No known context-cap breach; exact token telemetry remains unavailable. No runtime tests/builds
+were run or claimed by this author.
+
+### Controller readiness closeout
+
+Both appended amendment reviews are clean:
+[numerical/coverage](jax_maxplus_files/review_numerics.md) and
+[package/execution](jax_maxplus_files/review_scope.md). The numerical reviewer independently
+checked all five input points in both native carriers against rational prefix/path enumeration,
+including path-count gradients, permutation transport, cancellation and both tolerance controls.
+The package reviewer verified task-0 hashes, strict ordered private-index replay, provenance,
+provided manifests, task boundaries, counts and documentation. Neither reviewer reran backend
+pools/builds or changed production source. Both report within their 18-turn bounds, no known
+context-cap breach, and unavailable exact context telemetry.
+
+The package review's sole nonblocking nit was the stale phrase "ten checked witnesses" in the
+canonical T2 evidence summary. The controller corrected it to thirteen; this changes no patch,
+provided manifest, oracle or expected output. Readiness wording and evidence statuses now reflect
+the renewed signoff. No load-bearing finding remains.
+
+The controller's final token-report invocation again returned "no transcript"; no telemetry
+workaround or estimated totals were used. The original Stage A and corrective prose-author
+turn-cap breaches remain disclosed above. Process/performance point 4 remains outside scope.
+Only planning assets are to be integrated to local main, with no push. Implementation stays
+unapplied; its future execution still requires the separate worktree and all execution gates.

@@ -1,30 +1,33 @@
 # JAX max-plus: implementation plan
 
-**Status: execution-ready; controller verification and both final reviews are clean. Implementation not started.**
-The temporary prototype is authoring evidence, not landed production support. The
-[numerical review](jax_maxplus_files/review_numerics.md) is CLEAN;
-the [scope review](jax_maxplus_files/review_scope.md) confirmed P2 SCOPE-01 resolved after
-the independent precision-gate and one-leg-survival proofs. The [package](jax_maxplus_files/package.json)
+**Status: execution-ready plan; strengthened controller proofs and both renewed reviews complete. Implementation not started or authorized by this planning request.**
+The temporary prototype is authoring evidence, not landed production support. The original
+[numerical review](jax_maxplus_files/review_numerics.md) and
+[scope review](jax_maxplus_files/review_scope.md) were clean after SCOPE-01, but do not certify
+this coverage amendment. Their appended amendment reviews are now clean, and controller amendment proof passed.
+The [package](jax_maxplus_files/package.json)
 contains four ordered patches,
-boundary hashes and two provided mutation manifests. This document contains no implementation
+boundary hashes and three provided mutation manifests. This document contains no implementation
 snippets: replay the compiled patches, do not redesign or transcribe them.
-T4 is finalized with eight touched files and fifteen cumulative snapshot entries, including the
-verified scan-Python `JS-P-05` repin. The provided Python manifest contains twelve verified
-singleton-precision entries; package metadata/verifier, not an inline manifest hash, is authoritative.
+T4 retains eight touched files and fifteen cumulative snapshot entries, including the
+verified scan-Python `JS-P-05` repin. Kernel/gradient manifests contain 18/8 singleton-precision
+entries; the latter is T3-only. Package metadata/verifier, not inline manifest hashes, is authoritative.
 
 **Process: Full path**, because this adds a backend capability and a soundness-sensitive admission
 surface. One slice, max-plus only; no Boolean/Iverson implementation plan.
 Source baseline: `c5000dd462d72ed0ffcd5806937aa37fa477e9b0`.
 Execution may start from its local-main descendant containing the planning assets, provided affected
-source hashes still match. Planning branch `agents/jax-maxplus-plan` is not an implementation branch.
+source hashes still match. Planning branch `agents/jax-maxplus-plan-strengthen` is not an implementation branch.
 Authoring provenance: [authoring record](jax_maxplus_plan_record.md).
 The executor creates the separate future `papers/semantics/jax_maxplus_record.md`.
 
 **Goal.** `affineReference` renders max-plus standalone assignments, named/positional plans and
 single-axis scans in native binary64 and binary32. The original seven Viterbi source variants run
-eagerly and under JIT, and the unique-finite-winner baseline has exact Init/Trans/Emit path-count
-gradients. The six Boolean reachability variants remain checked/reference-only with explicit JAX
+eagerly and under JIT; five unique-finite-winner parameter points have exact Init/Trans/Emit
+path-count gradients. The six Boolean reachability variants remain checked/reference-only with explicit JAX
 refusal. Rendering is not executable evidence, and no new mathematical semiring laws are assumed.
+This amendment addresses skeptical points 1–3 only: existing runtime behavior already passes the
+new fixtures. It strengthens proof, not capability; performance/process point 4 is not addressed.
 
 ## 1. Execution contract
 
@@ -67,6 +70,9 @@ Open every execution/review brief with this preamble, replacing `<worktree>` wit
 
 - Factor fold: native addition, left-to-right from **+0**. Reduction and outer term folds: ordered
   max, each separately seeded with **-infinity**. Preserve term-local reduction domains.
+  `max_factor_order_cancellation` checks `[L,-L,1]`, `L=2^54` exact and finite in both carriers:
+  the ordered result is 1, factor reversal gives 0. The original acceptance survived that mutant;
+  this is a demonstrated test blind spot, not a known current runtime defect.
 - Enumerate reduction coordinates row-major, last reduction dimension fastest; retain source factor
   and term order. Do not remove seeds, reassociate, flatten folds, prune false factors, use parallel
   prefix/associative scan, or infer absorbing-zero laws from the name “max-plus.”
@@ -104,6 +110,8 @@ Open every execution/review brief with this preamble, replacing `<worktree>` wit
   and `semantics="ordered_scan_v1"`. Legacy real scans without these keys still initialize to zero.
   Reject invalid init tags, length and semantics. No positive-infinity initialization support.
 - Initialize the complete state history before base overlay; holes retain their initialization.
+  `scan_mixed_init_holes` checks two persistent tensors with distinct zero/neg_inf inits,
+  including both full histories and base holes; reusing `inits[0]` must fail numerically.
   Keep immutable pre-step captures, live time slicing and checked copy/write placement unchanged.
   Do not add a scalar reduction against an already-computed state write.
 - The checker does not prove a global sort theorem through arbitrary pointwise/pass-through state
@@ -119,7 +127,10 @@ The executor records this matrix against the final tree, rather than reviewing o
 |---|---|---|
 | Real standalone, named, positional, unary/nonlinear | Required, unchanged | Legacy affine/nonlinear verification |
 | Max standalone, named, positional | Required in affine rendering | Checked witnesses; original Viterbi |
-| Single-axis zero/negInf scan init | Required in render profile | Hole witness; real scans; Viterbi |
+| Ordered max factor fold | Required, native and source-ordered | Checked cancellation triple; reversal control |
+| Single-axis zero/negInf scan init | Required per persistent tensor | Mixed two-state holes; original hole scan; real scans |
+| Max unary OOB, nonempty / empty source | Required, distinct paths | Reciprocal partial-OOB / empty-source log |
+| Unique-finite-winner AD | Required at five parameter points | Winner change, full permutation transport, both near-tie sides |
 | Boolean-source read under max, cast true AND false | Required, exact checked flag | Same checked vector with flag changed |
 | Boolean source under real sum-product | Forbidden, unchanged | Existing standalone/plan/evidence guards |
 | Boolean destinations / `realToBool` | Forbidden | `gateMatrix`, reachability, runtime refusals |
@@ -151,20 +162,26 @@ Authoritative inputs:
   snapshot SHA256 and exact `touched_files`.
 - [authoring_evidence.json](jax_maxplus_files/authoring_evidence.json): compact observed facts,
   donor provenance, symbols, counts, scope and budget disclosures.
+- [revision_numeric_evidence.json](jax_maxplus_files/revision_numeric_evidence.json) and
+  [revision_gradient_evidence.json](jax_maxplus_files/revision_gradient_evidence.json):
+  case-level native observations, old-survivor/new-kill discrimination and oracle independence.
 - [prerequisite_contract.json](jax_maxplus_files/prerequisite_contract.json): scalar audit.
   Use its max-plus obligations, not its out-of-slice Boolean/min-plus implementation observations.
 - [verify_package.py](jax_maxplus_files/verify_package.py): asset hashes, private-index replay,
   current boundary hashes and real-index preservation. Use task 0 before implementation.
 - [Lean manifest](jax_maxplus_mutations_post.json) and
-  [Python manifest](jax_maxplus_mutations_python.json): **provided inputs**, not patch outputs.
-- [controller_results.json](jax_maxplus_files/controller_results.json): actual controller checks.
-  Overall readiness requires both `status="passed"` and `scan_python_followup_status="passed"`,
-  successful `precision_gate_review_fix` evidence, refreshed provided-asset hashes and final scope
-  signoff. Core status alone is insufficient.
+  [kernel Python manifest](jax_maxplus_mutations_python.json), plus the **T3-only**
+  [gradient Python manifest](jax_maxplus_grad_mutations_python.json): provided inputs, not patch outputs.
+- [controller_results.json](jax_maxplus_files/controller_results.json): original operator/legacy
+  proof for unchanged runtime/core/renderer and old verifier/input bytes, including SCOPE-01.
+- [coverage_amendment_controller.json](jax_maxplus_files/coverage_amendment_controller.json):
+  amendment reruns/restoration, observed `status="passed"` with all amendment checks complete.
+  Readiness requires recorded successful new checks, refreshed hashes and renewed numerical/scope
+  signoff, not just the original controller's passed statuses.
 
 The controller corrected a packaging collision: Stage B had included add-file diffs for the two
 provided manifests. Those diffs and source-map entries were removed, without changing implementation
-bytes. The verifier seeds its private index from the source baseline **plus provided manifests**,
+bytes. The verifier now seeds its private index from the source baseline **plus all three provided manifests**,
 then replays all four patches; it never relies on a prototype branch or implementation commits.
 Do not regenerate the patches or rewrite history to compensate for already-present planning inputs.
 
@@ -177,31 +194,35 @@ Do not regenerate the patches or rewrite history to compensate for already-prese
 
 The boundary maps deliberately include unchanged neighboring source; their 4/7/7/15 entry counts are
 **not** task Files counts. Files below come from patch headers/`touched_files`.
-Final 04.patch SHA256: `a788fbe33b2a518982f7551846fb66220c45d9a05ef5e32a856e6fdd757b8242`.
-Patches 01–03 and all implementation source bytes are unchanged by the precision-gate correction.
+Current patch/snapshot hashes come only from package.json. The amendment leaves 01.patch and
+runtime/core/renderer bytes unchanged; 02/03 were mechanically regenerated from compiled fixture
+and verifier modules. 04 retains coupled repins/docs and updates README coverage prose only.
 All task/hash/patch mismatches are hard stops. Raw Stage A/B logs and prototypes are archived in the
 author session, not execution dependencies; the shipped package is self-contained.
 
 | Risk / task | Fixture workload | Strict mutation workload |
 |---|---|---|
 | T1: scope leakage | 2 new tagged mutation controls; preserved guards and original 13-case logic suite | 2 Lean killed/restored cycles |
-| T2: scalar/native precision/init | 9 assignments + 1 scan, 40 checked views; 44 metadata refusals; scalar/JVP pins | 12 independently gated singleton cycles for 6 intents |
-| T3: real source/AD/oracle | 7 reused Viterbi cases, 56 views; 8 gradient views; 6 continued reachability refusals | Repeat T2's 12 singleton cycles after full bundle regeneration |
+| T2: scalar/native precision/init | 11 assignments + 2 scans, 52 checked views; 44 metadata refusals; scalar/JVP pins | 18 singleton cycles for 9 intents; 12 targeted numeric kills for 3 new intents |
+| T3: real source/AD/oracle | 7 reused Viterbi cases, 56 views; 5 parameter points, 40 gradient + 40 point-forward views; 6 reachability refusals | Regenerate full bundles; repeat kernel 18 plus T3-only gradient 8 singleton cycles |
 | T4: coupled repins/docs | 5 documentation updates; complete legacy 55/47 nonlinear checks plus curated affine/scatter | 8 nonlinear + 11 scan Lean + 6 scan Python inherited cycles |
 
-The complete pool has **33 unique mutation intents**, represented by **39 manifest entries/listed
-cycles per complete pool pass**: 2 new Lean + 12 new Python + 8 nonlinear + 11 scan Lean + 6 scan
-Python. T2/T3/final repetitions add physical executions; 39 is not the total of all executions
-across phases. Inherited grouped manifests retain historical aggregate semantics: do not infer
+The complete pool has **40 unique mutation intents**, represented by **53 manifest entries/listed
+cycles per complete pool pass**: 2 Lean + 18 kernel Python + 8 gradient Python + 8 nonlinear +
+11 scan Lean + 6 scan Python. T2/T3/final repetitions add physical executions; 53 is not the total
+of all executions across phases. Inherited grouped manifests retain historical aggregate semantics: do not infer
 per-precision kills from their grouped PASS output. Only new singleton entries independently gate
-each precision. The controller observed all twelve singleton cycles pass and verified that a
-deliberately surviving precision makes the run fail.
+each precision. Preserve the recorded SCOPE-01 negative-survival proof. The controller observed
+T2 kernel 18, T3 kernel 18 and gradient 8 strict passes, plus all 8 gradient observe passes;
+both complementary left-biased entries kill `near_tie_above`. Both renewed reviews are clean;
+the sole nonblocking stale evidence-summary count was corrected to thirteen.
 
 ## 4. Preflight (controller)
 
-1. Read controller status, successful precision-gate correction evidence and final scope signoff.
-   The scan-Python follow-up, T4 hashes, precision-gate proof and both final reviews are complete;
-   verify their immutable evidence before creating the implementation worktree.
+1. Require amendment controller checks/restoration and renewed reviews complete; then read original
+   scan-Python follow-up and successful precision-gate/negative-survival proof. Original clean reviews
+   are historical, not proof of the strengthened invariant. The appended amendment reviews provide
+   the renewed signoff; do not substitute the historical reviews for them.
 2. Verify local-main ancestry and planning assets. Create a fresh linked execution worktree using
    the new-slice skill from local `main`; if the intended branch/path exists, STOP rather than reuse.
 3. Run preparation with the tool's working directory set to that worktree, or the explicit Python
@@ -282,7 +303,8 @@ Commit subject: `feat(jax): admit render-only max-plus plans`.
 **Read windows:** `_ordered_max`, `_ordered_add`, `_ordered_add_jvp`, `_algebra`, `_check_factors`,
 `_run_term`, `_run_node`, `_run_scatter_node`, `_run_scan_node` @
 `leanncd/experiments/jax_bridge/evalplan_affine_runtime.py`;
-`rawFixture`, `vectorRaw`, `adversarial`, `contextProg`, `contextFixture`, `main` @
+`rawFixture`, `vectorRaw`, `adversarial`, `contextProg`, `contextFixture`,
+`mixedContextProg`, `mixedContextFixture`, `main` @
 `leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean`;
 `verify`, `__main__` @ `leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py`;
 `run` @ `leanncd/experiments/jax_bridge/run-evalplan-maxplus.py`.
@@ -293,6 +315,10 @@ became an explicit Boolean-source read followed by a +infinity read. The checked
 derives from its `contextFixture`: ordinary time-varying `Y[t,i]`, scalar base write leaving a hole.
 These prototypes are not files the executor needs: all exact code is in 02.patch.
 The custom JVP was integrated into the runtime, not hidden in a verifier wrapper.
+New donors: clone `max_empty_factors` via `rawFixture`, replacing factors with three scalar reads
+for cancellation; clone `contextProg`/`contextFixture` with coupled real/max S/R states and scalar
+base writes for mixed holes; clone `max_bare_oob`, adding `.recip` to its nonempty source read.
+Both assignment checkers and `checkScanPlan`/`checkScanPlanF32` accept these exact witnesses.
 
 | Checked witness | Distinguishing obligation / observed result |
 |---|---|
@@ -306,12 +332,21 @@ The custom JVP was integrated into the runtime, not hidden in a verifier wrapper
 | `false_source_opposing_infinity` | NaN, not false-factor pruning |
 | `max_empty_output` | Empty checked output |
 | `scan_context_holes` | `[[3,7,13,19],[-inf,11,17,23]]`; time/initialization differ observably |
+| `max_factor_order_cancellation` | Three scalar reads `[2^54,-2^54,1]`: 1; reversed factors: 0 |
+| `scan_mixed_init_holes` | Both histories `[[3,7,13,19],[h,11,17,23]]`, with respective `h=+0` and `h=-inf` |
+| `max_reciprocal_partial_oob` | Nonempty `[2]` over 3 positions gives `[.5,-inf,-inf]` |
 
-Both precisions × eager/JIT = 40 checked views. The 11 invalid-metadata variants × both precisions
+Eleven checked assignments + two checked scans × both precisions × eager/JIT = 52 checked views.
+The 11 invalid-metadata variants × both precisions
 × eager/JIT = 44 refusals. Scalar pins additionally distinguish RHS signed-zero max ties,
 first/second NaN patterns, zero-pair sum signs and the zero-Init derivative.
 False cast is not inferred even when the source tag could tempt such an inference; the factor
 +0 seed normalizes stored -0 to +0 before max.
+The empty-source log pin bypasses evaluation before gathering; it cannot certify the nonempty
+reciprocal's final max-unary OOB mask. Removing that mask is killed by the reciprocal witness.
+All three new controls return shaped numeric results, not syntax/import exceptions: 3 intents ×
+2 precisions × 2 modes = 12 targeted numerical kills. The original ten checked fixtures survived
+the same mutants, so their unchanged presence alone did not establish these obligations.
 
 ```text
 /usr/bin/git -C <worktree> apply --check <worktree>/papers/semantics/jax_maxplus_patches/02.patch
@@ -328,9 +363,10 @@ The existing mutation runner accepts `evalplan_maxplus_smoke.py float64|float32 
 The verifier also retains `--precision`, `--checked`, `--logic`; these are CLI compatibility,
 not an extra production mode. Normal verification performs **zero nested self-mutations**.
 
-**Acceptance:** 40 checked views, 44 refusals, scalar/JVP pins and **12/12 independently gated Python
-cycles for six intents**: each singleton entry must kill its precision with the expected diagnostic
-and restore green. A grouped six-line PASS report is insufficient. Do not claim source execution yet.
+**Acceptance:** 52 checked views, 44 refusals, scalar/JVP pins and **18/18 independently gated kernel
+cycles for nine intents**, each killed with its expected diagnostic and restored green.
+The gradient manifest is invalid here: the runner has no task selector; never combine its T3-only
+anchors into this T2 manifest or invoke it on checked-only bundles. Do not claim source execution yet.
 Commit subject: `feat(jax): execute ordered max-plus assignments and scans`.
 
 ## 7. T3 — original source programs and independent gradient oracle
@@ -344,28 +380,51 @@ Commit subject: `feat(jax): execute ordered max-plus assignments and scans`.
 **Read windows:** `fixtures`, `checkStructure`, `emit` @
 `leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean`;
 `gateMatrix` @ `leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean`;
-`verify` @ `leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py`;
+`verify`, `native_path_oracle`, `verify_gradient_points` @
+`leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py`;
 `verify` @ `leanncd/experiments/jax_bridge/evalplan_logic_smoke.py` (unchanged independent oracle).
 Use successive 40–60-line windows for the longer verifier, not a whole-file read.
 
 **Donors:** reuse the original seven Viterbi and six reachability entries in
 `EvalPlanLogicSmoke.fixtures`; do not duplicate source programs. Clone `idAssign`, `idSigs`,
 `idIversonAssign` for checked max/min/Boolean cases and exact affine/einsum candidate tables.
-The gradient oracle enumerates paths independently from original inputs, not runtime outputs.
+For AD, clone original `viterbi` inputs, changing only `Init[2]` for winner/near-tie points;
+reuse `viterbi_permuted` inputs for transport. The actual compiled baseline named/positional source
+plan and its eager/JIT functions are reused across all points, not recompiled per parameter point.
+`native_path_oracle` exhaustively enumerates every prefix and full path directly from inputs in
+`np.float32` or `np.float64`, preserving source zero seeds and factor order. No runtime operations,
+runtime results or narrowed binary64 oracle supply expected values.
 
 - Named/positional × eager/JIT × both precisions × seven Viterbi = 56 source views.
 - Compare every materialized export with the precision-specific checked worker. Feed those JAX
   exports through the original exhaustive-path/metamorphic oracle, not merely a new score check.
 - Preserve original state/node permutation, input sensitivity, time-causality, spare emission,
   additive-shift, impossible/tied-sequence and reachability oracle pins.
-- Independently enumerated unique winner: `(0,1,2,1,0,1)`, score `-5.25`, gap `0.25`.
-  Build Init one-hot, Trans occurrence counts and Emit time/state counts from that path.
-- Named/positional × eager/JIT × both precisions = 8 gradient views. Assert every parameter count,
-  winning Init partial 1, all-zero spare Emit row and frozen Allow.
+- Enumerate Init one-hot, Trans occurrence counts and Emit time/state counts independently for each
+  winner; compare full `D` histories and `Score` by bits, and every parameter gradient exactly.
+- Require finite binary frozen Allow, Init finite or -inf, finite Trans/active Emit and a unique
+  finite active final winner; keep the never-read NaN Emit row and require its gradient zero.
+- Five mathematical points × named/positional × eager/JIT × both precisions = **40 gradient views
+  and 40 point-forward executions**. Baseline/permutation overlap the existing 56 source views;
+  do not sum these deployment counts into independent mathematical scenarios.
 - `gateMatrix` rejects max/min/Boolean under the default policy, both candidate conversions and
   `validateAndConstructKernel`; affine rendering alone accepts max. An incompatible supplied shape
   must return `invalidSignatureContext`; an Iverson must remain `iversonFactor`.
 - Six reachability fixtures have no JAX fields and still produce explicit named/positional refusals.
+
+| AD parameter point | Independent observed winner / score / positive margin |
+|---|---|
+| `baseline` | `(0,1,2,1,0,1)` / -5.25 / .25 |
+| `changed_winner`: `Init[2]+=4` | `(2,1,2,1,0,1)` / -4.75 / .25; Init/Trans counts differ |
+| `state_permuted`: permutation `[2,0,3,1]` | `(1,3,0,3,1,3)` / -5.25 / .25 |
+| `near_tie_below`: `Init[2]=1-delta` | Baseline winner / -5.25 / delta |
+| `near_tie_above`: `Init[2]=1+delta` | Changed winner / `-5.25+delta` / delta |
+
+Use native `delta=2^-47` in f64 and `2^-18` in f32: margins respectively
+`7.105427357601002e-15` and `3.814697265625e-6`, exactly **8 output ULPs** on both sides.
+These are opposite unique winners, not true ties. Exact full gradient transport indexes Init by
+the permutation, both Trans axes by it, and Emit's state axis; also transform frozen Allow.
+Compare transported baseline counts with fresh independent enumeration and actual permuted gradients.
 
 ```text
 /usr/bin/git -C <worktree> apply --check <worktree>/papers/semantics/jax_maxplus_patches/03.patch
@@ -373,12 +432,21 @@ The gradient oracle enumerates paths independently from original inputs, not run
 env TMPDIR=<worktree>/.cache python3 <worktree>/papers/semantics/jax_maxplus_files/verify_package.py --task 3
 python3 <worktree>/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py --python <jax-python>
 python3 <worktree>/leanncd/experiments/jax_bridge/mutation_python_manifest.py <worktree>/papers/semantics/jax_maxplus_mutations_python.json
+python3 <worktree>/leanncd/experiments/jax_bridge/mutation_python_manifest.py <worktree>/papers/semantics/jax_maxplus_grad_mutations_python.json
 ```
 
-The full runner **must regenerate** standard bundles before the manifest, replacing T2's
+The full runner **must regenerate** standard bundles before both manifests, replacing T2's
 checked-only bundles so source/gradient checks actually participate. Expected totals remain
-40 checked / 44 metadata refusals / 56 Viterbi / 8 gradients. The twelve singleton cycles for six
-intents are repeated, not new intents. Commit subject:
+52 checked / 44 refusals / 56 Viterbi / 40 gradients / 40 point-forwards at five points.
+Repeat kernel 18, then require gradient 8 independently killed/restored cycles for four intents.
+Stale-baseline parameters are a **verifier orchestration** control, not a backend mutant; wrong
+permutation transport is an **oracle transport** control. Right-biased approximate max targets
+`near_tie_below`; the complementary **tie-preserving left-biased** control targets `near_tie_above`.
+Require each side numerically killed in both carriers/modes; non-discriminating target views do not
+count as kills. Author artifacts cover six gradient entries plus targeted both-sided probes;
+the controller subsequently observed/strict-verified all eight entries, including the persistent
+tie-preserving left-biased pair's required `near_tie_above` failures in both precisions.
+Commit subject:
 `test(jax): verify Viterbi values and winning-path gradients`.
 
 ## 8. T4 — coupled repins, discovery and controller closeout
@@ -427,7 +495,8 @@ updates separately identifiable; do not silently add unlisted source edits.
 | Manifest | First valid boundary | Required actual cycles |
 |---|---|---|
 | `jax_maxplus_mutations_post.json` | T1 | 2 |
-| `jax_maxplus_mutations_python.json` | T2 + generated standard bundles | 12 singleton-precision cycles for 6 intents |
+| `jax_maxplus_mutations_python.json` | T2 + generated checked standard bundles; repeat after full T3 regeneration | 18 singleton-precision cycles for 9 intents |
+| `jax_maxplus_grad_mutations_python.json` | T3 ONLY + regenerated full standard bundles; no runner task selector | 8 singleton-precision cycles for 4 intents |
 | `jax_nonlin_mutations_post.json` repins | T4 | 8 |
 | `jax_scan_mutations_post.json` repins | T4 | 11 |
 | `jax_scan_mutations_python.json` repin | T4 + freshly generated scan bundles | 6 inherited grouped cycles |
@@ -435,14 +504,16 @@ updates separately identifiable; do not silently add unlisted source edits.
 New Lean controls: `MAX-L-SCAN` revokes the render opt-in and kills the tagged scan acceptance;
 `MAX-L-DEFAULT` leaks max into the strict default and kills its tagged refusal.
 Python controls: `MAX-P-omit_cast`, `MAX-P-zero_init`, `MAX-P-freeze_time`, `MAX-P-zero_pad`,
-`MAX-P-native_max_zero_tie`, `MAX-P-remove_custom_jvp`. Their exact observed `expect` strings are
-in the provided manifest. The distinct witnesses make init holes and time slicing independently
-observable, and distinguish a correct primal from an erased derivative.
+`MAX-P-native_max_zero_tie`, `MAX-P-remove_custom_jvp`, `MAX-P-factor_order_cancellation`,
+`MAX-P-first_state_init`, `MAX-P-unary_final_oob_mask`. Gradient controls are `MAX-AD-stale_baseline_parameters`,
+`MAX-AD-permutation_transport`, `MAX-AD-approximate_max`, `MAX-AD-approximate_max_left`.
+Each has separate `-64`/`-32` entries. Require observed diagnostic strings in the frozen manifests;
+an unfinished controller supplement is not an execution-ready asset.
 
 **SCOPE-01 correction.** The unchanged Python runner ORs grouped precision failure statuses and
 concatenates diagnostics: one failing precision can conceal a survivor. The provided new max-plus
-manifest therefore represents each of the six intents as two singleton `runs` entries, one f64 and
-one f32, without source/harness changes or execution-time manifest edits. Require all twelve listed
+manifests therefore represent every new Python intent as two singleton `runs` entries, one f64 and
+one f32, without runner changes or execution-time manifest edits. Require all 18 kernel and 8 gradient
 cycles independently killed/restored green, with per-leg evidence. Do not strengthen inherited
 grouped-manifest claims retroactively.
 
@@ -451,7 +522,8 @@ The controller's recorded negative control made **only float64 fail**: a `PASS` 
 observe/strict runs and this negative proof are recorded in `precision_gate_review_fix`, with
 clean restoration. The scope reviewer confirmed the correction. This is authoring evidence,
 not an instruction to edit or regenerate the executor's immutable manifest.
-This changes provided-input metadata only; implementation patches and source/task blobs stay fixed.
+That original SCOPE-01 correction changed provided-input metadata only. The coverage amendment
+subsequently regenerated fixture/verifier patches; it preserves the independent precision gate.
 
 **Parked side issue:** preexisting scatter manifest `JS-T1-04` has zero matching baseline anchors.
 It is not required for max-plus, is not repaired here and is not counted as a pass; a separate
@@ -466,6 +538,7 @@ Do not substitute agent “green” reports for its own full build and mutation 
 python3 <worktree>/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py --python <jax-python>
 bash <worktree>/leanncd/scripts/mutation-manifest.sh <worktree>/leanncd <worktree>/papers/semantics/jax_maxplus_mutations_post.json
 python3 <worktree>/leanncd/experiments/jax_bridge/mutation_python_manifest.py <worktree>/papers/semantics/jax_maxplus_mutations_python.json
+python3 <worktree>/leanncd/experiments/jax_bridge/mutation_python_manifest.py <worktree>/papers/semantics/jax_maxplus_grad_mutations_python.json
 bash <worktree>/leanncd/scripts/mutation-manifest.sh <worktree>/leanncd <worktree>/papers/semantics/jax_nonlin_mutations_post.json
 bash <worktree>/leanncd/scripts/mutation-manifest.sh <worktree>/leanncd <worktree>/papers/semantics/jax_scan_mutations_post.json
 bash <worktree>/leanncd/scripts/lake-build.sh <worktree>/leanncd LeanNCD Tests JaxExperiment
@@ -483,16 +556,23 @@ counts and timings, without inventing them. Full 3,832-case corpus/performance c
 completion condition; any expansion beyond this validation set must be explicit, not quietly added.
 If environment selection differs across legacy shell runners, resolve their existing local JAX
 environment before launch rather than assuming max-plus `--python` controls them.
-Controller authoring checks passed: full LeanNCD/Tests/JaxExperiment (8847 jobs), nonlinear
+Original controller authoring checks passed: full LeanNCD/Tests/JaxExperiment (8847 jobs), nonlinear
 55 f64 / 47 f32 eager/JIT fixtures, 20 curated affine fixtures, scatter 10 f64 / 5 f32 bit-identical
 eager/JIT, and all 6 inherited scan-Python cycles killed/restored. Record actual execution results;
-do not assume authoring counts cannot change on a valid new base.
+do not assume authoring counts cannot change on a valid new base. For amendment authoring only,
+the original controller artifact remains operator/legacy proof where affected bytes are unchanged.
+The amendment controller reruns actual new manifests and the full prototype build, then restores
+baseline. Do not claim all 25 inherited controls reran if their existing proof was reused by hash.
+Its portable report now records all new checks passed: T2/T3 runners and kernel 18 at each boundary,
+gradient observe/strict 8, Lean 2, full prototype build (8847 jobs), task-4 package proof and restored
+baseline/task-0 proof. Main is unchanged; runtime/core/renderer bytes are preserved. The controller
+also reports the baseline rebuild complete. No archived raw-log path is an execution dependency.
 
 Documentation sweep (record and classify hits; historical records are not live-status claims):
 
 ```text
 rg -n -i -g '*.md' 'max.plus|tropical|Boolean|Iverson|unsupportedScanState|real.only|ordered_max_plus_v1' <worktree>/leanncd <worktree>/papers
-rg -n -g '*.md' '13|seven|six|56|40|44|55|47|3,832|3832' <worktree>
+rg -n -g '*.md' '13|seven|six|56|52|40|44|53|18|55|47|3,832|3832' <worktree>
 rg -n -g '*.md' 'non.real.*refus|tropical.*refus|ONLY real|both non.real' <worktree>
 /usr/bin/git -C <worktree> diff --check
 ```
@@ -507,8 +587,9 @@ Two independent **whole-branch** review lenses, each bounded at about 60 turns/2
 1. Scope/caller/evidence: typed opt-in, signature authority, unchanged sibling doors, both scatter
    modes, refusal locations, default gates, discovery and honest documentation.
 2. Numerical/gradient/oracle: seeds/order/native precision, cast false, OOB/unary/empty domains,
-   NaN patterns and signed zeros, state holes/time slicing, independent source/metamorphic oracle,
-   custom JVP and unique-winner derivatives.
+   NaN patterns and signed zeros, cancellation/factor reversal, two-state mixed holes, both unary OOB
+   paths, independent native prefix/path oracle, full permutation gradient transport and both
+   positive-margin near-tie sides, custom JVP and changed-winner derivatives.
 
 Reviewers read 40–60-line windows and append findings incrementally to the execution record.
 Check budget headroom before launching them; a fix is one bounded dispatch per finding group,
@@ -529,12 +610,17 @@ Include:
 
 - Actual base/worktree/interpreter/device, preparation/cache result and package-verifier outputs.
 - Per-task commands, exit codes, exact counts, commit IDs and boundary hashes.
-- Scalar/native precision observations; 40 checked / 44 refusals / 56 source / 8 gradient views,
-  or the actual discrepancy. Record original Boolean refusal and scoped exclusions explicitly.
+- Scalar/native precision observations; 13 fixtures (11 assignments/2 scans), 52 checked / 44 refusals /
+  56 source / 40 gradient / 40 point-forward views across five AD points, or actual discrepancies.
+  Preserve point-vs-deployment/overlap distinctions; record Boolean refusal and scoped exclusions.
+- New checked witness acceptance, complete mixed histories, native margins/winners/transport and
+  numeric-return kills; distinguish stale-parameter/oracle controls from backend mutants.
 - Mutation labels, independently gated precision legs, kills/refusals/survivors and restoration;
-  distinguish 33 unique intents / 39 entries per complete pool pass from repeated physical
+  distinguish 40 unique intents / 53 entries per complete pool pass from repeated physical
   executions. Do not infer per-precision kills from inherited grouped cycles; keep `JS-T1-04` visible.
 - Complete regression commands/counts/timings and full-build output, without claiming skipped checks.
+- Amendment authoring provenance: old proof reused by unchanged hashes versus new controller
+  reruns/restoration; original reviews versus renewed signoff. Never promote pending proof to passed.
 - Case × caller audit, documentation sweep classifications, both reviews and adjudicated findings.
 - Measured cumulative tokens/peak context/turns per dispatch and total, or explicit unavailable
   telemetry; disclose any cap breach rather than describing it as merely unmeasured.
