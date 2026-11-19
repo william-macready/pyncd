@@ -255,7 +255,11 @@ edits to this record.
   opt-in, signature authority, strict evidence/candidate/einsum/scatter siblings,
   refusal locations, scan restrictions and honest discovery/docs.
 - **Numerical/gradient/oracle: clean.** Confirmed seeds/order/native precision,
-  signed-zero/NaN selection, custom JVP, cast false, both unary OOB paths,
+  signed-zero selection and NaN output (function-level scalar pin: the
+  right-hand-wins signed-zero max tie, which kills `MAX-P-native_max_zero_tie`;
+  NaN cases assert only `isnan`, so NaN priority and fold operand order inside
+  statements are NOT distinguished by the current pins; see the post-landing
+  section below), custom JVP, cast false, both unary OOB paths,
   mixed-state holes, independent prefix/full-path oracle, changed winners,
   complete gradient transport and both positive-margin near-tie sides.
 - **N1, nonblocking source-comment drift: parked.** Some preexisting source
@@ -303,3 +307,52 @@ Both independent reviewers report no known dispatch-cap breach and unavailable
 exact telemetry. Total 175M-input-token compliance and exact peak/turn counts
 cannot be certified from the available telemetry; no exact estimate or measured
 compliance claim substitutes for it.
+
+## Post-landing review fixes (2026-11-19)
+
+A review of the landed work (after the merge, on branch `worktree-maxplus-review-fixes`)
+found two important and several minor items. Fixed as Direct-path changes; nothing here
+changes the immutable four-patch package or its recorded results above, which stay as run.
+
+**Findings and fixes**
+
+- **I1, multi-term gap (code/test).** The ordered-max fold over a statement's terms
+  (`term_body`) was exercised only with 0 or 1 terms; dropping every term but the last
+  survived the verifier. Fixed in `49f2a571`: fixture `max_multi_term_winners` (three
+  max-plus terms, winners differing by coordinate, a `-inf` and a NaN in non-last terms).
+- **I2, stale contract (docs).** The `renderScanNode` record contract still said states
+  start at `0` and omitted the max-plus keys (`state_init`, node `algebra`/`semantics`,
+  factor `tag`/`bool_to_tropical`/`real_to_bool`); the `unsupportedScanState`,
+  `generateNamed`, `buildAssignFixture` and file-header comments and the runtime module
+  docstring still described a real-only, zero-padded backend. This is the N1 item parked
+  above. Fixed in the docs commits of this batch (comments and docstring only, no
+  behavior change; `JaxExperiment` rebuilt green).
+- **M1-M5, minor items.** Fixed in `60d1d7c0` (`_run_scan_node` validated step-block nodes
+  only when `step_count > 0`, and silently zero-initialised a max-plus scan with no
+  `state_init`; now both are refused, with pinning fixtures `empty_step_unknown_algebra`
+  and `max_scan_missing_state_init`), in `66da8b1e` (`EvalPlanMaxPlusSmoke` was not run
+  by `check-lean-drivers.sh`; now registered, script says "seven drivers"), and in this
+  docs batch: the README row count ("eight rows" became ten; the f32 coverage of the
+  max-plus rows is stated), the `leanncd/AGENTS.md` wording on max-plus mask reads
+  (Boolean-source reads admitted, Iverson predicate factors still refused), the
+  `check-lean-drivers.sh` header count, a README note on max-plus gradients at ties and at
+  NaN outputs (behavior probed, explicitly outside the winning-path gradient promise), and
+  the NaN/operand-order pin wording below.
+- **Per-precision runner line** moved from 26 checked views / 22 refusals to 28 / 26
+  (both precisions together: 56 / 52); source, point-forward and gradient columns are
+  unchanged. The 52 / 44 figures quoted in the sections above are the as-run
+  counts at the original landing.
+
+**Pin wording corrected.** The plan and the "signed-zero/NaN selection" item above said the
+scalar pins distinguish first/second NaN patterns and operand order. They do not. The
+verifier asserts only `isnan` for NaN cases; the right-hand-wins signed-zero tie is pinned
+only at function level, by the direct `_ordered_max` scalar pin (it kills
+`MAX-P-native_max_zero_tie`). NaN priority and fold operand order inside statements are
+NOT distinguished by the current pins: swapping NaN priority or the fold operands in
+`_ordered_max`, `red_body` or `term_body` survives the verifier, and is effectively
+equivalent inside statements (the factor `+0` seed turns `-0` into `+0`, and NaN payloads
+are not compared).
+
+**Surviving mutants.** The mutants the review found surviving (NaN-priority swap and
+operand swaps in `_ordered_max`/`red_body`/`term_body`, above) are documented, not
+killed; no pin was added for them in this batch.
