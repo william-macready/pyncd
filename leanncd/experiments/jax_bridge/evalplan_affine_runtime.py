@@ -120,8 +120,55 @@ def _apply_unary(op: str, x: jax.Array, dtype: Any) -> jax.Array:
     raise ValueError(f"unknown unary op {op!r}")
 
 
+def _ordered_max(a, b):
+    return jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, b, a)))
+
+
+@jax.custom_jvp
+def _ordered_add(a, b):
+    # XLA may erase a literal +0 seed. Preserve IEEE zeros without erasing its derivative.
+    zero = jnp.zeros_like(a + b)
+    zeros = jnp.where(jnp.signbit(a) & jnp.signbit(b), -zero, zero)
+    return jnp.where((a == 0) & (b == 0), zeros, a + b)
+
+
+@_ordered_add.defjvp
+def _ordered_add_jvp(primals, tangents):
+    a, b = primals
+    da, db = tangents
+    return _ordered_add(a, b), da + db
+
+
+def _algebra(node, dtype):
+    tag = node.get("algebra", "real")
+    if tag == "real":
+        if "semantics" in node:
+            raise ValueError("real nodes use the legacy metadata-free format")
+        return jnp.multiply, dtype(1), jnp.add, dtype(0)
+    if tag == "max_plus":
+        if node.get("semantics") != "ordered_max_plus_v1":
+            raise ValueError("max-plus requires ordered_max_plus_v1 semantics")
+        return _ordered_add, dtype(0), _ordered_max, dtype(-math.inf)
+    raise ValueError(f"unknown algebra {tag!r}")
+
+
+def _check_factors(terms, max_plus):
+    for term in terms:
+        for f in term["factors"]:
+            if f.get("tag", "read") != "read":
+                raise ValueError(f"unknown factor tag {f['tag']!r}")
+            if max_plus:
+                if f.get("tag") != "read" or type(f.get("bool_to_tropical")) is not bool:
+                    raise ValueError("max-plus read requires explicit cast metadata")
+                if f.get("real_to_bool") is not False:
+                    raise ValueError("real_to_bool is not supported")
+            elif any(k in f for k in ("bool_to_tropical", "real_to_bool")):
+                raise ValueError("real read cast metadata is not supported")
+
+
 def _run_term(
-    term: dict[str, Any], store: list[jax.Array], dtype: Any, slicer: Any = None, shift: int = 0
+    term: dict[str, Any], store: list[jax.Array], dtype: Any, slicer: Any = None, shift: int = 0,
+    algebra: Any = None,
 ) -> jax.Array:
     """One term over its iteration box. `slicer`/`shift` serve a scan step block only: `shift = 1` drops
     the leading step axis (never an output or reduction axis) from the shape and the position lists, and
@@ -133,6 +180,8 @@ def _run_term(
     if min(output_pos + reduction_pos, default=0) < 0:
         raise ValueError(f"term uses position {shift - 1} (the step axis) as an output or reduction axis")
     factors = term["factors"]
+    factor_op, factor_id, reduce_op, reduce_id = algebra or _algebra({}, dtype)
+    max_plus = factor_op is _ordered_add
 
     out_extents = [iter_shape[p] for p in output_pos]
     red_extents = [iter_shape[p] for p in reduction_pos]
@@ -143,7 +192,7 @@ def _run_term(
     # output coordinate (the reduction fold never runs). Both short-circuit to zeros of the output
     # shape and avoid any size-0 gather/index — matching Dense's `runDenseAssign`.
     if output_size == 0 or reduction_size == 0:
-        return jnp.zeros(tuple(out_extents), dtype=dtype)
+        return jnp.full(tuple(out_extents), reduce_id, dtype=dtype)
 
     # --- gather one full iteration-space tensor per factor -------------------------------------
     factor_tensors: list[jax.Array] = []
@@ -153,8 +202,8 @@ def _run_term(
         if int(src_flat.shape[0]) == 0:
             # Empty source storage: emit an all-zero factor tensor without any index access. A unary
             # read still applies its function to those zero-padded zeros (Dense: pad, THEN apply).
-            zeros = jnp.zeros(iter_shape, dtype=dtype)
-            if "unary" in f:
+            zeros = jnp.full(iter_shape, reduce_id, dtype=dtype)
+            if "unary" in f and not max_plus:
                 zeros = _apply_unary(f["unary"], zeros, dtype)
             factor_tensors.append(zeros)
             continue
@@ -164,20 +213,27 @@ def _run_term(
         else:
             safe, mask = slicer(f)
         gathered = src_flat[safe]
-        padded = jnp.where(mask, gathered, dtype(0.0))
         if "unary" in f:
-            padded = _apply_unary(f["unary"], padded, dtype)  # AFTER the pad: OOB exp read is exp(0)
+            if max_plus:
+                value = _apply_unary(f["unary"], jnp.where(mask, gathered, dtype(1)), dtype)
+                padded = jnp.where(mask, value, reduce_id)
+            else:
+                padded = _apply_unary(f["unary"], jnp.where(mask, gathered, dtype(0)), dtype)
+        else:
+            if f.get("bool_to_tropical", False):
+                gathered = jnp.where(gathered != dtype(0), factor_id, reduce_id)
+            padded = jnp.where(mask, gathered, reduce_id)
         factor_tensors.append(jnp.reshape(padded, iter_shape))
 
     # --- fold the factor product from 1.0 in factor-array order (empty ⇒ ones) ------------------
-    ones = jnp.ones(iter_shape, dtype=dtype)
+    ones = jnp.full(iter_shape, factor_id, dtype=dtype)
     if not factor_tensors:
         product = ones
     else:
         stacked = jnp.stack(factor_tensors, axis=0)
 
         def factor_body(k, acc):
-            return acc * stacked[k]
+            return factor_op(acc, stacked[k])
 
         product = jax.lax.fori_loop(0, len(factor_tensors), factor_body, ones)
 
@@ -189,9 +245,9 @@ def _run_term(
     # --- per-row sequential reduction fold from 0.0 in reduction-coordinate order ---------------
     def reduce_row(row):
         def red_body(k, acc):
-            return acc + row[k]
+            return reduce_op(acc, row[k])
 
-        return jax.lax.fori_loop(0, reduction_size, red_body, dtype(0.0))
+        return jax.lax.fori_loop(0, reduction_size, red_body, reduce_id)
 
     reduced = jax.vmap(reduce_row)(mat)
     return jnp.reshape(reduced, tuple(out_extents))
@@ -202,17 +258,20 @@ def _run_node(
 ) -> jax.Array:
     output_shape = tuple(node["output_shape"])
     terms = node["terms"]
+    algebra = _algebra(node, dtype)
+    _, _, reduce_op, reduce_id = algebra
+    _check_factors(terms, algebra[0] is _ordered_add)
     if not terms:
         # Empty term array yields an all-zero output.
-        return jnp.zeros(output_shape, dtype=dtype)
+        return jnp.full(output_shape, reduce_id, dtype=dtype)
 
-    term_results = [_run_term(t, store, dtype, slicer, shift) for t in terms]
+    term_results = [_run_term(t, store, dtype, slicer, shift, algebra) for t in terms]
     stacked = jnp.stack(term_results, axis=0)
 
     def term_body(k, acc):
-        return acc + stacked[k]
+        return reduce_op(acc, stacked[k])
 
-    zero = jnp.zeros(output_shape, dtype=dtype)
+    zero = jnp.full(output_shape, reduce_id, dtype=dtype)
     return jax.lax.fori_loop(0, len(terms), term_body, zero)
 
 
@@ -220,6 +279,8 @@ def _run_scatter_node(
     node: dict[str, Any], store: list[jax.Array], dtype: Any, scatter_mode: str = "ordered"
 ) -> jax.Array:
     """One scatter node: source-shaped compute half, then the ordered (default) or fast placement fold."""
+    if node.get("algebra", "real") != "real":
+        raise ValueError("scatter requires real algebra")
     source = jnp.reshape(_run_node(node, store, dtype), (-1,))
     dest_shape = tuple(node["dest_shape"])
     idx = node["dest_flat_index"]
@@ -414,7 +475,18 @@ def _run_block(block: dict[str, Any], local: list[Any], dtype: Any, slicer: Any 
 
 def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> list[jax.Array]:
     steps = int(node["step_count"])
-    states = [jnp.zeros(tuple(s), dtype=dtype) for s in node["state_shapes"]]
+    if "state_init" in node:
+        if node.get("semantics") != "ordered_scan_v1":
+            raise ValueError("state_init requires ordered_scan_v1 semantics")
+        inits = node["state_init"]
+        if len(inits) != len(node["state_shapes"]) or any(i not in ("zero", "neg_inf") for i in inits):
+            raise ValueError("invalid state_init metadata")
+    else:
+        if "semantics" in node:
+            raise ValueError("unknown scan semantics")
+        inits = ["zero"] * len(node["state_shapes"])
+    states = [jnp.full(tuple(s), dtype(0 if i == "zero" else -math.inf), dtype=dtype)
+              for s, i in zip(node["state_shapes"], inits)]
 
     # Base block: once, no context.
     local = _run_block(node["base"], _bind_captures(node["base"], node["base_captures"], store, None), dtype)
