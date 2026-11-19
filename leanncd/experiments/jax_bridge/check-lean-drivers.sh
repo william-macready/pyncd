@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lean-side regression check for the six JAX-bridge drivers. NO Python and NO JAX: it only runs the
+# Lean-side regression check for the seven JAX-bridge drivers. NO Python and NO JAX: it only runs the
 # Lean generators and fails if any of them exits non-zero.
 #
 # Why: the drivers are `lake env lean --run` scripts outside every Lake target (`JaxExperiment` globs
