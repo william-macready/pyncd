@@ -34,9 +34,9 @@ dependencies; the selected interpreter must already provide the experiment's JAX
 
 Plus one Lean-only check, not a runner:
 
-- **`check-lean-drivers.sh [STRIDE]`**: builds `LeanNCD JaxExperiment Tests`, then runs the seven Lean
+- **`check-lean-drivers.sh [STRIDE]`**: builds `LeanNCD JaxExperiment Tests`, then runs the eight Lean
   generators (`EvalPlanSmoke`, `EvalPlanAffineSmoke`, `EvalPlanAffineCorpus`, `EvalPlanAffineSmoke32`,
-  `EvalPlanScatterSmoke`, `EvalPlanNonlinSmoke`, `EvalPlanMaxPlusSmoke`) into a temp directory and fails if any exits non-zero. No Python, no JAX. The drivers are outside every
+  `EvalPlanScatterSmoke`, `EvalPlanNonlinSmoke`, `EvalPlanMaxPlusSmoke`, `EvalPlanLogicSmoke`) into a temp directory and fails if any exits non-zero. No Python, no JAX. The drivers are outside every
   Lake target, and a change to a precision default or to an `InputSignature` constructor breaks them at
   RUN time (a typed `prepareEvalPlan` rejection), so only running them catches it. Run it after such a
   change; the F32 default flip broke all four silently.

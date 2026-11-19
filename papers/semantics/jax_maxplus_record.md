@@ -348,11 +348,11 @@ changes the immutable four-patch package or its recorded results above, which st
   counts at the original landing.
 - **Parked by the whole-branch review of these fixes (Rule 14).**
   (a) `check-lean-drivers.sh` still does not run `EvalPlanLogicSmoke.lean` (same run-time-break
-  class; about one line). (b) The `step_count=0` pair in `evalplan_maxplus_smoke.py` starts from a
+  class; about one line) — CLOSED 2026-11-19 (`b1c46c65`, now eight drivers). (b) The `step_count=0` pair in `evalplan_maxplus_smoke.py` starts from a
   record Lean never emits (step extent 3 with its tables kept); Lean's real zero-step record is
   `scan_extentone`. (c) `scanNonRealState` in `LeanNCD/Eval/Plan/Executable.lean` has a comment
   saying a tropical state is "zero-initialised", stale in the same way as the codegen comments
-  fixed here. (d) At zero steps pointwise/axiswise `fn`, captures and step writes are still not
+  fixed here — CLOSED 2026-11-19 (`d09dc8d7`). (d) At zero steps pointwise/axiswise `fn`, captures and step writes are still not
   validated.
 
 **Pin wording corrected.** The plan and the "signed-zero/NaN selection" item above said the
