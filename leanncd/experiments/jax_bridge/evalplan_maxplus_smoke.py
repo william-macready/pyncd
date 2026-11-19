@@ -204,7 +204,7 @@ def verify(precision, checked_path, logic_path=None):
         return (jax.jit(fn) if jit else fn)(inputs)
 
     fixtures = load(checked_path).ADVERSARIAL
-    assert len(fixtures) == 13
+    assert len(fixtures) == 14
     for f in fixtures:
         for jit in (False, True):
             output = run(f, jit)
@@ -222,6 +222,14 @@ def verify(precision, checked_path, logic_path=None):
     assert np.isneginf(holes[1, 0]) and np.array_equal(
         holes[:, 1:], np.asarray([[7, 13, 19], [11, 17, 23]], dtype=nd)), holes
     assert np.isnan(np.asarray(run(by["false_source_opposing_infinity"]))[0])
+
+    # Every max-plus term must reach the fold: B wins at 0, A at 2 and 4, C at 3, NaN in a non-last term at 5.
+    multi = by["max_multi_term_winners"]
+    assert len(multi["assign" + suffix]["terms"]) == 3, "max_multi_term_winners must render three terms"
+    for jit in (False, True):
+        got = np.asarray(run(multi, jit))
+        wanted = np.asarray([2, -np.inf, 5, 7, 9, np.nan], dtype=nd)
+        assert np.array_equal(got, wanted, equal_nan=True), ("max_multi_term_winners", jit, got)
 
     # Validate metadata even for empty domains: no silently ignored invalid tags.
     template = by["bool_to_tropical_true"]
