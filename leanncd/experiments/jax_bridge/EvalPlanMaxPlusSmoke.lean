@@ -16,6 +16,35 @@ def prepare (name : String) (s : ScheduledProgram) (sig : InputSignature) : IO P
   match prepareEvalPlan s sig with
   | .ok p => pure p | .error e => throw (IO.userError s!"{name}: {renderCompileCause e.cause}")
 
+def gateMatrix : Bool := Id.run do
+  for alg in [admittedAlgebraMax, admittedAlgebraMin, admittedAlgebraBool] do
+    let sigs := if alg == admittedAlgebraBool then
+      idSigs.modify 1 (fun s => { s with dtype := .bool }) else idSigs
+    let .ok c := checkAssign sigs { idAssign with algebra := alg } | return false
+    if alg == admittedAlgebraMax then
+      unless (renderAffineAssign sigs c).isOk do return false
+    else
+      unless (renderAffineAssign sigs c).toOption.isNone do return false
+    unless (checkJaxAssignSupport sigs 7 c).toOption.isNone &&
+      (loweringToAffineTableCandidate sigs 7 c).toOption.isNone &&
+      (loweringToEinsumCandidate sigs 7 c).toOption.isNone do return false
+    let tables := c.plan.terms.map fun t => t.factors.filterMap fun f => match f with
+      | .iverson _ => none
+      | .read r =>
+          let (safeIndex, validMask) := buildFactorTable t.iterationShape r
+          some ({ source := r.sourceSlot, safeIndex, validMask } : AffineTableReadCandidate)
+    unless (validateAndConstructKernel sigs (.affineTable { semanticAssignment := c, tables })).toOption.isNone &&
+      (validateAndConstructKernel sigs (.einsum { semanticAssignment := c, destination := 1, operands := #[#[0, 0]], outputAxes := #[0] })).toOption.isNone do return false
+  let .ok c := checkAssign idSigs { idAssign with algebra := admittedAlgebraMax } | return false
+  unless (match renderAffineAssign (idSigs.modify 0 (fun s => { s with shape := #[4] })) c with
+    | .error (.invalidSignatureContext 0 _) => true | _ => false) do return false
+  let .ok iv := checkAssign idSigs { idIversonAssign with algebra := admittedAlgebraMax } | return false
+  unless (match renderAffineAssign idSigs iv with
+    | .error (.iversonFactor 0 0 _) => true | _ => false) do return false
+  return true
+
+run_cmd unless gateMatrix do throwError "MAX-T3-GATE-MATRIX: render-only admission leaked"
+
 def pyTensor32 (t : DenseTensor32) : String :=
   "{\"shape\": " ++ pyShapeTuple t.shape.toArray ++ ", \"bits\": [" ++
   String.intercalate ", " (t.data.toList.map fun x => toString x.toBits) ++ "]}"
