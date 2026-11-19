@@ -210,9 +210,11 @@ inductive JaxSupportError
   | sourceDType            (nodeIndex termIndex factorIndex : Nat) (dtype : ScalarDType)
   | unaryFactor            (nodeIndex termIndex factorIndex : Nat)
   | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
-  -- A scan state whose cells start at a non-`zero` `initValue` (a tropical max-plus/min-plus state):
-  -- the scan renderer's states are real sum-product tensors, zero-initialised. Located at the scan's
-  -- outer step index and the state's index in `RawScanPlan.states`.
+  -- A scan state whose cells start at an `initValue` the active profile does not admit: `.zero` is
+  -- always admitted and `.negInf` only under the `.maxPlus` profile (a tropical max-plus state starts
+  -- at `-inf`, the ordered-max identity), so under `.realOnly` any non-`zero` state is refused and a
+  -- min-plus `.posInf` state is refused under every profile. Located at the scan's outer step index
+  -- and the state's index in `RawScanPlan.states`.
   | scanNonRealState       (nodeIndex stateIndex : Nat)
   -- A scan over more (or fewer) than one history axis: the scan runtime steps ONE axis. Located at
   -- the scan's outer step index.
