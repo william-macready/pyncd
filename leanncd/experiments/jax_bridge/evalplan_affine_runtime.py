@@ -487,7 +487,7 @@ def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> 
         if any(n.get("algebra") == "max_plus" for blk in (node["base"], node["step"]) for n in blk["nodes"]):
             raise ValueError("max-plus scan requires state_init")
         inits = ["zero"] * len(node["state_shapes"])
-    states =[jnp.full(tuple(s), dtype(0 if i == "zero" else -math.inf), dtype=dtype)
+    states = [jnp.full(tuple(s), dtype(0 if i == "zero" else -math.inf), dtype=dtype)
               for s, i in zip(node["state_shapes"], inits)]
 
     # Base block: once, no context.
