@@ -11,14 +11,17 @@ them (plan "Two explicit lowerings"):
 
 * `einsumOnly` — the completed smoke path. Recognizes a projection-only contraction and emits a real
   `jnp.einsum` call, rejecting every non-projection read with a closed `JaxCodegenError`.
-* `affineReference` — accepts the context-free `f64`/`f32` sum-product, assign-only fragment, with
-  every present factor an affine read (an inline unary read is rendered as a `"unary"` key on the
-  factor record; `einsumOnly` and the evidence path still reject it). It precomputes exact per-factor affine lookup tables
+* `affineReference` — accepts the context-free `f64`/`f32` real sum-product and max-plus
+  (`admittedAlgebraMax`/`admittedAlgebraF32Max`) assignments, with every present factor an affine
+  read (an inline unary read is rendered as a `"unary"` key on the factor record; `einsumOnly` and
+  the evidence path still reject it; under max-plus a Boolean-source read is admitted and carries its
+  checked cast flag). It precomputes exact per-factor affine lookup tables
   (safe index + validity mask) in Lean using the shared coordinate primitives
   (`Eval.Plan.Coordinates`), and emits static plan DATA that the committed generic runtime
   (`evalplan_affine_runtime.py`) interprets with ordered factor/reduction/term folds. Boolean
-  sources/destinations, tropical algebras, Iverson factors, contextual assignments, and
-  non-assignment steps fail loud with located typed errors. No `einsum`/`jnp.sum`/tree reduction is
+  destinations, Boolean sources outside max-plus, min-plus, Iverson factors and outer contextual
+  assignments fail loud with located typed errors (`.scatter`/`.pointwise`/`.axiswise`/`.scan` steps
+  have their own records and gates, see below). No `einsum`/`jnp.sum`/tree reduction is
   used on this path.
 
 Kept out of the default build (registered only in the non-default `JaxExperiment` `lean_lib`), no
@@ -103,9 +106,11 @@ inductive JaxCodegenError
   -- assignment (`checkAssign` re-run under it fails): a caller-supplied table is that entry's
   -- semantic authority, so it is rejected outright rather than consulted for its dtype tags alone.
   | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
-  -- The scan support gate (`checkJaxScanSupport`): a scan state whose cells start non-zero (a
-  -- tropical state), and a scan over other than exactly one history axis. Both located at the scan's
-  -- outer step index (the state's index too for the first).
+  -- The scan support gate (`checkJaxScanSupport`): a scan state whose cells start at an `initValue`
+  -- the active profile does not admit (`.zero` always; `.negInf` only under the `.maxPlus` profile
+  -- that `renderScanNode` passes, so e.g. a min-plus `+inf` state is refused), and a scan over other
+  -- than exactly one history axis. Both located at the scan's outer step index (the state's index
+  -- too for the first).
   | unsupportedScanState   (nodeIndex stateIndex : Nat)
   | unsupportedScanAxes    (nodeIndex : Nat)
   -- The emitter's own backstops for a scan (`renderScanNode`). A state write's placement would land
@@ -783,7 +788,29 @@ private def renderScanWrites (nodeIndex : Nat) (stateShapes : Array (Array Nat))
                "index": [flat offsets into the complete state, row-major]}
     ```
 
-    Semantics the runtime mirrors (`runDenseScanWith`): states start at `0`; the base block runs once
+    Max-plus keys (emitted only for max-plus content; a real-only scan keeps the record above
+    byte-for-byte):
+
+    ```
+    scan record  += "state_init": ["zero" | "neg_inf", ...]   -- one marker per state, states order
+                    "semantics": "ordered_scan_v1"
+    assign NODE  += "algebra": "max_plus", "semantics": "ordered_max_plus_v1"
+    FACTOR       += "tag": "read", "bool_to_tropical": True | False, "real_to_bool": False
+    ```
+
+    The scan record carries the `state_init` pair exactly when some state's `initValue` is `.negInf`
+    (`"neg_inf"` for those states, `"zero"` for the rest); a node record carries `algebra`/`semantics`
+    exactly when its assignment's algebra is the admitted max algebra for the storage kind
+    (`admittedAlgebraMax`/`admittedAlgebraF32Max`), and then every one of its factors carries
+    `tag`/`bool_to_tropical`/`real_to_bool` (`real_to_bool` is always `False`: not supported). The
+    runtime (`_run_scan_node`, `_algebra`, `_check_factors` in `evalplan_affine_runtime.py`) validates
+    all of it and fails loud: `state_init` requires the `ordered_scan_v1` marker, one entry per state,
+    each `"zero"` or `"neg_inf"`; a scan record WITHOUT `state_init` must carry no `semantics` key and
+    must hold no `max_plus` block node (a `max_plus` node in either block needs `state_init`), so a
+    scan whose block nodes are max-plus but whose states all start at `0` is refused at run time.
+
+    Semantics the runtime mirrors (`runDenseScanWith`): states start at `0`, except a `"neg_inf"`
+    state, which starts at `-inf` (the identity of the ordered max, as `0` is of the real sum); the base block runs once
     (no context) and each base write places its output tensor at `index` (one entry per output
     coordinate, `allCoords` order); then for `r = 0 .. T-1` the step block runs on the PRE-step
     states with step coordinate `r`, and every step write places into the NEXT states at
@@ -891,7 +918,11 @@ def renderAffineAssign (sigs : Array TensorSignature) (c : CheckedAssignPlan) :
 /-- Check, Dense-run, and render one checked-assignment fixture as a `FIXTURES`-list entry. Its
     existing `sigs` argument is now that fixture's explicit semantic authority (Task 4.5): the same
     table checks the assignment and gates its rendering, so a Boolean-source or otherwise
-    unsupported fixture fails loud here instead of producing Python.
+    unsupported fixture fails loud here instead of producing Python. "Unsupported" is the
+    `affineReference` policy (`renderAffineNode` runs `requireJaxSupport` under the `.maxPlus`
+    profile): a Boolean DESTINATION, min-plus, an Iverson factor or a contextual assignment is
+    refused, but a max-plus assignment and its Boolean-source reads (explicit cast flag) are
+    rendered.
     `{"name", "kind": "assign", "assign", "store", "expected"}`. The one assign-fixture builder
     every `jax_bridge` driver needs — shared here, on `EvalPlanCodegen`, so a new driver can call it
     directly instead of re-deriving the same check→run→render sequence. -/
@@ -915,9 +946,11 @@ def buildAssignFixture (name : String) (sigs : Array TensorSignature) (a : Assig
 
 /-- Generate the named-plan representation for a source/corpus `PreparedPlan` under an explicit
     mode. `einsumOnly` returns the `forward(inputs)` body (or a closed `JaxCodegenError` rejection);
-    `affineReference` returns static plan DATA only for the context-free `f64`/`f32` sum-product,
-    assignment-only plain/unary-read fragment described at the top of this file; every unsupported
-    category fails loud with its located `JaxCodegenError`. -/
+    `affineReference` returns static plan DATA for the `f64`/`f32` real sum-product and max-plus
+    fragment described at the top of this file (plain/unary reads, Boolean-source reads under
+    max-plus, assignments, real-only scatters, pointwise/axiswise steps and single-axis scans, no outer
+    contextual assignment); every unsupported category fails loud with its located
+    `JaxCodegenError`. -/
 def generateNamed (mode : LoweringMode) (plan : PreparedPlan) :
     Except JaxCodegenError String := do
   -- Plan-level storage gate, explicitly here as well as on both dispatch targets. Stated rather

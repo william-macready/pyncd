@@ -15,16 +15,27 @@ Load-bearing properties (whole-branch review gate):
   comparison. Float64 values are created only during execution, after that gate can have been
   enabled; importing this module while x64 is disabled cannot cache a silently narrowed scalar.
   Float32 needs no x64 (its callers run with x64 DISABLED, so no float64 can arise at all).
-* **Safe index + mask zero padding.** A factor gathers ONLY through the precomputed safe indices
-  (invalid entries carry the placeholder `0`) and re-zeros invalid entries with `jnp.where(mask, …,
-  0.0)`. It never relies on JAX's own out-of-bounds gather, which may clamp rather than zero-pad.
-* **No gather from empty source storage.** When a source tensor holds zero elements, an all-zero
-  factor tensor is emitted directly — no index access is attempted.
+* **Two algebras, chosen per node by `_algebra`.** A node without an `"algebra"` key is the real
+  sum-product (factor op `multiply` seeded `1`, reduction/term op `add` seeded `0`, pad `0`). A node
+  with `"algebra": "max_plus"` (which requires `"semantics": "ordered_max_plus_v1"`) uses factor op
+  `_ordered_add` seeded `0` and reduction/term op `_ordered_max` seeded and padded with `-inf`; its
+  factors must carry explicit `bool_to_tropical`/`real_to_bool` cast metadata (`_check_factors`).
+  Every "zero" below is therefore the reduction identity of the node's algebra: `0` for the real
+  algebra, `-inf` for max-plus (the factor-product seed stays `0` there).
+* **Safe index + mask padding.** A factor gathers ONLY through the precomputed safe indices
+  (invalid entries carry the placeholder `0`) and re-pads invalid entries with `jnp.where(mask, …,
+  pad)` (`0.0` real, `-inf` max-plus). It never relies on JAX's own out-of-bounds gather, which may
+  clamp rather than pad.
+* **No gather from empty source storage.** When a source tensor holds zero elements, a factor tensor
+  filled with the pad value is emitted directly — no index access is attempted.
 * **Explicit ordered folds.** Factor products, per-row reductions, and term sums are each folded
   with a sequential `jax.lax.fori_loop` carry (reductions under `jax.vmap`), preserving Dense's
   source-declared `reference64`/`reference32` fold order rather than an XLA-chosen tree reduction.
-* **Empty/zero boundaries.** An empty factor array yields ones; an empty term array yields an
-  all-zero output; a zero reduction extent yields zeros; a zero output extent yields empty storage.
+* **Empty/zero boundaries.** An empty factor array yields the factor identity (ones; `0` under
+  max-plus); an empty term array yields an output filled with the reduction identity (zeros; `-inf`
+  under max-plus); a zero reduction extent yields that same identity; a zero output extent yields
+  empty storage. A scan state starts at `0`, or at `-inf` where the record's `state_init` says
+  `"neg_inf"` (a max-plus scan block without `state_init` is refused).
 * **Graph order.** Positional nodes execute in checked order, each writing its destination slot
   before any later node reads it.
 * **Scatter nodes (`"kind": "scatter"`).** The compute half runs through the unchanged assignment
@@ -47,6 +58,9 @@ Load-bearing properties (whole-branch review gate):
   or all-zero row is exactly zero. The result agrees with Lean only within a tolerance, not bit for
   bit: `exp`/`tanh`/`pow` come from XLA, not Lean's libm.
 * **Differentiable** with respect to the floating input tensors (integer gather + `where` + loops).
+  `_ordered_add` carries a custom JVP (tangent `da + db`) so its IEEE signed-zero primal correction
+  does not erase the ordinary finite-input addition derivative; the max-plus fold's gradient goes
+  through `_ordered_max`'s `where` selection.
 """
 
 from __future__ import annotations
