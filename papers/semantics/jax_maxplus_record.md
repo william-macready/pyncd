@@ -328,7 +328,7 @@ changes the immutable four-patch package or its recorded results above, which st
   above. Fixed in the docs commits of this batch (comments and docstring only, no
   behavior change; `JaxExperiment` rebuilt green).
 - **M1-M5, minor items.** Fixed in `60d1d7c0` (`_run_scan_node` validated step-block nodes
-  only when `step_count > 0`; now it always does, pinned by `empty_step_unknown_algebra`.
+  only when `step_count > 0`; now it always does, pinned by `empty_step_unknown_algebra` (algebra half) and `empty_step_bad_factor_metadata` (factor-metadata half).
   The review's second hole, a max-plus scan with no `state_init` "silently zero-initialising",
   was NOT a hole: the Lean emitter writes `state_init` only when some state is `.negInf`, so
   a max-plus scan whose states all start at `0` legitimately has none. The first fix refused
@@ -342,10 +342,18 @@ changes the immutable four-patch package or its recorded results above, which st
   `check-lean-drivers.sh` header count, a README note on max-plus gradients at ties and at
   NaN outputs (behavior probed, explicitly outside the winning-path gradient promise), and
   the NaN/operand-order pin wording below.
-- **Per-precision runner line** moved from 26 checked views / 22 refusals to 28 / 24
-  (both precisions together: 56 / 48); source, point-forward and gradient columns are
+- **Per-precision runner line** moved from 26 checked views / 22 refusals to 28 / 26
+  (both precisions together: 56 / 52); source, point-forward and gradient columns are
   unchanged. The 52 / 44 figures quoted in the sections above are the as-run
   counts at the original landing.
+- **Parked by the whole-branch review of these fixes (Rule 14).**
+  (a) `check-lean-drivers.sh` still does not run `EvalPlanLogicSmoke.lean` (same run-time-break
+  class; about one line). (b) The `step_count=0` pair in `evalplan_maxplus_smoke.py` starts from a
+  record Lean never emits (step extent 3 with its tables kept); Lean's real zero-step record is
+  `scan_extentone`. (c) `scanNonRealState` in `LeanNCD/Eval/Plan/Executable.lean` has a comment
+  saying a tropical state is "zero-initialised", stale in the same way as the codegen comments
+  fixed here. (d) At zero steps pointwise/axiswise `fn`, captures and step writes are still not
+  validated.
 
 **Pin wording corrected.** The plan and the "signed-zero/NaN selection" item above said the
 scalar pins distinguish first/second NaN patterns and operand order. They do not. The
@@ -353,9 +361,11 @@ verifier asserts only `isnan` for NaN cases; the right-hand-wins signed-zero tie
 only at function level, by the direct `_ordered_max` scalar pin (it kills
 `MAX-P-native_max_zero_tie`). NaN priority and fold operand order inside statements are
 NOT distinguished by the current pins: swapping NaN priority or the fold operands in
-`_ordered_max`, `red_body` or `term_body` survives the verifier, and is effectively
-equivalent inside statements (the factor `+0` seed turns `-0` into `+0`, and NaN payloads
-are not compared).
+`_ordered_max`, `red_body` or `term_body` survives the verifier, and is
+forward-value-equivalent inside statements (the factor `+0` seed turns `-0` into `+0`, and NaN
+payloads are not compared). It is NOT gradient-equivalent: the `red_body` operand swap moves a
+tie's whole gradient from the last to the first maximal element (`[2,2,1]` gives `[1,0,0]`),
+which is why the README calls tie gradients behavior, not a promise.
 
 **Surviving mutants.** The mutants the review found surviving (NaN-priority swap and
 operand swaps in `_ordered_max`/`red_body`/`term_body`, above) are documented, not

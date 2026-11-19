@@ -265,6 +265,10 @@ def verify(precision, checked_path, logic_path=None):
     f["scan" + suffix].update(step_count=0)
     f["scan" + suffix]["step"]["nodes"][0]["algebra"] = "min_plus"
     cases.append(("empty_step_unknown_algebra", f))
+    f = copy.deepcopy(by["scan_context_holes"])
+    f["scan" + suffix].update(step_count=0)
+    f["scan" + suffix]["step"]["nodes"][0]["terms"][0]["factors"][0]["bool_to_tropical"] = None
+    cases.append(("empty_step_bad_factor_metadata", f))
     # Accept-neighbour: the same empty-range record with an unmodified step block is admitted.
     f = copy.deepcopy(by["scan_context_holes"])
     f["scan" + suffix].update(step_count=0)

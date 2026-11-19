@@ -36,7 +36,7 @@ Load-bearing properties (whole-branch review gate):
   under max-plus); a zero reduction extent yields that same identity; a zero output extent yields
   empty storage. A scan state starts at `0`, or at `-inf` where the record's `state_init` says
   `"neg_inf"`; a record without `state_init` starts every state at `0`, which is what the Lean emitter
-  produces for a scan with no `-inf` state, max-plus statements or not).
+  produces for a scan with no `-inf` state, max-plus statements or not.
 * **Graph order.** Positional nodes execute in checked order, each writing its destination slot
   before any later node reads it.
 * **Scatter nodes (`"kind": "scatter"`).** The compute half runs through the unchanged assignment
