@@ -2013,4 +2013,164 @@ def tropicalScan : RawScanPlan :=
 #guard scanChecks outerSigsBool linearScanBool
 #guard scanVerdict outerSigsBool linearScanBool == some (.destinationDType 5 1 .bool)
 
+/-! ### The `.booleanReach` render profile — scan gate (hand-built donors)
+
+The compiled Boolean-reachability scan (the accept neighbour) is pinned in `ScanJaxGateTest.lean`. -/
+
+def scanVerdictP (profile : JaxRenderProfile) (sigs : Array TensorSignature) (raw : RawScanPlan) :
+    Option JaxSupportError :=
+  match checkScanPlan sigs raw with
+  | .error _ => some (.scanMultiAxis 999)  -- sentinel: the donor itself must check (guarded below)
+  | .ok c => match checkJaxScanSupport 5 c profile with
+    | .ok _ => none
+    | .error e => some e
+
+-- `linearScanBool` (above): a Boolean-destination scan whose step block reads the REAL `X` in a Boolean
+-- statement. The new profile admits the Boolean destinations but refuses that real read (located at
+-- term 0, factor 0 of the step block's assignment); `.realOnly`/`.maxPlus` refuse the base block's
+-- Boolean destination first.
+#guard scanVerdictP .booleanReach outerSigsBool linearScanBool == some (.sourceDType 5 0 0 .f64)
+#guard scanVerdictP .maxPlus outerSigsBool linearScanBool == some (.destinationDType 5 1 .bool)
+#guard scanVerdictP .realOnly outerSigsBool linearScanBool == some (.destinationDType 5 1 .bool)
+
+-- The max-plus half of the superset: `tropicalScan` (`.negInf` state, max-plus step) is admitted by
+-- `.maxPlus` and `.booleanReach`, refused by `.realOnly` (`scanNonRealState`, pinned above). A
+-- min-plus scan (`.posInf` state) is refused by every profile at its state.
+#guard scanVerdictP .maxPlus outerSigs tropicalScan == none
+#guard scanVerdictP .booleanReach outerSigs tropicalScan == none
+#guard scanVerdictP .realOnly outerSigs tropicalScan == some (.scanNonRealState 5 0)
+def minPlusScan : RawScanPlan :=
+  { tropicalScan with
+    states := #[{ stateS with initValue := .posInf }]
+    stepBlock := { stepBlock with steps := #[.assign { stepAssign with algebra := admittedAlgebraMin }] } }
+#guard scanChecks outerSigs minPlusScan
+#guard scanVerdictP .maxPlus outerSigs minPlusScan == some (.scanNonRealState 5 0)
+#guard scanVerdictP .booleanReach outerSigs minPlusScan == some (.scanNonRealState 5 0)
+
+-- A Boolean state cannot start at `±∞`: the CHECKER refuses it (`stateInitNotAdmitted`), so no checked
+-- Boolean scan with a non-zero `initValue` exists for the gate to see — which is why the gate carries no
+-- Boolean-state clause of its own. Donor: `linearScanBool`; ONLY the state's `initValue` changes.
+#guard scanChecks outerSigsBool linearScanBool
+#guard !scanChecks outerSigsBool { linearScanBool with states := #[{ stateS with initValue := .negInf }] }
+#guard !scanChecks outerSigsBool { linearScanBool with states := #[{ stateS with initValue := .posInf }] }
+#guard (match checkScanPlan outerSigsBool { linearScanBool with states := #[{ stateS with initValue := .negInf }] } with
+  | .error e => e == .stateInitNotAdmitted 0 .negInf .bool | .ok _ => false)
+#guard (match checkScanPlan outerSigsBool { linearScanBool with states := #[{ stateS with initValue := .posInf }] } with
+  | .error e => e == .stateInitNotAdmitted 0 .posInf .bool | .ok _ => false)
+
+/-! ### The `.booleanReach` render profile — assignment gate
+
+Every pin is an accept/refuse pair: the accept neighbour is the nearest legal program under
+`.booleanReach`, and the refusal changes ONE thing. Donors: `idAssign`/`idRead` (the real identity
+read), `boolDestAssign`/`boolDestSigs` (Boolean destination, REAL source: Fixture 1 above) and
+`boolSourceSigs` (Boolean source, real destination: Fixture 2 above). The default profile
+(`.realOnly`) pins earlier in this file are the unchanged control. The verdict is `none` for accept,
+`some e` for the gate's located refusal; the sentinel `.scanMultiAxis 999` means the donor itself
+failed its checker (and is guarded to check separately). -/
+
+def profVerdict (profile : JaxRenderProfile) (f32 : Bool) (sigs : Array TensorSignature)
+    (a : AssignPlan) : Option JaxSupportError :=
+  match (if f32 then checkAssignF32 sigs a else checkAssign sigs a) with
+  | .error _ => some (.scanMultiAxis 999)
+  | .ok c => match checkJaxAssignSupport sigs 7 c (profile := profile) with
+    | .ok _ => none
+    | .error e => some e
+
+def profChecks (f32 : Bool) (sigs : Array TensorSignature) (a : AssignPlan) : Bool :=
+  match (if f32 then checkAssignF32 sigs a else checkAssign sigs a) with
+  | .ok _ => true | .error _ => false
+
+-- Pin 1 (Boolean destination + Boolean algebra; Boolean source). Slot 0 bool, slot 1 bool.
+def boolBoolSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .bool } ]
+#guard profChecks false boolBoolSigs boolDestAssign
+#guard profVerdict .booleanReach false boolBoolSigs boolDestAssign == none
+#guard profVerdict .realOnly false boolBoolSigs boolDestAssign == some (.destinationDType 7 1 .bool)
+#guard profVerdict .maxPlus false boolBoolSigs boolDestAssign == some (.destinationDType 7 1 .bool)
+
+-- Pin 2 (the `Closed` shape: Boolean SOURCE under the real sum-product algebra, real destination).
+-- Donor `idAssign` under `boolSourceSigs`: admitted by the new profile ONLY.
+#guard profChecks false boolSourceSigs idAssign
+#guard profVerdict .booleanReach false boolSourceSigs idAssign == none
+#guard profVerdict .realOnly false boolSourceSigs idAssign == some (.sourceDType 7 0 0 .bool)
+#guard profVerdict .maxPlus false boolSourceSigs idAssign == some (.sourceDType 7 0 0 .bool)
+
+-- Pin 3 (the `Reach[i,k,h]·Edge[k,j]` shape: two Boolean reads conjoined under the Boolean algebra,
+-- Boolean destination). Donor `boolDestAssign` with its term's factor list doubled.
+def boolConjAssign : AssignPlan :=
+  { boolDestAssign with terms := #[{ boolDestAssign.terms[0]! with
+      factors := #[.read idRead, .read idRead] }] }
+#guard profChecks false boolBoolSigs boolConjAssign
+#guard profVerdict .booleanReach false boolBoolSigs boolConjAssign == none
+#guard profVerdict .realOnly false boolBoolSigs boolConjAssign == some (.destinationDType 7 1 .bool)
+-- ... and ONE real source among the Boolean factors is refused (located at its own factor 1).
+def boolConjRealSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .bool }
+   , { shape := #[3], dtype := .f64 } ]
+def boolConjMixedAssign : AssignPlan :=
+  { boolConjAssign with terms := #[{ boolConjAssign.terms[0]! with
+      factors := #[.read idRead, .read { idRead with sourceSlot := 2 }] }] }
+#guard profChecks false boolConjRealSigs boolConjMixedAssign
+#guard profVerdict .booleanReach false boolConjRealSigs boolConjMixedAssign == some (.sourceDType 7 0 1 .f64)
+
+-- Pin 4 (the `realToBool` cast flag stays refused). Donor `boolDestAssign` over the REAL source
+-- `boolDestSigs`, whose read gains `realToBool := true`: the checker admits it (S3b-ii D1) but the
+-- cast needs a non-Boolean source, which the new profile refuses in a Boolean statement. The accept
+-- neighbour is pin 1 (the same statement over a Boolean source and no flag).
+def boolCastAssign : AssignPlan :=
+  { boolDestAssign with terms := #[{ boolDestAssign.terms[0]! with
+      factors := #[.read { idRead with realToBool := true }] }] }
+#guard profChecks false boolDestSigs boolCastAssign
+#guard profVerdict .booleanReach false boolDestSigs boolCastAssign == some (.sourceDType 7 0 0 .f64)
+#guard profVerdict .realOnly false boolDestSigs boolCastAssign == some (.destinationDType 7 1 .bool)
+#guard profVerdict .maxPlus false boolDestSigs boolCastAssign == some (.destinationDType 7 1 .bool)
+
+-- Pin 5 (a REAL source in a Boolean statement, no flag): donor `boolDestAssign` over `boolDestSigs`
+-- (Fixture 1). Refused by the new profile at the source; the accept neighbour is pin 1.
+#guard profChecks false boolDestSigs boolDestAssign
+#guard profVerdict .booleanReach false boolDestSigs boolDestAssign == some (.sourceDType 7 0 0 .f64)
+#guard profVerdict .realOnly false boolDestSigs boolDestAssign == some (.destinationDType 7 1 .bool)
+-- A Boolean destination under a non-Boolean algebra never reaches the gate: the checker re-run
+-- refuses it as `invalidSignatureContext`, under every profile.
+#guard !profChecks false boolBoolSigs { boolDestAssign with algebra := admittedAlgebraMax }
+#guard (match profVerdict .booleanReach false boolBoolSigs { boolDestAssign with algebra := admittedAlgebraMax } with
+  | some (.scanMultiAxis 999) => true | _ => false)
+-- The max-plus half of the superset keeps its verdicts: a max-plus statement with a Boolean source is
+-- admitted by `.maxPlus` AND `.booleanReach`, refused by `.realOnly`; min-plus is refused by all three.
+#guard profChecks false boolSourceSigs { idAssign with algebra := admittedAlgebraMax }
+#guard profVerdict .maxPlus false boolSourceSigs { idAssign with algebra := admittedAlgebraMax } == none
+#guard profVerdict .booleanReach false boolSourceSigs { idAssign with algebra := admittedAlgebraMax } == none
+#guard profVerdict .realOnly false boolSourceSigs { idAssign with algebra := admittedAlgebraMax }
+  == some (.unsupportedAlgebra 7 admittedAlgebraMax)
+#guard profVerdict .maxPlus false idSigs { idAssign with algebra := admittedAlgebraMin }
+  == some (.unsupportedAlgebra 7 admittedAlgebraMin)
+#guard profVerdict .booleanReach false idSigs { idAssign with algebra := admittedAlgebraMin }
+  == some (.unsupportedAlgebra 7 admittedAlgebraMin)
+-- A real source under real sum-product keeps being admitted by every profile (the unchanged control).
+#guard profVerdict .realOnly false idSigs idAssign == none
+#guard profVerdict .maxPlus false idSigs idAssign == none
+#guard profVerdict .booleanReach false idSigs idAssign == none
+
+-- Pin 7 (binary32 retag). Boolean constants are the SAME `admittedAlgebraBool` in a binary32 graph;
+-- the real algebra of the `Closed` shape is `admittedAlgebraF32` and its real dtype `.f32`.
+def boolSourceSigs32 : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .f32 } ]
+def boolDestSigs32 : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .bool } ]
+def closedAssign32 : AssignPlan := { idAssign with algebra := admittedAlgebraF32 }
+#guard profChecks true boolBoolSigs boolDestAssign
+#guard profVerdict .booleanReach true boolBoolSigs boolDestAssign == none
+#guard profVerdict .realOnly true boolBoolSigs boolDestAssign == some (.destinationDType 7 1 .bool)
+#guard profVerdict .maxPlus true boolBoolSigs boolDestAssign == some (.destinationDType 7 1 .bool)
+#guard profChecks true boolSourceSigs32 closedAssign32
+#guard profVerdict .booleanReach true boolSourceSigs32 closedAssign32 == none
+#guard profVerdict .realOnly true boolSourceSigs32 closedAssign32 == some (.sourceDType 7 0 0 .bool)
+#guard profVerdict .maxPlus true boolSourceSigs32 closedAssign32 == some (.sourceDType 7 0 0 .bool)
+-- A binary32 real source in a Boolean statement is refused; an f64 source in the binary32 graph is a
+-- checker-level mismatch (never the gate's), and the binary64 sum-product algebra is not the binary32 one.
+#guard profVerdict .booleanReach true boolDestSigs32 boolDestAssign == some (.sourceDType 7 0 0 .f32)
+#guard !profChecks true boolDestSigs boolDestAssign
+#guard profVerdict .booleanReach true boolSourceSigs32 { closedAssign32 with algebra := admittedAlgebra }
+  == some (.scanMultiAxis 999)
+
 end LeanNCD.Eval.Plan.ExecutableTest

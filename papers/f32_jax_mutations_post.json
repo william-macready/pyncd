@@ -30,7 +30,7 @@
     "label": "J3 (destination dtype check widened to admit bool)",
     "task": "1",
     "file": "LeanNCD/Eval/Plan/Executable.lean",
-    "old": "      unless destSig.dtype == realDType do\n",
+    "old": "      unless destSig.dtype == realDType || (boolean && destSig.dtype == .bool) do\n",
     "new": "      unless destSig.dtype == realDType || destSig.dtype == .bool do\n",
     "targets": [
       "Eval.Plan.ExecutableTest"

@@ -1,0 +1,41 @@
+[
+ {
+  "label": "BR-T1-REAL-SRC-IN-BOOLEAN",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Plan/Executable.lean",
+  "old": "unless (srcSig.dtype == realDType && !boolean) || (boolSourceOk && srcSig.dtype == .bool) do",
+  "new": "unless srcSig.dtype == realDType || (boolSourceOk && srcSig.dtype == .bool) do",
+  "targets": [
+   "Eval.Plan.ExecutableTest"
+  ],
+  "expect": [
+   "profVerdict JaxRenderProfile.booleanReach false boolDestSigs boolDestAssign =="
+  ]
+ },
+ {
+  "label": "BR-T1-BOOL-SRC-LEAKS-REALONLY",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Plan/Executable.lean",
+  "old": "let boolSourceOk := maxPlus || boolean || (profile.admitsBoolean && a.algebra == realAlgebra)",
+  "new": "let boolSourceOk := maxPlus || boolean || a.algebra == realAlgebra",
+  "targets": [
+   "Eval.Plan.ExecutableTest"
+  ],
+  "expect": [
+   "profVerdict JaxRenderProfile.realOnly false boolSourceSigs idAssign =="
+  ]
+ },
+ {
+  "label": "BR-T1-MAXPLUS-ADMITS-BOOLEAN",
+  "task": "T1",
+  "file": "LeanNCD/Eval/Plan/Executable.lean",
+  "old": "  | .maxPlus => false\n  | .booleanReach => true",
+  "new": "  | .maxPlus => true\n  | .booleanReach => true",
+  "targets": [
+   "Eval.Plan.ExecutableTest"
+  ],
+  "expect": [
+   "profVerdict JaxRenderProfile.maxPlus false boolBoolSigs boolDestAssign =="
+  ]
+ }
+]

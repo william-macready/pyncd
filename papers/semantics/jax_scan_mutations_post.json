@@ -3,7 +3,7 @@
   "label": "JS-L-g1 (scan gate: the initValue check replaced by true)",
   "task": "scan",
   "file": "LeanNCD/Eval/Plan/Executable.lean",
-  "old": "    unless raw.states[si].initValue == .zero ||\n        (profile == .maxPlus && raw.states[si].initValue == .negInf) do",
+  "old": "    unless raw.states[si].initValue == .zero ||\n        (profile.admitsMaxPlus && raw.states[si].initValue == .negInf) do",
   "new": "    unless true do",
   "targets": [
    "Eval.Plan.ExecutableTest"
