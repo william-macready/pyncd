@@ -1,0 +1,7 @@
+Compiling snippet as leanncd/spikes/SnippetCheck_36777_4095.lean ...
+
+[0, 9223372036854775808, 9223372036854775808, 0]
+[0, 2147483648, 2147483648, 0]
+[true, true, true]
+
+COMPILES. Safe to write into the plan.

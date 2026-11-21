@@ -1,0 +1,26 @@
+Compiling snippet as leanncd/spikes/SnippetCheck_36653_21571.lean ...
+
+===== step-dependent [j <= l]
+stepExtents=#[3]
+  step term iterationShape=#[3, 3] contextPos=#[0] outputPos=#[1] reductionPos=#[]
+    IVERSON LeanNCD.Eval.Plan.PosBoolExpr.rel
+  (LeanNCD.RelOp.le)
+  (LeanNCD.Eval.Plan.PosPredArith.affine { coeffs := #[0, 1], bias := 0 })
+  (LeanNCD.Eval.Plan.PosPredArith.affine { coeffs := #[1, 0], bias := 0 })
+    referenced columns [1, 0]; references step/context column: true
+    table (allCoords over full iterationShape, step-major): [1, 0, 0, 1, 1, 0, 1, 1, 1]
+  renderScanNode: JaxBridge.JaxCodegenError.iversonFactor 0 0 1
+  Dense S: #[1.000000, 1.000000, 1.000000, 1.000000, 2.000000, 0.000000, 0.000000, 0.000000, 3.000000, 0.000000, 0.000000, 0.000000]
+===== step-free [j <= 1] (ScanIversonRefusalTest.iverStep shape)
+stepExtents=#[3]
+  step term iterationShape=#[3, 3] contextPos=#[0] outputPos=#[1] reductionPos=#[]
+    IVERSON LeanNCD.Eval.Plan.PosBoolExpr.rel
+  (LeanNCD.RelOp.le)
+  (LeanNCD.Eval.Plan.PosPredArith.affine { coeffs := #[0, 1], bias := 0 })
+  (LeanNCD.Eval.Plan.PosPredArith.affine { coeffs := #[0, 0], bias := 1 })
+    referenced columns [1]; references step/context column: false
+    table (allCoords over full iterationShape, step-major): [1, 1, 0, 1, 1, 0, 1, 1, 0]
+  renderScanNode: JaxBridge.JaxCodegenError.iversonFactor 0 0 1
+  Dense S: #[1.000000, 1.000000, 1.000000, 1.000000, 2.000000, 2.000000, 2.000000, 2.000000, 3.000000, 0.000000, 0.000000, 0.000000]
+
+COMPILES. Safe to write into the plan.
