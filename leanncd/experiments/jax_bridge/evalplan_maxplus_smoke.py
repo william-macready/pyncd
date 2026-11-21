@@ -203,9 +203,12 @@ def verify(precision, checked_path, logic_path=None):
             fn = lambda xs: runtime.run_assign(f["assign" + suffix], xs, dtype=dt)
         return (jax.jit(fn) if jit else fn)(inputs)
 
-    fixtures = load(checked_path).ADVERSARIAL
+    checked_module = load(checked_path)
+    fixtures = checked_module.ADVERSARIAL
     assert len(fixtures) == 14
-    for f in fixtures:
+    bool_fixtures = checked_module.BOOLEAN
+    assert len(bool_fixtures) == 17
+    for f in fixtures + bool_fixtures:
         for jit in (False, True):
             output = run(f, jit)
             if "scan" + suffix in f:
@@ -292,6 +295,131 @@ def verify(precision, checked_path, logic_path=None):
                 report["refusals"].append({"name": name, "jit": jit, "error": str(error)})
             else:
                 raise AssertionError(("metadata silently admitted", name, jit))
+
+    # --- Boolean (`ordered_boolean_v1`) raw fixtures: Lean-pinned above; each independent pin below
+    # names the wrong implementation it kills. Values are NOT normalised to {0, 1} (mirrors Lean).
+    bby = {f["name"]: f for f in bool_fixtures}
+    z = nd(0)
+
+    def values(name, jit):
+        return np.asarray(run(bby[name], jit))
+
+    def negative_zero(x):
+        return bool(np.signbit(x)) and x == 0
+
+    for jit in (False, True):
+        # min keeps the FIRST operand on a tie; max keeps the SECOND (jnp.minimum/maximum differ).
+        tie = values("bool_min_tie_order", jit)
+        assert not negative_zero(tie[0]) and negative_zero(tie[1]), ("bool_min_tie_order", jit, tie)
+        for name in ("bool_max_tie_reduction", "bool_max_tie_terms"):
+            tie = values(name, jit)
+            assert negative_zero(tie[0]) and tie[1] == 0 and not np.signbit(tie[1]), (name, jit, tie)
+        # min is not `*`: 0.5,0.5 -> 0.5 (product .25); 2,2 -> 1 (product 4); 2,.5 -> .5.
+        assert np.array_equal(values("bool_min_not_product", jit), np.asarray([.5, 1, 0, .5], dtype=nd))
+        # max is not `+` at the reduction or the term fold (sums would be 2/.75).
+        assert np.array_equal(values("bool_max_not_sum", jit), np.asarray([1, .5], dtype=nd))
+        # NaN spreads through either operand of min and through max (NaN beats 2.0 and 0.5).
+        assert np.all(np.isnan(values("bool_nan_factor_fold", jit)))
+        got = values("bool_nan_reduction", jit)
+        assert np.isnan(got[0]) and np.isnan(got[1]) and got[2] == 1, ("bool_nan_reduction", jit, got)
+        # Iverson factor: included cells take min(x, 1), excluded cells min(x, 0).
+        assert np.array_equal(values("bool_iverson_base", jit),
+                              np.asarray([[.5, 1, 0], [0, .25, 1], [0, 0, .5]], dtype=nd))
+        assert np.array_equal(values("bool_iverson_reduction", jit), np.asarray([.2, .3, .7], dtype=nd))
+        # Step-dependent include tables: `[j <= l]` grows (monotone toy), `[l <= j]` shrinks.
+        grows = np.asarray(run(bby["bool_scan_step_iverson"], jit)[0])
+        assert np.array_equal(grows, np.asarray([[1, 1, 1, 1], [.5, 0, 0, 0], [1, 0, 0, 0]], dtype=nd)), grows
+        shrinks = np.asarray(run(bby["bool_scan_step_iverson_ge"], jit)[0])
+        assert np.array_equal(shrinks, np.asarray([[1, 1, 0, 0], [.5, .5, .5, 0], [1, 1, 1, 1]], dtype=nd)), shrinks
+        # A unary read pads with real 0 THEN applies the function (sqrt(0) = 0 but exp(0) = 1), and
+        # sqrt(-0) = -0 survives the folds.
+        root = values("bool_unary_sqrt_oob", jit)
+        assert root[0] == nd(.5) and negative_zero(root[1]) and np.all(root[2:] == 0), ("sqrt", jit, root)
+        assert np.array_equal(values("bool_unary_exp_oob", jit), np.asarray([1, 0, 1, 1], dtype=nd))
+        # A real destination reading a Boolean source copies it: no hidden cast (0.5, -3, 2 stay).
+        assert np.array_equal(values("real_dest_reads_bool_source", jit), np.asarray([.5, -3, 2, .25], dtype=nd))
+        assert "algebra" not in bby["real_dest_reads_bool_source"]["assign" + suffix]
+        # Pads and seeds: bare out-of-bounds pad 0 (not -inf), empty factor product 1, empty reduction 0.
+        assert np.array_equal(values("bool_bare_oob", jit), np.asarray([1, 0, 0], dtype=nd))
+        assert float(values("bool_empty_factors", jit)) == 1
+        assert float(values("bool_zero_reduction", jit)) == 0
+        # `_ordered_min` scalar contract (Lean `minNaN`): first operand on a signed-zero tie, NaN spreads.
+        a = jnp.asarray([0., -0., np.nan, 2., np.nan], dtype=dt)
+        b = jnp.asarray([-0., 0., 3., np.nan, np.nan], dtype=dt)
+        minimum = np.asarray((jax.jit(rt._ordered_min) if jit else rt._ordered_min)(a, b))
+        assert not np.signbit(minimum[0]) and np.signbit(minimum[1]) and np.all(np.isnan(minimum[2:]))
+
+    def bool_node(name):
+        return bby[name]["assign" + suffix]
+
+    def iverson_factor(node):
+        return next(f for t in node["terms"] for f in t["factors"] if f.get("tag") == "iverson")
+
+    def read_factor(node):
+        return next(f for t in node["terms"] for f in t["factors"] if f.get("tag") == "read")
+
+    bool_cases = []
+
+    def refusal(name, template, mutate, scan=False):
+        f = copy.deepcopy(bby[template] if template in bby else by[template])
+        mutate(f["scan" + suffix] if scan else f["assign" + suffix])
+        bool_cases.append((name, f))
+
+    t = "bool_iverson_base"  # a valid Boolean record: one tagged read plus one Iverson factor
+    refusal("bool_unknown_semantics", t, lambda n: n.update(semantics="future"))
+    refusal("bool_missing_semantics", t, lambda n: n.pop("semantics"))
+    refusal("bool_max_plus_semantics", t, lambda n: n.update(semantics="ordered_max_plus_v1"))
+    refusal("semantics_without_algebra", t, lambda n: n.pop("algebra"))
+    refusal("bool_real_to_bool_true", t, lambda n: read_factor(n).update(real_to_bool=True))
+    refusal("bool_real_to_bool_missing", t, lambda n: read_factor(n).pop("real_to_bool"))
+    refusal("bool_bool_to_tropical_key", t, lambda n: read_factor(n).update(bool_to_tropical=False))
+    refusal("bool_missing_tag", t, lambda n: read_factor(n).pop("tag"))
+    refusal("bool_unknown_tag", t, lambda n: read_factor(n).update(tag="future"))
+    refusal("bool_include_short", t, lambda n: iverson_factor(n)["include"].pop())
+    refusal("bool_include_long", t, lambda n: iverson_factor(n)["include"].append(1))
+    refusal("bool_include_entry_2", t, lambda n: iverson_factor(n)["include"].__setitem__(0, 2))
+    refusal("bool_include_entry_true", t, lambda n: iverson_factor(n)["include"].__setitem__(0, True))
+    refusal("bool_read_with_include", t, lambda n: read_factor(n).update(include=[1]))
+    refusal("iverson_in_real_node", "real_dest_reads_bool_source",
+            lambda n: n["terms"][0]["factors"].__setitem__(0, {"tag": "iverson", "include": [1] * 4}))
+    refusal("iverson_in_max_plus_node", "bool_to_tropical_true",
+            lambda n: n["terms"][0]["factors"].__setitem__(0, {"tag": "iverson", "include": [1] * 7}))
+    # Scan-level: an empty step range must still validate the Boolean step block's include table.
+    s = "bool_scan_step_iverson"
+    refusal("bool_scan_empty_step_bad_include", s, lambda n: (n.update(step_count=0), next(
+        f for nd_ in n["step"]["nodes"] for tm in nd_["terms"] for f in tm["factors"]
+        if f.get("tag") == "iverson")["include"].pop()), scan=True)
+    refusal("bool_scan_empty_step_include_entry_2", s, lambda n: (n.update(step_count=0), next(
+        f for nd_ in n["step"]["nodes"] for tm in nd_["terms"] for f in tm["factors"]
+        if f.get("tag") == "iverson")["include"].__setitem__(0, 2)), scan=True)
+    # Accept-neighbour: the same empty-range record with an unmodified step block is admitted.
+    f = copy.deepcopy(bby[s])
+    f["scan" + suffix].update(step_count=0)
+    for jit in (False, True):
+        assert len(run(f, jit)) == 1, ("empty step range with a valid Boolean step block must run", jit)
+    bool_reason = {name: "ordered_boolean_v1 semantics" for name in (
+        "bool_unknown_semantics", "bool_missing_semantics", "bool_max_plus_semantics")}
+    bool_reason.update({name: "boolean read requires" for name in (
+        "bool_real_to_bool_true", "bool_real_to_bool_missing", "bool_bool_to_tropical_key", "bool_missing_tag")})
+    bool_reason.update({name: "include must be one 0/1 entry" for name in (
+        "bool_include_short", "bool_include_long", "bool_include_entry_2", "bool_include_entry_true",
+        "bool_scan_empty_step_bad_include", "bool_scan_empty_step_include_entry_2")})
+    bool_reason.update({"semantics_without_algebra": "legacy metadata-free", "bool_unknown_tag": "unknown factor tag",
+                        "bool_read_with_include": "only valid on an iverson factor",
+                        "iverson_in_real_node": "require boolean algebra", "iverson_in_max_plus_node": "require boolean algebra"})
+    assert set(bool_reason) == {name for name, _ in bool_cases}
+    # A Boolean scan record carries no `state_init`/`semantics`: zero init, never refused.
+    assert "state_init" not in bby[s]["scan" + suffix] and "semantics" not in bby[s]["scan" + suffix]
+    for name, f in bool_cases:
+        for jit in (False, True):
+            try:
+                run(f, jit)
+            except ValueError as error:
+                # The refusal must be for the changed field, not an accident of another check.
+                assert bool_reason[name] in str(error), (name, jit, str(error))
+                report["refusals"].append({"name": name, "jit": jit, "error": str(error)})
+            else:
+                raise AssertionError(("Boolean metadata silently admitted", name, jit))
 
     for jit in (False, True):
         assert float(run(by["max_factor_order_cancellation"], jit)) == 1, \
