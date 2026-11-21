@@ -1,0 +1,92 @@
+{
+  "source_baseline": "b305b363942e440845ae19e57fec0629b7c1af04",
+  "scope": "Boolean-reachability JAX plan package: five ordered patches; manifests ship inside the patches.",
+  "provided_assets": {},
+  "tasks": [
+    {
+      "id": "T1",
+      "patch": "papers/semantics/jax_boolean_reach_patches/01.patch",
+      "patch_sha256": "cc4fd0e422250b331647cb7cc621ef5f2d6dc696132a97c19ad383abcdd14f26",
+      "snapshot": "papers/semantics/jax_boolean_reach_files/task1.json",
+      "snapshot_sha256": "e94461143a507b4576dfb5365a43949f1f156a10546480f2c973f8584851d8a6",
+      "touched_files": [
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean",
+        "leanncd/test/Eval/Plan/ExecutableTest.lean",
+        "leanncd/test/Eval/Plan/ScanJaxGateTest.lean",
+        "papers/f32_jax_mutations_post.json",
+        "papers/semantics/jax_boolean_reach_mutations_post.json",
+        "papers/semantics/jax_maxplus_mutations_post.json",
+        "papers/semantics/jax_scan_mutations_post.json"
+      ],
+      "snapshot_file_count": 7,
+      "prototype_tip": "15b40b9b"
+    },
+    {
+      "id": "T2",
+      "patch": "papers/semantics/jax_boolean_reach_patches/02.patch",
+      "patch_sha256": "0b12c288f30989f70e7b2cec26cfa2231980cb23b3b6f0cf821d67c0946a35b4",
+      "snapshot": "papers/semantics/jax_boolean_reach_files/task2.json",
+      "snapshot_sha256": "d1bf3b7113ea2421b2530a57a18cf9bb58c6954fb6d90b5cbc192ac3c49ae05e",
+      "touched_files": [
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean",
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean",
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean",
+        "leanncd/experiments/jax_bridge/ScanAffineEmitTest.lean",
+        "papers/semantics/jax_boolean_reach_mutations_post.json",
+        "papers/semantics/jax_maxplus_mutations_post.json",
+        "papers/semantics/jax_scan_mutations_post.json"
+      ],
+      "snapshot_file_count": 11,
+      "prototype_tip": "30f66a7c"
+    },
+    {
+      "id": "T3",
+      "patch": "papers/semantics/jax_boolean_reach_patches/03.patch",
+      "patch_sha256": "e8b8f8b73eaa599abe7ec7dfa0bb5df73c45f39598937f92de0d180b88a51be0",
+      "snapshot": "papers/semantics/jax_boolean_reach_files/task3.json",
+      "snapshot_sha256": "cdf0e1836d9dd5e51764c4e04cf119b764af5fd0298cdc06014c1302fc480dbf",
+      "touched_files": [
+        "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean",
+        "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py",
+        "papers/semantics/jax_boolean_reach_mutations_python.json",
+        "papers/semantics/jax_maxplus_mutations_python.json"
+      ],
+      "snapshot_file_count": 15,
+      "prototype_tip": "2c4fac2f"
+    },
+    {
+      "id": "T4",
+      "patch": "papers/semantics/jax_boolean_reach_patches/04.patch",
+      "patch_sha256": "b942984696d6abafe5cfb15b8ce91447865cd3b1fa1515a245ac21965a394ea5",
+      "snapshot": "papers/semantics/jax_boolean_reach_files/task4.json",
+      "snapshot_sha256": "bee45f432a40d90a152b7c1ddb8a605fb13247fbbc9e72aac793cd0081b62f0f",
+      "touched_files": [
+        "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean",
+        "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py",
+        "papers/semantics/jax_boolean_reach_mutations_python.json"
+      ],
+      "snapshot_file_count": 15,
+      "prototype_tip": "c785fe7d"
+    },
+    {
+      "id": "T5",
+      "patch": "papers/semantics/jax_boolean_reach_patches/05.patch",
+      "patch_sha256": "a9a278687f5091cf5bba6d71fa2e1a86f8337849948d35a0d6815f8b5491dc30",
+      "snapshot": "papers/semantics/jax_boolean_reach_files/task5.json",
+      "snapshot_sha256": "eeefb27cef2f9709170698c1e223cdcd99b8c232f85831906aa02241a0d0d071",
+      "touched_files": [
+        "leanncd/AGENTS.md",
+        "leanncd/LeanNCD/Eval/Plan/AGENTS.md",
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean",
+        "leanncd/docs/test_portfolio.md",
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean",
+        "leanncd/experiments/jax_bridge/README.md",
+        "papers/f32_jax_mutations_post.json"
+      ],
+      "snapshot_file_count": 19,
+      "prototype_tip": "b46cef9d"
+    }
+  ],
+  "execution_baseline": "A descendant of source_baseline with the planning assets already present and the affected source files unchanged."
+}

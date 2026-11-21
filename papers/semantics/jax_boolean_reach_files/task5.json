@@ -1,0 +1,116 @@
+{
+  "leanncd/AGENTS.md": {
+    "sha256": "1571c3a52c6242d79dbcee0d0770a880fa6ead2bfbe007c4f0902fd44b4eac68",
+    "blob": "1b82ea9d01146b82d8788c5a21b10eb5af536e5c",
+    "baseline_sha256": "e569bc713c8e62afa4b8a995d57fb335c53a1a7d641c1d9d6efafaa19a044d1c",
+    "baseline_blob": "8933a6a0d888059e6102f4ccff4cc30eaabd263c"
+  },
+  "leanncd/LeanNCD/Eval/Plan/AGENTS.md": {
+    "sha256": "14ed7c1518e24818e526c39613f8d4f727674952107f77955002bed508deb7e5",
+    "blob": "2fe836d7d5761909203f0252c2528da4fd5ca3ef",
+    "baseline_sha256": "2d21cb790c41a88afe9f2ba2cd32035fa40c200ed1756035163d4cd488bcaabe",
+    "baseline_blob": "726a4499b08e7371c3e16dce782fd8fbc6054cf4"
+  },
+  "leanncd/LeanNCD/Eval/Plan/Executable.lean": {
+    "sha256": "0a3890106fd1cefe49f641f214b496ce814ca1b1c172c9a2c2a599bf7ac2271c",
+    "blob": "e0089212b46bf41b6e7ce7f3fa57c3df5cd2cb80",
+    "baseline_sha256": "ca2621ffa0d4b0aae41662c7e20008ad42e2ac7a16ca8a78081548cdc377bd59",
+    "baseline_blob": "b0fc680c499cb57c2d24a525c925235f16202a46"
+  },
+  "leanncd/docs/test_portfolio.md": {
+    "sha256": "22b91b549a075dadcb832224067ac944b7ef780a408a3463286618f8f13fcb42",
+    "blob": "8b3a56f45352efad5564243ba4c010e63cae40fc",
+    "baseline_sha256": "8ac53844365be75787a549bb09c89537c817e054472e5ca627d36a02244f1d27",
+    "baseline_blob": "aadc420ced3af13dfa1485b68370c4d388f9231e"
+  },
+  "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": {
+    "sha256": "ff4bbe554b40cd6fb23910ed3fbefc70e67389801326a308712dad0d37fd66d8",
+    "blob": "319585893e2218dcf3dc065b25cf6664d3107ba9",
+    "baseline_sha256": "7007798ded90d25a77124a753195ac8dd09a694aadb93c1e74ff23e5a6ffe41b",
+    "baseline_blob": "3fe4ed3925324da508b8b81f3f4e4a90ce22d40a"
+  },
+  "leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean": {
+    "sha256": "7b2e654401251974837be9df7c42c23f8c3e27cbda6dccd4bfacc836c0dc5ff1",
+    "blob": "1a7d82a420339496da83002025af76ca1d99aa83",
+    "baseline_sha256": "19b8f550f3a24505d7d3ef1cbe6dbea4329a92f3bbd24fd9344a3add023b66cd",
+    "baseline_blob": "a27be6166e8eedd36713a66a2adb13ba6cae2c3c"
+  },
+  "leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean": {
+    "sha256": "7a70fe1e89fc923ef8e19abdc29fde1402c62ced9f9167263f3dc943832a4fba",
+    "blob": "15a306c6b27c98ae660669d2316e2de6750819bd",
+    "baseline_sha256": "ab90e81cc362b634361fb301b7af7bcc15fafa52433f9896b46ecba12d40badb",
+    "baseline_blob": "64ce88549226ee22be04477638e7a8e9f0c2ddf1"
+  },
+  "leanncd/experiments/jax_bridge/README.md": {
+    "sha256": "271d6ca900dde0bbaf0e237598968b8f6cdd6869d77aa356dd3b916ef631b8d5",
+    "blob": "d93bad35c9b7411ac5597cc104dbd5633981e73f",
+    "baseline_sha256": "55608cd0e23c1ab8cb5b29176480e7257103a6bc3c5de27c037880a53e7933d6",
+    "baseline_blob": "7f892d15b0f23a4ed3a488f188409cbabf7985d4"
+  },
+  "leanncd/experiments/jax_bridge/ScanAffineEmitTest.lean": {
+    "sha256": "38a592e4167157a3fc3af203aa528e32675f0c900790b6506d179c24ebc064f5",
+    "blob": "fc6e00e8eaa86f3d5661e84c8b8348b95cdacb83",
+    "baseline_sha256": "cb75e0128e16baa01700083f872ead89516b63add12ed4c5d1be4a7defea5daf",
+    "baseline_blob": "e0338d7f5060bb6c07a5addfda1f00eaa2f0c5d6"
+  },
+  "leanncd/experiments/jax_bridge/evalplan_affine_runtime.py": {
+    "sha256": "c093d27ac022e39ac9783f6ee06f90b368d34b84b5abb7b1c7e9fec313bfc5b1",
+    "blob": "e4365d2a288a7a8f4bf7572822b40effad25c19f",
+    "baseline_sha256": "bc47bd95fdf83ee65e49c9471445dccd8e75b875fe6fe35576146fc3fbfc63a3",
+    "baseline_blob": "033f817951cd98cd746735c93144638f8021ebdf"
+  },
+  "leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py": {
+    "sha256": "15a62dde757820cbd15d3684799fbca3060cdf10088059ab0eab917d10307108",
+    "blob": "fbac8f6db64334ea5e47bcda5a9a6d4842345a5a",
+    "baseline_sha256": "be27aaf9b2d40d621840c72e4f0602c40c36a1fffca2d75caa09c04bbc0e307e",
+    "baseline_blob": "3516a76847d67848b22cbc12248008681e654f76"
+  },
+  "leanncd/test/Eval/Plan/ExecutableTest.lean": {
+    "sha256": "b1248158865ae0f165b7ec1edb2f320d06a5b604fc0ee82b8e281cfa0e015813",
+    "blob": "b2126d9b9e81bfa05ed2e7306a06dbbf351cc5ef",
+    "baseline_sha256": "cbb0aa87d249307df994d4dc7da7f513c95f0ba553c1f70d889cac32a371793d",
+    "baseline_blob": "0fa25e6dee9729919e62f1b553429dc21ad5ce6e"
+  },
+  "leanncd/test/Eval/Plan/ScanJaxGateTest.lean": {
+    "sha256": "7827a2e9571072120f70faee3253927acbf1bfa48ce23e30e3862c26ed12a721",
+    "blob": "e2fcb577a044a2f0a20316f181f9cb253f9fb599",
+    "baseline_sha256": "04ddd28e68c2d2028f80b1ede44dee567a321beb4eabf666ff4a2c8b7a1dfd47",
+    "baseline_blob": "c875495576b9dee967539970f58e84b5be0eba0f"
+  },
+  "papers/f32_jax_mutations_post.json": {
+    "sha256": "98c0d61882bb794fbc6f1aabaa576a78b95643fc7d23b708b5174308974a46b0",
+    "blob": "e08ba6a0800a405afd3cbef32f3f2dc1035c09bb",
+    "baseline_sha256": "c896160aa7416efc5de078c4984c79f1a9f02f7b91f5fa6cfc44e4a7b04e7b09",
+    "baseline_blob": "4217ebe1d3eae65b5d5c528d147bc3049a063fce"
+  },
+  "papers/semantics/jax_boolean_reach_mutations_post.json": {
+    "sha256": "e744d3d29a3dbb317fc439d716bf6de5adb989985000b849e27a7f6eb8ea2f47",
+    "blob": "ab7ce783f4c5bdaa6816660e90f0634aaae5b535",
+    "baseline_sha256": null,
+    "baseline_blob": null
+  },
+  "papers/semantics/jax_boolean_reach_mutations_python.json": {
+    "sha256": "e4677b1768599487211f81719ef52d4f0e5c09b50e337d8aa39f12b58a6270ec",
+    "blob": "2d4030d2636c376aae7b2f4b30837c4de3e60337",
+    "baseline_sha256": null,
+    "baseline_blob": null
+  },
+  "papers/semantics/jax_maxplus_mutations_post.json": {
+    "sha256": "097594bec8196b08fba64fb7708fb39af93ea4f30dc24782b6127181ff80715f",
+    "blob": "7944d8a90a9cbaa4b9171764b15641415bc5ffe8",
+    "baseline_sha256": "1c7ea7b09d242d31a75bcc780b3451020cc5978c2f9de40ad01d33b35ae194ed",
+    "baseline_blob": "1c749232fadb40d92c77f8a5ed99e0a98c7b2eac"
+  },
+  "papers/semantics/jax_maxplus_mutations_python.json": {
+    "sha256": "3692527533c1f61b7cd319ec42541300e3769e9156a3430b51484400f7bb6892",
+    "blob": "378fc006a2b5daf2fe21462797cb158a63c58d04",
+    "baseline_sha256": "3757d85d07466478690dd289bbb4b34053da7331e9ab8e6326c779ce66aacf2b",
+    "baseline_blob": "fb914c0a40e5ea4c9a058e8318efe7467ee98b2e"
+  },
+  "papers/semantics/jax_scan_mutations_post.json": {
+    "sha256": "3e6c087233c28d451b80be02c5ee9f31ac39296e4e03dc3ad90aca76aea50e37",
+    "blob": "a8fffa5226f7032cc0343dc7c5fdb5b51c3224e8",
+    "baseline_sha256": "da6be9d4e1cd9ad96c3a948ab4a15e2bde96b103f0d9a774825e4cbf599bf696",
+    "baseline_blob": "3532f48321118392e0f07120529e5ac7faed9088"
+  }
+}

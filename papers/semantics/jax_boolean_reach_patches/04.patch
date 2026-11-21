@@ -1,0 +1,148 @@
+diff --git a/leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean b/leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean
+index 81b8ea5a..1a7d82a4 100644
+--- a/leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean
++++ b/leanncd/experiments/jax_bridge/EvalPlanLogicSmoke.lean
+@@ -7,7 +7,8 @@ import EvalPlanCodegen
+ 
+ Source Tensor Logic -> scheduled reference and checked plans in both precisions.
+ The Python verifier independently enumerates HMM paths and computes graph distances by BFS.
+-Max-plus additionally renders to JAX; Boolean reachability remains checked/reference-only.
++Every fixture (max-plus Viterbi and Boolean reachability) additionally renders to JAX; the verifier
++replaces the Lean values with the JAX-produced ones before the independent oracle checks them.
+ Viterbi exports scores, not argmax indices or a traceback (neither has a native TL operator).
+ -/
+ namespace JaxBridge.LogicSmoke
+@@ -176,7 +177,7 @@ def emit (f : Fixture) : IO String := do
+     | .ok r => pure r.env
+     | .error e => throw (IO.userError s!"{f.name}: plan32: {repr e.cause}")
+   let names := (p.bindings.requiredInputs.bindings.map (·.name)).toList
+-  let jaxFields ← if !f.tropical then pure "" else do
++  let jaxFields ← do
+     let named ← match renderAffinePlanNamed p with
+       | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
+     let positional ← match renderAffinePlanPositional p.plan with
+diff --git a/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py b/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
+index 9cd78c86..fbac8f6d 100644
+--- a/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
++++ b/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
+@@ -241,13 +241,11 @@ def verify(precision, checked_path, logic_path=None):
+         ("unknown_algebra", {"algebra": "min_plus"}),
+         ("unknown_semantics", {"semantics": "future"}),
+         ("missing_semantics", {"semantics": None}),
+-        ("boolean_output", {"algebra": "boolean"}),
+     ]:
+         f = copy.deepcopy(template)
+         f["assign" + suffix].update(changes)
+         cases.append((name, f))
+     for name, changes in [
+-        ("iverson", {"tag": "iverson"}),
+         ("missing_cast", {"bool_to_tropical": None}),
+         ("non_bool_cast", {"bool_to_tropical": 1}),
+         ("real_to_bool", {"real_to_bool": True}),
+@@ -458,15 +456,15 @@ def verify(precision, checked_path, logic_path=None):
+         import evalplan_logic_smoke as oracle
+         logic = load(logic_path).FIXTURES
+         assert len(logic) == 13
+-        assert sum("jax" + suffix in f for f in logic) == 7
+-        assert all(not any(k.startswith("jax") for k in f)
+-                   for f in logic if f["name"].startswith("reachability"))
++        assert sum("jax" + suffix in f for f in logic) == 13, "every logic fixture carries JAX fields"
+         report["logic"] = []
++        positional_ran = set()
+ 
+         def result(f, jit, positional):
+             named = f["jax" + suffix]
+             inputs = {n: array(t) for n, t in f["inputs" + suffix].items()}
+             if positional:
++                positional_ran.add((f["name"], jit))
+                 p = f["jaxpos" + suffix]
+                 args = [inputs[n] for n, _ in named["required_inputs"]]
+                 fn = lambda xs: rt.run_plan_positional(p, xs, dtype=dt)
+@@ -479,9 +477,10 @@ def verify(precision, checked_path, logic_path=None):
+             for jit in (False, True):
+                 replaced = copy.deepcopy(logic)
+                 for f in replaced:
+-                    if not f["name"].startswith("viterbi"):
+-                        continue
+                     got = result(f, jit, positional)
++                    if f["name"].startswith("reachability"):
++                        assert {n: tuple(np.shape(a)) for n, a in got.items()} == \
++                            {"Reach": (6, 6, 7), "Closed": (6, 6)}, (f["name"], jit, positional)
+                     for n, a in got.items():
+                         check(a, f["plan" + suffix][n], (f["name"], n, jit, positional))
+                     f["plan" + suffix] = {n: entry(a) for n, a in got.items()}
+@@ -489,9 +488,11 @@ def verify(precision, checked_path, logic_path=None):
+                                              "positional": positional, "all_exports_exact": True})
+                 # The unmodified independent exhaustive-path and metamorphic oracle sees JAX values.
+                 oracle.verify(replaced)
++        assert positional_ran == {(f["name"], jit) for f in logic for jit in (False, True)}, \
++            "every logic fixture must execute through the positional renderer, eager and jit"
+ 
+         report.update(verify_gradient_points(precision, logic, rt))
+-        report["reachability"] = "6 fixtures checked/reference-only; no JAX plan emitted"
++        report["reachability"] = "6 fixtures run on JAX (named/positional x eager/jit) and verified by the BFS oracle"
+ 
+     return report
+ 
+diff --git a/papers/semantics/jax_boolean_reach_mutations_python.json b/papers/semantics/jax_boolean_reach_mutations_python.json
+index 82d15fa9..2d4030d2 100644
+--- a/papers/semantics/jax_boolean_reach_mutations_python.json
++++ b/papers/semantics/jax_boolean_reach_mutations_python.json
+@@ -446,5 +446,57 @@
+    "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
+    "AssertionError: ('Boolean metadata silently admitted', 'bool_bool_to_tropical_key', False)"
+   ]
++ },
++ {
++  "label": "BR-T4-stale_baseline_reachability_inputs",
++  "task": "T4",
++  "control_class": "verifier wiring control",
++  "file": "evalplan_maxplus_smoke.py",
++  "old": "got = result(f, jit, positional)",
++  "new": "got = result(next(g for g in logic if g[\"name\"] == (\"reachability\" if f[\"name\"].startswith(\"reachability\") else f[\"name\"])), jit, positional)",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64",
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: (('reachability_permuted', 'Reach', False, False), array([[[1., 1., 1., 1.",
++   "AssertionError: (('reachability_permuted', 'Reach', False, False), array([[[1., 1., 1., 1., 1., 1., 1.],"
++  ]
++ },
++ {
++  "label": "BR-T4-closed_taken_from_hop_4",
++  "task": "T4",
++  "control_class": "verifier wiring control",
++  "file": "evalplan_maxplus_smoke.py",
++  "old": "f[\"plan\" + suffix] = {n: entry(a) for n, a in got.items()}",
++  "new": "f[\"plan\" + suffix] = {n: entry(got[\"Reach\"][:, :, 4] if n == \"Closed\" else a) for n, a in got.items()}",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64",
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: (('reachability_chain', 'plan64'), 'Closed', 5, 0.0, 1.0)",
++   "AssertionError: (('reachability_chain', 'plan64'), 'Closed', 5, 0.0, 1.0)",
++   "AssertionError: (('reachability_chain', 'plan32'), 'Closed', 5, 0.0, 1.0)"
++  ]
++ },
++ {
++  "label": "BR-T4-positional_skipped_for_reachability",
++  "task": "T4",
++  "control_class": "verifier wiring control",
++  "file": "evalplan_maxplus_smoke.py",
++  "old": "            if positional:\n                positional_ran.add(",
++  "new": "            if positional and not f[\"name\"].startswith(\"reachability\"):\n                positional_ran.add(",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64",
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: every logic fixture must execute through the positional renderer, eager an",
++   "AssertionError: every logic fixture must execute through the positional renderer, eager and jit"
++  ]
+  }
+ ]

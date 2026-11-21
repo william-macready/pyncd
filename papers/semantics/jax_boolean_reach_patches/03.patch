@@ -1,0 +1,941 @@
+diff --git a/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean b/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean
+index 681a5955..15a306c6 100644
+--- a/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean
++++ b/leanncd/experiments/jax_bridge/EvalPlanMaxPlusSmoke.lean
+@@ -243,11 +243,167 @@ def contextFixture : IO String := do
+       pyStrLit ("expected" ++ suffix) ++ ": " ++ result]
+   pure ("{\"name\": \"scan_context_holes\", " ++ String.intercalate ", " fields ++ "}")
+ 
++/-! ### Boolean (`ordered_boolean_v1`) raw fixtures
++
++Every expected value is Lean's OWN dense evaluation (`runDenseAssign` / `runDenseScan`, binary64 and
++binary32) of the same plan that is rendered. Boolean = (factor `min` seeded 1, reduce `max` seeded 0)
++over the real carrier; values are not normalised to {0, 1}. Each fixture isolates ONE reading that a
++plausible wrong implementation would get differently (tie order, `*` for min, `+` for max, NaN order,
++ignored/unstepped include table, wrong pad or seed); the verifier states which in its asserts. -/
++
++def blId (slot n : Nat) : ReadPlan :=
++  { sourceSlot := slot, sourceShape := #[n], map := LeanNCD.Eval.Plan.AffineMap.mk #[#[1]] #[0], oobPolicy := .zeroPad }
++
++def blId2 (slot m n : Nat) : ReadPlan :=
++  { sourceSlot := slot, sourceShape := #[m, n]
++    map := LeanNCD.Eval.Plan.AffineMap.mk #[#[1, 0], #[0, 1]] #[0, 0], oobPolicy := .zeroPad }
++
++/-- A vector statement `Y[i] := ⊕_terms ⊗ factors` over one iteration axis of extent `n`. -/
++def blVec (dest n : Nat) (terms : Array (Array FactorPlan)) : AssignPlan :=
++  { contextShape := #[], destinationSlot := dest, outputShape := #[n], algebra := admittedAlgebraBool
++    terms := terms.map fun fs =>
++      { contextPos := #[], iterationShape := #[n], outputPos := #[0], reductionPos := #[], factors := fs } }
++
++/-- `Y[i] := ⊕_k ⊗ factors` over iteration `(i, k)` of extents `m x n`: output position 0, reduction 1. -/
++def blRow (m n : Nat) (factors : Array FactorPlan) : TermPlan :=
++  { contextPos := #[], iterationShape := #[m, n], outputPos := #[0], reductionPos := #[1], factors := factors }
++
++def blAssign (dest : Nat) (outShape : Array Nat) (terms : Array TermPlan) : AssignPlan :=
++  { contextShape := #[], destinationSlot := dest, outputShape := outShape, algebra := admittedAlgebraBool, terms := terms }
++
++def blSig (shape : Array Nat) : TensorSignature := ⟨shape, .bool⟩
++
++def blStepProg : TLProgram := tlprog!{
++  axis j : ℕ = 3
++  iter l = 4
++  predicate Seed(j), S(j, l)
++  tensor f64 Closed(j)
++  S[j, 0] := Seed[j]
++  S[j, l +1] := S[j, l] · [j ≤ l]
++  Closed[j] := S[j, 3]
++}
++
++/-- The dual `[l ≤ j]`: the include table SHRINKS with the step. The `[j ≤ l]` toy below is monotone
++    (a cell it excludes stays 0 forever), so it cannot tell a stepped include table from an unstepped
++    step-0 one; this one can. -/
++def blStepGeProg : TLProgram := tlprog!{
++  axis j : ℕ = 3
++  iter l = 4
++  predicate Seed(j), S(j, l)
++  tensor f64 Closed(j)
++  S[j, 0] := Seed[j]
++  S[j, l +1] := S[j, l] · [l ≤ j]
++  Closed[j] := S[j, 3]
++}
++
++/-- The step-dependent toy `S[j, l+1] := S[j, l] · [j ≤ l]` (Boolean scan, stacked include table):
++    prepared, rendered and run through Lean's own `runDenseScan` in both precisions. -/
++def blScanFixture (name : String) (prog : TLProgram) (inputs : NamedDenseEnv) : IO String := do
++  let mut fields := []
++  for is32 in [false, true] do
++    let s ← compile name (if is32 then retag32 prog else prog)
++    let inputs32 : NamedDenseEnv32 := inputs.map fun _ t => ⟨t.shape, t.data.map Float.toFloat32⟩
++    let sig ← if is32 then match InputSignature.ofDenseInputs32ForDecls s.decls inputs32 with
++      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
++      else match InputSignature.ofDenseInputsForDecls s.decls inputs with
++      | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
++    let p ← prepare name s sig
++    let some c := p.plan.checkedNodes.toList.findSome? (fun n => match n with | .scan c => some c | _ => none)
++      | throw (IO.userError s!"{name}: expected one scan node")
++    let sigs := p.plan.raw.tensorSigs
++    let rendered ← match renderScanNode 0 c with
++      | .ok x => pure x | .error e => throw (IO.userError s!"{name} render: {repr e}")
++    let mut store := sigs.map fun sig =>
++      dense sig.shape.toList (Array.replicate (sig.shape.foldl (· * ·) 1) 0)
++    for b in p.bindings.requiredInputs.bindings do
++      let some t := inputs[b.name]? | throw (IO.userError s!"{name}: missing input")
++      store := store.set! b.slot t
++    let result ← if is32 then
++      match runDenseScan32 c.sigs c (store.map fun t => ⟨t.shape, t.data.map Float.toFloat32⟩) with
++      | .ok x => pure ("[" ++ String.intercalate ", " (x.toList.map pyTensor32) ++ "]")
++      | .error e => throw (IO.userError s!"{name} run32: {repr e}")
++      else match runDenseScan c.sigs c store with
++      | .ok x => pure ("[" ++ String.intercalate ", " (x.toList.map pyTensorEntry) ++ "]")
++      | .error e => throw (IO.userError s!"{name} run64: {repr e}")
++    let suffix := if is32 then "32" else "64"
++    fields := fields ++ [pyStrLit ("scan" ++ suffix) ++ ": " ++ rendered,
++      pyStrLit ("store" ++ suffix) ++ ": [" ++ String.intercalate ", "
++        (store.toList.map fun t => if is32 then pyTensor32 ⟨t.shape, t.data.map Float.toFloat32⟩ else pyTensorEntry t) ++ "]",
++      pyStrLit ("expected" ++ suffix) ++ ": " ++ result]
++  pure ("{\"name\": " ++ pyStrLit name ++ ", " ++ String.intercalate ", " fields ++ "}")
++
++def booleanRaw : IO (List String) := do
++  let nan : Float := 0.0 / 0.0
++  let inf : Float := 1.0 / 0.0
++  let nz : Float := Float.ofBits 9223372036854775808
++  let mut out := []
++  -- (a) factor-fold tie order: min(+0,-0) = +0 and min(-0,+0) = -0 (first operand on a tie).
++  out := out ++ [← rawFixture "bool_min_tie_order" #[blSig #[2], blSig #[2], blSig #[2]]
++    (blVec 2 2 #[#[.read (blId 0 2), .read (blId 1 2)]]) #[dense [2] #[0, nz], dense [2] #[nz, 0]]]
++  -- (b) max tie order: through a reduction fold (max(+0,-0) = -0, max(-0,+0) = +0: second operand) ...
++  out := out ++ [← rawFixture "bool_max_tie_reduction" #[blSig #[2, 2], blSig #[2]]
++    (blAssign 1 #[2] #[blRow 2 2 #[.read (blId2 0 2 2)]]) #[dense [2, 2] #[0, nz, nz, 0]]]
++  -- ... and through the term fold (two terms, one read each).
++  out := out ++ [← rawFixture "bool_max_tie_terms" #[blSig #[2], blSig #[2], blSig #[2]]
++    (blVec 2 2 #[#[.read (blId 0 2)], #[.read (blId 1 2)]]) #[dense [2] #[0, nz], dense [2] #[nz, 0]]]
++  -- (c) min is not `*`: (0.5,0.5) -> 0.5 (product .25); (2,2) -> 1 (product 4); (-1,2) -> -1; (2,.5) -> .5.
++  out := out ++ [← rawFixture "bool_min_not_product" #[blSig #[4], blSig #[4], blSig #[4]]
++    (blVec 2 4 #[#[.read (blId 0 4), .read (blId 1 4)]])
++    #[dense [4] #[0.5, 2, -1, 2], dense [4] #[0.5, 2, 2, 0.5]]]
++  -- (d) max is not `+` at either fold: row max of [[1,1],[.5,.25]] is [1,.5] (sums 2, .75), then the
++  -- second term W = [1,.25] folds by max (a term-fold sum would give 2 and .75).
++  out := out ++ [← rawFixture "bool_max_not_sum" #[blSig #[2, 2], blSig #[2], blSig #[2]]
++    (blAssign 2 #[2] #[blRow 2 2 #[.read (blId2 0 2 2)],
++      { contextPos := #[], iterationShape := #[2], outputPos := #[0], reductionPos := #[], factors := #[.read (blId 1 2)] }])
++    #[dense [2, 2] #[1, 1, 0.5, 0.25], dense [2] #[1, 0.25]]]
++  -- (e) NaN spreads through the factor fold (either operand, even against 2.0) and the reduction.
++  out := out ++ [← rawFixture "bool_nan_factor_fold" #[blSig #[4], blSig #[4], blSig #[4]]
++    (blVec 2 4 #[#[.read (blId 0 4), .read (blId 1 4)]])
++    #[dense [4] #[nan, 1, 2, 0.5], dense [4] #[1, nan, nan, nan]]]
++  out := out ++ [← rawFixture "bool_nan_reduction" #[blSig #[3, 3], blSig #[3]]
++    (blAssign 1 #[3] #[blRow 3 3 #[.read (blId2 0 3 3)]])
++    #[dense [3, 3] #[0.5, nan, 1, nan, 2, 0.5, 2, 0.5, 1]]]
++  -- (f) Iverson in a base block: `Y[i,j] := X[i,j] · [i ≤ j]` (excluded cells fold min with 0).
++  let ij : PosPredArith := .affine ⟨#[1, 0], 0⟩
++  let jj : PosPredArith := .affine ⟨#[0, 1], 0⟩
++  out := out ++ [← rawFixture "bool_iverson_base" #[blSig #[3, 3], blSig #[3, 3]]
++    (blAssign 1 #[3, 3] #[{ contextPos := #[], iterationShape := #[3, 3], outputPos := #[0, 1], reductionPos := #[], factors := #[.read (blId2 0 3 3), .iverson (.rel .le ij jj)] }])
++    #[dense [3, 3] #[0.5, 2, -1, 1, 0.25, 2, -1, 1, 0.5]]]
++  -- (g) Iverson inside a reduction: `Y[i] := max_k X[i,k] · [k ≤ i]` (the include spans the reduction axis).
++  out := out ++ [← rawFixture "bool_iverson_reduction" #[blSig #[3, 3], blSig #[3]]
++    (blAssign 1 #[3] #[blRow 3 3 #[.read (blId2 0 3 3), .iverson (.rel .le jj ij)]])
++    #[dense [3, 3] #[0.2, 0.9, 0.5, 0.1, 0.3, 0.8, 0.4, 0.7, 0.6]]]
++  -- (h) step-dependent Iverson `[j ≤ l]` in a Boolean scan, stacked step-major.
++  out := out ++ [← blScanFixture "bool_scan_step_iverson" blStepProg
++    (HashMap.ofList [("Seed", dense [3] #[1, 0.5, 2])])]
++  out := out ++ [← blScanFixture "bool_scan_step_iverson_ge" blStepGeProg
++    (HashMap.ofList [("Seed", dense [3] #[1, 0.5, 2])])]
++  -- (i) a unary read in a Boolean statement pads with real 0 THEN applies the unary (Lean `gatherFactorWith`).
++  out := out ++ [← rawFixture "bool_unary_sqrt_oob" #[blSig #[2], blSig #[4]]
++    (blVec 1 4 #[#[.read { (blId 0 2) with unary := some .sqrt }]]) #[dense [2] #[0.25, nz]]]
++  out := out ++ [← rawFixture "bool_unary_exp_oob" #[blSig #[2], blSig #[4]]
++    (blVec 1 4 #[#[.read { (blId 0 2) with unary := some .exp }]]) #[dense [2] #[0, -inf]]]
++  -- (j) a `Closed`-shaped REAL node reading a Boolean source: plain real record, no cast (a hidden
++  -- cast would turn 0.5, -3 and 2 into 1). No `-0` source here: the real fold `0 + (-0)` is `+0` in Lean
++  -- and in eager JAX but `-0` under `jit` (XLA drops the literal `+0` seed) — a pre-existing
++  -- real-path divergence, parked, not a Boolean one.
++  out := out ++ [← rawFixture "real_dest_reads_bool_source" #[blSig #[4], ⟨#[4], .f64⟩]
++    (vectorRaw admittedAlgebra (blId 0 4) 4) #[dense [4] #[0.5, -3, 2, 0.25]]]
++  -- pad / seed pins: bare out-of-bounds pad 0, empty factor product 1, zero reduction extent 0.
++  out := out ++ [← rawFixture "bool_bare_oob" #[blSig #[1], blSig #[3]]
++    (blVec 1 3 #[#[.read (blId 0 1)]]) #[dense [1] #[2]]]
++  out := out ++ [← rawFixture "bool_empty_factors" #[blSig #[]]
++    (blAssign 0 #[] #[{ contextPos := #[], iterationShape := #[], outputPos := #[], reductionPos := #[], factors := #[] }]) #[]]
++  out := out ++ [← rawFixture "bool_zero_reduction" #[blSig #[]]
++    (blAssign 0 #[] #[{ contextPos := #[], iterationShape := #[0], outputPos := #[], reductionPos := #[0], factors := #[] }]) #[]]
++  return out
+ 
+ end JaxBridge.MaxPlusSmoke
+ def main (args : List String) : IO Unit := do
+   let [out] := args | throw (IO.userError "usage: MaxPlus OUTPUT.py")
+   let adv ← JaxBridge.MaxPlusSmoke.adversarial
+   let ctx ← JaxBridge.MaxPlusSmoke.contextFixture
+-  IO.FS.writeFile out ("ADVERSARIAL = [\n" ++ String.intercalate ",\n" (adv ++ [ctx]) ++ "\n]\n")
+-  IO.println s!"max-plus: generated {adv.length + 1} checked edge cases"
++  let bl ← JaxBridge.MaxPlusSmoke.booleanRaw
++  IO.FS.writeFile out ("ADVERSARIAL = [\n" ++ String.intercalate ",\n" (adv ++ [ctx]) ++ "\n]\n" ++
++    "BOOLEAN = [\n" ++ String.intercalate ",\n" bl ++ "\n]\n")
++  IO.println s!"max-plus: generated {adv.length + 1} checked edge cases, {bl.length} Boolean raw fixtures"
+diff --git a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+index 033f8179..e4365d2a 100644
+--- a/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
++++ b/leanncd/experiments/jax_bridge/evalplan_affine_runtime.py
+@@ -15,13 +15,20 @@ Load-bearing properties (whole-branch review gate):
+   comparison. Float64 values are created only during execution, after that gate can have been
+   enabled; importing this module while x64 is disabled cannot cache a silently narrowed scalar.
+   Float32 needs no x64 (its callers run with x64 DISABLED, so no float64 can arise at all).
+-* **Two algebras, chosen per node by `_algebra`.** A node without an `"algebra"` key is the real
++* **Three algebras, chosen per node by `_algebra`.** A node without an `"algebra"` key is the real
+   sum-product (factor op `multiply` seeded `1`, reduction/term op `add` seeded `0`, pad `0`). A node
+   with `"algebra": "max_plus"` (which requires `"semantics": "ordered_max_plus_v1"`) uses factor op
+   `_ordered_add` seeded `0` and reduction/term op `_ordered_max` seeded and padded with `-inf`; its
+   factors must carry explicit `bool_to_tropical`/`real_to_bool` cast metadata (`_check_factors`).
++  A node with `"algebra": "boolean"` (requires `"semantics": "ordered_boolean_v1"`) runs over the
++  real carrier with factor op `_ordered_min` seeded `1` and reduction/term op `_ordered_max` seeded
++  and padded with `0`; values are NOT normalised to {0, 1} (mirrors Lean: 0.5 propagates, 2.0 clamps,
++  NaN spreads). Its factors are explicit `tag: "read"` records with `real_to_bool: false` and no
++  `bool_to_tropical` key, or `tag: "iverson"` records whose `include` table (0/1 per coordinate of the
++  term's full iteration shape, decided in Lean) becomes `where(include, 1, 0)`; the runtime evaluates
++  no predicate. An Iverson factor in a real or max-plus node fails loud.
+   Every "zero" below is therefore the reduction identity of the node's algebra: `0` for the real
+-  algebra, `-inf` for max-plus (the factor-product seed stays `0` there).
++  and Boolean algebras, `-inf` for max-plus (the factor-product seed stays `0` there).
+ * **Safe index + mask padding.** A factor gathers ONLY through the precomputed safe indices
+   (invalid entries carry the placeholder `0`) and re-pads invalid entries with `jnp.where(mask, …,
+   pad)` (`0.0` real, `-inf` max-plus). It never relies on JAX's own out-of-bounds gather, which may
+@@ -139,6 +146,12 @@ def _ordered_max(a, b):
+     return jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, b, a)))
+ 
+ 
++def _ordered_min(a, b):
++    # Lean's `minNaN`: the first NaN wins, and a tie keeps the FIRST operand (min(+0,-0) = +0).
++    # `jnp.minimum` is not safe: it does not follow the Lean tie and NaN order.
++    return jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, a, b)))
++
++
+ @jax.custom_jvp
+ def _ordered_add(a, b):
+     # XLA may erase a literal +0 seed. Preserve IEEE zeros without erasing its derivative.
+@@ -164,19 +177,40 @@ def _algebra(node, dtype):
+         if node.get("semantics") != "ordered_max_plus_v1":
+             raise ValueError("max-plus requires ordered_max_plus_v1 semantics")
+         return _ordered_add, dtype(0), _ordered_max, dtype(-math.inf)
++    if tag == "boolean":
++        if node.get("semantics") != "ordered_boolean_v1":
++            raise ValueError("boolean requires ordered_boolean_v1 semantics")
++        return _ordered_min, dtype(1), _ordered_max, dtype(0)
+     raise ValueError(f"unknown algebra {tag!r}")
+ 
+ 
+-def _check_factors(terms, max_plus):
++def _check_factors(terms, algebra):
++    factor_op = algebra[0]
++    max_plus = factor_op is _ordered_add
++    boolean = factor_op is _ordered_min
+     for term in terms:
+         for f in term["factors"]:
+-            if f.get("tag", "read") != "read":
++            tag = f.get("tag", "read")
++            if tag not in ("read", "iverson"):
+                 raise ValueError(f"unknown factor tag {f['tag']!r}")
++            if tag == "iverson":
++                if not boolean:
++                    raise ValueError("iverson factors require boolean algebra")
++                include = f.get("include")
++                if (not isinstance(include, list) or len(include) != _prod(list(term["iteration_shape"]))
++                        or any(type(e) is not int or e not in (0, 1) for e in include)):
++                    raise ValueError("iverson include must be one 0/1 entry per iteration coordinate")
++                continue
++            if "include" in f:
++                raise ValueError("include is only valid on an iverson factor")
+             if max_plus:
+                 if f.get("tag") != "read" or type(f.get("bool_to_tropical")) is not bool:
+                     raise ValueError("max-plus read requires explicit cast metadata")
+                 if f.get("real_to_bool") is not False:
+                     raise ValueError("real_to_bool is not supported")
++            elif boolean:
++                if f.get("tag") != "read" or f.get("real_to_bool") is not False or "bool_to_tropical" in f:
++                    raise ValueError("boolean read requires explicit tag read, real_to_bool false, no bool_to_tropical")
+             elif any(k in f for k in ("bool_to_tropical", "real_to_bool")):
+                 raise ValueError("real read cast metadata is not supported")
+ 
+@@ -212,6 +246,11 @@ def _run_term(
+     # --- gather one full iteration-space tensor per factor -------------------------------------
+     factor_tensors: list[jax.Array] = []
+     for f in factors:
++        if f.get("tag") == "iverson":
++            # Boolean Iverson factor: a static 0/1 include table decided in Lean (no predicate here).
++            include = jnp.asarray(f["include"], dtype=bool) if slicer is None else slicer(f)[1]
++            factor_tensors.append(jnp.reshape(jnp.where(include, factor_id, reduce_id), iter_shape))
++            continue
+         source = store[f["source_slot"]]
+         src_flat = jnp.reshape(source, (-1,))
+         if int(src_flat.shape[0]) == 0:
+@@ -275,7 +314,7 @@ def _run_node(
+     terms = node["terms"]
+     algebra = _algebra(node, dtype)
+     _, _, reduce_op, reduce_id = algebra
+-    _check_factors(terms, algebra[0] is _ordered_add)
++    _check_factors(terms, algebra)
+     if not terms:
+         # Empty term array yields an all-zero output.
+         return jnp.full(output_shape, reduce_id, dtype=dtype)
+@@ -515,7 +554,7 @@ def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) ->
+             states[i] = _place(states[i], jnp.asarray(w["index"], dtype=_index_dtype()), out)
+     for n in node["step"]["nodes"]:  # validate the step block even when it never runs (steps == 0)
+         if n.get("kind", "assign") == "assign":
+-            _check_factors(n["terms"], _algebra(n, dtype)[0] is _ordered_add)
++            _check_factors(n["terms"], _algebra(n, dtype))
+     if steps == 0:
+         return states
+ 
+@@ -529,6 +568,11 @@ def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) ->
+             if t["iteration_shape"][0] != steps:
+                 raise ValueError(f"step term iteration_shape {t['iteration_shape']} has step extent != {steps}")
+             for f in t["factors"]:
++                if f.get("tag") == "iverson":  # include table, stacked step-major like safe_index/mask
++                    if len(f["include"]) != steps * local_size:
++                        raise ValueError("step factor table is not steps * local entries")
++                    stacked[id(f)] = (None, jnp.reshape(jnp.asarray(f["include"], dtype=bool), (steps, local_size)))
++                    continue
+                 if len(f["safe_index"]) != steps * local_size or len(f["mask"]) != steps * local_size:
+                     raise ValueError("step factor table is not steps * local entries")
+                 stacked[id(f)] = (
+@@ -547,6 +591,8 @@ def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) ->
+     def body(carry, r):
+         def slicer(f):
+             safe, mask = stacked[id(f)]
++            if safe is None:  # an Iverson include table: no source index
++                return None, jax.lax.dynamic_index_in_dim(mask, r, 0, keepdims=False)
+             return (
+                 jax.lax.dynamic_index_in_dim(safe, r, 0, keepdims=False),
+                 jax.lax.dynamic_index_in_dim(mask, r, 0, keepdims=False),
+diff --git a/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py b/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
+index 3516a768..9cd78c86 100644
+--- a/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
++++ b/leanncd/experiments/jax_bridge/evalplan_maxplus_smoke.py
+@@ -203,9 +203,12 @@ def verify(precision, checked_path, logic_path=None):
+             fn = lambda xs: runtime.run_assign(f["assign" + suffix], xs, dtype=dt)
+         return (jax.jit(fn) if jit else fn)(inputs)
+ 
+-    fixtures = load(checked_path).ADVERSARIAL
++    checked_module = load(checked_path)
++    fixtures = checked_module.ADVERSARIAL
+     assert len(fixtures) == 14
+-    for f in fixtures:
++    bool_fixtures = checked_module.BOOLEAN
++    assert len(bool_fixtures) == 17
++    for f in fixtures + bool_fixtures:
+         for jit in (False, True):
+             output = run(f, jit)
+             if "scan" + suffix in f:
+@@ -293,6 +296,131 @@ def verify(precision, checked_path, logic_path=None):
+             else:
+                 raise AssertionError(("metadata silently admitted", name, jit))
+ 
++    # --- Boolean (`ordered_boolean_v1`) raw fixtures: Lean-pinned above; each independent pin below
++    # names the wrong implementation it kills. Values are NOT normalised to {0, 1} (mirrors Lean).
++    bby = {f["name"]: f for f in bool_fixtures}
++    z = nd(0)
++
++    def values(name, jit):
++        return np.asarray(run(bby[name], jit))
++
++    def negative_zero(x):
++        return bool(np.signbit(x)) and x == 0
++
++    for jit in (False, True):
++        # min keeps the FIRST operand on a tie; max keeps the SECOND (jnp.minimum/maximum differ).
++        tie = values("bool_min_tie_order", jit)
++        assert not negative_zero(tie[0]) and negative_zero(tie[1]), ("bool_min_tie_order", jit, tie)
++        for name in ("bool_max_tie_reduction", "bool_max_tie_terms"):
++            tie = values(name, jit)
++            assert negative_zero(tie[0]) and tie[1] == 0 and not np.signbit(tie[1]), (name, jit, tie)
++        # min is not `*`: 0.5,0.5 -> 0.5 (product .25); 2,2 -> 1 (product 4); 2,.5 -> .5.
++        assert np.array_equal(values("bool_min_not_product", jit), np.asarray([.5, 1, 0, .5], dtype=nd))
++        # max is not `+` at the reduction or the term fold (sums would be 2/.75).
++        assert np.array_equal(values("bool_max_not_sum", jit), np.asarray([1, .5], dtype=nd))
++        # NaN spreads through either operand of min and through max (NaN beats 2.0 and 0.5).
++        assert np.all(np.isnan(values("bool_nan_factor_fold", jit)))
++        got = values("bool_nan_reduction", jit)
++        assert np.isnan(got[0]) and np.isnan(got[1]) and got[2] == 1, ("bool_nan_reduction", jit, got)
++        # Iverson factor: included cells take min(x, 1), excluded cells min(x, 0).
++        assert np.array_equal(values("bool_iverson_base", jit),
++                              np.asarray([[.5, 1, 0], [0, .25, 1], [0, 0, .5]], dtype=nd))
++        assert np.array_equal(values("bool_iverson_reduction", jit), np.asarray([.2, .3, .7], dtype=nd))
++        # Step-dependent include tables: `[j <= l]` grows (monotone toy), `[l <= j]` shrinks.
++        grows = np.asarray(run(bby["bool_scan_step_iverson"], jit)[0])
++        assert np.array_equal(grows, np.asarray([[1, 1, 1, 1], [.5, 0, 0, 0], [1, 0, 0, 0]], dtype=nd)), grows
++        shrinks = np.asarray(run(bby["bool_scan_step_iverson_ge"], jit)[0])
++        assert np.array_equal(shrinks, np.asarray([[1, 1, 0, 0], [.5, .5, .5, 0], [1, 1, 1, 1]], dtype=nd)), shrinks
++        # A unary read pads with real 0 THEN applies the function (sqrt(0) = 0 but exp(0) = 1), and
++        # sqrt(-0) = -0 survives the folds.
++        root = values("bool_unary_sqrt_oob", jit)
++        assert root[0] == nd(.5) and negative_zero(root[1]) and np.all(root[2:] == 0), ("sqrt", jit, root)
++        assert np.array_equal(values("bool_unary_exp_oob", jit), np.asarray([1, 0, 1, 1], dtype=nd))
++        # A real destination reading a Boolean source copies it: no hidden cast (0.5, -3, 2 stay).
++        assert np.array_equal(values("real_dest_reads_bool_source", jit), np.asarray([.5, -3, 2, .25], dtype=nd))
++        assert "algebra" not in bby["real_dest_reads_bool_source"]["assign" + suffix]
++        # Pads and seeds: bare out-of-bounds pad 0 (not -inf), empty factor product 1, empty reduction 0.
++        assert np.array_equal(values("bool_bare_oob", jit), np.asarray([1, 0, 0], dtype=nd))
++        assert float(values("bool_empty_factors", jit)) == 1
++        assert float(values("bool_zero_reduction", jit)) == 0
++        # `_ordered_min` scalar contract (Lean `minNaN`): first operand on a signed-zero tie, NaN spreads.
++        a = jnp.asarray([0., -0., np.nan, 2., np.nan], dtype=dt)
++        b = jnp.asarray([-0., 0., 3., np.nan, np.nan], dtype=dt)
++        minimum = np.asarray((jax.jit(rt._ordered_min) if jit else rt._ordered_min)(a, b))
++        assert not np.signbit(minimum[0]) and np.signbit(minimum[1]) and np.all(np.isnan(minimum[2:]))
++
++    def bool_node(name):
++        return bby[name]["assign" + suffix]
++
++    def iverson_factor(node):
++        return next(f for t in node["terms"] for f in t["factors"] if f.get("tag") == "iverson")
++
++    def read_factor(node):
++        return next(f for t in node["terms"] for f in t["factors"] if f.get("tag") == "read")
++
++    bool_cases = []
++
++    def refusal(name, template, mutate, scan=False):
++        f = copy.deepcopy(bby[template] if template in bby else by[template])
++        mutate(f["scan" + suffix] if scan else f["assign" + suffix])
++        bool_cases.append((name, f))
++
++    t = "bool_iverson_base"  # a valid Boolean record: one tagged read plus one Iverson factor
++    refusal("bool_unknown_semantics", t, lambda n: n.update(semantics="future"))
++    refusal("bool_missing_semantics", t, lambda n: n.pop("semantics"))
++    refusal("bool_max_plus_semantics", t, lambda n: n.update(semantics="ordered_max_plus_v1"))
++    refusal("semantics_without_algebra", t, lambda n: n.pop("algebra"))
++    refusal("bool_real_to_bool_true", t, lambda n: read_factor(n).update(real_to_bool=True))
++    refusal("bool_real_to_bool_missing", t, lambda n: read_factor(n).pop("real_to_bool"))
++    refusal("bool_bool_to_tropical_key", t, lambda n: read_factor(n).update(bool_to_tropical=False))
++    refusal("bool_missing_tag", t, lambda n: read_factor(n).pop("tag"))
++    refusal("bool_unknown_tag", t, lambda n: read_factor(n).update(tag="future"))
++    refusal("bool_include_short", t, lambda n: iverson_factor(n)["include"].pop())
++    refusal("bool_include_long", t, lambda n: iverson_factor(n)["include"].append(1))
++    refusal("bool_include_entry_2", t, lambda n: iverson_factor(n)["include"].__setitem__(0, 2))
++    refusal("bool_include_entry_true", t, lambda n: iverson_factor(n)["include"].__setitem__(0, True))
++    refusal("bool_read_with_include", t, lambda n: read_factor(n).update(include=[1]))
++    refusal("iverson_in_real_node", "real_dest_reads_bool_source",
++            lambda n: n["terms"][0]["factors"].__setitem__(0, {"tag": "iverson", "include": [1] * 4}))
++    refusal("iverson_in_max_plus_node", "bool_to_tropical_true",
++            lambda n: n["terms"][0]["factors"].__setitem__(0, {"tag": "iverson", "include": [1] * 7}))
++    # Scan-level: an empty step range must still validate the Boolean step block's include table.
++    s = "bool_scan_step_iverson"
++    refusal("bool_scan_empty_step_bad_include", s, lambda n: (n.update(step_count=0), next(
++        f for nd_ in n["step"]["nodes"] for tm in nd_["terms"] for f in tm["factors"]
++        if f.get("tag") == "iverson")["include"].pop()), scan=True)
++    refusal("bool_scan_empty_step_include_entry_2", s, lambda n: (n.update(step_count=0), next(
++        f for nd_ in n["step"]["nodes"] for tm in nd_["terms"] for f in tm["factors"]
++        if f.get("tag") == "iverson")["include"].__setitem__(0, 2)), scan=True)
++    # Accept-neighbour: the same empty-range record with an unmodified step block is admitted.
++    f = copy.deepcopy(bby[s])
++    f["scan" + suffix].update(step_count=0)
++    for jit in (False, True):
++        assert len(run(f, jit)) == 1, ("empty step range with a valid Boolean step block must run", jit)
++    bool_reason = {name: "ordered_boolean_v1 semantics" for name in (
++        "bool_unknown_semantics", "bool_missing_semantics", "bool_max_plus_semantics")}
++    bool_reason.update({name: "boolean read requires" for name in (
++        "bool_real_to_bool_true", "bool_real_to_bool_missing", "bool_bool_to_tropical_key", "bool_missing_tag")})
++    bool_reason.update({name: "include must be one 0/1 entry" for name in (
++        "bool_include_short", "bool_include_long", "bool_include_entry_2", "bool_include_entry_true",
++        "bool_scan_empty_step_bad_include", "bool_scan_empty_step_include_entry_2")})
++    bool_reason.update({"semantics_without_algebra": "legacy metadata-free", "bool_unknown_tag": "unknown factor tag",
++                        "bool_read_with_include": "only valid on an iverson factor",
++                        "iverson_in_real_node": "require boolean algebra", "iverson_in_max_plus_node": "require boolean algebra"})
++    assert set(bool_reason) == {name for name, _ in bool_cases}
++    # A Boolean scan record carries no `state_init`/`semantics`: zero init, never refused.
++    assert "state_init" not in bby[s]["scan" + suffix] and "semantics" not in bby[s]["scan" + suffix]
++    for name, f in bool_cases:
++        for jit in (False, True):
++            try:
++                run(f, jit)
++            except ValueError as error:
++                # The refusal must be for the changed field, not an accident of another check.
++                assert bool_reason[name] in str(error), (name, jit, str(error))
++                report["refusals"].append({"name": name, "jit": jit, "error": str(error)})
++            else:
++                raise AssertionError(("Boolean metadata silently admitted", name, jit))
++
+     for jit in (False, True):
+         assert float(run(by["max_factor_order_cancellation"], jit)) == 1, \
+             "max_factor_order_cancellation: ordered [+2^54,-2^54,1] must retain one"
+diff --git a/papers/semantics/jax_boolean_reach_mutations_python.json b/papers/semantics/jax_boolean_reach_mutations_python.json
+new file mode 100644
+index 00000000..82d15fa9
+--- /dev/null
++++ b/papers/semantics/jax_boolean_reach_mutations_python.json
+@@ -0,0 +1,450 @@
++[
++ {
++  "label": "BR-T3-ordered_min_is_jnp_minimum-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, a, b)))",
++  "new": "jnp.minimum(a, b)",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.]), array([ 0., -0.]))",
++   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.]), array([ 0., -0.]))"
++  ]
++ },
++ {
++  "label": "BR-T3-ordered_min_is_jnp_minimum-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, a, b)))",
++  "new": "jnp.minimum(a, b)",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.], dtype=float32), array([ ",
++   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.], dtype=float32), array([ 0., -0.], dtype=float32))"
++  ]
++ },
++ {
++  "label": "BR-T3-ordered_min_tie_swapped-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "jnp.where(a <= b, a, b)))",
++  "new": "jnp.where(a < b, a, b)))",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([-0.,  0.]), array([ 0., -0.]))",
++   "AssertionError: (('bool_min_tie_order', False), array([-0.,  0.]), array([ 0., -0.]))"
++  ]
++ },
++ {
++  "label": "BR-T3-ordered_min_tie_swapped-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "jnp.where(a <= b, a, b)))",
++  "new": "jnp.where(a < b, a, b)))",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([-0.,  0.], dtype=float32), array([ ",
++   "AssertionError: (('bool_min_tie_order', False), array([-0.,  0.], dtype=float32), array([ 0., -0.], dtype=float32))"
++  ]
++ },
++ {
++  "label": "BR-T3-factor_fold_min_to_product-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return factor_op(acc, stacked[k])",
++  "new": "return (acc * stacked[k]) if factor_op is _ordered_min else factor_op(acc, stacked[k])",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.]), array([ 0., -0.]))",
++   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.]), array([ 0., -0.]))"
++  ]
++ },
++ {
++  "label": "BR-T3-factor_fold_min_to_product-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return factor_op(acc, stacked[k])",
++  "new": "return (acc * stacked[k]) if factor_op is _ordered_min else factor_op(acc, stacked[k])",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.], dtype=float32), array([ ",
++   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.], dtype=float32), array([ 0., -0.], dtype=float32))"
++  ]
++ },
++ {
++  "label": "BR-T3-reduction_fold_max_to_sum-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return reduce_op(acc, row[k])",
++  "new": "return (acc + row[k]) if factor_op is _ordered_min else reduce_op(acc, row[k])",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))",
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))"
++  ]
++ },
++ {
++  "label": "BR-T3-reduction_fold_max_to_sum-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return reduce_op(acc, row[k])",
++  "new": "return (acc + row[k]) if factor_op is _ordered_min else reduce_op(acc, row[k])",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0.",
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0., -0.], dtype=float32))"
++  ]
++ },
++ {
++  "label": "BR-T3-term_fold_max_to_sum-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return reduce_op(acc, stacked[k])",
++  "new": "return (acc + stacked[k]) if algebra[0] is _ordered_min else reduce_op(acc, stacked[k])",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))",
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))"
++  ]
++ },
++ {
++  "label": "BR-T3-term_fold_max_to_sum-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return reduce_op(acc, stacked[k])",
++  "new": "return (acc + stacked[k]) if algebra[0] is _ordered_min else reduce_op(acc, stacked[k])",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0.",
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0., -0.], dtype=float32))"
++  ]
++ },
++ {
++  "label": "BR-T3-iverson_ignores_include-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "jnp.reshape(jnp.where(include, factor_id, reduce_id), iter_shape)",
++  "new": "jnp.reshape(jnp.where(jnp.ones_like(include), factor_id, reduce_id), iter_shape)",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "AssertionError: (('bool_iverson_base', False), array([[0.5 , 1.  , 0.  ],",
++   "AssertionError: (('bool_iverson_base', False), array([[0.5 , 1.  , 0.  ],"
++  ]
++ },
++ {
++  "label": "BR-T3-iverson_ignores_include-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "jnp.reshape(jnp.where(include, factor_id, reduce_id), iter_shape)",
++  "new": "jnp.reshape(jnp.where(jnp.ones_like(include), factor_id, reduce_id), iter_shape)",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: (('bool_iverson_base', False), array([[0.5 , 1.  , 0.  ],",
++   "AssertionError: (('bool_iverson_base', False), array([[0.5 , 1.  , 0.  ],"
++  ]
++ },
++ {
++  "label": "BR-T3-include_table_not_stepped-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return None, jax.lax.dynamic_index_in_dim(mask, r, 0, keepdims=False)",
++  "new": "return None, jax.lax.dynamic_index_in_dim(mask, 0, 0, keepdims=False)",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "AssertionError: (('bool_scan_step_iverson_ge', False, 1), array([[1. , 1. , 1. , 1. ],",
++   "AssertionError: (('bool_scan_step_iverson_ge', False, 1), array([[1. , 1. , 1. , 1. ],"
++  ]
++ },
++ {
++  "label": "BR-T3-include_table_not_stepped-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return None, jax.lax.dynamic_index_in_dim(mask, r, 0, keepdims=False)",
++  "new": "return None, jax.lax.dynamic_index_in_dim(mask, 0, 0, keepdims=False)",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: (('bool_scan_step_iverson_ge', False, 1), array([[1. , 1. , 1. , 1. ],",
++   "AssertionError: (('bool_scan_step_iverson_ge', False, 1), array([[1. , 1. , 1. , 1. ],"
++  ]
++ },
++ {
++  "label": "BR-T3-factor_seed_one_to_zero-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return _ordered_min, dtype(1), _ordered_max, dtype(0)",
++  "new": "return _ordered_min, dtype(0), _ordered_max, dtype(0)",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))",
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))"
++  ]
++ },
++ {
++  "label": "BR-T3-factor_seed_one_to_zero-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return _ordered_min, dtype(1), _ordered_max, dtype(0)",
++  "new": "return _ordered_min, dtype(0), _ordered_max, dtype(0)",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0.",
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0., -0.], dtype=float32))"
++  ]
++ },
++ {
++  "label": "BR-T3-reduce_id_zero_to_neg_inf-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return _ordered_min, dtype(1), _ordered_max, dtype(0)",
++  "new": "return _ordered_min, dtype(1), _ordered_max, dtype(-math.inf)",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_not_product', False), array([ 0.5,  1. , -1. ,  0.5]), array([",
++   "AssertionError: (('bool_min_not_product', False), array([ 0.5,  1. , -1. ,  0.5]), array([0.5, 1. , 0. , 0.5]))"
++  ]
++ },
++ {
++  "label": "BR-T3-reduce_id_zero_to_neg_inf-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "return _ordered_min, dtype(1), _ordered_max, dtype(0)",
++  "new": "return _ordered_min, dtype(1), _ordered_max, dtype(-math.inf)",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "AssertionError: (('bool_min_not_product', False), array([ 0.5,  1. , -1. ,  0.5], dtype=fl",
++   "AssertionError: (('bool_min_not_product', False), array([ 0.5,  1. , -1. ,  0.5], dtype=float32), array([0.5, 1. , 0. , 0.5], dtype=float32))"
++  ]
++ },
++ {
++  "label": "BR-T3-iverson_admitted_in_maxplus-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "                if not boolean:\n",
++  "new": "                if False:\n",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
++   "AssertionError: ('Boolean metadata silently admitted', 'iverson_in_real_node', False)"
++  ]
++ },
++ {
++  "label": "BR-T3-iverson_admitted_in_maxplus-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "                if not boolean:\n",
++  "new": "                if False:\n",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
++   "AssertionError: ('Boolean metadata silently admitted', 'iverson_in_real_node', False)"
++  ]
++ },
++ {
++  "label": "BR-T3-real_to_bool_guard_dropped-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "f.get(\"tag\") != \"read\" or f.get(\"real_to_bool\") is not False or \"bool_to_tropical\" in f",
++  "new": "f.get(\"tag\") != \"read\" or \"bool_to_tropical\" in f",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
++   "AssertionError: ('Boolean metadata silently admitted', 'bool_real_to_bool_true', False)"
++  ]
++ },
++ {
++  "label": "BR-T3-real_to_bool_guard_dropped-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "f.get(\"tag\") != \"read\" or f.get(\"real_to_bool\") is not False or \"bool_to_tropical\" in f",
++  "new": "f.get(\"tag\") != \"read\" or \"bool_to_tropical\" in f",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
++   "AssertionError: ('Boolean metadata silently admitted', 'bool_real_to_bool_true', False)"
++  ]
++ },
++ {
++  "label": "BR-T3-include_range_guard_dropped-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "type(e) is not int or e not in (0, 1)",
++  "new": "type(e) is not int",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
++   "AssertionError: ('Boolean metadata silently admitted', 'bool_include_entry_2', False)"
++  ]
++ },
++ {
++  "label": "BR-T3-include_range_guard_dropped-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "type(e) is not int or e not in (0, 1)",
++  "new": "type(e) is not int",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
++   "AssertionError: ('Boolean metadata silently admitted', 'bool_include_entry_2', False)"
++  ]
++ },
++ {
++  "label": "BR-T3-include_length_guard_dropped-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "len(include) != _prod(list(term[\"iteration_shape\"]))",
++  "new": "False",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "TypeError: cannot reshape array of shape"
++  ]
++ },
++ {
++  "label": "BR-T3-include_length_guard_dropped-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "len(include) != _prod(list(term[\"iteration_shape\"]))",
++  "new": "False",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "TypeError: cannot reshape array of shape"
++  ]
++ },
++ {
++  "label": "BR-T3-include_on_read_guard_dropped-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "if \"include\" in f:",
++  "new": "if False:",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
++   "AssertionError: ('Boolean metadata silently admitted', 'bool_read_with_include', False)"
++  ]
++ },
++ {
++  "label": "BR-T3-include_on_read_guard_dropped-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "if \"include\" in f:",
++  "new": "if False:",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
++   "AssertionError: ('Boolean metadata silently admitted', 'bool_read_with_include', False)"
++  ]
++ },
++ {
++  "label": "BR-T3-bool_to_tropical_key_guard_dropped-64",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "or f.get(\"real_to_bool\") is not False or \"bool_to_tropical\" in f",
++  "new": "or f.get(\"real_to_bool\") is not False",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float64"
++  ],
++  "expect": [
++   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
++   "AssertionError: ('Boolean metadata silently admitted', 'bool_bool_to_tropical_key', False)"
++  ]
++ },
++ {
++  "label": "BR-T3-bool_to_tropical_key_guard_dropped-32",
++  "task": "T3",
++  "file": "evalplan_affine_runtime.py",
++  "old": "or f.get(\"real_to_bool\") is not False or \"bool_to_tropical\" in f",
++  "new": "or f.get(\"real_to_bool\") is not False",
++  "verifier": "evalplan_maxplus_smoke",
++  "runs": [
++   "float32"
++  ],
++  "expect": [
++   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
++   "AssertionError: ('Boolean metadata silently admitted', 'bool_bool_to_tropical_key', False)"
++  ]
++ }
++]
+diff --git a/papers/semantics/jax_maxplus_mutations_python.json b/papers/semantics/jax_maxplus_mutations_python.json
+index fb914c0a..378fc006 100644
+--- a/papers/semantics/jax_maxplus_mutations_python.json
++++ b/papers/semantics/jax_maxplus_mutations_python.json
+@@ -220,8 +220,8 @@
+    "float64"
+   ],
+   "expect": [
+-   "AssertionError: native_max_zero_tie: ordered max must choose the right signed zero",
+-   "AssertionError: native_max_zero_tie"
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))",
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))"
+   ]
+  },
+  {
+@@ -235,8 +235,8 @@
+    "float32"
+   ],
+   "expect": [
+-   "AssertionError: native_max_zero_tie: ordered max must choose the right signed zero",
+-   "AssertionError: native_max_zero_tie"
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0.",
++   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0., -0.], dtype=float32))"
+   ]
+  },
+  {

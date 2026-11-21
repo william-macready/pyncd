@@ -1,0 +1,162 @@
+Compiling snippet as leanncd/spikes/SnippetCheck_36156_31473.lean ...
+
+===================== reachProg f64
+storageKind=LeanNCD.StorageKind.float64
+tensorSigs=#[{ shape := #[6, 6], dtype := LeanNCD.Eval.Plan.ScalarDType.bool },
+  { shape := #[6, 6, 7], dtype := LeanNCD.Eval.Plan.ScalarDType.bool },
+  { shape := #[6, 6], dtype := LeanNCD.Eval.Plan.ScalarDType.f64 }]
+inputSlots=#[0]
+requiredInputs=#[{ name := "Edge", slot := 0 }]
+materialized=#[{ name := "Reach", slot := 1 }, { name := "Closed", slot := 2 }]
+node 0: SCAN historyExtents=#[7] stepExtents=#[6]
+  state { destSlot := 1,
+  advancingDims := #[2],
+  materialization := LeanNCD.Eval.Plan.MaterializationPolicy.completeHistory,
+  initValue := LeanNCD.Eval.Plan.StateInit.zero }
+  baseCaptures=#[] stepCaptures=#[{ inputSlot := 0, source := LeanNCD.Eval.Plan.CaptureSource.state 0 },
+  { inputSlot := 1, source := LeanNCD.Eval.Plan.CaptureSource.external 0 }]
+  baseWrites=#[{ outputSlot := 0, stateIndex := 0, map := { coeffs := #[#[1, 0], #[0, 1], #[0, 0]], bias := #[0, 0, 0] } }]
+  stepWrites=#[{ outputSlot := 2, stateIndex := 0, map := { coeffs := #[#[0, 1, 0], #[0, 0, 1], #[1, 0, 0]], bias := #[0, 0, 1] } }]
+  baseBlock.tensorSigs=#[{ shape := #[6, 6], dtype := LeanNCD.Eval.Plan.ScalarDType.bool }] inputs=#[]
+  stepBlock.tensorSigs=#[{ shape := #[6, 6, 7], dtype := LeanNCD.Eval.Plan.ScalarDType.bool },
+  { shape := #[6, 6], dtype := LeanNCD.Eval.Plan.ScalarDType.bool },
+  { shape := #[6, 6], dtype := LeanNCD.Eval.Plan.ScalarDType.bool }] inputs=#[0, 1]
+  [base] assign dest=0 outputShape=#[6, 6] contextShape=#[] algebra={ factorOp := LeanNCD.Eval.Plan.ScalarBinOp.min,
+  factorId := LeanNCD.Eval.Plan.ScalarConst.bool true,
+  reduceOp := LeanNCD.Eval.Plan.ScalarBinOp.max,
+  reduceId := LeanNCD.Eval.Plan.ScalarConst.bool false }
+    term 0: iterationShape=#[6, 6] contextPos=#[] outputPos=#[0, 1] reductionPos=#[]
+      factor 0: IVERSON LeanNCD.Eval.Plan.PosBoolExpr.rel
+  (LeanNCD.RelOp.eq)
+  (LeanNCD.Eval.Plan.PosPredArith.affine { coeffs := #[1, 0], bias := 0 })
+  (LeanNCD.Eval.Plan.PosPredArith.affine { coeffs := #[0, 1], bias := 0 })
+        referenced iteration columns: [0, 1]; contextPos=#[]
+        Lean-decided table (allCoords order over iterationShape, 36 entries): [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]
+  [step] assign dest=2 outputShape=#[6, 6] contextShape=#[6] algebra={ factorOp := LeanNCD.Eval.Plan.ScalarBinOp.min,
+  factorId := LeanNCD.Eval.Plan.ScalarConst.bool true,
+  reduceOp := LeanNCD.Eval.Plan.ScalarBinOp.max,
+  reduceId := LeanNCD.Eval.Plan.ScalarConst.bool false }
+    term 0: iterationShape=#[6, 6, 6] contextPos=#[0] outputPos=#[1, 2] reductionPos=#[]
+      factor 0: READ { sourceSlot := 0,
+  map := { coeffs := #[#[0, 1, 0], #[0, 0, 1], #[1, 0, 0]], bias := #[0, 0, 0] },
+  sourceShape := #[6, 6, 7],
+  oobPolicy := LeanNCD.Eval.Plan.OutOfBoundsPolicy.zeroPad,
+  unary := none,
+  boolToTropical := false,
+  realToBool := false }
+    term 1: iterationShape=#[6, 6, 6, 6] contextPos=#[0] outputPos=#[1, 2] reductionPos=#[3]
+      factor 0: READ { sourceSlot := 0,
+  map := { coeffs := #[#[0, 1, 0, 0], #[0, 0, 0, 1], #[1, 0, 0, 0]], bias := #[0, 0, 0] },
+  sourceShape := #[6, 6, 7],
+  oobPolicy := LeanNCD.Eval.Plan.OutOfBoundsPolicy.zeroPad,
+  unary := none,
+  boolToTropical := false,
+  realToBool := false }
+      factor 1: READ { sourceSlot := 1,
+  map := { coeffs := #[#[0, 0, 0, 1], #[0, 0, 1, 0]], bias := #[0, 0] },
+  sourceShape := #[6, 6],
+  oobPolicy := LeanNCD.Eval.Plan.OutOfBoundsPolicy.zeroPad,
+  unary := none,
+  boolToTropical := false,
+  realToBool := false }
+  checkJaxScanSupport realOnly: Except.error (LeanNCD.Eval.Plan.JaxSupportError.destinationDType 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool))
+  checkJaxScanSupport maxPlus : Except.error (LeanNCD.Eval.Plan.JaxSupportError.destinationDType 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool))
+  base assign alone, maxPlus, allowUnary: Except.error (LeanNCD.Eval.Plan.JaxSupportError.destinationDType 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool))
+  step assign alone (no ctx opt-in), maxPlus: Except.error (LeanNCD.Eval.Plan.JaxSupportError.destinationDType 0 2 (LeanNCD.Eval.Plan.ScalarDType.bool))
+node 1: ASSIGN dest=2 outputShape=#[6, 6] algebra={ factorOp := LeanNCD.Eval.Plan.ScalarBinOp.mul,
+  factorId := LeanNCD.Eval.Plan.ScalarConst.f64 4607182418800017408,
+  reduceOp := LeanNCD.Eval.Plan.ScalarBinOp.add,
+  reduceId := LeanNCD.Eval.Plan.ScalarConst.f64 0 }
+    term: iterationShape=#[6, 6] outputPos=#[0, 1] reductionPos=#[]
+      READ { sourceSlot := 1,
+  map := { coeffs := #[#[1, 0], #[0, 1], #[0, 0]], bias := #[0, 0, 6] },
+  sourceShape := #[6, 6, 7],
+  oobPolicy := LeanNCD.Eval.Plan.OutOfBoundsPolicy.zeroPad,
+  unary := none,
+  boolToTropical := false,
+  realToBool := false }
+  checkJaxAssignSupport realOnly: Except.error (LeanNCD.Eval.Plan.JaxSupportError.sourceDType 1 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool))
+  checkJaxAssignSupport maxPlus : Except.error (LeanNCD.Eval.Plan.JaxSupportError.sourceDType 1 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool))
+renderAffinePlanNamed: JaxBridge.JaxCodegenError.unsupportedDestDType 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool)
+renderAffinePlanPositional: JaxBridge.JaxCodegenError.unsupportedDestDType 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool)
+===================== reachProg f32 (retag32)
+storageKind=LeanNCD.StorageKind.float32
+tensorSigs=#[{ shape := #[6, 6], dtype := LeanNCD.Eval.Plan.ScalarDType.bool },
+  { shape := #[6, 6, 7], dtype := LeanNCD.Eval.Plan.ScalarDType.bool },
+  { shape := #[6, 6], dtype := LeanNCD.Eval.Plan.ScalarDType.f32 }]
+inputSlots=#[0]
+requiredInputs=#[{ name := "Edge", slot := 0 }]
+materialized=#[{ name := "Reach", slot := 1 }, { name := "Closed", slot := 2 }]
+node 0: SCAN historyExtents=#[7] stepExtents=#[6]
+  state { destSlot := 1,
+  advancingDims := #[2],
+  materialization := LeanNCD.Eval.Plan.MaterializationPolicy.completeHistory,
+  initValue := LeanNCD.Eval.Plan.StateInit.zero }
+  baseCaptures=#[] stepCaptures=#[{ inputSlot := 0, source := LeanNCD.Eval.Plan.CaptureSource.state 0 },
+  { inputSlot := 1, source := LeanNCD.Eval.Plan.CaptureSource.external 0 }]
+  baseWrites=#[{ outputSlot := 0, stateIndex := 0, map := { coeffs := #[#[1, 0], #[0, 1], #[0, 0]], bias := #[0, 0, 0] } }]
+  stepWrites=#[{ outputSlot := 2, stateIndex := 0, map := { coeffs := #[#[0, 1, 0], #[0, 0, 1], #[1, 0, 0]], bias := #[0, 0, 1] } }]
+  baseBlock.tensorSigs=#[{ shape := #[6, 6], dtype := LeanNCD.Eval.Plan.ScalarDType.bool }] inputs=#[]
+  stepBlock.tensorSigs=#[{ shape := #[6, 6, 7], dtype := LeanNCD.Eval.Plan.ScalarDType.bool },
+  { shape := #[6, 6], dtype := LeanNCD.Eval.Plan.ScalarDType.bool },
+  { shape := #[6, 6], dtype := LeanNCD.Eval.Plan.ScalarDType.bool }] inputs=#[0, 1]
+  [base] assign dest=0 outputShape=#[6, 6] contextShape=#[] algebra={ factorOp := LeanNCD.Eval.Plan.ScalarBinOp.min,
+  factorId := LeanNCD.Eval.Plan.ScalarConst.bool true,
+  reduceOp := LeanNCD.Eval.Plan.ScalarBinOp.max,
+  reduceId := LeanNCD.Eval.Plan.ScalarConst.bool false }
+    term 0: iterationShape=#[6, 6] contextPos=#[] outputPos=#[0, 1] reductionPos=#[]
+      factor 0: IVERSON LeanNCD.Eval.Plan.PosBoolExpr.rel
+  (LeanNCD.RelOp.eq)
+  (LeanNCD.Eval.Plan.PosPredArith.affine { coeffs := #[1, 0], bias := 0 })
+  (LeanNCD.Eval.Plan.PosPredArith.affine { coeffs := #[0, 1], bias := 0 })
+        referenced iteration columns: [0, 1]; contextPos=#[]
+        Lean-decided table (allCoords order over iterationShape, 36 entries): [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]
+  [step] assign dest=2 outputShape=#[6, 6] contextShape=#[6] algebra={ factorOp := LeanNCD.Eval.Plan.ScalarBinOp.min,
+  factorId := LeanNCD.Eval.Plan.ScalarConst.bool true,
+  reduceOp := LeanNCD.Eval.Plan.ScalarBinOp.max,
+  reduceId := LeanNCD.Eval.Plan.ScalarConst.bool false }
+    term 0: iterationShape=#[6, 6, 6] contextPos=#[0] outputPos=#[1, 2] reductionPos=#[]
+      factor 0: READ { sourceSlot := 0,
+  map := { coeffs := #[#[0, 1, 0], #[0, 0, 1], #[1, 0, 0]], bias := #[0, 0, 0] },
+  sourceShape := #[6, 6, 7],
+  oobPolicy := LeanNCD.Eval.Plan.OutOfBoundsPolicy.zeroPad,
+  unary := none,
+  boolToTropical := false,
+  realToBool := false }
+    term 1: iterationShape=#[6, 6, 6, 6] contextPos=#[0] outputPos=#[1, 2] reductionPos=#[3]
+      factor 0: READ { sourceSlot := 0,
+  map := { coeffs := #[#[0, 1, 0, 0], #[0, 0, 0, 1], #[1, 0, 0, 0]], bias := #[0, 0, 0] },
+  sourceShape := #[6, 6, 7],
+  oobPolicy := LeanNCD.Eval.Plan.OutOfBoundsPolicy.zeroPad,
+  unary := none,
+  boolToTropical := false,
+  realToBool := false }
+      factor 1: READ { sourceSlot := 1,
+  map := { coeffs := #[#[0, 0, 0, 1], #[0, 0, 1, 0]], bias := #[0, 0] },
+  sourceShape := #[6, 6],
+  oobPolicy := LeanNCD.Eval.Plan.OutOfBoundsPolicy.zeroPad,
+  unary := none,
+  boolToTropical := false,
+  realToBool := false }
+  checkJaxScanSupport realOnly: Except.error (LeanNCD.Eval.Plan.JaxSupportError.destinationDType 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool))
+  checkJaxScanSupport maxPlus : Except.error (LeanNCD.Eval.Plan.JaxSupportError.destinationDType 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool))
+  base assign alone, maxPlus, allowUnary: Except.error (LeanNCD.Eval.Plan.JaxSupportError.destinationDType 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool))
+  step assign alone (no ctx opt-in), maxPlus: Except.error (LeanNCD.Eval.Plan.JaxSupportError.destinationDType 0 2 (LeanNCD.Eval.Plan.ScalarDType.bool))
+node 1: ASSIGN dest=2 outputShape=#[6, 6] algebra={ factorOp := LeanNCD.Eval.Plan.ScalarBinOp.mul,
+  factorId := LeanNCD.Eval.Plan.ScalarConst.f32 1065353216,
+  reduceOp := LeanNCD.Eval.Plan.ScalarBinOp.add,
+  reduceId := LeanNCD.Eval.Plan.ScalarConst.f32 0 }
+    term: iterationShape=#[6, 6] outputPos=#[0, 1] reductionPos=#[]
+      READ { sourceSlot := 1,
+  map := { coeffs := #[#[1, 0], #[0, 1], #[0, 0]], bias := #[0, 0, 6] },
+  sourceShape := #[6, 6, 7],
+  oobPolicy := LeanNCD.Eval.Plan.OutOfBoundsPolicy.zeroPad,
+  unary := none,
+  boolToTropical := false,
+  realToBool := false }
+  checkJaxAssignSupport realOnly: Except.error (LeanNCD.Eval.Plan.JaxSupportError.sourceDType 1 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool))
+  checkJaxAssignSupport maxPlus : Except.error (LeanNCD.Eval.Plan.JaxSupportError.sourceDType 1 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool))
+renderAffinePlanNamed: JaxBridge.JaxCodegenError.unsupportedDestDType 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool)
+renderAffinePlanPositional: JaxBridge.JaxCodegenError.unsupportedDestDType 0 0 (LeanNCD.Eval.Plan.ScalarDType.bool)
+
+COMPILES. Safe to write into the plan.
