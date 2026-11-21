@@ -5,10 +5,11 @@ These are artifact-reported observations from the prototype implementers, re-ver
 `CONTROLLER`. They are not fresh execution results from the plan write-up. Line numbers are deliberately omitted: cite identifiers.
 
 ## Package replay (CONTROLLER, observed)
-The four task patches in `jax_boolean_reach_patches/` (`git diff` between consecutive task tips) apply with `git apply --check`
-then `git apply`, in order 01..04, onto `b305b363`, and the resulting tree equals the prototype tip tree
-(`8bd705dee6675cf692015c9e68204ddcc8ef4afc`). Task tips: T1 `15b40b9b`, T2 `30f66a7c` (commits `69f9d5be`, `4f56270f`, `30f66a7c`),
-T3 `2c4fac2f` (commits `05e0444e`, `2c4fac2f`), T4 `c785fe7d` (commits `7b031673`, `c785fe7d`).
+The five task patches in `jax_boolean_reach_patches/` (`git diff` between consecutive task tips) apply with `git apply --check`
+then `git apply`, in order 01..05, onto `b305b363`. After 01..04 the tree equals `8bd705dee6675cf692015c9e68204ddcc8ef4afc` (prototype tip `c785fe7d`);
+after 05 it equals `efa0c1cb53c333ddd69d654e33539c5e51c40f6c` (prototype tip `4af683c7`). `verify_package.py --task 0` passes.
+Task tips: T1 `15b40b9b`, T2 `30f66a7c` (commits `69f9d5be`, `4f56270f`, `30f66a7c`), T3 `2c4fac2f` (commits `05e0444e`, `2c4fac2f`),
+T4 `c785fe7d` (commits `7b031673`, `c785fe7d`), T5 `4af683c7` (commits `7bf46907`, `4af683c7`).
 Manifests ship INSIDE the patches (a manifest's `old` strings exist only after its task's code), not as separate assets.
 
 ## Decisions (user-approved) and where they bind
@@ -80,8 +81,16 @@ D5 `realToBool` stays refused. D6 no 0/1 input validation. D7 no gradients. Full
   `BR-T4-positional_skipped_for_reachability` (survived until the `positional_ran` assertion was added). A "stale baseline that keeps the Lean values" mutant is equivalent (JAX and Lean agree bitwise). `expect` strings contain `array([[[1., 1., ...` prefixes.
 - Final suites at the T4 tip (each once): `check-lean-drivers.sh` exit 0 (8 drivers), max-plus runner exit 0, `run-evalplan-logic.sh` exit 0 (13 fixtures). Affine/affine32/nonlin/scatter runners were not rerun in T4 because the shared runtime and emitter are untouched.
 
+## T5: documentation (commits `7bf46907`, `4af683c7`, 5 files, +111/-40)
+- Docs only, plus comment-only edits in `leanncd/LeanNCD/Eval/Plan/Executable.lean` (the module-header bullet and the `jaxRealCarrier` doc comment still said a Boolean destination or source is refused under every profile; they now say so only by default and name `.maxPlus`/`.booleanReach`). `LeanNCD` and `JaxExperiment` rebuilt green (8620 jobs).
+- `leanncd/experiments/jax_bridge/README.md`: refusal-table rows for Boolean destination, bool source into sum-product, a new `realToBool` row (still forbidden), Iverson split (lowered only in Boolean-algebra nodes, `iversonFactor` elsewhere); stale "no JAX Boolean execution ... none planned" and "Lean-side only" sentences rewritten; new subsection "Boolean reachability on JAX" (record contract, runtime semantics, runner counts, the known jit limitation, mutation records).
+  Error names in the README table are the emitter's `unsupportedDestDType`/`unsupportedSourceDType` (JaxCodegenError), mapped from the gate's `destinationDType`/`sourceDType`.
+- `leanncd/AGENTS.md` (JAX-bridge row and the "Boolean outputs are admitted" bullet), `leanncd/LeanNCD/Eval/Plan/AGENTS.md` (profile/gate lines, scan lines), `leanncd/docs/test_portfolio.md` (stale "JAX remains explicitly refused" fixed, new paragraph for the pins and the two manifests).
+- Counts claimed in the docs (62 checked views / 58 refusals / 52 source views / 5 gradient points / 20 point-forward / 20 gradient views per precision; 9 Lean-manifest entries, 33 Python-manifest entries; 17 raw Boolean fixtures; 18 metadata-refusal cases) come from this evidence file, not from a recount at the T5 tip. Manifest-entry counts were counted with python on the `task` key.
+- Sweep dispositions: live and stale were fixed. Dated snapshots left untouched and parked: `papers/wave_f_capability_manifest.md`, `papers/jax_evalplan_architecture.md`, `papers/wave_f_scanplan_proposal.md`, `papers/backend_missing_functionality.md`, `papers/eval_ir.md`, `papers/scatter_affine_lhs_writes.md`, `papers/predicate_boolean_backend_parity.md`; historical session briefs and records (`jax_*_session_brief.md`, `jax_scan_record.md` section 25, `jax_maxplus_*`, `f32_*`, nonlin/scatter driver quotes) are frozen history.
+
 ## Parked / disclosed (do not claim fixed)
-- Real-path jit divergence: under `jit` the real sum-product fold `0 + (-0)` gives `-0` (XLA drops the literal `+0` seed); Lean and eager JAX give `+0`. Pre-existing, outside this slice (the six fixtures never produce -0). Fix would be an ordered-add seed on the real path (~1-2 dispatches); needs a user decision.
+- Known limitation, NOT a new finding: under `jit` the real sum-product fold `0 + (-0)` gives `-0` (XLA drops the literal `+0` seed); Lean and eager JAX give `+0`. It is already documented in `leanncd/LeanNCD/Eval/Plan/AGENTS.md` (the "JAX ordered-reference labels ... exclude subnormals and jit signed zero" pitfall) and pinned for the affine corpus as `KNOWN_DIVERGENT` in `evalplan_affine_smoke32.py`. The six fixtures never produce -0; the T3 `real_dest_reads_bool_source` fixture dropped its -0 for this reason. Early authoring reports mislabelled it as new and as needing a decision; it needs neither.
 - Stale mutation entries J4/J5/J13/J14/J15 in `papers/f32_jax_mutations_post.json`; `jax_maxplus_mutations_python.json` is not in `mutation-manifest.sh` format (uses `mutation_python_manifest.py`).
 - `expect` strings with line numbers in Lean manifests drift if code above them changes.
 - Not run by prototypes: gradients (out of scope, D7); XLA rewrites of `0 + x` beyond the observed jit seed drop; large shapes.

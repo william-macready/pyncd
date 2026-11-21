@@ -1,6 +1,6 @@
 {
   "source_baseline": "b305b363942e440845ae19e57fec0629b7c1af04",
-  "scope": "Boolean-reachability JAX plan package: four ordered patches; manifests ship inside the patches.",
+  "scope": "Boolean-reachability JAX plan package: five ordered patches; manifests ship inside the patches.",
   "provided_assets": {},
   "tasks": [
     {
@@ -68,6 +68,22 @@
       ],
       "snapshot_file_count": 15,
       "prototype_tip": "c785fe7d"
+    },
+    {
+      "id": "T5",
+      "patch": "papers/semantics/jax_boolean_reach_patches/05.patch",
+      "patch_sha256": "7ed048b0189ccc0e084d9276b11584ad965abd6ee8dd50d6d7f788a7d17ec5dc",
+      "snapshot": "papers/semantics/jax_boolean_reach_files/task5.json",
+      "snapshot_sha256": "6d1ea549eb73ca1da350354797c65d92157d9938da58c2f1f6bdfe843efa51a0",
+      "touched_files": [
+        "leanncd/AGENTS.md",
+        "leanncd/LeanNCD/Eval/Plan/AGENTS.md",
+        "leanncd/LeanNCD/Eval/Plan/Executable.lean",
+        "leanncd/docs/test_portfolio.md",
+        "leanncd/experiments/jax_bridge/README.md"
+      ],
+      "snapshot_file_count": 19,
+      "prototype_tip": "4af683c7"
     }
   ],
   "execution_baseline": "A descendant of source_baseline with the planning assets already present and the affected source files unchanged."

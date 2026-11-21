@@ -16,7 +16,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 GIT = ["git", "-C", str(ROOT)]
 parser = argparse.ArgumentParser()
-parser.add_argument("--task", type=int, choices=range(5), default=0,
+parser.add_argument("--task", type=int, choices=range(6), default=0,
                     help="current working-tree boundary; 0 means unimplemented source baseline")
 args = parser.parse_args()
 package = json.loads((HERE / "package.json").read_text())
@@ -36,7 +36,7 @@ for task in package["tasks"]:
     assert sha((ROOT / task["snapshot"]).read_bytes()) == task["snapshot_sha256"], task["snapshot"]
     snapshots[int(task["id"][1:])] = json.loads((ROOT / task["snapshot"]).read_text())
 
-final = snapshots[4]
+final = snapshots[max(snapshots)]
 if args.task:
     for path, hashes in snapshots[args.task].items():
         assert sha((ROOT / path).read_bytes()) == hashes["sha256"], ("task boundary", args.task, path)

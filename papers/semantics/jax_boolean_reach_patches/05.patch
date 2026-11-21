@@ -1,0 +1,312 @@
+diff --git a/leanncd/AGENTS.md b/leanncd/AGENTS.md
+index 8933a6a0..1b82ea9d 100644
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -364,7 +364,7 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
+ | Experimental/scratch work | `spikes/` — gitignored except thirteen tracked files, all off the default build: `spikes/BrNF.lean` (for its wiring-combinator technique) and the twelve pre-Scatter audit probes (`spikes/Axis*Probe.lean` plus their `.output.txt` captures). The semantic-core prototype lives separately in `LeanNCD/Semantics/` and is checked by the non-default `SemanticCoreSpike` target. ⚠️ The ignore pattern is `spikes/*`, **not** `spikes/` — a directory-pattern ignore short-circuits before per-file `!` negations are consulted for *untracked* paths, so `!spikes/<file>` only works under the `spikes/*` form. `!spikes/BrNF.lean` appeared to work under the old `spikes/` form only because that file was `git mv`'d while already tracked and so never faced the ignore check at all. |
+ | What the checked-plan backend does NOT support, and the write-geometry/boundary audit of it | `../papers/backend_missing_functionality.md` is the active inventory. `../papers/pre_scatter_backend_audit.md` is the pre-Scatter findings record; its `[snippet]` evidence is the twelve tracked `spikes/Axis*Probe.lean` files, but its scatter boundary is superseded by the shipped S-A/S-B implementation. |
+ | Scatter/affine-write design and current boundary | `../papers/scatter_affine_lhs_writes.md`. S-A admits top-level scatter; S-B admits positive one-axis affine placement in non-advancing scan-state dimensions for both base and recurrence writes. The checked worker remains `AssignPlan` compute followed by `StateWriteMap` placement—there is no `BlockStep.scatter`. |
+-| Feasibility experiments: checked `EvalPlan` -> JAX | `experiments/jax_bridge/` — see its README for runners and exact boundaries. `affineReference` renders real sum-product and max-plus assignments and single-axis scans in both precisions; `run-evalplan-maxplus.py` checks Viterbi values and unique-winner gradients. Its `.maxPlus` render profile preserves explicit Boolean-source cast flags, algebra-specific padding and zero/negative-infinity state initialization. Default evidence/einsum/scatter policies remain real-only; max rendering is not an executable-evidence claim. Boolean destinations, Iverson lowering, min-plus, non-real scatter, outer contextual assignments and multi-axis scans remain refused. Inline unary reads retain the documented unchecked domain precondition. The full 3,832-case affine corpus runner builds `JaxExperiment` plus `Tests`, checks every materialized output eagerly and JIT-checks representatives; data stays in ignored `.cache/`. These are empirical experiments, not production imports. |
++| Feasibility experiments: checked `EvalPlan` -> JAX | `experiments/jax_bridge/` — see its README for runners and exact boundaries. `affineReference` renders real sum-product and max-plus assignments and single-axis scans in both precisions; `run-evalplan-maxplus.py` checks Viterbi values and unique-winner gradients, and runs the six Boolean reachability fixtures against the BFS oracle. Its `.maxPlus` render profile preserves explicit Boolean-source cast flags, algebra-specific padding and zero/negative-infinity state initialization; `.booleanReach` (what `renderAffineNode`/`renderScanNode` pass) is a superset that also runs Boolean destinations and Boolean-algebra Iverson factors (static `include` tables) over the real carrier. Default evidence/einsum/scatter policies remain real-only; max rendering is not an executable-evidence claim. Iverson in real/max-plus nodes, `realToBool`, min-plus, non-real scatter, outer contextual assignments and multi-axis scans remain refused. Inline unary reads retain the documented unchecked domain precondition. The full 3,832-case affine corpus runner builds `JaxExperiment` plus `Tests`, checks every materialized output eagerly and JIT-checks representatives; data stays in ignored `.cache/`. These are empirical experiments, not production imports. |
+ 
+ ### Global Invariants (Contracts)
+ 
+@@ -390,7 +390,7 @@ spelling): see the last bullet there before writing an eval-based test.
+ - **The R=Bool XOR-ring trap** (`Algebra/AGENTS.md`) — Mathlib's `Bool` ring instance is XOR, not `(∨,∧)`; `Mat Bool` typechecks but computes the wrong thing.
+ - **Top-level, inferred, and checked-scan scatter extents must share `LHSSlot.outExtent`** (`Eval/AGENTS.md`) — a real, previously-shipped duplicate-formula soundness bug is fixed; `scatterOutShape`, `scatterOutputShapes`, and checked scan geometry's `scatterDestExtent` adapter now converge on the stride-aligned rule.
+ - **`brCancelPoint` (`Base/`) is a known-hard, well-scoped open sorry**, not a mystery — it needs a non-bijective gs-monoidal/cospan model; the bijective-wiring approach (`spikes/BrNF.lean`) is proven inadequate. Nothing load-bearing (Bridge/Eval/DSL) depends on it.
+-- **"Boolean outputs are admitted" ≠ "the backend has a Boolean carrier, or JAX runs them"** — in the checked `Eval/Plan/` backend `ScalarDType.bool` is a semantic algebra/signature tag over the graph's real carrier — `Float` or `Float32` storage (destination selects the algebra; source/destination dtypes need not match; runtime values are NOT validated as 0/1). JAX still refuses Boolean outputs; under max-plus rendering a Boolean-source (mask-tensor) read is admitted with its checked cast flag, while Iverson predicate factors stay refused (`iversonFactor`). See `LeanNCD/Eval/Plan/AGENTS.md` Contracts and `papers/boolean_predicate_output_evalplan.md`.
++- **"Boolean outputs are admitted" ≠ "the backend has a Boolean carrier, or JAX runs them"** — in the checked `Eval/Plan/` backend `ScalarDType.bool` is a semantic algebra/signature tag over the graph's real carrier — `Float` or `Float32` storage (destination selects the algebra; source/destination dtypes need not match; runtime values are NOT validated as 0/1). JAX runs Boolean outputs only under the `affineReference` `.booleanReach` profile, over the real carrier (Boolean destinations and Boolean-algebra Iverson lowering); under max-plus rendering a Boolean-source (mask-tensor) read is admitted with its checked cast flag. Iverson factors in non-Boolean nodes (`iversonFactor`), `realToBool`, min-plus and non-real scatter stay refused. See `LeanNCD/Eval/Plan/AGENTS.md` Contracts and `papers/boolean_predicate_output_evalplan.md`.
+ - **A checked-plan scan `where=` mask can't see the live scan axis** (`lowerMaskPredicate`, `Eval/Plan/Compile.lean`) — its basis is deliberately the statement's non-seeded output axes only, so a mask referencing the scan's own `.iterAt`/`.iterNext` axis densifies that axis to a constant 0 instead of erroring. This means the top-level pyncd `CLAUDE.md`'s "causal masking goes through `softmax(..., where=predicate)`" guidance does not carry over to a scan recurrence in the checked backend — that specific shape compiles and runs silently wrong, not rejected. Tested/documented as an intentional Slice 5 scope limit, not a bug (`papers/predicate_boolean_backend_parity.md`, `backend_missing_functionality.md`'s masks/predicates entry).
+ 
+ ### Boundaries
+diff --git a/leanncd/LeanNCD/Eval/Plan/AGENTS.md b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+index 726a4499..2fe836d7 100644
+--- a/leanncd/LeanNCD/Eval/Plan/AGENTS.md
++++ b/leanncd/LeanNCD/Eval/Plan/AGENTS.md
+@@ -48,9 +48,11 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
+ - **JAX is context-free; `affineReference` runs binary64 and binary32, `einsumOnly` binary64 only.**
+   `checkJaxAssignSupport` re-runs the evidence's own checker before policy. Its default `.realOnly`
+   profile admits the storage kind's real sum-product carrier, preserving existing evidence/einsum
+-  callers. Affine rendering explicitly selects `.maxPlus`, additionally admitting max-plus and
+-  Boolean-source reads under that algebra, with the exact checked cast flag. Boolean destinations,
+-  min-plus and outer non-empty `contextShape` stay refused. Error order remains
++  callers. Affine rendering explicitly selects `.booleanReach`, a superset of `.maxPlus`: max-plus and
++  Boolean-source reads under that algebra (exact checked cast flag), plus a Boolean destination under
++  `admittedAlgebraBool`, and a Boolean source under Boolean algebra or, under `.booleanReach` only, under the
++  real sum-product algebra. Real sources in Boolean statements (`realToBool`), min-plus and outer non-empty
++  `contextShape` stay refused. Error order remains
+   destination/algebra/context/factors (source dtype before unary); `allowUnary` is renderer-only.
+   Real dictionaries retain their format; max records preserve algebra, read casts and negative-infinity
+   padding. Ordered scalar operations preserve NaNs and signed-zero ties; addition's custom JVP
+@@ -65,12 +67,13 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
+   optional static `include` table from `axiswiseIncludedPredicate`; the step's checker already ran
+   under its own signature table. Native exp/tanh/pow/sqrt results are tolerance-compared.
+   `einsumOnly` and the evidence path still refuse these nodes as `unsupportedStep`.
+-  A single-axis real or max-plus scan renders through `renderScanNode`, using `checkJaxScanSupport`
++  A single-axis real, max-plus or Boolean-reachability scan renders through `renderScanNode`, using `checkJaxScanSupport`
+   with the render profile and private context opt-in for block assignments. Zero and negative-infinity
+-  initialization are explicit; multi-axis scans, positive-infinity initialization and Boolean
+-  destinations remain refused. The existing immutable pre-step capture/write geometry is unchanged.
+-  Iverson factors still fail in the emitter. `einsumOnly`, candidate conversions and executable
+-  evidence still refuse scans as `unsupportedStep`; rendering max-plus is not certification.
++  initialization are explicit; multi-axis scans and positive-infinity initialization remain refused.
++  The existing immutable pre-step capture/write geometry is unchanged.
++  Iverson factors lower (static `include` table, `iversonIncludeTable`) only in Boolean-algebra nodes and
++  still fail in the emitter (`iversonFactor`) elsewhere. `einsumOnly`, candidate conversions and executable
++  evidence still refuse scans as `unsupportedStep`; rendering max-plus or Boolean is not certification.
+   Inline unary reads render only for affine assignments: real reads apply unary after zero padding,
+   while tropical OOB reads return the tropical pad unapplied. Lean unary-domain success remains an
+   unchecked runtime precondition (see the bridge README), not a new domain-error guarantee.
+diff --git a/leanncd/LeanNCD/Eval/Plan/Executable.lean b/leanncd/LeanNCD/Eval/Plan/Executable.lean
+index 21e46a22..e0089212 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Executable.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Executable.lean
+@@ -29,10 +29,13 @@ ownership the completed spike selected (`papers/jax_signature_evidence_ownership
+ decision GO B):
+ 
+ * `JaxSupportError`/`checkJaxAssignSupport` reject, with a located typed error, every assignment the
+-  checked backend admits but this experimental backend cannot render at all — a Boolean destination,
+-  a Boolean source, tropical max/min algebra, an inline unary read (by default: only the
+-  `affineReference` assignment renderer opts in, via `allowUnary`), and (Task 4.5 closure) a
+-  CONTEXTFUL assignment. Rejection happens BEFORE any candidate, evidence label, or Python emission.
++  checked backend admits but this experimental backend cannot render at all — by default (the
++  `.realOnly` profile) a Boolean destination, a Boolean source, tropical max/min algebra, an inline
++  unary read (only the `affineReference` assignment renderer opts in, via `allowUnary`), and (Task
++  4.5 closure) a CONTEXTFUL assignment. The `.maxPlus` and `.booleanReach` render profiles
++  (`JaxRenderProfile`) admit the max-plus and Boolean-reachability statements respectively, and only
++  the `affineReference` renderers pass them. Rejection happens BEFORE any candidate, evidence label,
++  or Python emission.
+ * A standalone entry (`validateAffineTable`/`validateEinsum`/`kernelWellFormedBool`/
+   `validateAndConstructKernel`, and the experimental renderers/conversions) takes ONE explicit
+   complete `Array TensorSignature` and treats it as its semantic authority: the assignment checker
+@@ -228,8 +231,10 @@ inductive JaxSupportError
+     accepting `f64 ∨ f32` symmetrically: an `f64` slot in a binary32 graph (or the reverse) is
+     already refused by the mode-selected `checkAssign`/`checkAssignF32` re-run, and keying the
+     policy to the kind keeps that refusal from depending on the re-run's order. `bool` is neither
+-    carrier's real dtype, so a Boolean destination or source stays refused under BOTH kinds; the
+-    tropical algebras are neither carrier's sum-product, so they stay refused too. No wildcard arm. -/
++    carrier's real dtype, so this real-carrier policy never names it: a Boolean destination or source
++    is refused under BOTH kinds unless the render profile admits it (`.booleanReach` does, below);
++    the tropical algebras are neither carrier's sum-product, so this policy never names them either.
++    No wildcard arm. -/
+ private def jaxRealCarrier : LeanNCD.StorageKind → ScalarDType × ContractionAlgebra
+   | .float64 => (.f64, admittedAlgebra)
+   | .float32 => (.f32, admittedAlgebraF32)
+diff --git a/leanncd/docs/test_portfolio.md b/leanncd/docs/test_portfolio.md
+index aadc420c..8b3a56f4 100644
+--- a/leanncd/docs/test_portfolio.md
++++ b/leanncd/docs/test_portfolio.md
+@@ -309,7 +309,8 @@ OR/AND recurrence, not arithmetic path counts: identity at hop zero, then retain
+ or extend by one directed edge. An independent Python BFS checks the complete bounded-hop history
+ and reflexive closure on the reference evaluator and checked binary64/binary32 plans.
+ Cases include a diamond (two paths still yield one), a cycle, an isolated node, node relabeling,
+-edge addition, empty/self-only graphs and a five-edge chain. JAX remains explicitly refused.
++edge addition, empty/self-only graphs and a five-edge chain. The six cases also run on JAX under the
++`.booleanReach` profile (see section 11, last paragraph).
+ Run `bash leanncd/experiments/jax_bridge/run-evalplan-logic.sh`; evidence is in section 25 of
+ [the example record](../../papers/semantics/jax_scan_record.md).
+ 
+@@ -340,9 +341,24 @@ The logic runner and section 25 linked in section 9 reproduce those Lean checks.
+ `run-evalplan-maxplus.py` additionally checks the seven Viterbi cases through named/positional JAX
+ eager/JIT in both precisions, with exact finite-value bits and NaN-pattern comparison.
+ Unique-winner gradients match independent path counts for Init, Trans and Emit; the unused
+-emission row has zero gradient. Boolean reachability, min-plus and native traceback are not
++emission row has zero gradient. Min-plus and native traceback are not
+ enabled by this max-plus capability.
+ 
++The six Boolean reachability cases also run through named/positional JAX eager/JIT in both precisions
++under the `.booleanReach` render profile (a superset of `.maxPlus`), their values checked by the unmodified
++BFS oracle with no tolerance (13 of 13 logic fixtures carry JAX fields). Pins: the gate arms in
++[`ExecutableTest.lean`](../test/Eval/Plan/ExecutableTest.lean) (assignment gate and scan gate sections for
++`.booleanReach`: Boolean destination and source accepted, real source in a Boolean statement and `realToBool`
++refused, `.realOnly`/`.maxPlus` refusals unchanged, f32 twins) and
++[`ScanJaxGateTest.lean`](../test/Eval/Plan/ScanJaxGateTest.lean) (the compiled `reachProg` scan under all three profiles);
++the emitter's Boolean record keys and Iverson `include` tables in
++[`ScanAffineEmitTest.lean`](../experiments/jax_bridge/ScanAffineEmitTest.lean) (`reachProg`, `Closed`, f32, step-dependent toy)
++and the in-file guards of `EvalPlanCodegen.lean` (per-predicate-family `iversonIncludeTable` pins and the
++`iversonPredicateFailed` backstop); the runtime and verifier in `evalplan_maxplus_smoke.py` (17 raw Boolean
++fixtures, 18 metadata-refusal cases, the six reachability fixtures, `positional_ran`). Mutation records:
++`papers/semantics/jax_boolean_reach_mutations_post.json` (9 Lean entries) and
++`papers/semantics/jax_boolean_reach_mutations_python.json` (33 runtime/verifier entries).
++
+ S3b-ii (tropical multi-writer collection; landed, merged to local main as 349b6127; `papers/semantics/additive_s3bii_plan.md`) adds production-only fixtures outside the TR table: `Eval.Plan.CollectPlanTest` (Bellman programs: all-max value iteration `[5,3]` and `[22,100]`, all-min shortest paths `[2,1]`, each on the reference, checked plan f64 and f32, the bare-copy terminal form, shifted copies pinning the group's `0_K` pad, the one-statement equivalents, max+min / sum+max / scatter / scan-node refusals, bool and min-plus readers of a collected max-plus tensor refused with `sortCastUnsupported`), `Eval.ContractTest`/`Eval.ScanTest`/`Eval.ScatterTest` and `Eval.Plan.BoolCastTest` (j) (the D1 real -> bool coerce on the reference and the checked plan: a real source `{0.25, 0.75, 0, NaN, -2}` reads as `{1, 1, 0, 1, 1}`; unary reads are not coerced and the out-of-range pad stays `0`, which j5 cannot distinguish from a coerced pad) and (k) (c0867dd9: an out-of-range read under a `unaryFn` in a tropical statement is `0_K`, unapplied, three-way: k1-k4 bare-vs-unary twins and the pooling window where `f(0)` would win, k5/k6 real and bool neighbours keeping `exp(0) = 1`, k7-k9 scan step, scan base and scatter compute half; k10-k13 pin out-of-range `log`/`recip` as absent under max/min, k14/k15 that a real statement still fails with a domain error), `Eval.Plan.DualityTest` and `Eval.Plan.ScanCompileTest` (D2 all-neutral scan state fixtures: max pads `-inf`, min `+inf`, sum stays real, a `sum` neutral writer abstains beside a `max` one). The typed oracle covers the all-max and all-min Bellman programs as `fourLegParity` (`SourceSortedDifferentialTest`); mixed groups are `mixedSorts` there. Mixed-sort and copy-form Source programs are covered by the per-tensor-sort oracle (`OracleSortRulesTest`, `OracleMixedRefusalTest`, `OracleMixedEvalTest`, `OracleMixedValueTest`; `compareMixedSource`): value parity on four legs (reference oracle, legacy, checked plan, stratified Core) where every intermediate read is finite, three legs where the Core leg could not run (a non-finite earlier cell), `unsupportedNumericalProfile` where a non-finite cell is read by a real statement, or predicted-refusal parity, with a test-side rule predictor kept independent of production's vote/cast helpers. Not covered: bool, Iverson, pad, unary, nonlinearity, affine-read and scan values (language-widening slice), a real heterogeneous Core leg, and the production-only rows (NaN and signed zero, `route`, the raw scan init tie, neutral scan scratch, the predicate abstain rewrite, the unary exemption in the cast check, real -> bool rejection); see `papers/semantics/oracle_sorts_record.md`.
+ 
+ | ID | Prog | Data → Expected | Probes | Tag |
+diff --git a/leanncd/experiments/jax_bridge/README.md b/leanncd/experiments/jax_bridge/README.md
+index 7f892d15..6d15eb7c 100644
+--- a/leanncd/experiments/jax_bridge/README.md
++++ b/leanncd/experiments/jax_bridge/README.md
+@@ -25,9 +25,9 @@ or toolchain:
+ Alongside the JAX runners, **`run-evalplan-logic.sh`** checks Lean-side Viterbi/max-plus scores and
+ Boolean reachability. It needs only Python's standard library, not the JAX environment. Run from
+ the repository root with `bash leanncd/experiments/jax_bridge/run-evalplan-logic.sh`.
+-The driver pins max-plus rendering acceptance and continued Boolean refusal. The original runner
++The driver pins max-plus and Boolean-reachability rendering acceptance. The original runner
+ still executes only the Lean workers and the independent standard-library oracles.
+-For JAX max-plus execution, use
++For JAX max-plus and Boolean-reachability execution, use
+ `python3 leanncd/experiments/jax_bridge/run-evalplan-maxplus.py --python /path/to/jax/python`.
+ This separate runner generates checked/source fixtures and verifies both precisions without installing
+ dependencies; the selected interpreter must already provide the experiment's JAX environment.
+@@ -219,18 +219,21 @@ cost (about 3 minutes of JIT) is acceptable and a per-case claim is strictly str
+ The checked Dense backend admits more than any individual JAX entry point. Unsupported features
+ are rejected with a located, typed error before that entry emits Python or constructs evidence.
+ Rendering support is not an `ExecutionEvidence` claim: candidates and einsum retain their strict
+-real-only defaults, while `affineReference` explicitly opts into max-plus rendering.
++real-only defaults, while `affineReference` explicitly opts into max-plus and Boolean-reachability
++rendering (the `.booleanReach` profile, a superset of `.maxPlus`).
+ 
+ | Assignment feature | Dense checked plan | JAX render | JAX candidate evidence |
+ |---|---|---|---|
+ | `f64`, real algebra, plain read | required | required | required |
+ | `f64`, max-plus (`admittedAlgebraMax`) | required | `affineReference`: required; `einsumOnly`: forbidden | forbidden |
+ | `f64`, min-plus (`admittedAlgebraMin`) | required | forbidden (`unsupportedAlgebra`) | forbidden |
+-| `bool` destination, Boolean algebra | required | forbidden (`unsupportedDestDType`) | forbidden |
+-| `bool` source into a sum-product destination | required | forbidden (`unsupportedSourceDType`) | forbidden |
++| `bool` destination, Boolean algebra | required | `affineReference`: required (`.booleanReach`); `einsumOnly`: forbidden (`unsupportedDestDType`) | forbidden |
++| `bool` source into a sum-product destination | required | `affineReference`: required (`.booleanReach`, the `Closed` shape); `einsumOnly`: forbidden (`unsupportedSourceDType`) | forbidden |
++| real source in a Boolean statement (`realToBool` read) | required | forbidden (`unsupportedSourceDType`) | forbidden |
+ | `bool` source under max-plus, checked cast flag true or false | required | `affineReference`: required; exact flag preserved | forbidden |
+ | unary read (`ReadPlan.unary`) | required | `affineReference`: required (opt-in `allowUnary`, tolerance-compared, unchecked domain precondition); `einsumOnly` and the candidate conversions: forbidden (`unaryFactor`) | forbidden |
+-| Iverson factor | required | forbidden (`iversonFactor`, original all-factor index) | forbidden |
++| Iverson factor in a Boolean-algebra node | required | `affineReference`: required (static `include` table, `iversonIncludeTable`); `einsumOnly`: forbidden (its Boolean destination is refused first) | forbidden |
++| Iverson factor in a real or max-plus node | required | forbidden (`iversonFactor`, original all-factor index) | forbidden |
+ | contextful assignment (`AssignPlan.contextShape` non-empty) | required | forbidden (`unsupportedContext`) | forbidden |
+ | zero-padded read shorter than its iteration basis | required | `einsumOnly` forbidden (`labelExtentMismatch`); `affineReference` required | einsum forbidden, affine required |
+ 
+@@ -238,9 +241,11 @@ Every row holds unchanged under a `.float32` plan for `affineReference` (same lo
+ max-plus rows use `admittedAlgebraF32Max`, the table's `f64` naming the binary64 case), and
+ under `einsumOnly` every binary32 plan is refused first with `unsupportedStorageKind .float32`.
+ 
+-**There is no JAX Boolean execution and none is planned here** — this is a fail-loud support
+-boundary, not a semantic gap in the checked backend, which executes all ten rows correctly. The
+-last row is the only mode-SPLIT one (whole-branch review): see the label-extent paragraph below.
++JAX Boolean execution exists only under `affineReference`'s `.booleanReach` profile, over the real
++carrier; the refused rows are a fail-loud support boundary, not a semantic gap in the checked
++backend, which executes every row correctly. The last row is the only mode-SPLIT one
++(whole-branch review): see the label-extent paragraph below. The Boolean record contract, runtime
++semantics and runner counts are in "Boolean reachability on JAX" below.
+ 
+ The contextful row is the Task 4.5 CLOSURE finding, and it is about a runtime parameter rather than
+ a dtype or an algebra: a checked assignment with a non-empty `contextShape` denotes a FAMILY of
+@@ -285,7 +290,10 @@ same coarse order `checkAssign` itself uses, which is why the context check sits
+ and the factors. Under the strict default profile, a contextful assignment with a Boolean destination
+ or a tropical algebra reports THAT, and one with a Boolean source or a unary read reports the CONTEXT.
+ The renderer's `.maxPlus` profile admits max-plus and its Boolean-source reads, but does not permit
+-an outer contextual assignment. Both profiles preserve checker revalidation before policy.
++an outer contextual assignment. Its `.booleanReach` profile (what `renderAffineNode` and
++`renderScanNode` pass) admits everything `.maxPlus` does plus a Boolean destination under
++`admittedAlgebraBool` and a Boolean source under the real sum-product algebra; a real source in a
++Boolean statement (`realToBool`) stays refused (`sourceDType` at the gate). All profiles preserve checker revalidation before policy.
+ `contextPos`/`contextShape` disagreement is never conflated with the context
+ rejection — `checkAssign` rejects it first as `contextProjectionMismatch`, so no `CheckedAssignPlan`
+ for it exists to reach the gate. Signature-context
+@@ -416,7 +424,7 @@ fixtures below say which are exercised) through `jax.lax.scan` over the step axi
+ states. The shared gate is `checkJaxScanSupport`
+ (with `jaxScanSingleAxis`) in `LeanNCD/Eval/Plan/Executable.lean`; its step-block assignments go through the
+ assign gate's private `allowContext` opt-in, because the outer gate still refuses contextful assigns. The
+-renderer opts into `.maxPlus`; the default gate remains strict for its other callers. The
++renderer opts into `.booleanReach` (a superset of `.maxPlus`); the default gate remains strict for its other callers. The
+ emitter is `renderScanNode` in `EvalPlanCodegen.lean`; the record contract it emits (one scan record per
+ `.scan` node) is in that function's doc comment, which is the source of truth. The runtime is
+ `_run_scan_node` in `evalplan_affine_runtime.py`: the base block runs once outside the scan, the carry is the
+@@ -427,12 +435,13 @@ compile size do not grow with the layer count.
+ Refused, each with a located error: a multi-axis scan (`scanMultiAxis` at the gate, `unsupportedScanAxes` at
+ the emitter), an unsupported initialization such as min-plus positive infinity
+ (`scanNonRealState` / `unsupportedScanState`), a Boolean
+-scratch tensor inside a scan (`unsupportedDestDType`), a state write outside the complete state
++scratch tensor inside a scan outside a Boolean-algebra statement (`unsupportedDestDType`), a state write outside the complete state
+ (`scanWriteOutOfRange`), a step-block context position other than `#[0]` (`scanContextPos`), and two
+ coordinates of one write landing on one offset (`scanWriteCollision`; the runtime scatter `.at[idx].set` is
+-unspecified for duplicates). An Iverson (predicate) factor inside a scan block assignment passes the gate and is
++unspecified for duplicates). An Iverson (predicate) factor inside a scan block assignment of a real or max-plus node passes the gate and is
+ refused by the emitter with `iversonFactor`, located by the outer node index with block-relative term and factor
+-indices, exactly as for an outer assignment; `ScanIversonRefusalTest` pins both blocks. `einsumOnly`, both candidate
++indices, exactly as for an outer assignment; `ScanIversonRefusalTest` pins both blocks. In a Boolean-algebra node it is
++lowered to a static `include` table (see "Boolean reachability on JAX" below). `einsumOnly`, both candidate
+ conversions and the evidence path still refuse a scan with `unsupportedStep`.
+ 
+ Fixtures (in `run-evalplan-nonlin.sh`'s differential): `transformer_scan` / `transformer_scan32`, a two-layer
+@@ -554,10 +563,10 @@ Thirteen cases cover state/node permutations, input sensitivity, time causality,
+ emission row, additive score shifts, impossible/tied sequences, diamonds, cycles, isolated nodes,
+ empty/self-only graphs, and a chain requiring five hops.
+ The reference evaluator and checked binary64/binary32 plans agree exactly (dyadic inputs, no
+-tolerance); scan structure, algebras, exports, max-plus rendering acceptance and Boolean refusal
+-are pinned before emission. The separate max-plus runner additionally checks the seven Viterbi
+-cases through named/positional JAX eager/JIT execution in both precisions. Boolean reachability
+-remains Lean-side only.
++tolerance); scan structure, algebras, exports, and max-plus and Boolean-reachability rendering
++acceptance are pinned before emission. The separate max-plus runner additionally checks the seven Viterbi
++cases and the six Boolean reachability cases through named/positional JAX eager/JIT execution in both
++precisions, the reachability values against the independent BFS oracle (`evalplan_logic_smoke.py`).
+ See section 25 of [the example record](../../../papers/semantics/jax_scan_record.md).
+ 
+ Max-plus metadata preserves the checked read cast, negative-infinity padding and scan initialization.
+@@ -579,8 +588,9 @@ split `[.5, .5, 0]` and `[1/3, 1/3, 1/3]`), because the ordered max keeps the ri
+ `a <= b`. When the output is NaN (for example `+inf` plus `-inf` in one factor product) the gradient
+ is finite and one-hot onto the first NaN-producing entry (the ordered max keeps the first NaN it
+ meets). Neither is part of the winning-path gradient the pins above check.
+-Min-plus, Boolean destination algebra, Iverson lowering, non-real scatter and executable evidence
+-remain outside this capability. See [the max-plus plan](../../../papers/semantics/jax_maxplus_plan.md).
++Min-plus, Iverson lowering outside Boolean-algebra nodes, non-real scatter and executable evidence
++remain outside this capability. See [the max-plus plan](../../../papers/semantics/jax_maxplus_plan.md)
++and, for the Boolean-algebra extension, "Boolean reachability on JAX" below.
+ 
+ Gradients: `jax.grad` works through the emitted `lax.scan` as is (no runtime change). The driver pins the gradient of `sum(C * H[:, :, 2])` of `transformer_scan` over every
+ float input, in both precisions, eager and jit: finite, exactly zero on the never-read NaN layer-2 weight slices, equal to the same loss through the unrolled plan
+@@ -594,8 +604,8 @@ the runtime mutants that only these pins catch (all-masked-row NaN gradient, a 1
+ both backends (`iter l = 4`, `S[j,l] = X[j]·G[j]^l`): a sum over `l` against an external tensor
+ (`Ysum := S[j,2]·V[l]`), a free read of the state summed over `l` (`Yfree := S[j,l]·V[l]`, NOT the per-step
+ reading), a read-out table, a broadcast, a masked softmax over `l`, and a count over `l` (`Zc := S[j,2]·M[l]`).
+-The bridge has no lowering for predicate (Iverson) factors (`iversonFactor`), so the count uses an input mask
+-`M`; the Iverson form is pinned on the Lean backends in `Eval.Plan.ScanCompileTest`. Every pin recomputes from
++The bridge lowers predicate (Iverson) factors only in Boolean-algebra nodes (a real sum-product node still gets
++`iversonFactor`), so the count uses an input mask `M`; the Iverson form is pinned on the Lean backends in `Eval.Plan.ScanCompileTest`. Every pin recomputes from
+ the fixture's inputs in numpy, never from a view's own outputs.
+ 
+ Run: `./run-evalplan-nonlin.sh` (and `./run-evalplan-scatter.sh`) first. The generated `.cache` modules go
+@@ -604,6 +614,43 @@ stale, and a Python mutation manifest runs against whatever is there. Then, from
+ (runtime, 6 entries) and `leanncd/scripts/mutation-manifest.sh leanncd papers/semantics/jax_scan_mutations_post.json`
+ (Lean gate and emitter, 11 entries; add `--check` first to validate the pins without building).
+ 
++### Boolean reachability on JAX
++
++The six Boolean reachability fixtures of `EvalPlanLogicSmoke.lean` run through named and positional JAX,
++eager and JIT, in both precisions (`run-evalplan-maxplus.py`); their values are replaced into the logic
++fixtures and checked by the unmodified independent BFS oracle in `evalplan_logic_smoke.py`, with no
++tolerance. Execution is over the real carrier under the `.booleanReach` profile.
++
++**Record contract** (emitter doc comment of `renderScanNode` in `EvalPlanCodegen.lean` is the source of truth):
++- A Boolean-algebra node carries `"algebra": "boolean"` and `"semantics": "ordered_boolean_v1"`; each read factor
++  carries `"tag": "read"` and `"real_to_bool": false`, with no `bool_to_tropical` key.
++- An Iverson factor is `{"tag": "iverson", "include": [0|1, ...]}`: one entry per coordinate of its term's full
++  `iteration_shape` (context, output, then reduction positions, in `allCoords` order, `1` where the predicate
++  holds), decided in Lean by `iversonIncludeTable`. In a scan step block the table is stacked step-major, like
++  that term's `safe_index` and `mask` tables, so a step-dependent predicate is a different table per step.
++- A Boolean scan record needs no `state_init`. The `Closed`-shaped node (a real destination reading a Boolean
++  source) is a plain real record with no `tag`/`algebra` keys.
++
++**Runtime semantics** (`evalplan_affine_runtime.py`): the factor fold is `_ordered_min` seeded `1`, the reduction
++and term fold is `_ordered_max` seeded `0`. Both are `where`-based and follow Lean's tie rule: min keeps its first
++argument on a tie, max its second. NaN spreads. Values are not normalised to {0, 1} (`0.5` propagates) and Boolean
++inputs are not validated. An Iverson factor contributes `where(include, 1, 0)`; the runtime evaluates no predicate.
++The runtime fails loud on an Iverson factor in a real or max-plus node, an `include` that is not one 0/1 entry per
++iteration coordinate, an `include` key on a read, or missing Boolean metadata. Gradients through Boolean nodes are
++unsupported and untested.
++
++**Runner counts** at this slice's tip, per precision (the same in binary64 and binary32): 62 checked views, 58
++refusals, 52 source views (13 logic fixtures x named/positional x eager/JIT), 5 gradient input points, 20
++point-forward views, 20 gradient views.
++
++**Known limitation (pre-existing, not fixed here).** Under `jit` the real sum-product fold `0 + (-0)` gives `-0`
++(XLA drops the literal `+0` seed); Lean and eager JAX give `+0`. This is the already documented jit signed-zero pitfall
++(`LeanNCD/Eval/Plan/AGENTS.md`; pinned for the affine corpus as `KNOWN_DIVERGENT` in `evalplan_affine_smoke32.py`).
++The six reachability fixtures never produce `-0`.
++The Boolean folds do not use the ordered-add seed. Mutation records:
++`papers/semantics/jax_boolean_reach_mutations_post.json` (Lean gate and emitter, 9 entries, `mutation-manifest.sh`) and
++`papers/semantics/jax_boolean_reach_mutations_python.json` (runtime and verifier, 33 entries, `mutation_python_manifest.py`).
++
+ ## Scaling probe
+ 
+ `run-scaling-probe.sh` measures one mid-sized contraction — `Y[i] := Σⱼ W[i,j]·x[j]`, `i,j` both
