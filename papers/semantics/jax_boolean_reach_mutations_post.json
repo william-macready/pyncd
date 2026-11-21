@@ -37,5 +37,85 @@
   "expect": [
    "profVerdict JaxRenderProfile.maxPlus false boolBoolSigs boolDestAssign =="
   ]
+ },
+ {
+  "label": "BR-T2-INCLUDE-ORDER",
+  "task": "T2",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "for iter in allCoords iterationShape.toList do",
+  "new": "for iter in (allCoords iterationShape.toList).map List.reverse do",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "experiments/jax_bridge/EvalPlanCodegen.lean:2782:0: Expression",
+   "experiments/jax_bridge/EvalPlanCodegen.lean:2793:0: Expression"
+  ]
+ },
+ {
+  "label": "BR-T2-NO-CONTEXT-COORDS",
+  "task": "T2",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "iversonIncludeTable nodeIndex termIndex fi t.iterationShape b",
+  "new": "iversonIncludeTable nodeIndex termIndex fi (t.iterationShape.extract t.contextPos.size t.iterationShape.size) b",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "experiments/jax_bridge/ScanAffineEmitTest.lean:253:0: Expression"
+  ]
+ },
+ {
+  "label": "BR-T2-ERROR-AS-INCLUDED",
+  "task": "T2",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "| .error _ => throw (.iversonPredicateFailed nodeIndex termIndex factorIndex)",
+  "new": "| .error _ => out := out.push 1",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "experiments/jax_bridge/EvalPlanCodegen.lean:2808:0: Expression"
+  ]
+ },
+ {
+  "label": "BR-T2-NO-BOOLEAN-NODE-META",
+  "task": "T2",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "    else if boolean then \", \\\"algebra\\\": \\\"boolean\\\", \\\"semantics\\\": \\\"ordered_boolean_v1\\\"\" else \"\")",
+  "new": "    else \"\")",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "experiments/jax_bridge/EvalPlanCodegen.lean:2734:0: Expression"
+  ]
+ },
+ {
+  "label": "BR-T2-NO-BOOLEAN-READ-TAG",
+  "task": "T2",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "  else if boolean then \", \\\"tag\\\": \\\"read\\\", \\\"real_to_bool\\\": False\" else \"\") ++ \"}\"",
+  "new": "  else \"\") ++ \"}\"",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "experiments/jax_bridge/EvalPlanCodegen.lean:2734:0: Expression"
+  ]
+ },
+ {
+  "label": "BR-T2-IVERSON-ADMITTED-EVERYWHERE",
+  "task": "T2",
+  "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+  "old": "a.terms[ti] maxPlus boolean)",
+  "new": "a.terms[ti] maxPlus true)",
+  "targets": [
+   "JaxExperiment"
+  ],
+  "expect": [
+   "experiments/jax_bridge/EvalPlanCodegen.lean:1504:0: Expression",
+   "experiments/jax_bridge/EvalPlanCodegen.lean:2734:0: Expression"
+  ]
  }
 ]

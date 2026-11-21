@@ -3,7 +3,7 @@
   "label": "MAX-L-SCAN",
   "task": "T1",
   "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
-  "old": "match checkJaxScanSupport nodeIndex checked (profile := .maxPlus) with",
+  "old": "match checkJaxScanSupport nodeIndex checked (profile := .booleanReach) with",
   "new": "match checkJaxScanSupport nodeIndex checked (profile := .realOnly) with",
   "targets": [
    "JaxExperiment"

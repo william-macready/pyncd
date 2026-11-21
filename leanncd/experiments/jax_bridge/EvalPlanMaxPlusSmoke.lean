@@ -19,9 +19,11 @@ def prepare (name : String) (s : ScheduledProgram) (sig : InputSignature) : IO P
 def gateMatrix : Bool := Id.run do
   for alg in [admittedAlgebraMax, admittedAlgebraMin, admittedAlgebraBool] do
     let sigs := if alg == admittedAlgebraBool then
-      idSigs.modify 1 (fun s => { s with dtype := .bool }) else idSigs
+      idSigs.map (fun s => { s with dtype := .bool }) else idSigs
     let .ok c := checkAssign sigs { idAssign with algebra := alg } | return false
-    if alg == admittedAlgebraMax then
+    -- Render-only admission: max-plus, and (the `.booleanReach` profile) a Boolean statement over
+    -- Boolean signatures. Min-plus stays refused; every other door below stays closed for all three.
+    if alg == admittedAlgebraMax || alg == admittedAlgebraBool then
       unless (renderAffineAssign sigs c).isOk do return false
     else
       unless (renderAffineAssign sigs c).toOption.isNone do return false
@@ -43,7 +45,7 @@ def gateMatrix : Bool := Id.run do
     | .error (.iversonFactor 0 0 _) => true | _ => false) do return false
   return true
 
-run_cmd unless gateMatrix do throwError "MAX-T3-GATE-MATRIX: render-only admission leaked"
+run_cmd unless gateMatrix do throwError "MAX-T3-GATE-MATRIX: render-only admission differs from max-plus and Boolean only"
 
 def pyTensor32 (t : DenseTensor32) : String :=
   "{\"shape\": " ++ pyShapeTuple t.shape.toArray ++ ", \"bits\": [" ++

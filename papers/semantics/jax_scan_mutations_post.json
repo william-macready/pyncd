@@ -22,7 +22,7 @@
    "Eval.Plan.ScanJaxGateTest"
   ],
   "expect": [
-   "error: test/Eval/Plan/ScanJaxGateTest.lean:26:0: Expression"
+   "error: test/Eval/Plan/ScanJaxGateTest.lean:28:0: Expression"
   ]
  },
  {
@@ -101,20 +101,20 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2539:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2630:0: Expression"
   ]
  },
  {
   "label": "JS-L-e4 (renderScanNode: the scan gate call dropped)",
   "task": "scan",
   "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
-  "old": "  match checkJaxScanSupport nodeIndex checked (profile := .maxPlus) with\n  | .ok _ => pure ()\n  | .error e => throw (codegenErrorOfSupport e)\n",
+  "old": "  match checkJaxScanSupport nodeIndex checked (profile := .booleanReach) with\n  | .ok _ => pure ()\n  | .error e => throw (codegenErrorOfSupport e)\n",
   "new": "",
   "targets": [
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2574:0: MAX-T1-SCAN-MIN: checked min-plus scan must remain refused"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2665:0: MAX-T1-SCAN-MIN: checked min-plus scan must remain refused"
   ]
  },
  {
@@ -127,7 +127,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2582:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2673:0: Expression"
   ]
  },
  {
@@ -140,7 +140,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2593:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2684:0: Expression"
   ]
  }
 ]

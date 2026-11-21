@@ -133,15 +133,10 @@ def checkStructure (f : Fixture) (p : PreparedPlan) (kind : StorageKind) : IO Un
       sc.states[0]!.initValue == (if f.tropical then .negInf else .zero) do
     throw (IO.userError s!"{f.name}: wrong scan algebra or neutral initialization")
   match renderAffinePlanNamed p with
-  | .error (.unsupportedDestDType 0 _ .bool) => unless !f.tropical do
-      throw (IO.userError s!"{f.name}: unexpected Boolean JAX refusal")
   | .error e => throw (IO.userError s!"{f.name}: unexpected JAX refusal: {repr e}")
-  | .ok _ => unless f.tropical do
-      throw (IO.userError s!"{f.name}: JAX unexpectedly admitted a Boolean scan")
+  | .ok _ => pure ()
   match renderAffinePlanPositional p.plan with
-  | .ok _ => unless f.tropical do throw (IO.userError s!"{f.name}: positional Boolean admitted")
-  | .error (.unsupportedDestDType 0 _ .bool) =>
-      unless !f.tropical do throw (IO.userError s!"{f.name}: positional max-plus refused")
+  | .ok _ => pure ()
   | .error e => throw (IO.userError s!"{f.name}: positional: {repr e}")
 
 def pyEnv (env : NamedDenseEnv) (names : List String) : IO String := do
