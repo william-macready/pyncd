@@ -33,10 +33,11 @@ How the package was produced (ARTIFACT, from the evidence headers):
    | T2 | `69f9d5be`, `4f56270f`, `30f66a7c` | `30f66a7c` |
    | T3 | `05e0444e`, `2c4fac2f` | `2c4fac2f` |
    | T4 | `7b031673`, `c785fe7d` | `c785fe7d` |
-   | T5 | `7bf46907`, `4af683c7` | `4af683c7` |
+   | T5 | `7bf46907`, `4af683c7` (T5b), `b46cef9d` (T5c) | `b46cef9d` |
 
 3. **Packaging.** The patches are the `git diff` between consecutive task tips. Per-task cumulative
-   hash snapshots are `task1.json`..`task5.json`, with 7, 11, 15, 15 and 19 file entries. The replay
+   hash snapshots are `task1.json`..`task5.json`, with 7, 11, 15, 15 and 19 file entries (T5 touches 7
+   files: the T5c follow-up added `EvalPlanCodegen.lean` and `papers/f32_jax_mutations_post.json`). The replay
    verifier is `verify_package.py`. Both new mutation manifests ship inside the patches, because their
    `old` strings exist only after their task's code.
 4. **This plan.** A fresh prose author wrote it from the artifacts only, without reading current
@@ -86,17 +87,21 @@ No dispatch is reported as failed outright.
 | T2 `69f9d5be` | `check-lean-drivers.sh` red: "JAX unexpectedly admitted a Boolean scan" | ARTIFACT |
 | T2 `30f66a7c` | `check-lean-drivers.sh` all eight PASS; max-plus runner 28 checked / 26 refusals per precision | CONTROLLER |
 | T2 | 6 mutants killed; 12 table pins agree with an independent Python enumeration; record contract as in plan section 3 | ARTIFACT |
-| T3 `2c4fac2f` | runner 62 checked / 62 refusals / 28 source / 5 / 20 / 20; 17 raw fixtures bitwise in f64/f32, eager/jit; 18 refusal cases; Boolean Python manifest 30 entries killed in both precisions, sha-clean, confirmation run twice; max-plus Python 18/18; grad 8/8; real-path runners (affine, affine32, nonlin, scatter, logic) and drivers 8/8 green | ARTIFACT |
+| T3 after Phase A (`05e0444e`) | runner 62 checked / 62 refusals / 28 source / 5 / 20 / 20; 17 raw fixtures bitwise in f64/f32, eager/jit; 18 refusal cases; real-path runners (affine, affine32, nonlin, scatter, logic) and drivers 8/8 green. Phase B (`2c4fac2f`) added mutation manifests only and changed no code | ARTIFACT |
+| T3 Phase B (`2c4fac2f`) | Boolean Python manifest 30 entries killed in both precisions, sha-clean, confirmation run twice; max-plus Python 18/18; grad 8/8 | ARTIFACT |
 | T4 `c785fe7d` | +64/-10, 3 files; runner 62 / 58 / 52 / 5 / 20 / 20; drivers exit 0 (8); `run-evalplan-logic.sh` exit 0 (13 fixtures); `Closed` 19 true pairs; chain `Reach[0,5,:]` = `[0,0,0,0,0,1,1]`; 3 controls (one survived until `positional_ran` was added) | ARTIFACT |
 | T4 | affine/affine32/nonlin/scatter runners NOT rerun (shared runtime and emitter untouched) | ARTIFACT |
-| T5 `4af683c7` | +111/-40, 5 files; `LeanNCD` and `JaxExperiment` rebuilt green (8620 jobs); doc counts copied from the evidence, not recounted | ARTIFACT |
+| T5b `4af683c7` | +111/-40, 5 files; `LeanNCD` and `JaxExperiment` rebuilt green (8620 jobs); doc counts copied from the evidence, not recounted | ARTIFACT |
+| T5c `b46cef9d` | 7 files in patch 05 in all. `J3` cycle run on the tip: KILLED, `expect` refreshed (it was stale before this slice); re-run PASS, restored byte-identically. `JS-L-g1` cycled PASS unchanged. README limitation and runtime paragraphs corrected; patch 02's whitespace change to `preparedOf` reverted | ARTIFACT, reported by the controller (see "Post-review fixes") |
 
 ## Replay observation
 
 - **CONTROLLER** (from the evidence). Patches 01..05 apply in order onto `b305b363` with
   `git apply --check` and then `git apply`. After 01..04 the tree equals
-  `8bd705dee6675cf692015c9e68204ddcc8ef4afc` (the prototype tip `c785fe7d`). After 05 it equals
-  `efa0c1cb53c333ddd69d654e33539c5e51c40f6c` (tip `4af683c7`). `verify_package.py --task 0` passes.
+  `8bd705dee6675cf692015c9e68204ddcc8ef4afc` (the prototype tip `c785fe7d`). After 05 (now three
+  prototype commits, T5b and T5c included) it equals `64ece7de674cac511d8ea6bad616f08355e625f8` (tip
+  `b46cef9d`). This replaces the earlier `efa0c1cb53c333ddd69d654e33539c5e51c40f6c` (tip `4af683c7`),
+  which was the tree before the T5c fixes. `verify_package.py --task 0` passes.
 - **AUTHOR.** I extracted `leanncd/`, `papers/` and the two root files from `b305b363` into a scratch
   directory outside the worktree and applied 01..05 there in order with `patch -p1`. All five applied
   cleanly. All 19 files in `task5.json` then matched their `sha256`.
@@ -176,13 +181,14 @@ No dispatch is reported as failed outright.
   `64` or `float64` was not checked.
 - The re-anchored existing mutation entries are not reported as cycled by the prototype:
   - `MAX-L-SCAN`, `MAX-L-DEFAULT`
-  - `JS-L-g1`, `JS-L-g2`, `JS-L-e3`, `JS-L-e4`, `JS-L-e5`, `JS-L-c1`
-  - `J3`
+  - `JS-L-g2`, `JS-L-e3`, `JS-L-e4`, `JS-L-e5`, `JS-L-c1`
 
-  The plan schedules them in final verification as first observations.
+  The plan schedules them in final verification as first observations. `JS-L-g1` and `J3` WERE cycled
+  at T5c (both PASS; `J3` after an `expect` refresh): see "Post-review fixes".
 - Driver and real-path runner results at the T1 boundary, and real-path runner results at T2, were not
   reported. The plan expects green and asks the executor to record them.
-- The full `LeanNCD Tests JaxExperiment` job count at the final tip was not recorded.
+- The full `LeanNCD Tests JaxExperiment` job count at the final tip was not recorded (the 8620-job
+  build was observed at `4af683c7`, before T5c).
 - J4, J5, J14 and J15 were not individually confirmed stale at `b305b363`; only J13 was (ARTIFACT).
 - The JAX environment setup (`setup-python.sh`, the fixed interpreter path used by
   `mutation_python_manifest.py`) comes from script headers. The evidence does not record it.
@@ -198,3 +204,50 @@ No dispatch is reported as failed outright.
   estimates, not harness measurements.
 - **Authoring target.** ≤ ~50M cumulative input tokens (CLAUDE.md Rule 6). Whether it was met is
   unknown until measured.
+
+## Post-review fixes
+
+Two read-only reviews of the draft plan (`5705a364`) were adjudicated by the controller.
+
+- **Review A (executability): fix first.** 1 Critical, 3 Important, 8 Minor. The Critical: the `expect`
+  strings of `J3` in `papers/f32_jax_mutations_post.json` named a blank line, so the cycle the plan
+  schedules would have stopped the executor.
+- **Review B (semantics): accept after text edits.** 10 Minor, no Critical or Important. Its findings
+  file could not be written by its harness; its message was the only copy, and the controller
+  adjudicated from that message.
+
+What the controller did:
+
+1. **Patch work (T5c, `b46cef9d`, folded into patch 05).**
+   - P1: the `J3` cycle was run on the prototype tip. The mutant is killed; its `expect` was refreshed
+     from the observed failure lines (`ExecutableTest.lean:587:0: Expression` and `:1929:0:
+     Expression`; manifest `expect` strings may carry line numbers); the re-run passed and the file was
+     restored byte-identically. `JS-L-g1` was cycled and passed unchanged. J4, J5, J13, J14, J15 are
+     untouched and stay stale at the baseline.
+   - P2: the README "Known limitation" now names the concrete `Edge` false = `-0` route through
+     `Closed` (not run by any fixture; inferred from the documented pitfall).
+   - P3: the README runtime paragraph no longer claims the runtime fails loud on missing Boolean
+     metadata (total loss with no Iverson factor runs silently as sum-product; the emitter guards it).
+   - P4: patch 02's whitespace-only change to `preparedOf` is reverted in patch 05.
+   - Result: patch 05 covers three prototype commits (`7bf46907`, `4af683c7`, `b46cef9d`), touches 7
+     files, and the tree after patches 01..05 is `64ece7de674cac511d8ea6bad616f08355e625f8` (replay
+     observed by the controller; identical to the prototype tip). After 01..04 the tree is still
+     `8bd705dee6675cf692015c9e68204ddcc8ef4afc`.
+2. **Plan text (W1-W14, applied to the plan, this record and the evidence file).** JAX environment
+   setup and `<jax-python>` (W1); the three `BR-T4-*` controls run at the T4 boundary from a filtered
+   manifest copy (W2); parallel mutation worktrees, merge preconditions and cleanup (W3); runner
+   `PYTHON` defaults (W4); the documented exceptions to "build only with `lake-build.sh`" (W5); the
+   non-zero-exit stop rule with the f32 `--check` exit 125 exception (W6); `verify_package.py --task N`
+   scope (W7); T3-era figures "carried from T3" (W8); `mkdir -p` before the `TMPDIR` fallback (W9); the
+   `JS-L-g2` shift and its refresh in patch 02 (W10); the T3 attribution corrected to "after Phase A
+   (`05e0444e`), Phase B added manifests only" (W11); the audit row for a bool source under a Boolean
+   algebra (W12); the evidence path of `ScanAffineEmitTest.lean` (it lives in
+   `leanncd/experiments/jax_bridge/`) and the T5/J3 updates (W13, W14, P5).
+3. **Parked (K1-K6),** listed with cost in plan section 12 and as silently-ignored cells in the audit:
+   zero-extent Iverson include; the weak empty-range accept neighbour; D6 pinned at node level only;
+   Iverson with a unary or several reads; the unpinned `jit` `-0` route through `Closed`; and the
+   earlier parked list (including `papers/f32_jax_prototype_notes.md`, which still cites the old `J3`
+   line).
+
+Unchanged and disclosed: the authoring token total remains unmeasured (the controller will measure it at
+closeout). A verification round aimed only at these fixes follows; this record does not claim its result.

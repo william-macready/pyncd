@@ -58,7 +58,7 @@ the emitter does not tag it, the node silently computes `+`/`*`.
 | gradients through Boolean nodes | not run, not claimed | D7 |
 | evidence, einsum, candidates, scatter paths | stay `.realOnly`, Boolean doors closed | unchanged |
 | 0/1 validation of Boolean inputs | none, matching Lean (values propagate) | D6, documented |
-| XLA `jit` signed-zero seed (`0 + (-0)` is `-0` under `jit`) | KNOWN and already PINNED (`KNOWN_DIVERGENT` in `evalplan_affine_smoke32.py`); not a new finding | parked; the six fixtures never produce `-0` |
+| XLA `jit` signed-zero seed (`0 + (-0)` is `-0` under `jit`) | KNOWN and already PINNED (`KNOWN_DIVERGENT` in `evalplan_affine_smoke32.py`); not a new finding | parked; no fixture is known to expose it, but `Reach` holds `-0` cells and a route through `Closed` exists (section 12, K5) |
 
 ## 2. Decisions (settled by the user) and where each binds
 
@@ -133,6 +133,10 @@ Derivations, for checking a mismatch: T3 adds 17 raw Boolean fixtures x 2 (eager
 views, and 18 refusal cases x 2 = 36 refusal records. T4 deletes 2 old cases x 2 = 4 refusal records
 and adds 6 reachability fixtures x 2 renderers x 2 modes = 24 source views.
 
+The "after T3" row was observed after T3 Phase A (`05e0444e`); Phase B (`2c4fac2f`) added mutation
+manifests only and changed no code. The T5 row is carried from T4 (T5 changes no executable behaviour:
+docs, a comment, a whitespace revert and one manifest refresh; see section 10).
+
 ## 4. Case x class audit
 
 Columns: what the slice REQUIRES, what it FORBIDS, and what is SILENTLY IGNORED (accepted with no
@@ -142,11 +146,12 @@ fixture or mutant (from the evidence and the patches) that catches a violation.
 | Door | Required | Forbidden | Silently ignored | Fails if violated |
 |---|---|---|---|---|
 | Lean gate: Boolean destination | accepted under `.booleanReach` with `admittedAlgebraBool` | under `.realOnly`/`.maxPlus`: `destinationDType 7 1 .bool` (assignment), `destinationDType 5 0 .bool` (compiled `reachProg` scan, f64 and f32) | none | `profVerdict` pins (`ExecutableTest.lean`), `reachVerdict` pins (`ScanJaxGateTest.lean`); mutant `BR-T1-MAXPLUS-ADMITS-BOOLEAN` |
-| Lean gate: bool source under Boolean algebra | accepted under `.booleanReach` | under `.realOnly` | none | `profVerdict ... boolBoolSigs boolDestAssign` pins |
+| Lean gate: bool source under Boolean algebra | accepted under `.booleanReach` | under `.realOnly`: the verdict is `destinationDType` (the destination check precedes the source check and a Boolean algebra implies a Boolean destination), so the source cell cannot be violated independently of the destination cell | none | `profVerdict ... boolBoolSigs boolDestAssign` pins |
 | Lean gate: bool source under real sum-product (`Closed`) | accepted under `.booleanReach` only (D2) | `sourceDType 7 0 0 .bool` under `.realOnly`/`.maxPlus` | the value is copied with no cast (D6, intended) | mutant `BR-T1-BOOL-SRC-LEAKS-REALONLY`; raw fixture `real_dest_reads_bool_source` `[.5,-3,2,.25]` (a hidden cast would give 1s) |
 | Lean gate: real source in a Boolean statement | none | refused under every profile: `sourceDType 7 0 0 .f64` (assignment), `sourceDType 5 0 0 .f64` (`linearScanBool` scan under `.booleanReach`) | none | mutant `BR-T1-REAL-SRC-IN-BOOLEAN`; `scanVerdictP .booleanReach outerSigsBool linearScanBool` pin |
 | Lean gate: Boolean state init | `.zero` admitted | `.negInf`/`.posInf` on a Boolean state: refused by `checkScanPlan` as `stateInitNotAdmitted 0 .negInf .bool` / `.posInf` | the gate has no Boolean-state clause (the checker refuses first) | `checkScanPlan ... linearScanBool` init pins in `ExecutableTest.lean`; verifier asserts no `state_init` key on the Boolean scan record |
 | Emitter: Iverson in a Boolean node | lowered to `{"tag":"iverson","include":[...]}` by `iversonIncludeTable` | an `evalPosBool` error counted as "included": `iversonPredicateFailed` instead | none | 12 `gridPin` family pins, donor pin, backstop pin (`EvalPlanCodegen.lean`); `brDiag6`, `brStepInclude` pins (`ScanAffineEmitTest.lean`); mutants `BR-T2-INCLUDE-ORDER`, `BR-T2-NO-CONTEXT-COORDS`, `BR-T2-ERROR-AS-INCLUDED` |
+| Emitter: Iverson over a zero-extent axis or with a unary/second read in the term | none | none | `include: []` for a zero-extent iteration axis; an Iverson factor combined with a unary read, with two or more reads, or listed first: silently-ignored cell, parked (K1, K4) | none; the factor fold is uniform and only signed-zero ties are order-sensitive |
 | Emitter: Iverson in a real node | none | `iversonFactor` (located) | none | donor pin real leg, `gridPin` real legs; `ScanIversonRefusalTest` (unchanged); mutant `BR-T2-IVERSON-ADMITTED-EVERYWHERE` |
 | Emitter: Iverson in a max-plus node | none | `iversonFactor 0 0 1` | none | donor pin max-plus leg; `gateMatrix` Iverson rows (`EvalPlanMaxPlusSmoke.lean`) |
 | Emitter: Boolean node metadata | node keys `algebra`/`semantics`; read `tag: read`, `real_to_bool: False` | `bool_to_tropical` on a Boolean read; Boolean keys on the real `Closed` node | none | `brReach` count pins and plain-real `Closed` pin (`ScanAffineEmitTest.lean`); mutants `BR-T2-NO-BOOLEAN-NODE-META`, `BR-T2-NO-BOOLEAN-READ-TAG` |
@@ -160,9 +165,9 @@ fixture or mutant (from the evidence and the patches) that catches a violation.
 | Runtime: tag family | `read`, `iverson` | other tags: "unknown factor tag 'future'" | none | `bool_unknown_tag` |
 | Runtime: include family | int 0/1 entries, length `prod(iteration_shape)` | short / long / entry 2 / entry `True`: "iverson include must be one 0/1 entry per iteration coordinate"; `include` on a read: "include is only valid on an iverson factor" (any algebra; added by the prototype, not requested) | the length guard has a WEAK pin: its mutant dies by a jax `TypeError`, not the ValueError reason check (parked) | `bool_include_*`, `bool_read_with_include`; mutants `BR-T3-include_range_guard_dropped-*`, `BR-T3-include_on_read_guard_dropped-*`, `BR-T3-include_length_guard_dropped-*` (weak) |
 | Runtime: Iverson in non-Boolean node | none | "iverson factors require boolean algebra" | none | `iverson_in_real_node`, `iverson_in_max_plus_node`; mutant `BR-T3-iverson_admitted_in_maxplus-*` |
-| Runtime: empty-range scan step block | step block validated even at `step_count=0` | bad include / include entry 2 at `step_count=0` | the stacked step-table length guard is redundant (`_check_factors` already checks it): equivalent mutant, left out | `bool_scan_empty_step_bad_include`, `bool_scan_empty_step_include_entry_2`; accept neighbour: same record, valid step block |
-| Runtime: Boolean input values | carried as floats | none | no 0/1 validation (D6) | values-not-normalised fixtures (`bool_min_not_product`, `bool_iverson_base`) |
-| Runtime: real fold signed zero under `jit` | none | none | `0 + (-0)` is `-0` under `jit` (KNOWN, pre-existing) | pinned for the affine corpus as `KNOWN_DIVERGENT`; parked; `real_dest_reads_bool_source` dropped its `-0` input for this reason |
+| Runtime: empty-range scan step block | step block validated even at `step_count=0` | bad include / include entry 2 at `step_count=0` | the stacked step-table length guard is redundant (`_check_factors` already checks it): equivalent mutant, left out. The accept neighbour is a record Lean never emits (`step_count=0` keeping step extent 3 and 9 include entries) and asserts only that the run returns one result, not its value; Lean's real zero-step record is `scan_extentone` (parked, K2) | `bool_scan_empty_step_bad_include`, `bool_scan_empty_step_include_entry_2`; accept neighbour: same record, valid step block (weak) |
+| Runtime: Boolean input values | carried as floats | none | no 0/1 validation (D6) | values-not-normalised fixtures (`bool_min_not_product`, `bool_iverson_base`) pin D6 at node level only. The six reachability fixtures use 0/1 `Edge` values only, so the named and positional plan entry points never see a non-0/1 input; a hidden input cast at that boundary would pass every fixture (none exists today). Silently-ignored cell, parked (K3) |
+| Runtime: real fold signed zero under `jit` | none | none | `0 + (-0)` is `-0` under `jit` (KNOWN, pre-existing). A concrete route exists through `Closed` (K5): `Reach` cells are `-0` where `Edge` is false, Lean's real fold turns them into `+0`, and a `jit` fold that drops the `+0` seed would keep `-0`. No fixture runs it (inferred from the documented pitfall) | pinned for the affine corpus as `KNOWN_DIVERGENT`; parked; `real_dest_reads_bool_source` dropped its `-0` input for this reason |
 | Verifier: reachability assertions | 13 of 13 logic fixtures carry jax fields; shapes `Reach` (6,6,7), `Closed` (6,6); exact JAX-vs-Lean check; `oracle.verify(replaced)`; `positional_ran` covers every fixture, eager and jit | Viterbi-only replacement filter (removed) | a "stale baseline that keeps the Lean values" control and the hop-5 `Closed` control are equivalent (left out) | controls `BR-T4-stale_baseline_reachability_inputs`, `BR-T4-closed_taken_from_hop_4`, `BR-T4-positional_skipped_for_reachability` |
 
 ## 5. Execution protocol (executor)
@@ -176,9 +181,15 @@ Open every brief and session with this preamble, with `<worktree>` replaced by i
 > never commit `.claude/settings.json`. Stay within about 60 turns and 250k context per session and
 > say so in the report if you breach it.
 
+Documented exceptions to "build only with `lake-build.sh`": `check-lean-drivers.sh` runs
+`$LAKE build LeanNCD JaxExperiment Tests` itself, and the `run-evalplan-*.sh` runners call `lake`
+directly; `LAKE` defaults to `~/.elan/bin/lake` in all of them. Run these scripts as written. Do not
+run `lake` yourself for anything else, and do not set `LAKE` to a different binary.
+
 Placeholders in angle brackets are literal absolute paths you substitute. They are not shell
 variables. `<primary>` = the primary checkout. `<worktree>` = the execution worktree.
-`<jax-python>` = a Python with JAX (see Setup).
+`<jax-python>` = `<worktree>/leanncd/experiments/jax_bridge/.cache/python/bin/python`, the Python with
+JAX that Setup step 4 creates.
 
 **Setup**
 
@@ -189,18 +200,28 @@ variables. `<primary>` = the primary checkout. `<worktree>` = the execution work
 3. With `<worktree>` as the current directory, run the shell script
    `bash <worktree>/.claude/skills/new-slice/prepare-worktree.sh`. It syncs a built `.lake` so Mathlib
    does not cold-build, and it fails loudly if it cannot. STOP if Mathlib would cold-build.
-4. JAX environment: the shell runners use `PYTHON` (default
-   `<worktree>/leanncd/experiments/jax_bridge/.cache/python/bin/python`). The max-plus runner takes
-   `--python <jax-python>`. `mutation_python_manifest.py` always uses
-   `<worktree>/leanncd/experiments/jax_bridge/.cache/python/bin/python`. Create it with
-   `bash <worktree>/leanncd/experiments/jax_bridge/setup-python.sh`. If `PYTHON` is set, that interpreter
-   seeds the venv. Then use that path as `<jax-python>` everywhere. (Read from the script headers; the
-   prototype evidence does not record the environment setup.)
+4. JAX environment. Neither the primary checkout nor a fresh worktree has
+   `<worktree>/leanncd/experiments/jax_bridge/.cache/python`, and `prepare-worktree.sh` does not create it.
+   Run `bash <worktree>/leanncd/experiments/jax_bridge/setup-python.sh` (needs network: it runs
+   `pip install -r requirements-cpu.txt`, pinning `jax==0.10.0`, `jaxlib==0.10.0`, `numpy==2.5.2`).
+   Seeding, read from the script: an existing `.cache/python/bin/python` is reused; else `$PYTHON -m
+   venv` if `PYTHON` is set; else `python3.13`/`3.12`/`3.11`, then `~/miniconda3/bin/python`, then
+   `conda create`; exit 1 if none exists. Afterwards run `unset PYTHON` (a leftover `PYTHON` without JAX
+   breaks the shell runners, which default to it).
+   - `run-evalplan-affine.sh`, `-affine32.sh`, `-nonlin.sh`, `-scatter.sh` default `PYTHON` to
+     `<jax-python>`. `run-evalplan-logic.sh` defaults it to `python3` (stdlib-only oracle; harmless).
+     `run-evalplan-maxplus.py` takes `--python <jax-python>`. `mutation_python_manifest.py` always uses
+     the `<jax-python>` of the worktree it lives in.
+   - Every extra mutation worktree (section 11) needs the same directory: rerun `setup-python.sh`
+     there, or `mkdir -p <extra>/leanncd/experiments/jax_bridge/.cache` and
+     `ln -s <worktree>/leanncd/experiments/jax_bridge/.cache/python <extra>/leanncd/experiments/jax_bridge/.cache/python`
+     (`.cache/` is gitignored; the symlink needs no network).
+   - The prototype evidence does not record the environment setup; this step is read from the scripts.
 5. `python3 <worktree>/papers/semantics/jax_boolean_reach_files/verify_package.py --task 0`
    → expected `Package OK: 5 ordered patches, task 0 boundary; index unchanged.` This checks the
    affected files still hash to the baseline, that the two new manifests do not exist yet, and that
-   01..05 replay onto `b305b363` in a temporary index. If the sandbox blocks `/tmp`, prefix
-   `env TMPDIR=<worktree>/.cache`.
+   01..05 replay onto `b305b363` in a temporary index. If the sandbox blocks `/tmp`, first run
+   `mkdir -p <worktree>/.cache`, then prefix the command with `env TMPDIR=<worktree>/.cache`.
 
 **Per task N (1..5)**
 
@@ -209,6 +230,8 @@ variables. `<primary>` = the primary checkout. `<worktree>` = the execution work
    (silent, exit 0)
 3. `/usr/bin/git -C <worktree> apply <worktree>/papers/semantics/jax_boolean_reach_patches/0N.patch`
 4. `python3 <worktree>/papers/semantics/jax_boolean_reach_files/verify_package.py --task <N>` → `Package OK: ... task N boundary ...`
+   (It hashes only the files of snapshot N. A stray edit to a file that a LATER task touches is not
+   caught until that task's step 1; keep the tree free of edits besides the patches.)
 5. Run that task's verification commands (sections 6-10) and compare with the expected results.
 6. Stage exactly that task's `touched_files` (listed per task below) with `/usr/bin/git -C <worktree> add <path> ...`.
    Then `/usr/bin/git -C <worktree> status --short` must show nothing else staged. Commit once with the
@@ -216,7 +239,10 @@ variables. `<primary>` = the primary checkout. `<worktree>` = the execution work
 
 **Stop and report (BLOCKED), do not improvise, if:** a patch fails `--check`; `verify_package.py`
 fails; a count differs from this plan; a mutant SURVIVES or is killed without its `expect` strings; a
-file is not sha-restored after a cycle; a pre-existing pin goes red; Mathlib would cold-build. Never
+file is not sha-restored after a cycle; a pre-existing pin goes red; Mathlib would cold-build; any
+command exits non-zero, with one exception: `mutation-manifest.sh --check` on
+`papers/f32_jax_mutations_post.json` WITHOUT a label filter exits 125 because of the five stale
+entries (see section 12). Never
 hand-edit a patch, a manifest, an `expect` string, a count or a fixture. Never use `git apply --3way`
 or `--reject`.
 
@@ -279,7 +305,13 @@ and `.booleanReach`; `minPlusScan` refused by both as `scanNonRealState 5 0`.
 
 **Manifest re-anchors (one line each).** `MAX-L-DEFAULT` in `jax_maxplus_mutations_post.json` (the
 `let maxPlus := ...` line), `JS-L-g1` in `jax_scan_mutations_post.json` (the `initValue` check), `J3`
-in `papers/f32_jax_mutations_post.json` (the destination dtype check).
+in `papers/f32_jax_mutations_post.json` (the destination dtype check). Two caveats:
+
+- Patch 01 adds two imports to `ScanJaxGateTest.lean`, shifting the `expect` of `JS-L-g2` (`:26:0`
+  becomes `:28:0`); patch 02 refreshes it. So `JS-L-g2` is stale at the T1 boundary. `--check` does not
+  see this (it checks `old`, not `expect`) and cycles of existing entries run only at the end.
+- `J3`'s `expect` strings were stale BEFORE this slice (they named a blank line); patch 01 re-anchored
+  only its `old`, and patch 05 refreshes the `expect` (section 10).
 
 **Commands**
 
@@ -299,7 +331,9 @@ PASS (killed for the `expect` reason, sha-restored). Both re-anchored manifests 
 check: `all eight drivers ran clean`. Runners: exit 0. The prototype did not report driver or runner
 results at T1; record what you observe. Optional observation: `--check` on
 `papers/f32_jax_mutations_post.json` reports J4, J5, J13, J14, J15 as stale (old-string matched 0
-times) and exits 125. That is pre-existing at the baseline. Do NOT fix it (section 12).
+times) and exits 125 (this is the documented exception to the non-zero-exit stop rule). That is
+pre-existing at the baseline. Do NOT fix it (section 12). `J3` is not among the stale five (patch 01
+re-anchored its `old`; to check it alone use the label prefix `"J3 "`).
 
 **Pitfall: ordering hazard.** T1 opens the gate for `.booleanReach`, but no renderer passes
 `.booleanReach` until T2. If a renderer passed it before the emitter tagged Boolean nodes, a Boolean
@@ -367,8 +401,10 @@ in-file failure stops `ScanAffineEmitTest` from building. Their `expect` strings
 
 **Manifest re-anchors.** `MAX-L-SCAN`: `(profile := .maxPlus)` becomes `(profile := .booleanReach)`,
 and the mutant still reverts to `.realOnly`. `JS-L-e4` is re-anchored the same way. The line-number
-`expect`s of `JS-L-e3`, `JS-L-e4`, `JS-L-e5`, `JS-L-c1` shift by 91 lines and `JS-L-g2` by 2. These
-`expect` strings carry line numbers and drift if code above them moves.
+`expect`s of `JS-L-e3`, `JS-L-e4`, `JS-L-e5`, `JS-L-c1` shift by 91 lines and `JS-L-g2` by 2 (the
+shift of `JS-L-g2` is caused by the two imports patch 01 added to `ScanJaxGateTest.lean`; see
+section 6). These `expect` strings carry line numbers and drift if code above them moves. (They are
+manifest strings, so they may carry line numbers; this plan cites identifiers elsewhere.)
 
 **Commands**
 
@@ -494,7 +530,9 @@ first: the Python mutation runner reads the generated
 driver line should read `generated 14 checked edge cases, 17 Boolean raw fixtures` (derived from the
 patched driver text and the counts; not quoted in the evidence). Boolean Python manifest: 30/30
 killed and sha-restored. Max-plus Python 18/18. Grad 8/8. `check-lean-drivers.sh` 8/8. Affine,
-affine32, nonlin, scatter, logic runners exit 0 (all observed by the prototype at T3).
+affine32, nonlin, scatter, logic runners exit 0. The runner counts, drivers and real-path results were
+observed by the prototype after T3 Phase A (`05e0444e`); Phase B (`2c4fac2f`) added the mutation
+manifests only and changed no code. The mutation results (30/30, 18/18, 8/8) are from Phase B.
 
 **Commit:** `feat(jax): execute ordered_boolean_v1 nodes and pin raw Boolean fixtures`
 
@@ -532,8 +570,8 @@ affine32, nonlin, scatter, logic runners exit 0 (all observed by the prototype a
 `BR-T4-stale_baseline_reachability_inputs` (killed by the exact JAX-vs-checked comparison),
 `BR-T4-closed_taken_from_hop_4` (killed by the BFS oracle),
 `BR-T4-positional_skipped_for_reachability` (survived until `positional_ran` was added). Their `expect`
-strings contain `array([[[1., 1., ...` prefixes. These three run in final verification (section 11),
-together with the 30 T3 entries.
+strings contain `array([[[1., 1., ...` prefixes. Run them at the T4 boundary (below) and again in
+final verification (section 11), where the full 33-entry manifest runs.
 
 **Commands** (T4 changes no shared runtime or emitter code, so the affine, affine32, nonlin and
 scatter runners are not rerun here):
@@ -544,19 +582,37 @@ python3 <worktree>/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py --pyth
 bash <worktree>/leanncd/experiments/jax_bridge/run-evalplan-logic.sh
 ```
 
+**The three `BR-T4-*` controls at the T4 boundary.** `mutation_python_manifest.py` has no task filter, so
+the full manifest would re-run the 30 `T3` entries too. Write a filtered copy with only the `T4` entries
+(entries resolve `file` relative to the RUNNER's directory, so the copy may live anywhere), then run it.
+The runner needs the `.cache/generated_evalplan_maxplus_smoke{64,32}.py` modules that the max-plus runner
+command above just produced. Do not pass `--observe` (it rewrites the manifest).
+
+```text
+python3 -c "import json; p='<worktree>/papers/semantics/jax_boolean_reach_mutations_python.json'; e=[x for x in json.load(open(p)) if x.get('task')=='T4']; json.dump(e, open('<worktree>/leanncd/experiments/jax_bridge/.cache/t4_controls.json','w'), indent=1); print(len(e))"
+python3 <worktree>/leanncd/experiments/jax_bridge/mutation_python_manifest.py <worktree>/leanncd/experiments/jax_bridge/.cache/t4_controls.json
+```
+
+The first prints `3`. The second must print three `PASS ... | killed | restored` lines and exit 0; anything
+else is a STOP. Do not commit the copy (`.cache/` is gitignored). The final phase still runs the full
+33-entry manifest.
+
 **Expected** (observed by the prototype at `c785fe7d`, each run once): `check-lean-drivers.sh` exit 0
 (8 drivers). Max-plus runner exit 0 with `62 checked views, 58 refusals, 52 source views, 5 gradient
 input points, 20 point-forward views, 20 gradient views` per precision. `run-evalplan-logic.sh` exit
-0 (13 fixtures).
+0 (13 fixtures). The three controls were observed killed by the prototype (one only after
+`positional_ran` was added); the filtered-copy run itself is a first observation, record it.
 
 **Commit:** `test(jax): run the six reachability fixtures on JAX against the BFS oracle`
 
 ## 10. T5: documentation (patch 05)
 
-**Files:** `leanncd/AGENTS.md`, `leanncd/LeanNCD/Eval/Plan/AGENTS.md`,
+**Files (7):** `leanncd/AGENTS.md`, `leanncd/LeanNCD/Eval/Plan/AGENTS.md`,
 `leanncd/LeanNCD/Eval/Plan/Executable.lean` (comment-only), `leanncd/docs/test_portfolio.md`,
-`leanncd/experiments/jax_bridge/README.md`. Snapshot count 19. Prototype commits `7bf46907`,
-`4af683c7` (+111/-40).
+`leanncd/experiments/jax_bridge/EvalPlanCodegen.lean` (one-line whitespace revert, below),
+`leanncd/experiments/jax_bridge/README.md`, `papers/f32_jax_mutations_post.json` (`J3` `expect`
+refresh, below). Cumulative snapshot file count 19. Prototype commits `7bf46907`, `4af683c7` (T5b) and
+`b46cef9d` (T5c); prototype tip `b46cef9d`. Diff size: see `package.json` and the patch header.
 
 **What lands.**
 
@@ -576,6 +632,24 @@ input points, 20 point-forward views, 20 gradient views` per precision. `run-eva
 - `LeanNCD/Eval/Plan/AGENTS.md`: profile/gate lines and scan lines.
 - `test_portfolio.md`: the stale "JAX remains explicitly refused" is fixed, and a paragraph is added
   for the pins and the two manifests.
+- T5c (`b46cef9d`, folded into patch 05):
+  - `papers/f32_jax_mutations_post.json`, entry `J3`: its `expect` strings (`ExecutableTest.lean:586:0:
+    Expression`, `:1861:0:`) were stale BEFORE this slice (line 586 was blank). The cycle was run on the
+    tip: KILLED, with errors at several `ExecutableTest.lean` lines. `expect` is now
+    `ExecutableTest.lean:587:0: Expression` and `ExecutableTest.lean:1929:0: Expression` (manifest
+    `expect` strings may carry line numbers; they are quoted as is). Re-run PASS, restored
+    byte-identically. `JS-L-g1` (also re-anchored by patch 01) cycled PASS unchanged: killed at lines
+    2000, 2041, 2047, 2048 of `ExecutableTest.lean`, including `ExecutableTest.lean:2000:0: Expression`.
+    Both are EXPECTED TO PASS in final verification. J3 is no longer a pre-existing stale entry (this
+    slice refreshed it); J4, J5, J13, J14, J15 stay stale and untouched.
+  - README "Known limitation" names the concrete route: `Edge` false entries are `-0`, so 30 `Reach`
+    cells are `-0`; Lean's `Closed` turns them into `+0`; under `jit` the dropped `+0` seed would leave
+    `-0`. No fixture runs it (inferred from the documented pitfall).
+  - README runtime paragraph states what the runtime catches and misses on metadata loss: total loss
+    with no Iverson factor runs silently as sum-product (observed 2.0 vs 1.0 for two empty-factor
+    terms); the emitter guards it (donor pin, `BR-T2-NO-BOOLEAN-*` mutants).
+  - Patch 02's whitespace-only change to `preparedOf` in `EvalPlanCodegen.lean` is reverted; the net
+    diff against `b305b363` has no change on that line.
 
 The counts these docs claim come from the authoring evidence, not from a recount at the T5 tip: 62 /
 58 / 52 / 5 / 20 / 20 per precision; 9 Lean and 33 Python manifest entries; 17 raw Boolean fixtures;
@@ -588,10 +662,13 @@ bash <worktree>/leanncd/scripts/lake-build.sh <worktree>/leanncd LeanNCD JaxExpe
 /usr/bin/git -C <worktree> diff --check
 ```
 
-**Expected.** Build green (prototype: 8620 jobs). `diff --check` (run before staging) prints nothing. Then run the
-stale-claim greps in section 11.
+**Expected.** Build green (prototype: 8620 jobs, observed at `4af683c7`; not re-recorded at
+`b46cef9d`, record yours). `diff --check` (run before staging) prints nothing. Then run the
+stale-claim greps in section 11. Replay observed by the controller: patches 01..05 applied in order
+give tree `64ece7de674cac511d8ea6bad616f08355e625f8`, identical to the prototype tip.
 
-**Commit:** `docs(jax): document Boolean reachability on JAX`
+**Commit:** `docs(jax): document Boolean reachability on JAX`, with a one-line body: "Refresh the J3
+mutation expect strings; revert an unrelated whitespace change to preparedOf."
 
 ---
 
@@ -623,32 +700,54 @@ bash <worktree>/leanncd/experiments/jax_bridge/run-evalplan-logic.sh
 - Five real-path runners: exit 0. Record their counts; this plan asserts none for them.
 - `diff --check`: empty.
 
-**Mutation phases** (these may run in parallel, each in its OWN prepared worktree at the final
-commit; never two in one worktree). The Python worktree must first run
-`run-evalplan-maxplus.py --python <jax-python>` to generate the `.cache` modules.
+**Mutation phases.** Two groups; run each serially inside ONE worktree. They mutate and build different
+files, so they may run in parallel only in separate prepared worktrees at the final commit. Never run two
+mutation runners, or a runner and a build, in one worktree. Running both groups serially in `<worktree>`
+is also fine. For parallel running, after the T5 commit create ONE extra worktree `<mut-py>`
+(= `<primary>/.claude/worktrees/boolean-reach-mut-py`):
+
+1. `/usr/bin/git -C <primary> worktree add --detach <mut-py> jax-boolean-reach-exec`
+2. With `<mut-py>` as the current directory: `bash <mut-py>/.claude/skills/new-slice/prepare-worktree.sh`
+   (supports detached worktrees; STOP if Mathlib would cold-build).
+3. Provide `<mut-py>/leanncd/experiments/jax_bridge/.cache/python` (Setup step 4).
+4. Run `python3 <mut-py>/leanncd/experiments/jax_bridge/run-evalplan-maxplus.py --python <mut-py>/leanncd/experiments/jax_bridge/.cache/python/bin/python`
+   once: it generates the `.cache/generated_evalplan_maxplus_smoke{64,32}.py` modules the Python runner reads.
+
+Group L (Lean manifests), run in `<worktree>`:
 
 ```text
 bash <worktree>/leanncd/scripts/mutation-manifest.sh <worktree>/leanncd <worktree>/papers/semantics/jax_boolean_reach_mutations_post.json
-python3 <worktree>/leanncd/experiments/jax_bridge/mutation_python_manifest.py <worktree>/papers/semantics/jax_boolean_reach_mutations_python.json
-python3 <worktree>/leanncd/experiments/jax_bridge/mutation_python_manifest.py <worktree>/papers/semantics/jax_maxplus_mutations_python.json
-python3 <worktree>/leanncd/experiments/jax_bridge/mutation_python_manifest.py <worktree>/papers/semantics/jax_maxplus_grad_mutations_python.json
 bash <worktree>/leanncd/scripts/mutation-manifest.sh <worktree>/leanncd <worktree>/papers/semantics/jax_maxplus_mutations_post.json
 bash <worktree>/leanncd/scripts/mutation-manifest.sh <worktree>/leanncd <worktree>/papers/semantics/jax_scan_mutations_post.json JS-L-g1 JS-L-g2 JS-L-e3 JS-L-e4 JS-L-e5 JS-L-c1
 bash <worktree>/leanncd/scripts/mutation-manifest.sh <worktree>/leanncd <worktree>/papers/f32_jax_mutations_post.json "J3 "
+```
+
+Group P (Python manifests), run in `<mut-py>` (or in `<worktree>` if running everything serially; the
+max-plus runner must have run there first):
+
+```text
+python3 <mut-py>/leanncd/experiments/jax_bridge/mutation_python_manifest.py <mut-py>/papers/semantics/jax_boolean_reach_mutations_python.json
+python3 <mut-py>/leanncd/experiments/jax_bridge/mutation_python_manifest.py <mut-py>/papers/semantics/jax_maxplus_mutations_python.json
+python3 <mut-py>/leanncd/experiments/jax_bridge/mutation_python_manifest.py <mut-py>/papers/semantics/jax_maxplus_grad_mutations_python.json
 ```
 
 **Expected kills.**
 
 - Boolean Lean manifest: 9/9 PASS (3 `T1` + 6 `T2`).
 - Boolean Python manifest: 33/33 killed and sha-restored (30 `T3` per-precision entries + 3 `T4`
-  controls, each control running both precisions).
-- Max-plus Python 18/18; grad 8/8 (both observed at T3).
-- The re-anchored existing entries (`MAX-L-SCAN`, `MAX-L-DEFAULT`; `JS-L-g1`, `JS-L-g2`, `JS-L-e3`,
-  `JS-L-e4`, `JS-L-e5`, `JS-L-c1`; `J3`) are expected killed. The evidence reports their re-anchoring
-  and refreshed `expect`s but no observed cycle result, so these are first observations; record them.
+  controls, each control running both precisions). The 30 `T3` results and the three controls were
+  observed by the prototype at T3 and T4; the 33-entry total is a first observation.
+- Max-plus Python 18/18; grad 8/8: carried from T3 (T4 only deletes two refusal cases and edits the
+  logic section; no `expect` names a deleted case).
+- `J3` and `JS-L-g1` were cycled by the prototype at T5c and PASSED (killed at the lines quoted in
+  section 10, restored byte-identically). Expect PASS for both here; a missing `expect` string is a STOP.
+- The other re-anchored existing entries (`MAX-L-SCAN`, `MAX-L-DEFAULT`; `JS-L-g2`, `JS-L-e3`,
+  `JS-L-e4`, `JS-L-e5`, `JS-L-c1`) are expected killed. The evidence reports their re-anchoring and
+  refreshed `expect`s but no observed cycle result, so these are first observations; record them.
   A survivor or a missing `expect` string (most likely a drifted line number) is a STOP and report;
   do not edit the `expect`.
-- The `"J3 "` prefix (with its trailing space) selects only J3. The stale J4/J5/J13/J14/J15 are
+- Select `J3` by the label prefix `"J3 "` (with its trailing space). `--check` on the f32 manifest
+  WITHOUT a prefix still exits 125 because of the five stale entries J4/J5/J13/J14/J15, which are
   outside the selection and do not block the run.
 
 **Stale-claim value greps** (after T5; package files excluded because they quote the tokens):
@@ -675,18 +774,28 @@ here is a finding.
 
 **Integration** (after green verification and a clean or adjudicated whole-branch review):
 
-1. Commit the execution record.
-2. Merge to local `main` with `/usr/bin/git -C <primary> merge --no-ff jax-boolean-reach-exec`, and
-   confirm `/usr/bin/git -C <primary> diff --stat main jax-boolean-reach-exec` is empty.
-3. Remove only this worktree and its merged branch.
+1. Commit the execution record (stage it by explicit path; `/usr/bin/git -C <worktree> status --short`
+   must then print nothing).
+2. In the primary checkout, `/usr/bin/git -C <primary> status --short` must print nothing and
+   `/usr/bin/git -C <primary> branch --show-current` must print `main`. STOP and report otherwise; do
+   not stash, reset or switch branches there.
+3. `/usr/bin/git -C <primary> merge --no-ff jax-boolean-reach-exec -m "Merge Boolean-reachability on JAX"`,
+   then confirm `/usr/bin/git -C <primary> diff --stat main jax-boolean-reach-exec` is empty.
+4. Clean up your own work only: `/usr/bin/git -C <primary> worktree remove <mut-py>` (if created), then
+   `/usr/bin/git -C <primary> worktree remove <worktree>`, then
+   `/usr/bin/git -C <primary> branch -d jax-boolean-reach-exec`. Add `--force` to a `worktree remove`
+   only if it refuses solely over untracked `.cache`/`.lake` content; STOP for anything tracked.
 
-No push.
+No push. Leave local `main` ahead of `origin/main` and say so in the report.
 
 ## 12. Risks and parked items (from the evidence; do not claim fixed)
 
 - **Stale entries J4, J5, J13, J14, J15 in `papers/f32_jax_mutations_post.json`.** Their old-strings
-  match 0 times. They are stale at the baseline: J13 was confirmed at `b305b363`; the other four were
-  not individually confirmed against it. Do NOT fix them. `--check` on that manifest reports them.
+  match 0 times. They are stale at the baseline and are not yours: J13 was confirmed at `b305b363`;
+  the other four were not individually confirmed against it. Do NOT fix them. `--check` on that
+  manifest without a label filter reports them and exits 125. `J3` is NOT among them: it was stale
+  only in its `expect` strings, and this slice refreshed it (section 10, T5c); `JS-L-g1` needed no
+  refresh.
 - **Weak include-length pin.** `BR-T3-include_length_guard_dropped-*` is killed only by a jax
   `TypeError: cannot reshape array of shape` escaping the refusal loop, not by the intended ValueError
   reason check. Parked.
@@ -706,14 +815,33 @@ No push.
 - **Known jit signed-zero limitation (NOT new).** Under `jit` the real sum-product fold `0 + (-0)`
   gives `-0`, because XLA drops the literal `+0` seed; Lean and eager JAX give `+0`. It is documented in
   `LeanNCD/Eval/Plan/AGENTS.md` (the "JAX ordered-reference labels ... exclude subnormals and jit
-  signed zero" pitfall) and pinned as `KNOWN_DIVERGENT` in `evalplan_affine_smoke32.py`. The six
-  fixtures never produce `-0`.
+  signed zero" pitfall) and pinned as `KNOWN_DIVERGENT` in `evalplan_affine_smoke32.py`. No fixture
+  is known to expose it, but a concrete route exists (K5 below).
 - **Not run by the prototype:** gradients (D7); XLA rewrites of `0 + x` beyond the observed jit seed
   drop; large shapes.
 - **Prose outside the patches** (plan-author observation, not in the evidence). The `Zc` fixture
   comment in `EvalPlanNonlinSmoke.lean` ("The bridge has no lowering for predicate factors") stays
   accurate for that real-algebra fixture, but is now too general. No patch touches it. Report it in the
   sweep; do not edit it.
+- **Dated note citing the old `J3` line.** `papers/f32_jax_prototype_notes.md` (historical) still
+  cites `ExecutableTest.lean:586:0` for `J3`. Left as is (frozen history).
+- **Parked review findings** (do not implement here; cost in dispatches):
+  - **K1.** No pin for an Iverson factor over a ZERO-extent axis (`include: []`, e.g.
+    `Y[i] := max_k X[i,k]*[k<=i]` with `k` of extent 0). About 1 small dispatch (raw fixture + mutation entry).
+  - **K2.** The empty-range scan accept neighbour (`step_count=0`, step extent 3, 9 include entries) is
+    a record Lean never emits and asserts only that the run returns one result, not its value; Lean's
+    real zero-step record is `scan_extentone`. Small.
+  - **K3.** D6 is pinned at node level only: the six fixtures use 0/1 `Edge`, so the plan entry points
+    never see non-0/1 values; a hidden input cast there would pass (none exists). About 1 dispatch
+    (run `reachProg` with `Edge` = 0.5 through both renderers against Lean).
+  - **K4.** No fixture combines an Iverson factor with a unary read, with two or more reads in one
+    term, or with the Iverson factor first. Low risk (uniform fold; only signed-zero ties are
+    order-sensitive). Park; unestimated.
+  - **K5.** The `jit` `-0` route through `Closed` (see the signed-zero item above; 30 `Reach` cells are
+    `-0`): a bitwise difference the BFS oracle cannot see; D2 and D6 make it reachable. Pinned
+    limitation, not new; no fixture covers it. Unestimated.
+  - **K6.** Earlier parked items stay: J4/J5/J13/J14/J15, the weak include-length pin, the two
+    equivalent mutants, the dated snapshot docs, the too-general `EvalPlanNonlinSmoke.lean` prose.
 - **Budget disclosure** (CLAUDE.md Rule 6). Prototype dispatch turn budgets (~60) were exceeded:
   T2 Phase B ~85 turns, T3 Phase A ~58, T3 Phase B ~71+ across resumes (one API outage), T4 139 tool
   calls in one dispatch. T1 was stopped by mistake and resumed. The authoring token total has not been
