@@ -72,18 +72,20 @@
     {
       "id": "T5",
       "patch": "papers/semantics/jax_boolean_reach_patches/05.patch",
-      "patch_sha256": "7ed048b0189ccc0e084d9276b11584ad965abd6ee8dd50d6d7f788a7d17ec5dc",
+      "patch_sha256": "a9a278687f5091cf5bba6d71fa2e1a86f8337849948d35a0d6815f8b5491dc30",
       "snapshot": "papers/semantics/jax_boolean_reach_files/task5.json",
-      "snapshot_sha256": "6d1ea549eb73ca1da350354797c65d92157d9938da58c2f1f6bdfe843efa51a0",
+      "snapshot_sha256": "eeefb27cef2f9709170698c1e223cdcd99b8c232f85831906aa02241a0d0d071",
       "touched_files": [
         "leanncd/AGENTS.md",
         "leanncd/LeanNCD/Eval/Plan/AGENTS.md",
         "leanncd/LeanNCD/Eval/Plan/Executable.lean",
         "leanncd/docs/test_portfolio.md",
-        "leanncd/experiments/jax_bridge/README.md"
+        "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean",
+        "leanncd/experiments/jax_bridge/README.md",
+        "papers/f32_jax_mutations_post.json"
       ],
       "snapshot_file_count": 19,
-      "prototype_tip": "4af683c7"
+      "prototype_tip": "b46cef9d"
     }
   ],
   "execution_baseline": "A descendant of source_baseline with the planning assets already present and the affected source files unchanged."

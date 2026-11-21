@@ -133,8 +133,21 @@ index aadc420c..8b3a56f4 100644
  S3b-ii (tropical multi-writer collection; landed, merged to local main as 349b6127; `papers/semantics/additive_s3bii_plan.md`) adds production-only fixtures outside the TR table: `Eval.Plan.CollectPlanTest` (Bellman programs: all-max value iteration `[5,3]` and `[22,100]`, all-min shortest paths `[2,1]`, each on the reference, checked plan f64 and f32, the bare-copy terminal form, shifted copies pinning the group's `0_K` pad, the one-statement equivalents, max+min / sum+max / scatter / scan-node refusals, bool and min-plus readers of a collected max-plus tensor refused with `sortCastUnsupported`), `Eval.ContractTest`/`Eval.ScanTest`/`Eval.ScatterTest` and `Eval.Plan.BoolCastTest` (j) (the D1 real -> bool coerce on the reference and the checked plan: a real source `{0.25, 0.75, 0, NaN, -2}` reads as `{1, 1, 0, 1, 1}`; unary reads are not coerced and the out-of-range pad stays `0`, which j5 cannot distinguish from a coerced pad) and (k) (c0867dd9: an out-of-range read under a `unaryFn` in a tropical statement is `0_K`, unapplied, three-way: k1-k4 bare-vs-unary twins and the pooling window where `f(0)` would win, k5/k6 real and bool neighbours keeping `exp(0) = 1`, k7-k9 scan step, scan base and scatter compute half; k10-k13 pin out-of-range `log`/`recip` as absent under max/min, k14/k15 that a real statement still fails with a domain error), `Eval.Plan.DualityTest` and `Eval.Plan.ScanCompileTest` (D2 all-neutral scan state fixtures: max pads `-inf`, min `+inf`, sum stays real, a `sum` neutral writer abstains beside a `max` one). The typed oracle covers the all-max and all-min Bellman programs as `fourLegParity` (`SourceSortedDifferentialTest`); mixed groups are `mixedSorts` there. Mixed-sort and copy-form Source programs are covered by the per-tensor-sort oracle (`OracleSortRulesTest`, `OracleMixedRefusalTest`, `OracleMixedEvalTest`, `OracleMixedValueTest`; `compareMixedSource`): value parity on four legs (reference oracle, legacy, checked plan, stratified Core) where every intermediate read is finite, three legs where the Core leg could not run (a non-finite earlier cell), `unsupportedNumericalProfile` where a non-finite cell is read by a real statement, or predicted-refusal parity, with a test-side rule predictor kept independent of production's vote/cast helpers. Not covered: bool, Iverson, pad, unary, nonlinearity, affine-read and scan values (language-widening slice), a real heterogeneous Core leg, and the production-only rows (NaN and signed zero, `route`, the raw scan init tie, neutral scan scratch, the predicate abstain rewrite, the unary exemption in the cast check, real -> bool rejection); see `papers/semantics/oracle_sorts_record.md`.
  
  | ID | Prog | Data → Expected | Probes | Tag |
+diff --git a/leanncd/experiments/jax_bridge/EvalPlanCodegen.lean b/leanncd/experiments/jax_bridge/EvalPlanCodegen.lean
+index ffca509f..31958589 100644
+--- a/leanncd/experiments/jax_bridge/EvalPlanCodegen.lean
++++ b/leanncd/experiments/jax_bridge/EvalPlanCodegen.lean
+@@ -1521,7 +1521,7 @@ private def accepted {α : Type} : Except JaxCodegenError α → Bool
+   | .ok _ => true
+   | .error _ => false
+ 
+-private def preparedOf(raw : RawEvalPlan) (inputs materialized : Array SlotBinding) :
++private def preparedOf (raw : RawEvalPlan) (inputs materialized : Array SlotBinding) :
+     Option PreparedPlan :=
+   match checkPlan raw with
+   | .error _ => none
 diff --git a/leanncd/experiments/jax_bridge/README.md b/leanncd/experiments/jax_bridge/README.md
-index 7f892d15..6d15eb7c 100644
+index 7f892d15..d93bad35 100644
 --- a/leanncd/experiments/jax_bridge/README.md
 +++ b/leanncd/experiments/jax_bridge/README.md
 @@ -25,9 +25,9 @@ or toolchain:
@@ -266,7 +279,7 @@ index 7f892d15..6d15eb7c 100644
  the fixture's inputs in numpy, never from a view's own outputs.
  
  Run: `./run-evalplan-nonlin.sh` (and `./run-evalplan-scatter.sh`) first. The generated `.cache` modules go
-@@ -604,6 +614,43 @@ stale, and a Python mutation manifest runs against whatever is there. Then, from
+@@ -604,6 +614,54 @@ stale, and a Python mutation manifest runs against whatever is there. Then, from
  (runtime, 6 entries) and `leanncd/scripts/mutation-manifest.sh leanncd papers/semantics/jax_scan_mutations_post.json`
  (Lean gate and emitter, 11 entries; add `--check` first to validate the pins without building).
  
@@ -292,8 +305,13 @@ index 7f892d15..6d15eb7c 100644
 +argument on a tie, max its second. NaN spreads. Values are not normalised to {0, 1} (`0.5` propagates) and Boolean
 +inputs are not validated. An Iverson factor contributes `where(include, 1, 0)`; the runtime evaluates no predicate.
 +The runtime fails loud on an Iverson factor in a real or max-plus node, an `include` that is not one 0/1 entry per
-+iteration coordinate, an `include` key on a read, or missing Boolean metadata. Gradients through Boolean nodes are
-+unsupported and untested.
++iteration coordinate, an `include` key on a read, a `boolean` algebra tag without `ordered_boolean_v1`, a Boolean read
++missing `tag`/`real_to_bool: false` or carrying `bool_to_tropical`, and a node whose `algebra` tag was dropped while its
++reads still carry `real_to_bool`/`bool_to_tropical`. It does not catch TOTAL loss of the Boolean metadata: a node with
++`algebra`, `semantics` and every read key stripped and no Iverson factor is a valid real record and runs as sum-product
++(observed: two empty-factor terms give `2.0` where the Boolean node gives `1.0`; a one-read term over three ones gives
++`3.0`). That case is guarded by the emitter (the `idIversonAssign` donor pin in `EvalPlanCodegen.lean`, plus the `BR-T2-NO-BOOLEAN-NODE-META` and
++`BR-T2-NO-BOOLEAN-READ-TAG` mutants), not by the runtime. Gradients through Boolean nodes are unsupported and untested.
 +
 +**Runner counts** at this slice's tip, per precision (the same in binary64 and binary32): 62 checked views, 58
 +refusals, 52 source views (13 logic fixtures x named/positional x eager/JIT), 5 gradient input points, 20
@@ -302,7 +320,13 @@ index 7f892d15..6d15eb7c 100644
 +**Known limitation (pre-existing, not fixed here).** Under `jit` the real sum-product fold `0 + (-0)` gives `-0`
 +(XLA drops the literal `+0` seed); Lean and eager JAX give `+0`. This is the already documented jit signed-zero pitfall
 +(`LeanNCD/Eval/Plan/AGENTS.md`; pinned for the affine corpus as `KNOWN_DIVERGENT` in `evalplan_affine_smoke32.py`).
-+The six reachability fixtures never produce `-0`.
++The six reachability fixtures never produce `-0`, but a caller can reach it: Boolean inputs are not validated, and with
++the `Edge` "false" entries set to `-0.0` the `Reach` result holds 30 `-0` cells (observed, binary64 `8000000000000000`,
++binary32 `80000000`; Lean, the reference and the plan agree bitwise). The `Closed` node (`Closed[i, j] := Reach[i, j, 6]`, a real sum-product node reading the Boolean state) turns each
++`-0` into `+0` in Lean (observed: `Closed` has only `+0` and `1.0` cells; the reference and the plan agree bitwise), and,
++per the documented pitfall, in eager JAX (real `0 + 1*x`; not separately run for this input). Under `jit` that `Closed` fold would keep `-0`, because XLA drops the literal `+0`
++seed; this is inferred from the documented dropped seed and was NOT run by any fixture, so it is an unpinned bitwise
++difference that the BFS oracle cannot see.
 +The Boolean folds do not use the ordered-add seed. Mutation records:
 +`papers/semantics/jax_boolean_reach_mutations_post.json` (Lean gate and emitter, 9 entries, `mutation-manifest.sh`) and
 +`papers/semantics/jax_boolean_reach_mutations_python.json` (runtime and verifier, 33 entries, `mutation_python_manifest.py`).
@@ -310,3 +334,18 @@ index 7f892d15..6d15eb7c 100644
  ## Scaling probe
  
  `run-scaling-probe.sh` measures one mid-sized contraction — `Y[i] := Σⱼ W[i,j]·x[j]`, `i,j` both
+diff --git a/papers/f32_jax_mutations_post.json b/papers/f32_jax_mutations_post.json
+index 661e4bfb..e08ba6a0 100644
+--- a/papers/f32_jax_mutations_post.json
++++ b/papers/f32_jax_mutations_post.json
+@@ -36,8 +36,8 @@
+       "Eval.Plan.ExecutableTest"
+     ],
+     "expect": [
+-      "ExecutableTest.lean:586:0: Expression",
+-      "ExecutableTest.lean:1861:0: Expression"
++      "ExecutableTest.lean:587:0: Expression",
++      "ExecutableTest.lean:1929:0: Expression"
+     ]
+   },
+   {

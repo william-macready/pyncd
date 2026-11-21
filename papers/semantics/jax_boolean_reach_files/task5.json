@@ -24,8 +24,8 @@
     "baseline_blob": "aadc420ced3af13dfa1485b68370c4d388f9231e"
   },
   "leanncd/experiments/jax_bridge/EvalPlanCodegen.lean": {
-    "sha256": "66bcbb5b6496bec25d8dea80ad81219da8ed74493a2247b61ae0f65c7a45991b",
-    "blob": "ffca509fca1363968672eeff402af4e4a4c72189",
+    "sha256": "ff4bbe554b40cd6fb23910ed3fbefc70e67389801326a308712dad0d37fd66d8",
+    "blob": "319585893e2218dcf3dc065b25cf6664d3107ba9",
     "baseline_sha256": "7007798ded90d25a77124a753195ac8dd09a694aadb93c1e74ff23e5a6ffe41b",
     "baseline_blob": "3fe4ed3925324da508b8b81f3f4e4a90ce22d40a"
   },
@@ -42,8 +42,8 @@
     "baseline_blob": "64ce88549226ee22be04477638e7a8e9f0c2ddf1"
   },
   "leanncd/experiments/jax_bridge/README.md": {
-    "sha256": "156c5db95e97ffdb1a7f050a2927393c4a28eb59a694f9216d894ffe3fef7dfc",
-    "blob": "6d15eb7cfd1c2892793c6e623775c6d324911127",
+    "sha256": "271d6ca900dde0bbaf0e237598968b8f6cdd6869d77aa356dd3b916ef631b8d5",
+    "blob": "d93bad35c9b7411ac5597cc104dbd5633981e73f",
     "baseline_sha256": "55608cd0e23c1ab8cb5b29176480e7257103a6bc3c5de27c037880a53e7933d6",
     "baseline_blob": "7f892d15b0f23a4ed3a488f188409cbabf7985d4"
   },
@@ -78,8 +78,8 @@
     "baseline_blob": "c875495576b9dee967539970f58e84b5be0eba0f"
   },
   "papers/f32_jax_mutations_post.json": {
-    "sha256": "5c639bc35b127460a88be695d36db2770e9a571cfd5aa86cffaa815d1eb71eb0",
-    "blob": "661e4bfb6aad6bb53ffea8e0ffd19372549827f3",
+    "sha256": "98c0d61882bb794fbc6f1aabaa576a78b95643fc7d23b708b5174308974a46b0",
+    "blob": "e08ba6a0800a405afd3cbef32f3f2dc1035c09bb",
     "baseline_sha256": "c896160aa7416efc5de078c4984c79f1a9f02f7b91f5fa6cfc44e4a7b04e7b09",
     "baseline_blob": "4217ebe1d3eae65b5d5c528d147bc3049a063fce"
   },
