@@ -50,7 +50,9 @@ manifest `expect` refreshes. `evalplan_affine_runtime.py` and `EvalPlanCodegen.l
   from the plan, a build is red, a manifest verdict is FAIL, a mutant survives or is not sha-restored, a
   pre-existing pin goes red, Mathlib would cold-build, or any command exits non-zero (the ONE documented
   exception: `mutation-manifest.sh --check` on `papers/f32_jax_mutations_post.json` WITHOUT a label filter
-  exits 125 because of five stale entries, plan section 12): STOP, leave the tree as it is, and report the
+  exits 125 because of five stale entries, plan section 12; and `rg` exiting 1 because NOTHING matched, which is
+a result to record, not a failure: it applies only to the stale-claim greps and to read-only searches): STOP,
+leave the tree as it is, and report the
   exact command and output. Do not repair around it.
 - **Do NOT merge, do NOT push.** Plan section 11 ends with an "Integration" step list: that is the OWNER's
   after review. You do only its step 1 (commit the execution record, `git status --short` empty), then STOP
@@ -81,8 +83,10 @@ git. Use absolute paths and `/usr/bin/git -C <worktree>`. Placeholders such as `
 repository root; the scripts `check-lean-drivers.sh`, `run-evalplan-*.sh` and `run-evalplan-maxplus.py` are the
 documented exceptions that call `lake` themselves (plan section 5). `lake` is not on `PATH`
 (`~/.elan/bin/lake`). Python and JAX come from `bash <worktree>/leanncd/experiments/jax_bridge/setup-python.sh`
-(needs network for `pip`; an offline failure is BLOCKED). Check `printenv PYTHON`: if it prints anything,
-prefix every runner command with `env -u PYTHON` (plan section 5, Setup step 4). The first build after T1
+(needs network for `pip`; an offline failure is BLOCKED). Do NOT probe the `PYTHON` variable (`printenv
+PYTHON` exits 1 when it is unset, which is the good case and is NOT a BLOCKED condition): instead prefix every
+shell runner command (`run-evalplan-affine.sh`, `-affine32.sh`, `-nonlin.sh`, `-scatter.sh`, `-logic.sh`)
+with `env -u PYTHON`, which is harmless whether or not it is set (plan section 5, Setup step 4). The first build after T1
 recompiles many jobs (it edits a core file, `Executable.lean`): run long builds, runners and manifests in the
 background with output redirected to a file under `<worktree>/.cache/`, and wait for completion instead of
 polling. Never run two of {a Lake build, a mutation manifest, a verifier, `check-lean-drivers.sh`, a runner} at

@@ -211,8 +211,10 @@ JAX that Setup step 4 creates.
    venv` if `PYTHON` is set; else `python3.13`/`3.12`/`3.11`, then `~/miniconda3/bin/python`, then
    `conda create`; exit 1 if none exists. Afterwards make sure `PYTHON` is not set to an interpreter without
    JAX (a leftover `PYTHON` breaks the shell runners, which default to it). Each command may run in a fresh
-   shell, so a bare `unset PYTHON` can be lost: check `printenv PYTHON`, and if it prints anything, prefix every
-   runner command with `env -u PYTHON` (or set `PYTHON=<jax-python>` on that command).
+   shell, so a bare `unset PYTHON` can be lost. Do NOT probe the variable (`printenv PYTHON` exits 1 when it is
+   unset, which is the good case and would look like a failure). Instead prefix every shell runner command
+   (`run-evalplan-affine.sh`, `-affine32.sh`, `-nonlin.sh`, `-scatter.sh`, `-logic.sh`) with `env -u PYTHON`;
+   that is harmless whether or not `PYTHON` is set.
    - `run-evalplan-affine.sh`, `-affine32.sh`, `-nonlin.sh`, `-scatter.sh` default `PYTHON` to
      `<jax-python>`. `run-evalplan-logic.sh` defaults it to `python3` (stdlib-only oracle; harmless).
      `run-evalplan-maxplus.py` takes `--python <jax-python>`. `mutation_python_manifest.py` always uses
@@ -245,9 +247,10 @@ JAX that Setup step 4 creates.
 **Stop and report (BLOCKED), do not improvise, if:** a patch fails `--check`; `verify_package.py`
 fails; a count differs from this plan; a mutant SURVIVES or is killed without its `expect` strings; a
 file is not sha-restored after a cycle; a pre-existing pin goes red; Mathlib would cold-build; any
-command exits non-zero, with one exception: `mutation-manifest.sh --check` on
+command exits non-zero, with two exceptions: `mutation-manifest.sh --check` on
 `papers/f32_jax_mutations_post.json` WITHOUT a label filter exits 125 because of the five stale
-entries (see section 12). Never
+entries (see section 12), and `rg` exits 1 when NOTHING matched, which for the stale-claim greps of
+section 11 and for read-only searches is a result to record, not a failure. Never
 hand-edit a patch, a manifest, an `expect` string, a count or a fixture. Never use `git apply --3way`
 or `--reject`.
 
