@@ -393,6 +393,14 @@ the compile guards of the value fixtures. Build `Tests` + `JaxExperiment` green 
   source), pinned against a plain-Python recomputation. Hand mutants killed: `isPost` without `touches`, global
   seeds, `readsPerStepIntermediate` ignoring the writer's role, spans check dropped. No scheduler or emitter
   change was needed.
+- Per-step intermediate read by a LATER scan (probed 2026-11-22, no code change): not a silent-value hole. A
+  per-step intermediate (`Tm[j] := S[j,l]·A[j]`, read by scan 1's own step) is block-local scratch and is never
+  published, so scan 2 reading it, from its step or its base case, is refused by `schedule` as `cyclicDataflow`
+  (the readiness rule: scan scratch is never emitted, so its reader is never ready). The cause is reported
+  generically; a precise `readsPerStepIntermediate` for iteration statements would be a diagnostic-only change
+  (about 0.3). Pinned at source level by `postTwoReadsInterStep` / `postTwoReadsInterBase` (and the accept
+  neighbour `postTwoReadsInterOk`) in `StructuralTest`; two hand mutants of the readiness rule (publications
+  include scratch; `eligible` ignores readiness for scans) are killed by exactly those two guards.
 - Multi-writer scan states (an additive contribution into a state, `multiWriterScan` today): candidate semantics
   are contributions written WITH an iteration slot at the same index (`S[j, l +1] := maxreduce(Y[j, l +1])`), so
   the existing collection rules apply; written as `S[j, l]` the cell is also written by the previous step.

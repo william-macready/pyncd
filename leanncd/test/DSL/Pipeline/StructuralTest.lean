@@ -385,6 +385,12 @@ private def layoutOf (p : TLProgram) : Except CompileError (List String) :=
   | .ok sp _ => .ok (renderLayout sp)
   | .error e _ => .error e
 
+/-- The whole compile (through `schedule`): the error, if any. -/
+private def compileErrOf (p : TLProgram) : Option CompileError :=
+  match p.compileToScheduled.run 0 with
+  | .error e _ => some e
+  | .ok _ _ => none
+
 private def postPin : TLProgram := tlprog!{ iter l = 3
   S[j, 0]    := X[j]
   S[j, l +1] := S[j, l]
@@ -549,6 +555,34 @@ private def postTwoInterOk : TLProgram := tlprog!{ iter l = 3
   T[j]       := H[j, m]
   H[j, m +1] := T[j] }
 
+-- A per-step intermediate of one scan is never published, so a LATER scan reading it is rejected, not
+-- handed an unset slot (`schedule`: scan scratch is never emitted, so its reader is never ready).
+-- `finalizeScans` still lays it out; the refusal is `cyclicDataflow` from the readiness rule. Read from
+-- the later scan's step, from its base case, and the accept neighbour where it reads its own scratch only.
+private def postTwoReadsInterStep : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  Tm[j]      := S[j, l] · A[j]
+  S[j, l +1] := Tm[j]
+  H[j, 0]    := X[j]
+  H[j, m +1] := H[j, m] · Tm[j] }
+
+private def postTwoReadsInterBase : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  Tm[j]      := S[j, l] · A[j]
+  S[j, l +1] := Tm[j]
+  H[j, 0]    := Tm[j]
+  H[j, m +1] := H[j, m] }
+
+private def postTwoReadsInterOk : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  Tm[j]      := S[j, l] · A[j]
+  S[j, l +1] := Tm[j]
+  H[j, 0]    := X[j]
+  H[j, m +1] := H[j, m] · A[j] }
+
 -- An Iverson predicate over the scan axis (`l`) does not matter: `Zi` feeds nothing, so it is post, as
 -- with the predicate over an ordinary axis (`j`).
 #guard layoutOf postIverScanAxis == .ok ["scan base=[S] body=[S]", "plain Zi"]
@@ -568,6 +602,13 @@ private def postTwoInterOk : TLProgram := tlprog!{ iter l = 3
   .ok ["scan base=[S] body=[S]", "scan base=[H] body=[H]", "plain Pc", "plain Pd"]
 #guard layoutOf postTwoInterRej == .error (.readsPerStepIntermediate "Z" "T")
 #guard layoutOf postTwoInterOk == .ok ["scan base=[S] body=[S]", "scan base=[H] body=[T, H]"]
+
+-- Source-level pins for the rule above (hand-built twins live in `ScanCompileTest`).
+#guard layoutOf postTwoReadsInterStep == .ok ["scan base=[S] body=[Tm, S]", "scan base=[H] body=[H]"]
+#guard layoutOf postTwoReadsInterBase == .ok ["scan base=[S] body=[Tm, S]", "scan base=[H] body=[H]"]
+#guard compileErrOf postTwoReadsInterStep == some (.cyclicDataflow "schedule: cyclic dataflow")
+#guard compileErrOf postTwoReadsInterBase == some (.cyclicDataflow "schedule: cyclic dataflow")
+#guard compileErrOf postTwoReadsInterOk == none
 
 -- New fixtures. State-name rule decided ALONE: the step does not read its own state, yet a second
 -- writer of `S` is per-step (so it is refused, not made post and failed later as `multiWriterScan`).
