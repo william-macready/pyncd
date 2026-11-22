@@ -494,7 +494,7 @@ private def postBaseOk : TLProgram := tlprog!{ iter l = 3
   H[j, 0]    := X[j]
   H[j, l +1] := H[j, l] }
 
-private def postTwoRej : TLProgram := tlprog!{ iter l = 3
+private def postTwoCapture : TLProgram := tlprog!{ iter l = 3
   iter m = 2
   S[j, 0]    := X[j]
   S[j, l +1] := S[j, l]
@@ -510,6 +510,45 @@ private def postTwoOk : TLProgram := tlprog!{ iter l = 3
   H[j, 0]    := X[j]
   H[j, m +1] := H[j, m] }
 
+-- Per-component neighbours. The capture does not depend on where the statement is written.
+private def postTwoCaptureLate : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  H[j, 0]    := X[j]
+  H[j, m +1] := Pc[j]
+  Pc[j]      := S[j, 2] }
+
+-- A post statement reading a capture is post too (post reading post is fine).
+private def postTwoCaptureChain : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  Pc[j]      := S[j, 2]
+  Pd[j]      := Pc[j]
+  H[j, 0]    := X[j]
+  H[j, m +1] := Pc[j] }
+
+-- The `m`-scan's own per-step intermediate `T` (it depends on `m` only) is still per-step for that scan,
+-- so a post statement reading it is `readsPerStepIntermediate`, exactly as with a single scan.
+private def postTwoInterRej : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  H[j, 0]    := X[j]
+  T[j]       := H[j, m]
+  H[j, m +1] := T[j]
+  Z[j]       := T[j] }
+
+-- Same shape without the post reader: `T` folds into the `m`-scan body and the `l`-scan is untouched.
+private def postTwoInterOk : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l]
+  H[j, 0]    := X[j]
+  T[j]       := H[j, m]
+  H[j, m +1] := T[j] }
+
 -- An Iverson predicate over the scan axis (`l`) does not matter: `Zi` feeds nothing, so it is post, as
 -- with the predicate over an ordinary axis (`j`).
 #guard layoutOf postIverScanAxis == .ok ["scan base=[S] body=[S]", "plain Zi"]
@@ -518,11 +557,17 @@ private def postTwoOk : TLProgram := tlprog!{ iter l = 3
 -- in the body; without that base read, `Pc` is post.
 #guard layoutOf postBaseRej == .ok ["scan base=[G, H] body=[G, Pc, H]"]
 #guard layoutOf postBaseOk == .ok ["scan base=[G, H] body=[G, H]", "plain Pc"]
--- Feeding across TWO scans: the recurrence of the `m`-scan reads `Pc`, which depends on the `l`-scan only,
--- so `Pc` is fed and sits in the `l`-scan body (the per-component case is parked); when the `m`-scan
--- does not read it, `Pc` is post.
-#guard layoutOf postTwoRej == .ok ["scan base=[S] body=[S, Pc]", "scan base=[H] body=[H]"]
+-- Feeding across TWO scans: the recurrence of the `m`-scan reads `Pc`, which depends on the `l`-scan only.
+-- Fed-ness is per scan component, so `Pc` does NOT feed the `l`-scan: it is post (emitted after the scan
+-- nodes; `schedule` moves it between the scans) and the `m`-scan captures it as an outer input. When the
+-- `m`-scan does not read it, `Pc` is post as well.
+#guard layoutOf postTwoCapture == .ok ["scan base=[S] body=[S]", "scan base=[H] body=[H]", "plain Pc"]
 #guard layoutOf postTwoOk == .ok ["scan base=[S] body=[S]", "scan base=[H] body=[H]", "plain Pc"]
+#guard layoutOf postTwoCaptureLate == .ok ["scan base=[S] body=[S]", "scan base=[H] body=[H]", "plain Pc"]
+#guard layoutOf postTwoCaptureChain ==
+  .ok ["scan base=[S] body=[S]", "scan base=[H] body=[H]", "plain Pc", "plain Pd"]
+#guard layoutOf postTwoInterRej == .error (.readsPerStepIntermediate "Z" "T")
+#guard layoutOf postTwoInterOk == .ok ["scan base=[S] body=[S]", "scan base=[H] body=[T, H]"]
 
 -- New fixtures. State-name rule decided ALONE: the step does not read its own state, yet a second
 -- writer of `S` is per-step (so it is refused, not made post and failed later as `multiWriterScan`).
@@ -582,7 +627,7 @@ private def postFreeSumCFed : TLProgram := tlprog!{ iter l = 3
 #guard layoutOf postStateNameNoSelfRead == .error (.scanProjectionUnsupported "S")
 #guard layoutOf postStateNameSelfRead == .error (.scanProjectionUnsupported "S")
 -- Spanning is a per-step error only: the not-fed `Z` is post after both scans; once the `m`-step reads it,
--- it is per-step and spans two components (the per-component closure is parked).
+-- it is per-step for the `m`-scan and spans two components, which stays an error.
 #guard layoutOf postMultiWriter == .ok ["scan base=[S] body=[S]", "plain T", "plain T"]
 #guard layoutOf postMultiWriterFed == .ok ["scan base=[S] body=[T, T, S]"]
 #guard layoutOf postTwoStates == .ok ["scan base=[S] body=[S]", "scan base=[H] body=[H]", "plain Z"]
