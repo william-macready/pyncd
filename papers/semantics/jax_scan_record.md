@@ -319,7 +319,7 @@ so it cannot see an orientation error by itself).
     first failing view (Lean).
   - CLOSED (2026-11-06): the clauses no test decided alone, now one fixture and an accept neighbour each in
     `StructuralTest` (observed layouts): the Iverson clause (`postIverRej` and `postIverOk`), demotion when a scan
-    BASE case reads a candidate (`postBaseRej`, `postBaseOk`), demotion across two scans (`postTwoRej`,
+    BASE case reads a candidate (`postBaseRej`, `postBaseOk`), demotion across two scans (`postTwoRej`, since renamed `postTwoCapture` and flipped to accepted by the per-component closure,
     `postTwoOk`), and the state-name case (function level, because `tlprog!` refuses it earlier with a rank
     mismatch; the clause itself was deleted, above). Each of the first three was killed by its own hand mutant and
     only its own guard failed.
@@ -383,10 +383,16 @@ the compile guards of the value fixtures. Build `Tests` + `JaxExperiment` green 
 
 **Parked.**
 
-- Per-component closure (the user's preferred reading, deferred): a statement fed by scan 2 but reading only
-  scan 1's finished state, such as `Pc[j] := S[j,2]` read by `H[j, m+1] := Pc[j]` (`postTwoRej`), is valid once
-  `fed` is computed per component and stays rejected under the global closure. About 2 dispatches: closure per
-  component, a scan capturing an outer slot produced between the scans, value fixtures and a JAX fixture.
+- Per-component closure: **DONE 2026-11-22** (Direct path). `fed` is now computed per scan component in
+  `finalizeScans`, so a statement fed by scan 2 but reading only scan 1's finished state, such as
+  `Pc[j] := S[j,2]` read by `H[j, m+1] := Pc[j]`, is post (emitted after the scan nodes; `schedule` moves it
+  between the scans) and scan 2 captures it. The fixture formerly named `postTwoRej` is now `postTwoCapture`
+  (accepted); neighbours `postTwoCaptureLate`, `postTwoCaptureChain`, `postTwoInterRej`, `postTwoInterOk`;
+  a statement depending on both scans' axes and fed by one stays `shapeMismatch` (`postTwoStatesFed`). Values on
+  the reference, checked plan and JAX (eager and jit): survey fixture `scan_twoscan_capture` (compiled from TL
+  source), pinned against a plain-Python recomputation. Hand mutants killed: `isPost` without `touches`, global
+  seeds, `readsPerStepIntermediate` ignoring the writer's role, spans check dropped. No scheduler or emitter
+  change was needed.
 - Multi-writer scan states (an additive contribution into a state, `multiWriterScan` today): candidate semantics
   are contributions written WITH an iteration slot at the same index (`S[j, l +1] := maxreduce(Y[j, l +1])`), so
   the existing collection rules apply; written as `S[j, l]` the cell is also written by the previous step.

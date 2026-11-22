@@ -27,6 +27,7 @@ tolerance.
 | A | `axisPosSched` | axis-position read, history 3 | `scan_axispos` |
 | A | `twoScanSched` | two scans, 3 outer steps | `scan_twoscan` |
 | A | `statePlainReadSched` | two scans, plain statement reads the state | `scan_stateplainread` |
+| A (compiled from TL source, not a `ScanCompileTest` donor) | `twoScanCaptureProg` in `EvalPlanNonlinSmoke.lean` | scan, plain statement reading the first scan's history, scan that captures it (per-component closure) | `scan_twoscan_capture` |
 | B (refused by the JAX gate) | `coupledSched` | two context axes, history `#[3,3]`, 2 states | `unsupportedScanAxes 0` |
 | B | `multiBaseSched` | two context axes | `unsupportedScanAxes 0` |
 | B | `scratchPredicateSched` | Boolean scratch inside a scan | `unsupportedDestDType 0 2 bool` |

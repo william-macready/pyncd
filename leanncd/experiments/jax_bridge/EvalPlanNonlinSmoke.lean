@@ -1748,6 +1748,27 @@ def postRoleProg32 : TLProgram := tlprog!{
   Sm[j, l.]  := softmax(where l ≤ 1)(S[j, l])
 }
 
+/-! ### Two scans chained through a captured post-scan statement (`scan_twoscan_capture`)
+
+`Pc[j] := S[j, 2]` reads the first (`l`) scan's finished history and feeds only the second (`m`) scan's
+recurrence, so under the per-component closure of `finalizeScans` it is post for the `l`-scan and a captured
+outer input of the `m`-scan; the schedule is `scan S, assign Pc, scan H`. Extents are distinct (j = 2, l = 4,
+m = 3) and the pinned read is NOT the last history slot (2 of 0..3), so a wrong slot or a wrong order differs. -/
+
+def twoScanCaptureX : Array Float := #[1.0, 2.0]
+def twoScanCaptureA : Array Float := #[2.0, 3.0]
+
+def twoScanCaptureProg : TLProgram := tlprog!{
+  iter l = 4
+  iter m = 3
+  tensor f64 X(j), A(j), S(j, l), Pc(j), H(j, m)
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l] · A[j]
+  Pc[j]      := S[j, 2]
+  H[j, 0]    := X[j]
+  H[j, m +1] := H[j, m] · Pc[j]
+}
+
 /-! ### 1-D convolution: a CNN, a causal TCN block and a patch embedding feeding the layer scan
 
 A convolution is the first model whose COMPUTATION is an affine read: output position `o` reads the input
@@ -2346,6 +2367,9 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "scan_postrole" postRoleProg
         (env64 [("X", t64 [2] postRoleX), ("G", t64 [2] postRoleG), ("V", t64 [4] postRoleV), ("M", t64 [4] postRoleM)])
         0 0 none true (scans := 1),
+    ← (fixture64 "scan_twoscan_capture" twoScanCaptureProg
+        (env64 [("X", t64 [2] twoScanCaptureX), ("A", t64 [2] twoScanCaptureA)]) 0 0 none false (scans := 2)).map
+        (·.replace "\"kind\": \"named\"" "\"kind\": \"named\", \"linear_ok\": True"),
     ← fixture64 "transformer_unrolled" unrolledProg unrolledEnv64 2 2 (some (36, 2, 2)) true] ++
     (← scanSurvey64)
 

@@ -3176,9 +3176,23 @@ def main() -> None:
         for who, o in views_of("scan_twoscan")[1].items():
             assert np.array_equal(o["A"], np.full(3, a0)) and np.array_equal(o["B"], np.full(3, b0)), (who, o)
             assert np.array_equal(o["Z"], np.full(3, a0 * b0)) and a0 != b0, (who, o["Z"].tolist())
+        # two scans chained through a captured post-scan statement: S[j,l] = X[j] * A[j]**l, Pc = S[:, 2] (NOT the last
+        # slot), H[j,m] = X[j] * Pc[j]**m. The plan runs scan, assign, scan in that order, so the second scan reads
+        # a Pc that exists; a wrong pinned slot, or Pc folded into the first scan, changes the values.
+        tc = by["scan_twoscan_capture"]
+        # (a plain assignment node carries no "kind" key, as with `scan_twoscan`'s Z)
+        assert [n.get("kind") for n in tc["plan"]["nodes"]] == ["scan", None, "scan"], [n.get("kind") for n in tc["plan"]["nodes"]]
+        x0, a0 = lean_array(tc["inputs"]["X"]), lean_array(tc["inputs"]["A"])
+        s_ref = np.stack([x0 * a0 ** l for l in range(4)], axis=1)
+        pc_ref = x0 * a0 ** 2
+        h_ref = np.stack([x0 * pc_ref ** m for m in range(3)], axis=1)
+        assert not np.array_equal(pc_ref, s_ref[:, 3]) and not np.array_equal(pc_ref, s_ref[:, 1]), "pinned slot is 2, not an end"
+        for who, o in views_of("scan_twoscan_capture")[1].items():
+            assert np.array_equal(o["S"], s_ref) and np.array_equal(o["Pc"], pc_ref) and np.array_equal(o["H"], h_ref), \
+                (who, {k: o[k].tolist() for k in ("S", "Pc", "H")}, s_ref.tolist(), pc_ref.tolist(), h_ref.tolist())
         print(f"scan survey: {sum(1 for f in mod.FIXTURES if f.get('linear_ok'))} donor scan fixtures within tolerance; "
               f"extent-one result == base state, deep-history (l and l-2) == plain-Python {ref}, "
-              f"two-scan outputs A, B, Z == plain-Python recomputation")
+              f"two-scan outputs A, B, Z == plain-Python recomputation; scan, assign, scan with a captured Pc == plain-Python recomputation")
 
     # Inline unary read (`E[i] := exp(A[i + 1])`, A = [0.5, -1, 2]): the last lane reads A[3], out of
     # bounds, which Dense zero-pads FIRST and then applies exp to, so it is exactly exp(0) = 1. Applying

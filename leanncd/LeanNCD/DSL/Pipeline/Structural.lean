@@ -1253,24 +1253,6 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
         dep := dep.insert s.lhsName merged
         changed := true
     unless changed do break
-  -- POST-SCAN CONSUMERS (role-based). Which names FEED the recurrence? `fed` is the least set of
-  -- names containing (1) every scan state name (`stateNames`: a non-iter statement written under a
-  -- state's name is per-step), (2) every name read by a statement with an iteration slot (a state's
-  -- base or step), and (3) closed backward through scan-dependent non-iter statements: a fed name's
-  -- statements read fed names. The closure is by NAME (all writers of a fed name are fed). A
-  -- scan-dependent non-iter statement whose LHS is fed is a per-step intermediate (folded into the
-  -- recurrence body, never published); one whose LHS is not fed is POST-SCAN: emitted as `.plain` after
-  -- the scan nodes, free to read states pinned or free, with the scan axis an ordinary axis. It may not
-  -- read a per-step intermediate (`readsPerStepIntermediate`). Bounded fixpoint, capped by #stmts.
-  let isScanDep : String → Bool := fun n => !(dep.getD n []).isEmpty
-  let stateNames : List String := (nonPre.filter (fun s => s.iterInfo.any (·.isRecur))).map (·.lhsName)
-  let mut fed : List String := (stateNames ++ iterStmts.flatMap (·.readNames)).eraseDups
-  for _ in List.range (nonPre.length + 1) do
-    let grown := (fed ++ nonPre.flatMap (fun s =>
-      if s.iterInfo.isEmpty && isScanDep s.lhsName && fed.contains s.lhsName then s.readNames else [])).eraseDups
-    if grown.length == fed.length then break
-    fed := grown
-  let isPost : Stmt → Bool := fun s => s.iterInfo.isEmpty && isScanDep s.lhsName && !fed.contains s.lhsName
   -- CONNECTED COMPONENTS over iteration-axis UIDs: two iter-stmts are coupled iff their axis-sets
   -- share a UID (the §12.1 `G`/`H` coupled scan, and each axis of a genuine multi-axis scan). One
   -- `ScanStmt.scan` per component. Bounded union-find: repeated merge, capped by #stmts passes.
@@ -1281,6 +1263,40 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
       match acc.find? (fun d => d.any (fun u => c.contains u)) with
       | some d => (acc.erase d) ++ [(d ++ c).eraseDups]
       | none   => acc ++ [c]) []
+  -- POST-SCAN CONSUMERS (role-based, PER COMPONENT). Which names FEED a component's recurrence?
+  -- `fedIn comp` is the least set of names containing (1) every state name of that component (a
+  -- non-iter statement written under a state's name is per-step), (2) every name read by a statement
+  -- with an iteration slot in that component (a state's base or step), and (3) closed backward through
+  -- scan-dependent non-iter statements. The closure is by NAME (all writers of a fed name are fed).
+  -- Only a component's OWN seeds count, so a statement that does not depend on the component's axes
+  -- (e.g. `Pc[j] := S[j, 2]` read by a LATER scan, where `S` belongs to an earlier one) is a
+  -- loop-invariant capture for it: fed by it, but not per-step in it (`touches`; `dep` is transitive,
+  -- so such a statement never reads a name that does). A scan-dependent non-iter statement fed by
+  -- a component it depends on is a per-step intermediate of that component (folded into its
+  -- recurrence body, never published); every other one is POST-SCAN: emitted as `.plain` after the
+  -- scan nodes (`schedule` places it before any later scan that captures it), free to read states
+  -- pinned or free, with the scan axis an ordinary axis. It may not read a per-step intermediate
+  -- (`readsPerStepIntermediate`). Bounded fixpoint, capped by #stmts. With ONE component every
+  -- scan-dependent statement touches it, so this is the former global closure.
+  let isScanDep : String → Bool := fun n => !(dep.getD n []).isEmpty
+  let touches : List UID → String → Bool := fun comp n => (dep.getD n []).any (fun u => comp.contains u)
+  let fedIn : List UID → List String := fun comp => Id.run do
+    let inComp : Stmt → Bool := fun s => (axSet s).any (fun u => comp.contains u)
+    let states : List String :=
+      (nonPre.filter (fun s => inComp s && s.iterInfo.any (·.isRecur))).map (·.lhsName)
+    let mut fed : List String :=
+      (states ++ (iterStmts.filter inComp).flatMap (·.readNames)).eraseDups
+    for _ in List.range (nonPre.length + 1) do
+      let grown := (fed ++ nonPre.flatMap (fun s =>
+        if s.iterInfo.isEmpty && isScanDep s.lhsName && fed.contains s.lhsName
+        then s.readNames else [])).eraseDups
+      if grown.length == fed.length then break
+      fed := grown
+    return fed
+  let fedPer : List (List UID × List String) := comps.map (fun c => (c, fedIn c))
+  let stateNames : List String := (nonPre.filter (fun s => s.iterInfo.any (·.isRecur))).map (·.lhsName)
+  let isPost : Stmt → Bool := fun s => s.iterInfo.isEmpty && isScanDep s.lhsName &&
+    !fedPer.any (fun cf => cf.2.contains s.lhsName && touches cf.1 s.lhsName)
   -- A per-step (fed) non-iter intermediate whose scan-axis deps span more than ONE component is an unsupported
   -- cross-scan coupling (no §12.1 example needs it); fail loud. Within a single (possibly
   -- multi-axis) component it is a normal per-step intermediate.
@@ -1344,8 +1360,8 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
   for s in nonPre do
     if isPost s then
       for r in s.readNames do
-        if fed.contains r && !stateNames.contains r &&
-            nonPre.any (fun t => t.iterInfo.isEmpty && isScanDep r && t.lhsName == r) then
+        if !stateNames.contains r &&
+            nonPre.any (fun t => t.iterInfo.isEmpty && isScanDep r && t.lhsName == r && !isPost t) then
           throw (CompileError.readsPerStepIntermediate s.lhsName r)
   -- plain = non-iter stmts with NO scan dependency (loop-invariant; evaluated once).
   let plainStmts := nonPre.filter (fun s => s.iterInfo.isEmpty && (dep.getD s.lhsName []).isEmpty)
