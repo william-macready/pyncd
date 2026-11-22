@@ -646,7 +646,7 @@ reads still carry `real_to_bool`/`bool_to_tropical`. It does not catch TOTAL los
 `3.0`). That case is guarded by the emitter (the `idIversonAssign` donor pin in `EvalPlanCodegen.lean`, plus the `BR-T2-NO-BOOLEAN-NODE-META` and
 `BR-T2-NO-BOOLEAN-READ-TAG` mutants), not by the runtime. Gradients through Boolean nodes are unsupported and untested.
 
-**Runner counts** at this slice's tip, per precision (the same in binary64 and binary32): 62 checked views, 58
+**Runner counts** at this slice's tip, per precision (the same in binary64 and binary32): 64 checked views, 58
 refusals, 52 source views (13 logic fixtures x named/positional x eager/JIT), 5 gradient input points, 20
 point-forward views, 20 gradient views.
 

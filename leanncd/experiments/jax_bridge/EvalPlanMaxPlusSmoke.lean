@@ -389,9 +389,16 @@ def booleanRaw : IO (List String) := do
   -- real-path divergence, parked, not a Boolean one.
   out := out ++ [← rawFixture "real_dest_reads_bool_source" #[blSig #[4], ⟨#[4], .f64⟩]
     (vectorRaw admittedAlgebra (blId 0 4) 4) #[dense [4] #[0.5, -3, 2, 0.25]]]
-  -- pad / seed pins: bare out-of-bounds pad 0, empty factor product 1, zero reduction extent 0.
+  -- pad / seed pins: bare out-of-bounds read padded (`bool_bare_oob` cannot distinguish a `-inf` pad from
+  -- 0; `bool_bare_oob_negzero` below does), empty factor product 1, zero reduction extent 0.
   out := out ++ [← rawFixture "bool_bare_oob" #[blSig #[1], blSig #[3]]
     (blVec 1 3 #[#[.read (blId 0 1)]]) #[dense [1] #[2]]]
+  -- `bool_bare_oob` cannot tell a `-inf` pad from the correct pad 0 (min(1, -inf) = -inf, and the
+  -- reduce seed max(0, -inf) = 0). `Y[i] := A[i] · B[i+1]` with the last `A` entry `-0` can: the last
+  -- read of `B` is out of bounds, min(-0, pad) keeps `-0` only when the pad is `+0`.
+  out := out ++ [← rawFixture "bool_bare_oob_negzero" #[blSig #[3], blSig #[3], blSig #[3]]
+    (blVec 2 3 #[#[.read (blId 0 3), .read { (blId 1 3) with map := LeanNCD.Eval.Plan.AffineMap.mk #[#[1]] #[1] }]])
+    #[dense [3] #[0.5, 0.75, nz], dense [3] #[9, 0.25, 0.5]]]
   out := out ++ [← rawFixture "bool_empty_factors" #[blSig #[]]
     (blAssign 0 #[] #[{ contextPos := #[], iterationShape := #[], outputPos := #[], reductionPos := #[], factors := #[] }]) #[]]
   out := out ++ [← rawFixture "bool_zero_reduction" #[blSig #[]]
