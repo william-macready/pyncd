@@ -1363,6 +1363,20 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
         if !stateNames.contains r &&
             nonPre.any (fun t => t.iterInfo.isEmpty && isScanDep r && t.lhsName == r && !isPost t) then
           throw (CompileError.readsPerStepIntermediate s.lhsName r)
+  -- A statement with an iteration slot may not read a per-step intermediate of ANOTHER component: the
+  -- intermediate is block-local to its own scan and never published, so there is no value for the reader
+  -- to see. (`schedule`'s readiness rule would refuse it anyway, but as a generic `cyclicDataflow`; this
+  -- reports the cause.) Its own component's intermediates and state names are fine.
+  let interOwner : String → Option (List UID) := fun r =>
+    if nonPre.any (fun t => t.iterInfo.isEmpty && t.lhsName == r && isScanDep r && !isPost t)
+    then comps.find? (fun c => (dep.getD r []).all (fun u => c.contains u)) else none
+  for s in iterStmts do
+    for r in s.readNames do
+      unless stateNames.contains r do
+        match comps.find? (fun c => (axSet s).any (fun u => c.contains u)), interOwner r with
+        | some mine, some owner =>
+            if mine != owner then throw (CompileError.readsPerStepIntermediate s.lhsName r)
+        | _, _ => pure ()
   -- plain = non-iter stmts with NO scan dependency (loop-invariant; evaluated once).
   let plainStmts := nonPre.filter (fun s => s.iterInfo.isEmpty && (dep.getD s.lhsName []).isEmpty)
   -- post = statements that do not feed the recurrence, after every scan node (source order).
