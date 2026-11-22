@@ -44,26 +44,26 @@
     "label": "J4 (algebra check widened to any binary32 algebra)",
     "task": "1",
     "file": "LeanNCD/Eval/Plan/Executable.lean",
-    "old": "  unless a.algebra == realAlgebra do\n",
-    "new": "  unless a.algebra == realAlgebra || admittedAlgebrasF32.contains a.algebra do\n",
+    "old": "  unless a.algebra == realAlgebra || maxPlus || boolean do\n",
+    "new": "  unless a.algebra == realAlgebra || maxPlus || boolean || kind == .float32 do\n",
     "targets": [
       "Eval.Plan.ExecutableTest"
     ],
     "expect": [
-      "ExecutableTest.lean:1870:0: Expression"
+      "ExecutableTest.lean:1938:0: Expression"
     ]
   },
   {
     "label": "J5 (unary check skipped for float32 evidence)",
     "task": "1",
     "file": "LeanNCD/Eval/Plan/Executable.lean",
-    "old": "        unless f.unary.isNone do\n",
-    "new": "        unless f.unary.isNone || kind == .float32 do\n",
+    "old": "        unless allowUnary || f.unary.isNone do\n",
+    "new": "        unless allowUnary || f.unary.isNone || kind == .float32 do\n",
     "targets": [
       "Eval.Plan.ExecutableTest"
     ],
     "expect": [
-      "ExecutableTest.lean:1878:0: Expression"
+      "ExecutableTest.lean:1946:0: Expression"
     ]
   },
   {
@@ -164,40 +164,40 @@
     "label": "J13 (bool source admitted under float32 evidence)",
     "task": "1",
     "file": "LeanNCD/Eval/Plan/Executable.lean",
-    "old": "            unless srcSig.dtype == realDType do\n",
-    "new": "            unless srcSig.dtype == realDType || (kind == .float32 && srcSig.dtype == .bool) do\n",
+    "old": "            unless (srcSig.dtype == realDType && !boolean) || (boolSourceOk && srcSig.dtype == .bool) do\n",
+    "new": "            unless (srcSig.dtype == realDType && !boolean) || (boolSourceOk && srcSig.dtype == .bool) || (kind == .float32 && srcSig.dtype == .bool) do\n",
     "targets": [
       "JaxExperiment"
     ],
     "expect": [
-      "EvalPlanCodegen.lean:1938:0: Expression"
+      "EvalPlanCodegen.lean:2349:0: Expression"
     ]
   },
   {
     "label": "J14 (context check skipped for float32 evidence)",
     "task": "1",
     "file": "LeanNCD/Eval/Plan/Executable.lean",
-    "old": "  unless a.contextShape.isEmpty do\n",
-    "new": "  unless a.contextShape.isEmpty || kind == .float32 do\n",
+    "old": "  unless allowContext || a.contextShape.isEmpty do\n",
+    "new": "  unless allowContext || a.contextShape.isEmpty || kind == .float32 do\n",
     "targets": [
       "JaxExperiment"
     ],
     "expect": [
-      "EvalPlanCodegen.lean:1964:0: Expression"
+      "EvalPlanCodegen.lean:2375:0: Expression"
     ]
   },
   {
     "label": "J15 (affine Iverson rejection dropped)",
     "task": "1",
     "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
-    "old": "    | .iverson _ => throw (.iversonFactor nodeIndex termIndex fi)\n    | .read f => facStrs := facStrs.push (renderAffineFactor t.iterationShape f)\n",
-    "new": "    | .iverson _ => pure ()\n    | .read f => facStrs := facStrs.push (renderAffineFactor t.iterationShape f)\n",
+    "old": "        unless boolean do throw (.iversonFactor nodeIndex termIndex fi)\n",
+    "new": "        pure ()\n",
     "targets": [
       "JaxExperiment"
     ],
     "expect": [
-      "EvalPlanCodegen.lean:1137:0: Expression",
-      "EvalPlanCodegen.lean:1951:0: Expression"
+      "EvalPlanCodegen.lean:1519:0: Expression",
+      "EvalPlanCodegen.lean:2362:0: Expression"
     ]
   }
 ]
