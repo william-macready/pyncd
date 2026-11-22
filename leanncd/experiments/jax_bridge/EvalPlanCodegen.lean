@@ -87,6 +87,12 @@ inductive JaxCodegenError
   -- its node/term/factor location. (Predicate/mask execution is not lowered to JAX — Global
   -- Constraints. Reads route through the unchanged path.)
   | iversonFactor         (nodeIndex termIndex factorIndex : Nat)
+  -- The `.booleanReach` Iverson lowering (Boolean-algebra nodes only): the dense worker's own
+  -- predicate evaluator (`evalPosBool`) failed at some iteration coordinate while the include table
+  -- was being built. Unreachable for a checked plan (`checkAssign` rejects a width-mismatched
+  -- predicate), so this is the codegen's own located backstop: a table is never emitted with a
+  -- guessed entry (contrast `axiswiseIncluded`, which counts an evaluation error as included).
+  | iversonPredicateFailed (nodeIndex termIndex factorIndex : Nat)
   -- Task 4.5 — the located support rejections this backend now makes BEFORE emitting any Python,
   -- building any candidate, or exposing any `ExecutionEvidence`. Each mirrors one
   -- `LeanNCD.Eval.Plan.JaxSupportError` constructor (see `codegenErrorOfSupport` below); the split
@@ -108,7 +114,7 @@ inductive JaxCodegenError
   | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
   -- The scan support gate (`checkJaxScanSupport`): a scan state whose cells start at an `initValue`
   -- the active profile does not admit (`.zero` always; `.negInf` only under the `.maxPlus` profile
-  -- that `renderScanNode` passes, so e.g. a min-plus `+inf` state is refused), and a scan over other
+  -- and its superset `.booleanReach`, which `renderScanNode` passes, so e.g. a min-plus `+inf` state is refused), and a scan over other
   -- than exactly one history axis. Both located at the scan's outer step index (the state's index
   -- too for the first).
   | unsupportedScanState   (nodeIndex stateIndex : Nat)
@@ -533,6 +539,24 @@ def buildFactorTable (iterationShape : Array Nat) (f : ReadPlan) : Array Nat × 
         (idxs.push 0, masks.push false))
     (#[], #[])
 
+/-- One Iverson factor's static include table: for every coordinate of its term's FULL iteration basis
+    (`iterationShape` = context ++ output ++ reduction positions, `allCoords` order — exactly the
+    order and length of every sibling `buildFactorTable` table, so a step block's table is stacked
+    step-major like theirs), `1` where the predicate holds and `0` where it does not, decided by the
+    dense worker's own evaluator (`evalPosBool`, the very call `Dense`'s Iverson arm makes). The
+    runtime evaluates no predicate. The evaluator's only error (`predicateWidthMismatch`) is
+    unreachable for a checked plan; it throws the located `iversonPredicateFailed` rather than emit
+    a guessed entry. -/
+def iversonIncludeTable (nodeIndex termIndex factorIndex : Nat) (iterationShape : Array Nat)
+    (b : PosBoolExpr) : Except JaxCodegenError (Array Nat) := do
+  let mut out : Array Nat := #[]
+  for iter in allCoords iterationShape.toList do
+    match evalPosBool iter b with
+    | .ok true => out := out.push 1
+    | .ok false => out := out.push 0
+    | .error _ => throw (.iversonPredicateFailed nodeIndex termIndex factorIndex)
+  return out
+
 /-- The name the Python runtime dispatches an inline unary read on. Total, no wildcard arm. -/
 def unaryOpName : UnaryOp → String
   | .log => "log" | .exp => "exp" | .sin => "sin" | .cos => "cos" | .sqrt => "sqrt"
@@ -542,7 +566,7 @@ def unaryOpName : UnaryOp → String
     `renderAffineNode`'s contextual support gate. A unary read adds a trailing `"unary"` key (the
     runtime applies it AFTER the zero-pad mask, as Dense does); a plain read's record is unchanged. -/
 private def renderAffineFactor (iterationShape : Array Nat) (f : ReadPlan)
-    (maxPlus : Bool := false) : String :=
+    (maxPlus : Bool := false) (boolean : Bool := false) : String :=
   let (idxs, masks) := buildFactorTable iterationShape f
   let unaryStr := match f.unary with
     | none => ""
@@ -552,16 +576,22 @@ private def renderAffineFactor (iterationShape : Array Nat) (f : ReadPlan)
   ", \"mask\": " ++ pyBoolListLit masks ++ unaryStr ++
   (if maxPlus then ", \"tag\": \"read\", \"bool_to_tropical\": " ++
     (if f.boolToTropical then "True" else "False") ++
-    ", \"real_to_bool\": False" else "") ++ "}"
+    ", \"real_to_bool\": False"
+  else if boolean then ", \"tag\": \"read\", \"real_to_bool\": False" else "") ++ "}"
 
-/-- PRIVATE (Task 4.5): emits one term's semantics; same gate. -/
-private def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) (maxPlus : Bool := false) :
-    Except JaxCodegenError String := do
+/-- PRIVATE (Task 4.5): emits one term's semantics; same gate. An Iverson factor lowers to its static
+    include table ONLY in a Boolean-algebra node (`boolean`, the `.booleanReach` profile's node
+    kind); in any other node (real sum-product, max-plus) it keeps the located `iversonFactor`. -/
+private def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) (maxPlus : Bool := false)
+    (boolean : Bool := false) : Except JaxCodegenError String := do
   let mut facStrs : Array String := #[]
   for h : fi in [0 : t.factors.size] do
     match t.factors[fi] with
-    | .iverson _ => throw (.iversonFactor nodeIndex termIndex fi)
-    | .read f => facStrs := facStrs.push (renderAffineFactor t.iterationShape f maxPlus)
+    | .iverson b =>
+        unless boolean do throw (.iversonFactor nodeIndex termIndex fi)
+        let inc ← iversonIncludeTable nodeIndex termIndex fi t.iterationShape b
+        facStrs := facStrs.push ("{\"tag\": \"iverson\", \"include\": " ++ pyNatListLit inc ++ "}")
+    | .read f => facStrs := facStrs.push (renderAffineFactor t.iterationShape f maxPlus boolean)
   let facs := String.intercalate ", " facStrs.toList
   return "{\"iteration_shape\": " ++ pyNatListLit t.iterationShape ++
     ", \"output_pos\": " ++ pyNatListLit t.outputPos ++
@@ -574,14 +604,16 @@ private def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) (maxPlus
     own support gate (`requireJaxSupport` / `requireJaxScatterSupport`). -/
 private def renderAffineFields (nodeIndex : Nat) (a : AssignPlan) : Except JaxCodegenError String := do
   let maxPlus := a.algebra == admittedAlgebraMax || a.algebra == admittedAlgebraF32Max
+  let boolean := a.algebra == admittedAlgebraBool
   let mut termStrs : Array String := #[]
   for h : ti in [0 : a.terms.size] do
-    termStrs := termStrs.push (← renderAffineTerm nodeIndex ti a.terms[ti] maxPlus)
+    termStrs := termStrs.push (← renderAffineTerm nodeIndex ti a.terms[ti] maxPlus boolean)
   let terms := String.intercalate ", " termStrs.toList
   return "\"dest\": " ++ toString a.destinationSlot ++
     ", \"output_shape\": " ++ pyNatListLit a.outputShape ++
     ", \"terms\": [" ++ terms ++ "]" ++
-    (if maxPlus then ", \"algebra\": \"max_plus\", \"semantics\": \"ordered_max_plus_v1\"" else "")
+    (if maxPlus then ", \"algebra\": \"max_plus\", \"semantics\": \"ordered_max_plus_v1\""
+    else if boolean then ", \"algebra\": \"boolean\", \"semantics\": \"ordered_boolean_v1\"" else "")
 
 /-- The scatter counterpart of `requireJaxSupport` (`checkJaxScatterSupport` in `Executable.lean`):
     the scatter checker is re-run under `sigs`, then the one JAX support policy grades the compute
@@ -679,7 +711,7 @@ private def renderAxiswiseNode (nodeIndex : Nat) (a : CheckedAxiswisePlan) :
 
 /-- One assignment node's static data: destination slot, output shape, and every term's precomputed
     tables in checked term-array order. Rejects a term carrying an Iverson factor with its located
-    error (via `renderAffineTerm`).
+    error (via `renderAffineTerm`) unless the node is Boolean-algebra (include table).
 
     PRIVATE (Task 4.5), and the single contextual gate of the whole `affineReference` mode: every
     public affine emitter — both plan renderers and the standalone `renderAffineAssign` — reaches a
@@ -688,7 +720,7 @@ private def renderAxiswiseNode (nodeIndex : Nat) (a : CheckedAxiswisePlan) :
     also the only caller that opts in to an inline unary read (`allowUnary := true`). -/
 private def renderAffineNode (sigs : Array TensorSignature) (nodeIndex : Nat)
     (checked : CheckedAssignPlan) : Except JaxCodegenError String := do
-  requireJaxSupport sigs nodeIndex checked (allowUnary := true) (profile := .maxPlus)
+  requireJaxSupport sigs nodeIndex checked (allowUnary := true) (profile := .booleanReach)
   return "{" ++ (← renderAffineFields nodeIndex checked.plan) ++ "}"
 
 /-- A scan write's static placement table: for every context coordinate in `ctxs` (in the order given:
@@ -802,7 +834,24 @@ private def renderScanWrites (nodeIndex : Nat) (stateShapes : Array (Array Nat))
     (`"neg_inf"` for those states, `"zero"` for the rest); a node record carries `algebra`/`semantics`
     exactly when its assignment's algebra is the admitted max algebra for the storage kind
     (`admittedAlgebraMax`/`admittedAlgebraF32Max`), and then every one of its factors carries
-    `tag`/`bool_to_tropical`/`real_to_bool` (`real_to_bool` is always `False`: not supported). The
+    `tag`/`bool_to_tropical`/`real_to_bool` (`real_to_bool` is always `False`: not supported).
+
+    Boolean keys (the `.booleanReach` profile; emitted exactly when the assignment's algebra is
+    `admittedAlgebraBool`, a Boolean-destination statement over the real carrier; a scan with Boolean
+    states needs no `state_init`, zero is the default):
+
+    ```
+    assign NODE  += "algebra": "boolean", "semantics": "ordered_boolean_v1"
+    read FACTOR  += "tag": "read", "real_to_bool": False         -- no "bool_to_tropical" key
+    IVERSON FACTOR = {"tag": "iverson", "include": [0 | 1, ...]}
+    ```
+
+    An Iverson factor's `include` table has one entry per coordinate of its term's full
+    `iteration_shape` (context ++ output ++ reduction positions, `allCoords` order, `1` where the
+    predicate holds; `iversonIncludeTable`), so in a step-block term it is stacked step-major exactly
+    like that term's `safe_index`/`mask` tables. An Iverson factor in a real or max-plus node stays the
+    located `iversonFactor` refusal; a real sum-product node reading a Boolean source (`Closed`) is a
+    plain real record. The
     runtime (`_run_scan_node`, `_algebra`, `_check_factors` in `evalplan_affine_runtime.py`) validates
     all of it and fails loud: `state_init` requires the `ordered_scan_v1` marker, one entry per state,
     each `"zero"` or `"neg_inf"`; a scan record WITHOUT `state_init` must carry no `semantics` key and
@@ -820,7 +869,7 @@ private def renderScanWrites (nodeIndex : Nat) (stateShapes : Array (Array Nat))
     step `r`, local iteration coordinate `j`, `local = prod(iteration_shape[1:])`. Dtype is not
     emitted (the caller supplies it, as for every other node). -/
 def renderScanNode (nodeIndex : Nat) (checked : CheckedScanPlan) : Except JaxCodegenError String := do
-  match checkJaxScanSupport nodeIndex checked (profile := .maxPlus) with
+  match checkJaxScanSupport nodeIndex checked (profile := .booleanReach) with
   | .ok _ => pure ()
   | .error e => throw (codegenErrorOfSupport e)
   let raw := checked.raw
@@ -919,10 +968,11 @@ def renderAffineAssign (sigs : Array TensorSignature) (c : CheckedAssignPlan) :
     existing `sigs` argument is now that fixture's explicit semantic authority (Task 4.5): the same
     table checks the assignment and gates its rendering, so a Boolean-source or otherwise
     unsupported fixture fails loud here instead of producing Python. "Unsupported" is the
-    `affineReference` policy (`renderAffineNode` runs `requireJaxSupport` under the `.maxPlus`
-    profile): a Boolean DESTINATION, min-plus, an Iverson factor or a contextual assignment is
-    refused, but a max-plus assignment and its Boolean-source reads (explicit cast flag) are
-    rendered.
+    `affineReference` policy (`renderAffineNode` runs `requireJaxSupport` under the `.booleanReach`
+    profile): min-plus, an Iverson factor in a real or max-plus node, a real source in a Boolean
+    statement or a contextual assignment is refused, but a max-plus assignment and its Boolean-source
+    reads (explicit cast flag), and a Boolean-algebra assignment (Iverson factors lowered to include
+    tables) are rendered.
     `{"name", "kind": "assign", "assign", "store", "expected"}`. The one assign-fixture builder
     every `jax_bridge` driver needs — shared here, on `EvalPlanCodegen`, so a new driver can call it
     directly instead of re-deriving the same check→run→render sequence. -/
@@ -1466,6 +1516,11 @@ private def rejectedWith {α : Type} (expected : JaxCodegenError) : Except JaxCo
   | .error e => e == expected
   | .ok _ => false
 
+/-- Rendered (the value is irrelevant; only acceptance is). -/
+private def accepted {α : Type} : Except JaxCodegenError α → Bool
+  | .ok _ => true
+  | .error _ => false
+
 private def preparedOf (raw : RawEvalPlan) (inputs materialized : Array SlotBinding) :
     Option PreparedPlan :=
   match checkPlan raw with
@@ -1479,8 +1534,11 @@ private def preparedOf (raw : RawEvalPlan) (inputs materialized : Array SlotBind
              , warnings := [] }
 
 /-! #### Fixture 2 — only the SOURCE signature is Boolean (`bool` slot 0 feeding the real slot 1).
-The checked plan accepts it; every public JAX entry point must reject it with the same located
-`.unsupportedSourceDType 0 0 0 .bool` (or, at the plan level, that error at the real step index). -/
+The checked plan accepts it; the einsum and candidate entry points must reject it with the same
+located `.unsupportedSourceDType 0 0 0 .bool` (or, at the plan level, that error at the real step
+index). The affine-reference renderers now ACCEPT it (the `Closed`-shaped node: a real sum-product
+destination reading a Boolean source, admitted by `.booleanReach` only); the default-profile
+`checkJaxAssignSupport` keeps refusing it (`ExecutableTest`). -/
 
 def boolSourceSigs : Array TensorSignature :=
   #[ { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .f64 } ]
@@ -1506,7 +1564,7 @@ private def boolSourceError : JaxCodegenError := .unsupportedSourceDType 0 0 0 .
   | .error _ => false
   | .ok checked =>
       rejectedWith boolSourceError (lowerAssign boolSourceSigs 0 checked) &&
-      rejectedWith boolSourceError (renderAffineAssign boolSourceSigs checked) &&
+      accepted (renderAffineAssign boolSourceSigs checked) &&
       rejectedWith boolSourceError (loweringToAffineTableCandidate boolSourceSigs 0 checked) &&
       rejectedWith boolSourceError (loweringToEinsumCandidate boolSourceSigs 0 checked))
 
@@ -1515,24 +1573,24 @@ private def boolSourceError : JaxCodegenError := .unsupportedSourceDType 0 0 0 .
 #guard (match checkPlan boolSourceRaw, boolSourcePrepared? with
   | .ok checkedPlan, some prepared =>
       rejectedWith boolSourceError (lowerPlan checkedPlan) &&
-      rejectedWith boolSourceError (renderAffinePlanPositional checkedPlan) &&
-      rejectedWith boolSourceError (renderAffinePlanNamed prepared) &&
+      accepted (renderAffinePlanPositional checkedPlan) &&
+      accepted (renderAffinePlanNamed prepared) &&
       rejectedWith boolSourceError (generateForward prepared) &&
       rejectedWith boolSourceError (generateNamed .einsumOnly prepared) &&
-      rejectedWith boolSourceError (generateNamed .affineReference prepared) &&
+      accepted (generateNamed .affineReference prepared) &&
       rejectedWith boolSourceError (lowerCheckPlanToCandidate prepared)
   | _, _ => false)
 
 -- `buildAssignFixture` is `IO`, so its guard is an `#eval` that throws on the wrong outcome: the
--- fixture builder must fail at the RENDER step (the checker and the Dense run both succeed on a
--- Boolean source), so the reported message is the render one.
+-- fixture builder now builds the Closed-shaped fixture (a Boolean source under a real sum-product
+-- destination renders under `.booleanReach`).
 #eval show IO Unit from do
   let outcome ← try
       let _ ← buildAssignFixture "boolSource" boolSourceSigs idAssign boolSourceStore
       pure "accepted"
     catch e => pure (toString e)
-  unless (outcome.splitOn "render failed").length == 2 do
-    throw (IO.userError s!"buildAssignFixture did not reject the Boolean source at render: {outcome}")
+  unless outcome == "accepted" do
+    throw (IO.userError s!"buildAssignFixture did not build the Closed-shaped Boolean source: {outcome}")
 
 /-! #### Fixture 4 (rendering half) — an inline unary read is a located rejection in `einsumOnly` and on
 the evidence path; `affineReference` rendering alone admits it. -/
@@ -1626,7 +1684,7 @@ def mixedBoolDestPrepared? : Option PreparedPlan :=
 #guard (match checkPlan mixedBoolDestRaw, mixedBoolDestPrepared? with
   | .ok checkedPlan, some prepared =>
       rejectedWith (.unsupportedDestDType 1 2 .bool) (lowerPlan checkedPlan) &&
-      rejectedWith (.unsupportedDestDType 1 2 .bool) (renderAffinePlanNamed prepared) &&
+      rejectedWith (.unsupportedSourceDType 1 0 0 .f64) (renderAffinePlanNamed prepared) &&
       rejectedWith (.unsupportedDestDType 1 2 .bool) (lowerCheckPlanToCandidate prepared)
   | _, _ => false)
 
@@ -1648,7 +1706,7 @@ def testVariantBPlanAuthoritySubstitutionRejected : Bool :=
   | none => false
   | some prepared =>
       rejectedWith boolSourceError (lowerCheckPlanToCandidate prepared) &&
-      rejectedWith boolSourceError (generateNamed .affineReference prepared)
+      rejectedWith boolSourceError (generateNamed .einsumOnly prepared)
 
 #guard testVariantBPlanAuthoritySubstitutionRejected
 
@@ -1702,7 +1760,7 @@ def step1BoolPrepared? : Option PreparedPlan :=
 #guard (match checkPlan step1BoolRaw, step1BoolPrepared? with
   | .ok checkedPlan, some prepared =>
       rejectedWith (.unsupportedSourceDType 1 0 0 .bool) (lowerPlan checkedPlan) &&
-      rejectedWith (.unsupportedSourceDType 1 0 0 .bool) (renderAffinePlanPositional checkedPlan) &&
+      accepted (renderAffinePlanPositional checkedPlan) &&
       rejectedWith (.unsupportedSourceDType 1 0 0 .bool) (generateForward prepared) &&
       rejectedWith (.unsupportedSourceDType 1 0 0 .bool) (lowerCheckPlanToCandidate prepared)
   | _, _ => false)
@@ -2276,8 +2334,8 @@ def f32BoolSourcePrepared? : Option PreparedPlan :=
 #guard (match f32BoolSourcePrepared? with
   | some p =>
       p.plan.storageKind == .float32 &&
-      rejectedWith (.unsupportedSourceDType 0 0 0 .bool) (generateNamed .affineReference p) &&
-      rejectedWith (.unsupportedSourceDType 0 0 0 .bool) (renderAffinePlanPositional p.plan) &&
+      accepted (generateNamed .affineReference p) &&
+      accepted (renderAffinePlanPositional p.plan) &&
       rejectedWith (.unsupportedSourceDType 0 0 0 .bool) (lowerCheckPlanToCandidate p) &&
       rejectedWith f32StorageError (generateNamed .einsumOnly p)
   | none => false)
@@ -2655,5 +2713,102 @@ run_cmd unless (match ntPreparedNamed scanMinRefusalRaw ntScanInputs #[3, 2] wit
     | .error (.assign (.mixedStorageKinds 1 .f64 .f32)) => true | _ => false) &&
   (match checkPlan { ntPlainRaw with tensorSigs := #[{ shape := #[2, 3], dtype := .f64 }, { shape := #[2, 3], dtype := .f32 }] } with
     | .error (.assign (.mixedStorageKinds 1 .f64 .f32)) => true | _ => false)
+
+/-! ### Boolean-reach emitter pins — Iverson include tables (`.booleanReach`)
+
+Donor: `idIversonAssign` (`Y[i] := X[i] · [0 = 0]`, the Slice 5.4 fixture). An Iverson factor lowers to a
+static include table ONLY in a Boolean-algebra node; the same factor in a real or max-plus node keeps the
+located `iversonFactor 0 0 1` refusal. The table itself is decided by `iversonIncludeTable` (the dense
+worker's `evalPosBool` over `allCoords iterationShape`); the `scan` side is pinned in
+`ScanAffineEmitTest.lean` (`reachProg`, the step-dependent `[j ≤ l]` toy). -/
+
+private def bbSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .bool } ]
+
+private def withAlgebra (a : AssignPlan) (alg : ContractionAlgebra) : AssignPlan := { a with algebra := alg }
+
+-- Accept: Boolean algebra over Boolean signatures renders the donor with its read tagged and its Iverson
+-- lowered (`[0 = 0]` holds at all three coordinates). Refuse: the identical factor in a real
+-- sum-product node (`idSigs`, the Slice 5.4 refusal, unchanged) and in a max-plus node (the same
+-- assignment under `admittedAlgebraMax`) is `iversonFactor 0 0 1`.
+#guard (match checkAssign bbSigs (withAlgebra idIversonAssign admittedAlgebraBool) with
+    | .error _ => false
+    | .ok c => match renderAffineAssign bbSigs c with
+      | .error _ => false
+      | .ok s =>
+        let has := fun (sub : String) => (s.splitOn sub).length == 2
+        has "\"algebra\": \"boolean\", \"semantics\": \"ordered_boolean_v1\"" &&
+        has "{\"tag\": \"iverson\", \"include\": [1, 1, 1]}" &&
+        has "\"tag\": \"read\", \"real_to_bool\": False") &&
+  (match checkAssign idSigs idIversonAssign with
+    | .error _ => false
+    | .ok c => rejectedWith (.iversonFactor 0 0 1) (renderAffineAssign idSigs c)) &&
+  (match checkAssign idSigs (withAlgebra idIversonAssign admittedAlgebraMax) with
+    | .error _ => false
+    | .ok c => rejectedWith (.iversonFactor 0 0 1) (renderAffineAssign idSigs c))
+
+/-- `D[i, j] := [pred]` on a 3 x 4 grid: a Boolean destination, one Iverson factor and no read. The
+    include table is therefore the predicate's truth table over `(i, j)` in row-major (`allCoords`)
+    order. -/
+private def gridAssign (pred : PosBoolExpr) (alg : ContractionAlgebra) : AssignPlan :=
+  { contextShape := #[], destinationSlot := 0, outputShape := #[3, 4]
+  , terms := #[{ iterationShape := #[3, 4], contextPos := #[], outputPos := #[0, 1], reductionPos := #[]
+               , factors := #[.iverson pred] }]
+  , algebra := alg }
+
+private def gridSigs (dt : ScalarDType) : Array TensorSignature := #[ { shape := #[3, 4], dtype := dt } ]
+
+private def gridI : PosPredArith := .affine ⟨#[1, 0], 0⟩        -- i
+private def gridJm1 : PosPredArith := .affine ⟨#[0, 1], -1⟩     -- j - 1
+private def gridJ : PosPredArith := .affine ⟨#[0, 1], 0⟩        -- j
+private def gridC (n : Int) : PosPredArith := .affine ⟨#[0, 0], n⟩
+
+/-- One pin: the Boolean node emits `table` EXACTLY (through the renderer, and through
+    `iversonIncludeTable` directly), and the same predicate in a real node is the located refusal. -/
+private def gridPin (pred : PosBoolExpr) (table : List Nat) : Bool :=
+  (match checkAssign (gridSigs .bool) (gridAssign pred admittedAlgebraBool) with
+    | .error _ => false
+    | .ok c => match renderAffineAssign (gridSigs .bool) c with
+      | .error _ => false
+      | .ok s => (s.splitOn ("{\"tag\": \"iverson\", \"include\": " ++ pyNatListLit table.toArray ++ "}")).length == 2) &&
+  (iversonIncludeTable 0 0 0 #[3, 4] pred).toOption == some table.toArray &&
+  (match checkAssign (gridSigs .f64) (gridAssign pred admittedAlgebra) with
+    | .error _ => false
+    | .ok c => rejectedWith (.iversonFactor 0 0 0) (renderAffineAssign (gridSigs .f64) c))
+
+-- One table per `PosBoolExpr` family. Every expected table below was computed by an INDEPENDENT python
+-- enumeration of the predicate over the grid (`i` in 0..2 outer, `j` in 0..3 inner) and agrees with the
+-- emitted one. The six relations compare `i` with `j - 1` (a bias and a negative value are exercised).
+#guard gridPin (.rel .lt gridI gridJm1) [0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0]
+#guard gridPin (.rel .le gridI gridJm1) [0, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1]
+#guard gridPin (.rel .eq gridI gridJm1) [0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+#guard gridPin (.rel .ne gridI gridJm1) [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0]
+#guard gridPin (.rel .ge gridI gridJm1) [1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1]
+#guard gridPin (.rel .gt gridI gridJm1) [1, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0]
+-- `mul`: i * j = 2 (so a `+` for `*` would give i + j = 2, a different table).
+#guard gridPin (.rel .eq (.mul gridI gridJ) (gridC 2)) [0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0]
+-- `iabs`: |i - j| = 1.
+#guard gridPin (.rel .eq (.iabs (.affine ⟨#[1, -1], 0⟩)) (gridC 1)) [0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1]
+-- `and` / `or` / `not`: (i <= j) and (j <= 2); (i = 0) or (j = 3); not (i < j).
+#guard gridPin (.and (.rel .le gridI gridJ) (.rel .le gridJ (gridC 2))) [1, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0]
+#guard gridPin (.or (.rel .eq gridI (gridC 0)) (.rel .eq gridJ (gridC 3))) [1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 1]
+#guard gridPin (.not (.rel .lt gridI gridJ)) [1, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0]
+-- `ieq`: i + j = 3.
+#guard gridPin (.ieq (.affine ⟨#[1, 1], 0⟩) (gridC 3)) [0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0]
+
+-- Backstop: `iversonIncludeTable` on a predicate whose affine width disagrees with the iteration shape
+-- (here rank 2) is the located `iversonPredicateFailed`, wherever the bad leaf sits, for a leaf that is
+-- too wide and one that is too narrow; no table is built. Accept neighbour: the same call on a width-2
+-- predicate (`i = j` on 2 x 2) returns `[1, 0, 0, 1]`. A checked plan never reaches this (`checkAssign`
+-- rejects the width mismatch), so the backstop is exercised directly on the helper.
+private def widthOk : PosBoolExpr := .rel .eq (.affine ⟨#[1, 0], 0⟩) (.affine ⟨#[0, 1], 0⟩)
+private def widthWide : PosBoolExpr := .rel .eq (.affine ⟨#[1, 0, 0], 0⟩) (.affine ⟨#[0, 1], 0⟩)
+private def widthNarrow : PosBoolExpr := .rel .eq (.affine ⟨#[1, 0], 0⟩) (.affine ⟨#[0], 0⟩)
+
+#guard (iversonIncludeTable 4 5 6 #[2, 2] widthOk).toOption == some #[1, 0, 0, 1] &&
+  rejectedWith (.iversonPredicateFailed 4 5 6) (iversonIncludeTable 4 5 6 #[2, 2] widthWide) &&
+  rejectedWith (.iversonPredicateFailed 4 5 6) (iversonIncludeTable 4 5 6 #[2, 2] widthNarrow) &&
+  rejectedWith (.iversonPredicateFailed 4 5 6) (iversonIncludeTable 4 5 6 #[2, 2] (.and widthOk widthWide)) &&
+  rejectedWith (.iversonPredicateFailed 4 5 6) (iversonIncludeTable 4 5 6 #[2, 2] (.not widthWide))
 
 end JaxBridge

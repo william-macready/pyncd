@@ -7,7 +7,8 @@ import EvalPlanCodegen
 
 Source Tensor Logic -> scheduled reference and checked plans in both precisions.
 The Python verifier independently enumerates HMM paths and computes graph distances by BFS.
-Max-plus additionally renders to JAX; Boolean reachability remains checked/reference-only.
+Every fixture (max-plus Viterbi and Boolean reachability) additionally renders to JAX; the verifier
+replaces the Lean values with the JAX-produced ones before the independent oracle checks them.
 Viterbi exports scores, not argmax indices or a traceback (neither has a native TL operator).
 -/
 namespace JaxBridge.LogicSmoke
@@ -133,15 +134,10 @@ def checkStructure (f : Fixture) (p : PreparedPlan) (kind : StorageKind) : IO Un
       sc.states[0]!.initValue == (if f.tropical then .negInf else .zero) do
     throw (IO.userError s!"{f.name}: wrong scan algebra or neutral initialization")
   match renderAffinePlanNamed p with
-  | .error (.unsupportedDestDType 0 _ .bool) => unless !f.tropical do
-      throw (IO.userError s!"{f.name}: unexpected Boolean JAX refusal")
   | .error e => throw (IO.userError s!"{f.name}: unexpected JAX refusal: {repr e}")
-  | .ok _ => unless f.tropical do
-      throw (IO.userError s!"{f.name}: JAX unexpectedly admitted a Boolean scan")
+  | .ok _ => pure ()
   match renderAffinePlanPositional p.plan with
-  | .ok _ => unless f.tropical do throw (IO.userError s!"{f.name}: positional Boolean admitted")
-  | .error (.unsupportedDestDType 0 _ .bool) =>
-      unless !f.tropical do throw (IO.userError s!"{f.name}: positional max-plus refused")
+  | .ok _ => pure ()
   | .error e => throw (IO.userError s!"{f.name}: positional: {repr e}")
 
 def pyEnv (env : NamedDenseEnv) (names : List String) : IO String := do
@@ -181,7 +177,7 @@ def emit (f : Fixture) : IO String := do
     | .ok r => pure r.env
     | .error e => throw (IO.userError s!"{f.name}: plan32: {repr e.cause}")
   let names := (p.bindings.requiredInputs.bindings.map (·.name)).toList
-  let jaxFields ← if !f.tropical then pure "" else do
+  let jaxFields ← do
     let named ← match renderAffinePlanNamed p with
       | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
     let positional ← match renderAffinePlanPositional p.plan with

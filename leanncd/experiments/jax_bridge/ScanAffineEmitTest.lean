@@ -144,4 +144,116 @@ def expectedLayerSlice (r : Nat) : List Nat :=
   has r "\"context_pos\": [0]" && has r "\"kind\": \"scan\"" && has r "\"step_count\": 2" &&
   has r "\"kind\": \"pointwise\"" && has r "\"kind\": \"axiswise\"" && has r "\"include\""
 
+/-! ### Boolean reachability (`.booleanReach`) emitter pins
+
+Donors: `brReach` (`reachProg`, copied verbatim from `EvalPlanLogicSmoke.lean` / `ScanJaxGateTest.lean`;
+a Boolean scan state `Reach` plus a later real `Closed` reading it) and `brStep`, the step-dependent toy
+`S[j, l+1] := S[j, l] · [j ≤ l]`. The Iverson `include` tables are pinned against the plan's OWN geometry
+(plain loops), never copied from the emitted string. -/
+
+def brReach : TLProgram := tlprog!{
+  axis i : ℕ = 6, j : ℕ = 6, k : ℕ = 6
+  iter h = 7
+  predicate Edge(i, j), Reach(i, j, h)
+  tensor f64 Closed(i, j)
+  Reach[i, j, 0] := [i = j]
+  Reach[i, j, h +1] := Reach[i, j, h] + Reach[i, k, h] · Edge[k, j]
+  Closed[i, j] := Reach[i, j, 6]
+}
+
+def brStep : TLProgram := tlprog!{
+  axis j : ℕ = 3
+  iter l = 4
+  predicate Seed(j), S(j, l)
+  S[j, 0] := Seed[j]
+  S[j, l +1] := S[j, l] · [j ≤ l]
+}
+
+def brRetag32 (p : TLProgram) : TLProgram :=
+  { p with decls := p.decls.map fun d => match d with
+      | .typedTensor .f64 n ax => .typedTensor .f32 n ax
+      | d => d }
+
+def brEdgeEnv : NamedDenseEnv := HashMap.ofList [("Edge", ⟨[6, 6], Array.replicate 36 0.0⟩)]
+def brSeedEnv : NamedDenseEnv := HashMap.ofList [("Seed", ⟨[3], #[1.0, 0.0, 1.0]⟩)]
+
+def brPrepared? (p : TLProgram) (env : NamedDenseEnv) (f32 : Bool) : Option PreparedPlan :=
+  match ((if f32 then brRetag32 p else p).compileToScheduled).run 0 with
+  | .error _ _ => none
+  | .ok sched _ =>
+    if f32 then
+      match InputSignature.ofDenseInputs32ForDecls sched.decls
+          (env.map fun _ t => ⟨t.shape, t.data.map Float.toFloat32⟩) with
+      | .ok sig => (prepareEvalPlan sched sig).toOption
+      | .error _ => none
+    else
+      match InputSignature.ofDenseInputsForDecls sched.decls env with
+      | .ok sig => (prepareEvalPlan sched sig).toOption
+      | .error _ => none
+
+def brRendered? (p : TLProgram) (env : NamedDenseEnv) (f32 : Bool) : Option String :=
+  (brPrepared? p env f32).bind fun pp => (renderAffinePlanNamed pp).toOption
+
+def brCount (s sub : String) : Nat := (s.splitOn sub).length - 1
+
+def brIverson (table : List Nat) : String :=
+  "{\"tag\": \"iverson\", \"include\": " ++ pyNatListLit table.toArray ++ "}"
+
+-- The donors prepare and render in both precisions.
+#guard (brRendered? brReach brEdgeEnv false).isSome
+#guard (brRendered? brReach brEdgeEnv true).isSome
+
+-- (a) `reachProg`: the Boolean base and step statements are tagged Boolean (two assignment nodes:
+-- the base block's and the step block's), every step read carries `tag: read` with an explicit
+-- `real_to_bool: False` and NO `bool_to_tropical` (that key is max-plus-only), the scan record has no
+-- `state_init`, and the one Iverson factor (the base statement `[i = j]`) is the identity diagonal of
+-- the 6x6 iteration shape, in `allCoords` order.
+def brDiag6 : List Nat :=
+  (List.range 6).flatMap fun i => (List.range 6).map fun j => if i == j then 1 else 0
+
+#guard match brRendered? brReach brEdgeEnv false with
+  | none => false
+  | some s =>
+    brDiag6.length == 36 &&
+    brCount s "\"algebra\"" == 2 && brCount s "\"algebra\": \"boolean\"" == 2 &&
+    brCount s "\"semantics\": \"ordered_boolean_v1\"" == 2 &&
+    brCount s "\"tag\": \"read\"" == 3 && brCount s "real_to_bool\": False" == 3 &&
+    brCount s "\"tag\": \"iverson\"" == 1 && brCount s "\"include\"" == 1 &&
+    has s (brIverson brDiag6) &&
+    brCount s "bool_to_tropical" == 0 && brCount s "state_init" == 0
+
+-- The `Closed`-shaped node (a real sum-product destination reading the Boolean state) is the ACCEPT/
+-- REFUSE contrast inside the same plan: a plain real record, NO `algebra`/`semantics`/`tag` key — the
+-- silent-miscompile hazard if Boolean metadata leaked onto (or off) either side. Rendered through the
+-- public single-node renderer; the plan's `Closed` step is its only terminal assignment.
+#guard match brPrepared? brReach brEdgeEnv false with
+  | none => false
+  | some pp =>
+    match pp.plan.checkedNodes.findSome? (fun | .assign a => some a | _ => none) with
+    | none => false
+    | some a =>
+      match renderAffineAssign pp.plan.raw.tensorSigs a with
+      | .error _ => false
+      | .ok r =>
+        brCount r "\"algebra\"" == 0 && brCount r "\"semantics\"" == 0 && brCount r "\"tag\"" == 0 &&
+        brCount r "\"source_slot\": 1" == 1
+
+-- (b) the binary32 retag renders BYTE-IDENTICALLY to binary64: the renderer emits shapes, index and
+-- mask tables, include tables and algebra tags, never the element dtype (the caller supplies it), and
+-- the Boolean algebra's constants are the same `.bool` ones at both precisions.
+#guard brRendered? brReach brEdgeEnv false == brRendered? brReach brEdgeEnv true
+#guard (brRendered? brReach brEdgeEnv true).isSome
+
+-- (c) step-dependent predicate `[j ≤ l]` in a step block (j = 3, steps r = 0..2): the include table is
+-- STACKED step-major like the term's read tables, entry `(r, j)` holds iff `j ≤ r`.
+def brStepInclude : List Nat :=
+  (List.range 3).flatMap fun r => (List.range 3).map fun j => if j ≤ r then 1 else 0
+
+#guard brStepInclude.length == 9
+#guard match brRendered? brStep brSeedEnv false with
+  | none => false
+  | some s =>
+    has s (brIverson brStepInclude) && brCount s "\"include\"" == 1 &&
+    brCount s "\"algebra\": \"boolean\"" == 2 && brCount s "\"context_pos\": [0]" == 1
+
 end ScanAffineEmitTest

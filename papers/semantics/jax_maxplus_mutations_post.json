@@ -3,7 +3,7 @@
   "label": "MAX-L-SCAN",
   "task": "T1",
   "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
-  "old": "match checkJaxScanSupport nodeIndex checked (profile := .maxPlus) with",
+  "old": "match checkJaxScanSupport nodeIndex checked (profile := .booleanReach) with",
   "new": "match checkJaxScanSupport nodeIndex checked (profile := .realOnly) with",
   "targets": [
    "JaxExperiment"
@@ -16,7 +16,7 @@
   "label": "MAX-L-DEFAULT",
   "task": "T1",
   "file": "LeanNCD/Eval/Plan/Executable.lean",
-  "old": "let maxPlus := profile == .maxPlus && a.algebra == jaxMaxAlgebra kind",
+  "old": "let maxPlus := profile.admitsMaxPlus && a.algebra == jaxMaxAlgebra kind",
   "new": "let maxPlus := a.algebra == jaxMaxAlgebra kind",
   "targets": [
    "JaxExperiment"

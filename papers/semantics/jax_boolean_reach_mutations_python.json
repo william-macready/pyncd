@@ -1,0 +1,502 @@
+[
+ {
+  "label": "BR-T3-ordered_min_is_jnp_minimum-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, a, b)))",
+  "new": "jnp.minimum(a, b)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.]), array([ 0., -0.]))",
+   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.]), array([ 0., -0.]))"
+  ]
+ },
+ {
+  "label": "BR-T3-ordered_min_is_jnp_minimum-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, a, b)))",
+  "new": "jnp.minimum(a, b)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.], dtype=float32), array([ ",
+   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.], dtype=float32), array([ 0., -0.], dtype=float32))"
+  ]
+ },
+ {
+  "label": "BR-T3-ordered_min_tie_swapped-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "jnp.where(a <= b, a, b)))",
+  "new": "jnp.where(a < b, a, b)))",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([-0.,  0.]), array([ 0., -0.]))",
+   "AssertionError: (('bool_min_tie_order', False), array([-0.,  0.]), array([ 0., -0.]))"
+  ]
+ },
+ {
+  "label": "BR-T3-ordered_min_tie_swapped-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "jnp.where(a <= b, a, b)))",
+  "new": "jnp.where(a < b, a, b)))",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([-0.,  0.], dtype=float32), array([ ",
+   "AssertionError: (('bool_min_tie_order', False), array([-0.,  0.], dtype=float32), array([ 0., -0.], dtype=float32))"
+  ]
+ },
+ {
+  "label": "BR-T3-factor_fold_min_to_product-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return factor_op(acc, stacked[k])",
+  "new": "return (acc * stacked[k]) if factor_op is _ordered_min else factor_op(acc, stacked[k])",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.]), array([ 0., -0.]))",
+   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.]), array([ 0., -0.]))"
+  ]
+ },
+ {
+  "label": "BR-T3-factor_fold_min_to_product-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return factor_op(acc, stacked[k])",
+  "new": "return (acc * stacked[k]) if factor_op is _ordered_min else factor_op(acc, stacked[k])",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.], dtype=float32), array([ ",
+   "AssertionError: (('bool_min_tie_order', False), array([-0., -0.], dtype=float32), array([ 0., -0.], dtype=float32))"
+  ]
+ },
+ {
+  "label": "BR-T3-reduction_fold_max_to_sum-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return reduce_op(acc, row[k])",
+  "new": "return (acc + row[k]) if factor_op is _ordered_min else reduce_op(acc, row[k])",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))",
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))"
+  ]
+ },
+ {
+  "label": "BR-T3-reduction_fold_max_to_sum-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return reduce_op(acc, row[k])",
+  "new": "return (acc + row[k]) if factor_op is _ordered_min else reduce_op(acc, row[k])",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0.",
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0., -0.], dtype=float32))"
+  ]
+ },
+ {
+  "label": "BR-T3-term_fold_max_to_sum-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return reduce_op(acc, stacked[k])",
+  "new": "return (acc + stacked[k]) if algebra[0] is _ordered_min else reduce_op(acc, stacked[k])",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))",
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))"
+  ]
+ },
+ {
+  "label": "BR-T3-term_fold_max_to_sum-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return reduce_op(acc, stacked[k])",
+  "new": "return (acc + stacked[k]) if algebra[0] is _ordered_min else reduce_op(acc, stacked[k])",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0.",
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0., -0.], dtype=float32))"
+  ]
+ },
+ {
+  "label": "BR-T3-iverson_ignores_include-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "jnp.reshape(jnp.where(include, factor_id, reduce_id), iter_shape)",
+  "new": "jnp.reshape(jnp.where(jnp.ones_like(include), factor_id, reduce_id), iter_shape)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('bool_iverson_base', False), array([[0.5 , 1.  , 0.  ],",
+   "AssertionError: (('bool_iverson_base', False), array([[0.5 , 1.  , 0.  ],"
+  ]
+ },
+ {
+  "label": "BR-T3-iverson_ignores_include-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "jnp.reshape(jnp.where(include, factor_id, reduce_id), iter_shape)",
+  "new": "jnp.reshape(jnp.where(jnp.ones_like(include), factor_id, reduce_id), iter_shape)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('bool_iverson_base', False), array([[0.5 , 1.  , 0.  ],",
+   "AssertionError: (('bool_iverson_base', False), array([[0.5 , 1.  , 0.  ],"
+  ]
+ },
+ {
+  "label": "BR-T3-include_table_not_stepped-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return None, jax.lax.dynamic_index_in_dim(mask, r, 0, keepdims=False)",
+  "new": "return None, jax.lax.dynamic_index_in_dim(mask, 0, 0, keepdims=False)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('bool_scan_step_iverson_ge', False, 1), array([[1. , 1. , 1. , 1. ],",
+   "AssertionError: (('bool_scan_step_iverson_ge', False, 1), array([[1. , 1. , 1. , 1. ],"
+  ]
+ },
+ {
+  "label": "BR-T3-include_table_not_stepped-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return None, jax.lax.dynamic_index_in_dim(mask, r, 0, keepdims=False)",
+  "new": "return None, jax.lax.dynamic_index_in_dim(mask, 0, 0, keepdims=False)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('bool_scan_step_iverson_ge', False, 1), array([[1. , 1. , 1. , 1. ],",
+   "AssertionError: (('bool_scan_step_iverson_ge', False, 1), array([[1. , 1. , 1. , 1. ],"
+  ]
+ },
+ {
+  "label": "BR-T3-factor_seed_one_to_zero-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return _ordered_min, dtype(1), _ordered_max, dtype(0)",
+  "new": "return _ordered_min, dtype(0), _ordered_max, dtype(0)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))",
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))"
+  ]
+ },
+ {
+  "label": "BR-T3-factor_seed_one_to_zero-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return _ordered_min, dtype(1), _ordered_max, dtype(0)",
+  "new": "return _ordered_min, dtype(0), _ordered_max, dtype(0)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0.",
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0., -0.], dtype=float32))"
+  ]
+ },
+ {
+  "label": "BR-T3-reduce_id_zero_to_neg_inf-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return _ordered_min, dtype(1), _ordered_max, dtype(0)",
+  "new": "return _ordered_min, dtype(1), _ordered_max, dtype(-math.inf)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_not_product', False), array([ 0.5,  1. , -1. ,  0.5]), array([",
+   "AssertionError: (('bool_min_not_product', False), array([ 0.5,  1. , -1. ,  0.5]), array([0.5, 1. , 0. , 0.5]))"
+  ]
+ },
+ {
+  "label": "BR-T3-reduce_id_zero_to_neg_inf-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "return _ordered_min, dtype(1), _ordered_max, dtype(0)",
+  "new": "return _ordered_min, dtype(1), _ordered_max, dtype(-math.inf)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('bool_min_not_product', False), array([ 0.5,  1. , -1. ,  0.5], dtype=fl",
+   "AssertionError: (('bool_min_not_product', False), array([ 0.5,  1. , -1. ,  0.5], dtype=float32), array([0.5, 1. , 0. , 0.5], dtype=float32))"
+  ]
+ },
+ {
+  "label": "BR-T3-iverson_admitted_in_maxplus-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "                if not boolean:\n",
+  "new": "                if False:\n",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
+   "AssertionError: ('Boolean metadata silently admitted', 'iverson_in_real_node', False)"
+  ]
+ },
+ {
+  "label": "BR-T3-iverson_admitted_in_maxplus-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "                if not boolean:\n",
+  "new": "                if False:\n",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
+   "AssertionError: ('Boolean metadata silently admitted', 'iverson_in_real_node', False)"
+  ]
+ },
+ {
+  "label": "BR-T3-real_to_bool_guard_dropped-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "f.get(\"tag\") != \"read\" or f.get(\"real_to_bool\") is not False or \"bool_to_tropical\" in f",
+  "new": "f.get(\"tag\") != \"read\" or \"bool_to_tropical\" in f",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
+   "AssertionError: ('Boolean metadata silently admitted', 'bool_real_to_bool_true', False)"
+  ]
+ },
+ {
+  "label": "BR-T3-real_to_bool_guard_dropped-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "f.get(\"tag\") != \"read\" or f.get(\"real_to_bool\") is not False or \"bool_to_tropical\" in f",
+  "new": "f.get(\"tag\") != \"read\" or \"bool_to_tropical\" in f",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
+   "AssertionError: ('Boolean metadata silently admitted', 'bool_real_to_bool_true', False)"
+  ]
+ },
+ {
+  "label": "BR-T3-include_range_guard_dropped-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "type(e) is not int or e not in (0, 1)",
+  "new": "type(e) is not int",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
+   "AssertionError: ('Boolean metadata silently admitted', 'bool_include_entry_2', False)"
+  ]
+ },
+ {
+  "label": "BR-T3-include_range_guard_dropped-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "type(e) is not int or e not in (0, 1)",
+  "new": "type(e) is not int",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
+   "AssertionError: ('Boolean metadata silently admitted', 'bool_include_entry_2', False)"
+  ]
+ },
+ {
+  "label": "BR-T3-include_length_guard_dropped-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "len(include) != _prod(list(term[\"iteration_shape\"]))",
+  "new": "False",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "TypeError: cannot reshape array of shape"
+  ]
+ },
+ {
+  "label": "BR-T3-include_length_guard_dropped-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "len(include) != _prod(list(term[\"iteration_shape\"]))",
+  "new": "False",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "TypeError: cannot reshape array of shape"
+  ]
+ },
+ {
+  "label": "BR-T3-include_on_read_guard_dropped-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "if \"include\" in f:",
+  "new": "if False:",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
+   "AssertionError: ('Boolean metadata silently admitted', 'bool_read_with_include', False)"
+  ]
+ },
+ {
+  "label": "BR-T3-include_on_read_guard_dropped-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "if \"include\" in f:",
+  "new": "if False:",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
+   "AssertionError: ('Boolean metadata silently admitted', 'bool_read_with_include', False)"
+  ]
+ },
+ {
+  "label": "BR-T3-bool_to_tropical_key_guard_dropped-64",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "or f.get(\"real_to_bool\") is not False or \"bool_to_tropical\" in f",
+  "new": "or f.get(\"real_to_bool\") is not False",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64"
+  ],
+  "expect": [
+   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
+   "AssertionError: ('Boolean metadata silently admitted', 'bool_bool_to_tropical_key', False)"
+  ]
+ },
+ {
+  "label": "BR-T3-bool_to_tropical_key_guard_dropped-32",
+  "task": "T3",
+  "file": "evalplan_affine_runtime.py",
+  "old": "or f.get(\"real_to_bool\") is not False or \"bool_to_tropical\" in f",
+  "new": "or f.get(\"real_to_bool\") is not False",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float32"
+  ],
+  "expect": [
+   "    raise AssertionError((\"Boolean metadata silently admitted\", name, jit))",
+   "AssertionError: ('Boolean metadata silently admitted', 'bool_bool_to_tropical_key', False)"
+  ]
+ },
+ {
+  "label": "BR-T4-stale_baseline_reachability_inputs",
+  "task": "T4",
+  "control_class": "verifier wiring control",
+  "file": "evalplan_maxplus_smoke.py",
+  "old": "got = result(f, jit, positional)",
+  "new": "got = result(next(g for g in logic if g[\"name\"] == (\"reachability\" if f[\"name\"].startswith(\"reachability\") else f[\"name\"])), jit, positional)",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('reachability_permuted', 'Reach', False, False), array([[[1., 1., 1., 1.",
+   "AssertionError: (('reachability_permuted', 'Reach', False, False), array([[[1., 1., 1., 1., 1., 1., 1.],"
+  ]
+ },
+ {
+  "label": "BR-T4-closed_taken_from_hop_4",
+  "task": "T4",
+  "control_class": "verifier wiring control",
+  "file": "evalplan_maxplus_smoke.py",
+  "old": "f[\"plan\" + suffix] = {n: entry(a) for n, a in got.items()}",
+  "new": "f[\"plan\" + suffix] = {n: entry(got[\"Reach\"][:, :, 4] if n == \"Closed\" else a) for n, a in got.items()}",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: (('reachability_chain', 'plan64'), 'Closed', 5, 0.0, 1.0)",
+   "AssertionError: (('reachability_chain', 'plan64'), 'Closed', 5, 0.0, 1.0)",
+   "AssertionError: (('reachability_chain', 'plan32'), 'Closed', 5, 0.0, 1.0)"
+  ]
+ },
+ {
+  "label": "BR-T4-positional_skipped_for_reachability",
+  "task": "T4",
+  "control_class": "verifier wiring control",
+  "file": "evalplan_maxplus_smoke.py",
+  "old": "            if positional:\n                positional_ran.add(",
+  "new": "            if positional and not f[\"name\"].startswith(\"reachability\"):\n                positional_ran.add(",
+  "verifier": "evalplan_maxplus_smoke",
+  "runs": [
+   "float64",
+   "float32"
+  ],
+  "expect": [
+   "AssertionError: every logic fixture must execute through the positional renderer, eager an",
+   "AssertionError: every logic fixture must execute through the positional renderer, eager and jit"
+  ]
+ }
+]

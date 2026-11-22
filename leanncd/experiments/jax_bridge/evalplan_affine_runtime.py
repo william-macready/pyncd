@@ -15,13 +15,20 @@ Load-bearing properties (whole-branch review gate):
   comparison. Float64 values are created only during execution, after that gate can have been
   enabled; importing this module while x64 is disabled cannot cache a silently narrowed scalar.
   Float32 needs no x64 (its callers run with x64 DISABLED, so no float64 can arise at all).
-* **Two algebras, chosen per node by `_algebra`.** A node without an `"algebra"` key is the real
+* **Three algebras, chosen per node by `_algebra`.** A node without an `"algebra"` key is the real
   sum-product (factor op `multiply` seeded `1`, reduction/term op `add` seeded `0`, pad `0`). A node
   with `"algebra": "max_plus"` (which requires `"semantics": "ordered_max_plus_v1"`) uses factor op
   `_ordered_add` seeded `0` and reduction/term op `_ordered_max` seeded and padded with `-inf`; its
   factors must carry explicit `bool_to_tropical`/`real_to_bool` cast metadata (`_check_factors`).
+  A node with `"algebra": "boolean"` (requires `"semantics": "ordered_boolean_v1"`) runs over the
+  real carrier with factor op `_ordered_min` seeded `1` and reduction/term op `_ordered_max` seeded
+  and padded with `0`; values are NOT normalised to {0, 1} (mirrors Lean: 0.5 propagates, 2.0 clamps,
+  NaN spreads). Its factors are explicit `tag: "read"` records with `real_to_bool: false` and no
+  `bool_to_tropical` key, or `tag: "iverson"` records whose `include` table (0/1 per coordinate of the
+  term's full iteration shape, decided in Lean) becomes `where(include, 1, 0)`; the runtime evaluates
+  no predicate. An Iverson factor in a real or max-plus node fails loud.
   Every "zero" below is therefore the reduction identity of the node's algebra: `0` for the real
-  algebra, `-inf` for max-plus (the factor-product seed stays `0` there).
+  and Boolean algebras, `-inf` for max-plus (the factor-product seed stays `0` there).
 * **Safe index + mask padding.** A factor gathers ONLY through the precomputed safe indices
   (invalid entries carry the placeholder `0`) and re-pads invalid entries with `jnp.where(mask, …,
   pad)` (`0.0` real, `-inf` max-plus). It never relies on JAX's own out-of-bounds gather, which may
@@ -139,6 +146,12 @@ def _ordered_max(a, b):
     return jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, b, a)))
 
 
+def _ordered_min(a, b):
+    # Lean's `minNaN`: the first NaN wins, and a tie keeps the FIRST operand (min(+0,-0) = +0).
+    # `jnp.minimum` is not safe: it does not follow the Lean tie and NaN order.
+    return jnp.where(jnp.isnan(a), a, jnp.where(jnp.isnan(b), b, jnp.where(a <= b, a, b)))
+
+
 @jax.custom_jvp
 def _ordered_add(a, b):
     # XLA may erase a literal +0 seed. Preserve IEEE zeros without erasing its derivative.
@@ -164,19 +177,40 @@ def _algebra(node, dtype):
         if node.get("semantics") != "ordered_max_plus_v1":
             raise ValueError("max-plus requires ordered_max_plus_v1 semantics")
         return _ordered_add, dtype(0), _ordered_max, dtype(-math.inf)
+    if tag == "boolean":
+        if node.get("semantics") != "ordered_boolean_v1":
+            raise ValueError("boolean requires ordered_boolean_v1 semantics")
+        return _ordered_min, dtype(1), _ordered_max, dtype(0)
     raise ValueError(f"unknown algebra {tag!r}")
 
 
-def _check_factors(terms, max_plus):
+def _check_factors(terms, algebra):
+    factor_op = algebra[0]
+    max_plus = factor_op is _ordered_add
+    boolean = factor_op is _ordered_min
     for term in terms:
         for f in term["factors"]:
-            if f.get("tag", "read") != "read":
+            tag = f.get("tag", "read")
+            if tag not in ("read", "iverson"):
                 raise ValueError(f"unknown factor tag {f['tag']!r}")
+            if tag == "iverson":
+                if not boolean:
+                    raise ValueError("iverson factors require boolean algebra")
+                include = f.get("include")
+                if (not isinstance(include, list) or len(include) != _prod(list(term["iteration_shape"]))
+                        or any(type(e) is not int or e not in (0, 1) for e in include)):
+                    raise ValueError("iverson include must be one 0/1 entry per iteration coordinate")
+                continue
+            if "include" in f:
+                raise ValueError("include is only valid on an iverson factor")
             if max_plus:
                 if f.get("tag") != "read" or type(f.get("bool_to_tropical")) is not bool:
                     raise ValueError("max-plus read requires explicit cast metadata")
                 if f.get("real_to_bool") is not False:
                     raise ValueError("real_to_bool is not supported")
+            elif boolean:
+                if f.get("tag") != "read" or f.get("real_to_bool") is not False or "bool_to_tropical" in f:
+                    raise ValueError("boolean read requires explicit tag read, real_to_bool false, no bool_to_tropical")
             elif any(k in f for k in ("bool_to_tropical", "real_to_bool")):
                 raise ValueError("real read cast metadata is not supported")
 
@@ -212,6 +246,11 @@ def _run_term(
     # --- gather one full iteration-space tensor per factor -------------------------------------
     factor_tensors: list[jax.Array] = []
     for f in factors:
+        if f.get("tag") == "iverson":
+            # Boolean Iverson factor: a static 0/1 include table decided in Lean (no predicate here).
+            include = jnp.asarray(f["include"], dtype=bool) if slicer is None else slicer(f)[1]
+            factor_tensors.append(jnp.reshape(jnp.where(include, factor_id, reduce_id), iter_shape))
+            continue
         source = store[f["source_slot"]]
         src_flat = jnp.reshape(source, (-1,))
         if int(src_flat.shape[0]) == 0:
@@ -275,7 +314,7 @@ def _run_node(
     terms = node["terms"]
     algebra = _algebra(node, dtype)
     _, _, reduce_op, reduce_id = algebra
-    _check_factors(terms, algebra[0] is _ordered_add)
+    _check_factors(terms, algebra)
     if not terms:
         # Empty term array yields an all-zero output.
         return jnp.full(output_shape, reduce_id, dtype=dtype)
@@ -515,7 +554,7 @@ def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> 
             states[i] = _place(states[i], jnp.asarray(w["index"], dtype=_index_dtype()), out)
     for n in node["step"]["nodes"]:  # validate the step block even when it never runs (steps == 0)
         if n.get("kind", "assign") == "assign":
-            _check_factors(n["terms"], _algebra(n, dtype)[0] is _ordered_add)
+            _check_factors(n["terms"], _algebra(n, dtype))
     if steps == 0:
         return states
 
@@ -529,6 +568,11 @@ def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> 
             if t["iteration_shape"][0] != steps:
                 raise ValueError(f"step term iteration_shape {t['iteration_shape']} has step extent != {steps}")
             for f in t["factors"]:
+                if f.get("tag") == "iverson":  # include table, stacked step-major like safe_index/mask
+                    if len(f["include"]) != steps * local_size:
+                        raise ValueError("step factor table is not steps * local entries")
+                    stacked[id(f)] = (None, jnp.reshape(jnp.asarray(f["include"], dtype=bool), (steps, local_size)))
+                    continue
                 if len(f["safe_index"]) != steps * local_size or len(f["mask"]) != steps * local_size:
                     raise ValueError("step factor table is not steps * local entries")
                 stacked[id(f)] = (
@@ -547,6 +591,8 @@ def _run_scan_node(node: dict[str, Any], store: list[jax.Array], dtype: Any) -> 
     def body(carry, r):
         def slicer(f):
             safe, mask = stacked[id(f)]
+            if safe is None:  # an Iverson include table: no source index
+                return None, jax.lax.dynamic_index_in_dim(mask, r, 0, keepdims=False)
             return (
                 jax.lax.dynamic_index_in_dim(safe, r, 0, keepdims=False),
                 jax.lax.dynamic_index_in_dim(mask, r, 0, keepdims=False),

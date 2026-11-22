@@ -220,8 +220,8 @@
    "float64"
   ],
   "expect": [
-   "AssertionError: native_max_zero_tie: ordered max must choose the right signed zero",
-   "AssertionError: native_max_zero_tie"
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))",
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.]), array([ 0., -0.]))"
   ]
  },
  {
@@ -235,8 +235,8 @@
    "float32"
   ],
   "expect": [
-   "AssertionError: native_max_zero_tie: ordered max must choose the right signed zero",
-   "AssertionError: native_max_zero_tie"
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0.",
+   "AssertionError: (('bool_min_tie_order', False), array([0., 0.], dtype=float32), array([ 0., -0.], dtype=float32))"
   ]
  },
  {

@@ -29,10 +29,13 @@ ownership the completed spike selected (`papers/jax_signature_evidence_ownership
 decision GO B):
 
 * `JaxSupportError`/`checkJaxAssignSupport` reject, with a located typed error, every assignment the
-  checked backend admits but this experimental backend cannot render at all — a Boolean destination,
-  a Boolean source, tropical max/min algebra, an inline unary read (by default: only the
-  `affineReference` assignment renderer opts in, via `allowUnary`), and (Task 4.5 closure) a
-  CONTEXTFUL assignment. Rejection happens BEFORE any candidate, evidence label, or Python emission.
+  checked backend admits but this experimental backend cannot render at all — by default (the
+  `.realOnly` profile) a Boolean destination, a Boolean source, tropical max/min algebra, an inline
+  unary read (only the `affineReference` assignment renderer opts in, via `allowUnary`), and (Task
+  4.5 closure) a CONTEXTFUL assignment. The `.maxPlus` and `.booleanReach` render profiles
+  (`JaxRenderProfile`) admit the max-plus and Boolean-reachability statements respectively, and only
+  the `affineReference` renderers pass them. Rejection happens BEFORE any candidate, evidence label,
+  or Python emission.
 * A standalone entry (`validateAffineTable`/`validateEinsum`/`kernelWellFormedBool`/
   `validateAndConstructKernel`, and the experimental renderers/conversions) takes ONE explicit
   complete `Array TensorSignature` and treats it as its semantic authority: the assignment checker
@@ -211,9 +214,11 @@ inductive JaxSupportError
   | unaryFactor            (nodeIndex termIndex factorIndex : Nat)
   | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
   -- A scan state whose cells start at an `initValue` the active profile does not admit: `.zero` is
-  -- always admitted and `.negInf` only under the `.maxPlus` profile (a tropical max-plus state starts
-  -- at `-inf`, the ordered-max identity), so under `.realOnly` any non-`zero` state is refused and a
-  -- min-plus `.posInf` state is refused under every profile. Located at the scan's outer step index
+  -- always admitted and `.negInf` only under the `.maxPlus` profile and its superset `.booleanReach`
+  -- (a tropical max-plus state starts at `-inf`, the ordered-max identity), so under `.realOnly` any
+  -- non-`zero` state is refused and a min-plus `.posInf` state is refused under every profile. A
+  -- Boolean state with a non-`zero` init never reaches the gate (`checkScanPlan` refuses it first, as
+  -- `stateInitNotAdmitted`). Located at the scan's outer step index
   -- and the state's index in `RawScanPlan.states`.
   | scanNonRealState       (nodeIndex stateIndex : Nat)
   -- A scan over more (or fewer) than one history axis: the scan runtime steps ONE axis. Located at
@@ -226,17 +231,38 @@ inductive JaxSupportError
     accepting `f64 ∨ f32` symmetrically: an `f64` slot in a binary32 graph (or the reverse) is
     already refused by the mode-selected `checkAssign`/`checkAssignF32` re-run, and keying the
     policy to the kind keeps that refusal from depending on the re-run's order. `bool` is neither
-    carrier's real dtype, so a Boolean destination or source stays refused under BOTH kinds; the
-    tropical algebras are neither carrier's sum-product, so they stay refused too. No wildcard arm. -/
+    carrier's real dtype, so this real-carrier policy never names it: a Boolean destination or source
+    is refused under BOTH kinds unless the render profile admits it (`.booleanReach` does, below);
+    the tropical algebras are neither carrier's sum-product, so this policy never names them either.
+    No wildcard arm. -/
 private def jaxRealCarrier : LeanNCD.StorageKind → ScalarDType × ContractionAlgebra
   | .float64 => (.f64, admittedAlgebra)
   | .float32 => (.f32, admittedAlgebraF32)
 
-/-- Additive render-only policy. Evidence, candidates, einsum and scatter use `realOnly`. -/
+/-- Additive render-only policy. Evidence, candidates, einsum and scatter use `realOnly`.
+    `booleanReach` is a SUPERSET of `maxPlus` (everything `maxPlus` admits, verbatim) that also admits
+    the Boolean-reachability statements: a Boolean destination under `admittedAlgebraBool` over
+    Boolean sources, and a Boolean source under the graph's real sum-product algebra (a real
+    destination reading a Boolean relation, e.g. `Closed := Reach[...]`). It never admits a real
+    source in a Boolean statement (so `realToBool` casts stay refused) or any other algebra. -/
 inductive JaxRenderProfile
   | realOnly
   | maxPlus
+  | booleanReach
   deriving BEq
+
+/-- Whether the profile admits the max-plus algebra (`jaxMaxAlgebra`), its Boolean-source reads and
+    its `.negInf` scan states: `maxPlus` and its superset `booleanReach`. No wildcard arm. -/
+private def JaxRenderProfile.admitsMaxPlus : JaxRenderProfile → Bool
+  | .realOnly => false
+  | .maxPlus => true
+  | .booleanReach => true
+
+/-- Whether the profile admits the Boolean-reachability statements: `booleanReach` only. -/
+private def JaxRenderProfile.admitsBoolean : JaxRenderProfile → Bool
+  | .realOnly => false
+  | .maxPlus => false
+  | .booleanReach => true
 
 private def jaxMaxAlgebra : LeanNCD.StorageKind → ContractionAlgebra
   | .float64 => admittedAlgebraMax
@@ -285,13 +311,18 @@ private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
     (allowContext : Bool := false) (profile : JaxRenderProfile := .realOnly) :
     Except JaxSupportError Unit := do
   let (realDType, realAlgebra) := jaxRealCarrier kind
-  let maxPlus := profile == .maxPlus && a.algebra == jaxMaxAlgebra kind
+  let maxPlus := profile.admitsMaxPlus && a.algebra == jaxMaxAlgebra kind
+  let boolean := profile.admitsBoolean && a.algebra == admittedAlgebraBool
+  -- A Boolean SOURCE is admitted under max-plus, under the Boolean algebra, and (Boolean-capable
+  -- profiles only) under the graph's real sum-product algebra; a REAL source never in a Boolean
+  -- statement (so a `realToBool` read, which needs a non-Boolean source, is refused here).
+  let boolSourceOk := maxPlus || boolean || (profile.admitsBoolean && a.algebra == realAlgebra)
   match sigs[a.destinationSlot]? with
   | none => throw (.invalidSignatureContext nodeIndex (.slotOutOfRange a.destinationSlot sigs.size))
   | some destSig =>
-      unless destSig.dtype == realDType do
+      unless destSig.dtype == realDType || (boolean && destSig.dtype == .bool) do
         throw (.destinationDType nodeIndex a.destinationSlot destSig.dtype)
-  unless a.algebra == realAlgebra || maxPlus do
+  unless a.algebra == realAlgebra || maxPlus || boolean do
     throw (.unsupportedAlgebra nodeIndex a.algebra)
   unless allowContext || a.contextShape.isEmpty do
     throw (.contextualAssignment nodeIndex a.contextShape)
@@ -304,7 +335,7 @@ private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat)
         match sigs[f.sourceSlot]? with
         | none => throw (.invalidSignatureContext nodeIndex (.slotOutOfRange f.sourceSlot sigs.size))
         | some srcSig =>
-            unless srcSig.dtype == realDType || (maxPlus && srcSig.dtype == .bool) do
+            unless (srcSig.dtype == realDType && !boolean) || (boolSourceOk && srcSig.dtype == .bool) do
               throw (.sourceDType nodeIndex ti fi srcSig.dtype)
         unless allowUnary || f.unary.isNone do
           throw (.unaryFactor nodeIndex ti fi)
@@ -397,7 +428,7 @@ def checkJaxScanSupport (nodeIndex : Nat) (checked : CheckedScanPlan)
     throw (.scanMultiAxis nodeIndex)
   for h : si in [0 : raw.states.size] do
     unless raw.states[si].initValue == .zero ||
-        (profile == .maxPlus && raw.states[si].initValue == .negInf) do
+        (profile.admitsMaxPlus && raw.states[si].initValue == .negInf) do
       throw (.scanNonRealState nodeIndex si)
   for (block, evidence) in [(raw.baseBlock, checked.checkedBase), (raw.stepBlock, checked.checkedStep)] do
     for e in evidence.checkedNodes do
