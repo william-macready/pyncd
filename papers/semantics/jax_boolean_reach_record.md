@@ -150,6 +150,10 @@ Logs: [T1 mutations](../../.cache/t1-mutations.log),
 Build and suite logs use `.cache/tN-{build,drivers,maxplus,affine,affine32,nonlin,scatter,logic}.log`
 where that command ran.
 
+Note (2026-11-22, added after the whole-branch review): the `../../.cache/...` log links in this
+record point into the gitignored `.cache` of the execution worktree, which was removed after the merge,
+so they are not durable. The quoted command outputs and tables in this record are the durable evidence.
+
 ## Final verification
 
 The exact plan section 11 sequence ran serially: task-5 package verification;

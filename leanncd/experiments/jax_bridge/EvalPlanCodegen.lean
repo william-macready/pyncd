@@ -18,11 +18,18 @@ them (plan "Two explicit lowerings"):
   checked cast flag). It precomputes exact per-factor affine lookup tables
   (safe index + validity mask) in Lean using the shared coordinate primitives
   (`Eval.Plan.Coordinates`), and emits static plan DATA that the committed generic runtime
-  (`evalplan_affine_runtime.py`) interprets with ordered factor/reduction/term folds. Boolean
-  destinations, Boolean sources outside max-plus, min-plus, Iverson factors and outer contextual
-  assignments fail loud with located typed errors (`.scatter`/`.pointwise`/`.axiswise`/`.scan` steps
-  have their own records and gates, see below). No `einsum`/`jnp.sum`/tree reduction is
-  used on this path.
+  (`evalplan_affine_runtime.py`) interprets with ordered factor/reduction/term folds. The renderers
+  pass the `.booleanReach` render profile (a superset of `.maxPlus`), so a Boolean destination under
+  `admittedAlgebraBool`, a Boolean source (under the Boolean algebra, under max-plus, and under the
+  graph's real sum-product algebra for a `Closed`-shaped node) and, in Boolean-algebra nodes only,
+  an Iverson factor (lowered to a static `include` table, `iversonIncludeTable`) are rendered.
+  Min-plus, an Iverson factor in a real or max-plus node (`iversonFactor`), a `realToBool` cast (a
+  real source in a Boolean statement) and outer contextual assignments still fail loud with located
+  typed errors (`.scatter`/`.pointwise`/`.axiswise`/`.scan` steps have their own records and gates,
+  see below). Under the default `.realOnly` profile (`einsumOnly`, the candidate conversions, the
+  evidence path, scatter compute) every Boolean destination/source and Iverson factor is still
+  refused, and the `.maxPlus` profile still admits exactly what it did. No `einsum`/`jnp.sum`/tree
+  reduction is used on this path.
 
 Kept out of the default build (registered only in the non-default `JaxExperiment` `lean_lib`), no
 `LeanNCD` public API touched, no JAX dependency added to this project's toolchain. This module
@@ -82,10 +89,12 @@ inductive JaxCodegenError
   -- codegen's own backstop: the include table is never built from a mask the worker would refuse.
   -- Carries the node and the worker's own refusal.
   | axiswiseIncludeRefused (nodeIndex : Nat) (cause : PositionalInputError)
-  -- A `.iverson` predicate factor inside an assignment term: this JAX backend lowers only affine
-  -- reads to einsum/affine-table kernels, so a term carrying an Iverson factor is rejected here with
-  -- its node/term/factor location. (Predicate/mask execution is not lowered to JAX — Global
-  -- Constraints. Reads route through the unchanged path.)
+  -- A `.iverson` predicate factor inside an assignment term that this backend does not lower: the
+  -- term is rejected with its node/term/factor location. Under the `.booleanReach` profile an
+  -- Iverson factor IS lowered (to a static `include` table, `iversonIncludeTable`) in a
+  -- Boolean-algebra node, so this error remains for an Iverson factor in a real sum-product or
+  -- max-plus node, for every Iverson factor under `einsumOnly` and in the candidate conversions
+  -- (`requireNoIverson`), and for a scatter's compute half. Reads route through the unchanged path.
   | iversonFactor         (nodeIndex termIndex factorIndex : Nat)
   -- The `.booleanReach` Iverson lowering (Boolean-algebra nodes only): the dense worker's own
   -- predicate evaluator (`evalPosBool`) failed at some iteration coordinate while the include table
@@ -540,9 +549,11 @@ def buildFactorTable (iterationShape : Array Nat) (f : ReadPlan) : Array Nat × 
     (#[], #[])
 
 /-- One Iverson factor's static include table: for every coordinate of its term's FULL iteration basis
-    (`iterationShape` = context ++ output ++ reduction positions, `allCoords` order — exactly the
-    order and length of every sibling `buildFactorTable` table, so a step block's table is stacked
-    step-major like theirs), `1` where the predicate holds and `0` where it does not, decided by the
+    (`allCoords` over `iterationShape`, in the term's own positional order — for a compiled plan the
+    compiler builds that basis as context, then output, then reduction positions, but
+    `positionsPartition` lets a hand-built raw plan use any permutation; exactly the order and length
+    of every sibling `buildFactorTable` table, so a step block's table is stacked step-major like
+    theirs), `1` where the predicate holds and `0` where it does not, decided by the
     dense worker's own evaluator (`evalPosBool`, the very call `Dense`'s Iverson arm makes). The
     runtime evaluates no predicate. The evaluator's only error (`predicateWidthMismatch`) is
     unreachable for a checked plan; it throws the located `iversonPredicateFailed` rather than emit
@@ -847,7 +858,8 @@ private def renderScanWrites (nodeIndex : Nat) (stateShapes : Array (Array Nat))
     ```
 
     An Iverson factor's `include` table has one entry per coordinate of its term's full
-    `iteration_shape` (context ++ output ++ reduction positions, `allCoords` order, `1` where the
+    `iteration_shape` (the iteration basis in positional order — for compiled plans context, then
+    output, then reduction positions — `allCoords` order, `1` where the
     predicate holds; `iversonIncludeTable`), so in a step-block term it is stacked step-major exactly
     like that term's `safe_index`/`mask` tables. An Iverson factor in a real or max-plus node stays the
     located `iversonFactor` refusal; a real sum-product node reading a Boolean source (`Closed`) is a
@@ -996,11 +1008,11 @@ def buildAssignFixture (name : String) (sigs : Array TensorSignature) (a : Assig
 
 /-- Generate the named-plan representation for a source/corpus `PreparedPlan` under an explicit
     mode. `einsumOnly` returns the `forward(inputs)` body (or a closed `JaxCodegenError` rejection);
-    `affineReference` returns static plan DATA for the `f64`/`f32` real sum-product and max-plus
-    fragment described at the top of this file (plain/unary reads, Boolean-source reads under
-    max-plus, assignments, real-only scatters, pointwise/axiswise steps and single-axis scans, no outer
-    contextual assignment); every unsupported category fails loud with its located
-    `JaxCodegenError`. -/
+    `affineReference` returns static plan DATA for the `f64`/`f32` real sum-product, max-plus and
+    (`.booleanReach`) Boolean-reachability fragment described at the top of this file (plain/unary
+    reads, Boolean-source reads, Boolean-destination assignments with Iverson include tables,
+    real-only scatters, pointwise/axiswise steps and single-axis scans, no outer contextual
+    assignment); every unsupported category fails loud with its located `JaxCodegenError`. -/
 def generateNamed (mode : LoweringMode) (plan : PreparedPlan) :
     Except JaxCodegenError String := do
   -- Plan-level storage gate, explicitly here as well as on both dispatch targets. Stated rather
@@ -1449,9 +1461,12 @@ def testScanStepRejectedLocated : Bool :=
 /-! ### Slice 5.4 — Iverson factor JAX rejection gate (`idRaw` family)
 
 The predicate/mask parity thread admits a source Iverson factor into the checked plan (Task 5.2), but
-this JAX backend lowers only affine reads to einsum/affine-table kernels — a term carrying an Iverson
-predicate has no JAX lowering and is rejected with the located `JaxCodegenError.iversonFactor`
-established in Task 5.1. The fixture inserts an Iverson at factor index 1 of the identity assignment's
+this JAX backend lowers an Iverson predicate only in a Boolean-algebra node under the `.booleanReach`
+profile (a static include table; see the "Boolean-reach emitter pins" section below). In a real
+sum-product or max-plus node, under `einsumOnly`, and in the candidate conversions a term carrying an
+Iverson predicate has no JAX lowering and is rejected with the located `JaxCodegenError.iversonFactor`
+established in Task 5.1; this section pins that refusal (the real-signature `idSigs` fixture,
+unchanged by `.booleanReach`). The fixture inserts an Iverson at factor index 1 of the identity assignment's
 single term (`Y[i] := X[i] · [predicate]`, the `idRaw` family), so `checkPlan` admits it (the
 predicate leaf has width 1 == the term's `iterationShape.size`) but both JAX lowering entry points —
 the einsum body (`generateNamed .einsumOnly` → `lowerTerm`) and the affine-reference static data
