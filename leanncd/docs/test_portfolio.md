@@ -311,7 +311,9 @@ and reflexive closure on the reference evaluator and checked binary64/binary32 p
 Cases include a diamond (two paths still yield one), a cycle, an isolated node, node relabeling,
 edge addition, empty/self-only graphs and a five-edge chain. The six cases also run on JAX under the
 `.booleanReach` profile (see section 11, last paragraph).
-Run `bash leanncd/experiments/jax_bridge/run-evalplan-logic.sh`; evidence is in section 25 of
+Run `bash leanncd/experiments/jax_bridge/run-evalplan-logic.sh` for the Lean legs only (no JAX); the JAX legs of the
+same fixtures run under `python3 leanncd/experiments/jax_bridge/run-evalplan-maxplus.py --python <jax python>`.
+Evidence is in section 25 of
 [the example record](../../papers/semantics/jax_scan_record.md).
 
 ## 10. Losses, reductions & statistics

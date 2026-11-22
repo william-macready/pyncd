@@ -1,6 +1,9 @@
 """Independent exact pins for Lean-side max-plus Viterbi and Boolean reachability.
 
-No JAX execution or autodiff is claimed: these scan algebras are still refused by that bridge.
+This module is the independent oracle and runs no JAX itself. Standalone (`run-evalplan-logic.sh`) it checks only
+the Lean legs (reference and checked binary64/binary32). The same fixtures also run on JAX (named and positional,
+eager and jit, both precisions, plus the max-plus gradient points) under `run-evalplan-maxplus.py`, which feeds the
+JAX-produced values back through `verify` below, so this oracle judges the JAX results too.
 Dyadic log-scores, infinities and Boolean values need no numerical tolerance.
 """
 from __future__ import annotations

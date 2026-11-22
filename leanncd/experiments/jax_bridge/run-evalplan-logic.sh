@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Lean-side logic algorithms; independent Python-standard-library oracles, no JAX execution.
+# Lean-side logic algorithms (max-plus Viterbi, Boolean reachability); independent Python-standard-library
+# oracles, NO JAX execution: this checks only the Lean legs (reference, checked binary64/binary32).
+# The same fixtures run on JAX, eager and jit in both precisions, under run-evalplan-maxplus.py
+# (`python3 leanncd/experiments/jax_bridge/run-evalplan-maxplus.py --python /path/to/jax/python`).
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
