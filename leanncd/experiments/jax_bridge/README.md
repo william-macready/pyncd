@@ -434,11 +434,13 @@ compile size do not grow with the layer count.
 
 Refused, each with a located error: a multi-axis scan (`scanMultiAxis` at the gate, `unsupportedScanAxes` at
 the emitter), an unsupported initialization such as min-plus positive infinity
-(`scanNonRealState` / `unsupportedScanState`), a Boolean
-scratch tensor inside a scan outside a Boolean-algebra statement (`unsupportedDestDType`), a state write outside the complete state
+(`scanNonRealState` / `unsupportedScanState`), a state write outside the complete state
 (`scanWriteOutOfRange`), a step-block context position other than `#[0]` (`scanContextPos`), and two
 coordinates of one write landing on one offset (`scanWriteCollision`; the runtime scatter `.at[idx].set` is
-unspecified for duplicates). An Iverson (predicate) factor inside a scan block assignment of a real or max-plus node passes the gate and is
+unspecified for duplicates). A Boolean scratch tensor inside a scan is never refused by this gate under
+`.booleanReach`: the checker admits exactly one algebra for a Boolean destination
+(`admittedAlgebrasFor` / `admittedAlgebrasForF32` yield only `admittedAlgebraBool`), so a Boolean destination
+under any other algebra is rejected by the checker before the JAX gate runs. An Iverson (predicate) factor inside a scan block assignment of a real or max-plus node passes the gate and is
 refused by the emitter with `iversonFactor`, located by the outer node index with block-relative term and factor
 indices, exactly as for an outer assignment; `ScanIversonRefusalTest` pins both blocks. In a Boolean-algebra node it is
 lowered to a static `include` table (see "Boolean reachability on JAX" below). `einsumOnly`, both candidate
@@ -625,8 +627,8 @@ tolerance. Execution is over the real carrier under the `.booleanReach` profile.
 - A Boolean-algebra node carries `"algebra": "boolean"` and `"semantics": "ordered_boolean_v1"`; each read factor
   carries `"tag": "read"` and `"real_to_bool": false`, with no `bool_to_tropical` key.
 - An Iverson factor is `{"tag": "iverson", "include": [0|1, ...]}`: one entry per coordinate of its term's full
-  `iteration_shape` (context, output, then reduction positions, in `allCoords` order, `1` where the predicate
-  holds), decided in Lean by `iversonIncludeTable`. In a scan step block the table is stacked step-major, like
+  `iteration_shape` (the iteration basis in positional order, in `allCoords` order; for compiled plans context,
+  then output, then reduction positions; `1` where the predicate holds), decided in Lean by `iversonIncludeTable`. In a scan step block the table is stacked step-major, like
   that term's `safe_index` and `mask` tables, so a step-dependent predicate is a different table per step.
 - A Boolean scan record needs no `state_init`. The `Closed`-shaped node (a real destination reading a Boolean
   source) is a plain real record with no `tag`/`algebra` keys.
@@ -644,7 +646,7 @@ reads still carry `real_to_bool`/`bool_to_tropical`. It does not catch TOTAL los
 `3.0`). That case is guarded by the emitter (the `idIversonAssign` donor pin in `EvalPlanCodegen.lean`, plus the `BR-T2-NO-BOOLEAN-NODE-META` and
 `BR-T2-NO-BOOLEAN-READ-TAG` mutants), not by the runtime. Gradients through Boolean nodes are unsupported and untested.
 
-**Runner counts** at this slice's tip, per precision (the same in binary64 and binary32): 62 checked views, 58
+**Runner counts** at this slice's tip, per precision (the same in binary64 and binary32): 64 checked views, 58
 refusals, 52 source views (13 logic fixtures x named/positional x eager/JIT), 5 gradient input points, 20
 point-forward views, 20 gradient views.
 

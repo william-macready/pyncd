@@ -354,7 +354,7 @@ refused, `.realOnly`/`.maxPlus` refusals unchanged, f32 twins) and
 the emitter's Boolean record keys and Iverson `include` tables in
 [`ScanAffineEmitTest.lean`](../experiments/jax_bridge/ScanAffineEmitTest.lean) (`reachProg`, `Closed`, f32, step-dependent toy)
 and the in-file guards of `EvalPlanCodegen.lean` (per-predicate-family `iversonIncludeTable` pins and the
-`iversonPredicateFailed` backstop); the runtime and verifier in `evalplan_maxplus_smoke.py` (17 raw Boolean
+`iversonPredicateFailed` backstop); the runtime and verifier in `evalplan_maxplus_smoke.py` (18 raw Boolean
 fixtures, 18 metadata-refusal cases, the six reachability fixtures, `positional_ran`). Mutation records:
 `papers/semantics/jax_boolean_reach_mutations_post.json` (9 Lean entries) and
 `papers/semantics/jax_boolean_reach_mutations_python.json` (33 runtime/verifier entries).

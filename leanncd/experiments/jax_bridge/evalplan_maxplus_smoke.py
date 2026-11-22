@@ -207,7 +207,7 @@ def verify(precision, checked_path, logic_path=None):
     fixtures = checked_module.ADVERSARIAL
     assert len(fixtures) == 14
     bool_fixtures = checked_module.BOOLEAN
-    assert len(bool_fixtures) == 17
+    assert len(bool_fixtures) == 18
     for f in fixtures + bool_fixtures:
         for jit in (False, True):
             output = run(f, jit)
@@ -337,8 +337,17 @@ def verify(precision, checked_path, logic_path=None):
         # A real destination reading a Boolean source copies it: no hidden cast (0.5, -3, 2 stay).
         assert np.array_equal(values("real_dest_reads_bool_source", jit), np.asarray([.5, -3, 2, .25], dtype=nd))
         assert "algebra" not in bby["real_dest_reads_bool_source"]["assign" + suffix]
-        # Pads and seeds: bare out-of-bounds pad 0 (not -inf), empty factor product 1, empty reduction 0.
+        # Pads and seeds: bare out-of-bounds read skipped/padded (not an error), empty factor product 1,
+        # empty reduction 0. `bool_bare_oob` alone CANNOT tell a `-inf` pad from the correct pad 0
+        # (min(1, -inf) = -inf, then the reduce seed gives max(0, -inf) = 0): `bool_bare_oob_negzero` does.
         assert np.array_equal(values("bool_bare_oob", jit), np.asarray([1, 0, 0], dtype=nd))
+        # `Y[i] := A[i] · B[i+1]` with the last `A` entry -0: min(1, -0) = -0, the out-of-bounds read of
+        # `B[3]` pads +0, min(-0, +0) keeps -0 (first operand on a tie) and max(+0 seed, -0) = -0 (second
+        # operand on a tie). Any negative pad (e.g. -inf) gives min(-0, -inf) = -inf, then max(0, -inf) = +0:
+        # the sign of zero at the last coordinate is the only thing that pins the Boolean bare-read pad.
+        negzero = values("bool_bare_oob_negzero", jit)
+        assert np.array_equal(negzero, np.asarray([.25, .5, 0], dtype=nd)) and negative_zero(negzero[2]), (
+            "bool_bare_oob_negzero", jit, negzero)
         assert float(values("bool_empty_factors", jit)) == 1
         assert float(values("bool_zero_reduction", jit)) == 0
         # `_ordered_min` scalar contract (Lean `minNaN`): first operand on a signed-zero tie, NaN spreads.
