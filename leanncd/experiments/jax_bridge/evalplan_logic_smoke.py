@@ -98,6 +98,40 @@ def reach_oracle(inp):
                              tuple(float(d <= nodes) for row in dist for d in row))}
 
 
+def weighted_reach_oracle(inp, *, combine=min):
+    """Bottleneck closure by enumerating every walk of length <= h, NOT the recurrence under test.
+
+    The value of a walk is `combine` over its edge weights (min = the Boolean algebra's `·`, which
+    never normalises its operands); the empty walk is 1 at i == j. `Reach[i,j,h]` is the max over
+    walks of length <= h.
+    """
+    edge = inp["Edge"]
+    nodes, _ = edge.shape
+    history = nodes + 1
+    best = {}
+    for i in range(nodes):
+        for j in range(nodes):
+            by_length = [1.0 if i == j else 0.0]
+            for length in range(1, history):
+                top = 0.0
+                for mid in itertools.product(range(nodes), repeat=length - 1):
+                    path = (i, *mid, j)
+                    weights = [edge[a, b] for a, b in zip(path, path[1:])]
+                    value = weights[0]
+                    for w in weights[1:]:
+                        value = combine(value, w)
+                    top = max(top, combine(1.0, value))
+                by_length.append(top)
+            running = 0.0
+            for h in range(history):
+                running = max(running, by_length[h])
+                best[i, j, h] = running
+    return {"Reach": Tensor((nodes, nodes, history), tuple(best[i, j, h] for i in range(nodes)
+                                                           for j in range(nodes) for h in range(history))),
+            "Closed": Tensor((nodes, nodes), tuple(best[i, j, nodes] for i in range(nodes)
+                                                   for j in range(nodes)))}
+
+
 def equal(actual, expected, label):
     assert set(actual) == set(expected), (label, "exports", set(actual), set(expected))
     for name, want in expected.items():
@@ -202,9 +236,33 @@ def reach_pins(by):
     print("Reachability: directed reflexive closure has", int(sum(base["plan64"]["Closed"].data)), "true pairs")
 
 
+def weighted_reach_pins(by):
+    """K3: non-0/1 Edge values through the plan entry points (D6: carried as floats, never cast)."""
+    base = by["reachability_weighted"]
+    edge = base["inputs"]["Edge"]
+    assert set(edge.data) - {0.0, 1.0} == {0.5, 0.25, 0.75, 2.0, 0.125}, "non-0/1 inputs, one above 1"
+    expected = weighted_reach_oracle(base["inputs"])
+    hard = {"Edge": Tensor(edge.shape, tuple(float(x != 0) for x in edge.data))}
+    # Each plausible boundary defect must give a DIFFERENT closure, or the fixture pins nothing.
+    assert reach_oracle(hard)["Closed"] != expected["Closed"], "input cast to 0/1 is observable"
+    assert weighted_reach_oracle(base["inputs"], combine=lambda a, b: a * b)["Closed"] != expected["Closed"], \
+        "product instead of min is observable"
+    clipped = {"Edge": Tensor(edge.shape, tuple(max(0.0, min(1.0, x)) for x in edge.data))}
+    assert weighted_reach_oracle(clipped)["Reach"] == expected["Reach"], "values above 1 act as 1 (min with Reach)"
+    assert expected["Closed"][0, 3] == 0.5, "two arms: min(.5,.75) beats min(.25,2)"
+    assert expected["Closed"][2, 3] == 1.0 and expected["Closed"][1, 4] == 0.5
+    for view in ("reference", "plan64", "plan32"):
+        out = base[view]
+        assert set(out["Reach"].data) - {0.0, 1.0} == {0.5, 0.25, 0.75, 0.125}, (view, "fractional history kept")
+        assert all(out["Reach"][i, j, h] <= out["Reach"][i, j, h + 1] for i in range(6)
+                   for j in range(6) for h in range(6)), (view, "monotone in hops")
+        assert out["Reach"][0, 3, 2] == 0.5 and out["Reach"][0, 4, 3] == 0.5, (view, "bottleneck, not product")
+    print("Weighted reachability: non-0/1 Edge closure differs from the 0/1-cast and product closures")
+
+
 def verify(fixtures):
     names = {f"viterbi{s}" for s in ("", "_permuted", "_changed", "_spare", "_shifted", "_blocked", "_tied")}
-    names |= {f"reachability{s}" for s in ("", "_permuted", "_added", "_empty", "_chain", "_self")}
+    names |= {f"reachability{s}" for s in ("", "_permuted", "_added", "_empty", "_chain", "_self", "_weighted")}
     assert len(fixtures) == len(names) and {f["name"] for f in fixtures} == names, "fixture inventory"
     by = {}
     for fixture in fixtures:
@@ -218,7 +276,8 @@ def verify(fixtures):
             b = inputs32[n]
             assert a.shape == b.shape and all(x == y or math.isnan(x) and math.isnan(y)
                                               for x, y in zip(a.data, b.data)), (name, "shared exact inputs", n)
-        want = viterbi_oracle(inputs) if name.startswith("viterbi") else reach_oracle(inputs)
+        want = (viterbi_oracle(inputs) if name.startswith("viterbi") else
+                weighted_reach_oracle(inputs) if name == "reachability_weighted" else reach_oracle(inputs))
         views = {v: decode(fixture[v], 32 if v == "plan32" else 64)
                  for v in ("reference", "plan64", "plan32")}
         for view, actual in views.items():
@@ -226,6 +285,7 @@ def verify(fixtures):
         by[name] = {"inputs": inputs, **views}
     viterbi_pins(by)
     reach_pins(by)
+    weighted_reach_pins(by)
     print(f"PASS: {len(by)} fixtures x reference/checked64/checked32; every export and history cell exact; no skipped checks")
 
 

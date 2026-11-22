@@ -346,7 +346,7 @@ enabled by this max-plus capability.
 
 The six Boolean reachability cases also run through named/positional JAX eager/JIT in both precisions
 under the `.booleanReach` render profile (a superset of `.maxPlus`), their values checked by the unmodified
-BFS oracle with no tolerance (13 of 13 logic fixtures carry JAX fields). Pins: the gate arms in
+BFS oracle with no tolerance (14 of 14 logic fixtures carry JAX fields; the fourteenth, `reachability_weighted`, feeds non-0/1 `Edge` values through both entry points and is checked by a walk-enumeration oracle). Pins: the gate arms in
 [`ExecutableTest.lean`](../test/Eval/Plan/ExecutableTest.lean) (assignment gate and scan gate sections for
 `.booleanReach`: Boolean destination and source accepted, real source in a Boolean statement and `realToBool`
 refused, `.realOnly`/`.maxPlus` refusals unchanged, f32 twins) and

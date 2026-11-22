@@ -623,6 +623,13 @@ eager and JIT, in both precisions (`run-evalplan-maxplus.py`); their values are 
 fixtures and checked by the unmodified independent BFS oracle in `evalplan_logic_smoke.py`, with no
 tolerance. Execution is over the real carrier under the `.booleanReach` profile.
 
+A seventh fixture, `reachability_weighted`, runs the same program with NON-0/1 `Edge` weights (0.5, 0.25, 0.75, 2,
+0.125; dyadic, so binary32 is exact) through both plan entry points. Boolean values are carried as floats and never
+normalised (D6), so `Reach` is a bottleneck (max-min) closure; its oracle (`weighted_reach_oracle`) enumerates walks and
+asserts that a 0/1 cast of `Edge` and a product-for-min fold would each give a different `Closed`. Hand mutants casting
+`Edge` to 0/1 at the named entry (`run_named`) and at the positional entry (`run_plan_positional`) are killed by this
+fixture alone, in both precisions (every 0/1 fixture still passes under them).
+
 **Record contract** (emitter doc comment of `renderScanNode` in `EvalPlanCodegen.lean` is the source of truth):
 - A Boolean-algebra node carries `"algebra": "boolean"` and `"semantics": "ordered_boolean_v1"`; each read factor
   carries `"tag": "read"` and `"real_to_bool": false`, with no `bool_to_tropical` key.
@@ -647,7 +654,7 @@ reads still carry `real_to_bool`/`bool_to_tropical`. It does not catch TOTAL los
 `BR-T2-NO-BOOLEAN-READ-TAG` mutants), not by the runtime. Gradients through Boolean nodes are unsupported and untested.
 
 **Runner counts** at this slice's tip, per precision (the same in binary64 and binary32): 64 checked views, 58
-refusals, 52 source views (13 logic fixtures x named/positional x eager/JIT), 5 gradient input points, 20
+refusals, 56 source views (14 logic fixtures x named/positional x eager/JIT), 5 gradient input points, 20
 point-forward views, 20 gradient views.
 
 **Known limitation (pre-existing, not fixed here).** Under `jit` the real sum-product fold `0 + (-0)` gives `-0`

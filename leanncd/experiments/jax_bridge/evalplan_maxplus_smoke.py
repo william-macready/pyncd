@@ -464,8 +464,8 @@ def verify(precision, checked_path, logic_path=None):
     if logic_path:
         import evalplan_logic_smoke as oracle
         logic = load(logic_path).FIXTURES
-        assert len(logic) == 13
-        assert sum("jax" + suffix in f for f in logic) == 13, "every logic fixture carries JAX fields"
+        assert len(logic) == 14
+        assert sum("jax" + suffix in f for f in logic) == 14, "every logic fixture carries JAX fields"
         report["logic"] = []
         positional_ran = set()
 
@@ -501,7 +501,7 @@ def verify(precision, checked_path, logic_path=None):
             "every logic fixture must execute through the positional renderer, eager and jit"
 
         report.update(verify_gradient_points(precision, logic, rt))
-        report["reachability"] = "6 fixtures run on JAX (named/positional x eager/jit) and verified by the BFS oracle"
+        report["reachability"] = "7 fixtures run on JAX (named/positional x eager/jit); 6 verified by the BFS oracle, 1 weighted by the walk-enumeration oracle"
 
     return report
 
