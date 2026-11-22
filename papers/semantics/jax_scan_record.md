@@ -88,7 +88,8 @@ before the Lean-side gate existed and has not been re-run since; its refusal col
    body, so trace and compile size do not grow with the layer count. Realistic sizes remain out of scope.
 7. **A pre-existing broken manifest.** `jax_scatter_mutations_post.json` has been broken since before this
    slice: entry JS-T1-04's `old` string is gone from `EvalPlanCodegen.lean` and its line pins match no guard,
-   so it exits 125 at validation. Not fixed (parked, below).
+   so it exits 125 at validation. Not fixed in this slice. **Resolved 2026-11-22** (main `a4552839`, `40b7af4a`): JS-T1-04
+   re-anchored and every stale pin refreshed; the manifest passes `--check` and cycles 6/6.
 8. **Generated `.cache` modules go stale.** Run `run-evalplan-nonlin.sh` and `run-evalplan-scatter.sh`
    before any Python manifest, or the manifest mutates against old generated code.
 9. **Rule 6 budget breaches** by the implementers (section 6).
@@ -106,7 +107,7 @@ Costs are the controller's rough estimates in dispatches (one dispatch is the Ru
 | Boolean scratch inside a scan | Refused with `unsupportedDestDType`; needs a Boolean carry. About 1 to 2 dispatches |
 | Evidence path / `einsumOnly` scan | `unsupportedStep` today; needs `ExecutionEvidence` for scan (touches core `Executable.lean`). About 3 dispatches, together with the pointwise/axiswise/scatter evidence work parked earlier |
 | Scalable tables (dynamic context arithmetic instead of stacked tables) | Table memory is unrolled-size today. About 3 to 5 dispatches; changes the emitter contract and the oracle story |
-| Fix `jax_scatter_mutations_post.json` | About 1 dispatch (re-derive JS-T1-04 and the line pins; then re-run the 16/16 cycle) |
+| ~~Fix `jax_scatter_mutations_post.json`~~ | DONE 2026-11-22 (main `a4552839`, `40b7af4a`): JS-T1-04 re-anchored, all stale pins refreshed, 6/6 cycles pass |
 | Fixture separating snapshot from updated state | NOT possible for single-axis causal scans (finding 4); revisit only with multi-axis scans |
 | GPU tolerance | Tolerances were measured on CPU only. About 1 dispatch on a GPU host |
 | f32 siblings of the eight donor scans | The donors are binary64 only. About 1 dispatch |
@@ -162,7 +163,8 @@ leanncd/scripts/mutation-manifest.sh leanncd papers/semantics/jax_scan_mutations
 leanncd/scripts/mutation-manifest.sh leanncd papers/semantics/jax_nonlin_mutations_post.json
 ```
 
-`jax_scatter_mutations_post.json` fails `--check` today (finding 7).
+`jax_scatter_mutations_post.json` failed `--check` when this slice landed (finding 7); fixed 2026-11-22
+(`--check` passes, 6/6 cycles).
 
 **Re-pin after edits.** Every entry of `jax_scan_mutations_post.json` pins a `file:line:0` failure location:
 `ExecutableTest.lean` (g1, g3, g4, g5), `ScanJaxGateTest.lean` (g2), `ScanAffineEmitTest.lean` (e1, e2) and

@@ -1,5 +1,12 @@
 # JAX Boolean reachability plan: authoring record
 
+> **Update 2026-11-22 (main `40b7af4a`).** The five stale entries J4, J5, J13, J14, J15 of
+> `papers/f32_jax_mutations_post.json` were re-anchored (`a4552839`), and every other stale `expect`
+> pin in that manifest and in `jax_scatter_mutations_post.json` was refreshed (`40b7af4a`). Both
+> manifests now run unfiltered with exit 0 (f32 15/15, scatter 6/6), so the "stale entries" and the
+> unfiltered `--check` exit-125 exception described below were true of the baseline this document
+> was written against and no longer apply. The text below is otherwise unedited.
+
 **Status.** Planning record for [`jax_boolean_reach_plan.md`](jax_boolean_reach_plan.md). The plan is
 execution-ready and implementation has not started. This record explains how the plan was produced
 and what evidence supports each part of it. It is not an execution record. The executor writes
