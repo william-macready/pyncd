@@ -160,7 +160,8 @@ certify precision legs independently. Parent/controller owns final readiness/sig
 
 `JS-T1-04` in the preexisting scatter manifest has zero matching baseline anchors. It is unrelated
 to required max-plus behavior, is not repaired or counted as a pass, and would take roughly one
-separate bounded Direct dispatch. T4 changes only directly coupled nonlinear/scan Lean/Python repins.
+separate bounded Direct dispatch (done 2026-11-22: main `a4552839`, `40b7af4a`; scatter manifest 6/6). T4 changes only
+directly coupled nonlinear/scan Lean/Python repins.
 No unrelated AGENTS trim was scheduled: recorded hook sections were under about 3k characters,
 including the leanncd pre-edit measurement of 2951.
 

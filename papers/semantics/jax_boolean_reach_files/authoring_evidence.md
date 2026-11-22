@@ -1,5 +1,12 @@
 # JAX Boolean reachability: authoring evidence (observed, from the prototype dispatch reports)
 
+> **Update 2026-11-22 (main `40b7af4a`).** The five stale entries J4, J5, J13, J14, J15 of
+> `papers/f32_jax_mutations_post.json` were re-anchored (`a4552839`), and every other stale `expect`
+> pin in that manifest and in `jax_scatter_mutations_post.json` was refreshed (`40b7af4a`). Both
+> manifests now run unfiltered with exit 0 (f32 15/15, scatter 6/6), so the "stale entries" and the
+> unfiltered `--check` exit-125 exception described below were true of the baseline this document
+> was written against and no longer apply. The text below is otherwise unedited.
+
 Source baseline: `b305b363` (local main at authoring time). Prototype branch `proto-boolean-reach`, tip `b46cef9d` (T4 tip `c785fe7d`).
 These are artifact-reported observations from the prototype implementers, re-verified by the controller only where marked
 `CONTROLLER`. They are not fresh execution results from the plan write-up. Line numbers are deliberately omitted: cite identifiers.

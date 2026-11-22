@@ -109,7 +109,8 @@ No push is authorized.
   (`docs(jax): record max-plus boundary and repin coupled controls`).
 - Parked, not repaired or counted as passed: preexisting scatter
   `JS-T1-04` has no baseline anchor; max-plus does not require its repair
-  (roughly one separate Direct dispatch).
+  (roughly one separate Direct dispatch). **Resolved 2026-11-22** (main `a4552839`, `40b7af4a`): re-anchored; the
+  scatter manifest cycles 6/6.
 
 ## Controller validation
 
@@ -151,7 +152,7 @@ The final complete mutation pass contains 40 distinct intents represented by
 earlier entry executions, for 99 entry executions across execution phases.
 Inherited grouped entries establish their historical aggregate verdict only;
 they do not independently certify both precision kills. No survivors or
-failed restoration occurred. `JS-T1-04` remains explicitly excluded.
+failed restoration occurred. `JS-T1-04` remained explicitly excluded (repaired 2026-11-22, `a4552839`).
 
 Kernel intent labels (each `-64` and `-32`): `MAX-P-omit_cast`,
 `MAX-P-zero_init`, `MAX-P-freeze_time`, `MAX-P-zero_pad`,

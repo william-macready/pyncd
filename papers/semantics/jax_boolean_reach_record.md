@@ -370,7 +370,7 @@ These are carried from plan section 12, not new fixes or measurements:
 | K4: Iverson with unary/multiple reads, or listed first | no new fixture | unestimated |
 | K5: jit signed-zero route through `Closed` | known limitation, no new fixture or repair | unestimated |
 | K6: earlier parked list | unchanged | unestimated |
-| J4/J5/J13/J14/J15 | outside selected J3 cycle; no repair or individual recheck | unestimated |
+| J4/J5/J13/J14/J15 | outside selected J3 cycle; no repair or individual recheck at the time. **Resolved 2026-11-22** (`a4552839`; the manifest's other stale pins `40b7af4a`): re-anchored, 5/5 cycles pass, manifest 15/15 unfiltered | done |
 | weak include-length reason pin | TypeError kill retained, not tightened | unestimated |
 | equivalent mutants and dated snapshot docs | no new cycle or prose rewrite | unestimated |
 | too-general `EvalPlanNonlinSmoke.lean` predicate-lowering prose | carried parked note; outside these value-grep tokens | unestimated |

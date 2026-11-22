@@ -535,6 +535,9 @@ subsequently regenerated fixture/verifier patches; it preserves the independent 
 It is not required for max-plus, is not repaired here and is not counted as a pass; a separate
 Direct repair would cost roughly one bounded dispatch. Do not broaden T4 to fix it.
 
+> **Resolved 2026-11-22** (main `a4552839`, `40b7af4a`): `JS-T1-04` was re-anchored after execution and the scatter
+> manifest now cycles 6/6. The instruction above describes the T4 scope at the time.
+
 ## 9. Final verification, review and integration
 
 The **controller** runs these serially, records commands/results and checks restored hashes.
