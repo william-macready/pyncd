@@ -29,10 +29,13 @@ ownership the completed spike selected (`papers/jax_signature_evidence_ownership
 decision GO B):
 
 * `JaxSupportError`/`checkJaxAssignSupport` reject, with a located typed error, every assignment the
-  checked backend admits but this experimental backend cannot render at all — a Boolean destination,
-  a Boolean source, tropical max/min algebra, an inline unary read (by default: only the
-  `affineReference` assignment renderer opts in, via `allowUnary`), and (Task 4.5 closure) a
-  CONTEXTFUL assignment. Rejection happens BEFORE any candidate, evidence label, or Python emission.
+  checked backend admits but this experimental backend cannot render at all — by default (the
+  `.realOnly` profile) a Boolean destination, a Boolean source, tropical max/min algebra, an inline
+  unary read (only the `affineReference` assignment renderer opts in, via `allowUnary`), and (Task
+  4.5 closure) a CONTEXTFUL assignment. The `.maxPlus` and `.booleanReach` render profiles
+  (`JaxRenderProfile`) admit the max-plus and Boolean-reachability statements respectively, and only
+  the `affineReference` renderers pass them. Rejection happens BEFORE any candidate, evidence label,
+  or Python emission.
 * A standalone entry (`validateAffineTable`/`validateEinsum`/`kernelWellFormedBool`/
   `validateAndConstructKernel`, and the experimental renderers/conversions) takes ONE explicit
   complete `Array TensorSignature` and treats it as its semantic authority: the assignment checker
@@ -228,8 +231,10 @@ inductive JaxSupportError
     accepting `f64 ∨ f32` symmetrically: an `f64` slot in a binary32 graph (or the reverse) is
     already refused by the mode-selected `checkAssign`/`checkAssignF32` re-run, and keying the
     policy to the kind keeps that refusal from depending on the re-run's order. `bool` is neither
-    carrier's real dtype, so a Boolean destination or source stays refused under BOTH kinds; the
-    tropical algebras are neither carrier's sum-product, so they stay refused too. No wildcard arm. -/
+    carrier's real dtype, so this real-carrier policy never names it: a Boolean destination or source
+    is refused under BOTH kinds unless the render profile admits it (`.booleanReach` does, below);
+    the tropical algebras are neither carrier's sum-product, so this policy never names them either.
+    No wildcard arm. -/
 private def jaxRealCarrier : LeanNCD.StorageKind → ScalarDType × ContractionAlgebra
   | .float64 => (.f64, admittedAlgebra)
   | .float32 => (.f32, admittedAlgebraF32)

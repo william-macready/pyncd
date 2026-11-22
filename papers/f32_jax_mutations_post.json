@@ -36,8 +36,8 @@
       "Eval.Plan.ExecutableTest"
     ],
     "expect": [
-      "ExecutableTest.lean:586:0: Expression",
-      "ExecutableTest.lean:1861:0: Expression"
+      "ExecutableTest.lean:587:0: Expression",
+      "ExecutableTest.lean:1929:0: Expression"
     ]
   },
   {

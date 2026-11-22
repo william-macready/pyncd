@@ -48,9 +48,11 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
 - **JAX is context-free; `affineReference` runs binary64 and binary32, `einsumOnly` binary64 only.**
   `checkJaxAssignSupport` re-runs the evidence's own checker before policy. Its default `.realOnly`
   profile admits the storage kind's real sum-product carrier, preserving existing evidence/einsum
-  callers. Affine rendering explicitly selects `.maxPlus`, additionally admitting max-plus and
-  Boolean-source reads under that algebra, with the exact checked cast flag. Boolean destinations,
-  min-plus and outer non-empty `contextShape` stay refused. Error order remains
+  callers. Affine rendering explicitly selects `.booleanReach`, a superset of `.maxPlus`: max-plus and
+  Boolean-source reads under that algebra (exact checked cast flag), plus a Boolean destination under
+  `admittedAlgebraBool`, and a Boolean source under Boolean algebra or, under `.booleanReach` only, under the
+  real sum-product algebra. Real sources in Boolean statements (`realToBool`), min-plus and outer non-empty
+  `contextShape` stay refused. Error order remains
   destination/algebra/context/factors (source dtype before unary); `allowUnary` is renderer-only.
   Real dictionaries retain their format; max records preserve algebra, read casts and negative-infinity
   padding. Ordered scalar operations preserve NaNs and signed-zero ties; addition's custom JVP
@@ -65,12 +67,13 @@ Reachable from `import LeanNCD` (via `Adapter`, `Adapter32`, `Nonlin`, `RawStep`
   optional static `include` table from `axiswiseIncludedPredicate`; the step's checker already ran
   under its own signature table. Native exp/tanh/pow/sqrt results are tolerance-compared.
   `einsumOnly` and the evidence path still refuse these nodes as `unsupportedStep`.
-  A single-axis real or max-plus scan renders through `renderScanNode`, using `checkJaxScanSupport`
+  A single-axis real, max-plus or Boolean-reachability scan renders through `renderScanNode`, using `checkJaxScanSupport`
   with the render profile and private context opt-in for block assignments. Zero and negative-infinity
-  initialization are explicit; multi-axis scans, positive-infinity initialization and Boolean
-  destinations remain refused. The existing immutable pre-step capture/write geometry is unchanged.
-  Iverson factors still fail in the emitter. `einsumOnly`, candidate conversions and executable
-  evidence still refuse scans as `unsupportedStep`; rendering max-plus is not certification.
+  initialization are explicit; multi-axis scans and positive-infinity initialization remain refused.
+  The existing immutable pre-step capture/write geometry is unchanged.
+  Iverson factors lower (static `include` table, `iversonIncludeTable`) only in Boolean-algebra nodes and
+  still fail in the emitter (`iversonFactor`) elsewhere. `einsumOnly`, candidate conversions and executable
+  evidence still refuse scans as `unsupportedStep`; rendering max-plus or Boolean is not certification.
   Inline unary reads render only for affine assignments: real reads apply unary after zero padding,
   while tropical OOB reads return the tropical pad unapplied. Lean unary-domain success remains an
   unchecked runtime precondition (see the bridge README), not a new domain-error guarantee.

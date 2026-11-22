@@ -309,7 +309,8 @@ OR/AND recurrence, not arithmetic path counts: identity at hop zero, then retain
 or extend by one directed edge. An independent Python BFS checks the complete bounded-hop history
 and reflexive closure on the reference evaluator and checked binary64/binary32 plans.
 Cases include a diamond (two paths still yield one), a cycle, an isolated node, node relabeling,
-edge addition, empty/self-only graphs and a five-edge chain. JAX remains explicitly refused.
+edge addition, empty/self-only graphs and a five-edge chain. The six cases also run on JAX under the
+`.booleanReach` profile (see section 11, last paragraph).
 Run `bash leanncd/experiments/jax_bridge/run-evalplan-logic.sh`; evidence is in section 25 of
 [the example record](../../papers/semantics/jax_scan_record.md).
 
@@ -340,8 +341,23 @@ The logic runner and section 25 linked in section 9 reproduce those Lean checks.
 `run-evalplan-maxplus.py` additionally checks the seven Viterbi cases through named/positional JAX
 eager/JIT in both precisions, with exact finite-value bits and NaN-pattern comparison.
 Unique-winner gradients match independent path counts for Init, Trans and Emit; the unused
-emission row has zero gradient. Boolean reachability, min-plus and native traceback are not
+emission row has zero gradient. Min-plus and native traceback are not
 enabled by this max-plus capability.
+
+The six Boolean reachability cases also run through named/positional JAX eager/JIT in both precisions
+under the `.booleanReach` render profile (a superset of `.maxPlus`), their values checked by the unmodified
+BFS oracle with no tolerance (13 of 13 logic fixtures carry JAX fields). Pins: the gate arms in
+[`ExecutableTest.lean`](../test/Eval/Plan/ExecutableTest.lean) (assignment gate and scan gate sections for
+`.booleanReach`: Boolean destination and source accepted, real source in a Boolean statement and `realToBool`
+refused, `.realOnly`/`.maxPlus` refusals unchanged, f32 twins) and
+[`ScanJaxGateTest.lean`](../test/Eval/Plan/ScanJaxGateTest.lean) (the compiled `reachProg` scan under all three profiles);
+the emitter's Boolean record keys and Iverson `include` tables in
+[`ScanAffineEmitTest.lean`](../experiments/jax_bridge/ScanAffineEmitTest.lean) (`reachProg`, `Closed`, f32, step-dependent toy)
+and the in-file guards of `EvalPlanCodegen.lean` (per-predicate-family `iversonIncludeTable` pins and the
+`iversonPredicateFailed` backstop); the runtime and verifier in `evalplan_maxplus_smoke.py` (17 raw Boolean
+fixtures, 18 metadata-refusal cases, the six reachability fixtures, `positional_ran`). Mutation records:
+`papers/semantics/jax_boolean_reach_mutations_post.json` (9 Lean entries) and
+`papers/semantics/jax_boolean_reach_mutations_python.json` (33 runtime/verifier entries).
 
 S3b-ii (tropical multi-writer collection; landed, merged to local main as 349b6127; `papers/semantics/additive_s3bii_plan.md`) adds production-only fixtures outside the TR table: `Eval.Plan.CollectPlanTest` (Bellman programs: all-max value iteration `[5,3]` and `[22,100]`, all-min shortest paths `[2,1]`, each on the reference, checked plan f64 and f32, the bare-copy terminal form, shifted copies pinning the group's `0_K` pad, the one-statement equivalents, max+min / sum+max / scatter / scan-node refusals, bool and min-plus readers of a collected max-plus tensor refused with `sortCastUnsupported`), `Eval.ContractTest`/`Eval.ScanTest`/`Eval.ScatterTest` and `Eval.Plan.BoolCastTest` (j) (the D1 real -> bool coerce on the reference and the checked plan: a real source `{0.25, 0.75, 0, NaN, -2}` reads as `{1, 1, 0, 1, 1}`; unary reads are not coerced and the out-of-range pad stays `0`, which j5 cannot distinguish from a coerced pad) and (k) (c0867dd9: an out-of-range read under a `unaryFn` in a tropical statement is `0_K`, unapplied, three-way: k1-k4 bare-vs-unary twins and the pooling window where `f(0)` would win, k5/k6 real and bool neighbours keeping `exp(0) = 1`, k7-k9 scan step, scan base and scatter compute half; k10-k13 pin out-of-range `log`/`recip` as absent under max/min, k14/k15 that a real statement still fails with a domain error), `Eval.Plan.DualityTest` and `Eval.Plan.ScanCompileTest` (D2 all-neutral scan state fixtures: max pads `-inf`, min `+inf`, sum stays real, a `sum` neutral writer abstains beside a `max` one). The typed oracle covers the all-max and all-min Bellman programs as `fourLegParity` (`SourceSortedDifferentialTest`); mixed groups are `mixedSorts` there. Mixed-sort and copy-form Source programs are covered by the per-tensor-sort oracle (`OracleSortRulesTest`, `OracleMixedRefusalTest`, `OracleMixedEvalTest`, `OracleMixedValueTest`; `compareMixedSource`): value parity on four legs (reference oracle, legacy, checked plan, stratified Core) where every intermediate read is finite, three legs where the Core leg could not run (a non-finite earlier cell), `unsupportedNumericalProfile` where a non-finite cell is read by a real statement, or predicted-refusal parity, with a test-side rule predictor kept independent of production's vote/cast helpers. Not covered: bool, Iverson, pad, unary, nonlinearity, affine-read and scan values (language-widening slice), a real heterogeneous Core leg, and the production-only rows (NaN and signed zero, `route`, the raw scan init tie, neutral scan scratch, the predicate abstain rewrite, the unary exemption in the cast check, real -> bool rejection); see `papers/semantics/oracle_sorts_record.md`.
 

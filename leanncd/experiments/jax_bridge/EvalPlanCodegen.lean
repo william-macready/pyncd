@@ -1521,7 +1521,7 @@ private def accepted {α : Type} : Except JaxCodegenError α → Bool
   | .ok _ => true
   | .error _ => false
 
-private def preparedOf(raw : RawEvalPlan) (inputs materialized : Array SlotBinding) :
+private def preparedOf (raw : RawEvalPlan) (inputs materialized : Array SlotBinding) :
     Option PreparedPlan :=
   match checkPlan raw with
   | .error _ => none
