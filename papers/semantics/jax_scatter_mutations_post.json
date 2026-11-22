@@ -42,13 +42,13 @@
   "label": "JS-T1-04 (affineReference refuses scatter again)",
   "task": "T1",
   "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
-  "old": "    | .scatter s => entries := entries.push (← renderScatterNode sigs ni s)\n    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)",
-  "new": "    | .scatter _ | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)",
+  "old": "    | .scatter s => entries := entries.push (← renderScatterNode sigs ni s)\n",
+  "new": "    | .scatter _ => throw (.unsupportedStep ni)\n",
   "targets": [
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2116:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2475:0: Expression"
   ]
  },
  {
