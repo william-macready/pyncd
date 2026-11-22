@@ -241,13 +241,11 @@ def verify(precision, checked_path, logic_path=None):
         ("unknown_algebra", {"algebra": "min_plus"}),
         ("unknown_semantics", {"semantics": "future"}),
         ("missing_semantics", {"semantics": None}),
-        ("boolean_output", {"algebra": "boolean"}),
     ]:
         f = copy.deepcopy(template)
         f["assign" + suffix].update(changes)
         cases.append((name, f))
     for name, changes in [
-        ("iverson", {"tag": "iverson"}),
         ("missing_cast", {"bool_to_tropical": None}),
         ("non_bool_cast", {"bool_to_tropical": 1}),
         ("real_to_bool", {"real_to_bool": True}),
@@ -458,15 +456,15 @@ def verify(precision, checked_path, logic_path=None):
         import evalplan_logic_smoke as oracle
         logic = load(logic_path).FIXTURES
         assert len(logic) == 13
-        assert sum("jax" + suffix in f for f in logic) == 7
-        assert all(not any(k.startswith("jax") for k in f)
-                   for f in logic if f["name"].startswith("reachability"))
+        assert sum("jax" + suffix in f for f in logic) == 13, "every logic fixture carries JAX fields"
         report["logic"] = []
+        positional_ran = set()
 
         def result(f, jit, positional):
             named = f["jax" + suffix]
             inputs = {n: array(t) for n, t in f["inputs" + suffix].items()}
             if positional:
+                positional_ran.add((f["name"], jit))
                 p = f["jaxpos" + suffix]
                 args = [inputs[n] for n, _ in named["required_inputs"]]
                 fn = lambda xs: rt.run_plan_positional(p, xs, dtype=dt)
@@ -479,9 +477,10 @@ def verify(precision, checked_path, logic_path=None):
             for jit in (False, True):
                 replaced = copy.deepcopy(logic)
                 for f in replaced:
-                    if not f["name"].startswith("viterbi"):
-                        continue
                     got = result(f, jit, positional)
+                    if f["name"].startswith("reachability"):
+                        assert {n: tuple(np.shape(a)) for n, a in got.items()} == \
+                            {"Reach": (6, 6, 7), "Closed": (6, 6)}, (f["name"], jit, positional)
                     for n, a in got.items():
                         check(a, f["plan" + suffix][n], (f["name"], n, jit, positional))
                     f["plan" + suffix] = {n: entry(a) for n, a in got.items()}
@@ -489,9 +488,11 @@ def verify(precision, checked_path, logic_path=None):
                                              "positional": positional, "all_exports_exact": True})
                 # The unmodified independent exhaustive-path and metamorphic oracle sees JAX values.
                 oracle.verify(replaced)
+        assert positional_ran == {(f["name"], jit) for f in logic for jit in (False, True)}, \
+            "every logic fixture must execute through the positional renderer, eager and jit"
 
         report.update(verify_gradient_points(precision, logic, rt))
-        report["reachability"] = "6 fixtures checked/reference-only; no JAX plan emitted"
+        report["reachability"] = "6 fixtures run on JAX (named/positional x eager/jit) and verified by the BFS oracle"
 
     return report
 

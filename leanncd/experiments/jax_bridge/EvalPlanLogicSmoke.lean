@@ -7,7 +7,8 @@ import EvalPlanCodegen
 
 Source Tensor Logic -> scheduled reference and checked plans in both precisions.
 The Python verifier independently enumerates HMM paths and computes graph distances by BFS.
-Max-plus additionally renders to JAX; Boolean reachability remains checked/reference-only.
+Every fixture (max-plus Viterbi and Boolean reachability) additionally renders to JAX; the verifier
+replaces the Lean values with the JAX-produced ones before the independent oracle checks them.
 Viterbi exports scores, not argmax indices or a traceback (neither has a native TL operator).
 -/
 namespace JaxBridge.LogicSmoke
@@ -176,7 +177,7 @@ def emit (f : Fixture) : IO String := do
     | .ok r => pure r.env
     | .error e => throw (IO.userError s!"{f.name}: plan32: {repr e.cause}")
   let names := (p.bindings.requiredInputs.bindings.map (·.name)).toList
-  let jaxFields ← if !f.tropical then pure "" else do
+  let jaxFields ← do
     let named ← match renderAffinePlanNamed p with
       | .ok x => pure x | .error e => throw (IO.userError s!"{repr e}")
     let positional ← match renderAffinePlanPositional p.plan with
