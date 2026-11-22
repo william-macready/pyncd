@@ -366,7 +366,7 @@ These are carried from plan section 12, not new fixes or measurements:
 |---|---|---|
 | K1: zero-extent Iverson include pin | not implemented | about 1 small dispatch |
 | K2: weak empty-range scan accept neighbour | not tightened | small; dispatch count not estimated |
-| K3: non-0/1 input values at named/positional entry points | no new entry-point fixture or cast check | about 1 dispatch |
+| K3: non-0/1 input values at named/positional entry points | **Resolved 2026-11-22**: fixture `reachability_weighted` (Edge 0.5/0.25/0.75/2/0.125) through both entry points, both precisions, eager and jit; runner now 64 / 58 / 56 | done |
 | K4: Iverson with unary/multiple reads, or listed first | no new fixture | unestimated |
 | K5: jit signed-zero route through `Closed` | known limitation, no new fixture or repair | unestimated |
 | K6: earlier parked list | unchanged | unestimated |

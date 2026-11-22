@@ -52,6 +52,14 @@ def edgeInputs (edges : List (Nat × Nat)) : NamedDenseEnv :=
 
 def graphEdges : List (Nat × Nat) := [(0, 1), (0, 2), (1, 3), (2, 3), (3, 4), (4, 1)]
 
+/-- K3: the `graphEdges` topology with non-0/1 weights (dyadic, so binary32 is exact). Boolean values are
+carried as floats and never normalised (D6), so `Reach` is a bottleneck (max-min) closure here. -/
+def weightedEdgeInputs : NamedDenseEnv :=
+  let weights : List ((Nat × Nat) × Float) :=
+    [((0, 1), 0.5), ((0, 2), 0.25), ((1, 3), 0.75), ((2, 3), 2), ((3, 4), 0.5), ((4, 1), 0.125)]
+  HashMap.ofList [("Edge", dense [6, 6] ((List.range 36).toArray.map fun q =>
+    (weights.lookup (q / 6, q % 6)).getD 0))]
+
 def permuteViterbi (env : NamedDenseEnv) : NamedDenseEnv :=
   let perm := #[2, 0, 3, 1]
   env.map fun n a => { a with data := a.data.mapIdx fun q _ =>
@@ -97,7 +105,8 @@ def fixtures : List Fixture :=
    ⟨"reachability_chain", reachProg, edgeInputs [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)],
      ["Reach", "Closed"], false⟩,
    ⟨"reachability_self", reachProg, edgeInputs ((List.range 6).map fun i => (i, i)),
-     ["Reach", "Closed"], false⟩]
+     ["Reach", "Closed"], false⟩,
+   ⟨"reachability_weighted", reachProg, weightedEdgeInputs, ["Reach", "Closed"], false⟩]
 
 def retag32 (p : TLProgram) : TLProgram :=
   { p with decls := p.decls.map fun d => match d with
