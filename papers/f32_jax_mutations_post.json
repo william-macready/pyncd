@@ -9,7 +9,7 @@
       "Eval.Plan.ExecutableTest"
     ],
     "expect": [
-      "ExecutableTest.lean:1827:0: Expression"
+      "ExecutableTest.lean:1895:0: Expression"
     ]
   },
   {
@@ -22,8 +22,8 @@
       "Eval.Plan.ExecutableTest"
     ],
     "expect": [
-      "ExecutableTest.lean:1806:0: Expression",
-      "ExecutableTest.lean:1815:0: Expression"
+      "ExecutableTest.lean:1874:0: Expression",
+      "ExecutableTest.lean:1883:0: Expression"
     ]
   },
   {
@@ -76,7 +76,7 @@
       "Eval.Plan.ExecutableTest"
     ],
     "expect": [
-      "ExecutableTest.lean:1815:0: Expression"
+      "ExecutableTest.lean:1883:0: Expression"
     ]
   },
   {
@@ -89,8 +89,8 @@
       "Eval.Plan.ExecutableTest"
     ],
     "expect": [
-      "ExecutableTest.lean:86:0: Expression",
-      "ExecutableTest.lean:87:0: Expression"
+      "ExecutableTest.lean:87:0: Expression",
+      "ExecutableTest.lean:88:0: Expression"
     ]
   },
   {
@@ -103,8 +103,8 @@
       "JaxExperiment"
     ],
     "expect": [
-      "EvalPlanCodegen.lean:1785:0: Expression",
-      "EvalPlanCodegen.lean:1798:0: Expression"
+      "EvalPlanCodegen.lean:2196:0: Expression",
+      "EvalPlanCodegen.lean:2209:0: Expression"
     ]
   },
   {
@@ -117,7 +117,7 @@
       "JaxExperiment"
     ],
     "expect": [
-      "EvalPlanCodegen.lean:1797:0: Expression"
+      "EvalPlanCodegen.lean:2208:0: Expression"
     ]
   },
   {
@@ -130,7 +130,7 @@
       "JaxExperiment"
     ],
     "expect": [
-      "EvalPlanCodegen.lean:1797:0: Expression"
+      "EvalPlanCodegen.lean:2208:0: Expression"
     ]
   },
   {
@@ -143,8 +143,8 @@
       "JaxExperiment"
     ],
     "expect": [
-      "EvalPlanCodegen.lean:1813:0: Expression",
-      "EvalPlanCodegen.lean:1833:0: Expression"
+      "EvalPlanCodegen.lean:2224:0: Expression",
+      "EvalPlanCodegen.lean:2244:0: Expression"
     ]
   },
   {
@@ -157,7 +157,7 @@
       "JaxExperiment"
     ],
     "expect": [
-      "EvalPlanCodegen.lean:770:25: Type mismatch"
+      "EvalPlanCodegen.lean:1149:25: Type mismatch"
     ]
   },
   {

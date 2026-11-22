@@ -9,7 +9,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2112:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2470:0: Expression"
   ]
  },
  {
@@ -22,7 +22,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2112:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2470:0: Expression"
   ]
  },
  {
@@ -35,7 +35,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2134:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2492:0: Expression"
   ]
  },
  {
@@ -61,7 +61,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2157:0: Expression"
+   "error: experiments/jax_bridge/EvalPlanCodegen.lean:2515:0: Expression"
   ]
  },
  {
@@ -75,7 +75,7 @@
    "JaxExperiment"
   ],
   "expect": [
-   "error: test/Eval/Plan/ExecutableTest.lean:1673:0: Expression"
+   "error: test/Eval/Plan/ExecutableTest.lean:1686:0: Expression"
   ]
  }
 ]
