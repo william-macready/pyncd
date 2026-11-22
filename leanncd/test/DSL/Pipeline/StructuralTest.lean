@@ -385,6 +385,12 @@ private def layoutOf (p : TLProgram) : Except CompileError (List String) :=
   | .ok sp _ => .ok (renderLayout sp)
   | .error e _ => .error e
 
+/-- The whole compile (through `schedule`): the error, if any. -/
+private def compileErrOf (p : TLProgram) : Option CompileError :=
+  match p.compileToScheduled.run 0 with
+  | .error e _ => some e
+  | .ok _ _ => none
+
 private def postPin : TLProgram := tlprog!{ iter l = 3
   S[j, 0]    := X[j]
   S[j, l +1] := S[j, l]
@@ -549,6 +555,35 @@ private def postTwoInterOk : TLProgram := tlprog!{ iter l = 3
   T[j]       := H[j, m]
   H[j, m +1] := T[j] }
 
+-- A per-step intermediate of one scan is never published, so a LATER scan reading it is rejected, not
+-- handed an unset slot. `finalizeScans` reports it as `readsPerStepIntermediate` (the reading statement, the
+-- intermediate); before that check existed it ended as a generic `cyclicDataflow` from `schedule`'s readiness
+-- rule, which stays as the backstop. Read from the later scan's step, from its base case, and the accept
+-- neighbour where it reads its own scratch only.
+private def postTwoReadsInterStep : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  Tm[j]      := S[j, l] · A[j]
+  S[j, l +1] := Tm[j]
+  H[j, 0]    := X[j]
+  H[j, m +1] := H[j, m] · Tm[j] }
+
+private def postTwoReadsInterBase : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  Tm[j]      := S[j, l] · A[j]
+  S[j, l +1] := Tm[j]
+  H[j, 0]    := Tm[j]
+  H[j, m +1] := H[j, m] }
+
+private def postTwoReadsInterOk : TLProgram := tlprog!{ iter l = 3
+  iter m = 2
+  S[j, 0]    := X[j]
+  Tm[j]      := S[j, l] · A[j]
+  S[j, l +1] := Tm[j]
+  H[j, 0]    := X[j]
+  H[j, m +1] := H[j, m] · A[j] }
+
 -- An Iverson predicate over the scan axis (`l`) does not matter: `Zi` feeds nothing, so it is post, as
 -- with the predicate over an ordinary axis (`j`).
 #guard layoutOf postIverScanAxis == .ok ["scan base=[S] body=[S]", "plain Zi"]
@@ -568,6 +603,13 @@ private def postTwoInterOk : TLProgram := tlprog!{ iter l = 3
   .ok ["scan base=[S] body=[S]", "scan base=[H] body=[H]", "plain Pc", "plain Pd"]
 #guard layoutOf postTwoInterRej == .error (.readsPerStepIntermediate "Z" "T")
 #guard layoutOf postTwoInterOk == .ok ["scan base=[S] body=[S]", "scan base=[H] body=[T, H]"]
+
+-- Source-level pins for the rule above (hand-built twins live in `ScanCompileTest`).
+#guard layoutOf postTwoReadsInterStep == .error (.readsPerStepIntermediate "H" "Tm")
+#guard layoutOf postTwoReadsInterBase == .error (.readsPerStepIntermediate "H" "Tm")
+#guard compileErrOf postTwoReadsInterStep == some (.readsPerStepIntermediate "H" "Tm")
+#guard compileErrOf postTwoReadsInterBase == some (.readsPerStepIntermediate "H" "Tm")
+#guard compileErrOf postTwoReadsInterOk == none
 
 -- New fixtures. State-name rule decided ALONE: the step does not read its own state, yet a second
 -- writer of `S` is per-step (so it is refused, not made post and failed later as `multiWriterScan`).
@@ -667,6 +709,21 @@ private def loweredStateReadByPost : LoweredProgram :=
         { body := { terms := [ { factors := [ .read "S" [ .axis j, .const 2 ] ] } ] }, nonlin := .identity } ] }
 
 #guard layoutOfLowered loweredStateReadByPost == .ok ["scan base=[S] body=[S, S]", "plain Z"]
+-- (b) The same exemption in the cross-component check: a SECOND scan's step reads `S` (a scan state that also
+-- has a non-iteration writer, so it looks like a per-step intermediate of the first scan). Reading another
+-- scan's state is not reading a per-step intermediate, so it is accepted.
+private def loweredStateReadByOtherScan : LoweredProgram :=
+  let m : AxisSpec := { name := "m", uid := 10, kind := .nat }
+  let j : AxisSpec := { name := "j", uid := 1, kind := .real }
+  let rd (nm : String) (ix : List IdxExpr) : RHSExpr :=
+    { body := { terms := [ { factors := [ .read nm ix ] } ] }, nonlin := .identity }
+  let lp := lowered "S"
+  { lp with stmts := lp.stmts ++ [
+      .assign "H" [ .free j, .iterAt m 0 ] (rd "X" [ .axis j ]),
+      .assign "H" [ .free j, .iterNext m ] (rd "S" [ .axis j, .const 2 ]) ] }
+
+#guard layoutOfLowered loweredStateReadByOtherScan ==
+  .ok ["scan base=[S] body=[S, S]", "scan base=[H] body=[H]"]
 -- checkReadRanks: declared tensor read with matching rank passes through.
 run_cmd do
   let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real }

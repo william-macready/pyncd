@@ -48,6 +48,8 @@ inductive CompileError
                                                              -- reads the per-step intermediate `T` of a scan; `T` is
                                                              -- never published, so the statement could be evaluated
                                                              -- only inside a step, where its other reads are unavailable
+                                                             -- (also a statement of ANOTHER scan reading it, from its
+                                                             -- step or its base case: `T` belongs to one scan's body)
   | unsupportedRecurMorphism : String → CompileError        -- Wave-A policy: the §12.2 `recurMorphism`
                                                              -- escape hatch has NO semantics anywhere —
                                                              -- `toBrBaseP` discards the supplied

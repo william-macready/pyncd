@@ -393,6 +393,18 @@ the compile guards of the value fixtures. Build `Tests` + `JaxExperiment` green 
   source), pinned against a plain-Python recomputation. Hand mutants killed: `isPost` without `touches`, global
   seeds, `readsPerStepIntermediate` ignoring the writer's role, spans check dropped. No scheduler or emitter
   change was needed.
+- Per-step intermediate read by a LATER scan (probed 2026-11-22): not a silent-value hole. A per-step intermediate
+  (`Tm[j] := S[j,l]·A[j]`, read by scan 1's own step) is block-local scratch and is never published, so scan 2
+  reading it, from its step or its base case, was already refused by `schedule` (the readiness rule: scan scratch
+  is never emitted, so its reader is never ready) but as a generic `cyclicDataflow`. Now `finalizeScans` reports
+  `readsPerStepIntermediate "H" "Tm"` (checked after the component loop and the post-statement check, so
+  `missingBaseCase`, `causalityViolation` and the multi-component `shapeMismatch` still come first); the
+  readiness rule stays as the backstop. Pins: `postTwoReadsInterStep` / `postTwoReadsInterBase` (the precise
+  error, at `finalizeScans` level and through the whole compile), accept neighbours `postTwoReadsInterOk` and
+  `postTwoInterOk`, and `loweredStateReadByOtherScan` for the state-name exemption (function level, because
+  `tlprog!` refuses that shape earlier). Hand mutants killed: readiness rule opened (two mutants, by the
+  source-level pins); new check never fires; own-component reads also flagged (11 guards); state-name
+  exemption dropped.
 - Multi-writer scan states (an additive contribution into a state, `multiWriterScan` today): candidate semantics
   are contributions written WITH an iteration slot at the same index (`S[j, l +1] := maxreduce(Y[j, l +1])`), so
   the existing collection rules apply; written as `S[j, l]` the cell is also written by the previous step.
