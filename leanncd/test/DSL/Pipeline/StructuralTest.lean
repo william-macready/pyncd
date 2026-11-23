@@ -1059,6 +1059,18 @@ private def maskOwnAxisAfterScan : TLProgram := tlprog!{ iter t = 3
   Zz[t, d, 0]    := H[d, t]
   Zz[t, d., l +1] := softmax(where l ≤ 1)(Zz[t, d, l]) }
 
+-- A BASE statement: the scan axis is pinned to the base's literal, but the mask basis does not carry that
+-- pin, so the mask reads coordinate 0. That is right for a base at 0 and wrong for a base at 1.
+private def maskBaseAtZero : TLProgram := tlprog!{ iter l = 3
+  S[j., 0]     := softmax(where l ≤ 0)(X[j])
+  S[j, l +1]   := S[j, l] }
+
+private def maskBaseAtOne : TLProgram := tlprog!{ iter l = 3
+  S[j., 1]     := softmax(where l ≤ 0)(X[j])
+  S[j, l +1]   := S[j, l] }
+
+#guard compileErrOf maskBaseAtZero == none
+#guard compileErrOf maskBaseAtOne == some (.maskOverScanAxis "S" "l")
 #guard compileErrOf maskOtherScanAxisFree == none
 #guard compileErrOf maskOwnAxisAfterScan == some (.maskOverScanAxis "Zz" "l")
 #guard layoutOf maskInterScanAxis == .error (.maskOverScanAxis "Pa" "l")
