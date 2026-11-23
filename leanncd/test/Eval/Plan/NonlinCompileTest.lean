@@ -411,4 +411,16 @@ def allMaskedInputs : HashMap String DenseTensor := HashMap.ofList [("A", tl [2,
 #guard diffEqB (tlprog!{ Y[q, s.] := softmax(A[q, s]) })
     (HashMap.ofList [("A", tl [2,2] [0, 0, 0, Float.log 3])]) "Y" (tl [2,2] [0.5,0.5, 0.25,0.75])
 
+-- Fixture: the Iverson FACTOR is the step-dependent form that works (a `where` mask over a scan axis is
+-- refused at the source, `StructuralTest`: `maskAxisNotOutput`). `Mx[s] := H[s, t] · [s ≤ t]` keeps row
+-- `s` of the state only once `t ≥ s`: with `H0 = [1,1,1]`, `Bi = [1,10,100]` the rows are
+-- `s=0: 1,2,3,4`, `s=1: 1,10,20,30`, `s=2: 1,100,100,200` (final column `[4,30,200]`). A factor that read
+-- `t` as coordinate 0 at every step would give a final column `[4,10,100]`. Source and checked agree.
+#guard diffEqB (tlprog!{ iter t = 4
+      H[s, 0]    := H0[s]
+      Mx[s]      := H[s, t] · [s ≤ t]
+      H[s, t +1] := Mx[s] + Bi[s] })
+    (HashMap.ofList [("H0", tl [3] [1,1,1]), ("Bi", tl [3] [1,10,100])])
+    "H" (tl [3,4] [1,2,3,4, 1,10,20,30, 1,100,100,200])
+
 end LeanNCD.Eval.Plan.NonlinCompileTest
