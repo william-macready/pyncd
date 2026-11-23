@@ -1377,6 +1377,22 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
         | some mine, some owner =>
             if mine != owner then throw (CompileError.readsPerStepIntermediate s.lhsName r)
         | _, _ => pure ()
+  -- A `(where …)` mask in a recurrence body (a state's step statement, or a per-step intermediate)
+  -- may not mention one of that scan's iteration axes. The mask is evaluated over the statement's own
+  -- non-seeded output axes; a seeded scan axis is not among them, so it would read as coordinate 0 at
+  -- every step (`where s ≤ t` meaning `s ≤ 0`) on both backends, while a per-step statement is meant to
+  -- see the CURRENT step in the scan axis. Refuse rather than misread. Base statements are not covered
+  -- (their scan axis is pinned at 0), and a POST-SCAN statement is exempt: there the scan axis is an
+  -- ordinary axis and the mask sees its real coordinate.
+  for s in nonPre do
+    if s.iterInfo.any (·.isRecur) || (s.iterInfo.isEmpty && isScanDep s.lhsName && !isPost s) then
+      -- A step statement's own scan is its iteration slots (`dep` is transitive and would also name an
+      -- EARLIER scan's axis that is an ordinary axis here); a per-step intermediate has no slot, so its
+      -- scan axes are its `dep` (which the multi-component check above confines to one scan).
+      let scanAxes := if s.iterInfo.isEmpty then dep.getD s.lhsName [] else axSet s
+      match (specsNonlin s.nonlinOf).find? (fun a => scanAxes.contains a.uid) with
+      | some a => throw (CompileError.maskOverScanAxis s.lhsName a.name)
+      | none => pure ()
   -- plain = non-iter stmts with NO scan dependency (loop-invariant; evaluated once).
   let plainStmts := nonPre.filter (fun s => s.iterInfo.isEmpty && (dep.getD s.lhsName []).isEmpty)
   -- post = statements that do not feed the recurrence, after every scan node (source order).
