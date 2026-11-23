@@ -48,6 +48,11 @@ inductive CompileError
                                                              -- reads the per-step intermediate `T` of a scan; `T` is
                                                              -- never published, so the statement could be evaluated
                                                              -- only inside a step, where its other reads are unavailable
+  | maskOverScanAxis : String → String → CompileError       -- statement, axis: a `(where …)` mask of a statement in a
+                                                             -- scan's recurrence body (a state's step or a per-step
+                                                             -- intermediate) mentions one of that scan's iteration
+                                                             -- axes; a mask cannot see the current step (the seeded
+                                                             -- axis reads as 0), so it is refused, not misread
                                                              -- (also a statement of ANOTHER scan reading it, from its
                                                              -- step or its base case: `T` belongs to one scan's body)
   | unsupportedRecurMorphism : String → CompileError        -- Wave-A policy: the §12.2 `recurMorphism`

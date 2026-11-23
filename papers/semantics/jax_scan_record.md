@@ -1598,3 +1598,26 @@ tokens/context peak are unavailable, not estimated.
 **Next.** The agreed progression advances to layers x time / nested scans and a KV cache,
 which require their own expressibility pre-flight. JAX support for non-real algebras and native
 argmax/traceback are separate capability work, not added by this example slice.
+
+## 26. Probe: layers x time (nested scans, a KV cache), and the scan-axis mask fix (2026-11-22)
+
+Scratch probe, nothing committed by the probe itself (a background agent, 81 tool calls against a 60 budget, binary64, t=6, s=5, k=4, i=3, v=2, l=3, d=4). Each program was run through source elaboration, `compileToScheduled`, `prepareEvalPlan`, the Lean dense run, the JAX gate and render, eager and jit, and `jax.grad`, against plain-Python loops written from the English definition.
+
+| Program | Result |
+|---|---|
+| P1b KV cache, one-hot slot write `Oh[s, t]`, data mask `Mk[s, t]` | Works. Cached incremental output == full causal attention recomputed from scratch to 2.8e-17; Lean, eager and jit agree to 5.6e-17. |
+| P1c same, unmasked | Works; a different model (0.46 from causal). |
+| P1a same with `softmax(where s <= t)` | Silently wrong (below); now refused. |
+| P2 scan state history read at a renamed axis `Kh[k, s]` | Refused: `stateReadNotCausal` in the checked plan (the reference evaluator accepts it). |
+| P3 two layers over the same axis, layer 2 reads the OLD layer-1 state | Works; ONE merged scan. A different model from `rnn_stack` (0.62 apart). |
+| P4n time scan then layer scan, time as an ordinary state axis | Works; 2 scan records. With a per-step intermediate in the layer scan: `shapeMismatch ... spans multiple scan components`. |
+| P5 two scan axes in one program | Only the diagonal `G[d, l+1, t+1] := f(G[d, l, t])` elaborates (no `t +1` read on the right); Lean accepts, JAX render refuses `unsupportedScanAxes 0`. |
+| P6 layer as an ordinary axis, shift matrix `Sh[l, m]` | Works; a skewed network, not a true stacked RNN (layer 2 differs from the new-state stack by 0.43). |
+
+Other traps: a state-independent intermediate that reads a scan-axis input is hoisted and summed over the scan axis, so give it an explicit `t` axis (`Kn[t, k]`); weight gradients through a hoisted table built from a NaN-sentinel row are NaN (0 x NaN), so such a table needs a finite spare row; a free non-iter axis on the left cannot be sized from a state read (P4nu).
+
+**The silent wrong answer (fixed).** `softmax(where s <= t)` with `t` the scan axis was accepted everywhere and behaved as `s <= 0` at every step; Lean dense, the reference evaluator, eager and jit all agreed on the wrong value. Cause (read in the source, then reproduced): a mask is evaluated over the statement's own non-seeded output axes (`lowerMaskPredicate` in the checked plan, `coordMap` over the output axes in the reference evaluator), and an axis missing from that basis reads as coordinate 0 (`getD 0`). The checked-plan comment and the `seededAxisZero` fixture of `ScanCompileTest` document this as parity, so it was deliberate at the hand-built layer, but it contradicts the source rule that `l` in a per-step statement is the current step.
+
+Fix (Direct path): `finalizeScans` refuses it, `maskOverScanAxis <stmt> <axis>`, for a state's step statement and for a per-step intermediate whose mask mentions one of its scan's axes. Not refused: a mask over an ordinary axis, a mask in a base statement at coordinate 0, a mask over the scan axis in a POST-SCAN statement (the axis is ordinary there), and a mask over an EARLIER scan's axis in a later scan's step (an ordinary free axis of that state; `maskOtherScanAxisFree`, which the first version of the guard refused wrongly because `dep` is transitive). A base statement at a NON-ZERO literal (`S[j., 1]`) is refused too (`maskBaseAtOne`): the base block lowers its mask with an empty pin map, so the axis reads 0 there as well; found by the independent review, which also noted that a mask over any axis that is not an output axis of its own statement reads 0 (not scan-specific, not verified, parked). Making the mask see the live step instead would need a step channel in the reference evaluator, the checked plan and the JAX emitter; not done. Pins: `maskInterScanAxis`, `maskStepScanAxis` and the accept neighbours `maskInterOtherAxis`, `maskStepOtherAxis`, `maskPostScanAxis` in `StructuralTest`. Hand mutants killed (check never fires; post statements also refused; step arm dropped; per-step axes dropped). The hand-built `seededAxisZero` fixture is unchanged: a hand-built schedule still has the coordinate-0 reading.
+
+**Next.** The slice that needs no capability change: P1b (pinned against both the incremental loop and the full causal recompute), P4n, P3, with P6 as the escape hatch. A true nested or grid scan (P5) and a renamed-axis state read (P2) need a Lean checked-plan change and JAX per-axis counters; each is a separate slice with a plan.
