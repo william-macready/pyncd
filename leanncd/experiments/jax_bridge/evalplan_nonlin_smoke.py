@@ -57,11 +57,17 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_cross_wide", "transformer_cross_wide32",
                         "conv1d_cnn", "conv1d_cnn32", "conv1d_causal", "conv1d_causal32", "vit_patch", "vit_patch32",
                         "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32", "rnn_stack", "rnn_stack32",
+                        "kv_cache", "kv_cache32", "time_layer", "time_layer32",
+                        "rnn_skew", "rnn_skew32", "layer_skew", "layer_skew32",
                         "ssm_diag", "ssm_diag32", "gnn_dense", "gnn_dense32", "gnn_edges", "gnn_edges32", "moe_dense", "moe_dense32"}
 # Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
 # layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
 # require that EXACTLY layer 2 is NaN (in Lean, eager and jit alike); every other output must be finite.
 NAN_LAYER_OUTPUTS = {(f"transformer_cross{kind}{sfx}", n) for kind in ("", "_wide") for sfx in ("", "32") for n in ("Kc", "Vc")}
+# Explicit-time tables materialize X's NaN spare row; only row 5 may be non-finite.
+NAN_TIME_OUTPUTS = {(f"{fixture}{sfx}", n) for fixture, names in
+                    (("kv_cache", ("Kn", "Vn", "Qr")), ("layer_skew", ("Ix",)))
+                    for sfx in ("", "32") for n in names}
 # Predicate-mask scan fixtures (`transformer_<kind>`, q = s = 5): kind -> the perturbed position of the
 # receptive-field pin (chosen so the reachable and the unreachable row sets are both non-empty).
 MASK_FIXTURES = {"window": 0, "strict": 4, "sink": 3}
@@ -322,7 +328,12 @@ def trim_nan_layer(a: np.ndarray, label: str) -> np.ndarray:
     return np.ascontiguousarray(a[..., :2])
 
 
-def require_close(got, entry: dict, label: str, fn: str | None, nan_layer: bool = False) -> None:
+def trim_nan_time(a: np.ndarray, label: str) -> np.ndarray:
+    assert a.shape[0] == 6 and np.all(np.isnan(a[5])) and np.all(np.isfinite(a[:5])), (label, "time-5 row is not the only NaN row")
+    return np.ascontiguousarray(a[:5])
+
+
+def require_close(got, entry: dict, label: str, fn: str | None, nan_layer: bool = False, nan_time: bool = False) -> None:
     g, w = np.asarray(got), lean_array(entry)
     if g.dtype != NDT:
         raise AssertionError(f"{label}: expected {NDT.__name__}, got {g.dtype}")
@@ -330,6 +341,8 @@ def require_close(got, entry: dict, label: str, fn: str | None, nan_layer: bool 
         raise AssertionError(f"{label}: shape {g.shape} != {w.shape}")
     if nan_layer:
         g, w = trim_nan_layer(g, label), trim_nan_layer(w, label)
+    if nan_time:
+        g, w = trim_nan_time(g, label), trim_nan_time(w, label)
     if not np.all(np.isfinite(g)) or not np.all(np.isfinite(w)):
         raise AssertionError(f"{label}: non-finite value: {g.tolist()} vs {w.tolist()}")
     if not np.array_equal(g == 0, w == 0):
@@ -355,6 +368,8 @@ def record_output(fixture: str, key: str, got, entry: dict) -> None:
     g, w = np.asarray(got), lean_array(entry)
     if (fixture, key) in NAN_LAYER_OUTPUTS:
         g, w = trim_nan_layer(g, f"{fixture} {key}"), trim_nan_layer(w, f"{fixture} {key}")
+    if (fixture, key) in NAN_TIME_OUTPUTS:
+        g, w = trim_nan_time(g, f"{fixture} {key}"), trim_nan_time(w, f"{fixture} {key}")
     diff = np.abs(g.astype(np.float64) - w.astype(np.float64))
     nz = w != 0
     rel = float(np.max(diff[nz] / np.abs(w.astype(np.float64))[nz])) if nz.any() else 0.0
@@ -384,8 +399,9 @@ def run_fixture(f: dict) -> None:
         EAGER[f["name"]] = {"eager": eager, "jit": jitted}
     for name, exp in f["expected"].items():
         nan_layer = (f["name"], name) in NAN_LAYER_OUTPUTS
-        require_close(eager[name], exp, f"{f['name']} eager {name}", fns.get(name), nan_layer)
-        require_close(jitted[name], exp, f"{f['name']} jit {name}", fns.get(name), nan_layer)
+        nan_time = (f["name"], name) in NAN_TIME_OUTPUTS
+        require_close(eager[name], exp, f"{f['name']} eager {name}", fns.get(name), nan_layer, nan_time)
+        require_close(jitted[name], exp, f"{f['name']} jit {name}", fns.get(name), nan_layer, nan_time)
         if is_transformer(f["name"]):
             record_output(f["name"], name, eager[name], exp)
             record_output(f["name"], name, jitted[name], exp)
