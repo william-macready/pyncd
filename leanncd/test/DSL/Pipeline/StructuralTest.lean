@@ -1014,7 +1014,7 @@ A softmax/normalize mask is evaluated over the statement's own non-seeded output
 seeded, so inside a recurrence body (a state's step statement, or a per-step intermediate) it is not
 in that basis and the mask used to read it as coordinate 0 at EVERY step: `softmax(where s ≤ t)` meant
 `s ≤ 0`, with the reference evaluator and the checked plan agreeing on the wrong value. A per-step
-statement is meant to see the CURRENT step in `l`, so the mask is refused (`maskOverScanAxis`: the
+statement is meant to see the CURRENT step in `l`, so the mask is refused (`maskAxisNotOutput`: the
 statement, the axis) instead of silently misread. A mask over an ordinary axis stays accepted, and so
 does a mask over the scan axis in a POST-SCAN statement, where that axis is an ordinary axis. -/
 
@@ -1069,17 +1069,40 @@ private def maskBaseAtOne : TLProgram := tlprog!{ iter l = 3
   S[j., 1]     := softmax(where l ≤ 0)(X[j])
   S[j, l +1]   := S[j, l] }
 
-#guard compileErrOf maskBaseAtZero == none
-#guard compileErrOf maskBaseAtOne == some (.maskOverScanAxis "S" "l")
+-- A mask over a pinned base coordinate is refused at 0 too: the axis is not an output axis, so the mask
+-- has no column for it. (It happened to read the right value, 0, before; the rule is now uniform.)
+#guard compileErrOf maskBaseAtZero == some (.maskAxisNotOutput "S" "l")
+#guard compileErrOf maskBaseAtOne == some (.maskAxisNotOutput "S" "l")
 #guard compileErrOf maskOtherScanAxisFree == none
-#guard compileErrOf maskOwnAxisAfterScan == some (.maskOverScanAxis "Zz" "l")
-#guard layoutOf maskInterScanAxis == .error (.maskOverScanAxis "Pa" "l")
-#guard layoutOf maskStepScanAxis == .error (.maskOverScanAxis "S" "l")
-#guard compileErrOf maskInterScanAxis == some (.maskOverScanAxis "Pa" "l")
+#guard compileErrOf maskOwnAxisAfterScan == some (.maskAxisNotOutput "Zz" "l")
+#guard layoutOf maskInterScanAxis == .error (.maskAxisNotOutput "Pa" "l")
+#guard layoutOf maskStepScanAxis == .error (.maskAxisNotOutput "S" "l")
+#guard compileErrOf maskInterScanAxis == some (.maskAxisNotOutput "Pa" "l")
 -- Accept neighbours: the nearest legal programs.
 #guard layoutOf maskInterOtherAxis == .ok ["scan base=[S] body=[Pa, S]"]
 #guard layoutOf maskStepOtherAxis == .ok ["scan base=[S] body=[S]"]
 #guard layoutOf maskPostScanAxis == .ok ["scan base=[S] body=[S]", "plain Sm"]
 #guard compileErrOf maskPostScanAxis == none
+
+-- Not scan-specific: a mask is evaluated over the statement's own `.free`/`.freeNorm` output axes, so a
+-- mask over ANY other axis (a contracted axis, an axis the statement does not carry) read coordinate 0 on
+-- both backends (`where k ≥ 1` masked everything, `where k ≤ 5` masked nothing). Refused at the source.
+private def maskContractedAxis : TLProgram := tlprog!{
+  Y[s.] := softmax(where k ≥ 1)(W[s, k] · x[k]) }
+
+private def maskUnboundAxis : TLProgram := tlprog!{
+  Y[s.] := softmax(where z ≥ 1)(W[s]) }
+
+-- Accept neighbours: the same statements masked over their own output axis.
+private def maskOutputAxisContracted : TLProgram := tlprog!{
+  Y[s.] := softmax(where s ≥ 1)(W[s, k] · x[k]) }
+
+private def maskOutputAxisPlain : TLProgram := tlprog!{
+  Y[q, s.] := normalize(where s ≠ 0)(A[q, s]) }
+
+#guard compileErrOf maskContractedAxis == some (.maskAxisNotOutput "Y" "k")
+#guard compileErrOf maskUnboundAxis == some (.maskAxisNotOutput "Y" "z")
+#guard compileErrOf maskOutputAxisContracted == none
+#guard compileErrOf maskOutputAxisPlain == none
 
 end LeanNCD
