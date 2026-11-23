@@ -1762,6 +1762,92 @@ def np_stack(inp: dict, old_state=False, no_recur2=False, no_input2=False, no_re
     return {"H1": out["H2"], "H2": out["H1"]} if swap_out else out
 
 
+def np_kv_cache(inp: dict, mode="causal") -> dict:
+    """Float64 additive-cache reference, reading only exported inputs."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    n_t = f["X"].shape[0]
+    n_s, n_k = f["Kz"].shape
+    n_v = f["Y0"].size
+    kc, vc, yh = np.zeros((n_s, n_k, n_t)), np.zeros((n_s, n_v, n_t)), np.zeros((n_v, n_t))
+    kc[:, :, 0], vc[:, :, 0], yh[:, 0] = f["Kz"], f["Vz"], f["Y0"]
+    kn, vn, qr = (np.empty((n_t, d)) for d in (n_k, n_v, n_k))
+    for t in range(n_t):
+        kn[t], vn[t], qr[t] = f["Wk"] @ f["X"][t], f["Wv"] @ f["X"][t], f["Wq"] @ f["X"][t]
+    for t in range(n_t - 1):
+        kc[:, :, t + 1], vc[:, :, t + 1] = kc[:, :, t], vc[:, :, t]
+        write = t - 1 if mode == "one-step-late write" else t
+        if write >= 0 and mode != "never written":
+            kc[:, :, t + 1] += f["Oh"][:, write, None] * kn[write]
+            vc[:, :, t + 1] += f["Oh"][:, write, None] * vn[write]
+        mask = f["Mk"][:, t]
+        if mode == "unmasked":
+            mask = np.zeros(n_s)
+        elif mode == "strict mask (s < t)":
+            mask = np.where(np.arange(n_s) < t, 0.0, -1e9)
+        p = np_softmax_last(kc[:, :, t + 1] @ qr[t] + mask)
+        yh[:, t + 1] = p @ vc[:, :, t if mode == "values before write" else t + 1]
+    return dict(Kc=kc, Vc=vc, Yh=yh, Kn=kn, Vn=vn, Qr=qr)
+
+
+def np_time_layer(inp: dict, shared=False, layers_first=False) -> dict:
+    """Float64 time recurrence, then a layer loop at every history slot."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    n_t = f["X"].shape[0]
+    n_l, n_d, _ = f["Wl"].shape
+    hs, zz = np.empty((n_d, n_t)), np.empty((n_t, n_d, n_l))
+    hs[:, 0] = f["H0"]
+    for t in range(n_t - 1):
+        hs[:, t + 1] = np.tanh(f["Wx"] @ f["X"][t] + f["U"] @ hs[:, t])
+    for t in range(n_t):
+        zz[t, :, 0] = hs[:, t]
+        for l in range(n_l - 1):
+            zz[t, :, l + 1] = np.tanh(f["Wl"][0 if shared else l] @ zz[t, :, l])
+    if layers_first:
+        # Reverse L(F(p)) to F(L(p)): p[0]=H0, p[t+1]=Wx x_t; F is the time recurrence.
+        projected = [f["H0"].copy()] + [f["Wx"] @ f["X"][t] for t in range(n_t - 1)]
+        for l in range(n_l):
+            if l:
+                projected = [np.tanh(f["Wl"][l - 1] @ p) for p in projected]
+            zz[0, :, l] = projected[0]
+            for t in range(n_t - 1):
+                zz[t + 1, :, l] = np.tanh(projected[t + 1] + f["U"] @ zz[t, :, l])
+    return dict(Hs=hs, Zz=zz)
+
+
+def np_rnn_skew(inp: dict, new_state=False, no_recur2=False, swapped=False) -> dict:
+    """Float64 skewed recurrence: layer 2 consumes the OLD layer-1 state."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    n_t, n_d = f["X"].shape[0], f["H10"].size
+    h1, h2 = np.empty((n_d, n_t)), np.empty((n_d, n_t))
+    h1[:, 0], h2[:, 0] = f["H10"], f["H20"]
+    for t in range(n_t - 1):
+        h1[:, t + 1] = np.tanh(f["W1"] @ f["X"][t] + f["U1"] @ h1[:, t])
+        old = h1[:, t + 1] if new_state else h1[:, t]
+        h2[:, t + 1] = np.tanh(f["W2"] @ old + (0.0 if no_recur2 else f["U2"] @ h2[:, t]))
+    return dict(H1=h2, H2=h1) if swapped else dict(H1=h1, H2=h2)
+
+
+def np_layer_skew(inp: dict, shift=None, new_state=False) -> dict:
+    """Float64 ordinary layer axis with shifted OLD states in a time loop."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    n_t = f["X"].shape[0]
+    n_l, n_d = f["H0"].shape
+    sh = f["Sh"] if shift is None else shift
+    hl, ix = np.empty((n_l, n_d, n_t)), np.empty((n_t, n_l, n_d))
+    hl[:, :, 0] = f["H0"]
+    for t in range(n_t):
+        projected = f["Wx"] @ f["X"][t]
+        for l in range(n_l):
+            ix[t, l] = f["E0"][l] * projected
+    for t in range(n_t - 1):
+        for l in range(n_l):
+            incoming = ix[t, l].copy()
+            for m in range(n_l):
+                incoming += sh[l, m] * hl[m, :, t + 1 if new_state and m < l else t]
+            hl[l, :, t + 1] = np.tanh(f["Wp"][l] @ incoming + f["Up"][l] @ hl[l, :, t])
+    return dict(Hl=hl, Ix=ix)
+
+
 def kv_cache_pins(by: dict, sfx: str) -> None:
     """Incremental additive caches versus an independent full-prefix causal recomputation."""
     name = f"kv_cache{sfx}"
@@ -1785,25 +1871,7 @@ def kv_cache_pins(by: dict, sfx: str) -> None:
     f = {n: v.astype(np.float64) for n, v in fin.items()}
 
     def incremental(mode="causal"):
-        kc, vc, yh = np.zeros((n_s, n_k, n_t)), np.zeros((n_s, n_v, n_t)), np.zeros((n_v, n_t))
-        kc[:, :, 0], vc[:, :, 0], yh[:, 0] = f["Kz"], f["Vz"], f["Y0"]
-        kn, vn, qr = (np.empty((n_t, d)) for d in (n_k, n_v, n_k))
-        for t in range(n_t):
-            kn[t], vn[t], qr[t] = f["Wk"] @ f["X"][t], f["Wv"] @ f["X"][t], f["Wq"] @ f["X"][t]
-        for t in range(n_t - 1):
-            kc[:, :, t + 1], vc[:, :, t + 1] = kc[:, :, t], vc[:, :, t]
-            write = t - 1 if mode == "one-step-late write" else t
-            if write >= 0 and mode != "never written":
-                kc[:, :, t + 1] += f["Oh"][:, write, None] * kn[write]
-                vc[:, :, t + 1] += f["Oh"][:, write, None] * vn[write]
-            mask = f["Mk"][:, t]
-            if mode == "unmasked":
-                mask = np.zeros(n_s)
-            elif mode == "strict mask (s < t)":
-                mask = np.where(np.arange(n_s) < t, 0.0, -1e9)
-            p = np_softmax_last(kc[:, :, t + 1] @ qr[t] + mask)
-            yh[:, t + 1] = p @ vc[:, :, t if mode == "values before write" else t + 1]
-        return dict(Kc=kc, Vc=vc, Yh=yh, Kn=kn, Vn=vn, Qr=qr)
+        return np_kv_cache(f, mode)
 
     want = incremental()
     causal = np.empty((n_v, n_t))
@@ -1914,24 +1982,7 @@ def time_layer_pins(by: dict, sfx: str) -> None:
     f = {n: v.astype(np.float64) for n, v in fin.items()}
 
     def model(shared=False, layers_first=False):
-        hs, zz = np.empty((n_d, n_t)), np.empty((n_t, n_d, n_l))
-        hs[:, 0] = f["H0"]
-        for t in range(n_t - 1):
-            hs[:, t + 1] = np.tanh(f["Wx"] @ f["X"][t] + f["U"] @ hs[:, t])
-        for t in range(n_t):
-            zz[t, :, 0] = hs[:, t]
-            for l in range(n_l - 1):
-                zz[t, :, l + 1] = np.tanh(f["Wl"][0 if shared else l] @ zz[t, :, l])
-        if layers_first:
-            # Reverse L(F(p)) to F(L(p)): p[0]=H0, p[t+1]=Wx x_t; F is the time recurrence.
-            projected = [f["H0"].copy()] + [f["Wx"] @ f["X"][t] for t in range(n_t - 1)]
-            for l in range(n_l):
-                if l:
-                    projected = [np.tanh(f["Wl"][l - 1] @ p) for p in projected]
-                zz[0, :, l] = projected[0]
-                for t in range(n_t - 1):
-                    zz[t + 1, :, l] = np.tanh(projected[t + 1] + f["U"] @ zz[t, :, l])
-        return dict(Hs=hs, Zz=zz)
+        return np_time_layer(f, shared, layers_first)
 
     want = model()
     wrong = {"shared Wl[0]": model(shared=True), "layers before time": model(layers_first=True)}
@@ -1994,13 +2045,7 @@ def rnn_skew_pins(by: dict, sfx: str) -> None:
     f = {n: v.astype(np.float64) for n, v in fin.items()}
 
     def model(new_state=False, no_recur2=False, swapped=False):
-        h1, h2 = np.empty((n_d, n_t)), np.empty((n_d, n_t))
-        h1[:, 0], h2[:, 0] = f["H10"], f["H20"]
-        for t in range(n_t - 1):
-            h1[:, t + 1] = np.tanh(f["W1"] @ f["X"][t] + f["U1"] @ h1[:, t])
-            old = h1[:, t + 1] if new_state else h1[:, t]
-            h2[:, t + 1] = np.tanh(f["W2"] @ old + (0.0 if no_recur2 else f["U2"] @ h2[:, t]))
-        return dict(H1=h2, H2=h1) if swapped else dict(H1=h1, H2=h2)
+        return np_rnn_skew(f, new_state, no_recur2, swapped)
 
     want = model()
     wrong = {"NEW layer-1 state": model(new_state=True), "U2=0": model(no_recur2=True), "layer histories swapped": model(swapped=True)}
@@ -2066,20 +2111,7 @@ def layer_skew_pins(by: dict, sfx: str) -> None:
     f = {n: v.astype(np.float64) for n, v in fin.items()}
 
     def model(shift=None, new_state=False):
-        sh = f["Sh"] if shift is None else shift
-        hl, ix = np.empty((n_l, n_d, n_t)), np.empty((n_t, n_l, n_d))
-        hl[:, :, 0] = f["H0"]
-        for t in range(n_t):
-            projected = f["Wx"] @ f["X"][t]
-            for l in range(n_l):
-                ix[t, l] = f["E0"][l] * projected
-        for t in range(n_t - 1):
-            for l in range(n_l):
-                incoming = ix[t, l].copy()
-                for m in range(n_l):
-                    incoming += sh[l, m] * hl[m, :, t + 1 if new_state and m < l else t]
-                hl[l, :, t + 1] = np.tanh(f["Wp"][l] @ incoming + f["Up"][l] @ hl[l, :, t])
-        return dict(Hl=hl, Ix=ix)
+        return np_layer_skew(f, shift, new_state)
 
     want = model()
     gaps = {mode: dict_gap({"Hl": want["Hl"]}, {"Hl": out["Hl"]}) for mode, out in
@@ -2119,6 +2151,168 @@ def layer_skew_pins(by: dict, sfx: str) -> None:
           f"finite X[5] makes Ix[5] finite, leaves every live output bitwise unchanged; "
           f"numpy gaps {', '.join(f'{m}={g:.6f}' for m, g in gaps.items())}")
     print_conv_stats(name)
+
+
+def layers_time_grad_pins(by: dict, sfx: str) -> None:
+    """Whole-history losses: independent Python-loop JAX autodiff and NumPy central differences."""
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    def kv_hand(i):
+        keys, values = i["Kz"], i["Vz"]
+        ys = [i["Y0"]]
+        for t in range(i["X"].shape[0] - 1):
+            x = i["X"][t]
+            q, k, v = i["Wq"] @ x, i["Wk"] @ x, i["Wv"] @ x
+            keys = keys + i["Oh"][:, t, None] * k
+            values = values + i["Oh"][:, t, None] * v
+            p = jax.nn.softmax(keys @ q + i["Mk"][:, t])
+            ys.append(p @ values)
+        return jnp.stack(ys, axis=1)
+
+    def time_layer_hand(i):
+        h = i["H0"]
+        hs = [h]
+        for t in range(i["X"].shape[0] - 1):
+            h = jnp.tanh(i["Wx"] @ i["X"][t] + i["U"] @ h)
+            hs.append(h)
+        zs = []
+        for h in hs:
+            layers = [h]
+            for l in range(i["Wl"].shape[0] - 1):
+                h = jnp.tanh(i["Wl"][l] @ h)
+                layers.append(h)
+            zs.append(jnp.stack(layers, axis=1))
+        return jnp.stack(zs)
+
+    def rnn_skew_hand(i):
+        h1, h2 = i["H10"], i["H20"]
+        hs = [h2]
+        for t in range(i["X"].shape[0] - 1):
+            n1 = jnp.tanh(i["W1"] @ i["X"][t] + i["U1"] @ h1)
+            h2 = jnp.tanh(i["W2"] @ h1 + i["U2"] @ h2)
+            h1 = n1
+            hs.append(h2)
+        return jnp.stack(hs, axis=1)
+
+    def layer_skew_hand(i):
+        h = i["H0"]
+        hs = [h]
+        for t in range(i["X"].shape[0] - 1):
+            projected = i["Wx"] @ i["X"][t]
+            layers = []
+            for l in range(h.shape[0]):
+                incoming = i["E0"][l] * projected
+                for m in range(h.shape[0]):
+                    incoming = incoming + i["Sh"][l, m] * h[m]
+                layers.append(jnp.tanh(i["Wp"][l] @ incoming + i["Up"][l] @ h[l]))
+            h = jnp.stack(layers)
+            hs.append(h)
+        return jnp.stack(hs, axis=2)
+
+    specs = {
+        "kv_cache": ("Yh", kv_hand, np_kv_cache, {"Wq", "Wk", "Wv"}),
+        "time_layer": ("Zz", time_layer_hand, np_time_layer, set()),
+        "rnn_skew": ("H2", rnn_skew_hand, np_rnn_skew, set()),
+        "layer_skew": ("Hl", layer_skew_hand, np_layer_skew, {"E0", "Wx"}),
+    }
+    for stem, (out, hand, np_model, expected_nan) in specs.items():
+        name = stem + sfx
+        fx = by[name]
+        sin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+        want = np_model(sin)[out]
+        c = np.sin(1.0 + np.arange(want.size)).reshape(want.shape).astype(NDT)
+
+        def loss_plan(inp):
+            return jnp.sum(c * rt.run_named(fx["plan"], inp, JDT)[out])
+
+        def loss_hand(inp):
+            return jnp.sum(c * hand(inp))
+
+        grad_plan = jax.grad(loss_plan)
+        jit_grad_plan = jax.jit(grad_plan)
+        value_in = {n: jnp.asarray(a) for n, a in sin.items()}
+        value_grads = {"eager": grad_plan(value_in), "jit": jit_grad_plan(value_in)}
+        for who, g in value_grads.items():
+            nan = {n: int(np.isnan(np.asarray(v)).sum()) for n, v in g.items() if np.any(np.isnan(np.asarray(v)))}
+            print(f"  {name} value-environment {who} NaN gradient inputs/counts: {nan}", flush=True)
+            assert set(nan) == expected_nan, (name, who, "unexpected sentinel-gradient NaNs", nan)
+            for n, v in g.items():
+                assert np.all(np.isnan(np.asarray(v))) if n in expected_nan else np.all(np.isfinite(np.asarray(v))), (name, who, n)
+        if expected_nan:
+            sin["X"] = sin["X"].copy()
+            sin["X"][-1] = NDT(0)
+        jin = {n: jnp.asarray(a) for n, a in sin.items()}
+        assert np.array_equal(np_model(sin)[out], want), (name, "finite spare X changed the loss output")
+        hand_out = np.asarray(hand(jin))
+        assert np.all(np.isfinite(hand_out)) and scaled(hand_out, want) < MODEL_TOL[_DT], (name, "pure-JAX loss output vs numpy")
+        grads = {"eager": grad_plan(jin), "jit": jit_grad_plan(jin), "pure-JAX": jax.grad(loss_hand)(jin)}
+        errors, sizes = {}, {}
+        used_rows = 4 if stem == "rnn_skew" else 5
+        for who, g in grads.items():
+            assert sorted(g) == sorted(sin), (name, who, "missing float input gradient")
+            for n, v in g.items():
+                a = np.asarray(v)
+                assert a.shape == sin[n].shape and a.dtype == NDT and np.all(np.isfinite(a)), (name, who, n, "gradient not finite or wrong shape/dtype")
+                size = float(np.max(np.abs(a)))
+                assert size > 1e-3, (name, who, n, "trivial gradient", size)
+                sizes[n] = min(sizes.get(n, np.inf), size)
+            assert np.all(np.asarray(g["X"])[5] == 0), (name, who, "never-read X[5] received gradient")
+            assert np.all(np.max(np.abs(np.asarray(g["X"])[:used_rows]), axis=1) > 1e-3), (name, who, "a reachable X row has no real gradient")
+            if stem == "rnn_skew":
+                assert np.all(np.asarray(g["X"])[4] == 0), (name, who, "skewed H2 loss reaches X[4] before the next step")
+            if stem == "time_layer":
+                assert np.all(np.asarray(g["Wl"])[2] == 0), (name, who, "never-read Wl[2] received gradient")
+            if stem == "kv_cache":
+                for n in ("Oh", "Mk"):
+                    assert np.all(np.isnan(sin[n][:, 5])) and np.all(np.asarray(g[n])[:, 5] == 0), (name, who, n, "never-read NaN time column")
+            if who != "pure-JAX":
+                errors[who] = max(scaled(v, grads["pure-JAX"][n]) for n, v in g.items())
+                assert errors[who] < GRAD_TOL[_DT], (name, who, "gradient vs pure-JAX Python-loop model", errors[who])
+        gx = np.array(grads["eager"]["X"])
+        perturbed = gx.copy()
+        perturbed.flat[int(np.argmax(np.abs(gx)))] += NDT(1e-3)
+        canary = scaled(perturbed, gx)
+        assert canary >= GRAD_TOL[_DT], (name, "gradient tolerance accepts an absolute 1e-3 perturbation: vacuous")
+
+        base = {n: a.astype(np.float64) for n, a in sin.items()}
+        loss_np = lambda inp: float(np.sum(c.astype(np.float64) * np_model(inp)[out]))
+        rng = np.random.default_rng(7)
+        fd_err, dots, fd_inputs = 0.0, [], {}
+        # Isolated directions prevent cancellation from hiding an omitted input; joint directions also exercise interactions.
+        for selected in [*base, None, None, None]:
+            direction = {n: rng.standard_normal(a.shape) if selected is None or selected == n else np.zeros_like(a) for n, a in base.items()}
+            direction["X"][5] = 0
+            if stem == "time_layer":
+                direction["Wl"][2] = 0
+            if stem == "kv_cache":
+                for n in ("Oh", "Mk"):
+                    direction[n][:, 5] = 0
+            assert all(np.all(d[~np.isfinite(base[n])] == 0) for n, d in direction.items()), (name, "finite differences perturb a NaN sentinel")
+            eps = 1e-6
+            fd = (loss_np({n: base[n] + eps * direction[n] for n in base}) -
+                  loss_np({n: base[n] - eps * direction[n] for n in base})) / (2 * eps)
+            assert np.isfinite(fd), (name, selected, "non-finite central difference")
+            for who, g in grads.items():
+                dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * direction[n]) for n in base))
+                assert abs(dot) > 1e-3, (name, who, selected, "finite-difference direction is trivial", dot)
+                error = abs(fd - dot) / max(1.0, abs(dot))
+                assert error < GRAD_FD_TOL[_DT], (name, who, selected, "gradient vs NumPy central differences", error)
+                fd_err = max(fd_err, error)
+                dots.append(abs(dot))
+                if selected is not None:
+                    fd_inputs[selected] = max(fd_inputs.get(selected, 0.0), error)
+        assert set(fd_inputs) == set(sin), (name, "finite differences missed a float input")
+        max_err = max(errors.values())
+        print(f"gradients of {name} ({out}, every {len(sin)} float inputs, eager/jit/pure-JAX finite): "
+              f"max scaled eager {errors['eager']:.3e}, jit {errors['jit']:.3e} "
+              f"(headroom {GRAD_TOL[_DT] / max(max_err, 1e-300):.1f}x); "
+              f"NumPy FD {len(sin)} isolated + 3 joint directions max scaled {fd_err:.3e} "
+              f"(headroom {GRAD_FD_TOL[_DT] / max(fd_err, 1e-300):.1f}x), |dot| {min(dots):.3e}..{max(dots):.3e}; "
+              f"smallest input gradient max {min(sizes.values()):.3e}; absolute-1e-3 canary {canary:.3e}; "
+              f"X[5]{', Wl[2]' if stem == 'time_layer' else ', Oh/Mk[:,5]' if stem == 'kv_cache' else ''} EXACTLY zero", flush=True)
+        print(f"  {name} per-input gradient maxima: {sizes}; FD max scaled by isolated input: {fd_inputs}", flush=True)
 
 
 def rnn_value_pins(by: dict, name: str, want: dict, wrong: dict) -> dict:
@@ -3380,6 +3574,7 @@ def main() -> None:
     time_layer_pins(by, sfx)
     rnn_skew_pins(by, sfx)
     layer_skew_pins(by, sfx)
+    layers_time_grad_pins(by, sfx)
     ssm_pins(by, sfx)
     gnn_pins(by, sfx)
     gnn_grad_pins(by, sfx)
