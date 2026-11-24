@@ -6,6 +6,5 @@ namespace LeanNCD
 open CategoryTheory
 
 #check @Cˢʰᵃʳᵖ
-#check @Dat
 
 end LeanNCD

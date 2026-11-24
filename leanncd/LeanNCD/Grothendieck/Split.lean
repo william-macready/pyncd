@@ -35,21 +35,14 @@ abbrev CSharp (C : Type) [ColoredPROP C] : Type :=
 /-- `C♯`, the structural index PROP (see `CSharp`). -/
 notation "Cˢʰᵃʳᵖ" => CSharp
 
-/-- Data functor stub (graded_prop.md §5, Prop 8.3): a trivial `Unit`-valued covariant functor.
-    A covariant functor is the wrong shape for the real size data. Sizes over a morphism form a
-    span between its boundary sizings (internal wires carry sizes neither boundary sees), so a
-    faithful version is the sizing functor `U : C → C♯` with its fibres described, or a
-    `Span`-valued lax functor. Kept as scaffolding; `grothendieck_split` was deleted as
-    false-as-stated (`2229cf66`). -/
-def Dat (C : Type) [ColoredPROP C] : Cˢʰᵃʳᵖ C ⥤ Type where
-  obj _ := Unit
-  map _ := 𝟙 Unit
-  map_id _ := rfl
-  map_comp _ _ := (Category.comp_id _).symm
+/-! ## No data functor here (removed 2026-11-24)
 
-/-- `Dat` valued in `Cat` via the discrete category on each fiber (`typeToCat : Type ⥤ Cat`),
-    as required by `CategoryTheory.Grothendieck`. -/
-noncomputable def Dat' (C : Type) [ColoredPROP C] : Cˢʰᵃʳᵖ C ⥤ CategoryTheory.Cat :=
-  Dat C ⋙ typeToCat
+A covariant `Dat : C♯ ⥤ Type` (and `Dat' := Dat ⋙ typeToCat`, for `CategoryTheory.Grothendieck`)
+used to live here as a `Unit`-valued stub. It was removed because a covariant functor is the
+wrong shape for the size data (graded_prop.md §5, Prop 8.3). Sizes over a morphism form a span
+between its boundary sizings, since internal wires carry sizes that neither boundary sees. A
+faithful version is the sizing functor `U : C → C♯` with its fibres described, or a
+`Span`-valued lax functor. `grothendieck_split` was already deleted as false-as-stated
+(`2229cf66`). -/
 
 end LeanNCD

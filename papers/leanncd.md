@@ -528,12 +528,10 @@ notation "Cˢʰᵃʳᵖ" => CSharp
 -- `C♯`/`Cˢʰᵃʳᵖ` is notation for `CSharp` — the superscript chars are not legal Lean identifiers,
 -- so the real identifier is `CSharp`.
 
--- STUB: a `Unit`-valued covariant functor. A covariant functor is the wrong shape for the
--- size data (graded_prop.md §5); a faithful encoding is the sizing functor `U : C → C♯` with
--- its fibres described, or a `Span`-valued lax functor.
-def Dat (C : Type) [ColoredPROP C] : CSharp C ⥤ Type := …
-noncomputable def Dat' (C : Type) [ColoredPROP C] : CSharp C ⥤ CategoryTheory.Cat :=
-  Dat C ⋙ typeToCat
+-- No data functor: a `Unit`-valued covariant `Dat` (and `Dat'`) was removed (2026-11-24),
+-- because a covariant functor is the wrong shape for the size data (graded_prop.md §5). A
+-- faithful encoding is the sizing functor `U : C → C♯` with its fibres described, or a
+-- `Span`-valued lax functor.
 -- No split theorem: `grothendieck_split` was deleted as false-as-stated (`2229cf66`).
 ```
 

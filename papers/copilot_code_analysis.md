@@ -446,7 +446,8 @@ induction principle that an opaque `iterate` field does not.
 **Evidence: verified source/interface gap.**
 
 `structuralCongruence` is currently `True` and `Dat` is constantly `Unit`
-(`Grothendieck/Split.lean:8-50`). `RouteStructure` and `SymmetryGraded` add no fields beyond their
+(`Grothendieck/Split.lean:8-50`). *(Update 2026-11-24: `Dat`/`Dat'` have since been removed as
+the wrong shape for the size data; see `graded_prop.md` §5. `structuralCongruence` is still `True`.)* `RouteStructure` and `SymmetryGraded` add no fields beyond their
 parent (`Mixins/Stubs.lean:10-19`).
 
 These placeholders are clearly commented, but they still elaborate as ordinary definitions and can

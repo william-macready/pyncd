@@ -8,7 +8,7 @@ namespace LeanNCD
 open CategoryTheory
 
 -- TEST: the seam gives St and Br objects a Mathlib Category instance.
--- `noncomputable` because the underlying St/Br ColoredPROP data is noncomputable (Numeric);
+-- `noncomputable` because St's ColoredPROP data is built over the noncomputable `Coeff`;
 -- the seam instance itself is computable — synthesis is all this test checks.
 noncomputable example : Category StObj := inferInstance
 noncomputable example : Category BrObj := inferInstance
