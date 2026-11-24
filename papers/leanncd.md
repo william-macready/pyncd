@@ -213,7 +213,7 @@ The category laws discharge using Mathlib's `Matrix` API (`Matrix.mul_one`/`one_
 
 ### 2.3 `Br` — free category over broadcasted base morphisms
 
-**Br** instantiates `ColoredPROP` with `gen = ArrayType`. Because there is no single canonical way to compose two arbitrary broadcasted operations, **Br** morphisms are a free list — the analog of `Composed[Array[B,A], Broadcasted[B,A]]` — making all category laws trivial list lemmas.
+**Br** instantiates `ColoredPROP` with `gen = ArrayType`. Because there is no single canonical way to compose two arbitrary broadcasted operations, **Br** morphisms are *syntax*: raw terms built from `BrBase` generators by composition, tensor, braiding and per-wire copy/discard, quotiented by exactly the laws a symmetric monoidal category with a commutative comonoid on each wire needs. This is the analog of `Composed[Array[B,A], Broadcasted[B,A]]`, with parallel composition and symmetry first-class.
 
 ```lean
 inductive DType
@@ -254,16 +254,30 @@ structure BrBase (dom cod : BrObj) where
 The `reindexings` field precisely captures the four cases from the paper — identity, deletion (broadcast), duplication (diagonal), affine scaling (strided convolution) — each a different `StMat`.
 
 ```lean
-inductive BrMorph : BrObj → BrObj → Type
-  | nil  : (a : BrObj) → BrMorph a a
-  | cons : BrBase a b → BrMorph b c → BrMorph a c
+-- Raw syntax: comp, tensor and braid are first-class constructors (Base/Br.lean).
+inductive Hom : BrObj → BrObj → Type
+  | id     : (a : BrObj) → Hom a a
+  | gen    : {a b : BrObj} → BrBase a b → Hom a b
+  | comp   : {a b c : BrObj} → Hom a b → Hom b c → Hom a c
+  | tensor : {a b c d : BrObj} → Hom a b → Hom c d → Hom (a ++ c) (b ++ d)
+  | braid  : (a b : BrObj) → Hom (a ++ b) (b ++ a)
+  | copyW  : (A : ArrayType) → Hom [A] [A, A]      -- per-wire copy
+  | delW   : (A : ArrayType) → Hom [A] []          -- per-wire discard
 
-def BrMorph.comp : BrMorph a b → BrMorph b c → BrMorph a c
-  | .nil _,     g => g
-  | .cons f fs, g => .cons f (BrMorph.comp fs g)
+-- Rel: the smallest congruence containing the category laws, the bifunctor laws (tensor_id,
+-- interchange), braid involution and naturality, the strict unit/associativity laws for tensor
+-- (cast across List.append_nil / List.append_assoc), the two hexagons, and the comonoid laws
+-- for copyW/delW (coassociativity, both counits, cocommutativity). Copy is deliberately NOT
+-- natural: no constructor lets a general `gen` op commute with copyW, so Br is gs-monoidal
+-- (copy-discard), not cartesian.
+inductive Rel : {a b : BrObj} → Hom a b → Hom a b → Prop  -- …
+
+abbrev BrMorph (a b : BrObj) : Type := Quotient (setoidHom a b)   -- setoidHom: r := Rel
+def BrMorph.comp   : BrMorph a b → BrMorph b c → BrMorph a c := Quotient.lift₂ …   -- by Rel.comp_congr
+def BrMorph.tensor : BrMorph a b → BrMorph c d → BrMorph (a ++ c) (b ++ d) := Quotient.lift₂ …
 ```
 
-This is the free category on `BrBase`: morphisms are lists of base operations threaded sequentially (`nil` the empty identity), composition is list concatenation.
+A free *list* of base operations was the earlier design, and it fails twice over. It is 1-dimensional: parallel composition has no constructor, so `tensorHom` had to be faked and interchange was unprovable. And `swap ; swap` is a two-element list, never equal to the identity. Quotiented raw syntax fixes both. `.comp (.braid a b) (.braid b a)` and `.id (a ++ b)` are distinct `Hom` trees, but `Rel.braid_involution` makes them equal in the quotient.
 
 ```lean
 instance Br : ColoredPROP BrObj where
@@ -271,45 +285,33 @@ instance Br : ColoredPROP BrObj where
   toList := id
   ofList := id
   hom    := BrMorph
-  id     := .nil
+  id     := BrMorph.idm
   comp   := BrMorph.comp
-  -- nil ++ g = g definitionally:
-  id_comp := by intros; rfl
-  -- f ++ nil = f, by induction on f:
-  comp_id := by
-    intro _ _ f; induction f with
-    | nil _      => rfl
-    | cons _ _ ih => simp [BrMorph.comp, ih]
-  -- list concatenation is associative, by induction on f:
-  assoc := by
-    intro _ _ _ _ f _ _; induction f with
-    | nil _      => rfl
-    | cons _ _ ih => simp [BrMorph.comp, ih]
-  tensor_assoc  := by simp [List.append_assoc]
-  tensor_unit_l := by simp
-  tensor_unit_r := by simp [List.append_nil]
-  swap a b      := .cons ⟨"swap",
-      [],                                                            -- degree: no loop shape
-      fun i => ((a ++ b).get i).shape.map (fun _ => .tiled),        -- all input axes tiled
-      fun j => ((b ++ a).get j).shape.map (fun _ => .tiled),        -- all output axes tiled
-      fun _ => ⟨Matrix.empty, Fin.elim0⟩⟩                          -- StMat [] []: trivial reindexing
-    (.nil _)
-  -- Routing (input i → output π(i)) is determined by dom/cod types and realized by
-  -- the Algebra F : C → V; BrBase records the weave shape, not the routing map.
-  tensorHom f g :=
-    -- Sequential encoding of parallel composition: extend f to act on (a ++ c) → (b ++ c)
-    -- by passing c-arrays unchanged, then extend g on (b ++ c) → (b ++ d) similarly.
-    BrMorph.comp (BrMorph.extendRight f c) (BrMorph.extendLeft g b)
-  -- def BrMorph.extendRight (f : BrMorph a b) (c : BrObj) : BrMorph (a ++ c) (b ++ c)
-  --   := augment each BrBase step of f with identity pass-throughs for the c-arrays
-  -- def BrMorph.extendLeft (g : BrMorph c d) (b : BrObj) : BrMorph (b ++ c) (b ++ d)
-  --   := symmetric; b-arrays unchanged
--- elementality is NOT a field here; it is `instance : Elemental BrObj` (below the `Br` instance).
+  id_comp := BrMorph.id_comp          -- each law: Quotient.inductionOn, then Quot.sound (Rel.…)
+  comp_id := BrMorph.comp_id
+  assoc   := BrMorph.assoc
+  tensor_assoc  := List.append_assoc
+  tensor_unit_l := by intro a; simp
+  tensor_unit_r := by intro a; simp [List.append_nil]
+  swap a b := BrMorph.braid a b                   -- symmetry is a first-class generator
+  tensorHom f g := BrMorph.tensor f g             -- parallel composition is a first-class generator
+  tensorHom_id   := BrMorph.tensor_id             -- Quot.sound (Rel.tensor_id)
+  tensorHom_comp := BrMorph.tensor_comp           -- interchange, Quot.sound (Rel.interchange)
+  swap_swap      := BrMorph.braid_braid           -- Quot.sound (Rel.braid_involution)
+  swap_natural   := BrMorph.braid_natural
+  swap_hexagon_fwd := …                           -- Quot.sound (Rel.braid_hexagon_fwd)
+  swap_hexagon_rev := …
+  tensorHom_assoc  := BrMorph.tensor_assoc_heq    -- cast-crossing laws: Quot.sound + HEq
+  tensorHom_unit_l := fun f => heq_of_eq (BrMorph.tensor_unitl f)
+  tensorHom_unit_r := BrMorph.tensor_unitr_heq
+-- elementality is NOT a field here; it is the opt-in `Elemental` mixin (`brElemental`).
 ```
 
-The category and tensor-strictness laws discharge sorry-free by `rfl` or one-step structural induction, because list concatenation is associative and `nil` is a two-sided unit definitionally. Because `BrMorph` is a free list carrying no `Coeff` arithmetic (the `StMat` reindexings ride inside `BrBase` but are never evaluated in composition), **`instance Br` is computable** — no `noncomputable` is needed, in contrast to the `St` instance of [§2.2](#22-st--stride-matrices). With elementality demoted to the [`Elemental` mixin](#2-the-base-coloredprop), **`instance Br : ColoredPROP` is now sorry-free** (its remaining `SIGNATURE` obligations — `swap`, `tensorHom` via the sketched `extendRight`/`extendLeft` — are the only stubs). `Br` elementality is the `(Elem-C)` of [graded_prop.md §2](graded_prop.md): a separate `instance : Elemental BrObj` whose `elemental` reduces (sorry-free) to `brCancelPoint` — the one remaining `Br` `sorry`, the free-strict-SMC normal-form milestone ([§5](#5-weaves-as-cartesian-lift-data)/Prop 8.2 is its only consumer). **Br is elemental** (the statement is true — witnessed by the argument in [theory.md §Elemental Categories](theory.md)); only its Lean proof is deferred.
+Every law is a one-step `Quot.sound` of the matching `Rel` constructor, so **`instance Br : ColoredPROP` is sorry-free**, `swap` and `tensorHom` included. Laws whose two sides live over different but propositionally equal objects (`a ++ [] = a`, `(a ++ b) ++ c = a ++ (b ++ c)`) are stated with a `cast` in `Rel` and surface in the instance as `HEq`. Because `BrMorph` carries no `Coeff` arithmetic (the `StMat` reindexings ride inside `BrBase` but are never evaluated in composition), **`instance Br` is computable**: no `noncomputable` is needed, in contrast to the `St` instance of [§2.2](#22-st--stride-matrices).
 
-The two instances embody a complementary split. **St is semantic**: a stride morphism is the *denotation* of a coordinate transform, not a syntax tree, so composition collapses to a single `Matrix.mul` and the laws come from Mathlib's `Matrix` API plus `ring`. **Br is syntactic (free)**: a composed sequence of broadcasted operations is stored as a list with no canonical simplified form, so the laws are free gifts from list algebra; the price is that symbolic reasoning over **Br** pattern-matches the list rather than inspecting one record.
+`Br` elementality is the `(Elem-C)` of [graded_prop.md §2](graded_prop.md). It is a separate opt-in `Elemental` instance whose `elemental` reduces, sorry-free, to `brCancelPoint`: left-cancellation of a point on raw syntax, the one remaining `Br` `sorry` ([§5](#5-weaves-as-cartesian-lift-data)/Prop 8.2 is its only consumer). Direct induction on `Rel` fails at the `trans` case, and the prototyped bijective-wiring normal form cannot interpret `copyW`/`delW`. So the documented next step is a non-bijective, gs-monoidal (cospan-style) model. **Br is elemental** (the statement is true, witnessed by the argument in [theory.md §Elemental Categories](theory.md)); only its Lean proof is deferred.
+
+The two instances embody a complementary split. **St is semantic**: a stride morphism is the *denotation* of a coordinate transform, not a syntax tree, so composition collapses to a single `Matrix.mul` and the laws come from Mathlib's `Matrix` API plus `ring`. **Br is syntactic (free)**: a composite of broadcasted operations is stored as a term with no canonical simplified form, and equality is the generated congruence `Rel`. The laws are therefore cheap (`Quot.sound`), but *deciding* equality of two `Br` morphisms needs a normal form, which is exactly what `brCancelPoint` is waiting on.
 
 ## 3. The seam adapter into Mathlib
 
@@ -833,7 +835,7 @@ The table below collects the Lean type names from each layer of the tower, with 
 | `List gen` (objects) | `ProdObject[L]` | Python wraps `tuple[L,…]` in a Term; Lean uses `List` directly |
 | `StMat` | `StrideMorphism` | stride *matrix* (`Matrix … Coeff` + bias) vs bundled stride record |
 | `BrBase` | `Broadcasted` | base op + reindexings; `Fin`-indexed weaves vs runtime tuples |
-| `BrMorph` | `Composed` | free list of `BrBase` vs `content: tuple[M,…]` |
+| `BrMorph` | `Composed` | quotiented term (comp/tensor/braid/copy/discard over `BrBase`) vs `content: tuple[M,…]` |
 | `ThreadedComposed` | `ThreadedComposed` | routed presentation of a `BrMorph` ([§14.5](#145-semantic-compilation)); the DSL's output. `from_tensor_program` extracts its `SBrInstance` |
 | `ProductOfMorphisms` ↔ `tensorHom` | `ProductOfMorphisms[L, M]` | `ColoredPROP.tensorHom` (a morphism) vs a data wrapper |
 | `DGradedColoredPROP.act` | batch lift `[f,P]` | the lift action; `[f,P] = act(f, 𝟙_P)`, `[X,η] = act(𝟙_X, η)` |

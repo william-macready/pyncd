@@ -710,7 +710,7 @@ Each practical advantage below is followed by an italicized note assessing wheth
 
 An `SBrInstance` exported via `write_sbr` / `read_sbr` is a functor $G : \mathcal{S}_{Br} \to \mathbf{Set}$ — one point in the $\mathcal{S}_{Br}$-instance category. The CSV tables assign finite sets to entity types (`Axis`, `Equation`, `Array`, `ArrayAxis`, `Sample`) and functions to the foreign-key maps between them. Importing $G$ into Lean gives access to the relational data but not yet to the categorical structure of $\mathbf{Br}$.
 
-The goal is to interpret $G$ as a **strict monoidal functor** $D : \mathcal{J} \to \mathbf{Br}$ from a finite index category $\mathcal{J}$ whose objects are the arrays of the program and whose morphisms are its equations. $\mathbf{Br}$ is the Lean 4 encoding in [`leanncd.md §5`](leanncd.md#5-br--free-category-over-broadcasted-base-morphisms).
+The goal is to interpret $G$ as a **strict monoidal functor** $D : \mathcal{J} \to \mathbf{Br}$ from a finite index category $\mathcal{J}$ whose objects are the arrays of the program and whose morphisms are its equations. $\mathbf{Br}$ is the Lean 4 encoding in [`leanncd.md §2.3`](leanncd.md#23-br--free-category-over-broadcasted-base-morphisms).
 
 **Running example.** A two-equation linear layer with activation:
 
@@ -732,7 +732,7 @@ abbrev Coeff := MvPolynomial String ℤ
 -- instance : CommRing Coeff               -- from Mathlib (noncomputable)
 ```
 
-The `ring` tactic closes all `StMat` arithmetic goals over any `CommRing`, so all laws in [`leanncd.md §2.2`](leanncd.md#22-st--stride-matrices) discharge immediately. Axis *sizes* do not use a Mathlib type. They are the computable `SizeExpr` (variables, literals, `+`, saturating `-`, `*`, floor-`/` by a literal), so the elaborator and the CSV path can build and compare them. *(Corrected 2026-11-24: this paragraph used to give `Numeric = MvPolynomial String ℕ` for both sizes and coefficients. Coefficients became the signed `Coeff` in `21864f78`, and Spike 8c replaced `Numeric` with `SizeExpr` for sizes, in `725e98be`.)*
+Mathlib's `CommRing` algebra and `Matrix` API discharge the `StMat` laws in [`leanncd.md §2.2`](leanncd.md#22-st--stride-matrices) (the bias of associativity also needs a sum-reordering rewrite, since bare `ring` does not reach under `∑`). Axis *sizes* do not use a Mathlib type. They are the computable `SizeExpr` (variables, literals, `+`, saturating `-`, `*`, floor-`/` by a literal), so the elaborator and the CSV path can build and compare them. *(Corrected 2026-11-24: this paragraph used to give `Numeric = MvPolynomial String ℕ` for both sizes and coefficients. Coefficients became the signed `Coeff` in `21864f78`, and Spike 8c replaced `Numeric` with `SizeExpr` for sizes, in `725e98be`.)*
 
 **Mathlib's `Matrix` for `StMat.coeffs`** ([`leanncd.md §2.2`](leanncd.md#22-st--stride-matrices)). The coefficient block of `StMat` is `Matrix (Fin cod.length) (Fin dom.length) Coeff`, giving direct access to `Matrix.mul`, `Matrix.mul_assoc`, `Matrix.one_mul`, and `Matrix.fromBlocks`:
 
@@ -778,7 +778,7 @@ For the running example, `extractGens inst` returns two generators:
 -- eq₁ = { eqIdx := 1, inputs := [⟨"Z"⟩],          output := ⟨"Y"⟩ }
 ```
 
-Because $\mathbf{Br}$'s $\otimes$ is list concatenation ([`leanncd.md §2`](leanncd.md#2-prop)), it is natural to give $\mathcal{J}$ the same object type rather than a separate inductive:
+Because $\mathbf{Br}$'s $\otimes$ is list concatenation ([`leanncd.md §2`](leanncd.md#2-the-base-coloredprop)), it is natural to give $\mathcal{J}$ the same object type rather than a separate inductive:
 
 ```lean
 abbrev JObj := List ArrayKey   -- ⊗ := (· ++ ·),  𝟙 := [],  atom k := [k]
@@ -831,37 +831,37 @@ Monoidality: `D.obj (A ++ B) = D.obj A ++ D.obj B` by `List.map_append` (`simp`)
 ```lean
 def D.map (inst : SBrInstance)
     : ∀ {A B : JObj}, JMor A B → BrMorph (D.obj inst A) (D.obj inst B)
-  | _, _, .id        => .nil _
+  | _, _, .id        => BrMorph.idm _
   | _, _, .comp f g  => BrMorph.comp (D.map inst f) (D.map inst g)
-  | _, _, .tens f g  => PROP.tensorHom (D.map inst f) (D.map inst g)
-  | _, _, .gen eq    => .cons (D.genBase inst eq) (.nil _)
+  | _, _, .tens f g  => BrMorph.tensor (D.map inst f) (D.map inst g)   -- = Br's tensorHom
+  | _, _, .gen eq    => BrMorph.mk (.gen (D.genBase inst eq))         -- one generator
 ```
 
 For the running example:
 
 ```lean
 D.map (gen eq₀) : BrMorph [W_type, X_type] [Z_type]
-  = BrMorph.cons matmul_base (.nil _)         -- single-element list
+  = BrMorph.mk (.gen matmul_base)             -- the class of a single generator
 
 D.map (gen eq₁) : BrMorph [Z_type] [Y_type]
-  = BrMorph.cons relu_base (.nil _)
+  = BrMorph.mk (.gen relu_base)
 
 D.map (JMor.comp (gen eq₀) (gen eq₁)) : BrMorph [W_type, X_type] [Y_type]
   = BrMorph.comp (D.map (gen eq₀)) (D.map (gen eq₁))
-  = BrMorph.cons matmul_base (BrMorph.cons relu_base (.nil _))
+  = BrMorph.mk (.comp (.gen matmul_base) (.gen relu_base))
 ```
 
-**Python counterparts.** `D.map .id` → identity `Rearrangement` (permutation = `(0,1,...)`); `D.map (.comp f g)` → `Composed([b1, b2, ...])` assembled via `BrMorph.comp` (list concatenation); `D.map (.tens f g)` → `ProductOfMorphisms` running two sub-morphisms on disjoint inputs.
+**Python counterparts.** `D.map .id` → identity `Rearrangement` (permutation = `(0,1,...)`); `D.map (.comp f g)` → `Composed([b1, b2, ...])` assembled via `BrMorph.comp` (sequential composition in the quotient); `D.map (.tens f g)` → `ProductOfMorphisms` running two sub-morphisms on disjoint inputs.
 
-The morphism for a full `TensorProgram` is a single `BrMorph` — a list of `BrBase` operations in topological order assembled by `BrMorph.comp` (list concatenation).
+The morphism for a full `TensorProgram` is a single `BrMorph`: the class of a term whose `BrBase` generators are composed in topological order by `BrMorph.comp`, with `BrMorph.tensor` where independent pieces run side by side. *(Corrected 2026-11-24: earlier versions described `BrMorph` as a free list of `BrBase` operations with `.nil`/`.cons`. `Br.lean` defines it as raw syntax, with `comp`, `tensor`, `braid` and per-wire copy/discard as constructors, quotiented by the symmetric monoidal and comonoid laws; see [`leanncd.md §2.3`](leanncd.md#23-br--free-category-over-broadcasted-base-morphisms).)*
 
 ### Populating BrBase from Instance Tables
 
-`D.genBase` assembles the five fields of `BrBase` ([`leanncd.md §9.5`](leanncd.md#95-broadcasted-operations-paper-def-13)).
+`D.genBase` assembles the five fields of `BrBase` ([`leanncd.md §2.3`](leanncd.md#23-br--free-category-over-broadcasted-base-morphisms)).
 
 **`op`.** The `operator_tag` of the output `ArrayRow` (slot 0, `is_input = false`). For equation 0 (matmul): `op = "identity"` — a plain einsum has no nonlinearity. For equation 1 (relu): `op = "elementwise/relu"`.
 
-**`degree` — outer-loop shape $P$** ([`leanncd.md §9.3`](leanncd.md#93-reindexing-and-batch-lift-paper-defs-1011)). All axes on the output array have `is_target = false`; sorted by `position` they give $P$:
+**`degree` — outer-loop shape $P$** ([`leanncd.md §2.3`](leanncd.md#23-br--free-category-over-broadcasted-base-morphisms)). All axes on the output array have `is_target = false`; sorted by `position` they give $P$:
 
 ```lean
 def reconstructDegree (inst : SBrInstance) (eqIdx : Nat) : StObj :=
@@ -875,7 +875,7 @@ def reconstructDegree (inst : SBrInstance) (eqIdx : Nat) : StObj :=
 
 For both equations: $P_0 = [i, j]$ (the axes of $Z$) and $P_1 = [i, j]$ (the axes of $Y$).
 
-**`inputWeaves` and `outputWeaves`** ([`leanncd.md §9.4`](leanncd.md#94-weaves-paper-def-12)). Each `ArrayAxisRow.is_target` classifies the axis as a `WeaveSlot`. The naming is inverted relative to `convert.py`: `convert.py` calls contracted axes "target" (they are the contraction target); `leanncd.md` calls retained axes "fixed" (the reindexing selects a value for them at each step $p \in P$):
+**`inputWeaves` and `outputWeaves`** ([`leanncd.md §2.3`](leanncd.md#23-br--free-category-over-broadcasted-base-morphisms)). Each `ArrayAxisRow.is_target` classifies the axis as a `WeaveSlot`. The naming is inverted relative to `convert.py`: `convert.py` calls contracted axes "target" (they are the contraction target); `leanncd.md` calls retained axes "fixed" (the reindexing selects a value for them at each step $p \in P$):
 
 | `convert.py` / `is_target` | `WeaveSlot` (Lean) | Python `Weave._shape` slot | Role |
 | --- | --- | --- | --- |
@@ -902,7 +902,7 @@ def reconstructWeave (inst : SBrInstance) (eqIdx slot : Nat) : Weave :=
                                         else .fixed ⟨none, findUID inst aa.axis_uid⟩
 ```
 
-**`reindexings` — one `StMat` per input** ([`leanncd.md §9.3`](leanncd.md#93-reindexing-and-batch-lift-paper-defs-1011)). For `TensorProgram`-derived instances, `convert.py` always writes `src_uid == tgt_uid` and `coeff = Integer(1)` on every `SampleRow`. The reindexing $\eta_i : P \to Q_i$ is therefore a pure projection: each retained input axis shares its UID with the matching degree axis, and the coefficient is 1. This makes a direct UID comparison sufficient — no `SampleRow` scan needed:
+**`reindexings` — one `StMat` per input** ([`leanncd.md §2.3`](leanncd.md#23-br--free-category-over-broadcasted-base-morphisms)). For `TensorProgram`-derived instances, `convert.py` always writes `src_uid == tgt_uid` and `coeff = Integer(1)` on every `SampleRow`. The reindexing $\eta_i : P \to Q_i$ is therefore a pure projection: each retained input axis shares its UID with the matching degree axis, and the coefficient is 1. This makes a direct UID comparison sufficient — no `SampleRow` scan needed:
 
 ```lean
 -- For TensorProgram instances: Q_i axes and P axes share UIDs (src_uid == tgt_uid).
@@ -984,8 +984,8 @@ For `matmul_base`, the degree loop steps through all $(i,j) \in P_0$; at each st
 
 ### Proof Obligations
 
-**Strict monoidality** ([`leanncd.md §2`](leanncd.md#2-prop)). `D.obj (A ++ B) = D.obj A ++ D.obj B` by `List.map_append` (`simp`). `D.map (.tens f g) = PROP.tensorHom ...` by the `tens` case of `D.map`. Both are one-liners.
+**Strict monoidality** ([`leanncd.md §2`](leanncd.md#2-the-base-coloredprop)). `D.obj (A ++ B) = D.obj A ++ D.obj B` by `List.map_append` (`simp`). `D.map (.tens f g) = PROP.tensorHom ...` by the `tens` case of `D.map`. Both are one-liners.
 
-**Functoriality** ([`leanncd.md §5`](leanncd.md#5-br--free-category-over-broadcasted-base-morphisms)). `D.map .id = .nil _` and `D.map (.comp f g) = BrMorph.comp ...` follow from the `id` and `comp` cases of `D.map` by structural induction on `JMor`. Both reduce to list lemmas requiring no arithmetic.
+**Functoriality** ([`leanncd.md §2.3`](leanncd.md#23-br--free-category-over-broadcasted-base-morphisms)). `D.map .id = BrMorph.idm _` and `D.map (.comp f g) = BrMorph.comp ...` are the `id` and `comp` cases of `D.map`. The functor laws then follow from the matching `BrMorph` laws (`id_comp`, `comp_id`, `assoc`, `tensor_comp`), each a one-step `Quot.sound` of a `Rel` constructor and requiring no arithmetic.
 
-**StMat laws** ([`leanncd.md §9.6`](leanncd.md#96-what-lean-formalises-that-the-paper-leaves-informal)). The coefficient block of `StMat.comp` is `Matrix.mul`; associativity is `Matrix.mul_assoc` from Mathlib. The bias terms close by `ring` over `CommSemiring Numeric`. `BrMorph` laws hold structurally and require no arithmetic.
+**StMat laws** ([`leanncd.md §2.2`](leanncd.md#22-st--stride-matrices)). The coefficient block of `StMat.comp` is `Matrix.mul`; associativity is `Matrix.mul_assoc` from Mathlib. The bias terms close by a sum-reordering rewrite over `CommRing Coeff`. `BrMorph` laws hold by `Quot.sound` and require no arithmetic.
