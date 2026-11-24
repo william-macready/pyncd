@@ -1632,4 +1632,329 @@ Fix, first version (Direct path): `finalizeScans` refused a mask over a scan axi
 
 So a `where` mask over ANY axis that is not one of the statement's own `.free`/`.freeNorm` output axes reads coordinate 0 on both backends, and the Iverson FACTOR form is correct (it is lowered with the scan context). The three scan-specific checks were replaced by one rule in `finalizeScans`: every axis of a mask must be an own output axis, else `maskAxisNotOutput <stmt> <axis>` (this renames `maskOverScanAxis`; the scan-axis cases are instances). Consequences: a mask over a base's pinned axis is refused at 0 too (it happened to read the right value; the rule is now uniform; `maskBaseAtZero` flipped); a post-scan statement ranging over the scan axis, and an earlier scan's axis as a free state axis, stay legal. Pins in `StructuralTest`: rejections `maskInterScanAxis`, `maskStepScanAxis`, `maskOwnAxisAfterScan`, `maskBaseAtZero`, `maskBaseAtOne`, `maskContractedAxis`, `maskUnboundAxis`; accept neighbours `maskInterOtherAxis`, `maskStepOtherAxis`, `maskPostScanAxis`, `maskOtherScanAxisFree`, `maskOutputAxisContracted`, `maskOutputAxisPlain`; the Iverson value pin is in `NonlinCompileTest`. Hand mutants killed (never refuse; `.free` not counted as an output axis, killed by `maskOtherScanAxisFree`; inverted test). Making a mask see the live step instead would need a step channel in the reference evaluator, the checked plan and the JAX emitter; not done, an Iverson factor or a data mask is the working form. The hand-built `seededAxisZero` fixture is unchanged: a hand-built schedule keeps the coordinate-0 reading.
 
-**Next.** The slice that needs no capability change: P1b (pinned against both the incremental loop and the full causal recompute), P4n, P3, with P6 as the escape hatch. A true nested or grid scan (P5) and a renamed-axis state read (P2) need a Lean checked-plan change and JAX per-axis counters; each is a separate slice with a plan.
+**Next.** P1b (pinned against both the incremental loop and the full causal recompute), P4n, P3 and P6 are now fixtures in both precisions (section 27). A true nested or grid scan (P5) and a renamed-axis state read (P2) still need a Lean checked-plan change and JAX per-axis counters; each is a separate slice with a plan.
+
+## 27. Layers/time execution: KV cache, sequential scans and old-state layer skew (2026-11-23)
+
+**Scope and history.** Direct path, tests/fixtures and documentation only; no authoring plan.
+All four models, eight registrations, all requested gradients and all eight hand mutants are done.
+The originally supplied baseline was `8c0a8444`; the final corrected-brief base is
+`3774e682534ed5c64fea0613ddc551d661fb496f`. Work is on `jax-layers-time-exec` in
+`.claude/worktrees/layers-time-exec`, not merged or pushed.
+No production compiler, runtime, grammar, LeanNCD module, mutation manifest, existing fixture,
+`np_transformer`, tolerance or existing pin meaning was changed.
+
+Two earlier executor STOPs are part of the record, not successful implementation attempts:
+
+1. The original export list omitted explicit-time materialized tables. `648e44c7` corrected
+   KV exports to `Kc, Kn, Qr, Vc, Vn, Yh`, layer-skew to `Hl, Ix`, finite-row comparisons,
+   NaN-row/spare-row handling, and the layer-skew `E0` gradient warning. The earlier failed
+   comparison itself was not captured; a `check_np` finiteness failure was only a likely cause,
+   not a confirmed diagnosis.
+2. The brief required distinct extents but used `i=l=3` for `time_layer`. `3774e682` corrected
+   `i` to 5 (`X[6,5]`, `Wx[4,5]`), requiring fresh observations at that size, and corrected the
+   `rnn_skew` last-token causality claim: `X[4]` cannot affect an `H2[:,6]` that does not exist.
+   The initial executor stops committed no implementation. There are no additional data,
+   size, seed, export, program-structure or pin-meaning deviations under the corrected brief.
+
+Implementation/evidence commits: `9d1cb02b` fixtures, `cab00149` value/non-vacuity/structure
+pins, `c436bfca` gradients, and `eeecbba8` the empty commit recording the complete mutant table.
+
+### Programs, plans and inputs
+
+The binary64 bodies below are the corrected brief's Appendix A programs; binary32 siblings
+omit the `f64` tags on the same declarations, with identical statements and shared input definitions.
+There is no nested scan and no state read at `t +1` on a right-hand side.
+`e`/`f` alias `d`, and `m` aliases `l`; distinctness refers to independent axes.
+
+| Model | Extents | Observed (assign, pointwise, axiswise) | Scan records / step counts | Exact exports and shapes |
+|---|---|---|---|---|
+| `kv_cache` | t=6, s=5, k=4, i=3, v=2 | (14, 0, 1) | 1 / [5] | Kc[5,4,6], Vc[5,2,6], Yh[2,6], Kn[6,4], Vn[6,2], Qr[6,4] |
+| `time_layer` | t=6, l=3, d=4, i=5 | (6, 2, 0) | 2 / [5,2] | Hs[4,6], Zz[6,4,3] |
+| `rnn_skew` | t=6, d=4, i=3 | (8, 2, 0) | 1 merged / [5] | H1[4,6], H2[4,6] |
+| `layer_skew` | t=6, l=3, d=4, i=5 | (6, 1, 0) | 1 / [5] | Hl[3,4,6], Ix[6,3,4] |
+
+Step 0 re-confirmed these counts, exports and scan steps, including `time_layer` at `i=5`;
+the final rendered plans, input bits and Lean output bits equalled the scratch fixtures.
+Exact topology, kind counts and step counts are value-independent Python pins.
+The registrations execute Lean dense and emit its expected values; the same rendered plans
+are checked eager and under JIT, then against input-only independent NumPy loops.
+The einsum door refuses every scan (`unsupportedStep`); no reference-evaluator or evidence-path
+execution claim is made.
+
+`kv_cache`:
+```text
+iter t = 6
+tensor f64 X(t, i), Wq(k, i), Wk(k, i), Wv(v, i), Kz(s, k), Vz(s, v), Y0(v), Oh(s, t), Mk(s, t)
+tensor f64 Kc(s, k, t), Vc(s, v, t), Yh(v, t), Kn(t, k), Vn(t, v), Qr(t, k), Kw(s, k), Vw(s, v), Sc(s), Pa(s), Yo(v)
+Kc[s, k, 0]    := Kz[s, k]
+Vc[s, v, 0]    := Vz[s, v]
+Yh[v, 0]       := Y0[v]
+Kn[t, k]       := Wk[k, i] · X[t, i]
+Vn[t, v]       := Wv[v, i] · X[t, i]
+Qr[t, k]       := Wq[k, i] · X[t, i]
+Kw[s, k]       := Kc[s, k, t] + Oh[s, t] · Kn[t, k]
+Vw[s, v]       := Vc[s, v, t] + Oh[s, t] · Vn[t, v]
+Sc[s]          := Kw[s, k] · Qr[t, k] + Mk[s, t]
+Pa[s.]         := softmax(Sc[s])
+Yo[v]          := Pa[s] · Vw[s, v]
+Kc[s, k, t +1] := Kw[s, k]
+Vc[s, v, t +1] := Vw[s, v]
+Yh[v, t +1]    := Yo[v]
+```
+
+`time_layer`:
+```text
+iter t = 6, l = 3
+tensor f64 X(t, i), H0(d), Wx(d, i), U(d, e), Wl(l, d, e)
+tensor f64 Hs(d, t), Zz(t, d, l), Ah(d), Nh(d)
+Hs[d, 0]       := H0[d]
+Ah[d]          := Wx[d, i] · X[t, i] + U[d, e] · Hs[e, t]
+Nh[d]          := tanh(Ah[d])
+Hs[d, t +1]    := Nh[d]
+Zz[t, d, 0]    := Hs[d, t]
+Zz[t, d, l +1] := tanh(Wl[l, d, e] · Zz[t, e, l])
+```
+
+`rnn_skew`:
+```text
+iter t = 6
+tensor f64 X(t, i), H10(d), H20(d), W1(d, i), U1(d, e), W2(d, e), U2(d, f)
+tensor f64 H1(d, t), H2(d, t), A1(d), N1(d), A2(d), N2(d)
+H1[d, 0]       := H10[d]
+H2[d, 0]       := H20[d]
+A1[d]          := W1[d, i] · X[t, i] + U1[d, e] · H1[e, t]
+N1[d]          := tanh(A1[d])
+H1[d, t +1]    := N1[d]
+A2[d]          := W2[d, e] · H1[e, t] + U2[d, f] · H2[f, t]
+N2[d]          := tanh(A2[d])
+H2[d, t +1]    := N2[d]
+```
+
+`layer_skew`:
+```text
+iter t = 6
+tensor f64 X(t, i), Wx(d, i), E0(l), Sh(l, m), H0(l, d), Wp(l, d, e), Up(l, d, e)
+tensor f64 Hl(l, d, t), Ix(t, l, e), Hi(l, e), Aa(l, d), Nn(l, d)
+Hl[l, d, 0]    := H0[l, d]
+Ix[t, l, e]    := E0[l] · Wx[e, i] · X[t, i]
+Hi[l, e]       := Sh[l, m] · Hl[m, e, t] + Ix[t, l, e]
+Aa[l, d]       := Wp[l, d, e] · Hi[l, e] + Up[l, d, e] · Hl[l, e, t]
+Nn[l, d]       := tanh(Aa[l, d])
+Hl[l, d, t +1] := Nn[l, d]
+```
+
+Original `gqaGen` seed sets were the **only candidates**, shared across precisions without tuning:
+
+| Model | Generated inputs (seed: shape) | Other inputs |
+|---|---|---|
+| KV | X 1:[6,3], Wq 2:[4,3], Wk 3:[4,3], Wv 4:[2,3] | Kz[5,4], Vz[5,2], Y0[2] zero; Oh/Mk[5,6] below |
+| time/layer | X 1:[6,5], H0 13:[4], Wx 14:[4,5], U 15:[4,4], Wl 16:[3,4,4] | X row 5 and Wl slice 2 NaN |
+| RNN skew | X 1:[6,3], H10 7:[4], H20 8:[4], W1 9:[4,3], U1 10:[4,4], W2 11:[4,4], U2 12:[4,4] | X row 5 NaN |
+| layer skew | X 21:[6,5], Wx 22:[4,5], H0 23:[3,4], Wp 24:[3,4,4], Up 25:[3,4,4] | E0=[1,0,0]; Sh=[[0,0,0],[1,0,0],[0,1,0]] |
+
+Every `X` has five generated finite rows and a sixth NaN row; Wl has two generated finite
+slices and a third NaN slice. Oh[s,t] is one-hot `s=t`; Mk[s,t] is 0 for `s<=t`,
+otherwise -1e9; both have exactly NaN spare column 5. Input shapes, generated values,
+initial states, Oh/Mk/E0/Sh definitions, exact exports and history slot 0 are independently pinned.
+
+### Traps, histories and non-vacuity
+
+The cache update is **additive**, not an overwrite. The unperturbed zero-cache model agrees
+with a second, independent full-prefix causal attention recomputation at every step.
+For each slot s, all Kc/Vc history entries before its write are zero and all entries after
+the write equal Wk*x_s / Wv*x_s. To prove future-cache masking is live, set initial
+Kz[4]=Vz[4]=1e3: the first four outputs are bitwise unchanged in BOTH precisions, while the
+last output moves 0.1227. At that step the initial content remains in the additive sum;
+the pin checks that sum against the perturbed independent cache model, not an overwrite
+or the zero-initial-cache causal formula.
+
+The time/layer ordering alternative is explicitly **F(L(p)) versus L(F(p))**, with
+`p[0]=H0`, `p[t+1]=Wx*x[t]`. This supplies a common hidden-width sequence despite unequal
+input/hidden dimensions; it is not an ill-typed attempt to apply Wl directly to X.
+The actual program first completes Hs, then reads that history as Zz's initial layer.
+The later scan uses the SAME `iter t` as an ordinary free state axis, not a renamed free
+axis whose extent would have to be inferred from a scan-state read.
+
+| Value-environment object | History / spare-slot assertion |
+|---|---|
+| All state histories | Every slot, including the initial slot, matches independent NumPy on Lean/eager/jit |
+| Kn, Vn, Qr, Ix | Rows 0..4 finite and match NumPy; row 5 exactly NaN on all three views; never send the whole NaN table through finite-only `check_np` |
+| X[5] finite replacement | All live histories and table rows 0..4 bitwise unchanged; hoisted table row 5 becomes finite, so it is deliberately NOT claimed unchanged |
+| Wl[2] finite replacement | Every time/layer export bitwise unchanged, independently of X's spare-row replacement |
+| Oh/Mk[:,5] finite replacement | Every live cache output unchanged; spare columns never used |
+| KV and time/layer causal perturbations | Earlier histories bitwise unchanged; first target response at t+1, minimum 0.07396 / 0.04075 |
+| RNN skew causal perturbations | H1 first responds at t+1; H2 first responds at t+2 for t=0..3, minimum 0.1054; X[4] leaves ALL H2 bitwise unchanged while H1[:,5] moves |
+
+Explicit-time Kn/Vn/Qr/Ix avoid the state-independent-intermediate hoisting/summing trap.
+They remain materialized exports, unlike Kw/Sc/Pa/Yo and other per-step intermediates.
+No `where` mask mentions the time axis: the refused scan-axis softmax mask is replaced
+by the stated additive DATA mask, without changing production mask semantics.
+The layer-scan update is one pointwise statement, avoiding an intermediate spanning two
+scan components. The programs use no subtraction and each pointwise function takes one product.
+Layer-skew uses the OLD lower layer through Sh: **it is not a true stacked RNN**.
+
+Measured independent NumPy gaps (binary64/binary32 agree to the shown six decimals);
+all are greater than 1e-2, and non-vacuity runs before value pins:
+
+| Model | Alternative | Gap |
+|---|---|---|
+| KV | unmasked / strict mask s<t | 0.461090 / 0.461090 |
+| KV | never written / one-step-late write / values before write | 0.621861 / 0.621861 / 0.621861 |
+| time/layer | shared Wl[0] / layers before time | 1.031693 / 0.441702 |
+| RNN skew | NEW lower state / U2=0 / layer histories swapped | 0.620938 / 0.770309 / 1.150059 |
+| layer skew | Sh=0 / upward shift / layer 2 versus NEW-state stack | 0.514224 / 0.672564 / 0.426241 |
+
+Layer-history swaps compare successor slots, excluding initial slots by the existing convention;
+they cannot pass merely because H10 and H20 differ.
+
+Worst scaled value differences against independent NumPy over all compared exports and
+Lean/eager/jit views, using the unchanged MODEL_TOL (1e-12 / 1e-6):
+
+| Model / sole seed candidate | binary64 error | binary32 error | binary32 headroom |
+|---|---|---|---|
+| KV, seeds 1..4 | 5.551e-17 | 3.902e-8 | 25.63x |
+| time/layer, seeds 1,13..16 | 3.331e-16 | 1.964e-7 | 5.09x |
+| RNN skew, seeds 1,7..12 | 2.220e-16 | 1.200e-7 | 8.34x |
+| layer skew, seeds 21..25 | 3.331e-16 | 1.166e-7 | 8.58x |
+
+The independent full-causal KV reference differs by at most 2.776e-17 / 3.740e-8.
+These are corrected-size observations, not the old `time_layer i=3` probe figures.
+No binary32 candidate was rejected and no seed or tolerance was adjusted.
+
+### Gradients, NaNs and headroom
+
+Differentiate `sum(C*out)` over **every float input**, eager and JIT: outputs Yh, Zz, H2,
+Hl respectively, with 9/5/7/7 inputs (including float masks/selectors and initial states).
+The reference is an independent pure-JAX Python-loop model, never the rendered plan or
+its scan. NumPy central differences use float64, eps=1e-6, one isolated direction per
+input plus three joint directions; all directions preserve NaN sentinels.
+The four NumPy model bodies were lifted unchanged into input-only helpers.
+
+Measured value-environment NaNs, identical eager/JIT and in both precisions:
+
+| Model | Inputs whose gradients contain NaNs | Finite-gradient environment |
+|---|---|---|
+| KV | Wq 12/12, Wk 12/12, Wv 6/6 entries | X[5]=0 only |
+| time/layer | none | original value environment |
+| RNN skew | none | original value environment |
+| layer skew | E0 3/3, Wx 20/20 entries | X[5]=0 only |
+
+No other input gradient contains NaNs. The only adjusted-environment candidate was zeroing
+X's spare row for KV/layer-skew; all gradients then became finite, with Oh/Mk's NaN spare
+columns retained. Selected NumPy histories remain bitwise unchanged. This avoids 0*NaN
+through hoisted tables; it is not a weakened tolerance or a silent change to value fixtures.
+X[5] gradients are exactly zero for all four models; Wl[2] (time/layer), Oh/Mk[:,5] (KV)
+and X[4] (the skewed H2 loss) are exactly zero in eager/JIT/independent models.
+Reachable X rows and every float input have nontrivial gradients.
+
+Eager/JIT maxima coincide; all gradient and finite-difference tolerances are unchanged:
+
+| Precision/model | Scaled gradient error / headroom | Scaled FD error / headroom |
+|---|---|---|
+| f64 KV | 1.110e-16 / 9007.2x | 1.262e-10 / 792.1x |
+| f64 time/layer | 4.094e-16 / 2442.6x | 6.795e-10 / 147.2x |
+| f64 RNN skew | 3.448e-16 / 2900.0x | 2.760e-10 / 362.3x |
+| f64 layer skew | 1.587e-15 / 630.3x | 4.059e-10 / 246.4x |
+| f32 KV | 1.192e-7 / 838.9x | 3.111e-7 / 321.5x |
+| f32 time/layer | 2.980e-7 / 335.5x | 3.118e-6 / 32.1x |
+| f32 RNN skew | 4.172e-7 / 239.7x | 4.467e-7 / 223.9x |
+| f32 layer skew | 7.749e-7 / 129.1x | 1.847e-6 / 54.2x |
+
+Smallest per-input gradient maxima, KV/time-layer/RNN-skew/layer-skew:
+0.1342/0.5371/1.288/0.3747. Directional |dot| ranges:
+0.02773..4.257 / 0.1818..6.388 / 0.01574..9.851 / 0.2811..9.388.
+An **absolute 1e-3** gradient perturbation is rejected for every model and precision:
+scaled errors f64 1.000e-3/9.821e-4/6.223e-4/3.566e-4,
+f32 1.000e-3/9.822e-4/6.224e-4/3.566e-4.
+
+### Hand mutants
+
+All eight were accepted by preparation/rendering, kept every input used, and were killed
+by independent pins. No refusals, replacements or survivors. A refused shape mutation
+would not have counted as a kill. D and G change only binary64 environment data;
+H changes only the binary32 program. A/B retain Kw through the other cache consumer,
+and C retains Vw through the Vc successor update.
+
+| ID | Isolated edit | First failing named assertion | Measured error or gap | Result |
+|---|---|---|---|---|
+| A | f64 KV Sc reads OLD Kc instead of Kw | `pin numpy model: kv_cache lean Yh` | 0.09789343895126039 | accepted/killed |
+| B | f64 KV Kc successor copies OLD Kc (no key-cache update) | `pin numpy model: kv_cache lean Kc` | 0.6670994138496541 | accepted/killed |
+| C | f64 KV Yo reads OLD Vc instead of Vw | `pin numpy model: kv_cache lean Yh` | 0.6218610300249688 | accepted/killed |
+| D | f64 KV Mk uses s<t, preserving the NaN spare column | `('kv_cache', 'vacuous cache reference', 'strict mask (s < t)', 0.0)` | gap 0.0, required >0.01 | accepted/killed |
+| E | f64 RNN-skew A2 reads NEW N1 instead of OLD H1 | `pin numpy model: rnn_skew lean H2` | 0.6209377266747358 | accepted/killed |
+| F | f64 time/layer reads Wl[0] at every layer | `pin numpy model: time_layer lean Zz` | 1.031692548228487 | accepted/killed |
+| G | f64 layer-skew Sh data transposed | `('layer_skew', 'vacuous layer-skew reference', 'layer 2 vs NEW-state stack', 0.0)` | gap 0.0, required >0.01 | accepted/killed |
+| H | f32 KV Sc reads OLD Kc instead of Kw | `pin numpy model: kv_cache32 lean Yh` | 0.09789345160136778 | accepted/killed |
+
+A-G intentionally stop in the binary64 Python leg; later assertions and the binary32 Python
+leg were not reached. H passes the COMPLETE binary64 leg, then all 51 binary32 fixtures
+match Lean eager/JIT before the independent NumPy pin kills it. These intentional failures
+are not final all-green differential runs. Each inverse edit restored an empty `git diff --stat`
+and was followed by a successful 8846-job restoration build. The whole final runner regenerates
+H's stale ignored binary32 fixture cache before either Python leg; no Python-only stale-cache
+baseline was used for the final gates.
+
+Detailed evidence: the empty commit `eeecbba8`; bridge `.cache/layers-time-mutant-{A..H}.log`
+and corresponding `-restored-build.log`; session evidence files
+`layers-time-mutants-A-D.json` and `layers-time-mutants-E-H.json` in
+`/Users/williammacready/.copilot/session-state/fb8135b4-f41f-4989-ac62-ac2af55e773e/files/`.
+Value/gradient development logs are `.cache/layers-time-phaseB{64,32}.log` and
+`.cache/layers-time-grad-{nan,target,final}{64,32}.log`.
+
+### Final verification, review and budgets
+
+The final gates run **sequentially after the documentation edits**, with background
+log redirection and waits, never concurrent Lean runs:
+
+1. `bash <wt>/leanncd/scripts/lake-build.sh <wt>/leanncd Tests JaxExperiment`:
+   **8846 jobs**, no errors, exit 0; log `.cache/layers-time-final-build.log`.
+2. `env -u PYTHON bash <wt>/leanncd/experiments/jax_bridge/check-lean-drivers.sh`:
+   **all eight drivers ran clean**, exit 0; log `.cache/layers-time-final-drivers.log`.
+3. `env -u PYTHON bash <wt>/leanncd/experiments/jax_bridge/run-evalplan-nonlin.sh`,
+   ONCE on the final source tree: **60 binary64 / 51 binary32** fixtures, exit 0,
+   eager/JIT within Lean tolerances, every old and new pin through the last assertion;
+   log `.cache/layers-time-final-runner.log`. Model and gradient measurements above are
+   checked against this final log; a missing count, unexpected red or structural
+   contradiction is a STOP, not a pass. The documentation commit body records gate outcomes.
+
+The bridge README previously said **55** binary64, a stale count: the measured baseline
+was **56 binary64 / 47 binary32**, and adding four models gives **60 / 51**.
+The parent independently read the complete Python/Lean branch diff against `3774e682`
+(742 insertions, 3 deletions): review clean, no load-bearing findings or source fixes.
+It checked the independent causal KV model versus additive cache semantics, finite-slice NaN
+handling on both sides, old-state causal lag, the time/layer ordering definition, and
+all-float-input gradients/finite differences without plan reuse. This documentation phase
+does not repeat that code review. No requested model, gradient or mutant was skipped;
+no merge, push, dependency installation or nested delegation in this phase.
+
+Manual tool-invocation counts **include parallel wrappers and underlying calls**:
+
+| Dispatch/window | Invocations |
+|---|---|
+| A original, stopped | 37 |
+| A resumed fixtures | 43 |
+| B values | 58 |
+| D gradients | 46 |
+| C1 mutants A-D | 60 |
+| C2 mutants E-H and empty table commit | 59 |
+| C3 documentation/final gates | 22 through the initial documentation edit; final actual total in the documentation commit body |
+| Coordinator, one chat across resumes | 58 + 31 + 26 = **115 so far**, final current-window/cumulative total pending the parent's close-out |
+
+The coordinator's resumed windows are **not separate sessions**: its cumulative >~60
+invocations are a budget breach, explicitly surfaced, while each implementer dispatch
+stayed <=60. No phase is relabelled to hide the coordinator overrun.
+Context was manually estimated below 250k per dispatch, not measured.
+Attempted the actual tool:
+`python3 <wt>/.claude/skills/slice-plan/token-report.py fb8135b4-f41f-4989-ac62-ac2af55e773e`.
+It returned `no transcript for session fb8135b4-f41f-4989-ac62-ac2af55e773e` despite exit 0.
+Thus Copilot cumulative tokens and context peak are **unmeasured**; compliance with the
+175M cumulative-token ceiling cannot be claimed, and no token total is invented.
+
+**Parked capability work (not needed for these fixtures).** True nested/grid/two-axis
+scans: the diagonal two-axis program elaborates and Lean accepts it, but JAX refuses
+`unsupportedScanAxes 0`; a wavefront needs an unparseable RHS `t +1` state read.
+Renamed-axis state-history reads: checked-plan `stateReadNotCausal`, although the reference
+evaluator accepts the read. Each requires a separate production slice/plan covering checked-plan
+changes and JAX per-axis step counters (at least one full slice, multiple implementation/review
+dispatches each; not sized or begun here). No scope expansion or additional side issue.
