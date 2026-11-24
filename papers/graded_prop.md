@@ -40,7 +40,7 @@ The structure must satisfy five requirements, one per source-document concern:
 | --- | --- | --- |
 | Operations are shape-typed wires, freely juxtaposed and permuted | [theory.md](theory.md#the-array-broadcasted-category-br) (Br as colored PROP) | the colored-PROP base ([§2](#2-preliminaries-colored-props)) |
 | Each wire decomposes into index sub-wires; broadcasting lifts a base op over a loop | [theory.md](theory.md#weaves) (weaves, lifts) | the **lift action** `⊛` and **shape map** `sh` ([§3](#3-the-central-definition-d-graded-colored-prop)) |
-| Structure (connectivity) separates from data (sizes, weights) | [acset.md](acset.md#the-grothendieck-construction) (Grothendieck) | `C ≅ ∫Dat` ([§5](#5-the-structuredata-split-as-a-grothendieck-construction)) |
+| Structure (connectivity) separates from data (sizes, weights) | [acset.md](acset.md#the-grothendieck-construction) (Grothendieck) | the sizing functor `U : C → C♯` with span-shaped fibres `(Dat₀, Dat₁)` ([§5](#5-the-structuredata-split-as-a-grothendieck-construction)) |
 | Composition unifies shared boundary | [theory.md](theory.md#autoalignment) (autoalignment), [acset.md](acset.md) (pushout) | composition-as-pushout ([§6](#6-composition-as-pushout)) |
 | Compiling to a concrete target is a structure-preserving, parameter-carrying functor | [prop_ideas.md](prop_ideas.md) (algebra, Para) | **algebras** and the Para refinement ([§7](#7-algebras-construct-and-the-para-refinement)) |
 
@@ -147,17 +147,67 @@ With Definitions 3.3–3.5 and the distributivity law, **`Scan := cata(step)`** 
 
 ## 5. The Structure/Data Split as a Grothendieck Construction
 
-The `D`-colors carry numeric content (sizes). Strip it to get the structural index PROP `D♯` (colors = formal size-symbols, morphisms = symbolic reindexings). Then `C♯` is `D♯`-graded.
+The `D`-colors carry numeric content (sizes). Strip it to get the structural index PROP `D♯` (colors = formal size-symbols, morphisms = symbolic reindexings). Then `C♯` is `D♯`-graded, and forgetting sizes is a functor `U : C → C♯`.
 
-**Definition 5.1 (Data functor).** A *data functor* is a functor `Dat : C♯ → Set` (more precisely into a category of size-assignments valued in a fixed semiring `R` of `Numeric` expressions) sending each structural object to its set of admissible `D`-color assignments, acting trivially on morphisms (data is unconstrained by connectivity; [acset.md §Grothendieck Construction](acset.md#the-grothendieck-construction)).
+> **Correction (2026-11-24).** Earlier versions of this section said the following. `Dat : C♯ → Set` was a functor acting *trivially on morphisms*. `∫Dat` had the `C♯`-morphisms as morphisms, *with no compatibility condition on data*. And `C ≅ ∫Dat`. That statement is false, for two independent reasons.
+>
+> 1. *It is internally inconsistent.* In a Grothendieck construction of a functor into discrete categories, a morphism `(c, d) → (c', d')` over `m` exists only when `Dat(m)(d) = d'`. The domain sizes would then *determine* the codomain sizes. "No compatibility condition" says the opposite: every pair `(d, d')` is allowed.
+> 2. *Neither reading recovers `C`.* If codomain sizes are determined by domain sizes, `C` has too few morphisms: a `Linear` map's output size is free, and a composite `f ; g` carries sizes on its internal wire that appear at neither boundary. If there is no condition, `C` has too many: a `Linear` of sizes `3 → 4` would connect objects of size 5.
+>
+> The Lean theorem `grothendieck_split` was deleted as false-as-stated in `2229cf66`. The reason given there was the `structuralCongruence := True` stub, which makes `C♯` thin. The defect above is separate and survives a real congruence. The statement below replaces it.
 
-**Definition 5.2 (Instance / `∫Dat`).** The **Grothendieck construction** `∫Dat` has objects `(c, d)` with `c ∈ C♯` and `d ∈ Dat(c)`, and morphisms the `C♯`-morphisms with no compatibility condition on data. Then
+Sizes live on objects *and* on morphisms. The data over a morphism projects to the data at both ends, so it is a **span**, not a function and not a product.
 
-> **`C ≅ ∫Dat`**
+**Definition 5.1 (Interface data).** `Dat₀(c)`, for an object `c ∈ C♯`, is the set of assignments of sizes (values in the `SizeExpr`/`Numeric` carrier) to the axis symbols of `c` that satisfy `c`'s own constraints (positivity, pinned declarations).
 
-recovers the fully-sized graded PROP. An **acset instance** ([acset.md](acset.md)'s `SBrInstance`) is a finite presentation of a single `∫Dat`-morphism: its `C♯`-part is the connectivity, its `Dat`-part the `axis_sizes`/coefficients/datatypes. Serialization (CSV) writes the two parts to separate tables.
+**Definition 5.2 (Morphism data).** `Dat₁(m)`, for a morphism `m : c → c'` of `C♯`, is the set of `C`-morphisms lying over `m`, i.e. the fibre `U⁻¹(m)`. Each has a restriction to its domain and codomain sizes, so `m` determines a span
 
-**Lean shape.** Mathlib has `CategoryTheory.Grothendieck` for the Grothendieck construction of a functor into `Cat`. With `Dat` valued in (discrete categories of) size-assignments, `∫Dat` is a direct instance. The iso `C ≅ ∫Dat` is the theorem to discharge per instantiation; it is *definitional* if `C` is *built* as `∫Dat` (recommended).
+```text
+Dat₀(c)  ←π_dom—  Dat₁(m)  —π_cod→  Dat₀(c')
+```
+
+For a composable pair `m : c → c'` and `n : c' → c''`, composition in `C` gives a map
+
+```text
+μ_{m,n} : Dat₁(m) ×_{Dat₀(c')} Dat₁(n) → Dat₁(m ; n)
+```
+
+The domain is pairs that agree on the shared boundary `c'`. The identities give `Dat₀(c) → Dat₁(id_c)`. These maps make `(Dat₀, Dat₁)` a **normal lax functor `C♯ → Span(Set)`**.
+
+The two old readings are the degenerate spans. "Codomain determined by domain" is the graph `Dat₁(m) ≅ Dat₀(c)`. "No compatibility condition" is the full product `Dat₁(m) = Dat₀(c) × Dat₀(c')`.
+
+The product happens to be right for `D = St` as formalized. A `StMat` is a coefficient matrix and bias that the axis sizes do not constrain; bounds are checked only at evaluation. `StMat.comp` keeps no intermediate sizes. It is wrong for `C = Br`, whose composites carry sizes on internal wires and must agree on the shared boundary.
+
+**Why lax.** A relation of `C♯` can delete an internal wire: `id ; f = f`, or an architecture relation `f ; g = h` in which `h` has no intermediate wire. The sizes on the deleted wire are then forgotten, so `μ` is in general only a map, not a bijection. It is a bijection when the composite keeps its internal wire, because then the sizes of `m ; n` are exactly a pair of sizings that agree on `c'`.
+
+An **acset instance** ([acset.md](acset.md)'s `SBrInstance`) is a finite presentation of one point of some `Dat₁(m)`. Its `C♯`-part is the connectivity `m`, and its data part (`axis_sizes`, coefficients, datatypes) is the point. Serialization (CSV) writes the two parts to separate tables.
+
+**What is automatic and what is content.** Every functor `U : E → B` corresponds to a normal lax functor `B → Span(Set)`, by taking fibres over objects and morphisms (Bénabou's correspondence; in the language of *displayed categories*, a displayed category over `B` is the same thing; see Ahrens–Lumsdaine). So "`C` is recovered from `(Dat₀, Dat₁)`" holds for any sizing functor and says nothing on its own. The substantive claims are the explicit descriptions of the two kinds of fibre:
+
+- `Dat₀(c)` is the set of size assignments to `c`'s axis symbols (Definition 5.1).
+- `Dat₁(m)` is the solution set of `m`'s **local size equations** over the axis symbols of a term representing `m`. These are the per-generator conditions: equal sizes on identified axes, and affine reindexings in bounds.
+- `μ` glues by pullback over the shared boundary. *Sizes are local*: the sizes of a composite are a compatible pair of sizings of its parts.
+
+The second claim is stated on term representatives. Showing that it is independent of the representative, i.e. that it respects the congruence defining `C♯`, is part of the proof obligation of Prop 8.3.
+
+**Size inference is lifting through `π_dom`.** Shape inference starts from sizes at the domain boundary (input shapes plus pinned `axis … = n` declarations) and looks for the sizes of everything else. That is computing the fibre `π_dom⁻¹(d) ⊆ Dat₁(m)` over the given boundary sizing `d`.
+
+The Lean solver ([`Eval/SizeInfer.lean`](../leanncd/LeanNCD/Eval/SizeInfer.lean), [`Eval/SizeSolve.lean`](../leanncd/LeanNCD/Eval/SizeSolve.lean)) works one level down, on Tensor Logic statements with axis UIDs as the symbols. Its outcomes sort exactly by the shape of that fibre:
+
+| Fibre `π_dom⁻¹(d)` | Solver outcome (`SolveFailureKind` / `ShapeError`) |
+| --- | --- |
+| empty | `inconsistent`, `nonIntegral`, `nonPositive`; a bare-axis size conflict |
+| has unconstrained directions | `underdetermined`, `negativeOnlyAxis` |
+| non-empty and constrained | success: one sizing returned |
+
+One caveat makes this a specification target rather than a theorem. Under padded-read semantics the per-read constraints are *inequalities*: the largest index read must be at most `d − 1`. So a successful fibre can contain several points, and the solver returns one by its floor-then-verify convention, the tightest sizing. This is the "tightest compatible extension" reading of [future_ideas.md §3.2](future_ideas.md#32-shape-inference-is-the-right-kan-extension-is-partial-evaluation).
+
+Two things are not yet established:
+
+- *A precise characterization of the returned point.* For example, that it is the greatest element of the fibre in the componentwise order, when that element exists.
+- *Agreement with the size equations of Definition 5.2.* Issue H, the padded fully-known read, is the documented place where they diverge.
+
+**Lean shape.** Mathlib's `CategoryTheory.Grothendieck` takes a functor into `Cat`. A covariant functor is exactly the wrong shape here, so it does not apply directly. A faithful encoding needs either a `Span`-valued lax functor or, more simply, the sizing functor `U : C → C♯` itself, with Definitions 5.1 and 5.2 proved as descriptions of its fibres. We know of no displayed-category library in Mathlib. Current state: [`Grothendieck/Split.lean`](../leanncd/LeanNCD/Grothendieck/Split.lean) keeps `CSharp` and a `Unit`-valued covariant `Dat` as stubs, and has no split theorem. Rebuilding it on the span shape is the recommended route if Prop 8.3 is ever restored.
 
 ---
 
@@ -200,6 +250,17 @@ The pushout identifies the matched boundary colors `B` (the cup) and is computed
 
 **What the framing does and does not buy.** It *certifies* the gluing — associativity, precise error semantics ("no cocone" = alignment failure; "inconsistent attributes" = size mismatch), and the hook into data migration — and it *is* the union-find, computed in near-linear time. It does **not** choose the interface (Stage 1). So [§6](#6-composition-as-pushout) is a **correctness/specification lens, not a composition algorithm**: pyncd already computes the pushout efficiently as union-find and would never invoke a generic colimit solver. The pushout explains and certifies what `Context` does; it does not replace it.
 
+### 6.1 Sketch of Prop 8.5: sized open instances as decorated cospans
+
+*Status: a sketch, not a proof. Lean omits Prop 8.5 (`Props/Generic.lean`, "needs Inst(C♯)/pushout").* The template is St Clere Smithe's open factor graphs. There, open graphs are cospans of finite variable sets decorated over their apex, and composition is a pushout of names plus gluing of decorations. The whole structure is a pseudo double category, obtained as the double Grothendieck construction of a lax double functor `Cospan(FinSet) → Span(Cat)`. We borrow the shape of that construction, not its factor-graph content. Its variables are axes and its factors are arrays, so its content belongs to the index layer, not to `Br`. Combined with [§5](#5-the-structuredata-split-as-a-grothendieck-construction), the sketch reads as follows.
+
+- **Open sized instance.** A cospan of axis-UID sets `A —a→ X ←b— B`, where `X` is every axis of the instance and `A`, `B` are its exposed boundary. It carries a connectivity term over `X` and a sizing `s ∈ Dat₁` that assigns sizes to all of `X`. The boundary sizings are the restrictions `s|_A` and `s|_B`, the span legs of [§5](#5-the-structuredata-split-as-a-grothendieck-construction). Axes of `X` hit by neither leg are *latent*: internal wires and contracted axes, whose sizes are invisible at the boundary.
+- **Stage 1 output is the legs.** Interface discovery (positional pairing, `(name, size)` matching, inserted `Rearrangement`s) produces exactly the maps `b : B → X` and `a' : B → Y` that the gluing consumes. Treating that output as explicit data makes Stage 1 checkable, even though it stays heuristic. In the double-categorical template, the inserted `Rearrangement`s are *vertical* 1-cells: renamings and deterministic reindexings of an interface.
+- **Stage 2 is pushout on names plus pullback on sizes.** The composite has apex `X +_B Y`, which is what `Context` union-find computes, strictified by canonical representatives. Its sizing is a pair `(s, t)` that agrees on `B` (`s∘b = t∘a'`), glued by `μ` ([§5](#5-the-structuredata-split-as-a-grothendieck-construction)). Sizings are functions out of the axis set, so a sizing of `X +_B Y` is exactly such a compatible pair. If no compatible pair exists, the size check fails. That is the "attribute pushout does not exist" error above.
+- **Associativity, as an argument.** There are three steps. (i) Pasting of pushouts on the name side; canonical representatives make this strict ([§6](#6-composition-as-pushout)). (ii) Pasting of pullbacks on the sizing side, since compatible triples agreeing on two boundaries can be glued in either order. (iii) Locality of the size equations: the equations of a composite are the union of its parts' equations, so admissibility is preserved by both bracketings. Step (iii) needs the representative-independence obligation of [§5](#5-the-structuredata-split-as-a-grothendieck-construction). Units are identity cospans `A = A = A` with the diagonal sizing.
+
+**What stays open.** Three things. A proof of (iii), including compatibility with the congruence on `C♯`. The interaction with `⊗`: parallel composition makes this a *monoidal* double category, a coherence layer the template does not treat. And any statement about Stage 1. Smithe's own write-up also asserts, rather than verifies, associativity of its composition and the pseudo-naturality of its structure maps, so the template supplies the shape of the argument, not a proof to cite.
+
 ---
 
 ## 7. Algebras: `construct()` and the Para Refinement
@@ -223,7 +284,7 @@ The source `C` carries a D-action `act` (Definition 3.1.2): lifting a morphism `
 - **Compiler-pass correctness** — a pass is correct iff it is a 2-cell: it transforms the forward map while fixing the parameter object up to reparameterization. This makes precise [future_ideas.md](future_ideas.md)'s slogan "a pass is correct iff it is a `Para` natural transformation."
 - **`Scan`-strategy selection** ([future_ideas.md §3.1](future_ideas.md#31-construct-is-a-para-functor-over-the-grothendieck-integral); eager / checkpoint / vmap) — a 2-cell exchanging stored-activation parameter for recomputation cost.
 
-A trained model is a section of the Para fibration over `∫Dat`; gradient descent is a vector field on the fiber.
+A trained model is a section of the Para fibration over the sized category `C`; gradient descent is a vector field on the fiber.
 
 **Lean shape.** `F` is a `MonoidalFunctor` (Mathlib) plus a `D`-equivariance natural-iso field and its coherences; algebra morphisms are `MonoidalNatTrans`. The 2-categorical `Para` belongs at the *specification* level (Def 7.3); for a *formalization*, the full bicategory is heavy, so keep the lightweight encoding — `Para(V)` as a 1-category with hom `Σ (P : V), (P ⊗ A ⟶ B)` plus an explicit reparameterization relation standing in for the 2-cells — and treat the "2-cell" statements above as that relation. Note the gap explicitly rather than paying for a bicategory only the spec uses.
 
@@ -237,7 +298,7 @@ These are the theorems a Lean development would prove *once*, at the graded-PROP
 
 **Proposition 8.2 (Weave uniqueness).** Under (Elem-C) and (Broadcast-gen), the weave of any `C`-morphism (Definition 3.2) is unique up to the canonical coherence isos. *(Elements separate, so the degree `P` and the target/tiling partition are determined.)* This is what makes `Weave` a well-defined datum rather than a choice.
 
-**Proposition 8.3 (Grothendieck splitting).** `C ≅ ∫Dat` ([§5](#5-the-structuredata-split-as-a-grothendieck-construction)), with the structural skeleton `C♯` the base and the size-data the fiber. *(The acset structure/data split is literally the Grothendieck construction.)*
+**Proposition 8.3 (Structure/data splitting; restated 2026-11-24).** The sizing functor `U : C → C♯` has these fibres. Over an object `c`, the fibre is `Dat₀(c)`, the size assignments to `c`'s axis symbols. Over a morphism `m`, the fibre is `Dat₁(m)`, the solutions of `m`'s local size equations. Composites glue by pullback over the shared boundary, and the gluing is a bijection whenever the composite keeps its internal wire ([§5](#5-the-structuredata-split-as-a-grothendieck-construction)). *(Recovering `C` from `(Dat₀, Dat₁)` as a normal lax functor `C♯ → Span(Set)` is automatic, by Bénabou's correspondence. The content is the explicit description of the fibres and the locality of sizes. The earlier statement `C ≅ ∫Dat`, with `Dat` a functor trivial on morphisms, was false; see the correction in §5.)*
 
 **Proposition 8.4 (Equivariance, via a symmetry monad).** Fix a *symmetry monad* `T` on `D` (or on its colors). An algebra `F` is **`T`-equivariant** iff it lifts to the Eilenberg–Moore category of `T` — i.e. `F` is a morphism of `T`-algebras. This is the CDL lens ([§11](#11-relation-to-categorical-deep-learning)): equivariance = morphism of algebras for the symmetry monad, recovering geometric deep learning. Instances:
 
@@ -247,7 +308,7 @@ These are the theorems a Lean development would prove *once*, at the graded-PROP
 
 **Two routes to equivariance (resolved — see [equivariance_unification.md](equivariance_unification.md)).** This proposition encodes a symmetry as a *monad* `T` on `D`; [§9.3](#93-the-horizontal-axis-swapping-d) encodes one instead as a *grading* `D = BG` (the delooping of a group `G`), and [future_ideas.md Appendix A.2](future_ideas.md#a2-d--group-bg-base-repg-fibers) adds the fiber grading `D = Rep(G)`. The conjecture was that these coincide. They do, for group/monoid symmetries: all three compute one category, `Alg(C, V^{T_G})` — `C`-algebras valued in the `G`-objects of the target — because the action monad's Eilenberg–Moore category *is* the delooping presheaves, `V^{T_G} ≃ [BG, V] ≃ Rep(G)` (monoidally, when `T_G` is Hopf), and `Alg(C, −)` transports this equivalence. The scope is sharp: coincidence holds **iff** `T` is an action/Hopf monad (its presentation is `BG`) — the [recognition theorem](equivariance_unification.md#51-the-recognition-theorem--coincidence--action-monad); a symmetry monad carrying extra relations has `V^{T} ⊋ [BG, V]` and the routes genuinely diverge. Continuous `G` splits at compactness ([§5.3](equivariance_unification.md#53-continuous-g-compact-closable-vs-non-compact-open)): compact `G` is covered (Haar measure, Peter–Weyl), non-compact `G` is the open residue. Full statement and proofs (Phases 1–4) are in [equivariance_unification.md](equivariance_unification.md), which also unifies base ⊗ fiber via the action groupoid ([§4.1](equivariance_unification.md#41-base--fiber-the-action-groupoid-phase-3-completed)).
 
-**Proposition 8.5 (Composition associativity).** Composition in `Inst(C♯)` is associative and unital. *(Pasting lemma for pushouts, [§6](#6-composition-as-pushout).)*
+**Proposition 8.5 (Composition associativity).** Composition in `Inst(C♯)` is associative and unital. *(Pasting lemma for pushouts on the name side, plus pullback pasting and locality of size equations on the sizing side. A sketch only, with open steps; see [§6.1](#61-sketch-of-prop-85-sized-open-instances-as-decorated-cospans).)*
 
 **Proposition 8.6 (Obstructions to being a weave — two species).** A morphism `s` can fail to lie in the image of `act(−, P)` — to admit no weave over `P` — in two categorically distinct ways, each demanding a dedicated generator in `G` rather than a base op lifted through `⊛`. The litmus test is uniform: *is the reindexing a fixed, point-natural `D`-morphism?* A "no" arises two ways:
 
@@ -289,8 +350,8 @@ Instantiation has two axes (cf. [future_ideas.md §6.4](future_ideas.md#64-stack
 | Base generators `G` | `Linear`, `Einops`, `SoftMax`, `MaskedSoftMax`, `Elementwise`, `Normalize`, `MaskedNormalize`, `Embedding`, `AdditionOp` | data_structure/Operators.py |
 | `(Broadcast-gen)` | every Br morphism is a broadcasted operation (Def 13) | [theory.md §Broadcasting](theory.md#broadcasting) |
 | `C♯` (structural) | `bc_signature()` pre-size; `SBrInstance` C-set part | [acset.md §Br schema](acset.md#the-schema-mathcals_br) |
-| Data functor `Dat` | `axis_sizes`, coefficients, `datatype_tag`, `max_value` | [acset.md §Br schema](acset.md#the-schema-mathcals_br) |
-| `∫Dat` instance | a fully-sized `Broadcasted`/`Composed` term; `SBrInstance` | [acset.md §TensorEquation as Proto-Acset](acset.md#tensorequation-as-a-proto-acset) |
+| Interface/morphism data `Dat₀`, `Dat₁` | `axis_sizes`, coefficients, `datatype_tag`, `max_value` | [acset.md §Br schema](acset.md#the-schema-mathcals_br) |
+| A point of `Dat₁(m)` (a sized morphism) | a fully-sized `Broadcasted`/`Composed` term; `SBrInstance` | [acset.md §TensorEquation as Proto-Acset](acset.md#tensorequation-as-a-proto-acset) |
 | Composition as pushout | `@` / `Context` UID unification | [theory.md §Autoalignment](theory.md#autoalignment) |
 | Architecture relations `R` | residual topology, weight sharing, fusion equalities | [prop_ideas.md §Generators-and-Relations](prop_ideas.md#1-generators-and-relations-presentations-of-architectures) |
 | Target `D`-actegory `(V, R)` | PyTorch tensors with `R = ℝ` (default `(×, +)` semiring); `⊛_V` appends dimensions | torch_compile/ |
@@ -336,9 +397,9 @@ A future Lean development can proceed in this order; Mathlib coverage noted.
 
 5. **`C♯`, `P_arch`** ([§4](#4-generators-relations-and-the-structural-prop-c)). Free graded PROP on a generator quiver, then `CategoryTheory.Quotient` by `R`. *Available:* `FreeMonoidalCategory`, `CategoryTheory.Quotient`.
 
-6. **Grothendieck splitting** ([§5](#5-the-structuredata-split-as-a-grothendieck-construction), `Prop 8.3`). Use `CategoryTheory.Grothendieck` on `Dat`. If `C` is *defined* as `∫Dat`, the iso is `Iso.refl`. *Available.*
+6. **Structure/data splitting** ([§5](#5-the-structuredata-split-as-a-grothendieck-construction), `Prop 8.3`). Not `CategoryTheory.Grothendieck`: that takes a covariant functor into `Cat`, which is the shape §5's correction shows to be wrong. Encode the sizing functor `U : C → C♯` and prove Definitions 5.1 and 5.2 as descriptions of its fibres, or build a `Span`-valued lax functor by hand. *To build;* we know of no Mathlib support for displayed categories. *Current state:* `grothendieck_split` was deleted as false-as-stated (`2229cf66`), and `Grothendieck/Split.lean` keeps only stubs.
 
-7. **Composition as pushout** ([§6](#6-composition-as-pushout), `Prop 8.5`). `Inst(C♯)` with `CategoryTheory.Limits.pushout`; associativity from pasting. *Available* (pushout API, pasting lemmas).
+7. **Composition as pushout** ([§6](#6-composition-as-pushout), `Prop 8.5`). The name side is `CategoryTheory.Limits.pushout` with associativity from pasting (*available*). The sizing side, pullback gluing plus locality of size equations ([§6.1](#61-sketch-of-prop-85-sized-open-instances-as-decorated-cospans)), is *to build*. *Current state:* omitted in `Props/Generic.lean`.
 
 8. **Algebras + Para** ([§7](#7-algebras-construct-and-the-para-refinement), `Prop 8.4`). `F : MonoidalFunctor C V` + a `D`-equivariance iso field; algebra morphisms `MonoidalNatTrans`. Para as a lightweight category of parameterized 1-cells. *Available:* `MonoidalFunctor`, `MonoidalNatTrans`; Para hand-rolled.
 
@@ -367,7 +428,7 @@ The closest external framework is the **Categorical Deep Learning** (CDL) progra
 **What this framework adds (CDL does not address).**
 
 - *The index grading / actegory lift (St→Br, weaves).* CDL has no shape category acting by broadcasting — no degree, tiling/target weaves, or reindexings. This is the entire `D`-graded-colored-PROP content ([§3](#3-the-central-definition-d-graded-colored-prop)), driven by tensor *execution* (GPU tiling), a concern orthogonal to CDL's constraint-specification focus.
-- *The acset structure/data split and compilation.* `C ≅ ∫Dat`, schema morphisms, shape inference as a Kan extension, and serialization ([§5](#5-the-structuredata-split-as-a-grothendieck-construction)) are the representational and compilation machinery CDL leaves open.
+- *The acset structure/data split and compilation.* The sizing functor with span-shaped fibres, schema morphisms, shape inference as a Kan extension, and serialization ([§5](#5-the-structuredata-split-as-a-grothendieck-construction)) are the representational and compilation machinery CDL leaves open.
 - *A symmetric-monoidal (non-cartesian) base.* The colored PROP here is resource-sensitive — no free copy or discard — native to linear/tensor contraction. CDL's monad-algebra equivariance is most naturally developed over a Cartesian base and would need its monoidal generalization to sit directly on the tensor fragment.
 
 **Net.** The `D`-graded colored PROP is a *specialization-and-extension* of the CDL philosophy: it adopts CDL's architecture-as-algebraic-theory stance and its `Para` carrier, specialized to the symmetric-monoidal/PROP fragment appropriate for tensors, and extends it with the grading/actegory lift and the acset structure/data split — the execution-and-representation layers a working tensor compiler requires. Conversely, CDL's monad-(co)algebra vocabulary is the natural setting in which to *generalize* this framework's equivariance and `Scan`: re-expressing `construct()`-domain operators as monad-algebras (and `Scan` as a lax algebra for a parametric monad, or a coalgebra à la arXiv:2603.03227) is a plausible unification direction.
@@ -380,8 +441,8 @@ The pieces scattered across theory.md, acset.md, and prop_ideas.md are one struc
 
 - **Weaves** are the cartesian-lift data of the grading ([§3.3](#33-weaves-as-cartesian-lift-data)); their well-definedness is a theorem (Prop 8.2), not an assumption.
 - **Lifts** are the action `act`; their distribution laws are functoriality (Prop 8.1).
-- **The structure/data split** is the Grothendieck construction `C ≅ ∫Dat` ([§5](#5-the-structuredata-split-as-a-grothendieck-construction), Prop 8.3).
-- **Autoalignment** is pushout in the instance category ([§6](#6-composition-as-pushout), Prop 8.5).
+- **The structure/data split** is the sizing functor `U : C → C♯`, whose fibres form a normal lax functor `C♯ → Span(Set)`. Sizes over a morphism are a span between its boundary sizings, and composites glue by pullback ([§5](#5-the-structuredata-split-as-a-grothendieck-construction), Prop 8.3). Size inference lifts a boundary sizing through that span.
+- **Autoalignment** is pushout in the instance category: names glue by pushout, sizes by pullback over the shared boundary ([§6](#6-composition-as-pushout), [§6.1](#61-sketch-of-prop-85-sized-open-instances-as-decorated-cospans), Prop 8.5; a sketch).
 - **`construct()`** is a `D`-equivariant strong symmetric monoidal algebra into a target actegory; the **Para refinement** carries the weights ([§7](#7-algebras-construct-and-the-para-refinement)); batch equivariance is a corollary (Prop 8.4).
 - **The `Scan`/MoE obstruction** is the failure of point-naturality (Eq. 3) — a decidable test for "weave vs. dedicated generator" (Prop 8.6).
 
@@ -398,6 +459,9 @@ The pieces scattered across theory.md, acset.md, and prop_ideas.md are one struc
 - Mac Lane, *Categories for the Working Mathematician*, Ch. VII (monoidal categories), XI (symmetry).
 - Fong & Spivak, *Seven Sketches in Compositionality*, Ch. 5 (PROPs and presentations).
 - Baez & Courser, "Structured Cospans", *Theory and Applications of Categories* 35, 2020 (composition of open systems by pushout — [§6](#6-composition-as-pushout)).
+- T. St Clere Smithe, "Open factor graphs", tsmithe.net/p/factor-graphs.html, 2023. The decorated-cospan pseudo double category used as the template in [§6.1](#61-sketch-of-prop-85-sized-open-instances-as-decorated-cospans).
+- E. Patterson, "Structured and decorated cospans from the viewpoint of double category theory", arXiv:2304.00447. Cruttwell, Lambert, Pronk, Szyld, "Double fibrations", arXiv:2205.15240 (the double Grothendieck construction).
+- B. Ahrens & P. L. Lumsdaine, "Displayed Categories", *Logical Methods in Computer Science* 15(1), 2019. Displayed categories over `B`, i.e. functors into `B`, correspond to normal lax functors `B → Span(Set)`, after Bénabou ([§5](#5-the-structuredata-split-as-a-grothendieck-construction)).
 - Capucci & Gavranović, "Actegories for the Working Amthematician", arXiv:2203.16351 (actegories / monoidal actions).
 - Gavranović, Lessard, Dudzik, von Glehn, Araújo, Veličković, "Position: Categorical Deep Learning is an Algebraic Theory of All Architectures", arXiv:2402.15332 (the Para construction; monad-algebra equivariance; recursion as lax algebras for parametric monads). See [§11](#11-relation-to-categorical-deep-learning).
 - "Coalgebras for Categorical Deep Learning: Representability …", arXiv:2603.03227 (the coalgebraic companion to the above; recursion/unfolding as coalgebras).
