@@ -1883,7 +1883,9 @@ def kv_cache_pins(by: dict, sfx: str) -> None:
             scores.append(q @ (f["Wk"] @ f["X"][s]))
             values.append(f["Wv"] @ f["X"][s])
         causal[:, t + 1] = np_softmax_last(np.array(scores)) @ np.array(values)
-    gaps = {mode: dict_gap({"Yh": want["Yh"]}, {"Yh": incremental(mode)["Yh"]})
+    # Yh columns 2: are steps 1..4. At step 0 (column 1) the strict mask hides every slot (== unmasked) and the
+    # three cache-write variants all output 0, so a gap over the whole history would be decided by step 0 alone.
+    gaps = {mode: dict_gap({"Yh": want["Yh"][:, 2:]}, {"Yh": incremental(mode)["Yh"][:, 2:]})
             for mode in ("unmasked", "strict mask (s < t)", "never written", "one-step-late write", "values before write")}
     for mode, gap in gaps.items():
         assert gap > 1e-2, (name, "vacuous cache reference", mode, gap)
@@ -1949,6 +1951,9 @@ def kv_cache_pins(by: dict, sfx: str) -> None:
     assert np.array_equal(bits(base["Yh"][:, 1:5]), bits(fy[:, 1:5])), (name, "future cache not masked bitwise")
     future_gap = float(np.max(np.abs(fy[:, -1].astype(np.float64) - base["Yh"][:, -1].astype(np.float64))))
     assert future_gap > 1e-4, (name, "future cache perturbation not live", future_gap)
+    # the last step is where slot 4 is written, so the 1e3 initial rows ARE live there: pin its VALUE too
+    check_np(name, "future eager", "Yh_last_step", fy[:, -1],
+             np_kv_cache(dict(f, Kz=kz.astype(np.float64), Vz=vz.astype(np.float64)))["Yh"][:, -1])
     for n, initial, w in (("Kc", kz, "Wk"), ("Vc", vz, "Wv")):
         p = np.asarray(future[n])
         assert np.array_equal(bits(p[-1, :, :-1]), bits(np.repeat(initial[-1, :, None], n_t - 1, axis=1))), (name, n, "future slot retention")
@@ -2244,7 +2249,7 @@ def layers_time_grad_pins(by: dict, sfx: str) -> None:
             sin["X"] = sin["X"].copy()
             sin["X"][-1] = NDT(0)
         jin = {n: jnp.asarray(a) for n, a in sin.items()}
-        assert np.array_equal(np_model(sin)[out], want), (name, "finite spare X changed the loss output")
+        assert np.array_equal(np_model(sin)[out], want), (name, "numpy reference read the spare X row")
         hand_out = np.asarray(hand(jin))
         assert np.all(np.isfinite(hand_out)) and scaled(hand_out, want) < MODEL_TOL[_DT], (name, "pure-JAX loss output vs numpy")
         grads = {"eager": grad_plan(jin), "jit": jit_grad_plan(jin), "pure-JAX": jax.grad(loss_hand)(jin)}

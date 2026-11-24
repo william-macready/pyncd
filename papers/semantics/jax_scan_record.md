@@ -1781,9 +1781,8 @@ axis whose extent would have to be inferred from a scan-state read.
 |---|---|
 | All state histories | Every slot, including the initial slot, matches independent NumPy on Lean/eager/jit |
 | Kn, Vn, Qr, Ix | Rows 0..4 finite and match NumPy; row 5 exactly NaN on all three views; never send the whole NaN table through finite-only `check_np` |
-| X[5] finite replacement | All live histories and table rows 0..4 bitwise unchanged; hoisted table row 5 becomes finite, so it is deliberately NOT claimed unchanged |
+| X[5]=0.5, Oh/Mk[:,5]=0.75/-0.25 finite replacements (ONE run in the KV pin, not three) | All live histories, cache outputs and table rows 0..4 bitwise unchanged; spare columns never used; hoisted table row 5 becomes finite, so it is deliberately NOT claimed unchanged |
 | Wl[2] finite replacement | Every time/layer export bitwise unchanged, independently of X's spare-row replacement |
-| Oh/Mk[:,5] finite replacement | Every live cache output unchanged; spare columns never used |
 | KV and time/layer causal perturbations | Earlier histories bitwise unchanged; first target response at t+1, minimum 0.07396 / 0.04075 |
 | RNN skew causal perturbations | H1 first responds at t+1; H2 first responds at t+2 for t=0..3, minimum 0.1054; X[4] leaves ALL H2 bitwise unchanged while H1[:,5] moves |
 
@@ -1800,11 +1799,13 @@ all are greater than 1e-2, and non-vacuity runs before value pins:
 
 | Model | Alternative | Gap |
 |---|---|---|
-| KV | unmasked / strict mask s<t | 0.461090 / 0.461090 |
-| KV | never written / one-step-late write / values before write | 0.621861 / 0.621861 / 0.621861 |
+| KV (steps 1..4) | unmasked / strict mask s<t | 0.222724 / 0.312467 |
+| KV (steps 1..4) | never written / one-step-late write / values before write | 0.414518 / 0.227676 / 0.188993 |
 | time/layer | shared Wl[0] / layers before time | 1.031693 / 0.441702 |
 | RNN skew | NEW lower state / U2=0 / layer histories swapped | 0.620938 / 0.770309 / 1.150059 |
 | layer skew | Sh=0 / upward shift / layer 2 versus NEW-state stack | 0.514224 / 0.672564 / 0.426241 |
+
+The KV gaps are computed over `Yh` steps 1..4 (columns 2:). The executor's first version took them over the whole history and reported 0.461090 / 0.461090 and 0.621861 x3: at step 0 the strict mask hides every slot (equal to the unmasked model) and the three cache-write variants all output 0, so those numbers were decided by step 0 alone and did not describe the change each gap is named for (independent review, Minor 1; fixed in the controller review below).
 
 Layer-history swaps compare successor slots, excluding initial slots by the existing convention;
 they cannot pass merely because H10 and H20 differ.
@@ -1843,7 +1844,7 @@ Measured value-environment NaNs, identical eager/JIT and in both precisions:
 
 No other input gradient contains NaNs. The only adjusted-environment candidate was zeroing
 X's spare row for KV/layer-skew; all gradients then became finite, with Oh/Mk's NaN spare
-columns retained. Selected NumPy histories remain bitwise unchanged. This avoids 0*NaN
+columns retained. The NumPy reference is asserted not to read the spare X row (a pin on the reference, not on the plan). This avoids 0*NaN
 through hoisted tables; it is not a weakened tolerance or a silent change to value fixtures.
 X[5] gradients are exactly zero for all four models; Wl[2] (time/layer), Oh/Mk[:,5] (KV)
 and X[4] (the skewed H2 loss) are exactly zero in eager/JIT/independent models.
@@ -1872,7 +1873,12 @@ f32 1.000e-3/9.822e-4/6.224e-4/3.566e-4.
 ### Hand mutants
 
 All eight were accepted by preparation/rendering, kept every input used, and were killed
-by independent pins. No refusals, replacements or survivors. A refused shape mutation
+by a named assertion: A, B, C, E, F and H by an independent value pin, D and G by the
+non-vacuity gap. D and G change only the exported DATA (`Mk`, `Sh`), and the numpy references
+read those data from the exported inputs, so their value pins follow the mutated data; the
+gap is what fires (D would also be caught later by the independent full causal recompute, and
+G only by the input-definition pin on `Sh`, per the independent review's reading, not
+re-run). No refusals, replacements or survivors. A refused shape mutation
 would not have counted as a kill. D and G change only binary64 environment data;
 H changes only the binary32 program. A/B retain Kw through the other cache consumer,
 and C retains Vw through the Vc successor update.
