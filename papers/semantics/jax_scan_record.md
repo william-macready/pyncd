@@ -1640,7 +1640,7 @@ So a `where` mask over ANY axis that is not one of the statement's own `.free`/`
 All four models, eight registrations, all requested gradients and all eight hand mutants are done.
 The originally supplied baseline was `8c0a8444`; the final corrected-brief base is
 `3774e682534ed5c64fea0613ddc551d661fb496f`. Work is on `jax-layers-time-exec` in
-`.claude/worktrees/layers-time-exec`, not merged or pushed.
+`.claude/worktrees/layers-time-exec`; merged to local `main` after the controller review at the end of this section (not pushed at the time of writing).
 No production compiler, runtime, grammar, LeanNCD module, mutation manifest, existing fixture,
 `np_transformer`, tolerance or existing pin meaning was changed.
 
@@ -1965,3 +1965,23 @@ Renamed-axis state-history reads: checked-plan `stateReadNotCausal`, although th
 evaluator accepts the read. Each requires a separate production slice/plan covering checked-plan
 changes and JAX per-axis step counters (at least one full slice, multiple implementation/review
 dispatches each; not sized or begun here). No scope expansion or additional side issue.
+
+### Controller review (2026-11-23, after the executor's STOP at ready-for-review)
+
+**Re-verification of the executor's branch before any edit** (controller runs, fresh): full build 8846 jobs, 0 errors; `check-lean-drivers.sh` all eight clean (Lean side only); `run-evalplan-nonlin.sh` exit 0, 60 binary64 and 51 binary32 fixtures within tolerance, 0 assertion errors. Scope: four files, add-only except the lines named in Minor 3.
+
+**Independent whole-branch review** (a separate read-only reviewer, about 25 calls, no build or run): no Critical or Important findings. The Lean programs, exports, registrations (`scans` 1/2/1/1, `unaryOk := true`) match the brief's Appendix A (with `time_layer` at i = 5); no tolerance changed (`MODEL_TOL`, `GRAD_TOL`, `GRAD_FD_TOL`, `RTOL`, `ATOL` equal to `main`); every non-vacuity threshold is asserted; both `kv_cache` references (incremental loop, full causal recompute) are independent of the plan and of each other; the value-environment NaN-gradient sets are asserted exactly ({Wq, Wk, Wv} and {E0, Wx}); the record's figures matched `.cache/layers-time-final-runner.log`. Six Minors:
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | `kv_cache` non-vacuity gaps were decided at step 0 (strict mask == unmasked there; the three cache-write variants all output 0) | FIXED: gaps over steps 1..4, new values in the gap table above, all above 1e-2 in both precisions |
+| 2 | D and G are killed by the non-vacuity gap, not by an independent value pin (the numpy references read the mutated data) | Record reworded (mutants section) |
+| 3 | Existing harness lines were edited, not only added: `require_close` gained the keyword `nan_time=False`, the two call lines in `run_fixture` were replaced, the new names join `TRANSFORMER_FIXTURES`; also the README count line and the section 26 "Next" sentence (both allowed by the brief) | Recorded here. Behaviour for existing fixtures is unchanged: the full run still passes all 60/51 fixtures and no existing pin was touched |
+| 4 | The last step of the future-slot run was only checked for movement | FIXED: `Yh_last_step` pinned against numpy on the perturbed inputs: max abs 2.776e-17 (binary64, tol 1e-12), 1.367e-08 (binary32, tol 1e-06); worst scaled difference of `kv_cache32` still 3.902e-08 (headroom 25.6x) |
+| 5 | The numpy-vs-numpy spare-row assert cannot fail for a plan bug but was cited as evidence; the record listed three spare replacements the code does as one run | Assert relabelled as a pin on the reference; record rows merged |
+| 6 | The first commit quotes numpy error figures before the numpy pins existed | Accepted: traceability only, the figures match the later committed run |
+
+**Mutant re-run on the final code.** D (`Mk` strict, `s < t`, NaN spare column kept) re-run through the full runner: killed by the same named assertion, now computed on the steps-1..4 gaps: `('kv_cache', 'vacuous cache reference', 'strict mask (s < t)', 0.0)`, runner exit 1; inverse edit restored, `git diff --stat` empty, then the full chain above re-run on the restored tree (8846 jobs, drivers clean, 60/51, exit 0).
+
+**NOT re-run by the controller:** mutants A, B, C, E, F, G, H (their kills are by value pins or gaps this review did not touch; the executor's evidence JSONs were read by the reviewer, not re-executed); the gradient pins and their finite-difference references beyond the full runner pass; the binary32 headroom of fixtures other than `kv_cache32`; the Python/JAX verifiers of the other seven drivers (`check-lean-drivers.sh` is Lean-side only). The executor's budget breach (136 tool calls, tokens unmeasured) stands as recorded above.
+
