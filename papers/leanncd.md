@@ -115,44 +115,60 @@ For both **St** and **Br**, `ob = List gen`, so `toList = id` and `ofList = id`,
 
 The `ColoredPROP` typeclass earns its keep in three ways: generic rearrangements (any list permutation induces a morphism in any colored PROP, proved once), the `St → Br` relationship (the `reindexings` of a `BrBase` are a family of **St** morphisms inside a **Br** morphism — the data of a monoidal functor `St → Br`), and the interchange law `(f ; g) ⊗ (h ; k) = (f ⊗ h) ; (g ⊗ k)`, derivable once from `tensorHom` and `assoc`.
 
-### 2.1 `Numeric`
+### 2.1 `SizeExpr` and `Coeff`
 
-Both **St** and **Br** rely on symbolic dimension expressions — terms in a free commutative ring on `String`-named generators. Two roles need DIFFERENT coefficient rings: axis **sizes** are non-negative, so they live in `Numeric = MvPolynomial String ℕ` (a `CommSemiring`); affine **stride coefficients and offsets** are *signed* (a look-back read `X[i-1]` has offset `-1`), so they live in `Coeff = MvPolynomial String ℤ` (a `CommRing`). Both are Mathlib types with `DecidableEq` and a `ring`-ready algebra for free, covering the Python `Numeric` hierarchy (`Integer`, `FreeNumeric`, `Addition`, `Multiplication`, `Power`) uniformly.
+Both **St** and **Br** use symbolic expressions over `String`-named variables, in two roles with different types.
+
+- **Axis sizes** use `SizeExpr` ([`Base/SizeExpr.lean`](../leanncd/LeanNCD/Base/SizeExpr.lean)). Sizes are non-negative, and the DSL elaborator must build, compare and embed them at elaboration time, so they need a computable type. `SizeExpr` is the only axis-size type, used by both the math tower and the DSL.
+- **Affine stride coefficients and offsets** use `Coeff = MvPolynomial String ℤ` ([`Base/Numeric.lean`](../leanncd/LeanNCD/Base/Numeric.lean), which now holds only this definition). They are *signed*: a look-back read `X[i-1]` has offset `-1`, and a reversed read `X[5-t]` has coefficient `-1`. They need a `ring`-ready algebra so the `StMat` laws discharge.
 
 ```lean
-abbrev Numeric := MvPolynomial String ℕ   -- axis SIZES (non-negative); a CommSemiring
-abbrev Coeff   := MvPolynomial String ℤ   -- StMat COEFFICIENTS/offsets (signed); a CommRing
--- free variable s  ↦  MvPolynomial.X s     (a degree-1 monomial)
--- literal n        ↦  MvPolynomial.C ↑n    (a constant polynomial)
--- addition, multiplication ↦ ring operations
--- instances : CommSemiring Numeric / CommRing Coeff, DecidableEq — free from Mathlib (NONCOMPUTABLE)
+inductive SizeExpr                          -- axis SIZES: computable, DecidableEq, ToExpr
+  | var : String → SizeExpr                 -- symbolic size (Python: a FreeNumeric)
+  | lit : Nat → SizeExpr                    -- literal size (Python: an Integer)
+  | add : SizeExpr → SizeExpr → SizeExpr
+  | sub : SizeExpr → SizeExpr → SizeExpr    -- saturating Nat.sub
+  | mul : SizeExpr → SizeExpr → SizeExpr
+  | div : SizeExpr → Nat → SizeExpr         -- floor-division by a positive literal
+  deriving DecidableEq, Repr, Inhabited, Lean.ToExpr
+def SizeExpr.eval (env : String → Nat) : SizeExpr → Nat   -- concrete value under an assignment
+
+abbrev Coeff := MvPolynomial String ℤ       -- StMat COEFFICIENTS/offsets (signed); a CommRing
+-- free variable s ↦ MvPolynomial.X s,  literal n ↦ MvPolynomial.C ↑n   (NONCOMPUTABLE)
 ```
 
-These are the minimal types making `StMat`'s laws provable: free commutative algebras on a `String`-indexed generator set. The `ring` tactic works immediately over any `CommSemiring`/`CommRing`, so all three `StMat` laws discharge without setup over `Coeff`. `MvPolynomial.X s` plays the role of a `FreeNumeric` — a name carrying no interpretation until indeterminates are substituted. **(Why two types:** an earlier design used `Numeric` for both roles, but its ℕ-semiring has no additive inverses, so negative look-back offsets — supported by the DSL and the [§14.3](#143-abstract-syntax) `IdxExpr` — were unrepresentable; separating out the signed `Coeff` fixes that while keeping sizes non-negative.)
+Equality of `SizeExpr` is the derived, structural `DecidableEq`, not semantic equality. `add (var "n") (lit 1)` and `add (lit 1) (var "n")` are different sizes to the type checker, and so are two expressions that merely evaluate to the same value. That is a deliberate trade: `SizeExpr` gets computability, and gives up the free-semiring laws.
 
-Mathlib's `CommSemiring (MvPolynomial …)` instance is **noncomputable** (it factors through `AddMonoidAlgebra`); so are `MvPolynomial.X`/`.C` and even `DecidableEq` (which resolves through `Classical.propDecidable`). This has no effect on the proof tower — `ring`/`simp` and the [§11](#11-the-propositions-as-generic-theorems) proofs work fine over a noncomputable semiring — but it has two consequences (`Coeff = MvPolynomial String ℤ` is noncomputable for the same reason). (i) Any `def` that *builds* a value over `Numeric`/`Coeff` (so `StMat.id`, `StMat.comp`, and the `St` instance of [§2.2](#22-st--stride-matrices)) must be marked `noncomputable`. (ii) **Compiled code cannot construct or `decide`-compare `Numeric`/`Coeff` values at all** — neither `#eval`, `decide`, nor `native_decide` reduces them. The executable / DSL layer must therefore not construct `Numeric` directly: the tensor-logic DSL ([§14](#14-the-tensor-logic-dsl)) carries sizes in a *computable* `SizeExpr` mirror, interpreted into `Numeric` only on the proof side (see the note in [§14.3](#143-abstract-syntax)).
+**(History.** An earlier design used one type, `Numeric = MvPolynomial String ℕ`, for both roles. Its ℕ-semiring has no additive inverses, so negative look-back offsets were unrepresentable, and coefficients moved to the signed `Coeff` (`21864f78`). Spike 8c then replaced `Numeric` for sizes with the computable `SizeExpr`, and deleted `Numeric` and the `SizeExpr.toNumeric` bridge (`725e98be`). No law in the tower needs ring arithmetic on sizes: the `StMat` laws are over `Coeff`, and the `StMat` type does not mention sizes at all.**)**
+
+Mathlib's `CommRing (MvPolynomial …)` instance is **noncomputable** (it factors through `AddMonoidAlgebra`); so are `MvPolynomial.X`/`.C` and even `DecidableEq` (which resolves through `Classical.propDecidable`). The proof tower is unaffected: `ring`/`simp` and the [§11](#11-the-propositions-as-generic-theorems) proofs work fine over a noncomputable ring. But there are two consequences.
+
+1. Any `def` that *builds* a `Coeff` value (so `StMat.id`, `StMat.comp`, and the `St` instance of [§2.2](#22-st--stride-matrices)) must be marked `noncomputable`.
+2. **Compiled code cannot construct or `decide`-compare `Coeff` values at all**; neither `#eval`, `decide`, nor `native_decide` reduces them. So the executable layer carries coefficients as plain `Int`: the DSL's `IdxExpr` and the computable `StMatP` presentation ([§14](#14-the-tensor-logic-dsl)), and the acset `SampleRow` ([§10](#10-acsets-and-the-executable-layer)).
+
+Sizes have no such problem, because `SizeExpr` is computable throughout.
 
 ### 2.2 `St` — stride matrices
 
-**St** instantiates `ColoredPROP` with `gen = Axis`. Its objects are shapes (lists of axes, whose sizes are `Numeric`); its morphisms are affine coordinate transforms stored as stride matrices over `Coeff`.
+**St** instantiates `ColoredPROP` with `gen = Axis`. Its objects are shapes (lists of axes, whose sizes are `SizeExpr`); its morphisms are affine coordinate transforms stored as stride matrices over `Coeff`.
 
 ```lean
 structure Axis where
   name : Option String
-  size : Numeric      -- symbolic SIZE (non-negative, ℕ); filled in at configuration time
+  size : SizeExpr     -- symbolic SIZE (computable; ℕ-valued under SizeExpr.eval)
 
 abbrev StObj := List Axis  -- a shape = an ordered list of axes
 ```
 
-A morphism `dom → cod` is a matrix `Λ ∈ Coeff^{|cod|×|dom|}` of signed coefficients plus a bias vector, with row `j` giving the linear combination of input coordinates producing output coordinate `j`. Coefficients live in `Coeff = MvPolynomial String ℤ` ([§2.1](#21-numeric)), not the size type `Numeric`, so look-back offsets (negative) are representable. Using Mathlib's `Matrix` gives the composition law for free:
+A morphism `dom → cod` is a matrix `Λ ∈ Coeff^{|cod|×|dom|}` of signed coefficients plus a bias vector, with row `j` giving the linear combination of input coordinates producing output coordinate `j`. Coefficients live in `Coeff = MvPolynomial String ℤ` ([§2.1](#21-sizeexpr-and-coeff)), not the size type `SizeExpr`, so look-back offsets (negative) are representable. Using Mathlib's `Matrix` gives the composition law for free:
 
 ```lean
 @[ext] structure StMat (dom cod : StObj) where   -- @[ext]: equality of stride matrices is entrywise on coeffs + bias
-  coeffs : Matrix (Fin cod.length) (Fin dom.length) Coeff   -- signed (ℤ), NOT Numeric (ℕ)
+  coeffs : Matrix (Fin cod.length) (Fin dom.length) Coeff   -- signed (ℤ), not the size type SizeExpr
   bias   : Fin cod.length → Coeff
 
-noncomputable def StMat.id (a : StObj) : StMat a a where   -- noncomputable: Numeric semiring (§2.1)
-  coeffs := 1        -- Matrix.one : Matrix (Fin n) (Fin n) Numeric
+noncomputable def StMat.id (a : StObj) : StMat a a where   -- noncomputable: the Coeff ring (§2.1)
+  coeffs := 1        -- Matrix.one : Matrix (Fin n) (Fin n) Coeff
   bias _ := 0
 
 noncomputable def StMat.comp (f : StMat a b) (g : StMat b c) : StMat a c where
@@ -170,7 +186,7 @@ noncomputable def StMat.comp (f : StMat a b) (g : StMat b c) : StMat a c where
 --   StMat.comp_assoc: coeffs by Matrix.mul_assoc; bias by a simp-set normalizing both double-sums
 --                     (Matrix.mul_apply, dotProduct, Finset.mul_sum, …) then `rw [add_assoc, Finset.sum_comm]`
 -- (The bias of comp_assoc needs the sum-reordering rewrite — bare `ring` does not reach under the ∑.)
-noncomputable instance St : ColoredPROP StObj where   -- noncomputable: StMat.id/comp build over Numeric (§2.1)
+noncomputable instance St : ColoredPROP StObj where   -- noncomputable: StMat.id/comp build over Coeff (§2.1)
   gen    := Axis
   toList := id
   ofList := id
@@ -193,7 +209,7 @@ noncomputable instance St : ColoredPROP StObj where   -- noncomputable: StMat.id
 --   instance : Elemental StObj where elemental := …   -- PROVED sorry-free (one-hot points)
 ```
 
-The category laws discharge using Mathlib's `Matrix` API (`Matrix.mul_one`/`one_mul`/`mul_assoc` for coefficients; root-namespace `dotProduct` lemmas + a sum-reordering rewrite for the bias), all over the noncomputable `CommRing Coeff` ([§2.1](#21-numeric); the proofs are `CommRing`-generic, so they were unchanged when coefficients moved from `Numeric` to the signed `Coeff`). `Matrix.fromBlocks` builds the block-diagonal `tensorHom` (reindexed through `finSumFinEquiv` to land in `Fin (·.length)`). `swap` (a reindexed identity matrix) is the `SIGNATURE` field left as an obligation. St's elementality lives in `instance : Elemental StObj` ([the (Elem) mixin](#2-the-base-coloredprop)) and is **proved sorry-free**: a stride matrix is determined by its action on global elements (points) — feeding the zero point fixes the bias and one-hot points recover each coefficient row, so two stride matrices agreeing on all points are equal.
+The category laws discharge using Mathlib's `Matrix` API (`Matrix.mul_one`/`one_mul`/`mul_assoc` for coefficients; root-namespace `dotProduct` lemmas + a sum-reordering rewrite for the bias), all over the noncomputable `CommRing Coeff` ([§2.1](#21-sizeexpr-and-coeff); the proofs are `CommRing`-generic, so they were unchanged when coefficients moved from `Numeric` to the signed `Coeff`). `Matrix.fromBlocks` builds the block-diagonal `tensorHom` (reindexed through `finSumFinEquiv` to land in `Fin (·.length)`). `swap` (a reindexed identity matrix) is the `SIGNATURE` field left as an obligation. St's elementality lives in `instance : Elemental StObj` ([the (Elem) mixin](#2-the-base-coloredprop)) and is **proved sorry-free**: a stride matrix is determined by its action on global elements (points) — feeding the zero point fixes the bias and one-hot points recover each coefficient row, so two stride matrices agreeing on all points are equal.
 
 ### 2.3 `Br` — free category over broadcasted base morphisms
 
@@ -202,7 +218,7 @@ The category laws discharge using Mathlib's `Matrix` API (`Matrix.mul_one`/`one_
 ```lean
 inductive DType
   | reals
-  | nat : Numeric → DType           -- Natural(max_value)
+  | nat : SizeExpr → DType          -- Natural(max_value)
 
 structure ArrayType where
   dtype : DType
@@ -291,7 +307,7 @@ instance Br : ColoredPROP BrObj where
 -- elementality is NOT a field here; it is `instance : Elemental BrObj` (below the `Br` instance).
 ```
 
-The category and tensor-strictness laws discharge sorry-free by `rfl` or one-step structural induction, because list concatenation is associative and `nil` is a two-sided unit definitionally. Because `BrMorph` is a free list carrying no `Numeric` arithmetic (the `StMat` reindexings ride inside `BrBase` but are never evaluated in composition), **`instance Br` is computable** — no `noncomputable` is needed, in contrast to the `St` instance of [§2.2](#22-st--stride-matrices). With elementality demoted to the [`Elemental` mixin](#2-the-base-coloredprop), **`instance Br : ColoredPROP` is now sorry-free** (its remaining `SIGNATURE` obligations — `swap`, `tensorHom` via the sketched `extendRight`/`extendLeft` — are the only stubs). `Br` elementality is the `(Elem-C)` of [graded_prop.md §2](graded_prop.md): a separate `instance : Elemental BrObj` whose `elemental` reduces (sorry-free) to `brCancelPoint` — the one remaining `Br` `sorry`, the free-strict-SMC normal-form milestone ([§5](#5-weaves-as-cartesian-lift-data)/Prop 8.2 is its only consumer). **Br is elemental** (the statement is true — witnessed by the argument in [theory.md §Elemental Categories](theory.md)); only its Lean proof is deferred.
+The category and tensor-strictness laws discharge sorry-free by `rfl` or one-step structural induction, because list concatenation is associative and `nil` is a two-sided unit definitionally. Because `BrMorph` is a free list carrying no `Coeff` arithmetic (the `StMat` reindexings ride inside `BrBase` but are never evaluated in composition), **`instance Br` is computable** — no `noncomputable` is needed, in contrast to the `St` instance of [§2.2](#22-st--stride-matrices). With elementality demoted to the [`Elemental` mixin](#2-the-base-coloredprop), **`instance Br : ColoredPROP` is now sorry-free** (its remaining `SIGNATURE` obligations — `swap`, `tensorHom` via the sketched `extendRight`/`extendLeft` — are the only stubs). `Br` elementality is the `(Elem-C)` of [graded_prop.md §2](graded_prop.md): a separate `instance : Elemental BrObj` whose `elemental` reduces (sorry-free) to `brCancelPoint` — the one remaining `Br` `sorry`, the free-strict-SMC normal-form milestone ([§5](#5-weaves-as-cartesian-lift-data)/Prop 8.2 is its only consumer). **Br is elemental** (the statement is true — witnessed by the argument in [theory.md §Elemental Categories](theory.md)); only its Lean proof is deferred.
 
 The two instances embody a complementary split. **St is semantic**: a stride morphism is the *denotation* of a coordinate transform, not a syntax tree, so composition collapses to a single `Matrix.mul` and the laws come from Mathlib's `Matrix` API plus `ring`. **Br is syntactic (free)**: a composed sequence of broadcasted operations is stored as a list with no canonical simplified form, so the laws are free gifts from list algebra; the price is that symbolic reasoning over **Br** pattern-matches the list rather than inspecting one record.
 
@@ -523,17 +539,16 @@ Mathlib's `CategoryTheory.Grothendieck` takes a covariant functor into `Cat`, wh
 
 ### 7.2 `FreeNumeric` is the fiber, not a layer
 
-The `Numeric := MvPolynomial String ℕ` of [§2.1](#21-numeric) is precisely the data the object fibre `Dat₀(c)` ranges over. A symbolic axis size is a term in the free commutative semiring on `String`-named generators; a `FreeNumeric` — the Python `UTerm` that names an as-yet-unknown size — is a single generator `MvPolynomial.X s`, carrying no interpretation until indeterminates are substituted.
+The `SizeExpr` of [§2.1](#21-sizeexpr-and-coeff) is precisely the data the object fibre `Dat₀(c)` ranges over. A symbolic axis size is a `SizeExpr` term over `String`-named variables. A `FreeNumeric` (the Python `UTerm` that names an as-yet-unknown size) is a single variable `SizeExpr.var s`, carrying no interpretation until a variable assignment is applied with `SizeExpr.eval`.
 
 ```lean
-abbrev Numeric := MvPolynomial String ℕ
--- MvPolynomial.X s  -- a FreeNumeric: a symbolic axis size, the fibre datum Dat₀(c)
--- a size-assignment d ∈ Dat₀(c) picks a Numeric for each structural axis-symbol of c
+-- SizeExpr.var s  -- a FreeNumeric: a symbolic axis size, the fibre datum Dat₀(c)
+-- a size-assignment d ∈ Dat₀(c) picks a SizeExpr for each structural axis-symbol of c
 ```
 
-Symbolic sizes — `FreeNumeric` and `Numeric` — are the **`Dat₀(c)` fibre data** of the structure/data split of [§7.1](#71-the-structuredata-split), as categorical as the structural skeleton `C♯` itself. They live in the fiber over `C♯`.
+Symbolic sizes — Python's `FreeNumeric`/`Numeric`, Lean's `SizeExpr` — are the **`Dat₀(c)` fibre data** of the structure/data split of [§7.1](#71-the-structuredata-split), as categorical as the structural skeleton `C♯` itself. They live in the fiber over `C♯`.
 
-`Numeric = MvPolynomial String ℕ` is the **proof-side** fiber representation: it is chosen so the `ring` tactic discharges the `StMat` laws for free, at the price of being noncomputable ([§2.1](#21-numeric)). The **executable** presentations of the fiber — the DSL ([§14](#14-the-tensor-logic-dsl)) and the acset tables ([§10](#10-acsets-and-the-executable-layer)) — cannot use it directly, because compiled code can neither construct nor compare `MvPolynomial` values. They carry a *computable* mirror of the fiber (a `SizeExpr` inductive: variables, literals, `+`, `*`, with `DecidableEq`/`ToExpr`), with an interpretation `SizeExpr → Numeric` crossing to the proof side. This is the proposition/computation seam applied to the fiber datum itself; the mechanism is detailed in [§14](#14-the-tensor-logic-dsl).
+Since Spike 8c (`725e98be`) the proof side and the executable side share this one computable representation, so the fibre datum needs no proof/computation bridge. Earlier, sizes were the noncomputable `Numeric = MvPolynomial String ℕ` on the proof side, with a lossy `SizeExpr → Numeric` interpretation. The seam does still apply to *coefficients*: `Coeff` is noncomputable, and the executable presentations carry `Int` instead ([§2.1](#21-sizeexpr-and-coeff)).
 
 ### 7.3 Composition as pushout
 
@@ -650,7 +665,7 @@ def Context.apply [TermTraversable β] (ctx : Context α) (target : β) : β :=
 
 The framing is the whole point. **The pushout/coequalizer is the spec; union-find plus the fresh-name counter is the implementation; they meet at the seam.** The Stage-2 colimit *certifies* the gluing — associativity (the pasting lemma), the precise error semantics ("no cocone" = alignment failure, "inconsistent attributes" = size mismatch), the canonical representative as cocone vertex — while `Context` *computes* it in near-linear time. A Lean development proves the coequalizer is what it claims; it does not re-derive `Context` line-by-line, and pyncd would never invoke a generic colimit solver. The substitution machinery `Context.apply` rides on a `TermTraversable` typeclass — one explicit traversal instance per decorated type — but that, the `WithUID` decoration, and `DynamicName` are display/identity bookkeeping on the executable side, never propositional content.
 
-Unlike the propositional tower (§2–§11, transcribed as signatures with `sorry`), this executable seam is **fully implemented and `sorry`-free** (`LeanNCD/Exec/`): `FreshM`/`freshUData` mint an increasing counter and propagate `CompileError`; `Context.merge` unions overlapping buckets keeping the largest-UID representative; `Context.apply` substitutes UIDs by canonical representatives. It is verified by evaluated tests (`#guard` plus an LSpec suite) — `#eval`/`decide` work here precisely because nothing crosses into the noncomputable `Numeric` algebra. The per-type `TermTraversable` instances for the DSL AST (`AxisSpec`, `IdxExpr`, …, `BrBase`, `ThreadedComposed`) are written alongside the compiler in [§14](#14-the-tensor-logic-dsl).
+Unlike the propositional tower (§2–§11, transcribed as signatures with `sorry`), this executable seam is **fully implemented and `sorry`-free** (`LeanNCD/Exec/`): `FreshM`/`freshUData` mint an increasing counter and propagate `CompileError`; `Context.merge` unions overlapping buckets keeping the largest-UID representative; `Context.apply` substitutes UIDs by canonical representatives. It is verified by evaluated tests (`#guard` plus an LSpec suite) — `#eval`/`decide` work here precisely because nothing crosses into the noncomputable `Coeff` algebra. The per-type `TermTraversable` instances for the DSL AST (`AxisSpec`, `IdxExpr`, …, `BrBase`, `ThreadedComposed`) are written alongside the compiler in [§14](#14-the-tensor-logic-dsl).
 
 ## 8. Algebras and `construct()`
 
@@ -786,16 +801,16 @@ structure SBrInstance where
   arrays     : List ArrayRow                    -- Array rows: slot, is_input, datatype_tag, op_predicate, …
   array_axes : List ArrayAxisRow                -- ArrayAxis rows: is_target, position (the Weave._shape interleaving)
   samples    : List SampleRow                   -- Sample rows: (src, tgt, coeff, offset) — the affine reindexing
-  axis_sizes : List (UID × Numeric)             -- the Dat-part: each axis-UID's symbolic size
+  axis_sizes : List (UID × SizeExpr)            -- the size data: each axis-UID's symbolic size
 -- EquationRow, ArrayRow, ArrayAxisRow, SampleRow are defined in acset.md
 -- (§"From SBrInstance to a Diagram in Br — a Lean Encoding"); see that document
 -- for the full field lists. SBrInstance is partially specified here; the row types
 -- complete the definition.
 ```
 
-The full-fidelity Lean `SBrInstance` is implemented in `leanncd/LeanNCD/Acset/SBrInstance.lean` (`namespace LeanNCD.Acset`), mirroring the Python `acset/instances.py` exactly: `AxisType`/`AxisUID`, `OpTag` (10 variants), `DataTag` (3), `EquationRow`, the 12-field `ArrayRow`, `ArrayAxisRow`, `SampleRow`, and the five-table `SBrInstance`. To be **computable** (so CSV I/O can run — `Numeric` is noncomputable, [§2.1](#21-numeric)), axis sizes use the [§14.3](#143-abstract-syntax) `SizeExpr` and coefficients use `ℤ` (so the sketch's `axis_sizes : List (UID × Numeric)` is realized as `List (AxisUID × SizeExpr)`). This is the structure the CSV path of [§10.2](#102-the-seam-made-tangible) reads and writes.
+The full-fidelity Lean `SBrInstance` is implemented in `leanncd/LeanNCD/Acset/SBrInstance.lean` (`namespace LeanNCD.Acset`), mirroring the Python `acset/instances.py` exactly: `AxisType`/`AxisUID`, `OpTag` (10 variants), `DataTag` (3), `EquationRow`, the 12-field `ArrayRow`, `ArrayAxisRow`, `SampleRow`, and the five-table `SBrInstance`. It is **computable** (so CSV I/O can run): axis sizes are the computable `SizeExpr` of [§2.1](#21-sizeexpr-and-coeff), and coefficients are `ℤ`, not the noncomputable `Coeff` (so the sketch's `axis_sizes` is realized as `List (AxisUID × SizeExpr)`). This is the structure the CSV path of [§10.2](#102-the-seam-made-tangible) reads and writes.
 
-acset.md interprets this `G` as a strict monoidal functor `D : J → Br` from a finite index category `J` (objects = the program's arrays, morphisms = its equations) into the `Br` of [§2.3](#23-br--free-category-over-broadcasted-base-morphisms), using two Mathlib shortcuts that are exactly this document's choices: **`MvPolynomial String ℕ` for `Numeric`** (so `ring` discharges the `StMat` laws — the `Dat`-fiber type of [§7.2](#72-freenumeric-is-the-fiber-not-a-layer)) and **`Matrix` for `StMat.coeffs`** (for the matrix lemmas). `J` is the *free strict monoidal category* on the equation quiver — Mathlib's `FreeMonoidalCategory` strictified — so specifying `D` on generators determines it uniquely; the functor laws are a consequence. The `axis_sizes` table populates the size data (a point of `Dat₁(m)`, restricting to `Dat₀` at each boundary); the `equations`/`arrays`/`array_axes`/`samples` connectivity is the `C♯`-morphism. This `D : J → Br` is the finite, written-down witness of one object/morphism of the `Grothendieck Dat'` instance of [§7.1](#71-the-structuredata-split).
+acset.md interprets this `G` as a strict monoidal functor `D : J → Br` from a finite index category `J` (objects = the program's arrays, morphisms = its equations) into the `Br` of [§2.3](#23-br--free-category-over-broadcasted-base-morphisms), using two Mathlib shortcuts that are exactly this document's choices: **`MvPolynomial String ℤ` for `Coeff`** (so `ring` discharges the `StMat` laws; axis sizes, the fibre data of [§7.2](#72-freenumeric-is-the-fiber-not-a-layer), are the computable `SizeExpr`, not a Mathlib type) and **`Matrix` for `StMat.coeffs`** (for the matrix lemmas). `J` is the *free strict monoidal category* on the equation quiver — Mathlib's `FreeMonoidalCategory` strictified — so specifying `D` on generators determines it uniquely; the functor laws are a consequence. The `axis_sizes` table populates the size data (a point of `Dat₁(m)`, restricting to `Dat₀` at each boundary); the `equations`/`arrays`/`array_axes`/`samples` connectivity is the `C♯`-morphism. This `D : J → Br` is the finite, written-down witness of one sized morphism in the sense of [§7.1](#71-the-structuredata-split).
 
 ### 10.2 The seam made tangible
 
@@ -816,7 +831,7 @@ The table below collects the Lean type names from each layer of the tower, with 
 | `SmallCategory` / `ColoredPROP` | implicit / `ProductCategory` | category and monoidal laws are unstated in Python; paper-level only |
 | `Elemental` (mixin) | — | the `(Elem)` axiom, opt-in (not a `ColoredPROP` field); no Python witness |
 | `List gen` (objects) | `ProdObject[L]` | Python wraps `tuple[L,…]` in a Term; Lean uses `List` directly |
-| `StMat` | `StrideMorphism` | stride *matrix* (`Matrix … Numeric` + bias) vs bundled stride record |
+| `StMat` | `StrideMorphism` | stride *matrix* (`Matrix … Coeff` + bias) vs bundled stride record |
 | `BrBase` | `Broadcasted` | base op + reindexings; `Fin`-indexed weaves vs runtime tuples |
 | `BrMorph` | `Composed` | free list of `BrBase` vs `content: tuple[M,…]` |
 | `ThreadedComposed` | `ThreadedComposed` | routed presentation of a `BrMorph` ([§14.5](#145-semantic-compilation)); the DSL's output. `from_tensor_program` extracts its `SBrInstance` |
@@ -824,7 +839,8 @@ The table below collects the Lean type names from each layer of the tower, with 
 | `DGradedColoredPROP.act` | batch lift `[f,P]` | the lift action; `[f,P] = act(f, 𝟙_P)`, `[X,η] = act(𝟙_X, η)` |
 | `WeaveShape` / `structure Weave` | `Weave._shape` | per-array shape (`WeaveShape`); [§5](#5-weaves-as-cartesian-lift-data)'s `structure Weave` = the cartesian-lift factorization witness |
 | a sized morphism (a point of `Dat₁(m)`) | `SBrInstance` | finite presentation of one sized morphism |
-| `Numeric` = `MvPolynomial String ℕ` | `Numeric` / `FreeNumeric` | the `Dat₀(c)` fibre; `MvPolynomial.X s` ↔ a `FreeNumeric` generator |
+| `SizeExpr` | `Numeric` / `FreeNumeric` | the `Dat₀(c)` fibre; `SizeExpr.var s` ↔ a `FreeNumeric` |
+| `Coeff` = `MvPolynomial String ℤ` | `Numeric` (stride coefficients) | `StMat` coefficients/bias; signed; proof side only |
 | `Context` / `EqClass` | `Context` / `EqualityClass` | union-find = the *implementation* of the coequalizer ([§7.4](#74-the-seam-concrete-union-find-realizes-the-coequalizer)) |
 | `FreshM` = `EStateM CompileError ℕ` | random-int UID side-effect | fresh-name counter + validation errors; Lean threads state explicitly, Python mutates a global source and raises exceptions |
 | `TermTraversable` | `deep_reconstruct` | per-type traversal instance vs `__dataclass_fields__` reflection |
@@ -862,7 +878,7 @@ In the current Lean transcription, **8.1** (lift functoriality) is *proved sorry
 
 ### 12.1 `D = St`, `C = Br` — the flagship instance
 
-Today's instantiation is `D = St`, `C = Br`: an index PROP of axis lengths (colors = `Numeric` sizes, morphisms = stride matrices) grading an operation PROP of broadcasted arrays. In Lean the *types* are `StObj`/`BrObj` (`St`/`Br` name the `ColoredPROP` *instances*), so the instance is `DGradedColoredPROP StObj BrObj`; it is `noncomputable` (it builds data over `Numeric`). The instance header supplies the core fields; the named `Prop`-fields are discharged by the laws established in [§2](#2-the-base-coloredprop)–[§4](#4-the-core-dgradedcoloredprop-d-c). `sh` is concrete (`fun a => a.shape`); the lift `act`, the coherence isos, and the laws are the genuine but deferred content.
+Today's instantiation is `D = St`, `C = Br`: an index PROP of axis lengths (colors = `SizeExpr` sizes, morphisms = stride matrices over `Coeff`) grading an operation PROP of broadcasted arrays. In Lean the *types* are `StObj`/`BrObj` (`St`/`Br` name the `ColoredPROP` *instances*), so the instance is `DGradedColoredPROP StObj BrObj`; it is `noncomputable` (it builds data over `Numeric`). The instance header supplies the core fields; the named `Prop`-fields are discharged by the laws established in [§2](#2-the-base-coloredprop)–[§4](#4-the-core-dgradedcoloredprop-d-c). `sh` is concrete (`fun a => a.shape`); the lift `act`, the coherence isos, and the laws are the genuine but deferred content.
 
 ```lean
 noncomputable instance : DGradedColoredPROP StObj BrObj where
@@ -1049,7 +1065,7 @@ axis_kind   ::= 'ℝ'    ['[' size ']']   -- real axis;          bracket = size 
 -- shape would otherwise fix (it seeds size inference); omitting `= n` declares dtype only.
 
 -- A size is a symbolic dimension term. In the implemented front-end it elaborates to a
--- computable `SizeExpr` (§14.3), the DSL mirror of `Numeric` (§2.1 / §7.2).
+-- computable `SizeExpr` (§14.3), the sole axis-size type (§2.1 / §7.2).
 -- Omitting the bracket leaves the size a fresh generator, minted in Stage 2.
 -- '/' is FLOOR division by a literal (n must be a positive numeral, not a name).
 size        ::= n                       -- literal (SizeExpr.lit)
@@ -1227,20 +1243,17 @@ H[q, m., l+1]    := normalize(Y[q, m] + A[q, m])         -- state recurrence: wr
 
 ### 14.3 Abstract syntax
 
-Direct formalization of the BNF layers as Lean inductive types. `UID` from [§7.4](#74-the-seam-concrete-union-find-realizes-the-coequalizer); `Numeric` (= `MvPolynomial String ℕ`, [§2.1](#21-numeric)) from [§2](#2-the-base-coloredprop); `FreshM` from [§7.4](#74-the-seam-concrete-union-find-realizes-the-coequalizer). Axis sizes are carried in a computable `SizeExpr` (below), not `Numeric` directly.
+Direct formalization of the BNF layers as Lean inductive types. `UID` from [§7.4](#74-the-seam-concrete-union-find-realizes-the-coequalizer); `SizeExpr` ([§2.1](#21-sizeexpr-and-coeff)) from [§2](#2-the-base-coloredprop); `FreshM` from [§7.4](#74-the-seam-concrete-union-find-realizes-the-coequalizer). Axis sizes are carried in that computable `SizeExpr` (restated below).
 
 ```lean
--- Layer 0: computable axis-size arithmetic (the DSL mirror of Numeric)
--- NOTE (computability). `Numeric = MvPolynomial String ℕ` is NONCOMPUTABLE — its `X`/`C`,
--- the semiring, and even `DecidableEq` all resolve through `Classical` (see §2.1). But the
--- elaborator builds a concrete `TLProgram` *value* (`elabTLProgram` returns a value, not an
--- `Expr`), and `compile` runs at elaboration time, and the `tlprog!`/`tl!` macros need `ToExpr`
--- plus size-equality dedup — none of which compiled metacode can do over `MvPolynomial`. So the
--- DSL carries axis sizes in this COMPUTABLE `SizeExpr`, with `SizeExpr.toNumeric` used only when
--- crossing to the proof side. (The integer stride coefficients of `IdxExpr` are plain `ℤ`, which
--- is already computable, so they need no mirror.)
+-- Layer 0: computable axis-size arithmetic (the sole axis-size type, Base/SizeExpr.lean, §2.1)
+-- NOTE (computability). The elaborator builds a concrete `TLProgram` *value* (`elabTLProgram`
+-- returns a value, not an `Expr`), `compile` runs at elaboration time, and the `tlprog!`/`tl!`
+-- macros need `ToExpr` plus size-equality dedup — none of which compiled metacode can do over a
+-- noncomputable `MvPolynomial`. Hence a computable size type. (The integer stride coefficients of
+-- `IdxExpr` are plain `ℤ`, which is already computable; the proof-side `Coeff` is not used here.)
 inductive SizeExpr
-  | var : String → SizeExpr               -- symbolic generator (was a FreeNumeric, §2.1)
+  | var : String → SizeExpr               -- symbolic size (Python: a FreeNumeric, §2.1)
   | lit : Nat → SizeExpr                   -- literal dimension
   | add : SizeExpr → SizeExpr → SizeExpr
   | sub : SizeExpr → SizeExpr → SizeExpr  -- saturating Nat.sub
@@ -1251,13 +1264,8 @@ inductive SizeExpr
 -- `eval` evaluates a SizeExpr concretely under a variable assignment (computable):
 def SizeExpr.eval (env : String → Nat) : SizeExpr → Nat  -- floor-div and saturating sub
 
--- Proof-side bridge: approximates sub/div (not representable in MvPolynomial String ℕ).
--- Acceptable because realize (the sole consumer) is sorry-dependent on Milestone B+.
-noncomputable def SizeExpr.toNumeric : SizeExpr → Numeric   -- proof-side bridge only
-  | .var s => MvPolynomial.X s | .lit n => MvPolynomial.C (n : ℕ)
-  | .add a b => a.toNumeric + b.toNumeric | .mul a b => a.toNumeric * b.toNumeric
-  | .sub a _ => a.toNumeric   -- APPROXIMATE: ℕ-polynomial has no negation; b dropped
-  | .div e _ => e.toNumeric   -- APPROXIMATE: floor-div is not polynomial; divisor dropped
+-- (A former proof-side bridge `SizeExpr.toNumeric`, lossy on sub/div, was deleted with
+-- `Numeric` in Spike 8c, 725e98be.)
 
 -- Layer 1
 inductive AxisKind
@@ -1385,11 +1393,11 @@ structure TLProgram where
 -- Every front-end type above — SizeExpr, AxisKind, AxisSpec, Decl, IdxExpr,
 --   PredArith, RelOp, BoolExpr, Nonlin, Factor, ProdTerm, SumExpr, RHSExpr, LHSSlot,
 --   ScatterOpts, Stmt, TLProgram — derives `DecidableEq, Repr, Lean.ToExpr` (with `Inhabited`
---   where a default is needed). Because sizes are `SizeExpr` (not `Numeric`), `ToExpr` derives
+--   where a default is needed). Because sizes are the computable `SizeExpr`, `ToExpr` derives
 --   automatically — no `MvPolynomial.toExpr` is needed for the front-end.
 -- The §14.5 ThreadedComposed/BrBase/StMat are realized as COMPUTABLE
 --   first-order presentations (BrBaseP/StMatP/AxisP/WeaveSlotP/Wire, sizes in SizeExpr,
---   coeffs in ℤ), so `ToExpr` derives directly and the anticipated noncomputable-`Numeric`
+--   coeffs in ℤ), so `ToExpr` derives directly and the anticipated noncomputable-`Coeff`
 --   ToExpr question (coeff enumeration vs ring normal form) is SIDESTEPPED, not answered —
 --   it would only resurface in the bridge that maps a presentation to a real BrMorph.
 ```
@@ -1573,7 +1581,7 @@ The elaborator is pure syntax-walking with no side effects: UID minting and axis
 
 ### 14.5 Semantic compilation
 
-The 8-phase `TLProgram.compile` pipeline, the typed intermediates (`LabeledProgram` … `ScheduledProgram`), `ScanStmt`, `Wire`, `ThreadedComposed`, and the `tl!{ … } : ThreadedComposed` compile macro are **implemented in `leanncd/LeanNCD/DSL/Pipeline/` + `Target.lean`/`Compile.lean`, fully executable and `sorry`-free**: the first five [§14.2](#142-bnf-grammar) examples compile end-to-end (the two predicate examples are parse-tested at THIS layer — `DSL/ParsePredicatesTest.lean`, no routing assertion — but both are evaluated end-to-end on concrete tensors by `Eval/` (`test/Eval/EvalExamplesTest.lean` 6 and 7): predicate *evaluation* is no longer deferred, see the paragraph end). Building on the executable `FreshM`/`Context` seam of [§7.4](#74-the-seam-concrete-union-find-realizes-the-coequalizer), the pipeline consumes `TLProgram` values and produces a **computable, first-order *presentation* of the Br morphism** — `ThreadedComposed`/`BrBaseP`/`StMatP`/`AxisP`/`WeaveSlotP` are `List`-based, `SizeExpr`/`Int`-valued, `deriving Lean.ToExpr` mirrors of the noncomputable math-tower `Br`/`St` types (the same `Numeric`→`SizeExpr` move made for the AST). The bridge (`leanncd/LeanNCD/Bridge/`, signatures + `sorry`) maps the presentation into the math tower — leaf realizations are `sorry`-free; the routed-DAG composite (`realize : ThreadedComposed → Σ dom cod, BrMorph dom cod`) rests on `Br.tensorHom`/`swap` (a `sorry`). The CSV-side `SBrInstance`/`realizeSBr` and the [§10](#10-acsets-and-the-executable-layer) agreement Props are stated with `sorry` — see the [§10.2](#102-the-seam-made-tangible) note. Reindexing coefficients are signed (`Coeff = MvPolynomial String ℤ`, [§2.1](#21-numeric)/[§2.2](#22-st--stride-matrices)), so the presentation's `Int` coeffs realize faithfully (look-back offsets included). The `Stmt.recurMorphism`/`ScanStmt.scanPre` escape hatch is implemented (consistent-collapse: the pre-built `ThreadedComposed` is validated, then routed as a single `op="scan_pre"` step), as is the `ScanAffine` fast path (`route` emits `op="scan_affine"` when the recurrence is nonlinearity-free, so routed scan steps carry `op ∈ {scan, scan_affine, scan_pre}`). **Predicate evaluation is implemented on the evaluation side:** both the reference interpreter (`Eval/`, `combineFor`) and the checked positional backend (`Eval/Plan/`) execute a `predicate`-declared destination under the [§8](#8-algebras-and-construct) Boolean reading — `∧`-per-factor / `∃`-per-contracted-coordinate, realized as Float `min`/`max` over the SAME `Array Float` storage, with `ScalarDType.bool` carried as a semantic algebra/signature tag rather than a native Boolean carrier (runtime values are not validated as 0/1, and source and destination dtypes need not match); this covers top-level predicate outputs, Iverson factors, `where=` masks, and Boolean scan state/scratch, checked against the reference interpreter case-by-case (`papers/boolean_predicate_output_evalplan.md`, `papers/predicate_boolean_backend_parity.md`). **Still deferred:** the *routed* side of that reading — threading a `DType`/op-semiring tag onto `BrBaseP` and the acset schema, and the `TargetActegory _ V Bool` instance over a genuine `(∨,∧)` semiring ([§8](#8-algebras-and-construct)'s `R = Bool` wrinkle, above) — plus the `Br` coherence `sorry`s. The experimental JAX backend likewise renders no Boolean semantics (it rejects them with located typed errors). The signatures below are shown in their implemented (presentation) form; the per-phase **implementation notes** after the phase table record the simplifications.
+The 8-phase `TLProgram.compile` pipeline, the typed intermediates (`LabeledProgram` … `ScheduledProgram`), `ScanStmt`, `Wire`, `ThreadedComposed`, and the `tl!{ … } : ThreadedComposed` compile macro are **implemented in `leanncd/LeanNCD/DSL/Pipeline/` + `Target.lean`/`Compile.lean`, fully executable and `sorry`-free**: the first five [§14.2](#142-bnf-grammar) examples compile end-to-end (the two predicate examples are parse-tested at THIS layer — `DSL/ParsePredicatesTest.lean`, no routing assertion — but both are evaluated end-to-end on concrete tensors by `Eval/` (`test/Eval/EvalExamplesTest.lean` 6 and 7): predicate *evaluation* is no longer deferred, see the paragraph end). Building on the executable `FreshM`/`Context` seam of [§7.4](#74-the-seam-concrete-union-find-realizes-the-coequalizer), the pipeline consumes `TLProgram` values and produces a **computable, first-order *presentation* of the Br morphism** — `ThreadedComposed`/`BrBaseP`/`StMatP`/`AxisP`/`WeaveSlotP` are `List`-based, `SizeExpr`/`Int`-valued, `deriving Lean.ToExpr` mirrors of the noncomputable math-tower `Br`/`St` types (sizes are `SizeExpr` on both sides; the `P`-types replace the noncomputable `Coeff` with `Int` and function-valued fields with `List`s). The bridge (`leanncd/LeanNCD/Bridge/`, signatures + `sorry`) maps the presentation into the math tower — leaf realizations are `sorry`-free; the routed-DAG composite (`realize : ThreadedComposed → Σ dom cod, BrMorph dom cod`) rests on `Br.tensorHom`/`swap` (a `sorry`). The CSV-side `SBrInstance`/`realizeSBr` and the [§10](#10-acsets-and-the-executable-layer) agreement Props are stated with `sorry` — see the [§10.2](#102-the-seam-made-tangible) note. Reindexing coefficients are signed (`Coeff = MvPolynomial String ℤ`, [§2.1](#21-sizeexpr-and-coeff)/[§2.2](#22-st--stride-matrices)), so the presentation's `Int` coeffs realize faithfully (look-back offsets included). The `Stmt.recurMorphism`/`ScanStmt.scanPre` escape hatch is implemented (consistent-collapse: the pre-built `ThreadedComposed` is validated, then routed as a single `op="scan_pre"` step), as is the `ScanAffine` fast path (`route` emits `op="scan_affine"` when the recurrence is nonlinearity-free, so routed scan steps carry `op ∈ {scan, scan_affine, scan_pre}`). **Predicate evaluation is implemented on the evaluation side:** both the reference interpreter (`Eval/`, `combineFor`) and the checked positional backend (`Eval/Plan/`) execute a `predicate`-declared destination under the [§8](#8-algebras-and-construct) Boolean reading — `∧`-per-factor / `∃`-per-contracted-coordinate, realized as Float `min`/`max` over the SAME `Array Float` storage, with `ScalarDType.bool` carried as a semantic algebra/signature tag rather than a native Boolean carrier (runtime values are not validated as 0/1, and source and destination dtypes need not match); this covers top-level predicate outputs, Iverson factors, `where=` masks, and Boolean scan state/scratch, checked against the reference interpreter case-by-case (`papers/boolean_predicate_output_evalplan.md`, `papers/predicate_boolean_backend_parity.md`). **Still deferred:** the *routed* side of that reading — threading a `DType`/op-semiring tag onto `BrBaseP` and the acset schema, and the `TargetActegory _ V Bool` instance over a genuine `(∨,∧)` semiring ([§8](#8-algebras-and-construct)'s `R = Bool` wrinkle, above) — plus the `Br` coherence `sorry`s. The experimental JAX backend likewise renders no Boolean semantics (it rejects them with located typed errors). The signatures below are shown in their implemented (presentation) form; the per-phase **implementation notes** after the phase table record the simplifications.
 
 ```lean
 /-- Named alias for the declaration environment built by resolveDecls. -/
@@ -1641,7 +1649,7 @@ structure ScheduledProgram where
   ctx      : Context AxisSpec
 
 -- COMPUTABLE PRESENTATION TYPES (Target.lean). The math-tower Br/St types (§2.2/§2.3) are
--- noncomputable (over `Numeric`) and use function-valued fields (`Fin _ → …`), so they cannot
+-- noncomputable (over `Coeff`) and use function-valued fields (`Fin _ → …`), so they cannot
 -- `deriving ToExpr`. The pipeline therefore lowers them to first-order, `List`-based, `SizeExpr`/`Int`-
 -- valued mirrors — the term-world PRESENTATION the tl!{} macro embeds. Each `P`-type drops the
 -- dependent length/shape indices of its math-tower twin (an invariant the bridge re-establishes).

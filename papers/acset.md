@@ -64,16 +64,16 @@ In both cases the connectivity is fixed at graph-compile time — which axes exi
 
 $\mathcal{S}_{St}$ models a stride morphism as a weighted directed multigraph on axis nodes: each nonzero entry of the coefficient matrix becomes an edge.
 
-$$\texttt{Entry} \underset{\texttt{tgt}}{\overset{\texttt{src}}{\rightrightarrows}} \texttt{Axis} \xrightarrow{\texttt{size}} \mathbb{N}_{>0} \qquad \texttt{Entry} \xrightarrow{\texttt{coeff}} \mathbb{N}$$
+$$\texttt{Entry} \underset{\texttt{tgt}}{\overset{\texttt{src}}{\rightrightarrows}} \texttt{Axis} \xrightarrow{\texttt{size}} \mathbb{N}_{>0} \qquad \texttt{Entry} \xrightarrow{\texttt{coeff}} \mathbb{Z}$$
 
-Two entity types (`Axis`, `Entry`), two attribute types ($\mathbb{N}_{>0}$, $\mathbb{N}$), four maps. A single schema covers both St objects and St morphisms.
+Two entity types (`Axis`, `Entry`), two attribute types ($\mathbb{N}_{>0}$, $\mathbb{Z}$), four maps. Coefficients are signed: a reversed read such as `X[5-t]` has coefficient $-1$. A single schema covers both St objects and St morphisms.
 
 **Attributes (data):**
 
 | Attribute | Type | What it captures |
 | --- | --- | --- |
 | `size` | `Axis → ℕ_{>0}` | axis size |
-| `coeff` | `Entry → ℕ` | transformation coefficient |
+| `coeff` | `Entry → ℤ` | transformation coefficient (signed) |
 
 The **C-set part** (structure) = the directed multigraph on `Axis` with edges `Entry` — the support graph of the stride morphism, with both size and coefficient values erased.
 
@@ -118,7 +118,7 @@ $$\texttt{Sample} \underset{\texttt{tgt}}{\overset{\texttt{src}}{\rightrightarro
 
 $$\texttt{Sample} \xrightarrow{\texttt{reindexing\_slot}} \texttt{Array}$$
 
-$$\texttt{Equation} \xrightarrow{\texttt{lhs\_name}} \texttt{String} \qquad \texttt{Sample} \xrightarrow{\texttt{coeff}} \mathbb{N} \qquad \texttt{Sample} \xrightarrow{\texttt{offset}} \mathbb{Z} \qquad \texttt{Axis} \xrightarrow{\texttt{size}} \mathbb{N}_{>0} \qquad \texttt{ArrayAxis} \xrightarrow{\texttt{is\_target}} \mathbb{B} \qquad \texttt{ArrayAxis} \xrightarrow{\texttt{position}} \mathbb{N}$$
+$$\texttt{Equation} \xrightarrow{\texttt{lhs\_name}} \texttt{String} \qquad \texttt{Sample} \xrightarrow{\texttt{coeff}} \mathbb{Z} \qquad \texttt{Sample} \xrightarrow{\texttt{offset}} \mathbb{Z} \qquad \texttt{Axis} \xrightarrow{\texttt{size}} \mathbb{N}_{>0} \qquad \texttt{ArrayAxis} \xrightarrow{\texttt{is\_target}} \mathbb{B} \qquad \texttt{ArrayAxis} \xrightarrow{\texttt{position}} \mathbb{N}$$
 
 $$\texttt{Array} \xrightarrow{\texttt{is\_input}} \mathbb{B} \qquad \texttt{Array} \xrightarrow{\texttt{datatype\_tag}} \texttt{DataTag} \qquad \texttt{Array} \xrightarrow{\texttt{max\_value}} \mathbb{N} \qquad \texttt{Array} \xrightarrow{\texttt{operator\_tag}} \texttt{OpTag}$$
 
@@ -135,7 +135,7 @@ Five entity types, six attribute types ($\mathbb{N}$, $\mathbb{N}_{>0}$, $\mathb
 | Attribute | Type | What it captures |
 | --- | --- | --- |
 | `size` | `Axis → ℕ_{>0}` | axis size |
-| `coeff` | `Sample → ℕ` | reindexing coefficient; the multiplier $c$ in the affine rule `tgt_index = offset + coeff * src_index` |
+| `coeff` | `Sample → ℤ` | reindexing coefficient (signed; Lean's `SampleRow.coeff : Int`); the multiplier $c$ in the affine rule `tgt_index = offset + coeff * src_index` |
 | `offset` | `Sample → ℤ` | affine offset $b$ in the rule `tgt_index = offset + coeff * src_index`; zero for all `TensorEquation`-derived instances; non-zero for `Reindex`/`Scatter`-derived instances |
 | `is_target` | `ArrayAxis → Bool` | For input arrays: True = axis consumed by the base operation (contracted for sum operations, normalized for SoftMax/MaskedSoftMax/Normalize); False = degree axis supplied by the outer loop. For output arrays: always False — every axis in `lhs_indices` is a degree axis produced by the outer loop; the normalization dimension is identified separately by `norm_axis` on `Array` |
 | `position` | `ArrayAxis → ℕ` | 0-indexed dimension position within the array's physical layout; encodes the axis interleaving of `Weave._shape` |
@@ -285,7 +285,7 @@ The structure/data distinction — C-set maps encoding connectivity, attribute m
 
 | Category | Scope | Structural | Data |
 | --- | --- | --- | --- |
-| **St** | functor-category ($\mathbf{St}_\sharp$) | support + coefficients ($\mathbb{N}$-matrix) | axis sizes |
+| **St** | functor-category ($\mathbf{St}_\sharp$) | support + coefficients ($\mathbb{Z}$-matrix) | axis sizes |
 | **St** | instance ($\mathcal{S}_{St}$) | directed multigraph | sizes, coefficients |
 | **Br** | functor-category ($\mathbf{Br}_\sharp$) | array–axis connectivity, reindexing support | sizes, coefficients, `is_target`, `position`, `is_input`, `operator_tag`, `datatype_tag`, `max_value`, `bias`, `elementwise_fn` |
 | **Br** | instance ($\mathcal{S}_{Br}$) | Sample–Axis–ArrayAxis–Array connectivity graph | sizes, coefficients, `is_target`, `position`, `is_input`, `operator_tag`, `datatype_tag`, `max_value`, `bias`, `elementwise_fn` |
@@ -723,23 +723,23 @@ The two equations share the intermediate array $Z$; equation 1 takes the output 
 
 Two Mathlib type choices give the construction access to ready-made lemmas.
 
-**`MvPolynomial String ℕ` for `Numeric`** ([`leanncd.md §3`](leanncd.md#3-numeric)). Symbolic axis sizes and stride coefficients inhabit the free commutative semiring on a set of named generators — exactly `MvPolynomial String ℕ` (multivariate polynomials over $\mathbb{N}$ with `String`-named indeterminates):
+**`MvPolynomial String ℤ` for `Coeff`** ([`leanncd.md §2.1`](leanncd.md#21-sizeexpr-and-coeff)). Stride coefficients and offsets inhabit the free commutative ring on a set of named generators, `MvPolynomial String ℤ` (multivariate polynomials over $\mathbb{Z}$ with `String`-named indeterminates). It is signed, because look-back offsets and reversed reads are negative:
 
 ```lean
-abbrev Numeric := MvPolynomial String ℕ
+abbrev Coeff := MvPolynomial String ℤ
 -- free variable s  ↦  MvPolynomial.X s    (degree-1 monomial)
 -- literal n        ↦  MvPolynomial.C ↑n   (constant polynomial)
--- instance : CommSemiring Numeric          -- from Mathlib
+-- instance : CommRing Coeff               -- from Mathlib (noncomputable)
 ```
 
-The `ring` tactic closes all `StMat` arithmetic goals over any `CommSemiring`, so all laws in [`leanncd.md §4`](leanncd.md#4-st--semantic-category-via-stride-matrices) discharge immediately.
+The `ring` tactic closes all `StMat` arithmetic goals over any `CommRing`, so all laws in [`leanncd.md §2.2`](leanncd.md#22-st--stride-matrices) discharge immediately. Axis *sizes* do not use a Mathlib type. They are the computable `SizeExpr` (variables, literals, `+`, saturating `-`, `*`, floor-`/` by a literal), so the elaborator and the CSV path can build and compare them. *(Corrected 2026-11-24: this paragraph used to give `Numeric = MvPolynomial String ℕ` for both sizes and coefficients. Coefficients became the signed `Coeff` in `21864f78`, and Spike 8c replaced `Numeric` with `SizeExpr` for sizes, in `725e98be`.)*
 
-**Mathlib's `Matrix` for `StMat.coeffs`** ([`leanncd.md §4`](leanncd.md#4-st--semantic-category-via-stride-matrices)). The coefficient block of `StMat` is `Matrix (Fin cod.length) (Fin dom.length) Numeric`, giving direct access to `Matrix.mul`, `Matrix.mul_assoc`, `Matrix.one_mul`, and `Matrix.fromBlocks`:
+**Mathlib's `Matrix` for `StMat.coeffs`** ([`leanncd.md §2.2`](leanncd.md#22-st--stride-matrices)). The coefficient block of `StMat` is `Matrix (Fin cod.length) (Fin dom.length) Coeff`, giving direct access to `Matrix.mul`, `Matrix.mul_assoc`, `Matrix.one_mul`, and `Matrix.fromBlocks`:
 
 ```lean
 -- StMat (dom cod : StObj)   -- a record with:
---   coeffs : Matrix (Fin cod.length) (Fin dom.length) Numeric
---   bias   : Fin cod.length → Numeric
+--   coeffs : Matrix (Fin cod.length) (Fin dom.length) Coeff
+--   bias   : Fin cod.length → Coeff
 -- StMat.comp: coeffs := g.coeffs * f.coeffs   (Matrix.mul)
 --             bias i := dotProduct (g.coeffs i) f.bias + g.bias i
 -- StMat.assoc: coefficients by Matrix.mul_assoc; bias by ring
@@ -908,7 +908,7 @@ def reconstructWeave (inst : SBrInstance) (eqIdx slot : Nat) : Weave :=
 -- For TensorProgram instances: Q_i axes and P axes share UIDs (src_uid == tgt_uid).
 def reconstructProjection (degree fixed : StObj) : StMat degree fixed :=
   { coeffs := Matrix.of fun j k =>
-        if degree[k].uid == fixed[j].uid then (1 : Numeric) else 0
+        if degree[k].uid == fixed[j].uid then (1 : Coeff) else 0
     bias := fun _ => 0 }
 -- fixed := (reconstructWeave inst eqIdx slot).targetAxes
 -- Eq 0, W:  fixed=[i],    degree=[i,j],   η_W = [[1,0]]     (project onto i)
@@ -926,12 +926,12 @@ def reconstructReindexing (inst : SBrInstance) (eqIdx slot : Nat)
             s.equation_idx    == eqIdx    ∧ s.reindexing_slot == slot
           ∧ s.tgt_uid == fixed[j].uid     -- input axis  → Q_i row j
           ∧ s.src_uid == degree[k].uid)   -- degree axis → P column k
-        |>.map (·.coeff.toNumeric) |>.getD 0
+        |>.map (intToCoeff ·.coeff) |>.getD 0   -- SampleRow.coeff : Int ↦ Coeff (Bridge/Realize.lean)
     bias := fun j =>
         inst.samples.find? (fun s =>
             s.equation_idx    == eqIdx    ∧ s.reindexing_slot == slot
           ∧ s.tgt_uid == fixed[j].uid)
-        |>.map (·.offset.toNumeric) |>.getD 0 }
+        |>.map (intToCoeff ·.offset) |>.getD 0 }
 ```
 
 When `coeff` is always 1, `src_uid == tgt_uid`, and `offset` is always 0 (the TensorEquation path), `reconstructReindexing` reduces to `reconstructProjection`.
