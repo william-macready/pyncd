@@ -2126,6 +2126,163 @@ def rnnStackProg32 : TLProgram := tlprog!{
   H2[d, t +1]  := N2[d]
 }
 
+/-! ### Layers × time
+
+The explicit-time tables (`Kn`, `Vn`, `Qr`, `Ix`) are exports, including their NaN spare row.
+`timeLayerProg` scans time and then layers, not a nested scan. `layerSkewProg` reads the OLD
+state of the layer below, so it is a skewed network, not a stacked RNN.
+All inputs below have ONE definition shared by the binary64 and binary32 environments. -/
+def layersTimeNanRow (seed : Float) (rows rest : Nat) : Array Float :=
+  gqaGen seed ((rows - 1) * rest) ++ scanNanSlice (gqaGen 0.0 rest)
+def layersTimeX3 : Array Float := layersTimeNanRow 1.0 6 3
+def layersTimeX5 : Array Float := layersTimeNanRow 1.0 6 5
+
+def kvCacheOh : Array Float :=
+  (Array.range 30).map fun n =>
+    if n % 6 == 5 then (0.0 : Float) / 0.0 else if n / 6 == n % 6 then 1.0 else 0.0
+def kvCacheMk : Array Float :=
+  (Array.range 30).map fun n =>
+    if n % 6 == 5 then (0.0 : Float) / 0.0 else if n / 6 <= n % 6 then 0.0 else -1.0e9
+def kvCacheInputs : List (String × List Nat × Array Float) :=
+  [("X", [6, 3], layersTimeX3), ("Wq", [4, 3], gqaGen 2.0 12),
+   ("Wk", [4, 3], gqaGen 3.0 12), ("Wv", [2, 3], gqaGen 4.0 6),
+   ("Kz", [5, 4], Array.replicate 20 0.0), ("Vz", [5, 2], Array.replicate 10 0.0),
+   ("Y0", [2], #[0.0, 0.0]), ("Oh", [5, 6], kvCacheOh), ("Mk", [5, 6], kvCacheMk)]
+def kvCacheEnv64 : HashMap String DenseTensor := env64 (kvCacheInputs.map fun (n, s, d) => (n, t64 s d))
+def kvCacheEnv32 : NamedDenseEnv32 := env32 (kvCacheInputs.map fun (n, s, d) => (n, t32 s d))
+
+def kvCacheProg : TLProgram := tlprog!{
+  iter t = 6
+  tensor f64 X(t, i), Wq(k, i), Wk(k, i), Wv(v, i), Kz(s, k), Vz(s, v), Y0(v), Oh(s, t), Mk(s, t)
+  tensor f64 Kc(s, k, t), Vc(s, v, t), Yh(v, t), Kn(t, k), Vn(t, v), Qr(t, k), Kw(s, k), Vw(s, v), Sc(s), Pa(s), Yo(v)
+  Kc[s, k, 0]    := Kz[s, k]
+  Vc[s, v, 0]    := Vz[s, v]
+  Yh[v, 0]       := Y0[v]
+  Kn[t, k]       := Wk[k, i] · X[t, i]
+  Vn[t, v]       := Wv[v, i] · X[t, i]
+  Qr[t, k]       := Wq[k, i] · X[t, i]
+  Kw[s, k]       := Kc[s, k, t] + Oh[s, t] · Kn[t, k]
+  Vw[s, v]       := Vc[s, v, t] + Oh[s, t] · Vn[t, v]
+  Sc[s]          := Kw[s, k] · Qr[t, k] + Mk[s, t]
+  Pa[s.]         := softmax(Sc[s])
+  Yo[v]          := Pa[s] · Vw[s, v]
+  Kc[s, k, t +1] := Kw[s, k]
+  Vc[s, v, t +1] := Vw[s, v]
+  Yh[v, t +1]    := Yo[v]
+}
+def kvCacheProg32 : TLProgram := tlprog!{
+  iter t = 6
+  tensor X(t, i), Wq(k, i), Wk(k, i), Wv(v, i), Kz(s, k), Vz(s, v), Y0(v), Oh(s, t), Mk(s, t)
+  tensor Kc(s, k, t), Vc(s, v, t), Yh(v, t), Kn(t, k), Vn(t, v), Qr(t, k), Kw(s, k), Vw(s, v), Sc(s), Pa(s), Yo(v)
+  Kc[s, k, 0]    := Kz[s, k]
+  Vc[s, v, 0]    := Vz[s, v]
+  Yh[v, 0]       := Y0[v]
+  Kn[t, k]       := Wk[k, i] · X[t, i]
+  Vn[t, v]       := Wv[v, i] · X[t, i]
+  Qr[t, k]       := Wq[k, i] · X[t, i]
+  Kw[s, k]       := Kc[s, k, t] + Oh[s, t] · Kn[t, k]
+  Vw[s, v]       := Vc[s, v, t] + Oh[s, t] · Vn[t, v]
+  Sc[s]          := Kw[s, k] · Qr[t, k] + Mk[s, t]
+  Pa[s.]         := softmax(Sc[s])
+  Yo[v]          := Pa[s] · Vw[s, v]
+  Kc[s, k, t +1] := Kw[s, k]
+  Vc[s, v, t +1] := Vw[s, v]
+  Yh[v, t +1]    := Yo[v]
+}
+
+def timeLayerInputs : List (String × List Nat × Array Float) :=
+  [("X", [6, 5], layersTimeX5), ("H0", [4], gqaGen 13.0 4), ("Wx", [4, 5], gqaGen 14.0 20),
+   ("U", [4, 4], gqaGen 15.0 16), ("Wl", [3, 4, 4], layersTimeNanRow 16.0 3 16)]
+def timeLayerEnv64 : HashMap String DenseTensor := env64 (timeLayerInputs.map fun (n, s, d) => (n, t64 s d))
+def timeLayerEnv32 : NamedDenseEnv32 := env32 (timeLayerInputs.map fun (n, s, d) => (n, t32 s d))
+
+def timeLayerProg : TLProgram := tlprog!{
+  iter t = 6, l = 3
+  tensor f64 X(t, i), H0(d), Wx(d, i), U(d, e), Wl(l, d, e)
+  tensor f64 Hs(d, t), Zz(t, d, l), Ah(d), Nh(d)
+  Hs[d, 0]       := H0[d]
+  Ah[d]          := Wx[d, i] · X[t, i] + U[d, e] · Hs[e, t]
+  Nh[d]          := tanh(Ah[d])
+  Hs[d, t +1]    := Nh[d]
+  Zz[t, d, 0]    := Hs[d, t]
+  Zz[t, d, l +1] := tanh(Wl[l, d, e] · Zz[t, e, l])
+}
+def timeLayerProg32 : TLProgram := tlprog!{
+  iter t = 6, l = 3
+  tensor X(t, i), H0(d), Wx(d, i), U(d, e), Wl(l, d, e)
+  tensor Hs(d, t), Zz(t, d, l), Ah(d), Nh(d)
+  Hs[d, 0]       := H0[d]
+  Ah[d]          := Wx[d, i] · X[t, i] + U[d, e] · Hs[e, t]
+  Nh[d]          := tanh(Ah[d])
+  Hs[d, t +1]    := Nh[d]
+  Zz[t, d, 0]    := Hs[d, t]
+  Zz[t, d, l +1] := tanh(Wl[l, d, e] · Zz[t, e, l])
+}
+
+def rnnSkewInputs : List (String × List Nat × Array Float) :=
+  [("X", [6, 3], layersTimeX3), ("H10", [4], gqaGen 7.0 4), ("H20", [4], gqaGen 8.0 4),
+   ("W1", [4, 3], gqaGen 9.0 12), ("U1", [4, 4], gqaGen 10.0 16),
+   ("W2", [4, 4], gqaGen 11.0 16), ("U2", [4, 4], gqaGen 12.0 16)]
+def rnnSkewEnv64 : HashMap String DenseTensor := env64 (rnnSkewInputs.map fun (n, s, d) => (n, t64 s d))
+def rnnSkewEnv32 : NamedDenseEnv32 := env32 (rnnSkewInputs.map fun (n, s, d) => (n, t32 s d))
+
+def rnnSkewProg : TLProgram := tlprog!{
+  iter t = 6
+  tensor f64 X(t, i), H10(d), H20(d), W1(d, i), U1(d, e), W2(d, e), U2(d, f)
+  tensor f64 H1(d, t), H2(d, t), A1(d), N1(d), A2(d), N2(d)
+  H1[d, 0]       := H10[d]
+  H2[d, 0]       := H20[d]
+  A1[d]          := W1[d, i] · X[t, i] + U1[d, e] · H1[e, t]
+  N1[d]          := tanh(A1[d])
+  H1[d, t +1]    := N1[d]
+  A2[d]          := W2[d, e] · H1[e, t] + U2[d, f] · H2[f, t]
+  N2[d]          := tanh(A2[d])
+  H2[d, t +1]    := N2[d]
+}
+def rnnSkewProg32 : TLProgram := tlprog!{
+  iter t = 6
+  tensor X(t, i), H10(d), H20(d), W1(d, i), U1(d, e), W2(d, e), U2(d, f)
+  tensor H1(d, t), H2(d, t), A1(d), N1(d), A2(d), N2(d)
+  H1[d, 0]       := H10[d]
+  H2[d, 0]       := H20[d]
+  A1[d]          := W1[d, i] · X[t, i] + U1[d, e] · H1[e, t]
+  N1[d]          := tanh(A1[d])
+  H1[d, t +1]    := N1[d]
+  A2[d]          := W2[d, e] · H1[e, t] + U2[d, f] · H2[f, t]
+  N2[d]          := tanh(A2[d])
+  H2[d, t +1]    := N2[d]
+}
+
+def layerSkewInputs : List (String × List Nat × Array Float) :=
+  [("X", [6, 5], layersTimeNanRow 21.0 6 5), ("Wx", [4, 5], gqaGen 22.0 20),
+   ("E0", [3], #[1.0, 0.0, 0.0]), ("Sh", [3, 3], #[0,0,0, 1,0,0, 0,1,0]),
+   ("H0", [3, 4], gqaGen 23.0 12), ("Wp", [3, 4, 4], gqaGen 24.0 48), ("Up", [3, 4, 4], gqaGen 25.0 48)]
+def layerSkewEnv64 : HashMap String DenseTensor := env64 (layerSkewInputs.map fun (n, s, d) => (n, t64 s d))
+def layerSkewEnv32 : NamedDenseEnv32 := env32 (layerSkewInputs.map fun (n, s, d) => (n, t32 s d))
+
+def layerSkewProg : TLProgram := tlprog!{
+  iter t = 6
+  tensor f64 X(t, i), Wx(d, i), E0(l), Sh(l, m), H0(l, d), Wp(l, d, e), Up(l, d, e)
+  tensor f64 Hl(l, d, t), Ix(t, l, e), Hi(l, e), Aa(l, d), Nn(l, d)
+  Hl[l, d, 0]    := H0[l, d]
+  Ix[t, l, e]    := E0[l] · Wx[e, i] · X[t, i]
+  Hi[l, e]       := Sh[l, m] · Hl[m, e, t] + Ix[t, l, e]
+  Aa[l, d]       := Wp[l, d, e] · Hi[l, e] + Up[l, d, e] · Hl[l, e, t]
+  Nn[l, d]       := tanh(Aa[l, d])
+  Hl[l, d, t +1] := Nn[l, d]
+}
+def layerSkewProg32 : TLProgram := tlprog!{
+  iter t = 6
+  tensor X(t, i), Wx(d, i), E0(l), Sh(l, m), H0(l, d), Wp(l, d, e), Up(l, d, e)
+  tensor Hl(l, d, t), Ix(t, l, e), Hi(l, e), Aa(l, d), Nn(l, d)
+  Hl[l, d, 0]    := H0[l, d]
+  Ix[t, l, e]    := E0[l] · Wx[e, i] · X[t, i]
+  Hi[l, e]       := Sh[l, m] · Hl[m, e, t] + Ix[t, l, e]
+  Aa[l, d]       := Wp[l, d, e] · Hi[l, e] + Up[l, d, e] · Hl[l, e, t]
+  Nn[l, d]       := tanh(Aa[l, d])
+  Hl[l, d, t +1] := Nn[l, d]
+}
+
 /-! ### Diagonal SSM: linear recurrence and its causal-convolution interpretation
 
 `N = A * H[t] + B X[t]`, `H[t+1] = N`, `Y[t+1] = Wy N + Wd X[t]`.
@@ -2359,6 +2516,10 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "rnn_lstm" rnnLstmProg rnnLstmEnv64 5 0 (some (17, 5, 0)) true (scans := 1),
     ← fixture64 "rnn_bi" rnnBiProg rnnBiEnv64 2 1 (some (10, 2, 1)) true (scans := 1),
     ← fixture64 "rnn_stack" rnnStackProg rnnStackEnv64 2 0 (some (8, 2, 0)) true (scans := 1),
+    ← fixture64 "kv_cache" kvCacheProg kvCacheEnv64 0 1 (some (14, 0, 1)) true (scans := 1),
+    ← fixture64 "time_layer" timeLayerProg timeLayerEnv64 2 0 (some (6, 2, 0)) true (scans := 2),
+    ← fixture64 "rnn_skew" rnnSkewProg rnnSkewEnv64 2 0 (some (8, 2, 0)) true (scans := 1),
+    ← fixture64 "layer_skew" layerSkewProg layerSkewEnv64 1 0 (some (6, 1, 0)) true (scans := 1),
     ← fixture64 "gnn_dense" gnnProg gnnEnv64 2 1 (some (12, 2, 1)) true,
     ← fixture64 "gnn_edges" gnnEdgeProg gnnEdgeEnv64 7 0 (some (17, 7, 0)),
     ← fixture64 "moe_dense" moeProg moeEnv64 1 1 (some (6, 1, 1)),
@@ -2438,6 +2599,10 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "rnn_lstm32" rnnLstmProg32 rnnLstmEnv32 5 0 (some (17, 5, 0)) true (scans := 1),
     ← fixture32 "rnn_bi32" rnnBiProg32 rnnBiEnv32 2 1 (some (10, 2, 1)) true (scans := 1),
     ← fixture32 "rnn_stack32" rnnStackProg32 rnnStackEnv32 2 0 (some (8, 2, 0)) true (scans := 1),
+    ← fixture32 "kv_cache32" kvCacheProg32 kvCacheEnv32 0 1 (some (14, 0, 1)) true (scans := 1),
+    ← fixture32 "time_layer32" timeLayerProg32 timeLayerEnv32 2 0 (some (6, 2, 0)) true (scans := 2),
+    ← fixture32 "rnn_skew32" rnnSkewProg32 rnnSkewEnv32 2 0 (some (8, 2, 0)) true (scans := 1),
+    ← fixture32 "layer_skew32" layerSkewProg32 layerSkewEnv32 1 0 (some (6, 1, 0)) true (scans := 1),
     ← fixture32 "gnn_dense32" gnnProg32 gnnEnv32 2 1 (some (12, 2, 1)) true,
     ← fixture32 "gnn_edges32" gnnEdgeProg32 gnnEdgeEnv32 7 0 (some (17, 7, 0)),
     ← fixture32 "moe_dense32" moeProg32 moeEnv32 1 1 (some (6, 1, 1)),

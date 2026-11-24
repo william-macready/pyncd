@@ -57,11 +57,17 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "transformer_cross_wide", "transformer_cross_wide32",
                         "conv1d_cnn", "conv1d_cnn32", "conv1d_causal", "conv1d_causal32", "vit_patch", "vit_patch32",
                         "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32", "rnn_stack", "rnn_stack32",
+                        "kv_cache", "kv_cache32", "time_layer", "time_layer32",
+                        "rnn_skew", "rnn_skew32", "layer_skew", "layer_skew32",
                         "ssm_diag", "ssm_diag32", "gnn_dense", "gnn_dense32", "gnn_edges", "gnn_edges32", "moe_dense", "moe_dense32"}
 # Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
 # layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
 # require that EXACTLY layer 2 is NaN (in Lean, eager and jit alike); every other output must be finite.
 NAN_LAYER_OUTPUTS = {(f"transformer_cross{kind}{sfx}", n) for kind in ("", "_wide") for sfx in ("", "32") for n in ("Kc", "Vc")}
+# Explicit-time tables materialize X's NaN spare row; only row 5 may be non-finite.
+NAN_TIME_OUTPUTS = {(f"{fixture}{sfx}", n) for fixture, names in
+                    (("kv_cache", ("Kn", "Vn", "Qr")), ("layer_skew", ("Ix",)))
+                    for sfx in ("", "32") for n in names}
 # Predicate-mask scan fixtures (`transformer_<kind>`, q = s = 5): kind -> the perturbed position of the
 # receptive-field pin (chosen so the reachable and the unreachable row sets are both non-empty).
 MASK_FIXTURES = {"window": 0, "strict": 4, "sink": 3}
@@ -322,7 +328,12 @@ def trim_nan_layer(a: np.ndarray, label: str) -> np.ndarray:
     return np.ascontiguousarray(a[..., :2])
 
 
-def require_close(got, entry: dict, label: str, fn: str | None, nan_layer: bool = False) -> None:
+def trim_nan_time(a: np.ndarray, label: str) -> np.ndarray:
+    assert a.shape[0] == 6 and np.all(np.isnan(a[5])) and np.all(np.isfinite(a[:5])), (label, "time-5 row is not the only NaN row")
+    return np.ascontiguousarray(a[:5])
+
+
+def require_close(got, entry: dict, label: str, fn: str | None, nan_layer: bool = False, nan_time: bool = False) -> None:
     g, w = np.asarray(got), lean_array(entry)
     if g.dtype != NDT:
         raise AssertionError(f"{label}: expected {NDT.__name__}, got {g.dtype}")
@@ -330,6 +341,8 @@ def require_close(got, entry: dict, label: str, fn: str | None, nan_layer: bool 
         raise AssertionError(f"{label}: shape {g.shape} != {w.shape}")
     if nan_layer:
         g, w = trim_nan_layer(g, label), trim_nan_layer(w, label)
+    if nan_time:
+        g, w = trim_nan_time(g, label), trim_nan_time(w, label)
     if not np.all(np.isfinite(g)) or not np.all(np.isfinite(w)):
         raise AssertionError(f"{label}: non-finite value: {g.tolist()} vs {w.tolist()}")
     if not np.array_equal(g == 0, w == 0):
@@ -355,6 +368,8 @@ def record_output(fixture: str, key: str, got, entry: dict) -> None:
     g, w = np.asarray(got), lean_array(entry)
     if (fixture, key) in NAN_LAYER_OUTPUTS:
         g, w = trim_nan_layer(g, f"{fixture} {key}"), trim_nan_layer(w, f"{fixture} {key}")
+    if (fixture, key) in NAN_TIME_OUTPUTS:
+        g, w = trim_nan_time(g, f"{fixture} {key}"), trim_nan_time(w, f"{fixture} {key}")
     diff = np.abs(g.astype(np.float64) - w.astype(np.float64))
     nz = w != 0
     rel = float(np.max(diff[nz] / np.abs(w.astype(np.float64))[nz])) if nz.any() else 0.0
@@ -384,8 +399,9 @@ def run_fixture(f: dict) -> None:
         EAGER[f["name"]] = {"eager": eager, "jit": jitted}
     for name, exp in f["expected"].items():
         nan_layer = (f["name"], name) in NAN_LAYER_OUTPUTS
-        require_close(eager[name], exp, f"{f['name']} eager {name}", fns.get(name), nan_layer)
-        require_close(jitted[name], exp, f"{f['name']} jit {name}", fns.get(name), nan_layer)
+        nan_time = (f["name"], name) in NAN_TIME_OUTPUTS
+        require_close(eager[name], exp, f"{f['name']} eager {name}", fns.get(name), nan_layer, nan_time)
+        require_close(jitted[name], exp, f"{f['name']} jit {name}", fns.get(name), nan_layer, nan_time)
         if is_transformer(f["name"]):
             record_output(f["name"], name, eager[name], exp)
             record_output(f["name"], name, jitted[name], exp)
@@ -1746,6 +1762,564 @@ def np_stack(inp: dict, old_state=False, no_recur2=False, no_input2=False, no_re
     return {"H1": out["H2"], "H2": out["H1"]} if swap_out else out
 
 
+def np_kv_cache(inp: dict, mode="causal") -> dict:
+    """Float64 additive-cache reference, reading only exported inputs."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    n_t = f["X"].shape[0]
+    n_s, n_k = f["Kz"].shape
+    n_v = f["Y0"].size
+    kc, vc, yh = np.zeros((n_s, n_k, n_t)), np.zeros((n_s, n_v, n_t)), np.zeros((n_v, n_t))
+    kc[:, :, 0], vc[:, :, 0], yh[:, 0] = f["Kz"], f["Vz"], f["Y0"]
+    kn, vn, qr = (np.empty((n_t, d)) for d in (n_k, n_v, n_k))
+    for t in range(n_t):
+        kn[t], vn[t], qr[t] = f["Wk"] @ f["X"][t], f["Wv"] @ f["X"][t], f["Wq"] @ f["X"][t]
+    for t in range(n_t - 1):
+        kc[:, :, t + 1], vc[:, :, t + 1] = kc[:, :, t], vc[:, :, t]
+        write = t - 1 if mode == "one-step-late write" else t
+        if write >= 0 and mode != "never written":
+            kc[:, :, t + 1] += f["Oh"][:, write, None] * kn[write]
+            vc[:, :, t + 1] += f["Oh"][:, write, None] * vn[write]
+        mask = f["Mk"][:, t]
+        if mode == "unmasked":
+            mask = np.zeros(n_s)
+        elif mode == "strict mask (s < t)":
+            mask = np.where(np.arange(n_s) < t, 0.0, -1e9)
+        p = np_softmax_last(kc[:, :, t + 1] @ qr[t] + mask)
+        yh[:, t + 1] = p @ vc[:, :, t if mode == "values before write" else t + 1]
+    return dict(Kc=kc, Vc=vc, Yh=yh, Kn=kn, Vn=vn, Qr=qr)
+
+
+def np_time_layer(inp: dict, shared=False, layers_first=False) -> dict:
+    """Float64 time recurrence, then a layer loop at every history slot."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    n_t = f["X"].shape[0]
+    n_l, n_d, _ = f["Wl"].shape
+    hs, zz = np.empty((n_d, n_t)), np.empty((n_t, n_d, n_l))
+    hs[:, 0] = f["H0"]
+    for t in range(n_t - 1):
+        hs[:, t + 1] = np.tanh(f["Wx"] @ f["X"][t] + f["U"] @ hs[:, t])
+    for t in range(n_t):
+        zz[t, :, 0] = hs[:, t]
+        for l in range(n_l - 1):
+            zz[t, :, l + 1] = np.tanh(f["Wl"][0 if shared else l] @ zz[t, :, l])
+    if layers_first:
+        # Reverse L(F(p)) to F(L(p)): p[0]=H0, p[t+1]=Wx x_t; F is the time recurrence.
+        projected = [f["H0"].copy()] + [f["Wx"] @ f["X"][t] for t in range(n_t - 1)]
+        for l in range(n_l):
+            if l:
+                projected = [np.tanh(f["Wl"][l - 1] @ p) for p in projected]
+            zz[0, :, l] = projected[0]
+            for t in range(n_t - 1):
+                zz[t + 1, :, l] = np.tanh(projected[t + 1] + f["U"] @ zz[t, :, l])
+    return dict(Hs=hs, Zz=zz)
+
+
+def np_rnn_skew(inp: dict, new_state=False, no_recur2=False, swapped=False) -> dict:
+    """Float64 skewed recurrence: layer 2 consumes the OLD layer-1 state."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    n_t, n_d = f["X"].shape[0], f["H10"].size
+    h1, h2 = np.empty((n_d, n_t)), np.empty((n_d, n_t))
+    h1[:, 0], h2[:, 0] = f["H10"], f["H20"]
+    for t in range(n_t - 1):
+        h1[:, t + 1] = np.tanh(f["W1"] @ f["X"][t] + f["U1"] @ h1[:, t])
+        old = h1[:, t + 1] if new_state else h1[:, t]
+        h2[:, t + 1] = np.tanh(f["W2"] @ old + (0.0 if no_recur2 else f["U2"] @ h2[:, t]))
+    return dict(H1=h2, H2=h1) if swapped else dict(H1=h1, H2=h2)
+
+
+def np_layer_skew(inp: dict, shift=None, new_state=False) -> dict:
+    """Float64 ordinary layer axis with shifted OLD states in a time loop."""
+    f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
+    n_t = f["X"].shape[0]
+    n_l, n_d = f["H0"].shape
+    sh = f["Sh"] if shift is None else shift
+    hl, ix = np.empty((n_l, n_d, n_t)), np.empty((n_t, n_l, n_d))
+    hl[:, :, 0] = f["H0"]
+    for t in range(n_t):
+        projected = f["Wx"] @ f["X"][t]
+        for l in range(n_l):
+            ix[t, l] = f["E0"][l] * projected
+    for t in range(n_t - 1):
+        for l in range(n_l):
+            incoming = ix[t, l].copy()
+            for m in range(n_l):
+                incoming += sh[l, m] * hl[m, :, t + 1 if new_state and m < l else t]
+            hl[l, :, t + 1] = np.tanh(f["Wp"][l] @ incoming + f["Up"][l] @ hl[l, :, t])
+    return dict(Hl=hl, Ix=ix)
+
+
+def kv_cache_pins(by: dict, sfx: str) -> None:
+    """Incremental additive caches versus an independent full-prefix causal recomputation."""
+    name = f"kv_cache{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    n_t, n_i = fin["X"].shape
+    n_s, n_k = fin["Kz"].shape
+    n_v = fin["Y0"].size
+    ext = (n_t, n_s, n_k, n_i, n_v)
+    assert ext == (6, 5, 4, 3, 2) and len(set(ext)) == len(ext), (name, ext)
+    shapes = {"X": (n_t, n_i), "Wq": (n_k, n_i), "Wk": (n_k, n_i), "Wv": (n_v, n_i),
+              "Kz": (n_s, n_k), "Vz": (n_s, n_v), "Y0": (n_v,), "Oh": (n_s, n_t), "Mk": (n_s, n_t)}
+    assert {n: v.shape for n, v in fin.items()} == shapes, (name, shapes)
+    nodes = fx["plan"]["nodes"]
+    assert [n.get("kind", "assign") for n in nodes] == ["assign"] * 3 + ["scan"], (name, nodes)
+    assert [n["step_count"] for n in nodes if n.get("kind") == "scan"] == [n_t - 1], name
+    counts = tuple(sum(n.get("kind", "assign") == k for n in flat_nodes(nodes)) for k in ("assign", "pointwise", "axiswise"))
+    assert counts == (14, 0, 1), (name, counts)
+    exports = ["Kc", "Kn", "Qr", "Vc", "Vn", "Yh"]
+    assert sorted(fx["expected"]) == sorted(n for n, _ in fx["plan"]["materialized"]) == exports, name
+    f = {n: v.astype(np.float64) for n, v in fin.items()}
+
+    def incremental(mode="causal"):
+        return np_kv_cache(f, mode)
+
+    want = incremental()
+    causal = np.empty((n_v, n_t))
+    causal[:, 0] = f["Y0"]
+    for t in range(n_t - 1):
+        q = f["Wq"] @ f["X"][t]
+        scores, values = [], []
+        for s in range(t + 1):
+            scores.append(q @ (f["Wk"] @ f["X"][s]))
+            values.append(f["Wv"] @ f["X"][s])
+        causal[:, t + 1] = np_softmax_last(np.array(scores)) @ np.array(values)
+    # Yh columns 2: are steps 1..4. At step 0 (column 1) the strict mask hides every slot (== unmasked) and the
+    # three cache-write variants all output 0, so a gap over the whole history would be decided by step 0 alone.
+    gaps = {mode: dict_gap({"Yh": want["Yh"][:, 2:]}, {"Yh": incremental(mode)["Yh"][:, 2:]})
+            for mode in ("unmasked", "strict mask (s < t)", "never written", "one-step-late write", "values before write")}
+    for mode, gap in gaps.items():
+        assert gap > 1e-2, (name, "vacuous cache reference", mode, gap)
+
+    for n in ("Kz", "Vz", "Y0"):
+        assert np.all(fin[n] == 0), (name, n)
+    assert np.array_equal(fin["Oh"][:, :n_s], np.eye(n_s, dtype=NDT)), name
+    assert np.array_equal(fin["Mk"][:, :n_s], np.where(np.arange(n_s)[:, None] <= np.arange(n_s), 0.0, -1e9).astype(NDT)), name
+    for n, seed in (("X", 1.0), ("Wq", 2.0), ("Wk", 3.0), ("Wv", 4.0)):
+        a = fin[n][:-1] if n == "X" else fin[n]
+        definition = np.array([0.6 * np.sin(seed + 1.7 * j) for j in range(a.size)]).reshape(a.shape).astype(NDT)
+        assert np.allclose(a, definition, rtol=0, atol=np.finfo(NDT).eps), (name, n, "input definition")
+    for n, a in fin.items():
+        finite = a[:-1] if n == "X" else a[:, :-1] if n in ("Oh", "Mk") else a
+        assert np.all(np.isfinite(finite)), (name, n)
+        if n in ("X", "Oh", "Mk"):
+            assert np.all(np.isnan(a[-1] if n == "X" else a[:, -1])), (name, n, "spare slot")
+    views = conv_views(by, name)
+    for who, out in views.items():
+        assert sorted(out) == exports, (name, who)
+        for n in exports:
+            assert out[n].shape == want[n].shape, (name, who, n)
+            if n in ("Kn", "Vn", "Qr"):
+                check_np(name, who, n, out[n][:-1], want[n][:-1])
+                assert np.all(np.isnan(out[n][-1])), (name, who, n, "spare table row")
+            else:
+                check_np(name, who, n, out[n], want[n])
+        check_np(name, who, "Yh_full_causal", out["Yh"], causal)
+        for n, init in (("Kc", "Kz"), ("Vc", "Vz"), ("Yh", "Y0")):
+            assert np.array_equal(bits(out[n][..., 0]), bits(fin[init])), (name, who, n, "initial state")
+        for s in range(n_s):
+            for tau in range(n_t):
+                for n, w in (("Kc", "Wk"), ("Vc", "Wv")):
+                    if tau <= s:
+                        assert np.all(out[n][s, :, tau] == 0), (name, who, n, s, tau)
+                    else:
+                        check_np(name, who, f"{n}_slot", out[n][s, :, tau], f[w] @ f["X"][s])
+    jin = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+    base = views["eager"]
+    spare = {n: v.copy() for n, v in fin.items()}
+    spare["X"][-1] = NDT(0.5)
+    spare["Oh"][:, -1], spare["Mk"][:, -1] = NDT(0.75), NDT(-0.25)
+    run = rt.run_named(fx["plan"], {n: jnp.asarray(v) for n, v in spare.items()}, JDT)
+    for n, b in base.items():
+        p = np.asarray(run[n])
+        if n in ("Kn", "Vn", "Qr"):
+            assert np.all(np.isfinite(p[-1])), (name, n, "finite spare table")
+            b, p = b[:-1], p[:-1]
+        assert np.array_equal(bits(b), bits(p)), (name, n, "spare input was read")
+    moved = []
+    for t in range(n_t - 1):
+        xp = fin["X"].copy()
+        xp[t] += NDT(0.5)
+        p = np.asarray(rt.run_named(fx["plan"], dict(jin, X=jnp.asarray(xp)), JDT)["Yh"])
+        assert np.array_equal(bits(base["Yh"][:, :t + 1]), bits(p[:, :t + 1])), (name, t, "noncausal")
+        gap = float(np.max(np.abs(p[:, t + 1].astype(np.float64) - base["Yh"][:, t + 1].astype(np.float64))))
+        assert gap > 1e-4, (name, t, "causality perturbation not live", gap)
+        moved.append(gap)
+    kz, vz = fin["Kz"].copy(), fin["Vz"].copy()
+    kz[-1], vz[-1] = NDT(1e3), NDT(1e3)
+    future = rt.run_named(fx["plan"], dict(jin, Kz=jnp.asarray(kz), Vz=jnp.asarray(vz)), JDT)
+    fy = np.asarray(future["Yh"])
+    assert np.array_equal(bits(base["Yh"][:, 1:5]), bits(fy[:, 1:5])), (name, "future cache not masked bitwise")
+    future_gap = float(np.max(np.abs(fy[:, -1].astype(np.float64) - base["Yh"][:, -1].astype(np.float64))))
+    assert future_gap > 1e-4, (name, "future cache perturbation not live", future_gap)
+    # the last step is where slot 4 is written, so the 1e3 initial rows ARE live there: pin its VALUE too
+    check_np(name, "future eager", "Yh_last_step", fy[:, -1],
+             np_kv_cache(dict(f, Kz=kz.astype(np.float64), Vz=vz.astype(np.float64)))["Yh"][:, -1])
+    for n, initial, w in (("Kc", kz, "Wk"), ("Vc", vz, "Wv")):
+        p = np.asarray(future[n])
+        assert np.array_equal(bits(p[-1, :, :-1]), bits(np.repeat(initial[-1, :, None], n_t - 1, axis=1))), (name, n, "future slot retention")
+        check_np(name, "future eager", f"{n}_additive", p[-1, :, -1], initial[-1].astype(np.float64) + f[w] @ f["X"][-2])
+    print(f"{name}: extents t={n_t}, s={n_s}, k={n_k}, i={n_i}, v={n_v}; kinds={counts}, scans=[5]; exactly {exports} exported; "
+          f"all histories/finite tables == incremental numpy, every Yh step == independent full causal recompute (Lean/eager/jit); "
+          f"all inputs/initial states pinned; NaN spare rows/columns replaced by finite sentinels without changing live outputs; "
+          f"all cache slots pinned, including additive update; causality bitwise, minimum response {min(moved):.3e}; "
+          f"future Kz[4]=Vz[4]=1e3 bitwise masked for first four outputs, final response {future_gap:.3e}; "
+          f"numpy gaps {', '.join(f'{m}={g:.6f}' for m, g in gaps.items())}")
+    print_conv_stats(name)
+
+
+def time_layer_pins(by: dict, sfx: str) -> None:
+    """A time recurrence followed by independent layer transforms of every history slot."""
+    name = f"time_layer{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    n_t, n_i = fin["X"].shape
+    n_l, n_d, n_e = fin["Wl"].shape
+    ext = (n_t, n_l, n_d, n_i)
+    assert ext == (6, 3, 4, 5) and len(set(ext)) == len(ext) and n_e == n_d, (name, ext)
+    shapes = {"X": (n_t, n_i), "H0": (n_d,), "Wx": (n_d, n_i), "U": (n_d, n_d), "Wl": (n_l, n_d, n_d)}
+    assert {n: v.shape for n, v in fin.items()} == shapes, name
+    nodes = fx["plan"]["nodes"]
+    assert [n.get("kind", "assign") for n in nodes] == ["scan", "scan"], name
+    assert [n["step_count"] for n in nodes] == [n_t - 1, n_l - 1], name
+    counts = tuple(sum(n.get("kind", "assign") == k for n in flat_nodes(nodes)) for k in ("assign", "pointwise", "axiswise"))
+    assert counts == (6, 2, 0), (name, counts)
+    assert sorted(fx["expected"]) == sorted(n for n, _ in fx["plan"]["materialized"]) == ["Hs", "Zz"], name
+    f = {n: v.astype(np.float64) for n, v in fin.items()}
+
+    def model(shared=False, layers_first=False):
+        return np_time_layer(f, shared, layers_first)
+
+    want = model()
+    wrong = {"shared Wl[0]": model(shared=True), "layers before time": model(layers_first=True)}
+    for n, seed in (("X", 1.0), ("H0", 13.0), ("Wx", 14.0), ("U", 15.0), ("Wl", 16.0)):
+        a = fin[n][:-1] if n in ("X", "Wl") else fin[n]
+        definition = np.array([0.6 * np.sin(seed + 1.7 * j) for j in range(a.size)]).reshape(a.shape).astype(NDT)
+        assert np.all(np.isfinite(a)) and np.allclose(a, definition, rtol=0, atol=np.finfo(NDT).eps), (name, n, "input definition")
+        if n in ("X", "Wl"):
+            assert np.all(np.isnan(fin[n][-1])), (name, n, "spare slice")
+    gaps = rnn_value_pins(by, name, want, wrong)
+    views = conv_views(by, name)
+    for who, out in views.items():
+        assert out["Hs"].shape == (n_d, n_t) and out["Zz"].shape == (n_t, n_d, n_l), (name, who)
+        assert np.array_equal(bits(out["Hs"][:, 0]), bits(fin["H0"])), (name, who, "H0")
+        assert np.array_equal(bits(out["Zz"][:, :, 0]), bits(out["Hs"].T)), (name, who, "layer initial state")
+    jin = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+    base = views["eager"]
+    for spare_name in ("X", "Wl"):
+        spare = fin[spare_name].copy()
+        spare[-1] = NDT(0.5)
+        run = rt.run_named(fx["plan"], dict(jin, **{spare_name: jnp.asarray(spare)}), JDT)
+        for n, b in base.items():
+            assert np.array_equal(bits(b), bits(np.asarray(run[n]))), (name, n, spare_name, "spare slice read")
+    moved = []
+    for t in range(n_t - 1):
+        xp = fin["X"].copy()
+        xp[t] += NDT(0.5)
+        run = rt.run_named(fx["plan"], dict(jin, X=jnp.asarray(xp)), JDT)
+        for n, prefix, target in (("Hs", (slice(None), slice(t + 1)), (slice(None), t + 1)),
+                                   ("Zz", (slice(t + 1), slice(None), slice(None)), (t + 1, slice(None), -1))):
+            p = np.asarray(run[n])
+            assert np.array_equal(bits(base[n][prefix]), bits(p[prefix])), (name, n, t, "noncausal")
+            gap = float(np.max(np.abs(p[target].astype(np.float64) - base[n][target].astype(np.float64))))
+            assert gap > 1e-4, (name, n, t, "causality perturbation not live", gap)
+            moved.append(gap)
+    print(f"{name}: extents t={n_t}, l={n_l}, d={n_d}, i={n_i}; kinds={counts}, scans=[5,2]; exactly Hs,Zz exported; "
+          f"all inputs/initial states pinned; all history slots == independent time-then-layer numpy (Lean/eager/jit); "
+          f"X[5] and Wl[2] finite sentinels independently leave every export bitwise unchanged; causality bitwise on Hs and Zz, "
+          f"minimum first response {min(moved):.3e}; numpy gaps {', '.join(f'{m}={g:.6f}' for m, g in gaps.items())}")
+    print_conv_stats(name)
+
+
+def rnn_skew_pins(by: dict, sfx: str) -> None:
+    """Two recurrent layers, with layer 2 reading layer 1's OLD state."""
+    name = f"rnn_skew{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    n_t, n_i = fin["X"].shape
+    n_d = fin["H10"].size
+    ext = (n_t, n_d, n_i)
+    assert ext == (6, 4, 3) and len(set(ext)) == len(ext), (name, ext)
+    shapes = {"X": (n_t, n_i), "H10": (n_d,), "H20": (n_d,), "W1": (n_d, n_i),
+              "U1": (n_d, n_d), "W2": (n_d, n_d), "U2": (n_d, n_d)}
+    assert {n: v.shape for n, v in fin.items()} == shapes, name
+    nodes = fx["plan"]["nodes"]
+    assert [n.get("kind", "assign") for n in nodes] == ["scan"] and nodes[0]["step_count"] == n_t - 1, name
+    counts = tuple(sum(n.get("kind", "assign") == k for n in flat_nodes(nodes)) for k in ("assign", "pointwise", "axiswise"))
+    assert counts == (8, 2, 0), (name, counts)
+    assert sorted(fx["expected"]) == sorted(n for n, _ in fx["plan"]["materialized"]) == ["H1", "H2"], name
+    f = {n: v.astype(np.float64) for n, v in fin.items()}
+
+    def model(new_state=False, no_recur2=False, swapped=False):
+        return np_rnn_skew(f, new_state, no_recur2, swapped)
+
+    want = model()
+    wrong = {"NEW layer-1 state": model(new_state=True), "U2=0": model(no_recur2=True), "layer histories swapped": model(swapped=True)}
+    # Exclude slot 0 from non-vacuity: distinct initial states alone must not witness a layer swap.
+    gaps = {mode: dict_gap({n: v[:, 1:] for n, v in want.items()}, {n: v[:, 1:] for n, v in out.items()}) for mode, out in wrong.items()}
+    for mode, gap in gaps.items():
+        assert gap > 1e-2, (name, "vacuous skew reference", mode, gap)
+    for n, seed in (("X", 1.0), ("H10", 7.0), ("H20", 8.0), ("W1", 9.0), ("U1", 10.0), ("W2", 11.0), ("U2", 12.0)):
+        a = fin[n][:-1] if n == "X" else fin[n]
+        definition = np.array([0.6 * np.sin(seed + 1.7 * j) for j in range(a.size)]).reshape(a.shape).astype(NDT)
+        assert np.all(np.isfinite(a)) and np.allclose(a, definition, rtol=0, atol=np.finfo(NDT).eps), (name, n, "input definition")
+    assert np.all(np.isnan(fin["X"][-1])), (name, "NaN spare row")
+    rnn_value_pins(by, name, want, wrong)
+    views = conv_views(by, name)
+    for who, out in views.items():
+        assert out["H1"].shape == out["H2"].shape == (n_d, n_t), (name, who)
+    jin = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+    base = views["eager"]
+    xs = fin["X"].copy()
+    xs[-1] = NDT(0.5)
+    run = rt.run_named(fx["plan"], dict(jin, X=jnp.asarray(xs)), JDT)
+    for n, b in base.items():
+        assert np.array_equal(bits(b), bits(np.asarray(run[n]))), (name, n, "spare row read")
+    moved = []
+    for t in range(n_t - 1):
+        xp = fin["X"].copy()
+        xp[t] += NDT(0.5)
+        run = rt.run_named(fx["plan"], dict(jin, X=jnp.asarray(xp)), JDT)
+        for n, lag in (("H1", 1), ("H2", 2)):
+            p = np.asarray(run[n])
+            first = t + lag
+            assert np.array_equal(bits(base[n][:, :first]), bits(p[:, :first])), (name, n, t, "wrong time dependency")
+            if first < n_t:
+                gap = float(np.max(np.abs(p[:, first].astype(np.float64) - base[n][:, first].astype(np.float64))))
+                assert gap > 1e-4, (name, n, t, "causality perturbation not live", gap)
+                moved.append(gap)
+            else:
+                assert np.array_equal(bits(base[n]), bits(p)), (name, "X[4] must not affect any H2 slot")
+    print(f"{name}: extents t={n_t}, d={n_d}, i={n_i}; kinds={counts}, scans=[5]; exactly H1,H2 exported; "
+          f"all inputs/initial states pinned; every slot == old-state numpy (Lean/eager/jit); finite spare sentinel leaves all outputs bitwise unchanged; "
+          f"causality bitwise, H1 first moves at t+1, H2 at t+2 (X[4] leaves ALL H2 unchanged), minimum response {min(moved):.3e}; "
+          f"numpy successor-slot gaps {', '.join(f'{m}={g:.6f}' for m, g in gaps.items())}")
+    print_conv_stats(name)
+
+
+def layer_skew_pins(by: dict, sfx: str) -> None:
+    """An ordinary layer axis inside one time scan: shifted OLD states, not a stacked RNN."""
+    name = f"layer_skew{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    n_t, n_i = fin["X"].shape
+    n_l, n_d = fin["H0"].shape
+    ext = (n_t, n_l, n_d, n_i)
+    assert ext == (6, 3, 4, 5) and len(set(ext)) == len(ext), (name, ext)
+    shapes = {"X": (n_t, n_i), "Wx": (n_d, n_i), "E0": (n_l,), "Sh": (n_l, n_l),
+              "H0": (n_l, n_d), "Wp": (n_l, n_d, n_d), "Up": (n_l, n_d, n_d)}
+    assert {n: v.shape for n, v in fin.items()} == shapes, name
+    nodes = fx["plan"]["nodes"]
+    assert [n.get("kind", "assign") for n in nodes] == ["assign", "scan"] and nodes[1]["step_count"] == n_t - 1, name
+    counts = tuple(sum(n.get("kind", "assign") == k for n in flat_nodes(nodes)) for k in ("assign", "pointwise", "axiswise"))
+    assert counts == (6, 1, 0), (name, counts)
+    assert sorted(fx["expected"]) == sorted(n for n, _ in fx["plan"]["materialized"]) == ["Hl", "Ix"], name
+    f = {n: v.astype(np.float64) for n, v in fin.items()}
+
+    def model(shift=None, new_state=False):
+        return np_layer_skew(f, shift, new_state)
+
+    want = model()
+    gaps = {mode: dict_gap({"Hl": want["Hl"]}, {"Hl": out["Hl"]}) for mode, out in
+            (("Sh=0", model(shift=np.zeros((n_l, n_l)))), ("upward shift", model(shift=f["Sh"].T)))}
+    gaps["layer 2 vs NEW-state stack"] = dict_gap({"layer2": want["Hl"][-1]}, {"layer2": model(new_state=True)["Hl"][-1]})
+    for mode, gap in gaps.items():
+        assert gap > 1e-2, (name, "vacuous layer-skew reference", mode, gap)
+    assert np.array_equal(fin["E0"], np.array([1, 0, 0], dtype=NDT)), name
+    assert np.array_equal(fin["Sh"], np.eye(n_l, k=-1, dtype=NDT)), name
+    for n, seed in (("X", 21.0), ("Wx", 22.0), ("H0", 23.0), ("Wp", 24.0), ("Up", 25.0)):
+        a = fin[n][:-1] if n == "X" else fin[n]
+        definition = np.array([0.6 * np.sin(seed + 1.7 * j) for j in range(a.size)]).reshape(a.shape).astype(NDT)
+        assert np.all(np.isfinite(a)) and np.allclose(a, definition, rtol=0, atol=np.finfo(NDT).eps), (name, n, "input definition")
+    assert np.all(np.isnan(fin["X"][-1])), (name, "NaN spare row")
+    views = conv_views(by, name)
+    for who, out in views.items():
+        assert sorted(out) == ["Hl", "Ix"], (name, who)
+        assert out["Hl"].shape == (n_l, n_d, n_t) and out["Ix"].shape == (n_t, n_l, n_d), (name, who)
+        check_np(name, who, "Hl", out["Hl"], want["Hl"])
+        check_np(name, who, "Ix", out["Ix"][:-1], want["Ix"][:-1])
+        assert np.all(np.isnan(out["Ix"][-1])), (name, who, "spare table row")
+        assert np.array_equal(bits(out["Hl"][:, :, 0]), bits(fin["H0"])), (name, who, "initial state")
+    jin = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+    base = views["eager"]
+    xs = fin["X"].copy()
+    xs[-1] = NDT(0.5)
+    run = rt.run_named(fx["plan"], dict(jin, X=jnp.asarray(xs)), JDT)
+    for n, b in base.items():
+        p = np.asarray(run[n])
+        if n == "Ix":
+            assert np.all(np.isfinite(p[-1])), (name, "finite spare table")
+            b, p = b[:-1], p[:-1]
+        assert np.array_equal(bits(b), bits(p)), (name, n, "spare row read")
+    print(f"{name}: extents t={n_t}, l={n_l}, d={n_d}, i={n_i}; kinds={counts}, scans=[5]; exactly Hl,Ix exported; "
+          f"all inputs/initial states pinned; every history/finite Ix row == independent old-layer numpy (Lean/eager/jit); "
+          f"Sh is the downward shift, E0 selects layer 0; NOT a true stacked RNN; Ix[5] exactly NaN; "
+          f"finite X[5] makes Ix[5] finite, leaves every live output bitwise unchanged; "
+          f"numpy gaps {', '.join(f'{m}={g:.6f}' for m, g in gaps.items())}")
+    print_conv_stats(name)
+
+
+def layers_time_grad_pins(by: dict, sfx: str) -> None:
+    """Whole-history losses: independent Python-loop JAX autodiff and NumPy central differences."""
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    def kv_hand(i):
+        keys, values = i["Kz"], i["Vz"]
+        ys = [i["Y0"]]
+        for t in range(i["X"].shape[0] - 1):
+            x = i["X"][t]
+            q, k, v = i["Wq"] @ x, i["Wk"] @ x, i["Wv"] @ x
+            keys = keys + i["Oh"][:, t, None] * k
+            values = values + i["Oh"][:, t, None] * v
+            p = jax.nn.softmax(keys @ q + i["Mk"][:, t])
+            ys.append(p @ values)
+        return jnp.stack(ys, axis=1)
+
+    def time_layer_hand(i):
+        h = i["H0"]
+        hs = [h]
+        for t in range(i["X"].shape[0] - 1):
+            h = jnp.tanh(i["Wx"] @ i["X"][t] + i["U"] @ h)
+            hs.append(h)
+        zs = []
+        for h in hs:
+            layers = [h]
+            for l in range(i["Wl"].shape[0] - 1):
+                h = jnp.tanh(i["Wl"][l] @ h)
+                layers.append(h)
+            zs.append(jnp.stack(layers, axis=1))
+        return jnp.stack(zs)
+
+    def rnn_skew_hand(i):
+        h1, h2 = i["H10"], i["H20"]
+        hs = [h2]
+        for t in range(i["X"].shape[0] - 1):
+            n1 = jnp.tanh(i["W1"] @ i["X"][t] + i["U1"] @ h1)
+            h2 = jnp.tanh(i["W2"] @ h1 + i["U2"] @ h2)
+            h1 = n1
+            hs.append(h2)
+        return jnp.stack(hs, axis=1)
+
+    def layer_skew_hand(i):
+        h = i["H0"]
+        hs = [h]
+        for t in range(i["X"].shape[0] - 1):
+            projected = i["Wx"] @ i["X"][t]
+            layers = []
+            for l in range(h.shape[0]):
+                incoming = i["E0"][l] * projected
+                for m in range(h.shape[0]):
+                    incoming = incoming + i["Sh"][l, m] * h[m]
+                layers.append(jnp.tanh(i["Wp"][l] @ incoming + i["Up"][l] @ h[l]))
+            h = jnp.stack(layers)
+            hs.append(h)
+        return jnp.stack(hs, axis=2)
+
+    specs = {
+        "kv_cache": ("Yh", kv_hand, np_kv_cache, {"Wq", "Wk", "Wv"}),
+        "time_layer": ("Zz", time_layer_hand, np_time_layer, set()),
+        "rnn_skew": ("H2", rnn_skew_hand, np_rnn_skew, set()),
+        "layer_skew": ("Hl", layer_skew_hand, np_layer_skew, {"E0", "Wx"}),
+    }
+    for stem, (out, hand, np_model, expected_nan) in specs.items():
+        name = stem + sfx
+        fx = by[name]
+        sin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+        want = np_model(sin)[out]
+        c = np.sin(1.0 + np.arange(want.size)).reshape(want.shape).astype(NDT)
+
+        def loss_plan(inp):
+            return jnp.sum(c * rt.run_named(fx["plan"], inp, JDT)[out])
+
+        def loss_hand(inp):
+            return jnp.sum(c * hand(inp))
+
+        grad_plan = jax.grad(loss_plan)
+        jit_grad_plan = jax.jit(grad_plan)
+        value_in = {n: jnp.asarray(a) for n, a in sin.items()}
+        value_grads = {"eager": grad_plan(value_in), "jit": jit_grad_plan(value_in)}
+        for who, g in value_grads.items():
+            nan = {n: int(np.isnan(np.asarray(v)).sum()) for n, v in g.items() if np.any(np.isnan(np.asarray(v)))}
+            print(f"  {name} value-environment {who} NaN gradient inputs/counts: {nan}", flush=True)
+            assert set(nan) == expected_nan, (name, who, "unexpected sentinel-gradient NaNs", nan)
+            for n, v in g.items():
+                assert np.all(np.isnan(np.asarray(v))) if n in expected_nan else np.all(np.isfinite(np.asarray(v))), (name, who, n)
+        if expected_nan:
+            sin["X"] = sin["X"].copy()
+            sin["X"][-1] = NDT(0)
+        jin = {n: jnp.asarray(a) for n, a in sin.items()}
+        assert np.array_equal(np_model(sin)[out], want), (name, "numpy reference read the spare X row")
+        hand_out = np.asarray(hand(jin))
+        assert np.all(np.isfinite(hand_out)) and scaled(hand_out, want) < MODEL_TOL[_DT], (name, "pure-JAX loss output vs numpy")
+        grads = {"eager": grad_plan(jin), "jit": jit_grad_plan(jin), "pure-JAX": jax.grad(loss_hand)(jin)}
+        errors, sizes = {}, {}
+        used_rows = 4 if stem == "rnn_skew" else 5
+        for who, g in grads.items():
+            assert sorted(g) == sorted(sin), (name, who, "missing float input gradient")
+            for n, v in g.items():
+                a = np.asarray(v)
+                assert a.shape == sin[n].shape and a.dtype == NDT and np.all(np.isfinite(a)), (name, who, n, "gradient not finite or wrong shape/dtype")
+                size = float(np.max(np.abs(a)))
+                assert size > 1e-3, (name, who, n, "trivial gradient", size)
+                sizes[n] = min(sizes.get(n, np.inf), size)
+            assert np.all(np.asarray(g["X"])[5] == 0), (name, who, "never-read X[5] received gradient")
+            assert np.all(np.max(np.abs(np.asarray(g["X"])[:used_rows]), axis=1) > 1e-3), (name, who, "a reachable X row has no real gradient")
+            if stem == "rnn_skew":
+                assert np.all(np.asarray(g["X"])[4] == 0), (name, who, "skewed H2 loss reaches X[4] before the next step")
+            if stem == "time_layer":
+                assert np.all(np.asarray(g["Wl"])[2] == 0), (name, who, "never-read Wl[2] received gradient")
+            if stem == "kv_cache":
+                for n in ("Oh", "Mk"):
+                    assert np.all(np.isnan(sin[n][:, 5])) and np.all(np.asarray(g[n])[:, 5] == 0), (name, who, n, "never-read NaN time column")
+            if who != "pure-JAX":
+                errors[who] = max(scaled(v, grads["pure-JAX"][n]) for n, v in g.items())
+                assert errors[who] < GRAD_TOL[_DT], (name, who, "gradient vs pure-JAX Python-loop model", errors[who])
+        gx = np.array(grads["eager"]["X"])
+        perturbed = gx.copy()
+        perturbed.flat[int(np.argmax(np.abs(gx)))] += NDT(1e-3)
+        canary = scaled(perturbed, gx)
+        assert canary >= GRAD_TOL[_DT], (name, "gradient tolerance accepts an absolute 1e-3 perturbation: vacuous")
+
+        base = {n: a.astype(np.float64) for n, a in sin.items()}
+        loss_np = lambda inp: float(np.sum(c.astype(np.float64) * np_model(inp)[out]))
+        rng = np.random.default_rng(7)
+        fd_err, dots, fd_inputs = 0.0, [], {}
+        # Isolated directions prevent cancellation from hiding an omitted input; joint directions also exercise interactions.
+        for selected in [*base, None, None, None]:
+            direction = {n: rng.standard_normal(a.shape) if selected is None or selected == n else np.zeros_like(a) for n, a in base.items()}
+            direction["X"][5] = 0
+            if stem == "time_layer":
+                direction["Wl"][2] = 0
+            if stem == "kv_cache":
+                for n in ("Oh", "Mk"):
+                    direction[n][:, 5] = 0
+            assert all(np.all(d[~np.isfinite(base[n])] == 0) for n, d in direction.items()), (name, "finite differences perturb a NaN sentinel")
+            eps = 1e-6
+            fd = (loss_np({n: base[n] + eps * direction[n] for n in base}) -
+                  loss_np({n: base[n] - eps * direction[n] for n in base})) / (2 * eps)
+            assert np.isfinite(fd), (name, selected, "non-finite central difference")
+            for who, g in grads.items():
+                dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * direction[n]) for n in base))
+                assert abs(dot) > 1e-3, (name, who, selected, "finite-difference direction is trivial", dot)
+                error = abs(fd - dot) / max(1.0, abs(dot))
+                assert error < GRAD_FD_TOL[_DT], (name, who, selected, "gradient vs NumPy central differences", error)
+                fd_err = max(fd_err, error)
+                dots.append(abs(dot))
+                if selected is not None:
+                    fd_inputs[selected] = max(fd_inputs.get(selected, 0.0), error)
+        assert set(fd_inputs) == set(sin), (name, "finite differences missed a float input")
+        max_err = max(errors.values())
+        print(f"gradients of {name} ({out}, every {len(sin)} float inputs, eager/jit/pure-JAX finite): "
+              f"max scaled eager {errors['eager']:.3e}, jit {errors['jit']:.3e} "
+              f"(headroom {GRAD_TOL[_DT] / max(max_err, 1e-300):.1f}x); "
+              f"NumPy FD {len(sin)} isolated + 3 joint directions max scaled {fd_err:.3e} "
+              f"(headroom {GRAD_FD_TOL[_DT] / max(fd_err, 1e-300):.1f}x), |dot| {min(dots):.3e}..{max(dots):.3e}; "
+              f"smallest input gradient max {min(sizes.values()):.3e}; absolute-1e-3 canary {canary:.3e}; "
+              f"X[5]{', Wl[2]' if stem == 'time_layer' else ', Oh/Mk[:,5]' if stem == 'kv_cache' else ''} EXACTLY zero", flush=True)
+        print(f"  {name} per-input gradient maxima: {sizes}; FD max scaled by isolated input: {fd_inputs}", flush=True)
+
+
 def rnn_value_pins(by: dict, name: str, want: dict, wrong: dict) -> dict:
     """Non-vacuity of the numpy reference against each wrong model (> 1e-2, computed BEFORE the view loop so a data mutant fails here and not on a
     value pin), then every export on the Lean, eager and jit views against `want` at MODEL_TOL (check_np records the observed maxima). Returns the gaps."""
@@ -3001,6 +3575,11 @@ def main() -> None:
     rnn_lstm_pins(by, sfx)
     rnn_bi_pins(by, sfx)
     rnn_stack_pins(by, sfx)
+    kv_cache_pins(by, sfx)
+    time_layer_pins(by, sfx)
+    rnn_skew_pins(by, sfx)
+    layer_skew_pins(by, sfx)
+    layers_time_grad_pins(by, sfx)
     ssm_pins(by, sfx)
     gnn_pins(by, sfx)
     gnn_grad_pins(by, sfx)
