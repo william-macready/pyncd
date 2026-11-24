@@ -458,7 +458,7 @@ TLProgram
 | **schedule** | Backward reachability BFS from the output name simultaneously determines liveness (DCE) and produces a valid reverse-topological order. Two passes in Python; one in Lean because the BFS visit order is already a reverse topo order. | Pure `String → List ScanStmt → List ScanStmt` |
 | **route** | For each stmt: detects contracted axes (axes appearing in a `ProdTerm` but absent from the LHS), builds a `Broadcasted` morphism (using ∃/∧ contraction for predicate-typed outputs per `DeclEnv`, Σ otherwise). Assigns each external input and produced intermediate an index slot; builds `ThreadedComposed.routing` and `n_external`. Automatic associative-scan detection (pure syntactic check on recurrence `IdxExpr`) selects `ScanAffine` where applicable. | Pure `List ScanStmt → DeclEnv → Context → ThreadedComposed` |
 
-The result is a `ThreadedComposed` morphism in `Br` — a finite presentation of an `∫Dat`-morphism in the sense of §8.1.
+The result is a `ThreadedComposed` morphism in `Br` — a finite presentation of an `∫Dat`-morphism in the sense of §8.1. *(Correction, 2026-11-24: the `∫Dat` reading is false; read "a sized morphism", a point of the span-shaped data `Dat₁(m)` of [graded_prop.md §5](../../../papers/graded_prop.md#5-the-structuredata-split-as-a-grothendieck-construction). This spec is otherwise left as its 2026-06 record.)*
 
 ### Python correspondence table
 

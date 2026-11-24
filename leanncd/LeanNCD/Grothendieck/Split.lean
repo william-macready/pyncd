@@ -35,9 +35,12 @@ abbrev CSharp (C : Type) [ColoredPROP C] : Type :=
 /-- `C♯`, the structural index PROP (see `CSharp`). -/
 notation "Cˢʰᵃʳᵖ" => CSharp
 
-/-- Data functor (graded_prop.md §7.1, Prop 8.3): each `C♯`-object maps to its set of
-    size-assignments over the structural skeleton; trivial (identity) on morphisms. Trivial
-    `Unit`-valued stub (the real `Dat` assigns each object its size-assignment set). -/
+/-- Data functor stub (graded_prop.md §5, Prop 8.3): a trivial `Unit`-valued covariant functor.
+    A covariant functor is the wrong shape for the real size data. Sizes over a morphism form a
+    span between its boundary sizings (internal wires carry sizes neither boundary sees), so a
+    faithful version is the sizing functor `U : C → C♯` with its fibres described, or a
+    `Span`-valued lax functor. Kept as scaffolding; `grothendieck_split` was deleted as
+    false-as-stated (`2229cf66`). -/
 def Dat (C : Type) [ColoredPROP C] : Cˢʰᵃʳᵖ C ⥤ Type where
   obj _ := Unit
   map _ := 𝟙 Unit

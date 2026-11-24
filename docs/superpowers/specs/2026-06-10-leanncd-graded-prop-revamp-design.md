@@ -4,6 +4,8 @@
 **Status:** Approved (design phase)
 **Scope:** Rewrite `papers/leanncd.md` — the Lean 4 formalization design document for the NCD categorical framework — to adopt the `D`-graded colored PROP framework of `papers/graded_prop.md`, encoded as a layered tower of typeclasses parameterized by other typeclasses.
 
+> **Correction (2026-11-24).** This spec treats the structure/data split as `C ≅ ∫Dat`, with symbolic sizes as "the fiber of the Grothendieck construction" of a covariant data functor. That statement is false. The Lean `grothendieck_split` was deleted as false-as-stated (`2229cf66`). The corrected statement is the size-erasing functor `U : C → C♯`, with data over each morphism a span between its boundary sizings ([graded_prop.md §5](../../../papers/graded_prop.md#5-the-structuredata-split-as-a-grothendieck-construction)). The text below is left as the 2026-06 design record; read its `∫Dat` mentions in that light.
+
 This document is a **design/spec**, not the rewrite itself. It records the agreed architecture, the typeclass signatures, the section plan, and the decisions (with rationale) reached during brainstorming. The output artifact is a revised `papers/leanncd.md`.
 
 ---

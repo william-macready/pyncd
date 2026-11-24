@@ -34,7 +34,7 @@ The core recommendation is **hybrid integration**:
    - [8.1 CUTE categories as index semantics](#81-cute-categories-as-index-semantics)
    - [8.2 Action of `D` on `C` with layout morphisms](#82-action-of-d-on-c-with-layout-morphisms)
    - [8.3 Weaves as internal factorizations](#83-weaves-as-internal-factorizations)
-   - [8.4 Relationship to `C ≅ ∫Dat` and Para](#84-relationship-to-c--dat-and-para)
+   - [8.4 Relationship to the structure/data split and Para](#84-relationship-to-the-structuredata-split-and-para)
    - [8.5 Scope boundary: what CUTE cannot absorb](#85-scope-boundary-what-cute-cannot-absorb)
 9. [Cost-based optimization perspective](#9-cost-based-optimization-perspective)
    - [9.1 Why the database analogy is strong](#91-why-the-database-analogy-is-strong)
@@ -738,15 +738,9 @@ Applying the rule to build `λ_X` over the same domain `(I, J, K)`:
 
 **Recovering the old view.** The mask is the sign pattern of strides: TILED slots have non-zero stride (they vary with degree), concrete slots have their own stride, and zero strides identify projected-out degree axes. The reindexing `η_i` is recovered as the restriction of `λ_i` to the non-zero-stride degree axes. The factorization thus contains strictly more information (explicit strides, CUTE admissibility conditions) while making the mask+reindexing derivable rather than stored separately.
 
-### 8.4 Relationship to `C ≅ ∫Dat` and Para
+### 8.4 Relationship to the structure/data split and Para
 
-This integration does **not** require changing the structure/data split:
-
-```text
-C ≅ ∫Dat
-```
-
-still holds. What changes is the structure-side index morphism language (richer `D`). Data payloads (sizes/params/dtypes) remain in `Dat`.
+This integration does **not** require changing the structure/data split. That split is the size-erasing functor `U : C → C♯`, whose data over a morphism is a span between its boundary sizings ([graded_prop.md §5](graded_prop.md#5-the-structuredata-split-as-a-grothendieck-construction); this replaces the earlier, false `C ≅ ∫Dat`). What changes is the structure-side index morphism language (richer `D`). Data payloads (sizes/params/dtypes) remain on the data side, `Dat₀`/`Dat₁`. CUTE admissibility conditions are size equations, so they join the local size equations that cut out `Dat₁(m)`.
 
 Likewise, Para semantics (`construct()` as parameter-carrying algebra) remains the same at the architectural level; CUTE enrichment improves legality/canonicalization of index transformations before lowering.
 

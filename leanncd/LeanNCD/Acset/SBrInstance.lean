@@ -59,7 +59,8 @@ structure SampleRow where
   offset         : Int
   deriving DecidableEq, Repr, Inhabited
 
-/-- The full-fidelity acset presentation of one ∫Dat-morphism (mirrors
+/-- The full-fidelity acset presentation of one sized morphism, i.e. a point of the span-shaped
+    size data `Dat₁(m)` over a structural morphism `m` (papers/graded_prop.md §5) (mirrors
     `acset/instances.py:SBrInstance`). Computable: sizes in `SizeExpr`, coeffs in `Int`. -/
 structure SBrInstance where
   axisSizes : List (AxisUID × SizeExpr)

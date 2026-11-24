@@ -150,7 +150,7 @@ generic propositions, and the §10.1 flagship `St`/`Br` instance. The mixin clas
 | `LeanNCD/Grothendieck/Split.lean` | `structuralCongruence.instCongruence.comp_right` | §7.1 | **PROVED** — `True` stub is trivially stable under post-composition |
 | `LeanNCD/Grothendieck/Split.lean` | `structuralCongruence.instCongruence.equivalence` | §7.1 | **PROVED** — `True` stub is trivially reflexive/symmetric/transitive |
 | `LeanNCD/Grothendieck/Split.lean` | `Dat` | §7.1 / 8.3 | **BODY FILLED** — Unit-constant functor (`obj _ := Unit`, `map _ := 𝟙 Unit`) under the `True` stub; real body awaits real structural congruence |
-| `LeanNCD/Grothendieck/Split.lean` | `grothendieck_split` | 8.3 | Prop 8.3: `C ≌ ∫Dat` (structure/data split) |
+| `LeanNCD/Grothendieck/Split.lean` | `grothendieck_split` | 8.3 | **DELETED** (`2229cf66`) — `C ≌ ∫Dat` is false-as-stated: false under the `True` stub, and false in shape, since a covariant `Dat` cannot carry a morphism's internal sizes. The restatement (span-shaped fibres of `U : C → C♯`) is in `papers/graded_prop.md` §5. No longer counted as a live sorry. |
 | `LeanNCD/Algebra/Target.lean` | `TargetActegory StObj (Mat ℝ) ℝ` instance `actV` | §7.2 | appends ℝ-typed dimensions; composition = matrix multiply over ℝ |
 | `LeanNCD/Props/Generic.lean` | `scan_catamorphism` | 8.7 | **PROVED** — needed a new `TemporalGraded.restrict_id` coherence field (the `restrict` analogue of `iotaTo_id`); then `rw [restrict_id]; comp_id`. `Props/Generic.lean` is now fully sorry-free. |
 | `LeanNCD/Instances/StBr.lean` | `instDGradedStBr.act` | §10.1 | batch lift + reindexing |
@@ -181,7 +181,7 @@ Notes:
     is **RESOLVED** — the `sh_act` *class* field in `Core/Graded.lean` was relaxed from `=` to a
     canonical iso `≅` (2026-07-03; build green, zero proof consumers). The `instDGradedStBr.sh_act`
     instance field remains `sorry` (now targeting the iso). `act` has no remaining design gate.
-- §9 props 8.3/8.4/8.5/8.6: 8.3 is `grothendieck_split` (in `Grothendieck/Split.lean`, not restated);
+- §9 props 8.3/8.4/8.5/8.6: 8.3 was `grothendieck_split`, now deleted as false-as-stated (`2229cf66`; restated in prose in `papers/graded_prop.md` §5, no Lean statement);
   8.4 (equivariance), 8.5, and 8.6 (obstruction species) are **OMITTED** — not vacuous, but no class
   field carries faithful content to state yet (EM-machinery / pushout / obstruction datum gated for
   later milestones). They are deliberately not stubbed with a `True`.

@@ -855,14 +855,13 @@ presentation but not meaning.
 ### CDL-aligned structure/data separation
 
 The strongest overlap is the syntax/semantics split. Let `C♯` be the symbolic
-operation category and `Dat : C♯ -> Set` assign concrete
-sizes/dtypes/parameters. The Grothendieck construction
-
-```text
-C ≃ ∫Dat
-```
-
-matches the CDL mindset: keep theory-level structure separate from instantiated
+operation category and `U : C -> C♯` erase concrete sizes/dtypes/parameters.
+The data over an object is `Dat₀(c)`. The data over a morphism is a span
+`Dat₀(c) <- Dat₁(m) -> Dat₀(c')`, because a morphism's internal wires carry
+data that neither boundary sees. So the split is a normal lax functor
+`C♯ -> Span(Set)`, not a covariant `Dat : C♯ -> Set`; see
+[graded_prop.md §5](graded_prop.md#5-the-structuredata-split-as-a-grothendieck-construction),
+which corrects an earlier, false `C ≃ ∫Dat`. This split matches the CDL mindset: keep theory-level structure separate from instantiated
 data, then interpret functorially.
 
 ### What remains mostly outside CDL’s scope
@@ -889,5 +888,5 @@ Keep four layers separate:
 The integration path is therefore conservative: keep the existing
 `DGradedColoredPROP` as the core; add CDL monads as optional mixins with
 explicit laws; present `Scan` both as the executable operator and as a
-parametric-monad algebra; and preserve weaves, the Grothendieck split,
+parametric-monad algebra; and preserve weaves, the structure/data split,
 pushout/gluing, and `Para` as compiler-critical structures.

@@ -77,7 +77,7 @@ Every structural ingredient of a tensor network has a direct counterpart in [the
 | a **physical / open** leg (survives) | a **degree** axis — `WeaveMode.TILED`, in `dom`/`cod` |
 | bond dimension `χ` (and physical `d`) | the axis size in [St](theory.md#the-axis-stride-category-st) (a `Numeric`) |
 | the network (which tensors share which bonds) | the **structure** `C♯` — the acset C-set part; bond/physical incidence |
-| the bond/physical **dimensions** | the **data** `∫Dat` — `axis_sizes` |
+| the bond/physical **dimensions** | the **data** over `C♯` (`Dat₀`/`Dat₁`, [graded_prop.md §5](graded_prop.md#5-the-structuredata-split-as-a-grothendieck-construction)) — `axis_sizes` |
 | contracting the whole network | a `Composed` of `Einops` morphisms; one big einsum |
 | choosing a **contraction order** | the framework's operator **fusion** + `opt_einsum` path (a roadmap item) |
 | Penrose diagrams | string diagrams of the (symmetric monoidal) PROP Br |
@@ -94,7 +94,7 @@ So an MPS is literally `tl.Psi[s₁,…,s_N] = tl.A1[s₁,a₁] · tl.A2[a₁,s�
 
 The cleanest way to see what carries over is the `construct() : C → V` split of [graded_prop.md §7](graded_prop.md#7-algebras-construct-and-the-para-refinement):
 
-- The **structural skeleton `C♯`** — network topology, the bond/physical weave split, bond dimensions as the data layer — is **datatype-agnostic**. It is identical whether the tensors are real (an ML tensor program) or complex (a quantum state). The acset structure/data split is genuinely apt: *the tensor-network architecture is `C♯`, the bond dimensions are `∫Dat`*.
+- The **structural skeleton `C♯`** — network topology, the bond/physical weave split, bond dimensions as the data layer — is **datatype-agnostic**. It is identical whether the tensors are real (an ML tensor program) or complex (a quantum state). The acset structure/data split is genuinely apt: *the tensor-network architecture is `C♯`, the bond dimensions are its data*. Bond dimensions are a clear case of why that data is a span rather than a function of the boundary ([graded_prop.md §5](graded_prop.md#5-the-structuredata-split-as-a-grothendieck-construction)): a contracted bond is internal, so its dimension is invisible at the open legs.
 - The **algebra (target `V`)** is where "quantum" lives. ML uses `V = Real-Vect`. A faithful quantum tensor network needs `V =` **finite-dimensional complex Hilbert spaces with a dagger** `(†)` — adjoints, inner products, unitarity. That category, `FdHilb`, is the prototypical **dagger compact closed category**, the setting of *categorical quantum mechanics* (Abramsky–Coecke).
 
 Two ingredients must be added to Br's *target* to reach it; the structural layers need no change:
