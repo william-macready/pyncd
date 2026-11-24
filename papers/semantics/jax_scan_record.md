@@ -102,7 +102,7 @@ Costs are the controller's rough estimates in dispatches (one dispatch is the Ru
 
 | Item | Cost / note |
 | --- | --- |
-| Multi-axis scans | Gated on the Lean-side F3-b stage 2 work (multi-axis scan slots in the checked path); JAX then needs per-axis step counters. Not estimated until stage 2 lands |
+| Multi-axis scans | Gated on the Lean-side F3-b stage 2 work (multi-axis scan slots in the checked path); JAX then needs per-axis step counters. Not estimated until stage 2 lands. **Corrected 2026-11-24 (`jax_grid_scan_scope.md`):** the checked plan and the reference already run multi-axis scans (one step per grid tuple), a grid scan does NOT need F3-b stage 2 (that is multi-axis scatter rows), and the JAX refusal is the single-axis gate plus a table-row-order hazard; a stacked RNN with a layer axis already runs as one skewed scan with no capability change |
 | Tropical / non-real scan states | Needs JAX tropical support first; the gate refuses with `scanNonRealState`. About 3 dispatches, with S2b-style carriers |
 | Boolean scratch inside a scan | Refused with `unsupportedDestDType`; needs a Boolean carry. About 1 to 2 dispatches |
 | Evidence path / `einsumOnly` scan | `unsupportedStep` today; needs `ExecutionEvidence` for scan (touches core `Executable.lean`). About 3 dispatches, together with the pointwise/axiswise/scatter evidence work parked earlier |
@@ -1632,7 +1632,7 @@ Fix, first version (Direct path): `finalizeScans` refused a mask over a scan axi
 
 So a `where` mask over ANY axis that is not one of the statement's own `.free`/`.freeNorm` output axes reads coordinate 0 on both backends, and the Iverson FACTOR form is correct (it is lowered with the scan context). The three scan-specific checks were replaced by one rule in `finalizeScans`: every axis of a mask must be an own output axis, else `maskAxisNotOutput <stmt> <axis>` (this renames `maskOverScanAxis`; the scan-axis cases are instances). Consequences: a mask over a base's pinned axis is refused at 0 too (it happened to read the right value; the rule is now uniform; `maskBaseAtZero` flipped); a post-scan statement ranging over the scan axis, and an earlier scan's axis as a free state axis, stay legal. Pins in `StructuralTest`: rejections `maskInterScanAxis`, `maskStepScanAxis`, `maskOwnAxisAfterScan`, `maskBaseAtZero`, `maskBaseAtOne`, `maskContractedAxis`, `maskUnboundAxis`; accept neighbours `maskInterOtherAxis`, `maskStepOtherAxis`, `maskPostScanAxis`, `maskOtherScanAxisFree`, `maskOutputAxisContracted`, `maskOutputAxisPlain`; the Iverson value pin is in `NonlinCompileTest`. Hand mutants killed (never refuse; `.free` not counted as an output axis, killed by `maskOtherScanAxisFree`; inverted test). Making a mask see the live step instead would need a step channel in the reference evaluator, the checked plan and the JAX emitter; not done, an Iverson factor or a data mask is the working form. The hand-built `seededAxisZero` fixture is unchanged: a hand-built schedule keeps the coordinate-0 reading.
 
-**Next.** P1b (pinned against both the incremental loop and the full causal recompute), P4n, P3 and P6 are now fixtures in both precisions (section 27). A true nested or grid scan (P5) and a renamed-axis state read (P2) still need a Lean checked-plan change and JAX per-axis counters; each is a separate slice with a plan.
+**Next.** P1b (pinned against both the incremental loop and the full causal recompute), P4n, P3 and P6 are now fixtures in both precisions (section 27). A true nested or grid scan (P5) and a renamed-axis state read (P2) still need a Lean checked-plan change and JAX per-axis counters; each is a separate slice with a plan. **Correction (2026-11-24, `jax_grid_scan_scope.md`):** for the stacked RNN with a layer axis, P5 is NOT needed: it runs today as one scan skewed onto `k = t + l` (exact to about 2e-16 on Lean, eager and jit); the checked plan's causality rule (offset <= 0 per axis) is what refuses a wavefront read, and the reference evaluator already computes the true grid values.
 
 ## 27. Layers/time execution: KV cache, sequential scans and old-state layer skew (2026-11-23)
 
@@ -1965,6 +1965,7 @@ Renamed-axis state-history reads: checked-plan `stateReadNotCausal`, although th
 evaluator accepts the read. Each requires a separate production slice/plan covering checked-plan
 changes and JAX per-axis step counters (at least one full slice, multiple implementation/review
 dispatches each; not sized or begun here). No scope expansion or additional side issue.
+**Correction (2026-11-24):** the "each requires a separate production slice" statement is too strong for the stacked-RNN case: see `jax_grid_scan_scope.md` (the skewed single-scan formulation, probed, needs no capability change; a native grid scan would be an optional convenience, sized there).
 
 ### Controller review (2026-11-23, after the executor's STOP at ready-for-review)
 
