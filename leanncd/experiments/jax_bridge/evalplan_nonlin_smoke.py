@@ -2465,6 +2465,180 @@ def grid_dp_pins(by: dict, sfx: str) -> None:
     print_conv_stats(name)
 
 
+def skew_grad_pins(by: dict, sfx: str) -> None:
+    """TRUE time/layer and coordinate loops; scheduling inputs are autodiff-only."""
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    def stacked_hand(inp):
+        h = [inp["H0"][l] for l in range(3)]
+        times = []
+        for t in range(5):
+            for l in range(3):
+                incoming = inp["Wx"] @ inp["X"][t] if l == 0 else h[l - 1]
+                h[l] = jnp.tanh(inp["Wp"][l] @ incoming + inp["Up"][l] @ h[l])
+            times.append(jnp.stack(h))
+        return jnp.stack(times, axis=2)
+
+    def grid_true(inp, xp):
+        cells = []
+        for i in range(4):
+            row = []
+            for j in range(4):
+                north = cells[i - 1][j] if i else 0.0
+                west = row[j - 1] if j else 0.0
+                northwest = cells[i - 1][j - 1] if i and j else 0.0
+                row.append(xp.tanh(0.7 * north + 0.5 * west + 0.4 * northwest + inp["Wk"][i + j, i]))
+            cells.append(row)
+        return cells[3][3]
+
+    for stem in ("rnn_layers_skew", "rnn_layers_native", "grid_dp"):
+        name = stem + sfx
+        fx = by[name]
+        sin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+        jin = {n: jnp.asarray(a) for n, a in sin.items()}
+        grid = stem == "grid_dp"
+        model_names = ("Wk",) if grid else ("Wx", "Wp", "Up", "H0", "X")
+        frozen = sorted(set(sin) - set(model_names))
+        model_in = {n: jin[n] for n in model_names}
+        support = {n: np.ones(sin[n].shape, dtype=bool) for n in model_names}
+        if grid:
+            support["Wk"][:] = False
+            for i in range(4):
+                for j in range(4):
+                    support["Wk"][i + j, i] = True
+        else:
+            support["X"][5:] = False
+
+        def top(live, initial, xp):
+            if stem == "rnn_layers_skew":
+                return live[2]
+            # Native G[2] includes three initial slots before the five true times.
+            return xp.stack([initial[2] if p <= 2 else live[2, :, p - 3] for p in range(8)], axis=1)
+
+        def hand(inp):
+            return grid_true(inp, jnp) if grid else top(stacked_hand(inp), inp["H0"], jnp)
+
+        def numpy_true(inp):
+            return (grid_true({"Wk": np.asarray(inp["Wk"], dtype=np.float64)}, np) if grid else
+                    top(np_stacked_layers(inp)[0], inp["H0"], np))
+
+        def plan_out(inp):
+            out = rt.run_named(fx["plan"], inp, JDT)
+            return out["G"][3, 7] if grid else out["Out"][2] if stem == "rnn_layers_skew" else out["G"][2]
+
+        want = np.asarray(numpy_true(sin))
+        c = np.sin(1.0 + np.arange(want.size)).reshape(want.shape).astype(NDT)
+        outputs = {"eager": plan_out(jin), "jit": jax.jit(plan_out)(jin),
+                   "pure-JAX": hand(model_in), "pure-JAX-jit": jax.jit(hand)(model_in)}
+        value_errors = {}
+        for who, out in outputs.items():
+            a = np.asarray(out)
+            assert a.shape == want.shape and np.all(np.isfinite(a)), (name, who, "loss output shape/finiteness")
+            value_errors[who] = scaled(a, want)
+            assert value_errors[who] < MODEL_TOL[_DT], (name, who, "TRUE loss output", value_errors[who])
+
+        grad_plan = jax.grad(lambda inp: jnp.sum(c * plan_out(inp)))
+        grad_hand = jax.grad(lambda inp: jnp.sum(c * hand(inp)))
+        grads = {"eager": grad_plan(jin), "jit": jax.jit(grad_plan)(jin),
+                 "pure-JAX": grad_hand(model_in), "pure-JAX-jit": jax.jit(grad_hand)(model_in)}
+        maxima, errors, absolute_errors = {}, {}, {}
+        for who, g in grads.items():
+            expected = sin if who in ("eager", "jit") else model_in
+            assert set(g) == set(expected), (name, who, "incomplete float input gradient keys", sorted(g))
+            maxima[who] = {}
+            for n, v in g.items():
+                a = np.asarray(v)
+                assert a.shape == sin[n].shape and a.dtype == NDT, (name, who, n, "gradient shape/dtype")
+                assert np.all(np.isfinite(a)), (name, who, n, "non-finite gradient; STOP without production repair")
+                maxima[who][n] = float(np.max(np.abs(a)))
+                if n in support:
+                    assert np.all(a[~support[n]] == 0), (name, who, n, "padded/dead input gradient not EXACTLY zero")
+            errors[who], absolute_errors[who] = {}, {}
+            for n in model_names:
+                a = np.asarray(g[n])[support[n]]
+                ref = np.asarray(grads["pure-JAX"][n])[support[n]]
+                errors[who][n] = scaled(a, ref)
+                absolute_errors[who][n] = float(np.max(np.abs(a.astype(np.float64) - ref.astype(np.float64))))
+                assert errors[who][n] < GRAD_TOL[_DT], (name, who, n, "TRUE model gradient", errors[who][n])
+                assert maxima[who][n] > 1e-3, (name, who, n, "trivial model gradient", maxima[who][n])
+        eager_jit_errors = {}
+        for n in sin:
+            eager_jit_errors[n] = scaled(grads["eager"][n], grads["jit"][n])
+            assert np.array_equal(bits(np.asarray(grads["eager"][n])), bits(np.asarray(grads["jit"][n]))), (
+                name, n, "gradient eager != jit bitwise", eager_jit_errors[n])
+
+        canary_input = "Wk" if grid else "Wp"
+        original = np.asarray(grads["eager"][canary_input])[support[canary_input]]
+        perturbed = original.copy()
+        perturbed.flat[int(np.argmax(np.abs(original)))] += NDT(1e-3)
+        canary = scaled(perturbed, original)
+        assert canary >= GRAD_TOL[_DT], (name, "absolute 1e-3 gradient canary accepted: vacuous", canary)
+
+        base = {n: a.astype(np.float64) for n, a in sin.items()}
+        loss_np = lambda inp: float(np.sum(c.astype(np.float64) * numpy_true(inp)))
+        rng = np.random.default_rng(7)
+        fd_errors = {who: {} for who in grads}
+        dots, directions = [], []
+        # Isolated inputs catch omissions that joint directional derivatives can hide.
+        for index, selected in enumerate([*model_names, None, None, None]):
+            label = selected if selected is not None else f"joint-{index - len(model_names) + 1}"
+            direction = {n: np.zeros_like(a) for n, a in base.items()}
+            for n in model_names:
+                if selected is None or selected == n:
+                    direction[n] = rng.standard_normal(base[n].shape) * support[n]
+            assert all(np.all(direction[n] == 0) for n in frozen), (name, "structural FD input not frozen")
+            assert all(np.all(direction[n][~support[n]] == 0) for n in model_names), (name, "FD outside live support")
+            eps = 1e-6
+            fd = (loss_np({n: base[n] + eps * direction[n] for n in base}) -
+                  loss_np({n: base[n] - eps * direction[n] for n in base})) / (2 * eps)
+            assert np.isfinite(fd), (name, label, "non-finite NumPy central difference")
+            for who, g in grads.items():
+                dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * direction[n]) for n in model_names))
+                assert abs(dot) > 1e-3, (name, who, label, "trivial directional derivative", dot)
+                error = abs(fd - dot) / max(1.0, abs(dot))
+                assert error < GRAD_FD_TOL[_DT], (name, who, label, "NumPy TRUE central differences", error)
+                fd_errors[who][label] = error
+                dots.append(abs(dot))
+            directions.append(label)
+        assert set(directions[:len(model_names)]) == set(model_names), (name, "FD missed a model input")
+        max_err = max(e for per_input in errors.values() for e in per_input.values())
+        fd_err = max(e for per_direction in fd_errors.values() for e in per_direction.values())
+        report = {
+            "fixture": name, "precision": _DT, "loss_output_shape": list(want.shape),
+            "loss": "sum(sin(1 + arange(out.size)) * out)",
+            "output": "G[3,7]" if grid else "Out[2]" if stem == "rnn_layers_skew" else "G[2], p<=2 initial; p=3..7 true t=p-3",
+            "model_inputs": list(model_names), "autodiff_inputs": sorted(sin),
+            "frozen_in_independent_reference_and_FD": frozen,
+            "support": "Wk[k=i+j,r=i], all 16 cells only" if grid else "X rows 0..4; all Wx,Wp,Up,H0",
+            "independent_reference": "row-major i/j loop, fixed 0.7/0.5/0.4, zero boundary, cell weights from Wk" if grid else "Python t=0..4, l=0..2, NEW lower-layer state; no scan/plan",
+            "numpy_reference": "separate NumPy execution of TRUE coordinate loop; np_grid value oracle untouched" if grid else "np_stacked_layers TRUE time/layer loop",
+            "model_tol": MODEL_TOL[_DT], "grad_tol": GRAD_TOL[_DT], "fd_tol": GRAD_FD_TOL[_DT],
+            "value_errors": value_errors,
+            "value_headroom": MODEL_TOL[_DT] / max(max(value_errors.values()), 1e-300),
+            "gradient_maxima": maxima, "gradient_errors": errors, "gradient_absolute_errors": absolute_errors,
+            "gradient_headroom": GRAD_TOL[_DT] / max(max_err, 1e-300),
+            "gradient_headroom_per_input": {
+                who: {n: GRAD_TOL[_DT] / max(e, 1e-300) for n, e in values.items()} for who, values in errors.items()},
+            "eager_jit_errors": eager_jit_errors, "all_float_inputs_finite_shape_keys_complete": True,
+            "all_float_inputs_eager_jit_bitwise": True,
+            "exact_zero_observed": "Wk outside live cells, all four gradient views" if grid else "X[5:8], all four gradient views",
+            "FD_epsilon": eps, "FD_directions": directions, "FD_errors": fd_errors,
+            "FD_headroom": GRAD_FD_TOL[_DT] / max(fd_err, 1e-300),
+            "FD_headroom_per_direction": {
+                who: {n: GRAD_FD_TOL[_DT] / max(e, 1e-300) for n, e in values.items()} for who, values in fd_errors.items()},
+            "absolute_directional_derivative_range": [min(dots), max(dots)],
+            "absolute_1e-3_canary_error": canary, "canary_rejected": True,
+        }
+        print(f"gradients of {name}: every {len(sin)} float inputs finite, eager == jit BITWISE; "
+              f"TRUE model max scaled {max_err:.3e} (headroom {report['gradient_headroom']:.1f}x), "
+              f"NumPy FD {len(model_names)} isolated + 3 joint max scaled {fd_err:.3e} "
+              f"(headroom {report['FD_headroom']:.1f}x); frozen in refs/FD: {frozen}; "
+              f"{report['exact_zero_observed']}; absolute-1e-3 canary rejected", flush=True)
+        print("skew-gradient-report: " + json.dumps(report, sort_keys=True), flush=True)
+
+
 def layers_time_grad_pins(by: dict, sfx: str) -> None:
     """Whole-history losses: independent Python-loop JAX autodiff and NumPy central differences."""
     def scaled(a, b):
@@ -3890,6 +4064,7 @@ def main() -> None:
     rnn_layers_skew_pins(by, sfx)
     rnn_layers_native_pins(by, sfx)
     grid_dp_pins(by, sfx)
+    skew_grad_pins(by, sfx)
     ssm_pins(by, sfx)
     gnn_pins(by, sfx)
     gnn_grad_pins(by, sfx)
