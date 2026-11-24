@@ -1648,9 +1648,10 @@ Two earlier executor STOPs are part of the record, not successful implementation
 
 1. The original export list omitted explicit-time materialized tables. `648e44c7` corrected
    KV exports to `Kc, Kn, Qr, Vc, Vn, Yh`, layer-skew to `Hl, Ix`, finite-row comparisons,
-   NaN-row/spare-row handling, and the layer-skew `E0` gradient warning. The earlier failed
-   comparison itself was not captured; a `check_np` finiteness failure was only a likely cause,
-   not a confirmed diagnosis.
+   NaN-row/spare-row handling, and the layer-skew `E0` gradient warning. The captured failure
+   in `phaseA-scratch-compare-verified.log` was an export-set assertion: actual
+   `{Qr, Kn, Kc, Vn, Yh, Vc}` versus required `{Kc, Yh, Vc}` on the Lean view.
+   It stopped before `check_np`; this was not a finiteness failure.
 2. The brief required distinct extents but used `i=l=3` for `time_layer`. `3774e682` corrected
    `i` to 5 (`X[6,5]`, `Wx[4,5]`), requiring fresh observations at that size, and corrected the
    `rnn_skew` last-token causality claim: `X[4]` cannot affect an `H2[:,6]` that does not exist.
@@ -1938,8 +1939,8 @@ Manual tool-invocation counts **include parallel wrappers and underlying calls**
 | D gradients | 46 |
 | C1 mutants A-D | 60 |
 | C2 mutants E-H and empty table commit | 59 |
-| C3 documentation/final gates | 22 through the initial documentation edit; final actual total in the documentation commit body |
-| Coordinator, one chat across resumes | 58 + 31 + 26 = **115 so far**, final current-window/cumulative total pending the parent's close-out |
+| C3 documentation/final gates | 54 |
+| Coordinator, one chat across resumes, including documentation review and close-out | 58 + 31 + 47 = **136** |
 
 The coordinator's resumed windows are **not separate sessions**: its cumulative >~60
 invocations are a budget breach, explicitly surfaced, while each implementer dispatch
