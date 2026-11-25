@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -59,6 +60,8 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32", "rnn_stack", "rnn_stack32",
                         "kv_cache", "kv_cache32", "time_layer", "time_layer32",
                         "rnn_skew", "rnn_skew32", "layer_skew", "layer_skew32",
+                        "rnn_layers_skew", "rnn_layers_skew32", "rnn_layers_native", "rnn_layers_native32",
+                        "grid_dp", "grid_dp32",
                         "ssm_diag", "ssm_diag32", "gnn_dense", "gnn_dense32", "gnn_edges", "gnn_edges32", "moe_dense", "moe_dense32"}
 # Exported pre-scan tables stacked over the layer axis (`Kc[t, h, j, l]`, `Vc[t, h, j, l]` of the cross-attention fixture): built from the NaN
 # layer-2 weight slice, so their layer-2 slice is NaN by construction. `require_close` and `record_output` compare layers 0 and 1 only and
@@ -2158,6 +2161,484 @@ def layer_skew_pins(by: dict, sfx: str) -> None:
     print_conv_stats(name)
 
 
+def np_stacked_layers(inp: dict):
+    """TRUE new-state stack, in unskewed time/layer order; no scheduling-table inputs."""
+    f = {n: np.asarray(inp[n], dtype=np.float64) for n in ("X", "Wx", "Wp", "Up", "H0")}
+    h = f["H0"].copy()
+    out, preact = np.empty((3, 4, 5)), np.empty((3, 4, 5))
+    for t in range(5):
+        for l in range(3):
+            incoming = f["Wx"] @ f["X"][t] if l == 0 else h[l - 1]
+            preact[l, :, t] = f["Wp"][l] @ incoming + f["Up"][l] @ h[l]
+            h[l] = np.tanh(preact[l, :, t])
+            out[l, :, t] = h[l]
+    return out, preact
+
+
+def np_stacked_skew_variant(inp: dict, mode: str) -> np.ndarray:
+    """Wrong skew semantics for gaps only, with independently defined scheduling data."""
+    f = {n: np.asarray(inp[n], dtype=np.float64) for n in ("X", "Wx", "Wp", "Up", "H0")}
+    g = np.empty((3, 4, 8))
+    g[:, :, 0] = f["H0"]
+    for k in range(7):
+        for l in range(3):
+            incoming = f["Wx"] @ f["X"][k] if l == 0 else np.zeros(4)
+            if mode == "reversed link":
+                if l < 2:
+                    incoming = incoming + g[l + 1, :, k]
+            elif mode != "no link" and l > 0:
+                p = max(0, k - 2) if mode == "below two skew steps late" else k
+                incoming = incoming + g[l - 1, :, p]
+            candidate = np.tanh(f["Wp"][l] @ incoming + f["Up"][l] @ g[l, :, k])
+            active = l <= k <= l + 4
+            if active or mode == "mask removed":
+                g[l, :, k + 1] = candidate
+            else:
+                g[l, :, k + 1] = 0.0 if mode == "Hold=0 only" else g[l, :, k]
+    return g
+
+
+def rnn_layers_skew_pins(by: dict, sfx: str) -> None:
+    _rnn_layers_pins(by, f"rnn_layers_skew{sfx}", True)
+
+
+def rnn_layers_native_pins(by: dict, sfx: str) -> None:
+    _rnn_layers_pins(by, f"rnn_layers_native{sfx}", False)
+
+
+def _rnn_layers_pins(by: dict, name: str, unskew: bool) -> None:
+    """Identical stack pins, differing only in topology, shift input and Out export."""
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    shapes = {"X": (8, 2), "Wx": (4, 2), "Wp": (3, 4, 4), "Up": (3, 4, 4),
+              "H0": (3, 4), "E0": (3,), "Act": (8, 3), "Hold": (8, 3)}
+    if unskew:
+        shapes["Sh"] = (3, 3)
+    assert {n: a.shape for n, a in fin.items()} == shapes, (name, "input shapes")
+    for n, a in fin.items():
+        assert np.all(np.isfinite(a)), (name, n, "finite padding required: 0 * NaN poisons inactive steps")
+    nodes = fx["plan"]["nodes"]
+    order = ["assign", "scan", "assign"] if unskew else ["assign", "scan"]
+    assert [n.get("kind", "assign") for n in nodes] == order, (name, "node order")
+    assert [n["step_count"] for n in nodes if n.get("kind") == "scan"] == [7], (name, "one seven-step scan")
+    counts = tuple(sum(n.get("kind", "assign") == k for n in flat_nodes(nodes))
+                   for k in ("assign", "pointwise", "axiswise"))
+    assert counts == (7 if unskew else 6, 1, 0), (name, counts)
+    exports = {"G": (3, 4, 8), "Ix": (8, 3, 4)}
+    if unskew:
+        exports["Out"] = (3, 4, 5)
+    assert sorted(fx["expected"]) == sorted(n for n, _ in fx["plan"]["materialized"]) == sorted(exports), name
+    out, preact = np_stacked_layers(fin)
+    g = np.empty((3, 4, 8))
+    for l in range(3):
+        for p in range(8):
+            g[l, :, p] = fin["H0"][l] if p <= l else out[l, :, min(p - l - 1, 4)]
+    ix = np.zeros((8, 3, 4))
+    for k in range(8):
+        ix[k, 0] = np.asarray(fin["Wx"], dtype=np.float64) @ np.asarray(fin["X"][k], dtype=np.float64)
+    want = dict(G=g, Ix=ix)
+    if unskew:
+        want["Out"] = out
+    views = conv_views(by, name)
+    errors = {}
+    for who, values in views.items():
+        assert {n: a.shape for n, a in values.items()} == exports, (name, who, "export shapes")
+        errors[who] = {}
+        for n in exports:
+            check_np(name, who, n, values[n], want[n])
+            errors[who][n] = float(np.max(np.abs(values[n].astype(np.float64) - want[n])))
+
+    k, l = np.arange(8)[:, None], np.arange(3)[None, :]
+    activity = ((l <= k) & (k <= l + 4)).astype(NDT)
+    assert np.array_equal(fin["Act"], activity), (name, "Act definition")
+    assert np.array_equal(fin["Hold"], 1 - activity), (name, "Hold definition")
+    assert np.array_equal(fin["E0"], np.array([1, 0, 0], dtype=NDT)), (name, "E0 definition")
+    if unskew:
+        assert np.array_equal(fin["Sh"], np.eye(3, k=-1, dtype=NDT)), (name, "Sh definition")
+    for n, seed in (("X", 1.0), ("Wx", 22.0), ("H0", 23.0), ("Wp", 24.0), ("Up", 25.0)):
+        a = fin[n][:5] if n == "X" else fin[n]
+        definition = np.array([0.6 * np.sin(seed + 1.7 * j) for j in range(a.size)]).reshape(a.shape).astype(NDT)
+        assert np.allclose(a, definition, rtol=0, atol=np.finfo(NDT).eps), (name, n, "gqaGen definition")
+    assert np.array_equal(fin["X"][5:], np.zeros((3, 2), dtype=NDT)), (name, "finite zero padding")
+
+    gaps = {}
+    for mode in ("mask removed", "no link", "reversed link", "below two skew steps late", "Hold=0 only"):
+        variant = np_stacked_skew_variant(fin, mode)
+        if mode in ("mask removed", "Hold=0 only"):
+            cells = [(l, p) for l in range(2) for p in range(l + 6, 8)]
+            domain = "post-live held G: (l,p)=(0,6),(0,7),(1,7); not initial/startup slots"
+        else:
+            layers = range(3) if mode == "reversed link" else range(1, 3)
+            cells = [(l, t + l + 1) for l in layers for t in range(1, 5)]
+            domain = f"live G, layers={list(layers)}, TRUE times=1..4 (exclude first step)"
+        gap = max(float(np.max(np.abs(g[l, :, p] - variant[l, :, p]))) for l, p in cells)
+        gaps[mode] = {"gap": gap, "domain": domain}
+    no_recur, _ = np_stacked_layers(dict(fin, Up=np.zeros((3, 4, 4))))
+    gaps["Up=0"] = {"gap": float(np.max(np.abs(out[:, :, 1:] - no_recur[:, :, 1:]))),
+                    "domain": "layers=0..2, TRUE times=1..4 (exclude first step)"}
+    old_inputs = dict(fin, X=fin["X"][:6], Sh=np.eye(3, k=-1), E0=np.array([1.0, 0.0, 0.0]))
+    old = np_layer_skew(old_inputs)["Hl"][:, :, 1:6]
+    gaps["old-state np_layer_skew"] = {"gap": float(np.max(np.abs(out[1:, :, 1:] - old[1:, :, 1:]))),
+                                     "domain": "align Hl positions=1..5 to TRUE times=0..4; gap layers=1..2, times=1..4"}
+    for mode, measurement in gaps.items():
+        print(f"{name}: gap {mode}: domain={measurement['domain']}; gap={measurement['gap']:.6f}")
+        assert measurement["gap"] > 1e-2, (name, "vacuous stack reference", mode, measurement)
+
+    base = views["eager"]
+    for l in range(3):
+        for p in range(8):
+            if p <= l:
+                expected = fin["H0"][l]
+            elif p > l + 5:
+                expected = base["G"][l, :, l + 5]
+            else:
+                continue
+            assert np.array_equal(bits(base["G"][l, :, p]), bits(expected)), (name, l, p, "held slot not bitwise")
+    jin = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+
+    def run(changes):
+        return {n: np.asarray(a) for n, a in rt.run_named(
+            fx["plan"], dict(jin, **{n: jnp.asarray(a) for n, a in changes.items()}), JDT).items()}
+
+    def live(values):
+        return values["Out"] if unskew else np.stack([values["G"][l, :, l + 1:l + 6] for l in range(3)])
+
+    xp = fin["X"].copy()
+    xp[5:] = NDT(0.5)
+    padded = run(dict(X=xp))
+    for n in ("G", "Out") if unskew else ("G",):
+        assert np.array_equal(bits(base[n]), bits(padded[n])), (name, n, "finite padding was read")
+    assert np.array_equal(bits(base["Ix"][:5]), bits(padded["Ix"][:5])), (name, "live Ix changed")
+    padding_moves = [float(np.max(np.abs(padded["Ix"][k] - base["Ix"][k]))) for k in range(5, 8)]
+    assert min(padding_moves) > 1e-4, (name, "padded Ix perturbation not live", padding_moves)
+    baseline = live(base)
+    time_moves = []
+    for t in range(5):
+        xp = fin["X"].copy()
+        xp[t] += NDT(0.5)
+        perturbed = live(run(dict(X=xp)))
+        assert np.array_equal(bits(baseline[:, :, :t]), bits(perturbed[:, :, :t])), (name, t, "noncausal TRUE time")
+        moves = np.max(np.abs(perturbed[:, :, t].astype(np.float64) - baseline[:, :, t]), axis=1).tolist()
+        assert min(moves) > 1e-4, (name, t, "NEW state must move EACH layer at SAME time", moves)
+        time_moves.append(moves)
+    for n in ("Wp", "Up", "H0"):
+        a = fin[n].copy()
+        a[2] += NDT(0.5)
+        perturbed = run({n: a})
+        assert np.array_equal(bits(base["G"][:2]), bits(perturbed["G"][:2])), (name, n, "top layer affects lower layers")
+        assert float(np.max(np.abs(perturbed["G"][2] - base["G"][2]))) > 1e-4, (name, n, "top perturbation not live")
+    wp = fin["Wp"].copy()
+    wp[0] += NDT(0.5)
+    perturbed = live(run(dict(Wp=wp)))
+    layer_moves = np.max(np.abs(perturbed.astype(np.float64) - baseline), axis=(1, 2)).tolist()
+    assert min(layer_moves) > 1e-4, (name, "Wp[0] must affect all three layers", layer_moves)
+    maximum = float(np.max(np.abs(preact)))
+    assert maximum < 2.0, (name, "tanh live preactivation lacks headroom", maximum)
+    worst = max(NUM_STATS[(name, n)][0] for n in exports)
+    print(f"{name}: extents k=8,l=3,d=4,i=2,t=5; kinds={counts}, scans=[7]; all exports/inputs pinned; "
+          "eager initial/held slots, finite padding, prior TRUE times and lower-layer direction BITWISE; SAME-time all-layer movement")
+    print("skew Part A measurements: " + json.dumps(dict(
+        fixture=name, precision=_DT, errors=errors, max_scaled=worst, headroom=MODEL_TOL[_DT] / worst if worst else None,
+        max_live_preactivation=maximum, min_tanh_slope=float(1 / np.cosh(maximum) ** 2), gaps=gaps,
+        bitwise={"held": True, "padding_G_Out_live_Ix": True, "prior_times_all_layers": True, "top_to_lower": True},
+        padding_Ix_moves=padding_moves, same_time_layer_moves=time_moves, Wp0_layer_moves=layer_moves)))
+    print_conv_stats(name)
+
+
+def np_grid(north=0.7, west=0.5, northwest=0.4, boundary=0.0):
+    """TRUE coordinatewise grid loops, fixed seed-31 weights; no skew-input tables."""
+    weights = np.array([0.6 * np.sin(31.0 + 1.7 * j) for j in range(16)]).reshape(4, 4)
+    cells, preact = np.empty((4, 4)), np.empty((4, 4))
+    for i in range(4):
+        for j in range(4):
+            n = cells[i - 1, j] if i else boundary
+            w = cells[i, j - 1] if j else boundary
+            nw = cells[i - 1, j - 1] if i and j else boundary
+            preact[i, j] = north * n + west * w + northwest * nw + weights[i, j]
+            cells[i, j] = np.tanh(preact[i, j])
+    return cells, preact
+
+
+def grid_dp_pins(by: dict, sfx: str) -> None:
+    name = f"grid_dp{sfx}"
+    fx = by[name]
+    fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+    shapes = {"Wk": (8, 4), "Act": (8, 4), "Hold": (8, 4),
+              "Ma": (4, 4), "Mb": (4, 4), "Mc": (4, 4), "Gz": (4,)}
+    assert {n: a.shape for n, a in fin.items()} == shapes, (name, "input shapes")
+    for n, a in fin.items():
+        assert np.all(np.isfinite(a)), (name, n, "finite padding required: 0 * NaN poisons inactive steps")
+    nodes = fx["plan"]["nodes"]
+    assert [n.get("kind", "assign") for n in nodes] == ["scan"], (name, "node order")
+    assert nodes[0]["step_count"] == 7, (name, "one seven-step scan")
+    counts = tuple(sum(n.get("kind", "assign") == k for n in flat_nodes(nodes))
+                   for k in ("assign", "pointwise", "axiswise"))
+    assert counts == (6, 1, 0), (name, counts)
+    assert sorted(fx["expected"]) == sorted(n for n, _ in fx["plan"]["materialized"]) == ["D", "G"], name
+    cells, preact = np_grid()
+    g = np.zeros((4, 8))
+    for i in range(4):
+        for p in range(i + 1, 8):
+            g[i, p] = cells[i, min(p - i - 1, 3)]
+    d = np.zeros((4, 8))
+    d[:, 1:] = g[:, :-1]
+    want = dict(G=g, D=d)
+    views, errors = conv_views(by, name), {}
+    for who, values in views.items():
+        assert {n: a.shape for n, a in values.items()} == {"D": (4, 8), "G": (4, 8)}, (name, who, "export shapes")
+        errors[who] = {}
+        for n in want:
+            check_np(name, who, n, values[n], want[n])
+            errors[who][n] = float(np.max(np.abs(values[n].astype(np.float64) - want[n])))
+        assert np.array_equal(bits(values["D"][:, 1:]), bits(values["G"][:, :-1])), (name, who, "delay line")
+        assert np.all(values["D"][:, 0] == 0), (name, who, "initial delay boundary")
+    k, r = np.arange(8)[:, None], np.arange(4)[None, :]
+    activity = ((r <= k) & (k <= r + 3)).astype(NDT)
+    assert np.array_equal(fin["Act"], activity), (name, "Act definition")
+    assert np.array_equal(fin["Hold"], 1 - activity), (name, "Hold definition")
+    shift = np.eye(4, k=-1, dtype=NDT)
+    for n, definition in (("Ma", NDT(0.7) * shift), ("Mb", NDT(0.5) * np.eye(4, dtype=NDT)),
+                          ("Mc", NDT(0.4) * shift), ("Gz", np.zeros(4, dtype=NDT))):
+        assert np.array_equal(fin[n], definition), (name, n, "boundary/coefficient definition")
+    weights = np.array([0.6 * np.sin(31.0 + 1.7 * j) for j in range(16)]).reshape(4, 4)
+    wk = np.zeros((8, 4), dtype=NDT)
+    for i in range(4):
+        for j in range(4):
+            wk[i + j, i] = NDT(weights[i, j])
+    assert np.allclose(fin["Wk"], wk, rtol=0, atol=np.finfo(NDT).eps), (name, "Wk live gqaGen and zero padding definition")
+
+    # Reading NW from G rather than D uses cell(i-1,j), one diagonal too recent.
+    wrong = np.zeros((4, 8))
+    for k in range(7):
+        for i in range(4):
+            if i <= k <= i + 3:
+                wrong[i, k + 1] = np.tanh(1.1 * (wrong[i - 1, k] if i else 0.0)
+                                         + 0.5 * wrong[i, k] + weights[i, k - i])
+            else:
+                wrong[i, k + 1] = wrong[i, k]
+    wrong_cells = np.array([[wrong[i, i + j + 1] for j in range(4)] for i in range(4)])
+    gaps = {}
+    for mode, variant, domain in (
+            ("drop north", np_grid(north=0.0)[0], [(i, j) for i in range(1, 4) for j in range(4)]),
+            ("drop west", np_grid(west=0.0)[0], [(i, j) for i in range(4) for j in range(1, 4)]),
+            ("drop NW", np_grid(northwest=0.0)[0], [(i, j) for i in range(1, 4) for j in range(1, 4)]),
+            ("NW wrong lag G instead of D", wrong_cells, [(i, j) for i in range(1, 4) for j in range(4)]),
+            ("nonzero boundary", np_grid(boundary=0.5)[0], [(i, j) for i in range(4) for j in range(4) if i + j > 0])):
+        gap = max(float(abs(cells[i, j] - variant[i, j])) for i, j in domain)
+        gaps[mode] = {"gap": gap, "domain": domain}
+        print(f"{name}: gap {mode}: domain={domain} (exclude degenerate first cell); gap={gap:.6f}")
+        assert gap > 1e-2, (name, "vacuous grid reference", mode, gap, domain)
+    base = views["eager"]
+    for i in range(4):
+        for p in range(8):
+            if p <= i:
+                assert np.all(base["G"][i, p] == 0), (name, i, p, "initial/held zero boundary")
+            elif p > i + 4:
+                assert np.array_equal(bits(base["G"][i, p]), bits(base["G"][i, i + 4])), (name, i, p, "held grid slot")
+    jin = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+    cone_moves = []
+    for i in range(4):
+        for j in range(4):
+            wp = fin["Wk"].copy()
+            wp[i + j, i] += NDT(0.5)
+            perturbed = np.asarray(rt.run_named(fx["plan"], dict(jin, Wk=jnp.asarray(wp)), JDT)["G"])
+            moves = []
+            for ii in range(4):
+                for jj in range(4):
+                    p = ii + jj + 1
+                    if ii < i or jj < j:
+                        assert np.array_equal(bits(base["G"][ii, p]), bits(perturbed[ii, p])), (name, i, j, ii, jj, "outside southeast cone")
+                    else:
+                        gap = float(abs(float(base["G"][ii, p]) - float(perturbed[ii, p])))
+                        assert gap > 1e-4, (name, i, j, ii, jj, "inside cone must move", gap)
+                        moves.append(gap)
+            cone_moves.append({"cell": [i, j], "minimum_inside_movement": min(moves)})
+    maximum = float(np.max(np.abs(preact)))
+    assert maximum < 2.0, (name, "tanh live preactivation lacks headroom", maximum)
+    worst = max(NUM_STATS[(name, n)][0] for n in want)
+    print(f"{name}: extents k=8,r=4; kinds={counts}, scans=[7]; every G/D position, all inputs/formulas pinned; "
+          "all 16 live Wk perturbations: outside coordinatewise southeast cone BITWISE, EVERY inside cell moves")
+    print("skew Part A measurements: " + json.dumps(dict(
+        fixture=name, precision=_DT, errors=errors, max_scaled=worst, headroom=MODEL_TOL[_DT] / worst if worst else None,
+        max_live_preactivation=maximum, min_tanh_slope=float(1 / np.cosh(maximum) ** 2), gaps=gaps,
+        bitwise={"held": True, "delay_line": True, "outside_southeast_cone": True}, cone_moves=cone_moves)))
+    print_conv_stats(name)
+
+
+def skew_grad_pins(by: dict, sfx: str) -> None:
+    """TRUE time/layer and coordinate loops; scheduling inputs are autodiff-only."""
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    def stacked_hand(inp):
+        h = [inp["H0"][l] for l in range(3)]
+        times = []
+        for t in range(5):
+            for l in range(3):
+                incoming = inp["Wx"] @ inp["X"][t] if l == 0 else h[l - 1]
+                h[l] = jnp.tanh(inp["Wp"][l] @ incoming + inp["Up"][l] @ h[l])
+            times.append(jnp.stack(h))
+        return jnp.stack(times, axis=2)
+
+    def grid_true(inp, xp):
+        cells = []
+        for i in range(4):
+            row = []
+            for j in range(4):
+                north = cells[i - 1][j] if i else 0.0
+                west = row[j - 1] if j else 0.0
+                northwest = cells[i - 1][j - 1] if i and j else 0.0
+                row.append(xp.tanh(0.7 * north + 0.5 * west + 0.4 * northwest + inp["Wk"][i + j, i]))
+            cells.append(row)
+        return cells[3][3]
+
+    for stem in ("rnn_layers_skew", "rnn_layers_native", "grid_dp"):
+        name = stem + sfx
+        fx = by[name]
+        sin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+        jin = {n: jnp.asarray(a) for n, a in sin.items()}
+        grid = stem == "grid_dp"
+        model_names = ("Wk",) if grid else ("Wx", "Wp", "Up", "H0", "X")
+        frozen = sorted(set(sin) - set(model_names))
+        model_in = {n: jin[n] for n in model_names}
+        support = {n: np.ones(sin[n].shape, dtype=bool) for n in model_names}
+        if grid:
+            support["Wk"][:] = False
+            for i in range(4):
+                for j in range(4):
+                    support["Wk"][i + j, i] = True
+        else:
+            support["X"][5:] = False
+
+        def top(live, initial, xp):
+            if stem == "rnn_layers_skew":
+                return live[2]
+            # Native G[2] includes three initial slots before the five true times.
+            return xp.stack([initial[2] if p <= 2 else live[2, :, p - 3] for p in range(8)], axis=1)
+
+        def hand(inp):
+            return grid_true(inp, jnp) if grid else top(stacked_hand(inp), inp["H0"], jnp)
+
+        def numpy_true(inp):
+            return (grid_true({"Wk": np.asarray(inp["Wk"], dtype=np.float64)}, np) if grid else
+                    top(np_stacked_layers(inp)[0], inp["H0"], np))
+
+        def plan_out(inp):
+            out = rt.run_named(fx["plan"], inp, JDT)
+            return out["G"][3, 7] if grid else out["Out"][2] if stem == "rnn_layers_skew" else out["G"][2]
+
+        want = np.asarray(numpy_true(sin))
+        c = np.sin(1.0 + np.arange(want.size)).reshape(want.shape).astype(NDT)
+        outputs = {"eager": plan_out(jin), "jit": jax.jit(plan_out)(jin),
+                   "pure-JAX": hand(model_in), "pure-JAX-jit": jax.jit(hand)(model_in)}
+        value_errors = {}
+        for who, out in outputs.items():
+            a = np.asarray(out)
+            assert a.shape == want.shape and np.all(np.isfinite(a)), (name, who, "loss output shape/finiteness")
+            value_errors[who] = scaled(a, want)
+            assert value_errors[who] < MODEL_TOL[_DT], (name, who, "TRUE loss output", value_errors[who])
+
+        grad_plan = jax.grad(lambda inp: jnp.sum(c * plan_out(inp)))
+        grad_hand = jax.grad(lambda inp: jnp.sum(c * hand(inp)))
+        grads = {"eager": grad_plan(jin), "jit": jax.jit(grad_plan)(jin),
+                 "pure-JAX": grad_hand(model_in), "pure-JAX-jit": jax.jit(grad_hand)(model_in)}
+        maxima, errors, absolute_errors = {}, {}, {}
+        for who, g in grads.items():
+            expected = sin if who in ("eager", "jit") else model_in
+            assert set(g) == set(expected), (name, who, "incomplete float input gradient keys", sorted(g))
+            maxima[who] = {}
+            for n, v in g.items():
+                a = np.asarray(v)
+                assert a.shape == sin[n].shape and a.dtype == NDT, (name, who, n, "gradient shape/dtype")
+                assert np.all(np.isfinite(a)), (name, who, n, "non-finite gradient; STOP without production repair")
+                maxima[who][n] = float(np.max(np.abs(a)))
+                if n in support:
+                    assert np.all(a[~support[n]] == 0), (name, who, n, "padded/dead input gradient not EXACTLY zero")
+            errors[who], absolute_errors[who] = {}, {}
+            for n in model_names:
+                a = np.asarray(g[n])[support[n]]
+                ref = np.asarray(grads["pure-JAX"][n])[support[n]]
+                errors[who][n] = scaled(a, ref)
+                absolute_errors[who][n] = float(np.max(np.abs(a.astype(np.float64) - ref.astype(np.float64))))
+                assert errors[who][n] < GRAD_TOL[_DT], (name, who, n, "TRUE model gradient", errors[who][n])
+                assert maxima[who][n] > 1e-3, (name, who, n, "trivial model gradient", maxima[who][n])
+        eager_jit_errors = {}
+        for n in sin:
+            eager_jit_errors[n] = scaled(grads["eager"][n], grads["jit"][n])
+            assert np.array_equal(bits(np.asarray(grads["eager"][n])), bits(np.asarray(grads["jit"][n]))), (
+                name, n, "gradient eager != jit bitwise", eager_jit_errors[n])
+
+        canary_input = "Wk" if grid else "Wp"
+        original = np.asarray(grads["eager"][canary_input])[support[canary_input]]
+        perturbed = original.copy()
+        perturbed.flat[int(np.argmax(np.abs(original)))] += NDT(1e-3)
+        canary = scaled(perturbed, original)
+        assert canary >= GRAD_TOL[_DT], (name, "absolute 1e-3 gradient canary accepted: vacuous", canary)
+
+        base = {n: a.astype(np.float64) for n, a in sin.items()}
+        loss_np = lambda inp: float(np.sum(c.astype(np.float64) * numpy_true(inp)))
+        rng = np.random.default_rng(7)
+        fd_errors = {who: {} for who in grads}
+        dots, directions = [], []
+        # Isolated inputs catch omissions that joint directional derivatives can hide.
+        for index, selected in enumerate([*model_names, None, None, None]):
+            label = selected if selected is not None else f"joint-{index - len(model_names) + 1}"
+            direction = {n: np.zeros_like(a) for n, a in base.items()}
+            for n in model_names:
+                if selected is None or selected == n:
+                    direction[n] = rng.standard_normal(base[n].shape) * support[n]
+            assert all(np.all(direction[n] == 0) for n in frozen), (name, "structural FD input not frozen")
+            assert all(np.all(direction[n][~support[n]] == 0) for n in model_names), (name, "FD outside live support")
+            eps = 1e-6
+            fd = (loss_np({n: base[n] + eps * direction[n] for n in base}) -
+                  loss_np({n: base[n] - eps * direction[n] for n in base})) / (2 * eps)
+            assert np.isfinite(fd), (name, label, "non-finite NumPy central difference")
+            for who, g in grads.items():
+                dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * direction[n]) for n in model_names))
+                assert abs(dot) > 1e-3, (name, who, label, "trivial directional derivative", dot)
+                error = abs(fd - dot) / max(1.0, abs(dot))
+                assert error < GRAD_FD_TOL[_DT], (name, who, label, "NumPy TRUE central differences", error)
+                fd_errors[who][label] = error
+                dots.append(abs(dot))
+            directions.append(label)
+        assert set(directions[:len(model_names)]) == set(model_names), (name, "FD missed a model input")
+        max_err = max(e for per_input in errors.values() for e in per_input.values())
+        fd_err = max(e for per_direction in fd_errors.values() for e in per_direction.values())
+        report = {
+            "fixture": name, "precision": _DT, "loss_output_shape": list(want.shape),
+            "loss": "sum(sin(1 + arange(out.size)) * out)",
+            "output": "G[3,7]" if grid else "Out[2]" if stem == "rnn_layers_skew" else "G[2], p<=2 initial; p=3..7 true t=p-3",
+            "model_inputs": list(model_names), "autodiff_inputs": sorted(sin),
+            "frozen_in_independent_reference_and_FD": frozen,
+            "support": "Wk[k=i+j,r=i], all 16 cells only" if grid else "X rows 0..4; all Wx,Wp,Up,H0",
+            "independent_reference": "row-major i/j loop, fixed 0.7/0.5/0.4, zero boundary, cell weights from Wk" if grid else "Python t=0..4, l=0..2, NEW lower-layer state; no scan/plan",
+            "numpy_reference": "separate NumPy execution of TRUE coordinate loop; np_grid value oracle untouched" if grid else "np_stacked_layers TRUE time/layer loop",
+            "model_tol": MODEL_TOL[_DT], "grad_tol": GRAD_TOL[_DT], "fd_tol": GRAD_FD_TOL[_DT],
+            "value_errors": value_errors,
+            "value_headroom": MODEL_TOL[_DT] / max(max(value_errors.values()), 1e-300),
+            "gradient_maxima": maxima, "gradient_errors": errors, "gradient_absolute_errors": absolute_errors,
+            "gradient_headroom": GRAD_TOL[_DT] / max(max_err, 1e-300),
+            "gradient_headroom_per_input": {
+                who: {n: GRAD_TOL[_DT] / max(e, 1e-300) for n, e in values.items()} for who, values in errors.items()},
+            "eager_jit_errors": eager_jit_errors, "all_float_inputs_finite_shape_keys_complete": True,
+            "all_float_inputs_eager_jit_bitwise": True,
+            "exact_zero_observed": "Wk outside live cells, all four gradient views" if grid else "X[5:8], all four gradient views",
+            "FD_epsilon": eps, "FD_directions": directions, "FD_errors": fd_errors,
+            "FD_headroom": GRAD_FD_TOL[_DT] / max(fd_err, 1e-300),
+            "FD_headroom_per_direction": {
+                who: {n: GRAD_FD_TOL[_DT] / max(e, 1e-300) for n, e in values.items()} for who, values in fd_errors.items()},
+            "absolute_directional_derivative_range": [min(dots), max(dots)],
+            "absolute_1e-3_canary_error": canary, "canary_rejected": True,
+        }
+        print(f"gradients of {name}: every {len(sin)} float inputs finite, eager == jit BITWISE; "
+              f"TRUE model max scaled {max_err:.3e} (headroom {report['gradient_headroom']:.1f}x), "
+              f"NumPy FD {len(model_names)} isolated + 3 joint max scaled {fd_err:.3e} "
+              f"(headroom {report['FD_headroom']:.1f}x); frozen in refs/FD: {frozen}; "
+              f"{report['exact_zero_observed']}; absolute-1e-3 canary rejected", flush=True)
+        print("skew-gradient-report: " + json.dumps(report, sort_keys=True), flush=True)
+
+
 def layers_time_grad_pins(by: dict, sfx: str) -> None:
     """Whole-history losses: independent Python-loop JAX autodiff and NumPy central differences."""
     def scaled(a, b):
@@ -3580,6 +4061,10 @@ def main() -> None:
     rnn_skew_pins(by, sfx)
     layer_skew_pins(by, sfx)
     layers_time_grad_pins(by, sfx)
+    rnn_layers_skew_pins(by, sfx)
+    rnn_layers_native_pins(by, sfx)
+    grid_dp_pins(by, sfx)
+    skew_grad_pins(by, sfx)
     ssm_pins(by, sfx)
     gnn_pins(by, sfx)
     gnn_grad_pins(by, sfx)

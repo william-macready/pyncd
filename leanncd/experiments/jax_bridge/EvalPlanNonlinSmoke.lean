@@ -2283,6 +2283,128 @@ def layerSkewProg32 : TLProgram := tlprog!{
   Hl[l, d, t +1] := Nn[l, d]
 }
 
+/-! ### Skewed single-scan models
+
+Layers consume the NEW lower-layer state by skewing time onto `k = t + l`.
+All padding is finite: inactive nonlinear candidates are still computed before masking.
+The grid's northwest dependency uses `D` to retain the extra diagonal of history. -/
+def rnnLayersX : Array Float := gqaGen 1.0 10 ++ Array.replicate 6 0.0
+def rnnLayersAct : Array Float :=
+  (Array.range 24).map fun n => if n % 3 <= n / 3 && n / 3 <= 4 + n % 3 then 1.0 else 0.0
+def rnnLayersHold : Array Float :=
+  (Array.range 24).map fun n => if n % 3 <= n / 3 && n / 3 <= 4 + n % 3 then 0.0 else 1.0
+def rnnLayersInputs : List (String × List Nat × Array Float) :=
+  [("X", [8, 2], rnnLayersX), ("Wx", [4, 2], gqaGen 22.0 8),
+   ("E0", [3], #[1.0, 0.0, 0.0]), ("H0", [3, 4], gqaGen 23.0 12),
+   ("Wp", [3, 4, 4], gqaGen 24.0 48), ("Up", [3, 4, 4], gqaGen 25.0 48),
+   ("Act", [8, 3], rnnLayersAct), ("Hold", [8, 3], rnnLayersHold)]
+def rnnLayersSkewInputs : List (String × List Nat × Array Float) :=
+  rnnLayersInputs ++ [("Sh", [3, 3], #[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])]
+def rnnLayersSkewEnv64 : HashMap String DenseTensor :=
+  env64 (rnnLayersSkewInputs.map fun (n, s, d) => (n, t64 s d))
+def rnnLayersSkewEnv32 : NamedDenseEnv32 :=
+  env32 (rnnLayersSkewInputs.map fun (n, s, d) => (n, t32 s d))
+def rnnLayersNativeEnv64 : HashMap String DenseTensor :=
+  env64 (rnnLayersInputs.map fun (n, s, d) => (n, t64 s d))
+def rnnLayersNativeEnv32 : NamedDenseEnv32 :=
+  env32 (rnnLayersInputs.map fun (n, s, d) => (n, t32 s d))
+
+def rnnLayersSkewProg : TLProgram := tlprog!{
+  iter k = 8
+  axis t : ℕ = 5
+  tensor f64 X(k, i), Wx(d, i), E0(l), Sh(l, m), H0(l, d), Wp(l, d, e), Up(l, d, e), Act(k, l), Hold(k, l)
+  tensor f64 G(l, d, k), Ix(k, l, e), Hi(l, e), Aa(l, d), Nn(l, d), Out(l, d, t)
+  G[l, d, 0]     := H0[l, d]
+  Ix[k, l, e]    := E0[l] · Wx[e, i] · X[k, i]
+  Hi[l, e]       := Sh[l, m] · G[m, e, k] + Ix[k, l, e]
+  Aa[l, d]       := Wp[l, d, e] · Hi[l, e] + Up[l, d, e] · G[l, e, k]
+  Nn[l, d]       := tanh(Aa[l, d])
+  G[l, d, k +1]  := Act[k, l] · Nn[l, d] + Hold[k, l] · G[l, d, k]
+  Out[l, d, t]   := G[l, d, t + l + 1]
+}
+def rnnLayersSkewProg32 : TLProgram := tlprog!{
+  iter k = 8
+  axis t : ℕ = 5
+  tensor X(k, i), Wx(d, i), E0(l), Sh(l, m), H0(l, d), Wp(l, d, e), Up(l, d, e), Act(k, l), Hold(k, l)
+  tensor G(l, d, k), Ix(k, l, e), Hi(l, e), Aa(l, d), Nn(l, d), Out(l, d, t)
+  G[l, d, 0]     := H0[l, d]
+  Ix[k, l, e]    := E0[l] · Wx[e, i] · X[k, i]
+  Hi[l, e]       := Sh[l, m] · G[m, e, k] + Ix[k, l, e]
+  Aa[l, d]       := Wp[l, d, e] · Hi[l, e] + Up[l, d, e] · G[l, e, k]
+  Nn[l, d]       := tanh(Aa[l, d])
+  G[l, d, k +1]  := Act[k, l] · Nn[l, d] + Hold[k, l] · G[l, d, k]
+  Out[l, d, t]   := G[l, d, t + l + 1]
+}
+
+def rnnLayersNativeProg : TLProgram := tlprog!{
+  iter k = 8
+  tensor f64 X(k, i), Wx(d, i), E0(l), H0(l, d), Wp(l, d, e), Up(l, d, e), Act(k, l), Hold(k, l)
+  tensor f64 G(l, d, k), Ix(k, l, e), Hi(l, e), Aa(l, d), Nn(l, d)
+  G[l, d, 0]     := H0[l, d]
+  Ix[k, l, e]    := E0[l] · Wx[e, i] · X[k, i]
+  Hi[l, e]       := G[l - 1, e, k] + Ix[k, l, e]
+  Aa[l, d]       := Wp[l, d, e] · Hi[l, e] + Up[l, d, e] · G[l, e, k]
+  Nn[l, d]       := tanh(Aa[l, d])
+  G[l, d, k +1]  := Act[k, l] · Nn[l, d] + Hold[k, l] · G[l, d, k]
+}
+def rnnLayersNativeProg32 : TLProgram := tlprog!{
+  iter k = 8
+  tensor X(k, i), Wx(d, i), E0(l), H0(l, d), Wp(l, d, e), Up(l, d, e), Act(k, l), Hold(k, l)
+  tensor G(l, d, k), Ix(k, l, e), Hi(l, e), Aa(l, d), Nn(l, d)
+  G[l, d, 0]     := H0[l, d]
+  Ix[k, l, e]    := E0[l] · Wx[e, i] · X[k, i]
+  Hi[l, e]       := G[l - 1, e, k] + Ix[k, l, e]
+  Aa[l, d]       := Wp[l, d, e] · Hi[l, e] + Up[l, d, e] · G[l, e, k]
+  Nn[l, d]       := tanh(Aa[l, d])
+  G[l, d, k +1]  := Act[k, l] · Nn[l, d] + Hold[k, l] · G[l, d, k]
+}
+
+def gridDpW : Array Float := gqaGen 31.0 16
+def gridDpWk : Array Float :=
+  (Array.range 32).map fun n =>
+    if n % 4 <= n / 4 && n / 4 <= n % 4 + 3 then gridDpW[4 * (n % 4) + (n / 4 - n % 4)]! else 0.0
+def gridDpAct : Array Float :=
+  (Array.range 32).map fun n => if n % 4 <= n / 4 && n / 4 <= n % 4 + 3 then 1.0 else 0.0
+def gridDpHold : Array Float :=
+  (Array.range 32).map fun n => if n % 4 <= n / 4 && n / 4 <= n % 4 + 3 then 0.0 else 1.0
+def gridDpMa : Array Float :=
+  (Array.range 16).map fun n => if n / 4 == n % 4 + 1 then 0.7 else 0.0
+def gridDpMb : Array Float :=
+  (Array.range 16).map fun n => if n / 4 == n % 4 then 0.5 else 0.0
+def gridDpMc : Array Float :=
+  (Array.range 16).map fun n => if n / 4 == n % 4 + 1 then 0.4 else 0.0
+def gridDpInputs : List (String × List Nat × Array Float) :=
+  [("Wk", [8, 4], gridDpWk), ("Act", [8, 4], gridDpAct), ("Hold", [8, 4], gridDpHold),
+   ("Ma", [4, 4], gridDpMa), ("Mb", [4, 4], gridDpMb), ("Mc", [4, 4], gridDpMc),
+   ("Gz", [4], Array.replicate 4 0.0)]
+def gridDpEnv64 : HashMap String DenseTensor :=
+  env64 (gridDpInputs.map fun (n, s, d) => (n, t64 s d))
+def gridDpEnv32 : NamedDenseEnv32 :=
+  env32 (gridDpInputs.map fun (n, s, d) => (n, t32 s d))
+
+def gridDpProg : TLProgram := tlprog!{
+  iter k = 8
+  tensor f64 Wk(k, r), Act(k, r), Hold(k, r), Ma(r, m), Mb(r, m), Mc(r, m), Gz(r)
+  tensor f64 G(r, k), D(r, k), Aa(r), Nn(r)
+  G[r, 0]     := Gz[r]
+  D[r, 0]     := Gz[r]
+  Aa[r]       := Ma[r, m] · G[m, k] + Mb[r, m] · G[m, k] + Mc[r, m] · D[m, k] + Wk[k, r]
+  Nn[r]       := tanh(Aa[r])
+  G[r, k +1]  := Act[k, r] · Nn[r] + Hold[k, r] · G[r, k]
+  D[r, k +1]  := G[r, k]
+}
+def gridDpProg32 : TLProgram := tlprog!{
+  iter k = 8
+  tensor Wk(k, r), Act(k, r), Hold(k, r), Ma(r, m), Mb(r, m), Mc(r, m), Gz(r)
+  tensor G(r, k), D(r, k), Aa(r), Nn(r)
+  G[r, 0]     := Gz[r]
+  D[r, 0]     := Gz[r]
+  Aa[r]       := Ma[r, m] · G[m, k] + Mb[r, m] · G[m, k] + Mc[r, m] · D[m, k] + Wk[k, r]
+  Nn[r]       := tanh(Aa[r])
+  G[r, k +1]  := Act[k, r] · Nn[r] + Hold[k, r] · G[r, k]
+  D[r, k +1]  := G[r, k]
+}
+
 /-! ### Diagonal SSM: linear recurrence and its causal-convolution interpretation
 
 `N = A * H[t] + B X[t]`, `H[t+1] = N`, `Y[t+1] = Wy N + Wd X[t]`.
@@ -2520,6 +2642,9 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "time_layer" timeLayerProg timeLayerEnv64 2 0 (some (6, 2, 0)) true (scans := 2),
     ← fixture64 "rnn_skew" rnnSkewProg rnnSkewEnv64 2 0 (some (8, 2, 0)) true (scans := 1),
     ← fixture64 "layer_skew" layerSkewProg layerSkewEnv64 1 0 (some (6, 1, 0)) true (scans := 1),
+    ← fixture64 "rnn_layers_skew" rnnLayersSkewProg rnnLayersSkewEnv64 1 0 (some (7, 1, 0)) true (scans := 1),
+    ← fixture64 "rnn_layers_native" rnnLayersNativeProg rnnLayersNativeEnv64 1 0 (some (6, 1, 0)) true (scans := 1),
+    ← fixture64 "grid_dp" gridDpProg gridDpEnv64 1 0 (some (6, 1, 0)) true (scans := 1),
     ← fixture64 "gnn_dense" gnnProg gnnEnv64 2 1 (some (12, 2, 1)) true,
     ← fixture64 "gnn_edges" gnnEdgeProg gnnEdgeEnv64 7 0 (some (17, 7, 0)),
     ← fixture64 "moe_dense" moeProg moeEnv64 1 1 (some (6, 1, 1)),
@@ -2603,6 +2728,9 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "time_layer32" timeLayerProg32 timeLayerEnv32 2 0 (some (6, 2, 0)) true (scans := 2),
     ← fixture32 "rnn_skew32" rnnSkewProg32 rnnSkewEnv32 2 0 (some (8, 2, 0)) true (scans := 1),
     ← fixture32 "layer_skew32" layerSkewProg32 layerSkewEnv32 1 0 (some (6, 1, 0)) true (scans := 1),
+    ← fixture32 "rnn_layers_skew32" rnnLayersSkewProg32 rnnLayersSkewEnv32 1 0 (some (7, 1, 0)) true (scans := 1),
+    ← fixture32 "rnn_layers_native32" rnnLayersNativeProg32 rnnLayersNativeEnv32 1 0 (some (6, 1, 0)) true (scans := 1),
+    ← fixture32 "grid_dp32" gridDpProg32 gridDpEnv32 1 0 (some (6, 1, 0)) true (scans := 1),
     ← fixture32 "gnn_dense32" gnnProg32 gnnEnv32 2 1 (some (12, 2, 1)) true,
     ← fixture32 "gnn_edges32" gnnEdgeProg32 gnnEdgeEnv32 7 0 (some (17, 7, 0)),
     ← fixture32 "moe_dense32" moeProg32 moeEnv32 1 1 (some (6, 1, 1)),

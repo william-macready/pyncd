@@ -1986,3 +1986,307 @@ dispatches each; not sized or begun here). No scope expansion or additional side
 
 **NOT re-run by the controller:** mutants A, B, C, E, F, G, H (their kills are by value pins or gaps this review did not touch; the executor's evidence JSONs were read by the reviewer, not re-executed); the gradient pins and their finite-difference references beyond the full runner pass; the binary32 headroom of fixtures other than `kv_cache32`; the Python/JAX verifiers of the other seven drivers (`check-lean-drivers.sh` is Lean-side only). The executor's budget breach (136 tool calls, tokens unmeasured) stands as recorded above.
 
+## 28. Skewed single-scan execution: true stacked layers and grid DP (2026-11-24)
+
+**Status:** reviewed by the controller and merged to local `main` (see "Controller review" at the end of this section). Direct path, fixtures and pins only.
+Base local `main`: `f4084d517e7bcdf15c92f2da8ff7d03b96c35c4b`, a papers-only descendant of
+`fee61984`. Branch `jax-skew-exec`, worktree `.claude/worktrees/skew-exec`.
+The session-start worktree and other branches were left untouched.
+
+Commits before this documentation close-out:
+
+| Commit | Subject |
+|---|---|
+| `bb19425d` | `test(jax): add skewed single-scan fixtures in both precisions` |
+| `75c51303` | `test(jax): pin true skewed stack and grid models` |
+| `9b770b02` | `test(jax): pin true skewed stack and grid gradients` |
+| `3af8d70d` | `test(jax): record eight skew fixture mutant kills` (empty commit, full mutation table in body) |
+
+### Programs, data and Step 0
+
+Definitions and registrations are in
+[`EvalPlanNonlinSmoke.lean`](../../leanncd/experiments/jax_bridge/EvalPlanNonlinSmoke.lean):
+`rnnLayersSkewProg`, `rnnLayersNativeProg`, `gridDpProg` and their `32` siblings.
+The binary32 declarations omit `f64`; each input has one shared definition for both environments.
+The skew RNN's recurrence is:
+
+```text
+G[l,d,0] := H0[l,d]
+Ix[k,l,e] := E0[l] * Wx[e,i] * X[k,i]
+Hi[l,e] := Sh[l,m] * G[m,e,k] + Ix[k,l,e]
+Aa[l,d] := Wp[l,d,e] * Hi[l,e] + Up[l,d,e] * G[l,e,k]
+Nn[l,d] := tanh(Aa[l,d])
+G[l,d,k+1] := Act[k,l] * Nn[l,d] + Hold[k,l] * G[l,d,k]
+Out[l,d,t] := G[l,d,t+l+1]
+```
+
+The native RNN substitutes `G[l-1,e,k]` for the shift-matrix read and has no `Sh` or `Out`.
+The grid uses:
+
+```text
+G[r,0] := Gz[r]
+D[r,0] := Gz[r]
+Aa[r] := Ma[r,m] * G[m,k] + Mb[r,m] * G[m,k] + Mc[r,m] * D[m,k] + Wk[k,r]
+Nn[r] := tanh(Aa[r])
+G[r,k+1] := Act[k,r] * Nn[r] + Hold[k,r] * G[r,k]
+D[r,k+1] := G[r,k]
+```
+
+Step 0 accepted all three programs in both precisions. Its observed structures, also asserted by
+the final Python pins, match the brief:
+
+| Fixture (and `32` sibling) | Exact exports | Kinds (assign, pointwise, axiswise) | Top-level nodes | Scan records / steps |
+|---|---|---|---|---|
+| `rnn_layers_skew` | `G`, `Ix`, `Out` | (7, 1, 0) | assign, scan, assign | 1 / 7 |
+| `rnn_layers_native` | `G`, `Ix` | (6, 1, 0) | assign, scan | 1 / 7 |
+| `grid_dp` | `D`, `G` | (6, 1, 0) | scan | 1 / 7 |
+
+RNN shapes: `X [8,2]`, `Wx [4,2]`, `E0 [3]`, `H0 [3,4]`, `Wp/Up [3,4,4]`,
+`Act/Hold [8,3]`, and skew-only `Sh [3,3]`. Extents `k=8,l=3,d=4,i=2,t=5` are distinct;
+`e` aliases `d`, `m` aliases `l`. Grid shapes: `Wk/Act/Hold [8,4]`,
+`Ma/Mb/Mc [4,4]`, `Gz [4]`; `k=8,r=4`, with `m` aliasing `r`.
+
+The only seed candidate was the brief's: RNN `X=1, Wx=22, H0=23, Wp=24, Up=25`;
+grid `31`. Generator `0.6 * sin(seed + 1.7*j)`. No rejected candidates, seed changes,
+data/size deviations or tolerance changes. RNN `X` has five generated rows and three finite zero
+rows. `E0=[1,0,0]`, `Sh` is the lower shift, `Act[k,l]=1` iff `l<=k<=l+4`,
+`Hold=1-Act`. Grid live `Wk[k,r]=w[r,k-r]`, `Act[k,r]=1` iff `r<=k<=r+3`,
+`Ma=0.7*S`, `Mb=0.5*I`, `Mc=0.4*S`, `Gz=0`.
+Every input and formula is pinned.
+
+Step 0 binary64 maximum errors (Lean / eager / jit): both RNNs
+`1.665e-16 / 2.220e-16 / 2.220e-16`; grid
+`1.110e-16 / 1.665e-16 / 1.665e-16`.
+Step 0 binary32 worst errors/headroom: both RNNs `9.183e-8 / 10.89x`;
+grid `9.544e-8 / 10.48x`. The scratch grid reference used reconstructed folded binary32
+inputs; the committed value oracle instead uses the fixed true coefficients and seed formula,
+giving the final measurements below. Neither data nor tolerance was changed.
+Live NumPy preactivation maxima: RNN layers `0.657522, 0.617954, 1.133214`;
+grid `1.123946`. Plan preactivations were inferred with `arctanh` of live outputs, not exported
+as additional tensors; largest binary32 inference `1.13321418`. No tanh saturation
+(minimum true-model slope about `0.340467`).
+
+Two scratch-loader mistakes were corrected without production edits: the binary64 tensor entries
+omit `dtype`, and final generated modules use `FIXTURES` rather than scratch `fixtures`.
+Their original failed logs were retained in the ignored cache; these were not gate passes.
+
+### Independent value pins and perturbations
+
+[`evalplan_nonlin_smoke.py`](../../leanncd/experiments/jax_bridge/evalplan_nonlin_smoke.py)
+contains one entry helper per model, called once per precision.
+`np_stacked_layers` loops over true time then layers, consuming the newly computed lower layer;
+it reads only `X, Wx, Wp, Up, H0`. `np_grid` loops over actual `(i,j)` cells, with fixed
+seed-31 weights, coefficients and zero boundaries, and takes no fixture input dictionary.
+Neither value oracle reads a scheduling table. Expected `G/D` histories are assembled from
+true outputs and initial states; expected `Ix` selects layer 0 independently of `E0`.
+Value comparisons precede table/gap checks so malformed structural data fails a value pin.
+
+All exports and every history position are pinned on Lean, eager and jit:
+
+| Model | Binary64 Lean / eager / jit max error | Binary32 Lean / eager / jit max error | Binary32 worst headroom |
+|---|---|---|---|
+| `rnn_layers_skew` | `1.665e-16 / 2.220e-16 / 2.220e-16` | `9.183e-8 / 8.990e-8 / 8.990e-8` | 10.89x |
+| `rnn_layers_native` | `1.665e-16 / 2.220e-16 / 2.220e-16` | `9.183e-8 / 8.990e-8 / 8.990e-8` | 10.89x |
+| `grid_dp` | `1.110e-16 / 1.665e-16 / 1.665e-16` | `4.609e-8 / 6.971e-8 / 6.971e-8` | 14.34x |
+
+`MODEL_TOL` remains `1e-12 / 1e-6`. Here outputs are bounded below magnitude 1, so maximum
+scaled and absolute errors agree. RNN `Ix` max error is zero in binary64 and `1.867e-8` in binary32.
+
+Non-vacuity domains deliberately exclude degenerate startup cells:
+
+| RNN wrong model (both RNN fixtures) | Domain | Gap binary64 / binary32 |
+|---|---|---|
+| Activity mask removed | post-live held `(l,p)=(0,6),(0,7),(1,7)` | 0.119763 / 0.119763 |
+| No layer link | layers 1..2, true times 1..4 | 0.163530 / 0.163530 |
+| Reversed layer link | layers 0..2, true times 1..4 | 0.901230 / 0.901230 |
+| Lower layer two skew steps late | layers 1..2, true times 1..4 | 0.572208 / 0.572208 |
+| No recurrence (`Up=0`) | layers 0..2, true times 1..4 | 0.350562 / 0.350562 |
+| OLD-state `np_layer_skew` | layers 1..2, true times 1..4, aligned to `Hl` positions 2..5 | 0.460426 / 0.460426 |
+| Held slots not held (`Hold=0`) | post-live held cells above | 0.126277 / 0.126277 |
+
+| Grid wrong model | Domain | Gap (both precisions) |
+|---|---|---|
+| Drop north | `i>=1`, all `j` | 0.511931 |
+| Drop west | all `i`, `j>=1` | 0.784782 |
+| Drop northwest | `i>=1,j>=1` | 0.627764 |
+| NW from `G` rather than `D` | `i>=1`, all `j` | 0.725912 |
+| Nonzero outside boundary | all cells except `(0,0)` | 0.856653 |
+
+Every gap is asserted `>1e-2`, with its domain printed. No gap is decided by the first cell alone.
+Observed in both precisions, not merely predicted:
+
+- Every eager RNN initial/held slot is bitwise equal to its initial/last-live value.
+- Replacing `X[5:8]` with `0.5` leaves `G`, `Out` and live `Ix` bitwise unchanged;
+  each padded `Ix` row moves by about `0.395197`. Finite padding is essential because
+  inactive nonlinear candidates are still evaluated (`0*NaN` is NaN).
+- Each of five `X[t]` perturbations preserves every earlier true-time output in every layer
+  bitwise and moves every layer at the SAME true time, minimum movement `0.01908618`.
+- Perturbing top-layer `Wp`, `Up` or `H0` preserves both lower layers at every position
+  bitwise and is live in the top layer; perturbing `Wp[0]` moves all three layers,
+  minimum `0.00386128`.
+- Grid `D[:,p+1]` is bitwise equal to `G[:,p]` on all three views; zero initial delay boundary
+  and eager held slots are pinned. Perturbing each of 16 live weights preserves all cells
+  outside its coordinatewise southeast cone bitwise and moves EVERY cell inside it,
+  minimum movement about `0.00696935`.
+
+The hoisted `Ix` table keeps `k` on the LHS and is exported, not an intermediate.
+`Hold` is input data, not term subtraction or a scan-axis `where` mask. Grid `D` starts at
+the same zero boundary as `G`. The native RNN covers zero-padding of the `l-1` read without
+adding the parked micro-program. All existing fixtures and pins remain unchanged.
+
+### Gradients
+
+Losses use `sum(sin(1+arange(out.size))*out)` on skew `Out[2]`, native `G[2]`
+(including its three initial slots), and grid final cell `G[3,7]`.
+The independent JAX RNN reference loops in true time/layer order, not the plan's scan.
+The grid reference loops in row-major coordinates, mapping live `Wk[i+j,i]` to cell weights.
+NumPy central differences use the true loops with epsilon `1e-6`.
+
+Every float input's eager/jit gradient is finite, shape/key-complete and bitwise equal.
+RNN `Wx,Wp,Up,H0,X[0:5]` and grid's 16 live `Wk` entries are compared against pure-JAX
+and pure-JAX-jit references. RNN structural `Act,Hold,E0,Sh` (native has no `Sh`) are frozen
+in independent references/FD; grid `Ma,Mb,Mc,Act,Hold,Gz` are likewise frozen:
+coefficient-matrix gradients are finite/bitwise checked, not independently certified.
+All four gradient views give EXACT zero on padded RNN `X[5:8]` and dead grid `Wk` entries.
+Five isolated RNN-input directions plus three joint directions, and one isolated grid-input
+direction plus three joint directions, prevent joint cancellation from hiding omitted inputs.
+The absolute `1e-3` gradient perturbation canary is rejected.
+
+| Model | Gradient error / headroom binary64 | Gradient error / headroom binary32 | FD error / headroom binary64 | FD error / headroom binary32 |
+|---|---|---|---|---|
+| `rnn_layers_skew` | `3.331e-16 / 3002x` | `2.384e-7 / 419x` | `1.647e-10 / 607x` | `3.829e-7 / 261x` |
+| `rnn_layers_native` | `3.331e-16 / 3002x` | `2.980e-7 / 336x` | `1.748e-10 / 572x` | `3.326e-7 / 301x` |
+| `grid_dp` | `3.331e-16 / 3002x` | `1.192e-7 / 839x` | `2.752e-11 / 3634x` | `2.501e-7 / 400x` |
+
+`GRAD_TOL` remains `1e-12 / 1e-4`, `GRAD_FD_TOL` remains `1e-7 / 1e-4`.
+Full per-input maxima, error/headroom and FD-direction measurements are printed in the final
+runner's `skew-gradient-report` JSON lines.
+
+### Accepted hand mutants
+
+All edits targeted only a new binary64 environment/program, except H's binary32 sibling.
+Every input stayed used. No shape-solver refusals, survivors or replacement mutants.
+Each full runner exited 1 at the named independent NumPy value pin:
+
+| ID | Edit | First failing assertion |
+|---|---|---|
+| A | skew Act all ones, Hold all zeros | `pin numpy model: rnn_layers_skew lean G` |
+| B | skew Sh transposed | `pin numpy model: rnn_layers_skew lean G` |
+| C | skew E0 = [1,1,1] | `pin numpy model: rnn_layers_skew lean G` |
+| D | skew hold INITIAL H0 instead of last G | `pin numpy model: rnn_layers_skew lean G` |
+| E | native read layer above (`l+1`) | `pin numpy model: rnn_layers_native lean G` |
+| F | grid NW reads G rather than D | `pin numpy model: grid_dp lean G` |
+| G | grid Act window upper endpoint `r+4` | `pin numpy model: grid_dp lean G` |
+| H | binary32 grid NW reads G rather than D | `pin numpy model: grid_dp32 lean G` |
+
+H's binary64 leg ran green first. After EACH inverse edit, `git diff --stat` was empty and
+`lake-build.sh ... Tests JaxExperiment` completed successfully with 8846 jobs, clearing mutated
+oleans. Exact edits, failure errors, commands and restoration logs are in the empty commit body
+and ignored `skew-mutants-report.json`. The controller did not rerun the eight cycles after
+reading their evidence; it ran the final full chain on the restored tree.
+
+### Final verification, review, budgets and parked work
+
+The controller ran these sequentially, with `env -u PYTHON`, on the final executable tree:
+
+```text
+bash <wt>/leanncd/scripts/lake-build.sh <wt>/leanncd Tests JaxExperiment
+bash <wt>/leanncd/experiments/jax_bridge/check-lean-drivers.sh
+bash <wt>/leanncd/experiments/jax_bridge/run-evalplan-nonlin.sh
+```
+
+Results: **8846 jobs, 0 errors; all eight Lean drivers clean; 63 binary64 and 54 binary32
+fixtures within tolerance, eager and jit, exit 0**. The other seven drivers' Python/JAX verifiers
+were not run: `check-lean-drivers.sh` explicitly checks the Lean side only.
+Final logs live in the ignored bridge `.cache/` as `skew-final-build.log`,
+`skew-final-drivers.log`, `skew-final-runner.log`. Part A baseline independently verified
+8846/eight/60+51 before edits. No two Lean builds/runs were launched concurrently.
+
+Controller read-only review of the entire executable diff: no findings. Checked the Appendix A
+programs and precision siblings, all shared input definitions, exact registrations and exports,
+true-model input independence, nondegenerate gap domains, bitwise/live perturbation claims,
+independent gradient losses/support, frozen tables and unchanged tolerances/existing pin code.
+No production files, grammar, runtime, existing fixtures or mutation manifests were changed.
+Documentation close-out follows that verified executable tree; owner whole-branch review remains.
+
+**Budget breaches are explicit.** At the accounting checkpoint before documentation close-out,
+Copilot `events.jsonl` gives the following counts by `agentId`:
+
+| Dispatch | Actual tool starts | Assistant turns | Cumulative input tokens | Peak prompt tokens |
+|---|---|---|---|---|
+| Lean/Step 0 | 99 | 51 | 4,772,302 | 122,268 |
+| Python value/structural pins | 43 | 33 | 2,061,844 | 79,683 |
+| Gradients | 47 | 42 | 2,366,595 | 76,904 |
+| Mutants | 74 | 64 | 3,193,580 | 65,222 |
+| Controller (checkpoint, excluding subsequent close-out calls) | 64 | 28 | 1,703,995 | 104,053 |
+
+Actual tool starts exclude parallel wrappers; agents' manually counted wrapper-inclusive totals
+were 110, 46, 49 and 78. Lean, mutants and controller exceed the roughly 60-call target;
+mutants also exceeded 60 turns. Reading/probe setup and eight serial mutation/build cycles were
+not sufficiently subdivided. All observed context peaks are below 250k.
+Cumulative input at this checkpoint: **14,098,316**, below the 175M execution budget.
+Method: aggregate `tool.execution_start`, `assistant.turn_start`, and `session.usage_record`
+from session `4e67350b-3910-4811-97e5-d61efe003b4c` by `agentId`.
+`usage.inputTokens` already includes cache reads/writes; they were not added a second time.
+The required `token-report.py <session-id>` returned `no transcript for session`; the Copilot
+event telemetry supplies these measured values instead. Controller close-out adds more calls/tokens
+after this snapshot. No claim of compliance with the breached per-dispatch caps.
+
+No requested fixture, pin, gradient or mutation was cut. Native grid/nested scan remains parked
+(scope options C/D: approximately 5..11 dispatches for native grid, 4..8 Lean-only for nested);
+frontend desugaring (B: 2..4 dispatches) is not needed for this goal. Part V certification,
+skew factors above one, strided/data-dependent structure and variable lengths were not probed
+or implemented (cost not sized; require separate scoping). The out-of-range micro-program,
+oracle tightening and mutation-manifest expansion were not started (one Direct dispatch apiece
+if separately requested). Compile/trace time was not measured.
+
+### Controller review (2026-11-24)
+
+The owner's controller read the brief and the whole executable diff (`f4084d51..88257d81`). It
+checked the Lean programs against Appendix A in both precisions and the row-major decoding of
+`Act`/`Hold`/`Wk`/`Ma`/`Mb`/`Mc`. On the Python side it checked:
+
+- the true-model oracles' input independence;
+- every gap domain;
+- the old-state gap's alignment (`np_layer_skew` on `X[:6]` puts true time `t` at `Hl` position
+  `t + 1`, and layer 0 is identical in both models, so the gap over layers 1..2 is a real
+  old-state versus new-state difference);
+- the causality, direction and cone pins;
+- the gradient references, frozen tables and finite-difference supports.
+
+The diff only adds lines, the single deletion being the README fixture count. No forbidden file
+was touched, and no existing fixture or pin changed. One independent read-only review (a separate
+agent, given the brief and the code but not the controller's conclusions) found no Critical or
+Important defects and three Minor ones, adjudicated as accepted:
+
+- **M1.** For `grid_dp`, the pure-JAX gradient reference and the finite-difference reference run
+  the same `grid_true` loop, under `jnp` and `np`. Autodiff and central differences are still
+  independent methods. `grid_true` is tied to the plan, and so to `np_grid`, only through the
+  value of the final cell `G[3,7]`, which depends on every live weight. A bug that changed only
+  `grid_true`'s derivatives at this data is implausible. The stacked RNN has two separate
+  implementations (`stacked_hand`, `np_stacked_layers`).
+- **M2.** The absolute-`1e-3` gradient canary only shows that `GRAD_TOL` is below
+  `1e-3 / max(1, |g|)`. It cannot detect a reference that silently equals the plan. It copies the
+  existing pattern of the other gradient helpers, and the real comparison is against the
+  independent pure-JAX reference.
+- **M3.** The "nonzero boundary" gap sets 0.5 on all three edges, but a `Gz` mutant can only
+  change the west and northwest edges, because row 0's north input comes through the zero row of
+  `Ma`. The gap is still non-vacuous: the west edge alone moves the pre-activation by 0.25.
+
+The reviewer also noted that the "mask removed" and "Hold=0 only" gaps are measured only on
+post-live held slots, a conservative subset, which is acceptable.
+
+The controller re-ran the final gates itself on `88257d81`:
+`lake-build.sh <wt>/leanncd Tests JaxExperiment` gave 8846 jobs, exit 0;
+`check-lean-drivers.sh` gave all eight drivers clean; and `run-evalplan-nonlin.sh` gave 63
+binary64 and 54 binary32 fixtures within tolerance, exit 0. The new fixtures' pin and gradient
+lines and headroom match the tables above.
+
+**NOT re-run by the controller:** the eight mutant cycles (their evidence was read, not
+re-executed) and the Python/JAX verifiers of the other seven drivers. The executor's per-dispatch
+call-cap breaches (Lean 99, mutants 74, controller 64 tool starts against about 60) stand as
+recorded above; the cumulative 14.1M input tokens are within the 175M execution budget. The
+executor's ignored `.cache/skew-*` logs (46 files) are archived at
+`/Users/williammacready/code/python/pyncd.worktrees/skew-exec-evidence-logs`. Merged to local
+`main` with `--no-ff`; the branch and worktree are removed after the merge.
+
