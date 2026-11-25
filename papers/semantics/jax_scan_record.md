@@ -1988,7 +1988,7 @@ dispatches each; not sized or begun here). No scope expansion or additional side
 
 ## 28. Skewed single-scan execution: true stacked layers and grid DP (2026-11-24)
 
-**Status:** READY FOR WHOLE-BRANCH REVIEW, not merged or pushed. Direct path, fixtures and pins only.
+**Status:** reviewed by the controller and merged to local `main` (see "Controller review" at the end of this section). Direct path, fixtures and pins only.
 Base local `main`: `f4084d517e7bcdf15c92f2da8ff7d03b96c35c4b`, a papers-only descendant of
 `fee61984`. Branch `jax-skew-exec`, worktree `.claude/worktrees/skew-exec`.
 The session-start worktree and other branches were left untouched.
@@ -2239,4 +2239,54 @@ skew factors above one, strided/data-dependent structure and variable lengths we
 or implemented (cost not sized; require separate scoping). The out-of-range micro-program,
 oracle tightening and mutation-manifest expansion were not started (one Direct dispatch apiece
 if separately requested). Compile/trace time was not measured.
+
+### Controller review (2026-11-24)
+
+The owner's controller read the brief and the whole executable diff (`f4084d51..88257d81`). It
+checked the Lean programs against Appendix A in both precisions and the row-major decoding of
+`Act`/`Hold`/`Wk`/`Ma`/`Mb`/`Mc`. On the Python side it checked:
+
+- the true-model oracles' input independence;
+- every gap domain;
+- the old-state gap's alignment (`np_layer_skew` on `X[:6]` puts true time `t` at `Hl` position
+  `t + 1`, and layer 0 is identical in both models, so the gap over layers 1..2 is a real
+  old-state versus new-state difference);
+- the causality, direction and cone pins;
+- the gradient references, frozen tables and finite-difference supports.
+
+The diff only adds lines, the single deletion being the README fixture count. No forbidden file
+was touched, and no existing fixture or pin changed. One independent read-only review (a separate
+agent, given the brief and the code but not the controller's conclusions) found no Critical or
+Important defects and three Minor ones, adjudicated as accepted:
+
+- **M1.** For `grid_dp`, the pure-JAX gradient reference and the finite-difference reference run
+  the same `grid_true` loop, under `jnp` and `np`. Autodiff and central differences are still
+  independent methods. `grid_true` is tied to the plan, and so to `np_grid`, only through the
+  value of the final cell `G[3,7]`, which depends on every live weight. A bug that changed only
+  `grid_true`'s derivatives at this data is implausible. The stacked RNN has two separate
+  implementations (`stacked_hand`, `np_stacked_layers`).
+- **M2.** The absolute-`1e-3` gradient canary only shows that `GRAD_TOL` is below
+  `1e-3 / max(1, |g|)`. It cannot detect a reference that silently equals the plan. It copies the
+  existing pattern of the other gradient helpers, and the real comparison is against the
+  independent pure-JAX reference.
+- **M3.** The "nonzero boundary" gap sets 0.5 on all three edges, but a `Gz` mutant can only
+  change the west and northwest edges, because row 0's north input comes through the zero row of
+  `Ma`. The gap is still non-vacuous: the west edge alone moves the pre-activation by 0.25.
+
+The reviewer also noted that the "mask removed" and "Hold=0 only" gaps are measured only on
+post-live held slots, a conservative subset, which is acceptable.
+
+The controller re-ran the final gates itself on `88257d81`:
+`lake-build.sh <wt>/leanncd Tests JaxExperiment` gave 8846 jobs, exit 0;
+`check-lean-drivers.sh` gave all eight drivers clean; and `run-evalplan-nonlin.sh` gave 63
+binary64 and 54 binary32 fixtures within tolerance, exit 0. The new fixtures' pin and gradient
+lines and headroom match the tables above.
+
+**NOT re-run by the controller:** the eight mutant cycles (their evidence was read, not
+re-executed) and the Python/JAX verifiers of the other seven drivers. The executor's per-dispatch
+call-cap breaches (Lean 99, mutants 74, controller 64 tool starts against about 60) stand as
+recorded above; the cumulative 14.1M input tokens are within the 175M execution budget. The
+executor's ignored `.cache/skew-*` logs (46 files) are archived at
+`/Users/williammacready/code/python/pyncd.worktrees/skew-exec-evidence-logs`. Merged to local
+`main` with `--no-ff`; the branch and worktree are removed after the merge.
 
