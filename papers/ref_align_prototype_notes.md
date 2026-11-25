@@ -77,6 +77,7 @@ fails before the accept assertion is reached).
   dtype-aware there) — documented as a checked-path refusal; (b) a sum scatter with a non-zero fill (checked:
   `scatterOptsNotAdmitted`); (c) `S[j,l+1] := S[j,2*l]` (checked: `stateReadNotCausal`; reference returns `[1,1,0]`),
   deferred as a twelfth shape.
+- The reference also accepts free-axis state-history reads; the checked path now accepts extent-bounded own-clock window/lag reads, but still refuses bare free-axis reads and non-causal affine rows (see `semantics/jax_scan_record.md`, section 29).
 - The checked `predicateScatterDest` rejection is KEPT. Removing it needs: dropping the throw in `capabilityPreflight`
   and the constructor, flipping the three predicate-scatter fixtures in `CompileTest.lean` and the name arm in
   `DifferentialTest.lean`, and verifying the checked scatter runner's Boolean algebra and collision policies against

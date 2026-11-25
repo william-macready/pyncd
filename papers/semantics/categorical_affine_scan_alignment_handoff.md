@@ -106,7 +106,7 @@ Read first:
 | Base | The complete slice at time zero is the supplied external vector `Z`; establish this from actual base captures/computation/write fields |
 | Recurrence | One sum/product assignment produces the complete next spatial slice; no scratch chain, contraction/reduction positions, masks, casts or nonlinear steps |
 | Spatial state reads | Integer-affine coordinates, including shifts, striding, reversal and dependence on the current clock; noninjectivity is allowed |
-| Temporal state reads | Exactly own-clock coefficient one and bias `-k`, with `k>=0`, matching `causalAdvancingRow` |
+| Temporal state reads | The profile door keeps the strict `causalAdvancingRow`/`stateReadCausal` rule: exactly own-clock coefficient one and bias `-k`, with `k>=0`. Production source/checker admission also allows extent-bounded free-axis window/lag rows via `stateReadCausalIn`; this profile is not widened (JAX scan record, section 29). |
 | External reads | Integer-affine rows over the actual term's spatial/context basis, with existing source shapes and real zero-padding behaviour |
 | Placement | Canonical complete base and successor writes; no strided/scattered spatial writes or overlapping writers |
 | Policies | Complete history, existing initialized boundary policy and immutable-pre-step state capture |

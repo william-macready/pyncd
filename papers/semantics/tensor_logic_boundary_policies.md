@@ -255,9 +255,13 @@ initialized value unless a base write supplies them.
 These are **in-bounds initialized zeros**, distinct from constants returned by
 an out-of-bounds read. The following causality and snapshot guarantees belong
 to the **checked backend**, not to both evaluators. Its scan checker requires
-every advancing row of
-a captured-state read to be `context[q] + b` with $b\le0$
-(`causalAdvancingRow`); non-advancing dimensions retain ordinary zero-padded
+every advancing row of a captured-state read to have own-clock coefficient one,
+no other context coefficient, and maximum free-axis offset
+$b+\sum_{p\ne q,\ c_p>0}c_p(\mathrm{extent}_p-1)\le0$
+over the term's iteration box (`stateReadCausalIn`, `causalAdvancingRowIn`,
+`maxSlotOffset`). The strict `context[q] + b`, $b\le0$ rule remains at the
+indexed affine-scan profile door (`causalAdvancingRow`, `stateReadCausal`);
+non-advancing dimensions retain ordinary zero-padded
 read behavior. Base blocks cannot capture state. Checked recurrence blocks
 observe an immutable pre-step snapshot and commit next-state slices together.
 

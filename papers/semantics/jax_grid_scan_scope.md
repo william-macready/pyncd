@@ -11,7 +11,7 @@ The motivating model, a stacked RNN whose layer axis is a tensor axis (stacked w
 | Term | Meaning today | Evidence |
 |---|---|---|
 | "Multi-axis scan" | NOT a lockstep diagonal. The reference evaluator and the checked plan run one step per TUPLE of the grid `prod(extent_a - 1)`, axis 0 fastest; each step writes the cell at `+1` on every advancing axis and reads the pre-step state | [read] `Eval/Scan.lean` `evalScan`; `Eval/Plan/Scan.lean` `runDenseScanWith`, `mixedRadixUnrank`; fixtures `coupledSched`, `coupledSched4` |
-| Reads allowed in a step | per advancing axis: offset <= 0 relative to the tuple (`stateReadCausal`, `causalAdvancingRow`); `l - 1`, `t - 1`, `l - 1, t - 1` all prepare and agree with the reference | [ran] variants v0, v3, v5 |
+| Reads allowed in a step | per advancing axis: own-clock coefficient one, no other context coefficient, and maximum free-axis offset <= 0 over the term's iteration box (`stateReadCausalIn`, `causalAdvancingRowIn`, `maxSlotOffset`); includes window/lag rows as well as `l - 1`, `t - 1`, `l - 1, t - 1`. The strict pair remains for the indexed profile door | [ran] original variants v0, v3, v5; window/lag evidence: JAX scan record section 29 |
 | Reads refused | offset +1 on an axis (a west or north neighbour of the written cell): `stateReadNotCausal` in the checked plan | [ran] v1 (`l + 1, t`), v2 (`l, t + 1`), v4 (own cell) |
 | Frontend check | `readsIterAhead` does not fire for these: spaced `l + 1`/`t + 1` parse, and a read inside a per-step intermediate is not examined; `compileToScheduled` accepts all six variants | [ran] |
 | Reference evaluator | accepts all six, and for the west and north reads computes the TRUE grid values (max difference to a numpy grid 4.6e-7, which is the 6-decimal print rounding); so the reference already has the semantics, only the checked plan and JAX refuse | [ran] |
@@ -64,6 +64,8 @@ D[r, k +1]  := G[r, k]
 ## 4. Options
 
 Dispatch = one agent session of at most about 60 tool calls and 250k context (Rule 6). All estimates are **[judgment]** from the agents' readings; reference points: the original JAX scan slice took 9 dispatches (5 over the cap), the four-model layers-time fixture session took about 136 harness calls (over two dispatches).
+
+Extent-bounded history windows/lags are a separate Direct change (JAX scan record section 29): no native grid, nested scan or step-aware `where` mask is added, and option C would now start from `stateReadCausalIn`.
 
 | Option | What it gives | Cost | Main risk |
 |---|---|---|---|
