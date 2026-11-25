@@ -74,6 +74,8 @@ Dispatch = one agent session of at most about 60 tool calls and 250k context (Ru
 
 ## 5. Recommendation
 
+Option A executed on `jax-skew-exec`: all three models in both precisions, value/structural/gradient pins and eight accepted mutant kills; see [record section 28](jax_scan_record.md#28-skewed-single-scan-execution-true-stacked-layers-and-grid-dp-2026-11-24). Awaiting the owner's whole-branch review; not merged or pushed.
+
 Do **A** if the goal is the models (stacked RNN with a layer axis, grid DPs): it is the cheapest, it is already probed, and it matches the repo's progression style. Treat **B** as optional, only if the grid surface syntax itself is a goal. Park **C** and **D** until a program needs something the skew cannot express (data-dependent structure, a skew factor above 1) or until the ergonomics justify two Full slices; if C is ever started, split it Lean first (one shared causality predicate for the frontend, the reference and the plan), JAX second.
 
 ## 6. Decisions for you
