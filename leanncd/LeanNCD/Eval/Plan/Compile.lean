@@ -1407,7 +1407,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
         match (capturedState.getD f.sourceSlot none) with
         | none => pure ()
         | some si =>
-            unless stateReadCausal (stateAdvDims.getD si #[]) t.contextPos f do
+            unless stateReadCausalIn t.iterationShape (stateAdvDims.getD si #[]) t.contextPos f do
               throw (scanErr warnings
                 (.stateReadNotCausal scanName (stateNames.getD si "") ri ti fi))
   ---------------------------------------------------------------------------

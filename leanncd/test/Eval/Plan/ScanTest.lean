@@ -543,6 +543,28 @@ run_cmd do
   | .error e => throwError s!"checkScanPlan rejected the deep-history scan: {repr e}"
   | .ok _checked => pure ()
 
+def winScan (coeffs : Array Int) (bias : Int) (w : Nat) : RawScanPlan :=
+  let read : ReadPlan := { stepReadG with map := { coeffs := #[coeffs], bias := #[bias] } }
+  let term : TermPlan := { iterationShape := #[4, w], contextPos := #[0], outputPos := #[], reductionPos := #[1], factors := #[.read read] }
+  { deepHistoryScan with stepBlock := { stepBlockG with steps := #[.assign { stepAssignG with terms := #[term] }] } }
+
+#guard (match checkScanPlan outerSigsDeepHistory (winScan #[1, 1] (-1) 2) with
+  | .ok _ => true | .error _ => false)
+#guard (match checkScanPlan outerSigsDeepHistory (winScan #[1, 1] 0 2) with
+  | .error e => e == .causalityFailure 0 0 0 0 | .ok _ => false)
+#guard (match checkScanPlan outerSigsDeepHistory (winScan #[1, -1] 0 2) with
+  | .ok _ => true | .error _ => false)
+#guard (match checkScanPlan outerSigsDeepHistory (winScan #[1, 2] (-2) 2) with
+  | .ok _ => true | .error _ => false)
+#guard (match checkScanPlan outerSigsDeepHistory (winScan #[1, 2] (-1) 2) with
+  | .error e => e == .causalityFailure 0 0 0 0 | .ok _ => false)
+#guard (match checkScanPlan outerSigsDeepHistory (winScan #[2, 1] (-3) 2) with
+  | .error e => e == .causalityFailure 0 0 0 0 | .ok _ => false)
+#guard (match checkScanPlan outerSigsDeepHistory (winScan #[0, 1] 0 2) with
+  | .error e => e == .causalityFailure 0 0 0 0 | .ok _ => false)
+#guard (match checkScanPlan outerSigsDeepHistory deepHistoryScan with
+  | .ok _ => true | .error _ => false)
+
 -- Reject: the Jacobi/Gauss-Seidel discriminator's unsafe read (F0 Task 3's `B[l+1] := A[.const 1]`)
 -- reproduced here as a constant read of G's own history, ignoring the loop axis entirely —
 -- coeffs=#[0], bias=#[1]. The legacy evaluator's `readsIterAhead`-style syntactic check only
@@ -2938,5 +2960,54 @@ run_cmd do
   | .error e =>
       unless e == .stateDtypeNotAdmitted 0 2 .f32 do
         throwError s!"f32 fixture 10: wrong error {repr e}"
+
+/-! ## Extent-aware causality oracle -/
+
+/-- Every point of the box `[0, shape_0) x [0, shape_1) x ...`, position 0 first. -/
+def ecBoxPoints : List Nat → List (List Nat)
+  | [] => [[]]
+  | e :: rest => (List.range e).flatMap fun v => (ecBoxPoints rest).map (v :: ·)
+
+/-- The slot a row addresses at box point `x`. -/
+def ecSlotAt (row : Array Int) (bias : Int) (x : List Nat) : Int :=
+  x.zipIdx.foldl (fun a (v, p) => a + row.getD p 0 * (v : Int)) bias
+
+/-- SAFE by definition: every box point addresses a slot `<=` its own scan coordinate. -/
+def ecBruteSafe (shape : Array Nat) (row : Array Int) (bias : Int) (ctxPos : Nat) : Bool :=
+  (ecBoxPoints shape.toList).all fun x => decide (ecSlotAt row bias x ≤ (x.getD ctxPos 0 : Int))
+
+/-- 3 positions (0 = scan axis, 1 and 2 free), scan coefficient in {-1,0,1,2}, free coefficients and
+    bias as below, every extent in 1..3. -/
+def ecCases : List (Array Nat × Array Int × Int) := Id.run do
+  let mut out := []
+  for e0 in [1, 2, 3] do
+    for e1 in [1, 2, 3] do
+      for e2 in [1, 2, 3] do
+        for c0 in [(-1 : Int), 0, 1, 2] do
+          for c1 in [(-2 : Int), -1, 0, 1, 2] do
+            for c2 in [(-2 : Int), -1, 0, 1, 2] do
+              for b in [(-4 : Int), -3, -2, -1, 0, 1, 2, 3, 4] do
+                out := (#[e0, e1, e2], #[c0, c1, c2], b) :: out
+  return out
+
+#guard ecCases.length == 24300
+-- SOUNDNESS: whatever the predicate accepts is safe.
+#guard ecCases.all fun (shape, row, b) =>
+  !causalAdvancingRowIn shape #[0] row b 0 || ecBruteSafe shape row b 0
+-- EXACTNESS inside the class it decides (scan coefficient 1): the bound is tight, not merely sufficient.
+#guard ecCases.all fun (shape, row, b) =>
+  row.getD 0 0 != 1 || (causalAdvancingRowIn shape #[0] row b 0 == ecBruteSafe shape row b 0)
+-- NON-VACUITY: the grid has many accepted and many refused rows of that class.
+#guard (ecCases.filter fun (shape, row, b) => row.getD 0 0 == 1 && causalAdvancingRowIn shape #[0] row b 0).length > 1000
+#guard (ecCases.filter fun (shape, row, b) => row.getD 0 0 == 1 && !causalAdvancingRowIn shape #[0] row b 0).length > 1000
+-- CONSERVATIVE outside the class: a scan coefficient other than 1 is always refused (constant, scaled reads).
+#guard ecCases.all fun (shape, row, b) =>
+  row.getD 0 0 == 1 || !causalAdvancingRowIn shape #[0] row b 0
+-- THE STRICT RULE IS A SPECIAL CASE.
+#guard ecCases.all fun (shape, row, b) =>
+  !causalAdvancingRow row b 0 || causalAdvancingRowIn shape #[0] row b 0
+-- ANOTHER context position (multi-axis scans) is never referenced.
+#guard ecCases.all fun (shape, row, b) =>
+  row.getD 1 0 == 0 || !causalAdvancingRowIn shape #[0, 1] row b 0
 
 end LeanNCD.Eval.Plan.ScanTest
