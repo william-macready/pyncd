@@ -59,6 +59,7 @@ TRANSFORMER_FIXTURES = {"transformer", "transformer32", "transformer_rms", "tran
                         "conv1d_cnn", "conv1d_cnn32", "conv1d_causal", "conv1d_causal32", "vit_patch", "vit_patch32",
                         "rnn_gru", "rnn_gru32", "rnn_lstm", "rnn_lstm32", "rnn_bi", "rnn_bi32", "rnn_stack", "rnn_stack32",
                         "kv_cache", "kv_cache32", "time_layer", "time_layer32",
+                        "kv_window", "kv_window32", "kv_lag", "kv_lag32",
                         "rnn_skew", "rnn_skew32", "layer_skew", "layer_skew32",
                         "rnn_layers_skew", "rnn_layers_skew32", "rnn_layers_native", "rnn_layers_native32",
                         "grid_dp", "grid_dp32",
@@ -1792,6 +1793,41 @@ def np_kv_cache(inp: dict, mode="causal") -> dict:
     return dict(Kc=kc, Vc=vc, Yh=yh, Kn=kn, Vn=vn, Qr=qr)
 
 
+def np_kv_history(inp: dict, mode="causal", slot_order="window") -> dict:
+    """Attention over prior keys and values, independent of the plan and its data mask."""
+    f = {n: np.asarray(inp[n], dtype=np.float64) for n in ("X", "Wq", "Wk", "Wv", "K0", "V0", "Y0")}
+    n_t = f["X"].shape[0]
+    keys, vals = [f["K0"].copy()], [f["V0"].copy()]
+    if mode == "zero K0":
+        keys[0] = np.zeros_like(keys[0])
+    kh, vh, yh = (np.empty((f[n].size, n_t)) for n in ("K0", "V0", "Y0"))
+    kh[:, 0], vh[:, 0], yh[:, 0] = f["K0"], f["V0"], f["Y0"]
+    kn, vn, qr = (np.empty((n_t, f[n].shape[0])) for n in ("Wk", "Wv", "Wq"))
+    for t in range(n_t):
+        kn[t], vn[t], qr[t] = (f[n] @ f["X"][t] for n in ("Wk", "Wv", "Wq"))
+    for t in range(n_t - 1):
+        q = f["Wq"] @ f["X"][t]
+        key, val = f["Wk"] @ f["X"][t], f["Wv"] @ f["X"][t]
+        visible_keys, visible_vals = list(keys), list(vals)
+        if mode == "unmasked":
+            # Every negative window cell participates with a zero key AND a zero value.
+            slots = range(t - 4, t + 1) if slot_order == "window" else range(t, t - 5, -1)
+            visible_keys = [keys[s] if s >= 0 else np.zeros_like(key) for s in slots]
+            visible_vals = [vals[s] if s >= 0 else np.zeros_like(val) for s in slots]
+        elif mode == "shorter window":
+            visible_keys, visible_vals = keys[-4:], vals[-4:]
+        elif mode == "current key included":
+            visible_keys, visible_vals = keys[1:] + [key], vals[1:] + [val]
+        elif mode == "values shifted":
+            visible_vals = [np.zeros_like(val)] + vals[:-1]
+        probs = np_softmax_last(np.array([np.dot(k, q) for k in visible_keys]))
+        yh[:, t + 1] = sum((p * v for p, v in zip(probs, visible_vals)), np.zeros_like(val))
+        kh[:, t + 1], vh[:, t + 1] = key, val
+        keys.append(key)
+        vals.append(val)
+    return dict(Kn=kn, Vn=vn, Qr=qr, Kh=kh, Vh=vh, Yh=yh)
+
+
 def np_time_layer(inp: dict, shared=False, layers_first=False) -> dict:
     """Float64 time recurrence, then a layer loop at every history slot."""
     f = {n: np.asarray(v, dtype=np.float64) for n, v in inp.items()}
@@ -1968,6 +2004,118 @@ def kv_cache_pins(by: dict, sfx: str) -> None:
           f"future Kz[4]=Vz[4]=1e3 bitwise masked for first four outputs, final response {future_gap:.3e}; "
           f"numpy gaps {', '.join(f'{m}={g:.6f}' for m, g in gaps.items())}")
     print_conv_stats(name)
+
+
+def kv_history_pins(by: dict, sfx: str) -> None:
+    """Full prior-history attention: both affine slot orders versus an input-only model."""
+    for stem, slot_order in (("kv_window", "window"), ("kv_lag", "lag")):
+        name = f"{stem}{sfx}"
+        fx = by[name]
+        fin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+        n_t, n_i = fin["X"].shape
+        n_u, mask_t = fin["Mk"].shape
+        n_k, n_v = fin["K0"].size, fin["V0"].size
+        ext = (n_t, n_u, n_k, n_i, n_v)
+        assert ext == (6, 5, 4, 3, 2) and len(set(ext)) == len(ext), (name, ext)
+        shapes = {"X": (n_t, n_i), "Wq": (n_k, n_i), "Wk": (n_k, n_i), "Wv": (n_v, n_i),
+                  "K0": (n_k,), "V0": (n_v,), "Y0": (n_v,), "Mk": (n_u, n_t)}
+        assert mask_t == n_t and {n: a.shape for n, a in fin.items()} == shapes, (name, shapes)
+        nodes = fx["plan"]["nodes"]
+        assert [n.get("kind", "assign") for n in nodes] == ["assign"] * 3 + ["scan"], (name, nodes)
+        scans = [n for n in nodes if n.get("kind") == "scan"]
+        assert len(scans) == 1 and scans[0]["step_count"] == 5, name
+        counts = tuple(sum(n.get("kind", "assign") == k for n in flat_nodes(nodes))
+                       for k in ("assign", "pointwise", "axiswise"))
+        assert counts == (12, 0, 1), (name, counts)
+        exports = ["Kh", "Kn", "Qr", "Vh", "Vn", "Yh"]
+        assert sorted(fx["expected"]) == sorted(n for n, _ in fx["plan"]["materialized"]) == exports, name
+        for n, a in fin.items():
+            assert np.all(np.isfinite(a)), (name, n, "all inputs, including padding, must be finite")
+        u, t = np.arange(n_u)[:, None], np.arange(n_t)[None, :]
+        exists = t + u >= 4 if slot_order == "window" else t >= u
+        assert np.array_equal(fin["Mk"], np.where(exists, 0.0, -1e9).astype(NDT)), (name, "mask formula")
+        assert np.array_equal(fin["X"][5], np.zeros(n_i, dtype=NDT)), (name, "finite spare X row")
+        assert np.array_equal(fin["Y0"], np.zeros(n_v, dtype=NDT)), (name, "Y0")
+        for n, seed in (("X", 1.0), ("Wq", 2.0), ("Wk", 3.0), ("Wv", 4.0), ("K0", 5.0), ("V0", 6.0)):
+            a = fin[n][:-1] if n == "X" else fin[n]
+            definition = np.array([0.6 * np.sin(seed + 1.7 * j) for j in range(a.size)]).reshape(a.shape).astype(NDT)
+            assert np.allclose(a, definition, rtol=0, atol=np.finfo(NDT).eps), (name, n, "input definition")
+        sibling = by[f"{'kv_lag' if stem == 'kv_window' else 'kv_window'}{sfx}"]
+        for n in fin:
+            if n != "Mk":
+                assert np.array_equal(bits(fin[n]), bits(lean_array(sibling["inputs"][n]))), (name, n, "shared input")
+        f = {n: a.astype(np.float64) for n, a in fin.items()}
+        want = np_kv_history(f)
+        gaps = {}
+        for mode in ("unmasked", "shorter window", "current key included", "values shifted", "zero K0"):
+            domain = slice(5, 6) if mode == "shorter window" else slice(2, 6)
+            variant = np_kv_history(f, mode, slot_order)
+            gap = dict_gap({"Yh": want["Yh"][:, domain]}, {"Yh": variant["Yh"][:, domain]})
+            assert gap > 1e-2, (name, mode, "vacuous history reference", gap)
+            gaps[mode] = gap
+        views = conv_views(by, name)
+        for who, out in views.items():
+            assert sorted(out) == exports, (name, who)
+            for n in exports:
+                check_np(name, who, n, out[n], want[n])
+            check_np(name, who, "Yh_first_is_V0", out["Yh"][:, 1], f["V0"])
+            for n, init in (("Kh", "K0"), ("Vh", "V0"), ("Yh", "Y0")):
+                assert np.array_equal(bits(out[n][:, 0]), bits(fin[init])), (name, who, n, "initial state")
+        jin = {n: reconstruct(e) for n, e in fx["inputs"].items()}
+        base = views["eager"]
+        xp = fin["X"].copy()
+        xp[5] = NDT(0.5)
+        padded = rt.run_named(fx["plan"], dict(jin, X=jnp.asarray(xp)), JDT)
+        padding = {}
+        for n in exports:
+            p = np.asarray(padded[n])
+            if n in ("Kn", "Vn", "Qr"):
+                assert np.array_equal(bits(p[:5]), bits(base[n][:5])), (name, n, "padding changed live tables")
+                gap = float(np.max(np.abs(p[5].astype(np.float64) - base[n][5].astype(np.float64))))
+                assert gap > 1e-4, (name, n, "padding perturbation not live", gap)
+                check_np(name, "padding eager", f"{n}_row5", p[5], f[{"Kn": "Wk", "Vn": "Wv", "Qr": "Wq"}[n]] @ xp[5])
+                padding[n] = gap
+            else:
+                assert np.array_equal(bits(p), bits(base[n])), (name, n, "padding was read")
+        moved = []
+        first_columns = []
+        for t in range(n_t - 1):
+            xp = fin["X"].copy()
+            xp[t] += NDT(0.37)
+            p = np.asarray(rt.run_named(fx["plan"], dict(jin, X=jnp.asarray(xp)), JDT)["Yh"])
+            end = max(t, 1) + 1
+            assert np.array_equal(bits(p[:, :end]), bits(base["Yh"][:, :end])), (name, t, "noncausal")
+            columns = [c for c in range(n_t) if not np.array_equal(bits(p[:, c]), bits(base["Yh"][:, c]))]
+            first = (2, 2, 3, 4, 5)[t]
+            assert columns and columns[0] == first, (name, t, "first moved column", columns)
+            gap = float(np.max(np.abs(p[:, first].astype(np.float64) - base["Yh"][:, first].astype(np.float64))))
+            assert gap > 1e-4, (name, t, "causality perturbation not live", gap)
+            moved.append(gap)
+            first_columns.append(columns[0])
+        history = {}
+        for initial in ("K0", "V0"):
+            ip = fin[initial].copy() + NDT(0.37)
+            p = np.asarray(rt.run_named(fx["plan"], dict(jin, **{initial: jnp.asarray(ip)}), JDT)["Yh"])
+            assert np.array_equal(bits(p[:, :1]), bits(base["Yh"][:, :1])), (name, initial, "Y0 changed")
+            if initial == "K0":
+                assert np.array_equal(bits(p[:, :2]), bits(base["Yh"][:, :2])), (name, "K0 affected singleton attention")
+            else:
+                check_np(name, "V0 perturbation eager", "Yh_first_response",
+                         p[:, 1].astype(np.float64) - base["Yh"][:, 1].astype(np.float64),
+                         ip.astype(np.float64) - f["V0"])
+            response = np.max(np.abs(p[:, 2:].astype(np.float64) - base["Yh"][:, 2:].astype(np.float64)), axis=0)
+            assert np.all(response > 1e-4), (name, initial, "history influence not live in every column 2..5", response)
+            check_np(name, f"{initial} perturbation eager", f"Yh_{initial}_live", p,
+                     np_kv_history(dict(f, **{initial: ip.astype(np.float64)}))["Yh"])
+            history[initial] = response.tolist()
+        print(f"{name}: extents t={n_t}, u={n_u}, k={n_k}, i={n_i}, v={n_v}; kinds={counts}, scans=[5]; "
+              f"exports={exports}; all six full finite exports == numpy (Lean/eager/jit); Yh[:,1] == V0; "
+              f"input/mask formulas and shared inputs pinned; padding histories/live table rows bitwise unchanged, row5 moves={padding}; "
+              f"causality unchanged prefixes bitwise, first moved columns={first_columns}, responses={moved}, "
+              f"t1 margin above 1e-4={moved[1] - 1e-4:.9e} ({moved[1] / 1e-4:.3f}x); "
+              f"history responses on columns2..5={history}, K0 columns0..1 bitwise unchanged, V0 column1 response exact within MODEL_TOL; "
+              f"numpy non-vacuity domain Yh[:,2:6], shorter window only Yh[:,5:6]: {gaps}")
+        print_conv_stats(name)
 
 
 def time_layer_pins(by: dict, sfx: str) -> None:
@@ -4057,6 +4205,7 @@ def main() -> None:
     rnn_bi_pins(by, sfx)
     rnn_stack_pins(by, sfx)
     kv_cache_pins(by, sfx)
+    kv_history_pins(by, sfx)
     time_layer_pins(by, sfx)
     rnn_skew_pins(by, sfx)
     layer_skew_pins(by, sfx)

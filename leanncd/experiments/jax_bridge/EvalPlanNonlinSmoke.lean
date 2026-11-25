@@ -2573,6 +2573,99 @@ def moeProg32 : TLProgram := tlprog!{
   Out[n,o]     := Gate[n,e] · Expert[n,e,o]
 }
 
+/-! ### Window and negative-lag reads of the complete KV state history. -/
+
+def kvWindowMk : Array Float :=
+  (Array.range 30).map fun n => if n % 6 + n / 6 >= 4 then 0.0 else -1.0e9
+def kvLagMk : Array Float :=
+  (Array.range 30).map fun n => if n % 6 >= n / 6 then 0.0 else -1.0e9
+def kvHistoryInputs : List (String × List Nat × Array Float) :=
+  [("X", [6, 3], gqaGen 1.0 15 ++ #[0.0, 0.0, 0.0]),
+   ("Wq", [4, 3], gqaGen 2.0 12), ("Wk", [4, 3], gqaGen 3.0 12),
+   ("Wv", [2, 3], gqaGen 4.0 6), ("K0", [4], gqaGen 5.0 4),
+   ("V0", [2], gqaGen 6.0 2), ("Y0", [2], #[0.0, 0.0])]
+def kvHistoryEnv64 (mk : Array Float) : HashMap String DenseTensor :=
+  env64 ((kvHistoryInputs ++ [("Mk", [5, 6], mk)]).map fun (n, s, d) => (n, t64 s d))
+def kvHistoryEnv32 (mk : Array Float) : NamedDenseEnv32 :=
+  env32 ((kvHistoryInputs ++ [("Mk", [5, 6], mk)]).map fun (n, s, d) => (n, t32 s d))
+def kvWindowEnv64 := kvHistoryEnv64 kvWindowMk
+def kvWindowEnv32 := kvHistoryEnv32 kvWindowMk
+def kvLagEnv64 := kvHistoryEnv64 kvLagMk
+def kvLagEnv32 := kvHistoryEnv32 kvLagMk
+
+def kvWindowProg : TLProgram := tlprog!{
+  iter t = 6
+  axis u : ℕ = 5
+  tensor f64 X(t, i), Wq(k, i), Wk(k, i), Wv(v, i), K0(k), V0(v), Y0(v), Mk(u, t)
+  tensor f64 Kh(k, t), Vh(v, t), Yh(v, t), Kn(t, k), Vn(t, v), Qr(t, k), Sc(u), Pa(u), Yo(v)
+  Kh[k, 0]      := K0[k]
+  Vh[v, 0]      := V0[v]
+  Yh[v, 0]      := Y0[v]
+  Kn[t, k]      := Wk[k, i] · X[t, i]
+  Vn[t, v]      := Wv[v, i] · X[t, i]
+  Qr[t, k]      := Wq[k, i] · X[t, i]
+  Sc[u]         := Kh[k, t + u - 4] · Qr[t, k] + Mk[u, t]
+  Pa[u.]        := softmax(Sc[u])
+  Yo[v]         := Pa[u] · Vh[v, t + u - 4]
+  Kh[k, t +1]   := Kn[t, k]
+  Vh[v, t +1]   := Vn[t, v]
+  Yh[v, t +1]   := Yo[v]
+}
+def kvWindowProg32 : TLProgram := tlprog!{
+  iter t = 6
+  axis u : ℕ = 5
+  tensor X(t, i), Wq(k, i), Wk(k, i), Wv(v, i), K0(k), V0(v), Y0(v), Mk(u, t)
+  tensor Kh(k, t), Vh(v, t), Yh(v, t), Kn(t, k), Vn(t, v), Qr(t, k), Sc(u), Pa(u), Yo(v)
+  Kh[k, 0]      := K0[k]
+  Vh[v, 0]      := V0[v]
+  Yh[v, 0]      := Y0[v]
+  Kn[t, k]      := Wk[k, i] · X[t, i]
+  Vn[t, v]      := Wv[v, i] · X[t, i]
+  Qr[t, k]      := Wq[k, i] · X[t, i]
+  Sc[u]         := Kh[k, t + u - 4] · Qr[t, k] + Mk[u, t]
+  Pa[u.]        := softmax(Sc[u])
+  Yo[v]         := Pa[u] · Vh[v, t + u - 4]
+  Kh[k, t +1]   := Kn[t, k]
+  Vh[v, t +1]   := Vn[t, v]
+  Yh[v, t +1]   := Yo[v]
+}
+def kvLagProg : TLProgram := tlprog!{
+  iter t = 6
+  axis u : ℕ = 5
+  tensor f64 X(t, i), Wq(k, i), Wk(k, i), Wv(v, i), K0(k), V0(v), Y0(v), Mk(u, t)
+  tensor f64 Kh(k, t), Vh(v, t), Yh(v, t), Kn(t, k), Vn(t, v), Qr(t, k), Sc(u), Pa(u), Yo(v)
+  Kh[k, 0]      := K0[k]
+  Vh[v, 0]      := V0[v]
+  Yh[v, 0]      := Y0[v]
+  Kn[t, k]      := Wk[k, i] · X[t, i]
+  Vn[t, v]      := Wv[v, i] · X[t, i]
+  Qr[t, k]      := Wq[k, i] · X[t, i]
+  Sc[u]         := Kh[k, t - u] · Qr[t, k] + Mk[u, t]
+  Pa[u.]        := softmax(Sc[u])
+  Yo[v]         := Pa[u] · Vh[v, t - u]
+  Kh[k, t +1]   := Kn[t, k]
+  Vh[v, t +1]   := Vn[t, v]
+  Yh[v, t +1]   := Yo[v]
+}
+def kvLagProg32 : TLProgram := tlprog!{
+  iter t = 6
+  axis u : ℕ = 5
+  tensor X(t, i), Wq(k, i), Wk(k, i), Wv(v, i), K0(k), V0(v), Y0(v), Mk(u, t)
+  tensor Kh(k, t), Vh(v, t), Yh(v, t), Kn(t, k), Vn(t, v), Qr(t, k), Sc(u), Pa(u), Yo(v)
+  Kh[k, 0]      := K0[k]
+  Vh[v, 0]      := V0[v]
+  Yh[v, 0]      := Y0[v]
+  Kn[t, k]      := Wk[k, i] · X[t, i]
+  Vn[t, v]      := Wv[v, i] · X[t, i]
+  Qr[t, k]      := Wq[k, i] · X[t, i]
+  Sc[u]         := Kh[k, t - u] · Qr[t, k] + Mk[u, t]
+  Pa[u.]        := softmax(Sc[u])
+  Yo[v]         := Pa[u] · Vh[v, t - u]
+  Kh[k, t +1]   := Kn[t, k]
+  Vh[v, t +1]   := Vn[t, v]
+  Yh[v, t +1]   := Yo[v]
+}
+
 def corpus64 : IO (Array String) := do
   return #[
     ← fixture64 "pw" pwProg (env64 [("X", t64 [7] pwX)]) 5,
@@ -2645,6 +2738,8 @@ def corpus64 : IO (Array String) := do
     ← fixture64 "rnn_layers_skew" rnnLayersSkewProg rnnLayersSkewEnv64 1 0 (some (7, 1, 0)) true (scans := 1),
     ← fixture64 "rnn_layers_native" rnnLayersNativeProg rnnLayersNativeEnv64 1 0 (some (6, 1, 0)) true (scans := 1),
     ← fixture64 "grid_dp" gridDpProg gridDpEnv64 1 0 (some (6, 1, 0)) true (scans := 1),
+    ← fixture64 "kv_window" kvWindowProg kvWindowEnv64 0 1 (some (12, 0, 1)) true (scans := 1),
+    ← fixture64 "kv_lag" kvLagProg kvLagEnv64 0 1 (some (12, 0, 1)) true (scans := 1),
     ← fixture64 "gnn_dense" gnnProg gnnEnv64 2 1 (some (12, 2, 1)) true,
     ← fixture64 "gnn_edges" gnnEdgeProg gnnEdgeEnv64 7 0 (some (17, 7, 0)),
     ← fixture64 "moe_dense" moeProg moeEnv64 1 1 (some (6, 1, 1)),
@@ -2731,6 +2826,8 @@ def corpus32 : IO (Array String) := do
     ← fixture32 "rnn_layers_skew32" rnnLayersSkewProg32 rnnLayersSkewEnv32 1 0 (some (7, 1, 0)) true (scans := 1),
     ← fixture32 "rnn_layers_native32" rnnLayersNativeProg32 rnnLayersNativeEnv32 1 0 (some (6, 1, 0)) true (scans := 1),
     ← fixture32 "grid_dp32" gridDpProg32 gridDpEnv32 1 0 (some (6, 1, 0)) true (scans := 1),
+    ← fixture32 "kv_window32" kvWindowProg32 kvWindowEnv32 0 1 (some (12, 0, 1)) true (scans := 1),
+    ← fixture32 "kv_lag32" kvLagProg32 kvLagEnv32 0 1 (some (12, 0, 1)) true (scans := 1),
     ← fixture32 "gnn_dense32" gnnProg32 gnnEnv32 2 1 (some (12, 2, 1)) true,
     ← fixture32 "gnn_edges32" gnnEdgeProg32 gnnEdgeEnv32 7 0 (some (17, 7, 0)),
     ← fixture32 "moe_dense32" moeProg32 moeEnv32 1 1 (some (6, 1, 1)),
