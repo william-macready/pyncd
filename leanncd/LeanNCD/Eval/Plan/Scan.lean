@@ -311,7 +311,7 @@ inductive ScanPlanError
     thin applications of the one `checkScanCore` (`private mk ::`).
 
     There is deliberately no separate `CausalityCertificate` type or field: the certificate IS
-    `checkScanCore`'s own causality loop over `stateReadCausal`, and a `CheckedScanPlan` value's
+    `checkScanCore`'s own extent-aware causality loop over `stateReadCausalIn`, and a `CheckedScanPlan` value's
     existence — obtainable only through `checkScanPlan`/`checkScanPlanF32`, since `mk` is
     `private` — is itself the
     evidence a worker relies on. Storing a redundant marker field would add a second thing to keep
@@ -530,8 +530,11 @@ private def checkStateInitTie (raw : RawScanPlan) : Except ScanPlanError Unit :=
 
 /-- Validate an unchecked scan node (proposal §7.3), INCLUDING causality: the final loop before
     `return` walks every `.assign` step-block factor that reads a captured state and requires
-    `stateReadCausal` of it, so a look-ahead or loop-axis-ignoring state read is rejected here
-    rather than left as a worker-side assumption (proposal §7.4).
+    `stateReadCausalIn` over the term's iteration extents. Each advancing row must have its own
+    context coefficient exactly one, no other context coefficient, and maximum free-axis offset
+    `bias + sum (c_p * (extent_p - 1))` over positive coefficients at most zero. Window/lag reads
+    are therefore already written or below zero and padded; look-ahead and loop-axis-ignoring
+    rows remain rejected. The strict `stateReadCausal` pair stays for the indexed profile door.
 
     **Why walking only `.assign` steps is complete.** A block's nonlinear steps
     (`.pointwise`/`.axiswise`) have no term/factor structure and so no state read to classify, but
