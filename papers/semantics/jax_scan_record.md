@@ -2638,3 +2638,21 @@ the emitter, runtime, grammar, an existing fixture or a mutation manifest was ed
 committed tree. Nothing was merged or pushed. The final commit records these
 outcomes; the owner, not this executor, decides integration after review.
 
+### Controller review (2026-11-26)
+
+Gates re-run by the controller on the executor's tip `4acd09c8`: `Tests JaxExperiment` 8846 jobs, 0 errors; `check-lean-drivers.sh` all eight clean; `run-evalplan-nonlin.sh` (with `env -u PYTHON`, the "fixtures within" lines checked) 65 binary64 and 56 binary32 within tolerance, exit 0; binary32 `Yh` 1.9e-8 against numpy (tolerance 1e-6), binary32 gradients 2237x headroom against the true model and 1291x against central differences. `IndexedExecutionExperiment` was not re-run on the tip: the controller built it on a scratch worktree carrying exactly the patch of the brief (8729 jobs, standard axioms only) and the executor reports the same at the tip. The production diff is byte-for-byte the brief's patch (three definitions, two call sites) plus comment text.
+
+One independent read-only reviewer (Opus, no builds, 19 tool calls) took two lenses on the committed diff. WRONGLY ACCEPTS: no finding; verified positions run over `[0, extent)` in the dense worker for output and reduction positions, other scan axes are excluded by the `ctxAll` clause, zero extents give an empty box, row width is checked before the loop in `checkScanCore` and re-checked by `checkScanPlan` after `compileScan`, nonlinear steps and base blocks cannot read a state, and every consumer of the strict pair still refuses what the examples file expects. WRONGLY REJECTS: none for any shape (old-accepted is a subset of new-accepted, not only inside the oracle grid). Seven Minors:
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | The window never slides (width 5, steps 0..4), so no JAX fixture has a written slot outside the window; truncation is pinned only by the Lean Fibonacci pins | accepted; already parked ("window genuinely shorter than history") |
+| 2 | Padding below slot 0 is never observed by value in JAX (masked cells have probability exactly 0) | accepted: the mask removes them by construction; the unmasked numpy model shows padding would matter |
+| 3 | Mask mutants A, B, F were killed first by the input-formula assertion, no evidence a value pin would also kill them | VERIFIED by the controller on the probe copies of the same programs and data: max `|Yh - numpy true model|` is 0.4630 (A), 0.2794 (B), 0.4630 (F), far above `MODEL_TOL`, so the value pin kills them too |
+| 4 | The `Mk` gradient has no independent reference (eager == jit bitwise only) | accepted: `Mk` is frozen in the references and FD by design and said so |
+| 5 | The oracle never uses a context position other than 0 or more than 3 positions | accepted; the two-axis strict fixtures cover position-dependence |
+| 6 | The time-causality perturbation pin cannot see look-ahead reads (they read initial zeros) | accepted; look-ahead is caught by the value pins and the refusal pins |
+| 7 | Two stale comments in `Compile.lean` still named `stateReadCausal` | FIXED (`checkScanBlockStatePins` docstring, compile Phase 5 comment) |
+
+Merged to local `main` with `--no-ff` after the controller re-ran `Tests JaxExperiment` on the merged tree.
+
