@@ -38,6 +38,16 @@ After (A), a source statement `Pa[s.] := softmax(where s ≤ t)(Kh[k, s] · Qr[t
 
 (A): two Full slices, Lean first (guard, reference, plan IR, dense worker, f32, unrolled-oracle flip, structural and differential pins, mutants), then JAX (codegen stacked table, runtime slicing, fixtures: `kv_cache` rewritten without `Mk` as the natural fixture, plus a `maskInterScanAxis` program), about 6 to 9 dispatches in all; the risk is the checked-plan IR change (many constructors and tests of `RawAxiswisePlan`). (B) on top: 2 to 3 dispatches. Prerequisite from the window slice: none for (A); (B)(i) reuses its predicate only as the fallback for bounded reads.
 
+## 5a. After the window slice landed (2026-11-26, merge `919d7350`; record section 29)
+
+What the landed slice gives this one [read]:
+- **No file overlap except two places.** The window slice changed `Scan.lean` (new definitions beside `stateReadCausal`), one line of `Compile.lean` Phase 5 (plus two comments), tests and fixtures. The mask slice touches `Compile.lean` at the scan-step `lowerMaskPredicate` site (~1312), far from that line, and `LeanNCD/Eval/Plan/AGENTS.md`'s code-map row for `Nonlin.lean`.
+- **The oracle pattern transfers.** `ecBruteSafe`/`ecCases` in `ScanTest.lean` walk the box literally and compare with the predicate; the route (B)(i) implication ("mask conjunct implies `slot <= t`") can be pinned the same way, using `evalPosBool` on the mask over (output cell, step) pairs, plus mutants. It is the cheapest way to make the syntactic-conjunct rule trustworthy.
+- **Reference fixtures exist.** `kv_window`/`kv_lag` and `np_kv_history` (independent numpy model, six exports, gradient references) are the natural comparison for a natural-spelling fixture: same model, masked cells exactly 0 instead of `-1e9` scores, so agreement should be at rounding level [judgment, not observed]. `kv_cache` (slot cache with the `Mk` table) is the candidate to restate with `where s <= t` for (A).
+- **Gaps the review left that (A) can close.** The window fixtures never slide (width 5, 5 steps, so no JAX fixture has a written slot outside the window). A step-aware mask makes a SLIDING window expressible as `where s <= t && s > t - W`; a fixture with `W` below the step count would pin the edge on JAX, which no current fixture does.
+- **The window predicate is not mask-aware.** `stateReadCausalIn shape advancingDims contextPos f` sees only the read row, so (B) needs a second predicate (or an extra argument) at the same two call sites (`checkScanCore` in `Scan.lean`, Phase 5 of `compileScan`), and the raw-plan walk in `checkScanCore` currently visits `.assign` steps only: a mask-aware rule must also see the following `.axiswise` step. This is the real additional cost of (B) over what the window slice built.
+- **Consumers of the strict pair** (found by the executor and confirmed by the review): the two production call sites, `IndexedAffineScanProfile`, and `IndexedAffineScanCompilerExamples` (guards and exact refusal strings). None is affected by a mask change.
+
 ## 6. Decisions needed from the owner before a plan is written
 
 1. (A) alone first, (B) later or never? (recommended)
