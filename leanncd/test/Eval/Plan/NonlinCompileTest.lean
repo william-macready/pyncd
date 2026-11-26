@@ -423,4 +423,21 @@ def allMaskedInputs : HashMap String DenseTensor := HashMap.ofList [("A", tl [2,
     (HashMap.ofList [("H0", tl [3] [1,1,1]), ("Bi", tl [3] [1,10,100])])
     "H" (tl [3,4] [1,2,3,4, 1,10,20,30, 1,100,100,200])
 
+-- Both orderings sum the current and previous slots, with zero padding before slot zero.
+#guard diffEqB (tlprog!{ iter t = 5
+      axis j : ℕ = 2
+      tensor f64 H0(d), F(d, t)
+      F[d, 0]     := H0[d]
+      F[d, t +1]  := F[d, t + j - 1] })
+    (HashMap.ofList [("H0", tl [3] [1, 2, 3])])
+    "F" (tl [3, 5] [1,1,2,3,5, 2,2,4,6,10, 3,3,6,9,15])
+
+#guard diffEqB (tlprog!{ iter t = 5
+      axis j : ℕ = 2
+      tensor f64 H0(d), F(d, t)
+      F[d, 0]     := H0[d]
+      F[d, t +1]  := F[d, t - j] })
+    (HashMap.ofList [("H0", tl [3] [1, 2, 3])])
+    "F" (tl [3, 5] [1,1,2,3,5, 2,2,4,6,10, 3,3,6,9,15])
+
 end LeanNCD.Eval.Plan.NonlinCompileTest

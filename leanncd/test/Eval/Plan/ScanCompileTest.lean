@@ -1398,6 +1398,21 @@ output-slice column rather than a context column (slice-dependent). -/
       , nonlin := .identity }]
   == some (.scan (.stateReadNotCausal "sc" "S" 0 0 0))
 
+def winStmt (e : IdxExpr) : Stmt := .assign "S" [.iterNext axL]
+  { body := { terms := [{ factors := [.read "S" [e]] }] }, nonlin := .identity }
+
+#guard rej [okBase] [winStmt (.affine (-1) [(1, axL), (1, axJ)])] == none
+#guard rej [okBase] [winStmt (.affine 0 [(1, axL), (-1, axJ)])] == none
+#guard rej [okBase] [winStmt (.affine 0 [(1, axL), (1, axJ)])]
+  == some (.scan (.stateReadNotCausal "sc" "S" 0 0 0))
+#guard rej [okBase] [winStmt (.axis axJ)]
+  == some (.scan (.stateReadNotCausal "sc" "S" 0 0 0))
+#guard rej [okBase] [winStmt (.affine (-3) [(2, axL), (1, axJ)])]
+  == some (.scan (.stateReadNotCausal "sc" "S" 0 0 0))
+#guard rej [okBase] [winStmt (.shift axL (-1))] == none
+#guard rej [okBase] [winStmt (.shift axL 1)]
+  == some (.scan (.stateReadNotCausal "sc" "S" 0 0 0))
+
 -- loop-axis-ignoring constant read `S[0]`: the advancing row has NO nonzero coefficient at all, so
 -- it is not a look-back on the loop axis and its value depends on when the read happens. This is
 -- the Jacobi/Gauss-Seidel discriminator `ScanTest.lean` Part 4 pins at the checker; here it is

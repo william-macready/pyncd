@@ -204,6 +204,33 @@ def stateReadCausal (advancingDims : Array Nat) (contextPos : Array Nat) (f : Re
     causalAdvancingRow (f.map.coeffs.getD (advancingDims.getD i 0) #[])
       (f.map.bias.getD (advancingDims.getD i 0) 0) (contextPos.getD i 0))
 
+/-- The LARGEST slot-offset a read row can address above the scan position over the term's iteration
+    box: `bias + sum over positions p /= ctxPos with c_p > 0 of c_p * (shape_p - 1)`. Every position
+    ranges over `[0, shape_p)`, so a non-positive coefficient only lowers the slot and a positive one
+    contributes at most `c_p * (shape_p - 1)`. -/
+def maxSlotOffset (shape : Array Nat) (row : Array Int) (bias : Int) (ctxPos : Nat) : Int :=
+  (List.range row.size).foldl (fun acc p =>
+    if p != ctxPos && row.getD p 0 > 0
+    then acc + row.getD p 0 * (Int.ofNat (shape.getD p 1) - 1) else acc) bias
+
+/-- Extent-aware causality of one read row (the strict `causalAdvancingRow` is the special case of no
+    other nonzero coefficient): the coefficient at the row's own context position is exactly `1`, no
+    OTHER context position is referenced, and `maxSlotOffset <= 0`, so every slot the read can address
+    is `<= t` (already written, or below `0` and zero-padded). -/
+def causalAdvancingRowIn (shape : Array Nat) (ctxAll : Array Nat) (row : Array Int) (bias : Int)
+    (ctxPos : Nat) : Bool :=
+  row.getD ctxPos 0 == 1 &&
+  (List.range row.size).all (fun p => p == ctxPos || row.getD p 0 == 0 || !ctxAll.contains p) &&
+  decide (maxSlotOffset shape row bias ctxPos ≤ 0)
+
+/-- `stateReadCausal` with the term's iteration extents: the rule the two production call sites use. -/
+def stateReadCausalIn (shape : Array Nat) (advancingDims : Array Nat) (contextPos : Array Nat)
+    (f : ReadPlan) : Bool :=
+  advancingDims.size == contextPos.size &&
+  (Array.range advancingDims.size).all (fun i =>
+    causalAdvancingRowIn shape contextPos (f.map.coeffs.getD (advancingDims.getD i 0) #[])
+      (f.map.bias.getD (advancingDims.getD i 0) 0) (contextPos.getD i 0))
+
 /-- A raw `RawScanPlan` violates a scan-level invariant. Indices identify the offending
     state/write/capture so a failure is locatable without re-deriving it (proposal §7.5). -/
 inductive ScanPlanError
@@ -284,7 +311,7 @@ inductive ScanPlanError
     thin applications of the one `checkScanCore` (`private mk ::`).
 
     There is deliberately no separate `CausalityCertificate` type or field: the certificate IS
-    `checkScanCore`'s own causality loop over `stateReadCausal`, and a `CheckedScanPlan` value's
+    `checkScanCore`'s own extent-aware causality loop over `stateReadCausalIn`, and a `CheckedScanPlan` value's
     existence — obtainable only through `checkScanPlan`/`checkScanPlanF32`, since `mk` is
     `private` — is itself the
     evidence a worker relies on. Storing a redundant marker field would add a second thing to keep
@@ -503,8 +530,11 @@ private def checkStateInitTie (raw : RawScanPlan) : Except ScanPlanError Unit :=
 
 /-- Validate an unchecked scan node (proposal §7.3), INCLUDING causality: the final loop before
     `return` walks every `.assign` step-block factor that reads a captured state and requires
-    `stateReadCausal` of it, so a look-ahead or loop-axis-ignoring state read is rejected here
-    rather than left as a worker-side assumption (proposal §7.4).
+    `stateReadCausalIn` over the term's iteration extents. Each advancing row must have its own
+    context coefficient exactly one, no other context coefficient, and maximum free-axis offset
+    `bias + sum (c_p * (extent_p - 1))` over positive coefficients at most zero. Window/lag reads
+    are therefore already written or below zero and padded; look-ahead and loop-axis-ignoring
+    rows remain rejected. The strict `stateReadCausal` pair stays for the indexed profile door.
 
     **Why walking only `.assign` steps is complete.** A block's nonlinear steps
     (`.pointwise`/`.axiswise`) have no term/factor structure and so no state read to classify, but
@@ -628,7 +658,7 @@ private def checkScanCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSigna
             | none => pure ()
             | some si =>
                 let st := raw.states.getD si default
-                unless stateReadCausal st.advancingDims t.contextPos f do
+                unless stateReadCausalIn t.iterationShape st.advancingDims t.contextPos f do
                   throw (.causalityFailure si ai ti fi)
   return CheckedScanPlan.mk raw sigs checkedBase checkedStep stepExtents kind
 

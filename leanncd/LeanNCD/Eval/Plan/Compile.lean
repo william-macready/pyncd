@@ -438,7 +438,7 @@ private def checkPlainStatePins (warnings : List EvalWarning)
     are checked in order (base, then step); `termIndex`/`factorIndex` index within the offending
     assignment, and `stmtIdx` is the `.scan`'s statement index. Called before this scan's own states
     enter `stateSlotInfo`, so only earlier scans' states are consulted; the scan's own states are
-    `.state` captures (not `.external`), checked by `stateReadCausal`. -/
+    `.state` captures (not `.external`), checked by `stateReadCausalIn`. -/
 private def checkScanBlockStatePins (warnings : List EvalWarning)
     (stateSlotInfo : HashMap TensorSlot (String × Array Nat)) (stmtIdx : Nat)
     (raw : RawScanPlan) : Except PlanCompileFailure Unit := do
@@ -1328,7 +1328,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   ---------------------------------------------------------------------------
   -- Phase 5: source-facing validation of base-write placement and step-read causality.
   ---------------------------------------------------------------------------
-  -- Reuses F3's own recognizers (`writeRowKinds`/`writesCollide`/`stateReadCausal`) rather than
+  -- Reuses F3's own recognizers (`writeRowKinds`/`writesCollide`/`stateReadCausalIn`) rather than
   -- restating their rules: what this pass adds is SOURCE locators. `checkScanPlan` re-checks all of
   -- it later (Step E) as the internal safety net — a rejection there is a compiler bug reported as
   -- `invalidPlan`, which is exactly why the source-facing rejection has to happen here first.
@@ -1407,7 +1407,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
         match (capturedState.getD f.sourceSlot none) with
         | none => pure ()
         | some si =>
-            unless stateReadCausal (stateAdvDims.getD si #[]) t.contextPos f do
+            unless stateReadCausalIn t.iterationShape (stateAdvDims.getD si #[]) t.contextPos f do
               throw (scanErr warnings
                 (.stateReadNotCausal scanName (stateNames.getD si "") ri ti fi))
   ---------------------------------------------------------------------------

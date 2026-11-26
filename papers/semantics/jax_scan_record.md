@@ -1608,7 +1608,7 @@ Scratch probe, nothing committed by the probe itself (a background agent, 81 too
 | P1b KV cache, one-hot slot write `Oh[s, t]`, data mask `Mk[s, t]` | Works. Cached incremental output == full causal attention recomputed from scratch to 2.8e-17; Lean, eager and jit agree to 5.6e-17. |
 | P1c same, unmasked | Works; a different model (0.46 from causal). |
 | P1a same with `softmax(where s <= t)` | Silently wrong (below); now refused. |
-| P2 scan state history read at a renamed axis `Kh[k, s]` | Refused: `stateReadNotCausal` in the checked plan (the reference evaluator accepts it). |
+| P2 scan state history read at a renamed axis `Kh[k, s]` | Bare renamed-axis read remains refused: `stateReadNotCausal` in the checked plan (the reference evaluator accepts it). Extent-bounded own-clock window/lag reads are now admitted; see section 29. |
 | P3 two layers over the same axis, layer 2 reads the OLD layer-1 state | Works; ONE merged scan. A different model from `rnn_stack` (0.62 apart). |
 | P4n time scan then layer scan, time as an ordinary state axis | Works; 2 scan records. With a per-step intermediate in the layer scan: `shapeMismatch ... spans multiple scan components`. |
 | P5 two scan axes in one program | Only the diagonal `G[d, l+1, t+1] := f(G[d, l, t])` elaborates (no `t +1` read on the right); Lean accepts, JAX render refuses `unsupportedScanAxes 0`. |
@@ -1633,6 +1633,8 @@ Fix, first version (Direct path): `finalizeScans` refused a mask over a scan axi
 So a `where` mask over ANY axis that is not one of the statement's own `.free`/`.freeNorm` output axes reads coordinate 0 on both backends, and the Iverson FACTOR form is correct (it is lowered with the scan context). The three scan-specific checks were replaced by one rule in `finalizeScans`: every axis of a mask must be an own output axis, else `maskAxisNotOutput <stmt> <axis>` (this renames `maskOverScanAxis`; the scan-axis cases are instances). Consequences: a mask over a base's pinned axis is refused at 0 too (it happened to read the right value; the rule is now uniform; `maskBaseAtZero` flipped); a post-scan statement ranging over the scan axis, and an earlier scan's axis as a free state axis, stay legal. Pins in `StructuralTest`: rejections `maskInterScanAxis`, `maskStepScanAxis`, `maskOwnAxisAfterScan`, `maskBaseAtZero`, `maskBaseAtOne`, `maskContractedAxis`, `maskUnboundAxis`; accept neighbours `maskInterOtherAxis`, `maskStepOtherAxis`, `maskPostScanAxis`, `maskOtherScanAxisFree`, `maskOutputAxisContracted`, `maskOutputAxisPlain`; the Iverson value pin is in `NonlinCompileTest`. Hand mutants killed (never refuse; `.free` not counted as an output axis, killed by `maskOtherScanAxisFree`; inverted test). Making a mask see the live step instead would need a step channel in the reference evaluator, the checked plan and the JAX emitter; not done, an Iverson factor or a data mask is the working form. The hand-built `seededAxisZero` fixture is unchanged: a hand-built schedule keeps the coordinate-0 reading.
 
 **Next.** P1b (pinned against both the incremental loop and the full causal recompute), P4n, P3 and P6 are now fixtures in both precisions (section 27). A true nested or grid scan (P5) and a renamed-axis state read (P2) still need a Lean checked-plan change and JAX per-axis counters; each is a separate slice with a plan. **Correction (2026-11-24, `jax_grid_scan_scope.md`):** for the stacked RNN with a layer axis, P5 is NOT needed: it runs today as one scan skewed onto `k = t + l` (exact to about 2e-16 on Lean, eager and jit); the checked plan's causality rule (offset <= 0 per axis) is what refuses a wavefront read, and the reference evaluator already computes the true grid values.
+
+**Correction (2026-11-25, section 29):** extent-bounded own-clock window/lag state-history reads need neither per-axis JAX counters nor a native grid scan. The production checker now admits them from iteration extents alone. Bare `Kh[k, s]` and a scan-dependent `where` mask remain refused; natural masked full-history syntax is still parked.
 
 ## 27. Layers/time execution: KV cache, sequential scans and old-state layer skew (2026-11-23)
 
@@ -1965,6 +1967,7 @@ Renamed-axis state-history reads: checked-plan `stateReadNotCausal`, although th
 evaluator accepts the read. Each requires a separate production slice/plan covering checked-plan
 changes and JAX per-axis step counters (at least one full slice, multiple implementation/review
 dispatches each; not sized or begun here). No scope expansion or additional side issue.
+**Correction (2026-11-25):** that cost claim does not apply to extent-bounded own-clock window/lag reads: section 29 admits these with a localized predicate change and unchanged JAX lowering. Bare renamed-axis reads and step-aware `where` masks remain parked.
 **Correction (2026-11-24):** the "each requires a separate production slice" statement is too strong for the stacked-RNN case: see `jax_grid_scan_scope.md` (the skewed single-scan formulation, probed, needs no capability change; a native grid scan would be an optional convenience, sized there).
 
 ### Controller review (2026-11-23, after the executor's STOP at ready-for-review)
@@ -2289,4 +2292,367 @@ recorded above; the cumulative 14.1M input tokens are within the 175M execution 
 executor's ignored `.cache/skew-*` logs (46 files) are archived at
 `/Users/williammacready/code/python/pyncd.worktrees/skew-exec-evidence-logs`. Merged to local
 `main` with `--no-ff`; the branch and worktree are removed after the merge.
+
+## 29. Extent-aware state-history causality and KV window/lag fixtures (2026-11-25)
+
+**Scope/status.** Direct execution of `jax_kv_window_session_brief.md`, based on local
+`main` **897b5ca6** (the only change after **a1799d71** was that brief).
+Branch **jax-kv-window-exec**, worktree `.claude/worktrees/kv-window-exec`.
+The exact Appendix A.1 production patch is implemented: three definitions in
+`Eval/Plan/Scan.lean`, two call sites in `Scan.lean`/`Compile.lean`. The strict
+`causalAdvancingRow`/`stateReadCausal` implementations and indexed-execution files are unchanged.
+Only two existing scan-evidence/checker docstrings were corrected afterward.
+Both models, both precisions, all requested value/structural/gradient pins and mutation
+cycles are complete. All final coordinator gates passed; results are recorded below.
+No merge, push, branch deletion or worktree removal is authorized by this brief.
+
+Implementation commits:
+
+| Commit | Subject |
+|---|---|
+| `32ad5c78` | feat(scan): admit extent-bounded causal history reads |
+| `300bbfd6` | test(scan): record checker mutation kills (empty) |
+| `f9a13e25` | test(jax): pin window and lag KV history fixtures |
+| `07cbbb3c` | docs(scan): distinguish bounded reads from the strict profile |
+| `c3b18ad2` | test(jax): pin window and lag KV history gradients |
+| `5d5c951c` | test(jax): record KV history fixture mutation verdicts (empty) |
+
+### Rule, oracle and verdicts
+
+For advancing context position `q`, accept only own coefficient `c_q = 1`, no
+nonzero coefficient at another context position, and
+`b + sum_{p != q, c_p > 0} c_p * (extent_p - 1) <= 0`.
+For every point of a nonempty iteration box, positive free coefficients attain
+their maximum at the upper endpoint and nonpositive ones at zero. Consequently
+the addressed slot is at most its own scan coordinate. A negative coordinate pads;
+a zero coordinate lies on the initialized boundary; otherwise the canonical producer
+is componentwise earlier than the current tuple and was already visited in the
+axis-zero-fastest scan order. This is not permission to read a future coordinate in a grid.
+
+The strict rule is a special case for *any* extents: all other coefficients are zero,
+so the maximum offset is just the old nonpositive bias. This argument goes beyond
+the finite oracle's grid. `checkAssignCore` rejects coefficient rows wider or narrower
+than `iterationShape`, checks its position partition and context projection, and
+`checkScanCore` ties the step-block context to the actual step extents before checking
+causality. Thus `shape.getD p 1` is not an admission shortcut for malformed production
+rows. A zero-extent free position makes the whole term box empty, so any loosened bound
+there is vacuously safe; another positive context coefficient is explicitly refused.
+
+`ecBoxPoints`/`ecSlotAt`/`ecBruteSafe` exhaustively enumerate **24,300** rows:
+three extents independently in 1..3; own coefficient -1,0,1,2; two free coefficients
+independently in -2..2; bias -4..4. All **eight guards**, including the case-count
+guard, pass: soundness, exactness in the unit-clock class, accepted/refused non-vacuity,
+conservatism outside the class, strict-rule inclusion and other-context exclusion.
+The brief's "seven guards" counts the seven properties without the case-count guard.
+This is exhaustive testing of the finite grid and a mathematical box-model argument,
+not a new Lean theorem proving evaluator enumeration. Dense `allCoords` was read:
+it enumerates every position with `List.range extent`; JAX consumes emitted gather tables.
+
+Raw `winScan`, extra-axis extent 2:
+
+| Read | Verdict |
+|---|---|
+| `G[l + j - 1]` | ACCEPT |
+| `G[l - j]` | ACCEPT |
+| `G[l + 2j - 2]` | ACCEPT |
+| `G[l + j]` | REJECT `.causalityFailure 0 0 0 0` |
+| `G[l + 2j - 1]` | Same rejection |
+| `G[2l + j - 3]` | Same rejection |
+| `G[j]` | Same rejection |
+| Unchanged `deepHistoryScan` | ACCEPT |
+
+Source `winStmt`/`rej`: `l+j-1`, `l-j`, `l-1` ACCEPT; `l+j`, `j`,
+`2l+j-3`, `l+1` REJECT exactly `.scan (.stateReadNotCausal "sc" "S" 0 0 0)`.
+Both hand-computable `diffEqB` window/lag guards pass through checked and reference
+evaluation: rows `[1,1,2,3,5]`, `[2,2,4,6,10]`, `[3,3,6,9,15]`.
+No existing guard flipped.
+
+### Programs, inputs and independent pins
+
+The common binary64 window program is:
+
+```text
+iter t = 6
+axis u : Nat = 5
+tensor f64 X(t,i), Wq(k,i), Wk(k,i), Wv(v,i), K0(k), V0(v), Y0(v), Mk(u,t)
+tensor f64 Kh(k,t), Vh(v,t), Yh(v,t), Kn(t,k), Vn(t,v), Qr(t,k), Sc(u), Pa(u), Yo(v)
+Kh[k,0] := K0[k]
+Vh[v,0] := V0[v]
+Yh[v,0] := Y0[v]
+Kn[t,k] := Wk[k,i] · X[t,i]
+Vn[t,v] := Wv[v,i] · X[t,i]
+Qr[t,k] := Wq[k,i] · X[t,i]
+Sc[u] := Kh[k,t+u-4] · Qr[t,k] + Mk[u,t]
+Pa[u.] := softmax(Sc[u])
+Yo[v] := Pa[u] · Vh[v,t+u-4]
+Kh[k,t+1] := Kn[t,k]
+Vh[v,t+1] := Vn[t,v]
+Yh[v,t+1] := Yo[v]
+```
+
+The lag program changes BOTH history reads to `t-u`. Binary32 siblings omit `f64`;
+the actual Lean source uses the brief's existing Unicode syntax. Extents are pairwise
+distinct: `(t,u,k,i,v) = (6,5,4,3,2)`. Each plan has three top-level assigns followed
+by ONE scan with `step_count = 5`; flattened kinds are exactly **(12,0,1)**.
+Exports are exactly **Kn, Vn, Qr, Kh, Vh, Yh**. The existing shared renderer checks
+the einsum/evidence refusals and successful affine render; the exact einsum refusal
+index from the scratch observation was not separately remeasured.
+
+One shared definition supplies every input except the mask to all four fixtures.
+`gqaGen(seed,n)[j] = 0.6*sin(seed+1.7*j)`:
+`X[6,3]` is seed 1 for 15 values plus a finite zero row; `Wq[4,3]`, `Wk[4,3]`,
+`Wv[2,3]`, `K0[4]`, `V0[2]` use seeds 2,3,4,5,6; `Y0[2]` is zero.
+`Mk[u,t]` is zero iff `t+u>=4` (window) or `t>=u` (lag), otherwise `-1e9`,
+including the finite spare column. Every input, shape and formula is pinned.
+No input, output or environment contains a NaN; no NaN fixture set was extended.
+
+`np_kv_history` reads only exported model inputs, NEVER `Mk`, Lean values or plan
+tables. It starts lists with `K0,V0`, attends to those prior lists at each time,
+then appends the current projected key/value. All six rows of each hoisted table
+are computed independently. Therefore `Yh[:,1] = V0`; the current key is deliberately
+not visible at its own step. A five-slot window over five steps never truncates history.
+
+Only seed candidate tried: **(1,2,3,4,5,6)**. Binary32 was measured on generated
+fixtures before accepting those seeds; no reseeding or tolerance change was needed.
+Scaled error means `max(abs(got-want)/max(1,abs(want)))`.
+
+| Fixture | Unperturbed six-export maximum vs NumPy | Maximum including perturbation pins | MODEL_TOL headroom |
+|---|---|---|---|
+| kv_window | `5.551e-17` | `5.551e-17` | 18014x |
+| kv_lag | `8.327e-17` | `9.714e-17` | 10294x |
+| kv_window32 | `3.901820022634e-8` | Same | 25.629x |
+| kv_lag32 | `3.901820022634e-8` | Same | 25.629x |
+
+All Lean/eager/jit views are compared in full with finiteness checks.
+Unperturbed `Kh,Vh,Kn,Vn,Qr` are exact vs the binary64 NumPy model; binary32's
+largest error is in `Kh/Kn`, not attention. Binary32 unperturbed `Yh` errors are
+`1.872386501400e-8` (window) and `1.905138302671e-8` (lag).
+No general output eager/jit bitwise claim is inferred from tolerance agreement.
+
+All five independent NumPy gap assertions exceed `1e-2`. Except for the shortened
+window, the domain is **Yh columns 2..5**, excluding the singleton first attention;
+the shortened-window gap uses **column 5 only**.
+
+| Variant | Binary64 gap (both models) | Binary32 gap (both, rounded) |
+|---|---|---|
+| Mask removed, padded cells are zero key AND zero value | 0.204629114 | 0.204629112 |
+| Four-slot window, drops K0 at t=4 | 0.106868952 | 0.106868950 |
+| Current-key cache semantics | 0.469526517 | 0.469526499 |
+| Values shifted one slot | 0.310803947 | 0.310803942 |
+| K0 replaced by zero | 0.051331714 | 0.051331710 |
+
+The brief's mask-removed 0.463 was over all columns; the required restricted domain
+is recomputed above. No gap is decided by the degenerate first attention.
+Setting `X[5]=0.5` leaves `Yh,Kh,Vh` and live table rows BITWISE unchanged;
+all three spare table rows move by approximately 0.216..0.223 and are value-pinned.
+Perturbing each `X[t]` by +0.37 leaves `Yh` columns `p<=max(t,1)` BITWISE unchanged;
+first moved columns are **[2,2,3,4,5]**. Binary64 responses are
+**[0.09738058,0.0007567113,0.01413859,0.04118846,0.05623603]**.
+The smallest response is 7.567x the `1e-4` threshold, absolute margin
+`6.567112742e-4` (binary32 margin `6.567405701e-4`).
+K0 perturbation preserves columns 0 and 1 bitwise and moves EVERY column 2..5;
+V0 perturbation moves column 1 by exactly the input perturbation within MODEL_TOL
+and every column 2..5. Perturbed histories also match the independent model.
+
+### Gradients
+
+Loss is `sum(C * Yh[:,5])`, fixed nonuniform **C=[0.7,-1.1]**.
+Both fixtures in both precisions differentiate all eight float inputs eagerly/JIT.
+Independent Python-loop/list JAX attention uses no plan, mask or `lax.scan`;
+NumPy central differences use six isolated input directions and three joint ones,
+epsilon `1e-6`. Wq/Wk/Wv/K0/V0 and every live X row are compared.
+Mk is finite and eager/JIT BITWISE equal, but frozen/absent in the independent
+model and FD directions. `X[5]` and `Y0` gradients are EXACTLY zero in all four
+gradient views. Every other model input has a nonzero gradient; an absolute `1e-3`
+canary is rejected by the unchanged gradient tolerance.
+
+| Precision, worst across fixtures/views | TRUE-model scaled gradient error / headroom | NumPy FD error / headroom |
+|---|---|---|
+| binary64 | `5.551e-17` / 18014x (tol `1e-12`) | `3.086e-11` / 3241x (tol `1e-7`) |
+| binary32 | `4.470e-8` / 2237x (tol `1e-4`) | `7.747e-8` / 1291x (tol `1e-4`) |
+
+Per-input gradient maxima, binary64 / binary32:
+Wq `.093775065/.093775071`; Wk `.057225096/.057225097`;
+Wv `.163058496/.163058504`; K0 `.057407982/.057407983`;
+V0 `.178604628/.178604633`; X `.171434665/.171434671`;
+Mk `.129281904/.129281908`; Y0 `0/0`.
+Eager/JIT model-gradient differences are zero except X (at most `2.776e-17`
+binary64, `1.490e-8` binary32); no unsupported bitwise claim is made.
+Full per-input/direction measurements are printed as `kv-history-gradient-report`.
+
+### Mutation tables
+
+All seven checker mutants were applied individually to committed production code,
+built with `Tests`, then inverse-restored with empty diff/status. Initial and final
+restored `Tests JaxExperiment` builds were **8846 jobs**.
+The first failing guard can precede the oracle killer predicted in the brief:
+
+| Mutant | Exact change | First failure | Specified property also killed |
+|---|---|---|---|
+| M1 | Bound `<=0` to `<=1` | Raw `l+j` rejection | Oracle soundness |
+| M2 | maxSlotOffset is bias only | Raw `l+j` rejection | Oracle soundness |
+| M3 | extent-1 to extent | Raw `l+j-1` acceptance | Oracle exactness |
+| M4 | own coefficient ==1 to !=0 | Raw scaled-read rejection | Conservative outside class |
+| M5 | Drop other-context exclusion | Multi-context oracle | Same |
+| M6 | Compile call back to strict rule | Window Fibonacci value guard | Source acceptance guards |
+| M7 | Scan checker call back to strict rule | Raw window acceptance | Raw acceptance guards |
+
+Fixture mutants use the FULL nonlinear runner, not a proxy. All accepted mutants
+generated **65/56** fixtures before the new independent/structural pin failed.
+Their Lean/eager/jit differential agreement is not counted as a kill.
+Each inverse restoration had empty `git diff --stat` and a green **8846-job**
+`Tests JaxExperiment` rebuild.
+
+| Mutant | Exact edit | First failing assertion / result |
+|---|---|---|
+| A | Window Mk all zero | `('kv_window','mask formula')` |
+| B | Window threshold t+u>=3 | Same mask-formula pin |
+| C | f64 window Vh read t+u-5 | `pin numpy model: kv_window lean Yh`, error `0.5929009403262002` |
+| D | f64 window Kh read t+u-3 | Expected prepare REFUSAL, NOT a kill |
+| D' | Replacement f64 window Kh read t+u-5 | Window Lean Yh model pin, error `0.1048095791809036` |
+| E | f64 lag Kh read t-u-1 | Lag Lean Yh model pin, error `0.10480957918090361` |
+| F | Lag threshold t>=u+1 | `('kv_lag','mask formula')` |
+| G | Only f32 window Vh read t+u-5 | Window32 Lean Yh model pin, error `0.5929009318351746` |
+
+D's exact text:
+`uncaught exception: kv_window prepare failed: scan: LeanNCD.Eval.Plan.ScanCompileError.stateReadNotCausal "Sc" "Kh" 0 0 0`.
+The replacement D' is accepted and killed. A/B/F modify shared mask data, naturally
+affecting both precisions; other program mutants touch only the named precision.
+G's ENTIRE binary64 Python leg passed, then binary32 differential agreement passed
+before the binary32 independent value pin killed it. No survivor or un-restored
+mutant remains. Checker and fixture tables are recorded in separate empty commits.
+
+### Reverification, review, documentation and limits
+
+The coordinator independently established the baseline before any source change:
+
+| Baseline gate at 897b5ca6 | Observed result |
+|---|---|
+| Tests JaxExperiment | 8846 jobs, exit 0 |
+| IndexedExecutionExperiment | 8729 jobs, exit 0; 882-constant standard-only AffineScan audit |
+| check-lean-drivers.sh | All eight drivers clean, exit 0 (Lean side only) |
+| run-evalplan-nonlin.sh | 63 binary64 / 54 binary32, full existing pins, exit 0 |
+
+Coordinator final gates, on the restored final executable tree, all **exit 0**:
+
+| Final gate | Observed result |
+|---|---|
+| Tests JaxExperiment | **8846 jobs**, no errors |
+| IndexedExecutionExperiment | **8729 jobs**, same **882**-constant standard-only audit as base |
+| check-lean-drivers.sh | **All eight drivers clean**, Lean side only |
+| run-evalplan-nonlin.sh | **65 binary64 / 56 binary32**, eager/JIT within Lean tolerances; ALL old/new value, structural and gradient pins passed |
+
+The chain ran sequentially, with `env -u PYTHON` for runners, no concurrent Lean
+builds/runs, and ONE full nonlinear run on the final executable tree. Its model
+and gradient measurements agree with the tables above. `git diff --check` passed.
+Only this documentation outcome/budget update followed the successful final chain.
+Baseline/final logs are `kv-baseline-*` / `kv-final-*` in the Copilot session's
+`files/`; implementation/mutation logs remain in the ignored bridge `.cache/`.
+
+One coordinator read-only review covered the complete committed executable diff,
+with BOTH lenses. WRONGLY ACCEPTS: checked row width/position partition/context
+projection, multi-axis predecessor geometry, zero extents and positive other-context
+coefficients; no behavioral finding. WRONGLY REJECTS: strict-rule inclusion for any
+extents, negative free coefficients and tight endpoint bound; no behavioral finding.
+Also checked independent models, nondegenerate gap domains, precision siblings,
+gradient support and unchanged old pins/tolerances. Two stale evidence/checker
+docstrings still named the strict production call; corrected without code changes.
+Owner whole-branch review remains the requested next step, not a merge authorization.
+
+The consumer grep over `leanncd/` and `papers/` found the two production callers,
+strict `IndexedAffineScanProfile`, and an additional live consumer the brief did not
+name: `IndexedAffineScanCompilerExamples` (strict predicate guards and exact
+compiler/checker refusal strings). No causality consumer was found under
+`LeanNCD/Semantics/`. Error constructors, ScanTest/ScanCompileTest callers and
+historical implementation seeds/patches also match; none were changed.
+Current prose corrected: Plan AGENTS code-map/hand-extension list, boundary policies,
+grid-scan terminology/options, indexed-profile handoff/plan, reference prototype
+notes, and record sections 26/27. Historical strict-rule/caller text is deliberately
+retained in `pre_scatter_backend_audit.md` (G-READ/caller tables), the Wave-F F3/F5
+and nonlinearity/T3 plans, and `wave_f_scanplan_proposal.md`; these describe their
+then-current implementation, not today's production admission. Strict-helper text
+in F32-C notes/manifests, post-audit roadmap, intent-layer drift audit and indexed
+profile record still describes unchanged helpers. No unrelated documentation cleanup.
+
+All requested fixtures, pins, gradients and mutants were executed; no data, size,
+seed, tolerance, export, program-structure or executable-patch deviation.
+Process differences: separate gradient and split mutation dispatches, an early
+documentation correction commit, and a resumed final mutation dispatch after a
+background-run wait. That dispatch was resumed as the SAME task, counted cumulatively;
+the user's progress question did not cancel the work. A's restoration build output
+was tool-captured rather than cache-redirected; its 8846 result was verified.
+Scratch observations not separately remeasured: exact einsum refusal index,
+mask-removed runtime numerical parity, all-output eager/JIT bitwise equality,
+maximum softmax score, compile/trace timing. No such claim is inferred here.
+The other seven drivers' Python/JAX verifiers were not run: the requested
+`check-lean-drivers.sh` is explicitly Lean-only.
+
+### Budget and parked work
+
+The prescribed `token-report.py 91b136a1-8024-4223-b656-d06e83db7a4d`
+returned `no transcript for session`. Copilot `events.jsonl` supplies measured
+`tool.execution_start`, `assistant.turn_start` and `session.usage_record` aggregates
+by agentId instead; `usage.inputTokens` is not double-counted with cache tokens.
+The coordinator already exceeded the approximately 60-tool-call cap during
+baseline/setup, documentation and review. This is an explicit breach, not several
+renamed "sessions"; all implementer dispatches stayed at or below 60 tool starts.
+Measured snapshot after the final gates, **2026-11-26T16:23:17Z**:
+
+| Dispatch (same chat across resumes) | Tool starts | Turn starts | Cumulative input tokens | Peak input tokens |
+|---|---:|---:|---:|---:|
+| Coordinator, checkpoint before final record edit/commit | **121** | 55 | 5,996,758 | 183,210 |
+| Checker and seven mutants | 60 | 41 | 3,050,275 | 97,260 |
+| Fixtures and value/structural pins | 55 | 28 | 2,026,186 | 98,231 |
+| Gradients | 46 | 19 | 1,134,527 | 82,100 |
+| Fixture mutants A..D' | 39 | 32 | 1,503,225 | 63,681 |
+| Fixture mutants E/F/G, both turns cumulatively | 50 | 41 | 1,732,532 | 54,315 |
+
+Total measured input at that snapshot: **15,443,503**, below the 175M execution
+budget. Every measured peak is below 250k, and every dispatch is below 60 turns
+at the snapshot. Coordinator tool count **121 exceeds ~60**; baseline preparation,
+the required read batches, direct two-lens review and repeated long waits were not
+budgeted into a sufficiently small controller dispatch. The final record edit,
+commit/status and todo close-out add calls/tokens after this explicitly bounded
+snapshot; no exact final total or call-cap compliance is invented. Earlier agent
+reports were snapshots before their final response, so this table supersedes them.
+
+Parked, none required for this goal:
+
+| Item | Rough separate cost (judgment, not a plan) |
+|---|---|
+| Natural Kh[k,s] with step-aware where s<=t, plus dataflow proof | At least 1 Full slice, roughly 4..8 dispatches across reference/checker/JAX |
+| Iverson factors on real/max-plus JAX terms | 1 separately scoped backend slice, roughly 2..4 dispatches |
+| Include current token key in this history model | 1 Direct fixture/model dispatch |
+| Window genuinely shorter than history | 1 Direct fixture/data/pin dispatch with another extent set |
+| Window fixture in multi-axis scan | 1 Lean-only Direct fixture dispatch; JAX multi-axis work remains separate |
+| Reference evaluator rejects non-causal/free-axis reads | 1 separately scoped Direct alignment dispatch |
+| Native grid/nested scan | Existing scope options C/D, roughly 5..11 / 4..8 Lean-only dispatches |
+| IndexedAffineScanProfile window-read widening | 1 separately scoped profile/proof slice; no estimate without its audit |
+
+Bare renamed-axis history reads still fail causality, and scan-dependent `where`
+still fails `maskAxisNotOutput`; neither is masked into safety by this change.
+The reference evaluator remains more permissive. Nothing under indexed execution,
+the emitter, runtime, grammar, an existing fixture or a mutation manifest was edited.
+
+**READY FOR WHOLE-BRANCH REVIEW.** Leave this branch/worktree intact with a clean
+committed tree. Nothing was merged or pushed. The final commit records these
+outcomes; the owner, not this executor, decides integration after review.
+
+### Controller review (2026-11-26)
+
+Gates re-run by the controller on the executor's tip `4acd09c8`: `Tests JaxExperiment` 8846 jobs, 0 errors; `check-lean-drivers.sh` all eight clean; `run-evalplan-nonlin.sh` (with `env -u PYTHON`, the "fixtures within" lines checked) 65 binary64 and 56 binary32 within tolerance, exit 0; binary32 `Yh` 1.9e-8 against numpy (tolerance 1e-6), binary32 gradients 2237x headroom against the true model and 1291x against central differences. `IndexedExecutionExperiment` was not re-run on the tip: the controller built it on a scratch worktree carrying exactly the patch of the brief (8729 jobs, standard axioms only) and the executor reports the same at the tip. The production diff is byte-for-byte the brief's patch (three definitions, two call sites) plus comment text.
+
+One independent read-only reviewer (Opus, no builds, 19 tool calls) took two lenses on the committed diff. WRONGLY ACCEPTS: no finding; verified positions run over `[0, extent)` in the dense worker for output and reduction positions, other scan axes are excluded by the `ctxAll` clause, zero extents give an empty box, row width is checked before the loop in `checkScanCore` and re-checked by `checkScanPlan` after `compileScan`, nonlinear steps and base blocks cannot read a state, and every consumer of the strict pair still refuses what the examples file expects. WRONGLY REJECTS: none for any shape (old-accepted is a subset of new-accepted, not only inside the oracle grid). Seven Minors:
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | The window never slides (width 5, steps 0..4), so no JAX fixture has a written slot outside the window; truncation is pinned only by the Lean Fibonacci pins | accepted; already parked ("window genuinely shorter than history") |
+| 2 | Padding below slot 0 is never observed by value in JAX (masked cells have probability exactly 0) | accepted: the mask removes them by construction; the unmasked numpy model shows padding would matter |
+| 3 | Mask mutants A, B, F were killed first by the input-formula assertion, no evidence a value pin would also kill them | VERIFIED by the controller on the probe copies of the same programs and data: max `|Yh - numpy true model|` is 0.4630 (A), 0.2794 (B), 0.4630 (F), far above `MODEL_TOL`, so the value pin kills them too |
+| 4 | The `Mk` gradient has no independent reference (eager == jit bitwise only) | accepted: `Mk` is frozen in the references and FD by design and said so |
+| 5 | The oracle never uses a context position other than 0 or more than 3 positions | accepted; the two-axis strict fixtures cover position-dependence |
+| 6 | The time-causality perturbation pin cannot see look-ahead reads (they read initial zeros) | accepted; look-ahead is caught by the value pins and the refusal pins |
+| 7 | Two stale comments in `Compile.lean` still named `stateReadCausal` | FIXED (`checkScanBlockStatePins` docstring, compile Phase 5 comment) |
+
+Merged to local `main` with `--no-ff` after the controller re-ran `Tests JaxExperiment` on the merged tree.
 
