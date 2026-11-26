@@ -2787,6 +2787,142 @@ def skew_grad_pins(by: dict, sfx: str) -> None:
         print("skew-gradient-report: " + json.dumps(report, sort_keys=True), flush=True)
 
 
+def kv_history_grad_pins(by: dict, sfx: str) -> None:
+    """Final prior-history attention loss; Mk is autodiff-only, frozen in references/FD."""
+    def scaled(a, b):
+        a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+        return float(np.max(np.abs(a - b) / np.maximum(1.0, np.abs(b))))
+
+    def hand(inp):
+        keys, vals, ys = [inp["K0"]], [inp["V0"]], [inp["Y0"]]
+        for t in range(5):
+            x = inp["X"][t]
+            q = inp["Wq"] @ x
+            p = jax.nn.softmax(jnp.stack([jnp.dot(key, q) for key in keys]))
+            ys.append(sum((prob * val for prob, val in zip(p, vals)), jnp.zeros_like(inp["V0"])))
+            keys.append(inp["Wk"] @ x)
+            vals.append(inp["Wv"] @ x)
+        return jnp.stack(ys, axis=1)
+
+    model_names = ("Wq", "Wk", "Wv", "K0", "V0", "X", "Y0")
+    fd_names = model_names[:-1]
+    c = np.asarray([0.7, -1.1], dtype=NDT)
+    for stem in ("kv_window", "kv_lag"):
+        name = stem + sfx
+        fx = by[name]
+        sin = {n: lean_array(e) for n, e in fx["inputs"].items()}
+        assert set(sin) == set(model_names) | {"Mk"}, (name, "unexpected float inputs")
+        assert all(np.all(np.isfinite(a)) for a in sin.values()), (name, "non-finite float input")
+        jin = {n: jnp.asarray(a) for n, a in sin.items()}
+        model_in = {n: jin[n] for n in model_names}
+        want = np_kv_history(sin)["Yh"]
+        value_errors = {}
+        for who, output in (("pure-JAX", hand(model_in)), ("pure-JAX-jit", jax.jit(hand)(model_in))):
+            check_np(name, who, "Yh", output, want)
+            value_errors[who] = scaled(output, want)
+
+        def loss_plan(inp):
+            return jnp.sum(c * rt.run_named(fx["plan"], inp, JDT)["Yh"][:, 5])
+
+        def loss_hand(inp):
+            return jnp.sum(c * hand(inp)[:, 5])
+
+        grad_plan, grad_hand = jax.grad(loss_plan), jax.grad(loss_hand)
+        grads = {"eager": grad_plan(jin), "jit": jax.jit(grad_plan)(jin),
+                 "pure-JAX": grad_hand(model_in), "pure-JAX-jit": jax.jit(grad_hand)(model_in)}
+        maxima, errors, absolute_errors = {}, {}, {}
+        for who, g in grads.items():
+            expected = sin if who in ("eager", "jit") else model_in
+            assert set(g) == set(expected), (name, who, "missing float input gradient")
+            maxima[who], errors[who], absolute_errors[who] = {}, {}, {}
+            for n, v in g.items():
+                a = np.asarray(v)
+                assert a.shape == sin[n].shape and a.dtype == NDT, (name, who, n, "gradient shape/dtype")
+                assert np.all(np.isfinite(a)), (name, who, n, "non-finite gradient; STOP without repair")
+                maxima[who][n] = float(np.max(np.abs(a)))
+            assert np.all(np.asarray(g["X"])[5] == 0), (name, who, "never-read X[5] gradient not EXACTLY zero")
+            assert np.all(np.asarray(g["Y0"]) == 0), (name, who, "final loss depends on Y0")
+            assert np.all(np.max(np.abs(np.asarray(g["X"])[:5]), axis=1) > 0), (name, who, "vacuous live X row gradient")
+            for n in model_names:
+                a = np.asarray(g[n])[:5] if n == "X" else np.asarray(g[n])
+                ref = np.asarray(grads["pure-JAX"][n])[:5] if n == "X" else np.asarray(grads["pure-JAX"][n])
+                errors[who][n] = scaled(a, ref)
+                absolute_errors[who][n] = float(np.max(np.abs(a.astype(np.float64) - ref.astype(np.float64))))
+                assert errors[who][n] < GRAD_TOL[_DT], (name, who, n, "TRUE attention gradient", errors[who][n])
+                if n != "Y0":
+                    assert maxima[who][n] > 0, (name, who, n, "vacuous model input gradient")
+        eager_jit_errors = {n: scaled(grads["eager"][n], grads["jit"][n]) for n in sin}
+        assert all(e < GRAD_TOL[_DT] for e in eager_jit_errors.values()), (name, "eager/jit gradient disagreement", eager_jit_errors)
+        assert np.array_equal(bits(np.asarray(grads["eager"]["Mk"])), bits(np.asarray(grads["jit"]["Mk"]))), (
+            name, "Mk gradient eager != jit BITWISE")
+        original = np.asarray(grads["eager"]["Wq"])
+        perturbed = original.copy()
+        perturbed.flat[int(np.argmax(np.abs(original)))] += NDT(1e-3)
+        canary = scaled(perturbed, original)
+        assert canary >= GRAD_TOL[_DT], (name, "absolute-1e-3 gradient canary accepted: vacuous", canary)
+
+        base = {n: a.astype(np.float64) for n, a in sin.items()}
+        loss_np = lambda inp: float(np.sum(c.astype(np.float64) * np_kv_history(inp)["Yh"][:, 5]))
+        rng = np.random.default_rng(7)
+        fd_errors = {who: {} for who in grads}
+        dots, directions = [], []
+        # Isolated inputs catch omissions hidden by cancellation in joint directions.
+        for index, selected in enumerate([*fd_names, None, None, None]):
+            label = selected if selected is not None else f"joint-{index - len(fd_names) + 1}"
+            direction = {n: np.zeros_like(a) for n, a in base.items()}
+            for n in fd_names:
+                if selected is None or selected == n:
+                    direction[n] = rng.standard_normal(base[n].shape)
+            direction["X"][5] = 0
+            assert np.all(direction["Mk"] == 0) and np.all(direction["Y0"] == 0), (name, "FD changed frozen Mk/Y0")
+            assert np.all(direction["X"][5] == 0), (name, "FD outside live X support")
+            eps = 1e-6
+            fd = (loss_np({n: base[n] + eps * direction[n] for n in base}) -
+                  loss_np({n: base[n] - eps * direction[n] for n in base})) / (2 * eps)
+            assert np.isfinite(fd), (name, label, "non-finite NumPy central difference")
+            for who, g in grads.items():
+                dot = float(sum(np.sum(np.asarray(g[n], dtype=np.float64) * direction[n]) for n in fd_names))
+                assert abs(dot) > 0, (name, who, label, "vacuous directional derivative", dot)
+                error = abs(fd - dot) / max(1.0, abs(dot))
+                assert error < GRAD_FD_TOL[_DT], (name, who, label, "NumPy TRUE central differences", error)
+                fd_errors[who][label] = error
+                dots.append(abs(dot))
+            directions.append(label)
+        assert set(directions[:len(fd_names)]) == set(fd_names), (name, "FD missed a model input")
+        max_err = max(e for per_input in errors.values() for e in per_input.values())
+        fd_err = max(e for per_direction in fd_errors.values() for e in per_direction.values())
+        report = {
+            "fixture": name, "precision": _DT, "loss": "sum(C * Yh[:,5])", "C": c.tolist(),
+            "model_inputs": list(model_names), "autodiff_inputs": sorted(sin),
+            "frozen_in_independent_reference_and_FD": ["Mk"],
+            "support": "all Wq/Wk/Wv/K0/V0; X rows 0..4; Y0 EXACTLY zero, frozen in FD",
+            "independent_reference": "Python t=0..4 loops/lists; prior keys/values only; no Mk/plan/lax.scan",
+            "numpy_reference": "unchanged np_kv_history true causal model",
+            "model_tol": MODEL_TOL[_DT], "grad_tol": GRAD_TOL[_DT], "fd_tol": GRAD_FD_TOL[_DT],
+            "value_errors": value_errors,
+            "gradient_maxima": maxima, "gradient_errors": errors, "gradient_absolute_errors": absolute_errors,
+            "gradient_max_scaled": max_err, "gradient_headroom": GRAD_TOL[_DT] / max(max_err, 1e-300),
+            "gradient_headroom_per_input": {
+                who: {n: GRAD_TOL[_DT] / max(e, 1e-300) for n, e in values.items()} for who, values in errors.items()},
+            "eager_jit_errors": eager_jit_errors,
+            "eager_jit_headroom_per_input": {n: GRAD_TOL[_DT] / max(e, 1e-300) for n, e in eager_jit_errors.items()},
+            "all_float_inputs_finite_shape_keys_complete": True, "Mk_eager_jit_bitwise": True,
+            "exact_zero_observed": "X[5] and Y0, all four gradient views",
+            "FD_epsilon": eps, "FD_directions": directions, "FD_errors": fd_errors,
+            "FD_max_scaled": fd_err, "FD_headroom": GRAD_FD_TOL[_DT] / max(fd_err, 1e-300),
+            "FD_headroom_per_direction": {
+                who: {n: GRAD_FD_TOL[_DT] / max(e, 1e-300) for n, e in values.items()} for who, values in fd_errors.items()},
+            "absolute_directional_derivative_range": [min(dots), max(dots)],
+            "absolute_1e-3_canary_error": canary, "canary_rejected": True,
+        }
+        print(f"gradients of {name}: every {len(sin)} float inputs finite, Mk eager == jit BITWISE; "
+              f"TRUE model max scaled {max_err:.3e} (tol {GRAD_TOL[_DT]:.0e}, headroom {report['gradient_headroom']:.1f}x); "
+              f"NumPy FD {len(fd_names)} isolated + 3 joint max scaled {fd_err:.3e} "
+              f"(tol {GRAD_FD_TOL[_DT]:.0e}, headroom {report['FD_headroom']:.1f}x); "
+              f"Mk frozen in refs/FD; {report['exact_zero_observed']}; absolute-1e-3 canary rejected", flush=True)
+        print("kv-history-gradient-report: " + json.dumps(report, sort_keys=True), flush=True)
+
+
 def layers_time_grad_pins(by: dict, sfx: str) -> None:
     """Whole-history losses: independent Python-loop JAX autodiff and NumPy central differences."""
     def scaled(a, b):
@@ -4206,6 +4342,7 @@ def main() -> None:
     rnn_stack_pins(by, sfx)
     kv_cache_pins(by, sfx)
     kv_history_pins(by, sfx)
+    kv_history_grad_pins(by, sfx)
     time_layer_pins(by, sfx)
     rnn_skew_pins(by, sfx)
     layer_skew_pins(by, sfx)
