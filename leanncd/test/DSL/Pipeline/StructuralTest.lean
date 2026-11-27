@@ -1049,14 +1049,33 @@ private def maskPostScanAxis : TLProgram := tlprog!{ iter l = 3
 -- Two scans. In the layer scan `l` the time axis `t` of the EARLIER scan is an ordinary (free) axis of the
 -- state, so a mask over `t` sees its real coordinate and is legal; a mask over the scan's own `l` sees the
 -- live `l` step coordinate and is legal too.
--- (`dep` of `Zz` is transitive and contains `t` too, so this decides that only the statement's own scan
--- axes count.)
+-- (Here `t` is a `.free` slot of `Zz`, so this program is accepted under either visibility rule; it does NOT
+-- decide that only the statement's own scan axes count. `maskStepEarlierScanAxis` below decides that.)
 private def maskOtherScanAxisFree : TLProgram := tlprog!{ iter t = 3
   iter l = 2
   H[d, 0]        := H0[d]
   H[d, t +1]     := H[d, t] · A[d]
   Zz[t, d, 0]    := H[d, t]
   Zz[t, d., l +1] := softmax(where t ≤ 1)(Zz[t, d, l]) }
+
+-- The negative half of the same rule: `Z` does not carry `t` (it reads the `t` scan only through the pinned
+-- read `H[d, 2]`), so `t` is neither an output axis of the `l`-scan step statement nor that scan's own axis.
+-- The mask over `t` is refused; the neighbour masking the statement's own `l` is accepted.
+private def maskStepEarlierScanAxis : TLProgram := tlprog!{ iter t = 3
+  iter l = 2
+  H[d, 0]      := H0[d]
+  H[d, t +1]   := H[d, t] · A[d]
+  Zp[d]        := H[d, 2]
+  Z[d, 0]      := Zp[d]
+  Z[d., l +1]  := softmax(where t ≤ 1)(Z[d, l]) }
+
+private def maskStepOwnAxisSameShape : TLProgram := tlprog!{ iter t = 3
+  iter l = 2
+  H[d, 0]      := H0[d]
+  H[d, t +1]   := H[d, t] · A[d]
+  Zp[d]        := H[d, 2]
+  Z[d, 0]      := Zp[d]
+  Z[d., l +1]  := softmax(where l ≤ 1)(Z[d, l]) }
 
 private def maskOwnAxisAfterScan : TLProgram := tlprog!{ iter t = 3
   iter l = 2
@@ -1081,6 +1100,8 @@ private def maskBaseAtOne : TLProgram := tlprog!{ iter l = 3
 #guard compileErrOf maskBaseAtZero == some (.maskAxisNotOutput "S" "l")
 #guard compileErrOf maskBaseAtOne == some (.maskAxisNotOutput "S" "l")
 #guard compileErrOf maskOtherScanAxisFree == none
+#guard compileErrOf maskStepEarlierScanAxis == some (.maskAxisNotOutput "Z" "t")
+#guard compileErrOf maskStepOwnAxisSameShape == none
 -- Step-aware masks over the statement's own scan axis: ACCEPTED (they see the live step coordinate).
 #guard compileErrOf maskOwnAxisAfterScan == none
 #guard layoutOf maskInterScanAxis == .ok ["scan base=[S] body=[Pa, S]"]

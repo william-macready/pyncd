@@ -77,5 +77,18 @@
     "expect": [
       "diffEqB stepMaskGrid stepMaskGridIn"
     ]
+  },
+  {
+    "label": "M7 (source guard widens step visibility to every scan component's axes)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+    "old": "      (comps.find? (fun c => (axSet s).any (fun u => c.contains u))).getD []",
+    "new": "      comps.flatten",
+    "targets": [
+      "DSL.Pipeline.StructuralTest"
+    ],
+    "expect": [
+      "compileErrOf maskStepEarlierScanAxis"
+    ]
   }
 ]
