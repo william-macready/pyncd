@@ -1651,8 +1651,9 @@ run_cmd do
 -- (the checked plan refuses them in `compileScan` Phase 1) and returned silently wrong values for
 -- some, e.g. an identity scratch `T[l, j] := S[l, j]` (P2) and the source-reachable
 -- `S[j, 0, l] := X[j, l]; S[j., l+1, l] := softmax(where l ≤ 0)(S[j, l, l])` (SRC; the hand-built
--- mirror below writes `.axiswise .normalize` where the source program writes `softmax`, and no
--- source-text `tlprog!` version of SRC is pinned through the reference). Axis uids:
+-- mirror below writes `.axiswise .normalize` where the source program writes `softmax`; the
+-- source-text `tlprog!` version of SRC is pinned through the reference in `Plan/ScanCompileTest.lean`,
+-- `seededSrcCheck`). Axis uids:
 -- `l` = 9 (size 3), `j` = 1 (size 2), `k` = 2 (size 2).
 run_cmd do
   let j := ax "j" 1; let k := ax "k" 2; let l := ax "l" 9
