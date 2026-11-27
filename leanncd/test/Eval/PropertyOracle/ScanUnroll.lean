@@ -35,8 +35,9 @@ whole-axis free) base regions, arbitrary advancing-dimension positions and order
 reads with non-positive bias, external reads, contractions, extent one, multiple scan axes, several
 disjoint base writes, block-local scratch, and — for the predicate/mask parity thread (Task 5.4) —
 source Iverson predicate factors and axiswise `where`-masks, rewritten to the leaf's own coordinates
-by `substBool` (an Iverson takes the actual scan coordinate; a mask zeros seeded scan axes and takes
-the current coordinate of free base scan axes). Nonlinearity and aggregation are carried through
+by `substBool` (an Iverson takes the actual scan coordinate; a mask takes the current coordinate of
+free base scan axes and of every scan axis in a STEP statement — the live step literal — and reads 0
+only for a seeded, pinned axis of a BASE statement, per `maskSubst`). Nonlinearity and aggregation are carried through
 unchanged, so the two `enumScanCases`
 templates F4 rejects as capability failures (`relu` steps, tropical aggregation) are still unrollable
 and still checked against the legacy evaluator. S-B adds positive one-axis affine placement in any

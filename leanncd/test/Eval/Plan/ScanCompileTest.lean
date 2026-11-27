@@ -2991,4 +2991,45 @@ def postRoleShiftExpected : DenseTensor :=
 
 #guard postRoleCompiles postRoleShiftProg 3
 
+/-! ## A source-reachable seeded free slot, through the REFERENCE
+
+`S[j, 0, l]` / `S[j., l +1, l]` carries the iteration axis `l` as a `.free` slot beside its own
+`.iterAt`/`.iterNext` slot. It COMPILES from source text. The checked plan refuses it in
+`compileScan` Phase 1 with `duplicateAxisInLhs` (asserted below), and the reference evaluator must
+refuse it with `EvalError.scanSeededAxisAsOutput`: the reference seeds `l` for each statement and used
+to drop the `.free l` slot, so the old reference ACCEPTED the program and returned a `[2, 3, 3]`-shaped
+`S` whose base write landed only in cell `(0, 0)` of the base face. `ScanTest.lean` pins the same
+refusal on a hand-built `Stmt` mirror (`SRC`); this is the same program as `tlprog!` source text, so
+dropping the reference guard in `checkScanStructure` turns this pin red. -/
+
+def seededSrcProg : TLProgram := tlprog!{ iter l = 3
+  S[j, 0, l]     := X[j, l]
+  S[j., l +1, l] := softmax(where l ≤ 0)(S[j, l, l]) }
+
+def seededSrcInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2, 3], #[1.0, 3.0, 5.0, 2.0, 4.0, 6.0]⟩
+
+/-- Compiles from source; the plan refuses it (`duplicateAxisInLhs`) and the reference refuses it
+    (`scanSeededAxisAsOutput`), both naming scan/state `S`, the BASE statement 0, and `l`'s uid. -/
+def seededSrcCheck : Except String Unit :=
+  match seededSrcProg.explicitF64.compileToScheduled.run 0 with
+  | .error _ _ => .error "seededSrc: the source program no longer compiles"
+  | .ok sched _ =>
+    match sched.decls.findSome? (fun | .iter ax _ => some ax.uid | _ => none) with
+    | none => .error "seededSrc: no `iter` declaration for l"
+    | some u =>
+      if causeOf (prepareEvalPlan (explicitF64Sched sched)
+          (InputSignature.ofDenseInputs seededSrcInputs))
+          != some (.scan (.duplicateAxisInLhs "S" "S" true 0 u)) then
+        .error "seededSrc: the plan no longer refuses with duplicateAxisInLhs"
+      else
+        match evalScheduledF64 sched seededSrcInputs with
+        | .ok rep => .error s!"seededSrc: the reference ACCEPTED it, S shape {repr (rep.env["S"]?.map (·.shape))}"
+        | .error f =>
+          match f.error with
+          | .scanSeededAxisAsOutput "S" "S" true 0 v =>
+              if v == u then .ok () else .error s!"seededSrc: refusal names uid {v}, expected {u}"
+          | e => .error s!"seededSrc: wrong reference refusal: {e}"
+run_cmd match seededSrcCheck with | .ok _ => pure () | .error m => throwError m
+
 end LeanNCD.Eval.Plan.ScanCompileTest
