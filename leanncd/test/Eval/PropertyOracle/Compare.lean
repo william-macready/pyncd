@@ -46,6 +46,8 @@ def evalErrorEq : EvalError → EvalError → Bool
       decide (sa = sb ∧ ta = tb ∧ da = db ∧ ea = eb ∧ aa = ab)
   | .scanWriteRowNotAdmitted sa na ba ia da, .scanWriteRowNotAdmitted sb nb bb ib db =>
       decide (sa = sb ∧ na = nb ∧ ba = bb ∧ ia = ib ∧ da = db)
+  | .scanSeededAxisAsOutput sa ta ba ia ua, .scanSeededAxisAsOutput sb tb bb ib ub =>
+      decide (sa = sb ∧ ta = tb ∧ ba = bb ∧ ia = ib ∧ ua = ub)
   | .stateReadInBaseBlock sa ia ta, .stateReadInBaseBlock sb ib tb =>
       decide (sa = sb ∧ ia = ib ∧ ta = tb)
   | .plainStatePinOutOfRange sa ta da la ea, .plainStatePinOutOfRange sb tb db lb eb =>
@@ -159,6 +161,10 @@ private def fieldVariants : List (EvalError × List EvalError) := [
     [.scanWriteRowNotAdmitted "t" "T" true 1 0, .scanWriteRowNotAdmitted "s" "U" true 1 0,
      .scanWriteRowNotAdmitted "s" "T" false 1 0, .scanWriteRowNotAdmitted "s" "T" true 2 0,
      .scanWriteRowNotAdmitted "s" "T" true 1 1]),
+  (.scanSeededAxisAsOutput "s" "T" true 1 7,
+    [.scanSeededAxisAsOutput "t" "T" true 1 7, .scanSeededAxisAsOutput "s" "U" true 1 7,
+     .scanSeededAxisAsOutput "s" "T" false 1 7, .scanSeededAxisAsOutput "s" "T" true 2 7,
+     .scanSeededAxisAsOutput "s" "T" true 1 8]),
   (.stateReadInBaseBlock "s" 1 "S",
     [.stateReadInBaseBlock "t" 1 "S", .stateReadInBaseBlock "s" 2 "S",
      .stateReadInBaseBlock "s" 1 "T"]),
@@ -193,7 +199,8 @@ run_cmd do
      ``EvalError.unsupportedDtype, ``EvalError.baseWriteNotAtBoundary,
      ``EvalError.baseWritesOverlap, ``EvalError.duplicateStateResult,
      ``EvalError.duplicateScratchProducer, ``EvalError.inconsistentStateExtent,
-     ``EvalError.scanWriteRowNotAdmitted, ``EvalError.stateReadInBaseBlock,
+     ``EvalError.scanWriteRowNotAdmitted, ``EvalError.scanSeededAxisAsOutput,
+     ``EvalError.stateReadInBaseBlock,
      ``EvalError.plainStatePinOutOfRange, ``EvalError.unmarkedReductionAxis, ``EvalError.multipleMarkedReductionAxes,
      ``EvalError.inputIsDefined]
   for c in info.ctors do

@@ -46,7 +46,8 @@ structure RawPointwisePlan where
     enclosing-block context coordinates (a scan step's live iteration coordinates, in block-context
     order) the mask reads, APPENDED after the tensor coordinates; `0` (the default) is a mask over
     the tensor coordinates alone. Only `0` or the enclosing block's context rank is admitted
-    (`maskContextRankMismatch`). -/
+    (`maskContextRankMismatch`); a plan with NO mask must have rank `0`
+    (`maskContextRankMismatch 0 actual`). -/
 structure RawAxiswisePlan where
   sourceSlot      : TensorSlot
   destinationSlot : TensorSlot
@@ -151,7 +152,10 @@ private def checkAxiswiseCore (kind : LeanNCD.StorageKind) (contextRank : Nat)
   -- Iverson-FACTOR width check — this one reports the mask.
   let width := a.shape.size + a.maskContextRank
   match a.mask with
-  | none => pure ()
+  | none =>
+      -- A maskless plan reads no context: its expected rank is `0`.
+      unless a.maskContextRank == 0 do
+        throw (.maskContextRankMismatch 0 a.maskContextRank)
   | some m => match m.affineWidths.find? (· != width) with
       | some w => throw (.maskWidthMismatch width w)
       | none => pure ()
@@ -159,13 +163,16 @@ private def checkAxiswiseCore (kind : LeanNCD.StorageKind) (contextRank : Nat)
 
 /-- Validate one axiswise operation against the positional signature table, for binary64.
     `contextRank` is the enclosing block's context rank (`0` at the top level, the default); the
-    mask's `maskContextRank` must be `0` or exactly `contextRank`. -/
+    mask's `maskContextRank` must be `0` or exactly `contextRank`, and a plan WITHOUT a mask must
+    have rank `0` (`maskContextRankMismatch 0 rank` otherwise). -/
 def checkAxiswise (sigs : Array TensorSignature) (a : RawAxiswisePlan) (contextRank : Nat := 0) :
     Except NonlinPlanError CheckedAxiswisePlan :=
   checkAxiswiseCore .float64 contextRank sigs a
 
 /-- Validate one axiswise operation for native binary32: the sibling of `checkAxiswise` through the
-    same core, admitting `.f32` slots and recording `.float32`. -/
+    same core, admitting `.f32` slots and recording `.float32`. The rank rules are the same: a mask's
+    `maskContextRank` is `0` or exactly `contextRank`, and a plan WITHOUT a mask must have rank `0`
+    (`maskContextRankMismatch 0 rank` otherwise). -/
 def checkAxiswiseF32 (sigs : Array TensorSignature) (a : RawAxiswisePlan)
     (contextRank : Nat := 0) : Except NonlinPlanError CheckedAxiswisePlan :=
   checkAxiswiseCore .float32 contextRank sigs a

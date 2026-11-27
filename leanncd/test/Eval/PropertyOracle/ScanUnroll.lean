@@ -839,9 +839,20 @@ at history coordinate {a.hist}"
     (fun (a, n) => (a.uid, n)))
   let syntheticDecls := g.states.flatMap (fun st => (st.sliceAxes.zip st.sliceExt).map
     (fun (a, n) => Decl.axis a (some n)))
+  -- A plain scratch leaf keeps its SOURCE output axes (state leaves get synthetic, declared axes),
+  -- and `evalScheduled` re-derives sizes from decls, ignoring `explicitSizes`. A scratch axis whose
+  -- only input read sat in a renamed base leaf (`Pa[j.] := …(S[j, l])`, `S[j, 0] := X[j]`) would be
+  -- unsized, so declare it at the extent `sizes` already holds.
+  let declaredUids : List UID := decls.filterMap (fun
+    | .axis a _ | .iter a _ => some a.uid | _ => none)
+  let scratchAxisDecls : List Decl :=
+    (((g.recur.filter (fun s => g.scratch.contains s.lhsName)).flatMap
+        (fun s => s.slots.filterMap (·.axisSpec?))).foldl
+      (fun acc a => if acc.any (·.uid == a.uid) || declaredUids.contains a.uid then acc
+                    else acc ++ [a]) []).map (fun a => Decl.axis a (sizes[a.uid]?))
   pure { geom := g
        , stmts := zeroStmts ++ baseStmts ++ mergeStmts ++ stepStmts
-       , live, sizes := syntheticSizes, axisDecls := syntheticDecls
+       , live, sizes := syntheticSizes, axisDecls := syntheticDecls ++ scratchAxisDecls
        , checks := baseChecks ++ mergeChecks ++ stepChecks
        , decls := zeroDecls ++ baseDecls ++ mergeDecls ++ stepDecls }
 

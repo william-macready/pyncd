@@ -81,21 +81,25 @@ Library 8615, `JaxExperiment` 8526 and `Tests JaxExperiment` 8846 match the plan
 T1 review (Opus, read-only, `papers/step_mask_files/review_t1.md`): 0 Critical, 0 Important, 4 Minor; items
 (i)-(v) all VERIFIED.
 - M1 (unrolled oracle still read 0; tests red at 071fdde2): expected, fixed by patch 0002.
-- M2 (checker admits `maskContextRank > 0` with `mask = none`; hand-built plans only; JAX refuses loudly): PARKED.
+- M2 (checker admits `maskContextRank > 0` with `mask = none`; hand-built plans only; JAX refuses loudly): CLOSED in `d6ee524f` (maskless plan with a context rank is refused).
 - M3 (stale Lean comments): first PARKED (build-time rule), then fixed in `04a49117` once a Lean fix wave existed.
-- M4 (reference vs plan output bases differ for a hand-built own-axis `.free` slot; pre-existing): PARKED.
+- M4 (reference vs plan output bases differ for a hand-built own-axis `.free` slot; pre-existing): CLOSED in `d6ee524f` (the reference now refuses a seeded `.free` slot).
 
 Final review lens A, wrongly accepts (Opus): 0 Critical, 0 Important, 4 Minor. The coordinate question is settled:
 all legs read the step coordinate 0..L-2, not the written index. m1 (no negative pin): FIXED (`d70751b4`).
-m2 (gate admits rank > 0), m3 (rank without mask), m4 (per-step-intermediate and kv programs two-way only): PARKED.
+m2 (gate admits rank > 0): PARKED. m3 (rank without mask): CLOSED in `d6ee524f`. m4 (per-step-intermediate and kv
+programs two-way only): CLOSED in `01ea66f7` (the independent unroller declares scratch axes, so `stepMaskInter`,
+`kvMaskCausal`, `kvMaskWindow` are now three-way).
 
 Final review lens B, breaks existing (Opus): 0 Critical, 1 Important, 11 Minor. No flipped pin weakened;
 rank-0 plans unchanged; strict `stateReadCausal` and the Indexed profile untouched.
 - I1 (three sentences claimed `seededAxisZero` still pins coordinate 0): FIXED (`89386841`).
 - M1, M7 (stale prose, un-annotated brief trap): FIXED (`89386841`). M2, M3, M4 (Lean comments): FIXED (`04a49117`).
 - M6 (no negative pin): FIXED (`d70751b4`). M8 (dangling `step_mask_record.md` pointer): resolved by this file.
-- M5 (gate/renderer disagreement), M9 (Python corpus not run), M10 (`evalStmtSliceSeededF64` drops `maskContext`),
-  M11 (`seededAxisZero` value hand-derived; `baseParity` expected decorative): PARKED / stated.
+- M5 (gate/renderer disagreement), M9 (Python corpus not run): PARKED / stated.
+- M10 (`evalStmtSliceSeededF64` drops `maskContext`): CLOSED in `01ea66f7` (the F64 wrapper forwards `maskContext`).
+- M11 (`seededAxisZero` value hand-derived; `baseParity` expected decorative): CLOSED in `01ea66f7` (`baseParity`
+  decorative tensor removed; `seededAxisZero` now in `expected_step_mask.py`).
 
 ## Rulings (controller)
 
@@ -132,13 +136,13 @@ the cumulative-input measure of `token-report.py`, which was not run).
 | Item | Cost |
 |---|---|
 | JAX slice: stacked step-major include tables, lift `axiswiseContextMask`, `kv_cache` natural-spelling and sliding-window fixtures, `checkJaxScanSupport` gate check (the gate currently admits a step-aware axiswise node; the renderer refuses it loudly) | its own Full plan, about 4-6 dispatches |
-| `checkAxiswiseCore` admits `maskContextRank > 0` with `mask = none` (hand-built only) | 1 dispatch + production rebuild |
-| reference/plan output-basis difference for a hand-built own-axis `.free` slot (pre-existing) | about 1 dispatch audit |
-| `evalStmtSliceSeededF64` (test helper) does not forward `maskContext` | 1 line, with the next test that needs it |
-| independent unroller on the per-step-intermediate program `Pa[j.] := softmax(where j <= l)(S[j, l])` (`output axis has no inferable size`); and the kv programs are not three-way | about 1 dispatch audit |
+| CLOSED `d6ee524f`: `checkAxiswiseCore` admits `maskContextRank > 0` with `mask = none` (hand-built only) | was 1 dispatch + production rebuild |
+| CLOSED `d6ee524f`: reference/plan output-basis difference for a hand-built own-axis `.free` slot (pre-existing) | was about 1 dispatch audit |
+| CLOSED `01ea66f7`: `evalStmtSliceSeededF64` (test helper) does not forward `maskContext` | was 1 line |
+| CLOSED `01ea66f7`: independent unroller on the per-step-intermediate program `Pa[j.] := softmax(where j <= l)(S[j, l])` (`output axis has no inferable size`); and the kv programs are not three-way | was about 1 dispatch audit |
 | `Kh[k, s]` free-axis causality proof | 2-3 dispatches |
-| Python nonlin runner / JAX verifiers not run on this change | 1 command if the Python env is linked |
-| `seededAxisZero` value and `baseParity` expected not in `expected_step_mask.py` | trivial |
+| Python nonlin verifier on this change: run 2026-11-27 on the gate outputs (see Follow-up); JAX verifiers not run | 1 command if the Python env is linked |
+| CLOSED `01ea66f7`: `seededAxisZero` value and `baseParity` expected not in `expected_step_mask.py` | was trivial |
 
 ## Survivors of the old-rule grep (`coordinate 0|reads 0|non-seeded output basis|Slice 5.3|maskOverScanAxis|seeded scan axis`)
 
@@ -155,3 +159,14 @@ successfully (8846 jobs)**, 1314 s (21.9 min, controller clock, background); no 
 `worktree-step-mask`, second worktree branch `worktree-step-mask-b`, prototype branch `proto-step-mask` and their
 worktrees removed. Executor logs archived under `.superpowers/sdd/2026-11-26-step-aware-where-masks-lean/` in the
 primary checkout (gitignored). **Nothing was pushed**: local `main` is ahead of `origin/main`.
+
+## Follow-up 2026-11-27: parked minors
+
+Commits `d6ee524f` (maskless-rank refusal; reference refusal of a seeded `.free` slot) and `01ea66f7` (F64 wrapper forwards `maskContext`; independent unroller declares scratch axes; `baseParity` removed; `seededAxisZero` in `expected_step_mask.py`) close the items marked CLOSED above.
+
+- Item 2 (`maskContextRank > 0` with `mask = none`) turned out wider than described. The plan always refused first; the real defect was the REFERENCE accepting, and sometimes silently miscomputing, any statement with a `.free`/`.freeNorm` slot on a seeded axis, including the source-reachable program `S[j, 0, l] := X[j, l]; S[j., l+1, l] := ...`. Fixed by a new refusal `EvalError.scanSeededAxisAsOutput` in `checkScanStructure`.
+- Behaviour note: a scan with an iteration axis of extent <= 1 that carried a `.free` slot on it used to give a base-only value on the reference and is now refused (the plan refused it already).
+- The Python nonlin verifier was run on the gate outputs: 65 float64 / 56 float32 fixtures within tolerance, exit 0.
+- Four hand mutants KILLED and restored: M-a maskless rank, M-b step arm of the reference refusal, M-c F64 forwarding, M-d scratch axis declarations.
+- Full `Tests JaxExperiment` green, 8846 jobs in 995 s.
+- Still parked: pin the source-reachable SRC program through the reference as `tlprog!` text (about 8 test lines, 1 small dispatch); `ScanUnroll.lean` header lines 38-39 are stale ("a mask zeros seeded scan axes", pre-existing).

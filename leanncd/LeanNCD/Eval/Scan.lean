@@ -262,6 +262,9 @@ private def checkBaseReads (scanName : String) (stateNames : List String)
     0. a non-assign base statement (`baseMustBeAssign`, hoisted here so it keeps precedence);
     1. `duplicateStateResult` / `duplicateScratchProducer`, over the `recur` list in order (the
        repeat at the lowest later index wins, whichever kind it is);
+    1b. `scanSeededAxisAsOutput`, over `base` then `recur` in order: a `.free`/`.freeNorm` slot on
+       an axis the reference seeds for that statement (a base's own `.iterAt` pins, any iteration
+       axis of a step);
     2. `scanWriteRowNotAdmitted` then `inconsistentStateExtent`, states in first-base order, each
        placement in turn (bases, then the result; the extent against the state's first placement,
        lowest dimension first);
@@ -282,6 +285,23 @@ def checkScanStructure (scanName : String) (axes : List AxisSpec) (sizes : HashM
     | .recurMorphism .. => throw (.invalidScanNode .baseMustBeAssign)
     | _ => pure ()
   checkRecurProducers scanName stateNames recur
+  -- A `.free`/`.freeNorm` slot on an axis the reference seeds for that statement (its own base
+  -- pins, any iteration axis of a step) would be dropped from the slice and written at the seed.
+  for (s, bi) in base.zipIdx do
+    let pins := s.slots.filterMap (fun | .iterAt a _ => some a.uid | _ => none)
+    for sl in s.slots do
+      match sl with
+      | .free a | .freeNorm a =>
+          if pins.contains a.uid then
+            throw (.scanSeededAxisAsOutput scanName s.lhsName true bi a.uid)
+      | _ => pure ()
+  for (s, ri) in recur.zipIdx do
+    for sl in s.slots do
+      match sl with
+      | .free a | .freeNorm a =>
+          if axUids.contains a.uid then
+            throw (.scanSeededAxisAsOutput scanName s.lhsName false ri a.uid)
+      | _ => pure ()
   checkStatePlacements scanName sizes stateNames base recur
   checkBaseReads scanName stateNames base
   for (s, bi) in base.zipIdx do

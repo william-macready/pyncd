@@ -97,11 +97,13 @@ def _root_.LeanNCD.Eval.evalPlainF64 (decls : List Decl) (env : Std.HashMap Stri
     (sizes : Std.HashMap UID Nat) (s : Stmt) : Except EvalError (String × DenseTensor) :=
   evalPlain (explicitF64Decls decls [s]) env sizes s
 
-/-- `evalStmtSliceSeeded` with `explicitF64Decls decls [s]`. -/
+/-- `evalStmtSliceSeeded` with `explicitF64Decls decls [s]`; `maskContext` is forwarded unchanged
+(same empty default as the entry), so a step mask over the scan axis can be given its live step. -/
 def _root_.LeanNCD.Eval.evalStmtSliceSeededF64 (decls : List Decl)
     (env : Std.HashMap String DenseTensor) (sizes : Std.HashMap UID Nat)
-    (seed : Std.HashMap UID Int) (s : Stmt) : Except EvalError (String × DenseTensor) :=
-  evalStmtSliceSeeded (explicitF64Decls decls [s]) env sizes seed s
+    (seed : Std.HashMap UID Int) (s : Stmt)
+    (maskContext : Std.HashMap UID Int := {}) : Except EvalError (String × DenseTensor) :=
+  evalStmtSliceSeeded (explicitF64Decls decls [s]) env sizes seed s maskContext
 
 /-- `evalScan` with `explicitF64Decls` over the scan node's own source statements. -/
 def _root_.LeanNCD.Eval.evalScanF64 (decls : List Decl) (env : Std.HashMap String DenseTensor)

@@ -378,6 +378,18 @@ inductive EvalError
       `base` list when `isBase`, else in `recur`; `dim` is the slot's 0-based LHS position. Only
       this row shape is refused here (the checked backend's other non-admitted rows are not). -/
   | scanWriteRowNotAdmitted (scan name : String) (isBase : Bool) (stmtIndex dim : Nat)
+  /-- A `.free`/`.freeNorm` slot of statement `stmt` names axis `axisUid`, which the reference SEEDS
+      for that statement: one of the statement's own `.iterAt` pins in a BASE statement, any of the
+      scan's iteration axes in a recurrence (step) statement. The reference drops a seeded slot from
+      the slice and writes at the seed coordinate, so such a statement used to evaluate to a silently
+      wrong value (e.g. the source `S[j, 0, l]` / `S[j., l+1, l]`); the checked backend refuses it in
+      `compileScan` Phase 1 (`duplicateAxisInLhs`, `contextAxisAsFreeOutput`, and for a step state
+      result carrying `.free l` without `.iterNext l`, `stateResultNotAdvancing` /
+      `partialAdvancingResult`). `stmtIndex` is the
+      position in the scan's `base` list when `isBase`, else in `recur`. An EARLIER scan's axis
+      carried as a `.free` slot of a LATER scan is not seeded by the later scan and is unaffected, as
+      is a base `.free c` on a scan axis other than the statement's own pins. -/
+  | scanSeededAxisAsOutput (scan stmt : String) (isBase : Bool) (stmtIndex : Nat) (axisUid : UID)
   /-- Base statement `baseIdx` reads a scan state (its own or another's). Base writes run in
       declaration order over a shared environment, so the value read depended on whether the
       reading base came before or after the state's own base. `state` is the first state name read,
@@ -470,6 +482,9 @@ but {actual} wide in a later one"
   | .scanWriteRowNotAdmitted scan name isBase idx dim =>
       s!"evalScan {scan}: {if isBase then "base" else "recurrence"} statement {idx} for {name} has an \
 affine slot at dimension {dim} that names no source axis"
+  | .scanSeededAxisAsOutput scan stmt isBase idx uid =>
+      s!"evalScan {scan}: {if isBase then "base" else "recurrence"} statement {idx} for {stmt} has a \
+free output slot on axis (uid {uid}), which the scan seeds for that statement"
   | .stateReadInBaseBlock scan baseIdx state =>
       s!"evalScan {scan}: base statement {baseIdx} reads scan state {state}"
   | .plainStatePinOutOfRange state stmt dim lit extent =>

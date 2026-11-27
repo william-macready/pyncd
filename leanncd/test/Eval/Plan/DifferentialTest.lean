@@ -2020,21 +2020,55 @@ into an unrolled mask — its coordinate was not substituted"
 
 /-! ### Step-aware source masks, three-way
 
-The `NonlinCompileTest` Section 6 program (ii) step statement through `scanParityCheck`: checked
-plan, legacy `evalScheduled`, and the independent scan-free unrolling (whose `maskSubst` now
-substitutes the step literal) agree. Program (i), the per-step intermediate
-`Pa[j.] := softmax(where j ≤ l)(S[j, l])`, is NOT here: the independent unroller fails on it
-(`evalAssign %T_Pa_0: output axis has no inferable size`), an oracle fragment limit; (i) is pinned
-two-way (checked vs reference) in `NonlinCompileTest`. -/
+The `NonlinCompileTest` Section 6 programs through `scanParityCheck`: checked plan, legacy
+`evalScheduled`, and the independent scan-free unrolling (whose `maskSubst` substitutes the step
+literal) agree. Program (ii) is the step statement; program (i) is the per-step intermediate
+`Pa[j.] := softmax(where j ≤ l)(S[j, l])` (scratch `["Pa"]`), and (iii)/(iv) are the slot-cache
+attention programs (scratch `["Kw", "Pa"]`). Program (i) used to fail in the independent unroller
+(`evalAssign %T_Pa_0: output axis has no inferable size`): a plain scratch leaf keeps its source
+output axes, whose only input read sits in a renamed state leaf, and `unrollScanNode` declared only
+the synthetic state axes. It now also declares the scratch output axes (`scratchAxisDecls`), at the
+extent `sizes` already holds. The three program texts below are verbatim copies of the
+`NonlinCompileTest` ones (this module does not import it). -/
 
 private def stepMaskStepProg : TLProgram := tlprog!{ iter l = 4
   S[j, 0]      := X[j]
   S[j., l +1]  := softmax(where l ≤ 1)(S[j, l]) }
 
+private def stepMaskInterProg : TLProgram := tlprog!{ iter l = 4
+  S[j, 0]    := X[j]
+  Pa[j.]     := softmax(where j ≤ l)(S[j, l])
+  S[j, l +1] := Pa[j] }
+
+private def kvMaskInputs : HashMap String DenseTensor :=
+  (((((({} : HashMap String DenseTensor).insert "Kz" ⟨[3, 2], #[0, 0, 0, 0, 0, 0]⟩).insert "Y0"
+      ⟨[3], #[0, 0, 0]⟩).insert "Oh" ⟨[3, 4], #[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]⟩).insert "Kn"
+      ⟨[4, 2], #[1, 0, 0, 1, 1, 1, 0, 0]⟩).insert "Qr" ⟨[4, 2], #[1, 0, 2, 1, 1, -1, 0, 0]⟩)
+
+private def kvMaskCausalProg : TLProgram := tlprog!{ iter t = 4
+  Kc[s, k, 0]    := Kz[s, k]
+  Yh[s, 0]       := Y0[s]
+  Kw[s, k]       := Kc[s, k, t] + Oh[s, t] · Kn[t, k]
+  Pa[s.]         := softmax(where s ≤ t)(Kw[s, k] · Qr[t, k])
+  Kc[s, k, t +1] := Kw[s, k]
+  Yh[s, t +1]    := Pa[s] }
+
+private def kvMaskWindowProg : TLProgram := tlprog!{ iter t = 4
+  Kc[s, k, 0]    := Kz[s, k]
+  Yh[s, 0]       := Y0[s]
+  Kw[s, k]       := Kc[s, k, t] + Oh[s, t] · Kn[t, k]
+  Pa[s.]         := softmax(where s ≤ t ∧ s > t - 2)(Kw[s, k] · Qr[t, k])
+  Kc[s, k, t +1] := Kw[s, k]
+  Yh[s, t +1]    := Pa[s] }
+
 run_cmd do
   for (nm, p, inputs, scratch) in
       [("step-mask step", stepMaskStepProg,
-          (({} : HashMap String DenseTensor).insert "X" ⟨[2], #[0, Float.log 3]⟩), [])] do
+          (({} : HashMap String DenseTensor).insert "X" ⟨[2], #[0, Float.log 3]⟩), []),
+       ("step-mask inter", stepMaskInterProg,
+          (({} : HashMap String DenseTensor).insert "X" ⟨[3], #[0, 0, 0]⟩), ["Pa"]),
+       ("kv mask causal", kvMaskCausalProg, kvMaskInputs, ["Kw", "Pa"]),
+       ("kv mask window", kvMaskWindowProg, kvMaskInputs, ["Kw", "Pa"])] do
     match p.explicitF64.compileToScheduled.run 0 with
     | .error _ _ => throwError s!"{nm}: compile failed"
     | .ok sched _ =>
