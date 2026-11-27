@@ -1,0 +1,68 @@
+[
+  {
+    "label": "M1 (source guard accepts an axis named k)",
+    "task": "T3",
+    "file": "LeanNCD/DSL/Pipeline/Structural.lean",
+    "old": "    match (specsNonlin s.nonlinOf).find? (fun a => !visible.contains a.uid) with",
+    "new": "    match (specsNonlin s.nonlinOf).find? (fun a => !visible.contains a.uid && a.name != \"k\") with",
+    "targets": [
+      "DSL.Pipeline.StructuralTest"
+    ],
+    "expect": [
+      "compileErrOf maskContractedAxis"
+    ]
+  },
+  {
+    "label": "M2 (step-site mask basis puts context uids before output uids)",
+    "task": "T3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "  lowerBoolExprPos ({} : HashMap UID Int) (outputUids ++ contextUids) mask",
+    "new": "  lowerBoolExprPos ({} : HashMap UID Int) (contextUids ++ outputUids) mask",
+    "targets": [
+      "Eval.Plan.NonlinCompileTest"
+    ],
+    "expect": [
+      "diffEqB stepMaskInter"
+    ]
+  },
+  {
+    "label": "M3 (axiswiseIncluded evaluates the context as all zeros)",
+    "task": "T3",
+    "file": "LeanNCD/Eval/Plan/Nonlin.lean",
+    "old": "  let env : List Int := if a.maskContextRank == 0 then [] else ctx",
+    "new": "  let env : List Int := if a.maskContextRank == 0 then [] else ctx.map (fun _ => 0)",
+    "targets": [
+      "Eval.Plan.ScanCompileTest"
+    ],
+    "expect": [
+      "T5.3 seededAxisZero: got",
+      "step-aware block: ctx0"
+    ]
+  },
+  {
+    "label": "M4 (reference step loop stops passing the live scan coordinates to the mask)",
+    "task": "T3",
+    "file": "LeanNCD/Eval/Scan.lean",
+    "old": "evalStmtSliceSeeded decls stepEnv sizes seed s (maskContext := seed)",
+    "new": "evalStmtSliceSeeded decls stepEnv sizes seed s",
+    "targets": [
+      "Eval.Plan.ScanCompileTest"
+    ],
+    "expect": [
+      "T5.3 seededAxisZero: SOURCE got"
+    ]
+  },
+  {
+    "label": "M5 (unroller substitutes 0 instead of the step literal)",
+    "task": "T3",
+    "file": "test/Eval/PropertyOracle/ScanUnroll.lean",
+    "old": "    else if step then σ u else some 0",
+    "new": "    else some 0",
+    "targets": [
+      "Eval.PropertyOracle.ScanUnroll"
+    ],
+    "expect": [
+      "substBool (maskSubst maskTestGeom pinX"
+    ]
+  }
+]

@@ -1,0 +1,579 @@
+From c787920f83f79ff6652cb00c1b74f991ddee0392 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Thu, 26 Nov 2026 15:51:08 -0700
+Subject: [PATCH] test: step-aware mask pins and unrolled-differential flip
+
+StructuralTest: step-aware masks over the statement's own scan axis accepted (maskOwnAxisAfterScan,
+maskInterScanAxis, maskStepScanAxis, new maskStepScanAndOutput); base/contracted/unbound refusals kept.
+ScanCompileTest: seededAxisZero restated to [1,3,0.25,0.75,0,0]; plan-level maskContextRank pins
+(mismatch in a block and at top level, live-ctx block run f64 + f32, base-at-1 refused).
+NonlinCompileTest: four source programs checked vs reference (per-step intermediate, step statement,
+slot-cache causal and sliding-window attention), values from expected_step_mask.py.
+ScanUnroll: maskSubst reads the live step literal in a recurrence body; DifferentialTest T5.4
+restated and the step program run three-way. ScanAffineEmitTest: JAX refuses axiswiseContextMask.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../jax_bridge/ScanAffineEmitTest.lean        |  20 ++++
+ leanncd/test/DSL/Pipeline/StructuralTest.lean |  39 +++---
+ leanncd/test/Eval/Plan/DifferentialTest.lean  |  46 ++++++--
+ leanncd/test/Eval/Plan/NonlinCompileTest.lean |  67 ++++++++++-
+ leanncd/test/Eval/Plan/ScanCompileTest.lean   | 111 ++++++++++++++++--
+ .../test/Eval/PropertyOracle/ScanUnroll.lean  |  36 +++---
+ papers/step_mask_files/expected_step_mask.py  |  67 +++++++++++
+ 7 files changed, 340 insertions(+), 46 deletions(-)
+ create mode 100644 papers/step_mask_files/expected_step_mask.py
+
+diff --git a/leanncd/experiments/jax_bridge/ScanAffineEmitTest.lean b/leanncd/experiments/jax_bridge/ScanAffineEmitTest.lean
+index fc6e00e8..5d1909d4 100644
+--- a/leanncd/experiments/jax_bridge/ScanAffineEmitTest.lean
++++ b/leanncd/experiments/jax_bridge/ScanAffineEmitTest.lean
+@@ -256,4 +256,24 @@ def brStepInclude : List Nat :=
+     has s (brIverson brStepInclude) && brCount s "\"include\"" == 1 &&
+     brCount s "\"algebra\": \"boolean\"" == 2 && brCount s "\"context_pos\": [0]" == 1
+ 
++-- Step-aware masks: a step mask over the scan's own axis reads the live step coordinate
++-- (`maskContextRank = 1`), which the JAX renderer does not implement yet, so it REFUSES the plan with
++-- `axiswiseContextMask` (nodeIndex, rank 1) instead of emitting a coordinate-0 include table. The
++-- neighbour, a mask over the output axis only, keeps rank 0 and still renders.
++def smStepProg : TLProgram := tlprog!{ iter l = 4
++  tensor f64 X(j), S(j, l)
++  S[j, 0]      := X[j]
++  S[j., l +1]  := softmax(where j ≤ l)(S[j, l]) }
++def smOutputProg : TLProgram := tlprog!{ iter l = 4
++  tensor f64 X(j), S(j, l)
++  S[j, 0]      := X[j]
++  S[j., l +1]  := softmax(where j ≤ 1)(S[j, l]) }
++def smEnv : NamedDenseEnv := HashMap.ofList [("X", ⟨[3], #[0.0, 0.0, 0.0]⟩)]
++#guard match (brPrepared? smStepProg smEnv false).map renderAffinePlanNamed with
++  | some (.error (.axiswiseContextMask _ 1)) => true
++  | _ => false
++#guard match (brPrepared? smOutputProg smEnv false).map renderAffinePlanNamed with
++  | some (.ok _) => true
++  | _ => false
++
+ end ScanAffineEmitTest
+diff --git a/leanncd/test/DSL/Pipeline/StructuralTest.lean b/leanncd/test/DSL/Pipeline/StructuralTest.lean
+index 9cd5b7db..2ba4b860 100644
+--- a/leanncd/test/DSL/Pipeline/StructuralTest.lean
++++ b/leanncd/test/DSL/Pipeline/StructuralTest.lean
+@@ -1010,13 +1010,13 @@ private def recurScatterScan : TLProgram := tlprog!{
+ 
+ /-! ### A `(where …)` mask over a scan axis inside a recurrence body
+ 
+-A softmax/normalize mask is evaluated over the statement's own non-seeded output axes. A scan axis is
+-seeded, so inside a recurrence body (a state's step statement, or a per-step intermediate) it is not
+-in that basis and the mask used to read it as coordinate 0 at EVERY step: `softmax(where s ≤ t)` meant
+-`s ≤ 0`, with the reference evaluator and the checked plan agreeing on the wrong value. A per-step
+-statement is meant to see the CURRENT step in `l`, so the mask is refused (`maskAxisNotOutput`: the
+-statement, the axis) instead of silently misread. A mask over an ordinary axis stays accepted, and so
+-does a mask over the scan axis in a POST-SCAN statement, where that axis is an ordinary axis. -/
++A softmax/normalize mask is evaluated over the statement's own `.free`/`.freeNorm` output axes PLUS,
++inside a recurrence body (a state's step statement, or a per-step intermediate), the LIVE coordinates
++of the statement's own scan component: `softmax(where s ≤ t)` inside the `t` scan means `s ≤ t` at the
++CURRENT step, on the reference evaluator and the checked plan alike (step-aware masks; plan side:
++`RawAxiswisePlan.maskContextRank`). A mask over the scan axis in a POST-SCAN statement sees it as an
++ordinary axis. Still refused (`maskAxisNotOutput`: the statement, the axis): a BASE statement's mask over
++its pinned scan axis, a contracted axis, an unbound axis. -/
+ 
+ private def maskInterScanAxis : TLProgram := tlprog!{ iter l = 3
+   S[j, 0]    := X[j]
+@@ -1036,13 +1036,19 @@ private def maskStepOtherAxis : TLProgram := tlprog!{ iter l = 3
+   S[j, 0]      := X[j]
+   S[j., l +1]  := softmax(where j ≤ 1)(S[j, l]) }
+ 
++-- A STEP statement whose mask mentions the scan axis AND an output axis in one predicate.
++private def maskStepScanAndOutput : TLProgram := tlprog!{ iter l = 3
++  S[j, 0]      := X[j]
++  S[j., l +1]  := softmax(where j ≤ l)(S[j, l]) }
++
+ private def maskPostScanAxis : TLProgram := tlprog!{ iter l = 3
+   S[j, 0]    := X[j]
+   S[j, l +1] := S[j, l]
+   Sm[j, l.]  := softmax(where l ≤ 1)(S[j, l]) }
+ 
+ -- Two scans. In the layer scan `l` the time axis `t` of the EARLIER scan is an ordinary (free) axis of the
+--- state, so a mask over `t` sees its real coordinate and is legal; a mask over the scan's own `l` is not.
++-- state, so a mask over `t` sees its real coordinate and is legal; a mask over the scan's own `l` sees the
++-- live `l` step coordinate and is legal too.
+ -- (`dep` of `Zz` is transitive and contains `t` too, so this decides that only the statement's own scan
+ -- axes count.)
+ private def maskOtherScanAxisFree : TLProgram := tlprog!{ iter t = 3
+@@ -1060,7 +1066,8 @@ private def maskOwnAxisAfterScan : TLProgram := tlprog!{ iter t = 3
+   Zz[t, d., l +1] := softmax(where l ≤ 1)(Zz[t, d, l]) }
+ 
+ -- A BASE statement: the scan axis is pinned to the base's literal, but the mask basis does not carry that
+--- pin, so the mask reads coordinate 0. That is right for a base at 0 and wrong for a base at 1.
++-- pin (no live step coordinate exists in a base), so the mask would read coordinate 0. That is right for
++-- a base at 0 and wrong for a base at 1, so both are refused.
+ private def maskBaseAtZero : TLProgram := tlprog!{ iter l = 3
+   S[j., 0]     := softmax(where l ≤ 0)(X[j])
+   S[j, l +1]   := S[j, l] }
+@@ -1074,11 +1081,15 @@ private def maskBaseAtOne : TLProgram := tlprog!{ iter l = 3
+ #guard compileErrOf maskBaseAtZero == some (.maskAxisNotOutput "S" "l")
+ #guard compileErrOf maskBaseAtOne == some (.maskAxisNotOutput "S" "l")
+ #guard compileErrOf maskOtherScanAxisFree == none
+-#guard compileErrOf maskOwnAxisAfterScan == some (.maskAxisNotOutput "Zz" "l")
+-#guard layoutOf maskInterScanAxis == .error (.maskAxisNotOutput "Pa" "l")
+-#guard layoutOf maskStepScanAxis == .error (.maskAxisNotOutput "S" "l")
+-#guard compileErrOf maskInterScanAxis == some (.maskAxisNotOutput "Pa" "l")
+--- Accept neighbours: the nearest legal programs.
++-- Step-aware masks over the statement's own scan axis: ACCEPTED (they see the live step coordinate).
++#guard compileErrOf maskOwnAxisAfterScan == none
++#guard layoutOf maskInterScanAxis == .ok ["scan base=[S] body=[Pa, S]"]
++#guard layoutOf maskStepScanAxis == .ok ["scan base=[S] body=[S]"]
++#guard compileErrOf maskInterScanAxis == none
++#guard compileErrOf maskStepScanAxis == none
++#guard layoutOf maskStepScanAndOutput == .ok ["scan base=[S] body=[S]"]
++#guard compileErrOf maskStepScanAndOutput == none
++-- Neighbours over ordinary axes: the nearest legal programs (unchanged).
+ #guard layoutOf maskInterOtherAxis == .ok ["scan base=[S] body=[Pa, S]"]
+ #guard layoutOf maskStepOtherAxis == .ok ["scan base=[S] body=[S]"]
+ #guard layoutOf maskPostScanAxis == .ok ["scan base=[S] body=[S]", "plain Sm"]
+diff --git a/leanncd/test/Eval/Plan/DifferentialTest.lean b/leanncd/test/Eval/Plan/DifferentialTest.lean
+index 2509e568..55eefad6 100644
+--- a/leanncd/test/Eval/Plan/DifferentialTest.lean
++++ b/leanncd/test/Eval/Plan/DifferentialTest.lean
+@@ -1933,10 +1933,9 @@ run_cmd do
+       ScanCompileTest.maskedAxiswiseRecurInputs [] with
+   | .ok () => pure ()
+   | .error m => throwError s!"T5.4 masked recurrence three-way: {m}"
+-  -- 4. seeded-axis-zero (scan-axis mask `where l = 0`), three-way. This is also the masked
+-  --    recurrence whose VALUE disagrees under a live-context mask substitution (mutation 3): the
+-  --    seeded `l` must read 0, so the mask is always true and the value equals the unmasked
+-  --    recurrence.
++  -- 4. seeded-axis step mask (`where l = 0` in a step statement), three-way. The seeded `l` reads
++  --    the LIVE step coordinate on all three legs, so the mask is true at step 0 and false at step 1
++  --    (value pinned in `ScanCompileTest`: `[1,3,0.25,0.75,0,0]`).
+   match scanParityCheck "T5.4 seededAxisZero" ScanCompileTest.seededAxisZero
+       ScanCompileTest.seededAxisZeroInputs [] with
+   | .ok () => pure ()
+@@ -1964,13 +1963,13 @@ run_cmd do
+       | .ok () => pure ()
+       | .error m => throwError s!"T4.4 template3Bool three-way: {m}"
+ 
+-/-! ### Structural check: no eliminated scan coordinate survives in an unrolled mask
++/-! ### Structural check: unrolled masks carry the step literal, never the scan-axis UID
+ 
+ Values alone cannot detect a missing mask substitution — `evalIdx` defaults an absent UID to 0, so
+-an unsubstituted `[l = 0]` and the substituted `[0 = 0]` evaluate identically. This walks the
+-unrolled `seededAxisZero` leaves and asserts NO mask carries the seeded scan-axis UID. Omitting the
+-mask substitution (mutation 2) leaves `l` in the mask and fails this check even though every value
+-still agrees. -/
++an unsubstituted `[l = 0]` and a substituted `[0 = 0]` evaluate identically. This walks the unrolled
++`seededAxisZero` leaves and asserts NO mask carries the seeded scan-axis UID (omitting the
++substitution, mutation 2, leaves `l` in the mask), and that the step-1 leaf's mask is the STEP
++literal `[1 = 0]` (a coordinate-0 substitution would give `[0 = 0]` in every leaf). -/
+ 
+ private def idxUids54 (e : IdxExpr) : List UID := (idxAffineForm e).2.map Prod.snd
+ private def predUids54 : PredArith → List UID
+@@ -2013,6 +2012,35 @@ run_cmd do
+           if leaked.contains ScanCompileTest.p9l.uid then
+             throwError s!"T5.4 structural: the seeded scan axis {ScanCompileTest.p9l.uid} leaked \
+ into an unrolled mask — its coordinate was not substituted"
++          -- …and the step-1 leaf carries the step literal, not 0.
++          unless un.stmts.any (fun s => match s.nonlinOf with
++              | .axiswise _ (some m) => m == .rel .eq (.embed (.const 1)) (.embed (.const 0))
++              | _ => false) do
++            throwError "T5.4 structural: no unrolled mask carries the step literal `1 = 0`"
++
++/-! ### Step-aware source masks, three-way
++
++The `NonlinCompileTest` Section 6 program (ii) step statement through `scanParityCheck`: checked
++plan, legacy `evalScheduled`, and the independent scan-free unrolling (whose `maskSubst` now
++substitutes the step literal) agree. Program (i), the per-step intermediate
++`Pa[j.] := softmax(where j ≤ l)(S[j, l])`, is NOT here: the independent unroller fails on it
++(`evalAssign %T_Pa_0: output axis has no inferable size`), an oracle fragment limit; (i) is pinned
++two-way (checked vs reference) in `NonlinCompileTest`. -/
++
++private def stepMaskStepProg : TLProgram := tlprog!{ iter l = 4
++  S[j, 0]      := X[j]
++  S[j., l +1]  := softmax(where l ≤ 1)(S[j, l]) }
++
++run_cmd do
++  for (nm, p, inputs, scratch) in
++      [("step-mask step", stepMaskStepProg,
++          (({} : HashMap String DenseTensor).insert "X" ⟨[2], #[0, Float.log 3]⟩), [])] do
++    match p.explicitF64.compileToScheduled.run 0 with
++    | .error _ _ => throwError s!"{nm}: compile failed"
++    | .ok sched _ =>
++        match scanParityCheck nm sched inputs scratch with
++        | .ok () => pure ()
++        | .error m => throwError s!"{nm} three-way: {m}"
+ 
+ /-! ### The oracle's own `eliminatedNormalizationAxis` fragment rejection
+ 
+diff --git a/leanncd/test/Eval/Plan/NonlinCompileTest.lean b/leanncd/test/Eval/Plan/NonlinCompileTest.lean
+index 9e689df5..e45fedb0 100644
+--- a/leanncd/test/Eval/Plan/NonlinCompileTest.lean
++++ b/leanncd/test/Eval/Plan/NonlinCompileTest.lean
+@@ -411,8 +411,8 @@ def allMaskedInputs : HashMap String DenseTensor := HashMap.ofList [("A", tl [2,
+ #guard diffEqB (tlprog!{ Y[q, s.] := softmax(A[q, s]) })
+     (HashMap.ofList [("A", tl [2,2] [0, 0, 0, Float.log 3])]) "Y" (tl [2,2] [0.5,0.5, 0.25,0.75])
+ 
+--- Fixture: the Iverson FACTOR is the step-dependent form that works (a `where` mask over a scan axis is
+--- refused at the source, `StructuralTest`: `maskAxisNotOutput`). `Mx[s] := H[s, t] · [s ≤ t]` keeps row
++-- Fixture: the Iverson FACTOR is a step-dependent form (a `where` mask over the scan axis is the other
++-- one, step-aware: Section 6 below). `Mx[s] := H[s, t] · [s ≤ t]` keeps row
+ -- `s` of the state only once `t ≥ s`: with `H0 = [1,1,1]`, `Bi = [1,10,100]` the rows are
+ -- `s=0: 1,2,3,4`, `s=1: 1,10,20,30`, `s=2: 1,100,100,200` (final column `[4,30,200]`). A factor that read
+ -- `t` as coordinate 0 at every step would give a final column `[4,10,100]`. Source and checked agree.
+@@ -440,4 +440,67 @@ def allMaskedInputs : HashMap String DenseTensor := HashMap.ofList [("A", tl [2,
+     (HashMap.ofList [("H0", tl [3] [1, 2, 3])])
+     "F" (tl [3, 5] [1,1,2,3,5, 2,2,4,6,10, 3,3,6,9,15])
+ 
++/-! ## Section 6 — step-aware `where` masks inside a scan (source→checked differential)
++
++Inside a recurrence body (a state's step statement or a per-step intermediate) a mask over the
++statement's own scan axis reads the LIVE step coordinate, on the checked plan and the reference
++alike. Every expected tensor below was computed independently by
++`papers/step_mask_files/expected_step_mask.py` (plain Python, no Lean) and observed in a real run.
++Each docstring names what a coordinate-0 reading of the scan axis would have given instead. -/
++
++-- (i) Per-step intermediate `Pa[j.] := softmax(where j ≤ l)(S[j, l])`, `X = 0`. Step `l` spreads the
++-- mass over `j ≤ l`: column 1 `[1,0,0]`, column 2 `softmax([1,0]) = [.731,.269,0]`, column 3
++-- `softmax([.731,.269,0])`. A coordinate-0 reading keeps `[1,0,0]` in every column.
++def stepMaskInter : TLProgram := tlprog!{ iter l = 4
++  S[j, 0]    := X[j]
++  Pa[j.]     := softmax(where j ≤ l)(S[j, l])
++  S[j, l +1] := Pa[j] }
++#guard diffEqB stepMaskInter (HashMap.ofList [("X", tl [3] [0, 0, 0])]) "S"
++    (tl [3,4] [0, 1, 0.7310585786300049, 0.4736311417473898,
++               0, 0, 0.2689414213699951, 0.2983632427253241,
++               0, 0, 0, 0.22800561552728602])
++
++-- (ii) Step statement `S[j., l +1] := softmax(where l ≤ 1)(S[j, l])`, `X = [0, ln 3]`: steps 0 and 1
++-- softmax, step 2 is all-masked → zeros. A coordinate-0 reading would softmax at step 2 too.
++def stepMaskStep : TLProgram := tlprog!{ iter l = 4
++  S[j, 0]      := X[j]
++  S[j., l +1]  := softmax(where l ≤ 1)(S[j, l]) }
++#guard diffEqB stepMaskStep (HashMap.ofList [("X", tl [2] [0, Float.log 3])]) "S"
++    (tl [2,4] [0, 0.25, 0.37754066879814546, 0,
++               Float.log 3, 0.75, 0.6224593312018546, 0])
++
++-- (iii) Slot-cache attention in the natural spelling (the `kv_cache` fixture of
++-- `experiments/jax_bridge/EvalPlanNonlinSmoke.lean` at 3 slots, 3 steps, no V cache, no additive
++-- mask input): step `t` writes key `Kn[t]` into slot `t` and attends with `Qr[t]` over slots `s ≤ t`.
++-- `Yh[s, t+1]` records the attention weights. A coordinate-0 reading gives `[1,0,0]` at every step.
++def kvMaskIn : HashMap String DenseTensor := HashMap.ofList
++  [("Kz", tl [3,2] [0,0, 0,0, 0,0]), ("Y0", tl [3] [0,0,0]),
++   ("Oh", tl [3,4] [1,0,0,0, 0,1,0,0, 0,0,1,0]),
++   ("Kn", tl [4,2] [1,0, 0,1, 1,1, 0,0]), ("Qr", tl [4,2] [1,0, 2,1, 1,-1, 0,0])]
++def kvMaskCausal : TLProgram := tlprog!{ iter t = 4
++  Kc[s, k, 0]    := Kz[s, k]
++  Yh[s, 0]       := Y0[s]
++  Kw[s, k]       := Kc[s, k, t] + Oh[s, t] · Kn[t, k]
++  Pa[s.]         := softmax(where s ≤ t)(Kw[s, k] · Qr[t, k])
++  Kc[s, k, t +1] := Kw[s, k]
++  Yh[s, t +1]    := Pa[s] }
++#guard diffEqB kvMaskCausal kvMaskIn "Yh"
++    (tl [3,4] [0, 1, 0.7310585786300049, 0.6652409557748218,
++               0, 0, 0.2689414213699951, 0.09003057317038046,
++               0, 0, 0, 0.24472847105479764])
++
++-- (iv) Sliding window `s ≤ t ∧ s > t - 2` (width 2) on the same cache: at step 2 slot 0 falls out of
++-- the window (the EDGE), so column 3 is `softmax([-1, 0])` over slots 1, 2 with slot 0 at 0.
++def kvMaskWindow : TLProgram := tlprog!{ iter t = 4
++  Kc[s, k, 0]    := Kz[s, k]
++  Yh[s, 0]       := Y0[s]
++  Kw[s, k]       := Kc[s, k, t] + Oh[s, t] · Kn[t, k]
++  Pa[s.]         := softmax(where s ≤ t ∧ s > t - 2)(Kw[s, k] · Qr[t, k])
++  Kc[s, k, t +1] := Kw[s, k]
++  Yh[s, t +1]    := Pa[s] }
++#guard diffEqB kvMaskWindow kvMaskIn "Yh"
++    (tl [3,4] [0, 1, 0.7310585786300049, 0,
++               0, 0, 0.2689414213699951, 0.2689414213699951,
++               0, 0, 0, 0.7310585786300049])
++
+ end LeanNCD.Eval.Plan.NonlinCompileTest
+\ No newline at end of file
+diff --git a/leanncd/test/Eval/Plan/ScanCompileTest.lean b/leanncd/test/Eval/Plan/ScanCompileTest.lean
+index 5522b69c..41a8ee9e 100644
+--- a/leanncd/test/Eval/Plan/ScanCompileTest.lean
++++ b/leanncd/test/Eval/Plan/ScanCompileTest.lean
+@@ -1892,14 +1892,15 @@ def maskedAxiswiseRecurCheck : Except String Unit :=
+     ⟨[3, 2], #[1, 3, 0.25, 0.75, 0.25, 0.75]⟩
+ run_cmd match maskedAxiswiseRecurCheck with | .ok _ => pure () | .error m => throwError m
+ 
+-/-! ### Fixture — Seeded-axis-zero parity (Slice 5.3)
++/-! ### Fixture — Seeded-axis step-aware mask (Slice 5.3 fixture, restated for step-aware masks)
+ 
+ The recurrence donor (fixture 15) with `where l = 0`. `l` is the SEEDED scan axis (`.iterNext`), so
+-it is ABSENT from the mask's non-seeded output basis `[i]`; `lowerMaskPredicate` densifies it to no
+-column and its EMPTY pins never bind it, so `l` evaluates as coordinate 0 at EVERY step. Hence
+-`l = 0` is TRUE every step ⇒ no masking ⇒ the value equals fixture 15's unmasked recurrence. Were
+-live scan context substituted for `l` (mutation 4), `l = 0` would be false at `l = 1`, all-masking
+-that step's row → zeros, giving `[1,3,0.25,0.75,0,0]` instead. -/
++it is absent from the mask's output basis `[i]`; the step statement's mask reads the LIVE step
++coordinate instead (`lowerMaskPredicate` appends the context uids, `maskContextRank = 1`; the
++reference passes the step seed as `maskContext`). Hence `l = 0` is TRUE at step `l = 0` (row 1 =
++`normalize([1,3]) = [0.25,0.75]`) and FALSE at step `l = 1`, all-masking that step's row → zeros:
++`[1,3,0.25,0.75,0,0]`. The former coordinate-0 reading kept `l = 0` true at EVERY step and gave
++`[1,3,0.25,0.75,0.25,0.75]` (fixture 15's unmasked value) instead. -/
+ def p9i : AxisSpec := ⟨"i", 41901, .real⟩
+ def p9l : AxisSpec := ⟨"l", 41902, .nat⟩
+ def seededAxisZeroMask : BoolExpr := .rel .eq (.embed (.axis p9l)) (.embed (.const 0))
+@@ -1916,9 +1917,105 @@ def seededAxisZeroInputs : HashMap String DenseTensor :=
+   ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
+ def seededAxisZeroCheck : Except String Unit :=
+   t4diff "T5.3 seededAxisZero" seededAxisZero seededAxisZeroInputs "S"
+-    ⟨[3, 2], #[1, 3, 0.25, 0.75, 0.25, 0.75]⟩
++    ⟨[3, 2], #[1, 3, 0.25, 0.75, 0, 0]⟩
+ run_cmd match seededAxisZeroCheck with | .ok _ => pure () | .error m => throwError m
+ 
++/-! ### Plan-level step-aware mask pins (hand-built, no source)
++
++`maskContextRank` is checked against the enclosing context: 0 or the WHOLE block context, nothing
++else; a top-level node has context rank 0. A block axiswise mask of rank `contextShape.size` reads
++the block's live `ctx` appended after the tensor coordinate. -/
++
++-- Block: `Y[o] := X[ctx,o]` (`BlockTest.stepBlock`'s assignment), then `softmax` over `o` masked by
++-- `o ≤ ctx`. Mask leaves are `shape.size + 1 = 2` wide over `[o, ctx]`.
++def smSigs (dt : ScalarDType) : Array TensorSignature :=
++  #[{ shape := #[2,3], dtype := dt }, { shape := #[3], dtype := dt }, { shape := #[3], dtype := dt }]
++def smRead : ReadPlan :=
++  { sourceSlot := 0, map := { coeffs := #[#[1,0], #[0,1]], «bias» := #[0,0] }
++  , sourceShape := #[2,3], oobPolicy := .zeroPad }
++def smAssign : AssignPlan :=
++  { contextShape := #[2], destinationSlot := 1, outputShape := #[3]
++  , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1], reductionPos := #[]
++               , factors := #[.read smRead] }]
++  , algebra := admittedAlgebra }
++def smMask : PosBoolExpr := .rel .le (.affine ⟨#[1,0], 0⟩) (.affine ⟨#[0,1], 0⟩)
++def smAxiswise (rank : Nat) : RawAxiswisePlan :=
++  { sourceSlot := 1, destinationSlot := 2, shape := #[3], axisPos := 0, fn := .softmax
++  , mask := some (match rank with
++      | 0 => .rel .le (.affine ⟨#[1], 0⟩) (.affine ⟨#[0], 0⟩)
++      | 2 => .rel .le (.affine ⟨#[1,0,0], 0⟩) (.affine ⟨#[0,1,0], 0⟩)
++      | _ => smMask)
++  , maskContextRank := rank }
++def smBlock (dt : ScalarDType) (rank : Nat) : RawPlanBlock :=
++  { contextShape := #[2], tensorSigs := smSigs dt, inputs := #[0]
++  , steps := #[.assign (if dt == .f32 then { smAssign with algebra := admittedAlgebraF32 } else smAssign),
++      .axiswise (smAxiswise rank)], outputs := #[2] }
++
++-- (a) rank mismatch: block context rank 1, mask rank 2 → refused with both ranks; a top-level node
++-- (context rank 0, `checkAxiswise`'s default, the `EvalPlan` caller) refuses rank 1.
++#guard match checkPlanBlock (smBlock .f64 2) with
++  | .error (.nonlin 1 (.maskContextRankMismatch 1 2)) => true
++  | _ => false
++#guard match checkAxiswise (smSigs .f64) (smAxiswise 1) with
++  | .error (.maskContextRankMismatch 0 1) => true
++  | _ => false
++-- accept neighbours: rank 0 and rank = context rank.
++#guard (checkPlanBlock (smBlock .f64 0)).toOption.isSome
++#guard (checkPlanBlock (smBlock .f64 1)).toOption.isSome
++
++-- (b) the live ctx decides the mask. `X = [[1,2,3],[4,5,6]]`. ctx=0: `o ≤ 0` keeps only `o=0` →
++-- `[1,0,0]`. ctx=1: `o ≤ 1` keeps `[4,5]` → `[1/(1+e), e/(1+e), 0]`. Reading ctx as 0 at ctx=1 would
++-- give `[1,0,0]` again. Values cross-checked by `papers/step_mask_files/expected_step_mask.py`.
++def smX : DenseTensor := { shape := [2,3], data := #[1,2,3,4,5,6] }
++def smAt1 : Array Float := #[0.2689414213699951, 0.7310585786300049, 0]
++def smApprox (a b : Array Float) (tol : Float) : Bool :=
++  a.size == b.size && (a.zip b).all (fun (x, y) => (x - y).abs ≤ tol)
++run_cmd do
++  match checkPlanBlock (smBlock .f64 1) with
++  | .error e => throwError s!"step-aware block rejected: {repr e}"
++  | .ok c =>
++      match runDenseBlock c [0] #[smX], runDenseBlock c [1] #[smX] with
++      | .ok s0, .ok s1 =>
++          unless smApprox s0[2]!.data #[1, 0, 0] 1e-12 && smApprox s1[2]!.data smAt1 1e-12 do
++            throwError s!"step-aware block: ctx0 {repr s0[2]!.data}, ctx1 {repr s1[2]!.data}"
++      | _, _ => throwError "step-aware block: run failed"
++  -- binary32 sibling: same block retagged f32, same answer to binary32 rounding.
++  match checkPlanBlockF32 (smBlock .f32 1) with
++  | .error e => throwError s!"step-aware f32 block rejected: {repr e}"
++  | .ok c =>
++      let x32 : DenseTensor32 := { shape := [2,3], data := smX.data.map Float.toFloat32 }
++      match runDenseBlock32 c [0] #[x32], runDenseBlock32 c [1] #[x32] with
++      | .ok s0, .ok s1 =>
++          let d0 := s0[2]!.data.map Float32.toFloat
++          let d1 := s1[2]!.data.map Float32.toFloat
++          unless smApprox d0 #[1, 0, 0] 1e-7 && smApprox d1 smAt1 1e-7 do
++            throwError s!"step-aware f32 block: ctx0 {repr d0}, ctx1 {repr d1}"
++      | _, _ => throwError "step-aware f32 block: run failed"
++
++/-! (c) Base parity. A base mask over its pinned scan axis is refused at the source; a hand-built
++schedule can only pin a base at the BOUNDARY literal 0 (a base at literal 1 is refused by the plan
++compiler, `baseWriteNotAtBoundary`, pinned here), and at 0 "reads 0" and "reads the literal" coincide.
++So the only distinguishing base case is unreachable on the plan. -/
++def pbi : AxisSpec := ⟨"i", 41951, .real⟩
++def pbl : AxisSpec := ⟨"l", 41952, .nat⟩
++def baseParityMask : BoolExpr := .rel .eq (.embed (.axis pbl)) (.embed (.const 0))
++def baseParity : ScheduledProgram :=
++  { decls := [.iter pbl 3]
++  , stmts := [.scan "S" [pbl]
++      [.assign "S" [.iterAt pbl 1, .freeNorm pbi]
++        (t4rhs "X" [.axis pbi] (.axiswise .normalize (some baseParityMask)))]
++      [.assign "S" [.iterNext pbl, .free pbi] (t4rhs "S" [.axis pbl, .axis pbi])]
++      false]
++  , env := {}, extNames := {"X"}
++  , explicitSizes := ({} : HashMap UID Nat).insert pbl.uid 3 }
++def baseParityInputs : HashMap String DenseTensor :=
++  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
++def baseParityCheck : Except String Unit :=
++  t4diff "base parity" baseParity baseParityInputs "S" ⟨[3, 2], #[0, 0, 0.25, 0.75, 0.25, 0.75]⟩
++run_cmd match baseParityCheck with
++  | .ok _ => throwError "base parity: a base at literal 1 was unexpectedly accepted"
++  | .error m => unless (m.splitOn "baseWriteNotAtBoundary").length > 1 do throwError m
++
+ /-! ### Fixture — Eliminated `.free` scan coordinate (Slice 5.3, template6-derived)
+ 
+ A `c`-scan whose base reduces over a SEPARATE `.freeNorm i` while retaining a non-seeded `.free r`,
+diff --git a/leanncd/test/Eval/PropertyOracle/ScanUnroll.lean b/leanncd/test/Eval/PropertyOracle/ScanUnroll.lean
+index 18b6e700..0da026c4 100644
+--- a/leanncd/test/Eval/PropertyOracle/ScanUnroll.lean
++++ b/leanncd/test/Eval/PropertyOracle/ScanUnroll.lean
+@@ -560,33 +560,37 @@ private def rewriteFactor (g : ScanGeom) (σ : UID → Option Int)
+       -- `substBool σ b` is the residual predicate the ordinary evaluator resolves against the leaf.
+       pure (.iverson (substBool σ b))
+ 
+-/-- The mask substitution induced by a source statement's LHS. Seeded scan axes are absent from the
+-    local output basis and therefore read as zero; a scan axis left free by a base statement is
+-    evaluated at the current base coordinate represented by `σ`. -/
+-private def maskSubst (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot) :
+-    UID → Option Int := fun u =>
++/-- The mask substitution induced by a source statement's LHS. A scan axis left free by a base
++    statement is evaluated at the current base coordinate represented by `σ`. A seeded scan axis is
++    absent from the local output basis: inside a recurrence body (`step`: a state's step statement or
++    a per-step intermediate, which has no iteration slot of its own, hence the flag) the mask reads
++    the LIVE step coordinate `σ u`; in a base statement it reads ZERO (a base mask over its pinned
++    axis is refused at the source; hand-built schedules read 0 on the reference and the plan). -/
++private def maskSubst (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot)
++    (step : Bool := false) : UID → Option Int := fun u =>
+   if g.axes.any (·.uid == u) then
+     if sourceSlots.any (fun
+         | .free a | .freeNorm a => a.uid == u
+         | _ => false) then σ u
+-    else some 0
++    else if step then σ u else some 0
+   else none
+ 
+ /-- Rewrite one statement's nonlinearity for the leaf program. `identity`/`pointwise` pass through.
+     An `.axiswise` operation whose marked normalization axis (`.freeNorm` among `sourceSlots`) is an
+     eliminated scan coordinate is REJECTED with the named fragment
+     error — the per-coordinate leaf unroller cannot reduce along an axis it has eliminated. Its mask
+-    (when present) is rewritten with the MASK policy, DISTINCT from the Iverson-factor policy: every
+-    seeded scan axis reads ZERO, while a free base scan axis takes its enumerated base coordinate;
++    (when present) is rewritten with the MASK policy (`maskSubst`): a seeded scan axis reads the live
++    step coordinate in a recurrence body (`step`) and ZERO in a base statement, while a free base scan
++    axis takes its enumerated base coordinate;
+     every retained non-scan output axis stays an expression resolved against the leaf's coordinate. -/
+-private def rewriteNonlin (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot) :
+-    Nonlin → Except String Nonlin
++private def rewriteNonlin (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot)
++    (step : Bool) : Nonlin → Except String Nonlin
+   | .axiswise fn m => do
+       match sourceSlots.findSome? (fun sl => match sl with | .freeNorm a => some a | _ => none) with
+       | some a =>
+           if g.axes.any (·.uid == a.uid) then .error fragment.eliminatedNormalizationAxis
+       | none => pure ()
+-      pure (.axiswise fn (m.map (substBool (maskSubst g σ sourceSlots))))
++      pure (.axiswise fn (m.map (substBool (maskSubst g σ sourceSlots step))))
+   | other => pure other
+ 
+ private def maskTestGeom : ScanGeom :=
+@@ -595,12 +599,16 @@ private def maskTestGeom : ScanGeom :=
+ private def scanAxisMask : BoolExpr :=
+   .rel .eq (.embed (.axis sx)) (.embed (.const 5))
+ 
+--- A free base scan axis remains an output coordinate before leaf specialization, whereas a seeded
+--- scan axis is absent from the output basis and therefore reads as zero.
++-- A free base scan axis remains an output coordinate before leaf specialization; a seeded scan axis
++-- is absent from the output basis and reads ZERO in a base statement, the live step literal in a step.
+ #guard substBool (maskSubst maskTestGeom pinX [.free sx, .freeNorm sy]) scanAxisMask
+   == BoolExpr.rel .eq (.embed (.const 5)) (.embed (.const 5))
+ #guard substBool (maskSubst maskTestGeom pinX [.iterAt sx 0, .freeNorm sy]) scanAxisMask
+   == BoolExpr.rel .eq (.embed (.const 0)) (.embed (.const 5))
++#guard substBool (maskSubst maskTestGeom pinX [.iterNext sx, .freeNorm sy] (step := true)) scanAxisMask
++  == BoolExpr.rel .eq (.embed (.const 5)) (.embed (.const 5))
++#guard substBool (maskSubst maskTestGeom pinX [.freeNorm sy] (step := true)) scanAxisMask
++  == BoolExpr.rel .eq (.embed (.const 5)) (.embed (.const 5))
+ 
+ /-- Rewrite a whole RHS, preserving source term and factor order, and rewriting the nonlinearity
+     (`rewriteNonlin`) — the mask must be lowered to the leaf's coordinates and an eliminated-axis
+@@ -613,7 +621,7 @@ private def rewriteRHS (g : ScanGeom) (σ : UID → Option Int)
+   let terms ← r.body.terms.mapM (fun t => do
+     let fs ← t.factors.mapM (rewriteFactor g σ hasLeaf stepCoord)
+     pure ({ factors := fs } : ProdTerm))
+-  let nonlin ← rewriteNonlin g σ outSlots r.nonlin
++  let nonlin ← rewriteNonlin g σ outSlots stepCoord.isSome r.nonlin
+   pure { r with body := { terms }, nonlin }
+ 
+ /-- One unrolled scan node. -/
+diff --git a/papers/step_mask_files/expected_step_mask.py b/papers/step_mask_files/expected_step_mask.py
+new file mode 100644
+index 00000000..55e830bf
+--- /dev/null
++++ b/papers/step_mask_files/expected_step_mask.py
+@@ -0,0 +1,67 @@
++"""Independent plain-Python expected values for the step-aware mask pins (no Lean, no numpy).
++
++Each program is evaluated by direct simulation of its scan: at step `t` the mask sees the LIVE
++step coordinate. Masked entries leave both the softmax max and sum; an all-masked row is zeros.
++"""
++import math
++
++
++def softmax_masked(xs, keep):
++    live = [x for x, k in zip(xs, keep) if k]
++    if not live:
++        return [0.0] * len(xs)
++    m = max(live)
++    den = sum(math.exp(x - m) for x in live)
++    return [math.exp(x - m) / den if k else 0.0 for x, k in zip(xs, keep)]
++
++
++def show(name, rows):
++    flat = [v for r in rows for v in r]
++    print(name, "[" + ", ".join(repr(v) for v in flat) + "]")
++
++
++# (i) per-step intermediate: iter l = 4, S[j,0] := X[j]; Pa[j.] := softmax(where j <= l)(S[j,l]);
++#     S[j,l+1] := Pa[j].  X = [0,0,0].  Output S[j][l], shape [3,4].
++X = [0.0, 0.0, 0.0]
++cols = [X]
++for l in range(3):
++    cols.append(softmax_masked(cols[-1], [j <= l for j in range(3)]))
++show("inter S[3,4]", [[cols[l][j] for l in range(4)] for j in range(3)])
++# what a ctx-0 reading would give
++c0 = [X]
++for l in range(3):
++    c0.append(softmax_masked(c0[-1], [j <= 0 for j in range(3)]))
++show("inter ctx0", [[c0[l][j] for l in range(4)] for j in range(3)])
++
++# (ii) step statement: iter l = 4, S[j,0] := X[j]; S[j., l+1] := softmax(where l <= 1)(S[j,l]).
++#      X = [0, ln 3].  Output S[j][l], shape [2,4].
++X2 = [0.0, math.log(3.0)]
++cols = [X2]
++for l in range(3):
++    cols.append(softmax_masked(cols[-1], [l <= 1] * 2))
++show("step S[2,4]", [[cols[l][j] for l in range(4)] for j in range(2)])
++
++# (iii)/(iv) slot-cache attention: iter t = 4, 3 slots, k = 2.
++Kn = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]
++Qr = [[1.0, 0.0], [2.0, 1.0], [1.0, -1.0], [0.0, 0.0]]
++
++
++def kv(keep_fn):
++    Kc = [[0.0, 0.0] for _ in range(3)]
++    Yh = [[0.0] * 3]
++    for t in range(3):
++        Kw = [[Kc[s][k] + (1.0 if s == t else 0.0) * Kn[t][k] for k in range(2)] for s in range(3)]
++        sc = [sum(Kw[s][k] * Qr[t][k] for k in range(2)) for s in range(3)]
++        Yh.append(softmax_masked(sc, [keep_fn(s, t) for s in range(3)]))
++        Kc = Kw
++    return [[Yh[t][s] for t in range(4)] for s in range(3)]
++
++
++show("kv causal Yh[3,4]", kv(lambda s, t: s <= t))
++show("kv window Yh[3,4]", kv(lambda s, t: s <= t and s > t - 2))
++show("kv causal ctx0", kv(lambda s, t: s <= 0))
++
++# (b) plan-level block: X[ctx, o] read, then softmax over o with mask `o <= ctx`, X = [[1,2,3],[4,5,6]].
++Xb = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
++for c in (0, 1):
++    print("block ctx", c, softmax_masked(Xb[c], [o <= c for o in range(3)]))
+-- 
+2.55.0
+
