@@ -129,9 +129,11 @@ def leakyReluT (t : DenseTensor) : DenseTensor :=
   ⟨t.shape, t.data.map (pointwiseWith floatNonlinOps .leakyrelu)⟩
 
 /-- Build the `coord : HashMap UID Int` for a full multi-index `c`, pairing each axis position's
-    UID with its coordinate value (so `evalBool` can see the coordinate for masking). -/
-private def coordMap (axisUids : List UID) (c : List Nat) : HashMap UID Int :=
-  (axisUids.zip c).foldl (fun m (u, v) => m.insert u (v : Int)) ({} : HashMap UID Int)
+    UID with its coordinate value (so `evalBool` can see the coordinate for masking), on top of
+    `context` (the live scan coordinates a step statement's mask may read; empty elsewhere). -/
+private def coordMap (axisUids : List UID) (c : List Nat) (context : HashMap UID Int) :
+    HashMap UID Int :=
+  (axisUids.zip c).foldl (fun m (u, v) => m.insert u (v : Int)) context
 
 /-- Group the tensor's coordinates into "rows" along `axisPos`: each row is the list of full
     coordinates that agree on all axes except `axisPos` (varying that axis 0..dim-1). Returns a
@@ -218,12 +220,13 @@ def _root_.LeanNCD.AxiswiseFn.applyCore32 (fn : AxiswiseFn) (axisPos : Nat)
 /-- The SOURCE axiswise wrapper: build the full-coordinate `included?` predicate from a source
     `BoolExpr` mask (`evalBool` over the `axisUids → Int` coordinate map) and hand it to `applyCore`.
     A `none` mask includes every coordinate, so an unmasked reduction is byte-for-byte the pre-mask
-    behavior. Owned by the enum, symmetric with `PointwiseFn.apply`. -/
+    behavior. Owned by the enum, symmetric with `PointwiseFn.apply`. `context` (default empty) binds
+    axes outside the tensor (a scan step's live iteration coordinates) for the mask. -/
 def _root_.LeanNCD.AxiswiseFn.apply (fn : AxiswiseFn) (axisPos : Nat) (axisUids : List UID)
-    (mask? : Option BoolExpr) (t : DenseTensor) : DenseTensor :=
+    (mask? : Option BoolExpr) (t : DenseTensor) (context : HashMap UID Int := {}) : DenseTensor :=
   fn.applyCore axisPos (fun c => match mask? with
     | none => true
-    | some b => evalBool (coordMap axisUids c) b) t
+    | some b => evalBool (coordMap axisUids c context) b) t
 
 /-- A nonlinearity together with everything statically resolved against one statement's own
     output slots: which axis position (if any) is the marked reduction axis, checked exactly
@@ -272,11 +275,13 @@ def checkNormMarkers (stmtName : String) (nl : Nonlin) (slots : List LHSSlot) :
     the `included?` coordinate map from the source mask; `softmaxT`/`normalizeT`/`l2normalizeT`
     themselves take that `included?` predicate directly. The axis *position* itself already lives
     in `rn` for the `.axiswise` case, resolved once by `resolveNonlin` rather than re-derived
-    here. -/
-def applyNonlin (rn : ResolvedNonlin) (axisUids : List UID) (t : DenseTensor) : DenseTensor :=
+    here. `context` (default empty) is the mask's binding for axes outside the tensor: a scan
+    step statement passes its live scan coordinates. -/
+def applyNonlin (rn : ResolvedNonlin) (axisUids : List UID) (t : DenseTensor)
+    (context : HashMap UID Int := {}) : DenseTensor :=
   match rn with
   | .identity        => t
   | .pointwise pf    => pf.apply t
-  | .axiswise fn m p => fn.apply p axisUids m t
+  | .axiswise fn m p => fn.apply p axisUids m t context
 
 end LeanNCD.Eval

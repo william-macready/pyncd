@@ -1381,16 +1381,26 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
   -- slots): that is the basis the mask is evaluated over, on the reference evaluator and the checked plan
   -- alike, and any other axis has no column and reads coordinate 0. So `where k ≥ 1` over a contracted
   -- `k` masked everything and `where k ≤ 5` masked nothing, and inside a scan `where s ≤ t` meant
-  -- `s ≤ 0` (a seeded scan axis is an `.iterAt`/`.iterNext` slot, not an output axis; a per-step
-  -- statement is meant to see the CURRENT step there). Refuse rather than misread. A POST-SCAN statement
-  -- that ranges over the scan axis (`Sm[j, l.] := softmax(where l ≤ 1)(S[j, l])`) is fine: there it is
-  -- an output axis. An EARLIER scan's axis as a free axis of a later scan's state is fine for the same
-  -- reason.
+  -- `s ≤ 0` (a seeded scan axis is an `.iterAt`/`.iterNext` slot, not an output axis). Refuse rather
+  -- than misread. The one exception is a STEP statement (a state recurrence or a per-step
+  -- intermediate): its mask may also mention its OWN enclosing scan's iteration axes, which both
+  -- evaluators bind to the LIVE step coordinate. A BASE statement's pinned scan axis stays refused. A
+  -- POST-SCAN statement that ranges over the scan axis (`Sm[j, l.] := softmax(where l ≤ 1)(S[j, l])`)
+  -- is fine: there it is an output axis. An EARLIER scan's axis as a free axis of a later scan's
+  -- state is fine for the same reason.
+  let stepScanAxes : Stmt → List UID := fun s =>
+    if s.iterInfo.any (·.isRecur) then
+      (comps.find? (fun c => (axSet s).any (fun u => c.contains u))).getD []
+    else if s.iterInfo.isEmpty && !isPost s then
+      let d := dep.getD s.lhsName []
+      if d.isEmpty then [] else (comps.find? (fun c => d.all (fun u => c.contains u))).getD []
+    else []
   for s in nonPre do
     let outs : List UID := s.slots.filterMap (fun sl => match sl with
       | .free a | .freeNorm a => some a.uid
       | _ => none)
-    match (specsNonlin s.nonlinOf).find? (fun a => !outs.contains a.uid) with
+    let visible := outs ++ stepScanAxes s
+    match (specsNonlin s.nonlinOf).find? (fun a => !visible.contains a.uid) with
     | some a => throw (CompileError.maskAxisNotOutput s.lhsName a.name)
     | none => pure ()
   -- plain = non-iter stmts with NO scan dependency (loop-invariant; evaluated once).

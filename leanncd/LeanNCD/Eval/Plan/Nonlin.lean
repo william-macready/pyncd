@@ -42,7 +42,11 @@ structure RawPointwisePlan where
     positional predicate over the LOCAL output coordinate (its non-seeded output basis) whose leaves
     are each `shape.size` wide (`checkAxiswise`'s mask width check); a coordinate the mask evaluates
     TRUE is INCLUDED in the reduction, one FALSE is excluded. There is no mask-axis-UID field: the
-    positional width is exactly `shape.size`. -/
+    positional width is exactly `shape.size + maskContextRank`. `maskContextRank` is the number of
+    enclosing-block context coordinates (a scan step's live iteration coordinates, in block-context
+    order) the mask reads, APPENDED after the tensor coordinates; `0` (the default) is a mask over
+    the tensor coordinates alone. Only `0` or the enclosing block's context rank is admitted
+    (`maskContextRankMismatch`). -/
 structure RawAxiswisePlan where
   sourceSlot      : TensorSlot
   destinationSlot : TensorSlot
@@ -50,6 +54,7 @@ structure RawAxiswisePlan where
   axisPos         : Nat
   fn              : LeanNCD.AxiswiseFn
   mask            : Option PosBoolExpr := none
+  maskContextRank : Nat := 0
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Geometry-checking errors for pointwise and axiswise operations. -/
@@ -61,6 +66,7 @@ inductive NonlinPlanError
   | destinationShapeMismatch (declared : Array Nat) (signature : Array Nat)
   | axisPositionOutOfRange   (position : Nat) (size : Nat)
   | maskWidthMismatch        (expected : Nat) (actual : Nat)
+  | maskContextRankMismatch  (contextRank : Nat) (actual : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Evidence that one `RawPointwisePlan` satisfies every local invariant, for the storage kind it
@@ -131,30 +137,38 @@ def checkPointwiseF32 (sigs : Array TensorSignature) (p : RawPointwisePlan) :
     Except NonlinPlanError CheckedPointwisePlan :=
   checkPointwiseCore .float32 sigs p
 
-private def checkAxiswiseCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature)
-    (a : RawAxiswisePlan) : Except NonlinPlanError CheckedAxiswisePlan := do
+private def checkAxiswiseCore (kind : LeanNCD.StorageKind) (contextRank : Nat)
+    (sigs : Array TensorSignature) (a : RawAxiswisePlan) :
+    Except NonlinPlanError CheckedAxiswisePlan := do
   let _ ← checkNonlinIOCore kind sigs a.sourceSlot a.destinationSlot a.shape
   unless a.axisPos < a.shape.size do
     throw (.axisPositionOutOfRange a.axisPos a.shape.size)
-  -- Mask width: each positional mask leaf must span exactly the local output basis (`shape.size`).
-  -- A DISTINCT check from `checkAssign`'s Iverson-FACTOR width check — this one reports the mask.
+  -- Context rank: a mask reads no context (`0`) or the WHOLE enclosing context (`contextRank`).
+  unless a.maskContextRank == 0 || a.maskContextRank == contextRank do
+    throw (.maskContextRankMismatch contextRank a.maskContextRank)
+  -- Mask width: each positional mask leaf must span exactly the local output basis plus the context
+  -- coordinates it reads (`shape.size + maskContextRank`). A DISTINCT check from `checkAssign`'s
+  -- Iverson-FACTOR width check — this one reports the mask.
+  let width := a.shape.size + a.maskContextRank
   match a.mask with
   | none => pure ()
-  | some m => match m.affineWidths.find? (· != a.shape.size) with
-      | some w => throw (.maskWidthMismatch a.shape.size w)
+  | some m => match m.affineWidths.find? (· != width) with
+      | some w => throw (.maskWidthMismatch width w)
       | none => pure ()
   return CheckedAxiswisePlan.mk a kind
 
-/-- Validate one axiswise operation against the positional signature table, for binary64. -/
-def checkAxiswise (sigs : Array TensorSignature) (a : RawAxiswisePlan) :
+/-- Validate one axiswise operation against the positional signature table, for binary64.
+    `contextRank` is the enclosing block's context rank (`0` at the top level, the default); the
+    mask's `maskContextRank` must be `0` or exactly `contextRank`. -/
+def checkAxiswise (sigs : Array TensorSignature) (a : RawAxiswisePlan) (contextRank : Nat := 0) :
     Except NonlinPlanError CheckedAxiswisePlan :=
-  checkAxiswiseCore .float64 sigs a
+  checkAxiswiseCore .float64 contextRank sigs a
 
 /-- Validate one axiswise operation for native binary32: the sibling of `checkAxiswise` through the
     same core, admitting `.f32` slots and recording `.float32`. -/
-def checkAxiswiseF32 (sigs : Array TensorSignature) (a : RawAxiswisePlan) :
-    Except NonlinPlanError CheckedAxiswisePlan :=
-  checkAxiswiseCore .float32 sigs a
+def checkAxiswiseF32 (sigs : Array TensorSignature) (a : RawAxiswisePlan)
+    (contextRank : Nat := 0) : Except NonlinPlanError CheckedAxiswisePlan :=
+  checkAxiswiseCore .float32 contextRank sigs a
 
 /-- Validate the positional store against the single source shape `checkNonlinIO` already validated,
     returning that source tensor. Generic over the carrier, so the workers of both precisions share
@@ -182,24 +196,33 @@ private def validateNonlinSourceOf {α : Type} (sourceSlot : TensorSlot) (shape 
     unreachable-in-practice error (`checkAxiswise`'s mask width check forbids the only failure
     mode), guarded here at leaf-count cost instead of coordinate-count cost. Once validated, builds
     the full-coordinate `included?` predicate from the mask (a `none` mask includes every
-    coordinate, so an unmasked reduction is byte-for-byte the pre-mask behavior). -/
-private def axiswiseIncluded (a : RawAxiswisePlan) :
+    coordinate, so an unmasked reduction is byte-for-byte the pre-mask behavior). A mask with a
+    nonzero `maskContextRank` reads the block context `ctx`, appended after the tensor coordinate;
+    `ctx` must then be exactly that long (else `predicateWidthMismatch`), and a rank-0 mask ignores
+    `ctx` entirely. -/
+private def axiswiseIncluded (a : RawAxiswisePlan) (ctx : List Int) :
     Except PositionalInputError (List Nat → Bool) := do
+  let width := a.shape.size + a.maskContextRank
+  let env : List Int := if a.maskContextRank == 0 then [] else ctx
   match a.mask with
   | none => pure ()
-  | some m => match m.affineWidths.find? (· != a.shape.size) with
-      | some w => throw (.predicateWidthMismatch a.shape.size w)
+  | some m =>
+      match m.affineWidths.find? (· != width) with
+      | some w => throw (.predicateWidthMismatch width w)
       | none => pure ()
+      unless env.length == a.maskContextRank do
+        throw (.predicateWidthMismatch width (a.shape.size + env.length))
   return fun coord => match a.mask with
     | none => true
-    | some m => (evalPosBool (coord.map (Int.ofNat ·)) m).toOption.getD true
+    | some m => (evalPosBool (coord.map (Int.ofNat ·) ++ env) m).toOption.getD true
 
 /-- Public view of `axiswiseIncluded` for static renderers (the JAX bridge's include table): the very
     same predicate the dense workers hand to `applyCore`/`applyCore32`, width check included — a
-    delegation, not a second copy, so a renderer cannot drift from the worker. -/
+    delegation, not a second copy, so a renderer cannot drift from the worker. It supplies NO block
+    context, so a mask with a nonzero `maskContextRank` is refused (`predicateWidthMismatch`). -/
 def axiswiseIncludedPredicate (a : RawAxiswisePlan) :
     Except PositionalInputError (List Nat → Bool) :=
-  axiswiseIncluded a
+  axiswiseIncluded a []
 
 /-- Run one checked pointwise operation over a binary64 store. **The storage-kind guard is the FIRST
     statement, before the store is looked at:** `.float32` evidence (from `checkPointwiseF32`) is
@@ -230,24 +253,35 @@ def runDensePointwise32 (c : CheckedPointwisePlan) (store : Array DenseTensor32)
     re-validates its source slot against the checked shape (`validateNonlinSourceOf`), builds the
     mask's `included?` predicate (`axiswiseIncluded`), and hands both to `AxiswiseFn.applyCore` —
     the SAME single softmax/normalize/L2 implementation the SOURCE `AxiswiseFn.apply` uses,
-    differing only in which predicate language it evaluates. -/
-def runDenseAxiswise (c : CheckedAxiswisePlan) (store : Array DenseTensor) :
+    differing only in which predicate language it evaluates. `ctx` is the enclosing block's context
+    coordinate, read only by a mask with a nonzero `maskContextRank`. -/
+def runDenseAxiswiseAt (c : CheckedAxiswisePlan) (ctx : List Int) (store : Array DenseTensor) :
     Except PositionalInputError DenseTensor := do
   unless c.storageKind == .float64 do
     throw (.storageKindMismatch .float64 c.storageKind)
   let src ← validateNonlinSourceOf c.raw.sourceSlot c.raw.shape store
-  let included? ← axiswiseIncluded c.raw
+  let included? ← axiswiseIncluded c.raw ctx
   return c.raw.fn.applyCore c.raw.axisPos included? src
 
+/-- `runDenseAxiswiseAt` with no block context: the top-level graph's binary64 axiswise worker. -/
+def runDenseAxiswise (c : CheckedAxiswisePlan) (store : Array DenseTensor) :
+    Except PositionalInputError DenseTensor :=
+  runDenseAxiswiseAt c [] store
+
 /-- Run one checked axiswise operation over a native binary32 store: the sibling of
-    `runDenseAxiswise`, guarded `.float32` as its FIRST statement, sharing its source validation and
-    mask handling, and applying the native binary32 row engine `AxiswiseFn.applyCore32`. -/
-def runDenseAxiswise32 (c : CheckedAxiswisePlan) (store : Array DenseTensor32) :
-    Except PositionalInputError DenseTensor32 := do
+    `runDenseAxiswiseAt`, guarded `.float32` as its FIRST statement, sharing its source validation
+    and mask handling, and applying the native binary32 row engine `AxiswiseFn.applyCore32`. -/
+def runDenseAxiswiseAt32 (c : CheckedAxiswisePlan) (ctx : List Int)
+    (store : Array DenseTensor32) : Except PositionalInputError DenseTensor32 := do
   unless c.storageKind == .float32 do
     throw (.storageKindMismatch .float32 c.storageKind)
   let src ← validateNonlinSourceOf c.raw.sourceSlot c.raw.shape store
-  let included? ← axiswiseIncluded c.raw
+  let included? ← axiswiseIncluded c.raw ctx
   return c.raw.fn.applyCore32 c.raw.axisPos included? src
+
+/-- `runDenseAxiswiseAt32` with no block context: the top-level graph's binary32 axiswise worker. -/
+def runDenseAxiswise32 (c : CheckedAxiswisePlan) (store : Array DenseTensor32) :
+    Except PositionalInputError DenseTensor32 :=
+  runDenseAxiswiseAt32 c [] store
 
 end LeanNCD.Eval.Plan
