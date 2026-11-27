@@ -40,6 +40,8 @@ Not in scope (park each with a one-line cost, Rule 14): the natural spelling `Kh
 
 ## 3. Traps (pre-flight facts; each is respected by Appendix B)
 
+(Annotation 2026-11-26: Lean now accepts a step statement's `where` mask over its own scan axis (live step coordinate); the JAX renderer still refuses it (`axiswiseContextMask`). See `jax_step_mask_scope.md`.)
+
 1. A `where` mask over the scan axis is refused (`maskAxisNotOutput`): the window mask is DATA (`Mk[u, t]`, additive `-1.0e9`), as in `kv_cache`. The mask now only says which cells EXIST (slot `>= 0`); it carries no safety. Without it a cell with slot `< 0` zero-pads and attends with score 0 (non-vacuity gap 0.463).
 2. Extents pairwise distinct: `t = 6`, `u = 5`, `k = 4`, `i = 3`, `v = 2`. The extra axis needs its declaration `axis u : ℕ = 5`.
 3. The spare time row is FINITE here: `X` row 5 is `0.0` and `Mk` column 5 follows the same formula (all `0.0`). Do NOT use the NaN spare row of `kv_cache`: it makes the `Wq`, `Wk`, `Wv` gradients NaN (0 * NaN through the hoisted tables). Row 5 of every `t`-indexed table is never consumed by a step (`step_count` is 5), which is why a finite filler is safe and why the padding perturbation pin of section 5 holds.
