@@ -149,4 +149,9 @@ top-level masks.
 
 ## Merge
 
-(Filled in after the merge.)
+Merged to local `main` with `--no-ff` as `34c50879` (branch tip `572fcfd6`; `git diff --stat main worktree-step-mask`
+empty at the time). Merged-tree `lake-build.sh Tests JaxExperiment` in the primary checkout: **Build completed
+successfully (8846 jobs)**, 1314 s (21.9 min, controller clock, background); no errors. Branch
+`worktree-step-mask`, second worktree branch `worktree-step-mask-b`, prototype branch `proto-step-mask` and their
+worktrees removed. Executor logs archived under `.superpowers/sdd/2026-11-26-step-aware-where-masks-lean/` in the
+primary checkout (gitignored). **Nothing was pushed**: local `main` is ahead of `origin/main`.
