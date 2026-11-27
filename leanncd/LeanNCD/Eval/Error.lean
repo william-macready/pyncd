@@ -383,7 +383,9 @@ inductive EvalError
       scan's iteration axes in a recurrence (step) statement. The reference drops a seeded slot from
       the slice and writes at the seed coordinate, so such a statement used to evaluate to a silently
       wrong value (e.g. the source `S[j, 0, l]` / `S[j., l+1, l]`); the checked backend refuses it in
-      `compileScan` Phase 1 (`duplicateAxisInLhs`, `contextAxisAsFreeOutput`). `stmtIndex` is the
+      `compileScan` Phase 1 (`duplicateAxisInLhs`, `contextAxisAsFreeOutput`, and for a step state
+      result carrying `.free l` without `.iterNext l`, `stateResultNotAdvancing` /
+      `partialAdvancingResult`). `stmtIndex` is the
       position in the scan's `base` list when `isBase`, else in `recur`. An EARLIER scan's axis
       carried as a `.free` slot of a LATER scan is not seeded by the later scan and is unaffected, as
       is a base `.free c` on a scan axis other than the statement's own pins. -/

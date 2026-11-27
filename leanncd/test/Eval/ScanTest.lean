@@ -1650,7 +1650,9 @@ run_cmd do
 -- guard the reference dropped the slot and wrote at the seed coordinate: it accepted these programs
 -- (the checked plan refuses them in `compileScan` Phase 1) and returned silently wrong values for
 -- some, e.g. an identity scratch `T[l, j] := S[l, j]` (P2) and the source-reachable
--- `S[j, 0, l] := X[j, l]; S[j., l+1, l] := softmax(where l ≤ 0)(S[j, l, l])` (SRC). Axis uids:
+-- `S[j, 0, l] := X[j, l]; S[j., l+1, l] := softmax(where l ≤ 0)(S[j, l, l])` (SRC; the hand-built
+-- mirror below writes `.axiswise .normalize` where the source program writes `softmax`, and no
+-- source-text `tlprog!` version of SRC is pinned through the reference). Axis uids:
 -- `l` = 9 (size 3), `j` = 1 (size 2), `k` = 2 (size 2).
 run_cmd do
   let j := ax "j" 1; let k := ax "k" 2; let l := ax "l" 9
@@ -1685,15 +1687,17 @@ run_cmd do
   | .error (.scanSeededAxisAsOutput "scn" "S" true 0 9) => pure ()
   | .error e => throwError s!"seeded free P3: wrong rejection: {e}"
   | .ok outs => throwError (raAccepted outs)
-  -- P3b: the same result `.free l` with an ACCEPTABLE base (`.free k` is no seed of that base): the
-  -- STEP arm fires on the state result.
+  -- P3b: the same result `.free l` with a base whose `.free k` is no seed of that base (the base
+  -- is still not a valid scan base: `k` has extent 2 but `l` has 3, an extent mismatch); this pin
+  -- tests only the STEP arm, which fires on the state result.
   let baseS3b : Stmt := .assign "S" [.iterAt l 0, .free j, .free k] (rhs "X" [.axis j] .identity)
   match evalScanF64 [] envX sizes (.scan "scn" [l] [baseS3b] [stepS3] false) with
   | .error (.scanSeededAxisAsOutput "scn" "S" false 0 9) => pure ()
   | .error e => throwError s!"seeded free P3b: wrong rejection: {e}"
   | .ok outs => throwError (raAccepted outs)
   -- SRC: `S[j, 0, l] := X[j, l]; S[j., l+1, l] := softmax(where l ≤ 0)(S[j, l, l])`, the shape a
-  -- source program compiles to (the plan refuses it with `duplicateAxisInLhs`). The reference used to
+  -- source program compiles to (the plan refuses it with `duplicateAxisInLhs`); `stepSrc` mirrors
+  -- the source step with `.axiswise .normalize` in place of `softmax`. The reference used to
   -- return a `[2,3,3]` value that wrote only cell `(0,0)` of the base face.
   let baseSrc : Stmt := .assign "S" [.free j, .iterAt l 0, .free l] (rhs "X" [.axis j, .axis l] .identity)
   let stepSrc : Stmt := .assign "S" [.freeNorm j, .iterNext l, .free l]
