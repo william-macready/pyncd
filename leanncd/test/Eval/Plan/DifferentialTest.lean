@@ -1933,10 +1933,9 @@ run_cmd do
       ScanCompileTest.maskedAxiswiseRecurInputs [] with
   | .ok () => pure ()
   | .error m => throwError s!"T5.4 masked recurrence three-way: {m}"
-  -- 4. seeded-axis-zero (scan-axis mask `where l = 0`), three-way. This is also the masked
-  --    recurrence whose VALUE disagrees under a live-context mask substitution (mutation 3): the
-  --    seeded `l` must read 0, so the mask is always true and the value equals the unmasked
-  --    recurrence.
+  -- 4. seeded-axis step mask (`where l = 0` in a step statement), three-way. The seeded `l` reads
+  --    the LIVE step coordinate on all three legs, so the mask is true at step 0 and false at step 1
+  --    (value pinned in `ScanCompileTest`: `[1,3,0.25,0.75,0,0]`).
   match scanParityCheck "T5.4 seededAxisZero" ScanCompileTest.seededAxisZero
       ScanCompileTest.seededAxisZeroInputs [] with
   | .ok () => pure ()
@@ -1964,13 +1963,13 @@ run_cmd do
       | .ok () => pure ()
       | .error m => throwError s!"T4.4 template3Bool three-way: {m}"
 
-/-! ### Structural check: no eliminated scan coordinate survives in an unrolled mask
+/-! ### Structural check: unrolled masks carry the step literal, never the scan-axis UID
 
 Values alone cannot detect a missing mask substitution — `evalIdx` defaults an absent UID to 0, so
-an unsubstituted `[l = 0]` and the substituted `[0 = 0]` evaluate identically. This walks the
-unrolled `seededAxisZero` leaves and asserts NO mask carries the seeded scan-axis UID. Omitting the
-mask substitution (mutation 2) leaves `l` in the mask and fails this check even though every value
-still agrees. -/
+an unsubstituted `[l = 0]` and a substituted `[0 = 0]` evaluate identically. This walks the unrolled
+`seededAxisZero` leaves and asserts NO mask carries the seeded scan-axis UID (omitting the
+substitution, mutation 2, leaves `l` in the mask), and that the step-1 leaf's mask is the STEP
+literal `[1 = 0]` (a coordinate-0 substitution would give `[0 = 0]` in every leaf). -/
 
 private def idxUids54 (e : IdxExpr) : List UID := (idxAffineForm e).2.map Prod.snd
 private def predUids54 : PredArith → List UID
@@ -2013,6 +2012,35 @@ run_cmd do
           if leaked.contains ScanCompileTest.p9l.uid then
             throwError s!"T5.4 structural: the seeded scan axis {ScanCompileTest.p9l.uid} leaked \
 into an unrolled mask — its coordinate was not substituted"
+          -- …and the step-1 leaf carries the step literal, not 0.
+          unless un.stmts.any (fun s => match s.nonlinOf with
+              | .axiswise _ (some m) => m == .rel .eq (.embed (.const 1)) (.embed (.const 0))
+              | _ => false) do
+            throwError "T5.4 structural: no unrolled mask carries the step literal `1 = 0`"
+
+/-! ### Step-aware source masks, three-way
+
+The `NonlinCompileTest` Section 6 program (ii) step statement through `scanParityCheck`: checked
+plan, legacy `evalScheduled`, and the independent scan-free unrolling (whose `maskSubst` now
+substitutes the step literal) agree. Program (i), the per-step intermediate
+`Pa[j.] := softmax(where j ≤ l)(S[j, l])`, is NOT here: the independent unroller fails on it
+(`evalAssign %T_Pa_0: output axis has no inferable size`), an oracle fragment limit; (i) is pinned
+two-way (checked vs reference) in `NonlinCompileTest`. -/
+
+private def stepMaskStepProg : TLProgram := tlprog!{ iter l = 4
+  S[j, 0]      := X[j]
+  S[j., l +1]  := softmax(where l ≤ 1)(S[j, l]) }
+
+run_cmd do
+  for (nm, p, inputs, scratch) in
+      [("step-mask step", stepMaskStepProg,
+          (({} : HashMap String DenseTensor).insert "X" ⟨[2], #[0, Float.log 3]⟩), [])] do
+    match p.explicitF64.compileToScheduled.run 0 with
+    | .error _ _ => throwError s!"{nm}: compile failed"
+    | .ok sched _ =>
+        match scanParityCheck nm sched inputs scratch with
+        | .ok () => pure ()
+        | .error m => throwError s!"{nm} three-way: {m}"
 
 /-! ### The oracle's own `eliminatedNormalizationAxis` fragment rejection
 

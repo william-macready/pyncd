@@ -274,8 +274,8 @@ private def checkPlanBlockCore (kind : LeanNCD.StorageKind) (block : RawPlanBloc
               | .ok c => pure (.pointwise c)
           | .axiswise a =>
               match (match kind with
-                     | .float64 => checkAxiswise block.tensorSigs a
-                     | .float32 => checkAxiswiseF32 block.tensorSigs a) with
+                     | .float64 => checkAxiswise block.tensorSigs a block.contextShape.size
+                     | .float32 => checkAxiswiseF32 block.tensorSigs a block.contextShape.size) with
               | .error e => throw (.nonlin ni e)
               | .ok c => pure (.axiswise c) }
     match step with
@@ -304,7 +304,7 @@ private def runDenseBlockWith {α : Type}
       Except PositionalInputError (DenseTensorOf α))
     (pointwise : CheckedPointwisePlan → Array (DenseTensorOf α) →
       Except PositionalInputError (DenseTensorOf α))
-    (axiswise : CheckedAxiswisePlan → Array (DenseTensorOf α) →
+    (axiswise : CheckedAxiswisePlan → List Int → Array (DenseTensorOf α) →
       Except PositionalInputError (DenseTensorOf α))
     (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array (DenseTensorOf α)) :
     Except PositionalInputError (Array (DenseTensorOf α)) := do
@@ -330,14 +330,14 @@ private def runDenseBlockWith {α : Type}
     | .pointwise p =>
         store := store.set! p.raw.destinationSlot (← pointwise p store)
     | .axiswise a =>
-        store := store.set! a.raw.destinationSlot (← axiswise a store)
+        store := store.set! a.raw.destinationSlot (← axiswise a ctx store)
   return store
 
 def runDenseBlock (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseTensor) :
     Except PositionalInputError (Array DenseTensor) := do
   unless c.storageKind == .float64 do
     throw (.storageKindMismatch .float64 c.storageKind)
-  runDenseBlockWith runDenseAssignAt runDensePointwise runDenseAxiswise c ctx inputs
+  runDenseBlockWith runDenseAssignAt runDensePointwise runDenseAxiswiseAt c ctx inputs
 
 /-- Execute one checked BINARY32 block: the same wiring as `runDenseBlock`, dispatching to the
     native binary32 workers. Storage-kind guard first. -/
@@ -345,6 +345,6 @@ def runDenseBlock32 (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array Dens
     Except PositionalInputError (Array DenseTensor32) := do
   unless c.storageKind == .float32 do
     throw (.storageKindMismatch .float32 c.storageKind)
-  runDenseBlockWith runDenseAssignAt32 runDensePointwise32 runDenseAxiswise32 c ctx inputs
+  runDenseBlockWith runDenseAssignAt32 runDensePointwise32 runDenseAxiswiseAt32 c ctx inputs
 
 end LeanNCD.Eval.Plan

@@ -89,6 +89,11 @@ inductive JaxCodegenError
   -- codegen's own backstop: the include table is never built from a mask the worker would refuse.
   -- Carries the node and the worker's own refusal.
   | axiswiseIncludeRefused (nodeIndex : Nat) (cause : PositionalInputError)
+  -- An axiswise step whose mask reads the enclosing block's context (`maskContextRank ≠ 0`, a scan
+  -- step's live coordinate): the static include table has no step dimension, so rendering it would
+  -- silently freeze the mask at one step. Refused until the JAX bridge supports step-aware masks.
+  -- Carries the node and the step's `maskContextRank`.
+  | axiswiseContextMask   (nodeIndex : Nat) (maskContextRank : Nat)
   -- A `.iverson` predicate factor inside an assignment term that this backend does not lower: the
   -- term is rejected with its node/term/factor location. Under the `.booleanReach` profile an
   -- Iverson factor IS lowered (to a static `include` table, `iversonIncludeTable`) in a
@@ -686,9 +691,12 @@ def axiswiseFnName : AxiswiseFn → String
     `axiswiseIncluded`: width check, then `evalPosBool`, an evaluation error counting as included).
     The runtime never sees the mask. A refusal by the worker's handling (a width-mismatched mask,
     unreachable for a checked step) throws the located `axiswiseIncludeRefused` instead of an
-    unmasked or partial table. Takes the raw step so the backstop is testable on a hand-built plan. -/
+    unmasked or partial table. Takes the raw step so the backstop is testable on a hand-built plan.
+    A step with a nonzero `maskContextRank` (a step-aware mask) is refused FIRST, as the located
+    `axiswiseContextMask`: this table has no step dimension. -/
 def buildAxiswiseInclude (nodeIndex : Nat) (a : RawAxiswisePlan) :
     Except JaxCodegenError (Option (Array Nat)) :=
+  if a.maskContextRank != 0 then .error (.axiswiseContextMask nodeIndex a.maskContextRank) else
   match a.mask with
   | none => .ok none
   | some _ =>
@@ -1431,7 +1439,9 @@ def testAxiswiseStepRejectedLocated : Bool :=
 /-! Slice 5.3: a MASKED `.axiswise` step (`RawAxiswisePlan.mask` present) is routed to the SAME
 generic located `unsupportedStep` error before any Python emission — the complete-step JAX support
 check never special-cases the mask into an emittable path. `maskInclude` is a width-1 always-true
-positional mask over the `#[3]`-shaped step, so `checkPlan` admits the step; JAX still rejects it. -/
+positional mask over the `#[3]`-shaped step, so `checkPlan` admits the step; JAX still rejects it.
+A mask with `maskContextRank > 0` (a step mask reading the live scan coordinate) is refused with
+`axiswiseContextMask`. -/
 
 def maskInclude : PosBoolExpr :=
   .rel .eq (.affine ⟨#[0], 0⟩) (.affine ⟨#[0], 0⟩)

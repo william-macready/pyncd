@@ -682,8 +682,9 @@ private def lowerBoolExprPos (pins : HashMap UID Int) (basis : List UID) :
 
 /-- Factor-policy predicate lowering — one of the TWO public entry points to the private
     `BoolExpr → PosBoolExpr` core (`lowerBoolExprPos`); the other is Task 5.3's `lowerMaskPredicate`,
-    which reuses the same core with the mask policy (local non-seeded output basis, empty pins).
-    The factor policy is `context ++ output ++ reduction` with the real pins folded into every leaf
+    which reuses the same core with the mask policy (local non-seeded output basis, empty pins; the
+    scan-step site appends the enclosing scan's iteration-axis uids (`contextUids`) after the
+    output uids). The factor policy is `context ++ output ++ reduction` with the real pins folded into every leaf
     — the SAME ordered basis `residualizeAssignment` builds for that term's `.read` factors, so the
     caller passes its already-derived `basisUids` here rather than this function re-deriving it from
     a `ProdTerm`. Identity is by basis position (via `idxToRow`), never by axis name — two
@@ -699,11 +700,17 @@ def lowerFactorPredicate (pins : HashMap UID Int) (basisUids : List UID) (pred :
     BOTH supplied INTERNALLY here: a caller passes only its non-seeded output UIDs and the source
     mask `BoolExpr`, and so cannot inject factor context or base pins the way `lowerFactorPredicate`
     does. Consequences pinned by fixtures: a UID absent from the basis (a seeded scan axis)
-    densifies to no column (`idxToRow`), so it evaluates as coordinate 0 at every step; and every
+    densifies to no column (`idxToRow`), so it evaluates as coordinate 0 at every step; that holds
+    for base and top-level masks (empty context), while at the scan-step site the context UIDs ARE in
+    the basis and evaluate as the live step coordinate; and every
     output axis — including an eliminated `.free`/`.freeNorm` reduction axis — keeps its own column,
-    so the mask sees its ACTUAL enumerated coordinate, never zero. Identity is by basis position. -/
-def lowerMaskPredicate (outputUids : List UID) (mask : BoolExpr) : PosBoolExpr :=
-  lowerBoolExprPos ({} : HashMap UID Int) outputUids mask
+    so the mask sees its ACTUAL enumerated coordinate, never zero. Identity is by basis position.
+    `contextUids` (default empty) extends the basis AFTER the output axes: a scan STEP statement
+    passes its enclosing scan's iteration-axis UIDs in block-context order, so a mask over the live
+    scan axis reads the step coordinate (the plan's `maskContextRank`) instead of coordinate 0. -/
+def lowerMaskPredicate (outputUids : List UID) (mask : BoolExpr) (contextUids : List UID := []) :
+    PosBoolExpr :=
+  lowerBoolExprPos ({} : HashMap UID Int) (outputUids ++ contextUids) mask
 
 /-- Select the checked contraction algebra a source statement's aggregation op compiles to. `sum`
     is Wave C's real sum-product; `max`/`min` are the tropical semirings max-plus / min-plus
@@ -1304,12 +1311,20 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
           let resSlot := stepSigs.size
           stepSigs := stepSigs.push { shape := outputShape, dtype := destDtype }
           stepSteps := stepSteps.push (.assign plan)
-          -- Mask policy: local non-seeded output basis (`outputUids` — this recurrence's
-          -- `.free`/`.freeNorm` axes; the seeded `.iterNext` scan axis is absent, so a mask over it
-          -- reads it as coordinate 0 every step), empty pins, both internal to `lowerMaskPredicate`.
+          -- Mask policy: basis is now `outputUids ++ ctxUids` (local non-seeded output basis —
+          -- this recurrence's `.free`/`.freeNorm` axes — followed by the scan's iteration axes,
+          -- block-context order), empty pins; the rank is set only when the mask mentions an
+          -- iteration axis of this scan: a mask over the live scan axis reads the step coordinate, which the
+          -- block runner appends after the tensor coordinate (`maskContextRank`). A mask that
+          -- mentions none of the iteration axes keeps rank 0, so its plan is unchanged.
+          let stepAware := m.any (fun e =>
+            (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run.any
+              (fun a => ctxUids.contains a.uid))
+          let maskCtx := if stepAware then ctxUids else []
           stepSteps := stepSteps.push (.axiswise
             { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, axisPos, fn
-            , mask := m.map (lowerMaskPredicate outputUids) })
+            , mask := m.map (fun e => lowerMaskPredicate outputUids e maskCtx)
+            , maskContextRank := maskCtx.length })
           pure resSlot
     if stateNames.contains nm then resultSlotOf := resultSlotOf.insert nm resultSlot
     else scratchSlotOf := scratchSlotOf.insert nm resultSlot

@@ -256,4 +256,24 @@ def brStepInclude : List Nat :=
     has s (brIverson brStepInclude) && brCount s "\"include\"" == 1 &&
     brCount s "\"algebra\": \"boolean\"" == 2 && brCount s "\"context_pos\": [0]" == 1
 
+-- Step-aware masks: a step mask over the scan's own axis reads the live step coordinate
+-- (`maskContextRank = 1`), which the JAX renderer does not implement yet, so it REFUSES the plan with
+-- `axiswiseContextMask` (nodeIndex, rank 1) instead of emitting a coordinate-0 include table. The
+-- neighbour, a mask over the output axis only, keeps rank 0 and still renders.
+def smStepProg : TLProgram := tlprog!{ iter l = 4
+  tensor f64 X(j), S(j, l)
+  S[j, 0]      := X[j]
+  S[j., l +1]  := softmax(where j ≤ l)(S[j, l]) }
+def smOutputProg : TLProgram := tlprog!{ iter l = 4
+  tensor f64 X(j), S(j, l)
+  S[j, 0]      := X[j]
+  S[j., l +1]  := softmax(where j ≤ 1)(S[j, l]) }
+def smEnv : NamedDenseEnv := HashMap.ofList [("X", ⟨[3], #[0.0, 0.0, 0.0]⟩)]
+#guard match (brPrepared? smStepProg smEnv false).map renderAffinePlanNamed with
+  | some (.error (.axiswiseContextMask _ 1)) => true
+  | _ => false
+#guard match (brPrepared? smOutputProg smEnv false).map renderAffinePlanNamed with
+  | some (.ok _) => true
+  | _ => false
+
 end ScanAffineEmitTest

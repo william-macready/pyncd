@@ -1010,13 +1010,13 @@ private def recurScatterScan : TLProgram := tlprog!{
 
 /-! ### A `(where …)` mask over a scan axis inside a recurrence body
 
-A softmax/normalize mask is evaluated over the statement's own non-seeded output axes. A scan axis is
-seeded, so inside a recurrence body (a state's step statement, or a per-step intermediate) it is not
-in that basis and the mask used to read it as coordinate 0 at EVERY step: `softmax(where s ≤ t)` meant
-`s ≤ 0`, with the reference evaluator and the checked plan agreeing on the wrong value. A per-step
-statement is meant to see the CURRENT step in `l`, so the mask is refused (`maskAxisNotOutput`: the
-statement, the axis) instead of silently misread. A mask over an ordinary axis stays accepted, and so
-does a mask over the scan axis in a POST-SCAN statement, where that axis is an ordinary axis. -/
+A softmax/normalize mask is evaluated over the statement's own `.free`/`.freeNorm` output axes PLUS,
+inside a recurrence body (a state's step statement, or a per-step intermediate), the LIVE coordinates
+of the statement's own scan component: `softmax(where s ≤ t)` inside the `t` scan means `s ≤ t` at the
+CURRENT step, on the reference evaluator and the checked plan alike (step-aware masks; plan side:
+`RawAxiswisePlan.maskContextRank`). A mask over the scan axis in a POST-SCAN statement sees it as an
+ordinary axis. Still refused (`maskAxisNotOutput`: the statement, the axis): a BASE statement's mask over
+its pinned scan axis, a contracted axis, an unbound axis. -/
 
 private def maskInterScanAxis : TLProgram := tlprog!{ iter l = 3
   S[j, 0]    := X[j]
@@ -1036,21 +1036,46 @@ private def maskStepOtherAxis : TLProgram := tlprog!{ iter l = 3
   S[j, 0]      := X[j]
   S[j., l +1]  := softmax(where j ≤ 1)(S[j, l]) }
 
+-- A STEP statement whose mask mentions the scan axis AND an output axis in one predicate.
+private def maskStepScanAndOutput : TLProgram := tlprog!{ iter l = 3
+  S[j, 0]      := X[j]
+  S[j., l +1]  := softmax(where j ≤ l)(S[j, l]) }
+
 private def maskPostScanAxis : TLProgram := tlprog!{ iter l = 3
   S[j, 0]    := X[j]
   S[j, l +1] := S[j, l]
   Sm[j, l.]  := softmax(where l ≤ 1)(S[j, l]) }
 
 -- Two scans. In the layer scan `l` the time axis `t` of the EARLIER scan is an ordinary (free) axis of the
--- state, so a mask over `t` sees its real coordinate and is legal; a mask over the scan's own `l` is not.
--- (`dep` of `Zz` is transitive and contains `t` too, so this decides that only the statement's own scan
--- axes count.)
+-- state, so a mask over `t` sees its real coordinate and is legal; a mask over the scan's own `l` sees the
+-- live `l` step coordinate and is legal too.
+-- (Here `t` is a `.free` slot of `Zz`, so this program is accepted under either visibility rule; it does NOT
+-- decide that only the statement's own scan axes count. `maskStepEarlierScanAxis` below decides that.)
 private def maskOtherScanAxisFree : TLProgram := tlprog!{ iter t = 3
   iter l = 2
   H[d, 0]        := H0[d]
   H[d, t +1]     := H[d, t] · A[d]
   Zz[t, d, 0]    := H[d, t]
   Zz[t, d., l +1] := softmax(where t ≤ 1)(Zz[t, d, l]) }
+
+-- The negative half of the same rule: `Z` does not carry `t` (it reads the `t` scan only through the pinned
+-- read `H[d, 2]`), so `t` is neither an output axis of the `l`-scan step statement nor that scan's own axis.
+-- The mask over `t` is refused; the neighbour masking the statement's own `l` is accepted.
+private def maskStepEarlierScanAxis : TLProgram := tlprog!{ iter t = 3
+  iter l = 2
+  H[d, 0]      := H0[d]
+  H[d, t +1]   := H[d, t] · A[d]
+  Zp[d]        := H[d, 2]
+  Z[d, 0]      := Zp[d]
+  Z[d., l +1]  := softmax(where t ≤ 1)(Z[d, l]) }
+
+private def maskStepOwnAxisSameShape : TLProgram := tlprog!{ iter t = 3
+  iter l = 2
+  H[d, 0]      := H0[d]
+  H[d, t +1]   := H[d, t] · A[d]
+  Zp[d]        := H[d, 2]
+  Z[d, 0]      := Zp[d]
+  Z[d., l +1]  := softmax(where l ≤ 1)(Z[d, l]) }
 
 private def maskOwnAxisAfterScan : TLProgram := tlprog!{ iter t = 3
   iter l = 2
@@ -1060,7 +1085,8 @@ private def maskOwnAxisAfterScan : TLProgram := tlprog!{ iter t = 3
   Zz[t, d., l +1] := softmax(where l ≤ 1)(Zz[t, d, l]) }
 
 -- A BASE statement: the scan axis is pinned to the base's literal, but the mask basis does not carry that
--- pin, so the mask reads coordinate 0. That is right for a base at 0 and wrong for a base at 1.
+-- pin (no live step coordinate exists in a base), so the mask would read coordinate 0. That is right for
+-- a base at 0 and wrong for a base at 1, so both are refused.
 private def maskBaseAtZero : TLProgram := tlprog!{ iter l = 3
   S[j., 0]     := softmax(where l ≤ 0)(X[j])
   S[j, l +1]   := S[j, l] }
@@ -1074,19 +1100,26 @@ private def maskBaseAtOne : TLProgram := tlprog!{ iter l = 3
 #guard compileErrOf maskBaseAtZero == some (.maskAxisNotOutput "S" "l")
 #guard compileErrOf maskBaseAtOne == some (.maskAxisNotOutput "S" "l")
 #guard compileErrOf maskOtherScanAxisFree == none
-#guard compileErrOf maskOwnAxisAfterScan == some (.maskAxisNotOutput "Zz" "l")
-#guard layoutOf maskInterScanAxis == .error (.maskAxisNotOutput "Pa" "l")
-#guard layoutOf maskStepScanAxis == .error (.maskAxisNotOutput "S" "l")
-#guard compileErrOf maskInterScanAxis == some (.maskAxisNotOutput "Pa" "l")
--- Accept neighbours: the nearest legal programs.
+#guard compileErrOf maskStepEarlierScanAxis == some (.maskAxisNotOutput "Z" "t")
+#guard compileErrOf maskStepOwnAxisSameShape == none
+-- Step-aware masks over the statement's own scan axis: ACCEPTED (they see the live step coordinate).
+#guard compileErrOf maskOwnAxisAfterScan == none
+#guard layoutOf maskInterScanAxis == .ok ["scan base=[S] body=[Pa, S]"]
+#guard layoutOf maskStepScanAxis == .ok ["scan base=[S] body=[S]"]
+#guard compileErrOf maskInterScanAxis == none
+#guard compileErrOf maskStepScanAxis == none
+#guard layoutOf maskStepScanAndOutput == .ok ["scan base=[S] body=[S]"]
+#guard compileErrOf maskStepScanAndOutput == none
+-- Neighbours over ordinary axes: the nearest legal programs (unchanged).
 #guard layoutOf maskInterOtherAxis == .ok ["scan base=[S] body=[Pa, S]"]
 #guard layoutOf maskStepOtherAxis == .ok ["scan base=[S] body=[S]"]
 #guard layoutOf maskPostScanAxis == .ok ["scan base=[S] body=[S]", "plain Sm"]
 #guard compileErrOf maskPostScanAxis == none
 
 -- Not scan-specific: a mask is evaluated over the statement's own `.free`/`.freeNorm` output axes, so a
--- mask over ANY other axis (a contracted axis, an axis the statement does not carry) read coordinate 0 on
--- both backends (`where k ≥ 1` masked everything, `where k ≤ 5` masked nothing). Refused at the source.
+-- mask over ANY other axis (a contracted axis, an axis the statement does not carry) FORMERLY read
+-- coordinate 0 on both backends (`where k ≥ 1` masked everything, `where k ≤ 5` masked nothing); that was the
+-- former behaviour. Refused at the source.
 private def maskContractedAxis : TLProgram := tlprog!{
   Y[s.] := softmax(where k ≥ 1)(W[s, k] · x[k]) }
 

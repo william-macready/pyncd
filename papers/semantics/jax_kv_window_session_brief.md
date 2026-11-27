@@ -15,6 +15,8 @@ Deliver, on the branch `jax-kv-window-exec`:
 2. Two fixtures, each in BOTH precisions, pinned against an independent numpy model: `kv_window` (read `Kh[k, t + u - 4]`, a window of `W = 5` slots ending at `t`) and `kv_lag` (read `Kh[k, t - u]`, lag `u`; a NEGATIVE coefficient on the extra axis).
 3. Mutants (checker and fixtures), docs and record section 29.
 
+(Annotation 2026-11-26: the step-aware `where` mask named in the next paragraph now exists on the Lean side (guard, reference, checked plan, unrolled differential); JAX support is the next slice, and the bare `Kh[k, s]` read is still refused by causality; see `jax_step_mask_scope.md`.)
+
 Not in scope (park each with a one-line cost, Rule 14): the natural spelling `Kh[k, s]` with `softmax(where s <= t)` (needs a step-aware `where` mask in the reference evaluator, the checked plan and the JAX emitter plus a dataflow proof; it is refused today by `maskAxisNotOutput` AND by the causality check, and stays so); Iverson guard factors on real or max-plus terms for JAX (refused: `iversonFactor`); attention that also includes the CURRENT token's key (see trap 4); a window shorter than the history (needs another extent set); window reads in a MULTI-axis scan (the predicate handles them, no fixture); making the reference evaluator refuse non-causal reads; changing `IndexedAffineScanProfile` or any file under `experiments/indexed_execution/`.
 
 ## 2. Baseline, and what was observed versus not
@@ -37,6 +39,8 @@ Not in scope (park each with a one-line cost, Rule 14): the natural spelling `Kh
 - Audit of consumers (grep, 2026-11-25): the only production callers of `stateReadCausal` are `checkScanCore` in `Scan.lean` and Phase 5 of `Compile.lean`; no module under `LeanNCD/Semantics/` mentions causality or look-back (scan history retention reasons about allocation, not read rows). Re-run the grep for `stateReadCausal`, `causalAdvancingRow`, `stateReadNotCausal`, `causalityFailure` over `leanncd/` and `papers/` and list any consumer I missed.
 
 ## 3. Traps (pre-flight facts; each is respected by Appendix B)
+
+(Annotation 2026-11-26: Lean now accepts a step statement's `where` mask over its own scan axis (live step coordinate); the JAX renderer still refuses it (`axiswiseContextMask`). See `jax_step_mask_scope.md`.)
 
 1. A `where` mask over the scan axis is refused (`maskAxisNotOutput`): the window mask is DATA (`Mk[u, t]`, additive `-1.0e9`), as in `kv_cache`. The mask now only says which cells EXIST (slot `>= 0`); it carries no safety. Without it a cell with slot `< 0` zero-pads and attends with score 0 (non-vacuity gap 0.463).
 2. Extents pairwise distinct: `t = 6`, `u = 5`, `k = 4`, `i = 3`, `v = 2`. The extra axis needs its declaration `axis u : ℕ = 5`.

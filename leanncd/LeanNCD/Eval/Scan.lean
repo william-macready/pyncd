@@ -49,9 +49,15 @@ def scanScatterSourceAxes (slots : List LHSSlot) : List AxisSpec :=
     The storage refusal (`rejectUnsupportedStorage`, `Contract.lean`) is installed at the ENTRY for
     the same reason it is on `evalPlain`: the `.scatter` arm reaches its own
     `unsupportedScatterNonlin` check and rebuilds its slots before delegating, so an f32 scatter
-    would otherwise be reported as a nonlinearity failure rather than a dtype one. -/
+    would otherwise be reported as a nonlinearity failure rather than a dtype one.
+
+    `maskContext` (default empty) binds axes outside the slice for a `where` mask: a scan STEP
+    statement passes its live step `seed`, so a mask over the scan axis reads the current step. A
+    BASE statement passes nothing, so a mask over its pinned axis reads coordinate 0, exactly as the
+    checked plan's base block (rank-0 mask, empty pins) does. -/
 def evalStmtSliceSeeded (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
-    (seed : HashMap UID Int) (s : Stmt) : Except EvalError (String × DenseTensor) := do
+    (seed : HashMap UID Int) (s : Stmt) (maskContext : HashMap UID Int := {}) :
+    Except EvalError (String × DenseTensor) := do
   rejectUnsupportedStorage decls (stmtStorageNames s)
   -- Marker agreement covers the scatter arm too, which never reaches `resolveNonlin`.
   match s with
@@ -62,7 +68,7 @@ def evalStmtSliceSeeded (decls : List Decl) (env : HashMap String DenseTensor) (
       let (_, slice) ← evalAssignDtypedSeeded decls env sizes seed nm slots rhs
       let sliceUids := (slots.filterMap (·.axisUID?)).filter (fun u => ! seed.contains u)
       let rn ← resolveNonlin rhs.nonlin slots sliceUids
-      return (nm, applyNonlin rn sliceUids slice)
+      return (nm, applyNonlin rn sliceUids slice maskContext)
   | .scatter nm slots rhs =>
       if rhs.nonlin ≠ Nonlin.identity then
         throw (.unsupportedScatterNonlin nm)
@@ -404,7 +410,7 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
         let seed : HashMap UID Int := (axUids.zip tup).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) {}
         let mut stepEnv := work
         for s in recur do
-          let (nm, slice) ← evalStmtSliceSeeded decls stepEnv sizes seed s
+          let (nm, slice) ← evalStmtSliceSeeded decls stepEnv sizes seed s (maskContext := seed)
           -- classify by NAME: only the allocated scan states (`stateNames`) are written into `work`.
           -- A per-step intermediate may itself carry an iteration slot (a recurrence-only
           -- destination with the same all-axis `+1` shape as a state result — nothing in the
