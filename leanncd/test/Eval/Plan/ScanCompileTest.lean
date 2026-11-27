@@ -1964,6 +1964,18 @@ def smBlock (dt : ScalarDType) (rank : Nat) : RawPlanBlock :=
 #guard (checkPlanBlock (smBlock .f64 0)).toOption.isSome
 #guard (checkPlanBlock (smBlock .f64 1)).toOption.isSome
 
+-- (a') a plan with NO mask reads no context, so its rank must be 0: in a block of context rank 1 a
+-- maskless step with rank 1 passes the `0 ∨ contextRank` test, and is refused by the maskless arm
+-- with expected rank 0. (At top level the first test already refuses it, so only a block pins the
+-- maskless arm.) Accept neighbour: the same maskless step at rank 0.
+def smMaskless (rank : Nat) : RawPlanBlock :=
+  { smBlock .f64 0 with
+    steps := #[.assign smAssign, .axiswise { smAxiswise 0 with mask := none, maskContextRank := rank }] }
+#guard match checkPlanBlock (smMaskless 1) with
+  | .error (.nonlin 1 (.maskContextRankMismatch 0 1)) => true
+  | _ => false
+#guard (checkPlanBlock (smMaskless 0)).toOption.isSome
+
 -- (b) the live ctx decides the mask. `X = [[1,2,3],[4,5,6]]`. ctx=0: `o ≤ 0` keeps only `o=0` →
 -- `[1,0,0]`. ctx=1: `o ≤ 1` keeps `[4,5]` → `[1/(1+e), e/(1+e), 0]`. Reading ctx as 0 at ctx=1 would
 -- give `[1,0,0]` again. Values cross-checked by `papers/step_mask_files/expected_step_mask.py`.

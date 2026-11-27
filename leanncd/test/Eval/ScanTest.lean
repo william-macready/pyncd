@@ -1645,5 +1645,81 @@ run_cmd do
             throwError s!"non-state pinned read (plain dest {viaPlainDest}) must zero-pad: {repr Y.data}"
         | none => throwError s!"non-state pinned read (plain dest {viaPlainDest}): no Y"
 
+-- A `.free`/`.freeNorm` slot on an axis the reference SEEDS for that statement (a base's own
+-- `.iterAt` pins, any iteration axis of a step) is refused with `scanSeededAxisAsOutput`. Before the
+-- guard the reference dropped the slot and wrote at the seed coordinate: it accepted these programs
+-- (the checked plan refuses them in `compileScan` Phase 1) and returned silently wrong values for
+-- some, e.g. an identity scratch `T[l, j] := S[l, j]` (P2) and the source-reachable
+-- `S[j, 0, l] := X[j, l]; S[j., l+1, l] := softmax(where l ≤ 0)(S[j, l, l])` (SRC). Axis uids:
+-- `l` = 9 (size 3), `j` = 1 (size 2), `k` = 2 (size 2).
+run_cmd do
+  let j := ax "j" 1; let k := ax "k" 2; let l := ax "l" 9
+  let envX : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" (tensorOf [2] [1, 3])
+  let envXL : HashMap String DenseTensor :=
+    ({} : HashMap String DenseTensor).insert "X" (tensorOf [2, 3] [1, 3, 5, 2, 4, 6])
+  let sizes := (((({} : HashMap UID Nat).insert 1 2).insert 2 2).insert 9 3)
+  let rhs (nm : String) (idx : List IdxExpr) (nl : Nonlin) : RHSExpr :=
+    { body := { terms := [{ factors := [.read nm idx] }] }, nonlin := nl }
+  let maskL : BoolExpr := .rel .le (.embed (.axis l)) (.embed (.const 0))
+  let baseS : Stmt := .assign "S" [.iterAt l 0, .free j] (rhs "X" [.axis j] .identity)
+  let stepS : Stmt := .assign "S" [.iterNext l, .free j] (rhs "T" [.axis l, .axis j] .identity)
+  -- P1: scratch `T[.free l, .freeNorm j] := normalize(where l ≤ 0)(S[l, j])` (recurrence stmt 0).
+  let p1 : Stmt := .assign "T" [.free l, .freeNorm j]
+    (rhs "S" [.axis l, .axis j] (.axiswise .normalize (some maskL)))
+  match evalScanF64 [] envX sizes (.scan "scn" [l] [baseS] [p1, stepS] false) with
+  | .error (.scanSeededAxisAsOutput "scn" "T" false 0 9) => pure ()
+  | .error e => throwError s!"seeded free P1: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- P2: identity scratch `T[.free l, .free j] := S[l, j]` (the silently wrong copy).
+  let p2 : Stmt := .assign "T" [.free l, .free j] (rhs "S" [.axis l, .axis j] .identity)
+  match evalScanF64 [] envX sizes (.scan "scn" [l] [baseS] [p2, stepS] false) with
+  | .error (.scanSeededAxisAsOutput "scn" "T" false 0 9) => pure ()
+  | .error e => throwError s!"seeded free P2: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- P3: a state whose base AND result carry `.free l` next to the `.iter` slot: the BASE is the
+  -- first offender (`.iterAt l 0` and `.free l` in one statement).
+  let baseS3 : Stmt := .assign "S" [.iterAt l 0, .free j, .free l] (rhs "X" [.axis j] .identity)
+  let stepS3 : Stmt := .assign "S" [.iterNext l, .freeNorm j, .free l]
+    (rhs "S" [.axis l, .axis j, .axis l] (.axiswise .normalize (some maskL)))
+  match evalScanF64 [] envX sizes (.scan "scn" [l] [baseS3] [stepS3] false) with
+  | .error (.scanSeededAxisAsOutput "scn" "S" true 0 9) => pure ()
+  | .error e => throwError s!"seeded free P3: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- P3b: the same result `.free l` with an ACCEPTABLE base (`.free k` is no seed of that base): the
+  -- STEP arm fires on the state result.
+  let baseS3b : Stmt := .assign "S" [.iterAt l 0, .free j, .free k] (rhs "X" [.axis j] .identity)
+  match evalScanF64 [] envX sizes (.scan "scn" [l] [baseS3b] [stepS3] false) with
+  | .error (.scanSeededAxisAsOutput "scn" "S" false 0 9) => pure ()
+  | .error e => throwError s!"seeded free P3b: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- SRC: `S[j, 0, l] := X[j, l]; S[j., l+1, l] := softmax(where l ≤ 0)(S[j, l, l])`, the shape a
+  -- source program compiles to (the plan refuses it with `duplicateAxisInLhs`). The reference used to
+  -- return a `[2,3,3]` value that wrote only cell `(0,0)` of the base face.
+  let baseSrc : Stmt := .assign "S" [.free j, .iterAt l 0, .free l] (rhs "X" [.axis j, .axis l] .identity)
+  let stepSrc : Stmt := .assign "S" [.freeNorm j, .iterNext l, .free l]
+    (rhs "S" [.axis j, .axis l, .axis l] (.axiswise .normalize (some maskL)))
+  match evalScanF64 [] envXL sizes (.scan "scn" [l] [baseSrc] [stepSrc] false) with
+  | .error (.scanSeededAxisAsOutput "scn" "S" true 0 9) => pure ()
+  | .error e => throwError s!"seeded free SRC: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+
+-- ACCEPT neighbour: a base `.free c` on a scan axis DIFFERENT from the statement's own pin
+-- (`dp[.iterAt r 0, .free c]`, the 2-D donor of the multi-base fixture above) is no seeded slot and
+-- stays accepted, as does the step's `.iterNext` on both axes.
+run_cmd do
+  let r := ax "r" 1; let c := ax "c" 2
+  let env : HashMap String DenseTensor :=
+    ((({} : HashMap String DenseTensor).insert "ROWFACE" (tensorOf [2] [0, 1])).insert "ONE"
+      (tensorOf [] [1])).insert "T" (tensorOf [2, 2] [1, 1, 1, 1])
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2
+  let baseFace : Stmt := .assign "dp" [.iterAt r 0, .free c] (raRhs "ROWFACE" [.axis c])
+  let basePoint : Stmt := .assign "dp" [.iterAt r 1, .iterAt c 0] (raRhs "ONE" [])
+  let recur : Stmt := .assign "dp" [.iterNext r, .iterNext c]
+    { body := { terms := [{ factors := [.read "dp" [.axis r, .axis c]] },
+                          { factors := [.read "T" [.axis r, .axis c]] }] }, nonlin := .identity }
+  match evalScanF64 [] env sizes (.scan "dp" [r, c] [baseFace, basePoint] [recur] false) with
+  | .error e => throwError s!"base .free on the other scan axis must stay accepted: {e}"
+  | .ok _ => pure ()
+
 end LeanNCD.Eval
 
