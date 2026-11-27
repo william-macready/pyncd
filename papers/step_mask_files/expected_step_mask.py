@@ -109,3 +109,21 @@ def zz(keep_fn):
 
 show("other-scan Zz[3,2,2]", zz(lambda t: t <= 1))
 show("other-scan ctx0 Zz[3,2,2]", zz(lambda t: 0 <= 1))
+
+
+# (C) `seededAxisZero` (ScanCompileTest T5.3): iter l = 3; S[0, i] := X[i];
+#     S[l+1, i~] := normalize(where l = 0)(S[l, i]), X = [1, 3].  Sum-normalization (not softmax);
+#     the mask reads the live step coordinate: true at step 0, false at step 1 (all-masked -> zeros).
+#     Output S[l][i], shape [3,2].
+def normalize_masked(xs, keep):
+    live = sum(x for x, k in zip(xs, keep) if k)
+    if not any(keep):
+        return [0.0] * len(xs)
+    return [x / live if k else 0.0 for x, k in zip(xs, keep)]
+
+
+XC = [1.0, 3.0]
+rows = [XC]
+for l in range(2):
+    rows.append(normalize_masked(rows[-1], [l == 0] * 2))
+show("seededAxisZero S[3,2]", rows)

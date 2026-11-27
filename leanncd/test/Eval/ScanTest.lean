@@ -1721,5 +1721,30 @@ run_cmd do
   | .error e => throwError s!"base .free on the other scan axis must stay accepted: {e}"
   | .ok _ => pure ()
 
+-- The F64 wrapper forwards `maskContext`. Step statement
+-- `S[l+1, i~] := normalize(where l = 0)(S[l, i])` at seed `l = 1`, with `S` rows `[1,3], [2,2], [0,0]`
+-- (read row `l = 1` = `[2,2]`). With `maskContext := seed` the mask reads the LIVE step `l = 1`:
+-- `1 = 0` is false for every `i`, the row is all-masked, result `[0, 0]`. With the default (empty)
+-- context `l` reads coordinate 0: `0 = 0` is true, result `normalize([2,2]) = [0.5, 0.5]`. A wrapper
+-- that drops the forwarding gives `[0.5, 0.5]` in the first case and fails this pin.
+run_cmd do
+  let i := ax "i" 1; let l := ax "l" 9
+  let env : HashMap String DenseTensor :=
+    ({} : HashMap String DenseTensor).insert "S" (tensorOf [3, 2] [1, 3, 2, 2, 0, 0])
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 9 3
+  let seed : HashMap UID Int := ({} : HashMap UID Int).insert 9 1
+  let mask : BoolExpr := .rel .eq (.embed (.axis l)) (.embed (.const 0))
+  let step : Stmt := .assign "S" [.iterNext l, .freeNorm i]
+    { body := { terms := [{ factors := [.read "S" [.axis l, .axis i]] }] }
+    , nonlin := .axiswise .normalize (some mask) }
+  match evalStmtSliceSeededF64 [] env sizes seed step (maskContext := seed) with
+  | .error e => throwError s!"F64 maskContext (live): {e}"
+  | .ok (_, t) => unless t.shape == [2] && t.data == #[0.0, 0.0] do
+      throwError s!"F64 maskContext (live step l = 1): expected [0, 0], got {repr t.data}"
+  match evalStmtSliceSeededF64 [] env sizes seed step with
+  | .error e => throwError s!"F64 maskContext (default): {e}"
+  | .ok (_, t) => unless t.shape == [2] && t.data == #[0.5, 0.5] do
+      throwError s!"F64 maskContext (default, coordinate 0): expected [0.5, 0.5], got {repr t.data}"
+
 end LeanNCD.Eval
 

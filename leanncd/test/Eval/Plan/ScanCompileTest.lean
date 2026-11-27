@@ -1916,6 +1916,8 @@ def seededAxisZero : ScheduledProgram :=
   , explicitSizes := ({} : HashMap UID Nat).insert p9l.uid 3 }
 def seededAxisZeroInputs : HashMap String DenseTensor :=
   ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
+-- Expected value independently simulated in `papers/step_mask_files/expected_step_mask.py`
+-- (entry `seededAxisZero`, plain Python).
 def seededAxisZeroCheck : Except String Unit :=
   t4diff "T5.3 seededAxisZero" seededAxisZero seededAxisZeroInputs "S"
     ⟨[3, 2], #[1, 3, 0.25, 0.75, 0, 0]⟩
@@ -2023,11 +2025,15 @@ def baseParity : ScheduledProgram :=
   , explicitSizes := ({} : HashMap UID Nat).insert pbl.uid 3 }
 def baseParityInputs : HashMap String DenseTensor :=
   ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
-def baseParityCheck : Except String Unit :=
-  t4diff "base parity" baseParity baseParityInputs "S" ⟨[3, 2], #[0, 0, 0.25, 0.75, 0.25, 0.75]⟩
-run_cmd match baseParityCheck with
+-- Only the REFUSAL is pinned (no value exists to compare: the plan refuses before running).
+run_cmd do
+  let sig := InputSignature.ofDenseInputs baseParityInputs
+  match prepareEvalPlan (explicitF64Sched baseParity) sig with
   | .ok _ => throwError "base parity: a base at literal 1 was unexpectedly accepted"
-  | .error m => unless (m.splitOn "baseWriteNotAtBoundary").length > 1 do throwError m
+  | .error e =>
+      let msg := render e.cause
+      unless (msg.splitOn "baseWriteNotAtBoundary").length > 1 do
+        throwError s!"base parity: wrong refusal {msg}"
 
 /-! ### Fixture — Eliminated `.free` scan coordinate (Slice 5.3, template6-derived)
 
