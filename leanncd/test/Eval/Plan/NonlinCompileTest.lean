@@ -504,4 +504,65 @@ def kvMaskWindow : TLProgram := tlprog!{ iter t = 4
                0, 0, 0.2689414213699951, 0.2689414213699951,
                0, 0, 0, 0.7310585786300049])
 
+/-- Every MASKED axiswise node inside a scan STEP block of the compiled plan, as
+    `(maskContextRank, step-block context rank)`, in plan order; `none` if the program does not
+    compile. Lets a pin state the rank the compiler chose directly, not only its numeric effect. -/
+def stepMaskRanks (p : TLProgram) (inputs : HashMap String DenseTensor) : Option (List (Nat × Nat)) :=
+  match p.explicitF64.compileToScheduled.run 0 with
+  | .error _ _ => none
+  | .ok sched _ =>
+      match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+      | .error _ => none
+      | .ok prepared => some <| prepared.plan.raw.steps.toList.flatMap fun
+          | .scan s => s.stepBlock.steps.toList.filterMap fun
+              | .axiswise a =>
+                  if a.mask.isSome then some (a.maskContextRank, s.stepBlock.contextShape.size)
+                  else none
+              | _ => none
+          | _ => []
+
+-- (v) Multi-axis context ORDER. A two-axis scan with DIFFERENT extents (`r = 3`, `c = 4`; live context
+-- `(r, c)` over `[0,2) × [0,3)`), whose step statement masks over BOTH scan axes asymmetrically:
+-- `where r ≤ c`. The mask basis is `[j, r, c]` (tensor coordinate, then the context in block-context
+-- order), so the compiled node has rank 2 in a rank-2 block. `X[j, r] = [[0,1,5],[ln 3,2,7]]` fills the
+-- `c = 0` column; cells `(0, c ≥ 1)` are never written (real zero). Context `(1,0)` is the only one
+-- with `r > c`, so `G[:,2,1]` is zeros; `(0,1)`, `(0,2)`, `(1,2)` softmax a zero column to `[½,½]`.
+-- Read with the context order SWAPPED (`(c, r)`, i.e. `c ≤ r`) the same program gives
+-- `[0,0,0,0, 1,.25,0,0, 5,.2689414213699951,.37754066879814546,0,
+--   ln 3,0,0,0, 2,.75,0,0, 7,.7310585786300049,.6224593312018546,0]` instead (mutant M6).
+def stepMaskGrid : TLProgram := tlprog!{ iter r = 3, c = 4
+  G[j, r, 0]          := X[j, r]
+  G[j., r +1, c +1]   := softmax(where r ≤ c)(G[j, r, c]) }
+def stepMaskGridIn : HashMap String DenseTensor :=
+  HashMap.ofList [("X", tl [2,3] [0, 1, 5, Float.log 3, 2, 7])]
+#guard diffEqB stepMaskGrid stepMaskGridIn "G"
+    (tl [2,3,4] [0, 0, 0, 0,
+                 1, 0.25, 0.5, 0.5,
+                 5, 0, 0.37754066879814546, 0.5,
+                 Float.log 3, 0, 0, 0,
+                 2, 0.75, 0.5, 0.5,
+                 7, 0, 0.6224593312018546, 0.5])
+#guard stepMaskRanks stepMaskGrid stepMaskGridIn == some [(2, 2)]
+
+-- (vi) A mask over the EARLIER scan's axis inside a later scan (donor `maskOtherScanAxisFree`,
+-- `StructuralTest`). In the `l` scan, `t` is an ordinary free output axis of `Zz` (the earlier `t`
+-- scan's history, read post-scan), so the mask is NOT step-aware: rank 0 in a rank-1 block, and it
+-- reads `t`'s real coordinate. `H0 = [0,1]`, `A = [1,2]` give `H[:,t] = [0,1],[0,2],[0,4]`; rows
+-- `t = 0, 1` softmax, row `t = 2` is all-masked → zeros. A reading of `t` as 0 (or as the live `l`
+-- coordinate, which is 0 at the only step) would softmax row 2 too: `[.017986209962091555,
+-- .9820137900379085]`.
+def stepMaskOtherScan : TLProgram := tlprog!{ iter t = 3
+  iter l = 2
+  H[d, 0]         := H0[d]
+  H[d, t +1]      := H[d, t] · A[d]
+  Zz[t, d, 0]     := H[d, t]
+  Zz[t, d., l +1] := softmax(where t ≤ 1)(Zz[t, d, l]) }
+def stepMaskOtherScanIn : HashMap String DenseTensor :=
+  HashMap.ofList [("H0", tl [2] [0, 1]), ("A", tl [2] [1, 2])]
+#guard diffEqB stepMaskOtherScan stepMaskOtherScanIn "Zz"
+    (tl [3,2,2] [0, 0.2689414213699951, 1, 0.7310585786300049,
+                 0, 0.11920292202211755, 2, 0.8807970779778823,
+                 0, 0, 4, 0])
+#guard stepMaskRanks stepMaskOtherScan stepMaskOtherScanIn == some [(0, 1)]
+
 end LeanNCD.Eval.Plan.NonlinCompileTest

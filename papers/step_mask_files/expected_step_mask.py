@@ -65,3 +65,47 @@ show("kv causal ctx0", kv(lambda s, t: s <= 0))
 Xb = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
 for c in (0, 1):
     print("block ctx", c, softmax_masked(Xb[c], [o <= c for o in range(3)]))
+
+# (A) two-axis scan, extents differ: iter r = 3, c = 4; G[j,r,0] := X[j,r];
+#     G[j., r+1, c+1] := softmax(where r <= c)(G[j,r,c]).  The live context is (r, c) in
+#     [0,2) x [0,3); unwritten cells (r = 0, c >= 1) keep the real zero.  Output G[j][r][c], [2,3,4].
+XA = [[0.0, 1.0, 5.0], [math.log(3.0), 2.0, 7.0]]
+
+
+def grid(keep_fn):
+    G = [[[0.0] * 4 for _ in range(3)] for _ in range(2)]
+    for j in range(2):
+        for r in range(3):
+            G[j][r][0] = XA[j][r]
+    for r in range(2):
+        for c in range(3):
+            col = softmax_masked([G[j][r][c] for j in range(2)], [keep_fn(r, c)] * 2)
+            for j in range(2):
+                G[j][r + 1][c + 1] = col[j]
+    return [G[j][r] for j in range(2) for r in range(3)]
+
+
+show("grid G[2,3,4]", grid(lambda r, c: r <= c))
+# the same mask with the context order swapped, i.e. read as `c <= r`
+show("grid swapped G[2,3,4]", grid(lambda r, c: c <= r))
+
+# (B) mask over the EARLIER scan's axis: iter t = 3, l = 2; H[d,0] := H0[d]; H[d,t+1] := H[d,t]*A[d];
+#     Zz[t,d,0] := H[d,t]; Zz[t,d.,l+1] := softmax(where t <= 1)(Zz[t,d,l]).  `t` is a free output axis
+#     of the l-scan, so the mask reads its real coordinate.  Output Zz[t][d][l], shape [3,2,2].
+H0 = [0.0, 1.0]
+AB = [1.0, 2.0]
+H = [H0]
+for t in range(2):
+    H.append([H[-1][d] * AB[d] for d in range(2)])
+
+
+def zz(keep_fn):
+    out = []
+    for t in range(3):
+        nxt = softmax_masked(H[t], [keep_fn(t)] * 2)
+        out.extend([[H[t][d], nxt[d]] for d in range(2)])
+    return out
+
+
+show("other-scan Zz[3,2,2]", zz(lambda t: t <= 1))
+show("other-scan ctx0 Zz[3,2,2]", zz(lambda t: 0 <= 1))

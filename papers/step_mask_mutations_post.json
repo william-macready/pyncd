@@ -64,5 +64,18 @@
     "expect": [
       "substBool (maskSubst maskTestGeom pinX"
     ]
+  },
+  {
+    "label": "M6 (step-site mask basis reverses the scan context order)",
+    "task": "T3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "          let maskCtx := if stepAware then ctxUids else []",
+    "new": "          let maskCtx := if stepAware then ctxUids.reverse else []",
+    "targets": [
+      "Eval.Plan.NonlinCompileTest"
+    ],
+    "expect": [
+      "diffEqB stepMaskGrid stepMaskGridIn"
+    ]
   }
 ]
