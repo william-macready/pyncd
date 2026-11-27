@@ -32,6 +32,8 @@ Not in scope (park with a one-line cost if you find more, Rule 14): a native gri
 ## 3. Traps (pre-flight facts; each is respected by the programs below)
 
 1. **Padding rows must be FINITE.** `X` has `k = 8` rows (the iteration extent) but only `T = 5` real ones; rows 5..7 are `0.0`, NOT NaN. The usual NaN spare-row convention of the other fixtures does NOT apply here: `Nn` is computed at every step and multiplied by `Act = 0`, and `0 * NaN = NaN`. Measured in the probe with NaN in X rows 5..7: 24 of 96 entries of `G` NaN, `G[2, :, 7]` non-finite, every input gradient non-finite. So the spare-slot pin of the layers-time slice is replaced by a padding-perturbation pin (section 5). Every input of these fixtures is finite.
+(Annotation 2026-11-26: `maskAxisNotOutput` no longer refuses a step statement's mask over its own scan axis on Lean; the JAX renderer still refuses a step-aware mask (`axiswiseContextMask`). See `jax_step_mask_scope.md`.)
+
 2. `Hold = 1 - Act` must be supplied as DATA (no subtraction in a term, no `where` mask over a scan axis, which is refused: `maskAxisNotOutput`).
 3. The iteration extent is steps plus one (position 0 holds the initial state): `iter k = 8` gives `step_count` 7 = `T + L - 1` with `T = 5`, `L = 3`.
 4. `Ix[k, l, e]` carries the scan axis on its left-hand side: it is a hoisted table and an EXPORT (as in the layers-time `Kn`), not a per-step intermediate.

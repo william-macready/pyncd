@@ -303,7 +303,9 @@ so it cannot see an orientation error by itself).
     the reference; a plain destination recorded as a state) fails a named guard.
   - SUPERSEDED (2026-11-08): the role-based rule of section 10 removed the predicate exclusion, and the comment at
     the rule now says that the scan axis is an ordinary axis in a post statement. Original note: the predicate
-    exclusion is partial: an axiswise `where=` mask over a scan axis is not inspected, and a post
+    exclusion is partial: an axiswise `where=` mask over a scan axis is not inspected (since 2026-11-22 it is
+    refused at the source, `maskAxisNotOutput`; since 2026-11-26 a STEP statement's mask over its own scan axis is
+    accepted and reads the live step, see the correction after section 26), and a post
     statement may mention the iteration axis through an external tensor (`Y[q] := H[q,2] · c[l]`, or a left-hand
     side carrying `l`: `y[j,l] := C·h[k,2]`, previously `scanProjectionUnsupported`); these now get ordinary
     plain-statement meaning. The comment at the rule does not say so. About 0.5 dispatch to state it or tighten it.
@@ -1634,6 +1636,8 @@ So a `where` mask over ANY axis that is not one of the statement's own `.free`/`
 
 **Next.** P1b (pinned against both the incremental loop and the full causal recompute), P4n, P3 and P6 are now fixtures in both precisions (section 27). A true nested or grid scan (P5) and a renamed-axis state read (P2) still need a Lean checked-plan change and JAX per-axis counters; each is a separate slice with a plan. **Correction (2026-11-24, `jax_grid_scan_scope.md`):** for the stacked RNN with a layer axis, P5 is NOT needed: it runs today as one scan skewed onto `k = t + l` (exact to about 2e-16 on Lean, eager and jit); the checked plan's causality rule (offset <= 0 per axis) is what refuses a wavefront read, and the reference evaluator already computes the true grid values.
 
+**Correction (2026-11-26, step-aware masks, Lean side; `jax_step_mask_scope.md`, `step_mask_record.md`):** the rule recorded in this section is superseded for step statements and per-step intermediates only. A `where` mask there may mention its own enclosing scan's iteration axes, and the guard (`finalizeScans`, `stepScanAxes`), the reference evaluator, the checked plan (`RawAxiswisePlan.maskContextRank`, error `maskContextRankMismatch`), the dense workers and the unrolled differential all bind them to the LIVE step coordinate. So the "silent wrong answer" `softmax(where s <= t)` is now accepted AND correct on Lean, and the Slice 5.3 policy "reads coordinate 0" no longer holds for step statements (the `seededAxisZero` hand-built fixture keeps it for a rank-0 mask). Unchanged and still refused at the source: base-statement masks over the pinned scan axis, contracted axes, unbound axes (`maskAxisNotOutput`). The JAX renderer refuses a step-aware mask with `axiswiseContextMask`; JAX support is the next slice, so the Iverson factor and the data mask remain the working forms on JAX. The text of this section is kept as written.
+
 **Correction (2026-11-25, section 29):** extent-bounded own-clock window/lag state-history reads need neither per-axis JAX counters nor a native grid scan. The production checker now admits them from iteration extents alone. Bare `Kh[k, s]` and a scan-dependent `where` mask remain refused; natural masked full-history syntax is still parked.
 
 ## 27. Layers/time execution: KV cache, sequential scans and old-state layer skew (2026-11-23)
@@ -2631,6 +2635,7 @@ Parked, none required for this goal:
 
 Bare renamed-axis history reads still fail causality, and scan-dependent `where`
 still fails `maskAxisNotOutput`; neither is masked into safety by this change.
+(Re-checked 2026-11-26: the program named is `Pa[s.] := softmax(where s <= t)(Kh[k, s] . Qr[t, k])`. Its mask is now ACCEPTED by the Lean guard, because `s` is an own output axis and `t` is the enclosing scan axis of a step statement; the program is still refused, but by the causality check on the bare `Kh[k, s]` read, not by `maskAxisNotOutput`. A scan-dependent mask over a contracted or unbound axis still fails `maskAxisNotOutput`.)
 The reference evaluator remains more permissive. Nothing under indexed execution,
 the emitter, runtime, grammar, an existing fixture or a mutation manifest was edited.
 

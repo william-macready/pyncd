@@ -15,6 +15,8 @@ Deliver, on the branch `jax-kv-window-exec`:
 2. Two fixtures, each in BOTH precisions, pinned against an independent numpy model: `kv_window` (read `Kh[k, t + u - 4]`, a window of `W = 5` slots ending at `t`) and `kv_lag` (read `Kh[k, t - u]`, lag `u`; a NEGATIVE coefficient on the extra axis).
 3. Mutants (checker and fixtures), docs and record section 29.
 
+(Annotation 2026-11-26: the step-aware `where` mask named in the next paragraph now exists on the Lean side (guard, reference, checked plan, unrolled differential); JAX support is the next slice, and the bare `Kh[k, s]` read is still refused by causality; see `jax_step_mask_scope.md`.)
+
 Not in scope (park each with a one-line cost, Rule 14): the natural spelling `Kh[k, s]` with `softmax(where s <= t)` (needs a step-aware `where` mask in the reference evaluator, the checked plan and the JAX emitter plus a dataflow proof; it is refused today by `maskAxisNotOutput` AND by the causality check, and stays so); Iverson guard factors on real or max-plus terms for JAX (refused: `iversonFactor`); attention that also includes the CURRENT token's key (see trap 4); a window shorter than the history (needs another extent set); window reads in a MULTI-axis scan (the predicate handles them, no fixture); making the reference evaluator refuse non-causal reads; changing `IndexedAffineScanProfile` or any file under `experiments/indexed_execution/`.
 
 ## 2. Baseline, and what was observed versus not

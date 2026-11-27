@@ -249,7 +249,9 @@ fragment.
   `affineWidthMismatch`), and Dense evaluates the predicate per contraction coordinate (`true` ⇒
   `1.0`, `false` annihilates the term). Source `BoolExpr` lowers to the positional form through one
   private recursive core reached only via `lowerFactorPredicate` (basis `context ++ output ++
-  reduction`, real pins) and `lowerMaskPredicate` (local non-seeded output basis, empty pins).
+  reduction`, real pins) and `lowerMaskPredicate` (local non-seeded output basis, empty pins; since 2026-11-26 a scan STEP statement's
+  mask also sees the enclosing scan's iteration axes through the block context, `maskContextRank`; the
+  JAX renderer refuses such a step-aware mask with `axiswiseContextMask` until the JAX slice).
   Axiswise `where=` masks add `RawAxiswisePlan.mask : Option PosBoolExpr`, with the `Eval/Nonlin.lean`
   row worker refactored around a shared `included?` callback so one `softmax`/`normalize`/`l2`
   serves both the source wrapper and the checked adapter. Every filtered read traversal keeps the
