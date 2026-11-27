@@ -560,33 +560,37 @@ private def rewriteFactor (g : ScanGeom) (σ : UID → Option Int)
       -- `substBool σ b` is the residual predicate the ordinary evaluator resolves against the leaf.
       pure (.iverson (substBool σ b))
 
-/-- The mask substitution induced by a source statement's LHS. Seeded scan axes are absent from the
-    local output basis and therefore read as zero; a scan axis left free by a base statement is
-    evaluated at the current base coordinate represented by `σ`. -/
-private def maskSubst (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot) :
-    UID → Option Int := fun u =>
+/-- The mask substitution induced by a source statement's LHS. A scan axis left free by a base
+    statement is evaluated at the current base coordinate represented by `σ`. A seeded scan axis is
+    absent from the local output basis: inside a recurrence body (`step`: a state's step statement or
+    a per-step intermediate, which has no iteration slot of its own, hence the flag) the mask reads
+    the LIVE step coordinate `σ u`; in a base statement it reads ZERO (a base mask over its pinned
+    axis is refused at the source; hand-built schedules read 0 on the reference and the plan). -/
+private def maskSubst (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot)
+    (step : Bool := false) : UID → Option Int := fun u =>
   if g.axes.any (·.uid == u) then
     if sourceSlots.any (fun
         | .free a | .freeNorm a => a.uid == u
         | _ => false) then σ u
-    else some 0
+    else if step then σ u else some 0
   else none
 
 /-- Rewrite one statement's nonlinearity for the leaf program. `identity`/`pointwise` pass through.
     An `.axiswise` operation whose marked normalization axis (`.freeNorm` among `sourceSlots`) is an
     eliminated scan coordinate is REJECTED with the named fragment
     error — the per-coordinate leaf unroller cannot reduce along an axis it has eliminated. Its mask
-    (when present) is rewritten with the MASK policy, DISTINCT from the Iverson-factor policy: every
-    seeded scan axis reads ZERO, while a free base scan axis takes its enumerated base coordinate;
+    (when present) is rewritten with the MASK policy (`maskSubst`): a seeded scan axis reads the live
+    step coordinate in a recurrence body (`step`) and ZERO in a base statement, while a free base scan
+    axis takes its enumerated base coordinate;
     every retained non-scan output axis stays an expression resolved against the leaf's coordinate. -/
-private def rewriteNonlin (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot) :
-    Nonlin → Except String Nonlin
+private def rewriteNonlin (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot)
+    (step : Bool) : Nonlin → Except String Nonlin
   | .axiswise fn m => do
       match sourceSlots.findSome? (fun sl => match sl with | .freeNorm a => some a | _ => none) with
       | some a =>
           if g.axes.any (·.uid == a.uid) then .error fragment.eliminatedNormalizationAxis
       | none => pure ()
-      pure (.axiswise fn (m.map (substBool (maskSubst g σ sourceSlots))))
+      pure (.axiswise fn (m.map (substBool (maskSubst g σ sourceSlots step))))
   | other => pure other
 
 private def maskTestGeom : ScanGeom :=
@@ -595,12 +599,16 @@ private def maskTestGeom : ScanGeom :=
 private def scanAxisMask : BoolExpr :=
   .rel .eq (.embed (.axis sx)) (.embed (.const 5))
 
--- A free base scan axis remains an output coordinate before leaf specialization, whereas a seeded
--- scan axis is absent from the output basis and therefore reads as zero.
+-- A free base scan axis remains an output coordinate before leaf specialization; a seeded scan axis
+-- is absent from the output basis and reads ZERO in a base statement, the live step literal in a step.
 #guard substBool (maskSubst maskTestGeom pinX [.free sx, .freeNorm sy]) scanAxisMask
   == BoolExpr.rel .eq (.embed (.const 5)) (.embed (.const 5))
 #guard substBool (maskSubst maskTestGeom pinX [.iterAt sx 0, .freeNorm sy]) scanAxisMask
   == BoolExpr.rel .eq (.embed (.const 0)) (.embed (.const 5))
+#guard substBool (maskSubst maskTestGeom pinX [.iterNext sx, .freeNorm sy] (step := true)) scanAxisMask
+  == BoolExpr.rel .eq (.embed (.const 5)) (.embed (.const 5))
+#guard substBool (maskSubst maskTestGeom pinX [.freeNorm sy] (step := true)) scanAxisMask
+  == BoolExpr.rel .eq (.embed (.const 5)) (.embed (.const 5))
 
 /-- Rewrite a whole RHS, preserving source term and factor order, and rewriting the nonlinearity
     (`rewriteNonlin`) — the mask must be lowered to the leaf's coordinates and an eliminated-axis
@@ -613,7 +621,7 @@ private def rewriteRHS (g : ScanGeom) (σ : UID → Option Int)
   let terms ← r.body.terms.mapM (fun t => do
     let fs ← t.factors.mapM (rewriteFactor g σ hasLeaf stepCoord)
     pure ({ factors := fs } : ProdTerm))
-  let nonlin ← rewriteNonlin g σ outSlots r.nonlin
+  let nonlin ← rewriteNonlin g σ outSlots stepCoord.isSome r.nonlin
   pure { r with body := { terms }, nonlin }
 
 /-- One unrolled scan node. -/

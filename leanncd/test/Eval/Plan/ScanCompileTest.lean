@@ -1843,7 +1843,8 @@ run_cmd match fixture10Check with | .ok _ => pure () | .error m => throwError m
 /-! ### Fixtures 14-15 — masked axiswise scan (Slice 5.3: rejection → ACCEPT + value)
 
 Formerly negative (`maskedAxiswiseNotSupported`); Slice 5.3 lowers a scan-block mask through
-`lowerMaskPredicate` (local NON-SEEDED output basis, empty pins) so both are now accepted and
+`lowerMaskPredicate` (local NON-SEEDED output basis, empty pins; exception: a step-aware mask over
+the statement's own scan axis takes the live step coordinate, see the step-mask pins) so both are now accepted and
 value-checked, source→checked differential. Both `t4mask`s below are trivially true, so the value
 equals the unmasked reduction — what they pin is that a masked base / masked recurrence COMPILES and
 RUNS through the checked path (mask width check, non-seeded basis) and agrees with the reference. -/
@@ -1892,14 +1893,15 @@ def maskedAxiswiseRecurCheck : Except String Unit :=
     ⟨[3, 2], #[1, 3, 0.25, 0.75, 0.25, 0.75]⟩
 run_cmd match maskedAxiswiseRecurCheck with | .ok _ => pure () | .error m => throwError m
 
-/-! ### Fixture — Seeded-axis-zero parity (Slice 5.3)
+/-! ### Fixture — Seeded-axis step-aware mask (Slice 5.3 fixture, restated for step-aware masks)
 
 The recurrence donor (fixture 15) with `where l = 0`. `l` is the SEEDED scan axis (`.iterNext`), so
-it is ABSENT from the mask's non-seeded output basis `[i]`; `lowerMaskPredicate` densifies it to no
-column and its EMPTY pins never bind it, so `l` evaluates as coordinate 0 at EVERY step. Hence
-`l = 0` is TRUE every step ⇒ no masking ⇒ the value equals fixture 15's unmasked recurrence. Were
-live scan context substituted for `l` (mutation 4), `l = 0` would be false at `l = 1`, all-masking
-that step's row → zeros, giving `[1,3,0.25,0.75,0,0]` instead. -/
+it is absent from the mask's output basis `[i]`; the step statement's mask reads the LIVE step
+coordinate instead (`lowerMaskPredicate` appends the context uids, `maskContextRank = 1`; the
+reference passes the step seed as `maskContext`). Hence `l = 0` is TRUE at step `l = 0` (row 1 =
+`normalize([1,3]) = [0.25,0.75]`) and FALSE at step `l = 1`, all-masking that step's row → zeros:
+`[1,3,0.25,0.75,0,0]`. The former coordinate-0 reading kept `l = 0` true at EVERY step and gave
+`[1,3,0.25,0.75,0.25,0.75]` (fixture 15's unmasked value) instead. -/
 def p9i : AxisSpec := ⟨"i", 41901, .real⟩
 def p9l : AxisSpec := ⟨"l", 41902, .nat⟩
 def seededAxisZeroMask : BoolExpr := .rel .eq (.embed (.axis p9l)) (.embed (.const 0))
@@ -1916,8 +1918,104 @@ def seededAxisZeroInputs : HashMap String DenseTensor :=
   ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
 def seededAxisZeroCheck : Except String Unit :=
   t4diff "T5.3 seededAxisZero" seededAxisZero seededAxisZeroInputs "S"
-    ⟨[3, 2], #[1, 3, 0.25, 0.75, 0.25, 0.75]⟩
+    ⟨[3, 2], #[1, 3, 0.25, 0.75, 0, 0]⟩
 run_cmd match seededAxisZeroCheck with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Plan-level step-aware mask pins (hand-built, no source)
+
+`maskContextRank` is checked against the enclosing context: 0 or the WHOLE block context, nothing
+else; a top-level node has context rank 0. A block axiswise mask of rank `contextShape.size` reads
+the block's live `ctx` appended after the tensor coordinate. -/
+
+-- Block: `Y[o] := X[ctx,o]` (`BlockTest.stepBlock`'s assignment), then `softmax` over `o` masked by
+-- `o ≤ ctx`. Mask leaves are `shape.size + 1 = 2` wide over `[o, ctx]`.
+def smSigs (dt : ScalarDType) : Array TensorSignature :=
+  #[{ shape := #[2,3], dtype := dt }, { shape := #[3], dtype := dt }, { shape := #[3], dtype := dt }]
+def smRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1,0], #[0,1]], «bias» := #[0,0] }
+  , sourceShape := #[2,3], oobPolicy := .zeroPad }
+def smAssign : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1], reductionPos := #[]
+               , factors := #[.read smRead] }]
+  , algebra := admittedAlgebra }
+def smMask : PosBoolExpr := .rel .le (.affine ⟨#[1,0], 0⟩) (.affine ⟨#[0,1], 0⟩)
+def smAxiswise (rank : Nat) : RawAxiswisePlan :=
+  { sourceSlot := 1, destinationSlot := 2, shape := #[3], axisPos := 0, fn := .softmax
+  , mask := some (match rank with
+      | 0 => .rel .le (.affine ⟨#[1], 0⟩) (.affine ⟨#[0], 0⟩)
+      | 2 => .rel .le (.affine ⟨#[1,0,0], 0⟩) (.affine ⟨#[0,1,0], 0⟩)
+      | _ => smMask)
+  , maskContextRank := rank }
+def smBlock (dt : ScalarDType) (rank : Nat) : RawPlanBlock :=
+  { contextShape := #[2], tensorSigs := smSigs dt, inputs := #[0]
+  , steps := #[.assign (if dt == .f32 then { smAssign with algebra := admittedAlgebraF32 } else smAssign),
+      .axiswise (smAxiswise rank)], outputs := #[2] }
+
+-- (a) rank mismatch: block context rank 1, mask rank 2 → refused with both ranks; a top-level node
+-- (context rank 0, `checkAxiswise`'s default, the `EvalPlan` caller) refuses rank 1.
+#guard match checkPlanBlock (smBlock .f64 2) with
+  | .error (.nonlin 1 (.maskContextRankMismatch 1 2)) => true
+  | _ => false
+#guard match checkAxiswise (smSigs .f64) (smAxiswise 1) with
+  | .error (.maskContextRankMismatch 0 1) => true
+  | _ => false
+-- accept neighbours: rank 0 and rank = context rank.
+#guard (checkPlanBlock (smBlock .f64 0)).toOption.isSome
+#guard (checkPlanBlock (smBlock .f64 1)).toOption.isSome
+
+-- (b) the live ctx decides the mask. `X = [[1,2,3],[4,5,6]]`. ctx=0: `o ≤ 0` keeps only `o=0` →
+-- `[1,0,0]`. ctx=1: `o ≤ 1` keeps `[4,5]` → `[1/(1+e), e/(1+e), 0]`. Reading ctx as 0 at ctx=1 would
+-- give `[1,0,0]` again. Values cross-checked by `papers/step_mask_files/expected_step_mask.py`.
+def smX : DenseTensor := { shape := [2,3], data := #[1,2,3,4,5,6] }
+def smAt1 : Array Float := #[0.2689414213699951, 0.7310585786300049, 0]
+def smApprox (a b : Array Float) (tol : Float) : Bool :=
+  a.size == b.size && (a.zip b).all (fun (x, y) => (x - y).abs ≤ tol)
+run_cmd do
+  match checkPlanBlock (smBlock .f64 1) with
+  | .error e => throwError s!"step-aware block rejected: {repr e}"
+  | .ok c =>
+      match runDenseBlock c [0] #[smX], runDenseBlock c [1] #[smX] with
+      | .ok s0, .ok s1 =>
+          unless smApprox s0[2]!.data #[1, 0, 0] 1e-12 && smApprox s1[2]!.data smAt1 1e-12 do
+            throwError s!"step-aware block: ctx0 {repr s0[2]!.data}, ctx1 {repr s1[2]!.data}"
+      | _, _ => throwError "step-aware block: run failed"
+  -- binary32 sibling: same block retagged f32, same answer to binary32 rounding.
+  match checkPlanBlockF32 (smBlock .f32 1) with
+  | .error e => throwError s!"step-aware f32 block rejected: {repr e}"
+  | .ok c =>
+      let x32 : DenseTensor32 := { shape := [2,3], data := smX.data.map Float.toFloat32 }
+      match runDenseBlock32 c [0] #[x32], runDenseBlock32 c [1] #[x32] with
+      | .ok s0, .ok s1 =>
+          let d0 := s0[2]!.data.map Float32.toFloat
+          let d1 := s1[2]!.data.map Float32.toFloat
+          unless smApprox d0 #[1, 0, 0] 1e-7 && smApprox d1 smAt1 1e-7 do
+            throwError s!"step-aware f32 block: ctx0 {repr d0}, ctx1 {repr d1}"
+      | _, _ => throwError "step-aware f32 block: run failed"
+
+/-! (c) Base parity. A base mask over its pinned scan axis is refused at the source; a hand-built
+schedule can only pin a base at the BOUNDARY literal 0 (a base at literal 1 is refused by the plan
+compiler, `baseWriteNotAtBoundary`, pinned here), and at 0 "reads 0" and "reads the literal" coincide.
+So the only distinguishing base case is unreachable on the plan. -/
+def pbi : AxisSpec := ⟨"i", 41951, .real⟩
+def pbl : AxisSpec := ⟨"l", 41952, .nat⟩
+def baseParityMask : BoolExpr := .rel .eq (.embed (.axis pbl)) (.embed (.const 0))
+def baseParity : ScheduledProgram :=
+  { decls := [.iter pbl 3]
+  , stmts := [.scan "S" [pbl]
+      [.assign "S" [.iterAt pbl 1, .freeNorm pbi]
+        (t4rhs "X" [.axis pbi] (.axiswise .normalize (some baseParityMask)))]
+      [.assign "S" [.iterNext pbl, .free pbi] (t4rhs "S" [.axis pbl, .axis pbi])]
+      false]
+  , env := {}, extNames := {"X"}
+  , explicitSizes := ({} : HashMap UID Nat).insert pbl.uid 3 }
+def baseParityInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
+def baseParityCheck : Except String Unit :=
+  t4diff "base parity" baseParity baseParityInputs "S" ⟨[3, 2], #[0, 0, 0.25, 0.75, 0.25, 0.75]⟩
+run_cmd match baseParityCheck with
+  | .ok _ => throwError "base parity: a base at literal 1 was unexpectedly accepted"
+  | .error m => unless (m.splitOn "baseWriteNotAtBoundary").length > 1 do throwError m
 
 /-! ### Fixture — Eliminated `.free` scan coordinate (Slice 5.3, template6-derived)
 

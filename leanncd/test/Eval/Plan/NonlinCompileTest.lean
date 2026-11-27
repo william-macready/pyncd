@@ -114,7 +114,8 @@ def axiswiseSig : InputSignature :=
 
 -- 1d. Masked-axiswise ADMISSION (Slice 5.3): a masked `.axiswise` is now lowered, not rejected.
 -- `resolveNonlinAxis` resolves its marked axis like any axiswise; the mask lowers via
--- `lowerMaskPredicate` (local non-seeded output basis, empty pins). `sampleMask` (always-true,
+-- `lowerMaskPredicate` (local non-seeded output basis, empty pins; exception: a step-aware mask over the
+-- statement's own scan axis reads the live step coordinate, not exercised here). `sampleMask` (always-true,
 -- width-2 over the `[q,s]` basis) satisfies `checkAxiswise`'s mask width check, so it compiles.
 def sampleMask : BoolExpr := .rel .eq (.embed (.const 0)) (.embed (.const 0))
 #guard (prepareEvalPlan
@@ -411,8 +412,8 @@ def allMaskedInputs : HashMap String DenseTensor := HashMap.ofList [("A", tl [2,
 #guard diffEqB (tlprog!{ Y[q, s.] := softmax(A[q, s]) })
     (HashMap.ofList [("A", tl [2,2] [0, 0, 0, Float.log 3])]) "Y" (tl [2,2] [0.5,0.5, 0.25,0.75])
 
--- Fixture: the Iverson FACTOR is the step-dependent form that works (a `where` mask over a scan axis is
--- refused at the source, `StructuralTest`: `maskAxisNotOutput`). `Mx[s] := H[s, t] · [s ≤ t]` keeps row
+-- Fixture: the Iverson FACTOR is a step-dependent form (a `where` mask over the scan axis is the other
+-- one, step-aware: Section 6 below). `Mx[s] := H[s, t] · [s ≤ t]` keeps row
 -- `s` of the state only once `t ≥ s`: with `H0 = [1,1,1]`, `Bi = [1,10,100]` the rows are
 -- `s=0: 1,2,3,4`, `s=1: 1,10,20,30`, `s=2: 1,100,100,200` (final column `[4,30,200]`). A factor that read
 -- `t` as coordinate 0 at every step would give a final column `[4,10,100]`. Source and checked agree.
@@ -439,5 +440,68 @@ def allMaskedInputs : HashMap String DenseTensor := HashMap.ofList [("A", tl [2,
       F[d, t +1]  := F[d, t - j] })
     (HashMap.ofList [("H0", tl [3] [1, 2, 3])])
     "F" (tl [3, 5] [1,1,2,3,5, 2,2,4,6,10, 3,3,6,9,15])
+
+/-! ## Section 6 — step-aware `where` masks inside a scan (source→checked differential)
+
+Inside a recurrence body (a state's step statement or a per-step intermediate) a mask over the
+statement's own scan axis reads the LIVE step coordinate, on the checked plan and the reference
+alike. Every expected tensor below was computed independently by
+`papers/step_mask_files/expected_step_mask.py` (plain Python, no Lean) and observed in a real run.
+Each docstring names what a coordinate-0 reading of the scan axis would have given instead. -/
+
+-- (i) Per-step intermediate `Pa[j.] := softmax(where j ≤ l)(S[j, l])`, `X = 0`. Step `l` spreads the
+-- mass over `j ≤ l`: column 1 `[1,0,0]`, column 2 `softmax([1,0]) = [.731,.269,0]`, column 3
+-- `softmax([.731,.269,0])`. A coordinate-0 reading keeps `[1,0,0]` in every column.
+def stepMaskInter : TLProgram := tlprog!{ iter l = 4
+  S[j, 0]    := X[j]
+  Pa[j.]     := softmax(where j ≤ l)(S[j, l])
+  S[j, l +1] := Pa[j] }
+#guard diffEqB stepMaskInter (HashMap.ofList [("X", tl [3] [0, 0, 0])]) "S"
+    (tl [3,4] [0, 1, 0.7310585786300049, 0.4736311417473898,
+               0, 0, 0.2689414213699951, 0.2983632427253241,
+               0, 0, 0, 0.22800561552728602])
+
+-- (ii) Step statement `S[j., l +1] := softmax(where l ≤ 1)(S[j, l])`, `X = [0, ln 3]`: steps 0 and 1
+-- softmax, step 2 is all-masked → zeros. A coordinate-0 reading would softmax at step 2 too.
+def stepMaskStep : TLProgram := tlprog!{ iter l = 4
+  S[j, 0]      := X[j]
+  S[j., l +1]  := softmax(where l ≤ 1)(S[j, l]) }
+#guard diffEqB stepMaskStep (HashMap.ofList [("X", tl [2] [0, Float.log 3])]) "S"
+    (tl [2,4] [0, 0.25, 0.37754066879814546, 0,
+               Float.log 3, 0.75, 0.6224593312018546, 0])
+
+-- (iii) Slot-cache attention in the natural spelling (the `kv_cache` fixture of
+-- `experiments/jax_bridge/EvalPlanNonlinSmoke.lean` at 3 slots, 3 steps, no V cache, no additive
+-- mask input): step `t` writes key `Kn[t]` into slot `t` and attends with `Qr[t]` over slots `s ≤ t`.
+-- `Yh[s, t+1]` records the attention weights. A coordinate-0 reading gives `[1,0,0]` at every step.
+def kvMaskIn : HashMap String DenseTensor := HashMap.ofList
+  [("Kz", tl [3,2] [0,0, 0,0, 0,0]), ("Y0", tl [3] [0,0,0]),
+   ("Oh", tl [3,4] [1,0,0,0, 0,1,0,0, 0,0,1,0]),
+   ("Kn", tl [4,2] [1,0, 0,1, 1,1, 0,0]), ("Qr", tl [4,2] [1,0, 2,1, 1,-1, 0,0])]
+def kvMaskCausal : TLProgram := tlprog!{ iter t = 4
+  Kc[s, k, 0]    := Kz[s, k]
+  Yh[s, 0]       := Y0[s]
+  Kw[s, k]       := Kc[s, k, t] + Oh[s, t] · Kn[t, k]
+  Pa[s.]         := softmax(where s ≤ t)(Kw[s, k] · Qr[t, k])
+  Kc[s, k, t +1] := Kw[s, k]
+  Yh[s, t +1]    := Pa[s] }
+#guard diffEqB kvMaskCausal kvMaskIn "Yh"
+    (tl [3,4] [0, 1, 0.7310585786300049, 0.6652409557748218,
+               0, 0, 0.2689414213699951, 0.09003057317038046,
+               0, 0, 0, 0.24472847105479764])
+
+-- (iv) Sliding window `s ≤ t ∧ s > t - 2` (width 2) on the same cache: at step 2 slot 0 falls out of
+-- the window (the EDGE), so column 3 is `softmax([-1, 0])` over slots 1, 2 with slot 0 at 0.
+def kvMaskWindow : TLProgram := tlprog!{ iter t = 4
+  Kc[s, k, 0]    := Kz[s, k]
+  Yh[s, 0]       := Y0[s]
+  Kw[s, k]       := Kc[s, k, t] + Oh[s, t] · Kn[t, k]
+  Pa[s.]         := softmax(where s ≤ t ∧ s > t - 2)(Kw[s, k] · Qr[t, k])
+  Kc[s, k, t +1] := Kw[s, k]
+  Yh[s, t +1]    := Pa[s] }
+#guard diffEqB kvMaskWindow kvMaskIn "Yh"
+    (tl [3,4] [0, 1, 0.7310585786300049, 0,
+               0, 0, 0.2689414213699951, 0.2689414213699951,
+               0, 0, 0, 0.7310585786300049])
 
 end LeanNCD.Eval.Plan.NonlinCompileTest
