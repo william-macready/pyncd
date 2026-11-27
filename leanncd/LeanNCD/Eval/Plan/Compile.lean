@@ -700,7 +700,9 @@ def lowerFactorPredicate (pins : HashMap UID Int) (basisUids : List UID) (pred :
     BOTH supplied INTERNALLY here: a caller passes only its non-seeded output UIDs and the source
     mask `BoolExpr`, and so cannot inject factor context or base pins the way `lowerFactorPredicate`
     does. Consequences pinned by fixtures: a UID absent from the basis (a seeded scan axis)
-    densifies to no column (`idxToRow`), so it evaluates as coordinate 0 at every step; and every
+    densifies to no column (`idxToRow`), so it evaluates as coordinate 0 at every step; that holds
+    for base and top-level masks (empty context), while at the scan-step site the context UIDs ARE in
+    the basis and evaluate as the live step coordinate; and every
     output axis — including an eliminated `.free`/`.freeNorm` reduction axis — keeps its own column,
     so the mask sees its ACTUAL enumerated coordinate, never zero. Identity is by basis position.
     `contextUids` (default empty) extends the basis AFTER the output axes: a scan STEP statement

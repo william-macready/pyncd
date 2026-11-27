@@ -40,7 +40,7 @@ structure RawPointwisePlan where
 /-- One axiswise (reduction along one axis) nonlinearity operation. `axisPos` is the position
     (0-indexed) of the reduction axis within the tensor's shape. `mask`, when present, is a UID-free
     positional predicate over the LOCAL output coordinate (its non-seeded output basis) whose leaves
-    are each `shape.size` wide (`checkAxiswise`'s mask width check); a coordinate the mask evaluates
+    are each `shape.size + maskContextRank` wide (`checkAxiswise`'s mask width check); a coordinate the mask evaluates
     TRUE is INCLUDED in the reduction, one FALSE is excluded. There is no mask-axis-UID field: the
     positional width is exactly `shape.size + maskContextRank`. `maskContextRank` is the number of
     enclosing-block context coordinates (a scan step's live iteration coordinates, in block-context
@@ -190,7 +190,7 @@ private def validateNonlinSourceOf {α : Type} (sourceSlot : TensorSlot) (shape 
 
 /-- The axiswise workers' shared mask handling, one copy for both carriers. Re-checks the mask's (if
     any) leaf widths against the local output basis with the SAME cheap symbolic check
-    `checkAxiswise` already ran (`affineWidths` vs `shape.size`, not a per-coordinate `evalPosBool`
+    `checkAxiswise` already ran (`affineWidths` vs `shape.size + maskContextRank`, not a per-coordinate `evalPosBool`
     pass), mapping a mismatch into `PositionalInputError.predicateWidthMismatch` so this path fails
     loud rather than the fail-open `included? = true` a raw `.toOption.getD true` would give — an
     unreachable-in-practice error (`checkAxiswise`'s mask width check forbids the only failure

@@ -52,8 +52,8 @@ inductive CompileError
                                                              -- not one of the statement's own `.free`/`.freeNorm`
                                                              -- output axes, except the statement's own enclosing-scan
                                                              -- axes in a recurrence body (a contracted axis, an axis it does not
-                                                             -- carry, or a scan's iteration axis inside its recurrence
-                                                             -- or base); the mask has no column for it and it would
+                                                             -- carry, or a BASE statement's pinned scan axis; a step
+                                                             -- statement's own scan axis is allowed); the mask has no column for it and it would
                                                              -- read coordinate 0, so it is refused, not misread
                                                              -- (also a statement of ANOTHER scan reading it, from its
                                                              -- step or its base case: `T` belongs to one scan's body)
